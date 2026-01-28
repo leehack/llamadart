@@ -31,9 +31,18 @@ if [ "$PLATFORM" == "macos" ]; then
     
     cmake --build "$BUILD_DIR" --config Release -j $(sysctl -n hw.logicalcpu)
     
-    # Artifact
-    cp "$BUILD_DIR/bin/libllama.dylib" ./libllama_macos_universal.dylib 2>/dev/null || cp "$BUILD_DIR/libllama.dylib" ./libllama_macos_universal.dylib
-    echo "macOS build complete: libllama_macos_universal.dylib"
+    # Artifacts
+    MAC_FRAMEWORKS_DIR="macos/Frameworks"
+    # Clean and recreate to ensure no leftovers (like libllama_cpp)
+    rm -rf "$MAC_FRAMEWORKS_DIR"
+    mkdir -p "$MAC_FRAMEWORKS_DIR"
+    
+    echo "Copying libraries to $MAC_FRAMEWORKS_DIR (cleaning leftovers)..."
+    # Copy only the main .dylib files, avoid versioned aliases (e.g. libllama.0.dylib or libllama.0.0.7865.dylib)
+    # The pattern excludes any file that has a dot followed immediately by a digit
+    find "$BUILD_DIR" -name "*.dylib" ! -name "*.[0-9]*.dylib" -exec cp -L {} "$MAC_FRAMEWORKS_DIR/" \;
+    
+    echo "macOS build complete: $MAC_FRAMEWORKS_DIR"
 
 elif [ "$PLATFORM" == "ios" ]; then
     echo "========================================"

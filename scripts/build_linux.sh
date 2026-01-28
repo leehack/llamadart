@@ -61,7 +61,14 @@ mkdir -p "$BUILD_DIR"
 cmake -S src/native/llama_cpp -B "$BUILD_DIR" $CMAKE_ARGS
 cmake --build "$BUILD_DIR" --config Release -j $(nproc 2>/dev/null || sysctl -n hw.logicalcpu)
 
-# Artifact
-OUTPUT_NAME="libllama_linux_${TARGET_ARCH}_$BACKEND.so"
-cp "$BUILD_DIR/bin/libllama.so" "./$OUTPUT_NAME" 2>/dev/null || cp "$BUILD_DIR/libllama.so" "./$OUTPUT_NAME"
-echo "Linux build complete: $OUTPUT_NAME"
+# Artifacts
+LIB_DIR="linux/lib/$TARGET_ARCH"
+# Clean and recreate to ensure no leftovers
+rm -rf "$LIB_DIR"
+mkdir -p "$LIB_DIR"
+
+echo "Copying libraries to $LIB_DIR (cleaning leftovers)..."
+# Copy only the main .so files, avoid versioned aliases if possible
+find "$BUILD_DIR" -name "*.so" ! -name "*.[0-9].so" ! -name "*.[0-9].[0-9].so" -exec cp -L {} "$LIB_DIR/" \;
+
+echo "Linux build complete for $TARGET_ARCH: $LIB_DIR"

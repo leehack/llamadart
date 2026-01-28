@@ -64,10 +64,16 @@ compile_commands.json
 models/*.gguf
 models/*.bin
 
-# Native Frameworks
+# Native Frameworks and Binaries
 ios/Frameworks/llama_cpp.xcframework
+macos/Frameworks/
+android/src/main/jniLibs/
+linux/lib/
+windows/lib/
 
 
 .scrum/
 .cache/
 .opencode/
+
+build-*/

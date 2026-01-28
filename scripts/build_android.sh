@@ -37,11 +37,14 @@ fi
 
 # 3. Create Host Toolchain for Vulkan Shaders
 OS_NAME=$(uname)
-echo "set(CMAKE_MAKE_PROGRAM \"$(which make)\" CACHE STRING \"make program\" FORCE)" > android-host-toolchain.cmake
-echo "set(CMAKE_SYSTEM_NAME \"$OS_NAME\")" >> android-host-toolchain.cmake
-echo "set(Threads_FOUND TRUE)" >> android-host-toolchain.cmake
-echo "set(CMAKE_THREAD_LIBS_INIT \"-pthread\")" >> android-host-toolchain.cmake
-echo "set(CMAKE_USE_PTHREADS_INIT TRUE)" >> android-host-toolchain.cmake
+TOOLCHAIN_FILE="$BUILD_DIR/android-host-toolchain.cmake"
+mkdir -p "$BUILD_DIR"
+
+echo "set(CMAKE_MAKE_PROGRAM \"$(which make)\" CACHE STRING \"make program\" FORCE)" > "$TOOLCHAIN_FILE"
+echo "set(CMAKE_SYSTEM_NAME \"$OS_NAME\")" >> "$TOOLCHAIN_FILE"
+echo "set(Threads_FOUND TRUE)" >> "$TOOLCHAIN_FILE"
+echo "set(CMAKE_THREAD_LIBS_INIT \"-pthread\")" >> "$TOOLCHAIN_FILE"
+echo "set(CMAKE_USE_PTHREADS_INIT TRUE)" >> "$TOOLCHAIN_FILE"
 
 # 4. Find Vulkan paths in NDK
 # Find glslc
@@ -73,7 +76,6 @@ if [ ! -d "$VULKAN_INC_DIR/vulkan" ]; then
 fi
 
 # 5. Build
-mkdir -p "$BUILD_DIR"
 cmake -S src/native/llama_cpp -B "$BUILD_DIR" \
   -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
   -DANDROID_ABI=$ABI \
@@ -91,11 +93,18 @@ cmake -S src/native/llama_cpp -B "$BUILD_DIR" \
   -DVulkan_LIBRARY="$VULKAN_LIB" \
   -DVulkan_INCLUDE_DIR="$VULKAN_INC_DIR" \
   -DVulkan_GLSLC_EXECUTABLE="$GLSLC" \
-  -DGGML_VULKAN_SHADERS_GEN_TOOLCHAIN=$(pwd)/android-host-toolchain.cmake
+  -DGGML_VULKAN_SHADERS_GEN_TOOLCHAIN="$TOOLCHAIN_FILE"
 
 cmake --build "$BUILD_DIR" --config Release -j $(nproc 2>/dev/null || sysctl -n hw.logicalcpu)
 
 # 6. Artifact management
-OUTPUT_NAME="libllama_android_$ABI.so"
-cp "$BUILD_DIR/bin/libllama.so" "./$OUTPUT_NAME" 2>/dev/null || cp "$BUILD_DIR/libllama.so" "./$OUTPUT_NAME"
-echo "Android build complete: $OUTPUT_NAME"
+JNI_LIBS_DIR="android/src/main/jniLibs/$ABI"
+# Clean and recreate to ensure no leftovers
+rm -rf "$JNI_LIBS_DIR"
+mkdir -p "$JNI_LIBS_DIR"
+
+echo "Copying libraries to $JNI_LIBS_DIR (cleaning leftovers)..."
+# Find all .so files in the bin or root build directory
+find "$BUILD_DIR" -name "*.so" -exec cp {} "$JNI_LIBS_DIR/" \;
+
+echo "Android build complete: $ABI binaries in $JNI_LIBS_DIR"

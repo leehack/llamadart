@@ -1,14 +1,28 @@
 cmake_minimum_required(VERSION 3.10)
 project(llamadart_windows LANGUAGES C CXX)
 
-# Include the central native build logic
-# Configure llama.cpp flags
-set(BUILD_SHARED_LIBS ON CACHE BOOL "Build shared" FORCE)
-set(LLAMA_BUILD_COMMON OFF CACHE BOOL "Build common" FORCE)
-set(LLAMA_BUILD_TESTS OFF CACHE BOOL "Build tests" FORCE)
-set(LLAMA_BUILD_TOOLS OFF CACHE BOOL "Build tools" FORCE)
-set(LLAMA_BUILD_EXAMPLES OFF CACHE BOOL "Build examples" FORCE)
-set(LLAMA_BUILD_SERVER OFF CACHE BOOL "Build server" FORCE)
+# Check for pre-built binaries
+set(PREBUILT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/lib")
 
-# Include the submodule directly
-add_subdirectory(../src/native/llama_cpp ${CMAKE_CURRENT_BINARY_DIR}/llama_cpp)
+if(NOT EXISTS "${PREBUILT_DIR}/llama.dll" AND NOT EXISTS "${PREBUILT_DIR}/libllama.dll")
+    message(FATAL_ERROR "llamadart: Pre-built binary not found in ${PREBUILT_DIR}. Please run scripts/build_windows.ps1 first.")
+endif()
+
+message(STATUS "llamadart: Using pre-built binaries for Windows")
+
+# Identify which one exists
+if(EXISTS "${PREBUILT_DIR}/llama.dll")
+    set(LLAMA_DLL_PATH "${PREBUILT_DIR}/llama.dll")
+else()
+    set(LLAMA_DLL_PATH "${PREBUILT_DIR}/libllama.dll")
+endif()
+
+# Create an imported target for the pre-built library
+add_library(llama SHARED IMPORTED)
+set_target_properties(llama PROPERTIES
+    IMPORTED_LOCATION "${LLAMA_DLL_PATH}"
+)
+
+# Install the DLL(s) so they are bundled with the app
+file(GLOB PREBUILT_LIBS "${PREBUILT_DIR}/*.dll")
+install(FILES ${PREBUILT_LIBS} DESTINATION "${CMAKE_INSTALL_PREFIX}")

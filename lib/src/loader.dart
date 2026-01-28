@@ -10,12 +10,18 @@ LlamaCpp loadLlamaLib() {
   if (Platform.isMacOS) {
     // For local testing (Dart standalone), look in the build directory
     // This assumes we are running from the project root
-    final localBuildPath =
-        path.join(Directory.current.path, 'build/bin/libllama.dylib');
+    final localBuildPath = path.join(
+      Directory.current.path,
+      'build/bin/libllama.dylib',
+    );
     final devBuildPath = path.join(
-        Directory.current.path, '../../src/native/build/bin/libllama.dylib');
-    final frameworksPath =
-        path.join(Directory.current.path, 'macos/Frameworks/libllama.dylib');
+      Directory.current.path,
+      '../../src/native/build/bin/libllama.dylib',
+    );
+    final frameworksPath = path.join(
+      Directory.current.path,
+      'macos/Frameworks/libllama.dylib',
+    );
 
     if (File(localBuildPath).existsSync()) {
       lib = DynamicLibrary.open(localBuildPath);
@@ -32,14 +38,21 @@ LlamaCpp loadLlamaLib() {
         try {
           final executableDir = path.dirname(Platform.resolvedExecutable);
           final libPath = path.canonicalize(
-              path.join(executableDir, '..', 'Frameworks', 'libllama.dylib'));
+            path.join(executableDir, '..', 'Frameworks', 'libllama.dylib'),
+          );
           print('llamadart: Attempting absolute bundle path: $libPath');
           lib = DynamicLibrary.open(libPath);
         } catch (_) {
           try {
             final executableDir = path.dirname(Platform.resolvedExecutable);
-            final libPath = path.join(executableDir, '..', 'Frameworks',
-                'llamadart.framework', 'Resources', 'libllama.dylib');
+            final libPath = path.join(
+              executableDir,
+              '..',
+              'Frameworks',
+              'llamadart.framework',
+              'Resources',
+              'libllama.dylib',
+            );
             print('llamadart: Attempting framework resources path: $libPath');
             lib = DynamicLibrary.open(libPath);
           } catch (__) {
@@ -50,24 +63,51 @@ LlamaCpp loadLlamaLib() {
       }
     }
   } else if (Platform.isLinux) {
-    final localBuildPath =
-        path.join(Directory.current.path, 'build/bin/libllama.so');
-    final devBuildPath = path.join(
-        Directory.current.path, '../../src/native/build/bin/libllama.so');
-    if (File(localBuildPath).existsSync()) {
-      lib = DynamicLibrary.open(localBuildPath);
-    } else if (File(devBuildPath).existsSync()) {
-      lib = DynamicLibrary.open(devBuildPath);
+    final arch =
+        Platform.version.contains('aarch64') ||
+            Platform.version.contains('arm64')
+        ? 'arm64'
+        : 'x64';
+    final libDir = path.join(Directory.current.path, 'linux/lib', arch);
+    final libPath = path.join(libDir, 'libllama.so');
+
+    if (File(libPath).existsSync()) {
+      lib = DynamicLibrary.open(libPath);
     } else {
-      lib = DynamicLibrary.open('libllama.so');
+      try {
+        lib = DynamicLibrary.open('libllama.so');
+      } catch (e) {
+        // Fallback for local dev if not in the new lib dir
+        final localBuildPath = path.join(
+          Directory.current.path,
+          'build/bin/libllama.so',
+        );
+        if (File(localBuildPath).existsSync()) {
+          lib = DynamicLibrary.open(localBuildPath);
+        } else {
+          rethrow;
+        }
+      }
     }
   } else if (Platform.isWindows) {
-    final localBuildPath =
-        path.join(Directory.current.path, 'build/bin/llama.dll');
-    if (File(localBuildPath).existsSync()) {
-      lib = DynamicLibrary.open(localBuildPath);
+    final libDir = path.join(Directory.current.path, 'windows/lib');
+    final libPath1 = path.join(libDir, 'llama.dll');
+    final libPath2 = path.join(libDir, 'libllama.dll');
+
+    if (File(libPath1).existsSync()) {
+      lib = DynamicLibrary.open(libPath1);
+    } else if (File(libPath2).existsSync()) {
+      lib = DynamicLibrary.open(libPath2);
     } else {
-      lib = DynamicLibrary.open('llama.dll');
+      try {
+        lib = DynamicLibrary.open('llama.dll');
+      } catch (_) {
+        try {
+          lib = DynamicLibrary.open('libllama.dll');
+        } catch (e) {
+          rethrow;
+        }
+      }
     }
   } else if (Platform.isIOS) {
     try {
@@ -80,7 +120,9 @@ LlamaCpp loadLlamaLib() {
         // Construct absolute path
         final executableDir = path.dirname(Platform.resolvedExecutable);
         final libPath = path.join(
-            executableDir, 'Frameworks/llama_cpp.framework/llama_cpp');
+          executableDir,
+          'Frameworks/llama_cpp.framework/llama_cpp',
+        );
         print('llamadart: Attempting load from $libPath');
         lib = DynamicLibrary.open(libPath);
         print('llamadart: Loaded successfully from absolute path.');
@@ -88,15 +130,18 @@ LlamaCpp loadLlamaLib() {
         print('llamadart: Failed to load absolute path: $e2');
         try {
           print(
-              'llamadart: Attempting process() fallback (for static linking)');
+            'llamadart: Attempting process() fallback (for static linking)',
+          );
           lib = DynamicLibrary.process();
 
           // Verify that we can actually find a symbol.
           // If strict stripping is enabled, process() returns a handle but lookup fails.
           if (!lib.providesSymbol('llama_backend_init')) {
-            throw Exception('llama_backend_init symbol not found in process(). '
-                'This indicates symbols were stripped or not exported. '
-                'Check STRIP_STYLE and -Wl,-export_dynamic in Podspec.');
+            throw Exception(
+              'llama_backend_init symbol not found in process(). '
+              'This indicates symbols were stripped or not exported. '
+              'Check STRIP_STYLE and -Wl,-export_dynamic in Podspec.',
+            );
           }
           print('llamadart: Loaded process() and verified symbols.');
         } catch (e3) {

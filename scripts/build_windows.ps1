@@ -48,14 +48,14 @@ if (-not (Test-Path $BuildDir)) {
 cmake -S src/native/llama_cpp -B $BuildDir @CmakeArgs
 cmake --build $BuildDir --config Release -j 4
 
-# Artifact
-$OutputName = "libllama_windows_x64_$Backend.dll"
-if (Test-Path "$BuildDir/bin/Release/libllama.dll") {
-    Copy-Item "$BuildDir/bin/Release/libllama.dll" "./$OutputName"
-} elseif (Test-Path "$BuildDir/bin/libllama.dll") {
-    Copy-Item "$BuildDir/bin/libllama.dll" "./$OutputName"
-} elseif (Test-Path "$BuildDir/Release/libllama.dll") {
-    Copy-Item "$BuildDir/Release/libllama.dll" "./$OutputName"
+# Artifacts
+$LibDir = "windows/lib"
+if (Test-Path $LibDir) {
+    Remove-Item -Path $LibDir -Recurse -Force
 }
+New-Item -Path $LibDir -ItemType Directory
 
-Write-Host "Windows build complete: $OutputName"
+Write-Host "Copying libraries to $LibDir (cleaning leftovers)..."
+Get-ChildItem -Path $BuildDir -Filter *.dll -Recurse | Copy-Item -Destination $LibDir
+
+Write-Host "Windows build complete: $LibDir"
