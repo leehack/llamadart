@@ -165,53 +165,58 @@ if(ANDROID AND NOT GGML_VULKAN_SHADERS_GEN_TOOLCHAIN)
     endif()
 endif()
 
-message(STATUS "llamadart: CHECKING GGML_VULKAN: ${GGML_VULKAN}")
-# Include the vendored llama.cpp source
+# Include the submodule
 add_subdirectory(llama_cpp)
 
-# Force symbols to be exported even from static library
-target_compile_definitions(llama PUBLIC LLAMA_SHARED)
-target_compile_definitions(ggml PUBLIC LLAMA_SHARED)
+# Define our plugin library
+# We rename the target to 'llamadart_plugin' to avoid conflict with the directory name 'llama_cpp' 
+# or any potential targets in the submodule.
+add_library(llamadart_plugin SHARED llamadart.cpp)
 
-# Define the shared library that Flutter will load
-add_library(llama_cpp SHARED llamadart.cpp)
+# Set the output name to 'llama_cpp' so the file on disk is 'libllama_cpp.so' / 'llama_cpp.dll'
+# This matches what the Dart FFI expects (if it looks for 'llama_cpp').
+set_target_properties(llamadart_plugin PROPERTIES OUTPUT_NAME "llama_cpp")
 
-
-
+# Link against the 'llama' target from the submodule
 if(GGML_VULKAN)
-    target_compile_definitions(llama_cpp PUBLIC GGML_USE_VULKAN)
-    target_compile_definitions(llama PUBLIC GGML_USE_VULKAN)
-    target_compile_definitions(ggml PUBLIC GGML_USE_VULKAN)
-    message(STATUS "llamadart: Applied GGML_USE_VULKAN to all native targets")
+    target_compile_definitions(llamadart_plugin PUBLIC GGML_USE_VULKAN)
+    # The submodule's 'llama' target should already carry usage requirements, 
+    # but we ensure visibility and linking here.
 endif()
 
 if(LLAMA_DART_COMPILE_DEFS)
-    target_compile_definitions(llama_cpp PUBLIC ${LLAMA_DART_COMPILE_DEFS})
+    target_compile_definitions(llamadart_plugin PUBLIC ${LLAMA_DART_COMPILE_DEFS})
 endif()
 
 # Links
 if(APPLE)
-    target_link_libraries(llama_cpp PRIVATE llama)
-    set_target_properties(llama_cpp PROPERTIES 
+    target_link_libraries(llamadart_plugin PRIVATE llama)
+    set_target_properties(llamadart_plugin PROPERTIES 
         LINK_FLAGS "-Wl,-all_load -Wl,-export_dynamic"
     )
 elseif(ANDROID)
-    if(GGML_VULKAN)
-        target_link_libraries(llama_cpp PRIVATE -Wl,--whole-archive llama ggml -Wl,--no-whole-archive log)
-        message(STATUS "llamadart: Linking Vulkan backend with --whole-archive")
-    else()
-        target_link_libraries(llama_cpp PRIVATE -Wl,--whole-archive llama -Wl,--no-whole-archive log)
-    endif()
-    set_target_properties(llama_cpp PROPERTIES 
+    target_link_libraries(llamadart_plugin PRIVATE -Wl,--whole-archive llama -Wl,--no-whole-archive log)
+    set_target_properties(llamadart_plugin PROPERTIES 
         LINK_FLAGS "-Wl,-export-dynamic"
     )
 else()
-    target_link_libraries(llama_cpp PRIVATE -Wl,--whole-archive llama -Wl,--no-whole-archive)
-    set_target_properties(llama_cpp PROPERTIES 
-        LINK_FLAGS "-Wl,-export-dynamic"
-    )
+    # Linux / Windows
+    if(MSVC)
+        target_link_libraries(llamadart_plugin PRIVATE llama)
+    else()
+        target_link_libraries(llamadart_plugin PRIVATE -Wl,--whole-archive llama -Wl,--no-whole-archive)
+        set_target_properties(llamadart_plugin PROPERTIES 
+            LINK_FLAGS "-Wl,-export-dynamic"
+        )
+    endif()
 endif()
 
+if(GGML_VULKAN)
+     # If the submodule defines Vulkan::Vulkan or similar, we might need it. 
+     # Usually linking 'llama' is enough if 'llama' links 'ggml-backend' which links Vulkan.
+     # But we keep explicit link just in case.
+    target_link_libraries(llamadart_plugin PRIVATE Vulkan::Vulkan)
+endif()
 
 
 if(GGML_VULKAN)
@@ -220,7 +225,7 @@ endif()
 
 # Install the shared library to the bundle
 include(GNUInstallDirs)
-install(TARGETS llama_cpp
+install(TARGETS llamadart_plugin
     RUNTIME DESTINATION "${CMAKE_INSTALL_LIBDIR}"
     LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
 )
