@@ -13,6 +13,7 @@ RUN sudo apt-get update && sudo apt-get install -y \
   mesa-utils \
   libvulkan-dev \
   glslc \
+  nvidia-cuda-toolkit \
   && sudo rm -rf /var/lib/apt/lists/*
 
 # Set up workspace

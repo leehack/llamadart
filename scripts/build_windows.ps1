@@ -21,7 +21,9 @@ $CmakeArgs = @(
     "-DLLAMA_BUILD_TESTS=OFF",
     "-DLLAMA_BUILD_EXAMPLES=OFF",
     "-DLLAMA_BUILD_SERVER=OFF",
-    "-DLLAMA_BUILD_TOOLS=OFF"
+    "-DLLAMA_BUILD_TOOLS=OFF",
+    "-DGGML_CPU_ALL_VARIANTS=ON",
+    "-DGGML_BACKEND_DL=ON"
 )
 
 if ($Backend -eq "vulkan") {

@@ -86,6 +86,8 @@ cmake -S src/native/llama_cpp -B "$BUILD_DIR" \
   -DLLAMA_BUILD_SERVER=OFF \
   -DLLAMA_BUILD_TOOLS=OFF \
   -DGGML_VULKAN=ON \
+  -DGGML_BACKEND_DL=ON \
+  -DGGML_CPU_ARM_ARCH=armv8.5-a+fp16+i8mm \
   -DVulkan_LIBRARY="$VULKAN_LIB" \
   -DVulkan_INCLUDE_DIR="$VULKAN_INC_DIR" \
   -DVulkan_GLSLC_EXECUTABLE="$GLSLC" \

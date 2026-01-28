@@ -1,0 +1,40 @@
+# Exclude large development sources and submodules
+src/
+.git/
+.github/
+
+# Exclude local build directories
+build/
+build-*/
+.dart_tool/
+android/build/
+android/.cxx/
+ios/.build/
+linux/flutter/ephemeral/
+macos/Flutter/ephemeral/
+windows/flutter/ephemeral/
+
+# Exclude development scripts and docs not needed by end users
+scripts/
+AGENTS.md
+VENDOR_NOTES.md
+CONTRIBUTING.md
+ffigen.yaml
+
+# Exclude local models
+models/
+*.gguf
+*.bin
+
+# Exclude debug symbols
+**/*.dSYM/
+**/*.pdb
+
+# UN-IGNORE binaries for pub distribution
+# (Needed if they are ignored in nested .gitignore files)
+!libllama_*.so
+!libllama_*.dylib
+!libllama_*.dll
+!*.xcframework/
+!ios/Frameworks/
+

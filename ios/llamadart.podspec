@@ -18,20 +18,6 @@ Provides FFI bindings to llama.cpp and embeds native libraries, requiring no add
   s.platform         = :ios, '12.0'
   s.swift_version    = '5.0'
 
-  # Automate the build if the framework is missing
-  s.prepare_command = <<-CMD
-    if [ ! -d "Frameworks/llama_cpp.xcframework" ]; then
-      echo "llamadart: Framework not found. Building llama.cpp for iOS..."
-      # Run the build script
-      if [ -f "../scripts/build_apple.sh" ]; then
-        ../scripts/build_apple.sh ios
-      else
-        echo "Error: ../scripts/build_apple.sh not found."
-        exit 1
-      fi
-    fi
-  CMD
-
   # Vendor the native libraries
   s.vendored_frameworks = 'Frameworks/llama_cpp.xcframework'
   s.static_framework = true
@@ -47,7 +33,7 @@ Provides FFI bindings to llama.cpp and embeds native libraries, requiring no add
 
   s.pod_target_xcconfig = {
     'GCC_PREPROCESSOR_DEFINITIONS' => '$(inherited) GGML_USE_METAL=1',
-    'HEADER_SEARCH_PATHS' => '$(inherited) "${PODS_TARGET_SRCROOT}/Frameworks/llama_cpp.xcframework/ios-arm64/Headers" "${PODS_TARGET_SRCROOT}/Frameworks/llama_cpp.xcframework/ios-arm64_x86_64-simulator/Headers"',
+    'HEADER_SEARCH_PATHS' => '$(inherited) "${PODS_TARGET_SRCROOT}/Frameworks/llama_cpp.xcframework/ios-arm64/llama.framework/Headers" "${PODS_TARGET_SRCROOT}/Frameworks/llama_cpp.xcframework/ios-arm64_x86_64-simulator/llama.framework/Headers"',
     'CLANG_CXX_LANGUAGE_STANDARD' => 'c++17',
     'CLANG_CXX_LIBRARY' => 'libc++'
   }
