@@ -29,25 +29,33 @@ jobs:
       - name: Install Ninja
         run: sudo apt-get install -y ninja-build
 
-      - name: Build Android (Vulkan)
+      - name: Create Host Toolchain for Vulkan Shaders
         run: |
-          mkdir -p build-android
-          cd build-android
-          cmake ../src/native \
+          echo "set(CMAKE_MAKE_PROGRAM \"$(which make)\" CACHE STRING \"make program\" FORCE)" > android-host-toolchain.cmake
+          echo "set(CMAKE_SYSTEM_NAME \"Linux\")" >> android-host-toolchain.cmake
+          echo "set(Threads_FOUND TRUE)" >> android-host-toolchain.cmake
+          echo "set(CMAKE_THREAD_LIBS_INIT \"-pthread\")" >> android-host-toolchain.cmake
+          echo "set(CMAKE_USE_PTHREADS_INIT TRUE)" >> android-host-toolchain.cmake
+
+      - name: Build with CMake
+        run: |
+          cmake -S src/native -B build-android \
             -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
-            -DANDROID_ABI=arm64-v8a \
-            -DANDROID_PLATFORM=android-26 \
+            -DANDROID_ABI=${{ matrix.android_abi }} \
+            -DANDROID_PLATFORM=android-21 \
             -DCMAKE_BUILD_TYPE=Release \
             -DGGML_VULKAN=ON \
-            -DLLAMA_DART_NO_VULKAN=OFF
-          cmake --build . --config Release -j $(nproc)
-          mv bin/libllama_cpp.so libllama_android.so
+            -DGGML_VULKAN_SHADERS_GEN_TOOLCHAIN=$(pwd)/android-host-toolchain.cmake
+          cmake --build build-android --config Release -j $(nproc)
+          
+          # Rename for clarity in release
+          mv build-android/bin/libllama.so libllama_android_${{ matrix.android_abi }}.so
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: libllama_android
-          path: build-android/libllama_android.so
+          name: libllama_android_${{ matrix.android_abi }}
+          path: libllama_android_${{ matrix.android_abi }}.so
 
   build-apple:
     runs-on: macos-latest

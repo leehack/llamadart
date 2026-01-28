@@ -51,29 +51,6 @@ if(GGML_CUDA)
 endif()
 
 # =============================================================================
-# Workaround for Android Vulkan Build (Host Toolchain for Shaders)
-# =============================================================================
-if(ANDROID AND GGML_VULKAN AND NOT GGML_VULKAN_SHADERS_GEN_TOOLCHAIN)
-    message(STATUS "llamadart: Generating host toolchain for Vulkan shader compiler...")
-    set(ENV{PATH} "${CMAKE_CURRENT_SOURCE_DIR}:$ENV{PATH}")
-    
-    # Detect host compilers
-    if(NOT CMAKE_MAKE_PROGRAM)
-        find_program(CMAKE_MAKE_PROGRAM NAMES ninja make)
-    endif()
-
-    set(HOST_TOOLCHAIN_FILE "${CMAKE_BINARY_DIR}/android-host-toolchain.cmake")
-    file(WRITE "${HOST_TOOLCHAIN_FILE}" 
-        "set(CMAKE_MAKE_PROGRAM \"${CMAKE_MAKE_PROGRAM}\" CACHE STRING \"make program\" FORCE)\n"
-        "set(CMAKE_SYSTEM_NAME \"${CMAKE_HOST_SYSTEM_NAME}\")\n"
-        "set(Threads_FOUND TRUE)\n"
-        "set(CMAKE_THREAD_LIBS_INIT \"-pthread\")\n"
-        "set(CMAKE_USE_PTHREADS_INIT TRUE)\n"
-    )
-    set(GGML_VULKAN_SHADERS_GEN_TOOLCHAIN "${HOST_TOOLCHAIN_FILE}" CACHE FILEPATH "Host toolchain" FORCE)
-endif()
-
-# =============================================================================
 # Include llama.cpp
 # =============================================================================
 
