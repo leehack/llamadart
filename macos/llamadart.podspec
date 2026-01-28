@@ -37,10 +37,11 @@ Provides FFI bindings to llama.cpp and embeds native libraries, requiring no add
     # We build from src/native/llama_cpp directly
     if cmake -S "$PROJECT_ROOT/src/native/llama_cpp" -B "$BUILD_DIR" \
         -DBUILD_SHARED_LIBS=ON \
-        -DLLAMA_BUILD_COMMON=ON \
+        -DLLAMA_BUILD_COMMON=OFF \
         -DLLAMA_BUILD_TESTS=OFF \
         -DLLAMA_BUILD_EXAMPLES=OFF \
         -DLLAMA_BUILD_SERVER=OFF \
+        -DLLAMA_BUILD_TOOLS=OFF \
         -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" && \
        cmake --build "$BUILD_DIR" --config Release -j $(sysctl -n hw.ncpu); then

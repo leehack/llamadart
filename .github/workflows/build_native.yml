@@ -29,59 +29,8 @@ jobs:
       - name: Install Ninja
         run: sudo apt-get install -y ninja-build
 
-      - name: Create Host Toolchain for Vulkan Shaders
-        run: |
-          echo "set(CMAKE_MAKE_PROGRAM \"$(which make)\" CACHE STRING \"make program\" FORCE)" > android-host-toolchain.cmake
-          echo "set(CMAKE_SYSTEM_NAME \"Linux\")" >> android-host-toolchain.cmake
-          echo "set(Threads_FOUND TRUE)" >> android-host-toolchain.cmake
-          echo "set(CMAKE_THREAD_LIBS_INIT \"-pthread\")" >> android-host-toolchain.cmake
-          echo "set(CMAKE_USE_PTHREADS_INIT TRUE)" >> android-host-toolchain.cmake
-
-      - name: Find NDK Vulkan Paths
-        id: vulkan_paths
-        run: |
-          # Find glslc
-          GLSLC=$(find $ANDROID_NDK_HOME -name glslc | head -n 1)
-          echo "Found glslc: $GLSLC"
-          echo "GLSLC=$GLSLC" >> $GITHUB_ENV
-          
-          # Find libvulkan.so (use aarch64 path, as we need a valid lib path for the variable, even if cross-compiling)
-          # We'll pick API 29 or higher to be safe
-          VULKAN_LIB=$(find $ANDROID_NDK_HOME -name "libvulkan.so" | grep "aarch64" | grep "/29/" | head -n 1)
-          # Fallback if 29 not found
-          if [ -z "$VULKAN_LIB" ]; then
-             VULKAN_LIB=$(find $ANDROID_NDK_HOME -name "libvulkan.so" | grep "aarch64" | head -n 1)
-          fi
-          echo "Found libvulkan: $VULKAN_LIB"
-          echo "VULKAN_LIB=$VULKAN_LIB" >> $GITHUB_ENV
-          
-          # Find includes
-          VULKAN_INC=$(find $ANDROID_NDK_HOME -type f -name "vulkan.h" | grep "include/vulkan" | head -n 1)
-          VULKAN_INC_DIR=$(dirname $(dirname $VULKAN_INC))
-          echo "Found includes: $VULKAN_INC_DIR"
-          echo "VULKAN_INC_DIR=$VULKAN_INC_DIR" >> $GITHUB_ENV
-
-      - name: Build with CMake
-        run: |
-          cmake -S src/native/llama_cpp -B build-android \
-            -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
-            -DANDROID_ABI=${{ matrix.android_abi }} \
-            -DANDROID_PLATFORM=android-21 \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DBUILD_SHARED_LIBS=ON \
-            -DLLAMA_BUILD_COMMON=ON \
-            -DLLAMA_BUILD_TESTS=OFF \
-            -DLLAMA_BUILD_EXAMPLES=OFF \
-            -DLLAMA_BUILD_SERVER=OFF \
-            -DGGML_VULKAN=ON \
-            -DVulkan_LIBRARY=$VULKAN_LIB \
-            -DVulkan_INCLUDE_DIR=$VULKAN_INC_DIR \
-            -DVulkan_GLSLC_EXECUTABLE=$GLSLC \
-            -DGGML_VULKAN_SHADERS_GEN_TOOLCHAIN=$(pwd)/android-host-toolchain.cmake
-          cmake --build build-android --config Release -j $(nproc)
-          
-          # Rename for clarity in release
-          mv build-android/bin/libllama.so libllama_android_${{ matrix.android_abi }}.so
+      - name: Build with Script
+        run: ./scripts/build_android.sh ${{ matrix.android_abi }}
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
@@ -99,49 +48,16 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Build macOS
-        if: matrix.target == 'macos'
-        run: |
-          mkdir -p build-macos
-          cd build-macos
-          cmake ../src/native/llama_cpp \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DBUILD_SHARED_LIBS=ON \
-            -DLLAMA_BUILD_COMMON=ON \
-            -DLLAMA_BUILD_TESTS=OFF \
-            -DLLAMA_BUILD_EXAMPLES=OFF \
-            -DLLAMA_BUILD_SERVER=OFF \
-            -DGGML_METAL=ON
-          cmake --build . --config Release -j $(sysctl -n hw.logicalcpu)
-          mv bin/libllama_cpp.dylib libllama_macos_universal.dylib
-
-      - name: Build iOS
-        if: matrix.target == 'ios'
-        run: |
-          mkdir -p build-ios
-          cd build-ios
-          cmake ../src/native/llama_cpp \
-            -G Xcode \
-            -DCMAKE_TOOLCHAIN_FILE=../src/native/llama_cpp/cmake/ios.toolchain.cmake \
-            -DPLATFORM=OS64 \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DBUILD_SHARED_LIBS=ON \
-            -DLLAMA_BUILD_COMMON=ON \
-            -DLLAMA_BUILD_TESTS=OFF \
-            -DLLAMA_BUILD_EXAMPLES=OFF \
-            -DLLAMA_BUILD_SERVER=OFF \
-            -DGGML_METAL=ON \
-            -DENABLE_BITCODE=OFF \
-            -DENABLE_ARC=OFF \
-            -DENABLE_VISIBILITY=OFF
-          cmake --build . --config Release
-          mv bin/Release-iphoneos/libllama_cpp.dylib libllama_ios_universal.dylib
+      - name: Build Apple Platforms
+        run: ./scripts/build_apple.sh ${{ matrix.target }}
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: libllama_${{ matrix.target }}
-          path: build-${{ matrix.target }}/libllama_${{ matrix.target }}_universal.dylib
+          path: |
+            build-macos/libllama_macos_universal.dylib
+            llama_ios_xcframework.zip
 
   build-linux-vulkan:
     runs-on: ubuntu-24.04
@@ -156,19 +72,7 @@ jobs:
           sudo apt-get install -y libvulkan-dev glslc
 
       - name: Build Linux (Vulkan)
-        run: |
-          mkdir -p build-linux-vulkan
-          cd build-linux-vulkan
-          cmake ../src/native/llama_cpp \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DBUILD_SHARED_LIBS=ON \
-            -DLLAMA_BUILD_COMMON=ON \
-            -DLLAMA_BUILD_TESTS=OFF \
-            -DLLAMA_BUILD_EXAMPLES=OFF \
-            -DLLAMA_BUILD_SERVER=OFF \
-            -DGGML_VULKAN=ON
-          cmake --build . --config Release -j $(nproc)
-          mv bin/libllama.so libllama_linux_x86_64_vulkan.so
+        run: ./scripts/build_linux.sh vulkan
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
@@ -189,19 +93,7 @@ jobs:
           apt-get update && apt-get install -y git cmake build-essential
 
       - name: Build Linux (CUDA)
-        run: |
-          mkdir -p build-linux-cuda
-          cd build-linux-cuda
-          cmake ../src/native/llama_cpp \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DBUILD_SHARED_LIBS=ON \
-            -DLLAMA_BUILD_COMMON=ON \
-            -DLLAMA_BUILD_TESTS=OFF \
-            -DLLAMA_BUILD_EXAMPLES=OFF \
-            -DLLAMA_BUILD_SERVER=OFF \
-            -DGGML_CUDA=ON
-          cmake --build . --config Release -j $(nproc)
-          mv bin/libllama.so libllama_linux_x64_cuda.so
+        run: ./scripts/build_linux.sh cuda
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
@@ -232,20 +124,7 @@ jobs:
           cuda: '12.2.0'
 
       - name: Build Windows
-        shell: bash
-        run: |
-          mkdir -p build-windows
-          cd build-windows
-          CMAKE_ARGS="-DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DLLAMA_BUILD_COMMON=ON -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF -DLLAMA_BUILD_SERVER=OFF"
-          if [ "${{ matrix.backend }}" == "vulkan" ]; then
-            CMAKE_ARGS="$CMAKE_ARGS -DGGML_VULKAN=ON"
-          elif [ "${{ matrix.backend }}" == "cuda" ]; then
-            CMAKE_ARGS="$CMAKE_ARGS -DGGML_CUDA=ON"
-          fi
-          
-          cmake ../src/native/llama_cpp $CMAKE_ARGS
-          cmake --build . --config Release -j 4
-          mv bin/libllama.dll libllama_windows_x64_${{ matrix.backend }}.dll
+        run: .\scripts\build_windows.ps1 ${{ matrix.backend }}
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4

@@ -23,10 +23,10 @@ Provides FFI bindings to llama.cpp and embeds native libraries, requiring no add
     if [ ! -d "Frameworks/llama_cpp.xcframework" ]; then
       echo "llamadart: Framework not found. Building llama.cpp for iOS..."
       # Run the build script
-      if command -v dart >/dev/null 2>&1; then
-        dart ../tool/build_ios.dart
+      if [ -f "../scripts/build_apple.sh" ]; then
+        ../scripts/build_apple.sh ios
       else
-        echo "Error: 'dart' command not found. Please ensure Dart/Flutter is in your PATH."
+        echo "Error: ../scripts/build_apple.sh not found."
         exit 1
       fi
     fi
