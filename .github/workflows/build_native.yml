@@ -39,11 +39,16 @@ jobs:
 
       - name: Build with CMake
         run: |
-          cmake -S src/native -B build-android \
+          cmake -S src/native/llama_cpp -B build-android \
             -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
             -DANDROID_ABI=${{ matrix.android_abi }} \
             -DANDROID_PLATFORM=android-21 \
             -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SHARED_LIBS=ON \
+            -DLLAMA_BUILD_COMMON=ON \
+            -DLLAMA_BUILD_TESTS=OFF \
+            -DLLAMA_BUILD_EXAMPLES=OFF \
+            -DLLAMA_BUILD_SERVER=OFF \
             -DGGML_VULKAN=ON \
             -DGGML_VULKAN_SHADERS_GEN_TOOLCHAIN=$(pwd)/android-host-toolchain.cmake
           cmake --build build-android --config Release -j $(nproc)
@@ -72,8 +77,13 @@ jobs:
         run: |
           mkdir -p build-macos
           cd build-macos
-          cmake ../src/native \
+          cmake ../src/native/llama_cpp \
             -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SHARED_LIBS=ON \
+            -DLLAMA_BUILD_COMMON=ON \
+            -DLLAMA_BUILD_TESTS=OFF \
+            -DLLAMA_BUILD_EXAMPLES=OFF \
+            -DLLAMA_BUILD_SERVER=OFF \
             -DGGML_METAL=ON
           cmake --build . --config Release -j $(sysctl -n hw.logicalcpu)
           mv bin/libllama_cpp.dylib libllama_macos_universal.dylib
@@ -83,11 +93,16 @@ jobs:
         run: |
           mkdir -p build-ios
           cd build-ios
-          cmake ../src/native \
+          cmake ../src/native/llama_cpp \
             -G Xcode \
             -DCMAKE_TOOLCHAIN_FILE=../src/native/llama_cpp/cmake/ios.toolchain.cmake \
             -DPLATFORM=OS64 \
             -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SHARED_LIBS=ON \
+            -DLLAMA_BUILD_COMMON=ON \
+            -DLLAMA_BUILD_TESTS=OFF \
+            -DLLAMA_BUILD_EXAMPLES=OFF \
+            -DLLAMA_BUILD_SERVER=OFF \
             -DGGML_METAL=ON \
             -DENABLE_BITCODE=OFF \
             -DENABLE_ARC=OFF \
@@ -117,8 +132,13 @@ jobs:
         run: |
           mkdir -p build-linux-vulkan
           cd build-linux-vulkan
-          cmake ../src/native \
+          cmake ../src/native/llama_cpp \
             -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SHARED_LIBS=ON \
+            -DLLAMA_BUILD_COMMON=ON \
+            -DLLAMA_BUILD_TESTS=OFF \
+            -DLLAMA_BUILD_EXAMPLES=OFF \
+            -DLLAMA_BUILD_SERVER=OFF \
             -DGGML_VULKAN=ON
           cmake --build . --config Release -j $(nproc)
           mv bin/libllama.so libllama_linux_x86_64_vulkan.so
@@ -145,8 +165,13 @@ jobs:
         run: |
           mkdir -p build-linux-cuda
           cd build-linux-cuda
-          cmake ../src/native \
+          cmake ../src/native/llama_cpp \
             -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SHARED_LIBS=ON \
+            -DLLAMA_BUILD_COMMON=ON \
+            -DLLAMA_BUILD_TESTS=OFF \
+            -DLLAMA_BUILD_EXAMPLES=OFF \
+            -DLLAMA_BUILD_SERVER=OFF \
             -DGGML_CUDA=ON
           cmake --build . --config Release -j $(nproc)
           mv bin/libllama.so libllama_linux_x64_cuda.so
@@ -184,14 +209,14 @@ jobs:
         run: |
           mkdir -p build-windows
           cd build-windows
-          CMAKE_ARGS="-DCMAKE_BUILD_TYPE=Release"
+          CMAKE_ARGS="-DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DLLAMA_BUILD_COMMON=ON -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF -DLLAMA_BUILD_SERVER=OFF"
           if [ "${{ matrix.backend }}" == "vulkan" ]; then
             CMAKE_ARGS="$CMAKE_ARGS -DGGML_VULKAN=ON"
           elif [ "${{ matrix.backend }}" == "cuda" ]; then
             CMAKE_ARGS="$CMAKE_ARGS -DGGML_CUDA=ON"
           fi
           
-          cmake ../src/native $CMAKE_ARGS
+          cmake ../src/native/llama_cpp $CMAKE_ARGS
           cmake --build . --config Release -j 4
           mv bin/libllama.dll libllama_windows_x64_${{ matrix.backend }}.dll
 
