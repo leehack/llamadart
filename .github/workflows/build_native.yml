@@ -128,13 +128,10 @@ jobs:
           submodules: recursive
 
 
-      - name: Install Vulkan SDK
-        run: |
-          $ver = "1.3.296.0"
-          curl.exe -o $env:RUNNER_TEMP/VulkanSDK-Installer.exe -L "https://sdk.lunarg.com/sdk/download/$ver/windows/vulkansdk-windows-X64-$ver.exe"
-          & "$env:RUNNER_TEMP\VulkanSDK-Installer.exe" --accept-licenses --default-answer --confirm-command install
-          Add-Content $env:GITHUB_ENV "VULKAN_SDK=C:\VulkanSDK\$ver"
-          Add-Content $env:GITHUB_PATH "C:\VulkanSDK\$ver\Bin"
+      - name: Setup Vulkan SDK
+        uses: humbletim/setup-vulkan-sdk@v1
+        with:
+          vulkan-version: 1.3.296.0
 
       - name: Build Windows
         run: .\scripts\build_windows.ps1 vulkan
