@@ -119,13 +119,21 @@ jobs:
 
   build-windows:
     runs-on: windows-latest
-    env:
-      CMAKE_C_COMPILER_LAUNCHER: ""
-      CMAKE_CXX_COMPILER_LAUNCHER: ""
+    # Re-enable ccache (inherited from global env) now that we use Ninja
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+
+      - name: Install dependencies (ccache, ninja)
+        run: choco install ccache ninja -y
+
+      - name: ccache
+        uses: ggml-org/ccache-action@v1.2.16
+        with:
+          key: windows-vulkan
+          evict-old-files: 1d
+          save: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
 
 
       - name: Install Vulkan SDK
