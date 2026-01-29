@@ -43,7 +43,7 @@ post_install do |installer|
     end
   end
   
-  # Force linker flags on the Runner target to ensure llama_dart symbols are exported
+  # Force linker flags on the Runner target to ensure llamadart symbols are exported
   require 'xcodeproj'
   project_path = 'Runner.xcodeproj'
   project = Xcodeproj::Project.open(project_path)

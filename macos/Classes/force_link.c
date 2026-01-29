@@ -4,7 +4,7 @@
 void llama_backend_init(void);
 
 __attribute__((visibility("default"))) __attribute__((used)) void
-llama_dart_init(void) {
-  // Purposefully empty. 
+llamadart_init(void) {
+  // Purposefully empty.
   // Symbols are loaded dynamically via FFI.
 }

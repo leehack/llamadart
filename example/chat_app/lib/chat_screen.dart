@@ -22,10 +22,12 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void initState() {
     super.initState();
-    // Auto-open model selection if no model is loaded
+    // Auto-scrolling and generation status listener
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final provider = context.read<ChatProvider>();
-      if (!provider.isLoaded) {
+
+      // Auto-open model selection if no model is selected
+      if (provider.modelPath == null) {
         _openModelSelection();
       }
 
@@ -694,49 +696,6 @@ class _ChatScreenState extends State<ChatScreen> {
                         const SizedBox(height: 24),
                         _buildSettingItem(
                           context,
-                          title: 'System Information',
-                          child: Container(
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .surfaceContainerHighest
-                                  .withValues(alpha: 0.3),
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .outlineVariant
-                                    .withValues(alpha: 0.5),
-                              ),
-                            ),
-                            child: Column(
-                              children: [
-                                _buildInfoRow(context, 'Compiled Backend',
-                                    provider.activeBackend),
-                                const Divider(height: 24),
-                                _buildInfoRow(
-                                    context,
-                                    'GPU Support',
-                                    provider.gpuSupported
-                                        ? 'Available'
-                                        : 'Not Supported'),
-                                const Divider(height: 24),
-                                _buildInfoRow(
-                                    context,
-                                    'Acceleration',
-                                    provider.activeBackend.toLowerCase() !=
-                                                'cpu' &&
-                                            provider.gpuSupported
-                                        ? 'Active (${provider.activeBackend})'
-                                        : 'CPU (No Acceleration)'),
-                              ],
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 24),
-                        _buildSettingItem(
-                          context,
                           title: 'Preferred Backend',
                           subtitle: 'Forces a specific driver if available',
                           child: Column(
@@ -775,14 +734,31 @@ class _ChatScreenState extends State<ChatScreen> {
                               if (provider.availableDevices.isNotEmpty)
                                 Padding(
                                   padding: const EdgeInsets.only(top: 8.0),
-                                  child: Text(
-                                    'Detected: ${provider.availableDevices.join(", ")}',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: Theme.of(context)
-                                          .colorScheme
-                                          .tertiary,
-                                    ),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Active: ${provider.activeBackend}',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.bold,
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .onSurfaceVariant,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        'Detected: ${provider.availableDevices.join(", ")}',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .tertiary,
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
                             ],
@@ -925,44 +901,17 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  Widget _buildInfoRow(BuildContext context, String label, String value) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(label,
-            style: TextStyle(
-                fontSize: 13, color: Theme.of(context).colorScheme.secondary)),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Text(
-            value,
-            textAlign: TextAlign.right,
-            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-      ],
-    );
-  }
-
   List<GpuBackend> _getAvailableBackends() {
-    final platform = Theme.of(context).platform;
-    switch (platform) {
-      case TargetPlatform.iOS:
-      case TargetPlatform.macOS:
-        return [GpuBackend.auto, GpuBackend.cpu, GpuBackend.metal];
-      case TargetPlatform.android:
-        return [GpuBackend.auto, GpuBackend.cpu, GpuBackend.vulkan];
-      case TargetPlatform.windows:
-      case TargetPlatform.linux:
-        return [
-          GpuBackend.auto,
-          GpuBackend.cpu,
-          GpuBackend.cuda,
-          GpuBackend.vulkan
-        ];
-      default:
-        return [GpuBackend.auto, GpuBackend.cpu];
+    final provider = context.read<ChatProvider>();
+    final Set<GpuBackend> backends = {GpuBackend.auto, GpuBackend.cpu};
+
+    for (final device in provider.availableDevices) {
+      final d = device.toLowerCase();
+      if (d.contains('metal')) backends.add(GpuBackend.metal);
+      if (d.contains('vulkan')) backends.add(GpuBackend.vulkan);
+      if (d.contains('blas')) backends.add(GpuBackend.blas);
     }
+
+    return backends.toList();
   }
 }

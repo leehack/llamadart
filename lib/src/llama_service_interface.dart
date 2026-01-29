@@ -6,20 +6,20 @@ import 'dart:async';
 /// If a backend is not compiled in, selection will fall back to the next available.
 enum GpuBackend {
   /// Automatically select the best available backend (recommended).
-  /// Priority: CUDA > Metal > Vulkan > CPU
+  /// Priority: Metal > Vulkan > CPU
   auto,
 
   /// Force CPU-only inference (no GPU acceleration).
   cpu,
-
-  /// Use NVIDIA CUDA backend (requires CUDA toolkit at build time).
-  cuda,
 
   /// Use Vulkan backend (cross-platform GPU support).
   vulkan,
 
   /// Use Apple Metal backend (macOS/iOS only, auto-enabled on Apple platforms).
   metal,
+
+  /// Use BLAS backend (CPU acceleration).
+  blas,
 }
 
 /// Configuration parameters for loading the model.
@@ -138,8 +138,10 @@ abstract class LlamaServiceBase {
   ///
   /// This uses the jinja template stored in the model's metadata (if available)
   /// or a suitable fallback. Returns the formatted prompt.
-  Future<String> applyChatTemplate(List<LlamaChatMessage> messages,
-      {bool addAssistant = true});
+  Future<String> applyChatTemplate(
+    List<LlamaChatMessage> messages, {
+    bool addAssistant = true,
+  });
 
   /// Disposes the service and releases resources.
   void dispose();

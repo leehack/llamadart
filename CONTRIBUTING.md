@@ -19,17 +19,32 @@ Before you begin, ensure you have the following installed:
 The project maps closely to the `llama.cpp` structure:
 
 -   `lib/`: Dart source code.
-    -   `src/native/`: Native bindings and C++ wrapper code.
+-   `src/native/`: `llama.cpp` source code and native wrappers.
 -   `example/`: Usage examples.
     -   `basic_app/`: Simple CLI app.
     -   `chat_app/`: Flutter GUI chat application.
--   `scripts/`: Utility scripts (e.g., Docker builds).
+-   `scripts/`: Platform-specific build and verification scripts.
+-   `android/`, `ios/`, `linux/`, `macos/`, `windows/`: Platform-specific plugin configurations.
+-   `src/native/llama_cpp/`: Git submodule for the core engine.
+
+## 🛡️ Zero-Patch Strategy
+
+This project follows a **Zero-Patch Strategy** for external submodules (like `llama.cpp` and `Vulkan-Headers`):
+
+*   **No Direct Modifications**: We never modify the source code inside `src/native/llama_cpp`.
+*   **Upgradability**: This allows us to update the core engine by simply bumping the submodule pointer, without having to re-apply custom patches.
+*   **Wrappers & Hooks**: Any necessary changes (like platform-specific fixes or API extensions) should be implemented in:
+    *   Our own C++ wrapper files (e.g., `src/native/llamadart_empty.cpp` or new bridge files).
+    *   CMake configurations (`src/native/CMakeLists.txt`).
+    *   Pre-build hooks or compiler flags in platform-specific scripts.
+
+If you find a bug in `llama.cpp`, the correct path is to contribute the fix to the upstream repository first.
 
 ## Setting Up the Development Environment
 
 1.  **Clone the repository**:
     ```bash
-    git clone https://github.com/netdur/llamadart.git
+    git clone https://github.com/leehack/llamadart.git
     cd llamadart
     ```
 
@@ -41,16 +56,27 @@ The project maps closely to the `llama.cpp` structure:
     *Note: If `src/native/llama_cpp` is populated, this step might be skipped.*
 
 3.  **Build the Native Library**:
-    This is the most critical step. The Dart package relies on a shared library (`libllama_cpp.so`, `.dylib`, or `.dll`).
-
-    ```bash
-    mkdir -p src/native/build
-    cd src/native/build
-    cmake .. -DCMAKE_BUILD_TYPE=Release
-    cmake --build . --config Release -j
-    ```
-
-    This will generate the dynamic library in `src/native/build/bin/`.
+-    In most cases, `flutter run` or `dart run` will handle the native compilation automatically via the plugin's build system (CMake/Gradle/Podspec).
+-
+-    If you need to build manually for development or verification:
+-
+-    **Desktop (macOS/Linux):**
+-    ```bash
+-    mkdir -p src/native/build
+-    cd src/native/build
+-    cmake .. -DCMAKE_BUILD_TYPE=Release
+-    cmake --build . --config Release -j
+-    ```
+-
+-    **Android:**
+-    ```bash
+-    ./scripts/build_android.sh
+-    ```
+-
+-    **iOS/macOS (XCFramework):**
+-    ```bash
+-    ./scripts/build_apple.sh
+-    ```
 
 ## Running Translations & Tests
 

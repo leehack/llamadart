@@ -18,22 +18,8 @@ Provides FFI bindings to llama.cpp and embeds native libraries, requiring no add
   s.platform         = :ios, '12.0'
   s.swift_version    = '5.0'
 
-  # Automate the build if the framework is missing
-  s.prepare_command = <<-CMD
-    if [ ! -d "Frameworks/llama_cpp.xcframework" ]; then
-      echo "llamadart: Framework not found. Building llama.cpp for iOS..."
-      # Run the build script
-      if command -v dart >/dev/null 2>&1; then
-        dart ../tool/build_ios.dart
-      else
-        echo "Error: 'dart' command not found. Please ensure Dart/Flutter is in your PATH."
-        exit 1
-      fi
-    fi
-  CMD
-
   # Vendor the native libraries
-  s.vendored_frameworks = 'Frameworks/llama_cpp.xcframework'
+  s.vendored_frameworks = 'Frameworks/llama.xcframework'
   s.static_framework = true
   s.libraries = 'c++'
   s.frameworks = 'Accelerate', 'Metal', 'MetalKit', 'Foundation'
@@ -47,7 +33,6 @@ Provides FFI bindings to llama.cpp and embeds native libraries, requiring no add
 
   s.pod_target_xcconfig = {
     'GCC_PREPROCESSOR_DEFINITIONS' => '$(inherited) GGML_USE_METAL=1',
-    'HEADER_SEARCH_PATHS' => '$(inherited) "${PODS_TARGET_SRCROOT}/Frameworks/llama_cpp.xcframework/ios-arm64/Headers" "${PODS_TARGET_SRCROOT}/Frameworks/llama_cpp.xcframework/ios-arm64_x86_64-simulator/Headers"',
     'CLANG_CXX_LANGUAGE_STANDARD' => 'c++17',
     'CLANG_CXX_LIBRARY' => 'libc++'
   }

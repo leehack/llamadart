@@ -4,13 +4,17 @@ output: 'lib/src/generated/llama_bindings.dart'
 headers:
   entry-points:
     - 'src/native/llama_cpp/include/llama.h'
+    - 'src/native/llama_cpp/ggml/include/ggml.h'
+    - 'src/native/llama_cpp/ggml/include/ggml-backend.h'
   include-directives:
     - 'src/native/llama_cpp/include/llama.h'
+    - 'src/native/llama_cpp/ggml/include/ggml.h'
+    - 'src/native/llama_cpp/ggml/include/ggml-backend.h'
 compiler-opts:
   - '-Isrc/native/llama_cpp/ggml/include'
   - '-Isrc/native/llama_cpp/include'
 preamble: |
-  // ignore_for_file: always_specify_types
+  // ignore_for_file: always_specify_types, unused_field
   // ignore_for_file: camel_case_types
   // ignore_for_file: non_constant_identifier_names
 comments:

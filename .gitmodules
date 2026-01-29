@@ -1,0 +1,6 @@
+[submodule "src/native/llama_cpp"]
+	path = src/native/llama_cpp
+	url = https://github.com/ggml-org/llama.cpp
+[submodule "src/native/Vulkan-Headers"]
+	path = src/native/Vulkan-Headers
+	url = https://github.com/KhronosGroup/Vulkan-Headers

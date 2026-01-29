@@ -34,9 +34,13 @@ class LlamaService implements LlamaServiceBase {
     return ["WASM"];
   }
 
+  /// Whether the service is ready for inference.
   @override
   bool get isReady => _isReady;
 
+  /// Initializes the service with the model at [modelPath].
+  ///
+  /// On web, [modelPath] is treated as a URL or a relative path from the server.
   @override
   Future<void> init(String modelPath, {ModelParams? modelParams}) async {
     // On web, "path" is ambiguous. We assume the user creates a URL
@@ -45,6 +49,7 @@ class LlamaService implements LlamaServiceBase {
     await initFromUrl(modelPath, modelParams: modelParams);
   }
 
+  /// Initializes the service with the model at the given [modelUrl].
   @override
   Future<void> initFromUrl(String modelUrl, {ModelParams? modelParams}) async {
     if (_wllama != null) {
@@ -108,6 +113,7 @@ class LlamaService implements LlamaServiceBase {
     _isReady = true;
   }
 
+  /// Generates a stream of text from the given [prompt].
   @override
   Stream<String> generate(String prompt, {GenerationParams? params}) async* {
     if (!_isReady || _wllama == null) {
@@ -176,6 +182,7 @@ class LlamaService implements LlamaServiceBase {
     yield* controller.stream.transform(utf8.decoder);
   }
 
+  /// Tokenizes the given [text] into a list of token IDs.
   @override
   Future<List<int>> tokenize(String text) async {
     if (_wllama == null) return [];
@@ -199,6 +206,7 @@ class LlamaService implements LlamaServiceBase {
     return [];
   }
 
+  /// Detokenizes the given [tokens] back into a string.
   @override
   Future<String> detokenize(List<int> tokens) async {
     if (_wllama == null) return "";
@@ -209,12 +217,14 @@ class LlamaService implements LlamaServiceBase {
     return result.toDart;
   }
 
+  /// Cancels the current generation.
   @override
   void cancelGeneration() {
     _abortController?.abort();
     _abortController = null;
   }
 
+  /// Applies a chat template to the given [messages].
   @override
   Future<String> applyChatTemplate(List<LlamaChatMessage> messages,
       {bool addAssistant = true}) async {
@@ -261,6 +271,7 @@ class LlamaService implements LlamaServiceBase {
     }
   }
 
+  /// Returns model metadata for the given [key], or null if not found.
   @override
   Future<String?> getModelMetadata(String key) async {
     if (!_isReady || _wllama == null) {
@@ -297,6 +308,7 @@ class LlamaService implements LlamaServiceBase {
     }
   }
 
+  /// Disposes the service and the underlying wllama instance.
   @override
   void dispose() {
     _wllama?.exit();
@@ -304,6 +316,7 @@ class LlamaService implements LlamaServiceBase {
     _isReady = false;
   }
 
+  /// Returns the resolved context size.
   @override
   Future<int> getContextSize() async {
     if (_wllama == null) return 0;
@@ -313,12 +326,14 @@ class LlamaService implements LlamaServiceBase {
     return 2048;
   }
 
+  /// Returns the token count for the given [text].
   @override
   Future<int> getTokenCount(String text) async {
     final tokens = await tokenize(text);
     return tokens.length;
   }
 
+  /// Returns all model metadata keys and values.
   @override
   Future<Map<String, String>> getAllMetadata() async {
     if (_wllama == null) {
@@ -384,9 +399,11 @@ class LlamaService implements LlamaServiceBase {
         .callMethod('keys'.toJS, obj) as JSArray;
   }
 
+  /// Returns the name of the backend being used.
   @override
   Future<String> getBackendName() async => "WASM (Web)";
 
+  /// Returns true if GPU acceleration is supported.
   @override
   Future<bool> isGpuSupported() async =>
       false; // WebGPU not yet explicitly toggled
