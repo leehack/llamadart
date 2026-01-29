@@ -63,39 +63,35 @@ if ($Backend -eq "vulkan") {
         }
     }
     
-    # 3. Configure CMake if SDK references are available
+    # 3. Configure CMake with explicit Vulkan_ROOT hint
     if ($env:VULKAN_SDK) {
         $SdkRoot = $env:VULKAN_SDK.Replace('\', '/')
-        Write-Host "Configuring CMake with Vulkan SDK: $SdkRoot"
+        Write-Host "Configuring CMake with Vulkan SDK root: $SdkRoot"
         
+        # This is often enough for modern CMake FindVulkan
+        $CmakeArgs += "-DVulkan_ROOT=$SdkRoot"
         $CmakeArgs += "-DVulkan_INCLUDE_DIR=$SdkRoot/Include"
-        
-        # Robustly find library (recursive)
+
+        # Explicitly find library (recursive, robust)
         $VulkanLib = Get-ChildItem -Path $SdkRoot -Filter "vulkan-1.lib" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
         if ($VulkanLib) {
              $VPath = $VulkanLib.FullName.Replace('\', '/')
              Write-Host "Found vulkan-1.lib at $VPath"
              $CmakeArgs += "-DVulkan_LIBRARY=$VPath"
         } else {
-             # Fallback to vulkan.lib
              $VulkanLibLegacy = Get-ChildItem -Path $SdkRoot -Filter "vulkan.lib" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
              if ($VulkanLibLegacy) {
                  $VPath = $VulkanLibLegacy.FullName.Replace('\', '/')
-                 Write-Host "Found vulkan.lib at $VPath"
                  $CmakeArgs += "-DVulkan_LIBRARY=$VPath"
-             } else {
-                 Write-Warning "Could not find vulkan-1.lib or vulkan.lib in SDK!"
              }
         }
         
-        # Robustly find glslc (recursive)
+        # Explicitly find glslc (recursive, robust)
         $GlslcExe = Get-ChildItem -Path $SdkRoot -Filter "glslc.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
         if ($GlslcExe) {
              $GPath = $GlslcExe.FullName.Replace('\', '/')
              Write-Host "Found glslc.exe at $GPath"
              $CmakeArgs += "-DVulkan_GLSLC_EXECUTABLE=$GPath"
-        } else {
-             Write-Warning "Could not find glslc.exe in SDK!"
         }
     }
     
