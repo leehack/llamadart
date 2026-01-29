@@ -63,35 +63,53 @@ if ($Backend -eq "vulkan") {
         }
     }
     
-    # 3. Configure CMake with explicit Vulkan_ROOT hint
+    # 3. Configure CMake with explicit Vulkan_ROOT hint and Debugging
     if ($env:VULKAN_SDK) {
-        $SdkRoot = $env:VULKAN_SDK.Replace('\', '/')
+        # Sanitize path for CMake (forward slashes)
+        $env:VULKAN_SDK = $env:VULKAN_SDK.Replace('\', '/')
+        $SdkRoot = $env:VULKAN_SDK
         Write-Host "Configuring CMake with Vulkan SDK root: $SdkRoot"
         
-        # This is often enough for modern CMake FindVulkan
+        # DEBUG: List SDK contents to verify layout
+        Write-Host "--- SDK Directory Layout (Depth 2) ---"
+        Get-ChildItem -Path $SdkRoot -Depth 2 -ErrorAction SilentlyContinue | Select-Object FullName | Format-Table -HideTableHeaders
+        Write-Host "--------------------------------------"
+
         $CmakeArgs += "-DVulkan_ROOT=$SdkRoot"
         $CmakeArgs += "-DVulkan_INCLUDE_DIR=$SdkRoot/Include"
 
-        # Explicitly find library (recursive, robust)
-        $VulkanLib = Get-ChildItem -Path $SdkRoot -Filter "vulkan-1.lib" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+        # Prioritize 64-bit library in 'Lib' folder
+        $VulkanLib = Get-ChildItem -Path "$SdkRoot/Lib" -Filter "vulkan-1.lib" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+        
+        if (-not $VulkanLib) {
+            # Retry generic search if not in Lib
+            $VulkanLib = Get-ChildItem -Path $SdkRoot -Filter "vulkan-1.lib" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+        }
+
         if ($VulkanLib) {
              $VPath = $VulkanLib.FullName.Replace('\', '/')
              Write-Host "Found vulkan-1.lib at $VPath"
              $CmakeArgs += "-DVulkan_LIBRARY=$VPath"
         } else {
+             # Fallback to vulkan.lib
              $VulkanLibLegacy = Get-ChildItem -Path $SdkRoot -Filter "vulkan.lib" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
              if ($VulkanLibLegacy) {
                  $VPath = $VulkanLibLegacy.FullName.Replace('\', '/')
+                 Write-Host "Found vulkan.lib at $VPath"
                  $CmakeArgs += "-DVulkan_LIBRARY=$VPath"
+             } else {
+                 Write-Warning "Could NOT find vulkan-1.lib or vulkan.lib in SDK!"
              }
         }
         
-        # Explicitly find glslc (recursive, robust)
+        # Explicitly find glslc
         $GlslcExe = Get-ChildItem -Path $SdkRoot -Filter "glslc.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
         if ($GlslcExe) {
              $GPath = $GlslcExe.FullName.Replace('\', '/')
              Write-Host "Found glslc.exe at $GPath"
              $CmakeArgs += "-DVulkan_GLSLC_EXECUTABLE=$GPath"
+        } else {
+             Write-Warning "Could NOT find glslc.exe in SDK!"
         }
     }
     
