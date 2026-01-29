@@ -161,7 +161,7 @@ class LlamaService implements LlamaServiceBase {
   // Checking cancellation token
   Pointer<Int8>? _currentCancelToken;
 
-  /// Creates a new LlamaService.
+  /// Creates a new [LlamaService].
   ///
   /// [wllamaPath] and [wasmPath] are web-specific and ignored on native platforms.
   LlamaService({String? wllamaPath, String? wasmPath});
@@ -176,10 +176,13 @@ class LlamaService implements LlamaServiceBase {
     }
   }
 
+  /// Whether the service is ready for inference.
   @override
   bool get isReady => _isReady;
 
   /// Initializes the service with the model at [modelPath].
+  ///
+  /// [modelParams] allows customizing context size and GPU offloading.
   @override
   Future<void> init(String modelPath, {ModelParams? modelParams}) async {
     if (_isolate == null) {
@@ -385,6 +388,7 @@ class LlamaService implements LlamaServiceBase {
     _isReady = false;
   }
 
+  /// Returns the name of the backend being used (e.g., 'Metal', 'Vulkan', 'CPU').
   @override
   Future<String> getBackendName() async {
     if (_sendPort == null) return "Unknown";
@@ -397,6 +401,7 @@ class LlamaService implements LlamaServiceBase {
     return "Unknown";
   }
 
+  /// Returns true if GPU acceleration is supported on this hardware.
   @override
   Future<bool> isGpuSupported() async {
     if (_sendPort == null) return false;
@@ -409,6 +414,7 @@ class LlamaService implements LlamaServiceBase {
     return false;
   }
 
+  /// Returns the resolved context size.
   @override
   Future<int> getContextSize() async {
     if (_sendPort == null) return 0;
@@ -421,6 +427,7 @@ class LlamaService implements LlamaServiceBase {
     return 0;
   }
 
+  /// Returns the token count for the given [text].
   @override
   Future<int> getTokenCount(String text) async {
     if (_sendPort == null) return 0;
@@ -433,6 +440,7 @@ class LlamaService implements LlamaServiceBase {
     return 0;
   }
 
+  /// Returns all model metadata keys and values.
   @override
   Future<Map<String, String>> getAllMetadata() async {
     if (_sendPort == null) return {};

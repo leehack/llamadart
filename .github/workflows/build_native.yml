@@ -12,6 +12,9 @@ permissions:
 jobs:
   build-android:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        android_abi: [arm64-v8a, x86_64]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -36,7 +39,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: libllama_android_${{ matrix.android_abi }}
-          path: libllama_android_${{ matrix.android_abi }}.so
+          path: android/src/main/jniLibs/${{ matrix.android_abi }}/libllama.so
 
   build-apple:
     runs-on: macos-latest
@@ -51,16 +54,28 @@ jobs:
       - name: Build Apple Platforms
         run: ./scripts/build_apple.sh ${{ matrix.target }}
 
-      - name: Upload Artifact
+      - name: Zip iOS XCFramework
+        if: matrix.target == 'ios'
+        run: |
+          cd ios/Frameworks
+          zip -r ../../llama_ios_xcframework.zip llama.xcframework
+
+      - name: Upload Artifact (macOS)
+        if: matrix.target == 'macos'
         uses: actions/upload-artifact@v4
         with:
-          name: libllama_${{ matrix.target }}
-          path: |
-            build-macos/libllama_macos_universal.dylib
-            llama_ios_xcframework.zip
+          name: libllama_macos
+          path: macos/Frameworks/libllama.dylib
+
+      - name: Upload Artifact (iOS)
+        if: matrix.target == 'ios'
+        uses: actions/upload-artifact@v4
+        with:
+          name: llama_ios_xcframework
+          path: llama_ios_xcframework.zip
 
   build-linux-vulkan:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
@@ -77,63 +92,35 @@ jobs:
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: libllama_linux_x86_64_vulkan
-          path: build-linux-vulkan/libllama_linux_x86_64_vulkan.so
-
-  build-linux-cuda:
-    runs-on: ubuntu-22.04
-    container: nvidia/cuda:12.2.0-devel-ubuntu22.04
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Install Dependencies
-        run: |
-          apt-get update && apt-get install -y git cmake build-essential
-
-      - name: Build Linux (CUDA)
-        run: ./scripts/build_linux.sh cuda
-
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: libllama_linux_cuda
-          path: build-linux-cuda/libllama_linux_x64_cuda.so
+          name: libllama_linux_x64_vulkan
+          path: linux/lib/x64/libllama.so
 
   build-windows:
     runs-on: windows-latest
-    strategy:
-      matrix:
-        backend: [vulkan, cuda]
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - name: Setup Vulkan SDK
-        if: matrix.backend == 'vulkan'
-        uses: shinchiro/setup-vulkan-sdk@v1
-        with:
-          version: 1.3.261.1
+      - name: Library Search Path Pre-fix
+        run: mkdir -p windows/lib
 
-      - name: Setup CUDA
-        if: matrix.backend == 'cuda'
-        uses: Jimver/cuda-toolkit@v0.2.14
+      - name: Setup Vulkan SDK
+        uses: humbletim/setup-vulkan-sdk@v1
         with:
-          cuda: '12.2.0'
+          vulkan-query-version: 1.3.261.1
 
       - name: Build Windows
-        run: .\scripts\build_windows.ps1 ${{ matrix.backend }}
+        run: .\scripts\build_windows.ps1 vulkan
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: libllama_windows_${{ matrix.backend }}
-          path: build-windows/libllama_windows_x64_${{ matrix.backend }}.dll
+          name: libllama_windows_vulkan
+          path: windows/lib/libllama.dll
 
   release:
-    needs: [build-android, build-apple, build-linux-vulkan, build-linux-cuda, build-windows]
+    needs: [build-android, build-apple, build-linux-vulkan, build-windows]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     steps:
