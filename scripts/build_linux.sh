@@ -17,7 +17,7 @@ fi
 BUILD_DIR="build-linux-$ARCH-$BACKEND"
 if [ "$CLEAN" == "clean" ]; then rm -rf "$BUILD_DIR"; fi
 
-CMAKE_ARGS="-DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=ON -DLLAMA_BUILD_COMMON=OFF -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF -DLLAMA_BUILD_SERVER=OFF -DLLAMA_BUILD_TOOLS=OFF -DGGML_CPU_ALL_VARIANTS=ON -DGGML_BACKEND_DL=ON"
+CMAKE_ARGS="-DCMAKE_BUILD_TYPE=Release -DBUILD_SHARED_LIBS=OFF -DLLAMA_BUILD_COMMON=OFF -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF -DLLAMA_BUILD_SERVER=OFF -DLLAMA_BUILD_TOOLS=OFF"
 
 # Cross-compilation setup
 if [ "$ARCH" == "aarch64" ] || [ "$ARCH" == "arm64" ]; then
@@ -58,7 +58,8 @@ else
 fi
 
 mkdir -p "$BUILD_DIR"
-cmake -S src/native/llama_cpp -B "$BUILD_DIR" $CMAKE_ARGS
+# Point to src/native (parent of llama_cpp)
+cmake -S src/native -B "$BUILD_DIR" $CMAKE_ARGS
 cmake --build "$BUILD_DIR" --config Release -j $(nproc 2>/dev/null || sysctl -n hw.logicalcpu)
 
 # Artifacts

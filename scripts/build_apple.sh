@@ -10,24 +10,30 @@ CLEAN=$2
 
 if [ "$PLATFORM" == "macos" ]; then
     echo "========================================"
-    echo "Building for macOS (Universal)..."
+    echo "Building for macOS (Universal) via src/native..."
     echo "========================================"
     BUILD_DIR="build-macos"
     if [ "$CLEAN" == "clean" ]; then rm -rf "$BUILD_DIR"; fi
     
     mkdir -p "$BUILD_DIR"
-    cmake -S src/native/llama_cpp -B "$BUILD_DIR" \
+    # match Android: point to src/native, BUILD_SHARED_LIBS=OFF to link statically internally
+    cmake -S src/native -B "$BUILD_DIR" \
       -DCMAKE_BUILD_TYPE=Release \
-      -DBUILD_SHARED_LIBS=ON \
+      -DBUILD_SHARED_LIBS=OFF \
+      -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
       -DLLAMA_BUILD_COMMON=OFF \
       -DLLAMA_BUILD_TESTS=OFF \
       -DLLAMA_BUILD_EXAMPLES=OFF \
       -DLLAMA_BUILD_SERVER=OFF \
       -DLLAMA_BUILD_TOOLS=OFF \
       -DGGML_METAL=ON \
-      -DGGML_METAL_USE_BF16=ON \
+      -DGGML_METAL_USE_BF16=OFF \
       -DGGML_METAL_EMBED_LIBRARY=ON \
-      -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+      -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
+      -DCMAKE_OSX_DEPLOYMENT_TARGET=10.15
+    
+    # We turned OFF BF16 because sometimes it causes issues on older targets, 
+    # but you can enable it if targeting newer macOS only.
     
     cmake --build "$BUILD_DIR" --config Release -j $(sysctl -n hw.logicalcpu)
     
@@ -37,44 +43,18 @@ if [ "$PLATFORM" == "macos" ]; then
     rm -rf "$MAC_FRAMEWORKS_DIR"
     mkdir -p "$MAC_FRAMEWORKS_DIR"
     
-    echo "Copying libraries to $MAC_FRAMEWORKS_DIR (cleaning leftovers)..."
-    # Copy only the main .dylib files, avoid versioned aliases (e.g. libllama.0.dylib or libllama.0.0.7865.dylib)
-    # The pattern excludes any file that has a dot followed immediately by a digit
-    find "$BUILD_DIR" -name "*.dylib" ! -name "*.[0-9]*.dylib" -exec cp -L {} "$MAC_FRAMEWORKS_DIR/" \;
-
-    echo "Patching dylib IDs and dependencies..."
-    # 1. Update IDs for all dylibs to be just @rpath/libname.dylib
-    for dylib in "$MAC_FRAMEWORKS_DIR"/*.dylib; do
-        if [ -f "$dylib" ]; then
-            filename=$(basename "$dylib")
-            install_name_tool -id "@rpath/$filename" "$dylib"
-        fi
-    done
-
-    # 2. Update dependencies between dylibs to point to the clean names
-    # This fixes libllama.dylib looking for libggml.0.dylib, etc.
-    for dylib in "$MAC_FRAMEWORKS_DIR"/*.dylib; do
-        if [ -f "$dylib" ]; then
-            # Get list of dependencies
-            deps=$(otool -L "$dylib" | grep "@rpath" | awk '{print $1}')
-            for dep in $deps; do
-                # If dependency has a version number (e.g. @rpath/libggml.0.dylib)
-                if [[ "$dep" =~ \.[0-9]+\.dylib$ ]]; then
-                    # Create clean name (e.g. @rpath/libggml.dylib)
-                    clean_dep=$(echo "$dep" | sed -E 's/\.[0-9]+\.dylib$/.dylib/')
-                    
-                    # If we have the clean file in our frameworks dir, update the linkage
-                    clean_filename=$(basename "$clean_dep")
-                    if [ -f "$MAC_FRAMEWORKS_DIR/$clean_filename" ]; then
-                        install_name_tool -change "$dep" "$clean_dep" "$dylib"
-                        echo "  Updated $dep -> $clean_dep in $(basename "$dylib")"
-                    fi
-                fi
-            done
-        fi
-    done
+    echo "Copying libraries to $MAC_FRAMEWORKS_DIR..."
+    # We expect only libllama.dylib now from our top-level CMakeLists.txt
+    cp "$BUILD_DIR/libllama.dylib" "$MAC_FRAMEWORKS_DIR/"
     
-    echo "macOS build complete: $MAC_FRAMEWORKS_DIR"
+    echo "Patching dylib ID..."
+    # Set ID to @rpath/libllama.dylib so it can be found when embedded
+    install_name_tool -id "@rpath/libllama.dylib" "$MAC_FRAMEWORKS_DIR/libllama.dylib"
+    
+    # Verify
+    otool -L "$MAC_FRAMEWORKS_DIR/libllama.dylib"
+    
+    echo "macOS build complete: $MAC_FRAMEWORKS_DIR/libllama.dylib"
 
 elif [ "$PLATFORM" == "ios" ]; then
     echo "========================================"

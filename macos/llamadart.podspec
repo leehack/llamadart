@@ -15,7 +15,7 @@ Provides FFI bindings to llama.cpp and embeds native libraries, requiring no add
   s.source           = { :path => '.' }
   s.source_files     = 'Classes/**/*'
   s.dependency 'FlutterMacOS'
-  s.platform         = :osx, '10.11'
+  s.platform         = :osx, '10.15'
   s.swift_version    = '5.0'
 
   # Vendor the native libraries.

@@ -16,14 +16,12 @@ if ($Clean -eq "clean") {
 
 $CmakeArgs = @(
     "-DCMAKE_BUILD_TYPE=Release",
-    "-DBUILD_SHARED_LIBS=ON",
+    "-DBUILD_SHARED_LIBS=OFF",
     "-DLLAMA_BUILD_COMMON=OFF",
     "-DLLAMA_BUILD_TESTS=OFF",
     "-DLLAMA_BUILD_EXAMPLES=OFF",
     "-DLLAMA_BUILD_SERVER=OFF",
-    "-DLLAMA_BUILD_TOOLS=OFF",
-    "-DGGML_CPU_ALL_VARIANTS=ON",
-    "-DGGML_BACKEND_DL=ON"
+    "-DLLAMA_BUILD_TOOLS=OFF"
 )
 
 if ($Backend -eq "vulkan") {
@@ -45,7 +43,8 @@ if (-not (Test-Path $BuildDir)) {
     New-Item -Path $BuildDir -ItemType Directory
 }
 
-cmake -S src/native/llama_cpp -B $BuildDir @CmakeArgs
+# Point to src/native (parent of llama_cpp)
+cmake -S src/native -B $BuildDir @CmakeArgs
 cmake --build $BuildDir --config Release -j 4
 
 # Artifacts

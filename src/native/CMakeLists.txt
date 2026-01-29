@@ -15,7 +15,11 @@ add_library(llamadart_shared SHARED "llamadart_empty.cpp")
 # Link the llama library (which pulls in ggml and backends)
 # On Linux/Android, we might need to use --whole-archive to ensure 
 # that static constructors in backends are not stripped.
-if (CMAKE_SYSTEM_NAME MATCHES "Android|Linux")
+if (APPLE)
+    target_link_libraries(llamadart_shared PUBLIC -Wl,-all_load llama)
+elseif (MSVC)
+    target_link_libraries(llamadart_shared PUBLIC -Wl,/WHOLEARCHIVE:llama)
+elseif (CMAKE_SYSTEM_NAME MATCHES "Android|Linux")
     target_link_libraries(llamadart_shared PUBLIC -Wl,--whole-archive llama -Wl,--no-whole-archive)
 else()
     target_link_libraries(llamadart_shared PUBLIC llama)
