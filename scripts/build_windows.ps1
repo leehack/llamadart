@@ -70,15 +70,32 @@ if ($Backend -eq "vulkan") {
         
         $CmakeArgs += "-DVulkan_INCLUDE_DIR=$SdkRoot/Include"
         
-        if (Test-Path "$SdkRoot/Lib/vulkan-1.lib") {
-             $CmakeArgs += "-DVulkan_LIBRARY=$SdkRoot/Lib/vulkan-1.lib"
-        } elseif (Test-Path "$SdkRoot/Lib/vulkan.lib") {
-             $CmakeArgs += "-DVulkan_LIBRARY=$SdkRoot/Lib/vulkan.lib"
+        # Robustly find library (recursive)
+        $VulkanLib = Get-ChildItem -Path $SdkRoot -Filter "vulkan-1.lib" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($VulkanLib) {
+             $VPath = $VulkanLib.FullName.Replace('\', '/')
+             Write-Host "Found vulkan-1.lib at $VPath"
+             $CmakeArgs += "-DVulkan_LIBRARY=$VPath"
+        } else {
+             # Fallback to vulkan.lib
+             $VulkanLibLegacy = Get-ChildItem -Path $SdkRoot -Filter "vulkan.lib" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+             if ($VulkanLibLegacy) {
+                 $VPath = $VulkanLibLegacy.FullName.Replace('\', '/')
+                 Write-Host "Found vulkan.lib at $VPath"
+                 $CmakeArgs += "-DVulkan_LIBRARY=$VPath"
+             } else {
+                 Write-Warning "Could not find vulkan-1.lib or vulkan.lib in SDK!"
+             }
         }
         
-        # Ensure we pass glslc executable path if it exists
-        if (Test-Path "$SdkRoot/Bin/glslc.exe") {
-             $CmakeArgs += "-DVulkan_GLSLC_EXECUTABLE=$SdkRoot/Bin/glslc.exe"
+        # Robustly find glslc (recursive)
+        $GlslcExe = Get-ChildItem -Path $SdkRoot -Filter "glslc.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($GlslcExe) {
+             $GPath = $GlslcExe.FullName.Replace('\', '/')
+             Write-Host "Found glslc.exe at $GPath"
+             $CmakeArgs += "-DVulkan_GLSLC_EXECUTABLE=$GPath"
+        } else {
+             Write-Warning "Could not find glslc.exe in SDK!"
         }
     }
     
