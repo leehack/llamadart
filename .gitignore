@@ -57,6 +57,13 @@ compile_commands.json
 *.gch
 *.pch
 
+# Native binaries (pre-built or generated)
+*.so
+*.dll
+*.dylib
+*.xcframework/
+.dart_tool/native_assets.json
+
 # Models (Large files)
 models/*.gguf
 models/*.bin

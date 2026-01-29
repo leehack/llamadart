@@ -52,7 +52,9 @@ DynamicLibrary _loadMacOS() {
     }
   } catch (_) {}
 
-  throw Exception('Failed to load libllama.dylib on macOS.');
+  throw Exception('Failed to load libllama.dylib on macOS.\n'
+      'If you are running in a CLI/Pure Dart project, please run:\n'
+      '  dart run llamadart:setup');
 }
 
 DynamicLibrary _loadWindows() {
@@ -76,7 +78,9 @@ DynamicLibrary _loadWindows() {
     }
   } catch (_) {}
 
-  throw Exception('Failed to load libllama.dll on Windows.');
+  throw Exception('Failed to load libllama.dll on Windows.\n'
+      'If you are running in a CLI/Pure Dart project, please run:\n'
+      '  dart run llamadart:setup');
 }
 
 DynamicLibrary _loadLinux() {
@@ -103,7 +107,9 @@ DynamicLibrary _loadLinux() {
     }
   } catch (_) {}
 
-  throw Exception('Failed to load libllama.so on Linux');
+  throw Exception('Failed to load libllama.so on Linux.\n'
+      'If you are running in a CLI/Pure Dart project, please run:\n'
+      '  dart run llamadart:setup');
 }
 
 DynamicLibrary _loadIOS() {
