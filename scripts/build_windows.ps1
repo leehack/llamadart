@@ -7,7 +7,7 @@ param (
     [string]$VulkanSdk = ""
 )
 
-$BuildDir = if ($Backend -eq "vulkan") { "C:\Users\leeha\bv" } else { "build-cpu" }
+$BuildDir = if ($Backend -eq "vulkan") { "build-vulkan" } else { "build-cpu" }
 if ($Clean -eq "clean") {
     if (Test-Path $BuildDir) {
         Remove-Item -Path $BuildDir -Recurse -Force
