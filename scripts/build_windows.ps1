@@ -7,7 +7,6 @@ param (
 )
 
 $BuildDir = "build-windows-$Backend"
-
 if ($Clean -eq "clean") {
     if (Test-Path $BuildDir) {
         Remove-Item -Path $BuildDir -Recurse -Force
@@ -21,7 +20,9 @@ $CmakeArgs = @(
     "-DLLAMA_BUILD_TESTS=OFF",
     "-DLLAMA_BUILD_EXAMPLES=OFF",
     "-DLLAMA_BUILD_SERVER=OFF",
-    "-DLLAMA_BUILD_TOOLS=OFF"
+    "-DLLAMA_BUILD_TOOLS=OFF",
+    "-DLLAMA_HTTPLIB=OFF",
+    "-DLLAMA_OPENSSL=OFF"
 )
 
 if ($Backend -eq "vulkan") {
@@ -29,8 +30,12 @@ if ($Backend -eq "vulkan") {
     Write-Host "Building for Windows (Vulkan)"
     Write-Host "============================"
     $CmakeArgs += "-DGGML_VULKAN=ON"
+} elseif ($Backend -eq "cpu") {
+    Write-Host "============================"
+    Write-Host "Building for Windows (CPU)"
+    Write-Host "============================"
 } else {
-    Write-Error "Invalid backend '$Backend'. Use 'vulkan'."
+    Write-Error "Invalid backend '$Backend'. Use 'vulkan' or 'cpu'."
     exit 1
 }
 
@@ -40,7 +45,7 @@ if (-not (Test-Path $BuildDir)) {
 
 # Point to src/native (parent of llama_cpp)
 cmake -S src/native -B $BuildDir @CmakeArgs
-cmake --build $BuildDir --config Release -j 4
+cmake --build $BuildDir --config Release -j 8
 
 # Artifacts
 $LibDir = "windows/lib"
