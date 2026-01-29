@@ -17,7 +17,7 @@ if [ "$PLATFORM" == "macos" ]; then
     
     mkdir -p "$BUILD_DIR"
     # match Android: point to src/native, BUILD_SHARED_LIBS=OFF to link statically internally
-    cmake -S src/native -B "$BUILD_DIR" \
+    cmake -G Ninja -S src/native -B "$BUILD_DIR" \
       -DCMAKE_BUILD_TYPE=Release \
       -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON \
       -DBUILD_SHARED_LIBS=OFF \

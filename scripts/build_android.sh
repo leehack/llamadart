@@ -53,7 +53,9 @@ for ABI in "${ABIS[@]}"; do
     TOOLCHAIN_FILE="$(pwd)/$BUILD_DIR/android-host-toolchain.cmake"
     mkdir -p "$BUILD_DIR"
 
-    echo "set(CMAKE_MAKE_PROGRAM \"$(which make)\" CACHE STRING \"make program\" FORCE)" > "$TOOLCHAIN_FILE"
+    # Detect make program to use for host toolchain
+    MAKE_PROG=$(which ninja 2>/dev/null || which make 2>/dev/null)
+    echo "set(CMAKE_MAKE_PROGRAM \"$MAKE_PROG\" CACHE STRING \"make program\" FORCE)" > "$TOOLCHAIN_FILE"
     echo "set(CMAKE_SYSTEM_NAME \"$OS_NAME\")" >> "$TOOLCHAIN_FILE"
     echo "set(Threads_FOUND TRUE)" >> "$TOOLCHAIN_FILE"
     echo "set(CMAKE_THREAD_LIBS_INIT \"-pthread\")" >> "$TOOLCHAIN_FILE"
