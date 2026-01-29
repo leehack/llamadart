@@ -1,5 +1,6 @@
 # Exclude large development sources and submodules
-src/
+/src/
+!android/src/main/jniLibs/
 .git/
 .github/
 

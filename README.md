@@ -1,6 +1,6 @@
 # llamadart
 
-A Dart/Flutter plugin for `llama.cpp`. Run LLM inference directly in Dart and Flutter applications using GGUF models with hardware acceleration (Metal, Vulkan).
+A Dart/Flutter plugin for `llama.cpp`. Run LLM inference directly in Dart and Flutter applications using GGUF models with high-performance pre-built binaries (Metal, Vulkan).
 
 ## ⚠️ Status
 **Actively Under Development**.
@@ -35,20 +35,19 @@ dependencies:
 ### 2. Platform Setup
 
 #### 📱 iOS
-**No manual setup required.**
-The plugin automatically builds `llama.cpp` for iOS (Device/Simulator) when you run `flutter build ios`.
-*Note: The first build will take a few minutes to compile the C++ libraries.*
+The plugin includes pre-built XCFrameworks for iOS (Device/Simulator). No local C++ compilation is required.
+*Note: This significantly reduces first-run build times.*
 
 #### 💻 macOS / Linux / Windows
-The package handles native builds automatically via CMake.
+The package uses pre-built shared libraries. No CMake configuration or C++ toolchain is needed by the end user.
 *   **macOS**: Metal acceleration is enabled by default.
 *   **Linux/Windows**: CPU and Vulkan inference are supported.
 
 #### 📱 Android
 **No manual setup required.**
-The plugin uses CMake to compile the native library automatically.
-- Ensure you have the **Android NDK** installed via Android Studio.
-- The first build will take a few minutes to compile the `llama.cpp` libraries for your target device's architecture.
+The plugin includes pre-optimized `.so` binaries for `arm64-v8a` and `x86_64`.
+- Vulkan acceleration is enabled in the bundled binaries.
+- No NDK or local compilation required.
 
 #### 🌐 Web
 **Zero-config** by default (uses jsDelivr CDN for `wllama`).
