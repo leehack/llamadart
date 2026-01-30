@@ -22,28 +22,18 @@ void main(List<String> args) async {
     final code = input.config.code;
     final (os, arch) = (code.targetOS, code.targetArchitecture);
 
-    final binariesDir = path.join(
-      input.packageRoot.toFilePath(),
-      '.dart_tool',
-      'llamadart',
-      'binaries',
-    );
-
     log.info('Hook Start: $os-$arch');
 
     try {
       // 1. Resolve Platform Configuration
       final (relPath, fileName) = switch ((os, arch)) {
-        (OS.windows, _) => ('windows', 'libllama.dll'),
-        (OS.linux, Architecture.arm64) => ('linux-arm64', 'libllama.so'),
-        (OS.linux, Architecture.x64) => ('linux-x64', 'libllama.so'),
-        (OS.macOS, _) => ('macos', 'libllama.dylib'),
-        (OS.android, Architecture.arm64) => ('android-arm64', 'libllama.so'),
-        (OS.android, Architecture.x64) => ('android-x64', 'libllama.so'),
-        (OS.iOS, _) => (
-          'ios',
-          'llama.xcframework/ios-arm64/llama.framework/llama',
-        ),
+        (OS.windows, _) => ('windows/x64', 'libllama.dll'),
+        (OS.linux, Architecture.arm64) => ('linux/arm64', 'libllama.so'),
+        (OS.linux, Architecture.x64) => ('linux/x64', 'libllama.so'),
+        (OS.macOS, _) => ('macos/${arch.name}', 'libllama.dylib'),
+        (OS.android, Architecture.arm64) => ('android/arm64', 'libllama.so'),
+        (OS.android, Architecture.x64) => ('android/x64', 'libllama.so'),
+        (OS.iOS, _) => ('ios', 'llama.xcframework'),
         _ => (null, null),
       };
 
@@ -52,41 +42,72 @@ void main(List<String> args) async {
         return;
       }
 
-      // Important: Use architecture-specific subfolder to avoid conflicts during universal builds
-      final targetDir = path.join(binariesDir, relPath, arch.name);
-      final assetPath = path.join(targetDir, fileName);
+      // 2. Hybrid Search Strategy
+      // Path A: Local Build Output (Developer mode)
+      final localBinDir = path.join(
+        input.packageRoot.toFilePath(),
+        'third_party',
+        'bin',
+        relPath,
+      );
+      final localAssetPath = path.join(localBinDir, fileName);
 
-      // 2. Setup (Download/Extract)
-      await _ensureAssets(targetDir: targetDir, os: os, arch: arch, log: log);
+      // Path B: Download Cache (User mode)
+      final cacheDir = path.join(
+        input.packageRoot.toFilePath(),
+        '.dart_tool',
+        'llamadart',
+        'binaries',
+        relPath,
+      );
+      final cacheAssetPath = path.join(cacheDir, fileName);
 
-      // 3. MacOS Thinning
-      // If we downloaded a fat binary, thin it to the requested architecture
-      if (os == OS.macOS && File(assetPath).existsSync()) {
-        await _thinBinary(assetPath, arch, log);
+      String? finalAssetPath;
+
+      if (_exists(localAssetPath)) {
+        log.info('Using local binary: $localAssetPath');
+        finalAssetPath = localAssetPath;
+      } else {
+        log.info('Local binary not found, ensuring cached assets...');
+        await _ensureAssets(targetDir: cacheDir, os: os, arch: arch, log: log);
+        if (_exists(cacheAssetPath)) {
+          finalAssetPath = cacheAssetPath;
+        }
+      }
+
+      if (finalAssetPath == null) {
+        log.severe('Missing Asset: $fileName for $os-$arch');
+        return;
+      }
+
+      // 3. MacOS Thinning (only if it's a dylib and we downloaded a fat one)
+      if (os == OS.macOS && finalAssetPath.endsWith('.dylib')) {
+        await _thinBinary(finalAssetPath, arch, log);
       }
 
       // 4. Report Asset
-      if (File(assetPath).existsSync()) {
-        final absoluteAssetPath = path.absolute(assetPath);
-        log.info('Reporting: $absoluteAssetPath');
+      final absoluteAssetPath = path.absolute(finalAssetPath);
+      log.info('Reporting: $absoluteAssetPath');
 
-        output.assets.code.add(
-          CodeAsset(
-            package: 'llamadart',
-            name: 'llama_cpp',
-            linkMode: DynamicLoadingBundled(),
-            file: Uri.file(absoluteAssetPath),
-          ),
-        );
-      } else {
-        log.severe('Missing Asset: $assetPath');
-      }
+      output.assets.code.add(
+        CodeAsset(
+          package: 'llamadart',
+          name: 'llama_cpp',
+          linkMode: DynamicLoadingBundled(),
+          // For iOS/macOS frameworks, providing the directory is preferred
+          file: os == OS.iOS
+              ? Uri.directory(absoluteAssetPath)
+              : Uri.file(absoluteAssetPath),
+        ),
+      );
     } catch (e, st) {
       log.severe('FATAL ERROR in hook', e, st);
       rethrow;
     }
   });
 }
+
+bool _exists(String p) => File(p).existsSync() || Directory(p).existsSync();
 
 Future<void> _ensureAssets({
   required String targetDir,

@@ -88,7 +88,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: libllama_macos
-          path: third_party/bin/apple/macos/libllama.dylib
+          path: third_party/bin/macos/*/libllama.dylib
 
       - name: Upload Artifact (iOS)
         if: matrix.target == 'ios'
@@ -97,75 +97,8 @@ jobs:
           name: llama_ios_xcframework
           path: third_party/llama_ios_xcframework.zip
 
-  build-linux-vulkan:
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: third_party
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Install Vulkan Dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libvulkan-dev glslc ccache
-
-      - name: ccache
-        uses: ggml-org/ccache-action@v1.2.16
-        with:
-          key: build-linux-vulkan
-
-      - name: Build Linux (Vulkan)
-        run: ./build_linux.sh vulkan
-
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: libllama_linux_x64_vulkan
-          path: third_party/bin/linux/x64/libllama.so
-
-  build-windows:
-    runs-on: windows-latest
-    defaults:
-      run:
-        working-directory: third_party
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Install dependencies (ccache, ninja)
-        run: choco install ccache ninja -y
-
-      - name: ccache
-        uses: ggml-org/ccache-action@v1.2.16
-        with:
-          key: windows-vulkan
-          evict-old-files: 1d
-          save: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
-
-
-      - name: Install Vulkan SDK
-        run: |
-          $ver = "1.4.313.2"
-          curl.exe -o $env:RUNNER_TEMP/VulkanSDK-Installer.exe -L "https://sdk.lunarg.com/sdk/download/$ver/windows/vulkansdk-windows-X64-$ver.exe"
-          & "$env:RUNNER_TEMP\VulkanSDK-Installer.exe" --accept-licenses --default-answer --confirm-command install
-          Add-Content $env:GITHUB_ENV "VULKAN_SDK=C:\VulkanSDK\$ver"
-          Add-Content $env:GITHUB_PATH "C:\VulkanSDK\$ver\Bin"
-
-      - name: Build Windows
-        run: .\build_windows.ps1 vulkan
-
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: libllama_windows_vulkan
-          path: third_party/bin/windows/x64/libllama.dll
-
   release:
-    needs: [build-android, build-apple, build-linux-vulkan, build-windows]
+    needs: [build-android, build-apple, build-linux-x64-vulkan, build-linux-arm64, build-windows]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     steps:
@@ -176,13 +109,15 @@ jobs:
       - name: Prepare Assets
         run: |
           mkdir -p release_assets
-          cp artifacts/libllama_windows_vulkan/libllama.dll release_assets/libllama-windows-x64.dll
-          cp artifacts/libllama_linux_x64_vulkan/libllama.so release_assets/libllama-linux-x64.so
-          cp artifacts/libllama_macos/libllama.dylib release_assets/libllama-macos.dylib
+          cp artifacts/libllama_windows_x64/libllama.dll release_assets/libllama-windows-x64.dll
+          cp artifacts/libllama_linux_x64/libllama.so release_assets/libllama-linux-x64.so
+          cp artifacts/libllama_linux_arm64/libllama.so release_assets/libllama-linux-arm64.so
+          find artifacts/libllama_macos -name "libllama.dylib" -exec cp {} release_assets/libllama-macos.dylib \;
           cp artifacts/llama_ios_xcframework/llama_ios_xcframework.zip release_assets/llama-ios-xcframework.zip
           cp artifacts/libllama_android_arm64-v8a/libllama.so release_assets/libllama-android-arm64.so
           cp artifacts/libllama_android_x86_64/libllama.so release_assets/libllama-android-x64.so
           ls -R release_assets
+
 
       - name: Create Release
         uses: softprops/action-gh-release@v2

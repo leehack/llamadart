@@ -39,7 +39,12 @@ if [ "$PLATFORM" == "macos" ]; then
     cmake --build "$BUILD_DIR" --config Release -j $(sysctl -n hw.logicalcpu)
     
     # Artifacts
-    MAC_BIN_DIR="bin/apple/macos"
+    # We output to arch-specific folders to match hook expectations
+    ARCH=$(uname -m)
+    if [ "$ARCH" == "aarch64" ]; then ARCH="arm64"; fi
+    if [ "$ARCH" == "x86_64" ]; then ARCH="x64"; fi
+
+    MAC_BIN_DIR="bin/macos/$ARCH"
     # Clean and recreate to ensure no leftovers
     rm -rf "$MAC_BIN_DIR"
     mkdir -p "$MAC_BIN_DIR"
@@ -65,7 +70,7 @@ elif [ "$PLATFORM" == "ios" ]; then
     echo "========================================"
     
     LLAMA_CPP_DIR="llama_cpp"
-    OUTPUT_DIR="bin/apple/ios"
+    OUTPUT_DIR="bin/ios"
     
     # Run the official script from its directory
     pushd "$LLAMA_CPP_DIR" > /dev/null

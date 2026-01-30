@@ -138,7 +138,14 @@ for ABI in "${ABIS[@]}"; do
     cmake --build "$BUILD_DIR" -j $(nproc 2>/dev/null || sysctl -n hw.logicalcpu)
 
     # 6. Artifact management
-    JNI_LIBS_DIR="bin/android/$ABI"
+    if [ "$ABI" == "arm64-v8a" ]; then
+        TARGET_ARCH="arm64"
+    elif [ "$ABI" == "x86_64" ]; then
+        TARGET_ARCH="x64"
+    else
+        TARGET_ARCH="$ABI"
+    fi
+    JNI_LIBS_DIR="bin/android/$TARGET_ARCH"
     # Clean and recreate to ensure no leftovers
     rm -rf "$JNI_LIBS_DIR"
     mkdir -p "$JNI_LIBS_DIR"
