@@ -57,7 +57,7 @@ jobs:
     runs-on: macos-latest
     strategy:
       matrix:
-        target: [ios, macos]
+        target: [macos, ios-device-arm64, ios-sim-arm64, ios-sim-x64]
     defaults:
       run:
         working-directory: third_party
@@ -74,28 +74,16 @@ jobs:
         with:
           key: build-apple-${{ matrix.target }}
 
-      - name: Build Apple Platforms
+      - name: Build Apple Target
         run: ./build_apple.sh ${{ matrix.target }}
 
-      - name: Zip iOS Slices
-        if: matrix.target == 'ios'
-        run: |
-          cd bin/ios
-          zip -r ../../llamadart_ios_static.zip *.a
-
-      - name: Upload Artifact (macOS)
-        if: matrix.target == 'macos'
+      - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: libllamadart_macos
-          path: third_party/bin/macos/*/libllamadart.a
-
-      - name: Upload Artifact (iOS)
-        if: matrix.target == 'ios'
-        uses: actions/upload-artifact@v4
-        with:
-          name: llamadart_ios_static
-          path: third_party/llamadart_ios_static.zip
+          name: libllamadart_apple_${{ matrix.target }}
+          path: |
+            third_party/bin/macos/*/libllamadart.a
+            third_party/bin/ios/*.a
 
   build-linux-x64-vulkan:
     runs-on: ubuntu-latest
@@ -204,11 +192,22 @@ jobs:
       - name: Prepare Assets
         run: |
           mkdir -p release_assets
+          # Windows
           cp artifacts/libllamadart_windows_x64/libllamadart.dll release_assets/libllamadart-windows-x64.dll
+          # Linux
           cp artifacts/libllamadart_linux_x64/libllamadart.so release_assets/libllamadart-linux-x64.so
           cp artifacts/libllamadart_linux_arm64/libllamadart.so release_assets/libllamadart-linux-arm64.so
-          find artifacts/libllamadart_macos -name "*.a" -exec cp {} release_assets/libllamadart-macos.a \;
-          cp artifacts/llamadart_ios_static/llamadart_ios_static.zip release_assets/llamadart-ios-xcframework.zip
+          # macOS
+          find artifacts/libllamadart_apple_macos -name "*.a" -exec cp {} release_assets/libllamadart-macos.a \;
+          # iOS
+          mkdir -p ios_slices
+          cp artifacts/libllamadart_apple_ios-device-arm64/*.a ios_slices/
+          cp artifacts/libllamadart_apple_ios-sim-arm64/*.a ios_slices/
+          cp artifacts/libllamadart_apple_ios-sim-x64/*.a ios_slices/
+          cd ios_slices
+          zip -j ../release_assets/llamadart-ios-xcframework.zip *.a
+          cd ..
+          # Android
           cp artifacts/libllamadart_android_arm64-v8a/libllamadart.so release_assets/libllamadart-android-arm64.so
           cp artifacts/libllamadart_android_x86_64/libllamadart.so release_assets/libllamadart-android-x64.so
           ls -R release_assets
