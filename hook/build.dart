@@ -144,8 +144,9 @@ Future<void> _ensureAssets({
       final fileName = _getIOSFileName(config, arch);
       await _download(fileName, path.join(targetDir, fileName), log);
     case OS.macOS:
+      final archStr = arch == Architecture.arm64 ? 'arm64' : 'x64';
       await _download(
-        'libllamadart-macos.a',
+        'libllamadart-macos-$archStr.a',
         path.join(targetDir, 'libllamadart.a'),
         log,
       );

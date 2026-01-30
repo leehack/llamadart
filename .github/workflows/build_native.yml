@@ -57,7 +57,7 @@ jobs:
     runs-on: macos-latest
     strategy:
       matrix:
-        target: [macos, ios-device-arm64, ios-sim-arm64, ios-sim-x64]
+        target: [macos-arm64, macos-x64, ios-device-arm64, ios-sim-arm64, ios-sim-x64]
     defaults:
       run:
         working-directory: third_party
@@ -82,7 +82,7 @@ jobs:
         with:
           name: libllamadart_apple_${{ matrix.target }}
           path: |
-            third_party/bin/macos/*/libllamadart.a
+            third_party/bin/macos/**/*.a
             third_party/bin/ios/*.a
 
   build-linux-x64-vulkan:
@@ -198,7 +198,8 @@ jobs:
           cp artifacts/libllamadart_linux_x64/libllamadart.so release_assets/libllamadart-linux-x64.so
           cp artifacts/libllamadart_linux_arm64/libllamadart.so release_assets/libllamadart-linux-arm64.so
           # macOS
-          find artifacts/libllamadart_apple_macos -name "*.a" -exec cp {} release_assets/libllamadart-macos.a \;
+          find artifacts/libllamadart_apple_macos-arm64 -name "*.a" -exec cp {} release_assets/libllamadart-macos-arm64.a \;
+          find artifacts/libllamadart_apple_macos-x64 -name "*.a" -exec cp {} release_assets/libllamadart-macos-x64.a \;
           # iOS
           mkdir -p ios_slices
           cp artifacts/libllamadart_apple_ios-device-arm64/*.a ios_slices/

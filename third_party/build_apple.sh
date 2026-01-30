@@ -2,16 +2,17 @@
 set -e
 
 # build_apple.sh <target> [clean]
-# Targets: macos, ios-device-arm64, ios-sim-arm64, ios-sim-x64
+# Targets: macos-arm64, macos-x64, ios-device-arm64, ios-sim-arm64, ios-sim-x64
 
 TARGET=$1
 CLEAN=$2
 
-if [ "$TARGET" == "macos" ]; then
+if [[ "$TARGET" == macos-* ]]; then
+    ARCH=${TARGET#macos-}
     echo "========================================"
-    echo "Building for macOS (Universal) via src/native..."
+    echo "Building for macOS ($ARCH)..."
     echo "========================================"
-    BUILD_DIR="build-macos"
+    BUILD_DIR="build-macos-$ARCH"
     if [ "$CLEAN" == "clean" ]; then rm -rf "$BUILD_DIR"; fi
     
     mkdir -p "$BUILD_DIR"
@@ -28,7 +29,7 @@ if [ "$TARGET" == "macos" ]; then
       -DGGML_METAL=ON \
       -DGGML_METAL_USE_BF16=OFF \
       -DGGML_METAL_EMBED_LIBRARY=ON \
-      -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
+      -DCMAKE_OSX_ARCHITECTURES="$ARCH" \
       -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
     
     cmake --build "$BUILD_DIR" --config Release -j $(sysctl -n hw.logicalcpu)
@@ -36,20 +37,14 @@ if [ "$TARGET" == "macos" ]; then
     # Merge static libraries
     echo "Combining static libraries for macOS..."
     LIBS=$(find "$BUILD_DIR" -name "*.a" ! -name "libllamadart.a")
-    libtool -static -o "$BUILD_DIR/libllamadart.a" $LIBS
+    
+    DIR="bin/macos/$ARCH"
+    mkdir -p "$DIR"
+    libtool -static -o "$DIR/libllamadart.a" ${LIBS} 2> /dev/null
 
-    # Artifacts
-    for A in arm64 x64; do
-        DIR="bin/macos/$A"
-        mkdir -p "$DIR"
-        cp "$BUILD_DIR/libllamadart.a" "$DIR/libllamadart.a"
-    done
-    echo "macOS build complete."
+    echo "macOS build complete: $DIR/libllamadart.a"
 
 elif [[ "$TARGET" == ios-* ]]; then
-    # Parse target: ios-device-arm64 -> SDK=iphoneos, ARCH=arm64, SUFFIX=""
-    # Parse target: ios-sim-arm64    -> SDK=iphonesimulator, ARCH=arm64, SUFFIX="-sim"
-    
     if [ "$TARGET" == "ios-device-arm64" ]; then
         SDK="iphoneos"
         ARCH="arm64"
@@ -76,6 +71,6 @@ elif [[ "$TARGET" == ios-* ]]; then
     echo "iOS build complete: bin/ios/$OUT_NAME"
 
 else
-    echo "Error: Invalid target '$TARGET'. Use 'macos' or 'ios-*'."
+    echo "Error: Invalid target '$TARGET'. Use 'macos-arm64', 'macos-x64', or 'ios-*'."
     exit 1
 fi
