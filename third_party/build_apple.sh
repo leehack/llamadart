@@ -2,7 +2,7 @@
 set -e
 
 # build_apple.sh <target> [clean]
-# Targets: macos-arm64, macos-x64, ios-device-arm64, ios-sim-arm64, ios-sim-x64
+# Targets: macos-arm64, macos-x86_64, ios-device-arm64, ios-sim-arm64, ios-sim-x86_64
 
 TARGET=$1
 CLEAN=$2
@@ -54,10 +54,10 @@ elif [[ "$TARGET" == ios-* ]]; then
         SDK="iphonesimulator"
         ARCH="arm64"
         OUT_NAME="libllamadart-ios-arm64-sim.a"
-    elif [ "$TARGET" == "ios-sim-x64" ]; then
+    elif [ "$TARGET" == "ios-sim-x86_64" ] || [ "$TARGET" == "ios-sim-x64" ]; then
         SDK="iphonesimulator"
         ARCH="x86_64"
-        OUT_NAME="libllamadart-ios-x64-sim.a"
+        OUT_NAME="libllamadart-ios-x86_64-sim.a"
     else
         echo "Error: Invalid iOS target '$TARGET'"
         exit 1
@@ -72,6 +72,6 @@ elif [[ "$TARGET" == ios-* ]]; then
     echo "iOS build complete: bin/ios/$OUT_NAME"
 
 else
-    echo "Error: Invalid target '$TARGET'. Use 'macos-arm64', 'macos-x64', or 'ios-*'."
+    echo "Error: Invalid target '$TARGET'. Use 'macos-arm64', 'macos-x86_64', or 'ios-*'."
     exit 1
 fi
