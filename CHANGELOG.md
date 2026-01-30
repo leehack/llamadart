@@ -1,3 +1,12 @@
+## 0.3.0
+
+*   **Pure Native Assets**: Migrated to the modern Dart Native Assets mechanism (`hook/build.dart`).
+*   **Zero Setup**: Native binaries are now automatically downloaded and bundled at runtime based on the target platform.
+*   **Streamlined Bindings**: Switched to `@Native` top-level FFI bindings for better performance and simpler code.
+*   **Stable Submodule**: Pinned `llama.cpp` to a stable release tag (`b7883`).
+*   **Consolidated Build Infra**: Moved all native source, submodules, and build scripts into a unified `third_party/` directory.
+*   **Clean Repository**: Removed obsolete platform folders (`macos/`, `android/`, `ios/`) and legacy build scripts.
+
 ## 0.2.0
 
 *   **Project Rename**: Renamed package from `llama_dart` to `llamadart`.

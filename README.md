@@ -18,9 +18,9 @@ dependencies:
 ```
 
 ### 2. Setup
-`llamadart` uses the **Dart Native Assets** (hooks) mechanism. Native binaries for `llama.cpp` are automatically downloaded and bundled during your first `dart run` or `flutter run`. No manual setup is required.
+`llamadart` uses the **Dart Native Assets** mechanism. Pre-compiled binaries for `llama.cpp` are automatically downloaded and bundled during your first `dart run` or `flutter run`. No manual setup, compilation, or script execution is required.
 
-> **Note**: This requires Dart SDK 3.x or later with native assets enabled.
+> **Requirement**: Dart SDK 3.x or later.
 
 ### 3. Usage
 ```dart
