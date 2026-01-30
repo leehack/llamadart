@@ -4,7 +4,7 @@ export 'generated/llama_bindings.dart';
 
 /// The underlying DynamicLibrary, exposed for NativeFinalizer access.
 ///
-/// This uses the Native Assets mapping for 'package:llamadart/llama_cpp'.
+/// This uses the Native Assets mapping for 'package:llamadart/llamadart'.
 /// If it fails (e.g. in some isolate contexts), it returns null.
 final DynamicLibrary? llamaLib = _openLibrary();
 
@@ -18,7 +18,7 @@ DynamicLibrary? _openLibrary() {
       final libName = Platform.isWindows
           ? 'libllamadart.dll'
           : Platform.isMacOS
-          ? 'libllamadart.dylib'
+          ? 'libllamadart.a'
           : 'libllamadart.so';
       return DynamicLibrary.open(libName);
     } catch (_) {

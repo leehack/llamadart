@@ -25,18 +25,26 @@ void main(List<String> args) async {
     log.info('Hook Start: $os-$arch');
 
     try {
+      final preferredLinkMode = code.linkModePreference;
+      final bool useShared =
+          (os == OS.iOS || os == OS.macOS) &&
+          preferredLinkMode == LinkModePreference.dynamic;
+
       // 1. Resolve Platform Configuration
       final (relPath, fileName) = switch ((os, arch)) {
         (OS.windows, _) => ('windows/x64', 'libllamadart.dll'),
         (OS.linux, Architecture.arm64) => ('linux/arm64', 'libllamadart.so'),
         (OS.linux, Architecture.x64) => ('linux/x64', 'libllamadart.so'),
-        (OS.macOS, _) => ('macos/${arch.name}', 'libllamadart.a'),
+        (OS.macOS, _) => (
+          'macos/${arch.name}',
+          useShared ? 'libllamadart.dylib' : 'libllamadart.a',
+        ),
         (OS.android, Architecture.arm64) => (
           'android/arm64',
           'libllamadart.so',
         ),
         (OS.android, Architecture.x64) => ('android/x64', 'libllamadart.so'),
-        (OS.iOS, _) => ('ios', _getIOSFileName(input.config, arch)),
+        (OS.iOS, _) => ('ios', _getIOSFileName(input.config, arch, useShared)),
         _ => (null, null),
       };
 
@@ -76,6 +84,7 @@ void main(List<String> args) async {
           arch: arch,
           log: log,
           config: input.config,
+          useShared: useShared,
         );
         if (_exists(cacheAssetPath)) {
           finalAssetPath = cacheAssetPath;
@@ -100,9 +109,7 @@ void main(List<String> args) async {
         CodeAsset(
           package: 'llamadart',
           name: 'llamadart',
-          linkMode: (os == OS.iOS || os == OS.macOS)
-              ? StaticLinking()
-              : DynamicLoadingBundled(),
+          linkMode: useShared ? DynamicLoadingBundled() : StaticLinking(),
           file: Uri.file(absoluteAssetPath),
         ),
       );
@@ -113,18 +120,16 @@ void main(List<String> args) async {
   });
 }
 
-String _getIOSFileName(BuildConfig config, Architecture arch) {
-  // Use a string check on the target to detect simulator vs device
-  // Standard targets are 'ios_arm64', 'ios_arm64_simulator', 'ios_x86_64_simulator'
+String _getIOSFileName(BuildConfig config, Architecture arch, bool useShared) {
+  final ext = useShared ? 'dylib' : 'a';
   final target = config.code.targetOS.toString().toLowerCase();
 
-  if (arch == Architecture.x64) return 'libllamadart-ios-x86_64-sim.a';
+  if (arch == Architecture.x64) return 'libllamadart-ios-x86_64-sim.$ext';
 
-  // For arm64, it could be both. We check if the config string contains 'simulator'
   if (config.toString().toLowerCase().contains('simulator')) {
-    return 'libllamadart-ios-arm64-sim.a';
+    return 'libllamadart-ios-arm64-sim.$ext';
   }
-  return 'libllamadart-ios-arm64.a';
+  return 'libllamadart-ios-arm64.$ext';
 }
 
 bool _exists(String p) => File(p).existsSync() || Directory(p).existsSync();
@@ -135,19 +140,21 @@ Future<void> _ensureAssets({
   required Architecture arch,
   required Logger log,
   required BuildConfig config,
+  required bool useShared,
 }) async {
   final dir = Directory(targetDir);
   if (!dir.existsSync()) await dir.create(recursive: true);
 
   switch (os) {
     case OS.iOS:
-      final fileName = _getIOSFileName(config, arch);
+      final fileName = _getIOSFileName(config, arch, useShared);
       await _download(fileName, path.join(targetDir, fileName), log);
     case OS.macOS:
       final archStr = arch == Architecture.arm64 ? 'arm64' : 'x86_64';
+      final ext = useShared ? 'dylib' : 'a';
       await _download(
-        'libllamadart-macos-$archStr.a',
-        path.join(targetDir, 'libllamadart.a'),
+        'libllamadart-macos-$archStr.$ext',
+        path.join(targetDir, 'libllamadart.$ext'),
         log,
       );
     case OS.windows:

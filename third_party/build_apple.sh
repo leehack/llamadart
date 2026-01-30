@@ -9,20 +9,24 @@ CLEAN=$2
 
 IOS_MIN_OS_VERSION=16.4
 
-if [[ "$TARGET" == macos-* ]]; then
-    ARCH=${TARGET#macos-}
-    if [ "$ARCH" == "x64" ]; then ARCH="x86_64"; fi
-    echo "========================================"
-    echo "Building for macOS ($ARCH)..."
-    echo "========================================"
-    BUILD_DIR="build-macos-$ARCH"
-    if [ "$CLEAN" == "clean" ]; then rm -rf "$BUILD_DIR"; fi
+# Helper function to build for a specific configuration
+build_target() {
+    local TYPE=$1 # STATIC or SHARED
+    local BUILD_DIR=$2
+    local OUT_NAME=$3
+    local ARCH=$4
+    local SDK=$5
+    local EXTRA_ARGS=$6
+
+    echo "--- Building $OUT_NAME ($ARCH, $TYPE) ---"
     
-    mkdir -p "$BUILD_DIR"
+    local SHARED_FLAG="OFF"
+    if [ "$TYPE" == "SHARED" ]; then SHARED_FLAG="ON"; fi
+
     cmake -G Ninja -S . -B "$BUILD_DIR" \
       -DCMAKE_BUILD_TYPE=Release \
       -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON \
-      -DBUILD_SHARED_LIBS=OFF \
+      -DLLAMADART_SHARED=$SHARED_FLAG \
       -DCMAKE_POSITION_INDEPENDENT_CODE=ON \
       -DLLAMA_BUILD_COMMON=OFF \
       -DLLAMA_BUILD_TESTS=OFF \
@@ -34,33 +38,49 @@ if [[ "$TARGET" == macos-* ]]; then
       -DGGML_METAL_EMBED_LIBRARY=ON \
       -DCMAKE_OSX_ARCHITECTURES="$ARCH" \
       -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 \
-      -DGGML_NATIVE=OFF
+      -DGGML_NATIVE=OFF \
+      $EXTRA_ARGS
     
     cmake --build "$BUILD_DIR" --config Release -j $(sysctl -n hw.logicalcpu)
     
-    # Merge static libraries
-    echo "Combining static libraries for macOS..."
-    LIBS=$(find "$BUILD_DIR" -name "*.a" ! -name "libllamadart.a")
-    
-    DIR="bin/macos/$ARCH"
-    mkdir -p "$DIR"
-    libtool -static -o "$DIR/libllamadart.a" ${LIBS} 2> /dev/null
+    # Merge/Copy artifacts
+    mkdir -p "$(dirname "$OUT_NAME")"
+    if [ "$TYPE" == "STATIC" ]; then
+        echo "Merging static libraries..."
+        LIBS=$(find "$BUILD_DIR" -name "*.a" ! -name "libllamadart.a")
+        libtool -static -o "$OUT_NAME" ${LIBS} 2> /dev/null
+    else
+        # Shared library (.dylib)
+        cp "$BUILD_DIR/libllamadart.dylib" "$OUT_NAME"
+    fi
+}
 
-    echo "macOS build complete: $DIR/libllamadart.a"
+if [[ "$TARGET" == macos-* ]]; then
+    ARCH=${TARGET#macos-}
+    if [ "$ARCH" == "x64" ]; then ARCH="x86_64"; fi
+    echo "========================================"
+    echo "Building for macOS ($ARCH)..."
+    echo "========================================"
+    
+    # Build both Static and Shared for macOS
+    build_target "STATIC" "build-macos-$ARCH-static" "bin/macos/$ARCH/libllamadart.a" "$ARCH" "" ""
+    build_target "SHARED" "build-macos-$ARCH-shared" "bin/macos/$ARCH/libllamadart.dylib" "$ARCH" "" ""
+    
+    echo "macOS build complete for $ARCH"
 
 elif [[ "$TARGET" == ios-* ]]; then
     if [ "$TARGET" == "ios-device-arm64" ]; then
         SDK="iphoneos"
         ARCH="arm64"
-        OUT_NAME="libllamadart-ios-arm64.a"
+        OUT_BASE="bin/ios/libllamadart-ios-arm64"
     elif [ "$TARGET" == "ios-sim-arm64" ]; then
         SDK="iphonesimulator"
         ARCH="arm64"
-        OUT_NAME="libllamadart-ios-arm64-sim.a"
+        OUT_BASE="bin/ios/libllamadart-ios-arm64-sim"
     elif [ "$TARGET" == "ios-sim-x86_64" ] || [ "$TARGET" == "ios-sim-x64" ]; then
         SDK="iphonesimulator"
         ARCH="x86_64"
-        OUT_NAME="libllamadart-ios-x86_64-sim.a"
+        OUT_BASE="bin/ios/libllamadart-ios-x86_64-sim"
     else
         echo "Error: Invalid iOS target '$TARGET'"
         exit 1
@@ -70,38 +90,13 @@ elif [[ "$TARGET" == ios-* ]]; then
     echo "Building for iOS ($TARGET)..."
     echo "========================================"
     
-    BUILD_DIR="build-ios-${SDK}-${ARCH}"
-    if [ "$CLEAN" == "clean" ]; then rm -rf "$BUILD_DIR"; fi
-
-    cmake -B "$BUILD_DIR" -G Ninja \
-        -DCMAKE_BUILD_TYPE=Release \
-        -DBUILD_SHARED_LIBS=OFF \
-        -DLLAMA_BUILD_EXAMPLES=OFF \
-        -DLLAMA_BUILD_TOOLS=OFF \
-        -DLLAMA_BUILD_TESTS=OFF \
-        -DLLAMA_BUILD_SERVER=OFF \
-        -DGGML_METAL=ON \
-        -DGGML_METAL_EMBED_LIBRARY=ON \
-        -DGGML_BLAS_DEFAULT=ON \
-        -DGGML_METAL_USE_BF16=ON \
-        -DGGML_OPENMP=OFF \
-        -DCMAKE_OSX_DEPLOYMENT_TARGET=${IOS_MIN_OS_VERSION} \
-        -DIOS=ON \
-        -DCMAKE_SYSTEM_NAME=iOS \
-        -DCMAKE_OSX_SYSROOT=${SDK} \
-        -DCMAKE_OSX_ARCHITECTURES=${ARCH} \
-        -DLLAMA_OPENSSL=OFF \
-        -DGGML_NATIVE=OFF \
-        -S .
-
-    cmake --build "$BUILD_DIR" --config Release -j $(sysctl -n hw.logicalcpu)
-
-    echo "Merging static libraries..."
-    LIBS=$(find "$BUILD_DIR" -name "*.a" ! -name "libllamadart.a")
-    mkdir -p bin/ios
-    libtool -static -o "bin/ios/${OUT_NAME}" ${LIBS} 2> /dev/null
-
-    echo "iOS build complete: bin/ios/$OUT_NAME"
+    EXTRA_IOS_ARGS="-DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_SYSROOT=$SDK -DIOS=ON -DLLAMA_OPENSSL=OFF"
+    
+    # Build both Static and Shared for iOS
+    build_target "STATIC" "build-ios-$TARGET-static" "${OUT_BASE}.a" "$ARCH" "$SDK" "$EXTRA_IOS_ARGS"
+    build_target "SHARED" "build-ios-$TARGET-shared" "${OUT_BASE}.dylib" "$ARCH" "$SDK" "$EXTRA_IOS_ARGS"
+    
+    echo "iOS build complete for $TARGET"
 
 else
     echo "Error: Invalid target '$TARGET'. Use 'macos-arm64', 'macos-x86_64', or 'ios-*'."

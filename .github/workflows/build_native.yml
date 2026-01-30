@@ -83,7 +83,9 @@ jobs:
           name: libllamadart_apple_${{ matrix.target }}
           path: |
             third_party/bin/macos/**/*.a
+            third_party/bin/macos/**/*.dylib
             third_party/bin/ios/*.a
+            third_party/bin/ios/*.dylib
 
   build-linux-x64-vulkan:
     runs-on: ubuntu-latest
@@ -199,11 +201,16 @@ jobs:
           find artifacts/libllamadart_linux_arm64 -name "*.so" -exec cp {} release_assets/libllamadart-linux-arm64.so \;
           # macOS
           find artifacts/libllamadart_apple_macos-arm64 -name "*.a" -exec cp {} release_assets/libllamadart-macos-arm64.a \;
+          find artifacts/libllamadart_apple_macos-arm64 -name "*.dylib" -exec cp {} release_assets/libllamadart-macos-arm64.dylib \;
           find artifacts/libllamadart_apple_macos-x86_64 -name "*.a" -exec cp {} release_assets/libllamadart-macos-x86_64.a \;
+          find artifacts/libllamadart_apple_macos-x86_64 -name "*.dylib" -exec cp {} release_assets/libllamadart-macos-x86_64.dylib \;
           # iOS
           find artifacts/libllamadart_apple_ios-device-arm64 -name "*.a" -exec cp {} release_assets/ \;
+          find artifacts/libllamadart_apple_ios-device-arm64 -name "*.dylib" -exec cp {} release_assets/ \;
           find artifacts/libllamadart_apple_ios-sim-arm64 -name "*.a" -exec cp {} release_assets/ \;
+          find artifacts/libllamadart_apple_ios-sim-arm64 -name "*.dylib" -exec cp {} release_assets/ \;
           find artifacts/libllamadart_apple_ios-sim-x86_64 -name "*.a" -exec cp {} release_assets/ \;
+          find artifacts/libllamadart_apple_ios-sim-x86_64 -name "*.dylib" -exec cp {} release_assets/ \;
           # Android
           find artifacts/libllamadart_android_arm64-v8a -name "*.so" -exec cp {} release_assets/libllamadart-android-arm64.so \;
           find artifacts/libllamadart_android_x86_64 -name "*.so" -exec cp {} release_assets/libllamadart-android-x64.so \;
