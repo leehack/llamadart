@@ -4,6 +4,9 @@ project(llamadart_native)
 # Force PIC so we can link static libs into shared
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
+# Force llama.cpp to build static libraries so we can bundle them
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build shared libraries" FORCE)
+
 # Add llama.cpp as a subdirectory
 add_subdirectory(llama_cpp)
 

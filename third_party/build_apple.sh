@@ -8,6 +8,7 @@ TARGET=$1
 CLEAN=$2
 
 IOS_MIN_OS_VERSION=16.4
+MACOS_MIN_OS_VERSION=11.0
 
 # Helper function to build for a specific configuration
 build_target() {
@@ -17,6 +18,7 @@ build_target() {
     local ARCH=$4
     local SDK=$5
     local EXTRA_ARGS=$6
+    local DEP_TARGET=$7
 
     echo "--- Building $OUT_NAME ($ARCH, $TYPE) ---"
     
@@ -37,7 +39,7 @@ build_target() {
       -DGGML_METAL_USE_BF16=OFF \
       -DGGML_METAL_EMBED_LIBRARY=ON \
       -DCMAKE_OSX_ARCHITECTURES="$ARCH" \
-      -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0 \
+      -DCMAKE_OSX_DEPLOYMENT_TARGET="$DEP_TARGET" \
       -DGGML_NATIVE=OFF \
       $EXTRA_ARGS
     
@@ -63,8 +65,8 @@ if [[ "$TARGET" == macos-* ]]; then
     echo "========================================"
     
     # Build both Static and Shared for macOS
-    build_target "STATIC" "build-macos-$ARCH-static" "bin/macos/$ARCH/libllamadart.a" "$ARCH" "" ""
-    build_target "SHARED" "build-macos-$ARCH-shared" "bin/macos/$ARCH/libllamadart.dylib" "$ARCH" "" ""
+    build_target "STATIC" "build-macos-$ARCH-static" "bin/macos/$ARCH/libllamadart.a" "$ARCH" "" "" "$MACOS_MIN_OS_VERSION"
+    build_target "SHARED" "build-macos-$ARCH-shared" "bin/macos/$ARCH/libllamadart.dylib" "$ARCH" "" "" "$MACOS_MIN_OS_VERSION"
     
     echo "macOS build complete for $ARCH"
 
@@ -93,8 +95,8 @@ elif [[ "$TARGET" == ios-* ]]; then
     EXTRA_IOS_ARGS="-DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_SYSROOT=$SDK -DIOS=ON -DLLAMA_OPENSSL=OFF"
     
     # Build both Static and Shared for iOS
-    build_target "STATIC" "build-ios-$TARGET-static" "${OUT_BASE}.a" "$ARCH" "$SDK" "$EXTRA_IOS_ARGS"
-    build_target "SHARED" "build-ios-$TARGET-shared" "${OUT_BASE}.dylib" "$ARCH" "$SDK" "$EXTRA_IOS_ARGS"
+    build_target "STATIC" "build-ios-$TARGET-static" "${OUT_BASE}.a" "$ARCH" "$SDK" "$EXTRA_IOS_ARGS" "$IOS_MIN_OS_VERSION"
+    build_target "SHARED" "build-ios-$TARGET-shared" "${OUT_BASE}.dylib" "$ARCH" "$SDK" "$EXTRA_IOS_ARGS" "$IOS_MIN_OS_VERSION"
     
     echo "iOS build complete for $TARGET"
 
