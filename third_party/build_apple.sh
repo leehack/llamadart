@@ -2,8 +2,8 @@
 set -e
 
 # build_apple.sh <platform> [clean]
-# Example: ./scripts/build_apple.sh macos
-# Example: ./scripts/build_apple.sh ios
+# Example: ./build_apple.sh macos
+# Example: ./build_apple.sh ios
 
 PLATFORM=$1
 CLEAN=$2
@@ -17,7 +17,7 @@ if [ "$PLATFORM" == "macos" ]; then
     
     mkdir -p "$BUILD_DIR"
     # match Android: point to src/native, BUILD_SHARED_LIBS=OFF to link statically internally
-    cmake -G Ninja -S src/native -B "$BUILD_DIR" \
+    cmake -G Ninja -S . -B "$BUILD_DIR" \
       -DCMAKE_BUILD_TYPE=Release \
       -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON \
       -DBUILD_SHARED_LIBS=OFF \
@@ -39,37 +39,37 @@ if [ "$PLATFORM" == "macos" ]; then
     cmake --build "$BUILD_DIR" --config Release -j $(sysctl -n hw.logicalcpu)
     
     # Artifacts
-    MAC_FRAMEWORKS_DIR="macos/Frameworks"
-    # Clean and recreate to ensure no leftovers (like libllama_cpp)
-    rm -rf "$MAC_FRAMEWORKS_DIR"
-    mkdir -p "$MAC_FRAMEWORKS_DIR"
+    MAC_BIN_DIR="bin/apple/macos"
+    # Clean and recreate to ensure no leftovers
+    rm -rf "$MAC_BIN_DIR"
+    mkdir -p "$MAC_BIN_DIR"
     
-    echo "Copying libraries to $MAC_FRAMEWORKS_DIR..."
+    echo "Copying libraries to $MAC_BIN_DIR..."
     # We expect only libllamadart.dylib now from our top-level CMakeLists.txt
     # Strip debugging symbols
     strip -x "$BUILD_DIR/libllamadart.dylib"
-    cp "$BUILD_DIR/libllamadart.dylib" "$MAC_FRAMEWORKS_DIR/libllama.dylib"
+    cp "$BUILD_DIR/libllamadart.dylib" "$MAC_BIN_DIR/libllama.dylib"
     
     echo "Patching dylib ID..."
     # Set ID to @rpath/libllama.dylib so it can be found when embedded
-    install_name_tool -id "@rpath/libllama.dylib" "$MAC_FRAMEWORKS_DIR/libllama.dylib"
+    install_name_tool -id "@rpath/libllama.dylib" "$MAC_BIN_DIR/libllama.dylib"
     
     # Verify
-    otool -L "$MAC_FRAMEWORKS_DIR/libllama.dylib"
+    otool -L "$MAC_BIN_DIR/libllama.dylib"
     
-    echo "macOS build complete: $MAC_FRAMEWORKS_DIR/libllama.dylib"
+    echo "macOS build complete: $MAC_BIN_DIR/libllama.dylib"
 
 elif [ "$PLATFORM" == "ios" ]; then
     echo "========================================"
     echo "Building for iOS (using llama.cpp/build-xcframework.sh)..."
     echo "========================================"
     
-    LLAMA_CPP_DIR="src/native/llama_cpp"
-    OUTPUT_DIR="ios/Frameworks"
+    LLAMA_CPP_DIR="llama_cpp"
+    OUTPUT_DIR="bin/apple/ios"
     
     # Run the official script from its directory
     pushd "$LLAMA_CPP_DIR" > /dev/null
-    ../../../scripts/build_ios_xcframework.sh
+    ../build_ios_xcframework.sh
     popd > /dev/null
     
     # Copy/Move the result to our expected location

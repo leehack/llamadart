@@ -1,147 +1,182 @@
 import 'dart:io';
 import 'package:code_assets/code_assets.dart';
 import 'package:hooks/hooks.dart';
-import 'package:llamadart/src/setup_utils.dart';
+import 'package:logging/logging.dart';
+import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as path;
 
-/// Native Assets build hook for llamadart.
-/// Automatically downloads pre-built binaries if they are missing.
-void main(List<String> args) async {
-  await build(args, (input, output) async {
-    final packageName = 'llamadart';
-    final logFile = File('C:/Users/leeha/llamadart_hook.log');
+// Constants for release
+const _releaseTag = 'libs-v0.2.0';
+const _baseUrl =
+    'https://github.com/leehack/llamadart/releases/download/$_releaseTag';
 
-    void log(String message) {
-      logFile.writeAsStringSync(
-        '${DateTime.now()}: $message\n',
-        mode: FileMode.append,
-      );
-      print('llamadart hook: $message');
-    }
+void main(List<String> args) async {
+  Logger.root.level = Level.ALL;
+  Logger.root.onRecord.listen(
+    (r) => print('${r.level.name}: ${r.time}: ${r.message}'),
+  );
+  final log = Logger('llamadart_hook');
+
+  await build(args, (input, output) async {
+    final code = input.config.code;
+    final (os, arch) = (code.targetOS, code.targetArchitecture);
+
+    final binariesDir = path.join(
+      input.packageRoot.toFilePath(),
+      '.dart_tool',
+      'llamadart',
+      'binaries',
+    );
+
+    log.info('Hook Start: $os-$arch');
 
     try {
-      log('Hook started. buildCodeAssets: ${input.config.buildCodeAssets}');
+      // 1. Resolve Platform Configuration
+      final (relPath, fileName) = switch ((os, arch)) {
+        (OS.windows, _) => ('windows', 'libllama.dll'),
+        (OS.linux, Architecture.arm64) => ('linux-arm64', 'libllama.so'),
+        (OS.linux, Architecture.x64) => ('linux-x64', 'libllama.so'),
+        (OS.macOS, _) => ('macos', 'libllama.dylib'),
+        (OS.android, Architecture.arm64) => ('android-arm64', 'libllama.so'),
+        (OS.android, Architecture.x64) => ('android-x64', 'libllama.so'),
+        (OS.iOS, _) => (
+          'ios',
+          'llama.xcframework/ios-arm64/llama.framework/llama',
+        ),
+        _ => (null, null),
+      };
 
-      // 1. Ensure binaries are present for the TARGET platform
-      if (input.config.buildCodeAssets) {
-        // NOTE: Optimization flags (like GGML_USE_METAL or GGML_USE_VULKAN)
-        // that were previously in android/build.gradle and ios/podspec
-        // are now managed by the native-assets build system.
-        // For pre-built binaries, these flags are already baked into the DLL/SO files.
-        final codeConfig = input.config.code;
-        final os = codeConfig.targetOS;
-        final arch = codeConfig.targetArchitecture;
-
-        String osName = 'unknown';
-        if (os == OS.windows) osName = 'windows';
-        if (os == OS.linux) osName = 'linux';
-        if (os == OS.macOS) osName = 'macos';
-        if (os == OS.android) osName = 'android';
-        if (os == OS.iOS) osName = 'ios';
-
-        String archName = 'x64';
-        if (arch == Architecture.arm64) archName = 'arm64';
-
-        final packageRoot = input.packageRoot.toFilePath();
-        String? targetFolder;
-        String? libPath;
-
-        log('Target OS: $osName, Arch: $archName');
-        log('Package root: $packageRoot');
-
-        if (os == OS.windows) {
-          targetFolder = path.join(packageRoot, 'windows/lib/x64');
-          libPath = 'windows/lib/x64/libllama.dll';
-        } else if (os == OS.linux) {
-          final archStr = arch == Architecture.arm64 ? 'arm64' : 'x64';
-          targetFolder = path.join(packageRoot, 'linux/lib', archStr);
-          libPath = 'linux/lib/$archStr/libllama.so';
-        } else if (os == OS.macOS) {
-          targetFolder = path.join(packageRoot, 'macos/Frameworks');
-          libPath = 'macos/Frameworks/libllama.dylib';
-        } else if (os == OS.android) {
-          log('Platform is Android, setting up and reporting assets...');
-          final abi = arch == Architecture.arm64 ? 'arm64-v8a' : 'x86_64';
-          targetFolder = path.join(
-            packageRoot,
-            'android/src/main/jniLibs',
-            abi,
-          );
-          libPath = 'android/src/main/jniLibs/$abi/libllama.so';
-
-          log(
-            'Invoking SetupUtils.setup for Android $archName at $targetFolder',
-          );
-          await SetupUtils.setup(
-            targetOs: 'android',
-            targetArch: archName,
-            targetFolder: targetFolder,
-          );
-        } else if (os == OS.iOS) {
-          targetFolder = path.join(packageRoot, 'ios/Frameworks');
-          libPath =
-              'ios/Frameworks/llama.xcframework/ios-arm64/llama.framework/llama';
-          log('Invoking SetupUtils.setup for iOS at $targetFolder');
-          await SetupUtils.setup(
-            targetOs: 'ios',
-            targetArch: 'arm64',
-            targetFolder: targetFolder,
-          );
-        }
-
-        if (targetFolder != null && os != OS.android && os != OS.iOS) {
-          log('Invoking SetupUtils.setup for $osName at $targetFolder');
-          await SetupUtils.setup(
-            targetOs: osName,
-            targetArch: archName,
-            targetFolder: targetFolder,
-          );
-          log('SetupUtils.setup finished');
-        }
-
-        if (os == OS.macOS && libPath != null) {
-          final fullLibPath = path.join(packageRoot, libPath);
-          if (File(fullLibPath).existsSync()) {
-            final result = await Process.run('lipo', ['-info', fullLibPath]);
-            if (result.stdout.toString().contains(
-              'Architectures in the fat file',
-            )) {
-              log('Thinning universal binary for $archName...');
-              await Process.run('lipo', [
-                '-thin',
-                archName,
-                fullLibPath,
-                '-output',
-                fullLibPath,
-              ]);
-            }
-          }
-        }
-
-        if (libPath != null) {
-          final fullPath = path.join(packageRoot, libPath);
-          log('Final check for asset at $fullPath');
-          if (File(fullPath).existsSync()) {
-            log(
-              'Asset FOUND. Size: ${File(fullPath).lengthSync()}. Reporting to build system...',
-            );
-            output.assets.code.add(
-              CodeAsset(
-                package: packageName,
-                name: 'src/loader.dart',
-                linkMode: DynamicLoadingBundled(),
-                file: input.packageRoot.resolve(libPath),
-              ),
-            );
-          } else {
-            log('ERROR: Asset file missing at $fullPath');
-          }
-        }
+      if (relPath == null || fileName == null) {
+        log.warning('Unsupported platform: $os-$arch');
+        return;
       }
-      log('Hook finished successfully.');
+
+      // Important: Use architecture-specific subfolder to avoid conflicts during universal builds
+      final targetDir = path.join(binariesDir, relPath, arch.name);
+      final assetPath = path.join(targetDir, fileName);
+
+      // 2. Setup (Download/Extract)
+      await _ensureAssets(targetDir: targetDir, os: os, arch: arch, log: log);
+
+      // 3. MacOS Thinning
+      // If we downloaded a fat binary, thin it to the requested architecture
+      if (os == OS.macOS && File(assetPath).existsSync()) {
+        await _thinBinary(assetPath, arch, log);
+      }
+
+      // 4. Report Asset
+      if (File(assetPath).existsSync()) {
+        final absoluteAssetPath = path.absolute(assetPath);
+        log.info('Reporting: $absoluteAssetPath');
+
+        output.assets.code.add(
+          CodeAsset(
+            package: 'llamadart',
+            name: 'llama_cpp',
+            linkMode: DynamicLoadingBundled(),
+            file: Uri.file(absoluteAssetPath),
+          ),
+        );
+      } else {
+        log.severe('Missing Asset: $assetPath');
+      }
     } catch (e, st) {
-      log('FATAL ERROR in hook: $e\n$st');
+      log.severe('FATAL ERROR in hook', e, st);
       rethrow;
     }
   });
+}
+
+Future<void> _ensureAssets({
+  required String targetDir,
+  required OS os,
+  required Architecture arch,
+  required Logger log,
+}) async {
+  final dir = Directory(targetDir);
+  if (!dir.existsSync()) await dir.create(recursive: true);
+
+  switch (os) {
+    case OS.iOS:
+      await _setupIOS(targetDir, log);
+    case OS.macOS:
+      await _download(
+        'libllama-macos.dylib',
+        path.join(targetDir, 'libllama.dylib'),
+        log,
+      );
+    case OS.windows:
+      await _download(
+        'libllama-windows-x64.dll',
+        path.join(targetDir, 'libllama.dll'),
+        log,
+      );
+    case OS.linux:
+    case OS.android:
+      final osStr = os == OS.android ? 'android' : 'linux';
+      final archStr = arch == Architecture.arm64 ? 'arm64' : 'x64';
+      await _download(
+        'libllama-$osStr-$archStr.so',
+        path.join(targetDir, 'libllama.so'),
+        log,
+      );
+    default:
+      throw UnsupportedError('Unsupported OS: $os');
+  }
+}
+
+Future<void> _download(String assetName, String destPath, Logger log) async {
+  final file = File(destPath);
+  if (file.existsSync()) return;
+
+  final url = '$_baseUrl/$assetName';
+  log.info('Downloading $url...');
+  final res = await http.get(Uri.parse(url));
+
+  if (res.statusCode != 200) {
+    throw Exception('Failed to download $url (${res.statusCode})');
+  }
+  await file.writeAsBytes(res.bodyBytes);
+  log.info('Saved to $destPath');
+}
+
+Future<void> _setupIOS(String targetDir, Logger log) async {
+  final frameworkPath = path.join(targetDir, 'llama.xcframework');
+  if (Directory(frameworkPath).existsSync()) return;
+
+  final zipName = 'llama-ios-xcframework.zip';
+  final zipPath = path.join(targetDir, zipName);
+
+  await _download(zipName, zipPath, log);
+
+  log.info('Extracting $zipName...');
+  final result = await Process.run('unzip', ['-o', zipPath, '-d', targetDir]);
+  if (result.exitCode != 0) throw Exception('Unzip failed: ${result.stderr}');
+
+  if (File(zipPath).existsSync()) await File(zipPath).delete();
+}
+
+Future<void> _thinBinary(
+  String binaryPath,
+  Architecture arch,
+  Logger log,
+) async {
+  final info = await Process.run('lipo', ['-info', binaryPath]);
+  final stdout = info.stdout.toString();
+  if (!stdout.contains('Architectures in the fat file')) return;
+
+  final archName = arch == Architecture.arm64 ? 'arm64' : 'x86_64';
+
+  if (stdout.contains(archName)) {
+    log.info('Thinning binary to $archName...');
+    final tempPath = '$binaryPath.thin';
+    await Process.run('lipo', [
+      '-thin',
+      archName,
+      binaryPath,
+      '-output',
+      tempPath,
+    ]);
+    await File(tempPath).rename(binaryPath);
+  }
 }

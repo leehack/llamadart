@@ -7,7 +7,6 @@ import 'dart:math';
 import 'package:ffi/ffi.dart';
 import 'package:http/http.dart' as http;
 import 'package:llamadart/src/loader.dart';
-import 'package:llamadart/src/generated/llama_bindings.dart';
 import 'package:llamadart/src/llama_service_interface.dart';
 import 'package:llamadart/src/native_helpers.dart';
 
@@ -262,24 +261,24 @@ class LlamaService implements LlamaServiceBase {
     byteController.stream
         .transform(const Utf8Decoder(allowMalformed: true))
         .listen(
-      (text) {
-        controller.add(text);
-      },
-      onDone: () {
-        controller.close();
-        if (_currentCancelToken != null) {
-          malloc.free(_currentCancelToken!);
-          _currentCancelToken = null;
-        }
-      },
-      onError: (e) {
-        controller.addError(e);
-        if (_currentCancelToken != null) {
-          malloc.free(_currentCancelToken!);
-          _currentCancelToken = null;
-        }
-      },
-    );
+          (text) {
+            controller.add(text);
+          },
+          onDone: () {
+            controller.close();
+            if (_currentCancelToken != null) {
+              malloc.free(_currentCancelToken!);
+              _currentCancelToken = null;
+            }
+          },
+          onError: (e) {
+            controller.addError(e);
+            if (_currentCancelToken != null) {
+              malloc.free(_currentCancelToken!);
+              _currentCancelToken = null;
+            }
+          },
+        );
 
     receivePort.listen((message) {
       if (message is _TokenResponse) {
@@ -464,28 +463,23 @@ class LlamaService implements LlamaServiceBase {
 
     print("Isolate: Initializing Backend...");
 
-    // Force initialization of the dylib by accessing the global 'llama' instance
-    final _ = llama;
+    // Force initialization of the dylib
+    // In ffi-native mode, this happens automatically when first function is called,
+    // but we can call a simple function to be sure.
+    llama_backend_init();
 
     // Register log callback
-    // try {
-    //   final logCallable =
-    //       Pointer.fromFunction<ggml_log_callbackFunction>(_logCallback);
-    //   llama.llama_log_set(logCallable, nullptr);
-    //   print("Isolate: Log callback registered.");
-    // } catch (e) {
-    //   print("Isolate: Failed to register log callback: $e");
-    // }
+    // ...
 
-    // Initialize backend (native side) - Standard llama.cpp backend init
+    // Initialize backend (native side) - Standard cpp backend init
     try {
-      llama.ggml_backend_load_all();
+      ggml_backend_load_all();
       print("Isolate: Backends loaded.");
     } catch (e) {
       print("Isolate: Failed to load backends: $e");
     }
 
-    llama.llama_backend_init();
+    llama_backend_init();
 
     print("Isolate: Backend initialized.");
 
@@ -543,7 +537,7 @@ class LlamaService implements LlamaServiceBase {
       }
 
       final modelPathPtr = message.modelPath.toNativeUtf8();
-      final modelParams = llama.llama_model_default_params();
+      final modelParams = llama_model_default_params();
       modelParams.n_gpu_layers = message.modelParams.gpuLayers;
       modelParams.use_mmap = false; // Disable mmap for now (test)
 
@@ -558,11 +552,13 @@ class LlamaService implements LlamaServiceBase {
           Platform.environment.containsKey('SIMULATOR_DEVICE_NAME')) {
         if (message.modelParams.preferredBackend == GpuBackend.auto) {
           print(
-              "Isolate: iOS Simulator detected. Disabling Metal (n_gpu_layers=0) for stability.");
+            "Isolate: iOS Simulator detected. Disabling Metal (n_gpu_layers=0) for stability.",
+          );
           modelParams.n_gpu_layers = 0;
         } else if (message.modelParams.preferredBackend == GpuBackend.metal) {
           print(
-              "Isolate: iOS Simulator detected but Metal explicitly requested. Proceeding with caution.");
+            "Isolate: iOS Simulator detected but Metal explicitly requested. Proceeding with caution.",
+          );
         }
       }
 
@@ -629,7 +625,7 @@ class LlamaService implements LlamaServiceBase {
       }
 
       print("Isolate: Calling llama_model_load_from_file...");
-      final modelPtr = llama.llama_model_load_from_file(
+      final modelPtr = llama_model_load_from_file(
         modelPathPtr.cast(),
         modelParams,
       );
@@ -646,12 +642,12 @@ class LlamaService implements LlamaServiceBase {
       state.model = _LlamaModelWrapper(modelPtr);
       print("Isolate: Model loaded.");
 
-      final ctxParams = llama.llama_context_default_params();
+      final ctxParams = llama_context_default_params();
 
       // Resolve context size
       int resolvedCtxSize = message.modelParams.contextSize;
       if (resolvedCtxSize <= 0) {
-        resolvedCtxSize = llama.llama_model_n_ctx_train(state.model!.pointer);
+        resolvedCtxSize = llama_model_n_ctx_train(state.model!.pointer);
         print("Isolate: Auto-detected context size: $resolvedCtxSize");
         // Safety cap for mobile/simulator: 4096
         if (resolvedCtxSize > 4096) {
@@ -668,10 +664,7 @@ class LlamaService implements LlamaServiceBase {
       print(
         "Isolate: Context params set (n_ctx=$resolvedCtxSize). Creating context...",
       );
-      final ctxPtr = llama.llama_init_from_model(
-        state.model!.pointer,
-        ctxParams,
-      );
+      final ctxPtr = llama_init_from_model(state.model!.pointer, ctxParams);
 
       if (ctxPtr == nullptr) {
         print("Isolate: Failed to create context.");
@@ -687,17 +680,17 @@ class LlamaService implements LlamaServiceBase {
       );
 
       // Initialize Sampler
-      final samplerChainParams = llama.llama_sampler_chain_default_params();
-      state.sampler = llama.llama_sampler_chain_init(samplerChainParams);
+      final samplerChainParams = llama_sampler_chain_default_params();
+      state.sampler = llama_sampler_chain_init(samplerChainParams);
 
       // Dummy sampler
-      llama.llama_sampler_chain_add(
+      llama_sampler_chain_add(
         state.sampler!,
-        llama.llama_sampler_init_dist(DateTime.now().millisecondsSinceEpoch),
+        llama_sampler_init_dist(DateTime.now().millisecondsSinceEpoch),
       );
 
       // Initialize Batch
-      state.batch = llama.llama_batch_init(resolvedCtxSize, 0, 1);
+      state.batch = llama_batch_init(resolvedCtxSize, 0, 1);
 
       print("Isolate: Init complete.");
       message.sendPort.send(_DoneResponse());
@@ -721,56 +714,56 @@ class LlamaService implements LlamaServiceBase {
     // Refresh context/batch for each request
     state.ctx?.dispose();
     state.ctx = null;
-    if (state.batch != null) llama.llama_batch_free(state.batch!);
-    if (state.sampler != null) llama.llama_sampler_free(state.sampler!);
+    if (state.batch != null) llama_batch_free(state.batch!);
+    if (state.sampler != null) llama_sampler_free(state.sampler!);
 
-    final ctxParams = llama.llama_context_default_params();
+    final ctxParams = llama_context_default_params();
     ctxParams.n_ctx = state.lastModelParams?.contextSize ?? 2048;
     ctxParams.n_batch = ctxParams.n_ctx;
     ctxParams.n_ubatch = ctxParams.n_ctx;
-    final ctxPtr = llama.llama_init_from_model(state.model!.pointer, ctxParams);
+    final ctxPtr = llama_init_from_model(state.model!.pointer, ctxParams);
     if (ctxPtr == nullptr) {
       message.sendPort.send(_ErrorResponse("Failed to refresh context"));
       return;
     }
     state.ctx = _LlamaContextWrapper(ctxPtr, state.model!);
 
-    final samplerChainParams = llama.llama_sampler_chain_default_params();
-    state.sampler = llama.llama_sampler_chain_init(samplerChainParams);
+    final samplerChainParams = llama_sampler_chain_default_params();
+    state.sampler = llama_sampler_chain_init(samplerChainParams);
 
     // 1. Repetition Penalty
-    llama.llama_sampler_chain_add(
+    llama_sampler_chain_add(
       state.sampler!,
-      llama.llama_sampler_init_penalties(64, message.params.penalty, 0.0, 0.0),
+      llama_sampler_init_penalties(64, message.params.penalty, 0.0, 0.0),
     );
 
     // 2. Top-K
-    llama.llama_sampler_chain_add(
+    llama_sampler_chain_add(
       state.sampler!,
-      llama.llama_sampler_init_top_k(message.params.topK),
+      llama_sampler_init_top_k(message.params.topK),
     );
 
     // 3. Top-P
-    llama.llama_sampler_chain_add(
+    llama_sampler_chain_add(
       state.sampler!,
-      llama.llama_sampler_init_top_p(message.params.topP, 1),
+      llama_sampler_init_top_p(message.params.topP, 1),
     );
 
     // 4. Temperature
-    llama.llama_sampler_chain_add(
+    llama_sampler_chain_add(
       state.sampler!,
-      llama.llama_sampler_init_temp(message.params.temp),
+      llama_sampler_init_temp(message.params.temp),
     );
 
     // 5. Distribution Sampler
-    llama.llama_sampler_chain_add(
+    llama_sampler_chain_add(
       state.sampler!,
-      llama.llama_sampler_init_dist(
+      llama_sampler_init_dist(
         message.params.seed ?? DateTime.now().millisecondsSinceEpoch,
       ),
     );
 
-    state.batch = llama.llama_batch_init(ctxParams.n_ctx, 0, 1);
+    state.batch = llama_batch_init(ctxParams.n_ctx, 0, 1);
 
     print(
       "Isolate: Generating for prompt: ${message.prompt.substring(0, min(100, message.prompt.length))}...",
@@ -785,13 +778,13 @@ class LlamaService implements LlamaServiceBase {
     try {
       // Tokenize
       final promptPtr = message.prompt.toNativeUtf8();
-      final vocab = llama.llama_model_get_vocab(state.model!.pointer);
+      final vocab = llama_model_get_vocab(state.model!.pointer);
 
       // Byte length is needed, not string length
       final byteLength = promptPtr.length;
 
       // Ensure buffer is large enough for tokens (usually n_bytes + special tokens)
-      final nTokens = llama.llama_tokenize(
+      final nTokens = llama_tokenize(
         vocab,
         promptPtr.cast(),
         byteLength,
@@ -828,7 +821,7 @@ class LlamaService implements LlamaServiceBase {
         b.logits[i] = (i == nTokens - 1) ? 1 : 0;
       }
 
-      if (llama.llama_decode(state.ctx!.pointer, b) != 0) {
+      if (llama_decode(state.ctx!.pointer, b) != 0) {
         message.sendPort.send(_ErrorResponse("Decode failed"));
         return;
       }
@@ -839,19 +832,19 @@ class LlamaService implements LlamaServiceBase {
 
       for (int i = 0; i < message.params.maxTokens; i++) {
         // Sample
-        final newTokenId = llama.llama_sampler_sample(
+        final newTokenId = llama_sampler_sample(
           state.sampler!,
           state.ctx!.pointer,
           b.n_tokens - 1,
         );
 
         // Check EOG
-        if (llama.llama_vocab_is_eog(vocab, newTokenId)) {
+        if (llama_vocab_is_eog(vocab, newTokenId)) {
           break;
         }
 
         // Convert to Bytes
-        final n = llama.llama_token_to_piece(
+        final n = llama_token_to_piece(
           vocab,
           newTokenId,
           pieceBuf.cast(),
@@ -888,7 +881,7 @@ class LlamaService implements LlamaServiceBase {
 
         currentPos++;
 
-        if (llama.llama_decode(state.ctx!.pointer, b) != 0) {
+        if (llama_decode(state.ctx!.pointer, b) != 0) {
           message.sendPort.send(
             _ErrorResponse("Decode failed during generation"),
           );
@@ -924,11 +917,11 @@ class LlamaService implements LlamaServiceBase {
     }
 
     final promptPtr = message.text.toNativeUtf8();
-    final vocab = llama.llama_model_get_vocab(state.model!.pointer);
+    final vocab = llama_model_get_vocab(state.model!.pointer);
     final textLen = utf8.encode(message.text).length;
 
     try {
-      int nTokens = -llama.llama_tokenize(
+      int nTokens = -llama_tokenize(
         vocab,
         promptPtr.cast(),
         textLen,
@@ -939,7 +932,7 @@ class LlamaService implements LlamaServiceBase {
       );
 
       final tokensPtr = malloc<Int32>(nTokens + 1);
-      final realNTokens = llama.llama_tokenize(
+      final realNTokens = llama_tokenize(
         vocab,
         promptPtr.cast(),
         textLen,
@@ -979,13 +972,13 @@ class LlamaService implements LlamaServiceBase {
       return;
     }
 
-    final vocab = llama.llama_model_get_vocab(state.model!.pointer);
+    final vocab = llama_model_get_vocab(state.model!.pointer);
     final buffer = malloc<Int8>(256);
     final resultBytes = <int>[];
 
     try {
       for (final token in message.tokens) {
-        final n = llama.llama_token_to_piece(
+        final n = llama_token_to_piece(
           vocab,
           token,
           buffer.cast(),
@@ -1025,7 +1018,7 @@ class LlamaService implements LlamaServiceBase {
     final buf = malloc<Int8>(1024 * 64);
 
     try {
-      final res = llama.llama_model_meta_val_str(
+      final res = llama_model_meta_val_str(
         state.model!.pointer,
         keyPtr.cast(),
         buf.cast(),
@@ -1075,7 +1068,7 @@ class LlamaService implements LlamaServiceBase {
       // Fetch template from model metadata
       final keyPtr = "tokenizer.chat_template".toNativeUtf8();
       final tmplBuf = malloc<Char>(1024 * 64);
-      final tmplRes = llama.llama_model_meta_val_str(
+      final tmplRes = llama_model_meta_val_str(
         state.model!.pointer,
         keyPtr.cast(),
         tmplBuf.cast(),
@@ -1102,7 +1095,7 @@ class LlamaService implements LlamaServiceBase {
       }
 
       // First call to get required buffer size
-      final requiredSize = llama.llama_chat_apply_template(
+      final requiredSize = llama_chat_apply_template(
         tmplPtr,
         chatMsgs,
         nMsgs,
@@ -1123,7 +1116,7 @@ class LlamaService implements LlamaServiceBase {
 
       // Allocate buffer and call again
       final buf = malloc<Char>(requiredSize + 1);
-      final actualSize = llama.llama_chat_apply_template(
+      final actualSize = llama_chat_apply_template(
         tmplPtr,
         chatMsgs,
         nMsgs,
@@ -1162,10 +1155,10 @@ class LlamaService implements LlamaServiceBase {
   ) {
     try {
       String backendName = "CPU";
-      final count = llama.ggml_backend_dev_count();
+      final count = ggml_backend_dev_count();
       for (int i = 0; i < count; i++) {
-        final dev = llama.ggml_backend_dev_get(i);
-        final namePtr = llama.ggml_backend_dev_name(dev);
+        final dev = ggml_backend_dev_get(i);
+        final namePtr = ggml_backend_dev_name(dev);
         if (namePtr != nullptr) {
           final name = namePtr.cast<Utf8>().toDartString();
           if (name.contains("Metal") ||
@@ -1188,7 +1181,7 @@ class LlamaService implements LlamaServiceBase {
     _LlamaState state,
   ) {
     try {
-      final supported = llama.llama_supports_gpu_offload();
+      final supported = llama_supports_gpu_offload();
       message.sendPort.send(_GpuSupportResponse(supported));
     } catch (e) {
       message.sendPort.send(_GpuSupportResponse(false));
@@ -1204,7 +1197,7 @@ class LlamaService implements LlamaServiceBase {
       message.sendPort.send(_ContextSizeResponse(0));
       return;
     }
-    final size = llama.llama_n_ctx(state.ctx!.pointer);
+    final size = llama_n_ctx(state.ctx!.pointer);
     message.sendPort.send(_ContextSizeResponse(size));
   }
 
@@ -1219,11 +1212,11 @@ class LlamaService implements LlamaServiceBase {
     }
 
     final promptPtr = message.text.toNativeUtf8();
-    final vocab = llama.llama_model_get_vocab(state.model!.pointer);
+    final vocab = llama_model_get_vocab(state.model!.pointer);
     final textLen = utf8.encode(message.text).length;
 
     try {
-      int nTokens = -llama.llama_tokenize(
+      int nTokens = -llama_tokenize(
         vocab,
         promptPtr.cast(),
         textLen,
@@ -1255,9 +1248,9 @@ class LlamaService implements LlamaServiceBase {
     final valBuf = malloc<Int8>(1024 * 64);
 
     try {
-      final nKeys = llama.llama_model_meta_count(state.model!.pointer);
+      final nKeys = llama_model_meta_count(state.model!.pointer);
       for (int i = 0; i < nKeys; i++) {
-        final keyLen = llama.llama_model_meta_key_by_index(
+        final keyLen = llama_model_meta_key_by_index(
           state.model!.pointer,
           i,
           keyBuf.cast(),
@@ -1265,7 +1258,7 @@ class LlamaService implements LlamaServiceBase {
         );
         if (keyLen >= 0) {
           final key = keyBuf.cast<Utf8>().toDartString();
-          final valLen = llama.llama_model_meta_val_str_by_index(
+          final valLen = llama_model_meta_val_str_by_index(
             state.model!.pointer,
             i,
             valBuf.cast(),
@@ -1288,10 +1281,10 @@ class LlamaService implements LlamaServiceBase {
   static void _handleDispose(ReceivePort receivePort, _LlamaState state) {
     print("Isolate: Disposing...");
     // Unregister log callback
-    llama.llama_log_set(nullptr, nullptr);
+    llama_log_set(nullptr, nullptr);
 
-    if (state.batch != null) llama.llama_batch_free(state.batch!);
-    if (state.sampler != null) llama.llama_sampler_free(state.sampler!);
+    if (state.batch != null) llama_batch_free(state.batch!);
+    if (state.sampler != null) llama_sampler_free(state.sampler!);
 
     // Explicitly dispose wrappers which detaches finalizers
     state.ctx?.dispose();
@@ -1299,7 +1292,7 @@ class LlamaService implements LlamaServiceBase {
 
     state.ctx = null;
     state.model = null;
-    // llama.llama_backend_free(); // Commented out to prevent crash on exit
+    // llama_backend_free(); // Commented out to prevent crash on exit
     receivePort.close();
     print("Isolate: Disposed.");
     Isolate.exit();
@@ -1316,19 +1309,21 @@ class _LlamaState {
 
 class _LlamaModelWrapper implements Finalizable {
   final Pointer<llama_model> pointer;
-  static final _finalizer = NativeFinalizer(
-    llamaLib.lookup<NativeFunction<Void Function(Pointer<Void>)>>(
-      'llama_model_free',
-    ),
-  );
+  static final _finalizer = llamaLib != null
+      ? NativeFinalizer(
+          llamaLib!.lookup<NativeFunction<Void Function(Pointer<Void>)>>(
+            'llama_model_free',
+          ),
+        )
+      : null;
 
   _LlamaModelWrapper(this.pointer) {
-    _finalizer.attach(this, pointer.cast(), detach: this);
+    _finalizer?.attach(this, pointer.cast(), detach: this);
   }
 
   void dispose() {
-    _finalizer.detach(this);
-    llama.llama_model_free(pointer);
+    _finalizer?.detach(this);
+    llama_model_free(pointer);
   }
 }
 
@@ -1336,20 +1331,24 @@ class _LlamaContextWrapper implements Finalizable {
   final Pointer<llama_context> pointer;
   // ignore: unused_field
   final _LlamaModelWrapper?
-      _modelKeepAlive; // Keep model alive while context exists
+  _modelKeepAlive; // Keep model alive while context exists
 
-  static final _finalizer = NativeFinalizer(
-    llamaLib.lookup<NativeFunction<Void Function(Pointer<Void>)>>('llama_free'),
-  );
+  static final _finalizer = llamaLib != null
+      ? NativeFinalizer(
+          llamaLib!.lookup<NativeFunction<Void Function(Pointer<Void>)>>(
+            'llama_free',
+          ),
+        )
+      : null;
 
   _LlamaContextWrapper(this.pointer, this._modelKeepAlive) {
-    _finalizer.attach(this, pointer.cast(), detach: this);
+    _finalizer?.attach(this, pointer.cast(), detach: this);
   }
 
   void dispose() {
     // Suppress unused warning by reading the field
     final _ = _modelKeepAlive;
-    _finalizer.detach(this);
-    llama.llama_free(pointer);
+    _finalizer?.detach(this);
+    llama_free(pointer);
   }
 }

@@ -205,7 +205,7 @@ if (-not $CmakeExe) {
 }
 Write-Host "Using CMake: $CmakeExe"
 # Point to src/native (parent of llama_cpp)
-& "$CmakeExe" -G Ninja -S src/native -B $BuildDir @CmakeArgs
+& "$CmakeExe" -G Ninja -S . -B $BuildDir @CmakeArgs
 if ($LASTEXITCODE -ne 0) { Write-Error "CMake configure failed with exit code $LASTEXITCODE"; exit 1 }
 
 Write-Host "Running CMake build..."
@@ -214,7 +214,7 @@ if ($LASTEXITCODE -ne 0) { Write-Error "CMake build failed with exit code $LASTE
 
 # Artifacts
 Write-Host "Processing artifacts..."
-$LibDir = "windows/lib/x64"
+$LibDir = "bin/windows/x64"
 if (Test-Path $LibDir) {
     Remove-Item -Path $LibDir -Recurse -Force
 }

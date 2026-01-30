@@ -1,7 +1,7 @@
 ## 0.2.0
 
 *   **Project Rename**: Renamed package from `llama_dart` to `llamadart`.
-*   **New Build System**: Refactored native build system into modular platform-specific scripts (`scripts/`).
+*   **New Build System**: Refactored native build system into modular platform-specific scripts (`tool/native_build/`).
 *   **Cleaner Architecture**: Switched to a standard Flutter FFI plugin structure for better maintainability.
 *   **Cross-Platform GPU**: Verified and improved hardware acceleration on macOS (Metal), iOS (Metal), Android (Vulkan), and Linux (Vulkan).
 *   **Windows Support**: Added robust Docker-based cross-compilation pipeline for Windows (MinGW + Vulkan).

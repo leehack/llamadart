@@ -17,14 +17,10 @@ dependencies:
   llamadart: ^0.2.0
 ```
 
-### 2. Setup (Native Binaries)
-`llamadart` requires native binaries from `llama.cpp`. For Dart CLI applications, you must download them manually:
+### 2. Setup
+`llamadart` uses the **Dart Native Assets** (hooks) mechanism. Native binaries for `llama.cpp` are automatically downloaded and bundled during your first `dart run` or `flutter run`. No manual setup is required.
 
-```bash
-dart run llamadart:setup
-```
-
-For Flutter applications, the `hook/build.dart` will attempt to automatically download the correct binaries during the build process.
+> **Note**: This requires Dart SDK 3.x or later with native assets enabled.
 
 ### 3. Usage
 ```dart

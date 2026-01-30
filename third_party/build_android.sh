@@ -2,7 +2,7 @@
 set -e
 
 # build_android.sh <ABI> [clean]
-# Example: ./scripts/build_android.sh arm64-v8a
+# Example: ./build_android.sh arm64-v8a
 
 # Determine ABIs to build
 if [ "$1" == "all" ]; then
@@ -94,9 +94,9 @@ for ABI in "${ABIS[@]}"; do
     echo "Found libvulkan: $VULKAN_LIB"
 
     # Use Vulkan headers from submodule
-    VULKAN_INC_DIR="$(pwd)/src/native/Vulkan-Headers/include"
+    VULKAN_INC_DIR="$(pwd)/Vulkan-Headers/include"
     if [ ! -d "$VULKAN_INC_DIR/vulkan" ]; then
-        echo "Error: Vulkan-Headers submodule not found. Run: git submodule update --init src/native/Vulkan-Headers"
+        echo "Error: Vulkan-Headers submodule not found. Run: git submodule update --init Vulkan-Headers"
         exit 1
     fi
 
@@ -110,7 +110,7 @@ for ABI in "${ABIS[@]}"; do
     
     VULKAN_ENABLED="ON"
     
-    cmake -G Ninja -S src/native -B "$BUILD_DIR" \
+    cmake -G Ninja -S . -B "$BUILD_DIR" \
       -DCMAKE_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake \
       -DANDROID_ABI=$ABI \
       -DANDROID_PLATFORM=android-23 \
@@ -138,7 +138,7 @@ for ABI in "${ABIS[@]}"; do
     cmake --build "$BUILD_DIR" -j $(nproc 2>/dev/null || sysctl -n hw.logicalcpu)
 
     # 6. Artifact management
-    JNI_LIBS_DIR="android/src/main/jniLibs/$ABI"
+    JNI_LIBS_DIR="bin/android/$ABI"
     # Clean and recreate to ensure no leftovers
     rm -rf "$JNI_LIBS_DIR"
     mkdir -p "$JNI_LIBS_DIR"

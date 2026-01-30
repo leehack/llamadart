@@ -2,7 +2,7 @@
 set -e
 
 # build_linux.sh <backend> [clean]
-# Example: ./scripts/build_linux.sh vulkan
+# Example: ./build_linux.sh vulkan
 
 BACKEND=$1
 ARCH=$2
@@ -54,11 +54,12 @@ fi
 
 mkdir -p "$BUILD_DIR"
 # Point to src/native (parent of llama_cpp)
-cmake -S src/native -B "$BUILD_DIR" $CMAKE_ARGS
+cmake -S . -B "$BUILD_DIR" $CMAKE_ARGS
 cmake --build "$BUILD_DIR" --config Release -j $(nproc 2>/dev/null || sysctl -n hw.logicalcpu)
 
-# Artifacts
-LIB_DIR="linux/lib/$TARGET_ARCH"
+    # Artifacts
+    LIB_DIR="bin/linux/$TARGET_ARCH"
+
 # Clean and recreate to ensure no leftovers
 rm -rf "$LIB_DIR"
 mkdir -p "$LIB_DIR"

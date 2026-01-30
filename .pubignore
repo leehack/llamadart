@@ -1,6 +1,5 @@
 # Exclude large development sources and submodules
-/src/
-!android/src/main/jniLibs/
+third_party/
 .git/
 .github/
 
@@ -8,19 +7,12 @@
 build/
 build-*/
 .dart_tool/
-android/build/
-android/.cxx/
-ios/.build/
-linux/flutter/ephemeral/
-macos/Flutter/ephemeral/
-windows/flutter/ephemeral/
 
-# Exclude development scripts and docs not needed by end users
-scripts/
-AGENTS.md
-VENDOR_NOTES.md
+# Exclude maintenance files not needed by end users
 CONTRIBUTING.md
 ffigen.yaml
+test_native_address.dart
+example/**/build_log*.txt
 
 # Exclude local models
 models/
@@ -31,11 +23,8 @@ models/
 **/*.dSYM/
 **/*.pdb
 
-# UN-IGNORE binaries for pub distribution
-# (Needed if they are ignored in nested .gitignore files)
-!libllama_*.so
-!libllama_*.dylib
-!libllama_*.dll
-!*.xcframework/
-!ios/Frameworks/
-
+# No binaries should be bundled; hook/build.dart downloads them at runtime
+*.so
+*.dylib
+*.dll
+*.xcframework/

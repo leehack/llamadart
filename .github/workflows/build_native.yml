@@ -19,6 +19,9 @@ jobs:
     strategy:
       matrix:
         android_abi: [arm64-v8a, x86_64]
+    defaults:
+      run:
+        working-directory: third_party
     steps:
       - uses: actions/checkout@v4
         with:
@@ -42,19 +45,22 @@ jobs:
           key: build-android-${{ matrix.android_abi }}
 
       - name: Build with Script
-        run: ./scripts/build_android.sh ${{ matrix.android_abi }}
+        run: ./build_android.sh ${{ matrix.android_abi }}
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: libllama_android_${{ matrix.android_abi }}
-          path: android/src/main/jniLibs/${{ matrix.android_abi }}/libllama.so
+          path: third_party/bin/android/${{ matrix.android_abi }}/libllama.so
 
   build-apple:
     runs-on: macos-latest
     strategy:
       matrix:
         target: [ios, macos]
+    defaults:
+      run:
+        working-directory: third_party
     steps:
       - uses: actions/checkout@v4
         with:
@@ -69,30 +75,33 @@ jobs:
           key: build-apple-${{ matrix.target }}
 
       - name: Build Apple Platforms
-        run: ./scripts/build_apple.sh ${{ matrix.target }}
+        run: ./build_apple.sh ${{ matrix.target }}
 
       - name: Zip iOS XCFramework
         if: matrix.target == 'ios'
         run: |
-          cd ios/Frameworks
-          zip -r ../../llama_ios_xcframework.zip llama.xcframework
+          cd bin/apple/ios
+          zip -r ../../../llama_ios_xcframework.zip llama.xcframework
 
       - name: Upload Artifact (macOS)
         if: matrix.target == 'macos'
         uses: actions/upload-artifact@v4
         with:
           name: libllama_macos
-          path: macos/Frameworks/libllama.dylib
+          path: third_party/bin/apple/macos/libllama.dylib
 
       - name: Upload Artifact (iOS)
         if: matrix.target == 'ios'
         uses: actions/upload-artifact@v4
         with:
           name: llama_ios_xcframework
-          path: llama_ios_xcframework.zip
+          path: third_party/llama_ios_xcframework.zip
 
   build-linux-vulkan:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: third_party
     steps:
       - uses: actions/checkout@v4
         with:
@@ -109,17 +118,19 @@ jobs:
           key: build-linux-vulkan
 
       - name: Build Linux (Vulkan)
-        run: ./scripts/build_linux.sh vulkan
+        run: ./build_linux.sh vulkan
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: libllama_linux_x64_vulkan
-          path: linux/lib/x64/libllama.so
+          path: third_party/bin/linux/x64/libllama.so
 
   build-windows:
     runs-on: windows-latest
-    # Re-enable ccache (inherited from global env) now that we use Ninja
+    defaults:
+      run:
+        working-directory: third_party
     steps:
       - uses: actions/checkout@v4
         with:
@@ -145,13 +156,13 @@ jobs:
           Add-Content $env:GITHUB_PATH "C:\VulkanSDK\$ver\Bin"
 
       - name: Build Windows
-        run: .\scripts\build_windows.ps1 vulkan
+        run: .\build_windows.ps1 vulkan
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: libllama_windows_vulkan
-          path: windows/lib/x64/libllama.dll
+          path: third_party/bin/windows/x64/libllama.dll
 
   release:
     needs: [build-android, build-apple, build-linux-vulkan, build-windows]
