@@ -1,51 +1,94 @@
 # llamadart
 
-A Dart/Flutter plugin for `llama.cpp` - run LLM inference on any platform using GGUF models with high performance.
+[![Pub Version](https://img.shields.io/pub/v/llamadart?logo=dart&color=blue)](https://pub.dev/packages/llamadart)
+[![License: MIT](https://img.shields.io/badge/license-MIT-purple.svg)](https://opensource.org/licenses/MIT)
+[![GitHub](https://img.shields.io/github/stars/leehack/llamadart?style=social)](https://github.com/leehack/llamadart)
 
-## Features
-- **Cross-platform**: Support for Android, iOS, macOS, Linux, and Windows.
-- **GPU Acceleration**: Metal (macOS/iOS), Vulkan (Windows/Android/Linux), and CUDA/ROCm (work in progress).
-- **Fast Inference**: Leverages the power of `llama.cpp`'s optimized kernels.
-- **Simple API**: Easy-to-use Dart bindings for model loading and text generation.
+**llamadart** is a high-performance Dart and Flutter plugin for [llama.cpp](https://github.com/ggml-org/llama.cpp). It allows you to run Large Language Models (LLMs) locally using GGUF models across all major platforms with minimal setup.
 
-## Quick Start
+## ✨ Features
+
+- 🚀 **High Performance**: Powered by `llama.cpp`'s optimized C++ kernels.
+- 🛠️ **Zero Configuration**: Uses the modern **Pure Native Asset** mechanism—no manual build scripts or platform folders required.
+- 📱 **Cross-Platform**: Full support for Android, iOS, macOS, Linux, and Windows.
+- ⚡ **GPU Acceleration**:
+  - **Apple**: Metal (macOS/iOS)
+  - **Android/Linux/Windows**: Vulkan
+- 🌐 **Web Support**: Run inference in the browser via WASM (powered by `wllama`).
+- 💎 **Dart-First API**: Streamlined FFI bindings with a clean, isolate-safe Dart interface.
+
+---
+
+## 🚀 Quick Start
 
 ### 1. Installation
+
 Add `llamadart` to your `pubspec.yaml`:
+
 ```yaml
 dependencies:
-  llamadart: ^0.2.0
+  llamadart: ^0.3.0
 ```
 
-### 2. Setup
-`llamadart` uses the **Dart Native Assets** mechanism. Pre-compiled binaries for `llama.cpp` are automatically downloaded and bundled during your first `dart run` or `flutter run`. No manual setup, compilation, or script execution is required.
+### 2. Zero Setup (Native Assets)
 
-> **Requirement**: Dart SDK 3.x or later.
+`llamadart` leverages the **Dart Native Assets** (build hooks) system. When you run your app for the first time (`dart run` or `flutter run`), the package automatically:
+1. Detects your target platform and architecture.
+2. Downloads the appropriate pre-compiled stable binary from GitHub.
+3. Bundles it seamlessly into your application.
 
-### 3. Usage
+No manual binary downloads or CMake configuration are needed.
+
+### 3. Basic Usage
+
 ```dart
+import 'dart:io';
 import 'package:llamadart/llamadart.dart';
 
 void main() async {
-  // Initialize the native backend
-  LlamaService.init();
+  // 1. Create the service
+  final service = LlamaService();
 
-  // Load a model
-  final model = await LlamaService.loadModel('path/to/model.gguf');
+  // 2. Initialize with a GGUF model
+  // This loads the model and prepares the native backend (GPU/CPU)
+  await service.init('path/to/your_model.gguf');
 
-  // Generate text
-  final stream = model.generate('The capital of France is');
+  // 3. Generate text (streaming)
+  final stream = service.generate('The capital of France is');
+  
   await for (final token in stream) {
-    print(token);
+    stdout.write(token);
+    await stdout.flush();
   }
+  
+  // 4. Clean up resources
+  service.dispose();
 }
 ```
 
-## Documentation
-For more details, see the [Documentation](https://github.com/leehack/llamadart/wiki).
+---
 
-## Contributing
-Please see [CONTRIBUTING.md](CONTRIBUTING.md) for details.
+## 📂 Examples
 
-## License
-MIT
+Explore the `example/` directory for full implementations:
+- **`basic_app`**: A lightweight CLI example for quick verification.
+- **`chat_app`**: A feature-rich Flutter chat application with streaming UI and model management.
+
+---
+
+## 🏗️ Architecture
+
+This package follows the "Pure Native Asset" philosophy:
+- **Maintenance**: All native build logic and submodules are isolated in `third_party/`.
+- **Distribution**: Binaries are produced via GitHub Actions and hosted on GitHub Releases.
+- **Integration**: The `hook/build.dart` manages the lifecycle of native dependencies, keeping your project root clean.
+
+---
+
+## 🤝 Contributing
+
+Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for architecture details and maintainer instructions for building native binaries.
+
+## 📜 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

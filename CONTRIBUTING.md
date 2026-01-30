@@ -31,6 +31,28 @@ This project follows a **Zero-Patch Strategy** for external submodules (like `ll
 *   **Upgradability**: This allows us to update the core engine by simply bumping the submodule pointer.
 *   **Wrappers & Hooks**: Any necessary changes should be implemented in `third_party/CMakeLists.txt` or through compiler flags in the build scripts.
 
+## 🏗️ Architecture: Native Assets & CI
+
+`llamadart` uses a modern binary distribution lifecycle:
+
+### 1. Binary Production (CI)
+When a maintainer pushes a tag in the format `libs-v*`, the GitHub Action workflow (`.github/workflows/build_native.yml`) is triggered:
+- It uses the consolidated build logic in `third_party/` to compile `llama.cpp` for **Android, iOS, macOS, Linux, and Windows**.
+- It bundles the submodules (pinned to stable tags) and applies necessary hardware acceleration flags (Metal, Vulkan).
+- The resulting binaries are uploaded to **GitHub Releases**.
+
+### 2. Binary Consumption (Hook)
+When a user adds `llamadart` as a dependency and runs their app:
+- The **`hook/build.dart`** script executes automatically.
+- It detects the user's current target OS and architecture.
+- It downloads the matching pre-compiled binary from the GitHub Release corresponding to the package version.
+- It reports the binary to the Dart VM as a **`CodeAsset`** with the ID `package:llamadart/llama_cpp`.
+
+### 3. Runtime Resolution (FFI)
+- The library uses **`@Native`** top-level bindings in `lib/src/generated/llama_bindings.dart`.
+- The Dart VM automatically resolves these calls to the downloaded binary reported by the hook.
+- This provides a "Zero-Setup" experience while maintaining high-performance native execution.
+
 ## Setting Up the Development Environment
 
 1.  **Clone the repository**:

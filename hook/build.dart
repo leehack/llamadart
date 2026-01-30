@@ -6,9 +6,10 @@ import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as path;
 
 // Constants for release
-const _releaseTag = 'libs-v0.2.0';
+// This should match the pinned llama.cpp submodule tag in third_party/llama_cpp
+const _llamaCppTag = 'b7883';
 const _baseUrl =
-    'https://github.com/leehack/llamadart/releases/download/$_releaseTag';
+    'https://github.com/leehack/llamadart/releases/download/$_llamaCppTag';
 
 void main(List<String> args) async {
   Logger.root.level = Level.ALL;

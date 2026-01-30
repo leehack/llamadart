@@ -6,7 +6,7 @@ export 'generated/llama_bindings.dart';
 ///
 /// This uses the Native Assets mapping for 'package:llamadart/llama_cpp'.
 /// If it fails (e.g. in some isolate contexts), it returns null.
-late final DynamicLibrary? llamaLib = _openLibrary();
+final DynamicLibrary? llamaLib = _openLibrary();
 
 DynamicLibrary? _openLibrary() {
   try {

@@ -3,7 +3,7 @@ name: Build Native Binaries
 on:
   push:
     tags:
-      - 'libs-v*'
+      - 'b*'
   workflow_dispatch:
 
 permissions:

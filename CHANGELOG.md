@@ -1,4 +1,6 @@
-## 0.3.0
+## 0.3.0+b7883
+
+*   **Version Alignment**: Aligned package versioning and binary distribution with `llama.cpp` release tags (starting with `b7883`).
 
 *   **Pure Native Assets**: Migrated to the modern Dart Native Assets mechanism (`hook/build.dart`).
 *   **Zero Setup**: Native binaries are now automatically downloaded and bundled at runtime based on the target platform.
