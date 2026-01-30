@@ -140,24 +140,18 @@ EOF
 
 combine_static_libraries() {
     local build_dir="$1"
-    local release_dir="$2"
     local is_simulator="$3"
     local base_dir="$(pwd)"
     local framework_name="llamadart"
 
     local output_lib="${build_dir}/${framework_name}.a"
 
-    local libs=(
-        "${base_dir}/${build_dir}/src/libllama.a"
-        "${base_dir}/${build_dir}/ggml/src/libggml.a"
-        "${base_dir}/${build_dir}/ggml/src/libggml-base.a"
-        "${base_dir}/${build_dir}/ggml/src/libggml-cpu.a"
-        "${base_dir}/${build_dir}/ggml/src/ggml-metal/libggml-metal.a"
-        "${base_dir}/${build_dir}/ggml/src/ggml-blas/libggml-blas.a"
-    )
+    echo "Finding static libraries in ${build_dir}..."
+    # Find all .a files in the build directory, excluding any previously combined ones
+    local libs=$(find "${base_dir}/${build_dir}" -name "*.a" ! -name "${framework_name}.a")
 
     echo "Combining static libraries into ${output_lib}..."
-    libtool -static -o "${base_dir}/${output_lib}" "${libs[@]}" 2> /dev/null
+    libtool -static -o "${base_dir}/${output_lib}" ${libs} 2> /dev/null
 }
 
 # 1. iOS Simulator

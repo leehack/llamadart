@@ -39,42 +39,34 @@ if [ "$PLATFORM" == "macos" ]; then
     cmake --build "$BUILD_DIR" --config Release -j $(sysctl -n hw.logicalcpu)
     
     # Artifacts
-    # We output to arch-specific folders to match hook expectations
+    # On macOS, we also need to combine all static libraries into one
+    echo "Combining static libraries for macOS..."
+    # Find all .a files, excluding our target output name if it exists
+    LIBS=$(find "$BUILD_DIR" -name "*.a" ! -name "libllamadart.a")
+    libtool -static -o "$BUILD_DIR/libllamadart.a" $LIBS
+
     ARCH=$(uname -m)
     if [ "$ARCH" == "aarch64" ]; then ARCH="arm64"; fi
     if [ "$ARCH" == "x86_64" ]; then ARCH="x64"; fi
 
-    MAC_BIN_DIR="bin/macos/$ARCH"
-    # Clean and recreate to ensure no leftovers
-    rm -rf "$MAC_BIN_DIR"
-    mkdir -p "$MAC_BIN_DIR"
+    # Copy to both arm64 and x64 directories since it's a universal binary
+    for A in arm64 x64; do
+        DIR="bin/macos/$A"
+        mkdir -p "$DIR"
+        cp "$BUILD_DIR/libllamadart.a" "$DIR/libllamadart.a"
+    done
     
-    echo "Copying static library to $MAC_BIN_DIR..."
-    # We now produce libllamadart.a for static linking
-    cp "$BUILD_DIR/libllamadart.a" "$MAC_BIN_DIR/libllamadart.a"
-    
-    echo "macOS build complete: $MAC_BIN_DIR/libllamadart.a"
+    echo "macOS build complete: Universal libllamadart.a in bin/macos/"
 
 elif [ "$PLATFORM" == "ios" ]; then
     echo "========================================"
-    echo "Building for iOS (using llama.cpp/build-xcframework.sh)..."
+    echo "Building for iOS..."
     echo "========================================"
     
-    LLAMA_CPP_DIR="llama_cpp"
-    OUTPUT_DIR="bin/ios"
+    # Run the iOS build script from the current directory (third_party)
+    ./build_ios_xcframework.sh
     
-    # Run the official script from its directory
-    pushd "$LLAMA_CPP_DIR" > /dev/null
-    ../build_ios_xcframework.sh
-    popd > /dev/null
-    
-    # Copy/Move the result to our expected location
-    mkdir -p "$OUTPUT_DIR"
-    rm -rf "$OUTPUT_DIR/llamadart.xcframework"
-    # Copy without renaming
-    cp -r "$LLAMA_CPP_DIR/build-apple/llamadart.xcframework" "$OUTPUT_DIR/llamadart.xcframework"
-    
-    echo "iOS XCFramework update complete: $OUTPUT_DIR/llamadart.xcframework"
+    echo "iOS build complete: static slices in bin/ios/"
 
 else
     echo "Error: Invalid platform '$PLATFORM'. Use 'macos' or 'ios'."
