@@ -12,6 +12,17 @@ late final DynamicLibrary llamaLib;
 
 /// Loads the llama.cpp native library
 LlamaCpp loadLlamaLib() {
+  // 1. Try Native Assets (ID-based loading)
+  // This is the modern way that works with hook/build.dart
+  try {
+    final lib = DynamicLibrary.open('package:llamadart/src/loader.dart');
+    llamaLib = lib;
+    return LlamaCpp(lib);
+  } catch (_) {
+    // Asset ID loading failed or Native Assets experiment not enabled
+    // Fallback to manual platform-specific loading below
+  }
+
   DynamicLibrary lib;
 
   if (Platform.isMacOS) {
@@ -114,8 +125,17 @@ DynamicLibrary _loadLinux() {
 
 DynamicLibrary _loadIOS() {
   // 1. Framework Bundle (Dynamic)
+  // Replaced by top-level NativeAsset resolution if hook works.
+  // But keep fallback if needed.
   try {
     return DynamicLibrary.open('llama.framework/llama');
+  } catch (e) {
+    print('LlamaDart: Failed to open dynamic library from framework path: $e');
+  }
+
+  // Try opening by name only (if native assets placed it flat)
+  try {
+    return DynamicLibrary.open('llama');
   } catch (_) {}
 
   // 2. Static Linking (Fallback/Alternative mode)

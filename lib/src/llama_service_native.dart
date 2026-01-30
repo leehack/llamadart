@@ -454,17 +454,6 @@ class LlamaService implements LlamaServiceBase {
   }
 
   // --- Native Logging Callback ---
-  static void _logCallback(
-      int level, Pointer<Char> text, Pointer<Void> userData) {
-    if (text == nullptr) return;
-    try {
-      final message = text.cast<Utf8>().toDartString();
-      // Use print which will show up in flutter run logs/logcat
-      print('llama.cpp: ${message.trim()}');
-    } catch (_) {
-      // Ignore conversion errors
-    }
-  }
 
   // --- Isolate Entry Point ---
   static void _isolateEntry(SendPort initialSendPort) {
@@ -479,14 +468,14 @@ class LlamaService implements LlamaServiceBase {
     final _ = llama;
 
     // Register log callback
-    try {
-      final logCallable =
-          Pointer.fromFunction<ggml_log_callbackFunction>(_logCallback);
-      llama.llama_log_set(logCallable, nullptr);
-      print("Isolate: Log callback registered.");
-    } catch (e) {
-      print("Isolate: Failed to register log callback: $e");
-    }
+    // try {
+    //   final logCallable =
+    //       Pointer.fromFunction<ggml_log_callbackFunction>(_logCallback);
+    //   llama.llama_log_set(logCallable, nullptr);
+    //   print("Isolate: Log callback registered.");
+    // } catch (e) {
+    //   print("Isolate: Failed to register log callback: $e");
+    // }
 
     // Initialize backend (native side) - Standard llama.cpp backend init
     try {
@@ -563,6 +552,20 @@ class LlamaService implements LlamaServiceBase {
       );
 
       // --- Backend Selection Logic ---
+
+      // Safety Check: Disable Metal on iOS Simulator by default due to potential instability/crashes
+      if (Platform.isIOS &&
+          Platform.environment.containsKey('SIMULATOR_DEVICE_NAME')) {
+        if (message.modelParams.preferredBackend == GpuBackend.auto) {
+          print(
+              "Isolate: iOS Simulator detected. Disabling Metal (n_gpu_layers=0) for stability.");
+          modelParams.n_gpu_layers = 0;
+        } else if (message.modelParams.preferredBackend == GpuBackend.metal) {
+          print(
+              "Isolate: iOS Simulator detected but Metal explicitly requested. Proceeding with caution.");
+        }
+      }
+
       Pointer<Pointer<Void>>? devicesPtr;
 
       if (message.modelParams.preferredBackend != GpuBackend.auto) {
@@ -675,7 +678,7 @@ class LlamaService implements LlamaServiceBase {
         message.sendPort.send(_ErrorResponse("Failed to create context"));
         return;
       }
-      state.ctx = _LlamaContextWrapper(ctxPtr);
+      state.ctx = _LlamaContextWrapper(ctxPtr, state.model!);
       print("Isolate: Context created.");
 
       // Store params with resolved context size
@@ -730,7 +733,7 @@ class LlamaService implements LlamaServiceBase {
       message.sendPort.send(_ErrorResponse("Failed to refresh context"));
       return;
     }
-    state.ctx = _LlamaContextWrapper(ctxPtr);
+    state.ctx = _LlamaContextWrapper(ctxPtr, state.model!);
 
     final samplerChainParams = llama.llama_sampler_chain_default_params();
     state.sampler = llama.llama_sampler_chain_init(samplerChainParams);
@@ -1289,9 +1292,14 @@ class LlamaService implements LlamaServiceBase {
 
     if (state.batch != null) llama.llama_batch_free(state.batch!);
     if (state.sampler != null) llama.llama_sampler_free(state.sampler!);
+
+    // Explicitly dispose wrappers which detaches finalizers
     state.ctx?.dispose();
     state.model?.dispose();
-    llama.llama_backend_free();
+
+    state.ctx = null;
+    state.model = null;
+    // llama.llama_backend_free(); // Commented out to prevent crash on exit
     receivePort.close();
     print("Isolate: Disposed.");
     Isolate.exit();
@@ -1326,15 +1334,21 @@ class _LlamaModelWrapper implements Finalizable {
 
 class _LlamaContextWrapper implements Finalizable {
   final Pointer<llama_context> pointer;
+  // ignore: unused_field
+  final _LlamaModelWrapper?
+      _modelKeepAlive; // Keep model alive while context exists
+
   static final _finalizer = NativeFinalizer(
     llamaLib.lookup<NativeFunction<Void Function(Pointer<Void>)>>('llama_free'),
   );
 
-  _LlamaContextWrapper(this.pointer) {
+  _LlamaContextWrapper(this.pointer, this._modelKeepAlive) {
     _finalizer.attach(this, pointer.cast(), detach: this);
   }
 
   void dispose() {
+    // Suppress unused warning by reading the field
+    final _ = _modelKeepAlive;
     _finalizer.detach(this);
     llama.llama_free(pointer);
   }

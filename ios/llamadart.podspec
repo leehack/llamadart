@@ -20,7 +20,7 @@ Provides FFI bindings to llama.cpp and embeds native libraries, requiring no add
 
   # Vendor the native libraries
   s.vendored_frameworks = 'Frameworks/llama.xcframework'
-  s.static_framework = true
+  # s.static_framework = true # It's a dynamic framework
   s.libraries = 'c++'
   s.frameworks = 'Accelerate', 'Metal', 'MetalKit', 'Foundation'
   

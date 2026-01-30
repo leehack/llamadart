@@ -4,27 +4,35 @@ import 'package:path/path.dart' as path;
 
 /// Utilities for downloading and setting up native binaries for llamadart.
 class SetupUtils {
+  /// The GitHub release tag to download binaries from.
   static const String releaseTag = 'libs-v0.2.0';
+
+  /// The base URL for downloading release assets.
   static const String baseUrl =
       'https://github.com/leehack/llamadart/releases/download/$releaseTag';
 
   /// Downloads the appropriate binary for the current platform and architecture.
-  static Future<void> setup({bool force = false, String? targetFolder}) async {
-    final os = Platform.operatingSystem;
-    final arch = _getArch();
+  static Future<void> setup({
+    bool force = false,
+    String? targetFolder,
+    String? targetOs,
+    String? targetArch,
+  }) async {
+    final os = targetOs ?? Platform.operatingSystem;
+    final arch = targetArch ?? _getArch();
 
-    print('Detecting platform: $os ($arch)');
+    print('Setup running for platform: $os ($arch)');
 
-    if (Platform.isWindows) {
+    if (os == 'windows') {
       await _setupWindows(arch, force, targetFolder);
-    } else if (Platform.isLinux) {
+    } else if (os == 'linux') {
       await _setupLinux(arch, force, targetFolder);
-    } else if (Platform.isMacOS) {
+    } else if (os == 'macos') {
       await _setupMacOS(force, targetFolder);
-    } else if (Platform.isIOS) {
+    } else if (os == 'ios') {
       await _setupIOS(force, targetFolder);
-    } else if (Platform.isAndroid) {
-      await _setupAndroid(force, targetFolder);
+    } else if (os == 'android') {
+      await _setupAndroid(arch, force, targetFolder);
     } else {
       print('Unsupported platform for automated setup: $os');
     }
@@ -80,22 +88,63 @@ class SetupUtils {
   }
 
   static Future<void> _setupIOS(bool force, String? targetFolder) async {
-    print('iOS setup requires manual extraction of llama_ios_xcframework.zip');
     final assetName = 'llama-ios-xcframework.zip';
     final destDir = targetFolder ?? 'ios/Frameworks';
-    final destFile = path.join(destDir, assetName);
+    final zipFile = path.join(destDir, assetName);
+    final frameworkDir = path.join(destDir, 'llama.xcframework');
 
-    await _downloadAsset(assetName, destFile, force);
-    print('Please extract $destFile to $destDir/llama.xcframework');
+    // If framework exists and not force, skip
+    if (Directory(frameworkDir).existsSync() && !force) {
+      print(
+          'iOS framework already exists at $frameworkDir. Use force=true to overwrite.');
+      return;
+    }
+
+    await _downloadAsset(assetName, zipFile, force);
+
+    print('Extracting $zipFile...');
+    try {
+      if (Platform.isMacOS || Platform.isLinux) {
+        final result =
+            await Process.run('unzip', ['-o', zipFile, '-d', destDir]);
+        if (result.exitCode != 0) {
+          print('Error extracting zip: ${result.stderr}');
+        } else {
+          print('Extraction complete.');
+          // Clean up zip
+          File(zipFile).deleteSync();
+        }
+      } else {
+        print(
+            'Warning: Automatic extraction not supported on this OS. Please unzip manually.');
+      }
+    } catch (e) {
+      print('Exception during extraction: $e');
+    }
   }
 
-  static Future<void> _setupAndroid(bool force, String? targetFolder) async {
-    final arch = _getArch();
-    final assetName = arch == 'arm64'
+  static Future<void> _setupAndroid(
+    String arch,
+    bool force,
+    String? targetFolder,
+  ) async {
+    // Check for valid Android archs
+    if (arch != 'arm64' && arch != 'x64' && arch != 'x86_64') {
+      print(
+          'Warning: Unsupported Android architecture: $arch. Defaulting to x86_64 for emulator safety.');
+      // Keep going, might be supported later or alias
+    }
+
+    // Normalize arch string for filename/path
+    final safeArch = (arch == 'x86_64') ? 'x64' : arch;
+
+    final assetName = safeArch == 'arm64'
         ? 'libllama-android-arm64.so'
         : 'libllama-android-x64.so';
-    final destDir = targetFolder ??
-        'android/src/main/jniLibs/${arch == "arm64" ? "arm64-v8a" : "x86_64"}';
+
+    final jniArch = safeArch == 'arm64' ? 'arm64-v8a' : 'x86_64';
+
+    final destDir = targetFolder ?? 'android/src/main/jniLibs/$jniArch';
     final destFile = path.join(destDir, 'libllama.so');
 
     await _downloadAsset(assetName, destFile, force);
