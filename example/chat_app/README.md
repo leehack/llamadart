@@ -66,33 +66,40 @@ flutter run
 
 ## Architecture
 
-The app follows a clean architecture with state management:
+The app follows a clean, layered architecture with strict separation of concerns:
 
 ```
 lib/
 ├── main.dart              # App entry point
-├── chat_screen.dart       # Main chat UI
-├── models/
-│   └── chat_model.dart    # State management (Provider)
 ├── screens/
-│   └── model_selection_screen.dart # Model downloader & selector
+│   ├── chat_screen.dart            # Main chat screen
+│   └── model_selection_screen.dart  # Model management UI
+├── widgets/
+│   ├── chat_input.dart             # Message input area
+│   ├── message_bubble.dart         # Styled chat bubbles
+│   ├── settings_sheet.dart         # Advanced config UI
+│   └── ...                         # Other modular UI components
+├── providers/
+│   └── chat_provider.dart          # App state & orchestration
+├── services/
+│   ├── chat_service.dart           # Business logic & prompt building
+│   ├── model_service.dart          # File system & download logic
+│   └── settings_service.dart       # Local persistence (SharedPreferences)
+├── models/
+│   ├── chat_message.dart           # Message data with token caching
+│   ├── chat_settings.dart          # Configuration data
+│   └── downloadable_model.dart     # Model metadata
 └── stub/
-    └── io_stub.dart       # Platform stubs for web compatibility
+    └── io_stub.dart                # Web compatibility stubs
 ```
 
-### ChatProvider
-State management provider using `ChangeNotifier`:
-- Manages model lifecycle (load/unload)
-- Handles chat messages
-- Persists settings to SharedPreferences
-- Provides reactive UI updates
+### Key Components
 
-### ChatScreen
-Flutter UI with Material Design 3:
-- Message list with scroll-to-bottom
-- Input field with send button
-- Settings modal for model configuration
-- Loading and error states
+- **`ChatProvider`**: Orchestrates state and reacts to user input.
+- **`ChatService`**: Handles prompt construction, token counting, and engine interaction.
+- **`ModelService`**: Manages the local model library and background downloads.
+- **`SettingsService`**: Handles persistent storage of user preferences.
+- **`ChatMessage`**: Implements **Token Caching** to optimize performance during long conversations.
 
 ## Code Examples
 
@@ -159,10 +166,12 @@ _(Add screenshots here when complete)_
 
 ## Tech Stack
 
-- **llamadart** - LLM inference
-- **Provider** - State management
-- **shared_preferences** - Settings persistence
-- **Material Design 3** - UI components
+- **llamadart** - High-performance LLM inference
+- **Provider** - Reactive state management
+- **Dio** - Robust background downloads
+- **SharedPreferences** - Persistent settings
+- **Material Design 3** - Modern UI components
+- **Google Fonts** - Typography
 
 ## Platform Support
 
@@ -174,12 +183,11 @@ _(Add screenshots here when complete)_
 | Android  | ✅ Verified | Full Vulkan acceleration |
 | iOS      | ✅ Verified | Full Metal acceleration |
 
-## Future Enhancements
+## Future Enhancements (Implemented ✅)
 
-- [ ] Conversation history
-- [ ] Multiple model support
-- [ ] Export/import conversations
-- [ ] Streaming token display in UI
-- [ ] Custom system prompts
-- [ ] Temperature/top_p controls in UI
-- [ ] Dark mode theme
+- [x] Conversation history maintenance
+- [x] Multiple model support & switching
+- [x] Professional layered architecture
+- [x] Real-time streaming UI
+- [x] Persistent settings & log control
+- [x] Advanced sampling parameters (Temp/Top-K/Top-P)
