@@ -47,13 +47,15 @@ class LlamaService implements LlamaServiceBase {
   }
 
   @override
-  void dispose() {
+  Future<void> dispose() async {
     throw UnimplementedError('LlamaService not supported on this platform');
   }
 
   @override
-  Future<String> applyChatTemplate(List<LlamaChatMessage> messages,
-      {bool addAssistant = true}) {
+  Future<String> applyChatTemplate(
+    List<LlamaChatMessage> messages, {
+    bool addAssistant = true,
+  }) {
     throw UnimplementedError('LlamaService not supported on this platform');
   }
 

@@ -3,17 +3,23 @@ description: Bindings to llama.cpp
 output: 'lib/src/generated/llama_bindings.dart'
 headers:
   entry-points:
-    - 'src/native/llama_cpp/include/llama.h'
+    - 'third_party/llama_cpp/include/llama.h'
+    - 'third_party/llama_cpp/ggml/include/ggml.h'
+    - 'third_party/llama_cpp/ggml/include/ggml-backend.h'
   include-directives:
-    - 'src/native/llama_cpp/include/llama.h'
+    - 'third_party/llama_cpp/include/llama.h'
+    - 'third_party/llama_cpp/ggml/include/ggml.h'
+    - 'third_party/llama_cpp/ggml/include/ggml-backend.h'
 compiler-opts:
-  - '-Isrc/native/llama_cpp/ggml/include'
-  - '-Isrc/native/llama_cpp/include'
+  - '-Ithird_party/llama_cpp/ggml/include'
+  - '-Ithird_party/llama_cpp/include'
 preamble: |
-  // ignore_for_file: always_specify_types
+  // ignore_for_file: always_specify_types, unused_field
   // ignore_for_file: camel_case_types
   // ignore_for_file: non_constant_identifier_names
 comments:
   style: any
   length: full
 silence-enum-warning: true
+ffi-native:
+  asset-id: 'package:llamadart/llamadart'

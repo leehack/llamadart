@@ -1,132 +1,39 @@
 import 'dart:ffi';
 import 'dart:io';
-import 'package:path/path.dart' as path;
-import 'generated/llama_bindings.dart';
-
-/// Loads the llama.cpp native library
-LlamaCpp loadLlamaLib() {
-  late DynamicLibrary lib;
-
-  if (Platform.isMacOS) {
-    // For local testing (Dart standalone), look in the build directory
-    // This assumes we are running from the project root
-    final localBuildPath =
-        path.join(Directory.current.path, 'build/bin/libllama_cpp.dylib');
-    final devBuildPath = path.join(Directory.current.path,
-        '../../src/native/build/bin/libllama_cpp.dylib');
-    final frameworksPath = path.join(
-        Directory.current.path, 'macos/Frameworks/libllama_cpp.dylib');
-
-    if (File(localBuildPath).existsSync()) {
-      lib = DynamicLibrary.open(localBuildPath);
-    } else if (File(devBuildPath).existsSync()) {
-      lib = DynamicLibrary.open(devBuildPath);
-    } else if (File(frameworksPath).existsSync()) {
-      lib = DynamicLibrary.open(frameworksPath);
-    } else {
-      // Fallback for Flutter apps
-      try {
-        print('llamadart: Attempting simple open libllama_cpp.dylib');
-        lib = DynamicLibrary.open('libllama_cpp.dylib');
-      } catch (e) {
-        try {
-          final executableDir = path.dirname(Platform.resolvedExecutable);
-          final libPath = path.canonicalize(path.join(
-              executableDir, '..', 'Frameworks', 'libllama_cpp.dylib'));
-          print('llamadart: Attempting absolute bundle path: $libPath');
-          lib = DynamicLibrary.open(libPath);
-        } catch (_) {
-          try {
-            final executableDir = path.dirname(Platform.resolvedExecutable);
-            final libPath = path.join(executableDir, '..', 'Frameworks',
-                'llamadart.framework', 'Resources', 'libllama_cpp.dylib');
-            print('llamadart: Attempting framework resources path: $libPath');
-            lib = DynamicLibrary.open(libPath);
-          } catch (__) {
-            print(
-                'llamadart: Falling back to process handle (Static Linking)');
-            lib = DynamicLibrary.process();
-          }
-        }
-      }
-    }
-  } else if (Platform.isLinux) {
-    final localBuildPath =
-        path.join(Directory.current.path, 'build/bin/libllama_cpp.so');
-    final devBuildPath = path.join(
-        Directory.current.path, '../../src/native/build/bin/libllama_cpp.so');
-    if (File(localBuildPath).existsSync()) {
-      lib = DynamicLibrary.open(localBuildPath);
-    } else if (File(devBuildPath).existsSync()) {
-      lib = DynamicLibrary.open(devBuildPath);
-    } else {
-      lib = DynamicLibrary.open('libllama_cpp.so');
-    }
-  } else if (Platform.isWindows) {
-    final localBuildPath =
-        path.join(Directory.current.path, 'build/bin/llama_cpp.dll');
-    if (File(localBuildPath).existsSync()) {
-      lib = DynamicLibrary.open(localBuildPath);
-    } else {
-      lib = DynamicLibrary.open('llama_cpp.dll');
-    }
-  } else if (Platform.isIOS) {
-    try {
-      print(
-          'llamadart: Attempting to load from llama_cpp.framework/llama_cpp');
-      lib = DynamicLibrary.open('llama_cpp.framework/llama_cpp');
-      print('llamadart: Loaded successfully.');
-    } catch (e1) {
-      print('llamadart: Failed to load from framework bundle: $e1');
-      try {
-        // Construct absolute path
-        final executableDir = path.dirname(Platform.resolvedExecutable);
-        final libPath = path.join(
-            executableDir, 'Frameworks/llama_cpp.framework/llama_cpp');
-        print('llamadart: Attempting load from $libPath');
-        lib = DynamicLibrary.open(libPath);
-        print('llamadart: Loaded successfully from absolute path.');
-      } catch (e2) {
-        print('llamadart: Failed to load absolute path: $e2');
-        try {
-          print(
-              'llamadart: Attempting process() fallback (for static linking)');
-          lib = DynamicLibrary.process();
-
-          // Verify that we can actually find a symbol.
-          // If strict stripping is enabled, process() returns a handle but lookup fails.
-          if (!lib.providesSymbol('llama_backend_init')) {
-            throw Exception('llama_backend_init symbol not found in process(). '
-                'This indicates symbols were stripped or not exported. '
-                'Check STRIP_STYLE and -Wl,-export_dynamic in Podspec.');
-          }
-          print('llamadart: Loaded process() and verified symbols.');
-        } catch (e3) {
-          print('llamadart: Failed process() fallback: $e3');
-          rethrow;
-        }
-      }
-    }
-  } else if (Platform.isAndroid) {
-    // For Android, we simply open the shared library by name.
-    // Flutter will have packaged it into the APK.
-    try {
-      lib = DynamicLibrary.open('libllama_cpp.so');
-    } catch (e) {
-      print('llamadart: Failed to load libllama_cpp.so on Android: $e');
-      rethrow;
-    }
-  } else {
-    throw UnsupportedError('Unknown platform: ${Platform.operatingSystem}');
-  }
-
-  llamaLib = lib;
-  return LlamaCpp(lib);
-}
-
-// Global instance for easy access
-/// Global instance of the Llama bindings.
-final LlamaCpp llama = loadLlamaLib();
+export 'generated/llama_bindings.dart';
 
 /// The underlying DynamicLibrary, exposed for NativeFinalizer access.
-late final DynamicLibrary llamaLib;
+///
+/// This uses the Native Assets mapping for 'package:llamadart/llamadart'.
+/// If it fails (e.g. in some isolate contexts), it returns null.
+final DynamicLibrary? llamaLib = _openLibrary();
+
+DynamicLibrary? _openLibrary() {
+  try {
+    final lib = DynamicLibrary.open('package:llamadart/llamadart');
+    print('llamadart: Loaded via Native Assets');
+    return lib;
+  } catch (e) {
+    try {
+      if (Platform.isIOS || Platform.isMacOS) {
+        // For Apple platforms, if Native Assets failed, it might be
+        // because the library was statically linked into the executable.
+        final lib = DynamicLibrary.executable();
+        print(
+          'llamadart: Loaded via DynamicLibrary.executable() (Static Linking fallback)',
+        );
+        return lib;
+      }
+
+      final libName = Platform.isWindows
+          ? 'libllamadart.dll'
+          : 'libllamadart.so'; // Linux/Android
+      final lib = DynamicLibrary.open(libName);
+      print('llamadart: Loaded via direct open($libName)');
+      return lib;
+    } catch (_) {
+      print('llamadart: Failed to load native library');
+      return null;
+    }
+  }
+}

@@ -12,12 +12,16 @@ extension type Wllama._(JSObject _) implements JSObject {
   external factory Wllama(JSAny pathConfig, [WllamaConfig? config]);
 
   /// Loads a model from a URL.
-  external JSPromise<JSAny?>? loadModelFromUrl(String url,
-      [LoadModelOptions? config]);
+  external JSPromise<JSAny?>? loadModelFromUrl(
+    String url, [
+    LoadModelOptions? config,
+  ]);
 
   /// Creates a completion.
   external JSPromise<JSString>? createCompletion(
-      String prompt, CompletionOptions? opts);
+    String prompt,
+    CompletionOptions? opts,
+  );
 
   /// Get metadata from the model.
   /// If [key] is provided, returns specific value. Otherwise returns full object.
@@ -66,10 +70,7 @@ extension type WllamaConfig._(JSObject _) implements JSObject {
 @anonymous
 extension type LoadModelOptions._(JSObject _) implements JSObject {
   /// Creates new load model options.
-  external factory LoadModelOptions({
-    bool? useCache,
-    JSFunction? onProgress,
-  });
+  external factory LoadModelOptions({bool? useCache, JSFunction? onProgress});
 }
 
 /// Options for completion.

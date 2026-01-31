@@ -1,0 +1,30 @@
+# Exclude large development sources and submodules
+third_party/
+.git/
+.github/
+
+# Exclude local build directories
+build/
+build-*/
+.dart_tool/
+
+# Exclude maintenance files not needed by end users
+CONTRIBUTING.md
+ffigen.yaml
+test_native_address.dart
+example/**/build_log*.txt
+
+# Exclude local models
+*.gguf
+*.bin
+
+# Exclude debug symbols
+**/*.dSYM/
+**/*.pdb
+
+# No binaries should be bundled; hook/build.dart downloads them at runtime
+*.so
+*.dylib
+*.dll
+*.xcframework/
+docker/

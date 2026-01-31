@@ -82,36 +82,26 @@ example/
 ## Need Help?
 
 - Check individual example README files
-- Report issues: https://github.com/your-org/llamadart/issues
-- Docs: https://github.com/your-org/llamadart
-
-## Running Tests
-
-```bash
-# Basic integration test
-cd example
-dart runner.dart basic
-
-# Instructions for Flutter tests
-dart runner.dart chat
-```
+- Report issues: https://github.com/leehack/llamadart/issues
+- Docs: https://github.com/leehack/llamadart
 
 ## Requirements
 
-- Dart SDK 3.6.0 or higher
-- For chat_app: Flutter 3.10.0 or higher
+- Dart SDK 3.10.7 or higher
+- For chat_app: Flutter 3.38.0 or higher
 - Internet connection (for first run - downloads native libraries)
 - At least 2GB RAM minimum, 4GB+ recommended
 
 ## Platform Compatibility
 
-| Platform | Basic App | Chat App | Notes |
-|----------|-----------|----------|-------|
-| macOS    | ✅        | ✅       | Fully tested |
-| Linux    | ✅        | ✅       | Fully tested |
-| Windows  | 🟡        | 🟡       | Expected to work |
-| Android  | N/A       | ✅       | Fully supported |
-| iOS      | N/A       | ✅       | Fully supported |
+| Platform | Architecture(s) | GPU Backend | Status |
+|----------|-----------------|-------------|--------|
+| **macOS** | arm64, x86_64 | Metal | ✅ Tested |
+| **iOS** | arm64 (Device), x86_64 (Sim) | Metal (Device), CPU (Sim) | ✅ Tested |
+| **Android** | arm64-v8a, x86_64 | Vulkan | ✅ Tested |
+| **Linux** | arm64, x86_64 | Vulkan | ⚠️ Tested (CPU Verified, Vulkan Untested) |
+| **Windows** | x64 | Vulkan | ✅ Tested |
+| **Web** | WASM | CPU | ✅ Tested |
 
 ## Troubleshooting
 

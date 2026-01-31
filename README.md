@@ -1,196 +1,126 @@
 # llamadart
 
-A Dart/Flutter plugin for `llama.cpp`. Run LLM inference directly in Dart and Flutter applications using GGUF models with hardware acceleration.
+[![Pub Version](https://img.shields.io/pub/v/llamadart?logo=dart&color=blue)](https://pub.dev/packages/llamadart)
+[![License: MIT](https://img.shields.io/badge/license-MIT-purple.svg)](https://opensource.org/licenses/MIT)
+[![GitHub](https://img.shields.io/github/stars/leehack/llamadart?style=social)](https://github.com/leehack/llamadart)
 
-## ⚠️ Status
-**Actively Under Development**.
-The core features are implemented and running. Many more features are in the pipeline, including:
-*   High-level APIs for easier integration.
-*   Multi-modality support (Vision/LLaVA).
+**llamadart** is a high-performance Dart and Flutter plugin for [llama.cpp](https://github.com/ggml-org/llama.cpp). It allows you to run Large Language Models (LLMs) locally using GGUF models across all major platforms with minimal setup.
 
-We welcome contributors to help us test on more platforms (especially Windows)!
+## ✨ Features
 
-## 🚀 Supported Platforms
+- 🚀 **High Performance**: Powered by `llama.cpp`'s optimized C++ kernels.
+- 🛠️ **Zero Configuration**: Uses the modern **Pure Native Asset** mechanism—no manual build scripts or platform folders required.
+- 📱 **Cross-Platform**: Full support for Android, iOS, macOS, Linux, and Windows.
+- ⚡ **GPU Acceleration**:
+  - **Apple**: Metal (macOS/iOS)
+  - **Android/Linux/Windows**: Vulkan
+- 🌐 **Web Support**: Run inference in the browser via WASM (powered by `wllama`).
+- 💎 **Dart-First API**: Streamlined FFI bindings with a clean, isolate-safe Dart interface.
+- 🔇 **Logging Control**: Granular control over native engine output (debug, info, warn, error, none).
+
+---
+
+## 📊 Compatibility & Test Status
 
 | Platform | Architecture(s) | GPU Backend | Status |
 |----------|-----------------|-------------|--------|
-| **macOS** | Universal (arm64, x86_64) | Metal | ✅ Tested (CPU, Metal) |
-| **iOS** | arm64 (Device), x86_64/arm64 (Sim) | Metal (Device), CPU (Sim) | ✅ Tested (CPU, Metal) |
-| **Android** | arm64-v8a, x86_64 | Vulkan (if supported) | ✅ Tested (CPU, Vulkan) |
-| **Linux** | x86_64 | CUDA / Vulkan | ⚠️ Tested (CPU Verified, Vulkan Untested) |
-| **Windows**| x86_64 | CUDA / Vulkan | ❓ Needs Testing |
-| **Web**| WASM | CPU (WASM) | ✅ Tested (WASM) |
+| **macOS** | arm64, x86_64 | Metal | ✅ Tested (CPU, Metal) |
+| **iOS** | arm64 (Device), x86_64 (Sim) | Metal (Device), CPU (Sim) | ✅ Tested (CPU, Metal) |
+| **Android** | arm64-v8a, x86_64 | Vulkan | ✅ Tested (CPU, Vulkan) |
+| **Linux** | arm64, x86_64 | Vulkan | ⚠️ Tested (CPU Verified, Vulkan Untested) |
+| **Windows** | x64 | Vulkan | ✅ Tested (CPU, Vulkan) |
+| **Web** | WASM | CPU | ✅ Tested (WASM) |
 
 ---
 
-### 1. Add Dependency
+## 🚀 Quick Start
+
+### 1. Installation
+
 Add `llamadart` to your `pubspec.yaml`:
+
 ```yaml
 dependencies:
-  llamadart: ^0.1.0
+  llamadart: ^0.2.0
 ```
 
-### 2. Platform Setup
+### 2. Zero Setup (Native Assets)
 
-#### 📱 iOS
-**No manual setup required.**
-The plugin automatically builds `llama.cpp` for iOS (Device/Simulator) when you run `flutter build ios`.
-*Note: The first build will take a few minutes to compile the C++ libraries.*
+`llamadart` leverages the **Dart Native Assets** (build hooks) system. When you run your app for the first time (`dart run` or `flutter run`), the package automatically:
+1. Detects your target platform and architecture.
+2. Downloads the appropriate pre-compiled stable binary from GitHub.
+3. Bundles it seamlessly into your application.
 
-#### 💻 macOS / Linux / Windows
-The package handles native builds automatically via CMake.
-*   **macOS**: Metal acceleration is enabled by default.
-*   **Linux/Windows**: CPU inference is supported.
+No manual binary downloads or CMake configuration are needed.
 
-#### 📱 Android
-**No manual setup required.**
-The plugin uses CMake to compile the native library automatically.
-- Ensure you have the **Android NDK** installed via Android Studio.
-- The first build will take a few minutes to compile the `llama.cpp` libraries for your target device's architecture.
-
-#### 🌐 Web
-**Zero-config** by default (uses jsDelivr CDN for `wllama`).
-1.  Import and use `LlamaService`.
-2.  Enable WASM support in Flutter web:
-    ```bash
-    flutter run -d chrome --wasm
-    # OR build with wasm
-    flutter build web --wasm
-    ```
-
-**Offline / Bundled Usage (Optional):**
-1.  Download assets to your `assets/` directory:
-    ```bash
-    dart run llamadart:download_wllama
-    ```
-2.  Add the folder to your `pubspec.yaml`:
-    ```yaml
-    flutter:
-      assets:
-        - assets/wllama/single-thread/
-    ```
-3.  Initialize with local asset paths:
-    ```dart
-    final service = LlamaService(
-      wllamaPath: 'assets/wllama/single-thread/wllama.js',
-      wasmPath: 'assets/wllama/single-thread/wllama.wasm',
-    );
-    ```
-
----
-
-## 📱 Platform Specifics
-
-### iOS
-- **Metal**: Acceleration enabled by default on physical devices.
-- **Simulator**: Runs on CPU (x86_64 or arm64).
-
-### macOS
-- **Sandboxing**: Add these entitlements to `macos/Runner/DebugProfile.entitlements` and `Release.entitlements` for network access (model downloading):
-  ```xml
-  <key>com.apple.security.network.client</key>
-  <true/>
-  ```
-
-### Android
-- **Architectures**: `arm64-v8a` (most devices) and `x86_64` (emulators).
-- **Vulkan**: GPU acceleration is enabled by default on devices with Vulkan support.
-- **NDK**: Requires Android NDK 26+ installed (usually handled by Android Studio).
-
----
-
-## 🎮 GPU Configuration
-
-GPU backends are **enabled by default** where available. Use the options below to customize.
-
-### Runtime Control (Recommended)
-
-Control GPU usage at runtime via `ModelParams`:
+### 3. Basic Usage
 
 ```dart
-// Use GPU with automatic backend selection (default)
-await service.init('model.gguf', modelParams: ModelParams(
-  gpuLayers: 99,  // Offload all layers to GPU
-  preferredBackend: GpuBackend.auto,
-));
-
-// Force CPU-only inference
-await service.init('model.gguf', modelParams: ModelParams(
-  gpuLayers: 0,  // No GPU offloading
-  preferredBackend: GpuBackend.cpu,
-));
-
-// Request specific backend (if compiled in)
-await service.init('model.gguf', modelParams: ModelParams(
-  preferredBackend: GpuBackend.vulkan,
-));
-```
-
-**Available backends**: `auto`, `cpu`, `cuda`, `vulkan`, `metal`
-
-### Compile-Time Options (Advanced)
-
-To disable GPU backends at build time:
-
-**Android** (in `android/gradle.properties`):
-```properties
-LLAMA_DART_NO_VULKAN=true
-```
-
-**Desktop** (CMake flags):
-```bash
-# Disable CUDA
-cmake -DLLAMA_DART_NO_CUDA=ON ...
-
-# Disable Vulkan
-cmake -DLLAMA_DART_NO_VULKAN=ON ...
-```
-
----
-
-## 🚀 Usage
-
-```dart
+import 'dart:io';
 import 'package:llamadart/llamadart.dart';
 
 void main() async {
+  // 1. Create the service
   final service = LlamaService();
 
-  try {
-    // 1. Initialize with model path (GGUF)
-    // On iOS/macOS, ensures Metal is used if available.
-    await service.init('models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf');
-    
-    // 2. Generate text (streaming)
-    final prompt = "<start_of_turn>user\nTell me a story about a llama.<end_of_turn>\n<start_of_turn>model\n";
-    
-    await for (final token in service.generate(prompt)) {
-      stdout.write(token);
-    }
-  } finally {
-    // 3. Always dispose to free native memory
-    service.dispose();
+  // 2. Initialize with a GGUF model
+  // This loads the model and prepares the native backend (GPU/CPU)
+  await service.init('path/to/your_model.gguf');
+
+  // 3. Generate text (streaming)
+  final stream = service.generate('The capital of France is');
+  
+  await for (final token in stream) {
+    stdout.write(token);
+    await stdout.flush();
   }
+  
+  // 4. Clean up resources
+  service.dispose();
 }
 ```
 
 ---
 
-## 📱 Examples
+## 📂 Examples
 
-- **Flutter Chat App**: `example/chat_app`
-  - A full-featured chat interface with real-time streaming, GPU acceleration support, and model management.
-- **Basic Console App**: `example/basic_app`
-  - Minimal example demonstrating model download and basic inference.
+Explore the `example/` directory for full implementations:
+- **`basic_app`**: A lightweight CLI example for quick verification.
+- **`chat_app`**: A feature-rich Flutter chat application with streaming UI and model management.
 
+---
+
+## 🐳 Docker (Linux)
+
+You can build and run the examples using Docker on Linux. This ensures all build dependencies (like `libgtk-3-dev`, `cmake`, etc.) are correctly configured.
+
+### 1. Build and Run CLI Basic Example
+```bash
+./docker/build-docker.sh basic-run
+```
+
+### 2. Build Flutter Chat App for Linux
+```bash
+./docker/build-docker.sh chat-build
+```
+
+The Dockerfile is multi-stage and optimized to minimize context size. It handles the downloading of native assets and compilation of Flutter Linux binaries.
+
+---
+
+## 🏗️ Architecture
+
+This package follows the "Pure Native Asset" philosophy:
+- **Maintenance**: All native build logic and submodules are isolated in `third_party/`.
+- **Distribution**: Binaries are produced via GitHub Actions and hosted on GitHub Releases.
+- **Integration**: The `hook/build.dart` manages the lifecycle of native dependencies, keeping your project root clean.
+
+---
 
 ## 🤝 Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed instructions on:
--   Setting up the development environment.
--   Building the native libraries.
--   Running tests and examples.
+Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for architecture details and maintainer instructions for building native binaries.
 
+## 📜 License
 
-## License
-MIT
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

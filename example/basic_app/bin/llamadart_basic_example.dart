@@ -1,34 +1,89 @@
 import 'dart:io';
-import 'package:llamadart/llamadart.dart';
-import 'package:llamadart_basic_example/model_downloader.dart';
-import 'package:llamadart_basic_example/inference_test.dart';
+import 'package:args/args.dart';
+import 'package:llamadart_basic_example/services/model_service.dart';
+import 'package:llamadart_basic_example/services/llama_service.dart';
 
-// TinyLlama is a good balance of size and performance for testing
-const modelUrl =
-    'https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf';
-const modelFileName = 'tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf';
+const defaultModelUrl =
+    'https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf?download=true';
 
-void main() async {
-  print('🦙 llamadart Basic Example & Test');
-  print('=' * 50);
+void main(List<String> arguments) async {
+  final parser = ArgParser()
+    ..addOption('model',
+        abbr: 'm',
+        help: 'Path or URL to the GGUF model file.',
+        defaultsTo: defaultModelUrl)
+    ..addOption('prompt', abbr: 'p', help: 'Prompt for single response mode.')
+    ..addFlag('interactive',
+        abbr: 'i',
+        help: 'Start in interactive conversation mode.',
+        defaultsTo: true)
+    ..addFlag('help',
+        abbr: 'h', help: 'Show this help message.', negatable: false);
+
+  final results = parser.parse(arguments);
+
+  if (results['help'] as bool) {
+    print('🦙 llamadart CLI Chat\n');
+    print(parser.usage);
+    return;
+  }
+
+  final modelUrlOrPath = results['model'] as String;
+  final singlePrompt = results['prompt'] as String?;
+  final isInteractive = results['interactive'] as bool && singlePrompt == null;
+
+  final modelService = ModelService();
+  final llamaService = LlamaCliService();
 
   try {
-    // 1. Setup & Download
-    final downloader = ModelDownloader();
-    final modelFile =
-        await downloader.downloadModel(modelUrl, fileName: modelFileName);
+    print('Checking model...');
+    final modelFile = await modelService.ensureModel(modelUrlOrPath);
 
-    // 2. Initialize Service
-    final service = LlamaService();
+    print('Initializing engine...');
+    await llamaService.init(modelFile.path);
+    print('Model loaded successfully.\n');
 
-    // 3. Run Test
-    final tester = InferenceTest(service);
-    await tester.run(
-      modelFile.path,
-      prompt: "<|user|>\nTell me a joke about a llama.<|end|>\n<|assistant|>\n",
-    );
+    if (singlePrompt != null) {
+      await _runSingleResponse(llamaService, singlePrompt);
+    } else if (isInteractive) {
+      await _runInteractiveMode(llamaService);
+    }
   } catch (e) {
-    print('\nFatal Error: $e');
-    exit(1);
+    print('\nError: $e');
+  } finally {
+    await llamaService.dispose();
+    exit(0);
+  }
+}
+
+Future<void> _runSingleResponse(LlamaCliService service, String prompt) async {
+  print('User: $prompt');
+  stdout.write('Assistant: ');
+  await for (final token in service.chatStream(prompt)) {
+    stdout.write(token);
+  }
+  print('\n');
+}
+
+Future<void> _runInteractiveMode(LlamaCliService service) async {
+  print('--- Interactive Mode ---');
+  print('Type your message and press Enter. Type "exit" or "quit" to quit.\n');
+
+  while (true) {
+    stdout.write('User: ');
+    final input = stdin.readLineSync();
+    if (input == null ||
+        input.toLowerCase() == 'exit' ||
+        input.toLowerCase() == 'quit') {
+      break;
+    }
+
+    if (input.trim().isEmpty) continue;
+
+    stdout.write('Assistant: ');
+    await for (final token in service.chatStream(input)) {
+      stdout.write(token);
+    }
+    print('\n');
   }
 }

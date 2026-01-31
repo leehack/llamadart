@@ -6,7 +6,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.llama_dart_chat_example"
+    namespace = "com.example.llamadart_chat_example"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = "29.0.14206865"
 
@@ -21,7 +21,7 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.example.llama_dart_chat_example"
+        applicationId = "com.example.llamadart_chat_example"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = 29

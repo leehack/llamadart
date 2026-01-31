@@ -48,9 +48,6 @@ Thumbs.db
 # C/C++ / CMake / Build Artifacts
 *.o
 *.a
-*.so
-*.dylib
-*.dll
 *.exe
 cmake_install.cmake
 CMakeCache.txt
@@ -60,14 +57,20 @@ compile_commands.json
 *.gch
 *.pch
 
+# Native binaries (pre-built or generated)
+*.so
+*.dll
+*.dylib
+*.xcframework/
+.dart_tool/native_assets.json
+
 # Models (Large files)
-models/*.gguf
-models/*.bin
-
-# Native Frameworks
-ios/Frameworks/llama_cpp.xcframework
-
+*.gguf
+*.bin
 
 .scrum/
 .cache/
 .opencode/
+
+build-*/
+third_party/bin/

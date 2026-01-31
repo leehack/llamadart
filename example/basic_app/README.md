@@ -1,39 +1,61 @@
-# llamadart Basic Example
+# llamadart CLI Chat Example
 
-A simple console application demonstrating how to use `llamadart` with:
-- Automatic model downloading (TinyLlama)
-- Inference testing
-- Clean architecture
+A clean, organized CLI application demonstrating the capabilities of the `llamadart` package. It supports both interactive conversation mode and single-response mode.
 
-## Run the Example
+## Features
+
+- **Interactive Mode**: Have a back-and-forth conversation with an LLM in your terminal.
+- **Single Response Mode**: Pass a prompt as an argument for quick tasks.
+- **Automatic Model Management**: Automatically downloads models from Hugging Face if a URL is provided.
+- **Backend Optimization**: Defaults to GPU acceleration (Metal/Vulkan) when available.
+
+## Usage
+
+First, ensure you have the Dart SDK installed.
+
+### 1. Install Dependencies
 
 ```bash
-cd basic_app
 dart pub get
+```
+
+### 2. Run Interactive Mode (Default)
+
+This will download a small default model (Qwen 2.5 0.5B) if not already present and start a chat session.
+
+```bash
 dart run
 ```
 
-This will:
-1.  Download `TinyLlama-1.1B` to `tmp/` (if not already present).
-2.  Initialize the `LlamaService`.
-3.  Run a test inference prompt.
+### 3. Run with a Specific Model
 
-## Code Structure
-
-- **`bin/llamadart_basic_example.dart`**: Entry point.
-- **`lib/model_downloader.dart`**: Handles automatic model downloading.
-- **`lib/inference_test.dart`**: Encapsulates the inference logic and validation.
-
-## Running with Docker (Linux Verification)
-
-You can verify the application on Linux using the provided Dockerfile:
+You can provide a local path or a Hugging Face GGUF URL.
 
 ```bash
-docker build -t llamadart_basic -f example/basic_app/Dockerfile .
-docker run --rm llamadart_basic
+dart run -- -m "path/to/model.gguf"
 ```
 
-## Troubleshooting
+### 4. Single Response Mode
 
-**"Failed to load library"**:
-Ensure you have built the project or are running in an environment where the native library is available.
+Useful for scripting or quick queries.
+
+```bash
+dart run -- -p "What is the capital of France?"
+```
+
+## Options
+
+- `-m, --model`: Path or URL to the GGUF model file.
+- `-p, --prompt`: Prompt for single response mode.
+- `-i, --interactive`: Start in interactive mode (default if no prompt provided).
+- `-h, --help`: Show help message.
+
+## Project Structure
+
+- **`bin/llamadart_basic_example.dart`**: The CLI entry point and user interface logic.
+- **`lib/services/llama_service.dart`**: High-level wrapper for the `llamadart` engine.
+- **`lib/services/model_service.dart`**: Handles model downloading and path verification.
+- **`lib/models.dart`**: Data structures for the application.
+- **`lib/services/llama_service.dart`**: High-level wrapper for the `llamadart` engine.
+- **`lib/services/model_service.dart`**: Handles model downloading and path verification.
+- **`lib/models.dart`**: Data structures for the application.

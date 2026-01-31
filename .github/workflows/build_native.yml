@@ -1,0 +1,224 @@
+name: Build Native Binaries
+
+on:
+  push:
+    tags:
+      - 'b*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CMAKE_C_COMPILER_LAUNCHER: ccache
+  CMAKE_CXX_COMPILER_LAUNCHER: ccache
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        android_abi: [arm64-v8a, x86_64]
+    defaults:
+      run:
+        working-directory: third_party
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android NDK
+        uses: android-actions/setup-android@v3
+      
+      - name: Install Ninja & ccache
+        run: sudo apt-get update && sudo apt-get install -y ninja-build ccache
+
+      - name: ccache
+        uses: ggml-org/ccache-action@v1.2.16
+        with:
+          key: build-android-${{ matrix.android_abi }}
+
+      - name: Build with Script
+        run: ./build_android.sh ${{ matrix.android_abi }}
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: libllamadart_android_${{ matrix.android_abi }}
+          path: third_party/bin/android/*/libllamadart.so
+
+  build-apple:
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        target: [macos-arm64, macos-x86_64, ios-device-arm64, ios-sim-arm64, ios-sim-x86_64]
+    defaults:
+      run:
+        working-directory: third_party
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: brew install ccache
+
+      - name: ccache
+        uses: ggml-org/ccache-action@v1.2.16
+        with:
+          key: build-apple-${{ matrix.target }}
+
+      - name: Build Apple Target
+        run: ./build_apple.sh ${{ matrix.target }}
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: libllamadart_apple_${{ matrix.target }}
+          path: |
+            third_party/bin/macos/**/*.a
+            third_party/bin/macos/**/*.dylib
+            third_party/bin/ios/*.a
+            third_party/bin/ios/*.dylib
+
+  build-linux-x64-vulkan:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: third_party
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Vulkan Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libvulkan-dev glslc ccache
+
+      - name: ccache
+        uses: ggml-org/ccache-action@v1.2.16
+        with:
+          key: build-linux-x64-vulkan
+
+      - name: Build Linux (x64 Vulkan)
+        run: ./build_linux.sh vulkan x64
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: libllamadart_linux_x64
+          path: third_party/bin/linux/x64/libllamadart.so
+
+  build-linux-arm64:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: third_party
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Cross-compilation Tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu ccache ninja-build
+
+      - name: ccache
+        uses: ggml-org/ccache-action@v1.2.16
+        with:
+          key: build-linux-arm64
+
+      - name: Build Linux (arm64)
+        run: ./build_linux.sh cpu arm64
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: libllamadart_linux_arm64
+          path: third_party/bin/linux/arm64/libllamadart.so
+
+  build-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: third_party
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies (ccache, ninja)
+        run: choco install ccache ninja -y
+
+      - name: ccache
+        uses: ggml-org/ccache-action@v1.2.16
+        with:
+          key: windows-vulkan
+          evict-old-files: 1d
+          save: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
+
+      - name: Install Vulkan SDK
+        run: |
+          $ver = "1.4.313.2"
+          curl.exe -o $env:RUNNER_TEMP/VulkanSDK-Installer.exe -L "https://sdk.lunarg.com/sdk/download/$ver/windows/vulkansdk-windows-X64-$ver.exe"
+          & "$env:RUNNER_TEMP\VulkanSDK-Installer.exe" --accept-licenses --default-answer --confirm-command install
+          Add-Content $env:GITHUB_ENV "VULKAN_SDK=C:\VulkanSDK\$ver"
+          Add-Content $env:GITHUB_PATH "C:\VulkanSDK\$ver\Bin"
+
+      - name: Build Windows
+        run: .\build_windows.ps1 vulkan
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: libllamadart_windows_x64
+          path: third_party/bin/windows/x64/libllamadart.dll
+
+  release:
+    needs: [build-android, build-apple, build-linux-x64-vulkan, build-linux-arm64, build-windows]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare Assets
+        run: |
+          mkdir -p release_assets
+          # Windows
+          find artifacts/libllamadart_windows_x64 -name "*.dll" -exec cp {} release_assets/libllamadart-windows-x64.dll \;
+          # Linux
+          find artifacts/libllamadart_linux_x64 -name "*.so" -exec cp {} release_assets/libllamadart-linux-x64.so \;
+          find artifacts/libllamadart_linux_arm64 -name "*.so" -exec cp {} release_assets/libllamadart-linux-arm64.so \;
+          # macOS
+          find artifacts/libllamadart_apple_macos-arm64 -name "*.a" -exec cp {} release_assets/libllamadart-macos-arm64.a \;
+          find artifacts/libllamadart_apple_macos-arm64 -name "*.dylib" -exec cp {} release_assets/libllamadart-macos-arm64.dylib \;
+          find artifacts/libllamadart_apple_macos-x86_64 -name "*.a" -exec cp {} release_assets/libllamadart-macos-x86_64.a \;
+          find artifacts/libllamadart_apple_macos-x86_64 -name "*.dylib" -exec cp {} release_assets/libllamadart-macos-x86_64.dylib \;
+          # iOS
+          find artifacts/libllamadart_apple_ios-device-arm64 -name "*.a" -exec cp {} release_assets/ \;
+          find artifacts/libllamadart_apple_ios-device-arm64 -name "*.dylib" -exec cp {} release_assets/ \;
+          find artifacts/libllamadart_apple_ios-sim-arm64 -name "*.a" -exec cp {} release_assets/ \;
+          find artifacts/libllamadart_apple_ios-sim-arm64 -name "*.dylib" -exec cp {} release_assets/ \;
+          find artifacts/libllamadart_apple_ios-sim-x86_64 -name "*.a" -exec cp {} release_assets/ \;
+          find artifacts/libllamadart_apple_ios-sim-x86_64 -name "*.dylib" -exec cp {} release_assets/ \;
+          # Android
+          find artifacts/libllamadart_android_arm64-v8a -name "*.so" -exec cp {} release_assets/libllamadart-android-arm64.so \;
+          find artifacts/libllamadart_android_x86_64 -name "*.so" -exec cp {} release_assets/libllamadart-android-x64.so \;
+          ls -R release_assets
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release_assets/*
+          draft: true
+          prerelease: false
