@@ -24,7 +24,7 @@ dart pub get
 This will download a small default model (Qwen 2.5 0.5B) if not already present and start a chat session.
 
 ```bash
-dart bin/main.dart
+dart run
 ```
 
 ### 3. Run with a Specific Model
@@ -32,7 +32,7 @@ dart bin/main.dart
 You can provide a local path or a Hugging Face GGUF URL.
 
 ```bash
-dart bin/main.dart -m "path/to/model.gguf"
+dart run -- -m "path/to/model.gguf"
 ```
 
 ### 4. Single Response Mode
@@ -40,7 +40,7 @@ dart bin/main.dart -m "path/to/model.gguf"
 Useful for scripting or quick queries.
 
 ```bash
-dart bin/main.dart -p "What is the capital of France?"
+dart run -- -p "What is the capital of France?"
 ```
 
 ## Options
@@ -52,7 +52,10 @@ dart bin/main.dart -p "What is the capital of France?"
 
 ## Project Structure
 
-- **`bin/main.dart`**: The CLI entry point and user interface logic.
+- **`bin/llamadart_basic_example.dart`**: The CLI entry point and user interface logic.
+- **`lib/services/llama_service.dart`**: High-level wrapper for the `llamadart` engine.
+- **`lib/services/model_service.dart`**: Handles model downloading and path verification.
+- **`lib/models.dart`**: Data structures for the application.
 - **`lib/services/llama_service.dart`**: High-level wrapper for the `llamadart` engine.
 - **`lib/services/model_service.dart`**: Handles model downloading and path verification.
 - **`lib/models.dart`**: Data structures for the application.
