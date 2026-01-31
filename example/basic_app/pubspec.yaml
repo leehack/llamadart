@@ -11,6 +11,7 @@ dependencies:
     path: ../..  # Use local version for testing
   http: ^1.6.0
   path: ^1.8.3
+  args: ^2.4.2
 
 dev_dependencies:
   lints: ^6.1.0
