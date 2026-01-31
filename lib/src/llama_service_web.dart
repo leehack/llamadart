@@ -125,6 +125,26 @@ class LlamaService implements LlamaServiceBase {
     _isReady = true;
   }
 
+  @override
+  Stream<String> chat(
+    List<LlamaChatMessage> messages, {
+    GenerationParams? params,
+  }) async* {
+    if (!_isReady || _wllama == null) {
+      throw Exception('Service not initialized');
+    }
+
+    final result = await applyChatTemplate(messages);
+
+    // Merge detected stop sequences with user provided ones
+    final stops = {...result.stopSequences, ...?params?.stopSequences}.toList();
+
+    yield* generate(
+      result.prompt,
+      params: params?.copyWith(stopSequences: stops),
+    );
+  }
+
   /// Generates a stream of text from the given [prompt].
   @override
   Stream<String> generate(String prompt, {GenerationParams? params}) async* {
@@ -237,7 +257,7 @@ class LlamaService implements LlamaServiceBase {
 
   /// Applies a chat template to the given [messages].
   @override
-  Future<String> applyChatTemplate(
+  Future<LlamaChatTemplateResult> applyChatTemplate(
     List<LlamaChatMessage> messages, {
     bool addAssistant = true,
   }) async {
@@ -255,14 +275,13 @@ class LlamaService implements LlamaServiceBase {
         .toList()
         .toJS;
 
+    String prompt;
     try {
       // wllama v2.x supports utils.chatTemplate(messages, tmpl)
       // Passing null for tmpl uses the model's internal template
       final promise = _wllama!.utils.chatTemplate(jsMessages);
-      // promise cannot be null based on static typing of standard JS compilation,
-      // but if runtime issues occur, it throws anyway.
-      final prompt = await promise.toDart;
-      return prompt.toDart;
+      final promptJs = await promise.toDart;
+      prompt = promptJs.toDart;
     } catch (e) {
       // Manual fallback (ChatML style as a safe default for modern models like Qwen/Yi/etc)
       final buffer = StringBuffer();
@@ -280,8 +299,25 @@ class LlamaService implements LlamaServiceBase {
       if (addAssistant) {
         buffer.write('<|im_start|>assistant\n');
       }
-      return buffer.toString();
+      prompt = buffer.toString();
     }
+
+    // Auto-detect stop sequences from metadata
+    final stops = <String>[];
+    final metadata = await getAllMetadata();
+    final template = metadata['tokenizer.chat_template']?.toLowerCase() ?? "";
+    if (template.contains('im_end')) stops.add('<|im_end|>');
+    if (template.contains('end_of_turn')) stops.add('<end_of_turn>');
+    if (template.contains('eot_id')) stops.add('<|eot_id|>');
+
+    final arch = metadata['general.architecture']?.toLowerCase() ?? "";
+    if (arch.contains('llama')) stops.add('<|eot_id|>');
+    if (arch.contains('gemma')) stops.add('<end_of_turn>');
+
+    return LlamaChatTemplateResult(
+      prompt: prompt,
+      stopSequences: stops.toSet().toList(),
+    );
   }
 
   /// Returns model metadata for the given [key], or null if not found.

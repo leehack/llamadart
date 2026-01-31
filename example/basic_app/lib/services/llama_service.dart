@@ -25,14 +25,14 @@ class LlamaCliService {
   Future<String> chat(String text) async {
     _history.add(CliMessage(text: text, role: CliRole.user));
 
-    final prompt = await _buildPrompt();
+    final messages = _getChatHistory();
     String response = "";
 
-    await for (final token in _service.generate(prompt)) {
+    await for (final token in _service.chat(messages)) {
       response += token;
     }
 
-    final cleanResponse = _cleanResponse(response);
+    final cleanResponse = response.trim();
     _history.add(CliMessage(text: cleanResponse, role: CliRole.assistant));
     return cleanResponse;
   }
@@ -41,36 +41,25 @@ class LlamaCliService {
   Stream<String> chatStream(String text) async* {
     _history.add(CliMessage(text: text, role: CliRole.user));
 
-    final prompt = await _buildPrompt();
+    final messages = _getChatHistory();
     String fullResponse = "";
 
-    await for (final token in _service.generate(prompt)) {
+    await for (final token in _service.chat(messages)) {
       fullResponse += token;
       yield token;
     }
 
-    final cleanResponse = _cleanResponse(fullResponse);
+    final cleanResponse = fullResponse.trim();
     _history.add(CliMessage(text: cleanResponse, role: CliRole.assistant));
   }
 
-  Future<String> _buildPrompt() async {
-    final messages = _history
+  List<LlamaChatMessage> _getChatHistory() {
+    return _history
         .map((m) => LlamaChatMessage(
               role: m.role == CliRole.user ? 'user' : 'assistant',
               content: m.text,
             ))
         .toList();
-
-    return await _service.applyChatTemplate(messages);
-  }
-
-  String _cleanResponse(String response) {
-    return response
-        .replaceAll('<|im_end|>', '')
-        .replaceAll('<|im_start|>', '')
-        .replaceAll('<|end_of_turn|>', '')
-        .replaceAll('</s>', '')
-        .trim();
   }
 
   /// Disposes the underlying engine resources.

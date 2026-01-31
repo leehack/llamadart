@@ -143,6 +143,39 @@ class GenerationParams {
     this.seed,
     this.stopSequences = const [],
   });
+
+  /// Creates a copy of this [GenerationParams] with updated fields.
+  GenerationParams copyWith({
+    int? maxTokens,
+    double? temp,
+    int? topK,
+    double? topP,
+    double? penalty,
+    int? seed,
+    List<String>? stopSequences,
+  }) {
+    return GenerationParams(
+      maxTokens: maxTokens ?? this.maxTokens,
+      temp: temp ?? this.temp,
+      topK: topK ?? this.topK,
+      topP: topP ?? this.topP,
+      penalty: penalty ?? this.penalty,
+      seed: seed ?? this.seed,
+      stopSequences: stopSequences ?? this.stopSequences,
+    );
+  }
+}
+
+/// Result of applying a chat template.
+class LlamaChatTemplateResult {
+  /// The formatted prompt string.
+  final String prompt;
+
+  /// Automatically detected stop sequences for this template/model.
+  final List<String> stopSequences;
+
+  /// Creates a new template result.
+  LlamaChatTemplateResult({required this.prompt, required this.stopSequences});
 }
 
 /// Platform-agnostic interface for LLM inference.
@@ -176,11 +209,20 @@ abstract class LlamaServiceBase {
   /// Cancels the current generation.
   void cancelGeneration();
 
+  /// High-level chat interface that automatically detects stop sequences,
+  /// applies the template and returns a stream of tokens.
+  ///
+  /// This is the recommended way to interact with chat models.
+  Stream<String> chat(
+    List<LlamaChatMessage> messages, {
+    GenerationParams? params,
+  });
+
   /// Applies the model's chat template to a list of messages.
   ///
   /// This uses the jinja template stored in the model's metadata (if available)
-  /// or a suitable fallback. Returns the formatted prompt.
-  Future<String> applyChatTemplate(
+  /// or a suitable fallback. Returns the formatted prompt and detected stop sequences.
+  Future<LlamaChatTemplateResult> applyChatTemplate(
     List<LlamaChatMessage> messages, {
     bool addAssistant = true,
   });

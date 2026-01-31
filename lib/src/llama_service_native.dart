@@ -136,7 +136,8 @@ class _MetadataResponse {
 
 class _ApplyTemplateResponse {
   final String prompt;
-  _ApplyTemplateResponse(this.prompt);
+  final List<String> stopSequences;
+  _ApplyTemplateResponse(this.prompt, this.stopSequences);
 }
 
 class _ErrorResponse {
@@ -362,7 +363,25 @@ class LlamaService implements LlamaServiceBase {
   }
 
   @override
-  Future<String> applyChatTemplate(
+  Stream<String> chat(
+    List<LlamaChatMessage> messages, {
+    GenerationParams? params,
+  }) async* {
+    if (!_isReady) throw Exception('Service not initialized');
+
+    final result = await applyChatTemplate(messages);
+
+    // Merge detected stop sequences with user provided ones
+    final stops = {...result.stopSequences, ...?params?.stopSequences}.toList();
+
+    yield* generate(
+      result.prompt,
+      params: params?.copyWith(stopSequences: stops),
+    );
+  }
+
+  @override
+  Future<LlamaChatTemplateResult> applyChatTemplate(
     List<LlamaChatMessage> messages, {
     bool addAssistant = true,
   }) async {
@@ -375,7 +394,10 @@ class LlamaService implements LlamaServiceBase {
 
     final response = await receivePort.first;
     if (response is _ApplyTemplateResponse) {
-      return response.prompt;
+      return LlamaChatTemplateResult(
+        prompt: response.prompt,
+        stopSequences: response.stopSequences,
+      );
     } else if (response is _ErrorResponse) {
       throw Exception(response.message);
     } else {
@@ -553,18 +575,23 @@ class LlamaService implements LlamaServiceBase {
   }
 
   // --- Isolate Entry Point ---
+  static bool _logCallbackSet = false;
+
   static void _isolateEntry(SendPort initialSendPort) {
     final receivePort = ReceivePort();
     initialSendPort.send(receivePort.sendPort);
 
     final state = _LlamaState();
 
-    // Register log callbacks
-    final logCallbackPtr = Pointer.fromFunction<ggml_log_callbackFunction>(
-      _logCallback,
-    );
-    llama_log_set(logCallbackPtr, nullptr);
-    ggml_log_set(logCallbackPtr, nullptr);
+    // Register log callbacks only once per process
+    if (!_logCallbackSet) {
+      final logCallbackPtr = Pointer.fromFunction<ggml_log_callbackFunction>(
+        _logCallback,
+      );
+      llama_log_set(logCallbackPtr, nullptr);
+      ggml_log_set(logCallbackPtr, nullptr);
+      _logCallbackSet = true;
+    }
 
     _log("Isolate: Initializing Backend...");
 
@@ -854,13 +881,13 @@ class LlamaService implements LlamaServiceBase {
       final samplerChainParams = llama_sampler_chain_default_params();
       state.sampler = llama_sampler_chain_init(samplerChainParams);
 
-      // Dummy sampler
+      // Dummy sampler (will be re-initialized in _handleGenerate with correct params)
       llama_sampler_chain_add(
         state.sampler!,
         llama_sampler_init_dist(DateTime.now().millisecondsSinceEpoch),
       );
 
-      // Initialize Batch
+      // Initialize Batch (allocate for max context)
       state.batch = llama_batch_init(resolvedCtxSize, 0, 1);
 
       _log("Isolate: Init complete.");
@@ -877,40 +904,19 @@ class LlamaService implements LlamaServiceBase {
     _GenerateRequest message,
     _LlamaState state,
   ) {
-    if (state.model == null) {
-      message.sendPort.send(_ErrorResponse("Model not initialized"));
+    if (state.model == null || state.ctx == null) {
+      message.sendPort.send(_ErrorResponse("Model or context not initialized"));
       return;
     }
 
-    // Refresh context/batch for each request
-    state.ctx?.dispose();
-    state.ctx = null;
-    if (state.batch != null) llama_batch_free(state.batch!);
-    if (state.sampler != null) llama_sampler_free(state.sampler!);
+    // Clear KV cache for new sequence
+    final memory = llama_get_memory(state.ctx!.pointer);
+    llama_memory_seq_rm(memory, -1, -1, -1);
 
-    final ctxParams = llama_context_default_params();
-    ctxParams.n_ctx = state.lastModelParams?.contextSize ?? 2048;
-    ctxParams.n_batch = ctxParams.n_ctx;
-    ctxParams.n_ubatch = ctxParams.n_ctx;
-    final ctxPtr = llama_init_from_model(state.model!.pointer, ctxParams);
-    if (ctxPtr == nullptr) {
-      message.sendPort.send(_ErrorResponse("Failed to refresh context"));
-      return;
+    // Re-initialize sampler with correct params
+    if (state.sampler != null) {
+      llama_sampler_free(state.sampler!);
     }
-    state.ctx = _LlamaContextWrapper(ctxPtr, state.model!);
-
-    // Apply active LoRAs to the new context
-    for (final entry in state.activeLoras.entries) {
-      final adapter = state.loraAdapters[entry.key];
-      if (adapter != null) {
-        llama_set_adapter_lora(
-          state.ctx!.pointer,
-          adapter.pointer,
-          entry.value,
-        );
-      }
-    }
-
     final samplerChainParams = llama_sampler_chain_default_params();
     state.sampler = llama_sampler_chain_init(samplerChainParams);
 
@@ -946,14 +952,14 @@ class LlamaService implements LlamaServiceBase {
       ),
     );
 
-    state.batch = llama_batch_init(ctxParams.n_ctx, 0, 1);
+    final nCtx = llama_n_ctx(state.ctx!.pointer);
 
     _log(
       "Isolate: Generating for prompt: ${message.prompt.substring(0, min(100, message.prompt.length))}...",
     );
 
     // Safety: allocate enough for prompt chars OR context size
-    final maxTokensPossible = max(message.prompt.length + 64, ctxParams.n_ctx);
+    final maxTokensPossible = max(message.prompt.length + 64, nCtx);
     final tokensPtr = malloc<Int32>(maxTokensPossible);
     final pieceBuf = malloc<Uint8>(256);
     final cancelToken = Pointer<Int8>.fromAddress(message.cancelTokenAddress);
@@ -972,7 +978,7 @@ class LlamaService implements LlamaServiceBase {
         promptPtr.cast(),
         byteLength,
         tokensPtr,
-        message.prompt.length + 8, // Safety margin for special tokens
+        maxTokensPossible,
         true, // add_special (BOS)
         true, // parse_special
       );
@@ -983,10 +989,10 @@ class LlamaService implements LlamaServiceBase {
         return;
       }
 
-      if (nTokens > ctxParams.n_ctx) {
+      if (nTokens > nCtx) {
         message.sendPort.send(
           _ErrorResponse(
-            "Prompt too long ($nTokens tokens) for context size (${ctxParams.n_ctx})",
+            "Prompt too long ($nTokens tokens) for context size ($nCtx)",
           ),
         );
         return;
@@ -1005,7 +1011,8 @@ class LlamaService implements LlamaServiceBase {
       }
 
       if (llama_decode(state.ctx!.pointer, b) != 0) {
-        message.sendPort.send(_ErrorResponse("Decode failed"));
+        _log("Isolate: Decode failed for prompt of size $nTokens. n_ctx=$nCtx");
+        message.sendPort.send(_ErrorResponse("Decode failed (prompt)"));
         return;
       }
 
@@ -1013,7 +1020,13 @@ class LlamaService implements LlamaServiceBase {
       int currentPos = nTokens;
       String fullGeneratedText = "";
 
+      _log("Isolate: Starting generation loop. n_ctx=$nCtx, nTokens=$nTokens");
+
       for (int i = 0; i < message.params.maxTokens; i++) {
+        if (currentPos >= nCtx) {
+          _log("Isolate: Context size reached. Stopping generation.");
+          break;
+        }
         // Sample
         final newTokenId = llama_sampler_sample(
           state.sampler!,
@@ -1260,9 +1273,10 @@ class LlamaService implements LlamaServiceBase {
       malloc.free(keyPtr);
 
       Pointer<Char> tmplPtr = nullptr;
+      String templateStr = "";
       if (tmplRes >= 0) {
         tmplPtr = tmplBuf;
-        final templateStr = tmplBuf.cast<Utf8>().toDartString();
+        templateStr = tmplBuf.cast<Utf8>().toDartString();
         _log(
           "Isolate: Using template from metadata (length: ${templateStr.length})",
         );
@@ -1320,7 +1334,45 @@ class LlamaService implements LlamaServiceBase {
 
       final prompt = buf.cast<Utf8>().toDartString();
       malloc.free(buf);
-      message.sendPort.send(_ApplyTemplateResponse(prompt));
+
+      // Detect stop sequences
+      final stopSequences = <String>{};
+      final vocab = llama_model_get_vocab(state.model!.pointer);
+
+      // Always add standard EOS if it's text-based
+      final eosToken = llama_vocab_eos(vocab);
+      if (eosToken != -1) {
+        final textPtr = llama_vocab_get_text(vocab, eosToken);
+        if (textPtr != nullptr) {
+          stopSequences.add(textPtr.cast<Utf8>().toDartString());
+        }
+      }
+
+      final eotToken = llama_vocab_eot(vocab);
+      if (eotToken != -1) {
+        final textPtr = llama_vocab_get_text(vocab, eotToken);
+        if (textPtr != nullptr) {
+          stopSequences.add(textPtr.cast<Utf8>().toDartString());
+        }
+      }
+
+      // Fallback heuristics from template string
+      if (templateStr.isNotEmpty) {
+        final lowerTmpl = templateStr.toLowerCase();
+        if (lowerTmpl.contains('im_end')) stopSequences.add('<|im_end|>');
+        if (lowerTmpl.contains('eot_id')) stopSequences.add('<|eot_id|>');
+        if (lowerTmpl.contains('end_of_turn'))
+          stopSequences.add('<end_of_turn>');
+      }
+
+      // Ensure some defaults for common templates if empty
+      if (stopSequences.isEmpty) {
+        stopSequences.add('</s>');
+      }
+
+      message.sendPort.send(
+        _ApplyTemplateResponse(prompt, stopSequences.toList()),
+      );
     } catch (e) {
       message.sendPort.send(_ErrorResponse(e.toString()));
     } finally {

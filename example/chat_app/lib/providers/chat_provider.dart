@@ -91,9 +91,6 @@ class ChatProvider extends ChangeNotifier {
 
       _maxTokens = await _chatService.llama.getContextSize();
 
-      final metadata = await _chatService.llama.getAllMetadata();
-      _autoStopSequences = _chatService.detectStopSequences(metadata);
-
       final libSupported = await _chatService.llama.isGpuSupported();
 
       _gpuSupported =
@@ -144,11 +141,7 @@ class ChatProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final prompt = await _chatService.buildPrompt(
-        _messages,
-        _settings.modelPath!,
-        _maxTokens,
-      );
+      final result = await _chatService.buildPrompt(_messages, _maxTokens);
 
       final responseMessageIndex = _messages.length;
       _messages.add(ChatMessage(text: "...", isUser: false));
@@ -157,10 +150,23 @@ class ChatProvider extends ChangeNotifier {
       String fullResponse = "";
       DateTime lastUpdate = DateTime.now();
 
+      final List<LlamaChatMessage> conversationMessages = _messages
+          .where(
+            (m) =>
+                m.text != 'Model loaded successfully! Ready to chat.' &&
+                m.text != '...',
+          )
+          .map(
+            (m) => LlamaChatMessage(
+              role: m.isUser ? 'user' : 'assistant',
+              content: m.text,
+            ),
+          )
+          .toList();
+
       await for (final token in _chatService.generate(
-        prompt,
+        conversationMessages,
         _settings,
-        _autoStopSequences,
       )) {
         if (!_isGenerating) break;
         fullResponse += token;

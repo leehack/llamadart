@@ -52,7 +52,15 @@ class LlamaService implements LlamaServiceBase {
   }
 
   @override
-  Future<String> applyChatTemplate(
+  Stream<String> chat(
+    List<LlamaChatMessage> messages, {
+    GenerationParams? params,
+  }) {
+    throw UnimplementedError('LlamaService not supported on this platform');
+  }
+
+  @override
+  Future<LlamaChatTemplateResult> applyChatTemplate(
     List<LlamaChatMessage> messages, {
     bool addAssistant = true,
   }) {
