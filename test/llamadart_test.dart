@@ -79,7 +79,7 @@ void main() async {
       final subscription = stream.listen(
         (token) {
           tokenCount++;
-          if (tokenCount == 3) {
+          if (tokenCount == 5) {
             service.cancelGeneration();
           }
         },

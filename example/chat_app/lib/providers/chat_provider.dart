@@ -26,7 +26,6 @@ class ChatProvider extends ChangeNotifier {
   int _currentTokens = 0;
   bool _isPruning = false;
 
-  List<String> _autoStopSequences = [];
   List<String> _availableDevices = [];
 
   // Getters
@@ -58,7 +57,9 @@ class ChatProvider extends ChangeNotifier {
   Future<void> _init() async {
     _settings = await _settingsService.loadSettings();
     try {
-      _availableDevices = await LlamaService.getAvailableDevices();
+      final tempService = LlamaService();
+      _availableDevices = [await tempService.getBackendName()];
+      await tempService.dispose();
     } catch (e) {
       debugPrint("Error fetching devices: $e");
     }
@@ -141,7 +142,7 @@ class ChatProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final result = await _chatService.buildPrompt(_messages, _maxTokens);
+      await _chatService.buildPrompt(_messages, _maxTokens);
 
       final responseMessageIndex = _messages.length;
       _messages.add(ChatMessage(text: "...", isUser: false));

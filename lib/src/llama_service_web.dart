@@ -1,479 +1,107 @@
 import 'dart:async';
-import 'dart:js_interop';
-import 'dart:js_interop_unsafe';
-import 'package:web/web.dart';
-import 'dart:convert';
-import 'package:llamadart/src/llama_service_interface.dart';
-import 'package:llamadart/src/web/wllama_interop.dart';
+import 'llama_service_interface.dart';
+import 'llama_engine.dart';
+import 'web/web_backend.dart';
 
-// Export interface
 export 'package:llamadart/src/llama_service_interface.dart';
 
-/// Web implementation of [LlamaServiceBase] using wllama.
+/// Web implementation of [LlamaServiceBase] using [LlamaEngine] and [WebLlamaBackend].
+///
+/// This class provides a platform-specific implementation for web browsers
+/// using WebAssembly and the wllama library.
 class LlamaService implements LlamaServiceBase {
-  Wllama? _wllama;
-  bool _isReady = false;
-  AbortController? _abortController;
+  late final LlamaEngine _engine;
+  final WebLlamaBackend _backend;
 
-  final String _wllamaJsUrl;
-  final String _wllamaWasmUrl;
-
-  /// Creates a new LlamaService.
-  ///
-  /// [wllamaPath] is the URL to `wllama.js` (default: jsDelivr CDN).
-  /// [wasmPath] is the URL to `wllama.wasm` (default: jsDelivr CDN).
+  /// Creates a new [LlamaService] for web platforms.
   LlamaService({String? wllamaPath, String? wasmPath})
-    : _wllamaJsUrl =
-          wllamaPath ??
-          'https://cdn.jsdelivr.net/npm/@wllama/wllama@2.3.7/esm/index.js',
-      _wllamaWasmUrl =
-          wasmPath ??
-          'https://cdn.jsdelivr.net/npm/@wllama/wllama@2.3.7/esm/single-thread/wllama.wasm';
-
-  /// Returns a list of available devices. On web, this reports the WASM environment.
-  static Future<List<String>> getAvailableDevices() async {
-    // TODO: check for WebGPU support if we enable the experimental backend
-    return ["WASM"];
+    : _backend = WebLlamaBackend(wllamaPath: wllamaPath, wasmPath: wasmPath) {
+    _engine = LlamaEngine(_backend);
   }
 
-  /// Whether the service is ready for inference.
   @override
-  bool get isReady => _isReady;
+  bool get isReady => _engine.isReady;
 
-  /// Initializes the service with the model at [modelPath].
-  ///
-  /// On web, [modelPath] is treated as a URL or a relative path from the server.
   @override
-  Future<void> init(String modelPath, {ModelParams? modelParams}) async {
-    // On web, "path" is ambiguous. We assume the user creates a URL
-    // or we throw unsupported if they try to pass a file path that isn't a URL.
-    // For consistency, we'll try to use it as a URL.
-    await initFromUrl(modelPath, modelParams: modelParams);
-  }
+  Future<void> init(String modelPath, {ModelParams? modelParams}) => _engine
+      .loadModel(modelPath, modelParams: modelParams ?? const ModelParams());
 
-  /// Initializes the service with the model at the given [modelUrl].
   @override
-  Future<void> initFromUrl(String modelUrl, {ModelParams? modelParams}) async {
-    if (modelParams != null && modelParams.loras.isNotEmpty) {
-      print(
-        'Warning: LoRA adapters are not yet supported on Web (Wasm). They will be ignored.',
+  Future<void> initFromUrl(String modelUrl, {ModelParams? modelParams}) =>
+      _engine.loadModelFromUrl(
+        modelUrl,
+        modelParams: modelParams ?? const ModelParams(),
       );
-    }
-    if (_wllama != null) {
-      // If already initialized, dispose/exit the current instance to load the new one.
-      final exitPromise = _wllama!.exit();
-      if (exitPromise != null) {
-        await exitPromise.toDart;
-      }
-      _wllama = null;
-      _isReady = false;
-    }
 
-    // 1. Load the Wllama JS library if not already loaded
-    if (!globalContext.has('Wllama')) {
-      final completer = Completer<void>();
-
-      // Create a script tag to load the ES module and expose it globally
-      final script = document.createElement('script') as HTMLScriptElement;
-      script.type = 'module';
-      // Note: In Flutter Web, assets are served from assets/...
-      // Plugins assets are in assets/packages/<plugin>/...
-      // But we are in the plugin itself? No, when running the example app.
-      // The relative path from the app index.html is needed.
-      // Standard flutter pattern: assets/packages/llamadart/assets/wllama/...
-      // Standard CDN path for wllama
-      // We use a specific version to ensure compatibility
-
-      script.text =
-          '''
-        import { Wllama } from "$_wllamaJsUrl";
-        window.Wllama = Wllama;
-        window.dispatchEvent(new Event('wllama_ready'));
-      ''';
-
-      void onReady(Event e) {
-        window.removeEventListener('wllama_ready', onReady.toJS);
-        completer.complete();
-      }
-
-      window.addEventListener('wllama_ready', onReady.toJS);
-      document.head!.appendChild(script);
-
-      await completer.future;
-    }
-
-    // 2. Initialize Wllama instance
-    // We need to pass the paths to the WASM files.
-    // The key 'single-thread/wllama.wasm' is required by Wllama.
-    final pathConfig = JSObject();
-    pathConfig.setProperty(
-      'single-thread/wllama.wasm'.toJS,
-      _wllamaWasmUrl.toJS,
-    );
-
-    _wllama = Wllama(pathConfig);
-
-    final loadPromise = _wllama!.loadModelFromUrl(
-      modelUrl,
-      LoadModelOptions(useCache: true),
-    );
-    if (loadPromise == null) {
-      throw Exception('Failed to load model: Wllama returned null promise');
-    }
-    await loadPromise.toDart;
-
-    _isReady = true;
-  }
+  @override
+  Stream<String> generate(String prompt, {GenerationParams? params}) =>
+      _engine.generate(prompt, params: params ?? const GenerationParams());
 
   @override
   Stream<String> chat(
     List<LlamaChatMessage> messages, {
     GenerationParams? params,
-  }) async* {
-    if (!_isReady || _wllama == null) {
-      throw Exception('Service not initialized');
-    }
+  }) => _engine.chat(messages, params: params);
 
-    final result = await applyChatTemplate(messages);
-
-    // Merge detected stop sequences with user provided ones
-    final stops = {...result.stopSequences, ...?params?.stopSequences}.toList();
-
-    yield* generate(
-      result.prompt,
-      params: params?.copyWith(stopSequences: stops),
-    );
-  }
-
-  /// Generates a stream of text from the given [prompt].
   @override
-  Stream<String> generate(String prompt, {GenerationParams? params}) async* {
-    if (!_isReady || _wllama == null) {
-      throw Exception('Service not initialized');
-    }
+  Future<List<int>> tokenize(String text) => _engine.tokenize(text);
 
-    // Initialize abort controller for this generation
-    _abortController = AbortController();
-
-    final p = params ?? const GenerationParams();
-    final controller = StreamController<List<int>>();
-
-    final onNewToken =
-        (JSAny? token, JSAny? piece, JSAny? currentText, JSAny? optionals) {
-          if (piece == null || !piece.isA<JSUint8Array>()) {
-            return;
-          }
-          if (currentText == null || !currentText.isA<JSString>()) {
-            return;
-          }
-
-          // Get bytes
-          final bytes = (piece as JSUint8Array).toDart;
-
-          // Check for stop sequences in web using the full text from JS (which handles decoding)
-          if (p.stopSequences.isNotEmpty) {
-            final fullText = (currentText as JSString).toDart;
-            for (final stop in p.stopSequences) {
-              if (fullText.endsWith(stop)) {
-                _abortController?.abort();
-                return;
-              }
-            }
-          }
-
-          controller.add(bytes);
-        }.toJS;
-
-    final opts = CompletionOptions(
-      nPredict: p.maxTokens,
-      sampling: WllamaSamplingConfig.create(
-        temp: p.temp,
-        topK: p.topK,
-        topP: p.topP,
-        repeatPenalty: p.penalty,
-      ),
-      seed: p.seed ?? DateTime.now().millisecondsSinceEpoch,
-      onNewToken: onNewToken,
-      signal: _abortController?.signal,
-    );
-
-    // Using a separate future to drive the completion so we can yield from controller
-    () async {
-      try {
-        final completionPromise = _wllama!.createCompletion(prompt, opts);
-        if (completionPromise != null) {
-          await completionPromise.toDart;
-        }
-      } catch (e) {
-        controller.addError(e);
-      } finally {
-        await controller.close();
-      }
-    }();
-
-    yield* controller.stream.transform(utf8.decoder);
-  }
-
-  /// Tokenizes the given [text] into a list of token IDs.
   @override
-  Future<List<int>> tokenize(String text) async {
-    if (_wllama == null) return [];
-    final promise = _wllama!.tokenize(text);
-    if (promise == null) return [];
-    final tokensRes = await promise.toDart;
-    // Wllama returns a TypedArray (usually Uint32Array)
-    if (tokensRes.isA<JSUint32Array>()) {
-      return (tokensRes as JSUint32Array).toDart.cast<int>().toList();
-    } else if (tokensRes.isA<JSInt32Array>()) {
-      return (tokensRes as JSInt32Array).toDart.cast<int>().toList();
-    } else if (tokensRes.isA<JSArray>()) {
-      // Fallback for standard JS arrays if that happens
-      return (tokensRes as JSArray).toDart
-          .map((e) => (e as JSNumber).toDartInt)
-          .toList();
-    }
+  Future<String> detokenize(List<int> tokens) => _engine.detokenize(tokens);
 
-    print('Web: tokenize returned unexpected type: ${tokensRes.runtimeType}');
-    return [];
-  }
-
-  /// Detokenizes the given [tokens] back into a string.
   @override
-  Future<String> detokenize(List<int> tokens) async {
-    if (_wllama == null) return "";
-    final jsTokens = tokens.map((e) => e.toJS).toList().toJS;
-    final promise = _wllama!.detokenize(jsTokens);
-    if (promise == null) return "";
-    final result = await promise.toDart;
-    return result.toDart;
+  Future<String?> getModelMetadata(String key) async {
+    final meta = await _engine.getMetadata();
+    return meta[key];
   }
 
-  /// Cancels the current generation.
+  @override
+  Future<Map<String, String>> getAllMetadata() => _engine.getMetadata();
+
   @override
   void cancelGeneration() {
-    _abortController?.abort();
-    _abortController = null;
+    _engine.cancelGeneration();
   }
 
-  /// Applies a chat template to the given [messages].
   @override
   Future<LlamaChatTemplateResult> applyChatTemplate(
     List<LlamaChatMessage> messages, {
     bool addAssistant = true,
   }) async {
-    if (!_isReady || _wllama == null) {
-      throw Exception('Service not initialized');
+    if (!isReady) {
+      throw Exception("Service not initialized");
     }
-
-    final jsMessages = messages
-        .map((m) {
-          final jsMsg = JSObject();
-          jsMsg.setProperty('role'.toJS, m.role.toJS);
-          jsMsg.setProperty('content'.toJS, m.content.toJS);
-          return jsMsg;
-        })
-        .toList()
-        .toJS;
-
-    String prompt;
-    try {
-      // wllama v2.x supports utils.chatTemplate(messages, tmpl)
-      // Passing null for tmpl uses the model's internal template
-      final promise = _wllama!.utils.chatTemplate(jsMessages);
-      final promptJs = await promise.toDart;
-      prompt = promptJs.toDart;
-    } catch (e) {
-      // Manual fallback (ChatML style as a safe default for modern models like Qwen/Yi/etc)
-      final buffer = StringBuffer();
-      for (final m in messages) {
-        if (m.role == 'system') {
-          buffer.write('<|im_start|>system\n${m.content}<|im_end|>\n');
-        } else if (m.role == 'user') {
-          buffer.write('<|im_start|>user\n${m.content}<|im_end|>\n');
-        } else if (m.role == 'assistant') {
-          buffer.write('<|im_start|>assistant\n${m.content}<|im_end|>\n');
-        } else {
-          buffer.write('<|im_start|>${m.role}\n${m.content}<|im_end|>\n');
-        }
-      }
-      if (addAssistant) {
-        buffer.write('<|im_start|>assistant\n');
-      }
-      prompt = buffer.toString();
-    }
-
-    // Auto-detect stop sequences from metadata
-    final stops = <String>[];
-    final metadata = await getAllMetadata();
-    final template = metadata['tokenizer.chat_template']?.toLowerCase() ?? "";
-    if (template.contains('im_end')) stops.add('<|im_end|>');
-    if (template.contains('end_of_turn')) stops.add('<end_of_turn>');
-    if (template.contains('eot_id')) stops.add('<|eot_id|>');
-
-    final arch = metadata['general.architecture']?.toLowerCase() ?? "";
-    if (arch.contains('llama')) stops.add('<|eot_id|>');
-    if (arch.contains('gemma')) stops.add('<end_of_turn>');
-
-    return LlamaChatTemplateResult(
-      prompt: prompt,
-      stopSequences: stops.toSet().toList(),
-    );
+    return _engine.chatTemplate(messages, addAssistant: addAssistant);
   }
 
-  /// Returns model metadata for the given [key], or null if not found.
   @override
-  Future<String?> getModelMetadata(String key) async {
-    if (!_isReady || _wllama == null) {
-      return null;
-    }
+  Future<void> dispose() => _engine.dispose();
 
-    try {
-      final jsWllama = _wllama as JSObject;
-      JSAny? res;
-
-      // Try getModelMetadata (Wllama v2 method)
-      if (jsWllama.has('getModelMetadata')) {
-        res = _wllama!.getModelMetadata(key);
-      }
-      // Try metadata property (Wllama v2 property)
-      else if (jsWllama.has('metadata')) {
-        final meta = jsWllama.getProperty('metadata'.toJS) as JSObject;
-        res = meta.getProperty(key.toJS);
-      }
-      // Try legacy getMetadata
-      else if (jsWllama.has('getMetadata')) {
-        res = _wllama!.getMetadata(key);
-      }
-
-      if (res == null || res.isUndefined || res.isNull) return null;
-
-      // Convert JS value to string
-      if (res.isA<JSString>()) {
-        return (res as JSString).toDart;
-      }
-      return res.toString();
-    } catch (e) {
-      return null;
-    }
-  }
-
-  /// Disposes the service and the underlying wllama instance.
   @override
-  Future<void> dispose() async {
-    final exitPromise = _wllama?.exit();
-    if (exitPromise != null) {
-      await exitPromise.toDart;
-    }
-    _wllama = null;
-    _isReady = false;
-  }
+  Future<String> getBackendName() => _engine.getBackendName();
 
-  /// Returns the resolved context size.
+  @override
+  Future<bool> isGpuSupported() => _engine.isGpuSupported();
+
   @override
   Future<int> getContextSize() async {
-    if (_wllama == null) return 0;
-    // Try to get from metadata or default
-    final nCtx = await getModelMetadata("n_ctx");
-    if (nCtx != null) return int.tryParse(nCtx) ?? 2048;
-    return 2048;
+    final meta = await _engine.getMetadata();
+    return int.tryParse(meta['n_ctx'] ?? "0") ?? 0;
   }
 
-  /// Returns the token count for the given [text].
   @override
   Future<int> getTokenCount(String text) async {
     final tokens = await tokenize(text);
     return tokens.length;
   }
 
-  /// Returns all model metadata keys and values.
   @override
-  Future<Map<String, String>> getAllMetadata() async {
-    if (_wllama == null) {
-      return {};
-    }
-
-    try {
-      final jsWllama = _wllama as JSObject;
-      JSObject? meta;
-
-      // Try getModelMetadata() (Wllama v2)
-      if (jsWllama.has('getModelMetadata')) {
-        final res = _wllama!.getModelMetadata();
-        if (!res.isUndefined && !res.isNull && res.isA<JSObject>()) {
-          meta = res as JSObject;
-        }
-      }
-      // Try metadata property (Wllama v2)
-      if (meta == null && jsWllama.has('metadata')) {
-        final res = jsWllama.getProperty('metadata'.toJS);
-        if (!res.isUndefined && !res.isNull && res.isA<JSObject>()) {
-          meta = res as JSObject;
-        }
-      }
-      // Try legacy getMetadata()
-      if (meta == null && jsWllama.has('getMetadata')) {
-        final res = _wllama!.getMetadata();
-        if (!res.isUndefined && !res.isNull && res.isA<JSObject>()) {
-          meta = res as JSObject;
-        }
-      }
-
-      if (meta == null) {
-        return {};
-      }
-
-      final result = <String, String>{};
-      final jsMeta = meta;
-
-      // Use JS Object.keys to iterate
-      final keys = _jsObjectKeys(jsMeta);
-      for (int i = 0; i < keys.length; i++) {
-        final key = keys.getProperty(i.toJS);
-        if (key.isA<JSString>()) {
-          final keyStr = (key as JSString).toDart;
-          final val = jsMeta.getProperty(keyStr.toJS);
-          if (val.isA<JSString>()) {
-            result[keyStr] = (val as JSString).toDart;
-          } else {
-            result[keyStr] = val.toString();
-          }
-        }
-      }
-      return result;
-    } catch (e) {
-      return {};
-    }
-  }
-
-  // Helper to get JS object keys
-  JSArray _jsObjectKeys(JSObject obj) {
-    return (globalContext.getProperty('Object'.toJS) as JSObject).callMethod(
-          'keys'.toJS,
-          obj,
-        )
-        as JSArray;
-  }
-
-  /// Returns the name of the backend being used.
-  @override
-  Future<String> getBackendName() async => "WASM (Web)";
-
-  /// Returns true if GPU acceleration is supported.
-  @override
-  Future<bool> isGpuSupported() async => false; // WebGPU not yet explicitly toggled
+  Future<void> setLoraAdapter(String path, {double scale = 1.0}) =>
+      Future.value();
 
   @override
-  Future<void> setLoraAdapter(String path, {double scale = 1.0}) async {
-    print('LoRA is not yet supported on Web (Wasm).');
-  }
+  Future<void> removeLoraAdapter(String path) => Future.value();
 
   @override
-  Future<void> removeLoraAdapter(String path) async {
-    print('LoRA is not yet supported on Web (Wasm).');
-  }
-
-  @override
-  Future<void> clearLoraAdapters() async {
-    print('LoRA is not yet supported on Web (Wasm).');
-  }
+  Future<void> clearLoraAdapters() => Future.value();
 }

@@ -1,263 +1,103 @@
 import 'dart:async';
 
-/// GPU backend selection for runtime device preference.
-///
-/// Note: The actual availability of backends depends on compile-time configuration.
-/// If a backend is not compiled in, selection will fall back to the next available.
-enum GpuBackend {
-  /// Automatically select the best available backend (recommended).
-  /// Priority: Metal > Vulkan > CPU
-  auto,
+import 'models/model_params.dart';
+import 'models/llama_chat_message.dart';
+import 'models/generation_params.dart';
+import 'models/llama_chat_template_result.dart';
 
-  /// Force CPU-only inference (no GPU acceleration).
-  cpu,
+export 'models/gpu_backend.dart';
+export 'models/llama_log_level.dart';
+export 'models/lora_adapter_config.dart';
+export 'models/model_params.dart';
+export 'models/llama_chat_message.dart';
+export 'models/generation_params.dart';
+export 'models/llama_chat_template_result.dart';
 
-  /// Use Vulkan backend (cross-platform GPU support).
-  vulkan,
-
-  /// Use Apple Metal backend (macOS/iOS only, auto-enabled on Apple platforms).
-  metal,
-
-  /// Use BLAS backend (CPU acceleration).
-  blas,
-}
-
-/// Log level for llama.cpp.
-enum LlamaLogLevel {
-  /// No logging.
-  none,
-
-  /// Debug information.
-  debug,
-
-  /// General information.
-  info,
-
-  /// Warnings.
-  warn,
-
-  /// Errors only.
-  error,
-}
-
-/// Configuration for a LoRA adapter.
-class LoraAdapterConfig {
-  /// Local file path to the LoRA adapter.
-  final String path;
-
-  /// The strength of the adapter (0.0 to 1.0+). Defaults to 1.0.
-  final double scale;
-
-  /// Creates a LoRA adapter configuration.
-  const LoraAdapterConfig({required this.path, this.scale = 1.0});
-}
-
-/// Configuration parameters for loading the model.
-class ModelParams {
-  /// Context size (n_ctx). Defaults to 2048.
-  final int contextSize;
-
-  /// Number of layers to offload to GPU (n_gpu_layers). Defaults to 99 (all).
-  /// Set to 0 to force CPU-only inference regardless of preferred backend.
-  final int gpuLayers;
-
-  /// Preferred GPU backend for inference.
-  /// Defaults to [GpuBackend.auto] which selects the best available.
-  final GpuBackend preferredBackend;
-
-  /// Minimum log level to print. Defaults to [LlamaLogLevel.info].
-  final LlamaLogLevel logLevel;
-
-  /// Initial LoRA adapters to load with the model.
-  final List<LoraAdapterConfig> loras;
-
-  /// Creates configuration for the model.
-  const ModelParams({
-    this.contextSize = 0, // 0 = Auto detect from model
-    this.gpuLayers = 99,
-    this.preferredBackend = GpuBackend.auto,
-    this.logLevel = LlamaLogLevel.info,
-    this.loras = const [],
-  });
-
-  /// Creates a copy of this [ModelParams] with updated fields.
-  ModelParams copyWith({
-    int? contextSize,
-    int? gpuLayers,
-    GpuBackend? preferredBackend,
-    LlamaLogLevel? logLevel,
-    List<LoraAdapterConfig>? loras,
-  }) {
-    return ModelParams(
-      contextSize: contextSize ?? this.contextSize,
-      gpuLayers: gpuLayers ?? this.gpuLayers,
-      preferredBackend: preferredBackend ?? this.preferredBackend,
-      logLevel: logLevel ?? this.logLevel,
-      loras: loras ?? this.loras,
-    );
-  }
-}
-
-/// A message in a chat conversation.
-class LlamaChatMessage {
-  /// The role of the message (e.g., 'user', 'assistant', 'system').
-  final String role;
-
-  /// The content of the message.
-  final String content;
-
-  /// Creates a message with a role and content.
-  const LlamaChatMessage({required this.role, required this.content});
-}
-
-/// Parameters for text generation.
-class GenerationParams {
-  /// Maximum number of tokens to generate.
-  final int maxTokens;
-
-  /// Temperature for sampling (0.0 - 2.0).
-  final double temp;
-
-  /// Top-K sampling (0 to disable).
-  final int topK;
-
-  /// Top-P sampling.
-  final double topP;
-
-  /// Repeat penalty.
-  final double penalty;
-
-  /// Random seed.
-  final int? seed;
-
-  /// Custom sequences that will stop generation when found.
-  final List<String> stopSequences;
-
-  /// Creates generation parameters with default values.
-  const GenerationParams({
-    this.maxTokens = 512,
-    this.temp = 0.8,
-    this.topK = 40,
-    this.topP = 0.9,
-    this.penalty = 1.1,
-    this.seed,
-    this.stopSequences = const [],
-  });
-
-  /// Creates a copy of this [GenerationParams] with updated fields.
-  GenerationParams copyWith({
-    int? maxTokens,
-    double? temp,
-    int? topK,
-    double? topP,
-    double? penalty,
-    int? seed,
-    List<String>? stopSequences,
-  }) {
-    return GenerationParams(
-      maxTokens: maxTokens ?? this.maxTokens,
-      temp: temp ?? this.temp,
-      topK: topK ?? this.topK,
-      topP: topP ?? this.topP,
-      penalty: penalty ?? this.penalty,
-      seed: seed ?? this.seed,
-      stopSequences: stopSequences ?? this.stopSequences,
-    );
-  }
-}
-
-/// Result of applying a chat template.
-class LlamaChatTemplateResult {
-  /// The formatted prompt string.
-  final String prompt;
-
-  /// Automatically detected stop sequences for this template/model.
-  final List<String> stopSequences;
-
-  /// Creates a new template result.
-  LlamaChatTemplateResult({required this.prompt, required this.stopSequences});
-}
-
-/// Platform-agnostic interface for LLM inference.
+/// Platform-agnostic interface for Llama model inference.
 abstract class LlamaServiceBase {
-  /// Whether the service is initialized and ready to use.
+  /// Whether the service is currently initialized and ready for inference.
   bool get isReady;
 
-  /// Initialize with a local file path (Primary for Native).
+  /// Initializes the service using a model file at the provided [modelPath].
   ///
-  /// On web, this might not be supported or might expect a VFS path.
+  /// On Native, this should be a local file system path.
+  /// On Web, this can be a relative URL or a path in the virtual file system.
   Future<void> init(String modelPath, {ModelParams? modelParams});
 
-  /// Initialize from a URL (Primary for Web).
+  /// Initializes the service by downloading a model from [modelUrl].
   ///
-  /// Downloads the model to a temporary location (native) or loads directly (web).
+  /// On Native, the model is downloaded to a temporary file.
+  /// On Web, the model is loaded directly into the browser's persistent cache.
   Future<void> initFromUrl(String modelUrl, {ModelParams? modelParams});
 
-  /// Generate text based on the [prompt].
+  /// Generates a stream of text tokens based on the provided [prompt].
+  ///
+  /// This is a low-level method that does not apply any chat formatting.
   Stream<String> generate(String prompt, {GenerationParams? params});
 
-  /// Tokenize the given [text] into a list of token IDs.
+  /// Encodes the given [text] into a list of token IDs using the model's vocabulary.
   Future<List<int>> tokenize(String text);
 
-  /// Detokenize the given [tokens] back into a string.
+  /// Decodes a list of [tokens] back into a human-readable string.
   Future<String> detokenize(List<int> tokens);
 
-  /// Get metadata value as a string by key name.
-  /// Returns null if not found.
+  /// Retrieves a specific piece of metadata from the loaded model by its [key].
+  ///
+  /// Returns null if the key is not found.
   Future<String?> getModelMetadata(String key);
 
-  /// Cancels the current generation.
+  /// Immediately cancels any ongoing generation process.
   void cancelGeneration();
 
-  /// High-level chat interface that automatically detects stop sequences,
-  /// applies the template and returns a stream of tokens.
+  /// High-level chat interface that manages the conversation flow.
   ///
-  /// This is the recommended way to interact with chat models.
+  /// This method automatically:
+  /// 1. Applies the model's chat template to the [messages].
+  /// 2. Detects appropriate stop sequences.
+  /// 3. Filters those stop sequences from the output stream.
   Stream<String> chat(
     List<LlamaChatMessage> messages, {
     GenerationParams? params,
   });
 
-  /// Applies the model's chat template to a list of messages.
+  /// Formats a list of [messages] into a single prompt string using the model's chat template.
   ///
-  /// This uses the jinja template stored in the model's metadata (if available)
-  /// or a suitable fallback. Returns the formatted prompt and detected stop sequences.
+  /// Returns both the formatted prompt and any detected stop markers.
   Future<LlamaChatTemplateResult> applyChatTemplate(
     List<LlamaChatMessage> messages, {
     bool addAssistant = true,
   });
 
-  /// Disposes the service and releases resources.
+  /// Releases all allocated resources (model, context, isolates, etc.).
   Future<void> dispose();
 
-  /// Returns the name of the GPU backend compiled into the library (e.g., 'Metal', 'CUDA', 'Vulkan', 'CPU').
+  /// Returns the name of the active GPU backend (e.g., 'Metal', 'Vulkan', 'CPU').
   Future<String> getBackendName();
 
-  /// Returns true if the hardware supports GPU offloading for the current backend.
+  /// Returns true if the current hardware and backend support GPU acceleration.
   Future<bool> isGpuSupported();
 
-  /// Returns the resolved context size used by the current model session.
+  /// Returns the actual context size being used by the current session.
   Future<int> getContextSize();
 
-  /// Returns the number of tokens in the given [text].
+  /// Utility to count the number of tokens in [text] without running inference.
   Future<int> getTokenCount(String text);
 
-  /// Returns all available metadata from the model as a map.
+  /// Returns all available metadata from the model as a Map.
   Future<Map<String, String>> getAllMetadata();
 
-  /// Dynamically adds or updates a LoRA adapter's scale.
+  /// Dynamically loads or updates a LoRA adapter's scale.
   ///
-  /// This loads the adapter if it's not already loaded.
-  /// Note: Not supported on Web.
+  /// Note: Only supported on native platforms.
   Future<void> setLoraAdapter(String path, {double scale = 1.0});
 
-  /// Removes a specific LoRA adapter from the session.
+  /// Removes a specific LoRA adapter from the active session.
   ///
-  /// Note: Not supported on Web.
+  /// Note: Only supported on native platforms.
   Future<void> removeLoraAdapter(String path);
 
-  /// Clears all active LoRA adapters.
+  /// Removes all active LoRA adapters from the current context.
   ///
-  /// Note: Not supported on Web.
+  /// Note: Only supported on native platforms.
   Future<void> clearLoraAdapters();
 }

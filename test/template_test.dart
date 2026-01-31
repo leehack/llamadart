@@ -79,8 +79,7 @@ void main() async {
 
       // Use a very simple "template" that this model might understand better (just plain text)
       final prompt =
-          history.map((m) => "${m.role}: ${m.content}").join("\n") +
-          "\nassistant:";
+          "${history.map((m) => "${m.role}: ${m.content}").join("\n")}\nassistant:";
 
       final response = await service.generate(prompt).join();
       expect(response.toLowerCase(), contains('buddy'));
