@@ -1,3 +1,10 @@
+## 0.3.0
+*   **LoRA Support**: Added full support for Low-Rank Adaptation (LoRA) on all native platforms (iOS, Android, macOS, Linux, Windows).
+*   **Dynamic Adapters**: Implemented APIs to dynamically add, update scale, or remove LoRA adapters at runtime without reloading the base model.
+*   **LoRA Training Pipeline**: Added a comprehensive Jupyter Notebook for fine-tuning models and converting adapters to GGUF format.
+*   **CLI Tooling**: Updated the `basic_app` example to support testing LoRA adapters via the `--lora` flag.
+*   **API Enhancements**: Updated `ModelParams` to include initial LoRA configurations.
+
 ## 0.2.0+b7883
 
 *   **Project Rebrand**: Renamed package from `llama_dart` to `llamadart`.

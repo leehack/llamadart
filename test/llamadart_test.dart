@@ -121,5 +121,12 @@ void main() async {
       final count = await service.getTokenCount(text);
       expect(count, greaterThan(0));
     });
+
+    test('LoRA non-existent file', () async {
+      await expectLater(
+        service.setLoraAdapter('non_existent.lora'),
+        throwsA(isA<Exception>()),
+      );
+    });
   });
 }

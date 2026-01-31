@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:args/args.dart';
+import 'package:llamadart/llamadart.dart';
 import 'package:llamadart_basic_example/services/model_service.dart';
 import 'package:llamadart_basic_example/services/llama_service.dart';
 
@@ -12,6 +13,9 @@ void main(List<String> arguments) async {
         abbr: 'm',
         help: 'Path or URL to the GGUF model file.',
         defaultsTo: defaultModelUrl)
+    ..addMultiOption('lora',
+        abbr: 'l',
+        help: 'Path to LoRA adapter(s). Can be specified multiple times.')
     ..addOption('prompt', abbr: 'p', help: 'Prompt for single response mode.')
     ..addFlag('interactive',
         abbr: 'i',
@@ -39,8 +43,11 @@ void main(List<String> arguments) async {
     print('Checking model...');
     final modelFile = await modelService.ensureModel(modelUrlOrPath);
 
+    final loraPaths = results['lora'] as List<String>;
+    final loras = loraPaths.map((p) => LoraAdapterConfig(path: p)).toList();
+
     print('Initializing engine...');
-    await llamaService.init(modelFile.path);
+    await llamaService.init(modelFile.path, loras: loras);
     print('Model loaded successfully.\n');
 
     if (singlePrompt != null) {

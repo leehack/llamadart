@@ -54,6 +54,11 @@ class LlamaService implements LlamaServiceBase {
   /// Initializes the service with the model at the given [modelUrl].
   @override
   Future<void> initFromUrl(String modelUrl, {ModelParams? modelParams}) async {
+    if (modelParams != null && modelParams.loras.isNotEmpty) {
+      print(
+        'Warning: LoRA adapters are not yet supported on Web (Wasm). They will be ignored.',
+      );
+    }
     if (_wllama != null) {
       // If already initialized, dispose/exit the current instance to load the new one.
       final exitPromise = _wllama!.exit();
@@ -420,4 +425,19 @@ class LlamaService implements LlamaServiceBase {
   /// Returns true if GPU acceleration is supported.
   @override
   Future<bool> isGpuSupported() async => false; // WebGPU not yet explicitly toggled
+
+  @override
+  Future<void> setLoraAdapter(String path, {double scale = 1.0}) async {
+    print('LoRA is not yet supported on Web (Wasm).');
+  }
+
+  @override
+  Future<void> removeLoraAdapter(String path) async {
+    print('LoRA is not yet supported on Web (Wasm).');
+  }
+
+  @override
+  Future<void> clearLoraAdapters() async {
+    print('LoRA is not yet supported on Web (Wasm).');
+  }
 }

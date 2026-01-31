@@ -1,6 +1,7 @@
 // ignore_for_file: always_specify_types, unused_field
 // ignore_for_file: camel_case_types
 // ignore_for_file: non_constant_identifier_names
+/// @nodoc
 
 // AUTO GENERATED FILE, DO NOT EDIT.
 //

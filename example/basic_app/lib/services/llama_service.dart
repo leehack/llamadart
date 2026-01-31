@@ -7,12 +7,16 @@ class LlamaCliService {
   final List<CliMessage> _history = [];
 
   /// Initializes the engine with the given [modelPath].
-  Future<void> init(String modelPath) async {
+  Future<void> init(
+    String modelPath, {
+    List<LoraAdapterConfig> loras = const [],
+  }) async {
     await _service.init(
       modelPath,
-      modelParams: const ModelParams(
+      modelParams: ModelParams(
         gpuLayers: 99,
         logLevel: LlamaLogLevel.error,
+        loras: loras,
       ),
     );
   }

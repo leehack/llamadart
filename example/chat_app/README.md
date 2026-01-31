@@ -13,30 +13,24 @@ A Flutter chat application demonstrating real-world usage of llamadart with UI.
 
 ## Setup
 
-### 1. Download a Model
+### 1. Run the App
 ```bash
-# For macOS/Linux
-mkdir -p /tmp/models
-curl -L https://huggingface.co/TheBloke/TinyLlama-1.1B-Chat-v1.0-GGUF/resolve/main/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf \
-  -o /tmp/models/tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf
-
-# For Android
-# Download and place in /storage/emulated/0/Download/
-```
-
-### 2. Run the App
-```bash
-cd chat_app
+cd example/chat_app
 flutter pub get
 flutter run
 ```
 
-### 3. Configure
-1. Tap the settings icon (⚙️) in the app bar
-2. Set your model path
-3. Select Preferred Backend (Auto/Metal/Vulkan/CPU)
-4. Tap "Load Model"
-5. Start chatting!
+### 2. Choose and Download a Model
+1. The app will open to a **Model Selection** screen.
+2. Select one of the pre-configured models (e.g., Qwen 2.5 0.5B).
+3. Tap the **Download** icon. The app uses `Dio` to download the model directly to your device's documents directory.
+4. Once downloaded, tap **Select** to load the model.
+
+### 3. Advanced Configuration (Optional)
+1. Tap the settings icon (⚙️) in the app bar.
+2. Adjust **GPU Layers**, **Context Size**, or **Preferred Backend**.
+3. Tap **Load Model** to apply changes.
+
 
 ## Testing Scenarios
 
@@ -112,6 +106,7 @@ await service.init(
     gpuLayers: 99, // Offload all layers for best performance on GPU
     contextSize: 2048,
     preferredBackend: GpuBackend.auto,
+    loras: [], // Optional LoRA adapters
   ),
 );
 ```
@@ -135,7 +130,6 @@ await for (final token in stream) {
 ```dart
 final prefs = await SharedPreferences.getInstance();
 await prefs.setString('model_path', modelPath);
-await prefs.setString('model_path', modelPath);
 await prefs.setInt('preferred_backend', backendIndex);
 ```
 
@@ -145,19 +139,20 @@ _(Add screenshots here when complete)_
 
 ## Troubleshooting
 
-**"Failed to load library" on first run:**
-- Check console for download messages
-- Ensure GitHub releases are accessible
-- Check internet connection
+**"Failed to load library" or "Native asset not found" on first run:**
+- Ensure you have an active internet connection. The `llamadart` build hook needs to download the pre-compiled `llama.cpp` binary for your platform.
+- Check the console for download progress logs.
+- If behind a proxy, ensure Dart/Flutter can access GitHub.
 
 **"Model file not found" error:**
-- Verify model path in settings
-- Ensure model is downloaded
-- Check file permissions
+- Ensure you have successfully downloaded a model from the selection screen.
+- If you manually moved a model, verify the path in the settings sheet.
 
 **Slow generation:**
-- Ensure hardware acceleration is enabled in settings
-- Use smaller quantization model (Q4_K_M)
+- Ensure hardware acceleration is enabled (e.g., Metal on Apple, Vulkan on Android/Linux/Windows).
+- Check if `GPU Layers` is set to a high enough value (default 99 offloads all layers).
+- Use a model with a smaller quantization level (e.g., Q4_K_M).
+
 
 **App crashes on startup:**
 - Check console output for error messages
@@ -175,13 +170,15 @@ _(Add screenshots here when complete)_
 
 ## Platform Support
 
-| Platform | Status | Notes |
-|----------|--------|-------|
-| macOS    | ✅ Tested | Full support |
-| Linux    | ✅ Tested | Full support |
-| Windows  | 🟡 Expected | Should work |
-| Android  | ✅ Verified | Full Vulkan acceleration |
-| iOS      | ✅ Verified | Full Metal acceleration |
+| Platform | Status | Hardware Acceleration |
+|----------|--------|-----------------------|
+| macOS    | ✅ Tested | Metal |
+| iOS      | ✅ Tested | Metal |
+| Android  | ✅ Tested | Vulkan |
+| Linux    | 🟡 Expected | Vulkan |
+| Windows  | ✅ Tested | Vulkan |
+| Web      | ✅ Tested | CPU (Wasm) |
+
 
 ## Future Enhancements (Implemented ✅)
 

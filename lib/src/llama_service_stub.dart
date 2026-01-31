@@ -83,4 +83,19 @@ class LlamaService implements LlamaServiceBase {
   Future<Map<String, String>> getAllMetadata() {
     throw UnimplementedError('LlamaService not supported on this platform');
   }
+
+  @override
+  Future<void> setLoraAdapter(String path, {double scale = 1.0}) {
+    throw UnimplementedError('LlamaService not supported on this platform');
+  }
+
+  @override
+  Future<void> removeLoraAdapter(String path) {
+    throw UnimplementedError('LlamaService not supported on this platform');
+  }
+
+  @override
+  Future<void> clearLoraAdapters() {
+    throw UnimplementedError('LlamaService not supported on this platform');
+  }
 }

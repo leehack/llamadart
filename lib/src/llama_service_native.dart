@@ -95,6 +95,24 @@ class _TokenCountRequest {
   _TokenCountRequest(this.text, this.sendPort);
 }
 
+class _SetLoraRequest {
+  final String path;
+  final double scale;
+  final SendPort sendPort;
+  _SetLoraRequest(this.path, this.scale, this.sendPort);
+}
+
+class _RemoveLoraRequest {
+  final String path;
+  final SendPort sendPort;
+  _RemoveLoraRequest(this.path, this.sendPort);
+}
+
+class _ClearLorasRequest {
+  final SendPort sendPort;
+  _ClearLorasRequest(this.sendPort);
+}
+
 // --- Responses ---
 class _TokenResponse {
   final List<int> bytes;
@@ -452,6 +470,39 @@ class LlamaService implements LlamaServiceBase {
     return 0;
   }
 
+  @override
+  Future<void> setLoraAdapter(String path, {double scale = 1.0}) async {
+    if (_sendPort == null) return;
+    final receivePort = ReceivePort();
+    _sendPort!.send(_SetLoraRequest(path, scale, receivePort.sendPort));
+    final response = await receivePort.first;
+    if (response is _ErrorResponse) {
+      throw Exception(response.message);
+    }
+  }
+
+  @override
+  Future<void> removeLoraAdapter(String path) async {
+    if (_sendPort == null) return;
+    final receivePort = ReceivePort();
+    _sendPort!.send(_RemoveLoraRequest(path, receivePort.sendPort));
+    final response = await receivePort.first;
+    if (response is _ErrorResponse) {
+      throw Exception(response.message);
+    }
+  }
+
+  @override
+  Future<void> clearLoraAdapters() async {
+    if (_sendPort == null) return;
+    final receivePort = ReceivePort();
+    _sendPort!.send(_ClearLorasRequest(receivePort.sendPort));
+    final response = await receivePort.first;
+    if (response is _ErrorResponse) {
+      throw Exception(response.message);
+    }
+  }
+
   /// Returns all model metadata keys and values.
   @override
   Future<Map<String, String>> getAllMetadata() async {
@@ -577,6 +628,12 @@ class LlamaService implements LlamaServiceBase {
         _handleContextSize(receivePort, message, state);
       } else if (message is _TokenCountRequest) {
         _handleTokenCount(receivePort, message, state);
+      } else if (message is _SetLoraRequest) {
+        _handleSetLora(receivePort, message, state);
+      } else if (message is _RemoveLoraRequest) {
+        _handleRemoveLora(receivePort, message, state);
+      } else if (message is _ClearLorasRequest) {
+        _handleClearLoras(receivePort, message, state);
       } else if (message is _DisposeRequest) {
         _handleDispose(receivePort, message, state);
       }
@@ -723,6 +780,26 @@ class LlamaService implements LlamaServiceBase {
       state.model = _LlamaModelWrapper(modelPtr);
       _log("Isolate: Model loaded.");
 
+      // Load initial LoRAs
+      for (final lora in message.modelParams.loras) {
+        _log("Isolate: Loading initial LoRA: ${lora.path}");
+        final pathPtr = lora.path.toNativeUtf8();
+        final adapterPtr = llama_adapter_lora_init(
+          state.model!.pointer,
+          pathPtr.cast(),
+        );
+        malloc.free(pathPtr);
+        if (adapterPtr != nullptr) {
+          state.loraAdapters[lora.path] = _LlamaLoraWrapper(adapterPtr);
+          state.activeLoras[lora.path] = lora.scale;
+        } else {
+          _log(
+            "Isolate: Failed to load LoRA: ${lora.path}",
+            level: LlamaLogLevel.error,
+          );
+        }
+      }
+
       final ctxParams = llama_context_default_params();
 
       // Resolve context size
@@ -755,6 +832,18 @@ class LlamaService implements LlamaServiceBase {
       }
       state.ctx = _LlamaContextWrapper(ctxPtr, state.model!);
       _log("Isolate: Context created.");
+
+      // Apply active LoRAs to the new context
+      for (final entry in state.activeLoras.entries) {
+        final adapter = state.loraAdapters[entry.key];
+        if (adapter != null) {
+          llama_set_adapter_lora(
+            state.ctx!.pointer,
+            adapter.pointer,
+            entry.value,
+          );
+        }
+      }
 
       // Store params with resolved context size
       state.lastModelParams = message.modelParams.copyWith(
@@ -809,6 +898,18 @@ class LlamaService implements LlamaServiceBase {
       return;
     }
     state.ctx = _LlamaContextWrapper(ctxPtr, state.model!);
+
+    // Apply active LoRAs to the new context
+    for (final entry in state.activeLoras.entries) {
+      final adapter = state.loraAdapters[entry.key];
+      if (adapter != null) {
+        llama_set_adapter_lora(
+          state.ctx!.pointer,
+          adapter.pointer,
+          entry.value,
+        );
+      }
+    }
 
     final samplerChainParams = llama_sampler_chain_default_params();
     state.sampler = llama_sampler_chain_init(samplerChainParams);
@@ -1360,6 +1461,78 @@ class LlamaService implements LlamaServiceBase {
     }
   }
 
+  static void _handleSetLora(
+    ReceivePort receivePort,
+    _SetLoraRequest message,
+    _LlamaState state,
+  ) {
+    if (state.model == null) {
+      message.sendPort.send(_ErrorResponse("Model not initialized"));
+      return;
+    }
+
+    try {
+      _LlamaLoraWrapper? adapter = state.loraAdapters[message.path];
+      if (adapter == null) {
+        _log("Isolate: Loading LoRA: ${message.path}");
+        final pathPtr = message.path.toNativeUtf8();
+        final adapterPtr = llama_adapter_lora_init(
+          state.model!.pointer,
+          pathPtr.cast(),
+        );
+        malloc.free(pathPtr);
+        if (adapterPtr == nullptr) {
+          message.sendPort.send(
+            _ErrorResponse("Failed to load LoRA at ${message.path}"),
+          );
+          return;
+        }
+        adapter = _LlamaLoraWrapper(adapterPtr);
+        state.loraAdapters[message.path] = adapter;
+      }
+
+      state.activeLoras[message.path] = message.scale;
+
+      // If context exists, apply immediately
+      if (state.ctx != null) {
+        llama_set_adapter_lora(
+          state.ctx!.pointer,
+          adapter.pointer,
+          message.scale,
+        );
+      }
+
+      message.sendPort.send(_DoneResponse());
+    } catch (e) {
+      message.sendPort.send(_ErrorResponse(e.toString()));
+    }
+  }
+
+  static void _handleRemoveLora(
+    ReceivePort receivePort,
+    _RemoveLoraRequest message,
+    _LlamaState state,
+  ) {
+    if (state.ctx != null && state.loraAdapters.containsKey(message.path)) {
+      final adapter = state.loraAdapters[message.path]!;
+      llama_rm_adapter_lora(state.ctx!.pointer, adapter.pointer);
+    }
+    state.activeLoras.remove(message.path);
+    message.sendPort.send(_DoneResponse());
+  }
+
+  static void _handleClearLoras(
+    ReceivePort receivePort,
+    _ClearLorasRequest message,
+    _LlamaState state,
+  ) {
+    if (state.ctx != null) {
+      llama_clear_adapter_lora(state.ctx!.pointer);
+    }
+    state.activeLoras.clear();
+    message.sendPort.send(_DoneResponse());
+  }
+
   static void _handleDispose(
     ReceivePort receivePort,
     _DisposeRequest message,
@@ -1378,6 +1551,13 @@ class LlamaService implements LlamaServiceBase {
       llama_sampler_free(state.sampler!);
       state.sampler = null;
     }
+
+    // Free LoRA adapters
+    for (final adapter in state.loraAdapters.values) {
+      adapter.dispose();
+    }
+    state.loraAdapters.clear();
+    state.activeLoras.clear();
 
     // Explicitly dispose wrappers which detaches finalizers
     state.ctx?.dispose();
@@ -1405,6 +1585,32 @@ class _LlamaState {
   Pointer<llama_sampler>? sampler;
   llama_batch? batch;
   ModelParams? lastModelParams;
+
+  // Track loaded LoRA adapters: Map<Path, Wrapper>
+  final Map<String, _LlamaLoraWrapper> loraAdapters = {};
+
+  // Active LoRAs in the current context: Map<Path, Scale>
+  final Map<String, double> activeLoras = {};
+}
+
+class _LlamaLoraWrapper implements Finalizable {
+  final Pointer<llama_adapter_lora> pointer;
+  static final _finalizer = llamaLib != null
+      ? NativeFinalizer(
+          llamaLib!.lookup<NativeFunction<Void Function(Pointer<Void>)>>(
+            'llama_adapter_lora_free',
+          ),
+        )
+      : null;
+
+  _LlamaLoraWrapper(this.pointer) {
+    _finalizer?.attach(this, pointer.cast(), detach: this);
+  }
+
+  void dispose() {
+    _finalizer?.detach(this);
+    llama_adapter_lora_free(pointer);
+  }
 }
 
 class _LlamaModelWrapper implements Finalizable {

@@ -2,7 +2,11 @@
 ///
 /// This package provides a streamlined interface for running Large Language Models (LLMs)
 /// locally using GGUF models across all major platforms with minimal setup.
-library llamadart;
+///
+/// Includes support for streaming generation, chat templates, and LoRA adapters.
+///
+/// Platforms: Android, iOS, macOS, Linux, Windows, Web.
+library;
 
 export 'src/generated/llama_bindings.dart'
     if (dart.library.js_interop) 'src/generated/llama_bindings_stub.dart';

@@ -40,6 +40,18 @@ enum LlamaLogLevel {
   error,
 }
 
+/// Configuration for a LoRA adapter.
+class LoraAdapterConfig {
+  /// Local file path to the LoRA adapter.
+  final String path;
+
+  /// The strength of the adapter (0.0 to 1.0+). Defaults to 1.0.
+  final double scale;
+
+  /// Creates a LoRA adapter configuration.
+  const LoraAdapterConfig({required this.path, this.scale = 1.0});
+}
+
 /// Configuration parameters for loading the model.
 class ModelParams {
   /// Context size (n_ctx). Defaults to 2048.
@@ -56,12 +68,16 @@ class ModelParams {
   /// Minimum log level to print. Defaults to [LlamaLogLevel.info].
   final LlamaLogLevel logLevel;
 
+  /// Initial LoRA adapters to load with the model.
+  final List<LoraAdapterConfig> loras;
+
   /// Creates configuration for the model.
   const ModelParams({
     this.contextSize = 0, // 0 = Auto detect from model
     this.gpuLayers = 99,
     this.preferredBackend = GpuBackend.auto,
     this.logLevel = LlamaLogLevel.info,
+    this.loras = const [],
   });
 
   /// Creates a copy of this [ModelParams] with updated fields.
@@ -70,12 +86,14 @@ class ModelParams {
     int? gpuLayers,
     GpuBackend? preferredBackend,
     LlamaLogLevel? logLevel,
+    List<LoraAdapterConfig>? loras,
   }) {
     return ModelParams(
       contextSize: contextSize ?? this.contextSize,
       gpuLayers: gpuLayers ?? this.gpuLayers,
       preferredBackend: preferredBackend ?? this.preferredBackend,
       logLevel: logLevel ?? this.logLevel,
+      loras: loras ?? this.loras,
     );
   }
 }
@@ -184,4 +202,20 @@ abstract class LlamaServiceBase {
 
   /// Returns all available metadata from the model as a map.
   Future<Map<String, String>> getAllMetadata();
+
+  /// Dynamically adds or updates a LoRA adapter's scale.
+  ///
+  /// This loads the adapter if it's not already loaded.
+  /// Note: Not supported on Web.
+  Future<void> setLoraAdapter(String path, {double scale = 1.0});
+
+  /// Removes a specific LoRA adapter from the session.
+  ///
+  /// Note: Not supported on Web.
+  Future<void> removeLoraAdapter(String path);
+
+  /// Clears all active LoRA adapters.
+  ///
+  /// Note: Not supported on Web.
+  Future<void> clearLoraAdapters();
 }

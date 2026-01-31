@@ -14,6 +14,7 @@
 - ⚡ **GPU Acceleration**:
   - **Apple**: Metal (macOS/iOS)
   - **Android/Linux/Windows**: Vulkan
+- 🧠 **LoRA Support**: Apply fine-tuned adapters (GGUF) dynamically at runtime.
 - 🌐 **Web Support**: Run inference in the browser via WASM (powered by `wllama`).
 - 💎 **Dart-First API**: Streamlined FFI bindings with a clean, isolate-safe Dart interface.
 - 🔇 **Logging Control**: Granular control over native engine output (debug, info, warn, error, none).
@@ -24,12 +25,12 @@
 
 | Platform | Architecture(s) | GPU Backend | Status |
 |----------|-----------------|-------------|--------|
-| **macOS** | arm64, x86_64 | Metal | ✅ Tested (CPU, Metal) |
-| **iOS** | arm64 (Device), x86_64 (Sim) | Metal (Device), CPU (Sim) | ✅ Tested (CPU, Metal) |
-| **Android** | arm64-v8a, x86_64 | Vulkan | ✅ Tested (CPU, Vulkan) |
-| **Linux** | arm64, x86_64 | Vulkan | ⚠️ Tested (CPU Verified, Vulkan Untested) |
-| **Windows** | x64 | Vulkan | ✅ Tested (CPU, Vulkan) |
-| **Web** | WASM | CPU | ✅ Tested (WASM) |
+| **macOS** | arm64, x86_64 | Metal | ✅ Tested |
+| **iOS** | arm64 (Device), x86_64 (Sim) | Metal (Device), CPU (Sim) | ✅ Tested |
+| **Android** | arm64-v8a, x86_64 | Vulkan | ✅ Tested |
+| **Linux** | arm64, x86_64 | Vulkan | ⚠️ Expected (Vulkan Untested) |
+| **Windows** | x64 | Vulkan | ✅ Tested |
+| **Web** | WASM | CPU | ✅ Tested |
 
 ---
 
@@ -41,7 +42,7 @@ Add `llamadart` to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  llamadart: ^0.2.0
+  llamadart: ^0.3.0
 ```
 
 ### 2. Zero Setup (Native Assets)
@@ -63,11 +64,21 @@ void main() async {
   // 1. Create the service
   final service = LlamaService();
 
-  // 2. Initialize with a GGUF model
+  // 2. Initialize with a GGUF model and optional LoRA adapters
   // This loads the model and prepares the native backend (GPU/CPU)
-  await service.init('path/to/your_model.gguf');
+  await service.init(
+    'path/to/your_model.gguf',
+    modelParams: ModelParams(
+      loras: [
+        LoraAdapterConfig(path: 'path/to/style.lora.gguf', scale: 0.8),
+      ],
+    ),
+  );
 
-  // 3. Generate text (streaming)
+  // 3. You can also update or add LoRA adapters dynamically (Native platforms)
+  await service.setLoraAdapter('path/to/emotional_shift.lora.gguf', scale: 1.2);
+
+  // 4. Generate text (streaming)
   final stream = service.generate('The capital of France is');
   
   await for (final token in stream) {
@@ -82,29 +93,28 @@ void main() async {
 
 ---
 
-## 📂 Examples
+## 🎨 Low-Rank Adaptation (LoRA)
 
-Explore the `example/` directory for full implementations:
-- **`basic_app`**: A lightweight CLI example for quick verification.
-- **`chat_app`**: A feature-rich Flutter chat application with streaming UI and model management.
+`llamadart` supports applying one or multiple LoRA adapters to your base model. This allows you to customize the model's style, persona, or domain knowledge without replacing the entire 7B+ parameter model.
+
+- **Dynamic Scaling**: Adjust the strength (`scale`) of each adapter at runtime.
+- **Isolate-Safe**: Adapters are loaded and managed in the background Isolate.
+- **Resource Efficient**: Multiple LoRAs share the memory of a single base model.
+
+### Training your own LoRA
+Check out our [LoRA Training Notebook](example/training_notebook/lora_training.ipynb) to learn how to:
+1. Fine-tune a small model (like Qwen2.5-0.5B) using Hugging Face tools.
+2. Convert the adapter to GGUF format using `llama.cpp`.
+3. Run it in your Flutter app with `llamadart`.
 
 ---
 
-## 🐳 Docker (Linux)
+## 📂 Examples
 
-You can build and run the examples using Docker on Linux. This ensures all build dependencies (like `libgtk-3-dev`, `cmake`, etc.) are correctly configured.
-
-### 1. Build and Run CLI Basic Example
-```bash
-./docker/build-docker.sh basic-run
-```
-
-### 2. Build Flutter Chat App for Linux
-```bash
-./docker/build-docker.sh chat-build
-```
-
-The Dockerfile is multi-stage and optimized to minimize context size. It handles the downloading of native assets and compilation of Flutter Linux binaries.
+Explore the `example/` directory for full implementations:
+- **`basic_app`**: A lightweight CLI example for quick verification. Supports loading LoRA adapters via `--lora`.
+- **`chat_app`**: A feature-rich Flutter chat application with streaming UI and model management.
+- **`training_notebook`**: A Jupyter Notebook demonstrating how to train your own LoRA adapters and convert them to GGUF.
 
 ---
 

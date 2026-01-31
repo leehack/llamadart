@@ -20,7 +20,7 @@ The project maps closely to the `llama.cpp` structure:
 
 -   `lib/`: Dart source code and FFI bindings.
 -   `third_party/`: `llama.cpp` core engine, dependencies (submodules), and build infrastructure.
--   `example/`: Usage examples (CLI and Flutter).
+-   `example/`: Usage examples, Flutter app, and LoRA training notebook.
 -   `hook/`: Native Assets build hook for automatic binary management.
 
 ## 🛡️ Zero-Patch Strategy
