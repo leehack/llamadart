@@ -20,7 +20,7 @@ Web mode uses an external JavaScript bridge runtime consumed by `llamadart`.
 Fetch pinned local assets with:
 
 ```bash
-WEBGPU_BRIDGE_ASSETS_TAG=v0.1.7 ./scripts/fetch_webgpu_bridge_assets.sh
+WEBGPU_BRIDGE_ASSETS_TAG=v0.1.8 ./scripts/fetch_webgpu_bridge_assets.sh
 ```
 
 ## Compatibility and safeguards
@@ -44,7 +44,7 @@ You can override bridge asset source/version before loader startup:
 ```html
 <script>
   window.__llamadartBridgeAssetsRepo = 'leehack/llama-web-bridge-assets';
-  window.__llamadartBridgeAssetsTag = 'v0.1.7';
+  window.__llamadartBridgeAssetsTag = 'v0.1.8';
 </script>
 ```
 
