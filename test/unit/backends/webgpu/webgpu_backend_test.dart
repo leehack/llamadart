@@ -12,6 +12,9 @@ import 'package:llamadart/src/backends/webgpu/interop.dart';
 import 'package:llamadart/src/backends/webgpu/webgpu_backend.dart';
 import 'package:test/test.dart';
 
+@JS('Promise.reject')
+external JSPromise<JSAny?> _rejectPromise(JSAny? reason);
+
 void main() {
   group('WebGpuLlamaBackend Unit', () {
     late JSObject bridge;
@@ -20,10 +23,14 @@ void main() {
     late bool sawMediaParts;
     late bool sawAudioParts;
     late bool sawAudioBytes;
+    int? lastRequestedContextSize;
     int? lastRequestedGpuLayers;
     int? lastRequestedThreadsBatch;
     int? lastRequestedBatchSize;
     int? lastRequestedMicroBatchSize;
+    late List<int> requestedContextSizes;
+    late List<int> requestedBatchSizes;
+    late List<int> requestedMicroBatchSizes;
     int? lastRequestedSeqMax;
     int? lastRequestedFlashAttention;
     int? lastRequestedCacheTypeK;
@@ -65,6 +72,87 @@ void main() {
       globalContext.delete('__llamadartBridgeThreadPoolSize'.toJS);
     }
 
+    void recordLoadConfig(JSObject? config) {
+      if (config == null) {
+        return;
+      }
+
+      final nCtx = config.getProperty('nCtx'.toJS);
+      if (nCtx.isA<JSNumber>()) {
+        lastRequestedContextSize = (nCtx as JSNumber).toDartInt;
+        requestedContextSizes.add(lastRequestedContextSize!);
+      }
+
+      final nGpuLayers = config.getProperty('nGpuLayers'.toJS);
+      if (nGpuLayers.isA<JSNumber>()) {
+        lastRequestedGpuLayers = (nGpuLayers as JSNumber).toDartInt;
+      }
+
+      final nThreadsBatch = config.getProperty('nThreadsBatch'.toJS);
+      if (nThreadsBatch.isA<JSNumber>()) {
+        lastRequestedThreadsBatch = (nThreadsBatch as JSNumber).toDartInt;
+      }
+
+      final nBatch = config.getProperty('nBatch'.toJS);
+      if (nBatch.isA<JSNumber>()) {
+        lastRequestedBatchSize = (nBatch as JSNumber).toDartInt;
+        requestedBatchSizes.add(lastRequestedBatchSize!);
+      }
+
+      final nUbatch = config.getProperty('nUbatch'.toJS);
+      if (nUbatch.isA<JSNumber>()) {
+        lastRequestedMicroBatchSize = (nUbatch as JSNumber).toDartInt;
+        requestedMicroBatchSizes.add(lastRequestedMicroBatchSize!);
+      }
+
+      final nSeqMax = config.getProperty('nSeqMax'.toJS);
+      if (nSeqMax.isA<JSNumber>()) {
+        lastRequestedSeqMax = (nSeqMax as JSNumber).toDartInt;
+      }
+
+      final flashAttention = config.getProperty('flashAttention'.toJS);
+      if (flashAttention.isA<JSNumber>()) {
+        lastRequestedFlashAttention = (flashAttention as JSNumber).toDartInt;
+      }
+
+      final cacheTypeK = config.getProperty('cacheTypeK'.toJS);
+      if (cacheTypeK.isA<JSNumber>()) {
+        lastRequestedCacheTypeK = (cacheTypeK as JSNumber).toDartInt;
+      }
+
+      final cacheTypeV = config.getProperty('cacheTypeV'.toJS);
+      if (cacheTypeV.isA<JSNumber>()) {
+        lastRequestedCacheTypeV = (cacheTypeV as JSNumber).toDartInt;
+      }
+
+      final kvUnified = config.getProperty('kvUnified'.toJS);
+      if (kvUnified.isA<JSBoolean>()) {
+        lastRequestedKvUnified = (kvUnified as JSBoolean).toDart;
+      }
+
+      final ropeFrequencyBase = config.getProperty('ropeFrequencyBase'.toJS);
+      if (ropeFrequencyBase.isA<JSNumber>()) {
+        lastRequestedRopeFrequencyBase =
+            (ropeFrequencyBase as JSNumber).toDartDouble;
+      }
+
+      final ropeFrequencyScale = config.getProperty('ropeFrequencyScale'.toJS);
+      if (ropeFrequencyScale.isA<JSNumber>()) {
+        lastRequestedRopeFrequencyScale =
+            (ropeFrequencyScale as JSNumber).toDartDouble;
+      }
+
+      final splitMode = config.getProperty('splitMode'.toJS);
+      if (splitMode.isA<JSNumber>()) {
+        lastRequestedSplitMode = (splitMode as JSNumber).toDartInt;
+      }
+
+      final mainGpu = config.getProperty('mainGpu'.toJS);
+      if (mainGpu.isA<JSNumber>()) {
+        lastRequestedMainGpu = (mainGpu as JSNumber).toDartInt;
+      }
+    }
+
     setUp(() {
       clearBridgeGlobals();
 
@@ -73,10 +161,14 @@ void main() {
       sawMediaParts = false;
       sawAudioParts = false;
       sawAudioBytes = false;
+      lastRequestedContextSize = null;
       lastRequestedGpuLayers = null;
       lastRequestedThreadsBatch = null;
       lastRequestedBatchSize = null;
       lastRequestedMicroBatchSize = null;
+      requestedContextSizes = <int>[];
+      requestedBatchSizes = <int>[];
+      requestedMicroBatchSizes = <int>[];
       lastRequestedSeqMax = null;
       lastRequestedFlashAttention = null;
       lastRequestedCacheTypeK = null;
@@ -106,80 +198,7 @@ void main() {
       bridge.setProperty(
         'loadModelFromUrl'.toJS,
         ((String url, JSObject? config) {
-          if (config != null) {
-            final nGpuLayers = config.getProperty('nGpuLayers'.toJS);
-            if (nGpuLayers.isA<JSNumber>()) {
-              lastRequestedGpuLayers = (nGpuLayers as JSNumber).toDartInt;
-            }
-
-            final nThreadsBatch = config.getProperty('nThreadsBatch'.toJS);
-            if (nThreadsBatch.isA<JSNumber>()) {
-              lastRequestedThreadsBatch = (nThreadsBatch as JSNumber).toDartInt;
-            }
-
-            final nBatch = config.getProperty('nBatch'.toJS);
-            if (nBatch.isA<JSNumber>()) {
-              lastRequestedBatchSize = (nBatch as JSNumber).toDartInt;
-            }
-
-            final nUbatch = config.getProperty('nUbatch'.toJS);
-            if (nUbatch.isA<JSNumber>()) {
-              lastRequestedMicroBatchSize = (nUbatch as JSNumber).toDartInt;
-            }
-
-            final nSeqMax = config.getProperty('nSeqMax'.toJS);
-            if (nSeqMax.isA<JSNumber>()) {
-              lastRequestedSeqMax = (nSeqMax as JSNumber).toDartInt;
-            }
-
-            final flashAttention = config.getProperty('flashAttention'.toJS);
-            if (flashAttention.isA<JSNumber>()) {
-              lastRequestedFlashAttention =
-                  (flashAttention as JSNumber).toDartInt;
-            }
-
-            final cacheTypeK = config.getProperty('cacheTypeK'.toJS);
-            if (cacheTypeK.isA<JSNumber>()) {
-              lastRequestedCacheTypeK = (cacheTypeK as JSNumber).toDartInt;
-            }
-
-            final cacheTypeV = config.getProperty('cacheTypeV'.toJS);
-            if (cacheTypeV.isA<JSNumber>()) {
-              lastRequestedCacheTypeV = (cacheTypeV as JSNumber).toDartInt;
-            }
-
-            final kvUnified = config.getProperty('kvUnified'.toJS);
-            if (kvUnified.isA<JSBoolean>()) {
-              lastRequestedKvUnified = (kvUnified as JSBoolean).toDart;
-            }
-
-            final ropeFrequencyBase = config.getProperty(
-              'ropeFrequencyBase'.toJS,
-            );
-            if (ropeFrequencyBase.isA<JSNumber>()) {
-              lastRequestedRopeFrequencyBase =
-                  (ropeFrequencyBase as JSNumber).toDartDouble;
-            }
-
-            final ropeFrequencyScale = config.getProperty(
-              'ropeFrequencyScale'.toJS,
-            );
-            if (ropeFrequencyScale.isA<JSNumber>()) {
-              lastRequestedRopeFrequencyScale =
-                  (ropeFrequencyScale as JSNumber).toDartDouble;
-            }
-
-            final splitMode = config.getProperty('splitMode'.toJS);
-            if (splitMode.isA<JSNumber>()) {
-              lastRequestedSplitMode = (splitMode as JSNumber).toDartInt;
-            }
-
-            final mainGpu = config.getProperty('mainGpu'.toJS);
-            if (mainGpu.isA<JSNumber>()) {
-              lastRequestedMainGpu = (mainGpu as JSNumber).toDartInt;
-            }
-          }
-
+          recordLoadConfig(config);
           return Future<void>.value().toJS;
         }).toJS,
       );
@@ -451,6 +470,20 @@ void main() {
       expect(lastRequestedMicroBatchSize, 384);
     });
 
+    test('clamps explicit web batch sizes to context bounds', () async {
+      await backend.modelLoadFromUrl(
+        'https://example.com/model.gguf',
+        const ModelParams(
+          contextSize: 512,
+          batchSize: 2048,
+          microBatchSize: 1024,
+        ),
+      );
+
+      expect(lastRequestedBatchSize, 512);
+      expect(lastRequestedMicroBatchSize, 512);
+    });
+
     test('forwards native-compatible load tuning params', () async {
       await backend.modelLoadFromUrl(
         'https://example.com/model.gguf',
@@ -519,21 +552,76 @@ void main() {
       );
 
       expect(lastRequestedGpuLayers, 99);
+      expect(lastRequestedBatchSize, 4096);
+      expect(lastRequestedMicroBatchSize, 4096);
     });
 
-    test('does not apply qwen3.5-0.8b batch tuning in CPU mode', () async {
+    test('cascades unset WebGPU encoder batches before embedBatch', () async {
       await backend.modelLoadFromUrl(
-        'https://example.com/Qwen_Qwen3.5-0.8B-Q4_K_M.gguf',
+        'https://example.com/multilingual-e5-small-Q8_0.gguf',
+        const ModelParams(contextSize: 512, gpuLayers: 99),
+      );
+
+      expect(lastRequestedGpuLayers, 99);
+      expect(lastRequestedBatchSize, 512);
+      expect(lastRequestedMicroBatchSize, 512);
+
+      final vectors = await backend.embedBatch(1, const <String>[
+        'first sentence',
+        'second sentence',
+      ]);
+      expect(vectors, <List<double>>[
+        <double>[14.0, 1.0],
+        <double>[15.0, 1.0],
+      ]);
+    });
+
+    test('cascades unset batch sizes to context size in CPU mode', () async {
+      await backend.modelLoadFromUrl(
+        'https://example.com/multilingual-e5-small-Q8_0.gguf',
         const ModelParams(
-          contextSize: 4096,
+          contextSize: 512,
           preferredBackend: GpuBackend.cpu,
           gpuLayers: 0,
         ),
       );
 
-      expect(lastRequestedBatchSize, isNull);
-      expect(lastRequestedMicroBatchSize, isNull);
+      expect(lastRequestedBatchSize, 512);
+      expect(lastRequestedMicroBatchSize, 512);
     });
+
+    test(
+      'recomputes cascaded batch sizes for reduced fallback context',
+      () async {
+        var loadCallCount = 0;
+        bridge.setProperty(
+          'loadModelFromUrl'.toJS,
+          ((String url, JSObject? config) {
+            loadCallCount += 1;
+            recordLoadConfig(config);
+
+            if (loadCallCount <= 2) {
+              final error = JSObject();
+              error.setProperty(
+                'message'.toJS,
+                'array buffer allocation failed'.toJS,
+              );
+              return _rejectPromise(error);
+            }
+            return Future<void>.value().toJS;
+          }).toJS,
+        );
+
+        await backend.modelLoadFromUrl(
+          'https://example.com/multilingual-e5-small-Q8_0.gguf',
+          const ModelParams(contextSize: 4096, gpuLayers: 99),
+        );
+
+        expect(requestedContextSizes, <int>[4096, 4096, 2048]);
+        expect(requestedBatchSizes, <int>[4096, 4096, 2048]);
+        expect(requestedMicroBatchSizes, <int>[4096, 4096, 2048]);
+      },
+    );
 
     test('streams generated tokens from bridge callback', () async {
       await backend.modelLoadFromUrl(

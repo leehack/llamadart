@@ -591,29 +591,44 @@ class WebGpuLlamaBackend
     return attempts;
   }
 
-  ({int? nBatch, int? nUbatch}) _resolveWebBatchTuning({
+  ({int nBatch, int nUbatch}) _resolveWebBatchSizes({
     required String url,
     required ModelParams params,
+    required int contextSize,
   }) {
-    if (params.batchSize > 0 || params.microBatchSize > 0) {
-      return (nBatch: null, nUbatch: null);
-    }
-
-    if (params.preferredBackend == GpuBackend.cpu || params.gpuLayers == 0) {
-      return (nBatch: null, nUbatch: null);
-    }
-
     final normalizedUrl = url.toLowerCase();
     final isQwen35Small =
         normalizedUrl.contains('qwen3.5-0.8b') ||
         normalizedUrl.contains('qwen_qwen3.5-0.8b');
-    if (!isQwen35Small) {
-      return (nBatch: null, nUbatch: null);
+    final shouldUseQwen35SmallTuning =
+        params.batchSize <= 0 &&
+        params.microBatchSize <= 0 &&
+        params.preferredBackend != GpuBackend.cpu &&
+        params.gpuLayers != 0 &&
+        isQwen35Small;
+
+    if (shouldUseQwen35SmallTuning) {
+      return (nBatch: 32, nUbatch: 8);
     }
 
-    final tunedBatch = 32;
-    final tunedUbatch = 8;
-    return (nBatch: tunedBatch, nUbatch: tunedUbatch);
+    final effectiveContextSize = contextSize > 0 ? contextSize : 1;
+    final configuredBatchSize = params.batchSize > 0
+        ? params.batchSize
+        : effectiveContextSize;
+    final cappedBatchSize = configuredBatchSize > effectiveContextSize
+        ? effectiveContextSize
+        : configuredBatchSize;
+    final batchSize = cappedBatchSize > 0 ? cappedBatchSize : 1;
+
+    final configuredMicroBatchSize = params.microBatchSize > 0
+        ? params.microBatchSize
+        : batchSize;
+    final cappedMicroBatchSize = configuredMicroBatchSize > batchSize
+        ? batchSize
+        : configuredMicroBatchSize;
+    final microBatchSize = cappedMicroBatchSize > 0 ? cappedMicroBatchSize : 1;
+
+    return (nBatch: batchSize, nUbatch: microBatchSize);
   }
 
   int _webGpuFlashAttentionValue(ModelParams params) {
@@ -894,8 +909,6 @@ class WebGpuLlamaBackend
       requestedContextSize: params.contextSize,
       requestedGpuLayers: requestedGpuLayers,
     );
-    final batchTuning = _resolveWebBatchTuning(url: url, params: params);
-
     Object? lastError;
     Map<String, String> lastRuntimeHints = const <String, String>{};
     var retriedWithWasm32 = false;
@@ -909,6 +922,11 @@ class WebGpuLlamaBackend
     for (var index = 0; index < loadAttempts.length; index += 1) {
       final attempt = loadAttempts[index];
       _lastNCtx = attempt.contextSize;
+      final batchSizes = _resolveWebBatchSizes(
+        url: url,
+        params: params,
+        contextSize: attempt.contextSize,
+      );
       LlamaWebGpuBridge? bridgeForAttempt;
       bool? forceRemoteFetchBackend;
       final attemptThreads = switch (index) {
@@ -940,12 +958,8 @@ class WebGpuLlamaBackend
             nThreadsBatch: params.numberOfThreadsBatch > 0
                 ? params.numberOfThreadsBatch
                 : null,
-            nBatch: params.batchSize > 0
-                ? params.batchSize
-                : batchTuning.nBatch,
-            nUbatch: params.microBatchSize > 0
-                ? params.microBatchSize
-                : batchTuning.nUbatch,
+            nBatch: batchSizes.nBatch,
+            nUbatch: batchSizes.nUbatch,
             nGpuLayers: attempt.gpuLayers,
             nSeqMax: math.max(1, params.maxParallelSequences),
             flashAttention: _webGpuFlashAttentionValue(params),

@@ -19,6 +19,10 @@ For canonical full release notes, use:
 - Forwarded native-compatible `ModelParams` load tuning knobs through the
   WebGPU bridge path, including sequence slots, flash attention, KV cache type,
   RoPE overrides, split mode, and main GPU.
+- Matched native batch defaults on WebGPU so unset `batchSize` and
+  `microBatchSize` use `n_batch = n_ctx` and `n_ubatch = n_batch`, avoiding
+  first-embedding aborts for BERT-class/non-causal encoder models while
+  preserving model-specific Qwen3.5-0.8B WebGPU safety tuning.
 - Filtered backend-owned runtime dependencies during native asset bundling so
   CUDA runtime DLLs and OpenBLAS runtime libraries are emitted only when their
   owning backend module is selected, while unknown runtime libraries stay

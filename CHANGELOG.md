@@ -40,6 +40,10 @@
   * Forwarded native-compatible `ModelParams` load tuning knobs through the
     WebGPU bridge path, including `maxParallelSequences`, flash attention,
     KV-cache type, KV-unified, RoPE, split-mode, and main-GPU options.
+  * Matched native batch defaults on the WebGPU path so unset `batchSize` /
+    `microBatchSize` cascade to `n_batch = n_ctx` and `n_ubatch = n_batch`,
+    avoiding first-embedding aborts for BERT-class/non-causal encoder models
+    while preserving explicit caller values and Qwen3.5 web tuning.
 * **GPU device selection API**:
   * Added `ModelParams.mainGpu` and wired it to llama.cpp
     `llama_model_params.main_gpu`.

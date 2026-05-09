@@ -40,8 +40,13 @@ Important fields:
 - `mainGpu`: primary GPU device index passed through to llama.cpp `main_gpu`.
   To select one GPU for the full model, use
   `splitMode: ModelSplitMode.none` with the desired `mainGpu` index.
-- `batchSize`: context logical batch size (`n_batch`).
-- `microBatchSize`: context micro-batch size (`n_ubatch`).
+- `batchSize`: context logical batch size (`n_batch`). When left at `0`,
+  llamadart uses the effective context size (`n_ctx`) on native and WebGPU
+  backends, except for model-specific WebGPU safety tuning such as the bundled
+  Qwen3.5-0.8B small-model preset.
+- `microBatchSize`: context micro-batch size (`n_ubatch`). When left at `0`,
+  llamadart uses the resolved `batchSize`; explicit values are capped so
+  `n_ubatch <= n_batch <= n_ctx`.
 - `maxParallelSequences`: max sequence slots (`n_seq_max`) for parallel
   sequence workloads (for example, batched embeddings).
 - `chatTemplate`: optional template override.
