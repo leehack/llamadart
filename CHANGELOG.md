@@ -12,6 +12,10 @@
     authenticated bearer/custom headers, cancellation, retry, Range resume,
     cache hit/refresh/cache-only/no-cache policies, SHA-256 verification,
     cache listing, removal, clearing, and age/size pruning.
+  * Serialized concurrent stable-cache downloads for the same remote cache entry
+    across manager instances so duplicate callers do not race on shared `.part`
+    files or metadata, while distinct cache entries can still download in
+    parallel and waiting-caller cancellation does not cancel the active download.
   * Added `LlamaEngine.loadModelSource(...)` to route local sources through the
     existing native local loader, remote sources through the native download
     cache before local loading, and simple remote sources through URL-capable web

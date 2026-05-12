@@ -123,6 +123,16 @@ await manager.clear();
 
 Downloaded files are written to `.part` files and promoted to the completed
 model path only after the HTTP stream and optional SHA-256 verification succeed.
+Stable-cache remote downloads are serialized per cache entry in-process,
+including across `DefaultModelDownloadManager` instances that share a cache root:
+same-entry callers wait for the active operation, cache-reusing policies then
+re-check the completed cache, and different cache entries remain parallel.
+Concurrent `refresh` calls are serialized but each refreshes when its turn runs;
+`noCache` transient downloads are not stable-cache coalesced. Cancelling a
+waiting caller is observed after the active same-entry operation finishes and
+does not cancel that active download; cancellation of the active download
+releases the entry lock so a later caller can retry or resume from a safe `.part`
+file.
 Retry/resume use HTTP Range only when the partial file has a safe validator
 (ETag/Last-Modified) or the caller supplied a SHA-256 checksum; validator-less
 partials restart from byte zero. If a server ignores a resume request and

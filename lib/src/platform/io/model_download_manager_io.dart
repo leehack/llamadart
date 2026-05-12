@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -23,12 +24,31 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
   /// Default cache root used when [ModelLoadOptions.cacheDirectory] is absent.
   final String defaultCacheDirectory;
 
+  static final Map<String, Future<void>> _cacheLocks = <String, Future<void>>{};
+
   @override
   Future<ModelCacheEntry> ensureModel(
     ModelSource source, {
     ModelLoadOptions options = ModelLoadOptions.defaults,
     ModelDownloadProgressCallback? onProgress,
   }) async {
+    _throwIfCancelled(options);
+    if (source.isLocal || options.cachePolicy == ModelCachePolicy.noCache) {
+      return _ensureModelUnlocked(source, options, onProgress);
+    }
+
+    final cacheDir = _cacheDirectory(source, options);
+    return _withCacheLock(
+      _cacheLockKey(cacheDir),
+      () => _ensureModelUnlocked(source, options, onProgress),
+    );
+  }
+
+  Future<ModelCacheEntry> _ensureModelUnlocked(
+    ModelSource source,
+    ModelLoadOptions options,
+    ModelDownloadProgressCallback? onProgress,
+  ) async {
     _throwIfCancelled(options);
     if (source.isLocal) {
       return _localEntry(source, options);
@@ -96,6 +116,25 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
     );
     await _writeMetadata(metadataFile, entry);
     return entry;
+  }
+
+  Future<T> _withCacheLock<T>(String key, Future<T> Function() action) async {
+    final previous = _cacheLocks[key];
+    final current = Completer<void>();
+    _cacheLocks[key] = current.future;
+
+    if (previous != null) {
+      await previous;
+    }
+
+    try {
+      return await action();
+    } finally {
+      if (identical(_cacheLocks[key], current.future)) {
+        _cacheLocks.remove(key);
+      }
+      current.complete();
+    }
   }
 
   @override
@@ -222,6 +261,10 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
 
   Directory _rootDirectory(String? cacheDirectory) {
     return Directory(cacheDirectory ?? defaultCacheDirectory);
+  }
+
+  String _cacheLockKey(Directory cacheDirectory) {
+    return path.normalize(path.absolute(cacheDirectory.path));
   }
 
   Future<List<File>> _candidateMetadataFiles(

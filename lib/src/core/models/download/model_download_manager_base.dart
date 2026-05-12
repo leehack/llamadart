@@ -176,6 +176,12 @@ class ModelCacheEntry {
 /// Public API for package-managed model cache/download implementations.
 abstract interface class ModelDownloadManager {
   /// Ensures [source] is available as a local cache entry.
+  ///
+  /// Implementations may serialize stable remote downloads for the same cache
+  /// entry so concurrent callers do not race on shared partial files or
+  /// metadata. Cancelling one waiting caller must not cancel another caller's
+  /// active download; cooperative cancellation may be observed after the active
+  /// same-entry operation finishes.
   Future<ModelCacheEntry> ensureModel(
     ModelSource source, {
     ModelLoadOptions options = ModelLoadOptions.defaults,

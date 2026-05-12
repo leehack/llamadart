@@ -18,6 +18,10 @@ For canonical full release notes, use:
   custom headers, cooperative cancellation, retry, HTTP Range resume, cache
   hit/refresh/cache-only/no-cache policies, SHA-256 verification, and persisted
   redacted metadata for signed URLs.
+- Serialized concurrent stable-cache downloads for the same remote cache entry
+  across manager instances so duplicate callers do not race on shared `.part`
+  files or metadata, while distinct cache entries can still download in
+  parallel and waiting-caller cancellation does not cancel the active download.
 - Added `LlamaEngine.loadModelSource(...)` so local path sources keep using the
   existing native loader, remote HTTP(S)/Hugging Face sources download through
   the package-managed native cache before local loading, and URL-capable web

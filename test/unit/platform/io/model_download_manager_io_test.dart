@@ -1,13 +1,15 @@
 @TestOn('vm')
 library;
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 import 'package:llamadart/src/core/exceptions.dart';
-import 'package:llamadart/src/platform/io/model_download_manager_io.dart';
+import 'package:llamadart/src/core/models/download/model_download_manager_base.dart';
 import 'package:llamadart/src/core/models/model_load_options.dart';
+import 'package:llamadart/src/platform/io/model_download_manager_io.dart';
 import 'package:llamadart/src/core/models/model_source.dart';
 import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
@@ -86,6 +88,150 @@ void main() {
         );
       },
     );
+
+    test('serializes concurrent downloads for the same cache key', () async {
+      server.payload = utf8.encode('serialized-model');
+      server.responseDelay = const Duration(milliseconds: 100);
+      final manager = DefaultModelDownloadManager(
+        defaultCacheDirectory: tempDir.path,
+      );
+      final source = ModelSource.url(server.modelUri, fileName: 'tiny.gguf');
+
+      final entries = await Future.wait(<Future<ModelCacheEntry>>[
+        manager.ensureModel(source),
+        manager.ensureModel(source),
+        manager.ensureModel(source),
+      ]);
+
+      expect(server.requestCount, 1);
+      expect(server.maxActiveRequests, 1);
+      expect(entries.map((entry) => entry.filePath).toSet(), hasLength(1));
+      expect(
+        File(entries.first.filePath).readAsStringSync(),
+        'serialized-model',
+      );
+      final cacheDir = Directory(path.dirname(entries.first.filePath));
+      expect(
+        File(path.join(cacheDir.path, 'tiny.gguf.part')).existsSync(),
+        isFalse,
+      );
+      expect(
+        File(path.join(cacheDir.path, 'tiny.gguf.part.json')).existsSync(),
+        isFalse,
+      );
+    });
+
+    test('serializes same-key downloads across manager instances', () async {
+      server.payload = utf8.encode('shared-manager-cache');
+      server.responseDelay = const Duration(milliseconds: 100);
+      final firstManager = DefaultModelDownloadManager(
+        defaultCacheDirectory: tempDir.path,
+      );
+      final secondManager = DefaultModelDownloadManager(
+        defaultCacheDirectory: tempDir.path,
+      );
+      final source = ModelSource.url(server.modelUri, fileName: 'tiny.gguf');
+
+      final entries = await Future.wait(<Future<ModelCacheEntry>>[
+        firstManager.ensureModel(source),
+        secondManager.ensureModel(source),
+      ]);
+
+      expect(server.requestCount, 1);
+      expect(server.maxActiveRequests, 1);
+      expect(entries.map((entry) => entry.filePath).toSet(), hasLength(1));
+      expect(
+        File(entries.first.filePath).readAsStringSync(),
+        'shared-manager-cache',
+      );
+    });
+
+    test('keeps different cache keys parallelizable', () async {
+      server.responseDelay = const Duration(milliseconds: 100);
+      final manager = DefaultModelDownloadManager(
+        defaultCacheDirectory: tempDir.path,
+      );
+      final firstSource = ModelSource.url(
+        server.modelUri,
+        fileName: 'first.gguf',
+      );
+      final secondSource = ModelSource.url(
+        server.modelUri.replace(queryParameters: const {'variant': 'second'}),
+        fileName: 'second.gguf',
+      );
+
+      final entries = await Future.wait(<Future<ModelCacheEntry>>[
+        manager.ensureModel(firstSource),
+        manager.ensureModel(secondSource),
+      ]);
+
+      expect(server.requestCount, 2);
+      expect(server.maxActiveRequests, greaterThanOrEqualTo(2));
+      expect(entries.map((entry) => entry.cacheKey).toSet(), hasLength(2));
+      expect(entries.map((entry) => entry.filePath).toSet(), hasLength(2));
+    });
+
+    test(
+      'cancelled same-key waiters do not cancel the active download',
+      () async {
+        server.payload = utf8.encode('leader-model');
+        server.responseDelay = const Duration(milliseconds: 100);
+        final manager = DefaultModelDownloadManager(
+          defaultCacheDirectory: tempDir.path,
+        );
+        final source = ModelSource.url(server.modelUri, fileName: 'tiny.gguf');
+        final waiterToken = ModelDownloadCancelToken();
+
+        final leader = manager.ensureModel(source);
+        await server.firstRequestStarted;
+        final waiter = manager.ensureModel(
+          source,
+          options: ModelLoadOptions(cancelToken: waiterToken),
+        );
+        waiterToken.cancel();
+
+        final leaderEntry = await leader;
+        await expectLater(waiter, throwsA(isA<LlamaStateException>()));
+
+        expect(server.requestCount, 1);
+        expect(File(leaderEntry.filePath).readAsStringSync(), 'leader-model');
+        expect(
+          (await manager.get(source.cacheKey))?.filePath,
+          leaderEntry.filePath,
+        );
+      },
+    );
+
+    test('cancelled same-key leader releases lock for retry', () async {
+      server.payload = utf8.encode('retry-after-leader-cancel');
+      server.responseDelay = const Duration(milliseconds: 100);
+      final manager = DefaultModelDownloadManager(
+        defaultCacheDirectory: tempDir.path,
+      );
+      final source = ModelSource.url(server.modelUri, fileName: 'tiny.gguf');
+      final leaderToken = ModelDownloadCancelToken();
+
+      final leader = manager.ensureModel(
+        source,
+        options: ModelLoadOptions(cancelToken: leaderToken),
+      );
+      await server.firstRequestStarted;
+      final retry = manager.ensureModel(source);
+      leaderToken.cancel();
+
+      await expectLater(leader, throwsA(isA<LlamaStateException>()));
+      final retryEntry = await retry;
+
+      expect(server.requestCount, 2);
+      expect(
+        File(retryEntry.filePath).readAsStringSync(),
+        'retry-after-leader-cancel',
+      );
+      expect(
+        (await manager.get(source.cacheKey))?.filePath,
+        retryEntry.filePath,
+      );
+    });
 
     test(
       'cross-origin redirects do not forward caller supplied headers',
@@ -917,6 +1063,10 @@ class _ModelHttpFixture {
   int failureStatusCode = HttpStatus.internalServerError;
   Uri? redirectTo;
   int requestCount = 0;
+  int activeRequests = 0;
+  int maxActiveRequests = 0;
+  Duration responseDelay = Duration.zero;
+  final Completer<void> _firstRequestStarted = Completer<void>();
   String? lastRange;
   final rangeHistory = <String?>[];
   String? lastIfRange;
@@ -936,62 +1086,86 @@ class _ModelHttpFixture {
 
   Future<void> close() => _server.close(force: true);
 
+  Future<void> get firstRequestStarted => _firstRequestStarted.future;
+
   void _handleRequest(HttpRequest request) async {
     requestCount += 1;
-    lastRange = request.headers.value(HttpHeaders.rangeHeader);
-    rangeHistory.add(lastRange);
-    lastIfRange = request.headers.value(HttpHeaders.ifRangeHeader);
-    lastAuthorization = request.headers.value(HttpHeaders.authorizationHeader);
-    lastTestHeader = request.headers.value('X-Test-Header');
-
-    final currentEtag = etag;
-    if (currentEtag != null) {
-      request.response.headers.set(HttpHeaders.etagHeader, currentEtag);
+    final requestNumber = requestCount;
+    activeRequests += 1;
+    if (activeRequests > maxActiveRequests) {
+      maxActiveRequests = activeRequests;
     }
-
-    final redirectTarget = redirectTo;
-    if (redirectTarget != null) {
-      request.response.statusCode = HttpStatus.temporaryRedirect;
-      request.response.headers.set(
-        HttpHeaders.locationHeader,
-        redirectTarget.toString(),
+    if (!_firstRequestStarted.isCompleted) {
+      _firstRequestStarted.complete();
+    }
+    try {
+      final requestRange = request.headers.value(HttpHeaders.rangeHeader);
+      final requestIfRange = request.headers.value(HttpHeaders.ifRangeHeader);
+      final requestAuthorization = request.headers.value(
+        HttpHeaders.authorizationHeader,
       );
-      await request.response.close();
-      return;
-    }
+      final requestTestHeader = request.headers.value('X-Test-Header');
+      lastRange = requestRange;
+      rangeHistory.add(requestRange);
+      lastIfRange = requestIfRange;
+      lastAuthorization = requestAuthorization;
+      lastTestHeader = requestTestHeader;
 
-    if (requestCount <= failuresBeforeSuccess) {
-      request.response.statusCode = failureStatusCode;
-      await request.response.close();
-      return;
-    }
+      final currentEtag = etag;
+      if (currentEtag != null) {
+        request.response.headers.set(HttpHeaders.etagHeader, currentEtag);
+      }
 
-    final range = lastRange;
-    if (supportRanges && range != null && range.startsWith('bytes=')) {
-      final startText = range.substring('bytes='.length).split('-').first;
-      final start = int.parse(startText);
-      if (start >= payload.length) {
-        request.response.statusCode = HttpStatus.requestedRangeNotSatisfiable;
+      if (responseDelay > Duration.zero) {
+        await Future<void>.delayed(responseDelay);
+      }
+
+      final redirectTarget = redirectTo;
+      if (redirectTarget != null) {
+        request.response.statusCode = HttpStatus.temporaryRedirect;
         request.response.headers.set(
-          HttpHeaders.contentRangeHeader,
-          'bytes */${payload.length}',
+          HttpHeaders.locationHeader,
+          redirectTarget.toString(),
         );
         await request.response.close();
         return;
       }
-      request.response.statusCode = HttpStatus.partialContent;
-      request.response.headers.set(HttpHeaders.acceptRangesHeader, 'bytes');
-      request.response.headers.set(
-        HttpHeaders.contentRangeHeader,
-        'bytes $start-${payload.length - 1}/${payload.length}',
-      );
-      request.response.headers.contentLength = payload.length - start;
-      request.response.add(payload.sublist(start));
-    } else {
-      request.response.statusCode = HttpStatus.ok;
-      request.response.headers.contentLength = payload.length;
-      request.response.add(payload);
+
+      if (requestNumber <= failuresBeforeSuccess) {
+        request.response.statusCode = failureStatusCode;
+        await request.response.close();
+        return;
+      }
+
+      final range = requestRange;
+      if (supportRanges && range != null && range.startsWith('bytes=')) {
+        final startText = range.substring('bytes='.length).split('-').first;
+        final start = int.parse(startText);
+        if (start >= payload.length) {
+          request.response.statusCode = HttpStatus.requestedRangeNotSatisfiable;
+          request.response.headers.set(
+            HttpHeaders.contentRangeHeader,
+            'bytes */${payload.length}',
+          );
+          await request.response.close();
+          return;
+        }
+        request.response.statusCode = HttpStatus.partialContent;
+        request.response.headers.set(HttpHeaders.acceptRangesHeader, 'bytes');
+        request.response.headers.set(
+          HttpHeaders.contentRangeHeader,
+          'bytes $start-${payload.length - 1}/${payload.length}',
+        );
+        request.response.headers.contentLength = payload.length - start;
+        request.response.add(payload.sublist(start));
+      } else {
+        request.response.statusCode = HttpStatus.ok;
+        request.response.headers.contentLength = payload.length;
+        request.response.add(payload);
+      }
+      await request.response.close();
+    } finally {
+      activeRequests -= 1;
     }
-    await request.response.close();
   }
 }
