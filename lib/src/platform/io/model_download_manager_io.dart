@@ -379,21 +379,26 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
             (options.sha256 != null || entry.sha256 != null))) {
       return null;
     }
-    final refreshed = ModelCacheEntry(
-      sourceCanonicalKey: entry.sourceCanonicalKey,
-      cacheKey: entry.cacheKey,
-      fileName: entry.fileName,
-      filePath: entry.filePath,
-      bytes: await finalFile.length(),
-      sha256: verifiedSha256 ?? entry.sha256,
-      etag: entry.etag,
-      lastModified: entry.lastModified,
-      createdAt: entry.createdAt,
-      updatedAt: DateTime.now().toUtc(),
-      expiresAt: entry.expiresAt,
-    );
-    await _writeMetadata(metadataFile, refreshed);
-    return refreshed;
+    try {
+      final refreshed = ModelCacheEntry(
+        sourceCanonicalKey: entry.sourceCanonicalKey,
+        cacheKey: entry.cacheKey,
+        fileName: entry.fileName,
+        filePath: entry.filePath,
+        bytes: await finalFile.length(),
+        sha256: verifiedSha256 ?? entry.sha256,
+        etag: entry.etag,
+        lastModified: entry.lastModified,
+        createdAt: entry.createdAt,
+        updatedAt: DateTime.now().toUtc(),
+        expiresAt: entry.expiresAt,
+      );
+      await _writeMetadata(metadataFile, refreshed);
+      return refreshed;
+    } on IOException {
+      await _deleteStaleCompletedEntry(finalFile, metadataFile);
+      return null;
+    }
   }
 
   Future<ModelCacheEntry?> _recoverMetadataEntry(
