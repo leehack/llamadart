@@ -391,7 +391,7 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
         cacheKey: entry.cacheKey,
         fileName: entry.fileName,
         filePath: entry.filePath,
-        bytes: await finalFile.length(),
+        bytes: verification.bytes!,
         sha256: verification.sha256 ?? entry.sha256,
         etag: entry.etag,
         lastModified: entry.lastModified,
@@ -402,10 +402,10 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
       await _writeMetadata(metadataFile, refreshed);
       return refreshed;
     } on FileSystemException {
-      await _deleteStaleCompletedEntry(finalFile, metadataFile);
+      await _deleteIfExists(metadataFile);
       return null;
     } on IOException {
-      await _deleteStaleCompletedEntry(finalFile, metadataFile);
+      await _deleteIfExists(metadataFile);
       return null;
     }
   }
@@ -434,42 +434,46 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
       );
       await _writeMetadata(metadataFile, recovered);
       return recovered;
+    } on FileSystemException {
+      await _deleteIfExists(metadataFile);
+      return null;
     } on IOException {
-      await _deleteStaleCompletedEntry(finalFile, metadataFile);
+      await _deleteIfExists(metadataFile);
       return null;
     }
   }
 
-  Future<({bool isValid, String? sha256})> _verifyCompletedFile(
+  Future<({bool isValid, int? bytes, String? sha256})> _verifyCompletedFile(
     File finalFile,
     File metadataFile,
     ModelCacheEntry entry,
     ModelLoadOptions options,
   ) async {
     try {
+      final actualBytes = await finalFile.length();
       final recordedBytes = entry.bytes;
-      if (recordedBytes != null && await finalFile.length() != recordedBytes) {
+      if (recordedBytes != null && actualBytes != recordedBytes) {
         await _deleteStaleCompletedEntry(finalFile, metadataFile);
-        return (isValid: false, sha256: null);
+        return (isValid: false, bytes: null, sha256: null);
       }
       final storedSha256 = entry.sha256;
       final expectedSha256 = options.sha256;
       if (storedSha256 == null && expectedSha256 == null) {
-        return (isValid: true, sha256: null);
+        return (isValid: true, bytes: actualBytes, sha256: null);
       }
       final actual = await _sha256File(finalFile);
       if ((storedSha256 != null && actual != storedSha256) ||
           (expectedSha256 != null && actual != expectedSha256)) {
         await _deleteStaleCompletedEntry(finalFile, metadataFile);
-        return (isValid: false, sha256: null);
+        return (isValid: false, bytes: null, sha256: null);
       }
-      return (isValid: true, sha256: actual);
+      return (isValid: true, bytes: actualBytes, sha256: actual);
     } on FileSystemException {
-      await _deleteStaleCompletedEntry(finalFile, metadataFile);
-      return (isValid: false, sha256: null);
+      await _deleteIfExists(metadataFile);
+      return (isValid: false, bytes: null, sha256: null);
     } on IOException {
-      await _deleteStaleCompletedEntry(finalFile, metadataFile);
-      return (isValid: false, sha256: null);
+      await _deleteIfExists(metadataFile);
+      return (isValid: false, bytes: null, sha256: null);
     }
   }
 
@@ -489,8 +493,11 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
         return null;
       }
       return actual;
+    } on FileSystemException {
+      await _deleteIfExists(metadataFile);
+      return null;
     } on IOException {
-      await _deleteStaleCompletedEntry(finalFile, metadataFile);
+      await _deleteIfExists(metadataFile);
       return null;
     }
   }
