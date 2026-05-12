@@ -16,6 +16,10 @@
     across manager instances so duplicate callers do not race on shared `.part`
     files or metadata, while distinct cache entries can still download in
     parallel and waiting-caller cancellation does not cancel the active download.
+  * Hardened versioned cache metadata recovery: completed files can rebuild
+    missing, malformed, or unsupported-schema sidecars without network access,
+    while byte-count and stored/caller SHA-256 mismatches are treated as cache
+    misses and safely re-downloaded.
   * Added `LlamaEngine.loadModelSource(...)` to route local sources through the
     existing native local loader, remote sources through the native download
     cache before local loading, and simple remote sources through URL-capable web

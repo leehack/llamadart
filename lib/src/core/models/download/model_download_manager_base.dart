@@ -182,6 +182,12 @@ abstract interface class ModelDownloadManager {
   /// metadata. Cancelling one waiting caller must not cancel another caller's
   /// active download; cooperative cancellation may be observed after the active
   /// same-entry operation finishes.
+  ///
+  /// Native/file-backed implementations may recover package-managed metadata
+  /// when the completed model file is still present in the deterministic cache
+  /// directory, but should treat missing files, source mismatches, byte-count
+  /// mismatches, and checksum mismatches as cache misses rather than returning
+  /// stale entries.
   Future<ModelCacheEntry> ensureModel(
     ModelSource source, {
     ModelLoadOptions options = ModelLoadOptions.defaults,
@@ -192,10 +198,16 @@ abstract interface class ModelDownloadManager {
   /// including transient `noCache` entries that remain until explicitly
   /// cleared or pruned.
   ///
+  /// Malformed or unsupported metadata entries may be ignored so one corrupt
+  /// cache directory does not make cache inspection unusable.
+  ///
   /// When [cacheDirectory] is omitted, the manager's default cache root is used.
   Future<List<ModelCacheEntry>> list({String? cacheDirectory});
 
   /// Gets a cached model entry by [cacheKey], if present under [cacheDirectory].
+  ///
+  /// Malformed or unsupported metadata entries may be ignored so one corrupt
+  /// cache directory does not block lookup of other candidates.
   ///
   /// When [cacheDirectory] is omitted, the manager's default cache root is used.
   Future<ModelCacheEntry?> get(String cacheKey, {String? cacheDirectory});

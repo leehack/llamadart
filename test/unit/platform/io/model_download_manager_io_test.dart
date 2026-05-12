@@ -303,6 +303,160 @@ void main() {
       expect(File(cached.filePath).readAsStringSync(), 'cached-model');
     });
 
+    test(
+      'cacheOnly recovers missing metadata for an existing model file',
+      () async {
+        final manager = DefaultModelDownloadManager(
+          defaultCacheDirectory: tempDir.path,
+        );
+        final source = ModelSource.url(server.modelUri, fileName: 'tiny.gguf');
+
+        server.payload = utf8.encode('metadata-recovery-model');
+        final first = await manager.ensureModel(source);
+        final metadataFile = File(
+          path.join(path.dirname(first.filePath), 'metadata.json'),
+        );
+        await metadataFile.delete();
+
+        final recovered = await manager.ensureModel(
+          source,
+          options: ModelLoadOptions(cachePolicy: ModelCachePolicy.cacheOnly),
+        );
+
+        expect(server.requestCount, 1);
+        expect(recovered.filePath, first.filePath);
+        expect(recovered.cacheKey, source.cacheKey);
+        expect(recovered.fileName, source.fileName);
+        expect(recovered.bytes, utf8.encode('metadata-recovery-model').length);
+        expect(metadataFile.existsSync(), isTrue);
+        expect(
+          metadataFile.readAsStringSync(),
+          isNot(contains('download=true')),
+        );
+      },
+    );
+
+    test(
+      'cache hit recovers malformed metadata without re-downloading',
+      () async {
+        final manager = DefaultModelDownloadManager(
+          defaultCacheDirectory: tempDir.path,
+        );
+        final source = ModelSource.url(server.modelUri, fileName: 'tiny.gguf');
+
+        server.payload = utf8.encode('malformed-metadata-model');
+        final first = await manager.ensureModel(source);
+        final metadataFile = File(
+          path.join(path.dirname(first.filePath), 'metadata.json'),
+        );
+        await metadataFile.writeAsString('{not valid json');
+
+        server.payload = utf8.encode('remote-newer-model');
+        final recovered = await manager.ensureModel(source);
+
+        expect(server.requestCount, 1);
+        expect(recovered.filePath, first.filePath);
+        expect(
+          File(recovered.filePath).readAsStringSync(),
+          'malformed-metadata-model',
+        );
+        expect(
+          metadataFile.readAsStringSync(),
+          contains('"schema_version": 1'),
+        );
+      },
+    );
+
+    test(
+      'cacheOnly recovers unsupported metadata schema for an existing file',
+      () async {
+        final manager = DefaultModelDownloadManager(
+          defaultCacheDirectory: tempDir.path,
+        );
+        final source = ModelSource.url(server.modelUri, fileName: 'tiny.gguf');
+
+        server.payload = utf8.encode('future-schema-model');
+        final first = await manager.ensureModel(source);
+        final metadataFile = File(
+          path.join(path.dirname(first.filePath), 'metadata.json'),
+        );
+        final metadata =
+            jsonDecode(metadataFile.readAsStringSync()) as Map<String, dynamic>;
+        metadata['schema_version'] = 999;
+        await metadataFile.writeAsString(jsonEncode(metadata));
+
+        final recovered = await manager.ensureModel(
+          source,
+          options: ModelLoadOptions(cachePolicy: ModelCachePolicy.cacheOnly),
+        );
+
+        expect(server.requestCount, 1);
+        expect(recovered.filePath, first.filePath);
+        expect(
+          metadataFile.readAsStringSync(),
+          contains('"schema_version": 1'),
+        );
+      },
+    );
+
+    test(
+      'cache hit redownloads when metadata byte length does not match file',
+      () async {
+        final manager = DefaultModelDownloadManager(
+          defaultCacheDirectory: tempDir.path,
+        );
+        final source = ModelSource.url(server.modelUri, fileName: 'tiny.gguf');
+
+        server.payload = utf8.encode('cached-model');
+        final first = await manager.ensureModel(source);
+        final metadataFile = File(
+          path.join(path.dirname(first.filePath), 'metadata.json'),
+        );
+        final metadata =
+            jsonDecode(metadataFile.readAsStringSync()) as Map<String, dynamic>;
+        metadata['bytes'] = 1024 * 1024;
+        await metadataFile.writeAsString(jsonEncode(metadata));
+
+        server.payload = utf8.encode('redownloaded-model');
+        final refreshed = await manager.ensureModel(source);
+
+        expect(server.requestCount, 2);
+        expect(refreshed.filePath, first.filePath);
+        expect(
+          File(refreshed.filePath).readAsStringSync(),
+          'redownloaded-model',
+        );
+      },
+    );
+
+    test(
+      'cache hit redownloads when stored sha256 no longer matches file',
+      () async {
+        final manager = DefaultModelDownloadManager(
+          defaultCacheDirectory: tempDir.path,
+        );
+        final source = ModelSource.url(server.modelUri, fileName: 'tiny.gguf');
+        server.payload = utf8.encode('checksummed-model');
+        final expectedSha256 = sha256.convert(server.payload).toString();
+
+        final first = await manager.ensureModel(
+          source,
+          options: ModelLoadOptions(sha256: expectedSha256),
+        );
+        await File(first.filePath).writeAsString('corrupted-model');
+
+        server.payload = utf8.encode('redownloaded-model');
+        final refreshed = await manager.ensureModel(source);
+
+        expect(server.requestCount, 2);
+        expect(refreshed.filePath, first.filePath);
+        expect(
+          File(refreshed.filePath).readAsStringSync(),
+          'redownloaded-model',
+        );
+      },
+    );
+
     test('cache hit rejects metadata for a different source', () async {
       final manager = DefaultModelDownloadManager(
         defaultCacheDirectory: tempDir.path,

@@ -133,6 +133,18 @@ waiting caller is observed after the active same-entry operation finishes and
 does not cancel that active download; cancellation of the active download
 releases the entry lock so a later caller can retry or resume from a safe `.part`
 file.
+
+Cache metadata uses a versioned `metadata.json` sidecar next to the completed
+model file. A completed cache entry is reused only when the sidecar matches the
+requested cache key, file name, and file path, and the file still satisfies the
+recorded byte length plus any caller-supplied or previously stored SHA-256. If a
+completed file remains but the sidecar is missing, malformed, or written by an
+unsupported schema version, the native manager rebuilds a fresh versioned
+sidecar from the deterministic source/cache identity instead of touching the
+network; `cacheOnly` can therefore recover from metadata-only damage. If the
+file is missing or fails the recorded length/checksum checks, the entry is
+ignored as a cache miss and cache-reusing policies re-download safely.
+
 Retry/resume use HTTP Range only when the partial file has a safe validator
 (ETag/Last-Modified) or the caller supplied a SHA-256 checksum; validator-less
 partials restart from byte zero. If a server ignores a resume request and
