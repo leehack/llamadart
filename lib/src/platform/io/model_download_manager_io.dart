@@ -443,12 +443,14 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
         await _deleteStaleCompletedEntry(finalFile, metadataFile);
         return null;
       }
-      final expectedSha256 = options.sha256 ?? entry.sha256;
-      if (expectedSha256 == null) {
+      final storedSha256 = entry.sha256;
+      final expectedSha256 = options.sha256;
+      if (storedSha256 == null && expectedSha256 == null) {
         return null;
       }
       final actual = await _sha256File(finalFile);
-      if (actual != expectedSha256) {
+      if ((storedSha256 != null && actual != storedSha256) ||
+          (expectedSha256 != null && actual != expectedSha256)) {
         await _deleteStaleCompletedEntry(finalFile, metadataFile);
         return null;
       }

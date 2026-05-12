@@ -443,7 +443,7 @@ void main() {
           source,
           options: ModelLoadOptions(sha256: expectedSha256),
         );
-        await File(first.filePath).writeAsString('corrupted-model');
+        await File(first.filePath).writeAsString('checksum-mismatch');
 
         server.payload = utf8.encode('redownloaded-model');
         final refreshed = await manager.ensureModel(source);
@@ -453,6 +453,39 @@ void main() {
         expect(
           File(refreshed.filePath).readAsStringSync(),
           'redownloaded-model',
+        );
+      },
+    );
+
+    test(
+      'cache hit redownloads when stored sha256 conflicts with caller sha256',
+      () async {
+        final manager = DefaultModelDownloadManager(
+          defaultCacheDirectory: tempDir.path,
+        );
+        final source = ModelSource.url(server.modelUri, fileName: 'tiny.gguf');
+        server.payload = utf8.encode('checksummed-model');
+        final storedSha256 = sha256.convert(server.payload).toString();
+
+        final first = await manager.ensureModel(
+          source,
+          options: ModelLoadOptions(sha256: storedSha256),
+        );
+        server.payload = utf8.encode('checksum-mismatch');
+        final callerSha256 = sha256.convert(server.payload).toString();
+        await File(first.filePath).writeAsString('checksum-mismatch');
+
+        final refreshed = await manager.ensureModel(
+          source,
+          options: ModelLoadOptions(sha256: callerSha256),
+        );
+
+        expect(server.requestCount, 2);
+        expect(refreshed.filePath, first.filePath);
+        expect(refreshed.sha256, callerSha256);
+        expect(
+          File(refreshed.filePath).readAsStringSync(),
+          'checksum-mismatch',
         );
       },
     );
