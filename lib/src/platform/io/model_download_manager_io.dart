@@ -345,10 +345,16 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
     File finalFile,
     ModelLoadOptions options,
   ) async {
-    if (!await finalFile.exists()) {
-      return null;
-    }
-    if (!await metadataFile.exists()) {
+    try {
+      if (!await finalFile.exists()) {
+        return null;
+      }
+      if (!await metadataFile.exists()) {
+        return _recoverMetadataEntry(source, metadataFile, finalFile, options);
+      }
+    } on FileSystemException {
+      return _recoverMetadataEntry(source, metadataFile, finalFile, options);
+    } on IOException {
       return _recoverMetadataEntry(source, metadataFile, finalFile, options);
     }
 
@@ -359,6 +365,8 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
       return _recoverMetadataEntry(source, metadataFile, finalFile, options);
     } on ArgumentError {
       return _recoverMetadataEntry(source, metadataFile, finalFile, options);
+    } on FileSystemException {
+      return _recoverMetadataEntry(source, metadataFile, finalFile, options);
     } on IOException {
       return _recoverMetadataEntry(source, metadataFile, finalFile, options);
     }
@@ -368,15 +376,13 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
         entry.filePath != finalFile.path) {
       return null;
     }
-    final verifiedSha256 = await _verifyCompletedFile(
+    final verification = await _verifyCompletedFile(
       finalFile,
       metadataFile,
       entry,
       options,
     );
-    if (!await finalFile.exists() ||
-        (verifiedSha256 == null &&
-            (options.sha256 != null || entry.sha256 != null))) {
+    if (!verification.isValid) {
       return null;
     }
     try {
@@ -386,7 +392,7 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
         fileName: entry.fileName,
         filePath: entry.filePath,
         bytes: await finalFile.length(),
-        sha256: verifiedSha256 ?? entry.sha256,
+        sha256: verification.sha256 ?? entry.sha256,
         etag: entry.etag,
         lastModified: entry.lastModified,
         createdAt: entry.createdAt,
@@ -395,6 +401,9 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
       );
       await _writeMetadata(metadataFile, refreshed);
       return refreshed;
+    } on FileSystemException {
+      await _deleteStaleCompletedEntry(finalFile, metadataFile);
+      return null;
     } on IOException {
       await _deleteStaleCompletedEntry(finalFile, metadataFile);
       return null;
@@ -431,7 +440,7 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
     }
   }
 
-  Future<String?> _verifyCompletedFile(
+  Future<({bool isValid, String? sha256})> _verifyCompletedFile(
     File finalFile,
     File metadataFile,
     ModelCacheEntry entry,
@@ -441,23 +450,26 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
       final recordedBytes = entry.bytes;
       if (recordedBytes != null && await finalFile.length() != recordedBytes) {
         await _deleteStaleCompletedEntry(finalFile, metadataFile);
-        return null;
+        return (isValid: false, sha256: null);
       }
       final storedSha256 = entry.sha256;
       final expectedSha256 = options.sha256;
       if (storedSha256 == null && expectedSha256 == null) {
-        return null;
+        return (isValid: true, sha256: null);
       }
       final actual = await _sha256File(finalFile);
       if ((storedSha256 != null && actual != storedSha256) ||
           (expectedSha256 != null && actual != expectedSha256)) {
         await _deleteStaleCompletedEntry(finalFile, metadataFile);
-        return null;
+        return (isValid: false, sha256: null);
       }
-      return actual;
+      return (isValid: true, sha256: actual);
+    } on FileSystemException {
+      await _deleteStaleCompletedEntry(finalFile, metadataFile);
+      return (isValid: false, sha256: null);
     } on IOException {
       await _deleteStaleCompletedEntry(finalFile, metadataFile);
-      return null;
+      return (isValid: false, sha256: null);
     }
   }
 

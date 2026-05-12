@@ -367,6 +367,34 @@ void main() {
       },
     );
 
+    test('cacheOnly recovers malformed metadata without network', () async {
+      final manager = DefaultModelDownloadManager(
+        defaultCacheDirectory: tempDir.path,
+      );
+      final source = ModelSource.url(server.modelUri, fileName: 'tiny.gguf');
+
+      server.payload = utf8.encode('cache-only-malformed-metadata-model');
+      final first = await manager.ensureModel(source);
+      final metadataFile = File(
+        path.join(path.dirname(first.filePath), 'metadata.json'),
+      );
+      await metadataFile.writeAsString('{not valid json');
+
+      server.payload = utf8.encode('remote-newer-model');
+      final recovered = await manager.ensureModel(
+        source,
+        options: ModelLoadOptions(cachePolicy: ModelCachePolicy.cacheOnly),
+      );
+
+      expect(server.requestCount, 1);
+      expect(recovered.filePath, first.filePath);
+      expect(
+        File(recovered.filePath).readAsStringSync(),
+        'cache-only-malformed-metadata-model',
+      );
+      expect(metadataFile.readAsStringSync(), contains('"schema_version": 1'));
+    });
+
     test(
       'cacheOnly recovers unsupported metadata schema for an existing file',
       () async {
