@@ -17,11 +17,19 @@ void main() {
     late LlamaEngine engine;
     late bool mmLoaded;
     late bool sawAudioPart;
+    String? lastStateSavePath;
+    List<int>? lastStateSaveTokens;
+    String? lastStateLoadPath;
+    int? lastStateLoadCapacity;
 
     setUp(() {
       bridge = JSObject();
       mmLoaded = false;
       sawAudioPart = false;
+      lastStateSavePath = null;
+      lastStateSaveTokens = null;
+      lastStateLoadPath = null;
+      lastStateLoadCapacity = null;
 
       bridge.setProperty(
         'loadModelFromUrl'.toJS,
@@ -93,6 +101,35 @@ void main() {
         'detokenize'.toJS,
         ((JSArray tokens, bool special) {
           return Future<JSString>.value('decoded'.toJS).toJS;
+        }).toJS,
+      );
+
+      bridge.setProperty(
+        'stateSaveFile'.toJS,
+        ((String path, JSArray tokens) {
+          lastStateSavePath = path;
+          lastStateSaveTokens = <int>[];
+          for (int i = 0; i < tokens.length; i++) {
+            final raw = tokens.getProperty(i.toJS);
+            if (raw.isA<JSNumber>()) {
+              lastStateSaveTokens!.add((raw as JSNumber).toDartInt);
+            }
+          }
+          return Future<JSBoolean>.value(true.toJS).toJS;
+        }).toJS,
+      );
+
+      bridge.setProperty(
+        'stateLoadFile'.toJS,
+        ((String path, int tokenCapacity) {
+          lastStateLoadPath = path;
+          lastStateLoadCapacity = tokenCapacity;
+          final result = JSObject();
+          result.setProperty(
+            'tokens'.toJS,
+            <JSNumber>[7.toJS, 8.toJS, 9.toJS].toJS,
+          );
+          return Future<JSObject>.value(result).toJS;
         }).toJS,
       );
 
@@ -224,6 +261,31 @@ void main() {
         <double>[5.0, 1.0],
         <double>[4.0, 1.0],
       ]);
+    });
+
+    test('LlamaEngine state persistence forwards to web bridge', () async {
+      await engine.loadModelFromUrl(
+        'https://example.com/model.gguf',
+        modelParams: const ModelParams(contextSize: 1024),
+      );
+
+      expect(engine.supportsStatePersistence, isTrue);
+
+      final saved = await engine.stateSaveFile(
+        '/prompt-state.bin',
+        tokens: const <int>[1, 2, 3],
+      );
+      expect(saved, isTrue);
+      expect(lastStateSavePath, '/prompt-state.bin');
+      expect(lastStateSaveTokens, <int>[1, 2, 3]);
+
+      final restored = await engine.stateLoadFile(
+        '/prompt-state.bin',
+        tokenCapacity: 1024,
+      );
+      expect(restored.tokens, <int>[7, 8, 9]);
+      expect(lastStateLoadPath, '/prompt-state.bin');
+      expect(lastStateLoadCapacity, 1024);
     });
   });
 }

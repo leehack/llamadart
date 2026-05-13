@@ -21,7 +21,7 @@ development validation, and CDN-first loading for normal hosted deployments:
 Fetch pinned local assets with:
 
 ```bash
-WEBGPU_BRIDGE_ASSETS_TAG=v0.1.14 ./scripts/fetch_webgpu_bridge_assets.sh
+WEBGPU_BRIDGE_ASSETS_TAG=v0.1.15 ./scripts/fetch_webgpu_bridge_assets.sh
 ```
 
 ## Compatibility and safeguards
@@ -35,6 +35,11 @@ WEBGPU_BRIDGE_ASSETS_TAG=v0.1.14 ./scripts/fetch_webgpu_bridge_assets.sh
 - `v0.1.14+` bridge assets cap automatically selected WebAssembly threads to
   the compiled pthread pool size, preventing BERT-style embedding models from
   aborting on hosts with higher hardware concurrency than the bridge pool.
+- `v0.1.15+` bridge assets expose state persistence APIs consumed by
+  `LlamaEngine.stateSaveFile(...)` / `stateLoadFile(...)`. Web paths are bridge
+  WASMFS virtual paths and are not durable across page reloads. Durable browser
+  storage currently requires app-level export/import outside the Dart
+  `stateSaveFile` / `stateLoadFile` helpers.
 - CPU fallback is available through bridge runtime routing.
 - Safari compatibility guard and fallback behavior are integrated in this repo.
 - Legacy bridge assets may be forced to CPU in Safari when GPU layers are
@@ -53,7 +58,7 @@ You can override bridge asset source/version before loader startup:
 ```html
 <script>
   window.__llamadartBridgeAssetsRepo = 'leehack/llama-web-bridge-assets';
-  window.__llamadartBridgeAssetsTag = 'v0.1.14';
+  window.__llamadartBridgeAssetsTag = 'v0.1.15';
   // Optional knobs:
   // window.__llamadartBridgeEnableMem64 = false;
   // window.__llamadartBridgeAllowAutoRemoteFetchBackend = false;

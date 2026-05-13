@@ -19,7 +19,7 @@ pipelines.
    `https://cdn.jsdelivr.net/gh/leehack/llama-web-bridge-assets@<tag>/llama_webgpu_bridge.js`
 2. Local fallback: `./webgpu_bridge/llama_webgpu_bridge.js`
 
-Default pinned tag in the example is `v0.1.14`.
+Default pinned tag in the example is `v0.1.15`.
 
 For broader browser coverage in this repository, fetched/local assets are patched
 to a universal Safari-compatible gate by default (`MIN_SAFARI_VERSION=170400`).
@@ -32,7 +32,7 @@ model bytes.
 To vendor pinned assets into local app web files:
 
 ```bash
-WEBGPU_BRIDGE_ASSETS_TAG=v0.1.14 ./scripts/fetch_webgpu_bridge_assets.sh
+WEBGPU_BRIDGE_ASSETS_TAG=v0.1.15 ./scripts/fetch_webgpu_bridge_assets.sh
 ```
 
 Optional compatibility env vars:
@@ -108,7 +108,7 @@ You can override CDN source/version before the bridge loader runs:
 ```html
 <script>
   window.__llamadartBridgeAssetsRepo = 'leehack/llama-web-bridge-assets';
-  window.__llamadartBridgeAssetsTag = 'v0.1.14';
+  window.__llamadartBridgeAssetsTag = 'v0.1.15';
 </script>
 ```
 
@@ -134,6 +134,8 @@ window.LlamaWebGpuBridge = class LlamaWebGpuBridge {
 - `createCompletion(prompt, { nPredict, temp, topK, topP, penalty, seed, grammar, onToken, parts, signal })`
 - `tokenize(text, addSpecial)`
 - `detokenize(tokens, special)`
+- `stateSaveFile(path, tokens)`
+- `stateLoadFile(path, tokenCapacity)`
 - `embed(text, { normalize })`
 - `embedBatch(texts, { normalize })`
 - `getModelMetadata()`
@@ -149,6 +151,10 @@ window.LlamaWebGpuBridge = class LlamaWebGpuBridge {
 - Web backend remains GGUF URL-based (`modelLoadFromUrl`).
 - If bridge activation fails, model loading fails (no alternate web backend).
 - Embeddings on web require bridge assets with embedding APIs (`v0.1.7+`).
+- State persistence on web requires bridge assets with state APIs (`v0.1.15+`);
+  paths are bridge WASMFS virtual paths and are not durable across page reloads.
+  Durable browser storage currently requires app-level export/import outside the
+  Dart `stateSaveFile` / `stateLoadFile` helpers.
 - During this experimental phase, bridge can be supplied by:
   - preloaded global `window.LlamaWebGpuBridge`, or
   - dynamic import URL via `WebGpuLlamaBackend(bridgeScriptUrl: ...)`.

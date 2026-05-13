@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(git rev-parse --show-toplevel)"
 OUT_DIR="${WEBGPU_BRIDGE_OUT_DIR:-$ROOT_DIR/example/chat_app/web/webgpu_bridge}"
 ASSETS_REPO="${WEBGPU_BRIDGE_ASSETS_REPO:-leehack/llama-web-bridge-assets}"
-ASSETS_TAG="${WEBGPU_BRIDGE_ASSETS_TAG:-v0.1.14}"
+ASSETS_TAG="${WEBGPU_BRIDGE_ASSETS_TAG:-v0.1.15}"
 CDN_BASE="${WEBGPU_BRIDGE_CDN_BASE:-https://cdn.jsdelivr.net/gh/${ASSETS_REPO}@${ASSETS_TAG}}"
 PATCH_SAFARI_COMPAT="${WEBGPU_BRIDGE_PATCH_SAFARI_COMPAT:-1}"
 MIN_SAFARI_VERSION="${WEBGPU_BRIDGE_MIN_SAFARI_VERSION:-170400}"
@@ -14,7 +14,7 @@ if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
 Downloads prebuilt WebGPU bridge assets into the chat_app web directory.
 
 Default source:
-  https://cdn.jsdelivr.net/gh/leehack/llama-web-bridge-assets@v0.1.14
+  https://cdn.jsdelivr.net/gh/leehack/llama-web-bridge-assets@v0.1.15
 
 Environment variables:
   WEBGPU_BRIDGE_ASSETS_REPO   Asset repo in owner/repo format
@@ -28,7 +28,7 @@ Usage:
   ./scripts/fetch_webgpu_bridge_assets.sh
 
 Examples:
-  WEBGPU_BRIDGE_ASSETS_TAG=v0.1.14 ./scripts/fetch_webgpu_bridge_assets.sh
+  WEBGPU_BRIDGE_ASSETS_TAG=v0.1.15 ./scripts/fetch_webgpu_bridge_assets.sh
   WEBGPU_BRIDGE_ASSETS_REPO=acme/llama-web-bridge-assets WEBGPU_BRIDGE_ASSETS_TAG=v2 ./scripts/fetch_webgpu_bridge_assets.sh
 USAGE
   exit 0

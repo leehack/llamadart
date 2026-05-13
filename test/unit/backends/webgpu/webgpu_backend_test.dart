@@ -48,10 +48,16 @@ void main() {
     int? lastTokenEventFlushMs;
     int? lastTokenEventFlushChars;
     String? lastPrompt;
+    String? lastStateSavePath;
+    List<int>? lastStateSaveTokens;
+    String? lastStateLoadPath;
+    int? lastStateLoadCapacity;
     WebGpuBridgeConfig? lastBridgeConfig;
     late int runtimeGpuLayers;
     late bool runtimeGpuActive;
     late int runtimeThreads;
+    late bool stateSaveResult;
+    late String stateLoadReturnShape;
     int createCompletionCallCount = 0;
     int warmupCallCount = 0;
     int cancelCallCount = 0;
@@ -184,10 +190,16 @@ void main() {
       lastTokenEventFlushMs = null;
       lastTokenEventFlushChars = null;
       lastPrompt = null;
+      lastStateSavePath = null;
+      lastStateSaveTokens = null;
+      lastStateLoadPath = null;
+      lastStateLoadCapacity = null;
       lastBridgeConfig = null;
       runtimeGpuLayers = 99;
       runtimeGpuActive = true;
       runtimeThreads = 4;
+      stateSaveResult = true;
+      stateLoadReturnShape = 'object';
       createCompletionCallCount = 0;
       warmupCallCount = 0;
       cancelCallCount = 0;
@@ -338,6 +350,49 @@ void main() {
         'detokenize'.toJS,
         ((JSArray tokens, bool special) {
           return Future<JSString>.value('decoded'.toJS).toJS;
+        }).toJS,
+      );
+
+      bridge.setProperty(
+        'stateSaveFile'.toJS,
+        ((String path, JSArray tokens) {
+          lastStateSavePath = path;
+          lastStateSaveTokens = <int>[];
+          for (int i = 0; i < tokens.length; i++) {
+            final raw = tokens.getProperty(i.toJS);
+            if (raw.isA<JSNumber>()) {
+              lastStateSaveTokens!.add((raw as JSNumber).toDartInt);
+            }
+          }
+          return Future<JSBoolean>.value(stateSaveResult.toJS).toJS;
+        }).toJS,
+      );
+
+      bridge.setProperty(
+        'stateLoadFile'.toJS,
+        ((String path, int tokenCapacity) {
+          lastStateLoadPath = path;
+          lastStateLoadCapacity = tokenCapacity;
+
+          JSAny result;
+          if (stateLoadReturnShape == 'array') {
+            result = <JSNumber>[7.toJS, 8.toJS, 9.toJS].toJS;
+          } else if (stateLoadReturnShape == 'uint32') {
+            final arr = JSUint32Array.withLength(3);
+            arr.toDart[0] = 7;
+            arr.toDart[1] = 8;
+            arr.toDart[2] = 9;
+            result = arr;
+          } else {
+            final obj = JSObject();
+            obj.setProperty(
+              'tokens'.toJS,
+              <JSNumber>[7.toJS, 8.toJS, 9.toJS].toJS,
+            );
+            result = obj;
+          }
+
+          return Future<JSAny>.value(result).toJS;
         }).toJS,
       );
 
@@ -746,6 +801,97 @@ void main() {
         ),
       );
     });
+
+    test('forwards state persistence calls to bridge', () async {
+      await backend.modelLoadFromUrl(
+        'https://example.com/model.gguf',
+        const ModelParams(),
+      );
+
+      final saved = await backend.stateSaveFile(
+        1,
+        '/prompt-prefix.state',
+        const <int>[1, 2, 3],
+      );
+      expect(saved, isTrue);
+      expect(lastStateSavePath, '/prompt-prefix.state');
+      expect(lastStateSaveTokens, <int>[1, 2, 3]);
+
+      final loaded = await backend.stateLoadFile(
+        1,
+        '/prompt-prefix.state',
+        128,
+      );
+      expect(lastStateLoadPath, '/prompt-prefix.state');
+      expect(lastStateLoadCapacity, 128);
+      expect(loaded.tokens, <int>[7, 8, 9]);
+    });
+
+    test('propagates false state save bridge result', () async {
+      await backend.modelLoadFromUrl(
+        'https://example.com/model.gguf',
+        const ModelParams(),
+      );
+
+      stateSaveResult = false;
+      expect(
+        await backend.stateSaveFile(1, '/prompt-prefix.state', const <int>[1]),
+        isFalse,
+      );
+    });
+
+    test('accepts direct array and typed array state load results', () async {
+      await backend.modelLoadFromUrl(
+        'https://example.com/model.gguf',
+        const ModelParams(),
+      );
+
+      stateLoadReturnShape = 'array';
+      expect(
+        (await backend.stateLoadFile(1, '/array.state', 128)).tokens,
+        <int>[7, 8, 9],
+      );
+
+      stateLoadReturnShape = 'uint32';
+      expect(
+        (await backend.stateLoadFile(1, '/typed.state', 128)).tokens,
+        <int>[7, 8, 9],
+      );
+    });
+
+    test(
+      'throws clear error when state persistence API is unavailable',
+      () async {
+        await backend.modelLoadFromUrl(
+          'https://example.com/model.gguf',
+          const ModelParams(),
+        );
+
+        bridge.delete('stateSaveFile'.toJS);
+        await expectLater(
+          () => backend.stateSaveFile(1, '/missing.state', const <int>[1]),
+          throwsA(
+            isA<UnsupportedError>().having(
+              (UnsupportedError error) => error.message,
+              'message',
+              contains('v0.1.15'),
+            ),
+          ),
+        );
+
+        bridge.delete('stateLoadFile'.toJS);
+        await expectLater(
+          () => backend.stateLoadFile(1, '/missing.state', 128),
+          throwsA(
+            isA<UnsupportedError>().having(
+              (UnsupportedError error) => error.message,
+              'message',
+              contains('v0.1.15'),
+            ),
+          ),
+        );
+      },
+    );
 
     test(
       'passes core module URL from bootstrap global to bridge config',

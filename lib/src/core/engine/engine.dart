@@ -1064,8 +1064,8 @@ class LlamaEngine {
   // ============================================================
 
   /// Whether the active backend can save and restore KV-cache state to
-  /// disk via [stateSaveFile] / [stateLoadFile]. Native backends do; the
-  /// WebGPU backend does not.
+  /// disk (native) or the bridge virtual filesystem (WebGPU bridge assets
+  /// v0.1.15+) via [stateSaveFile] / [stateLoadFile].
   bool get supportsStatePersistence => backend is BackendStatePersistence;
 
   /// Persists the KV-cache state of the loaded model to [path] together

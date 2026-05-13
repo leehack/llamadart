@@ -26,16 +26,20 @@
     backends when available.
   * Migrated server/testing helpers away from ad-hoc model downloads so examples
     dogfood the package-managed cache manager.
-* **State persistence API (native backend)**:
+* **State persistence API**:
   * Added `LlamaEngine.supportsStatePersistence`,
     `LlamaEngine.stateSaveFile(...)`, and
-    `LlamaEngine.stateLoadFile(...)` so native callers can persist and restore
+    `LlamaEngine.stateLoadFile(...)` so callers can persist and restore
     llama.cpp KV-cache state for fast raw-prompt resume/fork workflows.
   * Added `BackendStatePersistence` and `StateLoadResult` for custom backend
     implementers and diagnostics.
   * Documented that state files are opaque llama.cpp artifacts tied to the same
-    model and runtime/build, that WebGPU does not support state persistence, and
-    that `ChatSession` message history must be persisted separately.
+    model and runtime/build, that native paths use the app filesystem while web
+    paths use the bridge WASMFS virtual filesystem, and that `ChatSession`
+    message history must be persisted separately.
+  * Added WebGPU bridge state persistence wiring for bridge assets `v0.1.15+`,
+    including Dart JS interop, backend forwarding, and browser integration test
+    coverage.
 * **Compatibility note**: no public API breaking changes; the model source and
   state persistence APIs are additive and existing `loadModel(...)` callers are
   unchanged.

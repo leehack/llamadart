@@ -10,7 +10,11 @@ LlamaBackend createBackend() => WebAutoBackend();
 
 /// Uses the unified web backend implementation.
 class WebAutoBackend
-    implements LlamaBackend, BackendAvailability, BackendBatchEmbeddings {
+    implements
+        LlamaBackend,
+        BackendAvailability,
+        BackendBatchEmbeddings,
+        BackendStatePersistence {
   final LlamaBackend _delegate;
 
   /// Creates a web backend router.
@@ -125,6 +129,40 @@ class WebAutoBackend
 
     throw UnsupportedError(
       'Embeddings are not supported by the active web backend.',
+    );
+  }
+
+  @override
+  Future<bool> stateSaveFile(int contextHandle, String path, List<int> tokens) {
+    final delegate = _delegate;
+    if (delegate is BackendStatePersistence) {
+      return (delegate as BackendStatePersistence).stateSaveFile(
+        contextHandle,
+        path,
+        tokens,
+      );
+    }
+    throw UnsupportedError(
+      'State persistence is not supported by the active web backend.',
+    );
+  }
+
+  @override
+  Future<StateLoadResult> stateLoadFile(
+    int contextHandle,
+    String path,
+    int tokenCapacity,
+  ) {
+    final delegate = _delegate;
+    if (delegate is BackendStatePersistence) {
+      return (delegate as BackendStatePersistence).stateLoadFile(
+        contextHandle,
+        path,
+        tokenCapacity,
+      );
+    }
+    throw UnsupportedError(
+      'State persistence is not supported by the active web backend.',
     );
   }
 

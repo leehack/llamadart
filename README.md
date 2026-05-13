@@ -28,7 +28,7 @@
   `embedBatch(...)`.
 - 📦 **Structured Model Sources**: Describe local, HTTP(S), and Hugging Face
   GGUF sources with deterministic cache identities for download/cache workflows.
-- 💾 **Native State Persistence**: Save and restore llama.cpp KV-cache state
+- 💾 **KV-cache State Persistence**: Save and restore llama.cpp KV-cache state
   with `stateSaveFile(...)` / `stateLoadFile(...)` for fast raw-prompt resumes.
 - 🖼️ **Multimodal Support**: Vision/audio model runtime support.
 - **LoRA Support**: Runtime GGUF adapter application.
@@ -156,10 +156,13 @@ Note: embedding support depends on backend/runtime capabilities.
 - Web runtime requires bridge assets with embedding APIs (`v0.1.7` or newer).
 - See the full guide: https://llamadart.leehack.com/docs/guides/embeddings
 
-### 7. Optional: save and restore native KV-cache state
+### 7. Optional: save and restore KV-cache state
 
-Native backends can persist llama.cpp KV-cache state for fast raw-prompt
-resume/fork workflows:
+Native backends and WebGPU bridge assets `v0.1.15+` can persist llama.cpp
+KV-cache state for fast raw-prompt resume/fork workflows. On native platforms,
+`path` is an app-writable filesystem path. On web, `path` is a bridge WASMFS
+virtual path; use an app-managed browser storage layer if you need durable state
+across page reloads.
 
 ```dart
 final prompt = 'You are a concise assistant. Summarize llamadart.';
@@ -179,9 +182,7 @@ final restored = await engine.stateLoadFile(
 print('Restored ${restored.tokens.length} prompt tokens');
 ```
 
-State persistence is native-only; WebGPU bridge sessions report
-`supportsStatePersistence == false` and throw `LlamaUnsupportedException` if
-called. State files are opaque llama.cpp artifacts tied to the same model and
+State files are opaque llama.cpp artifacts tied to the same model and
 runtime/build. `ChatSession` message history is not restored automatically, so
 persist chat messages separately when using the high-level chat API.
 

@@ -51,6 +51,12 @@ extension type LlamaWebGpuBridge._(JSObject _) implements JSObject {
   /// Detokenizes token ids.
   external JSPromise<JSString>? detokenize(JSArray tokens, [bool? special]);
 
+  /// Saves the active KV-cache/session state to a bridge WASMFS path.
+  external JSPromise<JSAny?>? stateSaveFile(String path, JSArray tokens);
+
+  /// Loads KV-cache/session state from a bridge WASMFS path.
+  external JSPromise<JSAny?>? stateLoadFile(String path, int tokenCapacity);
+
   /// Generates a single embedding vector for [text].
   external JSPromise<JSAny?>? embed(
     String text, [

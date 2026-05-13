@@ -163,23 +163,27 @@ caller supplies SHA-256. On Android, prefer app-private storage unless the app
 intentionally exposes model files to the user; on iOS, avoid cache directories
 that the OS may purge while a model is still needed.
 
-## Native state persistence
+## State persistence
 
-Native backends can save and restore llama.cpp KV-cache state to avoid
-re-evaluating a long raw prompt on resume or when forking a prompt prefix. Gate
-the flow with `supportsStatePersistence` because the WebGPU bridge does not
-expose llama.cpp state files.
+Native backends and WebGPU bridge assets `v0.1.15+` can save and restore
+llama.cpp KV-cache state to avoid re-evaluating a long raw prompt on resume or
+when forking a prompt prefix. Gate the flow with `supportsStatePersistence` so
+backends that do not implement state persistence can fall back to prompt
+re-evaluation. If a web app overrides the bridge to older/custom assets that do
+not expose state APIs, `stateSaveFile(...)` / `stateLoadFile(...)` throw a clear
+unsupported error and callers should use the same fallback path.
 
 ```dart
 if (!engine.supportsStatePersistence) {
-  throw LlamaUnsupportedException('State persistence is native-only.');
+  throw LlamaUnsupportedException('State persistence is not supported by this backend.');
 }
 
 final prompt = 'You are a concise assistant. Summarize llamadart.';
 final tokens = await engine.tokenize(prompt);
 
 // Populate the KV cache, then persist it with the token sequence that produced
-// the state. Use your app's own writable path for the state file.
+// state. On native platforms, use your app's own writable path for the state
+// file. On web, use a bridge WASMFS virtual path such as '/prompt-prefix.state'.
 await engine.generate(
   prompt,
   params: const GenerationParams(maxTokens: 1, reusePromptPrefix: true),
@@ -205,14 +209,15 @@ print('Restored ${restored.tokens.length} prompt tokens');
 Important caveats:
 
 - State files are opaque llama.cpp artifacts. Treat them as tied to the same
-  model file and compatible native runtime/build that created them.
+  model file and compatible runtime/build that created them. Web paths refer to
+  the bridge WASMFS virtual filesystem and are not durable across page reloads.
+  Durable browser storage currently requires app-level export/import outside the
+  Dart `stateSaveFile` / `stateLoadFile` helpers.
 - `stateLoadFile(...)` restores native KV-cache state only. It does not rebuild
   `ChatSession` message history; persist and reconstruct chat messages
   separately when using the high-level chat API.
 - Pass a `tokenCapacity` large enough for the saved prompt token sequence. The
   current context size is usually a safe default.
-- WebGPU sessions should check `supportsStatePersistence` and use a normal
-  prompt re-evaluation fallback.
 
 ## Multimodal projector lifecycle
 
