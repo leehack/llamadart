@@ -182,17 +182,19 @@ final prompt = 'You are a concise assistant. Summarize llamadart.';
 final tokens = await engine.tokenize(prompt);
 
 // Populate the KV cache, then persist it with the token sequence that produced
-// state. On native platforms, use your app's own writable path for the state
-// file. On web, use a bridge WASMFS virtual path such as '/prompt-prefix.state'.
+// state. This sample uses a WebGPU bridge WASMFS virtual path. Native apps
+// should replace it with an app-writable filesystem path.
+const statePath = '/prompt-prefix.state';
+
 await engine.generate(
   prompt,
   params: const GenerationParams(maxTokens: 1, reusePromptPrefix: true),
 ).drain<void>();
-await engine.stateSaveFile('/path/to/prompt-prefix.state', tokens: tokens);
+await engine.stateSaveFile(statePath, tokens: tokens);
 
-// Later, after loading the same model with a compatible native runtime build:
+// Later, after loading the same model with a compatible runtime/bridge build:
 final restored = await engine.stateLoadFile(
-  '/path/to/prompt-prefix.state',
+  statePath,
   tokenCapacity: await engine.getContextSize(),
 );
 
