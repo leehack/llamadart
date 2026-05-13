@@ -69,13 +69,50 @@ if [[ -f "$OUT_DIR/sha256sums.txt" ]]; then
   echo "[webgpu-assets] verifying checksums"
   (
     cd "$OUT_DIR"
-    if command -v sha256sum >/dev/null 2>&1; then
-      sha256sum -c sha256sums.txt
+
+    is_required_checksum_file() {
+      case "$1" in
+        llama_webgpu_bridge.js|llama_webgpu_core.js|llama_webgpu_core.wasm)
+          return 0
+          ;;
+        *)
+          return 1
+          ;;
+      esac
+    }
+
+    filtered_sums="$(mktemp)"
+    missing_required=0
+    while read -r checksum file_name; do
+      if [[ -z "${checksum:-}" || -z "${file_name:-}" ]]; then
+        continue
+      fi
+
+      if [[ -f "$file_name" ]]; then
+        printf '%s  %s\n' "$checksum" "$file_name" >> "$filtered_sums"
+      elif is_required_checksum_file "$file_name"; then
+        echo "[webgpu-assets] error: checksum lists required asset that was not downloaded: $file_name"
+        missing_required=1
+      else
+        echo "[webgpu-assets] warning: checksum lists optional asset that was not downloaded: $file_name; skipping"
+      fi
+    done < sha256sums.txt
+
+    if [[ "$missing_required" == "1" ]]; then
+      rm -f "$filtered_sums"
+      exit 1
+    fi
+
+    if [[ ! -s "$filtered_sums" ]]; then
+      echo "[webgpu-assets] warning: checksum file did not include any downloaded assets; skipping checksum verification"
+    elif command -v sha256sum >/dev/null 2>&1; then
+      sha256sum -c "$filtered_sums"
     elif command -v shasum >/dev/null 2>&1; then
-      shasum -a 256 -c sha256sums.txt
+      shasum -a 256 -c "$filtered_sums"
     else
       echo "[webgpu-assets] warning: no sha256 tool found; skipping checksum verification"
     fi
+    rm -f "$filtered_sums"
   )
 fi
 
