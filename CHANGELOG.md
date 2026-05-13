@@ -40,9 +40,10 @@
   * Added WebGPU bridge state persistence wiring for bridge assets `v0.1.15+`,
     including Dart JS interop, backend forwarding, and browser integration test
     coverage.
-* **Compatibility note**: no public API breaking changes; the model source and
-  state persistence APIs are additive and existing `loadModel(...)` callers are
-  unchanged.
+* **Compatibility note**: existing `loadModel(...)` callers are unchanged. Code
+  that probes state persistence support should prefer
+  `LlamaEngine.supportsStatePersistence` over structural backend type checks so
+  web/router backends can report bridge-version-dependent support accurately.
 
 ## 0.6.12
 

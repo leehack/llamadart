@@ -31,7 +31,7 @@ void main() {
 
     await engine.loadModel('/model.gguf');
     expect(engine.supportsStatePersistence, isFalse);
-    expect(
+    await expectLater(
       () =>
           engine.stateSaveFile('/prompt-prefix.state', tokens: const <int>[1]),
       throwsA(isA<LlamaUnsupportedException>()),

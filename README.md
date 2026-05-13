@@ -168,6 +168,10 @@ across page reloads.
 final prompt = 'You are a concise assistant. Summarize llamadart.';
 final tokens = await engine.tokenize(prompt);
 
+if (!engine.supportsStatePersistence) {
+  throw UnsupportedError('State persistence is not available on this backend.');
+}
+
 // Populate the KV cache, then save it with the token sequence that produced it.
 await engine
     .generate(prompt, params: const GenerationParams(maxTokens: 1))

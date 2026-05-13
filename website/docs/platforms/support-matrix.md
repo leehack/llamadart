@@ -34,10 +34,11 @@ minimum deployment target of `16.4` or newer (for example
 
 - **State persistence** (`LlamaEngine.stateSaveFile(...)` /
   `stateLoadFile(...)`) is available on native backends and on WebGPU bridge
-  assets `v0.1.15+` that expose `BackendStatePersistence`. On web, state paths
-  refer to the bridge WASMFS virtual filesystem and are not durable across page
-  reloads. Durable browser storage currently requires app-level export/import
-  outside the Dart `stateSaveFile` / `stateLoadFile` helpers.
+  assets `v0.1.15+` that expose `stateSaveFile` / `stateLoadFile` bridge APIs.
+  On web, state paths refer to the bridge WASMFS virtual filesystem and are not
+  durable across page reloads. Durable browser storage currently requires
+  app-level export/import outside the Dart `stateSaveFile` / `stateLoadFile`
+  helpers.
 
 ## Current module availability by bundle (`b9016`)
 
