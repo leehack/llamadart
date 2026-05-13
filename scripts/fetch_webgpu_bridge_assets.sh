@@ -35,6 +35,22 @@ USAGE
 fi
 
 mkdir -p "$OUT_DIR"
+downloaded_files=()
+
+mark_downloaded() {
+  downloaded_files+=("$1")
+}
+
+was_downloaded() {
+  local expected="$1"
+  local downloaded
+  for downloaded in "${downloaded_files[@]}"; do
+    if [[ "$downloaded" == "$expected" ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
 
 download_required() {
   local file_name="$1"
@@ -43,6 +59,7 @@ download_required() {
 
   echo "[webgpu-assets] downloading $source_url"
   curl -fL --retry 3 --retry-delay 1 "$source_url" -o "$target_path"
+  mark_downloaded "$file_name"
 }
 
 download_optional() {
@@ -50,9 +67,11 @@ download_optional() {
   local source_url="$CDN_BASE/$file_name"
   local target_path="$OUT_DIR/$file_name"
 
+  rm -f "$target_path"
   if curl -fsI "$source_url" >/dev/null; then
     echo "[webgpu-assets] downloading optional $source_url"
     curl -fL --retry 3 --retry-delay 1 "$source_url" -o "$target_path"
+    mark_downloaded "$file_name"
   fi
 }
 
@@ -88,7 +107,7 @@ if [[ -f "$OUT_DIR/sha256sums.txt" ]]; then
         continue
       fi
 
-      if [[ -f "$file_name" ]]; then
+      if was_downloaded "$file_name" && [[ -f "$file_name" ]]; then
         printf '%s  %s\n' "$checksum" "$file_name" >> "$filtered_sums"
       elif is_required_checksum_file "$file_name"; then
         echo "[webgpu-assets] error: checksum lists required asset that was not downloaded: $file_name"
@@ -213,3 +232,4 @@ echo "[webgpu-assets] done"
 echo "  repo: $ASSETS_REPO"
 echo "  tag : $ASSETS_TAG"
 echo "  out : $OUT_DIR"
+
