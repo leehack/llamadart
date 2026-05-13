@@ -107,6 +107,8 @@ if [[ -f "$OUT_DIR/sha256sums.txt" ]]; then
         continue
       fi
 
+      file_name="${file_name#\*}"
+
       if was_downloaded "$file_name" && [[ -f "$file_name" ]]; then
         printf '%s  %s\n' "$checksum" "$file_name" >> "$filtered_sums"
       elif is_required_checksum_file "$file_name"; then
