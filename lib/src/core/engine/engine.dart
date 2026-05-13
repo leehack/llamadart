@@ -1121,7 +1121,9 @@ class LlamaEngine {
         !(candidate as BackendStatePersistenceSupport)
             .supportsStatePersistence) {
       throw LlamaUnsupportedException(
-        'State persistence is not supported by the active backend.',
+        'State persistence is not supported by the active backend. '
+        'For WebGPU, use bridge assets that expose stateSaveFile/stateLoadFile '
+        '(v0.1.15 or newer).',
       );
     }
     if (candidate is BackendStatePersistence) {

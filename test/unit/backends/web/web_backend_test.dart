@@ -34,7 +34,13 @@ void main() {
     await expectLater(
       () =>
           engine.stateSaveFile('/prompt-prefix.state', tokens: const <int>[1]),
-      throwsA(isA<LlamaUnsupportedException>()),
+      throwsA(
+        isA<LlamaUnsupportedException>().having(
+          (error) => error.message,
+          'message',
+          contains('v0.1.15'),
+        ),
+      ),
     );
   });
 }
