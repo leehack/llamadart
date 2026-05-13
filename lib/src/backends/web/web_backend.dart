@@ -14,7 +14,8 @@ class WebAutoBackend
         LlamaBackend,
         BackendAvailability,
         BackendBatchEmbeddings,
-        BackendStatePersistence {
+        BackendStatePersistence,
+        BackendStatePersistenceSupport {
   final LlamaBackend _delegate;
 
   /// Creates a web backend router.
@@ -25,6 +26,16 @@ class WebAutoBackend
 
   @override
   bool get isReady => _delegate.isReady;
+
+  @override
+  bool get supportsStatePersistence {
+    final delegate = _delegate;
+    if (delegate is BackendStatePersistenceSupport) {
+      return (delegate as BackendStatePersistenceSupport)
+          .supportsStatePersistence;
+    }
+    return delegate is BackendStatePersistence;
+  }
 
   @override
   Future<int> modelLoad(String path, ModelParams params) {

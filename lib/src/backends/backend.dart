@@ -248,3 +248,15 @@ abstract class BackendStatePersistence {
     int tokenCapacity,
   );
 }
+
+/// Optional backend capability for reporting whether
+/// [BackendStatePersistence] is actually available for the active runtime.
+///
+/// This is useful for delegating/router backends where the wrapper may expose
+/// the persistence methods but support depends on the selected concrete
+/// backend. Backends that do not implement this interface fall back to the
+/// structural `is BackendStatePersistence` check used by older versions.
+abstract class BackendStatePersistenceSupport {
+  /// Whether state save/load calls are expected to be supported by this backend.
+  bool get supportsStatePersistence;
+}

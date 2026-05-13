@@ -1063,10 +1063,21 @@ class LlamaEngine {
   // STATE PERSISTENCE
   // ============================================================
 
-  /// Whether the active backend can save and restore KV-cache state to
-  /// disk (native) or the bridge virtual filesystem (WebGPU bridge assets
-  /// v0.1.15+) via [stateSaveFile] / [stateLoadFile].
-  bool get supportsStatePersistence => backend is BackendStatePersistence;
+  /// Whether the active backend reports state save/load support.
+  ///
+  /// Native backends persist to disk. WebGPU backends persist to the bridge
+  /// virtual filesystem when using bridge assets `v0.1.15+`; older or custom
+  /// bridge assets can still throw from [stateSaveFile] / [stateLoadFile]
+  /// because bridge API availability is detected when the call reaches the
+  /// loaded JavaScript runtime.
+  bool get supportsStatePersistence {
+    final candidate = backend;
+    if (candidate is BackendStatePersistenceSupport) {
+      return (candidate as BackendStatePersistenceSupport)
+          .supportsStatePersistence;
+    }
+    return candidate is BackendStatePersistence;
+  }
 
   /// Persists the KV-cache state of the loaded model to [path] together
   /// with [tokens] — the token sequence the current state was produced

@@ -25,7 +25,8 @@ class WebGpuLlamaBackend
         LlamaBackend,
         BackendAvailability,
         BackendBatchEmbeddings,
-        BackendStatePersistence {
+        BackendStatePersistence,
+        BackendStatePersistenceSupport {
   static const Duration _bridgeReadyTimeout = Duration(seconds: 12);
   static const Duration _bridgePollInterval = Duration(milliseconds: 100);
   static const int _defaultRemoteFetchChunkBytes = 4 * 1024 * 1024;
@@ -72,6 +73,9 @@ class WebGpuLlamaBackend
 
   @override
   bool get isReady => _isReady;
+
+  @override
+  bool get supportsStatePersistence => true;
 
   Future<void> _loadBridgeScript() async {
     final scriptUrl = _bridgeScriptUrl;

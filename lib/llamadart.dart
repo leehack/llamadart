@@ -47,6 +47,7 @@ export 'src/backends/backend.dart'
         BackendEmbeddings,
         BackendBatchEmbeddings,
         BackendStatePersistence,
+        BackendStatePersistenceSupport,
         StateLoadResult;
 
 // Models - Inference

@@ -31,8 +31,8 @@
     `LlamaEngine.stateSaveFile(...)`, and
     `LlamaEngine.stateLoadFile(...)` so callers can persist and restore
     llama.cpp KV-cache state for fast raw-prompt resume/fork workflows.
-  * Added `BackendStatePersistence` and `StateLoadResult` for custom backend
-    implementers and diagnostics.
+  * Added `BackendStatePersistence`, `BackendStatePersistenceSupport`, and
+    `StateLoadResult` for custom backend implementers and diagnostics.
   * Documented that state files are opaque llama.cpp artifacts tied to the same
     model and runtime/build, that native paths use the app filesystem while web
     paths use the bridge WASMFS virtual filesystem, and that `ChatSession`
