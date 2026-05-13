@@ -803,10 +803,12 @@ void main() {
     });
 
     test('forwards state persistence calls to bridge', () async {
+      expect(backend.supportsStatePersistence, isFalse);
       await backend.modelLoadFromUrl(
         'https://example.com/model.gguf',
         const ModelParams(),
       );
+      expect(backend.supportsStatePersistence, isTrue);
 
       final saved = await backend.stateSaveFile(
         1,
@@ -867,7 +869,9 @@ void main() {
           const ModelParams(),
         );
 
+        expect(backend.supportsStatePersistence, isTrue);
         bridge.delete('stateSaveFile'.toJS);
+        expect(backend.supportsStatePersistence, isFalse);
         await expectLater(
           () => backend.stateSaveFile(1, '/missing.state', const <int>[1]),
           throwsA(
@@ -879,7 +883,15 @@ void main() {
           ),
         );
 
+        bridge.setProperty(
+          'stateSaveFile'.toJS,
+          ((String path, JSArray tokens) {
+            return Future<JSBoolean>.value(true.toJS).toJS;
+          }).toJS,
+        );
+        expect(backend.supportsStatePersistence, isTrue);
         bridge.delete('stateLoadFile'.toJS);
+        expect(backend.supportsStatePersistence, isFalse);
         await expectLater(
           () => backend.stateLoadFile(1, '/missing.state', 128),
           throwsA(

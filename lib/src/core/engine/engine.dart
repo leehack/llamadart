@@ -1065,11 +1065,11 @@ class LlamaEngine {
 
   /// Whether the active backend reports state save/load support.
   ///
-  /// Native backends persist to disk. WebGPU backends persist to the bridge
-  /// virtual filesystem when using bridge assets `v0.1.15+`; older or custom
-  /// bridge assets can still throw from [stateSaveFile] / [stateLoadFile]
-  /// because bridge API availability is detected when the call reaches the
-  /// loaded JavaScript runtime.
+  /// Native backends persist to disk. WebGPU backends report support only after
+  /// the active JavaScript bridge exposes the `stateSaveFile` and
+  /// `stateLoadFile` APIs introduced in bridge assets `v0.1.15`; older or
+  /// custom bridge assets report false and calls throw [LlamaUnsupportedException]
+  /// before reaching the bridge.
   bool get supportsStatePersistence {
     final candidate = backend;
     if (candidate is BackendStatePersistenceSupport) {
@@ -1117,6 +1117,13 @@ class LlamaEngine {
 
   BackendStatePersistence _resolveStatePersistence() {
     final candidate = backend;
+    if (candidate is BackendStatePersistenceSupport &&
+        !(candidate as BackendStatePersistenceSupport)
+            .supportsStatePersistence) {
+      throw LlamaUnsupportedException(
+        'State persistence is not supported by the active backend.',
+      );
+    }
     if (candidate is BackendStatePersistence) {
       return candidate as BackendStatePersistence;
     }

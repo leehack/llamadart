@@ -75,7 +75,18 @@ class WebGpuLlamaBackend
   bool get isReady => _isReady;
 
   @override
-  bool get supportsStatePersistence => true;
+  bool get supportsStatePersistence {
+    final bridge = _bridge;
+    return _usingBridge &&
+        bridge != null &&
+        _hasBridgeFunction(bridge, 'stateSaveFile') &&
+        _hasBridgeFunction(bridge, 'stateLoadFile');
+  }
+
+  bool _hasBridgeFunction(LlamaWebGpuBridge bridge, String name) {
+    final value = bridge.getProperty(name.toJS);
+    return value.isA<JSFunction>();
+  }
 
   Future<void> _loadBridgeScript() async {
     final scriptUrl = _bridgeScriptUrl;
@@ -2003,6 +2014,12 @@ class WebGpuLlamaBackend
     List<int> tokens,
   ) async {
     final bridge = _requireBridge();
+    if (!supportsStatePersistence) {
+      throw UnsupportedError(
+        'Web state persistence requires bridge assets with state support '
+        '(v0.1.15 or newer).',
+      );
+    }
     final jsTokens = tokens.map((token) => token.toJS).toList().toJS;
     try {
       final result = await _toFuture(bridge.stateSaveFile(path, jsTokens));
@@ -2031,6 +2048,12 @@ class WebGpuLlamaBackend
     int tokenCapacity,
   ) async {
     final bridge = _requireBridge();
+    if (!supportsStatePersistence) {
+      throw UnsupportedError(
+        'Web state persistence requires bridge assets with state support '
+        '(v0.1.15 or newer).',
+      );
+    }
     try {
       final result = await _toFuture(bridge.stateLoadFile(path, tokenCapacity));
       JSAny? rawTokens;
