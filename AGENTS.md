@@ -133,8 +133,8 @@ pass `--mem64` and a smaller `--context-size` to keep the smoke bounded.
   known (for example, WebGPU bridge assets that expose `stateSaveFile` and
   `stateLoadFile`, v0.1.15 or newer).
 - Do not silently report success for unsupported platform/option combinations.
-  Either gate the API with an explicit support flag or throw a typed
-  `LlamaUnsupportedException` before mutating state.
+  Public engine/API paths should either gate behavior with an explicit support
+  flag or throw a typed `LlamaUnsupportedException` before mutating state.
 
 ### Web / WebGPU Bridge Expectations
 - WebGPU bridge features are versioned runtime capabilities. When changing bridge
@@ -144,8 +144,8 @@ pass `--mem64` and a smaller `--context-size` to keep the smoke bounded.
   virtual paths and are not durable across browser reloads; durable browser
   storage requires app-level export/import outside Dart file helpers.
 - Add regression coverage for both happy and negative paths: missing bridge API,
-  old bridge assets, `supports* == false`, sync-vs-async error delivery, and
-  alternate JS interop return shapes.
+  old bridge assets, `supports* == false`, correctly awaited sync/async errors,
+  and alternate JS interop return shapes.
 - Keep README, website docs/support matrix, examples, and changelog aligned with
   any public capability or platform-support change.
 
