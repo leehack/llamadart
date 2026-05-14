@@ -62,9 +62,13 @@ await engine.loadModelSource(
 `ModelSource.parse(...)` accepts local paths, HTTP(S) URLs, and `hf://`
 Hugging Face references. Local path sources require native/file-backed targets;
 URL-loading web backends reject explicit local filesystem paths and should use
-HTTP(S) or `hf://` sources instead. Source values expose deterministic cache
-keys and redacted metadata identities so signed URL query strings are not stored
-in logs or cache metadata.
+HTTP(S) or `hf://` sources instead. Local paths already point at a file, so the
+native manager only applies cancellation and optional `sha256` verification to
+`ModelSource.path(...)` loads. Remote/download-only options such as non-default
+cache policies, `cacheDirectory`, authenticated headers, `resume`, and
+`maxRetries` are rejected for local paths instead of being silently ignored.
+Source values expose deterministic cache keys and redacted metadata identities
+so signed URL query strings are not stored in logs or cache metadata.
 
 Native/file-backed backends download remote sources into the package-managed
 cache, verify the completed file, persist metadata, and then call the existing

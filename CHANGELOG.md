@@ -20,6 +20,10 @@
     missing, malformed, or unsupported-schema sidecars without network access,
     while byte-count and stored/caller SHA-256 mismatches are treated as cache
     misses and safely re-downloaded.
+  * Clarified `ModelSource.path(...)` option semantics: local paths now reject
+    remote/download-only options (non-default cache policies, cache directories,
+    authenticated headers, resume, and retry overrides) while continuing to
+    support cancellation and optional local SHA-256 verification.
   * Added `LlamaEngine.loadModelSource(...)` to route local sources through the
     existing native local loader, remote sources through the native download
     cache before local loading, and simple remote sources through URL-capable web

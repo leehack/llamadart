@@ -267,6 +267,34 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
     return path.normalize(path.absolute(cacheDirectory.path));
   }
 
+  void _rejectUnsupportedLocalOptions(ModelLoadOptions options) {
+    if (options.cachePolicy != ModelCachePolicy.preferCached) {
+      throw LlamaUnsupportedException(
+        'Local ModelSource.path loads do not use package-managed cache policies.',
+      );
+    }
+    if (options.cacheDirectory != null) {
+      throw LlamaUnsupportedException(
+        'Local ModelSource.path loads do not use cacheDirectory.',
+      );
+    }
+    if (options.bearerToken != null || options.headers.isNotEmpty) {
+      throw LlamaUnsupportedException(
+        'Local ModelSource.path loads do not use remote authentication headers.',
+      );
+    }
+    if (!options.resume) {
+      throw LlamaUnsupportedException(
+        'Local ModelSource.path loads do not use download resume options.',
+      );
+    }
+    if (options.maxRetries != ModelLoadOptions.defaults.maxRetries) {
+      throw LlamaUnsupportedException(
+        'Local ModelSource.path loads do not use download retry options.',
+      );
+    }
+  }
+
   Future<List<File>> _candidateMetadataFiles(
     String cacheKey, {
     String? cacheDirectory,
@@ -309,6 +337,7 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
     ModelSource source,
     ModelLoadOptions options,
   ) async {
+    _rejectUnsupportedLocalOptions(options);
     final file = File(path.normalize(path.absolute(source.path!)));
     final stat = await file.stat();
     if (stat.type == FileSystemEntityType.notFound) {

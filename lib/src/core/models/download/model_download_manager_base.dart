@@ -183,6 +183,11 @@ abstract interface class ModelDownloadManager {
   /// active download; cooperative cancellation may be observed after the active
   /// same-entry operation finishes.
   ///
+  /// Local path sources are already available as files. Native/file-backed
+  /// implementations may verify a caller-provided SHA-256 checksum before
+  /// returning metadata, but should reject remote/cache-only options that cannot
+  /// affect local files instead of silently ignoring them.
+  ///
   /// Native/file-backed implementations may recover package-managed metadata
   /// when the completed model file is still present in the deterministic cache
   /// directory, but should treat missing files, source mismatches, byte-count

@@ -124,7 +124,10 @@ resume partial `.part` downloads when the server supports HTTP Range and the
 partial has a safe validator (ETag/Last-Modified) or caller-provided SHA-256,
 verify optional SHA-256 checksums, and redact signed URL credentials from
 metadata. Validator-less partial files restart from byte zero instead of being
-appended.
+appended. Local `ModelSource.path(...)` values are already files: only
+cancellation and optional `sha256` verification apply, while remote/download-only
+options such as cache policies, `cacheDirectory`, authenticated headers, resume,
+and retries are rejected for local paths.
 
 ### 6. Generate embeddings
 

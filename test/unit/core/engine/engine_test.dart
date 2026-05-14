@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math' as math;
 import 'package:test/test.dart';
 import 'package:llamadart/llamadart.dart';
@@ -415,6 +416,28 @@ void main() {
       },
     );
 
+    test('native loadModelSource rejects local remote-only options', () async {
+      final tempDir = await Directory.systemTemp.createTemp(
+        'llamadart_engine_local_source_test_',
+      );
+      try {
+        final localFile = File('${tempDir.path}/local-model.gguf')
+          ..writeAsStringSync('local-model');
+        final nativeBackend = MockLlamaBackend();
+        final nativeEngine = LlamaEngine(nativeBackend);
+
+        await expectLater(
+          () => nativeEngine.loadModelSource(
+            ModelSource.path(localFile.path),
+            options: ModelLoadOptions(cachePolicy: ModelCachePolicy.refresh),
+          ),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
+        expect(nativeBackend.modelLoadCalls, 0);
+      } finally {
+        await tempDir.delete(recursive: true);
+      }
+    }, testOn: 'vm');
     test(
       'native loadModelSource honors resolver-provided local path',
       () async {

@@ -33,10 +33,14 @@ class ModelDownloadCancelToken {
 /// Options used when resolving and loading model sources.
 ///
 /// Native/file-backed backends use the package-managed download/cache manager
-/// for remote HTTP(S) and Hugging Face sources. URL-loading web backends can
-/// load remote URLs directly and reject options that require native cache IO,
-/// such as authenticated headers, checksum verification, and explicit cache
-/// policy changes.
+/// for remote HTTP(S) and Hugging Face sources. Local [ModelSource.path(...)]
+/// values are already files: only [sha256] verification and cancellation are
+/// meaningful for them. Remote/download-only options such as authenticated
+/// headers, explicit cache policies, cache directories, resume, and retries are
+/// rejected for local paths. URL-loading web backends can load remote URLs
+/// directly and reject options that require native cache IO, such as
+/// authenticated headers, checksum verification, and explicit cache policy
+/// changes.
 class ModelLoadOptions {
   /// Creates model load options.
   factory ModelLoadOptions({

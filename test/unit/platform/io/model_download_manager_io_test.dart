@@ -750,6 +750,54 @@ void main() {
       );
     });
 
+    test('local path rejects remote cache/download options', () async {
+      final manager = DefaultModelDownloadManager(
+        defaultCacheDirectory: tempDir.path,
+      );
+      final localFile = File(path.join(tempDir.path, 'local-model.gguf'))
+        ..writeAsStringSync('local-model');
+      final source = ModelSource.path(localFile.path);
+      final remoteOnlyOptions = <ModelLoadOptions>[
+        ModelLoadOptions(cachePolicy: ModelCachePolicy.refresh),
+        ModelLoadOptions(cachePolicy: ModelCachePolicy.cacheOnly),
+        ModelLoadOptions(cachePolicy: ModelCachePolicy.noCache),
+        ModelLoadOptions(cacheDirectory: path.join(tempDir.path, 'cache')),
+        ModelLoadOptions(bearerToken: 'secret-token'),
+        ModelLoadOptions(headers: const <String, String>{'X-Test': 'value'}),
+        ModelLoadOptions(resume: false),
+        ModelLoadOptions(maxRetries: 0),
+      ];
+
+      for (final options in remoteOnlyOptions) {
+        await expectLater(
+          manager.ensureModel(source, options: options),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (error) => error.message,
+              'message',
+              allOf(contains('Local'), contains('ModelSource.path')),
+            ),
+          ),
+        );
+      }
+    });
+
+    test('local path honors cancellation before filesystem work', () async {
+      final manager = DefaultModelDownloadManager(
+        defaultCacheDirectory: tempDir.path,
+      );
+      final token = ModelDownloadCancelToken()..cancel();
+      final missingPath = path.join(tempDir.path, 'missing-local-model.gguf');
+
+      await expectLater(
+        manager.ensureModel(
+          ModelSource.path(missingPath),
+          options: ModelLoadOptions(cancelToken: token),
+        ),
+        throwsA(isA<LlamaStateException>()),
+      );
+    });
+
     test('normalizes local paths before returning metadata', () async {
       final manager = DefaultModelDownloadManager(
         defaultCacheDirectory: tempDir.path,
