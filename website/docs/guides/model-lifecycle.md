@@ -114,9 +114,11 @@ await engine.loadModelSource(
 
 Bearer tokens and custom headers are used only for remote download requests and
 are not part of `ModelSource.canonicalKey`, cache metadata, or `toString()`.
-Signed HTTP(S) URLs keep their full raw URL only for the in-memory cache-key
-hash; persisted metadata redacts query strings and appends the deterministic
-cache key so entries remain distinguishable without storing secrets.
+Signed HTTP(S) URLs are different: `ModelSource.canonicalKey` keeps the full
+raw URL and `cacheKey` hashes that full identity so distinct signed URLs stay
+unique. Persisted cache metadata and `toString()` redact query strings and
+append the deterministic cache key, but callers should not log or persist
+`canonicalKey` for signed URLs that carry secrets.
 
 Current limitations:
 

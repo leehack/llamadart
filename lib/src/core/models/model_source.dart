@@ -380,14 +380,13 @@ String _huggingFaceCanonicalKey(
   String revision,
   String filePath,
 ) {
-  if (!revision.contains('/')) {
+  final encodedFilePath = _encodedHuggingFaceFilePath(filePath);
+  if (!revision.contains('/') &&
+      revision == Uri.encodeComponent(revision) &&
+      filePath == encodedFilePath) {
     return 'hf://$repoId@$revision/$filePath';
   }
 
-  final encodedFilePath = filePath
-      .split('/')
-      .map(Uri.encodeComponent)
-      .join('/');
   final encodedRevision = Uri.encodeQueryComponent(revision);
   return 'hf://$repoId/$encodedFilePath?revision=$encodedRevision';
 }
@@ -395,13 +394,14 @@ String _huggingFaceCanonicalKey(
 Uri _huggingFaceResolvedUri(String repoId, String revision, String filePath) {
   final encodedRepoId = repoId.split('/').map(Uri.encodeComponent).join('/');
   final encodedRevision = Uri.encodeComponent(revision);
-  final encodedFilePath = filePath
-      .split('/')
-      .map(Uri.encodeComponent)
-      .join('/');
+  final encodedFilePath = _encodedHuggingFaceFilePath(filePath);
   return Uri.parse(
     'https://huggingface.co/$encodedRepoId/resolve/$encodedRevision/$encodedFilePath?download=true',
   );
+}
+
+String _encodedHuggingFaceFilePath(String filePath) {
+  return filePath.split('/').map(Uri.encodeComponent).join('/');
 }
 
 String _validateRepoId(String repoId) {

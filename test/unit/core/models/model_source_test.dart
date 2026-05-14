@@ -256,6 +256,46 @@ void main() {
       );
     });
 
+    test('delimiter revisions use query-form canonical keys', () {
+      final source = ModelSource.huggingFace(
+        repoId: 'owner/repo',
+        revision: 'release@v1',
+        filePath: 'model.gguf',
+      );
+
+      expect(source.revision, 'release@v1');
+      expect(
+        source.resolvedUri,
+        Uri.parse(
+          'https://huggingface.co/owner/repo/resolve/release%40v1/model.gguf?download=true',
+        ),
+      );
+      expect(
+        source.canonicalKey,
+        'hf://owner/repo/model.gguf?revision=release%40v1',
+      );
+
+      final reparsed = ModelSource.parse(source.canonicalKey);
+      expect(reparsed.revision, source.revision);
+      expect(reparsed.filePath, source.filePath);
+      expect(reparsed.canonicalKey, source.canonicalKey);
+    });
+
+    test('delimiter file paths use encoded query-form canonical keys', () {
+      final source = ModelSource.parse('hf://owner/repo/nested/model@q4.gguf');
+
+      expect(source.filePath, 'nested/model@q4.gguf');
+      expect(
+        source.canonicalKey,
+        'hf://owner/repo/nested/model%40q4.gguf?revision=main',
+      );
+
+      final reparsed = ModelSource.parse(source.canonicalKey);
+      expect(reparsed.revision, source.revision);
+      expect(reparsed.filePath, source.filePath);
+      expect(reparsed.canonicalKey, source.canonicalKey);
+    });
+
     test('hf URI revision query preserves literal plus signs', () {
       final source = ModelSource.parse(
         'hf://owner/repo/model.gguf?revision=release+cuda',
