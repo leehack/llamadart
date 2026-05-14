@@ -7,7 +7,7 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
-## Unreleased
+## 0.6.13
 
 - Added package-managed model source downloads and cache management:
   `ModelSource`, `ModelLoadOptions`, `ModelCachePolicy`, resolver targets,
@@ -22,19 +22,18 @@ For canonical full release notes, use:
   branch/ref names containing slashes, plus docs for private/gated bearer-token
   usage, separate `mmproj` assets, sharded-GGUF limitations, and redaction
   guarantees.
-- Serialized concurrent stable-cache downloads for the same remote cache entry
-  across manager instances so duplicate callers do not race on shared `.part`
-  files or metadata, while distinct cache entries can still download in
-  parallel and waiting-caller cancellation does not cancel the active download.
-- Hardened versioned cache metadata recovery so completed files can rebuild
-  missing, malformed, or unsupported-schema sidecars without network access,
-  while byte-count and stored/caller SHA-256 mismatches are treated as cache
-  misses and safely re-downloaded.
+- Hardened download/cache correctness by serializing concurrent same-entry
+  downloads, recovering missing or malformed cache metadata sidecars, treating
+  mismatched byte-count/SHA-256 metadata as cache misses, and rejecting
+  remote-only options for local `ModelSource.path(...)` inputs.
 - Added `LlamaEngine.loadModelSource(...)` so local path sources keep using the
   existing native loader, remote HTTP(S)/Hugging Face sources download through
   the package-managed native cache before local loading, and URL-capable web
   backends keep using direct URL loading for simple unauthenticated requests.
-- Compatibility note: no public API breaking changes; existing
+- Added KV-cache state persistence APIs: `LlamaEngine.supportsStatePersistence`,
+  `stateSaveFile(...)`, `stateLoadFile(...)`, backend support diagnostics, and
+  WebGPU bridge forwarding for bridge assets `v0.1.15+`.
+- Compatibility note: no public API breaking changes in `0.6.13`; existing
   `loadModel(...)` callers are unchanged.
 
 ## 0.6.12
