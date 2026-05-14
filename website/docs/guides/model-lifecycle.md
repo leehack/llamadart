@@ -70,6 +70,65 @@ cache policies, `cacheDirectory`, authenticated headers, `resume`, and
 Source values expose deterministic cache keys and redacted metadata identities
 so signed URL query strings are not stored in logs or cache metadata.
 
+### Hugging Face `hf://` references
+
+Use `hf://owner/repo/path/to/model.gguf` for a public GGUF file. The shorthand
+resolves to `https://huggingface.co/owner/repo/resolve/main/path/to/model.gguf`
+with `download=true` and uses the stable `hf://...` identity for cache keys.
+
+```dart
+final main = ModelSource.parse(
+  'hf://unsloth/Qwen3.5-0.8B-GGUF/Qwen3.5-0.8B-Q4_K_M.gguf',
+);
+
+final tagged = ModelSource.parse(
+  'hf://owner/repo@v1.0.0/model-Q4_K_M.gguf',
+);
+
+// Use ?revision= when the revision itself contains `/`, such as PR refs.
+final pullRequestRef = ModelSource.parse(
+  'hf://owner/repo/model-Q4_K_M.gguf?revision=refs/pr/12',
+);
+```
+
+`ModelSource.huggingFace(...)` exposes the same pieces directly when building a
+source from app state:
+
+```dart
+final source = ModelSource.huggingFace(
+  repoId: 'owner/repo',
+  revision: 'main',
+  filePath: 'model-Q4_K_M.gguf',
+);
+```
+
+Private or gated repositories should pass credentials through
+`ModelLoadOptions`, not in the source string:
+
+```dart
+await engine.loadModelSource(
+  ModelSource.parse('hf://owner/private-repo/model-Q4_K_M.gguf'),
+  options: ModelLoadOptions(bearerToken: hfToken),
+);
+```
+
+Bearer tokens and custom headers are used only for remote download requests and
+are not part of `ModelSource.canonicalKey`, cache metadata, or `toString()`.
+Signed HTTP(S) URLs keep their full raw URL only for the in-memory cache-key
+hash; persisted metadata redacts query strings and appends the deterministic
+cache key so entries remain distinguishable without storing secrets.
+
+Current limitations:
+
+- `hf://` identifies one file. For multimodal models, create a separate source
+  for the model GGUF and the `mmproj` GGUF, then load/cache each asset according
+  to the API you are using.
+- Sharded GGUF manifests are not expanded automatically; track that as a
+  separate design before relying on sharded repos.
+- `llamadart` does not list Hugging Face files or choose recommended
+  quantizations for you. Pick the exact `.gguf` file path from the repository's
+  **Files and versions** tab.
+
 Native/file-backed backends download remote sources into the package-managed
 cache, verify the completed file, persist metadata, and then call the existing
 local `loadModel(...)` path. URL-capable web backends keep using

@@ -129,6 +129,16 @@ cancellation and optional `sha256` verification apply, while remote/download-onl
 options such as cache policies, `cacheDirectory`, authenticated headers, resume,
 and retries are rejected for local paths.
 
+`hf://` references point at one Hugging Face file:
+`hf://owner/repo/path/to/model.gguf` uses `main`,
+`hf://owner/repo@v1.0.0/model.gguf` pins a simple tag/branch, and
+`hf://owner/repo/model.gguf?revision=refs/pr/12` handles revisions containing
+slashes. For private or gated repositories, pass `ModelLoadOptions(bearerToken:
+hfToken)` or custom headers instead of embedding credentials in the source.
+`llamadart` does not list Hugging Face files or expand sharded GGUF manifests;
+pick the exact `.gguf` file path from the repository, and use separate model and
+`mmproj` sources for multimodal assets.
+
 ### 6. Generate embeddings
 
 ```dart

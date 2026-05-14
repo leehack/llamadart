@@ -12,6 +12,10 @@
     authenticated bearer/custom headers, cancellation, retry, Range resume,
     cache hit/refresh/cache-only/no-cache policies, SHA-256 verification,
     cache listing, removal, clearing, and age/size pruning.
+  * Improved Hugging Face source ergonomics: `hf://` references now accept
+    `?revision=...` for branch/ref names containing slashes, and docs clarify
+    current single-file behavior, private/gated bearer-token usage, separate
+    `mmproj` asset handling, sharded-GGUF limitations, and redaction guarantees.
   * Serialized concurrent stable-cache downloads for the same remote cache entry
     across manager instances so duplicate callers do not race on shared `.part`
     files or metadata, while distinct cache entries can still download in

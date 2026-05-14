@@ -18,6 +18,10 @@ For canonical full release notes, use:
   custom headers, cooperative cancellation, retry, HTTP Range resume, cache
   hit/refresh/cache-only/no-cache policies, SHA-256 verification, and persisted
   redacted metadata for signed URLs.
+- Improved Hugging Face `hf://` ergonomics with `?revision=...` parsing for
+  branch/ref names containing slashes, plus docs for private/gated bearer-token
+  usage, separate `mmproj` assets, sharded-GGUF limitations, and redaction
+  guarantees.
 - Serialized concurrent stable-cache downloads for the same remote cache entry
   across manager instances so duplicate callers do not race on shared `.part`
   files or metadata, while distinct cache entries can still download in
