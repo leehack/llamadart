@@ -22,10 +22,19 @@ class ManageModelsScreen extends StatefulWidget {
   final VoidCallback? onModelActivated;
   final bool embeddedPanel;
 
+  // Test hooks for exercising download-controller wiring without relying on
+  // platform storage or the full built-in model catalog.
+  final ModelService? modelService;
+  final List<DownloadableModel>? initialModels;
+  final bool? showModelLibraryInitially;
+
   const ManageModelsScreen({
     super.key,
     this.onModelActivated,
     this.embeddedPanel = false,
+    this.modelService,
+    this.initialModels,
+    this.showModelLibraryInitially,
   });
 
   @override
@@ -37,12 +46,10 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
   static const String _customModelsPrefsKey = 'custom_hf_models_v1';
   static const int _webLargeModelWarningBytes = 1900 * 1024 * 1024;
 
-  final ModelService _modelService = ModelService();
+  late final ModelService _modelService;
   final HuggingFaceModelDiscoveryService _hfDiscoveryService =
       HuggingFaceModelDiscoveryService();
-  final List<DownloadableModel> _models = List<DownloadableModel>.from(
-    DownloadableModel.defaultModels,
-  );
+  final List<DownloadableModel> _models = <DownloadableModel>[];
   final List<DownloadableModel> _customModels = <DownloadableModel>[];
 
   final Map<String, ValueNotifier<_ModelDownloadUiState>>
@@ -65,8 +72,16 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _showModelLibrary = false;
+    _modelService = widget.modelService ?? ModelService();
+    _models.addAll(_initialModelCatalog());
+    _showModelLibrary = widget.showModelLibraryInitially ?? false;
     _initModelService();
+  }
+
+  List<DownloadableModel> _initialModelCatalog() {
+    return List<DownloadableModel>.from(
+      widget.initialModels ?? DownloadableModel.defaultModels,
+    );
   }
 
   @override
@@ -901,7 +916,7 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
 
     _models
       ..clear()
-      ..addAll(DownloadableModel.defaultModels);
+      ..addAll(_initialModelCatalog());
     _customModels.clear();
     for (final notifier in _downloadUiStateByFile.values) {
       notifier.dispose();
