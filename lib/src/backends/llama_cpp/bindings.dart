@@ -3617,6 +3617,14 @@ external void _ggml_mul_mat_set_prec(ffi.Pointer<ggml_tensor> a, int prec);
 void ggml_mul_mat_set_prec(ffi.Pointer<ggml_tensor> a, ggml_prec prec) =>
     _ggml_mul_mat_set_prec(a, prec.value);
 
+@ffi.Native<ffi.Void Function(ffi.Pointer<ggml_tensor>, ffi.UnsignedInt)>(
+  symbol: 'ggml_mul_mat_set_hint',
+)
+external void _ggml_mul_mat_set_hint(ffi.Pointer<ggml_tensor> a, int hint);
+
+void ggml_mul_mat_set_hint(ffi.Pointer<ggml_tensor> a, ggml_op_hint hint) =>
+    _ggml_mul_mat_set_hint(a, hint.value);
+
 @ffi.Native<
   ffi.Pointer<ggml_tensor> Function(
     ffi.Pointer<ggml_context>,
@@ -7450,6 +7458,9 @@ external void mtmd_log_set(
   ffi.Pointer<ffi.Void> user_data,
 );
 
+@ffi.Native<mtmd_caps Function(ffi.Pointer<ffi.Char>)>()
+external mtmd_caps mtmd_get_cap_from_file(ffi.Pointer<ffi.Char> mmproj_fname);
+
 /// //////////////////////////////////////
 @ffi.Native<ffi.Pointer<mtmd_input_chunks> Function()>()
 external ffi.Pointer<mtmd_input_chunks> mtmd_test_create_input_chunks();
@@ -9095,6 +9106,20 @@ enum ggml_prec {
   };
 }
 
+enum ggml_op_hint {
+  GGML_HINT_NONE(0),
+  GGML_HINT_SRC0_IS_HADAMARD(1);
+
+  final int value;
+  const ggml_op_hint(this.value);
+
+  static ggml_op_hint fromValue(int value) => switch (value) {
+    0 => GGML_HINT_NONE,
+    1 => GGML_HINT_SRC0_IS_HADAMARD,
+    _ => throw ArgumentError('Unknown value for ggml_op_hint: $value'),
+  };
+}
+
 enum ggml_ftype {
   GGML_FTYPE_UNKNOWN(-1),
   GGML_FTYPE_ALL_F32(0),
@@ -9861,6 +9886,14 @@ final class mtmd_decoder_pos extends ffi.Struct {
   external int z;
 }
 
+final class mtmd_caps extends ffi.Struct {
+  @ffi.Bool()
+  external bool inp_vision;
+
+  @ffi.Bool()
+  external bool inp_audio;
+}
+
 const int LLAMA_DEFAULT_SEED = 4294967295;
 
 const int LLAMA_TOKEN_NULL = -1;
@@ -9879,9 +9912,13 @@ const int LLAMA_STATE_SEQ_MAGIC = 1734833009;
 
 const int LLAMA_STATE_SEQ_VERSION = 2;
 
+const int LLAMA_STATE_SEQ_FLAGS_NONE = 0;
+
 const int LLAMA_STATE_SEQ_FLAGS_SWA_ONLY = 1;
 
 const int LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY = 1;
+
+const int LLAMA_STATE_SEQ_FLAGS_ON_DEVICE = 2;
 
 const int GGML_FILE_MAGIC = 1734831468;
 
