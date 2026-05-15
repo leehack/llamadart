@@ -12,6 +12,13 @@ For canonical full release notes, use:
 - Added WebGPU readiness guidance covering browser capability checks,
   cross-origin isolation, bridge asset/version diagnostics, fallback behavior,
   model/configuration pressure, and the Flutter Web real-model smoke path.
+- Added `ModelDownloadController`, a dependency-free helper that turns
+  `ModelDownloadManager` cache/download work into app-facing lifecycle states
+  for resolving, cache checks, downloads, verification, ready, failed,
+  cancelled, and retry flows.
+- Wired the runnable chat app example through a `ModelDownloadManager` adapter
+  so its model-management UI demonstrates the controller while preserving the
+  example's multi-asset and web-cache service behavior.
 
 ## 0.6.13
 

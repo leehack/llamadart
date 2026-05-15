@@ -186,6 +186,75 @@ await manager.prune(maxAge: const Duration(days: 30), maxBytes: 20 * 1024 * 1024
 await manager.clear();
 ```
 
+### App-friendly download controller
+
+Flutter apps often need more than byte callbacks: they need stable UI states,
+retry/cancel controls, cache-hit handling, and a safe error string for snackbars
+or banners. `ModelDownloadController` wraps any `ModelDownloadManager` and emits
+that lifecycle without depending on Flutter:
+
+```dart
+final controller = ModelDownloadController(
+  manager: DefaultModelDownloadManager(
+    defaultCacheDirectory: '/app/cache/llamadart-models',
+  ),
+);
+
+final subscription = controller.snapshots.listen((snapshot) {
+  switch (snapshot.stage) {
+    case ModelDownloadTaskStage.checkingCache:
+      print('Checking cache for ${snapshot.source?.displayName}');
+      break;
+    case ModelDownloadTaskStage.downloading:
+      final percent = snapshot.fraction == null
+          ? 'unknown'
+          : '${(snapshot.fraction! * 100).toStringAsFixed(1)}%';
+      print('Downloading $percent');
+      break;
+    case ModelDownloadTaskStage.ready:
+      print('Ready at ${snapshot.entry?.filePath}');
+      break;
+    case ModelDownloadTaskStage.failed:
+      print(snapshot.errorMessage);
+      break;
+    case ModelDownloadTaskStage.cancelled:
+      print('Cancelled; retry is available: ${snapshot.canRetry}');
+      break;
+    default:
+      break;
+  }
+});
+
+try {
+  final entry = await controller.start(
+    ModelSource.parse('hf://owner/repo/model-Q4_K_M.gguf'),
+    options: ModelLoadOptions(maxRetries: 3),
+  );
+  await engine.loadModel(entry.filePath);
+} catch (_) {
+  if (controller.snapshot.canRetry) {
+    // Wire this to a Retry button.
+    await controller.retry();
+  }
+} finally {
+  await subscription.cancel();
+  await controller.dispose();
+}
+```
+
+Controller stages are `idle`, `resolving`, `checkingCache`, `downloading`,
+`verifying`, `ready`, `failed`, and `cancelled`. The cache check is advisory for
+UI state only; `ready` is emitted only after the manager's authoritative
+`ensureModel(...)` path validates the cache entry and any caller-provided
+checksum. Call `cancel()` from your UI to request cooperative cancellation; call
+`retry()` after `failed` or `cancelled` to reuse the last source/options. Because
+the controller owns cancellation, pass cache/auth/retry options through
+`ModelLoadOptions` but call `controller.cancel()` instead of supplying
+`ModelLoadOptions.cancelToken`. Error messages redact URL query strings and
+fragments so signed URLs or tokens are not shown in UI logs. On web, inject a
+custom manager for browser-specific storage; the default package manager remains
+native/file-backed.
+
 Downloaded files are written to `.part` files and promoted to the completed
 model path only after the HTTP stream and optional SHA-256 verification succeed.
 Stable-cache remote downloads are serialized per cache entry in-process,

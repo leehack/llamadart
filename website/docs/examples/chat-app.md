@@ -31,6 +31,11 @@ flutter test
 
 - Real-time streaming chat UI.
 - Model selection and download flow.
+- The runnable chat app wires `ModelDownloadController` into its model-management
+  flow through a small adapter, so cache checks, progress, cancel, retry, and
+  clear ready/failure states come from the same package helper app code can
+  reuse. The adapter keeps the example's platform-specific service layer for
+  multi-asset model + `mmproj` downloads and browser cache behavior.
 - Runtime backend preference and GPU layer controls.
 - Persistent settings and split Dart/native logging controls.
 - Tool-calling toggles and model capability badges.
