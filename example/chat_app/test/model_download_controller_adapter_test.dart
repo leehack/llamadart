@@ -31,6 +31,29 @@ void main() {
     );
 
     test(
+      'rejects checksum options instead of reporting unverified ready',
+      () async {
+        final model = _remoteModel();
+        final service = _FakeModelService(downloadedFiles: {model.filename});
+        final manager = ChatAppModelDownloadManager(
+          modelService: service,
+          model: model,
+          modelsDir: '/models',
+        );
+
+        await expectLater(
+          manager.ensureModel(
+            manager.source,
+            options: llama.ModelLoadOptions(sha256: 'a' * 64),
+          ),
+          throwsA(isA<UnsupportedError>()),
+        );
+
+        expect(service.downloadCalls, 0);
+      },
+    );
+
+    test(
       'refresh downloads through the chat app service and forwards progress',
       () async {
         final model = _remoteModel();

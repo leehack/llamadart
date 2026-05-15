@@ -38,6 +38,7 @@ class ChatAppModelDownloadManager implements llama.ModelDownloadManager {
     llama.ModelDownloadProgressCallback? onProgress,
   }) async {
     _checkSource(source);
+    _rejectUnsupportedOptions(options);
 
     final cached = await get(source.cacheKey);
     switch (options.cachePolicy) {
@@ -150,12 +151,20 @@ class ChatAppModelDownloadManager implements llama.ModelDownloadManager {
     );
   }
 
-  void _checkSource(llama.ModelSource candidate) {
-    if (candidate.cacheKey != source.cacheKey) {
+  void _checkSource(llama.ModelSource requestedSource) {
+    if (requestedSource.cacheKey != source.cacheKey) {
       throw ArgumentError.value(
-        candidate,
+        requestedSource,
         'source',
-        'This chat app manager only resolves ${source.displayName}.',
+        'ChatAppModelDownloadManager is bound to ${source.displayName}.',
+      );
+    }
+  }
+
+  void _rejectUnsupportedOptions(llama.ModelLoadOptions options) {
+    if (options.sha256 != null) {
+      throw UnsupportedError(
+        'ChatAppModelDownloadManager cannot verify SHA-256 checksums.',
       );
     }
   }

@@ -752,7 +752,9 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
         return;
       }
       final snapshot = controller?.snapshot;
-      final isCancel = snapshot?.stage == ModelDownloadTaskStage.cancelled;
+      final isCancel =
+          snapshot?.stage == ModelDownloadTaskStage.cancelled ||
+          (error is DioException && error.type == DioExceptionType.cancel);
       _updateDownloadUiState(
         model.filename,
         isDownloading: false,

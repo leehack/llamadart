@@ -47,6 +47,29 @@ void main() {
       expect(find.text('Resume Download'), findsOneWidget);
     });
 
+    testWidgets('cancel and discard reports a paused cancellation', (
+      tester,
+    ) async {
+      SharedPreferences.setMockInitialValues({});
+      final model = _remoteModel();
+      final modelService = _HoldingModelService();
+
+      await _pumpScreen(tester, modelService: modelService, models: [model]);
+
+      await tester.tap(find.text('Download'));
+      await modelService.downloadStarted.future.timeout(_testTimeout);
+      await tester.pump();
+
+      await tester.tap(find.byTooltip('Cancel & Discard'));
+      await tester.pump(const Duration(milliseconds: 150));
+      await modelService.downloadCancelled.future.timeout(_testTimeout);
+      await tester.pump();
+
+      expect(modelService.lastCancelToken?.isCancelled, isTrue);
+      expect(find.text('Download paused: ${model.name}'), findsOneWidget);
+      expect(find.text('Download failed. Please retry.'), findsNothing);
+    });
+
     testWidgets('disposing the screen cancels active controller downloads', (
       tester,
     ) async {
