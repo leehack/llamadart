@@ -48,7 +48,16 @@ audio input disabled for that model.
 ## Web notes
 
 On web, this example prefers local bridge assets on `localhost` for development
-validation and otherwise prefers CDN assets with local fallback.
+validation and otherwise prefers CDN assets with local fallback. The runtime
+status panel exposes the active bridge/core variant, fallback reason, model
+source, cache state, and runtime notes so you can distinguish browser capability
+problems from model/configuration pressure.
+
+For reliable large GGUF loads, serve the app with COOP/COEP headers so
+`window.crossOriginIsolated === true`. A built smoke path is documented in
+[WebGPU Bridge](../platforms/webgpu-bridge); it uses
+`tool/testing/serve_static_with_headers.py` and the real-model Playwright smoke
+against a small Qwen3.5 model.
 
 ## Android notes
 

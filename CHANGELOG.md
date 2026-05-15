@@ -1,3 +1,10 @@
+## Unreleased
+
+* **Docs**:
+  * Added WebGPU readiness guidance covering browser capability checks,
+    cross-origin isolation, bridge asset/version diagnostics, fallback behavior,
+    model/configuration pressure, and the Flutter Web real-model smoke path.
+
 ## 0.6.13
 
 * **Model source download/cache manager**:

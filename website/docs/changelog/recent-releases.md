@@ -7,6 +7,12 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
+## Unreleased
+
+- Added WebGPU readiness guidance covering browser capability checks,
+  cross-origin isolation, bridge asset/version diagnostics, fallback behavior,
+  model/configuration pressure, and the Flutter Web real-model smoke path.
+
 ## 0.6.13
 
 - Added package-managed model source downloads and cache management:

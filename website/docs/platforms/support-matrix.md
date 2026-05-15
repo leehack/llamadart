@@ -24,7 +24,7 @@ The native-assets hook currently pins `llamadart-native` tag `b9016`
 | iOS x86_64 (simulator) | `ios-x86_64-sim` | No (fixed in hook) | Consolidated runtime: `cpu`, `metal` | Supported |
 | macOS arm64 | `macos-arm64` | No (fixed in hook) | Consolidated runtime: `cpu`, `metal` | Supported |
 | macOS x86_64 | `macos-x86_64` | No (fixed in hook) | Consolidated runtime: `cpu`, `metal` | Supported |
-| Web (browser) | N/A (JS bridge path) | N/A | Bridge router: `webgpu`, `cpu` fallback | Experimental |
+| Web (browser) | N/A (JS bridge path) | N/A | Bridge router: `webgpu`, `cpu` fallback | Experimental; see [WebGPU Bridge](./webgpu-bridge) readiness checks |
 
 All iOS targets above require the consuming Flutter/Xcode project to use a
 minimum deployment target of `16.4` or newer (for example
@@ -39,6 +39,11 @@ minimum deployment target of `16.4` or newer (for example
   durable across page reloads. Durable browser storage currently requires
   app-level export/import outside the Dart `stateSaveFile` / `stateLoadFile`
   helpers.
+- **WebGPU readiness** is browser/device/runtime dependent. Check secure
+  context, `navigator.gpu`, adapter/features, `window.crossOriginIsolated`,
+  loaded bridge asset source/version, and model memory pressure before treating
+  a web load failure as a package bug. The [WebGPU Bridge](./webgpu-bridge)
+  page has the browser-console probe and Flutter Web smoke-test path.
 
 ## Current module availability by bundle (`b9016`)
 
