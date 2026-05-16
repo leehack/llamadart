@@ -1,3 +1,120 @@
+import 'dart:convert';
+
+import 'package:crypto/crypto.dart';
+
+String _basename(String pathOrUrl) {
+  final withoutQuery = pathOrUrl.split('?').first.split('#').first;
+  final normalized = withoutQuery.replaceAll('\\', '/');
+  final parts = normalized.split('/').where((part) => part.isNotEmpty);
+  return parts.isEmpty ? pathOrUrl : parts.last;
+}
+
+String _sourceFilename(ModelAssetSource source) {
+  return source is RemoteModelAssetSource
+      ? source.filename
+      : source.displayName;
+}
+
+String _assetCacheKey(String canonicalKey) {
+  return sha256.convert(utf8.encode(canonicalKey)).toString();
+}
+
+enum ModelAssetRole { model, multimodalProjector }
+
+abstract class ModelAssetSource {
+  const ModelAssetSource();
+
+  String get displayName;
+
+  String get canonicalKey;
+
+  String get cacheKey;
+
+  String get loadReference;
+
+  bool get isRemote => this is RemoteModelAssetSource;
+
+  bool get isLocal => this is LocalModelAssetSource;
+}
+
+class LocalModelAssetSource extends ModelAssetSource {
+  final String path;
+
+  const LocalModelAssetSource(this.path);
+
+  @override
+  String get displayName => _basename(path);
+
+  @override
+  String get canonicalKey => 'local:$path';
+
+  @override
+  String get cacheKey => _assetCacheKey(canonicalKey);
+
+  @override
+  String get loadReference => path;
+}
+
+class RemoteModelAssetSource extends ModelAssetSource {
+  final String url;
+  final String filename;
+  final int? sizeBytes;
+  final String? sha256;
+  final Map<String, String>? headers;
+
+  const RemoteModelAssetSource({
+    required this.url,
+    required this.filename,
+    this.sizeBytes,
+    this.sha256,
+    this.headers,
+  });
+
+  @override
+  String get displayName => filename;
+
+  @override
+  String get canonicalKey => 'remote:${jsonEncode([url, filename])}';
+
+  @override
+  String get cacheKey => _assetCacheKey(canonicalKey);
+
+  @override
+  String get loadReference => url;
+}
+
+class ResolvedModelAsset {
+  final ModelAssetRole role;
+  final ModelAssetSource source;
+  final String loadReference;
+  final bool isLocal;
+
+  const ResolvedModelAsset({
+    required this.role,
+    required this.source,
+    required this.loadReference,
+    required this.isLocal,
+  });
+}
+
+class ModelCapabilities {
+  final bool supportsVision;
+  final bool supportsAudio;
+  final bool supportsVideo;
+  final bool supportsToolCalling;
+  final bool supportsThinking;
+
+  const ModelCapabilities({
+    this.supportsVision = false,
+    this.supportsAudio = false,
+    this.supportsVideo = false,
+    this.supportsToolCalling = false,
+    this.supportsThinking = false,
+  });
+
+  bool get isMultimodal => supportsVision || supportsAudio;
+}
+
 class ModelPreset {
   final double temperature;
   final int topK;
@@ -26,7 +143,38 @@ class ModelPreset {
   });
 }
 
+class ModelProfile {
+  final String id;
+  final String name;
+  final String description;
+  final ModelAssetSource modelSource;
+  final ModelAssetSource? multimodalProjectorSource;
+  final int sizeBytes;
+  final ModelCapabilities capabilities;
+
+  /// Recommended generation/model-loading preset for this model.
+  final ModelPreset preset;
+
+  /// Minimum RAM/VRAM in GB recommended for this model.
+  final int minRamGb;
+
+  const ModelProfile({
+    required this.id,
+    required this.name,
+    required this.description,
+    required this.modelSource,
+    this.multimodalProjectorSource,
+    this.sizeBytes = 0,
+    this.capabilities = const ModelCapabilities(),
+    this.minRamGb = 2,
+    this.preset = const ModelPreset(),
+  });
+
+  bool get isMultimodal => capabilities.isMultimodal;
+}
+
 class DownloadableModel {
+  final String id;
   final String name;
   final String description;
   final String url;
@@ -39,6 +187,8 @@ class DownloadableModel {
   final bool supportsVideo;
   final bool supportsToolCalling;
   final bool supportsThinking;
+  final ModelAssetSource? _modelSourceOverride;
+  final ModelAssetSource? _multimodalProjectorSourceOverride;
 
   /// Recommended generation/model-loading preset for this model.
   final ModelPreset preset;
@@ -61,7 +211,66 @@ class DownloadableModel {
     this.supportsThinking = false,
     this.minRamGb = 2,
     this.preset = const ModelPreset(),
-  });
+  }) : id = filename,
+       _modelSourceOverride = null,
+       _multimodalProjectorSourceOverride = null;
+
+  DownloadableModel.fromSources({
+    String? id,
+    required this.name,
+    required this.description,
+    required ModelAssetSource modelSource,
+    ModelAssetSource? multimodalProjectorSource,
+    this.sizeBytes = 0,
+    this.supportsVision = false,
+    this.supportsAudio = false,
+    this.supportsVideo = false,
+    this.supportsToolCalling = false,
+    this.supportsThinking = false,
+    this.minRamGb = 2,
+    this.preset = const ModelPreset(),
+  }) : id = id ?? modelSource.displayName,
+       url = modelSource.loadReference,
+       filename = _sourceFilename(modelSource),
+       mmprojUrl = multimodalProjectorSource is RemoteModelAssetSource
+           ? multimodalProjectorSource.url
+           : null,
+       mmprojFilename = multimodalProjectorSource == null
+           ? null
+           : _sourceFilename(multimodalProjectorSource),
+       _modelSourceOverride = modelSource,
+       _multimodalProjectorSourceOverride = multimodalProjectorSource;
+
+  ModelAssetSource get modelSource {
+    final override = _modelSourceOverride;
+    if (override != null) {
+      return override;
+    }
+    return RemoteModelAssetSource(
+      url: url,
+      filename: filename,
+      sizeBytes: sizeBytes,
+    );
+  }
+
+  ModelAssetSource? get multimodalProjectorSource {
+    final override = _multimodalProjectorSourceOverride;
+    if (override != null) {
+      return override;
+    }
+    if (mmprojUrl == null || mmprojFilename == null || mmprojUrl!.isEmpty) {
+      return null;
+    }
+    return RemoteModelAssetSource(url: mmprojUrl!, filename: mmprojFilename!);
+  }
+
+  ModelCapabilities get capabilities => ModelCapabilities(
+    supportsVision: supportsVision,
+    supportsAudio: supportsAudio,
+    supportsVideo: supportsVideo,
+    supportsToolCalling: supportsToolCalling,
+    supportsThinking: supportsThinking,
+  );
 
   bool get isMultimodal => supportsVision || supportsAudio;
 
@@ -205,6 +414,33 @@ class DownloadableModel {
         temperature: 0.7,
         topK: 20,
         topP: 0.8,
+        penalty: 1.0,
+        contextSize: 8192,
+        maxTokens: 1024,
+        thinkingEnabled: false,
+      ),
+    ),
+    DownloadableModel(
+      name: 'Gemma 4 E2B it',
+      description:
+          '🧪 Multimodal Gemma 4 vision bundle (2.83GB + 940MB mmproj) • Supports image input; audio support is not advertised by the current projector/runtime path.',
+      url:
+          'https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/main/gemma-4-E2B-it-Q4_K_S.gguf?download=true',
+      filename: 'gemma-4-E2B-it-Q4_K_S.gguf',
+      mmprojUrl:
+          'https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/main/mmproj-F16.gguf?download=true',
+      mmprojFilename: 'gemma-4-E2B-it-mmproj-F16.gguf',
+      sizeBytes: 3043927168,
+      minRamGb: 8,
+      supportsVision: true,
+      supportsAudio: false,
+      supportsVideo: true,
+      supportsToolCalling: true,
+      supportsThinking: true,
+      preset: ModelPreset(
+        temperature: 0.7,
+        topK: 64,
+        topP: 0.95,
         penalty: 1.0,
         contextSize: 8192,
         maxTokens: 1024,

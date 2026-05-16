@@ -130,9 +130,15 @@ void main() async {
       expect(accumulated, isNotEmpty, reason: 'Generation should have started');
     });
 
-    test('loadModelFromUrl throws Unimplemented on Native', () async {
-      expect(engine.loadModelFromUrl('http://test'), throwsUnimplementedError);
-    });
+    test(
+      'loadModelFromUrl throws LlamaUnsupportedException on Native',
+      () async {
+        expect(
+          engine.loadModelFromUrl('http://test'),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
+      },
+    );
 
     test('getContextSize prefers active context over metadata', () async {
       // Use a fresh engine to avoid disrupting the shared one and to test cleanup

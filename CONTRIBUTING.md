@@ -220,5 +220,45 @@ If you need to build binaries for a new release:
 2.  Create a new branch (`git checkout -b feature/my-feature`).
 3.  Commit your changes.
 4.  Push to your fork and submit a Pull Request.
+5.  Complete the production-readiness sections in the pull request template.
+
+### Production-readiness expectations
+
+`main` should remain production-ready. A pull request may reduce its scope, but
+the scope it declares must be complete, documented, and tested before merge.
+Use the pull request template to make that claim explicit.
+
+Every non-trivial pull request should explain:
+
+- **User-facing scope**: what users can do after the PR merges.
+- **Supported platform matrix**: native, WebGPU, Flutter examples, docs-only, or
+  any other relevant path.
+- **Unsupported paths**: combinations that are intentionally unavailable must
+  fail loudly with clear errors, disabled UI, or documented fallback behavior.
+  They must not appear to succeed silently.
+- **Docs and release notes**: README, website docs, examples, support matrices,
+  and changelog entries are updated when public behavior changes.
+- **Regression coverage**: tests cover the original issue and important
+  negative/version-skew paths where applicable.
+- **Security/privacy**: logs, errors, cache keys, metadata, and snapshots must
+  not expose credentials, bearer tokens, signed URLs, or raw secret-bearing
+  paths.
+- **Follow-ups**: useful future work that is outside the declared scope should
+  be linked as GitHub Issues before merge.
+
+If a feature is not ready across all originally imagined paths, prefer reducing
+the declared scope and tracking follow-up issues over merging incomplete or
+ambiguous behavior.
+
+### PR type examples
+
+- **Feature PR**: describes the new API or behavior, supported platforms,
+  unsupported combinations and their errors/fallbacks, docs/examples/changelog
+  updates, and happy-path plus negative-path tests.
+- **Bugfix PR**: states the root cause, the affected platform matrix, the
+  targeted regression coverage, and any manual validation needed to reproduce
+  the fix.
+- **Docs-only PR**: states that runtime behavior is unchanged and lists the docs
+  build/link checks or review performed.
 
 Thank you for contributing!

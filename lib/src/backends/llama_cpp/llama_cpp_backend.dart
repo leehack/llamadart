@@ -20,7 +20,8 @@ class NativeLlamaBackend
         BackendRuntimeDiagnostics,
         BackendPerformanceDiagnostics,
         BackendEmbeddings,
-        BackendBatchEmbeddings {
+        BackendBatchEmbeddings,
+        BackendStatePersistence {
   Isolate? _isolate;
   SendPort? _sendPort;
   final ReceivePort _responsesPort = ReceivePort();
@@ -308,6 +309,49 @@ class NativeLlamaBackend
     rp.close();
     if (res is MetadataResponse) return res.metadata;
     return {};
+  }
+
+  @override
+  Future<bool> stateSaveFile(
+    int contextHandle,
+    String path,
+    List<int> tokens,
+  ) async {
+    await _ensureIsolate();
+    final rp = ReceivePort();
+    _sendPort!.send(
+      StateSaveFileRequest(
+        contextHandle,
+        path,
+        List<int>.from(tokens),
+        rp.sendPort,
+      ),
+    );
+    final res = await rp.first;
+    rp.close();
+    if (res is StateSaveFileResponse) return res.success;
+    if (res is ErrorResponse) throw Exception(res.message);
+    throw Exception('State save failed');
+  }
+
+  @override
+  Future<StateLoadResult> stateLoadFile(
+    int contextHandle,
+    String path,
+    int tokenCapacity,
+  ) async {
+    await _ensureIsolate();
+    final rp = ReceivePort();
+    _sendPort!.send(
+      StateLoadFileRequest(contextHandle, path, tokenCapacity, rp.sendPort),
+    );
+    final res = await rp.first;
+    rp.close();
+    if (res is StateLoadFileResponse) {
+      return StateLoadResult(tokens: res.tokens);
+    }
+    if (res is ErrorResponse) throw Exception(res.message);
+    throw Exception('State load failed');
   }
 
   @override

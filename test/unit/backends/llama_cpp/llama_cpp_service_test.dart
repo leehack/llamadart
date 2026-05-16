@@ -93,6 +93,13 @@ void main() {
       );
     });
 
+    test('stateSaveFile throws for unknown context handle', () {
+      expect(
+        () => service.stateSaveFile(-1, '/tmp/state.bin', const <int>[]),
+        throwsA(isA<StateError>()),
+      );
+    });
+
     test('createMultimodalContext throws for unknown model handle', () {
       expect(
         () => service.createMultimodalContext(-1, 'mmproj.gguf'),

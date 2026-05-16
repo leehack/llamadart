@@ -26,6 +26,10 @@
   - Web: WebGPU via bridge runtime (with CPU fallback)
 - 🧭 **Embeddings API**: Generate vectors with `embed(...)` and
   `embedBatch(...)`.
+- 📦 **Structured Model Sources**: Describe local, HTTP(S), and Hugging Face
+  GGUF sources with deterministic cache identities for download/cache workflows.
+- 💾 **KV-cache State Persistence**: Save and restore llama.cpp KV-cache state
+  with `stateSaveFile(...)` / `stateLoadFile(...)` for fast raw-prompt resumes.
 - 🖼️ **Multimodal Support**: Vision/audio model runtime support.
 - **LoRA Support**: Runtime GGUF adapter application.
 - 🔇 **Split Logging Control**: Dart logs and native logs can be configured independently.
@@ -38,7 +42,7 @@
 
 ```yaml
 dependencies:
-  llamadart: ^0.6.9
+  llamadart: ^0.6.13
 ```
 
 ### 2. Run with defaults
@@ -88,7 +92,54 @@ Future<void> main() async {
 }
 ```
 
-### 5. Generate embeddings
+### 5. Download and cache a remote GGUF
+
+```dart
+import 'package:llamadart/llamadart.dart';
+
+Future<void> main() async {
+  final engine = LlamaEngine(LlamaBackend());
+  try {
+    await engine.loadModelSource(
+      ModelSource.parse('hf://owner/repo/model-Q4_K_M.gguf'),
+      options: ModelLoadOptions(
+        cachePolicy: ModelCachePolicy.preferCached,
+        cacheDirectory: '/path/to/app/model-cache',
+      ),
+      onProgress: (progress) {
+        final fraction = progress.fraction;
+        if (fraction != null) {
+          print('download ${(fraction * 100).toStringAsFixed(1)}%');
+        }
+      },
+    );
+  } finally {
+    await engine.dispose();
+  }
+}
+```
+
+Native/file-backed backends stream remote models into the package-managed cache,
+resume partial `.part` downloads when the server supports HTTP Range and the
+partial has a safe validator (ETag/Last-Modified) or caller-provided SHA-256,
+verify optional SHA-256 checksums, and redact signed URL credentials from
+metadata. Validator-less partial files restart from byte zero instead of being
+appended. Local `ModelSource.path(...)` values are already files: only
+cancellation and optional `sha256` verification apply, while remote/download-only
+options such as cache policies, `cacheDirectory`, authenticated headers, resume,
+and retries are rejected for local paths.
+
+`hf://` references point at one Hugging Face file:
+`hf://owner/repo/path/to/model.gguf` uses `main`,
+`hf://owner/repo@v1.0.0/model.gguf` pins a simple tag/branch, and
+`hf://owner/repo/model.gguf?revision=refs/pr/12` handles revisions containing
+slashes. For private or gated repositories, pass `ModelLoadOptions(bearerToken:
+hfToken)` or custom headers instead of embedding credentials in the source.
+`llamadart` does not list Hugging Face files or expand sharded GGUF manifests;
+pick the exact `.gguf` file path from the repository, and use separate model and
+`mmproj` sources for multimodal assets.
+
+### 6. Generate embeddings
 
 ```dart
 import 'package:llamadart/llamadart.dart';
@@ -118,6 +169,40 @@ Note: embedding support depends on backend/runtime capabilities.
 - Web runtime requires bridge assets with embedding APIs (`v0.1.7` or newer).
 - See the full guide: https://llamadart.leehack.com/docs/guides/embeddings
 
+### 7. Optional: save and restore KV-cache state
+
+Native backends and WebGPU bridge assets `v0.1.15+` can persist llama.cpp
+KV-cache state for fast raw-prompt resume/fork workflows. On native platforms,
+`path` is an app-writable filesystem path. On web, `path` is a bridge WASMFS
+virtual path; use an app-managed browser storage layer if you need durable state
+across page reloads.
+
+```dart
+final prompt = 'You are a concise assistant. Summarize llamadart.';
+final tokens = await engine.tokenize(prompt);
+
+if (!engine.supportsStatePersistence) {
+  throw UnsupportedError('State persistence is not available on this backend.');
+}
+
+// Populate the KV cache, then save it with the token sequence that produced it.
+await engine
+    .generate(prompt, params: const GenerationParams(maxTokens: 1))
+    .drain<void>();
+await engine.stateSaveFile('assistant.state', tokens: tokens);
+
+// Later, after loading the same model with a compatible runtime build:
+final restored = await engine.stateLoadFile(
+  'assistant.state',
+  tokenCapacity: await engine.getContextSize(),
+);
+print('Restored ${restored.tokens.length} prompt tokens');
+```
+
+State files are opaque llama.cpp artifacts tied to the same model and
+runtime/build. `ChatSession` message history is not restored automatically, so
+persist chat messages separately when using the high-level chat API.
+
 ---
 
 ## ✅ Platform Defaults and Configurability
@@ -134,7 +219,7 @@ Note: embedding support depends on backend/runtime capabilities.
 <details>
 <summary>Full module matrix (available modules by target)</summary>
 
-Backend module matrix from pinned native tag `b8480`:
+Backend module matrix from pinned native tag `b9016`:
 
 | Target | Available backend modules in bundle |
 |--------|-------------------------------------|
@@ -215,6 +300,11 @@ Notes:
 
 - Module availability depends on the pinned native release bundle and may change when the native tag updates.
 - Configurable targets always keep `cpu` bundled as a fallback.
+- Backend-owned runtime dependencies follow the selected backend module. For
+  example, CUDA runtime DLLs (`cudart64_*`, `cublas64_*`, `cublaslt64_*`) are
+  bundled only when `cuda` is selected, and OpenBLAS runtime libraries are
+  bundled only when `blas` is selected. Unknown runtime libraries are kept for
+  compatibility with future native bundle layouts.
 - Android arm64 defaults to `cpu_profile: full` for best runtime CPU
   optimization coverage.
 - Android keeps OpenCL and Vulkan available for opt-in, but `auto` now prefers CPU by default.
@@ -228,9 +318,16 @@ Notes:
 - `example/chat_app` active backend status reflects the effective backend used for model load (for example `CPU` when GPU fallback is applied).
 - `example/chat_app` exposes `Auto` only on web; native selectors list concrete backend options.
 - CPU mode (`preferredBackend: cpu` or effective `gpuLayers == 0`) also disables context-time GPU offload so context creation stays CPU-only.
+- `ModelParams.splitMode` passes through to llama.cpp `split_mode`; it defaults to upstream `layer` behavior.
+- `ModelParams.mainGpu` passes through to llama.cpp `main_gpu`. To select one GPU for the full model, use `splitMode: ModelSplitMode.none` with the desired `mainGpu` index.
 - `ModelParams.batchSize` (`n_batch`) and `ModelParams.microBatchSize` (`n_ubatch`) can be set independently for memory/performance tuning; defaults keep legacy behavior (`n_batch = n_ctx`, `n_ubatch = n_batch`).
 - Apple targets are intentionally non-configurable in this hook path and use consolidated native libraries.
 - The native-assets hook refreshes emitted files each build; if you change `hooks.user_defines` or are upgrading from older cached outputs, run `flutter clean && flutter pub get` before rebuilding.
+- Some Vulkan drivers can crash when probing cooperative matrix support. This
+  is a driver-side failure in the Vulkan property query path, not a llamadart
+  loader failure. Use upstream ggml-vulkan's opt-out environment variables
+  before starting the process:
+  `GGML_VK_DISABLE_COOPMAT=1` and `GGML_VK_DISABLE_COOPMAT2=1`.
 
 If you change `llamadart_native_backends`, run `flutter clean` once so stale native-asset outputs do not override new bundle selection.
 

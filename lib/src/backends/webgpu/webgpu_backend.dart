@@ -9,6 +9,7 @@ import 'package:web/web.dart';
 
 import '../../core/models/chat/content_part.dart';
 import '../../core/models/config/gpu_backend.dart';
+import '../../core/models/config/llama_cpp_param_values.dart';
 import '../../core/models/config/log_level.dart';
 import '../../core/models/inference/generation_params.dart';
 import '../../core/models/inference/model_params.dart';
@@ -20,7 +21,12 @@ external JSArray _objectKeys(JSObject obj);
 
 /// Web backend backed by the llama.cpp bridge runtime.
 class WebGpuLlamaBackend
-    implements LlamaBackend, BackendAvailability, BackendBatchEmbeddings {
+    implements
+        LlamaBackend,
+        BackendAvailability,
+        BackendBatchEmbeddings,
+        BackendStatePersistence,
+        BackendStatePersistenceSupport {
   static const Duration _bridgeReadyTimeout = Duration(seconds: 12);
   static const Duration _bridgePollInterval = Duration(milliseconds: 100);
   static const int _defaultRemoteFetchChunkBytes = 4 * 1024 * 1024;
@@ -67,6 +73,20 @@ class WebGpuLlamaBackend
 
   @override
   bool get isReady => _isReady;
+
+  @override
+  bool get supportsStatePersistence {
+    final bridge = _bridge;
+    return _usingBridge &&
+        bridge != null &&
+        _hasBridgeFunction(bridge, 'stateSaveFile') &&
+        _hasBridgeFunction(bridge, 'stateLoadFile');
+  }
+
+  bool _hasBridgeFunction(LlamaWebGpuBridge bridge, String name) {
+    final value = bridge.getProperty(name.toJS);
+    return value.isA<JSFunction>();
+  }
 
   Future<void> _loadBridgeScript() async {
     final scriptUrl = _bridgeScriptUrl;
@@ -590,29 +610,42 @@ class WebGpuLlamaBackend
     return attempts;
   }
 
-  ({int? nBatch, int? nUbatch}) _resolveWebBatchTuning({
+  ({int nBatch, int nUbatch}) _resolveWebBatchSizes({
     required String url,
     required ModelParams params,
+    required int contextSize,
   }) {
-    if (params.batchSize > 0 || params.microBatchSize > 0) {
-      return (nBatch: null, nUbatch: null);
-    }
-
-    if (params.preferredBackend == GpuBackend.cpu || params.gpuLayers == 0) {
-      return (nBatch: null, nUbatch: null);
-    }
-
     final normalizedUrl = url.toLowerCase();
     final isQwen35Small =
         normalizedUrl.contains('qwen3.5-0.8b') ||
         normalizedUrl.contains('qwen_qwen3.5-0.8b');
-    if (!isQwen35Small) {
-      return (nBatch: null, nUbatch: null);
+    final shouldUseQwen35SmallTuning =
+        params.batchSize <= 0 &&
+        params.microBatchSize <= 0 &&
+        params.preferredBackend != GpuBackend.cpu &&
+        params.gpuLayers != 0 &&
+        isQwen35Small;
+
+    if (shouldUseQwen35SmallTuning) {
+      return (nBatch: 32, nUbatch: 8);
     }
 
-    final tunedBatch = 32;
-    final tunedUbatch = 8;
-    return (nBatch: tunedBatch, nUbatch: tunedUbatch);
+    final resolved = resolveModelContextBatchSizes(params, contextSize);
+    return (nBatch: resolved.batchSize, nUbatch: resolved.microBatchSize);
+  }
+
+  int _webGpuFlashAttentionValue(ModelParams params) {
+    return llamaFlashAttentionTypeValueFor(
+      resolveFlashAttention(
+        requested: params.flashAttention,
+        cacheTypeK: params.cacheTypeK,
+        cacheTypeV: params.cacheTypeV,
+      ),
+    );
+  }
+
+  bool? _webGpuKvUnifiedValue(ModelParams params) {
+    return params.kvUnified ?? (params.maxParallelSequences > 1 ? true : null);
   }
 
   int _resolveSafeRequestedGpuLayers({
@@ -815,6 +848,7 @@ class WebGpuLlamaBackend
     ModelParams params, {
     Function(double progress)? onProgress,
   }) async {
+    params.validate();
     _preferMemory64Override = null;
     _forceRemoteFetchBackendOverride = null;
 
@@ -878,8 +912,6 @@ class WebGpuLlamaBackend
       requestedContextSize: params.contextSize,
       requestedGpuLayers: requestedGpuLayers,
     );
-    final batchTuning = _resolveWebBatchTuning(url: url, params: params);
-
     Object? lastError;
     Map<String, String> lastRuntimeHints = const <String, String>{};
     var retriedWithWasm32 = false;
@@ -893,6 +925,11 @@ class WebGpuLlamaBackend
     for (var index = 0; index < loadAttempts.length; index += 1) {
       final attempt = loadAttempts[index];
       _lastNCtx = attempt.contextSize;
+      final batchSizes = _resolveWebBatchSizes(
+        url: url,
+        params: params,
+        contextSize: attempt.contextSize,
+      );
       LlamaWebGpuBridge? bridgeForAttempt;
       bool? forceRemoteFetchBackend;
       final attemptThreads = switch (index) {
@@ -924,13 +961,18 @@ class WebGpuLlamaBackend
             nThreadsBatch: params.numberOfThreadsBatch > 0
                 ? params.numberOfThreadsBatch
                 : null,
-            nBatch: params.batchSize > 0
-                ? params.batchSize
-                : batchTuning.nBatch,
-            nUbatch: params.microBatchSize > 0
-                ? params.microBatchSize
-                : batchTuning.nUbatch,
+            nBatch: batchSizes.nBatch,
+            nUbatch: batchSizes.nUbatch,
             nGpuLayers: attempt.gpuLayers,
+            nSeqMax: math.max(1, params.maxParallelSequences),
+            flashAttention: _webGpuFlashAttentionValue(params),
+            cacheTypeK: ggmlTypeValueFor(params.cacheTypeK),
+            cacheTypeV: ggmlTypeValueFor(params.cacheTypeV),
+            kvUnified: _webGpuKvUnifiedValue(params),
+            ropeFrequencyBase: params.ropeFrequencyBase,
+            ropeFrequencyScale: params.ropeFrequencyScale,
+            splitMode: params.splitMode.llamaCppValue,
+            mainGpu: params.mainGpu,
             useCache: true,
             forceRemoteFetchBackend: forceRemoteFetchBackend,
             remoteFetchChunkBytes: remoteFetchChunkBytesOverride,
@@ -1900,6 +1942,45 @@ class WebGpuLlamaBackend
     '[gMASK]<sop>',
   ];
 
+  List<int> _parseTokenList(JSAny? value) {
+    if (value == null) {
+      return const <int>[];
+    }
+
+    if (value.isA<JSUint32Array>()) {
+      return (value as JSUint32Array).toDart.cast<int>().toList();
+    }
+
+    if (value.isA<JSInt32Array>()) {
+      return (value as JSInt32Array).toDart.cast<int>().toList();
+    }
+
+    if (value.isA<JSArray>()) {
+      final arr = value as JSArray;
+      final tokens = <int>[];
+      for (int i = 0; i < arr.length; i++) {
+        final item = arr.getProperty(i.toJS);
+        if (item.isA<JSNumber>()) {
+          tokens.add((item as JSNumber).toDartInt);
+        }
+      }
+      return tokens;
+    }
+
+    return const <int>[];
+  }
+
+  bool _isStatePersistenceMethodUnavailableError(Object error) {
+    final lowered = _errorText(error).toLowerCase();
+    return lowered.contains('statesavefile is not a function') ||
+        lowered.contains('stateloadfile is not a function') ||
+        lowered.contains('bridge.statesavefile is not a function') ||
+        lowered.contains('bridge.stateloadfile is not a function') ||
+        lowered.contains('llamadart_webgpu_state_save_file') ||
+        lowered.contains('llamadart_webgpu_state_load_file') ||
+        lowered.contains('unknown function') && lowered.contains('state_');
+  }
+
   @override
   Future<List<int>> tokenize(
     int modelHandle,
@@ -1911,31 +1992,7 @@ class WebGpuLlamaBackend
         ? _normalizePromptForBridge(text, bridge)
         : text;
     final result = await _toFuture(bridge.tokenize(normalizedText, addSpecial));
-    if (result == null) {
-      return const <int>[];
-    }
-
-    if (result.isA<JSUint32Array>()) {
-      return (result as JSUint32Array).toDart.cast<int>().toList();
-    }
-
-    if (result.isA<JSInt32Array>()) {
-      return (result as JSInt32Array).toDart.cast<int>().toList();
-    }
-
-    if (result.isA<JSArray>()) {
-      final arr = result as JSArray;
-      final tokens = <int>[];
-      for (int i = 0; i < arr.length; i++) {
-        final value = arr.getProperty(i.toJS);
-        if (value.isA<JSNumber>()) {
-          tokens.add((value as JSNumber).toDartInt);
-        }
-      }
-      return tokens;
-    }
-
-    return const <int>[];
+    return _parseTokenList(result);
   }
 
   @override
@@ -1948,6 +2005,77 @@ class WebGpuLlamaBackend
     final jsTokens = tokens.map((t) => t.toJS).toList().toJS;
     final result = await _toFuture(bridge.detokenize(jsTokens, special));
     return (result as JSString?)?.toDart ?? '';
+  }
+
+  @override
+  Future<bool> stateSaveFile(
+    int contextHandle,
+    String path,
+    List<int> tokens,
+  ) async {
+    final bridge = _requireBridge();
+    if (!supportsStatePersistence) {
+      throw UnsupportedError(
+        'Web state persistence requires bridge assets with state support '
+        '(v0.1.15 or newer).',
+      );
+    }
+    final jsTokens = tokens.map((token) => token.toJS).toList().toJS;
+    try {
+      final result = await _toFuture(bridge.stateSaveFile(path, jsTokens));
+      if (result == null) {
+        return true;
+      }
+      if (result.isA<JSBoolean>()) {
+        return (result as JSBoolean).toDart;
+      }
+      return true;
+    } catch (error) {
+      if (_isStatePersistenceMethodUnavailableError(error)) {
+        throw UnsupportedError(
+          'Web state persistence requires bridge assets with state support '
+          '(v0.1.15 or newer).',
+        );
+      }
+      rethrow;
+    }
+  }
+
+  @override
+  Future<StateLoadResult> stateLoadFile(
+    int contextHandle,
+    String path,
+    int tokenCapacity,
+  ) async {
+    final bridge = _requireBridge();
+    if (!supportsStatePersistence) {
+      throw UnsupportedError(
+        'Web state persistence requires bridge assets with state support '
+        '(v0.1.15 or newer).',
+      );
+    }
+    try {
+      final result = await _toFuture(bridge.stateLoadFile(path, tokenCapacity));
+      JSAny? rawTokens;
+      if (result != null &&
+          result.isA<JSObject>() &&
+          !result.isA<JSArray>() &&
+          !result.isA<JSUint32Array>() &&
+          !result.isA<JSInt32Array>()) {
+        rawTokens = (result as JSObject).getProperty('tokens'.toJS);
+      } else {
+        rawTokens = result;
+      }
+      return StateLoadResult(tokens: _parseTokenList(rawTokens));
+    } catch (error) {
+      if (_isStatePersistenceMethodUnavailableError(error)) {
+        throw UnsupportedError(
+          'Web state persistence requires bridge assets with state support '
+          '(v0.1.15 or newer).',
+        );
+      }
+      rethrow;
+    }
   }
 
   @override

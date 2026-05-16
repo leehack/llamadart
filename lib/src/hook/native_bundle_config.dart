@@ -56,6 +56,10 @@ const Map<String, String> _backendAliases = {
   'open-cl': 'opencl',
 };
 
+final _cudaRuntimeDependencyNamePattern = RegExp(
+  r'^(?:cudart64|cublas64|cublaslt64)(?:[_-]?\d+)?$',
+);
+
 const String _androidArm64Bundle = 'android-arm64';
 const String _androidCpuProfileCompact = 'compact';
 const String _androidCpuProfileFull = 'full';
@@ -526,9 +530,19 @@ List<NativeLibraryDescriptor> selectLibrariesForBundling({
 
   final selectedLibraries = libraries
       .where((library) {
-        if (library.isCore || library.backend == null) {
+        if (library.isCore) {
           return true;
         }
+
+        final runtimeBackend = _runtimeDependencyBackendFor(library);
+        if (runtimeBackend != null) {
+          return selectedBackends.contains(runtimeBackend);
+        }
+
+        if (library.backend == null) {
+          return true;
+        }
+
         return selectedBackends.contains(library.backend);
       })
       .toList(growable: false);
@@ -713,5 +727,16 @@ String? _inferBackend(String canonicalName) {
     return 'opencl';
   }
 
+  return null;
+}
+
+String? _runtimeDependencyBackendFor(NativeLibraryDescriptor library) {
+  final canonicalName = library.canonicalName;
+  if (_cudaRuntimeDependencyNamePattern.hasMatch(canonicalName)) {
+    return 'cuda';
+  }
+  if (canonicalName.startsWith('openblas')) {
+    return 'blas';
+  }
   return null;
 }

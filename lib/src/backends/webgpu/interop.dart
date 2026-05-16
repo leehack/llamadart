@@ -51,6 +51,12 @@ extension type LlamaWebGpuBridge._(JSObject _) implements JSObject {
   /// Detokenizes token ids.
   external JSPromise<JSString>? detokenize(JSArray tokens, [bool? special]);
 
+  /// Saves the active KV-cache/session state to a bridge WASMFS path.
+  external JSPromise<JSAny?>? stateSaveFile(String path, JSArray tokens);
+
+  /// Loads KV-cache/session state from a bridge WASMFS path.
+  external JSPromise<JSAny?>? stateLoadFile(String path, int tokenCapacity);
+
   /// Generates a single embedding vector for [text].
   external JSPromise<JSAny?>? embed(
     String text, [
@@ -125,6 +131,15 @@ extension type WebGpuLoadModelOptions._(JSObject _) implements JSObject {
     @JS('nBatch') int? nBatch,
     @JS('nUbatch') int? nUbatch,
     @JS('nGpuLayers') int? nGpuLayers,
+    @JS('nSeqMax') int? nSeqMax,
+    @JS('flashAttention') int? flashAttention,
+    @JS('cacheTypeK') int? cacheTypeK,
+    @JS('cacheTypeV') int? cacheTypeV,
+    @JS('kvUnified') bool? kvUnified,
+    @JS('ropeFrequencyBase') double? ropeFrequencyBase,
+    @JS('ropeFrequencyScale') double? ropeFrequencyScale,
+    @JS('splitMode') int? splitMode,
+    @JS('mainGpu') int? mainGpu,
     @JS('useCache') bool? useCache,
     @JS('forceRemoteFetchBackend') bool? forceRemoteFetchBackend,
     @JS('remoteFetchThresholdBytes') int? remoteFetchThresholdBytes,

@@ -4,9 +4,7 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
-import 'package:http/http.dart' as http;
 import 'package:llamadart/llamadart.dart';
-import 'package:path/path.dart' as path;
 
 enum _ModelKind { text, vision, audio }
 
@@ -299,34 +297,28 @@ Future<String> _ensureFile({
   required String fileName,
   required String downloadUrl,
 }) async {
-  final String filePath = path.join(modelsDir.path, fileName);
-  final File file = File(filePath);
-  if (file.existsSync() && file.lengthSync() > 0) {
-    stdout.writeln('Using cached file: $fileName');
-    return filePath;
-  }
-
-  stdout.writeln('Downloading $fileName');
-  final http.Request request = http.Request('GET', Uri.parse(downloadUrl));
-  final http.StreamedResponse response = await http.Client().send(request);
-  if (response.statusCode != 200) {
-    throw Exception('Failed download ($fileName): HTTP ${response.statusCode}');
-  }
-
-  final IOSink sink = file.openWrite();
-  final int? total = response.contentLength;
-  int received = 0;
-  await for (final List<int> chunk in response.stream) {
-    sink.add(chunk);
-    received += chunk.length;
-    if (total != null && received % (32 * 1024 * 1024) < chunk.length) {
-      final double pct = (received / total) * 100;
-      stdout.write('\r  $fileName ${(pct).toStringAsFixed(1)}%');
-    }
-  }
-  await sink.close();
-  stdout.writeln('\nDownloaded $fileName');
-  return filePath;
+  final manager = DefaultModelDownloadManager(
+    defaultCacheDirectory: modelsDir.path,
+  );
+  final source = ModelSource.url(Uri.parse(downloadUrl), fileName: fileName);
+  stdout.writeln('Ensuring cached model: $fileName');
+  final entry = await manager.ensureModel(
+    source,
+    onProgress: (progress) {
+      final total = progress.totalBytes;
+      if (total != null &&
+          progress.receivedBytes % (32 * 1024 * 1024) < 1024 * 1024) {
+        final pct = progress.fraction == null
+            ? null
+            : (progress.fraction! * 100).toStringAsFixed(1);
+        if (pct != null) {
+          stdout.write('\r  $fileName $pct%');
+        }
+      }
+    },
+  );
+  stdout.writeln('\nReady: ${entry.filePath}');
+  return entry.filePath;
 }
 
 Future<_ModelResult> _runTextModel(

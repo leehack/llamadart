@@ -1,93 +1,54 @@
 import 'dart:io';
 
-import 'package:http/http.dart' as http;
+import 'package:llamadart/llamadart.dart';
 import 'package:path/path.dart' as path;
 
 /// Resolves a model path or downloads a model URL into local cache.
 class ModelService {
+  /// Creates a model service with optional custom [cacheDir].
+  ModelService([String? cacheDir]) : this._(cacheDir ?? _defaultCacheDir());
+
+  ModelService._(String resolvedCacheDir)
+    : cacheDir = resolvedCacheDir,
+      _downloadManager = DefaultModelDownloadManager(
+        defaultCacheDirectory: resolvedCacheDir,
+      );
+
+  static String _defaultCacheDir() =>
+      path.join(Directory.current.path, 'models');
+
   /// Directory where downloaded model files are cached.
   final String cacheDir;
 
-  /// Creates a model service with optional custom [cacheDir].
-  ModelService([String? cacheDir])
-    : cacheDir = cacheDir ?? path.join(Directory.current.path, 'models');
+  final ModelDownloadManager _downloadManager;
 
   /// Ensures [urlOrPath] exists locally, downloading when needed.
   Future<File> ensureModel(String urlOrPath) async {
-    if (urlOrPath.startsWith('http://') || urlOrPath.startsWith('https://')) {
-      return _downloadModel(urlOrPath);
-    }
-
-    final file = File(urlOrPath);
-    if (!file.existsSync()) {
-      throw Exception('Model file not found at: $urlOrPath');
-    }
-
-    return file;
-  }
-
-  Future<File> _downloadModel(String url) async {
-    final fileName = url.split('/').last.split('?').first;
-    final file = File(path.join(cacheDir, fileName));
-
-    if (file.existsSync() && file.lengthSync() > 0) {
-      return file;
-    }
-
-    if (!file.parent.existsSync()) {
-      file.parent.createSync(recursive: true);
-    }
-
-    stdout.writeln('Downloading model: $fileName');
-
-    final client = http.Client();
-    try {
-      final request = http.Request('GET', Uri.parse(url));
-      final response = await client.send(request);
-
-      if (response.statusCode != HttpStatus.ok) {
-        throw Exception(
-          'Failed to download model: '
-          '${response.statusCode} ${response.reasonPhrase}',
-        );
+    final source = ModelSource.parse(urlOrPath);
+    if (source.isLocal) {
+      final file = File(source.path!);
+      if (!file.existsSync()) {
+        throw Exception('Model file not found at: ${source.path}');
       }
-
-      final contentLength = response.contentLength ?? 0;
-      var downloaded = 0;
-      final sink = file.openWrite();
-
-      await response.stream
-          .listen(
-            (List<int> chunk) {
-              sink.add(chunk);
-              downloaded += chunk.length;
-
-              if (contentLength > 0) {
-                final progress = (downloaded / contentLength * 100)
-                    .toStringAsFixed(1);
-                stdout.write('\rProgress: $progress%');
-              } else {
-                final mb = (downloaded / 1024 / 1024).toStringAsFixed(1);
-                stdout.write('\rDownloaded: $mb MB');
-              }
-            },
-            onDone: () async {
-              await sink.close();
-              stdout.writeln('\nDownload complete.');
-            },
-            onError: (Object error) {
-              sink.close();
-              if (file.existsSync()) {
-                file.deleteSync();
-              }
-              throw error;
-            },
-          )
-          .asFuture<void>();
-
       return file;
-    } finally {
-      client.close();
     }
+
+    stdout.writeln(
+      'Resolving model download/cache entry: ${source.displayName}',
+    );
+    final entry = await _downloadManager.ensureModel(
+      source,
+      onProgress: (progress) {
+        final fraction = progress.fraction;
+        if (fraction != null) {
+          stdout.write('\rProgress: ${(fraction * 100).toStringAsFixed(1)}%');
+        } else {
+          final mb = (progress.receivedBytes / 1024 / 1024).toStringAsFixed(1);
+          stdout.write('\rDownloaded: $mb MB');
+        }
+      },
+    );
+    stdout.writeln('\nModel ready: ${entry.filePath}');
+    return File(entry.filePath);
   }
 }

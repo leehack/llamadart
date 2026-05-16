@@ -104,6 +104,10 @@ enum ChatFormat {
   /// prompt-engineered tool calling and multimodal support.
   gemma,
 
+  /// Gemma 4 — `<|turn>/<turn|>` with optional `<|channel>` reasoning blocks
+  /// and `<|tool_call>call:name{args}<tool_call|>` tool calling.
+  gemma4,
+
   /// TranslateGemma format with language-code message content fields.
   translateGemma,
 
@@ -293,6 +297,12 @@ ChatFormat detectChatFormat(String? templateSource) {
   if (templateSource.contains('<start_of_turn>') &&
       !templateSource.contains('<|im_start|>')) {
     return ChatFormat.gemma;
+  }
+
+  // Gemma 4
+  if (templateSource.contains('<|turn>') &&
+      templateSource.contains('<turn|>')) {
+    return ChatFormat.gemma4;
   }
 
   // No recognized pattern

@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:llamadart/llamadart.dart';
+import 'package:llamadart/llamadart.dart' hide ModelDownloadProgress;
 
 import 'coding_agent_config.dart';
 import 'model_source_resolver.dart';

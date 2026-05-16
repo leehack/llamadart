@@ -160,6 +160,15 @@ void main() {
       expect(format, equals(ChatFormat.functionGemma));
     });
 
+    test('detects Gemma 4 format from turn markers', () {
+      const source =
+          '<|turn>user\nhi<turn|>\n'
+          '<|turn>model\n'
+          '<|tool_call>call:get_weather{location:<|"|>Seoul<|"|>}<tool_call|>';
+      final format = detectChatFormat(source);
+      expect(format, equals(ChatFormat.gemma4));
+    });
+
     test('detects Ministral format before Magistral', () {
       const source =
           '[SYSTEM_PROMPT]x[/SYSTEM_PROMPT][TOOL_CALLS]get_weather[ARGS]{}';

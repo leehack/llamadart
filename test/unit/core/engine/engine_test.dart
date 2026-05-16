@@ -12,10 +12,13 @@ class MockLlamaBackend
     this.failModelLoad = false,
     this.failModelLoadFromUrl = false,
     this.failContextCreate = false,
+    this.modelMetadataResponse,
   });
 
   bool _isReady = false;
+  String? lastModelPath;
   String? lastLoraPath;
+  String? lastModelUrl;
   double? lastLoraScale;
   int resolvedGpuLayers = 0;
   int modelLoadCalls = 0;
@@ -31,6 +34,7 @@ class MockLlamaBackend
   final bool failModelLoad;
   final bool failModelLoadFromUrl;
   final bool failContextCreate;
+  final Map<String, String>? modelMetadataResponse;
 
   @override
   bool get isReady => _isReady;
@@ -38,6 +42,7 @@ class MockLlamaBackend
   @override
   Future<int> modelLoad(String path, ModelParams params) async {
     modelLoadCalls += 1;
+    lastModelPath = path;
     if (failModelLoad) {
       throw Exception('model load failed');
     }
@@ -52,8 +57,10 @@ class MockLlamaBackend
     Function(double progress)? onProgress,
   }) async {
     modelLoadFromUrlCalls += 1;
+    lastModelUrl = url;
+    onProgress?.call(0.25);
     if (failModelLoadFromUrl) {
-      throw Exception('url model load failed');
+      throw Exception('url model load failed: $url');
     }
     _isReady = true;
     return 1;
@@ -119,11 +126,12 @@ class MockLlamaBackend
   @override
   Future<Map<String, String>> modelMetadata(int modelHandle) async {
     modelMetadataCalls += 1;
-    return {
-      'llm.context_length': '4096',
-      'tokenizer.chat_template':
-          '{{ bos_token }}{% for message in messages %}{% if message["role"] == "user" %}{{ "user: " + message["content"] }}{% elif message["role"] == "assistant" %}{{ "assistant: " + message["content"] }}{% endif %}{% endfor %}{% if add_generation_prompt %}{{ "assistant: " }}{% endif %}',
-    };
+    return modelMetadataResponse ??
+        {
+          'llm.context_length': '4096',
+          'tokenizer.chat_template':
+              '{{ bos_token }}{% for message in messages %}{% if message["role"] == "user" %}{{ "user: " + message["content"] }}{% elif message["role"] == "assistant" %}{{ "assistant: " + message["content"] }}{% endif %}{% endfor %}{% if add_generation_prompt %}{{ "assistant: " }}{% endif %}',
+        };
   }
 
   @override
@@ -197,6 +205,69 @@ class MockLlamaBackend
   }) async {
     return messages.map((m) => "${m['role']}: ${m['content']}").join('\n');
   }
+}
+
+class MockModelResolver implements ModelResolver {
+  MockModelResolver(this.target);
+
+  final ModelLoadTarget target;
+  ModelSource? lastSource;
+
+  @override
+  Future<ModelLoadTarget> resolve(
+    ModelSource source,
+    ModelResolveRequest request,
+  ) async {
+    lastSource = source;
+    return target;
+  }
+}
+
+class MockModelDownloadManager implements ModelDownloadManager {
+  MockModelDownloadManager(this.entry);
+
+  final ModelCacheEntry entry;
+  ModelSource? lastSource;
+  ModelLoadOptions? lastOptions;
+  int ensureModelCalls = 0;
+
+  @override
+  Future<ModelCacheEntry> ensureModel(
+    ModelSource source, {
+    ModelLoadOptions options = ModelLoadOptions.defaults,
+    ModelDownloadProgressCallback? onProgress,
+  }) async {
+    ensureModelCalls += 1;
+    lastSource = source;
+    lastOptions = options;
+    onProgress?.call(
+      const ModelDownloadProgress(receivedBytes: 1, totalBytes: 2),
+    );
+    return entry;
+  }
+
+  @override
+  Future<void> clear({String? cacheDirectory}) async {}
+
+  @override
+  Future<ModelCacheEntry?> get(
+    String cacheKey, {
+    String? cacheDirectory,
+  }) async => cacheKey == entry.cacheKey ? entry : null;
+
+  @override
+  Future<List<ModelCacheEntry>> list({String? cacheDirectory}) async =>
+      <ModelCacheEntry>[entry];
+
+  @override
+  Future<List<ModelCacheEntry>> prune({
+    Duration? maxAge,
+    int? maxBytes,
+    String? cacheDirectory,
+  }) async => <ModelCacheEntry>[];
+
+  @override
+  Future<void> remove(String cacheKey, {String? cacheDirectory}) async {}
 }
 
 class MockEmbeddingBackend extends MockLlamaBackend
@@ -297,10 +368,103 @@ void main() {
       expect(webEngine.isReady, isTrue);
     });
 
-    test('loadModelFromUrl successful', () async {
+    test(
+      'loadModelSource rejects explicit local paths on URL backends',
+      () async {
+        final webBackend = MockLlamaBackend(urlLoadingSupported: true);
+        final webEngine = LlamaEngine(webBackend);
+
+        await expectLater(
+          () =>
+              webEngine.loadModelSource(ModelSource.path('/models/model.gguf')),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
+      },
+    );
+
+    test(
+      'native loadModelSource applies load options for local path sources',
+      () async {
+        final source = ModelSource.path('/models/model.gguf');
+        final entry = ModelCacheEntry(
+          sourceCanonicalKey: source.metadataSourceKey,
+          cacheKey: source.cacheKey,
+          fileName: source.fileName,
+          filePath: '/models/model.gguf',
+          createdAt: DateTime.utc(2026),
+          updatedAt: DateTime.utc(2026),
+        );
+        final downloadManager = MockModelDownloadManager(entry);
+        final nativeBackend = MockLlamaBackend();
+        final nativeEngine = LlamaEngine(
+          nativeBackend,
+          modelDownloadManager: downloadManager,
+        );
+        final options = ModelLoadOptions(
+          sha256:
+              '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+        );
+
+        await nativeEngine.loadModelSource(source, options: options);
+
+        expect(downloadManager.ensureModelCalls, 1);
+        expect(downloadManager.lastSource?.path, source.path);
+        expect(downloadManager.lastSource?.cacheKey, source.cacheKey);
+        expect(downloadManager.lastOptions, same(options));
+        expect(nativeBackend.lastModelPath, '/models/model.gguf');
+      },
+    );
+
+    test('native loadModelSource rejects local remote-only options', () async {
+      final nativeBackend = MockLlamaBackend();
+      final nativeEngine = LlamaEngine(nativeBackend);
+
+      await expectLater(
+        () => nativeEngine.loadModelSource(
+          ModelSource.path('/models/local-model.gguf'),
+          options: ModelLoadOptions(cachePolicy: ModelCachePolicy.refresh),
+        ),
+        throwsA(isA<LlamaUnsupportedException>()),
+      );
+      expect(nativeBackend.modelLoadCalls, 0);
+    });
+
+    test(
+      'native loadModelSource honors resolver-provided local path',
+      () async {
+        final source = ModelSource.path('/models/original.gguf');
+        final resolvedSource = ModelSource.path('/models/resolved.gguf');
+        final entry = ModelCacheEntry(
+          sourceCanonicalKey: resolvedSource.metadataSourceKey,
+          cacheKey: resolvedSource.cacheKey,
+          fileName: resolvedSource.fileName,
+          filePath: '/models/resolved.gguf',
+          createdAt: DateTime.utc(2026),
+          updatedAt: DateTime.utc(2026),
+        );
+        final resolver = MockModelResolver(
+          const LocalModelFile('/models/resolved.gguf'),
+        );
+        final downloadManager = MockModelDownloadManager(entry);
+        final nativeBackend = MockLlamaBackend();
+        final nativeEngine = LlamaEngine(
+          nativeBackend,
+          modelResolver: resolver,
+          modelDownloadManager: downloadManager,
+        );
+
+        await nativeEngine.loadModelSource(source);
+
+        expect(resolver.lastSource, source);
+        expect(downloadManager.lastSource?.path, '/models/resolved.gguf');
+        expect(nativeBackend.lastModelPath, '/models/resolved.gguf');
+      },
+    );
+
+    test('loadModelFromUrl unsupported on non-URL backend', () async {
       expect(
         () => engine.loadModelFromUrl('http://test.gguf'),
-        throwsUnimplementedError,
+        throwsA(isA<LlamaUnsupportedException>()),
       );
     });
 
@@ -318,6 +482,209 @@ void main() {
         expect(webEngine.isReady, isTrue);
         expect(webEngine.modelHandle, isNotNull);
         expect(webEngine.contextHandle, isNotNull);
+      },
+    );
+
+    test(
+      'loadModelFromUrl redacts completion model metadata for signed URLs',
+      () async {
+        final webBackend = MockLlamaBackend(urlLoadingSupported: true)
+          ..generationText = 'hello';
+        final webEngine = LlamaEngine(webBackend);
+
+        await webEngine.loadModelFromUrl(
+          'https://user:secret@example.com/model.gguf?token=abc123#fragment',
+        );
+        final chunks = await webEngine.create(const [
+          LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
+        ]).toList();
+
+        expect(chunks, isNotEmpty);
+        for (final chunk in chunks) {
+          expect(chunk.model, 'https://example.com/model.gguf');
+          expect(chunk.model, isNot(contains('secret')));
+          expect(chunk.model, isNot(contains('token=abc123')));
+        }
+      },
+    );
+
+    test('loadModelSource forwards progress for remote URL targets', () async {
+      final webBackend = MockLlamaBackend(urlLoadingSupported: true);
+      final webEngine = LlamaEngine(webBackend);
+      final progressEvents = <ModelDownloadProgress>[];
+
+      await webEngine.loadModelSource(
+        ModelSource.url(Uri.parse('https://example.com/model.gguf')),
+        onProgress: progressEvents.add,
+      );
+
+      expect(webBackend.lastModelUrl, 'https://example.com/model.gguf');
+      expect(progressEvents, hasLength(1));
+      expect(progressEvents.single.receivedBytes, 0);
+      expect(progressEvents.single.totalBytes, isNull);
+      expect(progressEvents.single.fraction, 0.25);
+    });
+
+    test(
+      'loadModelSource downloads remote sources before native model load',
+      () async {
+        final source = ModelSource.url(
+          Uri.parse('https://example.com/model.gguf'),
+        );
+        final entry = ModelCacheEntry(
+          sourceCanonicalKey: source.metadataSourceKey,
+          cacheKey: source.cacheKey,
+          fileName: source.fileName,
+          filePath: '/cache/model.gguf',
+          createdAt: DateTime.utc(2026),
+          updatedAt: DateTime.utc(2026),
+          bytes: 12,
+        );
+        final downloadManager = MockModelDownloadManager(entry);
+        final nativeBackend = MockLlamaBackend();
+        final nativeEngine = LlamaEngine(
+          nativeBackend,
+          modelDownloadManager: downloadManager,
+        );
+        final options = ModelLoadOptions(
+          cachePolicy: ModelCachePolicy.refresh,
+          bearerToken: 'secret-token',
+        );
+        final progressEvents = <ModelDownloadProgress>[];
+
+        await nativeEngine.loadModelSource(
+          source,
+          options: options,
+          onProgress: progressEvents.add,
+        );
+
+        expect(downloadManager.ensureModelCalls, 1);
+        expect(downloadManager.lastSource?.resolvedUri, source.resolvedUri);
+        expect(downloadManager.lastSource?.fileName, source.fileName);
+        expect(downloadManager.lastOptions, same(options));
+        expect(nativeBackend.modelLoadCalls, 1);
+        expect(nativeBackend.modelLoadFromUrlCalls, 0);
+        expect(nativeBackend.lastModelPath, '/cache/model.gguf');
+        expect(nativeEngine.isReady, isTrue);
+        expect(progressEvents.single.fraction, 0.5);
+      },
+    );
+
+    test(
+      'native loadModelSource downloads resolved remote URL target',
+      () async {
+        final source = ModelSource.huggingFace(
+          repoId: 'owner/repo',
+          filePath: 'models/original.gguf',
+          fileName: 'resolved.gguf',
+        );
+        final resolvedUrl = Uri.parse('https://cdn.example.com/resolved.gguf');
+        final entry = ModelCacheEntry(
+          sourceCanonicalKey: source.metadataSourceKey,
+          cacheKey: source.cacheKey,
+          fileName: source.fileName,
+          filePath: '/cache/resolved.gguf',
+          createdAt: DateTime.utc(2026),
+          updatedAt: DateTime.utc(2026),
+        );
+        final resolver = MockModelResolver(RemoteModelUrl(resolvedUrl));
+        final downloadManager = MockModelDownloadManager(entry);
+        final nativeBackend = MockLlamaBackend();
+        final nativeEngine = LlamaEngine(
+          nativeBackend,
+          modelResolver: resolver,
+          modelDownloadManager: downloadManager,
+        );
+
+        await nativeEngine.loadModelSource(source);
+
+        expect(resolver.lastSource, source);
+        expect(downloadManager.lastSource?.resolvedUri, resolvedUrl);
+        expect(downloadManager.lastSource?.fileName, 'resolved.gguf');
+        expect(downloadManager.lastSource?.cacheKey, source.cacheKey);
+        expect(
+          downloadManager.lastSource?.cacheDirectoryName,
+          source.cacheDirectoryName,
+        );
+        expect(nativeBackend.lastModelPath, '/cache/resolved.gguf');
+      },
+    );
+
+    test(
+      'loadModelSource rejects unsupported cancellation on URL backends',
+      () async {
+        final webBackend = MockLlamaBackend(urlLoadingSupported: true);
+        final webEngine = LlamaEngine(webBackend);
+
+        await expectLater(
+          () => webEngine.loadModelSource(
+            ModelSource.url(Uri.parse('https://example.com/model.gguf')),
+            options: ModelLoadOptions(cancelToken: ModelDownloadCancelToken()),
+          ),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
+        expect(webBackend.modelLoadFromUrlCalls, 0);
+      },
+    );
+
+    test(
+      'loadModelSource rejects unsupported noCache remote URL option',
+      () async {
+        final webBackend = MockLlamaBackend(urlLoadingSupported: true);
+        final webEngine = LlamaEngine(webBackend);
+
+        await expectLater(
+          () => webEngine.loadModelSource(
+            ModelSource.url(Uri.parse('https://example.com/model.gguf')),
+            options: ModelLoadOptions(cachePolicy: ModelCachePolicy.noCache),
+          ),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
+      },
+    );
+
+    test(
+      'loadModelFromUrl redacts credentials from thrown exception messages',
+      () async {
+        final failingBackend = MockLlamaBackend(
+          urlLoadingSupported: true,
+          failModelLoadFromUrl: true,
+        );
+        final failingEngine = LlamaEngine(failingBackend);
+
+        Object? thrown;
+        try {
+          await failingEngine.loadModelFromUrl(
+            'https://user:secret@example.com/model.gguf?token=abc123#fragment',
+          );
+        } catch (e) {
+          thrown = e;
+        }
+
+        expect(thrown, isA<LlamaModelException>());
+        expect(thrown.toString(), isNot(contains('secret')));
+        expect(thrown.toString(), isNot(contains('token=abc123')));
+        expect(thrown.toString(), contains('https://example.com/model.gguf'));
+        final exception = thrown as LlamaModelException;
+        expect(
+          exception.details,
+          isA<Map<String, Object?>>()
+              .having(
+                (details) => details['type'].toString(),
+                'type',
+                contains('Exception'),
+              )
+              .having(
+                (details) => details['message'].toString(),
+                'message',
+                contains('url model load failed'),
+              )
+              .having(
+                (details) => details['message'].toString(),
+                'redacted message',
+                isNot(anyOf(contains('secret'), contains('token=abc123'))),
+              ),
+        );
       },
     );
 
@@ -845,6 +1212,43 @@ void main() {
         expect(chunks.last.choices.first.finishReason, equals('stop'));
       },
     );
+
+    test('create streams Gemma 4 thought blocks as thinking deltas', () async {
+      final gemmaBackend = MockLlamaBackend(
+        modelMetadataResponse: const {
+          'llm.context_length': '4096',
+          'tokenizer.chat_template':
+              '<|turn>user\n{{ messages[0]["content"] }}<turn|>{% if add_generation_prompt %}<|turn>model\n{% endif %}',
+        },
+      );
+      final gemmaEngine = LlamaEngine(gemmaBackend);
+      gemmaBackend.generationChunks = const [
+        '<|chan',
+        'nel>thought\npl',
+        'an first<chan',
+        'nel|>Final answer.',
+      ];
+
+      await gemmaEngine.loadModel('gemma4-test.gguf');
+
+      final chunks = await gemmaEngine.create(const [
+        LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
+      ]).toList();
+
+      final streamedContent = chunks
+          .map((chunk) => chunk.choices.first.delta.content)
+          .whereType<String>()
+          .join();
+      final streamedThinking = chunks
+          .map((chunk) => chunk.choices.first.delta.thinking)
+          .whereType<String>()
+          .join();
+
+      expect(streamedThinking, equals('plan first'));
+      expect(streamedContent, equals('Final answer.'));
+      expect(streamedContent, isNot(contains('thought')));
+      expect(chunks.last.choices.first.finishReason, equals('stop'));
+    });
 
     test('create handles many plain chunks when tools are enabled', () async {
       backend.generationChunks = List<String>.filled(80, 'a');

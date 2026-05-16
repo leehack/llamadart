@@ -14,6 +14,10 @@ import '../llama_logger.dart';
 import '../models/inference/model_params.dart';
 import '../models/inference/generation_params.dart';
 import '../models/inference/tool_choice.dart';
+import '../models/model_load_options.dart';
+import '../models/model_resolver.dart';
+import '../models/model_source.dart';
+import '../models/download/model_download_manager.dart';
 import '../models/tools/tool_definition.dart';
 
 enum _ToolStreamingMode { undecided, raw, parsed }
@@ -65,6 +69,12 @@ class _ThinkingSplitResult {
 class LlamaEngine {
   /// The backend implementation used for inference.
   final LlamaBackend backend;
+
+  /// Resolves source-aware model loading requests.
+  final ModelResolver modelResolver;
+
+  /// Downloads and caches remote model sources for native/file-backed backends.
+  final ModelDownloadManager modelDownloadManager;
   int? _modelHandle;
   int? _contextHandle;
   int? _mmContextHandle;
@@ -88,7 +98,13 @@ class LlamaEngine {
   }
 
   /// Creates a new [LlamaEngine] instance with the given [backend].
-  LlamaEngine(this.backend);
+  LlamaEngine(
+    this.backend, {
+    ModelResolver? modelResolver,
+    ModelDownloadManager? modelDownloadManager,
+  }) : modelResolver = modelResolver ?? const DefaultModelResolver(),
+       modelDownloadManager =
+           modelDownloadManager ?? DefaultModelDownloadManager();
 
   /// Sets both Dart and native log levels to [level].
   ///
@@ -159,7 +175,67 @@ class LlamaEngine {
         e,
         stackTrace,
       );
-      throw LlamaModelException("Failed to load model from $path", e);
+      throw LlamaModelException('Failed to load model from $path', e);
+    }
+  }
+
+  /// Loads a model from a structured [source].
+  ///
+  /// Local path sources are dispatched through [loadModel]. Remote URL targets
+  /// use the native download/cache manager on file-backed backends, then load
+  /// the cached local file. URL-capable web backends keep using
+  /// [loadModelFromUrl] for unauthenticated prefer-cached requests.
+  Future<void> loadModelSource(
+    ModelSource source, {
+    ModelParams modelParams = const ModelParams(),
+    ModelLoadOptions options = ModelLoadOptions.defaults,
+    ModelDownloadProgressCallback? onProgress,
+  }) async {
+    final target = await modelResolver.resolve(
+      source,
+      ModelResolveRequest(options: options, onProgress: onProgress),
+    );
+
+    switch (target) {
+      case LocalModelFile(:final path):
+        if (backend.supportsUrlLoading) {
+          throw LlamaUnsupportedException(
+            'Explicit local model paths are not supported by URL-loading backends.',
+          );
+        }
+        final localSource = ModelSource.path(path);
+        final entry = await modelDownloadManager.ensureModel(
+          localSource,
+          options: options,
+          onProgress: onProgress,
+        );
+        return loadModel(entry.filePath, modelParams: modelParams);
+      case RemoteModelUrl(:final url, :final useBrowserCache):
+        if (!useBrowserCache) {
+          throw LlamaUnsupportedException(
+            'Remote model loading without browser/backend cache is not supported yet.',
+          );
+        }
+        if (!backend.supportsUrlLoading) {
+          final downloadSource = source.isRemote
+              ? source.withResolvedUri(url)
+              : ModelSource.url(url, fileName: source.fileName);
+          final entry = await modelDownloadManager.ensureModel(
+            downloadSource,
+            options: options,
+            onProgress: onProgress,
+          );
+          return loadModel(entry.filePath, modelParams: modelParams);
+        }
+        _rejectUnsupportedUrlBackendOptions(options);
+        return loadModelFromUrl(
+          url.toString(),
+          modelParams: modelParams,
+          onProgress: onProgress == null
+              ? null
+              : (progress) =>
+                    onProgress(ModelDownloadProgress.fraction(progress)),
+        );
     }
   }
 
@@ -173,18 +249,19 @@ class LlamaEngine {
     Function(double progress)? onProgress,
   }) async {
     final modelName = _displayNameForSource(url);
+    final redactedUrl = _redactedUriForLogs(url);
     LlamaLogger.instance.info('Loading model from URL: $modelName');
 
     if (!backend.supportsUrlLoading) {
-      throw UnimplementedError(
-        "loadModelFromUrl for Native should be handled by the caller or a helper.",
+      throw LlamaUnsupportedException(
+        'loadModelFromUrl requires a backend that supports URL loading.',
       );
     }
 
     try {
       await backend.setLogLevel(_nativeLogLevel);
       _ensureNotReady();
-      _modelPath = url;
+      _modelPath = redactedUrl;
       _cachedModelMetadata = null;
 
       _modelHandle = await backend.modelLoadFromUrl(
@@ -196,17 +273,20 @@ class LlamaEngine {
       _isReady = true;
 
       LlamaLogger.instance.info(
-        'Model $modelName loaded successfully from $url',
+        'Model $modelName loaded successfully from $redactedUrl',
       );
     } catch (e, stackTrace) {
       await _cleanupFailedLoadState();
 
       LlamaLogger.instance.error(
-        'Failed to load model $modelName from URL $url',
-        e,
+        'Failed to load model $modelName from URL $redactedUrl',
+        _redactedErrorDetails(e),
         stackTrace,
       );
-      throw LlamaModelException("Failed to load model from $url", e);
+      throw LlamaModelException(
+        'Failed to load model from $redactedUrl',
+        _redactedErrorDetails(e),
+      );
     }
   }
 
@@ -980,6 +1060,81 @@ class LlamaEngine {
   }
 
   // ============================================================
+  // STATE PERSISTENCE
+  // ============================================================
+
+  /// Whether the active backend reports state save/load support.
+  ///
+  /// Native backends persist to disk. WebGPU backends report support only after
+  /// the active JavaScript bridge exposes the `stateSaveFile` and
+  /// `stateLoadFile` APIs introduced in bridge assets `v0.1.15`; older or
+  /// custom bridge assets report false and calls throw [LlamaUnsupportedException]
+  /// before reaching the bridge.
+  bool get supportsStatePersistence {
+    final candidate = backend;
+    if (candidate is BackendStatePersistenceSupport) {
+      return (candidate as BackendStatePersistenceSupport)
+          .supportsStatePersistence;
+    }
+    return candidate is BackendStatePersistence;
+  }
+
+  /// Persists the KV-cache state of the loaded model to [path] together
+  /// with [tokens] — the token sequence the current state was produced
+  /// from. A later [stateLoadFile] call rebuilds the same in-memory
+  /// state without re-evaluating the prompt, which is the difference
+  /// between a 30-second resume on phone CPUs and an instant one.
+  ///
+  /// File format is whatever llama.cpp emits — opaque, not portable
+  /// across builds, and tied to the same model used at save time.
+  ///
+  /// Returns true on success.
+  Future<bool> stateSaveFile(String path, {required List<int> tokens}) {
+    _ensureReady();
+    final persistence = _resolveStatePersistence();
+    return persistence.stateSaveFile(_contextHandle!, path, tokens);
+  }
+
+  /// Restores a previously saved state from [path]. [tokenCapacity]
+  /// caps how many tokens to read back; passing the loaded model's
+  /// `n_ctx` is a safe default.
+  ///
+  /// Returns the token sequence the saved state was originally produced
+  /// from. This API restores the native KV cache only — callers that use
+  /// [ChatSession] must persist and reconstruct the chat message history
+  /// separately (e.g. on disk), since [ChatSession.addMessage] takes
+  /// [LlamaChatMessage] objects, not raw token ids. The returned token
+  /// list is exposed mainly for diagnostics and for callers driving the
+  /// engine at the raw prompt level.
+  Future<StateLoadResult> stateLoadFile(
+    String path, {
+    required int tokenCapacity,
+  }) {
+    _ensureReady();
+    final persistence = _resolveStatePersistence();
+    return persistence.stateLoadFile(_contextHandle!, path, tokenCapacity);
+  }
+
+  BackendStatePersistence _resolveStatePersistence() {
+    final candidate = backend;
+    if (candidate is BackendStatePersistenceSupport &&
+        !(candidate as BackendStatePersistenceSupport)
+            .supportsStatePersistence) {
+      throw LlamaUnsupportedException(
+        'State persistence is not supported by the active backend. '
+        'For WebGPU, use bridge assets that expose stateSaveFile/stateLoadFile '
+        '(v0.1.15 or newer).',
+      );
+    }
+    if (candidate is BackendStatePersistence) {
+      return candidate as BackendStatePersistence;
+    }
+    throw LlamaUnsupportedException(
+      'State persistence is not supported by the active backend.',
+    );
+  }
+
+  // ============================================================
   // MODEL INTROSPECTION
   // ============================================================
 
@@ -1156,6 +1311,44 @@ class LlamaEngine {
     _isReady = false;
   }
 
+  void _rejectUnsupportedUrlBackendOptions(ModelLoadOptions options) {
+    if (options.cachePolicy != ModelCachePolicy.preferCached) {
+      throw LlamaUnsupportedException(
+        '${options.cachePolicy.name} model loading requires the native download/cache manager.',
+      );
+    }
+    if (options.bearerToken != null || options.headers.isNotEmpty) {
+      throw LlamaUnsupportedException(
+        'Authenticated model URL loading requires the native download/cache manager.',
+      );
+    }
+    if (options.cancelToken != null) {
+      throw LlamaUnsupportedException(
+        'Cancellation tokens require the native download/cache manager.',
+      );
+    }
+    if (options.sha256 != null) {
+      throw LlamaUnsupportedException(
+        'Checksum verification requires the native download/cache manager.',
+      );
+    }
+    if (options.cacheDirectory != null) {
+      throw LlamaUnsupportedException(
+        'cacheDirectory is not supported by URL-loading backends.',
+      );
+    }
+    if (!options.resume) {
+      throw LlamaUnsupportedException(
+        'Disabling resume is not supported by URL-loading backends.',
+      );
+    }
+    if (options.maxRetries != ModelLoadOptions.defaults.maxRetries) {
+      throw LlamaUnsupportedException(
+        'Custom maxRetries is not supported by URL-loading backends.',
+      );
+    }
+  }
+
   String _displayNameForSource(String source) {
     final parsedUri = Uri.tryParse(source);
     if (parsedUri != null &&
@@ -1171,6 +1364,30 @@ class LlamaEngine {
     final segments = normalizedSource.split('/');
     final lastSegment = segments.isNotEmpty ? segments.last : source;
     return lastSegment.isNotEmpty ? lastSegment : source;
+  }
+
+  String _redactedUriForLogs(String source) {
+    final uri = Uri.tryParse(source);
+    if (uri == null || !uri.hasScheme) {
+      return _displayNameForSource(source);
+    }
+    return Uri(
+      scheme: uri.scheme,
+      host: uri.hasAuthority ? uri.host : null,
+      port: uri.hasPort ? uri.port : null,
+      path: uri.path,
+    ).toString();
+  }
+
+  Object _redactedErrorDetails(Object error) {
+    final message = error.toString().replaceAllMapped(
+      RegExp(r'https?://[^\s)]+'),
+      (match) => _redactedUriForLogs(match.group(0)!),
+    );
+    return <String, Object?>{
+      'type': error.runtimeType.toString(),
+      'message': message,
+    };
   }
 
   int? _firstNonWhitespaceIndex(String value) {

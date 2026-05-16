@@ -1,5 +1,168 @@
 ## Unreleased
 
+* **WebGPU bridge assets**:
+  * Updated the default WebGPU bridge asset pin to
+    `leehack/llama-web-bridge-assets@v0.1.16` (llama.cpp `b9165`),
+    picking up the published JS bridge build, TypeScript declaration asset,
+    and refreshed bridge docs.
+* **Docs**:
+  * Added WebGPU readiness guidance covering browser capability checks,
+    cross-origin isolation, bridge asset/version diagnostics, fallback behavior,
+    model/configuration pressure, and the Flutter Web real-model smoke path.
+* **Model download UX**:
+  * Added `ModelDownloadController`, a dependency-free helper that turns
+    `ModelDownloadManager` cache/download work into app-facing lifecycle states
+    for resolving, cache checks, downloads, verification, ready, failed,
+    cancelled, and retry flows.
+  * Wired the runnable chat app example through a `ModelDownloadManager` adapter
+    so its model-management UI demonstrates the controller while preserving the
+    example's multi-asset and web-cache service behavior.
+
+## 0.6.13
+
+* **Model source download/cache manager**:
+  * Added `ModelSource` for local paths, HTTP(S) URLs, and Hugging Face
+    `hf://owner/repo/path/to/model.gguf` references, including deterministic
+    cache keys and redacted metadata/log identities for signed URLs.
+  * Added `ModelLoadOptions`, `ModelCachePolicy`, resolver targets, and
+    download/cache metadata/progress value models for package-managed model
+    download and cache management.
+  * Added native/file-backed `DefaultModelDownloadManager` support for streaming
+    HTTP downloads, `.part` files, atomic promotion, persisted metadata,
+    authenticated bearer/custom headers, cancellation, retry, Range resume,
+    cache hit/refresh/cache-only/no-cache policies, SHA-256 verification,
+    cache listing, removal, clearing, and age/size pruning.
+  * Improved Hugging Face source ergonomics: `hf://` references now accept
+    `?revision=...` for branch/ref names containing slashes, and docs clarify
+    current single-file behavior, private/gated bearer-token usage, separate
+    `mmproj` asset handling, sharded-GGUF limitations, and redaction guarantees.
+  * Serialized concurrent stable-cache downloads for the same remote cache entry
+    across manager instances so duplicate callers do not race on shared `.part`
+    files or metadata, while distinct cache entries can still download in
+    parallel and waiting-caller cancellation does not cancel the active download.
+  * Hardened versioned cache metadata recovery: completed files can rebuild
+    missing, malformed, or unsupported-schema sidecars without network access,
+    while byte-count and stored/caller SHA-256 mismatches are treated as cache
+    misses and safely re-downloaded.
+  * Clarified `ModelSource.path(...)` option semantics: local paths now reject
+    remote/download-only options (non-default cache policies, cache directories,
+    authenticated headers, resume, and retry overrides) while continuing to
+    support cancellation and optional local SHA-256 verification.
+  * Added `LlamaEngine.loadModelSource(...)` to route local sources through the
+    existing native local loader, remote sources through the native download
+    cache before local loading, and simple remote sources through URL-capable web
+    backends when available.
+  * Migrated server/testing helpers away from ad-hoc model downloads so examples
+    dogfood the package-managed cache manager.
+* **State persistence API**:
+  * Added `LlamaEngine.supportsStatePersistence`,
+    `LlamaEngine.stateSaveFile(...)`, and
+    `LlamaEngine.stateLoadFile(...)` so callers can persist and restore
+    llama.cpp KV-cache state for fast raw-prompt resume/fork workflows.
+  * Added `BackendStatePersistence`, `BackendStatePersistenceSupport`, and
+    `StateLoadResult` for custom backend implementers and diagnostics.
+  * Documented that state files are opaque llama.cpp artifacts tied to the same
+    model and runtime/build, that native paths use the app filesystem while web
+    paths use the bridge WASMFS virtual filesystem, and that `ChatSession`
+    message history must be persisted separately.
+  * Added WebGPU bridge state persistence wiring for bridge assets `v0.1.15+`,
+    including Dart JS interop, backend forwarding, and browser integration test
+    coverage.
+* **Compatibility note**: no public API breaking changes in `0.6.13`;
+  existing `loadModel(...)` callers are unchanged. Code that probes state
+  persistence support should prefer `LlamaEngine.supportsStatePersistence` over
+  structural backend type checks so web/router backends can report
+  bridge-version-dependent support accurately.
+
+## 0.6.12
+
+* **Native runtime sync**:
+  * Updated native hook pinning to `leehack/llamadart-native@b9016`,
+    picking up the CUDA 12.8 Blackwell-capable native bundles.
+  * Updated default web bridge asset pinning to
+    `leehack/llama-web-bridge-assets@v0.1.14` (llama.cpp `b9016`) so
+    native and web runtimes track the same upstream revision.
+  * Picked up the bridge-side Qwen UTF-8 streaming stabilization and
+    multimodal fallback narrowing, while preserving control-token output for
+    parser consumers.
+  * Picked up the bridge-side BERT embedding thread-pool sizing fix so
+    automatic thread selection does not exceed the compiled WebAssembly
+    pthread pool.
+* **Load-time tuning knobs**:
+  * Added `ModelParams.useMmap` (default `true`) and
+    `ModelParams.useMlock` (default `false`), wired to
+    `llama_model_params.use_mmap` / `use_mlock`. Lets callers turn off mmap
+    for platforms where memory-mapped weights hurt throughput, or pin
+    weights in RAM to avoid first-token paging spikes.
+  * Added `ModelParams.flashAttention` with the `FlashAttention.{auto,
+    enabled, disabled}` enum, wired to
+    `llama_context_params.flash_attn_type`. Explicit settings win over the
+    existing automatic Android/Vulkan heuristics; `auto` preserves prior
+    behavior.
+  * Added `ModelParams.cacheTypeK` and `ModelParams.cacheTypeV` with the
+    `KvCacheType.{f16, q8_0, q4_0}` enum, wired to
+    `llama_context_params.type_k` / `type_v`. Enables KV-cache
+    quantization (Q8_0 ≈ halves KV memory; Q4_0 ≈ quarters it). When the
+    user requests a non-F16 KV type with `flashAttention: auto`, the
+    service auto-promotes flash attention to enabled — llama.cpp requires
+    it for KV quantization.
+  * Added `ModelParams.kvUnified` (nullable) for explicit override of
+    `llama_context_params.kv_unified`. `null` keeps the existing
+    auto-enable-when-multi-sequence behavior.
+  * Added `ModelParams.ropeFrequencyBase` and
+    `ModelParams.ropeFrequencyScale` (both nullable) for
+    context-extension overrides on `llama_context_params.rope_freq_base` /
+    `rope_freq_scale`. `null` keeps the model's trained values.
+  * Forwarded native-compatible `ModelParams` load tuning knobs through the
+    WebGPU bridge path, including `maxParallelSequences`, flash attention,
+    KV-cache type, KV-unified, RoPE, split-mode, and main-GPU options.
+  * Matched native batch defaults on the WebGPU path so unset `batchSize` /
+    `microBatchSize` cascade to `n_batch = n_ctx` and `n_ubatch = n_batch`,
+    avoiding first-embedding aborts for BERT-class/non-causal encoder models
+    while preserving explicit caller values and Qwen3.5 web tuning.
+* **GPU device selection API**:
+  * Added `ModelParams.mainGpu` and wired it to llama.cpp
+    `llama_model_params.main_gpu`.
+  * Added `ModelParams.splitMode` and wired it to llama.cpp
+    `llama_model_params.split_mode`, enabling explicit single-GPU selection
+    with `ModelSplitMode.none`.
+* **Windows split-bundle loader fix**:
+  * Resolved ggml backend registry/device APIs from the loaded ggml runtime DLL
+    when the generated default FFI asset cannot see those symbols, restoring
+    explicit Vulkan device selection in Windows split bundles.
+* **Native packaging size fix**:
+  * Filtered backend-owned runtime dependencies during native asset bundling so
+    CUDA runtime DLLs and OpenBLAS runtime libraries are emitted only when their
+    owning backend module is selected.
+  * Kept unknown non-core runtime libraries bundled for compatibility with
+    future native bundle layouts.
+* **Compatibility note**: no public API breaking changes in `0.6.12`.
+
+## 0.6.11
+
+* **Native runtime syncs**:
+  * Updated native hook pinning and regenerated bindings through `leehack/llamadart-native@b8955`.
+* **Gemma 4 streaming fix**:
+  * Parsed streamed `<|channel>thought ... <channel|>` blocks into thinking deltas instead of leaking Gemma 4 thought markers into content output.
+  * Added engine coverage for Gemma 4 thought-channel chunks split across native stream boundaries.
+* **Release stability**:
+  * Tracked the chat app lockfile so generated Flutter plugin metadata stays stable in CI and release validation.
+* **Compatibility note**: no public API breaking changes in `0.6.11`.
+
+## 0.6.10
+
+* **Native runtime syncs**:
+  * Updated native hook pinning and regenerated bindings through `leehack/llamadart-native@b8638`.
+* **Multimodal context-safety hardening**:
+  * Converted native multimodal prompt-evaluation overflow paths into Dart exceptions instead of allowing downstream sampling asserts.
+  * Downscaled staged chat-app image picks to a `384px` max edge across Android, iOS, macOS, and Web to reduce multimodal context pressure.
+  * Added a local-only macOS Qwen3.5 multimodal repro harness plus CI-safe provider coverage for the new overflow guidance.
+* **Gemma 4 template support and multimodal capability gating**:
+  * Added built-in Gemma 4 template detection, rendering, and parsing support, including thinking and tool-call handling.
+  * Added runtime projector capability checks so multimodal flows and the chat app gate image/audio input against `supportsVision` / `supportsAudio` instead of model-family assumptions.
+  * Documented current Gemma 4 projector behavior in the docs site and chat app guidance.
+* **Compatibility note**: no public API breaking changes in `0.6.10`.
+
 ## 0.6.9
 
 * **iOS deployment target alignment**:

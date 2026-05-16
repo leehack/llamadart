@@ -69,11 +69,22 @@ void main() {
       expect(descriptor.backend, 'opencl');
     });
 
-    test('does not classify cublas runtime as a backend module', () {
-      final descriptor = describeNativeLibrary('/tmp/cublas64_12.dll');
+    test('does not classify cuda runtimes as backend modules', () {
+      final descriptors = [
+        describeNativeLibrary('/tmp/cudart64_12.dll'),
+        describeNativeLibrary('/tmp/cublas64_12.dll'),
+        describeNativeLibrary('/tmp/cublaslt64_12.dll'),
+      ];
 
-      expect(descriptor.canonicalName, 'cublas64_12');
-      expect(descriptor.backend, isNull);
+      expect(descriptors.map((descriptor) => descriptor.canonicalName), [
+        'cudart64_12',
+        'cublas64_12',
+        'cublaslt64_12',
+      ]);
+      expect(
+        descriptors.map((descriptor) => descriptor.backend),
+        everyElement(isNull),
+      );
     });
 
     test('normalizes Linux SONAME suffix for core libraries', () {
@@ -187,6 +198,130 @@ void main() {
       expect(selectedNames, contains('ggml-vulkan'));
       expect(selectedNames, isNot(contains('ggml-opencl')));
       expect(warnings, isNotEmpty);
+    });
+
+    test(
+      'filters backend runtime dependencies when backend is not selected',
+      () {
+        final windowsSpec = resolveNativeBundleSpec(
+          os: OS.windows,
+          arch: Architecture.x64,
+          isIosSimulator: false,
+        )!;
+        final windowsLibraries = [
+          describeNativeLibrary('/tmp/llamadart-windows-x64.dll'),
+          describeNativeLibrary('/tmp/llama-windows-x64.dll'),
+          describeNativeLibrary('/tmp/ggml-windows-x64.dll'),
+          describeNativeLibrary('/tmp/ggml-base-windows-x64.dll'),
+          describeNativeLibrary('/tmp/ggml-cpu-windows-x64.dll'),
+          describeNativeLibrary('/tmp/ggml-vulkan-windows-x64.dll'),
+          describeNativeLibrary('/tmp/ggml-cuda-windows-x64.dll'),
+          describeNativeLibrary('/tmp/ggml-blas-windows-x64.dll'),
+          describeNativeLibrary('/tmp/cudart64_12.dll'),
+          describeNativeLibrary('/tmp/cublas64_12.dll'),
+          describeNativeLibrary('/tmp/cublaslt64_12.dll'),
+          describeNativeLibrary('/tmp/libopenblas.so.0'),
+          describeNativeLibrary('/tmp/custom-runtime.dll'),
+        ];
+
+        final selected = selectLibrariesForBundling(
+          spec: windowsSpec,
+          libraries: windowsLibraries,
+          rawUserConfig: {
+            'platforms': {
+              'windows-x64': ['vulkan', 'cpu'],
+            },
+          },
+          warn: (_) {},
+        );
+
+        final selectedNames = selected
+            .map((item) => item.canonicalName)
+            .toSet();
+        expect(selectedNames, contains('ggml-cpu'));
+        expect(selectedNames, contains('ggml-vulkan'));
+        expect(selectedNames, contains('custom-runtime'));
+        expect(selectedNames, isNot(contains('ggml-cuda')));
+        expect(selectedNames, isNot(contains('cudart64_12')));
+        expect(selectedNames, isNot(contains('cublas64_12')));
+        expect(selectedNames, isNot(contains('cublaslt64_12')));
+        expect(selectedNames, isNot(contains('ggml-blas')));
+        expect(selectedNames, isNot(contains('openblas')));
+      },
+    );
+
+    test('keeps cuda runtime dependencies when cuda is selected', () {
+      final windowsSpec = resolveNativeBundleSpec(
+        os: OS.windows,
+        arch: Architecture.x64,
+        isIosSimulator: false,
+      )!;
+      final windowsLibraries = [
+        describeNativeLibrary('/tmp/llamadart-windows-x64.dll'),
+        describeNativeLibrary('/tmp/llama-windows-x64.dll'),
+        describeNativeLibrary('/tmp/ggml-windows-x64.dll'),
+        describeNativeLibrary('/tmp/ggml-base-windows-x64.dll'),
+        describeNativeLibrary('/tmp/ggml-cpu-windows-x64.dll'),
+        describeNativeLibrary('/tmp/ggml-vulkan-windows-x64.dll'),
+        describeNativeLibrary('/tmp/ggml-cuda-windows-x64.dll'),
+        describeNativeLibrary('/tmp/cudart64_12.dll'),
+        describeNativeLibrary('/tmp/cublas64_12.dll'),
+        describeNativeLibrary('/tmp/cublaslt64_12.dll'),
+      ];
+
+      final selected = selectLibrariesForBundling(
+        spec: windowsSpec,
+        libraries: windowsLibraries,
+        rawUserConfig: {
+          'platforms': {
+            'windows-x64': ['cuda'],
+          },
+        },
+        warn: (_) {},
+      );
+
+      final selectedNames = selected.map((item) => item.canonicalName).toSet();
+      expect(selectedNames, contains('ggml-cpu'));
+      expect(selectedNames, contains('ggml-cuda'));
+      expect(selectedNames, contains('cudart64_12'));
+      expect(selectedNames, contains('cublas64_12'));
+      expect(selectedNames, contains('cublaslt64_12'));
+      expect(selectedNames, isNot(contains('ggml-vulkan')));
+    });
+
+    test('keeps openblas runtime dependencies when blas is selected', () {
+      final windowsSpec = resolveNativeBundleSpec(
+        os: OS.windows,
+        arch: Architecture.x64,
+        isIosSimulator: false,
+      )!;
+      final windowsLibraries = [
+        describeNativeLibrary('/tmp/llamadart-windows-x64.dll'),
+        describeNativeLibrary('/tmp/llama-windows-x64.dll'),
+        describeNativeLibrary('/tmp/ggml-windows-x64.dll'),
+        describeNativeLibrary('/tmp/ggml-base-windows-x64.dll'),
+        describeNativeLibrary('/tmp/ggml-cpu-windows-x64.dll'),
+        describeNativeLibrary('/tmp/ggml-vulkan-windows-x64.dll'),
+        describeNativeLibrary('/tmp/ggml-blas-windows-x64.dll'),
+        describeNativeLibrary('/tmp/libopenblas.so.0'),
+      ];
+
+      final selected = selectLibrariesForBundling(
+        spec: windowsSpec,
+        libraries: windowsLibraries,
+        rawUserConfig: {
+          'platforms': {
+            'windows-x64': ['blas'],
+          },
+        },
+        warn: (_) {},
+      );
+
+      final selectedNames = selected.map((item) => item.canonicalName).toSet();
+      expect(selectedNames, contains('ggml-cpu'));
+      expect(selectedNames, contains('ggml-blas'));
+      expect(selectedNames, contains('openblas'));
+      expect(selectedNames, isNot(contains('ggml-vulkan')));
     });
 
     test('apple targets ignore backend config and include all libraries', () {

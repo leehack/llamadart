@@ -23,6 +23,7 @@ import 'handlers/function_gemma_handler.dart';
 import 'handlers/functionary_v31_llama31_handler.dart';
 import 'handlers/functionary_v32_handler.dart';
 import 'handlers/gemma_handler.dart';
+import 'handlers/gemma4_handler.dart';
 import 'handlers/generic_handler.dart';
 import 'handlers/glm45_handler.dart';
 import 'handlers/gpt_oss_handler.dart';
@@ -541,6 +542,8 @@ class ChatTemplateEngine {
         return FunctionGemmaHandler();
       case ChatFormat.gemma:
         return GemmaHandler();
+      case ChatFormat.gemma4:
+        return Gemma4Handler();
       case ChatFormat.commandR7B:
         return CommandR7BHandler();
       case ChatFormat.granite:

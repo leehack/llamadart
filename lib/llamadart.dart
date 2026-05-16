@@ -45,12 +45,21 @@ export 'src/backends/backend.dart'
         BackendPerfContextData,
         BackendPerformanceDiagnostics,
         BackendEmbeddings,
-        BackendBatchEmbeddings;
+        BackendBatchEmbeddings,
+        BackendStatePersistence,
+        BackendStatePersistenceSupport,
+        StateLoadResult;
 
 // Models - Inference
 export 'src/core/models/inference/model_params.dart';
 export 'src/core/models/inference/generation_params.dart';
 export 'src/core/models/inference/tool_choice.dart';
+
+// Models - Sources, resolution, and downloads
+export 'src/core/models/model_source.dart';
+export 'src/core/models/model_resolver.dart';
+export 'src/core/models/model_load_options.dart';
+export 'src/core/models/download/model_download_manager.dart';
 
 // Models - Chat
 export 'src/core/models/chat/chat_message.dart';
@@ -69,6 +78,8 @@ export 'src/core/models/tools/tool_params.dart';
 export 'src/core/llama_logger.dart';
 export 'src/core/models/config/log_level.dart';
 export 'src/core/models/config/gpu_backend.dart';
+export 'src/core/models/config/flash_attention.dart';
+export 'src/core/models/config/kv_cache_type.dart';
 export 'src/core/models/config/lora_config.dart';
 
 // Utils

@@ -83,6 +83,8 @@ class TemplateCaps {
     // Thinking: template uses thinking/reasoning tags
     final supportsThinking =
         src.contains('<think>') ||
+        src.contains('<|think|>') ||
+        src.contains('<|channel>thought') ||
         src.contains('thinking') ||
         src.contains('<|START_THINKING|>') ||
         src.contains('[THINK]') ||

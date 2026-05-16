@@ -356,6 +356,27 @@ void main() {
       expect(engine.lastTemplateKwargs?['reasoning_budget'], 256);
     });
 
+    test(
+      'shows multimodal context overflow guidance on prompt eval failure',
+      () async {
+        final engine = _MultimodalPromptEvalFailureEngine();
+        final customProvider = ChatProvider(
+          chatService: MockChatService(engine: engine),
+          settingsService: mockSettingsService,
+          initialSettings: const ChatSettings(modelPath: 'test_model.gguf'),
+        );
+
+        await customProvider.loadModel();
+        await customProvider.sendMessage('hi');
+
+        final infoMessage = customProvider.messages.where((m) => m.isInfo).last;
+        expect(
+          infoMessage.text,
+          contains('exceeded the active context window'),
+        );
+      },
+    );
+
     test('updateSettings', () {
       provider.updateTemperature(0.5);
       expect(provider.settings.temperature, 0.5);
@@ -779,6 +800,27 @@ class _ThinkingControlCaptureEngine extends MockLlamaEngine {
           delta: LlamaCompletionChunkDelta(content: 'ok'),
         ),
       ],
+    );
+  }
+}
+
+class _MultimodalPromptEvalFailureEngine extends MockLlamaEngine {
+  @override
+  Stream<LlamaCompletionChunk> create(
+    List<LlamaChatMessage> messages, {
+    GenerationParams? params,
+    List<ToolDefinition>? tools,
+    ToolChoice? toolChoice,
+    bool parallelToolCalls = false,
+    bool enableThinking = true,
+    String? sourceLangCode,
+    String? targetLangCode,
+    Map<String, dynamic>? chatTemplateKwargs,
+    DateTime? templateNow,
+  }) {
+    throw Exception(
+      'Multimodal prompt evaluation failed: 1. '
+      'The active context window may be too small for this image and conversation history.',
     );
   }
 }

@@ -1,0 +1,5 @@
+tags:
+  local-only:
+    skip: "Runs only on local machines. Use: flutter test --run-skipped -t local-only integration_test/model_cache_mmproj_e2e_test.dart -d <device>"
+  e2e:
+    timeout: 30m

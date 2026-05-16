@@ -212,6 +212,8 @@ class JinjaAnalyzer {
     for (final node in _findAll<StringLiteral>(template)) {
       final value = node.value;
       if (value.contains('<think>') ||
+          value.contains('<|think|>') ||
+          value.contains('<|channel>thought') ||
           value.contains('<｜thought｜>') ||
           value.contains('[THINK]')) {
         supportsThinking = true;

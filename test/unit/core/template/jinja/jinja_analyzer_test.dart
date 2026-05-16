@@ -56,6 +56,12 @@ void main() {
       expect(caps.supportsThinking, isTrue);
     });
 
+    test('detects Gemma 4 thinking tags', () {
+      final template = '{{ "<|think|>" + message.content }}';
+      final caps = JinjaAnalyzer.analyze(template);
+      expect(caps.supportsThinking, isTrue);
+    });
+
     test('falls back to regex for invalid Jinja', () {
       // Invalid syntax: missing end tag
       final template = '''

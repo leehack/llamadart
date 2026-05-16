@@ -192,18 +192,12 @@ void llamaWorkerEntry(SendPort initialSendPort) {
             message.sendPort.send(GetContextSizeResponse(size));
 
           case SupportsVisionRequest():
-            final connected = service.hasMultimodalContext(
-              message.mmContextHandle,
-            );
-            message.sendPort.send(
-              connected,
-            ); // Assuming boolean expected? Original was check in map
+            final supported = service.supportsVision(message.mmContextHandle);
+            message.sendPort.send(supported);
 
           case SupportsAudioRequest():
-            final connected = service.hasMultimodalContext(
-              message.mmContextHandle,
-            );
-            message.sendPort.send(connected);
+            final supported = service.supportsAudio(message.mmContextHandle);
+            message.sendPort.send(supported);
 
           case SystemInfoRequest():
             // Placeholder
@@ -213,6 +207,22 @@ void llamaWorkerEntry(SendPort initialSendPort) {
             message.sendPort.send(
               ErrorResponse("Chat template not implemented in service yet"),
             );
+
+          case StateSaveFileRequest():
+            final ok = service.stateSaveFile(
+              message.contextHandle,
+              message.path,
+              message.tokens,
+            );
+            message.sendPort.send(StateSaveFileResponse(ok));
+
+          case StateLoadFileRequest():
+            final tokens = service.stateLoadFile(
+              message.contextHandle,
+              message.path,
+              message.tokenCapacity,
+            );
+            message.sendPort.send(StateLoadFileResponse(tokens));
         }
       } catch (e) {
         message.sendPort.send(ErrorResponse(e.toString()));

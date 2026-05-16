@@ -12,6 +12,9 @@ import 'package:llamadart/src/backends/webgpu/interop.dart';
 import 'package:llamadart/src/backends/webgpu/webgpu_backend.dart';
 import 'package:test/test.dart';
 
+@JS('Promise.reject')
+external JSPromise<JSAny?> _rejectPromise(JSAny? reason);
+
 void main() {
   group('WebGpuLlamaBackend Unit', () {
     late JSObject bridge;
@@ -24,6 +27,18 @@ void main() {
     int? lastRequestedThreadsBatch;
     int? lastRequestedBatchSize;
     int? lastRequestedMicroBatchSize;
+    late List<int> requestedContextSizes;
+    late List<int> requestedBatchSizes;
+    late List<int> requestedMicroBatchSizes;
+    int? lastRequestedSeqMax;
+    int? lastRequestedFlashAttention;
+    int? lastRequestedCacheTypeK;
+    int? lastRequestedCacheTypeV;
+    bool? lastRequestedKvUnified;
+    double? lastRequestedRopeFrequencyBase;
+    double? lastRequestedRopeFrequencyScale;
+    int? lastRequestedSplitMode;
+    int? lastRequestedMainGpu;
     int? lastMediaMaxPredict;
     int? lastMediaMaxImagePixels;
     int? lastMediaMaxImageEdge;
@@ -33,10 +48,16 @@ void main() {
     int? lastTokenEventFlushMs;
     int? lastTokenEventFlushChars;
     String? lastPrompt;
+    String? lastStateSavePath;
+    List<int>? lastStateSaveTokens;
+    String? lastStateLoadPath;
+    int? lastStateLoadCapacity;
     WebGpuBridgeConfig? lastBridgeConfig;
     late int runtimeGpuLayers;
     late bool runtimeGpuActive;
     late int runtimeThreads;
+    late bool stateSaveResult;
+    late String stateLoadReturnShape;
     int createCompletionCallCount = 0;
     int warmupCallCount = 0;
     int cancelCallCount = 0;
@@ -56,6 +77,86 @@ void main() {
       globalContext.delete('__llamadartBridgeThreadPoolSize'.toJS);
     }
 
+    void recordLoadConfig(JSObject? config) {
+      if (config == null) {
+        return;
+      }
+
+      final nCtx = config.getProperty('nCtx'.toJS);
+      if (nCtx.isA<JSNumber>()) {
+        requestedContextSizes.add((nCtx as JSNumber).toDartInt);
+      }
+
+      final nGpuLayers = config.getProperty('nGpuLayers'.toJS);
+      if (nGpuLayers.isA<JSNumber>()) {
+        lastRequestedGpuLayers = (nGpuLayers as JSNumber).toDartInt;
+      }
+
+      final nThreadsBatch = config.getProperty('nThreadsBatch'.toJS);
+      if (nThreadsBatch.isA<JSNumber>()) {
+        lastRequestedThreadsBatch = (nThreadsBatch as JSNumber).toDartInt;
+      }
+
+      final nBatch = config.getProperty('nBatch'.toJS);
+      if (nBatch.isA<JSNumber>()) {
+        lastRequestedBatchSize = (nBatch as JSNumber).toDartInt;
+        requestedBatchSizes.add(lastRequestedBatchSize!);
+      }
+
+      final nUbatch = config.getProperty('nUbatch'.toJS);
+      if (nUbatch.isA<JSNumber>()) {
+        lastRequestedMicroBatchSize = (nUbatch as JSNumber).toDartInt;
+        requestedMicroBatchSizes.add(lastRequestedMicroBatchSize!);
+      }
+
+      final nSeqMax = config.getProperty('nSeqMax'.toJS);
+      if (nSeqMax.isA<JSNumber>()) {
+        lastRequestedSeqMax = (nSeqMax as JSNumber).toDartInt;
+      }
+
+      final flashAttention = config.getProperty('flashAttention'.toJS);
+      if (flashAttention.isA<JSNumber>()) {
+        lastRequestedFlashAttention = (flashAttention as JSNumber).toDartInt;
+      }
+
+      final cacheTypeK = config.getProperty('cacheTypeK'.toJS);
+      if (cacheTypeK.isA<JSNumber>()) {
+        lastRequestedCacheTypeK = (cacheTypeK as JSNumber).toDartInt;
+      }
+
+      final cacheTypeV = config.getProperty('cacheTypeV'.toJS);
+      if (cacheTypeV.isA<JSNumber>()) {
+        lastRequestedCacheTypeV = (cacheTypeV as JSNumber).toDartInt;
+      }
+
+      final kvUnified = config.getProperty('kvUnified'.toJS);
+      if (kvUnified.isA<JSBoolean>()) {
+        lastRequestedKvUnified = (kvUnified as JSBoolean).toDart;
+      }
+
+      final ropeFrequencyBase = config.getProperty('ropeFrequencyBase'.toJS);
+      if (ropeFrequencyBase.isA<JSNumber>()) {
+        lastRequestedRopeFrequencyBase =
+            (ropeFrequencyBase as JSNumber).toDartDouble;
+      }
+
+      final ropeFrequencyScale = config.getProperty('ropeFrequencyScale'.toJS);
+      if (ropeFrequencyScale.isA<JSNumber>()) {
+        lastRequestedRopeFrequencyScale =
+            (ropeFrequencyScale as JSNumber).toDartDouble;
+      }
+
+      final splitMode = config.getProperty('splitMode'.toJS);
+      if (splitMode.isA<JSNumber>()) {
+        lastRequestedSplitMode = (splitMode as JSNumber).toDartInt;
+      }
+
+      final mainGpu = config.getProperty('mainGpu'.toJS);
+      if (mainGpu.isA<JSNumber>()) {
+        lastRequestedMainGpu = (mainGpu as JSNumber).toDartInt;
+      }
+    }
+
     setUp(() {
       clearBridgeGlobals();
 
@@ -68,6 +169,18 @@ void main() {
       lastRequestedThreadsBatch = null;
       lastRequestedBatchSize = null;
       lastRequestedMicroBatchSize = null;
+      requestedContextSizes = <int>[];
+      requestedBatchSizes = <int>[];
+      requestedMicroBatchSizes = <int>[];
+      lastRequestedSeqMax = null;
+      lastRequestedFlashAttention = null;
+      lastRequestedCacheTypeK = null;
+      lastRequestedCacheTypeV = null;
+      lastRequestedKvUnified = null;
+      lastRequestedRopeFrequencyBase = null;
+      lastRequestedRopeFrequencyScale = null;
+      lastRequestedSplitMode = null;
+      lastRequestedMainGpu = null;
       lastMediaMaxPredict = null;
       lastMediaMaxImagePixels = null;
       lastMediaMaxImageEdge = null;
@@ -77,10 +190,16 @@ void main() {
       lastTokenEventFlushMs = null;
       lastTokenEventFlushChars = null;
       lastPrompt = null;
+      lastStateSavePath = null;
+      lastStateSaveTokens = null;
+      lastStateLoadPath = null;
+      lastStateLoadCapacity = null;
       lastBridgeConfig = null;
       runtimeGpuLayers = 99;
       runtimeGpuActive = true;
       runtimeThreads = 4;
+      stateSaveResult = true;
+      stateLoadReturnShape = 'object';
       createCompletionCallCount = 0;
       warmupCallCount = 0;
       cancelCallCount = 0;
@@ -88,28 +207,7 @@ void main() {
       bridge.setProperty(
         'loadModelFromUrl'.toJS,
         ((String url, JSObject? config) {
-          if (config != null) {
-            final nGpuLayers = config.getProperty('nGpuLayers'.toJS);
-            if (nGpuLayers.isA<JSNumber>()) {
-              lastRequestedGpuLayers = (nGpuLayers as JSNumber).toDartInt;
-            }
-
-            final nThreadsBatch = config.getProperty('nThreadsBatch'.toJS);
-            if (nThreadsBatch.isA<JSNumber>()) {
-              lastRequestedThreadsBatch = (nThreadsBatch as JSNumber).toDartInt;
-            }
-
-            final nBatch = config.getProperty('nBatch'.toJS);
-            if (nBatch.isA<JSNumber>()) {
-              lastRequestedBatchSize = (nBatch as JSNumber).toDartInt;
-            }
-
-            final nUbatch = config.getProperty('nUbatch'.toJS);
-            if (nUbatch.isA<JSNumber>()) {
-              lastRequestedMicroBatchSize = (nUbatch as JSNumber).toDartInt;
-            }
-          }
-
+          recordLoadConfig(config);
           return Future<void>.value().toJS;
         }).toJS,
       );
@@ -256,6 +354,49 @@ void main() {
       );
 
       bridge.setProperty(
+        'stateSaveFile'.toJS,
+        ((String path, JSArray tokens) {
+          lastStateSavePath = path;
+          lastStateSaveTokens = <int>[];
+          for (int i = 0; i < tokens.length; i++) {
+            final raw = tokens.getProperty(i.toJS);
+            if (raw.isA<JSNumber>()) {
+              lastStateSaveTokens!.add((raw as JSNumber).toDartInt);
+            }
+          }
+          return Future<JSBoolean>.value(stateSaveResult.toJS).toJS;
+        }).toJS,
+      );
+
+      bridge.setProperty(
+        'stateLoadFile'.toJS,
+        ((String path, int tokenCapacity) {
+          lastStateLoadPath = path;
+          lastStateLoadCapacity = tokenCapacity;
+
+          JSAny result;
+          if (stateLoadReturnShape == 'array') {
+            result = <JSNumber>[7.toJS, 8.toJS, 9.toJS].toJS;
+          } else if (stateLoadReturnShape == 'uint32') {
+            final arr = JSUint32Array.withLength(3);
+            arr.toDart[0] = 7;
+            arr.toDart[1] = 8;
+            arr.toDart[2] = 9;
+            result = arr;
+          } else {
+            final obj = JSObject();
+            obj.setProperty(
+              'tokens'.toJS,
+              <JSNumber>[7.toJS, 8.toJS, 9.toJS].toJS,
+            );
+            result = obj;
+          }
+
+          return Future<JSAny>.value(result).toJS;
+        }).toJS,
+      );
+
+      bridge.setProperty(
         'embed'.toJS,
         ((String text, JSObject? options) {
           var normalize = true;
@@ -381,6 +522,70 @@ void main() {
       expect(lastRequestedMicroBatchSize, 384);
     });
 
+    test('clamps explicit web batch sizes to context bounds', () async {
+      await backend.modelLoadFromUrl(
+        'https://example.com/model.gguf',
+        const ModelParams(
+          contextSize: 512,
+          batchSize: 2048,
+          microBatchSize: 1024,
+        ),
+      );
+
+      expect(lastRequestedBatchSize, 512);
+      expect(lastRequestedMicroBatchSize, 512);
+    });
+
+    test('forwards native-compatible load tuning params', () async {
+      await backend.modelLoadFromUrl(
+        'https://example.com/model.gguf',
+        const ModelParams(
+          maxParallelSequences: 4,
+          flashAttention: FlashAttention.auto,
+          cacheTypeK: KvCacheType.q8_0,
+          cacheTypeV: KvCacheType.q4_0,
+          kvUnified: false,
+          ropeFrequencyBase: 1000000,
+          ropeFrequencyScale: 0.5,
+          splitMode: ModelSplitMode.none,
+          mainGpu: 2,
+        ),
+      );
+
+      expect(lastRequestedSeqMax, 4);
+      expect(lastRequestedFlashAttention, 1);
+      expect(lastRequestedCacheTypeK, 8);
+      expect(lastRequestedCacheTypeV, 2);
+      expect(lastRequestedKvUnified, isFalse);
+      expect(lastRequestedRopeFrequencyBase, 1000000.0);
+      expect(lastRequestedRopeFrequencyScale, 0.5);
+      expect(lastRequestedSplitMode, 0);
+      expect(lastRequestedMainGpu, 2);
+    });
+
+    test('auto-enables unified KV for multiple web sequence slots', () async {
+      await backend.modelLoadFromUrl(
+        'https://example.com/model.gguf',
+        const ModelParams(maxParallelSequences: 3),
+      );
+
+      expect(lastRequestedSeqMax, 3);
+      expect(lastRequestedKvUnified, isTrue);
+    });
+
+    test('validates KV cache and flash attention combinations', () async {
+      await expectLater(
+        backend.modelLoadFromUrl(
+          'https://example.com/model.gguf',
+          const ModelParams(
+            flashAttention: FlashAttention.disabled,
+            cacheTypeK: KvCacheType.q8_0,
+          ),
+        ),
+        throwsArgumentError,
+      );
+    });
+
     test('applies qwen3.5-0.8b batch tuning when unset', () async {
       await backend.modelLoadFromUrl(
         'https://example.com/Qwen_Qwen3.5-0.8B-Q4_K_M.gguf',
@@ -399,21 +604,76 @@ void main() {
       );
 
       expect(lastRequestedGpuLayers, 99);
+      expect(lastRequestedBatchSize, 4096);
+      expect(lastRequestedMicroBatchSize, 4096);
     });
 
-    test('does not apply qwen3.5-0.8b batch tuning in CPU mode', () async {
+    test('cascades unset WebGPU encoder batches before embedBatch', () async {
       await backend.modelLoadFromUrl(
-        'https://example.com/Qwen_Qwen3.5-0.8B-Q4_K_M.gguf',
+        'https://example.com/multilingual-e5-small-Q8_0.gguf',
+        const ModelParams(contextSize: 512, gpuLayers: 99),
+      );
+
+      expect(lastRequestedGpuLayers, 99);
+      expect(lastRequestedBatchSize, 512);
+      expect(lastRequestedMicroBatchSize, 512);
+
+      final vectors = await backend.embedBatch(1, const <String>[
+        'first sentence',
+        'second sentence',
+      ]);
+      expect(vectors, <List<double>>[
+        <double>[14.0, 1.0],
+        <double>[15.0, 1.0],
+      ]);
+    });
+
+    test('cascades unset batch sizes to context size in CPU mode', () async {
+      await backend.modelLoadFromUrl(
+        'https://example.com/multilingual-e5-small-Q8_0.gguf',
         const ModelParams(
-          contextSize: 4096,
+          contextSize: 512,
           preferredBackend: GpuBackend.cpu,
           gpuLayers: 0,
         ),
       );
 
-      expect(lastRequestedBatchSize, isNull);
-      expect(lastRequestedMicroBatchSize, isNull);
+      expect(lastRequestedBatchSize, 512);
+      expect(lastRequestedMicroBatchSize, 512);
     });
+
+    test(
+      'recomputes cascaded batch sizes for reduced fallback context',
+      () async {
+        var loadCallCount = 0;
+        bridge.setProperty(
+          'loadModelFromUrl'.toJS,
+          ((String url, JSObject? config) {
+            loadCallCount += 1;
+            recordLoadConfig(config);
+
+            if (loadCallCount <= 2) {
+              final error = JSObject();
+              error.setProperty(
+                'message'.toJS,
+                'array buffer allocation failed'.toJS,
+              );
+              return _rejectPromise(error);
+            }
+            return Future<void>.value().toJS;
+          }).toJS,
+        );
+
+        await backend.modelLoadFromUrl(
+          'https://example.com/multilingual-e5-small-Q8_0.gguf',
+          const ModelParams(contextSize: 4096, gpuLayers: 99),
+        );
+
+        expect(requestedContextSizes, <int>[4096, 4096, 2048]);
+        expect(requestedBatchSizes, <int>[4096, 4096, 2048]);
+        expect(requestedMicroBatchSizes, <int>[4096, 4096, 2048]);
+      },
+    );
 
     test('streams generated tokens from bridge callback', () async {
       await backend.modelLoadFromUrl(
@@ -541,6 +801,109 @@ void main() {
         ),
       );
     });
+
+    test('forwards state persistence calls to bridge', () async {
+      expect(backend.supportsStatePersistence, isFalse);
+      await backend.modelLoadFromUrl(
+        'https://example.com/model.gguf',
+        const ModelParams(),
+      );
+      expect(backend.supportsStatePersistence, isTrue);
+
+      final saved = await backend.stateSaveFile(
+        1,
+        '/prompt-prefix.state',
+        const <int>[1, 2, 3],
+      );
+      expect(saved, isTrue);
+      expect(lastStateSavePath, '/prompt-prefix.state');
+      expect(lastStateSaveTokens, <int>[1, 2, 3]);
+
+      final loaded = await backend.stateLoadFile(
+        1,
+        '/prompt-prefix.state',
+        128,
+      );
+      expect(lastStateLoadPath, '/prompt-prefix.state');
+      expect(lastStateLoadCapacity, 128);
+      expect(loaded.tokens, <int>[7, 8, 9]);
+    });
+
+    test('propagates false state save bridge result', () async {
+      await backend.modelLoadFromUrl(
+        'https://example.com/model.gguf',
+        const ModelParams(),
+      );
+
+      stateSaveResult = false;
+      expect(
+        await backend.stateSaveFile(1, '/prompt-prefix.state', const <int>[1]),
+        isFalse,
+      );
+    });
+
+    test('accepts direct array and typed array state load results', () async {
+      await backend.modelLoadFromUrl(
+        'https://example.com/model.gguf',
+        const ModelParams(),
+      );
+
+      stateLoadReturnShape = 'array';
+      expect(
+        (await backend.stateLoadFile(1, '/array.state', 128)).tokens,
+        <int>[7, 8, 9],
+      );
+
+      stateLoadReturnShape = 'uint32';
+      expect(
+        (await backend.stateLoadFile(1, '/typed.state', 128)).tokens,
+        <int>[7, 8, 9],
+      );
+    });
+
+    test(
+      'throws clear error when state persistence API is unavailable',
+      () async {
+        await backend.modelLoadFromUrl(
+          'https://example.com/model.gguf',
+          const ModelParams(),
+        );
+
+        expect(backend.supportsStatePersistence, isTrue);
+        bridge.delete('stateSaveFile'.toJS);
+        expect(backend.supportsStatePersistence, isFalse);
+        await expectLater(
+          () => backend.stateSaveFile(1, '/missing.state', const <int>[1]),
+          throwsA(
+            isA<UnsupportedError>().having(
+              (UnsupportedError error) => error.message,
+              'message',
+              contains('v0.1.15'),
+            ),
+          ),
+        );
+
+        bridge.setProperty(
+          'stateSaveFile'.toJS,
+          ((String path, JSArray tokens) {
+            return Future<JSBoolean>.value(true.toJS).toJS;
+          }).toJS,
+        );
+        expect(backend.supportsStatePersistence, isTrue);
+        bridge.delete('stateLoadFile'.toJS);
+        expect(backend.supportsStatePersistence, isFalse);
+        await expectLater(
+          () => backend.stateLoadFile(1, '/missing.state', 128),
+          throwsA(
+            isA<UnsupportedError>().having(
+              (UnsupportedError error) => error.message,
+              'message',
+              contains('v0.1.15'),
+            ),
+          ),
+        );
+      },
+    );
 
     test(
       'passes core module URL from bootstrap global to bridge config',

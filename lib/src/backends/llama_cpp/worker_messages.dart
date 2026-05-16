@@ -292,6 +292,49 @@ class SystemInfoRequest extends WorkerRequest {
   SystemInfoRequest(super.sendPort);
 }
 
+/// Request to write the KV-cache state of [contextHandle] to [path]
+/// together with the producing token sequence (for state restore).
+class StateSaveFileRequest extends WorkerRequest {
+  /// Context whose state to persist.
+  final int contextHandle;
+
+  /// Destination file path.
+  final String path;
+
+  /// Token sequence the current state was produced from.
+  final List<int> tokens;
+
+  /// Creates a new [StateSaveFileRequest].
+  StateSaveFileRequest(
+    this.contextHandle,
+    this.path,
+    this.tokens,
+    super.sendPort,
+  );
+}
+
+/// Request to load a previously saved KV-cache state from [path].
+/// [tokenCapacity] caps the number of tokens the caller can hold —
+/// typically the loaded model's context size.
+class StateLoadFileRequest extends WorkerRequest {
+  /// Context to restore the saved state into.
+  final int contextHandle;
+
+  /// Source file path.
+  final String path;
+
+  /// Maximum number of tokens to read back.
+  final int tokenCapacity;
+
+  /// Creates a new [StateLoadFileRequest].
+  StateLoadFileRequest(
+    this.contextHandle,
+    this.path,
+    this.tokenCapacity,
+    super.sendPort,
+  );
+}
+
 /// Request to apply a chat template.
 class ChatTemplateRequest extends WorkerRequest {
   /// The handle of the model.
@@ -386,6 +429,25 @@ class GetContextSizeResponse {
 
   /// Creates a new [GetContextSizeResponse].
   GetContextSizeResponse(this.size);
+}
+
+/// Response from a [StateSaveFileRequest]: success / failure.
+class StateSaveFileResponse {
+  /// Whether the save succeeded.
+  final bool success;
+
+  /// Creates a new [StateSaveFileResponse].
+  StateSaveFileResponse(this.success);
+}
+
+/// Response from a [StateLoadFileRequest]: the token sequence the
+/// restored state was originally produced from.
+class StateLoadFileResponse {
+  /// The recovered token IDs.
+  final List<int> tokens;
+
+  /// Creates a new [StateLoadFileResponse].
+  StateLoadFileResponse(this.tokens);
 }
 
 /// Response containing an error message.

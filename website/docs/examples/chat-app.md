@@ -31,14 +31,38 @@ flutter test
 
 - Real-time streaming chat UI.
 - Model selection and download flow.
+- The runnable chat app wires `ModelDownloadController` into its model-management
+  flow through a small adapter, so cache checks, progress, cancel, retry, and
+  clear ready/failure states come from the same package helper app code can
+  reuse. The adapter keeps the example's platform-specific service layer for
+  multi-asset model + `mmproj` downloads and browser cache behavior.
 - Runtime backend preference and GPU layer controls.
 - Persistent settings and split Dart/native logging controls.
 - Tool-calling toggles and model capability badges.
+- Runtime-verified multimodal capability gating after `mmproj` load. The app
+  hides unsupported attachment types even if a model family advertises broader
+  multimodal support.
+
+## Gemma 4 note
+
+The download library includes a Gemma 4 E2B GGUF + projector pair. On the
+current `llama.cpp` mtmd path used by `llamadart`, that projector exposes
+vision support but not audio support, so the app keeps image input enabled and
+audio input disabled for that model.
 
 ## Web notes
 
 On web, this example prefers local bridge assets on `localhost` for development
-validation and otherwise prefers CDN assets with local fallback.
+validation and otherwise prefers CDN assets with local fallback. The runtime
+status panel exposes the active bridge/core variant, fallback reason, model
+source, cache state, and runtime notes so you can distinguish browser capability
+problems from model/configuration pressure.
+
+For reliable large GGUF loads, serve the app with COOP/COEP headers so
+`window.crossOriginIsolated === true`. A built smoke path is documented in
+[WebGPU Bridge](../platforms/webgpu-bridge); it uses
+`tool/testing/serve_static_with_headers.py` and the real-model Playwright smoke
+against a small Qwen3.5 model.
 
 ## Android notes
 

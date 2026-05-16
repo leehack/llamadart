@@ -7,6 +7,99 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
+## Unreleased
+
+- Updated the default WebGPU bridge asset pin to
+  `leehack/llama-web-bridge-assets@v0.1.16` (llama.cpp `b9165`), picking up
+  the published JS bridge build, TypeScript declaration asset, and refreshed
+  bridge docs.
+- Added WebGPU readiness guidance covering browser capability checks,
+  cross-origin isolation, bridge asset/version diagnostics, fallback behavior,
+  model/configuration pressure, and the Flutter Web real-model smoke path.
+- Added `ModelDownloadController`, a dependency-free helper that turns
+  `ModelDownloadManager` cache/download work into app-facing lifecycle states
+  for resolving, cache checks, downloads, verification, ready, failed,
+  cancelled, and retry flows.
+- Wired the runnable chat app example through a `ModelDownloadManager` adapter
+  so its model-management UI demonstrates the controller while preserving the
+  example's multi-asset and web-cache service behavior.
+
+## 0.6.13
+
+- Added package-managed model source downloads and cache management:
+  `ModelSource`, `ModelLoadOptions`, `ModelCachePolicy`, resolver targets,
+  download/cache metadata, progress callbacks, cache inspection, removal,
+  clearing, and age/size pruning.
+- Added native/file-backed `DefaultModelDownloadManager` support for streaming
+  HTTP downloads, `.part` files with atomic promotion, authenticated bearer and
+  custom headers, cooperative cancellation, retry, HTTP Range resume, cache
+  hit/refresh/cache-only/no-cache policies, SHA-256 verification, and persisted
+  redacted metadata for signed URLs.
+- Improved Hugging Face `hf://` ergonomics with `?revision=...` parsing for
+  branch/ref names containing slashes, plus docs for private/gated bearer-token
+  usage, separate `mmproj` assets, sharded-GGUF limitations, and redaction
+  guarantees.
+- Hardened download/cache correctness by serializing concurrent same-entry
+  downloads, recovering missing or malformed cache metadata sidecars, treating
+  mismatched byte-count/SHA-256 metadata as cache misses, and rejecting
+  remote-only options for local `ModelSource.path(...)` inputs.
+- Added `LlamaEngine.loadModelSource(...)` so local path sources keep using the
+  existing native loader, remote HTTP(S)/Hugging Face sources download through
+  the package-managed native cache before local loading, and URL-capable web
+  backends keep using direct URL loading for simple unauthenticated requests.
+- Added KV-cache state persistence APIs: `LlamaEngine.supportsStatePersistence`,
+  `stateSaveFile(...)`, `stateLoadFile(...)`, backend support diagnostics, and
+  WebGPU bridge forwarding for bridge assets `v0.1.15+`.
+- Compatibility note: no public API breaking changes in `0.6.13`; existing
+  `loadModel(...)` callers are unchanged.
+
+## 0.6.12
+
+- Synced default WebGPU bridge asset pinning to
+  `leehack/llama-web-bridge-assets@v0.1.14` (llama.cpp `b9016`) to match the
+  native runtime pin.
+- Picked up bridge-side Qwen UTF-8 streaming stabilization and multimodal
+  fallback narrowing while preserving control-token output for parser consumers.
+- Picked up the bridge-side BERT embedding thread-pool sizing fix so automatic
+  thread selection does not exceed the compiled WebAssembly pthread pool.
+- Forwarded native-compatible `ModelParams` load tuning knobs through the
+  WebGPU bridge path, including sequence slots, flash attention, KV cache type,
+  RoPE overrides, split mode, and main GPU.
+- Matched native batch defaults on WebGPU so unset `batchSize` and
+  `microBatchSize` use `n_batch = n_ctx` and `n_ubatch = n_batch`, avoiding
+  first-embedding aborts for BERT-class/non-causal encoder models while
+  preserving model-specific Qwen3.5-0.8B WebGPU safety tuning.
+- Filtered backend-owned runtime dependencies during native asset bundling so
+  CUDA runtime DLLs and OpenBLAS runtime libraries are emitted only when their
+  owning backend module is selected, while unknown runtime libraries stay
+  bundled for forward compatibility.
+- Compatibility note: no public API breaking changes in `0.6.12`.
+
+## 0.6.11
+
+- Synced native hook pinning and regenerated bindings through
+  `leehack/llamadart-native@b8955`.
+- Fixed Gemma 4 streaming so `<|channel>thought ... <channel|>` output is
+  emitted as thinking deltas instead of content text, including when channel
+  markers are split across streamed chunks.
+- Tracked the chat app lockfile for stable generated Flutter plugin metadata in
+  CI and release validation.
+- Compatibility note: no public API breaking changes in `0.6.11`.
+
+## 0.6.10
+
+- Synced native hook pinning and regenerated bindings through
+  `leehack/llamadart-native@b8638`.
+- Hardened multimodal prompt overflow handling so native failures surface as
+  Dart exceptions, and reduced staged chat-app image size to a `384px` max edge
+  to lower multimodal context pressure.
+- Added built-in Gemma 4 template detection/render/parse support, including
+  thinking and tool-call handling.
+- Added runtime projector capability gating so multimodal flows and the chat app
+  respect actual `supportsVision` / `supportsAudio` results instead of
+  model-family assumptions.
+- Compatibility note: no public API breaking changes in `0.6.10`.
+
 ## 0.6.9
 
 - Documented that iOS builds require a minimum deployment target of `16.4` or

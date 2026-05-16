@@ -46,11 +46,30 @@ Checks:
 
 ## Web behavior differs from native
 
+Symptoms:
+
+- The app loads, but model load fails only on web.
+- WebGPU falls back to CPU or reports lower GPU layers than requested.
+- A hosted build behaves differently from `localhost`.
+
 Checks:
 
-1. Confirm bridge runtime is loaded successfully.
-2. Verify browser WebGPU support and fallback behavior.
-3. Validate model URLs and CORS policy for hosted assets.
+1. Confirm bridge runtime is loaded successfully:
+   `window.LlamaWebGpuBridge` should exist and
+   `window.__llamadartBridgeLoadError` should be empty.
+2. Verify browser capability: secure context, `navigator.gpu`,
+   `requestAdapter()`, adapter features/limits, and current GPU drivers.
+3. For large single-file GGUF loads, verify cross-origin isolation:
+   `window.crossOriginIsolated === true` and the app origin sends COOP/COEP
+   headers.
+4. Distinguish bridge-load failures from model/config pressure. Memory errors,
+   `bad_alloc`, `memory access out of bounds`, or aborts often mean the model,
+   context size, thread count, or GPU-layer count is too large for the current
+   browser.
+5. Validate model URLs, CORS/CORP policy, base href, service-worker cache state,
+   and whether the runtime came from CDN or local assets.
+6. See [WebGPU Bridge](../platforms/webgpu-bridge) for the readiness probe,
+   fallback rules, and Flutter Web smoke-test command.
 
 ## High log noise
 

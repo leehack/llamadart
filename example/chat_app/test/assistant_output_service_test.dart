@@ -31,6 +31,19 @@ void main() {
       expect(calls.first.arguments, <String, dynamic>{'city': 'London'});
     });
 
+    test('normalizes Gemma 4 channel reasoning into text and thinking', () {
+      final normalized = service.normalizeAssistantOutput(
+        streamedContent: '<|channel>thought\nplan first<channel|>Final answer.',
+        streamedThinking: '',
+        toolsEnabled: false,
+        detectedChatFormat: ChatFormat.gemma4,
+        cleanResponse: (response) => response.trim(),
+      );
+
+      expect(normalized.text, 'Final answer.');
+      expect(normalized.thinking, 'plan first');
+    });
+
     test('builds debug badges from normalized output state', () {
       final badges = service.buildAssistantDebugBadges(
         detectedChatFormat: ChatFormat.generic,

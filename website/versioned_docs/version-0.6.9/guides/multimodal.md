@@ -42,6 +42,11 @@ final supportsVision = await engine.supportsVision;
 final supportsAudio = await engine.supportsAudio;
 ```
 
+Always prefer these runtime checks over model-card assumptions. A loaded
+projector can expose only a subset of the family-level modalities. For example,
+the current Gemma 4 E2B/E4B GGUF projector path in `llama.cpp` mtmd exposes
+vision, but not audio, in `llamadart`.
+
 ## Web notes
 
 - Web uses bridge runtime paths.
@@ -52,6 +57,8 @@ final supportsAudio = await engine.supportsAudio;
 ## Tuning notes
 
 - Start with smaller images or audio inputs before changing backend settings.
+- Projector load success does not imply every modality is available. Re-check
+  `engine.supportsVision` / `engine.supportsAudio` after loading `mmproj`.
 - Keep context and generation budgets tighter than your text-only defaults.
 - If multimodal is unstable on GPU, establish a working CPU baseline first.
 - For broader tuning workflow and diagnostics guidance, see

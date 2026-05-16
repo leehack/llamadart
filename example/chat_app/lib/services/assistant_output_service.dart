@@ -20,6 +20,9 @@ class AssistantOutputService {
         toolsEnabled ||
         normalizedText.contains('<think>') ||
         normalizedText.contains('</think>') ||
+        normalizedText.contains('<|think|>') ||
+        normalizedText.contains('<|channel>') ||
+        normalizedText.contains('<channel|>') ||
         normalizedText.trimLeft().startsWith('{');
 
     if (!shouldParseForNormalization) {
@@ -115,6 +118,9 @@ class AssistantOutputService {
   bool containsReasoningTag(String text) {
     return text.contains('<think>') ||
         text.contains('</think>') ||
+        text.contains('<|think|>') ||
+        text.contains('<|channel>') ||
+        text.contains('<channel|>') ||
         text.contains('[THINK]') ||
         text.contains('[/THINK]');
   }

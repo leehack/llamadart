@@ -143,6 +143,11 @@ abstract class ChatTemplateHandler {
       '<image>', // SmolVLM, InternVL, etc.
       '[IMG]', // Some CLIP-based models
       '<|image|>', // Phi-3 vision
+      '<|audio|>',
+      '<|video|>',
+      '<image_soft_token>',
+      '<audio_soft_token>',
+      '<video_soft_token>',
     ];
     for (final placeholder in imagePlaceholders) {
       prompt = prompt.replaceAll(placeholder, mtmdMarker);

@@ -264,6 +264,25 @@ void main() {
       expect(result.grammar, isNull);
     });
 
+    test('routes Gemma 4 templates to the Gemma 4 handler', () {
+      const template =
+          '<|turn>user\n{{ messages[0]["content"] }}<turn|>\n'
+          '<|turn>model\n'
+          '{% if tools %}<|tool_call>call:get_weather{location:<|"|>Seoul<|"|>}<tool_call|>{% endif %}';
+
+      final result = ChatTemplateEngine.render(
+        templateSource: template,
+        messages: grammarMessages,
+        metadata: const {},
+        tools: tools,
+      );
+
+      expect(result.format, equals(ChatFormat.gemma4.index));
+      expect(result.grammar, isNull);
+      expect(result.additionalStops, contains('<tool_call|>'));
+      expect(result.additionalStops, contains('<turn|>'));
+    });
+
     test('routes generic templates to content-only for tool_choice none', () {
       const template =
           '<|im_start|>user\n{{ messages[0]["content"] }}<|im_end|>\n'

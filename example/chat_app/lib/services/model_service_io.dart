@@ -48,23 +48,21 @@ class ModelServiceIO implements ModelService {
     final Set<String> downloaded = {};
 
     for (final model in models) {
-      final modelFile = File(p.join(dirPath, model.filename));
-      final partialFile = File(p.join(dirPath, '${model.filename}.download'));
-      final legacyMeta = File(p.join(dirPath, '${model.filename}.meta'));
-      var hasRequiredMmproj = true;
-      if (model.mmprojFilename != null) {
-        final mmprojFile = File(p.join(dirPath, model.mmprojFilename!));
-        final mmprojPartial = File(
-          p.join(dirPath, '${model.mmprojFilename!}.download'),
-        );
-        hasRequiredMmproj =
-            await mmprojFile.exists() && !await mmprojPartial.exists();
-      }
+      final hasModel = await _isAssetAvailable(
+        dirPath,
+        model.modelSource,
+        role: ModelAssetRole.model,
+      );
+      final mmprojSource = model.multimodalProjectorSource;
+      final hasMmproj =
+          mmprojSource == null ||
+          await _isAssetAvailable(
+            dirPath,
+            mmprojSource,
+            role: ModelAssetRole.multimodalProjector,
+          );
 
-      if (await modelFile.exists() &&
-          !await partialFile.exists() &&
-          !await legacyMeta.exists() &&
-          hasRequiredMmproj) {
+      if (hasModel && hasMmproj) {
         downloaded.add(model.filename);
       }
     }
@@ -82,50 +80,50 @@ class ModelServiceIO implements ModelService {
     required Function(String filename) onSuccess,
     required Function(dynamic error) onError,
   }) async {
-    final hasMmproj = model.mmprojUrl != null && model.mmprojFilename != null;
-    final stageCount = hasMmproj ? 2 : 1;
+    final modelRemoteSource = model.modelSource is RemoteModelAssetSource
+        ? model.modelSource as RemoteModelAssetSource
+        : null;
+    final mmprojRemoteSource =
+        model.multimodalProjectorSource is RemoteModelAssetSource
+        ? model.multimodalProjectorSource as RemoteModelAssetSource
+        : null;
+    final stageCount = [
+      modelRemoteSource,
+      mmprojRemoteSource,
+    ].whereType<RemoteModelAssetSource>().length;
+    final modelStageIndex = modelRemoteSource == null ? 0 : 1;
+    final mmprojStageIndex = mmprojRemoteSource == null
+        ? 0
+        : modelRemoteSource == null
+        ? 1
+        : 2;
+    final providedTotalBytes =
+        modelRemoteSource == null && mmprojRemoteSource != null
+        ? mmprojRemoteSource.sizeBytes
+        : (model.sizeBytes > 0 ? model.sizeBytes : null);
     final progressDispatcher = _ProgressDispatcher(
       onProgress: onProgress,
       onProgressDetail: onProgressDetail,
     );
     final aggregate = ModelDownloadProgressTracker(
-      includeMmproj: hasMmproj,
-      providedTotalBytes: model.sizeBytes > 0 ? model.sizeBytes : null,
+      includeMmproj: mmprojRemoteSource != null,
+      providedTotalBytes: providedTotalBytes,
     );
 
     try {
-      final modelSavePath = p.join(modelsDir, model.filename);
-      await _downloadFileWithResume(
-        url: model.url,
-        savePath: modelSavePath,
-        cancelToken: cancelToken,
-        onProgress: (downloadedBytes, totalBytes, resumed) {
-          aggregate.updateModel(downloadedBytes, totalBytes);
-          progressDispatcher.emit(
-            aggregate.buildProgress(
-              stage: ModelDownloadStage.model,
-              stageIndex: 1,
-              stageCount: stageCount,
-              stageDownloadedBytes: downloadedBytes,
-              stageTotalBytes: totalBytes,
-              resumed: resumed,
-            ),
-          );
-        },
-      );
-
-      if (hasMmproj) {
-        final mmprojSavePath = p.join(modelsDir, model.mmprojFilename!);
+      await _validateLocalSource(model.modelSource);
+      if (modelRemoteSource != null) {
+        final modelSavePath = _assetPath(modelsDir, modelRemoteSource);
         await _downloadFileWithResume(
-          url: model.mmprojUrl!,
-          savePath: mmprojSavePath,
+          url: modelRemoteSource.url,
+          savePath: modelSavePath,
           cancelToken: cancelToken,
           onProgress: (downloadedBytes, totalBytes, resumed) {
-            aggregate.updateMmproj(downloadedBytes, totalBytes);
+            aggregate.updateModel(downloadedBytes, totalBytes);
             progressDispatcher.emit(
               aggregate.buildProgress(
-                stage: ModelDownloadStage.multimodalProjector,
-                stageIndex: 2,
+                stage: ModelDownloadStage.model,
+                stageIndex: modelStageIndex,
                 stageCount: stageCount,
                 stageDownloadedBytes: downloadedBytes,
                 stageTotalBytes: totalBytes,
@@ -136,14 +134,81 @@ class ModelServiceIO implements ModelService {
         );
       }
 
-      progressDispatcher.emit(
-        aggregate.finalProgress(stageCount: stageCount),
-        force: true,
-      );
+      final mmprojSource = model.multimodalProjectorSource;
+      await _validateLocalSource(mmprojSource);
+      if (mmprojRemoteSource != null) {
+        final mmprojSavePath = _assetPath(modelsDir, mmprojRemoteSource);
+        await _downloadFileWithResume(
+          url: mmprojRemoteSource.url,
+          savePath: mmprojSavePath,
+          cancelToken: cancelToken,
+          onProgress: (downloadedBytes, totalBytes, resumed) {
+            aggregate.updateMmproj(downloadedBytes, totalBytes);
+            progressDispatcher.emit(
+              aggregate.buildProgress(
+                stage: ModelDownloadStage.multimodalProjector,
+                stageIndex: mmprojStageIndex,
+                stageCount: stageCount,
+                stageDownloadedBytes: downloadedBytes,
+                stageTotalBytes: totalBytes,
+                resumed: resumed,
+              ),
+            );
+          },
+        );
+      }
+
+      if (stageCount > 0) {
+        progressDispatcher.emit(
+          aggregate.finalProgress(stageCount: stageCount),
+          force: true,
+        );
+      }
 
       onSuccess(model.filename);
     } catch (e) {
       onError(e);
+    }
+  }
+
+  Future<bool> _isAssetAvailable(
+    String modelsDir,
+    ModelAssetSource source, {
+    required ModelAssetRole role,
+  }) async {
+    final path = _assetPath(modelsDir, source);
+    final file = File(path);
+    final partialFile = File('$path.download');
+    if (!await file.exists() || await partialFile.exists()) {
+      return false;
+    }
+
+    if (source is RemoteModelAssetSource && role == ModelAssetRole.model) {
+      final legacyMeta = File('$path.meta');
+      if (await legacyMeta.exists()) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  String _assetPath(String modelsDir, ModelAssetSource source) {
+    if (source is LocalModelAssetSource) {
+      return source.path;
+    }
+    return p.join(modelsDir, (source as RemoteModelAssetSource).filename);
+  }
+
+  Future<void> _validateLocalSource(ModelAssetSource? source) async {
+    if (source is! LocalModelAssetSource) {
+      return;
+    }
+    if (!await File(source.path).exists()) {
+      throw FileSystemException(
+        'Local model asset does not exist',
+        source.path,
+      );
     }
   }
 
@@ -626,28 +691,35 @@ class ModelServiceIO implements ModelService {
 
   @override
   Future<void> deleteModel(String modelsDir, DownloadableModel model) async {
-    final file = File(p.join(modelsDir, model.filename));
+    await _deleteCachedAsset(modelsDir, model.modelSource);
+    final mmprojSource = model.multimodalProjectorSource;
+    if (mmprojSource != null) {
+      await _deleteCachedAsset(modelsDir, mmprojSource);
+    }
+  }
+
+  Future<void> _deleteCachedAsset(
+    String modelsDir,
+    ModelAssetSource source,
+  ) async {
+    if (source is LocalModelAssetSource) {
+      return;
+    }
+
+    final path = _assetPath(modelsDir, source);
+    final file = File(path);
     if (await file.exists()) {
       await file.delete();
     }
 
-    final tempFile = File(p.join(modelsDir, '${model.filename}.download'));
+    final tempFile = File('$path.download');
     if (await tempFile.exists()) {
       await tempFile.delete();
     }
 
-    if (model.mmprojFilename != null) {
-      final mmprojFile = File(p.join(modelsDir, model.mmprojFilename!));
-      if (await mmprojFile.exists()) {
-        await mmprojFile.delete();
-      }
-
-      final mmprojTempFile = File(
-        p.join(modelsDir, '${model.mmprojFilename!}.download'),
-      );
-      if (await mmprojTempFile.exists()) {
-        await mmprojTempFile.delete();
-      }
+    final legacyMeta = File('$path.meta');
+    if (await legacyMeta.exists()) {
+      await legacyMeta.delete();
     }
   }
 }

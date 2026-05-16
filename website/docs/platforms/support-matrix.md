@@ -6,7 +6,7 @@ description: Check which native and web backends are supported by llamadart and 
 This page combines platform support and backend-module configuration for
 `llamadart`.
 
-The native-assets hook currently pins `llamadart-native` tag `b8480`
+The native-assets hook currently pins `llamadart-native` tag `b9016`
 (`hook/build.dart`). Module availability below is for that pinned tag.
 
 ## Platform/architecture coverage
@@ -24,13 +24,28 @@ The native-assets hook currently pins `llamadart-native` tag `b8480`
 | iOS x86_64 (simulator) | `ios-x86_64-sim` | No (fixed in hook) | Consolidated runtime: `cpu`, `metal` | Supported |
 | macOS arm64 | `macos-arm64` | No (fixed in hook) | Consolidated runtime: `cpu`, `metal` | Supported |
 | macOS x86_64 | `macos-x86_64` | No (fixed in hook) | Consolidated runtime: `cpu`, `metal` | Supported |
-| Web (browser) | N/A (JS bridge path) | N/A | Bridge router: `webgpu`, `cpu` fallback | Experimental |
+| Web (browser) | N/A (JS bridge path) | N/A | Bridge router: `webgpu`, `cpu` fallback | Experimental; see [WebGPU Bridge](./webgpu-bridge) readiness checks |
 
 All iOS targets above require the consuming Flutter/Xcode project to use a
 minimum deployment target of `16.4` or newer (for example
 `platform :ios, '16.4'`).
 
-## Current module availability by bundle (`b8480`)
+## Runtime capability notes
+
+- **State persistence** (`LlamaEngine.stateSaveFile(...)` /
+  `stateLoadFile(...)`) is available on native backends and on WebGPU bridge
+  assets `v0.1.15+` that expose `stateSaveFile` / `stateLoadFile` bridge APIs.
+  On web, state paths refer to the bridge WASMFS virtual filesystem and are not
+  durable across page reloads. Durable browser storage currently requires
+  app-level export/import outside the Dart `stateSaveFile` / `stateLoadFile`
+  helpers.
+- **WebGPU readiness** is browser/device/runtime dependent. Check secure
+  context, `navigator.gpu`, adapter/features, `window.crossOriginIsolated`,
+  loaded bridge asset source/version, and model memory pressure before treating
+  a web load failure as a package bug. The [WebGPU Bridge](./webgpu-bridge)
+  page has the browser-console probe and Flutter Web smoke-test path.
+
+## Current module availability by bundle (`b9016`)
 
 | Bundle key | Available backend modules in bundle |
 | --- | --- |
@@ -134,6 +149,11 @@ no valid entries remain, selection falls back to `cpu_profile` (or default
   back to defaults.
 - If defaults are also unavailable, all available modules in that bundle are
   used as fallback.
+- Backend-owned runtime dependencies follow the selected backend module. CUDA
+  runtime DLLs (`cudart64_*`, `cublas64_*`, `cublaslt64_*`) are bundled only
+  when `cuda` is selected, and OpenBLAS runtime libraries are bundled only when
+  `blas` is selected. Unknown runtime libraries are kept for compatibility with
+  future native bundle layouts.
 - Apple targets (`ios-*`, `macos-*`) support `cpu` + `metal`, but ignore
   per-backend module config in this hook path because runtime libraries are
   consolidated.
@@ -142,6 +162,30 @@ no valid entries remain, selection falls back to `cpu_profile` (or default
   - `blas` requires OpenBLAS DLL.
 - If you change `llamadart_native_backends`, run `flutter clean` once to clear
   stale native-asset outputs.
+
+## Vulkan cooperative matrix driver crashes
+
+Some Vulkan drivers advertise cooperative matrix support but crash inside the
+Vulkan property query calls used by upstream `ggml-vulkan`. This is a driver
+failure, not a llamadart loader failure. Use upstream ggml-vulkan's opt-out
+environment variables before starting the Dart/Flutter process:
+
+```bash
+GGML_VK_DISABLE_COOPMAT=1
+GGML_VK_DISABLE_COOPMAT2=1
+```
+
+On Windows PowerShell:
+
+```powershell
+$env:GGML_VK_DISABLE_COOPMAT = "1"
+$env:GGML_VK_DISABLE_COOPMAT2 = "1"
+flutter run -d windows
+```
+
+These variables disable the cooperative matrix optimized Vulkan paths for that
+process. They can reduce Vulkan performance, so use them only when the Vulkan
+driver crashes or reports device loss in the cooperative matrix path.
 
 ## Related docs
 

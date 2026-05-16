@@ -43,6 +43,10 @@ void main() {
       'ggml-base-windows-x64.dll',
       'ggml-cpu-windows-x64.dll',
       'ggml-vulkan-windows-x64.dll',
+      'ggml-cuda-windows-x64.dll',
+      'cudart64_12.dll',
+      'cublas64_12.dll',
+      'cublaslt64_12.dll',
     ]);
 
     if (archiveFile.existsSync()) {
@@ -102,6 +106,10 @@ void main() {
           expect(emittedNames, contains('llama-windows-x64.dll'));
           expect(emittedNames, contains('ggml-windows-x64.dll'));
           expect(emittedNames, contains('ggml-base-windows-x64.dll'));
+          expect(emittedNames, isNot(contains('ggml-cuda-windows-x64.dll')));
+          expect(emittedNames, isNot(contains('cudart64_12.dll')));
+          expect(emittedNames, isNot(contains('cublas64_12.dll')));
+          expect(emittedNames, isNot(contains('cublaslt64_12.dll')));
         },
       );
     },
@@ -128,6 +136,7 @@ void main() {
         'ggml-cuda-windows-x64.dll',
         'cudart64_12.dll',
         'cublas64_12.dll',
+        'cublaslt64_12.dll',
       ],
     );
 
@@ -162,6 +171,7 @@ void main() {
         expect(emittedNames, contains('ggml-cuda-windows-x64.dll'));
         expect(emittedNames, contains('cudart64_12.dll'));
         expect(emittedNames, contains('cublas64_12.dll'));
+        expect(emittedNames, contains('cublaslt64_12.dll'));
       },
     );
   });

@@ -7,11 +7,13 @@ import 'dart:math' as math;
 import 'package:ffi/ffi.dart';
 import 'package:path/path.dart' as path;
 
+import '../../core/llama_logger.dart';
 import '../../core/models/chat/content_part.dart';
 import '../../core/models/config/gpu_backend.dart';
 import '../../core/models/config/log_level.dart';
 import '../../core/models/inference/generation_params.dart';
 import '../../core/models/inference/model_params.dart';
+import 'load_param_helpers.dart';
 import 'bindings.dart';
 
 typedef _GgmlBackendLoadNative = ggml_backend_reg_t Function(Pointer<Char>);
@@ -26,6 +28,33 @@ typedef _GgmlBackendScoreNative = Int32 Function();
 typedef _GgmlBackendScoreDart = int Function();
 typedef _GgmlBackendRegisterNative = Void Function(ggml_backend_reg_t);
 typedef _GgmlBackendRegisterDart = void Function(ggml_backend_reg_t);
+typedef _GgmlBackendRegCountNative = Size Function();
+typedef _GgmlBackendRegCountDart = int Function();
+typedef _GgmlBackendRegGetNative = ggml_backend_reg_t Function(Size);
+typedef _GgmlBackendRegGetDart = ggml_backend_reg_t Function(int);
+typedef _GgmlBackendRegNameNative = Pointer<Char> Function(ggml_backend_reg_t);
+typedef _GgmlBackendRegNameDart = Pointer<Char> Function(ggml_backend_reg_t);
+typedef _GgmlBackendRegByNameNative =
+    ggml_backend_reg_t Function(Pointer<Char>);
+typedef _GgmlBackendRegByNameDart = ggml_backend_reg_t Function(Pointer<Char>);
+typedef _GgmlBackendRegDevCountNative = Size Function(ggml_backend_reg_t);
+typedef _GgmlBackendRegDevCountDart = int Function(ggml_backend_reg_t);
+typedef _GgmlBackendRegDevGetNative =
+    ggml_backend_dev_t Function(ggml_backend_reg_t, Size);
+typedef _GgmlBackendRegDevGetDart =
+    ggml_backend_dev_t Function(ggml_backend_reg_t, int);
+typedef _GgmlBackendDevCountNative = Size Function();
+typedef _GgmlBackendDevCountDart = int Function();
+typedef _GgmlBackendDevGetNative = ggml_backend_dev_t Function(Size);
+typedef _GgmlBackendDevGetDart = ggml_backend_dev_t Function(int);
+typedef _GgmlBackendDevNameNative = Pointer<Char> Function(ggml_backend_dev_t);
+typedef _GgmlBackendDevNameDart = Pointer<Char> Function(ggml_backend_dev_t);
+typedef _GgmlBackendDevBackendRegNative =
+    ggml_backend_reg_t Function(ggml_backend_dev_t);
+typedef _GgmlBackendDevBackendRegDart =
+    ggml_backend_reg_t Function(ggml_backend_dev_t);
+typedef _GgmlBackendDevByTypeNative = ggml_backend_dev_t Function(UnsignedInt);
+typedef _GgmlBackendDevByTypeDart = ggml_backend_dev_t Function(int);
 typedef _LlamaDartSetLogLevelNative = Void Function(Int32);
 typedef _LlamaDartSetLogLevelDart = void Function(int);
 typedef _MtmdDefaultMarkerNative = Pointer<Char> Function();
@@ -70,6 +99,10 @@ typedef _MtmdBitmapInitFromAudioNative =
     Pointer<mtmd_bitmap> Function(Size, Pointer<Float>);
 typedef _MtmdBitmapInitFromAudioDart =
     Pointer<mtmd_bitmap> Function(int, Pointer<Float>);
+typedef _MtmdSupportVisionNative = Bool Function(Pointer<mtmd_context>);
+typedef _MtmdSupportVisionDart = bool Function(Pointer<mtmd_context>);
+typedef _MtmdSupportAudioNative = Bool Function(Pointer<mtmd_context>);
+typedef _MtmdSupportAudioDart = bool Function(Pointer<mtmd_context>);
 typedef _MtmdBitmapFreeNative = Void Function(Pointer<mtmd_bitmap>);
 typedef _MtmdBitmapFreeDart = void Function(Pointer<mtmd_bitmap>);
 typedef _MtmdTokenizeNative =
@@ -161,10 +194,22 @@ class LlamaCppService {
   bool _linuxRuntimeDepsPrepared = false;
   String? _linuxPreparedLibraryDirectory;
   bool _ggmlFallbackLookupAttempted = false;
+  String? _ggmlFallbackLookupSearchKey;
   _GgmlBackendLoadDart? _ggmlBackendLoadFallback;
   _GgmlBackendLoadAllDart? _ggmlBackendLoadAllFallback;
   _GgmlBackendLoadAllFromPathDart? _ggmlBackendLoadAllFromPathFallback;
   _GgmlBackendRegisterDart? _ggmlBackendRegisterFallback;
+  _GgmlBackendRegCountDart? _ggmlBackendRegCountFallback;
+  _GgmlBackendRegGetDart? _ggmlBackendRegGetFallback;
+  _GgmlBackendRegNameDart? _ggmlBackendRegNameFallback;
+  _GgmlBackendRegByNameDart? _ggmlBackendRegByNameFallback;
+  _GgmlBackendRegDevCountDart? _ggmlBackendRegDevCountFallback;
+  _GgmlBackendRegDevGetDart? _ggmlBackendRegDevGetFallback;
+  _GgmlBackendDevCountDart? _ggmlBackendDevCountFallback;
+  _GgmlBackendDevGetDart? _ggmlBackendDevGetFallback;
+  _GgmlBackendDevNameDart? _ggmlBackendDevNameFallback;
+  _GgmlBackendDevBackendRegDart? _ggmlBackendDevBackendRegFallback;
+  _GgmlBackendDevByTypeDart? _ggmlBackendDevByTypeFallback;
   bool _logLevelFallbackLookupAttempted = false;
   String? _logLevelFallbackLookupSearchKey;
   _LlamaDartSetLogLevelDart? _llamaDartSetLogLevelFallback;
@@ -187,6 +232,10 @@ class LlamaCppService {
   final Map<int, Map<String, double>> _activeLoras = {};
   final Map<int, String> _modelBackendNames = <int, String>{};
   final Map<int, int> _modelResolvedGpuLayers = <int, int>{};
+
+  /// Refcount of in-flight `generate()` calls per context. A set would let the
+  /// first completion clear the marker while another decode is still running.
+  final Map<int, int> _generatingContexts = <int, int>{};
 
   // Mapping: modelHandle -> mtmdContextHandle
   final Map<int, int> _modelToMtmd = {};
@@ -280,36 +329,13 @@ class LlamaCppService {
 
   /// Resolves effective context batch parameters.
   ///
-  /// Legacy behavior is preserved when [ModelParams.batchSize] and
-  /// [ModelParams.microBatchSize] are not set:
-  ///
-  /// - `n_batch = n_ctx`
-  /// - `n_ubatch = n_batch`
-  ///
-  /// Values are clamped to safe bounds so `n_ubatch <= n_batch <= n_ctx`.
+  /// Uses the shared non-FFI helper so native and WebGPU batch semantics stay
+  /// in sync.
   static ({int batchSize, int microBatchSize}) resolveContextBatchSizes(
     ModelParams modelParams,
     int contextSize,
   ) {
-    final effectiveContextSize = contextSize > 0 ? contextSize : 1;
-
-    final configuredBatchSize = modelParams.batchSize > 0
-        ? modelParams.batchSize
-        : effectiveContextSize;
-    final cappedBatchSize = configuredBatchSize > effectiveContextSize
-        ? effectiveContextSize
-        : configuredBatchSize;
-    final batchSize = cappedBatchSize > 0 ? cappedBatchSize : 1;
-
-    final configuredMicroBatchSize = modelParams.microBatchSize > 0
-        ? modelParams.microBatchSize
-        : batchSize;
-    final cappedMicroBatchSize = configuredMicroBatchSize > batchSize
-        ? batchSize
-        : configuredMicroBatchSize;
-    final microBatchSize = cappedMicroBatchSize > 0 ? cappedMicroBatchSize : 1;
-
-    return (batchSize: batchSize, microBatchSize: microBatchSize);
+    return resolveModelContextBatchSizes(modelParams, contextSize);
   }
 
   /// Resolves whether multimodal projector init should use GPU.
@@ -453,7 +479,7 @@ class LlamaCppService {
       _tryLoadBackendModule('cpu');
     }
 
-    if (_backendRegistryOr<int>(0, ggml_backend_reg_count) == 0) {
+    if (_ggmlBackendRegCount() == 0) {
       // Fallback path: attempt to load CPU backend by filename resolution.
       _tryLoadBackendModule('cpu');
     }
@@ -1222,7 +1248,9 @@ class LlamaCppService {
     );
 
     mparams.n_gpu_layers = gpuLayers;
-    mparams.use_mmap = true;
+    mparams.split_modeAsInt = modelParams.splitMode.llamaCppValue;
+    mparams.main_gpu = modelParams.mainGpu;
+    applyModelParams(mparams, modelParams);
     if (preferredDevices != null) {
       mparams.devices = preferredDevices;
     }
@@ -1630,11 +1658,6 @@ class LlamaCppService {
   }
 
   void _resolveGgmlFallbackFunctions() {
-    if (_ggmlFallbackLookupAttempted) {
-      return;
-    }
-    _ggmlFallbackLookupAttempted = true;
-
     final fileNameCandidates = _ggmlLibraryCandidateFileNames();
     final candidates = <String>[..._ggmlAssetUriCandidates()];
     final filesystemCandidates = <String>{};
@@ -1647,6 +1670,14 @@ class LlamaCppService {
     // Keep bare-name fallback last so module-dir resolution wins when present.
     filesystemCandidates.addAll(fileNameCandidates);
     candidates.addAll(filesystemCandidates);
+
+    final searchKey = candidates.map(path.normalize).join('|');
+    if (_ggmlFallbackLookupAttempted &&
+        _ggmlFallbackLookupSearchKey == searchKey) {
+      return;
+    }
+    _ggmlFallbackLookupAttempted = true;
+    _ggmlFallbackLookupSearchKey = searchKey;
 
     final seen = <String>{};
     for (final candidate in candidates) {
@@ -1708,10 +1739,151 @@ class LlamaCppService {
         }
       }
 
+      if (_ggmlBackendRegCountFallback == null) {
+        try {
+          _ggmlBackendRegCountFallback = library
+              .lookupFunction<
+                _GgmlBackendRegCountNative,
+                _GgmlBackendRegCountDart
+              >('ggml_backend_reg_count');
+        } catch (_) {
+          // Keep searching other candidates.
+        }
+      }
+
+      if (_ggmlBackendRegGetFallback == null) {
+        try {
+          _ggmlBackendRegGetFallback = library
+              .lookupFunction<_GgmlBackendRegGetNative, _GgmlBackendRegGetDart>(
+                'ggml_backend_reg_get',
+              );
+        } catch (_) {
+          // Keep searching other candidates.
+        }
+      }
+
+      if (_ggmlBackendRegNameFallback == null) {
+        try {
+          _ggmlBackendRegNameFallback = library
+              .lookupFunction<
+                _GgmlBackendRegNameNative,
+                _GgmlBackendRegNameDart
+              >('ggml_backend_reg_name');
+        } catch (_) {
+          // Keep searching other candidates.
+        }
+      }
+
+      if (_ggmlBackendRegByNameFallback == null) {
+        try {
+          _ggmlBackendRegByNameFallback = library
+              .lookupFunction<
+                _GgmlBackendRegByNameNative,
+                _GgmlBackendRegByNameDart
+              >('ggml_backend_reg_by_name');
+        } catch (_) {
+          // Keep searching other candidates.
+        }
+      }
+
+      if (_ggmlBackendRegDevCountFallback == null) {
+        try {
+          _ggmlBackendRegDevCountFallback = library
+              .lookupFunction<
+                _GgmlBackendRegDevCountNative,
+                _GgmlBackendRegDevCountDart
+              >('ggml_backend_reg_dev_count');
+        } catch (_) {
+          // Keep searching other candidates.
+        }
+      }
+
+      if (_ggmlBackendRegDevGetFallback == null) {
+        try {
+          _ggmlBackendRegDevGetFallback = library
+              .lookupFunction<
+                _GgmlBackendRegDevGetNative,
+                _GgmlBackendRegDevGetDart
+              >('ggml_backend_reg_dev_get');
+        } catch (_) {
+          // Keep searching other candidates.
+        }
+      }
+
+      if (_ggmlBackendDevCountFallback == null) {
+        try {
+          _ggmlBackendDevCountFallback = library
+              .lookupFunction<
+                _GgmlBackendDevCountNative,
+                _GgmlBackendDevCountDart
+              >('ggml_backend_dev_count');
+        } catch (_) {
+          // Keep searching other candidates.
+        }
+      }
+
+      if (_ggmlBackendDevGetFallback == null) {
+        try {
+          _ggmlBackendDevGetFallback = library
+              .lookupFunction<_GgmlBackendDevGetNative, _GgmlBackendDevGetDart>(
+                'ggml_backend_dev_get',
+              );
+        } catch (_) {
+          // Keep searching other candidates.
+        }
+      }
+
+      if (_ggmlBackendDevNameFallback == null) {
+        try {
+          _ggmlBackendDevNameFallback = library
+              .lookupFunction<
+                _GgmlBackendDevNameNative,
+                _GgmlBackendDevNameDart
+              >('ggml_backend_dev_name');
+        } catch (_) {
+          // Keep searching other candidates.
+        }
+      }
+
+      if (_ggmlBackendDevBackendRegFallback == null) {
+        try {
+          _ggmlBackendDevBackendRegFallback = library
+              .lookupFunction<
+                _GgmlBackendDevBackendRegNative,
+                _GgmlBackendDevBackendRegDart
+              >('ggml_backend_dev_backend_reg');
+        } catch (_) {
+          // Keep searching other candidates.
+        }
+      }
+
+      if (_ggmlBackendDevByTypeFallback == null) {
+        try {
+          _ggmlBackendDevByTypeFallback = library
+              .lookupFunction<
+                _GgmlBackendDevByTypeNative,
+                _GgmlBackendDevByTypeDart
+              >('ggml_backend_dev_by_type');
+        } catch (_) {
+          // Keep searching other candidates.
+        }
+      }
+
       if (_ggmlBackendLoadFallback != null &&
           _ggmlBackendLoadAllFallback != null &&
           _ggmlBackendLoadAllFromPathFallback != null &&
-          _ggmlBackendRegisterFallback != null) {
+          _ggmlBackendRegisterFallback != null &&
+          _ggmlBackendRegCountFallback != null &&
+          _ggmlBackendRegGetFallback != null &&
+          _ggmlBackendRegNameFallback != null &&
+          _ggmlBackendRegByNameFallback != null &&
+          _ggmlBackendRegDevCountFallback != null &&
+          _ggmlBackendRegDevGetFallback != null &&
+          _ggmlBackendDevCountFallback != null &&
+          _ggmlBackendDevGetFallback != null &&
+          _ggmlBackendDevNameFallback != null &&
+          _ggmlBackendDevBackendRegFallback != null &&
+          _ggmlBackendDevByTypeFallback != null) {
         return;
       }
     }
@@ -1983,16 +2155,122 @@ class LlamaCppService {
     }
   }
 
-  T _backendRegistryOr<T>(T fallback, T Function() call) {
+  T _ggmlRegistryFallbackOr<T>(
+    T fallback,
+    T Function() primaryCall,
+    T? Function() fallbackCall,
+  ) {
+    if (Platform.isWindows) {
+      // Windows split bundles can expose ggml registry state through ggml.dll
+      // while the generated default asset points at llama.dll. Prefer the
+      // explicit ggml runtime lookup when it is available so count/get/name
+      // calls all read the same registry.
+      _resolveGgmlFallbackFunctions();
+      final fallbackValue = fallbackCall();
+      if (fallbackValue != null) {
+        return fallbackValue;
+      }
+    }
+
     try {
-      return call();
+      return primaryCall();
     } on ArgumentError {
-      // Some split bundles may omit a subset of registry symbols on the
-      // primary lookup target. Treat this call as unavailable, but continue
-      // attempting other registry APIs that may still be present.
+      _resolveGgmlFallbackFunctions();
+      final fallbackValue = fallbackCall();
+      if (fallbackValue != null) {
+        return fallbackValue;
+      }
       _backendRegistrySymbolUnavailable = true;
       return fallback;
     }
+  }
+
+  int _ggmlBackendRegCount() {
+    return _ggmlRegistryFallbackOr<int>(
+      0,
+      ggml_backend_reg_count,
+      () => _ggmlBackendRegCountFallback?.call(),
+    );
+  }
+
+  ggml_backend_reg_t _ggmlBackendRegGet(int index) {
+    return _ggmlRegistryFallbackOr<ggml_backend_reg_t>(
+      nullptr,
+      () => ggml_backend_reg_get(index),
+      () => _ggmlBackendRegGetFallback?.call(index),
+    );
+  }
+
+  Pointer<Char> _ggmlBackendRegName(ggml_backend_reg_t reg) {
+    return _ggmlRegistryFallbackOr<Pointer<Char>>(
+      nullptr,
+      () => ggml_backend_reg_name(reg),
+      () => _ggmlBackendRegNameFallback?.call(reg),
+    );
+  }
+
+  ggml_backend_reg_t _ggmlBackendRegByName(Pointer<Char> name) {
+    return _ggmlRegistryFallbackOr<ggml_backend_reg_t>(
+      nullptr,
+      () => ggml_backend_reg_by_name(name),
+      () => _ggmlBackendRegByNameFallback?.call(name),
+    );
+  }
+
+  int _ggmlBackendRegDevCount(ggml_backend_reg_t reg) {
+    return _ggmlRegistryFallbackOr<int>(
+      0,
+      () => ggml_backend_reg_dev_count(reg),
+      () => _ggmlBackendRegDevCountFallback?.call(reg),
+    );
+  }
+
+  ggml_backend_dev_t _ggmlBackendRegDevGet(ggml_backend_reg_t reg, int index) {
+    return _ggmlRegistryFallbackOr<ggml_backend_dev_t>(
+      nullptr,
+      () => ggml_backend_reg_dev_get(reg, index),
+      () => _ggmlBackendRegDevGetFallback?.call(reg, index),
+    );
+  }
+
+  int _ggmlBackendDevCount() {
+    return _ggmlRegistryFallbackOr<int>(
+      0,
+      ggml_backend_dev_count,
+      () => _ggmlBackendDevCountFallback?.call(),
+    );
+  }
+
+  ggml_backend_dev_t _ggmlBackendDevGet(int index) {
+    return _ggmlRegistryFallbackOr<ggml_backend_dev_t>(
+      nullptr,
+      () => ggml_backend_dev_get(index),
+      () => _ggmlBackendDevGetFallback?.call(index),
+    );
+  }
+
+  Pointer<Char> _ggmlBackendDevName(ggml_backend_dev_t dev) {
+    return _ggmlRegistryFallbackOr<Pointer<Char>>(
+      nullptr,
+      () => ggml_backend_dev_name(dev),
+      () => _ggmlBackendDevNameFallback?.call(dev),
+    );
+  }
+
+  ggml_backend_reg_t _ggmlBackendDevBackendReg(ggml_backend_dev_t dev) {
+    return _ggmlRegistryFallbackOr<ggml_backend_reg_t>(
+      nullptr,
+      () => ggml_backend_dev_backend_reg(dev),
+      () => _ggmlBackendDevBackendRegFallback?.call(dev),
+    );
+  }
+
+  ggml_backend_dev_t _ggmlBackendDevByType(ggml_backend_dev_type type) {
+    return _ggmlRegistryFallbackOr<ggml_backend_dev_t>(
+      nullptr,
+      () => ggml_backend_dev_by_type(type),
+      () => _ggmlBackendDevByTypeFallback?.call(type.value),
+    );
   }
 
   static String _backendLibraryFileName(String backend) {
@@ -2027,19 +2305,13 @@ class LlamaCppService {
 
   String _backendDiagnostics() {
     final regs = <String>[];
-    final regCount = _backendRegistryOr<int>(0, ggml_backend_reg_count);
+    final regCount = _ggmlBackendRegCount();
     for (var i = 0; i < regCount; i++) {
-      final reg = _backendRegistryOr<ggml_backend_reg_t>(
-        nullptr,
-        () => ggml_backend_reg_get(i),
-      );
+      final reg = _ggmlBackendRegGet(i);
       if (reg == nullptr) {
         continue;
       }
-      final regNamePtr = _backendRegistryOr<Pointer<Char>>(
-        nullptr,
-        () => ggml_backend_reg_name(reg),
-      );
+      final regNamePtr = _ggmlBackendRegName(reg);
       if (regNamePtr == nullptr) {
         continue;
       }
@@ -2072,11 +2344,8 @@ class LlamaCppService {
       case GpuBackend.auto:
         return null;
       case GpuBackend.cpu:
-        final cpuDev = _backendRegistryOr<ggml_backend_dev_t>(
-          nullptr,
-          () => ggml_backend_dev_by_type(
-            ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_CPU,
-          ),
+        final cpuDev = _ggmlBackendDevByType(
+          ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_CPU,
         );
         if (cpuDev == nullptr) {
           return null;
@@ -2100,28 +2369,19 @@ class LlamaCppService {
   List<ggml_backend_dev_t>? _devicesForBackendRegName(String regName) {
     final regNamePtr = regName.toNativeUtf8();
     try {
-      final reg = _backendRegistryOr<ggml_backend_reg_t>(
-        nullptr,
-        () => ggml_backend_reg_by_name(regNamePtr.cast()),
-      );
+      final reg = _ggmlBackendRegByName(regNamePtr.cast());
       if (reg == nullptr) {
         return null;
       }
 
-      final count = _backendRegistryOr<int>(
-        0,
-        () => ggml_backend_reg_dev_count(reg),
-      );
+      final count = _ggmlBackendRegDevCount(reg);
       if (count <= 0) {
         return null;
       }
 
       final devices = <ggml_backend_dev_t>[];
       for (var i = 0; i < count; i++) {
-        final dev = _backendRegistryOr<ggml_backend_dev_t>(
-          nullptr,
-          () => ggml_backend_reg_dev_get(reg, i),
-        );
+        final dev = _ggmlBackendRegDevGet(reg, i);
         if (dev != nullptr) {
           devices.add(dev);
         }
@@ -2247,6 +2507,15 @@ class LlamaCppService {
       }
     }
 
+    params.validate();
+    final resolvedFlashAttn = applyContextParams(ctxParams, params);
+    if (resolvedFlashAttn != params.flashAttention) {
+      LlamaLogger.instance.debug(
+        'llama_cpp_service: promoting flash_attn=enabled for non-F16 KV '
+        '(k=${params.cacheTypeK}, v=${params.cacheTypeV})',
+      );
+    }
+
     final ctxPtr = llama_init_from_model(model.pointer, ctxParams);
     if (ctxPtr == nullptr) {
       throw Exception("Failed to create context");
@@ -2294,45 +2563,54 @@ class LlamaCppService {
   }) async* {
     var ctx = _contexts[contextHandle];
     if (ctx == null) throw Exception("Invalid context handle");
-
-    final modelHandle = _contextToModel[contextHandle]!;
-    final model = _models[modelHandle]!;
-    final modelParams = _contextParams[contextHandle]!;
-    final vocab = llama_model_get_vocab(model.pointer);
-    final hasMediaParts =
-        parts?.any((p) => p is LlamaImageContent || p is LlamaAudioContent) ??
-        false;
-
-    // 1. Reset Context
-    ctx = _resetContext(
+    _generatingContexts.update(
       contextHandle,
-      ctx,
-      clearMemory: hasMediaParts || !params.reusePromptPrefix,
+      (count) => count + 1,
+      ifAbsent: () => 1,
     );
-    llama_perf_context_reset(ctx.pointer);
-    final existingSampler = _samplers[contextHandle];
-    if (existingSampler != null) {
-      llama_perf_sampler_reset(existingSampler);
-    }
 
-    // 2. Prepare Resources
-    final nCtx = llama_n_ctx(ctx.pointer);
-    final batch = _batches[contextHandle]!;
-    final tokensPtr = malloc<Int32>(nCtx);
-    final pieceBuf = malloc<Uint8>(256);
+    Pointer<Int32> tokensPtr = nullptr;
+    Pointer<Uint8> pieceBuf = nullptr;
     Pointer<Utf8> grammarPtr = nullptr;
     Pointer<Utf8> rootPtr = nullptr;
     _LazyGrammarConfig? lazyGrammarConfig;
-
-    if (params.grammar != null) {
-      grammarPtr = params.grammar!.toNativeUtf8();
-      rootPtr = params.grammarRoot.toNativeUtf8();
-      if (params.grammarLazy && params.grammarTriggers.isNotEmpty) {
-        lazyGrammarConfig = _buildLazyGrammarConfig(params);
-      }
-    }
+    Pointer<llama_sampler> sampler = nullptr;
 
     try {
+      final modelHandle = _contextToModel[contextHandle]!;
+      final model = _models[modelHandle]!;
+      final modelParams = _contextParams[contextHandle]!;
+      final vocab = llama_model_get_vocab(model.pointer);
+      final hasMediaParts =
+          parts?.any((p) => p is LlamaImageContent || p is LlamaAudioContent) ??
+          false;
+
+      // 1. Reset Context
+      ctx = _resetContext(
+        contextHandle,
+        ctx,
+        clearMemory: hasMediaParts || !params.reusePromptPrefix,
+      );
+      llama_perf_context_reset(ctx.pointer);
+      final existingSampler = _samplers[contextHandle];
+      if (existingSampler != null) {
+        llama_perf_sampler_reset(existingSampler);
+      }
+
+      // 2. Prepare Resources
+      final nCtx = llama_n_ctx(ctx.pointer);
+      final batch = _batches[contextHandle]!;
+      tokensPtr = malloc<Int32>(nCtx);
+      pieceBuf = malloc<Uint8>(256);
+
+      if (params.grammar != null) {
+        grammarPtr = params.grammar!.toNativeUtf8();
+        rootPtr = params.grammarRoot.toNativeUtf8();
+        if (params.grammarLazy && params.grammarTriggers.isNotEmpty) {
+          lazyGrammarConfig = _buildLazyGrammarConfig(params);
+        }
+      }
+
       // 3. Ingest Prompt (Text or Multimodal)
       final promptEvalStopwatch = Stopwatch()..start();
       final initialTokens = _ingestPrompt(
@@ -2353,8 +2631,10 @@ class LlamaCppService {
           promptEvalStopwatch.elapsedMicroseconds / 1000.0;
       ctx.lastPerfPromptEvalTokens = initialTokens;
 
+      _ensureLogitsAvailableAfterPromptEval(ctx.pointer);
+
       // 4. Initialize and Run Sampler Loop
-      final sampler = _initializeSampler(
+      sampler = _initializeSampler(
         params,
         vocab,
         grammarPtr,
@@ -2387,11 +2667,16 @@ class LlamaCppService {
         preservedTokenIds,
         effectiveStopSequences,
       );
-
-      llama_sampler_free(sampler);
     } finally {
-      malloc.free(tokensPtr);
-      malloc.free(pieceBuf);
+      if (sampler != nullptr) llama_sampler_free(sampler);
+      final remaining = (_generatingContexts[contextHandle] ?? 1) - 1;
+      if (remaining <= 0) {
+        _generatingContexts.remove(contextHandle);
+      } else {
+        _generatingContexts[contextHandle] = remaining;
+      }
+      if (tokensPtr != nullptr) malloc.free(tokensPtr);
+      if (pieceBuf != nullptr) malloc.free(pieceBuf);
       if (grammarPtr != nullptr) malloc.free(grammarPtr);
       if (rootPtr != nullptr) malloc.free(rootPtr);
       lazyGrammarConfig?.dispose();
@@ -2912,20 +3197,28 @@ class LlamaCppService {
 
       if (res == 0) {
         final newPast = malloc<llama_pos>();
-        if (_mtmdHelperEvalChunks(
-              mmCtx,
-              ctx.pointer,
-              chunks,
-              0,
-              0,
-              modelParams.n_batch,
-              true,
-              newPast,
-            ) ==
-            0) {
-          initialTokens = newPast.value;
+        try {
+          final evalResult = _mtmdHelperEvalChunks(
+            mmCtx,
+            ctx.pointer,
+            chunks,
+            0,
+            0,
+            modelParams.n_batch,
+            true,
+            newPast,
+          );
+          if (evalResult == 0) {
+            initialTokens = newPast.value;
+          } else {
+            throw Exception(
+              'Multimodal prompt evaluation failed: $evalResult. '
+              'The active context window may be too small for this image and conversation history.',
+            );
+          }
+        } finally {
+          malloc.free(newPast);
         }
-        malloc.free(newPast);
       } else {
         throw Exception("mtmd_tokenize failed: $res");
       }
@@ -2943,6 +3236,17 @@ class LlamaCppService {
     return initialTokens;
   }
 
+  void _ensureLogitsAvailableAfterPromptEval(Pointer<llama_context> ctx) {
+    if (llama_get_logits(ctx) != nullptr) {
+      return;
+    }
+
+    throw Exception(
+      'Prompt evaluation produced no logits for sampling. '
+      'The active context window may be too small for this prompt or multimodal decode failed.',
+    );
+  }
+
   String _normalizeMtmdPromptMarkers(String prompt, int mediaPartCount) {
     final markerPtr = _mtmdDefaultMarker();
     final marker = markerPtr == nullptr
@@ -2954,8 +3258,13 @@ class LlamaCppService {
       '<image>',
       '[IMG]',
       '<|image|>',
+      '<|audio|>',
+      '<|video|>',
       '<img>',
       '<|img|>',
+      '<image_soft_token>',
+      '<audio_soft_token>',
+      '<video_soft_token>',
     ];
 
     for (final placeholder in directPlaceholders) {
@@ -3073,7 +3382,16 @@ class LlamaCppService {
 
     final reusedPrefix = _sharedPrefixLength(cachedTokens, tokensPtr, nTokens);
 
-    if (reusedPrefix <= 0 || reusedPrefix >= nTokens) {
+    // Loaded KV holds no live logits; re-decode only the final token. Gated
+    // on kvFromStateLoad so the in-process reuse path stays bit-exact against
+    // a cleared baseline (parity property).
+    final exactStateLoadMatch =
+        ctx.kvFromStateLoad &&
+        reusedPrefix == nTokens &&
+        cachedTokens.length == nTokens;
+
+    if (reusedPrefix <= 0 ||
+        (reusedPrefix >= nTokens && !exactStateLoadMatch)) {
       final canReuseCachedCopy =
           reusedPrefix == nTokens && cachedTokens.length == nTokens;
       return _decodeAndCacheFullPrompt(
@@ -3097,7 +3415,7 @@ class LlamaCppService {
       );
     }
 
-    final decodeStart = reusedPrefix;
+    final decodeStart = exactStateLoadMatch ? nTokens - 1 : reusedPrefix;
 
     final maxSeqPos = llama_memory_seq_pos_max(memory, 0);
     final removeTo = maxSeqPos >= decodeStart ? maxSeqPos + 1 : decodeStart;
@@ -3122,7 +3440,10 @@ class LlamaCppService {
       maxBatchTokens: maxBatchTokens,
     );
 
-    ctx.cachedPromptTokens = _copyPromptTokens(tokensPtr, nTokens);
+    ctx.cachedPromptTokens = exactStateLoadMatch
+        ? cachedTokens
+        : _copyPromptTokens(tokensPtr, nTokens);
+    ctx.kvFromStateLoad = false;
 
     return nTokens;
   }
@@ -3146,6 +3467,7 @@ class LlamaCppService {
     );
     ctx.cachedPromptTokens =
         existingCachedTokens ?? _copyPromptTokens(tokensPtr, nTokens);
+    ctx.kvFromStateLoad = false;
     return nTokens;
   }
 
@@ -3559,6 +3881,107 @@ class LlamaCppService {
     return utf8.decode(bytes, allowMalformed: true);
   }
 
+  /// Persists the KV-cache state of [contextHandle] to [path] together
+  /// with the producing token sequence so a later [stateLoadFile] can
+  /// resume inference without paying the prompt-eval cost again.
+  ///
+  /// Wraps `llama_state_save_file`. Returns true on success.
+  bool stateSaveFile(int contextHandle, String path, List<int> tokens) {
+    final ctx = _contexts[contextHandle];
+    if (ctx == null) {
+      throw StateError('Unknown context handle: $contextHandle');
+    }
+    if (_generatingContexts.containsKey(contextHandle)) {
+      throw StateError(
+        'Cannot save state while generation is active on context $contextHandle',
+      );
+    }
+    llama_synchronize(ctx.pointer);
+    final pathPtr = path.toNativeUtf8();
+    final tokensPtr = tokens.isEmpty ? nullptr : malloc<Int32>(tokens.length);
+    try {
+      for (int i = 0; i < tokens.length; i++) {
+        tokensPtr[i] = tokens[i];
+      }
+      return llama_state_save_file(
+        ctx.pointer,
+        pathPtr.cast(),
+        tokensPtr,
+        tokens.length,
+      );
+    } finally {
+      malloc.free(pathPtr);
+      if (tokensPtr != nullptr) malloc.free(tokensPtr);
+    }
+  }
+
+  /// Restores a previously saved KV-cache state into [contextHandle].
+  /// [tokenCapacity] caps the number of tokens read back.
+  ///
+  /// Wraps `llama_state_load_file`. Throws on failure (corrupt file,
+  /// schema mismatch, etc.).
+  List<int> stateLoadFile(int contextHandle, String path, int tokenCapacity) {
+    final ctx = _contexts[contextHandle];
+    if (ctx == null) {
+      throw StateError('Unknown context handle: $contextHandle');
+    }
+    if (_generatingContexts.containsKey(contextHandle)) {
+      throw StateError(
+        'Cannot load state while generation is active on context $contextHandle',
+      );
+    }
+    if (tokenCapacity <= 0) {
+      throw ArgumentError.value(
+        tokenCapacity,
+        'tokenCapacity',
+        'must be positive',
+      );
+    }
+    final contextCapacity = llama_n_ctx(ctx.pointer);
+    if (tokenCapacity > contextCapacity) {
+      throw ArgumentError.value(
+        tokenCapacity,
+        'tokenCapacity',
+        'must not exceed context size ($contextCapacity)',
+      );
+    }
+    llama_synchronize(ctx.pointer);
+    final pathPtr = path.toNativeUtf8();
+    final tokensPtr = malloc<Int32>(tokenCapacity);
+    final countPtr = malloc<Size>();
+    try {
+      countPtr.value = 0;
+      final ok = llama_state_load_file(
+        ctx.pointer,
+        pathPtr.cast(),
+        tokensPtr,
+        tokenCapacity,
+        countPtr,
+      );
+      if (!ok) {
+        throw StateError(
+          'llama_state_load_file failed for "$path" '
+          '(corrupt file, version mismatch, or capacity too small)',
+        );
+      }
+      final actual = countPtr.value;
+      if (actual > tokenCapacity) {
+        throw StateError(
+          'llama_state_load_file returned actual=$actual '
+          'exceeding capacity=$tokenCapacity',
+        );
+      }
+      final loaded = List<int>.generate(actual, (i) => tokensPtr[i]);
+      ctx.cachedPromptTokens = loaded;
+      ctx.kvFromStateLoad = true;
+      return loaded;
+    } finally {
+      malloc.free(pathPtr);
+      malloc.free(tokensPtr);
+      malloc.free(countPtr);
+    }
+  }
+
   /// Returns metadata for the specified [modelHandle].
   Map<String, String> getMetadata(int modelHandle) {
     final model = _models[modelHandle];
@@ -3768,32 +4191,20 @@ class LlamaCppService {
 
   /// Returns information about currently initialized backend devices.
   List<String> getBackendInfo() {
-    final count = _backendRegistryOr<int>(0, ggml_backend_dev_count);
+    final count = _ggmlBackendDevCount();
     final devices = <String>{};
     for (var i = 0; i < count; i++) {
-      final dev = _backendRegistryOr<ggml_backend_dev_t>(
-        nullptr,
-        () => ggml_backend_dev_get(i),
-      );
+      final dev = _ggmlBackendDevGet(i);
       if (dev == nullptr) continue;
 
-      final devNamePtr = _backendRegistryOr<Pointer<Char>>(
-        nullptr,
-        () => ggml_backend_dev_name(dev),
-      );
+      final devNamePtr = _ggmlBackendDevName(dev);
       if (devNamePtr == nullptr) continue;
       final devName = devNamePtr.cast<Utf8>().toDartString();
 
       String label = devName;
-      final reg = _backendRegistryOr<ggml_backend_reg_t>(
-        nullptr,
-        () => ggml_backend_dev_backend_reg(dev),
-      );
+      final reg = _ggmlBackendDevBackendReg(dev);
       if (reg != nullptr) {
-        final regNamePtr = _backendRegistryOr<Pointer<Char>>(
-          nullptr,
-          () => ggml_backend_reg_name(reg),
-        );
+        final regNamePtr = _ggmlBackendRegName(reg);
         if (regNamePtr != nullptr) {
           final regName = regNamePtr.cast<Utf8>().toDartString();
           if (regName.toLowerCase() == devName.toLowerCase()) {
@@ -4270,6 +4681,44 @@ class LlamaCppService {
   bool hasMultimodalContext(int mmContextHandle) {
     return _mtmdContexts.containsKey(mmContextHandle);
   }
+
+  /// Returns whether the active multimodal projector supports vision input.
+  bool supportsVision(int mmContextHandle) {
+    final mmCtx = _mtmdContexts[mmContextHandle];
+    if (mmCtx == null) {
+      return false;
+    }
+
+    if (!_mtmdPrimarySymbolsUnavailable) {
+      try {
+        return mtmd_support_vision(mmCtx);
+      } on ArgumentError {
+        _mtmdPrimarySymbolsUnavailable = true;
+      }
+    }
+
+    final fallback = _resolveMtmdFallbackApi();
+    return fallback?.supportsVision(mmCtx) ?? false;
+  }
+
+  /// Returns whether the active multimodal projector supports audio input.
+  bool supportsAudio(int mmContextHandle) {
+    final mmCtx = _mtmdContexts[mmContextHandle];
+    if (mmCtx == null) {
+      return false;
+    }
+
+    if (!_mtmdPrimarySymbolsUnavailable) {
+      try {
+        return mtmd_support_audio(mmCtx);
+      } on ArgumentError {
+        _mtmdPrimarySymbolsUnavailable = true;
+      }
+    }
+
+    final fallback = _resolveMtmdFallbackApi();
+    return fallback?.supportsAudio(mmCtx) ?? false;
+  }
 }
 
 class _LazyGrammarConfig {
@@ -4311,6 +4760,8 @@ class _MtmdApi {
   final _MtmdHelperBitmapInitFromFileDart helperBitmapInitFromFile;
   final _MtmdHelperBitmapInitFromBufDart helperBitmapInitFromBuf;
   final _MtmdBitmapInitFromAudioDart bitmapInitFromAudio;
+  final _MtmdSupportVisionDart supportsVision;
+  final _MtmdSupportAudioDart supportsAudio;
   final _MtmdBitmapFreeDart bitmapFree;
   final _MtmdTokenizeDart tokenize;
   final _MtmdHelperEvalChunksDart helperEvalChunks;
@@ -4327,6 +4778,8 @@ class _MtmdApi {
     required this.helperBitmapInitFromFile,
     required this.helperBitmapInitFromBuf,
     required this.bitmapInitFromAudio,
+    required this.supportsVision,
+    required this.supportsAudio,
     required this.bitmapFree,
     required this.tokenize,
     required this.helperEvalChunks,
@@ -4392,6 +4845,14 @@ class _MtmdApi {
               _MtmdBitmapInitFromAudioNative,
               _MtmdBitmapInitFromAudioDart
             >('mtmd_bitmap_init_from_audio'),
+        supportsVision: library
+            .lookupFunction<_MtmdSupportVisionNative, _MtmdSupportVisionDart>(
+              'mtmd_support_vision',
+            ),
+        supportsAudio: library
+            .lookupFunction<_MtmdSupportAudioNative, _MtmdSupportAudioDart>(
+              'mtmd_support_audio',
+            ),
         bitmapFree: library
             .lookupFunction<_MtmdBitmapFreeNative, _MtmdBitmapFreeDart>(
               'mtmd_bitmap_free',
@@ -4437,6 +4898,12 @@ class _LlamaContextWrapper {
   final Pointer<llama_context> pointer;
   final _LlamaModelWrapper? _modelKeepAlive;
   List<int>? cachedPromptTokens;
+
+  /// Set by stateLoadFile, cleared by any decode. Gates the exact-prompt
+  /// single-token resume path; without the gate, the in-process reuse path
+  /// would diverge from the cleared+full-decode baseline (parity property).
+  bool kvFromStateLoad = false;
+
   double lastPerfPromptEvalMs = 0;
   double lastPerfEvalMs = 0;
   double lastPerfSampleMs = 0;
@@ -4448,6 +4915,7 @@ class _LlamaContextWrapper {
     // ignore: unused_local_variable
     final _ = _modelKeepAlive;
     cachedPromptTokens = null;
+    kvFromStateLoad = false;
     llama_free(pointer);
   }
 }
