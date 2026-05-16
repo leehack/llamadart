@@ -7,6 +7,8 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
+## Unreleased
+
 ## 0.6.14
 
 - Updated the default WebGPU bridge asset pin to
