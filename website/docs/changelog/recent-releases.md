@@ -7,7 +7,7 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
-## Unreleased
+## 0.6.14
 
 - Updated the default WebGPU bridge asset pin to
   `leehack/llama-web-bridge-assets@v0.1.16` (llama.cpp `b9165`), picking up
@@ -23,6 +23,9 @@ For canonical full release notes, use:
 - Wired the runnable chat app example through a `ModelDownloadManager` adapter
   so its model-management UI demonstrates the controller while preserving the
   example's multi-asset and web-cache service behavior.
+- Compatibility note: no public API breaking changes in `0.6.14`; the WebGPU
+  bridge asset update and `ModelDownloadController` are additive, and existing
+  `0.6.13` callers remain compatible.
 
 ## 0.6.13
 

@@ -25,7 +25,7 @@ configurations.
 
 ```yaml
 dependencies:
-  llamadart: ^0.6.13
+  llamadart: ^0.6.14
 ```
 
 Then resolve packages:
