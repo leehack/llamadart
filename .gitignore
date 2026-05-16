@@ -99,6 +99,7 @@ a.out.wasm
 
 # Local web bridge artifacts fetched/built for chat_app
 example/chat_app/web/webgpu_bridge/*.js
+example/chat_app/web/webgpu_bridge/*.d.ts
 example/chat_app/web/webgpu_bridge/*.wasm
 example/chat_app/web/webgpu_bridge/manifest.json
 example/chat_app/web/webgpu_bridge/sha256sums.txt

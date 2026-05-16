@@ -9,6 +9,10 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Updated the default WebGPU bridge asset pin to
+  `leehack/llama-web-bridge-assets@v0.1.16` (llama.cpp `b9165`), picking up
+  the published JS bridge build, TypeScript declaration asset, and refreshed
+  bridge docs.
 - Added WebGPU readiness guidance covering browser capability checks,
   cross-origin isolation, bridge asset/version diagnostics, fallback behavior,
   model/configuration pressure, and the Flutter Web real-model smoke path.
