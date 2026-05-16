@@ -108,7 +108,7 @@ jobs:
           dart run tool/testing/check_lcov_threshold.dart coverage/lcov.info 70
 
       - name: Upload coverage to Codecov
-        if: ${{ github.actor != 'dependabot[bot]' }}
+        if: ${{ github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]' }}
         uses: codecov/codecov-action@v6
         with:
           files: coverage/lcov.info
