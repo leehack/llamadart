@@ -125,7 +125,13 @@ Running `dart test` will run VM and Chrome-compatible tests. Tests tagged
 # Run default suite (VM + Chrome-compatible tests)
 dart test
 
-# Run local-only E2E tests
+# Discover heavyweight local-only E2E scenarios
+dart run tool/testing/run_local_e2e.dart --list
+
+# Preview the commands for one scenario without running it
+dart run tool/testing/run_local_e2e.dart --scenario chat-app-model-cache --device macos --dry-run
+
+# Run root local-only Dart E2E tests directly
 dart test --run-skipped -t local-only
 ```
 

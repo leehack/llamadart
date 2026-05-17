@@ -18,12 +18,26 @@ dart analyze --fatal-infos              # Optional stricter local check for info
 dart test                                 # Run all platform-compatible tests (VM or browser)
 dart test -p vm                           # Run only VM (native) tests
 dart test -p chrome                       # Run only Chrome (web) tests
-dart test --run-skipped -t local-only     # Run local-only E2E scenarios
+dart run tool/testing/run_local_e2e.dart --list  # Discover local-only E2E scenarios
+dart test --run-skipped -t local-only     # Run root local-only Dart E2E scenarios
 dart test test/path/to/test_file.dart     # Run a single test file
 dart test -p vm --coverage=coverage       # Run VM tests and collect coverage
 dart pub global run coverage:format_coverage --lcov --in=coverage/test --out=coverage/lcov.info --report-on=lib --check-ignore
 dart run tool/testing/check_lcov_threshold.dart coverage/lcov.info 70
 ```
+
+### Local-Only E2E Runner
+Use the scenario runner as the discovery entry point for heavyweight manual checks:
+
+```bash
+dart run tool/testing/run_local_e2e.dart --list
+dart run tool/testing/run_local_e2e.dart --scenario <name> --dry-run
+dart run tool/testing/run_local_e2e.dart --scenario chat-app-model-cache --device macos
+```
+
+Heavy scenarios remain skipped by default and out of CI unless explicitly requested.
+Use `--dry-run` before Web smoke scenarios to see the required build/server/
+Playwright steps and model URL defaults.
 
 ### Local Chat App Web E2E
 Use the real chat app path for WebGPU bridge validation after bridge/runtime

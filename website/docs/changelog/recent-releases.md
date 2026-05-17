@@ -7,6 +7,15 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
+## Unreleased
+
+- Added `tool/testing/run_local_e2e.dart` as a discovery and orchestration
+  entry point for heavyweight local-only Dart E2E, Flutter device, and
+  Web/Playwright smoke scenarios.
+- Documented that real-model/device/WebGPU scenarios remain skipped from
+  default CI and should be opted into explicitly with `--list` and `--dry-run`
+  first.
+
 ## 0.6.14
 
 - Updated the default WebGPU bridge asset pin to
