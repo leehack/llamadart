@@ -1,5 +1,8 @@
 ## Unreleased
 
+* **Fixes**:
+  * Fixed GLM-OCR and other multimodal chat-template workarounds so image and
+    audio content parts are preserved when tool-call normalization runs.
 * **Testing**:
   * Added `tool/testing/run_local_e2e.dart` as a discovery and orchestration
     entry point for heavyweight local-only Dart E2E, Flutter device, and

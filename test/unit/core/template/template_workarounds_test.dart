@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
 import 'package:llamadart/src/core/models/chat/content_part.dart';
@@ -122,6 +124,121 @@ void main() {
       expect(message['content'], contains('\n  "tool_calls"'));
       expect(message['content'], contains('"weather"'));
     });
+
+    test(
+      'applyFormatWorkarounds returns before serializing byte-backed multimodal content without tool calls',
+      () {
+        final imageBytes = Uint8List.fromList([1, 2, 3, 4]);
+        final input = [
+          LlamaChatMessage.withContent(
+            role: LlamaChatRole.user,
+            content: [
+              LlamaImageContent(bytes: imageBytes, width: 1, height: 1),
+              const LlamaTextContent('Extract text.'),
+            ],
+          ),
+        ];
+
+        final output = TemplateWorkarounds.applyFormatWorkarounds(
+          input,
+          ChatFormat.glm45,
+        );
+
+        expect(identical(output, input), isTrue);
+        final image = output.first.parts.whereType<LlamaImageContent>().single;
+        expect(identical(image.bytes, imageBytes), isTrue);
+        expect(
+          output.first.parts.whereType<LlamaTextContent>().single.text,
+          equals('Extract text.'),
+        );
+      },
+    );
+
+    test(
+      'applyFormatWorkarounds preserves multimodal content when tool calls are normalized',
+      () {
+        const input = [
+          LlamaChatMessage.withContent(
+            role: LlamaChatRole.user,
+            content: [
+              LlamaImageContent(path: '/tmp/page.png'),
+              LlamaTextContent('Extract text.'),
+            ],
+          ),
+          LlamaChatMessage.withContent(
+            role: LlamaChatRole.assistant,
+            content: [
+              LlamaToolCallContent(
+                id: 'call_1',
+                name: 'lookup',
+                arguments: {'query': 'ocr'},
+                rawJson: '{"query":"ocr"}',
+              ),
+            ],
+          ),
+        ];
+
+        final output = TemplateWorkarounds.applyFormatWorkarounds(
+          input,
+          ChatFormat.glm45,
+        );
+
+        expect(output.first.parts[0], isA<LlamaImageContent>());
+        expect(
+          output.first.parts.whereType<LlamaTextContent>().single.text,
+          equals('Extract text.'),
+        );
+        final toolCall = output.last.parts
+            .whereType<LlamaToolCallContent>()
+            .single;
+        expect(toolCall.name, equals('lookup'));
+        expect(toolCall.arguments, equals({'query': 'ocr'}));
+      },
+    );
+
+    test(
+      'applyFormatWorkarounds preserves audio content when tool calls are normalized',
+      () {
+        final audioBytes = Uint8List.fromList([82, 73, 70, 70]);
+        final input = [
+          LlamaChatMessage.withContent(
+            role: LlamaChatRole.user,
+            content: [
+              LlamaAudioContent(bytes: audioBytes),
+              const LlamaTextContent('Transcribe audio.'),
+            ],
+          ),
+          const LlamaChatMessage.withContent(
+            role: LlamaChatRole.assistant,
+            content: [
+              LlamaToolCallContent(
+                id: 'call_1',
+                name: 'lookup',
+                arguments: {'query': 'audio'},
+                rawJson: '{"query":"audio"}',
+              ),
+            ],
+          ),
+        ];
+
+        final output = TemplateWorkarounds.applyFormatWorkarounds(
+          input,
+          ChatFormat.glm45,
+        );
+
+        final audio = output.first.parts.whereType<LlamaAudioContent>().single;
+        expect(identical(audio.bytes, audioBytes), isTrue);
+        expect(
+          output.first.parts.whereType<LlamaTextContent>().single.text,
+          equals('Transcribe audio.'),
+        );
+        final toolCall = output.last.parts
+            .whereType<LlamaToolCallContent>()
+            .single;
+        expect(toolCall.name, equals('lookup'));
+        expect(toolCall.arguments, equals({'query': 'audio'}));
+      },
+    );
 
     test('applyFormatWorkarounds applies Granite chain', () {
       final input = [

@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
+import 'package:llamadart/src/core/models/chat/content_part.dart';
 import 'package:llamadart/src/core/models/inference/tool_choice.dart';
 import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:llamadart/src/core/models/tools/tool_param.dart';
@@ -26,6 +27,41 @@ void main() {
 
       expect(result.prompt, contains('CUSTOM:hello'));
       expect(result.prompt, isNot(contains('BASE:hello')));
+    });
+
+    test('preserves GLM-OCR image markers through format workarounds', () {
+      const template = '''[gMASK]<sop>
+{# GLM detection marker: <arg_key>name</arg_key><arg_value>value</arg_value> #}
+{% for m in messages %}
+{% if m.role == 'user' %}<|user|>
+{% for item in m.content %}
+{% if item.type == 'image' %}<|begin_of_image|><|image|><|end_of_image|>{% elif item.type == 'text' %}{{ item.text }}{% endif %}
+{% endfor %}
+{% endif %}
+{% endfor %}
+{% if add_generation_prompt %}<|assistant|>{% endif %}''';
+      const multimodalMessages = [
+        LlamaChatMessage.withContent(
+          role: LlamaChatRole.user,
+          content: [
+            LlamaImageContent(path: '/tmp/page.png'),
+            LlamaTextContent('Extract text.'),
+          ],
+        ),
+      ];
+
+      final result = ChatTemplateEngine.render(
+        templateSource: template,
+        messages: multimodalMessages,
+        metadata: const {},
+      );
+
+      expect(result.format, equals(ChatFormat.glm45.index));
+      expect(
+        result.prompt,
+        contains('<|begin_of_image|><__media__><|end_of_image|>'),
+      );
+      expect(result.prompt, contains('Extract text.'));
     });
   });
 

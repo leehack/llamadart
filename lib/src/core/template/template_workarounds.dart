@@ -43,29 +43,37 @@ class TemplateWorkarounds {
     List<LlamaChatMessage> messages,
     ChatFormat format,
   ) {
-    final jsonMessages = messages.map((m) => m.toJson()).toList();
-    var changed = false;
+    final needsFuncArgsNormalization = _formatsNeedFuncArgsNormalization
+        .contains(format);
+    final needsGenericSchema = _formatsNeedGenericSchema.contains(format);
+    final needsMoveToolCallsToContent = _formatsNeedMoveToolCallsToContent
+        .contains(format);
 
-    if (_formatsNeedFuncArgsNormalization.contains(format)) {
-      normalizeToolCallArgs(jsonMessages);
-      changed = true;
-    }
-
-    if (_formatsNeedGenericSchema.contains(format)) {
-      useGenericSchema(jsonMessages);
-      changed = true;
-    }
-
-    if (_formatsNeedMoveToolCallsToContent.contains(format)) {
-      moveToolCallsToContent(jsonMessages);
-      changed = true;
-    }
-
-    if (!changed) {
+    if (!needsFuncArgsNormalization &&
+        !needsGenericSchema &&
+        !needsMoveToolCallsToContent) {
       return messages;
     }
 
-    return _messagesFromJson(jsonMessages);
+    if (!_hasTypedToolCalls(messages)) {
+      return messages;
+    }
+
+    final jsonMessages = messages.map((m) => m.toJson()).toList();
+
+    if (needsFuncArgsNormalization) {
+      normalizeToolCallArgs(jsonMessages);
+    }
+
+    if (needsGenericSchema) {
+      useGenericSchema(jsonMessages);
+    }
+
+    if (needsMoveToolCallsToContent) {
+      moveToolCallsToContent(jsonMessages);
+    }
+
+    return _messagesFromJson(jsonMessages, messages);
   }
 
   /// Ensures tool call arguments are JSON objects, not strings.
@@ -172,6 +180,12 @@ class TemplateWorkarounds {
     }
   }
 
+  static bool _hasTypedToolCalls(List<LlamaChatMessage> messages) {
+    return messages.any(
+      (message) => message.parts.any((part) => part is LlamaToolCallContent),
+    );
+  }
+
   static Map<String, dynamic> _argumentsToObject(Object? args) {
     final map = ToolCallParsingUtils.decodeJsonMapValue(args);
     if (map != null) {
@@ -193,11 +207,18 @@ class TemplateWorkarounds {
 
   static List<LlamaChatMessage> _messagesFromJson(
     List<Map<String, dynamic>> messages,
+    List<LlamaChatMessage> originals,
   ) {
-    return messages.map(_messageFromJson).toList();
+    return [
+      for (var i = 0; i < messages.length; i++)
+        _messageFromJson(messages[i], original: originals[i]),
+    ];
   }
 
-  static LlamaChatMessage _messageFromJson(Map<String, dynamic> message) {
+  static LlamaChatMessage _messageFromJson(
+    Map<String, dynamic> message, {
+    required LlamaChatMessage original,
+  }) {
     final role = _parseRole(message['role'] as String? ?? 'user');
     final parts = <LlamaContentPart>[];
 
@@ -244,10 +265,7 @@ class TemplateWorkarounds {
         ),
       );
     } else {
-      final text = _extractTextContent(content);
-      if (text.isNotEmpty) {
-        parts.add(LlamaTextContent(text));
-      }
+      parts.addAll(_extractContentParts(content, original: original));
     }
 
     if (parts.isEmpty) {
@@ -257,21 +275,68 @@ class TemplateWorkarounds {
     return LlamaChatMessage.withContent(role: role, content: parts);
   }
 
-  static String _extractTextContent(Object? content) {
-    if (content == null) return '';
-    if (content is String) return content;
-    if (content is! List) return content.toString();
+  static List<LlamaContentPart> _extractContentParts(
+    Object? content, {
+    required LlamaChatMessage original,
+  }) {
+    if (content == null) return const [];
+    if (content is String) {
+      return content.isEmpty ? const [] : [LlamaTextContent(content)];
+    }
+    if (content is! List) {
+      final text = content.toString();
+      return text.isEmpty ? const [] : [LlamaTextContent(text)];
+    }
 
-    final buffer = StringBuffer();
+    final originalImages = original.parts
+        .whereType<LlamaImageContent>()
+        .toList();
+    final originalAudio = original.parts
+        .whereType<LlamaAudioContent>()
+        .toList();
+    var imageIndex = 0;
+    var audioIndex = 0;
+    final parts = <LlamaContentPart>[];
+
     for (final item in content) {
-      if (item is Map<String, dynamic> && item['type'] == 'text') {
-        final text = item['text'];
-        if (text is String) {
-          buffer.write(text);
-        }
+      if (item is! Map<String, dynamic>) continue;
+      switch (item['type']) {
+        case 'text':
+          final text = item['text'];
+          if (text is String && text.isNotEmpty) {
+            parts.add(LlamaTextContent(text));
+          }
+          break;
+        case 'image':
+        case 'image_url':
+          if (imageIndex < originalImages.length) {
+            parts.add(originalImages[imageIndex++]);
+          } else {
+            parts.add(_imageContentFromJson(item));
+          }
+          break;
+        case 'input_audio':
+        case 'audio':
+          if (audioIndex < originalAudio.length) {
+            parts.add(originalAudio[audioIndex++]);
+          }
+          break;
       }
     }
-    return buffer.toString();
+
+    return parts;
+  }
+
+  static LlamaImageContent _imageContentFromJson(Map<String, dynamic> item) {
+    final imageUrl = item['image_url'];
+    final url = imageUrl is Map<String, dynamic> ? imageUrl['url'] : null;
+    if (url is String && url.startsWith('file://')) {
+      return LlamaImageContent(path: url.substring('file://'.length));
+    }
+    if (url is String && url.isNotEmpty) {
+      return LlamaImageContent(url: url);
+    }
+    return const LlamaImageContent();
   }
 
   static LlamaChatRole _parseRole(String role) {
