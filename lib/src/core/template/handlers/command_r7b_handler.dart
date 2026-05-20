@@ -20,6 +20,10 @@ class CommandR7BHandler extends ChatTemplateHandler {
   ChatFormat get format => ChatFormat.commandR7B;
 
   @override
+  TemplateToolCallSerialization get toolCallSerialization =>
+      TemplateToolCallSerialization.normalizeOnly;
+
+  @override
   String get thinkingStartTag => '<|START_THINKING|>';
 
   @override
@@ -47,7 +51,7 @@ class CommandR7BHandler extends ChatTemplateHandler {
       template,
       metadata: metadata,
       context: {
-        'messages': messages.map((m) => m.toJson()).toList(),
+        'messages': templateMessages(messages),
         'add_generation_prompt': addAssistant,
         'tools': tools?.map((t) => t.toJson()).toList(),
         'bos_token':

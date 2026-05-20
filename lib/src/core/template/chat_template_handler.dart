@@ -1,12 +1,16 @@
 import 'package:dinja/dinja.dart';
 
 import '../models/chat/chat_message.dart';
+import '../llama_logger.dart';
 import '../models/chat/chat_template_result.dart';
 import '../models/tools/tool_definition.dart';
 import 'chat_format.dart';
 import 'chat_parse_result.dart';
 import 'template_internal_metadata.dart';
+import 'template_render_context.dart';
 import 'tool_call_parsing_utils.dart';
+
+export 'template_render_context.dart' show TemplateToolCallSerialization;
 
 /// Abstract base class for per-format chat template handlers.
 ///
@@ -30,6 +34,37 @@ abstract class ChatTemplateHandler {
   ///
   /// Prefer [getStops] for context-aware stop sequences.
   List<String> get additionalStops;
+
+  /// Tool-call serialization shape expected by this handler's Jinja template.
+  TemplateToolCallSerialization get toolCallSerialization =>
+      TemplateToolCallSerialization.none;
+
+  /// Builds the `messages` value passed to Jinja.
+  ///
+  /// Handlers should use this instead of calling [LlamaChatMessage.toJson]
+  /// directly so template-specific tool-call shapes are applied only at the
+  /// render-context boundary.
+  List<Map<String, dynamic>> templateMessages(
+    List<LlamaChatMessage> messages, {
+    bool multimodal = false,
+  }) {
+    try {
+      return TemplateRenderContext.messagesForTemplate(
+        messages,
+        toolCallSerialization: toolCallSerialization,
+        multimodal: multimodal,
+      );
+    } catch (e) {
+      LlamaLogger.instance.warning(
+        'ChatTemplateHandler: Tool-call render context failed for '
+        '$format: $e. Continuing without template-specific serialization.',
+      );
+      return TemplateRenderContext.messagesForTemplate(
+        messages,
+        multimodal: multimodal,
+      );
+    }
+  }
 
   /// Returns context-aware stop sequences for this format.
   ///
@@ -128,7 +163,7 @@ abstract class ChatTemplateHandler {
       template,
       metadata: metadata,
       context: {
-        'messages': messages.map((m) => m.toJsonMultimodal()).toList(),
+        'messages': templateMessages(messages, multimodal: true),
         'add_generation_prompt': addAssistant,
         'tools': tools?.map((t) => t.toJson()).toList(),
         'bos_token': metadata['tokenizer.ggml.bos_token'] ?? '',

@@ -8,6 +8,7 @@ import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:llamadart/src/core/models/tools/tool_param.dart';
 import 'package:llamadart/src/core/template/chat_format.dart';
 import 'package:llamadart/src/core/template/chat_template_engine.dart';
+import 'package:llamadart/src/core/template/template_render_context.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -29,8 +30,73 @@ void main() {
       expect(result.prompt, isNot(contains('BASE:hello')));
     });
 
-    test('preserves GLM-OCR image markers through format workarounds', () {
-      const template = '''[gMASK]<sop>
+    test(
+      'does not apply generic tool-call serialization to content-only routing',
+      () {
+        const template = '{{ "CONTENT:" ~ messages[0]["content"] }}';
+        const history = [
+          LlamaChatMessage.withContent(
+            role: LlamaChatRole.assistant,
+            content: [
+              LlamaTextContent('done'),
+              LlamaToolCallContent(
+                name: 'weather',
+                arguments: {'city': 'Seoul'},
+                rawJson: '{"city":"Seoul"}',
+              ),
+            ],
+          ),
+        ];
+
+        final result = ChatTemplateEngine.render(
+          templateSource: template,
+          messages: history,
+          metadata: const {},
+        );
+
+        expect(result.format, equals(ChatFormat.contentOnly.index));
+        expect(result.prompt, contains('CONTENT:done'));
+        expect(result.prompt, isNot(contains('"tool_calls"')));
+        expect(result.prompt, isNot(contains('weather')));
+      },
+    );
+
+    test('keeps old workaround format matrix in handler policies', () {
+      final expectedPolicies = <ChatFormat, TemplateToolCallSerialization>{
+        for (final format in ChatFormat.values)
+          format: TemplateToolCallSerialization.none,
+        ChatFormat.generic:
+            TemplateToolCallSerialization.genericSchemaInContent,
+        ChatFormat.granite:
+            TemplateToolCallSerialization.genericSchemaInContent,
+        ChatFormat.mistralNemo: TemplateToolCallSerialization.normalizeOnly,
+        ChatFormat.llama3: TemplateToolCallSerialization.normalizeOnly,
+        ChatFormat.llama3BuiltinTools:
+            TemplateToolCallSerialization.normalizeOnly,
+        ChatFormat.commandR7B: TemplateToolCallSerialization.normalizeOnly,
+        ChatFormat.glm45: TemplateToolCallSerialization.normalizeOnly,
+        ChatFormat.minimaxM2: TemplateToolCallSerialization.normalizeOnly,
+        ChatFormat.qwen3CoderXml: TemplateToolCallSerialization.normalizeOnly,
+        ChatFormat.seedOss: TemplateToolCallSerialization.normalizeOnly,
+      };
+
+      for (final MapEntry(key: format, value: expected)
+          in expectedPolicies.entries) {
+        final actual = ChatTemplateEngine.handlerFor(
+          format,
+        ).toolCallSerialization;
+        _expectToolCallSerialization(
+          actual,
+          expected,
+          reason: 'Unexpected tool-call serialization for $format',
+        );
+      }
+    });
+
+    test(
+      'preserves GLM-OCR image markers through render-context serialization',
+      () {
+        const template = '''[gMASK]<sop>
 {# GLM detection marker: <arg_key>name</arg_key><arg_value>value</arg_value> #}
 {% for m in messages %}
 {% if m.role == 'user' %}<|user|>
@@ -40,29 +106,30 @@ void main() {
 {% endif %}
 {% endfor %}
 {% if add_generation_prompt %}<|assistant|>{% endif %}''';
-      const multimodalMessages = [
-        LlamaChatMessage.withContent(
-          role: LlamaChatRole.user,
-          content: [
-            LlamaImageContent(path: '/tmp/page.png'),
-            LlamaTextContent('Extract text.'),
-          ],
-        ),
-      ];
+        const multimodalMessages = [
+          LlamaChatMessage.withContent(
+            role: LlamaChatRole.user,
+            content: [
+              LlamaImageContent(path: '/tmp/page.png'),
+              LlamaTextContent('Extract text.'),
+            ],
+          ),
+        ];
 
-      final result = ChatTemplateEngine.render(
-        templateSource: template,
-        messages: multimodalMessages,
-        metadata: const {},
-      );
+        final result = ChatTemplateEngine.render(
+          templateSource: template,
+          messages: multimodalMessages,
+          metadata: const {},
+        );
 
-      expect(result.format, equals(ChatFormat.glm45.index));
-      expect(
-        result.prompt,
-        contains('<|begin_of_image|><__media__><|end_of_image|>'),
-      );
-      expect(result.prompt, contains('Extract text.'));
-    });
+        expect(result.format, equals(ChatFormat.glm45.index));
+        expect(
+          result.prompt,
+          contains('<|begin_of_image|><__media__><|end_of_image|>'),
+        );
+        expect(result.prompt, contains('Extract text.'));
+      },
+    );
   });
 
   group('ChatTemplateEngine grammar routing', () {
@@ -723,6 +790,28 @@ void main() {
       expect(result.grammar, isNotNull);
     });
   });
+}
+
+void _expectToolCallSerialization(
+  TemplateToolCallSerialization actual,
+  TemplateToolCallSerialization expected, {
+  String? reason,
+}) {
+  expect(
+    actual.normalizeArguments,
+    equals(expected.normalizeArguments),
+    reason: reason,
+  );
+  expect(
+    actual.useGenericSchema,
+    equals(expected.useGenericSchema),
+    reason: reason,
+  );
+  expect(
+    actual.moveToolCallsToContent,
+    equals(expected.moveToolCallsToContent),
+    reason: reason,
+  );
 }
 
 Future<Object?> _noopHandler(_) async {

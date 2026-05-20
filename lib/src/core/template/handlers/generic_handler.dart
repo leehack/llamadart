@@ -31,8 +31,27 @@ const String _chatMlTemplate = '''
 /// - `{"tool_call": {"name": ..., "arguments": ...}}`
 /// - `{"response": "..."}`
 class GenericHandler extends ChatTemplateHandler {
+  /// Creates a generic ChatML-compatible handler.
+  ///
+  /// [format] and [toolCallSerialization] allow the engine to reuse generic
+  /// rendering for content-only fallbacks without inheriting generic tool-call
+  /// prompt serialization.
+  GenericHandler({
+    ChatFormat format = ChatFormat.generic,
+    TemplateToolCallSerialization toolCallSerialization =
+        TemplateToolCallSerialization.genericSchemaInContent,
+  }) : _format = format,
+       _toolCallSerialization = toolCallSerialization;
+
+  final ChatFormat _format;
+  final TemplateToolCallSerialization _toolCallSerialization;
+
   @override
-  ChatFormat get format => ChatFormat.generic;
+  ChatFormat get format => _format;
+
+  @override
+  TemplateToolCallSerialization get toolCallSerialization =>
+      _toolCallSerialization;
 
   @override
   List<String> get additionalStops => ['<|im_end|>'];
@@ -56,7 +75,7 @@ class GenericHandler extends ChatTemplateHandler {
       template,
       metadata: metadata,
       context: {
-        'messages': messages.map((m) => m.toJson()).toList(),
+        'messages': templateMessages(messages),
         'add_generation_prompt': addAssistant,
         'tools': tools?.map((t) => t.toJson()).toList(),
         'bos_token': metadata['tokenizer.ggml.bos_token'] ?? '<s>',

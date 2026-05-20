@@ -44,7 +44,7 @@ import 'handlers/translate_gemma_handler.dart';
 import 'handlers/xiaomi_mimo_handler.dart';
 import 'template_caps.dart';
 import 'template_internal_metadata.dart';
-import 'template_workarounds.dart';
+import 'template_render_context.dart';
 
 /// Orchestrates chat template detection, rendering, and output parsing.
 ///
@@ -192,7 +192,7 @@ class ChatTemplateEngine {
 
     final handler = handlerFor(effectiveFormat);
 
-    // 3. Apply workarounds matching llama.cpp
+    // 3. Prepare template capabilities and render context matching llama.cpp
     final caps = TemplateCaps.detect(effectiveTemplate ?? '');
     final effectiveParallelToolCalls =
         parallelToolCalls && caps.supportsParallelToolCalls;
@@ -220,11 +220,11 @@ class ChatTemplateEngine {
       );
     }
 
-    // Workarounds mirror llama.cpp preprocessing chain.
+    // Apply typed message preparation before render-context serialization.
     if (!caps.supportsSystemRole) {
-      effectiveMessages = TemplateWorkarounds.applySystemMessageWorkaround(
+      effectiveMessages = TemplateRenderContext.mergeLeadingSystemMessage(
         effectiveMessages,
-        caps,
+        supportsSystemRole: caps.supportsSystemRole,
       );
     }
 
@@ -233,18 +233,6 @@ class ChatTemplateEngine {
         effectiveMessages,
         _genericToolSystemInstruction,
         supportsSystemRole: caps.supportsSystemRole,
-      );
-    }
-
-    try {
-      effectiveMessages = TemplateWorkarounds.applyFormatWorkarounds(
-        effectiveMessages,
-        effectiveFormat,
-      );
-    } catch (e) {
-      LlamaLogger.instance.warning(
-        'ChatTemplateEngine: Format workarounds failed for '
-        '$effectiveFormat: $e. Continuing without them.',
       );
     }
 
@@ -575,12 +563,27 @@ class ChatTemplateEngine {
       case ChatFormat.translateGemma:
         return TranslateGemmaHandler();
       case ChatFormat.pegSimple:
+        return GenericHandler(
+          format: ChatFormat.pegSimple,
+          toolCallSerialization: TemplateToolCallSerialization.none,
+        );
       case ChatFormat.pegNative:
+        return GenericHandler(
+          format: ChatFormat.pegNative,
+          toolCallSerialization: TemplateToolCallSerialization.none,
+        );
       case ChatFormat.pegConstructed:
-        return GenericHandler();
+        return GenericHandler(
+          format: ChatFormat.pegConstructed,
+          toolCallSerialization: TemplateToolCallSerialization.none,
+        );
       case ChatFormat.generic:
-      case ChatFormat.contentOnly:
         return GenericHandler();
+      case ChatFormat.contentOnly:
+        return GenericHandler(
+          format: ChatFormat.contentOnly,
+          toolCallSerialization: TemplateToolCallSerialization.none,
+        );
     }
   }
 
