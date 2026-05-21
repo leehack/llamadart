@@ -129,9 +129,12 @@ class ChatTemplateEngine {
   }) {
     // 1. Select template source (default vs tool_use variant)
     final hasTools = tools != null && tools.isNotEmpty;
+    final allowToolCalls = hasTools && toolChoice != ToolChoice.none;
+    final effectiveTools = allowToolCalls ? tools : null;
     var metadataTemplate = templateSource;
 
-    if (hasTools && metadata.containsKey('tokenizer.chat_template.tool_use')) {
+    if (allowToolCalls &&
+        metadata.containsKey('tokenizer.chat_template.tool_use')) {
       metadataTemplate = metadata['tokenizer.chat_template.tool_use'];
       LlamaLogger.instance.debug(
         'ChatTemplateEngine: Using tool_use template variant',
@@ -157,27 +160,27 @@ class ChatTemplateEngine {
     ChatFormat effectiveFormat;
     // Match llama.cpp schema-aware routing: tools + schema falls back to
     // generic routing, and some format handlers are disabled with schema.
-    if (hasTools && hasSchemaResponseFormat) {
+    if (allowToolCalls && hasSchemaResponseFormat) {
       effectiveFormat = ChatFormat.generic;
     } else if (hasTools &&
         toolChoice == ToolChoice.none &&
         _toolChoiceNoneContentOnlyFormats.contains(format)) {
       effectiveFormat = ChatFormat.contentOnly;
-    } else if (hasTools &&
-        toolChoice != ToolChoice.none &&
-        _toolCallGenericFormats.contains(format)) {
+    } else if (allowToolCalls && _toolCallGenericFormats.contains(format)) {
       // Match llama.cpp server behavior: Gemma tool-call requests route
       // through generic JSON tool-calling semantics.
       effectiveFormat = ChatFormat.generic;
     } else if (format == ChatFormat.gemma) {
       // llama.cpp does not have a dedicated Gemma Jinja handler.
       // Gemma routes to content-only (no tools) or generic (tools).
-      effectiveFormat = hasTools && toolChoice != ToolChoice.none
+      effectiveFormat = allowToolCalls
           ? ChatFormat.generic
           : ChatFormat.contentOnly;
     } else if (hasSchemaResponseFormat &&
         _schemaDisabledFormats.contains(format)) {
-      effectiveFormat = hasTools ? ChatFormat.generic : ChatFormat.contentOnly;
+      effectiveFormat = allowToolCalls
+          ? ChatFormat.generic
+          : ChatFormat.contentOnly;
     } else {
       effectiveFormat = format;
     }
@@ -185,8 +188,7 @@ class ChatTemplateEngine {
     // Use generic handler fallback when template is missing, or when tool
     // calling is requested for an unknown/unclassified template.
     if (effectiveFormat == ChatFormat.contentOnly &&
-        (effectiveTemplate == null ||
-            (hasTools && toolChoice != ToolChoice.none))) {
+        (effectiveTemplate == null || allowToolCalls)) {
       effectiveFormat = ChatFormat.generic;
     }
 
@@ -195,11 +197,11 @@ class ChatTemplateEngine {
     // 3. Prepare template capabilities and render context matching llama.cpp
     final caps = TemplateCaps.detect(effectiveTemplate ?? '');
     final effectiveParallelToolCalls =
-        parallelToolCalls && caps.supportsParallelToolCalls;
+        allowToolCalls && parallelToolCalls && caps.supportsParallelToolCalls;
     if (parallelToolCalls && !effectiveParallelToolCalls) {
       LlamaLogger.instance.debug(
         'ChatTemplateEngine: Disabling parallelToolCalls because template '
-        'does not support parallel tool calls.',
+        'does not support parallel tool calls or tool calls are disabled.',
       );
     }
 
@@ -212,7 +214,7 @@ class ChatTemplateEngine {
     );
     var effectiveMessages = messages;
 
-    if (hasTools && caps.supportsToolCalls && !caps.supportsTools) {
+    if (allowToolCalls && caps.supportsToolCalls && !caps.supportsTools) {
       LlamaLogger.instance.warning(
         'ChatTemplateEngine: Template appears to support tool-call output but '
         'does not advertise tool definitions. Results may be unreliable; '
@@ -228,7 +230,7 @@ class ChatTemplateEngine {
       );
     }
 
-    if (hasTools && effectiveFormat == ChatFormat.generic) {
+    if (allowToolCalls && effectiveFormat == ChatFormat.generic) {
       effectiveMessages = _injectSystemInstructionLikeLlamaCpp(
         effectiveMessages,
         _genericToolSystemInstruction,
@@ -255,7 +257,7 @@ class ChatTemplateEngine {
         messages: effectiveMessages,
         metadata: handlerMetadata,
         addAssistant: addAssistant,
-        tools: tools,
+        tools: effectiveTools,
         enableThinking: enableThinking,
       );
       if (effectiveFormat == ChatFormat.contentOnly) {
@@ -264,7 +266,7 @@ class ChatTemplateEngine {
 
       final withGrammar = _applyGrammar(
         rendered,
-        tools,
+        effectiveTools,
         toolChoice,
         responseFormat,
       );
@@ -276,7 +278,7 @@ class ChatTemplateEngine {
       messages: effectiveMessages,
       metadata: handlerMetadata,
       addAssistant: addAssistant,
-      tools: tools,
+      tools: effectiveTools,
       enableThinking: enableThinking,
     );
 
@@ -287,7 +289,7 @@ class ChatTemplateEngine {
     // Apply grammar constraints for tool calls or response format
     final withGrammar = _applyGrammar(
       baseResult,
-      tools,
+      effectiveTools,
       toolChoice,
       responseFormat,
     );

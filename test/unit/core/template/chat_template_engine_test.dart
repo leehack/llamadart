@@ -198,6 +198,39 @@ void main() {
       expect(result.prompt, contains('<arg_value>ko</arg_value>'));
     });
 
+    test('tool_choice none disables GLM tool rendering and grammar', () {
+      const baseTemplate = '''[gMASK]<sop>
+{# GLM detection marker: <arg_key>name</arg_key><arg_value>value</arg_value> #}
+{% if tools %}TOOLS:{{ tools[0]["function"]["name"] }}{% endif %}
+{% for m in messages %}{% if m.role == 'user' %}<|user|>{{ m.content }}{% endif %}{% endfor %}
+{% if add_generation_prompt %}<|assistant|>{% endif %}''';
+      const toolUseTemplate = 'TOOL_USE_VARIANT\n$baseTemplate';
+      final tools = [
+        ToolDefinition(
+          name: 'get_weather',
+          description: 'Get weather',
+          parameters: [ToolParam.string('city')],
+          handler: _noopHandler,
+        ),
+      ];
+
+      final result = ChatTemplateEngine.render(
+        templateSource: baseTemplate,
+        messages: messages,
+        metadata: const {'tokenizer.chat_template.tool_use': toolUseTemplate},
+        tools: tools,
+        toolChoice: ToolChoice.none,
+      );
+
+      expect(result.format, equals(ChatFormat.glm45.index));
+      expect(result.prompt, isNot(contains('TOOL_USE_VARIANT')));
+      expect(result.prompt, isNot(contains('TOOLS:get_weather')));
+      expect(result.grammar, isNull);
+      expect(result.grammarLazy, isFalse);
+      expect(result.preservedTokens, isEmpty);
+      expect(result.grammarTriggers, isEmpty);
+    });
+
     test(
       'keeps system text before media for templates without system role',
       () {
