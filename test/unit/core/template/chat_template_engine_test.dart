@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
 import 'package:llamadart/src/core/models/chat/content_part.dart';
@@ -130,6 +131,131 @@ void main() {
         expect(result.prompt, contains('Extract text.'));
       },
     );
+
+    test(
+      'keeps system text before media for templates without system role',
+      () {
+        const template = '''[gMASK]<sop>
+{# GLM detection marker: <arg_key>name</arg_key><arg_value>value</arg_value> #}
+{% for m in messages %}
+{% if m.role == 'user' %}<|user|>
+{% for item in m.content %}
+{% if item.type == 'image' %}<|begin_of_image|><|image|><|end_of_image|>{% elif item.type == 'text' %}{{ item.text }}{% endif %}
+{% endfor %}
+{% endif %}
+{% endfor %}
+{% if add_generation_prompt %}<|assistant|>{% endif %}''';
+        const multimodalMessages = [
+          LlamaChatMessage.fromText(
+            role: LlamaChatRole.system,
+            text: 'Use OCR mode.',
+          ),
+          LlamaChatMessage.withContent(
+            role: LlamaChatRole.user,
+            content: [
+              LlamaImageContent(path: '/tmp/page.png'),
+              LlamaTextContent('Extract text.'),
+            ],
+          ),
+        ];
+
+        final result = ChatTemplateEngine.render(
+          templateSource: template,
+          messages: multimodalMessages,
+          metadata: const {},
+        );
+
+        expect(result.format, equals(ChatFormat.glm45.index));
+        final systemIndex = result.prompt.indexOf('Use OCR mode.');
+        final mediaIndex = result.prompt.indexOf('<__media__>');
+        final taskIndex = result.prompt.indexOf('Extract text.');
+        expect(systemIndex, isNonNegative);
+        expect(mediaIndex, isNonNegative);
+        expect(taskIndex, isNonNegative);
+        expect(systemIndex, lessThan(mediaIndex));
+        expect(mediaIndex, lessThan(taskIndex));
+      },
+    );
+
+    test(
+      'generic tool instruction injection preserves multimodal user parts',
+      () {
+        const template = '''{% for m in messages %}
+{% if m.role == 'user' %}
+{% for item in m.content %}{% if item.type == 'image' %}<image>{% elif item.type == 'text' %}{{ item.text }}{% endif %}{% endfor %}
+{% endif %}
+{% endfor %}''';
+        final tools = [
+          ToolDefinition(
+            name: 'get_weather',
+            description: 'Get weather',
+            parameters: [ToolParam.string('city')],
+            handler: _noopHandler,
+          ),
+        ];
+
+        final result = ChatTemplateEngine.render(
+          templateSource: template,
+          messages: const [
+            LlamaChatMessage.withContent(
+              role: LlamaChatRole.user,
+              content: [
+                LlamaImageContent(path: '/tmp/page.png'),
+                LlamaTextContent('Extract text.'),
+              ],
+            ),
+          ],
+          metadata: const {},
+          tools: tools,
+        );
+
+        expect(result.format, equals(ChatFormat.generic.index));
+        expect(result.prompt, contains('Respond in JSON format'));
+        expect(result.prompt, contains('<__media__>'));
+        expect(result.prompt, contains('Extract text.'));
+        expect(
+          result.prompt.indexOf('Respond in JSON format'),
+          lessThan(result.prompt.indexOf('<__media__>')),
+        );
+        expect(
+          result.prompt.indexOf('<__media__>'),
+          lessThan(result.prompt.indexOf('Extract text.')),
+        );
+      },
+    );
+
+    test('fails loudly when required tool-call serialization is invalid', () {
+      const template = '{{ messages[0]["content"] }}';
+      final tools = [
+        ToolDefinition(
+          name: 'get_weather',
+          description: 'Get weather',
+          parameters: [ToolParam.string('city')],
+          handler: _noopHandler,
+        ),
+      ];
+
+      expect(
+        () => ChatTemplateEngine.render(
+          templateSource: template,
+          messages: const [
+            LlamaChatMessage.withContent(
+              role: LlamaChatRole.assistant,
+              content: [
+                LlamaToolCallContent(
+                  name: 'get_weather',
+                  arguments: {},
+                  rawJson: '["not", "an", "object"]',
+                ),
+              ],
+            ),
+          ],
+          metadata: const {},
+          tools: tools,
+        ),
+        throwsA(isA<LlamaInferenceException>()),
+      );
+    });
   });
 
   group('ChatTemplateEngine grammar routing', () {

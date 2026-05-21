@@ -2,7 +2,10 @@
 
 * **Fixes**:
   * Fixed GLM-OCR and other multimodal chat-template workarounds so image and
-    audio content parts are preserved when tool-call normalization runs.
+    audio content parts are preserved when tool-call normalization runs, system
+    prompts are merged before leading media parts, and invalid tool-call
+    serialization fails loudly instead of silently falling back to the wrong
+    template shape.
 * **Testing**:
   * Added `tool/testing/run_local_e2e.dart` as a discovery and orchestration
     entry point for heavyweight local-only Dart E2E, Flutter device, and

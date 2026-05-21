@@ -167,10 +167,14 @@ void main() {
           hasLength(1),
         );
         expect(
+          merged.single.parts.map((part) => part.runtimeType),
+          equals([LlamaTextContent, LlamaImageContent, LlamaTextContent]),
+        );
+        expect(
           merged.single.parts.whereType<LlamaTextContent>().map(
             (part) => part.text,
           ),
-          equals(['You are concise.\nExtract text.']),
+          equals(['You are concise.', 'Extract text.']),
         );
       },
     );

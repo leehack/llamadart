@@ -1,7 +1,7 @@
 import 'package:dinja/dinja.dart';
 
+import '../exceptions.dart';
 import '../models/chat/chat_message.dart';
-import '../llama_logger.dart';
 import '../models/chat/chat_template_result.dart';
 import '../models/tools/tool_definition.dart';
 import 'chat_format.dart';
@@ -54,14 +54,13 @@ abstract class ChatTemplateHandler {
         toolCallSerialization: toolCallSerialization,
         multimodal: multimodal,
       );
-    } catch (e) {
-      LlamaLogger.instance.warning(
-        'ChatTemplateHandler: Tool-call render context failed for '
-        '$format: $e. Continuing without template-specific serialization.',
-      );
-      return TemplateRenderContext.messagesForTemplate(
-        messages,
-        multimodal: multimodal,
+    } catch (e, stackTrace) {
+      if (toolCallSerialization.isEmpty) rethrow;
+      throw LlamaInferenceException(
+        'Failed to build render context for $format chat template while '
+        'applying template-specific tool-call serialization. Verify tool-call '
+        'arguments are JSON objects compatible with the selected template.',
+        {'cause': e.toString(), 'stackTrace': stackTrace.toString()},
       );
     }
   }

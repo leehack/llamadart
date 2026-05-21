@@ -234,24 +234,20 @@ class TemplateRenderContext {
       return LlamaChatMessage.fromText(role: message.role, text: systemText);
     }
 
-    final mergedParts = <LlamaContentPart>[];
-    var mergedText = false;
-    for (final part in message.parts) {
-      if (!mergedText && part is LlamaTextContent) {
-        mergedParts.add(LlamaTextContent('$systemText\n${part.text}'));
-        mergedText = true;
-      } else {
-        mergedParts.add(part);
-      }
-    }
-
-    if (!mergedText) {
-      mergedParts.insert(0, LlamaTextContent(systemText));
+    final firstPart = message.parts.first;
+    if (firstPart is LlamaTextContent) {
+      return LlamaChatMessage.withContent(
+        role: message.role,
+        content: [
+          LlamaTextContent('$systemText\n${firstPart.text}'),
+          ...message.parts.skip(1),
+        ],
+      );
     }
 
     return LlamaChatMessage.withContent(
       role: message.role,
-      content: mergedParts,
+      content: [LlamaTextContent(systemText), ...message.parts],
     );
   }
 

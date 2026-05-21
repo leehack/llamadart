@@ -714,11 +714,12 @@ class ChatTemplateEngine {
       ];
     }
 
-    final first = messages.first;
-    final merged = '${instruction.trim()}\n\n${first.content.trim()}';
-    return <LlamaChatMessage>[
-      first.copyWith(content: merged),
-      ...messages.skip(1),
-    ];
+    return TemplateRenderContext.mergeLeadingSystemMessage(<LlamaChatMessage>[
+      LlamaChatMessage.fromText(
+        role: LlamaChatRole.system,
+        text: instruction.trim(),
+      ),
+      ...messages,
+    ], supportsSystemRole: false);
   }
 }
