@@ -215,7 +215,7 @@ void main() {
     );
 
     test(
-      'keeps list content structured when moving tool calls into content',
+      'stringifies list content in text-oriented tool-call content moves',
       () {
         final messages = [
           <String, dynamic>{
@@ -237,6 +237,44 @@ void main() {
         ];
 
         TemplateRenderContext.moveToolCallsToContent(messages, indentSpaces: 0);
+
+        expect(messages.single.containsKey('tool_calls'), isFalse);
+        final content = messages.single['content'];
+        expect(content, isA<String>());
+        expect(content, contains('image_url'));
+        expect(content, contains('prefix:'));
+        expect(content, contains('"tool_calls"'));
+        expect(content, contains('weather'));
+      },
+    );
+
+    test(
+      'keeps list content structured when explicitly preserving content parts',
+      () {
+        final messages = [
+          <String, dynamic>{
+            'role': 'assistant',
+            'content': [
+              {
+                'type': 'image_url',
+                'image_url': {'url': 'data:image/jpeg;base64,abc'},
+              },
+              {'type': 'text', 'text': 'prefix:'},
+            ],
+            'tool_calls': [
+              {
+                'name': 'weather',
+                'arguments': {'city': 'Seoul'},
+              },
+            ],
+          },
+        ];
+
+        TemplateRenderContext.moveToolCallsToContent(
+          messages,
+          indentSpaces: 0,
+          preserveContentList: true,
+        );
 
         expect(messages.single.containsKey('tool_calls'), isFalse);
         final content = messages.single['content'];
@@ -280,5 +318,42 @@ void main() {
       expect(content.last['text'], contains('"tool_calls"'));
       expect(content.last['text'], contains('"weather"'));
     });
+
+    test(
+      'preserves audio parts when moving tool calls for multimodal contexts',
+      () {
+        const messages = [
+          LlamaChatMessage.withContent(
+            role: LlamaChatRole.assistant,
+            content: [
+              LlamaAudioContent(path: '/tmp/prompt.wav'),
+              LlamaTextContent('prefix:'),
+              LlamaToolCallContent(
+                name: 'transcribe_hint',
+                arguments: {'language': 'ko'},
+                rawJson: '{"language":"ko"}',
+              ),
+            ],
+          ),
+        ];
+
+        final renderedMessages = TemplateRenderContext.messagesForTemplate(
+          messages,
+          toolCallSerialization:
+              TemplateToolCallSerialization.genericSchemaInContent,
+          multimodal: true,
+        );
+
+        expect(renderedMessages.single.containsKey('tool_calls'), isFalse);
+        final content = renderedMessages.single['content'];
+        expect(content, isA<List>());
+        expect(content, hasLength(3));
+        expect(content.first['type'], equals('input_audio'));
+        expect(content[1], equals({'type': 'text', 'text': 'prefix:'}));
+        expect(content.last['type'], equals('text'));
+        expect(content.last['text'], contains('"tool_calls"'));
+        expect(content.last['text'], contains('transcribe_hint'));
+      },
+    );
   });
 }

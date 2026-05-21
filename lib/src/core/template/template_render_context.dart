@@ -49,6 +49,18 @@ class TemplateToolCallSerialization {
   /// Whether no tool-call serialization transformations are enabled.
   bool get isEmpty =>
       !normalizeArguments && !useGenericSchema && !moveToolCallsToContent;
+
+  @override
+  bool operator ==(Object other) {
+    return other is TemplateToolCallSerialization &&
+        other.normalizeArguments == normalizeArguments &&
+        other.useGenericSchema == useGenericSchema &&
+        other.moveToolCallsToContent == moveToolCallsToContent;
+  }
+
+  @override
+  int get hashCode =>
+      Object.hash(normalizeArguments, useGenericSchema, moveToolCallsToContent);
 }
 
 /// Builds Jinja render-context values from typed chat messages.
@@ -57,6 +69,10 @@ class TemplateToolCallSerialization {
 /// converting the rendered JSON maps back into [LlamaChatMessage] instances so
 /// typed multimodal parts remain first-class until the final context build.
 class TemplateRenderContext {
+  static const JsonEncoder _defaultToolCallEncoder = JsonEncoder.withIndent(
+    '  ',
+  );
+
   /// Serializes [messages] into the JSON shape expected by a template handler.
   static List<Map<String, dynamic>> messagesForTemplate(
     List<LlamaChatMessage> messages, {
@@ -64,12 +80,19 @@ class TemplateRenderContext {
         TemplateToolCallSerialization.none,
     bool multimodal = false,
   }) {
-    final renderedMessages = [
-      for (final message in messages)
-        multimodal ? message.toJsonMultimodal() : message.toJson(),
-    ];
+    final renderedMessages = <Map<String, dynamic>>[];
+    var hasToolCalls = false;
+    for (final message in messages) {
+      final rendered = multimodal
+          ? message.toJsonMultimodal()
+          : message.toJson();
+      if (rendered['tool_calls'] is List) {
+        hasToolCalls = true;
+      }
+      renderedMessages.add(rendered);
+    }
 
-    if (toolCallSerialization.isEmpty || !_hasToolCalls(renderedMessages)) {
+    if (toolCallSerialization.isEmpty || !hasToolCalls) {
       return renderedMessages;
     }
 
@@ -194,9 +217,11 @@ class TemplateRenderContext {
       final payload = {'tool_calls': toolCalls};
       final toolCallsJson = indentSpaces <= 0
           ? jsonEncode(payload)
+          : indentSpaces == 2
+          ? _defaultToolCallEncoder.convert(payload)
           : JsonEncoder.withIndent(' ' * indentSpaces).convert(payload);
 
-      if (preserveContentList || currentContent is List) {
+      if (preserveContentList) {
         final parts = _contentAsTextParts(currentContent);
         parts.add({'type': 'text', 'text': toolCallsJson});
         message['content'] = parts;
@@ -249,10 +274,6 @@ class TemplateRenderContext {
       role: message.role,
       content: [LlamaTextContent(systemText), ...message.parts],
     );
-  }
-
-  static bool _hasToolCalls(List<Map<String, dynamic>> messages) {
-    return messages.any((message) => message['tool_calls'] is List);
   }
 
   static Map<String, dynamic> _argumentsToObject(Object? args) {

@@ -236,43 +236,21 @@ class ChatTemplateEngine {
       );
     }
 
-    try {
-      // Proactively detect templates that access content as a list
-      // (e.g. SmolVLM's `message['content'][0]['type']`)
-      final hasMediaParts = effectiveMessages.any(
-        (message) => message.parts.any(
-          (part) => part is LlamaImageContent || part is LlamaAudioContent,
-        ),
+    // Proactively detect templates that access content as a list
+    // (e.g. SmolVLM's `message['content'][0]['type']`)
+    final hasMediaParts = effectiveMessages.any(
+      (message) => message.parts.any(
+        (part) => part is LlamaImageContent || part is LlamaAudioContent,
+      ),
+    );
+    final needsTypedContent = caps.supportsTypedContent && hasMediaParts;
+
+    if (needsTypedContent) {
+      LlamaLogger.instance.debug(
+        'ChatTemplateEngine: Using multimodal content format '
+        'for template that accesses content as list',
       );
-      final needsTypedContent = caps.supportsTypedContent && hasMediaParts;
-
-      if (needsTypedContent) {
-        LlamaLogger.instance.debug(
-          'ChatTemplateEngine: Using multimodal content format '
-          'for template that accesses content as list',
-        );
-        var rendered = handler.renderWithMultimodalContent(
-          templateSource: effectiveTemplate ?? GenericHandler.chatMlTemplate,
-          messages: effectiveMessages,
-          metadata: handlerMetadata,
-          addAssistant: addAssistant,
-          tools: tools,
-          enableThinking: enableThinking,
-        );
-        if (effectiveFormat == ChatFormat.contentOnly) {
-          rendered = _withFormat(rendered, ChatFormat.contentOnly.index);
-        }
-
-        final withGrammar = _applyGrammar(
-          rendered,
-          tools,
-          toolChoice,
-          responseFormat,
-        );
-        return _normalizeGrammarLazyForToolChoice(withGrammar, toolChoice);
-      }
-
-      var baseResult = handler.render(
+      var rendered = handler.renderWithMultimodalContent(
         templateSource: effectiveTemplate ?? GenericHandler.chatMlTemplate,
         messages: effectiveMessages,
         metadata: handlerMetadata,
@@ -280,22 +258,40 @@ class ChatTemplateEngine {
         tools: tools,
         enableThinking: enableThinking,
       );
-
       if (effectiveFormat == ChatFormat.contentOnly) {
-        baseResult = _withFormat(baseResult, ChatFormat.contentOnly.index);
+        rendered = _withFormat(rendered, ChatFormat.contentOnly.index);
       }
 
-      // Apply grammar constraints for tool calls or response format
       final withGrammar = _applyGrammar(
-        baseResult,
+        rendered,
         tools,
         toolChoice,
         responseFormat,
       );
       return _normalizeGrammarLazyForToolChoice(withGrammar, toolChoice);
-    } catch (_) {
-      rethrow;
     }
+
+    var baseResult = handler.render(
+      templateSource: effectiveTemplate ?? GenericHandler.chatMlTemplate,
+      messages: effectiveMessages,
+      metadata: handlerMetadata,
+      addAssistant: addAssistant,
+      tools: tools,
+      enableThinking: enableThinking,
+    );
+
+    if (effectiveFormat == ChatFormat.contentOnly) {
+      baseResult = _withFormat(baseResult, ChatFormat.contentOnly.index);
+    }
+
+    // Apply grammar constraints for tool calls or response format
+    final withGrammar = _applyGrammar(
+      baseResult,
+      tools,
+      toolChoice,
+      responseFormat,
+    );
+    return _normalizeGrammarLazyForToolChoice(withGrammar, toolChoice);
   }
 
   /// Apply grammar constraints based on tool definitions and response format.
@@ -453,42 +449,38 @@ class ChatTemplateEngine {
     final handler = resolved.handler;
     final format = resolved.format;
 
-    try {
-      final hasPegParser = parser != null && parser.trim().isNotEmpty;
-      final isPegFormat =
-          format == ChatFormat.pegSimple ||
-          format == ChatFormat.pegNative ||
-          format == ChatFormat.pegConstructed;
-      final pegFormat = switch (format) {
-        ChatFormat.pegSimple => ChatFormat.pegSimple,
-        ChatFormat.pegNative => ChatFormat.pegNative,
-        ChatFormat.pegConstructed => ChatFormat.pegConstructed,
-        ChatFormat.ministral => hasPegParser ? ChatFormat.pegNative : null,
-        ChatFormat.solarOpen => hasPegParser ? ChatFormat.pegNative : null,
-        ChatFormat.qwen3CoderXml =>
-          hasPegParser ? ChatFormat.pegConstructed : null,
-        _ => null,
-      };
+    final hasPegParser = parser != null && parser.trim().isNotEmpty;
+    final isPegFormat =
+        format == ChatFormat.pegSimple ||
+        format == ChatFormat.pegNative ||
+        format == ChatFormat.pegConstructed;
+    final pegFormat = switch (format) {
+      ChatFormat.pegSimple => ChatFormat.pegSimple,
+      ChatFormat.pegNative => ChatFormat.pegNative,
+      ChatFormat.pegConstructed => ChatFormat.pegConstructed,
+      ChatFormat.ministral => hasPegParser ? ChatFormat.pegNative : null,
+      ChatFormat.solarOpen => hasPegParser ? ChatFormat.pegNative : null,
+      ChatFormat.qwen3CoderXml =>
+        hasPegParser ? ChatFormat.pegConstructed : null,
+      _ => null,
+    };
 
-      if (pegFormat != null && (isPegFormat || hasPegParser)) {
-        return PegChatParser.parse(
-          parser: parser ?? '',
-          format: pegFormat,
-          output: output,
-          isPartial: isPartial,
-          parseToolCalls: parseToolCalls,
-        );
-      }
-
-      return handler.parse(
-        output,
+    if (pegFormat != null && (isPegFormat || hasPegParser)) {
+      return PegChatParser.parse(
+        parser: parser ?? '',
+        format: pegFormat,
+        output: output,
         isPartial: isPartial,
         parseToolCalls: parseToolCalls,
-        thinkingForcedOpen: thinkingForcedOpen,
       );
-    } catch (_) {
-      rethrow;
     }
+
+    return handler.parse(
+      output,
+      isPartial: isPartial,
+      parseToolCalls: parseToolCalls,
+      thinkingForcedOpen: thinkingForcedOpen,
+    );
   }
 
   /// Returns the thinking tags used by the selected parser handler.
