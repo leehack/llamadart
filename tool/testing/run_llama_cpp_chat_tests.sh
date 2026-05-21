@@ -49,7 +49,7 @@ resolve_target() {
   shift
   local candidate
   for candidate in "$@"; do
-    if grep -Eq "(^|[[:space:]])${candidate}($|[[:space:]])" <<<"${available_targets}"; then
+    if grep -Eq "(^|[[:space:]])${candidate}(:|$|[[:space:]])" <<<"${available_targets}"; then
       echo "${candidate}"
       return 0
     fi

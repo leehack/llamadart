@@ -19,6 +19,7 @@ void main() {
       expect(script, contains('test-chat-auto-parser'));
       expect(script, contains('test-chat-parser'));
       expect(script, contains('resolve_target'));
+      expect(script, contains(r'(:|$|[[:space:]])'));
     });
 
     test(

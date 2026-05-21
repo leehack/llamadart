@@ -215,7 +215,7 @@ void main() {
     );
 
     test(
-      'stringifies list content in text-oriented tool-call content moves',
+      'keeps only text from list content in text-oriented tool-call moves',
       () {
         final messages = [
           <String, dynamic>{
@@ -224,6 +224,10 @@ void main() {
               {
                 'type': 'image_url',
                 'image_url': {'url': 'data:image/jpeg;base64,abc'},
+              },
+              {
+                'type': 'image_url',
+                'image_url': {'url': 'file:///tmp/page.png'},
               },
               {'type': 'text', 'text': 'prefix:'},
             ],
@@ -241,10 +245,12 @@ void main() {
         expect(messages.single.containsKey('tool_calls'), isFalse);
         final content = messages.single['content'];
         expect(content, isA<String>());
-        expect(content, contains('image_url'));
         expect(content, contains('prefix:'));
         expect(content, contains('"tool_calls"'));
         expect(content, contains('weather'));
+        expect(content, isNot(contains('image_url')));
+        expect(content, isNot(contains('data:image')));
+        expect(content, isNot(contains('file:///tmp/page.png')));
       },
     );
 

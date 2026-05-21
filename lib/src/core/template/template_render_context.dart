@@ -226,13 +226,30 @@ class TemplateRenderContext {
         parts.add({'type': 'text', 'text': toolCallsJson});
         message['content'] = parts;
       } else {
-        final contentText = currentContent == null
-            ? ''
-            : currentContent.toString();
+        final contentText = _contentAsText(currentContent);
         message['content'] = '$contentText$toolCallsJson';
       }
       message.remove('tool_calls');
     }
+  }
+
+  static String _contentAsText(Object? content) {
+    if (content == null) return '';
+    if (content is List) {
+      final buffer = StringBuffer();
+      for (final item in content) {
+        if (item is String) {
+          buffer.write(item);
+        } else if (item is Map<String, dynamic>) {
+          final text = item['text'];
+          if (text is String) {
+            buffer.write(text);
+          }
+        }
+      }
+      return buffer.toString();
+    }
+    return content.toString();
   }
 
   static List<Map<String, dynamic>> _contentAsTextParts(Object? content) {
