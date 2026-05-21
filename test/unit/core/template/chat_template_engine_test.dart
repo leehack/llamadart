@@ -253,7 +253,19 @@ void main() {
           metadata: const {},
           tools: tools,
         ),
-        throwsA(isA<LlamaInferenceException>()),
+        throwsA(
+          isA<LlamaInferenceException>()
+              .having(
+                (error) => error.details.toString(),
+                'details',
+                isNot(contains('stackTrace')),
+              )
+              .having(
+                (error) => error.details.toString(),
+                'details',
+                contains('cause'),
+              ),
+        ),
       );
     });
   });

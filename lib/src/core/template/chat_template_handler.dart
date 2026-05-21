@@ -56,12 +56,13 @@ abstract class ChatTemplateHandler {
       );
     } catch (e, stackTrace) {
       if (toolCallSerialization.isEmpty) rethrow;
-      throw LlamaInferenceException(
+      final wrapped = LlamaInferenceException(
         'Failed to build render context for $format chat template while '
         'applying template-specific tool-call serialization. Verify tool-call '
         'arguments are JSON objects compatible with the selected template.',
-        {'cause': e.toString(), 'stackTrace': stackTrace.toString()},
+        {'causeType': e.runtimeType.toString(), 'cause': e.toString()},
       );
+      Error.throwWithStackTrace(wrapped, stackTrace);
     }
   }
 
