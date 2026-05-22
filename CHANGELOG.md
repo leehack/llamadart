@@ -1,4 +1,4 @@
-## Unreleased
+## 0.6.15
 
 * **Fixes**:
   * Fixed GLM-OCR and other multimodal chat-template workarounds so image and
@@ -16,6 +16,10 @@
   * Documented that real-model/device/WebGPU scenarios remain skipped from
     default CI and should be opted into explicitly with `--list` and
     `--dry-run` first.
+* **Compatibility note**: no public API breaking changes in `0.6.15`;
+  existing `0.6.14` callers remain compatible. The chat-template changes fix
+  multimodal serialization behavior for affected templates, and the local E2E
+  runner is additive.
 
 ## 0.6.14
 
