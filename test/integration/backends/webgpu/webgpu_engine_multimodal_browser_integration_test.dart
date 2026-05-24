@@ -21,6 +21,8 @@ void main() {
     List<int>? lastStateSaveTokens;
     String? lastStateLoadPath;
     int? lastStateLoadCapacity;
+    int? lastLoadNBatch;
+    int? lastLoadNUbatch;
 
     setUp(() {
       bridge = JSObject();
@@ -30,10 +32,22 @@ void main() {
       lastStateSaveTokens = null;
       lastStateLoadPath = null;
       lastStateLoadCapacity = null;
+      lastLoadNBatch = null;
+      lastLoadNUbatch = null;
 
       bridge.setProperty(
         'loadModelFromUrl'.toJS,
         ((String url, JSObject? config) {
+          if (config != null) {
+            final nBatch = config.getProperty('nBatch'.toJS);
+            final nUbatch = config.getProperty('nUbatch'.toJS);
+            lastLoadNBatch = nBatch.isA<JSNumber>()
+                ? (nBatch as JSNumber).toDartInt
+                : null;
+            lastLoadNUbatch = nUbatch.isA<JSNumber>()
+                ? (nUbatch as JSNumber).toDartInt
+                : null;
+          }
           return Future<void>.value().toJS;
         }).toJS,
       );
@@ -212,6 +226,41 @@ void main() {
 
     tearDown(() async {
       await engine.dispose();
+    });
+
+    test('WebGPU load leaves Gemma 4 batches to bridge defaults', () async {
+      await engine.loadModelFromUrl(
+        'https://example.com/gemma-4-E2B-it-Q4_K_S.gguf',
+        modelParams: const ModelParams(contextSize: 4096, gpuLayers: 99),
+      );
+
+      expect(lastLoadNBatch, isNull);
+      expect(lastLoadNUbatch, isNull);
+    });
+
+    test('WebGPU load keeps Qwen3.5 0.8B browser-safe batch tuning', () async {
+      await engine.loadModelFromUrl(
+        'https://example.com/Qwen3.5-0.8B-Q4_K_M.gguf',
+        modelParams: const ModelParams(contextSize: 4096, gpuLayers: 99),
+      );
+
+      expect(lastLoadNBatch, 32);
+      expect(lastLoadNUbatch, 8);
+    });
+
+    test('WebGPU load forwards explicit batch sizing', () async {
+      await engine.loadModelFromUrl(
+        'https://example.com/gemma-4-E2B-it-Q4_K_S.gguf',
+        modelParams: const ModelParams(
+          contextSize: 4096,
+          gpuLayers: 99,
+          batchSize: 128,
+          microBatchSize: 64,
+        ),
+      );
+
+      expect(lastLoadNBatch, 128);
+      expect(lastLoadNUbatch, 64);
     });
 
     test('LlamaEngine create forwards multimodal audio parts', () async {

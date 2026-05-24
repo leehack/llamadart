@@ -610,24 +610,32 @@ class WebGpuLlamaBackend
     return attempts;
   }
 
-  ({int nBatch, int nUbatch}) _resolveWebBatchSizes({
+  ({int? nBatch, int? nUbatch}) _resolveWebBatchSizes({
     required String url,
     required ModelParams params,
     required int contextSize,
+    required int gpuLayers,
   }) {
     final normalizedUrl = url.toLowerCase();
     final isQwen35Small =
         normalizedUrl.contains('qwen3.5-0.8b') ||
         normalizedUrl.contains('qwen_qwen3.5-0.8b');
-    final shouldUseQwen35SmallTuning =
-        params.batchSize <= 0 &&
-        params.microBatchSize <= 0 &&
+    final isGemma4 = normalizedUrl.contains('gemma-4');
+    final hasExplicitBatchSizes =
+        params.batchSize > 0 || params.microBatchSize > 0;
+    final shouldUseWebGpuDefaults =
+        !hasExplicitBatchSizes &&
         params.preferredBackend != GpuBackend.cpu &&
-        params.gpuLayers != 0 &&
-        isQwen35Small;
+        gpuLayers != 0;
+    final shouldUseQwen35SmallTuning = shouldUseWebGpuDefaults && isQwen35Small;
+    final shouldUseBridgeBatchDefaults = shouldUseWebGpuDefaults && isGemma4;
 
     if (shouldUseQwen35SmallTuning) {
       return (nBatch: 32, nUbatch: 8);
+    }
+
+    if (shouldUseBridgeBatchDefaults) {
+      return (nBatch: null, nUbatch: null);
     }
 
     final resolved = resolveModelContextBatchSizes(params, contextSize);
@@ -929,6 +937,7 @@ class WebGpuLlamaBackend
         url: url,
         params: params,
         contextSize: attempt.contextSize,
+        gpuLayers: attempt.gpuLayers,
       );
       LlamaWebGpuBridge? bridgeForAttempt;
       bool? forceRemoteFetchBackend;

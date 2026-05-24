@@ -675,6 +675,37 @@ void main() {
       },
     );
 
+    test('Gemma 4 CPU fallback uses cascaded batch sizes', () async {
+      var loadCallCount = 0;
+      bridge.setProperty(
+        'loadModelFromUrl'.toJS,
+        ((String url, JSObject? config) {
+          loadCallCount += 1;
+          recordLoadConfig(config);
+
+          if (loadCallCount == 1) {
+            final error = JSObject();
+            error.setProperty(
+              'message'.toJS,
+              'array buffer allocation failed'.toJS,
+            );
+            return _rejectPromise(error);
+          }
+          return Future<void>.value().toJS;
+        }).toJS,
+      );
+
+      await backend.modelLoadFromUrl(
+        'https://example.com/gemma-4-E2B-it-Q4_K_S.gguf',
+        const ModelParams(contextSize: 4096, gpuLayers: 99),
+      );
+
+      expect(requestedContextSizes, <int>[4096, 4096]);
+      expect(requestedBatchSizes, <int>[4096]);
+      expect(requestedMicroBatchSizes, <int>[4096]);
+      expect(lastRequestedGpuLayers, 0);
+    });
+
     test('streams generated tokens from bridge callback', () async {
       await backend.modelLoadFromUrl(
         'https://example.com/model.gguf',
