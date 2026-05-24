@@ -47,6 +47,11 @@ web backend load options).
 
 - First load of a model URL fetches from network and stores into cache.
 - Subsequent loads of the same URL can be served from cache.
+- Model URLs with userinfo, query strings, or fragments are treated as
+  credential-sensitive; `llamadart` passes `useCache: false` so the bridge loads
+  them directly with no persistent Cache Storage request key.
+- Multimodal projector loads are direct bridge fetches and should not rely on
+  model Cache Storage for reuse.
 - Cache behavior/availability depends on browser storage quota and private mode
   policies.
 

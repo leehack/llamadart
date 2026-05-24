@@ -567,6 +567,18 @@ class WebGpuLlamaBackend
         lowered.contains('error 138');
   }
 
+  bool _urlHasPersistentCacheSensitiveParts(String value) {
+    final uri = Uri.tryParse(value);
+    if (uri == null ||
+        (uri.scheme != 'http' && uri.scheme != 'https') ||
+        uri.host.isEmpty) {
+      return false;
+    }
+    return uri.userInfo.isNotEmpty ||
+        uri.query.isNotEmpty ||
+        uri.fragment.isNotEmpty;
+  }
+
   List<({int contextSize, int gpuLayers})> _buildLoadAttempts({
     required int requestedContextSize,
     required int requestedGpuLayers,
@@ -982,7 +994,7 @@ class WebGpuLlamaBackend
             ropeFrequencyScale: params.ropeFrequencyScale,
             splitMode: params.splitMode.llamaCppValue,
             mainGpu: params.mainGpu,
-            useCache: true,
+            useCache: !_urlHasPersistentCacheSensitiveParts(url),
             forceRemoteFetchBackend: forceRemoteFetchBackend,
             remoteFetchChunkBytes: remoteFetchChunkBytesOverride,
             progressCallback: progressCallback,
@@ -1052,6 +1064,10 @@ class WebGpuLlamaBackend
             _isThreadConstructorFailure(e) ||
             runtimeNotes.contains('thread_constructor_failed') ||
             runtimeNotes.contains('threads_capped_no_coi');
+        final wasm32ModelStagingFailed =
+            coreVariant == 'wasm32' && fsWriteFailed;
+        final memoryPressureFailure =
+            _isLikelyMemoryPressureError(e) || wasm32ModelStagingFailed;
         final forceRemoteFetchRequested = forceRemoteFetchBackend == true;
 
         if (remoteFetchAborted) {
@@ -1083,12 +1099,12 @@ class WebGpuLlamaBackend
             !retriedWithWasm64 &&
             !wasm64InteropKnownBroken &&
             coreVariant == 'wasm32' &&
-            _isLikelyMemoryPressureError(e) &&
+            memoryPressureFailure &&
             !runtimeNotes.contains('model_fetch_backend_skipped_small');
 
         final canRetry =
             index < loadAttempts.length - 1 &&
-            _isLikelyMemoryPressureError(e) &&
+            memoryPressureFailure &&
             !(fsWriteFailed && coreVariant == 'wasm64');
 
         await _safeDisposeBridge();

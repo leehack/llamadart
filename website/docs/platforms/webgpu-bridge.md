@@ -196,7 +196,10 @@ failure:
 - Legacy Safari bridge assets force CPU fallback unless adaptive Safari GPU probe
   support is present or `window.__llamadartAllowSafariWebGpu = true` is set.
 - wasm64/wasm32 and remote-fetch loader retries can happen automatically when
-  bridge metadata indicates an interop or memory-pressure problem.
+  bridge metadata indicates an interop or memory-pressure problem. Large
+  wasm32 model-staging aborts, including virtual-filesystem write aborts during
+  remote model/projector setup, are treated as memory pressure and retried with
+  the wasm64 core when available.
 
 Fallback is not silent success for every unsupported condition. If the bridge
 cannot load, the browser blocks worker threads, or the model exceeds browser

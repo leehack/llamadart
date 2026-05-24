@@ -8,7 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/downloadable_model.dart';
 import 'model_service_base.dart';
 
-class ModelServiceWeb implements ModelService {
+class ModelServiceWeb implements ModelService, WebCachePrefetchModelService {
   static const String _downloadedModelsKey = 'web_cached_models';
   static const String _modelCacheName = 'llamadart-webgpu-model-cache-v1';
   static const String _hfToken = String.fromEnvironment('HF_TOKEN');
@@ -110,6 +110,25 @@ class ModelServiceWeb implements ModelService {
       includeMmproj: mmprojUrl != null,
       providedTotalBytes: model.sizeBytes > 0 ? model.sizeBytes : null,
     );
+    if (_remoteSourcesFor(
+      model,
+    ).any((source) => _hasPersistentCacheSensitiveUrlParts(source.url))) {
+      onError(
+        UnsupportedError(
+          'Browser cache prefetch skipped for credentialed remote URL; load the model directly to avoid storing sensitive URL parts.',
+        ),
+      );
+      return;
+    }
+    if (!_hasCacheStorageApi()) {
+      onError(
+        UnsupportedError(
+          'Browser CacheStorage is unavailable; remote models can still be loaded directly.',
+        ),
+      );
+      return;
+    }
+
     final bridge = _tryCreateBridge();
 
     try {
@@ -221,10 +240,59 @@ class ModelServiceWeb implements ModelService {
     }
   }
 
+  @override
+  Future<bool> supportsWebCachePrefetch() async {
+    if (!_hasCacheStorageApi()) {
+      return false;
+    }
+
+    final bridge = _tryCreateBridge();
+    if (bridge == null) {
+      return false;
+    }
+
+    try {
+      final prefetchMember = bridge.getProperty<JSAny?>(
+        'prefetchModelToCache'.toJS,
+      );
+      return prefetchMember != null && prefetchMember.isA<JSFunction>();
+    } finally {
+      try {
+        final disposePromise = bridge.dispose();
+        if (disposePromise != null) {
+          await disposePromise.toDart;
+        }
+      } catch (_) {
+        // best-effort bridge disposal
+      }
+    }
+  }
+
   bool _looksLikePrefetchUnavailable(dynamic error) {
     final normalized = '$error'.toLowerCase();
     return normalized.contains('prefetchmodeltocache') &&
         normalized.contains('not a function');
+  }
+
+  bool _hasCacheStorageApi() {
+    try {
+      final caches = globalContext.getProperty<JSAny?>('caches'.toJS);
+      if (caches == null || !caches.isA<JSObject>()) {
+        return false;
+      }
+      final openMember = (caches as JSObject).getProperty<JSAny?>('open'.toJS);
+      return openMember != null && openMember.isA<JSFunction>();
+    } catch (_) {
+      return false;
+    }
+  }
+
+  bool _hasPersistentCacheSensitiveUrlParts(String value) {
+    final uri = Uri.tryParse(value);
+    return uri != null &&
+        (uri.userInfo.isNotEmpty ||
+            uri.query.isNotEmpty ||
+            uri.fragment.isNotEmpty);
   }
 
   _WebModelCacheBridge? _tryCreateBridge() {

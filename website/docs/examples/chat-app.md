@@ -65,6 +65,15 @@ status panel exposes the active bridge/core variant, fallback reason, model
 source, cache state, and runtime notes so you can distinguish browser capability
 problems from model/configuration pressure.
 
+When the model path is a remote HTTP(S) URL, the web app tries to prefetch the
+model into browser cache before handing it to the bridge. If `CacheStorage` is
+unavailable, quota-limited, or rejects the write, startup falls back to direct
+network loading instead of failing the model load. Signed or otherwise
+credentialed model URLs with userinfo, query strings, or fragments bypass
+persistent browser cache storage so credentials are not stored as cache request
+keys. Web multimodal projectors are fetched directly by the bridge and are not
+part of the chat startup cache prefetch.
+
 For reliable large GGUF loads, serve the app with COOP/COEP headers so
 `window.crossOriginIsolated === true`. A built smoke path is documented in
 [WebGPU Bridge](../platforms/webgpu-bridge); it uses

@@ -1,5 +1,13 @@
 ## Unreleased
 
+* **WebGPU and chat app fixes**:
+  * Improved browser recovery for large remote WebGPU model/projector loads by
+    retrying wasm32 model-staging aborts with the wasm64 core before surfacing
+    memory-pressure failures.
+  * Improved the runnable chat app's web remote-model startup path so model
+    assets are prefetched into browser cache when available, browser
+    `CacheStorage` failures fall back to direct network loading, and
+    credentialed/signed model URLs skip persistent browser cache storage.
 * **Model download UX**:
   * Improved the runnable chat app's mobile download behavior so lifecycle
     pauses no longer deliberately cancel active foreground downloads; the app

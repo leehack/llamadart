@@ -344,7 +344,7 @@ The default web backend uses `WebGpuLlamaBackend` as a router for WebGPU and CPU
   - [`leehack/llama-web-bridge-assets`](https://github.com/leehack/llama-web-bridge-assets)
 - `example/chat_app` prefers vendored local bridge assets on localhost for dev/runtime validation, and otherwise prefers pinned jsDelivr assets with local fallback.
 - Web embeddings require bridge assets with embedding APIs (`v0.1.7` or newer).
-- Browser Cache Storage is used for repeated model loads when `useCache` is enabled (default).
+- Browser Cache Storage is used for repeated model loads when `useCache` is enabled (default). Signed or credentialed model URLs bypass persistent cache storage and load directly so secret-bearing URL parts are not stored as browser cache request keys.
 - `loadMultimodalProjector` is supported on web for URL-based model/mmproj assets.
 - `supportsVision` and `supportsAudio` reflect loaded projector capabilities.
 - LoRA runtime adapters are not currently supported on web.
