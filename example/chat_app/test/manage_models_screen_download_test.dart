@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:llamadart_chat_example/models/downloadable_model.dart';
@@ -19,32 +20,101 @@ void main() {
     testWidgets('pause button cancels the active controller download', (
       tester,
     ) async {
-      SharedPreferences.setMockInitialValues({});
-      final model = _remoteModel();
-      final modelService = _HoldingModelService();
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      try {
+        SharedPreferences.setMockInitialValues({});
+        final model = _remoteModel();
+        final modelService = _HoldingModelService();
 
-      await _pumpScreen(tester, modelService: modelService, models: [model]);
+        await _pumpScreen(tester, modelService: modelService, models: [model]);
 
-      expect(find.text(model.name), findsOneWidget);
-      expect(find.text('Download'), findsOneWidget);
+        expect(find.text(model.name), findsOneWidget);
+        expect(find.text('Download'), findsOneWidget);
 
-      await tester.tap(find.text('Download'));
-      await modelService.downloadStarted.future.timeout(_testTimeout);
-      await tester.pump();
+        await tester.tap(find.text('Download'));
+        await modelService.downloadStarted.future.timeout(_testTimeout);
+        await tester.pump();
 
-      expect(modelService.downloadCalls, 1);
-      expect(find.text('Downloading model'), findsOneWidget);
-      expect(find.text('25%'), findsOneWidget);
+        expect(modelService.downloadCalls, 1);
+        expect(find.text('Downloading model'), findsOneWidget);
+        expect(find.text('25%'), findsOneWidget);
+        expect(find.textContaining('Keep the app open'), findsOneWidget);
 
-      await tester.tap(find.byTooltip('Pause Download'));
-      await tester.pump(const Duration(milliseconds: 150));
-      await modelService.downloadCancelled.future.timeout(_testTimeout);
-      await tester.pump();
+        await tester.tap(find.byTooltip('Pause Download'));
+        await tester.pump(const Duration(milliseconds: 150));
+        await modelService.downloadCancelled.future.timeout(_testTimeout);
+        await tester.pump();
 
-      expect(modelService.lastCancelToken?.isCancelled, isTrue);
-      expect(find.text('Paused'), findsOneWidget);
-      expect(find.text('25%'), findsOneWidget);
-      expect(find.text('Resume Download'), findsOneWidget);
+        expect(modelService.lastCancelToken?.isCancelled, isTrue);
+        expect(find.text('Paused'), findsOneWidget);
+        expect(find.text('25%'), findsOneWidget);
+        expect(find.text('Resume Download'), findsOneWidget);
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
+    });
+
+    testWidgets(
+      'mobile lifecycle pause does not deliberately cancel downloads',
+      (tester) async {
+        SharedPreferences.setMockInitialValues({});
+        final model = _remoteModel();
+        final modelService = _HoldingModelService();
+
+        await _pumpScreen(tester, modelService: modelService, models: [model]);
+
+        await tester.tap(find.text('Download'));
+        await modelService.downloadStarted.future.timeout(_testTimeout);
+        await tester.pump();
+
+        final state = tester.state(find.byType(ManageModelsScreen)) as dynamic;
+        state.didChangeAppLifecycleState(AppLifecycleState.paused);
+        await tester.pump(const Duration(milliseconds: 150));
+
+        expect(modelService.lastCancelToken?.isCancelled, isFalse);
+        expect(modelService.downloadCancelled.isCompleted, isFalse);
+        expect(find.text('Downloading model'), findsOneWidget);
+        expect(find.text('25%'), findsOneWidget);
+
+        state.didChangeAppLifecycleState(AppLifecycleState.hidden);
+        await tester.pump(const Duration(milliseconds: 150));
+
+        expect(modelService.lastCancelToken?.isCancelled, isFalse);
+        expect(modelService.downloadCancelled.isCompleted, isFalse);
+        expect(find.text('Downloading model'), findsOneWidget);
+        expect(find.text('25%'), findsOneWidget);
+
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump(const Duration(milliseconds: 150));
+        await modelService.downloadCancelled.future.timeout(_testTimeout);
+      },
+    );
+
+    testWidgets('mobile download guidance is hidden on desktop platforms', (
+      tester,
+    ) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+      try {
+        SharedPreferences.setMockInitialValues({});
+        final model = _remoteModel();
+        final modelService = _HoldingModelService();
+
+        await _pumpScreen(tester, modelService: modelService, models: [model]);
+
+        await tester.tap(find.text('Download'));
+        await modelService.downloadStarted.future.timeout(_testTimeout);
+        await tester.pump();
+
+        expect(find.text('Downloading model'), findsOneWidget);
+        expect(find.text('25%'), findsOneWidget);
+        expect(find.textContaining('Keep the app open'), findsNothing);
+
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump(const Duration(milliseconds: 150));
+        await modelService.downloadCancelled.future.timeout(_testTimeout);
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
     });
 
     testWidgets('cancel and discard reports a paused cancellation', (

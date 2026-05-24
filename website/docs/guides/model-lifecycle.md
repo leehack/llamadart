@@ -290,12 +290,28 @@ strings, fragments, and userinfo are redacted from display strings and metadata.
 For Flutter apps, pass an app-controlled `cacheDirectory` from your storage
 strategy (for example an application-support or documents directory selected by
 `path_provider`). Surface progress/cancel controls in the UI, keep downloads
-serialized for large GGUF files, and expect OS backgrounding to interrupt active
-requests. The `.part` resume support lets a later foreground session continue
-when the server supports Range requests and exposes a safe validator or the
-caller supplies SHA-256. On Android, prefer app-private storage unless the app
-intentionally exposes model files to the user; on iOS, avoid cache directories
-that the OS may purge while a model is still needed.
+serialized for large GGUF files, and tell users to keep the app open for the
+foreground download. Do not cancel purely because the app receives a lifecycle
+pause: Android/iOS may allow short screen-lock or app-switch interruptions to
+continue, while an eager cancellation guarantees a pause on every lock.
+
+Foreground Dart HTTP requests are still not a substitute for native background
+downloads. If the OS suspends or kills the app, the request can fail later. The
+`.part` resume support lets a later foreground session continue when the server
+supports Range requests and exposes a safe validator or the caller supplies
+SHA-256. On Android, a robust always-continue UX needs an app-owned foreground
+service or system `DownloadManager` flow with a notification; on iOS, use
+background `URLSession` download tasks. Implement those policies in the app or
+an optional platform package that implements `ModelDownloadManager`, not in the
+core package.
+
+For shared device-level GGUF storage, keep the same separation: core
+`llamadart` exposes source identities, cache metadata, progress, cancellation,
+retry, and verification hooks; a future opt-in platform model-store package can
+decide how apps share files, metadata, permissions, pruning, and native
+background download execution. On Android, prefer app-private storage unless the
+app intentionally exposes model files to the user; on iOS, avoid cache
+directories that the OS may purge while a model is still needed.
 
 ## State persistence
 

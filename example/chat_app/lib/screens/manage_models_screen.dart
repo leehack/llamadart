@@ -86,14 +86,11 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (kIsWeb) {
-      return;
-    }
-
-    if (state == AppLifecycleState.paused ||
-        state == AppLifecycleState.hidden) {
-      _pauseActiveDownloads();
-    }
+    // Do not deliberately cancel active downloads on mobile background/sleep.
+    // The foreground Dart request may be suspended by the OS, but cancelling here
+    // guarantees a pause every time the screen locks. Let the transfer continue
+    // for short lifecycle interruptions and rely on resumable `.download` files
+    // when the OS eventually interrupts the socket.
   }
 
   Future<void> _initModelService() async {

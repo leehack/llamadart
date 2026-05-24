@@ -36,6 +36,13 @@ flutter test
   clear ready/failure states come from the same package helper app code can
   reuse. The adapter keeps the example's platform-specific service layer for
   multi-asset model + `mmproj` downloads and browser cache behavior.
+- On mobile, active downloads are treated as foreground work: the app no longer
+  cancels them just because Android/iOS reports a lifecycle pause, and the card
+  tells users to keep the app open. If the OS interrupts the socket anyway, the
+  next foreground download attempt reuses the partial file when the server
+  honors Range resume. A true sleep-proof UX should be built as an opt-in native
+  background downloader/model-store manager and injected through
+  `ModelDownloadManager`.
 - Runtime backend preference and GPU layer controls.
 - Persistent settings and split Dart/native logging controls.
 - Tool-calling toggles and model capability badges.
@@ -68,6 +75,12 @@ against a small Qwen3.5 model.
 
 - Qwen3.5 `0.8B` and `2B` currently default to `CPU` on Android because that was
   the fastest verified path on the maintainer Pixel test device.
+- GGUF downloads in this example run through the app's foreground Dart process.
+  Keep the app visible/unlocked for the most reliable download. The app avoids
+  deliberately cancelling on screen lock, but Android can still suspend the
+  process; production apps that need guaranteed completion should use a
+  foreground service or system download integration behind a custom
+  `ModelDownloadManager`.
 - Runtime chips expose native llama.cpp timing breakdowns (`p_eval`, `eval`,
   `sample`, `reuse`) so Android CPU vs Vulkan comparisons are visible in-app.
 - For general model/backend tuning workflow, use

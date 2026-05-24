@@ -1,3 +1,15 @@
+## Unreleased
+
+* **Model download UX**:
+  * Improved the runnable chat app's mobile download behavior so lifecycle
+    pauses no longer deliberately cancel active foreground downloads; the app
+    now lets short screen-lock/background interruptions continue when the OS
+    permits and still keeps explicit pause/dispose cancellation paths.
+  * Added in-app and docs guidance for mobile large-model downloads, including
+    resumable partial files, foreground Dart lifecycle limits, and the need for
+    opt-in native background download/model-store integrations for robust
+    cross-app GGUF management.
+
 ## 0.6.15
 
 * **Fixes**:
