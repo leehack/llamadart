@@ -16,6 +16,35 @@ void main() {
     expect(service, isA<LlamaCppService>());
   });
 
+  group('getVramInfo', () {
+    test('returns (0, 0) when ggml device symbols are unresolvable', () {
+      // Under `dart test`, the primary @DefaultAsset doesn't expose
+      // the ggml backend-device entry points (ggml_backend_dev_count
+      // / _get / _type / _get_props / _memory) and the bundled
+      // ggml-base runtime isn't on the asset search path either, so
+      // both the direct call and the fallback registry lookup fail.
+      // getVramInfo should surface (0, 0) — never propagate a
+      // missing-symbol ArgumentError to the caller.
+      final service = LlamaCppService();
+      final info = service.getVramInfo();
+      expect(info.total, 0);
+      expect(info.free, 0);
+    });
+
+    test('returns a (total, free) record shape with non-negative values', () {
+      // Shape invariant: callers destructure these two fields. A
+      // rename or struct change in `LlamaCppService.getVramInfo`
+      // would break every backend that forwards the worker
+      // SystemInfoResponse fields.
+      final service = LlamaCppService();
+      final info = service.getVramInfo();
+      expect(info.total, isA<int>());
+      expect(info.free, isA<int>());
+      expect(info.total, greaterThanOrEqualTo(0));
+      expect(info.free, greaterThanOrEqualTo(0));
+    });
+  });
+
   group('loadModel preflight validation', () {
     late Directory tempDir;
 

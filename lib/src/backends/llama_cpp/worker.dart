@@ -200,8 +200,8 @@ void llamaWorkerEntry(SendPort initialSendPort) {
             message.sendPort.send(supported);
 
           case SystemInfoRequest():
-            // Placeholder
-            message.sendPort.send(SystemInfoResponse(0, 0));
+            final info = service.getVramInfo();
+            message.sendPort.send(SystemInfoResponse(info.total, info.free));
 
           case ChatTemplateRequest():
             message.sendPort.send(

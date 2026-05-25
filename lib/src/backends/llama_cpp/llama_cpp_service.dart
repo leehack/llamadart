@@ -55,6 +55,16 @@ typedef _GgmlBackendDevBackendRegDart =
     ggml_backend_reg_t Function(ggml_backend_dev_t);
 typedef _GgmlBackendDevByTypeNative = ggml_backend_dev_t Function(UnsignedInt);
 typedef _GgmlBackendDevByTypeDart = ggml_backend_dev_t Function(int);
+typedef _GgmlBackendDevTypeNative = UnsignedInt Function(ggml_backend_dev_t);
+typedef _GgmlBackendDevTypeDart = int Function(ggml_backend_dev_t);
+typedef _GgmlBackendDevGetPropsNative =
+    Void Function(ggml_backend_dev_t, Pointer<ggml_backend_dev_props>);
+typedef _GgmlBackendDevGetPropsDart =
+    void Function(ggml_backend_dev_t, Pointer<ggml_backend_dev_props>);
+typedef _GgmlBackendDevMemoryNative =
+    Void Function(ggml_backend_dev_t, Pointer<Size>, Pointer<Size>);
+typedef _GgmlBackendDevMemoryDart =
+    void Function(ggml_backend_dev_t, Pointer<Size>, Pointer<Size>);
 typedef _LlamaDartSetLogLevelNative = Void Function(Int32);
 typedef _LlamaDartSetLogLevelDart = void Function(int);
 typedef _MtmdDefaultMarkerNative = Pointer<Char> Function();
@@ -210,6 +220,9 @@ class LlamaCppService {
   _GgmlBackendDevNameDart? _ggmlBackendDevNameFallback;
   _GgmlBackendDevBackendRegDart? _ggmlBackendDevBackendRegFallback;
   _GgmlBackendDevByTypeDart? _ggmlBackendDevByTypeFallback;
+  _GgmlBackendDevTypeDart? _ggmlBackendDevTypeFallback;
+  _GgmlBackendDevGetPropsDart? _ggmlBackendDevGetPropsFallback;
+  _GgmlBackendDevMemoryDart? _ggmlBackendDevMemoryFallback;
   bool _logLevelFallbackLookupAttempted = false;
   String? _logLevelFallbackLookupSearchKey;
   _LlamaDartSetLogLevelDart? _llamaDartSetLogLevelFallback;
@@ -1869,6 +1882,42 @@ class LlamaCppService {
         }
       }
 
+      if (_ggmlBackendDevTypeFallback == null) {
+        try {
+          _ggmlBackendDevTypeFallback = library
+              .lookupFunction<
+                _GgmlBackendDevTypeNative,
+                _GgmlBackendDevTypeDart
+              >('ggml_backend_dev_type');
+        } catch (_) {
+          // Keep searching other candidates.
+        }
+      }
+
+      if (_ggmlBackendDevGetPropsFallback == null) {
+        try {
+          _ggmlBackendDevGetPropsFallback = library
+              .lookupFunction<
+                _GgmlBackendDevGetPropsNative,
+                _GgmlBackendDevGetPropsDart
+              >('ggml_backend_dev_get_props');
+        } catch (_) {
+          // Keep searching other candidates.
+        }
+      }
+
+      if (_ggmlBackendDevMemoryFallback == null) {
+        try {
+          _ggmlBackendDevMemoryFallback = library
+              .lookupFunction<
+                _GgmlBackendDevMemoryNative,
+                _GgmlBackendDevMemoryDart
+              >('ggml_backend_dev_memory');
+        } catch (_) {
+          // Keep searching other candidates.
+        }
+      }
+
       if (_ggmlBackendLoadFallback != null &&
           _ggmlBackendLoadAllFallback != null &&
           _ggmlBackendLoadAllFromPathFallback != null &&
@@ -1883,7 +1932,10 @@ class LlamaCppService {
           _ggmlBackendDevGetFallback != null &&
           _ggmlBackendDevNameFallback != null &&
           _ggmlBackendDevBackendRegFallback != null &&
-          _ggmlBackendDevByTypeFallback != null) {
+          _ggmlBackendDevByTypeFallback != null &&
+          _ggmlBackendDevTypeFallback != null &&
+          _ggmlBackendDevGetPropsFallback != null &&
+          _ggmlBackendDevMemoryFallback != null) {
         return;
       }
     }
@@ -2270,6 +2322,67 @@ class LlamaCppService {
       nullptr,
       () => ggml_backend_dev_by_type(type),
       () => _ggmlBackendDevByTypeFallback?.call(type.value),
+    );
+  }
+
+  /// Raw `ggml_backend_dev_type` value (the C enum int) for a device.
+  /// Callers compare against `ggml_backend_dev_type.GGML_*.value` so a
+  /// newer llama.cpp adding a new enum variant doesn't crash here via
+  /// the high-level binding's `fromValue` ArgumentError — unknown
+  /// values just don't match any of the GPU-class checks. Returns `-1`
+  /// when both the primary `@DefaultAsset` lookup and the ggml-runtime
+  /// fallback can't resolve the symbol.
+  int _ggmlBackendDevType(ggml_backend_dev_t dev) {
+    return _ggmlRegistryFallbackOr<int>(
+      -1,
+      () => ggml_backend_dev_type$1(dev).value,
+      () => _ggmlBackendDevTypeFallback?.call(dev),
+    );
+  }
+
+  /// Routes `ggml_backend_dev_get_props` through the registry fallback
+  /// so the call lands on whichever ggml runtime owns the device state
+  /// on Windows split bundles. Returns `false` when the symbol is
+  /// unavailable from both the primary asset and the ggml runtime.
+  bool _ggmlBackendDevGetProps(
+    ggml_backend_dev_t dev,
+    Pointer<ggml_backend_dev_props> props,
+  ) {
+    return _ggmlRegistryFallbackOr<bool>(
+      false,
+      () {
+        ggml_backend_dev_get_props(dev, props);
+        return true;
+      },
+      () {
+        final fn = _ggmlBackendDevGetPropsFallback;
+        if (fn == null) return null;
+        fn(dev, props);
+        return true;
+      },
+    );
+  }
+
+  /// Routes `ggml_backend_dev_memory` through the registry fallback.
+  /// Same shape as [_ggmlBackendDevGetProps]; returns `false` when the
+  /// symbol is unavailable.
+  bool _ggmlBackendDevMemory(
+    ggml_backend_dev_t dev,
+    Pointer<Size> free,
+    Pointer<Size> total,
+  ) {
+    return _ggmlRegistryFallbackOr<bool>(
+      false,
+      () {
+        ggml_backend_dev_memory(dev, free, total);
+        return true;
+      },
+      () {
+        final fn = _ggmlBackendDevMemoryFallback;
+        if (fn == null) return null;
+        fn(dev, free, total);
+        return true;
+      },
     );
   }
 
@@ -4621,6 +4734,67 @@ class LlamaCppService {
   }
 
   // --- Helper Getters ---
+
+  /// Returns total and free VRAM (in bytes) of the first GPU-class ggml
+  /// backend device. Backend-agnostic — works for Vulkan, CUDA, HIP,
+  /// Metal, whichever the active backend(s) expose at runtime.
+  ///
+  /// Reads memory via `ggml_backend_dev_get_props` (the struct-filling
+  /// API) first. The older `ggml_backend_dev_memory` is unreliable on
+  /// the Vulkan backend in current llama.cpp — it can return all-zeros
+  /// even when the GPU is fully free — so we use it only as a
+  /// second-chance fallback per device, for backends that haven't moved
+  /// their memory reporting to props yet.
+  ///
+  /// All ggml backend-device FFI calls are routed through registry
+  /// fallback wrappers ([_ggmlBackendDevCount], [_ggmlBackendDevType],
+  /// [_ggmlBackendDevGetProps], [_ggmlBackendDevMemory]) so the call
+  /// lands on whichever runtime asset owns the device state on
+  /// Windows split bundles. Returns `(0, 0)` only when no GPU-class
+  /// device is reachable through either symbol path AND every
+  /// reachable GPU device declines to report memory.
+  ({int total, int free}) getVramInfo() {
+    final count = _ggmlBackendDevCount();
+    for (var i = 0; i < count; i++) {
+      final dev = _ggmlBackendDevGet(i);
+      if (dev == nullptr) continue;
+      // Compare via raw int so a future llama.cpp adding a new
+      // `ggml_backend_dev_type` variant doesn't crash here via the
+      // high-level binding's `fromValue` ArgumentError — unknown
+      // values just don't match any GPU-class check and we move on.
+      final type = _ggmlBackendDevType(dev);
+      if (type != ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_GPU.value &&
+          type != ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_IGPU.value &&
+          type != ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_ACCEL.value) {
+        continue;
+      }
+      final propsPtr = calloc<ggml_backend_dev_props>();
+      try {
+        if (_ggmlBackendDevGetProps(dev, propsPtr)) {
+          final props = propsPtr.ref;
+          if (props.memory_total > 0) {
+            return (total: props.memory_total, free: props.memory_free);
+          }
+        }
+        // get_props unavailable or reported zero on this device —
+        // fall back to the older dev_memory entry point.
+        final freePtr = calloc<Size>();
+        final totalPtr = calloc<Size>();
+        try {
+          if (_ggmlBackendDevMemory(dev, freePtr, totalPtr) &&
+              totalPtr.value > 0) {
+            return (total: totalPtr.value, free: freePtr.value);
+          }
+        } finally {
+          calloc.free(freePtr);
+          calloc.free(totalPtr);
+        }
+      } finally {
+        calloc.free(propsPtr);
+      }
+    }
+    return (total: 0, free: 0);
+  }
 
   /// Returns the context size for the given [contextHandle].
   int getContextSize(int contextHandle) {
