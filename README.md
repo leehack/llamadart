@@ -42,7 +42,7 @@
 
 ```yaml
 dependencies:
-  llamadart: ^0.6.12
+  llamadart: ^0.6.15
 ```
 
 ### 2. Run with defaults
@@ -124,7 +124,20 @@ resume partial `.part` downloads when the server supports HTTP Range and the
 partial has a safe validator (ETag/Last-Modified) or caller-provided SHA-256,
 verify optional SHA-256 checksums, and redact signed URL credentials from
 metadata. Validator-less partial files restart from byte zero instead of being
-appended.
+appended. Local `ModelSource.path(...)` values are already files: only
+cancellation and optional `sha256` verification apply, while remote/download-only
+options such as cache policies, `cacheDirectory`, authenticated headers, resume,
+and retries are rejected for local paths.
+
+`hf://` references point at one Hugging Face file:
+`hf://owner/repo/path/to/model.gguf` uses `main`,
+`hf://owner/repo@v1.0.0/model.gguf` pins a simple tag/branch, and
+`hf://owner/repo/model.gguf?revision=refs/pr/12` handles revisions containing
+slashes. For private or gated repositories, pass `ModelLoadOptions(bearerToken:
+hfToken)` or custom headers instead of embedding credentials in the source.
+`llamadart` does not list Hugging Face files or expand sharded GGUF manifests;
+pick the exact `.gguf` file path from the repository, and use separate model and
+`mmproj` sources for multimodal assets.
 
 ### 6. Generate embeddings
 
@@ -331,7 +344,7 @@ The default web backend uses `WebGpuLlamaBackend` as a router for WebGPU and CPU
   - [`leehack/llama-web-bridge-assets`](https://github.com/leehack/llama-web-bridge-assets)
 - `example/chat_app` prefers vendored local bridge assets on localhost for dev/runtime validation, and otherwise prefers pinned jsDelivr assets with local fallback.
 - Web embeddings require bridge assets with embedding APIs (`v0.1.7` or newer).
-- Browser Cache Storage is used for repeated model loads when `useCache` is enabled (default).
+- Browser Cache Storage is used for repeated model loads when `useCache` is enabled (default). Signed or credentialed model URLs bypass persistent cache storage and load directly so secret-bearing URL parts are not stored as browser cache request keys.
 - `loadMultimodalProjector` is supported on web for URL-based model/mmproj assets.
 - `supportsVision` and `supportsAudio` reflect loaded projector capabilities.
 - LoRA runtime adapters are not currently supported on web.
@@ -715,12 +728,15 @@ Check out our [LoRA Training Notebook](https://github.com/leehack/llamadart/blob
 This project maintains a high standard of quality with **>=70% line coverage on maintainable `lib/` code** (auto-generated files marked with `// coverage:ignore-file` are excluded).
 
 - **Multi-Platform Testing**: `dart test` runs VM and Chrome-compatible suites automatically.
-- **Local-Only Scenarios**: Slow E2E tests are tagged `local-only` and skipped by default.
+- **Local-Only Scenarios**: Slow E2E tests are tagged `local-only` and skipped by default; use `tool/testing/run_local_e2e.dart` to discover the root Dart, Flutter device, and Web smoke commands.
 - **CI/CD**: Automatic analysis, linting, and cross-platform test execution on every PR.
 
 ```bash
 # Run default test suite (VM + Chrome-compatible tests)
 dart test
+
+# Discover local-only E2E scenarios
+dart run tool/testing/run_local_e2e.dart --list
 
 # Run local-only E2E scenarios
 dart test --run-skipped -t local-only

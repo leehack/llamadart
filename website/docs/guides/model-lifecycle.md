@@ -62,9 +62,74 @@ await engine.loadModelSource(
 `ModelSource.parse(...)` accepts local paths, HTTP(S) URLs, and `hf://`
 Hugging Face references. Local path sources require native/file-backed targets;
 URL-loading web backends reject explicit local filesystem paths and should use
-HTTP(S) or `hf://` sources instead. Source values expose deterministic cache
-keys and redacted metadata identities so signed URL query strings are not stored
-in logs or cache metadata.
+HTTP(S) or `hf://` sources instead. Local paths already point at a file, so the
+native manager only applies cancellation and optional `sha256` verification to
+`ModelSource.path(...)` loads. Remote/download-only options such as non-default
+cache policies, `cacheDirectory`, authenticated headers, `resume`, and
+`maxRetries` are rejected for local paths instead of being silently ignored.
+Source values expose deterministic cache keys and redacted metadata identities
+so signed URL query strings are not stored in logs or cache metadata.
+
+### Hugging Face `hf://` references
+
+Use `hf://owner/repo/path/to/model.gguf` for a public GGUF file. The shorthand
+resolves to `https://huggingface.co/owner/repo/resolve/main/path/to/model.gguf`
+with `download=true` and uses the stable `hf://...` identity for cache keys.
+
+```dart
+final main = ModelSource.parse(
+  'hf://unsloth/Qwen3.5-0.8B-GGUF/Qwen3.5-0.8B-Q4_K_M.gguf',
+);
+
+final tagged = ModelSource.parse(
+  'hf://owner/repo@v1.0.0/model-Q4_K_M.gguf',
+);
+
+// Use ?revision= when the revision itself contains `/`, such as PR refs.
+final pullRequestRef = ModelSource.parse(
+  'hf://owner/repo/model-Q4_K_M.gguf?revision=refs/pr/12',
+);
+```
+
+`ModelSource.huggingFace(...)` exposes the same pieces directly when building a
+source from app state:
+
+```dart
+final source = ModelSource.huggingFace(
+  repoId: 'owner/repo',
+  revision: 'main',
+  filePath: 'model-Q4_K_M.gguf',
+);
+```
+
+Private or gated repositories should pass credentials through
+`ModelLoadOptions`, not in the source string:
+
+```dart
+await engine.loadModelSource(
+  ModelSource.parse('hf://owner/private-repo/model-Q4_K_M.gguf'),
+  options: ModelLoadOptions(bearerToken: hfToken),
+);
+```
+
+Bearer tokens and custom headers are used only for remote download requests and
+are not part of `ModelSource.canonicalKey`, cache metadata, or `toString()`.
+Signed HTTP(S) URLs are different: `ModelSource.canonicalKey` keeps the full
+raw URL and `cacheKey` hashes that full identity so distinct signed URLs stay
+unique. Persisted cache metadata and `toString()` redact query strings and
+append the deterministic cache key, but callers should not log or persist
+`canonicalKey` for signed URLs that carry secrets.
+
+Current limitations:
+
+- `hf://` identifies one file. For multimodal models, create a separate source
+  for the model GGUF and the `mmproj` GGUF, then load/cache each asset according
+  to the API you are using.
+- Sharded GGUF manifests are not expanded automatically; track that as a
+  separate design before relying on sharded repos.
+- `llamadart` does not list Hugging Face files or choose recommended
+  quantizations for you. Pick the exact `.gguf` file path from the repository's
+  **Files and versions** tab.
 
 Native/file-backed backends download remote sources into the package-managed
 cache, verify the completed file, persist metadata, and then call the existing
@@ -121,6 +186,75 @@ await manager.prune(maxAge: const Duration(days: 30), maxBytes: 20 * 1024 * 1024
 await manager.clear();
 ```
 
+### App-friendly download controller
+
+Flutter apps often need more than byte callbacks: they need stable UI states,
+retry/cancel controls, cache-hit handling, and a safe error string for snackbars
+or banners. `ModelDownloadController` wraps any `ModelDownloadManager` and emits
+that lifecycle without depending on Flutter:
+
+```dart
+final controller = ModelDownloadController(
+  manager: DefaultModelDownloadManager(
+    defaultCacheDirectory: '/app/cache/llamadart-models',
+  ),
+);
+
+final subscription = controller.snapshots.listen((snapshot) {
+  switch (snapshot.stage) {
+    case ModelDownloadTaskStage.checkingCache:
+      print('Checking cache for ${snapshot.source?.displayName}');
+      break;
+    case ModelDownloadTaskStage.downloading:
+      final percent = snapshot.fraction == null
+          ? 'unknown'
+          : '${(snapshot.fraction! * 100).toStringAsFixed(1)}%';
+      print('Downloading $percent');
+      break;
+    case ModelDownloadTaskStage.ready:
+      print('Ready at ${snapshot.entry?.filePath}');
+      break;
+    case ModelDownloadTaskStage.failed:
+      print(snapshot.errorMessage);
+      break;
+    case ModelDownloadTaskStage.cancelled:
+      print('Cancelled; retry is available: ${snapshot.canRetry}');
+      break;
+    default:
+      break;
+  }
+});
+
+try {
+  final entry = await controller.start(
+    ModelSource.parse('hf://owner/repo/model-Q4_K_M.gguf'),
+    options: ModelLoadOptions(maxRetries: 3),
+  );
+  await engine.loadModel(entry.filePath);
+} catch (_) {
+  if (controller.snapshot.canRetry) {
+    // Wire this to a Retry button.
+    await controller.retry();
+  }
+} finally {
+  await subscription.cancel();
+  await controller.dispose();
+}
+```
+
+Controller stages are `idle`, `resolving`, `checkingCache`, `downloading`,
+`verifying`, `ready`, `failed`, and `cancelled`. The cache check is advisory for
+UI state only; `ready` is emitted only after the manager's authoritative
+`ensureModel(...)` path validates the cache entry and any caller-provided
+checksum. Call `cancel()` from your UI to request cooperative cancellation; call
+`retry()` after `failed` or `cancelled` to reuse the last source/options. Because
+the controller owns cancellation, pass cache/auth/retry options through
+`ModelLoadOptions` but call `controller.cancel()` instead of supplying
+`ModelLoadOptions.cancelToken`. Error messages redact URL query strings and
+fragments so signed URLs or tokens are not shown in UI logs. On web, inject a
+custom manager for browser-specific storage; the default package manager remains
+native/file-backed.
+
 Downloaded files are written to `.part` files and promoted to the completed
 model path only after the HTTP stream and optional SHA-256 verification succeed.
 Stable-cache remote downloads are serialized per cache entry in-process,
@@ -156,12 +290,28 @@ strings, fragments, and userinfo are redacted from display strings and metadata.
 For Flutter apps, pass an app-controlled `cacheDirectory` from your storage
 strategy (for example an application-support or documents directory selected by
 `path_provider`). Surface progress/cancel controls in the UI, keep downloads
-serialized for large GGUF files, and expect OS backgrounding to interrupt active
-requests. The `.part` resume support lets a later foreground session continue
-when the server supports Range requests and exposes a safe validator or the
-caller supplies SHA-256. On Android, prefer app-private storage unless the app
-intentionally exposes model files to the user; on iOS, avoid cache directories
-that the OS may purge while a model is still needed.
+serialized for large GGUF files, and tell users to keep the app open for the
+foreground download. Do not cancel purely because the app receives a lifecycle
+pause: Android/iOS may allow short screen-lock or app-switch interruptions to
+continue, while an eager cancellation guarantees a pause on every lock.
+
+Foreground Dart HTTP requests are still not a substitute for native background
+downloads. If the OS suspends or kills the app, the request can fail later. The
+`.part` resume support lets a later foreground session continue when the server
+supports Range requests and exposes a safe validator or the caller supplies
+SHA-256. On Android, a robust always-continue UX needs an app-owned foreground
+service or system `DownloadManager` flow with a notification; on iOS, use
+background `URLSession` download tasks. Implement those policies in the app or
+an optional platform package that implements `ModelDownloadManager`, not in the
+core package.
+
+For shared device-level GGUF storage, keep the same separation: core
+`llamadart` exposes source identities, cache metadata, progress, cancellation,
+retry, and verification hooks; a future opt-in platform model-store package can
+decide how apps share files, metadata, permissions, pruning, and native
+background download execution. On Android, prefer app-private storage unless the
+app intentionally exposes model files to the user; on iOS, avoid cache
+directories that the OS may purge while a model is still needed.
 
 ## State persistence
 

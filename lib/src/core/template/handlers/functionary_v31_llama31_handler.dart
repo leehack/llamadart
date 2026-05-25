@@ -58,7 +58,7 @@ class FunctionaryV31Llama31Handler extends ChatTemplateHandler {
       template,
       metadata: metadata,
       context: {
-        'messages': messages.map((m) => m.toJson()).toList(),
+        'messages': templateMessages(messages),
         'add_generation_prompt': addAssistant,
         'tools': tools?.map((t) => t.toJson()).toList(),
         'bos_token':

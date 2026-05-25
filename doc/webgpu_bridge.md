@@ -19,7 +19,7 @@ pipelines.
    `https://cdn.jsdelivr.net/gh/leehack/llama-web-bridge-assets@<tag>/llama_webgpu_bridge.js`
 2. Local fallback: `./webgpu_bridge/llama_webgpu_bridge.js`
 
-Default pinned tag in the example is `v0.1.15`.
+Default pinned tag in the example is `v0.1.16`.
 
 For broader browser coverage in this repository, fetched/local assets are patched
 to a universal Safari-compatible gate by default (`MIN_SAFARI_VERSION=170400`).
@@ -32,7 +32,7 @@ model bytes.
 To vendor pinned assets into local app web files:
 
 ```bash
-WEBGPU_BRIDGE_ASSETS_TAG=v0.1.15 ./scripts/fetch_webgpu_bridge_assets.sh
+WEBGPU_BRIDGE_ASSETS_TAG=v0.1.16 ./scripts/fetch_webgpu_bridge_assets.sh
 ```
 
 Optional compatibility env vars:
@@ -47,6 +47,11 @@ web backend load options).
 
 - First load of a model URL fetches from network and stores into cache.
 - Subsequent loads of the same URL can be served from cache.
+- Model URLs with userinfo, query strings, or fragments are treated as
+  credential-sensitive; `llamadart` passes `useCache: false` so the bridge loads
+  them directly with no persistent Cache Storage request key.
+- Multimodal projector loads are direct bridge fetches and should not rely on
+  model Cache Storage for reuse.
 - Cache behavior/availability depends on browser storage quota and private mode
   policies.
 
@@ -108,7 +113,7 @@ You can override CDN source/version before the bridge loader runs:
 ```html
 <script>
   window.__llamadartBridgeAssetsRepo = 'leehack/llama-web-bridge-assets';
-  window.__llamadartBridgeAssetsTag = 'v0.1.15';
+  window.__llamadartBridgeAssetsTag = 'v0.1.16';
 </script>
 ```
 

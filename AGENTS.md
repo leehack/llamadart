@@ -10,7 +10,7 @@ dart pub get                              # Install dependencies
 dart format .                             # Format all Dart files
 dart format --output=none --set-exit-if-changed .  # Check only, CI-friendly
 dart analyze                              # Run static analysis/linting
-dart analyze --fatal-infos              # Treat info-level lints as errors (CI)
+dart analyze --fatal-infos              # Optional stricter local check for info-level lints
 ```
 
 ### Testing Commands
@@ -18,12 +18,26 @@ dart analyze --fatal-infos              # Treat info-level lints as errors (CI)
 dart test                                 # Run all platform-compatible tests (VM or browser)
 dart test -p vm                           # Run only VM (native) tests
 dart test -p chrome                       # Run only Chrome (web) tests
-dart test --run-skipped -t local-only     # Run local-only E2E scenarios
+dart run tool/testing/run_local_e2e.dart --list  # Discover local-only E2E scenarios
+dart test --run-skipped -t local-only     # Run root local-only Dart E2E scenarios
 dart test test/path/to/test_file.dart     # Run a single test file
 dart test -p vm --coverage=coverage       # Run VM tests and collect coverage
 dart pub global run coverage:format_coverage --lcov --in=coverage/test --out=coverage/lcov.info --report-on=lib --check-ignore
 dart run tool/testing/check_lcov_threshold.dart coverage/lcov.info 70
 ```
+
+### Local-Only E2E Runner
+Use the scenario runner as the discovery entry point for heavyweight manual checks:
+
+```bash
+dart run tool/testing/run_local_e2e.dart --list
+dart run tool/testing/run_local_e2e.dart --scenario <name> --dry-run
+dart run tool/testing/run_local_e2e.dart --scenario chat-app-model-cache --device macos
+```
+
+Heavy scenarios remain skipped by default and out of CI unless explicitly requested.
+Use `--dry-run` before Web smoke scenarios to see the required build/server/
+Playwright steps and model URL defaults.
 
 ### Local Chat App Web E2E
 Use the real chat app path for WebGPU bridge validation after bridge/runtime
@@ -248,6 +262,30 @@ test -d ../llama-web-bridge-assets
 2. Run `dart analyze` to fix all warnings and lint errors
 3. Run `dart test` to verify all tests pass
 4. For new features, add tests to maintain >=70% coverage on maintainable source code (generated files are excluded via `// coverage:ignore-file`)
+
+### Production-Readiness Gate
+Treat `main` as production-ready. Before opening or updating a non-trivial PR,
+make sure the PR template can honestly answer:
+
+- **User-facing scope**: what users can do after merge, and what is explicitly
+  out of scope.
+- **Platform matrix**: native, WebGPU, Flutter examples, docs-only, or other
+  relevant paths are listed with actual validation evidence.
+- **Unsupported combinations**: unsupported platforms/options fail loudly with a
+  typed/actionable error, disabled UI, or documented fallback; never report
+  success for a path that is not implemented.
+- **Docs/release notes**: README, website docs, examples, support matrices, and
+  changelog entries are updated when public behavior changes.
+- **Regression coverage**: tests cover the issue plus important negative or
+  version-skew paths where applicable.
+- **Security/privacy**: logs, cache keys, metadata, errors, and snapshots do not
+  expose credentials, bearer tokens, signed URLs, or raw secret-bearing paths.
+- **Follow-ups**: useful but non-blocking work is tracked in GitHub Issues before
+  merge and linked from the PR body.
+
+If the implementation cannot satisfy the full originally planned scope, reduce
+and state the scope instead of merging incomplete behavior. For docs-only PRs,
+state that runtime behavior is unchanged and list the docs validation performed.
 
 ### Syncing Native Version
 When you need to update native version + bindings in this repository:

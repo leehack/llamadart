@@ -19,6 +19,10 @@ class MistralHandler extends ChatTemplateHandler {
   ChatFormat get format => ChatFormat.mistralNemo;
 
   @override
+  TemplateToolCallSerialization get toolCallSerialization =>
+      TemplateToolCallSerialization.normalizeOnly;
+
+  @override
   List<String> get additionalStops => ['</s>'];
 
   @override
@@ -43,7 +47,7 @@ class MistralHandler extends ChatTemplateHandler {
       template,
       metadata: metadata,
       context: {
-        'messages': messages.map((m) => m.toJson()).toList(),
+        'messages': templateMessages(messages),
         'add_generation_prompt': addAssistant,
         'tools': tools?.map((t) => t.toJson()).toList(),
         'bos_token': metadata['tokenizer.ggml.bos_token'] ?? '<s>',

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
+import 'package:dio/dio.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:llamadart/llamadart.dart';
@@ -18,6 +19,7 @@ import '../services/chat_session_service.dart';
 import '../services/conversation_state_service.dart';
 import '../services/runtime_profile_service.dart';
 import '../services/settings_service.dart';
+import '../services/model_service_base.dart' as model_service;
 import '../services/tool_declaration_service.dart';
 import '../utils/backend_utils.dart';
 
@@ -54,8 +56,10 @@ class ChatProvider extends ChangeNotifier {
   final ConversationStateService _conversationStateService;
   final RuntimeProfileService _runtimeProfileService;
   final SettingsService _settingsService;
+  final model_service.ModelService _modelService;
   final AssistantOutputService _assistantOutputService;
   final ToolDeclarationService _toolDeclarationService;
+  final bool _enableWebModelPrefetch;
 
   final List<ChatMessage> _messages = [];
   final List<LlamaContentPart> _stagedParts = [];
@@ -85,6 +89,8 @@ class ChatProvider extends ChangeNotifier {
   ChatFormat? _detectedChatFormat;
   String? _error;
   Timer? _settingsSaveDebounce;
+  CancelToken? _activeModelPrefetchCancelToken;
+  bool _isDisposed = false;
 
   // Telemetry
   int _contextLimit = 2048;
@@ -203,9 +209,11 @@ class ChatProvider extends ChangeNotifier {
     ConversationStateService? conversationStateService,
     RuntimeProfileService? runtimeProfileService,
     SettingsService? settingsService,
+    model_service.ModelService? modelService,
     AssistantOutputService? assistantOutputService,
     ToolDeclarationService? toolDeclarationService,
     ChatSettings? initialSettings,
+    bool? enableWebModelPrefetch,
   }) : _chatService = chatService ?? ChatService(),
        _chatGenerationService =
            chatGenerationService ?? const ChatGenerationService(),
@@ -215,10 +223,12 @@ class ChatProvider extends ChangeNotifier {
        _runtimeProfileService =
            runtimeProfileService ?? const RuntimeProfileService(),
        _settingsService = settingsService ?? SettingsService(),
+       _modelService = modelService ?? model_service.ModelService(),
        _assistantOutputService =
            assistantOutputService ?? const AssistantOutputService(),
        _toolDeclarationService =
            toolDeclarationService ?? const ToolDeclarationService(),
+       _enableWebModelPrefetch = enableWebModelPrefetch ?? kIsWeb,
        _settings = initialSettings ?? const ChatSettings() {
     _createInitialConversation();
     _rebuildDeclaredToolsFromSettings();
@@ -468,8 +478,179 @@ class ChatProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  bool _isRemoteUrl(String? value) {
+    if (value == null || value.isEmpty) {
+      return false;
+    }
+    final uri = Uri.tryParse(value);
+    return uri != null && (uri.scheme == 'http' || uri.scheme == 'https');
+  }
+
+  bool _hasPersistentCacheSensitiveUrlParts(String? value) {
+    if (!_isRemoteUrl(value)) {
+      return false;
+    }
+    final uri = Uri.parse(value!);
+    return uri.userInfo.isNotEmpty ||
+        uri.query.isNotEmpty ||
+        uri.fragment.isNotEmpty;
+  }
+
+  bool _webCachePrefetchWouldPersistSensitiveUrl() {
+    return _hasPersistentCacheSensitiveUrlParts(_settings.modelPath);
+  }
+
+  String _filenameFromPathOrUrl(
+    String value, {
+    String fallback = 'model.gguf',
+  }) {
+    final uri = Uri.tryParse(value);
+    final path = (uri?.hasScheme ?? false) ? uri!.path : value;
+    final normalized = path.replaceAll('\\', '/');
+    final pieces = normalized.split('/').where((part) => part.isNotEmpty);
+    final filename = pieces.isEmpty ? fallback : pieces.last;
+    return filename.isEmpty ? fallback : filename;
+  }
+
+  DownloadableModel? _downloadableModelForCurrentSettings() {
+    final modelPath = _settings.modelPath;
+    if (!_isRemoteUrl(modelPath)) {
+      return null;
+    }
+
+    return DownloadableModel(
+      name: _filenameFromPathOrUrl(modelPath!),
+      description: 'Chat startup model cache prefetch',
+      url: modelPath,
+      filename: _filenameFromPathOrUrl(modelPath),
+      sizeBytes: 0,
+    );
+  }
+
+  void _cancelActiveModelPrefetch() {
+    final cancelToken = _activeModelPrefetchCancelToken;
+    if (cancelToken != null && !cancelToken.isCancelled) {
+      cancelToken.cancel('Model prefetch cancelled');
+    }
+    _activeModelPrefetchCancelToken = null;
+  }
+
+  Future<bool> _prefetchWebRemoteModelIfNeeded(
+    void Function(double value, {String? backendLabel, bool forceNotify})
+    updateLoadingUi,
+  ) async {
+    if (!_enableWebModelPrefetch || !_isRemoteUrl(_settings.modelPath)) {
+      return false;
+    }
+    if (_webCachePrefetchWouldPersistSensitiveUrl()) {
+      updateLoadingUi(
+        0.14,
+        backendLabel:
+            'Browser cache skipped for credentialed URL; loading from network...',
+        forceNotify: true,
+      );
+      return false;
+    }
+    if (_modelService is! model_service.WebCachePrefetchModelService) {
+      return false;
+    }
+    final prefetchService =
+        _modelService as model_service.WebCachePrefetchModelService;
+    if (!await prefetchService.supportsWebCachePrefetch()) {
+      return false;
+    }
+
+    final model = _downloadableModelForCurrentSettings();
+    if (model == null) {
+      return false;
+    }
+
+    final cancelToken = CancelToken();
+    _activeModelPrefetchCancelToken = cancelToken;
+    final modelsDir = await _modelService.getModelsDirectory();
+    Object? downloadError;
+    var completed = false;
+
+    try {
+      updateLoadingUi(
+        0.14,
+        backendLabel: 'Downloading model 0%',
+        forceNotify: true,
+      );
+
+      await _modelService.downloadModel(
+        model: model,
+        modelsDir: modelsDir,
+        cancelToken: cancelToken,
+        onProgress: (progress) {
+          if (cancelToken.isCancelled || _isDisposed) {
+            return;
+          }
+          final normalized = progress.clamp(0.0, 1.0);
+          updateLoadingUi(
+            0.14 + (normalized * 0.58),
+            backendLabel:
+                'Downloading model ${(normalized * 100).toStringAsFixed(0)}%',
+            forceNotify: normalized >= 1.0,
+          );
+        },
+        onProgressDetail: (progress) {
+          if (cancelToken.isCancelled || _isDisposed) {
+            return;
+          }
+          final normalized = progress.overallProgress.clamp(0.0, 1.0);
+          updateLoadingUi(
+            0.14 + (normalized * 0.58),
+            backendLabel:
+                'Downloading model ${(normalized * 100).toStringAsFixed(0)}%',
+            forceNotify: normalized >= 1.0,
+          );
+        },
+        onSuccess: (_) {
+          completed = true;
+        },
+        onError: (error) {
+          downloadError = error;
+        },
+      );
+    } finally {
+      if (identical(_activeModelPrefetchCancelToken, cancelToken)) {
+        _activeModelPrefetchCancelToken = null;
+      }
+    }
+
+    if (cancelToken.isCancelled) {
+      throw DioException(
+        requestOptions: RequestOptions(path: 'web-cache-prefetch'),
+        type: DioExceptionType.cancel,
+        message: 'Model prefetch cancelled',
+      );
+    }
+    if (downloadError != null) {
+      if (_isNonFatalWebCachePrefetchFailure(downloadError!)) {
+        updateLoadingUi(
+          0.14,
+          backendLabel: 'Browser cache unavailable; loading from network...',
+          forceNotify: true,
+        );
+        return false;
+      }
+      throw downloadError!;
+    }
+    if (!completed) {
+      throw Exception('Model download did not complete.');
+    }
+
+    updateLoadingUi(
+      0.72,
+      backendLabel: 'Preparing WebGPU runtime...',
+      forceNotify: true,
+    );
+    return true;
+  }
+
   Future<void> loadModel() async {
-    if (_isInitializing) return;
+    if (_isDisposed || _isInitializing) return;
     if (_settings.modelPath == null || _settings.modelPath!.isEmpty) {
       _error = 'Model path not set. Please configure in settings.';
       _syncActiveConversationSnapshot(touchUpdatedAt: false);
@@ -504,6 +685,9 @@ class ChatProvider extends ChangeNotifier {
       String? backendLabel,
       bool forceNotify = false,
     }) {
+      if (_isDisposed) {
+        return;
+      }
       final double clamped = value.clamp(0.0, 1.0);
       var changed = false;
 
@@ -558,17 +742,35 @@ class ChatProvider extends ChangeNotifier {
 
       await _chatService.engine.setDartLogLevel(_settings.logLevel);
       await _chatService.engine.setNativeLogLevel(_settings.nativeLogLevel);
+      if (_chatService.engine.isReady) {
+        await _chatService.unloadModel();
+      }
       updateLoadingUi(0.14);
+
+      final prefetchedWebModel = await _prefetchWebRemoteModelIfNeeded(
+        updateLoadingUi,
+      );
+      final modelLoadStart = prefetchedWebModel ? 0.72 : 0.14;
+      final modelLoadSpan = prefetchedWebModel ? 0.12 : 0.7;
+      if (prefetchedWebModel) {
+        updateLoadingUi(
+          modelLoadStart,
+          backendLabel: 'Loading model into memory...',
+          forceNotify: true,
+        );
+      }
+
       await _chatService.init(
         _settings,
         eagerLoadMultimodalProjector: eagerLoadMmproj,
         onProgress: (progress) {
           final normalized = progress.clamp(0.0, 1.0);
-          final staged = 0.14 + (normalized * 0.7);
+          final staged = modelLoadStart + (normalized * modelLoadSpan);
           updateLoadingUi(
             staged,
-            backendLabel:
-                'Loading model ${(normalized * 100).toStringAsFixed(0)}%',
+            backendLabel: prefetchedWebModel
+                ? 'Loading model into memory ${(normalized * 100).toStringAsFixed(0)}%'
+                : 'Loading model ${(normalized * 100).toStringAsFixed(0)}%',
           );
         },
       );
@@ -669,9 +871,13 @@ class ChatProvider extends ChangeNotifier {
       _syncActiveConversationSnapshot(touchUpdatedAt: false);
       updateLoadingUi(1.0, forceNotify: true);
     } catch (e, stackTrace) {
-      debugPrint('Error loading model: $e');
+      if (_isDisposed) {
+        return;
+      }
+      final displayError = _formatDisplayError(e);
+      debugPrint('Error loading model: $displayError');
       debugPrint(stackTrace.toString());
-      _error = _formatDisplayError(e);
+      _error = displayError;
       _loadedModelPath = null;
       _loadedMmprojPath = null;
       _supportsVision = false;
@@ -679,12 +885,53 @@ class ChatProvider extends ChangeNotifier {
       _mmprojLoaded = false;
     } finally {
       _isInitializing = false;
-      notifyListeners();
+      if (!_isDisposed) {
+        notifyListeners();
+      }
     }
   }
 
+  bool _isNonFatalWebCachePrefetchFailure(Object error) {
+    final normalized = error.toString().toLowerCase();
+    if (normalized.contains('browser cache prefetch skipped') &&
+        normalized.contains('credentialed')) {
+      return true;
+    }
+    final mentionsCache =
+        normalized.contains('browser cache') ||
+        normalized.contains('cachestorage') ||
+        normalized.contains('cache storage') ||
+        normalized.contains('model cache') ||
+        normalized.contains('quota');
+    final mentionsStoreFailure =
+        normalized.contains('failed to store') ||
+        normalized.contains('store_failed') ||
+        normalized.contains('storage') ||
+        normalized.contains('quota') ||
+        normalized.contains('quotaexceeded');
+    return mentionsCache && mentionsStoreFailure;
+  }
+
+  String _redactPotentiallySensitiveUrls(String text) {
+    final urlPattern = RegExp(r'''https?:\/\/[^\s\])}>"']+''');
+    return text.replaceAllMapped(urlPattern, (match) {
+      final value = match.group(0)!;
+      final uri = Uri.tryParse(value);
+      if (uri == null || !uri.hasScheme || uri.host.isEmpty) {
+        return value;
+      }
+      final redacted = Uri(
+        scheme: uri.scheme,
+        host: uri.host,
+        port: uri.hasPort ? uri.port : null,
+        path: uri.path,
+      );
+      return redacted.toString();
+    });
+  }
+
   String _formatDisplayError(Object error) {
-    final raw = error.toString().trim();
+    final raw = _redactPotentiallySensitiveUrls(error.toString().trim());
     const prefixes = <String>['LlamaException: ', 'Exception: '];
     for (final prefix in prefixes) {
       if (raw.startsWith(prefix)) {
@@ -1616,6 +1863,7 @@ class ChatProvider extends ChangeNotifier {
 
   Future<void> unloadModel() async {
     stopGeneration();
+    _cancelActiveModelPrefetch();
     _session?.reset();
     _session = null;
     await _chatService.unloadModel();
@@ -1853,10 +2101,12 @@ class ChatProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    _isDisposed = true;
     _settingsSaveDebounce?.cancel();
     _settingsSaveDebounce = null;
     unawaited(_settingsService.saveSettings(_settings));
     stopGeneration();
+    _cancelActiveModelPrefetch();
     _session?.reset();
     _session = null;
     unawaited(_chatService.dispose());
@@ -1872,6 +2122,7 @@ class ChatProvider extends ChangeNotifier {
     try {
       await _saveSettingsNow();
       stopGeneration();
+      _cancelActiveModelPrefetch();
       _session?.reset();
       _session = null;
       _isLoaded = false;

@@ -44,7 +44,7 @@ import 'handlers/translate_gemma_handler.dart';
 import 'handlers/xiaomi_mimo_handler.dart';
 import 'template_caps.dart';
 import 'template_internal_metadata.dart';
-import 'template_workarounds.dart';
+import 'template_render_context.dart';
 
 /// Orchestrates chat template detection, rendering, and output parsing.
 ///
@@ -129,9 +129,12 @@ class ChatTemplateEngine {
   }) {
     // 1. Select template source (default vs tool_use variant)
     final hasTools = tools != null && tools.isNotEmpty;
+    final allowToolCalls = hasTools && toolChoice != ToolChoice.none;
+    final effectiveTools = allowToolCalls ? tools : null;
     var metadataTemplate = templateSource;
 
-    if (hasTools && metadata.containsKey('tokenizer.chat_template.tool_use')) {
+    if (allowToolCalls &&
+        metadata.containsKey('tokenizer.chat_template.tool_use')) {
       metadataTemplate = metadata['tokenizer.chat_template.tool_use'];
       LlamaLogger.instance.debug(
         'ChatTemplateEngine: Using tool_use template variant',
@@ -157,27 +160,27 @@ class ChatTemplateEngine {
     ChatFormat effectiveFormat;
     // Match llama.cpp schema-aware routing: tools + schema falls back to
     // generic routing, and some format handlers are disabled with schema.
-    if (hasTools && hasSchemaResponseFormat) {
+    if (allowToolCalls && hasSchemaResponseFormat) {
       effectiveFormat = ChatFormat.generic;
     } else if (hasTools &&
         toolChoice == ToolChoice.none &&
         _toolChoiceNoneContentOnlyFormats.contains(format)) {
       effectiveFormat = ChatFormat.contentOnly;
-    } else if (hasTools &&
-        toolChoice != ToolChoice.none &&
-        _toolCallGenericFormats.contains(format)) {
+    } else if (allowToolCalls && _toolCallGenericFormats.contains(format)) {
       // Match llama.cpp server behavior: Gemma tool-call requests route
       // through generic JSON tool-calling semantics.
       effectiveFormat = ChatFormat.generic;
     } else if (format == ChatFormat.gemma) {
       // llama.cpp does not have a dedicated Gemma Jinja handler.
       // Gemma routes to content-only (no tools) or generic (tools).
-      effectiveFormat = hasTools && toolChoice != ToolChoice.none
+      effectiveFormat = allowToolCalls
           ? ChatFormat.generic
           : ChatFormat.contentOnly;
     } else if (hasSchemaResponseFormat &&
         _schemaDisabledFormats.contains(format)) {
-      effectiveFormat = hasTools ? ChatFormat.generic : ChatFormat.contentOnly;
+      effectiveFormat = allowToolCalls
+          ? ChatFormat.generic
+          : ChatFormat.contentOnly;
     } else {
       effectiveFormat = format;
     }
@@ -185,21 +188,20 @@ class ChatTemplateEngine {
     // Use generic handler fallback when template is missing, or when tool
     // calling is requested for an unknown/unclassified template.
     if (effectiveFormat == ChatFormat.contentOnly &&
-        (effectiveTemplate == null ||
-            (hasTools && toolChoice != ToolChoice.none))) {
+        (effectiveTemplate == null || allowToolCalls)) {
       effectiveFormat = ChatFormat.generic;
     }
 
     final handler = handlerFor(effectiveFormat);
 
-    // 3. Apply workarounds matching llama.cpp
+    // 3. Prepare template capabilities and render context matching llama.cpp
     final caps = TemplateCaps.detect(effectiveTemplate ?? '');
     final effectiveParallelToolCalls =
-        parallelToolCalls && caps.supportsParallelToolCalls;
+        allowToolCalls && parallelToolCalls && caps.supportsParallelToolCalls;
     if (parallelToolCalls && !effectiveParallelToolCalls) {
       LlamaLogger.instance.debug(
         'ChatTemplateEngine: Disabling parallelToolCalls because template '
-        'does not support parallel tool calls.',
+        'does not support parallel tool calls or tool calls are disabled.',
       );
     }
 
@@ -212,7 +214,7 @@ class ChatTemplateEngine {
     );
     var effectiveMessages = messages;
 
-    if (hasTools && caps.supportsToolCalls && !caps.supportsTools) {
+    if (allowToolCalls && caps.supportsToolCalls && !caps.supportsTools) {
       LlamaLogger.instance.warning(
         'ChatTemplateEngine: Template appears to support tool-call output but '
         'does not advertise tool definitions. Results may be unreliable; '
@@ -220,15 +222,15 @@ class ChatTemplateEngine {
       );
     }
 
-    // Workarounds mirror llama.cpp preprocessing chain.
+    // Apply typed message preparation before render-context serialization.
     if (!caps.supportsSystemRole) {
-      effectiveMessages = TemplateWorkarounds.applySystemMessageWorkaround(
+      effectiveMessages = TemplateRenderContext.mergeLeadingSystemMessage(
         effectiveMessages,
-        caps,
+        supportsSystemRole: caps.supportsSystemRole,
       );
     }
 
-    if (hasTools && effectiveFormat == ChatFormat.generic) {
+    if (allowToolCalls && effectiveFormat == ChatFormat.generic) {
       effectiveMessages = _injectSystemInstructionLikeLlamaCpp(
         effectiveMessages,
         _genericToolSystemInstruction,
@@ -236,78 +238,62 @@ class ChatTemplateEngine {
       );
     }
 
-    try {
-      effectiveMessages = TemplateWorkarounds.applyFormatWorkarounds(
-        effectiveMessages,
-        effectiveFormat,
+    // Proactively detect templates that access content as a list
+    // (e.g. SmolVLM's `message['content'][0]['type']`)
+    final hasMediaParts = effectiveMessages.any(
+      (message) => message.parts.any(
+        (part) => part is LlamaImageContent || part is LlamaAudioContent,
+      ),
+    );
+    final needsTypedContent = caps.supportsTypedContent && hasMediaParts;
+
+    if (needsTypedContent) {
+      LlamaLogger.instance.debug(
+        'ChatTemplateEngine: Using multimodal content format '
+        'for template that accesses content as list',
       );
-    } catch (e) {
-      LlamaLogger.instance.warning(
-        'ChatTemplateEngine: Format workarounds failed for '
-        '$effectiveFormat: $e. Continuing without them.',
-      );
-    }
-
-    try {
-      // Proactively detect templates that access content as a list
-      // (e.g. SmolVLM's `message['content'][0]['type']`)
-      final hasMediaParts = effectiveMessages.any(
-        (message) => message.parts.any(
-          (part) => part is LlamaImageContent || part is LlamaAudioContent,
-        ),
-      );
-      final needsTypedContent = caps.supportsTypedContent && hasMediaParts;
-
-      if (needsTypedContent) {
-        LlamaLogger.instance.debug(
-          'ChatTemplateEngine: Using multimodal content format '
-          'for template that accesses content as list',
-        );
-        var rendered = handler.renderWithMultimodalContent(
-          templateSource: effectiveTemplate ?? GenericHandler.chatMlTemplate,
-          messages: effectiveMessages,
-          metadata: handlerMetadata,
-          addAssistant: addAssistant,
-          tools: tools,
-          enableThinking: enableThinking,
-        );
-        if (effectiveFormat == ChatFormat.contentOnly) {
-          rendered = _withFormat(rendered, ChatFormat.contentOnly.index);
-        }
-
-        final withGrammar = _applyGrammar(
-          rendered,
-          tools,
-          toolChoice,
-          responseFormat,
-        );
-        return _normalizeGrammarLazyForToolChoice(withGrammar, toolChoice);
-      }
-
-      var baseResult = handler.render(
+      var rendered = handler.renderWithMultimodalContent(
         templateSource: effectiveTemplate ?? GenericHandler.chatMlTemplate,
         messages: effectiveMessages,
         metadata: handlerMetadata,
         addAssistant: addAssistant,
-        tools: tools,
+        tools: effectiveTools,
         enableThinking: enableThinking,
       );
-
       if (effectiveFormat == ChatFormat.contentOnly) {
-        baseResult = _withFormat(baseResult, ChatFormat.contentOnly.index);
+        rendered = _withFormat(rendered, ChatFormat.contentOnly.index);
       }
 
-      // Apply grammar constraints for tool calls or response format
       final withGrammar = _applyGrammar(
-        baseResult,
-        tools,
+        rendered,
+        effectiveTools,
         toolChoice,
         responseFormat,
       );
       return _normalizeGrammarLazyForToolChoice(withGrammar, toolChoice);
-    } catch (_) {
-      rethrow;
     }
+
+    var baseResult = handler.render(
+      templateSource: effectiveTemplate ?? GenericHandler.chatMlTemplate,
+      messages: effectiveMessages,
+      metadata: handlerMetadata,
+      addAssistant: addAssistant,
+      tools: effectiveTools,
+      enableThinking: enableThinking,
+    );
+
+    if (effectiveFormat == ChatFormat.contentOnly) {
+      baseResult = _withFormat(baseResult, ChatFormat.contentOnly.index);
+    }
+
+    // Apply grammar constraints for tool calls or response format
+    final withGrammar = _applyGrammar(
+      baseResult,
+      effectiveTools,
+      toolChoice,
+      responseFormat,
+    );
+    return _normalizeGrammarLazyForToolChoice(withGrammar, toolChoice);
   }
 
   /// Apply grammar constraints based on tool definitions and response format.
@@ -465,42 +451,38 @@ class ChatTemplateEngine {
     final handler = resolved.handler;
     final format = resolved.format;
 
-    try {
-      final hasPegParser = parser != null && parser.trim().isNotEmpty;
-      final isPegFormat =
-          format == ChatFormat.pegSimple ||
-          format == ChatFormat.pegNative ||
-          format == ChatFormat.pegConstructed;
-      final pegFormat = switch (format) {
-        ChatFormat.pegSimple => ChatFormat.pegSimple,
-        ChatFormat.pegNative => ChatFormat.pegNative,
-        ChatFormat.pegConstructed => ChatFormat.pegConstructed,
-        ChatFormat.ministral => hasPegParser ? ChatFormat.pegNative : null,
-        ChatFormat.solarOpen => hasPegParser ? ChatFormat.pegNative : null,
-        ChatFormat.qwen3CoderXml =>
-          hasPegParser ? ChatFormat.pegConstructed : null,
-        _ => null,
-      };
+    final hasPegParser = parser != null && parser.trim().isNotEmpty;
+    final isPegFormat =
+        format == ChatFormat.pegSimple ||
+        format == ChatFormat.pegNative ||
+        format == ChatFormat.pegConstructed;
+    final pegFormat = switch (format) {
+      ChatFormat.pegSimple => ChatFormat.pegSimple,
+      ChatFormat.pegNative => ChatFormat.pegNative,
+      ChatFormat.pegConstructed => ChatFormat.pegConstructed,
+      ChatFormat.ministral => hasPegParser ? ChatFormat.pegNative : null,
+      ChatFormat.solarOpen => hasPegParser ? ChatFormat.pegNative : null,
+      ChatFormat.qwen3CoderXml =>
+        hasPegParser ? ChatFormat.pegConstructed : null,
+      _ => null,
+    };
 
-      if (pegFormat != null && (isPegFormat || hasPegParser)) {
-        return PegChatParser.parse(
-          parser: parser ?? '',
-          format: pegFormat,
-          output: output,
-          isPartial: isPartial,
-          parseToolCalls: parseToolCalls,
-        );
-      }
-
-      return handler.parse(
-        output,
+    if (pegFormat != null && (isPegFormat || hasPegParser)) {
+      return PegChatParser.parse(
+        parser: parser ?? '',
+        format: pegFormat,
+        output: output,
         isPartial: isPartial,
         parseToolCalls: parseToolCalls,
-        thinkingForcedOpen: thinkingForcedOpen,
       );
-    } catch (_) {
-      rethrow;
     }
+
+    return handler.parse(
+      output,
+      isPartial: isPartial,
+      parseToolCalls: parseToolCalls,
+      thinkingForcedOpen: thinkingForcedOpen,
+    );
   }
 
   /// Returns the thinking tags used by the selected parser handler.
@@ -575,12 +557,27 @@ class ChatTemplateEngine {
       case ChatFormat.translateGemma:
         return TranslateGemmaHandler();
       case ChatFormat.pegSimple:
+        return GenericHandler(
+          format: ChatFormat.pegSimple,
+          toolCallSerialization: TemplateToolCallSerialization.none,
+        );
       case ChatFormat.pegNative:
+        return GenericHandler(
+          format: ChatFormat.pegNative,
+          toolCallSerialization: TemplateToolCallSerialization.none,
+        );
       case ChatFormat.pegConstructed:
-        return GenericHandler();
+        return GenericHandler(
+          format: ChatFormat.pegConstructed,
+          toolCallSerialization: TemplateToolCallSerialization.none,
+        );
       case ChatFormat.generic:
-      case ChatFormat.contentOnly:
         return GenericHandler();
+      case ChatFormat.contentOnly:
+        return GenericHandler(
+          format: ChatFormat.contentOnly,
+          toolCallSerialization: TemplateToolCallSerialization.none,
+        );
     }
   }
 
@@ -711,11 +708,12 @@ class ChatTemplateEngine {
       ];
     }
 
-    final first = messages.first;
-    final merged = '${instruction.trim()}\n\n${first.content.trim()}';
-    return <LlamaChatMessage>[
-      first.copyWith(content: merged),
-      ...messages.skip(1),
-    ];
+    return TemplateRenderContext.mergeLeadingSystemMessage(<LlamaChatMessage>[
+      LlamaChatMessage.fromText(
+        role: LlamaChatRole.system,
+        text: instruction.trim(),
+      ),
+      ...messages,
+    ], supportsSystemRole: false);
   }
 }

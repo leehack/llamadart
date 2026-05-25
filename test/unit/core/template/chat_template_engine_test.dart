@@ -1,12 +1,15 @@
 import 'dart:convert';
 
+import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
+import 'package:llamadart/src/core/models/chat/content_part.dart';
 import 'package:llamadart/src/core/models/inference/tool_choice.dart';
 import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:llamadart/src/core/models/tools/tool_param.dart';
 import 'package:llamadart/src/core/template/chat_format.dart';
 import 'package:llamadart/src/core/template/chat_template_engine.dart';
+import 'package:llamadart/src/core/template/template_render_context.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -26,6 +29,343 @@ void main() {
 
       expect(result.prompt, contains('CUSTOM:hello'));
       expect(result.prompt, isNot(contains('BASE:hello')));
+    });
+
+    test(
+      'does not apply generic tool-call serialization to content-only routing',
+      () {
+        const template = '{{ "CONTENT:" ~ messages[0]["content"] }}';
+        const history = [
+          LlamaChatMessage.withContent(
+            role: LlamaChatRole.assistant,
+            content: [
+              LlamaTextContent('done'),
+              LlamaToolCallContent(
+                name: 'weather',
+                arguments: {'city': 'Seoul'},
+                rawJson: '{"city":"Seoul"}',
+              ),
+            ],
+          ),
+        ];
+
+        final result = ChatTemplateEngine.render(
+          templateSource: template,
+          messages: history,
+          metadata: const {},
+        );
+
+        expect(result.format, equals(ChatFormat.contentOnly.index));
+        expect(result.prompt, contains('CONTENT:done'));
+        expect(result.prompt, isNot(contains('"tool_calls"')));
+        expect(result.prompt, isNot(contains('weather')));
+      },
+    );
+
+    test('keeps old workaround format matrix in handler policies', () {
+      final expectedPolicies = <ChatFormat, TemplateToolCallSerialization>{
+        for (final format in ChatFormat.values)
+          format: TemplateToolCallSerialization.none,
+        ChatFormat.generic:
+            TemplateToolCallSerialization.genericSchemaInContent,
+        ChatFormat.granite:
+            TemplateToolCallSerialization.genericSchemaInContent,
+        ChatFormat.mistralNemo: TemplateToolCallSerialization.normalizeOnly,
+        ChatFormat.llama3: TemplateToolCallSerialization.normalizeOnly,
+        ChatFormat.llama3BuiltinTools:
+            TemplateToolCallSerialization.normalizeOnly,
+        ChatFormat.commandR7B: TemplateToolCallSerialization.normalizeOnly,
+        ChatFormat.glm45: TemplateToolCallSerialization.normalizeOnly,
+        ChatFormat.minimaxM2: TemplateToolCallSerialization.normalizeOnly,
+        ChatFormat.qwen3CoderXml: TemplateToolCallSerialization.normalizeOnly,
+        ChatFormat.seedOss: TemplateToolCallSerialization.normalizeOnly,
+      };
+
+      for (final MapEntry(key: format, value: expected)
+          in expectedPolicies.entries) {
+        final actual = ChatTemplateEngine.handlerFor(
+          format,
+        ).toolCallSerialization;
+        _expectToolCallSerialization(
+          actual,
+          expected,
+          reason: 'Unexpected tool-call serialization for $format',
+        );
+      }
+    });
+
+    test(
+      'preserves GLM-OCR image markers through render-context serialization',
+      () {
+        const template = '''[gMASK]<sop>
+{# GLM detection marker: <arg_key>name</arg_key><arg_value>value</arg_value> #}
+{% for m in messages %}
+{% if m.role == 'user' %}<|user|>
+{% for item in m.content %}
+{% if item.type == 'image' %}<|begin_of_image|><|image|><|end_of_image|>{% elif item.type == 'text' %}{{ item.text }}{% endif %}
+{% endfor %}
+{% endif %}
+{% endfor %}
+{% if add_generation_prompt %}<|assistant|>{% endif %}''';
+        const multimodalMessages = [
+          LlamaChatMessage.withContent(
+            role: LlamaChatRole.user,
+            content: [
+              LlamaImageContent(path: '/tmp/page.png'),
+              LlamaTextContent('Extract text.'),
+            ],
+          ),
+        ];
+
+        final result = ChatTemplateEngine.render(
+          templateSource: template,
+          messages: multimodalMessages,
+          metadata: const {},
+        );
+
+        expect(result.format, equals(ChatFormat.glm45.index));
+        expect(
+          result.prompt,
+          contains('<|begin_of_image|><__media__><|end_of_image|>'),
+        );
+        expect(result.prompt, contains('Extract text.'));
+      },
+    );
+
+    test(
+      'renders actual GLM-OCR image prompt without leaking image source',
+      () {
+        const multimodalMessages = [
+          LlamaChatMessage.withContent(
+            role: LlamaChatRole.user,
+            content: [
+              LlamaImageContent(path: '/tmp/page.png'),
+              LlamaTextContent('Text Extraction:'),
+            ],
+          ),
+        ];
+
+        final result = ChatTemplateEngine.render(
+          templateSource: _actualGlmOcrTemplate,
+          messages: multimodalMessages,
+          metadata: const {},
+        );
+
+        expect(result.format, equals(ChatFormat.glm45.index));
+        expect(result.prompt, startsWith('[gMASK]<sop>'));
+        expect(result.prompt, contains('<|user|>'));
+        expect(_mediaPlaceholderCount(result.prompt), equals(1));
+        expect(result.prompt, contains('Text Extraction:'));
+        expect(result.prompt, contains('<|assistant|>'));
+        expect(result.prompt, isNot(contains('file:///tmp/page.png')));
+        expect(result.prompt, isNot(contains('image_url')));
+        expect(result.prompt, isNot(contains('data:image')));
+      },
+    );
+
+    test('keeps GLM-OCR image marker when GLM tool-call policy runs', () {
+      const history = [
+        LlamaChatMessage.withContent(
+          role: LlamaChatRole.user,
+          content: [
+            LlamaImageContent(path: '/tmp/page.png'),
+            LlamaTextContent('Text Extraction:'),
+          ],
+        ),
+        LlamaChatMessage.withContent(
+          role: LlamaChatRole.assistant,
+          content: [
+            LlamaToolCallContent(
+              name: 'ocr_hint',
+              arguments: {'language': 'ko'},
+              rawJson: '{"language":"ko"}',
+            ),
+          ],
+        ),
+      ];
+
+      final result = ChatTemplateEngine.render(
+        templateSource: _actualGlmOcrTemplate,
+        messages: history,
+        metadata: const {},
+      );
+
+      expect(result.format, equals(ChatFormat.glm45.index));
+      expect(_mediaPlaceholderCount(result.prompt), equals(1));
+      expect(result.prompt, contains('Text Extraction:'));
+      expect(result.prompt, contains('<tool_call>ocr_hint'));
+      expect(result.prompt, contains('<arg_key>language</arg_key>'));
+      expect(result.prompt, contains('<arg_value>ko</arg_value>'));
+    });
+
+    test('tool_choice none disables GLM tool rendering and grammar', () {
+      const baseTemplate = '''[gMASK]<sop>
+{# GLM detection marker: <arg_key>name</arg_key><arg_value>value</arg_value> #}
+{% if tools %}TOOLS:{{ tools[0]["function"]["name"] }}{% endif %}
+{% for m in messages %}{% if m.role == 'user' %}<|user|>{{ m.content }}{% endif %}{% endfor %}
+{% if add_generation_prompt %}<|assistant|>{% endif %}''';
+      const toolUseTemplate = 'TOOL_USE_VARIANT\n$baseTemplate';
+      final tools = [
+        ToolDefinition(
+          name: 'get_weather',
+          description: 'Get weather',
+          parameters: [ToolParam.string('city')],
+          handler: _noopHandler,
+        ),
+      ];
+
+      final result = ChatTemplateEngine.render(
+        templateSource: baseTemplate,
+        messages: messages,
+        metadata: const {'tokenizer.chat_template.tool_use': toolUseTemplate},
+        tools: tools,
+        toolChoice: ToolChoice.none,
+      );
+
+      expect(result.format, equals(ChatFormat.glm45.index));
+      expect(result.prompt, isNot(contains('TOOL_USE_VARIANT')));
+      expect(result.prompt, isNot(contains('TOOLS:get_weather')));
+      expect(result.grammar, isNull);
+      expect(result.grammarLazy, isFalse);
+      expect(result.preservedTokens, isEmpty);
+      expect(result.grammarTriggers, isEmpty);
+    });
+
+    test(
+      'keeps system text before media for templates without system role',
+      () {
+        const template = '''[gMASK]<sop>
+{# GLM detection marker: <arg_key>name</arg_key><arg_value>value</arg_value> #}
+{% for m in messages %}
+{% if m.role == 'user' %}<|user|>
+{% for item in m.content %}
+{% if item.type == 'image' %}<|begin_of_image|><|image|><|end_of_image|>{% elif item.type == 'text' %}{{ item.text }}{% endif %}
+{% endfor %}
+{% endif %}
+{% endfor %}
+{% if add_generation_prompt %}<|assistant|>{% endif %}''';
+        const multimodalMessages = [
+          LlamaChatMessage.fromText(
+            role: LlamaChatRole.system,
+            text: 'Use OCR mode.',
+          ),
+          LlamaChatMessage.withContent(
+            role: LlamaChatRole.user,
+            content: [
+              LlamaImageContent(path: '/tmp/page.png'),
+              LlamaTextContent('Extract text.'),
+            ],
+          ),
+        ];
+
+        final result = ChatTemplateEngine.render(
+          templateSource: template,
+          messages: multimodalMessages,
+          metadata: const {},
+        );
+
+        expect(result.format, equals(ChatFormat.glm45.index));
+        final systemIndex = result.prompt.indexOf('Use OCR mode.');
+        final mediaIndex = result.prompt.indexOf('<__media__>');
+        final taskIndex = result.prompt.indexOf('Extract text.');
+        expect(systemIndex, isNonNegative);
+        expect(mediaIndex, isNonNegative);
+        expect(taskIndex, isNonNegative);
+        expect(systemIndex, lessThan(mediaIndex));
+        expect(mediaIndex, lessThan(taskIndex));
+      },
+    );
+
+    test(
+      'generic tool instruction injection preserves multimodal user parts',
+      () {
+        const template = '''{% for m in messages %}
+{% if m.role == 'user' %}
+{% for item in m.content %}{% if item.type == 'image' %}<image>{% elif item.type == 'text' %}{{ item.text }}{% endif %}{% endfor %}
+{% endif %}
+{% endfor %}''';
+        final tools = [
+          ToolDefinition(
+            name: 'get_weather',
+            description: 'Get weather',
+            parameters: [ToolParam.string('city')],
+            handler: _noopHandler,
+          ),
+        ];
+
+        final result = ChatTemplateEngine.render(
+          templateSource: template,
+          messages: const [
+            LlamaChatMessage.withContent(
+              role: LlamaChatRole.user,
+              content: [
+                LlamaImageContent(path: '/tmp/page.png'),
+                LlamaTextContent('Extract text.'),
+              ],
+            ),
+          ],
+          metadata: const {},
+          tools: tools,
+        );
+
+        expect(result.format, equals(ChatFormat.generic.index));
+        expect(result.prompt, contains('Respond in JSON format'));
+        expect(result.prompt, contains('<__media__>'));
+        expect(result.prompt, contains('Extract text.'));
+        expect(
+          result.prompt.indexOf('Respond in JSON format'),
+          lessThan(result.prompt.indexOf('<__media__>')),
+        );
+        expect(
+          result.prompt.indexOf('<__media__>'),
+          lessThan(result.prompt.indexOf('Extract text.')),
+        );
+      },
+    );
+
+    test('fails loudly when required tool-call serialization is invalid', () {
+      const template = '{{ messages[0]["content"] }}';
+      final tools = [
+        ToolDefinition(
+          name: 'get_weather',
+          description: 'Get weather',
+          parameters: [ToolParam.string('city')],
+          handler: _noopHandler,
+        ),
+      ];
+
+      expect(
+        () => ChatTemplateEngine.render(
+          templateSource: template,
+          messages: const [
+            LlamaChatMessage.withContent(
+              role: LlamaChatRole.assistant,
+              content: [
+                LlamaToolCallContent(
+                  name: 'get_weather',
+                  arguments: {},
+                  rawJson: '["not", "an", "object"]',
+                ),
+              ],
+            ),
+          ],
+          metadata: const {},
+          tools: tools,
+        ),
+        throwsA(
+          isA<LlamaInferenceException>()
+              .having(
+                (error) => error.details.toString(),
+                'details',
+                isNot(contains('stackTrace')),
+              )
+              .having(
+                (error) => error.details.toString(),
+                'details',
+                contains('cause'),
+              ),
+        ),
+      );
     });
   });
 
@@ -687,6 +1027,173 @@ void main() {
       expect(result.grammar, isNotNull);
     });
   });
+}
+
+int _mediaPlaceholderCount(String prompt) {
+  return '<__media__>'.allMatches(prompt).length;
+}
+
+const _actualGlmOcrTemplate = r'''[gMASK]<sop>
+{%- if tools -%}
+<|system|>
+# Tools
+
+You may call one or more functions to assist with the user query.
+
+You are provided with function signatures within <tools></tools> XML tags:
+<tools>
+{% for tool in tools %}
+{{ tool | tojson(ensure_ascii=False) }}
+{% endfor %}
+</tools>
+
+For each function call, output the function name and arguments within the following XML format:
+<tool_call>{function-name}
+<arg_key>{arg-key-1}</arg_key>
+<arg_value>{arg-value-1}</arg_value>
+<arg_key>{arg-key-2}</arg_key>
+<arg_value>{arg-value-2}</arg_value>
+...
+</tool_call>{%- endif -%}
+{%- macro visible_text(content) -%}
+    {%- if content is string -%}
+        {{- content }}
+    {%- elif content is iterable and content is not mapping -%}
+        {%- for item in content -%}
+            {%- if item is mapping and item.type == 'text' -%}
+                {{- item.text }}
+            {%- elif item is mapping and (item.type == 'image' or 'image' in item) -%}
+                <|begin_of_image|><|image|><|end_of_image|>
+            {%- elif item is mapping and (item.type == 'video' or 'video' in item) -%}
+                <|begin_of_video|><|video|><|end_of_video|>
+            {%- elif item is string -%}
+                {{- item }}
+            {%- endif -%}
+        {%- endfor -%}
+    {%- else -%}
+        {{- content }}
+    {%- endif -%}
+{%- endmacro -%}
+{%- set ns = namespace(last_user_index=-1) %}
+{%- for m in messages %}
+    {%- if m.role == 'user' %}
+        {% set ns.last_user_index = loop.index0 -%}
+    {%- endif %}
+{%- endfor %}
+{% for m in messages %}
+{%- if m.role == 'user' -%}<|user|>
+{% if m.content is string %}
+{{ m.content }}
+{%- else %}
+{%- for item in m.content %}
+{% if item.type == 'video' or 'video' in item %}
+<|begin_of_video|><|video|><|end_of_video|>{% elif item.type == 'image' or 'image' in item %}
+<|begin_of_image|><|image|><|end_of_image|>{% elif item.type == 'text' %}
+{{ item.text }}
+{%- endif %}
+{%- endfor %}
+{%- endif %}
+{{- '/nothink' if (enable_thinking is defined and not enable_thinking and not visible_text(m.content).endswith("/nothink")) else '' -}}
+{%- elif m.role == 'assistant' -%}
+<|assistant|>
+{%- set reasoning_content = '' %}
+{%- set content = visible_text(m.content) %}
+{%- if m.reasoning_content is string %}
+    {%- set reasoning_content = m.reasoning_content %}
+{%- else %}
+    {%- if '</think>' in content %}
+        {%- set reasoning_content = content.split('</think>')[0].rstrip('\n').split('<think>')[-1].lstrip('\n') %}
+        {%- set content = content.split('</think>')[-1].lstrip('\n') %}
+    {%- endif %}
+{%- endif %}
+{%- if loop.index0 > ns.last_user_index and reasoning_content -%}
+{{ '\n<think>' + reasoning_content.strip() +  '</think>'}}
+{%- else -%}
+{{ '\n<think></think>' }}
+{%- endif -%}
+{%- if content.strip() -%}
+{{ '\n' + content.strip() }}
+{%- endif -%}
+{% if m.tool_calls %}
+{% for tc in m.tool_calls %}
+{%- if tc.function %}
+    {%- set tc = tc.function %}
+{%- endif %}
+{{ '\n<tool_call>' + tc.name }}
+{% set _args = tc.arguments %}
+{% for k, v in _args.items() %}
+<arg_key>{{ k }}</arg_key>
+<arg_value>{{ v | tojson(ensure_ascii=False) if v is not string else v }}</arg_value>
+{% endfor %}
+</tool_call>{% endfor %}
+{% endif %}
+{%- elif m.role == 'tool' -%}
+{%- if m.content is string -%}
+{%- if loop.first or (messages[loop.index0 - 1].role != "tool") %}
+    {{- '<|observation|>' }}
+{%- endif %}
+{{- '\n<tool_response>\n' }}
+{{- m.content }}
+{{- '\n</tool_response>' }}
+{% elif m.content is iterable and m.content is not mapping %}
+{%- if loop.first or (messages[loop.index0 - 1].role != "tool") %}
+{{- '<|observation|>' }}
+{%- endif %}
+{{- '\n<tool_response>\n' }}
+{%- for tr in m.content -%}
+  {%- if tr is mapping and tr.type is defined -%}
+    {%- set t = tr.type | lower -%}
+    {%- if t == 'text' and tr.text is defined -%}
+{{ tr.text }}
+    {%- elif t in ['image', 'image_url'] -%}
+<|begin_of_image|><|image|><|end_of_image|>
+    {%- elif t in ['video', 'video_url'] -%}
+<|begin_of_video|><|video|><|end_of_video|>
+    {%- else -%}
+{{ tr | tojson(ensure_ascii=False) }}
+    {%- endif -%}
+  {%- else -%}
+{{ tr.output if tr.output is defined else tr }}
+  {%- endif -%}
+{%- endfor -%}
+{{- '\n</tool_response>' }}
+{%- else -%}
+<|observation|>{% for tr in m.content %}
+
+<tool_response>
+{{ tr.output if tr.output is defined else tr }}
+</tool_response>{% endfor -%}
+{% endif -%}
+{%- elif m.role == 'system' -%}
+<|system|>
+{{ visible_text(m.content) }}
+{%- endif -%}
+{%- endfor -%}
+{%- if add_generation_prompt -%}
+<|assistant|>
+{{'<think></think>\n' if (enable_thinking is defined and not enable_thinking) else ''}}
+{%- endif -%}''';
+
+void _expectToolCallSerialization(
+  TemplateToolCallSerialization actual,
+  TemplateToolCallSerialization expected, {
+  String? reason,
+}) {
+  expect(
+    actual.normalizeArguments,
+    equals(expected.normalizeArguments),
+    reason: reason,
+  );
+  expect(
+    actual.useGenericSchema,
+    equals(expected.useGenericSchema),
+    reason: reason,
+  );
+  expect(
+    actual.moveToolCallsToContent,
+    equals(expected.moveToolCallsToContent),
+    reason: reason,
+  );
 }
 
 Future<Object?> _noopHandler(_) async {

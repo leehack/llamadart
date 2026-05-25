@@ -62,6 +62,10 @@ class ModelSource {
   }
 
   /// Creates a Hugging Face model source from repository details.
+  ///
+  /// The generated download URL uses Hugging Face's `/resolve/{revision}/...`
+  /// endpoint. [revision] defaults to `main`; use a branch, tag, commit SHA, or
+  /// pull-request ref such as `refs/pr/12` when a model must be pinned.
   factory ModelSource.huggingFace({
     required String repoId,
     required String filePath,
@@ -86,12 +90,19 @@ class ModelSource {
         fileName ?? _fileNameFromPath(normalizedFilePath),
         'fileName',
       ),
-      canonicalKey:
-          'hf://$normalizedRepoId@$normalizedRevision/$normalizedFilePath',
+      canonicalKey: _huggingFaceCanonicalKey(
+        normalizedRepoId,
+        normalizedRevision,
+        normalizedFilePath,
+      ),
     );
   }
 
   /// Parses [value] as a local path, HTTP(S) URL, or `hf://` reference.
+  ///
+  /// Hugging Face references use `hf://owner/repo/path/to/model.gguf`. A simple
+  /// branch or tag can be written as `hf://owner/repo@revision/model.gguf`; use
+  /// `?revision=refs/pr/12` when the revision itself contains `/`.
   factory ModelSource.parse(String value) {
     if (value.isEmpty) {
       throw ArgumentError.value(value, 'value', 'Source must not be empty.');
@@ -239,7 +250,7 @@ void _validateRemoteUri(Uri url, String name) {
 
 ModelSource _parseHuggingFaceUri(String value) {
   final reference = value.substring('hf://'.length);
-  if (reference.isEmpty || reference.contains('//')) {
+  if (reference.isEmpty || reference.contains('#')) {
     throw ArgumentError.value(
       value,
       'value',
@@ -247,7 +258,26 @@ ModelSource _parseHuggingFaceUri(String value) {
     );
   }
 
-  final rawParts = reference.split('/');
+  final queryStart = reference.indexOf('?');
+  final pathReference = queryStart == -1
+      ? reference
+      : reference.substring(0, queryStart);
+  final queryRevision = queryStart == -1
+      ? null
+      : _parseHuggingFaceRevisionQuery(
+          reference.substring(queryStart + 1),
+          value,
+        );
+
+  if (pathReference.isEmpty || pathReference.contains('//')) {
+    throw ArgumentError.value(
+      value,
+      'value',
+      'Invalid Hugging Face reference.',
+    );
+  }
+
+  final rawParts = pathReference.split('/');
   if (rawParts.length < 3) {
     throw ArgumentError.value(
       value,
@@ -266,9 +296,17 @@ ModelSource _parseHuggingFaceUri(String value) {
   if (repoRevisionParts.length > 2 || repoRevisionParts.first.isEmpty) {
     throw ArgumentError.value(value, 'value', 'Invalid Hugging Face repo id.');
   }
-  final revision = repoRevisionParts.length == 2
+  final inlineRevision = repoRevisionParts.length == 2
       ? repoRevisionParts[1]
-      : 'main';
+      : null;
+  if (inlineRevision != null && queryRevision != null) {
+    throw ArgumentError.value(
+      value,
+      'value',
+      'Use either @revision or ?revision=, not both.',
+    );
+  }
+  final revision = queryRevision ?? inlineRevision ?? 'main';
   final repoId = '$owner/${repoRevisionParts.first}';
   final decodedFileSegments = rawParts
       .skip(2)
@@ -299,12 +337,71 @@ ModelSource _parseHuggingFaceUri(String value) {
   );
 }
 
+String _parseHuggingFaceRevisionQuery(String rawQuery, String value) {
+  if (rawQuery.isEmpty) {
+    throw ArgumentError.value(
+      value,
+      'value',
+      'Hugging Face reference query must include revision=...',
+    );
+  }
+
+  String? revision;
+  for (final pair in rawQuery.split('&')) {
+    if (pair.isEmpty) {
+      throw ArgumentError.value(value, 'value', 'Invalid Hugging Face query.');
+    }
+    final separator = pair.indexOf('=');
+    final rawKey = separator == -1 ? pair : pair.substring(0, separator);
+    final rawValue = separator == -1 ? '' : pair.substring(separator + 1);
+    final key = _decodeHuggingFaceQueryComponent(rawKey, value);
+    if (key != 'revision') {
+      throw ArgumentError.value(
+        value,
+        'value',
+        'Unsupported Hugging Face query parameter: $key.',
+      );
+    }
+    if (revision != null) {
+      throw ArgumentError.value(
+        value,
+        'value',
+        'Hugging Face revision query must appear only once.',
+      );
+    }
+    revision = _decodeHuggingFaceQueryComponent(rawValue, value);
+  }
+
+  return revision ?? '';
+}
+
+String _huggingFaceCanonicalKey(
+  String repoId,
+  String revision,
+  String filePath,
+) {
+  final encodedFilePath = _encodedHuggingFaceFilePath(filePath);
+  if (!revision.contains('/') &&
+      revision == Uri.encodeComponent(revision) &&
+      filePath == encodedFilePath) {
+    return 'hf://$repoId@$revision/$filePath';
+  }
+
+  final encodedRevision = Uri.encodeQueryComponent(revision);
+  return 'hf://$repoId/$encodedFilePath?revision=$encodedRevision';
+}
+
 Uri _huggingFaceResolvedUri(String repoId, String revision, String filePath) {
-  return Uri.https(
-    'huggingface.co',
-    '/$repoId/resolve/$revision/$filePath',
-    const <String, String>{'download': 'true'},
+  final encodedRepoId = repoId.split('/').map(Uri.encodeComponent).join('/');
+  final encodedRevision = Uri.encodeComponent(revision);
+  final encodedFilePath = _encodedHuggingFaceFilePath(filePath);
+  return Uri.parse(
+    'https://huggingface.co/$encodedRepoId/resolve/$encodedRevision/$encodedFilePath?download=true',
   );
+}
+
+String _encodedHuggingFaceFilePath(String filePath) {
+  return filePath.split('/').map(Uri.encodeComponent).join('/');
 }
 
 String _validateRepoId(String repoId) {
@@ -330,6 +427,18 @@ String _decodeHuggingFacePathSegment(String segment, String value) {
   }
 }
 
+String _decodeHuggingFaceQueryComponent(String component, String value) {
+  try {
+    return Uri.decodeComponent(component);
+  } on FormatException catch (error) {
+    throw ArgumentError.value(
+      value,
+      'value',
+      'Hugging Face query contains invalid percent-encoding: ${error.message}',
+    );
+  }
+}
+
 void _validateRepoSegment(String segment, String repoId) {
   final validSegment = RegExp(r'^[A-Za-z0-9][A-Za-z0-9._-]*$');
   if (!validSegment.hasMatch(segment) || segment.contains('..')) {
@@ -342,7 +451,14 @@ void _validateRepoSegment(String segment, String repoId) {
 }
 
 String _validateRevision(String revision) {
-  if (revision.isEmpty || revision.startsWith('/') || revision.contains('..')) {
+  final invalidCharacters = RegExp(r'[\x00-\x20\x7F~^:?*\[\\\]#]');
+  if (revision.isEmpty ||
+      revision.startsWith('/') ||
+      revision.endsWith('/') ||
+      revision.contains('//') ||
+      revision.contains('..') ||
+      revision.contains('@{') ||
+      invalidCharacters.hasMatch(revision)) {
     throw ArgumentError.value(
       revision,
       'revision',

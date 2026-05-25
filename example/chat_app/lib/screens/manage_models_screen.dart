@@ -12,6 +12,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/downloadable_model.dart';
 import '../providers/chat_provider.dart';
 import '../services/hugging_face_model_discovery_service.dart';
+import '../services/model_download_controller_adapter.dart';
 import '../services/model_service_base.dart';
 import '../utils/backend_utils.dart';
 import '../widgets/model_card.dart';
@@ -21,10 +22,19 @@ class ManageModelsScreen extends StatefulWidget {
   final VoidCallback? onModelActivated;
   final bool embeddedPanel;
 
+  // Test hooks for exercising download-controller wiring without relying on
+  // platform storage or the full built-in model catalog.
+  final ModelService? modelService;
+  final List<DownloadableModel>? initialModels;
+  final bool? showModelLibraryInitially;
+
   const ManageModelsScreen({
     super.key,
     this.onModelActivated,
     this.embeddedPanel = false,
+    this.modelService,
+    this.initialModels,
+    this.showModelLibraryInitially,
   });
 
   @override
@@ -36,12 +46,10 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
   static const String _customModelsPrefsKey = 'custom_hf_models_v1';
   static const int _webLargeModelWarningBytes = 1900 * 1024 * 1024;
 
-  final ModelService _modelService = ModelService();
+  late final ModelService _modelService;
   final HuggingFaceModelDiscoveryService _hfDiscoveryService =
       HuggingFaceModelDiscoveryService();
-  final List<DownloadableModel> _models = List<DownloadableModel>.from(
-    DownloadableModel.defaultModels,
-  );
+  final List<DownloadableModel> _models = <DownloadableModel>[];
   final List<DownloadableModel> _customModels = <DownloadableModel>[];
 
   final Map<String, ValueNotifier<_ModelDownloadUiState>>
@@ -49,7 +57,9 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
   final Map<String, int> _lastDownloadedBytes = {};
   final Map<String, DateTime> _lastDownloadSampleAt = {};
   final Map<String, double> _smoothedDownloadRateBytesPerSec = {};
-  final Map<String, CancelToken> _cancelTokens = {};
+  final Map<String, ModelDownloadController> _downloadControllers = {};
+  final Map<String, StreamSubscription<ModelDownloadTaskSnapshot>>
+  _downloadSubscriptions = {};
 
   Set<String> _downloadedFiles = {};
   String? _modelsDir;
@@ -62,20 +72,25 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _showModelLibrary = false;
+    _modelService = widget.modelService ?? ModelService();
+    _models.addAll(_initialModelCatalog());
+    _showModelLibrary = widget.showModelLibraryInitially ?? false;
     _initModelService();
+  }
+
+  List<DownloadableModel> _initialModelCatalog() {
+    return List<DownloadableModel>.from(
+      widget.initialModels ?? DownloadableModel.defaultModels,
+    );
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (kIsWeb) {
-      return;
-    }
-
-    if (state == AppLifecycleState.paused ||
-        state == AppLifecycleState.hidden) {
-      _pauseActiveDownloads('App moved to background');
-    }
+    // Do not deliberately cancel active downloads on mobile background/sleep.
+    // The foreground Dart request may be suspended by the OS, but cancelling here
+    // guarantees a pause every time the screen locks. Let the transfer continue
+    // for short lifecycle interruptions and rely on resumable `.download` files
+    // when the OS eventually interrupts the socket.
   }
 
   Future<void> _initModelService() async {
@@ -462,6 +477,23 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
     return stageText;
   }
 
+  String? _downloadTaskLabel(ModelDownloadTaskSnapshot? task) {
+    if (task == null) {
+      return null;
+    }
+    return switch (task.stage) {
+      ModelDownloadTaskStage.idle => null,
+      ModelDownloadTaskStage.resolving => 'Resolving model',
+      ModelDownloadTaskStage.checkingCache => 'Checking cache',
+      ModelDownloadTaskStage.downloading =>
+        kIsWeb ? 'Caching model' : 'Downloading model',
+      ModelDownloadTaskStage.verifying => 'Verifying model',
+      ModelDownloadTaskStage.ready => 'Ready',
+      ModelDownloadTaskStage.failed => task.errorMessage ?? 'Download failed',
+      ModelDownloadTaskStage.cancelled => 'Paused',
+    };
+  }
+
   String _downloadFailureMessage(dynamic error) {
     if (error is DioException) {
       final normalized = '${error.message ?? ''} ${error.error ?? ''}'
@@ -582,7 +614,9 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
     bool? isDownloading,
     double? progress,
     ModelDownloadProgress? detail,
+    ModelDownloadTaskSnapshot? task,
     bool clearDetail = false,
+    bool clearTask = false,
     bool clearProgress = false,
   }) {
     final notifier = _downloadUiStateFor(filename);
@@ -591,7 +625,9 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
       isDownloading: isDownloading,
       progress: clearProgress ? 0.0 : progress,
       detail: detail,
+      task: task,
       clearDetail: clearDetail,
+      clearTask: clearTask,
     );
   }
 
@@ -601,98 +637,154 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
     _smoothedDownloadRateBytesPerSec.remove(filename);
   }
 
-  void _pauseActiveDownloads(String reason) {
-    final entries = _cancelTokens.entries.toList(growable: false);
-    for (final entry in entries) {
-      final token = entry.value;
-      if (!token.isCancelled) {
-        token.cancel(reason);
+  void _pauseActiveDownloads() {
+    for (final controller in _downloadControllers.values) {
+      if (controller.snapshot.isRunning) {
+        controller.cancel();
       }
     }
+  }
+
+  Future<void> _disposeDownloadController(
+    String filename, {
+    ModelDownloadController? controller,
+    StreamSubscription<ModelDownloadTaskSnapshot>? subscription,
+  }) async {
+    final currentSubscription = _downloadSubscriptions[filename];
+    if (subscription == null || identical(currentSubscription, subscription)) {
+      await _downloadSubscriptions.remove(filename)?.cancel();
+    } else {
+      await subscription.cancel();
+    }
+
+    final currentController = _downloadControllers[filename];
+    if (controller == null || identical(currentController, controller)) {
+      await _downloadControllers.remove(filename)?.dispose();
+    } else {
+      await controller.dispose();
+    }
+  }
+
+  void _handleDownloadSnapshot(
+    DownloadableModel model,
+    ModelDownloadTaskSnapshot snapshot,
+  ) {
+    if (!mounted) {
+      return;
+    }
+    _updateDownloadUiState(
+      model.filename,
+      isDownloading: snapshot.isRunning,
+      progress: snapshot.fraction,
+      task: snapshot,
+    );
   }
 
   Future<void> _downloadModel(DownloadableModel model) async {
     if (!kIsWeb && _modelsDir == null) {
       return;
     }
+    if (_downloadControllers[model.filename]?.snapshot.isRunning ?? false) {
+      return;
+    }
 
-    final cancelToken = CancelToken();
+    await _disposeDownloadController(model.filename);
+
+    ModelDownloadController? controller;
+    StreamSubscription<ModelDownloadTaskSnapshot>? subscription;
+
     _updateDownloadUiState(
       model.filename,
       isDownloading: true,
       clearDetail: true,
+      clearTask: true,
+      clearProgress: true,
     );
-    _lastDownloadedBytes.remove(model.filename);
-    _lastDownloadSampleAt.remove(model.filename);
-    _smoothedDownloadRateBytesPerSec.remove(model.filename);
-    _cancelTokens[model.filename] = cancelToken;
+    _clearDownloadTracking(model.filename);
 
-    await _modelService.downloadModel(
-      model: model,
-      modelsDir: _modelsDir ?? '',
-      cancelToken: cancelToken,
-      onProgress: (_) {},
-      onProgressDetail: (detail) {
-        if (!mounted) {
-          return;
-        }
-        _updateDownloadRate(model.filename, detail);
-        _updateDownloadUiState(
-          model.filename,
-          progress: detail.overallProgress,
-          detail: detail,
-        );
-      },
-      onSuccess: (filename) {
-        if (!mounted) return;
-        _updateDownloadUiState(
-          model.filename,
-          isDownloading: false,
-          clearProgress: true,
-          clearDetail: true,
-        );
+    try {
+      final manager = ChatAppModelDownloadManager(
+        modelService: _modelService,
+        model: model,
+        modelsDir: _modelsDir ?? '',
+        onProgressDetail: (detail) {
+          if (!mounted) {
+            return;
+          }
+          _updateDownloadRate(model.filename, detail);
+          _updateDownloadUiState(
+            model.filename,
+            progress: detail.overallProgress,
+            detail: detail,
+          );
+        },
+      );
+      controller = ModelDownloadController(manager: manager);
+      _downloadControllers[model.filename] = controller;
+      subscription = controller.snapshots.listen(
+        (snapshot) => _handleDownloadSnapshot(model, snapshot),
+      );
+      _downloadSubscriptions[model.filename] = subscription;
+
+      await controller.start(manager.source);
+      if (!mounted) {
+        return;
+      }
+      _updateDownloadUiState(
+        model.filename,
+        isDownloading: false,
+        clearProgress: true,
+        clearDetail: true,
+        clearTask: true,
+      );
+      _clearDownloadTracking(model.filename);
+      setState(() {
+        _downloadedFiles.add(model.filename);
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('${model.name} downloaded successfully.')),
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      final snapshot = controller?.snapshot;
+      final isCancel =
+          snapshot?.stage == ModelDownloadTaskStage.cancelled ||
+          (error is DioException && error.type == DioExceptionType.cancel);
+      _updateDownloadUiState(
+        model.filename,
+        isDownloading: false,
+        clearDetail: !isCancel,
+        clearTask: !isCancel,
+        clearProgress: !isCancel,
+      );
+      if (!isCancel) {
         _clearDownloadTracking(model.filename);
-        _cancelTokens.remove(model.filename);
-        setState(() {
-          _downloadedFiles.add(filename);
-        });
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('${model.name} downloaded successfully.')),
-        );
-      },
-      onError: (error) {
-        if (!mounted) return;
-        final isCancel =
-            error is DioException && error.type == DioExceptionType.cancel;
-        _updateDownloadUiState(
-          model.filename,
-          isDownloading: false,
-          clearDetail: !isCancel,
-          clearProgress: !isCancel,
-        );
-        if (!isCancel) {
-          _clearDownloadTracking(model.filename);
-        }
-        _cancelTokens.remove(model.filename);
+      }
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              isCancel
-                  ? 'Download paused: ${model.name}'
-                  : _downloadFailureMessage(error),
-            ),
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            isCancel
+                ? 'Download paused: ${model.name}'
+                : error is DioException
+                ? _downloadFailureMessage(error)
+                : snapshot?.errorMessage ?? _downloadFailureMessage(error),
           ),
-        );
-      },
-    );
+        ),
+      );
+    } finally {
+      await _disposeDownloadController(
+        model.filename,
+        controller: controller,
+        subscription: subscription,
+      );
+    }
   }
 
   void _cancelDownload(DownloadableModel model) {
-    final token = _cancelTokens[model.filename];
-    if (token != null && !token.isCancelled) {
-      token.cancel();
-    }
+    _downloadControllers[model.filename]?.cancel();
   }
 
   Future<void> _selectModel(DownloadableModel model) async {
@@ -770,7 +862,7 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
       clearDetail: true,
     );
     _clearDownloadTracking(model.filename);
-    _cancelTokens.remove(model.filename);
+    await _disposeDownloadController(model.filename);
 
     setState(() {
       _downloadedFiles.remove(model.filename);
@@ -814,11 +906,7 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
 
     final provider = context.read<ChatProvider>();
 
-    for (final token in _cancelTokens.values) {
-      if (!token.isCancelled) {
-        token.cancel('Bulk remove models');
-      }
-    }
+    _pauseActiveDownloads();
 
     final snapshot = List<DownloadableModel>.from(_models);
     for (final model in snapshot) {
@@ -827,7 +915,7 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
 
     _models
       ..clear()
-      ..addAll(DownloadableModel.defaultModels);
+      ..addAll(_initialModelCatalog());
     _customModels.clear();
     for (final notifier in _downloadUiStateByFile.values) {
       notifier.dispose();
@@ -836,7 +924,14 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
     _lastDownloadedBytes.clear();
     _lastDownloadSampleAt.clear();
     _smoothedDownloadRateBytesPerSec.clear();
-    _cancelTokens.clear();
+    for (final subscription in _downloadSubscriptions.values) {
+      await subscription.cancel();
+    }
+    _downloadSubscriptions.clear();
+    for (final controller in _downloadControllers.values) {
+      await controller.dispose();
+    }
+    _downloadControllers.clear();
     _downloadedFiles = await _modelService.getDownloadedModels(_models);
 
     await _saveCustomModels();
@@ -1231,6 +1326,9 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
                           valueListenable: downloadStateListenable,
                           builder: (context, downloadState, _) {
                             final detail = downloadState.detail;
+                            final taskLabel = _downloadTaskLabel(
+                              downloadState.task,
+                            );
 
                             final card = ModelCard(
                               model: model,
@@ -1240,7 +1338,7 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
                               isDownloading: downloadState.isDownloading,
                               progress: downloadState.progress,
                               downloadStatusLabel: detail == null
-                                  ? null
+                                  ? taskLabel
                                   : _downloadStageLabel(detail),
                               downloadTransferLabel: detail == null
                                   ? null
@@ -1833,7 +1931,15 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _pauseActiveDownloads('Model manager disposed');
+    _pauseActiveDownloads();
+    for (final subscription in _downloadSubscriptions.values) {
+      unawaited(subscription.cancel());
+    }
+    _downloadSubscriptions.clear();
+    for (final controller in _downloadControllers.values) {
+      unawaited(controller.dispose());
+    }
+    _downloadControllers.clear();
     for (final notifier in _downloadUiStateByFile.values) {
       notifier.dispose();
     }
@@ -1846,18 +1952,22 @@ class _ModelDownloadUiState {
   final bool isDownloading;
   final double progress;
   final ModelDownloadProgress? detail;
+  final ModelDownloadTaskSnapshot? task;
 
   const _ModelDownloadUiState({
     this.isDownloading = false,
     this.progress = 0.0,
     this.detail,
+    this.task,
   });
 
   _ModelDownloadUiState copyWith({
     bool? isDownloading,
     double? progress,
     ModelDownloadProgress? detail,
+    ModelDownloadTaskSnapshot? task,
     bool clearDetail = false,
+    bool clearTask = false,
   }) {
     final normalizedProgress =
         ((progress ?? this.progress).clamp(0.0, 1.0) as num).toDouble();
@@ -1866,6 +1976,7 @@ class _ModelDownloadUiState {
       isDownloading: isDownloading ?? this.isDownloading,
       progress: normalizedProgress,
       detail: clearDetail ? null : (detail ?? this.detail),
+      task: clearTask ? null : (task ?? this.task),
     );
   }
 }

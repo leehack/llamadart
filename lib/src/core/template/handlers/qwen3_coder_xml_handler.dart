@@ -37,6 +37,10 @@ class Qwen3CoderXmlHandler extends ChatTemplateHandler {
   ChatFormat get format => ChatFormat.qwen3CoderXml;
 
   @override
+  TemplateToolCallSerialization get toolCallSerialization =>
+      TemplateToolCallSerialization.normalizeOnly;
+
+  @override
   List<String> get additionalStops => ['<|im_end|>', '</s>'];
 
   @override
@@ -56,7 +60,7 @@ class Qwen3CoderXmlHandler extends ChatTemplateHandler {
       template,
       metadata: metadata,
       context: {
-        'messages': messages.map((m) => m.toJson()).toList(),
+        'messages': templateMessages(messages),
         'add_generation_prompt': addAssistant,
         'tools': tools?.map((t) => t.toJson()).toList(),
         'bos_token': metadata['tokenizer.ggml.bos_token'] ?? '<|im_start|>',

@@ -12,6 +12,50 @@ For canonical full release notes, use:
 - Fixed native `getVramInfo()` so llama.cpp GPU-class backend devices can
   report free/total VRAM when available, with Windows split-bundle registry
   fallback handling for backend-device symbols.
+
+## 0.6.15
+
+- Fixed GLM-OCR and other multimodal chat-template workarounds so image and
+  audio content parts are preserved when tool-call normalization runs, system
+  prompts are merged before leading media parts, and invalid tool-call
+  serialization fails loudly instead of silently falling back to the wrong
+  template shape.
+- Added `tool/testing/run_local_e2e.dart` as a discovery and orchestration
+  entry point for heavyweight local-only Dart E2E, Flutter device, and
+  Web/Playwright smoke scenarios.
+- Hardened the upstream llama.cpp chat/template E2E runner against current
+  llama.cpp target renames, dynamic backend library lookup, and full
+  `test-chat` server/mtmd build requirements.
+- Documented that real-model/device/WebGPU scenarios remain skipped from
+  default CI and should be opted into explicitly with `--list` and `--dry-run`
+  first.
+- Compatibility note: no public API breaking changes in `0.6.15`; existing
+  `0.6.14` callers remain compatible. The chat-template changes fix
+  multimodal serialization behavior for affected templates, and the local E2E
+  runner is additive.
+
+## 0.6.14
+
+- Updated the default WebGPU bridge asset pin to
+  `leehack/llama-web-bridge-assets@v0.1.16` (llama.cpp `b9165`), picking up
+  the published JS bridge build, TypeScript declaration asset, and refreshed
+  bridge docs.
+- Added WebGPU readiness guidance covering browser capability checks,
+  cross-origin isolation, bridge asset/version diagnostics, fallback behavior,
+  model/configuration pressure, and the Flutter Web real-model smoke path.
+- Added `ModelDownloadController`, a dependency-free helper that turns
+  `ModelDownloadManager` cache/download work into app-facing lifecycle states
+  for resolving, cache checks, downloads, verification, ready, failed,
+  cancelled, and retry flows.
+- Wired the runnable chat app example through a `ModelDownloadManager` adapter
+  so its model-management UI demonstrates the controller while preserving the
+  example's multi-asset and web-cache service behavior.
+- Compatibility note: no public API breaking changes in `0.6.14`; the WebGPU
+  bridge asset update and `ModelDownloadController` are additive, and existing
+  `0.6.13` callers remain compatible.
+
+## 0.6.13
+
 - Added package-managed model source downloads and cache management:
   `ModelSource`, `ModelLoadOptions`, `ModelCachePolicy`, resolver targets,
   download/cache metadata, progress callbacks, cache inspection, removal,
@@ -21,19 +65,22 @@ For canonical full release notes, use:
   custom headers, cooperative cancellation, retry, HTTP Range resume, cache
   hit/refresh/cache-only/no-cache policies, SHA-256 verification, and persisted
   redacted metadata for signed URLs.
-- Serialized concurrent stable-cache downloads for the same remote cache entry
-  across manager instances so duplicate callers do not race on shared `.part`
-  files or metadata, while distinct cache entries can still download in
-  parallel and waiting-caller cancellation does not cancel the active download.
-- Hardened versioned cache metadata recovery so completed files can rebuild
-  missing, malformed, or unsupported-schema sidecars without network access,
-  while byte-count and stored/caller SHA-256 mismatches are treated as cache
-  misses and safely re-downloaded.
+- Improved Hugging Face `hf://` ergonomics with `?revision=...` parsing for
+  branch/ref names containing slashes, plus docs for private/gated bearer-token
+  usage, separate `mmproj` assets, sharded-GGUF limitations, and redaction
+  guarantees.
+- Hardened download/cache correctness by serializing concurrent same-entry
+  downloads, recovering missing or malformed cache metadata sidecars, treating
+  mismatched byte-count/SHA-256 metadata as cache misses, and rejecting
+  remote-only options for local `ModelSource.path(...)` inputs.
 - Added `LlamaEngine.loadModelSource(...)` so local path sources keep using the
   existing native loader, remote HTTP(S)/Hugging Face sources download through
   the package-managed native cache before local loading, and URL-capable web
   backends keep using direct URL loading for simple unauthenticated requests.
-- Compatibility note: no public API breaking changes; existing
+- Added KV-cache state persistence APIs: `LlamaEngine.supportsStatePersistence`,
+  `stateSaveFile(...)`, `stateLoadFile(...)`, backend support diagnostics, and
+  WebGPU bridge forwarding for bridge assets `v0.1.15+`.
+- Compatibility note: no public API breaking changes in `0.6.13`; existing
   `loadModel(...)` callers are unchanged.
 
 ## 0.6.12

@@ -170,6 +170,172 @@ void main() {
       expect(source.canonicalKey, 'hf://owner/repo@rev/sub/dir/model.gguf');
     });
 
+    test('hf URI accepts revision query for branch names with slashes', () {
+      final source = ModelSource.parse(
+        'hf://owner/repo/sub/dir/model.gguf?revision=refs/pr/12',
+      );
+
+      expect(source.repoId, 'owner/repo');
+      expect(source.revision, 'refs/pr/12');
+      expect(source.filePath, 'sub/dir/model.gguf');
+      expect(
+        source.resolvedUri,
+        Uri.parse(
+          'https://huggingface.co/owner/repo/resolve/refs%2Fpr%2F12/sub/dir/model.gguf?download=true',
+        ),
+      );
+      expect(source.fileName, 'model.gguf');
+      expect(
+        source.canonicalKey,
+        'hf://owner/repo/sub/dir/model.gguf?revision=refs%2Fpr%2F12',
+      );
+      expect(source.metadataSourceKey, isNot(contains('refs/pr/12')));
+    });
+
+    test('hf URI accepts encoded slash revision query', () {
+      final source = ModelSource.parse(
+        'hf://owner/repo/model.gguf?revision=refs%2Fpr%2F12',
+      );
+
+      expect(source.revision, 'refs/pr/12');
+      expect(
+        source.resolvedUri,
+        Uri.parse(
+          'https://huggingface.co/owner/repo/resolve/refs%2Fpr%2F12/model.gguf?download=true',
+        ),
+      );
+    });
+
+    test('factory encodes revision path separators in resolved URL', () {
+      final source = ModelSource.huggingFace(
+        repoId: 'owner/repo',
+        revision: 'refs/pr/12',
+        filePath: 'model.gguf',
+      );
+
+      expect(source.revision, 'refs/pr/12');
+      expect(
+        source.resolvedUri,
+        Uri.parse(
+          'https://huggingface.co/owner/repo/resolve/refs%2Fpr%2F12/model.gguf?download=true',
+        ),
+      );
+      expect(
+        source.canonicalKey,
+        'hf://owner/repo/model.gguf?revision=refs%2Fpr%2F12',
+      );
+    });
+
+    test('slash-containing revisions produce unambiguous cache identities', () {
+      final queryRevisionSource = ModelSource.parse(
+        'hf://owner/repo/model.gguf?revision=a/b',
+      );
+      final inlineRevisionSource = ModelSource.parse(
+        'hf://owner/repo@a/b/model.gguf',
+      );
+
+      expect(queryRevisionSource.revision, 'a/b');
+      expect(queryRevisionSource.filePath, 'model.gguf');
+      expect(
+        queryRevisionSource.canonicalKey,
+        'hf://owner/repo/model.gguf?revision=a%2Fb',
+      );
+      expect(inlineRevisionSource.revision, 'a');
+      expect(inlineRevisionSource.filePath, 'b/model.gguf');
+      expect(
+        inlineRevisionSource.canonicalKey,
+        'hf://owner/repo@a/b/model.gguf',
+      );
+      expect(
+        queryRevisionSource.canonicalKey,
+        isNot(inlineRevisionSource.canonicalKey),
+      );
+      expect(
+        queryRevisionSource.cacheKey,
+        isNot(inlineRevisionSource.cacheKey),
+      );
+    });
+
+    test('delimiter revisions use query-form canonical keys', () {
+      final source = ModelSource.huggingFace(
+        repoId: 'owner/repo',
+        revision: 'release@v1',
+        filePath: 'model.gguf',
+      );
+
+      expect(source.revision, 'release@v1');
+      expect(
+        source.resolvedUri,
+        Uri.parse(
+          'https://huggingface.co/owner/repo/resolve/release%40v1/model.gguf?download=true',
+        ),
+      );
+      expect(
+        source.canonicalKey,
+        'hf://owner/repo/model.gguf?revision=release%40v1',
+      );
+
+      final reparsed = ModelSource.parse(source.canonicalKey);
+      expect(reparsed.revision, source.revision);
+      expect(reparsed.filePath, source.filePath);
+      expect(reparsed.canonicalKey, source.canonicalKey);
+    });
+
+    test('delimiter file paths use encoded query-form canonical keys', () {
+      final source = ModelSource.parse('hf://owner/repo/nested/model@q4.gguf');
+
+      expect(source.filePath, 'nested/model@q4.gguf');
+      expect(
+        source.canonicalKey,
+        'hf://owner/repo/nested/model%40q4.gguf?revision=main',
+      );
+
+      final reparsed = ModelSource.parse(source.canonicalKey);
+      expect(reparsed.revision, source.revision);
+      expect(reparsed.filePath, source.filePath);
+      expect(reparsed.canonicalKey, source.canonicalKey);
+    });
+
+    test('hf URI revision query preserves literal plus signs', () {
+      final source = ModelSource.parse(
+        'hf://owner/repo/model.gguf?revision=release+cuda',
+      );
+
+      expect(source.revision, 'release+cuda');
+      expect(
+        source.resolvedUri,
+        Uri.parse(
+          'https://huggingface.co/owner/repo/resolve/release%2Bcuda/model.gguf?download=true',
+        ),
+      );
+    });
+
+    test('hf URI rejects ambiguous or unsupported revision query syntax', () {
+      final invalidValues = <String>[
+        'hf://owner/repo@main/model.gguf?revision=dev',
+        'hf://owner/repo/model.gguf?revision=',
+        'hf://owner/repo/model.gguf?revision=main&revision=dev',
+        'hf://owner/repo/model.gguf?download=true',
+        'hf://owner/repo/model.gguf?',
+        'hf://owner/repo/model.gguf?revision=bad%ZZ',
+        'hf://owner/repo/model.gguf?revision=main%0Ainjected',
+        'hf://owner/repo/model.gguf?revision=main%0Dinjected',
+        'hf://owner/repo/model.gguf?revision=main%09injected',
+        'hf://owner/repo/model.gguf?revision=foo%5Cbar',
+        'hf://owner/repo/model.gguf?revision=foo//bar',
+        'hf://owner/repo/model.gguf?revision=foo/',
+        'hf://owner/repo/model.gguf?revision=foo%20bar',
+      ];
+
+      for (final value in invalidValues) {
+        expect(
+          () => ModelSource.parse(value),
+          throwsArgumentError,
+          reason: value,
+        );
+      }
+    });
+
     test('parse accepts local paths as explicit convenience', () {
       final source = ModelSource.parse('/local/model.gguf');
 

@@ -21,6 +21,12 @@ void main() {
     List<int>? lastStateSaveTokens;
     String? lastStateLoadPath;
     int? lastStateLoadCapacity;
+    int? lastLoadNBatch;
+    int? lastLoadNUbatch;
+    bool? lastLoadUseCache;
+    var modelLoadCallCount = 0;
+    var failFirstWasm32StagingAbort = false;
+    late List<bool?> bridgePreferMemory64Values;
 
     setUp(() {
       bridge = JSObject();
@@ -30,10 +36,36 @@ void main() {
       lastStateSaveTokens = null;
       lastStateLoadPath = null;
       lastStateLoadCapacity = null;
+      lastLoadNBatch = null;
+      lastLoadNUbatch = null;
+      lastLoadUseCache = null;
+      modelLoadCallCount = 0;
+      failFirstWasm32StagingAbort = false;
+      bridgePreferMemory64Values = <bool?>[];
 
       bridge.setProperty(
         'loadModelFromUrl'.toJS,
         ((String url, JSObject? config) {
+          modelLoadCallCount += 1;
+          if (config != null) {
+            final nBatch = config.getProperty('nBatch'.toJS);
+            final nUbatch = config.getProperty('nUbatch'.toJS);
+            lastLoadNBatch = nBatch.isA<JSNumber>()
+                ? (nBatch as JSNumber).toDartInt
+                : null;
+            lastLoadNUbatch = nUbatch.isA<JSNumber>()
+                ? (nUbatch as JSNumber).toDartInt
+                : null;
+            final useCache = config.getProperty('useCache'.toJS);
+            lastLoadUseCache = useCache.isA<JSBoolean>()
+                ? (useCache as JSBoolean).toDart
+                : null;
+          }
+          if (failFirstWasm32StagingAbort && modelLoadCallCount == 1) {
+            return Future<void>.error(
+              Exception('Aborted(). Build with -sASSERTIONS for more info.'),
+            ).toJS;
+          }
           return Future<void>.value().toJS;
         }).toJS,
       );
@@ -183,6 +215,17 @@ void main() {
         (() {
           final meta = JSObject();
           meta.setProperty('general.architecture'.toJS, 'llama'.toJS);
+          if (failFirstWasm32StagingAbort && modelLoadCallCount == 1) {
+            meta.setProperty(
+              'llamadart.webgpu.core_variant'.toJS,
+              'wasm32'.toJS,
+            );
+            meta.setProperty(
+              'llamadart.webgpu.runtime_notes'.toJS,
+              'core_wasm32_active;core_abort;model_fs_write_loaded:1073741824;model_fs_write_abort'
+                  .toJS,
+            );
+          }
           return meta;
         }).toJS,
       );
@@ -205,13 +248,82 @@ void main() {
       );
 
       backend = WebGpuLlamaBackend(
-        bridgeFactory: ([config]) => bridge as LlamaWebGpuBridge,
+        bridgeFactory: ([config]) {
+          if (config == null) {
+            bridgePreferMemory64Values.add(null);
+          } else {
+            final rawPreferMemory64 = config.getProperty('preferMemory64'.toJS);
+            bridgePreferMemory64Values.add(
+              rawPreferMemory64.isA<JSBoolean>()
+                  ? (rawPreferMemory64 as JSBoolean).toDart
+                  : null,
+            );
+          }
+          return bridge as LlamaWebGpuBridge;
+        },
       );
       engine = LlamaEngine(backend);
     });
 
     tearDown(() async {
       await engine.dispose();
+    });
+
+    test('WebGPU load leaves Gemma 4 batches to bridge defaults', () async {
+      await engine.loadModelFromUrl(
+        'https://example.com/gemma-4-E2B-it-Q4_K_S.gguf',
+        modelParams: const ModelParams(contextSize: 4096, gpuLayers: 99),
+      );
+
+      expect(lastLoadNBatch, isNull);
+      expect(lastLoadNUbatch, isNull);
+      expect(lastLoadUseCache, isTrue);
+    });
+
+    test('WebGPU load retries wasm32 staging aborts with wasm64', () async {
+      failFirstWasm32StagingAbort = true;
+
+      await engine.loadModelFromUrl(
+        'https://example.com/gemma-4-E2B-it-Q4_K_S.gguf',
+        modelParams: const ModelParams(contextSize: 4096, gpuLayers: 99),
+      );
+
+      expect(modelLoadCallCount, 2);
+      expect(bridgePreferMemory64Values, <bool?>[null, true]);
+    });
+
+    test('WebGPU load keeps Qwen3.5 0.8B browser-safe batch tuning', () async {
+      await engine.loadModelFromUrl(
+        'https://example.com/Qwen3.5-0.8B-Q4_K_M.gguf',
+        modelParams: const ModelParams(contextSize: 4096, gpuLayers: 99),
+      );
+
+      expect(lastLoadNBatch, 32);
+      expect(lastLoadNUbatch, 8);
+    });
+
+    test('WebGPU load forwards explicit batch sizing', () async {
+      await engine.loadModelFromUrl(
+        'https://example.com/gemma-4-E2B-it-Q4_K_S.gguf',
+        modelParams: const ModelParams(
+          contextSize: 4096,
+          gpuLayers: 99,
+          batchSize: 128,
+          microBatchSize: 64,
+        ),
+      );
+
+      expect(lastLoadNBatch, 128);
+      expect(lastLoadNUbatch, 64);
+    });
+
+    test('WebGPU load disables cache for signed URLs', () async {
+      await engine.loadModelFromUrl(
+        'https://example.com/gemma-4-E2B-it-Q4_K_S.gguf?token=secret',
+        modelParams: const ModelParams(contextSize: 4096, gpuLayers: 99),
+      );
+
+      expect(lastLoadUseCache, isFalse);
     });
 
     test('LlamaEngine create forwards multimodal audio parts', () async {

@@ -415,6 +415,20 @@ void main() {
       },
     );
 
+    test('native loadModelSource rejects local remote-only options', () async {
+      final nativeBackend = MockLlamaBackend();
+      final nativeEngine = LlamaEngine(nativeBackend);
+
+      await expectLater(
+        () => nativeEngine.loadModelSource(
+          ModelSource.path('/models/local-model.gguf'),
+          options: ModelLoadOptions(cachePolicy: ModelCachePolicy.refresh),
+        ),
+        throwsA(isA<LlamaUnsupportedException>()),
+      );
+      expect(nativeBackend.modelLoadCalls, 0);
+    });
+
     test(
       'native loadModelSource honors resolver-provided local path',
       () async {

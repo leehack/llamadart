@@ -16,6 +16,10 @@ class MinimaxM2Handler extends ChatTemplateHandler {
   ChatFormat get format => ChatFormat.minimaxM2;
 
   @override
+  TemplateToolCallSerialization get toolCallSerialization =>
+      TemplateToolCallSerialization.normalizeOnly;
+
+  @override
   List<String> get additionalStops => ['<|end_of_text|>'];
 
   @override
@@ -40,7 +44,7 @@ class MinimaxM2Handler extends ChatTemplateHandler {
       template,
       metadata: metadata,
       context: {
-        'messages': messages.map((m) => m.toJson()).toList(),
+        'messages': templateMessages(messages),
         'add_generation_prompt': addAssistant,
         'tools': tools?.map((t) => t.toJson()).toList(),
         'bos_token':

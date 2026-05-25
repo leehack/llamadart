@@ -15,26 +15,82 @@ if [[ ! -f "${src_dir}/CMakeLists.txt" ]]; then
   exit 1
 fi
 
-echo "[chat-tests] configure: ${build_dir}"
-cmake -S "${src_dir}" -B "${build_dir}" \
-  -DLLAMA_BUILD_TESTS=ON \
-  -DLLAMA_BUILD_TOOLS=OFF \
-  -DLLAMA_BUILD_EXAMPLES=OFF \
-  -DLLAMA_BUILD_SERVER=OFF \
-  -DGGML_CCACHE=OFF \
-  -DGGML_OPENMP=OFF
-
-targets=(test-chat-parser test-chat-peg-parser test-chat-template)
+build_tools=OFF
+build_server=OFF
 if [[ "${include_full}" == "1" ]]; then
-  targets+=(test-chat)
+  build_tools=ON
+  build_server=ON
+fi
+
+cmake_args=(
+  -DLLAMA_BUILD_TESTS=ON
+  "-DLLAMA_BUILD_TOOLS=${build_tools}"
+  -DLLAMA_BUILD_EXAMPLES=OFF
+  "-DLLAMA_BUILD_SERVER=${build_server}"
+  -DGGML_CCACHE=OFF
+  -DGGML_OPENMP=OFF
+)
+
+if [[ "${include_full}" == "1" && -d "${src_dir}/tools/mtmd" ]]; then
+  # Newer llama.cpp releases include mtmd.h from server headers while the
+  # test-chat target only exposes tools/server. Add the include path at configure
+  # time instead of patching the prepared upstream source.
+  cxx_flags="${LLAMA_CPP_CHAT_TEST_CXX_FLAGS:-}"
+  cxx_flags="${cxx_flags:+${cxx_flags} }-I${src_dir}/tools/mtmd"
+  cmake_args+=("-DCMAKE_CXX_FLAGS=${cxx_flags}")
+fi
+
+echo "[chat-tests] configure: ${build_dir}"
+cmake -S "${src_dir}" -B "${build_dir}" "${cmake_args[@]}"
+
+available_targets="$(cmake --build "${build_dir}" --target help 2>/dev/null || true)"
+resolve_target() {
+  local label="$1"
+  shift
+  local candidate
+  for candidate in "$@"; do
+    if grep -Eq "(^|[[:space:]])${candidate}(:|$|[[:space:]])" <<<"${available_targets}"; then
+      echo "${candidate}"
+      return 0
+    fi
+  done
+  echo "No llama.cpp build target found for ${label}. Tried: $*" >&2
+  exit 1
+}
+
+# llama.cpp renamed test-chat-parser to test-chat-auto-parser in newer releases.
+# Keep both names so this local-only E2E works across old pinned tags and the
+# current latest release used by prepare_llama_cpp_source.sh.
+chat_parser_target="$(resolve_target chat-parser test-chat-parser test-chat-auto-parser)"
+peg_parser_target="$(resolve_target peg-parser test-chat-peg-parser)"
+template_target="$(resolve_target chat-template test-chat-template)"
+
+ctest_targets=("${chat_parser_target}" "${peg_parser_target}" "${template_target}")
+targets=("${ctest_targets[@]}")
+if [[ "${include_full}" == "1" ]]; then
+  full_target="$(resolve_target full-chat test-chat)"
+  targets+=("${full_target}")
 fi
 
 echo "[chat-tests] build targets: ${targets[*]}"
 cmake --build "${build_dir}" --target "${targets[@]}" --parallel
 
-echo "[chat-tests] running ctest selection"
-ctest --test-dir "${build_dir}" --output-on-failure \
-  -R '^(test-chat-parser|test-chat-peg-parser|test-chat-template)$'
+library_path_entries=(
+  "${build_dir}/bin"
+  "${build_dir}/src"
+  "${build_dir}/common"
+  "${build_dir}/ggml/src"
+  "${build_dir}/ggml/src/ggml-cpu"
+  "${build_dir}/ggml/src/ggml-blas"
+  "${build_dir}/ggml/src/ggml-metal"
+)
+library_path="$(IFS=:; echo "${library_path_entries[*]}")"
+export DYLD_LIBRARY_PATH="${library_path}${DYLD_LIBRARY_PATH:+:${DYLD_LIBRARY_PATH}}"
+export LD_LIBRARY_PATH="${library_path}${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
+
+ctest_pattern="^($(IFS='|'; echo "${ctest_targets[*]}"))$"
+echo "[chat-tests] running ctest selection: ${ctest_pattern}"
+ctest --test-dir "${build_dir}" --output-on-failure -R "${ctest_pattern}"
 
 if [[ "${include_full}" == "1" ]]; then
   echo "[chat-tests] running full test-chat (source-root cwd required)"

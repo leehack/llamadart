@@ -33,7 +33,7 @@ jobs:
       HF_CHAT_APP_SPACE_REPO: ${{ vars.HF_CHAT_APP_SPACE_REPO }}
       INPUT_SPACE_REPO: ${{ github.event.inputs.space_repo }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           ref: ${{ github.event.inputs.deploy_ref || github.ref }}
 

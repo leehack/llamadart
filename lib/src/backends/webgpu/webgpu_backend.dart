@@ -567,6 +567,18 @@ class WebGpuLlamaBackend
         lowered.contains('error 138');
   }
 
+  bool _urlHasPersistentCacheSensitiveParts(String value) {
+    final uri = Uri.tryParse(value);
+    if (uri == null ||
+        (uri.scheme != 'http' && uri.scheme != 'https') ||
+        uri.host.isEmpty) {
+      return false;
+    }
+    return uri.userInfo.isNotEmpty ||
+        uri.query.isNotEmpty ||
+        uri.fragment.isNotEmpty;
+  }
+
   List<({int contextSize, int gpuLayers})> _buildLoadAttempts({
     required int requestedContextSize,
     required int requestedGpuLayers,
@@ -610,24 +622,32 @@ class WebGpuLlamaBackend
     return attempts;
   }
 
-  ({int nBatch, int nUbatch}) _resolveWebBatchSizes({
+  ({int? nBatch, int? nUbatch}) _resolveWebBatchSizes({
     required String url,
     required ModelParams params,
     required int contextSize,
+    required int gpuLayers,
   }) {
     final normalizedUrl = url.toLowerCase();
     final isQwen35Small =
         normalizedUrl.contains('qwen3.5-0.8b') ||
         normalizedUrl.contains('qwen_qwen3.5-0.8b');
-    final shouldUseQwen35SmallTuning =
-        params.batchSize <= 0 &&
-        params.microBatchSize <= 0 &&
+    final isGemma4 = normalizedUrl.contains('gemma-4');
+    final hasExplicitBatchSizes =
+        params.batchSize > 0 || params.microBatchSize > 0;
+    final shouldUseWebGpuDefaults =
+        !hasExplicitBatchSizes &&
         params.preferredBackend != GpuBackend.cpu &&
-        params.gpuLayers != 0 &&
-        isQwen35Small;
+        gpuLayers != 0;
+    final shouldUseQwen35SmallTuning = shouldUseWebGpuDefaults && isQwen35Small;
+    final shouldUseBridgeBatchDefaults = shouldUseWebGpuDefaults && isGemma4;
 
     if (shouldUseQwen35SmallTuning) {
       return (nBatch: 32, nUbatch: 8);
+    }
+
+    if (shouldUseBridgeBatchDefaults) {
+      return (nBatch: null, nUbatch: null);
     }
 
     final resolved = resolveModelContextBatchSizes(params, contextSize);
@@ -929,6 +949,7 @@ class WebGpuLlamaBackend
         url: url,
         params: params,
         contextSize: attempt.contextSize,
+        gpuLayers: attempt.gpuLayers,
       );
       LlamaWebGpuBridge? bridgeForAttempt;
       bool? forceRemoteFetchBackend;
@@ -973,7 +994,7 @@ class WebGpuLlamaBackend
             ropeFrequencyScale: params.ropeFrequencyScale,
             splitMode: params.splitMode.llamaCppValue,
             mainGpu: params.mainGpu,
-            useCache: true,
+            useCache: !_urlHasPersistentCacheSensitiveParts(url),
             forceRemoteFetchBackend: forceRemoteFetchBackend,
             remoteFetchChunkBytes: remoteFetchChunkBytesOverride,
             progressCallback: progressCallback,
@@ -1043,6 +1064,10 @@ class WebGpuLlamaBackend
             _isThreadConstructorFailure(e) ||
             runtimeNotes.contains('thread_constructor_failed') ||
             runtimeNotes.contains('threads_capped_no_coi');
+        final wasm32ModelStagingFailed =
+            coreVariant == 'wasm32' && fsWriteFailed;
+        final memoryPressureFailure =
+            _isLikelyMemoryPressureError(e) || wasm32ModelStagingFailed;
         final forceRemoteFetchRequested = forceRemoteFetchBackend == true;
 
         if (remoteFetchAborted) {
@@ -1074,12 +1099,12 @@ class WebGpuLlamaBackend
             !retriedWithWasm64 &&
             !wasm64InteropKnownBroken &&
             coreVariant == 'wasm32' &&
-            _isLikelyMemoryPressureError(e) &&
+            memoryPressureFailure &&
             !runtimeNotes.contains('model_fetch_backend_skipped_small');
 
         final canRetry =
             index < loadAttempts.length - 1 &&
-            _isLikelyMemoryPressureError(e) &&
+            memoryPressureFailure &&
             !(fsWriteFailed && coreVariant == 'wasm64');
 
         await _safeDisposeBridge();

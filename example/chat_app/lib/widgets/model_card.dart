@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../models/downloadable_model.dart';
@@ -46,6 +47,11 @@ class ModelCard extends StatelessWidget {
     const webLargeModelWarningThresholdBytes = 1900 * 1024 * 1024;
     final showWebLargeModelWarning =
         isWeb && model.sizeBytes >= webLargeModelWarningThresholdBytes;
+    final showMobileDownloadGuidance =
+        isDownloading &&
+        !isWeb &&
+        (defaultTargetPlatform == TargetPlatform.android ||
+            defaultTargetPlatform == TargetPlatform.iOS);
 
     return Container(
       decoration: BoxDecoration(
@@ -274,6 +280,17 @@ class ModelCard extends StatelessWidget {
                 downloadTransferLabel!,
                 style: TextStyle(
                   fontSize: 11,
+                  color: colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+            if (showMobileDownloadGuidance) ...[
+              const SizedBox(height: 6),
+              Text(
+                'Keep the app open until the download finishes. On phones, if Android or iOS interrupts it, starting again reuses the partial file when supported.',
+                style: TextStyle(
+                  fontSize: 11,
+                  height: 1.3,
                   color: colorScheme.onSurfaceVariant,
                 ),
               ),

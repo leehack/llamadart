@@ -7,6 +7,72 @@
   * Routed native VRAM probing through the ggml registry fallback path so
     Windows split bundles resolve backend-device symbols from the runtime that
     owns the device registry.
+* **WebGPU and chat app fixes**:
+  * Improved browser recovery for large remote WebGPU model/projector loads by
+    retrying wasm32 model-staging aborts with the wasm64 core before surfacing
+    memory-pressure failures.
+  * Improved the runnable chat app's web remote-model startup path so model
+    assets are prefetched into browser cache when available, browser
+    `CacheStorage` failures fall back to direct network loading, and
+    credentialed/signed model URLs skip persistent browser cache storage.
+* **Model download UX**:
+  * Improved the runnable chat app's mobile download behavior so lifecycle
+    pauses no longer deliberately cancel active foreground downloads; the app
+    now lets short screen-lock/background interruptions continue when the OS
+    permits and still keeps explicit pause/dispose cancellation paths.
+  * Added in-app and docs guidance for mobile large-model downloads, including
+    resumable partial files, foreground Dart lifecycle limits, and the need for
+    opt-in native background download/model-store integrations for robust
+    cross-app GGUF management.
+
+## 0.6.15
+
+* **Fixes**:
+  * Fixed GLM-OCR and other multimodal chat-template workarounds so image and
+    audio content parts are preserved when tool-call normalization runs, system
+    prompts are merged before leading media parts, and invalid tool-call
+    serialization fails loudly instead of silently falling back to the wrong
+    template shape.
+* **Testing**:
+  * Added `tool/testing/run_local_e2e.dart` as a discovery and orchestration
+    entry point for heavyweight local-only Dart E2E, Flutter device, and
+    Web/Playwright smoke scenarios.
+  * Hardened the upstream llama.cpp chat/template E2E runner against current
+    llama.cpp target renames, dynamic backend library lookup, and full
+    `test-chat` server/mtmd build requirements.
+  * Documented that real-model/device/WebGPU scenarios remain skipped from
+    default CI and should be opted into explicitly with `--list` and
+    `--dry-run` first.
+* **Compatibility note**: no public API breaking changes in `0.6.15`;
+  existing `0.6.14` callers remain compatible. The chat-template changes fix
+  multimodal serialization behavior for affected templates, and the local E2E
+  runner is additive.
+
+## 0.6.14
+
+* **WebGPU bridge assets**:
+  * Updated the default WebGPU bridge asset pin to
+    `leehack/llama-web-bridge-assets@v0.1.16` (llama.cpp `b9165`),
+    picking up the published JS bridge build, TypeScript declaration asset,
+    and refreshed bridge docs.
+* **Docs**:
+  * Added WebGPU readiness guidance covering browser capability checks,
+    cross-origin isolation, bridge asset/version diagnostics, fallback behavior,
+    model/configuration pressure, and the Flutter Web real-model smoke path.
+* **Model download UX**:
+  * Added `ModelDownloadController`, a dependency-free helper that turns
+    `ModelDownloadManager` cache/download work into app-facing lifecycle states
+    for resolving, cache checks, downloads, verification, ready, failed,
+    cancelled, and retry flows.
+  * Wired the runnable chat app example through a `ModelDownloadManager` adapter
+    so its model-management UI demonstrates the controller while preserving the
+    example's multi-asset and web-cache service behavior.
+* **Compatibility note**: no public API breaking changes in `0.6.14`;
+  the WebGPU bridge asset update and `ModelDownloadController` are additive, and
+  existing `0.6.13` callers remain compatible.
+
+## 0.6.13
+
 * **Model source download/cache manager**:
   * Added `ModelSource` for local paths, HTTP(S) URLs, and Hugging Face
     `hf://owner/repo/path/to/model.gguf` references, including deterministic
@@ -19,6 +85,10 @@
     authenticated bearer/custom headers, cancellation, retry, Range resume,
     cache hit/refresh/cache-only/no-cache policies, SHA-256 verification,
     cache listing, removal, clearing, and age/size pruning.
+  * Improved Hugging Face source ergonomics: `hf://` references now accept
+    `?revision=...` for branch/ref names containing slashes, and docs clarify
+    current single-file behavior, private/gated bearer-token usage, separate
+    `mmproj` asset handling, sharded-GGUF limitations, and redaction guarantees.
   * Serialized concurrent stable-cache downloads for the same remote cache entry
     across manager instances so duplicate callers do not race on shared `.part`
     files or metadata, while distinct cache entries can still download in
@@ -27,6 +97,10 @@
     missing, malformed, or unsupported-schema sidecars without network access,
     while byte-count and stored/caller SHA-256 mismatches are treated as cache
     misses and safely re-downloaded.
+  * Clarified `ModelSource.path(...)` option semantics: local paths now reject
+    remote/download-only options (non-default cache policies, cache directories,
+    authenticated headers, resume, and retry overrides) while continuing to
+    support cancellation and optional local SHA-256 verification.
   * Added `LlamaEngine.loadModelSource(...)` to route local sources through the
     existing native local loader, remote sources through the native download
     cache before local loading, and simple remote sources through URL-capable web
@@ -47,10 +121,11 @@
   * Added WebGPU bridge state persistence wiring for bridge assets `v0.1.15+`,
     including Dart JS interop, backend forwarding, and browser integration test
     coverage.
-* **Compatibility note**: existing `loadModel(...)` callers are unchanged. Code
-  that probes state persistence support should prefer
-  `LlamaEngine.supportsStatePersistence` over structural backend type checks so
-  web/router backends can report bridge-version-dependent support accurately.
+* **Compatibility note**: no public API breaking changes in `0.6.13`;
+  existing `loadModel(...)` callers are unchanged. Code that probes state
+  persistence support should prefer `LlamaEngine.supportsStatePersistence` over
+  structural backend type checks so web/router backends can report
+  bridge-version-dependent support accurately.
 
 ## 0.6.12
 

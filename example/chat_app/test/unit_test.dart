@@ -1,9 +1,15 @@
+import 'dart:async';
+
+import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:llamadart/llamadart.dart';
 import 'package:llamadart_chat_example/providers/chat_provider.dart';
 import 'package:llamadart_chat_example/models/chat_settings.dart';
 import 'package:llamadart_chat_example/models/downloadable_model.dart';
+import 'package:llamadart_chat_example/services/chat_service.dart';
+import 'package:llamadart_chat_example/services/model_service_base.dart'
+    as app_model_service;
 
 import 'mocks.dart';
 
@@ -55,6 +61,204 @@ void main() {
       expect(mockEngine.initialized, isTrue);
       expect(provider.maxGenerationTokens, greaterThan(0));
     });
+
+    test(
+      'web remote load prefetches model before runtime load and shows download stage',
+      () async {
+        final webEngine = MockLlamaEngine();
+        final modelService = _RecordingModelService();
+        final webProvider = ChatProvider(
+          chatService: ChatService(engine: webEngine),
+          settingsService: mockSettingsService,
+          modelService: modelService,
+          enableWebModelPrefetch: true,
+          initialSettings: const ChatSettings(
+            modelPath: 'https://example.com/models/tiny.gguf',
+            mmprojPath: 'https://example.com/models/mmproj.gguf',
+          ),
+        );
+        addTearDown(webProvider.dispose);
+
+        final labels = <String>[];
+        final progress = <double>[];
+        webProvider.addListener(() {
+          labels.add(webProvider.activeBackend);
+          progress.add(webProvider.loadingProgress);
+        });
+
+        await webProvider.loadModel();
+
+        expect(modelService.downloadCalls, 1);
+        expect(modelService.lastModel?.url, webProvider.settings.modelPath);
+        expect(modelService.lastModel?.mmprojUrl, isNull);
+        expect(webEngine.lastLoadedModelUrl, webProvider.settings.modelPath);
+        expect(webProvider.isLoaded, isTrue);
+        expect(webProvider.error, isNull);
+        expect(labels, contains('Downloading model 50%'));
+        expect(labels, contains('Preparing WebGPU runtime...'));
+        expect(labels, contains('Loading model into memory...'));
+        expect(progress.any((value) => value > 0.14 && value < 0.72), isTrue);
+      },
+    );
+
+    test('web remote load skips cache prefetch for credentialed urls', () async {
+      final webEngine = MockLlamaEngine();
+      final modelService = _RecordingModelService();
+      final webProvider = ChatProvider(
+        chatService: ChatService(engine: webEngine),
+        settingsService: mockSettingsService,
+        modelService: modelService,
+        enableWebModelPrefetch: true,
+        initialSettings: const ChatSettings(
+          modelPath:
+              'https://user:pass@example.com/models/tiny.gguf?token=secret#frag',
+          mmprojPath: 'https://example.com/models/mmproj.gguf?sig=secret',
+        ),
+      );
+      addTearDown(webProvider.dispose);
+
+      final labels = <String>[];
+      webProvider.addListener(() {
+        labels.add(webProvider.activeBackend);
+      });
+
+      await webProvider.loadModel();
+
+      expect(modelService.downloadCalls, 0);
+      expect(webEngine.lastLoadedModelUrl, webProvider.settings.modelPath);
+      expect(webProvider.isLoaded, isTrue);
+      expect(webProvider.error, isNull);
+      expect(
+        labels,
+        contains(
+          'Browser cache skipped for credentialed URL; loading from network...',
+        ),
+      );
+    });
+
+    test(
+      'web remote load skips prefetch when cache bridge is unavailable',
+      () async {
+        final webEngine = MockLlamaEngine();
+        final modelService = _RecordingModelService(supportsPrefetch: false);
+        final webProvider = ChatProvider(
+          chatService: ChatService(engine: webEngine),
+          settingsService: mockSettingsService,
+          modelService: modelService,
+          enableWebModelPrefetch: true,
+          initialSettings: const ChatSettings(
+            modelPath: 'https://example.com/models/tiny.gguf',
+          ),
+        );
+        addTearDown(webProvider.dispose);
+
+        await webProvider.loadModel();
+
+        expect(modelService.downloadCalls, 0);
+        expect(webEngine.lastLoadedModelUrl, webProvider.settings.modelPath);
+        expect(webProvider.isLoaded, isTrue);
+        expect(webProvider.error, isNull);
+      },
+    );
+
+    test(
+      'web remote load falls back to network when browser cache storage fails',
+      () async {
+        final webEngine = MockLlamaEngine();
+        final modelService = _RecordingModelService(
+          downloadError: Exception(
+            'Failed to store prefetched model in browser cache.',
+          ),
+        );
+        final webProvider = ChatProvider(
+          chatService: ChatService(engine: webEngine),
+          settingsService: mockSettingsService,
+          modelService: modelService,
+          enableWebModelPrefetch: true,
+          initialSettings: const ChatSettings(
+            modelPath: 'https://example.com/models/tiny.gguf',
+          ),
+        );
+        addTearDown(webProvider.dispose);
+
+        final labels = <String>[];
+        webProvider.addListener(() {
+          labels.add(webProvider.activeBackend);
+        });
+
+        await webProvider.loadModel();
+
+        expect(modelService.downloadCalls, 1);
+        expect(webEngine.lastLoadedModelUrl, webProvider.settings.modelPath);
+        expect(webProvider.isLoaded, isTrue);
+        expect(webProvider.error, isNull);
+        expect(
+          labels,
+          contains('Browser cache unavailable; loading from network...'),
+        );
+      },
+    );
+
+    test(
+      'web prefetch failure redacts signed urls from user-facing error',
+      () async {
+        final webProvider = ChatProvider(
+          chatService: ChatService(engine: MockLlamaEngine()),
+          settingsService: mockSettingsService,
+          modelService: _RecordingModelService(
+            downloadError: DioException(
+              requestOptions: RequestOptions(
+                path: 'https://example.com/models/tiny.gguf?token=secret',
+              ),
+              message:
+                  'Failed https://user:pass@example.com/models/tiny.gguf?token=secret#frag',
+            ),
+          ),
+          enableWebModelPrefetch: true,
+          initialSettings: const ChatSettings(
+            modelPath: 'https://example.com/models/tiny.gguf',
+          ),
+        );
+        addTearDown(webProvider.dispose);
+
+        await webProvider.loadModel();
+
+        expect(webProvider.isLoaded, isFalse);
+        expect(webProvider.error, isNotNull);
+        expect(
+          webProvider.error,
+          contains('https://example.com/models/tiny.gguf'),
+        );
+        expect(webProvider.error, isNot(contains('token=secret')));
+        expect(webProvider.error, isNot(contains('user:pass')));
+        expect(webProvider.error, isNot(contains('#frag')));
+      },
+    );
+
+    test(
+      'web reload unloads existing runtime before prefetch can fail',
+      () async {
+        final webEngine = _UnloadRecordingEngine()..initialized = true;
+        final webProvider = ChatProvider(
+          chatService: ChatService(engine: webEngine),
+          settingsService: mockSettingsService,
+          modelService: _RecordingModelService(
+            downloadError: Exception('offline'),
+          ),
+          enableWebModelPrefetch: true,
+          initialSettings: const ChatSettings(
+            modelPath: 'https://example.com/models/tiny.gguf',
+          ),
+        );
+        addTearDown(webProvider.dispose);
+
+        await webProvider.loadModel();
+
+        expect(webEngine.unloadModelCalls, 1);
+        expect(webEngine.initialized, isFalse);
+        expect(webProvider.isLoaded, isFalse);
+      },
+    );
 
     test('loadConfiguredMmproj attaches projector to loaded model', () async {
       await provider.loadModel();
@@ -834,6 +1038,67 @@ class _MacFallbackEstimateEngine extends MockLlamaEngine {
 
   @override
   Future<String> getAvailableBackends() async => 'CPU, METAL';
+}
+
+class _UnloadRecordingEngine extends MockLlamaEngine {
+  int unloadModelCalls = 0;
+
+  @override
+  Future<void> unloadModel() async {
+    unloadModelCalls += 1;
+    initialized = false;
+  }
+}
+
+class _RecordingModelService
+    implements
+        app_model_service.ModelService,
+        app_model_service.WebCachePrefetchModelService {
+  _RecordingModelService({this.supportsPrefetch = true, this.downloadError});
+
+  final bool supportsPrefetch;
+  final Object? downloadError;
+  int downloadCalls = 0;
+  DownloadableModel? lastModel;
+
+  @override
+  Future<bool> supportsWebCachePrefetch() async => supportsPrefetch;
+
+  @override
+  Future<String> getModelsDirectory() async => 'browser-cache';
+
+  @override
+  Future<Set<String>> getDownloadedModels(
+    List<DownloadableModel> models,
+  ) async {
+    return <String>{};
+  }
+
+  @override
+  Future<void> downloadModel({
+    required DownloadableModel model,
+    required String modelsDir,
+    required CancelToken cancelToken,
+    required Function(double progress) onProgress,
+    Function(app_model_service.ModelDownloadProgress progress)?
+    onProgressDetail,
+    required Function(String filename) onSuccess,
+    required Function(dynamic error) onError,
+  }) async {
+    downloadCalls += 1;
+    lastModel = model;
+    if (downloadError != null) {
+      onError(downloadError);
+      return;
+    }
+    onProgress(0.0);
+    onProgress(0.5);
+    onProgress(1.0);
+    onSuccess(model.filename);
+  }
+
+  @override
+  Future<void> deleteModel(String modelsDir, DownloadableModel model) async {}
 }
 
 class _FunctionGemmaRawCallTextEngine extends MockLlamaEngine {

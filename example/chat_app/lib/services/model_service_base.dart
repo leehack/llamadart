@@ -150,6 +150,10 @@ class ModelDownloadProgressTracker {
   }
 }
 
+abstract class WebCachePrefetchModelService {
+  Future<bool> supportsWebCachePrefetch();
+}
+
 abstract class ModelService {
   factory ModelService() => createModelService();
 
