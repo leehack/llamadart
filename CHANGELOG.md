@@ -1,5 +1,12 @@
 ## Unreleased
 
+* **Native runtime diagnostics**:
+  * Fixed native `getVramInfo()` so it reports free/total VRAM from
+    llama.cpp GPU-class backend devices when available, using props-based
+    memory reporting first and the legacy memory probe as a fallback.
+  * Routed native VRAM probing through the ggml registry fallback path so
+    Windows split bundles resolve backend-device symbols from the runtime that
+    owns the device registry.
 * **Model source download/cache manager**:
   * Added `ModelSource` for local paths, HTTP(S) URLs, and Hugging Face
     `hf://owner/repo/path/to/model.gguf` references, including deterministic

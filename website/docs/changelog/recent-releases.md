@@ -9,6 +9,9 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Fixed native `getVramInfo()` so llama.cpp GPU-class backend devices can
+  report free/total VRAM when available, with Windows split-bundle registry
+  fallback handling for backend-device symbols.
 - Added package-managed model source downloads and cache management:
   `ModelSource`, `ModelLoadOptions`, `ModelCachePolicy`, resolver targets,
   download/cache metadata, progress callbacks, cache inspection, removal,
