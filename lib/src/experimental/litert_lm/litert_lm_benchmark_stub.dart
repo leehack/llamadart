@@ -64,4 +64,29 @@ class LiteRtLmBenchmarkClient {
   LiteRtLmBenchmarkClient() {
     throw UnsupportedError('LiteRT-LM benchmark requires a native platform.');
   }
+
+  /// Initializes the native LiteRT-LM engine.
+  Future<void> initialize({
+    required String modelPath,
+    String backend = 'gpu',
+    int maxTokens = 4096,
+    int outputTokens = 256,
+    int? prefillTokens,
+    String? cacheDir,
+    bool speculativeDecoding = true,
+  }) {
+    throw UnsupportedError('LiteRT-LM benchmark requires a native platform.');
+  }
+
+  /// Runs the benchmark.
+  Future<LiteRtLmBenchmarkResult> run({
+    required String prompt,
+    int warmupRuns = 1,
+    int measuredRuns = 3,
+  }) {
+    throw UnsupportedError('LiteRT-LM benchmark requires a native platform.');
+  }
+
+  /// Releases native LiteRT-LM resources.
+  void dispose() {}
 }
