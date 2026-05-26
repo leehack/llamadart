@@ -85,6 +85,10 @@ export 'src/core/models/config/lora_config.dart';
 // Utils
 export 'src/core/exceptions.dart';
 
+// Experimental POC APIs
+export 'src/backends/litert_lm/litert_lm_backend.dart' show LiteRtLmBackend;
+export 'src/experimental/litert_lm/litert_lm_benchmark.dart';
+
 // Bindings - conditional export for web/native
 export 'src/backends/llama_cpp/bindings.dart'
     if (dart.library.js_interop) 'src/backends/llama_cpp/bindings_stub.dart';

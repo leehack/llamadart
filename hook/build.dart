@@ -22,6 +22,75 @@ const _cacheBaseDir = 'llamadart';
 const _bundleCacheDir = 'native_bundles';
 const _reportDir = 'llamadart_bin';
 const _allowLegacyLocalBundleEnv = 'LLAMADART_ALLOW_LEGACY_LOCAL_BUNDLES';
+const _litertLmPocVersion = '0.12.0';
+const _litertLmNativeReleaseBaseUrl =
+    'https://github.com/leehack/litert-lm-native/releases/download/'
+    'v$_litertLmPocVersion';
+const _litertLmPocCacheDir = 'litert_lm_poc';
+
+const _litertLmPocBundles = <String, _LiteRtLmPocBundleSpec>{
+  'android-arm64': _LiteRtLmPocBundleSpec(
+    directoryName: 'android/arm64',
+    archiveName: 'litert-lm-native-runtime-android-arm64-v0.12.0.tar.gz',
+    sha256: '1d590f688af30eb5fe720d0dc7b1c003aee6a8f0ced92fd39166bd1bdfbc2aac',
+    releaseBaseUrl: _litertLmNativeReleaseBaseUrl,
+    sourcePrefix: 'android/arm64',
+    requiredLibraries: {'libLiteRtLm.so'},
+    emitAllLibraries: true,
+  ),
+  'android-x64': _LiteRtLmPocBundleSpec(
+    directoryName: 'android/x64',
+    archiveName: 'litert-lm-native-runtime-android-x64-v0.12.0.tar.gz',
+    sha256: 'dedf61f158e1ae8e73909d15784f33d62f54c58bfde5c50a72ff9e0d48a2a5d0',
+    releaseBaseUrl: _litertLmNativeReleaseBaseUrl,
+    sourcePrefix: 'android/x64',
+    requiredLibraries: {'libLiteRtLm.so'},
+    emitAllLibraries: true,
+  ),
+  'macos-arm64': _LiteRtLmPocBundleSpec(
+    directoryName: 'macos/arm64',
+    archiveName: 'litert-lm-native-runtime-macos-arm64-v0.12.0.tar.gz',
+    sha256: 'dc02829b181bfcd04b7cec32080e5d070826a1210807a7da446b6761b169e3c7',
+    releaseBaseUrl: _litertLmNativeReleaseBaseUrl,
+    sourcePrefix: 'macos/arm64',
+    requiredLibraries: {'libLiteRtLm.dylib'},
+  ),
+  'macos-x64': _LiteRtLmPocBundleSpec(
+    directoryName: 'macos/x64',
+    archiveName: 'litert-lm-native-runtime-macos-x64-v0.12.0.tar.gz',
+    sha256: 'a20ff8ef674008573449ae07be58bc11a8eb0e27c7f1ec1d2cf941886de7466c',
+    releaseBaseUrl: _litertLmNativeReleaseBaseUrl,
+    sourcePrefix: 'macos/x64',
+    requiredLibraries: {'libLiteRtLm.dylib'},
+  ),
+  'linux-arm64': _LiteRtLmPocBundleSpec(
+    directoryName: 'linux/arm64',
+    archiveName: 'litert-lm-native-runtime-linux-arm64-v0.12.0.tar.gz',
+    sha256: 'f97dd78d9324bbbdd5e9573992d7fb694f448ad47e92ff7306ac5a0d48f176e4',
+    releaseBaseUrl: _litertLmNativeReleaseBaseUrl,
+    sourcePrefix: 'linux/arm64',
+    requiredLibraries: {'libLiteRtLm.so'},
+    emitAllLibraries: true,
+  ),
+  'linux-x64': _LiteRtLmPocBundleSpec(
+    directoryName: 'linux/x64',
+    archiveName: 'litert-lm-native-runtime-linux-x64-v0.12.0.tar.gz',
+    sha256: '510e6865bcf610dd04bb89ebe31af7f10e868b6958c45e36ac34bf45954970fb',
+    releaseBaseUrl: _litertLmNativeReleaseBaseUrl,
+    sourcePrefix: 'linux/x64',
+    requiredLibraries: {'libLiteRtLm.so'},
+    emitAllLibraries: true,
+  ),
+  'windows-x64': _LiteRtLmPocBundleSpec(
+    directoryName: 'windows/x64',
+    archiveName: 'litert-lm-native-runtime-windows-x64-v0.12.0.tar.gz',
+    sha256: 'abfe4443d32572fb0c5c3e27d7b97717d9676b8dcef7f265a2585c9c7e801326',
+    releaseBaseUrl: _litertLmNativeReleaseBaseUrl,
+    sourcePrefix: 'windows/x64',
+    requiredLibraries: {'LiteRtLm.dll'},
+    emitAllLibraries: true,
+  ),
+};
 
 const _dynamicLibraryExtensions = {'.so', '.dylib', '.dll'};
 final _windowsCudartPattern = RegExp(r'^cudart64(?:[_-]?\d+)?\.dll$');
@@ -51,6 +120,26 @@ class _NativeBundleConfig {
     }
     return '$repository@$tag';
   }
+}
+
+class _LiteRtLmPocBundleSpec {
+  final String directoryName;
+  final String archiveName;
+  final String? sha256;
+  final String releaseBaseUrl;
+  final String? sourcePrefix;
+  final Set<String> requiredLibraries;
+  final bool emitAllLibraries;
+
+  const _LiteRtLmPocBundleSpec({
+    required this.directoryName,
+    required this.archiveName,
+    required this.sha256,
+    required this.releaseBaseUrl,
+    this.sourcePrefix,
+    required this.requiredLibraries,
+    this.emitAllLibraries = false,
+  });
 }
 
 void main(List<String> args) async {
@@ -191,12 +280,283 @@ void main(List<String> args) async {
       );
     }
 
+    await _emitLiteRtLmPocAssets(
+      code: code,
+      output: output,
+      packageRoot: pkgRoot,
+      reportDirPath: reportDirPath,
+      usedAssetNames: usedAssetNames,
+      log: log,
+    );
+
     if (!usedAssetNames.contains(_packageName)) {
       throw Exception(
         'Primary asset package:$_packageName/$_packageName was not emitted.',
       );
     }
   });
+}
+
+Future<void> _emitLiteRtLmPocAssets({
+  required CodeConfig code,
+  required BuildOutputBuilder output,
+  required String packageRoot,
+  required String reportDirPath,
+  required Set<String> usedAssetNames,
+  required Logger log,
+}) async {
+  final bundleSpec = _liteRtLmPocBundleSpecForCode(code);
+  if (bundleSpec == null) {
+    return;
+  }
+
+  final bundleDir = await _acquireLiteRtLmPocBundle(
+    packageRoot: packageRoot,
+    bundleSpec: bundleSpec,
+    log: log,
+  );
+  final libraryPaths = _collectDynamicLibraryPaths(bundleDir);
+  if (libraryPaths.isEmpty) {
+    log.warning('LiteRT-LM POC bundle had no dynamic libraries.');
+    return;
+  }
+
+  final emittedFileNames = <String>{};
+  for (final sourcePath in libraryPaths) {
+    final fileName = path.basename(sourcePath);
+    final loweredFileName = fileName.toLowerCase();
+    if (!emittedFileNames.add(loweredFileName)) {
+      log.info('Skipping duplicate LiteRT-LM POC library `$fileName`.');
+      continue;
+    }
+    final destinationPath = path.join(reportDirPath, fileName);
+    await File(sourcePath).copy(destinationPath);
+    if (!_shouldEmitLiteRtLmPocCodeAsset(code, bundleSpec, fileName)) {
+      log.info(
+        'Copied LiteRT-LM POC companion `$fileName` without reporting it '
+        'as a native asset.',
+      );
+      continue;
+    }
+    final assetName = _dedupeAssetName(
+      _liteRtLmAssetName(fileName),
+      usedAssetNames,
+    );
+    output.assets.code.add(
+      CodeAsset(
+        package: _packageName,
+        name: assetName,
+        linkMode: DynamicLoadingBundled(),
+        file: Uri.file(path.absolute(destinationPath)),
+      ),
+    );
+    log.info(
+      'Reporting LiteRT-LM POC library `$fileName` as code asset '
+      '`package:$_packageName/$assetName`.',
+    );
+  }
+}
+
+bool _shouldEmitLiteRtLmPocCodeAsset(
+  CodeConfig code,
+  _LiteRtLmPocBundleSpec bundleSpec,
+  String fileName,
+) {
+  if (bundleSpec.emitAllLibraries) {
+    return true;
+  }
+  if (code.targetOS != OS.macOS) {
+    return true;
+  }
+  // Some upstream macOS companion dylibs are linked without enough header
+  // padding for Dart Native Assets' JIT install_name_tool rewrite. Keep only
+  // FFI entry libraries as code assets; the runtime loader opens companions
+  // from the extracted cache first.
+  return fileName == 'libLiteRtLm.dylib' || fileName == 'libStreamProxy.dylib';
+}
+
+_LiteRtLmPocBundleSpec? _liteRtLmPocBundleSpecForCode(CodeConfig code) {
+  switch (code.targetOS) {
+    case OS.android:
+      return switch (code.targetArchitecture) {
+        Architecture.arm64 => _litertLmPocBundles['android-arm64'],
+        Architecture.x64 => _litertLmPocBundles['android-x64'],
+        _ => null,
+      };
+    case OS.macOS:
+      return switch (code.targetArchitecture) {
+        Architecture.arm64 => _litertLmPocBundles['macos-arm64'],
+        Architecture.x64 => _litertLmPocBundles['macos-x64'],
+        _ => null,
+      };
+    case OS.linux:
+      return switch (code.targetArchitecture) {
+        Architecture.arm64 => _litertLmPocBundles['linux-arm64'],
+        Architecture.x64 => _litertLmPocBundles['linux-x64'],
+        _ => null,
+      };
+    case OS.windows:
+      return switch (code.targetArchitecture) {
+        Architecture.x64 => _litertLmPocBundles['windows-x64'],
+        _ => null,
+      };
+    default:
+      return null;
+  }
+}
+
+String _liteRtLmAssetName(String fileName) {
+  var name = path.basenameWithoutExtension(fileName);
+  if (name.startsWith('lib')) {
+    name = name.substring(3);
+  }
+  return 'litert_lm_poc_$name';
+}
+
+Future<Directory> _acquireLiteRtLmPocBundle({
+  required String packageRoot,
+  required _LiteRtLmPocBundleSpec bundleSpec,
+  required Logger log,
+}) async {
+  final cacheDir = path.join(
+    packageRoot,
+    _dartToolDir,
+    _cacheBaseDir,
+    _litertLmPocCacheDir,
+    _litertLmPocVersion,
+  );
+  final extractedDir = Directory(path.join(cacheDir, bundleSpec.directoryName));
+  if (_liteRtLmPocBundleIsUsable(extractedDir, bundleSpec)) {
+    log.info('Using cached LiteRT-LM POC bundle: ${extractedDir.path}');
+    return extractedDir;
+  }
+
+  await Directory(cacheDir).create(recursive: true);
+  final archiveFile = File(path.join(cacheDir, bundleSpec.archiveName));
+  if (!archiveFile.existsSync()) {
+    final url = '${bundleSpec.releaseBaseUrl}/${bundleSpec.archiveName}';
+    log.info('Downloading LiteRT-LM POC bundle from $url');
+    final response = await http.get(Uri.parse(url));
+    if (response.statusCode != 200) {
+      throw Exception(
+        'Failed to download LiteRT-LM POC bundle: '
+        'HTTP ${response.statusCode}',
+      );
+    }
+    await archiveFile.writeAsBytes(response.bodyBytes);
+  }
+
+  final expectedSha256 = bundleSpec.sha256;
+  if (expectedSha256 != null) {
+    final digest = sha256.convert(await archiveFile.readAsBytes()).toString();
+    if (digest != expectedSha256) {
+      throw Exception(
+        'LiteRT-LM POC archive checksum mismatch: expected '
+        '$expectedSha256, got $digest',
+      );
+    }
+  }
+
+  if (extractedDir.existsSync()) {
+    await extractedDir.delete(recursive: true);
+  }
+  await extractedDir.create(recursive: true);
+  try {
+    final bytes = await archiveFile.readAsBytes();
+    final archive = TarDecoder().decodeBytes(GZipDecoder().decodeBytes(bytes));
+    for (final entry in archive.files) {
+      if (!entry.isFile) {
+        continue;
+      }
+      if (!_isLiteRtLmPocEntrySelected(entry.name, bundleSpec)) {
+        continue;
+      }
+      final fileName = path.basename(entry.name);
+      if (!_dynamicLibraryExtensions.contains(
+        path.extension(fileName).toLowerCase(),
+      )) {
+        continue;
+      }
+      await File(
+        path.join(extractedDir.path, fileName),
+      ).writeAsBytes(entry.content as List<int>);
+    }
+  } on FormatException catch (error) {
+    log.warning(
+      'Archive package could not decode LiteRT-LM PAX metadata; falling back '
+      'to system tar: $error',
+    );
+    final result = await Process.run('tar', [
+      '-xzf',
+      archiveFile.path,
+      '-C',
+      extractedDir.path,
+    ]);
+    if (result.exitCode != 0) {
+      throw Exception(
+        'System tar failed for LiteRT-LM POC bundle: ${result.stderr}',
+      );
+    }
+    await _flattenLiteRtLmPocDynamicLibraries(extractedDir, bundleSpec);
+  }
+  log.info('Extracted LiteRT-LM POC bundle to ${extractedDir.path}');
+  return extractedDir;
+}
+
+bool _isLiteRtLmPocEntrySelected(
+  String entryName,
+  _LiteRtLmPocBundleSpec bundleSpec,
+) {
+  final sourcePrefix = bundleSpec.sourcePrefix;
+  if (sourcePrefix == null) {
+    return true;
+  }
+  final normalized = path.posix.normalize(entryName);
+  return normalized == sourcePrefix || normalized.startsWith('$sourcePrefix/');
+}
+
+Future<void> _flattenLiteRtLmPocDynamicLibraries(
+  Directory extractedDir,
+  _LiteRtLmPocBundleSpec bundleSpec,
+) async {
+  final sourcePrefix = bundleSpec.sourcePrefix;
+  if (sourcePrefix == null) {
+    return;
+  }
+  final nestedDir = Directory(
+    path.joinAll([extractedDir.path, ...sourcePrefix.split('/')]),
+  );
+  if (!nestedDir.existsSync()) {
+    return;
+  }
+  await for (final entity in nestedDir.list(recursive: true)) {
+    if (entity is! File) {
+      continue;
+    }
+    final fileName = path.basename(entity.path);
+    if (!_dynamicLibraryExtensions.contains(
+      path.extension(fileName).toLowerCase(),
+    )) {
+      continue;
+    }
+    await entity.copy(path.join(extractedDir.path, fileName));
+  }
+  await nestedDir.delete(recursive: true);
+}
+
+bool _liteRtLmPocBundleIsUsable(
+  Directory directory,
+  _LiteRtLmPocBundleSpec bundleSpec,
+) {
+  if (!directory.existsSync()) {
+    return false;
+  }
+  for (final libraryName in bundleSpec.requiredLibraries) {
+    if (!File(path.join(directory.path, libraryName)).existsSync()) {
+      return false;
+    }
+  }
+  return true;
 }
 
 String _dedupeAssetName(String base, Set<String> used) {
