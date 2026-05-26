@@ -362,17 +362,17 @@ bool _shouldEmitLiteRtLmPocCodeAsset(
   _LiteRtLmPocBundleSpec bundleSpec,
   String fileName,
 ) {
+  if (code.targetOS == OS.macOS) {
+    // Upstream LiteRT-LM dylibs are not reliable Dart Native Assets on macOS:
+    // the JIT bundler rewrites install names, and some upstream dylibs do not
+    // tolerate that rewrite. Keep them in the hook cache and let the
+    // LiteRT-LM loader open them from there.
+    return false;
+  }
   if (bundleSpec.emitAllLibraries) {
     return true;
   }
-  if (code.targetOS != OS.macOS) {
-    return true;
-  }
-  // Some upstream macOS companion dylibs are linked without enough header
-  // padding for Dart Native Assets' JIT install_name_tool rewrite. Keep only
-  // FFI entry libraries as code assets; the runtime loader opens companions
-  // from the extracted cache first.
-  return fileName == 'libLiteRtLm.dylib' || fileName == 'libStreamProxy.dylib';
+  return true;
 }
 
 _LiteRtLmPocBundleSpec? _liteRtLmPocBundleSpecForCode(CodeConfig code) {
