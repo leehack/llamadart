@@ -1,36 +1,40 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
+import 'dart:isolate';
 
 import '../../core/models/chat/content_part.dart';
-import '../../core/models/config/gpu_backend.dart';
 import '../../core/models/config/log_level.dart';
 import '../../core/models/inference/generation_params.dart';
 import '../../core/models/inference/model_params.dart';
-import '../../experimental/litert_lm/litert_lm_benchmark.dart';
 import '../backend.dart';
+import 'worker.dart';
 
 /// Experimental LiteRT-LM backend for `.litertlm` models.
 ///
-/// This backend intentionally implements the narrow inference path needed for
-/// early LiteRT-LM validation. Unsupported llama.cpp-specific features throw
-/// [UnsupportedError] instead of pretending to work.
+/// LiteRT-LM native state is owned by a worker isolate so callbacks, native
+/// handles, and generation work do not live on the caller isolate.
 class LiteRtLmBackend
     implements
         LlamaBackend,
         BackendAvailability,
         BackendRuntimeDiagnostics,
         BackendPerformanceDiagnostics {
-  static const int _modelHandle = 1;
-  static const int _contextHandle = 1;
+  Isolate? _isolate;
+  SendPort? _sendPort;
+  void Function()? _activeGenerationCleanup;
+  final String? _preferredBackend;
 
-  LiteRtLmBenchmarkClient? _client;
-  ModelParams? _modelParams;
-  String? _modelPath;
-  String? _activeBackend;
-  int? _activeOutputTokens;
-  LiteRtLmBenchmarkMetrics? _lastMetrics;
   bool _isReady = false;
+  bool _disposed = false;
+  LlamaLogLevel _currentLogLevel = LlamaLogLevel.warn;
+
+  /// Creates a LiteRT-LM backend.
+  LiteRtLmBackend({SendPort? initialSendPort, String? preferredBackend})
+    : _preferredBackend = preferredBackend {
+    if (initialSendPort != null) {
+      _sendPort = initialSendPort;
+      _isReady = true;
+    }
+  }
 
   @override
   bool get isReady => _isReady;
@@ -40,21 +44,20 @@ class LiteRtLmBackend
 
   @override
   Future<int> modelLoad(String path, ModelParams params) async {
-    final file = File(path);
-    if (!await file.exists()) {
-      throw ArgumentError('LiteRT-LM model does not exist: $path');
-    }
-    if (!path.endsWith('.litertlm')) {
-      throw ArgumentError(
-        'LiteRtLmBackend expects a .litertlm model bundle; got $path',
-      );
-    }
-    _modelPath = path;
-    _modelParams = params;
-    _activeBackend = _backendNameFor(params.preferredBackend);
-    _lastMetrics = null;
+    final response = await _sendRequest(
+      (sendPort) => LiteRtLmModelLoadRequest(
+        path,
+        params,
+        sendPort,
+        backendOverride: _preferredBackend,
+      ),
+    );
+    final handle = _expect<LiteRtLmHandleResponse>(
+      response,
+      'model load',
+    ).handle;
     _isReady = true;
-    return _modelHandle;
+    return handle;
   }
 
   @override
@@ -68,33 +71,47 @@ class LiteRtLmBackend
 
   @override
   Future<void> modelFree(int modelHandle) async {
-    _checkModelHandle(modelHandle);
-    _client?.dispose();
-    _client = null;
-    _modelPath = null;
-    _modelParams = null;
-    _activeBackend = null;
-    _activeOutputTokens = null;
-    _lastMetrics = null;
+    if (_sendPort == null) {
+      return;
+    }
+    try {
+      await _sendRequest(
+        (sendPort) => LiteRtLmModelFreeRequest(modelHandle, sendPort),
+        timeout: const Duration(seconds: 5),
+      );
+    } on TimeoutException {
+      _killWorker();
+    }
     _isReady = false;
   }
 
   @override
   Future<int> contextCreate(int modelHandle, ModelParams params) async {
-    _checkModelHandle(modelHandle);
-    _modelParams = params;
-    return _contextHandle;
+    final response = await _sendRequest(
+      (sendPort) => LiteRtLmContextCreateRequest(modelHandle, params, sendPort),
+    );
+    return _expect<LiteRtLmHandleResponse>(response, 'context creation').handle;
   }
 
   @override
   Future<void> contextFree(int contextHandle) async {
-    _checkContextHandle(contextHandle);
+    if (_sendPort == null) {
+      return;
+    }
+    await _sendRequest(
+      (sendPort) => LiteRtLmContextFreeRequest(contextHandle, sendPort),
+    );
   }
 
   @override
   Future<int> getContextSize(int contextHandle) async {
-    _checkContextHandle(contextHandle);
-    return _modelParams?.contextSize ?? 0;
+    final response = await _sendRequest(
+      (sendPort) => LiteRtLmGetContextSizeRequest(contextHandle, sendPort),
+    );
+    return _expect<LiteRtLmGetContextSizeResponse>(
+      response,
+      'context size lookup',
+    ).size;
   }
 
   @override
@@ -103,68 +120,74 @@ class LiteRtLmBackend
     String prompt,
     GenerationParams params, {
     List<LlamaContentPart>? parts,
-  }) async* {
-    _checkContextHandle(contextHandle);
-    if (parts != null && parts.isNotEmpty) {
-      throw UnsupportedError('LiteRtLmBackend does not support media parts.');
-    }
-    if (params.grammar != null) {
-      throw UnsupportedError('LiteRtLmBackend does not support grammars yet.');
+  }) {
+    final responsePort = ReceivePort();
+    late final StreamController<List<int>> controller;
+    var cleanedUp = false;
+
+    void cleanup() {
+      if (cleanedUp) {
+        return;
+      }
+      cleanedUp = true;
+      responsePort.close();
+      if (!controller.isClosed) {
+        unawaited(controller.close());
+      }
+      if (_activeGenerationCleanup == cleanup) {
+        _activeGenerationCleanup = null;
+      }
     }
 
-    final client = await _ensureClient(params);
-    client.createConversation(
-      temperature: params.temp,
-      topK: params.topK,
-      topP: params.topP,
-      seed: params.seed ?? 1,
+    controller = StreamController<List<int>>(
+      onListen: () {
+        unawaited(() async {
+          try {
+            await _ensureIsolate();
+            _sendPort!.send(
+              LiteRtLmGenerateRequest(
+                contextHandle,
+                prompt,
+                params,
+                responsePort.sendPort,
+                parts: parts,
+              ),
+            );
+          } catch (error, stackTrace) {
+            if (!controller.isClosed) {
+              controller.addError(error, stackTrace);
+            }
+            cleanup();
+          }
+        }());
+      },
+      onCancel: () {
+        cancelGeneration();
+        cleanup();
+      },
     );
+    _activeGenerationCleanup = cleanup;
 
-    final stopSequences = params.stopSequences.where((s) => s.isNotEmpty);
-    final emitted = StringBuffer();
-    final sw = Stopwatch()..start();
-    try {
-      await for (final chunk in client.generate(prompt)) {
-        var next = chunk;
-        final combined = emitted.toString() + next;
-        var stopIndex = -1;
-        for (final stop in stopSequences) {
-          final index = combined.indexOf(stop);
-          if (index >= 0 && (stopIndex < 0 || index < stopIndex)) {
-            stopIndex = index;
-          }
-        }
-        if (stopIndex >= 0) {
-          final allowed = stopIndex - emitted.length;
-          if (allowed > 0) {
-            next = next.substring(0, allowed);
-            emitted.write(next);
-            yield utf8.encode(next);
-          }
-          cancelGeneration();
-          break;
-        }
+    responsePort.listen((message) {
+      if (cleanedUp) {
+        return;
+      }
+      if (message is LiteRtLmTokenResponse) {
+        controller.add(message.bytes);
+      } else if (message is LiteRtLmDoneResponse) {
+        cleanup();
+      } else if (message is LiteRtLmErrorResponse) {
+        controller.addError(_exceptionForErrorResponse(message));
+        cleanup();
+      }
+    });
 
-        emitted.write(next);
-        if (next.isNotEmpty) {
-          yield utf8.encode(next);
-        }
-      }
-    } finally {
-      sw.stop();
-      try {
-        _lastMetrics = client.readMetrics(
-          wallMilliseconds: sw.elapsedMilliseconds,
-        );
-      } catch (_) {
-        _lastMetrics = null;
-      }
-    }
+    return controller.stream;
   }
 
   @override
   void cancelGeneration() {
-    _client?.cancel();
+    unawaited(_cancelGeneration());
   }
 
   @override
@@ -172,9 +195,12 @@ class LiteRtLmBackend
     int modelHandle,
     String text, {
     bool addSpecial = true,
-  }) {
-    _checkModelHandle(modelHandle);
-    throw UnsupportedError('LiteRtLmBackend does not expose tokenization yet.');
+  }) async {
+    final response = await _sendRequest(
+      (sendPort) =>
+          LiteRtLmTokenizeRequest(modelHandle, text, addSpecial, sendPort),
+    );
+    return _expect<LiteRtLmTokenizeResponse>(response, 'tokenization').tokens;
   }
 
   @override
@@ -182,126 +208,212 @@ class LiteRtLmBackend
     int modelHandle,
     List<int> tokens, {
     bool special = false,
-  }) {
-    _checkModelHandle(modelHandle);
-    throw UnsupportedError(
-      'LiteRtLmBackend does not expose detokenization yet.',
+  }) async {
+    final response = await _sendRequest(
+      (sendPort) =>
+          LiteRtLmDetokenizeRequest(modelHandle, tokens, special, sendPort),
     );
+    return _expect<LiteRtLmDetokenizeResponse>(response, 'detokenization').text;
   }
 
   @override
   Future<Map<String, String>> modelMetadata(int modelHandle) async {
-    _checkModelHandle(modelHandle);
-    return <String, String>{
-      'general.architecture': 'litert-lm',
-      'general.file_type': 'litertlm',
-      if (_modelPath != null)
-        'general.name': File(_modelPath!).uri.pathSegments.last,
-    };
+    final response = await _sendRequest(
+      (sendPort) => LiteRtLmMetadataRequest(modelHandle, sendPort),
+    );
+    return _expect<LiteRtLmMetadataResponse>(
+      response,
+      'metadata lookup',
+    ).metadata;
   }
 
   @override
-  Future<void> setLoraAdapter(int contextHandle, String path, double scale) {
-    _checkContextHandle(contextHandle);
-    throw UnsupportedError('LiteRtLmBackend does not support LoRA adapters.');
+  Future<void> setLoraAdapter(
+    int contextHandle,
+    String path,
+    double scale,
+  ) async {
+    await _sendRequest(
+      (sendPort) => LiteRtLmLoraRequest(
+        contextHandle,
+        'set',
+        path: path,
+        scale: scale,
+        sendPort: sendPort,
+      ),
+    );
   }
 
   @override
-  Future<void> removeLoraAdapter(int contextHandle, String path) {
-    _checkContextHandle(contextHandle);
-    throw UnsupportedError('LiteRtLmBackend does not support LoRA adapters.');
+  Future<void> removeLoraAdapter(int contextHandle, String path) async {
+    await _sendRequest(
+      (sendPort) => LiteRtLmLoraRequest(
+        contextHandle,
+        'remove',
+        path: path,
+        sendPort: sendPort,
+      ),
+    );
   }
 
   @override
   Future<void> clearLoraAdapters(int contextHandle) async {
-    _checkContextHandle(contextHandle);
+    await _sendRequest(
+      (sendPort) =>
+          LiteRtLmLoraRequest(contextHandle, 'clear', sendPort: sendPort),
+    );
   }
 
   @override
   Future<String> getBackendName() async {
-    final backend = _activeBackend ?? 'gpu';
-    return 'LiteRT-LM $backend';
+    final response = await _sendRequest(LiteRtLmBackendInfoRequest.new);
+    return _expect<LiteRtLmBackendInfoResponse>(
+      response,
+      'backend info lookup',
+    ).name;
   }
 
   @override
   Future<String> getAvailableBackends() async {
-    return Platform.isMacOS || Platform.isAndroid ? 'cpu,gpu' : 'cpu';
+    final response = await _sendRequest(LiteRtLmAvailableBackendsRequest.new);
+    return _expect<LiteRtLmBackendInfoResponse>(
+      response,
+      'available backend lookup',
+    ).name;
   }
 
   @override
   Future<int?> getResolvedGpuLayers() async {
-    return _activeBackend == 'cpu' ? 0 : ModelParams.maxGpuLayers;
+    final response = await _sendRequest(LiteRtLmResolvedGpuLayersRequest.new);
+    return _expect<LiteRtLmResolvedGpuLayersResponse>(
+      response,
+      'resolved GPU layer lookup',
+    ).layers;
   }
 
   @override
   Future<BackendPerfContextData?> getPerformanceContext(
     int contextHandle,
   ) async {
-    _checkContextHandle(contextHandle);
-    final metrics = _lastMetrics;
-    if (metrics == null) {
+    final response = await _sendRequest(
+      (sendPort) => LiteRtLmPerformanceContextRequest(contextHandle, sendPort),
+    );
+    if (response is LiteRtLmDoneResponse) {
       return null;
     }
-    final promptEvalMs = _millisecondsFromTps(
-      metrics.inputTokens,
-      metrics.prefillTokensPerSecond,
-    );
-    final evalMs = _millisecondsFromTps(
-      metrics.outputTokens,
-      metrics.decodeTokensPerSecond,
+    final perf = _expect<LiteRtLmPerformanceContextResponse>(
+      response,
+      'performance context lookup',
     );
     return BackendPerfContextData(
-      loadMs: (metrics.initSeconds ?? 0) * 1000.0,
-      promptEvalMs: promptEvalMs,
-      evalMs: evalMs,
-      sampleMs: 0,
-      promptEvalTokens: metrics.inputTokens,
-      evalTokens: metrics.outputTokens,
-      sampleCount: metrics.outputTokens,
-      reusedGraphs: 0,
+      loadMs: perf.loadMs,
+      promptEvalMs: perf.promptEvalMs,
+      evalMs: perf.evalMs,
+      sampleMs: perf.sampleMs,
+      promptEvalTokens: perf.promptEvalTokens,
+      evalTokens: perf.evalTokens,
+      sampleCount: perf.sampleCount,
+      reusedGraphs: perf.reusedGraphs,
     );
   }
 
   @override
   Future<bool> isGpuSupported() async {
-    return Platform.isMacOS || Platform.isAndroid;
+    final response = await _sendRequest(LiteRtLmGpuSupportRequest.new);
+    return _expect<LiteRtLmGpuSupportResponse>(
+      response,
+      'GPU support lookup',
+    ).support;
   }
 
   @override
-  Future<void> setLogLevel(LlamaLogLevel level) async {}
-
-  @override
-  Future<void> dispose() async {
-    _client?.dispose();
-    _client = null;
-    _modelPath = null;
-    _modelParams = null;
-    _activeBackend = null;
-    _activeOutputTokens = null;
-    _lastMetrics = null;
-    _isReady = false;
-  }
-
-  @override
-  Future<int?> multimodalContextCreate(int modelHandle, String mmProjPath) {
-    _checkModelHandle(modelHandle);
-    throw UnsupportedError(
-      'LiteRtLmBackend does not support multimodal input.',
+  Future<void> setLogLevel(LlamaLogLevel level) async {
+    _currentLogLevel = level;
+    if (_sendPort == null) {
+      return;
+    }
+    await _sendRequest(
+      (sendPort) => LiteRtLmLogLevelRequest(level, sendPort),
+      ensureIsolate: false,
     );
   }
 
   @override
-  Future<void> multimodalContextFree(int mmContextHandle) async {}
+  Future<void> dispose() async {
+    if (_disposed) {
+      return;
+    }
+    _disposed = true;
+    await _cancelGeneration();
+    _activeGenerationCleanup?.call();
+
+    final sendPort = _sendPort;
+    if (sendPort != null) {
+      final responsePort = ReceivePort();
+      try {
+        sendPort.send(LiteRtLmDisposeRequest(responsePort.sendPort));
+        await responsePort.first.timeout(const Duration(seconds: 5));
+      } catch (_) {
+        // Native LiteRT-LM teardown can stall on some accelerator paths. The
+        // isolate is killed below so app shutdown is not held indefinitely.
+      } finally {
+        responsePort.close();
+      }
+    }
+    _killWorker();
+    _isReady = false;
+  }
 
   @override
-  Future<bool> supportsVision(int mmContextHandle) async => false;
+  Future<int?> multimodalContextCreate(
+    int modelHandle,
+    String mmProjPath,
+  ) async {
+    final response = await _sendRequest(
+      (sendPort) => LiteRtLmMultimodalContextCreateRequest(
+        modelHandle,
+        mmProjPath,
+        sendPort,
+      ),
+    );
+    return _expect<LiteRtLmHandleResponse>(
+      response,
+      'multimodal context creation',
+    ).handle;
+  }
 
   @override
-  Future<bool> supportsAudio(int mmContextHandle) async => false;
+  Future<void> multimodalContextFree(int mmContextHandle) async {
+    await _sendRequest(
+      (sendPort) =>
+          LiteRtLmMultimodalContextFreeRequest(mmContextHandle, sendPort),
+    );
+  }
+
+  @override
+  Future<bool> supportsVision(int mmContextHandle) async {
+    final response = await _sendRequest(
+      (sendPort) => LiteRtLmSupportsVisionRequest(mmContextHandle, sendPort),
+    );
+    return response as bool;
+  }
+
+  @override
+  Future<bool> supportsAudio(int mmContextHandle) async {
+    final response = await _sendRequest(
+      (sendPort) => LiteRtLmSupportsAudioRequest(mmContextHandle, sendPort),
+    );
+    return response as bool;
+  }
 
   @override
   Future<({int total, int free})> getVramInfo() async {
-    return (total: 0, free: 0);
+    final response = await _sendRequest(LiteRtLmSystemInfoRequest.new);
+    final info = _expect<LiteRtLmSystemInfoResponse>(
+      response,
+      'system info lookup',
+    );
+    return (total: info.totalVram, free: info.freeVram);
   }
 
   @override
@@ -310,88 +422,117 @@ class LiteRtLmBackend
     List<Map<String, dynamic>> messages, {
     String? customTemplate,
     bool addAssistant = true,
-  }) {
-    _checkModelHandle(modelHandle);
-    throw UnsupportedError(
-      'LiteRtLmBackend uses Dart-side chat templates for now.',
+  }) async {
+    final response = await _sendRequest(
+      (sendPort) => LiteRtLmChatTemplateRequest(
+        modelHandle,
+        messages,
+        customTemplate,
+        addAssistant,
+        sendPort,
+      ),
     );
+    return _expect<LiteRtLmChatTemplateResponse>(
+      response,
+      'chat template application',
+    ).result;
   }
 
-  Future<LiteRtLmBenchmarkClient> _ensureClient(GenerationParams params) async {
-    final modelPath = _modelPath;
-    final modelParams = _modelParams;
-    if (modelPath == null || modelParams == null) {
-      throw StateError('No LiteRT-LM model is loaded.');
+  Future<void> _ensureIsolate() async {
+    if (_disposed) {
+      throw StateError('LiteRT-LM backend has been disposed.');
+    }
+    if (_sendPort != null) {
+      return;
     }
 
-    final outputTokens = params.maxTokens <= 0 ? 4096 : params.maxTokens;
-    final backend =
-        _activeBackend ?? _backendNameFor(modelParams.preferredBackend);
-    final existing = _client;
-    if (existing != null &&
-        _activeOutputTokens == outputTokens &&
-        _activeBackend == backend) {
-      return existing;
-    }
-
-    existing?.dispose();
-    final client = LiteRtLmBenchmarkClient();
-    await client.initialize(
-      modelPath: modelPath,
-      backend: backend,
-      maxTokens: modelParams.contextSize,
-      outputTokens: outputTokens,
-      cacheDir: _defaultCacheDir(),
-      speculativeDecoding: false,
-    );
-    _client = client;
-    _activeOutputTokens = outputTokens;
-    _activeBackend = backend;
-    return client;
+    final completer = Completer<void>();
+    final tempPort = ReceivePort();
+    tempPort.listen((message) {
+      if (message is SendPort) {
+        _sendPort = message;
+        _sendPort!.send(LiteRtLmWorkerHandshake(_currentLogLevel));
+        tempPort.close();
+        completer.complete();
+      }
+    });
+    _isolate = await Isolate.spawn(liteRtLmWorkerEntry, tempPort.sendPort);
+    await completer.future;
   }
 
-  String _backendNameFor(GpuBackend backend) {
-    switch (backend) {
-      case GpuBackend.cpu:
-      case GpuBackend.blas:
-        return 'cpu';
-      case GpuBackend.auto:
-      case GpuBackend.vulkan:
-      case GpuBackend.metal:
-      case GpuBackend.cuda:
-      case GpuBackend.opencl:
-      case GpuBackend.hip:
-        return 'gpu';
+  Future<Object?> _sendRequest(
+    LiteRtLmWorkerRequest Function(SendPort sendPort) buildRequest, {
+    bool ensureIsolate = true,
+    Duration? timeout,
+  }) async {
+    if (ensureIsolate) {
+      await _ensureIsolate();
     }
-  }
+    final sendPort = _sendPort;
+    if (sendPort == null) {
+      throw StateError('LiteRT-LM worker is not initialized.');
+    }
 
-  String? _defaultCacheDir() {
-    if (!Platform.isMacOS && !Platform.isAndroid) {
-      return null;
-    }
-    final dir = Directory('${Directory.systemTemp.path}/llamadart_litert_lm');
-    if (!dir.existsSync()) {
-      dir.createSync(recursive: true);
-    }
-    return dir.path;
-  }
-
-  double _millisecondsFromTps(int tokens, double? tps) {
-    if (tokens <= 0 || tps == null || tps <= 0) {
-      return 0;
-    }
-    return tokens / tps * 1000.0;
-  }
-
-  void _checkModelHandle(int handle) {
-    if (handle != _modelHandle || !_isReady) {
-      throw StateError('Invalid LiteRT-LM model handle: $handle');
+    final responsePort = ReceivePort();
+    try {
+      sendPort.send(buildRequest(responsePort.sendPort));
+      final response = timeout == null
+          ? await responsePort.first
+          : await responsePort.first.timeout(timeout);
+      if (response is LiteRtLmErrorResponse) {
+        _throwLiteRtLmError(response);
+      }
+      return response;
+    } finally {
+      responsePort.close();
     }
   }
 
-  void _checkContextHandle(int handle) {
-    if (handle != _contextHandle || !_isReady) {
-      throw StateError('Invalid LiteRT-LM context handle: $handle');
+  void _killWorker() {
+    _isolate?.kill(priority: Isolate.immediate);
+    _isolate = null;
+    _sendPort = null;
+    _activeGenerationCleanup = null;
+  }
+
+  Future<void> _cancelGeneration() async {
+    final sendPort = _sendPort;
+    if (sendPort == null) {
+      return;
+    }
+    final responsePort = ReceivePort();
+    try {
+      sendPort.send(LiteRtLmCancelGenerationRequest(responsePort.sendPort));
+      await responsePort.first.timeout(const Duration(seconds: 1));
+    } catch (_) {
+      // Cancellation is best-effort because this method is also used by
+      // StreamController.onCancel and dispose paths.
+    } finally {
+      responsePort.close();
+    }
+  }
+
+  T _expect<T>(Object? response, String operation) {
+    if (response is T) {
+      return response;
+    }
+    throw StateError('Unexpected LiteRT-LM response during $operation.');
+  }
+
+  Never _throwLiteRtLmError(LiteRtLmErrorResponse response) {
+    throw _exceptionForErrorResponse(response);
+  }
+
+  Object _exceptionForErrorResponse(LiteRtLmErrorResponse response) {
+    switch (response.kind) {
+      case 'unsupported':
+        return UnsupportedError(response.message);
+      case 'argument':
+        return ArgumentError(response.message);
+      case 'state':
+        return StateError(response.message);
+      default:
+        return Exception(response.message);
     }
   }
 }

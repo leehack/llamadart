@@ -26,22 +26,24 @@ const _litertLmPocVersion = '0.12.0';
 const _litertLmNativeReleaseBaseUrl =
     'https://github.com/leehack/litert-lm-native/releases/download/'
     'v$_litertLmPocVersion';
+const _flutterGemmaLiteRtLmReleaseBaseUrl =
+    'https://github.com/DenisovAV/flutter_gemma/releases/download/'
+    'native-v$_litertLmPocVersion';
 const _litertLmPocCacheDir = 'litert_lm_poc';
 
 const _litertLmPocBundles = <String, _LiteRtLmPocBundleSpec>{
   'android-arm64': _LiteRtLmPocBundleSpec(
-    directoryName: 'android/arm64',
-    archiveName: 'litert-lm-native-runtime-android-arm64-v0.12.0.tar.gz',
-    sha256: '1d590f688af30eb5fe720d0dc7b1c003aee6a8f0ced92fd39166bd1bdfbc2aac',
-    releaseBaseUrl: _litertLmNativeReleaseBaseUrl,
-    sourcePrefix: 'android/arm64',
+    directoryName: 'android_arm64',
+    archiveName: 'litertlm-android_arm64.tar.gz',
+    sha256: 'e24804d922aadd91a85a6faf272a20e9c3e7991ed2754cf2a9071ad08a8fc2ce',
+    releaseBaseUrl: _flutterGemmaLiteRtLmReleaseBaseUrl,
     requiredLibraries: {'libLiteRtLm.so'},
     emitAllLibraries: true,
   ),
   'android-x64': _LiteRtLmPocBundleSpec(
     directoryName: 'android/x64',
     archiveName: 'litert-lm-native-runtime-android-x64-v0.12.0.tar.gz',
-    sha256: 'dedf61f158e1ae8e73909d15784f33d62f54c58bfde5c50a72ff9e0d48a2a5d0',
+    sha256: '5e47523a21df69bfcb3bb827f2b871e09654b08720e71a8b69a833029333e5c9',
     releaseBaseUrl: _litertLmNativeReleaseBaseUrl,
     sourcePrefix: 'android/x64',
     requiredLibraries: {'libLiteRtLm.so'},

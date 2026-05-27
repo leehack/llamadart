@@ -25,8 +25,16 @@ echo "== LiteRT-LM Metal =="
 (
   cd "$CHAT_APP_DIR"
   rm -rf \
+    "$CHAT_APP_DIR/.dart_tool/flutter_build" \
+    "$CHAT_APP_DIR/build/native_assets/macos" \
     "$APP/Contents/Frameworks/LiteRtMetalAccelerator.framework" \
-    "$APP/Contents/Frameworks/GemmaModelConstraintProvider.framework"
+    "$APP/Contents/Frameworks/LiteRtTopKMetalSampler.framework" \
+    "$APP/Contents/Frameworks/LiteRtTopKWebGpuSampler.framework" \
+    "$APP/Contents/Frameworks/LiteRtWebGpuAccelerator.framework" \
+    "$APP/Contents/Frameworks/LiteRt.framework" \
+    "$APP/Contents/Frameworks/LiteRtLm.framework" \
+    "$APP/Contents/Frameworks/GemmaModelConstraintProvider.framework" \
+    "$APP/Contents/Frameworks/StreamProxy.framework"
 
   flutter build macos --debug \
     -t lib/litert_lm_benchmark_app.dart \
@@ -44,6 +52,37 @@ echo "== LiteRT-LM Metal =="
   "$ROOT_DIR/tool/macos_litert_lm_prepare_app.sh" "$APP" >/dev/null
   cp "$LITERT_MODEL" "$MODEL_IN_APP"
 
-  "$APP/Contents/MacOS/llamadart_chat_example" 2>&1 \
-    | rg --line-buffered 'BENCHMARK: RESULT|BENCHMARK: BENCHMARK_DONE|ERROR|Failed to create engine|RegisterAccelerator'
+  LOG_FILE="$(mktemp -t llamadart_litert_macos.XXXXXX.log)"
+  "$APP/Contents/MacOS/llamadart_chat_example" >"$LOG_FILE" 2>&1 &
+  APP_PID="$!"
+  cleanup() {
+    if kill -0 "$APP_PID" 2>/dev/null; then
+      kill "$APP_PID" 2>/dev/null || true
+    fi
+    rm -f "$LOG_FILE"
+  }
+  trap cleanup EXIT
+
+  NEXT_LINE=1
+  DONE=0
+  process_new_lines() {
+    local chunk
+    chunk="$(sed -n "${NEXT_LINE},\$p" "$LOG_FILE")"
+    if [[ -n "$chunk" ]]; then
+      grep -E 'BENCHMARK: RESULT|BENCHMARK: BENCHMARK_DONE|ERROR|Failed to create engine|RegisterAccelerator' <<<"$chunk" || true
+      if grep -Eq 'BENCHMARK: (RESULT litert_lm|BENCHMARK_DONE)' <<<"$chunk"; then
+        DONE=1
+      fi
+    fi
+    NEXT_LINE="$(($(wc -l <"$LOG_FILE" | tr -d ' ') + 1))"
+  }
+
+  while kill -0 "$APP_PID" 2>/dev/null && [[ "$DONE" -eq 0 ]]; do
+    process_new_lines
+    sleep 0.2
+  done
+  process_new_lines
+  cleanup
+  trap - EXIT
+  [[ "$DONE" -eq 1 ]]
 )

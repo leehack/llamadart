@@ -38,28 +38,32 @@ void main() {
   test('loads local litertlm model and exposes metadata', () async {
     final backend = LiteRtLmBackend();
 
-    final handle = await backend.modelLoad(
-      modelFile.path,
-      const ModelParams(preferredBackend: GpuBackend.cpu),
-    );
-    final contextHandle = await backend.contextCreate(
-      handle,
-      const ModelParams(),
-    );
+    try {
+      final handle = await backend.modelLoad(
+        modelFile.path,
+        const ModelParams(preferredBackend: GpuBackend.cpu),
+      );
+      final contextHandle = await backend.contextCreate(
+        handle,
+        const ModelParams(),
+      );
 
-    expect(handle, 1);
-    expect(contextHandle, 1);
-    expect(backend.isReady, isTrue);
-    expect(await backend.getContextSize(contextHandle), 4096);
-    expect(await backend.getBackendName(), 'LiteRT-LM cpu');
-    expect(await backend.getResolvedGpuLayers(), 0);
-    expect(
-      await backend.modelMetadata(handle),
-      containsPair('general.file_type', 'litertlm'),
-    );
+      expect(handle, 1);
+      expect(contextHandle, 1);
+      expect(backend.isReady, isTrue);
+      expect(await backend.getContextSize(contextHandle), 4096);
+      expect(await backend.getBackendName(), 'LiteRT-LM cpu');
+      expect(await backend.getResolvedGpuLayers(), 0);
+      expect(
+        await backend.modelMetadata(handle),
+        containsPair('general.file_type', 'litertlm'),
+      );
 
-    await backend.modelFree(handle);
-    expect(backend.isReady, isFalse);
+      await backend.modelFree(handle);
+      expect(backend.isReady, isFalse);
+    } finally {
+      await backend.dispose();
+    }
   });
 
   test('rejects unsupported load and llama.cpp-specific operations', () async {
@@ -67,35 +71,40 @@ void main() {
     final wrongFormat = File('${tempDir.path}/model.gguf');
     await wrongFormat.writeAsString('fake model');
 
-    expect(
-      () => backend.modelLoad(wrongFormat.path, const ModelParams()),
-      throwsArgumentError,
-    );
-    expect(
-      () => backend.modelLoadFromUrl(
-        'https://example.test/model.litertlm',
+    try {
+      expect(
+        () => backend.modelLoad(wrongFormat.path, const ModelParams()),
+        throwsArgumentError,
+      );
+      expect(
+        () => backend.modelLoadFromUrl(
+          'https://example.test/model.litertlm',
+          const ModelParams(),
+        ),
+        throwsUnsupportedError,
+      );
+
+      final handle = await backend.modelLoad(
+        modelFile.path,
         const ModelParams(),
-      ),
-      throwsUnsupportedError,
-    );
+      );
+      final contextHandle = await backend.contextCreate(
+        handle,
+        const ModelParams(),
+      );
 
-    final handle = await backend.modelLoad(modelFile.path, const ModelParams());
-    final contextHandle = await backend.contextCreate(
-      handle,
-      const ModelParams(),
-    );
-
-    expect(() => backend.tokenize(handle, 'hello'), throwsUnsupportedError);
-    expect(
-      () => backend
-          .generate(
-            contextHandle,
-            'hello',
-            const GenerationParams(grammar: 'root ::= "x"'),
-          )
-          .drain<void>(),
-      throwsUnsupportedError,
-    );
+      expect(() => backend.tokenize(handle, 'hello'), throwsUnsupportedError);
+      await expectLater(
+        backend.generate(
+          contextHandle,
+          'hello',
+          const GenerationParams(grammar: 'root ::= "x"'),
+        ),
+        emitsError(isA<UnsupportedError>()),
+      );
+    } finally {
+      await backend.dispose();
+    }
   });
 
   test(
@@ -103,12 +112,16 @@ void main() {
     () async {
       final backend = LiteRtLmBackend();
 
-      expect(
-        () => backend.contextCreate(99, const ModelParams()),
-        throwsStateError,
-      );
-      expect(() => backend.modelMetadata(99), throwsStateError);
-      expect(() => backend.getContextSize(99), throwsStateError);
+      try {
+        expect(
+          () => backend.contextCreate(99, const ModelParams()),
+          throwsStateError,
+        );
+        expect(() => backend.modelMetadata(99), throwsStateError);
+        expect(() => backend.getContextSize(99), throwsStateError);
+      } finally {
+        await backend.dispose();
+      }
     },
   );
 }

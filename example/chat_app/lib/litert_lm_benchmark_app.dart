@@ -127,45 +127,90 @@ class _LiteRtLmBenchmarkAppState extends State<LiteRtLmBenchmarkApp> {
   }
 
   Future<void> _runLiteRtBenchmark(String modelPath) async {
-    final client = LiteRtLmBenchmarkClient();
+    final engine = LlamaEngine(LiteRtLmBackend(preferredBackend: _backend));
     try {
-      _append('=== LiteRT-LM ===');
+      _append('=== LiteRT-LM / llamadart backend ===');
       _append('Initializing LiteRT-LM:');
       _append('  model: $modelPath');
       _append('  backend: $_backend');
-      _append('  speculative: $_speculative');
-      final cacheDir = _cacheDir.isNotEmpty
-          ? _cacheDir
-          : Platform.isMacOS
-          ? '${Directory.systemTemp.path}/llamadart_litert_lm_cache'
-          : null;
-      if (cacheDir != null) {
-        await Directory(cacheDir).create(recursive: true);
-        _append('  cache: $cacheDir');
+      _append('  speculative: ignored by backend API');
+      if (_cacheDir.isNotEmpty) {
+        await Directory(_cacheDir).create(recursive: true);
+        _append('  cache override ignored by backend API: $_cacheDir');
       }
-      await client.initialize(
-        modelPath: modelPath,
-        backend: _backend,
-        maxTokens: _maxTokens,
-        outputTokens: _outputTokens,
-        speculativeDecoding: _speculative,
-        cacheDir: cacheDir,
+
+      final loadSw = Stopwatch()..start();
+      await engine.loadModel(
+        modelPath,
+        modelParams: ModelParams(
+          contextSize: _maxTokens,
+          preferredBackend: _backend == 'cpu'
+              ? GpuBackend.cpu
+              : Platform.isMacOS
+              ? GpuBackend.metal
+              : GpuBackend.vulkan,
+        ),
       );
+      loadSw.stop();
       _append(
         'Initialized. Running $_warmups warmup(s), $_runs measured run(s).',
       );
-      final result = await client.run(
-        prompt: _promptController.text,
-        warmupRuns: _warmups,
-        measuredRuns: _runs,
-      );
+
+      for (var i = 0; i < _warmups; i++) {
+        await engine
+            .generate(
+              _promptController.text,
+              params: GenerationParams(maxTokens: _outputTokens, seed: 1),
+            )
+            .drain<void>();
+      }
+
+      var lastText = '';
+      BackendPerfContextData? perf;
+      var wallMs = 0;
+      for (var i = 0; i < _runs; i++) {
+        final buffer = StringBuffer();
+        final sw = Stopwatch()..start();
+        await for (final chunk in engine.generate(
+          _promptController.text,
+          params: GenerationParams(maxTokens: _outputTokens, seed: 1),
+        )) {
+          buffer.write(chunk);
+        }
+        sw.stop();
+        wallMs = sw.elapsedMilliseconds;
+        lastText = buffer.toString();
+        perf = await engine.getPerformanceContext();
+      }
+
+      final metrics = {
+        'loadMilliseconds': loadSw.elapsedMilliseconds,
+        'wallMilliseconds': wallMs,
+        'backendName': await engine.getBackendName(),
+        'targetDecodeTokens': _outputTokens,
+        'backendInitMilliseconds': perf?.loadMs,
+        'promptEvalTokens': perf?.promptEvalTokens,
+        'evalTokens': perf?.evalTokens,
+        'promptEvalMs': perf?.promptEvalMs,
+        'evalMs': perf?.evalMs,
+        'sampleMs': perf?.sampleMs,
+        'prefillTokensPerSecond': perf == null || perf.promptEvalMs <= 0
+            ? null
+            : perf.promptEvalTokens / (perf.promptEvalMs / 1000.0),
+        'decodeTokensPerSecond': perf == null || perf.evalMs <= 0
+            ? null
+            : perf.evalTokens / (perf.evalMs / 1000.0),
+        'wallTokensPerSecond': wallMs <= 0 || perf == null
+            ? null
+            : perf.evalTokens / (wallMs / 1000.0),
+      };
       const encoder = JsonEncoder.withIndent('  ');
-      _append('RESULT litert_lm ${jsonEncode(result.metrics.toJson())}');
-      _append(encoder.convert(result.metrics.toJson()));
+      _append('RESULT litert_lm ${jsonEncode(metrics)}');
+      _append(encoder.convert(metrics));
       _append('Last LiteRT-LM response:');
-      _append(result.text);
+      _append(lastText);
     } finally {
-      client.dispose();
+      await engine.dispose();
     }
   }
 

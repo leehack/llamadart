@@ -1,0 +1,436 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
+import '../../core/models/chat/content_part.dart';
+import '../../core/models/config/gpu_backend.dart';
+import '../../core/models/config/log_level.dart';
+import '../../core/models/inference/generation_params.dart';
+import '../../core/models/inference/model_params.dart';
+import '../../experimental/litert_lm/litert_lm_benchmark.dart';
+import '../backend.dart';
+
+/// Worker-owned service for the LiteRT-LM backend.
+///
+/// This keeps all LiteRT-LM FFI state inside the backend worker isolate. The
+/// public backend only sends requests and receives stream chunks, mirroring the
+/// llama.cpp backend architecture.
+class LiteRtLmService {
+  static const int _modelHandle = 1;
+  static const int _contextHandle = 1;
+
+  LiteRtLmBenchmarkClient? _client;
+  ModelParams? _modelParams;
+  String? _modelPath;
+  String? _activeBackend;
+  int? _activeOutputTokens;
+  LiteRtLmBenchmarkMetrics? _lastMetrics;
+  bool _modelLoaded = false;
+  bool _contextCreated = false;
+
+  /// Updates the current backend log level.
+  void setLogLevel(LlamaLogLevel level) {}
+
+  /// Loads a local `.litertlm` model bundle.
+  Future<int> loadModel(
+    String path,
+    ModelParams params, {
+    String? backendOverride,
+  }) async {
+    final file = File(path);
+    if (!await file.exists()) {
+      throw ArgumentError('LiteRT-LM model does not exist: $path');
+    }
+    if (!path.endsWith('.litertlm')) {
+      throw ArgumentError(
+        'LiteRtLmBackend expects a .litertlm model bundle; got $path',
+      );
+    }
+
+    _client?.dispose();
+    _client = null;
+    _modelPath = path;
+    _modelParams = params;
+    _activeBackend =
+        _normalizeBackendOverride(backendOverride) ??
+        _backendNameFor(params.preferredBackend);
+    _activeOutputTokens = null;
+    _lastMetrics = null;
+    _modelLoaded = true;
+    _contextCreated = false;
+    return _modelHandle;
+  }
+
+  /// Frees the loaded model and any active LiteRT-LM client.
+  void freeModel(int modelHandle) {
+    _checkModelHandle(modelHandle);
+    _client?.dispose();
+    _client = null;
+    _modelPath = null;
+    _modelParams = null;
+    _activeBackend = null;
+    _activeOutputTokens = null;
+    _lastMetrics = null;
+    _modelLoaded = false;
+    _contextCreated = false;
+  }
+
+  /// Creates the single LiteRT-LM context used by this backend.
+  int createContext(int modelHandle, ModelParams params) {
+    _checkModelHandle(modelHandle);
+    _modelParams = params;
+    _contextCreated = true;
+    return _contextHandle;
+  }
+
+  /// Frees the active LiteRT-LM context.
+  void freeContext(int contextHandle) {
+    _checkContextHandle(contextHandle);
+    _contextCreated = false;
+  }
+
+  /// Returns the configured context size.
+  int getContextSize(int contextHandle) {
+    _checkContextHandle(contextHandle);
+    return _modelParams?.contextSize ?? 0;
+  }
+
+  /// Generates UTF-8 token byte chunks for [prompt].
+  Stream<List<int>> generate(
+    int contextHandle,
+    String prompt,
+    GenerationParams params, {
+    List<LlamaContentPart>? parts,
+  }) async* {
+    _checkContextHandle(contextHandle);
+    if (parts != null && parts.isNotEmpty) {
+      throw UnsupportedError('LiteRtLmBackend does not support media parts.');
+    }
+    if (params.grammar != null) {
+      throw UnsupportedError('LiteRtLmBackend does not support grammars yet.');
+    }
+
+    final client = await _ensureClient(params);
+    final backend =
+        _activeBackend ??
+        _backendNameFor(_modelParams?.preferredBackend ?? GpuBackend.auto);
+    client.createConversation(
+      temperature: params.temp,
+      topK: params.topK,
+      topP: params.topP,
+      seed: params.seed ?? 1,
+      npuBackend: backend == 'npu',
+    );
+
+    final stopSequences = params.stopSequences
+        .where((sequence) => sequence.isNotEmpty)
+        .toList(growable: false);
+    final sw = Stopwatch()..start();
+    try {
+      yield* _applyStopSequences(
+        client.generate(prompt),
+        stopSequences,
+        onStop: cancelGeneration,
+      );
+    } finally {
+      sw.stop();
+      try {
+        _lastMetrics = client.readMetrics(
+          wallMilliseconds: sw.elapsedMilliseconds,
+        );
+      } catch (_) {
+        _lastMetrics = null;
+      }
+    }
+  }
+
+  /// Cancels the active LiteRT-LM conversation if one is running.
+  void cancelGeneration() {
+    _client?.cancel();
+  }
+
+  /// Tokenization is not currently exposed by LiteRT-LM.
+  List<int> tokenize(int modelHandle, String text, bool addSpecial) {
+    _checkModelHandle(modelHandle);
+    throw UnsupportedError('LiteRtLmBackend does not expose tokenization yet.');
+  }
+
+  /// Detokenization is not currently exposed by LiteRT-LM.
+  String detokenize(int modelHandle, List<int> tokens, bool special) {
+    _checkModelHandle(modelHandle);
+    throw UnsupportedError(
+      'LiteRtLmBackend does not expose detokenization yet.',
+    );
+  }
+
+  /// Returns the metadata known from the LiteRT-LM bundle path.
+  Map<String, String> getMetadata(int modelHandle) {
+    _checkModelHandle(modelHandle);
+    return <String, String>{
+      'general.architecture': 'litert-lm',
+      'general.file_type': 'litertlm',
+      if (_modelPath != null)
+        'general.name': File(_modelPath!).uri.pathSegments.last,
+    };
+  }
+
+  /// Handles LiteRT-LM LoRA operations.
+  void handleLora(int contextHandle, String? path, double? scale, String op) {
+    _checkContextHandle(contextHandle);
+    if (op == 'clear') {
+      return;
+    }
+    throw UnsupportedError('LiteRtLmBackend does not support LoRA adapters.');
+  }
+
+  /// Returns the active backend name.
+  String getActiveBackendName() {
+    final backend = _activeBackend ?? 'gpu';
+    return 'LiteRT-LM $backend';
+  }
+
+  /// Returns the backend choices available on this platform.
+  List<String> getAvailableBackendInfo() {
+    if (Platform.isAndroid) {
+      return const <String>['cpu', 'gpu', 'npu'];
+    }
+    return Platform.isMacOS
+        ? const <String>['cpu', 'gpu']
+        : const <String>['cpu'];
+  }
+
+  /// Returns the resolved GPU layer count analogue for LiteRT-LM.
+  int? getResolvedGpuLayers() {
+    return _activeBackend == 'cpu' ? 0 : ModelParams.maxGpuLayers;
+  }
+
+  /// Returns the most recent LiteRT-LM performance metrics.
+  BackendPerfContextData? getPerformanceContext(int contextHandle) {
+    _checkContextHandle(contextHandle);
+    final metrics = _lastMetrics;
+    if (metrics == null) {
+      return null;
+    }
+    final promptEvalMs = _millisecondsFromTps(
+      metrics.inputTokens,
+      metrics.prefillTokensPerSecond,
+    );
+    final evalMs = _millisecondsFromTps(
+      metrics.outputTokens,
+      metrics.decodeTokensPerSecond,
+    );
+    return BackendPerfContextData(
+      loadMs: (metrics.initSeconds ?? 0) * 1000.0,
+      promptEvalMs: promptEvalMs,
+      evalMs: evalMs,
+      sampleMs: 0,
+      promptEvalTokens: metrics.inputTokens,
+      evalTokens: metrics.outputTokens,
+      sampleCount: metrics.outputTokens,
+      reusedGraphs: 0,
+    );
+  }
+
+  /// Returns whether this runtime can use a GPU LiteRT-LM backend.
+  bool getGpuSupport() {
+    return Platform.isMacOS || Platform.isAndroid;
+  }
+
+  /// Creates a multimodal context.
+  int createMultimodalContext(int modelHandle, String mmProjPath) {
+    _checkModelHandle(modelHandle);
+    throw UnsupportedError(
+      'LiteRtLmBackend does not support multimodal input.',
+    );
+  }
+
+  /// Frees a multimodal context.
+  void freeMultimodalContext(int mmContextHandle) {}
+
+  /// Returns whether vision is supported for a multimodal context.
+  bool supportsVision(int mmContextHandle) => false;
+
+  /// Returns whether audio is supported for a multimodal context.
+  bool supportsAudio(int mmContextHandle) => false;
+
+  /// Returns VRAM information when the backend can expose it.
+  ({int total, int free}) getVramInfo() => (total: 0, free: 0);
+
+  /// Applies a native chat template.
+  String applyChatTemplate(
+    int modelHandle,
+    List<Map<String, dynamic>> messages, {
+    String? customTemplate,
+    bool addAssistant = true,
+  }) {
+    _checkModelHandle(modelHandle);
+    throw UnsupportedError(
+      'LiteRtLmBackend uses Dart-side chat templates for now.',
+    );
+  }
+
+  /// Releases all service-owned native resources.
+  void dispose() {
+    _client?.dispose();
+    _client = null;
+    _modelPath = null;
+    _modelParams = null;
+    _activeBackend = null;
+    _activeOutputTokens = null;
+    _lastMetrics = null;
+    _modelLoaded = false;
+    _contextCreated = false;
+  }
+
+  Future<LiteRtLmBenchmarkClient> _ensureClient(GenerationParams params) async {
+    final modelPath = _modelPath;
+    final modelParams = _modelParams;
+    if (modelPath == null || modelParams == null) {
+      throw StateError('No LiteRT-LM model is loaded.');
+    }
+
+    final outputTokens = params.maxTokens <= 0 ? 4096 : params.maxTokens;
+    final backend =
+        _activeBackend ?? _backendNameFor(modelParams.preferredBackend);
+    final existing = _client;
+    if (existing != null &&
+        _activeOutputTokens == outputTokens &&
+        _activeBackend == backend) {
+      return existing;
+    }
+
+    existing?.dispose();
+    final client = LiteRtLmBenchmarkClient();
+    await client.initialize(
+      modelPath: modelPath,
+      backend: backend,
+      maxTokens: modelParams.contextSize,
+      outputTokens: outputTokens,
+      cacheDir: _defaultCacheDir(),
+      speculativeDecoding: false,
+    );
+    _client = client;
+    _activeOutputTokens = outputTokens;
+    _activeBackend = backend;
+    return client;
+  }
+
+  Stream<List<int>> _applyStopSequences(
+    Stream<String> source,
+    List<String> stopSequences, {
+    required void Function() onStop,
+  }) async* {
+    if (stopSequences.isEmpty) {
+      await for (final chunk in source) {
+        if (chunk.isNotEmpty) {
+          yield utf8.encode(chunk);
+        }
+      }
+      return;
+    }
+
+    final keepChars =
+        stopSequences
+            .map((sequence) => sequence.length)
+            .reduce((a, b) => a > b ? a : b) -
+        1;
+    var pending = '';
+    var stopped = false;
+
+    await for (final chunk in source) {
+      pending += chunk;
+      final stopIndex = _firstStopIndex(pending, stopSequences);
+      if (stopIndex >= 0) {
+        final allowed = pending.substring(0, stopIndex);
+        if (allowed.isNotEmpty) {
+          yield utf8.encode(allowed);
+        }
+        stopped = true;
+        onStop();
+        break;
+      }
+
+      final emitLength = pending.length - keepChars;
+      if (emitLength > 0) {
+        final allowed = pending.substring(0, emitLength);
+        pending = pending.substring(emitLength);
+        if (allowed.isNotEmpty) {
+          yield utf8.encode(allowed);
+        }
+      }
+    }
+
+    if (!stopped && pending.isNotEmpty) {
+      yield utf8.encode(pending);
+    }
+  }
+
+  int _firstStopIndex(String text, List<String> stopSequences) {
+    var stopIndex = -1;
+    for (final stop in stopSequences) {
+      final index = text.indexOf(stop);
+      if (index >= 0 && (stopIndex < 0 || index < stopIndex)) {
+        stopIndex = index;
+      }
+    }
+    return stopIndex;
+  }
+
+  String _backendNameFor(GpuBackend backend) {
+    switch (backend) {
+      case GpuBackend.cpu:
+      case GpuBackend.blas:
+        return 'cpu';
+      case GpuBackend.auto:
+      case GpuBackend.vulkan:
+      case GpuBackend.metal:
+      case GpuBackend.cuda:
+      case GpuBackend.opencl:
+      case GpuBackend.hip:
+        return 'gpu';
+    }
+  }
+
+  String? _normalizeBackendOverride(String? backend) {
+    if (backend == null || backend.isEmpty) {
+      return null;
+    }
+    final normalized = backend.toLowerCase();
+    if (normalized == 'cpu' || normalized == 'gpu' || normalized == 'npu') {
+      return normalized;
+    }
+    throw ArgumentError(
+      'LiteRtLmBackend backend must be cpu, gpu, or npu; got $backend',
+    );
+  }
+
+  String? _defaultCacheDir() {
+    if (!Platform.isMacOS && !Platform.isAndroid) {
+      return null;
+    }
+    final dir = Directory('${Directory.systemTemp.path}/llamadart_litert_lm');
+    if (!dir.existsSync()) {
+      dir.createSync(recursive: true);
+    }
+    return dir.path;
+  }
+
+  double _millisecondsFromTps(int tokens, double? tps) {
+    if (tokens <= 0 || tps == null || tps <= 0) {
+      return 0;
+    }
+    return tokens / tps * 1000.0;
+  }
+
+  void _checkModelHandle(int handle) {
+    if (handle != _modelHandle || !_modelLoaded) {
+      throw StateError('Invalid LiteRT-LM model handle: $handle');
+    }
+  }
+
+  void _checkContextHandle(int handle) {
+    if (handle != _contextHandle || !_modelLoaded || !_contextCreated) {
+      throw StateError('Invalid LiteRT-LM context handle: $handle');
+    }
+  }
+}

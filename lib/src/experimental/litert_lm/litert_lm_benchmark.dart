@@ -463,10 +463,13 @@ class LiteRtLmBenchmarkClient {
           liteRtLm:
               '${frameworksDir.path}/LiteRtLm.framework/Versions/A/LiteRtLm',
           companions: [
+            '${frameworksDir.path}/LiteRt.framework/LiteRt',
             '${frameworksDir.path}/GemmaModelConstraintProvider.framework/'
                 'GemmaModelConstraintProvider',
             '${frameworksDir.path}/LiteRtMetalAccelerator.framework/'
                 'LiteRtMetalAccelerator',
+            '${frameworksDir.path}/LiteRtTopKMetalSampler.framework/'
+                'LiteRtTopKMetalSampler',
           ],
           directCallbackSupported: true,
         );
@@ -481,8 +484,10 @@ class LiteRtLmBenchmarkClient {
           ],
           liteRtLm: '${cacheDir.path}/libLiteRtLm.dylib',
           companions: [
+            '${cacheDir.path}/libLiteRt.dylib',
             '${cacheDir.path}/libGemmaModelConstraintProvider.dylib',
             '${cacheDir.path}/libLiteRtMetalAccelerator.dylib',
+            '${cacheDir.path}/libLiteRtTopKMetalSampler.dylib',
           ],
           directCallbackSupported: true,
         );
