@@ -35,6 +35,21 @@ void main() {
     expect(backend, isA<BackendPerformanceDiagnostics>());
   });
 
+  test('reports platform default diagnostics before model load', () async {
+    final backend = LiteRtLmBackend();
+
+    try {
+      final expectedBackend = _expectedAutoLiteRtLmBackend();
+      expect(await backend.getBackendName(), 'LiteRT-LM $expectedBackend');
+      expect(
+        await backend.getResolvedGpuLayers(),
+        expectedBackend == 'cpu' ? 0 : ModelParams.maxGpuLayers,
+      );
+    } finally {
+      await backend.dispose();
+    }
+  });
+
   test('loads local litertlm model and exposes metadata', () async {
     final backend = LiteRtLmBackend();
 
@@ -136,4 +151,11 @@ void main() {
       }
     },
   );
+}
+
+String _expectedAutoLiteRtLmBackend() {
+  if (Platform.isAndroid || Platform.isMacOS) {
+    return 'gpu';
+  }
+  return 'cpu';
 }

@@ -11,8 +11,11 @@ import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
 import 'package:llamadart/src/core/models/config/gpu_backend.dart';
 import 'package:llamadart/src/core/models/config/log_level.dart';
+import 'package:llamadart/src/core/models/download/model_download_manager.dart';
 import 'package:llamadart/src/core/models/inference/generation_params.dart';
 import 'package:llamadart/src/core/models/inference/model_params.dart';
+import 'package:llamadart/src/core/models/model_load_options.dart';
+import 'package:llamadart/src/core/models/model_source.dart';
 import 'package:llamadart/src/core/template/chat_format.dart';
 import 'package:test/test.dart';
 
@@ -119,6 +122,74 @@ void main() {
       await backend.dispose();
     }
   });
+
+  test(
+    'loadModelSource downloads litertlm bundles and routes them to LiteRT-LM',
+    () async {
+      final tempDir = await Directory.systemTemp.createTemp(
+        'llamadart_native_auto_litert_source_',
+      );
+      final modelFile = File('${tempDir.path}/gemma-4-E2B-it.litertlm');
+      await modelFile.writeAsString('fake model');
+
+      final source = ModelSource.parse(
+        'hf://litert-community/gemma-4-E2B-it-litert-lm/gemma-4-E2B-it.litertlm',
+      );
+      final entry = ModelCacheEntry(
+        sourceCanonicalKey: source.metadataSourceKey,
+        cacheKey: source.cacheKey,
+        fileName: source.fileName,
+        filePath: modelFile.path,
+        createdAt: DateTime.utc(2026),
+        updatedAt: DateTime.utc(2026),
+        bytes: await modelFile.length(),
+      );
+      final downloadManager = _FakeModelDownloadManager(entry);
+      final llama = _FakeBackend(handle: 11);
+      final litert = _FakeBackend(handle: 22);
+      final backend = NativeAutoBackend(
+        llamaCppFactory: () => llama,
+        liteRtLmFactory: () => litert,
+      );
+      final engine = LlamaEngine(
+        backend,
+        modelDownloadManager: downloadManager,
+      );
+      final options = ModelLoadOptions(
+        cachePolicy: ModelCachePolicy.refresh,
+        bearerToken: 'secret-token',
+      );
+
+      try {
+        await engine.loadModelSource(
+          source,
+          modelParams: const ModelParams(
+            liteRtLmBackend: LiteRtLmBackendPreference.npu,
+          ),
+          options: options,
+        );
+
+        expect(downloadManager.ensureModelCalls, 1);
+        expect(downloadManager.lastSource?.resolvedUri, source.resolvedUri);
+        expect(downloadManager.lastSource?.fileName, 'gemma-4-E2B-it.litertlm');
+        expect(downloadManager.lastOptions, same(options));
+        expect(llama.loadedPaths, isEmpty);
+        expect(litert.loadedPaths, [modelFile.path]);
+        expect(
+          litert.loadedParams.single.liteRtLmBackend,
+          LiteRtLmBackendPreference.npu,
+        );
+        expect(
+          litert.contextParams.single.liteRtLmBackend,
+          LiteRtLmBackendPreference.npu,
+        );
+        expect(engine.isReady, isTrue);
+      } finally {
+        await engine.dispose();
+        await tempDir.delete(recursive: true);
+      }
+    },
+  );
 
   test('high-level engine loads litertlm with the default backend', () async {
     final tempDir = await Directory.systemTemp.createTemp(
@@ -378,6 +449,9 @@ class _FakeBackend implements LlamaBackend {
   final int handle;
   final List<String> loadedPaths = <String>[];
   final List<ModelParams> loadedParams = <ModelParams>[];
+  final List<ModelParams> contextParams = <ModelParams>[];
+  final List<int> freedModels = <int>[];
+  final List<int> freedContexts = <int>[];
   final List<LlamaLogLevel> logLevels = <LlamaLogLevel>[];
   int disposeCount = 0;
 
@@ -397,6 +471,22 @@ class _FakeBackend implements LlamaBackend {
   }
 
   @override
+  Future<void> modelFree(int modelHandle) async {
+    freedModels.add(modelHandle);
+  }
+
+  @override
+  Future<int> contextCreate(int modelHandle, ModelParams params) async {
+    contextParams.add(params);
+    return handle + 100;
+  }
+
+  @override
+  Future<void> contextFree(int contextHandle) async {
+    freedContexts.add(contextHandle);
+  }
+
+  @override
   Future<String> getBackendName() async => 'fake-$handle';
 
   @override
@@ -411,4 +501,53 @@ class _FakeBackend implements LlamaBackend {
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _FakeModelDownloadManager implements ModelDownloadManager {
+  _FakeModelDownloadManager(this.entry);
+
+  final ModelCacheEntry entry;
+  ModelSource? lastSource;
+  ModelLoadOptions? lastOptions;
+  int ensureModelCalls = 0;
+
+  @override
+  Future<ModelCacheEntry> ensureModel(
+    ModelSource source, {
+    ModelLoadOptions options = ModelLoadOptions.defaults,
+    ModelDownloadProgressCallback? onProgress,
+  }) async {
+    ensureModelCalls += 1;
+    lastSource = source;
+    lastOptions = options;
+    return entry;
+  }
+
+  @override
+  Future<void> clear({String? cacheDirectory}) async {}
+
+  @override
+  Future<ModelCacheEntry?> get(
+    String cacheKey, {
+    String? cacheDirectory,
+  }) async {
+    return cacheKey == entry.cacheKey ? entry : null;
+  }
+
+  @override
+  Future<List<ModelCacheEntry>> list({String? cacheDirectory}) async {
+    return <ModelCacheEntry>[entry];
+  }
+
+  @override
+  Future<List<ModelCacheEntry>> prune({
+    Duration? maxAge,
+    int? maxBytes,
+    String? cacheDirectory,
+  }) async {
+    return const <ModelCacheEntry>[];
+  }
+
+  @override
+  Future<void> remove(String cacheKey, {String? cacheDirectory}) async {}
 }

@@ -234,7 +234,7 @@ class LiteRtLmService {
 
   /// Returns the active backend name.
   String getActiveBackendName() {
-    final backend = _activeBackend ?? 'gpu';
+    final backend = _activeBackend ?? _defaultBackendNameForPlatform();
     return 'LiteRT-LM $backend';
   }
 
@@ -250,7 +250,8 @@ class LiteRtLmService {
 
   /// Returns the resolved GPU layer count analogue for LiteRT-LM.
   int? getResolvedGpuLayers() {
-    return _activeBackend == 'cpu' ? 0 : ModelParams.maxGpuLayers;
+    final backend = _activeBackend ?? _defaultBackendNameForPlatform();
+    return backend == 'cpu' ? 0 : ModelParams.maxGpuLayers;
   }
 
   /// Returns the most recent LiteRT-LM performance metrics.

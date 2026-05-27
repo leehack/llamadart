@@ -183,6 +183,9 @@ and retries are rejected for local paths.
 `hf://owner/repo/model.gguf?revision=refs/pr/12` handles revisions containing
 slashes. For private or gated repositories, pass `ModelLoadOptions(bearerToken:
 hfToken)` or custom headers instead of embedding credentials in the source.
+For LiteRT-LM bundles, use the same `loadModelSource(...)` path with a
+`.litertlm` source and pass `ModelParams.liteRtLmBackend` when you need to pin
+CPU, GPU, or Android NPU execution after the file is cached.
 `llamadart` does not list Hugging Face files or expand sharded GGUF manifests;
 pick the exact `.gguf` file path from the repository, and use separate model and
 `mmproj` sources for multimodal assets.

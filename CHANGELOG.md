@@ -16,6 +16,12 @@
     high-level `LlamaBackend()` router can explicitly select LiteRT-LM CPU,
     GPU, or Android NPU execution. The default remains automatic, choosing GPU
     on Android/macOS and CPU on other current LiteRT-LM targets.
+  * Aligned LiteRT-LM backend diagnostics with the same platform default before
+    a model is loaded, so direct `LiteRtLmBackend` callers see CPU/GPU status
+    that matches load-time routing.
+  * Added coverage and docs for loading cached Hugging Face `.litertlm` bundles
+    through `loadModelSource(...)`, preserving `liteRtLmBackend` routing after
+    the download/cache manager resolves the local file.
 
 ## 0.6.17
 

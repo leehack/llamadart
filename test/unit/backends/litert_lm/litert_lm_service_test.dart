@@ -149,6 +149,21 @@ void main() {
     }
   });
 
+  test('reports platform default backend diagnostics before load', () {
+    final service = LiteRtLmService();
+
+    try {
+      final expectedBackend = _expectedAutoLiteRtLmBackend();
+      expect(service.getActiveBackendName(), 'LiteRT-LM $expectedBackend');
+      expect(
+        service.getResolvedGpuLayers(),
+        expectedBackend == 'cpu' ? 0 : ModelParams.maxGpuLayers,
+      );
+    } finally {
+      service.dispose();
+    }
+  });
+
   test(
     'rejects invalid paths and unsupported llama.cpp-specific features',
     () async {
