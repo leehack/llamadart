@@ -4,7 +4,13 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CHAT_APP_DIR="$ROOT_DIR/example/chat_app"
 LITERT_MODEL="${LITERT_MODEL:-$ROOT_DIR/.dart_tool/litert_lm_models/gemma-4-E2B-it.litertlm}"
-LLAMADART_MODEL="${LLAMADART_MODEL:-/opt/UnitySrc/personal/llama/llamadart/models/gemma-4-E2B-it-Q4_K_S.gguf}"
+LLAMADART_MODEL_NAME="${LLAMADART_MODEL_NAME:-gemma-4-E2B-it-Q4_K_S.gguf}"
+DEFAULT_LLAMADART_MODEL="$ROOT_DIR/models/$LLAMADART_MODEL_NAME"
+SIBLING_LLAMADART_MODEL="$(dirname "$ROOT_DIR")/llamadart/models/$LLAMADART_MODEL_NAME"
+if [[ ! -f "$DEFAULT_LLAMADART_MODEL" && -f "$SIBLING_LLAMADART_MODEL" ]]; then
+  DEFAULT_LLAMADART_MODEL="$SIBLING_LLAMADART_MODEL"
+fi
+LLAMADART_MODEL="${LLAMADART_MODEL:-$DEFAULT_LLAMADART_MODEL}"
 DECODE_TOKENS="${DECODE_TOKENS:-256}"
 PROMPT="${PROMPT:-Write a detailed practical guide for product engineers who want to use on-device language models in mobile and desktop apps. Cover privacy, latency, offline behavior, personalization, battery tradeoffs, model format choices, benchmarking methodology, rollout strategy, and failure modes. Use clear paragraphs and continue until the answer is complete.}"
 

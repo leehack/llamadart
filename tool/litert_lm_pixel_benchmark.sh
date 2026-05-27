@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_DIR="$ROOT_DIR/example/chat_app"
+BENCHMARK_TARGET="$APP_DIR/lib/litert_lm_benchmark_app.dart"
 APP_ID="com.example.llamadart_chat_example"
 MODEL_NAME="${MODEL_NAME:-gemma-4-E2B-it.litertlm}"
 MODEL_URL="${MODEL_URL:-https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/$MODEL_NAME}"
@@ -10,7 +11,12 @@ LOCAL_MODEL="${LOCAL_MODEL:-$ROOT_DIR/.dart_tool/litert_lm_models/$MODEL_NAME}"
 DEVICE_APP_FILES_DIR="${DEVICE_APP_FILES_DIR:-/data/user/0/$APP_ID/files}"
 DEVICE_MODEL="${DEVICE_MODEL:-$DEVICE_APP_FILES_DIR/$MODEL_NAME}"
 LLAMADART_MODEL_NAME="${LLAMADART_MODEL_NAME:-gemma-4-E2B-it-Q4_K_S.gguf}"
-LOCAL_LLAMADART_MODEL="${LOCAL_LLAMADART_MODEL:-/opt/UnitySrc/personal/llama/llamadart/models/$LLAMADART_MODEL_NAME}"
+DEFAULT_LLAMADART_MODEL="$ROOT_DIR/models/$LLAMADART_MODEL_NAME"
+SIBLING_LLAMADART_MODEL="$(dirname "$ROOT_DIR")/llamadart/models/$LLAMADART_MODEL_NAME"
+if [[ ! -f "$DEFAULT_LLAMADART_MODEL" && -f "$SIBLING_LLAMADART_MODEL" ]]; then
+  DEFAULT_LLAMADART_MODEL="$SIBLING_LLAMADART_MODEL"
+fi
+LOCAL_LLAMADART_MODEL="${LOCAL_LLAMADART_MODEL:-$DEFAULT_LLAMADART_MODEL}"
 DEVICE_LLAMADART_MODEL="${DEVICE_LLAMADART_MODEL:-$DEVICE_APP_FILES_DIR/$LLAMADART_MODEL_NAME}"
 BACKEND="${BACKEND:-gpu}"
 TARGETS="${TARGETS:-litert_lm,llamadart}"
@@ -18,8 +24,10 @@ RUNS="${RUNS:-3}"
 WARMUPS="${WARMUPS:-1}"
 OUTPUT_TOKENS="${OUTPUT_TOKENS:-256}"
 MAX_TOKENS="${MAX_TOKENS:-4096}"
+SPECULATIVE="${SPECULATIVE:-false}"
 PROMPT="${PROMPT:-Write a detailed practical guide for product engineers who want to use on-device language models in mobile and desktop apps. Cover privacy, latency, offline behavior, personalization, battery tradeoffs, model format choices, benchmarking methodology, rollout strategy, and failure modes. Use clear paragraphs and continue until the answer is complete.}"
 LOG_TIMEOUT="${LOG_TIMEOUT:-900}"
+FAIL_IF_GGUF_MISSING="${FAIL_IF_GGUF_MISSING:-0}"
 
 ADB="${ADB:-${ANDROID_HOME:-$HOME/Library/Android/sdk}/platform-tools/adb}"
 if [[ ! -x "$ADB" ]]; then
@@ -29,7 +37,7 @@ fi
 
 DEVICE="${DEVICE:-}"
 if [[ -z "$DEVICE" ]]; then
-  DEVICE="$("$ADB" devices -l | sed -n 's/[[:space:]]device .*$//p' | head -1)"
+  DEVICE="$("$ADB" devices -l | awk '$2 == "device" { print $1; exit }')"
 fi
 if [[ -z "$DEVICE" ]]; then
   echo "No Android device found. Set DEVICE=<adb serial> if needed." >&2
@@ -37,10 +45,15 @@ if [[ -z "$DEVICE" ]]; then
   exit 2
 fi
 
+if [[ ! -f "$BENCHMARK_TARGET" ]]; then
+  echo "Benchmark app target not found: $BENCHMARK_TARGET" >&2
+  exit 2
+fi
+
 mkdir -p "$(dirname "$LOCAL_MODEL")"
 if [[ ! -f "$LOCAL_MODEL" ]]; then
   echo "Downloading $MODEL_URL"
-  curl -L --fail --continue-at - "$MODEL_URL" -o "$LOCAL_MODEL"
+  curl -L --fail --retry 5 --retry-all-errors --retry-delay 3 --continue-at - "$MODEL_URL" -o "$LOCAL_MODEL"
 fi
 
 LLAMADART_MODEL_DEFINE=""
@@ -48,6 +61,23 @@ if [[ -f "$LOCAL_LLAMADART_MODEL" ]]; then
   LLAMADART_MODEL_DEFINE="$DEVICE_LLAMADART_MODEL"
 else
   echo "Skipping GGUF benchmark; file not found: $LOCAL_LLAMADART_MODEL" >&2
+  if [[ "$FAIL_IF_GGUF_MISSING" == "1" ]]; then
+    exit 2
+  fi
+fi
+
+echo "Benchmark configuration:"
+echo "  device: $DEVICE"
+echo "  targets: $TARGETS"
+echo "  backend: $BACKEND"
+echo "  speculative: $SPECULATIVE"
+echo "  runs/warmups: $RUNS/$WARMUPS"
+echo "  output/max tokens: $OUTPUT_TOKENS/$MAX_TOKENS"
+echo "  LiteRT-LM model: $LOCAL_MODEL -> $DEVICE_MODEL"
+if [[ -n "$LLAMADART_MODEL_DEFINE" ]]; then
+  echo "  GGUF model: $LOCAL_LLAMADART_MODEL -> $DEVICE_LLAMADART_MODEL"
+else
+  echo "  GGUF model: unavailable"
 fi
 
 push_app_file() {
@@ -100,6 +130,7 @@ build_install_and_push() {
       --dart-define="LITERT_LM_MODEL=$litert_model_define" \
       --dart-define="LLAMADART_MODEL=$llamadart_model_define" \
       --dart-define="LITERT_LM_BACKEND=$BACKEND" \
+      --dart-define="LITERT_LM_SPECULATIVE=$SPECULATIVE" \
       --dart-define="LITERT_LM_RUNS=$RUNS" \
       --dart-define="LITERT_LM_WARMUPS=$WARMUPS" \
       --dart-define="LITERT_LM_OUTPUT_TOKENS=$OUTPUT_TOKENS" \
