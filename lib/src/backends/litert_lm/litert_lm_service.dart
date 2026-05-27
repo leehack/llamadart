@@ -59,14 +59,16 @@ class LiteRtLmService {
         'LiteRtLmBackend expects a .litertlm model bundle; got $path',
       );
     }
+    final resolvedBackend = _resolveBackendName(
+      params,
+      backendOverride: backendOverride,
+    );
 
     _client?.dispose();
     _client = null;
     _modelPath = path;
     _modelParams = params;
-    _activeBackend =
-        _normalizeBackendOverride(backendOverride) ??
-        _backendNameFor(params.preferredBackend);
+    _activeBackend = resolvedBackend;
     _activeOutputTokens = null;
     _lastMetrics = null;
     _cancelRequested = false;
@@ -131,8 +133,7 @@ class LiteRtLmService {
       return;
     }
     final backend =
-        _activeBackend ??
-        _backendNameFor(_modelParams?.preferredBackend ?? GpuBackend.auto);
+        _activeBackend ?? _backendNameFor(_modelParams ?? const ModelParams());
     client.createConversation(
       temperature: params.temp,
       topK: params.topK,
@@ -339,8 +340,7 @@ class LiteRtLmService {
     }
 
     final outputTokens = params.maxTokens <= 0 ? 4096 : params.maxTokens;
-    final backend =
-        _activeBackend ?? _backendNameFor(modelParams.preferredBackend);
+    final backend = _activeBackend ?? _backendNameFor(modelParams);
     final existing = _client;
     if (existing != null &&
         _activeOutputTokens == outputTokens &&
@@ -425,12 +425,35 @@ class LiteRtLmService {
     return stopIndex;
   }
 
-  String _backendNameFor(GpuBackend backend) {
+  String _resolveBackendName(ModelParams params, {String? backendOverride}) {
+    final backend =
+        _normalizeBackendOverride(backendOverride) ?? _backendNameFor(params);
+    final available = getAvailableBackendInfo();
+    if (!available.contains(backend)) {
+      throw ArgumentError(
+        'LiteRtLmBackend backend $backend is not available on '
+        '${Platform.operatingSystem}. Available LiteRT-LM backends: '
+        '${available.join(', ')}.',
+      );
+    }
+    return backend;
+  }
+
+  String _backendNameFor(ModelParams params) {
+    final explicit = params.liteRtLmBackend.nativeName;
+    if (explicit != null) {
+      return explicit;
+    }
+    return _backendNameForGpuPreference(params.preferredBackend);
+  }
+
+  String _backendNameForGpuPreference(GpuBackend backend) {
     switch (backend) {
       case GpuBackend.cpu:
       case GpuBackend.blas:
         return 'cpu';
       case GpuBackend.auto:
+        return _defaultBackendNameForPlatform();
       case GpuBackend.vulkan:
       case GpuBackend.metal:
       case GpuBackend.cuda:
@@ -438,6 +461,13 @@ class LiteRtLmService {
       case GpuBackend.hip:
         return 'gpu';
     }
+  }
+
+  String _defaultBackendNameForPlatform() {
+    if (Platform.isAndroid || Platform.isMacOS) {
+      return 'gpu';
+    }
+    return 'cpu';
   }
 
   String? _normalizeBackendOverride(String? backend) {

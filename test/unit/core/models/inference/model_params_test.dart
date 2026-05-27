@@ -11,6 +11,7 @@ void main() {
     expect(params.contextSize, 4096);
     expect(params.gpuLayers, ModelParams.maxGpuLayers);
     expect(params.preferredBackend, GpuBackend.auto);
+    expect(params.liteRtLmBackend, LiteRtLmBackendPreference.auto);
     expect(params.splitMode, ModelSplitMode.layer);
     expect(params.mainGpu, 0);
     expect(params.chatTemplate, isNull);
@@ -35,6 +36,7 @@ void main() {
     final updated = params.copyWith(
       gpuLayers: 2,
       preferredBackend: GpuBackend.metal,
+      liteRtLmBackend: LiteRtLmBackendPreference.npu,
       splitMode: ModelSplitMode.none,
       mainGpu: 1,
       batchSize: 256,
@@ -45,6 +47,7 @@ void main() {
     expect(updated.contextSize, 1024);
     expect(updated.gpuLayers, 2);
     expect(updated.preferredBackend, GpuBackend.metal);
+    expect(updated.liteRtLmBackend, LiteRtLmBackendPreference.npu);
     expect(updated.splitMode, ModelSplitMode.none);
     expect(updated.mainGpu, 1);
     expect(updated.batchSize, 256);
@@ -102,6 +105,7 @@ void main() {
       contextSize: 3072,
       gpuLayers: 8,
       preferredBackend: GpuBackend.cuda,
+      liteRtLmBackend: LiteRtLmBackendPreference.gpu,
       splitMode: ModelSplitMode.row,
       mainGpu: 2,
       chatTemplate: 'custom-template',
@@ -125,6 +129,7 @@ void main() {
     expect(updated.contextSize, 3072);
     expect(updated.gpuLayers, 12);
     expect(updated.preferredBackend, GpuBackend.cuda);
+    expect(updated.liteRtLmBackend, LiteRtLmBackendPreference.gpu);
     expect(updated.splitMode, ModelSplitMode.row);
     expect(updated.mainGpu, 2);
     expect(updated.chatTemplate, 'custom-template');

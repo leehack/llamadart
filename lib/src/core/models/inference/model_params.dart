@@ -27,6 +27,30 @@ enum ModelSplitMode {
   const ModelSplitMode(this.llamaCppValue);
 }
 
+/// Preferred LiteRT-LM runtime backend for `.litertlm` models.
+///
+/// This is intentionally separate from [GpuBackend], which mirrors llama.cpp
+/// backends. LiteRT-LM exposes a smaller runtime selector: CPU, GPU, or the
+/// Android NPU delegate.
+enum LiteRtLmBackendPreference {
+  /// Let llamadart choose a platform default.
+  auto(null),
+
+  /// Run LiteRT-LM on CPU.
+  cpu('cpu'),
+
+  /// Run LiteRT-LM on the platform GPU delegate when available.
+  gpu('gpu'),
+
+  /// Run LiteRT-LM on Android NPU delegate when available.
+  npu('npu');
+
+  /// Native LiteRT-LM backend name, or null for automatic selection.
+  final String? nativeName;
+
+  const LiteRtLmBackendPreference(this.nativeName);
+}
+
 /// Configuration parameters for loading a Llama model.
 ///
 /// These parameters affect the initial model loading and context allocation.
@@ -55,6 +79,13 @@ class ModelParams {
 
   /// Preferred GPU backend for inference.
   final GpuBackend preferredBackend;
+
+  /// Preferred LiteRT-LM runtime backend for `.litertlm` models.
+  ///
+  /// Defaults to [LiteRtLmBackendPreference.auto]. The llama.cpp
+  /// [preferredBackend] field is still used for `.gguf` models and as an
+  /// automatic LiteRT-LM hint, but NPU is only expressible through this field.
+  final LiteRtLmBackendPreference liteRtLmBackend;
 
   /// Model tensor distribution strategy across GPU devices.
   ///
@@ -149,6 +180,7 @@ class ModelParams {
     this.contextSize = 4096,
     this.gpuLayers = maxGpuLayers,
     this.preferredBackend = GpuBackend.auto,
+    this.liteRtLmBackend = LiteRtLmBackendPreference.auto,
     this.splitMode = ModelSplitMode.layer,
     this.mainGpu = 0,
     this.loras = const [],
@@ -196,6 +228,7 @@ class ModelParams {
     int? contextSize,
     int? gpuLayers,
     GpuBackend? preferredBackend,
+    LiteRtLmBackendPreference? liteRtLmBackend,
     ModelSplitMode? splitMode,
     int? mainGpu,
     List<LoraAdapterConfig>? loras,
@@ -222,6 +255,7 @@ class ModelParams {
       contextSize: contextSize ?? this.contextSize,
       gpuLayers: gpuLayers ?? this.gpuLayers,
       preferredBackend: preferredBackend ?? this.preferredBackend,
+      liteRtLmBackend: liteRtLmBackend ?? this.liteRtLmBackend,
       splitMode: splitMode ?? this.splitMode,
       mainGpu: mainGpu ?? this.mainGpu,
       loras: loras ?? this.loras,

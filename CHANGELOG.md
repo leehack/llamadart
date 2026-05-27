@@ -11,6 +11,11 @@
     default native runtime revision.
   * Updated the Windows runtime fallback scanner to discover custom GitHub and
     local archive cache namespaces when `.dart_tool/lib` is unavailable.
+* **LiteRT-LM backend selection**:
+  * Added `ModelParams.liteRtLmBackend` so `.litertlm` callers using the
+    high-level `LlamaBackend()` router can explicitly select LiteRT-LM CPU,
+    GPU, or Android NPU execution. The default remains automatic, choosing GPU
+    on Android/macOS and CPU on other current LiteRT-LM targets.
 
 ## 0.6.17
 

@@ -88,6 +88,67 @@ void main() {
     }
   });
 
+  test('resolves LiteRT-LM backend preference from model params', () async {
+    final service = LiteRtLmService();
+
+    try {
+      var modelHandle = await service.loadModel(
+        modelFile.path,
+        const ModelParams(),
+      );
+      expect(
+        service.getActiveBackendName(),
+        'LiteRT-LM ${_expectedAutoLiteRtLmBackend()}',
+      );
+      service.freeModel(modelHandle);
+
+      modelHandle = await service.loadModel(
+        modelFile.path,
+        const ModelParams(
+          preferredBackend: GpuBackend.metal,
+          liteRtLmBackend: LiteRtLmBackendPreference.cpu,
+        ),
+      );
+      expect(service.getActiveBackendName(), 'LiteRT-LM cpu');
+      service.freeModel(modelHandle);
+
+      if (service.getAvailableBackendInfo().contains('gpu')) {
+        modelHandle = await service.loadModel(
+          modelFile.path,
+          const ModelParams(liteRtLmBackend: LiteRtLmBackendPreference.gpu),
+        );
+        expect(service.getActiveBackendName(), 'LiteRT-LM gpu');
+        service.freeModel(modelHandle);
+      } else {
+        expect(
+          () => service.loadModel(
+            modelFile.path,
+            const ModelParams(liteRtLmBackend: LiteRtLmBackendPreference.gpu),
+          ),
+          throwsArgumentError,
+        );
+      }
+
+      if (Platform.isAndroid) {
+        modelHandle = await service.loadModel(
+          modelFile.path,
+          const ModelParams(liteRtLmBackend: LiteRtLmBackendPreference.npu),
+        );
+        expect(service.getActiveBackendName(), 'LiteRT-LM npu');
+      } else {
+        expect(
+          () => service.loadModel(
+            modelFile.path,
+            const ModelParams(liteRtLmBackend: LiteRtLmBackendPreference.npu),
+          ),
+          throwsArgumentError,
+        );
+      }
+    } finally {
+      service.dispose();
+    }
+  });
+
   test(
     'rejects invalid paths and unsupported llama.cpp-specific features',
     () async {
@@ -229,6 +290,13 @@ void main() {
       service.dispose();
     }
   });
+}
+
+String _expectedAutoLiteRtLmBackend() {
+  if (Platform.isAndroid || Platform.isMacOS) {
+    return 'gpu';
+  }
+  return 'cpu';
 }
 
 class _FakeLiteRtLmBenchmarkClient extends LiteRtLmBenchmarkClient {

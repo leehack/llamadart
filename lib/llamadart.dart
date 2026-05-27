@@ -45,6 +45,7 @@ export 'src/backends/backend.dart'
         BackendPerfContextData,
         BackendPerformanceDiagnostics,
         BackendEmbeddings,
+        BackendEmbeddingsSupport,
         BackendBatchEmbeddings,
         BackendStatePersistence,
         BackendStatePersistenceSupport,

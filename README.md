@@ -126,6 +126,19 @@ Future<void> main() async {
 }
 ```
 
+For LiteRT-LM bundles, use the same high-level API and pass a `.litertlm`
+path. Android callers can opt into the LiteRT-LM NPU delegate through
+`ModelParams`:
+
+```dart
+await engine.loadModel(
+  'path/to/gemma-4-E2B-it.litertlm',
+  modelParams: const ModelParams(
+    liteRtLmBackend: LiteRtLmBackendPreference.npu,
+  ),
+);
+```
+
 ### 5. Download and cache a remote model file
 
 ```dart
@@ -260,7 +273,9 @@ LiteRT-LM generation works through the same high-level `LlamaEngine` and
 `ChatSession` APIs, but the current native C API does not expose tokenizer,
 detokenizer, LoRA, grammar, or multimodal operations. `ChatSession` uses a
 conservative prompt-size estimate for history pruning when exact tokenization
-is unavailable.
+is unavailable. `LiteRtLmBackendPreference.auto` chooses GPU on Android/macOS
+and CPU on other current LiteRT-LM targets; set `cpu`, `gpu`, or Android-only
+`npu` explicitly when benchmarking or pinning deployment behavior.
 
 <details>
 <summary>Full module matrix (available modules by target)</summary>

@@ -28,6 +28,10 @@ class LiteRtLmBackend
   LlamaLogLevel _currentLogLevel = LlamaLogLevel.warn;
 
   /// Creates a LiteRT-LM backend.
+  ///
+  /// Prefer [ModelParams.liteRtLmBackend] when using the default
+  /// `LlamaBackend()` router. [preferredBackend] remains available for callers
+  /// that instantiate [LiteRtLmBackend] directly.
   LiteRtLmBackend({SendPort? initialSendPort, String? preferredBackend})
     : _preferredBackend = preferredBackend {
     if (initialSendPort != null) {

@@ -95,6 +95,31 @@ void main() {
     },
   );
 
+  test('forwards LiteRT-LM backend preference through the router', () async {
+    final llama = _FakeBackend(handle: 11);
+    final litert = _FakeBackend(handle: 22);
+    final backend = NativeAutoBackend(
+      llamaCppFactory: () => llama,
+      liteRtLmFactory: () => litert,
+    );
+
+    try {
+      await backend.modelLoad(
+        '/models/gemma-4-E2B-it.litertlm',
+        const ModelParams(liteRtLmBackend: LiteRtLmBackendPreference.npu),
+      );
+
+      expect(litert.loadedPaths, ['/models/gemma-4-E2B-it.litertlm']);
+      expect(
+        litert.loadedParams.single.liteRtLmBackend,
+        LiteRtLmBackendPreference.npu,
+      );
+      expect(llama.loadedPaths, isEmpty);
+    } finally {
+      await backend.dispose();
+    }
+  });
+
   test('high-level engine loads litertlm with the default backend', () async {
     final tempDir = await Directory.systemTemp.createTemp(
       'llamadart_native_auto_litert_',
@@ -352,6 +377,7 @@ void main() {
 class _FakeBackend implements LlamaBackend {
   final int handle;
   final List<String> loadedPaths = <String>[];
+  final List<ModelParams> loadedParams = <ModelParams>[];
   final List<LlamaLogLevel> logLevels = <LlamaLogLevel>[];
   int disposeCount = 0;
 
@@ -366,6 +392,7 @@ class _FakeBackend implements LlamaBackend {
   @override
   Future<int> modelLoad(String path, ModelParams params) async {
     loadedPaths.add(path);
+    loadedParams.add(params);
     return handle;
   }
 
