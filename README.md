@@ -253,10 +253,9 @@ persist chat messages separately when using the high-level chat API.
 
 `.gguf` models use the llama.cpp runtime matrix above. Native `.litertlm`
 models use the LiteRT-LM runtime bundles from `litert-lm-native`; the current
-FFI path is validated on Android, macOS, Linux, and Windows. iOS LiteRT-LM
-support is tracked separately because upstream publishes iOS as
-`CLiteRTLM.xcframework`, not the same dylib layout used by the other native
-targets.
+FFI path is validated on Android, iOS, macOS, Linux, and Windows. iOS
+LiteRT-LM bundles are derived from upstream `CLiteRTLM.xcframework` slices and
+packaged as dylib-style native assets for device and simulator builds.
 
 <details>
 <summary>Full module matrix (available modules by target)</summary>

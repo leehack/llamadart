@@ -538,6 +538,17 @@ class LiteRtLmBenchmarkClient {
         directCallbackSupported: true,
       );
     }
+    if (Platform.isIOS && (abi == Abi.iosArm64 || abi == Abi.iosX64)) {
+      return (
+        proxyCandidates: const [
+          'package:llamadart/litert_lm_StreamProxy',
+          'libStreamProxy.dylib',
+        ],
+        liteRtLm: 'libLiteRtLm.dylib',
+        companions: const [],
+        directCallbackSupported: true,
+      );
+    }
     if (Platform.isMacOS && (abi == Abi.macosArm64 || abi == Abi.macosX64)) {
       final frameworksDir = _findMacOsAppFrameworksDir();
       if (frameworksDir != null) {

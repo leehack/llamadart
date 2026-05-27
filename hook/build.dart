@@ -47,6 +47,30 @@ const _litertLmBundles = <String, _LiteRtLmBundleSpec>{
     requiredLibraries: {'libLiteRtLm.so', 'libStreamProxy.so'},
     emitAllLibraries: true,
   ),
+  'ios-arm64': _LiteRtLmBundleSpec(
+    directoryName: 'ios/arm64',
+    archiveName: 'litert-lm-native-runtime-ios-arm64-v0.12.0.tar.gz',
+    sha256: 'a8e99bcd921ee94e64f943f1bb93fa0c54634a6290209cb6598da1da128d4e76',
+    releaseBaseUrl: _litertLmNativeReleaseBaseUrl,
+    sourcePrefix: 'ios/arm64',
+    requiredLibraries: {'libLiteRtLm.dylib', 'libStreamProxy.dylib'},
+  ),
+  'ios-arm64-sim': _LiteRtLmBundleSpec(
+    directoryName: 'ios/arm64-sim',
+    archiveName: 'litert-lm-native-runtime-ios-arm64-sim-v0.12.0.tar.gz',
+    sha256: '7b806b5d53c9ad832b37b7e77b1b9a90b53bbb2d61a972c6fb11ade2ce2ba342',
+    releaseBaseUrl: _litertLmNativeReleaseBaseUrl,
+    sourcePrefix: 'ios/arm64-sim',
+    requiredLibraries: {'libLiteRtLm.dylib', 'libStreamProxy.dylib'},
+  ),
+  'ios-x64-sim': _LiteRtLmBundleSpec(
+    directoryName: 'ios/x64-sim',
+    archiveName: 'litert-lm-native-runtime-ios-x64-sim-v0.12.0.tar.gz',
+    sha256: 'cf646f9740e4cd407f7a422da11a5c0985cb44d8d307d2e8bc62af17f21667b0',
+    releaseBaseUrl: _litertLmNativeReleaseBaseUrl,
+    sourcePrefix: 'ios/x64-sim',
+    requiredLibraries: {'libLiteRtLm.dylib', 'libStreamProxy.dylib'},
+  ),
   'macos-arm64': _LiteRtLmBundleSpec(
     directoryName: 'macos/arm64',
     archiveName: 'litert-lm-native-runtime-macos-arm64-v0.12.0.tar.gz',
@@ -381,6 +405,14 @@ _LiteRtLmBundleSpec? _liteRtLmBundleSpecForCode(CodeConfig code) {
       return switch (code.targetArchitecture) {
         Architecture.arm64 => _litertLmBundles['android-arm64'],
         Architecture.x64 => _litertLmBundles['android-x64'],
+        _ => null,
+      };
+    case OS.iOS:
+      final isSimulator = code.iOS.targetSdk == IOSSdk.iPhoneSimulator;
+      return switch (code.targetArchitecture) {
+        Architecture.arm64 =>
+          _litertLmBundles[isSimulator ? 'ios-arm64-sim' : 'ios-arm64'],
+        Architecture.x64 => _litertLmBundles['ios-x64-sim'],
         _ => null,
       };
     case OS.macOS:
