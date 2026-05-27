@@ -1,13 +1,12 @@
 @TestOn('vm')
-// ignore_for_file: deprecated_member_use_from_same_package
 library;
 
-import 'package:llamadart/src/experimental/litert_lm/litert_lm_benchmark.dart';
+import 'package:llamadart/src/backends/litert_lm/litert_lm_runtime.dart';
 import 'package:test/test.dart';
 
 void main() {
-  test('LiteRtLmBenchmarkMetrics serializes benchmark counters', () {
-    const metrics = LiteRtLmBenchmarkMetrics(
+  test('LiteRtLmRuntimeMetrics serializes runtime counters', () {
+    const metrics = LiteRtLmRuntimeMetrics(
       inputTokens: 12,
       outputTokens: 34,
       timeToFirstTokenSeconds: 0.5,
@@ -28,8 +27,8 @@ void main() {
     });
   });
 
-  test('LiteRtLmBenchmarkResult keeps generated text with metrics', () {
-    const metrics = LiteRtLmBenchmarkMetrics(
+  test('LiteRtLmRuntimeResult keeps generated text with metrics', () {
+    const metrics = LiteRtLmRuntimeMetrics(
       inputTokens: 1,
       outputTokens: 2,
       timeToFirstTokenSeconds: null,
@@ -39,7 +38,7 @@ void main() {
       wallMilliseconds: 3,
     );
 
-    const result = LiteRtLmBenchmarkResult(text: 'hello', metrics: metrics);
+    const result = LiteRtLmRuntimeResult(text: 'hello', metrics: metrics);
 
     expect(result.text, 'hello');
     expect(result.metrics, same(metrics));

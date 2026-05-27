@@ -12,7 +12,7 @@ import '../../core/models/config/log_level.dart';
 import '../../core/models/inference/generation_params.dart';
 import '../../core/models/inference/model_params.dart';
 import '../../core/template/chat_template_engine.dart';
-import '../../experimental/litert_lm/litert_lm_benchmark.dart';
+import 'litert_lm_runtime.dart';
 import '../backend.dart';
 
 /// Worker-owned service for the LiteRT-LM backend.
@@ -32,16 +32,16 @@ class LiteRtLmService {
       '{% if add_generation_prompt %}<|turn>model\n{% endif %}';
 
   /// Creates a LiteRT-LM service.
-  LiteRtLmService({LiteRtLmBenchmarkClient Function()? clientFactory})
-    : _clientFactory = clientFactory ?? LiteRtLmBenchmarkClient.new;
+  LiteRtLmService({LiteRtLmRuntimeClient Function()? clientFactory})
+    : _clientFactory = clientFactory ?? LiteRtLmRuntimeClient.new;
 
-  final LiteRtLmBenchmarkClient Function() _clientFactory;
-  LiteRtLmBenchmarkClient? _client;
+  final LiteRtLmRuntimeClient Function() _clientFactory;
+  LiteRtLmRuntimeClient? _client;
   ModelParams? _modelParams;
   String? _modelPath;
   String? _activeBackend;
   int? _activeOutputTokens;
-  LiteRtLmBenchmarkMetrics? _lastMetrics;
+  LiteRtLmRuntimeMetrics? _lastMetrics;
   LlamaLogLevel _logLevel = LlamaLogLevel.warn;
   bool _modelLoaded = false;
   bool _contextCreated = false;
@@ -359,14 +359,14 @@ class LiteRtLmService {
     _contextCreated = false;
   }
 
-  Future<LiteRtLmBenchmarkClient> _ensureClientForGeneration(
+  Future<LiteRtLmRuntimeClient> _ensureClientForGeneration(
     GenerationParams params,
   ) {
     final outputTokens = params.maxTokens <= 0 ? 4096 : params.maxTokens;
     return _ensureClientForRuntime(outputTokens: outputTokens);
   }
 
-  Future<LiteRtLmBenchmarkClient> _ensureClientForRuntime({
+  Future<LiteRtLmRuntimeClient> _ensureClientForRuntime({
     int? outputTokens,
   }) async {
     final modelPath = _modelPath;

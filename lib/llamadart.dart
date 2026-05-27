@@ -90,8 +90,11 @@ export 'src/core/exceptions.dart';
 export 'src/backends/litert_lm/litert_lm_backend_stub.dart'
     if (dart.library.io) 'src/backends/litert_lm/litert_lm_backend.dart'
     show LiteRtLmBackend;
+export 'src/backends/litert_lm/litert_lm_runtime_stub.dart'
+    if (dart.library.io) 'src/backends/litert_lm/litert_lm_runtime.dart'
+    show LiteRtLmRuntimeClient, LiteRtLmRuntimeMetrics, LiteRtLmRuntimeResult;
 
-// Experimental LiteRT-LM benchmark APIs
+// Deprecated compatibility aliases for the old benchmark API.
 export 'src/experimental/litert_lm/litert_lm_benchmark_stub.dart'
     if (dart.library.io) 'src/experimental/litert_lm/litert_lm_benchmark.dart';
 

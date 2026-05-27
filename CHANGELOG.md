@@ -40,6 +40,9 @@
   * Routed direct LiteRT-LM chat-template application through the Dart template
     engine so backend-level template calls work consistently with the
     high-level `.litertlm` engine path.
+  * Promoted the LiteRT-LM runtime client, result, and metrics types out of the
+    experimental benchmark namespace while keeping deprecated benchmark
+    wrappers for compatibility.
 
 ## 0.6.17
 

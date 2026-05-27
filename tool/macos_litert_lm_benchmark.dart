@@ -13,7 +13,7 @@ Future<void> main(List<String> args) async {
   final backend = args.length > 1 ? args[1] : 'gpu';
   final prompt = args.length > 2 ? args[2] : _defaultPrompt;
 
-  final client = LiteRtLmBenchmarkClient();
+  final client = LiteRtLmRuntimeClient();
   try {
     stderr.writeln('Initializing LiteRT-LM ($backend): $modelPath');
     await client.initialize(

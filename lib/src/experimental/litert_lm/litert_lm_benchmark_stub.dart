@@ -1,92 +1,76 @@
 // coverage:ignore-file
 
-/// Benchmark metrics shape shared with the native LiteRT-LM implementation.
-class LiteRtLmBenchmarkMetrics {
-  /// Number of prompt/input tokens.
-  final int inputTokens;
+import '../../backends/litert_lm/litert_lm_runtime_stub.dart';
 
-  /// Number of generated/output tokens.
-  final int outputTokens;
-
-  /// Time to first token in seconds, when reported by LiteRT-LM.
-  final double? timeToFirstTokenSeconds;
-
-  /// Engine initialization time in seconds, when reported by LiteRT-LM.
-  final double? initSeconds;
-
-  /// Prompt prefill throughput in tokens per second.
-  final double? prefillTokensPerSecond;
-
-  /// Decode throughput in tokens per second.
-  final double? decodeTokensPerSecond;
-
-  /// Wall-clock runtime measured by Dart.
-  final int wallMilliseconds;
-
+/// Deprecated compatibility name for [LiteRtLmRuntimeMetrics].
+@Deprecated('Use LiteRtLmRuntimeMetrics from the LiteRT-LM runtime API.')
+class LiteRtLmBenchmarkMetrics extends LiteRtLmRuntimeMetrics {
   /// Creates benchmark metrics.
   const LiteRtLmBenchmarkMetrics({
-    required this.inputTokens,
-    required this.outputTokens,
-    required this.timeToFirstTokenSeconds,
-    required this.initSeconds,
-    required this.prefillTokensPerSecond,
-    required this.decodeTokensPerSecond,
-    required this.wallMilliseconds,
+    required super.inputTokens,
+    required super.outputTokens,
+    required super.timeToFirstTokenSeconds,
+    required super.initSeconds,
+    required super.prefillTokensPerSecond,
+    required super.decodeTokensPerSecond,
+    required super.wallMilliseconds,
   });
 
-  /// Converts metrics to JSON-compatible values.
-  Map<String, Object?> toJson() => {
-    'inputTokens': inputTokens,
-    'outputTokens': outputTokens,
-    'timeToFirstTokenSeconds': timeToFirstTokenSeconds,
-    'initSeconds': initSeconds,
-    'prefillTokensPerSecond': prefillTokensPerSecond,
-    'decodeTokensPerSecond': decodeTokensPerSecond,
-    'wallMilliseconds': wallMilliseconds,
-  };
+  /// Converts stable runtime metrics to the deprecated compatibility type.
+  factory LiteRtLmBenchmarkMetrics.fromRuntime(LiteRtLmRuntimeMetrics metrics) {
+    return LiteRtLmBenchmarkMetrics(
+      inputTokens: metrics.inputTokens,
+      outputTokens: metrics.outputTokens,
+      timeToFirstTokenSeconds: metrics.timeToFirstTokenSeconds,
+      initSeconds: metrics.initSeconds,
+      prefillTokensPerSecond: metrics.prefillTokensPerSecond,
+      decodeTokensPerSecond: metrics.decodeTokensPerSecond,
+      wallMilliseconds: metrics.wallMilliseconds,
+    );
+  }
 }
 
-/// Generated text and benchmark metrics from a LiteRT-LM run.
-class LiteRtLmBenchmarkResult {
-  /// Generated text.
-  final String text;
-
-  /// Benchmark metrics.
-  final LiteRtLmBenchmarkMetrics metrics;
-
+/// Deprecated compatibility name for [LiteRtLmRuntimeResult].
+@Deprecated('Use LiteRtLmRuntimeResult from the LiteRT-LM runtime API.')
+class LiteRtLmBenchmarkResult extends LiteRtLmRuntimeResult {
   /// Creates a benchmark result.
-  const LiteRtLmBenchmarkResult({required this.text, required this.metrics});
+  const LiteRtLmBenchmarkResult({
+    required super.text,
+    required LiteRtLmBenchmarkMetrics metrics,
+  }) : super(metrics: metrics);
+
+  /// Converts a stable runtime result to the deprecated compatibility type.
+  factory LiteRtLmBenchmarkResult.fromRuntime(LiteRtLmRuntimeResult result) {
+    return LiteRtLmBenchmarkResult(
+      text: result.text,
+      metrics: LiteRtLmBenchmarkMetrics.fromRuntime(result.metrics),
+    );
+  }
+
+  @override
+  LiteRtLmBenchmarkMetrics get metrics =>
+      super.metrics as LiteRtLmBenchmarkMetrics;
 }
 
-/// Web-safe placeholder for the native-only benchmark client.
-class LiteRtLmBenchmarkClient {
+/// Deprecated compatibility name for [LiteRtLmRuntimeClient].
+@Deprecated('Use LiteRtLmRuntimeClient from the LiteRT-LM runtime API.')
+class LiteRtLmBenchmarkClient extends LiteRtLmRuntimeClient {
   /// Creates a placeholder client on platforms without `dart:ffi`.
-  LiteRtLmBenchmarkClient() {
-    throw UnsupportedError('LiteRT-LM benchmark requires a native platform.');
-  }
-
-  /// Initializes the native LiteRT-LM engine.
-  Future<void> initialize({
-    required String modelPath,
-    String backend = 'gpu',
-    int maxTokens = 4096,
-    int outputTokens = 256,
-    int? prefillTokens,
-    String? cacheDir,
-    bool speculativeDecoding = true,
-  }) {
-    throw UnsupportedError('LiteRT-LM benchmark requires a native platform.');
-  }
+  LiteRtLmBenchmarkClient();
 
   /// Runs the benchmark.
+  @override
   Future<LiteRtLmBenchmarkResult> run({
     required String prompt,
     int warmupRuns = 1,
     int measuredRuns = 3,
   }) {
-    throw UnsupportedError('LiteRT-LM benchmark requires a native platform.');
+    throw UnsupportedError('LiteRT-LM runtime requires a native platform.');
   }
 
-  /// Releases native LiteRT-LM resources.
-  void dispose() {}
+  /// Reads benchmark metrics for the active conversation.
+  @override
+  LiteRtLmBenchmarkMetrics readMetrics({required int wallMilliseconds}) {
+    throw UnsupportedError('LiteRT-LM runtime requires a native platform.');
+  }
 }

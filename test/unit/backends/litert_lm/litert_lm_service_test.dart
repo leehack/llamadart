@@ -10,7 +10,7 @@ import 'package:llamadart/src/core/models/config/log_level.dart';
 import 'package:llamadart/src/core/models/config/gpu_backend.dart';
 import 'package:llamadart/src/core/models/inference/generation_params.dart';
 import 'package:llamadart/src/core/models/inference/model_params.dart';
-import 'package:llamadart/src/experimental/litert_lm/litert_lm_benchmark.dart';
+import 'package:llamadart/src/backends/litert_lm/litert_lm_runtime.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -344,7 +344,7 @@ void main() {
   );
 
   test('passes LiteRT-LM tokenization APIs to the client', () async {
-    final fakeClient = _FakeLiteRtLmBenchmarkClient()
+    final fakeClient = _FakeLiteRtLmRuntimeClient()
       ..tokenizeResult = const <int>[2, 10, 11]
       ..detokenizeResult = 'hello';
     final service = LiteRtLmService(clientFactory: () => fakeClient);
@@ -373,7 +373,7 @@ void main() {
   });
 
   test('maps log levels to LiteRT-LM native log levels', () async {
-    final fakeClient = _FakeLiteRtLmBenchmarkClient()
+    final fakeClient = _FakeLiteRtLmRuntimeClient()
       ..tokenizeResult = const <int>[1];
     final service = LiteRtLmService(clientFactory: () => fakeClient);
 
@@ -398,7 +398,7 @@ void main() {
   });
 
   test('passes supported LiteRT-LM generation options to the client', () async {
-    final fakeClient = _FakeLiteRtLmBenchmarkClient();
+    final fakeClient = _FakeLiteRtLmRuntimeClient();
     final service = LiteRtLmService(clientFactory: () => fakeClient);
 
     try {
@@ -510,7 +510,7 @@ void main() {
   });
 
   test('latches cancellation while LiteRT-LM client initializes', () async {
-    final fakeClient = _FakeLiteRtLmBenchmarkClient(blockInitialize: true);
+    final fakeClient = _FakeLiteRtLmRuntimeClient(blockInitialize: true);
     final service = LiteRtLmService(clientFactory: () => fakeClient);
 
     try {
@@ -542,7 +542,7 @@ void main() {
   });
 
   test('suppresses late blocking response after cancellation', () async {
-    final fakeClient = _FakeLiteRtLmBenchmarkClient();
+    final fakeClient = _FakeLiteRtLmRuntimeClient();
     final service = LiteRtLmService(clientFactory: () => fakeClient);
 
     try {
@@ -595,8 +595,8 @@ String _expectedAutoLiteRtLmBackend() {
   return 'cpu';
 }
 
-class _FakeLiteRtLmBenchmarkClient extends LiteRtLmBenchmarkClient {
-  _FakeLiteRtLmBenchmarkClient({bool blockInitialize = false})
+class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
+  _FakeLiteRtLmRuntimeClient({bool blockInitialize = false})
     : _initializeBlocker = blockInitialize ? Completer<void>() : null;
 
   final Completer<void> initializeStarted = Completer<void>();
@@ -698,8 +698,8 @@ class _FakeLiteRtLmBenchmarkClient extends LiteRtLmBenchmarkClient {
   }
 
   @override
-  LiteRtLmBenchmarkMetrics readMetrics({required int wallMilliseconds}) {
-    return LiteRtLmBenchmarkMetrics(
+  LiteRtLmRuntimeMetrics readMetrics({required int wallMilliseconds}) {
+    return LiteRtLmRuntimeMetrics(
       inputTokens: 0,
       outputTokens: 0,
       timeToFirstTokenSeconds: null,
