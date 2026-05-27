@@ -1,9 +1,11 @@
 @TestOn('vm')
 library;
 
+import 'dart:async';
 import 'dart:io';
 import 'dart:isolate';
 
+import 'package:llamadart/src/backends/litert_lm/litert_lm_service.dart';
 import 'package:llamadart/src/backends/litert_lm/worker.dart';
 import 'package:llamadart/llamadart.dart';
 import 'package:test/test.dart';
@@ -224,6 +226,107 @@ void main() {
         await _disposeWorker(worker);
       }
     });
+
+    test(
+      'serializes regular requests while a service call is pending',
+      () async {
+        final service = _BlockingLiteRtLmService();
+        final worker = await _startWorkerInCurrentIsolate(service);
+
+        try {
+          final tokenizeFuture = _sendRequest(
+            worker.sendPort,
+            (sendPort) => LiteRtLmTokenizeRequest(1, 'hello', true, sendPort),
+          );
+          await service.tokenizeStarted.future;
+
+          final backendInfoFuture = _sendRequest(
+            worker.sendPort,
+            LiteRtLmBackendInfoRequest.new,
+          );
+          await expectLater(
+            backendInfoFuture.timeout(const Duration(milliseconds: 25)),
+            throwsA(isA<TimeoutException>()),
+          );
+
+          service.releaseTokenize();
+          expect(await tokenizeFuture, isA<LiteRtLmTokenizeResponse>());
+          expect(await backendInfoFuture, isA<LiteRtLmBackendInfoResponse>());
+        } finally {
+          await _disposeWorker(worker);
+        }
+      },
+    );
+
+    test(
+      'handles cancellation while generation owns the service queue',
+      () async {
+        final service = _BlockingLiteRtLmService();
+        final worker = await _startWorkerInCurrentIsolate(service);
+
+        try {
+          final generationFuture = _collectGenerationResponses(
+            worker.sendPort,
+            (sendPort) => LiteRtLmGenerateRequest(
+              1,
+              'hello',
+              const GenerationParams(),
+              sendPort,
+            ),
+          );
+          await service.generateStarted.future;
+
+          final cancelResponse = await _sendRequest(
+            worker.sendPort,
+            LiteRtLmCancelGenerationRequest.new,
+          ).timeout(const Duration(milliseconds: 100));
+          expect(cancelResponse, isA<LiteRtLmDoneResponse>());
+          expect(service.cancelCount, 1);
+
+          service.releaseGeneration();
+          expect(await generationFuture, contains(isA<LiteRtLmDoneResponse>()));
+        } finally {
+          await _disposeWorker(worker);
+        }
+      },
+    );
+
+    test('cancels accepted generation before it starts when queued', () async {
+      final service = _BlockingLiteRtLmService();
+      final worker = await _startWorkerInCurrentIsolate(service);
+
+      try {
+        final tokenizeFuture = _sendRequest(
+          worker.sendPort,
+          (sendPort) => LiteRtLmTokenizeRequest(1, 'hello', true, sendPort),
+        );
+        await service.tokenizeStarted.future;
+
+        final generationFuture = _collectGenerationResponses(
+          worker.sendPort,
+          (sendPort) => LiteRtLmGenerateRequest(
+            1,
+            'queued',
+            const GenerationParams(),
+            sendPort,
+          ),
+        );
+        await Future<void>.delayed(Duration.zero);
+
+        final cancelResponse = await _sendRequest(
+          worker.sendPort,
+          LiteRtLmCancelGenerationRequest.new,
+        ).timeout(const Duration(milliseconds: 100));
+        expect(cancelResponse, isA<LiteRtLmDoneResponse>());
+
+        service.releaseTokenize();
+        expect(await tokenizeFuture, isA<LiteRtLmTokenizeResponse>());
+        expect(await generationFuture, contains(isA<LiteRtLmDoneResponse>()));
+        expect(service.generateCount, 0);
+      } finally {
+        await _disposeWorker(worker);
+      }
+    });
   });
 }
 
@@ -238,6 +341,21 @@ Future<({Isolate isolate, SendPort sendPort})> _spawnWorker() async {
   return (isolate: isolate, sendPort: sendPort);
 }
 
+Future<({Isolate? isolate, SendPort sendPort})> _startWorkerInCurrentIsolate(
+  LiteRtLmService service,
+) async {
+  final receivePort = ReceivePort();
+  runLiteRtLmWorkerForTesting(
+    receivePort.sendPort,
+    service,
+    exitOnDispose: false,
+  );
+  final sendPort = await receivePort.first as SendPort;
+  receivePort.close();
+  sendPort.send(LiteRtLmWorkerHandshake(LlamaLogLevel.warn));
+  return (isolate: null, sendPort: sendPort);
+}
+
 Future<dynamic> _sendRequest(
   SendPort workerSendPort,
   LiteRtLmWorkerRequest Function(SendPort sendPort) buildRequest,
@@ -249,12 +367,81 @@ Future<dynamic> _sendRequest(
   return response;
 }
 
+Future<List<Object?>> _collectGenerationResponses(
+  SendPort workerSendPort,
+  LiteRtLmWorkerRequest Function(SendPort sendPort) buildRequest,
+) async {
+  final responsePort = ReceivePort();
+  final responses = <Object?>[];
+  workerSendPort.send(buildRequest(responsePort.sendPort));
+  await for (final response in responsePort) {
+    responses.add(response);
+    if (response is LiteRtLmDoneResponse || response is LiteRtLmErrorResponse) {
+      responsePort.close();
+    }
+  }
+  return responses;
+}
+
 Future<void> _disposeWorker(
-  ({Isolate isolate, SendPort sendPort}) worker,
+  ({Isolate? isolate, SendPort sendPort}) worker,
 ) async {
   final responsePort = ReceivePort();
   worker.sendPort.send(LiteRtLmDisposeRequest(responsePort.sendPort));
   await responsePort.first;
   responsePort.close();
-  worker.isolate.kill(priority: Isolate.immediate);
+  worker.isolate?.kill(priority: Isolate.immediate);
+}
+
+class _BlockingLiteRtLmService extends LiteRtLmService {
+  final Completer<void> tokenizeStarted = Completer<void>();
+  final Completer<void> generateStarted = Completer<void>();
+  final Completer<void> _releaseTokenize = Completer<void>();
+  final Completer<void> _releaseGeneration = Completer<void>();
+  int generateCount = 0;
+  int cancelCount = 0;
+
+  void releaseTokenize() {
+    if (!_releaseTokenize.isCompleted) {
+      _releaseTokenize.complete();
+    }
+  }
+
+  void releaseGeneration() {
+    if (!_releaseGeneration.isCompleted) {
+      _releaseGeneration.complete();
+    }
+  }
+
+  @override
+  Future<List<int>> tokenize(
+    int modelHandle,
+    String text,
+    bool addSpecial,
+  ) async {
+    if (!tokenizeStarted.isCompleted) {
+      tokenizeStarted.complete();
+    }
+    await _releaseTokenize.future;
+    return const <int>[1, 2, 3];
+  }
+
+  @override
+  Stream<List<int>> generate(
+    int contextHandle,
+    String prompt,
+    GenerationParams params, {
+    List<LlamaContentPart>? parts,
+  }) async* {
+    generateCount += 1;
+    if (!generateStarted.isCompleted) {
+      generateStarted.complete();
+    }
+    await _releaseGeneration.future;
+  }
+
+  @override
+  void cancelGeneration() {
+    cancelCount += 1;
+  }
 }

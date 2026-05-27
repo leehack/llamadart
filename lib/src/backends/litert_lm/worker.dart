@@ -9,21 +9,37 @@ export 'worker_messages.dart';
 
 /// Entry point for the LiteRT-LM worker isolate.
 void liteRtLmWorkerEntry(SendPort initialSendPort) {
+  runLiteRtLmWorkerForTesting(initialSendPort, LiteRtLmService());
+}
+
+/// Runs the LiteRT-LM worker loop with an injected service.
+///
+/// This is public only for VM unit tests; production callers should use
+/// [liteRtLmWorkerEntry].
+void runLiteRtLmWorkerForTesting(
+  SendPort initialSendPort,
+  LiteRtLmService service, {
+  bool exitOnDispose = true,
+}) {
   final receivePort = ReceivePort();
   initialSendPort.send(receivePort.sendPort);
 
-  final service = LiteRtLmService();
+  Future<void> activeRequest = Future<void>.value();
   Future<void>? activeGeneration;
+  var generationInFlight = false;
+  var generationCancelRequested = false;
+  var shuttingDown = false;
 
   receivePort.listen((message) async {
     if (message is LiteRtLmDisposeRequest) {
+      shuttingDown = true;
       service.cancelGeneration();
       try {
-        await activeGeneration?.timeout(const Duration(seconds: 5));
+        await activeRequest.timeout(const Duration(seconds: 5));
       } on TimeoutException {
         // Teardown continues below; the isolate is exited after the response.
       } catch (_) {
-        // Generation errors are reported to the original generation listener.
+        // Request errors are reported to their original listeners.
       }
       try {
         service.dispose();
@@ -32,7 +48,10 @@ void liteRtLmWorkerEntry(SendPort initialSendPort) {
       }
       message.sendPort.send(LiteRtLmDoneResponse());
       receivePort.close();
-      Isolate.exit();
+      if (exitOnDispose) {
+        Isolate.exit();
+      }
+      return;
     }
 
     if (message is LiteRtLmWorkerHandshake) {
@@ -45,14 +64,16 @@ void liteRtLmWorkerEntry(SendPort initialSendPort) {
     }
 
     if (message is LiteRtLmCancelGenerationRequest) {
+      if (generationInFlight) {
+        generationCancelRequested = true;
+      }
       service.cancelGeneration();
       message.sendPort.send(LiteRtLmDoneResponse());
       return;
     }
 
-    final currentGeneration = activeGeneration;
-    if (currentGeneration != null) {
-      if (message is LiteRtLmGenerateRequest) {
+    if (message is LiteRtLmGenerateRequest) {
+      if (generationInFlight) {
         message.sendPort.send(
           LiteRtLmErrorResponse(
             'LiteRT-LM generation is already in progress.',
@@ -61,179 +82,199 @@ void liteRtLmWorkerEntry(SendPort initialSendPort) {
         );
         return;
       }
-      await currentGeneration;
+      generationInFlight = true;
     }
 
-    try {
-      switch (message) {
-        case LiteRtLmModelLoadRequest():
-          final handle = await service.loadModel(
-            message.modelPath,
-            message.modelParams,
-            backendOverride: message.backendOverride,
+    activeRequest = activeRequest.catchError((_) {}).then((_) async {
+      try {
+        if (shuttingDown) {
+          message.sendPort.send(
+            LiteRtLmErrorResponse(
+              'LiteRT-LM worker is shutting down.',
+              kind: 'state',
+            ),
           );
-          message.sendPort.send(LiteRtLmHandleResponse(handle));
+          return;
+        }
+        switch (message) {
+          case LiteRtLmModelLoadRequest():
+            final handle = await service.loadModel(
+              message.modelPath,
+              message.modelParams,
+              backendOverride: message.backendOverride,
+            );
+            message.sendPort.send(LiteRtLmHandleResponse(handle));
 
-        case LiteRtLmModelFreeRequest():
-          service.freeModel(message.modelHandle);
-          message.sendPort.send(LiteRtLmDoneResponse());
+          case LiteRtLmModelFreeRequest():
+            service.freeModel(message.modelHandle);
+            message.sendPort.send(LiteRtLmDoneResponse());
 
-        case LiteRtLmContextCreateRequest():
-          final handle = service.createContext(
-            message.modelHandle,
-            message.params,
-          );
-          message.sendPort.send(LiteRtLmHandleResponse(handle));
-
-        case LiteRtLmContextFreeRequest():
-          service.freeContext(message.contextHandle);
-          message.sendPort.send(LiteRtLmDoneResponse());
-
-        case LiteRtLmGenerateRequest():
-          final generationCompleter = Completer<void>();
-          activeGeneration = generationCompleter.future;
-          try {
-            final stream = service.generate(
-              message.contextHandle,
-              message.prompt,
+          case LiteRtLmContextCreateRequest():
+            final handle = service.createContext(
+              message.modelHandle,
               message.params,
-              parts: message.parts,
             );
-            final batcher = NativeTokenStreamBatcher(
-              tokenThreshold: message.params.streamBatchTokenThreshold,
-              byteThreshold: message.params.streamBatchByteThreshold,
-            );
+            message.sendPort.send(LiteRtLmHandleResponse(handle));
 
-            await for (final tokens in stream) {
-              final readyChunks = batcher.add(tokens);
-              for (final chunk in readyChunks) {
-                message.sendPort.send(LiteRtLmTokenResponse(chunk));
+          case LiteRtLmContextFreeRequest():
+            service.freeContext(message.contextHandle);
+            message.sendPort.send(LiteRtLmDoneResponse());
+
+          case LiteRtLmGenerateRequest():
+            final generationCompleter = Completer<void>();
+            activeGeneration = generationCompleter.future;
+            try {
+              if (generationCancelRequested) {
+                message.sendPort.send(LiteRtLmDoneResponse());
+                return;
+              }
+              final stream = service.generate(
+                message.contextHandle,
+                message.prompt,
+                message.params,
+                parts: message.parts,
+              );
+              final batcher = NativeTokenStreamBatcher(
+                tokenThreshold: message.params.streamBatchTokenThreshold,
+                byteThreshold: message.params.streamBatchByteThreshold,
+              );
+
+              await for (final tokens in stream) {
+                final readyChunks = batcher.add(tokens);
+                for (final chunk in readyChunks) {
+                  message.sendPort.send(LiteRtLmTokenResponse(chunk));
+                }
+              }
+
+              final finalChunk = batcher.flush();
+              if (finalChunk != null) {
+                message.sendPort.send(LiteRtLmTokenResponse(finalChunk));
+              }
+
+              message.sendPort.send(LiteRtLmDoneResponse());
+            } catch (error) {
+              message.sendPort.send(LiteRtLmErrorResponse.from(error));
+            } finally {
+              generationCompleter.complete();
+              if (identical(activeGeneration, generationCompleter.future)) {
+                activeGeneration = null;
               }
             }
 
-            final finalChunk = batcher.flush();
-            if (finalChunk != null) {
-              message.sendPort.send(LiteRtLmTokenResponse(finalChunk));
-            }
-
-            message.sendPort.send(LiteRtLmDoneResponse());
-          } catch (error) {
-            message.sendPort.send(LiteRtLmErrorResponse.from(error));
-          } finally {
-            generationCompleter.complete();
-            if (identical(activeGeneration, generationCompleter.future)) {
-              activeGeneration = null;
-            }
-          }
-
-        case LiteRtLmTokenizeRequest():
-          final tokens = await service.tokenize(
-            message.modelHandle,
-            message.text,
-            message.addSpecial,
-          );
-          message.sendPort.send(LiteRtLmTokenizeResponse(tokens));
-
-        case LiteRtLmDetokenizeRequest():
-          final text = await service.detokenize(
-            message.modelHandle,
-            message.tokens,
-            message.special,
-          );
-          message.sendPort.send(LiteRtLmDetokenizeResponse(text));
-
-        case LiteRtLmMetadataRequest():
-          final metadata = service.getMetadata(message.modelHandle);
-          message.sendPort.send(LiteRtLmMetadataResponse(metadata));
-
-        case LiteRtLmLoraRequest():
-          service.handleLora(
-            message.contextHandle,
-            message.path,
-            message.scale,
-            message.op,
-          );
-          message.sendPort.send(LiteRtLmDoneResponse());
-
-        case LiteRtLmBackendInfoRequest():
-          final info = service.getActiveBackendName();
-          message.sendPort.send(LiteRtLmBackendInfoResponse(info));
-
-        case LiteRtLmAvailableBackendsRequest():
-          final info = service.getAvailableBackendInfo();
-          message.sendPort.send(LiteRtLmBackendInfoResponse(info.join(', ')));
-
-        case LiteRtLmResolvedGpuLayersRequest():
-          final layers = service.getResolvedGpuLayers();
-          message.sendPort.send(LiteRtLmResolvedGpuLayersResponse(layers));
-
-        case LiteRtLmPerformanceContextRequest():
-          final perf = service.getPerformanceContext(message.contextHandle);
-          if (perf == null) {
-            message.sendPort.send(LiteRtLmDoneResponse());
-          } else {
-            message.sendPort.send(
-              LiteRtLmPerformanceContextResponse(
-                loadMs: perf.loadMs,
-                promptEvalMs: perf.promptEvalMs,
-                evalMs: perf.evalMs,
-                sampleMs: perf.sampleMs,
-                promptEvalTokens: perf.promptEvalTokens,
-                evalTokens: perf.evalTokens,
-                sampleCount: perf.sampleCount,
-                reusedGraphs: perf.reusedGraphs,
-              ),
+          case LiteRtLmTokenizeRequest():
+            final tokens = await service.tokenize(
+              message.modelHandle,
+              message.text,
+              message.addSpecial,
             );
-          }
+            message.sendPort.send(LiteRtLmTokenizeResponse(tokens));
 
-        case LiteRtLmGpuSupportRequest():
-          final supports = service.getGpuSupport();
-          message.sendPort.send(LiteRtLmGpuSupportResponse(supports));
+          case LiteRtLmDetokenizeRequest():
+            final text = await service.detokenize(
+              message.modelHandle,
+              message.tokens,
+              message.special,
+            );
+            message.sendPort.send(LiteRtLmDetokenizeResponse(text));
 
-        case LiteRtLmLogLevelRequest():
-          service.setLogLevel(message.logLevel);
-          message.sendPort.send(LiteRtLmDoneResponse());
+          case LiteRtLmMetadataRequest():
+            final metadata = service.getMetadata(message.modelHandle);
+            message.sendPort.send(LiteRtLmMetadataResponse(metadata));
 
-        case LiteRtLmGetContextSizeRequest():
-          final size = service.getContextSize(message.contextHandle);
-          message.sendPort.send(LiteRtLmGetContextSizeResponse(size));
+          case LiteRtLmLoraRequest():
+            service.handleLora(
+              message.contextHandle,
+              message.path,
+              message.scale,
+              message.op,
+            );
+            message.sendPort.send(LiteRtLmDoneResponse());
 
-        case LiteRtLmMultimodalContextCreateRequest():
-          final handle = service.createMultimodalContext(
-            message.modelHandle,
-            message.mmProjPath,
-          );
-          message.sendPort.send(LiteRtLmHandleResponse(handle));
+          case LiteRtLmBackendInfoRequest():
+            final info = service.getActiveBackendName();
+            message.sendPort.send(LiteRtLmBackendInfoResponse(info));
 
-        case LiteRtLmMultimodalContextFreeRequest():
-          service.freeMultimodalContext(message.mmContextHandle);
-          message.sendPort.send(LiteRtLmDoneResponse());
+          case LiteRtLmAvailableBackendsRequest():
+            final info = service.getAvailableBackendInfo();
+            message.sendPort.send(LiteRtLmBackendInfoResponse(info.join(', ')));
 
-        case LiteRtLmSupportsVisionRequest():
-          final supported = service.supportsVision(message.mmContextHandle);
-          message.sendPort.send(supported);
+          case LiteRtLmResolvedGpuLayersRequest():
+            final layers = service.getResolvedGpuLayers();
+            message.sendPort.send(LiteRtLmResolvedGpuLayersResponse(layers));
 
-        case LiteRtLmSupportsAudioRequest():
-          final supported = service.supportsAudio(message.mmContextHandle);
-          message.sendPort.send(supported);
+          case LiteRtLmPerformanceContextRequest():
+            final perf = service.getPerformanceContext(message.contextHandle);
+            if (perf == null) {
+              message.sendPort.send(LiteRtLmDoneResponse());
+            } else {
+              message.sendPort.send(
+                LiteRtLmPerformanceContextResponse(
+                  loadMs: perf.loadMs,
+                  promptEvalMs: perf.promptEvalMs,
+                  evalMs: perf.evalMs,
+                  sampleMs: perf.sampleMs,
+                  promptEvalTokens: perf.promptEvalTokens,
+                  evalTokens: perf.evalTokens,
+                  sampleCount: perf.sampleCount,
+                  reusedGraphs: perf.reusedGraphs,
+                ),
+              );
+            }
 
-        case LiteRtLmSystemInfoRequest():
-          final info = service.getVramInfo();
-          message.sendPort.send(
-            LiteRtLmSystemInfoResponse(info.total, info.free),
-          );
+          case LiteRtLmGpuSupportRequest():
+            final supports = service.getGpuSupport();
+            message.sendPort.send(LiteRtLmGpuSupportResponse(supports));
 
-        case LiteRtLmChatTemplateRequest():
-          final result = service.applyChatTemplate(
-            message.modelHandle,
-            message.messages,
-            customTemplate: message.customTemplate,
-            addAssistant: message.addAssistant,
-          );
-          message.sendPort.send(LiteRtLmChatTemplateResponse(result));
+          case LiteRtLmLogLevelRequest():
+            service.setLogLevel(message.logLevel);
+            message.sendPort.send(LiteRtLmDoneResponse());
+
+          case LiteRtLmGetContextSizeRequest():
+            final size = service.getContextSize(message.contextHandle);
+            message.sendPort.send(LiteRtLmGetContextSizeResponse(size));
+
+          case LiteRtLmMultimodalContextCreateRequest():
+            final handle = service.createMultimodalContext(
+              message.modelHandle,
+              message.mmProjPath,
+            );
+            message.sendPort.send(LiteRtLmHandleResponse(handle));
+
+          case LiteRtLmMultimodalContextFreeRequest():
+            service.freeMultimodalContext(message.mmContextHandle);
+            message.sendPort.send(LiteRtLmDoneResponse());
+
+          case LiteRtLmSupportsVisionRequest():
+            final supported = service.supportsVision(message.mmContextHandle);
+            message.sendPort.send(supported);
+
+          case LiteRtLmSupportsAudioRequest():
+            final supported = service.supportsAudio(message.mmContextHandle);
+            message.sendPort.send(supported);
+
+          case LiteRtLmSystemInfoRequest():
+            final info = service.getVramInfo();
+            message.sendPort.send(
+              LiteRtLmSystemInfoResponse(info.total, info.free),
+            );
+
+          case LiteRtLmChatTemplateRequest():
+            final result = service.applyChatTemplate(
+              message.modelHandle,
+              message.messages,
+              customTemplate: message.customTemplate,
+              addAssistant: message.addAssistant,
+            );
+            message.sendPort.send(LiteRtLmChatTemplateResponse(result));
+        }
+      } catch (error) {
+        message.sendPort.send(LiteRtLmErrorResponse.from(error));
+      } finally {
+        if (message is LiteRtLmGenerateRequest) {
+          generationCancelRequested = false;
+          generationInFlight = false;
+        }
       }
-    } catch (error) {
-      message.sendPort.send(LiteRtLmErrorResponse.from(error));
-    }
+    });
   });
 }
