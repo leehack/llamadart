@@ -132,8 +132,8 @@ void main() {
     await wrongFormat.writeAsString('fake model');
 
     try {
-      expect(
-        () => backend.modelLoad(wrongFormat.path, const ModelParams()),
+      await expectLater(
+        backend.modelLoad(wrongFormat.path, const ModelParams()),
         throwsArgumentError,
       );
       expect(
