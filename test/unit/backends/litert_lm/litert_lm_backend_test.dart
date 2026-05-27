@@ -304,6 +304,36 @@ void main() {
   });
 
   test(
+    'does not send generation after immediate stream cancellation',
+    () async {
+      final worker = _FakeLiteRtLmWorker(
+        tokenizeResponse: const <int>[],
+        detokenizeResponse: '',
+      );
+      final backend = LiteRtLmBackend(initialSendPort: worker.sendPort);
+
+      try {
+        final subscription = backend
+            .generate(1, 'cancelled', const GenerationParams())
+            .listen((_) {});
+
+        await subscription.cancel();
+        await Future<void>.delayed(Duration.zero);
+        await Future<void>.delayed(Duration.zero);
+
+        expect(worker.requests.whereType<LiteRtLmGenerateRequest>(), isEmpty);
+        expect(
+          worker.requests.whereType<LiteRtLmCancelGenerationRequest>(),
+          hasLength(1),
+        );
+      } finally {
+        await backend.dispose();
+        worker.close();
+      }
+    },
+  );
+
+  test(
     'routes chat template application through the LiteRT-LM worker',
     () async {
       final worker = _FakeLiteRtLmWorker(

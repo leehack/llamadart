@@ -186,6 +186,9 @@ class LiteRtLmBackend
         unawaited(() async {
           try {
             await _ensureIsolate();
+            if (cleanedUp) {
+              return;
+            }
             _sendPort!.send(
               LiteRtLmGenerateRequest(
                 contextHandle,

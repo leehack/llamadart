@@ -53,6 +53,8 @@
     pre-load diagnostics cannot leak extra backend isolates.
   * Reject concurrent LiteRT-LM generations before sending them to the worker so
     the active generation cleanup hook cannot be overwritten by a second stream.
+  * Prevent immediate LiteRT-LM stream cancellation from sending a stale
+    generation request after the caller's response port has already closed.
   * Serialized regular LiteRT-LM worker requests through one service queue while
     keeping cancellation responsive, preventing overlapping async access to the
     worker-owned native runtime state.
