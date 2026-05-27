@@ -296,7 +296,7 @@ class _LiteRtLmBenchmarkAppState extends State<LiteRtLmBenchmarkApp> {
   Widget build(BuildContext context) {
     return MaterialApp(
       home: Scaffold(
-        appBar: AppBar(title: const Text('LiteRT-LM Benchmark POC')),
+        appBar: AppBar(title: const Text('LiteRT-LM Benchmark')),
         body: SafeArea(
           child: Padding(
             padding: const EdgeInsets.all(16),

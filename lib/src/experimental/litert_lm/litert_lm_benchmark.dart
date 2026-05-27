@@ -9,8 +9,8 @@ import 'dart:isolate';
 import 'package:ffi/ffi.dart';
 import 'package:path/path.dart' as path;
 
-const _litertLmPocVersion = '0.12.0';
-const _litertLmPocLibDirEnv = 'LLAMADART_LITERT_LM_LIB_DIR';
+const _litertLmVersion = '0.12.0';
+const _litertLmLibDirEnv = 'LLAMADART_LITERT_LM_LIB_DIR';
 
 typedef _StreamCallbackNative =
     Void Function(
@@ -381,9 +381,7 @@ class LiteRtLmBenchmarkClient {
     }
     final libraries = _librariesForCurrentPlatform();
     if (libraries == null) {
-      throw UnsupportedError(
-        'LiteRT-LM POC does not support ${Abi.current()}.',
-      );
+      throw UnsupportedError('LiteRT-LM does not support ${Abi.current()}.');
     }
 
     for (final companion in libraries.companions) {
@@ -443,7 +441,7 @@ class LiteRtLmBenchmarkClient {
         (abi == Abi.androidArm64 || abi == Abi.androidX64)) {
       return (
         proxyCandidates: const [
-          'package:llamadart/litert_lm_poc_StreamProxy',
+          'package:llamadart/litert_lm_StreamProxy',
           'libStreamProxy.so',
         ],
         liteRtLm: 'libLiteRtLm.so',
@@ -457,7 +455,7 @@ class LiteRtLmBenchmarkClient {
         return (
           proxyCandidates: [
             '${frameworksDir.path}/StreamProxy.framework/Versions/A/StreamProxy',
-            'package:llamadart/litert_lm_poc_StreamProxy',
+            'package:llamadart/litert_lm_StreamProxy',
             'libStreamProxy.dylib',
           ],
           liteRtLm:
@@ -479,7 +477,7 @@ class LiteRtLmBenchmarkClient {
         return (
           proxyCandidates: [
             '${cacheDir.path}/libStreamProxy.dylib',
-            'package:llamadart/litert_lm_poc_StreamProxy',
+            'package:llamadart/litert_lm_StreamProxy',
             'libStreamProxy.dylib',
           ],
           liteRtLm: '${cacheDir.path}/libLiteRtLm.dylib',
@@ -494,7 +492,7 @@ class LiteRtLmBenchmarkClient {
       }
       return (
         proxyCandidates: const [
-          'package:llamadart/litert_lm_poc_StreamProxy',
+          'package:llamadart/litert_lm_StreamProxy',
           'libStreamProxy.dylib',
         ],
         liteRtLm: 'libLiteRtLm.dylib',
@@ -558,7 +556,7 @@ class LiteRtLmBenchmarkClient {
   }
 
   Directory? _findMacOsLiteRtLmCacheDir() {
-    final envPath = Platform.environment[_litertLmPocLibDirEnv];
+    final envPath = Platform.environment[_litertLmLibDirEnv];
     if (envPath != null && envPath.isNotEmpty) {
       final dir = Directory(envPath);
       if (_isMacOsLiteRtLmDir(dir)) {
@@ -570,15 +568,15 @@ class LiteRtLmBenchmarkClient {
       Directory? current = root;
       while (current != null) {
         final candidate = Directory(
-          '${current.path}/.dart_tool/llamadart/litert_lm_poc/'
-          '$_litertLmPocVersion/macos_arm64',
+          '${current.path}/.dart_tool/llamadart/litert_lm/'
+          '$_litertLmVersion/macos_arm64',
         );
         if (_isMacOsLiteRtLmDir(candidate)) {
           return candidate;
         }
         final nativeCandidate = Directory(
-          '${current.path}/.dart_tool/llamadart/litert_lm_poc/'
-          '$_litertLmPocVersion/macos/arm64',
+          '${current.path}/.dart_tool/llamadart/litert_lm/'
+          '$_litertLmVersion/macos/arm64',
         );
         if (_isMacOsLiteRtLmDir(nativeCandidate)) {
           return nativeCandidate;
