@@ -286,7 +286,7 @@ void main() {
           }
 
           final parts = opts.getProperty('parts'.toJS);
-          if (parts.isA<JSArray>() && (parts as JSArray).length > 0) {
+          if (parts.isA<JSArray>() && (parts as JSArray).length != 0) {
             sawMediaParts = true;
 
             for (int i = 0; i < parts.length; i++) {

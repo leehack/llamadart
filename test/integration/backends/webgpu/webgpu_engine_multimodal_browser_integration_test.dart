@@ -74,7 +74,7 @@ void main() {
         'createCompletion'.toJS,
         ((String prompt, JSObject opts) {
           final parts = opts.getProperty('parts'.toJS);
-          if (parts.isA<JSArray>() && (parts as JSArray).length > 0) {
+          if (parts.isA<JSArray>() && (parts as JSArray).length != 0) {
             for (int i = 0; i < parts.length; i++) {
               final rawPart = parts.getProperty(i.toJS);
               if (!rawPart.isA<JSObject>()) {
