@@ -137,6 +137,8 @@ class LiteRtLmRuntimeResult {
   const LiteRtLmRuntimeResult({required this.text, required this.metrics});
 }
 
+// coverage:ignore-start
+// Native FFI boundary: exercised by LiteRT-LM smoke tests with real libraries.
 final class _BlockingSendMessageRequest {
   const _BlockingSendMessageRequest({
     required this.libraryPath,
@@ -1443,3 +1445,5 @@ class _LiteRtLmBindings {
         double Function(Pointer<_LiteRtLmBenchmarkInfo>, int)
       >('litert_lm_benchmark_info_get_decode_tokens_per_sec_at');
 }
+
+// coverage:ignore-end

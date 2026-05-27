@@ -61,6 +61,9 @@
   * Validate the full platform-specific LiteRT-LM companion runtime library set
     during native-asset setup so incomplete native bundles are refreshed or fail
     at build time instead of surfacing missing-library errors at model load.
+  * Matched coverage handling for the LiteRT-LM native FFI runtime boundary to
+    real-library smoke coverage while keeping public runtime value types covered
+    by unit tests.
 
 ## 0.6.17
 
