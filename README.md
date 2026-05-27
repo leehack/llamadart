@@ -274,11 +274,12 @@ LiteRT-LM bundles are derived from upstream `CLiteRTLM.xcframework` slices and
 packaged as dylib-style native assets for device and simulator builds.
 LiteRT-LM generation works through the same high-level `LlamaEngine` and
 `ChatSession` APIs, but the current native C API does not expose tokenizer,
-detokenizer, LoRA, grammar, or multimodal operations. `ChatSession` uses a
-conservative prompt-size estimate for history pruning when exact tokenization
-is unavailable. `LiteRtLmBackendPreference.auto` chooses GPU on Android/macOS
-and CPU on other current LiteRT-LM targets; set `cpu`, `gpu`, or Android-only
-`npu` explicitly when benchmarking or pinning deployment behavior.
+detokenizer, embeddings, state persistence, LoRA, grammar, or multimodal
+operations. `ChatSession` uses a conservative prompt-size estimate for history
+pruning when exact tokenization is unavailable. `LiteRtLmBackendPreference.auto`
+chooses GPU on Android/macOS and CPU on other current LiteRT-LM targets; set
+`cpu`, `gpu`, or Android-only `npu` explicitly when benchmarking or pinning
+deployment behavior.
 `ModelParams.contextSize`, `chatTemplate`, `preferredBackend`,
 `liteRtLmBackend`, and all-or-CPU `gpuLayers` hints are honored for
 `.litertlm` loads; llama.cpp-only tuning knobs such as partial GPU layer

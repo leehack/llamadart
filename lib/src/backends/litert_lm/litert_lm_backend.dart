@@ -17,7 +17,9 @@ class LiteRtLmBackend
         LlamaBackend,
         BackendAvailability,
         BackendRuntimeDiagnostics,
-        BackendPerformanceDiagnostics {
+        BackendPerformanceDiagnostics,
+        BackendEmbeddingsSupport,
+        BackendStatePersistenceSupport {
   Isolate? _isolate;
   SendPort? _sendPort;
   void Function()? _activeGenerationCleanup;
@@ -45,6 +47,12 @@ class LiteRtLmBackend
 
   @override
   bool get supportsUrlLoading => false;
+
+  @override
+  bool get supportsEmbeddings => false;
+
+  @override
+  bool get supportsStatePersistence => false;
 
   @override
   Future<int> modelLoad(String path, ModelParams params) async {

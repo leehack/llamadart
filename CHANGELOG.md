@@ -30,6 +30,8 @@
     grammar/lazy grammar triggers, preserved tokens, or custom grammar roots.
   * Matched LiteRT-LM bundle validation to native router behavior so uppercase
     `.LITERTLM` local paths are accepted after format routing selects LiteRT-LM.
+  * Added explicit false capability reporting for direct `LiteRtLmBackend`
+    embeddings and state-persistence support.
 
 ## 0.6.17
 

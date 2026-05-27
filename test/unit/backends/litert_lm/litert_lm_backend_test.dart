@@ -33,6 +33,13 @@ void main() {
     expect(backend, isA<BackendAvailability>());
     expect(backend, isA<BackendRuntimeDiagnostics>());
     expect(backend, isA<BackendPerformanceDiagnostics>());
+    expect(backend, isA<BackendEmbeddingsSupport>());
+    expect(backend, isA<BackendStatePersistenceSupport>());
+    expect((backend as BackendEmbeddingsSupport).supportsEmbeddings, isFalse);
+    expect(
+      (backend as BackendStatePersistenceSupport).supportsStatePersistence,
+      isFalse,
+    );
   });
 
   test('reports platform default diagnostics before model load', () async {
