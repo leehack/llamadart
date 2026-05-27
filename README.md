@@ -251,6 +251,13 @@ persist chat messages separately when using the high-level chat API.
 | ios-arm64 / ios simulators | cpu, METAL | no |
 | web | webgpu, cpu (bridge router) | n/a |
 
+`.gguf` models use the llama.cpp runtime matrix above. Native `.litertlm`
+models use the LiteRT-LM runtime bundles from `litert-lm-native`; the current
+FFI path is validated on Android, macOS, Linux, and Windows. iOS LiteRT-LM
+support is tracked separately because upstream publishes iOS as
+`CLiteRTLM.xcframework`, not the same dylib layout used by the other native
+targets.
+
 <details>
 <summary>Full module matrix (available modules by target)</summary>
 
@@ -509,6 +516,8 @@ llamadart has decoupled runtime ownership:
 
 - Native source/build/release:
   [`leehack/llamadart-native`](https://github.com/leehack/llamadart-native)
+- LiteRT-LM native runtime release:
+  [`leehack/litert-lm-native`](https://github.com/leehack/litert-lm-native)
 - Web bridge source/build:
   [`leehack/llama-web-bridge`](https://github.com/leehack/llama-web-bridge)
 - Web bridge runtime assets:
