@@ -228,9 +228,6 @@ class LiteRtLmService {
   /// Handles LiteRT-LM LoRA operations.
   void handleLora(int contextHandle, String? path, double? scale, String op) {
     _checkContextHandle(contextHandle);
-    if (op == 'clear') {
-      return;
-    }
     throw UnsupportedError('LiteRtLmBackend does not support LoRA adapters.');
   }
 

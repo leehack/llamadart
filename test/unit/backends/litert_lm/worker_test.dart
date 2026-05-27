@@ -132,7 +132,14 @@ void main() {
           (sendPort) =>
               LiteRtLmLoraRequest(contextHandle, 'clear', sendPort: sendPort),
         );
-        expect(clearLora, isA<LiteRtLmDoneResponse>());
+        expect(
+          clearLora,
+          isA<LiteRtLmErrorResponse>().having(
+            (response) => response.kind,
+            'kind',
+            'unsupported',
+          ),
+        );
 
         final generate = await _sendRequest(
           worker.sendPort,

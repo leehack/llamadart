@@ -16,7 +16,7 @@ Future<void> main(List<String> args) async {
       ? GpuBackend.cpu
       : GpuBackend.metal;
 
-  final engine = LlamaEngine(LiteRtLmBackend());
+  final engine = LlamaEngine(LlamaBackend());
   try {
     final loadSw = Stopwatch()..start();
     await engine.loadModel(

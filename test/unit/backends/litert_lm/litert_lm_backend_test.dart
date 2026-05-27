@@ -94,6 +94,18 @@ void main() {
       );
 
       expect(() => backend.tokenize(handle, 'hello'), throwsUnsupportedError);
+      expect(
+        () => backend.setLoraAdapter(contextHandle, 'adapter.bin', 1.0),
+        throwsUnsupportedError,
+      );
+      expect(
+        () => backend.removeLoraAdapter(contextHandle, 'adapter.bin'),
+        throwsUnsupportedError,
+      );
+      expect(
+        () => backend.clearLoraAdapters(contextHandle),
+        throwsUnsupportedError,
+      );
       await expectLater(
         backend.generate(
           contextHandle,

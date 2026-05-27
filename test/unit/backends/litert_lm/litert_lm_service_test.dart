@@ -125,6 +125,19 @@ void main() {
           () => service.detokenize(modelHandle, const <int>[1], false),
           throwsUnsupportedError,
         );
+        expect(
+          () => service.handleLora(contextHandle, 'adapter.bin', 1.0, 'set'),
+          throwsUnsupportedError,
+        );
+        expect(
+          () =>
+              service.handleLora(contextHandle, 'adapter.bin', null, 'remove'),
+          throwsUnsupportedError,
+        );
+        expect(
+          () => service.handleLora(contextHandle, null, null, 'clear'),
+          throwsUnsupportedError,
+        );
         await expectLater(
           service.generate(
             contextHandle,

@@ -147,6 +147,38 @@ void main() {
       }
     },
   );
+
+  test(
+    'high-level engine rejects LoRA operations for litertlm bundles',
+    () async {
+      final tempDir = await Directory.systemTemp.createTemp(
+        'llamadart_native_auto_lora_litert_',
+      );
+      final modelFile = File('${tempDir.path}/gemma-4-E2B-it.litertlm');
+      await modelFile.writeAsString('fake model');
+      final engine = LlamaEngine(LlamaBackend());
+
+      try {
+        await engine.loadModel(
+          modelFile.path,
+          modelParams: const ModelParams(preferredBackend: GpuBackend.cpu),
+        );
+
+        await expectLater(
+          engine.setLora('adapter.bin'),
+          throwsUnsupportedError,
+        );
+        await expectLater(
+          engine.removeLora('adapter.bin'),
+          throwsUnsupportedError,
+        );
+        await expectLater(engine.clearLoras(), throwsUnsupportedError);
+      } finally {
+        await engine.dispose();
+        await tempDir.delete(recursive: true);
+      }
+    },
+  );
 }
 
 class _FakeBackend implements LlamaBackend {
