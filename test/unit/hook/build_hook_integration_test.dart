@@ -16,6 +16,7 @@ import '../../../hook/build.dart' as build_hook;
 void main() {
   final nativeTag = _readHookNativeTag();
   final litertVersion = _readHookLiteRtLmVersion();
+  final litertSha256 = _readLiteRtBundleSha256('windows-x64');
   final cacheRelativeDir =
       '.dart_tool/llamadart/native_bundles/$nativeTag/windows-x64';
   final bundleRelativePath = '$cacheRelativeDir/extracted';
@@ -63,10 +64,11 @@ void main() {
       'cublas64_12.dll',
       'cublaslt64_12.dll',
     ]);
-    await _writeBundleLibraries(litertBundleDir, const [
-      'LiteRtLm.dll',
-      'StreamProxy.dll',
-    ]);
+    await _writeBundleLibraries(
+      litertBundleDir,
+      _windowsLiteRtLibraries,
+      sha256: litertSha256,
+    );
 
     if (archiveFile.existsSync()) {
       await archiveFile.delete();
@@ -552,10 +554,23 @@ String _readHookLiteRtLmVersion() {
   return match.group(1)!;
 }
 
+String _readLiteRtBundleSha256(String bundleKey) {
+  final source = File('hook/build.dart').readAsStringSync();
+  final escapedKey = RegExp.escape(bundleKey);
+  final match = RegExp(
+    "'$escapedKey':\\s*_LiteRtLmBundleSpec\\([\\s\\S]*?sha256:\\s*'([^']+)'",
+  ).firstMatch(source);
+  if (match == null) {
+    throw StateError('Could not locate LiteRT-LM checksum for $bundleKey');
+  }
+  return match.group(1)!;
+}
+
 Future<void> _writeBundleLibraries(
   Directory bundleDir,
-  List<String> fileNames,
-) async {
+  List<String> fileNames, {
+  String? sha256,
+}) async {
   if (bundleDir.existsSync()) {
     await bundleDir.delete(recursive: true);
   }
@@ -563,7 +578,21 @@ Future<void> _writeBundleLibraries(
   for (final name in fileNames) {
     await File(path.join(bundleDir.path, name)).writeAsString('fake-$name');
   }
+  if (sha256 != null) {
+    await File(
+      path.join(bundleDir.path, '.llamadart_litert_lm.sha256'),
+    ).writeAsString('$sha256\n');
+  }
 }
+
+const List<String> _windowsLiteRtLibraries = [
+  'LiteRtLm.dll',
+  'StreamProxy.dll',
+  'libGemmaModelConstraintProvider.dll',
+  'libLiteRt.dll',
+  'libLiteRtTopKWebGpuSampler.dll',
+  'libLiteRtWebGpuAccelerator.dll',
+];
 
 Future<void> _writeBundleArchive({
   required File archiveFile,

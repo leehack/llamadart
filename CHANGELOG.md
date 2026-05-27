@@ -58,6 +58,9 @@
   * Serialized regular LiteRT-LM worker requests through one service queue while
     keeping cancellation responsive, preventing overlapping async access to the
     worker-owned native runtime state.
+  * Validate the full platform-specific LiteRT-LM companion runtime library set
+    during native-asset setup so incomplete native bundles are refreshed or fail
+    at build time instead of surfacing missing-library errors at model load.
 
 ## 0.6.17
 

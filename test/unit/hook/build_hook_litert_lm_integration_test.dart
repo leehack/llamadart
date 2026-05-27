@@ -13,15 +13,15 @@ import '../../../hook/build.dart' as build_hook;
 void main() {
   final nativeTag = _readHookConst('_llamaCppTag');
   final litertVersion = _readHookConst('_litertLmVersion');
-  final linuxX64LitertSha256 = _readLiteRtBundleSha256('linux-x64');
+  final linuxArm64LitertSha256 = _readLiteRtBundleSha256('linux-arm64');
   final iosArm64LitertSha256 = _readLiteRtBundleSha256('ios-arm64');
   final iosArm64SimLitertSha256 = _readLiteRtBundleSha256('ios-arm64-sim');
   final iosX64SimLitertSha256 = _readLiteRtBundleSha256('ios-x64-sim');
   final nativeBundleDir = Directory(
-    '.dart_tool/llamadart/native_bundles/$nativeTag/linux-x64/extracted',
+    '.dart_tool/llamadart/native_bundles/$nativeTag/linux-arm64/extracted',
   );
   final litertBundleDir = Directory(
-    '.dart_tool/llamadart/litert_lm/$litertVersion/linux/x64',
+    '.dart_tool/llamadart/litert_lm/$litertVersion/linux/arm64',
   );
   final iosDeviceNativeBundleDir = Directory(
     '.dart_tool/llamadart/native_bundles/$nativeTag/ios-arm64/extracted',
@@ -84,10 +84,11 @@ void main() {
       'libggml-base.so',
       'libggml-cpu.so',
     ]);
-    await _writeBundleLibraries(litertBundleDir, const [
-      'libLiteRtLm.so',
-      'libStreamProxy.so',
-    ], sha256: linuxX64LitertSha256);
+    await _writeBundleLibraries(
+      litertBundleDir,
+      _linuxLiteRtLibraries,
+      sha256: linuxArm64LitertSha256,
+    );
     for (final directory in [
       iosDeviceNativeBundleDir,
       iosArm64SimNativeBundleDir,
@@ -122,26 +123,26 @@ void main() {
     }
   });
 
-  test('LiteRT-LM bundle specs require StreamProxy companions', () {
+  test('LiteRT-LM bundle specs require platform runtime companions', () {
     final source = File('hook/build.dart').readAsStringSync();
-    final specs = RegExp(
-      r'requiredLibraries:\s*\{([^}]+)\}',
-    ).allMatches(source).map((match) => match.group(1)!).toList();
-    final liteRtSpecs = specs
-        .where((spec) => spec.contains('LiteRtLm') || spec.contains('LiteRt'))
-        .toList();
 
-    expect(liteRtSpecs, hasLength(10));
-    for (final spec in liteRtSpecs) {
-      expect(spec, contains('StreamProxy'));
-    }
+    _expectSpecLibraries(source, 'android-arm64', _androidLiteRtLibraries);
+    _expectSpecLibraries(source, 'android-x64', _androidLiteRtLibraries);
+    _expectSpecLibraries(source, 'ios-arm64', _iosLiteRtLibraries);
+    _expectSpecLibraries(source, 'ios-arm64-sim', _iosLiteRtLibraries);
+    _expectSpecLibraries(source, 'ios-x64-sim', _iosLiteRtLibraries);
+    _expectSpecLibraries(source, 'macos-arm64', _macosArm64LiteRtLibraries);
+    _expectSpecLibraries(source, 'macos-x64', _macosX64LiteRtLibraries);
+    _expectSpecLibraries(source, 'linux-arm64', _linuxLiteRtLibraries);
+    _expectSpecLibraries(source, 'linux-x64', _linuxLiteRtLibraries);
+    _expectSpecLibraries(source, 'windows-x64', _windowsLiteRtLibraries);
   });
 
-  test('build hook emits Linux LiteRT-LM runtime and StreamProxy', () async {
+  test('build hook emits Linux arm64 LiteRT-LM runtime companions', () async {
     await testCodeBuildHook(
       mainMethod: build_hook.main,
       targetOS: OS.linux,
-      targetArchitecture: Architecture.x64,
+      targetArchitecture: Architecture.arm64,
       check: (input, output) {
         final codeAssets = output.assets.encodedAssets
             .where((asset) => asset.isCodeAsset)
@@ -154,13 +155,12 @@ void main() {
             .toSet();
 
         expect(codeAssetIds, contains('package:llamadart/llamadart'));
-        expect(codeAssetIds, contains('package:llamadart/litert_lm_LiteRtLm'));
-        expect(
-          codeAssetIds,
-          contains('package:llamadart/litert_lm_StreamProxy'),
-        );
-        expect(emittedNames, contains('libLiteRtLm.so'));
-        expect(emittedNames, contains('libStreamProxy.so'));
+        for (final library in _linuxLiteRtLibraries) {
+          expect(emittedNames, contains(library));
+        }
+        for (final assetName in _linuxLiteRtAssetNames) {
+          expect(codeAssetIds, contains('package:llamadart/$assetName'));
+        }
       },
     );
   });
@@ -231,6 +231,85 @@ String _readHookConst(String name) {
   }
   return match.group(1)!;
 }
+
+void _expectSpecLibraries(
+  String source,
+  String bundleKey,
+  List<String> expectedLibraries,
+) {
+  final escapedKey = RegExp.escape(bundleKey);
+  final match = RegExp(
+    "'$escapedKey':\\s*_LiteRtLmBundleSpec\\([\\s\\S]*?"
+    'requiredLibraries:\\s*\\{([\\s\\S]*?)\\},',
+  ).firstMatch(source);
+  if (match == null) {
+    throw StateError('Could not locate LiteRT-LM libraries for $bundleKey');
+  }
+  final spec = match.group(1)!;
+  for (final library in expectedLibraries) {
+    expect(spec, contains("'$library'"), reason: bundleKey);
+  }
+}
+
+const List<String> _androidLiteRtLibraries = [
+  'libGemmaModelConstraintProvider.so',
+  'libLiteRt.so',
+  'libLiteRtGpuAccelerator.so',
+  'libLiteRtLm.so',
+  'libLiteRtOpenClAccelerator.so',
+  'libLiteRtTopKOpenClSampler.so',
+  'libLiteRtTopKWebGpuSampler.so',
+  'libLiteRtWebGpuAccelerator.so',
+  'libStreamProxy.so',
+];
+
+const List<String> _iosLiteRtLibraries = [
+  'libLiteRtLm.dylib',
+  'libStreamProxy.dylib',
+];
+
+const List<String> _macosArm64LiteRtLibraries = [
+  'libGemmaModelConstraintProvider.dylib',
+  'libLiteRt.dylib',
+  'libLiteRtLm.dylib',
+  'libLiteRtMetalAccelerator.dylib',
+  'libLiteRtTopKMetalSampler.dylib',
+  'libLiteRtTopKWebGpuSampler.dylib',
+  'libLiteRtWebGpuAccelerator.dylib',
+  'libStreamProxy.dylib',
+];
+
+const List<String> _macosX64LiteRtLibraries = [
+  'libLiteRtLm.dylib',
+  'libStreamProxy.dylib',
+];
+
+const List<String> _linuxLiteRtLibraries = [
+  'libGemmaModelConstraintProvider.so',
+  'libLiteRt.so',
+  'libLiteRtLm.so',
+  'libLiteRtTopKWebGpuSampler.so',
+  'libLiteRtWebGpuAccelerator.so',
+  'libStreamProxy.so',
+];
+
+const List<String> _linuxLiteRtAssetNames = [
+  'litert_lm_GemmaModelConstraintProvider',
+  'litert_lm_LiteRt',
+  'litert_lm_LiteRtLm',
+  'litert_lm_LiteRtTopKWebGpuSampler',
+  'litert_lm_LiteRtWebGpuAccelerator',
+  'litert_lm_StreamProxy',
+];
+
+const List<String> _windowsLiteRtLibraries = [
+  'LiteRtLm.dll',
+  'StreamProxy.dll',
+  'libGemmaModelConstraintProvider.dll',
+  'libLiteRt.dll',
+  'libLiteRtTopKWebGpuSampler.dll',
+  'libLiteRtWebGpuAccelerator.dll',
+];
 
 String _readLiteRtBundleSha256(String bundleKey) {
   final source = File('hook/build.dart').readAsStringSync();

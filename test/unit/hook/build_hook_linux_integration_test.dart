@@ -11,19 +11,33 @@ import '../../../hook/build.dart' as build_hook;
 
 void main() {
   final nativeTag = _readHookNativeTag();
+  final litertVersion = _readHookLiteRtLmVersion();
+  final litertSha256 = _readLiteRtBundleSha256('linux-x64');
   final cacheRelativeDir =
       '.dart_tool/llamadart/native_bundles/$nativeTag/linux-x64';
   final bundleRelativePath = '$cacheRelativeDir/extracted';
   final bundleDir = Directory(bundleRelativePath);
   final backupDir = Directory('$bundleRelativePath.__hook_test_backup');
+  final litertBundleDir = Directory(
+    '.dart_tool/llamadart/litert_lm/$litertVersion/linux/x64',
+  );
+  final litertBackupDir = Directory(
+    '${litertBundleDir.path}.__hook_test_backup',
+  );
 
   setUpAll(() async {
     if (backupDir.existsSync()) {
       await backupDir.delete(recursive: true);
     }
+    if (litertBackupDir.existsSync()) {
+      await litertBackupDir.delete(recursive: true);
+    }
 
     if (bundleDir.existsSync()) {
       await bundleDir.rename(backupDir.path);
+    }
+    if (litertBundleDir.existsSync()) {
+      await litertBundleDir.rename(litertBackupDir.path);
     }
   });
 
@@ -39,6 +53,11 @@ void main() {
       'libggml-cpu.so',
       'libggml-vulkan.so',
     ]);
+    await _writeBundleLibraries(
+      litertBundleDir,
+      _linuxLiteRtLibraries,
+      sha256: litertSha256,
+    );
   });
 
   tearDownAll(() async {
@@ -47,6 +66,12 @@ void main() {
     }
     if (backupDir.existsSync()) {
       await backupDir.rename(bundleDir.path);
+    }
+    if (litertBundleDir.existsSync()) {
+      await litertBundleDir.delete(recursive: true);
+    }
+    if (litertBackupDir.existsSync()) {
+      await litertBackupDir.rename(litertBundleDir.path);
     }
   });
 
@@ -92,15 +117,53 @@ String _readHookNativeTag() {
   return match.group(1)!;
 }
 
+String _readHookLiteRtLmVersion() {
+  final source = File('hook/build.dart').readAsStringSync();
+  final match = RegExp(
+    r"const _litertLmVersion = '([^']+)';",
+  ).firstMatch(source);
+  if (match == null) {
+    throw StateError('Could not locate _litertLmVersion in hook/build.dart');
+  }
+  return match.group(1)!;
+}
+
+String _readLiteRtBundleSha256(String bundleKey) {
+  final source = File('hook/build.dart').readAsStringSync();
+  final escapedKey = RegExp.escape(bundleKey);
+  final match = RegExp(
+    "'$escapedKey':\\s*_LiteRtLmBundleSpec\\([\\s\\S]*?sha256:\\s*'([^']+)'",
+  ).firstMatch(source);
+  if (match == null) {
+    throw StateError('Could not locate LiteRT-LM checksum for $bundleKey');
+  }
+  return match.group(1)!;
+}
+
+const List<String> _linuxLiteRtLibraries = [
+  'libGemmaModelConstraintProvider.so',
+  'libLiteRt.so',
+  'libLiteRtLm.so',
+  'libLiteRtTopKWebGpuSampler.so',
+  'libLiteRtWebGpuAccelerator.so',
+  'libStreamProxy.so',
+];
+
 Future<void> _writeBundleLibraries(
   Directory bundleDir,
-  List<String> fileNames,
-) async {
+  List<String> fileNames, {
+  String? sha256,
+}) async {
   if (bundleDir.existsSync()) {
     await bundleDir.delete(recursive: true);
   }
   await bundleDir.create(recursive: true);
   for (final name in fileNames) {
     await File(path.join(bundleDir.path, name)).writeAsString('fake-$name');
+  }
+  if (sha256 != null) {
+    await File(
+      path.join(bundleDir.path, '.llamadart_litert_lm.sha256'),
+    ).writeAsString('$sha256\n');
   }
 }
