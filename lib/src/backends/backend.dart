@@ -193,6 +193,18 @@ abstract class BackendEmbeddings {
   });
 }
 
+/// Optional backend capability for reporting whether [BackendEmbeddings] is
+/// actually available for the active runtime.
+///
+/// This is useful for delegating/router backends where the wrapper may expose
+/// embedding methods but support depends on the selected concrete backend.
+/// Backends that do not implement this interface fall back to the structural
+/// `is BackendEmbeddings` check used by older versions.
+abstract class BackendEmbeddingsSupport {
+  /// Whether embedding calls are expected to be supported by this backend.
+  bool get supportsEmbeddings;
+}
+
 /// Optional backend capability for batching embedding requests.
 abstract class BackendBatchEmbeddings extends BackendEmbeddings {
   /// Generates embedding vectors for all [texts] in order.

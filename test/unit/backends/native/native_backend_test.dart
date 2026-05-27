@@ -6,10 +6,12 @@ import 'dart:io';
 import 'package:llamadart/src/backends/backend.dart';
 import 'package:llamadart/src/backends/native/native_backend.dart';
 import 'package:llamadart/src/core/engine/engine.dart';
+import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
 import 'package:llamadart/src/core/models/config/gpu_backend.dart';
 import 'package:llamadart/src/core/models/config/log_level.dart';
+import 'package:llamadart/src/core/models/inference/generation_params.dart';
 import 'package:llamadart/src/core/models/inference/model_params.dart';
 import 'package:llamadart/src/core/template/chat_format.dart';
 import 'package:test/test.dart';
@@ -166,13 +168,179 @@ void main() {
 
         await expectLater(
           engine.setLora('adapter.bin'),
-          throwsUnsupportedError,
+          throwsA(isA<LlamaUnsupportedException>()),
         );
         await expectLater(
           engine.removeLora('adapter.bin'),
-          throwsUnsupportedError,
+          throwsA(isA<LlamaUnsupportedException>()),
         );
-        await expectLater(engine.clearLoras(), throwsUnsupportedError);
+        await expectLater(
+          engine.clearLoras(),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
+      } finally {
+        await engine.dispose();
+        await tempDir.delete(recursive: true);
+      }
+    },
+  );
+
+  test(
+    'high-level engine rejects tokenization APIs for litertlm bundles',
+    () async {
+      final tempDir = await Directory.systemTemp.createTemp(
+        'llamadart_native_auto_token_litert_',
+      );
+      final modelFile = File('${tempDir.path}/gemma-4-E2B-it.litertlm');
+      await modelFile.writeAsString('fake model');
+      final engine = LlamaEngine(LlamaBackend());
+
+      try {
+        await engine.loadModel(
+          modelFile.path,
+          modelParams: const ModelParams(preferredBackend: GpuBackend.cpu),
+        );
+
+        await expectLater(
+          engine.tokenize('hello'),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
+        await expectLater(
+          engine.detokenize([1, 2, 3]),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
+        await expectLater(
+          engine.getTokenCount('hello'),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
+      } finally {
+        await engine.dispose();
+        await tempDir.delete(recursive: true);
+      }
+    },
+  );
+
+  test(
+    'high-level engine reports embeddings unsupported for litertlm bundles',
+    () async {
+      final tempDir = await Directory.systemTemp.createTemp(
+        'llamadart_native_auto_embed_litert_',
+      );
+      final modelFile = File('${tempDir.path}/gemma-4-E2B-it.litertlm');
+      await modelFile.writeAsString('fake model');
+      final backend = LlamaBackend();
+      final engine = LlamaEngine(backend);
+
+      try {
+        await engine.loadModel(
+          modelFile.path,
+          modelParams: const ModelParams(preferredBackend: GpuBackend.cpu),
+        );
+
+        expect(backend, isA<BackendEmbeddingsSupport>());
+        expect(
+          (backend as BackendEmbeddingsSupport).supportsEmbeddings,
+          isFalse,
+        );
+        await expectLater(
+          engine.embed('hello'),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
+        await expectLater(
+          engine.embedBatch(['hello']),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
+      } finally {
+        await engine.dispose();
+        await tempDir.delete(recursive: true);
+      }
+    },
+  );
+
+  test(
+    'high-level engine reports state persistence unsupported for litertlm bundles',
+    () async {
+      final tempDir = await Directory.systemTemp.createTemp(
+        'llamadart_native_auto_state_litert_',
+      );
+      final modelFile = File('${tempDir.path}/gemma-4-E2B-it.litertlm');
+      await modelFile.writeAsString('fake model');
+      final engine = LlamaEngine(LlamaBackend());
+
+      try {
+        await engine.loadModel(
+          modelFile.path,
+          modelParams: const ModelParams(preferredBackend: GpuBackend.cpu),
+        );
+
+        expect(engine.supportsStatePersistence, isFalse);
+        await expectLater(
+          engine.stateSaveFile('${tempDir.path}/state.bin', tokens: const []),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
+        await expectLater(
+          engine.stateLoadFile('${tempDir.path}/state.bin', tokenCapacity: 16),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
+      } finally {
+        await engine.dispose();
+        await tempDir.delete(recursive: true);
+      }
+    },
+  );
+
+  test(
+    'high-level engine rejects multimodal projectors for litertlm bundles',
+    () async {
+      final tempDir = await Directory.systemTemp.createTemp(
+        'llamadart_native_auto_mm_litert_',
+      );
+      final modelFile = File('${tempDir.path}/gemma-4-E2B-it.litertlm');
+      await modelFile.writeAsString('fake model');
+      final engine = LlamaEngine(LlamaBackend());
+
+      try {
+        await engine.loadModel(
+          modelFile.path,
+          modelParams: const ModelParams(preferredBackend: GpuBackend.cpu),
+        );
+
+        await expectLater(
+          engine.loadMultimodalProjector('mmproj.bin'),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
+      } finally {
+        await engine.dispose();
+        await tempDir.delete(recursive: true);
+      }
+    },
+  );
+
+  test(
+    'high-level engine rejects unsupported litertlm generation options',
+    () async {
+      final tempDir = await Directory.systemTemp.createTemp(
+        'llamadart_native_auto_generate_litert_',
+      );
+      final modelFile = File('${tempDir.path}/gemma-4-E2B-it.litertlm');
+      await modelFile.writeAsString('fake model');
+      final engine = LlamaEngine(LlamaBackend());
+
+      try {
+        await engine.loadModel(
+          modelFile.path,
+          modelParams: const ModelParams(preferredBackend: GpuBackend.cpu),
+        );
+
+        await expectLater(
+          engine
+              .generate(
+                'hello',
+                params: const GenerationParams(grammar: 'root ::= "x"'),
+              )
+              .join(),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
       } finally {
         await engine.dispose();
         await tempDir.delete(recursive: true);

@@ -10,6 +10,10 @@ void main() {
     expect(BackendEmbeddings, isNotNull);
   });
 
+  test('BackendEmbeddingsSupport capability interface is available', () {
+    expect(BackendEmbeddingsSupport, isNotNull);
+  });
+
   test('BackendBatchEmbeddings capability interface is available', () {
     expect(BackendBatchEmbeddings, isNotNull);
   });

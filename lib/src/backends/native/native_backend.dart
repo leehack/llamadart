@@ -20,6 +20,7 @@ class NativeAutoBackend
         BackendRuntimeDiagnostics,
         BackendPerformanceDiagnostics,
         BackendEmbeddings,
+        BackendEmbeddingsSupport,
         BackendBatchEmbeddings,
         BackendStatePersistence,
         BackendStatePersistenceSupport {
@@ -237,6 +238,15 @@ class NativeAutoBackend
       customTemplate: customTemplate,
       addAssistant: addAssistant,
     );
+  }
+
+  @override
+  bool get supportsEmbeddings {
+    final delegate = _delegate;
+    if (delegate is BackendEmbeddingsSupport) {
+      return (delegate as BackendEmbeddingsSupport).supportsEmbeddings;
+    }
+    return delegate is BackendEmbeddings;
   }
 
   @override
