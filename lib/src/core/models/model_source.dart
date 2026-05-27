@@ -14,7 +14,7 @@ enum ModelSourceKind {
   huggingFace,
 }
 
-/// Describes where a GGUF model can be loaded from.
+/// Describes where a model file can be loaded from.
 ///
 /// [ModelSource] is a value object only; creating one does not perform network
 /// or filesystem access.
@@ -100,8 +100,8 @@ class ModelSource {
 
   /// Parses [value] as a local path, HTTP(S) URL, or `hf://` reference.
   ///
-  /// Hugging Face references use `hf://owner/repo/path/to/model.gguf`. A simple
-  /// branch or tag can be written as `hf://owner/repo@revision/model.gguf`; use
+  /// Hugging Face references use `hf://owner/repo/path/to/model-file`. A simple
+  /// branch or tag can be written as `hf://owner/repo@revision/model-file`; use
   /// `?revision=refs/pr/12` when the revision itself contains `/`.
   factory ModelSource.parse(String value) {
     if (value.isEmpty) {
@@ -211,7 +211,8 @@ class ModelSource {
   /// this source's canonical cache identity.
   ///
   /// This is intended for resolvers that translate a stable user-facing source
-  /// such as `hf://owner/repo/model.gguf` to a concrete HTTP(S) URL. Cache
+  /// such as `hf://owner/repo/model.gguf` or
+  /// `hf://owner/repo/model.litertlm` to a concrete HTTP(S) URL. Cache
   /// operations should still use the original [canonicalKey], [cacheKey], and
   /// [cacheDirectoryName] so entries remain discoverable by the caller's source.
   ModelSource withResolvedUri(Uri resolvedUri) {

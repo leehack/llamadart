@@ -89,6 +89,27 @@ void main() {
       },
     );
 
+    test('downloads and caches LiteRT-LM bundle files', () async {
+      server.payload = utf8.encode('litert-lm-bundle-bytes');
+      final manager = DefaultModelDownloadManager(
+        defaultCacheDirectory: tempDir.path,
+      );
+      final source = ModelSource.url(
+        server.modelUri,
+        fileName: 'gemma-4-E2B-it.litertlm',
+      );
+
+      final entry = await manager.ensureModel(source);
+      final cached = await manager.get(source.cacheKey);
+
+      expect(server.requestCount, 1);
+      expect(entry.fileName, 'gemma-4-E2B-it.litertlm');
+      expect(entry.filePath, endsWith('gemma-4-E2B-it.litertlm'));
+      expect(File(entry.filePath).readAsStringSync(), 'litert-lm-bundle-bytes');
+      expect(cached?.filePath, entry.filePath);
+      expect(cached?.sourceCanonicalKey, source.metadataSourceKey);
+    });
+
     test('serializes concurrent downloads for the same cache key', () async {
       server.payload = utf8.encode('serialized-model');
       server.responseDelay = const Duration(milliseconds: 100);

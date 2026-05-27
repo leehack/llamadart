@@ -8,7 +8,7 @@ import '../../core/models/inference/model_params.dart';
 import '../backend.dart';
 import 'worker.dart';
 
-/// Experimental LiteRT-LM backend for `.litertlm` models.
+/// Native LiteRT-LM backend for `.litertlm` models.
 ///
 /// LiteRT-LM native state is owned by a worker isolate so callbacks, native
 /// handles, and generation work do not live on the caller isolate.

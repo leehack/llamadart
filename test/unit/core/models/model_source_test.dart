@@ -152,6 +152,29 @@ void main() {
       );
     });
 
+    test('hf URI supports LiteRT-LM bundle file names', () {
+      final source = ModelSource.parse(
+        'hf://litert-community/gemma-4-E2B-it-litert-lm/gemma-4-E2B-it.litertlm',
+      );
+
+      expect(source.kind, ModelSourceKind.huggingFace);
+      expect(source.repoId, 'litert-community/gemma-4-E2B-it-litert-lm');
+      expect(source.revision, 'main');
+      expect(source.filePath, 'gemma-4-E2B-it.litertlm');
+      expect(source.fileName, 'gemma-4-E2B-it.litertlm');
+      expect(
+        source.resolvedUri,
+        Uri.parse(
+          'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm?download=true',
+        ),
+      );
+      expect(
+        source.canonicalKey,
+        'hf://litert-community/gemma-4-E2B-it-litert-lm@main/gemma-4-E2B-it.litertlm',
+      );
+      expect(source.cacheDirectoryName, startsWith('gemma-4-E2B-it-'));
+    });
+
     test('hf URI resolves explicit revision and nested file path', () {
       final source = ModelSource.parse(
         'hf://owner/repo@rev/sub/dir/model.gguf',

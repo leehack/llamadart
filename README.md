@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-purple.svg)](https://opensource.org/licenses/MIT)
 [![GitHub](https://img.shields.io/github/stars/leehack/llamadart?style=social)](https://github.com/leehack/llamadart)
 
-**llamadart** is a high-performance Dart and Flutter plugin for local LLMs. It runs GGUF models through [llama.cpp](https://github.com/ggml-org/llama.cpp) across native platforms and web (CPU/WebGPU bridge path), with native LiteRT-LM bundle support in progress for `.litertlm` models.
+**llamadart** is a high-performance Dart and Flutter plugin for local LLMs. It runs GGUF models through [llama.cpp](https://github.com/ggml-org/llama.cpp) across native platforms and web (CPU/WebGPU bridge path), and routes native `.litertlm` bundles through LiteRT-LM.
 
 ## 📚 Documentation
 
@@ -16,7 +16,7 @@
 
 ## ✨ Features
 
-- 🚀 **High Performance**: Powered by `llama.cpp` kernels.
+- 🚀 **High Performance**: Powered by `llama.cpp` kernels and LiteRT-LM native runtimes.
 - 🧩 **Model Format Routing**: Native `LlamaBackend()` loads GGUF models with
   llama.cpp and `.litertlm` bundles with LiteRT-LM.
 - 🛠️ **Zero Configuration**: Uses Pure Native Assets; no manual CMake or platform project edits.
@@ -29,7 +29,7 @@
 - 🧭 **Embeddings API**: Generate vectors with `embed(...)` and
   `embedBatch(...)`.
 - 📦 **Structured Model Sources**: Describe local, HTTP(S), and Hugging Face
-  GGUF sources with deterministic cache identities for download/cache workflows.
+  model sources with deterministic cache identities for download/cache workflows.
 - 💾 **KV-cache State Persistence**: Save and restore llama.cpp KV-cache state
   with `stateSaveFile(...)` / `stateLoadFile(...)` for fast raw-prompt resumes.
 - 🖼️ **Multimodal Support**: Vision/audio model runtime support.
@@ -126,7 +126,7 @@ Future<void> main() async {
 }
 ```
 
-### 5. Download and cache a remote GGUF
+### 5. Download and cache a remote model file
 
 ```dart
 import 'package:llamadart/llamadart.dart';
@@ -163,7 +163,8 @@ cancellation and optional `sha256` verification apply, while remote/download-onl
 options such as cache policies, `cacheDirectory`, authenticated headers, resume,
 and retries are rejected for local paths.
 
-`hf://` references point at one Hugging Face file:
+`hf://` references point at one Hugging Face file, such as a `.gguf` model or
+`.litertlm` LiteRT-LM bundle:
 `hf://owner/repo/path/to/model.gguf` uses `main`,
 `hf://owner/repo@v1.0.0/model.gguf` pins a simple tag/branch, and
 `hf://owner/repo/model.gguf?revision=refs/pr/12` handles revisions containing

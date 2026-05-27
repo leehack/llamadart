@@ -50,7 +50,7 @@ class _ThinkingSplitResult {
 /// Example (OpenAI-style stateless usage):
 /// ```dart
 /// final engine = LlamaEngine(LlamaBackend());
-/// await engine.loadModel('path/to/model.gguf');
+/// await engine.loadModel('path/to/model.gguf'); // or model.litertlm on native
 ///
 /// // Build messages array (you manage history)
 /// final messages = [
