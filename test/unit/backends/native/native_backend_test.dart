@@ -213,6 +213,28 @@ void main() {
     }
   });
 
+  test('high-level engine routes uppercase litertlm extensions', () async {
+    final tempDir = await Directory.systemTemp.createTemp(
+      'llamadart_native_auto_litert_upper_',
+    );
+    final modelFile = File('${tempDir.path}/MODEL.LITERTLM');
+    await modelFile.writeAsString('fake model');
+    final engine = LlamaEngine(LlamaBackend());
+
+    try {
+      await engine.loadModel(
+        modelFile.path,
+        modelParams: const ModelParams(preferredBackend: GpuBackend.cpu),
+      );
+
+      expect(await engine.getBackendName(), 'LiteRT-LM cpu');
+      expect((await engine.getMetadata())['general.name'], 'MODEL.LITERTLM');
+    } finally {
+      await engine.dispose();
+      await tempDir.delete(recursive: true);
+    }
+  });
+
   test(
     'high-level engine applies Gemma 4 template for litertlm bundles',
     () async {

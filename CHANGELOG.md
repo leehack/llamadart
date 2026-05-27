@@ -28,6 +28,8 @@
   * Rejected unsupported llama.cpp-only `GenerationParams` for `.litertlm`
     generation instead of silently ignoring Min-P, repeat-penalty overrides,
     grammar/lazy grammar triggers, preserved tokens, or custom grammar roots.
+  * Matched LiteRT-LM bundle validation to native router behavior so uppercase
+    `.LITERTLM` local paths are accepted after format routing selects LiteRT-LM.
 
 ## 0.6.17
 

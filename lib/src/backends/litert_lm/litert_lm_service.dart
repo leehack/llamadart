@@ -56,7 +56,7 @@ class LiteRtLmService {
     if (!await file.exists()) {
       throw ArgumentError('LiteRT-LM model does not exist: $path');
     }
-    if (!path.endsWith('.litertlm')) {
+    if (!path.toLowerCase().endsWith('.litertlm')) {
       throw ArgumentError(
         'LiteRtLmBackend expects a .litertlm model bundle; got $path',
       );

@@ -61,6 +61,19 @@ void main() {
 
         service.freeContext(contextHandle);
         service.freeModel(modelHandle);
+
+        final uppercaseModelFile = File('${tempDir.path}/MODEL.LITERTLM');
+        await uppercaseModelFile.writeAsString('fake model');
+        final uppercaseModelHandle = await service.loadModel(
+          uppercaseModelFile.path,
+          const ModelParams(preferredBackend: GpuBackend.cpu),
+        );
+        expect(uppercaseModelHandle, 1);
+        expect(
+          service.getMetadata(uppercaseModelHandle),
+          containsPair('general.name', 'MODEL.LITERTLM'),
+        );
+        service.freeModel(uppercaseModelHandle);
       } finally {
         service.dispose();
       }
