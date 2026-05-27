@@ -18,6 +18,13 @@ import '../backend.dart';
 class LiteRtLmService {
   static const int _modelHandle = 1;
   static const int _contextHandle = 1;
+  static const String _gemma4ChatTemplate =
+      '{% for message in messages %}'
+      '<|turn>{% if message["role"] == "assistant" %}model\n'
+      '{% else %}{{ message["role"] }}\n{% endif %}'
+      '{{ message["content"] }}<turn|>\n'
+      '{% endfor %}'
+      '{% if add_generation_prompt %}<|turn>model\n{% endif %}';
 
   LiteRtLmBenchmarkClient? _client;
   ModelParams? _modelParams;
@@ -166,12 +173,33 @@ class LiteRtLmService {
   /// Returns the metadata known from the LiteRT-LM bundle path.
   Map<String, String> getMetadata(int modelHandle) {
     _checkModelHandle(modelHandle);
-    return <String, String>{
+    final modelPath = _modelPath;
+    final modelName = modelPath == null
+        ? null
+        : File(modelPath).uri.pathSegments.last;
+    final metadata = <String, String>{
       'general.architecture': 'litert-lm',
       'general.file_type': 'litertlm',
-      if (_modelPath != null)
-        'general.name': File(_modelPath!).uri.pathSegments.last,
     };
+    if (modelName != null) {
+      metadata['general.name'] = modelName;
+    }
+    if (_modelParams case final params?) {
+      metadata['llm.context_length'] = params.contextSize.toString();
+    }
+    if (modelName != null && _isGemma4ModelName(modelName)) {
+      metadata.addAll(const <String, String>{
+        'tokenizer.chat_template': _gemma4ChatTemplate,
+        'tokenizer.ggml.bos_token': '<bos>',
+        'tokenizer.ggml.eos_token': '<turn|>',
+      });
+    }
+    return metadata;
+  }
+
+  bool _isGemma4ModelName(String modelName) {
+    final normalized = modelName.toLowerCase().replaceAll('_', '-');
+    return normalized.contains('gemma-4') || normalized.contains('gemma4');
   }
 
   /// Handles LiteRT-LM LoRA operations.

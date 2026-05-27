@@ -64,6 +64,28 @@ void main() {
     },
   );
 
+  test('exposes Gemma 4 chat template metadata for Gemma 4 bundles', () async {
+    final service = LiteRtLmService();
+    final gemmaModelFile = File('${tempDir.path}/gemma-4-E2B-it.litertlm');
+    await gemmaModelFile.writeAsString('fake model');
+
+    try {
+      final modelHandle = await service.loadModel(
+        gemmaModelFile.path,
+        const ModelParams(contextSize: 2048),
+      );
+      final metadata = service.getMetadata(modelHandle);
+
+      expect(metadata, containsPair('general.name', 'gemma-4-E2B-it.litertlm'));
+      expect(metadata, containsPair('llm.context_length', '2048'));
+      expect(metadata['tokenizer.chat_template'], contains('<|turn>'));
+      expect(metadata['tokenizer.chat_template'], contains('<turn|>'));
+      expect(metadata, containsPair('tokenizer.ggml.eos_token', '<turn|>'));
+    } finally {
+      service.dispose();
+    }
+  });
+
   test(
     'rejects invalid paths and unsupported llama.cpp-specific features',
     () async {

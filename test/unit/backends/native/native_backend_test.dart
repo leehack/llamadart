@@ -6,9 +6,12 @@ import 'dart:io';
 import 'package:llamadart/src/backends/backend.dart';
 import 'package:llamadart/src/backends/native/native_backend.dart';
 import 'package:llamadart/src/core/engine/engine.dart';
+import 'package:llamadart/src/core/models/chat/chat_message.dart';
+import 'package:llamadart/src/core/models/chat/chat_role.dart';
 import 'package:llamadart/src/core/models/config/gpu_backend.dart';
 import 'package:llamadart/src/core/models/config/log_level.dart';
 import 'package:llamadart/src/core/models/inference/model_params.dart';
+import 'package:llamadart/src/core/template/chat_format.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -111,6 +114,39 @@ void main() {
       await tempDir.delete(recursive: true);
     }
   });
+
+  test(
+    'high-level engine applies Gemma 4 template for litertlm bundles',
+    () async {
+      final tempDir = await Directory.systemTemp.createTemp(
+        'llamadart_native_auto_gemma4_litert_',
+      );
+      final modelFile = File('${tempDir.path}/gemma-4-E2B-it.litertlm');
+      await modelFile.writeAsString('fake model');
+      final engine = LlamaEngine(LlamaBackend());
+
+      try {
+        await engine.loadModel(
+          modelFile.path,
+          modelParams: const ModelParams(preferredBackend: GpuBackend.cpu),
+        );
+
+        final metadata = await engine.getMetadata();
+        expect(metadata['tokenizer.chat_template'], contains('<|turn>'));
+
+        final template = await engine.chatTemplate(const [
+          LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
+        ], includeTokenCount: false);
+
+        expect(template.format, ChatFormat.gemma4.index);
+        expect(template.prompt, contains('<|turn>user\nhi<turn|>'));
+        expect(template.prompt, endsWith('<|turn>model\n'));
+      } finally {
+        await engine.dispose();
+        await tempDir.delete(recursive: true);
+      }
+    },
+  );
 }
 
 class _FakeBackend implements LlamaBackend {
