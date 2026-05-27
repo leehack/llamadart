@@ -36,6 +36,9 @@ typedef _ProxyCreateDart =
 typedef _ProxyFreeStringNative = Void Function(Pointer<Char> value);
 typedef _ProxyFreeStringDart = void Function(Pointer<Char> value);
 
+typedef _ProxyDeleteNative = Void Function(Pointer<Void> callbackData);
+typedef _ProxyDeleteDart = void Function(Pointer<Void> callbackData);
+
 typedef _LoadGlobalNative = Pointer<Void> Function(Pointer<Utf8> path);
 typedef _LoadGlobalDart = Pointer<Void> Function(Pointer<Utf8> path);
 
@@ -128,6 +131,7 @@ class LiteRtLmBenchmarkClient {
   DynamicLibrary? _proxyLibrary;
   _ProxyCreateDart? _proxyCreate;
   _ProxyFreeStringDart? _proxyFreeString;
+  _ProxyDeleteDart? _proxyDelete;
   String? _liteRtLmLibraryPath;
   Pointer<_LiteRtLmEngine>? _engine;
   Pointer<_LiteRtLmConversation>? _conversation;
@@ -306,10 +310,25 @@ class LiteRtLmBenchmarkClient {
   Stream<String> _generateStreaming(String prompt) {
     final bindings = _requireBindings();
     final conversation = _requireConversation();
-    final controller = StreamController<String>();
+    final controller = StreamController<String>(onCancel: cancel);
     final messagePtr = _messageJson(prompt).toNativeUtf8();
+    Pointer<Void> callbackData = nullptr;
+    var cleanedUp = false;
 
     late final NativeCallable<_StreamCallbackNative> callable;
+    void cleanup() {
+      if (cleanedUp) {
+        return;
+      }
+      cleanedUp = true;
+      if (callbackData != nullptr) {
+        _proxyDelete?.call(callbackData);
+        callbackData = nullptr;
+      }
+      callable.close();
+      calloc.free(messagePtr);
+    }
+
     callable = NativeCallable<_StreamCallbackNative>.listener((
       Pointer<Void> data,
       Pointer<Char> chunk,
@@ -325,8 +344,7 @@ class LiteRtLmBenchmarkClient {
           controller.addError(StateError(error));
           unawaited(controller.close());
         }
-        callable.close();
-        calloc.free(messagePtr);
+        cleanup();
         return;
       }
 
@@ -341,26 +359,36 @@ class LiteRtLmBenchmarkClient {
 
       if (isFinal) {
         unawaited(controller.close());
-        callable.close();
-        calloc.free(messagePtr);
+        cleanup();
       }
     });
 
     var callbackFn = callable.nativeFunction;
-    Pointer<Void> callbackData = nullptr;
     final proxyCreate = _proxyCreate;
     if (proxyCreate != null) {
       final outProxyFn =
           calloc<Pointer<NativeFunction<_StreamCallbackNative>>>();
-      callbackData = proxyCreate(callable.nativeFunction, nullptr, outProxyFn);
-      callbackFn = outProxyFn.value;
-      calloc.free(outProxyFn);
+      try {
+        callbackData = proxyCreate(
+          callable.nativeFunction,
+          nullptr,
+          outProxyFn,
+        );
+        callbackFn = outProxyFn.value;
+        if (callbackData == nullptr || callbackFn == nullptr) {
+          throw StateError('stream_proxy_create returned null');
+        }
+      } catch (_) {
+        cleanup();
+        rethrow;
+      } finally {
+        calloc.free(outProxyFn);
+      }
     }
 
     final optionalArgs = bindings.conversationOptionalArgsCreate();
     if (optionalArgs == nullptr) {
-      callable.close();
-      calloc.free(messagePtr);
+      cleanup();
       throw StateError(
         'litert_lm_conversation_optional_args_create returned null',
       );
@@ -376,8 +404,7 @@ class LiteRtLmBenchmarkClient {
     );
     bindings.conversationOptionalArgsDelete(optionalArgs);
     if (rc != 0) {
-      callable.close();
-      calloc.free(messagePtr);
+      cleanup();
       throw StateError('litert_lm_conversation_send_message_stream rc=$rc');
     }
 
@@ -475,6 +502,10 @@ class LiteRtLmBenchmarkClient {
             .lookupFunction<_ProxyFreeStringNative, _ProxyFreeStringDart>(
               'stream_proxy_free_string',
             );
+        _proxyDelete = proxyLibrary
+            .lookupFunction<_ProxyDeleteNative, _ProxyDeleteDart>(
+              'stream_proxy_delete',
+            );
         _proxyLibrary = proxyLibrary;
       } catch (error) {
         if (!libraries.directCallbackSupported) {
@@ -563,7 +594,10 @@ class LiteRtLmBenchmarkClient {
     }
     if (Platform.isLinux && (abi == Abi.linuxX64 || abi == Abi.linuxArm64)) {
       return (
-        proxyCandidates: const [],
+        proxyCandidates: const [
+          'package:llamadart/litert_lm_StreamProxy',
+          'libStreamProxy.so',
+        ],
         liteRtLm: 'libLiteRtLm.so',
         companions: const [],
         directCallbackSupported: true,
@@ -571,7 +605,10 @@ class LiteRtLmBenchmarkClient {
     }
     if (Platform.isWindows && abi == Abi.windowsX64) {
       return (
-        proxyCandidates: const [],
+        proxyCandidates: const [
+          'package:llamadart/litert_lm_StreamProxy',
+          'StreamProxy.dll',
+        ],
         liteRtLm: 'LiteRtLm.dll',
         companions: const [],
         directCallbackSupported: true,
