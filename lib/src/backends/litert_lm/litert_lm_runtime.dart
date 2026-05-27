@@ -1,5 +1,3 @@
-// ignore_for_file: public_member_api_docs
-
 import 'dart:async';
 import 'dart:convert';
 import 'dart:ffi';
@@ -81,15 +79,30 @@ final class _LiteRtLmSamplerParams extends Struct {
   external int seed;
 }
 
+/// Runtime metrics reported by LiteRT-LM for a completed generation.
 class LiteRtLmRuntimeMetrics {
+  /// Number of prompt/input tokens.
   final int inputTokens;
+
+  /// Number of generated/output tokens.
   final int outputTokens;
+
+  /// Time to first token in seconds, when reported by LiteRT-LM.
   final double? timeToFirstTokenSeconds;
+
+  /// Engine initialization time in seconds, when reported by LiteRT-LM.
   final double? initSeconds;
+
+  /// Prompt prefill throughput in tokens per second.
   final double? prefillTokensPerSecond;
+
+  /// Decode throughput in tokens per second.
   final double? decodeTokensPerSecond;
+
+  /// Wall-clock runtime measured by Dart.
   final int wallMilliseconds;
 
+  /// Creates runtime metrics.
   const LiteRtLmRuntimeMetrics({
     required this.inputTokens,
     required this.outputTokens,
@@ -100,6 +113,7 @@ class LiteRtLmRuntimeMetrics {
     required this.wallMilliseconds,
   });
 
+  /// Converts metrics to JSON-compatible values.
   Map<String, Object?> toJson() => {
     'inputTokens': inputTokens,
     'outputTokens': outputTokens,
@@ -111,10 +125,15 @@ class LiteRtLmRuntimeMetrics {
   };
 }
 
+/// Generated text and runtime metrics from a LiteRT-LM run.
 class LiteRtLmRuntimeResult {
+  /// Generated text.
   final String text;
+
+  /// Runtime metrics.
   final LiteRtLmRuntimeMetrics metrics;
 
+  /// Creates a runtime result.
   const LiteRtLmRuntimeResult({required this.text, required this.metrics});
 }
 
@@ -130,6 +149,11 @@ final class _BlockingSendMessageRequest {
   final String prompt;
 }
 
+/// Low-level native LiteRT-LM runtime client.
+///
+/// Most callers should use [LiteRtLmBackend] through the high-level
+/// `LlamaEngine` API. This client is exported for benchmark tools and advanced
+/// native integrations that need direct access to LiteRT-LM bundles.
 class LiteRtLmRuntimeClient {
   _LiteRtLmBindings? _bindings;
   // Keep a strong reference while callbacks/function pointers may be active.
@@ -142,6 +166,7 @@ class LiteRtLmRuntimeClient {
   Pointer<_LiteRtLmEngine>? _engine;
   Pointer<_LiteRtLmConversation>? _conversation;
 
+  /// Initializes the native LiteRT-LM engine for a `.litertlm` model bundle.
   Future<void> initialize({
     required String modelPath,
     String backend = 'gpu',
@@ -214,6 +239,7 @@ class LiteRtLmRuntimeClient {
     }
   }
 
+  /// Creates a new LiteRT-LM conversation for generation and token operations.
   void createConversation({
     String? systemMessage,
     double temperature = 0.8,
@@ -272,11 +298,13 @@ class LiteRtLmRuntimeClient {
     }
   }
 
+  /// Updates the native LiteRT-LM log level.
   void setMinLogLevel(int level) {
     _ensureLibrariesLoaded();
     _bindings!.setMinLogLevel(level);
   }
 
+  /// Tokenizes text with the native LiteRT-LM tokenizer.
   List<int> tokenize(String text, {bool addSpecial = true}) {
     final tokens = _tokenizeRaw(text);
     if (!addSpecial) {
@@ -289,6 +317,7 @@ class LiteRtLmRuntimeClient {
     return <int>[...startToken, ...tokens];
   }
 
+  /// Converts native LiteRT-LM token ids back to text.
   String detokenize(List<int> tokens) {
     final bindings = _requireBindings();
     final engine = _requireEngine();
@@ -321,6 +350,7 @@ class LiteRtLmRuntimeClient {
     }
   }
 
+  /// Streams generated text from the active conversation.
   Stream<String> generate(String prompt) {
     // Upstream stream callback strings are only valid during the native call.
     // Dart listener callbacks run later, so streaming requires StreamProxy to
@@ -533,6 +563,7 @@ class LiteRtLmRuntimeClient {
     }
   }
 
+  /// Runs a benchmark-style prompt loop and returns runtime metrics.
   Future<LiteRtLmRuntimeResult> run({
     required String prompt,
     int warmupRuns = 1,
@@ -560,10 +591,12 @@ class LiteRtLmRuntimeClient {
     return LiteRtLmRuntimeResult(text: lastText, metrics: metrics);
   }
 
+  /// Reads runtime metrics for the active conversation.
   LiteRtLmRuntimeMetrics readMetrics({required int wallMilliseconds}) {
     return _readMetrics(wallMilliseconds);
   }
 
+  /// Cancels active native generation.
   void cancel() {
     final conversation = _conversation;
     final bindings = _bindings;
@@ -572,6 +605,7 @@ class LiteRtLmRuntimeClient {
     }
   }
 
+  /// Releases native LiteRT-LM resources.
   void dispose() {
     _deleteConversation();
     final engine = _engine;
