@@ -191,6 +191,9 @@ class _LiteRtLmBenchmarkAppState extends State<LiteRtLmBenchmarkApp> {
         'backendInitMilliseconds': perf?.loadMs,
         'promptEvalTokens': perf?.promptEvalTokens,
         'evalTokens': perf?.evalTokens,
+        'hitEosBeforeTarget': perf == null
+            ? null
+            : perf.evalTokens < _outputTokens,
         'promptEvalMs': perf?.promptEvalMs,
         'evalMs': perf?.evalMs,
         'sampleMs': perf?.sampleMs,
@@ -200,6 +203,10 @@ class _LiteRtLmBenchmarkAppState extends State<LiteRtLmBenchmarkApp> {
         'decodeTokensPerSecond': perf == null || perf.evalMs <= 0
             ? null
             : perf.evalTokens / (perf.evalMs / 1000.0),
+        'decodeWithSamplingTokensPerSecond':
+            perf == null || perf.evalMs + perf.sampleMs <= 0
+            ? null
+            : perf.evalTokens / ((perf.evalMs + perf.sampleMs) / 1000.0),
         'wallTokensPerSecond': wallMs <= 0 || perf == null
             ? null
             : perf.evalTokens / (wallMs / 1000.0),
@@ -270,8 +277,12 @@ class _LiteRtLmBenchmarkAppState extends State<LiteRtLmBenchmarkApp> {
         'wallMilliseconds': wallMs,
         'backendName': backendName,
         'resolvedGpuLayers': resolvedGpuLayers,
+        'targetDecodeTokens': _outputTokens,
         'promptEvalTokens': perf?.promptEvalTokens,
         'evalTokens': perf?.evalTokens,
+        'hitEosBeforeTarget': perf == null
+            ? null
+            : perf.evalTokens < _outputTokens,
         'promptEvalMs': perf?.promptEvalMs,
         'evalMs': perf?.evalMs,
         'sampleMs': perf?.sampleMs,
@@ -281,6 +292,13 @@ class _LiteRtLmBenchmarkAppState extends State<LiteRtLmBenchmarkApp> {
         'decodeTokensPerSecond': perf == null || perf.evalMs <= 0
             ? null
             : perf.evalTokens / (perf.evalMs / 1000.0),
+        'decodeWithSamplingTokensPerSecond':
+            perf == null || perf.evalMs + perf.sampleMs <= 0
+            ? null
+            : perf.evalTokens / ((perf.evalMs + perf.sampleMs) / 1000.0),
+        'wallTokensPerSecond': wallMs <= 0 || perf == null
+            ? null
+            : perf.evalTokens / (wallMs / 1000.0),
       };
       const encoder = JsonEncoder.withIndent('  ');
       _append('RESULT llamadart ${jsonEncode(metrics)}');
