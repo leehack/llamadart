@@ -199,24 +199,6 @@ Future<Directory> _acquireBundleDirectory({
   final archivePath = path.join(cacheDir, archiveName);
   final archiveFile = File(archivePath);
 
-  final cachedLibraryPaths = _collectDynamicLibraryPaths(extractedDir);
-  if (cachedLibraryPaths.isNotEmpty &&
-      _isBundleLayoutCompatible(
-        bundle: bundle,
-        libraryPaths: cachedLibraryPaths,
-        log: log,
-      )) {
-    log.info('Using cached native bundle: ${extractedDir.path}');
-    return extractedDir;
-  }
-
-  if (cachedLibraryPaths.isNotEmpty) {
-    log.warning('Cached native bundle appears stale; refreshing: $bundle');
-    if (extractedDir.existsSync()) {
-      await extractedDir.delete(recursive: true);
-    }
-  }
-
   if (allowLegacyLocalBundles) {
     final localCandidates = _localBundleCandidates(
       packageRoot: packageRoot,
@@ -236,6 +218,24 @@ Future<Directory> _acquireBundleDirectory({
         );
         return candidate;
       }
+    }
+  }
+
+  final cachedLibraryPaths = _collectDynamicLibraryPaths(extractedDir);
+  if (cachedLibraryPaths.isNotEmpty &&
+      _isBundleLayoutCompatible(
+        bundle: bundle,
+        libraryPaths: cachedLibraryPaths,
+        log: log,
+      )) {
+    log.info('Using cached native bundle: ${extractedDir.path}');
+    return extractedDir;
+  }
+
+  if (cachedLibraryPaths.isNotEmpty) {
+    log.warning('Cached native bundle appears stale; refreshing: $bundle');
+    if (extractedDir.existsSync()) {
+      await extractedDir.delete(recursive: true);
     }
   }
 
