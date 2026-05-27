@@ -109,6 +109,18 @@ class LiteRtLmBenchmarkResult {
   const LiteRtLmBenchmarkResult({required this.text, required this.metrics});
 }
 
+final class _BlockingSendMessageRequest {
+  const _BlockingSendMessageRequest({
+    required this.libraryPath,
+    required this.conversationAddress,
+    required this.prompt,
+  });
+
+  final String libraryPath;
+  final int conversationAddress;
+  final String prompt;
+}
+
 class LiteRtLmBenchmarkClient {
   _LiteRtLmBindings? _bindings;
   // Keep a strong reference while callbacks/function pointers may be active.
@@ -259,55 +271,34 @@ class LiteRtLmBenchmarkClient {
   }
 
   Stream<String> _generateBlocking(String prompt) {
-    final bindings = _requireBindings();
     final conversation = _requireConversation();
-    final controller = StreamController<String>();
+    final liteRtLmLibraryPath = _liteRtLmLibraryPath!;
+    final controller = StreamController<String>(onCancel: cancel);
+    final request = _BlockingSendMessageRequest(
+      libraryPath: liteRtLmLibraryPath,
+      conversationAddress: conversation.address,
+      prompt: prompt,
+    );
 
-    Future<void>(() {
-      final messagePtr = _messageJson(prompt).toNativeUtf8();
-      Pointer<_LiteRtLmConversationOptionalArgs> optionalArgs = nullptr;
+    unawaited(() async {
       try {
-        optionalArgs = bindings.conversationOptionalArgsCreate();
-        if (optionalArgs == nullptr) {
-          throw StateError(
-            'litert_lm_conversation_optional_args_create returned null',
-          );
-        }
-
-        final response = bindings.conversationSendMessage(
-          conversation,
-          messagePtr.cast(),
-          nullptr,
-          optionalArgs,
-        );
-        if (response == nullptr) {
-          throw StateError('litert_lm_conversation_send_message returned null');
-        }
-
-        try {
-          final rawPtr = bindings.jsonResponseGetString(response);
-          if (rawPtr == nullptr) {
-            throw StateError(
-              'litert_lm_json_response_get_string returned null',
-            );
-          }
-          final text = _extractText(rawPtr.cast<Utf8>().toDartString());
+        final raw = await _runBlockingSendMessageInIsolate(request);
+        if (!controller.isClosed) {
+          final text = _extractText(raw);
           if (text.isNotEmpty) {
             controller.add(text);
           }
-        } finally {
-          bindings.jsonResponseDelete(response);
         }
       } catch (error, stackTrace) {
-        controller.addError(error, stackTrace);
-      } finally {
-        if (optionalArgs != nullptr) {
-          bindings.conversationOptionalArgsDelete(optionalArgs);
+        if (!controller.isClosed) {
+          controller.addError(error, stackTrace);
         }
-        calloc.free(messagePtr);
-        unawaited(controller.close());
+      } finally {
+        if (!controller.isClosed) {
+          await controller.close();
+        }
       }
-    });
+    }());
 
     return controller.stream;
   }
@@ -763,6 +754,54 @@ String _messageJson(String text) {
       {'type': 'text', 'text': text},
     ],
   });
+}
+
+Future<String> _runBlockingSendMessageInIsolate(
+  _BlockingSendMessageRequest request,
+) {
+  return Isolate.run(() => _runBlockingSendMessage(request));
+}
+
+String _runBlockingSendMessage(_BlockingSendMessageRequest request) {
+  final bindings = _LiteRtLmBindings(DynamicLibrary.open(request.libraryPath));
+  final conversation = Pointer<_LiteRtLmConversation>.fromAddress(
+    request.conversationAddress,
+  );
+  final messagePtr = _messageJson(request.prompt).toNativeUtf8();
+  Pointer<_LiteRtLmConversationOptionalArgs> optionalArgs = nullptr;
+  try {
+    optionalArgs = bindings.conversationOptionalArgsCreate();
+    if (optionalArgs == nullptr) {
+      throw StateError(
+        'litert_lm_conversation_optional_args_create returned null',
+      );
+    }
+
+    final response = bindings.conversationSendMessage(
+      conversation,
+      messagePtr.cast(),
+      nullptr,
+      optionalArgs,
+    );
+    if (response == nullptr) {
+      throw StateError('litert_lm_conversation_send_message returned null');
+    }
+
+    try {
+      final rawPtr = bindings.jsonResponseGetString(response);
+      if (rawPtr == nullptr) {
+        throw StateError('litert_lm_json_response_get_string returned null');
+      }
+      return rawPtr.cast<Utf8>().toDartString();
+    } finally {
+      bindings.jsonResponseDelete(response);
+    }
+  } finally {
+    if (optionalArgs != nullptr) {
+      bindings.conversationOptionalArgsDelete(optionalArgs);
+    }
+    calloc.free(messagePtr);
+  }
 }
 
 String _extractText(String raw) {

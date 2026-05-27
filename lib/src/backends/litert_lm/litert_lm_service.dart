@@ -26,6 +26,11 @@ class LiteRtLmService {
       '{% endfor %}'
       '{% if add_generation_prompt %}<|turn>model\n{% endif %}';
 
+  /// Creates a LiteRT-LM service.
+  LiteRtLmService({LiteRtLmBenchmarkClient Function()? clientFactory})
+    : _clientFactory = clientFactory ?? LiteRtLmBenchmarkClient.new;
+
+  final LiteRtLmBenchmarkClient Function() _clientFactory;
   LiteRtLmBenchmarkClient? _client;
   ModelParams? _modelParams;
   String? _modelPath;
@@ -34,6 +39,7 @@ class LiteRtLmService {
   LiteRtLmBenchmarkMetrics? _lastMetrics;
   bool _modelLoaded = false;
   bool _contextCreated = false;
+  bool _cancelRequested = false;
 
   /// Updates the current backend log level.
   void setLogLevel(LlamaLogLevel level) {}
@@ -63,6 +69,7 @@ class LiteRtLmService {
         _backendNameFor(params.preferredBackend);
     _activeOutputTokens = null;
     _lastMetrics = null;
+    _cancelRequested = false;
     _modelLoaded = true;
     _contextCreated = false;
     return _modelHandle;
@@ -78,6 +85,7 @@ class LiteRtLmService {
     _activeBackend = null;
     _activeOutputTokens = null;
     _lastMetrics = null;
+    _cancelRequested = false;
     _modelLoaded = false;
     _contextCreated = false;
   }
@@ -117,7 +125,11 @@ class LiteRtLmService {
       throw UnsupportedError('LiteRtLmBackend does not support grammars yet.');
     }
 
+    _cancelRequested = false;
     final client = await _ensureClient(params);
+    if (_cancelRequested) {
+      return;
+    }
     final backend =
         _activeBackend ??
         _backendNameFor(_modelParams?.preferredBackend ?? GpuBackend.auto);
@@ -128,17 +140,27 @@ class LiteRtLmService {
       seed: params.seed ?? 1,
       npuBackend: backend == 'npu',
     );
+    if (_cancelRequested) {
+      client.cancel();
+      return;
+    }
 
     final stopSequences = params.stopSequences
         .where((sequence) => sequence.isNotEmpty)
         .toList(growable: false);
     final sw = Stopwatch()..start();
     try {
-      yield* _applyStopSequences(
+      final stream = _applyStopSequences(
         client.generate(prompt),
         stopSequences,
         onStop: cancelGeneration,
       );
+      await for (final chunk in stream) {
+        if (_cancelRequested) {
+          break;
+        }
+        yield chunk;
+      }
     } finally {
       sw.stop();
       try {
@@ -153,6 +175,7 @@ class LiteRtLmService {
 
   /// Cancels the active LiteRT-LM conversation if one is running.
   void cancelGeneration() {
+    _cancelRequested = true;
     _client?.cancel();
   }
 
@@ -306,6 +329,7 @@ class LiteRtLmService {
     _activeBackend = null;
     _activeOutputTokens = null;
     _lastMetrics = null;
+    _cancelRequested = false;
     _modelLoaded = false;
     _contextCreated = false;
   }
@@ -328,7 +352,7 @@ class LiteRtLmService {
     }
 
     existing?.dispose();
-    final client = LiteRtLmBenchmarkClient();
+    final client = _clientFactory();
     await client.initialize(
       modelPath: modelPath,
       backend: backend,

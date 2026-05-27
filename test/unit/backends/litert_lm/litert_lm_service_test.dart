@@ -1,12 +1,14 @@
 @TestOn('vm')
 library;
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:llamadart/src/backends/litert_lm/litert_lm_service.dart';
 import 'package:llamadart/src/core/models/config/gpu_backend.dart';
 import 'package:llamadart/src/core/models/inference/generation_params.dart';
 import 'package:llamadart/src/core/models/inference/model_params.dart';
+import 'package:llamadart/src/experimental/litert_lm/litert_lm_benchmark.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -137,6 +139,71 @@ void main() {
     },
   );
 
+  test('latches cancellation while LiteRT-LM client initializes', () async {
+    final fakeClient = _FakeLiteRtLmBenchmarkClient(blockInitialize: true);
+    final service = LiteRtLmService(clientFactory: () => fakeClient);
+
+    try {
+      final modelHandle = await service.loadModel(
+        modelFile.path,
+        const ModelParams(),
+      );
+      final contextHandle = service.createContext(
+        modelHandle,
+        const ModelParams(),
+      );
+
+      final chunks = <List<int>>[];
+      final subscription = service
+          .generate(contextHandle, 'hello', const GenerationParams())
+          .listen(chunks.add);
+
+      await fakeClient.initializeStarted.future;
+      service.cancelGeneration();
+      fakeClient.completeInitialize();
+      await subscription.asFuture<void>();
+
+      expect(chunks, isEmpty);
+      expect(fakeClient.createConversationCount, 0);
+      expect(fakeClient.generateCount, 0);
+    } finally {
+      service.dispose();
+    }
+  });
+
+  test('suppresses late blocking response after cancellation', () async {
+    final fakeClient = _FakeLiteRtLmBenchmarkClient();
+    final service = LiteRtLmService(clientFactory: () => fakeClient);
+
+    try {
+      final modelHandle = await service.loadModel(
+        modelFile.path,
+        const ModelParams(),
+      );
+      final contextHandle = service.createContext(
+        modelHandle,
+        const ModelParams(),
+      );
+
+      final chunks = <List<int>>[];
+      final subscription = service
+          .generate(contextHandle, 'hello', const GenerationParams())
+          .listen(chunks.add);
+
+      await fakeClient.generateStarted.future;
+      service.cancelGeneration();
+      fakeClient.generated.add('late response');
+      await fakeClient.generated.close();
+      await subscription.asFuture<void>();
+
+      expect(chunks, isEmpty);
+      expect(fakeClient.createConversationCount, 1);
+      expect(fakeClient.cancelCount, 1);
+    } finally {
+      service.dispose();
+    }
+  });
+
   test('reports platform-level capabilities conservatively', () {
     final service = LiteRtLmService();
 
@@ -149,4 +216,83 @@ void main() {
       service.dispose();
     }
   });
+}
+
+class _FakeLiteRtLmBenchmarkClient extends LiteRtLmBenchmarkClient {
+  _FakeLiteRtLmBenchmarkClient({bool blockInitialize = false})
+    : _initializeBlocker = blockInitialize ? Completer<void>() : null;
+
+  final Completer<void> initializeStarted = Completer<void>();
+  final Completer<void> generateStarted = Completer<void>();
+  final StreamController<String> generated = StreamController<String>();
+  final Completer<void>? _initializeBlocker;
+  int createConversationCount = 0;
+  int generateCount = 0;
+  int cancelCount = 0;
+
+  @override
+  Future<void> initialize({
+    required String modelPath,
+    String backend = 'gpu',
+    int maxTokens = 4096,
+    int outputTokens = 256,
+    int? prefillTokens,
+    String? cacheDir,
+    bool speculativeDecoding = true,
+  }) {
+    initializeStarted.complete();
+    return _initializeBlocker?.future ?? Future<void>.value();
+  }
+
+  void completeInitialize() {
+    if (_initializeBlocker != null && !_initializeBlocker.isCompleted) {
+      _initializeBlocker.complete();
+    }
+  }
+
+  @override
+  void createConversation({
+    String? systemMessage,
+    double temperature = 0.8,
+    int topK = 40,
+    double topP = 0.95,
+    int seed = 1,
+    bool npuBackend = false,
+  }) {
+    createConversationCount += 1;
+  }
+
+  @override
+  Stream<String> generate(String prompt) {
+    generateCount += 1;
+    if (!generateStarted.isCompleted) {
+      generateStarted.complete();
+    }
+    return generated.stream;
+  }
+
+  @override
+  LiteRtLmBenchmarkMetrics readMetrics({required int wallMilliseconds}) {
+    return LiteRtLmBenchmarkMetrics(
+      inputTokens: 0,
+      outputTokens: 0,
+      timeToFirstTokenSeconds: null,
+      initSeconds: null,
+      prefillTokensPerSecond: null,
+      decodeTokensPerSecond: null,
+      wallMilliseconds: wallMilliseconds,
+    );
+  }
+
+  @override
+  void cancel() {
+    cancelCount += 1;
+  }
+
+  @override
+  void dispose() {
+    if (!generated.isClosed) {
+      unawaited(generated.close());
+    }
+  }
 }

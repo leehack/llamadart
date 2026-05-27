@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:isolate';
 
 import '../native_token_stream_batcher.dart';
@@ -12,9 +13,18 @@ void liteRtLmWorkerEntry(SendPort initialSendPort) {
   initialSendPort.send(receivePort.sendPort);
 
   final service = LiteRtLmService();
+  Future<void>? activeGeneration;
 
   receivePort.listen((message) async {
     if (message is LiteRtLmDisposeRequest) {
+      service.cancelGeneration();
+      try {
+        await activeGeneration?.timeout(const Duration(seconds: 5));
+      } on TimeoutException {
+        // Teardown continues below; the isolate is exited after the response.
+      } catch (_) {
+        // Generation errors are reported to the original generation listener.
+      }
       try {
         service.dispose();
       } catch (_) {
@@ -32,6 +42,26 @@ void liteRtLmWorkerEntry(SendPort initialSendPort) {
 
     if (message is! LiteRtLmWorkerRequest) {
       return;
+    }
+
+    if (message is LiteRtLmCancelGenerationRequest) {
+      service.cancelGeneration();
+      message.sendPort.send(LiteRtLmDoneResponse());
+      return;
+    }
+
+    final currentGeneration = activeGeneration;
+    if (currentGeneration != null) {
+      if (message is LiteRtLmGenerateRequest) {
+        message.sendPort.send(
+          LiteRtLmErrorResponse(
+            'LiteRT-LM generation is already in progress.',
+            kind: 'state',
+          ),
+        );
+        return;
+      }
+      await currentGeneration;
     }
 
     try {
@@ -60,6 +90,8 @@ void liteRtLmWorkerEntry(SendPort initialSendPort) {
           message.sendPort.send(LiteRtLmDoneResponse());
 
         case LiteRtLmGenerateRequest():
+          final generationCompleter = Completer<void>();
+          activeGeneration = generationCompleter.future;
           try {
             final stream = service.generate(
               message.contextHandle,
@@ -87,11 +119,12 @@ void liteRtLmWorkerEntry(SendPort initialSendPort) {
             message.sendPort.send(LiteRtLmDoneResponse());
           } catch (error) {
             message.sendPort.send(LiteRtLmErrorResponse.from(error));
+          } finally {
+            generationCompleter.complete();
+            if (identical(activeGeneration, generationCompleter.future)) {
+              activeGeneration = null;
+            }
           }
-
-        case LiteRtLmCancelGenerationRequest():
-          service.cancelGeneration();
-          message.sendPort.send(LiteRtLmDoneResponse());
 
         case LiteRtLmTokenizeRequest():
           final tokens = service.tokenize(
