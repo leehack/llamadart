@@ -32,7 +32,7 @@ const _litertLmBundles = <String, _LiteRtLmBundleSpec>{
   'android-arm64': _LiteRtLmBundleSpec(
     directoryName: 'android/arm64',
     archiveName: 'litert-lm-native-runtime-android-arm64-v0.12.0.tar.gz',
-    sha256: '79bdd5f63d3ee1412b4a0ff8c113eb9dded8fef64c1862c7142abaa2a805cbfe',
+    sha256: '3ae6b3d1c3e8afebac73a76519d49dd8ba702e4532f78a49c031f30a4999f73c',
     releaseBaseUrl: _litertLmNativeReleaseBaseUrl,
     sourcePrefix: 'android/arm64',
     requiredLibraries: {'libLiteRtLm.so', 'libStreamProxy.so'},
@@ -41,7 +41,7 @@ const _litertLmBundles = <String, _LiteRtLmBundleSpec>{
   'android-x64': _LiteRtLmBundleSpec(
     directoryName: 'android/x64',
     archiveName: 'litert-lm-native-runtime-android-x64-v0.12.0.tar.gz',
-    sha256: 'b63c31b027c6cf23443bdb773a87d4d75c4ca9b6379d43e4e399ba9bb7d027ae',
+    sha256: '7c53764ba25b13be4607a2a621561513ab6a516ba8bfcd5965c7be0c0d53c865',
     releaseBaseUrl: _litertLmNativeReleaseBaseUrl,
     sourcePrefix: 'android/x64',
     requiredLibraries: {'libLiteRtLm.so', 'libStreamProxy.so'},
@@ -74,7 +74,7 @@ const _litertLmBundles = <String, _LiteRtLmBundleSpec>{
   'macos-arm64': _LiteRtLmBundleSpec(
     directoryName: 'macos/arm64',
     archiveName: 'litert-lm-native-runtime-macos-arm64-v0.12.0.tar.gz',
-    sha256: 'a21b75f7739b4530d75daf6f403ac20dea4ff28dfe9bc06948ab7e66c48b5bb4',
+    sha256: 'cf45695bd76ed608d94a400dd81bb3b9307d2b53436e501fbb45089ec7b8c7df',
     releaseBaseUrl: _litertLmNativeReleaseBaseUrl,
     sourcePrefix: 'macos/arm64',
     requiredLibraries: {'libLiteRtLm.dylib', 'libStreamProxy.dylib'},
@@ -82,7 +82,7 @@ const _litertLmBundles = <String, _LiteRtLmBundleSpec>{
   'macos-x64': _LiteRtLmBundleSpec(
     directoryName: 'macos/x64',
     archiveName: 'litert-lm-native-runtime-macos-x64-v0.12.0.tar.gz',
-    sha256: 'cd467ea6a2eeede6f1b338eb20478df0696a58417448732f7e6c86485c126ed3',
+    sha256: '83861be457bf670ffd9d5055d6e9b61e84eaa9b9765a61ceb834c55301a8858e',
     releaseBaseUrl: _litertLmNativeReleaseBaseUrl,
     sourcePrefix: 'macos/x64',
     requiredLibraries: {'libLiteRtLm.dylib', 'libStreamProxy.dylib'},
@@ -90,7 +90,7 @@ const _litertLmBundles = <String, _LiteRtLmBundleSpec>{
   'linux-arm64': _LiteRtLmBundleSpec(
     directoryName: 'linux/arm64',
     archiveName: 'litert-lm-native-runtime-linux-arm64-v0.12.0.tar.gz',
-    sha256: 'df32359641403d825723a0f4c32f3fd2c91ce38c55eee308f67f6cea611993a4',
+    sha256: '0818cb83f07758941c321f70486b5f056bb2b6e0d728f3d70a75b438b2df32cb',
     releaseBaseUrl: _litertLmNativeReleaseBaseUrl,
     sourcePrefix: 'linux/arm64',
     requiredLibraries: {'libLiteRtLm.so', 'libStreamProxy.so'},
@@ -99,7 +99,7 @@ const _litertLmBundles = <String, _LiteRtLmBundleSpec>{
   'linux-x64': _LiteRtLmBundleSpec(
     directoryName: 'linux/x64',
     archiveName: 'litert-lm-native-runtime-linux-x64-v0.12.0.tar.gz',
-    sha256: '315c258eeaef493a50870664d84643afd7e1db9eddc50010cfa62977d28d3e7b',
+    sha256: '53c9e12b3a0360f4d51381eb6d271fccba849bd4c89dd0e2656f2a170d90f759',
     releaseBaseUrl: _litertLmNativeReleaseBaseUrl,
     sourcePrefix: 'linux/x64',
     requiredLibraries: {'libLiteRtLm.so', 'libStreamProxy.so'},
@@ -108,7 +108,7 @@ const _litertLmBundles = <String, _LiteRtLmBundleSpec>{
   'windows-x64': _LiteRtLmBundleSpec(
     directoryName: 'windows/x64',
     archiveName: 'litert-lm-native-runtime-windows-x64-v0.12.0.tar.gz',
-    sha256: '40c3c7bd9a4b533f4ec6abad88abbd0c69eea8888c2e4c5e9c4b7dc44e0da392',
+    sha256: '2f15785f784cd2fc917a6232cc125eb9ba9d850cd271520fa30e93ae4b275e23',
     releaseBaseUrl: _litertLmNativeReleaseBaseUrl,
     sourcePrefix: 'windows/x64',
     requiredLibraries: {'LiteRtLm.dll', 'StreamProxy.dll'},
