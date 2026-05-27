@@ -10,6 +10,7 @@ class MockLlamaBackend implements LlamaBackend, BackendAvailability {
   int contextSize = 2048;
   String? lastPrompt;
   int tokenizeCalls = 0;
+  bool supportsTokenization = true;
 
   void queueResponse(String response) => _responses.add(response);
 
@@ -63,6 +64,9 @@ class MockLlamaBackend implements LlamaBackend, BackendAvailability {
     bool addSpecial = true,
   }) async {
     tokenizeCalls += 1;
+    if (!supportsTokenization) {
+      throw UnsupportedError('tokenization unavailable');
+    }
     return List.generate(text.length, (i) => i);
   }
 
@@ -187,6 +191,40 @@ void main() {
       expect(trimTemplateCalls, lessThan(10));
       expect(session.history.length, lessThan(33));
     });
+
+    test(
+      'enforceContextLimit uses estimated count when tokenization is missing',
+      () async {
+        backend.supportsTokenization = false;
+        session.maxContextTokens = 512;
+
+        for (int i = 0; i < 12; i++) {
+          session.addMessage(
+            LlamaChatMessage.fromText(
+              role: LlamaChatRole.user,
+              text: 'U$i ${List.filled(120, 'x').join()}',
+            ),
+          );
+          session.addMessage(
+            LlamaChatMessage.fromText(
+              role: LlamaChatRole.assistant,
+              text: 'A$i ${List.filled(120, 'y').join()}',
+            ),
+          );
+        }
+
+        backend.queueResponse('ok');
+        await session.create(const [LlamaTextContent('new turn')]).drain();
+
+        expect(backend.tokenizeCalls, greaterThan(0));
+        expect(backend.lastPrompt, isNotNull);
+        expect(
+          session.history.any((message) => message.content == 'new turn'),
+          isTrue,
+        );
+        expect(session.history.length, lessThan(26));
+      },
+    );
 
     test('multimodal marker injection', () async {
       final msg = LlamaChatMessage.withContent(

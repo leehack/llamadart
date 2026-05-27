@@ -935,8 +935,20 @@ class LlamaEngine {
 
       int? tokenCount;
       if (includeTokenCount) {
-        final tokens = await tokenize(result.prompt, addSpecial: false);
-        tokenCount = tokens.length;
+        try {
+          final tokens = await tokenize(result.prompt, addSpecial: false);
+          tokenCount = tokens.length;
+        } on UnsupportedError catch (error) {
+          LlamaLogger.instance.debug(
+            'Skipping chat template token count because backend tokenization '
+            'is unsupported: $error',
+          );
+        } on LlamaUnsupportedException catch (error) {
+          LlamaLogger.instance.debug(
+            'Skipping chat template token count because backend tokenization '
+            'is unsupported: $error',
+          );
+        }
       }
 
       return LlamaChatTemplateResult(

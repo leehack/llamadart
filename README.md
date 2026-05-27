@@ -256,6 +256,11 @@ models use the LiteRT-LM runtime bundles from `litert-lm-native`; the current
 FFI path is validated on Android, iOS, macOS, Linux, and Windows. iOS
 LiteRT-LM bundles are derived from upstream `CLiteRTLM.xcframework` slices and
 packaged as dylib-style native assets for device and simulator builds.
+LiteRT-LM generation works through the same high-level `LlamaEngine` and
+`ChatSession` APIs, but the current native C API does not expose tokenizer,
+detokenizer, LoRA, grammar, or multimodal operations. `ChatSession` uses a
+conservative prompt-size estimate for history pruning when exact tokenization
+is unavailable.
 
 <details>
 <summary>Full module matrix (available modules by target)</summary>

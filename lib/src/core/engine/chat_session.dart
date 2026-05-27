@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'engine.dart';
+import '../exceptions.dart';
 import '../models/chat/chat_message.dart';
 import '../models/chat/completion_chunk.dart';
 import '../models/chat/chat_role.dart';
@@ -272,8 +273,27 @@ class ChatSession {
   }
 
   Future<int> _getTemplateTokenCount(List<LlamaChatMessage> messages) async {
-    final template = await _engine.chatTemplate(messages);
-    return template.tokenCount ?? await _engine.getTokenCount(template.prompt);
+    final template = await _engine.chatTemplate(
+      messages,
+      includeTokenCount: false,
+    );
+    try {
+      return await _engine.getTokenCount(template.prompt);
+    } on UnsupportedError {
+      return _estimateTokenCount(template.prompt);
+    } on LlamaUnsupportedException {
+      return _estimateTokenCount(template.prompt);
+    }
+  }
+
+  int _estimateTokenCount(String prompt) {
+    if (prompt.isEmpty) {
+      return 0;
+    }
+    // Used only for backends such as LiteRT-LM where the native tokenizer is
+    // not exposed. Overestimate slightly so history trimming stays conservative.
+    final byteLength = utf8.encode(prompt).length;
+    return (byteLength + 2) ~/ 3;
   }
 
   List<LlamaChatMessage> _buildMessagesFromOffset(int startOffset) {

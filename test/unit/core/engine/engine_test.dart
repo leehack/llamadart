@@ -207,6 +207,18 @@ class MockLlamaBackend
   }
 }
 
+class UnsupportedTokenizationBackend extends MockLlamaBackend {
+  @override
+  Future<List<int>> tokenize(
+    int modelHandle,
+    String text, {
+    bool addSpecial = true,
+  }) async {
+    tokenizeCalls += 1;
+    throw UnsupportedError('tokenization unavailable');
+  }
+}
+
 class MockModelResolver implements ModelResolver {
   MockModelResolver(this.target);
 
@@ -835,6 +847,25 @@ void main() {
       expect(result.prompt, '<s>user: hiassistant: ');
       expect(result.tokenCount, isNull);
       expect(backend.tokenizeCalls, 0);
+    });
+
+    test('chatTemplate tolerates backends without tokenization', () async {
+      final tokenlessBackend = UnsupportedTokenizationBackend();
+      final tokenlessEngine = LlamaEngine(tokenlessBackend);
+
+      try {
+        await tokenlessEngine.loadModel('gemma-4-E2B-it.litertlm');
+
+        final result = await tokenlessEngine.chatTemplate(const [
+          LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
+        ]);
+
+        expect(result.prompt, '<s>user: hiassistant: ');
+        expect(result.tokenCount, isNull);
+        expect(tokenlessBackend.tokenizeCalls, 1);
+      } finally {
+        await tokenlessEngine.dispose();
+      }
     });
 
     test('create reuses cached metadata across requests', () async {
