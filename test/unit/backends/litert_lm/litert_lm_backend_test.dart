@@ -2,9 +2,11 @@
 library;
 
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:llamadart/src/backends/backend.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_backend.dart';
+import 'package:llamadart/src/backends/litert_lm/worker_messages.dart';
 import 'package:llamadart/src/core/models/config/gpu_backend.dart';
 import 'package:llamadart/src/core/models/inference/generation_params.dart';
 import 'package:llamadart/src/core/models/inference/model_params.dart';
@@ -195,6 +197,43 @@ void main() {
       }
     },
   );
+
+  test('routes tokenization APIs through the LiteRT-LM worker', () async {
+    final worker = _FakeLiteRtLmWorker(
+      tokenizeResponse: const <int>[2, 10, 11],
+      detokenizeResponse: 'hello',
+    );
+    final backend = LiteRtLmBackend(initialSendPort: worker.sendPort);
+
+    try {
+      expect(await backend.tokenize(42, 'hello', addSpecial: false), [
+        2,
+        10,
+        11,
+      ]);
+      expect(
+        await backend.detokenize(42, const [10, 11], special: true),
+        'hello',
+      );
+
+      final tokenizeRequest = worker.requests
+          .whereType<LiteRtLmTokenizeRequest>()
+          .single;
+      expect(tokenizeRequest.modelHandle, 42);
+      expect(tokenizeRequest.text, 'hello');
+      expect(tokenizeRequest.addSpecial, isFalse);
+
+      final detokenizeRequest = worker.requests
+          .whereType<LiteRtLmDetokenizeRequest>()
+          .single;
+      expect(detokenizeRequest.modelHandle, 42);
+      expect(detokenizeRequest.tokens, [10, 11]);
+      expect(detokenizeRequest.special, isTrue);
+    } finally {
+      await backend.dispose();
+      worker.close();
+    }
+  });
 }
 
 String _expectedAutoLiteRtLmBackend() {
@@ -202,4 +241,47 @@ String _expectedAutoLiteRtLmBackend() {
     return 'gpu';
   }
   return 'cpu';
+}
+
+class _FakeLiteRtLmWorker {
+  _FakeLiteRtLmWorker({
+    required this.tokenizeResponse,
+    required this.detokenizeResponse,
+  }) {
+    _receivePort.listen(_handleMessage);
+  }
+
+  final List<int> tokenizeResponse;
+  final String detokenizeResponse;
+  final ReceivePort _receivePort = ReceivePort();
+  final List<Object?> requests = <Object?>[];
+
+  SendPort get sendPort => _receivePort.sendPort;
+
+  void close() {
+    _receivePort.close();
+  }
+
+  void _handleMessage(Object? message) {
+    requests.add(message);
+    switch (message) {
+      case LiteRtLmTokenizeRequest():
+        message.sendPort.send(LiteRtLmTokenizeResponse(tokenizeResponse));
+      case LiteRtLmDetokenizeRequest():
+        message.sendPort.send(LiteRtLmDetokenizeResponse(detokenizeResponse));
+      case LiteRtLmCancelGenerationRequest():
+        message.sendPort.send(LiteRtLmDoneResponse());
+      case LiteRtLmDisposeRequest():
+        message.sendPort.send(LiteRtLmDoneResponse());
+      default:
+        if (message is LiteRtLmWorkerRequest) {
+          message.sendPort.send(
+            LiteRtLmErrorResponse(
+              'Unexpected fake worker request: ${message.runtimeType}',
+              kind: 'state',
+            ),
+          );
+        }
+    }
+  }
 }
