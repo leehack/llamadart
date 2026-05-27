@@ -25,6 +25,9 @@
   * Rejected unsupported llama.cpp-only `ModelParams` for `.litertlm` loads
     instead of silently ignoring them, while honoring `gpuLayers: 0` as a CPU
     hint and `chatTemplate` as the LiteRT-LM chat-template override.
+  * Rejected unsupported llama.cpp-only `GenerationParams` for `.litertlm`
+    generation instead of silently ignoring Min-P, repeat-penalty overrides,
+    grammar/lazy grammar triggers, preserved tokens, or custom grammar roots.
 
 ## 0.6.17
 

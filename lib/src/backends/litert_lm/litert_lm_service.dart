@@ -127,9 +127,7 @@ class LiteRtLmService {
     if (parts != null && parts.isNotEmpty) {
       throw UnsupportedError('LiteRtLmBackend does not support media parts.');
     }
-    if (params.grammar != null) {
-      throw UnsupportedError('LiteRtLmBackend does not support grammars yet.');
-    }
+    _validateGenerationParams(params);
 
     _cancelRequested = false;
     final client = await _ensureClient(params);
@@ -142,7 +140,7 @@ class LiteRtLmService {
       temperature: params.temp,
       topK: params.topK,
       topP: params.topP,
-      seed: params.seed ?? 1,
+      seed: params.seed ?? _defaultSamplerSeed(),
       npuBackend: backend == 'npu',
     );
     if (_cancelRequested) {
@@ -523,6 +521,46 @@ class LiteRtLmService {
       'contextSize, chatTemplate, preferredBackend, all-or-CPU gpuLayers '
       'hints, and liteRtLmBackend for explicit CPU/GPU/NPU selection.',
     );
+  }
+
+  void _validateGenerationParams(GenerationParams params) {
+    const defaults = GenerationParams();
+    final unsupported = <String>[];
+    if (params.minP != defaults.minP) {
+      unsupported.add('minP');
+    }
+    if (params.penalty != defaults.penalty) {
+      unsupported.add('penalty');
+    }
+    if (params.grammar != null) {
+      unsupported.add('grammar');
+    }
+    if (params.grammarLazy) {
+      unsupported.add('grammarLazy');
+    }
+    if (params.grammarTriggers.isNotEmpty) {
+      unsupported.add('grammarTriggers');
+    }
+    if (params.preservedTokens.isNotEmpty) {
+      unsupported.add('preservedTokens');
+    }
+    if (params.grammarRoot != defaults.grammarRoot) {
+      unsupported.add('grammarRoot');
+    }
+
+    if (unsupported.isEmpty) {
+      return;
+    }
+    throw UnsupportedError(
+      'LiteRtLmBackend does not support llama.cpp-specific GenerationParams: '
+      '${unsupported.join(', ')}. Supported LiteRT-LM generation options are '
+      'maxTokens, temp, topK, topP, seed, stopSequences, and native stream '
+      'batching thresholds.',
+    );
+  }
+
+  int _defaultSamplerSeed() {
+    return DateTime.now().microsecondsSinceEpoch & 0x7fffffff;
   }
 
   String _backendNameForGpuPreference(GpuBackend backend) {

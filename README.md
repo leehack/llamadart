@@ -284,7 +284,12 @@ and CPU on other current LiteRT-LM targets; set `cpu`, `gpu`, or Android-only
 `.litertlm` loads; llama.cpp-only tuning knobs such as partial GPU layer
 offload, batch/micro-batch sizing, KV-cache type, flash attention, mmap/mlock,
 thread counts, LoRA load configs, and rope overrides are rejected instead of
-being silently ignored.
+being silently ignored. `.litertlm` generation honors `GenerationParams`
+`maxTokens`, `temp`, `topK`, `topP`, `seed`, `stopSequences`, and native stream
+batching thresholds; llama.cpp-only sampling and constrained-decoding controls
+such as Min-P, repeat penalty overrides, grammar/lazy grammar triggers,
+preserved tokens, and custom grammar roots are rejected until LiteRT-LM exposes
+equivalent runtime controls.
 
 <details>
 <summary>Full module matrix (available modules by target)</summary>

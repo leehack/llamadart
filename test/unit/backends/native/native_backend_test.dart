@@ -469,6 +469,12 @@ void main() {
               .join(),
           throwsA(isA<LlamaUnsupportedException>()),
         );
+        await expectLater(
+          engine
+              .generate('hello', params: const GenerationParams(minP: 0.1))
+              .join(),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
       } finally {
         await engine.dispose();
         await tempDir.delete(recursive: true);

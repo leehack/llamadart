@@ -2,6 +2,7 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:llamadart/src/backends/litert_lm/litert_lm_service.dart';
@@ -298,6 +299,118 @@ void main() {
     },
   );
 
+  test('passes supported LiteRT-LM generation options to the client', () async {
+    final fakeClient = _FakeLiteRtLmBenchmarkClient();
+    final service = LiteRtLmService(clientFactory: () => fakeClient);
+
+    try {
+      final modelHandle = await service.loadModel(
+        modelFile.path,
+        const ModelParams(contextSize: 3072, preferredBackend: GpuBackend.cpu),
+      );
+      final contextHandle = service.createContext(
+        modelHandle,
+        const ModelParams(contextSize: 3072, preferredBackend: GpuBackend.cpu),
+      );
+
+      final chunks = <List<int>>[];
+      final subscription = service
+          .generate(
+            contextHandle,
+            'hello',
+            const GenerationParams(
+              maxTokens: 7,
+              temp: 0.3,
+              topK: 5,
+              topP: 0.4,
+              seed: 123,
+              stopSequences: ['STOP'],
+            ),
+          )
+          .listen(chunks.add);
+
+      await fakeClient.generateStarted.future;
+      fakeClient.generated.add('alpha STOP hidden');
+      await fakeClient.generated.close();
+      await subscription.asFuture<void>();
+
+      expect(fakeClient.lastModelPath, modelFile.path);
+      expect(fakeClient.lastBackend, 'cpu');
+      expect(fakeClient.lastMaxTokens, 3072);
+      expect(fakeClient.lastOutputTokens, 7);
+      expect(fakeClient.lastTemperature, 0.3);
+      expect(fakeClient.lastTopK, 5);
+      expect(fakeClient.lastTopP, 0.4);
+      expect(fakeClient.lastSeed, 123);
+      expect(fakeClient.lastNpuBackend, isFalse);
+      expect(utf8.decode(chunks.expand((chunk) => chunk).toList()), 'alpha ');
+      expect(fakeClient.cancelCount, 1);
+    } finally {
+      service.dispose();
+    }
+  });
+
+  test('rejects unsupported LiteRT-LM generation params', () async {
+    final service = LiteRtLmService();
+
+    try {
+      final modelHandle = await service.loadModel(
+        modelFile.path,
+        const ModelParams(),
+      );
+      final contextHandle = service.createContext(
+        modelHandle,
+        const ModelParams(),
+      );
+
+      await expectLater(
+        service.generate(
+          contextHandle,
+          'hello',
+          const GenerationParams(minP: 0.1),
+        ),
+        emitsError(
+          isA<UnsupportedError>().having(
+            (error) => error.message.toString(),
+            'message',
+            contains('minP'),
+          ),
+        ),
+      );
+
+      await expectLater(
+        service.generate(
+          contextHandle,
+          'hello',
+          const GenerationParams(
+            penalty: 1.0,
+            grammarLazy: true,
+            grammarTriggers: [
+              GenerationGrammarTrigger(type: 0, value: '<tool_call>'),
+            ],
+            preservedTokens: ['<tool_call>'],
+            grammarRoot: 'tool_call',
+          ),
+        ),
+        emitsError(
+          isA<UnsupportedError>().having(
+            (error) => error.message.toString(),
+            'message',
+            allOf(
+              contains('penalty'),
+              contains('grammarLazy'),
+              contains('grammarTriggers'),
+              contains('preservedTokens'),
+              contains('grammarRoot'),
+            ),
+          ),
+        ),
+      );
+    } finally {
+      service.dispose();
+    }
+  });
+
   test('latches cancellation while LiteRT-LM client initializes', () async {
     final fakeClient = _FakeLiteRtLmBenchmarkClient(blockInitialize: true);
     final service = LiteRtLmService(clientFactory: () => fakeClient);
@@ -392,6 +505,17 @@ class _FakeLiteRtLmBenchmarkClient extends LiteRtLmBenchmarkClient {
   final Completer<void> generateStarted = Completer<void>();
   final StreamController<String> generated = StreamController<String>();
   final Completer<void>? _initializeBlocker;
+  String? lastModelPath;
+  String? lastBackend;
+  int? lastMaxTokens;
+  int? lastOutputTokens;
+  String? lastCacheDir;
+  bool? lastSpeculativeDecoding;
+  double? lastTemperature;
+  int? lastTopK;
+  double? lastTopP;
+  int? lastSeed;
+  bool? lastNpuBackend;
   int createConversationCount = 0;
   int generateCount = 0;
   int cancelCount = 0;
@@ -406,6 +530,12 @@ class _FakeLiteRtLmBenchmarkClient extends LiteRtLmBenchmarkClient {
     String? cacheDir,
     bool speculativeDecoding = true,
   }) {
+    lastModelPath = modelPath;
+    lastBackend = backend;
+    lastMaxTokens = maxTokens;
+    lastOutputTokens = outputTokens;
+    lastCacheDir = cacheDir;
+    lastSpeculativeDecoding = speculativeDecoding;
     initializeStarted.complete();
     return _initializeBlocker?.future ?? Future<void>.value();
   }
@@ -425,6 +555,11 @@ class _FakeLiteRtLmBenchmarkClient extends LiteRtLmBenchmarkClient {
     int seed = 1,
     bool npuBackend = false,
   }) {
+    lastTemperature = temperature;
+    lastTopK = topK;
+    lastTopP = topP;
+    lastSeed = seed;
+    lastNpuBackend = npuBackend;
     createConversationCount += 1;
   }
 
