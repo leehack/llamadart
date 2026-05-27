@@ -26,24 +26,22 @@ const _litertLmPocVersion = '0.12.0';
 const _litertLmNativeReleaseBaseUrl =
     'https://github.com/leehack/litert-lm-native/releases/download/'
     'v$_litertLmPocVersion';
-const _flutterGemmaLiteRtLmReleaseBaseUrl =
-    'https://github.com/DenisovAV/flutter_gemma/releases/download/'
-    'native-v$_litertLmPocVersion';
 const _litertLmPocCacheDir = 'litert_lm_poc';
 
 const _litertLmPocBundles = <String, _LiteRtLmPocBundleSpec>{
   'android-arm64': _LiteRtLmPocBundleSpec(
-    directoryName: 'android_arm64',
-    archiveName: 'litertlm-android_arm64.tar.gz',
-    sha256: 'e24804d922aadd91a85a6faf272a20e9c3e7991ed2754cf2a9071ad08a8fc2ce',
-    releaseBaseUrl: _flutterGemmaLiteRtLmReleaseBaseUrl,
+    directoryName: 'android/arm64',
+    archiveName: 'litert-lm-native-runtime-android-arm64-v0.12.0.tar.gz',
+    sha256: '52d06d1a9abcb7a10034aed39445618505ae0a5dd96778a83365d9411f303d87',
+    releaseBaseUrl: _litertLmNativeReleaseBaseUrl,
+    sourcePrefix: 'android/arm64',
     requiredLibraries: {'libLiteRtLm.so'},
     emitAllLibraries: true,
   ),
   'android-x64': _LiteRtLmPocBundleSpec(
     directoryName: 'android/x64',
     archiveName: 'litert-lm-native-runtime-android-x64-v0.12.0.tar.gz',
-    sha256: '5e47523a21df69bfcb3bb827f2b871e09654b08720e71a8b69a833029333e5c9',
+    sha256: '548a35aa04abfc7fc84ee5751e30821989faf8666511fec61e2f8c05f7b08aaf',
     releaseBaseUrl: _litertLmNativeReleaseBaseUrl,
     sourcePrefix: 'android/x64',
     requiredLibraries: {'libLiteRtLm.so'},
@@ -52,7 +50,7 @@ const _litertLmPocBundles = <String, _LiteRtLmPocBundleSpec>{
   'macos-arm64': _LiteRtLmPocBundleSpec(
     directoryName: 'macos/arm64',
     archiveName: 'litert-lm-native-runtime-macos-arm64-v0.12.0.tar.gz',
-    sha256: 'dc02829b181bfcd04b7cec32080e5d070826a1210807a7da446b6761b169e3c7',
+    sha256: '201b3208c5a3df5b3dd1b5fbd81743942950167f68112f9010fede11cdb4eeda',
     releaseBaseUrl: _litertLmNativeReleaseBaseUrl,
     sourcePrefix: 'macos/arm64',
     requiredLibraries: {'libLiteRtLm.dylib'},
@@ -60,7 +58,7 @@ const _litertLmPocBundles = <String, _LiteRtLmPocBundleSpec>{
   'macos-x64': _LiteRtLmPocBundleSpec(
     directoryName: 'macos/x64',
     archiveName: 'litert-lm-native-runtime-macos-x64-v0.12.0.tar.gz',
-    sha256: 'a20ff8ef674008573449ae07be58bc11a8eb0e27c7f1ec1d2cf941886de7466c',
+    sha256: 'ec67c459f41454d23d14ee1b015a57d255fc264ddd42cce7ac18e4d2a0cfba8c',
     releaseBaseUrl: _litertLmNativeReleaseBaseUrl,
     sourcePrefix: 'macos/x64',
     requiredLibraries: {'libLiteRtLm.dylib'},
@@ -68,7 +66,7 @@ const _litertLmPocBundles = <String, _LiteRtLmPocBundleSpec>{
   'linux-arm64': _LiteRtLmPocBundleSpec(
     directoryName: 'linux/arm64',
     archiveName: 'litert-lm-native-runtime-linux-arm64-v0.12.0.tar.gz',
-    sha256: 'f97dd78d9324bbbdd5e9573992d7fb694f448ad47e92ff7306ac5a0d48f176e4',
+    sha256: 'fa9b00d053c3515c265af5aee33c8739b380b525b9cd6f2975cd9edcd3f71004',
     releaseBaseUrl: _litertLmNativeReleaseBaseUrl,
     sourcePrefix: 'linux/arm64',
     requiredLibraries: {'libLiteRtLm.so'},
@@ -77,7 +75,7 @@ const _litertLmPocBundles = <String, _LiteRtLmPocBundleSpec>{
   'linux-x64': _LiteRtLmPocBundleSpec(
     directoryName: 'linux/x64',
     archiveName: 'litert-lm-native-runtime-linux-x64-v0.12.0.tar.gz',
-    sha256: '510e6865bcf610dd04bb89ebe31af7f10e868b6958c45e36ac34bf45954970fb',
+    sha256: 'af42fee4a95aac005fca9ec52c9af78adfe7c220ff4a6101caf7242f8a8d04b3',
     releaseBaseUrl: _litertLmNativeReleaseBaseUrl,
     sourcePrefix: 'linux/x64',
     requiredLibraries: {'libLiteRtLm.so'},
@@ -86,7 +84,7 @@ const _litertLmPocBundles = <String, _LiteRtLmPocBundleSpec>{
   'windows-x64': _LiteRtLmPocBundleSpec(
     directoryName: 'windows/x64',
     archiveName: 'litert-lm-native-runtime-windows-x64-v0.12.0.tar.gz',
-    sha256: 'abfe4443d32572fb0c5c3e27d7b97717d9676b8dcef7f265a2585c9c7e801326',
+    sha256: '677bd1a19a65ff42797bc72a8fbea94a3426f9fe81a80763273a05cd8723ba0a',
     releaseBaseUrl: _litertLmNativeReleaseBaseUrl,
     sourcePrefix: 'windows/x64',
     requiredLibraries: {'LiteRtLm.dll'},
