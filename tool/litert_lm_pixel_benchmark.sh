@@ -26,7 +26,15 @@ OUTPUT_TOKENS="${OUTPUT_TOKENS:-256}"
 MAX_TOKENS="${MAX_TOKENS:-4096}"
 SPECULATIVE="${SPECULATIVE:-false}"
 PROMPT="${PROMPT:-Write a detailed practical guide for product engineers who want to use on-device language models in mobile and desktop apps. Cover privacy, latency, offline behavior, personalization, battery tradeoffs, model format choices, benchmarking methodology, rollout strategy, and failure modes. Use clear paragraphs and continue until the answer is complete.}"
-LOG_TIMEOUT="${LOG_TIMEOUT:-900}"
+if [[ -n "${LOG_TIMEOUT:-}" ]]; then
+  LITERT_LM_LOG_TIMEOUT="${LITERT_LM_LOG_TIMEOUT:-$LOG_TIMEOUT}"
+  LLAMADART_LOG_TIMEOUT="${LLAMADART_LOG_TIMEOUT:-$LOG_TIMEOUT}"
+  BOTH_LOG_TIMEOUT="${BOTH_LOG_TIMEOUT:-$LOG_TIMEOUT}"
+else
+  LITERT_LM_LOG_TIMEOUT="${LITERT_LM_LOG_TIMEOUT:-1200}"
+  LLAMADART_LOG_TIMEOUT="${LLAMADART_LOG_TIMEOUT:-3600}"
+  BOTH_LOG_TIMEOUT="${BOTH_LOG_TIMEOUT:-4800}"
+fi
 FAIL_IF_GGUF_MISSING="${FAIL_IF_GGUF_MISSING:-0}"
 
 ADB="${ADB:-${ANDROID_HOME:-$HOME/Library/Android/sdk}/platform-tools/adb}"
@@ -73,6 +81,7 @@ echo "  backend: $BACKEND"
 echo "  speculative: $SPECULATIVE"
 echo "  runs/warmups: $RUNS/$WARMUPS"
 echo "  output/max tokens: $OUTPUT_TOKENS/$MAX_TOKENS"
+echo "  log timeouts: LiteRT-LM=${LITERT_LM_LOG_TIMEOUT}s llamadart=${LLAMADART_LOG_TIMEOUT}s both=${BOTH_LOG_TIMEOUT}s"
 echo "  LiteRT-LM model: $LOCAL_MODEL -> $DEVICE_MODEL"
 if [[ -n "$LLAMADART_MODEL_DEFINE" ]]; then
   echo "  GGUF model: $LOCAL_LLAMADART_MODEL -> $DEVICE_LLAMADART_MODEL"
@@ -154,9 +163,19 @@ build_install_and_push() {
 
 run_installed_benchmark() {
   local target="$1"
+  local timeout="$BOTH_LOG_TIMEOUT"
   local log_file
   local logcat_pid
   log_file="$(mktemp -t llamadart_litert_pixel.XXXXXX.log)"
+
+  case "$target" in
+    litert_lm)
+      timeout="$LITERT_LM_LOG_TIMEOUT"
+      ;;
+    llamadart)
+      timeout="$LLAMADART_LOG_TIMEOUT"
+      ;;
+  esac
 
   "$ADB" -s "$DEVICE" shell am force-stop "$APP_ID" || true
   "$ADB" -s "$DEVICE" logcat -c
@@ -194,8 +213,8 @@ run_installed_benchmark() {
     process_new_lines
     local now_seconds
     now_seconds="$(date +%s)"
-    if ((now_seconds - start_seconds >= LOG_TIMEOUT)); then
-      echo "Timed out waiting for BENCHMARK_DONE after ${LOG_TIMEOUT}s" >&2
+    if ((now_seconds - start_seconds >= timeout)); then
+      echo "Timed out waiting for BENCHMARK_DONE after ${timeout}s" >&2
       cleanup_logcat
       return 1
     fi
