@@ -3,7 +3,7 @@ import '../core/models/inference/generation_params.dart';
 import '../core/models/chat/content_part.dart';
 import '../core/models/config/log_level.dart';
 
-import 'llama_cpp/llama_cpp_backend.dart'
+import 'native/native_backend.dart'
     if (dart.library.js_interop) 'web/web_backend.dart';
 
 /// Platform-agnostic interface for Llama model inference.
