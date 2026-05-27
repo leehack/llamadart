@@ -27,12 +27,13 @@ const _litertLmNativeReleaseBaseUrl =
     'https://github.com/leehack/litert-lm-native/releases/download/'
     'v$_litertLmVersion';
 const _litertLmCacheDir = 'litert_lm';
+const _litertLmChecksumFileName = '.llamadart_litert_lm.sha256';
 
 const _litertLmBundles = <String, _LiteRtLmBundleSpec>{
   'android-arm64': _LiteRtLmBundleSpec(
     directoryName: 'android/arm64',
     archiveName: 'litert-lm-native-runtime-android-arm64-v0.12.0.tar.gz',
-    sha256: '3ae6b3d1c3e8afebac73a76519d49dd8ba702e4532f78a49c031f30a4999f73c',
+    sha256: '1d4332e740aca7bb3d23af20d94fb16193803e8997138a87633e8de4a096a026',
     releaseBaseUrl: _litertLmNativeReleaseBaseUrl,
     sourcePrefix: 'android/arm64',
     requiredLibraries: {'libLiteRtLm.so', 'libStreamProxy.so'},
@@ -41,7 +42,7 @@ const _litertLmBundles = <String, _LiteRtLmBundleSpec>{
   'android-x64': _LiteRtLmBundleSpec(
     directoryName: 'android/x64',
     archiveName: 'litert-lm-native-runtime-android-x64-v0.12.0.tar.gz',
-    sha256: '7c53764ba25b13be4607a2a621561513ab6a516ba8bfcd5965c7be0c0d53c865',
+    sha256: 'b59cb34a83d5e3b8c467fe9b670a7f810fe956f1b47b524271008546bc31c655',
     releaseBaseUrl: _litertLmNativeReleaseBaseUrl,
     sourcePrefix: 'android/x64',
     requiredLibraries: {'libLiteRtLm.so', 'libStreamProxy.so'},
@@ -50,7 +51,7 @@ const _litertLmBundles = <String, _LiteRtLmBundleSpec>{
   'ios-arm64': _LiteRtLmBundleSpec(
     directoryName: 'ios/arm64',
     archiveName: 'litert-lm-native-runtime-ios-arm64-v0.12.0.tar.gz',
-    sha256: 'a8e99bcd921ee94e64f943f1bb93fa0c54634a6290209cb6598da1da128d4e76',
+    sha256: 'd1c48c085f901baac67097209814e25a84dfa61d79644a8fe6d125d6ab39c3c3',
     releaseBaseUrl: _litertLmNativeReleaseBaseUrl,
     sourcePrefix: 'ios/arm64',
     requiredLibraries: {'libLiteRtLm.dylib', 'libStreamProxy.dylib'},
@@ -58,7 +59,7 @@ const _litertLmBundles = <String, _LiteRtLmBundleSpec>{
   'ios-arm64-sim': _LiteRtLmBundleSpec(
     directoryName: 'ios/arm64-sim',
     archiveName: 'litert-lm-native-runtime-ios-arm64-sim-v0.12.0.tar.gz',
-    sha256: '7b806b5d53c9ad832b37b7e77b1b9a90b53bbb2d61a972c6fb11ade2ce2ba342',
+    sha256: '9ae754eb6a0e9d6ff51caa94864b24b520b7e73c46a46091b8a44f99b7a4aef6',
     releaseBaseUrl: _litertLmNativeReleaseBaseUrl,
     sourcePrefix: 'ios/arm64-sim',
     requiredLibraries: {'libLiteRtLm.dylib', 'libStreamProxy.dylib'},
@@ -66,7 +67,7 @@ const _litertLmBundles = <String, _LiteRtLmBundleSpec>{
   'ios-x64-sim': _LiteRtLmBundleSpec(
     directoryName: 'ios/x64-sim',
     archiveName: 'litert-lm-native-runtime-ios-x64-sim-v0.12.0.tar.gz',
-    sha256: 'cf646f9740e4cd407f7a422da11a5c0985cb44d8d307d2e8bc62af17f21667b0',
+    sha256: 'be573217169878cb5d79b70084730c5a2978230cc6d1b96144f694249e2027e0',
     releaseBaseUrl: _litertLmNativeReleaseBaseUrl,
     sourcePrefix: 'ios/x64-sim',
     requiredLibraries: {'libLiteRtLm.dylib', 'libStreamProxy.dylib'},
@@ -74,7 +75,7 @@ const _litertLmBundles = <String, _LiteRtLmBundleSpec>{
   'macos-arm64': _LiteRtLmBundleSpec(
     directoryName: 'macos/arm64',
     archiveName: 'litert-lm-native-runtime-macos-arm64-v0.12.0.tar.gz',
-    sha256: 'cf45695bd76ed608d94a400dd81bb3b9307d2b53436e501fbb45089ec7b8c7df',
+    sha256: '6fe694ccc895c904b173f2952b73b7698097eda18d8bff0210ea9fcf10ca3da9',
     releaseBaseUrl: _litertLmNativeReleaseBaseUrl,
     sourcePrefix: 'macos/arm64',
     requiredLibraries: {'libLiteRtLm.dylib', 'libStreamProxy.dylib'},
@@ -82,7 +83,7 @@ const _litertLmBundles = <String, _LiteRtLmBundleSpec>{
   'macos-x64': _LiteRtLmBundleSpec(
     directoryName: 'macos/x64',
     archiveName: 'litert-lm-native-runtime-macos-x64-v0.12.0.tar.gz',
-    sha256: '83861be457bf670ffd9d5055d6e9b61e84eaa9b9765a61ceb834c55301a8858e',
+    sha256: '8b54daaf55d6cb2570b7a667891c71bba1578a5875d8c2b7230c2185b2e88bf4',
     releaseBaseUrl: _litertLmNativeReleaseBaseUrl,
     sourcePrefix: 'macos/x64',
     requiredLibraries: {'libLiteRtLm.dylib', 'libStreamProxy.dylib'},
@@ -90,7 +91,7 @@ const _litertLmBundles = <String, _LiteRtLmBundleSpec>{
   'linux-arm64': _LiteRtLmBundleSpec(
     directoryName: 'linux/arm64',
     archiveName: 'litert-lm-native-runtime-linux-arm64-v0.12.0.tar.gz',
-    sha256: '0818cb83f07758941c321f70486b5f056bb2b6e0d728f3d70a75b438b2df32cb',
+    sha256: 'd0546e0f769b1156f973051dfd928d8f4448e0db9465d57386cf0490192651c1',
     releaseBaseUrl: _litertLmNativeReleaseBaseUrl,
     sourcePrefix: 'linux/arm64',
     requiredLibraries: {'libLiteRtLm.so', 'libStreamProxy.so'},
@@ -99,7 +100,7 @@ const _litertLmBundles = <String, _LiteRtLmBundleSpec>{
   'linux-x64': _LiteRtLmBundleSpec(
     directoryName: 'linux/x64',
     archiveName: 'litert-lm-native-runtime-linux-x64-v0.12.0.tar.gz',
-    sha256: '53c9e12b3a0360f4d51381eb6d271fccba849bd4c89dd0e2656f2a170d90f759',
+    sha256: 'e508e545d7be417895071c47612fd4fd5da842b05864f0776c98c2c67ad223e9',
     releaseBaseUrl: _litertLmNativeReleaseBaseUrl,
     sourcePrefix: 'linux/x64',
     requiredLibraries: {'libLiteRtLm.so', 'libStreamProxy.so'},
@@ -108,7 +109,7 @@ const _litertLmBundles = <String, _LiteRtLmBundleSpec>{
   'windows-x64': _LiteRtLmBundleSpec(
     directoryName: 'windows/x64',
     archiveName: 'litert-lm-native-runtime-windows-x64-v0.12.0.tar.gz',
-    sha256: '2f15785f784cd2fc917a6232cc125eb9ba9d850cd271520fa30e93ae4b275e23',
+    sha256: '4c6ff1b3affd37c49c4d45538fdd2f376cc065a85a1339ca6c166e2b542072df',
     releaseBaseUrl: _litertLmNativeReleaseBaseUrl,
     sourcePrefix: 'windows/x64',
     requiredLibraries: {'LiteRtLm.dll', 'StreamProxy.dll'},
@@ -542,6 +543,7 @@ Future<Directory> _acquireLiteRtLmBundle({
       'libraries: ${missingLibraries.join(', ')}',
     );
   }
+  await _writeLiteRtLmChecksumMarker(extractedDir, expectedSha256);
   log.info('Extracted LiteRT-LM bundle to ${extractedDir.path}');
   return extractedDir;
 }
@@ -611,7 +613,30 @@ bool _liteRtLmBundleIsUsable(
   Directory directory,
   _LiteRtLmBundleSpec bundleSpec,
 ) {
-  return _missingLiteRtLmLibraries(directory, bundleSpec).isEmpty;
+  if (_missingLiteRtLmLibraries(directory, bundleSpec).isNotEmpty) {
+    return false;
+  }
+  final expectedSha256 = bundleSpec.sha256;
+  if (expectedSha256 == null) {
+    return true;
+  }
+  final checksumFile = File(
+    path.join(directory.path, _litertLmChecksumFileName),
+  );
+  return checksumFile.existsSync() &&
+      checksumFile.readAsStringSync().trim() == expectedSha256;
+}
+
+Future<void> _writeLiteRtLmChecksumMarker(
+  Directory directory,
+  String? sha256,
+) async {
+  if (sha256 == null) {
+    return;
+  }
+  await File(
+    path.join(directory.path, _litertLmChecksumFileName),
+  ).writeAsString('$sha256\n');
 }
 
 List<String> _missingLiteRtLmLibraries(

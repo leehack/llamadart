@@ -13,6 +13,10 @@ import '../../../hook/build.dart' as build_hook;
 void main() {
   final nativeTag = _readHookConst('_llamaCppTag');
   final litertVersion = _readHookConst('_litertLmVersion');
+  final linuxX64LitertSha256 = _readLiteRtBundleSha256('linux-x64');
+  final iosArm64LitertSha256 = _readLiteRtBundleSha256('ios-arm64');
+  final iosArm64SimLitertSha256 = _readLiteRtBundleSha256('ios-arm64-sim');
+  final iosX64SimLitertSha256 = _readLiteRtBundleSha256('ios-x64-sim');
   final nativeBundleDir = Directory(
     '.dart_tool/llamadart/native_bundles/$nativeTag/linux-x64/extracted',
   );
@@ -83,7 +87,7 @@ void main() {
     await _writeBundleLibraries(litertBundleDir, const [
       'libLiteRtLm.so',
       'libStreamProxy.so',
-    ]);
+    ], sha256: linuxX64LitertSha256);
     for (final directory in [
       iosDeviceNativeBundleDir,
       iosArm64SimNativeBundleDir,
@@ -96,10 +100,19 @@ void main() {
       iosArm64SimLitertBundleDir,
       iosX64SimLitertBundleDir,
     ]) {
-      await _writeBundleLibraries(directory, const [
-        'libLiteRtLm.dylib',
-        'libStreamProxy.dylib',
-      ]);
+      await _writeBundleLibraries(
+        directory,
+        const ['libLiteRtLm.dylib', 'libStreamProxy.dylib'],
+        sha256: switch (directory.path) {
+          final path when path == iosDeviceLitertBundleDir.path =>
+            iosArm64LitertSha256,
+          final path when path == iosArm64SimLitertBundleDir.path =>
+            iosArm64SimLitertSha256,
+          final path when path == iosX64SimLitertBundleDir.path =>
+            iosX64SimLitertSha256,
+          _ => null,
+        },
+      );
     }
   });
 
@@ -219,6 +232,18 @@ String _readHookConst(String name) {
   return match.group(1)!;
 }
 
+String _readLiteRtBundleSha256(String bundleKey) {
+  final source = File('hook/build.dart').readAsStringSync();
+  final escapedKey = RegExp.escape(bundleKey);
+  final match = RegExp(
+    "'$escapedKey':\\s*_LiteRtLmBundleSpec\\([\\s\\S]*?sha256:\\s*'([^']+)'",
+  ).firstMatch(source);
+  if (match == null) {
+    throw StateError('Could not locate LiteRT-LM checksum for $bundleKey');
+  }
+  return match.group(1)!;
+}
+
 Future<void> _backupDirectory(Directory directory, Directory backup) async {
   if (backup.existsSync()) {
     await backup.delete(recursive: true);
@@ -239,14 +264,20 @@ Future<void> _restoreDirectory(Directory directory, Directory backup) async {
 
 Future<void> _writeBundleLibraries(
   Directory bundleDir,
-  List<String> fileNames,
-) async {
+  List<String> fileNames, {
+  String? sha256,
+}) async {
   if (bundleDir.existsSync()) {
     await bundleDir.delete(recursive: true);
   }
   await bundleDir.create(recursive: true);
   for (final name in fileNames) {
     await File(path.join(bundleDir.path, name)).writeAsString('fake-$name');
+  }
+  if (sha256 != null) {
+    await File(
+      path.join(bundleDir.path, '.llamadart_litert_lm.sha256'),
+    ).writeAsString('$sha256\n');
   }
 }
 
