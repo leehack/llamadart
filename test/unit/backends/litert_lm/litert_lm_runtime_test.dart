@@ -43,4 +43,67 @@ void main() {
     expect(result.text, 'hello');
     expect(result.metrics, same(metrics));
   });
+
+  test(
+    'LiteRtLmRuntimeClient validates counts before native initialization',
+    () {
+      final client = LiteRtLmRuntimeClient();
+
+      expect(
+        client.initialize(modelPath: 'model.litertlm', maxTokens: 0),
+        throwsA(
+          isA<ArgumentError>().having(
+            (error) => error.name,
+            'name',
+            'maxTokens',
+          ),
+        ),
+      );
+      expect(
+        client.initialize(modelPath: 'model.litertlm', outputTokens: 0),
+        throwsA(
+          isA<ArgumentError>().having(
+            (error) => error.name,
+            'name',
+            'outputTokens',
+          ),
+        ),
+      );
+      expect(
+        client.initialize(modelPath: 'model.litertlm', prefillTokens: -1),
+        throwsA(
+          isA<ArgumentError>().having(
+            (error) => error.name,
+            'name',
+            'prefillTokens',
+          ),
+        ),
+      );
+    },
+  );
+
+  test('LiteRtLmRuntimeClient validates benchmark loop counts', () {
+    final client = LiteRtLmRuntimeClient();
+
+    expect(
+      client.run(prompt: 'hello', warmupRuns: -1),
+      throwsA(
+        isA<ArgumentError>().having(
+          (error) => error.name,
+          'name',
+          'warmupRuns',
+        ),
+      ),
+    );
+    expect(
+      client.run(prompt: 'hello', measuredRuns: 0),
+      throwsA(
+        isA<ArgumentError>().having(
+          (error) => error.name,
+          'name',
+          'measuredRuns',
+        ),
+      ),
+    );
+  });
 }

@@ -177,15 +177,38 @@ class LiteRtLmRuntimeClient {
     bool speculativeDecoding = true,
     int minLogLevel = 3,
   }) async {
+    if (maxTokens <= 0) {
+      throw ArgumentError.value(maxTokens, 'maxTokens', 'must be positive');
+    }
+    if (outputTokens <= 0) {
+      throw ArgumentError.value(
+        outputTokens,
+        'outputTokens',
+        'must be positive',
+      );
+    }
+    if (prefillTokens != null && prefillTokens <= 0) {
+      throw ArgumentError.value(
+        prefillTokens,
+        'prefillTokens',
+        'must be positive when provided',
+      );
+    }
+
     _ensureLibrariesLoaded();
     final bindings = _bindings!;
     bindings.setMinLogLevel(minLogLevel);
+    if (_engine != null || _conversation != null) {
+      dispose();
+    }
+
     final modelPathPtr = modelPath.toNativeUtf8();
     final backendPtr = backend.toNativeUtf8();
     final cacheDirPtr = cacheDir?.toNativeUtf8();
+    Pointer<_LiteRtLmEngineSettings> settings = nullptr;
 
     try {
-      final settings = bindings.engineSettingsCreate(
+      settings = bindings.engineSettingsCreate(
         modelPathPtr.cast(),
         backendPtr.cast(),
         nullptr,
@@ -225,12 +248,14 @@ class LiteRtLmRuntimeClient {
           Pointer<_LiteRtLmEngineSettings>.fromAddress(settingsAddress),
         ).address;
       });
-      bindings.engineSettingsDelete(settings);
       if (engineAddress == 0) {
         throw StateError('litert_lm_engine_create returned null');
       }
       _engine = Pointer<_LiteRtLmEngine>.fromAddress(engineAddress);
     } finally {
+      if (settings != nullptr) {
+        bindings.engineSettingsDelete(settings);
+      }
       calloc.free(modelPathPtr);
       calloc.free(backendPtr);
       if (cacheDirPtr != null) {
@@ -473,26 +498,33 @@ class LiteRtLmRuntimeClient {
       }
     }
 
-    final optionalArgs = bindings.conversationOptionalArgsCreate();
-    if (optionalArgs == nullptr) {
-      cleanup();
-      throw StateError(
-        'litert_lm_conversation_optional_args_create returned null',
-      );
-    }
+    Pointer<_LiteRtLmConversationOptionalArgs> optionalArgs = nullptr;
+    try {
+      optionalArgs = bindings.conversationOptionalArgsCreate();
+      if (optionalArgs == nullptr) {
+        throw StateError(
+          'litert_lm_conversation_optional_args_create returned null',
+        );
+      }
 
-    final rc = bindings.conversationSendMessageStream(
-      conversation,
-      messagePtr.cast(),
-      nullptr,
-      optionalArgs,
-      callbackFn.cast(),
-      callbackData,
-    );
-    bindings.conversationOptionalArgsDelete(optionalArgs);
-    if (rc != 0) {
+      final rc = bindings.conversationSendMessageStream(
+        conversation,
+        messagePtr.cast(),
+        nullptr,
+        optionalArgs,
+        callbackFn.cast(),
+        callbackData,
+      );
+      if (rc != 0) {
+        throw StateError('litert_lm_conversation_send_message_stream rc=$rc');
+      }
+    } catch (_) {
       cleanup();
-      throw StateError('litert_lm_conversation_send_message_stream rc=$rc');
+      rethrow;
+    } finally {
+      if (optionalArgs != nullptr) {
+        bindings.conversationOptionalArgsDelete(optionalArgs);
+      }
     }
 
     return controller.stream;
@@ -569,6 +601,13 @@ class LiteRtLmRuntimeClient {
     int warmupRuns = 1,
     int measuredRuns = 3,
   }) async {
+    if (warmupRuns < 0) {
+      throw ArgumentError.value(warmupRuns, 'warmupRuns', 'must be >= 0');
+    }
+    if (measuredRuns <= 0) {
+      throw ArgumentError.value(measuredRuns, 'measuredRuns', 'must be > 0');
+    }
+
     for (var i = 0; i < warmupRuns; i++) {
       createConversation();
       await generate(prompt).drain<void>();

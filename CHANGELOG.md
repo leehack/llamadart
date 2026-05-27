@@ -43,6 +43,9 @@
   * Promoted the LiteRT-LM runtime client, result, and metrics types out of the
     experimental benchmark namespace while keeping deprecated benchmark
     wrappers for compatibility.
+  * Hardened direct `LiteRtLmRuntimeClient` lifecycle handling with validation
+    for impossible token/run counts and safer native handle cleanup on
+    initialization or streaming failures.
 
 ## 0.6.17
 
