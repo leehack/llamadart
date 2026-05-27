@@ -16,7 +16,7 @@ typedef _StreamCallbackNative =
     Void Function(
       Pointer<Void> callbackData,
       Pointer<Char> chunk,
-      Uint8 isFinal,
+      Bool isFinal,
       Pointer<Char> errorMessage,
     );
 
@@ -50,6 +50,8 @@ final class _LiteRtLmConversationConfig extends Opaque {}
 final class _LiteRtLmConversationOptionalArgs extends Opaque {}
 
 final class _LiteRtLmConversation extends Opaque {}
+
+final class _LiteRtLmJsonResponse extends Opaque {}
 
 final class _LiteRtLmBenchmarkInfo extends Opaque {}
 
@@ -219,26 +221,27 @@ class LiteRtLmBenchmarkClient {
     final systemPtr = systemMessage == null
         ? nullptr
         : systemMessage.toNativeUtf8();
+    Pointer<_LiteRtLmConversationConfig> config = nullptr;
     try {
-      final config = bindings.conversationConfigCreate(
-        engine,
-        sessionConfig,
-        systemPtr == nullptr ? nullptr : systemPtr.cast(),
-        nullptr,
-        nullptr,
-        false,
-      );
-      bindings.sessionConfigDelete(sessionConfig);
+      config = bindings.conversationConfigCreate();
       if (config == nullptr) {
         throw StateError('litert_lm_conversation_config_create returned null');
       }
+      bindings.conversationConfigSetSessionConfig(config, sessionConfig);
+      if (systemPtr != nullptr) {
+        bindings.conversationConfigSetSystemMessage(config, systemPtr.cast());
+      }
+      bindings.conversationConfigSetEnableConstrainedDecoding(config, false);
       final conversation = bindings.conversationCreate(engine, config);
-      bindings.conversationConfigDelete(config);
       if (conversation == nullptr) {
         throw StateError('litert_lm_conversation_create returned null');
       }
       _conversation = conversation;
     } finally {
+      if (config != nullptr) {
+        bindings.conversationConfigDelete(config);
+      }
+      bindings.sessionConfigDelete(sessionConfig);
       if (systemPtr != nullptr) {
         calloc.free(systemPtr);
       }
@@ -246,6 +249,70 @@ class LiteRtLmBenchmarkClient {
   }
 
   Stream<String> generate(String prompt) {
+    // Upstream stream callback strings are only valid during the native call.
+    // Dart listener callbacks run later, so streaming requires StreamProxy to
+    // copy those strings across the thread/isolate boundary.
+    if (_proxyCreate == null) {
+      return _generateBlocking(prompt);
+    }
+    return _generateStreaming(prompt);
+  }
+
+  Stream<String> _generateBlocking(String prompt) {
+    final bindings = _requireBindings();
+    final conversation = _requireConversation();
+    final controller = StreamController<String>();
+
+    Future<void>(() {
+      final messagePtr = _messageJson(prompt).toNativeUtf8();
+      Pointer<_LiteRtLmConversationOptionalArgs> optionalArgs = nullptr;
+      try {
+        optionalArgs = bindings.conversationOptionalArgsCreate();
+        if (optionalArgs == nullptr) {
+          throw StateError(
+            'litert_lm_conversation_optional_args_create returned null',
+          );
+        }
+
+        final response = bindings.conversationSendMessage(
+          conversation,
+          messagePtr.cast(),
+          nullptr,
+          optionalArgs,
+        );
+        if (response == nullptr) {
+          throw StateError('litert_lm_conversation_send_message returned null');
+        }
+
+        try {
+          final rawPtr = bindings.jsonResponseGetString(response);
+          if (rawPtr == nullptr) {
+            throw StateError(
+              'litert_lm_json_response_get_string returned null',
+            );
+          }
+          final text = _extractText(rawPtr.cast<Utf8>().toDartString());
+          if (text.isNotEmpty) {
+            controller.add(text);
+          }
+        } finally {
+          bindings.jsonResponseDelete(response);
+        }
+      } catch (error, stackTrace) {
+        controller.addError(error, stackTrace);
+      } finally {
+        if (optionalArgs != nullptr) {
+          bindings.conversationOptionalArgsDelete(optionalArgs);
+        }
+        calloc.free(messagePtr);
+        unawaited(controller.close());
+      }
+    });
+
+    return controller.stream;
+  }
+
+  Stream<String> _generateStreaming(String prompt) {
     final bindings = _requireBindings();
     final conversation = _requireConversation();
     final controller = StreamController<String>();
@@ -255,7 +322,7 @@ class LiteRtLmBenchmarkClient {
     callable = NativeCallable<_StreamCallbackNative>.listener((
       Pointer<Void> data,
       Pointer<Char> chunk,
-      int isFinal,
+      bool isFinal,
       Pointer<Char> errorMessage,
     ) {
       if (errorMessage != nullptr) {
@@ -281,7 +348,7 @@ class LiteRtLmBenchmarkClient {
         }
       }
 
-      if (isFinal != 0) {
+      if (isFinal) {
         unawaited(controller.close());
         callable.close();
         calloc.free(messagePtr);
@@ -815,23 +882,33 @@ class _LiteRtLmBindings {
 
   late final conversationConfigCreate = _library
       .lookupFunction<
-        Pointer<_LiteRtLmConversationConfig> Function(
-          Pointer<_LiteRtLmEngine>,
-          Pointer<_LiteRtLmSessionConfig>,
-          Pointer<Char>,
-          Pointer<Char>,
-          Pointer<Char>,
-          Bool,
-        ),
-        Pointer<_LiteRtLmConversationConfig> Function(
-          Pointer<_LiteRtLmEngine>,
-          Pointer<_LiteRtLmSessionConfig>,
-          Pointer<Char>,
-          Pointer<Char>,
-          Pointer<Char>,
-          bool,
-        )
+        Pointer<_LiteRtLmConversationConfig> Function(),
+        Pointer<_LiteRtLmConversationConfig> Function()
       >('litert_lm_conversation_config_create');
+
+  late final conversationConfigSetSessionConfig = _library
+      .lookupFunction<
+        Void Function(
+          Pointer<_LiteRtLmConversationConfig>,
+          Pointer<_LiteRtLmSessionConfig>,
+        ),
+        void Function(
+          Pointer<_LiteRtLmConversationConfig>,
+          Pointer<_LiteRtLmSessionConfig>,
+        )
+      >('litert_lm_conversation_config_set_session_config');
+
+  late final conversationConfigSetSystemMessage = _library
+      .lookupFunction<
+        Void Function(Pointer<_LiteRtLmConversationConfig>, Pointer<Char>),
+        void Function(Pointer<_LiteRtLmConversationConfig>, Pointer<Char>)
+      >('litert_lm_conversation_config_set_system_message');
+
+  late final conversationConfigSetEnableConstrainedDecoding = _library
+      .lookupFunction<
+        Void Function(Pointer<_LiteRtLmConversationConfig>, Bool),
+        void Function(Pointer<_LiteRtLmConversationConfig>, bool)
+      >('litert_lm_conversation_config_set_enable_constrained_decoding');
 
   late final conversationConfigDelete = _library
       .lookupFunction<
@@ -868,6 +945,34 @@ class _LiteRtLmBindings {
         Void Function(Pointer<_LiteRtLmConversationOptionalArgs>),
         void Function(Pointer<_LiteRtLmConversationOptionalArgs>)
       >('litert_lm_conversation_optional_args_delete');
+
+  late final conversationSendMessage = _library
+      .lookupFunction<
+        Pointer<_LiteRtLmJsonResponse> Function(
+          Pointer<_LiteRtLmConversation>,
+          Pointer<Char>,
+          Pointer<Char>,
+          Pointer<_LiteRtLmConversationOptionalArgs>,
+        ),
+        Pointer<_LiteRtLmJsonResponse> Function(
+          Pointer<_LiteRtLmConversation>,
+          Pointer<Char>,
+          Pointer<Char>,
+          Pointer<_LiteRtLmConversationOptionalArgs>,
+        )
+      >('litert_lm_conversation_send_message');
+
+  late final jsonResponseDelete = _library
+      .lookupFunction<
+        Void Function(Pointer<_LiteRtLmJsonResponse>),
+        void Function(Pointer<_LiteRtLmJsonResponse>)
+      >('litert_lm_json_response_delete');
+
+  late final jsonResponseGetString = _library
+      .lookupFunction<
+        Pointer<Char> Function(Pointer<_LiteRtLmJsonResponse>),
+        Pointer<Char> Function(Pointer<_LiteRtLmJsonResponse>)
+      >('litert_lm_json_response_get_string');
 
   late final conversationSendMessageStream = _library
       .lookupFunction<
