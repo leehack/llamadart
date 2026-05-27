@@ -1,4 +1,4 @@
-/// Log level for the underlying llama.cpp engine.
+/// Log level for the selected native inference backend.
 enum LlamaLogLevel {
   /// No logging output.
   none,

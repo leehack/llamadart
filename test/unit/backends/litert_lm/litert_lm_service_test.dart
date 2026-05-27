@@ -6,6 +6,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:llamadart/src/backends/litert_lm/litert_lm_service.dart';
+import 'package:llamadart/src/core/models/config/log_level.dart';
 import 'package:llamadart/src/core/models/config/gpu_backend.dart';
 import 'package:llamadart/src/core/models/inference/generation_params.dart';
 import 'package:llamadart/src/core/models/inference/model_params.dart';
@@ -333,6 +334,31 @@ void main() {
     }
   });
 
+  test('maps log levels to LiteRT-LM native log levels', () async {
+    final fakeClient = _FakeLiteRtLmBenchmarkClient()
+      ..tokenizeResult = const <int>[1];
+    final service = LiteRtLmService(clientFactory: () => fakeClient);
+
+    try {
+      service.setLogLevel(LlamaLogLevel.debug);
+      final modelHandle = await service.loadModel(
+        modelFile.path,
+        const ModelParams(preferredBackend: GpuBackend.cpu),
+      );
+
+      await service.tokenize(modelHandle, 'hello', false);
+      expect(fakeClient.lastMinLogLevel, 1);
+
+      service.setLogLevel(LlamaLogLevel.error);
+      expect(fakeClient.lastSetMinLogLevel, 4);
+
+      service.setLogLevel(LlamaLogLevel.none);
+      expect(fakeClient.lastSetMinLogLevel, 1000);
+    } finally {
+      service.dispose();
+    }
+  });
+
   test('passes supported LiteRT-LM generation options to the client', () async {
     final fakeClient = _FakeLiteRtLmBenchmarkClient();
     final service = LiteRtLmService(clientFactory: () => fakeClient);
@@ -546,6 +572,7 @@ class _FakeLiteRtLmBenchmarkClient extends LiteRtLmBenchmarkClient {
   String? lastCacheDir;
   bool? lastSpeculativeDecoding;
   int? lastMinLogLevel;
+  int? lastSetMinLogLevel;
   double? lastTemperature;
   int? lastTopK;
   double? lastTopP;
@@ -586,6 +613,11 @@ class _FakeLiteRtLmBenchmarkClient extends LiteRtLmBenchmarkClient {
     if (_initializeBlocker != null && !_initializeBlocker.isCompleted) {
       _initializeBlocker.complete();
     }
+  }
+
+  @override
+  void setMinLogLevel(int level) {
+    lastSetMinLogLevel = level;
   }
 
   @override
