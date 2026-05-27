@@ -1,7 +1,7 @@
 /// High-performance Dart and Flutter plugin for llama.cpp.
 ///
 /// **llamadart** allows you to run Large Language Models (LLMs) locally using
-/// GGUF models across all major platforms (Android, iOS, macOS, Linux, Windows, Web).
+/// GGUF models and native LiteRT-LM bundles across major platforms.
 ///
 /// ### Core Components
 ///
@@ -15,7 +15,7 @@
 ///
 /// ```dart
 /// final engine = LlamaEngine(LlamaBackend());
-/// await engine.loadModel('path/to/model.gguf');
+/// await engine.loadModel('path/to/model.gguf'); // or model.litertlm on native
 ///
 /// final session = ChatSession(engine);
 /// await for (final token in session.create([LlamaTextContent('Hello!')])) {
@@ -85,10 +85,12 @@ export 'src/core/models/config/lora_config.dart';
 // Utils
 export 'src/core/exceptions.dart';
 
-// Experimental POC APIs
+// LiteRT-LM native APIs
 export 'src/backends/litert_lm/litert_lm_backend_stub.dart'
     if (dart.library.io) 'src/backends/litert_lm/litert_lm_backend.dart'
     show LiteRtLmBackend;
+
+// Experimental LiteRT-LM benchmark APIs
 export 'src/experimental/litert_lm/litert_lm_benchmark_stub.dart'
     if (dart.library.io) 'src/experimental/litert_lm/litert_lm_benchmark.dart';
 
