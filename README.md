@@ -279,6 +279,12 @@ conservative prompt-size estimate for history pruning when exact tokenization
 is unavailable. `LiteRtLmBackendPreference.auto` chooses GPU on Android/macOS
 and CPU on other current LiteRT-LM targets; set `cpu`, `gpu`, or Android-only
 `npu` explicitly when benchmarking or pinning deployment behavior.
+`ModelParams.contextSize`, `chatTemplate`, `preferredBackend`,
+`liteRtLmBackend`, and all-or-CPU `gpuLayers` hints are honored for
+`.litertlm` loads; llama.cpp-only tuning knobs such as partial GPU layer
+offload, batch/micro-batch sizing, KV-cache type, flash attention, mmap/mlock,
+thread counts, LoRA load configs, and rope overrides are rejected instead of
+being silently ignored.
 
 <details>
 <summary>Full module matrix (available modules by target)</summary>

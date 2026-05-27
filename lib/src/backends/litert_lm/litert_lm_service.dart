@@ -3,7 +3,9 @@ import 'dart:convert';
 import 'dart:io';
 
 import '../../core/models/chat/content_part.dart';
+import '../../core/models/config/flash_attention.dart';
 import '../../core/models/config/gpu_backend.dart';
+import '../../core/models/config/kv_cache_type.dart';
 import '../../core/models/config/log_level.dart';
 import '../../core/models/inference/generation_params.dart';
 import '../../core/models/inference/model_params.dart';
@@ -59,6 +61,7 @@ class LiteRtLmService {
         'LiteRtLmBackend expects a .litertlm model bundle; got $path',
       );
     }
+    _validateModelParams(params);
     final resolvedBackend = _resolveBackendName(
       params,
       backendOverride: backendOverride,
@@ -95,6 +98,7 @@ class LiteRtLmService {
   /// Creates the single LiteRT-LM context used by this backend.
   int createContext(int modelHandle, ModelParams params) {
     _checkModelHandle(modelHandle);
+    _validateModelParams(params);
     _modelParams = params;
     _contextCreated = true;
     return _contextHandle;
@@ -217,6 +221,9 @@ class LiteRtLmService {
         'tokenizer.ggml.bos_token': '<bos>',
         'tokenizer.ggml.eos_token': '<turn|>',
       });
+    }
+    if (_modelParams?.chatTemplate case final customTemplate?) {
+      metadata['tokenizer.chat_template'] = customTemplate;
     }
     return metadata;
   }
@@ -445,7 +452,77 @@ class LiteRtLmService {
     if (explicit != null) {
       return explicit;
     }
+    if (params.gpuLayers <= 0) {
+      return 'cpu';
+    }
     return _backendNameForGpuPreference(params.preferredBackend);
+  }
+
+  void _validateModelParams(ModelParams params) {
+    params.validate();
+
+    final unsupported = <String>[];
+    if (params.gpuLayers > 0 && params.gpuLayers != ModelParams.maxGpuLayers) {
+      unsupported.add('gpuLayers=${params.gpuLayers}');
+    }
+    if (params.splitMode != ModelSplitMode.layer) {
+      unsupported.add('splitMode');
+    }
+    if (params.mainGpu != 0) {
+      unsupported.add('mainGpu');
+    }
+    if (params.loras.isNotEmpty) {
+      unsupported.add('loras');
+    }
+    if (params.numberOfThreads != 0) {
+      unsupported.add('numberOfThreads');
+    }
+    if (params.numberOfThreadsBatch != 0) {
+      unsupported.add('numberOfThreadsBatch');
+    }
+    if (params.batchSize > 0) {
+      unsupported.add('batchSize');
+    }
+    if (params.microBatchSize > 0) {
+      unsupported.add('microBatchSize');
+    }
+    if (params.maxParallelSequences != 1) {
+      unsupported.add('maxParallelSequences');
+    }
+    if (!params.useMmap) {
+      unsupported.add('useMmap=false');
+    }
+    if (params.useMlock) {
+      unsupported.add('useMlock');
+    }
+    if (params.flashAttention != FlashAttention.auto) {
+      unsupported.add('flashAttention');
+    }
+    if (params.cacheTypeK != KvCacheType.f16) {
+      unsupported.add('cacheTypeK');
+    }
+    if (params.cacheTypeV != KvCacheType.f16) {
+      unsupported.add('cacheTypeV');
+    }
+    if (params.kvUnified != null) {
+      unsupported.add('kvUnified');
+    }
+    if (params.ropeFrequencyBase != null) {
+      unsupported.add('ropeFrequencyBase');
+    }
+    if (params.ropeFrequencyScale != null) {
+      unsupported.add('ropeFrequencyScale');
+    }
+
+    if (unsupported.isEmpty) {
+      return;
+    }
+    throw ArgumentError(
+      'LiteRtLmBackend does not support llama.cpp-specific ModelParams: '
+      '${unsupported.join(', ')}. Supported LiteRT-LM load options are '
+      'contextSize, chatTemplate, preferredBackend, all-or-CPU gpuLayers '
+      'hints, and liteRtLmBackend for explicit CPU/GPU/NPU selection.',
+    );
   }
 
   String _backendNameForGpuPreference(GpuBackend backend) {

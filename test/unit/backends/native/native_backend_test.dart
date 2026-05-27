@@ -246,6 +246,38 @@ void main() {
     },
   );
 
+  test('high-level engine rejects unsupported litertlm load params', () async {
+    final tempDir = await Directory.systemTemp.createTemp(
+      'llamadart_native_auto_load_params_litert_',
+    );
+    final modelFile = File('${tempDir.path}/gemma-4-E2B-it.litertlm');
+    await modelFile.writeAsString('fake model');
+    final engine = LlamaEngine(LlamaBackend());
+
+    try {
+      await expectLater(
+        () => engine.loadModel(
+          modelFile.path,
+          modelParams: const ModelParams(
+            preferredBackend: GpuBackend.cpu,
+            batchSize: 128,
+          ),
+        ),
+        throwsA(
+          isA<LlamaModelException>().having(
+            (error) => error.details.toString(),
+            'details',
+            contains('batchSize'),
+          ),
+        ),
+      );
+      expect(engine.isReady, isFalse);
+    } finally {
+      await engine.dispose();
+      await tempDir.delete(recursive: true);
+    }
+  });
+
   test(
     'high-level engine rejects LoRA operations for litertlm bundles',
     () async {

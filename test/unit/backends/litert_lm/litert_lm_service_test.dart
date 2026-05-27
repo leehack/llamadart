@@ -74,14 +74,20 @@ void main() {
     try {
       final modelHandle = await service.loadModel(
         gemmaModelFile.path,
-        const ModelParams(contextSize: 2048),
+        const ModelParams(
+          contextSize: 2048,
+          chatTemplate: 'custom {{ message }}',
+        ),
       );
       final metadata = service.getMetadata(modelHandle);
 
       expect(metadata, containsPair('general.name', 'gemma-4-E2B-it.litertlm'));
       expect(metadata, containsPair('llm.context_length', '2048'));
-      expect(metadata['tokenizer.chat_template'], contains('<|turn>'));
-      expect(metadata['tokenizer.chat_template'], contains('<turn|>'));
+      expect(
+        metadata,
+        containsPair('tokenizer.chat_template', 'custom {{ message }}'),
+      );
+      expect(metadata, containsPair('tokenizer.ggml.bos_token', '<bos>'));
       expect(metadata, containsPair('tokenizer.ggml.eos_token', '<turn|>'));
     } finally {
       service.dispose();
@@ -100,6 +106,14 @@ void main() {
         service.getActiveBackendName(),
         'LiteRT-LM ${_expectedAutoLiteRtLmBackend()}',
       );
+      service.freeModel(modelHandle);
+
+      modelHandle = await service.loadModel(
+        modelFile.path,
+        const ModelParams(gpuLayers: 0),
+      );
+      expect(service.getActiveBackendName(), 'LiteRT-LM cpu');
+      expect(service.getResolvedGpuLayers(), 0);
       service.freeModel(modelHandle);
 
       modelHandle = await service.loadModel(
@@ -144,6 +158,62 @@ void main() {
           throwsArgumentError,
         );
       }
+    } finally {
+      service.dispose();
+    }
+  });
+
+  test('rejects unsupported LiteRT-LM load-time model params', () async {
+    final service = LiteRtLmService();
+
+    try {
+      await expectLater(
+        () =>
+            service.loadModel(modelFile.path, const ModelParams(gpuLayers: 12)),
+        throwsA(
+          isA<ArgumentError>().having(
+            (error) => error.message.toString(),
+            'message',
+            contains('gpuLayers=12'),
+          ),
+        ),
+      );
+
+      await expectLater(
+        () => service.loadModel(
+          modelFile.path,
+          const ModelParams(
+            gpuLayers: 12,
+            liteRtLmBackend: LiteRtLmBackendPreference.gpu,
+          ),
+        ),
+        throwsA(
+          isA<ArgumentError>().having(
+            (error) => error.message.toString(),
+            'message',
+            contains('gpuLayers=12'),
+          ),
+        ),
+      );
+
+      await expectLater(
+        () => service.loadModel(
+          modelFile.path,
+          const ModelParams(batchSize: 128, useMlock: true),
+        ),
+        throwsA(
+          isA<ArgumentError>().having(
+            (error) => error.message.toString(),
+            'message',
+            allOf(contains('batchSize'), contains('useMlock')),
+          ),
+        ),
+      );
+
+      expect(
+        service.getActiveBackendName(),
+        'LiteRT-LM ${_expectedAutoLiteRtLmBackend()}',
+      );
     } finally {
       service.dispose();
     }

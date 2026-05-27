@@ -22,6 +22,9 @@
   * Added coverage and docs for loading cached Hugging Face `.litertlm` bundles
     through `loadModelSource(...)`, preserving `liteRtLmBackend` routing after
     the download/cache manager resolves the local file.
+  * Rejected unsupported llama.cpp-only `ModelParams` for `.litertlm` loads
+    instead of silently ignoring them, while honoring `gpuLayers: 0` as a CPU
+    hint and `chatTemplate` as the LiteRT-LM chat-template override.
 
 ## 0.6.17
 
