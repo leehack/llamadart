@@ -15,11 +15,18 @@ import '../../../hook/build.dart' as build_hook;
 
 void main() {
   final nativeTag = _readHookNativeTag();
+  final litertVersion = _readHookLiteRtLmVersion();
   final cacheRelativeDir =
       '.dart_tool/llamadart/native_bundles/$nativeTag/windows-x64';
   final bundleRelativePath = '$cacheRelativeDir/extracted';
   final bundleDir = Directory(bundleRelativePath);
   final backupDir = Directory('$bundleRelativePath.__hook_test_backup');
+  final litertBundleDir = Directory(
+    '.dart_tool/llamadart/litert_lm/$litertVersion/windows/x64',
+  );
+  final litertBackupDir = Directory(
+    '${litertBundleDir.path}.__hook_test_backup',
+  );
   final archivePath =
       '$cacheRelativeDir/llamadart-native-windows-x64-$nativeTag.tar.gz';
   final archiveFile = File(archivePath);
@@ -31,6 +38,12 @@ void main() {
 
     if (bundleDir.existsSync()) {
       await bundleDir.rename(backupDir.path);
+    }
+    if (litertBackupDir.existsSync()) {
+      await litertBackupDir.delete(recursive: true);
+    }
+    if (litertBundleDir.existsSync()) {
+      await litertBundleDir.rename(litertBackupDir.path);
     }
   });
 
@@ -50,6 +63,10 @@ void main() {
       'cublas64_12.dll',
       'cublaslt64_12.dll',
     ]);
+    await _writeBundleLibraries(litertBundleDir, const [
+      'LiteRtLm.dll',
+      'StreamProxy.dll',
+    ]);
 
     if (archiveFile.existsSync()) {
       await archiveFile.delete();
@@ -65,6 +82,12 @@ void main() {
     }
     if (backupDir.existsSync()) {
       await backupDir.rename(bundleDir.path);
+    }
+    if (litertBundleDir.existsSync()) {
+      await litertBundleDir.delete(recursive: true);
+    }
+    if (litertBackupDir.existsSync()) {
+      await litertBackupDir.rename(litertBundleDir.path);
     }
   });
 
@@ -514,6 +537,17 @@ String _readHookNativeTag() {
   final match = RegExp(r"const _llamaCppTag = '([^']+)';").firstMatch(source);
   if (match == null) {
     throw StateError('Could not locate _llamaCppTag in hook/build.dart');
+  }
+  return match.group(1)!;
+}
+
+String _readHookLiteRtLmVersion() {
+  final source = File('hook/build.dart').readAsStringSync();
+  final match = RegExp(
+    r"const _litertLmVersion = '([^']+)';",
+  ).firstMatch(source);
+  if (match == null) {
+    throw StateError('Could not locate _litertLmVersion in hook/build.dart');
   }
   return match.group(1)!;
 }
