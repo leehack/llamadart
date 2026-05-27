@@ -136,16 +136,17 @@ class LiteRtLmBackend
     GenerationParams params, {
     List<LlamaContentPart>? parts,
   }) {
-    final responsePort = ReceivePort();
     late final StreamController<List<int>> controller;
+    ReceivePort? responsePort;
     var cleanedUp = false;
+    var activeGeneration = false;
 
     void cleanup() {
       if (cleanedUp) {
         return;
       }
       cleanedUp = true;
-      responsePort.close();
+      responsePort?.close();
       if (!controller.isClosed) {
         unawaited(controller.close());
       }
@@ -156,6 +157,32 @@ class LiteRtLmBackend
 
     controller = StreamController<List<int>>(
       onListen: () {
+        if (_activeGenerationCleanup != null) {
+          controller.addError(
+            StateError('LiteRT-LM generation is already in progress.'),
+          );
+          cleanup();
+          return;
+        }
+
+        final port = ReceivePort();
+        responsePort = port;
+        port.listen((message) {
+          if (cleanedUp) {
+            return;
+          }
+          if (message is LiteRtLmTokenResponse) {
+            controller.add(message.bytes);
+          } else if (message is LiteRtLmDoneResponse) {
+            cleanup();
+          } else if (message is LiteRtLmErrorResponse) {
+            controller.addError(_exceptionForErrorResponse(message));
+            cleanup();
+          }
+        });
+
+        activeGeneration = true;
+        _activeGenerationCleanup = cleanup;
         unawaited(() async {
           try {
             await _ensureIsolate();
@@ -164,7 +191,7 @@ class LiteRtLmBackend
                 contextHandle,
                 prompt,
                 params,
-                responsePort.sendPort,
+                port.sendPort,
                 parts: parts,
               ),
             );
@@ -177,25 +204,12 @@ class LiteRtLmBackend
         }());
       },
       onCancel: () {
-        cancelGeneration();
+        if (activeGeneration) {
+          cancelGeneration();
+        }
         cleanup();
       },
     );
-    _activeGenerationCleanup = cleanup;
-
-    responsePort.listen((message) {
-      if (cleanedUp) {
-        return;
-      }
-      if (message is LiteRtLmTokenResponse) {
-        controller.add(message.bytes);
-      } else if (message is LiteRtLmDoneResponse) {
-        cleanup();
-      } else if (message is LiteRtLmErrorResponse) {
-        controller.addError(_exceptionForErrorResponse(message));
-        cleanup();
-      }
-    });
 
     return controller.stream;
   }

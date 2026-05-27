@@ -1,6 +1,7 @@
 @TestOn('vm')
 library;
 
+import 'dart:async';
 import 'dart:io';
 import 'dart:isolate';
 
@@ -259,6 +260,49 @@ void main() {
     }
   });
 
+  test('rejects concurrent generation before touching worker', () async {
+    final worker = _FakeLiteRtLmWorker(
+      tokenizeResponse: const <int>[],
+      detokenizeResponse: '',
+      holdGeneration: true,
+    );
+    final backend = LiteRtLmBackend(initialSendPort: worker.sendPort);
+
+    try {
+      final firstDone = Completer<void>();
+      final firstSubscription = backend
+          .generate(1, 'first', const GenerationParams())
+          .listen(
+            (_) {},
+            onError: firstDone.completeError,
+            onDone: firstDone.complete,
+          );
+      await worker.generateReceived.future;
+
+      await expectLater(
+        backend.generate(1, 'second', const GenerationParams()).drain<void>(),
+        throwsA(
+          isA<StateError>().having(
+            (error) => error.message,
+            'message',
+            contains('already in progress'),
+          ),
+        ),
+      );
+      expect(
+        worker.requests.whereType<LiteRtLmGenerateRequest>(),
+        hasLength(1),
+      );
+
+      worker.releaseGeneration();
+      await firstDone.future.timeout(const Duration(seconds: 1));
+      await firstSubscription.cancel();
+    } finally {
+      await backend.dispose();
+      worker.close();
+    }
+  });
+
   test(
     'routes chat template application through the LiteRT-LM worker',
     () async {
@@ -309,6 +353,7 @@ class _FakeLiteRtLmWorker {
     required this.tokenizeResponse,
     required this.detokenizeResponse,
     this.chatTemplateResponse = '',
+    this.holdGeneration = false,
   }) {
     _receivePort.listen(_handleMessage);
   }
@@ -316,8 +361,12 @@ class _FakeLiteRtLmWorker {
   final List<int> tokenizeResponse;
   final String detokenizeResponse;
   final String chatTemplateResponse;
+  final bool holdGeneration;
   final ReceivePort _receivePort = ReceivePort();
   final List<Object?> requests = <Object?>[];
+  final Completer<LiteRtLmGenerateRequest> generateReceived =
+      Completer<LiteRtLmGenerateRequest>();
+  final Completer<void> _releaseGeneration = Completer<void>();
 
   SendPort get sendPort => _receivePort.sendPort;
 
@@ -325,9 +374,28 @@ class _FakeLiteRtLmWorker {
     _receivePort.close();
   }
 
+  void releaseGeneration() {
+    if (!_releaseGeneration.isCompleted) {
+      _releaseGeneration.complete();
+    }
+  }
+
   void _handleMessage(Object? message) {
     requests.add(message);
     switch (message) {
+      case LiteRtLmGenerateRequest():
+        if (!generateReceived.isCompleted) {
+          generateReceived.complete(message);
+        }
+        if (holdGeneration) {
+          unawaited(
+            _releaseGeneration.future.then(
+              (_) => message.sendPort.send(LiteRtLmDoneResponse()),
+            ),
+          );
+        } else {
+          message.sendPort.send(LiteRtLmDoneResponse());
+        }
       case LiteRtLmTokenizeRequest():
         message.sendPort.send(LiteRtLmTokenizeResponse(tokenizeResponse));
       case LiteRtLmDetokenizeRequest():

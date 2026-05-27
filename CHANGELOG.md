@@ -51,6 +51,8 @@
     LiteRT-LM failures behind an unnecessarily long timeout.
   * Coalesced concurrent LiteRT-LM worker startup requests so simultaneous
     pre-load diagnostics cannot leak extra backend isolates.
+  * Reject concurrent LiteRT-LM generations before sending them to the worker so
+    the active generation cleanup hook cannot be overwritten by a second stream.
 
 ## 0.6.17
 
