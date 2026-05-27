@@ -49,6 +49,8 @@
   * Added target-specific Pixel benchmark timeouts so full Gemma 4 comparisons
     can allow the slower llama.cpp/GGUF Vulkan leg to finish without hiding
     LiteRT-LM failures behind an unnecessarily long timeout.
+  * Coalesced concurrent LiteRT-LM worker startup requests so simultaneous
+    pre-load diagnostics cannot leak extra backend isolates.
 
 ## 0.6.17
 

@@ -59,6 +59,30 @@ void main() {
     }
   });
 
+  test('coalesces concurrent worker startup diagnostics', () async {
+    final backend = LiteRtLmBackend();
+
+    try {
+      final expectedBackend = _expectedAutoLiteRtLmBackend();
+      final results = await Future.wait<Object?>([
+        backend.getBackendName(),
+        backend.getAvailableBackends(),
+        backend.getResolvedGpuLayers(),
+        backend.isGpuSupported(),
+      ]);
+
+      expect(results[0], 'LiteRT-LM $expectedBackend');
+      expect(results[1], contains('cpu'));
+      expect(
+        results[2],
+        expectedBackend == 'cpu' ? 0 : ModelParams.maxGpuLayers,
+      );
+      expect(results[3], Platform.isMacOS || Platform.isAndroid);
+    } finally {
+      await backend.dispose();
+    }
+  });
+
   test(
     'reports direct preferred backend diagnostics before model load',
     () async {

@@ -23,6 +23,8 @@ class LiteRtLmBackend
         BackendStatePersistenceSupport {
   Isolate? _isolate;
   SendPort? _sendPort;
+  Future<void>? _isolateStart;
+  int _workerGeneration = 0;
   void Function()? _activeGenerationCleanup;
   final String? _preferredBackend;
 
@@ -469,18 +471,85 @@ class LiteRtLmBackend
       return;
     }
 
+    final existingStart = _isolateStart;
+    if (existingStart != null) {
+      await existingStart;
+      if (_disposed) {
+        throw StateError('LiteRT-LM backend has been disposed.');
+      }
+      if (_sendPort == null) {
+        throw StateError('LiteRT-LM worker startup did not provide a port.');
+      }
+      return;
+    }
+
+    final generation = _workerGeneration;
+    final start = _startIsolate(generation);
+    _isolateStart = start;
+    try {
+      await start;
+    } finally {
+      if (identical(_isolateStart, start)) {
+        _isolateStart = null;
+      }
+    }
+
+    if (_disposed) {
+      throw StateError('LiteRT-LM backend has been disposed.');
+    }
+    if (_sendPort == null) {
+      throw StateError('LiteRT-LM worker startup did not provide a port.');
+    }
+  }
+
+  Future<void> _startIsolate(int generation) async {
     final completer = Completer<void>();
     final tempPort = ReceivePort();
-    tempPort.listen((message) {
+    late final StreamSubscription<Object?> subscription;
+    subscription = tempPort.listen((message) {
       if (message is SendPort) {
+        if (_disposed || generation != _workerGeneration) {
+          if (!completer.isCompleted) {
+            completer.completeError(
+              StateError('LiteRT-LM worker startup was cancelled.'),
+            );
+          }
+          unawaited(subscription.cancel());
+          tempPort.close();
+          return;
+        }
         _sendPort = message;
         _sendPort!.send(LiteRtLmWorkerHandshake(_currentLogLevel));
         tempPort.close();
-        completer.complete();
+        unawaited(subscription.cancel());
+        if (!completer.isCompleted) {
+          completer.complete();
+        }
       }
     });
-    _isolate = await Isolate.spawn(liteRtLmWorkerEntry, tempPort.sendPort);
-    await completer.future;
+    Isolate? isolate;
+    try {
+      isolate = await Isolate.spawn(liteRtLmWorkerEntry, tempPort.sendPort);
+      if (_disposed || generation != _workerGeneration) {
+        isolate.kill(priority: Isolate.immediate);
+        throw StateError('LiteRT-LM worker startup was cancelled.');
+      }
+      _isolate = isolate;
+      await completer.future.timeout(
+        const Duration(seconds: 5),
+        onTimeout: () {
+          throw TimeoutException('Timed out starting LiteRT-LM worker.');
+        },
+      );
+    } catch (_) {
+      if (identical(_isolate, isolate)) {
+        _isolate = null;
+      }
+      isolate?.kill(priority: Isolate.immediate);
+      await subscription.cancel();
+      tempPort.close();
+      rethrow;
+    }
   }
 
   Future<Object?> _sendRequest(
@@ -512,9 +581,11 @@ class LiteRtLmBackend
   }
 
   void _killWorker() {
+    _workerGeneration += 1;
     _isolate?.kill(priority: Isolate.immediate);
     _isolate = null;
     _sendPort = null;
+    _isolateStart = null;
     _activeGenerationCleanup = null;
   }
 
