@@ -127,7 +127,7 @@ void liteRtLmWorkerEntry(SendPort initialSendPort) {
           }
 
         case LiteRtLmTokenizeRequest():
-          final tokens = service.tokenize(
+          final tokens = await service.tokenize(
             message.modelHandle,
             message.text,
             message.addSpecial,
@@ -135,7 +135,7 @@ void liteRtLmWorkerEntry(SendPort initialSendPort) {
           message.sendPort.send(LiteRtLmTokenizeResponse(tokens));
 
         case LiteRtLmDetokenizeRequest():
-          final text = service.detokenize(
+          final text = await service.detokenize(
             message.modelHandle,
             message.tokens,
             message.special,

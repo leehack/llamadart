@@ -153,7 +153,6 @@ void main() {
         const ModelParams(),
       );
 
-      expect(() => backend.tokenize(handle, 'hello'), throwsUnsupportedError);
       expect(
         () => backend.setLoraAdapter(contextHandle, 'adapter.bin', 1.0),
         throwsUnsupportedError,

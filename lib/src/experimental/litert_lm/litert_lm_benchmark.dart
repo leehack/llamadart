@@ -58,6 +58,12 @@ final class _LiteRtLmJsonResponse extends Opaque {}
 
 final class _LiteRtLmBenchmarkInfo extends Opaque {}
 
+final class _LiteRtLmTokenizeResult extends Opaque {}
+
+final class _LiteRtLmDetokenizeResult extends Opaque {}
+
+final class _LiteRtLmTokenUnion extends Opaque {}
+
 final class _LiteRtLmSamplerParams extends Struct {
   @Int32()
   external int type;
@@ -144,9 +150,11 @@ class LiteRtLmBenchmarkClient {
     int? prefillTokens,
     String? cacheDir,
     bool speculativeDecoding = true,
+    int minLogLevel = 3,
   }) async {
     _ensureLibrariesLoaded();
     final bindings = _bindings!;
+    bindings.setMinLogLevel(minLogLevel);
     final modelPathPtr = modelPath.toNativeUtf8();
     final backendPtr = backend.toNativeUtf8();
     final cacheDirPtr = cacheDir?.toNativeUtf8();
@@ -261,6 +269,55 @@ class LiteRtLmBenchmarkClient {
       if (systemPtr != nullptr) {
         calloc.free(systemPtr);
       }
+    }
+  }
+
+  void setMinLogLevel(int level) {
+    _ensureLibrariesLoaded();
+    _bindings!.setMinLogLevel(level);
+  }
+
+  List<int> tokenize(String text, {bool addSpecial = true}) {
+    final tokens = _tokenizeRaw(text);
+    if (!addSpecial) {
+      return tokens;
+    }
+    final startToken = _readStartToken();
+    if (startToken.isEmpty) {
+      return tokens;
+    }
+    return <int>[...startToken, ...tokens];
+  }
+
+  String detokenize(List<int> tokens) {
+    final bindings = _requireBindings();
+    final engine = _requireEngine();
+    if (tokens.isEmpty) {
+      return '';
+    }
+
+    final tokenPtr = calloc<Int>(tokens.length);
+    Pointer<_LiteRtLmDetokenizeResult> result = nullptr;
+    try {
+      for (var i = 0; i < tokens.length; i++) {
+        tokenPtr[i] = tokens[i];
+      }
+      result = bindings.engineDetokenize(engine, tokenPtr, tokens.length);
+      if (result == nullptr) {
+        throw StateError('litert_lm_engine_detokenize returned null');
+      }
+      final textPtr = bindings.detokenizeResultGetString(result);
+      if (textPtr == nullptr) {
+        throw StateError(
+          'litert_lm_detokenize_result_get_string returned null',
+        );
+      }
+      return textPtr.cast<Utf8>().toDartString();
+    } finally {
+      if (result != nullptr) {
+        bindings.detokenizeResultDelete(result);
+      }
+      calloc.free(tokenPtr);
     }
   }
 
@@ -409,6 +466,71 @@ class LiteRtLmBenchmarkClient {
     }
 
     return controller.stream;
+  }
+
+  List<int> _tokenizeRaw(String text) {
+    final bindings = _requireBindings();
+    final engine = _requireEngine();
+    final textPtr = text.toNativeUtf8();
+    Pointer<_LiteRtLmTokenizeResult> result = nullptr;
+    try {
+      result = bindings.engineTokenize(engine, textPtr.cast());
+      if (result == nullptr) {
+        throw StateError('litert_lm_engine_tokenize returned null');
+      }
+      final count = bindings.tokenizeResultGetNumTokens(result);
+      final tokenPtr = bindings.tokenizeResultGetTokens(result);
+      if (count > 0 && tokenPtr == nullptr) {
+        throw StateError('litert_lm_tokenize_result_get_tokens returned null');
+      }
+      return List<int>.generate(count, (index) => tokenPtr[index]);
+    } finally {
+      if (result != nullptr) {
+        bindings.tokenizeResultDelete(result);
+      }
+      calloc.free(textPtr);
+    }
+  }
+
+  List<int> _readStartToken() {
+    final bindings = _requireBindings();
+    final engine = _requireEngine();
+    final tokenUnion = bindings.engineGetStartToken(engine);
+    if (tokenUnion == nullptr) {
+      return const <int>[];
+    }
+    try {
+      final type = bindings.tokenUnionGetType(tokenUnion);
+      if (type == 1) {
+        final tokensOut = calloc<Pointer<Int>>();
+        final countOut = calloc<Size>();
+        try {
+          final rc = bindings.tokenUnionGetIds(tokenUnion, tokensOut, countOut);
+          final tokenPtr = tokensOut.value;
+          final count = countOut.value;
+          if (rc != 0 || count == 0 || tokenPtr == nullptr) {
+            return const <int>[];
+          }
+          return List<int>.generate(count, (index) => tokenPtr[index]);
+        } finally {
+          calloc.free(tokensOut);
+          calloc.free(countOut);
+        }
+      }
+
+      if (type == 0) {
+        final textPtr = bindings.tokenUnionGetString(tokenUnion);
+        if (textPtr == nullptr) {
+          return const <int>[];
+        }
+        final text = textPtr.cast<Utf8>().toDartString();
+        return text.isEmpty ? const <int>[] : _tokenizeRaw(text);
+      }
+
+      return const <int>[];
+    } finally {
+      bindings.tokenUnionDelete(tokenUnion);
+    }
   }
 
   Future<LiteRtLmBenchmarkResult> run({
@@ -879,6 +1001,11 @@ class _LiteRtLmBindings {
 
   _LiteRtLmBindings(this._library);
 
+  late final setMinLogLevel = _library
+      .lookupFunction<Void Function(Int), void Function(int)>(
+        'litert_lm_set_min_log_level',
+      );
+
   late final engineSettingsCreate = _library
       .lookupFunction<
         Pointer<_LiteRtLmEngineSettings> Function(
@@ -942,6 +1069,100 @@ class _LiteRtLmBindings {
         Void Function(Pointer<_LiteRtLmEngine>),
         void Function(Pointer<_LiteRtLmEngine>)
       >('litert_lm_engine_delete');
+
+  late final engineTokenize = _library
+      .lookupFunction<
+        Pointer<_LiteRtLmTokenizeResult> Function(
+          Pointer<_LiteRtLmEngine>,
+          Pointer<Char>,
+        ),
+        Pointer<_LiteRtLmTokenizeResult> Function(
+          Pointer<_LiteRtLmEngine>,
+          Pointer<Char>,
+        )
+      >('litert_lm_engine_tokenize');
+
+  late final tokenizeResultDelete = _library
+      .lookupFunction<
+        Void Function(Pointer<_LiteRtLmTokenizeResult>),
+        void Function(Pointer<_LiteRtLmTokenizeResult>)
+      >('litert_lm_tokenize_result_delete');
+
+  late final tokenizeResultGetTokens = _library
+      .lookupFunction<
+        Pointer<Int> Function(Pointer<_LiteRtLmTokenizeResult>),
+        Pointer<Int> Function(Pointer<_LiteRtLmTokenizeResult>)
+      >('litert_lm_tokenize_result_get_tokens');
+
+  late final tokenizeResultGetNumTokens = _library
+      .lookupFunction<
+        Size Function(Pointer<_LiteRtLmTokenizeResult>),
+        int Function(Pointer<_LiteRtLmTokenizeResult>)
+      >('litert_lm_tokenize_result_get_num_tokens');
+
+  late final engineDetokenize = _library
+      .lookupFunction<
+        Pointer<_LiteRtLmDetokenizeResult> Function(
+          Pointer<_LiteRtLmEngine>,
+          Pointer<Int>,
+          Size,
+        ),
+        Pointer<_LiteRtLmDetokenizeResult> Function(
+          Pointer<_LiteRtLmEngine>,
+          Pointer<Int>,
+          int,
+        )
+      >('litert_lm_engine_detokenize');
+
+  late final detokenizeResultDelete = _library
+      .lookupFunction<
+        Void Function(Pointer<_LiteRtLmDetokenizeResult>),
+        void Function(Pointer<_LiteRtLmDetokenizeResult>)
+      >('litert_lm_detokenize_result_delete');
+
+  late final detokenizeResultGetString = _library
+      .lookupFunction<
+        Pointer<Char> Function(Pointer<_LiteRtLmDetokenizeResult>),
+        Pointer<Char> Function(Pointer<_LiteRtLmDetokenizeResult>)
+      >('litert_lm_detokenize_result_get_string');
+
+  late final engineGetStartToken = _library
+      .lookupFunction<
+        Pointer<_LiteRtLmTokenUnion> Function(Pointer<_LiteRtLmEngine>),
+        Pointer<_LiteRtLmTokenUnion> Function(Pointer<_LiteRtLmEngine>)
+      >('litert_lm_engine_get_start_token');
+
+  late final tokenUnionDelete = _library
+      .lookupFunction<
+        Void Function(Pointer<_LiteRtLmTokenUnion>),
+        void Function(Pointer<_LiteRtLmTokenUnion>)
+      >('litert_lm_token_union_delete');
+
+  late final tokenUnionGetType = _library
+      .lookupFunction<
+        Int Function(Pointer<_LiteRtLmTokenUnion>),
+        int Function(Pointer<_LiteRtLmTokenUnion>)
+      >('litert_lm_token_union_get_type');
+
+  late final tokenUnionGetString = _library
+      .lookupFunction<
+        Pointer<Char> Function(Pointer<_LiteRtLmTokenUnion>),
+        Pointer<Char> Function(Pointer<_LiteRtLmTokenUnion>)
+      >('litert_lm_token_union_get_string');
+
+  late final tokenUnionGetIds = _library
+      .lookupFunction<
+        Int Function(
+          Pointer<_LiteRtLmTokenUnion>,
+          Pointer<Pointer<Int>>,
+          Pointer<Size>,
+        ),
+        int Function(
+          Pointer<_LiteRtLmTokenUnion>,
+          Pointer<Pointer<Int>>,
+          Pointer<Size>,
+        )
+      >('litert_lm_token_union_get_ids');
 
   late final sessionConfigCreate = _library
       .lookupFunction<

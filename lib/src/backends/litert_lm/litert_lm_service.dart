@@ -39,12 +39,16 @@ class LiteRtLmService {
   String? _activeBackend;
   int? _activeOutputTokens;
   LiteRtLmBenchmarkMetrics? _lastMetrics;
+  LlamaLogLevel _logLevel = LlamaLogLevel.warn;
   bool _modelLoaded = false;
   bool _contextCreated = false;
   bool _cancelRequested = false;
 
   /// Updates the current backend log level.
-  void setLogLevel(LlamaLogLevel level) {}
+  void setLogLevel(LlamaLogLevel level) {
+    _logLevel = level;
+    _client?.setMinLogLevel(_liteRtLmMinLogLevel(level));
+  }
 
   /// Loads a local `.litertlm` model bundle.
   Future<int> loadModel(
@@ -130,7 +134,7 @@ class LiteRtLmService {
     _validateGenerationParams(params);
 
     _cancelRequested = false;
-    final client = await _ensureClient(params);
+    final client = await _ensureClientForGeneration(params);
     if (_cancelRequested) {
       return;
     }
@@ -182,18 +186,26 @@ class LiteRtLmService {
     _client?.cancel();
   }
 
-  /// Tokenization is not currently exposed by LiteRT-LM.
-  List<int> tokenize(int modelHandle, String text, bool addSpecial) {
+  /// Tokenizes text with the loaded LiteRT-LM model tokenizer.
+  Future<List<int>> tokenize(
+    int modelHandle,
+    String text,
+    bool addSpecial,
+  ) async {
     _checkModelHandle(modelHandle);
-    throw UnsupportedError('LiteRtLmBackend does not expose tokenization yet.');
+    final client = await _ensureClientForRuntime();
+    return client.tokenize(text, addSpecial: addSpecial);
   }
 
-  /// Detokenization is not currently exposed by LiteRT-LM.
-  String detokenize(int modelHandle, List<int> tokens, bool special) {
+  /// Detokenizes token IDs with the loaded LiteRT-LM model tokenizer.
+  Future<String> detokenize(
+    int modelHandle,
+    List<int> tokens,
+    bool special,
+  ) async {
     _checkModelHandle(modelHandle);
-    throw UnsupportedError(
-      'LiteRtLmBackend does not expose detokenization yet.',
-    );
+    final client = await _ensureClientForRuntime();
+    return client.detokenize(tokens);
   }
 
   /// Returns the metadata known from the LiteRT-LM bundle path.
@@ -338,18 +350,28 @@ class LiteRtLmService {
     _contextCreated = false;
   }
 
-  Future<LiteRtLmBenchmarkClient> _ensureClient(GenerationParams params) async {
+  Future<LiteRtLmBenchmarkClient> _ensureClientForGeneration(
+    GenerationParams params,
+  ) {
+    final outputTokens = params.maxTokens <= 0 ? 4096 : params.maxTokens;
+    return _ensureClientForRuntime(outputTokens: outputTokens);
+  }
+
+  Future<LiteRtLmBenchmarkClient> _ensureClientForRuntime({
+    int? outputTokens,
+  }) async {
     final modelPath = _modelPath;
     final modelParams = _modelParams;
     if (modelPath == null || modelParams == null) {
       throw StateError('No LiteRT-LM model is loaded.');
     }
 
-    final outputTokens = params.maxTokens <= 0 ? 4096 : params.maxTokens;
+    final resolvedOutputTokens =
+        outputTokens ?? _activeOutputTokens ?? GenerationParams().maxTokens;
     final backend = _activeBackend ?? _backendNameFor(modelParams);
     final existing = _client;
     if (existing != null &&
-        _activeOutputTokens == outputTokens &&
+        (outputTokens == null || _activeOutputTokens == resolvedOutputTokens) &&
         _activeBackend == backend) {
       return existing;
     }
@@ -360,12 +382,13 @@ class LiteRtLmService {
       modelPath: modelPath,
       backend: backend,
       maxTokens: modelParams.contextSize,
-      outputTokens: outputTokens,
+      outputTokens: resolvedOutputTokens,
       cacheDir: _defaultCacheDir(),
       speculativeDecoding: false,
+      minLogLevel: _liteRtLmMinLogLevel(_logLevel),
     );
     _client = client;
-    _activeOutputTokens = outputTokens;
+    _activeOutputTokens = resolvedOutputTokens;
     _activeBackend = backend;
     return client;
   }
@@ -615,6 +638,21 @@ class LiteRtLmService {
       return 0;
     }
     return tokens / tps * 1000.0;
+  }
+
+  int _liteRtLmMinLogLevel(LlamaLogLevel level) {
+    switch (level) {
+      case LlamaLogLevel.none:
+        return 1000;
+      case LlamaLogLevel.debug:
+        return 1;
+      case LlamaLogLevel.info:
+        return 2;
+      case LlamaLogLevel.warn:
+        return 3;
+      case LlamaLogLevel.error:
+        return 4;
+    }
   }
 
   void _checkModelHandle(int handle) {

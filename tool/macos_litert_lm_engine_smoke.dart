@@ -28,6 +28,12 @@ Future<void> main(List<String> args) async {
     );
     loadSw.stop();
 
+    final promptTokens = await engine.tokenize(prompt, addSpecial: false);
+    final promptTokensWithSpecial = await engine.tokenize(
+      prompt,
+      addSpecial: true,
+    );
+    final promptRoundTrip = await engine.detokenize(promptTokens);
     final buffer = StringBuffer();
     final generateSw = Stopwatch()..start();
     await for (final chunk in engine.generate(
@@ -44,6 +50,9 @@ Future<void> main(List<String> args) async {
       'wallMilliseconds': generateSw.elapsedMilliseconds,
       'backendName': await engine.getBackendName(),
       'targetDecodeTokens': outputTokens,
+      'promptTokenCount': promptTokens.length,
+      'promptTokenCountWithSpecial': promptTokensWithSpecial.length,
+      'promptRoundTripLength': promptRoundTrip.length,
       'backendInitMilliseconds': perf?.loadMs,
       'promptEvalTokens': perf?.promptEvalTokens,
       'evalTokens': perf?.evalTokens,

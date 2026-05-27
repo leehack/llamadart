@@ -290,8 +290,8 @@ class ChatSession {
     if (prompt.isEmpty) {
       return 0;
     }
-    // Used only for backends such as LiteRT-LM where the native tokenizer is
-    // not exposed. Overestimate slightly so history trimming stays conservative.
+    // Used only when the active backend cannot expose exact tokenization.
+    // Overestimate slightly so history trimming stays conservative.
     final byteLength = utf8.encode(prompt).length;
     return (byteLength + 2) ~/ 3;
   }

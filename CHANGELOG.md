@@ -34,6 +34,9 @@
     embeddings and state-persistence support.
   * Report direct `LiteRtLmBackend(preferredBackend: ...)` CPU/GPU/NPU
     diagnostics before model load, including platform availability errors.
+  * Wired LiteRT-LM native tokenization, detokenization, and log-level control
+    through the worker isolate so high-level token counts and chat-session
+    history pruning no longer need fallback estimates for `.litertlm` bundles.
 
 ## 0.6.17
 

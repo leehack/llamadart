@@ -278,14 +278,6 @@ void main() {
         );
 
         expect(
-          () => service.tokenize(modelHandle, 'hello', true),
-          throwsUnsupportedError,
-        );
-        expect(
-          () => service.detokenize(modelHandle, const <int>[1], false),
-          throwsUnsupportedError,
-        );
-        expect(
           () => service.handleLora(contextHandle, 'adapter.bin', 1.0, 'set'),
           throwsUnsupportedError,
         );
@@ -311,6 +303,35 @@ void main() {
       }
     },
   );
+
+  test('passes LiteRT-LM tokenization APIs to the client', () async {
+    final fakeClient = _FakeLiteRtLmBenchmarkClient()
+      ..tokenizeResult = const <int>[2, 10, 11]
+      ..detokenizeResult = 'hello';
+    final service = LiteRtLmService(clientFactory: () => fakeClient);
+
+    try {
+      final modelHandle = await service.loadModel(
+        modelFile.path,
+        const ModelParams(contextSize: 3072, preferredBackend: GpuBackend.cpu),
+      );
+
+      expect(await service.tokenize(modelHandle, 'hello', true), [2, 10, 11]);
+      expect(
+        await service.detokenize(modelHandle, const [10, 11], false),
+        'hello',
+      );
+      expect(fakeClient.lastModelPath, modelFile.path);
+      expect(fakeClient.lastBackend, 'cpu');
+      expect(fakeClient.lastMaxTokens, 3072);
+      expect(fakeClient.lastMinLogLevel, 3);
+      expect(fakeClient.lastTokenizeText, 'hello');
+      expect(fakeClient.lastTokenizeAddSpecial, isTrue);
+      expect(fakeClient.lastDetokenizeTokens, [10, 11]);
+    } finally {
+      service.dispose();
+    }
+  });
 
   test('passes supported LiteRT-LM generation options to the client', () async {
     final fakeClient = _FakeLiteRtLmBenchmarkClient();
@@ -524,11 +545,17 @@ class _FakeLiteRtLmBenchmarkClient extends LiteRtLmBenchmarkClient {
   int? lastOutputTokens;
   String? lastCacheDir;
   bool? lastSpeculativeDecoding;
+  int? lastMinLogLevel;
   double? lastTemperature;
   int? lastTopK;
   double? lastTopP;
   int? lastSeed;
   bool? lastNpuBackend;
+  String? lastTokenizeText;
+  bool? lastTokenizeAddSpecial;
+  List<int>? lastDetokenizeTokens;
+  List<int> tokenizeResult = const <int>[];
+  String detokenizeResult = '';
   int createConversationCount = 0;
   int generateCount = 0;
   int cancelCount = 0;
@@ -542,6 +569,7 @@ class _FakeLiteRtLmBenchmarkClient extends LiteRtLmBenchmarkClient {
     int? prefillTokens,
     String? cacheDir,
     bool speculativeDecoding = true,
+    int minLogLevel = 3,
   }) {
     lastModelPath = modelPath;
     lastBackend = backend;
@@ -549,6 +577,7 @@ class _FakeLiteRtLmBenchmarkClient extends LiteRtLmBenchmarkClient {
     lastOutputTokens = outputTokens;
     lastCacheDir = cacheDir;
     lastSpeculativeDecoding = speculativeDecoding;
+    lastMinLogLevel = minLogLevel;
     initializeStarted.complete();
     return _initializeBlocker?.future ?? Future<void>.value();
   }
@@ -574,6 +603,19 @@ class _FakeLiteRtLmBenchmarkClient extends LiteRtLmBenchmarkClient {
     lastSeed = seed;
     lastNpuBackend = npuBackend;
     createConversationCount += 1;
+  }
+
+  @override
+  List<int> tokenize(String text, {bool addSpecial = true}) {
+    lastTokenizeText = text;
+    lastTokenizeAddSpecial = addSpecial;
+    return tokenizeResult;
+  }
+
+  @override
+  String detokenize(List<int> tokens) {
+    lastDetokenizeTokens = List<int>.from(tokens);
+    return detokenizeResult;
   }
 
   @override

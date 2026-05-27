@@ -335,40 +335,38 @@ void main() {
     },
   );
 
-  test(
-    'high-level engine rejects tokenization APIs for litertlm bundles',
-    () async {
-      final tempDir = await Directory.systemTemp.createTemp(
-        'llamadart_native_auto_token_litert_',
+  test('high-level engine delegates litertlm tokenization APIs', () async {
+    final tempDir = await Directory.systemTemp.createTemp(
+      'llamadart_native_auto_token_litert_',
+    );
+    final modelFile = File('${tempDir.path}/gemma-4-E2B-it.litertlm');
+    await modelFile.writeAsString('fake model');
+    final litert = _FakeBackend(handle: 22)
+      ..tokenizeResult = const <int>[2, 10, 11]
+      ..detokenizeResult = 'hello';
+    final backend = NativeAutoBackend(
+      llamaCppFactory: () => _FakeBackend(handle: 11),
+      liteRtLmFactory: () => litert,
+    );
+    final engine = LlamaEngine(backend);
+
+    try {
+      await engine.loadModel(
+        modelFile.path,
+        modelParams: const ModelParams(preferredBackend: GpuBackend.cpu),
       );
-      final modelFile = File('${tempDir.path}/gemma-4-E2B-it.litertlm');
-      await modelFile.writeAsString('fake model');
-      final engine = LlamaEngine(LlamaBackend());
 
-      try {
-        await engine.loadModel(
-          modelFile.path,
-          modelParams: const ModelParams(preferredBackend: GpuBackend.cpu),
-        );
-
-        await expectLater(
-          engine.tokenize('hello'),
-          throwsA(isA<LlamaUnsupportedException>()),
-        );
-        await expectLater(
-          engine.detokenize([1, 2, 3]),
-          throwsA(isA<LlamaUnsupportedException>()),
-        );
-        await expectLater(
-          engine.getTokenCount('hello'),
-          throwsA(isA<LlamaUnsupportedException>()),
-        );
-      } finally {
-        await engine.dispose();
-        await tempDir.delete(recursive: true);
-      }
-    },
-  );
+      expect(await engine.tokenize('hello'), [2, 10, 11]);
+      expect(await engine.detokenize([10, 11]), 'hello');
+      expect(await engine.getTokenCount('hello'), 3);
+      expect(litert.lastTokenizeText, 'hello');
+      expect(litert.lastTokenizeAddSpecial, isFalse);
+      expect(litert.lastDetokenizeTokens, [10, 11]);
+    } finally {
+      await engine.dispose();
+      await tempDir.delete(recursive: true);
+    }
+  });
 
   test(
     'high-level engine reports embeddings unsupported for litertlm bundles',
@@ -513,6 +511,11 @@ class _FakeBackend implements LlamaBackend {
   final List<int> freedModels = <int>[];
   final List<int> freedContexts = <int>[];
   final List<LlamaLogLevel> logLevels = <LlamaLogLevel>[];
+  List<int> tokenizeResult = const <int>[];
+  String detokenizeResult = '';
+  String? lastTokenizeText;
+  bool? lastTokenizeAddSpecial;
+  List<int>? lastDetokenizeTokens;
   int disposeCount = 0;
 
   _FakeBackend({required this.handle});
@@ -544,6 +547,27 @@ class _FakeBackend implements LlamaBackend {
   @override
   Future<void> contextFree(int contextHandle) async {
     freedContexts.add(contextHandle);
+  }
+
+  @override
+  Future<List<int>> tokenize(
+    int modelHandle,
+    String text, {
+    bool addSpecial = true,
+  }) async {
+    lastTokenizeText = text;
+    lastTokenizeAddSpecial = addSpecial;
+    return tokenizeResult;
+  }
+
+  @override
+  Future<String> detokenize(
+    int modelHandle,
+    List<int> tokens, {
+    bool special = false,
+  }) async {
+    lastDetokenizeTokens = List<int>.from(tokens);
+    return detokenizeResult;
   }
 
   @override
