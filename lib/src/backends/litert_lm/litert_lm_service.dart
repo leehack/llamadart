@@ -3,12 +3,15 @@ import 'dart:convert';
 import 'dart:io';
 
 import '../../core/models/chat/content_part.dart';
+import '../../core/models/chat/chat_message.dart';
+import '../../core/models/chat/chat_role.dart';
 import '../../core/models/config/flash_attention.dart';
 import '../../core/models/config/gpu_backend.dart';
 import '../../core/models/config/kv_cache_type.dart';
 import '../../core/models/config/log_level.dart';
 import '../../core/models/inference/generation_params.dart';
 import '../../core/models/inference/model_params.dart';
+import '../../core/template/chat_template_engine.dart';
 import '../../experimental/litert_lm/litert_lm_benchmark.dart';
 import '../backend.dart';
 
@@ -331,9 +334,15 @@ class LiteRtLmService {
     bool addAssistant = true,
   }) {
     _checkModelHandle(modelHandle);
-    throw UnsupportedError(
-      'LiteRtLmBackend uses Dart-side chat templates for now.',
+    final metadata = getMetadata(modelHandle);
+    final result = ChatTemplateEngine.render(
+      templateSource: metadata['tokenizer.chat_template'],
+      messages: messages.map(_messageFromTemplateMap).toList(growable: false),
+      metadata: metadata,
+      addAssistant: addAssistant,
+      customTemplate: customTemplate,
     );
+    return result.prompt;
   }
 
   /// Releases all service-owned native resources.
@@ -620,6 +629,39 @@ class LiteRtLmService {
     throw ArgumentError(
       'LiteRtLmBackend backend must be cpu, gpu, or npu; got $backend',
     );
+  }
+
+  LlamaChatMessage _messageFromTemplateMap(Map<String, dynamic> message) {
+    final roleName = message['role']?.toString() ?? LlamaChatRole.user.name;
+    final role = LlamaChatRole.values.byName(roleName);
+    return LlamaChatMessage.fromText(
+      role: role,
+      text: _contentTextFromTemplateMap(message['content']),
+    );
+  }
+
+  String _contentTextFromTemplateMap(Object? content) {
+    if (content == null) {
+      return '';
+    }
+    if (content is String) {
+      return content;
+    }
+    if (content is Iterable) {
+      final buffer = StringBuffer();
+      for (final part in content) {
+        if (part is Map) {
+          final type = part['type']?.toString();
+          if (type == 'text' && part['text'] != null) {
+            buffer.write(part['text']);
+            continue;
+          }
+        }
+        buffer.write(part);
+      }
+      return buffer.toString();
+    }
+    return content.toString();
   }
 
   String? _defaultCacheDir() {

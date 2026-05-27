@@ -234,6 +234,43 @@ void main() {
       worker.close();
     }
   });
+
+  test(
+    'routes chat template application through the LiteRT-LM worker',
+    () async {
+      final worker = _FakeLiteRtLmWorker(
+        tokenizeResponse: const <int>[],
+        detokenizeResponse: '',
+        chatTemplateResponse: 'templated',
+      );
+      final backend = LiteRtLmBackend(initialSendPort: worker.sendPort);
+
+      try {
+        expect(
+          await backend.applyChatTemplate(
+            42,
+            const [
+              {'role': 'user', 'content': 'hello'},
+            ],
+            customTemplate: 'custom',
+            addAssistant: false,
+          ),
+          'templated',
+        );
+
+        final request = worker.requests
+            .whereType<LiteRtLmChatTemplateRequest>()
+            .single;
+        expect(request.modelHandle, 42);
+        expect(request.messages.single, containsPair('content', 'hello'));
+        expect(request.customTemplate, 'custom');
+        expect(request.addAssistant, isFalse);
+      } finally {
+        await backend.dispose();
+        worker.close();
+      }
+    },
+  );
 }
 
 String _expectedAutoLiteRtLmBackend() {
@@ -247,12 +284,14 @@ class _FakeLiteRtLmWorker {
   _FakeLiteRtLmWorker({
     required this.tokenizeResponse,
     required this.detokenizeResponse,
+    this.chatTemplateResponse = '',
   }) {
     _receivePort.listen(_handleMessage);
   }
 
   final List<int> tokenizeResponse;
   final String detokenizeResponse;
+  final String chatTemplateResponse;
   final ReceivePort _receivePort = ReceivePort();
   final List<Object?> requests = <Object?>[];
 
@@ -269,6 +308,10 @@ class _FakeLiteRtLmWorker {
         message.sendPort.send(LiteRtLmTokenizeResponse(tokenizeResponse));
       case LiteRtLmDetokenizeRequest():
         message.sendPort.send(LiteRtLmDetokenizeResponse(detokenizeResponse));
+      case LiteRtLmChatTemplateRequest():
+        message.sendPort.send(
+          LiteRtLmChatTemplateResponse(chatTemplateResponse),
+        );
       case LiteRtLmCancelGenerationRequest():
         message.sendPort.send(LiteRtLmDoneResponse());
       case LiteRtLmDisposeRequest():

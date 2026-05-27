@@ -37,6 +37,9 @@
   * Wired LiteRT-LM native tokenization, detokenization, and log-level control
     through the worker isolate so high-level token counts and chat-session
     history pruning no longer need fallback estimates for `.litertlm` bundles.
+  * Routed direct LiteRT-LM chat-template application through the Dart template
+    engine so backend-level template calls work consistently with the
+    high-level `.litertlm` engine path.
 
 ## 0.6.17
 

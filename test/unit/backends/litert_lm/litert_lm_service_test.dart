@@ -109,6 +109,44 @@ void main() {
     }
   });
 
+  test('applies chat templates through the Dart template engine', () async {
+    final service = LiteRtLmService();
+    final gemmaModelFile = File('${tempDir.path}/gemma-4-E2B-it.litertlm');
+    await gemmaModelFile.writeAsString('fake model');
+
+    try {
+      final modelHandle = await service.loadModel(
+        gemmaModelFile.path,
+        const ModelParams(contextSize: 2048),
+      );
+
+      final rendered = service.applyChatTemplate(modelHandle, const [
+        {
+          'role': 'user',
+          'content': [
+            {'type': 'text', 'text': 'hello'},
+          ],
+        },
+      ]);
+
+      expect(rendered, contains('<|turn>user\nhello<turn|>'));
+      expect(rendered, endsWith('<|turn>model\n'));
+
+      final custom = service.applyChatTemplate(
+        modelHandle,
+        const [
+          {'role': 'user', 'content': 'hello'},
+        ],
+        customTemplate:
+            '{{ messages[0]["role"] }}:{{ messages[0]["content"] }}'
+            '{% if add_generation_prompt %}:assistant{% endif %}',
+      );
+      expect(custom, 'user:hello:assistant');
+    } finally {
+      service.dispose();
+    }
+  });
+
   test('resolves LiteRT-LM backend preference from model params', () async {
     final service = LiteRtLmService();
 

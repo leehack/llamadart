@@ -127,6 +127,27 @@ void main() {
           ),
         );
 
+        final template = await _sendRequest(
+          worker.sendPort,
+          (sendPort) => LiteRtLmChatTemplateRequest(
+            modelHandle,
+            const [
+              {'role': 'user', 'content': 'hello'},
+            ],
+            null,
+            true,
+            sendPort,
+          ),
+        );
+        expect(
+          template,
+          isA<LiteRtLmChatTemplateResponse>().having(
+            (response) => response.result,
+            'result',
+            allOf(contains('hello'), contains('assistant')),
+          ),
+        );
+
         final clearLora = await _sendRequest(
           worker.sendPort,
           (sendPort) =>
