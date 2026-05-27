@@ -32,6 +32,8 @@
     `.LITERTLM` local paths are accepted after format routing selects LiteRT-LM.
   * Added explicit false capability reporting for direct `LiteRtLmBackend`
     embeddings and state-persistence support.
+  * Report direct `LiteRtLmBackend(preferredBackend: ...)` CPU/GPU/NPU
+    diagnostics before model load, including platform availability errors.
 
 ## 0.6.17
 

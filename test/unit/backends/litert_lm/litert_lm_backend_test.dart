@@ -57,6 +57,44 @@ void main() {
     }
   });
 
+  test(
+    'reports direct preferred backend diagnostics before model load',
+    () async {
+      final backend = LiteRtLmBackend(preferredBackend: 'cpu');
+
+      try {
+        expect(await backend.getBackendName(), 'LiteRT-LM cpu');
+        expect(await backend.getResolvedGpuLayers(), 0);
+      } finally {
+        await backend.dispose();
+      }
+    },
+  );
+
+  test('rejects unavailable direct preferred backend diagnostics', () async {
+    final backend = LiteRtLmBackend(preferredBackend: 'npu');
+
+    try {
+      if (Platform.isAndroid) {
+        expect(await backend.getBackendName(), 'LiteRT-LM npu');
+        expect(await backend.getResolvedGpuLayers(), ModelParams.maxGpuLayers);
+      } else {
+        await expectLater(
+          backend.getBackendName(),
+          throwsA(
+            isA<ArgumentError>().having(
+              (error) => error.message.toString(),
+              'message',
+              contains('not available'),
+            ),
+          ),
+        );
+      }
+    } finally {
+      await backend.dispose();
+    }
+  });
+
   test('loads local litertlm model and exposes metadata', () async {
     final backend = LiteRtLmBackend();
 

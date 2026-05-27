@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:isolate';
 
 import '../../core/models/chat/content_part.dart';
@@ -278,6 +279,11 @@ class LiteRtLmBackend
 
   @override
   Future<String> getBackendName() async {
+    final preferredBackend = _preloadPreferredBackend();
+    if (preferredBackend != null) {
+      return 'LiteRT-LM $preferredBackend';
+    }
+
     final response = await _sendRequest(LiteRtLmBackendInfoRequest.new);
     return _expect<LiteRtLmBackendInfoResponse>(
       response,
@@ -296,6 +302,11 @@ class LiteRtLmBackend
 
   @override
   Future<int?> getResolvedGpuLayers() async {
+    final preferredBackend = _preloadPreferredBackend();
+    if (preferredBackend != null) {
+      return preferredBackend == 'cpu' ? 0 : ModelParams.maxGpuLayers;
+    }
+
     final response = await _sendRequest(LiteRtLmResolvedGpuLayersRequest.new);
     return _expect<LiteRtLmResolvedGpuLayersResponse>(
       response,
@@ -546,5 +557,37 @@ class LiteRtLmBackend
       default:
         return Exception(response.message);
     }
+  }
+
+  String? _preloadPreferredBackend() {
+    if (_isReady || _preferredBackend == null || _preferredBackend.isEmpty) {
+      return null;
+    }
+    final backend = _preferredBackend.toLowerCase();
+    if (backend != 'cpu' && backend != 'gpu' && backend != 'npu') {
+      throw ArgumentError(
+        'LiteRtLmBackend backend must be cpu, gpu, or npu; got '
+        '$_preferredBackend',
+      );
+    }
+    final available = _preloadAvailableBackends();
+    if (!available.contains(backend)) {
+      throw ArgumentError(
+        'LiteRtLmBackend backend $backend is not available on '
+        '${Platform.operatingSystem}. Available LiteRT-LM backends: '
+        '${available.join(', ')}.',
+      );
+    }
+    return backend;
+  }
+
+  List<String> _preloadAvailableBackends() {
+    if (Platform.isAndroid) {
+      return const <String>['cpu', 'gpu', 'npu'];
+    }
+    if (Platform.isMacOS) {
+      return const <String>['cpu', 'gpu'];
+    }
+    return const <String>['cpu'];
   }
 }
