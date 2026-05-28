@@ -117,6 +117,9 @@ class _NoStateBackend implements LlamaBackend {
   Future<void> modelFree(int modelHandle) async {}
 
   @override
+  Future<String> getBackendName() async => 'WebGPU';
+
+  @override
   Future<void> setLogLevel(LlamaLogLevel level) async {}
 
   @override
