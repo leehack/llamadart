@@ -1962,7 +1962,7 @@ class ChatProvider extends ChangeNotifier {
             ? 512
             : model.preset.contextSize,
         maxTokens: shouldUseMobileLiteRtLmDefaults
-            ? math.min(model.preset.maxTokens, 32)
+            ? math.min(model.preset.maxTokens, 128)
             : model.preset.maxTokens,
         gpuLayers: shouldPreferCpuOnAndroid
             ? 0

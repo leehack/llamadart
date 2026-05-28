@@ -857,7 +857,7 @@ void main() {
       expect(provider.settings.preferredBackend, GpuBackend.auto);
       expect(provider.settings.gpuLayers, ModelParams.maxGpuLayers);
       expect(provider.settings.contextSize, 512);
-      expect(provider.settings.maxTokens, 32);
+      expect(provider.settings.maxTokens, 128);
     });
   });
 
