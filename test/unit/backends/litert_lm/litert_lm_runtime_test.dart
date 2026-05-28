@@ -77,6 +77,32 @@ void main() {
     expect(liteRtLmMacOsRequiredLibrariesForAbi(Abi.linuxX64), isEmpty);
   });
 
+  test('macOS LiteRT-LM app framework validation follows runtime ABI', () {
+    expect(
+      liteRtLmMacOsRequiredFrameworksForAbi(Abi.macosArm64),
+      const <String>[
+        'GemmaModelConstraintProvider.framework/Versions/A/'
+            'GemmaModelConstraintProvider',
+        'LiteRt.framework/Versions/A/LiteRt',
+        'LiteRtLm.framework/Versions/A/LiteRtLm',
+        'LiteRtMetalAccelerator.framework/Versions/A/'
+            'LiteRtMetalAccelerator',
+        'LiteRtTopKMetalSampler.framework/Versions/A/'
+            'LiteRtTopKMetalSampler',
+        'LiteRtTopKWebGpuSampler.framework/Versions/A/'
+            'LiteRtTopKWebGpuSampler',
+        'LiteRtWebGpuAccelerator.framework/Versions/A/'
+            'LiteRtWebGpuAccelerator',
+        'StreamProxy.framework/Versions/A/StreamProxy',
+      ],
+    );
+    expect(liteRtLmMacOsRequiredFrameworksForAbi(Abi.macosX64), const <String>[
+      'LiteRtLm.framework/Versions/A/LiteRtLm',
+      'StreamProxy.framework/Versions/A/StreamProxy',
+    ]);
+    expect(liteRtLmMacOsRequiredFrameworksForAbi(Abi.linuxX64), isEmpty);
+  });
+
   test('macOS LiteRT-LM cache validation rejects partial caches', () {
     final root = Directory.systemTemp.createTempSync('litert_lm_cache_test_');
     addTearDown(() => root.deleteSync(recursive: true));

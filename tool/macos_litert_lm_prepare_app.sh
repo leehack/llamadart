@@ -5,25 +5,91 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_PATH="${1:?usage: $0 /path/to/App.app}"
 FRAMEWORKS_DIR="$APP_PATH/Contents/Frameworks"
 
+resolve_litert_arch() {
+  local arch="${LLAMADART_LITERT_LM_ARCH:-$(uname -m)}"
+  case "$arch" in
+    arm64 | aarch64)
+      echo "arm64"
+      ;;
+    x64 | x86_64 | amd64)
+      echo "x64"
+      ;;
+    *)
+      echo "Unsupported LiteRT-LM macOS architecture: $arch" >&2
+      exit 2
+      ;;
+  esac
+}
+
+LITERT_ARCH="$(resolve_litert_arch)"
+
+required_libraries() {
+  case "$LITERT_ARCH" in
+    arm64)
+      printf '%s\n' \
+        "libGemmaModelConstraintProvider.dylib" \
+        "libLiteRt.dylib" \
+        "libLiteRtLm.dylib" \
+        "libLiteRtMetalAccelerator.dylib" \
+        "libLiteRtTopKMetalSampler.dylib" \
+        "libLiteRtTopKWebGpuSampler.dylib" \
+        "libLiteRtWebGpuAccelerator.dylib" \
+        "libStreamProxy.dylib"
+      ;;
+    x64)
+      printf '%s\n' \
+        "libLiteRtLm.dylib" \
+        "libStreamProxy.dylib"
+      ;;
+  esac
+}
+
+validate_litert_dir() {
+  local candidate="$1"
+  local mode="${2:-candidate}"
+  local missing=()
+  local library
+
+  [[ -d "$candidate" ]] || return 1
+  while IFS= read -r library; do
+    if [[ ! -f "$candidate/$library" ]]; then
+      missing+=("$library")
+    fi
+  done < <(required_libraries)
+
+  if [[ "${#missing[@]}" -eq 0 ]]; then
+    return 0
+  fi
+
+  if [[ "$mode" == "explicit" ]]; then
+    echo "LiteRT-LM macOS $LITERT_ARCH library directory is incomplete: $candidate" >&2
+    echo "Missing required runtime libraries:" >&2
+    printf '  - %s\n' "${missing[@]}" >&2
+    exit 2
+  fi
+  return 1
+}
+
 resolve_litert_dir() {
   if [[ -n "${LLAMADART_LITERT_LM_LIB_DIR:-}" ]]; then
+    validate_litert_dir "$LLAMADART_LITERT_LM_LIB_DIR" "explicit"
     echo "$LLAMADART_LITERT_LM_LIB_DIR"
     return
   fi
 
   local candidates=(
-    "$ROOT_DIR/.dart_tool/llamadart/litert_lm/0.12.0/macos_arm64"
-    "$ROOT_DIR/.dart_tool/llamadart/litert_lm/0.12.0/macos/arm64"
+    "$ROOT_DIR/.dart_tool/llamadart/litert_lm/0.12.0/macos_$LITERT_ARCH"
+    "$ROOT_DIR/.dart_tool/llamadart/litert_lm/0.12.0/macos/$LITERT_ARCH"
   )
   local candidate
   for candidate in "${candidates[@]}"; do
-    if [[ -f "$candidate/libLiteRtLm.dylib" && -f "$candidate/libStreamProxy.dylib" ]]; then
+    if validate_litert_dir "$candidate"; then
       echo "$candidate"
       return
     fi
   done
 
-  echo "No low-level-compatible LiteRT-LM macOS library directory found." >&2
+  echo "No complete LiteRT-LM macOS $LITERT_ARCH library directory found." >&2
   exit 2
 }
 
@@ -64,22 +130,7 @@ install_framework() {
 EOF
 }
 
-install_framework_if_exists() {
-  local source_path="$1"
-  local framework_name="$2"
-  local binary_name="$3"
-  if [[ -f "$source_path" ]]; then
-    install_framework "$source_path" "$framework_name" "$binary_name"
-  fi
-}
-
 LITERT_DIR="$(resolve_litert_dir)"
-if [[ -f "$LITERT_DIR/libStreamProxy.dylib" ]]; then
-  STREAM_PROXY_LIB="$LITERT_DIR/libStreamProxy.dylib"
-else
-  echo "No LiteRT-LM stream proxy library found in $LITERT_DIR." >&2
-  exit 2
-fi
 
 install_framework \
   "$LITERT_DIR/libLiteRtLm.dylib" \
@@ -87,28 +138,40 @@ install_framework \
   "LiteRtLm"
 
 install_framework \
-  "$STREAM_PROXY_LIB" \
+  "$LITERT_DIR/libStreamProxy.dylib" \
   "StreamProxy" \
   "StreamProxy"
 
-install_framework_if_exists \
-  "$LITERT_DIR/libLiteRt.dylib" \
-  "LiteRt" \
-  "LiteRt"
+if [[ "$LITERT_ARCH" == "arm64" ]]; then
+  install_framework \
+    "$LITERT_DIR/libLiteRt.dylib" \
+    "LiteRt" \
+    "LiteRt"
 
-install_framework_if_exists \
-  "$LITERT_DIR/libLiteRtMetalAccelerator.dylib" \
-  "LiteRtMetalAccelerator" \
-  "LiteRtMetalAccelerator"
+  install_framework \
+    "$LITERT_DIR/libLiteRtMetalAccelerator.dylib" \
+    "LiteRtMetalAccelerator" \
+    "LiteRtMetalAccelerator"
 
-install_framework_if_exists \
-  "$LITERT_DIR/libGemmaModelConstraintProvider.dylib" \
-  "GemmaModelConstraintProvider" \
-  "GemmaModelConstraintProvider"
+  install_framework \
+    "$LITERT_DIR/libGemmaModelConstraintProvider.dylib" \
+    "GemmaModelConstraintProvider" \
+    "GemmaModelConstraintProvider"
 
-install_framework_if_exists \
-  "$LITERT_DIR/libLiteRtTopKMetalSampler.dylib" \
-  "LiteRtTopKMetalSampler" \
-  "LiteRtTopKMetalSampler"
+  install_framework \
+    "$LITERT_DIR/libLiteRtTopKMetalSampler.dylib" \
+    "LiteRtTopKMetalSampler" \
+    "LiteRtTopKMetalSampler"
+
+  install_framework \
+    "$LITERT_DIR/libLiteRtTopKWebGpuSampler.dylib" \
+    "LiteRtTopKWebGpuSampler" \
+    "LiteRtTopKWebGpuSampler"
+
+  install_framework \
+    "$LITERT_DIR/libLiteRtWebGpuAccelerator.dylib" \
+    "LiteRtWebGpuAccelerator" \
+    "LiteRtWebGpuAccelerator"
+fi
 
 echo "Prepared LiteRT-LM macOS companion frameworks in $FRAMEWORKS_DIR"

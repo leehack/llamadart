@@ -70,6 +70,33 @@ List<String> liteRtLmMacOsRequiredLibrariesForAbi(Abi abi) {
   };
 }
 
+/// Internal helper used by the LiteRT-LM runtime to validate macOS app
+/// framework directories.
+List<String> liteRtLmMacOsRequiredFrameworksForAbi(Abi abi) {
+  return switch (abi) {
+    Abi.macosArm64 => const <String>[
+      'GemmaModelConstraintProvider.framework/Versions/A/'
+          'GemmaModelConstraintProvider',
+      'LiteRt.framework/Versions/A/LiteRt',
+      'LiteRtLm.framework/Versions/A/LiteRtLm',
+      'LiteRtMetalAccelerator.framework/Versions/A/'
+          'LiteRtMetalAccelerator',
+      'LiteRtTopKMetalSampler.framework/Versions/A/'
+          'LiteRtTopKMetalSampler',
+      'LiteRtTopKWebGpuSampler.framework/Versions/A/'
+          'LiteRtTopKWebGpuSampler',
+      'LiteRtWebGpuAccelerator.framework/Versions/A/'
+          'LiteRtWebGpuAccelerator',
+      'StreamProxy.framework/Versions/A/StreamProxy',
+    ],
+    Abi.macosX64 => const <String>[
+      'LiteRtLm.framework/Versions/A/LiteRtLm',
+      'StreamProxy.framework/Versions/A/StreamProxy',
+    ],
+    _ => const <String>[],
+  };
+}
+
 /// Internal helper used by the LiteRT-LM runtime to validate extracted macOS
 /// native-assets cache directories.
 bool liteRtLmIsMacOsCacheDirectoryForAbi(Directory dir, Abi abi) {
@@ -823,6 +850,7 @@ class LiteRtLmRuntimeClient {
       );
     }
     if (Platform.isMacOS && (abi == Abi.macosArm64 || abi == Abi.macosX64)) {
+      final companions = _macOsCompanionLibrariesForAbi(abi);
       final frameworksDir = _findMacOsAppFrameworksDir();
       if (frameworksDir != null) {
         return (
@@ -834,13 +862,8 @@ class LiteRtLmRuntimeClient {
           liteRtLm:
               '${frameworksDir.path}/LiteRtLm.framework/Versions/A/LiteRtLm',
           companions: [
-            '${frameworksDir.path}/LiteRt.framework/LiteRt',
-            '${frameworksDir.path}/GemmaModelConstraintProvider.framework/'
-                'GemmaModelConstraintProvider',
-            '${frameworksDir.path}/LiteRtMetalAccelerator.framework/'
-                'LiteRtMetalAccelerator',
-            '${frameworksDir.path}/LiteRtTopKMetalSampler.framework/'
-                'LiteRtTopKMetalSampler',
+            for (final library in companions)
+              _macOsFrameworkBinaryPath(frameworksDir, library),
           ],
           directCallbackSupported: true,
         );
@@ -855,10 +878,7 @@ class LiteRtLmRuntimeClient {
           ],
           liteRtLm: '${cacheDir.path}/libLiteRtLm.dylib',
           companions: [
-            '${cacheDir.path}/libLiteRt.dylib',
-            '${cacheDir.path}/libGemmaModelConstraintProvider.dylib',
-            '${cacheDir.path}/libLiteRtMetalAccelerator.dylib',
-            '${cacheDir.path}/libLiteRtTopKMetalSampler.dylib',
+            for (final library in companions) '${cacheDir.path}/$library',
           ],
           directCallbackSupported: true,
         );
@@ -869,10 +889,7 @@ class LiteRtLmRuntimeClient {
           'libStreamProxy.dylib',
         ],
         liteRtLm: 'libLiteRtLm.dylib',
-        companions: const [
-          'libGemmaModelConstraintProvider.dylib',
-          'libLiteRtMetalAccelerator.dylib',
-        ],
+        companions: [for (final library in companions) library],
         directCallbackSupported: true,
       );
     }
@@ -920,16 +937,15 @@ class LiteRtLmRuntimeClient {
     if (!frameworksDir.existsSync()) {
       return null;
     }
+    final requiredFrameworks = liteRtLmMacOsRequiredFrameworksForAbi(
+      Abi.current(),
+    );
+    if (requiredFrameworks.isEmpty) {
+      return null;
+    }
     final requiredFiles = [
-      '${frameworksDir.path}/LiteRtLm.framework/Versions/A/LiteRtLm',
-      '${frameworksDir.path}/StreamProxy.framework/Versions/A/StreamProxy',
-      '${frameworksDir.path}/LiteRt.framework/LiteRt',
-      '${frameworksDir.path}/GemmaModelConstraintProvider.framework/'
-          'GemmaModelConstraintProvider',
-      '${frameworksDir.path}/LiteRtMetalAccelerator.framework/'
-          'LiteRtMetalAccelerator',
-      '${frameworksDir.path}/LiteRtTopKMetalSampler.framework/'
-          'LiteRtTopKMetalSampler',
+      for (final framework in requiredFrameworks)
+        '${frameworksDir.path}/$framework',
     ];
     if (requiredFiles.every((file) => File(file).existsSync())) {
       return frameworksDir;
@@ -979,6 +995,27 @@ class LiteRtLmRuntimeClient {
 
   bool _isMacOsLiteRtLmDir(Directory dir) {
     return liteRtLmIsMacOsCacheDirectoryForAbi(dir, Abi.current());
+  }
+
+  List<String> _macOsCompanionLibrariesForAbi(Abi abi) {
+    return liteRtLmMacOsRequiredLibrariesForAbi(abi)
+        .where(
+          (library) =>
+              library != 'libLiteRtLm.dylib' &&
+              library != 'libStreamProxy.dylib',
+        )
+        .toList(growable: false);
+  }
+
+  String _macOsFrameworkBinaryPath(Directory frameworksDir, String library) {
+    final frameworkName = _macOsFrameworkNameForLibrary(library);
+    return '${frameworksDir.path}/$frameworkName.framework/Versions/A/'
+        '$frameworkName';
+  }
+
+  String _macOsFrameworkNameForLibrary(String library) {
+    final basename = path.basenameWithoutExtension(library);
+    return basename.startsWith('lib') ? basename.substring(3) : basename;
   }
 
   _LiteRtLmBindings _requireBindings() {
