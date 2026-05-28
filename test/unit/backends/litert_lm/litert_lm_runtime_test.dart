@@ -2,6 +2,7 @@
 library;
 
 import 'dart:ffi';
+import 'dart:io';
 
 import 'package:llamadart/src/backends/litert_lm/litert_lm_runtime.dart';
 import 'package:test/test.dart';
@@ -56,6 +57,59 @@ void main() {
       const <String>['macos_x64', 'macos/x64'],
     );
     expect(liteRtLmMacOsCacheDirectoryCandidatesForAbi(Abi.linuxX64), isEmpty);
+  });
+
+  test('macOS LiteRT-LM cache validation follows runtime ABI files', () {
+    expect(liteRtLmMacOsRequiredLibrariesForAbi(Abi.macosArm64), const <String>[
+      'libGemmaModelConstraintProvider.dylib',
+      'libLiteRt.dylib',
+      'libLiteRtLm.dylib',
+      'libLiteRtMetalAccelerator.dylib',
+      'libLiteRtTopKMetalSampler.dylib',
+      'libLiteRtTopKWebGpuSampler.dylib',
+      'libLiteRtWebGpuAccelerator.dylib',
+      'libStreamProxy.dylib',
+    ]);
+    expect(liteRtLmMacOsRequiredLibrariesForAbi(Abi.macosX64), const <String>[
+      'libLiteRtLm.dylib',
+      'libStreamProxy.dylib',
+    ]);
+    expect(liteRtLmMacOsRequiredLibrariesForAbi(Abi.linuxX64), isEmpty);
+  });
+
+  test('macOS LiteRT-LM cache validation rejects partial caches', () {
+    final root = Directory.systemTemp.createTempSync('litert_lm_cache_test_');
+    addTearDown(() => root.deleteSync(recursive: true));
+
+    final arm64Dir = Directory('${root.path}/arm64')..createSync();
+    File('${arm64Dir.path}/libLiteRtLm.dylib').createSync();
+    File('${arm64Dir.path}/libStreamProxy.dylib').createSync();
+
+    expect(
+      liteRtLmIsMacOsCacheDirectoryForAbi(arm64Dir, Abi.macosArm64),
+      isFalse,
+    );
+
+    for (final library in liteRtLmMacOsRequiredLibrariesForAbi(
+      Abi.macosArm64,
+    )) {
+      File('${arm64Dir.path}/$library').createSync();
+    }
+
+    expect(
+      liteRtLmIsMacOsCacheDirectoryForAbi(arm64Dir, Abi.macosArm64),
+      isTrue,
+    );
+
+    final x64Dir = Directory('${root.path}/x64')..createSync();
+    File('${x64Dir.path}/libLiteRtLm.dylib').createSync();
+
+    expect(liteRtLmIsMacOsCacheDirectoryForAbi(x64Dir, Abi.macosX64), isFalse);
+
+    File('${x64Dir.path}/libStreamProxy.dylib').createSync();
+
+    expect(liteRtLmIsMacOsCacheDirectoryForAbi(x64Dir, Abi.macosX64), isTrue);
+    expect(liteRtLmIsMacOsCacheDirectoryForAbi(x64Dir, Abi.linuxX64), isFalse);
   });
 
   test('engine create failure diagnostics include fallback guidance', () {

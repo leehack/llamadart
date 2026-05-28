@@ -51,6 +51,35 @@ List<String> liteRtLmMacOsCacheDirectoryCandidatesForAbi(Abi abi) {
   return <String>['macos_$arch', 'macos/$arch'];
 }
 
+/// Internal helper used by the LiteRT-LM runtime to validate extracted macOS
+/// native-assets cache directories.
+List<String> liteRtLmMacOsRequiredLibrariesForAbi(Abi abi) {
+  return switch (abi) {
+    Abi.macosArm64 => const <String>[
+      'libGemmaModelConstraintProvider.dylib',
+      'libLiteRt.dylib',
+      'libLiteRtLm.dylib',
+      'libLiteRtMetalAccelerator.dylib',
+      'libLiteRtTopKMetalSampler.dylib',
+      'libLiteRtTopKWebGpuSampler.dylib',
+      'libLiteRtWebGpuAccelerator.dylib',
+      'libStreamProxy.dylib',
+    ],
+    Abi.macosX64 => const <String>['libLiteRtLm.dylib', 'libStreamProxy.dylib'],
+    _ => const <String>[],
+  };
+}
+
+/// Internal helper used by the LiteRT-LM runtime to validate extracted macOS
+/// native-assets cache directories.
+bool liteRtLmIsMacOsCacheDirectoryForAbi(Directory dir, Abi abi) {
+  final requiredLibraries = liteRtLmMacOsRequiredLibrariesForAbi(abi);
+  return requiredLibraries.isNotEmpty &&
+      requiredLibraries.every(
+        (library) => File('${dir.path}/$library').existsSync(),
+      );
+}
+
 typedef _StreamCallbackNative =
     Void Function(
       Pointer<Void> callbackData,
@@ -894,10 +923,13 @@ class LiteRtLmRuntimeClient {
     final requiredFiles = [
       '${frameworksDir.path}/LiteRtLm.framework/Versions/A/LiteRtLm',
       '${frameworksDir.path}/StreamProxy.framework/Versions/A/StreamProxy',
+      '${frameworksDir.path}/LiteRt.framework/LiteRt',
       '${frameworksDir.path}/GemmaModelConstraintProvider.framework/'
           'GemmaModelConstraintProvider',
       '${frameworksDir.path}/LiteRtMetalAccelerator.framework/'
           'LiteRtMetalAccelerator',
+      '${frameworksDir.path}/LiteRtTopKMetalSampler.framework/'
+          'LiteRtTopKMetalSampler',
     ];
     if (requiredFiles.every((file) => File(file).existsSync())) {
       return frameworksDir;
@@ -946,7 +978,7 @@ class LiteRtLmRuntimeClient {
   }
 
   bool _isMacOsLiteRtLmDir(Directory dir) {
-    return File('${dir.path}/libLiteRtLm.dylib').existsSync();
+    return liteRtLmIsMacOsCacheDirectoryForAbi(dir, Abi.current());
   }
 
   _LiteRtLmBindings _requireBindings() {
