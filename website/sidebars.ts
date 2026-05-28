@@ -42,6 +42,7 @@ const sidebars: SidebarsConfig = {
       items: [
         'configuration/runtime-parameters',
         'guides/performance-tuning',
+        'guides/backend-benchmarks',
         'configuration/logging'
       ]
     },

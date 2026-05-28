@@ -32,6 +32,7 @@ bundles through LiteRT-LM native and web runtimes.
 - Template internals: [Template Engine Internals](./guides/template-engine-internals)
 - LoRA runtime workflows: [LoRA Adapters](./guides/lora-adapters)
 - Performance work: [Performance Tuning](./guides/performance-tuning)
+- Backend benchmark results: [Backend Benchmarks](./guides/backend-benchmarks)
 - Platform/backend planning: [Platform & Backend Matrix](./platforms/support-matrix)
 - Upgrade planning: [Upgrade Checklist](./migration/upgrade-checklist)
 - Maintainer operations: [Maintainer Overview](./maintainers/docs-site)

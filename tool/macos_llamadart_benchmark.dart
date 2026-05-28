@@ -6,6 +6,42 @@ import 'package:llamadart/llamadart.dart';
 const _defaultPrompt =
     'Write a concise explanation of why on-device language models are useful.';
 
+Map<String, Object?> _numericSummary(
+  List<Map<String, Object?>> runs,
+  String key,
+) {
+  final values =
+      runs
+          .map((run) => run[key])
+          .whereType<num>()
+          .where((value) => value.isFinite)
+          .map((value) => value.toDouble())
+          .toList()
+        ..sort();
+  if (values.isEmpty) {
+    return {'median': null, 'min': null, 'max': null};
+  }
+
+  final middle = values.length ~/ 2;
+  final median = values.length.isOdd
+      ? values[middle]
+      : (values[middle - 1] + values[middle]) / 2.0;
+  return {'median': median, 'min': values.first, 'max': values.last};
+}
+
+Map<String, Object?> _summarizeRuns(List<Map<String, Object?>> runs) {
+  return {
+    'wallTokensPerSecond': _numericSummary(runs, 'wallTokensPerSecond'),
+    'decodeTokensPerSecond': _numericSummary(runs, 'decodeTokensPerSecond'),
+    'decodeWithSamplingTokensPerSecond': _numericSummary(
+      runs,
+      'decodeWithSamplingTokensPerSecond',
+    ),
+    'wallMilliseconds': _numericSummary(runs, 'wallMilliseconds'),
+    'evalTokens': _numericSummary(runs, 'evalTokens'),
+  };
+}
+
 Future<void> main(List<String> args) async {
   final modelPath = args.isNotEmpty
       ? args.first
@@ -44,6 +80,7 @@ Future<void> main(List<String> args) async {
     BackendPerfContextData? perf;
     var wallMs = 0;
     var lastText = '';
+    final runsDetail = <Map<String, Object?>>[];
     for (var i = 0; i < runs; i++) {
       final buffer = StringBuffer();
       final sw = Stopwatch()..start();
@@ -57,6 +94,35 @@ Future<void> main(List<String> args) async {
       wallMs = sw.elapsedMilliseconds;
       lastText = buffer.toString();
       perf = await engine.getPerformanceContext();
+      final runMetrics = {
+        'index': i,
+        'wallMilliseconds': wallMs,
+        'promptEvalTokens': perf?.promptEvalTokens,
+        'evalTokens': perf?.evalTokens,
+        'hitEosBeforeTarget': perf == null
+            ? null
+            : perf.evalTokens < outputTokens,
+        'promptEvalMs': perf?.promptEvalMs,
+        'evalMs': perf?.evalMs,
+        'sampleMs': perf?.sampleMs,
+        'prefillTokensPerSecond': perf == null || perf.promptEvalMs <= 0
+            ? null
+            : perf.promptEvalTokens / (perf.promptEvalMs / 1000.0),
+        'decodeTokensPerSecond': perf == null || perf.evalMs <= 0
+            ? null
+            : perf.evalTokens / (perf.evalMs / 1000.0),
+        'decodeWithSamplingTokensPerSecond':
+            perf == null || perf.evalMs + perf.sampleMs <= 0
+            ? null
+            : perf.evalTokens / ((perf.evalMs + perf.sampleMs) / 1000.0),
+        'wallTokensPerSecond': wallMs <= 0
+            ? null
+            : perf?.evalTokens != null
+            ? perf!.evalTokens / (wallMs / 1000.0)
+            : null,
+      };
+      runsDetail.add(runMetrics);
+      print('RUN llamadart ${jsonEncode(runMetrics)}');
     }
 
     final metrics = {
@@ -89,6 +155,10 @@ Future<void> main(List<String> args) async {
           : perf?.evalTokens != null
           ? perf!.evalTokens / (wallMs / 1000.0)
           : null,
+      'runs': runs,
+      'warmups': warmups,
+      'measured': _summarizeRuns(runsDetail),
+      'runsDetail': runsDetail,
     };
 
     print('RESULT llamadart ${jsonEncode(metrics)}');

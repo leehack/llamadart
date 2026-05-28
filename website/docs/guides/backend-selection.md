@@ -26,6 +26,9 @@ If both formats exist for the model you want, treat the choice as a deployment
 benchmark, not only a file-format preference. Measure the exact model artifact,
 device, prompt shape, and output length your app will ship.
 
+See [Backend Benchmarks](./backend-benchmarks) for measured Gemma 4 E2B results
+on Pixel 9 Pro, macOS, and web.
+
 ## Format Routing
 
 ```dart
@@ -153,6 +156,14 @@ kernel benchmark.
 - Start with LiteRT-LM if your target model is already distributed as a
   `.litertlm` bundle and your app mainly needs text generation/chat on mobile or
   web.
+- For Gemma 4 E2B on Pixel 9 Pro, the measured LiteRT-LM GPU path was about 9x
+  faster than the measured llama.cpp Vulkan GGUF path.
+- For Gemma 4 E2B on an Apple M4 Max Mac, measured llama.cpp Metal and
+  LiteRT-LM Metal throughput were close; choose based on model format and
+  feature needs.
+- For web Gemma 4 E2B, the LiteRT-LM web bundle completed while the large GGUF
+  artifact failed browser wasm model load. On web, successful model loading is
+  part of the backend decision.
 - On Android, benchmark LiteRT-LM `gpu` and `npu` separately when the model and
   device support them. NPU is not a general replacement for GGUF/Vulkan; it is a
   LiteRT-LM deployment path.

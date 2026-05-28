@@ -193,6 +193,32 @@ dart run tool/testing/native_embedding_sweep.dart \
   --csv-out embedding_speedup.csv
 ```
 
+Compare llama.cpp/GGUF and LiteRT-LM with the bundled fair benchmark scripts:
+
+```bash
+# macOS native, Gemma 4 E2B artifacts
+DECODE_TOKENS=256 tool/macos_fair_litert_vs_llamadart.sh
+
+# Web LiteRT-LM; use TARGETS=llamadart to test GGUF WebGPU separately
+DOWNLOAD_LITERT_WEB_MODEL=1 \
+DECODE_TOKENS=256 \
+WARMUPS=1 \
+RUNS=3 \
+TARGETS=litert_lm \
+tool/web_fair_litert_vs_llamadart.sh
+
+# Android / Pixel-style app benchmark
+ADB=/path/to/adb
+DEVICE=<adb-serial>
+"$ADB" -s "$DEVICE" shell svc power stayon true
+"$ADB" -s "$DEVICE" shell input keyevent KEYCODE_WAKEUP
+DEVICE="$DEVICE" ADB="$ADB" OUTPUT_TOKENS=256 WARMUPS=1 RUNS=3 \
+  TARGETS=litert_lm,llamadart tool/litert_lm_pixel_benchmark.sh
+```
+
+Current measured Gemma 4 E2B results are recorded in
+[Backend Benchmarks](./backend-benchmarks).
+
 - Validate memory behavior with your real context sizes.
 - Check runtime backend and VRAM info where available:
 

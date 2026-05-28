@@ -1,5 +1,5 @@
 name: llamadart
-description: A Dart/Flutter plugin for llama.cpp - run LLM inference on any platform using GGUF models
+description: Dart and Flutter local LLM inference with llama.cpp GGUF and LiteRT-LM across native platforms and web.
 version: 0.6.17
 homepage: https://github.com/leehack/llamadart
 repository: https://github.com/leehack/llamadart
@@ -7,9 +7,9 @@ issue_tracker: https://github.com/leehack/llamadart/issues
 topics:
   - llama
   - llm
-  - ai
   - inference
   - gguf
+  - litert
 
 environment:
   sdk: ^3.10.7
