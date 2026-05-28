@@ -142,6 +142,7 @@ class LiteRtLmBackend
   @override
   Future<int> contextCreate(int modelHandle, ModelParams params) async {
     _requireModelHandle(modelHandle);
+    _validateModelParams(params);
     _validateContextParams(params);
     _contextHandle = _nextContextHandle++;
     _hasContext = true;
@@ -910,6 +911,9 @@ class LiteRtLmBackend
 
   void _validateContextParams(ModelParams params) {
     final requested = _explicitBackendName(params);
+    if (requested == 'npu') {
+      throw UnsupportedError('LiteRT-LM web does not support NPU backend.');
+    }
     if (requested != null && requested != _activeBackend) {
       throw ArgumentError(
         'LiteRtLmBackend web contextCreate cannot change the loaded backend '

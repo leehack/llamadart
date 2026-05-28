@@ -227,6 +227,62 @@ void main() {
     }
   });
 
+  test('rejects unsupported context-time model params', () async {
+    _installFakeEngine(chunks: <JSAny?>[]);
+
+    final backend = LiteRtLmBackend();
+    try {
+      final modelHandle = await backend.modelLoadFromUrl(
+        'https://example.com/model.litertlm',
+        const ModelParams(),
+      );
+
+      await expectLater(
+        () => backend.contextCreate(
+          modelHandle,
+          const ModelParams(batchSize: 128),
+        ),
+        throwsA(
+          isA<ArgumentError>().having(
+            (error) => error.message.toString(),
+            'message',
+            contains('batchSize'),
+          ),
+        ),
+      );
+
+      await expectLater(
+        () => backend.contextCreate(
+          modelHandle,
+          const ModelParams(contextSize: 0),
+        ),
+        throwsA(
+          isA<ArgumentError>().having(
+            (error) => error.message.toString(),
+            'message',
+            contains('contextSize=0'),
+          ),
+        ),
+      );
+
+      await expectLater(
+        () => backend.contextCreate(
+          modelHandle,
+          const ModelParams(liteRtLmBackend: LiteRtLmBackendPreference.npu),
+        ),
+        throwsA(
+          isA<UnsupportedError>().having(
+            (error) => error.message,
+            'message',
+            contains('NPU backend'),
+          ),
+        ),
+      );
+    } finally {
+      await backend.dispose();
+    }
+  });
+
   test('rejects media content in direct chat-template calls', () async {
     _installFakeEngine(chunks: <JSAny?>[_messageChunk('ok')]);
 
