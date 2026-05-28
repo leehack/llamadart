@@ -287,6 +287,49 @@ void main() {
       }
     });
 
+    test('routes successful detokenize and LoRA service responses', () async {
+      final service = _TokenAndLoraLiteRtLmService();
+      final worker = await _startWorkerInCurrentIsolate(service);
+
+      try {
+        final detokenize = await _sendRequest(
+          worker.sendPort,
+          (sendPort) => LiteRtLmDetokenizeRequest(
+            1,
+            const <int>[10, 11],
+            false,
+            sendPort,
+          ),
+        );
+        expect(
+          detokenize,
+          isA<LiteRtLmDetokenizeResponse>().having(
+            (response) => response.text,
+            'text',
+            'decoded text',
+          ),
+        );
+
+        final lora = await _sendRequest(
+          worker.sendPort,
+          (sendPort) => LiteRtLmLoraRequest(
+            2,
+            'set',
+            path: 'adapter.bin',
+            scale: 0.5,
+            sendPort: sendPort,
+          ),
+        );
+        expect(lora, isA<LiteRtLmDoneResponse>());
+        expect(service.lastLoraContextHandle, 2);
+        expect(service.lastLoraPath, 'adapter.bin');
+        expect(service.lastLoraScale, 0.5);
+        expect(service.lastLoraOp, 'set');
+      } finally {
+        await _disposeWorker(worker);
+      }
+    });
+
     test(
       'serializes regular requests while a service call is pending',
       () async {
@@ -317,6 +360,64 @@ void main() {
         }
       },
     );
+
+    test('returns done when performance context is absent', () async {
+      final service = _NoPerfLiteRtLmService();
+      final worker = await _startWorkerInCurrentIsolate(service);
+
+      try {
+        final missingPerf = await _sendRequest(
+          worker.sendPort,
+          (sendPort) => LiteRtLmPerformanceContextRequest(1, sendPort),
+        );
+        expect(missingPerf, isA<LiteRtLmDoneResponse>());
+      } finally {
+        await _disposeWorker(worker);
+      }
+    });
+
+    test('rejects overlapping generation requests immediately', () async {
+      final service = _BlockingLiteRtLmService();
+      final worker = await _startWorkerInCurrentIsolate(service);
+
+      try {
+        final firstGeneration = _collectGenerationResponses(
+          worker.sendPort,
+          (sendPort) => LiteRtLmGenerateRequest(
+            1,
+            'first',
+            const GenerationParams(),
+            sendPort,
+          ),
+        );
+        await service.generateStarted.future;
+
+        final secondGeneration = await _sendRequest(
+          worker.sendPort,
+          (sendPort) => LiteRtLmGenerateRequest(
+            1,
+            'second',
+            const GenerationParams(),
+            sendPort,
+          ),
+        );
+        expect(
+          secondGeneration,
+          isA<LiteRtLmErrorResponse>()
+              .having((response) => response.kind, 'kind', 'state')
+              .having(
+                (response) => response.message,
+                'message',
+                contains('already in progress'),
+              ),
+        );
+
+        service.releaseGeneration();
+        expect(await firstGeneration, contains(isA<LiteRtLmDoneResponse>()));
+      } finally {
+        await _disposeWorker(worker);
+      }
+    });
 
     test(
       'handles cancellation while generation owns the service queue',
@@ -643,6 +744,37 @@ class _BlockingLiteRtLmService extends LiteRtLmService {
   @override
   void cancelGeneration() {
     cancelCount += 1;
+  }
+}
+
+class _TokenAndLoraLiteRtLmService extends LiteRtLmService {
+  int? lastLoraContextHandle;
+  String? lastLoraPath;
+  double? lastLoraScale;
+  String? lastLoraOp;
+
+  @override
+  Future<String> detokenize(
+    int modelHandle,
+    List<int> tokens,
+    bool special,
+  ) async {
+    return 'decoded text';
+  }
+
+  @override
+  void handleLora(int contextHandle, String? path, double? scale, String op) {
+    lastLoraContextHandle = contextHandle;
+    lastLoraPath = path;
+    lastLoraScale = scale;
+    lastLoraOp = op;
+  }
+}
+
+class _NoPerfLiteRtLmService extends LiteRtLmService {
+  @override
+  BackendPerfContextData? getPerformanceContext(int contextHandle) {
+    return null;
   }
 }
 
