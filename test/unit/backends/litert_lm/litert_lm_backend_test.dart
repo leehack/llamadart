@@ -124,6 +124,25 @@ void main() {
     }
   });
 
+  test('rejects invalid direct preferred backend diagnostics', () async {
+    final backend = LiteRtLmBackend(preferredBackend: 'directml');
+
+    try {
+      await expectLater(
+        backend.getBackendName(),
+        throwsA(
+          isA<ArgumentError>().having(
+            (error) => error.message.toString(),
+            'message',
+            contains('must be cpu, gpu, or npu'),
+          ),
+        ),
+      );
+    } finally {
+      await backend.dispose();
+    }
+  });
+
   test('loads local litertlm model and exposes metadata', () async {
     final backend = LiteRtLmBackend();
 
@@ -295,6 +314,31 @@ void main() {
     expect(backend.isReady, isFalse);
   });
 
+  test('rejects calls after dispose without restarting worker', () async {
+    final worker = _FakeLiteRtLmWorker(
+      tokenizeResponse: const <int>[],
+      detokenizeResponse: '',
+    );
+    final backend = LiteRtLmBackend(initialSendPort: worker.sendPort);
+
+    try {
+      await backend.dispose();
+      await expectLater(
+        backend.getBackendName(),
+        throwsA(
+          isA<StateError>().having(
+            (error) => error.message,
+            'message',
+            contains('disposed'),
+          ),
+        ),
+      );
+      expect(worker.requests.whereType<LiteRtLmBackendInfoRequest>(), isEmpty);
+    } finally {
+      worker.close();
+    }
+  });
+
   test('routes tokenization APIs through the LiteRT-LM worker', () async {
     final worker = _FakeLiteRtLmWorker(
       tokenizeResponse: const <int>[2, 10, 11],
@@ -326,6 +370,66 @@ void main() {
       expect(detokenizeRequest.modelHandle, 42);
       expect(detokenizeRequest.tokens, [10, 11]);
       expect(detokenizeRequest.special, isTrue);
+    } finally {
+      await backend.dispose();
+      worker.close();
+    }
+  });
+
+  test('streams generated token bytes from the LiteRT-LM worker', () async {
+    final worker = _FakeLiteRtLmWorker(
+      tokenizeResponse: const <int>[],
+      detokenizeResponse: '',
+      generationChunks: const [
+        [104, 101],
+        [108, 108, 111],
+      ],
+    );
+    final backend = LiteRtLmBackend(initialSendPort: worker.sendPort);
+
+    try {
+      expect(
+        await backend.generate(7, 'prompt', const GenerationParams()).toList(),
+        [
+          [104, 101],
+          [108, 108, 111],
+        ],
+      );
+
+      final request = worker.requests
+          .whereType<LiteRtLmGenerateRequest>()
+          .single;
+      expect(request.contextHandle, 7);
+      expect(request.prompt, 'prompt');
+      expect(request.parts, isNull);
+    } finally {
+      await backend.dispose();
+      worker.close();
+    }
+  });
+
+  test('maps unknown worker generation errors to generic exceptions', () async {
+    final worker = _FakeLiteRtLmWorker(
+      tokenizeResponse: const <int>[],
+      detokenizeResponse: '',
+      generationErrorResponse: LiteRtLmErrorResponse(
+        'native failed',
+        kind: 'native',
+      ),
+    );
+    final backend = LiteRtLmBackend(initialSendPort: worker.sendPort);
+
+    try {
+      await expectLater(
+        backend.generate(7, 'prompt', const GenerationParams()).drain<void>(),
+        throwsA(
+          isA<Exception>().having(
+            (error) => error.toString(),
+            'message',
+            contains('native failed'),
+          ),
+        ),
+      );
     } finally {
       await backend.dispose();
       worker.close();
@@ -630,6 +734,33 @@ void main() {
     }
   });
 
+  test('rejects unexpected worker response types', () async {
+    final worker = _FakeLiteRtLmWorker(
+      tokenizeResponse: const <int>[],
+      detokenizeResponse: '',
+      backendInfoRawResponse: LiteRtLmDoneResponse(),
+    );
+    final backend = LiteRtLmBackend(initialSendPort: worker.sendPort);
+
+    try {
+      await expectLater(
+        backend.getBackendName(),
+        throwsA(
+          isA<StateError>().having(
+            (error) => error.message,
+            'message',
+            contains(
+              'Unexpected LiteRT-LM response during backend info lookup',
+            ),
+          ),
+        ),
+      );
+    } finally {
+      await backend.dispose();
+      worker.close();
+    }
+  });
+
   test('returns null when LiteRT-LM performance data is absent', () async {
     final worker = _FakeLiteRtLmWorker(
       tokenizeResponse: const <int>[],
@@ -698,7 +829,10 @@ class _FakeLiteRtLmWorker {
     required this.detokenizeResponse,
     this.chatTemplateResponse = '',
     this.holdGeneration = false,
+    this.generationChunks = const <List<int>>[],
+    this.generationErrorResponse,
     this.backendInfoResponse = 'LiteRT-LM cpu',
+    this.backendInfoRawResponse,
     this.availableBackendsResponse = 'cpu',
     this.resolvedGpuLayersResponse = 0,
     this.gpuSupportResponse = false,
@@ -715,7 +849,10 @@ class _FakeLiteRtLmWorker {
   final String detokenizeResponse;
   final String chatTemplateResponse;
   final bool holdGeneration;
+  final List<List<int>> generationChunks;
+  final LiteRtLmErrorResponse? generationErrorResponse;
   final String backendInfoResponse;
+  final Object? backendInfoRawResponse;
   final String availableBackendsResponse;
   final int resolvedGpuLayersResponse;
   final bool gpuSupportResponse;
@@ -749,6 +886,13 @@ class _FakeLiteRtLmWorker {
         if (!generateReceived.isCompleted) {
           generateReceived.complete(message);
         }
+        if (generationErrorResponse != null) {
+          message.sendPort.send(generationErrorResponse);
+          break;
+        }
+        for (final chunk in generationChunks) {
+          message.sendPort.send(LiteRtLmTokenResponse(chunk));
+        }
         if (holdGeneration) {
           unawaited(
             _releaseGeneration.future.then(
@@ -773,7 +917,10 @@ class _FakeLiteRtLmWorker {
           LiteRtLmChatTemplateResponse(chatTemplateResponse),
         );
       case LiteRtLmBackendInfoRequest():
-        message.sendPort.send(LiteRtLmBackendInfoResponse(backendInfoResponse));
+        message.sendPort.send(
+          backendInfoRawResponse ??
+              LiteRtLmBackendInfoResponse(backendInfoResponse),
+        );
       case LiteRtLmAvailableBackendsRequest():
         message.sendPort.send(
           LiteRtLmBackendInfoResponse(availableBackendsResponse),
