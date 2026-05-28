@@ -113,6 +113,7 @@ class MockLlamaEngine extends LlamaEngine {
   int createCalls = 0;
   ModelParams? lastModelParams;
   GenerationParams? lastCreateParams;
+  BackendPerfContextData? performanceContext;
   String? lastLoadedModelPath;
   String? lastLoadedModelUrl;
 
@@ -218,6 +219,10 @@ class MockLlamaEngine extends LlamaEngine {
 
   @override
   Future<int> getTokenCount(String text) async => 5;
+
+  @override
+  Future<BackendPerfContextData?> getPerformanceContext() async =>
+      performanceContext;
 }
 
 class MockSettingsService implements SettingsService {

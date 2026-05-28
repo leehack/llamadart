@@ -321,6 +321,33 @@ void main() {
       expect(provider.currentTokens, 1);
     });
 
+    test('sendMessage prefers native perf token counts for metrics', () async {
+      final perfEngine = MockLlamaEngine()
+        ..performanceContext = const BackendPerfContextData(
+          loadMs: 0,
+          promptEvalMs: 250,
+          evalMs: 2000,
+          sampleMs: 0,
+          promptEvalTokens: 26,
+          evalTokens: 32,
+          sampleCount: 32,
+          reusedGraphs: 0,
+        );
+      final perfProvider = ChatProvider(
+        chatService: MockChatService(engine: perfEngine),
+        settingsService: mockSettingsService,
+        initialSettings: const ChatSettings(modelPath: 'test_model.litertlm'),
+      );
+
+      await perfProvider.loadModel();
+      await perfProvider.sendMessage('Hello');
+
+      expect(perfProvider.currentTokens, 32);
+      expect(perfProvider.lastNativePromptEvalTokens, 26);
+      expect(perfProvider.lastNativeEvalTokens, 32);
+      expect(perfProvider.lastDecodeTokensPerSecond, closeTo(16, 0.001));
+    });
+
     test('normalizes generic JSON response envelope for display', () async {
       final jsonEngine = _JsonResponseEngine();
       final jsonProvider = ChatProvider(

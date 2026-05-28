@@ -1420,18 +1420,9 @@ class ChatProvider extends ChangeNotifier {
       final generatedTokens = generationResult.generatedTokens;
       final elapsedMs = generationResult.elapsedMs;
       final decodeElapsedMs = generationResult.decodeElapsedMs;
-      if (generatedTokens > 0 && elapsedMs > 0) {
-        _lastTokensPerSecond = generatedTokens / (elapsedMs / 1000);
-      } else {
-        _lastTokensPerSecond = null;
-      }
 
-      if (generatedTokens > 0 && decodeElapsedMs > 0) {
-        _lastDecodeTokensPerSecond = generatedTokens / (decodeElapsedMs / 1000);
-      } else {
-        _lastDecodeTokensPerSecond = null;
-      }
-
+      int? nativeEvalTokens;
+      double? nativeEvalMs;
       try {
         final perf = await _chatService.engine.getPerformanceContext();
         if (perf != null) {
@@ -1441,6 +1432,8 @@ class ChatProvider extends ChangeNotifier {
           _lastNativePromptEvalTokens = perf.promptEvalTokens;
           _lastNativeEvalTokens = perf.evalTokens;
           _lastNativeReusedGraphs = perf.reusedGraphs;
+          nativeEvalTokens = perf.evalTokens;
+          nativeEvalMs = perf.evalMs;
         } else {
           _lastNativePromptEvalMs = null;
           _lastNativeEvalMs = null;
@@ -1456,6 +1449,27 @@ class ChatProvider extends ChangeNotifier {
         _lastNativePromptEvalTokens = null;
         _lastNativeEvalTokens = null;
         _lastNativeReusedGraphs = null;
+      }
+
+      final effectiveGeneratedTokens = nativeEvalTokens ?? generatedTokens;
+      if (nativeEvalTokens != null && nativeEvalTokens > generatedTokens) {
+        _currentTokens += nativeEvalTokens - generatedTokens;
+      }
+
+      if (effectiveGeneratedTokens > 0 && elapsedMs > 0) {
+        _lastTokensPerSecond = effectiveGeneratedTokens / (elapsedMs / 1000);
+      } else {
+        _lastTokensPerSecond = null;
+      }
+
+      final effectiveDecodeElapsedMs = nativeEvalMs != null && nativeEvalMs > 0
+          ? nativeEvalMs
+          : decodeElapsedMs.toDouble();
+      if (effectiveGeneratedTokens > 0 && effectiveDecodeElapsedMs > 0) {
+        _lastDecodeTokensPerSecond =
+            effectiveGeneratedTokens / (effectiveDecodeElapsedMs / 1000);
+      } else {
+        _lastDecodeTokensPerSecond = null;
       }
 
       if (generationResult.firstTokenLatencyMs != null ||
