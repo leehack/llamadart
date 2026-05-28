@@ -1,6 +1,7 @@
 @TestOn('vm')
 library;
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:llamadart/src/backends/backend.dart';
@@ -303,6 +304,133 @@ void main() {
       expect((await backend.stateLoadFile(1, '/tmp/state.bin', 16)).tokens, [
         3,
       ]);
+    } finally {
+      await backend.dispose();
+    }
+  });
+
+  test(
+    'falls back to single embedding calls when selected backend lacks batch embeddings',
+    () async {
+      final llama = _EmbeddingOnlyFakeBackend(handle: 11);
+      final backend = NativeAutoBackend(
+        llamaCppFactory: () => llama,
+        liteRtLmFactory: () => _FakeBackend(handle: 22),
+      );
+
+      try {
+        await backend.modelLoad('/models/model.gguf', const ModelParams());
+
+        expect(backend.supportsEmbeddings, isTrue);
+        expect(await backend.embedBatch(1, const ['a', 'bb']), [
+          [1.0],
+          [2.0],
+        ]);
+        expect(llama.embeddedTexts, ['a', 'bb']);
+      } finally {
+        await backend.dispose();
+      }
+    },
+  );
+
+  test(
+    'routes multimodal, template, and VRAM calls to selected delegate',
+    () async {
+      final litert = _FakeBackend(handle: 22)
+        ..vramInfo = (total: 2048, free: 1024)
+        ..chatTemplateResponse = 'templated';
+      final backend = NativeAutoBackend(
+        llamaCppFactory: () => _FakeBackend(handle: 11),
+        liteRtLmFactory: () => litert,
+      );
+
+      try {
+        await backend.modelLoad(
+          '/models/gemma-4-E2B-it.litertlm',
+          const ModelParams(),
+        );
+
+        expect(await backend.getVramInfo(), (total: 2048, free: 1024));
+        expect(await backend.multimodalContextCreate(22, 'mmproj.task'), 222);
+        await backend.multimodalContextFree(222);
+        expect(await backend.supportsVision(222), isTrue);
+        expect(await backend.supportsAudio(222), isFalse);
+        expect(
+          await backend.applyChatTemplate(
+            22,
+            const [
+              {'role': 'user', 'content': 'hi'},
+            ],
+            customTemplate: 'custom',
+            addAssistant: false,
+          ),
+          'templated',
+        );
+
+        expect(litert.lastMultimodalCreateModelHandle, 22);
+        expect(litert.lastMultimodalProjectorPath, 'mmproj.task');
+        expect(litert.lastMultimodalFreeHandle, 222);
+        expect(litert.lastSupportsVisionHandle, 222);
+        expect(litert.lastSupportsAudioHandle, 222);
+        expect(litert.lastChatTemplateCustomTemplate, 'custom');
+        expect(litert.lastChatTemplateAddAssistant, isFalse);
+      } finally {
+        await backend.dispose();
+      }
+    },
+  );
+
+  test('updates an existing pre-load diagnostic delegate log level', () async {
+    final llama = _FakeBackend(handle: 11)..gpuSupported = true;
+    final backend = NativeAutoBackend(
+      llamaCppFactory: () => llama,
+      liteRtLmFactory: () => _FakeBackend(handle: 22),
+    );
+
+    try {
+      expect(await backend.isGpuSupported(), isTrue);
+      await backend.setLogLevel(LlamaLogLevel.debug);
+
+      expect(llama.logLevels, [LlamaLogLevel.warn, LlamaLogLevel.debug]);
+    } finally {
+      await backend.dispose();
+    }
+  });
+
+  test('updates diagnostic log level while probe startup is pending', () async {
+    final llama = _BlockingLogLevelBackend(handle: 11)..gpuSupported = true;
+    final backend = NativeAutoBackend(
+      llamaCppFactory: () => llama,
+      liteRtLmFactory: () => _FakeBackend(handle: 22),
+    );
+
+    try {
+      final gpuSupport = backend.isGpuSupported();
+      await llama.firstLogLevelStarted.future;
+
+      final update = backend.setLogLevel(LlamaLogLevel.debug);
+      await Future<void>.delayed(Duration.zero);
+      expect(llama.logLevels, [LlamaLogLevel.warn]);
+
+      llama.releaseFirstLogLevel();
+      expect(await gpuSupport, isTrue);
+      await update;
+      expect(llama.logLevels, [LlamaLogLevel.warn, LlamaLogLevel.debug]);
+    } finally {
+      await backend.dispose();
+    }
+  });
+
+  test('disposes failed diagnostic probes', () async {
+    final llama = _FailingLogLevelBackend(handle: 11);
+    final backend = NativeAutoBackend(
+      llamaCppFactory: () => llama,
+      liteRtLmFactory: () => _FakeBackend(handle: 22),
+    );
+
+    try {
+      await expectLater(backend.isGpuSupported(), throwsA(isA<StateError>()));
+      expect(llama.disposeCount, 1);
     } finally {
       await backend.dispose();
     }
@@ -704,6 +832,15 @@ class _FakeBackend implements LlamaBackend {
   bool gpuSupported = false;
   ({int total, int free}) vramInfo = (total: 0, free: 0);
   int disposeCount = 0;
+  int? lastMultimodalCreateModelHandle;
+  String? lastMultimodalProjectorPath;
+  int? lastMultimodalFreeHandle;
+  int? lastSupportsVisionHandle;
+  int? lastSupportsAudioHandle;
+  String chatTemplateResponse = '';
+  List<Map<String, dynamic>>? lastChatTemplateMessages;
+  String? lastChatTemplateCustomTemplate;
+  bool? lastChatTemplateAddAssistant;
 
   _FakeBackend({required this.handle});
 
@@ -767,6 +904,46 @@ class _FakeBackend implements LlamaBackend {
   Future<({int total, int free})> getVramInfo() async => vramInfo;
 
   @override
+  Future<int?> multimodalContextCreate(
+    int modelHandle,
+    String mmProjPath,
+  ) async {
+    lastMultimodalCreateModelHandle = modelHandle;
+    lastMultimodalProjectorPath = mmProjPath;
+    return handle + 200;
+  }
+
+  @override
+  Future<void> multimodalContextFree(int mmContextHandle) async {
+    lastMultimodalFreeHandle = mmContextHandle;
+  }
+
+  @override
+  Future<bool> supportsVision(int mmContextHandle) async {
+    lastSupportsVisionHandle = mmContextHandle;
+    return true;
+  }
+
+  @override
+  Future<bool> supportsAudio(int mmContextHandle) async {
+    lastSupportsAudioHandle = mmContextHandle;
+    return false;
+  }
+
+  @override
+  Future<String> applyChatTemplate(
+    int modelHandle,
+    List<Map<String, dynamic>> messages, {
+    String? customTemplate,
+    bool addAssistant = true,
+  }) async {
+    lastChatTemplateMessages = messages;
+    lastChatTemplateCustomTemplate = customTemplate;
+    lastChatTemplateAddAssistant = addAssistant;
+    return chatTemplateResponse;
+  }
+
+  @override
   Future<void> setLogLevel(LlamaLogLevel level) async {
     logLevels.add(level);
   }
@@ -778,6 +955,57 @@ class _FakeBackend implements LlamaBackend {
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _EmbeddingOnlyFakeBackend extends _FakeBackend
+    implements BackendEmbeddings {
+  _EmbeddingOnlyFakeBackend({required super.handle});
+
+  final List<String> embeddedTexts = <String>[];
+
+  @override
+  Future<List<double>> embed(
+    int contextHandle,
+    String text, {
+    bool normalize = true,
+  }) async {
+    embeddedTexts.add(text);
+    return <double>[text.length.toDouble()];
+  }
+}
+
+class _BlockingLogLevelBackend extends _FakeBackend {
+  _BlockingLogLevelBackend({required super.handle});
+
+  final Completer<void> firstLogLevelStarted = Completer<void>();
+  final Completer<void> _releaseFirstLogLevel = Completer<void>();
+  var _blockedFirstLogLevel = false;
+
+  @override
+  Future<void> setLogLevel(LlamaLogLevel level) async {
+    logLevels.add(level);
+    if (!_blockedFirstLogLevel) {
+      _blockedFirstLogLevel = true;
+      firstLogLevelStarted.complete();
+      await _releaseFirstLogLevel.future;
+    }
+  }
+
+  void releaseFirstLogLevel() {
+    if (!_releaseFirstLogLevel.isCompleted) {
+      _releaseFirstLogLevel.complete();
+    }
+  }
+}
+
+class _FailingLogLevelBackend extends _FakeBackend {
+  _FailingLogLevelBackend({required super.handle});
+
+  @override
+  Future<void> setLogLevel(LlamaLogLevel level) async {
+    logLevels.add(level);
+    throw StateError('diagnostic log level failed');
+  }
 }
 
 class _CapabilityFakeBackend extends _FakeBackend
