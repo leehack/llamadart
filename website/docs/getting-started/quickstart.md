@@ -1,6 +1,6 @@
 ---
 title: Quickstart
-description: Load a GGUF model, generate tokens, and try embeddings with the core llamadart APIs in minutes.
+description: Load a GGUF or LiteRT-LM model, generate tokens, and try embeddings with the core llamadart APIs in minutes.
 ---
 
 This quickstart uses the core `LlamaEngine` API.
@@ -26,6 +26,22 @@ Future<void> main() async {
   }
 }
 ```
+
+Native targets can load LiteRT-LM `.litertlm` bundles through the same engine:
+
+```dart
+await engine.loadModel(
+  'path/to/gemma-4-E2B-it.litertlm',
+  modelParams: const ModelParams(
+    liteRtLmBackend: LiteRtLmBackendPreference.gpu,
+  ),
+);
+```
+
+`LiteRtLmBackendPreference.auto` is the default. It chooses GPU on Android and
+macOS and CPU on other current LiteRT-LM targets. Android callers can request
+`LiteRtLmBackendPreference.npu` for devices and model bundles that support the
+LiteRT-LM NPU delegate.
 
 ## Stateless chat completions
 
@@ -59,6 +75,10 @@ final batch = await engine.embedBatch([
 print('single dims=${single.length}');
 print('batch size=${batch.length}');
 ```
+
+Embeddings are a llama.cpp/GGUF capability in the current package. Check
+`engine.supportsEmbeddings` before calling these APIs when your app can switch
+between GGUF and LiteRT-LM models.
 
 ## Next steps
 

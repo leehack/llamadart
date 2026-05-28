@@ -6,12 +6,13 @@ description: Check which native and web backends are supported by llamadart and 
 This page combines platform support and backend-module configuration for
 `llamadart`.
 
-The native-assets hook defaults to `llamadart-native` tag `b9371`
-(`hook/build.dart`). Apps can override the GitHub source with
+The native-assets hook currently pins `llamadart-native` tag `b9371` and
+`litert-lm-native` release `v0.12.0` (`hook/build.dart`). Apps can override the
+llama.cpp native GitHub source with
 `hooks.user_defines.llamadart.llamadart_native_tag` and
 `hooks.user_defines.llamadart.llamadart_native_repository`, or use a local
 bundle source with `hooks.user_defines.llamadart.llamadart_native_path`. Module
-availability below is for the default tag.
+availability below is for the pinned/default artifacts.
 
 Available override tags are published on the
 [`leehack/llamadart-native` releases page](https://github.com/leehack/llamadart-native/releases)
@@ -43,6 +44,39 @@ All iOS targets above require the consuming Flutter/Xcode project to use a
 minimum deployment target of `16.4` or newer (for example
 `platform :ios, '16.4'`).
 
+## Model format routing
+
+Native `LlamaBackend()` routes by model file format:
+
+- `.gguf` and unknown extensions use the llama.cpp backend.
+- `.litertlm` uses the LiteRT-LM backend and the companion runtime bundles from
+  `litert-lm-native`.
+
+Use the same high-level `LlamaEngine`, `ChatSession`, `ModelSource`, and
+download/cache APIs for both formats. Select LiteRT-LM CPU/GPU/NPU with
+`ModelParams.liteRtLmBackend`; `LiteRtLmBackendPreference.auto` currently maps
+to GPU on Android/macOS and CPU on other LiteRT-LM targets.
+
+## LiteRT-LM runtime coverage (`v0.12.0`)
+
+| Platform target | LiteRT-LM bundle key | Selectable backends | Status |
+| --- | --- | --- | --- |
+| Android arm64 | `android-arm64` | `cpu`, `gpu`, `npu` | Supported |
+| Android x64 | `android-x64` | `cpu`, `gpu`, `npu` | Supported for emulator/test targets |
+| iOS arm64 (device) | `ios-arm64` | `cpu` | Supported |
+| iOS arm64 (simulator) | `ios-arm64-sim` | `cpu` | Supported |
+| iOS x86_64 (simulator) | `ios-x64-sim` | `cpu` | Supported |
+| macOS arm64 | `macos-arm64` | `cpu`, `gpu` | Supported |
+| macOS x86_64 | `macos-x64` | `cpu`, `gpu` | Supported |
+| Linux arm64 | `linux-arm64` | `cpu` | Supported |
+| Linux x64 | `linux-x64` | `cpu` | Supported |
+| Windows x64 | `windows-x64` | `cpu` | Supported |
+
+LiteRT-LM does not currently expose embeddings, state persistence, LoRA,
+grammar constraints, or multimodal projector APIs through the pinned native C
+runtime. `llamadart` rejects those operations explicitly for `.litertlm` loads
+instead of silently ignoring llama.cpp-only settings.
+
 ## Runtime capability notes
 
 - **State persistence** (`LlamaEngine.stateSaveFile(...)` /
@@ -51,14 +85,14 @@ minimum deployment target of `16.4` or newer (for example
   On web, state paths refer to the bridge WASMFS virtual filesystem and are not
   durable across page reloads. Durable browser storage currently requires
   app-level export/import outside the Dart `stateSaveFile` / `stateLoadFile`
-  helpers.
+  helpers. LiteRT-LM currently reports state persistence as unsupported.
 - **WebGPU readiness** is browser/device/runtime dependent. Check secure
   context, `navigator.gpu`, adapter/features, `window.crossOriginIsolated`,
   loaded bridge asset source/version, and model memory pressure before treating
   a web load failure as a package bug. The [WebGPU Bridge](./webgpu-bridge)
   page has the browser-console probe and Flutter Web smoke-test path.
 
-## Current module availability by bundle (`b9371`)
+## Current llama.cpp module availability by bundle (`b9371`)
 
 | Bundle key | Available backend modules in bundle |
 | --- | --- |

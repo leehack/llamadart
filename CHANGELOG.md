@@ -91,6 +91,9 @@
   * Reject explicit LiteRT-LM backend changes during context creation instead
     of silently keeping the model-load backend while accepting other context
     parameters.
+  * Updated website platform/lifecycle docs to cover `.litertlm` routing,
+    `litert-lm-native` runtime bundles, and the current LiteRT-LM capability
+    limits.
   * Reject non-positive LiteRT-LM `contextSize` values during model load so
     callers get a clear load-time error instead of a later native initialization
     failure.

@@ -16,6 +16,21 @@ await engine.unloadModel();
 await engine.dispose();
 ```
 
+On native platforms the same lifecycle also works for LiteRT-LM bundles. The
+default `LlamaBackend()` router selects the backend from the file extension:
+
+```dart
+await engine.loadModel(
+  '/path/to/gemma-4-E2B-it.litertlm',
+  modelParams: const ModelParams(
+    liteRtLmBackend: LiteRtLmBackendPreference.gpu,
+  ),
+);
+```
+
+`.gguf` models use llama.cpp. `.litertlm` models use LiteRT-LM and the pinned
+runtime bundles downloaded by the native-assets hook.
+
 ## Switching models
 
 `LlamaEngine.loadModel(...)` requires no currently loaded model. Unload first:
@@ -72,13 +87,18 @@ so signed URL query strings are not stored in logs or cache metadata.
 
 ### Hugging Face `hf://` references
 
-Use `hf://owner/repo/path/to/model.gguf` for a public GGUF file. The shorthand
-resolves to `https://huggingface.co/owner/repo/resolve/main/path/to/model.gguf`
-with `download=true` and uses the stable `hf://...` identity for cache keys.
+Use `hf://owner/repo/path/to/model.gguf` for a public GGUF file, or point at a
+`.litertlm` file to use LiteRT-LM on native platforms. The shorthand resolves
+to the corresponding `https://huggingface.co/.../resolve/...` URL with
+`download=true` and uses the stable `hf://...` identity for cache keys.
 
 ```dart
 final main = ModelSource.parse(
   'hf://unsloth/Qwen3.5-0.8B-GGUF/Qwen3.5-0.8B-Q4_K_M.gguf',
+);
+
+final litert = ModelSource.parse(
+  'hf://litert-community/gemma-4-E2B-it-litert-lm/gemma-4-E2B-it.litertlm',
 );
 
 final tagged = ModelSource.parse(
@@ -128,8 +148,8 @@ Current limitations:
 - Sharded GGUF manifests are not expanded automatically; track that as a
   separate design before relying on sharded repos.
 - `llamadart` does not list Hugging Face files or choose recommended
-  quantizations for you. Pick the exact `.gguf` file path from the repository's
-  **Files and versions** tab.
+  quantizations for you. Pick the exact `.gguf` or `.litertlm` file path from
+  the repository's **Files and versions** tab.
 
 Native/file-backed backends download remote sources into the package-managed
 cache, verify the completed file, persist metadata, and then call the existing
@@ -319,9 +339,10 @@ Native backends and WebGPU bridge assets `v0.1.15+` can save and restore
 llama.cpp KV-cache state to avoid re-evaluating a long raw prompt on resume or
 when forking a prompt prefix. Gate the flow with `supportsStatePersistence` so
 backends that do not implement state persistence can fall back to prompt
-re-evaluation. If a web app overrides the bridge to older/custom assets that do
-not expose state APIs, `stateSaveFile(...)` / `stateLoadFile(...)` throw a clear
-unsupported error and callers should use the same fallback path.
+re-evaluation. LiteRT-LM currently reports state persistence as unsupported. If
+a web app overrides the bridge to older/custom assets that do not expose state
+APIs, `stateSaveFile(...)` / `stateLoadFile(...)` throw a clear unsupported
+error and callers should use the same fallback path.
 
 ```dart
 if (!engine.supportsStatePersistence) {
