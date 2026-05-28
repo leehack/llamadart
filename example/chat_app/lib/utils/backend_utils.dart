@@ -32,6 +32,15 @@ class BackendUtils {
   }) {
     final lower = backendInfo.toLowerCase();
 
+    final isLiteRtLm = lower.contains('litert-lm');
+    final isLiteRtGpu = isLiteRtLm && lower.contains('gpu');
+    if (isLiteRtGpu) {
+      return lower.contains('web') ? 'WEBGPU' : 'GPU';
+    }
+    if (isLiteRtLm && lower.contains('cpu')) {
+      return 'CPU';
+    }
+
     if (preferredBackend == GpuBackend.cpu || gpuLayers == 0) {
       return 'CPU';
     }
@@ -39,11 +48,6 @@ class BackendUtils {
     if (preferredBackend != GpuBackend.auto &&
         _containsBackendMarker(backendInfo, preferredBackend)) {
       return preferredBackend.name.toUpperCase();
-    }
-
-    final isLiteRtGpu = lower.contains('litert-lm') && lower.contains('gpu');
-    if (preferredBackend != GpuBackend.auto && isLiteRtGpu) {
-      return lower.contains('web') ? 'WEBGPU' : 'GPU';
     }
 
     if (preferredBackend != GpuBackend.auto) {

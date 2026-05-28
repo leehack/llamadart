@@ -127,8 +127,11 @@ class ChatService {
     final isQwen35Small = _isQwen35SmallModel(settings.modelPath);
 
     if (isLiteRtLm) {
+      final liteRtLmGpuLayers = settings.preferredBackend == GpuBackend.cpu
+          ? 0
+          : ModelParams.maxGpuLayers;
       return ModelParams(
-        gpuLayers: settings.gpuLayers <= 0 ? 0 : ModelParams.maxGpuLayers,
+        gpuLayers: liteRtLmGpuLayers,
         preferredBackend: settings.preferredBackend,
         contextSize: settings.contextSize,
       );

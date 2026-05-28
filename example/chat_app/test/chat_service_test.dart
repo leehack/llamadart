@@ -136,6 +136,29 @@ void main() {
       },
     );
 
+    test(
+      'keeps LiteRT-LM auto on GPU when saved GPU layers are stale zero',
+      () async {
+        debugDefaultTargetPlatformOverride = TargetPlatform.android;
+        final engine = MockLlamaEngine();
+        final service = ChatService(engine: engine);
+
+        await service.init(
+          const ChatSettings(
+            modelPath: 'gemma-4-E2B-it.litertlm',
+            preferredBackend: GpuBackend.auto,
+            contextSize: 8192,
+            gpuLayers: 0,
+          ),
+          eagerLoadMultimodalProjector: false,
+        );
+
+        expect(engine.lastModelParams, isNotNull);
+        expect(engine.lastModelParams!.gpuLayers, ModelParams.maxGpuLayers);
+        expect(engine.lastModelParams!.preferredBackend, GpuBackend.auto);
+      },
+    );
+
     test('keeps explicit CPU loads on LiteRT-LM models', () async {
       debugDefaultTargetPlatformOverride = TargetPlatform.android;
       final engine = MockLlamaEngine();

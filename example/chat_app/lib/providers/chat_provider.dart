@@ -486,6 +486,14 @@ class ChatProvider extends ChangeNotifier {
     return uri != null && (uri.scheme == 'http' || uri.scheme == 'https');
   }
 
+  bool _isLiteRtLmModelPath(String? value) {
+    if (value == null || value.isEmpty) {
+      return false;
+    }
+    final withoutQuery = value.split('?').first.split('#').first;
+    return withoutQuery.toLowerCase().endsWith('.litertlm');
+  }
+
   bool _hasPersistentCacheSensitiveUrlParts(String? value) {
     if (!_isRemoteUrl(value)) {
       return false;
@@ -725,7 +733,8 @@ class ChatProvider extends ChangeNotifier {
     updateLoadingUi(0.04, forceNotify: true);
 
     // Estimate dynamic settings only when backend preference remains Auto.
-    if (_settings.preferredBackend == GpuBackend.auto &&
+    if (!_isLiteRtLmModelPath(_settings.modelPath) &&
+        _settings.preferredBackend == GpuBackend.auto &&
         (_settings.gpuLayers == 32 || _settings.gpuLayers == 99)) {
       try {
         await estimateDynamicSettings();

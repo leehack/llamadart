@@ -67,6 +67,24 @@ void main() {
         ),
         'GPU',
       );
+
+      expect(
+        BackendUtils.deriveActiveBackendLabel(
+          'LiteRT-LM gpu',
+          preferredBackend: GpuBackend.auto,
+          gpuLayers: 0,
+        ),
+        'GPU',
+      );
+
+      expect(
+        BackendUtils.deriveActiveBackendLabel(
+          'LiteRT-LM cpu',
+          preferredBackend: GpuBackend.auto,
+          gpuLayers: 999,
+        ),
+        'CPU',
+      );
     });
 
     test('selects highest-priority backend from runtime text', () {
