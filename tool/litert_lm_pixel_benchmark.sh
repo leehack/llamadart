@@ -195,6 +195,7 @@ run_installed_benchmark() {
   echo "Capturing benchmark logs until BENCHMARK_DONE"
   local next_line=1
   local done=0
+  local failed=0
   local start_seconds
   start_seconds="$(date +%s)"
   process_new_lines() {
@@ -202,6 +203,9 @@ run_installed_benchmark() {
     chunk="$(sed -n "${next_line},\$p" "$log_file")"
     if [[ -n "$chunk" ]]; then
       grep -E 'BENCHMARK: RESULT|BENCHMARK: BENCHMARK_DONE|ERROR|Failed to create engine|RegisterAccelerator' <<<"$chunk" || true
+      if grep -q 'BENCHMARK: ERROR' <<<"$chunk"; then
+        failed=1
+      fi
       if grep -q 'BENCHMARK: BENCHMARK_DONE' <<<"$chunk"; then
         done=1
       fi
@@ -231,6 +235,10 @@ run_installed_benchmark() {
   done
   process_new_lines
   cleanup_logcat
+  if [[ "$failed" -ne 0 ]]; then
+    echo "Benchmark app reported an error." >&2
+    return 1
+  fi
   return 0
 }
 

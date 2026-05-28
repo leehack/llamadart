@@ -80,6 +80,8 @@
     teardown semantics more closely.
   * Treat LiteRT-LM generation requests with `maxTokens <= 0` as no-ops instead
     of inflating them to the default output-token budget.
+  * Report backend/model-specific LiteRT-LM engine creation failures and make
+    Pixel benchmark runs fail when the app logs `BENCHMARK: ERROR`.
   * Prevent immediate LiteRT-LM stream cancellation from sending a stale
     generation request after the caller's response port has already closed.
   * Serialized regular LiteRT-LM worker requests through one service queue while

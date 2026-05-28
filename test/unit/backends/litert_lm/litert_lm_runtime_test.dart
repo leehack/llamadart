@@ -58,6 +58,29 @@ void main() {
     expect(liteRtLmMacOsCacheDirectoryCandidatesForAbi(Abi.linuxX64), isEmpty);
   });
 
+  test('engine create failure diagnostics include fallback guidance', () {
+    expect(
+      liteRtLmEngineCreateFailureMessage(
+        backend: 'npu',
+        modelPath: '/models/gemma-4-E2B-it.litertlm',
+      ),
+      allOf(
+        contains('backend "npu"'),
+        contains('gemma-4-E2B-it.litertlm'),
+        contains('Android NPU delegate'),
+        contains('backend "gpu"'),
+        contains('backend "cpu"'),
+      ),
+    );
+    expect(
+      liteRtLmEngineCreateFailureMessage(
+        backend: 'gpu',
+        modelPath: '/models/gemma-4-E2B-it.litertlm',
+      ),
+      allOf(contains('GPU delegate'), contains('backend "cpu"')),
+    );
+  });
+
   test(
     'LiteRtLmRuntimeClient validates counts before native initialization',
     () {

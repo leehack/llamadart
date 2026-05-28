@@ -10,6 +10,33 @@ import 'package:path/path.dart' as path;
 const _litertLmVersion = '0.12.0';
 const _litertLmLibDirEnv = 'LLAMADART_LITERT_LM_LIB_DIR';
 
+/// Builds a diagnostic for LiteRT-LM engine creation failures.
+///
+/// This is public only for unit tests; production callers should receive the
+/// message through [LiteRtLmRuntimeClient.initialize].
+String liteRtLmEngineCreateFailureMessage({
+  required String backend,
+  required String modelPath,
+}) {
+  final modelName = path.basename(modelPath);
+  final displayName = modelName.isEmpty ? modelPath : modelName;
+  final normalizedBackend = backend.toLowerCase();
+  final hint = switch (normalizedBackend) {
+    'npu' =>
+      'The Android NPU delegate may not support this device, OS, model, or '
+          'bundle; try backend "gpu" or backend "cpu".',
+    'gpu' =>
+      'The GPU delegate may not support this device, OS, model, or bundle; '
+          'try backend "cpu".',
+    'cpu' => 'Verify the LiteRT-LM bundle and native runtime libraries.',
+    _ =>
+      'Verify the backend name, LiteRT-LM bundle, and native runtime '
+          'libraries.',
+  };
+  return 'LiteRT-LM engine creation failed for backend "$backend" and model '
+      '"$displayName". $hint';
+}
+
 /// Internal helper used by the LiteRT-LM runtime to locate extracted macOS
 /// native-assets cache directories.
 List<String> liteRtLmMacOsCacheDirectoryCandidatesForAbi(Abi abi) {
@@ -265,7 +292,12 @@ class LiteRtLmRuntimeClient {
         ).address;
       });
       if (engineAddress == 0) {
-        throw StateError('litert_lm_engine_create returned null');
+        throw StateError(
+          liteRtLmEngineCreateFailureMessage(
+            backend: backend,
+            modelPath: modelPath,
+          ),
+        );
       }
       _engine = Pointer<_LiteRtLmEngine>.fromAddress(engineAddress);
     } finally {
