@@ -1,0 +1,984 @@
+@JS()
+library;
+
+import 'dart:async';
+import 'dart:convert';
+import 'dart:js_interop';
+import 'dart:js_interop_unsafe';
+import 'dart:math' as math;
+
+import 'package:web/web.dart';
+
+import '../../core/models/chat/content_part.dart';
+import '../../core/models/config/flash_attention.dart';
+import '../../core/models/config/gpu_backend.dart';
+import '../../core/models/config/kv_cache_type.dart';
+import '../../core/models/config/log_level.dart';
+import '../../core/models/inference/generation_params.dart';
+import '../../core/models/inference/model_params.dart';
+import '../backend.dart';
+
+/// Web LiteRT-LM backend for `.litertlm` models.
+///
+/// This backend wraps the official `@litert-lm/core` browser API. Apps can
+/// preload the package and expose `window.LiteRtLmEngine = module.Engine`, or
+/// set `window.__llamadartLiteRtLmModuleUrl` to a module URL such as
+/// `https://cdn.jsdelivr.net/npm/@litert-lm/core/+esm`.
+class LiteRtLmBackend
+    implements
+        LlamaBackend,
+        BackendAvailability,
+        BackendEmbeddings,
+        BackendEmbeddingsSupport,
+        BackendStatePersistence,
+        BackendStatePersistenceSupport {
+  static const Duration _engineReadyTimeout = Duration(seconds: 12);
+  static const Duration _enginePollInterval = Duration(milliseconds: 100);
+
+  static const int _backendCpu = 3;
+  static const int _backendGpu = 4;
+
+  final String? _moduleUrl;
+  final Duration _readyTimeout;
+  final String? _preferredBackend;
+
+  _LiteRtLmWebEngine? _engine;
+  _LiteRtLmWebConversation? _activeConversation;
+  bool _isReady = false;
+  bool _hasContext = false;
+  bool _cancelRequested = false;
+  ModelParams? _modelParams;
+  String? _modelUrl;
+  String? _activeBackend;
+  String? _chatTemplate;
+
+  /// Creates a web LiteRT-LM backend.
+  ///
+  /// [initialSendPort] is accepted for API compatibility with the native
+  /// backend and ignored on web.
+  LiteRtLmBackend({
+    Object? initialSendPort,
+    String? preferredBackend,
+    String? moduleUrl,
+    Duration? readyTimeout,
+  }) : _moduleUrl = moduleUrl,
+       _readyTimeout = readyTimeout ?? _engineReadyTimeout,
+       _preferredBackend = _normalizeBackendOverride(preferredBackend);
+
+  @override
+  bool get isReady => _isReady;
+
+  @override
+  bool get supportsUrlLoading => true;
+
+  @override
+  bool get supportsEmbeddings => false;
+
+  @override
+  bool get supportsStatePersistence => false;
+
+  @override
+  Future<int> modelLoad(String path, ModelParams params) {
+    return modelLoadFromUrl(path, params);
+  }
+
+  @override
+  Future<int> modelLoadFromUrl(
+    String url,
+    ModelParams params, {
+    Function(double progress)? onProgress,
+  }) async {
+    _validateLiteRtLmSource(url);
+    _validateModelParams(params);
+    final backend = _resolveBackendName(params);
+
+    onProgress?.call(0);
+    final constructor = await _ensureEngineConstructor();
+    final settings = _createEngineSettings(
+      model: url,
+      params: params,
+      backend: backend,
+    );
+
+    await _disposeEngine();
+    _modelUrl = url;
+    _modelParams = params;
+    _chatTemplate = params.chatTemplate;
+    _activeBackend = backend;
+    _hasContext = false;
+
+    try {
+      _engine = await constructor.create(settings).toDart;
+      _isReady = true;
+      onProgress?.call(1);
+      return 1;
+    } catch (error) {
+      _isReady = false;
+      _modelUrl = null;
+      _modelParams = null;
+      _chatTemplate = null;
+      _activeBackend = null;
+      throw StateError('LiteRT-LM web engine creation failed: $error');
+    }
+  }
+
+  @override
+  Future<void> modelFree(int modelHandle) async {
+    await _disposeEngine();
+  }
+
+  @override
+  Future<int> contextCreate(int modelHandle, ModelParams params) async {
+    _requireEngine();
+    _validateContextParams(params);
+    _hasContext = true;
+    return 1;
+  }
+
+  @override
+  Future<void> contextFree(int contextHandle) async {
+    _hasContext = false;
+    final conversation = _activeConversation;
+    _activeConversation = null;
+    if (conversation != null) {
+      await _deleteConversation(conversation);
+    }
+  }
+
+  @override
+  Future<int> getContextSize(int contextHandle) async {
+    _requireContext();
+    return _modelParams?.contextSize ?? 0;
+  }
+
+  @override
+  Stream<List<int>> generate(
+    int contextHandle,
+    String prompt,
+    GenerationParams params, {
+    List<LlamaContentPart>? parts,
+  }) async* {
+    final engine = _requireContext();
+    if (parts != null && parts.isNotEmpty) {
+      throw UnsupportedError(
+        'LiteRtLmBackend web does not support media parts.',
+      );
+    }
+    _validateGenerationParams(params);
+    if (params.maxTokens <= 0) {
+      return;
+    }
+    if (_activeConversation != null) {
+      throw StateError('LiteRT-LM web generation is already in progress.');
+    }
+
+    _cancelRequested = false;
+    final conversation = await engine
+        .createConversation(_createConversationConfig(params))
+        .toDart;
+    _activeConversation = conversation;
+
+    final stopSequences = params.stopSequences
+        .where((sequence) => sequence.isNotEmpty)
+        .toList(growable: false);
+    try {
+      final stream = _streamConversation(conversation, prompt);
+      await for (final chunk in _applyStopSequences(
+        stream,
+        stopSequences,
+        onStop: cancelGeneration,
+      )) {
+        if (_cancelRequested) {
+          break;
+        }
+        yield chunk;
+      }
+    } finally {
+      if (identical(_activeConversation, conversation)) {
+        _activeConversation = null;
+      }
+      await _deleteConversation(conversation);
+    }
+  }
+
+  @override
+  void cancelGeneration() {
+    _cancelRequested = true;
+    try {
+      _activeConversation?.cancel();
+    } catch (_) {
+      // Preserve the caller-visible generation error, if any.
+    }
+  }
+
+  @override
+  Future<List<int>> tokenize(
+    int modelHandle,
+    String text, {
+    bool addSpecial = true,
+  }) {
+    throw UnsupportedError(
+      'LiteRtLmBackend web does not expose tokenizer operations yet.',
+    );
+  }
+
+  @override
+  Future<String> detokenize(
+    int modelHandle,
+    List<int> tokens, {
+    bool special = false,
+  }) {
+    throw UnsupportedError(
+      'LiteRtLmBackend web does not expose tokenizer operations yet.',
+    );
+  }
+
+  @override
+  Future<Map<String, String>> modelMetadata(int modelHandle) async {
+    _requireEngine();
+    final metadata = <String, String>{
+      'general.file_type': 'litertlm',
+      'llamadart.backend': 'LiteRT-LM web',
+    };
+    final activeBackend = _activeBackend;
+    if (activeBackend != null) {
+      metadata['litert_lm.backend'] = activeBackend;
+    }
+    final modelUrl = _modelUrl;
+    if (modelUrl != null) {
+      metadata['litert_lm.model_url'] = modelUrl;
+    }
+    final chatTemplate = _chatTemplate;
+    if (chatTemplate != null) {
+      metadata['tokenizer.chat_template'] = chatTemplate;
+    }
+    return metadata;
+  }
+
+  @override
+  Future<void> setLoraAdapter(int contextHandle, String path, double scale) {
+    throw UnsupportedError(
+      'LiteRtLmBackend web does not support LoRA adapters.',
+    );
+  }
+
+  @override
+  Future<void> removeLoraAdapter(int contextHandle, String path) {
+    throw UnsupportedError(
+      'LiteRtLmBackend web does not support LoRA adapters.',
+    );
+  }
+
+  @override
+  Future<void> clearLoraAdapters(int contextHandle) {
+    throw UnsupportedError(
+      'LiteRtLmBackend web does not support LoRA adapters.',
+    );
+  }
+
+  @override
+  Future<String> getBackendName() async {
+    final backend = _activeBackend ?? _preferredBackend ?? 'auto';
+    return 'LiteRT-LM web $backend';
+  }
+
+  @override
+  Future<String> getAvailableBackends() async => 'cpu, gpu';
+
+  @override
+  Future<bool> isGpuSupported() async {
+    final navigator = globalContext.getProperty('navigator'.toJS);
+    if (navigator == null || !navigator.isA<JSObject>()) {
+      return false;
+    }
+    return (navigator as JSObject).getProperty('gpu'.toJS) != null;
+  }
+
+  @override
+  Future<void> setLogLevel(LlamaLogLevel level) async {}
+
+  @override
+  Future<void> dispose() async {
+    await _disposeEngine();
+  }
+
+  @override
+  Future<int?> multimodalContextCreate(int modelHandle, String mmProjPath) {
+    throw UnsupportedError(
+      'LiteRtLmBackend web does not support multimodal input.',
+    );
+  }
+
+  @override
+  Future<void> multimodalContextFree(int mmContextHandle) async {}
+
+  @override
+  Future<bool> supportsVision(int mmContextHandle) async => false;
+
+  @override
+  Future<bool> supportsAudio(int mmContextHandle) async => false;
+
+  @override
+  Future<({int total, int free})> getVramInfo() async {
+    return (total: 0, free: 0);
+  }
+
+  @override
+  Future<String> applyChatTemplate(
+    int modelHandle,
+    List<Map<String, dynamic>> messages, {
+    String? customTemplate,
+    bool addAssistant = true,
+  }) async {
+    if (customTemplate != null && customTemplate.isNotEmpty) {
+      throw UnsupportedError(
+        'LiteRtLmBackend web does not apply custom chat templates directly.',
+      );
+    }
+
+    final lines = messages
+        .map(
+          (msg) =>
+              '${msg['role']?.toString() ?? 'user'}: ${msg['content']?.toString() ?? ''}',
+        )
+        .toList();
+    if (addAssistant) {
+      lines.add('assistant: ');
+    }
+    return lines.join('\n');
+  }
+
+  @override
+  Future<List<double>> embed(
+    int contextHandle,
+    String text, {
+    bool normalize = true,
+  }) {
+    throw UnsupportedError('LiteRtLmBackend web does not support embeddings.');
+  }
+
+  @override
+  Future<bool> stateSaveFile(int contextHandle, String path, List<int> tokens) {
+    throw UnsupportedError(
+      'LiteRtLmBackend web does not support state persistence.',
+    );
+  }
+
+  @override
+  Future<StateLoadResult> stateLoadFile(
+    int contextHandle,
+    String path,
+    int tokenCapacity,
+  ) {
+    throw UnsupportedError(
+      'LiteRtLmBackend web does not support state persistence.',
+    );
+  }
+
+  Future<_LiteRtLmEngineConstructor> _ensureEngineConstructor() async {
+    if (!globalContext.has('LiteRtLmEngine')) {
+      final moduleUrl =
+          _moduleUrl ?? _getGlobalString('__llamadartLiteRtLmModuleUrl');
+      if (moduleUrl != null && moduleUrl.isNotEmpty) {
+        await _loadModuleScript(moduleUrl);
+      } else {
+        await _waitForPreloadedEngine();
+      }
+    }
+
+    final raw = globalContext.getProperty('LiteRtLmEngine'.toJS);
+    if (raw != null && raw.isA<JSObject>()) {
+      return _LiteRtLmEngineConstructor._(raw as JSObject);
+    }
+
+    throw StateError(
+      'LiteRT-LM web runtime is not loaded. Preload @litert-lm/core and set '
+      'window.LiteRtLmEngine = module.Engine, or set '
+      'window.__llamadartLiteRtLmModuleUrl to the @litert-lm/core module URL.',
+    );
+  }
+
+  Future<void> _loadModuleScript(String moduleUrl) async {
+    if (globalContext.has('LiteRtLmEngine')) {
+      return;
+    }
+
+    final completer = Completer<void>();
+    const callbackName = '__llamadart_litert_lm_init';
+    globalContext.setProperty(
+      callbackName.toJS,
+      (JSAny? err) {
+        if (err != null) {
+          if (!completer.isCompleted) {
+            completer.completeError(
+              StateError('LiteRT-LM web module load failed: $err'),
+            );
+          }
+          return;
+        }
+
+        if (!completer.isCompleted) {
+          completer.complete();
+        }
+      }.toJS,
+    );
+
+    final script = HTMLScriptElement();
+    script.type = 'module';
+    script.text =
+        '''
+      import(${jsonEncode(moduleUrl)}).then(mod => {
+        if (mod?.Engine) {
+          window.LiteRtLmEngine = mod.Engine;
+        }
+        if (mod?.Backend) {
+          window.LiteRtLmBackendEnum = mod.Backend;
+        }
+        window.__llamadartLiteRtLmModule = mod;
+        if (window.$callbackName) {
+          window.$callbackName();
+        }
+      }).catch(e => {
+        if (window.$callbackName) {
+          window.$callbackName(e);
+        }
+      });
+    ''';
+
+    script.addEventListener(
+      'error',
+      ((Event _) {
+        if (!completer.isCompleted) {
+          completer.completeError(
+            StateError('Failed to load LiteRT-LM web module script'),
+          );
+        }
+      }).toJS,
+    );
+
+    document.head?.append(script);
+    try {
+      await completer.future.timeout(_readyTimeout);
+    } finally {
+      globalContext.delete(callbackName.toJS);
+    }
+  }
+
+  Future<void> _waitForPreloadedEngine() async {
+    final deadline = DateTime.now().add(_readyTimeout);
+    while (DateTime.now().isBefore(deadline)) {
+      if (globalContext.has('LiteRtLmEngine')) {
+        return;
+      }
+      await Future<void>.delayed(_enginePollInterval);
+    }
+  }
+
+  JSObject _createEngineSettings({
+    required String model,
+    required ModelParams params,
+    required String backend,
+  }) {
+    final settings = JSObject();
+    settings.setProperty('model'.toJS, model.toJS);
+    settings.setProperty('backend'.toJS, _backendValueFor(backend).toJS);
+
+    final executorSettings = JSObject();
+    executorSettings.setProperty('maxNumTokens'.toJS, params.contextSize.toJS);
+    settings.setProperty('mainExecutorSettings'.toJS, executorSettings);
+    return settings;
+  }
+
+  JSObject _createConversationConfig(GenerationParams params) {
+    final samplerParams = JSObject();
+    samplerParams.setProperty('k'.toJS, params.topK.toJS);
+    samplerParams.setProperty('p'.toJS, params.topP.toJS);
+    samplerParams.setProperty('temperature'.toJS, params.temp.toJS);
+    samplerParams.setProperty(
+      'seed'.toJS,
+      (params.seed ?? _defaultSamplerSeed()).toJS,
+    );
+
+    final sessionConfig = JSObject();
+    sessionConfig.setProperty('maxOutputTokens'.toJS, params.maxTokens.toJS);
+    sessionConfig.setProperty('samplerParams'.toJS, samplerParams);
+    sessionConfig.setProperty(
+      'samplerBackend'.toJS,
+      _backendValueFor(_activeBackend ?? 'gpu').toJS,
+    );
+
+    final config = JSObject();
+    config.setProperty('sessionConfig'.toJS, sessionConfig);
+    return config;
+  }
+
+  _LiteRtLmWebEngine _requireEngine() {
+    final engine = _engine;
+    if (engine == null || !_isReady) {
+      throw StateError('No LiteRT-LM web model is loaded.');
+    }
+    return engine;
+  }
+
+  _LiteRtLmWebEngine _requireContext() {
+    final engine = _requireEngine();
+    if (!_hasContext) {
+      throw StateError('No LiteRT-LM web context is active.');
+    }
+    return engine;
+  }
+
+  Stream<String> _streamConversation(
+    _LiteRtLmWebConversation conversation,
+    String prompt,
+  ) async* {
+    final reader = conversation.sendMessageStreaming(prompt).getReader();
+    try {
+      while (!_cancelRequested) {
+        final result = await reader.read().toDart;
+        if (result.done) {
+          break;
+        }
+
+        final text = _extractTextChunk(result.value);
+        if (text.isNotEmpty) {
+          yield text;
+        }
+      }
+    } finally {
+      if (_cancelRequested) {
+        try {
+          final cancel = reader.cancel();
+          if (cancel != null) {
+            await cancel.toDart;
+          }
+        } catch (_) {
+          // The conversation cancel path above is the authoritative signal.
+        }
+      }
+      try {
+        reader.releaseLock();
+      } catch (_) {
+        // Some stream implementations auto-release after completion/cancel.
+      }
+    }
+  }
+
+  Stream<List<int>> _applyStopSequences(
+    Stream<String> source,
+    List<String> stopSequences, {
+    required void Function() onStop,
+  }) async* {
+    if (stopSequences.isEmpty) {
+      await for (final chunk in source) {
+        if (chunk.isNotEmpty) {
+          yield utf8.encode(chunk);
+        }
+      }
+      return;
+    }
+
+    final keepChars =
+        stopSequences.map((sequence) => sequence.length).reduce(math.max) - 1;
+    var pending = '';
+    var stopped = false;
+
+    await for (final chunk in source) {
+      pending += chunk;
+      final stopIndex = _firstStopIndex(pending, stopSequences);
+      if (stopIndex >= 0) {
+        final allowed = pending.substring(0, stopIndex);
+        if (allowed.isNotEmpty) {
+          yield utf8.encode(allowed);
+        }
+        stopped = true;
+        onStop();
+        break;
+      }
+
+      final emitLength = pending.length - keepChars;
+      if (emitLength > 0) {
+        final allowed = pending.substring(0, emitLength);
+        pending = pending.substring(emitLength);
+        if (allowed.isNotEmpty) {
+          yield utf8.encode(allowed);
+        }
+      }
+    }
+
+    if (!stopped && pending.isNotEmpty) {
+      yield utf8.encode(pending);
+    }
+  }
+
+  int _firstStopIndex(String text, List<String> stopSequences) {
+    var stopIndex = -1;
+    for (final stop in stopSequences) {
+      final index = text.indexOf(stop);
+      if (index >= 0 && (stopIndex < 0 || index < stopIndex)) {
+        stopIndex = index;
+      }
+    }
+    return stopIndex;
+  }
+
+  String _extractTextChunk(JSAny? value) {
+    if (value == null) {
+      return '';
+    }
+    if (value.isA<JSString>()) {
+      return (value as JSString).toDart;
+    }
+    if (!value.isA<JSObject>()) {
+      return '';
+    }
+
+    final obj = value as JSObject;
+    final directText = obj.getProperty('text'.toJS);
+    if (directText != null && directText.isA<JSString>()) {
+      return (directText as JSString).toDart;
+    }
+
+    final content = obj.getProperty('content'.toJS);
+    if (content == null || !content.isA<JSArray>()) {
+      return '';
+    }
+
+    final buffer = StringBuffer();
+    final items = content as JSArray;
+    for (var i = 0; i < items.length; i += 1) {
+      final item = items.getProperty(i.toJS);
+      if (item == null || !item.isA<JSObject>()) {
+        continue;
+      }
+      final text = (item as JSObject).getProperty('text'.toJS);
+      if (text != null && text.isA<JSString>()) {
+        buffer.write((text as JSString).toDart);
+      }
+    }
+    return buffer.toString();
+  }
+
+  Future<void> _disposeEngine() async {
+    final conversation = _activeConversation;
+    _activeConversation = null;
+    if (conversation != null) {
+      await _deleteConversation(conversation);
+    }
+
+    final engine = _engine;
+    _engine = null;
+    _isReady = false;
+    _hasContext = false;
+    _modelUrl = null;
+    _modelParams = null;
+    _chatTemplate = null;
+    _activeBackend = null;
+    if (engine != null) {
+      final result = engine.deleteEngine();
+      if (result != null) {
+        await result.toDart;
+      }
+    }
+  }
+
+  Future<void> _deleteConversation(
+    _LiteRtLmWebConversation conversation,
+  ) async {
+    try {
+      final result = conversation.deleteConversation();
+      if (result != null) {
+        await result.toDart;
+      }
+    } catch (_) {
+      // Best-effort cleanup; callers should see the primary load/generate error.
+    }
+  }
+
+  void _validateLiteRtLmSource(String source) {
+    final path = _sourcePath(source).toLowerCase();
+    if (!path.endsWith('.litertlm')) {
+      throw ArgumentError(
+        'LiteRtLmBackend web expects a .litertlm model URL/path; got $source',
+      );
+    }
+  }
+
+  String _sourcePath(String source) {
+    final uri = Uri.tryParse(source);
+    if (uri != null && uri.path.isNotEmpty) {
+      return uri.path;
+    }
+    final queryIndex = source.indexOf('?');
+    return queryIndex < 0 ? source : source.substring(0, queryIndex);
+  }
+
+  void _validateModelParams(ModelParams params) {
+    params.validate();
+    final unsupported = <String>[];
+    if (params.contextSize <= 0) {
+      unsupported.add('contextSize=${params.contextSize}');
+    }
+    if (params.gpuLayers > 0 && params.gpuLayers != ModelParams.maxGpuLayers) {
+      unsupported.add('gpuLayers=${params.gpuLayers}');
+    }
+    if (params.splitMode != ModelSplitMode.layer) {
+      unsupported.add('splitMode');
+    }
+    if (params.mainGpu != 0) {
+      unsupported.add('mainGpu');
+    }
+    if (params.loras.isNotEmpty) {
+      unsupported.add('loras');
+    }
+    if (params.numberOfThreads != 0) {
+      unsupported.add('numberOfThreads');
+    }
+    if (params.numberOfThreadsBatch != 0) {
+      unsupported.add('numberOfThreadsBatch');
+    }
+    if (params.batchSize > 0) {
+      unsupported.add('batchSize');
+    }
+    if (params.microBatchSize > 0) {
+      unsupported.add('microBatchSize');
+    }
+    if (params.maxParallelSequences != 1) {
+      unsupported.add('maxParallelSequences');
+    }
+    if (!params.useMmap) {
+      unsupported.add('useMmap=false');
+    }
+    if (params.useMlock) {
+      unsupported.add('useMlock');
+    }
+    if (params.flashAttention != FlashAttention.auto) {
+      unsupported.add('flashAttention');
+    }
+    if (params.cacheTypeK != KvCacheType.f16) {
+      unsupported.add('cacheTypeK');
+    }
+    if (params.cacheTypeV != KvCacheType.f16) {
+      unsupported.add('cacheTypeV');
+    }
+    if (params.kvUnified != null) {
+      unsupported.add('kvUnified');
+    }
+    if (params.ropeFrequencyBase != null) {
+      unsupported.add('ropeFrequencyBase');
+    }
+    if (params.ropeFrequencyScale != null) {
+      unsupported.add('ropeFrequencyScale');
+    }
+
+    if (unsupported.isEmpty) {
+      return;
+    }
+    throw ArgumentError(
+      'LiteRtLmBackend web does not support llama.cpp-specific ModelParams: '
+      '${unsupported.join(', ')}. Supported LiteRT-LM web load options are '
+      'contextSize, chatTemplate, preferredBackend, all-or-CPU gpuLayers '
+      'hints, and liteRtLmBackend CPU/GPU selection.',
+    );
+  }
+
+  void _validateContextParams(ModelParams params) {
+    final requested = _explicitBackendName(params);
+    if (requested != null && requested != _activeBackend) {
+      throw ArgumentError(
+        'LiteRtLmBackend web contextCreate cannot change the loaded backend '
+        'from $_activeBackend to $requested.',
+      );
+    }
+  }
+
+  void _validateGenerationParams(GenerationParams params) {
+    const defaults = GenerationParams();
+    final unsupported = <String>[];
+    if (params.minP != defaults.minP) {
+      unsupported.add('minP');
+    }
+    if (params.penalty != defaults.penalty) {
+      unsupported.add('penalty');
+    }
+    if (params.grammar != null) {
+      unsupported.add('grammar');
+    }
+    if (params.grammarLazy) {
+      unsupported.add('grammarLazy');
+    }
+    if (params.grammarTriggers.isNotEmpty) {
+      unsupported.add('grammarTriggers');
+    }
+    if (params.preservedTokens.isNotEmpty) {
+      unsupported.add('preservedTokens');
+    }
+    if (params.grammarRoot != defaults.grammarRoot) {
+      unsupported.add('grammarRoot');
+    }
+    if (params.streamBatchTokenThreshold !=
+        defaults.streamBatchTokenThreshold) {
+      unsupported.add('streamBatchTokenThreshold');
+    }
+    if (params.streamBatchByteThreshold != defaults.streamBatchByteThreshold) {
+      unsupported.add('streamBatchByteThreshold');
+    }
+
+    if (unsupported.isEmpty) {
+      return;
+    }
+    throw UnsupportedError(
+      'LiteRtLmBackend web does not support llama.cpp-specific '
+      'GenerationParams: ${unsupported.join(', ')}. Supported LiteRT-LM web '
+      'generation options are maxTokens, temp, topK, topP, seed, and '
+      'stopSequences.',
+    );
+  }
+
+  String _resolveBackendName(ModelParams params) {
+    final explicit = _preferredBackend ?? params.liteRtLmBackend.nativeName;
+    if (explicit != null) {
+      if (explicit == 'npu') {
+        throw UnsupportedError('LiteRT-LM web does not support NPU backend.');
+      }
+      return explicit;
+    }
+    if (params.gpuLayers <= 0) {
+      return 'cpu';
+    }
+    return _backendNameForGpuPreference(params.preferredBackend);
+  }
+
+  String? _explicitBackendName(ModelParams params) {
+    final explicit = params.liteRtLmBackend.nativeName;
+    if (explicit != null) {
+      return explicit;
+    }
+    if (params.gpuLayers <= 0) {
+      return 'cpu';
+    }
+    if (params.preferredBackend != GpuBackend.auto) {
+      return _backendNameForGpuPreference(params.preferredBackend);
+    }
+    return null;
+  }
+
+  String _backendNameForGpuPreference(GpuBackend backend) {
+    return switch (backend) {
+      GpuBackend.cpu || GpuBackend.blas => 'cpu',
+      GpuBackend.auto ||
+      GpuBackend.vulkan ||
+      GpuBackend.metal ||
+      GpuBackend.cuda ||
+      GpuBackend.opencl ||
+      GpuBackend.hip => 'gpu',
+    };
+  }
+
+  int _backendValueFor(String backend) {
+    final moduleBackend = _backendValueFromGlobalEnum(backend);
+    if (moduleBackend != null) {
+      return moduleBackend;
+    }
+    return switch (backend) {
+      'cpu' => _backendCpu,
+      'gpu' => _backendGpu,
+      _ => _backendGpu,
+    };
+  }
+
+  int? _backendValueFromGlobalEnum(String backend) {
+    final raw = globalContext.getProperty('LiteRtLmBackendEnum'.toJS);
+    if (raw == null || !raw.isA<JSObject>()) {
+      return null;
+    }
+    final key = switch (backend) {
+      'cpu' => 'CPU',
+      'gpu' => 'GPU',
+      _ => null,
+    };
+    if (key == null) {
+      return null;
+    }
+    final value = (raw as JSObject).getProperty(key.toJS);
+    if (value != null && value.isA<JSNumber>()) {
+      return (value as JSNumber).toDartInt;
+    }
+    return null;
+  }
+
+  int _defaultSamplerSeed() {
+    return DateTime.now().microsecondsSinceEpoch & 0x7fffffff;
+  }
+
+  String? _getGlobalString(String propertyName) {
+    final raw = globalContext.getProperty(propertyName.toJS);
+    if (raw != null && raw.isA<JSString>()) {
+      final value = (raw as JSString).toDart.trim();
+      return value.isEmpty ? null : value;
+    }
+    return null;
+  }
+
+  static String? _normalizeBackendOverride(String? backend) {
+    if (backend == null) {
+      return null;
+    }
+    final normalized = backend.trim().toLowerCase();
+    if (normalized.isEmpty) {
+      return null;
+    }
+    if (normalized == 'cpu' || normalized == 'gpu' || normalized == 'npu') {
+      return normalized;
+    }
+    throw ArgumentError(
+      'LiteRtLmBackend backend must be cpu, gpu, or npu; got $backend',
+    );
+  }
+}
+
+@JS()
+extension type _LiteRtLmEngineConstructor._(JSObject _) implements JSObject {
+  external JSPromise<_LiteRtLmWebEngine> create(JSObject settings);
+}
+
+@JS()
+extension type _LiteRtLmWebEngine._(JSObject _) implements JSObject {
+  external JSPromise<_LiteRtLmWebConversation> createConversation([
+    JSObject? config,
+  ]);
+
+  @JS('delete')
+  external JSPromise<JSAny?>? deleteEngine();
+}
+
+@JS()
+extension type _LiteRtLmWebConversation._(JSObject _) implements JSObject {
+  external _LiteRtLmReadableStream sendMessageStreaming(String message);
+
+  external void cancel();
+
+  @JS('delete')
+  external JSPromise<JSAny?>? deleteConversation();
+}
+
+@JS()
+extension type _LiteRtLmReadableStream._(JSObject _) implements JSObject {
+  external _LiteRtLmReadableStreamReader getReader();
+}
+
+@JS()
+extension type _LiteRtLmReadableStreamReader._(JSObject _) implements JSObject {
+  external JSPromise<_LiteRtLmStreamReadResult> read();
+
+  external JSPromise<JSAny?>? cancel();
+
+  external void releaseLock();
+}
+
+@JS()
+extension type _LiteRtLmStreamReadResult._(JSObject _) implements JSObject {
+  external bool get done;
+
+  external JSAny? get value;
+}

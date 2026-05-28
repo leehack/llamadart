@@ -30,13 +30,18 @@ void main() {
     });
   });
 
-  test('reports native-only LiteRT-LM APIs as unsupported on web', () {
+  test('reports native-only LiteRT-LM runtime APIs as unsupported on web', () {
     expect(LiteRtLmRuntimeClient.new, throwsUnsupportedError);
     expect(LiteRtLmBenchmarkClient.new, throwsUnsupportedError);
-    expect(LiteRtLmBackend.new, throwsUnsupportedError);
-    expect(
-      () => LiteRtLmBackend(initialSendPort: null, preferredBackend: 'cpu'),
-      throwsUnsupportedError,
+  });
+
+  test('exports LiteRT-LM web backend constructor on web', () async {
+    final backend = LiteRtLmBackend(
+      initialSendPort: null,
+      preferredBackend: 'cpu',
     );
+
+    expect(backend.supportsUrlLoading, isTrue);
+    expect(await backend.getBackendName(), 'LiteRT-LM web cpu');
   });
 }

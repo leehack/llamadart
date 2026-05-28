@@ -3,6 +3,7 @@ import '../../core/models/chat/content_part.dart';
 import '../../core/models/config/log_level.dart';
 import '../../core/models/inference/generation_params.dart';
 import '../../core/models/inference/model_params.dart';
+import '../litert_lm/litert_lm_backend_web.dart';
 import '../webgpu/webgpu_backend.dart';
 
 /// Creates a web backend that can route between multiple web runtimes.
@@ -16,16 +17,32 @@ class WebAutoBackend
         BackendBatchEmbeddings,
         BackendStatePersistence,
         BackendStatePersistenceSupport {
-  final LlamaBackend _delegate;
+  final LlamaBackend Function() _webGpuFactory;
+  final LlamaBackend Function() _liteRtLmFactory;
+
+  LlamaBackend? _delegate;
+  _WebBackendKind? _delegateKind;
+  LlamaLogLevel _currentLogLevel = LlamaLogLevel.warn;
 
   /// Creates a web backend router.
   ///
-  /// Optional backend is injectable for testing.
-  WebAutoBackend({LlamaBackend? webBackend})
-    : _delegate = webBackend ?? WebGpuLlamaBackend();
+  /// Optional backend is injectable for legacy tests that need a fixed
+  /// delegate. Factory overrides are injectable for router tests.
+  WebAutoBackend({
+    LlamaBackend? webBackend,
+    LlamaBackend Function()? webGpuFactory,
+    LlamaBackend Function()? liteRtLmFactory,
+  }) : _webGpuFactory =
+           webGpuFactory ?? (() => webBackend ?? WebGpuLlamaBackend()),
+       _liteRtLmFactory = liteRtLmFactory ?? (() => LiteRtLmBackend()) {
+    if (webBackend != null) {
+      _delegate = webBackend;
+      _delegateKind = _WebBackendKind.llamaCpp;
+    }
+  }
 
   @override
-  bool get isReady => _delegate.isReady;
+  bool get isReady => _delegate?.isReady ?? false;
 
   @override
   bool get supportsStatePersistence {
@@ -38,8 +55,9 @@ class WebAutoBackend
   }
 
   @override
-  Future<int> modelLoad(String path, ModelParams params) {
-    return _delegate.modelLoad(path, params);
+  Future<int> modelLoad(String path, ModelParams params) async {
+    final delegate = await _delegateForSource(path);
+    return delegate.modelLoad(path, params);
   }
 
   @override
@@ -47,28 +65,29 @@ class WebAutoBackend
     String url,
     ModelParams params, {
     Function(double p1)? onProgress,
-  }) {
-    return _delegate.modelLoadFromUrl(url, params, onProgress: onProgress);
+  }) async {
+    final delegate = await _delegateForSource(url);
+    return delegate.modelLoadFromUrl(url, params, onProgress: onProgress);
   }
 
   @override
   Future<void> modelFree(int modelHandle) {
-    return _delegate.modelFree(modelHandle);
+    return _requireDelegate().modelFree(modelHandle);
   }
 
   @override
   Future<int> contextCreate(int modelHandle, ModelParams params) {
-    return _delegate.contextCreate(modelHandle, params);
+    return _requireDelegate().contextCreate(modelHandle, params);
   }
 
   @override
   Future<void> contextFree(int contextHandle) {
-    return _delegate.contextFree(contextHandle);
+    return _requireDelegate().contextFree(contextHandle);
   }
 
   @override
   Future<int> getContextSize(int contextHandle) {
-    return _delegate.getContextSize(contextHandle);
+    return _requireDelegate().getContextSize(contextHandle);
   }
 
   @override
@@ -78,12 +97,17 @@ class WebAutoBackend
     GenerationParams params, {
     List<LlamaContentPart>? parts,
   }) {
-    return _delegate.generate(contextHandle, prompt, params, parts: parts);
+    return _requireDelegate().generate(
+      contextHandle,
+      prompt,
+      params,
+      parts: parts,
+    );
   }
 
   @override
   void cancelGeneration() {
-    _delegate.cancelGeneration();
+    _delegate?.cancelGeneration();
   }
 
   @override
@@ -92,7 +116,7 @@ class WebAutoBackend
     String text, {
     bool normalize = true,
   }) {
-    final delegate = _delegate;
+    final delegate = _requireDelegate();
     if (delegate is BackendEmbeddings) {
       return (delegate as BackendEmbeddings).embed(
         contextHandle,
@@ -115,7 +139,7 @@ class WebAutoBackend
       return const <List<double>>[];
     }
 
-    final delegate = _delegate;
+    final delegate = _requireDelegate();
     if (delegate is BackendBatchEmbeddings) {
       return (delegate as BackendBatchEmbeddings).embedBatch(
         contextHandle,
@@ -145,7 +169,7 @@ class WebAutoBackend
 
   @override
   Future<bool> stateSaveFile(int contextHandle, String path, List<int> tokens) {
-    final delegate = _delegate;
+    final delegate = _requireDelegate();
     if (delegate is BackendStatePersistence) {
       return (delegate as BackendStatePersistence).stateSaveFile(
         contextHandle,
@@ -164,7 +188,7 @@ class WebAutoBackend
     String path,
     int tokenCapacity,
   ) {
-    final delegate = _delegate;
+    final delegate = _requireDelegate();
     if (delegate is BackendStatePersistence) {
       return (delegate as BackendStatePersistence).stateLoadFile(
         contextHandle,
@@ -183,7 +207,11 @@ class WebAutoBackend
     String text, {
     bool addSpecial = true,
   }) {
-    return _delegate.tokenize(modelHandle, text, addSpecial: addSpecial);
+    return _requireDelegate().tokenize(
+      modelHandle,
+      text,
+      addSpecial: addSpecial,
+    );
   }
 
   @override
@@ -192,32 +220,36 @@ class WebAutoBackend
     List<int> tokens, {
     bool special = false,
   }) {
-    return _delegate.detokenize(modelHandle, tokens, special: special);
+    return _requireDelegate().detokenize(modelHandle, tokens, special: special);
   }
 
   @override
   Future<Map<String, String>> modelMetadata(int modelHandle) {
-    return _delegate.modelMetadata(modelHandle);
+    return _requireDelegate().modelMetadata(modelHandle);
   }
 
   @override
   Future<void> setLoraAdapter(int contextHandle, String path, double scale) {
-    return _delegate.setLoraAdapter(contextHandle, path, scale);
+    return _requireDelegate().setLoraAdapter(contextHandle, path, scale);
   }
 
   @override
   Future<void> removeLoraAdapter(int contextHandle, String path) {
-    return _delegate.removeLoraAdapter(contextHandle, path);
+    return _requireDelegate().removeLoraAdapter(contextHandle, path);
   }
 
   @override
   Future<void> clearLoraAdapters(int contextHandle) {
-    return _delegate.clearLoraAdapters(contextHandle);
+    return _requireDelegate().clearLoraAdapters(contextHandle);
   }
 
   @override
   Future<String> getBackendName() {
-    return _delegate.getBackendName();
+    final delegate = _delegate;
+    if (delegate == null) {
+      return Future<String>.value('Web auto');
+    }
+    return delegate.getBackendName();
   }
 
   @override
@@ -226,50 +258,68 @@ class WebAutoBackend
     if (delegate is BackendAvailability) {
       return (delegate as BackendAvailability).getAvailableBackends();
     }
-    return delegate.getBackendName();
+    if (delegate != null) {
+      return delegate.getBackendName();
+    }
+    return Future<String>.value('llama.cpp webgpu, LiteRT-LM web');
   }
 
   @override
-  bool get supportsUrlLoading => _delegate.supportsUrlLoading;
+  bool get supportsUrlLoading => true;
 
   @override
   Future<bool> isGpuSupported() {
-    return _delegate.isGpuSupported();
+    final delegate = _delegate;
+    if (delegate != null) {
+      return delegate.isGpuSupported();
+    }
+    final diagnosticDelegate = _webGpuFactory();
+    return diagnosticDelegate.isGpuSupported().whenComplete(
+      diagnosticDelegate.dispose,
+    );
   }
 
   @override
-  Future<void> setLogLevel(LlamaLogLevel level) {
-    return _delegate.setLogLevel(level);
+  Future<void> setLogLevel(LlamaLogLevel level) async {
+    _currentLogLevel = level;
+    await _delegate?.setLogLevel(level);
   }
 
   @override
-  Future<void> dispose() {
-    return _delegate.dispose();
+  Future<void> dispose() async {
+    final delegate = _delegate;
+    _delegate = null;
+    _delegateKind = null;
+    await delegate?.dispose();
   }
 
   @override
   Future<int?> multimodalContextCreate(int modelHandle, String mmProjPath) {
-    return _delegate.multimodalContextCreate(modelHandle, mmProjPath);
+    return _requireDelegate().multimodalContextCreate(modelHandle, mmProjPath);
   }
 
   @override
   Future<void> multimodalContextFree(int mmContextHandle) {
-    return _delegate.multimodalContextFree(mmContextHandle);
+    return _requireDelegate().multimodalContextFree(mmContextHandle);
   }
 
   @override
   Future<bool> supportsVision(int mmContextHandle) {
-    return _delegate.supportsVision(mmContextHandle);
+    return _requireDelegate().supportsVision(mmContextHandle);
   }
 
   @override
   Future<bool> supportsAudio(int mmContextHandle) {
-    return _delegate.supportsAudio(mmContextHandle);
+    return _requireDelegate().supportsAudio(mmContextHandle);
   }
 
   @override
   Future<({int total, int free})> getVramInfo() {
-    return _delegate.getVramInfo();
+    final delegate = _delegate;
+    if (delegate != null) {
+      return delegate.getVramInfo();
+    }
+    return Future<({int total, int free})>.value((total: 0, free: 0));
   }
 
   @override
@@ -279,11 +329,59 @@ class WebAutoBackend
     String? customTemplate,
     bool addAssistant = true,
   }) {
-    return _delegate.applyChatTemplate(
+    return _requireDelegate().applyChatTemplate(
       modelHandle,
       messages,
       customTemplate: customTemplate,
       addAssistant: addAssistant,
     );
   }
+
+  Future<LlamaBackend> _delegateForSource(String source) async {
+    final kind = _kindForSource(source);
+    if (_delegate != null && _delegateKind == kind) {
+      return _delegate!;
+    }
+
+    final oldDelegate = _delegate;
+    _delegate = null;
+    _delegateKind = null;
+    await oldDelegate?.dispose();
+
+    final delegate = switch (kind) {
+      _WebBackendKind.liteRtLm => _liteRtLmFactory(),
+      _WebBackendKind.llamaCpp => _webGpuFactory(),
+    };
+    await delegate.setLogLevel(_currentLogLevel);
+    _delegate = delegate;
+    _delegateKind = kind;
+    return delegate;
+  }
+
+  _WebBackendKind _kindForSource(String source) {
+    final path = _sourcePath(source).toLowerCase();
+    if (path.endsWith('.litertlm')) {
+      return _WebBackendKind.liteRtLm;
+    }
+    return _WebBackendKind.llamaCpp;
+  }
+
+  String _sourcePath(String source) {
+    final uri = Uri.tryParse(source);
+    if (uri != null && uri.path.isNotEmpty) {
+      return uri.path;
+    }
+    final queryIndex = source.indexOf('?');
+    return queryIndex < 0 ? source : source.substring(0, queryIndex);
+  }
+
+  LlamaBackend _requireDelegate() {
+    final delegate = _delegate;
+    if (delegate == null) {
+      throw StateError('No web backend has been selected. Load a model first.');
+    }
+    return delegate;
+  }
 }
+
+enum _WebBackendKind { llamaCpp, liteRtLm }

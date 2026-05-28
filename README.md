@@ -127,8 +127,9 @@ Future<void> main() async {
 ```
 
 For LiteRT-LM bundles, use the same high-level API and pass a `.litertlm`
-path. Android callers can opt into the LiteRT-LM NPU delegate through
-`ModelParams`:
+path or URL. Native callers load local bundle paths; web callers load
+web-compatible `.litertlm` URLs through the LiteRT-LM JavaScript runtime.
+Android callers can opt into the LiteRT-LM NPU delegate through `ModelParams`:
 
 ```dart
 await engine.loadModel(
@@ -265,32 +266,37 @@ persist chat messages separately when using the high-level chat API.
 | windows-arm64 / windows-x64 | cpu, vulkan | yes |
 | macos-arm64 / macos-x86_64 | cpu, METAL | no |
 | ios-arm64 / ios simulators | cpu, METAL | no |
-| web | webgpu, cpu (bridge router) | n/a |
+| web | webgpu, cpu (bridge router); LiteRT-LM JS for `.litertlm` URLs | n/a |
 
 `.gguf` models use the llama.cpp runtime matrix above. Native `.litertlm`
 models use the LiteRT-LM runtime bundles from `litert-lm-native`; the current
-FFI path is validated on Android, iOS, macOS, Linux, and Windows. iOS
-LiteRT-LM bundles are derived from upstream `CLiteRTLM.xcframework` slices and
-packaged as dylib-style native assets for device and simulator builds.
-LiteRT-LM generation works through the same high-level `LlamaEngine` and
-`ChatSession` APIs, including native tokenization and detokenization for exact
-token counts. The current native C API does not expose embeddings, state
-persistence, LoRA, grammar, or multimodal operations. `ChatSession` uses a
-conservative prompt-size estimate for history pruning only when exact
-tokenization is unavailable. `LiteRtLmBackendPreference.auto` chooses GPU on
-Android/macOS and CPU on other current LiteRT-LM targets; set `cpu`, `gpu`, or
-Android-only `npu` explicitly when benchmarking or pinning deployment behavior.
+FFI path is validated on Android, iOS, macOS, Linux, and Windows. Web
+`.litertlm` URLs route to the official `@litert-lm/core` JavaScript runtime,
+which is an early-preview text-in/text-out API and currently supports
+web-compatible Gemma 4 LiteRT-LM model variants. iOS LiteRT-LM bundles are
+derived from upstream `CLiteRTLM.xcframework` slices and packaged as
+dylib-style native assets for device and simulator builds. LiteRT-LM generation
+works through the same high-level `LlamaEngine` and `ChatSession` APIs,
+including native tokenization and detokenization for exact token counts on
+native targets. The current native C API and web JS API do not expose
+embeddings, state persistence, LoRA, grammar, or multimodal operations through
+llamadart. `ChatSession` uses a conservative prompt-size estimate for history
+pruning only when exact tokenization is unavailable.
+`LiteRtLmBackendPreference.auto` chooses GPU on Android/macOS/web and CPU on
+other current LiteRT-LM targets; set `cpu`, `gpu`, or Android-only `npu`
+explicitly when benchmarking or pinning deployment behavior.
 `ModelParams.contextSize`, `chatTemplate`, `preferredBackend`,
 `liteRtLmBackend`, and all-or-CPU `gpuLayers` hints are honored for
 `.litertlm` loads; llama.cpp-only tuning knobs such as partial GPU layer
 offload, batch/micro-batch sizing, KV-cache type, flash attention, mmap/mlock,
 thread counts, LoRA load configs, and rope overrides are rejected instead of
 being silently ignored. `.litertlm` generation honors `GenerationParams`
-`maxTokens`, `temp`, `topK`, `topP`, `seed`, `stopSequences`, and native stream
-batching thresholds; llama.cpp-only sampling and constrained-decoding controls
+`maxTokens`, `temp`, `topK`, `topP`, and `seed` on native and web, with
+`stopSequences` enforced by llamadart. Native LiteRT-LM also honors stream
+batching thresholds. llama.cpp-only sampling and constrained-decoding controls
 such as Min-P, repeat penalty overrides, grammar/lazy grammar triggers,
-preserved tokens, and custom grammar roots are rejected until LiteRT-LM exposes
-equivalent runtime controls.
+preserved tokens, custom grammar roots, and web stream batching thresholds are
+rejected until LiteRT-LM exposes equivalent runtime controls.
 
 <details>
 <summary>Full module matrix (available modules by target)</summary>
@@ -420,7 +426,8 @@ once so stale native-asset outputs do not override new bundle selection.
 
 ## 🌐 Web Backend Notes (Router)
 
-The default web backend uses `WebGpuLlamaBackend` as a router for WebGPU and CPU paths.
+The default web backend routes `.gguf` URLs to `WebGpuLlamaBackend` and
+`.litertlm` URLs to `LiteRtLmBackend`.
 
 - Web mode is currently experimental and depends on an external JS bridge runtime.
 - Bridge API contract: [WebGPU bridge contract](https://github.com/leehack/llamadart/blob/main/doc/webgpu_bridge.md).
@@ -434,6 +441,14 @@ The default web backend uses `WebGpuLlamaBackend` as a router for WebGPU and CPU
 - `supportsVision` and `supportsAudio` reflect loaded projector capabilities.
 - LoRA runtime adapters are not currently supported on web.
 - `setLogLevel` / `setNativeLogLevel` changes take effect on next model load.
+- LiteRT-LM web requires preloading `@litert-lm/core` and exposing
+  `window.LiteRtLmEngine = module.Engine`, or setting
+  `window.__llamadartLiteRtLmModuleUrl` to an `@litert-lm/core` ESM URL before
+  loading a `.litertlm` model.
+- LiteRT-LM web currently supports URL/path loading, conversation streaming,
+  CPU/GPU selection, stop sequences, and the high-level `LlamaEngine` /
+  `ChatSession` flow. Tokenizer APIs, embeddings, state persistence, LoRA,
+  grammar, multimodal, and NPU selection remain unsupported on web.
 
 If your app targets both native and web, gate feature toggles by capability checks.
 

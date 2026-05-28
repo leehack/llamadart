@@ -88,6 +88,7 @@ export 'src/core/exceptions.dart';
 
 // LiteRT-LM native APIs
 export 'src/backends/litert_lm/litert_lm_backend_stub.dart'
+    if (dart.library.js_interop) 'src/backends/litert_lm/litert_lm_backend_web.dart'
     if (dart.library.io) 'src/backends/litert_lm/litert_lm_backend.dart'
     show LiteRtLmBackend;
 export 'src/backends/litert_lm/litert_lm_runtime_stub.dart'

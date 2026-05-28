@@ -216,6 +216,11 @@
       typeof configuredTag === 'string' && configuredTag.length > 0
         ? configuredTag
         : 'v0.1.16';
+    window.__llamadartLiteRtLmModuleUrl =
+      typeof window.__llamadartLiteRtLmModuleUrl === 'string' &&
+      window.__llamadartLiteRtLmModuleUrl.length > 0
+        ? window.__llamadartLiteRtLmModuleUrl
+        : 'https://cdn.jsdelivr.net/npm/@litert-lm/core/+esm';
     const localBridgeVersion = 'v0.1.16-local-b9165';
     window.__llamadartBridgeLocalVersion = localBridgeVersion;
 
