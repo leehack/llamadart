@@ -387,6 +387,146 @@ void main() {
         await _disposeWorker(worker);
       }
     });
+
+    test('batches and flushes generation token responses', () async {
+      final service = _StreamingLiteRtLmService(const [
+        [1],
+        [2],
+        [3],
+      ]);
+      final worker = await _startWorkerInCurrentIsolate(service);
+
+      try {
+        final responses = await _collectGenerationResponses(
+          worker.sendPort,
+          (sendPort) => LiteRtLmGenerateRequest(
+            1,
+            'hello',
+            const GenerationParams(
+              streamBatchTokenThreshold: 10,
+              streamBatchByteThreshold: 10,
+            ),
+            sendPort,
+          ),
+        );
+
+        expect(
+          responses.whereType<LiteRtLmTokenResponse>().map(
+            (response) => response.bytes,
+          ),
+          equals([
+            [1],
+            [2, 3],
+          ]),
+        );
+        expect(responses.last, isA<LiteRtLmDoneResponse>());
+      } finally {
+        await _disposeWorker(worker);
+      }
+    });
+
+    test('reports generation failures as typed worker errors', () async {
+      final service = _ThrowingGenerationLiteRtLmService();
+      final worker = await _startWorkerInCurrentIsolate(service);
+
+      try {
+        final responses = await _collectGenerationResponses(
+          worker.sendPort,
+          (sendPort) => LiteRtLmGenerateRequest(
+            1,
+            'hello',
+            const GenerationParams(),
+            sendPort,
+          ),
+        );
+
+        expect(
+          responses.single,
+          isA<LiteRtLmErrorResponse>()
+              .having((response) => response.kind, 'kind', 'state')
+              .having(
+                (response) => response.message,
+                'message',
+                contains('generation failed'),
+              ),
+        );
+      } finally {
+        await _disposeWorker(worker);
+      }
+    });
+
+    test('routes performance and multimodal capability responses', () async {
+      final service = _FeatureLiteRtLmService();
+      final worker = await _startWorkerInCurrentIsolate(service);
+
+      try {
+        final perf = await _sendRequest(
+          worker.sendPort,
+          (sendPort) => LiteRtLmPerformanceContextRequest(9, sendPort),
+        );
+        expect(
+          perf,
+          isA<LiteRtLmPerformanceContextResponse>()
+              .having((response) => response.loadMs, 'loadMs', 1.0)
+              .having((response) => response.promptEvalMs, 'promptEvalMs', 2.0)
+              .having((response) => response.evalMs, 'evalMs', 3.0)
+              .having((response) => response.sampleMs, 'sampleMs', 4.0)
+              .having(
+                (response) => response.promptEvalTokens,
+                'promptEvalTokens',
+                5,
+              )
+              .having((response) => response.evalTokens, 'evalTokens', 6)
+              .having((response) => response.sampleCount, 'sampleCount', 7)
+              .having((response) => response.reusedGraphs, 'reusedGraphs', 8),
+        );
+
+        final multimodalCreate = await _sendRequest(
+          worker.sendPort,
+          (sendPort) =>
+              LiteRtLmMultimodalContextCreateRequest(1, 'mmproj.bin', sendPort),
+        );
+        expect(
+          multimodalCreate,
+          isA<LiteRtLmHandleResponse>().having(
+            (response) => response.handle,
+            'handle',
+            42,
+          ),
+        );
+
+        final vision = await _sendRequest(
+          worker.sendPort,
+          (sendPort) => LiteRtLmSupportsVisionRequest(42, sendPort),
+        );
+        final audio = await _sendRequest(
+          worker.sendPort,
+          (sendPort) => LiteRtLmSupportsAudioRequest(42, sendPort),
+        );
+        expect(vision, isTrue);
+        expect(audio, isFalse);
+
+        final multimodalFree = await _sendRequest(
+          worker.sendPort,
+          (sendPort) => LiteRtLmMultimodalContextFreeRequest(42, sendPort),
+        );
+        expect(multimodalFree, isA<LiteRtLmDoneResponse>());
+        expect(service.freeMultimodalCount, 1);
+
+        final systemInfo = await _sendRequest(
+          worker.sendPort,
+          LiteRtLmSystemInfoRequest.new,
+        );
+        expect(
+          systemInfo,
+          isA<LiteRtLmSystemInfoResponse>()
+              .having((response) => response.totalVram, 'totalVram', 2048)
+              .having((response) => response.freeVram, 'freeVram', 512),
+        );
+      } finally {
+        await _disposeWorker(worker);
+      }
+    });
   });
 }
 
@@ -504,4 +644,71 @@ class _BlockingLiteRtLmService extends LiteRtLmService {
   void cancelGeneration() {
     cancelCount += 1;
   }
+}
+
+class _StreamingLiteRtLmService extends LiteRtLmService {
+  _StreamingLiteRtLmService(this.chunks);
+
+  final List<List<int>> chunks;
+
+  @override
+  Stream<List<int>> generate(
+    int contextHandle,
+    String prompt,
+    GenerationParams params, {
+    List<LlamaContentPart>? parts,
+  }) async* {
+    for (final chunk in chunks) {
+      yield chunk;
+    }
+  }
+}
+
+class _ThrowingGenerationLiteRtLmService extends LiteRtLmService {
+  @override
+  Stream<List<int>> generate(
+    int contextHandle,
+    String prompt,
+    GenerationParams params, {
+    List<LlamaContentPart>? parts,
+  }) async* {
+    throw StateError('generation failed');
+  }
+}
+
+class _FeatureLiteRtLmService extends LiteRtLmService {
+  int freeMultimodalCount = 0;
+
+  @override
+  BackendPerfContextData? getPerformanceContext(int contextHandle) {
+    return const BackendPerfContextData(
+      loadMs: 1.0,
+      promptEvalMs: 2.0,
+      evalMs: 3.0,
+      sampleMs: 4.0,
+      promptEvalTokens: 5,
+      evalTokens: 6,
+      sampleCount: 7,
+      reusedGraphs: 8,
+    );
+  }
+
+  @override
+  int createMultimodalContext(int modelHandle, String mmProjPath) {
+    return 42;
+  }
+
+  @override
+  void freeMultimodalContext(int mmContextHandle) {
+    freeMultimodalCount += 1;
+  }
+
+  @override
+  bool supportsVision(int mmContextHandle) => true;
+
+  @override
+  bool supportsAudio(int mmContextHandle) => false;
+
+  @override
+  ({int total, int free}) getVramInfo() => (total: 2048, free: 512);
 }

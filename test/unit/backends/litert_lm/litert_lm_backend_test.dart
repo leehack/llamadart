@@ -9,6 +9,7 @@ import 'package:llamadart/src/backends/backend.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_backend.dart';
 import 'package:llamadart/src/backends/litert_lm/worker_messages.dart';
 import 'package:llamadart/src/core/models/config/gpu_backend.dart';
+import 'package:llamadart/src/core/models/config/log_level.dart';
 import 'package:llamadart/src/core/models/inference/generation_params.dart';
 import 'package:llamadart/src/core/models/inference/model_params.dart';
 import 'package:test/test.dart';
@@ -38,6 +39,7 @@ void main() {
     expect(backend, isA<BackendPerformanceDiagnostics>());
     expect(backend, isA<BackendEmbeddingsSupport>());
     expect(backend, isA<BackendStatePersistenceSupport>());
+    expect(backend.supportsUrlLoading, isFalse);
     expect((backend as BackendEmbeddingsSupport).supportsEmbeddings, isFalse);
     expect(
       (backend as BackendStatePersistenceSupport).supportsStatePersistence,
@@ -283,6 +285,15 @@ void main() {
       }
     },
   );
+
+  test('free operations are no-ops before worker startup', () async {
+    final backend = LiteRtLmBackend();
+
+    await backend.contextFree(123);
+    await backend.modelFree(123);
+
+    expect(backend.isReady, isFalse);
+  });
 
   test('routes tokenization APIs through the LiteRT-LM worker', () async {
     final worker = _FakeLiteRtLmWorker(
@@ -567,6 +578,111 @@ void main() {
       }
     },
   );
+
+  test('routes diagnostics through the LiteRT-LM worker', () async {
+    final worker = _FakeLiteRtLmWorker(
+      tokenizeResponse: const <int>[],
+      detokenizeResponse: '',
+      backendInfoResponse: 'LiteRT-LM gpu',
+      availableBackendsResponse: 'cpu, gpu',
+      resolvedGpuLayersResponse: 999,
+      gpuSupportResponse: true,
+      performanceContextResponse: LiteRtLmPerformanceContextResponse(
+        loadMs: 1.5,
+        promptEvalMs: 2.5,
+        evalMs: 3.5,
+        sampleMs: 4.5,
+        promptEvalTokens: 11,
+        evalTokens: 22,
+        sampleCount: 33,
+        reusedGraphs: 44,
+      ),
+      vramInfoResponse: (total: 4096, free: 1024),
+    );
+    final backend = LiteRtLmBackend(initialSendPort: worker.sendPort);
+
+    try {
+      expect(await backend.getBackendName(), 'LiteRT-LM gpu');
+      expect(await backend.getAvailableBackends(), 'cpu, gpu');
+      expect(await backend.getResolvedGpuLayers(), 999);
+      expect(await backend.isGpuSupported(), isTrue);
+      expect(await backend.getVramInfo(), (total: 4096, free: 1024));
+
+      final perf = await backend.getPerformanceContext(7);
+      expect(perf, isNotNull);
+      expect(perf!.loadMs, 1.5);
+      expect(perf.promptEvalMs, 2.5);
+      expect(perf.evalMs, 3.5);
+      expect(perf.sampleMs, 4.5);
+      expect(perf.promptEvalTokens, 11);
+      expect(perf.evalTokens, 22);
+      expect(perf.sampleCount, 33);
+      expect(perf.reusedGraphs, 44);
+
+      await backend.setLogLevel(LlamaLogLevel.debug);
+      final logLevelRequest = worker.requests
+          .whereType<LiteRtLmLogLevelRequest>()
+          .single;
+      expect(logLevelRequest.logLevel, LlamaLogLevel.debug);
+    } finally {
+      await backend.dispose();
+      worker.close();
+    }
+  });
+
+  test('returns null when LiteRT-LM performance data is absent', () async {
+    final worker = _FakeLiteRtLmWorker(
+      tokenizeResponse: const <int>[],
+      detokenizeResponse: '',
+    );
+    final backend = LiteRtLmBackend(initialSendPort: worker.sendPort);
+
+    try {
+      expect(await backend.getPerformanceContext(7), isNull);
+    } finally {
+      await backend.dispose();
+      worker.close();
+    }
+  });
+
+  test('routes multimodal capability methods through the worker', () async {
+    final worker = _FakeLiteRtLmWorker(
+      tokenizeResponse: const <int>[],
+      detokenizeResponse: '',
+      multimodalHandleResponse: 77,
+      supportsVisionResponse: true,
+      supportsAudioResponse: false,
+    );
+    final backend = LiteRtLmBackend(initialSendPort: worker.sendPort);
+
+    try {
+      expect(await backend.multimodalContextCreate(42, 'mmproj.bin'), 77);
+      await backend.multimodalContextFree(77);
+      expect(await backend.supportsVision(77), isTrue);
+      expect(await backend.supportsAudio(77), isFalse);
+
+      final createRequest = worker.requests
+          .whereType<LiteRtLmMultimodalContextCreateRequest>()
+          .single;
+      expect(createRequest.modelHandle, 42);
+      expect(createRequest.mmProjPath, 'mmproj.bin');
+      expect(
+        worker.requests.whereType<LiteRtLmMultimodalContextFreeRequest>(),
+        hasLength(1),
+      );
+      expect(
+        worker.requests.whereType<LiteRtLmSupportsVisionRequest>(),
+        hasLength(1),
+      );
+      expect(
+        worker.requests.whereType<LiteRtLmSupportsAudioRequest>(),
+        hasLength(1),
+      );
+    } finally {
+      await backend.dispose();
+      worker.close();
+    }
+  });
 }
 
 String _expectedAutoLiteRtLmBackend() {
@@ -582,6 +698,15 @@ class _FakeLiteRtLmWorker {
     required this.detokenizeResponse,
     this.chatTemplateResponse = '',
     this.holdGeneration = false,
+    this.backendInfoResponse = 'LiteRT-LM cpu',
+    this.availableBackendsResponse = 'cpu',
+    this.resolvedGpuLayersResponse = 0,
+    this.gpuSupportResponse = false,
+    this.performanceContextResponse,
+    this.vramInfoResponse = (total: 0, free: 0),
+    this.multimodalHandleResponse,
+    this.supportsVisionResponse,
+    this.supportsAudioResponse,
   }) {
     _receivePort.listen(_handleMessage);
   }
@@ -590,6 +715,15 @@ class _FakeLiteRtLmWorker {
   final String detokenizeResponse;
   final String chatTemplateResponse;
   final bool holdGeneration;
+  final String backendInfoResponse;
+  final String availableBackendsResponse;
+  final int resolvedGpuLayersResponse;
+  final bool gpuSupportResponse;
+  final LiteRtLmPerformanceContextResponse? performanceContextResponse;
+  final ({int total, int free}) vramInfoResponse;
+  final int? multimodalHandleResponse;
+  final bool? supportsVisionResponse;
+  final bool? supportsAudioResponse;
   final ReceivePort _receivePort = ReceivePort();
   final List<Object?> requests = <Object?>[];
   final Completer<LiteRtLmGenerateRequest> generateReceived =
@@ -638,6 +772,49 @@ class _FakeLiteRtLmWorker {
         message.sendPort.send(
           LiteRtLmChatTemplateResponse(chatTemplateResponse),
         );
+      case LiteRtLmBackendInfoRequest():
+        message.sendPort.send(LiteRtLmBackendInfoResponse(backendInfoResponse));
+      case LiteRtLmAvailableBackendsRequest():
+        message.sendPort.send(
+          LiteRtLmBackendInfoResponse(availableBackendsResponse),
+        );
+      case LiteRtLmResolvedGpuLayersRequest():
+        message.sendPort.send(
+          LiteRtLmResolvedGpuLayersResponse(resolvedGpuLayersResponse),
+        );
+      case LiteRtLmGpuSupportRequest():
+        message.sendPort.send(LiteRtLmGpuSupportResponse(gpuSupportResponse));
+      case LiteRtLmPerformanceContextRequest():
+        message.sendPort.send(
+          performanceContextResponse ?? LiteRtLmDoneResponse(),
+        );
+      case LiteRtLmSystemInfoRequest():
+        message.sendPort.send(
+          LiteRtLmSystemInfoResponse(
+            vramInfoResponse.total,
+            vramInfoResponse.free,
+          ),
+        );
+      case LiteRtLmLogLevelRequest():
+        message.sendPort.send(LiteRtLmDoneResponse());
+      case LiteRtLmMultimodalContextCreateRequest():
+        final handle = multimodalHandleResponse;
+        if (handle == null) {
+          message.sendPort.send(
+            LiteRtLmErrorResponse(
+              'LiteRT-LM multimodal context unavailable.',
+              kind: 'unsupported',
+            ),
+          );
+        } else {
+          message.sendPort.send(LiteRtLmHandleResponse(handle));
+        }
+      case LiteRtLmMultimodalContextFreeRequest():
+        message.sendPort.send(LiteRtLmDoneResponse());
+      case LiteRtLmSupportsVisionRequest():
+        message.sendPort.send(supportsVisionResponse ?? false);
+      case LiteRtLmSupportsAudioRequest():
+        message.sendPort.send(supportsAudioResponse ?? false);
       case LiteRtLmCancelGenerationRequest():
         message.sendPort.send(LiteRtLmDoneResponse());
       case LiteRtLmDisposeRequest():

@@ -32,6 +32,28 @@ void main() {
     }
   });
 
+  test('pre-load router reports defaults and rejects direct calls', () async {
+    final backend = NativeAutoBackend(
+      llamaCppFactory: () => _FakeBackend(handle: 11),
+      liteRtLmFactory: () => _FakeBackend(handle: 22),
+    );
+
+    try {
+      expect(backend.isReady, isFalse);
+      expect(backend.supportsUrlLoading, isFalse);
+      expect(
+        () => backend.modelLoadFromUrl(
+          'https://example.test/model.gguf',
+          const ModelParams(),
+        ),
+        throwsUnsupportedError,
+      );
+      expect(() => backend.tokenize(1, 'hello'), throwsStateError);
+    } finally {
+      await backend.dispose();
+    }
+  });
+
   test(
     'pre-load diagnostics use a llama.cpp probe without selecting a model backend',
     () async {
@@ -213,6 +235,74 @@ void main() {
         LiteRtLmBackendPreference.npu,
       );
       expect(llama.loadedPaths, isEmpty);
+    } finally {
+      await backend.dispose();
+    }
+  });
+
+  test('falls back when delegate lacks optional capabilities', () async {
+    final llama = _FakeBackend(handle: 11);
+    final backend = NativeAutoBackend(
+      llamaCppFactory: () => llama,
+      liteRtLmFactory: () => _FakeBackend(handle: 22),
+    );
+
+    try {
+      await backend.modelLoad('/models/model.gguf', const ModelParams());
+
+      expect(await backend.getAvailableBackends(), 'llama.cpp, LiteRT-LM');
+      expect(await backend.getResolvedGpuLayers(), isNull);
+      expect(await backend.getPerformanceContext(1), isNull);
+      expect(backend.supportsEmbeddings, isFalse);
+      expect(backend.supportsStatePersistence, isFalse);
+
+      expect(() => backend.embed(1, 'hello'), throwsUnsupportedError);
+      await expectLater(
+        backend.embedBatch(1, const ['hello']),
+        throwsUnsupportedError,
+      );
+      expect(
+        () => backend.stateSaveFile(1, '/tmp/state.bin', const [1, 2]),
+        throwsUnsupportedError,
+      );
+      expect(
+        () => backend.stateLoadFile(1, '/tmp/state.bin', 16),
+        throwsUnsupportedError,
+      );
+    } finally {
+      await backend.dispose();
+    }
+  });
+
+  test('routes optional native delegate capabilities', () async {
+    final llama = _CapabilityFakeBackend(handle: 11);
+    final backend = NativeAutoBackend(
+      llamaCppFactory: () => llama,
+      liteRtLmFactory: () => _FakeBackend(handle: 22),
+    );
+
+    try {
+      await backend.modelLoad('/models/model.gguf', const ModelParams());
+
+      expect(await backend.getAvailableBackends(), 'capability-backends');
+      expect(await backend.getResolvedGpuLayers(), 123);
+      final perf = await backend.getPerformanceContext(1);
+      expect(perf, isNotNull);
+      expect(perf!.evalTokens, 7);
+      expect(backend.supportsEmbeddings, isTrue);
+      expect(await backend.embed(1, 'hello', normalize: false), [1.0, 2.0]);
+      expect(await backend.embedBatch(1, const ['a', 'b']), [
+        [1.0],
+        [2.0],
+      ]);
+      expect(backend.supportsStatePersistence, isTrue);
+      expect(
+        await backend.stateSaveFile(1, '/tmp/state.bin', const [3]),
+        isTrue,
+      );
+      expect((await backend.stateLoadFile(1, '/tmp/state.bin', 16)).tokens, [
+        3,
+      ]);
     } finally {
       await backend.dispose();
     }
@@ -688,6 +778,85 @@ class _FakeBackend implements LlamaBackend {
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _CapabilityFakeBackend extends _FakeBackend
+    implements
+        BackendAvailability,
+        BackendRuntimeDiagnostics,
+        BackendPerformanceDiagnostics,
+        BackendEmbeddings,
+        BackendEmbeddingsSupport,
+        BackendBatchEmbeddings,
+        BackendStatePersistence,
+        BackendStatePersistenceSupport {
+  _CapabilityFakeBackend({required super.handle});
+
+  @override
+  Future<String> getAvailableBackends() async => 'capability-backends';
+
+  @override
+  Future<int?> getResolvedGpuLayers() async => 123;
+
+  @override
+  Future<BackendPerfContextData?> getPerformanceContext(
+    int contextHandle,
+  ) async {
+    return const BackendPerfContextData(
+      loadMs: 1,
+      promptEvalMs: 2,
+      evalMs: 3,
+      sampleMs: 4,
+      promptEvalTokens: 5,
+      evalTokens: 7,
+      sampleCount: 8,
+      reusedGraphs: 9,
+    );
+  }
+
+  @override
+  bool get supportsEmbeddings => true;
+
+  @override
+  Future<List<double>> embed(
+    int contextHandle,
+    String text, {
+    bool normalize = true,
+  }) async {
+    return const <double>[1.0, 2.0];
+  }
+
+  @override
+  Future<List<List<double>>> embedBatch(
+    int contextHandle,
+    List<String> texts, {
+    bool normalize = true,
+  }) async {
+    return [
+      for (var i = 0; i < texts.length; i++) <double>[i + 1.0],
+    ];
+  }
+
+  @override
+  bool get supportsStatePersistence => true;
+
+  @override
+  Future<bool> stateSaveFile(
+    int contextHandle,
+    String path,
+    List<int> tokens,
+  ) async {
+    return true;
+  }
+
+  @override
+  Future<StateLoadResult> stateLoadFile(
+    int contextHandle,
+    String path,
+    int tokenCapacity,
+  ) async {
+    return const StateLoadResult(tokens: [3]);
+  }
 }
 
 class _FakeModelDownloadManager implements ModelDownloadManager {
