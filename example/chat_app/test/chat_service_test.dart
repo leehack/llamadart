@@ -148,6 +148,7 @@ void main() {
             modelPath: 'gemma-4-E2B-it.litertlm',
             preferredBackend: GpuBackend.auto,
             contextSize: 8192,
+            maxTokens: 32,
             gpuLayers: 0,
           ),
           eagerLoadMultimodalProjector: false,
@@ -156,6 +157,8 @@ void main() {
         expect(engine.lastModelParams, isNotNull);
         expect(engine.lastModelParams!.gpuLayers, ModelParams.maxGpuLayers);
         expect(engine.lastModelParams!.preferredBackend, GpuBackend.auto);
+        expect(engine.createCalls, 1);
+        expect(engine.lastCreateParams!.maxTokens, 32);
       },
     );
 

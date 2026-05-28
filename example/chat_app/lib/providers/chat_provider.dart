@@ -1917,6 +1917,10 @@ class ChatProvider extends ChangeNotifier {
         !kIsWeb &&
         defaultTargetPlatform == TargetPlatform.android &&
         model.name == 'Qwen3.5 0.8B Instruct';
+    final shouldUseMobileLiteRtLmDefaults =
+        !kIsWeb &&
+        defaultTargetPlatform == TargetPlatform.android &&
+        _isLiteRtLmModelPath(model.filename);
     final shouldPreferCpuOnAndroid =
         !kIsWeb &&
         defaultTargetPlatform == TargetPlatform.android &&
@@ -1934,9 +1938,18 @@ class ChatProvider extends ChangeNotifier {
         penalty: model.preset.penalty,
         contextSize: shouldUseReducedAndroidContext
             ? 2048
+            : shouldUseMobileLiteRtLmDefaults
+            ? 512
             : model.preset.contextSize,
-        maxTokens: model.preset.maxTokens,
-        gpuLayers: shouldPreferCpuOnAndroid ? 0 : model.preset.gpuLayers,
+        maxTokens: shouldUseMobileLiteRtLmDefaults
+            ? math.min(model.preset.maxTokens, 32)
+            : model.preset.maxTokens,
+        gpuLayers: shouldPreferCpuOnAndroid
+            ? 0
+            : shouldUseMobileLiteRtLmDefaults &&
+                  _settings.preferredBackend != GpuBackend.cpu
+            ? ModelParams.maxGpuLayers
+            : model.preset.gpuLayers,
         preferredBackend: shouldPreferCpuOnAndroid
             ? GpuBackend.cpu
             : _settings.preferredBackend,

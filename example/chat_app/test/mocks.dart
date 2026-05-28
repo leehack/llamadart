@@ -110,7 +110,9 @@ class MockLlamaEngine extends LlamaEngine {
   bool mmprojLoaded = false;
   int loadMultimodalProjectorCalls = 0;
   int unloadMultimodalProjectorCalls = 0;
+  int createCalls = 0;
   ModelParams? lastModelParams;
+  GenerationParams? lastCreateParams;
   String? lastLoadedModelPath;
   String? lastLoadedModelUrl;
 
@@ -195,6 +197,8 @@ class MockLlamaEngine extends LlamaEngine {
     Map<String, dynamic>? chatTemplateKwargs,
     DateTime? templateNow,
   }) async* {
+    createCalls += 1;
+    lastCreateParams = params;
     yield LlamaCompletionChunk(
       id: "mock-id",
       object: "chat.completion.chunk",

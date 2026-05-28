@@ -788,6 +788,20 @@ void main() {
 
       expect(provider.settings.contextSize, 2048);
     });
+
+    test('applyModelPreset uses mobile defaults for LiteRT-LM on Android', () {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      final liteRtModel = DownloadableModel.defaultModels.singleWhere(
+        (model) => model.name == 'Gemma 4 E2B LiteRT-LM',
+      );
+
+      provider.applyModelPreset(liteRtModel);
+
+      expect(provider.settings.preferredBackend, GpuBackend.auto);
+      expect(provider.settings.gpuLayers, ModelParams.maxGpuLayers);
+      expect(provider.settings.contextSize, 512);
+      expect(provider.settings.maxTokens, 32);
+    });
   });
 
   group('MockChatService Tests', () {
