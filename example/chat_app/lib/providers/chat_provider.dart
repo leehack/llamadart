@@ -1175,6 +1175,7 @@ class ChatProvider extends ChangeNotifier {
     );
     _lastFirstTokenLatencyMs = null;
     final toolsForTurn = _toolsForTurn();
+    var appliedGeneratedTokenDeltas = 0;
     var hasMediaPartsInTurn = false;
     var hasAudioPartsInTurn = false;
     var isCpuMultimodalTurn = false;
@@ -1241,6 +1242,7 @@ class ChatProvider extends ChangeNotifier {
             stallTimeout: streamStallTimeout,
             onUpdate: (update) {
               _currentTokens += update.generatedTokenDelta;
+              appliedGeneratedTokenDeltas += update.generatedTokenDelta;
 
               final shouldRefreshStreamingMessage =
                   update.shouldNotify || update.generatedTokenDelta == 0;
@@ -1452,8 +1454,12 @@ class ChatProvider extends ChangeNotifier {
       }
 
       final effectiveGeneratedTokens = nativeEvalTokens ?? generatedTokens;
-      if (nativeEvalTokens != null && nativeEvalTokens > generatedTokens) {
-        _currentTokens += nativeEvalTokens - generatedTokens;
+      if (nativeEvalTokens != null &&
+          nativeEvalTokens != appliedGeneratedTokenDeltas) {
+        _currentTokens = math.max(
+          0,
+          _currentTokens + nativeEvalTokens - appliedGeneratedTokenDeltas,
+        );
       }
 
       if (effectiveGeneratedTokens > 0 && elapsedMs > 0) {

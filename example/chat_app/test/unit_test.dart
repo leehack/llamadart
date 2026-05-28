@@ -348,6 +348,36 @@ void main() {
       expect(perfProvider.lastDecodeTokensPerSecond, closeTo(16, 0.001));
     });
 
+    test(
+      'sendMessage corrects chunk overcount with native token count',
+      () async {
+        final perfEngine = MockLlamaEngine()
+          ..createChunkContents = const ['A', 'B', 'C', 'D']
+          ..performanceContext = const BackendPerfContextData(
+            loadMs: 0,
+            promptEvalMs: 250,
+            evalMs: 1000,
+            sampleMs: 0,
+            promptEvalTokens: 8,
+            evalTokens: 2,
+            sampleCount: 2,
+            reusedGraphs: 0,
+          );
+        final perfProvider = ChatProvider(
+          chatService: MockChatService(engine: perfEngine),
+          settingsService: mockSettingsService,
+          initialSettings: const ChatSettings(modelPath: 'test_model.litertlm'),
+        );
+
+        await perfProvider.loadModel();
+        await perfProvider.sendMessage('Hello');
+
+        expect(perfProvider.currentTokens, 2);
+        expect(perfProvider.lastNativeEvalTokens, 2);
+        expect(perfProvider.lastDecodeTokensPerSecond, closeTo(2, 0.001));
+      },
+    );
+
     test('normalizes generic JSON response envelope for display', () async {
       final jsonEngine = _JsonResponseEngine();
       final jsonProvider = ChatProvider(
