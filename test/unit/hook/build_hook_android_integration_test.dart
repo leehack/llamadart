@@ -96,6 +96,7 @@ void main() {
             .map((asset) => asset.asCodeAsset)
             .toList(growable: false);
 
+        final codeAssetIds = codeAssets.map((asset) => asset.id).toSet();
         final emittedNames = codeAssets
             .map((asset) => path.basename(asset.file!.toFilePath()))
             .toSet();
@@ -108,6 +109,12 @@ void main() {
 
         for (final variant in _androidCpuVariantLibraries) {
           expect(emittedNames, contains(variant));
+        }
+        for (final library in _androidLiteRtLibraries) {
+          expect(emittedNames, contains(library));
+        }
+        for (final assetName in _androidLiteRtAssetNames) {
+          expect(codeAssetIds, contains('package:llamadart/$assetName'));
         }
       },
     );
@@ -233,6 +240,18 @@ const List<String> _androidLiteRtLibraries = [
   'libLiteRtTopKWebGpuSampler.so',
   'libLiteRtWebGpuAccelerator.so',
   'libStreamProxy.so',
+];
+
+const List<String> _androidLiteRtAssetNames = [
+  'litert_lm_GemmaModelConstraintProvider',
+  'litert_lm_LiteRt',
+  'litert_lm_LiteRtGpuAccelerator',
+  'litert_lm_LiteRtLm',
+  'litert_lm_LiteRtOpenClAccelerator',
+  'litert_lm_LiteRtTopKOpenClSampler',
+  'litert_lm_LiteRtTopKWebGpuSampler',
+  'litert_lm_LiteRtWebGpuAccelerator',
+  'litert_lm_StreamProxy',
 ];
 
 String _readHookNativeTag() {

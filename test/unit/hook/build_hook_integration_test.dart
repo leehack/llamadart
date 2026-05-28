@@ -133,6 +133,12 @@ void main() {
           expect(emittedNames, contains('llama-windows-x64.dll'));
           expect(emittedNames, contains('ggml-windows-x64.dll'));
           expect(emittedNames, contains('ggml-base-windows-x64.dll'));
+          for (final library in _windowsLiteRtLibraries) {
+            expect(emittedNames, contains(library));
+          }
+          for (final assetName in _windowsLiteRtAssetNames) {
+            expect(codeAssetIds, contains('package:llamadart/$assetName'));
+          }
           expect(emittedNames, isNot(contains('ggml-cuda-windows-x64.dll')));
           expect(emittedNames, isNot(contains('cudart64_12.dll')));
           expect(emittedNames, isNot(contains('cublas64_12.dll')));
@@ -592,6 +598,15 @@ const List<String> _windowsLiteRtLibraries = [
   'libLiteRt.dll',
   'libLiteRtTopKWebGpuSampler.dll',
   'libLiteRtWebGpuAccelerator.dll',
+];
+
+const List<String> _windowsLiteRtAssetNames = [
+  'litert_lm_LiteRtLm',
+  'litert_lm_StreamProxy',
+  'litert_lm_GemmaModelConstraintProvider',
+  'litert_lm_LiteRt',
+  'litert_lm_LiteRtTopKWebGpuSampler',
+  'litert_lm_LiteRtWebGpuAccelerator',
 ];
 
 Future<void> _writeBundleArchive({

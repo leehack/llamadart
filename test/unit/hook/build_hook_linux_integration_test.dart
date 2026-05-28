@@ -102,6 +102,12 @@ void main() {
           expect(emittedNames, contains('libggml.so.0'));
           expect(emittedNames, contains('libggml-base.so'));
           expect(emittedNames, contains('libggml-base.so.0'));
+          for (final library in _linuxLiteRtLibraries) {
+            expect(emittedNames, contains(library));
+          }
+          for (final assetName in _linuxLiteRtAssetNames) {
+            expect(codeAssetIds, contains('package:llamadart/$assetName'));
+          }
         },
       );
     },
@@ -147,6 +153,15 @@ const List<String> _linuxLiteRtLibraries = [
   'libLiteRtTopKWebGpuSampler.so',
   'libLiteRtWebGpuAccelerator.so',
   'libStreamProxy.so',
+];
+
+const List<String> _linuxLiteRtAssetNames = [
+  'litert_lm_GemmaModelConstraintProvider',
+  'litert_lm_LiteRt',
+  'litert_lm_LiteRtLm',
+  'litert_lm_LiteRtTopKWebGpuSampler',
+  'litert_lm_LiteRtWebGpuAccelerator',
+  'litert_lm_StreamProxy',
 ];
 
 Future<void> _writeBundleLibraries(
