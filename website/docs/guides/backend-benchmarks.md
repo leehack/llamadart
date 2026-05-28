@@ -32,13 +32,13 @@ rollout strategy, and failure modes.
 | Mac, Apple M4 Max, macOS 26.5 | LiteRT-LM | `gemma-4-E2B-it.litertlm` | Metal | 130.08 | 131.90 | `loadMilliseconds=86`, backend init about 4.6s |
 | Mac, Apple M4 Max, macOS 26.5 | llama.cpp | `gemma-4-E2B-it-Q4_K_S.gguf` | Metal | 136.15 | 140.48 including sampling | `loadMilliseconds=1883`; backend eval-only counter was much higher |
 | Web, Chromium on Apple M4 Max | LiteRT-LM | `gemma-4-E2B-it-web.litertlm` | WebGPU | 62.70 | 64.30 | `loadMilliseconds=7730`; first token 98-129ms |
-| Web, Chromium on Apple M4 Max | llama.cpp | `gemma-4-E2B-it-Q4_K_S.gguf` | WebGPU bridge | Did not complete | Did not complete | wasm model load aborted after progressing into the 72% init phase |
+| Web, Chromium on Apple M4 Max | llama.cpp | `gemma-4-E2B-it-Q4_K_S.gguf` | WebGPU bridge | Pending valid re-run | Pending valid re-run | Must be measured through the same chat app WebGPU profile/cache path used by users |
 
-As a sanity check, the web llama.cpp/GGUF bridge still loaded and generated
-with smaller GGUF files in Chromium, including `stories15M.gguf` and
-`Qwen3.5-0.8B-Q4_K_M.gguf`. Those checks used CPU fallback, so the failed row
-above should be read as a large Gemma 4 GGUF browser-load limit, not as evidence
-that GGUF web support is generally broken.
+The first automated Gemma 4 GGUF web attempt was invalid: the harness forced
+`GpuBackend.cpu` by passing the wrong enum index and did not set the mem64
+bootstrap flag that the chat app reads. Smaller GGUF sanity checks still loaded
+and generated in Chromium through the bridge. Do not interpret the pending row
+as a Gemma 4 GGUF web support failure.
 
 The Pixel 9 Pro was explicitly woken and kept awake with `svc power stayon true`.
 Thermal status was 0 before the benchmark and 1 after the run, so the Android
@@ -55,10 +55,9 @@ On the M4 Max, llama.cpp Metal and LiteRT-LM Metal were close for wall-clock
 throughput. Use model format, feature needs, and distribution constraints as
 the deciding factors on macOS rather than assuming LiteRT-LM is faster.
 
-On web, the web-compatible LiteRT-LM Gemma 4 bundle completed successfully,
-while the large Gemma 4 GGUF artifact did not complete model load in Chromium.
-For browser deployments, this makes model format and artifact size an
-availability constraint before it is a throughput question.
+On web, the web-compatible LiteRT-LM Gemma 4 bundle completed successfully.
+The matching Gemma 4 GGUF result still needs a valid re-run through the normal
+chat app WebGPU load path before making a performance claim.
 
 ## Reproducing
 

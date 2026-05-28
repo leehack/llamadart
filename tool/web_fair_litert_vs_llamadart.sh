@@ -19,6 +19,8 @@ RUNS="${RUNS:-3}"
 TARGETS="${TARGETS:-llamadart,litert_lm}"
 THREADS="${THREADS:-2}"
 THREAD_POOL_SIZE="${THREAD_POOL_SIZE:-2}"
+LLAMADART_GPU_LAYERS="${LLAMADART_GPU_LAYERS:-99}"
+LITERT_GPU_LAYERS="${LITERT_GPU_LAYERS:-999}"
 LOAD_TIMEOUT_MS="${LOAD_TIMEOUT_MS:-2400000}"
 RESPONSE_TIMEOUT_MS="${RESPONSE_TIMEOUT_MS:-1200000}"
 PROMPT="${PROMPT:-Write a detailed practical guide for product engineers who want to use on-device language models in mobile and desktop apps. Cover privacy, latency, offline behavior, personalization, battery tradeoffs, model format choices, benchmarking methodology, rollout strategy, and failure modes. Use clear paragraphs and continue until the answer is complete.}"
@@ -72,6 +74,7 @@ else
 fi
 echo "  runs/warmups: $RUNS/$WARMUPS"
 echo "  output/context tokens: $DECODE_TOKENS/$CONTEXT_SIZE"
+echo "  GGUF/LiteRT GPU layers: $LLAMADART_GPU_LAYERS/$LITERT_GPU_LAYERS"
 echo "  targets: $TARGETS"
 
 (
@@ -135,8 +138,8 @@ if target_enabled llamadart; then
     --label "web_llamacpp_gguf_webgpu" \
     --model-url "$LLAMADART_MODEL_URL" \
     --response-source bridge \
-    --backend-index 1 \
-    --gpu-layers 999 \
+    --backend-index 0 \
+    --gpu-layers "$LLAMADART_GPU_LAYERS" \
     --context-size "$CONTEXT_SIZE" \
     --max-tokens "$DECODE_TOKENS" \
     --warmups "$WARMUPS" \
@@ -160,7 +163,7 @@ if target_enabled litert_lm; then
     --model-url "$LITERT_WEB_BENCHMARK_URL" \
     --response-source litert \
     --backend-index 2 \
-    --gpu-layers 999 \
+    --gpu-layers "$LITERT_GPU_LAYERS" \
     --context-size "$CONTEXT_SIZE" \
     --max-tokens "$DECODE_TOKENS" \
     --warmups "$WARMUPS" \

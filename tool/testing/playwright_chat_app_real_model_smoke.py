@@ -229,6 +229,7 @@ def main() -> int:
         window.__llamadartPreferLocalBridgeRuntime = true;
         window.__llamadartBridgeBootstrapVerbose = true;
         window.__llamadartBridgeThreadPoolSize = {args.thread_pool_size};
+        window.__llamadartBridgeEnableMem64 = {str(args.mem64).lower()};
         window.__llamadartBridgePreferMemory64 = {str(args.mem64).lower()};
         window.__llamadartBridgeAllowAutoRemoteFetchBackend =
             {str(not args.disable_auto_remote_fetch).lower()};
