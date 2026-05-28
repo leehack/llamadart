@@ -38,7 +38,7 @@ runtime revision.
 | iOS x86_64 (simulator) | `ios-x86_64-sim` | No (fixed in hook) | Consolidated runtime: `cpu`, `metal` | Supported |
 | macOS arm64 | `macos-arm64` | No (fixed in hook) | Consolidated runtime: `cpu`, `metal` | Supported |
 | macOS x86_64 | `macos-x86_64` | No (fixed in hook) | Consolidated runtime: `cpu`, `metal` | Supported |
-| Web (browser) | N/A (JS bridge path) | N/A | Bridge router: `webgpu`, `cpu` fallback | Experimental; see [WebGPU Bridge](./webgpu-bridge) readiness checks |
+| Web (browser) | N/A (JS bridge path) | N/A | Router: llama.cpp WebGPU/CPU for `.gguf`; LiteRT-LM JS for `.litertlm` URLs | Experimental; see [WebGPU Bridge](./webgpu-bridge) and LiteRT-LM web notes below |
 
 All iOS targets above require the consuming Flutter/Xcode project to use a
 minimum deployment target of `16.4` or newer (for example
@@ -46,16 +46,27 @@ minimum deployment target of `16.4` or newer (for example
 
 ## Model format routing
 
-Native `LlamaBackend()` routes by model file format:
+`LlamaBackend()` routes by model file format:
 
-- `.gguf` and unknown extensions use the llama.cpp backend.
-- `.litertlm` uses the LiteRT-LM backend and the companion runtime bundles from
-  `litert-lm-native`.
+- `.gguf` and unknown extensions use llama.cpp. Native targets load the
+  bundled native runtime; web targets use the WebGPU bridge router.
+- Native `.litertlm` paths use LiteRT-LM and the companion runtime bundles
+  from `litert-lm-native`.
+- Web `.litertlm` URLs use the browser LiteRT-LM backend, which wraps the
+  official `@litert-lm/core` JavaScript API. Apps can preload
+  `window.LiteRtLmEngine = module.Engine` or set
+  `window.__llamadartLiteRtLmModuleUrl` to an `@litert-lm/core` ESM URL before
+  loading the model.
 
 Use the same high-level `LlamaEngine`, `ChatSession`, `ModelSource`, and
-download/cache APIs for both formats. Select LiteRT-LM CPU/GPU/NPU with
-`ModelParams.liteRtLmBackend`; `LiteRtLmBackendPreference.auto` currently maps
-to GPU on Android/macOS and CPU on other LiteRT-LM targets.
+download/cache APIs for both formats. Native/file-backed targets cache remote
+`.litertlm` sources before local load; web URL-capable targets stream through
+`loadModelFromUrl(...)` for simple unauthenticated sources.
+
+Select LiteRT-LM CPU/GPU/NPU with `ModelParams.liteRtLmBackend`.
+`LiteRtLmBackendPreference.auto` currently maps to GPU on Android, macOS, and
+web, and CPU on other LiteRT-LM targets. NPU selection is Android native only;
+web rejects it explicitly.
 
 ## LiteRT-LM runtime coverage (`v0.12.0`)
 
@@ -71,11 +82,14 @@ to GPU on Android/macOS and CPU on other LiteRT-LM targets.
 | Linux arm64 | `linux-arm64` | `cpu` | Supported |
 | Linux x64 | `linux-x64` | `cpu` | Supported |
 | Windows x64 | `windows-x64` | `cpu` | Supported |
+| Web (browser) | N/A (`@litert-lm/core`) | `cpu`, `gpu` | Experimental; web-compatible `.litertlm` URLs only |
 
 LiteRT-LM does not currently expose embeddings, state persistence, LoRA,
 grammar constraints, or multimodal projector APIs through the pinned native C
-runtime. `llamadart` rejects those operations explicitly for `.litertlm` loads
-instead of silently ignoring llama.cpp-only settings.
+runtime or web JavaScript API. Web LiteRT-LM also does not expose tokenizer
+operations yet, so chat history pruning uses conservative prompt-size
+estimates there. `llamadart` rejects unsupported operations explicitly for
+`.litertlm` loads instead of silently ignoring llama.cpp-only settings.
 
 ## Runtime capability notes
 

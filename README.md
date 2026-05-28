@@ -5,7 +5,11 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-purple.svg)](https://opensource.org/licenses/MIT)
 [![GitHub](https://img.shields.io/github/stars/leehack/llamadart?style=social)](https://github.com/leehack/llamadart)
 
-**llamadart** is a high-performance Dart and Flutter plugin for local LLMs. It runs GGUF models through [llama.cpp](https://github.com/ggml-org/llama.cpp) across native platforms and web (CPU/WebGPU bridge path), and routes native `.litertlm` bundles through LiteRT-LM.
+**llamadart** is a high-performance Dart and Flutter plugin for local LLMs. It
+runs GGUF models through [llama.cpp](https://github.com/ggml-org/llama.cpp)
+across native platforms and web (CPU/WebGPU bridge path), and routes
+`.litertlm` bundles through LiteRT-LM native runtimes or the LiteRT-LM web
+JavaScript runtime.
 
 ## 📚 Documentation
 
@@ -16,9 +20,10 @@
 
 ## ✨ Features
 
-- 🚀 **High Performance**: Powered by `llama.cpp` kernels and LiteRT-LM native runtimes.
-- 🧩 **Model Format Routing**: Native `LlamaBackend()` loads GGUF models with
-  llama.cpp and `.litertlm` bundles with LiteRT-LM.
+- 🚀 **High Performance**: Powered by `llama.cpp` kernels and LiteRT-LM native
+  and web runtimes.
+- 🧩 **Model Format Routing**: `LlamaBackend()` loads GGUF models with
+  llama.cpp and `.litertlm` bundles with LiteRT-LM on native and web targets.
 - 🛠️ **Zero Configuration**: Uses Pure Native Assets; no manual CMake or platform project edits.
 - 📱 **Cross-Platform**: Android, iOS, macOS, Linux, Windows, and web.
 - ⚡ **GPU Acceleration**:

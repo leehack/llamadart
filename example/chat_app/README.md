@@ -11,6 +11,7 @@ A Flutter chat application demonstrating real-world usage of llamadart with UI.
 - 📱 Material Design 3 UI
 - ⚙️ Model configuration (path, runtime-detected backend selection, GPU layers, context size)
 - 🧩 Capability badges per model (Tools / Thinking / Vision / Audio / Video)
+- 🧪 GGUF and LiteRT-LM model routing through the same high-level engine APIs
 - 🎯 Per-model presets for temperature, Top-K, Top-P, context, and max tokens
 - 🛠️ Tool-calling toggles with template support checks
 - 💾 Settings persistence
@@ -58,11 +59,18 @@ flutter test --run-skipped -t local-only \
      `llama.cpp` mtmd path used here, that projector exposes vision support but
      not audio support, so the chat UI keeps image input enabled and audio input
      disabled for this model.
+   - LiteRT-LM `.litertlm` presets, when present, use the same model library
+     flow. Native builds load cached local bundle paths through the
+     `litert-lm-native` runtime. Web builds load web-compatible `.litertlm`
+     URLs through `@litert-lm/core`; `web/index.html` sets a default module URL
+     that apps can override with `window.__llamadartLiteRtLmModuleUrl`.
 
 ### 3. Advanced Configuration (Optional)
 1. Tap the settings icon (⚙️) in the app bar.
 2. Adjust **GPU Layers**, **Context Size**, **Preferred Backend**, **Dart Log Level**, and **Native Log Level**.
-   - Backend choices are concrete runtime-detected options (for example: CPU/Vulkan/CUDA), not `Auto`.
+   - Backend choices are concrete runtime-detected options (for example:
+     CPU/Vulkan/CUDA for GGUF, or CPU/GPU/NPU where LiteRT-LM exposes them), not
+     `Auto`.
 3. Optionally enable **Function Calling** and edit tool declarations depending on model/template support.
 4. Tap **Load Model** to apply changes.
 
@@ -210,6 +218,10 @@ _(Add screenshots here when complete)_
 - Ensure hardware acceleration is enabled (e.g., Metal on Apple, Vulkan on Android/Linux/Windows).
 - Check if `GPU Layers` is set to a high enough value (default 99 offloads all layers).
 - Use a smaller model or a lighter 4-bit quant when your device is memory-bound.
+- For LiteRT-LM, select CPU/GPU/NPU intentionally in the settings sheet when
+  comparing performance. NPU is Android-only and may fail for a given device,
+  OS, or model bundle; fall back to GPU or CPU when the runtime reports that
+  engine creation is unsupported.
 
 **Multimodal instability or decode crashes (Qwen3.5 VLMs):**
 - Keep Qwen3.5 model defaults unless you are tuning carefully (`0.8B` uses `Context Size` 4096; `2B`/`4B`/`9B` use 8192; all ship with `Max Tokens` 1024).

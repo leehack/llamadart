@@ -27,7 +27,10 @@ Future<void> main() async {
 }
 ```
 
-Native targets can load LiteRT-LM `.litertlm` bundles through the same engine:
+LiteRT-LM `.litertlm` bundles load through the same engine. Native targets use
+local bundle paths from the native-assets runtime; web targets use
+web-compatible `.litertlm` URLs through the `@litert-lm/core` JavaScript
+runtime.
 
 ```dart
 await engine.loadModel(
@@ -38,10 +41,11 @@ await engine.loadModel(
 );
 ```
 
-`LiteRtLmBackendPreference.auto` is the default. It chooses GPU on Android and
-macOS and CPU on other current LiteRT-LM targets. Android callers can request
-`LiteRtLmBackendPreference.npu` for devices and model bundles that support the
-LiteRT-LM NPU delegate.
+`LiteRtLmBackendPreference.auto` is the default. It chooses GPU on Android,
+macOS, and web, and CPU on other current LiteRT-LM targets. Android native
+callers can request `LiteRtLmBackendPreference.npu` for devices and model
+bundles that support the LiteRT-LM NPU delegate. Web rejects NPU selection
+explicitly.
 
 ## Stateless chat completions
 
