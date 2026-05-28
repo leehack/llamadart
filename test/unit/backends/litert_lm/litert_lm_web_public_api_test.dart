@@ -34,5 +34,9 @@ void main() {
     expect(LiteRtLmRuntimeClient.new, throwsUnsupportedError);
     expect(LiteRtLmBenchmarkClient.new, throwsUnsupportedError);
     expect(LiteRtLmBackend.new, throwsUnsupportedError);
+    expect(
+      () => LiteRtLmBackend(initialSendPort: null, preferredBackend: 'cpu'),
+      throwsUnsupportedError,
+    );
   });
 }

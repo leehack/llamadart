@@ -5,7 +5,7 @@ import '../backend.dart';
 /// Web-safe placeholder for the native-only LiteRT-LM backend.
 class LiteRtLmBackend implements LlamaBackend {
   /// Creates a placeholder backend on platforms without `dart:ffi`.
-  LiteRtLmBackend({String? preferredBackend}) {
+  LiteRtLmBackend({Object? initialSendPort, String? preferredBackend}) {
     throw UnsupportedError('LiteRT-LM backend requires a native platform.');
   }
 

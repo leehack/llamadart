@@ -57,6 +57,9 @@
   * Fixed macOS LiteRT-LM extracted-runtime cache discovery to use the current
     runtime ABI, so Intel macOS looks for `macos/x64` bundles instead of the
     arm64 cache layout.
+  * Kept the web-safe `LiteRtLmBackend` placeholder constructor aligned with
+    the native constructor so cross-platform code still compiles before failing
+    with the expected native-only unsupported error.
   * Added target-specific Pixel benchmark timeouts so full Gemma 4 comparisons
     can allow the slower llama.cpp/GGUF Vulkan leg to finish without hiding
     LiteRT-LM failures behind an unnecessarily long timeout.
