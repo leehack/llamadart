@@ -81,6 +81,19 @@ void main() {
       );
     });
 
+    test('maps Dart errors into worker error responses', () {
+      expect(
+        LiteRtLmErrorResponse.from(UnsupportedError('nope')).kind,
+        'unsupported',
+      );
+      expect(LiteRtLmErrorResponse.from(ArgumentError('bad')).kind, 'argument');
+      expect(LiteRtLmErrorResponse.from(StateError('wrong')).kind, 'state');
+
+      final generic = LiteRtLmErrorResponse.from(Exception('native failed'));
+      expect(generic.kind, 'exception');
+      expect(generic.message, contains('native failed'));
+    });
+
     test('responses keep response fields', () {
       expect(LiteRtLmHandleResponse(1).handle, 1);
       expect(LiteRtLmTokenResponse(const <int>[1]).bytes, const <int>[1]);
