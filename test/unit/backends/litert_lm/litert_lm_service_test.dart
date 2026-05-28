@@ -562,6 +562,135 @@ void main() {
     }
   });
 
+  test(
+    'freeContext disposes runtime client and clears context metrics',
+    () async {
+      final firstClient = _FakeLiteRtLmRuntimeClient();
+      final secondClient = _FakeLiteRtLmRuntimeClient()
+        ..tokenizeResult = const <int>[42];
+      final clients = <_FakeLiteRtLmRuntimeClient>[firstClient, secondClient];
+      var nextClient = 0;
+      final service = LiteRtLmService(
+        clientFactory: () => clients[nextClient++],
+      );
+
+      try {
+        final modelHandle = await service.loadModel(
+          modelFile.path,
+          const ModelParams(
+            contextSize: 3072,
+            preferredBackend: GpuBackend.cpu,
+          ),
+        );
+        final contextHandle = service.createContext(
+          modelHandle,
+          const ModelParams(
+            contextSize: 3072,
+            preferredBackend: GpuBackend.cpu,
+          ),
+        );
+
+        final subscription = service
+            .generate(
+              contextHandle,
+              'hello',
+              const GenerationParams(stopSequences: ['STOP']),
+            )
+            .listen((_) {});
+        await firstClient.generateStarted.future;
+        firstClient.generated.add('done STOP hidden');
+        await subscription.asFuture<void>();
+
+        expect(service.getPerformanceContext(contextHandle), isNotNull);
+
+        service.freeContext(contextHandle);
+        expect(firstClient.disposeCount, 1);
+
+        final nextContextHandle = service.createContext(
+          modelHandle,
+          const ModelParams(
+            contextSize: 3072,
+            preferredBackend: GpuBackend.cpu,
+          ),
+        );
+        expect(nextContextHandle, isNot(contextHandle));
+        expect(service.getPerformanceContext(nextContextHandle), isNull);
+        expect(await service.tokenize(modelHandle, 'after-free', true), [42]);
+        expect(secondClient.lastTokenizeText, 'after-free');
+        expect(nextClient, 2);
+      } finally {
+        service.dispose();
+      }
+    },
+  );
+
+  test(
+    'recreating context disposes previous runtime client and metrics',
+    () async {
+      final firstClient = _FakeLiteRtLmRuntimeClient();
+      final secondClient = _FakeLiteRtLmRuntimeClient()
+        ..tokenizeResult = const <int>[7];
+      final clients = <_FakeLiteRtLmRuntimeClient>[firstClient, secondClient];
+      var nextClient = 0;
+      final service = LiteRtLmService(
+        clientFactory: () => clients[nextClient++],
+      );
+
+      try {
+        final modelHandle = await service.loadModel(
+          modelFile.path,
+          const ModelParams(
+            contextSize: 3072,
+            preferredBackend: GpuBackend.cpu,
+          ),
+        );
+        final firstContextHandle = service.createContext(
+          modelHandle,
+          const ModelParams(
+            contextSize: 3072,
+            preferredBackend: GpuBackend.cpu,
+          ),
+        );
+
+        final subscription = service
+            .generate(
+              firstContextHandle,
+              'hello',
+              const GenerationParams(stopSequences: ['STOP']),
+            )
+            .listen((_) {});
+        await firstClient.generateStarted.future;
+        firstClient.generated.add('done STOP hidden');
+        await subscription.asFuture<void>();
+
+        expect(service.getPerformanceContext(firstContextHandle), isNotNull);
+
+        final secondContextHandle = service.createContext(
+          modelHandle,
+          const ModelParams(
+            contextSize: 3072,
+            preferredBackend: GpuBackend.cpu,
+          ),
+        );
+
+        expect(secondContextHandle, isNot(firstContextHandle));
+        expect(firstClient.disposeCount, 1);
+        expect(
+          () => service.getPerformanceContext(firstContextHandle),
+          throwsStateError,
+        );
+        expect(service.getPerformanceContext(secondContextHandle), isNull);
+        expect(await service.tokenize(modelHandle, 'after-recreate', true), [
+          7,
+        ]);
+        expect(secondClient.lastTokenizeText, 'after-recreate');
+        expect(nextClient, 2);
+      } finally {
+        service.dispose();
+      }
+    },
+  );
+
   test('rejects unsupported LiteRT-LM generation params', () async {
     final service = LiteRtLmService();
 

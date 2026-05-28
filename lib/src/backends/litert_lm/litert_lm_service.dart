@@ -112,6 +112,9 @@ class LiteRtLmService {
   int createContext(int modelHandle, ModelParams params) {
     _checkModelHandle(modelHandle);
     _validateModelParams(params);
+    if (_contextCreated) {
+      _disposeContextRuntimeState();
+    }
     _modelParams = params;
     _contextHandle = _nextContextHandle++;
     _contextCreated = true;
@@ -121,6 +124,7 @@ class LiteRtLmService {
   /// Frees the active LiteRT-LM context.
   void freeContext(int contextHandle) {
     _checkContextHandle(contextHandle);
+    _disposeContextRuntimeState();
     _contextHandle = null;
     _contextCreated = false;
   }
@@ -372,18 +376,22 @@ class LiteRtLmService {
 
   /// Releases all service-owned native resources.
   void dispose() {
-    _client?.dispose();
-    _client = null;
+    _disposeContextRuntimeState();
     _modelPath = null;
     _modelParams = null;
     _activeBackend = null;
-    _activeOutputTokens = null;
     _modelHandle = null;
     _contextHandle = null;
-    _lastMetrics = null;
-    _cancelRequested = false;
     _modelLoaded = false;
     _contextCreated = false;
+  }
+
+  void _disposeContextRuntimeState() {
+    _client?.dispose();
+    _client = null;
+    _activeOutputTokens = null;
+    _lastMetrics = null;
+    _cancelRequested = false;
   }
 
   Future<LiteRtLmRuntimeClient> _ensureClientForGeneration(

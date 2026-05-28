@@ -75,6 +75,9 @@
   * Cancel and close active LiteRT-LM generation streams before direct backend
     reload, context free, or model free requests so teardown cannot leave callers
     waiting on a stale stream.
+  * Dispose LiteRT-LM runtime clients and clear context-scoped performance
+    metrics when a context is freed or replaced, matching llama.cpp context
+    teardown semantics more closely.
   * Prevent immediate LiteRT-LM stream cancellation from sending a stale
     generation request after the caller's response port has already closed.
   * Serialized regular LiteRT-LM worker requests through one service queue while
