@@ -14,6 +14,7 @@ class WebAutoBackend
     implements
         LlamaBackend,
         BackendAvailability,
+        BackendEmbeddingsSupport,
         BackendBatchEmbeddings,
         BackendStatePersistence,
         BackendStatePersistenceSupport {
@@ -52,6 +53,15 @@ class WebAutoBackend
           .supportsStatePersistence;
     }
     return delegate is BackendStatePersistence;
+  }
+
+  @override
+  bool get supportsEmbeddings {
+    final delegate = _delegate;
+    if (delegate is BackendEmbeddingsSupport) {
+      return (delegate as BackendEmbeddingsSupport).supportsEmbeddings;
+    }
+    return delegate is BackendEmbeddings;
   }
 
   @override

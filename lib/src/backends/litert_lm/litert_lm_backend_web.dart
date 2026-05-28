@@ -240,7 +240,9 @@ class LiteRtLmBackend
   @override
   Future<Map<String, String>> modelMetadata(int modelHandle) async {
     _requireEngine();
+    final modelUrl = _modelUrl;
     final metadata = <String, String>{
+      'general.architecture': 'litert-lm',
       'general.file_type': 'litertlm',
       'llamadart.backend': 'LiteRT-LM web',
       // @litert-lm/core Conversation applies the model chat template itself
@@ -249,13 +251,19 @@ class LiteRtLmBackend
       'tokenizer.chat_template':
           _chatTemplate ?? _passthroughLatestMessageTemplate,
     };
+    if (modelUrl != null) {
+      final modelName = Uri.tryParse(modelUrl)?.pathSegments.last;
+      if (modelName != null && modelName.isNotEmpty) {
+        metadata['general.name'] = Uri.decodeComponent(modelName);
+      }
+      metadata['litert_lm.model_url'] = modelUrl;
+    }
+    if (_modelParams case final params?) {
+      metadata['llm.context_length'] = params.contextSize.toString();
+    }
     final activeBackend = _activeBackend;
     if (activeBackend != null) {
       metadata['litert_lm.backend'] = activeBackend;
-    }
-    final modelUrl = _modelUrl;
-    if (modelUrl != null) {
-      metadata['litert_lm.model_url'] = modelUrl;
     }
     return metadata;
   }
@@ -315,13 +323,25 @@ class LiteRtLmBackend
   }
 
   @override
-  Future<void> multimodalContextFree(int mmContextHandle) async {}
+  Future<void> multimodalContextFree(int mmContextHandle) {
+    throw UnsupportedError(
+      'LiteRtLmBackend web does not support multimodal input.',
+    );
+  }
 
   @override
-  Future<bool> supportsVision(int mmContextHandle) async => false;
+  Future<bool> supportsVision(int mmContextHandle) {
+    throw UnsupportedError(
+      'LiteRtLmBackend web does not support multimodal input.',
+    );
+  }
 
   @override
-  Future<bool> supportsAudio(int mmContextHandle) async => false;
+  Future<bool> supportsAudio(int mmContextHandle) {
+    throw UnsupportedError(
+      'LiteRtLmBackend web does not support multimodal input.',
+    );
+  }
 
   @override
   Future<({int total, int free})> getVramInfo() async {

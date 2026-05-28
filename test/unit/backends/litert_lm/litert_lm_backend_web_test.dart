@@ -116,6 +116,17 @@ void main() {
       );
 
       final metadata = await backend.modelMetadata(modelHandle);
+      expect(metadata, containsPair('general.architecture', 'litert-lm'));
+      expect(metadata, containsPair('general.file_type', 'litertlm'));
+      expect(metadata, containsPair('general.name', 'model.litertlm'));
+      expect(metadata, containsPair('llm.context_length', '4096'));
+      expect(
+        metadata,
+        containsPair(
+          'litert_lm.model_url',
+          'https://example.com/model.litertlm',
+        ),
+      );
       final rendered = ChatTemplateEngine.render(
         templateSource: metadata['tokenizer.chat_template'],
         messages: const [
@@ -166,6 +177,24 @@ void main() {
     expect(text, '4');
     expect(lastPrompt, 'What is 2+2?');
     await engine.dispose();
+  });
+
+  test('rejects unsupported multimodal operations consistently', () async {
+    _installFakeEngine(chunks: <JSAny?>[_messageChunk('ok')]);
+
+    final backend = LiteRtLmBackend();
+    final modelHandle = await backend.modelLoadFromUrl(
+      'https://example.com/model.litertlm',
+      const ModelParams(),
+    );
+
+    expect(
+      () => backend.multimodalContextCreate(modelHandle, 'mmproj.gguf'),
+      throwsUnsupportedError,
+    );
+    expect(() => backend.multimodalContextFree(1), throwsUnsupportedError);
+    expect(() => backend.supportsVision(1), throwsUnsupportedError);
+    expect(() => backend.supportsAudio(1), throwsUnsupportedError);
   });
 
   test('loads LiteRT-LM Engine from module URL', () async {
