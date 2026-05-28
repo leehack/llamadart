@@ -104,7 +104,7 @@ const homepageSchema = {
   '@type': 'SoftwareSourceCode',
   name: 'llamadart',
   description:
-    'Run GGUF models locally from Dart and Flutter across native and web.',
+    'Run GGUF and LiteRT-LM models locally from Dart and Flutter across native and web.',
   codeRepository: 'https://github.com/leehack/llamadart',
   license: 'https://github.com/leehack/llamadart/blob/main/LICENSE',
   programmingLanguage: 'Dart',
@@ -121,12 +121,12 @@ export default function Home(): JSX.Element {
   return (
     <Layout
       title="llamadart documentation"
-      description="Run GGUF models locally from Dart and Flutter across Android, iOS, macOS, Linux, Windows, and web."
+      description="Run GGUF and LiteRT-LM models locally from Dart and Flutter across Android, iOS, macOS, Linux, Windows, and web."
     >
       <Head>
         <meta
           name="keywords"
-          content="llamadart, Dart, Flutter, llama.cpp, GGUF, local inference, on-device AI"
+          content="llamadart, Dart, Flutter, llama.cpp, LiteRT-LM, GGUF, litertlm, local inference, on-device AI"
         />
         <script type="application/ld+json">
           {JSON.stringify(homepageSchema)}
@@ -159,7 +159,7 @@ export default function Home(): JSX.Element {
             </div>
             <ul className="heroChecklist">
               <li>Single Dart API across native and browser targets</li>
-              <li>GGUF model lifecycle and streaming-first generation</li>
+              <li>GGUF and LiteRT-LM model routing</li>
               <li>OpenAI-compatible local server example included</li>
             </ul>
             <div className="platformChips" aria-label="Supported platforms">

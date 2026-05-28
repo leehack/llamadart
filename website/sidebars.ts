@@ -18,6 +18,7 @@ const sidebars: SidebarsConfig = {
       label: 'Core Concepts',
       items: [
         'guides/architecture',
+        'guides/backend-selection',
         'guides/api-levels',
         'guides/model-lifecycle',
         'guides/generation-and-streaming',

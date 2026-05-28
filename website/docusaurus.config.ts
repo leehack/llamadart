@@ -106,7 +106,7 @@ const config: Config = {
             name: 'llamadart documentation',
             url: siteUrl,
             description:
-              'Run GGUF models locally from Dart and Flutter across native and web.',
+              'Run GGUF and LiteRT-LM models locally from Dart and Flutter across native and web.',
             image: socialCardUrl,
             publisher: {
               '@id': `${siteUrl}/#organization`,
@@ -127,12 +127,12 @@ const config: Config = {
       {
         name: 'description',
         content:
-          'Run GGUF models locally from Dart and Flutter across Android, iOS, macOS, Linux, Windows, and web.',
+          'Run GGUF and LiteRT-LM models locally from Dart and Flutter across Android, iOS, macOS, Linux, Windows, and web.',
       },
       {
         name: 'keywords',
         content:
-          'llamadart, Dart, Flutter, llama.cpp, GGUF, local inference, on-device AI',
+          'llamadart, Dart, Flutter, llama.cpp, LiteRT-LM, GGUF, litertlm, local inference, on-device AI',
       },
       {
         name: 'twitter:card',

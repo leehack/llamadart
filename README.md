@@ -17,6 +17,7 @@ JavaScript runtime.
 - API reference: https://pub.dev/documentation/llamadart/latest/
 - Chat app demo: https://leehack-llamadart.static.hf.space
 - Migration guide: [`MIGRATION.md`](https://github.com/leehack/llamadart/blob/main/MIGRATION.md)
+- Backend selection guide: https://llamadart.leehack.com/docs/guides/backend-selection
 
 ## ✨ Features
 

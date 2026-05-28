@@ -87,6 +87,7 @@ between GGUF and LiteRT-LM models.
 ## Next steps
 
 - Use [First Chat Session](./first-chat-session) for automatic history.
+- Choose a runtime with [Choosing llama.cpp or LiteRT-LM](../guides/backend-selection).
 - Build retrieval flows with [Embeddings](../guides/embeddings).
 - Tune [Runtime Parameters](../configuration/runtime-parameters).
 - Add tools with [Tool Calling](../guides/tool-calling).

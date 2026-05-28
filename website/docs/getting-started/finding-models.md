@@ -2,22 +2,36 @@
 title: Finding and Choosing Models
 ---
 
-`llamadart` runs models formatted as **GGUF** (GGML Unified Format), the
-standard format used by `llama.cpp`. You cannot use raw PyTorch (`.bin` or
-`.safetensors`) models directly; they must be converted and quantized into GGUF
-first.
+`llamadart` supports two model artifact families:
+
+- **GGUF** (GGML Unified Format), the standard format used by `llama.cpp`.
+- **`.litertlm`** bundles, used by LiteRT-LM.
+
+You cannot use raw PyTorch (`.bin` or `.safetensors`) models directly; they
+must be converted into a runtime-ready artifact first. For most open model
+workflows that means a quantized GGUF. For LiteRT-LM deployments, use a
+published `.litertlm` bundle that matches the LiteRT-LM runtime.
 
 Fortunately, thousands of pre-converted GGUF models are readily available.
+LiteRT-LM bundles are more specialized; use them when your target model is
+distributed for LiteRT-LM or when you are intentionally benchmarking that
+runtime path.
 
 ## Where to find models
 
-The best place to find GGUF models is **[Hugging Face](https://huggingface.co/models?search=gguf)**.
+The best place to find GGUF models is
+**[Hugging Face](https://huggingface.co/models?search=gguf)**.
 
 You can search for any model name followed by `gguf` (e.g., `Llama-3-8B-Instruct-GGUF`).
 For a deeper dive into the GGUF ecosystem and how quantization works, check out these insightful resources:
 - [The GGUF format specification](https://github.com/ggerganov/ggml/blob/master/docs/gguf.md)
 - [Hugging Face's official GGUF documentation](https://huggingface.co/docs/hub/en/gguf)
 - [Quantization in llama.cpp](https://github.com/ggerganov/llama.cpp/wiki/Tensor-Encoding-and-Quantization)
+
+For LiteRT-LM, look for model repositories that publish `.litertlm` files and
+document LiteRT-LM compatibility. If both GGUF and `.litertlm` variants exist,
+see [Choosing llama.cpp or LiteRT-LM](../guides/backend-selection) before
+treating them as equivalent artifacts.
 
 ## Understanding Quantization
 
@@ -44,11 +58,13 @@ When downloading a model, check its file size. Your target device needs enough *
 
 Once you find a model on Hugging Face:
 1. Go to the **Files and versions** tab of the model repository.
-2. Look for a file ending in `.gguf` (e.g., `model-q4_k_m.gguf`).
+2. Look for a file ending in `.gguf` (e.g., `model-q4_k_m.gguf`) or
+   `.litertlm`.
 3. Use the exact repository path with
    `ModelSource.parse('hf://owner/repo/path/to/model.gguf')`, or click the
-   download icon and place the `.gguf` file in your application's assets or a
-   reachable file path for `engine.loadModel()`.
+   download icon and place the model file in your application's assets or a
+   reachable file path for `engine.loadModel()`. Use the real file extension in
+   the `hf://` path so `LlamaBackend()` can route to the correct runtime.
 
 For package-managed downloads, `hf://` defaults to the repository's `main`
 revision. Use `hf://owner/repo@tag/model.gguf` for simple branch/tag names, or
