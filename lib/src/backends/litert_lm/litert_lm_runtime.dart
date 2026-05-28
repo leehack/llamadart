@@ -10,6 +10,20 @@ import 'package:path/path.dart' as path;
 const _litertLmVersion = '0.12.0';
 const _litertLmLibDirEnv = 'LLAMADART_LITERT_LM_LIB_DIR';
 
+/// Internal helper used by the LiteRT-LM runtime to locate extracted macOS
+/// native-assets cache directories.
+List<String> liteRtLmMacOsCacheDirectoryCandidatesForAbi(Abi abi) {
+  final arch = switch (abi) {
+    Abi.macosArm64 => 'arm64',
+    Abi.macosX64 => 'x64',
+    _ => null,
+  };
+  if (arch == null) {
+    return const <String>[];
+  }
+  return <String>['macos_$arch', 'macos/$arch'];
+}
+
 typedef _StreamCallbackNative =
     Void Function(
       Pointer<Void> callbackData,
@@ -867,22 +881,20 @@ class LiteRtLmRuntimeClient {
       }
     }
 
+    final cacheDirectoryCandidates =
+        liteRtLmMacOsCacheDirectoryCandidatesForAbi(Abi.current());
+
     for (final root in _candidateSearchRoots()) {
       Directory? current = root;
       while (current != null) {
-        final candidate = Directory(
-          '${current.path}/.dart_tool/llamadart/litert_lm/'
-          '$_litertLmVersion/macos_arm64',
-        );
-        if (_isMacOsLiteRtLmDir(candidate)) {
-          return candidate;
-        }
-        final nativeCandidate = Directory(
-          '${current.path}/.dart_tool/llamadart/litert_lm/'
-          '$_litertLmVersion/macos/arm64',
-        );
-        if (_isMacOsLiteRtLmDir(nativeCandidate)) {
-          return nativeCandidate;
+        for (final cacheDirectoryCandidate in cacheDirectoryCandidates) {
+          final candidate = Directory(
+            '${current.path}/.dart_tool/llamadart/litert_lm/'
+            '$_litertLmVersion/$cacheDirectoryCandidate',
+          );
+          if (_isMacOsLiteRtLmDir(candidate)) {
+            return candidate;
+          }
         }
         current = current.parent.path == current.path ? null : current.parent;
       }

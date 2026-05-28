@@ -1,6 +1,8 @@
 @TestOn('vm')
 library;
 
+import 'dart:ffi';
+
 import 'package:llamadart/src/backends/litert_lm/litert_lm_runtime.dart';
 import 'package:test/test.dart';
 
@@ -42,6 +44,18 @@ void main() {
 
     expect(result.text, 'hello');
     expect(result.metrics, same(metrics));
+  });
+
+  test('macOS LiteRT-LM cache lookup follows the current runtime ABI', () {
+    expect(
+      liteRtLmMacOsCacheDirectoryCandidatesForAbi(Abi.macosArm64),
+      const <String>['macos_arm64', 'macos/arm64'],
+    );
+    expect(
+      liteRtLmMacOsCacheDirectoryCandidatesForAbi(Abi.macosX64),
+      const <String>['macos_x64', 'macos/x64'],
+    );
+    expect(liteRtLmMacOsCacheDirectoryCandidatesForAbi(Abi.linuxX64), isEmpty);
   });
 
   test(

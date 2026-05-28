@@ -50,6 +50,9 @@
   * Hardened direct `LiteRtLmRuntimeClient` lifecycle handling with validation
     for impossible token/run counts and safer native handle cleanup on
     initialization or streaming failures.
+  * Fixed macOS LiteRT-LM extracted-runtime cache discovery to use the current
+    runtime ABI, so Intel macOS looks for `macos/x64` bundles instead of the
+    arm64 cache layout.
   * Added target-specific Pixel benchmark timeouts so full Gemma 4 comparisons
     can allow the slower llama.cpp/GGUF Vulkan leg to finish without hiding
     LiteRT-LM failures behind an unnecessarily long timeout.
