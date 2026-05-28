@@ -179,6 +179,99 @@ void main() {
     await engine.dispose();
   });
 
+  test('invalidates stale model and context handles after reload', () async {
+    _installFakeEngine(chunks: <JSAny?>[_messageChunk('ok')]);
+
+    final backend = LiteRtLmBackend();
+    try {
+      final firstModelHandle = await backend.modelLoadFromUrl(
+        'https://example.com/first.litertlm',
+        const ModelParams(),
+      );
+      final firstContextHandle = await backend.contextCreate(
+        firstModelHandle,
+        const ModelParams(),
+      );
+
+      final secondModelHandle = await backend.modelLoadFromUrl(
+        'https://example.com/second.litertlm',
+        const ModelParams(contextSize: 1024),
+      );
+      final secondContextHandle = await backend.contextCreate(
+        secondModelHandle,
+        const ModelParams(contextSize: 1024),
+      );
+
+      expect(secondModelHandle, isNot(firstModelHandle));
+      expect(secondContextHandle, isNot(firstContextHandle));
+      await expectLater(
+        backend.modelMetadata(firstModelHandle),
+        throwsStateError,
+      );
+      await expectLater(
+        backend.getContextSize(firstContextHandle),
+        throwsStateError,
+      );
+      await expectLater(
+        backend.contextFree(firstContextHandle),
+        throwsStateError,
+      );
+      await expectLater(backend.modelFree(firstModelHandle), throwsStateError);
+      expect(
+        await backend.modelMetadata(secondModelHandle),
+        containsPair('general.name', 'second.litertlm'),
+      );
+      expect(await backend.getContextSize(secondContextHandle), 1024);
+    } finally {
+      await backend.dispose();
+    }
+  });
+
+  test('rejects media content in direct chat-template calls', () async {
+    _installFakeEngine(chunks: <JSAny?>[_messageChunk('ok')]);
+
+    final backend = LiteRtLmBackend();
+    try {
+      final modelHandle = await backend.modelLoadFromUrl(
+        'https://example.com/model.litertlm',
+        const ModelParams(),
+      );
+
+      expect(
+        await backend.applyChatTemplate(
+          modelHandle,
+          const <Map<String, dynamic>>[
+            {
+              'role': 'user',
+              'content': [
+                {'type': 'text', 'text': 'hello'},
+                {'type': 'text', 'text': ' world'},
+              ],
+            },
+          ],
+          addAssistant: false,
+        ),
+        'user: hello world',
+      );
+      await expectLater(
+        backend.applyChatTemplate(modelHandle, const <Map<String, dynamic>>[
+          {
+            'role': 'user',
+            'content': [
+              {
+                'type': 'image_url',
+                'image_url': {'url': 'https://example.com/cat.png'},
+              },
+            ],
+          },
+        ]),
+        throwsUnsupportedError,
+      );
+    } finally {
+      await backend.dispose();
+    }
+  });
+
   test('rejects unsupported multimodal operations consistently', () async {
     _installFakeEngine(chunks: <JSAny?>[_messageChunk('ok')]);
 

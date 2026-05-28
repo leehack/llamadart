@@ -51,6 +51,10 @@ class LiteRtLmBackend
   bool _isReady = false;
   bool _hasContext = false;
   bool _cancelRequested = false;
+  int _nextModelHandle = 1;
+  int _nextContextHandle = 1;
+  int? _modelHandle;
+  int? _contextHandle;
   ModelParams? _modelParams;
   String? _modelUrl;
   String? _activeBackend;
@@ -113,11 +117,14 @@ class LiteRtLmBackend
 
     try {
       _engine = await constructor.create(settings).toDart;
+      _modelHandle = _nextModelHandle++;
       _isReady = true;
       onProgress?.call(1);
-      return 1;
+      return _modelHandle!;
     } catch (error) {
       _isReady = false;
+      _modelHandle = null;
+      _contextHandle = null;
       _modelUrl = null;
       _modelParams = null;
       _chatTemplate = null;
@@ -128,20 +135,24 @@ class LiteRtLmBackend
 
   @override
   Future<void> modelFree(int modelHandle) async {
+    _requireModelHandle(modelHandle);
     await _disposeEngine();
   }
 
   @override
   Future<int> contextCreate(int modelHandle, ModelParams params) async {
-    _requireEngine();
+    _requireModelHandle(modelHandle);
     _validateContextParams(params);
+    _contextHandle = _nextContextHandle++;
     _hasContext = true;
-    return 1;
+    return _contextHandle!;
   }
 
   @override
   Future<void> contextFree(int contextHandle) async {
+    _requireContextHandle(contextHandle);
     _hasContext = false;
+    _contextHandle = null;
     final conversation = _activeConversation;
     _activeConversation = null;
     if (conversation != null) {
@@ -151,7 +162,7 @@ class LiteRtLmBackend
 
   @override
   Future<int> getContextSize(int contextHandle) async {
-    _requireContext();
+    _requireContextHandle(contextHandle);
     return _modelParams?.contextSize ?? 0;
   }
 
@@ -162,7 +173,7 @@ class LiteRtLmBackend
     GenerationParams params, {
     List<LlamaContentPart>? parts,
   }) async* {
-    final engine = _requireContext();
+    final engine = _requireContextHandle(contextHandle);
     if (_hasMediaParts(parts)) {
       throw UnsupportedError(
         'LiteRtLmBackend web does not support media parts.',
@@ -220,7 +231,8 @@ class LiteRtLmBackend
     int modelHandle,
     String text, {
     bool addSpecial = true,
-  }) {
+  }) async {
+    _requireModelHandle(modelHandle);
     throw UnsupportedError(
       'LiteRtLmBackend web does not expose tokenizer operations yet.',
     );
@@ -231,7 +243,8 @@ class LiteRtLmBackend
     int modelHandle,
     List<int> tokens, {
     bool special = false,
-  }) {
+  }) async {
+    _requireModelHandle(modelHandle);
     throw UnsupportedError(
       'LiteRtLmBackend web does not expose tokenizer operations yet.',
     );
@@ -239,7 +252,7 @@ class LiteRtLmBackend
 
   @override
   Future<Map<String, String>> modelMetadata(int modelHandle) async {
-    _requireEngine();
+    _requireModelHandle(modelHandle);
     final modelUrl = _modelUrl;
     final metadata = <String, String>{
       'general.architecture': 'litert-lm',
@@ -317,6 +330,7 @@ class LiteRtLmBackend
 
   @override
   Future<int?> multimodalContextCreate(int modelHandle, String mmProjPath) {
+    _requireModelHandle(modelHandle);
     throw UnsupportedError(
       'LiteRtLmBackend web does not support multimodal input.',
     );
@@ -345,6 +359,7 @@ class LiteRtLmBackend
 
   @override
   Future<({int total, int free})> getVramInfo() async {
+    _requireEngine();
     return (total: 0, free: 0);
   }
 
@@ -355,6 +370,7 @@ class LiteRtLmBackend
     String? customTemplate,
     bool addAssistant = true,
   }) async {
+    _requireModelHandle(modelHandle);
     if (customTemplate != null && customTemplate.isNotEmpty) {
       throw UnsupportedError(
         'LiteRtLmBackend web does not apply custom chat templates directly.',
@@ -364,7 +380,8 @@ class LiteRtLmBackend
     final lines = messages
         .map(
           (msg) =>
-              '${msg['role']?.toString() ?? 'user'}: ${msg['content']?.toString() ?? ''}',
+              '${msg['role']?.toString() ?? 'user'}: '
+              '${_contentTextFromTemplateMap(msg['content'])}',
         )
         .toList();
     if (addAssistant) {
@@ -378,12 +395,14 @@ class LiteRtLmBackend
     int contextHandle,
     String text, {
     bool normalize = true,
-  }) {
+  }) async {
+    _requireContextHandle(contextHandle);
     throw UnsupportedError('LiteRtLmBackend web does not support embeddings.');
   }
 
   @override
   Future<bool> stateSaveFile(int contextHandle, String path, List<int> tokens) {
+    _requireContextHandle(contextHandle);
     throw UnsupportedError(
       'LiteRtLmBackend web does not support state persistence.',
     );
@@ -395,6 +414,7 @@ class LiteRtLmBackend
     String path,
     int tokenCapacity,
   ) {
+    _requireContextHandle(contextHandle);
     throw UnsupportedError(
       'LiteRtLmBackend web does not support state persistence.',
     );
@@ -545,10 +565,18 @@ class LiteRtLmBackend
     return engine;
   }
 
-  _LiteRtLmWebEngine _requireContext() {
+  _LiteRtLmWebEngine _requireModelHandle(int modelHandle) {
     final engine = _requireEngine();
-    if (!_hasContext) {
-      throw StateError('No LiteRT-LM web context is active.');
+    if (modelHandle != _modelHandle) {
+      throw StateError('Invalid LiteRT-LM web model handle: $modelHandle');
+    }
+    return engine;
+  }
+
+  _LiteRtLmWebEngine _requireContextHandle(int contextHandle) {
+    final engine = _requireEngine();
+    if (contextHandle != _contextHandle || !_hasContext) {
+      throw StateError('Invalid LiteRT-LM web context handle: $contextHandle');
     }
     return engine;
   }
@@ -693,6 +721,66 @@ class LiteRtLmBackend
     );
   }
 
+  String _contentTextFromTemplateMap(Object? content) {
+    if (content == null) {
+      return '';
+    }
+    if (content is String) {
+      return content;
+    }
+    if (content is Map) {
+      if (_isUnsupportedTemplateContentPart(content)) {
+        throw UnsupportedError(
+          'LiteRtLmBackend web does not support multimodal chat-template '
+          'content.',
+        );
+      }
+      if (content['type']?.toString() == 'text' && content['text'] != null) {
+        return content['text'].toString();
+      }
+      return content.toString();
+    }
+    if (content is Iterable) {
+      final buffer = StringBuffer();
+      for (final part in content) {
+        if (part is Map) {
+          if (_isUnsupportedTemplateContentPart(part)) {
+            throw UnsupportedError(
+              'LiteRtLmBackend web does not support multimodal chat-template '
+              'content.',
+            );
+          }
+          final type = part['type']?.toString();
+          if (type == 'text' && part['text'] != null) {
+            buffer.write(part['text']);
+            continue;
+          }
+        }
+        buffer.write(part);
+      }
+      return buffer.toString();
+    }
+    return content.toString();
+  }
+
+  bool _isUnsupportedTemplateContentPart(Map<dynamic, dynamic> part) {
+    final type = part['type']?.toString().toLowerCase();
+    if (type == 'image' ||
+        type == 'image_url' ||
+        type == 'input_image' ||
+        type == 'audio' ||
+        type == 'input_audio' ||
+        type == 'video' ||
+        type == 'input_video') {
+      return true;
+    }
+    return part.containsKey('image') ||
+        part.containsKey('image_url') ||
+        part.containsKey('input_audio') ||
+        part.containsKey('audio') ||
+        part.containsKey('video');
+  }
+
   Future<void> _disposeEngine() async {
     final conversation = _activeConversation;
     _activeConversation = null;
@@ -704,6 +792,8 @@ class LiteRtLmBackend
     _engine = null;
     _isReady = false;
     _hasContext = false;
+    _modelHandle = null;
+    _contextHandle = null;
     _modelUrl = null;
     _modelParams = null;
     _chatTemplate = null;
