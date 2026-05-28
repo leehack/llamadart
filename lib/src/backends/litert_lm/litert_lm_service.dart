@@ -149,6 +149,11 @@ class LiteRtLmService {
     _validateGenerationParams(params);
 
     _cancelRequested = false;
+    if (params.maxTokens <= 0) {
+      _lastMetrics = null;
+      return;
+    }
+
     final client = await _ensureClientForGeneration(params);
     if (_cancelRequested) {
       return;
@@ -397,8 +402,7 @@ class LiteRtLmService {
   Future<LiteRtLmRuntimeClient> _ensureClientForGeneration(
     GenerationParams params,
   ) {
-    final outputTokens = params.maxTokens <= 0 ? 4096 : params.maxTokens;
-    return _ensureClientForRuntime(outputTokens: outputTokens);
+    return _ensureClientForRuntime(outputTokens: params.maxTokens);
   }
 
   Future<LiteRtLmRuntimeClient> _ensureClientForRuntime({

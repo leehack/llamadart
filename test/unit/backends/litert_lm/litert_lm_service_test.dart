@@ -562,6 +562,64 @@ void main() {
     }
   });
 
+  test('maxTokens less than one is a no-op and clears metrics', () async {
+    final fakeClient = _FakeLiteRtLmRuntimeClient();
+    final service = LiteRtLmService(clientFactory: () => fakeClient);
+
+    try {
+      final modelHandle = await service.loadModel(
+        modelFile.path,
+        const ModelParams(contextSize: 3072, preferredBackend: GpuBackend.cpu),
+      );
+      final contextHandle = service.createContext(
+        modelHandle,
+        const ModelParams(contextSize: 3072, preferredBackend: GpuBackend.cpu),
+      );
+
+      final firstSubscription = service
+          .generate(
+            contextHandle,
+            'hello',
+            const GenerationParams(maxTokens: 2, stopSequences: ['STOP']),
+          )
+          .listen((_) {});
+
+      await fakeClient.generateStarted.future;
+      fakeClient.generated.add('alpha STOP hidden');
+      await fakeClient.generated.close();
+      await firstSubscription.asFuture<void>();
+
+      expect(service.getPerformanceContext(contextHandle), isNotNull);
+      expect(fakeClient.lastOutputTokens, 2);
+      expect(fakeClient.createConversationCount, 1);
+      expect(fakeClient.generateCount, 1);
+
+      final zeroChunks = await service
+          .generate(
+            contextHandle,
+            'should not run',
+            const GenerationParams(maxTokens: 0),
+          )
+          .toList();
+      final negativeChunks = await service
+          .generate(
+            contextHandle,
+            'should not run either',
+            const GenerationParams(maxTokens: -1),
+          )
+          .toList();
+
+      expect(zeroChunks, isEmpty);
+      expect(negativeChunks, isEmpty);
+      expect(service.getPerformanceContext(contextHandle), isNull);
+      expect(fakeClient.lastOutputTokens, 2);
+      expect(fakeClient.createConversationCount, 1);
+      expect(fakeClient.generateCount, 1);
+    } finally {
+      service.dispose();
+    }
+  });
+
   test(
     'freeContext disposes runtime client and clears context metrics',
     () async {
