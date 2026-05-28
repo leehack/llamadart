@@ -73,6 +73,20 @@ void main() {
       );
     });
 
+    test('parses loose function call syntax emitted by Gemma 4 LiteRT-LM', () {
+      const output = 'get_weather(location="Seoul")';
+
+      final parsed = ChatTemplateEngine.parse(ChatFormat.gemma4.index, output);
+
+      expect(parsed.content, isEmpty);
+      expect(parsed.toolCalls, hasLength(1));
+      expect(parsed.toolCalls.first.function?.name, equals('get_weather'));
+      expect(
+        jsonDecode(parsed.toolCalls.first.function!.arguments!),
+        equals({'location': 'Seoul'}),
+      );
+    });
+
     test('streams an open thought channel as partial reasoning', () {
       const output = '<|channel>thought\nNeed weather';
 

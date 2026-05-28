@@ -47,8 +47,8 @@ void main() {
       await chatService.init(
         ChatSettings(
           modelPath: resolvedModelPath,
-          preferredBackend: GpuBackend.cpu,
-          gpuLayers: 0,
+          preferredBackend: _preferredBackendFromEnvironment(),
+          gpuLayers: ModelParams.maxGpuLayers,
           contextSize: 1024,
           maxTokens: 16,
           nativeLogLevel: LlamaLogLevel.warn,
@@ -58,24 +58,83 @@ void main() {
       expect(chatService.engine.isReady, isTrue);
       expect(await chatService.engine.getBackendName(), contains('LiteRT-LM'));
 
-      final session = ChatSession(chatService.engine, maxContextTokens: 1024);
-      final chunks = await session
+      final thinkingSession = ChatSession(
+        chatService.engine,
+        maxContextTokens: 1024,
+      );
+      final thinkingChunks = await thinkingSession
           .create(
             [LlamaTextContent('What is 2+2? Answer only with the number.')],
             params: const GenerationParams(maxTokens: 16, seed: 1),
-            enableThinking: false,
+            enableThinking: true,
           )
           .toList();
-      final text = chunks.map((chunk) {
+      final thinkingText = thinkingChunks.map((chunk) {
         final delta = chunk.choices.first.delta;
         return delta.content ?? delta.thinking ?? '';
       }).join();
 
-      expect(text.trim(), isNotEmpty);
+      expect(thinkingText.trim(), isNotEmpty);
+
+      final toolSession = ChatSession(
+        chatService.engine,
+        maxContextTokens: 1024,
+        systemPrompt: 'You must call get_weather. Return only a tool call.',
+      );
+      final toolChunks = await toolSession
+          .create(
+            [LlamaTextContent('Call get_weather with location Seoul.')],
+            tools: [
+              ToolDefinition(
+                name: 'get_weather',
+                description: 'Returns current weather for a city.',
+                parameters: [
+                  ToolParam.string('location', description: 'City name'),
+                ],
+                handler: (_) async => 'Sunny',
+              ),
+            ],
+            toolChoice: ToolChoice.required,
+            params: const GenerationParams(maxTokens: 160, temp: 0, seed: 1),
+            enableThinking: false,
+          )
+          .toList();
+
+      final toolCalls = [
+        for (final chunk in toolChunks) ...?chunk.choices.first.delta.toolCalls,
+      ];
+      expect(toolChunks.last.choices.first.finishReason, equals('tool_calls'));
+      expect(toolCalls, hasLength(1));
+      expect(toolCalls.first.function?.name, equals('get_weather'));
+      expect(
+        toolCalls.first.function?.arguments,
+        contains('"location":"Seoul"'),
+      );
     } finally {
       await chatService.dispose();
     }
   });
+}
+
+GpuBackend _preferredBackendFromEnvironment() {
+  const backend = String.fromEnvironment(
+    'LITERT_LM_E2E_BACKEND',
+    defaultValue: 'auto',
+  );
+  switch (backend.trim().toLowerCase()) {
+    case 'auto':
+      return GpuBackend.auto;
+    case 'cpu':
+      return GpuBackend.cpu;
+    case 'gpu':
+      return GpuBackend.vulkan;
+    default:
+      throw ArgumentError.value(
+        backend,
+        'LITERT_LM_E2E_BACKEND',
+        'Expected auto, cpu, or gpu.',
+      );
+  }
 }
 
 Future<String> _downloadModelFromUrl(String url) async {
@@ -89,8 +148,11 @@ Future<String> _downloadModelFromUrl(String url) async {
     filename: filename,
     sizeBytes: 0,
   );
+  final downloaded = await service.getDownloadedModels([model]);
+  if (downloaded.contains(model.filename)) {
+    return p.join(modelsDir, filename);
+  }
 
-  await service.deleteModel(modelsDir, model);
   Object? downloadError;
   var completed = false;
   await service.downloadModel(

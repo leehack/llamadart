@@ -204,6 +204,16 @@ class Gemma4Handler extends ChatTemplateHandler {
     }
 
     final parsed = _extractToolCalls(reasoning.content, isPartial: isPartial);
+    if (parsed.toolCalls.isEmpty) {
+      final fallback = parseToolCallsFromLooseText(parsed.content);
+      if (fallback.toolCalls.isNotEmpty) {
+        return ChatParseResult(
+          content: fallback.content.trim(),
+          reasoningContent: reasoning.reasoning,
+          toolCalls: fallback.toolCalls,
+        );
+      }
+    }
     return ChatParseResult(
       content: parsed.content.trim(),
       reasoningContent: reasoning.reasoning,
