@@ -189,7 +189,7 @@ await engine.loadModel(
 );
 ```
 
-### 5. Download and cache a remote model file
+### 6. Download and cache a remote model file
 
 ```dart
 import 'package:llamadart/llamadart.dart';
@@ -240,7 +240,7 @@ CPU, GPU, or Android NPU execution after the file is cached.
 pick the exact `.gguf` file path from the repository, and use separate model and
 `mmproj` sources for multimodal assets.
 
-### 6. Generate embeddings
+### 7. Generate embeddings
 
 ```dart
 import 'package:llamadart/llamadart.dart';

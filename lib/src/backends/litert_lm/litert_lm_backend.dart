@@ -7,6 +7,7 @@ import '../../core/models/config/log_level.dart';
 import '../../core/models/inference/generation_params.dart';
 import '../../core/models/inference/model_params.dart';
 import '../backend.dart';
+import 'litert_lm_platform.dart';
 import 'worker.dart';
 
 /// Native LiteRT-LM backend for `.litertlm` models.
@@ -672,17 +673,11 @@ class LiteRtLmBackend
     if (_isReady || preferredBackend == null) {
       return null;
     }
-    final backend = preferredBackend.trim().toLowerCase();
-    if (backend.isEmpty) {
+    final backend = normalizeLiteRtLmNativeBackendOverride(preferredBackend);
+    if (backend == null) {
       return null;
     }
-    if (backend != 'cpu' && backend != 'gpu' && backend != 'npu') {
-      throw ArgumentError(
-        'LiteRtLmBackend backend must be cpu, gpu, or npu; got '
-        '$preferredBackend',
-      );
-    }
-    final available = _preloadAvailableBackends();
+    final available = liteRtLmAvailableNativeBackendsForCurrentPlatform();
     if (!available.contains(backend)) {
       throw ArgumentError(
         'LiteRtLmBackend backend $backend is not available on '
@@ -691,15 +686,5 @@ class LiteRtLmBackend
       );
     }
     return backend;
-  }
-
-  List<String> _preloadAvailableBackends() {
-    if (Platform.isAndroid) {
-      return const <String>['cpu', 'gpu', 'npu'];
-    }
-    if (Platform.isMacOS) {
-      return const <String>['cpu', 'gpu'];
-    }
-    return const <String>['cpu'];
   }
 }

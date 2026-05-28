@@ -6,7 +6,7 @@ import '../core/models/config/log_level.dart';
 import 'native/native_backend.dart'
     if (dart.library.js_interop) 'web/web_backend.dart';
 
-/// Platform-agnostic interface for Llama model inference.
+/// Platform-agnostic interface for local model inference.
 abstract class LlamaBackend {
   /// Factory to create the appropriate backend for the current platform.
   factory LlamaBackend() => createBackend();
@@ -73,7 +73,7 @@ abstract class LlamaBackend {
   /// Removes all active LoRA adapters from the current context.
   Future<void> clearLoraAdapters(int contextHandle);
 
-  /// Returns the name of the active GPU backend.
+  /// Returns the name of the active runtime backend.
   Future<String> getBackendName();
 
   /// Whether this backend supports loading from URLs directly (e.g. WASM).
@@ -91,7 +91,6 @@ abstract class LlamaBackend {
   /// Releases all allocated backend resources.
   Future<void> dispose();
 
-  // NEW: Multimodal context methods
   /// Loads a multimodal projector for vision/audio support.
   Future<int?> multimodalContextCreate(int modelHandle, String mmProjPath);
 

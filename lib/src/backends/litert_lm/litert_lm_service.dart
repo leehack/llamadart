@@ -12,8 +12,9 @@ import '../../core/models/config/log_level.dart';
 import '../../core/models/inference/generation_params.dart';
 import '../../core/models/inference/model_params.dart';
 import '../../core/template/chat_template_engine.dart';
-import 'litert_lm_runtime.dart';
 import '../backend.dart';
+import 'litert_lm_platform.dart';
+import 'litert_lm_runtime.dart';
 
 /// Worker-owned service for the LiteRT-LM backend.
 ///
@@ -275,24 +276,21 @@ class LiteRtLmService {
 
   /// Returns the active backend name.
   String getActiveBackendName() {
-    final backend = _activeBackend ?? _defaultBackendNameForPlatform();
+    final backend =
+        _activeBackend ?? liteRtLmDefaultNativeBackendForCurrentPlatform();
     return 'LiteRT-LM $backend';
   }
 
   /// Returns the backend choices available on this platform.
   List<String> getAvailableBackendInfo() {
-    if (Platform.isAndroid) {
-      return const <String>['cpu', 'gpu', 'npu'];
-    }
-    return Platform.isMacOS
-        ? const <String>['cpu', 'gpu']
-        : const <String>['cpu'];
+    return liteRtLmAvailableNativeBackendsForCurrentPlatform();
   }
 
   /// Returns the resolved GPU layer count analogue for LiteRT-LM.
   int? getResolvedGpuLayers() {
-    final backend = _activeBackend ?? _defaultBackendNameForPlatform();
-    return backend == 'cpu' ? 0 : ModelParams.maxGpuLayers;
+    final backend =
+        _activeBackend ?? liteRtLmDefaultNativeBackendForCurrentPlatform();
+    return backend == liteRtLmCpuBackend ? 0 : ModelParams.maxGpuLayers;
   }
 
   /// Returns the most recent LiteRT-LM performance metrics.
@@ -324,7 +322,7 @@ class LiteRtLmService {
 
   /// Returns whether this runtime can use a GPU LiteRT-LM backend.
   bool getGpuSupport() {
-    return Platform.isMacOS || Platform.isAndroid;
+    return liteRtLmNativeGpuSupportedOnCurrentPlatform();
   }
 
   /// Creates a multimodal context.
@@ -523,7 +521,8 @@ class LiteRtLmService {
 
   String _resolveBackendName(ModelParams params, {String? backendOverride}) {
     final backend =
-        _normalizeBackendOverride(backendOverride) ?? _backendNameFor(params);
+        normalizeLiteRtLmNativeBackendOverride(backendOverride) ??
+        _backendNameFor(params);
     final available = getAvailableBackendInfo();
     if (!available.contains(backend)) {
       throw ArgumentError(
@@ -541,7 +540,7 @@ class LiteRtLmService {
       return explicit;
     }
     if (params.gpuLayers <= 0) {
-      return 'cpu';
+      return liteRtLmCpuBackend;
     }
     return _backendNameForGpuPreference(params.preferredBackend);
   }
@@ -631,7 +630,8 @@ class LiteRtLmService {
       );
     }
 
-    final activeBackend = _activeBackend ?? _defaultBackendNameForPlatform();
+    final activeBackend =
+        _activeBackend ?? liteRtLmDefaultNativeBackendForCurrentPlatform();
     if (requestedBackend == activeBackend) {
       return;
     }
@@ -649,7 +649,7 @@ class LiteRtLmService {
       return explicit;
     }
     if (params.gpuLayers <= 0) {
-      return 'cpu';
+      return liteRtLmCpuBackend;
     }
     if (params.preferredBackend != GpuBackend.auto) {
       return _backendNameForGpuPreference(params.preferredBackend);
@@ -701,39 +701,16 @@ class LiteRtLmService {
     switch (backend) {
       case GpuBackend.cpu:
       case GpuBackend.blas:
-        return 'cpu';
+        return liteRtLmCpuBackend;
       case GpuBackend.auto:
-        return _defaultBackendNameForPlatform();
+        return liteRtLmDefaultNativeBackendForCurrentPlatform();
       case GpuBackend.vulkan:
       case GpuBackend.metal:
       case GpuBackend.cuda:
       case GpuBackend.opencl:
       case GpuBackend.hip:
-        return 'gpu';
+        return liteRtLmGpuBackend;
     }
-  }
-
-  String _defaultBackendNameForPlatform() {
-    if (Platform.isAndroid || Platform.isMacOS) {
-      return 'gpu';
-    }
-    return 'cpu';
-  }
-
-  String? _normalizeBackendOverride(String? backend) {
-    if (backend == null) {
-      return null;
-    }
-    final normalized = backend.trim().toLowerCase();
-    if (normalized.isEmpty) {
-      return null;
-    }
-    if (normalized == 'cpu' || normalized == 'gpu' || normalized == 'npu') {
-      return normalized;
-    }
-    throw ArgumentError(
-      'LiteRtLmBackend backend must be cpu, gpu, or npu; got $backend',
-    );
   }
 
   LlamaChatMessage _messageFromTemplateMap(Map<String, dynamic> message) {

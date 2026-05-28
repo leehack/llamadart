@@ -1,7 +1,8 @@
-/// High-performance Dart and Flutter plugin for llama.cpp.
+/// High-performance Dart and Flutter plugin for local LLM inference.
 ///
-/// **llamadart** allows you to run Large Language Models (LLMs) locally using
-/// GGUF models and native LiteRT-LM bundles across major platforms.
+/// **llamadart** allows you to run Large Language Models (LLMs) locally with
+/// GGUF models through llama.cpp and `.litertlm` bundles through LiteRT-LM
+/// across native and web platforms.
 ///
 /// ### Core Components
 ///
@@ -15,7 +16,7 @@
 ///
 /// ```dart
 /// final engine = LlamaEngine(LlamaBackend());
-/// await engine.loadModel('path/to/model.gguf'); // or model.litertlm on native
+/// await engine.loadModel('path/to/model.gguf'); // or model.litertlm
 ///
 /// final session = ChatSession(engine);
 /// await for (final token in session.create([LlamaTextContent('Hello!')])) {

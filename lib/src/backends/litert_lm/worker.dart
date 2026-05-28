@@ -25,7 +25,6 @@ void runLiteRtLmWorkerForTesting(
   initialSendPort.send(receivePort.sendPort);
 
   Future<void> activeRequest = Future<void>.value();
-  Future<void>? activeGeneration;
   var generationInFlight = false;
   var generationCancelRequested = false;
   var shuttingDown = false;
@@ -121,8 +120,6 @@ void runLiteRtLmWorkerForTesting(
             message.sendPort.send(LiteRtLmDoneResponse());
 
           case LiteRtLmGenerateRequest():
-            final generationCompleter = Completer<void>();
-            activeGeneration = generationCompleter.future;
             try {
               if (generationCancelRequested) {
                 message.sendPort.send(LiteRtLmDoneResponse());
@@ -154,11 +151,6 @@ void runLiteRtLmWorkerForTesting(
               message.sendPort.send(LiteRtLmDoneResponse());
             } catch (error) {
               message.sendPort.send(LiteRtLmErrorResponse.from(error));
-            } finally {
-              generationCompleter.complete();
-              if (identical(activeGeneration, generationCompleter.future)) {
-                activeGeneration = null;
-              }
             }
 
           case LiteRtLmTokenizeRequest():

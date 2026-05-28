@@ -27,10 +27,10 @@ Future<void> main() async {
 }
 ```
 
-LiteRT-LM `.litertlm` bundles load through the same engine. Native targets use
-local bundle paths from the native-assets runtime; web targets use
-web-compatible `.litertlm` URLs through the `@litert-lm/core` JavaScript
-runtime.
+LiteRT-LM `.litertlm` bundles load through the same engine. Native targets load
+local bundle paths, including paths resolved by `loadModelSource(...)`; web
+targets load web-compatible `.litertlm` URLs through the `@litert-lm/core`
+JavaScript runtime.
 
 ```dart
 await engine.loadModel(
