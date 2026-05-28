@@ -627,8 +627,9 @@ void main() {
     try {
       expect(service.getGpuSupport(), Platform.isMacOS || Platform.isAndroid);
       expect(service.getVramInfo(), (total: 0, free: 0));
-      expect(service.supportsVision(1), isFalse);
-      expect(service.supportsAudio(1), isFalse);
+      expect(() => service.freeMultimodalContext(1), throwsUnsupportedError);
+      expect(() => service.supportsVision(1), throwsUnsupportedError);
+      expect(() => service.supportsAudio(1), throwsUnsupportedError);
     } finally {
       service.dispose();
     }

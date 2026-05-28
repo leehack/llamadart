@@ -328,13 +328,25 @@ class LiteRtLmService {
   }
 
   /// Frees a multimodal context.
-  void freeMultimodalContext(int mmContextHandle) {}
+  void freeMultimodalContext(int mmContextHandle) {
+    throw UnsupportedError(
+      'LiteRtLmBackend does not support multimodal input.',
+    );
+  }
 
   /// Returns whether vision is supported for a multimodal context.
-  bool supportsVision(int mmContextHandle) => false;
+  bool supportsVision(int mmContextHandle) {
+    throw UnsupportedError(
+      'LiteRtLmBackend does not support multimodal input.',
+    );
+  }
 
   /// Returns whether audio is supported for a multimodal context.
-  bool supportsAudio(int mmContextHandle) => false;
+  bool supportsAudio(int mmContextHandle) {
+    throw UnsupportedError(
+      'LiteRtLmBackend does not support multimodal input.',
+    );
+  }
 
   /// Returns VRAM information when the backend can expose it.
   ({int total, int free}) getVramInfo() => (total: 0, free: 0);

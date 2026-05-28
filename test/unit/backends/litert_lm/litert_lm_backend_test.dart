@@ -238,6 +238,22 @@ void main() {
         throwsUnsupportedError,
       );
       await expectLater(
+        backend.multimodalContextCreate(handle, 'mmproj.bin'),
+        throwsUnsupportedError,
+      );
+      await expectLater(
+        backend.multimodalContextFree(contextHandle),
+        throwsUnsupportedError,
+      );
+      await expectLater(
+        backend.supportsVision(contextHandle),
+        throwsUnsupportedError,
+      );
+      await expectLater(
+        backend.supportsAudio(contextHandle),
+        throwsUnsupportedError,
+      );
+      await expectLater(
         backend.generate(
           contextHandle,
           'hello',

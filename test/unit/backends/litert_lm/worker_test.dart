@@ -178,6 +178,23 @@ void main() {
           ),
         );
 
+        for (final request in <LiteRtLmWorkerRequest Function(SendPort)>[
+          (sendPort) =>
+              LiteRtLmMultimodalContextFreeRequest(contextHandle, sendPort),
+          (sendPort) => LiteRtLmSupportsVisionRequest(contextHandle, sendPort),
+          (sendPort) => LiteRtLmSupportsAudioRequest(contextHandle, sendPort),
+        ]) {
+          final response = await _sendRequest(worker.sendPort, request);
+          expect(
+            response,
+            isA<LiteRtLmErrorResponse>().having(
+              (response) => response.kind,
+              'kind',
+              'unsupported',
+            ),
+          );
+        }
+
         final generate = await _sendRequest(
           worker.sendPort,
           (sendPort) => LiteRtLmGenerateRequest(
