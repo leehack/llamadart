@@ -435,6 +435,57 @@ void main() {
     }
   });
 
+  test('recovers after replacement client initialization fails', () async {
+    final firstClient = _FakeLiteRtLmRuntimeClient()
+      ..tokenizeResult = const <int>[1];
+    final failingClient = _FakeLiteRtLmRuntimeClient(
+      initializeError: StateError('planned initialization failure'),
+    );
+    final retryClient = _FakeLiteRtLmRuntimeClient()
+      ..tokenizeResult = const <int>[3];
+    final clients = [firstClient, failingClient, retryClient];
+    var nextClient = 0;
+    final service = LiteRtLmService(clientFactory: () => clients[nextClient++]);
+
+    try {
+      final modelHandle = await service.loadModel(
+        modelFile.path,
+        const ModelParams(contextSize: 3072, preferredBackend: GpuBackend.cpu),
+      );
+      final contextHandle = service.createContext(
+        modelHandle,
+        const ModelParams(contextSize: 3072, preferredBackend: GpuBackend.cpu),
+      );
+
+      expect(await service.tokenize(modelHandle, 'first', true), [1]);
+
+      await expectLater(
+        service
+            .generate(
+              contextHandle,
+              'hello',
+              const GenerationParams(maxTokens: 7),
+            )
+            .drain<void>(),
+        throwsA(
+          isA<StateError>().having(
+            (error) => error.message,
+            'message',
+            contains('planned initialization failure'),
+          ),
+        ),
+      );
+
+      expect(firstClient.disposeCount, 1);
+      expect(failingClient.disposeCount, 1);
+      expect(await service.tokenize(modelHandle, 'retry', true), [3]);
+      expect(retryClient.lastTokenizeText, 'retry');
+      expect(nextClient, 3);
+    } finally {
+      service.dispose();
+    }
+  });
+
   test('maps log levels to LiteRT-LM native log levels', () async {
     final fakeClient = _FakeLiteRtLmRuntimeClient()
       ..tokenizeResult = const <int>[1];
@@ -660,13 +711,16 @@ String _expectedAutoLiteRtLmBackend() {
 }
 
 class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
-  _FakeLiteRtLmRuntimeClient({bool blockInitialize = false})
-    : _initializeBlocker = blockInitialize ? Completer<void>() : null;
+  _FakeLiteRtLmRuntimeClient({
+    bool blockInitialize = false,
+    this.initializeError,
+  }) : _initializeBlocker = blockInitialize ? Completer<void>() : null;
 
   final Completer<void> initializeStarted = Completer<void>();
   final Completer<void> generateStarted = Completer<void>();
   final StreamController<String> generated = StreamController<String>();
   final Completer<void>? _initializeBlocker;
+  final Object? initializeError;
   String? lastModelPath;
   String? lastBackend;
   int? lastMaxTokens;
@@ -688,6 +742,7 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
   int createConversationCount = 0;
   int generateCount = 0;
   int cancelCount = 0;
+  int disposeCount = 0;
 
   @override
   Future<void> initialize({
@@ -707,7 +762,13 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
     lastCacheDir = cacheDir;
     lastSpeculativeDecoding = speculativeDecoding;
     lastMinLogLevel = minLogLevel;
-    initializeStarted.complete();
+    if (!initializeStarted.isCompleted) {
+      initializeStarted.complete();
+    }
+    final error = initializeError;
+    if (error != null) {
+      throw error;
+    }
     return _initializeBlocker?.future ?? Future<void>.value();
   }
 
@@ -719,6 +780,7 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
 
   @override
   void setMinLogLevel(int level) {
+    _checkNotDisposed();
     lastSetMinLogLevel = level;
   }
 
@@ -731,6 +793,7 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
     int seed = 1,
     bool npuBackend = false,
   }) {
+    _checkNotDisposed();
     lastTemperature = temperature;
     lastTopK = topK;
     lastTopP = topP;
@@ -741,6 +804,7 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
 
   @override
   List<int> tokenize(String text, {bool addSpecial = true}) {
+    _checkNotDisposed();
     lastTokenizeText = text;
     lastTokenizeAddSpecial = addSpecial;
     return tokenizeResult;
@@ -748,12 +812,14 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
 
   @override
   String detokenize(List<int> tokens) {
+    _checkNotDisposed();
     lastDetokenizeTokens = List<int>.from(tokens);
     return detokenizeResult;
   }
 
   @override
   Stream<String> generate(String prompt) {
+    _checkNotDisposed();
     generateCount += 1;
     if (!generateStarted.isCompleted) {
       generateStarted.complete();
@@ -763,6 +829,7 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
 
   @override
   LiteRtLmRuntimeMetrics readMetrics({required int wallMilliseconds}) {
+    _checkNotDisposed();
     return LiteRtLmRuntimeMetrics(
       inputTokens: 0,
       outputTokens: 0,
@@ -776,13 +843,21 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
 
   @override
   void cancel() {
+    _checkNotDisposed();
     cancelCount += 1;
   }
 
   @override
   void dispose() {
+    disposeCount += 1;
     if (!generated.isClosed) {
       unawaited(generated.close());
+    }
+  }
+
+  void _checkNotDisposed() {
+    if (disposeCount > 0) {
+      throw StateError('Fake LiteRT-LM client has been disposed.');
     }
   }
 }

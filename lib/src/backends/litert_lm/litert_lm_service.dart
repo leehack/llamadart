@@ -413,16 +413,27 @@ class LiteRtLmService {
     }
 
     existing?.dispose();
+    _client = null;
+    _activeOutputTokens = null;
     final client = _clientFactory();
-    await client.initialize(
-      modelPath: modelPath,
-      backend: backend,
-      maxTokens: modelParams.contextSize,
-      outputTokens: resolvedOutputTokens,
-      cacheDir: _defaultCacheDir(),
-      speculativeDecoding: false,
-      minLogLevel: _liteRtLmMinLogLevel(_logLevel),
-    );
+    try {
+      await client.initialize(
+        modelPath: modelPath,
+        backend: backend,
+        maxTokens: modelParams.contextSize,
+        outputTokens: resolvedOutputTokens,
+        cacheDir: _defaultCacheDir(),
+        speculativeDecoding: false,
+        minLogLevel: _liteRtLmMinLogLevel(_logLevel),
+      );
+    } catch (_) {
+      try {
+        client.dispose();
+      } catch (_) {
+        // Preserve the initialization error reported by the runtime.
+      }
+      rethrow;
+    }
     _client = client;
     _activeOutputTokens = resolvedOutputTokens;
     _activeBackend = backend;

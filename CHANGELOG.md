@@ -56,6 +56,9 @@
   * Hardened direct `LiteRtLmRuntimeClient` lifecycle handling with validation
     for impossible token/run counts and safer native handle cleanup on
     initialization or streaming failures.
+  * Cleared disposed LiteRT-LM service runtime clients when replacement
+    initialization fails so later tokenization or generation retries start from a
+    clean runtime client.
   * Fixed macOS LiteRT-LM extracted-runtime cache discovery to use the current
     runtime ABI, so Intel macOS looks for `macos/x64` bundles instead of the
     arm64 cache layout.
