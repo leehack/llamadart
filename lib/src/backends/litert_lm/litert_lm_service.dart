@@ -21,8 +21,6 @@ import '../backend.dart';
 /// public backend only sends requests and receives stream chunks, mirroring the
 /// llama.cpp backend architecture.
 class LiteRtLmService {
-  static const int _modelHandle = 1;
-  static const int _contextHandle = 1;
   static const String _gemma4ChatTemplate =
       '{% for message in messages %}'
       '<|turn>{% if message["role"] == "assistant" %}model\n'
@@ -41,6 +39,10 @@ class LiteRtLmService {
   String? _modelPath;
   String? _activeBackend;
   int? _activeOutputTokens;
+  int _nextModelHandle = 1;
+  int _nextContextHandle = 1;
+  int? _modelHandle;
+  int? _contextHandle;
   LiteRtLmRuntimeMetrics? _lastMetrics;
   LlamaLogLevel _logLevel = LlamaLogLevel.warn;
   bool _modelLoaded = false;
@@ -80,11 +82,13 @@ class LiteRtLmService {
     _modelParams = params;
     _activeBackend = resolvedBackend;
     _activeOutputTokens = null;
+    _modelHandle = _nextModelHandle++;
+    _contextHandle = null;
     _lastMetrics = null;
     _cancelRequested = false;
     _modelLoaded = true;
     _contextCreated = false;
-    return _modelHandle;
+    return _modelHandle!;
   }
 
   /// Frees the loaded model and any active LiteRT-LM client.
@@ -96,6 +100,8 @@ class LiteRtLmService {
     _modelParams = null;
     _activeBackend = null;
     _activeOutputTokens = null;
+    _modelHandle = null;
+    _contextHandle = null;
     _lastMetrics = null;
     _cancelRequested = false;
     _modelLoaded = false;
@@ -107,13 +113,15 @@ class LiteRtLmService {
     _checkModelHandle(modelHandle);
     _validateModelParams(params);
     _modelParams = params;
+    _contextHandle = _nextContextHandle++;
     _contextCreated = true;
-    return _contextHandle;
+    return _contextHandle!;
   }
 
   /// Frees the active LiteRT-LM context.
   void freeContext(int contextHandle) {
     _checkContextHandle(contextHandle);
+    _contextHandle = null;
     _contextCreated = false;
   }
 
@@ -353,6 +361,8 @@ class LiteRtLmService {
     _modelParams = null;
     _activeBackend = null;
     _activeOutputTokens = null;
+    _modelHandle = null;
+    _contextHandle = null;
     _lastMetrics = null;
     _cancelRequested = false;
     _modelLoaded = false;

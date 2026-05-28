@@ -153,6 +153,51 @@ void main() {
     }
   });
 
+  test('invalidates stale handles after direct LiteRT-LM reload', () async {
+    final backend = LiteRtLmBackend();
+    final secondModelFile = File('${tempDir.path}/second.litertlm');
+    await secondModelFile.writeAsString('fake model');
+
+    try {
+      final firstHandle = await backend.modelLoad(
+        modelFile.path,
+        const ModelParams(preferredBackend: GpuBackend.cpu),
+      );
+      final firstContextHandle = await backend.contextCreate(
+        firstHandle,
+        const ModelParams(preferredBackend: GpuBackend.cpu),
+      );
+
+      final secondHandle = await backend.modelLoad(
+        secondModelFile.path,
+        const ModelParams(preferredBackend: GpuBackend.cpu),
+      );
+      final secondContextHandle = await backend.contextCreate(
+        secondHandle,
+        const ModelParams(preferredBackend: GpuBackend.cpu),
+      );
+
+      expect(secondHandle, isNot(firstHandle));
+      expect(secondContextHandle, isNot(firstContextHandle));
+      await expectLater(backend.modelMetadata(firstHandle), throwsStateError);
+      await expectLater(
+        backend.getContextSize(firstContextHandle),
+        throwsStateError,
+      );
+      await expectLater(
+        backend.contextFree(firstContextHandle),
+        throwsStateError,
+      );
+      await expectLater(backend.modelFree(firstHandle), throwsStateError);
+      expect(
+        await backend.modelMetadata(secondHandle),
+        containsPair('general.name', 'second.litertlm'),
+      );
+    } finally {
+      await backend.dispose();
+    }
+  });
+
   test('rejects unsupported load and llama.cpp-specific operations', () async {
     final backend = LiteRtLmBackend();
     final wrongFormat = File('${tempDir.path}/model.gguf');

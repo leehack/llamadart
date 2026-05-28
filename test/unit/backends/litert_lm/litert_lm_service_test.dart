@@ -69,7 +69,7 @@ void main() {
           uppercaseModelFile.path,
           const ModelParams(preferredBackend: GpuBackend.cpu),
         );
-        expect(uppercaseModelHandle, 1);
+        expect(uppercaseModelHandle, isNot(modelHandle));
         expect(
           service.getMetadata(uppercaseModelHandle),
           containsPair('general.name', 'MODEL.LITERTLM'),
@@ -80,6 +80,49 @@ void main() {
       }
     },
   );
+
+  test('invalidates stale model and context handles after reload', () async {
+    final service = LiteRtLmService();
+    final secondModelFile = File('${tempDir.path}/second.litertlm');
+    await secondModelFile.writeAsString('fake model');
+
+    try {
+      final firstModelHandle = await service.loadModel(
+        modelFile.path,
+        const ModelParams(preferredBackend: GpuBackend.cpu),
+      );
+      final firstContextHandle = service.createContext(
+        firstModelHandle,
+        const ModelParams(preferredBackend: GpuBackend.cpu),
+      );
+
+      final secondModelHandle = await service.loadModel(
+        secondModelFile.path,
+        const ModelParams(preferredBackend: GpuBackend.cpu),
+      );
+      final secondContextHandle = service.createContext(
+        secondModelHandle,
+        const ModelParams(preferredBackend: GpuBackend.cpu),
+      );
+
+      expect(secondModelHandle, isNot(firstModelHandle));
+      expect(secondContextHandle, isNot(firstContextHandle));
+      expect(() => service.getMetadata(firstModelHandle), throwsStateError);
+      expect(
+        () => service.getContextSize(firstContextHandle),
+        throwsStateError,
+      );
+      expect(() => service.freeContext(firstContextHandle), throwsStateError);
+      expect(() => service.freeModel(firstModelHandle), throwsStateError);
+      expect(
+        service.getMetadata(secondModelHandle),
+        containsPair('general.name', 'second.litertlm'),
+      );
+      expect(service.getContextSize(secondContextHandle), 4096);
+    } finally {
+      service.dispose();
+    }
+  });
 
   test('exposes Gemma 4 chat template metadata for Gemma 4 bundles', () async {
     final service = LiteRtLmService();
