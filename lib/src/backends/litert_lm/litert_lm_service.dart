@@ -112,6 +112,7 @@ class LiteRtLmService {
   int createContext(int modelHandle, ModelParams params) {
     _checkModelHandle(modelHandle);
     _validateModelParams(params);
+    _validateContextBackendParams(params);
     _disposeContextRuntimeState();
     _modelParams = params;
     _contextHandle = _nextContextHandle++;
@@ -604,6 +605,47 @@ class LiteRtLmService {
       'contextSize, chatTemplate, preferredBackend, all-or-CPU gpuLayers '
       'hints, and liteRtLmBackend for explicit CPU/GPU/NPU selection.',
     );
+  }
+
+  void _validateContextBackendParams(ModelParams params) {
+    final requestedBackend = _explicitContextBackendName(params);
+    if (requestedBackend == null) {
+      return;
+    }
+
+    final available = getAvailableBackendInfo();
+    if (!available.contains(requestedBackend)) {
+      throw ArgumentError(
+        'LiteRtLmBackend backend $requestedBackend is not available on '
+        '${Platform.operatingSystem}. Available LiteRT-LM backends: '
+        '${available.join(', ')}.',
+      );
+    }
+
+    final activeBackend = _activeBackend ?? _defaultBackendNameForPlatform();
+    if (requestedBackend == activeBackend) {
+      return;
+    }
+
+    throw ArgumentError(
+      'LiteRtLmBackend contextCreate cannot change the loaded backend from '
+      '$activeBackend to $requestedBackend. Select the LiteRT-LM backend in '
+      'modelLoad ModelParams.',
+    );
+  }
+
+  String? _explicitContextBackendName(ModelParams params) {
+    final explicit = params.liteRtLmBackend.nativeName;
+    if (explicit != null) {
+      return explicit;
+    }
+    if (params.gpuLayers <= 0) {
+      return 'cpu';
+    }
+    if (params.preferredBackend != GpuBackend.auto) {
+      return _backendNameForGpuPreference(params.preferredBackend);
+    }
+    return null;
   }
 
   void _validateGenerationParams(GenerationParams params) {

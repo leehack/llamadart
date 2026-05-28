@@ -88,6 +88,9 @@
   * Normalize direct LiteRT-LM backend selectors before native initialization so
     `cpu`, `gpu`, and `npu` behave consistently across runtime, service, and
     direct-backend APIs.
+  * Reject explicit LiteRT-LM backend changes during context creation instead
+    of silently keeping the model-load backend while accepting other context
+    parameters.
   * Reject non-positive LiteRT-LM `contextSize` values during model load so
     callers get a clear load-time error instead of a later native initialization
     failure.

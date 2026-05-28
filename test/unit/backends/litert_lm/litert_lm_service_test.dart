@@ -284,6 +284,59 @@ void main() {
     }
   });
 
+  test('rejects explicit backend changes during context creation', () async {
+    final service = LiteRtLmService();
+
+    try {
+      final modelHandle = await service.loadModel(
+        modelFile.path,
+        const ModelParams(gpuLayers: 0),
+      );
+      final contextHandle = service.createContext(
+        modelHandle,
+        const ModelParams(gpuLayers: 0),
+      );
+
+      expect(service.getActiveBackendName(), 'LiteRT-LM cpu');
+      expect(service.getContextSize(contextHandle), 4096);
+      service.freeContext(contextHandle);
+
+      if (service.getAvailableBackendInfo().contains('gpu')) {
+        expect(
+          () => service.createContext(
+            modelHandle,
+            const ModelParams(liteRtLmBackend: LiteRtLmBackendPreference.gpu),
+          ),
+          throwsA(
+            isA<ArgumentError>().having(
+              (error) => error.message.toString(),
+              'message',
+              allOf(contains('cannot change'), contains('cpu to gpu')),
+            ),
+          ),
+        );
+      }
+
+      expect(
+        () => service.createContext(
+          modelHandle,
+          const ModelParams(liteRtLmBackend: LiteRtLmBackendPreference.npu),
+        ),
+        throwsA(
+          isA<ArgumentError>().having(
+            (error) => error.message.toString(),
+            'message',
+            Platform.isAndroid
+                ? allOf(contains('cannot change'), contains('cpu to npu'))
+                : contains('not available'),
+          ),
+        ),
+      );
+    } finally {
+      service.dispose();
+    }
+  });
+
   test('rejects unsupported LiteRT-LM load-time model params', () async {
     final service = LiteRtLmService();
 
