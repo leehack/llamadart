@@ -6,11 +6,15 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:llamadart/src/backends/litert_lm/litert_lm_service.dart';
-import 'package:llamadart/src/core/models/config/log_level.dart';
+import 'package:llamadart/src/backends/litert_lm/litert_lm_runtime.dart';
+import 'package:llamadart/src/core/models/chat/content_part.dart';
+import 'package:llamadart/src/core/models/config/flash_attention.dart';
 import 'package:llamadart/src/core/models/config/gpu_backend.dart';
+import 'package:llamadart/src/core/models/config/kv_cache_type.dart';
+import 'package:llamadart/src/core/models/config/log_level.dart';
+import 'package:llamadart/src/core/models/config/lora_config.dart';
 import 'package:llamadart/src/core/models/inference/generation_params.dart';
 import 'package:llamadart/src/core/models/inference/model_params.dart';
-import 'package:llamadart/src/backends/litert_lm/litert_lm_runtime.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -201,6 +205,47 @@ void main() {
         ]),
         throwsUnsupportedError,
       );
+
+      final mappedContent = service.applyChatTemplate(modelHandle, const [
+        {
+          'role': 'user',
+          'content': {'type': 'text', 'text': 'mapped'},
+        },
+        {
+          'role': 'user',
+          'content': {'type': 'custom', 'value': 7},
+        },
+        {
+          'role': 'user',
+          'content': [
+            {'type': 'text', 'text': 'part'},
+            ' tail',
+            {'type': 'custom', 'value': 1},
+          ],
+        },
+        {'role': 'user', 'content': 42},
+      ]);
+
+      expect(mappedContent, contains('<|turn>user\nmapped<turn|>'));
+      expect(
+        mappedContent,
+        contains('<|turn>user\n{type: custom, value: 7}<turn|>'),
+      );
+      expect(
+        mappedContent,
+        contains('<|turn>user\npart tail{type: custom, value: 1}<turn|>'),
+      );
+      expect(mappedContent, contains('<|turn>user\n42<turn|>'));
+
+      expect(
+        () => service.applyChatTemplate(modelHandle, const [
+          {
+            'role': 'user',
+            'content': {'type': 'input_audio', 'data': '...'},
+          },
+        ]),
+        throwsUnsupportedError,
+      );
     } finally {
       service.dispose();
     }
@@ -219,6 +264,39 @@ void main() {
         'LiteRT-LM ${_expectedAutoLiteRtLmBackend()}',
       );
       service.freeModel(modelHandle);
+
+      modelHandle = await service.loadModel(
+        modelFile.path,
+        const ModelParams(preferredBackend: GpuBackend.blas),
+      );
+      expect(service.getActiveBackendName(), 'LiteRT-LM cpu');
+      service.freeModel(modelHandle);
+
+      final gpuLikeBackends = <GpuBackend>[
+        GpuBackend.vulkan,
+        GpuBackend.metal,
+        GpuBackend.cuda,
+        GpuBackend.opencl,
+        GpuBackend.hip,
+      ];
+      for (final preferredBackend in gpuLikeBackends) {
+        if (service.getAvailableBackendInfo().contains('gpu')) {
+          modelHandle = await service.loadModel(
+            modelFile.path,
+            ModelParams(preferredBackend: preferredBackend),
+          );
+          expect(service.getActiveBackendName(), 'LiteRT-LM gpu');
+          service.freeModel(modelHandle);
+        } else {
+          expect(
+            () => service.loadModel(
+              modelFile.path,
+              ModelParams(preferredBackend: preferredBackend),
+            ),
+            throwsArgumentError,
+          );
+        }
+      }
 
       modelHandle = await service.loadModel(
         modelFile.path,
@@ -398,6 +476,68 @@ void main() {
         ),
       );
 
+      await expectLater(
+        () => service.loadModel(
+          modelFile.path,
+          const ModelParams(
+            splitMode: ModelSplitMode.none,
+            mainGpu: 1,
+            loras: [LoraAdapterConfig(path: 'adapter.bin')],
+            numberOfThreads: 2,
+            numberOfThreadsBatch: 3,
+            microBatchSize: 64,
+            maxParallelSequences: 2,
+            useMmap: false,
+            flashAttention: FlashAttention.enabled,
+            cacheTypeK: KvCacheType.q8_0,
+            cacheTypeV: KvCacheType.q4_0,
+            kvUnified: true,
+            ropeFrequencyBase: 10000,
+            ropeFrequencyScale: 1.0,
+          ),
+        ),
+        throwsA(
+          isA<ArgumentError>().having(
+            (error) => error.message.toString(),
+            'message',
+            predicate<String>(
+              (message) => const <String>[
+                'splitMode',
+                'mainGpu',
+                'loras',
+                'numberOfThreads',
+                'numberOfThreadsBatch',
+                'microBatchSize',
+                'maxParallelSequences',
+                'useMmap=false',
+                'flashAttention',
+                'cacheTypeK',
+                'cacheTypeV',
+                'kvUnified',
+                'ropeFrequencyBase',
+                'ropeFrequencyScale',
+              ].every(message.contains),
+              'contains every unsupported ModelParams field',
+            ),
+          ),
+        ),
+      );
+
+      expect(
+        () => service.loadModel(
+          modelFile.path,
+          const ModelParams(),
+          backendOverride: 'directml',
+        ),
+        throwsA(
+          isA<ArgumentError>().having(
+            (error) => error.message.toString(),
+            'message',
+            allOf(contains('must be cpu, gpu, or npu'), contains('directml')),
+          ),
+        ),
+      );
+
       expect(
         service.getActiveBackendName(),
         'LiteRT-LM ${_expectedAutoLiteRtLmBackend()}',
@@ -477,6 +617,44 @@ void main() {
       }
     },
   );
+
+  test('rejects media parts before native runtime initialization', () async {
+    final fakeClient = _FakeLiteRtLmRuntimeClient();
+    final service = LiteRtLmService(clientFactory: () => fakeClient);
+
+    try {
+      final modelHandle = await service.loadModel(
+        modelFile.path,
+        const ModelParams(preferredBackend: GpuBackend.cpu),
+      );
+      final contextHandle = service.createContext(
+        modelHandle,
+        const ModelParams(preferredBackend: GpuBackend.cpu),
+      );
+
+      await expectLater(
+        service.generate(
+          contextHandle,
+          'describe',
+          const GenerationParams(),
+          parts: const [LlamaImageContent(path: '/tmp/image.png')],
+        ),
+        emitsError(
+          isA<UnsupportedError>().having(
+            (error) => error.message.toString(),
+            'message',
+            contains('media parts'),
+          ),
+        ),
+      );
+
+      expect(fakeClient.initializeStarted.isCompleted, isFalse);
+      expect(fakeClient.createConversationCount, 0);
+      expect(fakeClient.generateCount, 0);
+    } finally {
+      service.dispose();
+    }
+  });
 
   test('passes LiteRT-LM tokenization APIs to the client', () async {
     final fakeClient = _FakeLiteRtLmRuntimeClient()
@@ -637,6 +815,189 @@ void main() {
       service.dispose();
     }
   });
+
+  test('buffers stop-sequence tails when no stop is found', () async {
+    final fakeClient = _FakeLiteRtLmRuntimeClient();
+    final service = LiteRtLmService(clientFactory: () => fakeClient);
+
+    try {
+      final modelHandle = await service.loadModel(
+        modelFile.path,
+        const ModelParams(contextSize: 3072, preferredBackend: GpuBackend.cpu),
+      );
+      final contextHandle = service.createContext(
+        modelHandle,
+        const ModelParams(contextSize: 3072, preferredBackend: GpuBackend.cpu),
+      );
+
+      final chunks = <List<int>>[];
+      final subscription = service
+          .generate(
+            contextHandle,
+            'hello',
+            const GenerationParams(stopSequences: ['XYZ']),
+          )
+          .listen(chunks.add);
+
+      await fakeClient.generateStarted.future;
+      fakeClient.generated
+        ..add('ab')
+        ..add('cd')
+        ..add('ef');
+      unawaited(fakeClient.generated.close());
+      await subscription.asFuture<void>();
+
+      expect(utf8.decode(chunks.expand((chunk) => chunk).toList()), 'abcdef');
+      expect(fakeClient.cancelCount, 0);
+    } finally {
+      service.dispose();
+    }
+  });
+
+  test('skips empty chunks when no stop sequences are configured', () async {
+    final fakeClient = _FakeLiteRtLmRuntimeClient();
+    final service = LiteRtLmService(clientFactory: () => fakeClient);
+
+    try {
+      final modelHandle = await service.loadModel(
+        modelFile.path,
+        const ModelParams(contextSize: 3072, preferredBackend: GpuBackend.cpu),
+      );
+      final contextHandle = service.createContext(
+        modelHandle,
+        const ModelParams(contextSize: 3072, preferredBackend: GpuBackend.cpu),
+      );
+
+      final chunks = <List<int>>[];
+      final subscription = service
+          .generate(contextHandle, 'hello', const GenerationParams())
+          .listen(chunks.add);
+
+      await fakeClient.generateStarted.future;
+      fakeClient.generated
+        ..add('')
+        ..add('visible');
+      unawaited(fakeClient.generated.close());
+      await subscription.asFuture<void>();
+
+      expect(chunks, hasLength(1));
+      expect(utf8.decode(chunks.single), 'visible');
+    } finally {
+      service.dispose();
+    }
+  });
+
+  test('stores LiteRT-LM runtime metrics as performance context', () async {
+    final fakeClient = _FakeLiteRtLmRuntimeClient()
+      ..metrics = const LiteRtLmRuntimeMetrics(
+        inputTokens: 8,
+        outputTokens: 5,
+        timeToFirstTokenSeconds: 0.05,
+        initSeconds: 0.25,
+        prefillTokensPerSecond: 40,
+        decodeTokensPerSecond: 25,
+        wallMilliseconds: 123,
+      );
+    final service = LiteRtLmService(clientFactory: () => fakeClient);
+
+    try {
+      final modelHandle = await service.loadModel(
+        modelFile.path,
+        const ModelParams(contextSize: 3072, preferredBackend: GpuBackend.cpu),
+      );
+      final contextHandle = service.createContext(
+        modelHandle,
+        const ModelParams(contextSize: 3072, preferredBackend: GpuBackend.cpu),
+      );
+
+      final subscription = service
+          .generate(contextHandle, 'hello', const GenerationParams())
+          .listen((_) {});
+
+      await fakeClient.generateStarted.future;
+      fakeClient.generated.add('done');
+      unawaited(fakeClient.generated.close());
+      await subscription.asFuture<void>();
+
+      final perf = service.getPerformanceContext(contextHandle);
+      expect(perf, isNotNull);
+      expect(perf!.loadMs, 250);
+      expect(perf.promptEvalMs, 200);
+      expect(perf.evalMs, 200);
+      expect(perf.promptEvalTokens, 8);
+      expect(perf.evalTokens, 5);
+      expect(perf.sampleCount, 5);
+    } finally {
+      service.dispose();
+    }
+  });
+
+  test('clears performance context when runtime metrics fail', () async {
+    final fakeClient = _FakeLiteRtLmRuntimeClient()
+      ..metricsError = StateError('metrics unavailable');
+    final service = LiteRtLmService(clientFactory: () => fakeClient);
+
+    try {
+      final modelHandle = await service.loadModel(
+        modelFile.path,
+        const ModelParams(contextSize: 3072, preferredBackend: GpuBackend.cpu),
+      );
+      final contextHandle = service.createContext(
+        modelHandle,
+        const ModelParams(contextSize: 3072, preferredBackend: GpuBackend.cpu),
+      );
+
+      final subscription = service
+          .generate(contextHandle, 'hello', const GenerationParams())
+          .listen((_) {});
+
+      await fakeClient.generateStarted.future;
+      fakeClient.generated.add('done');
+      unawaited(fakeClient.generated.close());
+      await subscription.asFuture<void>();
+
+      expect(service.getPerformanceContext(contextHandle), isNull);
+    } finally {
+      service.dispose();
+    }
+  });
+
+  test(
+    'cancels when cancellation is requested after conversation setup',
+    () async {
+      final fakeClient = _FakeLiteRtLmRuntimeClient();
+      final service = LiteRtLmService(clientFactory: () => fakeClient);
+      fakeClient.onCreateConversation = service.cancelGeneration;
+
+      try {
+        final modelHandle = await service.loadModel(
+          modelFile.path,
+          const ModelParams(
+            contextSize: 3072,
+            preferredBackend: GpuBackend.cpu,
+          ),
+        );
+        final contextHandle = service.createContext(
+          modelHandle,
+          const ModelParams(
+            contextSize: 3072,
+            preferredBackend: GpuBackend.cpu,
+          ),
+        );
+
+        final chunks = await service
+            .generate(contextHandle, 'hello', const GenerationParams())
+            .toList();
+
+        expect(chunks, isEmpty);
+        expect(fakeClient.createConversationCount, 1);
+        expect(fakeClient.generateCount, 0);
+        expect(fakeClient.cancelCount, 2);
+      } finally {
+        service.dispose();
+      }
+    },
+  );
 
   test('maxTokens less than one is a no-op and clears metrics', () async {
     final fakeClient = _FakeLiteRtLmRuntimeClient();
@@ -1049,6 +1410,9 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
   List<int>? lastDetokenizeTokens;
   List<int> tokenizeResult = const <int>[];
   String detokenizeResult = '';
+  LiteRtLmRuntimeMetrics? metrics;
+  Object? metricsError;
+  void Function()? onCreateConversation;
   int createConversationCount = 0;
   int generateCount = 0;
   int cancelCount = 0;
@@ -1110,6 +1474,7 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
     lastSeed = seed;
     lastNpuBackend = npuBackend;
     createConversationCount += 1;
+    onCreateConversation?.call();
   }
 
   @override
@@ -1140,6 +1505,22 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
   @override
   LiteRtLmRuntimeMetrics readMetrics({required int wallMilliseconds}) {
     _checkNotDisposed();
+    final error = metricsError;
+    if (error != null) {
+      throw error;
+    }
+    final currentMetrics = metrics;
+    if (currentMetrics != null) {
+      return LiteRtLmRuntimeMetrics(
+        inputTokens: currentMetrics.inputTokens,
+        outputTokens: currentMetrics.outputTokens,
+        timeToFirstTokenSeconds: currentMetrics.timeToFirstTokenSeconds,
+        initSeconds: currentMetrics.initSeconds,
+        prefillTokensPerSecond: currentMetrics.prefillTokensPerSecond,
+        decodeTokensPerSecond: currentMetrics.decodeTokensPerSecond,
+        wallMilliseconds: wallMilliseconds,
+      );
+    }
     return LiteRtLmRuntimeMetrics(
       inputTokens: 0,
       outputTokens: 0,
