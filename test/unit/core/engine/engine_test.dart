@@ -219,6 +219,14 @@ class UnsupportedTokenizationBackend extends MockLlamaBackend {
   }
 }
 
+class UnsupportedStateBackend extends MockLlamaBackend
+    implements BackendStatePersistenceSupport {
+  UnsupportedStateBackend({required super.backendName});
+
+  @override
+  bool get supportsStatePersistence => false;
+}
+
 class MockModelResolver implements ModelResolver {
   MockModelResolver(this.target);
 
@@ -776,6 +784,43 @@ void main() {
         throwsA(isA<LlamaUnsupportedException>()),
       );
     });
+
+    test('state persistence unsupported message is backend-aware', () async {
+      final stateBackend = UnsupportedStateBackend(backendName: 'Mock');
+      final stateEngine = LlamaEngine(stateBackend);
+      await stateEngine.loadModel('qwen-test.gguf');
+
+      await expectLater(
+        stateEngine.stateSaveFile('/tmp/state.bin', tokens: const []),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            'State persistence is not supported by the active backend.',
+          ),
+        ),
+      );
+    });
+
+    test(
+      'state persistence unsupported keeps WebGPU bridge guidance',
+      () async {
+        final stateBackend = UnsupportedStateBackend(backendName: 'WebGPU');
+        final stateEngine = LlamaEngine(stateBackend);
+        await stateEngine.loadModel('qwen-test.gguf');
+
+        await expectLater(
+          stateEngine.stateLoadFile('/tmp/state.bin', tokenCapacity: 16),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (error) => error.message,
+              'message',
+              allOf(contains('WebGPU'), contains('stateSaveFile')),
+            ),
+          ),
+        );
+      },
+    );
 
     test('embed returns normalized vector by default', () async {
       final embeddingBackend = MockEmbeddingBackend();

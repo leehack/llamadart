@@ -735,13 +735,20 @@ void main() {
         );
 
         expect(engine.supportsStatePersistence, isFalse);
+        final throwsLiteRtLmStateUnsupported = throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            allOf(contains('LiteRT-LM'), isNot(contains('WebGPU'))),
+          ),
+        );
         await expectLater(
           engine.stateSaveFile('${tempDir.path}/state.bin', tokens: const []),
-          throwsA(isA<LlamaUnsupportedException>()),
+          throwsLiteRtLmStateUnsupported,
         );
         await expectLater(
           engine.stateLoadFile('${tempDir.path}/state.bin', tokenCapacity: 16),
-          throwsA(isA<LlamaUnsupportedException>()),
+          throwsLiteRtLmStateUnsupported,
         );
       } finally {
         await engine.dispose();

@@ -1171,7 +1171,7 @@ class LlamaEngine {
   /// Returns true on success.
   Future<bool> stateSaveFile(String path, {required List<int> tokens}) async {
     _ensureReady();
-    final persistence = _resolveStatePersistence();
+    final persistence = await _resolveStatePersistence();
     try {
       return await persistence.stateSaveFile(_contextHandle!, path, tokens);
     } on UnsupportedError catch (error) {
@@ -1195,7 +1195,7 @@ class LlamaEngine {
     required int tokenCapacity,
   }) async {
     _ensureReady();
-    final persistence = _resolveStatePersistence();
+    final persistence = await _resolveStatePersistence();
     try {
       return await persistence.stateLoadFile(
         _contextHandle!,
@@ -1207,15 +1207,13 @@ class LlamaEngine {
     }
   }
 
-  BackendStatePersistence _resolveStatePersistence() {
+  Future<BackendStatePersistence> _resolveStatePersistence() async {
     final candidate = backend;
     if (candidate is BackendStatePersistenceSupport &&
         !(candidate as BackendStatePersistenceSupport)
             .supportsStatePersistence) {
       throw LlamaUnsupportedException(
-        'State persistence is not supported by the active backend. '
-        'For WebGPU, use bridge assets that expose stateSaveFile/stateLoadFile '
-        '(v0.1.15 or newer).',
+        await _statePersistenceUnsupportedMessage(),
       );
     }
     if (candidate is BackendStatePersistence) {
@@ -1224,6 +1222,30 @@ class LlamaEngine {
     throw LlamaUnsupportedException(
       'State persistence is not supported by the active backend.',
     );
+  }
+
+  Future<String> _statePersistenceUnsupportedMessage() async {
+    String backendName = '';
+    try {
+      backendName = await backend.getBackendName();
+    } catch (_) {
+      // Fall back to the generic message when backend diagnostics are not
+      // available on the active runtime.
+    }
+
+    final normalizedBackendName = backendName.toLowerCase();
+    if (normalizedBackendName.contains('litert-lm')) {
+      return 'State persistence is not supported by the active LiteRT-LM '
+          'backend because the LiteRT-LM APIs exposed through llamadart do not '
+          'provide KV-cache save/load yet.';
+    }
+    if (normalizedBackendName.contains('webgpu') ||
+        normalizedBackendName.contains('web gpu')) {
+      return 'State persistence is not supported by the active backend. '
+          'For WebGPU, use bridge assets that expose '
+          'stateSaveFile/stateLoadFile (v0.1.15 or newer).';
+    }
+    return 'State persistence is not supported by the active backend.';
   }
 
   // ============================================================
