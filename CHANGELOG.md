@@ -62,6 +62,9 @@
   * Fixed macOS LiteRT-LM extracted-runtime cache discovery to use the current
     runtime ABI, so Intel macOS looks for `macos/x64` bundles instead of the
     arm64 cache layout.
+  * Validate macOS LiteRT-LM cache and app framework directories before
+    selecting them so partial runtime installs cannot hide missing
+    `StreamProxy` or companion dylib failures until model load.
   * Kept the web-safe `LiteRtLmBackend` placeholder constructor aligned with
     the native constructor so cross-platform code still compiles before failing
     with the expected native-only unsupported error.
@@ -88,9 +91,9 @@
   * Normalize direct LiteRT-LM backend selectors before native initialization so
     `cpu`, `gpu`, and `npu` behave consistently across runtime, service, and
     direct-backend APIs.
-  * Reject explicit LiteRT-LM backend changes during context creation instead
-    of silently keeping the model-load backend while accepting other context
-    parameters.
+  * Reject explicit LiteRT-LM backend changes and unsupported llama.cpp-only
+    context-time `ModelParams` during context creation instead of silently
+    keeping the model-load backend or ignoring unsupported context parameters.
   * Updated website platform/lifecycle docs to cover `.litertlm` routing,
     `litert-lm-native` runtime bundles, and the current LiteRT-LM capability
     limits.
