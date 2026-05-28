@@ -87,7 +87,7 @@ void main() {
   test(
     'reports direct preferred backend diagnostics before model load',
     () async {
-      final backend = LiteRtLmBackend(preferredBackend: 'cpu');
+      final backend = LiteRtLmBackend(preferredBackend: ' CPU ');
 
       try {
         expect(await backend.getBackendName(), 'LiteRT-LM cpu');

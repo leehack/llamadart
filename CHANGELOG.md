@@ -82,6 +82,9 @@
     of inflating them to the default output-token budget.
   * Report backend/model-specific LiteRT-LM engine creation failures and make
     Pixel benchmark runs fail when the app logs `BENCHMARK: ERROR`.
+  * Normalize direct LiteRT-LM backend selectors before native initialization so
+    `cpu`, `gpu`, and `npu` behave consistently across runtime, service, and
+    direct-backend APIs.
   * Prevent immediate LiteRT-LM stream cancellation from sending a stale
     generation request after the caller's response port has already closed.
   * Serialized regular LiteRT-LM worker requests through one service queue while

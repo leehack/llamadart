@@ -119,6 +119,20 @@ void main() {
     },
   );
 
+  test(
+    'LiteRtLmRuntimeClient validates backend before native initialization',
+    () {
+      final client = LiteRtLmRuntimeClient();
+
+      expect(
+        client.initialize(modelPath: 'model.litertlm', backend: ' dsp '),
+        throwsA(
+          isA<ArgumentError>().having((error) => error.name, 'name', 'backend'),
+        ),
+      );
+    },
+  );
+
   test('LiteRtLmRuntimeClient validates benchmark loop counts', () {
     final client = LiteRtLmRuntimeClient();
 

@@ -230,6 +230,15 @@ void main() {
 
       modelHandle = await service.loadModel(
         modelFile.path,
+        const ModelParams(),
+        backendOverride: ' CPU ',
+      );
+      expect(service.getActiveBackendName(), 'LiteRT-LM cpu');
+      expect(service.getResolvedGpuLayers(), 0);
+      service.freeModel(modelHandle);
+
+      modelHandle = await service.loadModel(
+        modelFile.path,
         const ModelParams(
           preferredBackend: GpuBackend.metal,
           liteRtLmBackend: LiteRtLmBackendPreference.cpu,

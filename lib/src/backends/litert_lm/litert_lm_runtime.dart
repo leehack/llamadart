@@ -237,6 +237,7 @@ class LiteRtLmRuntimeClient {
         'must be positive when provided',
       );
     }
+    final resolvedBackend = _normalizeLiteRtLmRuntimeBackend(backend);
 
     _ensureLibrariesLoaded();
     final bindings = _bindings!;
@@ -246,7 +247,7 @@ class LiteRtLmRuntimeClient {
     }
 
     final modelPathPtr = modelPath.toNativeUtf8();
-    final backendPtr = backend.toNativeUtf8();
+    final backendPtr = resolvedBackend.toNativeUtf8();
     final cacheDirPtr = cacheDir?.toNativeUtf8();
     Pointer<_LiteRtLmEngineSettings> settings = nullptr;
 
@@ -294,7 +295,7 @@ class LiteRtLmRuntimeClient {
       if (engineAddress == 0) {
         throw StateError(
           liteRtLmEngineCreateFailureMessage(
-            backend: backend,
+            backend: resolvedBackend,
             modelPath: modelPath,
           ),
         );
@@ -1034,6 +1035,14 @@ class LiteRtLmRuntimeClient {
       bindings.benchmarkInfoDelete(info);
     }
   }
+}
+
+String _normalizeLiteRtLmRuntimeBackend(String backend) {
+  final normalized = backend.trim().toLowerCase();
+  if (normalized == 'cpu' || normalized == 'gpu' || normalized == 'npu') {
+    return normalized;
+  }
+  throw ArgumentError.value(backend, 'backend', 'must be cpu, gpu, or npu');
 }
 
 String _messageJson(String text) {

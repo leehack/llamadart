@@ -669,10 +669,13 @@ class LiteRtLmService {
   }
 
   String? _normalizeBackendOverride(String? backend) {
-    if (backend == null || backend.isEmpty) {
+    if (backend == null) {
       return null;
     }
-    final normalized = backend.toLowerCase();
+    final normalized = backend.trim().toLowerCase();
+    if (normalized.isEmpty) {
+      return null;
+    }
     if (normalized == 'cpu' || normalized == 'gpu' || normalized == 'npu') {
       return normalized;
     }

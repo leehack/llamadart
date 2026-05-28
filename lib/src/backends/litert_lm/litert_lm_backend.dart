@@ -668,14 +668,18 @@ class LiteRtLmBackend
   }
 
   String? _preloadPreferredBackend() {
-    if (_isReady || _preferredBackend == null || _preferredBackend.isEmpty) {
+    final preferredBackend = _preferredBackend;
+    if (_isReady || preferredBackend == null) {
       return null;
     }
-    final backend = _preferredBackend.toLowerCase();
+    final backend = preferredBackend.trim().toLowerCase();
+    if (backend.isEmpty) {
+      return null;
+    }
     if (backend != 'cpu' && backend != 'gpu' && backend != 'npu') {
       throw ArgumentError(
         'LiteRtLmBackend backend must be cpu, gpu, or npu; got '
-        '$_preferredBackend',
+        '$preferredBackend',
       );
     }
     final available = _preloadAvailableBackends();
