@@ -164,6 +164,20 @@ void main() {
           ),
         );
 
+        final specialDetokenize = await _sendRequest(
+          worker.sendPort,
+          (sendPort) =>
+              LiteRtLmDetokenizeRequest(modelHandle, const [1], true, sendPort),
+        );
+        expect(
+          specialDetokenize,
+          isA<LiteRtLmErrorResponse>().having(
+            (response) => response.kind,
+            'kind',
+            'unsupported',
+          ),
+        );
+
         final generate = await _sendRequest(
           worker.sendPort,
           (sendPort) => LiteRtLmGenerateRequest(

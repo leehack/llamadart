@@ -41,6 +41,8 @@
   * Wired LiteRT-LM native tokenization, detokenization, and log-level control
     through the worker isolate so high-level token counts and chat-session
     history pruning no longer need fallback estimates for `.litertlm` bundles.
+  * Rejected LiteRT-LM detokenization requests that ask to include special
+    tokens instead of silently ignoring the llama.cpp-only flag.
   * Routed direct LiteRT-LM chat-template application through the Dart template
     engine so backend-level template calls work consistently with the
     high-level `.litertlm` engine path.

@@ -215,6 +215,11 @@ class LiteRtLmService {
     bool special,
   ) async {
     _checkModelHandle(modelHandle);
+    if (special) {
+      throw UnsupportedError(
+        'LiteRtLmBackend does not support detokenizing special tokens.',
+      );
+    }
     final client = await _ensureClientForRuntime();
     return client.detokenize(tokens);
   }

@@ -403,6 +403,10 @@ void main() {
         await service.detokenize(modelHandle, const [10, 11], false),
         'hello',
       );
+      expect(
+        () => service.detokenize(modelHandle, const [10, 11], true),
+        throwsUnsupportedError,
+      );
       expect(fakeClient.lastModelPath, modelFile.path);
       expect(fakeClient.lastBackend, 'cpu');
       expect(fakeClient.lastMaxTokens, 3072);
