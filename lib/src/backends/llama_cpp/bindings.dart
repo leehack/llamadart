@@ -191,6 +191,9 @@ external int llama_n_ubatch(ffi.Pointer<llama_context> ctx);
 @ffi.Native<ffi.Uint32 Function(ffi.Pointer<llama_context>)>()
 external int llama_n_seq_max(ffi.Pointer<llama_context> ctx);
 
+@ffi.Native<ffi.Uint32 Function(ffi.Pointer<llama_context>)>()
+external int llama_n_rs_seq(ffi.Pointer<llama_context> ctx);
+
 @ffi.Native<ffi.Int32 Function(ffi.Pointer<llama_model>)>()
 external int llama_n_ctx_train(ffi.Pointer<llama_model> model);
 
@@ -8353,6 +8356,20 @@ enum llama_split_mode {
   };
 }
 
+enum llama_context_type {
+  LLAMA_CONTEXT_TYPE_DEFAULT(0),
+  LLAMA_CONTEXT_TYPE_MTP(1);
+
+  final int value;
+  const llama_context_type(this.value);
+
+  static llama_context_type fromValue(int value) => switch (value) {
+    0 => LLAMA_CONTEXT_TYPE_DEFAULT,
+    1 => LLAMA_CONTEXT_TYPE_MTP,
+    _ => throw ArgumentError('Unknown value for llama_context_type: $value'),
+  };
+}
+
 typedef llama_progress_callbackFunction =
     ffi.Bool Function(ffi.Float progress, ffi.Pointer<ffi.Void> user_data);
 typedef Dartllama_progress_callbackFunction =
@@ -8559,11 +8576,20 @@ final class llama_context_params extends ffi.Struct {
   @ffi.Uint32()
   external int n_seq_max;
 
+  @ffi.Uint32()
+  external int n_rs_seq;
+
   @ffi.Int32()
   external int n_threads;
 
   @ffi.Int32()
   external int n_threads_batch;
+
+  @ffi.UnsignedInt()
+  external int ctx_typeAsInt;
+
+  llama_context_type get ctx_type =>
+      llama_context_type.fromValue(ctx_typeAsInt);
 
   @ffi.Int()
   external int rope_scaling_typeAsInt;
