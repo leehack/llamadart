@@ -28,6 +28,7 @@ class LiteRtLmBackend
     implements
         LlamaBackend,
         BackendAvailability,
+        BackendGrammarConstraintsSupport,
         BackendEmbeddings,
         BackendEmbeddingsSupport,
         BackendStatePersistence,
@@ -84,6 +85,9 @@ class LiteRtLmBackend
 
   @override
   bool get supportsStatePersistence => false;
+
+  @override
+  bool get supportsGrammarConstraints => false;
 
   @override
   Future<int> modelLoad(String path, ModelParams params) {

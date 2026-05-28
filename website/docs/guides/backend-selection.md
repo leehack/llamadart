@@ -69,7 +69,8 @@ JavaScript runtime.
 | Embeddings | Supported on native; supported on web bridge assets with embedding APIs | Not exposed by current LiteRT-LM APIs |
 | KV-cache state persistence | Supported on native; supported on WebGPU bridge assets that expose state APIs | Not exposed |
 | LoRA adapters | Supported on native GGUF flows | Not exposed |
-| Grammar / constrained decoding | Supported by llama.cpp-backed paths | Not exposed |
+| Thinking and tool-call parsing | Supported through template handlers | Supported through the high-level `LlamaEngine` parser for compatible templates; LiteRT-native constrained tool execution is not wired yet |
+| Grammar / constrained decoding | Supported by llama.cpp-backed paths | llama.cpp GBNF is not supported; template-generated grammar is skipped and explicit grammar params are rejected |
 | Multimodal projectors | Supported through llama.cpp `mtmd` paths where the model/projector supports it | Not exposed through llamadart today |
 | Tokenization APIs | Supported | Supported on native LiteRT-LM; not exposed on LiteRT-LM web |
 | Low-level runtime tuning | `gpuLayers`, backend preference, thread/batch fields, split mode, main GPU, KV/cache fields, and more | `liteRtLmBackend`, context size, chat template, generation length/sampling fields that LiteRT-LM exposes |

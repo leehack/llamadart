@@ -122,12 +122,14 @@ load `.litertlm` models.
 | Windows x64 | `windows-x64` | `cpu` | Supported |
 | Web (browser) | N/A (`@litert-lm/core`) | `cpu`, `gpu` | Experimental; web-compatible `.litertlm` URLs only |
 
-LiteRT-LM does not currently expose embeddings, state persistence, LoRA,
-grammar constraints, or multimodal projector APIs through the pinned native C
-runtime or web JavaScript API. Web LiteRT-LM also does not expose tokenizer
-operations yet, so chat history pruning uses conservative prompt-size
-estimates there. `llamadart` rejects unsupported operations explicitly for
-`.litertlm` loads instead of silently ignoring llama.cpp-only settings.
+LiteRT-LM does not currently expose embeddings, state persistence, LoRA, or
+multimodal projector APIs through llamadart. High-level thinking and tool-call
+parsing still run through `LlamaEngine` for compatible templates, but
+llama.cpp-style GBNF grammar constraints are not supported for `.litertlm`
+generation. Web LiteRT-LM also does not expose tokenizer operations yet, so
+chat history pruning uses conservative prompt-size estimates there. `llamadart`
+rejects unsupported operations explicitly for `.litertlm` loads instead of
+silently ignoring llama.cpp-only settings.
 
 ## Runtime capability notes
 

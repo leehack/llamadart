@@ -323,14 +323,17 @@ FFI path is validated on Android, iOS, macOS, Linux, and Windows. Web
 `.litertlm` URLs route to the official `@litert-lm/core` JavaScript runtime,
 which is an early-preview text-in/text-out API and currently supports
 web-compatible Gemma 4 LiteRT-LM model variants. iOS LiteRT-LM bundles are
-derived from upstream `CLiteRTLM.xcframework` slices and packaged as
-dylib-style native assets for device and simulator builds. LiteRT-LM generation
+derived from upstream `CLiteRTLM.xcframework` slices and loaded from bundled
+native-asset identifiers for device and simulator builds. LiteRT-LM generation
 works through the same high-level `LlamaEngine` and `ChatSession` APIs,
 including native tokenization and detokenization for exact token counts on
-native targets. The current native C API and web JS API do not expose
-embeddings, state persistence, LoRA, grammar, or multimodal operations through
-llamadart. `ChatSession` uses a conservative prompt-size estimate for history
-pruning only when exact tokenization is unavailable.
+native targets. Thinking and tool-call parsing run through the same high-level
+template parser for compatible models, but llama.cpp-style GBNF grammar
+constraints are not applied to `.litertlm` generation. The current
+implementation does not expose embeddings, state persistence, LoRA, or
+multimodal operations through LiteRT-LM. `ChatSession` uses a conservative
+prompt-size estimate for history pruning only when exact tokenization is
+unavailable.
 `LiteRtLmBackendPreference.auto` chooses GPU on Android/macOS/web and CPU on
 other current LiteRT-LM targets; set `cpu`, `gpu`, or Android-only `npu`
 explicitly when benchmarking or pinning deployment behavior.

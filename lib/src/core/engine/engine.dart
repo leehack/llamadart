@@ -444,7 +444,20 @@ class LlamaEngine {
     // Collect media parts from all messages
     final allParts = messages.expand((m) => m.parts).toList();
 
-    final hasTemplateGrammar = result.grammar != null;
+    final activeBackend = backend;
+    final backendSupportsGrammarConstraints =
+        activeBackend is BackendGrammarConstraintsSupport
+        ? (activeBackend as BackendGrammarConstraintsSupport)
+              .supportsGrammarConstraints
+        : true;
+    if (!backendSupportsGrammarConstraints && result.grammar != null) {
+      LlamaLogger.instance.debug(
+        '  Template grammar skipped: backend does not support grammar constraints',
+      );
+    }
+
+    final hasTemplateGrammar =
+        result.grammar != null && backendSupportsGrammarConstraints;
     final effectiveGrammar = hasTemplateGrammar
         ? result.grammar
         : params?.grammar;
@@ -463,7 +476,7 @@ class LlamaEngine {
               .toList(growable: false)
         : (params?.grammarTriggers ?? const <GenerationGrammarTrigger>[]);
     final effectivePreservedTokens = {
-      ...result.preservedTokens,
+      if (backendSupportsGrammarConstraints) ...result.preservedTokens,
       ...?params?.preservedTokens,
     }.toList(growable: false);
 

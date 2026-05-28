@@ -9,6 +9,8 @@ import 'package:path/path.dart' as path;
 
 const _litertLmVersion = '0.12.0';
 const _litertLmLibDirEnv = 'LLAMADART_LITERT_LM_LIB_DIR';
+const _liteRtLmIosNativeAsset = 'package:llamadart/litert_lm_LiteRtLm';
+const _streamProxyIosNativeAsset = 'package:llamadart/litert_lm_StreamProxy';
 
 /// Builds a diagnostic for LiteRT-LM engine creation failures.
 ///
@@ -79,6 +81,26 @@ List<String> liteRtLmCacheDirectoryCandidatesForAbi(Abi abi) {
     Abi.linuxArm64 => const <String>['linux/arm64', 'linux_arm64'],
     Abi.linuxX64 => const <String>['linux/x64', 'linux_x64'],
     Abi.windowsX64 => const <String>['windows/x64', 'windows_x64'],
+    _ => const <String>[],
+  };
+}
+
+/// Internal helper used by the LiteRT-LM runtime to locate iOS native assets.
+List<String> liteRtLmIosLibraryCandidatesForAbi(Abi abi) {
+  return switch (abi) {
+    Abi.iosArm64 ||
+    Abi.iosX64 => const <String>[_liteRtLmIosNativeAsset, 'libLiteRtLm.dylib'],
+    _ => const <String>[],
+  };
+}
+
+/// Internal helper used by the LiteRT-LM runtime to locate iOS StreamProxy.
+List<String> liteRtLmIosStreamProxyCandidatesForAbi(Abi abi) {
+  return switch (abi) {
+    Abi.iosArm64 || Abi.iosX64 => const <String>[
+      _streamProxyIosNativeAsset,
+      'libStreamProxy.dylib',
+    ],
     _ => const <String>[],
   };
 }
@@ -839,12 +861,13 @@ class LiteRtLmRuntimeClient {
             .lookupFunction<_LoadGlobalNative, _LoadGlobalDart>(
               'stream_proxy_load_global',
             );
-        final liteRtLmName = libraries.liteRtLm.toNativeUtf8();
+        final liteRtLmLoadTarget = libraries.liteRtLmCandidates.first;
+        final liteRtLmName = liteRtLmLoadTarget.toNativeUtf8();
         try {
           final handle = loadGlobal(liteRtLmName);
           if (handle == nullptr) {
             throw StateError(
-              'Failed to load ${libraries.liteRtLm} with RTLD_GLOBAL',
+              'Failed to load $liteRtLmLoadTarget with RTLD_GLOBAL',
             );
           }
         } finally {
@@ -871,13 +894,14 @@ class LiteRtLmRuntimeClient {
       }
     }
 
-    _liteRtLmLibraryPath = libraries.liteRtLm;
-    _bindings = _LiteRtLmBindings(DynamicLibrary.open(libraries.liteRtLm));
+    final liteRtLm = _openFirstAvailableWithPath(libraries.liteRtLmCandidates);
+    _liteRtLmLibraryPath = liteRtLm.path;
+    _bindings = _LiteRtLmBindings(liteRtLm.library);
   }
 
   ({
     List<String> proxyCandidates,
-    String liteRtLm,
+    List<String> liteRtLmCandidates,
     List<String> companions,
     bool directCallbackSupported,
   })?
@@ -890,18 +914,15 @@ class LiteRtLmRuntimeClient {
           'package:llamadart/litert_lm_StreamProxy',
           'libStreamProxy.so',
         ],
-        liteRtLm: 'libLiteRtLm.so',
+        liteRtLmCandidates: const ['libLiteRtLm.so'],
         companions: const [],
         directCallbackSupported: true,
       );
     }
     if (Platform.isIOS && (abi == Abi.iosArm64 || abi == Abi.iosX64)) {
       return (
-        proxyCandidates: const [
-          'package:llamadart/litert_lm_StreamProxy',
-          'libStreamProxy.dylib',
-        ],
-        liteRtLm: 'libLiteRtLm.dylib',
+        proxyCandidates: liteRtLmIosStreamProxyCandidatesForAbi(abi),
+        liteRtLmCandidates: liteRtLmIosLibraryCandidatesForAbi(abi),
         companions: const [],
         directCallbackSupported: true,
       );
@@ -916,8 +937,9 @@ class LiteRtLmRuntimeClient {
             'package:llamadart/litert_lm_StreamProxy',
             'libStreamProxy.dylib',
           ],
-          liteRtLm:
-              '${frameworksDir.path}/LiteRtLm.framework/Versions/A/LiteRtLm',
+          liteRtLmCandidates: [
+            '${frameworksDir.path}/LiteRtLm.framework/Versions/A/LiteRtLm',
+          ],
           companions: [
             for (final library in companions)
               _macOsFrameworkBinaryPath(frameworksDir, library),
@@ -933,7 +955,7 @@ class LiteRtLmRuntimeClient {
             'package:llamadart/litert_lm_StreamProxy',
             'libStreamProxy.dylib',
           ],
-          liteRtLm: '${cacheDir.path}/libLiteRtLm.dylib',
+          liteRtLmCandidates: ['${cacheDir.path}/libLiteRtLm.dylib'],
           companions: [
             for (final library in companions) '${cacheDir.path}/$library',
           ],
@@ -945,7 +967,7 @@ class LiteRtLmRuntimeClient {
           'package:llamadart/litert_lm_StreamProxy',
           'libStreamProxy.dylib',
         ],
-        liteRtLm: 'libLiteRtLm.dylib',
+        liteRtLmCandidates: const ['libLiteRtLm.dylib'],
         companions: [for (final library in companions) library],
         directCallbackSupported: true,
       );
@@ -959,7 +981,7 @@ class LiteRtLmRuntimeClient {
             'package:llamadart/litert_lm_StreamProxy',
             'libStreamProxy.so',
           ],
-          liteRtLm: '${cacheDir.path}/libLiteRtLm.so',
+          liteRtLmCandidates: ['${cacheDir.path}/libLiteRtLm.so'],
           companions: _companionLibrariesForAbi(abi, cacheDir),
           directCallbackSupported: true,
         );
@@ -969,7 +991,7 @@ class LiteRtLmRuntimeClient {
           'package:llamadart/litert_lm_StreamProxy',
           'libStreamProxy.so',
         ],
-        liteRtLm: 'package:llamadart/litert_lm_LiteRtLm',
+        liteRtLmCandidates: const ['package:llamadart/litert_lm_LiteRtLm'],
         companions: const [],
         directCallbackSupported: true,
       );
@@ -983,7 +1005,7 @@ class LiteRtLmRuntimeClient {
             'package:llamadart/litert_lm_StreamProxy',
             'StreamProxy.dll',
           ],
-          liteRtLm: '${cacheDir.path}/LiteRtLm.dll',
+          liteRtLmCandidates: ['${cacheDir.path}/LiteRtLm.dll'],
           companions: _companionLibrariesForAbi(abi, cacheDir),
           directCallbackSupported: true,
         );
@@ -993,7 +1015,7 @@ class LiteRtLmRuntimeClient {
           'package:llamadart/litert_lm_StreamProxy',
           'StreamProxy.dll',
         ],
-        liteRtLm: 'package:llamadart/litert_lm_LiteRtLm',
+        liteRtLmCandidates: const ['package:llamadart/litert_lm_LiteRtLm'],
         companions: const [],
         directCallbackSupported: true,
       );
@@ -1006,6 +1028,20 @@ class LiteRtLmRuntimeClient {
     for (final candidate in candidates) {
       try {
         return DynamicLibrary.open(candidate);
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    throw ArgumentError('Failed to load any of $candidates: $lastError');
+  }
+
+  ({String path, DynamicLibrary library}) _openFirstAvailableWithPath(
+    List<String> candidates,
+  ) {
+    Object? lastError;
+    for (final candidate in candidates) {
+      try {
+        return (path: candidate, library: DynamicLibrary.open(candidate));
       } catch (error) {
         lastError = error;
       }

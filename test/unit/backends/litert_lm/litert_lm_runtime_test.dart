@@ -79,6 +79,22 @@ void main() {
     expect(liteRtLmCacheDirectoryCandidatesForAbi(Abi.androidArm64), isEmpty);
   });
 
+  test('LiteRT-LM iOS lookup prefers bundled native asset identifiers', () {
+    expect(liteRtLmIosLibraryCandidatesForAbi(Abi.iosArm64), const <String>[
+      'package:llamadart/litert_lm_LiteRtLm',
+      'libLiteRtLm.dylib',
+    ]);
+    expect(liteRtLmIosLibraryCandidatesForAbi(Abi.iosX64), const <String>[
+      'package:llamadart/litert_lm_LiteRtLm',
+      'libLiteRtLm.dylib',
+    ]);
+    expect(liteRtLmIosStreamProxyCandidatesForAbi(Abi.iosArm64), const <String>[
+      'package:llamadart/litert_lm_StreamProxy',
+      'libStreamProxy.dylib',
+    ]);
+    expect(liteRtLmIosLibraryCandidatesForAbi(Abi.macosArm64), isEmpty);
+  });
+
   test('macOS LiteRT-LM cache validation follows runtime ABI files', () {
     expect(liteRtLmMacOsRequiredLibrariesForAbi(Abi.macosArm64), const <String>[
       'libGemmaModelConstraintProvider.dylib',

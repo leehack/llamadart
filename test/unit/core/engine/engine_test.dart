@@ -29,6 +29,8 @@ class MockLlamaBackend
   int modelMetadataCalls = 0;
   String generationText = 'response';
   List<String>? generationChunks;
+  String? lastGenerationPrompt;
+  GenerationParams? lastGenerationParams;
   final String backendName;
   final bool urlLoadingSupported;
   final bool failModelLoad;
@@ -94,6 +96,8 @@ class MockLlamaBackend
     GenerationParams params, {
     List<LlamaContentPart>? parts,
   }) async* {
+    lastGenerationPrompt = prompt;
+    lastGenerationParams = params;
     if (generationChunks != null) {
       for (final chunk in generationChunks!) {
         yield utf8.encode(chunk);
@@ -225,6 +229,14 @@ class UnsupportedStateBackend extends MockLlamaBackend
 
   @override
   bool get supportsStatePersistence => false;
+}
+
+class NoGrammarMockLlamaBackend extends MockLlamaBackend
+    implements BackendGrammarConstraintsSupport {
+  NoGrammarMockLlamaBackend({super.modelMetadataResponse});
+
+  @override
+  bool get supportsGrammarConstraints => false;
 }
 
 class MockModelResolver implements ModelResolver {
@@ -988,6 +1000,55 @@ void main() {
       expect(toolCalls!.first.id, equals('call_0'));
       expect(toolCalls.first.function?.name, equals('get_weather'));
     });
+
+    test(
+      'create skips template grammar for backends without grammar constraints',
+      () async {
+        final noGrammarBackend = NoGrammarMockLlamaBackend(
+          modelMetadataResponse: const {
+            'llm.context_length': '4096',
+            'tokenizer.chat_template':
+                '<|turn>user\n{{ messages[0]["content"] }}<turn|>{% if add_generation_prompt %}<|turn>model\n{% endif %}',
+          },
+        );
+        final noGrammarEngine = LlamaEngine(noGrammarBackend);
+        noGrammarBackend.generationText =
+            '<|tool_call>call:get_weather{location:<|"|>Seoul<|"|>}<tool_call|>';
+
+        await noGrammarEngine.loadModel('gemma4-test.litertlm');
+
+        final chunks = await noGrammarEngine
+            .create(
+              const [
+                LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
+              ],
+              tools: [
+                ToolDefinition(
+                  name: 'get_weather',
+                  description: 'Get weather',
+                  parameters: [ToolParam.string('location')],
+                  handler: (_) async => 'ok',
+                ),
+              ],
+            )
+            .toList();
+
+        expect(noGrammarBackend.lastGenerationParams?.grammar, isNull);
+        expect(noGrammarBackend.lastGenerationParams?.grammarLazy, isFalse);
+        expect(noGrammarBackend.lastGenerationParams?.grammarTriggers, isEmpty);
+        expect(noGrammarBackend.lastGenerationParams?.preservedTokens, isEmpty);
+
+        final toolChunk = chunks.last;
+        expect(toolChunk.choices.first.finishReason, equals('tool_calls'));
+        final toolCalls = toolChunk.choices.first.delta.toolCalls;
+        expect(toolCalls, hasLength(1));
+        expect(toolCalls!.first.function?.name, equals('get_weather'));
+        expect(
+          jsonDecode(toolCalls.first.function!.arguments!),
+          equals({'location': 'Seoul'}),
+        );
+      },
+    );
 
     test('create does not stream raw tool-call JSON as content', () async {
       backend.generationText =

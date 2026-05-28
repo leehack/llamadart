@@ -28,6 +28,9 @@
   * Rejected unsupported llama.cpp-only `GenerationParams` for `.litertlm`
     generation instead of silently ignoring Min-P, repeat-penalty overrides,
     grammar/lazy grammar triggers, preserved tokens, or custom grammar roots.
+  * Kept high-level `.litertlm` thinking and tool-call parsing active while
+    skipping template-generated GBNF grammar parameters for LiteRT-LM backends,
+    so tool-capable templates do not fail before generation.
   * Matched LiteRT-LM bundle validation to native router behavior so uppercase
     `.LITERTLM` local paths are accepted after format routing selects LiteRT-LM.
   * Added explicit false capability reporting for direct `LiteRtLmBackend`
@@ -67,6 +70,8 @@
   * Validate macOS LiteRT-LM cache and app framework directories before
     selecting them so partial runtime installs cannot hide missing
     `StreamProxy` or companion dylib failures until model load.
+  * Fixed iOS LiteRT-LM loading to prefer the bundled native asset identifiers
+    for `LiteRtLm` and `StreamProxy` before falling back to bare dylib names.
   * Kept the web-safe `LiteRtLmBackend` placeholder constructor aligned with
     the native constructor so cross-platform code still compiles before failing
     with the expected native-only unsupported error.

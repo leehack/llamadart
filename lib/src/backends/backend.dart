@@ -126,6 +126,16 @@ abstract class BackendAvailability {
   Future<String> getAvailableBackends();
 }
 
+/// Optional backend capability for reporting grammar-constrained decoding.
+///
+/// Backends that do not support llama.cpp-style GBNF grammar constraints can
+/// implement this so high-level chat rendering keeps prompt/parser behavior
+/// while avoiding unsupported grammar parameters.
+abstract class BackendGrammarConstraintsSupport {
+  /// Whether [GenerationParams.grammar] and related grammar fields are supported.
+  bool get supportsGrammarConstraints;
+}
+
 /// Optional backend capability for exposing resolved runtime diagnostics.
 abstract class BackendRuntimeDiagnostics {
   /// Returns resolved GPU layers used for the active model load.
