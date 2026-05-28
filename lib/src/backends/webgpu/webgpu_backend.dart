@@ -1056,6 +1056,7 @@ class WebGpuLlamaBackend
         );
         final remoteFetchAborted =
             runtimeNotes.contains('model_fetch_backend_abort') ||
+            (remoteFetchAttempted && runtimeNotes.contains('core_abort')) ||
             (remoteFetchAttempted &&
                 _errorText(e).toLowerCase().contains(
                   'aborted(native code called abort())',

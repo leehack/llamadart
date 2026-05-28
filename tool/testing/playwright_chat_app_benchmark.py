@@ -103,6 +103,27 @@ def extract_response_state(page) -> dict[str, Any]:
     )
 
 
+def collect_bridge_globals(page) -> dict[str, Any]:
+    return page.evaluate(
+        """() => ({
+          crossOriginIsolated: window.crossOriginIsolated,
+          assetSource: window.__llamadartBridgeAssetSource ?? null,
+          moduleUrl: window.__llamadartBridgeModuleUrl ?? null,
+          coreModuleUrl: window.__llamadartBridgeCoreModuleUrl ?? null,
+          coreModuleUrlMem64: window.__llamadartBridgeCoreModuleUrlMem64 ?? null,
+          wasmUrl: window.__llamadartBridgeWasmUrl ?? null,
+          wasmUrlMem64: window.__llamadartBridgeWasmUrlMem64 ?? null,
+          workerUrl: window.__llamadartBridgeWorkerUrl ?? null,
+          preferMemory64: window.__llamadartBridgePreferMemory64 ?? null,
+          enableMemory64: window.__llamadartBridgeEnableMem64 ?? null,
+          workerFallbackReason: window.__llamadartBridgeWorkerFallbackReason ?? null,
+          loadError: window.__llamadartBridgeLoadError ?? null,
+          threadPoolSize: window.__llamadartBridgeThreadPoolSize ?? null,
+          liteRtLmModuleUrl: window.__llamadartLiteRtLmModuleUrl ?? null,
+        })"""
+    )
+
+
 def response_for_source(state: dict[str, Any], response_source: str) -> str:
     if response_source == "bridge":
         return str(state.get("bridgeResponse") or "")
@@ -411,122 +432,146 @@ def main() -> int:
             ),
         )
 
-        emit("goto", app_url=args.app_url, label=args.label)
-        page.goto(args.app_url, wait_until="domcontentloaded")
-        enable_flutter_semantics(page)
+        try:
+            emit("goto", app_url=args.app_url, label=args.label)
+            page.goto(args.app_url, wait_until="domcontentloaded")
+            enable_flutter_semantics(page)
 
-        button = page.get_by_role("button", name=re.compile(r"Load Model"))
-        button.wait_for(timeout=120000)
-        emit("load_click", model_url=args.model_url)
-        button.click()
-        body_after_load = wait_for_text(
-            page,
-            "Model loaded successfully! Ready to chat.",
-            args.load_timeout_ms,
-            "model load",
-        )
-        load_elapsed_ms = int((time.monotonic() - started_at) * 1000)
-        emit("loaded", loadMilliseconds=load_elapsed_ms, body_tail=body_after_load[-700:])
-
-        runs: list[dict[str, Any]] = []
-        total_runs = args.warmups + args.runs
-        textbox = page.get_by_role("textbox").last
-        for index in range(total_runs):
-            measured = index >= args.warmups
-            page.evaluate(
-                """() => {
-                  window.__llamadartRealBridgeLastResponse = null;
-                  window.__llamadartRealBridgeLastError = null;
-                  window.__llamadartRealLiteRtLmLastResponse = null;
-                  window.__llamadartRealLiteRtLmLastError = null;
-                  window.__llamadartRealLiteRtLmLastChunks = [];
-                }"""
-            )
-            textbox.fill(args.prompt)
-            generation_started = time.monotonic()
-            page.get_by_role("button", name="Send message").click()
-            try:
-                page.get_by_role("button", name="Stop generation").wait_for(timeout=10000)
-            except PlaywrightTimeoutError:
-                pass
-            state, body, response_chars = wait_for_generation_complete(
+            button = page.get_by_role("button", name=re.compile(r"Load Model"))
+            button.wait_for(timeout=120000)
+            emit("load_click", model_url=args.model_url)
+            button.click()
+            body_after_load = wait_for_text(
                 page,
-                response_source,
-                args.response_timeout_ms,
+                "Model loaded successfully! Ready to chat.",
+                args.load_timeout_ms,
+                "model load",
             )
-            elapsed_ms = int((time.monotonic() - generation_started) * 1000)
-            ui_metrics = parse_ui_metrics(body)
-            run = {
-                "index": index,
-                "measured": measured,
-                "elapsedMilliseconds": elapsed_ms,
-                "responseChars": response_chars,
-                **ui_metrics,
-            }
-            runs.append(run)
-            emit("run", **run)
+            load_elapsed_ms = int((time.monotonic() - started_at) * 1000)
+            emit(
+                "loaded",
+                loadMilliseconds=load_elapsed_ms,
+                body_tail=body_after_load[-700:],
+            )
 
-        measured_runs = [run for run in runs if run["measured"]]
-        summary = {
-            "label": args.label,
-            "modelUrl": args.model_url,
-            "responseSource": response_source,
-            "loadMilliseconds": load_elapsed_ms,
-            "warmups": args.warmups,
-            "runs": args.runs,
-            "contextSize": args.context_size,
-            "targetDecodeTokens": args.max_tokens,
-            "browser": "chromium",
-            "browserAngle": args.browser_angle,
-            "mem64Requested": args.mem64,
-            "measured": {
-                "averageTokensPerSecond": summarize(
-                    [
-                        float(run["averageTokensPerSecond"])
-                        for run in measured_runs
-                        if "averageTokensPerSecond" in run
-                    ]
-                ),
-                "decodeTokensPerSecond": summarize(
-                    [
-                        float(run["decodeTokensPerSecond"])
-                        for run in measured_runs
-                        if "decodeTokensPerSecond" in run
-                    ]
-                ),
-                "totalMilliseconds": summarize(
-                    [
-                        float(run["totalMilliseconds"])
-                        for run in measured_runs
-                        if "totalMilliseconds" in run
-                    ]
-                ),
-                "elapsedMilliseconds": summarize(
-                    [float(run["elapsedMilliseconds"]) for run in measured_runs]
-                ),
-            },
-            "runsDetail": runs,
-            "bridgeGlobals": page.evaluate(
-                """() => ({
-                  crossOriginIsolated: window.crossOriginIsolated,
-                  assetSource: window.__llamadartBridgeAssetSource ?? null,
-                  moduleUrl: window.__llamadartBridgeModuleUrl ?? null,
-                  coreModuleUrl: window.__llamadartBridgeCoreModuleUrl ?? null,
-                  wasmUrl: window.__llamadartBridgeWasmUrl ?? null,
-                  workerUrl: window.__llamadartBridgeWorkerUrl ?? null,
-                  preferMemory64: window.__llamadartBridgePreferMemory64 ?? null,
-                  workerFallbackReason: window.__llamadartBridgeWorkerFallbackReason ?? null,
-                  loadError: window.__llamadartBridgeLoadError ?? null,
-                  threadPoolSize: window.__llamadartBridgeThreadPoolSize ?? null,
-                  liteRtLmModuleUrl: window.__llamadartLiteRtLmModuleUrl ?? null,
-                })"""
-            ),
-            "pageErrors": page_errors[-10:],
-            "requestFailures": request_failures[-10:],
-            "consoleTail": console_logs[-25:],
-        }
-        emit("result", ok=True, **summary)
-        browser.close()
+            runs: list[dict[str, Any]] = []
+            total_runs = args.warmups + args.runs
+            textbox = page.get_by_role("textbox").last
+            for index in range(total_runs):
+                measured = index >= args.warmups
+                page.evaluate(
+                    """() => {
+                      window.__llamadartRealBridgeLastResponse = null;
+                      window.__llamadartRealBridgeLastError = null;
+                      window.__llamadartRealLiteRtLmLastResponse = null;
+                      window.__llamadartRealLiteRtLmLastError = null;
+                      window.__llamadartRealLiteRtLmLastChunks = [];
+                    }"""
+                )
+                textbox.fill(args.prompt)
+                generation_started = time.monotonic()
+                page.get_by_role("button", name="Send message").click()
+                try:
+                    page.get_by_role("button", name="Stop generation").wait_for(
+                        timeout=10000,
+                    )
+                except PlaywrightTimeoutError:
+                    pass
+                state, body, response_chars = wait_for_generation_complete(
+                    page,
+                    response_source,
+                    args.response_timeout_ms,
+                )
+                elapsed_ms = int((time.monotonic() - generation_started) * 1000)
+                ui_metrics = parse_ui_metrics(body)
+                run = {
+                    "index": index,
+                    "measured": measured,
+                    "elapsedMilliseconds": elapsed_ms,
+                    "responseChars": response_chars,
+                    **ui_metrics,
+                }
+                runs.append(run)
+                emit("run", **run)
+
+            measured_runs = [run for run in runs if run["measured"]]
+            summary = {
+                "label": args.label,
+                "modelUrl": args.model_url,
+                "responseSource": response_source,
+                "loadMilliseconds": load_elapsed_ms,
+                "warmups": args.warmups,
+                "runs": args.runs,
+                "contextSize": args.context_size,
+                "targetDecodeTokens": args.max_tokens,
+                "browser": "chromium",
+                "browserAngle": args.browser_angle,
+                "mem64Requested": args.mem64,
+                "measured": {
+                    "averageTokensPerSecond": summarize(
+                        [
+                            float(run["averageTokensPerSecond"])
+                            for run in measured_runs
+                            if "averageTokensPerSecond" in run
+                        ]
+                    ),
+                    "decodeTokensPerSecond": summarize(
+                        [
+                            float(run["decodeTokensPerSecond"])
+                            for run in measured_runs
+                            if "decodeTokensPerSecond" in run
+                        ]
+                    ),
+                    "totalMilliseconds": summarize(
+                        [
+                            float(run["totalMilliseconds"])
+                            for run in measured_runs
+                            if "totalMilliseconds" in run
+                        ]
+                    ),
+                    "elapsedMilliseconds": summarize(
+                        [float(run["elapsedMilliseconds"]) for run in measured_runs]
+                    ),
+                },
+                "runsDetail": runs,
+                "bridgeGlobals": collect_bridge_globals(page),
+                "pageErrors": page_errors[-10:],
+                "requestFailures": request_failures[-10:],
+                "consoleTail": console_logs[-25:],
+            }
+            emit("result", ok=True, **summary)
+            browser.close()
+        except Exception as error:
+            try:
+                body_tail = safe_body_text(page)[-1200:]
+            except Exception as body_error:
+                body_tail = f"<body unavailable: {body_error}>"
+            try:
+                response_state: dict[str, Any] = extract_response_state(page)
+            except Exception as state_error:
+                response_state = {"error": str(state_error)}
+            try:
+                bridge_globals: dict[str, Any] = collect_bridge_globals(page)
+            except Exception as globals_error:
+                bridge_globals = {"error": str(globals_error)}
+            emit(
+                "result",
+                ok=False,
+                label=args.label,
+                modelUrl=args.model_url,
+                responseSource=response_source,
+                error=str(error),
+                exceptionType=type(error).__name__,
+                elapsedMilliseconds=int((time.monotonic() - started_at) * 1000),
+                body_tail=body_tail,
+                responseState=response_state,
+                bridgeGlobals=bridge_globals,
+                pageErrors=page_errors[-10:],
+                requestFailures=request_failures[-10:],
+                consoleTail=console_logs[-25:],
+            )
+            browser.close()
+            return 1
 
     return 0
 

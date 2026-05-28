@@ -31,14 +31,16 @@ rollout strategy, and failure modes.
 | Pixel 9 Pro, Android 16 | llama.cpp | `gemma-4-E2B-it-Q4_K_S.gguf` | Vulkan | 1.66 | 1.82 | `loadMilliseconds=8831`; process reached about 7.4 GB RSS |
 | Mac, Apple M4 Max, macOS 26.5 | LiteRT-LM | `gemma-4-E2B-it.litertlm` | Metal | 130.08 | 131.90 | `loadMilliseconds=86`, backend init about 4.6s |
 | Mac, Apple M4 Max, macOS 26.5 | llama.cpp | `gemma-4-E2B-it-Q4_K_S.gguf` | Metal | 136.15 | 140.48 including sampling | `loadMilliseconds=1883`; backend eval-only counter was much higher |
-| Web, Chromium on Apple M4 Max | LiteRT-LM | `gemma-4-E2B-it-web.litertlm` | WebGPU | 62.70 | 64.30 | `loadMilliseconds=7730`; first token 98-129ms |
-| Web, Chromium on Apple M4 Max | llama.cpp | `gemma-4-E2B-it-Q4_K_S.gguf` | WebGPU bridge | Pending valid re-run | Pending valid re-run | Must be measured through the same chat app WebGPU profile/cache path used by users |
+| Web, Chromium on Apple M4 Max | LiteRT-LM | `gemma-4-E2B-it-web.litertlm` | WebGPU | 48.70 | 49.80 | `loadMilliseconds=7727`; first token 107-114ms |
+| Web, Chromium on Apple M4 Max | llama.cpp | `gemma-4-E2B-it-Q4_K_S.gguf` | WebGPU bridge | 23.90 | 24.40 | `loadMilliseconds=58641`; WebGPU worker, wasm64, 99 GPU layers |
 
 The first automated Gemma 4 GGUF web attempt was invalid: the harness forced
-`GpuBackend.cpu` by passing the wrong enum index and did not set the mem64
-bootstrap flag that the chat app reads. Smaller GGUF sanity checks still loaded
-and generated in Chromium through the bridge. Do not interpret the pending row
-as a Gemma 4 GGUF web support failure.
+`GpuBackend.cpu` by passing the wrong enum index, did not set the mem64
+bootstrap flag that the chat app reads, and served the local GGUF through a
+single-threaded static server without byte-range support. The bridge also needed
+to retry the normal streamed loader when the fetch-backed loader aborted with a
+generic `core_abort`. After those fixes, the same chat app path loaded Gemma 4
+GGUF and generated through WebGPU.
 
 The Pixel 9 Pro was explicitly woken and kept awake with `svc power stayon true`.
 Thermal status was 0 before the benchmark and 1 after the run, so the Android
@@ -55,9 +57,11 @@ On the M4 Max, llama.cpp Metal and LiteRT-LM Metal were close for wall-clock
 throughput. Use model format, feature needs, and distribution constraints as
 the deciding factors on macOS rather than assuming LiteRT-LM is faster.
 
-On web, the web-compatible LiteRT-LM Gemma 4 bundle completed successfully.
-The matching Gemma 4 GGUF result still needs a valid re-run through the normal
-chat app WebGPU load path before making a performance claim.
+On web, both Gemma 4 artifacts completed through the chat app. LiteRT-LM WebGPU
+was about 2x faster than the GGUF WebGPU bridge on the measured decode counter,
+and its cold model load was much shorter. GGUF web still worked, but it was more
+sensitive to serving behavior because the large artifact needs a range-capable
+server or browser cache path.
 
 ## Reproducing
 
@@ -74,7 +78,7 @@ DOWNLOAD_LITERT_WEB_MODEL=1 \
 DECODE_TOKENS=256 \
 WARMUPS=1 \
 RUNS=3 \
-TARGETS=litert_lm \
+TARGETS=llamadart,litert_lm \
 tool/web_fair_litert_vs_llamadart.sh
 ```
 
@@ -95,6 +99,7 @@ TARGETS=litert_lm,llamadart \
 tool/litert_lm_pixel_benchmark.sh
 ```
 
-For web GGUF experiments, use `TARGETS=llamadart`. Large GGUF files may fail
-browser wasm memory or initialization limits even when the same file runs on
-native targets.
+For web GGUF experiments, use `TARGETS=llamadart`. If serving local large GGUF
+files, use the included benchmark server or another range-capable server; simple
+single-threaded file servers can make large browser model loads fail before the
+runtime sees real GGUF bytes.

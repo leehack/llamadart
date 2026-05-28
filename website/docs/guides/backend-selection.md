@@ -161,9 +161,10 @@ kernel benchmark.
 - For Gemma 4 E2B on an Apple M4 Max Mac, measured llama.cpp Metal and
   LiteRT-LM Metal throughput were close; choose based on model format and
   feature needs.
-- For web Gemma 4 E2B, the LiteRT-LM web bundle has a measured result in the
-  benchmark doc. The matching GGUF WebGPU result is pending a valid re-run
-  through the normal chat app model-load path.
+- For web Gemma 4 E2B, both LiteRT-LM WebGPU and GGUF WebGPU loaded and
+  generated through the chat app. LiteRT-LM was about 2x faster on the measured
+  web decode counter and loaded much faster, while GGUF kept the broader
+  llama.cpp feature surface.
 - On Android, benchmark LiteRT-LM `gpu` and `npu` separately when the model and
   device support them. NPU is not a general replacement for GGUF/Vulkan; it is a
   LiteRT-LM deployment path.
