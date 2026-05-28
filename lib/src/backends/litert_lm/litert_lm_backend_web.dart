@@ -283,6 +283,7 @@ class LiteRtLmBackend
 
   @override
   Future<void> setLoraAdapter(int contextHandle, String path, double scale) {
+    _requireContextHandle(contextHandle);
     throw UnsupportedError(
       'LiteRtLmBackend web does not support LoRA adapters.',
     );
@@ -290,6 +291,7 @@ class LiteRtLmBackend
 
   @override
   Future<void> removeLoraAdapter(int contextHandle, String path) {
+    _requireContextHandle(contextHandle);
     throw UnsupportedError(
       'LiteRtLmBackend web does not support LoRA adapters.',
     );
@@ -297,6 +299,7 @@ class LiteRtLmBackend
 
   @override
   Future<void> clearLoraAdapters(int contextHandle) {
+    _requireContextHandle(contextHandle);
     throw UnsupportedError(
       'LiteRtLmBackend web does not support LoRA adapters.',
     );
@@ -359,7 +362,6 @@ class LiteRtLmBackend
 
   @override
   Future<({int total, int free})> getVramInfo() async {
-    _requireEngine();
     return (total: 0, free: 0);
   }
 

@@ -272,6 +272,50 @@ void main() {
     }
   });
 
+  test('reports zero VRAM without requiring web runtime', () async {
+    final backend = LiteRtLmBackend(readyTimeout: Duration.zero);
+
+    expect(await backend.getVramInfo(), (total: 0, free: 0));
+  });
+
+  test('validates LoRA context handles before unsupported errors', () async {
+    _installFakeEngine(chunks: <JSAny?>[_messageChunk('ok')]);
+
+    final backend = LiteRtLmBackend();
+    try {
+      final modelHandle = await backend.modelLoadFromUrl(
+        'https://example.com/model.litertlm',
+        const ModelParams(),
+      );
+
+      expect(
+        () => backend.setLoraAdapter(123, 'adapter.lora', 1),
+        throwsStateError,
+      );
+      final contextHandle = await backend.contextCreate(
+        modelHandle,
+        const ModelParams(),
+      );
+      expect(
+        () => backend.setLoraAdapter(contextHandle, 'adapter.lora', 1),
+        throwsUnsupportedError,
+      );
+      expect(
+        () => backend.removeLoraAdapter(contextHandle, 'adapter.lora'),
+        throwsUnsupportedError,
+      );
+      expect(
+        () => backend.clearLoraAdapters(contextHandle),
+        throwsUnsupportedError,
+      );
+
+      await backend.contextFree(contextHandle);
+      expect(() => backend.clearLoraAdapters(contextHandle), throwsStateError);
+    } finally {
+      await backend.dispose();
+    }
+  });
+
   test('rejects unsupported multimodal operations consistently', () async {
     _installFakeEngine(chunks: <JSAny?>[_messageChunk('ok')]);
 
