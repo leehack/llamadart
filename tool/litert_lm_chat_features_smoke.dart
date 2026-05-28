@@ -68,9 +68,39 @@ Future<void> main(List<String> args) async {
       'thinking': thinking.toJson(),
       'toolCall': toolCall.toJson(),
     };
+    _verifyResult(thinking: thinking, toolCall: toolCall);
     print('RESULT litert_lm_chat_features ${jsonEncode(result)}');
   } finally {
     await engine.dispose();
+  }
+}
+
+void _verifyResult({
+  required _ScenarioResult thinking,
+  required _ScenarioResult toolCall,
+}) {
+  if (thinking.thinking.trim().isEmpty) {
+    throw StateError('Gemma 4 thinking scenario produced no thinking delta.');
+  }
+  if (toolCall.finishReason != 'tool_calls') {
+    throw StateError(
+      'Gemma 4 tool scenario finished with ${toolCall.finishReason}.',
+    );
+  }
+  if (toolCall.toolCalls.length != 1) {
+    throw StateError(
+      'Gemma 4 tool scenario produced ${toolCall.toolCalls.length} calls.',
+    );
+  }
+  final function = toolCall.toolCalls.first['function'];
+  if (function is! Map || function['name'] != 'get_weather') {
+    throw StateError('Gemma 4 tool scenario did not call get_weather.');
+  }
+  final arguments = function['arguments'];
+  if (arguments is! String || !arguments.contains('"location":"Seoul"')) {
+    throw StateError(
+      'Gemma 4 tool scenario did not pass the expected location argument.',
+    );
   }
 }
 

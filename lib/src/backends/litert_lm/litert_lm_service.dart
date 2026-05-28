@@ -28,7 +28,9 @@ class LiteRtLmService {
       '{% else %}{{ message["role"] }}\n{% endif %}'
       '{{ message["content"] }}<turn|>\n'
       '{% endfor %}'
-      '{% if add_generation_prompt %}<|turn>model\n{% endif %}';
+      '{% if add_generation_prompt %}<|turn>model\n'
+      '{% if enable_thinking %}<|channel>thought\n{% endif %}'
+      '{% endif %}';
 
   /// Creates a LiteRT-LM service.
   LiteRtLmService({LiteRtLmRuntimeClient Function()? clientFactory})

@@ -177,7 +177,7 @@ void main() {
       ]);
 
       expect(rendered, contains('<|turn>user\nhello<turn|>'));
-      expect(rendered, endsWith('<|turn>model\n'));
+      expect(rendered, endsWith('<|turn>model\n<|channel>thought\n'));
 
       final custom = service.applyChatTemplate(
         modelHandle,

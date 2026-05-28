@@ -9,6 +9,7 @@ import '../../models/tools/tool_definition.dart';
 import '../chat_format.dart';
 import '../chat_parse_result.dart';
 import '../chat_template_handler.dart';
+import '../thinking_utils.dart';
 import '../tool_call_fallback_parser.dart';
 import '../tool_call_parsing_utils.dart';
 
@@ -97,7 +98,7 @@ class Gemma4Handler extends ChatTemplateHandler {
     required bool multimodalContent,
   }) {
     final template = Template(templateSource);
-    final prompt = renderTemplate(
+    var prompt = renderTemplate(
       template,
       metadata: metadata,
       context: {
@@ -113,12 +114,22 @@ class Gemma4Handler extends ChatTemplateHandler {
       },
     );
 
+    var thinkingForcedOpen = false;
+    if (isThinkingForcedOpen(prompt, startTag: thinkingStartTag.trimRight())) {
+      if (!enableThinking) {
+        prompt = '${prompt.trimRight()}$_channelEnd\n';
+      } else {
+        thinkingForcedOpen = true;
+      }
+    }
+
     final hasTools = tools != null && tools.isNotEmpty;
     return LlamaChatTemplateResult(
       prompt: prompt,
       format: format.index,
       grammar: buildGrammar(tools),
       grammarLazy: false,
+      thinkingForcedOpen: thinkingForcedOpen,
       additionalStops: getStops(
         hasTools: hasTools,
         enableThinking: enableThinking,
@@ -194,7 +205,11 @@ class Gemma4Handler extends ChatTemplateHandler {
     bool parseToolCalls = true,
     bool thinkingForcedOpen = false,
   }) {
-    final reasoning = _extractReasoning(output, isPartial: isPartial);
+    final reasoning = _extractReasoning(
+      output,
+      isPartial: isPartial,
+      thinkingForcedOpen: thinkingForcedOpen,
+    );
 
     if (!parseToolCalls) {
       return ChatParseResult(
@@ -224,6 +239,7 @@ class Gemma4Handler extends ChatTemplateHandler {
   ({String content, String? reasoning}) _extractReasoning(
     String output, {
     required bool isPartial,
+    required bool thinkingForcedOpen,
   }) {
     final reasoningParts = <String>[];
     final content = StringBuffer();
@@ -232,7 +248,24 @@ class Gemma4Handler extends ChatTemplateHandler {
     while (cursor < output.length) {
       final start = output.indexOf(_channelStart, cursor);
       if (start == -1) {
-        content.write(output.substring(cursor));
+        if (thinkingForcedOpen) {
+          final end = output.indexOf(_channelEnd, cursor);
+          if (end == -1) {
+            final reasoning = output.substring(cursor);
+            if (reasoning.isNotEmpty) {
+              reasoningParts.add(reasoning);
+            }
+          } else {
+            final reasoning = output.substring(cursor, end);
+            if (reasoning.isNotEmpty) {
+              reasoningParts.add(reasoning);
+            }
+            content.write(output.substring(end + _channelEnd.length));
+            thinkingForcedOpen = false;
+          }
+        } else {
+          content.write(output.substring(cursor));
+        }
         break;
       }
 

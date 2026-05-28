@@ -70,8 +70,7 @@ void main() {
           )
           .toList();
       final thinkingText = thinkingChunks.map((chunk) {
-        final delta = chunk.choices.first.delta;
-        return delta.content ?? delta.thinking ?? '';
+        return chunk.choices.first.delta.thinking ?? '';
       }).join();
 
       expect(thinkingText.trim(), isNotEmpty);
