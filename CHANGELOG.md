@@ -34,6 +34,8 @@
     embeddings and state-persistence support.
   * Report direct `LiteRtLmBackend(preferredBackend: ...)` CPU/GPU/NPU
     diagnostics before model load, including platform availability errors.
+  * Preserved pre-load `LlamaBackend()` native diagnostics by probing through a
+    llama.cpp delegate without selecting the final model-format backend.
   * Wired LiteRT-LM native tokenization, detokenization, and log-level control
     through the worker isolate so high-level token counts and chat-session
     history pruning no longer need fallback estimates for `.litertlm` bundles.

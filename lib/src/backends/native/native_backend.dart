@@ -29,6 +29,8 @@ class NativeAutoBackend
 
   LlamaBackend? _delegate;
   _NativeBackendKind? _delegateKind;
+  LlamaBackend? _diagnosticDelegate;
+  Future<LlamaBackend>? _diagnosticDelegateStart;
   LlamaLogLevel _currentLogLevel = LlamaLogLevel.warn;
 
   /// Creates a backend router.
@@ -183,13 +185,32 @@ class NativeAutoBackend
 
   @override
   Future<bool> isGpuSupported() {
-    return _requireDelegate().isGpuSupported();
+    final delegate = _delegate;
+    if (delegate != null) {
+      return delegate.isGpuSupported();
+    }
+    return _ensureDiagnosticDelegate().then(
+      (diagnosticDelegate) => diagnosticDelegate.isGpuSupported(),
+    );
   }
 
   @override
   Future<void> setLogLevel(LlamaLogLevel level) async {
     _currentLogLevel = level;
     await _delegate?.setLogLevel(level);
+    final diagnosticDelegate = _diagnosticDelegate;
+    if (diagnosticDelegate != null) {
+      await diagnosticDelegate.setLogLevel(level);
+      return;
+    }
+    final diagnosticStart = _diagnosticDelegateStart;
+    if (diagnosticStart != null) {
+      try {
+        await (await diagnosticStart).setLogLevel(level);
+      } catch (_) {
+        // The original diagnostic caller receives the startup failure.
+      }
+    }
   }
 
   @override
@@ -197,7 +218,11 @@ class NativeAutoBackend
     final delegate = _delegate;
     _delegate = null;
     _delegateKind = null;
+    final diagnosticDelegate = await _takeDiagnosticDelegate();
     await delegate?.dispose();
+    if (!identical(delegate, diagnosticDelegate)) {
+      await diagnosticDelegate?.dispose();
+    }
   }
 
   @override
@@ -222,7 +247,13 @@ class NativeAutoBackend
 
   @override
   Future<({int total, int free})> getVramInfo() {
-    return _requireDelegate().getVramInfo();
+    final delegate = _delegate;
+    if (delegate != null) {
+      return delegate.getVramInfo();
+    }
+    return _ensureDiagnosticDelegate().then(
+      (diagnosticDelegate) => diagnosticDelegate.getVramInfo(),
+    );
   }
 
   @override
@@ -350,10 +381,21 @@ class NativeAutoBackend
       return _delegate!;
     }
 
+    final diagnosticDelegate = await _takeDiagnosticDelegate();
+    if (_delegate == null &&
+        diagnosticDelegate != null &&
+        kind == _NativeBackendKind.llamaCpp) {
+      await diagnosticDelegate.setLogLevel(_currentLogLevel);
+      _delegate = diagnosticDelegate;
+      _delegateKind = kind;
+      return diagnosticDelegate;
+    }
+
     final oldDelegate = _delegate;
     _delegate = null;
     _delegateKind = null;
     await oldDelegate?.dispose();
+    await diagnosticDelegate?.dispose();
 
     final delegate = switch (kind) {
       _NativeBackendKind.liteRtLm => _liteRtLmFactory(),
@@ -362,6 +404,53 @@ class NativeAutoBackend
     await delegate.setLogLevel(_currentLogLevel);
     _delegate = delegate;
     _delegateKind = kind;
+    return delegate;
+  }
+
+  Future<LlamaBackend> _ensureDiagnosticDelegate() async {
+    final existing = _diagnosticDelegate;
+    if (existing != null) {
+      return existing;
+    }
+
+    final existingStart = _diagnosticDelegateStart;
+    if (existingStart != null) {
+      return existingStart;
+    }
+
+    late final Future<LlamaBackend> start;
+    start = () async {
+      final delegate = _llamaCppFactory();
+      try {
+        await delegate.setLogLevel(_currentLogLevel);
+        _diagnosticDelegate = delegate;
+        return delegate;
+      } catch (_) {
+        await delegate.dispose();
+        rethrow;
+      } finally {
+        if (identical(_diagnosticDelegateStart, start)) {
+          _diagnosticDelegateStart = null;
+        }
+      }
+    }();
+    _diagnosticDelegateStart = start;
+    return start;
+  }
+
+  Future<LlamaBackend?> _takeDiagnosticDelegate() async {
+    final start = _diagnosticDelegateStart;
+    if (start != null) {
+      try {
+        await start;
+      } catch (_) {
+        // The original diagnostic caller receives the failure. Later load and
+        // dispose paths should still clear any partially initialized state.
+      }
+    }
+    final delegate = _diagnosticDelegate;
+    _diagnosticDelegate = null;
+    _diagnosticDelegateStart = null;
     return delegate;
   }
 

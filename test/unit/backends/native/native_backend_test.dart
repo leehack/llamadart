@@ -32,6 +32,101 @@ void main() {
     }
   });
 
+  test(
+    'pre-load diagnostics use a llama.cpp probe without selecting a model backend',
+    () async {
+      final llama = _FakeBackend(handle: 11)
+        ..gpuSupported = true
+        ..vramInfo = (total: 1024, free: 512);
+      final litert = _FakeBackend(handle: 22);
+      final backend = NativeAutoBackend(
+        llamaCppFactory: () => llama,
+        liteRtLmFactory: () => litert,
+      );
+
+      try {
+        await backend.setLogLevel(LlamaLogLevel.debug);
+
+        expect(await backend.getBackendName(), 'Native auto');
+        expect(await backend.isGpuSupported(), isTrue);
+        expect(await backend.getVramInfo(), (total: 1024, free: 512));
+        expect(await backend.getBackendName(), 'Native auto');
+        expect(llama.loadedPaths, isEmpty);
+        expect(litert.loadedPaths, isEmpty);
+        expect(llama.logLevels, [LlamaLogLevel.debug]);
+        expect(llama.disposeCount, 0);
+      } finally {
+        await backend.dispose();
+      }
+
+      expect(llama.disposeCount, 1);
+      expect(litert.disposeCount, 0);
+    },
+  );
+
+  test(
+    'reuses pre-load diagnostic delegate for llama.cpp model loads',
+    () async {
+      var llamaFactoryCalls = 0;
+      final llama = _FakeBackend(handle: 11)..gpuSupported = true;
+      final litert = _FakeBackend(handle: 22);
+      final backend = NativeAutoBackend(
+        llamaCppFactory: () {
+          llamaFactoryCalls += 1;
+          return llama;
+        },
+        liteRtLmFactory: () => litert,
+      );
+
+      try {
+        expect(await backend.isGpuSupported(), isTrue);
+        expect(llamaFactoryCalls, 1);
+
+        expect(
+          await backend.modelLoad('/models/model.gguf', const ModelParams()),
+          11,
+        );
+
+        expect(llamaFactoryCalls, 1);
+        expect(llama.loadedPaths, ['/models/model.gguf']);
+        expect(llama.disposeCount, 0);
+        expect(litert.loadedPaths, isEmpty);
+      } finally {
+        await backend.dispose();
+      }
+    },
+  );
+
+  test(
+    'disposes pre-load diagnostic delegate when routing to LiteRT-LM',
+    () async {
+      final llama = _FakeBackend(handle: 11)..gpuSupported = true;
+      final litert = _FakeBackend(handle: 22);
+      final backend = NativeAutoBackend(
+        llamaCppFactory: () => llama,
+        liteRtLmFactory: () => litert,
+      );
+
+      try {
+        expect(await backend.isGpuSupported(), isTrue);
+
+        expect(
+          await backend.modelLoad(
+            '/models/gemma-4-E2B-it.litertlm',
+            const ModelParams(),
+          ),
+          22,
+        );
+
+        expect(llama.disposeCount, 1);
+        expect(llama.loadedPaths, isEmpty);
+        expect(litert.loadedPaths, ['/models/gemma-4-E2B-it.litertlm']);
+      } finally {
+        await backend.dispose();
+      }
+    },
+  );
+
   test('routes GGUF and unknown formats to llama.cpp', () async {
     final llama = _FakeBackend(handle: 11);
     final litert = _FakeBackend(handle: 22);
@@ -516,6 +611,8 @@ class _FakeBackend implements LlamaBackend {
   String? lastTokenizeText;
   bool? lastTokenizeAddSpecial;
   List<int>? lastDetokenizeTokens;
+  bool gpuSupported = false;
+  ({int total, int free}) vramInfo = (total: 0, free: 0);
   int disposeCount = 0;
 
   _FakeBackend({required this.handle});
@@ -572,6 +669,12 @@ class _FakeBackend implements LlamaBackend {
 
   @override
   Future<String> getBackendName() async => 'fake-$handle';
+
+  @override
+  Future<bool> isGpuSupported() async => gpuSupported;
+
+  @override
+  Future<({int total, int free})> getVramInfo() async => vramInfo;
 
   @override
   Future<void> setLogLevel(LlamaLogLevel level) async {
