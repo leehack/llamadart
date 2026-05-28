@@ -73,7 +73,8 @@
     LiteRT-LM failures behind an unnecessarily long timeout.
   * Updated the LiteRT-LM benchmark app so the llama.cpp/GGUF comparison leg
     defaults to Metal on Apple platforms and Vulkan on Android/Linux/Windows,
-    with `LLAMADART_BACKEND` available for explicit benchmark overrides.
+    with `LLAMADART_BACKEND` forwarded by the Pixel benchmark script for
+    explicit benchmark overrides.
   * Coalesced concurrent LiteRT-LM worker startup requests so simultaneous
     pre-load diagnostics cannot leak extra backend isolates.
   * Reject concurrent LiteRT-LM generations before sending them to the worker so

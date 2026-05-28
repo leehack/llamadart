@@ -19,6 +19,7 @@ fi
 LOCAL_LLAMADART_MODEL="${LOCAL_LLAMADART_MODEL:-$DEFAULT_LLAMADART_MODEL}"
 DEVICE_LLAMADART_MODEL="${DEVICE_LLAMADART_MODEL:-$DEVICE_APP_FILES_DIR/$LLAMADART_MODEL_NAME}"
 BACKEND="${BACKEND:-gpu}"
+LLAMADART_BACKEND="${LLAMADART_BACKEND:-auto}"
 TARGETS="${TARGETS:-litert_lm,llamadart}"
 RUNS="${RUNS:-3}"
 WARMUPS="${WARMUPS:-1}"
@@ -78,6 +79,7 @@ echo "Benchmark configuration:"
 echo "  device: $DEVICE"
 echo "  targets: $TARGETS"
 echo "  backend: $BACKEND"
+echo "  llama.cpp backend: $LLAMADART_BACKEND"
 echo "  speculative: $SPECULATIVE"
 echo "  runs/warmups: $RUNS/$WARMUPS"
 echo "  output/max tokens: $OUTPUT_TOKENS/$MAX_TOKENS"
@@ -139,6 +141,7 @@ build_install_and_push() {
       --dart-define="LITERT_LM_MODEL=$litert_model_define" \
       --dart-define="LLAMADART_MODEL=$llamadart_model_define" \
       --dart-define="LITERT_LM_BACKEND=$BACKEND" \
+      --dart-define="LLAMADART_BACKEND=$LLAMADART_BACKEND" \
       --dart-define="LITERT_LM_SPECULATIVE=$SPECULATIVE" \
       --dart-define="LITERT_LM_RUNS=$RUNS" \
       --dart-define="LITERT_LM_WARMUPS=$WARMUPS" \
