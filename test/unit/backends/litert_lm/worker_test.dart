@@ -150,6 +150,35 @@ void main() {
           ),
         );
 
+        final multimodalTemplate = await _sendRequest(
+          worker.sendPort,
+          (sendPort) => LiteRtLmChatTemplateRequest(
+            modelHandle,
+            const [
+              {
+                'role': 'user',
+                'content': [
+                  {'type': 'text', 'text': 'describe this'},
+                  {'type': 'image'},
+                ],
+              },
+            ],
+            null,
+            true,
+            sendPort,
+          ),
+        );
+        expect(
+          multimodalTemplate,
+          isA<LiteRtLmErrorResponse>()
+              .having((response) => response.kind, 'kind', 'unsupported')
+              .having(
+                (response) => response.message,
+                'message',
+                contains('multimodal chat-template content'),
+              ),
+        );
+
         final clearLora = await _sendRequest(
           worker.sendPort,
           (sendPort) =>

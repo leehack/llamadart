@@ -185,6 +185,22 @@ void main() {
             '{% if add_generation_prompt %}:assistant{% endif %}',
       );
       expect(custom, 'user:hello:assistant');
+
+      expect(
+        () => service.applyChatTemplate(modelHandle, const [
+          {
+            'role': 'user',
+            'content': [
+              {'type': 'text', 'text': 'describe this'},
+              {
+                'type': 'image_url',
+                'image_url': {'url': 'file:///tmp/image.png'},
+              },
+            ],
+          },
+        ]),
+        throwsUnsupportedError,
+      );
     } finally {
       service.dispose();
     }

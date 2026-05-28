@@ -674,10 +674,27 @@ class LiteRtLmService {
     if (content is String) {
       return content;
     }
+    if (content is Map) {
+      if (_isUnsupportedTemplateContentPart(content)) {
+        throw UnsupportedError(
+          'LiteRtLmBackend does not support multimodal chat-template content.',
+        );
+      }
+      if (content['type']?.toString() == 'text' && content['text'] != null) {
+        return content['text'].toString();
+      }
+      return content.toString();
+    }
     if (content is Iterable) {
       final buffer = StringBuffer();
       for (final part in content) {
         if (part is Map) {
+          if (_isUnsupportedTemplateContentPart(part)) {
+            throw UnsupportedError(
+              'LiteRtLmBackend does not support multimodal chat-template '
+              'content.',
+            );
+          }
           final type = part['type']?.toString();
           if (type == 'text' && part['text'] != null) {
             buffer.write(part['text']);
@@ -689,6 +706,24 @@ class LiteRtLmService {
       return buffer.toString();
     }
     return content.toString();
+  }
+
+  bool _isUnsupportedTemplateContentPart(Map<dynamic, dynamic> part) {
+    final type = part['type']?.toString().toLowerCase();
+    if (type == 'image' ||
+        type == 'image_url' ||
+        type == 'input_image' ||
+        type == 'audio' ||
+        type == 'input_audio' ||
+        type == 'video' ||
+        type == 'input_video') {
+      return true;
+    }
+    return part.containsKey('image') ||
+        part.containsKey('image_url') ||
+        part.containsKey('input_audio') ||
+        part.containsKey('audio') ||
+        part.containsKey('video');
   }
 
   String? _defaultCacheDir() {

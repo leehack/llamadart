@@ -45,6 +45,8 @@
     tokens instead of silently ignoring the llama.cpp-only flag.
   * Rejected all LiteRT-LM multimodal backend operations consistently instead
     of allowing no-op projector frees or false capability probes.
+  * Rejected multimodal content passed to direct LiteRT-LM chat-template
+    application instead of stringifying image/audio maps into text prompts.
   * Routed direct LiteRT-LM chat-template application through the Dart template
     engine so backend-level template calls work consistently with the
     high-level `.litertlm` engine path.
