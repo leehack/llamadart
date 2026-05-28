@@ -112,9 +112,7 @@ class LiteRtLmService {
   int createContext(int modelHandle, ModelParams params) {
     _checkModelHandle(modelHandle);
     _validateModelParams(params);
-    if (_contextCreated) {
-      _disposeContextRuntimeState();
-    }
+    _disposeContextRuntimeState();
     _modelParams = params;
     _contextHandle = _nextContextHandle++;
     _contextCreated = true;

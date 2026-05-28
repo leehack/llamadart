@@ -706,6 +706,53 @@ void main() {
   );
 
   test(
+    'createContext disposes pre-context runtime client and applies params',
+    () async {
+      final firstClient = _FakeLiteRtLmRuntimeClient()
+        ..tokenizeResult = const <int>[1];
+      final secondClient = _FakeLiteRtLmRuntimeClient()
+        ..tokenizeResult = const <int>[2];
+      final clients = <_FakeLiteRtLmRuntimeClient>[firstClient, secondClient];
+      var nextClient = 0;
+      final service = LiteRtLmService(
+        clientFactory: () => clients[nextClient++],
+      );
+
+      try {
+        final modelHandle = await service.loadModel(
+          modelFile.path,
+          const ModelParams(
+            contextSize: 2048,
+            preferredBackend: GpuBackend.cpu,
+          ),
+        );
+
+        expect(await service.tokenize(modelHandle, 'before-context', true), [
+          1,
+        ]);
+        expect(firstClient.lastMaxTokens, 2048);
+
+        final contextHandle = service.createContext(
+          modelHandle,
+          const ModelParams(
+            contextSize: 4096,
+            preferredBackend: GpuBackend.cpu,
+          ),
+        );
+
+        expect(firstClient.disposeCount, 1);
+        expect(service.getContextSize(contextHandle), 4096);
+        expect(await service.tokenize(modelHandle, 'after-context', true), [2]);
+        expect(secondClient.lastTokenizeText, 'after-context');
+        expect(secondClient.lastMaxTokens, 4096);
+        expect(nextClient, 2);
+      } finally {
+        service.dispose();
+      }
+    },
+  );
+
+  test(
     'recreating context disposes previous runtime client and metrics',
     () async {
       final firstClient = _FakeLiteRtLmRuntimeClient();

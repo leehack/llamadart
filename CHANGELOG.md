@@ -78,6 +78,9 @@
   * Dispose LiteRT-LM runtime clients and clear context-scoped performance
     metrics when a context is freed or replaced, matching llama.cpp context
     teardown semantics more closely.
+  * Dispose any pre-context LiteRT-LM runtime client when a context is created
+    so tokenization before context creation cannot leave generation using stale
+    native context settings.
   * Treat LiteRT-LM generation requests with `maxTokens <= 0` as no-ops instead
     of inflating them to the default output-token budget.
   * Report backend/model-specific LiteRT-LM engine creation failures and make
