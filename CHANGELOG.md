@@ -1,4 +1,4 @@
-## Unreleased
+## 0.7.0
 
 * **Native runtime configuration**:
   * Added `hooks.user_defines.llamadart.llamadart_native_tag`,
@@ -117,6 +117,10 @@
   * Matched coverage handling for the LiteRT-LM native FFI runtime boundary to
     real-library smoke coverage while keeping public runtime value types covered
     by unit tests.
+* **Compatibility note**: no public API breaking changes for existing GGUF /
+  llama.cpp callers. LiteRT-LM support is additive, with deprecated benchmark
+  wrappers retained for compatibility; unsupported llama.cpp-only parameters are
+  rejected for `.litertlm` loads instead of being silently ignored.
 
 ## 0.6.17
 

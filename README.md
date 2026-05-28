@@ -51,7 +51,7 @@ JavaScript runtime.
 
 ```yaml
 dependencies:
-  llamadart: ^0.6.17
+  llamadart: ^0.7.0
 ```
 
 ### 2. Run with defaults
@@ -627,6 +627,15 @@ llamadart has decoupled runtime ownership:
 - Web bridge runtime assets:
   [`leehack/llama-web-bridge-assets`](https://github.com/leehack/llama-web-bridge-assets)
 - This repository consumes pinned published artifacts from those repositories.
+
+Current pinned runtime artifacts:
+
+| Runtime path | Published artifact |
+|--------------|--------------------|
+| Native llama.cpp / GGUF | `leehack/llamadart-native@b9371` |
+| Native LiteRT-LM / `.litertlm` | `leehack/litert-lm-native@v0.12.0` |
+| Web llama.cpp / GGUF | `leehack/llama-web-bridge-assets@v0.1.16` |
+| Web LiteRT-LM / `.litertlm` | App-provided `@litert-lm/core` module URL; the chat app defaults to jsDelivr `@litert-lm/core/+esm` |
 
 Core abstractions in this package:
 
