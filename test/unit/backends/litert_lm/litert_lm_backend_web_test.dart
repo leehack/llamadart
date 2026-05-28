@@ -6,9 +6,13 @@ import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
 
 import 'package:llamadart/src/backends/litert_lm/litert_lm_backend_web.dart';
+import 'package:llamadart/src/core/engine/engine.dart';
+import 'package:llamadart/src/core/models/chat/chat_message.dart';
+import 'package:llamadart/src/core/models/chat/chat_role.dart';
 import 'package:llamadart/src/core/models/config/gpu_backend.dart';
 import 'package:llamadart/src/core/models/inference/generation_params.dart';
 import 'package:llamadart/src/core/models/inference/model_params.dart';
+import 'package:llamadart/src/core/template/chat_template_engine.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -51,7 +55,7 @@ void main() {
       (settings.getProperty('model'.toJS) as JSString).toDart,
       'https://example.com/gemma-4-E2B-it-web.litertlm?download=1',
     );
-    expect((settings.getProperty('backend'.toJS) as JSNumber).toDartInt, 4);
+    expect((settings.getProperty('backend'.toJS) as JSNumber).toDartInt, 2);
     final executor =
         settings.getProperty('mainExecutorSettings'.toJS) as JSObject;
     expect(
@@ -88,7 +92,7 @@ void main() {
     );
     expect(
       (sessionConfig.getProperty('samplerBackend'.toJS) as JSNumber).toDartInt,
-      4,
+      2,
     );
     final sampler = sessionConfig.getProperty('samplerParams'.toJS) as JSObject;
     expect((sampler.getProperty('k'.toJS) as JSNumber).toDartInt, 7);
@@ -98,6 +102,154 @@ void main() {
       0.2,
     );
     expect((sampler.getProperty('seed'.toJS) as JSNumber).toDartInt, 42);
+  });
+
+  test(
+    'exposes passthrough chat template for JS conversation runtime',
+    () async {
+      _installFakeEngine(chunks: <JSAny?>[_messageChunk('ok')]);
+
+      final backend = LiteRtLmBackend();
+      final modelHandle = await backend.modelLoadFromUrl(
+        'https://example.com/model.litertlm',
+        const ModelParams(),
+      );
+
+      final metadata = await backend.modelMetadata(modelHandle);
+      final rendered = ChatTemplateEngine.render(
+        templateSource: metadata['tokenizer.chat_template'],
+        messages: const [
+          LlamaChatMessage.fromText(
+            role: LlamaChatRole.user,
+            text: 'What is 2+2?',
+          ),
+        ],
+        metadata: metadata,
+        addAssistant: true,
+      );
+
+      expect(rendered.prompt, 'What is 2+2?');
+    },
+  );
+
+  test('routes high-level chat through JS conversation runtime', () async {
+    String? lastPrompt;
+    _installFakeEngine(
+      chunks: <JSAny?>[_messageChunk('4')],
+      onPrompt: (prompt) {
+        lastPrompt = prompt;
+      },
+    );
+
+    final engine = LlamaEngine(LiteRtLmBackend());
+    await engine.loadModelFromUrl(
+      'https://example.com/gemma-4-E2B-it-web.litertlm',
+      modelParams: const ModelParams(
+        contextSize: 1024,
+        preferredBackend: GpuBackend.vulkan,
+      ),
+    );
+
+    final chunks = await engine.create(
+      const [
+        LlamaChatMessage.fromText(
+          role: LlamaChatRole.user,
+          text: 'What is 2+2?',
+        ),
+      ],
+      params: const GenerationParams(maxTokens: 8, temp: 0, topK: 1, topP: 1),
+    ).toList();
+    final text = chunks
+        .map((chunk) => chunk.choices.first.delta.content ?? '')
+        .join();
+
+    expect(text, '4');
+    expect(lastPrompt, 'What is 2+2?');
+    await engine.dispose();
+  });
+
+  test('loads LiteRT-LM Engine from module URL', () async {
+    final moduleUrl =
+        'data:text/javascript;charset=utf-8,${Uri.encodeComponent('''
+      export const Backend = { CPU: 3, GPU_ARTISAN: 2, GPU: 4 };
+      export const Engine = {
+        async create(settings) {
+          globalThis.__llamadartLiteRtLmModuleSettings = {
+            model: settings.model,
+            backend: settings.backend,
+            maxNumTokens: settings.mainExecutorSettings?.maxNumTokens,
+          };
+          if (settings.backend !== 2) {
+            throw new Error(`Unexpected backend: \${settings.backend}`);
+          }
+          return {
+            async createConversation(config) {
+              globalThis.__llamadartLiteRtLmModuleConversationConfig = config;
+              return {
+                sendMessageStreaming(prompt) {
+                  globalThis.__llamadartLiteRtLmModulePrompt = prompt;
+                  let sent = false;
+                  return new ReadableStream({
+                    pull(controller) {
+                      if (sent) {
+                        controller.close();
+                        return;
+                      }
+                      sent = true;
+                      controller.enqueue({
+                        content: [{ type: 'text', text: 'Module ok' }],
+                      });
+                    },
+                  });
+                },
+                cancel() {},
+                async delete() {},
+              };
+            },
+            async delete() {},
+          };
+        },
+      };
+    ''')}';
+
+    final backend = LiteRtLmBackend(moduleUrl: moduleUrl);
+    final modelHandle = await backend.modelLoadFromUrl(
+      'https://example.com/module-model.litertlm',
+      const ModelParams(contextSize: 1024, preferredBackend: GpuBackend.vulkan),
+    );
+    final contextHandle = await backend.contextCreate(
+      modelHandle,
+      const ModelParams(contextSize: 1024, preferredBackend: GpuBackend.vulkan),
+    );
+
+    final output = await backend
+        .generate(
+          contextHandle,
+          'Module prompt',
+          const GenerationParams(maxTokens: 8),
+        )
+        .expand((bytes) => bytes)
+        .toList();
+
+    expect(utf8.decode(output), 'Module ok');
+    final settings =
+        globalContext.getProperty('__llamadartLiteRtLmModuleSettings'.toJS)
+            as JSObject;
+    expect(
+      (settings.getProperty('model'.toJS) as JSString).toDart,
+      'https://example.com/module-model.litertlm',
+    );
+    expect((settings.getProperty('backend'.toJS) as JSNumber).toDartInt, 2);
+    expect(
+      (settings.getProperty('maxNumTokens'.toJS) as JSNumber).toDartInt,
+      1024,
+    );
+    expect(
+      (globalContext.getProperty('__llamadartLiteRtLmModulePrompt'.toJS)
+              as JSString)
+          .toDart,
+      'Module prompt',
+    );
   });
 
   test('applies stop sequences and cancels active conversation', () async {
@@ -292,4 +444,7 @@ void _clearGlobals() {
   globalContext.delete('LiteRtLmBackendEnum'.toJS);
   globalContext.delete('__llamadartLiteRtLmModule'.toJS);
   globalContext.delete('__llamadartLiteRtLmModuleUrl'.toJS);
+  globalContext.delete('__llamadartLiteRtLmModuleSettings'.toJS);
+  globalContext.delete('__llamadartLiteRtLmModuleConversationConfig'.toJS);
+  globalContext.delete('__llamadartLiteRtLmModulePrompt'.toJS);
 }

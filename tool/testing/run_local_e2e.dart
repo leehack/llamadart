@@ -52,6 +52,18 @@ class LocalE2eCommandStep {
   }
 }
 
+class _BackgroundProcess {
+  const _BackgroundProcess({
+    required this.process,
+    required this.stdoutSubscription,
+    required this.stderrSubscription,
+  });
+
+  final Process process;
+  final StreamSubscription<String> stdoutSubscription;
+  final StreamSubscription<String> stderrSubscription;
+}
+
 class LocalE2eRunContext {
   const LocalE2eRunContext({
     required this.projectRoot,
@@ -77,6 +89,8 @@ class LocalE2eRunContext {
       'http://127.0.0.1:$port/example/chat_app/build/web/';
   String get defaultModelUrl =>
       'http://127.0.0.1:$port/example/llamadart_server/models/Qwen3.5-0.8B-Q4_K_M.gguf';
+  String get defaultLiteRtLmWebModelUrl =>
+      'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it-web.litertlm?download=true';
 }
 
 class LocalE2eScenario {
@@ -260,6 +274,77 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       },
     ),
     LocalE2eScenario(
+      name: 'chat-app-web-litert-gemma4-smoke',
+      group: LocalE2eScenarioGroup.webSmoke,
+      description: 'Build chat_app web and run Gemma 4 through LiteRT-LM JS.',
+      requiresDevice: false,
+      stepsBuilder: (context) {
+        final steps = <LocalE2eCommandStep>[];
+        if (!context.skipBuild) {
+          steps.add(
+            LocalE2eCommandStep(
+              workingDirectory: context.chatAppDir,
+              executable: 'flutter',
+              arguments: const [
+                'build',
+                'web',
+                '--base-href=/example/chat_app/build/web/',
+              ],
+              description: 'Build Flutter web chat app',
+            ),
+          );
+        }
+        steps.addAll([
+          LocalE2eCommandStep(
+            workingDirectory: context.projectRoot,
+            executable: context.python,
+            arguments: [
+              'tool/testing/serve_static_with_headers.py',
+              '--directory',
+              '.',
+              '--port',
+              '${context.port}',
+            ],
+            description: 'Serve repo root with COOP/COEP headers',
+            background: true,
+            waitForPort: context.port,
+          ),
+          LocalE2eCommandStep(
+            workingDirectory: context.projectRoot,
+            executable: context.python,
+            arguments: [
+              'tool/testing/playwright_chat_app_real_model_smoke.py',
+              context.webBuildUrl,
+              '--model-url',
+              context.modelUrl ?? context.defaultLiteRtLmWebModelUrl,
+              '--prompt',
+              'What is 2+2? Answer with only the number.',
+              '--expect',
+              context.expect,
+              '--response-source',
+              'litert',
+              '--backend-index',
+              '2',
+              '--gpu-layers',
+              '999',
+              '--context-size',
+              '8192',
+              '--max-tokens',
+              '16',
+              '--penalty',
+              '1.1',
+              '--load-timeout-ms',
+              '${40 * 60 * 1000}',
+              '--response-timeout-ms',
+              '${10 * 60 * 1000}',
+            ],
+            description: 'Run Playwright Gemma 4 LiteRT-LM web smoke',
+          ),
+        ]);
+        return steps;
+      },
+    ),
+    LocalE2eScenario(
       name: 'bridge-smoke',
       group: LocalE2eScenarioGroup.webSmoke,
       description: 'Run the cheap WebGPU bridge bootstrap smoke.',
@@ -332,7 +417,7 @@ Future<LocalE2eResult> runLocalE2e(
     projectRoot: root,
     device: parsed.device,
     port: parsed.port,
-    python: parsed.python,
+    python: parsed.pythonProvided ? parsed.python : _defaultPython(root),
     modelUrl: parsed.modelUrl,
     expect: parsed.expect,
     skipBuild: parsed.skipBuild,
@@ -345,7 +430,7 @@ Future<LocalE2eResult> runLocalE2e(
 
   final buffer = StringBuffer()
     ..writeln('Running local E2E scenario: ${scenario.name}');
-  final backgroundProcesses = <Process>[];
+  final backgroundProcesses = <_BackgroundProcess>[];
   try {
     for (final step in steps) {
       buffer.writeln('[local-e2e] ${step.description}');
@@ -361,9 +446,19 @@ Future<LocalE2eResult> runLocalE2e(
           environment: step.environment.isEmpty ? null : step.environment,
           runInShell: false,
         );
-        backgroundProcesses.add(process);
-        process.stdout.transform(systemEncoding.decoder).listen(buffer.write);
-        process.stderr.transform(systemEncoding.decoder).listen(buffer.write);
+        final stdoutSubscription = process.stdout
+            .transform(systemEncoding.decoder)
+            .listen(buffer.write);
+        final stderrSubscription = process.stderr
+            .transform(systemEncoding.decoder)
+            .listen(buffer.write);
+        backgroundProcesses.add(
+          _BackgroundProcess(
+            process: process,
+            stdoutSubscription: stdoutSubscription,
+            stderrSubscription: stderrSubscription,
+          ),
+        );
         if (port != null) {
           await _waitForPort(port, process);
         }
@@ -388,12 +483,17 @@ Future<LocalE2eResult> runLocalE2e(
   } on Object catch (error) {
     return LocalE2eResult(1, stdout: buffer.toString(), stderr: '$error\n');
   } finally {
-    for (final process in backgroundProcesses.reversed) {
-      process.kill();
-      await process.exitCode.timeout(
+    for (final background in backgroundProcesses.reversed) {
+      background.process.kill();
+      await background.process.exitCode.timeout(
         const Duration(seconds: 5),
-        onTimeout: () => -1,
+        onTimeout: () {
+          background.process.kill(ProcessSignal.sigkill);
+          return -1;
+        },
       );
+      await background.stdoutSubscription.cancel();
+      await background.stderrSubscription.cancel();
     }
   }
 }
@@ -453,6 +553,16 @@ Future<int?> _pollExitCode(Process process) async {
   }
 }
 
+String _defaultPython(String projectRoot) {
+  final localPython = Platform.isWindows
+      ? '$projectRoot/.dart_tool/playwright-python/Scripts/python.exe'
+      : '$projectRoot/.dart_tool/playwright-python/bin/python';
+  if (File(localPython).existsSync()) {
+    return localPython;
+  }
+  return 'python3';
+}
+
 String _formatScenarioList(List<LocalE2eScenario> scenarios) {
   final buffer = StringBuffer()
     ..writeln('Local-only E2E scenarios:')
@@ -498,7 +608,7 @@ Options:
   --dry-run                      Print commands without executing them.
   --device <device>              Flutter device id for device scenarios (default: macos).
   --port <port>                  Local web server port (default: 7358).
-  --python <path>                Python executable for helper scripts (default: python3).
+  --python <path>                Python executable for helper scripts (default: repo Playwright venv, then python3).
   --model-url <url>              Model URL for real-model web smoke.
   --expect <text>                Expected response text for real-model web smoke.
   --skip-build                   Reuse an existing Flutter web build where supported.
@@ -525,6 +635,7 @@ class _ParsedArgs {
     required this.device,
     required this.port,
     required this.python,
+    required this.pythonProvided,
     required this.expect,
     required this.skipBuild,
     this.scenario,
@@ -538,6 +649,7 @@ class _ParsedArgs {
   final String device;
   final int port;
   final String python;
+  final bool pythonProvided;
   final String? modelUrl;
   final String expect;
   final bool skipBuild;
@@ -549,6 +661,7 @@ class _ParsedArgs {
     var device = 'macos';
     var port = 7358;
     var python = 'python3';
+    var pythonProvided = false;
     var expect = '4';
     var skipBuild = false;
     String? scenario;
@@ -573,6 +686,7 @@ class _ParsedArgs {
           port = int.parse(_readValue(args, ++index, arg));
         case '--python':
           python = _readValue(args, ++index, arg);
+          pythonProvided = true;
         case '--model-url':
           modelUrl = _readValue(args, ++index, arg);
         case '--expect':
@@ -590,6 +704,7 @@ class _ParsedArgs {
       device: device,
       port: port,
       python: python,
+      pythonProvided: pythonProvided,
       modelUrl: modelUrl,
       expect: expect,
       skipBuild: skipBuild,
@@ -620,5 +735,7 @@ Future<void> main(List<String> args) async {
   if (result.stderr.isNotEmpty) {
     stderr.write(result.stderr);
   }
-  exitCode = result.exitCode;
+  await stdout.flush();
+  await stderr.flush();
+  exit(result.exitCode);
 }

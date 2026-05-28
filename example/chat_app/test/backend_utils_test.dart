@@ -49,6 +49,24 @@ void main() {
         ),
         'WEBGPU',
       );
+
+      expect(
+        BackendUtils.deriveActiveBackendLabel(
+          'LiteRT-LM web gpu',
+          preferredBackend: GpuBackend.vulkan,
+          gpuLayers: 999,
+        ),
+        'WEBGPU',
+      );
+
+      expect(
+        BackendUtils.deriveActiveBackendLabel(
+          'LiteRT-LM gpu',
+          preferredBackend: GpuBackend.vulkan,
+          gpuLayers: 999,
+        ),
+        'GPU',
+      );
     });
 
     test('selects highest-priority backend from runtime text', () {

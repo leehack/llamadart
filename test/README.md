@@ -21,6 +21,12 @@ dart test -p chrome
 # Local-only E2E tests
 dart test --run-skipped -t local-only
 
+# Enumerate repeatable local browser/device smoke scenarios
+dart run tool/testing/run_local_e2e.dart --list
+
+# Real Gemma 4 LiteRT-LM web smoke
+dart run tool/testing/run_local_e2e.dart --scenario chat-app-web-litert-gemma4-smoke
+
 # Template parity suites (sequential, local-only e2e included)
 tool/testing/run_template_parity_suites.sh
 ```

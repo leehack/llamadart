@@ -34,9 +34,13 @@ class LiteRtLmBackend
         BackendStatePersistenceSupport {
   static const Duration _engineReadyTimeout = Duration(seconds: 12);
   static const Duration _enginePollInterval = Duration(milliseconds: 100);
+  static const String _passthroughLatestMessageTemplate =
+      '{% for message in messages %}'
+      '{% if loop.last %}{{ message["content"] }}{% endif %}'
+      '{% endfor %}';
 
+  static const int _backendGpuArtisan = 2;
   static const int _backendCpu = 3;
-  static const int _backendGpu = 4;
 
   final String? _moduleUrl;
   final Duration _readyTimeout;
@@ -159,7 +163,7 @@ class LiteRtLmBackend
     List<LlamaContentPart>? parts,
   }) async* {
     final engine = _requireContext();
-    if (parts != null && parts.isNotEmpty) {
+    if (_hasMediaParts(parts)) {
       throw UnsupportedError(
         'LiteRtLmBackend web does not support media parts.',
       );
@@ -239,6 +243,11 @@ class LiteRtLmBackend
     final metadata = <String, String>{
       'general.file_type': 'litertlm',
       'llamadart.backend': 'LiteRT-LM web',
+      // @litert-lm/core Conversation applies the model chat template itself
+      // when sendMessageStreaming receives a string. The high-level llamadart
+      // chat API still asks for a template, so return only the current message.
+      'tokenizer.chat_template':
+          _chatTemplate ?? _passthroughLatestMessageTemplate,
     };
     final activeBackend = _activeBackend;
     if (activeBackend != null) {
@@ -247,10 +256,6 @@ class LiteRtLmBackend
     final modelUrl = _modelUrl;
     if (modelUrl != null) {
       metadata['litert_lm.model_url'] = modelUrl;
-    }
-    final chatTemplate = _chatTemplate;
-    if (chatTemplate != null) {
-      metadata['tokenizer.chat_template'] = chatTemplate;
     }
     return metadata;
   }
@@ -436,7 +441,7 @@ class LiteRtLmBackend
         }
         window.__llamadartLiteRtLmModule = mod;
         if (window.$callbackName) {
-          window.$callbackName();
+          window.$callbackName(null);
         }
       }).catch(e => {
         if (window.$callbackName) {
@@ -657,6 +662,15 @@ class LiteRtLmBackend
       }
     }
     return buffer.toString();
+  }
+
+  bool _hasMediaParts(List<LlamaContentPart>? parts) {
+    if (parts == null) {
+      return false;
+    }
+    return parts.any(
+      (part) => part is LlamaImageContent || part is LlamaAudioContent,
+    );
   }
 
   Future<void> _disposeEngine() async {
@@ -882,8 +896,10 @@ class LiteRtLmBackend
     }
     return switch (backend) {
       'cpu' => _backendCpu,
-      'gpu' => _backendGpu,
-      _ => _backendGpu,
+      // @litert-lm/core web bundles default to GPU_ARTISAN for streaming
+      // browser execution. The Gemma 4 web bundle only loads through that path.
+      'gpu' => _backendGpuArtisan,
+      _ => _backendGpuArtisan,
     };
   }
 
@@ -892,17 +908,17 @@ class LiteRtLmBackend
     if (raw == null || !raw.isA<JSObject>()) {
       return null;
     }
-    final key = switch (backend) {
-      'cpu' => 'CPU',
-      'gpu' => 'GPU',
-      _ => null,
+    final keys = switch (backend) {
+      'cpu' => const ['CPU'],
+      'gpu' => const ['GPU_ARTISAN', 'GPU'],
+      _ => const <String>[],
     };
-    if (key == null) {
-      return null;
-    }
-    final value = (raw as JSObject).getProperty(key.toJS);
-    if (value != null && value.isA<JSNumber>()) {
-      return (value as JSNumber).toDartInt;
+    final enumObject = raw as JSObject;
+    for (final key in keys) {
+      final value = enumObject.getProperty(key.toJS);
+      if (value != null && value.isA<JSNumber>()) {
+        return (value as JSNumber).toDartInt;
+      }
     }
     return null;
   }

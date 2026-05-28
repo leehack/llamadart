@@ -142,7 +142,7 @@ class LiteRtLmService {
     List<LlamaContentPart>? parts,
   }) async* {
     _checkContextHandle(contextHandle);
-    if (parts != null && parts.isNotEmpty) {
+    if (_hasMediaParts(parts)) {
       throw UnsupportedError('LiteRtLmBackend does not support media parts.');
     }
     _validateGenerationParams(params);
@@ -499,6 +499,15 @@ class LiteRtLmService {
     if (!stopped && pending.isNotEmpty) {
       yield utf8.encode(pending);
     }
+  }
+
+  bool _hasMediaParts(List<LlamaContentPart>? parts) {
+    if (parts == null) {
+      return false;
+    }
+    return parts.any(
+      (part) => part is LlamaImageContent || part is LlamaAudioContent,
+    );
   }
 
   int _firstStopIndex(String text, List<String> stopSequences) {

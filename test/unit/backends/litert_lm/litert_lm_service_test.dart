@@ -656,6 +656,44 @@ void main() {
     }
   });
 
+  test(
+    'allows text parts already represented in the rendered prompt',
+    () async {
+      final fakeClient = _FakeLiteRtLmRuntimeClient();
+      final service = LiteRtLmService(clientFactory: () => fakeClient);
+
+      try {
+        final modelHandle = await service.loadModel(
+          modelFile.path,
+          const ModelParams(preferredBackend: GpuBackend.cpu),
+        );
+        final contextHandle = service.createContext(
+          modelHandle,
+          const ModelParams(preferredBackend: GpuBackend.cpu),
+        );
+
+        final chunksFuture = service
+            .generate(
+              contextHandle,
+              'hello',
+              const GenerationParams(),
+              parts: const [LlamaTextContent('hello')],
+            )
+            .toList();
+
+        await fakeClient.generateStarted.future;
+        fakeClient.generated.add('ok');
+        await fakeClient.generated.close();
+
+        expect(await chunksFuture, [utf8.encode('ok')]);
+        expect(fakeClient.createConversationCount, 1);
+        expect(fakeClient.generateCount, 1);
+      } finally {
+        service.dispose();
+      }
+    },
+  );
+
   test('passes LiteRT-LM tokenization APIs to the client', () async {
     final fakeClient = _FakeLiteRtLmRuntimeClient()
       ..tokenizeResult = const <int>[2, 10, 11]

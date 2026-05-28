@@ -351,6 +351,11 @@ _(Add screenshots here when complete)_
 - For autonomous browser smoke tests without downloading a real model, append
   `?llamadart_mock_bridge=echo` (or `qwen-weird`) and use
   `tool/testing/playwright_chat_app_mock_smoke.py` against a local static server.
+- For the real Gemma 4 LiteRT-LM web path, use
+  `dart run tool/testing/run_local_e2e.dart --scenario chat-app-web-litert-gemma4-smoke`.
+  This builds the Flutter web app, serves it with COOP/COEP headers, loads the
+  `gemma-4-E2B-it-web.litertlm` bundle through `@litert-lm/core`, and captures
+  streamed LiteRT-LM output in Playwright.
 - Runtime status chips expose execution mode/core/cache/worker fallback/runtime notes,
   so non-COI or worker fallback perf constraints are visible in-app.
 - On web, multimodal projector loading is eager by default for stability: if an

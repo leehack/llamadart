@@ -19,6 +19,7 @@ void main() {
       expect(result.stdout, contains('webgpu-multimodal-regression'));
       expect(result.stdout, contains('chat-app-model-cache'));
       expect(result.stdout, contains('chat-app-web-real-model-smoke'));
+      expect(result.stdout, contains('chat-app-web-litert-gemma4-smoke'));
       expect(result.stdout, contains('bridge-smoke'));
       expect(result.stdout, contains('Dart local-only'));
       expect(result.stdout, contains('Flutter device'));
@@ -82,6 +83,59 @@ void main() {
           contains('--model-url http://127.0.0.1:7358/models/tiny.gguf'),
         );
         expect(result.stdout, contains('--expect ok'));
+      },
+    );
+
+    test('prefers repo-local Playwright Python by default', () async {
+      final tempDir = await Directory.systemTemp.createTemp(
+        'run_local_e2e_python_test_',
+      );
+      addTearDown(() => tempDir.delete(recursive: true));
+
+      final pythonPath = Platform.isWindows
+          ? '${tempDir.path}/.dart_tool/playwright-python/Scripts/python.exe'
+          : '${tempDir.path}/.dart_tool/playwright-python/bin/python';
+      await File(pythonPath).create(recursive: true);
+
+      final result = await runLocalE2e([
+        '--scenario',
+        'chat-app-web-litert-gemma4-smoke',
+        '--skip-build',
+        '--dry-run',
+      ], projectRoot: tempDir.path);
+
+      expect(result.exitCode, 0);
+      expect(
+        result.stdout,
+        contains(
+          '$pythonPath tool/testing/playwright_chat_app_real_model_smoke.py',
+        ),
+      );
+    });
+
+    test(
+      'dry-runs Web LiteRT-LM Gemma 4 smoke with LiteRT response capture',
+      () async {
+        final result = await runLocalE2e(const [
+          '--scenario',
+          'chat-app-web-litert-gemma4-smoke',
+          '--skip-build',
+          '--dry-run',
+        ], projectRoot: '/repo');
+
+        expect(result.exitCode, 0);
+        expect(
+          result.stdout,
+          contains('playwright_chat_app_real_model_smoke.py'),
+        );
+        expect(
+          result.stdout,
+          contains('gemma-4-E2B-it-web.litertlm?download=true'),
+        );
+        expect(result.stdout, contains('--response-source litert'));
+        expect(result.stdout, contains('--backend-index 2'));
+        expect(result.stdout, contains('--gpu-layers 999'));
+        expect(result.stdout, contains('--penalty 1.1'));
       },
     );
 
