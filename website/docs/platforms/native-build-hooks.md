@@ -24,6 +24,7 @@ sequenceDiagram
 
     Build->>Hook: invoke native-assets hook
     Hook->>Hook: resolve target OS + arch bundle key
+    Hook->>Hook: apply runtime-family selection
     Hook->>Cache: check cached bundle
     alt cache hit
         Cache-->>Hook: extracted bundle
@@ -33,7 +34,7 @@ sequenceDiagram
         Hook->>Hook: extract libraries
     end
     Hook->>Hook: validate required runtime libraries
-    Hook->>Hook: collect modules + apply backend selection/fallback
+    Hook->>Hook: collect llama.cpp modules + apply backend selection/fallback
     Hook->>Assets: emit bundled code assets
     Assets-->>Runtime: package .so/.dylib/.dll
     Runtime->>Runtime: load libraries with DynamicLibrary.open
@@ -50,6 +51,33 @@ GitHub Releases:
 - `leehack/llamadart-native` for llama.cpp / GGUF runtime libraries.
 - `leehack/litert-lm-native` for LiteRT-LM / `.litertlm` runtime libraries.
 
+Native builds include both runtime families by default when the target platform
+has both. Apps that only ship one model format can reduce package size with
+`hooks.user_defines.llamadart.llamadart_native_runtimes`:
+
+```yaml
+hooks:
+  user_defines:
+    llamadart:
+      llamadart_native_runtimes: [llama_cpp] # or [litert_lm]
+```
+
+The value can also be a per-platform map:
+
+```yaml
+hooks:
+  user_defines:
+    llamadart:
+      llamadart_native_runtimes:
+        runtimes: [llama_cpp, litert_lm]
+        platforms:
+          android-arm64: [litert_lm]
+          linux-x64: [llama_cpp]
+```
+
+Use `llamadart_native_backends` separately to filter llama.cpp modules such as
+Vulkan, CUDA, OpenCL, BLAS, and HIP inside the `llama_cpp` runtime family.
+
 ### 3. Dynamic Linking
 Using `native_assets_cli`, the downloaded dynamic libraries (`.so`, `.dylib`,
 `.dll`) are configured for **Dynamic Loading Bundled** when the runtime supports
@@ -63,7 +91,15 @@ The hook validates the full expected companion set after extraction so missing
 or stale `litert-lm-native` archives fail during the build rather than later at
 engine creation.
 
+On macOS, LiteRT-LM dylibs are staged as app-bundle frameworks instead of
+opened directly from `.dart_tool`, because sandboxed apps cannot open arbitrary
+files from the build cache. The example chat app includes an Xcode build phase
+that calls `tool/macos_litert_lm_prepare_app.sh` after Flutter embeds its
+frameworks.
+
 ### 4. Validation and fallback safeguards
+- Runtime-family selection is explicit: `llama_cpp`, `litert_lm`, or both.
+  Selecting an unavailable LiteRT-LM platform explicitly fails during the hook.
 - Backend selection is bundle-aware: requested modules must exist in the
   platform/arch bundle.
 - If requested modules are unavailable, the hook logs warnings and falls back

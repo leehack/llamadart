@@ -130,6 +130,72 @@ void main() {
     });
   });
 
+  group('selectNativeRuntimesForBundle', () {
+    test('defaults to llama.cpp and LiteRT-LM', () {
+      final selected = selectNativeRuntimesForBundle(
+        bundle: 'linux-x64',
+        rawUserConfig: null,
+        warn: (_) {},
+      );
+
+      expect(selected, [nativeRuntimeLlamaCpp, nativeRuntimeLiteRtLm]);
+    });
+
+    test('parses global runtime list with aliases', () {
+      final selected = selectNativeRuntimesForBundle(
+        bundle: 'android-arm64',
+        rawUserConfig: 'gguf, litert-lm',
+        warn: (_) {},
+      );
+
+      expect(selected, [nativeRuntimeLlamaCpp, nativeRuntimeLiteRtLm]);
+    });
+
+    test('supports per-platform runtime override', () {
+      final selected = selectNativeRuntimesForBundle(
+        bundle: 'windows-x64',
+        rawUserConfig: {
+          'runtimes': ['llama_cpp', 'litert_lm'],
+          'platforms': {
+            'windows-x64': ['litert'],
+          },
+        },
+        warn: (_) {},
+      );
+
+      expect(selected, [nativeRuntimeLiteRtLm]);
+    });
+
+    test('supports map platform shape with runtimes key', () {
+      final selected = selectNativeRuntimesForBundle(
+        bundle: 'android-arm64',
+        rawUserConfig: {
+          'platforms': {
+            'android-arm64': {
+              'runtimes': ['llama.cpp'],
+              'backends': ['vulkan'],
+            },
+          },
+        },
+        warn: (_) {},
+      );
+
+      expect(selected, [nativeRuntimeLlamaCpp]);
+    });
+
+    test('warns and ignores unknown runtime names', () {
+      final warnings = <String>[];
+      final selected = selectNativeRuntimesForBundle(
+        bundle: 'linux-x64',
+        rawUserConfig: ['litert_lm', 'onnx'],
+        warn: warnings.add,
+      );
+
+      expect(selected, [nativeRuntimeLiteRtLm]);
+      expect(warnings.single, contains('onnx'));
+    });
+  });
+
   group('selectLibrariesForBundling', () {
     final spec = resolveNativeBundleSpec(
       os: OS.linux,

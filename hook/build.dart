@@ -266,31 +266,26 @@ void main(List<String> args) async {
     }
 
     final pkgRoot = input.packageRoot.toFilePath();
-    final bundleDir = await _acquireBundleDirectory(
-      packageRoot: pkgRoot,
-      nativeConfig: nativeConfig,
+    final selectedRuntimes = selectNativeRuntimesForBundle(
       bundle: spec.bundle,
-      log: log,
-    );
-
-    final libraryPaths = _collectDynamicLibraryPaths(bundleDir);
-    if (libraryPaths.isEmpty) {
-      throw Exception('No dynamic libraries found in ${bundleDir.path}.');
-    }
-
-    final libraries = describeNativeLibraries(libraryPaths);
-    if (!libraries.any((library) => library.isPrimary)) {
-      throw Exception(
-        'No primary libllamadart library found in ${bundleDir.path}.',
-      );
-    }
-
-    final selectedLibraries = selectLibrariesForBundling(
-      spec: spec,
-      libraries: libraries,
-      rawUserConfig: input.userDefines[nativeBackendUserDefineKey],
+      rawUserConfig: input.userDefines[nativeRuntimesUserDefineKey],
       warn: log.warning,
     );
+    if (selectedRuntimes.isEmpty) {
+      throw Exception(
+        'No native runtimes selected for ${spec.bundle}. Configure '
+        '$nativeRuntimesUserDefineKey with llama_cpp, litert_lm, or both.',
+      );
+    }
+    final includeLlamaCpp = selectedRuntimes.contains(nativeRuntimeLlamaCpp);
+    final includeLiteRtLm = selectedRuntimes.contains(nativeRuntimeLiteRtLm);
+    log.info('Selected native runtimes: ${selectedRuntimes.join(', ')}.');
+
+    if (includeLiteRtLm &&
+        _liteRtLmBundleSpecForCode(code) == null &&
+        input.userDefines[nativeRuntimesUserDefineKey] != null) {
+      throw Exception('LiteRT-LM runtime is not available for ${spec.bundle}.');
+    }
 
     final reportDirPath = path.join(
       input.outputDirectory.toFilePath(),
@@ -307,29 +302,57 @@ void main(List<String> args) async {
 
     final emittedLibraries = <NativeLibraryDescriptor>[];
 
-    for (final library in selectedLibraries) {
-      final emittedFileNames = _emittedFileNamesForLibrary(
-        spec: spec,
-        library: library,
+    if (includeLlamaCpp) {
+      final bundleDir = await _acquireBundleDirectory(
+        packageRoot: pkgRoot,
+        nativeConfig: nativeConfig,
+        bundle: spec.bundle,
+        log: log,
       );
 
-      for (final emittedFileName in emittedFileNames) {
-        final loweredFileName = emittedFileName.toLowerCase();
-        if (copiedFileNames.contains(loweredFileName)) {
-          if (emittedFileName == library.fileName) {
-            log.warning(
-              'Duplicate library filename detected, skipping: '
-              '${library.fileName}',
-            );
+      final libraryPaths = _collectDynamicLibraryPaths(bundleDir);
+      if (libraryPaths.isEmpty) {
+        throw Exception('No dynamic libraries found in ${bundleDir.path}.');
+      }
+
+      final libraries = describeNativeLibraries(libraryPaths);
+      if (!libraries.any((library) => library.isPrimary)) {
+        throw Exception(
+          'No primary libllamadart library found in ${bundleDir.path}.',
+        );
+      }
+
+      final selectedLibraries = selectLibrariesForBundling(
+        spec: spec,
+        libraries: libraries,
+        rawUserConfig: input.userDefines[nativeBackendUserDefineKey],
+        warn: log.warning,
+      );
+
+      for (final library in selectedLibraries) {
+        final emittedFileNames = _emittedFileNamesForLibrary(
+          spec: spec,
+          library: library,
+        );
+
+        for (final emittedFileName in emittedFileNames) {
+          final loweredFileName = emittedFileName.toLowerCase();
+          if (copiedFileNames.contains(loweredFileName)) {
+            if (emittedFileName == library.fileName) {
+              log.warning(
+                'Duplicate library filename detected, skipping: '
+                '${library.fileName}',
+              );
+            }
+            continue;
           }
-          continue;
+
+          copiedFileNames.add(loweredFileName);
+
+          final destinationPath = path.join(reportDirPath, emittedFileName);
+          await File(library.filePath).copy(destinationPath);
+          emittedLibraries.add(describeNativeLibrary(destinationPath));
         }
-
-        copiedFileNames.add(loweredFileName);
-
-        final destinationPath = path.join(reportDirPath, emittedFileName);
-        await File(library.filePath).copy(destinationPath);
-        emittedLibraries.add(describeNativeLibrary(destinationPath));
       }
     }
 
@@ -355,16 +378,18 @@ void main(List<String> args) async {
       );
     }
 
-    await _emitLiteRtLmAssets(
-      code: code,
-      output: output,
-      packageRoot: pkgRoot,
-      reportDirPath: reportDirPath,
-      usedAssetNames: usedAssetNames,
-      log: log,
-    );
+    if (includeLiteRtLm) {
+      await _emitLiteRtLmAssets(
+        code: code,
+        output: output,
+        packageRoot: pkgRoot,
+        reportDirPath: reportDirPath,
+        usedAssetNames: usedAssetNames,
+        log: log,
+      );
+    }
 
-    if (!usedAssetNames.contains(_packageName)) {
+    if (includeLlamaCpp && !usedAssetNames.contains(_packageName)) {
       throw Exception(
         'Primary asset package:$_packageName/$_packageName was not emitted.',
       );

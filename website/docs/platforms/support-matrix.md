@@ -1,9 +1,10 @@
 ---
 title: Platform & Backend Matrix
-description: Check which native and web backends are supported by llamadart and how backend module selection works per platform.
+description: Check which native and web runtimes are supported by llamadart and how backend selection works per platform.
 ---
 
-This page combines platform support and backend-module configuration for
+This page combines platform support, runtime-family selection, and
+backend-module configuration for
 `llamadart`.
 
 The native-assets hook currently pins `llamadart-native` tag `b9371` and
@@ -67,6 +68,43 @@ Select LiteRT-LM CPU/GPU/NPU with `ModelParams.liteRtLmBackend`.
 `LiteRtLmBackendPreference.auto` currently maps to GPU on Android, macOS, and
 web, and CPU on other LiteRT-LM targets. NPU selection is Android native only;
 web rejects it explicitly.
+
+## Configuring native runtime families
+
+Use `llamadart_native_runtimes` to choose which native runtime families are
+bundled:
+
+- `llama_cpp`: GGUF model support through llama.cpp.
+- `litert_lm`: `.litertlm` model support through LiteRT-LM.
+
+The default is both runtime families where the target platform has both. This
+maximizes format compatibility, but apps that only ship one model format can
+trim package size:
+
+```yaml
+hooks:
+  user_defines:
+    llamadart:
+      llamadart_native_runtimes: [llama_cpp]
+```
+
+Per-platform overrides use the same bundle keys as the tables on this page:
+
+```yaml
+hooks:
+  user_defines:
+    llamadart:
+      llamadart_native_runtimes:
+        runtimes: [llama_cpp, litert_lm]
+        platforms:
+          android-arm64: [litert_lm]
+          linux-x64: [llama_cpp]
+```
+
+Accepted aliases include `llama.cpp`, `gguf`, `litert`, and `litert-lm`.
+Explicitly selecting `litert_lm` for a target without a pinned LiteRT-LM
+runtime fails during the build hook instead of producing an app that cannot
+load `.litertlm` models.
 
 ## LiteRT-LM runtime coverage (`v0.12.0`)
 
@@ -146,8 +184,8 @@ Use `hooks.user_defines.llamadart.llamadart_native_tag` and
 `hooks.user_defines.llamadart.llamadart_native_repository` to test another
 GitHub release source,
 `hooks.user_defines.llamadart.llamadart_native_path` to use a local source, and
-`hooks.user_defines.llamadart.llamadart_native_backends` to select split backend
-modules:
+`hooks.user_defines.llamadart.llamadart_native_backends` to select split
+llama.cpp backend modules:
 
 ```yaml
 hooks:
@@ -217,6 +255,10 @@ no valid entries remain, selection falls back to `cpu_profile` (or default
 ## Selection and fallback behavior
 
 - Configurable targets start from defaults (`cpu`, `vulkan`) if available.
+- `llamadart_native_runtimes` controls whole native runtime families:
+  `llama_cpp`, `litert_lm`, or both.
+- `llamadart_native_backends` controls only llama.cpp module files inside
+  `llama_cpp`; it does not affect LiteRT-LM assets.
 - `cpu` is auto-added as fallback when present in the bundle.
 - Android arm64 defaults to `cpu_profile: full`.
 - `cpu_variants` (if provided) takes precedence over `cpu_profile` for Android
@@ -233,6 +275,9 @@ no valid entries remain, selection falls back to `cpu_profile` (or default
 - Apple targets (`ios-*`, `macos-*`) support `cpu` + `metal`, but ignore
   per-backend module config in this hook path because runtime libraries are
   consolidated.
+- Sandboxed macOS apps must stage LiteRT-LM companion dylibs inside the app
+  bundle. The example chat app does this with the
+  `Prepare LiteRT-LM Frameworks` Xcode build phase.
 - `windows-x64` performs extra runtime dependency validation:
   - `cuda` requires `cudart` and `cublas` DLLs.
   - `blas` requires OpenBLAS DLL.
@@ -248,8 +293,9 @@ no valid entries remain, selection falls back to `cpu_profile` (or default
 - Native source overrides do not regenerate Dart FFI bindings or symbol
   lookups, so they are only safe with compatible native binaries.
 - If you change `llamadart_native_tag`, `llamadart_native_repository`,
-  `llamadart_native_path`, or `llamadart_native_backends`, run `flutter clean`
-  once to clear stale native-asset outputs.
+  `llamadart_native_path`, `llamadart_native_runtimes`, or
+  `llamadart_native_backends`, run `flutter clean` once to clear stale
+  native-asset outputs.
 
 ## Vulkan cooperative matrix driver crashes
 

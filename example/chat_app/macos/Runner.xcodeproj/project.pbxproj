@@ -240,6 +240,7 @@
 				33CC10EB2044A3C60003C045 /* Resources */,
 				33CC110E2044A8840003C045 /* Bundle Framework */,
 				3399D490228B24CF009A79C7 /* ShellScript */,
+				A17E2C1B5C7747D5A3C40A23 /* Prepare LiteRT-LM Frameworks */,
 				684C686447A55F16132EB20D /* [CP] Embed Pods Frameworks */,
 			);
 			buildRules = (
@@ -404,6 +405,25 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "\"$FLUTTER_ROOT\"/packages/flutter_tools/bin/macos_assemble.sh && touch Flutter/ephemeral/tripwire";
+		};
+		A17E2C1B5C7747D5A3C40A23 /* Prepare LiteRT-LM Frameworks */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Prepare LiteRT-LM Frameworks";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/bash;
+			shellScript = "set -euo pipefail\nSCRIPT=\"$PROJECT_DIR/../../../tool/macos_litert_lm_prepare_app.sh\"\nif [ -x \"$SCRIPT\" ]; then\n  \"$SCRIPT\" \"$TARGET_BUILD_DIR/$WRAPPER_NAME\"\nelse\n  echo \"warning: LiteRT-LM prepare script not found: $SCRIPT\" >&2\nfi\n";
 		};
 		684C686447A55F16132EB20D /* [CP] Embed Pods Frameworks */ = {
 			isa = PBXShellScriptBuildPhase;

@@ -148,6 +148,49 @@ void main() {
     },
   );
 
+  test('build hook can emit llama.cpp runtime without LiteRT-LM', () async {
+    final userDefines = PackageUserDefines(
+      workspacePubspec: PackageUserDefinesSource(
+        defines: {
+          'llamadart_native_runtimes': ['llama_cpp'],
+          'llamadart_native_backends': {
+            'platforms': {
+              'windows-x64': ['vulkan'],
+            },
+          },
+        },
+        basePath: Directory.current.uri,
+      ),
+    );
+
+    await testCodeBuildHook(
+      mainMethod: build_hook.main,
+      targetOS: OS.windows,
+      targetArchitecture: Architecture.x64,
+      userDefines: userDefines,
+      check: (input, output) {
+        final codeAssets = output.assets.encodedAssets
+            .where((asset) => asset.isCodeAsset)
+            .map((asset) => asset.asCodeAsset)
+            .toList(growable: false);
+
+        final codeAssetIds = codeAssets.map((asset) => asset.id).toSet();
+        final emittedNames = codeAssets
+            .map((asset) => path.basename(asset.file!.toFilePath()))
+            .toSet();
+
+        expect(codeAssetIds, contains('package:llamadart/llamadart'));
+        expect(emittedNames, contains('ggml-vulkan-windows-x64.dll'));
+        for (final library in _windowsLiteRtLibraries) {
+          expect(emittedNames, isNot(contains(library)));
+        }
+        for (final assetName in _windowsLiteRtAssetNames) {
+          expect(codeAssetIds, isNot(contains('package:llamadart/$assetName')));
+        }
+      },
+    );
+  });
+
   test('build hook refreshes stale windows cache from local archive', () async {
     await _writeBundleLibraries(bundleDir, const [
       'llamadart-windows-x64.dll',

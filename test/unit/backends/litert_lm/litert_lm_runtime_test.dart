@@ -59,6 +59,26 @@ void main() {
     expect(liteRtLmMacOsCacheDirectoryCandidatesForAbi(Abi.linuxX64), isEmpty);
   });
 
+  test('LiteRT-LM cache lookup follows desktop runtime ABIs', () {
+    expect(
+      liteRtLmCacheDirectoryCandidatesForAbi(Abi.macosArm64),
+      const <String>['macos_arm64', 'macos/arm64'],
+    );
+    expect(liteRtLmCacheDirectoryCandidatesForAbi(Abi.linuxX64), const <String>[
+      'linux/x64',
+      'linux_x64',
+    ]);
+    expect(
+      liteRtLmCacheDirectoryCandidatesForAbi(Abi.linuxArm64),
+      const <String>['linux/arm64', 'linux_arm64'],
+    );
+    expect(
+      liteRtLmCacheDirectoryCandidatesForAbi(Abi.windowsX64),
+      const <String>['windows/x64', 'windows_x64'],
+    );
+    expect(liteRtLmCacheDirectoryCandidatesForAbi(Abi.androidArm64), isEmpty);
+  });
+
   test('macOS LiteRT-LM cache validation follows runtime ABI files', () {
     expect(liteRtLmMacOsRequiredLibrariesForAbi(Abi.macosArm64), const <String>[
       'libGemmaModelConstraintProvider.dylib',
@@ -75,6 +95,26 @@ void main() {
       'libStreamProxy.dylib',
     ]);
     expect(liteRtLmMacOsRequiredLibrariesForAbi(Abi.linuxX64), isEmpty);
+  });
+
+  test('LiteRT-LM cache validation follows desktop runtime ABI files', () {
+    expect(liteRtLmRequiredLibrariesForAbi(Abi.linuxX64), const <String>[
+      'libGemmaModelConstraintProvider.so',
+      'libLiteRt.so',
+      'libLiteRtLm.so',
+      'libLiteRtTopKWebGpuSampler.so',
+      'libLiteRtWebGpuAccelerator.so',
+      'libStreamProxy.so',
+    ]);
+    expect(liteRtLmRequiredLibrariesForAbi(Abi.windowsX64), const <String>[
+      'LiteRtLm.dll',
+      'StreamProxy.dll',
+      'libGemmaModelConstraintProvider.dll',
+      'libLiteRt.dll',
+      'libLiteRtTopKWebGpuSampler.dll',
+      'libLiteRtWebGpuAccelerator.dll',
+    ]);
+    expect(liteRtLmRequiredLibrariesForAbi(Abi.androidArm64), isEmpty);
   });
 
   test('macOS LiteRT-LM app framework validation follows runtime ABI', () {
@@ -136,6 +176,35 @@ void main() {
 
     expect(liteRtLmIsMacOsCacheDirectoryForAbi(x64Dir, Abi.macosX64), isTrue);
     expect(liteRtLmIsMacOsCacheDirectoryForAbi(x64Dir, Abi.linuxX64), isFalse);
+  });
+
+  test('LiteRT-LM cache validation rejects partial desktop caches', () {
+    final root = Directory.systemTemp.createTempSync('litert_lm_cache_test_');
+    addTearDown(() => root.deleteSync(recursive: true));
+
+    final linuxDir = Directory('${root.path}/linux')..createSync();
+    File('${linuxDir.path}/libLiteRtLm.so').createSync();
+    File('${linuxDir.path}/libStreamProxy.so').createSync();
+
+    expect(liteRtLmIsCacheDirectoryForAbi(linuxDir, Abi.linuxX64), isFalse);
+
+    for (final library in liteRtLmRequiredLibrariesForAbi(Abi.linuxX64)) {
+      File('${linuxDir.path}/$library').createSync();
+    }
+
+    expect(liteRtLmIsCacheDirectoryForAbi(linuxDir, Abi.linuxX64), isTrue);
+
+    final windowsDir = Directory('${root.path}/windows')..createSync();
+    File('${windowsDir.path}/LiteRtLm.dll').createSync();
+
+    expect(liteRtLmIsCacheDirectoryForAbi(windowsDir, Abi.windowsX64), isFalse);
+
+    for (final library in liteRtLmRequiredLibrariesForAbi(Abi.windowsX64)) {
+      File('${windowsDir.path}/$library').createSync();
+    }
+
+    expect(liteRtLmIsCacheDirectoryForAbi(windowsDir, Abi.windowsX64), isTrue);
+    expect(liteRtLmIsCacheDirectoryForAbi(windowsDir, Abi.linuxX64), isFalse);
   });
 
   test('engine create failure diagnostics include fallback guidance', () {

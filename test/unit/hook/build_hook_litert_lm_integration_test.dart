@@ -165,6 +165,44 @@ void main() {
     );
   });
 
+  test('build hook can emit LiteRT-LM runtime without llama.cpp', () async {
+    final userDefines = PackageUserDefines(
+      workspacePubspec: PackageUserDefinesSource(
+        defines: {
+          'llamadart_native_runtimes': ['litert_lm'],
+        },
+        basePath: Directory.current.uri,
+      ),
+    );
+
+    await testCodeBuildHook(
+      mainMethod: build_hook.main,
+      targetOS: OS.linux,
+      targetArchitecture: Architecture.arm64,
+      userDefines: userDefines,
+      check: (input, output) {
+        final codeAssets = output.assets.encodedAssets
+            .where((asset) => asset.isCodeAsset)
+            .map((asset) => asset.asCodeAsset)
+            .toList(growable: false);
+
+        final codeAssetIds = codeAssets.map((asset) => asset.id).toSet();
+        final emittedNames = codeAssets
+            .map((asset) => path.basename(asset.file!.toFilePath()))
+            .toSet();
+
+        expect(codeAssetIds, isNot(contains('package:llamadart/llamadart')));
+        expect(emittedNames, isNot(contains('libllamadart.so')));
+        for (final library in _linuxLiteRtLibraries) {
+          expect(emittedNames, contains(library));
+        }
+        for (final assetName in _linuxLiteRtAssetNames) {
+          expect(codeAssetIds, contains('package:llamadart/$assetName'));
+        }
+      },
+    );
+  });
+
   test(
     'build hook emits iOS device LiteRT-LM runtime and StreamProxy',
     () async {

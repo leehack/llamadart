@@ -57,7 +57,7 @@ dependencies:
 
 On first `dart run` / `flutter run`, `llamadart` will:
 1. Detect platform/architecture.
-2. Download the matching native runtime bundle from [`leehack/llamadart-native`](https://github.com/leehack/llamadart-native).
+2. Download the matching native runtime bundles from [`leehack/llamadart-native`](https://github.com/leehack/llamadart-native) and [`leehack/litert-lm-native`](https://github.com/leehack/litert-lm-native).
 3. Wire it into your app via native assets.
 
 No manual binary download or C++ build steps are required.
@@ -65,7 +65,37 @@ No manual binary download or C++ build steps are required.
 > iOS builds require a minimum deployment target of `16.4` or newer in your
 > Xcode project / Podfile (for example `platform :ios, '16.4'`).
 
-### 3. Optional: choose native source and backend modules
+### 3. Optional: choose native runtimes for package size
+
+By default, native builds include both runtime families where available:
+
+- `llama_cpp` for GGUF models.
+- `litert_lm` for `.litertlm` model bundles.
+
+Use `llamadart_native_runtimes` when an app only ships one model format and
+you want to avoid bundling the other runtime family:
+
+```yaml
+hooks:
+  user_defines:
+    llamadart:
+      llamadart_native_runtimes: [llama_cpp] # or [litert_lm]
+```
+
+The setting also supports per-target overrides:
+
+```yaml
+hooks:
+  user_defines:
+    llamadart:
+      llamadart_native_runtimes:
+        runtimes: [llama_cpp, litert_lm]
+        platforms:
+          android-arm64: [litert_lm]
+          linux-x64: [llama_cpp]
+```
+
+### 4. Optional: choose llama.cpp backend modules per target
 
 ```yaml
 hooks:
@@ -91,7 +121,11 @@ hooks:
           windows-x64: [vulkan, cuda]
 ```
 
-If a requested module is unavailable for a target, `llamadart` logs a warning and falls back to target defaults.
+`llamadart_native_backends` only filters llama.cpp modules inside the
+`llama_cpp` runtime family. It does not enable or disable LiteRT-LM. If a
+requested module is unavailable for a target, `llamadart` logs a warning and
+falls back to target defaults.
+
 If `llamadart_native_tag` points at a release without a matching bundle asset,
 the native-assets hook fails while downloading that asset.
 
@@ -114,7 +148,7 @@ For local testing, `llamadart_native_path` may point directly at a bundle
 archive, at an extracted bundle directory, or at a directory containing
 `<tag>/<bundle>/`, `<bundle>/`, or the expected archive file.
 
-### 4. Minimal first model load
+### 5. Minimal first model load
 
 ```dart
 import 'package:llamadart/llamadart.dart';
@@ -136,6 +170,14 @@ For LiteRT-LM bundles, use the same high-level API and pass a `.litertlm`
 path or URL. Native callers load local bundle paths; web callers load
 web-compatible `.litertlm` URLs through the LiteRT-LM JavaScript runtime.
 Android callers can opt into the LiteRT-LM NPU delegate through `ModelParams`:
+
+Sandboxed macOS apps must stage LiteRT-LM companion dylibs inside the `.app`
+bundle. The chat app example includes a `Prepare LiteRT-LM Frameworks` Xcode
+build phase that copies the pinned LiteRT-LM runtime into
+`Contents/Frameworks`. Standalone desktop VM tools also search the extracted
+`.dart_tool/llamadart/litert_lm/<version>/<platform>/<arch>` cache; set
+`LLAMADART_LITERT_LM_LIB_DIR` to that directory for custom CI or launcher
+layouts.
 
 ```dart
 await engine.loadModel(
@@ -394,6 +436,11 @@ Notes:
 - Native source overrides do not regenerate Dart FFI bindings or symbol
   lookups, so the selected binary must remain compatible with the default
   runtime revision.
+- `llamadart_native_runtimes` controls whole native runtime families:
+  `llama_cpp`, `litert_lm`, or both. Use it to trim package size when an app
+  only ships GGUF or only ships `.litertlm` models.
+- `llamadart_native_backends` controls llama.cpp module files inside the
+  `llama_cpp` runtime family. It does not affect LiteRT-LM assets.
 - Configurable targets always keep `cpu` bundled as a fallback.
 - Backend-owned runtime dependencies follow the selected backend module. For
   example, CUDA runtime DLLs (`cudart64_*`, `cublas64_*`, `cublaslt64_*`) are
@@ -425,8 +472,9 @@ Notes:
   `GGML_VK_DISABLE_COOPMAT=1` and `GGML_VK_DISABLE_COOPMAT2=1`.
 
 If you change `llamadart_native_tag`, `llamadart_native_repository`,
-`llamadart_native_path`, or `llamadart_native_backends`, run `flutter clean`
-once so stale native-asset outputs do not override new bundle selection.
+`llamadart_native_path`, `llamadart_native_runtimes`, or
+`llamadart_native_backends`, run `flutter clean` once so stale native-asset
+outputs do not override new bundle selection.
 
 ---
 

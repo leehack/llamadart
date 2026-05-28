@@ -74,6 +74,33 @@ JavaScript runtime.
 See [Platform & Backend Matrix](../platforms/support-matrix) for the current
 bundle keys, module availability, and selector names.
 
+## Package Size Controls
+
+Native apps include both runtime families by default where available, so one
+build can load GGUF and `.litertlm` models. If your app only ships one model
+format, opt into the matching runtime family with
+`llamadart_native_runtimes`:
+
+```yaml
+hooks:
+  user_defines:
+    llamadart:
+      llamadart_native_runtimes: [llama_cpp] # GGUF only
+```
+
+or:
+
+```yaml
+hooks:
+  user_defines:
+    llamadart:
+      llamadart_native_runtimes: [litert_lm] # .litertlm only
+```
+
+`llamadart_native_backends` is a different switch: it filters llama.cpp module
+files such as Vulkan, CUDA, OpenCL, BLAS, and HIP inside the `llama_cpp`
+runtime. It does not enable or disable LiteRT-LM.
+
 ## Parameter Differences
 
 For GGUF / llama.cpp, common load-time controls include:

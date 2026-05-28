@@ -7,6 +7,14 @@ const String nativeBackendUserDefineKey = 'llamadart_native_backends';
 const String nativeTagUserDefineKey = 'llamadart_native_tag';
 const String nativeRepositoryUserDefineKey = 'llamadart_native_repository';
 const String nativePathUserDefineKey = 'llamadart_native_path';
+const String nativeRuntimesUserDefineKey = 'llamadart_native_runtimes';
+const String nativeRuntimeLlamaCpp = 'llama_cpp';
+const String nativeRuntimeLiteRtLm = 'litert_lm';
+
+const List<String> defaultNativeRuntimes = [
+  nativeRuntimeLlamaCpp,
+  nativeRuntimeLiteRtLm,
+];
 
 const Set<String> _coreLibraries = {
   'llamadart',
@@ -57,6 +65,21 @@ const Map<String, String> _backendAliases = {
   'vk': 'vulkan',
   'ocl': 'opencl',
   'open-cl': 'opencl',
+};
+
+const Map<String, String> _runtimeAliases = {
+  'llama': nativeRuntimeLlamaCpp,
+  'llamacpp': nativeRuntimeLlamaCpp,
+  'llama-cpp': nativeRuntimeLlamaCpp,
+  'llama.cpp': nativeRuntimeLlamaCpp,
+  'gguf': nativeRuntimeLlamaCpp,
+  'litert': nativeRuntimeLiteRtLm,
+  'lite-rt': nativeRuntimeLiteRtLm,
+  'lite-rt-lm': nativeRuntimeLiteRtLm,
+  'litertlm': nativeRuntimeLiteRtLm,
+  'litert-lm': nativeRuntimeLiteRtLm,
+  'litert.lm': nativeRuntimeLiteRtLm,
+  '.litertlm': nativeRuntimeLiteRtLm,
 };
 
 final _cudaRuntimeDependencyNamePattern = RegExp(
@@ -281,6 +304,30 @@ List<String>? parseRequestedBackends({
   return _parseBackendList(platformValue);
 }
 
+List<String> selectNativeRuntimesForBundle({
+  required String bundle,
+  required Object? rawUserConfig,
+  required void Function(String message) warn,
+}) {
+  final parsed = _parseNativeRuntimeConfigForBundle(
+    bundle: bundle,
+    rawUserConfig: rawUserConfig,
+  );
+  if (parsed == null) {
+    return defaultNativeRuntimes;
+  }
+
+  final invalid = parsed.invalid;
+  if (invalid.isNotEmpty) {
+    warn(
+      'Ignoring unknown native runtime(s) for $bundle: ${invalid.join(', ')}. '
+      'Supported runtimes: llama_cpp, litert_lm.',
+    );
+  }
+
+  return parsed.runtimes;
+}
+
 List<String> selectBackendsForBundle({
   required NativeBundleSpec spec,
   required Set<String> availableBackends,
@@ -336,6 +383,64 @@ List<String> selectBackendsForBundle({
   }
 
   return _ensureCpuBackend(requested, availableBackends);
+}
+
+({List<String> runtimes, List<String> invalid})?
+_parseNativeRuntimeConfigForBundle({
+  required String bundle,
+  required Object? rawUserConfig,
+}) {
+  if (rawUserConfig == null) {
+    return null;
+  }
+
+  if (rawUserConfig is String || rawUserConfig is List<Object?>) {
+    return _parseRuntimeList(rawUserConfig);
+  }
+
+  final root = _toStringMap(rawUserConfig);
+  if (root == null) {
+    return (
+      runtimes: defaultNativeRuntimes,
+      invalid: [rawUserConfig.toString()],
+    );
+  }
+
+  final globalValue = root.containsKey('runtimes')
+      ? root['runtimes']
+      : root.containsKey('default')
+      ? root['default']
+      : null;
+  final platformValue = _platformConfigValueForBundle(
+    bundle: bundle,
+    rawUserConfig: rawUserConfig,
+  );
+
+  if (platformValue != null) {
+    if (platformValue is Map<Object?, Object?>) {
+      final platformMap = _toStringMap(platformValue);
+      if (platformMap != null && platformMap.containsKey('runtimes')) {
+        return _parseRuntimeList(platformMap['runtimes']);
+      }
+      return _parseRuntimeList(platformValue);
+    }
+    return _parseRuntimeList(platformValue);
+  }
+
+  if (globalValue != null) {
+    return _parseRuntimeList(globalValue);
+  }
+
+  final hasRuntimeShape =
+      root.keys.any(
+        (key) => _knownBundleKeys.contains(canonicalizeBundleKey(key)),
+      ) ||
+      _extractPlatformsMap(root) != null;
+  if (hasRuntimeShape) {
+    return null;
+  }
+
+  return (runtimes: defaultNativeRuntimes, invalid: [rawUserConfig.toString()]);
 }
 
 List<String> _androidCpuVariantsForProfile(String profile) {
@@ -685,12 +790,95 @@ List<String> _parseBackendList(Object? value) {
   return result;
 }
 
+({List<String> runtimes, List<String> invalid}) _parseRuntimeList(
+  Object? value,
+) {
+  final result = <String>[];
+  final invalid = <String>[];
+
+  void addToken(String token) {
+    final normalized = _normalizeRuntime(token);
+    if (normalized == null) {
+      if (token.trim().isNotEmpty) {
+        invalid.add(token.trim());
+      }
+      return;
+    }
+    if (normalized == 'all') {
+      for (final runtime in defaultNativeRuntimes) {
+        if (!result.contains(runtime)) {
+          result.add(runtime);
+        }
+      }
+      return;
+    }
+    if (normalized == 'none') {
+      result.clear();
+      return;
+    }
+    if (!result.contains(normalized)) {
+      result.add(normalized);
+    }
+  }
+
+  if (value is String) {
+    for (final token in value.split(',')) {
+      addToken(token);
+    }
+    return (runtimes: result, invalid: invalid);
+  }
+
+  if (value is List<Object?>) {
+    for (final entry in value) {
+      if (entry is String) {
+        addToken(entry);
+      } else if (entry != null) {
+        invalid.add(entry.toString());
+      }
+    }
+    return (runtimes: result, invalid: invalid);
+  }
+
+  if (value is Map<Object?, Object?>) {
+    final mapped = _toStringMap(value);
+    if (mapped != null && mapped.containsKey('runtimes')) {
+      return _parseRuntimeList(mapped['runtimes']);
+    }
+  }
+
+  if (value != null) {
+    invalid.add(value.toString());
+  }
+  return (runtimes: result, invalid: invalid);
+}
+
 String? _normalizeBackend(String value) {
   final normalized = value.trim().toLowerCase().replaceAll('_', '-');
   if (normalized.isEmpty) {
     return null;
   }
   return _backendAliases[normalized] ?? normalized;
+}
+
+String? _normalizeRuntime(String value) {
+  var normalized = value.trim().toLowerCase();
+  if (normalized.isEmpty) {
+    return null;
+  }
+  normalized = normalized.replaceAll('_', '-');
+  if (normalized == 'all' || normalized == 'both') {
+    return 'all';
+  }
+  if (normalized == 'none' || normalized == 'off' || normalized == 'false') {
+    return 'none';
+  }
+  if (normalized == nativeRuntimeLlamaCpp.replaceAll('_', '-')) {
+    return nativeRuntimeLlamaCpp;
+  }
+  if (normalized == nativeRuntimeLiteRtLm.replaceAll('_', '-')) {
+    return nativeRuntimeLiteRtLm;
+  }
+  return _runtimeAliases[normalized];
 }
 
 String _canonicalLibraryName(String fileName) {

@@ -70,6 +70,53 @@ List<String> liteRtLmMacOsRequiredLibrariesForAbi(Abi abi) {
   };
 }
 
+/// Internal helper used by the LiteRT-LM runtime to locate extracted
+/// native-assets cache directories.
+List<String> liteRtLmCacheDirectoryCandidatesForAbi(Abi abi) {
+  return switch (abi) {
+    Abi.macosArm64 => liteRtLmMacOsCacheDirectoryCandidatesForAbi(abi),
+    Abi.macosX64 => liteRtLmMacOsCacheDirectoryCandidatesForAbi(abi),
+    Abi.linuxArm64 => const <String>['linux/arm64', 'linux_arm64'],
+    Abi.linuxX64 => const <String>['linux/x64', 'linux_x64'],
+    Abi.windowsX64 => const <String>['windows/x64', 'windows_x64'],
+    _ => const <String>[],
+  };
+}
+
+/// Internal helper used by the LiteRT-LM runtime to validate extracted
+/// native-assets cache directories.
+List<String> liteRtLmRequiredLibrariesForAbi(Abi abi) {
+  return switch (abi) {
+    Abi.macosArm64 => liteRtLmMacOsRequiredLibrariesForAbi(abi),
+    Abi.macosX64 => liteRtLmMacOsRequiredLibrariesForAbi(abi),
+    Abi.linuxArm64 => const <String>[
+      'libGemmaModelConstraintProvider.so',
+      'libLiteRt.so',
+      'libLiteRtLm.so',
+      'libLiteRtTopKWebGpuSampler.so',
+      'libLiteRtWebGpuAccelerator.so',
+      'libStreamProxy.so',
+    ],
+    Abi.linuxX64 => const <String>[
+      'libGemmaModelConstraintProvider.so',
+      'libLiteRt.so',
+      'libLiteRtLm.so',
+      'libLiteRtTopKWebGpuSampler.so',
+      'libLiteRtWebGpuAccelerator.so',
+      'libStreamProxy.so',
+    ],
+    Abi.windowsX64 => const <String>[
+      'LiteRtLm.dll',
+      'StreamProxy.dll',
+      'libGemmaModelConstraintProvider.dll',
+      'libLiteRt.dll',
+      'libLiteRtTopKWebGpuSampler.dll',
+      'libLiteRtWebGpuAccelerator.dll',
+    ],
+    _ => const <String>[],
+  };
+}
+
 /// Internal helper used by the LiteRT-LM runtime to validate macOS app
 /// framework directories.
 List<String> liteRtLmMacOsRequiredFrameworksForAbi(Abi abi) {
@@ -101,6 +148,16 @@ List<String> liteRtLmMacOsRequiredFrameworksForAbi(Abi abi) {
 /// native-assets cache directories.
 bool liteRtLmIsMacOsCacheDirectoryForAbi(Directory dir, Abi abi) {
   final requiredLibraries = liteRtLmMacOsRequiredLibrariesForAbi(abi);
+  return requiredLibraries.isNotEmpty &&
+      requiredLibraries.every(
+        (library) => File('${dir.path}/$library').existsSync(),
+      );
+}
+
+/// Internal helper used by the LiteRT-LM runtime to validate extracted
+/// native-assets cache directories.
+bool liteRtLmIsCacheDirectoryForAbi(Directory dir, Abi abi) {
+  final requiredLibraries = liteRtLmRequiredLibrariesForAbi(abi);
   return requiredLibraries.isNotEmpty &&
       requiredLibraries.every(
         (library) => File('${dir.path}/$library').existsSync(),
@@ -894,23 +951,49 @@ class LiteRtLmRuntimeClient {
       );
     }
     if (Platform.isLinux && (abi == Abi.linuxX64 || abi == Abi.linuxArm64)) {
+      final cacheDir = _findLiteRtLmCacheDirForAbi(abi);
+      if (cacheDir != null) {
+        return (
+          proxyCandidates: [
+            '${cacheDir.path}/libStreamProxy.so',
+            'package:llamadart/litert_lm_StreamProxy',
+            'libStreamProxy.so',
+          ],
+          liteRtLm: '${cacheDir.path}/libLiteRtLm.so',
+          companions: _companionLibrariesForAbi(abi, cacheDir),
+          directCallbackSupported: true,
+        );
+      }
       return (
         proxyCandidates: const [
           'package:llamadart/litert_lm_StreamProxy',
           'libStreamProxy.so',
         ],
-        liteRtLm: 'libLiteRtLm.so',
+        liteRtLm: 'package:llamadart/litert_lm_LiteRtLm',
         companions: const [],
         directCallbackSupported: true,
       );
     }
     if (Platform.isWindows && abi == Abi.windowsX64) {
+      final cacheDir = _findLiteRtLmCacheDirForAbi(abi);
+      if (cacheDir != null) {
+        return (
+          proxyCandidates: [
+            '${cacheDir.path}/StreamProxy.dll',
+            'package:llamadart/litert_lm_StreamProxy',
+            'StreamProxy.dll',
+          ],
+          liteRtLm: '${cacheDir.path}/LiteRtLm.dll',
+          companions: _companionLibrariesForAbi(abi, cacheDir),
+          directCallbackSupported: true,
+        );
+      }
       return (
         proxyCandidates: const [
           'package:llamadart/litert_lm_StreamProxy',
           'StreamProxy.dll',
         ],
-        liteRtLm: 'LiteRtLm.dll',
+        liteRtLm: 'package:llamadart/litert_lm_LiteRtLm',
         companions: const [],
         directCallbackSupported: true,
       );
@@ -954,16 +1037,21 @@ class LiteRtLmRuntimeClient {
   }
 
   Directory? _findMacOsLiteRtLmCacheDir() {
+    return _findLiteRtLmCacheDirForAbi(Abi.current());
+  }
+
+  Directory? _findLiteRtLmCacheDirForAbi(Abi abi) {
     final envPath = Platform.environment[_litertLmLibDirEnv];
     if (envPath != null && envPath.isNotEmpty) {
       final dir = Directory(envPath);
-      if (_isMacOsLiteRtLmDir(dir)) {
-        return dir;
+      if (liteRtLmIsCacheDirectoryForAbi(dir, abi)) {
+        return dir.absolute;
       }
     }
 
-    final cacheDirectoryCandidates =
-        liteRtLmMacOsCacheDirectoryCandidatesForAbi(Abi.current());
+    final cacheDirectoryCandidates = liteRtLmCacheDirectoryCandidatesForAbi(
+      abi,
+    );
 
     for (final root in _candidateSearchRoots()) {
       Directory? current = root;
@@ -973,7 +1061,7 @@ class LiteRtLmRuntimeClient {
             '${current.path}/.dart_tool/llamadart/litert_lm/'
             '$_litertLmVersion/$cacheDirectoryCandidate',
           );
-          if (_isMacOsLiteRtLmDir(candidate)) {
+          if (liteRtLmIsCacheDirectoryForAbi(candidate, abi)) {
             return candidate;
           }
         }
@@ -993,10 +1081,6 @@ class LiteRtLmRuntimeClient {
     return roots.map(Directory.new).toList();
   }
 
-  bool _isMacOsLiteRtLmDir(Directory dir) {
-    return liteRtLmIsMacOsCacheDirectoryForAbi(dir, Abi.current());
-  }
-
   List<String> _macOsCompanionLibrariesForAbi(Abi abi) {
     return liteRtLmMacOsRequiredLibrariesForAbi(abi)
         .where(
@@ -1005,6 +1089,40 @@ class LiteRtLmRuntimeClient {
               library != 'libStreamProxy.dylib',
         )
         .toList(growable: false);
+  }
+
+  List<String> _companionLibrariesForAbi(Abi abi, Directory dir) {
+    final liteRtLm = _liteRtLmLibraryFileNameForAbi(abi);
+    final streamProxy = _streamProxyLibraryFileNameForAbi(abi);
+    if (liteRtLm == null || streamProxy == null) {
+      return const <String>[];
+    }
+    return liteRtLmRequiredLibrariesForAbi(abi)
+        .where((library) => library != liteRtLm && library != streamProxy)
+        .map((library) => '${dir.path}/$library')
+        .toList(growable: false);
+  }
+
+  String? _liteRtLmLibraryFileNameForAbi(Abi abi) {
+    return switch (abi) {
+      Abi.macosArm64 => 'libLiteRtLm.dylib',
+      Abi.macosX64 => 'libLiteRtLm.dylib',
+      Abi.linuxArm64 => 'libLiteRtLm.so',
+      Abi.linuxX64 => 'libLiteRtLm.so',
+      Abi.windowsX64 => 'LiteRtLm.dll',
+      _ => null,
+    };
+  }
+
+  String? _streamProxyLibraryFileNameForAbi(Abi abi) {
+    return switch (abi) {
+      Abi.macosArm64 => 'libStreamProxy.dylib',
+      Abi.macosX64 => 'libStreamProxy.dylib',
+      Abi.linuxArm64 => 'libStreamProxy.so',
+      Abi.linuxX64 => 'libStreamProxy.so',
+      Abi.windowsX64 => 'StreamProxy.dll',
+      _ => null,
+    };
   }
 
   String _macOsFrameworkBinaryPath(Directory frameworksDir, String library) {
