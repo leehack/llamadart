@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:llamadart/llamadart.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/chat_provider.dart';
@@ -100,6 +101,9 @@ class RuntimeStatusPanel extends StatelessWidget {
         if (!isReady) {
           return const SizedBox.shrink();
         }
+        final isLiteRtLmModel = activeModelName.toLowerCase().endsWith(
+          '.litertlm',
+        );
 
         return Padding(
           padding: const EdgeInsets.fromLTRB(14, 8, 14, 0),
@@ -175,7 +179,11 @@ class RuntimeStatusPanel extends StatelessWidget {
                 _chip(
                   context,
                   icon: Icons.layers_rounded,
-                  text: 'layers $runtimeGpuLayers',
+                  text:
+                      isLiteRtLmModel &&
+                          runtimeGpuLayers >= ModelParams.maxGpuLayers
+                      ? 'gpu max'
+                      : 'layers $runtimeGpuLayers',
                 ),
               if (runtimeThreads != null)
                 _chip(
