@@ -6,6 +6,70 @@ import 'package:llamadart/llamadart.dart';
 
 const _defaultPrompt =
     'Write a concise explanation of why on-device language models are useful.';
+const _llamaCppBenchmarkBackendNames = <String>{
+  'auto',
+  'cpu',
+  'vulkan',
+  'metal',
+  'cuda',
+  'opencl',
+  'hip',
+  'blas',
+};
+
+String normalizeLlamaCppBenchmarkBackendName(String backend) {
+  final normalized = backend.trim().toLowerCase();
+  if (_llamaCppBenchmarkBackendNames.contains(normalized)) {
+    return normalized;
+  }
+  return 'auto';
+}
+
+GpuBackend resolveLlamaCppBenchmarkBackend(
+  String backend, {
+  String? operatingSystem,
+}) {
+  final normalized = backend.trim().toLowerCase();
+  return switch (normalized) {
+    '' || 'auto' => _defaultLlamaCppBenchmarkBackend(
+      operatingSystem: operatingSystem,
+    ),
+    'cpu' => GpuBackend.cpu,
+    'vulkan' => GpuBackend.vulkan,
+    'metal' => GpuBackend.metal,
+    'cuda' => GpuBackend.cuda,
+    'opencl' => GpuBackend.opencl,
+    'hip' => GpuBackend.hip,
+    'blas' => GpuBackend.blas,
+    _ => throw ArgumentError.value(
+      backend,
+      'LLAMADART_BACKEND',
+      'Expected auto, cpu, vulkan, metal, cuda, opencl, hip, or blas.',
+    ),
+  };
+}
+
+GpuBackend _defaultLlamaCppBenchmarkBackend({String? operatingSystem}) {
+  final os = operatingSystem ?? Platform.operatingSystem;
+  return switch (os) {
+    'macos' || 'ios' => GpuBackend.metal,
+    'android' || 'linux' || 'windows' => GpuBackend.vulkan,
+    _ => GpuBackend.auto,
+  };
+}
+
+String llamaCppBenchmarkBackendLabel(GpuBackend backend) {
+  return switch (backend) {
+    GpuBackend.auto => 'Auto',
+    GpuBackend.cpu => 'CPU',
+    GpuBackend.vulkan => 'Vulkan',
+    GpuBackend.metal => 'Metal',
+    GpuBackend.cuda => 'CUDA',
+    GpuBackend.opencl => 'OpenCL',
+    GpuBackend.hip => 'HIP',
+    GpuBackend.blas => 'BLAS',
+  };
+}
 
 void main() {
   runApp(const LiteRtLmBenchmarkApp());
@@ -37,6 +101,9 @@ class _LiteRtLmBenchmarkAppState extends State<LiteRtLmBenchmarkApp> {
   String _backend = const String.fromEnvironment(
     'LITERT_LM_BACKEND',
     defaultValue: 'gpu',
+  );
+  String _llamaBackend = normalizeLlamaCppBenchmarkBackendName(
+    const String.fromEnvironment('LLAMADART_BACKEND', defaultValue: 'auto'),
   );
   bool _speculative = const bool.fromEnvironment(
     'LITERT_LM_SPECULATIVE',
@@ -224,18 +291,19 @@ class _LiteRtLmBenchmarkAppState extends State<LiteRtLmBenchmarkApp> {
   Future<void> _runLlamaDartBenchmark(String modelPath) async {
     final engine = LlamaEngine(LlamaBackend());
     try {
+      final backendPreference = resolveLlamaCppBenchmarkBackend(_llamaBackend);
       _append('');
       _append('=== llamadart / llama.cpp ===');
       _append('Initializing llamadart:');
       _append('  model: $modelPath');
-      _append('  backend: Vulkan');
+      _append('  backend: ${llamaCppBenchmarkBackendLabel(backendPreference)}');
       final loadSw = Stopwatch()..start();
       await engine.loadModel(
         modelPath,
         modelParams: ModelParams(
           contextSize: _maxTokens,
           gpuLayers: ModelParams.maxGpuLayers,
-          preferredBackend: GpuBackend.vulkan,
+          preferredBackend: backendPreference,
         ),
       );
       loadSw.stop();
@@ -275,6 +343,7 @@ class _LiteRtLmBenchmarkAppState extends State<LiteRtLmBenchmarkApp> {
       final metrics = {
         'loadMilliseconds': loadSw.elapsedMilliseconds,
         'wallMilliseconds': wallMs,
+        'requestedBackend': backendPreference.name,
         'backendName': backendName,
         'resolvedGpuLayers': resolvedGpuLayers,
         'targetDecodeTokens': _outputTokens,
@@ -362,6 +431,48 @@ class _LiteRtLmBenchmarkAppState extends State<LiteRtLmBenchmarkApp> {
                           ? null
                           : (value) =>
                                 setState(() => _backend = value ?? _backend),
+                    ),
+                    DropdownButton<String>(
+                      value: _llamaBackend,
+                      items: const [
+                        DropdownMenuItem(
+                          value: 'auto',
+                          child: Text('llama.cpp auto'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'cpu',
+                          child: Text('llama.cpp CPU'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'vulkan',
+                          child: Text('llama.cpp Vulkan'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'metal',
+                          child: Text('llama.cpp Metal'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'cuda',
+                          child: Text('llama.cpp CUDA'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'opencl',
+                          child: Text('llama.cpp OpenCL'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'hip',
+                          child: Text('llama.cpp HIP'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'blas',
+                          child: Text('llama.cpp BLAS'),
+                        ),
+                      ],
+                      onChanged: _running
+                          ? null
+                          : (value) => setState(
+                              () => _llamaBackend = value ?? _llamaBackend,
+                            ),
                     ),
                     FilterChip(
                       label: const Text('Speculative'),

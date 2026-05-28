@@ -71,6 +71,9 @@
   * Added target-specific Pixel benchmark timeouts so full Gemma 4 comparisons
     can allow the slower llama.cpp/GGUF Vulkan leg to finish without hiding
     LiteRT-LM failures behind an unnecessarily long timeout.
+  * Updated the LiteRT-LM benchmark app so the llama.cpp/GGUF comparison leg
+    defaults to Metal on Apple platforms and Vulkan on Android/Linux/Windows,
+    with `LLAMADART_BACKEND` available for explicit benchmark overrides.
   * Coalesced concurrent LiteRT-LM worker startup requests so simultaneous
     pre-load diagnostics cannot leak extra backend isolates.
   * Reject concurrent LiteRT-LM generations before sending them to the worker so
