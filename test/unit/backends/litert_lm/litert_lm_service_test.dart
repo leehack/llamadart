@@ -303,6 +303,20 @@ void main() {
       await expectLater(
         () => service.loadModel(
           modelFile.path,
+          const ModelParams(contextSize: 0),
+        ),
+        throwsA(
+          isA<ArgumentError>().having(
+            (error) => error.message.toString(),
+            'message',
+            contains('contextSize=0'),
+          ),
+        ),
+      );
+
+      await expectLater(
+        () => service.loadModel(
+          modelFile.path,
           const ModelParams(
             gpuLayers: 12,
             liteRtLmBackend: LiteRtLmBackendPreference.gpu,

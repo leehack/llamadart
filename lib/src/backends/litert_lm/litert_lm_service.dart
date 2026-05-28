@@ -542,6 +542,9 @@ class LiteRtLmService {
     params.validate();
 
     final unsupported = <String>[];
+    if (params.contextSize <= 0) {
+      unsupported.add('contextSize=${params.contextSize}');
+    }
     if (params.gpuLayers > 0 && params.gpuLayers != ModelParams.maxGpuLayers) {
       unsupported.add('gpuLayers=${params.gpuLayers}');
     }
