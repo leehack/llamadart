@@ -59,6 +59,7 @@ class LiteRtLmBackend
 
   @override
   Future<int> modelLoad(String path, ModelParams params) async {
+    await _cancelActiveGeneration();
     final response = await _sendRequest(
       (sendPort) => LiteRtLmModelLoadRequest(
         path,
@@ -86,7 +87,9 @@ class LiteRtLmBackend
 
   @override
   Future<void> modelFree(int modelHandle) async {
+    await _cancelActiveGeneration();
     if (_sendPort == null) {
+      _isReady = false;
       return;
     }
     try {
@@ -110,12 +113,18 @@ class LiteRtLmBackend
 
   @override
   Future<void> contextFree(int contextHandle) async {
+    await _cancelActiveGeneration();
     if (_sendPort == null) {
       return;
     }
-    await _sendRequest(
-      (sendPort) => LiteRtLmContextFreeRequest(contextHandle, sendPort),
-    );
+    try {
+      await _sendRequest(
+        (sendPort) => LiteRtLmContextFreeRequest(contextHandle, sendPort),
+        timeout: const Duration(seconds: 5),
+      );
+    } on TimeoutException {
+      _killWorker();
+    }
   }
 
   @override
@@ -598,12 +607,23 @@ class LiteRtLmBackend
   }
 
   void _killWorker() {
+    _activeGenerationCleanup?.call();
     _workerGeneration += 1;
     _isolate?.kill(priority: Isolate.immediate);
     _isolate = null;
     _sendPort = null;
     _isolateStart = null;
     _activeGenerationCleanup = null;
+    _isReady = false;
+  }
+
+  Future<void> _cancelActiveGeneration() async {
+    final cleanup = _activeGenerationCleanup;
+    if (cleanup == null) {
+      return;
+    }
+    await _cancelGeneration();
+    cleanup();
   }
 
   Future<void> _cancelGeneration() async {

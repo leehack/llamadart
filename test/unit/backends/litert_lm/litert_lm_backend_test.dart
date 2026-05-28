@@ -394,6 +394,143 @@ void main() {
     },
   );
 
+  test('cancels active generation before context free', () async {
+    final worker = _FakeLiteRtLmWorker(
+      tokenizeResponse: const <int>[],
+      detokenizeResponse: '',
+      holdGeneration: true,
+    );
+    final backend = LiteRtLmBackend(initialSendPort: worker.sendPort);
+
+    try {
+      final firstDone = Completer<void>();
+      final firstSubscription = backend
+          .generate(1, 'first', const GenerationParams())
+          .listen(
+            (_) {},
+            onError: firstDone.completeError,
+            onDone: firstDone.complete,
+          );
+      await worker.generateReceived.future;
+
+      await backend.contextFree(1);
+      await firstDone.future.timeout(const Duration(seconds: 1));
+
+      final cancelIndex = worker.requests.indexWhere(
+        (request) => request is LiteRtLmCancelGenerationRequest,
+      );
+      final contextFreeIndex = worker.requests.indexWhere(
+        (request) => request is LiteRtLmContextFreeRequest,
+      );
+      expect(cancelIndex, isNonNegative);
+      expect(contextFreeIndex, isNonNegative);
+      expect(cancelIndex, lessThan(contextFreeIndex));
+      expect(
+        worker.requests.whereType<LiteRtLmGenerateRequest>(),
+        hasLength(1),
+      );
+
+      await firstSubscription.cancel();
+    } finally {
+      await backend.dispose();
+      worker.close();
+    }
+  });
+
+  test('cancels active generation before model free', () async {
+    final worker = _FakeLiteRtLmWorker(
+      tokenizeResponse: const <int>[],
+      detokenizeResponse: '',
+      holdGeneration: true,
+    );
+    final backend = LiteRtLmBackend(initialSendPort: worker.sendPort);
+
+    try {
+      final firstDone = Completer<void>();
+      final firstSubscription = backend
+          .generate(1, 'first', const GenerationParams())
+          .listen(
+            (_) {},
+            onError: firstDone.completeError,
+            onDone: firstDone.complete,
+          );
+      await worker.generateReceived.future;
+
+      await backend.modelFree(1);
+      await firstDone.future.timeout(const Duration(seconds: 1));
+
+      final cancelIndex = worker.requests.indexWhere(
+        (request) => request is LiteRtLmCancelGenerationRequest,
+      );
+      final modelFreeIndex = worker.requests.indexWhere(
+        (request) => request is LiteRtLmModelFreeRequest,
+      );
+      expect(cancelIndex, isNonNegative);
+      expect(modelFreeIndex, isNonNegative);
+      expect(cancelIndex, lessThan(modelFreeIndex));
+      expect(backend.isReady, isFalse);
+      expect(
+        worker.requests.whereType<LiteRtLmGenerateRequest>(),
+        hasLength(1),
+      );
+
+      await firstSubscription.cancel();
+    } finally {
+      await backend.dispose();
+      worker.close();
+    }
+  });
+
+  test('cancels active generation before direct model reload', () async {
+    final worker = _FakeLiteRtLmWorker(
+      tokenizeResponse: const <int>[],
+      detokenizeResponse: '',
+      holdGeneration: true,
+    );
+    final backend = LiteRtLmBackend(initialSendPort: worker.sendPort);
+
+    try {
+      final firstDone = Completer<void>();
+      final firstSubscription = backend
+          .generate(1, 'first', const GenerationParams())
+          .listen(
+            (_) {},
+            onError: firstDone.completeError,
+            onDone: firstDone.complete,
+          );
+      await worker.generateReceived.future;
+
+      expect(
+        await backend.modelLoad(
+          modelFile.path,
+          const ModelParams(preferredBackend: GpuBackend.cpu),
+        ),
+        1,
+      );
+      await firstDone.future.timeout(const Duration(seconds: 1));
+
+      final cancelIndex = worker.requests.indexWhere(
+        (request) => request is LiteRtLmCancelGenerationRequest,
+      );
+      final loadIndex = worker.requests.indexWhere(
+        (request) => request is LiteRtLmModelLoadRequest,
+      );
+      expect(cancelIndex, isNonNegative);
+      expect(loadIndex, isNonNegative);
+      expect(cancelIndex, lessThan(loadIndex));
+      expect(backend.isReady, isTrue);
+      expect(
+        worker.requests.whereType<LiteRtLmGenerateRequest>(),
+        hasLength(1),
+      );
+
+      await firstSubscription.cancel();
+    } finally {
+      await backend.dispose();
+      worker.close();
+    }
+  });
+
   test(
     'routes chat template application through the LiteRT-LM worker',
     () async {
@@ -487,10 +624,16 @@ class _FakeLiteRtLmWorker {
         } else {
           message.sendPort.send(LiteRtLmDoneResponse());
         }
+      case LiteRtLmModelLoadRequest():
+        message.sendPort.send(LiteRtLmHandleResponse(1));
       case LiteRtLmTokenizeRequest():
         message.sendPort.send(LiteRtLmTokenizeResponse(tokenizeResponse));
       case LiteRtLmDetokenizeRequest():
         message.sendPort.send(LiteRtLmDetokenizeResponse(detokenizeResponse));
+      case LiteRtLmContextFreeRequest():
+        message.sendPort.send(LiteRtLmDoneResponse());
+      case LiteRtLmModelFreeRequest():
+        message.sendPort.send(LiteRtLmDoneResponse());
       case LiteRtLmChatTemplateRequest():
         message.sendPort.send(
           LiteRtLmChatTemplateResponse(chatTemplateResponse),
