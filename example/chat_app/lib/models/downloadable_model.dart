@@ -182,6 +182,7 @@ class DownloadableModel {
   final String? mmprojUrl;
   final String? mmprojFilename;
   final int sizeBytes;
+  final int? webSizeBytes;
   final bool supportsVision;
   final bool supportsAudio;
   final bool supportsVideo;
@@ -189,6 +190,8 @@ class DownloadableModel {
   final bool supportsThinking;
   final ModelAssetSource? _modelSourceOverride;
   final ModelAssetSource? _multimodalProjectorSourceOverride;
+  final ModelAssetSource? _webModelSourceOverride;
+  final ModelAssetSource? _webMultimodalProjectorSourceOverride;
 
   /// Recommended generation/model-loading preset for this model.
   final ModelPreset preset;
@@ -202,6 +205,9 @@ class DownloadableModel {
     required this.url,
     required this.filename,
     required this.sizeBytes,
+    this.webSizeBytes,
+    ModelAssetSource? webModelSource,
+    ModelAssetSource? webMultimodalProjectorSource,
     this.mmprojUrl,
     this.mmprojFilename,
     this.supportsVision = false,
@@ -213,7 +219,9 @@ class DownloadableModel {
     this.preset = const ModelPreset(),
   }) : id = filename,
        _modelSourceOverride = null,
-       _multimodalProjectorSourceOverride = null;
+       _multimodalProjectorSourceOverride = null,
+       _webModelSourceOverride = webModelSource,
+       _webMultimodalProjectorSourceOverride = webMultimodalProjectorSource;
 
   DownloadableModel.fromSources({
     String? id,
@@ -221,7 +229,10 @@ class DownloadableModel {
     required this.description,
     required ModelAssetSource modelSource,
     ModelAssetSource? multimodalProjectorSource,
+    ModelAssetSource? webModelSource,
+    ModelAssetSource? webMultimodalProjectorSource,
     this.sizeBytes = 0,
+    this.webSizeBytes,
     this.supportsVision = false,
     this.supportsAudio = false,
     this.supportsVideo = false,
@@ -239,7 +250,9 @@ class DownloadableModel {
            ? null
            : _sourceFilename(multimodalProjectorSource),
        _modelSourceOverride = modelSource,
-       _multimodalProjectorSourceOverride = multimodalProjectorSource;
+       _multimodalProjectorSourceOverride = multimodalProjectorSource,
+       _webModelSourceOverride = webModelSource,
+       _webMultimodalProjectorSourceOverride = webMultimodalProjectorSource;
 
   ModelAssetSource get modelSource {
     final override = _modelSourceOverride;
@@ -262,6 +275,34 @@ class DownloadableModel {
       return null;
     }
     return RemoteModelAssetSource(url: mmprojUrl!, filename: mmprojFilename!);
+  }
+
+  ModelAssetSource get webModelSource => _webModelSourceOverride ?? modelSource;
+
+  ModelAssetSource? get webMultimodalProjectorSource =>
+      _webMultimodalProjectorSourceOverride ?? multimodalProjectorSource;
+
+  ModelAssetSource modelSourceFor({required bool web}) {
+    return web ? webModelSource : modelSource;
+  }
+
+  ModelAssetSource? multimodalProjectorSourceFor({required bool web}) {
+    return web ? webMultimodalProjectorSource : multimodalProjectorSource;
+  }
+
+  int sizeBytesFor({required bool web}) {
+    if (web && webSizeBytes != null) {
+      return webSizeBytes!;
+    }
+    final source = modelSourceFor(web: web);
+    if (source is RemoteModelAssetSource && source.sizeBytes != null) {
+      return source.sizeBytes!;
+    }
+    return sizeBytes;
+  }
+
+  String filenameFor({required bool web}) {
+    return _sourceFilename(modelSourceFor(web: web));
   }
 
   ModelCapabilities get capabilities => ModelCapabilities(
@@ -442,6 +483,32 @@ class DownloadableModel {
         topK: 64,
         topP: 0.95,
         penalty: 1.0,
+        contextSize: 8192,
+        maxTokens: 1024,
+        thinkingEnabled: false,
+      ),
+    ),
+    DownloadableModel(
+      name: 'Gemma 4 E2B LiteRT-LM',
+      description:
+          '⚡ LiteRT-LM Gemma 4 text bundle (2.41GB native, 1.87GB web) • Use this for llama.cpp vs LiteRT-LM comparisons.',
+      url:
+          'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm?download=true',
+      filename: 'gemma-4-E2B-it.litertlm',
+      sizeBytes: 2588147712,
+      webSizeBytes: 2008432640,
+      webModelSource: RemoteModelAssetSource(
+        url:
+            'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it-web.litertlm?download=true',
+        filename: 'gemma-4-E2B-it-web.litertlm',
+        sizeBytes: 2008432640,
+      ),
+      minRamGb: 8,
+      supportsThinking: true,
+      preset: ModelPreset(
+        temperature: 0.7,
+        topK: 64,
+        topP: 0.95,
         contextSize: 8192,
         maxTokens: 1024,
         thinkingEnabled: false,

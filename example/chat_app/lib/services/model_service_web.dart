@@ -71,11 +71,8 @@ class ModelServiceWeb implements ModelService, WebCachePrefetchModelService {
   }
 
   List<ModelAssetSource> _assetSourcesFor(DownloadableModel model) {
-    return <ModelAssetSource>[
-      model.modelSource,
-      if (model.multimodalProjectorSource != null)
-        model.multimodalProjectorSource!,
-    ];
+    final projector = model.multimodalProjectorSourceFor(web: true);
+    return <ModelAssetSource>[model.modelSourceFor(web: true), ?projector];
   }
 
   List<RemoteModelAssetSource> _remoteSourcesFor(DownloadableModel model) {
@@ -94,7 +91,7 @@ class ModelServiceWeb implements ModelService, WebCachePrefetchModelService {
     required Function(String filename) onSuccess,
     required Function(dynamic error) onError,
   }) async {
-    final modelSource = model.modelSource;
+    final modelSource = model.modelSourceFor(web: true);
     final assetSources = _assetSourcesFor(model);
     if (assetSources.any((source) => source is! RemoteModelAssetSource)) {
       onError(
@@ -104,11 +101,15 @@ class ModelServiceWeb implements ModelService, WebCachePrefetchModelService {
     }
     final remoteModelSource = modelSource as RemoteModelAssetSource;
     final mmprojUrl =
-        (model.multimodalProjectorSource as RemoteModelAssetSource?)?.url;
+        (model.multimodalProjectorSourceFor(web: true)
+                as RemoteModelAssetSource?)
+            ?.url;
     final stageCount = mmprojUrl == null ? 1 : 2;
     final aggregate = ModelDownloadProgressTracker(
       includeMmproj: mmprojUrl != null,
-      providedTotalBytes: model.sizeBytes > 0 ? model.sizeBytes : null,
+      providedTotalBytes: model.sizeBytesFor(web: true) > 0
+          ? model.sizeBytesFor(web: true)
+          : null,
     );
     if (_remoteSourcesFor(
       model,

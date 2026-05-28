@@ -53,6 +53,35 @@ void main() {
       },
     );
 
+    test('uses web-specific model source when requested', () async {
+      final model = DownloadableModel.fromSources(
+        id: 'litert-gemma',
+        name: 'Gemma LiteRT',
+        description: 'Platform-specific LiteRT-LM model',
+        modelSource: const RemoteModelAssetSource(
+          url: 'https://example.com/gemma-native.litertlm?download=true',
+          filename: 'gemma-native.litertlm',
+        ),
+        webModelSource: const RemoteModelAssetSource(
+          url: 'https://example.com/gemma-web.litertlm?download=true',
+          filename: 'gemma-web.litertlm',
+        ),
+      );
+      final service = _FakeModelService(downloadedFiles: {model.filename});
+      final manager = ChatAppModelDownloadManager(
+        modelService: service,
+        model: model,
+        modelsDir: '/models',
+        useWebSources: true,
+      );
+
+      final entry = await manager.ensureModel(manager.source);
+
+      expect(manager.source.url.toString(), model.webModelSource.loadReference);
+      expect(entry.fileName, 'gemma-web.litertlm');
+      expect(entry.filePath, '/models/gemma-web.litertlm');
+    });
+
     test(
       'refresh downloads through the chat app service and forwards progress',
       () async {

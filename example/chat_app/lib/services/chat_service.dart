@@ -103,9 +103,20 @@ class ChatService {
         normalized.contains('qwen_qwen3.5-0.8b');
   }
 
+  bool _isLiteRtLmModel(String? modelPath) {
+    final normalized = (modelPath ?? '')
+        .split('?')
+        .first
+        .split('#')
+        .first
+        .toLowerCase();
+    return normalized.endsWith('.litertlm');
+  }
+
   ModelParams _buildModelParams(ChatSettings settings) {
     final isAndroidNative =
         !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+    final isLiteRtLm = _isLiteRtLmModel(settings.modelPath);
     final usesGpuBackend = settings.preferredBackend != GpuBackend.cpu;
     final usesVulkanBackend =
         settings.preferredBackend == GpuBackend.vulkan ||
@@ -114,6 +125,14 @@ class ChatService {
         ? settings.contextSize
         : 4096;
     final isQwen35Small = _isQwen35SmallModel(settings.modelPath);
+
+    if (isLiteRtLm) {
+      return ModelParams(
+        gpuLayers: settings.gpuLayers <= 0 ? 0 : ModelParams.maxGpuLayers,
+        preferredBackend: settings.preferredBackend,
+        contextSize: settings.contextSize,
+      );
+    }
 
     int resolvedThreads = settings.numberOfThreads;
     int resolvedThreadsBatch = settings.numberOfThreadsBatch;

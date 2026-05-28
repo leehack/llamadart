@@ -64,6 +64,9 @@ flutter test --run-skipped -t local-only \
      `litert-lm-native` runtime. Web builds load web-compatible `.litertlm`
      URLs through `@litert-lm/core`; `web/index.html` sets a default module URL
      that apps can override with `window.__llamadartLiteRtLmModuleUrl`.
+   - The Gemma 4 E2B LiteRT-LM preset uses the native `.litertlm` bundle on
+     Android/iOS/macOS/Linux/Windows and the `-web.litertlm` bundle on Flutter
+     Web.
 
 ### 3. Advanced Configuration (Optional)
 1. Tap the settings icon (⚙️) in the app bar.

@@ -18,17 +18,22 @@ class ChatAppModelDownloadManager implements llama.ModelDownloadManager {
     required this.modelService,
     required this.model,
     required this.modelsDir,
+    this.useWebSources = false,
     this.onProgressDetail,
-  }) : source = sourceFor(model);
+  }) : source = sourceFor(model, useWebSources: useWebSources);
 
   final ModelService modelService;
   final DownloadableModel model;
   final String modelsDir;
+  final bool useWebSources;
   final void Function(ModelDownloadProgress progress)? onProgressDetail;
   final llama.ModelSource source;
 
-  static llama.ModelSource sourceFor(DownloadableModel model) {
-    return _sourceForAsset(model.modelSource);
+  static llama.ModelSource sourceFor(
+    DownloadableModel model, {
+    bool useWebSources = false,
+  }) {
+    return _sourceForAsset(model.modelSourceFor(web: useWebSources));
   }
 
   @override

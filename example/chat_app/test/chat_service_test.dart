@@ -106,6 +106,58 @@ void main() {
       expect(engine.lastModelParams!.numberOfThreadsBatch, 0);
     });
 
+    test(
+      'does not apply llama.cpp Android tuning to LiteRT-LM models',
+      () async {
+        debugDefaultTargetPlatformOverride = TargetPlatform.android;
+        final engine = MockLlamaEngine();
+        final service = ChatService(engine: engine);
+
+        await service.init(
+          const ChatSettings(
+            modelPath: 'gemma-4-E2B-it.litertlm?download=true',
+            preferredBackend: GpuBackend.auto,
+            contextSize: 8192,
+            gpuLayers: 99,
+            numberOfThreads: 8,
+            numberOfThreadsBatch: 8,
+          ),
+          eagerLoadMultimodalProjector: false,
+        );
+
+        expect(engine.lastModelParams, isNotNull);
+        expect(engine.lastModelParams!.gpuLayers, ModelParams.maxGpuLayers);
+        expect(engine.lastModelParams!.preferredBackend, GpuBackend.auto);
+        expect(engine.lastModelParams!.contextSize, 8192);
+        expect(engine.lastModelParams!.batchSize, 0);
+        expect(engine.lastModelParams!.microBatchSize, 0);
+        expect(engine.lastModelParams!.numberOfThreads, 0);
+        expect(engine.lastModelParams!.numberOfThreadsBatch, 0);
+      },
+    );
+
+    test('keeps explicit CPU loads on LiteRT-LM models', () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      final engine = MockLlamaEngine();
+      final service = ChatService(engine: engine);
+
+      await service.init(
+        const ChatSettings(
+          modelPath: 'gemma-4-E2B-it.litertlm',
+          preferredBackend: GpuBackend.cpu,
+          contextSize: 8192,
+          gpuLayers: 0,
+        ),
+        eagerLoadMultimodalProjector: false,
+      );
+
+      expect(engine.lastModelParams, isNotNull);
+      expect(engine.lastModelParams!.gpuLayers, 0);
+      expect(engine.lastModelParams!.preferredBackend, GpuBackend.cpu);
+      expect(engine.lastModelParams!.batchSize, 0);
+      expect(engine.lastModelParams!.microBatchSize, 0);
+    });
+
     test('uses faster Android CPU thread defaults for Qwen3.5 0.8B', () async {
       debugDefaultTargetPlatformOverride = TargetPlatform.android;
       final engine = MockLlamaEngine();

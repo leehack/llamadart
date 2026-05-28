@@ -82,5 +82,39 @@ void main() {
       expect(profile.mmprojUrl, 'https://cdn.example.net/mmproj.gguf');
       expect(profile.mmprojFilename, 'mmproj.gguf');
     });
+
+    test('platform-specific web source can differ from native source', () {
+      final profile = DownloadableModel.fromSources(
+        id: 'litert-gemma',
+        name: 'Gemma LiteRT',
+        description: 'Platform-specific LiteRT-LM model',
+        modelSource: const RemoteModelAssetSource(
+          url: 'https://example.com/gemma-native.litertlm?download=true',
+          filename: 'gemma-native.litertlm',
+          sizeBytes: 2588147712,
+        ),
+        webModelSource: const RemoteModelAssetSource(
+          url: 'https://example.com/gemma-web.litertlm?download=true',
+          filename: 'gemma-web.litertlm',
+          sizeBytes: 2008432640,
+        ),
+        sizeBytes: 2588147712,
+        webSizeBytes: 2008432640,
+      );
+
+      expect(profile.filename, 'gemma-native.litertlm');
+      expect(
+        profile.modelSourceFor(web: false).loadReference,
+        'https://example.com/gemma-native.litertlm?download=true',
+      );
+      expect(
+        profile.modelSourceFor(web: true).loadReference,
+        'https://example.com/gemma-web.litertlm?download=true',
+      );
+      expect(profile.filenameFor(web: false), 'gemma-native.litertlm');
+      expect(profile.filenameFor(web: true), 'gemma-web.litertlm');
+      expect(profile.sizeBytesFor(web: false), 2588147712);
+      expect(profile.sizeBytesFor(web: true), 2008432640);
+    });
   });
 }

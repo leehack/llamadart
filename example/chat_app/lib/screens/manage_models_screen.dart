@@ -707,6 +707,7 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
         modelService: _modelService,
         model: model,
         modelsDir: _modelsDir ?? '',
+        useWebSources: kIsWeb,
         onProgressDetail: (detail) {
           if (!mounted) {
             return;
@@ -1017,14 +1018,15 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
   }
 
   String _resolveModelLoadReference(DownloadableModel model) {
-    return _resolveAssetLoadReference(model.modelSource);
+    return _resolveAssetLoadReference(model.modelSourceFor(web: kIsWeb));
   }
 
   bool _hasUnsupportedWebAsset(DownloadableModel model) {
-    if (model.modelSource is LocalModelAssetSource) {
+    if (model.modelSourceFor(web: true) is LocalModelAssetSource) {
       return true;
     }
-    return model.multimodalProjectorSource is LocalModelAssetSource;
+    return model.multimodalProjectorSourceFor(web: true)
+        is LocalModelAssetSource;
   }
 
   String _resolveAssetLoadReference(ModelAssetSource source) {
@@ -1046,7 +1048,7 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
       return null;
     }
 
-    final source = model.multimodalProjectorSource;
+    final source = model.multimodalProjectorSourceFor(web: kIsWeb);
     if (source != null) {
       return _resolveAssetLoadReference(source);
     }
