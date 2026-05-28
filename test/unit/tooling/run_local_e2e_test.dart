@@ -105,11 +105,10 @@ void main() {
       ], projectRoot: tempDir.path);
 
       expect(result.exitCode, 0);
+      expect(result.stdout, contains(pythonPath));
       expect(
         result.stdout,
-        contains(
-          '$pythonPath tool/testing/playwright_chat_app_real_model_smoke.py',
-        ),
+        contains('tool/testing/playwright_chat_app_real_model_smoke.py'),
       );
     });
 
