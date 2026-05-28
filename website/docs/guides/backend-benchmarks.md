@@ -34,6 +34,11 @@ rollout strategy, and failure modes.
 | Web, Chromium on Apple M4 Max | LiteRT-LM | `gemma-4-E2B-it-web.litertlm` | WebGPU | 62.70 | 64.30 | `loadMilliseconds=7730`; first token 98-129ms |
 | Web, Chromium on Apple M4 Max | llama.cpp | `gemma-4-E2B-it-Q4_K_S.gguf` | WebGPU bridge | Did not complete | Did not complete | wasm model load aborted after progressing into the 72% init phase |
 
+As a sanity check, the web llama.cpp/GGUF path still loaded and generated with
+the smaller `stories15M.gguf` fixture in Chromium. The failed row above should
+therefore be read as a Gemma 4 GGUF browser-load limit, not as evidence that
+GGUF web support is generally broken.
+
 The Pixel 9 Pro was explicitly woken and kept awake with `svc power stayon true`.
 Thermal status was 0 before the benchmark and 1 after the run, so the Android
 numbers should be treated as practical app-level numbers rather than a cooled
