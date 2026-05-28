@@ -203,6 +203,172 @@ def summarize(values: list[float]) -> dict[str, float | None]:
     }
 
 
+def run_chat_benchmark(
+    page,
+    args: argparse.Namespace,
+    response_source: str,
+    started_at: float,
+) -> tuple[int, list[dict[str, Any]]]:
+    emit("goto", app_url=args.app_url, label=args.label)
+    page.goto(args.app_url, wait_until="domcontentloaded")
+    enable_flutter_semantics(page)
+
+    button = page.get_by_role("button", name=re.compile(r"Load Model"))
+    button.wait_for(timeout=120000)
+    emit("load_click", model_url=args.model_url)
+    button.click()
+    body_after_load = wait_for_text(
+        page,
+        "Model loaded successfully! Ready to chat.",
+        args.load_timeout_ms,
+        "model load",
+    )
+    load_elapsed_ms = int((time.monotonic() - started_at) * 1000)
+    emit(
+        "loaded",
+        loadMilliseconds=load_elapsed_ms,
+        body_tail=body_after_load[-700:],
+    )
+
+    runs: list[dict[str, Any]] = []
+    total_runs = args.warmups + args.runs
+    textbox = page.get_by_role("textbox").last
+    for index in range(total_runs):
+        measured = index >= args.warmups
+        page.evaluate(
+            """() => {
+              window.__llamadartRealBridgeLastResponse = null;
+              window.__llamadartRealBridgeLastError = null;
+              window.__llamadartRealLiteRtLmLastResponse = null;
+              window.__llamadartRealLiteRtLmLastError = null;
+              window.__llamadartRealLiteRtLmLastChunks = [];
+            }"""
+        )
+        textbox.fill(args.prompt)
+        generation_started = time.monotonic()
+        page.get_by_role("button", name="Send message").click()
+        try:
+            page.get_by_role("button", name="Stop generation").wait_for(
+                timeout=10000,
+            )
+        except PlaywrightTimeoutError:
+            pass
+        _state, body, response_chars = wait_for_generation_complete(
+            page,
+            response_source,
+            args.response_timeout_ms,
+        )
+        elapsed_ms = int((time.monotonic() - generation_started) * 1000)
+        ui_metrics = parse_ui_metrics(body)
+        run = {
+            "index": index,
+            "measured": measured,
+            "elapsedMilliseconds": elapsed_ms,
+            "responseChars": response_chars,
+            **ui_metrics,
+        }
+        runs.append(run)
+        emit("run", **run)
+
+    return load_elapsed_ms, runs
+
+
+def build_success_result(
+    page,
+    args: argparse.Namespace,
+    response_source: str,
+    load_elapsed_ms: int,
+    runs: list[dict[str, Any]],
+    page_errors: list[str],
+    request_failures: list[str],
+    console_logs: list[dict[str, str]],
+) -> dict[str, Any]:
+    measured_runs = [run for run in runs if run["measured"]]
+    return {
+        "label": args.label,
+        "modelUrl": args.model_url,
+        "responseSource": response_source,
+        "loadMilliseconds": load_elapsed_ms,
+        "warmups": args.warmups,
+        "runs": args.runs,
+        "contextSize": args.context_size,
+        "targetDecodeTokens": args.max_tokens,
+        "browser": "chromium",
+        "browserAngle": args.browser_angle,
+        "mem64Requested": args.mem64,
+        "measured": {
+            "averageTokensPerSecond": summarize(
+                [
+                    float(run["averageTokensPerSecond"])
+                    for run in measured_runs
+                    if "averageTokensPerSecond" in run
+                ]
+            ),
+            "decodeTokensPerSecond": summarize(
+                [
+                    float(run["decodeTokensPerSecond"])
+                    for run in measured_runs
+                    if "decodeTokensPerSecond" in run
+                ]
+            ),
+            "totalMilliseconds": summarize(
+                [
+                    float(run["totalMilliseconds"])
+                    for run in measured_runs
+                    if "totalMilliseconds" in run
+                ]
+            ),
+            "elapsedMilliseconds": summarize(
+                [float(run["elapsedMilliseconds"]) for run in measured_runs]
+            ),
+        },
+        "runsDetail": runs,
+        "bridgeGlobals": collect_bridge_globals(page),
+        "pageErrors": page_errors[-10:],
+        "requestFailures": request_failures[-10:],
+        "consoleTail": console_logs[-25:],
+    }
+
+
+def build_failure_result(
+    page,
+    args: argparse.Namespace,
+    response_source: str,
+    error: Exception,
+    started_at: float,
+    page_errors: list[str],
+    request_failures: list[str],
+    console_logs: list[dict[str, str]],
+) -> dict[str, Any]:
+    try:
+        body_tail = safe_body_text(page)[-1200:]
+    except Exception as body_error:
+        body_tail = f"<body unavailable: {body_error}>"
+    try:
+        response_state: dict[str, Any] = extract_response_state(page)
+    except Exception as state_error:
+        response_state = {"error": str(state_error)}
+    try:
+        bridge_globals: dict[str, Any] = collect_bridge_globals(page)
+    except Exception as globals_error:
+        bridge_globals = {"error": str(globals_error)}
+
+    return {
+        "label": args.label,
+        "modelUrl": args.model_url,
+        "responseSource": response_source,
+        "error": str(error),
+        "exceptionType": type(error).__name__,
+        "elapsedMilliseconds": int((time.monotonic() - started_at) * 1000),
+        "body_tail": body_tail,
+        "responseState": response_state,
+        "bridgeGlobals": bridge_globals,
+        "pageErrors": page_errors[-10:],
+        "requestFailures": request_failures[-10:],
+        "consoleTail": console_logs[-25:],
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("app_url")
@@ -432,146 +598,48 @@ def main() -> int:
             ),
         )
 
+        exit_code = 0
         try:
-            emit("goto", app_url=args.app_url, label=args.label)
-            page.goto(args.app_url, wait_until="domcontentloaded")
-            enable_flutter_semantics(page)
-
-            button = page.get_by_role("button", name=re.compile(r"Load Model"))
-            button.wait_for(timeout=120000)
-            emit("load_click", model_url=args.model_url)
-            button.click()
-            body_after_load = wait_for_text(
+            load_elapsed_ms, runs = run_chat_benchmark(
                 page,
-                "Model loaded successfully! Ready to chat.",
-                args.load_timeout_ms,
-                "model load",
+                args,
+                response_source,
+                started_at,
             )
-            load_elapsed_ms = int((time.monotonic() - started_at) * 1000)
             emit(
-                "loaded",
-                loadMilliseconds=load_elapsed_ms,
-                body_tail=body_after_load[-700:],
-            )
-
-            runs: list[dict[str, Any]] = []
-            total_runs = args.warmups + args.runs
-            textbox = page.get_by_role("textbox").last
-            for index in range(total_runs):
-                measured = index >= args.warmups
-                page.evaluate(
-                    """() => {
-                      window.__llamadartRealBridgeLastResponse = null;
-                      window.__llamadartRealBridgeLastError = null;
-                      window.__llamadartRealLiteRtLmLastResponse = null;
-                      window.__llamadartRealLiteRtLmLastError = null;
-                      window.__llamadartRealLiteRtLmLastChunks = [];
-                    }"""
-                )
-                textbox.fill(args.prompt)
-                generation_started = time.monotonic()
-                page.get_by_role("button", name="Send message").click()
-                try:
-                    page.get_by_role("button", name="Stop generation").wait_for(
-                        timeout=10000,
-                    )
-                except PlaywrightTimeoutError:
-                    pass
-                state, body, response_chars = wait_for_generation_complete(
+                "result",
+                ok=True,
+                **build_success_result(
                     page,
+                    args,
                     response_source,
-                    args.response_timeout_ms,
-                )
-                elapsed_ms = int((time.monotonic() - generation_started) * 1000)
-                ui_metrics = parse_ui_metrics(body)
-                run = {
-                    "index": index,
-                    "measured": measured,
-                    "elapsedMilliseconds": elapsed_ms,
-                    "responseChars": response_chars,
-                    **ui_metrics,
-                }
-                runs.append(run)
-                emit("run", **run)
-
-            measured_runs = [run for run in runs if run["measured"]]
-            summary = {
-                "label": args.label,
-                "modelUrl": args.model_url,
-                "responseSource": response_source,
-                "loadMilliseconds": load_elapsed_ms,
-                "warmups": args.warmups,
-                "runs": args.runs,
-                "contextSize": args.context_size,
-                "targetDecodeTokens": args.max_tokens,
-                "browser": "chromium",
-                "browserAngle": args.browser_angle,
-                "mem64Requested": args.mem64,
-                "measured": {
-                    "averageTokensPerSecond": summarize(
-                        [
-                            float(run["averageTokensPerSecond"])
-                            for run in measured_runs
-                            if "averageTokensPerSecond" in run
-                        ]
-                    ),
-                    "decodeTokensPerSecond": summarize(
-                        [
-                            float(run["decodeTokensPerSecond"])
-                            for run in measured_runs
-                            if "decodeTokensPerSecond" in run
-                        ]
-                    ),
-                    "totalMilliseconds": summarize(
-                        [
-                            float(run["totalMilliseconds"])
-                            for run in measured_runs
-                            if "totalMilliseconds" in run
-                        ]
-                    ),
-                    "elapsedMilliseconds": summarize(
-                        [float(run["elapsedMilliseconds"]) for run in measured_runs]
-                    ),
-                },
-                "runsDetail": runs,
-                "bridgeGlobals": collect_bridge_globals(page),
-                "pageErrors": page_errors[-10:],
-                "requestFailures": request_failures[-10:],
-                "consoleTail": console_logs[-25:],
-            }
-            emit("result", ok=True, **summary)
-            browser.close()
+                    load_elapsed_ms,
+                    runs,
+                    page_errors,
+                    request_failures,
+                    console_logs,
+                ),
+            )
         except Exception as error:
-            try:
-                body_tail = safe_body_text(page)[-1200:]
-            except Exception as body_error:
-                body_tail = f"<body unavailable: {body_error}>"
-            try:
-                response_state: dict[str, Any] = extract_response_state(page)
-            except Exception as state_error:
-                response_state = {"error": str(state_error)}
-            try:
-                bridge_globals: dict[str, Any] = collect_bridge_globals(page)
-            except Exception as globals_error:
-                bridge_globals = {"error": str(globals_error)}
             emit(
                 "result",
                 ok=False,
-                label=args.label,
-                modelUrl=args.model_url,
-                responseSource=response_source,
-                error=str(error),
-                exceptionType=type(error).__name__,
-                elapsedMilliseconds=int((time.monotonic() - started_at) * 1000),
-                body_tail=body_tail,
-                responseState=response_state,
-                bridgeGlobals=bridge_globals,
-                pageErrors=page_errors[-10:],
-                requestFailures=request_failures[-10:],
-                consoleTail=console_logs[-25:],
+                **build_failure_result(
+                    page,
+                    args,
+                    response_source,
+                    error,
+                    started_at,
+                    page_errors,
+                    request_failures,
+                    console_logs,
+                ),
             )
+            exit_code = 1
+        finally:
             browser.close()
-            return 1
+
+        return exit_code
 
     return 0
 

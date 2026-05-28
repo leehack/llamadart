@@ -23,6 +23,10 @@ The prompt asked for a practical guide covering privacy, latency, offline
 behavior, personalization, battery tradeoffs, model formats, benchmarking,
 rollout strategy, and failure modes.
 
+Web runs use the chat app and the benchmark static server, which sets the
+COOP/COEP headers required for threaded WebAssembly and supports byte-range
+requests for large local model artifacts.
+
 ## Results
 
 | Device / target | Backend | Model artifact | Runtime path | Median wall tok/s | Median decode tok/s | Load / init notes |
@@ -34,13 +38,11 @@ rollout strategy, and failure modes.
 | Web, Chromium on Apple M4 Max | LiteRT-LM | `gemma-4-E2B-it-web.litertlm` | WebGPU | 48.70 | 49.80 | `loadMilliseconds=7727`; first token 107-114ms |
 | Web, Chromium on Apple M4 Max | llama.cpp | `gemma-4-E2B-it-Q4_K_S.gguf` | WebGPU bridge | 23.90 | 24.40 | `loadMilliseconds=58641`; WebGPU worker, wasm64, 99 GPU layers |
 
-The first automated Gemma 4 GGUF web attempt was invalid: the harness forced
-`GpuBackend.cpu` by passing the wrong enum index, did not set the mem64
-bootstrap flag that the chat app reads, and served the local GGUF through a
-single-threaded static server without byte-range support. The bridge also needed
-to retry the normal streamed loader when the fetch-backed loader aborted with a
-generic `core_abort`. After those fixes, the same chat app path loaded Gemma 4
-GGUF and generated through WebGPU.
+Earlier Gemma 4 GGUF web failures were benchmark-harness artifacts, not a chat
+app support failure. The current web benchmark uses the same mem64 bootstrap
+path as the chat app, selects `GpuBackend.auto`, serves local GGUF files with
+byte-range support, and falls back from the fetch-backed loader to streamed
+loading when the bridge reports a generic `core_abort`.
 
 The Pixel 9 Pro was explicitly woken and kept awake with `svc power stayon true`.
 Thermal status was 0 before the benchmark and 1 after the run, so the Android
@@ -102,4 +104,6 @@ tool/litert_lm_pixel_benchmark.sh
 For web GGUF experiments, use `TARGETS=llamadart`. If serving local large GGUF
 files, use the included benchmark server or another range-capable server; simple
 single-threaded file servers can make large browser model loads fail before the
-runtime sees real GGUF bytes.
+runtime sees real GGUF bytes. `python -m http.server` is not a good substitute
+for this benchmark because it does not provide the same browser isolation and
+large-file behavior.
