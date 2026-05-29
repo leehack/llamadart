@@ -6,8 +6,21 @@ description: Check which native and web backends are supported by llamadart and 
 This page combines platform support and backend-module configuration for
 `llamadart`.
 
-The native-assets hook currently pins `llamadart-native` tag `b9016`
-(`hook/build.dart`). Module availability below is for that pinned tag.
+The native-assets hook defaults to `llamadart-native` tag `b9371`
+(`hook/build.dart`). Apps can override the GitHub source with
+`hooks.user_defines.llamadart.llamadart_native_tag` and
+`hooks.user_defines.llamadart.llamadart_native_repository`, or use a local
+bundle source with `hooks.user_defines.llamadart.llamadart_native_path`. Module
+availability below is for the default tag.
+
+Available override tags are published on the
+[`leehack/llamadart-native` releases page](https://github.com/leehack/llamadart-native/releases)
+or via `gh release list --repo leehack/llamadart-native --limit 20`.
+The selected release must include a bundle asset named
+`llamadart-native-<bundle>-<tag>.tar.gz` for the target being built.
+Native source overrides do not regenerate Dart FFI bindings or symbol lookups,
+so the selected binary must remain ABI- and symbol-compatible with the default
+runtime revision.
 
 ## Platform/architecture coverage
 
@@ -45,7 +58,7 @@ minimum deployment target of `16.4` or newer (for example
   a web load failure as a package bug. The [WebGPU Bridge](./webgpu-bridge)
   page has the browser-console probe and Flutter Web smoke-test path.
 
-## Current module availability by bundle (`b9016`)
+## Current module availability by bundle (`b9371`)
 
 | Bundle key | Available backend modules in bundle |
 | --- | --- |
@@ -81,12 +94,27 @@ targets, but Apple targets are non-configurable in
 
 ## Configuring native backend modules
 
-Use `hooks.user_defines.llamadart.llamadart_native_backends`:
+Use `hooks.user_defines.llamadart.llamadart_native_tag` and
+`hooks.user_defines.llamadart.llamadart_native_repository` to test another
+GitHub release source,
+`hooks.user_defines.llamadart.llamadart_native_path` to use a local source, and
+`hooks.user_defines.llamadart.llamadart_native_backends` to select split backend
+modules:
 
 ```yaml
 hooks:
   user_defines:
     llamadart:
+      # Optional. Defaults to llamadart's tested native runtime pin.
+      llamadart_native_tag: b9371
+
+      # Optional. GitHub repository slug or github.com URL.
+      llamadart_native_repository: leehack/llamadart-native
+
+      # Optional. Takes precedence over GitHub downloads when set.
+      # Relative paths are resolved from the pubspec defining this config.
+      # llamadart_native_path: ./native-bundles
+
       llamadart_native_backends:
         platforms:
           android-arm64:
@@ -160,8 +188,20 @@ no valid entries remain, selection falls back to `cpu_profile` (or default
 - `windows-x64` performs extra runtime dependency validation:
   - `cuda` requires `cudart` and `cublas` DLLs.
   - `blas` requires OpenBLAS DLL.
-- If you change `llamadart_native_backends`, run `flutter clean` once to clear
-  stale native-asset outputs.
+- If `llamadart_native_tag` points at a release without a matching bundle asset,
+  the native-assets hook fails while downloading that asset.
+- Available override values are `leehack/llamadart-native` release tags, not
+  `llamadart` package versions.
+- `llamadart_native_repository` accepts a GitHub `owner/repo` slug or
+  `https://github.com/owner/repo` URL.
+- `llamadart_native_path` takes precedence over GitHub downloads and can point
+  directly at an archive, at an extracted bundle directory, or at a directory
+  containing `<tag>/<bundle>/`, `<bundle>/`, or the expected archive file.
+- Native source overrides do not regenerate Dart FFI bindings or symbol
+  lookups, so they are only safe with compatible native binaries.
+- If you change `llamadart_native_tag`, `llamadart_native_repository`,
+  `llamadart_native_path`, or `llamadart_native_backends`, run `flutter clean`
+  once to clear stale native-asset outputs.
 
 ## Vulkan cooperative matrix driver crashes
 

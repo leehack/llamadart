@@ -706,6 +706,65 @@ void main() {
       expect(path.normalize(resolved!), path.normalize(extractedDir.path));
     });
 
+    test('finds custom GitHub hook cache namespace', () {
+      final extractedDir = Directory(
+        path.join(
+          tempRoot.path,
+          '.dart_tool',
+          'llamadart',
+          'native_bundles',
+          'github',
+          'example',
+          'native-fork',
+          'b8095',
+          'windows-x64',
+          'extracted',
+        ),
+      )..createSync(recursive: true);
+      _createWindowsBundleMarkerFiles(extractedDir.path);
+
+      final resolved = LlamaCppService.resolveWindowsBackendModuleDirectory(
+        resolvedExecutablePath: path.join(
+          tempRoot.path,
+          'dart-sdk',
+          'dart.exe',
+        ),
+        currentDirectoryPath: tempRoot.path,
+        environment: const {},
+      );
+
+      expect(path.normalize(resolved!), path.normalize(extractedDir.path));
+    });
+
+    test('finds local archive hook cache namespace', () {
+      final extractedDir = Directory(
+        path.join(
+          tempRoot.path,
+          '.dart_tool',
+          'llamadart',
+          'native_bundles',
+          'local',
+          '0123456789abcdef',
+          'b8095',
+          'windows-x64',
+          'extracted',
+        ),
+      )..createSync(recursive: true);
+      _createWindowsBundleMarkerFiles(extractedDir.path);
+
+      final resolved = LlamaCppService.resolveWindowsBackendModuleDirectory(
+        resolvedExecutablePath: path.join(
+          tempRoot.path,
+          'dart-sdk',
+          'dart.exe',
+        ),
+        currentDirectoryPath: tempRoot.path,
+        environment: const {},
+      );
+
+      expect(path.normalize(resolved!), path.normalize(extractedDir.path));
+    });
+
     test('prefers .dart_tool/lib when suffixed native assets are present', () {
       final dartToolLibDir = Directory(
         path.join(tempRoot.path, '.dart_tool', 'lib'),

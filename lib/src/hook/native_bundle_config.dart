@@ -4,6 +4,9 @@ import 'package:code_assets/code_assets.dart';
 import 'package:path/path.dart' as path;
 
 const String nativeBackendUserDefineKey = 'llamadart_native_backends';
+const String nativeTagUserDefineKey = 'llamadart_native_tag';
+const String nativeRepositoryUserDefineKey = 'llamadart_native_repository';
+const String nativePathUserDefineKey = 'llamadart_native_path';
 
 const Set<String> _coreLibraries = {
   'llamadart',

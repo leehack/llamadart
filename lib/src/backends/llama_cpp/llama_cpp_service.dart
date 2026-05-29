@@ -914,7 +914,8 @@ class LlamaCppService {
   ///    `LLAMADART_BACKEND_MODULE_DIR`)
   /// 2. Directory of resolved executable (if it looks like a native bundle)
   /// 3. Current working directory (if it looks like a native bundle)
-  /// 4. Hook cache under `.dart_tool/llamadart/native_bundles/*/windows-*/`
+  /// 4. Hook cache under `.dart_tool/llamadart/native_bundles`, including
+  ///    default, custom GitHub, and local archive cache namespaces.
   /// 5. Directory of resolved executable (best-effort fallback)
   static String? resolveWindowsBackendModuleDirectory({
     required String resolvedExecutablePath,
@@ -1055,63 +1056,99 @@ class LlamaCppService {
     String cacheRootPath, {
     String? preferredBundleName,
   }) {
-    final cacheRoot = Directory(cacheRootPath);
-    List<Directory> tagDirectories;
-    try {
-      tagDirectories = cacheRoot.listSync().whereType<Directory>().toList(
-        growable: false,
-      );
-    } catch (_) {
-      return null;
+    final bundleDirs = _windowsBundleDirectoriesFromCache(
+      cacheRootPath,
+      preferredBundleName: preferredBundleName,
+    );
+
+    for (final bundleDir in bundleDirs) {
+      final extractedDir = path.join(bundleDir.path, 'extracted');
+      if (_containsWindowsNativeModules(extractedDir)) {
+        return extractedDir;
+      }
+      if (_containsWindowsNativeModules(bundleDir.path)) {
+        return bundleDir.path;
+      }
     }
+
+    return null;
+  }
+
+  static List<Directory> _windowsBundleDirectoriesFromCache(
+    String cacheRootPath, {
+    String? preferredBundleName,
+  }) {
+    final cacheRoot = Directory(cacheRootPath);
+    final tagDirectories = <Directory>[];
+
+    void addDefaultTags(Directory root) {
+      for (final child in _listChildDirectories(root)) {
+        final name = path.basename(child.path);
+        if (name == 'github' || name == 'local') {
+          continue;
+        }
+        tagDirectories.add(child);
+      }
+    }
+
+    void addGitHubTags(Directory root) {
+      final githubRoot = Directory(path.join(root.path, 'github'));
+      for (final ownerDir in _listChildDirectories(githubRoot)) {
+        for (final repoDir in _listChildDirectories(ownerDir)) {
+          tagDirectories.addAll(_listChildDirectories(repoDir));
+        }
+      }
+    }
+
+    void addLocalTags(Directory root) {
+      final localRoot = Directory(path.join(root.path, 'local'));
+      for (final digestDir in _listChildDirectories(localRoot)) {
+        tagDirectories.addAll(_listChildDirectories(digestDir));
+      }
+    }
+
+    addDefaultTags(cacheRoot);
+    addGitHubTags(cacheRoot);
+    addLocalTags(cacheRoot);
 
     tagDirectories.sort(
       (a, b) => path.basename(b.path).compareTo(path.basename(a.path)),
     );
 
+    final candidates = <Directory>[];
     for (final tagDirectory in tagDirectories) {
-      final bundleDirs = <Directory>[];
       if (preferredBundleName != null) {
         final preferred = Directory(
           path.join(tagDirectory.path, preferredBundleName),
         );
         if (preferred.existsSync()) {
-          bundleDirs.add(preferred);
+          candidates.add(preferred);
         }
       }
 
-      try {
-        final otherWindowsBundles = tagDirectory
-            .listSync()
-            .whereType<Directory>()
-            .where(
-              (directory) =>
-                  path.basename(directory.path).startsWith('windows-'),
-            )
-            .toList(growable: false);
-        bundleDirs.addAll(otherWindowsBundles);
-      } catch (_) {
-        // Ignore and continue with what we have.
-      }
-
-      final seen = <String>{};
-      for (final bundleDir in bundleDirs) {
-        final normalizedBundle = path.normalize(bundleDir.path);
-        if (!seen.add(normalizedBundle)) {
-          continue;
-        }
-
-        final extractedDir = path.join(bundleDir.path, 'extracted');
-        if (_containsWindowsNativeModules(extractedDir)) {
-          return extractedDir;
-        }
-        if (_containsWindowsNativeModules(bundleDir.path)) {
-          return bundleDir.path;
+      for (final directory in _listChildDirectories(tagDirectory)) {
+        if (path.basename(directory.path).startsWith('windows-')) {
+          candidates.add(directory);
         }
       }
     }
 
-    return null;
+    final seen = <String>{};
+    return candidates
+        .where((directory) {
+          return seen.add(path.normalize(directory.path));
+        })
+        .toList(growable: false);
+  }
+
+  static List<Directory> _listChildDirectories(Directory directory) {
+    try {
+      return directory.listSync().whereType<Directory>().toList(
+        growable: false,
+      );
+    } catch (_) {
+      return const <Directory>[];
+    }
   }
 
   static bool _containsWindowsNativeModules(String directoryPath) {

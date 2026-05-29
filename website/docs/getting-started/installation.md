@@ -46,14 +46,26 @@ On the first `dart run` / `flutter run` for a native target, `llamadart`:
 
 No local C++ toolchain setup is required for consumers.
 
-## Optional backend selection (non-Apple)
+## Optional native source and backend selection
 
-You can configure backend modules per target in your `pubspec.yaml`:
+You can configure the native runtime source and backend modules per target in
+your `pubspec.yaml`:
 
 ```yaml
 hooks:
   user_defines:
     llamadart:
+      # Optional. Defaults to llamadart's tested native runtime pin.
+      # Use a leehack/llamadart-native release tag when testing another build.
+      llamadart_native_tag: b9371
+
+      # Optional. GitHub repository slug or github.com URL.
+      llamadart_native_repository: leehack/llamadart-native
+
+      # Optional. Takes precedence over GitHub downloads when set.
+      # Relative paths are resolved from the pubspec defining this config.
+      # llamadart_native_path: ./native-bundles
+
       llamadart_native_backends:
         platforms:
           android-arm64:
@@ -63,9 +75,30 @@ hooks:
           windows-x64: [vulkan, cuda]
 ```
 
-Module availability is platform/arch specific and tied to the pinned native
-bundle tag. See [Platform & Backend Matrix](../platforms/support-matrix) for
-the current per-target module list.
+Module availability is platform/arch specific and tied to the selected native
+bundle tag. If `llamadart_native_tag` points at a release without a matching
+bundle asset, the native-assets hook fails while downloading that asset. See
+[Platform & Backend Matrix](../platforms/support-matrix) for the current
+per-target module list.
+
+Native source overrides are for compatibility testing. They do not regenerate
+Dart FFI bindings or symbol lookups, so the selected binary still must be ABI-
+and symbol-compatible with the default `leehack/llamadart-native@b9371` runtime.
+
+Available native tags are published on the
+[`leehack/llamadart-native` releases page](https://github.com/leehack/llamadart-native/releases).
+You can also list them with the GitHub CLI:
+
+```bash
+gh release list --repo leehack/llamadart-native --limit 20
+```
+
+Before overriding, confirm the release includes the asset for your target. The
+hook downloads files named `llamadart-native-<bundle>-<tag>.tar.gz`, for example
+`llamadart-native-windows-x64-b9371.tar.gz`.
+For local testing, `llamadart_native_path` may point directly at a bundle
+archive, at an extracted bundle directory, or at a directory containing
+`<tag>/<bundle>/`, `<bundle>/`, or the expected archive file.
 
 For `android-arm64`, CPU variant policy is configurable:
 

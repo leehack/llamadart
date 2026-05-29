@@ -57,12 +57,23 @@ No manual binary download or C++ build steps are required.
 > iOS builds require a minimum deployment target of `16.4` or newer in your
 > Xcode project / Podfile (for example `platform :ios, '16.4'`).
 
-### 3. Optional: choose backend modules per target (non-Apple)
+### 3. Optional: choose native source and backend modules
 
 ```yaml
 hooks:
   user_defines:
     llamadart:
+      # Optional. Defaults to llamadart's tested native runtime pin.
+      # Use a leehack/llamadart-native release tag when testing another build.
+      llamadart_native_tag: b9371
+
+      # Optional. GitHub repository slug or github.com URL.
+      llamadart_native_repository: leehack/llamadart-native
+
+      # Optional. Takes precedence over GitHub downloads when set.
+      # Relative paths are resolved from the pubspec defining this config.
+      # llamadart_native_path: ./native-bundles
+
       llamadart_native_backends:
         platforms:
           android-arm64:
@@ -73,6 +84,27 @@ hooks:
 ```
 
 If a requested module is unavailable for a target, `llamadart` logs a warning and falls back to target defaults.
+If `llamadart_native_tag` points at a release without a matching bundle asset,
+the native-assets hook fails while downloading that asset.
+
+Native source overrides are for compatibility testing. They do not regenerate
+Dart FFI bindings or symbol lookups, so the selected binary still must be ABI-
+and symbol-compatible with the default `leehack/llamadart-native@b9371` runtime.
+
+Available native tags are published on the
+[`leehack/llamadart-native` releases page](https://github.com/leehack/llamadart-native/releases).
+You can also list them with the GitHub CLI:
+
+```bash
+gh release list --repo leehack/llamadart-native --limit 20
+```
+
+Before overriding, confirm the release includes the asset for your target. The
+hook downloads files named `llamadart-native-<bundle>-<tag>.tar.gz`, for example
+`llamadart-native-windows-x64-b9371.tar.gz`.
+For local testing, `llamadart_native_path` may point directly at a bundle
+archive, at an extracted bundle directory, or at a directory containing
+`<tag>/<bundle>/`, `<bundle>/`, or the expected archive file.
 
 ### 4. Minimal first model load
 
@@ -219,7 +251,7 @@ persist chat messages separately when using the high-level chat API.
 <details>
 <summary>Full module matrix (available modules by target)</summary>
 
-Backend module matrix from pinned native tag `b9016`:
+Backend module matrix from the default native tag `b9371`:
 
 | Target | Available backend modules in bundle |
 |--------|-------------------------------------|
@@ -298,7 +330,14 @@ Selection precedence for Android arm64 CPU variants:
 
 Notes:
 
-- Module availability depends on the pinned native release bundle and may change when the native tag updates.
+- Module availability depends on the selected native release bundle and may
+  change when the native tag updates. Available tags are listed in
+  [`leehack/llamadart-native` releases](https://github.com/leehack/llamadart-native/releases).
+  The selected release must include `llamadart-native-<bundle>-<tag>.tar.gz`
+  for the target being built.
+- Native source overrides do not regenerate Dart FFI bindings or symbol
+  lookups, so the selected binary must remain compatible with the default
+  runtime revision.
 - Configurable targets always keep `cpu` bundled as a fallback.
 - Backend-owned runtime dependencies follow the selected backend module. For
   example, CUDA runtime DLLs (`cudart64_*`, `cublas64_*`, `cublaslt64_*`) are
@@ -329,7 +368,9 @@ Notes:
   before starting the process:
   `GGML_VK_DISABLE_COOPMAT=1` and `GGML_VK_DISABLE_COOPMAT2=1`.
 
-If you change `llamadart_native_backends`, run `flutter clean` once so stale native-asset outputs do not override new bundle selection.
+If you change `llamadart_native_tag`, `llamadart_native_repository`,
+`llamadart_native_path`, or `llamadart_native_backends`, run `flutter clean`
+once so stale native-asset outputs do not override new bundle selection.
 
 ---
 

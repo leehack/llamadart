@@ -1,7 +1,9 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:archive/archive.dart';
 import 'package:code_assets/code_assets.dart';
+import 'package:crypto/crypto.dart';
 import 'package:hooks/hooks.dart';
 import 'package:http/http.dart' as http;
 import 'package:logging/logging.dart';
@@ -11,8 +13,6 @@ import 'package:llamadart/src/hook/native_bundle_config.dart';
 
 const _llamaCppTag = 'b9371';
 const _nativeRepoSlug = 'leehack/llamadart-native';
-const _baseUrl =
-    'https://github.com/$_nativeRepoSlug/releases/download/$_llamaCppTag';
 
 const _packageName = 'llamadart';
 const _thirdPartyDir = 'third_party';
@@ -27,6 +27,31 @@ const _dynamicLibraryExtensions = {'.so', '.dylib', '.dll'};
 final _windowsCudartPattern = RegExp(r'^cudart64(?:[_-]?\d+)?\.dll$');
 final _windowsCublasPattern = RegExp(r'^cublas64(?:[_-]?\d+)?\.dll$');
 final _linuxVersionedSoPattern = RegExp(r'\.so\.\d+$');
+final _nativeTagPattern = RegExp(r'^[A-Za-z0-9][A-Za-z0-9._-]*$');
+final _githubRepoSegmentPattern = RegExp(r'^[A-Za-z0-9_.-]+$');
+
+class _NativeBundleConfig {
+  final String tag;
+  final String repository;
+  final Uri? localPath;
+
+  const _NativeBundleConfig({
+    required this.tag,
+    required this.repository,
+    required this.localPath,
+  });
+
+  bool get usesOverride =>
+      tag != _llamaCppTag || repository != _nativeRepoSlug || localPath != null;
+
+  String get sourceLabel {
+    final pathUri = localPath;
+    if (pathUri != null) {
+      return 'local path ${pathUri.toFilePath()}';
+    }
+    return '$repository@$tag';
+  }
+}
 
 void main(List<String> args) async {
   Logger.root.level = Level.ALL;
@@ -66,9 +91,20 @@ void main(List<String> args) async {
 
     log.info('Hook Start: ${spec.bundle}');
 
+    final nativeConfig = _resolveNativeBundleConfig(input.userDefines);
+    log.info('Using native runtime source: ${nativeConfig.sourceLabel}');
+    if (nativeConfig.usesOverride) {
+      log.warning(
+        'Native runtime overrides do not regenerate Dart FFI bindings. '
+        'The selected binaries must stay ABI- and symbol-compatible with '
+        '$_nativeRepoSlug@$_llamaCppTag.',
+      );
+    }
+
     final pkgRoot = input.packageRoot.toFilePath();
     final bundleDir = await _acquireBundleDirectory(
       packageRoot: pkgRoot,
+      nativeConfig: nativeConfig,
       bundle: spec.bundle,
       log: log,
     );
@@ -179,25 +215,163 @@ String _dedupeAssetName(String base, Set<String> used) {
   return deduped;
 }
 
+_NativeBundleConfig _resolveNativeBundleConfig(
+  HookInputUserDefines userDefines,
+) {
+  return _NativeBundleConfig(
+    tag: _resolveNativeTag(userDefines[nativeTagUserDefineKey]),
+    repository: _resolveNativeRepository(
+      userDefines[nativeRepositoryUserDefineKey],
+    ),
+    localPath: _resolveNativePath(userDefines),
+  );
+}
+
+String _resolveNativeTag(Object? rawUserConfig) {
+  if (rawUserConfig == null) {
+    return _llamaCppTag;
+  }
+
+  if (rawUserConfig is! String) {
+    throw FormatException(
+      'hooks.user_defines.$_packageName.$nativeTagUserDefineKey must be a '
+      'string release tag such as $_llamaCppTag.',
+    );
+  }
+
+  final tag = rawUserConfig.trim();
+  if (tag.isEmpty) {
+    throw FormatException(
+      'hooks.user_defines.$_packageName.$nativeTagUserDefineKey must not be '
+      'empty.',
+    );
+  }
+  if (!_nativeTagPattern.hasMatch(tag)) {
+    throw FormatException(
+      'hooks.user_defines.$_packageName.$nativeTagUserDefineKey must be a '
+      'path-safe release tag such as $_llamaCppTag.',
+    );
+  }
+
+  return tag;
+}
+
+String _resolveNativeRepository(Object? rawUserConfig) {
+  if (rawUserConfig == null) {
+    return _nativeRepoSlug;
+  }
+
+  if (rawUserConfig is! String) {
+    throw FormatException(
+      'hooks.user_defines.$_packageName.$nativeRepositoryUserDefineKey must be '
+      'a GitHub repository slug such as $_nativeRepoSlug.',
+    );
+  }
+
+  final repository = _normalizeNativeRepository(rawUserConfig);
+  final segments = repository.split('/');
+  if (segments.length != 2 ||
+      segments.any((segment) => !_isValidGithubRepoSegment(segment))) {
+    throw FormatException(
+      'hooks.user_defines.$_packageName.$nativeRepositoryUserDefineKey must be '
+      'a GitHub repository slug such as $_nativeRepoSlug.',
+    );
+  }
+
+  return repository;
+}
+
+bool _isValidGithubRepoSegment(String segment) {
+  return _githubRepoSegmentPattern.hasMatch(segment) &&
+      segment != '.' &&
+      segment != '..';
+}
+
+String _normalizeNativeRepository(String value) {
+  final trimmed = value.trim();
+  if (trimmed.isEmpty) {
+    return trimmed;
+  }
+
+  final uri = Uri.tryParse(trimmed);
+  if (uri != null &&
+      (uri.scheme == 'https' || uri.scheme == 'http') &&
+      uri.host == 'github.com' &&
+      uri.pathSegments.length >= 2) {
+    final owner = uri.pathSegments[0];
+    final repo = uri.pathSegments[1].replaceFirst(RegExp(r'\.git$'), '');
+    return '$owner/$repo';
+  }
+
+  final gitPrefix = 'git@github.com:';
+  if (trimmed.startsWith(gitPrefix)) {
+    return trimmed
+        .substring(gitPrefix.length)
+        .replaceFirst(RegExp(r'\.git$'), '');
+  }
+
+  return trimmed.replaceFirst(RegExp(r'\.git$'), '');
+}
+
+Uri? _resolveNativePath(HookInputUserDefines userDefines) {
+  final rawUserConfig = userDefines[nativePathUserDefineKey];
+  if (rawUserConfig == null) {
+    return null;
+  }
+
+  if (rawUserConfig is! String) {
+    throw FormatException(
+      'hooks.user_defines.$_packageName.$nativePathUserDefineKey must be a '
+      'path string.',
+    );
+  }
+  if (rawUserConfig.trim().isEmpty) {
+    throw FormatException(
+      'hooks.user_defines.$_packageName.$nativePathUserDefineKey must not be '
+      'empty.',
+    );
+  }
+
+  final resolvedPath = userDefines.path(nativePathUserDefineKey);
+  if (resolvedPath == null || !resolvedPath.isScheme('file')) {
+    throw FormatException(
+      'hooks.user_defines.$_packageName.$nativePathUserDefineKey must resolve '
+      'to a local file path.',
+    );
+  }
+
+  return resolvedPath;
+}
+
 Future<Directory> _acquireBundleDirectory({
   required String packageRoot,
+  required _NativeBundleConfig nativeConfig,
   required String bundle,
   required Logger log,
 }) async {
   final allowLegacyLocalBundles = _isLegacyLocalBundleEnabled();
-
-  final cacheDir = path.join(
-    packageRoot,
-    _dartToolDir,
-    _cacheBaseDir,
-    _bundleCacheDir,
-    _llamaCppTag,
-    bundle,
+  final archiveName = 'llamadart-native-$bundle-${nativeConfig.tag}.tar.gz';
+  final cacheDir = _bundleCacheDirectory(
+    packageRoot: packageRoot,
+    nativeConfig: nativeConfig,
+    bundle: bundle,
   );
   final extractedDir = Directory(path.join(cacheDir, 'extracted'));
-  final archiveName = 'llamadart-native-$bundle-$_llamaCppTag.tar.gz';
   final archivePath = path.join(cacheDir, archiveName);
   final archiveFile = File(archivePath);
+
+  final localPath = nativeConfig.localPath;
+  if (localPath != null) {
+    return _acquireLocalBundleDirectory(
+      localPath: localPath,
+      nativeTag: nativeConfig.tag,
+      bundle: bundle,
+      archiveName: archiveName,
+      cacheDir: cacheDir,
+      extractedDir: extractedDir,
+      log: log,
+    );
+  }
 
   final cachedLibraryPaths = _collectDynamicLibraryPaths(extractedDir);
   if (cachedLibraryPaths.isNotEmpty &&
@@ -269,6 +443,8 @@ Future<Directory> _acquireBundleDirectory({
 
   if (!archiveFile.existsSync()) {
     await _downloadReleaseAsset(
+      repository: nativeConfig.repository,
+      nativeTag: nativeConfig.tag,
       assetName: archiveName,
       destinationPath: archivePath,
       log: log,
@@ -287,6 +463,183 @@ Future<Directory> _acquireBundleDirectory({
   )) {
     throw Exception('Downloaded bundle $archiveName is missing runtime deps.');
   }
+  return extractedDir;
+}
+
+String _bundleCacheDirectory({
+  required String packageRoot,
+  required _NativeBundleConfig nativeConfig,
+  required String bundle,
+}) {
+  final localPath = nativeConfig.localPath;
+  if (localPath != null) {
+    final digest = sha1.convert(utf8.encode(localPath.toString())).toString();
+    return path.join(
+      packageRoot,
+      _dartToolDir,
+      _cacheBaseDir,
+      _bundleCacheDir,
+      'local',
+      digest,
+      nativeConfig.tag,
+      bundle,
+    );
+  }
+
+  if (nativeConfig.repository == _nativeRepoSlug) {
+    return path.join(
+      packageRoot,
+      _dartToolDir,
+      _cacheBaseDir,
+      _bundleCacheDir,
+      nativeConfig.tag,
+      bundle,
+    );
+  }
+
+  final segments = nativeConfig.repository.split('/');
+  return path.join(
+    packageRoot,
+    _dartToolDir,
+    _cacheBaseDir,
+    _bundleCacheDir,
+    'github',
+    segments[0],
+    segments[1],
+    nativeConfig.tag,
+    bundle,
+  );
+}
+
+Future<Directory> _acquireLocalBundleDirectory({
+  required Uri localPath,
+  required String nativeTag,
+  required String bundle,
+  required String archiveName,
+  required String cacheDir,
+  required Directory extractedDir,
+  required Logger log,
+}) async {
+  final localFilePath = localPath.toFilePath();
+
+  final directArchive = File(localFilePath);
+  if (directArchive.existsSync()) {
+    return _extractLocalBundleArchive(
+      archivePath: directArchive.path,
+      bundle: bundle,
+      cacheDir: cacheDir,
+      extractedDir: extractedDir,
+      log: log,
+    );
+  }
+
+  for (final candidatePath in _localPathDirectoryCandidates(
+    localPath: localFilePath,
+    nativeTag: nativeTag,
+    bundle: bundle,
+  )) {
+    final candidate = Directory(candidatePath);
+    final candidatePaths = _collectDynamicLibraryPaths(candidate);
+    if (candidatePaths.isNotEmpty &&
+        _isBundleLayoutCompatible(
+          bundle: bundle,
+          libraryPaths: candidatePaths,
+          log: log,
+        )) {
+      log.info('Using local native bundle directory: ${candidate.path}');
+      return candidate;
+    }
+  }
+
+  for (final candidatePath in _localPathArchiveCandidates(
+    localPath: localFilePath,
+    nativeTag: nativeTag,
+    bundle: bundle,
+    archiveName: archiveName,
+  )) {
+    final candidate = File(candidatePath);
+    if (!candidate.existsSync()) {
+      continue;
+    }
+    return _extractLocalBundleArchive(
+      archivePath: candidate.path,
+      bundle: bundle,
+      cacheDir: cacheDir,
+      extractedDir: extractedDir,
+      log: log,
+    );
+  }
+
+  throw Exception(
+    'No compatible native bundle found at $localFilePath for $bundle. '
+    'Expected a directory containing dynamic libraries, a directory containing '
+    '$archiveName, or a direct path to a bundle archive.',
+  );
+}
+
+List<String> _localPathDirectoryCandidates({
+  required String localPath,
+  required String nativeTag,
+  required String bundle,
+}) {
+  return _dedupePaths([
+    path.join(localPath, nativeTag, bundle, 'extracted'),
+    path.join(localPath, nativeTag, bundle),
+    path.join(localPath, bundle, 'extracted'),
+    path.join(localPath, bundle),
+    path.join(localPath, 'extracted'),
+    localPath,
+  ]);
+}
+
+List<String> _localPathArchiveCandidates({
+  required String localPath,
+  required String nativeTag,
+  required String bundle,
+  required String archiveName,
+}) {
+  return _dedupePaths([
+    path.join(localPath, archiveName),
+    path.join(localPath, nativeTag, bundle, archiveName),
+    path.join(localPath, bundle, archiveName),
+  ]);
+}
+
+List<String> _dedupePaths(List<String> paths) {
+  final normalizedPaths = <String>[];
+  final seen = <String>{};
+  for (final entry in paths) {
+    final normalized = path.normalize(entry);
+    if (seen.add(normalized)) {
+      normalizedPaths.add(normalized);
+    }
+  }
+  return normalizedPaths;
+}
+
+Future<Directory> _extractLocalBundleArchive({
+  required String archivePath,
+  required String bundle,
+  required String cacheDir,
+  required Directory extractedDir,
+  required Logger log,
+}) async {
+  final extractedLibraryPaths = await _extractCachedArchive(
+    archivePath: archivePath,
+    extractedDir: extractedDir,
+    cacheDir: cacheDir,
+    log: log,
+  );
+  if (!_isBundleLayoutCompatible(
+    bundle: bundle,
+    libraryPaths: extractedLibraryPaths,
+    log: log,
+  )) {
+    throw Exception(
+      'Local bundle archive $archivePath is missing runtime deps.',
+    );
+  }
+  log.info('Using local native bundle archive: $archivePath');
   return extractedDir;
 }
 
@@ -493,11 +846,14 @@ Future<List<String>> _extractCachedArchive({
 }
 
 Future<void> _downloadReleaseAsset({
+  required String repository,
+  required String nativeTag,
   required String assetName,
   required String destinationPath,
   required Logger log,
 }) async {
-  final url = '$_baseUrl/$assetName';
+  final url =
+      'https://github.com/$repository/releases/download/$nativeTag/$assetName';
   log.info('Downloading native bundle: $url');
 
   final destination = File(destinationPath);

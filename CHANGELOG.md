@@ -1,3 +1,17 @@
+## Unreleased
+
+* **Native runtime configuration**:
+  * Added `hooks.user_defines.llamadart.llamadart_native_tag`,
+    `llamadart_native_repository`, and `llamadart_native_path` so apps can test
+    a different compatible native runtime source without patching `llamadart`.
+  * Documented where to find available native release tags and how to confirm a
+    release includes the target bundle asset before overriding the default.
+  * Documented and logged that native source overrides do not regenerate Dart
+    FFI bindings or symbol lookups, so binaries must stay compatible with the
+    default native runtime revision.
+  * Updated the Windows runtime fallback scanner to discover custom GitHub and
+    local archive cache namespaces when `.dart_tool/lib` is unavailable.
+
 ## 0.6.17
 
 * **Native runtime sync**:
