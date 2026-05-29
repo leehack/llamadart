@@ -28,9 +28,12 @@
   * Rejected unsupported llama.cpp-only `GenerationParams` for `.litertlm`
     generation instead of silently ignoring Min-P, repeat-penalty overrides,
     grammar/lazy grammar triggers, preserved tokens, or custom grammar roots.
-  * Kept high-level `.litertlm` thinking and tool-call parsing active while
-    skipping template-generated GBNF grammar parameters for LiteRT-LM backends,
-    so tool-capable templates do not fail before generation.
+  * Kept high-level native `.litertlm` thinking and tool-call parsing active
+    while skipping template-generated GBNF grammar parameters for LiteRT-LM
+    backends, so tool-capable templates do not fail before generation.
+  * Documented LiteRT-LM web as single-turn text generation until
+    `@litert-lm/core` structured chat/tool forwarding is wired through
+    llamadart.
   * Matched LiteRT-LM bundle validation to native router behavior so uppercase
     `.LITERTLM` local paths are accepted after format routing selects LiteRT-LM.
   * Added explicit false capability reporting for direct `LiteRtLmBackend`

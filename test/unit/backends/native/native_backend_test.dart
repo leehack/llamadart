@@ -573,7 +573,7 @@ void main() {
 
         expect(template.format, ChatFormat.gemma4.index);
         expect(template.prompt, contains('<|turn>user\nhi<turn|>'));
-        expect(template.prompt, endsWith('<|turn>model\n'));
+        expect(template.prompt, endsWith('<|turn>model\n<|channel>thought\n'));
       } finally {
         await engine.dispose();
         await tempDir.delete(recursive: true);

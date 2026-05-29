@@ -846,7 +846,7 @@ void main() {
       expect(provider.settings.contextSize, 2048);
     });
 
-    test('applyModelPreset uses mobile defaults for LiteRT-LM on Android', () {
+    test('applyModelPreset uses LiteRT-LM preset values on Android', () {
       debugDefaultTargetPlatformOverride = TargetPlatform.android;
       final liteRtModel = DownloadableModel.defaultModels.singleWhere(
         (model) => model.name == 'Gemma 4 E2B LiteRT-LM',
@@ -855,9 +855,9 @@ void main() {
       provider.applyModelPreset(liteRtModel);
 
       expect(provider.settings.preferredBackend, GpuBackend.auto);
-      expect(provider.settings.gpuLayers, ModelParams.maxGpuLayers);
-      expect(provider.settings.contextSize, 512);
-      expect(provider.settings.maxTokens, 128);
+      expect(provider.settings.gpuLayers, liteRtModel.preset.gpuLayers);
+      expect(provider.settings.contextSize, liteRtModel.preset.contextSize);
+      expect(provider.settings.maxTokens, liteRtModel.preset.maxTokens);
     });
   });
 

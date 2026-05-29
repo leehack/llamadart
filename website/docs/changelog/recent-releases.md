@@ -10,7 +10,8 @@ For canonical full release notes, use:
 ## 0.7.0
 
 - Added LiteRT-LM as a first-class backend for native `.litertlm` bundles and
-  web-compatible `.litertlm` URLs, alongside the existing llama.cpp/GGUF path.
+  single-turn web-compatible `.litertlm` URLs, alongside the existing
+  llama.cpp/GGUF path.
 - Added `ModelParams.liteRtLmBackend` so callers can select LiteRT-LM CPU, GPU,
   or Android NPU execution where the pinned runtime supports it.
 - Added native LiteRT-LM tokenization, detokenization, log-level control,
@@ -21,6 +22,9 @@ For canonical full release notes, use:
   runtime artifacts.
 - Added Gemma 4 benchmark tooling and docs for fair llama.cpp/GGUF versus
   LiteRT-LM comparisons on Android, macOS, and web.
+- Documented that LiteRT-LM web is currently single-turn text generation and
+  does not yet preserve `ChatSession` history, system prompts, or tool
+  declarations through `@litert-lm/core`.
 - Compatibility note: no public API breaking changes for existing GGUF /
   llama.cpp callers. LiteRT-LM support is additive, with deprecated benchmark
   wrappers retained for compatibility; unsupported llama.cpp-only parameters are

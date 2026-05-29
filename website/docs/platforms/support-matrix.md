@@ -59,10 +59,12 @@ minimum deployment target of `16.4` or newer (for example
   `window.__llamadartLiteRtLmModuleUrl` to an `@litert-lm/core` ESM URL before
   loading the model.
 
-Use the same high-level `LlamaEngine`, `ChatSession`, `ModelSource`, and
-download/cache APIs for both formats. Native/file-backed targets cache remote
-`.litertlm` sources before local load; web URL-capable targets stream through
-`loadModelFromUrl(...)` for simple unauthenticated sources.
+Use the same high-level `LlamaEngine`, `ModelSource`, and download/cache APIs
+for both formats. Native/file-backed targets cache remote `.litertlm` sources
+before local load and can use `ChatSession` for multi-turn chat. LiteRT-LM web
+currently forwards only single-turn text prompts through `@litert-lm/core`, so
+it does not preserve `ChatSession` history, system prompts, or tool
+declarations with native LiteRT-LM semantics yet.
 
 Select LiteRT-LM CPU/GPU/NPU with `ModelParams.liteRtLmBackend`.
 `LiteRtLmBackendPreference.auto` currently maps to GPU on Android, macOS, and
@@ -123,13 +125,14 @@ load `.litertlm` models.
 | Web (browser) | N/A (`@litert-lm/core`) | `cpu`, `gpu` | Experimental; web-compatible `.litertlm` URLs only |
 
 LiteRT-LM does not currently expose embeddings, state persistence, LoRA, or
-multimodal projector APIs through llamadart. High-level thinking and tool-call
-parsing still run through `LlamaEngine` for compatible templates, but
-llama.cpp-style GBNF grammar constraints are not supported for `.litertlm`
-generation. Web LiteRT-LM also does not expose tokenizer operations yet, so
-chat history pruning uses conservative prompt-size estimates there. `llamadart`
-rejects unsupported operations explicitly for `.litertlm` loads instead of
-silently ignoring llama.cpp-only settings.
+multimodal projector APIs through llamadart. On native LiteRT-LM targets,
+high-level thinking and tool-call parsing still run through `LlamaEngine` for
+compatible templates, but llama.cpp-style GBNF grammar constraints are not
+supported for `.litertlm` generation. Web LiteRT-LM also does not expose
+tokenizer operations and is limited to single-turn text prompts, so it should
+not be treated as a multi-turn `ChatSession` or tool-calling backend yet.
+`llamadart` rejects unsupported operations explicitly for `.litertlm` loads
+instead of silently ignoring llama.cpp-only settings.
 
 ## Runtime capability notes
 

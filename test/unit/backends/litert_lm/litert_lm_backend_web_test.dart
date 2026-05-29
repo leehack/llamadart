@@ -105,7 +105,7 @@ void main() {
   });
 
   test(
-    'exposes passthrough chat template for JS conversation runtime',
+    'exposes single-turn latest-message template for JS conversation runtime',
     () async {
       _installFakeEngine(chunks: <JSAny?>[_messageChunk('ok')]);
 
@@ -118,6 +118,14 @@ void main() {
       final metadata = await backend.modelMetadata(modelHandle);
       expect(metadata, containsPair('general.architecture', 'litert-lm'));
       expect(metadata, containsPair('general.file_type', 'litertlm'));
+      expect(
+        metadata,
+        containsPair('llamadart.litert_lm_web.chat_scope', 'single-turn-text'),
+      );
+      expect(
+        metadata,
+        containsPair('llamadart.litert_lm_web.structured_chat', 'false'),
+      );
       expect(metadata, containsPair('general.name', 'model.litertlm'));
       expect(metadata, containsPair('llm.context_length', '4096'));
       expect(
@@ -131,6 +139,18 @@ void main() {
         templateSource: metadata['tokenizer.chat_template'],
         messages: const [
           LlamaChatMessage.fromText(
+            role: LlamaChatRole.system,
+            text: 'Be terse.',
+          ),
+          LlamaChatMessage.fromText(
+            role: LlamaChatRole.user,
+            text: 'Ignore this older turn.',
+          ),
+          LlamaChatMessage.fromText(
+            role: LlamaChatRole.assistant,
+            text: 'Older answer.',
+          ),
+          LlamaChatMessage.fromText(
             role: LlamaChatRole.user,
             text: 'What is 2+2?',
           ),
@@ -143,41 +163,56 @@ void main() {
     },
   );
 
-  test('routes high-level chat through JS conversation runtime', () async {
-    String? lastPrompt;
-    _installFakeEngine(
-      chunks: <JSAny?>[_messageChunk('4')],
-      onPrompt: (prompt) {
-        lastPrompt = prompt;
-      },
-    );
+  test(
+    'routes high-level single-turn text through JS conversation runtime',
+    () async {
+      String? lastPrompt;
+      _installFakeEngine(
+        chunks: <JSAny?>[_messageChunk('4')],
+        onPrompt: (prompt) {
+          lastPrompt = prompt;
+        },
+      );
 
-    final engine = LlamaEngine(LiteRtLmBackend());
-    await engine.loadModelFromUrl(
-      'https://example.com/gemma-4-E2B-it-web.litertlm',
-      modelParams: const ModelParams(
-        contextSize: 1024,
-        preferredBackend: GpuBackend.vulkan,
-      ),
-    );
-
-    final chunks = await engine.create(
-      const [
-        LlamaChatMessage.fromText(
-          role: LlamaChatRole.user,
-          text: 'What is 2+2?',
+      final engine = LlamaEngine(LiteRtLmBackend());
+      await engine.loadModelFromUrl(
+        'https://example.com/gemma-4-E2B-it-web.litertlm',
+        modelParams: const ModelParams(
+          contextSize: 1024,
+          preferredBackend: GpuBackend.vulkan,
         ),
-      ],
-      params: const GenerationParams(maxTokens: 8, temp: 0, topK: 1, topP: 1),
-    ).toList();
-    final text = chunks
-        .map((chunk) => chunk.choices.first.delta.content ?? '')
-        .join();
+      );
 
-    expect(text, '4');
-    expect(lastPrompt, 'What is 2+2?');
-    await engine.dispose();
-  });
+      final chunks = await engine.create(
+        const [
+          LlamaChatMessage.fromText(
+            role: LlamaChatRole.system,
+            text: 'Answer as JSON.',
+          ),
+          LlamaChatMessage.fromText(
+            role: LlamaChatRole.user,
+            text: 'This older user turn is not forwarded by LiteRT-LM web.',
+          ),
+          LlamaChatMessage.fromText(
+            role: LlamaChatRole.assistant,
+            text: 'Older assistant turn.',
+          ),
+          LlamaChatMessage.fromText(
+            role: LlamaChatRole.user,
+            text: 'What is 2+2?',
+          ),
+        ],
+        params: const GenerationParams(maxTokens: 8, temp: 0, topK: 1, topP: 1),
+      ).toList();
+      final text = chunks
+          .map((chunk) => chunk.choices.first.delta.content ?? '')
+          .join();
+
+      expect(text, '4');
+      expect(lastPrompt, 'What is 2+2?');
+      await engine.dispose();
+    },
+  );
 
   test('invalidates stale model and context handles after reload', () async {
     _installFakeEngine(chunks: <JSAny?>[_messageChunk('ok')]);
@@ -307,7 +342,7 @@ void main() {
           ],
           addAssistant: false,
         ),
-        'user: hello world',
+        'hello world',
       );
       await expectLater(
         backend.applyChatTemplate(modelHandle, const <Map<String, dynamic>>[

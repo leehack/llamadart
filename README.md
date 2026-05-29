@@ -324,12 +324,15 @@ FFI path is validated on Android, iOS, macOS, Linux, and Windows. Web
 which is an early-preview text-in/text-out API and currently supports
 web-compatible Gemma 4 LiteRT-LM model variants. iOS LiteRT-LM bundles are
 derived from upstream `CLiteRTLM.xcframework` slices and loaded from bundled
-native-asset identifiers for device and simulator builds. LiteRT-LM generation
-works through the same high-level `LlamaEngine` and `ChatSession` APIs,
-including native tokenization and detokenization for exact token counts on
-native targets. Thinking and tool-call parsing run through the same high-level
-template parser for compatible models, but llama.cpp-style GBNF grammar
-constraints are not applied to `.litertlm` generation. The current
+native-asset identifiers for device and simulator builds. Native LiteRT-LM
+generation works through the same high-level `LlamaEngine` and `ChatSession`
+APIs, including native tokenization and detokenization for exact token counts.
+On native targets, thinking and tool-call parsing run through the same
+high-level template parser for compatible models, but llama.cpp-style GBNF
+grammar constraints are not applied to `.litertlm` generation. LiteRT-LM web is
+currently limited to single-turn text prompts through `@litert-lm/core`; it does
+not yet preserve structured chat history, system prompts, tool declarations, or
+thinking/tool-call parsing with the same semantics as native. The current
 implementation does not expose embeddings, state persistence, LoRA, or
 multimodal operations through LiteRT-LM. `ChatSession` uses a conservative
 prompt-size estimate for history pruning only when exact tokenization is
@@ -503,10 +506,12 @@ The default web backend routes `.gguf` URLs to `WebGpuLlamaBackend` and
   `window.LiteRtLmEngine = module.Engine`, or setting
   `window.__llamadartLiteRtLmModuleUrl` to an `@litert-lm/core` ESM URL before
   loading a `.litertlm` model.
-- LiteRT-LM web currently supports URL/path loading, conversation streaming,
-  CPU/GPU selection, stop sequences, and the high-level `LlamaEngine` /
-  `ChatSession` flow. Tokenizer APIs, embeddings, state persistence, LoRA,
-  grammar, multimodal, and NPU selection remain unsupported on web.
+- LiteRT-LM web currently supports URL/path loading, single-turn text
+  generation, CPU/GPU selection, and stop sequences. It does not yet preserve
+  `ChatSession` history, system prompts, tool declarations, thinking parsing, or
+  tool-call parsing through `@litert-lm/core`. Tokenizer APIs, embeddings, state
+  persistence, LoRA, grammar, multimodal, and NPU selection remain unsupported
+  on web.
 
 If your app targets both native and web, gate feature toggles by capability checks.
 

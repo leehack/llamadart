@@ -4,10 +4,14 @@ description: Decide when to use GGUF with llama.cpp or .litertlm bundles with Li
 ---
 
 `llamadart` can route two model families through the same high-level
-`LlamaEngine` and `ChatSession` APIs:
+`LlamaEngine` APIs. Native targets can also use `ChatSession` for both formats:
 
 - **GGUF models** run through `llama.cpp`.
 - **`.litertlm` bundles** run through LiteRT-LM.
+
+LiteRT-LM web is currently narrower than native LiteRT-LM: it forwards
+single-turn text prompts to `@litert-lm/core` and does not yet preserve
+`ChatSession` history, system prompts, or tool declarations.
 
 The backend is selected from the model format when you use `LlamaBackend()`.
 Use GGUF when you want the broad `llama.cpp` ecosystem and feature surface. Use
@@ -69,7 +73,7 @@ JavaScript runtime.
 | Embeddings | Supported on native; supported on web bridge assets with embedding APIs | Not exposed by current LiteRT-LM APIs |
 | KV-cache state persistence | Supported on native; supported on WebGPU bridge assets that expose state APIs | Not exposed |
 | LoRA adapters | Supported on native GGUF flows | Not exposed |
-| Thinking and tool-call parsing | Supported through template handlers | Supported through the high-level `LlamaEngine` parser for compatible templates; LiteRT-native constrained tool execution is not wired yet |
+| Thinking and tool-call parsing | Supported through template handlers | Native: supported through the high-level `LlamaEngine` parser for compatible templates; LiteRT-native constrained tool execution is not wired yet. Web: single-turn text only; no structured chat/tool forwarding yet. |
 | Grammar / constrained decoding | Supported by llama.cpp-backed paths | llama.cpp GBNF is not supported; template-generated grammar is skipped and explicit grammar params are rejected |
 | Multimodal projectors | Supported through llama.cpp `mtmd` paths where the model/projector supports it | Not exposed through llamadart today |
 | Tokenization APIs | Supported | Supported on native LiteRT-LM; not exposed on LiteRT-LM web |

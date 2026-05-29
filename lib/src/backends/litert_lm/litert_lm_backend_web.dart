@@ -35,6 +35,9 @@ class LiteRtLmBackend
         BackendStatePersistenceSupport {
   static const Duration _engineReadyTimeout = Duration(seconds: 12);
   static const Duration _enginePollInterval = Duration(milliseconds: 100);
+  // The current @litert-lm/core web API accepts one string prompt and applies
+  // the model's chat wrapper internally. Until the JS API exposes structured
+  // messages/tools, keep the Dart template intentionally single-turn.
   static const String _passthroughLatestMessageTemplate =
       '{% for message in messages %}'
       '{% if loop.last %}{{ message["content"] }}{% endif %}'
@@ -263,9 +266,8 @@ class LiteRtLmBackend
       'general.architecture': 'litert-lm',
       'general.file_type': 'litertlm',
       'llamadart.backend': 'LiteRT-LM web',
-      // @litert-lm/core Conversation applies the model chat template itself
-      // when sendMessageStreaming receives a string. The high-level llamadart
-      // chat API still asks for a template, so return only the current message.
+      'llamadart.litert_lm_web.chat_scope': 'single-turn-text',
+      'llamadart.litert_lm_web.structured_chat': 'false',
       'tokenizer.chat_template':
           _chatTemplate ?? _passthroughLatestMessageTemplate,
     };
@@ -384,17 +386,10 @@ class LiteRtLmBackend
       );
     }
 
-    final lines = messages
-        .map(
-          (msg) =>
-              '${msg['role']?.toString() ?? 'user'}: '
-              '${_contentTextFromTemplateMap(msg['content'])}',
-        )
-        .toList();
-    if (addAssistant) {
-      lines.add('assistant: ');
+    if (messages.isEmpty) {
+      return '';
     }
-    return lines.join('\n');
+    return _contentTextFromTemplateMap(messages.last['content']);
   }
 
   @override
