@@ -85,6 +85,29 @@ You never hand-author a template — copy the canonical one llama.cpp uses.
 - **TranslateGemma / FunctionGemma** have handlers but no vendored canonical
   jinja yet.
 
+## Runtime behavior (beyond templating)
+
+Two LiteRT-LM-specific behaviors complement the templates above; both live in
+the backend, not the registry:
+
+- **Thinking is reassembled from a channel stream.** The native runtime streams
+  reasoning and the answer on separate channels — thought as
+  `{"role":"assistant","channels":{"thought":"..."}}` and the answer as
+  `{"role":"assistant","content":[{"type":"text",...}]}`. `LiteRtLmChannelAssembler`
+  (in `litert_lm_runtime.dart`) wraps thought runs in `<|channel>thought … <channel|>`
+  so the chat-template handlers extract them as reasoning instead of leaking the
+  raw JSON. The markers are the Gemma 4 form but are also recognized for the
+  Hermes/Qwen path.
+- **Grammar-constrained decoding is skipped.** Grammar-using handlers (Hermes/Qwen)
+  emit a GBNF grammar for tool calls, which the LiteRT-LM backend rejects.
+  `NativeAutoBackend` forwards `supportsGrammarConstraints == false` from the
+  active delegate, so the engine drops the grammar and tool calls are parsed
+  best-effort from the model output. Gemma 4 emits no grammar, so it is
+  unaffected.
+
+> The web backend (`@litert-lm/core`) uses a separate response path and does not
+> share this channel reassembly; web thinking remains limited/single-turn.
+
 ## Longer-term direction
 
 The registry is a deliberate bridge, not the end state. Two "proper" endgames,
