@@ -156,6 +156,32 @@ void main() {
     }
   });
 
+  test('exposes the built-in Gemma 4 template when no override is set', () async {
+    final service = LiteRtLmService();
+    final gemmaModelFile = File('${tempDir.path}/gemma-4-E2B-it.litertlm');
+    await gemmaModelFile.writeAsString('fake model');
+
+    try {
+      final modelHandle = await service.loadModel(
+        gemmaModelFile.path,
+        const ModelParams(contextSize: 2048),
+      );
+      final template = service.getMetadata(modelHandle)['tokenizer.chat_template'];
+
+      // The full canonical template renders tool declarations and the thinking
+      // channel — unlike the previous stub, which omitted both.
+      expect(template, isNotNull);
+      expect(template, contains('format_function_declaration'));
+      expect(template, contains('<|tool>'));
+      expect(template, contains('<|think|>'));
+      // The native runtime adds the start token, so the template must not emit
+      // its own BOS (which would double it).
+      expect(template, isNot(contains('bos_token')));
+    } finally {
+      service.dispose();
+    }
+  });
+
   test('applies chat templates through the Dart template engine', () async {
     final service = LiteRtLmService();
     final gemmaModelFile = File('${tempDir.path}/gemma-4-E2B-it.litertlm');
@@ -177,7 +203,10 @@ void main() {
       ]);
 
       expect(rendered, contains('<|turn>user\nhello<turn|>'));
-      expect(rendered, endsWith('<|turn>model\n<|channel>thought\n'));
+      // Thinking is enabled by default: the canonical template emits a
+      // `<|think|>` system block and leaves the model turn open.
+      expect(rendered, contains('<|turn>system\n<|think|>\n<turn|>'));
+      expect(rendered, endsWith('<|turn>model\n'));
 
       final custom = service.applyChatTemplate(
         modelHandle,

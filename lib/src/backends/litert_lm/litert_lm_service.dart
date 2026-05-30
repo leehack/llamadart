@@ -13,6 +13,8 @@ import '../../core/models/inference/generation_params.dart';
 import '../../core/models/inference/model_params.dart';
 import '../../core/template/chat_template_engine.dart';
 import '../backend.dart';
+import 'litert_lm_chat_template.dart';
+import 'litert_lm_chat_templates.dart';
 import 'litert_lm_platform.dart';
 import 'litert_lm_runtime.dart';
 
@@ -22,16 +24,6 @@ import 'litert_lm_runtime.dart';
 /// public backend only sends requests and receives stream chunks, mirroring the
 /// llama.cpp backend architecture.
 class LiteRtLmService {
-  static const String _gemma4ChatTemplate =
-      '{% for message in messages %}'
-      '<|turn>{% if message["role"] == "assistant" %}model\n'
-      '{% else %}{{ message["role"] }}\n{% endif %}'
-      '{{ message["content"] }}<turn|>\n'
-      '{% endfor %}'
-      '{% if add_generation_prompt %}<|turn>model\n'
-      '{% if enable_thinking %}<|channel>thought\n{% endif %}'
-      '{% endif %}';
-
   /// Creates a LiteRT-LM service.
   LiteRtLmService({LiteRtLmRuntimeClient Function()? clientFactory})
     : _clientFactory = clientFactory ?? LiteRtLmRuntimeClient.new;
@@ -252,12 +244,13 @@ class LiteRtLmService {
     if (_modelParams case final params?) {
       metadata['llm.context_length'] = params.contextSize.toString();
     }
-    if (modelName != null && _isGemma4ModelName(modelName)) {
-      metadata.addAll(const <String, String>{
-        'tokenizer.chat_template': _gemma4ChatTemplate,
-        'tokenizer.ggml.bos_token': '<bos>',
-        'tokenizer.ggml.eos_token': '<turn|>',
-      });
+    final builtinTemplate = modelName == null
+        ? null
+        : _resolveBuiltinTemplate(modelName);
+    if (builtinTemplate != null) {
+      metadata['tokenizer.chat_template'] = builtinTemplate.template;
+      metadata['tokenizer.ggml.bos_token'] = builtinTemplate.bosToken;
+      metadata['tokenizer.ggml.eos_token'] = builtinTemplate.eosToken;
     }
     if (_modelParams?.chatTemplate case final customTemplate?) {
       metadata['tokenizer.chat_template'] = customTemplate;
@@ -265,9 +258,20 @@ class LiteRtLmService {
     return metadata;
   }
 
-  bool _isGemma4ModelName(String modelName) {
+  /// Resolves the built-in chat template for [modelName], if any.
+  ///
+  /// `.litertlm` bundles don't expose their chat template through the native
+  /// FFI, so the family is detected from the bundle filename and mapped to one
+  /// of the templates in [kLiteRtLmChatTemplates]. Callers can always override
+  /// the result with [ModelParams.chatTemplate].
+  LiteRtLmChatTemplate? _resolveBuiltinTemplate(String modelName) {
     final normalized = modelName.toLowerCase().replaceAll('_', '-');
-    return normalized.contains('gemma-4') || normalized.contains('gemma4');
+    for (final template in kLiteRtLmChatTemplates) {
+      if (template.matches(normalized)) {
+        return template;
+      }
+    }
+    return null;
   }
 
   /// Handles LiteRT-LM LoRA operations.
