@@ -149,6 +149,12 @@ class ChatSession {
       enableThinking: enableThinking,
       chatTemplateKwargs: chatTemplateKwargs,
     )) {
+      // Guard against an empty-choices chunk (e.g. a keep-alive) which would
+      // otherwise throw "Bad state: No element" mid-stream.
+      if (chunk.choices.isEmpty) {
+        yield chunk;
+        continue;
+      }
       final delta = chunk.choices.first.delta;
       if (delta.content != null) fullContent += delta.content!;
       if (delta.thinking != null) fullThinking += delta.thinking!;

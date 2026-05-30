@@ -48,6 +48,17 @@ void main() {
       );
     });
 
+    test('keeps commas inside quoted function argument values', () {
+      final parsed = parseToolCallsFromLooseText(
+        "send_note(to='Alice', body='hello, world')",
+      );
+
+      expect(parsed.toolCalls, hasLength(1));
+      final args = jsonDecode(parsed.toolCalls.first.function!.arguments!);
+      expect(args, containsPair('to', 'Alice'));
+      expect(args, containsPair('body', 'hello, world'));
+    });
+
     test('does not coerce bare weather-like alias', () {
       final parsed = parseToolCallsFromLooseText('weatherlookup');
 

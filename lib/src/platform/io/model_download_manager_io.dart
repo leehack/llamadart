@@ -592,8 +592,17 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
     Uri uri,
     File finalFile,
     File? partFile,
-    ModelDownloadProgressCallback? onProgress,
-  ) async {
+    ModelDownloadProgressCallback? onProgress, {
+    int restartDepth = 0,
+  }) async {
+    // Bound the restart recursion (validator-mismatch / HTTP 416 restarts) so a
+    // server that keeps flapping its validator cannot drive unbounded recursion
+    // or repeated full re-downloads.
+    if (restartDepth > 3) {
+      throw LlamaModelException(
+        'Exceeded download restart attempts for ${source.displayName}.',
+      );
+    }
     await finalFile.parent.create(recursive: true);
     final downloadFile = partFile ?? File('${finalFile.path}.download');
     final partMetadataFile = partFile == null
@@ -686,6 +695,7 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
             finalFile,
             partFile,
             onProgress,
+            restartDepth: restartDepth + 1,
           );
         }
       } else if (existingBytes > 0 && statusCode == HttpStatus.ok) {
@@ -708,6 +718,7 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
           finalFile,
           partFile,
           onProgress,
+          restartDepth: restartDepth + 1,
         );
       } else if (statusCode != HttpStatus.ok) {
         throw LlamaModelException(

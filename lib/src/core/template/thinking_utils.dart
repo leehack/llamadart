@@ -14,6 +14,24 @@ ThinkingExtraction extractThinking(
   String endTag = '</think>',
   bool thinkingForcedOpen = false,
 }) {
+  final result = _extractThinking(
+    text,
+    startTag: startTag,
+    endTag: endTag,
+    thinkingForcedOpen: thinkingForcedOpen,
+  );
+  // Trim only the overall content ends here, once. The recursion keeps content
+  // raw so whitespace between stripped thinking blocks (e.g. the space in
+  // "Hello<think>x</think> world<think>y</think>!") is preserved.
+  return (content: result.content.trim(), reasoning: result.reasoning);
+}
+
+ThinkingExtraction _extractThinking(
+  String text, {
+  required String startTag,
+  required String endTag,
+  bool thinkingForcedOpen = false,
+}) {
   final startIdx = text.indexOf(startTag);
   final endIdx = text.indexOf(endTag);
 
@@ -26,7 +44,7 @@ ThinkingExtraction extractThinking(
           .replaceAll(r'\n', '\n')
           .replaceAll(r'\r', '\r')
           .trim();
-      final content = text.substring(endIdx + endTag.length).trim();
+      final content = text.substring(endIdx + endTag.length);
       return (
         content: content,
         reasoning: reasoning.isEmpty ? null : reasoning,
@@ -49,7 +67,11 @@ ThinkingExtraction extractThinking(
         .trim();
     final remaining = text.substring(endIdx + endTag.length);
     // Recursively parse the rest to find more thinking tags if any
-    final rest = extractThinking(remaining, startTag: startTag, endTag: endTag);
+    final rest = _extractThinking(
+      remaining,
+      startTag: startTag,
+      endTag: endTag,
+    );
     return (
       content: rest.content,
       reasoning:
@@ -62,7 +84,7 @@ ThinkingExtraction extractThinking(
 
   if (nextEndIdx == -1) {
     // Still thinking — everything after startTag is reasoning
-    final before = text.substring(0, startIdx).trim();
+    final before = text.substring(0, startIdx);
     final reasoning = text
         .substring(afterStart)
         .replaceAll(r'\n', '\n')
@@ -79,9 +101,20 @@ ThinkingExtraction extractThinking(
       .trim();
   final before = text.substring(0, startIdx);
   final after = text.substring(nextEndIdx + endTag.length);
-  final content = (before + after).trim();
+  // Recurse into the remainder so additional <think> blocks are also stripped
+  // (mirrors the pre-opened branch above), instead of leaking them into
+  // user-visible content. Content is kept raw; the public wrapper trims once.
+  final rest = _extractThinking(after, startTag: startTag, endTag: endTag);
+  final content = before + rest.content;
+  final reasoningParts = <String>[
+    if (reasoning.isNotEmpty) reasoning,
+    if (rest.reasoning != null && rest.reasoning!.isNotEmpty) rest.reasoning!,
+  ];
 
-  return (content: content, reasoning: reasoning.isEmpty ? null : reasoning);
+  return (
+    content: content,
+    reasoning: reasoningParts.isEmpty ? null : reasoningParts.join('\n'),
+  );
 }
 
 /// Strips all thinking tags and content from text, returning only the

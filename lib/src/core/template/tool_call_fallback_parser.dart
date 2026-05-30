@@ -340,6 +340,35 @@ LlamaCompletionChunkToolCall? _parseFunctionCallSyntax(String input) {
   );
 }
 
+/// Splits `key=value` argument lists on top-level commas only, leaving commas
+/// inside single/double-quoted values intact (e.g. `note='a, b'`).
+List<String> _splitArgsRespectingQuotes(String raw) {
+  final parts = <String>[];
+  final buffer = StringBuffer();
+  String? quote;
+  for (var i = 0; i < raw.length; i++) {
+    final ch = raw[i];
+    if (quote != null) {
+      buffer.write(ch);
+      if (ch == quote) {
+        quote = null;
+      }
+    } else if (ch == '"' || ch == "'") {
+      quote = ch;
+      buffer.write(ch);
+    } else if (ch == ',') {
+      parts.add(buffer.toString());
+      buffer.clear();
+    } else {
+      buffer.write(ch);
+    }
+  }
+  if (buffer.isNotEmpty) {
+    parts.add(buffer.toString());
+  }
+  return parts;
+}
+
 Map<String, dynamic>? _parseFunctionArguments(String raw) {
   if (raw.trim().isEmpty) {
     return const <String, dynamic>{};
@@ -351,7 +380,7 @@ Map<String, dynamic>? _parseFunctionArguments(String raw) {
   }
 
   final result = <String, dynamic>{};
-  final pairs = raw.split(',');
+  final pairs = _splitArgsRespectingQuotes(raw);
   for (final rawPair in pairs) {
     final pair = rawPair.trim();
     if (pair.isEmpty) {
@@ -405,7 +434,12 @@ Map<String, dynamic>? _parseFunctionArguments(String raw) {
 }
 
 String _stripToolFence(String input) {
-  final fenced = RegExp(r'^```(?:tool_code|tool|json)?\s*([\s\S]*?)\s*```$');
+  // Require a whitespace boundary after the optional language token so a
+  // payload like ```jsonify{...} does not get "json" consumed as the language
+  // (which would leave "ify{...}" as the body and corrupt the JSON).
+  final fenced = RegExp(
+    r'^```(?:(?:tool_code|tool|json)(?=\s))?\s*([\s\S]*?)\s*```$',
+  );
   final match = fenced.firstMatch(input);
   if (match == null) {
     return input;

@@ -463,6 +463,18 @@ String _buildRepetition(
   int? maxItems, {
   String separatorRule = '',
 }) {
+  // Validate bounds before formatting: a malformed schema with min > max (or a
+  // negative count) would otherwise emit invalid GBNF like `rule{2,1}`.
+  final normalizedMin = minItems < 0 ? 0 : minItems;
+  if (maxItems != null && maxItems < normalizedMin) {
+    // Generic wording: this helper backs both array minItems/maxItems and
+    // string minLength/maxLength repetition.
+    throw StateError(
+      'Invalid repetition bounds: maximum ($maxItems) must be >= minimum '
+      '($normalizedMin) and non-negative.',
+    );
+  }
+  minItems = normalizedMin;
   if (maxItems != null && maxItems == 0) return '';
   if (minItems == 0 && maxItems != null && maxItems == 1) return '$itemRule?';
 

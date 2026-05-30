@@ -828,8 +828,11 @@ class LlamaEngine {
           .map(
             (entry) => LlamaCompletionChunkToolCall(
               index: entry.value.index,
+              // Base the fallback id on the tool call's logical index (not the
+              // list position) so the id stays consistent with the index that
+              // downstream consumers key tool-call builders by.
               id: (entry.value.id == null || entry.value.id!.isEmpty)
-                  ? 'call_${entry.key}'
+                  ? 'call_${entry.value.index}'
                   : entry.value.id,
               type: entry.value.type,
               function: entry.value.function,
@@ -1019,6 +1022,16 @@ class LlamaEngine {
       }
     } on UnsupportedError catch (error) {
       throw _unsupportedBackendOperation('Generation', error);
+    } on LlamaException {
+      rethrow;
+    } catch (error, stackTrace) {
+      // Wrap raw backend failures so callers catching LlamaException (the
+      // documented error contract) don't see unexpected error types escape,
+      // while preserving the original backend stack trace.
+      Error.throwWithStackTrace(
+        LlamaInferenceException('Generation failed', error),
+        stackTrace,
+      );
     }
   }
 
