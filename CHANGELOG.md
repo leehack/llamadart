@@ -1,3 +1,22 @@
+## Unreleased
+
+* **Cancellation / disposal lifecycle fixes** (native & LiteRT-LM):
+  * Fixed a cross-isolate use-after-free where the llama.cpp generation cancel
+    token was freed in `onCancel` while the worker isolate could still poll it.
+    The token is now freed only after the worker's terminal response, or after
+    the worker is killed during `dispose`.
+  * The llama.cpp worker now waits for an in-flight generation to emit its
+    terminal response before disposing native resources and exiting, so
+    cancelling/disposing mid-generation no longer abandons the consumer stream.
+  * The LiteRT-LM worker no longer deletes the engine/conversation while a
+    native call may still be running (it skips the native dispose when the
+    in-flight request has not settled), avoiding a use-after-free on teardown.
+  * The LiteRT-LM streaming path no longer leaks the `NativeCallable`, stream
+    proxy, and message buffer when a generation is cancelled, and guards stream
+    writes against a closed controller.
+  * The LiteRT-LM backend no longer sends a generation request to a closed
+    response port when cancellation races isolate startup.
+
 ## 0.7.0
 
 * **Native runtime configuration**:

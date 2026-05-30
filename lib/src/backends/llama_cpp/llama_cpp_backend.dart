@@ -27,6 +27,7 @@ class NativeLlamaBackend
   final ReceivePort _responsesPort = ReceivePort();
   Pointer<Int8>? _activeCancelToken;
   void Function()? _activeGenerationCleanup;
+  void Function()? _activeFreeToken;
 
   bool _isReady = false;
   LlamaLogLevel _currentLogLevel = LlamaLogLevel.warn;
@@ -173,22 +174,46 @@ class NativeLlamaBackend
     cancelToken.value = 0;
     _activeCancelToken = cancelToken;
 
-    var cleanedUp = false;
-    void cleanup() {
-      if (cleanedUp) {
+    // The cancel token is shared with the worker isolate, which polls it every
+    // decode iteration. It must only be freed once the worker has stopped
+    // reading it. Cleanup is split in two: detachAndClose() runs eagerly on
+    // cancel and only tears down the Dart-side controller, while freeToken()
+    // frees the native token and closes the response port. The only safe times
+    // to free are when the worker proves it has stopped: a terminal
+    // DoneResponse/ErrorResponse (the worker breaks its decode loop on seeing
+    // the cancel flag and then emits one), or dispose() freeing it after
+    // killing the worker isolate. A timer-based backstop is deliberately
+    // avoided: it could fire mid-decode (e.g. during a slow prompt eval) and
+    // reintroduce the use-after-free. Worst case (a wedged worker that never
+    // responds and is never disposed) leaks a single byte, which is acceptable.
+    var tokenFreed = false;
+    late final void Function() freeToken;
+    freeToken = () {
+      if (tokenFreed) {
         return;
       }
-      cleanedUp = true;
-
+      tokenFreed = true;
       rp.close();
-      if (!controller.isClosed) {
-        unawaited(controller.close());
-      }
       malloc.free(cancelToken);
       if (_activeCancelToken == cancelToken) {
         _activeCancelToken = null;
       }
-      if (_activeGenerationCleanup == cleanup) {
+      if (_activeFreeToken == freeToken) {
+        _activeFreeToken = null;
+      }
+    };
+    _activeFreeToken = freeToken;
+
+    var detached = false;
+    void detachAndClose() {
+      if (detached) {
+        return;
+      }
+      detached = true;
+      if (!controller.isClosed) {
+        unawaited(controller.close());
+      }
+      if (_activeGenerationCleanup == detachAndClose) {
         _activeGenerationCleanup = null;
       }
     }
@@ -196,10 +221,13 @@ class NativeLlamaBackend
     controller = StreamController<List<int>>(
       onCancel: () {
         cancelGeneration();
-        cleanup();
+        // Close the Dart side immediately, but keep the response port open and
+        // the native token alive so the worker can observe the cancel flag and
+        // emit its terminal response, at which point freeToken() runs.
+        detachAndClose();
       },
     );
-    _activeGenerationCleanup = cleanup;
+    _activeGenerationCleanup = detachAndClose;
 
     _sendPort!.send(
       GenerateRequest(
@@ -214,12 +242,18 @@ class NativeLlamaBackend
 
     rp.listen((msg) {
       if (msg is TokenResponse) {
-        controller.add(msg.bytes);
+        if (!controller.isClosed) {
+          controller.add(msg.bytes);
+        }
       } else if (msg is DoneResponse) {
-        cleanup();
+        detachAndClose();
+        freeToken();
       } else if (msg is ErrorResponse) {
-        controller.addError(Exception(msg.message));
-        cleanup();
+        if (!controller.isClosed) {
+          controller.addError(Exception(msg.message));
+        }
+        detachAndClose();
+        freeToken();
       }
     });
 
@@ -467,6 +501,12 @@ class NativeLlamaBackend
 
   @override
   Future<void> dispose() async {
+    // Signal any in-flight generation to stop and close the Dart side, but do
+    // not free the shared cancel token yet: the worker may still poll it. The
+    // worker awaits the in-flight generation before acking the dispose, so its
+    // terminal response normally frees the token first. After killing the
+    // worker (below) the token is provably unread, so freeing it there is safe
+    // and idempotent (guarded by the freeToken tokenFreed flag).
     _activeCancelToken?.value = 1;
     _activeGenerationCleanup?.call();
 
@@ -478,8 +518,11 @@ class NativeLlamaBackend
     }
     _isolate?.kill();
     _responsesPort.close();
+    // Worker is gone; free the token if a terminal response did not already.
+    _activeFreeToken?.call();
     _activeCancelToken = null;
     _activeGenerationCleanup = null;
+    _activeFreeToken = null;
     _isReady = false;
   }
 
