@@ -550,6 +550,14 @@ class ChatProvider extends ChangeNotifier {
     if (!_enableWebModelPrefetch || !_isRemoteUrl(_settings.modelPath)) {
       return false;
     }
+    // The WebGPU bridge prefetch stores into a CacheStorage bucket that only
+    // the llama.cpp/GGUF bridge reads back. The @litert-lm/core engine fetches
+    // the .litertlm URL itself and has no access to that cache, so prefetching
+    // here just downloads the whole model an extra time before the engine
+    // re-downloads it. Skip it and let the engine fetch once.
+    if (_isLiteRtLmModelPath(_settings.modelPath)) {
+      return false;
+    }
     if (_webCachePrefetchWouldPersistSensitiveUrl()) {
       updateLoadingUi(
         0.14,
@@ -761,10 +769,23 @@ class ChatProvider extends ChangeNotifier {
       );
       final modelLoadStart = prefetchedWebModel ? 0.72 : 0.14;
       final modelLoadSpan = prefetchedWebModel ? 0.12 : 0.7;
+      // The web LiteRT-LM backend only reports 0% and 100% (the @litert-lm/core
+      // engine fetches and initializes the model without granular progress), so
+      // a percentage would sit at "0%" for the whole download and look frozen.
+      // Show an honest indeterminate message instead.
+      final isLiteRtLmLoad = _isLiteRtLmModelPath(_settings.modelPath);
       if (prefetchedWebModel) {
         updateLoadingUi(
           modelLoadStart,
           backendLabel: 'Loading model into memory...',
+          forceNotify: true,
+        );
+      } else if (isLiteRtLmLoad) {
+        updateLoadingUi(
+          modelLoadStart,
+          backendLabel:
+              'Downloading and initializing model (first load may '
+              'take a while)...',
           forceNotify: true,
         );
       }
@@ -775,12 +796,20 @@ class ChatProvider extends ChangeNotifier {
         onProgress: (progress) {
           final normalized = progress.clamp(0.0, 1.0);
           final staged = modelLoadStart + (normalized * modelLoadSpan);
-          updateLoadingUi(
-            staged,
-            backendLabel: prefetchedWebModel
-                ? 'Loading model into memory ${(normalized * 100).toStringAsFixed(0)}%'
-                : 'Loading model ${(normalized * 100).toStringAsFixed(0)}%',
-          );
+          final String backendLabel;
+          if (prefetchedWebModel) {
+            backendLabel =
+                'Loading model into memory ${(normalized * 100).toStringAsFixed(0)}%';
+          } else if (isLiteRtLmLoad) {
+            // Avoid a misleading "0%" stuck for the whole load.
+            backendLabel =
+                'Downloading and initializing model (first load may '
+                'take a while)...';
+          } else {
+            backendLabel =
+                'Loading model ${(normalized * 100).toStringAsFixed(0)}%';
+          }
+          updateLoadingUi(staged, backendLabel: backendLabel);
         },
       );
 
@@ -1340,9 +1369,18 @@ class ChatProvider extends ChangeNotifier {
             parts: messageParts,
             debugBadges: debugBadges,
           );
-          _messages.last.tokenCount = await _chatService.engine.getTokenCount(
-            finalText,
-          );
+          // Some backends (e.g. LiteRT-LM on web) don't expose tokenizer
+          // operations, so getTokenCount throws. The count is only a cached
+          // hint, so swallow the unsupported case instead of failing the turn.
+          try {
+            _messages.last.tokenCount = await _chatService.engine.getTokenCount(
+              finalText,
+            );
+          } on LlamaUnsupportedException {
+            // Backend can't tokenize; leave the cached count unset.
+          } on UnsupportedError {
+            // Same as above for backends that surface the raw Dart error.
+          }
         }
       }
     } catch (e) {

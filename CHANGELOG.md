@@ -1,5 +1,19 @@
 ## Unreleased
 
+* **Web LiteRT-LM (`.litertlm`) chat-app fixes**:
+  * Fixed a spurious `Error: LlamaException: Tokenization is not supported by
+    the active backend ...` bubble shown after every reply on web. The chat app
+    called `getTokenCount` (write-only, unused) after each turn, which throws on
+    the web LiteRT-LM backend (no tokenizer API); the unsupported case is now
+    swallowed so the turn completes normally.
+  * Halved web `.litertlm` load time by skipping the WebGPU `CacheStorage`
+    prefetch for LiteRT-LM models. That cache is only readable by the
+    llama.cpp/GGUF bridge, while the `@litert-lm/core` engine fetches the URL
+    itself — so prefetching downloaded the whole model an extra time before the
+    engine re-downloaded it. The engine now fetches once.
+  * Replaced the misleading stuck "Loading model 0%" label during web
+    LiteRT-LM loads (the backend only reports 0%/100%) with an honest
+    indeterminate "Downloading and initializing model" message.
 * **Minor correctness cleanups**:
   * `ChatSession` no longer throws on an empty-choices completion chunk
     (e.g. a keep-alive); such chunks are forwarded as-is.
