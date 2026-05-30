@@ -101,6 +101,7 @@ void main() {
   );
 
   final buffer = StringBuffer()
+    ..writeln('// coverage:ignore-file')
     ..writeln('// GENERATED FILE — DO NOT EDIT BY HAND.')
     ..writeln('//')
     ..writeln('// Regenerate with: dart run tool/gen_litert_lm_templates.dart')

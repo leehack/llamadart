@@ -1,3 +1,4 @@
+// coverage:ignore-file
 // GENERATED FILE — DO NOT EDIT BY HAND.
 //
 // Regenerate with: dart run tool/gen_litert_lm_templates.dart
