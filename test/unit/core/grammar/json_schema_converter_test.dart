@@ -184,6 +184,59 @@ void main() {
       expect(grammar, contains(r'\"city\"'));
     });
 
+    test(r'resolves a $ref nested inside another $ref target', () {
+      // Node has a $ref AND the target itself contains a nested $ref. The
+      // nested ref must be resolved (no dangling rule / invalid GBNF).
+      final grammar = JsonSchemaConverter.convert({
+        'type': 'object',
+        'properties': {
+          'person': {r'$ref': '#/definitions/Person'},
+        },
+        'required': ['person'],
+        'definitions': {
+          'Person': {
+            'type': 'object',
+            'properties': {
+              'home': {r'$ref': '#/definitions/Address'},
+            },
+            'required': ['home'],
+          },
+          'Address': {
+            'type': 'object',
+            'properties': {
+              'city': {'type': 'string'},
+            },
+            'required': ['city'],
+          },
+        },
+      });
+      expect(grammar, contains('root ::='));
+      expect(grammar, contains(r'\"home\"'));
+      expect(grammar, contains(r'\"city\"'));
+      // No rule may reference an undefined rule (dangling ref). Every "ref..."
+      // token used on a right-hand side must have its own definition.
+      final defined = RegExp(
+        r'^([A-Za-z0-9-]+) ::=',
+        multiLine: true,
+      ).allMatches(grammar).map((m) => m.group(1)).toSet();
+      final referenced = RegExp(
+        r'\bref[A-Za-z0-9-]+\b',
+      ).allMatches(grammar).map((m) => m.group(0)!).toSet();
+      expect(referenced.difference(defined), isEmpty);
+    });
+
+    test(r'throws on an unresolvable external $ref', () {
+      expect(
+        () => JsonSchemaConverter.convert({
+          'type': 'object',
+          'properties': {
+            'x': {r'$ref': 'https://example.com/schema.json#/X'},
+          },
+        }),
+        throwsA(isA<StateError>()),
+      );
+    });
+
     test('converts array type union', () {
       final grammar = JsonSchemaConverter.convert({
         'type': ['string', 'null'],

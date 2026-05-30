@@ -606,12 +606,12 @@ class LiteRtLmRuntimeClient {
   Stream<String> _generateStreaming(String prompt) {
     final bindings = _requireBindings();
     final conversation = _requireConversation();
-    final controller = StreamController<String>(onCancel: cancel);
     final messagePtr = _messageJson(prompt).toNativeUtf8();
     Pointer<Void> callbackData = nullptr;
     var cleanedUp = false;
 
     late final NativeCallable<_StreamCallbackNative> callable;
+    late final StreamController<String> controller;
     void cleanup() {
       if (cleanedUp) {
         return;
@@ -625,6 +625,20 @@ class LiteRtLmRuntimeClient {
       calloc.free(messagePtr);
     }
 
+    controller = StreamController<String>(
+      onCancel: () {
+        // Signal the native side to stop, but do NOT run cleanup() here:
+        // closing the NativeCallable while the runtime may still invoke it is
+        // unsafe. cancellation drives the runtime to deliver a terminal
+        // CANCELLED/error callback, and cleanup() runs from there (below). A
+        // timer-based backstop is deliberately avoided: closing the callable
+        // while a later native callback is still possible would crash. If the
+        // runtime never delivers a terminal callback the callback resources
+        // leak, which is preferable to a use-after-free.
+        cancel();
+      },
+    );
+
     callable = NativeCallable<_StreamCallbackNative>.listener((
       Pointer<Void> data,
       Pointer<Char> chunk,
@@ -635,10 +649,14 @@ class LiteRtLmRuntimeClient {
         final error = errorMessage.cast<Utf8>().toDartString();
         _proxyFreeString?.call(errorMessage);
         if (error.startsWith('CANCELLED')) {
-          unawaited(controller.close());
+          if (!controller.isClosed) {
+            unawaited(controller.close());
+          }
         } else {
-          controller.addError(StateError(error));
-          unawaited(controller.close());
+          if (!controller.isClosed) {
+            controller.addError(StateError(error));
+            unawaited(controller.close());
+          }
         }
         cleanup();
         return;
@@ -648,13 +666,15 @@ class LiteRtLmRuntimeClient {
         final raw = chunk.cast<Utf8>().toDartString();
         _proxyFreeString?.call(chunk);
         final text = _extractText(raw);
-        if (text.isNotEmpty) {
+        if (text.isNotEmpty && !controller.isClosed) {
           controller.add(text);
         }
       }
 
       if (isFinal) {
-        unawaited(controller.close());
+        if (!controller.isClosed) {
+          unawaited(controller.close());
+        }
         cleanup();
       }
     });
