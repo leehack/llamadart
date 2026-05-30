@@ -24,6 +24,7 @@ void main() {
     late bool sawAudioParts;
     late bool sawAudioBytes;
     int? lastRequestedGpuLayers;
+    int? lastModelBytesHint;
     int? lastRequestedThreadsBatch;
     int? lastRequestedBatchSize;
     int? lastRequestedMicroBatchSize;
@@ -90,6 +91,11 @@ void main() {
       final nGpuLayers = config.getProperty('nGpuLayers'.toJS);
       if (nGpuLayers.isA<JSNumber>()) {
         lastRequestedGpuLayers = (nGpuLayers as JSNumber).toDartInt;
+      }
+
+      final modelBytesHint = config.getProperty('modelBytesHint'.toJS);
+      if (modelBytesHint.isA<JSNumber>()) {
+        lastModelBytesHint = (modelBytesHint as JSNumber).toDartInt;
       }
 
       final nThreadsBatch = config.getProperty('nThreadsBatch'.toJS);
@@ -166,6 +172,7 @@ void main() {
       sawAudioParts = false;
       sawAudioBytes = false;
       lastRequestedGpuLayers = null;
+      lastModelBytesHint = null;
       lastRequestedThreadsBatch = null;
       lastRequestedBatchSize = null;
       lastRequestedMicroBatchSize = null;
@@ -505,6 +512,60 @@ void main() {
       expect(await backend.getBackendName(), 'WebGPU (Mock)');
       expect(await backend.isGpuSupported(), isTrue);
       expect(await backend.getContextSize(1), 4096);
+    });
+
+    bool? capturedPreferMemory64() {
+      final config = lastBridgeConfig;
+      if (config == null) {
+        return null;
+      }
+      final value = config.getProperty('preferMemory64'.toJS);
+      if (value.isA<JSBoolean>()) {
+        return (value as JSBoolean).toDart;
+      }
+      return null;
+    }
+
+    test('explicit preferMemory64 is forwarded to the bridge config', () async {
+      await backend.modelLoadFromUrl(
+        'https://example.com/model.gguf',
+        const ModelParams(preferMemory64: true),
+      );
+      expect(capturedPreferMemory64(), isTrue);
+
+      await backend.dispose();
+      await backend.modelLoadFromUrl(
+        'https://example.com/model.gguf',
+        const ModelParams(preferMemory64: false),
+      );
+      expect(capturedPreferMemory64(), isFalse);
+    });
+
+    test('auto-enables mem64 for large model size hints', () async {
+      await backend.modelLoadFromUrl(
+        'https://example.com/model.gguf',
+        const ModelParams(modelBytesHint: 3 * 1024 * 1024 * 1024),
+      );
+      expect(capturedPreferMemory64(), isTrue);
+      expect(lastModelBytesHint, 3 * 1024 * 1024 * 1024);
+    });
+
+    test('leaves mem64 unset for a sub-ceiling size hint', () async {
+      // Selection is size-driven, not model-name based: a known-large model
+      // name with a small/absent hint must NOT force mem64.
+      await backend.modelLoadFromUrl(
+        'https://example.com/gemma-4-E2B-it-Q4_K_S.gguf',
+        const ModelParams(modelBytesHint: 100 * 1024 * 1024),
+      );
+      expect(capturedPreferMemory64(), isNull);
+    });
+
+    test('leaves mem64 unset for small models without a hint', () async {
+      await backend.modelLoadFromUrl(
+        'https://example.com/tiny-model.gguf',
+        const ModelParams(),
+      );
+      expect(capturedPreferMemory64(), isNull);
     });
 
     test('forwards batch threading and batching model params', () async {

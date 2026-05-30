@@ -1,3 +1,19 @@
+## Unreleased
+
+* **Web large-model (mem64) support**:
+  * Added `ModelParams.preferMemory64` and `ModelParams.modelBytesHint`
+    (web/WebGPU only; ignored on native) so large GGUF models such as Gemma 4
+    E2B can load into the 64-bit (mem64) bridge core instead of failing on the
+    32-bit wasm core's ~4 GiB address-space limit.
+    Selection is size-driven: the WebGPU backend picks the mem64 core up front
+    when the model is explicitly flagged or when `modelBytesHint` is at/above the
+    wasm32-safe ceiling (no hardcoded model-name list), and forwards
+    `modelBytesHint` to the bridge load call. The chat app forwards each model's
+    catalog size so large models (for example Gemma 4 E2B) select mem64 on web.
+  * Added a `chat-app-web-gemma4-webgpu-smoke` local E2E scenario that runs
+    Gemma 4 E2B (text-only) through the WebGPU/llama.cpp path with the mem64
+    core.
+
 ## 0.7.0
 
 * **Native runtime configuration**:

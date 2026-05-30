@@ -25,6 +25,7 @@ class SettingsService {
   static const _keyThinkingEnabled = 'thinking_enabled';
   static const _keyThinkingBudgetTokens = 'thinking_budget_tokens';
   static const _keySingleTurnMode = 'single_turn_mode';
+  static const _keyModelBytesHint = 'model_bytes_hint';
 
   static const Map<String, String> _modelPathMigrations = {
     'https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-UD-Q4_K_XL.gguf?download=true':
@@ -92,6 +93,7 @@ class SettingsService {
       thinkingEnabled: prefs.getBool(_keyThinkingEnabled) ?? true,
       thinkingBudgetTokens: prefs.getInt(_keyThinkingBudgetTokens) ?? 0,
       singleTurnMode: prefs.getBool(_keySingleTurnMode) ?? false,
+      modelBytesHint: prefs.getInt(_keyModelBytesHint),
     );
   }
 
@@ -123,5 +125,11 @@ class SettingsService {
     await prefs.setBool(_keyThinkingEnabled, settings.thinkingEnabled);
     await prefs.setInt(_keyThinkingBudgetTokens, settings.thinkingBudgetTokens);
     await prefs.setBool(_keySingleTurnMode, settings.singleTurnMode);
+    final modelBytesHint = settings.modelBytesHint;
+    if (modelBytesHint != null && modelBytesHint > 0) {
+      await prefs.setInt(_keyModelBytesHint, modelBytesHint);
+    } else {
+      await prefs.remove(_keyModelBytesHint);
+    }
   }
 }

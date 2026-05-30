@@ -171,6 +171,20 @@ class ModelParams {
   /// trained value.
   final double? ropeFrequencyScale;
 
+  /// Web/WebGPU only: prefer the 64-bit (wasm64/mem64) bridge core.
+  ///
+  /// Models larger than the ~4 GiB wasm32 address space (for example Gemma 4
+  /// E2B) cannot load on the default 32-bit core. `null` (default) lets
+  /// llamadart auto-decide from [modelBytesHint] and the model name; `true`
+  /// forces the mem64 core; `false` forces wasm32. Ignored on every non-web
+  /// backend (native llama.cpp uses the host address space).
+  final bool? preferMemory64;
+
+  /// Web/WebGPU only: approximate model size in bytes, used to decide whether
+  /// to load the mem64 core up front (instead of waiting for an out-of-memory
+  /// failure and retrying). Ignored on non-web backends. `null` when unknown.
+  final int? modelBytesHint;
+
   /// Maximum number of GPU layers to safely offload all layers.
   static const int maxGpuLayers = 999;
 
@@ -198,6 +212,8 @@ class ModelParams {
     this.kvUnified,
     this.ropeFrequencyBase,
     this.ropeFrequencyScale,
+    this.preferMemory64,
+    this.modelBytesHint,
   });
 
   /// Validates the parameter combination. Throws [ArgumentError] when the
@@ -250,6 +266,10 @@ class ModelParams {
     bool clearRopeFrequencyBase = false,
     double? ropeFrequencyScale,
     bool clearRopeFrequencyScale = false,
+    bool? preferMemory64,
+    bool clearPreferMemory64 = false,
+    int? modelBytesHint,
+    bool clearModelBytesHint = false,
   }) {
     return ModelParams(
       contextSize: contextSize ?? this.contextSize,
@@ -279,6 +299,12 @@ class ModelParams {
       ropeFrequencyScale: clearRopeFrequencyScale
           ? null
           : (ropeFrequencyScale ?? this.ropeFrequencyScale),
+      preferMemory64: clearPreferMemory64
+          ? null
+          : (preferMemory64 ?? this.preferMemory64),
+      modelBytesHint: clearModelBytesHint
+          ? null
+          : (modelBytesHint ?? this.modelBytesHint),
     );
   }
 }

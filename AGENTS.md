@@ -55,6 +55,11 @@ python3 tool/testing/serve_static_with_headers.py --directory . --port 7358
   --expect 4
 ```
 
+For the WebGPU/llama.cpp Gemma 4 path specifically, use the
+`chat-app-web-gemma4-webgpu-smoke` scenario, which forces the mem64 core and a
+bounded context. It expects `gemma-4-E2B-it-Q4_K_S.gguf` to be served locally
+(for example under `example/llamadart_server/models/`).
+
 When serving `build/web` under a repo-root path, build with the matching
 `--base-href`; otherwise Flutter resolves `flutter_bootstrap.js` and
 `webgpu_bridge/*` from `/`. On macOS headless Chromium, use the smoke script's

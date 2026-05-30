@@ -220,6 +220,31 @@ For first WebGPU validation, prefer:
 When a failure only appears after increasing model size or context, classify it
 as a model/configuration pressure issue first, not a bridge-load failure.
 
+### Large models and the 64-bit (mem64) core
+
+Models larger than the ~4 GiB wasm32 address space (for example Gemma 4 E2B,
+~2.8 GB of weights) cannot load on the default 32-bit core. Select the 64-bit
+(wasm64/mem64) core up front with `ModelParams`:
+
+```dart
+await engine.loadModelFromUrl(
+  modelUrl,
+  modelParams: const ModelParams(
+    preferMemory64: true, // force the mem64 core
+    // or leave null and pass modelBytesHint so the size heuristic decides:
+    // modelBytesHint: 3043927168,
+    contextSize: 2048,
+  ),
+);
+```
+
+`preferMemory64` defaults to `null`, which lets llamadart pick the mem64 core
+automatically from `modelBytesHint` when it is at/above the wasm32-safe ceiling
+(selection is size-driven, not based on a hardcoded model-name list). Passing
+the model size up front is preferable to relying on the post-out-of-memory
+wasm32→wasm64 retry, which is slower and best-effort. Both fields are
+web/WebGPU only and ignored on native backends.
+
 ## Flutter Web demo and smoke path
 
 Run the production-style chat app locally:
