@@ -283,8 +283,12 @@ void main() {
     test('WebGPU load retries wasm32 staging aborts with wasm64', () async {
       failFirstWasm32StagingAbort = true;
 
+      // Use a model that is not pre-flagged for mem64 (not Gemma 4 and no size
+      // hint), so the first attempt starts on wasm32 and the OOM/staging-abort
+      // escalation to the wasm64 core is exercised. Known-large models like
+      // Gemma 4 now start on wasm64 up front and would not hit this retry path.
       await engine.loadModelFromUrl(
-        'https://example.com/gemma-4-E2B-it-Q4_K_S.gguf',
+        'https://example.com/large-model.gguf',
         modelParams: const ModelParams(contextSize: 4096, gpuLayers: 99),
       );
 

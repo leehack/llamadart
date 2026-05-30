@@ -26,6 +26,11 @@ class ChatSettings {
   final int thinkingBudgetTokens;
   final bool singleTurnMode;
 
+  /// Approximate selected-model size in bytes (web only), forwarded to
+  /// `ModelParams.modelBytesHint` so the WebGPU backend can pick the mem64 core
+  /// up front for large models. `null`/`0` when unknown.
+  final int? modelBytesHint;
+
   const ChatSettings({
     this.modelPath,
     this.mmprojPath,
@@ -47,6 +52,7 @@ class ChatSettings {
     this.thinkingEnabled = true,
     this.thinkingBudgetTokens = 0,
     this.singleTurnMode = false,
+    this.modelBytesHint,
   });
 
   ChatSettings copyWith({
@@ -70,6 +76,7 @@ class ChatSettings {
     bool? thinkingEnabled,
     int? thinkingBudgetTokens,
     bool? singleTurnMode,
+    int? modelBytesHint,
   }) {
     return ChatSettings(
       modelPath: modelPath ?? this.modelPath,
@@ -92,6 +99,7 @@ class ChatSettings {
       thinkingEnabled: thinkingEnabled ?? this.thinkingEnabled,
       thinkingBudgetTokens: thinkingBudgetTokens ?? this.thinkingBudgetTokens,
       singleTurnMode: singleTurnMode ?? this.singleTurnMode,
+      modelBytesHint: modelBytesHint ?? this.modelBytesHint,
     );
   }
 }

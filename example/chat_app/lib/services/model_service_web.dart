@@ -11,17 +11,6 @@ import 'model_service_base.dart';
 class ModelServiceWeb implements ModelService, WebCachePrefetchModelService {
   static const String _downloadedModelsKey = 'web_cached_models';
   static const String _modelCacheName = 'llamadart-webgpu-model-cache-v1';
-  static const String _hfToken = String.fromEnvironment('HF_TOKEN');
-
-  final Dio _dio = Dio();
-
-  Map<String, Object>? _requestHeaders() {
-    final token = _hfToken.trim();
-    if (token.isEmpty) {
-      return null;
-    }
-    return <String, Object>{'authorization': 'Bearer $token'};
-  }
 
   @override
   Future<String> getModelsDirectory() async => 'browser-cache';
@@ -130,82 +119,61 @@ class ModelServiceWeb implements ModelService, WebCachePrefetchModelService {
       return;
     }
 
-    final bridge = _tryCreateBridge();
+    // Wait for the bridge runtime to actually finish loading before deciding
+    // whether prefetch is possible. Without this, an early download tap raced
+    // the async bridge import and silently "succeeded" without caching bytes.
+    final ready = await _awaitBridgeReady();
+    final bridge = ready ? _tryCreateBridge() : null;
+    if (bridge == null) {
+      final detail = _bridgeLoadError();
+      onError(
+        StateError(
+          'Web model caching requires the WebGPU bridge runtime, which did not '
+          'become available${detail != null ? ': $detail' : ''}. Reload the '
+          'page and try again, or load the model directly without prefetch.',
+        ),
+      );
+      return;
+    }
 
     try {
-      var usedBridgePrefetch = false;
-      if (bridge != null) {
-        try {
-          unawaited(
-            cancelToken.whenCancel.then((_) {
-              try {
-                bridge.cancel();
-              } catch (_) {
-                // best-effort cancellation only
-              }
-            }),
-          );
-
-          await _prefetchStage(
-            bridge,
-            remoteModelSource.url,
-            stage: ModelDownloadStage.model,
-            stageIndex: 1,
-            stageCount: stageCount,
-            aggregate: aggregate,
-            updateStage: aggregate.updateModel,
-            onProgress: onProgress,
-            onProgressDetail: onProgressDetail,
-          );
-
-          if (mmprojUrl != null) {
-            await _prefetchStage(
-              bridge,
-              mmprojUrl,
-              stage: ModelDownloadStage.multimodalProjector,
-              stageIndex: 2,
-              stageCount: stageCount,
-              aggregate: aggregate,
-              updateStage: aggregate.updateMmproj,
-              onProgress: onProgress,
-              onProgressDetail: onProgressDetail,
-            );
+      unawaited(
+        cancelToken.whenCancel.then((_) {
+          try {
+            bridge.cancel();
+          } catch (_) {
+            // best-effort cancellation only
           }
+        }),
+      );
 
-          usedBridgePrefetch = true;
-        } catch (error) {
-          if (!_looksLikePrefetchUnavailable(error)) {
-            rethrow;
-          }
-        }
-      }
+      // A prefetch failure (including an old bridge that lacks
+      // prefetchModelToCache) now surfaces as a real error instead of silently
+      // marking the model cached.
+      await _prefetchStage(
+        bridge,
+        remoteModelSource.url,
+        stage: ModelDownloadStage.model,
+        stageIndex: 1,
+        stageCount: stageCount,
+        aggregate: aggregate,
+        updateStage: aggregate.updateModel,
+        onProgress: onProgress,
+        onProgressDetail: onProgressDetail,
+      );
 
-      if (!usedBridgePrefetch) {
-        await _verifyRemoteStage(
-          remoteModelSource.url,
-          stage: ModelDownloadStage.model,
-          stageIndex: 1,
+      if (mmprojUrl != null) {
+        await _prefetchStage(
+          bridge,
+          mmprojUrl,
+          stage: ModelDownloadStage.multimodalProjector,
+          stageIndex: 2,
           stageCount: stageCount,
-          cancelToken: cancelToken,
           aggregate: aggregate,
-          updateStage: aggregate.updateModel,
+          updateStage: aggregate.updateMmproj,
           onProgress: onProgress,
           onProgressDetail: onProgressDetail,
         );
-
-        if (mmprojUrl != null) {
-          await _verifyRemoteStage(
-            mmprojUrl,
-            stage: ModelDownloadStage.multimodalProjector,
-            stageIndex: 2,
-            stageCount: stageCount,
-            cancelToken: cancelToken,
-            aggregate: aggregate,
-            updateStage: aggregate.updateMmproj,
-            onProgress: onProgress,
-            onProgressDetail: onProgressDetail,
-          );
-        }
       }
 
       final finalDetail = aggregate.finalProgress(stageCount: stageCount);
@@ -228,15 +196,13 @@ class ModelServiceWeb implements ModelService, WebCachePrefetchModelService {
         onError(error);
       }
     } finally {
-      if (bridge != null) {
-        try {
-          final disposePromise = bridge.dispose();
-          if (disposePromise != null) {
-            await disposePromise.toDart;
-          }
-        } catch (_) {
-          // best-effort bridge disposal
+      try {
+        final disposePromise = bridge.dispose();
+        if (disposePromise != null) {
+          await disposePromise.toDart;
         }
+      } catch (_) {
+        // best-effort bridge disposal
       }
     }
   }
@@ -247,7 +213,8 @@ class ModelServiceWeb implements ModelService, WebCachePrefetchModelService {
       return false;
     }
 
-    final bridge = _tryCreateBridge();
+    final ready = await _awaitBridgeReady();
+    final bridge = ready ? _tryCreateBridge() : null;
     if (bridge == null) {
       return false;
     }
@@ -269,12 +236,6 @@ class ModelServiceWeb implements ModelService, WebCachePrefetchModelService {
     }
   }
 
-  bool _looksLikePrefetchUnavailable(dynamic error) {
-    final normalized = '$error'.toLowerCase();
-    return normalized.contains('prefetchmodeltocache') &&
-        normalized.contains('not a function');
-  }
-
   bool _hasCacheStorageApi() {
     try {
       final caches = globalContext.getProperty<JSAny?>('caches'.toJS);
@@ -290,10 +251,76 @@ class ModelServiceWeb implements ModelService, WebCachePrefetchModelService {
 
   bool _hasPersistentCacheSensitiveUrlParts(String value) {
     final uri = Uri.tryParse(value);
-    return uri != null &&
-        (uri.userInfo.isNotEmpty ||
-            uri.query.isNotEmpty ||
-            uri.fragment.isNotEmpty);
+    if (uri == null) {
+      return false;
+    }
+    if (uri.userInfo.isNotEmpty || uri.fragment.isNotEmpty) {
+      return true;
+    }
+    // Only block queries that look like signed credentials. Benign flags such
+    // as Hugging Face's `?download=true` are safe to persist in the cache key.
+    const benignQueryKeys = {'download'};
+    return uri.queryParameters.keys.any((key) {
+      final lower = key.toLowerCase();
+      if (benignQueryKeys.contains(lower)) {
+        return false;
+      }
+      return lower.contains('token') ||
+          lower.contains('sig') ||
+          lower.contains('signature') ||
+          lower.contains('expires') ||
+          lower.contains('credential') ||
+          lower.contains('key') ||
+          lower.contains('secret') ||
+          lower.contains('auth') ||
+          lower.contains('session') ||
+          lower.startsWith('x-amz');
+    });
+  }
+
+  /// Awaits the bridge-readiness signal published by `web/index.html`.
+  ///
+  /// Returns true once the `LlamaWebGpuBridge` global is available, false if it
+  /// failed to load or did not become ready within [timeout]. Falls back to
+  /// polling for older `index.html` builds without the readiness promise.
+  Future<bool> _awaitBridgeReady({
+    Duration timeout = const Duration(seconds: 30),
+  }) async {
+    if (globalContext.has('LlamaWebGpuBridge')) {
+      return true;
+    }
+    final promise = globalContext.getProperty<JSAny?>(
+      '__llamadartBridgeReadyPromise'.toJS,
+    );
+    if (promise != null && promise.isA<JSPromise>()) {
+      try {
+        await (promise as JSPromise).toDart.timeout(timeout);
+      } catch (_) {
+        // Rejected or timed out; the global check below is authoritative.
+      }
+      return globalContext.has('LlamaWebGpuBridge');
+    }
+    final deadline = DateTime.now().add(timeout);
+    while (DateTime.now().isBefore(deadline)) {
+      if (globalContext.has('LlamaWebGpuBridge')) {
+        return true;
+      }
+      if (_bridgeLoadError() != null) {
+        return false;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    }
+    return false;
+  }
+
+  String? _bridgeLoadError() {
+    final value = globalContext.getProperty<JSAny?>(
+      '__llamadartBridgeLoadError'.toJS,
+    );
+    if (value != null && value.isA<JSString>()) {
+      return (value as JSString).toDart;
+    }
+    return null;
   }
 
   _WebModelCacheBridge? _tryCreateBridge() {
@@ -457,80 +484,6 @@ class ModelServiceWeb implements ModelService, WebCachePrefetchModelService {
       port: uri.hasPort ? uri.port : null,
       path: uri.path,
     ).toString();
-  }
-
-  Future<void> _verifyRemoteStage(
-    String url, {
-    required ModelDownloadStage stage,
-    required int stageIndex,
-    required int stageCount,
-    required CancelToken cancelToken,
-    required ModelDownloadProgressTracker aggregate,
-    required void Function(int downloadedBytes, int? totalBytes) updateStage,
-    required Function(double progress) onProgress,
-    Function(ModelDownloadProgress progress)? onProgressDetail,
-  }) async {
-    final stageTotalBytes = await _resolveRemoteLength(
-      url: url,
-      cancelToken: cancelToken,
-    );
-
-    updateStage(0, stageTotalBytes);
-    final initial = aggregate.buildProgress(
-      stage: stage,
-      stageIndex: stageIndex,
-      stageCount: stageCount,
-      stageDownloadedBytes: 0,
-      stageTotalBytes: stageTotalBytes,
-      resumed: false,
-    );
-    onProgress(initial.overallProgress);
-    onProgressDetail?.call(initial);
-
-    final completedBytes = stageTotalBytes != null && stageTotalBytes > 0
-        ? stageTotalBytes
-        : 1;
-    final normalizedStageTotal = stageTotalBytes ?? completedBytes;
-    updateStage(completedBytes, normalizedStageTotal);
-
-    final completed = aggregate.buildProgress(
-      stage: stage,
-      stageIndex: stageIndex,
-      stageCount: stageCount,
-      stageDownloadedBytes: completedBytes,
-      stageTotalBytes: normalizedStageTotal,
-      resumed: false,
-    );
-    onProgress(completed.overallProgress);
-    onProgressDetail?.call(completed);
-  }
-
-  Future<int?> _resolveRemoteLength({
-    required String url,
-    required CancelToken cancelToken,
-  }) async {
-    final response = await _dio.head<void>(
-      url,
-      cancelToken: cancelToken,
-      options: Options(
-        headers: _requestHeaders(),
-        validateStatus: (status) =>
-            status != null && status >= 200 && status < 500,
-      ),
-    );
-
-    final statusCode = response.statusCode ?? 500;
-    if (statusCode >= 400) {
-      throw DioException.badResponse(
-        statusCode: statusCode,
-        requestOptions: response.requestOptions,
-        response: response,
-      );
-    }
-
-    return int.tryParse(
-      response.headers.value(Headers.contentLengthHeader) ?? '',
-    );
   }
 
   @override

@@ -654,6 +654,30 @@ class WebGpuLlamaBackend
     return (nBatch: resolved.batchSize, nUbatch: resolved.microBatchSize);
   }
 
+  // Approximate wasm32 linear-memory ceiling under which a model + KV cache can
+  // be expected to fit. Models at or above this should load into the mem64 core
+  // up front. wasm32 caps at 4 GiB; ~2 GiB leaves headroom for the KV cache and
+  // intermediate buffers.
+  static const int _wasm32SafeModelCeilingBytes = 2 * 1024 * 1024 * 1024;
+
+  /// Resolves the effective mem64 preference for a load.
+  ///
+  /// Size-driven, not model-name based: an explicit [ModelParams.preferMemory64]
+  /// wins; otherwise a [ModelParams.modelBytesHint] at/above the wasm32-safe
+  /// ceiling opts in; otherwise `null` (let the bridge / reactive escalation
+  /// decide). Callers that know a model is large should pass `modelBytesHint`
+  /// (or set `preferMemory64`) rather than relying on a hardcoded name list.
+  bool? _resolvePreferMemory64(ModelParams params) {
+    if (params.preferMemory64 != null) {
+      return params.preferMemory64;
+    }
+    final hint = params.modelBytesHint ?? 0;
+    if (hint >= _wasm32SafeModelCeilingBytes) {
+      return true;
+    }
+    return null;
+  }
+
   int _webGpuFlashAttentionValue(ModelParams params) {
     return llamaFlashAttentionTypeValueFor(
       resolveFlashAttention(
@@ -869,7 +893,11 @@ class WebGpuLlamaBackend
     Function(double progress)? onProgress,
   }) async {
     params.validate();
-    _preferMemory64Override = null;
+    // Seed the mem64 preference from the public ModelParams (explicit flag or a
+    // size hint at/above the wasm32 ceiling) so large models load into the
+    // 64-bit core up front instead of relying on a post-OOM retry. The reactive
+    // escalation paths below can still flip this to true as a last resort.
+    _preferMemory64Override = _resolvePreferMemory64(params);
     _forceRemoteFetchBackendOverride = null;
 
     final requestedThreads = params.numberOfThreads > 0
@@ -997,6 +1025,7 @@ class WebGpuLlamaBackend
             useCache: !_urlHasPersistentCacheSensitiveParts(url),
             forceRemoteFetchBackend: forceRemoteFetchBackend,
             remoteFetchChunkBytes: remoteFetchChunkBytesOverride,
+            modelBytesHint: params.modelBytesHint,
             progressCallback: progressCallback,
           ),
         );

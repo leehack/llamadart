@@ -225,6 +225,12 @@ class ChatService {
       }
     }
 
+    // On web, forward the known model size so the WebGPU backend can select the
+    // 64-bit (mem64) core up front for models that exceed the wasm32 address
+    // space. This is size-driven; there is no hardcoded model-name list.
+    final hint = settings.modelBytesHint ?? 0;
+    final int? modelBytesHint = kIsWeb && hint > 0 ? hint : null;
+
     return ModelParams(
       gpuLayers: settings.gpuLayers,
       preferredBackend: settings.preferredBackend,
@@ -233,6 +239,7 @@ class ChatService {
       numberOfThreadsBatch: resolvedThreadsBatch,
       batchSize: batchSize,
       microBatchSize: microBatchSize,
+      modelBytesHint: modelBytesHint,
     );
   }
 

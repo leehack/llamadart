@@ -20,6 +20,7 @@ void runLiteRtLmWorkerForTesting(
   SendPort initialSendPort,
   LiteRtLmService service, {
   bool exitOnDispose = true,
+  Duration disposeTimeout = const Duration(seconds: 5),
 }) {
   final receivePort = ReceivePort();
   initialSendPort.send(receivePort.sendPort);
@@ -33,17 +34,24 @@ void runLiteRtLmWorkerForTesting(
     if (message is LiteRtLmDisposeRequest) {
       shuttingDown = true;
       service.cancelGeneration();
+      var requestSettled = true;
       try {
-        await activeRequest.timeout(const Duration(seconds: 5));
+        await activeRequest.timeout(disposeTimeout);
       } on TimeoutException {
-        // Teardown continues below; the isolate is exited after the response.
+        // The in-flight native call (e.g. a blocking send_message) may still be
+        // executing. Deleting the engine/conversation now would be a
+        // use-after-free, so skip the native dispose and let the isolate/
+        // process teardown reclaim the (bounded) native memory instead.
+        requestSettled = false;
       } catch (_) {
-        // Request errors are reported to their original listeners.
+        // Request errored but is settled; safe to dispose.
       }
-      try {
-        service.dispose();
-      } catch (_) {
-        // Ignore errors during dispose.
+      if (requestSettled) {
+        try {
+          service.dispose();
+        } catch (_) {
+          // Ignore errors during dispose.
+        }
       }
       message.sendPort.send(LiteRtLmDoneResponse());
       receivePort.close();

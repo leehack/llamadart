@@ -474,6 +474,7 @@ Notes:
 - `ModelParams.splitMode` passes through to llama.cpp `split_mode`; it defaults to upstream `layer` behavior.
 - `ModelParams.mainGpu` passes through to llama.cpp `main_gpu`. To select one GPU for the full model, use `splitMode: ModelSplitMode.none` with the desired `mainGpu` index.
 - `ModelParams.batchSize` (`n_batch`) and `ModelParams.microBatchSize` (`n_ubatch`) can be set independently for memory/performance tuning; defaults keep legacy behavior (`n_batch = n_ctx`, `n_ubatch = n_batch`).
+- `ModelParams.preferMemory64` and `ModelParams.modelBytesHint` are web/WebGPU only (ignored on native). They select the 64-bit (wasm64/mem64) bridge core so models larger than the ~4 GiB wasm32 address space (for example Gemma 4 E2B) can load; `null` auto-decides from the size hint (size-driven, no hardcoded model names). See the [WebGPU bridge docs](https://leehack.github.io/llamadart/docs/platforms/webgpu-bridge).
 - Apple targets are intentionally non-configurable in this hook path and use consolidated native libraries.
 - The native-assets hook refreshes emitted files each build; if you change `hooks.user_defines` or are upgrading from older cached outputs, run `flutter clean && flutter pub get` before rebuilding.
 - Some Vulkan drivers can crash when probing cooperative matrix support. This

@@ -1964,6 +1964,10 @@ class ChatProvider extends ChangeNotifier {
         thinkingEnabled: model.preset.thinkingEnabled,
         thinkingBudgetTokens: model.preset.thinkingBudgetTokens,
         singleTurnMode: false,
+        // Web only: forward the known model size so the WebGPU backend can
+        // select the mem64 core up front for large models (size-driven, not a
+        // hardcoded model-name list).
+        modelBytesHint: kIsWeb ? model.sizeBytesFor(web: true) : null,
       ),
     );
 

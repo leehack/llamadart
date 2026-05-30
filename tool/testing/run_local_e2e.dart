@@ -91,6 +91,8 @@ class LocalE2eRunContext {
       'http://127.0.0.1:$port/example/llamadart_server/models/Qwen3.5-0.8B-Q4_K_M.gguf';
   String get defaultLiteRtLmWebModelUrl =>
       'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it-web.litertlm?download=true';
+  String get defaultGemma4WebGpuModelUrl =>
+      'http://127.0.0.1:$port/example/llamadart_server/models/gemma-4-E2B-it-Q4_K_S.gguf';
 }
 
 class LocalE2eScenario {
@@ -339,6 +341,79 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
               '${10 * 60 * 1000}',
             ],
             description: 'Run Playwright Gemma 4 LiteRT-LM web smoke',
+          ),
+        ]);
+        return steps;
+      },
+    ),
+    LocalE2eScenario(
+      name: 'chat-app-web-gemma4-webgpu-smoke',
+      group: LocalE2eScenarioGroup.webSmoke,
+      description:
+          'Build chat_app web and run Gemma 4 E2B (text-only) through '
+          'WebGPU/llama.cpp with the mem64 core.',
+      requiresDevice: false,
+      stepsBuilder: (context) {
+        final steps = <LocalE2eCommandStep>[];
+        if (!context.skipBuild) {
+          steps.add(
+            LocalE2eCommandStep(
+              workingDirectory: context.chatAppDir,
+              executable: 'flutter',
+              arguments: const [
+                'build',
+                'web',
+                '--base-href=/example/chat_app/build/web/',
+              ],
+              description: 'Build Flutter web chat app',
+            ),
+          );
+        }
+        steps.addAll([
+          LocalE2eCommandStep(
+            workingDirectory: context.projectRoot,
+            executable: context.python,
+            arguments: [
+              'tool/testing/serve_static_with_headers.py',
+              '--directory',
+              '.',
+              '--port',
+              '${context.port}',
+            ],
+            description: 'Serve repo root with COOP/COEP headers',
+            background: true,
+            waitForPort: context.port,
+          ),
+          LocalE2eCommandStep(
+            workingDirectory: context.projectRoot,
+            executable: context.python,
+            arguments: [
+              'tool/testing/playwright_chat_app_real_model_smoke.py',
+              context.webBuildUrl,
+              '--model-url',
+              context.modelUrl ?? context.defaultGemma4WebGpuModelUrl,
+              '--prompt',
+              'What is 2+2? Answer with only the number.',
+              '--expect',
+              context.expect,
+              // WebGPU/llama.cpp backend (LiteRT-LM is index 2).
+              '--backend-index',
+              '1',
+              '--gpu-layers',
+              '0',
+              // Bounded context for the large model per AGENTS.md guidance.
+              '--context-size',
+              '2048',
+              '--max-tokens',
+              '16',
+              // Force the mem64 core: Gemma 4 E2B exceeds the wasm32 ceiling.
+              '--mem64',
+              '--load-timeout-ms',
+              '${40 * 60 * 1000}',
+              '--response-timeout-ms',
+              '${10 * 60 * 1000}',
+            ],
+            description: 'Run Playwright Gemma 4 WebGPU (mem64) web smoke',
           ),
         ]);
         return steps;
