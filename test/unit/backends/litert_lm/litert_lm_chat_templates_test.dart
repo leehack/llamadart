@@ -1,12 +1,17 @@
 import 'package:llamadart/src/backends/litert_lm/litert_lm_chat_templates.dart';
+import 'package:llamadart/src/backends/litert_lm/litert_lm_chat_template.dart';
 import 'package:test/test.dart';
 
 /// Mirrors `LiteRtLmService._resolveBuiltinTemplate`: first match wins.
 String? resolveId(String fileName) {
+  return resolveTemplate(fileName)?.id;
+}
+
+LiteRtLmChatTemplate? resolveTemplate(String fileName) {
   final normalized = fileName.toLowerCase().replaceAll('_', '-');
   for (final template in kLiteRtLmChatTemplates) {
     if (template.matches(normalized)) {
-      return template.id;
+      return template;
     }
   }
   return null;
@@ -34,10 +39,13 @@ void main() {
       expect(resolveId('Qwen3-0.6B.litertlm'), isNot('qwen25'));
     });
 
-    test('returns null for unseeded models (caller falls back / overrides)', () {
-      expect(resolveId('phi-4-mini-instruct.litertlm'), isNull);
-      expect(resolveId('some-unknown-model.litertlm'), isNull);
-    });
+    test(
+      'returns null for unseeded models (caller falls back / overrides)',
+      () {
+        expect(resolveId('phi-4-mini-instruct.litertlm'), isNull);
+        expect(resolveId('some-unknown-model.litertlm'), isNull);
+      },
+    );
 
     test('does not mis-route qwen-derived models to the Qwen 2.5 template', () {
       // DeepSeek-R1-Distill-Qwen needs its own handler; the bare `qwen` rule
@@ -54,5 +62,21 @@ void main() {
         );
       }
     });
+
+    test(
+      'uses parser-compatible thought markers for Qwen/Hermes templates',
+      () {
+        final gemma4 = resolveTemplate('gemma-4-E2B-it.litertlm')!;
+        final qwen3 = resolveTemplate('Qwen3-0.6B.litertlm')!;
+        final qwen25 = resolveTemplate('Qwen2.5-1.5B-Instruct.litertlm')!;
+
+        expect(gemma4.thinkingStartTag, '<|channel>thought\n');
+        expect(gemma4.thinkingEndTag, '<channel|>');
+        expect(qwen3.thinkingStartTag, '<think>');
+        expect(qwen3.thinkingEndTag, '</think>');
+        expect(qwen25.thinkingStartTag, '<think>');
+        expect(qwen25.thinkingEndTag, '</think>');
+      },
+    );
   });
 }

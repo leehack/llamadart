@@ -23,6 +23,8 @@ class _Entry {
     required this.familyMatches,
     this.bosToken = '<bos>',
     this.eosToken = '<turn|>',
+    this.thinkingStartTag = '<|channel>thought\n',
+    this.thinkingEndTag = '<channel|>',
     this.stripLeadingBosToken = false,
   });
 
@@ -31,6 +33,8 @@ class _Entry {
   final List<String> familyMatches;
   final String bosToken;
   final String eosToken;
+  final String thinkingStartTag;
+  final String thinkingEndTag;
 
   /// Drops a standalone `{{- bos_token -}}` line: the native LiteRT-LM runtime
   /// adds the start token, so emitting one in the template would double it.
@@ -71,6 +75,8 @@ const List<_Entry> _manifest = [
     familyMatches: ['qwen3', 'qwen-3'],
     bosToken: '',
     eosToken: '<|im_end|>',
+    thinkingStartTag: '<think>',
+    thinkingEndTag: '</think>',
   ),
   _Entry(
     id: 'qwen25',
@@ -81,6 +87,8 @@ const List<_Entry> _manifest = [
     familyMatches: ['qwen2.5', 'qwen-2.5', 'qwen2'],
     bosToken: '',
     eosToken: '<|im_end|>',
+    thinkingStartTag: '<think>',
+    thinkingEndTag: '</think>',
   ),
 ];
 
@@ -137,6 +145,8 @@ void main() {
       '    familyMatches: ${_dartStringList(entry.familyMatches)},\n'
       "    bosToken: '${entry.bosToken}',\n"
       "    eosToken: '${entry.eosToken}',\n"
+      "    thinkingStartTag: ${_dartStringLiteral(entry.thinkingStartTag)},\n"
+      "    thinkingEndTag: ${_dartStringLiteral(entry.thinkingEndTag)},\n"
       '  ),',
     );
   }
@@ -144,8 +154,12 @@ void main() {
   buffer
     ..writeln('/// Built-in LiteRT-LM chat templates, matched in order.')
     ..writeln('///')
-    ..writeln('/// The first entry whose [LiteRtLmChatTemplate.matches] returns')
-    ..writeln('/// true for the bundle filename wins, so more specific families')
+    ..writeln(
+      '/// The first entry whose [LiteRtLmChatTemplate.matches] returns',
+    )
+    ..writeln(
+      '/// true for the bundle filename wins, so more specific families',
+    )
     ..writeln('/// must precede broader ones.')
     ..writeln('const List<LiteRtLmChatTemplate> kLiteRtLmChatTemplates = [')
     ..writeln(entries.join('\n'))
@@ -181,4 +195,12 @@ String _stripBosToken(String template) {
 String _dartStringList(List<String> values) {
   final items = values.map((v) => "'$v'").join(', ');
   return '[$items]';
+}
+
+String _dartStringLiteral(String value) {
+  final escaped = value
+      .replaceAll('\\', r'\\')
+      .replaceAll('\n', r'\n')
+      .replaceAll("'", r"\'");
+  return "'$escaped'";
 }

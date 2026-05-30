@@ -9,17 +9,48 @@ void main() {
     test('wraps a thought run in Gemma 4 channel markers, then content', () {
       final assembler = LiteRtLmChannelAssembler();
       final out = StringBuffer()
-        ..write(assembler.add('{"role":"assistant","channels":{"thought":"Hel"}}'))
-        ..write(assembler.add('{"role":"assistant","channels":{"thought":"lo"}}'))
-        ..write(assembler.add('{"role":"assistant","content":[{"type":"text","text":"42"}]}'))
+        ..write(
+          assembler.add('{"role":"assistant","channels":{"thought":"Hel"}}'),
+        )
+        ..write(
+          assembler.add('{"role":"assistant","channels":{"thought":"lo"}}'),
+        )
+        ..write(
+          assembler.add(
+            '{"role":"assistant","content":[{"type":"text","text":"42"}]}',
+          ),
+        )
         ..write(assembler.flush());
 
       expect(out.toString(), '<|channel>thought\nHello<channel|>42');
     });
 
+    test('wraps thought runs with the configured handler markers', () {
+      final assembler = LiteRtLmChannelAssembler(
+        thinkingStartTag: '<think>',
+        thinkingEndTag: '</think>',
+      );
+      final out = StringBuffer()
+        ..write(
+          assembler.add('{"role":"assistant","channels":{"thought":"Hel"}}'),
+        )
+        ..write(
+          assembler.add('{"role":"assistant","channels":{"thought":"lo"}}'),
+        )
+        ..write(
+          assembler.add(
+            '{"role":"assistant","content":[{"type":"text","text":"42"}]}',
+          ),
+        )
+        ..write(assembler.flush());
+
+      expect(out.toString(), '<think>Hello</think>42');
+    });
+
     test('passes plain content through untouched', () {
       final assembler = LiteRtLmChannelAssembler();
-      final out = assembler.add(
+      final out =
+          assembler.add(
             '{"role":"assistant","content":[{"type":"text","text":"7"}]}',
           ) +
           assembler.flush();
@@ -30,7 +61,11 @@ void main() {
     test('closes an unterminated thought run on flush (token cutoff)', () {
       final assembler = LiteRtLmChannelAssembler();
       final out = StringBuffer()
-        ..write(assembler.add('{"role":"assistant","channels":{"thought":"partial"}}'))
+        ..write(
+          assembler.add(
+            '{"role":"assistant","channels":{"thought":"partial"}}',
+          ),
+        )
         ..write(assembler.flush());
 
       expect(out.toString(), '<|channel>thought\npartial<channel|>');

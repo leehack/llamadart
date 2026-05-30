@@ -52,6 +52,35 @@ void main() {
     expect(parsed.content, equals('tail'));
   });
 
+  test('passes enableThinking into the template context', () {
+    final handler = HermesHandler();
+    const template =
+        '{% if enable_thinking is defined and enable_thinking is false %}'
+        'thinking-off'
+        '{% else %}'
+        'thinking-on'
+        '{% endif %}';
+    const messages = [
+      LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
+    ];
+
+    final disabled = handler.render(
+      templateSource: template,
+      messages: messages,
+      metadata: const {},
+      enableThinking: false,
+    );
+    final enabled = handler.render(
+      templateSource: template,
+      messages: messages,
+      metadata: const {},
+      enableThinking: true,
+    );
+
+    expect(disabled.prompt, 'thinking-off');
+    expect(enabled.prompt, 'thinking-on');
+  });
+
   test('parses tool call with space between tag and JSON', () {
     final handler = HermesHandler();
     final parsed = handler.parse(

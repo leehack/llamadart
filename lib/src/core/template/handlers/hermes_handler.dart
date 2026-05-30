@@ -46,6 +46,7 @@ class HermesHandler extends ChatTemplateHandler {
         'messages': templateMessages(messages),
         'add_generation_prompt': addAssistant,
         'tools': tools?.map((t) => t.toJson()).toList(),
+        'enable_thinking': enableThinking,
         'bos_token': metadata['tokenizer.ggml.bos_token'] ?? '<s>',
         'eos_token': metadata['tokenizer.ggml.eos_token'] ?? '</s>',
       },

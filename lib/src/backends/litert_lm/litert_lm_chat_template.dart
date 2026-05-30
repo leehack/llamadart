@@ -13,6 +13,8 @@ class LiteRtLmChatTemplate {
     required this.familyMatches,
     this.bosToken = '<bos>',
     this.eosToken = '<turn|>',
+    this.thinkingStartTag = '<|channel>thought\n',
+    this.thinkingEndTag = '<channel|>',
   });
 
   /// Stable identifier for diagnostics (e.g. `gemma4`).
@@ -37,6 +39,12 @@ class LiteRtLmChatTemplate {
 
   /// The EOS token exposed via `tokenizer.ggml.eos_token` metadata.
   final String eosToken;
+
+  /// The marker used to expose LiteRT-LM thought-channel chunks as reasoning.
+  final String thinkingStartTag;
+
+  /// The marker used to close LiteRT-LM thought-channel chunks.
+  final String thinkingEndTag;
 
   /// Whether [normalizedName] (lower-cased, `_`→`-`) belongs to this family.
   bool matches(String normalizedName) =>

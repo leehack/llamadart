@@ -333,6 +333,18 @@ final class _BlockingSendMessageRequest {
 /// `LlamaEngine` API. This client is exported for benchmark tools and advanced
 /// native integrations that need direct access to LiteRT-LM bundles.
 class LiteRtLmRuntimeClient {
+  String _thinkingStartTag = LiteRtLmChannelAssembler.gemma4ThinkingStartTag;
+  String _thinkingEndTag = LiteRtLmChannelAssembler.gemma4ThinkingEndTag;
+
+  /// Configures how LiteRT-LM thought-channel chunks are exposed to parsers.
+  void configureResponseThinkingTags({
+    required String startTag,
+    required String endTag,
+  }) {
+    _thinkingStartTag = startTag;
+    _thinkingEndTag = endTag;
+  }
+
   _LiteRtLmBindings? _bindings;
   // Keep a strong reference while callbacks/function pointers may be active.
   // ignore: unused_field
@@ -584,7 +596,10 @@ class LiteRtLmRuntimeClient {
       try {
         final raw = await _runBlockingSendMessageInIsolate(request);
         if (!controller.isClosed) {
-          final assembler = LiteRtLmChannelAssembler();
+          final assembler = LiteRtLmChannelAssembler(
+            thinkingStartTag: _thinkingStartTag,
+            thinkingEndTag: _thinkingEndTag,
+          );
           final text = assembler.add(raw) + assembler.flush();
           if (text.isNotEmpty) {
             controller.add(text);
@@ -608,7 +623,10 @@ class LiteRtLmRuntimeClient {
     final bindings = _requireBindings();
     final conversation = _requireConversation();
     final messagePtr = _messageJson(prompt).toNativeUtf8();
-    final assembler = LiteRtLmChannelAssembler();
+    final assembler = LiteRtLmChannelAssembler(
+      thinkingStartTag: _thinkingStartTag,
+      thinkingEndTag: _thinkingEndTag,
+    );
     Pointer<Void> callbackData = nullptr;
     var cleanedUp = false;
 
@@ -1351,20 +1369,33 @@ String _runBlockingSendMessage(_BlockingSendMessageRequest request) {
   }
 }
 
-/// Markers the Gemma 4 chat-template handler uses to delimit reasoning, so the
-/// thinking channel streamed by the native runtime is parsed as reasoning.
-const String _liteRtLmThoughtOpen = '<|channel>thought\n';
-const String _liteRtLmThoughtClose = '<channel|>';
-
 /// Reassembles LiteRT-LM streaming response chunks into the textual form the
 /// chat-template handlers parse.
 ///
 /// The native runtime emits thinking and final content on separate channels:
 /// thought as `{"role":"assistant","channels":{"thought":"..."}}` and the
 /// answer as `{"role":"assistant","content":[{"type":"text","text":"..."}]}`.
-/// Thought runs are wrapped in `<|channel>thought ... <channel|>` so downstream
-/// parsing surfaces them as reasoning instead of leaking the raw JSON.
+/// Thought runs are wrapped in the active chat handler's reasoning tags so
+/// downstream parsing surfaces them as reasoning instead of leaking raw JSON.
 class LiteRtLmChannelAssembler {
+  /// Gemma 4 reasoning start marker.
+  static const String gemma4ThinkingStartTag = '<|channel>thought\n';
+
+  /// Gemma 4 reasoning end marker.
+  static const String gemma4ThinkingEndTag = '<channel|>';
+
+  /// Creates a response-channel assembler.
+  LiteRtLmChannelAssembler({
+    this.thinkingStartTag = gemma4ThinkingStartTag,
+    this.thinkingEndTag = gemma4ThinkingEndTag,
+  });
+
+  /// Marker used to open a thought run.
+  final String thinkingStartTag;
+
+  /// Marker used to close a thought run.
+  final String thinkingEndTag;
+
   bool _inThought = false;
 
   /// Converts one native response [raw] chunk into handler-facing text.
@@ -1374,7 +1405,7 @@ class LiteRtLmChannelAssembler {
     final thought = chunk.thought;
     if (thought != null && thought.isNotEmpty) {
       if (!_inThought) {
-        buffer.write(_liteRtLmThoughtOpen);
+        buffer.write(thinkingStartTag);
         _inThought = true;
       }
       buffer.write(thought);
@@ -1395,7 +1426,7 @@ class LiteRtLmChannelAssembler {
       return '';
     }
     _inThought = false;
-    return _liteRtLmThoughtClose;
+    return thinkingEndTag;
   }
 }
 

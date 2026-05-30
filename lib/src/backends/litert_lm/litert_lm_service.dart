@@ -431,6 +431,11 @@ class LiteRtLmService {
     _client = null;
     _activeOutputTokens = null;
     final client = _clientFactory();
+    final responseThinkingTags = _responseThinkingTagsForModel(modelPath);
+    client.configureResponseThinkingTags(
+      startTag: responseThinkingTags.startTag,
+      endTag: responseThinkingTags.endTag,
+    );
     try {
       await client.initialize(
         modelPath: modelPath,
@@ -453,6 +458,21 @@ class LiteRtLmService {
     _activeOutputTokens = resolvedOutputTokens;
     _activeBackend = backend;
     return client;
+  }
+
+  ({String startTag, String endTag}) _responseThinkingTagsForModel(
+    String modelPath,
+  ) {
+    final modelName = File(modelPath).uri.pathSegments.last;
+    final template = _resolveBuiltinTemplate(modelName);
+    return (
+      startTag:
+          template?.thinkingStartTag ??
+          LiteRtLmChannelAssembler.gemma4ThinkingStartTag,
+      endTag:
+          template?.thinkingEndTag ??
+          LiteRtLmChannelAssembler.gemma4ThinkingEndTag,
+    );
   }
 
   Stream<List<int>> _applyStopSequences(

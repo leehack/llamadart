@@ -629,6 +629,8 @@ const List<LiteRtLmChatTemplate> kLiteRtLmChatTemplates = [
     familyMatches: ['gemma-4', 'gemma4'],
     bosToken: '<bos>',
     eosToken: '<turn|>',
+    thinkingStartTag: '<|channel>thought\n',
+    thinkingEndTag: '<channel|>',
   ),
   LiteRtLmChatTemplate(
     id: 'gemma3n',
@@ -636,6 +638,8 @@ const List<LiteRtLmChatTemplate> kLiteRtLmChatTemplates = [
     familyMatches: ['gemma-3n', 'gemma3n'],
     bosToken: '<bos>',
     eosToken: '<end_of_turn>',
+    thinkingStartTag: '<|channel>thought\n',
+    thinkingEndTag: '<channel|>',
   ),
   LiteRtLmChatTemplate(
     id: 'gemma',
@@ -643,6 +647,8 @@ const List<LiteRtLmChatTemplate> kLiteRtLmChatTemplates = [
     familyMatches: ['gemma-3', 'gemma3', 'gemma-2', 'gemma2'],
     bosToken: '<bos>',
     eosToken: '<end_of_turn>',
+    thinkingStartTag: '<|channel>thought\n',
+    thinkingEndTag: '<channel|>',
   ),
   LiteRtLmChatTemplate(
     id: 'qwen3',
@@ -650,6 +656,8 @@ const List<LiteRtLmChatTemplate> kLiteRtLmChatTemplates = [
     familyMatches: ['qwen3', 'qwen-3'],
     bosToken: '',
     eosToken: '<|im_end|>',
+    thinkingStartTag: '<think>',
+    thinkingEndTag: '</think>',
   ),
   LiteRtLmChatTemplate(
     id: 'qwen25',
@@ -657,5 +665,7 @@ const List<LiteRtLmChatTemplate> kLiteRtLmChatTemplates = [
     familyMatches: ['qwen2.5', 'qwen-2.5', 'qwen2'],
     bosToken: '',
     eosToken: '<|im_end|>',
+    thinkingStartTag: '<think>',
+    thinkingEndTag: '</think>',
   ),
 ];

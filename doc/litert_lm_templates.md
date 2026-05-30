@@ -42,7 +42,7 @@ format.
 | Gemma 3n (E2B/E4B) | `gemma` | `gemma-3n`, `gemma3n` | ✅ | ⚠️ prompt-engineered, no schema¹ | — |
 | Gemma 3 / 2 / 1B / 270m | `gemma` | `gemma-3`, `gemma-2` | ✅ | ⚠️ prompt-engineered, no schema¹ | — |
 | Qwen 3 / 3.5 | `hermes` | `qwen3`, `qwen-3` | ✅ | ✅ `<tool_call>` | ✅ `<think>` |
-| Qwen 2.5 | `hermes` | `qwen2.5`, `qwen2`, `qwen` | ✅ | ✅ `<tool_call>` | — |
+| Qwen 2.5 | `hermes` | `qwen2.5`, `qwen2` | ✅ | ✅ `<tool_call>` | — |
 
 ¹ For Gemma 3/3n the engine injects a generic "respond with `tool_call` JSON"
 instruction but does **not** render the tool schemas into the prompt. This
@@ -94,10 +94,10 @@ the backend, not the registry:
   reasoning and the answer on separate channels — thought as
   `{"role":"assistant","channels":{"thought":"..."}}` and the answer as
   `{"role":"assistant","content":[{"type":"text",...}]}`. `LiteRtLmChannelAssembler`
-  (in `litert_lm_runtime.dart`) wraps thought runs in `<|channel>thought … <channel|>`
-  so the chat-template handlers extract them as reasoning instead of leaking the
-  raw JSON. The markers are the Gemma 4 form but are also recognized for the
-  Hermes/Qwen path.
+  (in `litert_lm_runtime.dart`) wraps thought runs in the active handler's
+  reasoning tags (`<|channel>thought … <channel|>` for Gemma 4, `<think>…</think>`
+  for Qwen/Hermes) so chat-template handlers extract them as reasoning instead
+  of leaking raw JSON.
 - **Grammar-constrained decoding is skipped.** Grammar-using handlers (Hermes/Qwen)
   emit a GBNF grammar for tool calls, which the LiteRT-LM backend rejects.
   `NativeAutoBackend` forwards `supportsGrammarConstraints == false` from the
