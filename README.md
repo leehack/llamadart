@@ -189,6 +189,12 @@ await engine.loadModel(
 );
 ```
 
+Chat templates for `.litertlm` bundles are resolved from a built-in,
+filename-keyed registry (Gemma 4/3/3n and Qwen 2.5/3 are supported today). For
+other models, or to override detection, pass `ModelParams.chatTemplate`. See
+[doc/litert_lm_templates.md](doc/litert_lm_templates.md) for the support matrix
+and how to add a family.
+
 ### 6. Download and cache a remote model file
 
 ```dart

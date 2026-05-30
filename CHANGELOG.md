@@ -1,5 +1,18 @@
 ## Unreleased
 
+* **LiteRT-LM Gemma 4 function calling + thinking fix**:
+  * Fixed Gemma 4 `.litertlm` models not calling tools and producing unreliable
+    thinking. The backend supplied a hand-written stub chat template that
+    omitted the tool-declaration block entirely and inverted the thinking
+    control structure; it is replaced with the full canonical Gemma 4 template
+    (the one llama.cpp reads from the GGUF), minus the leading `bos_token` since
+    the native runtime adds the start token itself.
+  * Introduced a filename-keyed chat-template registry for `.litertlm` bundles
+    (they can't expose their template through the native FFI), seeded with
+    Gemma 4/3/3n and Qwen 2.5/3. Gemma 3/3n previously fell back to ChatML (the
+    wrong format); they now render the correct `<start_of_turn>` format with
+    system folded into the first user turn. Pass `ModelParams.chatTemplate` to
+    override detection for other models. See `doc/litert_lm_templates.md`.
 * **Web LiteRT-LM (`.litertlm`) chat-app fixes**:
   * Fixed a spurious tokenization error bubble shown after every reply on web
     (`Tokenization is not supported by the active backend`). The chat app
