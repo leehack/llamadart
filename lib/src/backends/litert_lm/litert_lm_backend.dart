@@ -200,10 +200,17 @@ class LiteRtLmBackend
         unawaited(() async {
           try {
             await _ensureIsolate();
-            if (cleanedUp) {
+            // Re-check after the await: a cancel during _ensureIsolate() runs
+            // cleanup(), which closes the response port and may clear
+            // _sendPort. Capture the port and guard in one synchronous step so
+            // we never send a generate request to a closed port (which would
+            // orphan a generation on the worker) or dereference a null port.
+            final sendPort = _sendPort;
+            if (cleanedUp || sendPort == null) {
+              cleanup();
               return;
             }
-            _sendPort!.send(
+            sendPort.send(
               LiteRtLmGenerateRequest(
                 contextHandle,
                 prompt,

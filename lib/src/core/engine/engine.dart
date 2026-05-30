@@ -78,6 +78,9 @@ class LlamaEngine {
   int? _modelHandle;
   int? _contextHandle;
   int? _mmContextHandle;
+  // Serializes multimodal projector load/unload so concurrent calls cannot
+  // race the native create/free (which could leak or double-free the context).
+  Future<void> _mmLifecycle = Future<void>.value();
   bool _isReady = false;
   String? _modelPath;
   Map<String, String>? _cachedModelMetadata;
@@ -290,14 +293,28 @@ class LlamaEngine {
     }
   }
 
+  // Runs [action] after any in-flight multimodal lifecycle operation, so
+  // create/free of the multimodal context never overlap.
+  Future<T> _withMmLifecycle<T>(Future<T> Function() action) {
+    final result = _mmLifecycle.then((_) => action());
+    // Advance the chain on a swallowed copy so one failed operation doesn't
+    // wedge subsequent ones; the real result/error still flows to the caller.
+    _mmLifecycle = result.then((_) {}, onError: (_) {});
+    return result;
+  }
+
   /// Loads a multimodal projector model for vision/audio support.
-  Future<void> loadMultimodalProjector(String mmProjPath) async {
+  Future<void> loadMultimodalProjector(String mmProjPath) {
+    return _withMmLifecycle(() => _loadMultimodalProjectorLocked(mmProjPath));
+  }
+
+  Future<void> _loadMultimodalProjectorLocked(String mmProjPath) async {
     final mmProjName = _displayNameForSource(mmProjPath);
     LlamaLogger.instance.info('Loading multimodal projector: $mmProjName');
     _ensureReady(requireContext: false);
     try {
       if (_mmContextHandle != null) {
-        await unloadMultimodalProjector();
+        await _unloadMultimodalProjectorLocked();
       }
 
       _mmContextHandle = await backend.multimodalContextCreate(
@@ -321,15 +338,24 @@ class LlamaEngine {
   }
 
   /// Unloads the active multimodal projector while keeping the model loaded.
-  Future<void> unloadMultimodalProjector() async {
+  Future<void> unloadMultimodalProjector() {
+    return _withMmLifecycle(_unloadMultimodalProjectorLocked);
+  }
+
+  Future<void> _unloadMultimodalProjectorLocked() async {
     final mmContextHandle = _mmContextHandle;
     if (mmContextHandle == null) {
       return;
     }
 
     LlamaLogger.instance.info('Unloading multimodal projector');
-    _mmContextHandle = null;
+    // Free the native context before clearing the handle so a concurrent
+    // reader never observes a null handle while teardown is still in flight.
+    // Serialization via _withMmLifecycle prevents a double free.
     await backend.multimodalContextFree(mmContextHandle);
+    if (_mmContextHandle == mmContextHandle) {
+      _mmContextHandle = null;
+    }
   }
 
   /// Releases all allocated resources.
@@ -346,10 +372,11 @@ class LlamaEngine {
       await backend.contextFree(_contextHandle!);
       _contextHandle = null;
     }
-    if (_mmContextHandle != null) {
-      await backend.multimodalContextFree(_mmContextHandle!);
-      _mmContextHandle = null;
-    }
+    // Always queue the projector unload (even when no handle is set yet): a
+    // projector load may be in flight and not have assigned _mmContextHandle.
+    // Routing through the serialized lifecycle makes this wait behind that load
+    // and free the projector before the model handle is released.
+    await unloadMultimodalProjector();
     if (_modelHandle != null) {
       await backend.modelFree(_modelHandle!);
       _modelHandle = null;
