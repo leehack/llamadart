@@ -603,11 +603,18 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
         ? null
         : await _readPartMetadata(partMetadataFile);
     var existingBytes = 0;
+    // Only resume when we have a stored validator (ETag/Last-Modified) to send
+    // as If-Range. Resuming on sha256 alone risks appending a fresh tail onto
+    // stale leading bytes if the remote changed, wasting a full re-download
+    // before the checksum catches it.
+    final hasResumeValidator =
+        partMetadata != null &&
+        (partMetadata.etag != null || partMetadata.lastModified != null);
     final canResumePartial =
         partFile != null &&
         options.resume &&
         await partFile.exists() &&
-        (partMetadata != null || options.sha256 != null);
+        hasResumeValidator;
     if (canResumePartial) {
       existingBytes = await partFile.length();
     } else {
@@ -618,6 +625,7 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
     }
 
     final client = HttpClient();
+    client.connectionTimeout = const Duration(seconds: 30);
     try {
       var requestUri = uri;
       late HttpClientResponse response;
@@ -645,7 +653,15 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
           }
         }
 
-        response = await request.close();
+        // Bound the wait for response headers too: a server can accept the
+        // connection (passing connectionTimeout) yet never send headers, which
+        // would hang before the body idle-read timeout is even installed.
+        response = await request.close().timeout(
+          const Duration(seconds: 60),
+          onTimeout: () => throw const HttpException(
+            'Timed out waiting for download response headers.',
+          ),
+        );
         if (!_isRedirectStatus(response.statusCode)) {
           break;
         }
@@ -725,8 +741,21 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
       );
       var receivedBytes = existingBytes;
       final totalBytes = _totalBytes(response, existingBytes);
+      // Guard against a server that accepts the connection then stalls: an idle
+      // read timeout surfaces as an IOException so the retry loop can react,
+      // instead of hanging indefinitely (cooperative cancel only fires when a
+      // chunk arrives).
+      final body = response.timeout(
+        const Duration(seconds: 60),
+        onTimeout: (sink) {
+          sink.addError(
+            const HttpException('Timed out waiting for download data.'),
+          );
+          sink.close();
+        },
+      );
       try {
-        await for (final chunk in response) {
+        await for (final chunk in body) {
           _throwIfCancelled(options);
           sink.add(chunk);
           receivedBytes += chunk.length;
@@ -747,6 +776,11 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
         final actual = await _sha256File(downloadFile);
         if (actual != options.sha256) {
           await _deleteIfExists(downloadFile);
+          // Drop the stale validator too, so the next attempt restarts cleanly
+          // instead of resuming onto bytes we just rejected.
+          if (partMetadataFile != null) {
+            await _deleteIfExists(partMetadataFile);
+          }
           throw LlamaModelException(
             'Checksum mismatch for ${source.displayName}.',
           );

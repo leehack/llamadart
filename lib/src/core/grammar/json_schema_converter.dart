@@ -148,24 +148,25 @@ class JsonSchemaConverter {
       }
     } else if (node is Map<String, dynamic>) {
       final ref = node[r'$ref'] as String?;
-      if (ref != null && !_refs.containsKey(ref)) {
-        if (ref.startsWith('#/')) {
-          // Local ref
-          dynamic target = rootSchema;
-          final selectors = ref.substring(2).split('/');
-          for (final sel in selectors) {
-            if (target is Map<String, dynamic> && target.containsKey(sel)) {
-              target = target[sel];
-            } else {
-              throw StateError('Error resolving ref $ref: $sel not found');
-            }
+      if (ref != null && !_refs.containsKey(ref) && ref.startsWith('#/')) {
+        // Local ref
+        dynamic target = rootSchema;
+        final selectors = ref.substring(2).split('/');
+        for (final sel in selectors) {
+          if (target is Map<String, dynamic> && target.containsKey(sel)) {
+            target = target[sel];
+          } else {
+            throw StateError('Error resolving ref $ref: $sel not found');
           }
-          _refs[ref] = target;
         }
-      } else {
-        for (final value in node.values) {
-          resolveRefs(value, rootSchema);
-        }
+        _refs[ref] = target;
+        // Resolve refs nested inside the target as well.
+        resolveRefs(target, rootSchema);
+      }
+      // Always walk children so refs nested as siblings of a $ref (or inside an
+      // already-registered ref-bearing node) are resolved too.
+      for (final value in node.values) {
+        resolveRefs(value, rootSchema);
       }
     }
   }
@@ -174,6 +175,18 @@ class JsonSchemaConverter {
     var refFragment = ref.split('#').last;
     var refName =
         'ref${refFragment.replaceAll(RegExp(r'[^a-zA-Z0-9-]+'), '-')}';
+    // Fail loudly for unresolvable refs based on the ref itself, not the
+    // generated rule name. `resolveRefs` registers every local "#/..." ref in
+    // _refs up front, so a ref that is absent there (and not mid-resolution for
+    // cycles) is external/unresolvable. Checking the ref rather than the
+    // rule-name cache keeps this order-independent even when an external ref
+    // would collide with an already-emitted local rule name.
+    if (!_refs.containsKey(ref) && !_refsBeingResolved.contains(ref)) {
+      throw StateError(
+        'Cannot resolve \$ref "$ref": only local "#/..." references within '
+        'the same schema are supported.',
+      );
+    }
     if (!_rules.containsKey(refName) && !_refsBeingResolved.contains(ref)) {
       _refsBeingResolved.add(ref);
       final resolved = _refs[ref];

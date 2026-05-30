@@ -48,10 +48,11 @@ class NativeLlamaBackend
       _sendPort = message;
       // Complete handshake
       _sendPort!.send(WorkerHandshake(_currentLogLevel));
-      // Sync log level
-      _sendPort!.send(
-        LogLevelRequest(_currentLogLevel, ReceivePort().sendPort),
-      );
+      // Sync log level, closing the reply port once acked so it does not leak
+      // (mirrors _ensureIsolate).
+      final logRp = ReceivePort();
+      _sendPort!.send(LogLevelRequest(_currentLogLevel, logRp.sendPort));
+      logRp.first.then((_) => logRp.close());
     }
   }
 

@@ -1,3 +1,24 @@
+## Unreleased
+
+* **Memory-safety and correctness fixes**:
+  * Freed the multimodal prompt buffer and input-text struct on tokenize/eval
+    error paths instead of leaking them on every failed multimodal prompt.
+  * Fixed `ChatSession` history truncation to trim only on user-message turn
+    boundaries (so a user prompt is never split from its reply), and to warn
+    when even the most recent turn exceeds the context budget instead of
+    silently sending an over-limit prompt.
+  * JSON-schema-to-GBNF conversion now resolves `$ref`s nested inside other
+    `$ref` targets, and fails loudly on unresolvable/external `$ref`s rather
+    than emitting invalid grammar that the sampler rejects.
+  * Serialized multimodal projector load/unload so concurrent calls cannot
+    leak or double-free the native multimodal context.
+  * Added connection and idle-read timeouts to model downloads so a stalled
+    server surfaces a retryable error instead of hanging indefinitely.
+  * Restricted partial-download resume to cases with a stored validator
+    (ETag/Last-Modified) and cleared stale resume metadata on checksum
+    mismatch, avoiding wasted full re-downloads onto stale bytes.
+  * Closed a leaked handshake reply port in the native backend.
+
 ## 0.7.0
 
 * **Native runtime configuration**:

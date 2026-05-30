@@ -3271,6 +3271,8 @@ class LlamaCppService {
     int initialTokens = 0;
     final bitmaps = malloc<Pointer<mtmd_bitmap>>(mediaParts.length);
     final chunks = _mtmdInputChunksInit();
+    Pointer<mtmd_input_text> inputText = nullptr;
+    Pointer<Utf8> promptPtr = nullptr;
 
     try {
       for (int i = 0; i < mediaParts.length; i++) {
@@ -3321,12 +3323,12 @@ class LlamaCppService {
         }
       }
 
-      final inputText = malloc<mtmd_input_text>();
+      inputText = malloc<mtmd_input_text>();
       final normalizedPrompt = _normalizeMtmdPromptMarkers(
         prompt,
         mediaParts.length,
       );
-      final promptPtr = normalizedPrompt.toNativeUtf8();
+      promptPtr = normalizedPrompt.toNativeUtf8();
       inputText.ref.text = promptPtr.cast();
 
       final bos = llama_vocab_bos(vocab);
@@ -3372,10 +3374,11 @@ class LlamaCppService {
       } else {
         throw Exception("mtmd_tokenize failed: $res");
       }
-
-      malloc.free(promptPtr);
-      malloc.free(inputText);
     } finally {
+      // Free in finally so a tokenize/eval failure above does not leak the
+      // prompt buffer or the input-text struct.
+      if (promptPtr != nullptr) malloc.free(promptPtr);
+      if (inputText != nullptr) malloc.free(inputText);
       for (int i = 0; i < mediaParts.length; i++) {
         if (bitmaps[i] != nullptr) _mtmdBitmapFree(bitmaps[i]);
       }

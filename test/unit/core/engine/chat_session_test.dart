@@ -165,6 +165,73 @@ void main() {
       expect(session.history.length, lessThan(40));
     });
 
+    test(
+      'truncation keeps turn boundaries when history starts with assistant',
+      () async {
+        backend.contextSize = 400;
+        session.maxContextTokens = 400;
+
+        // Pre-seed a leading assistant message (history does not start with a
+        // user turn). The old segmentation could strand this assistant or split
+        // a user/assistant pair; boundaries anchored at user messages must trim
+        // only on clean turn starts.
+        session.addMessage(
+          LlamaChatMessage.fromText(
+            role: LlamaChatRole.assistant,
+            text: 'seed ${List.filled(40, 'z').join()}',
+          ),
+        );
+        for (int i = 0; i < 20; i++) {
+          session.addMessage(
+            LlamaChatMessage.fromText(
+              role: LlamaChatRole.user,
+              text: 'U$i ${List.filled(40, 'x').join()}',
+            ),
+          );
+          session.addMessage(
+            LlamaChatMessage.fromText(
+              role: LlamaChatRole.assistant,
+              text: 'A$i ${List.filled(40, 'y').join()}',
+            ),
+          );
+        }
+
+        backend.queueResponse('ok');
+        await session.create(const []).drain();
+
+        // Trimming must have occurred, and the retained history must begin at a
+        // user turn boundary (never an orphaned assistant reply).
+        expect(session.history.length, lessThan(41));
+        expect(session.history.first.role, LlamaChatRole.user);
+      },
+    );
+
+    test('warns when a single oversized turn cannot be trimmed', () async {
+      final warnings = <String>[];
+      LlamaEngine.configureLogging(
+        level: LlamaLogLevel.warn,
+        handler: (record) {
+          if (record.level == LlamaLogLevel.warn) {
+            warnings.add(record.message);
+          }
+        },
+      );
+      try {
+        // Budget below the single turn's rendered token count, with no older
+        // turns to trim, must warn instead of silently sending it.
+        session.maxContextTokens = 140;
+        backend.queueResponse('ok');
+        await session.create([const LlamaTextContent('hello')]).drain();
+
+        expect(
+          warnings.any((w) => w.contains('no older turns to trim')),
+          isTrue,
+        );
+      } finally {
+        LlamaEngine.configureLogging(level: LlamaLogLevel.none);
+      }
+    });
+
     test('enforceContextLimit trims with bounded template passes', () async {
       backend.contextSize = 420;
       session.maxContextTokens = 420;

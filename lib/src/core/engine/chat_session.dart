@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'engine.dart';
 import '../exceptions.dart';
+import '../llama_logger.dart';
 import '../models/chat/chat_message.dart';
 import '../models/chat/completion_chunk.dart';
 import '../models/chat/chat_role.dart';
@@ -241,16 +242,29 @@ class ChatSession {
     if (_history.isEmpty) return;
 
     final turnOffsets = _buildTurnOffsets();
-    if (turnOffsets.length <= 1) return;
 
     final fullTokenCount = await _getTemplateTokenCount(
       _buildMessagesFromOffset(0),
     );
     if (fullTokenCount < targetLimit) return;
 
+    if (turnOffsets.length <= 1) {
+      // Nothing older to trim (e.g. a single oversized user turn). Warn rather
+      // than silently sending an over-limit prompt the backend may truncate or
+      // reject.
+      LlamaLogger.instance.warn(
+        'ChatSession: the latest turn ($fullTokenCount tokens) exceeds the '
+        'context budget ($targetLimit tokens) and there are no older turns to '
+        'trim. The prompt may be truncated or rejected by the backend; reduce '
+        'the message size or increase the context window.',
+      );
+      return;
+    }
+
     int low = 1;
     int high = turnOffsets.length - 1;
     int bestDropCount = high;
+    var foundFit = false;
 
     while (low <= high) {
       final mid = (low + high) >> 1;
@@ -260,6 +274,7 @@ class ChatSession {
 
       if (tokenCount < targetLimit) {
         bestDropCount = mid;
+        foundFit = true;
         high = mid - 1;
       } else {
         low = mid + 1;
@@ -269,6 +284,18 @@ class ChatSession {
     final removeUntil = turnOffsets[bestDropCount];
     if (removeUntil > 0) {
       _history.removeRange(0, removeUntil);
+    }
+
+    if (!foundFit) {
+      // Even retaining only the most recent turn exceeds the budget. Do not
+      // silently send an over-limit prompt: warn so the oversize prompt (which
+      // the backend may truncate or reject) is at least diagnosable.
+      LlamaLogger.instance.warn(
+        'ChatSession: conversation still exceeds the context budget '
+        '($targetLimit tokens) after trimming to the most recent turn. The '
+        'prompt may be truncated or rejected by the backend; reduce the '
+        'message size or increase the context window.',
+      );
     }
   }
 
@@ -322,17 +349,19 @@ class ChatSession {
     return messages;
   }
 
+  // Returns the indices at which conversational turns begin, so history can be
+  // trimmed only on clean turn boundaries. A turn starts at a user message and
+  // includes the assistant/tool messages that follow it until the next user
+  // message. Anchoring on user messages (rather than blindly consuming the
+  // first message of each iteration) keeps a user prompt grouped with its reply
+  // even when the history does not start with a user message.
   List<int> _buildTurnOffsets() {
     final offsets = <int>[0];
-    int index = 0;
 
-    while (index < _history.length) {
-      index += 1;
-      while (index < _history.length &&
-          _history[index].role == LlamaChatRole.assistant) {
-        index += 1;
+    for (int i = 1; i < _history.length; i++) {
+      if (_history[i].role == LlamaChatRole.user) {
+        offsets.add(i);
       }
-      offsets.add(index);
     }
 
     return offsets;
