@@ -776,6 +776,8 @@ class ChatProvider extends ChangeNotifier {
       // file path (no download), so they keep the generic progress label.
       final isLiteRtLmLoad =
           kIsWeb && _isLiteRtLmModelPath(_settings.modelPath);
+      const liteRtLmLoadingLabel =
+          'Downloading and initializing model (first load may take a while)...';
       if (prefetchedWebModel) {
         updateLoadingUi(
           modelLoadStart,
@@ -785,9 +787,7 @@ class ChatProvider extends ChangeNotifier {
       } else if (isLiteRtLmLoad) {
         updateLoadingUi(
           modelLoadStart,
-          backendLabel:
-              'Downloading and initializing model (first load may '
-              'take a while)...',
+          backendLabel: liteRtLmLoadingLabel,
           forceNotify: true,
         );
       }
@@ -804,9 +804,7 @@ class ChatProvider extends ChangeNotifier {
                 'Loading model into memory ${(normalized * 100).toStringAsFixed(0)}%';
           } else if (isLiteRtLmLoad) {
             // Avoid a misleading "0%" stuck for the whole load.
-            backendLabel =
-                'Downloading and initializing model (first load may '
-                'take a while)...';
+            backendLabel = liteRtLmLoadingLabel;
           } else {
             backendLabel =
                 'Loading model ${(normalized * 100).toStringAsFixed(0)}%';
