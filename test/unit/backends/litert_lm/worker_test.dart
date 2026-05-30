@@ -556,6 +556,70 @@ void main() {
       }
     });
 
+    test(
+      'skips native dispose when an in-flight request has not settled',
+      () async {
+        final service = _DisposeTrackingBlockingService();
+        final worker = await _startWorkerInCurrentIsolate(
+          service,
+          disposeTimeout: const Duration(milliseconds: 50),
+        );
+
+        final generationPort = ReceivePort();
+        try {
+          worker.sendPort.send(
+            LiteRtLmGenerateRequest(
+              1,
+              'hello',
+              const GenerationParams(),
+              generationPort.sendPort,
+            ),
+          );
+          await service.generateStarted.future;
+
+          final disposePort = ReceivePort();
+          worker.sendPort.send(LiteRtLmDisposeRequest(disposePort.sendPort));
+          final ack = await disposePort.first.timeout(
+            const Duration(seconds: 2),
+          );
+          disposePort.close();
+
+          expect(ack, isA<LiteRtLmDoneResponse>());
+          // The blocking generation never settled, so the worker must not
+          // delete native handles out from under the in-flight native call.
+          expect(service.disposeCalled, isFalse);
+        } finally {
+          generationPort.close();
+        }
+      },
+    );
+
+    test(
+      'disposes native resources when the in-flight request settles',
+      () async {
+        final service = _DisposeTrackingStreamingService();
+        final worker = await _startWorkerInCurrentIsolate(service);
+
+        final responses = await _collectGenerationResponses(
+          worker.sendPort,
+          (sendPort) => LiteRtLmGenerateRequest(
+            1,
+            'hello',
+            const GenerationParams(),
+            sendPort,
+          ),
+        );
+        expect(responses.last, isA<LiteRtLmDoneResponse>());
+
+        final disposePort = ReceivePort();
+        worker.sendPort.send(LiteRtLmDisposeRequest(disposePort.sendPort));
+        await disposePort.first.timeout(const Duration(seconds: 2));
+        disposePort.close();
+
+        expect(service.disposeCalled, isTrue);
+      },
+    );
+
     test('routes performance and multimodal capability responses', () async {
       final service = _FeatureLiteRtLmService();
       final worker = await _startWorkerInCurrentIsolate(service);
@@ -643,13 +707,15 @@ Future<({Isolate isolate, SendPort sendPort})> _spawnWorker() async {
 }
 
 Future<({Isolate? isolate, SendPort sendPort})> _startWorkerInCurrentIsolate(
-  LiteRtLmService service,
-) async {
+  LiteRtLmService service, {
+  Duration disposeTimeout = const Duration(seconds: 5),
+}) async {
   final receivePort = ReceivePort();
   runLiteRtLmWorkerForTesting(
     receivePort.sendPort,
     service,
     exitOnDispose: false,
+    disposeTimeout: disposeTimeout,
   );
   final sendPort = await receivePort.first as SendPort;
   receivePort.close();
@@ -805,6 +871,54 @@ class _ThrowingGenerationLiteRtLmService extends LiteRtLmService {
     List<LlamaContentPart>? parts,
   }) async* {
     throw StateError('generation failed');
+  }
+}
+
+class _DisposeTrackingBlockingService extends LiteRtLmService {
+  final Completer<void> generateStarted = Completer<void>();
+  final Completer<void> _releaseGeneration = Completer<void>();
+  bool disposeCalled = false;
+
+  @override
+  Stream<List<int>> generate(
+    int contextHandle,
+    String prompt,
+    GenerationParams params, {
+    List<LlamaContentPart>? parts,
+  }) async* {
+    if (!generateStarted.isCompleted) {
+      generateStarted.complete();
+    }
+    // Block forever; cancellation does not release this in the test, so the
+    // worker's dispose wait must time out.
+    await _releaseGeneration.future;
+  }
+
+  @override
+  void cancelGeneration() {}
+
+  @override
+  void dispose() {
+    disposeCalled = true;
+  }
+}
+
+class _DisposeTrackingStreamingService extends LiteRtLmService {
+  bool disposeCalled = false;
+
+  @override
+  Stream<List<int>> generate(
+    int contextHandle,
+    String prompt,
+    GenerationParams params, {
+    List<LlamaContentPart>? parts,
+  }) async* {
+    yield const [1];
+  }
+
+  @override
+  void dispose() {
+    disposeCalled = true;
   }
 }
 

@@ -140,6 +140,40 @@ void main() {
       },
     );
 
+    test(
+      'cancel defers token free until the terminal worker response',
+      () async {
+        final subscription = backend
+            .generate(1, 'pending', const GenerationParams())
+            .listen((_) {});
+        await Future<void>.delayed(Duration.zero);
+
+        final generateRequest = harness.received
+            .whereType<GenerateRequest>()
+            .last;
+
+        // Cancelling closes the Dart side but must NOT free the shared cancel
+        // token yet, because the worker may still be polling it.
+        await subscription.cancel();
+        expect(backend.cancelGenerationCalled, isTrue);
+
+        // The worker observes the cancel flag and emits its terminal response,
+        // which is when the token is finally freed. A double free here would
+        // crash the VM.
+        generateRequest.sendPort.send(DoneResponse());
+        await Future<void>.delayed(Duration.zero);
+
+        // The backend remains healthy: a subsequent generation still streams.
+        final chunks = await backend
+            .generate(1, 'ok', const GenerationParams())
+            .toList();
+        expect(chunks, <List<int>>[
+          <int>[65],
+          <int>[66],
+        ]);
+      },
+    );
+
     test('diagnostic and multimodal endpoints route correctly', () async {
       expect(await backend.getBackendName(), 'CPU');
       expect(await backend.getAvailableBackends(), 'CPU, METAL');

@@ -15,9 +15,24 @@ void llamaWorkerEntry(SendPort initialSendPort) {
   // Service
   final service = LlamaCppService();
   var isInitialized = false;
+  var shuttingDown = false;
+
+  // Tracks the currently running generation so dispose can wait for it to emit
+  // its terminal response (and stop reading the shared native cancel token)
+  // before tearing the isolate down. Without this, Isolate.exit() abandons an
+  // in-flight generate with no DoneResponse, hanging the consumer's stream.
+  Future<void> activeGenerate = Future<void>.value();
 
   receivePort.listen((message) async {
     if (message is DisposeRequest) {
+      shuttingDown = true;
+      // Let any in-flight generation observe the cancel flag and finish
+      // emitting its terminal response before we dispose native resources.
+      try {
+        await activeGenerate.timeout(const Duration(seconds: 5));
+      } catch (_) {
+        // Timed out or errored; proceed with teardown regardless.
+      }
       try {
         service.dispose();
       } catch (e) {
@@ -40,6 +55,9 @@ void llamaWorkerEntry(SendPort initialSendPort) {
 
     // Requests
     if (message is WorkerRequest) {
+      if (shuttingDown) {
+        return;
+      }
       try {
         switch (message) {
           case ModelLoadRequest():
@@ -69,36 +87,42 @@ void llamaWorkerEntry(SendPort initialSendPort) {
             message.sendPort.send(DoneResponse());
 
           case GenerateRequest():
-            try {
-              final stream = service.generate(
-                message.contextHandle,
-                message.prompt,
-                message.params,
-                message.cancelTokenAddress,
-                parts: message.parts,
-              );
+            // Capture the generation future so a concurrent DisposeRequest can
+            // await its terminal response before tearing down the isolate.
+            final generateFuture = () async {
+              try {
+                final stream = service.generate(
+                  message.contextHandle,
+                  message.prompt,
+                  message.params,
+                  message.cancelTokenAddress,
+                  parts: message.parts,
+                );
 
-              final batcher = NativeTokenStreamBatcher(
-                tokenThreshold: message.params.streamBatchTokenThreshold,
-                byteThreshold: message.params.streamBatchByteThreshold,
-              );
+                final batcher = NativeTokenStreamBatcher(
+                  tokenThreshold: message.params.streamBatchTokenThreshold,
+                  byteThreshold: message.params.streamBatchByteThreshold,
+                );
 
-              await for (final tokens in stream) {
-                final readyChunks = batcher.add(tokens);
-                for (final chunk in readyChunks) {
-                  message.sendPort.send(TokenResponse(chunk));
+                await for (final tokens in stream) {
+                  final readyChunks = batcher.add(tokens);
+                  for (final chunk in readyChunks) {
+                    message.sendPort.send(TokenResponse(chunk));
+                  }
                 }
-              }
 
-              final finalChunk = batcher.flush();
-              if (finalChunk != null) {
-                message.sendPort.send(TokenResponse(finalChunk));
-              }
+                final finalChunk = batcher.flush();
+                if (finalChunk != null) {
+                  message.sendPort.send(TokenResponse(finalChunk));
+                }
 
-              message.sendPort.send(DoneResponse());
-            } catch (e) {
-              message.sendPort.send(ErrorResponse(e.toString()));
-            }
+                message.sendPort.send(DoneResponse());
+              } catch (e) {
+                message.sendPort.send(ErrorResponse(e.toString()));
+              }
+            }();
+            activeGenerate = generateFuture;
+            await generateFuture;
 
           case EmbedRequest():
             final embedding = service.embed(
