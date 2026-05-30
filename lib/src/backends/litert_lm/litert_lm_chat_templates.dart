@@ -654,7 +654,7 @@ const List<LiteRtLmChatTemplate> kLiteRtLmChatTemplates = [
   LiteRtLmChatTemplate(
     id: 'qwen25',
     template: _qwen25ChatTemplate,
-    familyMatches: ['qwen2.5', 'qwen-2.5', 'qwen2', 'qwen'],
+    familyMatches: ['qwen2.5', 'qwen-2.5', 'qwen2'],
     bosToken: '',
     eosToken: '<|im_end|>',
   ),

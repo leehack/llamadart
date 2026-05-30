@@ -75,7 +75,10 @@ const List<_Entry> _manifest = [
   _Entry(
     id: 'qwen25',
     jinja: 'qwen25.jinja',
-    familyMatches: ['qwen2.5', 'qwen-2.5', 'qwen2', 'qwen'],
+    // Version-specific only: a bare `qwen` would greedily mis-route
+    // qwen-derived models that need a different handler (e.g.
+    // DeepSeek-R1-Distill-Qwen) to the Qwen 2.5 template.
+    familyMatches: ['qwen2.5', 'qwen-2.5', 'qwen2'],
     bosToken: '',
     eosToken: '<|im_end|>',
   ),

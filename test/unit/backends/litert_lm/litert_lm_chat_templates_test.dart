@@ -39,6 +39,12 @@ void main() {
       expect(resolveId('some-unknown-model.litertlm'), isNull);
     });
 
+    test('does not mis-route qwen-derived models to the Qwen 2.5 template', () {
+      // DeepSeek-R1-Distill-Qwen needs its own handler; the bare `qwen` rule
+      // must not greedily claim it.
+      expect(resolveId('DeepSeek-R1-Distill-Qwen-1.5B.litertlm'), isNull);
+    });
+
     test('templates omit a leading BOS token (native runtime adds it)', () {
       for (final template in kLiteRtLmChatTemplates) {
         expect(
