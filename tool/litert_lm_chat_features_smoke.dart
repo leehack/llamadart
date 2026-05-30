@@ -29,12 +29,14 @@ Future<void> main(List<String> args) async {
       messages: const [
         LlamaChatMessage.fromText(
           role: LlamaChatRole.user,
-          text: 'Think briefly, then answer with only the number: 2 + 2.',
+          text:
+              'A farmer has 17 sheep. All but 9 run away. Think step by step, '
+              'then state how many sheep remain.',
         ),
       ],
       tools: const [],
       enableThinking: true,
-      maxTokens: 96,
+      maxTokens: 256,
     );
 
     final toolCall = await _runScenario(

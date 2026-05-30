@@ -584,7 +584,8 @@ class LiteRtLmRuntimeClient {
       try {
         final raw = await _runBlockingSendMessageInIsolate(request);
         if (!controller.isClosed) {
-          final text = _extractText(raw);
+          final assembler = LiteRtLmChannelAssembler();
+          final text = assembler.add(raw) + assembler.flush();
           if (text.isNotEmpty) {
             controller.add(text);
           }
@@ -607,6 +608,7 @@ class LiteRtLmRuntimeClient {
     final bindings = _requireBindings();
     final conversation = _requireConversation();
     final messagePtr = _messageJson(prompt).toNativeUtf8();
+    final assembler = LiteRtLmChannelAssembler();
     Pointer<Void> callbackData = nullptr;
     var cleanedUp = false;
 
@@ -665,13 +667,17 @@ class LiteRtLmRuntimeClient {
       if (chunk != nullptr) {
         final raw = chunk.cast<Utf8>().toDartString();
         _proxyFreeString?.call(chunk);
-        final text = _extractText(raw);
+        final text = assembler.add(raw);
         if (text.isNotEmpty && !controller.isClosed) {
           controller.add(text);
         }
       }
 
       if (isFinal) {
+        final tail = assembler.flush();
+        if (tail.isNotEmpty && !controller.isClosed) {
+          controller.add(tail);
+        }
         if (!controller.isClosed) {
           unawaited(controller.close());
         }
@@ -1345,25 +1351,96 @@ String _runBlockingSendMessage(_BlockingSendMessageRequest request) {
   }
 }
 
-String _extractText(String raw) {
+/// Markers the Gemma 4 chat-template handler uses to delimit reasoning, so the
+/// thinking channel streamed by the native runtime is parsed as reasoning.
+const String _liteRtLmThoughtOpen = '<|channel>thought\n';
+const String _liteRtLmThoughtClose = '<channel|>';
+
+/// Reassembles LiteRT-LM streaming response chunks into the textual form the
+/// chat-template handlers parse.
+///
+/// The native runtime emits thinking and final content on separate channels:
+/// thought as `{"role":"assistant","channels":{"thought":"..."}}` and the
+/// answer as `{"role":"assistant","content":[{"type":"text","text":"..."}]}`.
+/// Thought runs are wrapped in `<|channel>thought ... <channel|>` so downstream
+/// parsing surfaces them as reasoning instead of leaking the raw JSON.
+class LiteRtLmChannelAssembler {
+  bool _inThought = false;
+
+  /// Converts one native response [raw] chunk into handler-facing text.
+  String add(String raw) {
+    final chunk = _parseLiteRtLmChunk(raw);
+    final buffer = StringBuffer();
+    final thought = chunk.thought;
+    if (thought != null && thought.isNotEmpty) {
+      if (!_inThought) {
+        buffer.write(_liteRtLmThoughtOpen);
+        _inThought = true;
+      }
+      buffer.write(thought);
+    }
+    final content = chunk.content;
+    if (content != null && content.isNotEmpty) {
+      buffer.write(_closeThoughtIfOpen());
+      buffer.write(content);
+    }
+    return buffer.toString();
+  }
+
+  /// Closes a still-open thought run at end of stream (e.g. token-limit cutoff).
+  String flush() => _closeThoughtIfOpen();
+
+  String _closeThoughtIfOpen() {
+    if (!_inThought) {
+      return '';
+    }
+    _inThought = false;
+    return _liteRtLmThoughtClose;
+  }
+}
+
+({String? thought, String? content}) _parseLiteRtLmChunk(String raw) {
   try {
     final decoded = jsonDecode(raw);
     if (decoded is! Map<String, dynamic>) {
-      return raw;
+      return (thought: null, content: raw);
     }
+
+    final channels = decoded['channels'];
+    String? thought;
+    final contentBuffer = StringBuffer();
+    if (channels is Map<String, dynamic>) {
+      channels.forEach((channel, value) {
+        if (value is! String) {
+          return;
+        }
+        if (channel == 'thought') {
+          thought = (thought ?? '') + value;
+        } else {
+          // Non-thought channels are surfaced as ordinary content.
+          contentBuffer.write(value);
+        }
+      });
+    }
+
     final content = decoded['content'];
-    if (content is! List) {
-      return raw;
-    }
-    final buffer = StringBuffer();
-    for (final item in content) {
-      if (item is Map<String, dynamic> && item['type'] == 'text') {
-        buffer.write(item['text'] as String? ?? '');
+    if (content is List) {
+      for (final item in content) {
+        if (item is Map<String, dynamic> && item['type'] == 'text') {
+          contentBuffer.write(item['text'] as String? ?? '');
+        }
       }
+    } else if (channels is! Map<String, dynamic>) {
+      // Neither a recognized channels nor content shape: preserve verbatim.
+      return (thought: null, content: raw);
     }
-    return buffer.toString();
+
+    return (
+      thought: thought,
+      content: contentBuffer.isEmpty ? null : contentBuffer.toString(),
+    );
   } on FormatException {
-    return raw;
+    return (thought: null, content: raw);
   }
 }
 

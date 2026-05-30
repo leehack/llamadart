@@ -7,6 +7,14 @@
     control structure; it is replaced with the full canonical Gemma 4 template
     (the one llama.cpp reads from the GGUF), minus the leading `bos_token` since
     the native runtime adds the start token itself.
+  * Fixed Gemma 4 thinking never surfacing (and raw JSON leaking into the reply)
+    on native LiteRT-LM. The runtime streams reasoning on a separate channel
+    (`{"role":"assistant","channels":{"thought":"..."}}`) and the answer as
+    `content`; the response parser only understood `content`, so thought chunks
+    leaked verbatim. Thought runs are now reassembled into the
+    `<|channel>thought ... <channel|>` markers the handler parses as reasoning.
+    Verified on-device with `gemma-4-E2B-it.litertlm` (function calling +
+    thinking) via `tool/litert_lm_chat_features_smoke.dart`.
   * Introduced a filename-keyed chat-template registry for `.litertlm` bundles
     (they can't expose their template through the native FFI), seeded with
     Gemma 4/3/3n and Qwen 2.5/3. Gemma 3/3n previously fell back to ChatML (the
