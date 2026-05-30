@@ -769,11 +769,13 @@ class ChatProvider extends ChangeNotifier {
       );
       final modelLoadStart = prefetchedWebModel ? 0.72 : 0.14;
       final modelLoadSpan = prefetchedWebModel ? 0.12 : 0.7;
-      // The web LiteRT-LM backend only reports 0% and 100% (the @litert-lm/core
-      // engine fetches and initializes the model without granular progress), so
-      // a percentage would sit at "0%" for the whole download and look frozen.
-      // Show an honest indeterminate message instead.
-      final isLiteRtLmLoad = _isLiteRtLmModelPath(_settings.modelPath);
+      // On web the LiteRT-LM backend downloads + initializes the model through
+      // @litert-lm/core and only reports 0%/100%, so a percentage would sit at
+      // "0%" for the whole download and look frozen. Show an honest
+      // indeterminate message there. Native/local .litertlm loads read from a
+      // file path (no download), so they keep the generic progress label.
+      final isLiteRtLmLoad =
+          kIsWeb && _isLiteRtLmModelPath(_settings.modelPath);
       if (prefetchedWebModel) {
         updateLoadingUi(
           modelLoadStart,

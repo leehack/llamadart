@@ -321,6 +321,75 @@ void main() {
       expect(provider.currentTokens, 1);
     });
 
+    test('web remote load skips cache prefetch for .litertlm models', () async {
+      final webEngine = MockLlamaEngine();
+      final modelService = _RecordingModelService();
+      final webProvider = ChatProvider(
+        chatService: ChatService(engine: webEngine),
+        settingsService: mockSettingsService,
+        modelService: modelService,
+        enableWebModelPrefetch: true,
+        initialSettings: const ChatSettings(
+          modelPath: 'https://example.com/models/gemma-4-E2B-it-web.litertlm',
+        ),
+      );
+      addTearDown(webProvider.dispose);
+
+      await webProvider.loadModel();
+
+      // The @litert-lm/core engine fetches the URL itself and cannot read the
+      // WebGPU CacheStorage bucket the prefetch fills, so prefetching would
+      // download the whole model an extra time. It must be skipped for
+      // .litertlm (a .gguf URL still prefetches; see the test above).
+      expect(modelService.downloadCalls, 0);
+      expect(webEngine.lastLoadedModelUrl, webProvider.settings.modelPath);
+      expect(webProvider.isLoaded, isTrue);
+      expect(webProvider.error, isNull);
+    });
+
+    test(
+      'sendMessage swallows unsupported getTokenCount without an error bubble',
+      () async {
+        // The web LiteRT-LM backend exposes no tokenizer, so the post-reply
+        // getTokenCount throws. That must not surface as a chat bubble,
+        // whether the backend raises LlamaUnsupportedException or the raw
+        // UnsupportedError.
+        for (final error in <Object>[
+          LlamaUnsupportedException('no tokenizer'),
+          UnsupportedError('no tokenizer'),
+        ]) {
+          final tokenlessProvider = ChatProvider(
+            chatService: MockChatService(engine: _TokenizerlessEngine(error)),
+            settingsService: mockSettingsService,
+            initialSettings: const ChatSettings(
+              modelPath: 'test_model.litertlm',
+            ),
+          );
+          addTearDown(tokenlessProvider.dispose);
+
+          await tokenlessProvider.loadModel();
+          await tokenlessProvider.sendMessage('Hello');
+
+          expect(
+            tokenlessProvider.messages.any(
+              (m) => m.text.contains('Tokenization is not supported'),
+            ),
+            isFalse,
+            reason:
+                'unsupported tokenization must not become a bubble ($error)',
+          );
+          expect(
+            tokenlessProvider.messages.any((m) => m.text.startsWith('Error:')),
+            isFalse,
+          );
+          final assistant = tokenlessProvider.messages
+              .where((m) => !m.isUser && !m.isInfo)
+              .last;
+          expect(assistant.text, 'Hi there');
+        }
+      },
+    );
+
     test('sendMessage prefers native perf token counts for metrics', () async {
       final perfEngine = MockLlamaEngine()
         ..performanceContext = const BackendPerfContextData(
@@ -1119,6 +1188,15 @@ class _UnloadRecordingEngine extends MockLlamaEngine {
     unloadModelCalls += 1;
     initialized = false;
   }
+}
+
+class _TokenizerlessEngine extends MockLlamaEngine {
+  _TokenizerlessEngine(this.tokenCountError);
+
+  final Object tokenCountError;
+
+  @override
+  Future<int> getTokenCount(String text) async => throw tokenCountError;
 }
 
 class _RecordingModelService

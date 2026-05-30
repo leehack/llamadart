@@ -1,8 +1,8 @@
 ## Unreleased
 
 * **Web LiteRT-LM (`.litertlm`) chat-app fixes**:
-  * Fixed a spurious `Error: LlamaException: Tokenization is not supported by
-    the active backend ...` bubble shown after every reply on web. The chat app
+  * Fixed a spurious tokenization error bubble shown after every reply on web
+    (`Tokenization is not supported by the active backend`). The chat app
     called `getTokenCount` (write-only, unused) after each turn, which throws on
     the web LiteRT-LM backend (no tokenizer API); the unsupported case is now
     swallowed so the turn completes normally.
