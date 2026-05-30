@@ -27,6 +27,14 @@
   * Added a `chat-app-web-gemma4-webgpu-smoke` local E2E scenario that runs
     Gemma 4 E2B (text-only) through the WebGPU/llama.cpp path with the mem64
     core.
+* **Web LiteRT-LM (`.litertlm`) chat-app generation fix**:
+  * Fixed every reply failing when the Repeat Penalty or Min-P slider was moved
+    while a `.litertlm` model was loaded. The chat app forwarded `minP`/`penalty`
+    to the LiteRT-LM web backend, which rejects any non-default llama.cpp-specific
+    `GenerationParams` with an `UnsupportedError`. The chat app now leaves
+    `minP`/`penalty` at their defaults for `.litertlm` models (the backend
+    supports only `maxTokens`, `temp`, `topK`, `topP`, `seed`, `stopSequences`);
+    other backends are unchanged.
 * **Web model download fixes (chat app example)**:
   * Fixed broken web downloads where the app silently reported success without
     caching any bytes when the WebGPU bridge runtime had not finished loading.
