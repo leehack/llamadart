@@ -120,7 +120,10 @@ String liteRtLmIosFrameworkBinaryPath(String frameworksDirPath, String name) {
 /// dlopen and never loads. When [frameworksDirPath] is known, the absolute path
 /// to the embedded framework binary is preferred; the native-asset id and bare
 /// `libLiteRtLm.dylib` remain as last-resort fallbacks for the error message.
-List<String> liteRtLmIosLibraryCandidates(Abi abi, {String? frameworksDirPath}) {
+List<String> liteRtLmIosLibraryCandidates(
+  Abi abi, {
+  String? frameworksDirPath,
+}) {
   final fallbacks = liteRtLmIosLibraryCandidatesForAbi(abi);
   if (fallbacks.isEmpty) {
     return const <String>[];
