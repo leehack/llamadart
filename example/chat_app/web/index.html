@@ -564,6 +564,42 @@
       BridgeClass.__llamadartUtf8StreamingHotfixApplied = true;
     }
 
+    // Deterministic bridge-readiness signal awaited by the Dart app so it never
+    // races the asynchronous bridge import. Previously the app could observe a
+    // missing `LlamaWebGpuBridge` global and silently fall back to a fake
+    // "download" that cached nothing.
+    let __resolveBridgeReady;
+    let __rejectBridgeReady;
+    window.__llamadartBridgeReady = false;
+    window.__llamadartBridgeReadyPromise = new Promise((resolve, reject) => {
+      __resolveBridgeReady = resolve;
+      __rejectBridgeReady = reject;
+    });
+    // Attach a no-op rejection handler so a failure/timeout before the Dart
+    // side awaits the promise does not surface as an unhandled rejection in the
+    // console. The failure is still observable via __llamadartBridgeLoadError
+    // and by awaiting __llamadartBridgeReadyPromise.
+    window.__llamadartBridgeReadyPromise.catch(function () {});
+    function markBridgeReady() {
+      window.__llamadartBridgeReady = true;
+      if (__resolveBridgeReady) {
+        __resolveBridgeReady();
+      }
+    }
+    function markBridgeFailed(detail) {
+      window.__llamadartBridgeReady = false;
+      window.__llamadartBridgeLoadError = detail;
+      if (__rejectBridgeReady) {
+        __rejectBridgeReady(new Error(detail));
+      }
+    }
+    // Safety timeout so the Dart side never awaits readiness forever.
+    setTimeout(function () {
+      if (!window.__llamadartBridgeReady && !window.__llamadartBridgeLoadError) {
+        markBridgeFailed('Bridge runtime did not become ready within 30s.');
+      }
+    }, 30000);
+
     async function loadBridge(moduleUrl, source) {
       const runtimeAssetModuleUrl = source === 'cdn' ? localBridgeUrl : moduleUrl;
       const coreModuleUrl = await resolveCoreModuleUrl(runtimeAssetModuleUrl);
@@ -596,6 +632,7 @@
       window.__llamadartBridgePreferMemory64 = preferMemory64;
       window.__llamadartBridgeWorkerFallbackReason = null;
       window.__llamadartBridgeLoadError = null;
+      markBridgeReady();
       bridgeBootstrapLog(
         'info',
         `llamadart: Web bridge runtime loaded (${source}), runtimeAssets=${source === 'cdn' ? 'local' : source}, worker=${workerModuleUrl ?? 'auto'}, mem64=${coreModuleUrlMem64 ?? 'none'}, preferMem64=${preferMemory64}, threadPool=${bridgeThreadPoolSize}, utf8Hotfix=on`,
@@ -619,6 +656,7 @@
       window.__llamadartBridgePreferMemory64 = false;
       window.__llamadartBridgeWorkerFallbackReason = null;
       window.__llamadartBridgeLoadError = null;
+      markBridgeReady();
       bridgeBootstrapLog(
         'info',
         `llamadart: mock bridge runtime loaded (${configuredMockBridgeScenario})`,
@@ -644,7 +682,7 @@
           const detail =
             `${primarySource.toUpperCase()} load failed: ${String(primaryError)} | ` +
             `${fallbackSource.toUpperCase()} load failed: ${String(fallbackErr)}`;
-          window.__llamadartBridgeLoadError = detail;
+          markBridgeFailed(detail);
           bridgeBootstrapLog('error', 'llamadart: failed to load bridge runtime', detail);
         });
     }

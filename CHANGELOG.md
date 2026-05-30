@@ -1,3 +1,17 @@
+## Unreleased
+
+* **Web model download fixes (chat app example)**:
+  * Fixed broken web downloads where the app silently reported success without
+    caching any bytes when the WebGPU bridge runtime had not finished loading.
+    The app now awaits a deterministic bridge-readiness signal, performs a real
+    CacheStorage prefetch, and surfaces an actionable error instead of faking
+    success (an old bridge missing `prefetchModelToCache` now fails loudly too).
+  * `web/index.html` publishes `window.__llamadartBridgeReadyPromise` /
+    `__llamadartBridgeReady`, resolved when the bridge loads and rejected on
+    failure (with a 30s safety timeout).
+  * Allowed benign Hugging Face `?download=true` URLs to be prefetched into the
+    browser cache while still skipping genuinely credentialed/signed URLs.
+
 ## 0.7.0
 
 * **Native runtime configuration**:
