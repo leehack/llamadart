@@ -21,6 +21,11 @@
     wrong format); they now render the correct `<start_of_turn>` format with
     system folded into the first user turn. Pass `ModelParams.chatTemplate` to
     override detection for other models. See `doc/litert_lm_templates.md`.
+  * Fixed tool calling throwing on LiteRT-LM for grammar-using handlers (e.g.
+    Qwen/Hermes): `NativeAutoBackend` now forwards `supportsGrammarConstraints`
+    from the active delegate, so the engine skips the template grammar that
+    LiteRT-LM rejects instead of erroring. Verified on-device with
+    `Qwen3-0.6B.litertlm` (thinking + `get_weather` tool call).
 * **Web LiteRT-LM (`.litertlm`) chat-app fixes**:
   * Fixed a spurious tokenization error bubble shown after every reply on web
     (`Tokenization is not supported by the active backend`). The chat app

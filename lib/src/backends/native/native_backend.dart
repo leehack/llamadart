@@ -23,7 +23,8 @@ class NativeAutoBackend
         BackendEmbeddingsSupport,
         BackendBatchEmbeddings,
         BackendStatePersistence,
-        BackendStatePersistenceSupport {
+        BackendStatePersistenceSupport,
+        BackendGrammarConstraintsSupport {
   final LlamaBackend Function() _llamaCppFactory;
   final LlamaBackend Function() _liteRtLmFactory;
 
@@ -45,6 +46,19 @@ class NativeAutoBackend
 
   @override
   bool get supportsUrlLoading => false;
+
+  @override
+  bool get supportsGrammarConstraints {
+    // Forward the active delegate's capability so the engine skips template
+    // grammars on backends that reject them (e.g. LiteRT-LM). Defaults to true
+    // (llama.cpp) before a model is loaded.
+    final delegate = _delegate;
+    if (delegate is BackendGrammarConstraintsSupport) {
+      return (delegate as BackendGrammarConstraintsSupport)
+          .supportsGrammarConstraints;
+    }
+    return true;
+  }
 
   @override
   Future<int> modelLoad(String path, ModelParams params) async {
