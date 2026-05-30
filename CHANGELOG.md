@@ -46,6 +46,20 @@
   * Replaced the misleading stuck "Loading model 0%" label during web
     LiteRT-LM loads (the backend only reports 0%/100%) with an honest
     indeterminate "Downloading and initializing model" message.
+* **Fixed iOS LiteRT-LM model loading**:
+  * `.litertlm` models failed to load on iOS device and simulator with
+    `Failed to load dynamic library 'package:llamadart/litert_lm_LiteRtLm'`.
+    The loader passed the `package:llamadart/...` native-asset id straight to
+    `DynamicLibrary.open`, which does not resolve native-asset ids (only
+    `@Native` externals do), so it reached `dlopen` verbatim and never loaded;
+    the bare `libLiteRtLm.dylib` fallback is not on any iOS search path either.
+  * iOS now loads the embedded `LiteRtLm`/`StreamProxy` frameworks by their
+    absolute bundle path (`<App>.app/Frameworks/<Name>.framework/<Name>`,
+    resolved from the executable), matching the macOS approach. This also lets
+    the StreamProxy `RTLD_GLOBAL` preload and the isolate re-open receive a real
+    path, so streaming generation works on iOS instead of silently falling back.
+  * `_openFirstAvailable*` now report every candidate's error, so future load
+    failures name the actual reason rather than only the last fallback.
 * **Minor correctness cleanups**:
   * `ChatSession` no longer throws on an empty-choices completion chunk
     (e.g. a keep-alive); such chunks are forwarded as-is.

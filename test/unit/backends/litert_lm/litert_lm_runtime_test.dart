@@ -79,7 +79,11 @@ void main() {
     expect(liteRtLmCacheDirectoryCandidatesForAbi(Abi.androidArm64), isEmpty);
   });
 
-  test('LiteRT-LM iOS lookup prefers bundled native asset identifiers', () {
+  test('LiteRT-LM iOS fallback identifiers are the native-asset id + dylib', () {
+    // These are last-resort fallbacks only: `DynamicLibrary.open` cannot
+    // resolve the `package:` native-asset id, and the bare dylib is not on any
+    // iOS search path. The absolute framework path (below) is what actually
+    // loads.
     expect(liteRtLmIosLibraryCandidatesForAbi(Abi.iosArm64), const <String>[
       'package:llamadart/litert_lm_LiteRtLm',
       'libLiteRtLm.dylib',
@@ -93,6 +97,50 @@ void main() {
       'libStreamProxy.dylib',
     ]);
     expect(liteRtLmIosLibraryCandidatesForAbi(Abi.macosArm64), isEmpty);
+  });
+
+  test('LiteRT-LM iOS lookup prefers the absolute embedded framework path', () {
+    // With the app Frameworks dir known, the absolute framework binary path is
+    // tried first, then the fallback identifiers.
+    expect(
+      liteRtLmIosLibraryCandidates(
+        Abi.iosArm64,
+        frameworksDirPath: '/App.app/Frameworks',
+      ),
+      const <String>[
+        '/App.app/Frameworks/LiteRtLm.framework/LiteRtLm',
+        'package:llamadart/litert_lm_LiteRtLm',
+        'libLiteRtLm.dylib',
+      ],
+    );
+    expect(
+      liteRtLmIosStreamProxyCandidates(
+        Abi.iosArm64,
+        frameworksDirPath: '/App.app/Frameworks',
+      ),
+      const <String>[
+        '/App.app/Frameworks/StreamProxy.framework/StreamProxy',
+        'package:llamadart/litert_lm_StreamProxy',
+        'libStreamProxy.dylib',
+      ],
+    );
+    // Without a Frameworks dir, only the fallback identifiers remain.
+    expect(liteRtLmIosLibraryCandidates(Abi.iosArm64), const <String>[
+      'package:llamadart/litert_lm_LiteRtLm',
+      'libLiteRtLm.dylib',
+    ]);
+    // Non-iOS ABIs have no iOS candidates regardless of a frameworks dir.
+    expect(
+      liteRtLmIosLibraryCandidates(
+        Abi.macosArm64,
+        frameworksDirPath: '/App.app/Frameworks',
+      ),
+      isEmpty,
+    );
+    expect(
+      liteRtLmIosFrameworkBinaryPath('/App.app/Frameworks', 'LiteRtLm'),
+      '/App.app/Frameworks/LiteRtLm.framework/LiteRtLm',
+    );
   });
 
   test('macOS LiteRT-LM cache validation follows runtime ABI files', () {

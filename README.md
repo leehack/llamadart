@@ -330,8 +330,9 @@ FFI path is validated on Android, iOS, macOS, Linux, and Windows. Web
 `.litertlm` URLs route to the official `@litert-lm/core` JavaScript runtime,
 which is an early-preview text-in/text-out API and currently supports
 web-compatible Gemma 4 LiteRT-LM model variants. iOS LiteRT-LM bundles are
-derived from upstream `CLiteRTLM.xcframework` slices and loaded from bundled
-native-asset identifiers for device and simulator builds. Native LiteRT-LM
+derived from upstream `CLiteRTLM.xcframework` slices, embedded as app
+frameworks, and loaded by their absolute bundle path for device and simulator
+builds. Native LiteRT-LM
 generation works through the same high-level `LlamaEngine` and `ChatSession`
 APIs, including native tokenization and detokenization for exact token counts.
 On native targets, thinking and tool-call parsing run through the same
