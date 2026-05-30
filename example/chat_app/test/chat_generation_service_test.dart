@@ -28,6 +28,31 @@ void main() {
       expect(params.stopSequences, isEmpty);
     });
 
+    test('omits unsupported minP/penalty for litert models', () {
+      const defaults = GenerationParams();
+      const settings = ChatSettings(
+        modelPath: '/models/gemma.litertlm',
+        maxTokens: 1234,
+        temperature: 0.4,
+        topK: 7,
+        topP: 0.8,
+        minP: 0.2,
+        penalty: 1.3,
+      );
+
+      final params = service.buildParams(settings);
+
+      // Supported options are still forwarded.
+      expect(params.maxTokens, 1234);
+      expect(params.temp, 0.4);
+      expect(params.topK, 7);
+      expect(params.topP, 0.8);
+      // minP/penalty fall back to defaults so the LiteRT-LM backend does not
+      // reject the request with an UnsupportedError.
+      expect(params.minP, defaults.minP);
+      expect(params.penalty, defaults.penalty);
+    });
+
     test('accumulates stream updates and metrics', () async {
       final updates = <GenerationStreamUpdate>[];
       final result = await service.consumeStream(

@@ -46,15 +46,32 @@ class ChatGenerationService {
   static const int _tokenDeltaFlushBatchSize = 8;
 
   GenerationParams buildParams(ChatSettings settings) {
+    // The LiteRT-LM backend only supports a subset of generation options
+    // (maxTokens, temp, topK, topP, seed, stopSequences) and throws an
+    // UnsupportedError for llama.cpp-specific fields like minP/penalty when
+    // they differ from their defaults. For .litertlm models, leave those
+    // fields at their defaults so generation does not fail.
+    const defaults = GenerationParams();
+    final isLiteRtLm = _isLiteRtLmModel(settings.modelPath);
     return GenerationParams(
       maxTokens: settings.maxTokens,
       temp: settings.temperature,
       topK: settings.topK,
       topP: settings.topP,
-      minP: settings.minP,
-      penalty: settings.penalty,
+      minP: isLiteRtLm ? defaults.minP : settings.minP,
+      penalty: isLiteRtLm ? defaults.penalty : settings.penalty,
       stopSequences: const <String>[],
     );
+  }
+
+  bool _isLiteRtLmModel(String? modelPath) {
+    final normalized = (modelPath ?? '')
+        .split('?')
+        .first
+        .split('#')
+        .first
+        .toLowerCase();
+    return normalized.endsWith('.litertlm');
   }
 
   List<LlamaContentPart> buildChatParts({
