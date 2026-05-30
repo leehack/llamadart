@@ -37,6 +37,9 @@ class _Entry {
   final bool stripLeadingBosToken;
 }
 
+// Order matters: the registry matches top-to-bottom and the first hit wins, so
+// more specific families must precede broader ones (gemma-4 and gemma-3n before
+// gemma-3). See `doc/litert_lm_templates.md`.
 const List<_Entry> _manifest = [
   _Entry(
     id: 'gemma4',
@@ -45,6 +48,36 @@ const List<_Entry> _manifest = [
     bosToken: '<bos>',
     eosToken: '<turn|>',
     stripLeadingBosToken: true,
+  ),
+  _Entry(
+    id: 'gemma3n',
+    jinja: 'gemma3n.jinja',
+    familyMatches: ['gemma-3n', 'gemma3n'],
+    bosToken: '<bos>',
+    eosToken: '<end_of_turn>',
+    stripLeadingBosToken: true,
+  ),
+  _Entry(
+    id: 'gemma',
+    jinja: 'gemma.jinja',
+    familyMatches: ['gemma-3', 'gemma3', 'gemma-2', 'gemma2'],
+    bosToken: '<bos>',
+    eosToken: '<end_of_turn>',
+    stripLeadingBosToken: true,
+  ),
+  _Entry(
+    id: 'qwen3',
+    jinja: 'qwen3.jinja',
+    familyMatches: ['qwen3', 'qwen-3'],
+    bosToken: '',
+    eosToken: '<|im_end|>',
+  ),
+  _Entry(
+    id: 'qwen25',
+    jinja: 'qwen25.jinja',
+    familyMatches: ['qwen2.5', 'qwen-2.5', 'qwen2', 'qwen'],
+    bosToken: '',
+    eosToken: '<|im_end|>',
   ),
 ];
 
@@ -119,10 +152,27 @@ void main() {
   stdout.writeln('Wrote ${outputFile.path} (${_manifest.length} templates).');
 }
 
+/// Removes the first `bos_token` output expression in any whitespace-control
+/// form (`{{ bos_token }}`, `{{- bos_token -}}`, …). If the expression was on
+/// its own line, the now-empty line is dropped; an inline remainder is kept.
 String _stripBosToken(String template) {
+  final bos = RegExp(r'\{\{-?\s*bos_token\s*-?\}\}');
   final lines = template.split('\n');
-  lines.removeWhere((line) => line.trim() == '{{- bos_token -}}');
-  return lines.join('\n');
+  final out = <String>[];
+  var stripped = false;
+  for (final line in lines) {
+    if (!stripped && bos.hasMatch(line)) {
+      stripped = true;
+      final remainder = line.replaceFirst(bos, '');
+      if (remainder.trim().isEmpty) {
+        continue;
+      }
+      out.add(remainder);
+      continue;
+    }
+    out.add(line);
+  }
+  return out.join('\n');
 }
 
 String _dartStringList(List<String> values) {
