@@ -150,27 +150,32 @@ void main() {
     },
   );
 
-  test('forwards grammar-constraint support from the active delegate', () async {
-    final llama = _FakeBackend(handle: 11)..grammarConstraintsSupported = true;
-    final litert = _FakeBackend(handle: 22)..grammarConstraintsSupported = false;
-    final backend = NativeAutoBackend(
-      llamaCppFactory: () => llama,
-      liteRtLmFactory: () => litert,
-    );
-    final grammar = backend as BackendGrammarConstraintsSupport;
+  test(
+    'forwards grammar-constraint support from the active delegate',
+    () async {
+      final llama = _FakeBackend(handle: 11)
+        ..grammarConstraintsSupported = true;
+      final litert = _FakeBackend(handle: 22)
+        ..grammarConstraintsSupported = false;
+      final backend = NativeAutoBackend(
+        llamaCppFactory: () => llama,
+        liteRtLmFactory: () => litert,
+      );
+      final grammar = backend as BackendGrammarConstraintsSupport;
 
-    try {
-      // Defaults to true (llama.cpp) before any model is loaded.
-      expect(grammar.supportsGrammarConstraints, isTrue);
+      try {
+        // Defaults to true (llama.cpp) before any model is loaded.
+        expect(grammar.supportsGrammarConstraints, isTrue);
 
-      await backend.modelLoad('/models/model.litertlm', const ModelParams());
-      // LiteRT-LM rejects grammar params, so the engine must learn to skip
-      // them — otherwise hermes/Qwen tool calls throw.
-      expect(grammar.supportsGrammarConstraints, isFalse);
-    } finally {
-      await backend.dispose();
-    }
-  });
+        await backend.modelLoad('/models/model.litertlm', const ModelParams());
+        // LiteRT-LM rejects grammar params, so the engine must learn to skip
+        // them — otherwise hermes/Qwen tool calls throw.
+        expect(grammar.supportsGrammarConstraints, isFalse);
+      } finally {
+        await backend.dispose();
+      }
+    },
+  );
 
   test('routes GGUF and unknown formats to llama.cpp', () async {
     final llama = _FakeBackend(handle: 11);
@@ -848,8 +853,7 @@ void main() {
   );
 }
 
-class _FakeBackend
-    implements LlamaBackend, BackendGrammarConstraintsSupport {
+class _FakeBackend implements LlamaBackend, BackendGrammarConstraintsSupport {
   final int handle;
   bool grammarConstraintsSupported = true;
   final List<String> loadedPaths = <String>[];

@@ -166,7 +166,9 @@ void main() {
         gemmaModelFile.path,
         const ModelParams(contextSize: 2048),
       );
-      final template = service.getMetadata(modelHandle)['tokenizer.chat_template'];
+      final template = service.getMetadata(
+        modelHandle,
+      )['tokenizer.chat_template'];
 
       // The full canonical template renders tool declarations and the thinking
       // channel — unlike the previous stub, which omitted both.
