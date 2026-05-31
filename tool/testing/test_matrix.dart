@@ -19,7 +19,7 @@ class TestMatrixRow {
   /// One of `essential`, `targeted`, `platform`, or `release`.
   final String tier;
 
-  /// Where the row normally runs: CI, local, or manual/device.
+  /// Free-form descriptor for where the row normally runs.
   final String mode;
 
   /// Runtime, model, feature, or platform coverage represented by this row.
@@ -425,7 +425,7 @@ Options:
 ''';
 }
 
-Future<void> main(List<String> args) async {
+void main(List<String> args) {
   var list = true;
   var prTemplate = false;
   var tier = 'all';

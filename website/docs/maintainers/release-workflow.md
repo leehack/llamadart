@@ -9,6 +9,7 @@ Use this checklist when releasing `llamadart`.
 ## 1. Pre-release validation
 
 ```bash
+# Print release-tier rows for evidence planning; this does not run validation.
 dart run tool/testing/test_matrix.dart --tier release
 dart format --output=none --set-exit-if-changed .
 dart analyze
