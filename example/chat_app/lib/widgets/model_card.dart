@@ -47,8 +47,9 @@ class ModelCard extends StatelessWidget {
     const webLargeModelWarningThresholdBytes = 1900 * 1024 * 1024;
     final isWebLiteRtLmModel = isWeb && _isLiteRtLmModel(model);
     final canLoadModel = isDownloaded || isWebLiteRtLmModel;
+    final effectiveModelSizeBytes = model.sizeBytesFor(web: isWeb);
     final showWebLargeModelWarning =
-        isWeb && model.sizeBytes >= webLargeModelWarningThresholdBytes;
+        isWeb && effectiveModelSizeBytes >= webLargeModelWarningThresholdBytes;
     final showMobileDownloadGuidance =
         isDownloading &&
         !isWeb &&

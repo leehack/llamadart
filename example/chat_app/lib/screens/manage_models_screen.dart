@@ -815,7 +815,7 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
       provider.updateMmprojPath('');
     }
 
-    if (kIsWeb && model.sizeBytes >= _webLargeModelWarningBytes) {
+    if (kIsWeb && model.sizeBytesFor(web: true) >= _webLargeModelWarningBytes) {
       final warningMessage = _isLiteRtLmWebModel(model)
           ? 'Large LiteRT-LM web model selected. Browser memory limits may still block engine initialization.'
           : 'Large web model selected. Download/cache can complete, but browser memory limits may still block loading.';

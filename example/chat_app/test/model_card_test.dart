@@ -53,6 +53,21 @@ void main() {
     expect(selectCalls, 0);
     expect(downloadCalls, 1);
   });
+
+  testWidgets('web large warning uses web model size when available', (
+    tester,
+  ) async {
+    await _pumpCard(
+      tester,
+      model: _largeNativeSmallWebLiteRtLmModel(),
+      isWeb: true,
+      isDownloaded: false,
+      onSelect: () {},
+      onDownload: () {},
+    );
+
+    expect(find.textContaining('very large LiteRT-LM'), findsNothing);
+  });
 }
 
 Future<void> _pumpCard(
@@ -109,5 +124,21 @@ DownloadableModel _ggufModel() {
     url: 'https://example.com/model.gguf',
     filename: 'model.gguf',
     sizeBytes: 10,
+  );
+}
+
+DownloadableModel _largeNativeSmallWebLiteRtLmModel() {
+  return const DownloadableModel(
+    name: 'LiteRT-LM Test Model',
+    description: 'Fake LiteRT-LM model for widget tests.',
+    url: 'https://example.com/model.litertlm',
+    filename: 'model.litertlm',
+    webSizeBytes: 1200 * 1024 * 1024,
+    webModelSource: RemoteModelAssetSource(
+      url: 'https://example.com/model-web.litertlm?download=true',
+      filename: 'model-web.litertlm',
+      sizeBytes: 1200 * 1024 * 1024,
+    ),
+    sizeBytes: 2400 * 1024 * 1024,
   );
 }
