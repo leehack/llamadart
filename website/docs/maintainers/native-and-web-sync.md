@@ -39,6 +39,12 @@ WEBGPU_BRIDGE_ASSETS_TAG=<tag> ./scripts/fetch_webgpu_bridge_assets.sh
 
 ## Validation after sync
 
+Use the contributor matrix to choose exact rows and record PR evidence:
+
+```bash
+dart run tool/testing/test_matrix.dart --list
+```
+
 - Native: model load/generation smoke checks on relevant platforms.
 - Web: bridge load/fallback checks in `example/chat_app`.
 - Docs: ensure version/platform notes match newly pinned runtime behavior.

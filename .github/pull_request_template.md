@@ -26,7 +26,14 @@
 - [ ] `dart format --output=none --set-exit-if-changed .`
 - [ ] `dart analyze`
 - [ ] `dart test -p vm -j 1 --exclude-tags local-only`
-- [ ] Other targeted/local-only validation: <!-- e.g. Chrome/WebGPU smoke, Flutter app E2E, docs build, N/A -->
+- [ ] `dart test -p chrome --exclude-tags local-only` <!-- N/A with reason if not relevant -->
+- [ ] Other targeted/local-only validation: <!-- Use `dart run tool/testing/test_matrix.dart --list`; e.g. WebGPU smoke, Flutter app E2E, docs build, N/A -->
+
+## Matrix Evidence
+<!-- Generate rows with `dart run tool/testing/test_matrix.dart --pr-template`; keep applicable rows and mark skipped rows N/A with a concrete reason. -->
+| Matrix row | Scope covered | Platform / model / backend | Result | Evidence / notes |
+| --- | --- | --- | --- | --- |
+|  |  |  |  |  |
 
 ## Review Notes
 - Independent review status: <!-- reviewer/tool/verdict, or N/A for trivial docs-only changes -->

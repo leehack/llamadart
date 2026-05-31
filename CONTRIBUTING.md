@@ -116,6 +116,17 @@ Always verify paths in your environment before using them.
 
 We take testing seriously. CI enforces **>=70% line coverage on maintainable `lib/` code**. Auto-generated files are excluded when they are marked with `// coverage:ignore-file`.
 
+The authoritative contributor test matrix lives in
+[`doc/testing_matrix.md`](doc/testing_matrix.md) and
+`tool/testing/test_matrix.dart`. Use it to decide which runtime/model/feature
+rows apply to a PR and to generate the evidence table for the pull request:
+
+```bash
+dart run tool/testing/test_matrix.dart --list
+dart run tool/testing/test_matrix.dart --pr-template
+dart run tool/testing/test_matrix.dart --tier platform
+```
+
 ### 1. Unified Test Runner
 We use `dart_test.yaml` and `@TestOn` tags to manage multi-platform execution.
 Running `dart test` will run VM and Chrome-compatible tests. Tests tagged
@@ -130,6 +141,10 @@ dart run tool/testing/run_local_e2e.dart --list
 
 # Preview the commands for one scenario without running it
 dart run tool/testing/run_local_e2e.dart --scenario chat-app-model-cache --device macos --dry-run
+
+# Run representative local real-model feature smokes
+dart run tool/testing/run_local_e2e.dart --scenario gguf-chat-features-smoke --model-path models/Qwen3.5-0.8B-Q4_K_M.gguf --backend auto
+dart run tool/testing/run_local_e2e.dart --scenario litert-lm-chat-features-smoke --model-path /path/to/gemma-4-E2B-it.litertlm --backend auto
 
 # Run root local-only Dart E2E tests directly
 dart test --run-skipped -t local-only
@@ -239,6 +254,9 @@ Every non-trivial pull request should explain:
 - **User-facing scope**: what users can do after the PR merges.
 - **Supported platform matrix**: native, WebGPU, Flutter examples, docs-only, or
   any other relevant path.
+- **Matrix evidence**: applicable row IDs from `tool/testing/test_matrix.dart`,
+  including exact commands, CI workflow names, model/backend/device selections,
+  and PASS/FAIL/N/A status.
 - **Unsupported paths**: combinations that are intentionally unavailable must
   fail loudly with clear errors, disabled UI, or documented fallback behavior.
   They must not appear to succeed silently.

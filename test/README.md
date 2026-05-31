@@ -24,6 +24,11 @@ dart test --run-skipped -t local-only
 # Enumerate repeatable local browser/device smoke scenarios
 dart run tool/testing/run_local_e2e.dart --list
 
+# Print the contributor validation matrix and PR evidence table
+dart run tool/testing/test_matrix.dart --list
+dart run tool/testing/test_matrix.dart --pr-template
+dart run tool/testing/test_matrix.dart --tier platform
+
 # Real Gemma 4 LiteRT-LM web smoke
 dart run tool/testing/run_local_e2e.dart --scenario chat-app-web-litert-gemma4-smoke
 

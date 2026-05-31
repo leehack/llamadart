@@ -30,6 +30,9 @@ dart run tool/testing/check_lcov_threshold.dart coverage/lcov.info 70
 Use the scenario runner as the discovery entry point for heavyweight manual checks:
 
 ```bash
+dart run tool/testing/test_matrix.dart --list
+dart run tool/testing/test_matrix.dart --pr-template
+dart run tool/testing/test_matrix.dart --tier platform
 dart run tool/testing/run_local_e2e.dart --list
 dart run tool/testing/run_local_e2e.dart --scenario <name> --dry-run
 dart run tool/testing/run_local_e2e.dart --scenario chat-app-model-cache --device macos
@@ -38,6 +41,20 @@ dart run tool/testing/run_local_e2e.dart --scenario chat-app-model-cache --devic
 Heavy scenarios remain skipped by default and out of CI unless explicitly requested.
 Use `--dry-run` before Web smoke scenarios to see the required build/server/
 Playwright steps and model URL defaults.
+
+When preparing or updating a PR, pick the applicable rows from
+`doc/testing_matrix.md` / `tool/testing/test_matrix.dart` and record evidence in
+the PR. Include row ID, exact command or CI workflow, platform/device, model,
+backend, PASS/FAIL/N/A status, and any log/artifact pointer. If a row cannot run
+locally, state why and whether CI, a manual device run, or a follow-up issue
+covers it.
+
+Representative local real-model feature smokes:
+
+```bash
+dart run tool/testing/run_local_e2e.dart --scenario gguf-chat-features-smoke --model-path models/Qwen3.5-0.8B-Q4_K_M.gguf --backend auto
+dart run tool/testing/run_local_e2e.dart --scenario litert-lm-chat-features-smoke --model-path /path/to/gemma-4-E2B-it.litertlm --backend auto
+```
 
 ### Local Chat App Web E2E
 Use the real chat app path for WebGPU bridge validation after bridge/runtime
@@ -276,6 +293,9 @@ make sure the PR template can honestly answer:
   out of scope.
 - **Platform matrix**: native, WebGPU, Flutter examples, docs-only, or other
   relevant paths are listed with actual validation evidence.
+- **Matrix evidence**: applicable rows from `tool/testing/test_matrix.dart` are
+  recorded with exact command, platform/device, model, backend, result, and
+  notes.
 - **Unsupported combinations**: unsupported platforms/options fail loudly with a
   typed/actionable error, disabled UI, or documented fallback; never report
   success for a path that is not implemented.

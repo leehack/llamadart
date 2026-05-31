@@ -70,7 +70,9 @@ class LocalE2eRunContext {
     required this.device,
     required this.port,
     required this.python,
+    required this.modelPath,
     required this.modelUrl,
+    required this.backend,
     required this.expect,
     required this.skipBuild,
   });
@@ -79,7 +81,9 @@ class LocalE2eRunContext {
   final String device;
   final int port;
   final String python;
+  final String? modelPath;
   final String? modelUrl;
+  final String backend;
   final String expect;
   final bool skipBuild;
 
@@ -177,6 +181,52 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
           description: 'Qwen3.5 multimodal macOS repro E2E',
         ),
       ],
+    ),
+    LocalE2eScenario(
+      name: 'gguf-chat-features-smoke',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description:
+          'Run real GGUF chat, thinking-suppression, and tool-call smoke.',
+      requiresDevice: false,
+      stepsBuilder: (context) {
+        final arguments = <String>['run', 'tool/gguf_chat_features_smoke.dart'];
+        if (context.modelPath != null) {
+          arguments.add(context.modelPath!);
+          arguments.add(context.backend);
+        }
+        return [
+          LocalE2eCommandStep(
+            workingDirectory: context.projectRoot,
+            executable: 'dart',
+            arguments: arguments,
+            description: 'GGUF chat feature smoke',
+          ),
+        ];
+      },
+    ),
+    LocalE2eScenario(
+      name: 'litert-lm-chat-features-smoke',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description: 'Run real LiteRT-LM chat, thinking, and tool-call smoke.',
+      requiresDevice: false,
+      stepsBuilder: (context) {
+        final arguments = <String>[
+          'run',
+          'tool/litert_lm_chat_features_smoke.dart',
+        ];
+        if (context.modelPath != null) {
+          arguments.add(context.modelPath!);
+          arguments.add(context.backend);
+        }
+        return [
+          LocalE2eCommandStep(
+            workingDirectory: context.projectRoot,
+            executable: 'dart',
+            arguments: arguments,
+            description: 'LiteRT-LM chat feature smoke',
+          ),
+        ];
+      },
     ),
     LocalE2eScenario(
       name: 'webgpu-multimodal-regression',
@@ -493,7 +543,9 @@ Future<LocalE2eResult> runLocalE2e(
     device: parsed.device,
     port: parsed.port,
     python: parsed.pythonProvided ? parsed.python : _defaultPython(root),
+    modelPath: parsed.modelPath,
     modelUrl: parsed.modelUrl,
+    backend: parsed.backend,
     expect: parsed.expect,
     skipBuild: parsed.skipBuild,
   );
@@ -684,7 +736,9 @@ Options:
   --device <device>              Flutter device id for device scenarios (default: macos).
   --port <port>                  Local web server port (default: 7358).
   --python <path>                Python executable for helper scripts (default: repo Playwright venv, then python3).
+  --model-path <path>            Local model path for Dart local-only model scenarios.
   --model-url <url>              Model URL for real-model web smoke.
+  --backend <name>               Backend for local model scenarios (default: auto).
   --expect <text>                Expected response text for real-model web smoke.
   --skip-build                   Reuse an existing Flutter web build where supported.
   -h, --help                     Show this help.
@@ -711,9 +765,11 @@ class _ParsedArgs {
     required this.port,
     required this.python,
     required this.pythonProvided,
+    required this.backend,
     required this.expect,
     required this.skipBuild,
     this.scenario,
+    this.modelPath,
     this.modelUrl,
   });
 
@@ -725,7 +781,9 @@ class _ParsedArgs {
   final int port;
   final String python;
   final bool pythonProvided;
+  final String? modelPath;
   final String? modelUrl;
+  final String backend;
   final String expect;
   final bool skipBuild;
 
@@ -737,9 +795,11 @@ class _ParsedArgs {
     var port = 7358;
     var python = 'python3';
     var pythonProvided = false;
+    var backend = 'auto';
     var expect = '4';
     var skipBuild = false;
     String? scenario;
+    String? modelPath;
     String? modelUrl;
 
     for (var index = 0; index < args.length; index++) {
@@ -762,8 +822,12 @@ class _ParsedArgs {
         case '--python':
           python = _readValue(args, ++index, arg);
           pythonProvided = true;
+        case '--model-path':
+          modelPath = _readValue(args, ++index, arg);
         case '--model-url':
           modelUrl = _readValue(args, ++index, arg);
+        case '--backend':
+          backend = _readValue(args, ++index, arg);
         case '--expect':
           expect = _readValue(args, ++index, arg);
         default:
@@ -780,7 +844,9 @@ class _ParsedArgs {
       port: port,
       python: python,
       pythonProvided: pythonProvided,
+      modelPath: modelPath,
       modelUrl: modelUrl,
+      backend: backend,
       expect: expect,
       skipBuild: skipBuild,
     );

@@ -915,6 +915,8 @@ Check out our [LoRA Training Notebook](https://github.com/leehack/llamadart/blob
 This project maintains a high standard of quality with **>=70% line coverage on maintainable `lib/` code** (auto-generated files marked with `// coverage:ignore-file` are excluded).
 
 - **Multi-Platform Testing**: `dart test` runs VM and Chrome-compatible suites automatically.
+- **Contributor Matrix**: `tool/testing/test_matrix.dart` lists essential,
+  targeted, and release validation rows for PR evidence.
 - **Local-Only Scenarios**: Slow E2E tests are tagged `local-only` and skipped by default; use `tool/testing/run_local_e2e.dart` to discover the root Dart, Flutter device, and Web smoke commands.
 - **CI/CD**: Automatic analysis, linting, and cross-platform test execution on every PR.
 
@@ -924,6 +926,11 @@ dart test
 
 # Discover local-only E2E scenarios
 dart run tool/testing/run_local_e2e.dart --list
+
+# Print the PR validation matrix and evidence table
+dart run tool/testing/test_matrix.dart --list
+dart run tool/testing/test_matrix.dart --pr-template
+dart run tool/testing/test_matrix.dart --tier platform
 
 # Run local-only E2E scenarios
 dart test --run-skipped -t local-only

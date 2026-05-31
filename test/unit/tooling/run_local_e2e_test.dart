@@ -16,6 +16,8 @@ void main() {
       expect(result.stdout, contains('root-template-e2e'));
       expect(result.stdout, contains('root-native-tool-e2e'));
       expect(result.stdout, contains('qwen35-multimodal-macos-repro'));
+      expect(result.stdout, contains('gguf-chat-features-smoke'));
+      expect(result.stdout, contains('litert-lm-chat-features-smoke'));
       expect(result.stdout, contains('webgpu-multimodal-regression'));
       expect(result.stdout, contains('chat-app-model-cache'));
       expect(result.stdout, contains('chat-app-web-real-model-smoke'));
@@ -109,6 +111,51 @@ void main() {
       expect(
         result.stdout,
         contains('tool/testing/playwright_chat_app_real_model_smoke.py'),
+      );
+    });
+
+    test(
+      'dry-runs GGUF chat feature smoke with model path and backend',
+      () async {
+        final result = await runLocalE2e(const [
+          '--scenario',
+          'gguf-chat-features-smoke',
+          '--model-path',
+          'models/Qwen3.5-0.8B-Q4_K_M.gguf',
+          '--backend',
+          'cpu',
+          '--dry-run',
+        ], projectRoot: '/repo');
+
+        expect(result.exitCode, 0);
+        expect(result.stdout, contains('gguf-chat-features-smoke'));
+        expect(
+          result.stdout,
+          contains(
+            'cd /repo && dart run tool/gguf_chat_features_smoke.dart '
+            'models/Qwen3.5-0.8B-Q4_K_M.gguf cpu',
+          ),
+        );
+      },
+    );
+
+    test('dry-runs LiteRT-LM chat feature smoke with model path', () async {
+      final result = await runLocalE2e(const [
+        '--scenario',
+        'litert-lm-chat-features-smoke',
+        '--model-path',
+        'models/gemma-4-E2B-it.litertlm',
+        '--dry-run',
+      ], projectRoot: '/repo');
+
+      expect(result.exitCode, 0);
+      expect(result.stdout, contains('litert-lm-chat-features-smoke'));
+      expect(
+        result.stdout,
+        contains(
+          'cd /repo && dart run tool/litert_lm_chat_features_smoke.dart '
+          'models/gemma-4-E2B-it.litertlm auto',
+        ),
       );
     });
 
