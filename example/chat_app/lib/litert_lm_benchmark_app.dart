@@ -143,7 +143,7 @@ class _LiteRtLmBenchmarkAppState extends State<LiteRtLmBenchmarkApp> {
   );
   bool _speculative = const bool.fromEnvironment(
     'LITERT_LM_SPECULATIVE',
-    defaultValue: true,
+    defaultValue: false,
   );
   int _maxTokens = const int.fromEnvironment(
     'LITERT_LM_MAX_TOKENS',
