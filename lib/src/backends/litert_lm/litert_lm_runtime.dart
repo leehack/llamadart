@@ -946,7 +946,10 @@ class LiteRtLmRuntimeClient {
 
     if (libraries.proxyCandidates.isNotEmpty) {
       try {
-        final proxyLibrary = _openFirstAvailable(libraries.proxyCandidates);
+        final proxyLibrary = _openFirstAvailable(
+          libraries.proxyCandidates,
+          description: 'StreamProxy library',
+        );
         final loadGlobal = proxyLibrary
             .lookupFunction<_LoadGlobalNative, _LoadGlobalDart>(
               'stream_proxy_load_global',
@@ -984,7 +987,10 @@ class LiteRtLmRuntimeClient {
       }
     }
 
-    final liteRtLm = _openFirstAvailableWithPath(libraries.liteRtLmCandidates);
+    final liteRtLm = _openFirstAvailableWithPath(
+      libraries.liteRtLmCandidates,
+      description: 'LiteRT-LM library',
+    );
     _liteRtLmLibraryPath = liteRtLm.path;
     _bindings = _LiteRtLmBindings(liteRtLm.library);
   }
@@ -1125,13 +1131,20 @@ class LiteRtLmRuntimeClient {
     return null;
   }
 
-  DynamicLibrary _openFirstAvailable(List<String> candidates) {
-    return _openFirstAvailableWithPath(candidates).library;
+  DynamicLibrary _openFirstAvailable(
+    List<String> candidates, {
+    required String description,
+  }) {
+    return _openFirstAvailableWithPath(
+      candidates,
+      description: description,
+    ).library;
   }
 
   ({String path, DynamicLibrary library}) _openFirstAvailableWithPath(
-    List<String> candidates,
-  ) {
+    List<String> candidates, {
+    required String description,
+  }) {
     final errors = <String>[];
     for (final candidate in candidates) {
       try {
@@ -1141,7 +1154,7 @@ class LiteRtLmRuntimeClient {
       }
     }
     throw ArgumentError(
-      'Failed to load any LiteRT-LM library candidate:\n${errors.join('\n')}',
+      'Failed to load any $description candidate:\n${errors.join('\n')}',
     );
   }
 
