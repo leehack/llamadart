@@ -47,7 +47,7 @@ llama.cpp reads `tokenizer.chat_template` straight from the GGUF metadata.
 | Gemma 3n (E2B/E4B) | `gemma` | `gemma-3n`, `gemma3n` | ✅ | ⚠️ prompt-engineered, no schema¹ | — |
 | Gemma 3 / 2 / 1B / 270m | `gemma` | `gemma-3`, `gemma-2` | ✅ | ⚠️ prompt-engineered, no schema¹ | — |
 | Qwen 3 / 3.5 | `hermes` | `qwen3`, `qwen-3` | ✅ | ✅ `<tool_call>` | ✅ `<think>` |
-| Qwen 2.5 | `hermes` | `qwen2.5`, `qwen2` | ✅ | ✅ `<tool_call>` | — |
+| Qwen 2.5 | `hermes` | `qwen2.5`, `qwen-2.5`, `qwen2` | ✅ | ✅ `<tool_call>` | — |
 
 ¹ For Gemma 3/3n the engine injects a generic "respond with `tool_call` JSON"
 instruction but does **not** render the tool schemas into the prompt. This
@@ -59,7 +59,7 @@ renamed or its family isn't listed above, pass the template explicitly via
 `ModelParams.chatTemplate`.
 
 The registry is ordered most-specific-first, so `gemma-4` and `gemma-3n` are
-matched before `gemma-3`, and `qwen3` before the generic `qwen` rule.
+matched before `gemma-3`, and `qwen3` is matched before the Qwen 2.5 rules.
 
 ## Real-model smoke coverage
 
