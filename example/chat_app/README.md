@@ -367,9 +367,10 @@ _(Add screenshots here when complete)_
   `@litert-lm/core`.
 - `.litertlm` web loads do **not** use the browser Cache Storage prefetch (that
   cache is only read back by the llama.cpp/GGUF bridge); `@litert-lm/core`
-  fetches the model URL itself, so the model is downloaded once. Per-message
-  token counts are also not shown for web LiteRT-LM models because the backend
-  exposes no tokenizer API.
+  fetches the model URL itself. Browser HTTP cache may avoid some network
+  transfer, but engine creation still has to initialize the large model and GPU
+  resources on each load. Per-message token counts are also not shown for web
+  LiteRT-LM models because the backend exposes no tokenizer API.
 - Runtime status chips expose execution mode/core/cache/worker fallback/runtime notes,
   so non-COI or worker fallback perf constraints are visible in-app.
 - On web, multimodal projector loading is eager by default for stability: if an
