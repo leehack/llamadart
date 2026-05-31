@@ -26,6 +26,10 @@
     from the active delegate, so the engine skips the template grammar that
     LiteRT-LM rejects instead of erroring. Verified on-device with
     `Qwen3-0.6B.litertlm` (thinking + `get_weather` tool call).
+  * Suppressed reasoning deltas when callers pass `enableThinking: false`, even
+    if the LiteRT-LM runtime still emits a thought channel. Structured tool-call
+    streams also no longer leak raw Hermes/Qwen JSON or Gemma `<|tool_call>`
+    markers as assistant content before the final `tool_calls` chunk.
 * **Web LiteRT-LM (`.litertlm`) chat-app fixes**:
   * Fixed a spurious tokenization error bubble shown after every reply on web
     (`Tokenization is not supported by the active backend`). The chat app

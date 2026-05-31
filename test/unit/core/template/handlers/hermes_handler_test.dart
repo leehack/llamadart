@@ -111,6 +111,17 @@ void main() {
     expect(parsed.content, isEmpty);
   });
 
+  test('keeps partial bare JSON tool calls out of content', () {
+    final handler = HermesHandler();
+    final parsed = handler.parse(
+      '{"name":"get_current_weather",',
+      isPartial: true,
+    );
+
+    expect(parsed.toolCalls, isEmpty);
+    expect(parsed.content, isEmpty);
+  });
+
   test(
     'parses tool call with multiple whitespace chars between tag and JSON',
     () {

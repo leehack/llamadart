@@ -552,7 +552,15 @@ class LlamaEngine {
 
         if (streamingMode == _ToolStreamingMode.undecided) {
           undecidedPrefix += token;
-          final mode = _decideToolStreamingMode(undecidedPrefix);
+          final decisionPrefix = _stripLeadingThinkingForToolDecision(
+            undecidedPrefix,
+            startTag: startTag,
+            endTag: endTag,
+          );
+          if (decisionPrefix == null) {
+            continue;
+          }
+          final mode = _decideToolStreamingMode(decisionPrefix);
           if (mode == _ToolStreamingMode.undecided) {
             continue;
           }
@@ -586,6 +594,9 @@ class LlamaEngine {
               streamedReasoning += emission.text;
             } else {
               streamedContent += emission.text;
+            }
+            if (emission.isThinking && !enableThinking) {
+              continue;
             }
             yield LlamaCompletionChunk(
               id: 'chatcmpl-$completionId',
@@ -644,7 +655,7 @@ class LlamaEngine {
           final partialReasoning = partialParsed.reasoningContent ?? '';
           if (partialReasoning.length > streamedReasoning.length) {
             final delta = partialReasoning.substring(streamedReasoning.length);
-            if (delta.isNotEmpty) {
+            if (delta.isNotEmpty && enableThinking) {
               yield LlamaCompletionChunk(
                 id: 'chatcmpl-$completionId',
                 object: 'chat.completion.chunk',
@@ -717,20 +728,22 @@ class LlamaEngine {
         } else {
           streamedContent += pendingBuffer;
         }
-        yield LlamaCompletionChunk(
-          id: 'chatcmpl-$completionId',
-          object: 'chat.completion.chunk',
-          created: DateTime.now().millisecondsSinceEpoch ~/ 1000,
-          model: _modelPath ?? 'llama_model',
-          choices: [
-            LlamaCompletionChunkChoice(
-              index: 0,
-              delta: isThinking
-                  ? LlamaCompletionChunkDelta(thinking: pendingBuffer)
-                  : LlamaCompletionChunkDelta(content: pendingBuffer),
-            ),
-          ],
-        );
+        if (!isThinking || enableThinking) {
+          yield LlamaCompletionChunk(
+            id: 'chatcmpl-$completionId',
+            object: 'chat.completion.chunk',
+            created: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+            model: _modelPath ?? 'llama_model',
+            choices: [
+              LlamaCompletionChunkChoice(
+                index: 0,
+                delta: isThinking
+                    ? LlamaCompletionChunkDelta(thinking: pendingBuffer)
+                    : LlamaCompletionChunkDelta(content: pendingBuffer),
+              ),
+            ],
+          );
+        }
       }
     } else {
       await for (final token in tokenStream) {
@@ -745,6 +758,9 @@ class LlamaEngine {
         pendingBuffer = split.pendingBuffer;
         isThinking = split.isThinking;
         for (final emission in split.emissions) {
+          if (emission.isThinking && !enableThinking) {
+            continue;
+          }
           yield LlamaCompletionChunk(
             id: 'chatcmpl-$completionId',
             object: 'chat.completion.chunk',
@@ -763,7 +779,7 @@ class LlamaEngine {
       }
 
       // Final flush of any pending buffer
-      if (pendingBuffer.isNotEmpty) {
+      if (pendingBuffer.isNotEmpty && (!isThinking || enableThinking)) {
         yield LlamaCompletionChunk(
           id: 'chatcmpl-$completionId',
           object: 'chat.completion.chunk',
@@ -798,7 +814,9 @@ class LlamaEngine {
         finalValue: finalReasoning,
         channel: 'thinking',
       );
-      if (reasoningDelta != null && reasoningDelta.isNotEmpty) {
+      if (reasoningDelta != null &&
+          reasoningDelta.isNotEmpty &&
+          enableThinking) {
         yield LlamaCompletionChunk(
           id: 'chatcmpl-$completionId',
           object: 'chat.completion.chunk',
@@ -1599,6 +1617,43 @@ class LlamaEngine {
     return mode;
   }
 
+  String? _stripLeadingThinkingForToolDecision(
+    String value, {
+    required String startTag,
+    required String endTag,
+  }) {
+    var remaining = value;
+    while (true) {
+      final start = _firstNonWhitespaceIndex(remaining);
+      if (start == null) {
+        return remaining;
+      }
+
+      final leading = remaining.substring(0, start);
+      final trimmed = remaining.substring(start);
+      if (startTag.startsWith(trimmed) || endTag.startsWith(trimmed)) {
+        return null;
+      }
+
+      if (trimmed.startsWith(endTag)) {
+        remaining = leading + trimmed.substring(endTag.length);
+        continue;
+      }
+
+      if (trimmed.startsWith(startTag)) {
+        final afterStart = trimmed.substring(startTag.length);
+        final endIndex = afterStart.indexOf(endTag);
+        if (endIndex < 0) {
+          return null;
+        }
+        remaining = leading + afterStart.substring(endIndex + endTag.length);
+        continue;
+      }
+
+      return remaining;
+    }
+  }
+
   _ToolStreamingMode _decideJsonEnvelopeMode(String text) {
     var i = 1;
     while (i < text.length && _isWhitespaceCodeUnit(text.codeUnitAt(i))) {
@@ -1637,7 +1692,10 @@ class LlamaEngine {
   }
 
   bool _isGenericEnvelopeKey(String key) {
-    return key == 'tool_call' || key == 'tool_calls' || key == 'response';
+    return key == 'tool_call' ||
+        key == 'tool_calls' ||
+        key == 'response' ||
+        key == 'name';
   }
 
   _ToolStreamingMode _decideBracketEnvelopeMode(String text) {
@@ -1657,6 +1715,7 @@ class LlamaEngine {
     const parsedPrefixes = <String>[
       '<tool_call',
       '<tool_calls',
+      '<|tool_call',
       '<function',
       '<function_call',
       '<start_function_call',

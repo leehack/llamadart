@@ -1002,6 +1002,62 @@ void main() {
     });
 
     test(
+      'create does not stream raw Hermes bare tool-call JSON as content',
+      () async {
+        final hermesBackend = MockLlamaBackend(
+          modelMetadataResponse: const {
+            'llm.context_length': '4096',
+            'tokenizer.chat_template':
+                '{%- if tools %}<tools>{{ tools[0] | tojson }}</tools>'
+                '<tool_call>{"name": <function-name>, "arguments": <args-json-object>}</tool_call>{% endif %}'
+                '{% for message in messages %}<|im_start|>{{ message["role"] }}\n{{ message["content"] }}<|im_end|>\n{% endfor %}'
+                '{% if add_generation_prompt %}<|im_start|>assistant\n{% endif %}',
+          },
+        );
+        final hermesEngine = LlamaEngine(hermesBackend);
+        hermesBackend.generationChunks = const [
+          '</think>\n\n{"na',
+          'me": "get_weather", "arguments": {"l',
+          'ocation": "Seoul"}}',
+        ];
+        await hermesEngine.loadModel('qwen-test.gguf');
+
+        final chunks = await hermesEngine
+            .create(
+              const [
+                LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
+              ],
+              tools: [
+                ToolDefinition(
+                  name: 'get_weather',
+                  description: 'Get weather',
+                  parameters: [ToolParam.string('location')],
+                  handler: (_) async => 'ok',
+                ),
+              ],
+              toolChoice: ToolChoice.required,
+            )
+            .toList();
+
+        final streamedContent = chunks
+            .map((chunk) => chunk.choices.first.delta.content)
+            .whereType<String>()
+            .join();
+        final toolChunk = chunks.last;
+        final toolCalls = toolChunk.choices.first.delta.toolCalls;
+
+        expect(streamedContent, isEmpty);
+        expect(toolChunk.choices.first.finishReason, equals('tool_calls'));
+        expect(toolCalls, hasLength(1));
+        expect(toolCalls!.first.function?.name, equals('get_weather'));
+        expect(
+          jsonDecode(toolCalls.first.function!.arguments!),
+          equals({'location': 'Seoul'}),
+        );
+      },
+    );
+
+    test(
       'create skips template grammar for backends without grammar constraints',
       () async {
         final noGrammarBackend = NoGrammarMockLlamaBackend(
@@ -1032,6 +1088,12 @@ void main() {
               ],
             )
             .toList();
+
+        final streamedContent = chunks
+            .map((chunk) => chunk.choices.first.delta.content)
+            .whereType<String>()
+            .join();
+        expect(streamedContent, isEmpty);
 
         expect(noGrammarBackend.lastGenerationParams?.grammar, isNull);
         expect(noGrammarBackend.lastGenerationParams?.grammarLazy, isFalse);
@@ -1344,6 +1406,72 @@ void main() {
             .join();
 
         expect(streamedThinking, equals('reason'));
+        expect(streamedContent, equals(' answer'));
+        expect(streamedContent, isNot(contains('reason')));
+        expect(chunks.last.choices.first.finishReason, equals('stop'));
+      },
+    );
+
+    test(
+      'create suppresses thinking deltas when thinking is disabled',
+      () async {
+        backend.generationChunks = const ['<think>reason', '</think> answer'];
+        await engine.loadModel('qwen-test.gguf');
+
+        final chunks = await engine.create(const [
+          LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
+        ], enableThinking: false).toList();
+
+        final streamedContent = chunks
+            .map((chunk) => chunk.choices.first.delta.content)
+            .whereType<String>()
+            .join();
+        final streamedThinking = chunks
+            .map((chunk) => chunk.choices.first.delta.thinking)
+            .whereType<String>()
+            .join();
+
+        expect(streamedThinking, isEmpty);
+        expect(streamedContent, equals(' answer'));
+        expect(streamedContent, isNot(contains('reason')));
+        expect(chunks.last.choices.first.finishReason, equals('stop'));
+      },
+    );
+
+    test(
+      'create suppresses thinking deltas in raw tool-enabled mode when disabled',
+      () async {
+        backend.generationChunks = const ['<think>reason', '</think> answer'];
+        await engine.loadModel('qwen-test.gguf');
+
+        final chunks = await engine
+            .create(
+              const [
+                LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
+              ],
+              tools: [
+                ToolDefinition(
+                  name: 'get_weather',
+                  description: 'Get weather',
+                  parameters: [ToolParam.string('city')],
+                  handler: (_) async => 'ok',
+                ),
+              ],
+              toolChoice: ToolChoice.auto,
+              enableThinking: false,
+            )
+            .toList();
+
+        final streamedContent = chunks
+            .map((chunk) => chunk.choices.first.delta.content)
+            .whereType<String>()
+            .join();
+        final streamedThinking = chunks
+            .map((chunk) => chunk.choices.first.delta.thinking)
+            .whereType<String>()
+            .join();
+
+        expect(streamedThinking, isEmpty);
         expect(streamedContent, equals(' answer'));
         expect(streamedContent, isNot(contains('reason')));
         expect(chunks.last.choices.first.finishReason, equals('stop'));

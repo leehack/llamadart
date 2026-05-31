@@ -202,7 +202,14 @@ class HermesHandler extends ChatTemplateHandler {
       }
     }
 
-    if (parseFailed && !isPartial) {
+    if (parseFailed) {
+      if (isPartial) {
+        return ChatParseResult(
+          content: content.toString().trim(),
+          reasoningContent: thinking.reasoning,
+          toolCalls: toolCalls,
+        );
+      }
       return ChatParseResult(
         content: text.trim(),
         reasoningContent: thinking.reasoning,
