@@ -2711,6 +2711,14 @@ class LlamaCppService {
     int cancelTokenAddress, {
     List<LlamaContentPart>? parts,
   }) async* {
+    if (params.speculativeDecoding) {
+      throw UnsupportedError(
+        'llama.cpp speculative decoding is not exposed by llamadart yet. '
+        'Use the LiteRT-LM native backend or track llama.cpp support in '
+        'issues #168/#190.',
+      );
+    }
+
     var ctx = _contexts[contextHandle];
     if (ctx == null) throw Exception("Invalid context handle");
     _generatingContexts.update(

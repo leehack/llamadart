@@ -101,6 +101,26 @@ void main() {
       );
     });
 
+    test('generate rejects speculative decoding', () async {
+      expect(
+        service
+            .generate(
+              -1,
+              'hello',
+              const GenerationParams(speculativeDecoding: true),
+              0,
+            )
+            .drain<void>(),
+        throwsA(
+          isA<UnsupportedError>().having(
+            (error) => error.message.toString(),
+            'message',
+            contains('speculative decoding'),
+          ),
+        ),
+      );
+    });
+
     test('embed and embedBatch throw for unknown context handle', () {
       expect(() => service.embed(-1, 'hello'), throwsA(isA<Exception>()));
       expect(

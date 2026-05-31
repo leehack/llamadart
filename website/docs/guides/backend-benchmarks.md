@@ -49,6 +49,26 @@ Thermal status was 0 before the benchmark and 1 after the run, so the Android
 numbers should be treated as practical app-level numbers rather than a cooled
 lab baseline.
 
+### Speculative decoding check
+
+After `GenerationParams.speculativeDecoding` was exposed for native LiteRT-LM,
+the Gemma 4 E2B `.litertlm` path was rerun with the flag off and on. The flag
+remains off by default because the measured result was slower for this model on
+both devices.
+
+| Device / target | Runtime path | `speculativeDecoding` | Median wall tok/s | Median decode tok/s | Result |
+| --- | --- | ---: | ---: | ---: | --- |
+| Pixel 9 Pro, Android 16 | LiteRT-LM GPU | `false` | 15.50 | 15.70 | baseline |
+| Pixel 9 Pro, Android 16 | LiteRT-LM GPU | `true` | 9.06 | 9.13 | about 42% slower |
+| Mac, Apple M4 Max, macOS 26.5 | LiteRT-LM Metal | `false` | 135.02 | 136.70 | baseline |
+| Mac, Apple M4 Max, macOS 26.5 | LiteRT-LM Metal | `true` | 118.96 | 120.25 | about 12% slower |
+
+The Pixel NPU path was also attempted for `gemma-4-E2B-it.litertlm`, but native
+LiteRT-LM failed engine creation for backend `npu` on this device/model bundle
+and reported that the Android NPU delegate may not support the device, OS,
+model, or bundle. Use GPU or CPU for this artifact unless a newer LiteRT-LM
+bundle/runtime combination validates NPU support.
+
 ## Interpretation
 
 On Pixel 9 Pro, LiteRT-LM GPU was about 9x faster than llama.cpp Vulkan for this
@@ -71,6 +91,10 @@ macOS:
 
 ```bash
 DECODE_TOKENS=256 tool/macos_fair_litert_vs_llamadart.sh
+
+# Native LiteRT-LM speculative decoding off/on check
+SPECULATIVE=false DECODE_TOKENS=256 tool/macos_fair_litert_vs_llamadart.sh
+SPECULATIVE=true  DECODE_TOKENS=256 tool/macos_fair_litert_vs_llamadart.sh
 ```
 
 Web:
@@ -99,6 +123,14 @@ WARMUPS=1 \
 RUNS=3 \
 TARGETS=litert_lm,llamadart \
 tool/litert_lm_pixel_benchmark.sh
+
+# Native LiteRT-LM GPU speculative decoding off/on check
+DEVICE="$DEVICE" ADB="$ADB" TARGETS=litert_lm BACKEND=gpu \
+  SPECULATIVE=false OUTPUT_TOKENS=256 WARMUPS=1 RUNS=3 \
+  tool/litert_lm_pixel_benchmark.sh
+DEVICE="$DEVICE" ADB="$ADB" TARGETS=litert_lm BACKEND=gpu \
+  SPECULATIVE=true OUTPUT_TOKENS=256 WARMUPS=1 RUNS=3 \
+  tool/litert_lm_pixel_benchmark.sh
 ```
 
 For web GGUF experiments, use `TARGETS=llamadart`. If serving local large GGUF

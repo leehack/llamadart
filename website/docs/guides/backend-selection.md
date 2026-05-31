@@ -127,6 +127,7 @@ For `.litertlm` / LiteRT-LM, use:
 - `contextSize`
 - `chatTemplate`
 - `GenerationParams.maxTokens`, `temp`, `topK`, `topP`, and `seed`
+- `GenerationParams.speculativeDecoding` on native LiteRT-LM only
 - `stopSequences`, enforced by `llamadart`
 
 `llamadart` rejects unsupported backend-specific options for `.litertlm` loads
@@ -170,6 +171,10 @@ kernel benchmark.
   generated through the chat app. LiteRT-LM was about 2x faster on the measured
   web decode counter and loaded much faster, while GGUF kept the broader
   llama.cpp feature surface.
+- Treat `GenerationParams.speculativeDecoding` as a per-model/per-device tuning
+  knob, not a guaranteed speedup. For the measured Gemma 4 E2B LiteRT-LM runs,
+  speculative decoding was slower on Pixel 9 Pro GPU and Apple M4 Max Metal, so
+  the `LlamaEngine` default remains off.
 - On Android, benchmark LiteRT-LM `gpu` and `npu` separately when the model and
   device support them. NPU is not a general replacement for GGUF/Vulkan; it is a
   LiteRT-LM deployment path.

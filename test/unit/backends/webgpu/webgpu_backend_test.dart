@@ -785,6 +785,23 @@ void main() {
       expect(lastTokenEventFlushChars, 48);
     });
 
+    test('rejects speculative decoding', () {
+      expect(
+        () => backend.generate(
+          1,
+          'Hello',
+          const GenerationParams(speculativeDecoding: true),
+        ),
+        throwsA(
+          isA<UnsupportedError>().having(
+            (error) => error.message.toString(),
+            'message',
+            contains('speculative decoding'),
+          ),
+        ),
+      );
+    });
+
     test(
       'canceling generation subscription aborts active bridge completion',
       () async {

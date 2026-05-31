@@ -85,6 +85,7 @@ const params = GenerationParams(
   minP: 0.0,
   penalty: 1.1,
   stopSequences: ['</s>'],
+  speculativeDecoding: false,
 );
 ```
 
@@ -94,6 +95,9 @@ Important fields:
 - `temp`: randomness.
 - `topK`, `topP`, `minP`: token filtering controls.
 - `penalty`: repeat penalty.
+- `speculativeDecoding`: opt-in backend-native speculative decoding. Native
+  LiteRT-LM honors this flag; llama.cpp, WebGPU, and LiteRT-LM web reject it
+  until their speculative paths are implemented.
 - `seed`: deterministic replay when set.
 - `grammar`: constrained decoding with GBNF.
 

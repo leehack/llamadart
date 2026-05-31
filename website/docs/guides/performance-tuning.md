@@ -110,6 +110,9 @@ Guidelines:
   `streamBatchTokenThreshold` and `streamBatchByteThreshold`.
 - Lower stream thresholds improve token-by-token UI granularity, while higher
   values improve throughput by reducing isolate message overhead.
+- Use `speculativeDecoding` only for native LiteRT-LM and benchmark your target
+  model/device before enabling it; the default remains off because it is not a
+  universal speedup.
 - `reusePromptPrefix` is enabled by default for native generation; keep it on
   for multi-turn chats and repeated prompts, and validate parity for your
   target model/workload.
@@ -199,6 +202,10 @@ Compare llama.cpp/GGUF and LiteRT-LM with the bundled fair benchmark scripts:
 # macOS native, Gemma 4 E2B artifacts
 DECODE_TOKENS=256 tool/macos_fair_litert_vs_llamadart.sh
 
+# Native LiteRT-LM speculative decoding off/on comparison
+SPECULATIVE=false DECODE_TOKENS=256 tool/macos_fair_litert_vs_llamadart.sh
+SPECULATIVE=true  DECODE_TOKENS=256 tool/macos_fair_litert_vs_llamadart.sh
+
 # Web LiteRT-LM; use TARGETS=llamadart to test GGUF WebGPU separately
 DOWNLOAD_LITERT_WEB_MODEL=1 \
 DECODE_TOKENS=256 \
@@ -214,6 +221,13 @@ DEVICE=<adb-serial>
 "$ADB" -s "$DEVICE" shell input keyevent KEYCODE_WAKEUP
 DEVICE="$DEVICE" ADB="$ADB" OUTPUT_TOKENS=256 WARMUPS=1 RUNS=3 \
   TARGETS=litert_lm,llamadart tool/litert_lm_pixel_benchmark.sh
+
+DEVICE="$DEVICE" ADB="$ADB" TARGETS=litert_lm BACKEND=gpu \
+  SPECULATIVE=false OUTPUT_TOKENS=256 WARMUPS=1 RUNS=3 \
+  tool/litert_lm_pixel_benchmark.sh
+DEVICE="$DEVICE" ADB="$ADB" TARGETS=litert_lm BACKEND=gpu \
+  SPECULATIVE=true OUTPUT_TOKENS=256 WARMUPS=1 RUNS=3 \
+  tool/litert_lm_pixel_benchmark.sh
 ```
 
 Current measured Gemma 4 E2B results are recorded in

@@ -1,5 +1,14 @@
 ## Unreleased
 
+* **LiteRT-LM speculative decoding opt-in**:
+  * Added `GenerationParams.speculativeDecoding` and wired it through the
+    native LiteRT-LM backend to
+    `litert_lm_engine_settings_set_enable_speculative_decoding`. The
+    `LlamaEngine` default remains disabled for stable/parity behavior;
+    llama.cpp, WebGPU, and LiteRT-LM web reject the option until their
+    speculative paths are implemented.
+  * Updated the LiteRT-LM benchmark app so its speculative toggle now affects
+    native LiteRT-LM generation and is recorded in per-run/final metrics.
 * **LiteRT-LM Gemma 4 function calling + thinking fix**:
   * Fixed Gemma 4 `.litertlm` models not calling tools and producing unreliable
     thinking. The backend supplied a hand-written stub chat template that

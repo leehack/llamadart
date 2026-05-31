@@ -834,6 +834,36 @@ void main() {
     }
   });
 
+  test('keeps LiteRT-LM speculative decoding disabled by default', () async {
+    final fakeClient = _FakeLiteRtLmRuntimeClient();
+    final service = LiteRtLmService(clientFactory: () => fakeClient);
+
+    try {
+      final modelHandle = await service.loadModel(
+        modelFile.path,
+        const ModelParams(preferredBackend: GpuBackend.cpu),
+      );
+      final contextHandle = service.createContext(
+        modelHandle,
+        const ModelParams(preferredBackend: GpuBackend.cpu),
+      );
+
+      final subscription = service
+          .generate(
+            contextHandle,
+            'hello',
+            const GenerationParams(maxTokens: 7),
+          )
+          .listen((_) {});
+
+      await fakeClient.generateStarted.future;
+      expect(fakeClient.lastSpeculativeDecoding, isFalse);
+      unawaited(subscription.cancel());
+    } finally {
+      service.dispose();
+    }
+  });
+
   test('passes supported LiteRT-LM generation options to the client', () async {
     final fakeClient = _FakeLiteRtLmRuntimeClient();
     final service = LiteRtLmService(clientFactory: () => fakeClient);
@@ -860,6 +890,7 @@ void main() {
               topP: 0.4,
               seed: 123,
               stopSequences: ['STOP'],
+              speculativeDecoding: true,
             ),
           )
           .listen(chunks.add);
@@ -877,6 +908,7 @@ void main() {
       expect(fakeClient.lastTopK, 5);
       expect(fakeClient.lastTopP, 0.4);
       expect(fakeClient.lastSeed, 123);
+      expect(fakeClient.lastSpeculativeDecoding, isTrue);
       expect(fakeClient.lastNpuBackend, isFalse);
       expect(utf8.decode(chunks.expand((chunk) => chunk).toList()), 'alpha ');
       expect(fakeClient.cancelCount, 1);

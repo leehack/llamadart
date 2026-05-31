@@ -945,6 +945,9 @@ class LiteRtLmBackend
     if (params.grammarRoot != defaults.grammarRoot) {
       unsupported.add('grammarRoot');
     }
+    if (params.speculativeDecoding) {
+      unsupported.add('speculativeDecoding');
+    }
     if (params.streamBatchTokenThreshold !=
         defaults.streamBatchTokenThreshold) {
       unsupported.add('streamBatchTokenThreshold');

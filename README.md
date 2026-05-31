@@ -356,7 +356,9 @@ thread counts, LoRA load configs, and rope overrides are rejected instead of
 being silently ignored. `.litertlm` generation honors `GenerationParams`
 `maxTokens`, `temp`, `topK`, `topP`, and `seed` on native and web, with
 `stopSequences` enforced by llamadart. Native LiteRT-LM also honors stream
-batching thresholds. llama.cpp-only sampling and constrained-decoding controls
+batching thresholds and the opt-in `speculativeDecoding` flag; Web LiteRT-LM
+rejects speculative decoding until the browser runtime exposes an equivalent
+control. llama.cpp-only sampling and constrained-decoding controls
 such as Min-P, repeat penalty overrides, grammar/lazy grammar triggers,
 preserved tokens, custom grammar roots, and web stream batching thresholds are
 rejected until LiteRT-LM exposes equivalent runtime controls.

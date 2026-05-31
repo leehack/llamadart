@@ -34,6 +34,7 @@ class LiteRtLmService {
   String? _modelPath;
   String? _activeBackend;
   int? _activeOutputTokens;
+  bool? _activeSpeculativeDecoding;
   int _nextModelHandle = 1;
   int _nextContextHandle = 1;
   int? _modelHandle;
@@ -77,6 +78,7 @@ class LiteRtLmService {
     _modelParams = params;
     _activeBackend = resolvedBackend;
     _activeOutputTokens = null;
+    _activeSpeculativeDecoding = null;
     _modelHandle = _nextModelHandle++;
     _contextHandle = null;
     _lastMetrics = null;
@@ -95,6 +97,7 @@ class LiteRtLmService {
     _modelParams = null;
     _activeBackend = null;
     _activeOutputTokens = null;
+    _activeSpeculativeDecoding = null;
     _modelHandle = null;
     _contextHandle = null;
     _lastMetrics = null;
@@ -398,6 +401,7 @@ class LiteRtLmService {
     _client?.dispose();
     _client = null;
     _activeOutputTokens = null;
+    _activeSpeculativeDecoding = null;
     _lastMetrics = null;
     _cancelRequested = false;
   }
@@ -405,11 +409,15 @@ class LiteRtLmService {
   Future<LiteRtLmRuntimeClient> _ensureClientForGeneration(
     GenerationParams params,
   ) {
-    return _ensureClientForRuntime(outputTokens: params.maxTokens);
+    return _ensureClientForRuntime(
+      outputTokens: params.maxTokens,
+      speculativeDecoding: params.speculativeDecoding,
+    );
   }
 
   Future<LiteRtLmRuntimeClient> _ensureClientForRuntime({
     int? outputTokens,
+    bool? speculativeDecoding,
   }) async {
     final modelPath = _modelPath;
     final modelParams = _modelParams;
@@ -419,10 +427,14 @@ class LiteRtLmService {
 
     final resolvedOutputTokens =
         outputTokens ?? _activeOutputTokens ?? GenerationParams().maxTokens;
+    final resolvedSpeculativeDecoding =
+        speculativeDecoding ?? _activeSpeculativeDecoding ?? false;
     final backend = _activeBackend ?? _backendNameFor(modelParams);
     final existing = _client;
     if (existing != null &&
         (outputTokens == null || _activeOutputTokens == resolvedOutputTokens) &&
+        (speculativeDecoding == null ||
+            _activeSpeculativeDecoding == resolvedSpeculativeDecoding) &&
         _activeBackend == backend) {
       return existing;
     }
@@ -430,6 +442,7 @@ class LiteRtLmService {
     existing?.dispose();
     _client = null;
     _activeOutputTokens = null;
+    _activeSpeculativeDecoding = null;
     final client = _clientFactory();
     final responseThinkingTags = _responseThinkingTagsForModel(modelPath);
     client.configureResponseThinkingTags(
@@ -443,7 +456,7 @@ class LiteRtLmService {
         maxTokens: modelParams.contextSize,
         outputTokens: resolvedOutputTokens,
         cacheDir: _defaultCacheDir(),
-        speculativeDecoding: false,
+        speculativeDecoding: resolvedSpeculativeDecoding,
         minLogLevel: _liteRtLmMinLogLevel(_logLevel),
       );
     } catch (_) {
@@ -456,6 +469,7 @@ class LiteRtLmService {
     }
     _client = client;
     _activeOutputTokens = resolvedOutputTokens;
+    _activeSpeculativeDecoding = resolvedSpeculativeDecoding;
     _activeBackend = backend;
     return client;
   }
@@ -714,8 +728,8 @@ class LiteRtLmService {
     throw UnsupportedError(
       'LiteRtLmBackend does not support llama.cpp-specific GenerationParams: '
       '${unsupported.join(', ')}. Supported LiteRT-LM generation options are '
-      'maxTokens, temp, topK, topP, seed, stopSequences, and native stream '
-      'batching thresholds.',
+      'maxTokens, temp, topK, topP, seed, stopSequences, '
+      'speculativeDecoding, and native stream batching thresholds.',
     );
   }
 

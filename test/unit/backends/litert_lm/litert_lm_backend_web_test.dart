@@ -262,6 +262,39 @@ void main() {
     }
   });
 
+  test('rejects speculative decoding on LiteRT-LM web', () async {
+    _installFakeEngine(chunks: <JSAny?>[]);
+
+    final backend = LiteRtLmBackend();
+    try {
+      final modelHandle = await backend.modelLoadFromUrl(
+        'https://example.com/model.litertlm',
+        const ModelParams(),
+      );
+      final contextHandle = await backend.contextCreate(
+        modelHandle,
+        const ModelParams(),
+      );
+
+      await expectLater(
+        backend.generate(
+          contextHandle,
+          'hello',
+          const GenerationParams(speculativeDecoding: true),
+        ),
+        emitsError(
+          isA<UnsupportedError>().having(
+            (error) => error.message.toString(),
+            'message',
+            contains('speculativeDecoding'),
+          ),
+        ),
+      );
+    } finally {
+      await backend.dispose();
+    }
+  });
+
   test('rejects unsupported context-time model params', () async {
     _installFakeEngine(chunks: <JSAny?>[]);
 

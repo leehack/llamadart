@@ -236,7 +236,7 @@ class _LiteRtLmBenchmarkAppState extends State<LiteRtLmBenchmarkApp> {
       _append('Initializing LiteRT-LM:');
       _append('  model: $modelPath');
       _append('  backend: $_backend');
-      _append('  speculative: ignored by backend API');
+      _append('  speculative: $_speculative');
       if (_cacheDir.isNotEmpty) {
         await Directory(_cacheDir).create(recursive: true);
         _append('  cache override ignored by backend API: $_cacheDir');
@@ -247,11 +247,8 @@ class _LiteRtLmBenchmarkAppState extends State<LiteRtLmBenchmarkApp> {
         modelPath,
         modelParams: ModelParams(
           contextSize: _maxTokens,
-          preferredBackend: _backend == 'cpu'
-              ? GpuBackend.cpu
-              : Platform.isMacOS
-              ? GpuBackend.metal
-              : GpuBackend.vulkan,
+          preferredBackend: _preferredGpuBackendForLiteRt(_backend),
+          liteRtLmBackend: _liteRtLmBackendPreference(_backend),
         ),
       );
       loadSw.stop();
@@ -263,7 +260,11 @@ class _LiteRtLmBenchmarkAppState extends State<LiteRtLmBenchmarkApp> {
         await engine
             .generate(
               _promptController.text,
-              params: GenerationParams(maxTokens: _outputTokens, seed: 1),
+              params: GenerationParams(
+                maxTokens: _outputTokens,
+                seed: 1,
+                speculativeDecoding: _speculative,
+              ),
             )
             .drain<void>();
       }
@@ -277,7 +278,11 @@ class _LiteRtLmBenchmarkAppState extends State<LiteRtLmBenchmarkApp> {
         final sw = Stopwatch()..start();
         await for (final chunk in engine.generate(
           _promptController.text,
-          params: GenerationParams(maxTokens: _outputTokens, seed: 1),
+          params: GenerationParams(
+            maxTokens: _outputTokens,
+            seed: 1,
+            speculativeDecoding: _speculative,
+          ),
         )) {
           buffer.write(chunk);
         }
@@ -288,6 +293,7 @@ class _LiteRtLmBenchmarkAppState extends State<LiteRtLmBenchmarkApp> {
         final runMetrics = {
           'index': i,
           'wallMilliseconds': wallMs,
+          'speculativeDecoding': _speculative,
           'promptEvalTokens': perf?.promptEvalTokens,
           'evalTokens': perf?.evalTokens,
           'hitEosBeforeTarget': perf == null
@@ -319,6 +325,7 @@ class _LiteRtLmBenchmarkAppState extends State<LiteRtLmBenchmarkApp> {
         'wallMilliseconds': wallMs,
         'backendName': await engine.getBackendName(),
         'targetDecodeTokens': _outputTokens,
+        'speculativeDecoding': _speculative,
         'backendInitMilliseconds': perf?.loadMs,
         'promptEvalTokens': perf?.promptEvalTokens,
         'evalTokens': perf?.evalTokens,
@@ -354,6 +361,23 @@ class _LiteRtLmBenchmarkAppState extends State<LiteRtLmBenchmarkApp> {
     } finally {
       await engine.dispose();
     }
+  }
+
+  GpuBackend _preferredGpuBackendForLiteRt(String backend) {
+    return switch (backend) {
+      'cpu' => GpuBackend.cpu,
+      'gpu' => Platform.isMacOS ? GpuBackend.metal : GpuBackend.vulkan,
+      _ => GpuBackend.auto,
+    };
+  }
+
+  LiteRtLmBackendPreference _liteRtLmBackendPreference(String backend) {
+    return switch (backend) {
+      'cpu' => LiteRtLmBackendPreference.cpu,
+      'gpu' => LiteRtLmBackendPreference.gpu,
+      'npu' => LiteRtLmBackendPreference.npu,
+      _ => LiteRtLmBackendPreference.auto,
+    };
   }
 
   Future<void> _runLlamaDartBenchmark(String modelPath) async {

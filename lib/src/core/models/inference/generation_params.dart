@@ -90,6 +90,13 @@ class GenerationParams {
   /// Grammar start symbol. Defaults to "root".
   final String grammarRoot;
 
+  /// Enables backend-native speculative decoding when supported.
+  ///
+  /// Native LiteRT-LM currently honors this flag by forwarding it to the
+  /// runtime's speculative decoding setting. llama.cpp, WebGPU, and LiteRT-LM
+  /// web reject this option until their speculative paths are implemented.
+  final bool speculativeDecoding;
+
   /// Reuses matching prompt prefixes from previous requests in the same native
   /// context to reduce prompt ingestion latency.
   ///
@@ -125,6 +132,7 @@ class GenerationParams {
     this.grammarTriggers = const [],
     this.preservedTokens = const [],
     this.grammarRoot = 'root',
+    this.speculativeDecoding = false,
     this.reusePromptPrefix = defaultReusePromptPrefix,
     this.streamBatchTokenThreshold = defaultStreamBatchTokenThreshold,
     this.streamBatchByteThreshold = defaultStreamBatchByteThreshold,
@@ -145,6 +153,7 @@ class GenerationParams {
     List<GenerationGrammarTrigger>? grammarTriggers,
     List<String>? preservedTokens,
     String? grammarRoot,
+    bool? speculativeDecoding,
     bool? reusePromptPrefix,
     int? streamBatchTokenThreshold,
     int? streamBatchByteThreshold,
@@ -163,6 +172,7 @@ class GenerationParams {
       grammarTriggers: grammarTriggers ?? this.grammarTriggers,
       preservedTokens: preservedTokens ?? this.preservedTokens,
       grammarRoot: grammarRoot ?? this.grammarRoot,
+      speculativeDecoding: speculativeDecoding ?? this.speculativeDecoding,
       reusePromptPrefix: reusePromptPrefix ?? this.reusePromptPrefix,
       streamBatchTokenThreshold:
           streamBatchTokenThreshold ?? this.streamBatchTokenThreshold,

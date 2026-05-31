@@ -9,6 +9,7 @@ void main() {
       minP: 0.05,
       grammarRoot: 'main',
       grammarLazy: true,
+      speculativeDecoding: true,
       reusePromptPrefix: false,
       streamBatchTokenThreshold: 4,
       streamBatchByteThreshold: 256,
@@ -24,6 +25,7 @@ void main() {
     expect(updated.minP, 0.05);
     expect(updated.grammarRoot, 'main');
     expect(updated.grammarLazy, isTrue);
+    expect(updated.speculativeDecoding, isTrue);
     expect(updated.reusePromptPrefix, isFalse);
     expect(updated.streamBatchTokenThreshold, 4);
     expect(updated.streamBatchByteThreshold, 256);
@@ -35,6 +37,7 @@ void main() {
     const params = GenerationParams();
 
     expect(params.minP, 0.0);
+    expect(params.speculativeDecoding, isFalse);
   });
 
   test('GenerationParams defaults stream batching thresholds', () {

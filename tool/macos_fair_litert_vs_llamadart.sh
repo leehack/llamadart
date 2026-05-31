@@ -12,6 +12,7 @@ if [[ ! -f "$DEFAULT_LLAMADART_MODEL" && -f "$SIBLING_LLAMADART_MODEL" ]]; then
 fi
 LLAMADART_MODEL="${LLAMADART_MODEL:-$DEFAULT_LLAMADART_MODEL}"
 DECODE_TOKENS="${DECODE_TOKENS:-256}"
+SPECULATIVE="${SPECULATIVE:-false}"
 PROMPT="${PROMPT:-Write a detailed practical guide for product engineers who want to use on-device language models in mobile and desktop apps. Cover privacy, latency, offline behavior, personalization, battery tradeoffs, model format choices, benchmarking methodology, rollout strategy, and failure modes. Use clear paragraphs and continue until the answer is complete.}"
 
 APP="$CHAT_APP_DIR/build/macos/Build/Products/Debug/llamadart_chat_example.app"
@@ -48,7 +49,7 @@ echo "== LiteRT-LM Metal =="
     --dart-define="LITERT_LM_MODEL=$MODEL_IN_APP" \
     --dart-define=LLAMADART_MODEL= \
     --dart-define=LITERT_LM_BACKEND=gpu \
-    --dart-define=LITERT_LM_SPECULATIVE=false \
+    --dart-define="LITERT_LM_SPECULATIVE=$SPECULATIVE" \
     --dart-define=LITERT_LM_RUNS=3 \
     --dart-define=LITERT_LM_WARMUPS=1 \
     --dart-define="LITERT_LM_OUTPUT_TOKENS=$DECODE_TOKENS" \
