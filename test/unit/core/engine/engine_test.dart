@@ -1058,6 +1058,62 @@ void main() {
     );
 
     test(
+      'create does not stream raw Hermes XML tool-call prefix as content',
+      () async {
+        final hermesBackend = MockLlamaBackend(
+          modelMetadataResponse: const {
+            'llm.context_length': '4096',
+            'tokenizer.chat_template':
+                '{%- if tools %}<tools>{{ tools[0] | tojson }}</tools>'
+                '<tool_call>{"name": <function-name>, "arguments": <args-json-object>}</tool_call>{% endif %}'
+                '{% for message in messages %}<|im_start|>{{ message["role"] }}\n{{ message["content"] }}<|im_end|>\n{% endfor %}'
+                '{% if add_generation_prompt %}<|im_start|>assistant\n{% endif %}',
+          },
+        );
+        final hermesEngine = LlamaEngine(hermesBackend);
+        hermesBackend.generationChunks = const [
+          '<tool_call>',
+          '{"name":"get_weather","arguments":{"location":"Seoul"}}',
+          '</tool_call>',
+        ];
+        await hermesEngine.loadModel('qwen-test.gguf');
+
+        final chunks = await hermesEngine
+            .create(
+              const [
+                LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
+              ],
+              tools: [
+                ToolDefinition(
+                  name: 'get_weather',
+                  description: 'Get weather',
+                  parameters: [ToolParam.string('location')],
+                  handler: (_) async => 'ok',
+                ),
+              ],
+              toolChoice: ToolChoice.required,
+            )
+            .toList();
+
+        final streamedContent = chunks
+            .map((chunk) => chunk.choices.first.delta.content)
+            .whereType<String>()
+            .join();
+        final toolChunk = chunks.last;
+        final toolCalls = toolChunk.choices.first.delta.toolCalls;
+
+        expect(streamedContent, isEmpty);
+        expect(toolChunk.choices.first.finishReason, equals('tool_calls'));
+        expect(toolCalls, hasLength(1));
+        expect(toolCalls!.first.function?.name, equals('get_weather'));
+        expect(
+          jsonDecode(toolCalls.first.function!.arguments!),
+          equals({'location': 'Seoul'}),
+        );
+      },
+    );
+
+    test(
       'create skips template grammar for backends without grammar constraints',
       () async {
         final noGrammarBackend = NoGrammarMockLlamaBackend(

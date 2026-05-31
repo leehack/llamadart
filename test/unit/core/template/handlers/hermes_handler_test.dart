@@ -122,6 +122,14 @@ void main() {
     expect(parsed.content, isEmpty);
   });
 
+  test('keeps partial XML tool-call envelopes out of content', () {
+    final handler = HermesHandler();
+    final parsed = handler.parse('<tool_call>{"na', isPartial: true);
+
+    expect(parsed.toolCalls, isEmpty);
+    expect(parsed.content, isEmpty);
+  });
+
   test(
     'parses tool call with multiple whitespace chars between tag and JSON',
     () {
