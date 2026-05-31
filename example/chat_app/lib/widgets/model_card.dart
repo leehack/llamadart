@@ -186,7 +186,9 @@ class ModelCard extends StatelessWidget {
                 ),
               ),
               child: Text(
-                'Web warning: very large model. Download can succeed, but browser memory limits may still prevent loading.',
+                isWebLiteRtLmModel
+                    ? 'Web warning: very large LiteRT-LM model. Browser memory limits may still prevent engine initialization.'
+                    : 'Web warning: very large model. Download can succeed, but browser memory limits may still prevent loading.',
                 style: GoogleFonts.outfit(
                   fontSize: 12,
                   height: 1.3,

@@ -816,13 +816,11 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
     }
 
     if (kIsWeb && model.sizeBytes >= _webLargeModelWarningBytes) {
+      final warningMessage = _isLiteRtLmWebModel(model)
+          ? 'Large LiteRT-LM web model selected. Browser memory limits may still block engine initialization.'
+          : 'Large web model selected. Download/cache can complete, but browser memory limits may still block loading.';
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          duration: Duration(seconds: 4),
-          content: Text(
-            'Large web model selected. Download/cache can complete, but browser memory limits may still block loading.',
-          ),
-        ),
+        SnackBar(duration: Duration(seconds: 4), content: Text(warningMessage)),
       );
     }
 
@@ -1027,6 +1025,10 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
     }
     return model.multimodalProjectorSourceFor(web: true)
         is LocalModelAssetSource;
+  }
+
+  bool _isLiteRtLmWebModel(DownloadableModel model) {
+    return model.filenameFor(web: true).toLowerCase().endsWith('.litertlm');
   }
 
   String _resolveAssetLoadReference(ModelAssetSource source) {
