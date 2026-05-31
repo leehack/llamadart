@@ -49,7 +49,7 @@ void main() {
           modelPath: resolvedModelPath,
           preferredBackend: _preferredBackendFromEnvironment(),
           gpuLayers: ModelParams.maxGpuLayers,
-          contextSize: 1024,
+          contextSize: 2048,
           maxTokens: 16,
           nativeLogLevel: LlamaLogLevel.warn,
         ),
@@ -60,12 +60,17 @@ void main() {
 
       final thinkingSession = ChatSession(
         chatService.engine,
-        maxContextTokens: 1024,
+        maxContextTokens: 2048,
       );
       final thinkingChunks = await thinkingSession
           .create(
-            [LlamaTextContent('What is 2+2? Answer only with the number.')],
-            params: const GenerationParams(maxTokens: 16, seed: 1),
+            [
+              LlamaTextContent(
+                'A farmer has 17 sheep. All but 9 run away. Think step by '
+                'step, then state how many sheep remain.',
+              ),
+            ],
+            params: const GenerationParams(maxTokens: 256, temp: 0, seed: 1),
             enableThinking: true,
           )
           .toList();
@@ -77,7 +82,7 @@ void main() {
 
       final toolSession = ChatSession(
         chatService.engine,
-        maxContextTokens: 1024,
+        maxContextTokens: 2048,
         systemPrompt: 'You must call get_weather. Return only a tool call.',
       );
       final toolChunks = await toolSession

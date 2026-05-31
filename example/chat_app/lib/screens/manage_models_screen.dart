@@ -1731,11 +1731,15 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
                     SwitchListTile.adaptive(
                       value: provider.toolsEnabled,
                       title: const Text('Function calling'),
-                      subtitle: const Text(
-                        'Allow the model to emit tool calls.',
+                      subtitle: Text(
+                        provider.templateSupportsTools
+                            ? 'Allow the model to emit tool calls.'
+                            : 'Unavailable for this loaded runtime/template.',
                       ),
                       contentPadding: EdgeInsets.zero,
-                      onChanged: provider.updateToolsEnabled,
+                      onChanged: provider.templateSupportsTools
+                          ? provider.updateToolsEnabled
+                          : null,
                     ),
                     Align(
                       alignment: Alignment.centerLeft,
@@ -1771,11 +1775,15 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
                     SwitchListTile.adaptive(
                       value: provider.thinkingEnabled,
                       title: const Text('Enable thinking output'),
-                      subtitle: const Text(
-                        'Sends thinking-disable hint to template handlers.',
+                      subtitle: Text(
+                        provider.thinkingControlsSupported
+                            ? 'Sends thinking-disable hint to template handlers.'
+                            : 'Unavailable for this loaded runtime.',
                       ),
                       contentPadding: EdgeInsets.zero,
-                      onChanged: provider.updateThinkingEnabled,
+                      onChanged: provider.thinkingControlsSupported
+                          ? provider.updateThinkingEnabled
+                          : null,
                     ),
                     const SizedBox(height: 10),
                     _LabeledSlider(
@@ -1787,8 +1795,11 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
                       max: 4096,
                       divisions: 64,
                       value: provider.thinkingBudgetTokens.toDouble(),
-                      onChanged: (value) =>
-                          provider.updateThinkingBudgetTokens(value.toInt()),
+                      onChanged: provider.thinkingControlsSupported
+                          ? (value) => provider.updateThinkingBudgetTokens(
+                              value.toInt(),
+                            )
+                          : null,
                     ),
                     SwitchListTile.adaptive(
                       value: provider.singleTurnMode,

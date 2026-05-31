@@ -1,0 +1,265 @@
+name: Chat App HF PR Preview
+
+on:
+  pull_request:
+    branches: [master, main]
+    types: [opened, reopened, synchronize, closed]
+    paths:
+      - "example/chat_app/**"
+      - "lib/**"
+      - "pubspec.yaml"
+      - "pubspec.lock"
+      - "scripts/fetch_webgpu_bridge_assets.sh"
+      - ".github/workflows/chat_app_hf_pr_preview.yml"
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: chat-app-hf-pr-preview-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  preview:
+    name: Deploy chat app PR preview
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    if: >-
+      ${{
+        github.event.pull_request.head.repo.full_name == github.repository &&
+        github.event.pull_request.user.login != 'dependabot[bot]'
+      }}
+    env:
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      HF_CHAT_APP_SPACE_REPO: ${{ vars.HF_CHAT_APP_SPACE_REPO }}
+      HF_CHAT_APP_PREVIEW_NAMESPACE: ${{ vars.HF_CHAT_APP_PREVIEW_NAMESPACE }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - name: Resolve Hugging Face preview target
+        id: target
+        run: |
+          if [ -z "$HF_TOKEN" ]; then
+            echo "error: set HF_TOKEN repository secret with write/create access to the preview Space namespace"
+            exit 1
+          fi
+
+          NAMESPACE="$HF_CHAT_APP_PREVIEW_NAMESPACE"
+          if [ -z "$NAMESPACE" ] && [ -n "$HF_CHAT_APP_SPACE_REPO" ]; then
+            NAMESPACE="${HF_CHAT_APP_SPACE_REPO%%/*}"
+          fi
+
+          if [ -z "$NAMESPACE" ]; then
+            echo "error: set HF_CHAT_APP_PREVIEW_NAMESPACE or HF_CHAT_APP_SPACE_REPO"
+            exit 1
+          fi
+
+          SPACE_NAME="llamadart-chat-pr-${PR_NUMBER}"
+          SPACE_REPO="${NAMESPACE}/${SPACE_NAME}"
+          SPACE_URL="https://huggingface.co/spaces/${SPACE_REPO}"
+          APP_HOST="$(printf '%s-%s' "$NAMESPACE" "$SPACE_NAME" | tr '[:upper:]' '[:lower:]')"
+          APP_URL="https://${APP_HOST}.static.hf.space"
+
+          {
+            echo "HF_PREVIEW_NAMESPACE=$NAMESPACE"
+            echo "SPACE_NAME=$SPACE_NAME"
+            echo "SPACE_REPO=$SPACE_REPO"
+            echo "SPACE_URL=$SPACE_URL"
+            echo "APP_URL=$APP_URL"
+          } >> "$GITHUB_ENV"
+
+          {
+            echo "space_repo=$SPACE_REPO"
+            echo "space_url=$SPACE_URL"
+            echo "app_url=$APP_URL"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v6
+        if: ${{ github.event.action != 'closed' }}
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Setup Flutter
+        if: ${{ github.event.action != 'closed' }}
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install chat app dependencies
+        if: ${{ github.event.action != 'closed' }}
+        run: |
+          (cd example/chat_app && flutter pub get)
+
+      - name: Fetch pinned web bridge assets
+        if: ${{ github.event.action != 'closed' }}
+        run: ./scripts/fetch_webgpu_bridge_assets.sh
+
+      - name: Build chat app web
+        if: ${{ github.event.action != 'closed' }}
+        run: |
+          (cd example/chat_app && flutter build web --release)
+
+      - name: Install Hugging Face Hub client
+        run: python3 -m pip install --upgrade huggingface_hub
+
+      - name: Prepare static Space payload
+        if: ${{ github.event.action != 'closed' }}
+        run: |
+          rm -rf hf-space-sync
+          mkdir -p hf-space-sync
+
+          rsync -a --delete \
+            "example/chat_app/build/web/" "hf-space-sync/"
+
+          {
+            printf '%s\n' '---'
+            printf '%s\n' "title: llamadart chat app PR ${PR_NUMBER}"
+            printf '%s\n' 'sdk: static'
+            printf '%s\n' 'app_file: index.html'
+            printf '%s\n' 'custom_headers:'
+            printf '%s\n' '  cross-origin-embedder-policy: require-corp'
+            printf '%s\n' '  cross-origin-opener-policy: same-origin'
+            printf '%s\n' '  cross-origin-resource-policy: cross-origin'
+            printf '%s\n' '---'
+            printf '%s\n' ''
+            printf '%s\n' "llamadart chat app preview for PR ${PR_NUMBER}."
+          } > "hf-space-sync/README.md"
+
+      - name: Create or update preview Space
+        if: ${{ github.event.action != 'closed' }}
+        run: |
+          python3 - <<'PY'
+          import os
+
+          from huggingface_hub import HfApi
+
+          api = HfApi(token=os.environ["HF_TOKEN"])
+          space_repo = os.environ["SPACE_REPO"]
+          pr_number = os.environ["PR_NUMBER"]
+          head_sha = os.environ["PR_HEAD_SHA"]
+
+          api.create_repo(
+              repo_id=space_repo,
+              repo_type="space",
+              space_sdk="static",
+              exist_ok=True,
+              private=False,
+          )
+          api.upload_folder(
+              repo_id=space_repo,
+              repo_type="space",
+              folder_path="hf-space-sync",
+              revision="main",
+              delete_patterns="*",
+              commit_message=f"deploy PR #{pr_number} {head_sha[:7]}",
+          )
+          PY
+
+      - name: Delete preview Space
+        if: ${{ github.event.action == 'closed' }}
+        run: |
+          python3 - <<'PY'
+          import os
+
+          from huggingface_hub import HfApi
+          from huggingface_hub.errors import HfHubHTTPError
+
+          api = HfApi(token=os.environ["HF_TOKEN"])
+          try:
+              api.delete_repo(
+                  repo_id=os.environ["SPACE_REPO"],
+                  repo_type="space",
+              )
+          except HfHubHTTPError as error:
+              if getattr(error.response, "status_code", None) != 404:
+                  raise
+          PY
+
+      - name: Comment preview URL
+        if: ${{ github.event.action != 'closed' }}
+        uses: actions/github-script@v8
+        env:
+          APP_URL: ${{ steps.target.outputs.app_url }}
+          SPACE_URL: ${{ steps.target.outputs.space_url }}
+          SPACE_REPO: ${{ steps.target.outputs.space_repo }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        with:
+          script: |
+            const marker = '<!-- llamadart-chat-app-hf-pr-preview -->';
+            const shortSha = process.env.PR_HEAD_SHA.slice(0, 7);
+            const body = [
+              marker,
+              `Chat app preview deployed for \`${shortSha}\`.`,
+              '',
+              `- App: ${process.env.APP_URL}`,
+              `- Space: ${process.env.SPACE_URL}`,
+              `- Repo: \`${process.env.SPACE_REPO}\``,
+            ].join('\n');
+
+            const {owner, repo} = context.repo;
+            const issue_number = context.issue.number;
+            const comments = await github.paginate(
+              github.rest.issues.listComments,
+              {owner, repo, issue_number, per_page: 100},
+            );
+            const existing = comments.find((comment) =>
+              comment.user?.type === 'Bot' && comment.body?.includes(marker)
+            );
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner,
+                repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number,
+                body,
+              });
+            }
+
+      - name: Comment preview removal
+        if: ${{ github.event.action == 'closed' }}
+        uses: actions/github-script@v8
+        env:
+          SPACE_REPO: ${{ steps.target.outputs.space_repo }}
+        with:
+          script: |
+            const marker = '<!-- llamadart-chat-app-hf-pr-preview -->';
+            const body = [
+              marker,
+              `Chat app preview removed for \`${process.env.SPACE_REPO}\`.`,
+            ].join('\n');
+
+            const {owner, repo} = context.repo;
+            const issue_number = context.issue.number;
+            const comments = await github.paginate(
+              github.rest.issues.listComments,
+              {owner, repo, issue_number, per_page: 100},
+            );
+            const existing = comments.find((comment) =>
+              comment.user?.type === 'Bot' && comment.body?.includes(marker)
+            );
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner,
+                repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number,
+                body,
+              });
+            }

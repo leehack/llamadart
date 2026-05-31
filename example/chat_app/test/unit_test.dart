@@ -63,6 +63,54 @@ void main() {
     });
 
     test(
+      'loadModel disables structured controls for LiteRT-LM web metadata',
+      () async {
+        final initialSettings = const ChatSettings(
+          modelPath: 'https://example.com/gemma-4-web.litertlm',
+          toolsEnabled: true,
+          thinkingEnabled: true,
+        );
+        final settingsService = MockSettingsService()
+          ..settings = initialSettings;
+        final liteRtWebProvider = ChatProvider(
+          chatService: MockChatService(
+            engine: _MetadataEngine(const {
+              'general.architecture': 'litert-lm',
+              'llamadart.litert_lm_web.chat_scope': 'single-turn-text',
+              'llamadart.litert_lm_web.structured_chat': 'false',
+              'tokenizer.chat_template':
+                  '{% for message in messages %}{% if loop.last %}{{ message["content"] }}{% endif %}{% endfor %}',
+            }),
+          ),
+          settingsService: settingsService,
+          initialSettings: initialSettings,
+        );
+        addTearDown(liteRtWebProvider.dispose);
+
+        await liteRtWebProvider.loadModel();
+
+        expect(liteRtWebProvider.templateSupportsTools, isFalse);
+        expect(liteRtWebProvider.thinkingControlsSupported, isFalse);
+        expect(liteRtWebProvider.settings.toolsEnabled, isFalse);
+        expect(liteRtWebProvider.settings.thinkingEnabled, isFalse);
+        expect(
+          liteRtWebProvider.messages.map((message) => message.text),
+          contains(
+            contains(
+              'LiteRT-LM Web currently exposes single-turn text generation only',
+            ),
+          ),
+        );
+
+        liteRtWebProvider.updateToolsEnabled(true);
+        liteRtWebProvider.updateThinkingEnabled(true);
+
+        expect(liteRtWebProvider.settings.toolsEnabled, isFalse);
+        expect(liteRtWebProvider.settings.thinkingEnabled, isFalse);
+      },
+    );
+
+    test(
       'web remote load prefetches model before runtime load and shows download stage',
       () async {
         final webEngine = MockLlamaEngine();
@@ -936,6 +984,15 @@ void main() {
       expect(result, '  hello world  '); // MockChatService doesn't trim
     });
   });
+}
+
+class _MetadataEngine extends MockLlamaEngine {
+  final Map<String, String> metadata;
+
+  _MetadataEngine(this.metadata);
+
+  @override
+  Future<Map<String, String>> getMetadata() async => metadata;
 }
 
 class _JsonResponseEngine extends MockLlamaEngine {

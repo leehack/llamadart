@@ -86,6 +86,7 @@ class ChatProvider extends ChangeNotifier {
   bool _supportsVision = false;
   bool _supportsAudio = false;
   bool _templateSupportsTools = true;
+  bool _thinkingControlsSupported = true;
   ChatFormat? _detectedChatFormat;
   String? _error;
   Timer? _settingsSaveDebounce;
@@ -139,6 +140,7 @@ class ChatProvider extends ChangeNotifier {
   bool get supportsVision => _supportsVision;
   bool get supportsAudio => _supportsAudio;
   bool get templateSupportsTools => _templateSupportsTools;
+  bool get thinkingControlsSupported => _thinkingControlsSupported;
   String? get error => _error;
   double get temperature => _settings.temperature;
   int get topK => _settings.topK;
@@ -366,6 +368,8 @@ class ChatProvider extends ChangeNotifier {
       _supportsVision = false;
       _supportsAudio = false;
       _mmprojLoaded = false;
+      _templateSupportsTools = true;
+      _thinkingControlsSupported = true;
       _runtimeGpuLayers = null;
       _runtimeThreads = null;
       _runtimeThreadPoolSize = null;
@@ -682,6 +686,8 @@ class ChatProvider extends ChangeNotifier {
     _supportsVision = false;
     _supportsAudio = false;
     _mmprojLoaded = false;
+    _templateSupportsTools = true;
+    _thinkingControlsSupported = true;
     _runtimeGpuLayers = null;
     _runtimeThreads = null;
     _runtimeThreadPoolSize = null;
@@ -860,6 +866,7 @@ class ChatProvider extends ChangeNotifier {
       _supportsAudio =
           runtimeSupportsAudio ||
           (!_mmprojLoaded && inferredCapabilities.supportsAudio);
+      _updateThinkingControlSupport(metadata);
       _updateToolTemplateSupport(metadata);
       updateLoadingUi(0.9);
 
@@ -921,6 +928,8 @@ class ChatProvider extends ChangeNotifier {
       _supportsVision = false;
       _supportsAudio = false;
       _mmprojLoaded = false;
+      _templateSupportsTools = true;
+      _thinkingControlsSupported = true;
     } finally {
       _isInitializing = false;
       if (!_isDisposed) {
@@ -1884,6 +1893,13 @@ class ChatProvider extends ChangeNotifier {
   }
 
   void updateToolsEnabled(bool value) {
+    if (value && !_templateSupportsTools) {
+      _addInfoMessage(
+        'Tool calling is unavailable for this loaded runtime/template.',
+      );
+      notifyListeners();
+      return;
+    }
     _updateSettings(_settings.copyWith(toolsEnabled: value));
   }
 
@@ -1915,6 +1931,13 @@ class ChatProvider extends ChangeNotifier {
   }
 
   void updateThinkingEnabled(bool value) {
+    if (value && !_thinkingControlsSupported) {
+      _addInfoMessage(
+        'Thinking controls are unavailable for this loaded runtime.',
+      );
+      notifyListeners();
+      return;
+    }
     _updateSettings(_settings.copyWith(thinkingEnabled: value));
   }
 
@@ -1946,6 +1969,8 @@ class ChatProvider extends ChangeNotifier {
     _supportsVision = false;
     _supportsAudio = false;
     _mmprojLoaded = false;
+    _templateSupportsTools = true;
+    _thinkingControlsSupported = true;
     _runtimeGpuLayers = null;
     _runtimeThreads = null;
     _runtimeThreadPoolSize = null;
@@ -2017,7 +2042,43 @@ class ChatProvider extends ChangeNotifier {
     }
   }
 
+  bool _isSingleTurnTextOnlyRuntime(Map<String, String> metadata) {
+    final structuredChat = metadata['llamadart.litert_lm_web.structured_chat']
+        ?.trim()
+        .toLowerCase();
+    final chatScope = metadata['llamadart.litert_lm_web.chat_scope']
+        ?.trim()
+        .toLowerCase();
+    return structuredChat == 'false' || chatScope == 'single-turn-text';
+  }
+
+  void _updateThinkingControlSupport(Map<String, String> metadata) {
+    _thinkingControlsSupported = !_isSingleTurnTextOnlyRuntime(metadata);
+    if (_thinkingControlsSupported || !_settings.thinkingEnabled) {
+      return;
+    }
+
+    _settings = _settings.copyWith(thinkingEnabled: false);
+    unawaited(_saveSettingsNow());
+    _addInfoMessage(
+      'Thinking controls disabled for this runtime: LiteRT-LM Web currently exposes single-turn text generation only.',
+    );
+  }
+
   void _updateToolTemplateSupport(Map<String, String> metadata) {
+    if (_isSingleTurnTextOnlyRuntime(metadata)) {
+      _detectedChatFormat = ChatFormat.contentOnly;
+      _templateSupportsTools = false;
+      if (_settings.toolsEnabled) {
+        _settings = _settings.copyWith(toolsEnabled: false);
+        unawaited(_saveSettingsNow());
+      }
+      _addInfoMessage(
+        'Tool calling disabled for this runtime: LiteRT-LM Web currently exposes single-turn text generation only. Use GGUF/WebGPU or a native LiteRT-LM target for structured tool calls.',
+      );
+      return;
+    }
+
     final toolTemplate = metadata['tokenizer.chat_template.tool_use'];
     final defaultTemplate = metadata['tokenizer.chat_template'];
 
