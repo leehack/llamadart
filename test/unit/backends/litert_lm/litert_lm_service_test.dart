@@ -917,6 +917,67 @@ void main() {
     }
   });
 
+  test(
+    'recreates LiteRT-LM client when speculative decoding changes',
+    () async {
+      final firstClient = _FakeLiteRtLmRuntimeClient();
+      final secondClient = _FakeLiteRtLmRuntimeClient();
+      final clients = <_FakeLiteRtLmRuntimeClient>[firstClient, secondClient];
+      var nextClient = 0;
+      final service = LiteRtLmService(
+        clientFactory: () => clients[nextClient++],
+      );
+
+      try {
+        final modelHandle = await service.loadModel(
+          modelFile.path,
+          const ModelParams(
+            contextSize: 3072,
+            preferredBackend: GpuBackend.cpu,
+          ),
+        );
+        final contextHandle = service.createContext(
+          modelHandle,
+          const ModelParams(
+            contextSize: 3072,
+            preferredBackend: GpuBackend.cpu,
+          ),
+        );
+
+        final firstChunks = service
+            .generate(
+              contextHandle,
+              'hello',
+              const GenerationParams(maxTokens: 7, speculativeDecoding: true),
+            )
+            .toList();
+        await firstClient.generateStarted.future;
+        firstClient.generated.add('first');
+        await firstClient.generated.close();
+        await firstChunks;
+
+        final secondChunks = service
+            .generate(
+              contextHandle,
+              'hello',
+              const GenerationParams(maxTokens: 7),
+            )
+            .toList();
+        await secondClient.generateStarted.future;
+        secondClient.generated.add('second');
+        await secondClient.generated.close();
+        await secondChunks;
+
+        expect(firstClient.lastSpeculativeDecoding, isTrue);
+        expect(firstClient.disposeCount, 1);
+        expect(secondClient.lastSpeculativeDecoding, isFalse);
+        expect(nextClient, 2);
+      } finally {
+        service.dispose();
+      }
+    },
+  );
+
   test('buffers stop-sequence tails when no stop is found', () async {
     final fakeClient = _FakeLiteRtLmRuntimeClient();
     final service = LiteRtLmService(clientFactory: () => fakeClient);
