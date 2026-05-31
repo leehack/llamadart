@@ -30,6 +30,8 @@
     if the LiteRT-LM runtime still emits a thought channel. Structured tool-call
     streams also no longer leak raw Hermes/Qwen JSON or Gemma `<|tool_call>`
     markers as assistant content before the final `tool_calls` chunk.
+  * Added `tool/gguf_chat_features_smoke.dart` so the same streaming/parser
+    invariants can be smoke-tested against real Qwen and Gemma GGUF artifacts.
 * **Web LiteRT-LM (`.litertlm`) chat-app fixes**:
   * Fixed a spurious tokenization error bubble shown after every reply on web
     (`Tokenization is not supported by the active backend`). The chat app

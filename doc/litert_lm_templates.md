@@ -1,8 +1,8 @@
 # LiteRT-LM chat templates
 
 This document explains how llamadart picks a chat template for `.litertlm`
-model bundles, the families that are supported out of the box, and how to add a
-new one.
+model bundles, which template families are seeded out of the box, how to
+validate those families against real models, and how to add a new one.
 
 ## Why a built-in registry is needed
 
@@ -34,7 +34,12 @@ If neither applies, no chat template is exposed and the engine falls back to its
 generic ChatML handling — usable for plain text, but not the model's native
 format.
 
-## Supported families
+## Template coverage
+
+The table below is **template registry coverage** for `.litertlm` bundles. It
+does not mean every quantization, runtime delegate, device, or browser path has
+been exhaustively validated. GGUF models do not need this registry because
+llama.cpp reads `tokenizer.chat_template` straight from the GGUF metadata.
 
 | Family | Detected as | Filename match | Chat | Tools | Thinking |
 | --- | --- | --- | --- | --- | --- |
@@ -55,6 +60,43 @@ renamed or its family isn't listed above, pass the template explicitly via
 
 The registry is ordered most-specific-first, so `gemma-4` and `gemma-3n` are
 matched before `gemma-3`, and `qwen3` before the generic `qwen` rule.
+
+## Real-model smoke coverage
+
+Use the smoke tools below when a change touches shared chat rendering,
+streaming, thinking, tool-call parsing, or `LlamaEngine.create()`. They require
+local model files and are intentionally outside default CI.
+
+For GGUF / llama.cpp, `tool/gguf_chat_features_smoke.dart` loads a local GGUF
+through `LlamaEngine(LlamaBackend())`, verifies that `enableThinking: false`
+does not leak reasoning markers, and verifies that a required `get_weather`
+tool call is emitted as a final `tool_calls` chunk with no raw tool-call marker
+or content leak:
+
+```bash
+dart run tool/gguf_chat_features_smoke.dart \
+  models/Qwen3.5-0.8B-Q4_K_M.gguf auto
+
+dart run tool/gguf_chat_features_smoke.dart \
+  models/gemma-4-E2B-it-Q4_K_S.gguf auto
+```
+
+For native LiteRT-LM, `tool/litert_lm_chat_features_smoke.dart` checks the same
+tool-call path and also requires the model to emit a thinking channel. Use it
+with models that support thinking, such as Qwen 3/3.5 and Gemma 4:
+
+```bash
+dart run tool/litert_lm_chat_features_smoke.dart \
+  /path/to/Qwen3-0.6B.litertlm gpu
+
+dart run tool/litert_lm_chat_features_smoke.dart \
+  /path/to/gemma-4-E2B-it.litertlm gpu
+```
+
+The smoke scripts are not a universal model certification suite. Passing them
+means the representative Qwen/Gemma chat-template family can load on the chosen
+backend and that the high-risk streaming parser invariants hold for the tested
+artifact.
 
 ## Adding a model family
 
