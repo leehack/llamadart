@@ -28,8 +28,11 @@ A page is ready for WebGPU model loading only when all of these checks pass:
 
 1. **Secure browser context**: serve from `https://`, `http://localhost`, or
    `http://127.0.0.1`. WebGPU is not available to arbitrary insecure origins.
-2. **Bridge runtime loaded**: `window.LlamaWebGpuBridge` exists and
-   `window.__llamadartBridgeLoadError` is empty.
+2. **Bridge runtime loaded**: `window.__llamadartBridgeReady === true`,
+   `window.LlamaWebGpuBridge` exists, and
+   `window.__llamadartBridgeLoadError` is empty. Custom app code that starts
+   before bridge bootstrap finishes can await
+   `window.__llamadartBridgeReadyPromise`.
 3. **WebGPU is exposed**: `navigator.gpu` exists and `requestAdapter()` returns
    an adapter. If this fails, use CPU fallback or another browser/device.
 4. **Large-model threading is available**: for large single-file GGUF loads,
@@ -52,6 +55,7 @@ console.table({
   hasAdapter: !!adapter,
   adapterFeatures: adapter ? [...adapter.features].join(', ') : '',
   bridgeLoaded: typeof window.LlamaWebGpuBridge === 'function',
+  bridgeReady: window.__llamadartBridgeReady,
   bridgeLoadError: window.__llamadartBridgeLoadError || '',
   bridgeAssetSource: window.__llamadartBridgeAssetSource || '',
   bridgeModuleUrl: window.__llamadartBridgeModuleUrl || '',
@@ -154,12 +158,21 @@ WEBGPU_BRIDGE_ASSETS_TAG=v0.1.16 ./scripts/fetch_webgpu_bridge_assets.sh
 To verify the loaded runtime in a browser console, inspect:
 
 ```js
+await window.__llamadartBridgeReadyPromise;
+
+window.__llamadartBridgeReady;       // true after bridge bootstrap succeeds
+window.__llamadartBridgeLoadError;   // string/null bootstrap failure detail
 window.__llamadartBridgeAssetSource;   // "cdn", "local", or "mock"
 window.__llamadartBridgeModuleUrl;     // actual bridge module URL
 window.__llamadartBridgeCoreModuleUrl; // wasm32 JS core module URL
 window.__llamadartBridgeCoreModuleUrlMem64; // optional wasm64 JS core module URL
 window.__llamadartBridgeWorkerUrl;     // dedicated worker module, if available
 ```
+
+The readiness promise rejects if both CDN and local bridge loading fail, and the
+example bootstrap also rejects it after a bounded timeout. The chat app awaits
+this signal before browser Cache Storage prefetch, so an early **Download** tap
+cannot report success before the bridge exposes `prefetchModelToCache(...)`.
 
 ## Compatibility and safeguards
 

@@ -117,6 +117,21 @@ You can override CDN source/version before the bridge loader runs:
 </script>
 ```
 
+## Bridge Readiness Signal
+
+`example/chat_app/web/index.html` exposes deterministic readiness globals while
+bootstrapping the CDN/local bridge assets:
+
+- `window.__llamadartBridgeReadyPromise` resolves after the bridge runtime is
+  loaded and rejects if bootstrap fails or times out.
+- `window.__llamadartBridgeReady` is `true` only after successful bootstrap.
+- `window.__llamadartBridgeLoadError` contains the failure detail when bootstrap
+  fails.
+
+Custom browser integrations that call bridge methods directly, especially
+`prefetchModelToCache(...)`, should await the readiness promise before checking
+`window.LlamaWebGpuBridge`.
+
 ## Expected Global
 
 ```js

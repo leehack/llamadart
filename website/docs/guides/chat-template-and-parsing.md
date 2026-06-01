@@ -72,6 +72,18 @@ Gemma 4 thought-channel output is parsed incrementally during streaming, so
 `chunk.choices.first.delta.thinking` carries reasoning text while
 `chunk.choices.first.delta.content` remains reserved for final answer content.
 
+### LiteRT-LM template registry
+
+GGUF models expose `tokenizer.chat_template` metadata directly through the
+llama.cpp backend. Native `.litertlm` bundles do not currently expose their
+embedded template through the LiteRT-LM FFI, so `llamadart` uses a
+filename-keyed registry for supported Gemma and Qwen LiteRT-LM families.
+
+Use `ModelParams.chatTemplate` when loading a `.litertlm` bundle whose family is
+not in the registry or whose filename has been changed. The maintained registry
+coverage, smoke commands, and contribution notes live in
+[`doc/litert_lm_templates.md`](https://github.com/leehack/llamadart/blob/main/doc/litert_lm_templates.md).
+
 ## Custom template overrides
 
 For application code, the supported customization path is `customTemplate` on
