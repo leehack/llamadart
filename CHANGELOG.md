@@ -1,203 +1,93 @@
-## Unreleased
-
-* **LiteRT-LM speculative decoding opt-in**:
-  * Added `GenerationParams.speculativeDecoding` and wired it through the
-    native LiteRT-LM backend to
-    `litert_lm_engine_settings_set_enable_speculative_decoding`. The
-    `LlamaEngine` default remains disabled for stable/parity behavior;
-    llama.cpp, WebGPU, and LiteRT-LM web reject the option until their
-    speculative paths are implemented.
-  * Updated the LiteRT-LM benchmark app so its speculative toggle now affects
-    native LiteRT-LM generation and is recorded in per-run/final metrics.
-* **LiteRT-LM Gemma 4 function calling + thinking fix**:
-  * Fixed Gemma 4 `.litertlm` models not calling tools and producing unreliable
-    thinking. The backend supplied a hand-written stub chat template that
-    omitted the tool-declaration block entirely and inverted the thinking
-    control structure; it is replaced with the full canonical Gemma 4 template
-    (the one llama.cpp reads from the GGUF), minus the leading `bos_token` since
-    the native runtime adds the start token itself.
-  * Fixed Gemma 4 thinking never surfacing (and raw JSON leaking into the reply)
-    on native LiteRT-LM. The runtime streams reasoning on a separate channel
-    (`{"role":"assistant","channels":{"thought":"..."}}`) and the answer as
-    `content`; the response parser only understood `content`, so thought chunks
-    leaked verbatim. Thought runs are now reassembled into the
-    `<|channel>thought ... <channel|>` markers the handler parses as reasoning.
-    Verified on-device with `gemma-4-E2B-it.litertlm` (function calling +
-    thinking) via `tool/litert_lm_chat_features_smoke.dart`.
-  * Introduced a filename-keyed chat-template registry for `.litertlm` bundles
-    (they can't expose their template through the native FFI), seeded with
-    Gemma 4/3/3n and Qwen 2.5/3. Gemma 3/3n previously fell back to ChatML (the
-    wrong format); they now render the correct `<start_of_turn>` format with
-    system folded into the first user turn. Pass `ModelParams.chatTemplate` to
-    override detection for other models. See `doc/litert_lm_templates.md`.
-  * Fixed tool calling throwing on LiteRT-LM for grammar-using handlers (e.g.
-    Qwen/Hermes): `NativeAutoBackend` now forwards `supportsGrammarConstraints`
-    from the active delegate, so the engine skips the template grammar that
-    LiteRT-LM rejects instead of erroring. Verified on-device with
-    `Qwen3-0.6B.litertlm` (thinking + `get_weather` tool call).
-  * Suppressed reasoning deltas when callers pass `enableThinking: false`, even
-    if the LiteRT-LM runtime still emits a thought channel. Structured tool-call
-    streams also no longer leak raw Hermes/Qwen JSON or Gemma `<|tool_call>`
-    markers as assistant content before the final `tool_calls` chunk.
-  * Added `tool/gguf_chat_features_smoke.dart` so the same streaming/parser
-    invariants can be smoke-tested against real Qwen and Gemma GGUF artifacts.
-* **Web LiteRT-LM (`.litertlm`) chat-app fixes**:
-  * Fixed a spurious tokenization error bubble shown after every reply on web
-    (`Tokenization is not supported by the active backend`). The chat app
-    called `getTokenCount` (write-only, unused) after each turn, which throws on
-    the web LiteRT-LM backend (no tokenizer API); the unsupported case is now
-    swallowed so the turn completes normally.
-  * Halved web `.litertlm` load time by skipping the WebGPU `CacheStorage`
-    prefetch for LiteRT-LM models. That cache is only readable by the
-    llama.cpp/GGUF bridge, while the `@litert-lm/core` engine fetches the URL
-    itself — so prefetching downloaded the whole model an extra time before the
-    engine re-downloaded it. The engine now fetches once.
-  * Replaced the misleading stuck "Loading model 0%" label during web
-    LiteRT-LM loads (the backend only reports 0%/100%) with an honest
-    indeterminate "Downloading and initializing model" message.
-* **Fixed iOS LiteRT-LM model loading**:
-  * `.litertlm` models failed to load on iOS device and simulator with
-    `Failed to load dynamic library 'package:llamadart/litert_lm_LiteRtLm'`.
-    The loader passed the `package:llamadart/...` native-asset id straight to
-    `DynamicLibrary.open`, which does not resolve native-asset ids (only
-    `@Native` externals do), so it reached `dlopen` verbatim and never loaded;
-    the bare `libLiteRtLm.dylib` fallback is not on any iOS search path either.
-  * iOS now loads the embedded `LiteRtLm`/`StreamProxy` frameworks by their
-    absolute bundle path (`<App>.app/Frameworks/<Name>.framework/<Name>`,
-    resolved from the executable), matching the macOS approach. This also lets
-    the StreamProxy `RTLD_GLOBAL` preload and the isolate re-open receive a real
-    path, so streaming generation works on iOS instead of silently falling back.
-  * `_openFirstAvailable*` now report every candidate's error, so future load
-    failures name the actual reason rather than only the last fallback.
-* **Minor correctness cleanups**:
-  * `ChatSession` no longer throws on an empty-choices completion chunk
-    (e.g. a keep-alive); such chunks are forwarded as-is.
-  * Thinking extraction now strips multiple `<think>` blocks instead of leaking
-    the second and later blocks into user-visible content.
-  * `LlamaEngine.generate` wraps unexpected backend errors in
-    `LlamaInferenceException` so callers catching `LlamaException` see the
-    documented error type.
-  * Fallback tool-call ids are derived from the tool call's logical index
-    rather than its list position.
-  * Loose tool-call parsing tolerates a language token without a trailing
-    delimiter in code fences, and keeps commas inside quoted argument values.
-  * Array grammar generation validates `minItems`/`maxItems` bounds and bounds
-    download restart recursion.
-* **Web large-model (mem64) support**:
-  * Added `ModelParams.preferMemory64` and `ModelParams.modelBytesHint`
-    (web/WebGPU only; ignored on native) so large GGUF models such as Gemma 4
-    E2B can load into the 64-bit (mem64) bridge core instead of failing on the
-    32-bit wasm core's ~4 GiB address-space limit.
-    Selection is size-driven: the WebGPU backend picks the mem64 core up front
-    when the model is explicitly flagged or when `modelBytesHint` is at/above the
-    wasm32-safe ceiling (no hardcoded model-name list), and forwards
-    `modelBytesHint` to the bridge load call. The chat app forwards each model's
-    catalog size so large models (for example Gemma 4 E2B) select mem64 on web.
-  * Added a `chat-app-web-gemma4-webgpu-smoke` local E2E scenario that runs
-    Gemma 4 E2B (text-only) through the WebGPU/llama.cpp path with the mem64
-    core.
-* **Web LiteRT-LM (`.litertlm`) chat-app generation fix**:
-  * Fixed every reply failing when the Repeat Penalty or Min-P slider was moved
-    while a `.litertlm` model was loaded. The chat app forwarded `minP`/`penalty`
-    to the LiteRT-LM web backend, which rejects any non-default llama.cpp-specific
-    `GenerationParams` with an `UnsupportedError`. The chat app now leaves
-    `minP`/`penalty` at their defaults for `.litertlm` models (the backend
-    supports only `maxTokens`, `temp`, `topK`, `topP`, `seed`, `stopSequences`);
-    other backends are unchanged.
-* **Web model download fixes (chat app example)**:
-  * Fixed broken web downloads where the app silently reported success without
-    caching any bytes when the WebGPU bridge runtime had not finished loading.
-    The app now awaits a deterministic bridge-readiness signal, performs a real
-    CacheStorage prefetch, and surfaces an actionable error instead of faking
-    success (an old bridge missing `prefetchModelToCache` now fails loudly too).
-  * `web/index.html` publishes `window.__llamadartBridgeReadyPromise` /
-    `__llamadartBridgeReady`, resolved when the bridge loads and rejected on
-    failure (with a 30s safety timeout).
-  * Allowed benign Hugging Face `?download=true` URLs to be prefetched into the
-    browser cache while still skipping genuinely credentialed/signed URLs.
-* **Memory-safety and correctness fixes**:
-  * Freed the multimodal prompt buffer and input-text struct on tokenize/eval
-    error paths instead of leaking them on every failed multimodal prompt.
-  * Fixed `ChatSession` history truncation to trim only on user-message turn
-    boundaries (so a user prompt is never split from its reply), and to warn
-    when even the most recent turn exceeds the context budget instead of
-    silently sending an over-limit prompt.
-  * JSON-schema-to-GBNF conversion now resolves `$ref`s nested inside other
-    `$ref` targets, and fails loudly on unresolvable/external `$ref`s rather
-    than emitting invalid grammar that the sampler rejects.
-  * Serialized multimodal projector load/unload so concurrent calls cannot
-    leak or double-free the native multimodal context.
-  * Added connection and idle-read timeouts to model downloads so a stalled
-    server surfaces a retryable error instead of hanging indefinitely.
-  * Restricted partial-download resume to cases with a stored validator
-    (ETag/Last-Modified) and cleared stale resume metadata on checksum
-    mismatch, avoiding wasted full re-downloads onto stale bytes.
-  * Closed a leaked handshake reply port in the native backend.
-* **Cancellation / disposal lifecycle fixes** (native & LiteRT-LM):
-  * Fixed a cross-isolate use-after-free where the llama.cpp generation cancel
-    token was freed in `onCancel` while the worker isolate could still poll it.
-    The token is now freed only after the worker's terminal response, or after
-    the worker is killed during `dispose`.
-  * The llama.cpp worker now waits for an in-flight generation to emit its
-    terminal response before disposing native resources and exiting, so
-    cancelling/disposing mid-generation no longer abandons the consumer stream.
-  * The LiteRT-LM worker no longer deletes the engine/conversation while a
-    native call may still be running (it skips the native dispose when the
-    in-flight request has not settled), avoiding a use-after-free on teardown.
-  * The LiteRT-LM streaming path no longer leaks the `NativeCallable`, stream
-    proxy, and message buffer when a generation is cancelled, and guards stream
-    writes against a closed controller.
-  * The LiteRT-LM backend no longer sends a generation request to a closed
-    response port when cancellation races isolate startup.
-
 ## 0.7.0
 
-* **Native runtime configuration**:
+* **LiteRT-LM backend and runtime selection**:
+  * Added first-class `.litertlm` routing through `LlamaBackend()` on native and
+    web targets, with native bundle downloads from `leehack/litert-lm-native`
+    and web loading through `@litert-lm/core`.
+  * Added `ModelParams.liteRtLmBackend` so callers can select LiteRT-LM CPU,
+    GPU, or Android NPU execution where supported. `auto` chooses GPU on
+    Android/macOS and CPU elsewhere on native targets.
+  * Added cached Hugging Face `.litertlm` loading through
+    `loadModelSource(...)`, preserving the selected LiteRT-LM backend after the
+    cache manager resolves the local file.
+  * Added native LiteRT-LM tokenization, detokenization, log-level control,
+    runtime metrics, and high-level `ChatSession` token counting support.
   * Added `hooks.user_defines.llamadart.llamadart_native_tag`,
     `llamadart_native_repository`, and `llamadart_native_path` so apps can test
     a different compatible native runtime source without patching `llamadart`.
   * Updated the Windows runtime fallback scanner to discover custom GitHub and
     local archive cache namespaces when `.dart_tool/lib` is unavailable.
-* **LiteRT-LM model support**:
-  * Added `.litertlm` routing through `LlamaBackend()` on native and web targets,
-    including native bundle downloads from `leehack/litert-lm-native` and web
-    loading through `@litert-lm/core`.
-  * Added `ModelParams.liteRtLmBackend` so callers can select LiteRT-LM CPU,
-    GPU, or Android NPU execution where supported; `auto` chooses GPU on
-    Android/macOS and CPU elsewhere on native targets.
-  * Added cached Hugging Face `.litertlm` loading through
-    `loadModelSource(...)`, preserving the selected LiteRT-LM backend after the
-    download/cache manager resolves the local file.
-  * Added native LiteRT-LM tokenization, detokenization, log-level control,
-    runtime metrics, and high-level `ChatSession` token counting support.
-  * Kept high-level native thinking and tool-call parsing active for compatible
-    templates while documenting LiteRT-LM web as single-turn text generation
-    until structured chat/tool forwarding is exposed by `@litert-lm/core`.
-* **Validation and capability reporting**:
-  * Reject unsupported llama.cpp-only `ModelParams` and `GenerationParams` for
-    `.litertlm` loads/generation instead of silently ignoring them.
-  * Report LiteRT-LM embeddings, state persistence, LoRA, grammar constraints,
-    multimodal, and web tokenizer limitations explicitly through capability
-    probes and unsupported-operation errors.
-  * Validate platform-specific LiteRT-LM companion libraries during native-asset
-    setup so incomplete runtime bundles fail at build time rather than model
-    load.
-* **Lifecycle and diagnostics**:
-  * Hardened LiteRT-LM worker startup, cancellation, reload, context teardown,
-    runtime-client cleanup, stale-handle invalidation, and concurrent generation
-    handling.
-  * Improved direct `LiteRtLmBackend` diagnostics before model load, including
-    selected CPU/GPU/NPU backend reporting and platform availability errors.
-  * Fixed macOS LiteRT-LM cache/framework discovery for arm64 and x64 layouts
-    and iOS loading of bundled `LiteRtLm` / `StreamProxy` native asset
-    identifiers.
-* **Benchmarks and docs**:
+* **LiteRT-LM chat, templates, and generation quality**:
+  * Added `GenerationParams.speculativeDecoding` for native LiteRT-LM. The
+    default remains disabled; llama.cpp, WebGPU, and LiteRT-LM web reject the
+    option until their speculative paths are implemented.
+  * Fixed Gemma 4 `.litertlm` thinking and tool calling by replacing the stub
+    template with the canonical Gemma 4 chat template, parsing the runtime
+    thought channel as reasoning, and suppressing reasoning deltas when callers
+    set `enableThinking: false`.
+  * Added a filename-keyed `.litertlm` chat-template registry seeded with
+    Gemma 4/3/3n and Qwen 2.5/3. Pass `ModelParams.chatTemplate` to override
+    detection for other models.
+  * Fixed LiteRT-LM tool calling for grammar-using handlers by forwarding
+    `supportsGrammarConstraints` from the active `NativeAutoBackend` delegate.
+  * Stopped structured tool-call streams from leaking raw Hermes/Qwen JSON or
+    Gemma `<|tool_call>` markers as assistant content before the final
+    `tool_calls` chunk.
+* **Web and chat-app support**:
+  * Added `ModelParams.preferMemory64` and `ModelParams.modelBytesHint` so
+    large WebGPU GGUF models such as Gemma 4 E2B can choose the 64-bit bridge
+    core before hitting the wasm32 address-space limit.
+  * Fixed web `.litertlm` chat-app turns by swallowing unsupported token-count
+    refreshes, avoiding unsupported `minP`/`penalty` parameters for LiteRT-LM
+    web generation, and replacing the stuck "Loading model 0%" label with an
+    indeterminate load message.
+  * Halved web `.litertlm` load time by skipping WebGPU `CacheStorage` prefetch
+    for LiteRT-LM models, which are fetched directly by `@litert-lm/core`.
+  * Fixed web GGUF downloads reporting success before the bridge was ready by
+    awaiting `window.__llamadartBridgeReadyPromise`, requiring the bridge
+    prefetch API, and surfacing actionable errors for old bridge assets.
+  * Allowed benign Hugging Face `?download=true` URLs to be prefetched into the
+    browser cache while still skipping credentialed or signed URLs.
+* **Lifecycle, cancellation, and native stability**:
+  * Fixed iOS `.litertlm` loading by resolving embedded `LiteRtLm` and
+    `StreamProxy` frameworks from the app bundle, matching the macOS runtime
+    path behavior.
+  * Improved LiteRT-LM diagnostics before model load, including selected
+    CPU/GPU/NPU backend reporting, platform availability errors, and complete
+    dynamic-library candidate failures.
+  * Validated platform-specific LiteRT-LM companion libraries during
+    native-asset setup so incomplete runtime bundles fail at build time.
+  * Hardened native and LiteRT-LM cancellation/disposal so in-flight generation
+    no longer races token release, worker teardown, engine deletion, closed
+    response ports, or stream writes after cancellation.
+  * Freed multimodal prompt buffers on tokenize/eval error paths, serialized
+    multimodal projector load/unload, and closed a leaked native-backend
+    handshake reply port.
+* **Correctness and download resilience**:
+  * `ChatSession` now forwards empty-choices completion chunks instead of
+    throwing, strips multiple `<think>` blocks, and trims history only on
+    user-message turn boundaries.
+  * `LlamaEngine.generate` wraps unexpected backend errors in
+    `LlamaInferenceException` so callers catching `LlamaException` see the
+    documented error type.
+  * Tool-call parsing now uses stable fallback ids, tolerates code-fence
+    language tokens without trailing delimiters, and keeps commas inside quoted
+    argument values.
+  * JSON-schema-to-GBNF conversion now resolves `$ref`s nested inside other
+    `$ref` targets and fails loudly on unresolvable or external `$ref`s.
+  * Array grammar generation validates `minItems`/`maxItems`, model downloads
+    use connection and idle-read timeouts, and partial-download resume is
+    restricted to files with stored validators.
+* **Benchmarks, docs, and validation**:
   * Added fair Gemma 4 LiteRT-LM versus llama.cpp/GGUF benchmark tooling for
-    Android, macOS, and web, including Pixel benchmark failure detection and
-    target-specific timeouts.
-  * Updated README and website docs for backend selection, platform/runtime
-    support, package-size controls, benchmark results, and current LiteRT-LM
-    capability limits.
+    Android, macOS, and web, with speculative-decoding metrics, Pixel benchmark
+    failure detection, and target-specific timeouts.
+  * Added `tool/gguf_chat_features_smoke.dart` and the
+    `chat-app-web-gemma4-webgpu-smoke` E2E scenario for real-model parser and
+    WebGPU mem64 validation.
+  * Updated README, website docs, and `doc/litert_lm_templates.md` for backend
+    selection, platform/runtime support, package-size controls, benchmark
+    results, model templates, and current LiteRT-LM capability limits.
 * **Compatibility note**: no public API breaking changes for existing GGUF /
   llama.cpp callers. LiteRT-LM support is additive, with deprecated benchmark
   wrappers retained for compatibility; unsupported llama.cpp-only parameters are

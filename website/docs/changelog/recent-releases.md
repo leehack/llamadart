@@ -15,16 +15,28 @@ For canonical full release notes, use:
 - Added `ModelParams.liteRtLmBackend` so callers can select LiteRT-LM CPU, GPU,
   or Android NPU execution where the pinned runtime supports it.
 - Added native LiteRT-LM tokenization, detokenization, log-level control,
-  lifecycle cleanup, concurrency guards, and platform companion-library
-  validation.
-- Added runtime-family package-size controls through `llamadart_native_runtimes`
-  and documented backend choice, capability limits, platform support, and pinned
-  runtime artifacts.
-- Added Gemma 4 benchmark tooling and docs for fair llama.cpp/GGUF versus
-  LiteRT-LM comparisons on Android, macOS, and web.
-- Documented that LiteRT-LM web is currently single-turn text generation and
-  does not yet preserve `ChatSession` history, system prompts, or tool
-  declarations through `@litert-lm/core`.
+  runtime metrics, cached Hugging Face loading, and package hook overrides for
+  testing compatible native runtime sources.
+- Added `GenerationParams.speculativeDecoding` for native LiteRT-LM and wired
+  the benchmark app so speculative runs are reflected in metrics.
+- Fixed Gemma 4 `.litertlm` thinking and tool calling with canonical templates,
+  thought-channel parsing, reasoning suppression, and a filename-keyed template
+  registry for Gemma and Qwen LiteRT-LM bundles.
+- Fixed iOS `.litertlm` loading by resolving embedded `LiteRtLm` and
+  `StreamProxy` frameworks from the app bundle.
+- Added WebGPU mem64 selection through `ModelParams.preferMemory64` and
+  `ModelParams.modelBytesHint` so large GGUF models such as Gemma 4 E2B can
+  choose the 64-bit bridge core.
+- Fixed chat-app web downloads, LiteRT-LM web loading/generation, unsupported
+  token-count refreshes, and misleading LiteRT-LM load progress.
+- Hardened native and LiteRT-LM cancellation/disposal, multimodal cleanup,
+  parser correctness, grammar generation, model download timeouts, and partial
+  download resume behavior.
+- Added Gemma 4 benchmark tooling, GGUF chat-feature smoke coverage, and the
+  WebGPU Gemma 4 mem64 E2E scenario.
+- Updated README and website docs for backend choice, capability limits,
+  platform support, package-size controls, benchmark results, model templates,
+  and pinned runtime artifacts.
 - Compatibility note: no public API breaking changes for existing GGUF /
   llama.cpp callers. LiteRT-LM support is additive, with deprecated benchmark
   wrappers retained for compatibility; unsupported llama.cpp-only parameters are
