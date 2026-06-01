@@ -30,7 +30,7 @@ A page is ready for WebGPU model loading only when all of these checks pass:
    `http://127.0.0.1`. WebGPU is not available to arbitrary insecure origins.
 2. **Bridge runtime loaded**: `window.__llamadartBridgeReady === true`,
    `window.LlamaWebGpuBridge` exists, and
-   `window.__llamadartBridgeLoadError` is empty. Custom app code that starts
+   `window.__llamadartBridgeLoadError == null`. Custom app code that starts
    before bridge bootstrap finishes can await
    `window.__llamadartBridgeReadyPromise`.
 3. **WebGPU is exposed**: `navigator.gpu` exists and `requestAdapter()` returns
@@ -158,7 +158,9 @@ WEBGPU_BRIDGE_ASSETS_TAG=v0.1.16 ./scripts/fetch_webgpu_bridge_assets.sh
 To verify the loaded runtime in a browser console, inspect:
 
 ```js
-await window.__llamadartBridgeReadyPromise;
+if (window.__llamadartBridgeReadyPromise != null) {
+  await window.__llamadartBridgeReadyPromise;
+}
 
 window.__llamadartBridgeReady;       // true after bridge bootstrap succeeds
 window.__llamadartBridgeLoadError;   // string/null bootstrap failure detail
