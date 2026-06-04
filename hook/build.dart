@@ -22,20 +22,19 @@ const _cacheBaseDir = 'llamadart';
 const _bundleCacheDir = 'native_bundles';
 const _reportDir = 'llamadart_bin';
 const _allowLegacyLocalBundleEnv = 'LLAMADART_ALLOW_LEGACY_LOCAL_BUNDLES';
-const _litertLmVersion = '0.12.0';
+const _litertLmVersion = '0.13.1';
 const _litertLmNativeReleaseBaseUrl =
     'https://github.com/leehack/litert-lm-native/releases/download/'
     'v$_litertLmVersion';
 const _litertLmCacheDir = 'litert_lm';
-const _litertLmChecksumFileName = '.llamadart_litert_lm.sha256';
 
-const _litertLmBundles = <String, _LiteRtLmBundleSpec>{
-  'android-arm64': _LiteRtLmBundleSpec(
-    directoryName: 'android/arm64',
-    archiveName: 'litert-lm-native-runtime-android-arm64-v0.12.0.tar.gz',
-    sha256: '1d4332e740aca7bb3d23af20d94fb16193803e8997138a87633e8de4a096a026',
-    releaseBaseUrl: _litertLmNativeReleaseBaseUrl,
-    sourcePrefix: 'android/arm64',
+final _litertLmBundles = Map.unmodifiable({
+  for (final bundle in _litertLmBundleSpecs) bundle.bundle: bundle,
+});
+
+const _litertLmBundleSpecs = <_LiteRtLmBundleSpec>[
+  _LiteRtLmBundleSpec(
+    'android-arm64',
     requiredLibraries: {
       'libGemmaModelConstraintProvider.so',
       'libLiteRt.so',
@@ -45,16 +44,10 @@ const _litertLmBundles = <String, _LiteRtLmBundleSpec>{
       'libLiteRtTopKOpenClSampler.so',
       'libLiteRtTopKWebGpuSampler.so',
       'libLiteRtWebGpuAccelerator.so',
-      'libStreamProxy.so',
     },
-    emitAllLibraries: true,
   ),
-  'android-x64': _LiteRtLmBundleSpec(
-    directoryName: 'android/x64',
-    archiveName: 'litert-lm-native-runtime-android-x64-v0.12.0.tar.gz',
-    sha256: 'b59cb34a83d5e3b8c467fe9b670a7f810fe956f1b47b524271008546bc31c655',
-    releaseBaseUrl: _litertLmNativeReleaseBaseUrl,
-    sourcePrefix: 'android/x64',
+  _LiteRtLmBundleSpec(
+    'android-x64',
     requiredLibraries: {
       'libGemmaModelConstraintProvider.so',
       'libLiteRt.so',
@@ -64,40 +57,18 @@ const _litertLmBundles = <String, _LiteRtLmBundleSpec>{
       'libLiteRtTopKOpenClSampler.so',
       'libLiteRtTopKWebGpuSampler.so',
       'libLiteRtWebGpuAccelerator.so',
-      'libStreamProxy.so',
     },
-    emitAllLibraries: true,
   ),
-  'ios-arm64': _LiteRtLmBundleSpec(
-    directoryName: 'ios/arm64',
-    archiveName: 'litert-lm-native-runtime-ios-arm64-v0.12.0.tar.gz',
-    sha256: 'd1c48c085f901baac67097209814e25a84dfa61d79644a8fe6d125d6ab39c3c3',
-    releaseBaseUrl: _litertLmNativeReleaseBaseUrl,
-    sourcePrefix: 'ios/arm64',
-    requiredLibraries: {'libLiteRtLm.dylib', 'libStreamProxy.dylib'},
+  _LiteRtLmBundleSpec(
+    'ios-arm64',
+    requiredLibraries: {'LiteRtLm', 'CLiteRTLM'},
   ),
-  'ios-arm64-sim': _LiteRtLmBundleSpec(
-    directoryName: 'ios/arm64-sim',
-    archiveName: 'litert-lm-native-runtime-ios-arm64-sim-v0.12.0.tar.gz',
-    sha256: '9ae754eb6a0e9d6ff51caa94864b24b520b7e73c46a46091b8a44f99b7a4aef6',
-    releaseBaseUrl: _litertLmNativeReleaseBaseUrl,
-    sourcePrefix: 'ios/arm64-sim',
-    requiredLibraries: {'libLiteRtLm.dylib', 'libStreamProxy.dylib'},
+  _LiteRtLmBundleSpec(
+    'ios-arm64-sim',
+    requiredLibraries: {'LiteRtLm', 'CLiteRTLM'},
   ),
-  'ios-x64-sim': _LiteRtLmBundleSpec(
-    directoryName: 'ios/x64-sim',
-    archiveName: 'litert-lm-native-runtime-ios-x64-sim-v0.12.0.tar.gz',
-    sha256: 'be573217169878cb5d79b70084730c5a2978230cc6d1b96144f694249e2027e0',
-    releaseBaseUrl: _litertLmNativeReleaseBaseUrl,
-    sourcePrefix: 'ios/x64-sim',
-    requiredLibraries: {'libLiteRtLm.dylib', 'libStreamProxy.dylib'},
-  ),
-  'macos-arm64': _LiteRtLmBundleSpec(
-    directoryName: 'macos/arm64',
-    archiveName: 'litert-lm-native-runtime-macos-arm64-v0.12.0.tar.gz',
-    sha256: '6fe694ccc895c904b173f2952b73b7698097eda18d8bff0210ea9fcf10ca3da9',
-    releaseBaseUrl: _litertLmNativeReleaseBaseUrl,
-    sourcePrefix: 'macos/arm64',
+  _LiteRtLmBundleSpec(
+    'macos-arm64',
     requiredLibraries: {
       'libGemmaModelConstraintProvider.dylib',
       'libLiteRt.dylib',
@@ -106,66 +77,40 @@ const _litertLmBundles = <String, _LiteRtLmBundleSpec>{
       'libLiteRtTopKMetalSampler.dylib',
       'libLiteRtTopKWebGpuSampler.dylib',
       'libLiteRtWebGpuAccelerator.dylib',
-      'libStreamProxy.dylib',
     },
   ),
-  'macos-x64': _LiteRtLmBundleSpec(
-    directoryName: 'macos/x64',
-    archiveName: 'litert-lm-native-runtime-macos-x64-v0.12.0.tar.gz',
-    sha256: '8b54daaf55d6cb2570b7a667891c71bba1578a5875d8c2b7230c2185b2e88bf4',
-    releaseBaseUrl: _litertLmNativeReleaseBaseUrl,
-    sourcePrefix: 'macos/x64',
-    requiredLibraries: {'libLiteRtLm.dylib', 'libStreamProxy.dylib'},
-  ),
-  'linux-arm64': _LiteRtLmBundleSpec(
-    directoryName: 'linux/arm64',
-    archiveName: 'litert-lm-native-runtime-linux-arm64-v0.12.0.tar.gz',
-    sha256: 'd0546e0f769b1156f973051dfd928d8f4448e0db9465d57386cf0490192651c1',
-    releaseBaseUrl: _litertLmNativeReleaseBaseUrl,
-    sourcePrefix: 'linux/arm64',
+  _LiteRtLmBundleSpec('macos-x64', requiredLibraries: {'libLiteRtLm.dylib'}),
+  _LiteRtLmBundleSpec(
+    'linux-arm64',
     requiredLibraries: {
       'libGemmaModelConstraintProvider.so',
       'libLiteRt.so',
       'libLiteRtLm.so',
       'libLiteRtTopKWebGpuSampler.so',
       'libLiteRtWebGpuAccelerator.so',
-      'libStreamProxy.so',
     },
-    emitAllLibraries: true,
   ),
-  'linux-x64': _LiteRtLmBundleSpec(
-    directoryName: 'linux/x64',
-    archiveName: 'litert-lm-native-runtime-linux-x64-v0.12.0.tar.gz',
-    sha256: 'e508e545d7be417895071c47612fd4fd5da842b05864f0776c98c2c67ad223e9',
-    releaseBaseUrl: _litertLmNativeReleaseBaseUrl,
-    sourcePrefix: 'linux/x64',
+  _LiteRtLmBundleSpec(
+    'linux-x64',
     requiredLibraries: {
       'libGemmaModelConstraintProvider.so',
       'libLiteRt.so',
       'libLiteRtLm.so',
       'libLiteRtTopKWebGpuSampler.so',
       'libLiteRtWebGpuAccelerator.so',
-      'libStreamProxy.so',
     },
-    emitAllLibraries: true,
   ),
-  'windows-x64': _LiteRtLmBundleSpec(
-    directoryName: 'windows/x64',
-    archiveName: 'litert-lm-native-runtime-windows-x64-v0.12.0.tar.gz',
-    sha256: '4c6ff1b3affd37c49c4d45538fdd2f376cc065a85a1339ca6c166e2b542072df',
-    releaseBaseUrl: _litertLmNativeReleaseBaseUrl,
-    sourcePrefix: 'windows/x64',
+  _LiteRtLmBundleSpec(
+    'windows-x64',
     requiredLibraries: {
       'LiteRtLm.dll',
-      'StreamProxy.dll',
       'libGemmaModelConstraintProvider.dll',
       'libLiteRt.dll',
       'libLiteRtTopKWebGpuSampler.dll',
       'libLiteRtWebGpuAccelerator.dll',
     },
-    emitAllLibraries: true,
   ),
-};
+];
 
 const _dynamicLibraryExtensions = {'.so', '.dylib', '.dll'};
 final _windowsCudartPattern = RegExp(r'^cudart64(?:[_-]?\d+)?\.dll$');
@@ -198,23 +143,25 @@ class _NativeBundleConfig {
 }
 
 class _LiteRtLmBundleSpec {
-  final String directoryName;
-  final String archiveName;
-  final String? sha256;
-  final String releaseBaseUrl;
-  final String? sourcePrefix;
+  final String bundle;
   final Set<String> requiredLibraries;
-  final bool emitAllLibraries;
 
-  const _LiteRtLmBundleSpec({
-    required this.directoryName,
-    required this.archiveName,
-    required this.sha256,
-    required this.releaseBaseUrl,
-    this.sourcePrefix,
-    required this.requiredLibraries,
-    this.emitAllLibraries = false,
-  });
+  const _LiteRtLmBundleSpec(this.bundle, {required this.requiredLibraries});
+
+  String get archiveName =>
+      'litert-lm-native-runtime-$bundle-v$_litertLmVersion.tar.gz';
+
+  String get directoryName {
+    final separator = bundle.indexOf('-');
+    if (separator < 0) {
+      return bundle;
+    }
+    return '${bundle.substring(0, separator)}/${bundle.substring(separator + 1)}';
+  }
+
+  String get releaseUrl => '$_litertLmNativeReleaseBaseUrl/$archiveName';
+
+  String get sourcePrefix => directoryName;
 }
 
 void main(List<String> args) async {
@@ -407,6 +354,12 @@ Future<void> _emitLiteRtLmAssets({
 }) async {
   final bundleSpec = _liteRtLmBundleSpecForCode(code);
   if (bundleSpec == null) {
+    log.warning(
+      'LiteRT-LM runtime is not available for '
+      '${_liteRtLmTargetLabel(code)}; no LiteRT-LM assets will be bundled. '
+      'Configure $nativeRuntimesUserDefineKey to exclude litert_lm for this '
+      'target.',
+    );
     return;
   }
 
@@ -415,7 +368,18 @@ Future<void> _emitLiteRtLmAssets({
     bundleSpec: bundleSpec,
     log: log,
   );
-  final libraryPaths = _collectDynamicLibraryPaths(bundleDir);
+  if (code.targetOS == OS.macOS) {
+    log.info(
+      'Keeping macOS LiteRT-LM libraries in the hook cache at '
+      '${bundleDir.path}; the runtime loads them directly to avoid Flutter '
+      'rewriting upstream install names during app bundling.',
+    );
+    return;
+  }
+  final libraryPaths = _collectDynamicLibraryPaths(
+    bundleDir,
+    additionalFileNames: bundleSpec.requiredLibraries,
+  );
   if (libraryPaths.isEmpty) {
     log.warning('LiteRT-LM bundle had no dynamic libraries.');
     return;
@@ -431,13 +395,6 @@ Future<void> _emitLiteRtLmAssets({
     }
     final destinationPath = path.join(reportDirPath, fileName);
     await File(sourcePath).copy(destinationPath);
-    if (!_shouldEmitLiteRtLmCodeAsset(code, bundleSpec, fileName)) {
-      log.info(
-        'Copied LiteRT-LM companion `$fileName` without reporting it '
-        'as a native asset.',
-      );
-      continue;
-    }
     final assetName = _dedupeAssetName(
       _liteRtLmAssetName(fileName),
       usedAssetNames,
@@ -457,24 +414,6 @@ Future<void> _emitLiteRtLmAssets({
   }
 }
 
-bool _shouldEmitLiteRtLmCodeAsset(
-  CodeConfig code,
-  _LiteRtLmBundleSpec bundleSpec,
-  String fileName,
-) {
-  if (code.targetOS == OS.macOS) {
-    // Upstream LiteRT-LM dylibs are not reliable Dart Native Assets on macOS:
-    // the JIT bundler rewrites install names, and some upstream dylibs do not
-    // tolerate that rewrite. Keep them in the hook cache and let the
-    // LiteRT-LM loader open them from there.
-    return false;
-  }
-  if (bundleSpec.emitAllLibraries) {
-    return true;
-  }
-  return true;
-}
-
 _LiteRtLmBundleSpec? _liteRtLmBundleSpecForCode(CodeConfig code) {
   switch (code.targetOS) {
     case OS.android:
@@ -488,7 +427,7 @@ _LiteRtLmBundleSpec? _liteRtLmBundleSpecForCode(CodeConfig code) {
       return switch (code.targetArchitecture) {
         Architecture.arm64 =>
           _litertLmBundles[isSimulator ? 'ios-arm64-sim' : 'ios-arm64'],
-        Architecture.x64 => _litertLmBundles['ios-x64-sim'],
+        Architecture.x64 => null,
         _ => null,
       };
     case OS.macOS:
@@ -511,6 +450,17 @@ _LiteRtLmBundleSpec? _liteRtLmBundleSpecForCode(CodeConfig code) {
     default:
       return null;
   }
+}
+
+String _liteRtLmTargetLabel(CodeConfig code) {
+  final architecture =
+      code.targetOS == OS.iOS && code.targetArchitecture == Architecture.x64
+      ? 'x86_64'
+      : code.targetArchitecture.name;
+  if (code.targetOS == OS.iOS && code.iOS.targetSdk == IOSSdk.iPhoneSimulator) {
+    return '${code.targetOS.name}-$architecture-sim';
+  }
+  return '${code.targetOS.name}-$architecture';
 }
 
 String _liteRtLmAssetName(String fileName) {
@@ -541,16 +491,15 @@ Future<Directory> _acquireLiteRtLmBundle({
 
   await Directory(cacheDir).create(recursive: true);
   final archiveFile = File(path.join(cacheDir, bundleSpec.archiveName));
-  final expectedSha256 = bundleSpec.sha256;
-  if (archiveFile.existsSync() && expectedSha256 != null) {
-    final digest = await _sha256File(archiveFile);
-    if (digest != expectedSha256) {
-      log.warning(
-        'Cached LiteRT-LM archive checksum mismatch; redownloading '
-        '${bundleSpec.archiveName}.',
-      );
-      await archiveFile.delete();
-    }
+  if (archiveFile.existsSync() &&
+      await _tryExtractLiteRtLmArchive(
+        archiveFile: archiveFile,
+        extractedDir: extractedDir,
+        bundleSpec: bundleSpec,
+        log: log,
+        allowRefresh: true,
+      )) {
+    return extractedDir;
   }
   if (!archiveFile.existsSync()) {
     await _downloadLiteRtLmArchive(
@@ -559,16 +508,24 @@ Future<Directory> _acquireLiteRtLmBundle({
       log: log,
     );
   }
-  if (expectedSha256 != null) {
-    final digest = await _sha256File(archiveFile);
-    if (digest != expectedSha256) {
-      throw Exception(
-        'LiteRT-LM archive checksum mismatch: expected '
-        '$expectedSha256, got $digest',
-      );
-    }
-  }
 
+  await _tryExtractLiteRtLmArchive(
+    archiveFile: archiveFile,
+    extractedDir: extractedDir,
+    bundleSpec: bundleSpec,
+    log: log,
+    allowRefresh: false,
+  );
+  return extractedDir;
+}
+
+Future<bool> _tryExtractLiteRtLmArchive({
+  required File archiveFile,
+  required Directory extractedDir,
+  required _LiteRtLmBundleSpec bundleSpec,
+  required Logger log,
+  required bool allowRefresh,
+}) async {
   if (extractedDir.existsSync()) {
     await extractedDir.delete(recursive: true);
   }
@@ -584,9 +541,7 @@ Future<Directory> _acquireLiteRtLmBundle({
         continue;
       }
       final fileName = path.basename(entry.name);
-      if (!_dynamicLibraryExtensions.contains(
-        path.extension(fileName).toLowerCase(),
-      )) {
+      if (!_isLiteRtLmRuntimeLibraryFileName(fileName, bundleSpec)) {
         continue;
       }
       await File(
@@ -610,17 +565,40 @@ Future<Directory> _acquireLiteRtLmBundle({
       );
     }
     await _flattenLiteRtLmDynamicLibraries(extractedDir, bundleSpec);
+  } catch (error) {
+    if (!allowRefresh) {
+      rethrow;
+    }
+    log.warning(
+      'Cached LiteRT-LM archive could not be extracted; redownloading '
+      '${bundleSpec.archiveName}: $error',
+    );
+    await archiveFile.delete();
+    if (extractedDir.existsSync()) {
+      await extractedDir.delete(recursive: true);
+    }
+    return false;
   }
   final missingLibraries = _missingLiteRtLmLibraries(extractedDir, bundleSpec);
   if (missingLibraries.isNotEmpty) {
+    if (allowRefresh) {
+      log.warning(
+        'Cached LiteRT-LM archive ${bundleSpec.archiveName} is missing '
+        'required libraries: ${missingLibraries.join(', ')}; redownloading.',
+      );
+      await archiveFile.delete();
+      if (extractedDir.existsSync()) {
+        await extractedDir.delete(recursive: true);
+      }
+      return false;
+    }
     throw Exception(
       'LiteRT-LM bundle ${bundleSpec.archiveName} is missing required '
       'libraries: ${missingLibraries.join(', ')}',
     );
   }
-  await _writeLiteRtLmChecksumMarker(extractedDir, expectedSha256);
   log.info('Extracted LiteRT-LM bundle to ${extractedDir.path}');
-  return extractedDir;
+  return true;
 }
 
 Future<void> _downloadLiteRtLmArchive({
@@ -628,9 +606,8 @@ Future<void> _downloadLiteRtLmArchive({
   required File destination,
   required Logger log,
 }) async {
-  final url = '${bundleSpec.releaseBaseUrl}/${bundleSpec.archiveName}';
-  log.info('Downloading LiteRT-LM bundle from $url');
-  final response = await http.get(Uri.parse(url));
+  log.info('Downloading LiteRT-LM bundle from ${bundleSpec.releaseUrl}');
+  final response = await http.get(Uri.parse(bundleSpec.releaseUrl));
   if (response.statusCode != 200) {
     throw Exception(
       'Failed to download LiteRT-LM bundle: HTTP ${response.statusCode}',
@@ -639,19 +616,12 @@ Future<void> _downloadLiteRtLmArchive({
   await destination.writeAsBytes(response.bodyBytes);
 }
 
-Future<String> _sha256File(File file) async {
-  return sha256.convert(await file.readAsBytes()).toString();
-}
-
 bool _isLiteRtLmEntrySelected(
   String entryName,
   _LiteRtLmBundleSpec bundleSpec,
 ) {
-  final sourcePrefix = bundleSpec.sourcePrefix;
-  if (sourcePrefix == null) {
-    return true;
-  }
   final normalized = path.posix.normalize(entryName);
+  final sourcePrefix = bundleSpec.sourcePrefix;
   return normalized == sourcePrefix || normalized.startsWith('$sourcePrefix/');
 }
 
@@ -660,9 +630,6 @@ Future<void> _flattenLiteRtLmDynamicLibraries(
   _LiteRtLmBundleSpec bundleSpec,
 ) async {
   final sourcePrefix = bundleSpec.sourcePrefix;
-  if (sourcePrefix == null) {
-    return;
-  }
   final nestedDir = Directory(
     path.joinAll([extractedDir.path, ...sourcePrefix.split('/')]),
   );
@@ -674,9 +641,7 @@ Future<void> _flattenLiteRtLmDynamicLibraries(
       continue;
     }
     final fileName = path.basename(entity.path);
-    if (!_dynamicLibraryExtensions.contains(
-      path.extension(fileName).toLowerCase(),
-    )) {
+    if (!_isLiteRtLmRuntimeLibraryFileName(fileName, bundleSpec)) {
       continue;
     }
     await entity.copy(path.join(extractedDir.path, fileName));
@@ -691,27 +656,7 @@ bool _liteRtLmBundleIsUsable(
   if (_missingLiteRtLmLibraries(directory, bundleSpec).isNotEmpty) {
     return false;
   }
-  final expectedSha256 = bundleSpec.sha256;
-  if (expectedSha256 == null) {
-    return true;
-  }
-  final checksumFile = File(
-    path.join(directory.path, _litertLmChecksumFileName),
-  );
-  return checksumFile.existsSync() &&
-      checksumFile.readAsStringSync().trim() == expectedSha256;
-}
-
-Future<void> _writeLiteRtLmChecksumMarker(
-  Directory directory,
-  String? sha256,
-) async {
-  if (sha256 == null) {
-    return;
-  }
-  await File(
-    path.join(directory.path, _litertLmChecksumFileName),
-  ).writeAsString('$sha256\n');
+  return true;
 }
 
 List<String> _missingLiteRtLmLibraries(
@@ -726,6 +671,16 @@ List<String> _missingLiteRtLmLibraries(
         return !File(path.join(directory.path, libraryName)).existsSync();
       })
       .toList(growable: false);
+}
+
+bool _isLiteRtLmRuntimeLibraryFileName(
+  String fileName,
+  _LiteRtLmBundleSpec bundleSpec,
+) {
+  return _dynamicLibraryExtensions.contains(
+        path.extension(fileName).toLowerCase(),
+      ) ||
+      bundleSpec.requiredLibraries.contains(fileName);
 }
 
 String _dedupeAssetName(String base, Set<String> used) {
@@ -1244,7 +1199,10 @@ List<String> _localBundleCandidates({
   return candidates;
 }
 
-List<String> _collectDynamicLibraryPaths(Directory directory) {
+List<String> _collectDynamicLibraryPaths(
+  Directory directory, {
+  Set<String> additionalFileNames = const {},
+}) {
   if (!directory.existsSync()) {
     return const [];
   }
@@ -1257,6 +1215,7 @@ List<String> _collectDynamicLibraryPaths(Directory directory) {
     final fileName = path.basename(entity.path).toLowerCase();
     final extension = path.extension(entity.path).toLowerCase();
     if (_dynamicLibraryExtensions.contains(extension) ||
+        additionalFileNames.contains(path.basename(entity.path)) ||
         _linuxVersionedSoPattern.hasMatch(fileName)) {
       paths.add(entity.path);
     }

@@ -11,10 +11,12 @@ const String nativeRuntimesUserDefineKey = 'llamadart_native_runtimes';
 const String nativeRuntimeLlamaCpp = 'llama_cpp';
 const String nativeRuntimeLiteRtLm = 'litert_lm';
 
-const List<String> defaultNativeRuntimes = [
+const List<String> allNativeRuntimes = [
   nativeRuntimeLlamaCpp,
   nativeRuntimeLiteRtLm,
 ];
+
+const List<String> defaultNativeRuntimes = [nativeRuntimeLlamaCpp];
 
 const Set<String> _coreLibraries = {
   'llamadart',
@@ -38,6 +40,28 @@ const Set<String> _knownBundleKeys = {
   'windows-x64',
 };
 
+const Set<String> _knownOsKeys = {
+  'android',
+  'ios',
+  'linux',
+  'macos',
+  'windows',
+};
+
+const Map<String, String> _bundleOsKeys = {
+  'android-arm64': 'android',
+  'android-x64': 'android',
+  'ios-arm64': 'ios',
+  'ios-arm64-sim': 'ios',
+  'ios-x86_64-sim': 'ios',
+  'linux-arm64': 'linux',
+  'linux-x64': 'linux',
+  'macos-arm64': 'macos',
+  'macos-x86_64': 'macos',
+  'windows-arm64': 'windows',
+  'windows-x64': 'windows',
+};
+
 const List<String> _platformSuffixes = [
   '-ios-x86_64-sim',
   '-ios-arm64-sim',
@@ -59,6 +83,21 @@ const Map<String, String> _bundleAliases = {
   'linux-x86_64': 'linux-x64',
   'macos-x64': 'macos-x86_64',
   'windows-x86_64': 'windows-x64',
+};
+
+const Map<String, String> _osAliases = {
+  'darwin': 'macos',
+  'mac': 'macos',
+  'mac-os': 'macos',
+  'macosx': 'macos',
+  'osx': 'macos',
+  'iphoneos': 'ios',
+  'iphonesimulator': 'ios',
+  'ios-sim': 'ios',
+  'ios-simulator': 'ios',
+  'win': 'windows',
+  'win32': 'windows',
+  'win64': 'windows',
 };
 
 const Map<String, String> _backendAliases = {
@@ -215,6 +254,20 @@ String canonicalizeBundleKey(String value) {
   return _bundleAliases[normalized] ?? normalized;
 }
 
+String _canonicalizePlatformKey(String value) {
+  final canonicalBundle = canonicalizeBundleKey(value);
+  if (_knownBundleKeys.contains(canonicalBundle)) {
+    return canonicalBundle;
+  }
+  return _osAliases[canonicalBundle] ?? canonicalBundle;
+}
+
+bool _isKnownPlatformConfigKey(String value) {
+  final canonical = _canonicalizePlatformKey(value);
+  return _knownBundleKeys.contains(canonical) ||
+      _knownOsKeys.contains(canonical);
+}
+
 Object? _platformConfigValueForBundle({
   required String bundle,
   required Object? rawUserConfig,
@@ -232,6 +285,16 @@ Object? _platformConfigValueForBundle({
   final canonicalBundle = canonicalizeBundleKey(bundle);
   for (final entry in platformsMap.entries) {
     if (canonicalizeBundleKey(entry.key) == canonicalBundle) {
+      return entry.value;
+    }
+  }
+
+  final osKey = _bundleOsKeys[canonicalBundle];
+  if (osKey == null) {
+    return null;
+  }
+  for (final entry in platformsMap.entries) {
+    if (_canonicalizePlatformKey(entry.key) == osKey) {
       return entry.value;
     }
   }
@@ -314,7 +377,7 @@ List<String> selectNativeRuntimesForBundle({
     rawUserConfig: rawUserConfig,
   );
   if (parsed == null) {
-    return defaultNativeRuntimes;
+    return defaultNativeRuntimesForBundle(bundle);
   }
 
   final invalid = parsed.invalid;
@@ -326,6 +389,14 @@ List<String> selectNativeRuntimesForBundle({
   }
 
   return parsed.runtimes;
+}
+
+List<String> defaultNativeRuntimesForBundle(String bundle) {
+  final canonicalBundle = canonicalizeBundleKey(bundle);
+  if (_bundleOsKeys[canonicalBundle] == 'android') {
+    return allNativeRuntimes;
+  }
+  return defaultNativeRuntimes;
 }
 
 List<String> selectBackendsForBundle({
@@ -401,7 +472,7 @@ _parseNativeRuntimeConfigForBundle({
   final root = _toStringMap(rawUserConfig);
   if (root == null) {
     return (
-      runtimes: defaultNativeRuntimes,
+      runtimes: defaultNativeRuntimesForBundle(bundle),
       invalid: [rawUserConfig.toString()],
     );
   }
@@ -432,15 +503,16 @@ _parseNativeRuntimeConfigForBundle({
   }
 
   final hasRuntimeShape =
-      root.keys.any(
-        (key) => _knownBundleKeys.contains(canonicalizeBundleKey(key)),
-      ) ||
+      root.keys.any(_isKnownPlatformConfigKey) ||
       _extractPlatformsMap(root) != null;
   if (hasRuntimeShape) {
     return null;
   }
 
-  return (runtimes: defaultNativeRuntimes, invalid: [rawUserConfig.toString()]);
+  return (
+    runtimes: defaultNativeRuntimesForBundle(bundle),
+    invalid: [rawUserConfig.toString()],
+  );
 }
 
 List<String> _androidCpuVariantsForProfile(String profile) {
@@ -735,9 +807,7 @@ Map<String, Object?>? _extractPlatformsMap(Map<String, Object?> root) {
   }
 
   // Backward-compatible shape: direct platform map.
-  final hasPlatformKeys = root.keys.any(
-    (key) => _knownBundleKeys.contains(canonicalizeBundleKey(key)),
-  );
+  final hasPlatformKeys = root.keys.any(_isKnownPlatformConfigKey);
   if (hasPlatformKeys) {
     return root;
   }
@@ -805,7 +875,7 @@ List<String> _parseBackendList(Object? value) {
       return;
     }
     if (normalized == 'all') {
-      for (final runtime in defaultNativeRuntimes) {
+      for (final runtime in allNativeRuntimes) {
         if (!result.contains(runtime)) {
           result.add(runtime);
         }

@@ -18,7 +18,6 @@ void main() {
 
         final libDir = Directory(path.join(root.path, 'litert'))..createSync();
         await File(path.join(libDir.path, 'libLiteRtLm.dylib')).create();
-        await File(path.join(libDir.path, 'libStreamProxy.dylib')).create();
 
         final appDir = Directory(path.join(root.path, 'Test.app'));
         final result = await _runPrepareApp(appDir, libDir, arch: 'arm64');
@@ -40,7 +39,7 @@ void main() {
     );
 
     test(
-      'installs the full arm64 companion framework set',
+      'installs the full arm64 companion library set',
       () async {
         final root = await Directory.systemTemp.createTemp(
           'litert_prepare_full_',
@@ -59,22 +58,26 @@ void main() {
         expect(result.stdout, contains('Prepared LiteRT-LM macOS'));
 
         final frameworksDir = path.join(appDir.path, 'Contents', 'Frameworks');
-        for (final framework in _arm64Frameworks) {
-          final binaryPath = path.join(
-            frameworksDir,
-            '$framework.framework',
-            'Versions',
-            'A',
-            framework,
+        final runtimeDir = path.join(frameworksDir, 'LiteRtLmRuntime');
+        for (final library in _arm64Libraries) {
+          final libraryPath = path.join(runtimeDir, library);
+          expect(File(libraryPath).existsSync(), isTrue, reason: library);
+        }
+        for (final framework in _oldFrameworks) {
+          expect(
+            Directory(
+              path.join(frameworksDir, '$framework.framework'),
+            ).existsSync(),
+            isFalse,
+            reason: framework,
           );
-          expect(File(binaryPath).existsSync(), isTrue, reason: framework);
         }
       },
       skip: Platform.isWindows ? 'requires bash and POSIX symlinks' : false,
     );
 
     test(
-      'installs the x64 runtime framework set',
+      'installs the x64 runtime library set',
       () async {
         final root = await Directory.systemTemp.createTemp(
           'litert_prepare_x64_',
@@ -92,22 +95,30 @@ void main() {
         expect(result.exitCode, 0, reason: result.stderr.toString());
 
         final frameworksDir = path.join(appDir.path, 'Contents', 'Frameworks');
-        for (final framework in _x64Frameworks) {
-          final binaryPath = path.join(
-            frameworksDir,
-            '$framework.framework',
-            'Versions',
-            'A',
-            framework,
-          );
-          expect(File(binaryPath).existsSync(), isTrue, reason: framework);
+        final runtimeDir = path.join(frameworksDir, 'LiteRtLmRuntime');
+        for (final library in _x64Libraries) {
+          final libraryPath = path.join(runtimeDir, library);
+          expect(File(libraryPath).existsSync(), isTrue, reason: library);
         }
         expect(
-          Directory(
-            path.join(frameworksDir, 'LiteRtMetalAccelerator.framework'),
+          File(
+            path.join(
+              frameworksDir,
+              'LiteRtLmRuntime',
+              'libLiteRtMetalAccelerator.dylib',
+            ),
           ).existsSync(),
           isFalse,
         );
+        for (final framework in _oldFrameworks) {
+          expect(
+            Directory(
+              path.join(frameworksDir, '$framework.framework'),
+            ).existsSync(),
+            isFalse,
+            reason: framework,
+          );
+        }
       },
       skip: Platform.isWindows ? 'requires bash and POSIX symlinks' : false,
     );
@@ -137,10 +148,9 @@ const List<String> _arm64Libraries = [
   'libLiteRtTopKMetalSampler.dylib',
   'libLiteRtTopKWebGpuSampler.dylib',
   'libLiteRtWebGpuAccelerator.dylib',
-  'libStreamProxy.dylib',
 ];
 
-const List<String> _arm64Frameworks = [
+const List<String> _oldFrameworks = [
   'GemmaModelConstraintProvider',
   'LiteRt',
   'LiteRtLm',
@@ -148,12 +158,6 @@ const List<String> _arm64Frameworks = [
   'LiteRtTopKMetalSampler',
   'LiteRtTopKWebGpuSampler',
   'LiteRtWebGpuAccelerator',
-  'StreamProxy',
 ];
 
-const List<String> _x64Libraries = [
-  'libLiteRtLm.dylib',
-  'libStreamProxy.dylib',
-];
-
-const List<String> _x64Frameworks = ['LiteRtLm', 'StreamProxy'];
+const List<String> _x64Libraries = ['libLiteRtLm.dylib'];

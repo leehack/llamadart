@@ -1,3 +1,10 @@
+## Unreleased
+
+* Changed native build-hook defaults so Android continues to include both
+  `llama_cpp` and `litert_lm`, while iOS, macOS, Linux, and Windows default to
+  `llama_cpp` only. Apps that ship `.litertlm` models on non-Android native
+  targets should opt in with `llamadart_native_runtimes`.
+
 ## 0.7.0
 
 * **LiteRT-LM backend and runtime selection**:

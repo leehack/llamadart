@@ -16,7 +16,6 @@ import '../../../hook/build.dart' as build_hook;
 void main() {
   final nativeTag = _readHookNativeTag();
   final litertVersion = _readHookLiteRtLmVersion();
-  final litertSha256 = _readLiteRtBundleSha256('windows-x64');
   final cacheRelativeDir =
       '.dart_tool/llamadart/native_bundles/$nativeTag/windows-x64';
   final bundleRelativePath = '$cacheRelativeDir/extracted';
@@ -64,11 +63,7 @@ void main() {
       'cublas64_12.dll',
       'cublaslt64_12.dll',
     ]);
-    await _writeBundleLibraries(
-      litertBundleDir,
-      _windowsLiteRtLibraries,
-      sha256: litertSha256,
-    );
+    await _writeBundleLibraries(litertBundleDir, _windowsLiteRtLibraries);
 
     if (archiveFile.existsSync()) {
       await archiveFile.delete();
@@ -94,7 +89,7 @@ void main() {
   });
 
   test(
-    'build hook selects configured backend modules and emits primary asset',
+    'build hook selects configured backend modules without LiteRT-LM by default',
     () async {
       final userDefines = PackageUserDefines(
         workspacePubspec: PackageUserDefinesSource(
@@ -134,10 +129,13 @@ void main() {
           expect(emittedNames, contains('ggml-windows-x64.dll'));
           expect(emittedNames, contains('ggml-base-windows-x64.dll'));
           for (final library in _windowsLiteRtLibraries) {
-            expect(emittedNames, contains(library));
+            expect(emittedNames, isNot(contains(library)));
           }
           for (final assetName in _windowsLiteRtAssetNames) {
-            expect(codeAssetIds, contains('package:llamadart/$assetName'));
+            expect(
+              codeAssetIds,
+              isNot(contains('package:llamadart/$assetName')),
+            );
           }
           expect(emittedNames, isNot(contains('ggml-cuda-windows-x64.dll')));
           expect(emittedNames, isNot(contains('cudart64_12.dll')));
@@ -148,11 +146,102 @@ void main() {
     },
   );
 
+  test('build hook can emit both runtime families when requested', () async {
+    final userDefines = PackageUserDefines(
+      workspacePubspec: PackageUserDefinesSource(
+        defines: {
+          'llamadart_native_runtimes': ['all'],
+          'llamadart_native_backends': {
+            'platforms': {
+              'windows-x64': ['vulkan'],
+            },
+          },
+        },
+        basePath: Directory.current.uri,
+      ),
+    );
+
+    await testCodeBuildHook(
+      mainMethod: build_hook.main,
+      targetOS: OS.windows,
+      targetArchitecture: Architecture.x64,
+      userDefines: userDefines,
+      check: (input, output) {
+        final codeAssets = output.assets.encodedAssets
+            .where((asset) => asset.isCodeAsset)
+            .map((asset) => asset.asCodeAsset)
+            .toList(growable: false);
+
+        final codeAssetIds = codeAssets.map((asset) => asset.id).toSet();
+        final emittedNames = codeAssets
+            .map((asset) => path.basename(asset.file!.toFilePath()))
+            .toSet();
+
+        expect(codeAssetIds, contains('package:llamadart/llamadart'));
+        expect(emittedNames, contains('ggml-vulkan-windows-x64.dll'));
+        for (final library in _windowsLiteRtLibraries) {
+          expect(emittedNames, contains(library));
+        }
+        for (final assetName in _windowsLiteRtAssetNames) {
+          expect(codeAssetIds, contains('package:llamadart/$assetName'));
+        }
+      },
+    );
+  });
+
   test('build hook can emit llama.cpp runtime without LiteRT-LM', () async {
     final userDefines = PackageUserDefines(
       workspacePubspec: PackageUserDefinesSource(
         defines: {
           'llamadart_native_runtimes': ['llama_cpp'],
+          'llamadart_native_backends': {
+            'platforms': {
+              'windows-x64': ['vulkan'],
+            },
+          },
+        },
+        basePath: Directory.current.uri,
+      ),
+    );
+
+    await testCodeBuildHook(
+      mainMethod: build_hook.main,
+      targetOS: OS.windows,
+      targetArchitecture: Architecture.x64,
+      userDefines: userDefines,
+      check: (input, output) {
+        final codeAssets = output.assets.encodedAssets
+            .where((asset) => asset.isCodeAsset)
+            .map((asset) => asset.asCodeAsset)
+            .toList(growable: false);
+
+        final codeAssetIds = codeAssets.map((asset) => asset.id).toSet();
+        final emittedNames = codeAssets
+            .map((asset) => path.basename(asset.file!.toFilePath()))
+            .toSet();
+
+        expect(codeAssetIds, contains('package:llamadart/llamadart'));
+        expect(emittedNames, contains('ggml-vulkan-windows-x64.dll'));
+        for (final library in _windowsLiteRtLibraries) {
+          expect(emittedNames, isNot(contains(library)));
+        }
+        for (final assetName in _windowsLiteRtAssetNames) {
+          expect(codeAssetIds, isNot(contains('package:llamadart/$assetName')));
+        }
+      },
+    );
+  });
+
+  test('build hook supports OS-level runtime selection', () async {
+    final userDefines = PackageUserDefines(
+      workspacePubspec: PackageUserDefinesSource(
+        defines: {
+          'llamadart_native_runtimes': {
+            'runtimes': ['llama_cpp', 'litert_lm'],
+            'platforms': {
+              'windows': ['llama_cpp'],
+            },
+          },
           'llamadart_native_backends': {
             'platforms': {
               'windows-x64': ['vulkan'],
@@ -603,23 +692,10 @@ String _readHookLiteRtLmVersion() {
   return match.group(1)!;
 }
 
-String _readLiteRtBundleSha256(String bundleKey) {
-  final source = File('hook/build.dart').readAsStringSync();
-  final escapedKey = RegExp.escape(bundleKey);
-  final match = RegExp(
-    "'$escapedKey':\\s*_LiteRtLmBundleSpec\\([\\s\\S]*?sha256:\\s*'([^']+)'",
-  ).firstMatch(source);
-  if (match == null) {
-    throw StateError('Could not locate LiteRT-LM checksum for $bundleKey');
-  }
-  return match.group(1)!;
-}
-
 Future<void> _writeBundleLibraries(
   Directory bundleDir,
-  List<String> fileNames, {
-  String? sha256,
-}) async {
+  List<String> fileNames,
+) async {
   if (bundleDir.existsSync()) {
     await bundleDir.delete(recursive: true);
   }
@@ -627,16 +703,10 @@ Future<void> _writeBundleLibraries(
   for (final name in fileNames) {
     await File(path.join(bundleDir.path, name)).writeAsString('fake-$name');
   }
-  if (sha256 != null) {
-    await File(
-      path.join(bundleDir.path, '.llamadart_litert_lm.sha256'),
-    ).writeAsString('$sha256\n');
-  }
 }
 
 const List<String> _windowsLiteRtLibraries = [
   'LiteRtLm.dll',
-  'StreamProxy.dll',
   'libGemmaModelConstraintProvider.dll',
   'libLiteRt.dll',
   'libLiteRtTopKWebGpuSampler.dll',
@@ -645,7 +715,6 @@ const List<String> _windowsLiteRtLibraries = [
 
 const List<String> _windowsLiteRtAssetNames = [
   'litert_lm_LiteRtLm',
-  'litert_lm_StreamProxy',
   'litert_lm_GemmaModelConstraintProvider',
   'litert_lm_LiteRt',
   'litert_lm_LiteRtTopKWebGpuSampler',

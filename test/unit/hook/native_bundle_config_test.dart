@@ -128,12 +128,39 @@ void main() {
 
       expect(requested, ['vulkan']);
     });
+
+    test('supports OS-level platform map shape', () {
+      final requested = parseRequestedBackends(
+        bundle: 'linux-x64',
+        rawUserConfig: {
+          'platforms': {
+            'linux': ['vulkan'],
+          },
+        },
+      );
+
+      expect(requested, ['vulkan']);
+    });
+
+    test('uses exact target backend override before OS-level config', () {
+      final requested = parseRequestedBackends(
+        bundle: 'linux-x64',
+        rawUserConfig: {
+          'platforms': {
+            'linux': ['vulkan'],
+            'linux-x64': ['cuda'],
+          },
+        },
+      );
+
+      expect(requested, ['cuda']);
+    });
   });
 
   group('selectNativeRuntimesForBundle', () {
-    test('defaults to llama.cpp and LiteRT-LM', () {
+    test('defaults to llama.cpp and LiteRT-LM on Android', () {
       final selected = selectNativeRuntimesForBundle(
-        bundle: 'linux-x64',
+        bundle: 'android-arm64',
         rawUserConfig: null,
         warn: (_) {},
       );
@@ -141,10 +168,37 @@ void main() {
       expect(selected, [nativeRuntimeLlamaCpp, nativeRuntimeLiteRtLm]);
     });
 
+    test('defaults to llama.cpp on non-Android targets', () {
+      for (final bundle in [
+        'ios-arm64',
+        'linux-x64',
+        'macos-arm64',
+        'windows-x64',
+      ]) {
+        final selected = selectNativeRuntimesForBundle(
+          bundle: bundle,
+          rawUserConfig: null,
+          warn: (_) {},
+        );
+
+        expect(selected, [nativeRuntimeLlamaCpp], reason: bundle);
+      }
+    });
+
     test('parses global runtime list with aliases', () {
       final selected = selectNativeRuntimesForBundle(
         bundle: 'android-arm64',
         rawUserConfig: 'gguf, litert-lm',
+        warn: (_) {},
+      );
+
+      expect(selected, [nativeRuntimeLlamaCpp, nativeRuntimeLiteRtLm]);
+    });
+
+    test('parses all as both runtime families on non-Android targets', () {
+      final selected = selectNativeRuntimesForBundle(
+        bundle: 'linux-x64',
+        rawUserConfig: 'all',
         warn: (_) {},
       );
 
@@ -164,6 +218,86 @@ void main() {
       );
 
       expect(selected, [nativeRuntimeLiteRtLm]);
+    });
+
+    test('supports OS-level runtime override', () {
+      final rawUserConfig = {
+        'runtimes': ['llama_cpp', 'litert_lm'],
+        'platforms': {
+          'ios': ['llama_cpp'],
+        },
+      };
+
+      final deviceSelected = selectNativeRuntimesForBundle(
+        bundle: 'ios-arm64',
+        rawUserConfig: rawUserConfig,
+        warn: (_) {},
+      );
+      final simulatorSelected = selectNativeRuntimesForBundle(
+        bundle: 'ios-arm64-sim',
+        rawUserConfig: rawUserConfig,
+        warn: (_) {},
+      );
+      final macosSelected = selectNativeRuntimesForBundle(
+        bundle: 'macos-arm64',
+        rawUserConfig: rawUserConfig,
+        warn: (_) {},
+      );
+
+      expect(deviceSelected, [nativeRuntimeLlamaCpp]);
+      expect(simulatorSelected, [nativeRuntimeLlamaCpp]);
+      expect(macosSelected, [nativeRuntimeLlamaCpp, nativeRuntimeLiteRtLm]);
+    });
+
+    test('uses exact target runtime override before OS-level config', () {
+      final rawUserConfig = {
+        'runtimes': ['llama_cpp', 'litert_lm'],
+        'platforms': {
+          'ios': ['llama_cpp'],
+          'ios-arm64': ['litert_lm'],
+        },
+      };
+
+      final deviceSelected = selectNativeRuntimesForBundle(
+        bundle: 'ios-arm64',
+        rawUserConfig: rawUserConfig,
+        warn: (_) {},
+      );
+      final simulatorSelected = selectNativeRuntimesForBundle(
+        bundle: 'ios-arm64-sim',
+        rawUserConfig: rawUserConfig,
+        warn: (_) {},
+      );
+
+      expect(deviceSelected, [nativeRuntimeLiteRtLm]);
+      expect(simulatorSelected, [nativeRuntimeLlamaCpp]);
+    });
+
+    test('supports direct OS runtime map shape', () {
+      final rawUserConfig = {
+        'ios': ['llama_cpp'],
+        'macos': ['litert_lm'],
+      };
+
+      final iosSelected = selectNativeRuntimesForBundle(
+        bundle: 'ios-arm64-sim',
+        rawUserConfig: rawUserConfig,
+        warn: (_) {},
+      );
+      final macosSelected = selectNativeRuntimesForBundle(
+        bundle: 'macos-x86_64',
+        rawUserConfig: rawUserConfig,
+        warn: (_) {},
+      );
+      final linuxSelected = selectNativeRuntimesForBundle(
+        bundle: 'linux-x64',
+        rawUserConfig: rawUserConfig,
+        warn: (_) {},
+      );
+
+      expect(iosSelected, [nativeRuntimeLlamaCpp]);
+      expect(macosSelected, [nativeRuntimeLiteRtLm]);
+      expect(linuxSelected, [nativeRuntimeLlamaCpp]);
     });
 
     test('supports map platform shape with runtimes key', () {

@@ -36,3 +36,15 @@ dev_dependencies:
   http: any
 flutter:
   uses-material-design: true
+
+hooks:
+  user_defines:
+    llamadart:
+      # The chat example intentionally demonstrates both GGUF and .litertlm
+      # model flows. Smaller examples rely on the package defaults.
+      llamadart_native_runtimes:
+        runtimes: [llama_cpp, litert_lm]
+        platforms:
+          # LiteRT-LM native bundles are not published for these targets.
+          ios-x86_64-sim: [llama_cpp]
+          windows-arm64: [llama_cpp]

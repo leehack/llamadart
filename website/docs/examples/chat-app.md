@@ -20,6 +20,11 @@ flutter run
 If you run this example on iOS, set the project deployment target to `16.4` or
 newer before building.
 
+This example intentionally opts into both native runtime families in
+`pubspec.yaml` so native `.litertlm` presets work on supported targets. If your
+app only ships GGUF models, set `llamadart_native_runtimes` to `[llama_cpp]` to
+avoid bundling LiteRT-LM.
+
 ## Test
 
 ```bash
@@ -49,6 +54,9 @@ flutter test
 - Runtime-verified multimodal capability gating after `mmproj` load. The app
   hides unsupported attachment types even if a model family advertises broader
   multimodal support.
+- Native and web `.litertlm` routing through LiteRT-LM. Native LiteRT-LM is
+  enabled for supported targets; iOS x86_64 simulator and Windows arm64 remain
+  GGUF-only because no matching LiteRT-LM native bundle is published.
 
 ## Gemma 4 note
 

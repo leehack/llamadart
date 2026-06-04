@@ -7,10 +7,9 @@ import 'dart:isolate';
 import 'package:ffi/ffi.dart';
 import 'package:path/path.dart' as path;
 
-const _litertLmVersion = '0.12.0';
+const _litertLmVersion = '0.13.1';
 const _litertLmLibDirEnv = 'LLAMADART_LITERT_LM_LIB_DIR';
 const _liteRtLmIosNativeAsset = 'package:llamadart/litert_lm_LiteRtLm';
-const _streamProxyIosNativeAsset = 'package:llamadart/litert_lm_StreamProxy';
 
 /// Builds a diagnostic for LiteRT-LM engine creation failures.
 ///
@@ -65,9 +64,8 @@ List<String> liteRtLmMacOsRequiredLibrariesForAbi(Abi abi) {
       'libLiteRtTopKMetalSampler.dylib',
       'libLiteRtTopKWebGpuSampler.dylib',
       'libLiteRtWebGpuAccelerator.dylib',
-      'libStreamProxy.dylib',
     ],
-    Abi.macosX64 => const <String>['libLiteRtLm.dylib', 'libStreamProxy.dylib'],
+    Abi.macosX64 => const <String>['libLiteRtLm.dylib'],
     _ => const <String>[],
   };
 }
@@ -89,18 +87,7 @@ List<String> liteRtLmCacheDirectoryCandidatesForAbi(Abi abi) {
 List<String> liteRtLmIosLibraryCandidatesForAbi(Abi abi) {
   return switch (abi) {
     Abi.iosArm64 ||
-    Abi.iosX64 => const <String>[_liteRtLmIosNativeAsset, 'libLiteRtLm.dylib'],
-    _ => const <String>[],
-  };
-}
-
-/// Internal helper used by the LiteRT-LM runtime to locate iOS StreamProxy.
-List<String> liteRtLmIosStreamProxyCandidatesForAbi(Abi abi) {
-  return switch (abi) {
-    Abi.iosArm64 || Abi.iosX64 => const <String>[
-      _streamProxyIosNativeAsset,
-      'libStreamProxy.dylib',
-    ],
+    Abi.iosX64 => const <String>[_liteRtLmIosNativeAsset, 'LiteRtLm'],
     _ => const <String>[],
   };
 }
@@ -119,7 +106,7 @@ String liteRtLmIosFrameworkBinaryPath(String frameworksDirPath, String name) {
 /// externals do), so the `package:llamadart/...` id is passed verbatim to
 /// dlopen and never loads. When [frameworksDirPath] is known, the absolute path
 /// to the embedded framework binary is preferred; the native-asset id and bare
-/// `libLiteRtLm.dylib` remain as last-resort fallbacks for the error message.
+/// `LiteRtLm` remain as last-resort fallbacks for the error message.
 List<String> liteRtLmIosLibraryCandidates(
   Abi abi, {
   String? frameworksDirPath,
@@ -131,22 +118,6 @@ List<String> liteRtLmIosLibraryCandidates(
   return <String>[
     if (frameworksDirPath != null)
       liteRtLmIosFrameworkBinaryPath(frameworksDirPath, 'LiteRtLm'),
-    ...fallbacks,
-  ];
-}
-
-/// Ordered StreamProxy load candidates for iOS. See [liteRtLmIosLibraryCandidates].
-List<String> liteRtLmIosStreamProxyCandidates(
-  Abi abi, {
-  String? frameworksDirPath,
-}) {
-  final fallbacks = liteRtLmIosStreamProxyCandidatesForAbi(abi);
-  if (fallbacks.isEmpty) {
-    return const <String>[];
-  }
-  return <String>[
-    if (frameworksDirPath != null)
-      liteRtLmIosFrameworkBinaryPath(frameworksDirPath, 'StreamProxy'),
     ...fallbacks,
   ];
 }
@@ -163,7 +134,6 @@ List<String> liteRtLmRequiredLibrariesForAbi(Abi abi) {
       'libLiteRtLm.so',
       'libLiteRtTopKWebGpuSampler.so',
       'libLiteRtWebGpuAccelerator.so',
-      'libStreamProxy.so',
     ],
     Abi.linuxX64 => const <String>[
       'libGemmaModelConstraintProvider.so',
@@ -171,11 +141,9 @@ List<String> liteRtLmRequiredLibrariesForAbi(Abi abi) {
       'libLiteRtLm.so',
       'libLiteRtTopKWebGpuSampler.so',
       'libLiteRtWebGpuAccelerator.so',
-      'libStreamProxy.so',
     ],
     Abi.windowsX64 => const <String>[
       'LiteRtLm.dll',
-      'StreamProxy.dll',
       'libGemmaModelConstraintProvider.dll',
       'libLiteRt.dll',
       'libLiteRtTopKWebGpuSampler.dll',
@@ -202,12 +170,8 @@ List<String> liteRtLmMacOsRequiredFrameworksForAbi(Abi abi) {
           'LiteRtTopKWebGpuSampler',
       'LiteRtWebGpuAccelerator.framework/Versions/A/'
           'LiteRtWebGpuAccelerator',
-      'StreamProxy.framework/Versions/A/StreamProxy',
     ],
-    Abi.macosX64 => const <String>[
-      'LiteRtLm.framework/Versions/A/LiteRtLm',
-      'StreamProxy.framework/Versions/A/StreamProxy',
-    ],
+    Abi.macosX64 => const <String>['LiteRtLm.framework/Versions/A/LiteRtLm'],
     _ => const <String>[],
   };
 }
@@ -392,7 +356,7 @@ class LiteRtLmRuntimeClient {
   }
 
   _LiteRtLmBindings? _bindings;
-  // Keep a strong reference while callbacks/function pointers may be active.
+  // Keep a strong runtime-library reference while proxy function pointers are active.
   // ignore: unused_field
   DynamicLibrary? _proxyLibrary;
   _ProxyCreateDart? _proxyCreate;
@@ -944,59 +908,20 @@ class LiteRtLmRuntimeClient {
       }
     }
 
-    if (libraries.proxyCandidates.isNotEmpty) {
-      try {
-        final proxyLibrary = _openFirstAvailable(
-          libraries.proxyCandidates,
-          description: 'StreamProxy library',
-        );
-        final loadGlobal = proxyLibrary
-            .lookupFunction<_LoadGlobalNative, _LoadGlobalDart>(
-              'stream_proxy_load_global',
-            );
-        final liteRtLmLoadTarget = libraries.liteRtLmCandidates.first;
-        final liteRtLmName = liteRtLmLoadTarget.toNativeUtf8();
-        try {
-          final handle = loadGlobal(liteRtLmName);
-          if (handle == nullptr) {
-            throw StateError(
-              'Failed to load $liteRtLmLoadTarget with RTLD_GLOBAL',
-            );
-          }
-        } finally {
-          calloc.free(liteRtLmName);
-        }
-
-        _proxyCreate = proxyLibrary
-            .lookupFunction<_ProxyCreateNative, _ProxyCreateDart>(
-              'stream_proxy_create',
-            );
-        _proxyFreeString = proxyLibrary
-            .lookupFunction<_ProxyFreeStringNative, _ProxyFreeStringDart>(
-              'stream_proxy_free_string',
-            );
-        _proxyDelete = proxyLibrary
-            .lookupFunction<_ProxyDeleteNative, _ProxyDeleteDart>(
-              'stream_proxy_delete',
-            );
-        _proxyLibrary = proxyLibrary;
-      } catch (error) {
-        if (!libraries.directCallbackSupported) {
-          rethrow;
-        }
-      }
-    }
-
     final liteRtLm = _openFirstAvailableWithPath(
       libraries.liteRtLmCandidates,
       description: 'LiteRT-LM library',
     );
     _liteRtLmLibraryPath = liteRtLm.path;
+    _tryLoadEmbeddedStreamProxy(
+      liteRtLm.library,
+      liteRtLm.path,
+      libraries.directCallbackSupported,
+    );
     _bindings = _LiteRtLmBindings(liteRtLm.library);
   }
 
   ({
-    List<String> proxyCandidates,
     List<String> liteRtLmCandidates,
     List<String> companions,
     bool directCallbackSupported,
@@ -1006,10 +931,6 @@ class LiteRtLmRuntimeClient {
     if (Platform.isAndroid &&
         (abi == Abi.androidArm64 || abi == Abi.androidX64)) {
       return (
-        proxyCandidates: const [
-          'package:llamadart/litert_lm_StreamProxy',
-          'libStreamProxy.so',
-        ],
         liteRtLmCandidates: const ['libLiteRtLm.so'],
         companions: const [],
         directCallbackSupported: true,
@@ -1018,15 +939,11 @@ class LiteRtLmRuntimeClient {
     if (Platform.isIOS && (abi == Abi.iosArm64 || abi == Abi.iosX64)) {
       // The LiteRT-LM frameworks are embedded under
       // `<App>.app/Frameworks/<Name>.framework/<Name>`. Resolving their absolute
-      // paths from the executable lets dlopen, the StreamProxy RTLD_GLOBAL
-      // preload, and the isolate re-open all receive a real path (the
-      // `package:` native-asset ids never load via `DynamicLibrary.open`).
+      // paths from the executable lets dlopen and the isolate re-open receive a
+      // real path (the `package:` native-asset ids never load via
+      // `DynamicLibrary.open`).
       final frameworksDirPath = _findIosAppFrameworksDir()?.path;
       return (
-        proxyCandidates: liteRtLmIosStreamProxyCandidates(
-          abi,
-          frameworksDirPath: frameworksDirPath,
-        ),
         liteRtLmCandidates: liteRtLmIosLibraryCandidates(
           abi,
           frameworksDirPath: frameworksDirPath,
@@ -1037,14 +954,29 @@ class LiteRtLmRuntimeClient {
     }
     if (Platform.isMacOS && (abi == Abi.macosArm64 || abi == Abi.macosX64)) {
       final companions = _macOsCompanionLibrariesForAbi(abi);
+      final appLibraryDir = _findMacOsAppLibraryDir();
+      if (appLibraryDir != null) {
+        return (
+          liteRtLmCandidates: ['${appLibraryDir.path}/libLiteRtLm.dylib'],
+          companions: [
+            for (final library in companions) '${appLibraryDir.path}/$library',
+          ],
+          directCallbackSupported: true,
+        );
+      }
+      final cacheDir = _findMacOsLiteRtLmCacheDir();
+      if (cacheDir != null) {
+        return (
+          liteRtLmCandidates: ['${cacheDir.path}/libLiteRtLm.dylib'],
+          companions: [
+            for (final library in companions) '${cacheDir.path}/$library',
+          ],
+          directCallbackSupported: true,
+        );
+      }
       final frameworksDir = _findMacOsAppFrameworksDir();
       if (frameworksDir != null) {
         return (
-          proxyCandidates: [
-            '${frameworksDir.path}/StreamProxy.framework/Versions/A/StreamProxy',
-            'package:llamadart/litert_lm_StreamProxy',
-            'libStreamProxy.dylib',
-          ],
           liteRtLmCandidates: [
             '${frameworksDir.path}/LiteRtLm.framework/Versions/A/LiteRtLm',
           ],
@@ -1055,26 +987,7 @@ class LiteRtLmRuntimeClient {
           directCallbackSupported: true,
         );
       }
-      final cacheDir = _findMacOsLiteRtLmCacheDir();
-      if (cacheDir != null) {
-        return (
-          proxyCandidates: [
-            '${cacheDir.path}/libStreamProxy.dylib',
-            'package:llamadart/litert_lm_StreamProxy',
-            'libStreamProxy.dylib',
-          ],
-          liteRtLmCandidates: ['${cacheDir.path}/libLiteRtLm.dylib'],
-          companions: [
-            for (final library in companions) '${cacheDir.path}/$library',
-          ],
-          directCallbackSupported: true,
-        );
-      }
       return (
-        proxyCandidates: const [
-          'package:llamadart/litert_lm_StreamProxy',
-          'libStreamProxy.dylib',
-        ],
         liteRtLmCandidates: const ['libLiteRtLm.dylib'],
         companions: [for (final library in companions) library],
         directCallbackSupported: true,
@@ -1084,21 +997,12 @@ class LiteRtLmRuntimeClient {
       final cacheDir = _findLiteRtLmCacheDirForAbi(abi);
       if (cacheDir != null) {
         return (
-          proxyCandidates: [
-            '${cacheDir.path}/libStreamProxy.so',
-            'package:llamadart/litert_lm_StreamProxy',
-            'libStreamProxy.so',
-          ],
           liteRtLmCandidates: ['${cacheDir.path}/libLiteRtLm.so'],
           companions: _companionLibrariesForAbi(abi, cacheDir),
           directCallbackSupported: true,
         );
       }
       return (
-        proxyCandidates: const [
-          'package:llamadart/litert_lm_StreamProxy',
-          'libStreamProxy.so',
-        ],
         liteRtLmCandidates: const ['package:llamadart/litert_lm_LiteRtLm'],
         companions: const [],
         directCallbackSupported: true,
@@ -1108,37 +1012,18 @@ class LiteRtLmRuntimeClient {
       final cacheDir = _findLiteRtLmCacheDirForAbi(abi);
       if (cacheDir != null) {
         return (
-          proxyCandidates: [
-            '${cacheDir.path}/StreamProxy.dll',
-            'package:llamadart/litert_lm_StreamProxy',
-            'StreamProxy.dll',
-          ],
           liteRtLmCandidates: ['${cacheDir.path}/LiteRtLm.dll'],
           companions: _companionLibrariesForAbi(abi, cacheDir),
           directCallbackSupported: true,
         );
       }
       return (
-        proxyCandidates: const [
-          'package:llamadart/litert_lm_StreamProxy',
-          'StreamProxy.dll',
-        ],
         liteRtLmCandidates: const ['package:llamadart/litert_lm_LiteRtLm'],
         companions: const [],
         directCallbackSupported: true,
       );
     }
     return null;
-  }
-
-  DynamicLibrary _openFirstAvailable(
-    List<String> candidates, {
-    required String description,
-  }) {
-    return _openFirstAvailableWithPath(
-      candidates,
-      description: description,
-    ).library;
   }
 
   ({String path, DynamicLibrary library}) _openFirstAvailableWithPath(
@@ -1156,6 +1041,65 @@ class LiteRtLmRuntimeClient {
     throw ArgumentError(
       'Failed to load any $description candidate:\n${errors.join('\n')}',
     );
+  }
+
+  void _tryLoadEmbeddedStreamProxy(
+    DynamicLibrary liteRtLmLibrary,
+    String liteRtLmPath,
+    bool directCallbackSupported,
+  ) {
+    try {
+      _loadRuntimeGloballyIfAvailable(liteRtLmLibrary, liteRtLmPath);
+      final proxyCreate = liteRtLmLibrary
+          .lookupFunction<_ProxyCreateNative, _ProxyCreateDart>(
+            'stream_proxy_create',
+          );
+      final proxyFreeString = liteRtLmLibrary
+          .lookupFunction<_ProxyFreeStringNative, _ProxyFreeStringDart>(
+            'stream_proxy_free_string',
+          );
+      final proxyDelete = liteRtLmLibrary
+          .lookupFunction<_ProxyDeleteNative, _ProxyDeleteDart>(
+            'stream_proxy_delete',
+          );
+
+      _proxyCreate = proxyCreate;
+      _proxyFreeString = proxyFreeString;
+      _proxyDelete = proxyDelete;
+      _proxyLibrary = liteRtLmLibrary;
+    } catch (error) {
+      _proxyCreate = null;
+      _proxyFreeString = null;
+      _proxyDelete = null;
+      _proxyLibrary = null;
+      if (!directCallbackSupported) {
+        throw StateError(
+          'LiteRT-LM runtime does not export embedded StreamProxy symbols: '
+          '$error',
+        );
+      }
+    }
+  }
+
+  void _loadRuntimeGloballyIfAvailable(
+    DynamicLibrary liteRtLmLibrary,
+    String liteRtLmPath,
+  ) {
+    try {
+      final loadGlobal = liteRtLmLibrary
+          .lookupFunction<_LoadGlobalNative, _LoadGlobalDart>(
+            'stream_proxy_load_global',
+          );
+      final liteRtLmName = liteRtLmPath.toNativeUtf8();
+      try {
+        loadGlobal(liteRtLmName);
+      } finally {
+        calloc.free(liteRtLmName);
+      }
+    } catch (_) {
+      // Loading the already-open runtime globally is best-effort. The proxy
+      // functions themselves are resolved from the active LiteRtLm handle below.
+    }
   }
 
   Directory? _findMacOsAppFrameworksDir() {
@@ -1179,6 +1123,20 @@ class LiteRtLmRuntimeClient {
       return frameworksDir;
     }
     return null;
+  }
+
+  Directory? _findMacOsAppLibraryDir() {
+    final executable = File(Platform.resolvedExecutable);
+    final contentsDir = executable.parent.parent;
+    final libraryDir = Directory(
+      '${contentsDir.path}/Frameworks/LiteRtLmRuntime',
+    );
+    if (!libraryDir.existsSync()) {
+      return null;
+    }
+    return liteRtLmIsMacOsCacheDirectoryForAbi(libraryDir, Abi.current())
+        ? libraryDir
+        : null;
   }
 
   /// Locates the `Frameworks` directory of the running iOS `.app` bundle when
@@ -1246,22 +1204,17 @@ class LiteRtLmRuntimeClient {
 
   List<String> _macOsCompanionLibrariesForAbi(Abi abi) {
     return liteRtLmMacOsRequiredLibrariesForAbi(abi)
-        .where(
-          (library) =>
-              library != 'libLiteRtLm.dylib' &&
-              library != 'libStreamProxy.dylib',
-        )
+        .where((library) => library != 'libLiteRtLm.dylib')
         .toList(growable: false);
   }
 
   List<String> _companionLibrariesForAbi(Abi abi, Directory dir) {
     final liteRtLm = _liteRtLmLibraryFileNameForAbi(abi);
-    final streamProxy = _streamProxyLibraryFileNameForAbi(abi);
-    if (liteRtLm == null || streamProxy == null) {
+    if (liteRtLm == null) {
       return const <String>[];
     }
     return liteRtLmRequiredLibrariesForAbi(abi)
-        .where((library) => library != liteRtLm && library != streamProxy)
+        .where((library) => library != liteRtLm)
         .map((library) => '${dir.path}/$library')
         .toList(growable: false);
   }
@@ -1273,17 +1226,6 @@ class LiteRtLmRuntimeClient {
       Abi.linuxArm64 => 'libLiteRtLm.so',
       Abi.linuxX64 => 'libLiteRtLm.so',
       Abi.windowsX64 => 'LiteRtLm.dll',
-      _ => null,
-    };
-  }
-
-  String? _streamProxyLibraryFileNameForAbi(Abi abi) {
-    return switch (abi) {
-      Abi.macosArm64 => 'libStreamProxy.dylib',
-      Abi.macosX64 => 'libStreamProxy.dylib',
-      Abi.linuxArm64 => 'libStreamProxy.so',
-      Abi.linuxX64 => 'libStreamProxy.so',
-      Abi.windowsX64 => 'StreamProxy.dll',
       _ => null,
     };
   }

@@ -37,6 +37,7 @@ A Flutter UI application showing:
 - Model configuration
 - Settings persistence
 - Streaming text generation
+- GGUF plus LiteRT-LM `.litertlm` model routing
 - Material Design UI
 
 **Best for:** Real-world Flutter integration
@@ -161,7 +162,9 @@ See HuggingFace for more: https://huggingface.co/models?search=gguf
 
 ## Model Formats
 
-llamadart supports GGUF format models (converted for llama.cpp).
+Most examples use GGUF models through the llama.cpp runtime. The Flutter
+`chat_app` also demonstrates LiteRT-LM `.litertlm` models and explicitly opts
+into the `litert_lm` native runtime family for supported native targets.
 
 ## Architecture
 
@@ -205,7 +208,8 @@ example/
 - Dart SDK 3.10.7 or higher
 - For chat_app: Flutter 3.38.0 or higher
 - iOS builds require a minimum deployment target of 16.4 or newer
-- Internet connection (for first run - downloads native libraries)
+- Internet connection (for first run - downloads selected native runtime
+  libraries)
 - At least 2GB RAM minimum, 4GB+ recommended
 
 ## Platform Compatibility

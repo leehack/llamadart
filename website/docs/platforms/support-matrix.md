@@ -8,7 +8,7 @@ backend-module configuration for
 `llamadart`.
 
 The native-assets hook currently pins `llamadart-native` tag `b9371` and
-`litert-lm-native` release `v0.12.0` (`hook/build.dart`). Apps can override the
+`litert-lm-native` release `v0.13.1` (`hook/build.dart`). Apps can override the
 llama.cpp native GitHub source with
 `hooks.user_defines.llamadart.llamadart_native_tag` and
 `hooks.user_defines.llamadart.llamadart_native_repository`, or use a local
@@ -79,9 +79,10 @@ bundled:
 - `llama_cpp`: GGUF model support through llama.cpp.
 - `litert_lm`: `.litertlm` model support through LiteRT-LM.
 
-The default is both runtime families where the target platform has both. This
-maximizes format compatibility, but apps that only ship one model format can
-trim package size:
+Android defaults to both runtime families where available. Other native targets
+default to `llama_cpp` only; opt into `litert_lm` when those apps ship
+`.litertlm` bundles. Apps that only ship one model format can also trim package
+size:
 
 ```yaml
 hooks:
@@ -90,7 +91,8 @@ hooks:
       llamadart_native_runtimes: [llama_cpp]
 ```
 
-Per-platform overrides use the same bundle keys as the tables on this page:
+Per-platform overrides can use OS keys or the exact bundle keys from the tables
+on this page. Exact target keys override OS keys:
 
 ```yaml
 hooks:
@@ -99,16 +101,19 @@ hooks:
       llamadart_native_runtimes:
         runtimes: [llama_cpp, litert_lm]
         platforms:
+          ios: [llama_cpp]
+          macos: [llama_cpp, litert_lm]
           android-arm64: [litert_lm]
           linux-x64: [llama_cpp]
 ```
 
 Accepted aliases include `llama.cpp`, `gguf`, `litert`, and `litert-lm`.
+Use `all` or `both` to include every runtime family for a target.
 Explicitly selecting `litert_lm` for a target without a pinned LiteRT-LM
 runtime fails during the build hook instead of producing an app that cannot
 load `.litertlm` models.
 
-## LiteRT-LM runtime coverage (`v0.12.0`)
+## LiteRT-LM runtime coverage (`v0.13.1`)
 
 | Platform target | LiteRT-LM bundle key | Selectable backends | Status |
 | --- | --- | --- | --- |
@@ -116,7 +121,7 @@ load `.litertlm` models.
 | Android x64 | `android-x64` | `cpu`, `gpu`, `npu` | Supported for emulator/test targets |
 | iOS arm64 (device) | `ios-arm64` | `cpu` | Supported |
 | iOS arm64 (simulator) | `ios-arm64-sim` | `cpu` | Supported |
-| iOS x86_64 (simulator) | `ios-x64-sim` | `cpu` | Supported |
+| iOS x86_64 (simulator) | Not published | N/A | Unsupported; exclude `litert_lm` for this target |
 | macOS arm64 | `macos-arm64` | `cpu`, `gpu` | Supported |
 | macOS x86_64 | `macos-x64` | `cpu`, `gpu` | Supported |
 | Linux arm64 | `linux-arm64` | `cpu` | Supported |
@@ -264,7 +269,8 @@ no valid entries remain, selection falls back to `cpu_profile` (or default
 
 - Configurable targets start from defaults (`cpu`, `vulkan`) if available.
 - `llamadart_native_runtimes` controls whole native runtime families:
-  `llama_cpp`, `litert_lm`, or both.
+  `llama_cpp`, `litert_lm`, or both. Android defaults to both families; other
+  native targets default to `llama_cpp` only.
 - `llamadart_native_backends` controls only llama.cpp module files inside
   `llama_cpp`; it does not affect LiteRT-LM assets.
 - `cpu` is auto-added as fallback when present in the bundle.
@@ -285,7 +291,8 @@ no valid entries remain, selection falls back to `cpu_profile` (or default
   consolidated.
 - Sandboxed macOS apps must stage LiteRT-LM companion dylibs inside the app
   bundle. The example chat app does this with the
-  `Prepare LiteRT-LM Frameworks` Xcode build phase.
+  `Prepare LiteRT-LM Runtime` Xcode build phase, which copies dylibs into
+  `Contents/Frameworks/LiteRtLmRuntime`.
 - `windows-x64` performs extra runtime dependency validation:
   - `cuda` requires `cudart` and `cublas` DLLs.
   - `blas` requires OpenBLAS DLL.

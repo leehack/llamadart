@@ -51,8 +51,9 @@ GitHub Releases:
 - `leehack/llamadart-native` for llama.cpp / GGUF runtime libraries.
 - `leehack/litert-lm-native` for LiteRT-LM / `.litertlm` runtime libraries.
 
-Native builds include both runtime families by default when the target platform
-has both. Apps that only ship one model format can reduce package size with
+Android native builds include both runtime families by default when available.
+Other native targets default to `llama_cpp` only. Apps can enable LiteRT-LM on
+desktop/iOS, or reduce package size when they only ship one model format, with
 `hooks.user_defines.llamadart.llamadart_native_runtimes`:
 
 ```yaml
@@ -62,7 +63,8 @@ hooks:
       llamadart_native_runtimes: [llama_cpp] # or [litert_lm]
 ```
 
-The value can also be a per-platform map:
+The value can also be a per-OS or exact-target map. Exact target keys override
+OS keys:
 
 ```yaml
 hooks:
@@ -71,12 +73,15 @@ hooks:
       llamadart_native_runtimes:
         runtimes: [llama_cpp, litert_lm]
         platforms:
+          ios: [llama_cpp]
+          macos: [llama_cpp, litert_lm]
           android-arm64: [litert_lm]
           linux-x64: [llama_cpp]
 ```
 
 Use `llamadart_native_backends` separately to filter llama.cpp modules such as
 Vulkan, CUDA, OpenCL, BLAS, and HIP inside the `llama_cpp` runtime family.
+Use `all` or `both` to include every runtime family for a target.
 
 ### 3. Dynamic Linking
 Using `native_assets_cli`, the downloaded dynamic libraries (`.so`, `.dylib`,
@@ -91,10 +96,11 @@ The hook validates the full expected companion set after extraction so missing
 or stale `litert-lm-native` archives fail during the build rather than later at
 engine creation.
 
-On macOS, LiteRT-LM dylibs are staged as app-bundle frameworks instead of
-opened directly from `.dart_tool`, because sandboxed apps cannot open arbitrary
-files from the build cache. The example chat app includes an Xcode build phase
-that calls `tool/macos_litert_lm_prepare_app.sh` after Flutter embeds its
+On macOS, LiteRT-LM dylibs are copied into
+`Contents/Frameworks/LiteRtLmRuntime` instead of reported as native assets,
+because Flutter's macOS bundler can rewrite install names in a way the upstream
+dylibs do not tolerate. The example chat app includes an Xcode build phase that
+calls `tool/macos_litert_lm_prepare_app.sh` after Flutter embeds its
 frameworks.
 
 ### 4. Validation and fallback safeguards
@@ -106,9 +112,9 @@ frameworks.
   to defaults.
 - On `windows-x64`, the hook additionally validates CUDA/BLAS runtime
   dependencies before accepting a bundle.
-- LiteRT-LM archives are checksum-pinned separately from llama.cpp archives and
-  use a cache marker so stale extracted runtimes are re-extracted when the
-  pinned release digest changes.
+- LiteRT-LM archives are validated after extraction by checking the required
+  runtime libraries; corrupt or incomplete cached archives are refreshed before
+  the build continues.
 
 ## The `llamadart-native` Bridge Repo
 

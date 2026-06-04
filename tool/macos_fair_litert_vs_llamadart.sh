@@ -40,8 +40,7 @@ echo "== LiteRT-LM Metal =="
     "$APP/Contents/Frameworks/LiteRtWebGpuAccelerator.framework" \
     "$APP/Contents/Frameworks/LiteRt.framework" \
     "$APP/Contents/Frameworks/LiteRtLm.framework" \
-    "$APP/Contents/Frameworks/GemmaModelConstraintProvider.framework" \
-    "$APP/Contents/Frameworks/StreamProxy.framework"
+    "$APP/Contents/Frameworks/GemmaModelConstraintProvider.framework"
 
   flutter build macos --debug \
     -t lib/litert_lm_benchmark_app.dart \

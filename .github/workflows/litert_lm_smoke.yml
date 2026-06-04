@@ -12,6 +12,7 @@ on:
       - "lib/src/hook/**"
       - "pubspec.*"
       - "tool/litert_lm_engine_smoke.dart"
+      - "tool/litert_lm_library_smoke.dart"
   pull_request:
     branches: [master, main]
     paths:
@@ -22,6 +23,7 @@ on:
       - "lib/src/hook/**"
       - "pubspec.*"
       - "tool/litert_lm_engine_smoke.dart"
+      - "tool/litert_lm_library_smoke.dart"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -34,12 +36,13 @@ jobs:
     timeout-minutes: 35
     strategy:
       fail-fast: false
+      max-parallel: 1
       matrix:
         include:
           - os: ubuntu-latest
-            litert_lib_dir: .dart_tool/llamadart/litert_lm/0.12.0/linux/x64
+            litert_lib_subdir: linux/x64
           - os: windows-latest
-            litert_lib_dir: .dart_tool/llamadart/litert_lm/0.12.0/windows/x64
+            litert_lib_subdir: windows/x64
 
     steps:
       - uses: actions/checkout@v6
@@ -50,47 +53,112 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Install dependencies
-        run: flutter pub get
-
-      - name: Download tiny LiteRT-LM model
+      - name: Enable LiteRT-LM runtime for smoke
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/models"
-          PYTHON_BIN=python3
-          if ! command -v python3 >/dev/null 2>&1; then
-            PYTHON_BIN=python
-          fi
-          "$PYTHON_BIN" - <<'PY'
-          import os
-          import pathlib
-          import time
-          import urllib.request
+          python3 - <<'PY'
+          from pathlib import Path
 
-          url = "https://huggingface.co/litert-community/Qwen3-0.6B/resolve/main/Qwen3-0.6B.litertlm?download=true"
-          destination = pathlib.Path(os.environ["RUNNER_TEMP"]) / "models" / "Qwen3-0.6B.litertlm"
-          last_error = None
-          for attempt in range(1, 6):
-              try:
-                  urllib.request.urlretrieve(url, destination)
-                  break
-              except Exception as error:
-                  last_error = error
-                  if attempt == 5:
-                      raise
-                  time.sleep(3 * attempt)
-          print(f"Downloaded {destination} ({destination.stat().st_size} bytes)")
+          pubspec = Path("pubspec.yaml")
+          text = pubspec.read_text()
+          if "\nhooks:" in text or text.startswith("hooks:"):
+              raise SystemExit(
+                  "pubspec.yaml already contains hooks; update the "
+                  "LiteRT-LM smoke workflow to merge the CI user_defines."
+              )
+          pubspec.write_text(text.rstrip() + """
+
+          hooks:
+            user_defines:
+              llamadart:
+                llamadart_native_runtimes: [litert_lm]
+          """)
           PY
 
-      - name: Run LiteRT-LM engine smoke
+      - name: Resolve LiteRT-LM runtime version
+        id: litert-version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(python3 - <<'PY'
+          import pathlib
+          import re
+
+          text = pathlib.Path("hook/build.dart").read_text()
+          match = re.search(r"const _litertLmVersion = '([^']+)';", text)
+          if not match:
+              raise SystemExit("Could not locate _litertLmVersion")
+          print(match.group(1))
+          PY
+          )"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Run LiteRT-LM library smoke
         shell: bash
         env:
-          LLAMADART_LITERT_LM_LIB_DIR: ${{ github.workspace }}/${{ matrix.litert_lib_dir }}
+          LLAMADART_LITERT_LM_LIB_DIR: ${{ github.workspace }}/.dart_tool/llamadart/litert_lm/${{ steps.litert-version.outputs.version }}/${{ matrix.litert_lib_subdir }}
+        run: dart run tool/litert_lm_library_smoke.dart
+
+      - name: Cache tiny LiteRT-LM model
+        uses: actions/cache@v5
+        with:
+          path: .dart_tool/litert_lm_models/Qwen3-0.6B.litertlm
+          key: litert-lm-smoke-qwen3-0.6b-${{ runner.os }}-v1
+
+      - name: Download tiny LiteRT-LM model
+        id: download-model
+        continue-on-error: true
+        shell: bash
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          set -euo pipefail
+          model_path=".dart_tool/litert_lm_models/Qwen3-0.6B.litertlm"
+          model_url="https://huggingface.co/litert-community/Qwen3-0.6B/resolve/main/Qwen3-0.6B.litertlm?download=true"
+          mkdir -p "$(dirname "$model_path")"
+          if [ -s "$model_path" ]; then
+            echo "Using cached $model_path ($(wc -c < "$model_path") bytes)"
+            exit 0
+          fi
+          tmp_path="${model_path}.tmp"
+          rm -f "$tmp_path"
+          curl_args=(
+            --fail
+            --location
+            --retry 8
+            --retry-all-errors
+            --retry-delay 15
+            --retry-max-time 600
+            --connect-timeout 30
+            --output "$tmp_path"
+          )
+          if [ -n "${HF_TOKEN:-}" ]; then
+            curl_args+=(--header "Authorization: Bearer ${HF_TOKEN}")
+          fi
+          curl "${curl_args[@]}" "$model_url"
+          mv "$tmp_path" "$model_path"
+          echo "Downloaded $model_path ($(wc -c < "$model_path") bytes)"
+
+      - name: Run LiteRT-LM engine smoke
+        if: steps.download-model.outcome == 'success'
+        shell: bash
+        env:
+          LLAMADART_LITERT_LM_LIB_DIR: ${{ github.workspace }}/.dart_tool/llamadart/litert_lm/${{ steps.litert-version.outputs.version }}/${{ matrix.litert_lib_subdir }}
+          LITERT_LM_MODEL_PATH: ${{ github.workspace }}/.dart_tool/litert_lm_models/Qwen3-0.6B.litertlm
         run: |
           dart run tool/litert_lm_engine_smoke.dart \
-            "$RUNNER_TEMP/models/Qwen3-0.6B.litertlm" \
+            "$LITERT_LM_MODEL_PATH" \
             cpu \
             "What is 2+2? Answer only with the number." \
             16 \
             1024
+
+      - name: Note skipped LiteRT-LM engine smoke
+        if: steps.download-model.outcome != 'success'
+        shell: bash
+        run: |
+          echo "::warning::Skipped LiteRT-LM engine smoke because the external model download failed. The library/native-asset smoke already passed."

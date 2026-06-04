@@ -13,15 +13,17 @@ import '../../../hook/build.dart' as build_hook;
 void main() {
   final nativeTag = _readHookConst('_llamaCppTag');
   final litertVersion = _readHookConst('_litertLmVersion');
-  final linuxArm64LitertSha256 = _readLiteRtBundleSha256('linux-arm64');
-  final iosArm64LitertSha256 = _readLiteRtBundleSha256('ios-arm64');
-  final iosArm64SimLitertSha256 = _readLiteRtBundleSha256('ios-arm64-sim');
-  final iosX64SimLitertSha256 = _readLiteRtBundleSha256('ios-x64-sim');
   final nativeBundleDir = Directory(
     '.dart_tool/llamadart/native_bundles/$nativeTag/linux-arm64/extracted',
   );
   final litertBundleDir = Directory(
     '.dart_tool/llamadart/litert_lm/$litertVersion/linux/arm64',
+  );
+  final macosArm64NativeBundleDir = Directory(
+    '.dart_tool/llamadart/native_bundles/$nativeTag/macos-arm64/extracted',
+  );
+  final macosArm64LitertBundleDir = Directory(
+    '.dart_tool/llamadart/litert_lm/$litertVersion/macos/arm64',
   );
   final iosDeviceNativeBundleDir = Directory(
     '.dart_tool/llamadart/native_bundles/$nativeTag/ios-arm64/extracted',
@@ -38,12 +40,17 @@ void main() {
   final iosArm64SimLitertBundleDir = Directory(
     '.dart_tool/llamadart/litert_lm/$litertVersion/ios/arm64-sim',
   );
-  final iosX64SimLitertBundleDir = Directory(
-    '.dart_tool/llamadart/litert_lm/$litertVersion/ios/x64-sim',
-  );
   final backupPairs = [
     (nativeBundleDir, Directory('${nativeBundleDir.path}.__litert_test')),
     (litertBundleDir, Directory('${litertBundleDir.path}.__litert_test')),
+    (
+      macosArm64NativeBundleDir,
+      Directory('${macosArm64NativeBundleDir.path}.__litert_test'),
+    ),
+    (
+      macosArm64LitertBundleDir,
+      Directory('${macosArm64LitertBundleDir.path}.__litert_test'),
+    ),
     (
       iosDeviceNativeBundleDir,
       Directory('${iosDeviceNativeBundleDir.path}.__litert_test'),
@@ -64,10 +71,6 @@ void main() {
       iosArm64SimLitertBundleDir,
       Directory('${iosArm64SimLitertBundleDir.path}.__litert_test'),
     ),
-    (
-      iosX64SimLitertBundleDir,
-      Directory('${iosX64SimLitertBundleDir.path}.__litert_test'),
-    ),
   ];
 
   setUpAll(() async {
@@ -84,10 +87,13 @@ void main() {
       'libggml-base.so',
       'libggml-cpu.so',
     ]);
+    await _writeBundleLibraries(litertBundleDir, _linuxLiteRtLibraries);
+    await _writeBundleLibraries(macosArm64NativeBundleDir, const [
+      'libllamadart.dylib',
+    ]);
     await _writeBundleLibraries(
-      litertBundleDir,
-      _linuxLiteRtLibraries,
-      sha256: linuxArm64LitertSha256,
+      macosArm64LitertBundleDir,
+      _macosArm64LiteRtLibraries,
     );
     for (final directory in [
       iosDeviceNativeBundleDir,
@@ -99,21 +105,8 @@ void main() {
     for (final directory in [
       iosDeviceLitertBundleDir,
       iosArm64SimLitertBundleDir,
-      iosX64SimLitertBundleDir,
     ]) {
-      await _writeBundleLibraries(
-        directory,
-        const ['libLiteRtLm.dylib', 'libStreamProxy.dylib'],
-        sha256: switch (directory.path) {
-          final path when path == iosDeviceLitertBundleDir.path =>
-            iosArm64LitertSha256,
-          final path when path == iosArm64SimLitertBundleDir.path =>
-            iosArm64SimLitertSha256,
-          final path when path == iosX64SimLitertBundleDir.path =>
-            iosX64SimLitertSha256,
-          _ => null,
-        },
-      );
+      await _writeBundleLibraries(directory, _iosLiteRtLibraries);
     }
   });
 
@@ -130,7 +123,6 @@ void main() {
     _expectSpecLibraries(source, 'android-x64', _androidLiteRtLibraries);
     _expectSpecLibraries(source, 'ios-arm64', _iosLiteRtLibraries);
     _expectSpecLibraries(source, 'ios-arm64-sim', _iosLiteRtLibraries);
-    _expectSpecLibraries(source, 'ios-x64-sim', _iosLiteRtLibraries);
     _expectSpecLibraries(source, 'macos-arm64', _macosArm64LiteRtLibraries);
     _expectSpecLibraries(source, 'macos-x64', _macosX64LiteRtLibraries);
     _expectSpecLibraries(source, 'linux-arm64', _linuxLiteRtLibraries);
@@ -138,48 +130,72 @@ void main() {
     _expectSpecLibraries(source, 'windows-x64', _windowsLiteRtLibraries);
   });
 
-  test('build hook emits Linux arm64 LiteRT-LM runtime companions', () async {
-    await testCodeBuildHook(
-      mainMethod: build_hook.main,
-      targetOS: OS.linux,
-      targetArchitecture: Architecture.arm64,
-      check: (input, output) {
-        final codeAssets = output.assets.encodedAssets
-            .where((asset) => asset.isCodeAsset)
-            .map((asset) => asset.asCodeAsset)
-            .toList(growable: false);
+  test(
+    'build hook emits Linux arm64 LiteRT-LM runtime companions when requested',
+    () async {
+      await testCodeBuildHook(
+        mainMethod: build_hook.main,
+        targetOS: OS.linux,
+        targetArchitecture: Architecture.arm64,
+        userDefines: _allRuntimeUserDefines(),
+        check: (input, output) {
+          final codeAssets = output.assets.encodedAssets
+              .where((asset) => asset.isCodeAsset)
+              .map((asset) => asset.asCodeAsset)
+              .toList(growable: false);
 
-        final codeAssetIds = codeAssets.map((asset) => asset.id).toSet();
-        final emittedNames = codeAssets
-            .map((asset) => path.basename(asset.file!.toFilePath()))
-            .toSet();
+          final codeAssetIds = codeAssets.map((asset) => asset.id).toSet();
+          final emittedNames = codeAssets
+              .map((asset) => path.basename(asset.file!.toFilePath()))
+              .toSet();
 
-        expect(codeAssetIds, contains('package:llamadart/llamadart'));
-        for (final library in _linuxLiteRtLibraries) {
-          expect(emittedNames, contains(library));
-        }
-        for (final assetName in _linuxLiteRtAssetNames) {
-          expect(codeAssetIds, contains('package:llamadart/$assetName'));
-        }
-      },
-    );
-  });
+          expect(codeAssetIds, contains('package:llamadart/llamadart'));
+          for (final library in _linuxLiteRtLibraries) {
+            expect(emittedNames, contains(library));
+          }
+          for (final assetName in _linuxLiteRtAssetNames) {
+            expect(codeAssetIds, contains('package:llamadart/$assetName'));
+          }
+        },
+      );
+    },
+  );
+
+  test(
+    'build hook keeps macOS LiteRT-LM libraries in the cache when requested',
+    () async {
+      await testCodeBuildHook(
+        mainMethod: build_hook.main,
+        targetOS: OS.macOS,
+        targetArchitecture: Architecture.arm64,
+        userDefines: _allRuntimeUserDefines(),
+        check: (input, output) {
+          final codeAssets = output.assets.encodedAssets
+              .where((asset) => asset.isCodeAsset)
+              .map((asset) => asset.asCodeAsset)
+              .toList(growable: false);
+
+          final codeAssetIds = codeAssets.map((asset) => asset.id).toSet();
+          final emittedNames = codeAssets
+              .map((asset) => path.basename(asset.file!.toFilePath()))
+              .toSet();
+
+          expect(codeAssetIds, contains('package:llamadart/llamadart'));
+          expect(codeAssetIds.where((id) => id.contains('litert_lm')), isEmpty);
+          for (final library in _macosArm64LiteRtLibraries) {
+            expect(emittedNames, isNot(contains(library)));
+          }
+        },
+      );
+    },
+  );
 
   test('build hook can emit LiteRT-LM runtime without llama.cpp', () async {
-    final userDefines = PackageUserDefines(
-      workspacePubspec: PackageUserDefinesSource(
-        defines: {
-          'llamadart_native_runtimes': ['litert_lm'],
-        },
-        basePath: Directory.current.uri,
-      ),
-    );
-
     await testCodeBuildHook(
       mainMethod: build_hook.main,
       targetOS: OS.linux,
       targetArchitecture: Architecture.arm64,
-      userDefines: userDefines,
+      userDefines: _liteRtLmOnlyUserDefines(),
       check: (input, output) {
         final codeAssets = output.assets.encodedAssets
             .where((asset) => asset.isCodeAsset)
@@ -204,18 +220,19 @@ void main() {
   });
 
   test(
-    'build hook emits iOS device LiteRT-LM runtime and StreamProxy',
+    'build hook emits iOS device LiteRT-LM wrapper and upstream runtime',
     () async {
       await testCodeBuildHook(
         mainMethod: build_hook.main,
         targetOS: OS.iOS,
         targetArchitecture: Architecture.arm64,
         targetIOSSdk: IOSSdk.iPhoneOS,
+        userDefines: _allRuntimeUserDefines(),
         check: (input, output) {
           _expectLiteRtLmAssets(
             output.assets.encodedAssets,
-            liteRtLmFileName: 'libLiteRtLm.dylib',
-            streamProxyFileName: 'libStreamProxy.dylib',
+            liteRtLmFileName: 'LiteRtLm',
+            upstreamFileName: 'CLiteRTLM',
           );
         },
       );
@@ -223,18 +240,19 @@ void main() {
   );
 
   test(
-    'build hook emits iOS arm64 simulator LiteRT-LM runtime and StreamProxy',
+    'build hook emits iOS arm64 simulator wrapper and upstream runtime',
     () async {
       await testCodeBuildHook(
         mainMethod: build_hook.main,
         targetOS: OS.iOS,
         targetArchitecture: Architecture.arm64,
         targetIOSSdk: IOSSdk.iPhoneSimulator,
+        userDefines: _allRuntimeUserDefines(),
         check: (input, output) {
           _expectLiteRtLmAssets(
             output.assets.encodedAssets,
-            liteRtLmFileName: 'libLiteRtLm.dylib',
-            streamProxyFileName: 'libStreamProxy.dylib',
+            liteRtLmFileName: 'LiteRtLm',
+            upstreamFileName: 'CLiteRTLM',
           );
         },
       );
@@ -242,20 +260,45 @@ void main() {
   );
 
   test(
-    'build hook emits iOS x64 simulator LiteRT-LM runtime and StreamProxy',
+    'build hook excludes unavailable iOS simulator LiteRT-LM by default',
     () async {
       await testCodeBuildHook(
         mainMethod: build_hook.main,
         targetOS: OS.iOS,
         targetArchitecture: Architecture.x64,
         targetIOSSdk: IOSSdk.iPhoneSimulator,
-        check: (input, output) {
-          _expectLiteRtLmAssets(
-            output.assets.encodedAssets,
-            liteRtLmFileName: 'libLiteRtLm.dylib',
-            streamProxyFileName: 'libStreamProxy.dylib',
-          );
+        check: (_, output) {
+          final codeAssetIds = output.assets.encodedAssets
+              .where((asset) => asset.isCodeAsset)
+              .map((asset) => asset.asCodeAsset.id)
+              .toSet();
+
+          expect(codeAssetIds, contains('package:llamadart/llamadart'));
+          expect(codeAssetIds.where((id) => id.contains('litert_lm')), isEmpty);
         },
+      );
+    },
+  );
+
+  test(
+    'build hook fails when requested LiteRT-LM runtime is unavailable',
+    () async {
+      await expectLater(
+        testCodeBuildHook(
+          mainMethod: build_hook.main,
+          targetOS: OS.iOS,
+          targetArchitecture: Architecture.x64,
+          targetIOSSdk: IOSSdk.iPhoneSimulator,
+          userDefines: _allRuntimeUserDefines(),
+          check: (_, _) {},
+        ),
+        throwsA(
+          isA<Exception>().having(
+            (error) => error.toString(),
+            'message',
+            contains('LiteRT-LM runtime is not available for ios-x86_64-sim'),
+          ),
+        ),
       );
     },
   );
@@ -270,6 +313,24 @@ String _readHookConst(String name) {
   return match.group(1)!;
 }
 
+PackageUserDefines _liteRtLmOnlyUserDefines() => PackageUserDefines(
+  workspacePubspec: PackageUserDefinesSource(
+    defines: {
+      'llamadart_native_runtimes': ['litert_lm'],
+    },
+    basePath: Directory.current.uri,
+  ),
+);
+
+PackageUserDefines _allRuntimeUserDefines() => PackageUserDefines(
+  workspacePubspec: PackageUserDefinesSource(
+    defines: {
+      'llamadart_native_runtimes': ['all'],
+    },
+    basePath: Directory.current.uri,
+  ),
+);
+
 void _expectSpecLibraries(
   String source,
   String bundleKey,
@@ -277,7 +338,7 @@ void _expectSpecLibraries(
 ) {
   final escapedKey = RegExp.escape(bundleKey);
   final match = RegExp(
-    "'$escapedKey':\\s*_LiteRtLmBundleSpec\\([\\s\\S]*?"
+    "_LiteRtLmBundleSpec\\(\\s*'$escapedKey',[\\s\\S]*?"
     'requiredLibraries:\\s*\\{([\\s\\S]*?)\\},',
   ).firstMatch(source);
   if (match == null) {
@@ -298,13 +359,9 @@ const List<String> _androidLiteRtLibraries = [
   'libLiteRtTopKOpenClSampler.so',
   'libLiteRtTopKWebGpuSampler.so',
   'libLiteRtWebGpuAccelerator.so',
-  'libStreamProxy.so',
 ];
 
-const List<String> _iosLiteRtLibraries = [
-  'libLiteRtLm.dylib',
-  'libStreamProxy.dylib',
-];
+const List<String> _iosLiteRtLibraries = ['LiteRtLm', 'CLiteRTLM'];
 
 const List<String> _macosArm64LiteRtLibraries = [
   'libGemmaModelConstraintProvider.dylib',
@@ -314,13 +371,9 @@ const List<String> _macosArm64LiteRtLibraries = [
   'libLiteRtTopKMetalSampler.dylib',
   'libLiteRtTopKWebGpuSampler.dylib',
   'libLiteRtWebGpuAccelerator.dylib',
-  'libStreamProxy.dylib',
 ];
 
-const List<String> _macosX64LiteRtLibraries = [
-  'libLiteRtLm.dylib',
-  'libStreamProxy.dylib',
-];
+const List<String> _macosX64LiteRtLibraries = ['libLiteRtLm.dylib'];
 
 const List<String> _linuxLiteRtLibraries = [
   'libGemmaModelConstraintProvider.so',
@@ -328,7 +381,6 @@ const List<String> _linuxLiteRtLibraries = [
   'libLiteRtLm.so',
   'libLiteRtTopKWebGpuSampler.so',
   'libLiteRtWebGpuAccelerator.so',
-  'libStreamProxy.so',
 ];
 
 const List<String> _linuxLiteRtAssetNames = [
@@ -337,29 +389,15 @@ const List<String> _linuxLiteRtAssetNames = [
   'litert_lm_LiteRtLm',
   'litert_lm_LiteRtTopKWebGpuSampler',
   'litert_lm_LiteRtWebGpuAccelerator',
-  'litert_lm_StreamProxy',
 ];
 
 const List<String> _windowsLiteRtLibraries = [
   'LiteRtLm.dll',
-  'StreamProxy.dll',
   'libGemmaModelConstraintProvider.dll',
   'libLiteRt.dll',
   'libLiteRtTopKWebGpuSampler.dll',
   'libLiteRtWebGpuAccelerator.dll',
 ];
-
-String _readLiteRtBundleSha256(String bundleKey) {
-  final source = File('hook/build.dart').readAsStringSync();
-  final escapedKey = RegExp.escape(bundleKey);
-  final match = RegExp(
-    "'$escapedKey':\\s*_LiteRtLmBundleSpec\\([\\s\\S]*?sha256:\\s*'([^']+)'",
-  ).firstMatch(source);
-  if (match == null) {
-    throw StateError('Could not locate LiteRT-LM checksum for $bundleKey');
-  }
-  return match.group(1)!;
-}
 
 Future<void> _backupDirectory(Directory directory, Directory backup) async {
   if (backup.existsSync()) {
@@ -381,9 +419,8 @@ Future<void> _restoreDirectory(Directory directory, Directory backup) async {
 
 Future<void> _writeBundleLibraries(
   Directory bundleDir,
-  List<String> fileNames, {
-  String? sha256,
-}) async {
+  List<String> fileNames,
+) async {
   if (bundleDir.existsSync()) {
     await bundleDir.delete(recursive: true);
   }
@@ -391,17 +428,12 @@ Future<void> _writeBundleLibraries(
   for (final name in fileNames) {
     await File(path.join(bundleDir.path, name)).writeAsString('fake-$name');
   }
-  if (sha256 != null) {
-    await File(
-      path.join(bundleDir.path, '.llamadart_litert_lm.sha256'),
-    ).writeAsString('$sha256\n');
-  }
 }
 
 void _expectLiteRtLmAssets(
   Iterable<EncodedAsset> encodedAssets, {
   required String liteRtLmFileName,
-  required String streamProxyFileName,
+  required String upstreamFileName,
 }) {
   final codeAssets = encodedAssets
       .where((asset) => asset.isCodeAsset)
@@ -415,7 +447,7 @@ void _expectLiteRtLmAssets(
 
   expect(codeAssetIds, contains('package:llamadart/llamadart'));
   expect(codeAssetIds, contains('package:llamadart/litert_lm_LiteRtLm'));
-  expect(codeAssetIds, contains('package:llamadart/litert_lm_StreamProxy'));
+  expect(codeAssetIds, contains('package:llamadart/litert_lm_CLiteRTLM'));
   expect(emittedNames, contains(liteRtLmFileName));
-  expect(emittedNames, contains(streamProxyFileName));
+  expect(emittedNames, contains(upstreamFileName));
 }

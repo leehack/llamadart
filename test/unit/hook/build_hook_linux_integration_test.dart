@@ -12,7 +12,6 @@ import '../../../hook/build.dart' as build_hook;
 void main() {
   final nativeTag = _readHookNativeTag();
   final litertVersion = _readHookLiteRtLmVersion();
-  final litertSha256 = _readLiteRtBundleSha256('linux-x64');
   final cacheRelativeDir =
       '.dart_tool/llamadart/native_bundles/$nativeTag/linux-x64';
   final bundleRelativePath = '$cacheRelativeDir/extracted';
@@ -53,11 +52,7 @@ void main() {
       'libggml-cpu.so',
       'libggml-vulkan.so',
     ]);
-    await _writeBundleLibraries(
-      litertBundleDir,
-      _linuxLiteRtLibraries,
-      sha256: litertSha256,
-    );
+    await _writeBundleLibraries(litertBundleDir, _linuxLiteRtLibraries);
   });
 
   tearDownAll(() async {
@@ -76,7 +71,7 @@ void main() {
   });
 
   test(
-    'build hook emits linux SONAME aliases for runtime dependencies',
+    'build hook emits linux SONAME aliases without LiteRT-LM by default',
     () async {
       await testCodeBuildHook(
         mainMethod: build_hook.main,
@@ -103,10 +98,13 @@ void main() {
           expect(emittedNames, contains('libggml-base.so'));
           expect(emittedNames, contains('libggml-base.so.0'));
           for (final library in _linuxLiteRtLibraries) {
-            expect(emittedNames, contains(library));
+            expect(emittedNames, isNot(contains(library)));
           }
           for (final assetName in _linuxLiteRtAssetNames) {
-            expect(codeAssetIds, contains('package:llamadart/$assetName'));
+            expect(
+              codeAssetIds,
+              isNot(contains('package:llamadart/$assetName')),
+            );
           }
         },
       );
@@ -134,25 +132,12 @@ String _readHookLiteRtLmVersion() {
   return match.group(1)!;
 }
 
-String _readLiteRtBundleSha256(String bundleKey) {
-  final source = File('hook/build.dart').readAsStringSync();
-  final escapedKey = RegExp.escape(bundleKey);
-  final match = RegExp(
-    "'$escapedKey':\\s*_LiteRtLmBundleSpec\\([\\s\\S]*?sha256:\\s*'([^']+)'",
-  ).firstMatch(source);
-  if (match == null) {
-    throw StateError('Could not locate LiteRT-LM checksum for $bundleKey');
-  }
-  return match.group(1)!;
-}
-
 const List<String> _linuxLiteRtLibraries = [
   'libGemmaModelConstraintProvider.so',
   'libLiteRt.so',
   'libLiteRtLm.so',
   'libLiteRtTopKWebGpuSampler.so',
   'libLiteRtWebGpuAccelerator.so',
-  'libStreamProxy.so',
 ];
 
 const List<String> _linuxLiteRtAssetNames = [
@@ -161,24 +146,17 @@ const List<String> _linuxLiteRtAssetNames = [
   'litert_lm_LiteRtLm',
   'litert_lm_LiteRtTopKWebGpuSampler',
   'litert_lm_LiteRtWebGpuAccelerator',
-  'litert_lm_StreamProxy',
 ];
 
 Future<void> _writeBundleLibraries(
   Directory bundleDir,
-  List<String> fileNames, {
-  String? sha256,
-}) async {
+  List<String> fileNames,
+) async {
   if (bundleDir.existsSync()) {
     await bundleDir.delete(recursive: true);
   }
   await bundleDir.create(recursive: true);
   for (final name in fileNames) {
     await File(path.join(bundleDir.path, name)).writeAsString('fake-$name');
-  }
-  if (sha256 != null) {
-    await File(
-      path.join(bundleDir.path, '.llamadart_litert_lm.sha256'),
-    ).writeAsString('$sha256\n');
   }
 }

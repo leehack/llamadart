@@ -138,7 +138,9 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     id: 'litert-lm-engine-smoke',
     tier: 'targeted',
     mode: 'CI + local',
-    covers: 'real .litertlm load/generate path on LiteRT-LM CPU runtime',
+    covers:
+        'LiteRT-LM native library load in CI, plus real .litertlm '
+        'load/generate path when the smoke model is available',
     command:
         'CI workflow "LiteRT-LM Smoke", or dart run '
         'tool/litert_lm_engine_smoke.dart <model.litertlm> cpu '
@@ -223,7 +225,8 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     tier: 'platform',
     mode: 'CI + local',
     covers:
-        'Linux x64 root VM tests, real GGUF prompt reuse, LiteRT-LM CPU smoke',
+        'Linux x64 root VM tests, real GGUF prompt reuse, LiteRT-LM native '
+        'library smoke, and opportunistic LiteRT-LM CPU engine smoke',
     command:
         'CI jobs "Test Linux & Web (with Coverage)", '
         '"Native Prompt Reuse Parity", and '
@@ -246,7 +249,9 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     id: 'windows-x64-ci-runtime',
     tier: 'platform',
     mode: 'CI + local',
-    covers: 'Windows x64 VM tests, hook bundle validation, LiteRT-LM CPU smoke',
+    covers:
+        'Windows x64 VM tests, hook bundle validation, LiteRT-LM native '
+        'library smoke, and opportunistic LiteRT-LM CPU engine smoke',
     command:
         'CI jobs "Test Native (windows-latest)" and '
         '"LiteRT-LM Smoke / Native smoke (windows-latest)".',

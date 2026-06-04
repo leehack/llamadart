@@ -84,10 +84,10 @@ bundle keys, module availability, and selector names.
 
 ## Package Size Controls
 
-Native apps include both runtime families by default where available, so one
-build can load GGUF and `.litertlm` models. If your app only ships one model
-format, opt into the matching runtime family with
-`llamadart_native_runtimes`:
+Android native apps include both runtime families by default where available, so
+one build can load GGUF and `.litertlm` models. Other native targets default to
+`llama_cpp` only. Use `llamadart_native_runtimes` when your app needs a
+different package-size / model-format tradeoff:
 
 ```yaml
 hooks:
@@ -108,6 +108,11 @@ hooks:
 `llamadart_native_backends` is a different switch: it filters llama.cpp module
 files such as Vulkan, CUDA, OpenCL, BLAS, and HIP inside the `llama_cpp`
 runtime. It does not enable or disable LiteRT-LM.
+
+`llamadart_native_runtimes` can also be configured per OS (`ios`, `macos`,
+`android`, `linux`, `windows`) or per exact target (`android-arm64`,
+`linux-x64`, etc.); exact target keys override OS keys. Use `all` or `both` to
+include every runtime family for a target.
 
 ## Parameter Differences
 

@@ -31,6 +31,11 @@ flutter run
 If you run this app on iOS, set the project deployment target to `16.4` or
 newer first (for example `platform :ios, '16.4'` in `ios/Podfile`).
 
+Unlike the smaller GGUF-only examples, this app intentionally opts into both
+native runtime families in `pubspec.yaml` so native `.litertlm` presets work on
+supported targets. If you copy this app and only ship GGUF models, set
+`llamadart_native_runtimes` to `[llama_cpp]` to reduce bundle size.
+
 ### 1.1 Run Tests
 ```bash
 cd example/chat_app
@@ -60,10 +65,11 @@ flutter test --run-skipped -t local-only \
      not audio support, so the chat UI keeps image input enabled and audio input
      disabled for this model.
    - LiteRT-LM `.litertlm` presets, when present, use the same model library
-     flow. Native builds load cached local bundle paths through the
-     `litert-lm-native` runtime. Web builds load web-compatible `.litertlm`
-     URLs through `@litert-lm/core`; `web/index.html` sets a default module URL
-     that apps can override with `window.__llamadartLiteRtLmModuleUrl`.
+     flow. The example `pubspec.yaml` enables the `litert_lm` native runtime
+     family for supported native targets, while Web builds load web-compatible
+     `.litertlm` URLs through `@litert-lm/core`; `web/index.html` sets a
+     default module URL that apps can override with
+     `window.__llamadartLiteRtLmModuleUrl`.
    - LiteRT-LM Web is currently a single-turn text runtime. Because
      `@litert-lm/core` accepts one prompt string and applies its own chat
      wrapper internally, the chat app cannot pass structured chat history,
@@ -72,8 +78,10 @@ flutter test --run-skipped -t local-only \
      controls for this runtime; use GGUF/WebGPU or native LiteRT-LM when those
      structured controls are required.
    - The Gemma 4 E2B LiteRT-LM preset uses the native `.litertlm` bundle on
-     Android/iOS/macOS/Linux/Windows and the `-web.litertlm` bundle on Flutter
-     Web.
+     Android, iOS arm64/arm64 simulator, macOS, Linux, and Windows x64; it uses
+     the `-web.litertlm` bundle on Flutter Web. iOS x86_64 simulator and
+     Windows arm64 are kept GGUF-only because no matching LiteRT-LM native
+     bundle is published.
 
 ### 3. Advanced Configuration (Optional)
 1. Tap the settings icon (⚙️) in the app bar.
@@ -215,10 +223,14 @@ _(Add screenshots here when complete)_
 ## Troubleshooting
 
 **"Failed to load library" or "Native asset not found" on first run:**
-- Ensure you have an active internet connection. The `llamadart` build hook needs to download the pre-compiled `llama.cpp` binary for your platform.
+- Ensure you have an active internet connection. The `llamadart` build hook needs to download the selected native runtime bundles for your platform.
 - Check the console for download progress logs.
 - If behind a proxy, ensure Dart/Flutter can access GitHub.
-- If you recently changed native backend config and are upgrading from an older build cache, run a one-time `flutter clean`.
+- If a native `.litertlm` load fails, confirm `pubspec.yaml` includes
+  `litert_lm` for your target. This example does that for supported native
+  targets and keeps iOS x86_64 simulator / Windows arm64 GGUF-only.
+- If you recently changed native backend or runtime config and are upgrading
+  from an older build cache, run a one-time `flutter clean`.
 
 **"Model file not found" error:**
 - Ensure you have successfully downloaded a model from the selection screen.

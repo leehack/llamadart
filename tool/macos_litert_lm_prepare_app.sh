@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_PATH="${1:?usage: $0 /path/to/App.app}"
 FRAMEWORKS_DIR="$APP_PATH/Contents/Frameworks"
+RUNTIME_DIR="$FRAMEWORKS_DIR/LiteRtLmRuntime"
 
 resolve_litert_arch() {
   local arch="${LLAMADART_LITERT_LM_ARCH:-$(uname -m)}"
@@ -33,13 +34,11 @@ required_libraries() {
         "libLiteRtMetalAccelerator.dylib" \
         "libLiteRtTopKMetalSampler.dylib" \
         "libLiteRtTopKWebGpuSampler.dylib" \
-        "libLiteRtWebGpuAccelerator.dylib" \
-        "libStreamProxy.dylib"
+        "libLiteRtWebGpuAccelerator.dylib"
       ;;
     x64)
       printf '%s\n' \
-        "libLiteRtLm.dylib" \
-        "libStreamProxy.dylib"
+        "libLiteRtLm.dylib"
       ;;
   esac
 }
@@ -78,8 +77,8 @@ resolve_litert_dir() {
   fi
 
   local candidates=(
-    "$ROOT_DIR/.dart_tool/llamadart/litert_lm/0.12.0/macos_$LITERT_ARCH"
-    "$ROOT_DIR/.dart_tool/llamadart/litert_lm/0.12.0/macos/$LITERT_ARCH"
+    "$ROOT_DIR/.dart_tool/llamadart/litert_lm/0.13.1/macos_$LITERT_ARCH"
+    "$ROOT_DIR/.dart_tool/llamadart/litert_lm/0.13.1/macos/$LITERT_ARCH"
   )
   local candidate
   for candidate in "${candidates[@]}"; do
@@ -93,85 +92,42 @@ resolve_litert_dir() {
   exit 2
 }
 
-install_framework() {
-  local source_path="$1"
-  local framework_name="$2"
-  local binary_name="$3"
-  local framework_dir="$FRAMEWORKS_DIR/$framework_name.framework"
-  local version_dir="$framework_dir/Versions/A"
-  local resources_dir="$version_dir/Resources"
+sign_if_needed() {
+  local target="$1"
+  if ! file "$target" | grep -q "Mach-O"; then
+    return
+  fi
 
-  rm -rf "$framework_dir"
-  mkdir -p "$resources_dir"
-  cp "$source_path" "$version_dir/$binary_name"
-  chmod +x "$version_dir/$binary_name"
-  ln -s A "$framework_dir/Versions/Current"
-  ln -s Versions/Current/Resources "$framework_dir/Resources"
-  ln -s "Versions/Current/$binary_name" "$framework_dir/$binary_name"
-  cat > "$resources_dir/Info.plist" <<EOF
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>CFBundleExecutable</key>
-  <string>$binary_name</string>
-  <key>CFBundleIdentifier</key>
-  <string>com.llamadart.litertlm.$framework_name</string>
-  <key>CFBundleName</key>
-  <string>$framework_name</string>
-  <key>CFBundlePackageType</key>
-  <string>FMWK</string>
-  <key>CFBundleShortVersionString</key>
-  <string>1.0</string>
-  <key>CFBundleVersion</key>
-  <string>1</string>
-</dict>
-</plist>
-EOF
+  local identity="${EXPANDED_CODE_SIGN_IDENTITY:-${CODE_SIGN_IDENTITY:--}}"
+  if [[ -z "$identity" ]]; then
+    identity="-"
+  fi
+  codesign --force --sign "$identity" --timestamp=none "$target" >/dev/null
+}
+
+install_library() {
+  local library="$1"
+  local target="$RUNTIME_DIR/$library"
+
+  cp "$LITERT_DIR/$library" "$target"
+  chmod +x "$target"
+  sign_if_needed "$target"
 }
 
 LITERT_DIR="$(resolve_litert_dir)"
 
-install_framework \
-  "$LITERT_DIR/libLiteRtLm.dylib" \
-  "LiteRtLm" \
-  "LiteRtLm"
+rm -rf "$RUNTIME_DIR"
+mkdir -p "$RUNTIME_DIR"
 
-install_framework \
-  "$LITERT_DIR/libStreamProxy.dylib" \
-  "StreamProxy" \
-  "StreamProxy"
+install_library "libLiteRtLm.dylib"
 
 if [[ "$LITERT_ARCH" == "arm64" ]]; then
-  install_framework \
-    "$LITERT_DIR/libLiteRt.dylib" \
-    "LiteRt" \
-    "LiteRt"
-
-  install_framework \
-    "$LITERT_DIR/libLiteRtMetalAccelerator.dylib" \
-    "LiteRtMetalAccelerator" \
-    "LiteRtMetalAccelerator"
-
-  install_framework \
-    "$LITERT_DIR/libGemmaModelConstraintProvider.dylib" \
-    "GemmaModelConstraintProvider" \
-    "GemmaModelConstraintProvider"
-
-  install_framework \
-    "$LITERT_DIR/libLiteRtTopKMetalSampler.dylib" \
-    "LiteRtTopKMetalSampler" \
-    "LiteRtTopKMetalSampler"
-
-  install_framework \
-    "$LITERT_DIR/libLiteRtTopKWebGpuSampler.dylib" \
-    "LiteRtTopKWebGpuSampler" \
-    "LiteRtTopKWebGpuSampler"
-
-  install_framework \
-    "$LITERT_DIR/libLiteRtWebGpuAccelerator.dylib" \
-    "LiteRtWebGpuAccelerator" \
-    "LiteRtWebGpuAccelerator"
+  install_library "libLiteRt.dylib"
+  install_library "libLiteRtMetalAccelerator.dylib"
+  install_library "libGemmaModelConstraintProvider.dylib"
+  install_library "libLiteRtTopKMetalSampler.dylib"
+  install_library "libLiteRtTopKWebGpuSampler.dylib"
+  install_library "libLiteRtWebGpuAccelerator.dylib"
 fi
 
-echo "Prepared LiteRT-LM macOS companion frameworks in $FRAMEWORKS_DIR"
+echo "Prepared LiteRT-LM macOS runtime libraries in $RUNTIME_DIR"

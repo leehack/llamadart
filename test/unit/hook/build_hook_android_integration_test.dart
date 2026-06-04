@@ -13,7 +13,6 @@ import '../../../hook/build.dart' as build_hook;
 void main() {
   final nativeTag = _readHookNativeTag();
   final litertVersion = _readHookLiteRtLmVersion();
-  final litertSha256 = _readLiteRtBundleSha256('android-arm64');
   final cacheRelativeDir =
       '.dart_tool/llamadart/native_bundles/$nativeTag/android-arm64';
   final bundleRelativePath = '$cacheRelativeDir/extracted';
@@ -47,11 +46,7 @@ void main() {
       await bundleDir.delete(recursive: true);
     }
     await _writeBundleLibraries(bundleDir, _androidArm64Libraries);
-    await _writeBundleLibraries(
-      litertBundleDir,
-      _androidLiteRtLibraries,
-      sha256: litertSha256,
-    );
+    await _writeBundleLibraries(litertBundleDir, _androidLiteRtLibraries);
   });
 
   tearDownAll(() async {
@@ -239,7 +234,6 @@ const List<String> _androidLiteRtLibraries = [
   'libLiteRtTopKOpenClSampler.so',
   'libLiteRtTopKWebGpuSampler.so',
   'libLiteRtWebGpuAccelerator.so',
-  'libStreamProxy.so',
 ];
 
 const List<String> _androidLiteRtAssetNames = [
@@ -251,7 +245,6 @@ const List<String> _androidLiteRtAssetNames = [
   'litert_lm_LiteRtTopKOpenClSampler',
   'litert_lm_LiteRtTopKWebGpuSampler',
   'litert_lm_LiteRtWebGpuAccelerator',
-  'litert_lm_StreamProxy',
 ];
 
 String _readHookNativeTag() {
@@ -274,33 +267,15 @@ String _readHookLiteRtLmVersion() {
   return match.group(1)!;
 }
 
-String _readLiteRtBundleSha256(String bundleKey) {
-  final source = File('hook/build.dart').readAsStringSync();
-  final escapedKey = RegExp.escape(bundleKey);
-  final match = RegExp(
-    "'$escapedKey':\\s*_LiteRtLmBundleSpec\\([\\s\\S]*?sha256:\\s*'([^']+)'",
-  ).firstMatch(source);
-  if (match == null) {
-    throw StateError('Could not locate LiteRT-LM checksum for $bundleKey');
-  }
-  return match.group(1)!;
-}
-
 Future<void> _writeBundleLibraries(
   Directory bundleDir,
-  List<String> fileNames, {
-  String? sha256,
-}) async {
+  List<String> fileNames,
+) async {
   if (bundleDir.existsSync()) {
     await bundleDir.delete(recursive: true);
   }
   await bundleDir.create(recursive: true);
   for (final name in fileNames) {
     await File(path.join(bundleDir.path, name)).writeAsString('fake-$name');
-  }
-  if (sha256 != null) {
-    await File(
-      path.join(bundleDir.path, '.llamadart_litert_lm.sha256'),
-    ).writeAsString('$sha256\n');
   }
 }
