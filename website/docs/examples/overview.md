@@ -26,5 +26,5 @@ The repository ships multiple examples for different integration styles.
 
 - Dart SDK `>= 3.10.7`
 - Flutter SDK `>= 3.38.0` for Flutter examples
-- iOS example builds require a minimum deployment target of `16.4` or newer
+- iOS example builds require a minimum deployment target of `13.0` or newer
 - Internet on first run (runtime bundle resolution)

@@ -63,8 +63,8 @@ On first `dart run` / `flutter run`, `llamadart` will:
 
 No manual binary download or C++ build steps are required.
 
-> iOS builds require a minimum deployment target of `16.4` or newer in your
-> Xcode project / Podfile (for example `platform :ios, '16.4'`).
+> iOS builds require a minimum deployment target of `13.0` or newer in your
+> Xcode project / Podfile (for example `platform :ios, '13.0'`).
 
 ### 3. Optional: choose native runtimes for package size
 

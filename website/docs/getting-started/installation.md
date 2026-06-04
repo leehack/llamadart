@@ -7,18 +7,18 @@ description: Install llamadart, add the package to your app, and understand the 
 
 - Dart SDK `>= 3.10.7`
 - Flutter SDK `>= 3.38.0` (if you build Flutter apps)
-- iOS builds require a minimum deployment target of `16.4` or newer
+- iOS builds require a minimum deployment target of `13.0` or newer
 
 ## iOS deployment target
 
-If you build for iOS, set your app project and Podfile to `16.4` or newer
+If you build for iOS, set your app project and Podfile to `13.0` or newer
 before running the app.
 
 ```ruby
-platform :ios, '16.4'
+platform :ios, '13.0'
 ```
 
-In Xcode, set `IPHONEOS_DEPLOYMENT_TARGET = 16.4` for the relevant Runner
+In Xcode, set `IPHONEOS_DEPLOYMENT_TARGET = 13.0` for the relevant Runner
 configurations.
 
 ## Add dependency

@@ -17,7 +17,7 @@ flutter pub get
 flutter run
 ```
 
-If you run this example on iOS, set the project deployment target to `16.4` or
+If you run this example on iOS, set the project deployment target to `13.0` or
 newer before building.
 
 ## Test

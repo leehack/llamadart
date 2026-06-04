@@ -1,3 +1,8 @@
+## Unreleased
+
+* Lowered the documented iOS deployment target for the llama.cpp runtime to
+  `13.0`, matching the rebuilt native runtime bundles and example app settings.
+
 ## 0.7.0
 
 * **LiteRT-LM backend and runtime selection**:

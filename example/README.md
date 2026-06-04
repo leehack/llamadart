@@ -204,7 +204,7 @@ example/
 
 - Dart SDK 3.10.7 or higher
 - For chat_app: Flutter 3.38.0 or higher
-- iOS builds require a minimum deployment target of 16.4 or newer
+- iOS builds require a minimum deployment target of 13.0 or newer
 - Internet connection (for first run - downloads native libraries)
 - At least 2GB RAM minimum, 4GB+ recommended
 
