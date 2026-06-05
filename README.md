@@ -54,6 +54,14 @@ dependencies:
   llamadart: ^0.7.0
 ```
 
+Flutter iOS apps must also add the Swift Package Manager companion package:
+
+```yaml
+dependencies:
+  llamadart: ^0.7.0
+  llamadart_apple_spm: ^0.1.0
+```
+
 ### 2. Run with defaults
 
 On first `dart run` / `flutter run`, `llamadart` will:
@@ -502,8 +510,10 @@ Notes:
   `llamadart_apple_spm` package. In that mode, Apple runtime customization
   moves from the Dart hook to the companion `Package.swift` binary target pins;
   `llamadart_native_tag`, `llamadart_native_repository`, and
-  `llamadart_native_path` still apply to non-Apple targets and Apple fallback
-  mode, but they do not rewrite SPM URL/checksum pins.
+  `llamadart_native_path` still apply to non-Apple targets and macOS fallback
+  mode, but they do not rewrite SPM URL/checksum pins. iOS builds require the
+  companion package so the old hook-managed wrapper path cannot recreate App
+  Store `MinimumOSVersion` mismatches.
 - The native-assets hook refreshes emitted files each build; if you change `hooks.user_defines` or are upgrading from older cached outputs, run `flutter clean && flutter pub get` before rebuilding.
 - Some Vulkan drivers can crash when probing cooperative matrix support. This
   is a driver-side failure in the Vulkan property query path, not a llamadart

@@ -382,6 +382,15 @@ Future<bool> _emitAppleSpmAssetsIfEnabled({
   final enabled =
       explicit ?? await _packageConfigContains(_appleSpmPackageName);
   if (!enabled) {
+    if (code.targetOS == OS.iOS) {
+      throw Exception(
+        'iOS builds require the $_appleSpmPackageName companion package. '
+        'Add $_appleSpmPackageName to the Flutter app dependencies, or set '
+        '$appleSpmUserDefineKey to true after wiring that package. The old '
+        'hook-managed iOS native assets are disabled to avoid App Store '
+        'MinimumOSVersion mismatches.',
+      );
+    }
     return false;
   }
 

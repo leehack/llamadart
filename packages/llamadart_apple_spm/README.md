@@ -3,9 +3,10 @@
 Apple-only Flutter plugin that links official llama.cpp and LiteRT-LM
 XCFramework releases through Swift Package Manager.
 
-Add this package as a path dependency next to `llamadart` in a Flutter app to
-use the thin Apple runtime path. The `llamadart` build hook auto-detects this
-package and switches iOS/macOS native assets to process-symbol lookup.
+Add this package next to `llamadart` in a Flutter app to use the thin Apple
+runtime path. It is required for iOS builds; the `llamadart` build hook
+auto-detects this package and switches iOS/macOS native assets to process-symbol
+lookup.
 
 The linked Apple binaries are pinned in `darwin/llamadart_apple_spm/Package.swift`.
 The current pins use official upstream artifacts:
@@ -33,11 +34,12 @@ from the Dart build hook to Swift Package Manager:
   different pins.
 - To use locally built Apple binaries, replace the binary targets with local
   binary targets or a local package dependency.
-- To keep the hook-managed Apple bundles instead, remove this package from the
-  app or set `llamadart_apple_spm` to `false`.
+- macOS native-assets builds that do not use Flutter/SPM can omit this package.
+  iOS builds fail fast without it to avoid App Store `MinimumOSVersion`
+  mismatches from the old hook-managed wrapper path.
 
 The Dart build hook cannot rewrite SPM binary target URLs or checksums at build
-time. It still controls non-Apple native bundles, Apple fallback mode, and the
+time. It still controls non-Apple native bundles, macOS fallback mode, and the
 runtime selection surface (`llama_cpp`, `litert_lm`, or both).
 
 ## LiteRT-LM backend note

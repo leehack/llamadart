@@ -293,6 +293,9 @@ no valid entries remain, selection falls back to `cpu_profile` (or default
   `llamadart_native_tag`, `llamadart_native_repository`, and
   `llamadart_native_path` do not change those SPM binary targets. Customize the
   companion `Package.swift` pins instead.
+- iOS builds require the `llamadart_apple_spm` companion package. The old
+  hook-managed iOS wrapper path is disabled to avoid App Store
+  `MinimumOSVersion` mismatches.
 - Sandboxed macOS apps must stage LiteRT-LM companion dylibs inside the app
   bundle. The example chat app does this with the
   `Prepare LiteRT-LM Runtime` Xcode build phase, which copies dylibs into

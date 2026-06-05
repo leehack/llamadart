@@ -1,11 +1,13 @@
 name: llamadart_apple_spm
 description: Apple Swift Package Manager bridge for llamadart native runtimes.
 version: 0.1.0
-publish_to: none
+homepage: https://github.com/leehack/llamadart
+repository: https://github.com/leehack/llamadart
+issue_tracker: https://github.com/leehack/llamadart/issues
 
 environment:
   sdk: ^3.10.7
-  flutter: ^3.38.0
+  flutter: ">=3.38.0"
 
 dependencies:
   flutter:

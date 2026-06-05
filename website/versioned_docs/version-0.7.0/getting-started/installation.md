@@ -28,6 +28,14 @@ dependencies:
   llamadart: ^0.7.0
 ```
 
+Flutter iOS apps must also add the Swift Package Manager companion package:
+
+```yaml
+dependencies:
+  llamadart: ^0.7.0
+  llamadart_apple_spm: ^0.1.0
+```
+
 Then resolve packages:
 
 ```bash

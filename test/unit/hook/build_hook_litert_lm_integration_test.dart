@@ -219,45 +219,51 @@ void main() {
     );
   });
 
-  test(
-    'build hook emits iOS device LiteRT-LM wrapper and upstream runtime',
-    () async {
-      await testCodeBuildHook(
+  test('build hook rejects iOS device native-assets fallback', () async {
+    await expectLater(
+      testCodeBuildHook(
         mainMethod: build_hook.main,
         targetOS: OS.iOS,
         targetArchitecture: Architecture.arm64,
         targetIOSSdk: IOSSdk.iPhoneOS,
         userDefines: _allRuntimeUserDefines(),
-        check: (input, output) {
-          _expectLiteRtLmAssets(
-            output.assets.encodedAssets,
-            liteRtLmFileName: 'LiteRtLm',
-            upstreamFileName: 'CLiteRTLM',
-          );
-        },
-      );
-    },
-  );
+        check: (_, _) {},
+      ),
+      throwsA(
+        isA<Exception>().having(
+          (error) => error.toString(),
+          'message',
+          allOf(
+            contains('iOS builds require the llamadart_apple_spm'),
+            contains('hook-managed iOS native assets are disabled'),
+          ),
+        ),
+      ),
+    );
+  });
 
-  test(
-    'build hook emits iOS arm64 simulator wrapper and upstream runtime',
-    () async {
-      await testCodeBuildHook(
+  test('build hook rejects iOS simulator native-assets fallback', () async {
+    await expectLater(
+      testCodeBuildHook(
         mainMethod: build_hook.main,
         targetOS: OS.iOS,
         targetArchitecture: Architecture.arm64,
         targetIOSSdk: IOSSdk.iPhoneSimulator,
         userDefines: _allRuntimeUserDefines(),
-        check: (input, output) {
-          _expectLiteRtLmAssets(
-            output.assets.encodedAssets,
-            liteRtLmFileName: 'LiteRtLm',
-            upstreamFileName: 'CLiteRTLM',
-          );
-        },
-      );
-    },
-  );
+        check: (_, _) {},
+      ),
+      throwsA(
+        isA<Exception>().having(
+          (error) => error.toString(),
+          'message',
+          allOf(
+            contains('iOS builds require the llamadart_apple_spm'),
+            contains('hook-managed iOS native assets are disabled'),
+          ),
+        ),
+      ),
+    );
+  });
 
   test(
     'build hook uses process lookup for Apple runtimes when SPM is enabled',
@@ -316,13 +322,14 @@ void main() {
   );
 
   test(
-    'build hook excludes unavailable iOS simulator LiteRT-LM by default',
+    'build hook uses SPM process lookup for iOS x64 simulator llama.cpp',
     () async {
       await testCodeBuildHook(
         mainMethod: build_hook.main,
         targetOS: OS.iOS,
         targetArchitecture: Architecture.x64,
         targetIOSSdk: IOSSdk.iPhoneSimulator,
+        userDefines: _appleSpmLlamaCppOnlyUserDefines(),
         check: (_, output) {
           final codeAssetIds = output.assets.encodedAssets
               .where((asset) => asset.isCodeAsset)
@@ -402,6 +409,16 @@ PackageUserDefines _appleSpmLiteRtLmOnlyUserDefines() => PackageUserDefines(
     defines: {
       'llamadart_apple_spm': true,
       'llamadart_native_runtimes': ['litert_lm'],
+    },
+    basePath: Directory.current.uri,
+  ),
+);
+
+PackageUserDefines _appleSpmLlamaCppOnlyUserDefines() => PackageUserDefines(
+  workspacePubspec: PackageUserDefinesSource(
+    defines: {
+      'llamadart_apple_spm': true,
+      'llamadart_native_runtimes': ['llama_cpp'],
     },
     basePath: Directory.current.uri,
   ),
@@ -504,26 +521,4 @@ Future<void> _writeBundleLibraries(
   for (final name in fileNames) {
     await File(path.join(bundleDir.path, name)).writeAsString('fake-$name');
   }
-}
-
-void _expectLiteRtLmAssets(
-  Iterable<EncodedAsset> encodedAssets, {
-  required String liteRtLmFileName,
-  required String upstreamFileName,
-}) {
-  final codeAssets = encodedAssets
-      .where((asset) => asset.isCodeAsset)
-      .map((asset) => asset.asCodeAsset)
-      .toList(growable: false);
-
-  final codeAssetIds = codeAssets.map((asset) => asset.id).toSet();
-  final emittedNames = codeAssets
-      .map((asset) => path.basename(asset.file!.toFilePath()))
-      .toSet();
-
-  expect(codeAssetIds, contains('package:llamadart/llamadart'));
-  expect(codeAssetIds, contains('package:llamadart/litert_lm_LiteRtLm'));
-  expect(codeAssetIds, contains('package:llamadart/litert_lm_CLiteRTLM'));
-  expect(emittedNames, contains(liteRtLmFileName));
-  expect(emittedNames, contains(upstreamFileName));
 }

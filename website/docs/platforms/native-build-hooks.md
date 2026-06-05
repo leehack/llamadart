@@ -90,14 +90,16 @@ link official upstream Apple artifacts through Swift Package Manager instead of
 hook-managed Apple bundles. When that package is present, or when
 `hooks.user_defines.llamadart.llamadart_apple_spm` is `true`, the hook switches
 iOS/macOS runtime lookup to process symbols and does not emit the legacy Apple
-bundle assets.
+bundle assets. iOS builds require this SPM path; without it, the hook fails fast
+instead of emitting the old iOS wrapper that can produce App Store
+`MinimumOSVersion` mismatches.
 
 The SPM path keeps runtime customization, but the customization point moves
 from `hook/build.dart` to the companion package's `Package.swift` pins. To use
 a different Apple runtime build, edit the binary target URL/checksum pins or
 publish a sibling companion package. The Dart hook cannot rewrite SPM binary
 target URLs/checksums at build time. Hook customization still applies to
-non-Apple targets and to Apple fallback mode when the SPM companion package is
+non-Apple targets and to macOS fallback mode when the SPM companion package is
 not used.
 
 ### 3. Dynamic Linking
