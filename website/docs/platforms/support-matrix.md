@@ -294,11 +294,10 @@ no valid entries remain, selection falls back to `cpu_profile` (or default
   `llamadart_native_tag`, `llamadart_native_repository`, and
   `llamadart_native_path` do not change those SPM binary targets. Customize the
   SwiftPM binary target pins instead.
-- iOS builds use the root package's SPM path by default. The old hook-managed
-  iOS wrapper path is disabled to avoid App Store `MinimumOSVersion` mismatches.
-- macOS keeps native-assets fallback by default for standalone Dart
-  compatibility; Flutter apps can opt into the same root SPM path with
-  `llamadart_apple_spm: true`.
+- Flutter Apple builds use the root package's SPM path on iOS and macOS. The
+  old hook-managed iOS wrapper path is disabled to avoid App Store
+  `MinimumOSVersion` mismatches.
+- Standalone Dart macOS runs keep the native-assets fallback for compatibility.
 - Sandboxed macOS apps must stage LiteRT-LM companion dylibs inside the app
   bundle. The example chat app does this with the
   `Prepare LiteRT-LM Runtime` Xcode build phase, which copies dylibs into

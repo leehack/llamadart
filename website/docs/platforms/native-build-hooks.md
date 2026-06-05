@@ -90,16 +90,16 @@ manifest to link Apple XCFrameworks published by `leehack/llamadart-native` and
 `leehack/litert-lm-native` instead of hook-managed Apple bundles. On iOS, the
 hook always uses process-symbol lookup and does not emit the legacy Apple bundle
 assets. This avoids the old iOS wrapper path that can produce App Store
-`MinimumOSVersion` mismatches. macOS can opt into the same SPM hook path with
-`hooks.user_defines.llamadart.llamadart_apple_spm: true`; the default macOS hook
-path is kept for standalone Dart compatibility.
+`MinimumOSVersion` mismatches. Flutter macOS builds use the same SPM path
+automatically; standalone Dart macOS runs keep the native-assets fallback for
+compatibility.
 
 The SPM path keeps runtime customization, but the customization point moves
 from `hook/build.dart` to `darwin/llamadart/Package.swift`. To use a different
 Apple runtime build, edit the binary target URL/checksum pins or publish a fork
 with different pins. The Dart hook cannot rewrite SPM binary target
 URLs/checksums at build time. Hook customization still applies to non-Apple
-targets and to macOS fallback mode when SPM is not enabled.
+targets and to standalone Dart macOS fallback mode.
 
 ### 3. Dynamic Linking
 Using `native_assets_cli`, the downloaded dynamic libraries (`.so`, `.dylib`,

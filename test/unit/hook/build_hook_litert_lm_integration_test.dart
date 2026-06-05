@@ -220,58 +220,6 @@ void main() {
   });
 
   test(
-    'build hook rejects iOS device native-assets fallback opt-out',
-    () async {
-      await expectLater(
-        testCodeBuildHook(
-          mainMethod: build_hook.main,
-          targetOS: OS.iOS,
-          targetArchitecture: Architecture.arm64,
-          targetIOSSdk: IOSSdk.iPhoneOS,
-          userDefines: _appleSpmDisabledAllRuntimeUserDefines(),
-          check: (_, _) {},
-        ),
-        throwsA(
-          isA<Exception>().having(
-            (error) => error.toString(),
-            'message',
-            allOf(
-              contains('iOS builds require the package:llamadart'),
-              contains('hook-managed iOS native assets are disabled'),
-            ),
-          ),
-        ),
-      );
-    },
-  );
-
-  test(
-    'build hook rejects iOS simulator native-assets fallback opt-out',
-    () async {
-      await expectLater(
-        testCodeBuildHook(
-          mainMethod: build_hook.main,
-          targetOS: OS.iOS,
-          targetArchitecture: Architecture.arm64,
-          targetIOSSdk: IOSSdk.iPhoneSimulator,
-          userDefines: _appleSpmDisabledAllRuntimeUserDefines(),
-          check: (_, _) {},
-        ),
-        throwsA(
-          isA<Exception>().having(
-            (error) => error.toString(),
-            'message',
-            allOf(
-              contains('iOS builds require the package:llamadart'),
-              contains('hook-managed iOS native assets are disabled'),
-            ),
-          ),
-        ),
-      );
-    },
-  );
-
-  test(
     'build hook uses process lookup for Apple runtimes by default',
     () async {
       await testCodeBuildHook(
@@ -303,13 +251,13 @@ void main() {
   );
 
   test(
-    'build hook emits no bundled Apple assets for LiteRT-LM-only SPM mode',
+    'build hook emits no bundled Apple assets for Flutter macOS SPM mode',
     () async {
       await testCodeBuildHook(
         mainMethod: build_hook.main,
         targetOS: OS.macOS,
         targetArchitecture: Architecture.arm64,
-        userDefines: _appleSpmLiteRtLmOnlyUserDefines(),
+        userDefines: await _flutterLiteRtLmOnlyUserDefines(),
         check: (input, output) {
           final codeAssets = output.assets.encodedAssets
               .where((asset) => asset.isCodeAsset)
@@ -400,26 +348,39 @@ PackageUserDefines _allRuntimeUserDefines() => PackageUserDefines(
   ),
 );
 
-PackageUserDefines _appleSpmDisabledAllRuntimeUserDefines() =>
-    PackageUserDefines(
-      workspacePubspec: PackageUserDefinesSource(
-        defines: {
-          'llamadart_apple_spm': false,
-          'llamadart_native_runtimes': ['all'],
-        },
-        basePath: Directory.current.uri,
-      ),
-    );
+Future<PackageUserDefines> _flutterLiteRtLmOnlyUserDefines() async {
+  final dir = await Directory.systemTemp.createTemp(
+    'llamadart_flutter_consumer_',
+  );
+  addTearDown(() {
+    if (dir.existsSync()) {
+      dir.deleteSync(recursive: true);
+    }
+  });
 
-PackageUserDefines _appleSpmLiteRtLmOnlyUserDefines() => PackageUserDefines(
-  workspacePubspec: PackageUserDefinesSource(
-    defines: {
-      'llamadart_apple_spm': true,
-      'llamadart_native_runtimes': ['litert_lm'],
-    },
-    basePath: Directory.current.uri,
-  ),
-);
+  final pubspec = File(path.join(dir.path, 'pubspec.yaml'));
+  await pubspec.writeAsString('''
+name: llamadart_flutter_consumer
+publish_to: none
+
+environment:
+  sdk: ^3.10.7
+  flutter: ^3.38.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+''');
+
+  return PackageUserDefines(
+    workspacePubspec: PackageUserDefinesSource(
+      defines: {
+        'llamadart_native_runtimes': ['litert_lm'],
+      },
+      basePath: pubspec.uri,
+    ),
+  );
+}
 
 PackageUserDefines _llamaCppOnlyUserDefines() => PackageUserDefines(
   workspacePubspec: PackageUserDefinesSource(

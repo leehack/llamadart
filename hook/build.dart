@@ -235,9 +235,9 @@ void main(List<String> args) async {
     }
 
     if (await _emitAppleSpmAssetsIfEnabled(
+      input: input,
       code: code,
       output: output,
-      userDefines: input.userDefines,
       includeLlamaCpp: includeLlamaCpp,
       includeLiteRtLm: includeLiteRtLm,
       log: log,
@@ -356,36 +356,20 @@ void main(List<String> args) async {
 }
 
 Future<bool> _emitAppleSpmAssetsIfEnabled({
+  required BuildInput input,
   required CodeConfig code,
   required BuildOutputBuilder output,
-  required HookInputUserDefines userDefines,
   required bool includeLlamaCpp,
   required bool includeLiteRtLm,
   required Logger log,
 }) async {
-  final explicit = _parseOptionalBool(
-    userDefines[appleSpmUserDefineKey],
-    key: appleSpmUserDefineKey,
-  );
   if (!_isAppleTarget(code.targetOS)) {
-    if (explicit == true) {
-      log.warning(
-        '$appleSpmUserDefineKey is only supported for iOS and macOS; '
-        'falling back to bundled native assets.',
-      );
-    }
     return false;
   }
 
-  final enabled = explicit ?? code.targetOS == OS.iOS;
+  final enabled =
+      code.targetOS == OS.iOS || _isFlutterMacOsConsumer(input, log);
   if (!enabled) {
-    if (code.targetOS == OS.iOS) {
-      throw Exception(
-        'iOS builds require the package:$_packageName Swift Package Manager '
-        'path. The old hook-managed iOS native assets are disabled to avoid '
-        'App Store MinimumOSVersion mismatches.',
-      );
-    }
     return false;
   }
 
@@ -416,30 +400,115 @@ Future<bool> _emitAppleSpmAssetsIfEnabled({
 
 bool _isAppleTarget(OS os) => os == OS.iOS || os == OS.macOS;
 
-bool? _parseOptionalBool(Object? rawUserConfig, {required String key}) {
-  if (rawUserConfig == null) {
+bool _isFlutterMacOsConsumer(BuildInput input, Logger log) {
+  final consumerRoot = _consumerPackageRoot(input);
+  if (consumerRoot == null) {
+    log.info(
+      'Using bundled macOS native assets; could not resolve the invoking '
+      'package root.',
+    );
+    return false;
+  }
+
+  final packageRoot = Directory.fromUri(input.packageRoot);
+  if (_sameDirectory(consumerRoot, packageRoot)) {
+    log.info(
+      'Using bundled macOS native assets for package-root builds. Flutter apps '
+      'that depend on package:$_packageName use Swift Package Manager '
+      'automatically.',
+    );
+    return false;
+  }
+
+  final pubspec = File(path.join(consumerRoot.path, 'pubspec.yaml'));
+  if (!pubspec.existsSync()) {
+    log.info(
+      'Using bundled macOS native assets; no pubspec.yaml found at '
+      '${pubspec.path}.',
+    );
+    return false;
+  }
+
+  final isFlutter = _pubspecDeclaresFlutter(pubspec.readAsStringSync());
+  if (!isFlutter) {
+    log.info(
+      'Using bundled macOS native assets for non-Flutter package '
+      '${consumerRoot.path}.',
+    );
+  }
+  return isFlutter;
+}
+
+Directory? _consumerPackageRoot(BuildInput input) {
+  final fromUserDefines = _consumerPackageRootFromUserDefines(input);
+  if (fromUserDefines != null) {
+    return fromUserDefines;
+  }
+
+  final sharedOutputPath = path.normalize(
+    input.outputDirectoryShared.toFilePath(),
+  );
+  final segments = path.split(sharedOutputPath);
+  final dartToolIndex = segments.lastIndexOf(_dartToolDir);
+  if (dartToolIndex <= 0) {
     return null;
   }
-  if (rawUserConfig is bool) {
-    return rawUserConfig;
+  return Directory(path.joinAll(segments.sublist(0, dartToolIndex)));
+}
+
+Directory? _consumerPackageRootFromUserDefines(BuildInput input) {
+  final userDefines = input.json['user_defines'];
+  if (userDefines is! Map) {
+    return null;
   }
-  if (rawUserConfig is String) {
-    switch (rawUserConfig.trim().toLowerCase()) {
-      case 'true':
-      case '1':
-      case 'yes':
-      case 'on':
-        return true;
-      case 'false':
-      case '0':
-      case 'no':
-      case 'off':
-        return false;
+  final workspacePubspec = userDefines['workspace_pubspec'];
+  if (workspacePubspec is! Map) {
+    return null;
+  }
+  final basePathRaw = workspacePubspec['base_path'];
+  if (basePathRaw is! String || basePathRaw.trim().isEmpty) {
+    return null;
+  }
+
+  final basePath = _uriOrPathToFilePath(basePathRaw);
+  if (basePath == null) {
+    return null;
+  }
+
+  final type = FileSystemEntity.typeSync(basePath);
+  return switch (type) {
+    FileSystemEntityType.directory => Directory(basePath),
+    FileSystemEntityType.file => File(basePath).parent,
+    _ => File(basePath).parent,
+  };
+}
+
+String? _uriOrPathToFilePath(String value) {
+  final uri = Uri.tryParse(value);
+  if (uri != null && uri.scheme == 'file') {
+    return uri.toFilePath();
+  }
+  if (uri != null && uri.scheme.isNotEmpty) {
+    return null;
+  }
+  return value;
+}
+
+bool _sameDirectory(Directory a, Directory b) {
+  final left = path.normalize(path.absolute(a.path));
+  final right = path.normalize(path.absolute(b.path));
+  return left == right;
+}
+
+bool _pubspecDeclaresFlutter(String source) {
+  final lines = source.split('\n');
+  for (final rawLine in lines) {
+    final line = rawLine.split('#').first;
+    if (RegExp(r'^\s*sdk\s*:\s*flutter\s*$').hasMatch(line)) {
+      return true;
     }
   }
-  throw FormatException(
-    'hooks.user_defines.$_packageName.$key must be a boolean.',
-  );
+  return false;
 }
 
 Future<void> _emitLiteRtLmAssets({

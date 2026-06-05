@@ -40,9 +40,6 @@ flutter:
 hooks:
   user_defines:
     llamadart:
-      # iOS uses the root package SwiftPM path by default; the example opts in
-      # explicitly so macOS also exercises the thin SwiftPM path.
-      llamadart_apple_spm: true
       # The chat example intentionally demonstrates both GGUF and .litertlm
       # model flows. Smaller examples rely on the package defaults.
       llamadart_native_runtimes:

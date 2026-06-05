@@ -502,12 +502,11 @@ Notes:
   `darwin/llamadart/Package.swift` pins. In that mode, Apple runtime
   customization moves from the Dart hook to those binary target pins;
   `llamadart_native_tag`, `llamadart_native_repository`, and
-  `llamadart_native_path` still apply to non-Apple targets and macOS fallback
-  mode, but they do not rewrite SPM URL/checksum pins. iOS uses SPM by default
-  so the old hook-managed wrapper path cannot recreate App Store
-  `MinimumOSVersion` mismatches. macOS can opt into the same SPM path with
-  `hooks.user_defines.llamadart.llamadart_apple_spm: true`; the default macOS
-  hook path is kept for standalone Dart compatibility.
+  `llamadart_native_path` still apply to non-Apple targets and standalone Dart
+  macOS fallback mode, but they do not rewrite SPM URL/checksum pins. Flutter
+  Apple builds use SPM on both iOS and macOS so the old hook-managed wrapper
+  path cannot recreate App Store `MinimumOSVersion` mismatches. Standalone Dart
+  macOS runs keep the native-assets dylib path for compatibility.
 - The native-assets hook refreshes emitted files each build; if you change `hooks.user_defines` or are upgrading from older cached outputs, run `flutter clean && flutter pub get` before rebuilding.
 - Some Vulkan drivers can crash when probing cooperative matrix support. This
   is a driver-side failure in the Vulkan property query path, not a llamadart

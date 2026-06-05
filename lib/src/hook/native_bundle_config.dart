@@ -8,7 +8,6 @@ const String nativeTagUserDefineKey = 'llamadart_native_tag';
 const String nativeRepositoryUserDefineKey = 'llamadart_native_repository';
 const String nativePathUserDefineKey = 'llamadart_native_path';
 const String nativeRuntimesUserDefineKey = 'llamadart_native_runtimes';
-const String appleSpmUserDefineKey = 'llamadart_apple_spm';
 const String nativeRuntimeLlamaCpp = 'llama_cpp';
 const String nativeRuntimeLiteRtLm = 'litert_lm';
 
