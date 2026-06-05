@@ -85,22 +85,20 @@ Use `all` or `both` to include every runtime family for a target.
 
 ### Apple Swift Package Manager path
 
-Flutter Apple builds can use the companion `llamadart_apple_spm` package to
-link official upstream Apple artifacts through Swift Package Manager instead of
-hook-managed Apple bundles. When that package is present, or when
-`hooks.user_defines.llamadart.llamadart_apple_spm` is `true`, the hook switches
-iOS/macOS runtime lookup to process symbols and does not emit the legacy Apple
-bundle assets. iOS builds require this SPM path; without it, the hook fails fast
-instead of emitting the old iOS wrapper that can produce App Store
-`MinimumOSVersion` mismatches.
+Flutter Apple builds use the root `llamadart` package's Swift Package Manager
+manifest to link official upstream Apple artifacts instead of hook-managed Apple
+bundles. On iOS, the hook always uses process-symbol lookup and does not emit
+the legacy Apple bundle assets. This avoids the old iOS wrapper path that can
+produce App Store `MinimumOSVersion` mismatches. macOS can opt into the same SPM
+hook path with `hooks.user_defines.llamadart.llamadart_apple_spm: true`; the
+default macOS hook path is kept for standalone Dart compatibility.
 
 The SPM path keeps runtime customization, but the customization point moves
-from `hook/build.dart` to the companion package's `Package.swift` pins. To use
-a different Apple runtime build, edit the binary target URL/checksum pins or
-publish a sibling companion package. The Dart hook cannot rewrite SPM binary
-target URLs/checksums at build time. Hook customization still applies to
-non-Apple targets and to macOS fallback mode when the SPM companion package is
-not used.
+from `hook/build.dart` to `darwin/llamadart/Package.swift`. To use a different
+Apple runtime build, edit the binary target URL/checksum pins or publish a fork
+with different pins. The Dart hook cannot rewrite SPM binary target
+URLs/checksums at build time. Hook customization still applies to non-Apple
+targets and to macOS fallback mode when SPM is not enabled.
 
 ### 3. Dynamic Linking
 Using `native_assets_cli`, the downloaded dynamic libraries (`.so`, `.dylib`,

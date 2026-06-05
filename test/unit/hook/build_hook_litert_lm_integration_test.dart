@@ -219,61 +219,67 @@ void main() {
     );
   });
 
-  test('build hook rejects iOS device native-assets fallback', () async {
-    await expectLater(
-      testCodeBuildHook(
-        mainMethod: build_hook.main,
-        targetOS: OS.iOS,
-        targetArchitecture: Architecture.arm64,
-        targetIOSSdk: IOSSdk.iPhoneOS,
-        userDefines: _allRuntimeUserDefines(),
-        check: (_, _) {},
-      ),
-      throwsA(
-        isA<Exception>().having(
-          (error) => error.toString(),
-          'message',
-          allOf(
-            contains('iOS builds require the llamadart_apple_spm'),
-            contains('hook-managed iOS native assets are disabled'),
+  test(
+    'build hook rejects iOS device native-assets fallback opt-out',
+    () async {
+      await expectLater(
+        testCodeBuildHook(
+          mainMethod: build_hook.main,
+          targetOS: OS.iOS,
+          targetArchitecture: Architecture.arm64,
+          targetIOSSdk: IOSSdk.iPhoneOS,
+          userDefines: _appleSpmDisabledAllRuntimeUserDefines(),
+          check: (_, _) {},
+        ),
+        throwsA(
+          isA<Exception>().having(
+            (error) => error.toString(),
+            'message',
+            allOf(
+              contains('iOS builds require the package:llamadart'),
+              contains('hook-managed iOS native assets are disabled'),
+            ),
           ),
         ),
-      ),
-    );
-  });
-
-  test('build hook rejects iOS simulator native-assets fallback', () async {
-    await expectLater(
-      testCodeBuildHook(
-        mainMethod: build_hook.main,
-        targetOS: OS.iOS,
-        targetArchitecture: Architecture.arm64,
-        targetIOSSdk: IOSSdk.iPhoneSimulator,
-        userDefines: _allRuntimeUserDefines(),
-        check: (_, _) {},
-      ),
-      throwsA(
-        isA<Exception>().having(
-          (error) => error.toString(),
-          'message',
-          allOf(
-            contains('iOS builds require the llamadart_apple_spm'),
-            contains('hook-managed iOS native assets are disabled'),
-          ),
-        ),
-      ),
-    );
-  });
+      );
+    },
+  );
 
   test(
-    'build hook uses process lookup for Apple runtimes when SPM is enabled',
+    'build hook rejects iOS simulator native-assets fallback opt-out',
+    () async {
+      await expectLater(
+        testCodeBuildHook(
+          mainMethod: build_hook.main,
+          targetOS: OS.iOS,
+          targetArchitecture: Architecture.arm64,
+          targetIOSSdk: IOSSdk.iPhoneSimulator,
+          userDefines: _appleSpmDisabledAllRuntimeUserDefines(),
+          check: (_, _) {},
+        ),
+        throwsA(
+          isA<Exception>().having(
+            (error) => error.toString(),
+            'message',
+            allOf(
+              contains('iOS builds require the package:llamadart'),
+              contains('hook-managed iOS native assets are disabled'),
+            ),
+          ),
+        ),
+      );
+    },
+  );
+
+  test(
+    'build hook uses process lookup for Apple runtimes by default',
     () async {
       await testCodeBuildHook(
         mainMethod: build_hook.main,
         targetOS: OS.iOS,
         targetArchitecture: Architecture.arm64,
         targetIOSSdk: IOSSdk.iPhoneOS,
-        userDefines: _appleSpmAllRuntimeUserDefines(),
+        userDefines: _allRuntimeUserDefines(),
         check: (input, output) {
           final codeAssets = output.assets.encodedAssets
               .where((asset) => asset.isCodeAsset)
@@ -329,7 +335,7 @@ void main() {
         targetOS: OS.iOS,
         targetArchitecture: Architecture.x64,
         targetIOSSdk: IOSSdk.iPhoneSimulator,
-        userDefines: _appleSpmLlamaCppOnlyUserDefines(),
+        userDefines: _llamaCppOnlyUserDefines(),
         check: (_, output) {
           final codeAssetIds = output.assets.encodedAssets
               .where((asset) => asset.isCodeAsset)
@@ -394,15 +400,16 @@ PackageUserDefines _allRuntimeUserDefines() => PackageUserDefines(
   ),
 );
 
-PackageUserDefines _appleSpmAllRuntimeUserDefines() => PackageUserDefines(
-  workspacePubspec: PackageUserDefinesSource(
-    defines: {
-      'llamadart_apple_spm': true,
-      'llamadart_native_runtimes': ['all'],
-    },
-    basePath: Directory.current.uri,
-  ),
-);
+PackageUserDefines _appleSpmDisabledAllRuntimeUserDefines() =>
+    PackageUserDefines(
+      workspacePubspec: PackageUserDefinesSource(
+        defines: {
+          'llamadart_apple_spm': false,
+          'llamadart_native_runtimes': ['all'],
+        },
+        basePath: Directory.current.uri,
+      ),
+    );
 
 PackageUserDefines _appleSpmLiteRtLmOnlyUserDefines() => PackageUserDefines(
   workspacePubspec: PackageUserDefinesSource(
@@ -414,10 +421,9 @@ PackageUserDefines _appleSpmLiteRtLmOnlyUserDefines() => PackageUserDefines(
   ),
 );
 
-PackageUserDefines _appleSpmLlamaCppOnlyUserDefines() => PackageUserDefines(
+PackageUserDefines _llamaCppOnlyUserDefines() => PackageUserDefines(
   workspacePubspec: PackageUserDefinesSource(
     defines: {
-      'llamadart_apple_spm': true,
       'llamadart_native_runtimes': ['llama_cpp'],
     },
     basePath: Directory.current.uri,

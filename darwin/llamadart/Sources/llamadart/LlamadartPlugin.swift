@@ -10,7 +10,7 @@ import llama
 import CLiteRTLM
 #endif
 
-public class LlamadartAppleSpmPlugin: NSObject, FlutterPlugin {
+public class LlamadartPlugin: NSObject, FlutterPlugin {
   public static func register(with registrar: FlutterPluginRegistrar) {}
 }
 

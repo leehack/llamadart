@@ -12,8 +12,6 @@ dependencies:
     sdk: flutter
   llamadart:
     path: ../..  # Use local version
-  llamadart_apple_spm:
-    path: ../../packages/llamadart_apple_spm
   provider: ^6.0.5
   shared_preferences: ^2.2.0
   file_picker: ^10.3.10
@@ -42,6 +40,8 @@ flutter:
 hooks:
   user_defines:
     llamadart:
+      # iOS uses the root package SwiftPM path by default; the example opts in
+      # explicitly so macOS also exercises the thin SwiftPM path.
       llamadart_apple_spm: true
       # The chat example intentionally demonstrates both GGUF and .litertlm
       # model flows. Smaller examples rely on the package defaults.

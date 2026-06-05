@@ -349,7 +349,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/bash;
-			shellScript = "set -euo pipefail\nPACKAGE_CONFIG_PATH=\"${PACKAGE_CONFIG:-$PROJECT_DIR/../.dart_tool/package_config.json}\"\nif [ -f \"$PACKAGE_CONFIG_PATH\" ] && /usr/bin/grep -q '\"name\"[[:space:]]*:[[:space:]]*\"llamadart_apple_spm\"' \"$PACKAGE_CONFIG_PATH\"; then\n  echo \"LiteRT-LM SPM package detected; skipping legacy runtime copy.\"\n  exit 0\nfi\nSCRIPT=\"$PROJECT_DIR/../../../tool/macos_litert_lm_prepare_app.sh\"\nif [ -x \"$SCRIPT\" ]; then\n  \"$SCRIPT\" \"$TARGET_BUILD_DIR/$WRAPPER_NAME\"\nelse\n  echo \"warning: LiteRT-LM prepare script not found: $SCRIPT\" >&2\nfi\n";
+			shellScript = "set -euo pipefail\nSCRIPT=\"$PROJECT_DIR/../../../tool/macos_litert_lm_prepare_app.sh\"\nif [ -x \"$SCRIPT\" ]; then\n  \"$SCRIPT\" \"$TARGET_BUILD_DIR/$WRAPPER_NAME\"\nelse\n  echo \"warning: LiteRT-LM prepare script not found: $SCRIPT\" >&2\nfi\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 

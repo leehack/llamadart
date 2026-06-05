@@ -1,6 +1,5 @@
-import 'dart:convert';
+import 'dart:convert' show utf8;
 import 'dart:io';
-import 'dart:isolate';
 
 import 'package:archive/archive.dart';
 import 'package:code_assets/code_assets.dart';
@@ -16,7 +15,6 @@ const _llamaCppTag = 'b9371';
 const _nativeRepoSlug = 'leehack/llamadart-native';
 
 const _packageName = 'llamadart';
-const _appleSpmPackageName = 'llamadart_apple_spm';
 const _thirdPartyDir = 'third_party';
 const _binDir = 'bin';
 const _dartToolDir = '.dart_tool';
@@ -379,24 +377,21 @@ Future<bool> _emitAppleSpmAssetsIfEnabled({
     return false;
   }
 
-  final enabled =
-      explicit ?? await _packageConfigContains(_appleSpmPackageName);
+  final enabled = explicit ?? code.targetOS == OS.iOS;
   if (!enabled) {
     if (code.targetOS == OS.iOS) {
       throw Exception(
-        'iOS builds require the $_appleSpmPackageName companion package. '
-        'Add $_appleSpmPackageName to the Flutter app dependencies, or set '
-        '$appleSpmUserDefineKey to true after wiring that package. The old '
-        'hook-managed iOS native assets are disabled to avoid App Store '
-        'MinimumOSVersion mismatches.',
+        'iOS builds require the package:$_packageName Swift Package Manager '
+        'path. The old hook-managed iOS native assets are disabled to avoid '
+        'App Store MinimumOSVersion mismatches.',
       );
     }
     return false;
   }
 
   log.info(
-    'Using $_appleSpmPackageName for Apple native runtimes; the hook will not '
-    'bundle Apple dynamic libraries.',
+    'Using package:$_packageName Swift Package Manager for Apple native '
+    'runtimes; the hook will not bundle Apple dynamic libraries.',
   );
   if (includeLlamaCpp) {
     output.assets.code.add(
@@ -444,29 +439,6 @@ bool? _parseOptionalBool(Object? rawUserConfig, {required String key}) {
   }
   throw FormatException(
     'hooks.user_defines.$_packageName.$key must be a boolean.',
-  );
-}
-
-Future<bool> _packageConfigContains(String packageName) async {
-  final configUri = Isolate.packageConfigSync ?? await Isolate.packageConfig;
-  if (configUri == null || !configUri.isScheme('file')) {
-    return false;
-  }
-  final configFile = File.fromUri(configUri);
-  if (!configFile.existsSync()) {
-    return false;
-  }
-  final decoded = jsonDecode(await configFile.readAsString());
-  if (decoded is! Map<String, Object?>) {
-    return false;
-  }
-  final packages = decoded['packages'];
-  if (packages is! List<Object?>) {
-    return false;
-  }
-  return packages.any(
-    (package) =>
-        package is Map<String, Object?> && package['name'] == packageName,
   );
 }
 

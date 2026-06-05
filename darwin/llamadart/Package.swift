@@ -2,16 +2,16 @@
 import PackageDescription
 
 let package = Package(
-    name: "llamadart_apple_spm",
+    name: "llamadart",
     platforms: [
         .iOS("16.4"),
         .macOS("13.3")
     ],
     products: [
         .library(
-            name: "llamadart-apple-spm",
+            name: "llamadart",
             type: .dynamic,
-            targets: ["llamadart_apple_spm"]
+            targets: ["llamadart"]
         )
     ],
     targets: [
@@ -31,7 +31,7 @@ let package = Package(
             checksum: "ec9ffe230dc39117a7fc8933b1cc15910454027fee6d3041534ab7cf17313981"
         ),
         .target(
-            name: "llamadart_apple_spm",
+            name: "llamadart",
             dependencies: [
                 "llama",
                 .target(name: "CLiteRTLM", condition: .when(platforms: [.iOS])),

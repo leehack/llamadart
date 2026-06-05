@@ -289,13 +289,16 @@ no valid entries remain, selection falls back to `cpu_profile` (or default
 - Apple targets (`ios-*`, `macos-*`) support `cpu` + `metal`, but ignore
   per-backend module config in this hook path because runtime libraries are
   consolidated.
-- Apple SPM targets resolve runtime libraries through the companion package, so
+- Apple SPM targets resolve runtime libraries through the root package's
+  `darwin/llamadart/Package.swift`, so
   `llamadart_native_tag`, `llamadart_native_repository`, and
   `llamadart_native_path` do not change those SPM binary targets. Customize the
-  companion `Package.swift` pins instead.
-- iOS builds require the `llamadart_apple_spm` companion package. The old
-  hook-managed iOS wrapper path is disabled to avoid App Store
-  `MinimumOSVersion` mismatches.
+  SwiftPM binary target pins instead.
+- iOS builds use the root package's SPM path by default. The old hook-managed
+  iOS wrapper path is disabled to avoid App Store `MinimumOSVersion` mismatches.
+- macOS keeps native-assets fallback by default for standalone Dart
+  compatibility; Flutter apps can opt into the same root SPM path with
+  `llamadart_apple_spm: true`.
 - Sandboxed macOS apps must stage LiteRT-LM companion dylibs inside the app
   bundle. The example chat app does this with the
   `Prepare LiteRT-LM Runtime` Xcode build phase, which copies dylibs into
