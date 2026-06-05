@@ -110,7 +110,8 @@ String liteRtLmIosFrameworkBinaryPath(String frameworksDirPath, String name) {
 /// `DynamicLibrary.open` does not resolve Dart native-asset ids (only `@Native`
 /// externals do), so the `package:llamadart/...` id is passed verbatim to
 /// dlopen and never loads. The process image is tried first so Flutter SPM apps
-/// can resolve the upstream `CLiteRTLM` symbols linked by the companion plugin.
+/// can resolve the SPM-linked `CLiteRTLM` symbols exported by the companion
+/// plugin.
 /// When [frameworksDirPath] is known, absolute framework binary paths are tried
 /// next; the native-asset id and bare dylib names remain last-resort fallbacks
 /// for the error message.
@@ -987,21 +988,15 @@ class LiteRtLmRuntimeClient {
       final companions = _macOsCompanionLibrariesForAbi(abi);
       final frameworksDir = _findMacOsAppFrameworksDir();
       if (frameworksDir != null) {
-        final usesOfficialSpmDylib = File(
-          '${frameworksDir.path}/libCLiteRTLM_mac.dylib',
-        ).existsSync();
         final usesNativeSpmFramework = File(
           '${frameworksDir.path}/LiteRtLm.framework/Versions/A/LiteRtLm',
         ).existsSync();
         return (
           liteRtLmCandidates: [
             _processLibraryCandidate,
-            '${frameworksDir.path}/libCLiteRTLM_mac.dylib',
             '${frameworksDir.path}/LiteRtLm.framework/Versions/A/LiteRtLm',
           ],
-          companions: usesOfficialSpmDylib
-              ? const <String>[]
-              : usesNativeSpmFramework
+          companions: usesNativeSpmFramework
               ? [
                   for (final library in companions)
                     '${frameworksDir.path}/$library',
@@ -1042,7 +1037,6 @@ class LiteRtLmRuntimeClient {
       return (
         liteRtLmCandidates: const [
           _processLibraryCandidate,
-          'libCLiteRTLM_mac.dylib',
           'libLiteRtLm.dylib',
         ],
         companions: [for (final library in companions) library],
@@ -1166,10 +1160,6 @@ class LiteRtLmRuntimeClient {
     final frameworksDir = Directory('${contentsDir.path}/Frameworks');
     if (!frameworksDir.existsSync()) {
       return null;
-    }
-    final officialDylib = File('${frameworksDir.path}/libCLiteRTLM_mac.dylib');
-    if (officialDylib.existsSync()) {
-      return frameworksDir;
     }
     final requiredNativeSpmFiles = liteRtLmMacOsRequiredNativeSpmFilesForAbi(
       Abi.current(),

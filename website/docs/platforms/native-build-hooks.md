@@ -114,12 +114,9 @@ The hook validates the full expected companion set after extraction so missing
 or stale `litert-lm-native` archives fail during the build rather than later at
 engine creation.
 
-On macOS, LiteRT-LM dylibs are copied into
-`Contents/Frameworks/LiteRtLmRuntime` instead of reported as native assets,
-because Flutter's macOS bundler can rewrite install names in a way the upstream
-dylibs do not tolerate. The example chat app includes an Xcode build phase that
-calls `tool/macos_litert_lm_prepare_app.sh` after Flutter embeds its
-frameworks.
+On standalone Dart macOS, LiteRT-LM dylibs stay in the hook cache and the
+runtime loads them directly. Flutter macOS apps use the SwiftPM path instead,
+so the example app does not need a post-build runtime-copy phase.
 
 ### 4. Validation and fallback safeguards
 - Runtime-family selection is explicit: `llama_cpp`, `litert_lm`, or both.

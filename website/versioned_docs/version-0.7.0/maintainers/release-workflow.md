@@ -20,18 +20,6 @@ dart test
 
 Ensure migration/changelog docs reflect behavior in the release branch.
 
-Before publishing a release that changes native runtime pins, verify native
-version alignment:
-
-- `hook/build.dart` native-assets pins and `darwin/llamadart/Package.swift`
-  Apple SPM pins must reference the same native repo releases.
-- `llamadart-native` owns llama.cpp bridge artifacts for both native-assets and
-  Apple SPM.
-- `litert-lm-native` owns LiteRT-LM bridge artifacts for both native-assets and
-  Apple SPM.
-- If native versions changed, prefer the `Sync Native Version, Bindings & SPM
-  Pins` workflow PR over hand-editing pins.
-
 ## 2. Version and docs updates
 
 - Update `pubspec.yaml` version.

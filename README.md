@@ -179,13 +179,11 @@ path or URL. Native callers load local bundle paths; web callers load
 web-compatible `.litertlm` URLs through the LiteRT-LM JavaScript runtime.
 Android callers can opt into the LiteRT-LM NPU delegate through `ModelParams`:
 
-Sandboxed macOS apps must stage LiteRT-LM companion dylibs inside the `.app`
-bundle. The chat app example includes a `Prepare LiteRT-LM Runtime` Xcode build
-phase that copies the pinned LiteRT-LM runtime into
-`Contents/Frameworks/LiteRtLmRuntime`. Standalone desktop VM tools also search
-the extracted `.dart_tool/llamadart/litert_lm/<version>/<platform>/<arch>`
-cache; set `LLAMADART_LITERT_LM_LIB_DIR` to that directory for custom CI or
-launcher layouts.
+Flutter Apple apps load LiteRT-LM through the package SwiftPM integration.
+Standalone desktop VM tools search the extracted
+`.dart_tool/llamadart/litert_lm/<version>/<platform>/<arch>` cache; set
+`LLAMADART_LITERT_LM_LIB_DIR` to that directory for custom CI or launcher
+layouts.
 
 ```dart
 await engine.loadModel(

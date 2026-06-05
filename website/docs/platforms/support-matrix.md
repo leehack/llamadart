@@ -298,10 +298,9 @@ no valid entries remain, selection falls back to `cpu_profile` (or default
   old hook-managed iOS wrapper path is disabled to avoid App Store
   `MinimumOSVersion` mismatches.
 - Standalone Dart macOS runs keep the native-assets fallback for compatibility.
-- Sandboxed macOS apps must stage LiteRT-LM companion dylibs inside the app
-  bundle. The example chat app does this with the
-  `Prepare LiteRT-LM Runtime` Xcode build phase, which copies dylibs into
-  `Contents/Frameworks/LiteRtLmRuntime`.
+- Custom standalone Dart macOS launchers can point
+  `LLAMADART_LITERT_LM_LIB_DIR` at the extracted LiteRT-LM cache directory when
+  the default cache search is not suitable.
 - `windows-x64` performs extra runtime dependency validation:
   - `cuda` requires `cudart` and `cublas` DLLs.
   - `blas` requires OpenBLAS DLL.
