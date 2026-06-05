@@ -1,4 +1,4 @@
-name: Sync Native Version & Bindings
+name: Sync Native Version, Bindings & SPM Pins
 
 on:
   workflow_dispatch:
@@ -65,9 +65,16 @@ jobs:
             - Updates `hook/build.dart` native tag pin.
             - Syncs headers from the matching `llamadart-native` release header bundle.
             - Regenerates `lib/src/backends/llama_cpp/bindings.dart` via ffigen.
+
+            Native version checklist:
+            - [ ] Confirm `leehack/llamadart-native` release `${{ steps.sync_headers.outputs.resolved_tag }}` includes the required native-assets archives.
+            - [ ] Confirm Apple SPM pins in `darwin/llamadart/Package.swift` reference the same native release when SPM-ready Apple XCFramework assets are available.
+            - [ ] If Package.swift changed, verify the binary target URLs and checksums match the published native repo release assets.
+            - [ ] Run Apple Flutter build validation when Apple SPM pins changed.
           branch: "automation/native-sync-${{ steps.sync_headers.outputs.resolved_tag }}"
           labels: automation/native-sync
           add-paths: |
             hook/build.dart
             lib/src/backends/llama_cpp/bindings.dart
+            darwin/llamadart/Package.swift
           delete-branch: true

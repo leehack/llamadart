@@ -15,6 +15,12 @@ let package = Package(
         )
     ],
     targets: [
+        // Native version management:
+        // Keep these Apple SPM binary pins aligned with the native-assets pins
+        // in hook/build.dart. The intended long-term source is the matching
+        // leehack/llamadart-native and leehack/litert-lm-native Apple
+        // XCFramework release artifacts, so Flutter/SPM builds and pure Dart
+        // native-assets builds use the same bridge runtime versions.
         .binaryTarget(
             name: "llama",
             url: "https://github.com/ggml-org/llama.cpp/releases/download/b9371/llama-b9371-xcframework.zip",
