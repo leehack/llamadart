@@ -7,7 +7,7 @@ This page combines platform support, runtime-family selection, and
 backend-module configuration for
 `llamadart`.
 
-The native-assets hook currently pins `llamadart-native` tag `b9371` and
+The native-assets hook currently pins `llamadart-native` tag `b9536` and
 `litert-lm-native` release `v0.13.1` (`hook/build.dart`). Apps can override the
 llama.cpp native GitHub source with
 `hooks.user_defines.llamadart.llamadart_native_tag` and
@@ -157,7 +157,7 @@ instead of silently ignoring llama.cpp-only settings.
   a web load failure as a package bug. The [WebGPU Bridge](./webgpu-bridge)
   page has the browser-console probe and Flutter Web smoke-test path.
 
-## Current llama.cpp module availability by bundle (`b9371`)
+## Current llama.cpp module availability by bundle (`b9536`)
 
 | Bundle key | Available backend modules in bundle |
 | --- | --- |
@@ -205,7 +205,7 @@ hooks:
   user_defines:
     llamadart:
       # Optional. Defaults to llamadart's tested native runtime pin.
-      llamadart_native_tag: b9371
+      llamadart_native_tag: b9536
 
       # Optional. GitHub repository slug or github.com URL.
       llamadart_native_repository: leehack/llamadart-native

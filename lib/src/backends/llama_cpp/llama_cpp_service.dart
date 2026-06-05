@@ -2067,6 +2067,10 @@ class LlamaCppService {
     directories.add(executableDir);
     directories.add(Directory.current.path);
 
+    if (Platform.isIOS) {
+      directories.add(path.normalize(path.join(executableDir, 'Frameworks')));
+    }
+
     if (Platform.isMacOS) {
       directories.add(
         path.normalize(path.join(executableDir, '..', 'Frameworks')),

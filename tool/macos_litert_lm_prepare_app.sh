@@ -8,6 +8,8 @@ RUNTIME_DIR="$FRAMEWORKS_DIR/LiteRtLmRuntime"
 
 if [[ "${LLAMADART_FORCE_LITERT_LM_PREPARE:-}" != "1" ]] && \
    { [[ -f "$FRAMEWORKS_DIR/libCLiteRTLM_mac.dylib" ]] || \
+     [[ -d "$FRAMEWORKS_DIR/LiteRtLm.framework" ]] || \
+     [[ -d "$FRAMEWORKS_DIR/llama.framework" ]] || \
      [[ -d "$FRAMEWORKS_DIR/llamadart.framework" ]]; }; then
   echo "LiteRT-LM SPM runtime detected; skipping legacy macOS runtime copy."
   exit 0

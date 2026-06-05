@@ -111,7 +111,7 @@ hooks:
     llamadart:
       # Optional. Defaults to llamadart's tested native runtime pin.
       # Use a leehack/llamadart-native release tag when testing another build.
-      llamadart_native_tag: b9371
+      llamadart_native_tag: b9536
 
       # Optional. GitHub repository slug or github.com URL.
       llamadart_native_repository: leehack/llamadart-native
@@ -139,7 +139,7 @@ the native-assets hook fails while downloading that asset.
 
 Native source overrides are for compatibility testing. They do not regenerate
 Dart FFI bindings or symbol lookups, so the selected binary still must be ABI-
-and symbol-compatible with the default `leehack/llamadart-native@b9371` runtime.
+and symbol-compatible with the default `leehack/llamadart-native@b9536` runtime.
 
 Available native tags are published on the
 [`leehack/llamadart-native` releases page](https://github.com/leehack/llamadart-native/releases).
@@ -151,7 +151,7 @@ gh release list --repo leehack/llamadart-native --limit 20
 
 Before overriding, confirm the release includes the asset for your target. The
 hook downloads files named `llamadart-native-<bundle>-<tag>.tar.gz`, for example
-`llamadart-native-windows-x64-b9371.tar.gz`.
+`llamadart-native-windows-x64-b9536.tar.gz`.
 For local testing, `llamadart_native_path` may point directly at a bundle
 archive, at an extracted bundle directory, or at a directory containing
 `<tag>/<bundle>/`, `<bundle>/`, or the expected archive file.
@@ -373,7 +373,7 @@ rejected until LiteRT-LM exposes equivalent runtime controls.
 <details>
 <summary>Full module matrix (available modules by target)</summary>
 
-Available llama.cpp module matrix from the default native tag `b9371`:
+Available llama.cpp module matrix from the default native tag `b9536`:
 
 | Target | Available backend modules in bundle |
 |--------|-------------------------------------|
@@ -677,12 +677,16 @@ Current pinned runtime artifacts:
 
 | Runtime path | Published artifact |
 |--------------|--------------------|
-| Native llama.cpp / GGUF | `leehack/llamadart-native@b9371` |
+| Native llama.cpp / GGUF | `leehack/llamadart-native@b9536` |
 | Native LiteRT-LM / `.litertlm` | `leehack/litert-lm-native@v0.13.1` |
-| Apple SPM llama.cpp / GGUF | official `ggml-org/llama.cpp@b9371` XCFramework |
-| Apple SPM LiteRT-LM / `.litertlm` | official `google-ai-edge/LiteRT-LM@v0.13.1` XCFrameworks |
+| Apple SPM llama.cpp / GGUF | `leehack/llamadart-native@b9536` Apple XCFramework |
+| Apple SPM LiteRT-LM / `.litertlm` | `leehack/litert-lm-native@v0.13.1` Apple XCFrameworks |
 | Web llama.cpp / GGUF | `leehack/llama-web-bridge-assets@v0.1.16` |
 | Web LiteRT-LM / `.litertlm` | App-provided `@litert-lm/core` module URL; the chat app defaults to jsDelivr `@litert-lm/core/+esm` |
+
+When bumping native runtime pins, publish the matching native repo release
+artifacts first, then update `darwin/llamadart/Package.swift` checksums from the
+exact uploaded Apple XCFramework zips.
 
 Core abstractions in this package:
 

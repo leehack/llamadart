@@ -186,6 +186,27 @@ List<String> liteRtLmMacOsRequiredFrameworksForAbi(Abi abi) {
   };
 }
 
+/// Internal helper used by the LiteRT-LM runtime to validate the native-repo
+/// Apple SPM layout in macOS app bundles.
+List<String> liteRtLmMacOsRequiredNativeSpmFilesForAbi(Abi abi) {
+  return switch (abi) {
+    Abi.macosArm64 => const <String>[
+      'LiteRtLm.framework/Versions/A/LiteRtLm',
+      'libGemmaModelConstraintProvider.dylib',
+      'libLiteRt.dylib',
+      'libLiteRtMetalAccelerator.dylib',
+      'libLiteRtTopKMetalSampler.dylib',
+      'libLiteRtTopKWebGpuSampler.dylib',
+      'libLiteRtWebGpuAccelerator.dylib',
+    ],
+    Abi.macosX64 => const <String>[
+      'LiteRtLm.framework/Versions/A/LiteRtLm',
+      'libLiteRt.dylib',
+    ],
+    _ => const <String>[],
+  };
+}
+
 /// Internal helper used by the LiteRT-LM runtime to validate extracted macOS
 /// native-assets cache directories.
 bool liteRtLmIsMacOsCacheDirectoryForAbi(Directory dir, Abi abi) {
@@ -969,6 +990,9 @@ class LiteRtLmRuntimeClient {
         final usesOfficialSpmDylib = File(
           '${frameworksDir.path}/libCLiteRTLM_mac.dylib',
         ).existsSync();
+        final usesNativeSpmFramework = File(
+          '${frameworksDir.path}/LiteRtLm.framework/Versions/A/LiteRtLm',
+        ).existsSync();
         return (
           liteRtLmCandidates: [
             _processLibraryCandidate,
@@ -977,6 +1001,11 @@ class LiteRtLmRuntimeClient {
           ],
           companions: usesOfficialSpmDylib
               ? const <String>[]
+              : usesNativeSpmFramework
+              ? [
+                  for (final library in companions)
+                    '${frameworksDir.path}/$library',
+                ]
               : [
                   for (final library in companions)
                     _macOsFrameworkBinaryPath(frameworksDir, library),
@@ -1140,6 +1169,15 @@ class LiteRtLmRuntimeClient {
     }
     final officialDylib = File('${frameworksDir.path}/libCLiteRTLM_mac.dylib');
     if (officialDylib.existsSync()) {
+      return frameworksDir;
+    }
+    final requiredNativeSpmFiles = liteRtLmMacOsRequiredNativeSpmFilesForAbi(
+      Abi.current(),
+    );
+    if (requiredNativeSpmFiles.isNotEmpty &&
+        requiredNativeSpmFiles.every(
+          (file) => File('${frameworksDir.path}/$file').existsSync(),
+        )) {
       return frameworksDir;
     }
     final requiredFrameworks = liteRtLmMacOsRequiredFrameworksForAbi(

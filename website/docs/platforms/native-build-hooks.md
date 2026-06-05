@@ -86,12 +86,13 @@ Use `all` or `both` to include every runtime family for a target.
 ### Apple Swift Package Manager path
 
 Flutter Apple builds use the root `llamadart` package's Swift Package Manager
-manifest to link official upstream Apple artifacts instead of hook-managed Apple
-bundles. On iOS, the hook always uses process-symbol lookup and does not emit
-the legacy Apple bundle assets. This avoids the old iOS wrapper path that can
-produce App Store `MinimumOSVersion` mismatches. macOS can opt into the same SPM
-hook path with `hooks.user_defines.llamadart.llamadart_apple_spm: true`; the
-default macOS hook path is kept for standalone Dart compatibility.
+manifest to link Apple XCFrameworks published by `leehack/llamadart-native` and
+`leehack/litert-lm-native` instead of hook-managed Apple bundles. On iOS, the
+hook always uses process-symbol lookup and does not emit the legacy Apple bundle
+assets. This avoids the old iOS wrapper path that can produce App Store
+`MinimumOSVersion` mismatches. macOS can opt into the same SPM hook path with
+`hooks.user_defines.llamadart.llamadart_apple_spm: true`; the default macOS hook
+path is kept for standalone Dart compatibility.
 
 The SPM path keeps runtime customization, but the customization point moves
 from `hook/build.dart` to `darwin/llamadart/Package.swift`. To use a different
