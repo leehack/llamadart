@@ -83,6 +83,23 @@ Use `llamadart_native_backends` separately to filter llama.cpp modules such as
 Vulkan, CUDA, OpenCL, BLAS, and HIP inside the `llama_cpp` runtime family.
 Use `all` or `both` to include every runtime family for a target.
 
+### Apple Swift Package Manager path
+
+Flutter Apple builds can use the companion `llamadart_apple_spm` package to
+link official upstream Apple artifacts through Swift Package Manager instead of
+hook-managed Apple bundles. When that package is present, or when
+`hooks.user_defines.llamadart.llamadart_apple_spm` is `true`, the hook switches
+iOS/macOS runtime lookup to process symbols and does not emit the legacy Apple
+bundle assets.
+
+The SPM path keeps runtime customization, but the customization point moves
+from `hook/build.dart` to the companion package's `Package.swift` pins. To use
+a different Apple runtime build, edit the binary target URL/checksum pins or
+publish a sibling companion package. The Dart hook cannot rewrite SPM binary
+target URLs/checksums at build time. Hook customization still applies to
+non-Apple targets and to Apple fallback mode when the SPM companion package is
+not used.
+
 ### 3. Dynamic Linking
 Using `native_assets_cli`, the downloaded dynamic libraries (`.so`, `.dylib`,
 `.dll`) are configured for **Dynamic Loading Bundled** when the runtime supports

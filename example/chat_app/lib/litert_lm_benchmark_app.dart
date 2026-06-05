@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:llamadart/llamadart.dart';
+import 'package:path/path.dart' as path;
+import 'package:path_provider/path_provider.dart';
 
 const _defaultPrompt =
     'Write a concise explanation of why on-device language models are useful.';
@@ -16,6 +18,28 @@ const _llamaCppBenchmarkBackendNames = <String>{
   'hip',
   'blas',
 };
+const _liteRtLmBenchmarkBackendNames = <String>{'auto', 'cpu', 'gpu', 'npu'};
+
+String resolveLiteRtLmBenchmarkBackendName(
+  String backend, {
+  String? operatingSystem,
+}) {
+  final normalized = backend.trim().toLowerCase();
+  if (normalized.isEmpty || normalized == 'auto') {
+    return switch (operatingSystem ?? Platform.operatingSystem) {
+      'ios' => 'cpu',
+      _ => 'gpu',
+    };
+  }
+  if (_liteRtLmBenchmarkBackendNames.contains(normalized)) {
+    return normalized;
+  }
+  throw ArgumentError.value(
+    backend,
+    'LITERT_LM_BACKEND',
+    'Expected auto, cpu, gpu, or npu.',
+  );
+}
 
 String normalizeLlamaCppBenchmarkBackendName(String backend) {
   final normalized = backend.trim().toLowerCase();
@@ -69,6 +93,62 @@ String llamaCppBenchmarkBackendLabel(GpuBackend backend) {
     GpuBackend.hip => 'HIP',
     GpuBackend.blas => 'BLAS',
   };
+}
+
+String resolveBenchmarkModelPath(
+  String value, {
+  String? homeDirectory,
+  bool? useDocumentsForRelative,
+}) {
+  final trimmed = value.trim();
+  if (trimmed.isEmpty || path.isAbsolute(trimmed)) {
+    return trimmed;
+  }
+
+  const documentsPrefix = 'documents:';
+  final hasDocumentsPrefix = trimmed.startsWith(documentsPrefix);
+  final shouldUseDocuments =
+      hasDocumentsPrefix || (useDocumentsForRelative ?? Platform.isIOS);
+  if (!shouldUseDocuments) {
+    return trimmed;
+  }
+
+  final fileName = hasDocumentsPrefix
+      ? trimmed.substring(documentsPrefix.length).trim()
+      : trimmed;
+  if (fileName.isEmpty || path.isAbsolute(fileName)) {
+    return fileName;
+  }
+
+  final home = homeDirectory ?? Platform.environment['HOME'];
+  if (home == null || home.isEmpty) {
+    return fileName;
+  }
+  return path.join(home, 'Documents', fileName);
+}
+
+Future<String> resolveBenchmarkModelPathForApp(String value) async {
+  final trimmed = value.trim();
+  if (trimmed.isEmpty || path.isAbsolute(trimmed)) {
+    return trimmed;
+  }
+
+  const documentsPrefix = 'documents:';
+  final hasDocumentsPrefix = trimmed.startsWith(documentsPrefix);
+  final shouldUseDocuments = hasDocumentsPrefix || Platform.isIOS;
+  if (!shouldUseDocuments) {
+    return trimmed;
+  }
+
+  final fileName = hasDocumentsPrefix
+      ? trimmed.substring(documentsPrefix.length).trim()
+      : trimmed;
+  if (fileName.isEmpty || path.isAbsolute(fileName)) {
+    return fileName;
+  }
+
+  final documentsDir = await getApplicationDocumentsDirectory();
+  return path.join(documentsDir.path, fileName);
 }
 
 Map<String, Object?> _numericSummary(
@@ -134,9 +214,8 @@ class _LiteRtLmBenchmarkAppState extends State<LiteRtLmBenchmarkApp> {
   final _log = StringBuffer();
   bool _running = false;
   bool _autoRunStarted = false;
-  String _backend = const String.fromEnvironment(
-    'LITERT_LM_BACKEND',
-    defaultValue: 'gpu',
+  String _backend = resolveLiteRtLmBenchmarkBackendName(
+    const String.fromEnvironment('LITERT_LM_BACKEND', defaultValue: 'auto'),
   );
   String _llamaBackend = normalizeLlamaCppBenchmarkBackendName(
     const String.fromEnvironment('LLAMADART_BACKEND', defaultValue: 'auto'),
@@ -186,8 +265,12 @@ class _LiteRtLmBenchmarkAppState extends State<LiteRtLmBenchmarkApp> {
   }
 
   Future<void> _runBenchmarks() async {
-    final modelPath = _modelPathController.text.trim();
-    final llamaModelPath = _llamaModelPathController.text.trim();
+    final modelPath = await resolveBenchmarkModelPathForApp(
+      _modelPathController.text,
+    );
+    final llamaModelPath = await resolveBenchmarkModelPathForApp(
+      _llamaModelPathController.text,
+    );
     if (modelPath.isEmpty && llamaModelPath.isEmpty) {
       _append('Set LITERT_LM_MODEL and/or LLAMADART_MODEL.');
       return;

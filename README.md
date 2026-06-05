@@ -498,6 +498,12 @@ Notes:
   `llamadart_native_backends` does not split Apple backend modules. Use
   `llamadart_native_runtimes` to include or exclude the llama.cpp or LiteRT-LM
   runtime families on Apple targets.
+- Apple Swift Package Manager builds can depend on the companion
+  `llamadart_apple_spm` package. In that mode, Apple runtime customization
+  moves from the Dart hook to the companion `Package.swift` binary target pins;
+  `llamadart_native_tag`, `llamadart_native_repository`, and
+  `llamadart_native_path` still apply to non-Apple targets and Apple fallback
+  mode, but they do not rewrite SPM URL/checksum pins.
 - The native-assets hook refreshes emitted files each build; if you change `hooks.user_defines` or are upgrading from older cached outputs, run `flutter clean && flutter pub get` before rebuilding.
 - Some Vulkan drivers can crash when probing cooperative matrix support. This
   is a driver-side failure in the Vulkan property query path, not a llamadart
@@ -669,6 +675,8 @@ Current pinned runtime artifacts:
 |--------------|--------------------|
 | Native llama.cpp / GGUF | `leehack/llamadart-native@b9371` |
 | Native LiteRT-LM / `.litertlm` | `leehack/litert-lm-native@v0.13.1` |
+| Apple SPM llama.cpp / GGUF | official `ggml-org/llama.cpp@b9371` XCFramework |
+| Apple SPM LiteRT-LM / `.litertlm` | official `google-ai-edge/LiteRT-LM@v0.13.1` XCFrameworks |
 | Web llama.cpp / GGUF | `leehack/llama-web-bridge-assets@v0.1.16` |
 | Web LiteRT-LM / `.litertlm` | App-provided `@litert-lm/core` module URL; the chat app defaults to jsDelivr `@litert-lm/core/+esm` |
 

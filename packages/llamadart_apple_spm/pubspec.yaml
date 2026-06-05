@@ -1,0 +1,22 @@
+name: llamadart_apple_spm
+description: Apple Swift Package Manager bridge for llamadart native runtimes.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.10.7
+  flutter: ^3.38.0
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+flutter:
+  plugin:
+    platforms:
+      ios:
+        pluginClass: LlamadartAppleSpmPlugin
+        sharedDarwinSource: true
+      macos:
+        pluginClass: LlamadartAppleSpmPlugin
+        sharedDarwinSource: true

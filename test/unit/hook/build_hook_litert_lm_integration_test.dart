@@ -260,6 +260,62 @@ void main() {
   );
 
   test(
+    'build hook uses process lookup for Apple runtimes when SPM is enabled',
+    () async {
+      await testCodeBuildHook(
+        mainMethod: build_hook.main,
+        targetOS: OS.iOS,
+        targetArchitecture: Architecture.arm64,
+        targetIOSSdk: IOSSdk.iPhoneOS,
+        userDefines: _appleSpmAllRuntimeUserDefines(),
+        check: (input, output) {
+          final codeAssets = output.assets.encodedAssets
+              .where((asset) => asset.isCodeAsset)
+              .map((asset) => asset.asCodeAsset)
+              .toList(growable: false);
+
+          expect(codeAssets, hasLength(1));
+          final codeAsset = codeAssets.single;
+          expect(codeAsset.id, 'package:llamadart/llamadart');
+          expect(codeAsset.file, isNull);
+          expect(codeAsset.linkMode, isA<LookupInProcess>());
+
+          final outputDir = input.outputDirectory.toFilePath();
+          expect(
+            Directory(path.join(outputDir, 'llamadart_bin')).existsSync(),
+            isFalse,
+          );
+        },
+      );
+    },
+  );
+
+  test(
+    'build hook emits no bundled Apple assets for LiteRT-LM-only SPM mode',
+    () async {
+      await testCodeBuildHook(
+        mainMethod: build_hook.main,
+        targetOS: OS.macOS,
+        targetArchitecture: Architecture.arm64,
+        userDefines: _appleSpmLiteRtLmOnlyUserDefines(),
+        check: (input, output) {
+          final codeAssets = output.assets.encodedAssets
+              .where((asset) => asset.isCodeAsset)
+              .map((asset) => asset.asCodeAsset)
+              .toList(growable: false);
+
+          expect(codeAssets, isEmpty);
+          final outputDir = input.outputDirectory.toFilePath();
+          expect(
+            Directory(path.join(outputDir, 'llamadart_bin')).existsSync(),
+            isFalse,
+          );
+        },
+      );
+    },
+  );
+
+  test(
     'build hook excludes unavailable iOS simulator LiteRT-LM by default',
     () async {
       await testCodeBuildHook(
@@ -326,6 +382,26 @@ PackageUserDefines _allRuntimeUserDefines() => PackageUserDefines(
   workspacePubspec: PackageUserDefinesSource(
     defines: {
       'llamadart_native_runtimes': ['all'],
+    },
+    basePath: Directory.current.uri,
+  ),
+);
+
+PackageUserDefines _appleSpmAllRuntimeUserDefines() => PackageUserDefines(
+  workspacePubspec: PackageUserDefinesSource(
+    defines: {
+      'llamadart_apple_spm': true,
+      'llamadart_native_runtimes': ['all'],
+    },
+    basePath: Directory.current.uri,
+  ),
+);
+
+PackageUserDefines _appleSpmLiteRtLmOnlyUserDefines() => PackageUserDefines(
+  workspacePubspec: PackageUserDefinesSource(
+    defines: {
+      'llamadart_apple_spm': true,
+      'llamadart_native_runtimes': ['litert_lm'],
     },
     basePath: Directory.current.uri,
   ),

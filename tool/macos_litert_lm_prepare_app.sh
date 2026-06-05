@@ -6,6 +6,13 @@ APP_PATH="${1:?usage: $0 /path/to/App.app}"
 FRAMEWORKS_DIR="$APP_PATH/Contents/Frameworks"
 RUNTIME_DIR="$FRAMEWORKS_DIR/LiteRtLmRuntime"
 
+if [[ "${LLAMADART_FORCE_LITERT_LM_PREPARE:-}" != "1" ]] && \
+   { [[ -f "$FRAMEWORKS_DIR/libCLiteRTLM_mac.dylib" ]] || \
+     [[ -d "$FRAMEWORKS_DIR/llamadart-apple-spm.framework" ]]; }; then
+  echo "LiteRT-LM SPM runtime detected; skipping legacy macOS runtime copy."
+  exit 0
+fi
+
 resolve_litert_arch() {
   local arch="${LLAMADART_LITERT_LM_ARCH:-$(uname -m)}"
   case "$arch" in

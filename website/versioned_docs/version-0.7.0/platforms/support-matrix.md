@@ -289,6 +289,10 @@ no valid entries remain, selection falls back to `cpu_profile` (or default
 - Apple targets (`ios-*`, `macos-*`) support `cpu` + `metal`, but ignore
   per-backend module config in this hook path because runtime libraries are
   consolidated.
+- Apple SPM targets resolve runtime libraries through the companion package, so
+  `llamadart_native_tag`, `llamadart_native_repository`, and
+  `llamadart_native_path` do not change those SPM binary targets. Customize the
+  companion `Package.swift` pins instead.
 - Sandboxed macOS apps must stage LiteRT-LM companion dylibs inside the app
   bundle. The example chat app does this with the
   `Prepare LiteRT-LM Runtime` Xcode build phase, which copies dylibs into

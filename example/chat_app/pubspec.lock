@@ -350,6 +350,13 @@ packages:
       relative: true
     source: path
     version: "0.7.0"
+  llamadart_apple_spm:
+    dependency: "direct main"
+    description:
+      path: "../../packages/llamadart_apple_spm"
+      relative: true
+    source: path
+    version: "0.1.0"
   logging:
     dependency: transitive
     description:

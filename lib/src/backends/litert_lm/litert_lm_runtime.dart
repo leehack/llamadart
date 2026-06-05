@@ -10,6 +10,7 @@ import 'package:path/path.dart' as path;
 const _litertLmVersion = '0.13.1';
 const _litertLmLibDirEnv = 'LLAMADART_LITERT_LM_LIB_DIR';
 const _liteRtLmIosNativeAsset = 'package:llamadart/litert_lm_LiteRtLm';
+const _processLibraryCandidate = '<process>';
 
 /// Builds a diagnostic for LiteRT-LM engine creation failures.
 ///
@@ -86,8 +87,12 @@ List<String> liteRtLmCacheDirectoryCandidatesForAbi(Abi abi) {
 /// Internal helper used by the LiteRT-LM runtime to locate iOS native assets.
 List<String> liteRtLmIosLibraryCandidatesForAbi(Abi abi) {
   return switch (abi) {
-    Abi.iosArm64 ||
-    Abi.iosX64 => const <String>[_liteRtLmIosNativeAsset, 'LiteRtLm'],
+    Abi.iosArm64 || Abi.iosX64 => const <String>[
+      _processLibraryCandidate,
+      _liteRtLmIosNativeAsset,
+      'LiteRtLm',
+      'CLiteRTLM',
+    ],
     _ => const <String>[],
   };
 }
@@ -104,9 +109,11 @@ String liteRtLmIosFrameworkBinaryPath(String frameworksDirPath, String name) {
 ///
 /// `DynamicLibrary.open` does not resolve Dart native-asset ids (only `@Native`
 /// externals do), so the `package:llamadart/...` id is passed verbatim to
-/// dlopen and never loads. When [frameworksDirPath] is known, the absolute path
-/// to the embedded framework binary is preferred; the native-asset id and bare
-/// `LiteRtLm` remain as last-resort fallbacks for the error message.
+/// dlopen and never loads. The process image is tried first so Flutter SPM apps
+/// can resolve the upstream `CLiteRTLM` symbols linked by the companion plugin.
+/// When [frameworksDirPath] is known, absolute framework binary paths are tried
+/// next; the native-asset id and bare dylib names remain last-resort fallbacks
+/// for the error message.
 List<String> liteRtLmIosLibraryCandidates(
   Abi abi, {
   String? frameworksDirPath,
@@ -116,9 +123,12 @@ List<String> liteRtLmIosLibraryCandidates(
     return const <String>[];
   }
   return <String>[
+    _processLibraryCandidate,
+    if (frameworksDirPath != null)
+      liteRtLmIosFrameworkBinaryPath(frameworksDirPath, 'CLiteRTLM'),
     if (frameworksDirPath != null)
       liteRtLmIosFrameworkBinaryPath(frameworksDirPath, 'LiteRtLm'),
-    ...fallbacks,
+    ...fallbacks.where((candidate) => candidate != _processLibraryCandidate),
   ];
 }
 
@@ -435,7 +445,7 @@ class LiteRtLmRuntimeClient {
       final settingsAddress = settings.address;
       final liteRtLmLibraryPath = _liteRtLmLibraryPath!;
       final engineAddress = await Isolate.run(() {
-        final lib = DynamicLibrary.open(liteRtLmLibraryPath);
+        final lib = _openLiteRtLmLibraryCandidate(liteRtLmLibraryPath);
         final create = lib
             .lookupFunction<
               Pointer<_LiteRtLmEngine> Function(
@@ -954,10 +964,33 @@ class LiteRtLmRuntimeClient {
     }
     if (Platform.isMacOS && (abi == Abi.macosArm64 || abi == Abi.macosX64)) {
       final companions = _macOsCompanionLibrariesForAbi(abi);
+      final frameworksDir = _findMacOsAppFrameworksDir();
+      if (frameworksDir != null) {
+        final usesOfficialSpmDylib = File(
+          '${frameworksDir.path}/libCLiteRTLM_mac.dylib',
+        ).existsSync();
+        return (
+          liteRtLmCandidates: [
+            _processLibraryCandidate,
+            '${frameworksDir.path}/libCLiteRTLM_mac.dylib',
+            '${frameworksDir.path}/LiteRtLm.framework/Versions/A/LiteRtLm',
+          ],
+          companions: usesOfficialSpmDylib
+              ? const <String>[]
+              : [
+                  for (final library in companions)
+                    _macOsFrameworkBinaryPath(frameworksDir, library),
+                ],
+          directCallbackSupported: true,
+        );
+      }
       final appLibraryDir = _findMacOsAppLibraryDir();
       if (appLibraryDir != null) {
         return (
-          liteRtLmCandidates: ['${appLibraryDir.path}/libLiteRtLm.dylib'],
+          liteRtLmCandidates: [
+            _processLibraryCandidate,
+            '${appLibraryDir.path}/libLiteRtLm.dylib',
+          ],
           companions: [
             for (final library in companions) '${appLibraryDir.path}/$library',
           ],
@@ -967,28 +1000,22 @@ class LiteRtLmRuntimeClient {
       final cacheDir = _findMacOsLiteRtLmCacheDir();
       if (cacheDir != null) {
         return (
-          liteRtLmCandidates: ['${cacheDir.path}/libLiteRtLm.dylib'],
+          liteRtLmCandidates: [
+            _processLibraryCandidate,
+            '${cacheDir.path}/libLiteRtLm.dylib',
+          ],
           companions: [
             for (final library in companions) '${cacheDir.path}/$library',
           ],
           directCallbackSupported: true,
         );
       }
-      final frameworksDir = _findMacOsAppFrameworksDir();
-      if (frameworksDir != null) {
-        return (
-          liteRtLmCandidates: [
-            '${frameworksDir.path}/LiteRtLm.framework/Versions/A/LiteRtLm',
-          ],
-          companions: [
-            for (final library in companions)
-              _macOsFrameworkBinaryPath(frameworksDir, library),
-          ],
-          directCallbackSupported: true,
-        );
-      }
       return (
-        liteRtLmCandidates: const ['libLiteRtLm.dylib'],
+        liteRtLmCandidates: const [
+          _processLibraryCandidate,
+          'libCLiteRTLM_mac.dylib',
+          'libLiteRtLm.dylib',
+        ],
         companions: [for (final library in companions) library],
         directCallbackSupported: true,
       );
@@ -1033,7 +1060,9 @@ class LiteRtLmRuntimeClient {
     final errors = <String>[];
     for (final candidate in candidates) {
       try {
-        return (path: candidate, library: DynamicLibrary.open(candidate));
+        final library = _openLiteRtLmLibraryCandidate(candidate);
+        _validateLiteRtLmLibrary(library);
+        return (path: candidate, library: library);
       } catch (error) {
         errors.add('  - $candidate: $error');
       }
@@ -1109,6 +1138,10 @@ class LiteRtLmRuntimeClient {
     if (!frameworksDir.existsSync()) {
       return null;
     }
+    final officialDylib = File('${frameworksDir.path}/libCLiteRTLM_mac.dylib');
+    if (officialDylib.existsSync()) {
+      return frameworksDir;
+    }
     final requiredFrameworks = liteRtLmMacOsRequiredFrameworksForAbi(
       Abi.current(),
     );
@@ -1150,6 +1183,12 @@ class LiteRtLmRuntimeClient {
     final frameworksDir = Directory('${executable.parent.path}/Frameworks');
     if (!frameworksDir.existsSync()) {
       return null;
+    }
+    final upstream = File(
+      liteRtLmIosFrameworkBinaryPath(frameworksDir.path, 'CLiteRTLM'),
+    );
+    if (upstream.existsSync()) {
+      return frameworksDir;
     }
     final liteRtLm = File(
       liteRtLmIosFrameworkBinaryPath(frameworksDir.path, 'LiteRtLm'),
@@ -1353,7 +1392,9 @@ Future<String> _runBlockingSendMessageInIsolate(
 }
 
 String _runBlockingSendMessage(_BlockingSendMessageRequest request) {
-  final bindings = _LiteRtLmBindings(DynamicLibrary.open(request.libraryPath));
+  final bindings = _LiteRtLmBindings(
+    _openLiteRtLmLibraryCandidate(request.libraryPath),
+  );
   final conversation = Pointer<_LiteRtLmConversation>.fromAddress(
     request.conversationAddress,
   );
@@ -1392,6 +1433,18 @@ String _runBlockingSendMessage(_BlockingSendMessageRequest request) {
     }
     calloc.free(messagePtr);
   }
+}
+
+DynamicLibrary _openLiteRtLmLibraryCandidate(String candidate) {
+  return candidate == _processLibraryCandidate
+      ? DynamicLibrary.process()
+      : DynamicLibrary.open(candidate);
+}
+
+void _validateLiteRtLmLibrary(DynamicLibrary library) {
+  library.lookup<NativeFunction<Void Function()>>(
+    'litert_lm_engine_settings_create',
+  );
 }
 
 /// Reassembles LiteRT-LM streaming response chunks into the textual form the

@@ -79,43 +79,48 @@ void main() {
     expect(liteRtLmCacheDirectoryCandidatesForAbi(Abi.androidArm64), isEmpty);
   });
 
-  test(
-    'LiteRT-LM iOS fallback identifiers are the native-asset id + binary',
-    () {
-      // These are last-resort fallbacks only: `DynamicLibrary.open` cannot
-      // resolve the `package:` native-asset id, and the bare dylib is not on any
-      // iOS search path. The absolute framework path (below) is what actually
-      // loads.
-      expect(liteRtLmIosLibraryCandidatesForAbi(Abi.iosArm64), const <String>[
-        'package:llamadart/litert_lm_LiteRtLm',
-        'LiteRtLm',
-      ]);
-      expect(liteRtLmIosLibraryCandidatesForAbi(Abi.iosX64), const <String>[
-        'package:llamadart/litert_lm_LiteRtLm',
-        'LiteRtLm',
-      ]);
-      expect(liteRtLmIosLibraryCandidatesForAbi(Abi.macosArm64), isEmpty);
-    },
-  );
+  test('LiteRT-LM iOS fallback identifiers include process and frameworks', () {
+    // The process candidate supports the Flutter SPM bridge. The remaining
+    // entries preserve the native-asset/framework fallbacks used by bundled
+    // builds.
+    expect(liteRtLmIosLibraryCandidatesForAbi(Abi.iosArm64), const <String>[
+      '<process>',
+      'package:llamadart/litert_lm_LiteRtLm',
+      'LiteRtLm',
+      'CLiteRTLM',
+    ]);
+    expect(liteRtLmIosLibraryCandidatesForAbi(Abi.iosX64), const <String>[
+      '<process>',
+      'package:llamadart/litert_lm_LiteRtLm',
+      'LiteRtLm',
+      'CLiteRTLM',
+    ]);
+    expect(liteRtLmIosLibraryCandidatesForAbi(Abi.macosArm64), isEmpty);
+  });
 
-  test('LiteRT-LM iOS lookup prefers the absolute embedded framework path', () {
-    // With the app Frameworks dir known, the absolute framework binary path is
-    // tried first, then the fallback identifiers.
+  test('LiteRT-LM iOS lookup prefers process then framework paths', () {
+    // With the app Frameworks dir known, process lookup is still tried first
+    // for SPM, then absolute upstream/wrapper framework paths.
     expect(
       liteRtLmIosLibraryCandidates(
         Abi.iosArm64,
         frameworksDirPath: '/App.app/Frameworks',
       ),
       const <String>[
+        '<process>',
+        '/App.app/Frameworks/CLiteRTLM.framework/CLiteRTLM',
         '/App.app/Frameworks/LiteRtLm.framework/LiteRtLm',
         'package:llamadart/litert_lm_LiteRtLm',
         'LiteRtLm',
+        'CLiteRTLM',
       ],
     );
-    // Without a Frameworks dir, only the fallback identifiers remain.
+    // Without a Frameworks dir, only process and fallback identifiers remain.
     expect(liteRtLmIosLibraryCandidates(Abi.iosArm64), const <String>[
+      '<process>',
       'package:llamadart/litert_lm_LiteRtLm',
       'LiteRtLm',
+      'CLiteRTLM',
     ]);
     // Non-iOS ABIs have no iOS candidates regardless of a frameworks dir.
     expect(

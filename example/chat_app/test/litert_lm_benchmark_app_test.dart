@@ -4,6 +4,31 @@ import 'package:llamadart_chat_example/litert_lm_benchmark_app.dart';
 
 void main() {
   group('LiteRT-LM benchmark backend selection', () {
+    test('chooses platform defaults for LiteRT-LM comparisons', () {
+      expect(
+        resolveLiteRtLmBenchmarkBackendName('auto', operatingSystem: 'ios'),
+        'cpu',
+      );
+      expect(
+        resolveLiteRtLmBenchmarkBackendName('', operatingSystem: 'macos'),
+        'gpu',
+      );
+      expect(
+        resolveLiteRtLmBenchmarkBackendName('auto', operatingSystem: 'android'),
+        'gpu',
+      );
+    });
+
+    test('honors explicit LiteRT-LM backend overrides', () {
+      expect(resolveLiteRtLmBenchmarkBackendName(' cpu '), 'cpu');
+      expect(resolveLiteRtLmBenchmarkBackendName('gpu'), 'gpu');
+      expect(resolveLiteRtLmBenchmarkBackendName('npu'), 'npu');
+      expect(
+        () => resolveLiteRtLmBenchmarkBackendName('metal'),
+        throwsA(isA<ArgumentError>()),
+      );
+    });
+
     test('chooses platform defaults for fair llama.cpp comparisons', () {
       expect(
         resolveLlamaCppBenchmarkBackend('auto', operatingSystem: 'macos'),
@@ -45,6 +70,33 @@ void main() {
     test('normalizes UI backend names from environment values', () {
       expect(normalizeLlamaCppBenchmarkBackendName(' Metal '), 'metal');
       expect(normalizeLlamaCppBenchmarkBackendName('directml'), 'auto');
+    });
+
+    test('resolves relative model names from app documents when requested', () {
+      expect(
+        resolveBenchmarkModelPath(
+          'gemma-4-E2B-it.litertlm',
+          homeDirectory: '/app/home',
+          useDocumentsForRelative: true,
+        ),
+        '/app/home/Documents/gemma-4-E2B-it.litertlm',
+      );
+      expect(
+        resolveBenchmarkModelPath(
+          'documents:gemma-4-E2B-it-Q4_K_S.gguf',
+          homeDirectory: '/app/home',
+          useDocumentsForRelative: false,
+        ),
+        '/app/home/Documents/gemma-4-E2B-it-Q4_K_S.gguf',
+      );
+      expect(
+        resolveBenchmarkModelPath(
+          '/tmp/gemma.gguf',
+          homeDirectory: '/app/home',
+          useDocumentsForRelative: true,
+        ),
+        '/tmp/gemma.gguf',
+      );
     });
 
     test('rejects unknown backend override names', () {

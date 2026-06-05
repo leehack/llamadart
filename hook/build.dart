@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:archive/archive.dart';
 import 'package:code_assets/code_assets.dart';
@@ -15,6 +16,7 @@ const _llamaCppTag = 'b9371';
 const _nativeRepoSlug = 'leehack/llamadart-native';
 
 const _packageName = 'llamadart';
+const _appleSpmPackageName = 'llamadart_apple_spm';
 const _thirdPartyDir = 'third_party';
 const _binDir = 'bin';
 const _dartToolDir = '.dart_tool';
@@ -234,6 +236,17 @@ void main(List<String> args) async {
       throw Exception('LiteRT-LM runtime is not available for ${spec.bundle}.');
     }
 
+    if (await _emitAppleSpmAssetsIfEnabled(
+      code: code,
+      output: output,
+      userDefines: input.userDefines,
+      includeLlamaCpp: includeLlamaCpp,
+      includeLiteRtLm: includeLiteRtLm,
+      log: log,
+    )) {
+      return;
+    }
+
     final reportDirPath = path.join(
       input.outputDirectory.toFilePath(),
       _reportDir,
@@ -342,6 +355,110 @@ void main(List<String> args) async {
       );
     }
   });
+}
+
+Future<bool> _emitAppleSpmAssetsIfEnabled({
+  required CodeConfig code,
+  required BuildOutputBuilder output,
+  required HookInputUserDefines userDefines,
+  required bool includeLlamaCpp,
+  required bool includeLiteRtLm,
+  required Logger log,
+}) async {
+  final explicit = _parseOptionalBool(
+    userDefines[appleSpmUserDefineKey],
+    key: appleSpmUserDefineKey,
+  );
+  if (!_isAppleTarget(code.targetOS)) {
+    if (explicit == true) {
+      log.warning(
+        '$appleSpmUserDefineKey is only supported for iOS and macOS; '
+        'falling back to bundled native assets.',
+      );
+    }
+    return false;
+  }
+
+  final enabled =
+      explicit ?? await _packageConfigContains(_appleSpmPackageName);
+  if (!enabled) {
+    return false;
+  }
+
+  log.info(
+    'Using $_appleSpmPackageName for Apple native runtimes; the hook will not '
+    'bundle Apple dynamic libraries.',
+  );
+  if (includeLlamaCpp) {
+    output.assets.code.add(
+      CodeAsset(
+        package: _packageName,
+        name: _packageName,
+        linkMode: LookupInProcess(),
+      ),
+    );
+    log.info(
+      'Reporting package:$_packageName/$_packageName as an in-process code '
+      'asset for the SPM-linked llama.cpp runtime.',
+    );
+  }
+  if (includeLiteRtLm) {
+    log.info(
+      'LiteRT-LM will resolve symbols from the SPM-linked process image.',
+    );
+  }
+  return true;
+}
+
+bool _isAppleTarget(OS os) => os == OS.iOS || os == OS.macOS;
+
+bool? _parseOptionalBool(Object? rawUserConfig, {required String key}) {
+  if (rawUserConfig == null) {
+    return null;
+  }
+  if (rawUserConfig is bool) {
+    return rawUserConfig;
+  }
+  if (rawUserConfig is String) {
+    switch (rawUserConfig.trim().toLowerCase()) {
+      case 'true':
+      case '1':
+      case 'yes':
+      case 'on':
+        return true;
+      case 'false':
+      case '0':
+      case 'no':
+      case 'off':
+        return false;
+    }
+  }
+  throw FormatException(
+    'hooks.user_defines.$_packageName.$key must be a boolean.',
+  );
+}
+
+Future<bool> _packageConfigContains(String packageName) async {
+  final configUri = Isolate.packageConfigSync ?? await Isolate.packageConfig;
+  if (configUri == null || !configUri.isScheme('file')) {
+    return false;
+  }
+  final configFile = File.fromUri(configUri);
+  if (!configFile.existsSync()) {
+    return false;
+  }
+  final decoded = jsonDecode(await configFile.readAsString());
+  if (decoded is! Map<String, Object?>) {
+    return false;
+  }
+  final packages = decoded['packages'];
+  if (packages is! List<Object?>) {
+    return false;
+  }
+  return packages.any(
+    (package) =>
+        package is Map<String, Object?> && package['name'] == packageName,
+  );
 }
 
 Future<void> _emitLiteRtLmAssets({
