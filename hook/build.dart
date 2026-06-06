@@ -484,6 +484,10 @@ Directory? _consumerPackageRootFromUserDefines(BuildInput input) {
 }
 
 String? _uriOrPathToFilePath(String value) {
+  if (_looksLikeWindowsPath(value)) {
+    return value;
+  }
+
   final uri = Uri.tryParse(value);
   if (uri != null && uri.scheme == 'file') {
     return uri.toFilePath();
@@ -492,6 +496,13 @@ String? _uriOrPathToFilePath(String value) {
     return null;
   }
   return value;
+}
+
+bool _looksLikeWindowsPath(String value) {
+  if (value.startsWith(r'\\')) {
+    return true;
+  }
+  return RegExp(r'^[A-Za-z]:[\\/]').hasMatch(value);
 }
 
 bool _sameDirectory(Directory a, Directory b) {
