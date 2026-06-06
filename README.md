@@ -504,17 +504,20 @@ Notes:
   `llamadart_native_path` still apply to non-Apple targets and standalone Dart
   macOS fallback mode, but they do not rewrite SPM URL/checksum pins. Normal
   apps consuming `llamadart` from pub.dev cannot customize the published
-  package's `Package.swift` in-place. To test another Apple binary version with
-  SPM, use a path/git dependency override or fork of `llamadart` with updated
-  `Package.swift` pins, or place matching local development XCFrameworks under
-  `darwin/llamadart/Artifacts/` in that overridden package checkout.
+  package's `Package.swift` in-place, so Apple SPM binary version overrides are
+  not part of the supported app-level customization surface. A path/git
+  dependency override or fork of `llamadart` with different `Package.swift`
+  pins is an advanced testing/maintenance escape hatch, not a pub.dev consumer
+  configuration.
 - `llamadart_native_runtimes` still controls which runtime families the hook
   reports for Apple SPM builds. It does not prune the SwiftPM binary target
-  dependencies from the linked Apple package; use a forked `Package.swift` if
-  you need a physically smaller Apple SPM product. Flutter Apple builds use SPM
-  on both iOS and macOS so the old hook-managed wrapper path cannot recreate
-  App Store `MinimumOSVersion` mismatches. Standalone Dart macOS runs keep the
-  native-assets dylib path for compatibility.
+  dependencies from the linked Apple package. Physically pruning the Apple SPM
+  product requires maintaining a fork/path override with different
+  `Package.swift` target dependencies, which is outside the supported pub.dev
+  app configuration. Flutter Apple builds use SPM on both iOS and macOS so the
+  old hook-managed wrapper path cannot recreate App Store `MinimumOSVersion`
+  mismatches. Standalone Dart macOS runs keep the native-assets dylib path for
+  compatibility.
 - The native-assets hook refreshes emitted files each build; if you change `hooks.user_defines` or are upgrading from older cached outputs, run `flutter clean && flutter pub get` before rebuilding.
 - Some Vulkan drivers can crash when probing cooperative matrix support. This
   is a driver-side failure in the Vulkan property query path, not a llamadart
