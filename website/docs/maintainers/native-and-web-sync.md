@@ -26,17 +26,20 @@ Preferred in-repo workflow:
 
 - `.github/workflows/sync_native_bindings.yml`
 
-That workflow already syncs llama.cpp headers, regenerates ffigen bindings, and
-opens a PR for the native hook tag. Once the native repos publish SPM-ready
-Apple XCFramework zip assets, extend the same workflow to download/verify the
-matching asset checksums and update `darwin/llamadart/Package.swift` in the
-generated PR. Until that is automated, every native sync PR must include a
-manual Package.swift pin check before merge.
+That workflow syncs llama.cpp headers, regenerates ffigen bindings, updates the
+native hook pins, updates Apple SPM URL/checksum pins from GitHub release asset
+digests, and opens a PR. The `native_tag` input controls the `llamadart-native`
+release. The `litert_lm_tag` input defaults to `keep`; set it to a
+`litert-lm-native` tag or `latest` only when the LiteRT-LM native release should
+move in the same PR.
 
 Local fallback:
 
 ```bash
 tool/native/sync_native_headers_and_bindings.sh --tag latest
+python3 tool/native/sync_native_release_pins.py \
+  --llama-cpp-tag latest \
+  --litert-lm-tag keep
 ```
 
 After sync, run analyze/tests/docs checks before merge. For Apple SPM pin
@@ -52,9 +55,9 @@ Use this checklist in native sync PRs:
   release and the required per-platform native-assets archives.
 - Confirm the same release provides Apple SPM-compatible XCFramework zip
   artifacts, or explicitly document that Apple SPM pins are unchanged.
-- Update `hook/build.dart` native pins.
-- Update `darwin/llamadart/Package.swift` URL/checksum pins when Apple SPM
-  artifacts changed.
+- Update `hook/build.dart` native pins and `darwin/llamadart/Package.swift`
+  URL/checksum pins with `.github/workflows/sync_native_bindings.yml` or
+  `tool/native/sync_native_release_pins.py`.
 - Regenerate `lib/src/backends/llama_cpp/bindings.dart` whenever the
   `llamadart-native` header bundle changed.
 - Update public docs that mention the pinned native versions or source table.

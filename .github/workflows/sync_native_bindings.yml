@@ -7,6 +7,10 @@ on:
         description: 'llamadart-native release tag to sync (e.g., b8011 or latest)'
         required: true
         default: 'latest'
+      litert_lm_tag:
+        description: 'litert-lm-native release tag to sync (e.g., v0.13.1, latest, or keep)'
+        required: true
+        default: 'keep'
 
 permissions:
   contents: write
@@ -47,10 +51,14 @@ jobs:
         run: |
           tool/native/sync_native_headers_and_bindings.sh --tag "${{ github.event.inputs.native_tag }}"
 
-      - name: Update native hook tag
+      - name: Sync native hook pins and Apple SPM checksums
+        id: sync_pins
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          TAG="${{ steps.sync_headers.outputs.resolved_tag }}"
-          sed -i "s/const _llamaCppTag = '.*';/const _llamaCppTag = '$TAG';/" hook/build.dart
+          python3 tool/native/sync_native_release_pins.py \
+            --llama-cpp-tag "${{ steps.sync_headers.outputs.resolved_tag }}" \
+            --litert-lm-tag "${{ github.event.inputs.litert_lm_tag }}"
 
       - name: Create pull request
         uses: peter-evans/create-pull-request@v8
@@ -62,14 +70,16 @@ jobs:
             Automated sync from `leehack/llamadart-native` release `${{ steps.sync_headers.outputs.resolved_tag }}`.
 
             Changes:
-            - Updates `hook/build.dart` native tag pin.
+            - Updates `hook/build.dart` native release pins.
             - Syncs headers from the matching `llamadart-native` release header bundle.
             - Regenerates `lib/src/backends/llama_cpp/bindings.dart` via ffigen.
+            - Updates Apple SPM binary target checksums from GitHub release asset digests.
+            - Updates LiteRT-LM runtime archive checksums when `litert_lm_tag` is not `keep`.
 
             Native version checklist:
             - [ ] Confirm `leehack/llamadart-native` release `${{ steps.sync_headers.outputs.resolved_tag }}` includes the required native-assets archives.
-            - [ ] Confirm Apple SPM pins in `darwin/llamadart/Package.swift` reference the same native release when SPM-ready Apple XCFramework assets are available.
-            - [ ] If Package.swift changed, verify the binary target URLs and checksums match the published native repo release assets.
+            - [ ] Confirm Apple SPM pins in `darwin/llamadart/Package.swift` reference the same native release.
+            - [ ] If `${{ github.event.inputs.litert_lm_tag }}` is not `keep`, confirm `leehack/litert-lm-native` release `${{ steps.sync_pins.outputs.resolved_litert_lm_tag }}` includes the required runtime archives and Apple XCFramework zips.
             - [ ] Run Apple Flutter build validation when Apple SPM pins changed.
           branch: "automation/native-sync-${{ steps.sync_headers.outputs.resolved_tag }}"
           labels: automation/native-sync

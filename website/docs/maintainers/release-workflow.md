@@ -30,7 +30,8 @@ version alignment:
 - `litert-lm-native` owns LiteRT-LM bridge artifacts for both native-assets and
   Apple SPM.
 - If native versions changed, prefer the `Sync Native Version, Bindings & SPM
-  Pins` workflow PR over hand-editing pins.
+  Pins` workflow PR over hand-editing pins. That workflow updates Apple SPM
+  checksums from the published native release asset digests.
 
 ## 2. Version and docs updates
 

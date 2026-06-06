@@ -14,6 +14,8 @@
   `llama_cpp` and `litert_lm`, while iOS, macOS, Linux, and Windows default to
   `llama_cpp` only. Apps that ship `.litertlm` models on non-Android native
   targets should opt in with `llamadart_native_runtimes`.
+* Added native release pin automation so the maintainer sync workflow updates
+  Apple SPM checksums from the published native release asset digests.
 
 ## 0.7.0
 
