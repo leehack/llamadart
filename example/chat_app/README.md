@@ -28,8 +28,8 @@ flutter pub get
 flutter run
 ```
 
-If you run this app on iOS, set the project deployment target to `16.4` or
-newer first (for example `platform :ios, '16.4'` in `ios/Podfile`).
+If you run this app on iOS, set the Xcode project deployment target to `16.4`
+or newer first.
 
 Unlike the smaller GGUF-only examples, this app intentionally opts into both
 native runtime families in `pubspec.yaml` so native `.litertlm` presets work on

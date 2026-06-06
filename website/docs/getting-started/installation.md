@@ -11,8 +11,8 @@ description: Install llamadart, add the package to your app, and understand the 
 
 ## iOS deployment target
 
-If you build for iOS, set your app project and Podfile to `16.4` or newer
-before running the app.
+If you build for iOS, set your app project to `16.4` or newer before running
+the app. If your app still uses CocoaPods, set the Podfile platform too.
 
 ```ruby
 platform :ios, '16.4'

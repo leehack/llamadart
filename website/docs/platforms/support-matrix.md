@@ -42,8 +42,8 @@ runtime revision.
 | Web (browser) | N/A (JS bridge path) | N/A | Router: llama.cpp WebGPU/CPU for `.gguf`; LiteRT-LM JS for `.litertlm` URLs | Experimental; see [WebGPU Bridge](./webgpu-bridge) and LiteRT-LM web notes below |
 
 All iOS targets above require the consuming Flutter/Xcode project to use a
-minimum deployment target of `16.4` or newer (for example
-`platform :ios, '16.4'`).
+minimum deployment target of `16.4` or newer. If the app still uses CocoaPods,
+set the Podfile platform to `16.4` or newer too.
 
 ## Model format routing
 
