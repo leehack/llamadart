@@ -367,9 +367,11 @@ _(Add screenshots here when complete)_
   hardware concurrency; explicit override wins).
 - Bridge bootstrap console logs are quiet by default. Enable verbose startup logs with
   `window.__llamadartBridgeBootstrapVerbose = true` before bridge bootstrap.
-- For autonomous browser smoke tests without downloading a real model, append
-  `?llamadart_mock_bridge=echo` (or `qwen-weird`) and use
-  `tool/testing/playwright_chat_app_mock_smoke.py` against a local static server.
+- For autonomous browser smoke tests without downloading a real model, run
+  `dart run tool/testing/run_local_e2e.dart --scenario chat-app-web-mock-smoke`.
+  The scenario builds the web app, serves it with COOP/COEP headers, appends
+  `?llamadart_mock_bridge=echo`, and validates prompt/response wiring through
+  Playwright.
 - For the real Gemma 4 LiteRT-LM web path, use
   `dart run tool/testing/run_local_e2e.dart --scenario chat-app-web-litert-gemma4-smoke`.
   This builds the Flutter web app, serves it with COOP/COEP headers, loads the

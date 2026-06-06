@@ -27,6 +27,8 @@ void main() {
 
       expect(ids, contains('gguf-chat-features-smoke'));
       expect(ids, contains('litert-lm-chat-features-smoke'));
+      expect(ids, contains('native-inference-benchmark'));
+      expect(ids, contains('web-mock-chat-smoke'));
       expect(ids, contains('web-real-model-smoke'));
       expect(ids, contains('webgpu-multimodal-regression'));
       expect(ids, contains('gemma4-webgpu-mem64'));

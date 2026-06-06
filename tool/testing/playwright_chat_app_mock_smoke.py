@@ -4,6 +4,12 @@ import json
 
 from playwright.sync_api import sync_playwright
 
+from playwright_chat_app_utils import (
+    append_console_log,
+    enable_flutter_semantics,
+    local_storage_init_script,
+)
+
 
 DEFAULT_APP_URL = "http://127.0.0.1:7357/?llamadart_mock_bridge=echo"
 DEFAULT_MODEL_URL = "https://example.com/mock-qwen.gguf"
@@ -38,21 +44,15 @@ def main() -> int:
             "flutter.tools_enabled": json.dumps(False),
             "flutter.thinking_enabled": json.dumps(False),
         }
-        page.add_init_script(
-            f"for (const [k,v] of Object.entries({json.dumps(seeded_settings)})) localStorage.setItem(k, v);"
-        )
+        page.add_init_script(local_storage_init_script(seeded_settings))
 
         def on_console(message) -> None:
-            console_logs.append({"type": str(message.type), "text": str(message.text)})
+            append_console_log(console_logs, message)
 
         page.on("console", on_console)
         page.goto(args.app_url, wait_until="networkidle")
 
-        semantics = page.locator("flt-semantics-placeholder")
-        semantics.wait_for()
-        semantics.focus()
-        page.keyboard.press("Enter")
-        page.wait_for_timeout(1000)
+        enable_flutter_semantics(page)
 
         page.get_by_role("button", name="Load Model").click()
         page.get_by_text("Model loaded successfully! Ready to chat.").wait_for()

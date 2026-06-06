@@ -45,7 +45,7 @@ Map<String, Object?> _summarizeRuns(List<Map<String, Object?>> runs) {
 Future<void> main(List<String> args) async {
   final modelPath = args.isNotEmpty
       ? args.first
-      : '/opt/UnitySrc/personal/llama/llamadart/models/gemma-4-E2B-it-Q4_K_S.gguf';
+      : 'models/gemma-4-E2B-it-Q4_K_S.gguf';
   final prompt = args.length > 1 ? args[1] : _defaultPrompt;
   final outputTokens = args.length > 2 ? int.parse(args[2]) : 256;
   const warmups = 1;

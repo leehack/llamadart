@@ -270,25 +270,23 @@ flutter pub get
 flutter run -d chrome
 ```
 
-For a built web smoke path that matches how hosted assets are served from the
-repo root:
+For built web smoke paths that match how hosted assets are served from the repo
+root, use the local E2E runner:
 
 ```bash
-cd example/chat_app
-flutter build web --base-href=/example/chat_app/build/web/
-cd ../..
-python3 tool/testing/serve_static_with_headers.py --directory . --port 7358
+dart run tool/testing/run_local_e2e.dart --scenario chat-app-web-mock-smoke
 
-.venv-playwright/bin/python tool/testing/playwright_chat_app_real_model_smoke.py \
-  http://127.0.0.1:7358/example/chat_app/build/web/ \
+dart run tool/testing/run_local_e2e.dart --scenario chat-app-web-real-model-smoke \
   --model-url http://127.0.0.1:7358/example/llamadart_server/models/Qwen3.5-0.8B-Q4_K_M.gguf \
   --expect 4
 ```
 
-`serve_static_with_headers.py` provides the COOP/COEP headers needed for large
-web model loads. When serving `build/web` under a repo-root path, keep the
-`--base-href` value aligned with the URL path, otherwise Flutter and bridge
-assets are resolved from the wrong location.
+The runner builds Flutter web with the matching `--base-href`, serves the repo
+root through `tool/testing/serve_static_with_headers.py`, and invokes the
+appropriate Playwright helper. `serve_static_with_headers.py` provides the
+COOP/COEP headers needed for large web model loads. When debugging the helper
+scripts directly, keep the `--base-href` value aligned with the URL path,
+otherwise Flutter and bridge assets are resolved from the wrong location.
 
 On macOS headless Chromium, use the smoke script's default `--browser-angle auto`
 or pass `--browser-angle metal`; without Metal ANGLE the adapter can lack

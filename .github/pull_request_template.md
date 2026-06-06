@@ -27,7 +27,7 @@
 - [ ] `dart analyze`
 - [ ] `dart test -p vm -j 1 --exclude-tags local-only`
 - [ ] `dart test -p chrome --exclude-tags local-only` <!-- N/A with reason if not relevant -->
-- [ ] Other targeted/local-only validation: <!-- Use `dart run tool/testing/test_matrix.dart --list`; e.g. WebGPU smoke, Flutter app E2E, docs build, N/A -->
+- [ ] Other targeted/local-only validation: <!-- Use `dart run tool/testing/test_matrix.dart --list` and `dart run tool/testing/run_local_e2e.dart --list`; e.g. Web mock smoke, WebGPU smoke, Flutter app E2E, docs build, N/A -->
 
 ## Matrix Evidence
 <!-- Generate rows with `dart run tool/testing/test_matrix.dart --pr-template`; keep applicable rows and mark skipped rows N/A with a concrete reason. -->

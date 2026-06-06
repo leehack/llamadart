@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
+import 'package:llamadart/src/core/models/chat/content_part.dart';
 import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:llamadart/src/core/models/tools/tool_param.dart';
 import 'package:llamadart/src/core/template/chat_format.dart';
@@ -9,6 +10,46 @@ import 'package:llamadart/src/core/template/handlers/deepseek_r1_handler.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test('DeepseekR1Handler renders assistant content after think blocks', () {
+    final handler = DeepseekR1Handler();
+    final rendered = handler.render(
+      templateSource:
+          "{% if not add_generation_prompt is defined %}{% set add_generation_prompt = false %}{% endif %}"
+          "{% if not bos_token is defined %}{% set bos_token = '<｜begin▁of▁sentence｜>' %}{% endif %}"
+          "{% if not eos_token is defined %}{% set eos_token = '<｜end▁of▁sentence｜>' %}{% endif %}"
+          "{{ bos_token }}"
+          "{% for message in messages %}"
+          "{% if message['role'] == 'user' %}"
+          "{{ '<｜User｜>' + message['content'] }}"
+          "{% elif message['role'] == 'assistant' and message['content'] is not none %}"
+          "{% set content = message['content'] %}"
+          "{% if '</think>' in content %}"
+          "{% set content = content.split('</think>')[-1] %}"
+          "{% endif %}"
+          "{{ '<｜Assistant｜>' + content + eos_token }}"
+          "{% endif %}"
+          "{% endfor %}"
+          "{% if add_generation_prompt %}"
+          "{{ '<｜Assistant｜>' }}"
+          "{% endif %}",
+      messages: const [
+        LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Hello!'),
+        LlamaChatMessage.withContent(
+          role: LlamaChatRole.assistant,
+          content: [
+            LlamaTextContent('I am thinking... '),
+            LlamaTextContent('<think>Reasoning here</think> Answer.'),
+          ],
+        ),
+      ],
+      metadata: const {},
+    );
+
+    expect(rendered.prompt, contains('<｜User｜>Hello!'));
+    expect(rendered.prompt, contains('<｜Assistant｜> Answer.'));
+    expect(rendered.prompt, endsWith('<｜Assistant｜>'));
+  });
+
   test('DeepseekR1Handler renders grammar and parses modern tool block', () {
     final handler = DeepseekR1Handler();
     final tools = [

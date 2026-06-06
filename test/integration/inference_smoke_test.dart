@@ -2,7 +2,6 @@
 @Timeout(Duration(minutes: 10))
 library;
 
-import 'dart:io';
 import 'dart:typed_data';
 import 'package:test/test.dart';
 import 'package:llamadart/llamadart.dart';
@@ -12,7 +11,6 @@ import '../test_helper.dart';
 void main() {
   group('Inference Smoke Test (Desktop)', () {
     test('Verify native library load and basic inference', () async {
-      print('Environment: ${Platform.environment}');
       try {
         // 1. Basic Init Check
         // (Removed manual init, LlamaEngine handles it via worker isolate)

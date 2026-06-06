@@ -115,6 +115,18 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'Native prompt reuse, context reuse, generation stability changes.',
   ),
   TestMatrixRow(
+    id: 'native-inference-benchmark',
+    tier: 'targeted',
+    mode: 'local-only',
+    covers: 'real GGUF native generate/create TTFT and throughput metrics',
+    command:
+        'dart run tool/testing/native_inference_benchmark.dart '
+        '--model <model.gguf> --gpu-layers 0 --mode all --runs 3 '
+        '--max-tokens 128',
+    useWhen:
+        'Generation latency, streaming, batching, prompt reuse, or performance changes.',
+  ),
+  TestMatrixRow(
     id: 'gguf-chat-features-smoke',
     tier: 'targeted',
     mode: 'local-only',
@@ -178,6 +190,17 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     covers: 'WebGPU bridge bootstrap and fallback wiring',
     command: 'dart run tool/testing/run_local_e2e.dart --scenario bridge-smoke',
     useWhen: 'Bridge asset loading, web bootstrap, or web interop changes.',
+  ),
+  TestMatrixRow(
+    id: 'web-mock-chat-smoke',
+    tier: 'targeted',
+    mode: 'local-only',
+    covers: 'built Flutter web chat app with deterministic mock bridge',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario '
+        'chat-app-web-mock-smoke',
+    useWhen:
+        'Web chat app UI, prompt wiring, settings, or bridge integration changes.',
   ),
   TestMatrixRow(
     id: 'web-real-model-smoke',
@@ -341,8 +364,8 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     covers: 'Chrome browser-safe tests plus local WebGPU/LiteRT-LM web smokes',
     command:
         'dart test -p chrome --exclude-tags local-only; choose relevant web '
-        'rows: web-bridge-smoke, web-real-model-smoke, gemma4-webgpu-mem64, '
-        'or gemma4-litert-web.',
+        'rows: web-bridge-smoke, web-mock-chat-smoke, web-real-model-smoke, '
+        'gemma4-webgpu-mem64, or gemma4-litert-web.',
     useWhen: 'Web backend, browser interop, WebGPU, or LiteRT-LM web changes.',
   ),
   TestMatrixRow(

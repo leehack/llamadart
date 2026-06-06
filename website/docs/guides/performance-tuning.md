@@ -180,6 +180,14 @@ dart run tool/testing/native_prompt_reuse_parity.dart \
   --runs 3 \
   --fail-on-mismatch
 
+# Benchmark native generate/create TTFT and throughput
+dart run tool/testing/native_inference_benchmark.dart \
+  --model path/to/model.gguf \
+  --gpu-layers 0 \
+  --mode all \
+  --runs 3 \
+  --max-tokens 128
+
 # Benchmark embeddings (sequential vs batch)
 dart run tool/testing/native_embedding_benchmark.dart \
   --model path/to/model.gguf \

@@ -42,6 +42,12 @@ Heavy scenarios remain skipped by default and out of CI unless explicitly reques
 Use `--dry-run` before Web smoke scenarios to see the required build/server/
 Playwright steps and model URL defaults.
 
+Do not add one-off repro scripts under `tool/testing/` unless they are wired
+into `tool/testing/run_local_e2e.dart`, represented in
+`tool/testing/test_matrix.dart`, and documented where contributors can discover
+them. Prefer durable assertions in `test/unit/`, `test/integration/`, or
+`test/e2e/` over standalone scripts.
+
 When preparing or updating a PR, pick the applicable rows from
 `doc/testing_matrix.md` / `tool/testing/test_matrix.dart` and record evidence in
 the PR. Include row ID, exact command or CI workflow, platform/device, model,
@@ -57,17 +63,13 @@ dart run tool/testing/run_local_e2e.dart --scenario litert-lm-chat-features-smok
 ```
 
 ### Local Chat App Web E2E
-Use the real chat app path for WebGPU bridge validation after bridge/runtime
-updates. This catches issues that direct bridge probes miss.
+Use the scenario runner for chat app web validation after bridge/runtime or UI
+updates. This catches issues that direct bridge probes miss while keeping build,
+server, and Playwright steps discoverable.
 
 ```bash
-cd example/chat_app
-flutter build web --base-href=/example/chat_app/build/web/
-cd ../..
-python3 tool/testing/serve_static_with_headers.py --directory . --port 7358
-
-.venv-playwright/bin/python tool/testing/playwright_chat_app_real_model_smoke.py \
-  http://127.0.0.1:7358/example/chat_app/build/web/ \
+dart run tool/testing/run_local_e2e.dart --scenario chat-app-web-mock-smoke --dry-run
+dart run tool/testing/run_local_e2e.dart --scenario chat-app-web-real-model-smoke \
   --model-url http://127.0.0.1:7358/example/llamadart_server/models/Qwen3.5-0.8B-Q4_K_M.gguf \
   --expect 4
 ```
@@ -77,13 +79,14 @@ For the WebGPU/llama.cpp Gemma 4 path specifically, use the
 bounded context. It expects `gemma-4-E2B-it-Q4_K_S.gguf` to be served locally
 (for example under `example/llamadart_server/models/`).
 
-When serving `build/web` under a repo-root path, build with the matching
-`--base-href`; otherwise Flutter resolves `flutter_bootstrap.js` and
-`webgpu_bridge/*` from `/`. On macOS headless Chromium, use the smoke script's
-default `--browser-angle auto` or pass `--browser-angle metal`; without Metal
-ANGLE the adapter may lack `shader-f16` and llama.cpp can abort in
-`ggml-webgpu` even for CPU/gpuLayers=0 runs. For larger models such as Gemma 4,
-pass `--mem64` and a smaller `--context-size` to keep the smoke bounded.
+The runner builds web with the matching `--base-href`, serves with
+`tool/testing/serve_static_with_headers.py`, and invokes the appropriate
+Playwright helper. If debugging a helper directly, preserve those same serving
+and browser options. On macOS headless Chromium, use the smoke script's default
+`--browser-angle auto` or pass `--browser-angle metal`; without Metal ANGLE the
+adapter may lack `shader-f16` and llama.cpp can abort in `ggml-webgpu` even for
+CPU/gpuLayers=0 runs. For larger models such as Gemma 4, pass `--mem64` and a
+smaller `--context-size` to keep the smoke bounded.
 
 ### CI Standards
 - `dart format --output=none --set-exit-if-changed .` checks formatting

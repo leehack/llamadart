@@ -987,6 +987,9 @@ dart pub global run coverage:format_coverage --lcov --in=coverage/test --out=cov
 # Enforce >=70% threshold
 dart run tool/testing/check_lcov_threshold.dart coverage/lcov.info 70
 
+# Benchmark native generate/create TTFT and throughput
+dart run tool/testing/native_inference_benchmark.dart --model path/to/model.gguf --gpu-layers 0 --mode all --runs 3 --max-tokens 128
+
 # Benchmark embedding throughput (sequential vs batch)
 dart run tool/testing/native_embedding_benchmark.dart --model path/to/model.gguf --cpu --mode both --input-count 8 --max-seq 8
 

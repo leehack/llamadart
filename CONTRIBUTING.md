@@ -145,6 +145,10 @@ dart run tool/testing/run_local_e2e.dart --scenario chat-app-model-cache --devic
 # Run representative local real-model feature smokes
 dart run tool/testing/run_local_e2e.dart --scenario gguf-chat-features-smoke --model-path models/Qwen3.5-0.8B-Q4_K_M.gguf --backend auto
 dart run tool/testing/run_local_e2e.dart --scenario litert-lm-chat-features-smoke --model-path /path/to/gemma-4-E2B-it.litertlm --backend auto
+dart run tool/testing/run_local_e2e.dart --scenario chat-app-web-mock-smoke
+
+# Benchmark native generate/create TTFT and throughput
+dart run tool/testing/native_inference_benchmark.dart --model models/Qwen3.5-0.8B-Q4_K_M.gguf --gpu-layers 0 --mode all --runs 3 --max-tokens 128
 
 # Run root local-only Dart E2E tests directly
 dart test --run-skipped -t local-only
@@ -184,6 +188,11 @@ dart run tool/testing/check_lcov_threshold.dart coverage/lcov.info 70
   - Generated/native-bridge files are excluded from strict mirroring when marked with `// coverage:ignore-file`.
   - Scenario, regression, and diagnostic tests live in `test/integration/`.
   - Slow, local-machine scenarios live in `test/e2e/` with `@Tags(['local-only'])`.
+- **Manual scripts**: Do not leave one-off repro scripts in `tool/testing/`.
+  Durable checks should become unit/integration/e2e tests. Heavyweight manual
+  checks should be wired into `tool/testing/run_local_e2e.dart`, represented in
+  `tool/testing/test_matrix.dart`, and mentioned in contributor docs when
+  broadly useful.
 - **Refactoring**: If you refactor shared logic, ensure both Native and Web tests pass.
 - **New Features**: Every new public API or feature must include unit or integration tests.
 - **Platform-Safety**: `LlamaEngine` must remain `dart:ffi` and `dart:io` free to maintain web support.

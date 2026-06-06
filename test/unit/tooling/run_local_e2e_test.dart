@@ -14,13 +14,13 @@ void main() {
 
       expect(result.exitCode, 0);
       expect(result.stdout, contains('root-template-e2e'));
-      expect(result.stdout, contains('root-native-tool-e2e'));
       expect(result.stdout, contains('qwen35-multimodal-macos-repro'));
       expect(result.stdout, contains('gguf-chat-features-smoke'));
       expect(result.stdout, contains('litert-lm-chat-features-smoke'));
       expect(result.stdout, contains('webgpu-multimodal-regression'));
       expect(result.stdout, contains('chat-app-model-cache'));
       expect(result.stdout, contains('chat-app-web-real-model-smoke'));
+      expect(result.stdout, contains('chat-app-web-mock-smoke'));
       expect(result.stdout, contains('chat-app-web-litert-gemma4-smoke'));
       expect(result.stdout, contains('bridge-smoke'));
       expect(result.stdout, contains('Dart local-only'));
@@ -85,6 +85,42 @@ void main() {
           contains('--model-url http://127.0.0.1:7358/models/tiny.gguf'),
         );
         expect(result.stdout, contains('--expect ok'));
+      },
+    );
+
+    test(
+      'dry-runs Web mock smoke with build, serve, and Playwright steps',
+      () async {
+        final result = await runLocalE2e(const [
+          '--scenario',
+          'chat-app-web-mock-smoke',
+          '--model-url',
+          'https://example.com/custom-mock.gguf',
+          '--python',
+          '/custom/python',
+          '--dry-run',
+        ], projectRoot: '/repo');
+
+        expect(result.exitCode, 0);
+        expect(result.stdout, contains('flutter build web'));
+        expect(result.stdout, contains('serve_static_with_headers.py'));
+        expect(result.stdout, contains('playwright_chat_app_mock_smoke.py'));
+        expect(
+          result.stdout,
+          contains(
+            '/custom/python tool/testing/playwright_chat_app_mock_smoke.py',
+          ),
+        );
+        expect(
+          result.stdout,
+          contains(
+            'http://127.0.0.1:7358/example/chat_app/build/web/?llamadart_mock_bridge=echo',
+          ),
+        );
+        expect(
+          result.stdout,
+          contains('--model-url https://example.com/custom-mock.gguf'),
+        );
       },
     );
 

@@ -142,26 +142,6 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       ],
     ),
     LocalE2eScenario(
-      name: 'root-native-tool-e2e',
-      group: LocalE2eScenarioGroup.dartLocalOnly,
-      description: 'Run the local-only native tool chat-template E2E test.',
-      requiresDevice: false,
-      stepsBuilder: (context) => [
-        LocalE2eCommandStep(
-          workingDirectory: context.projectRoot,
-          executable: 'dart',
-          arguments: const [
-            'test',
-            '--run-skipped',
-            '-t',
-            'local-only',
-            'test/e2e/tooling/native_tool_e2e_test.dart',
-          ],
-          description: 'Dart native tool E2E',
-        ),
-      ],
-    ),
-    LocalE2eScenario(
       name: 'qwen35-multimodal-macos-repro',
       group: LocalE2eScenarioGroup.dartLocalOnly,
       description:
@@ -320,6 +300,60 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
               context.expect,
             ],
             description: 'Run Playwright real-model chat app smoke',
+          ),
+        ]);
+        return steps;
+      },
+    ),
+    LocalE2eScenario(
+      name: 'chat-app-web-mock-smoke',
+      group: LocalE2eScenarioGroup.webSmoke,
+      description:
+          'Build chat_app web and run the deterministic mock-bridge smoke.',
+      requiresDevice: false,
+      stepsBuilder: (context) {
+        final steps = <LocalE2eCommandStep>[];
+        if (!context.skipBuild) {
+          steps.add(
+            LocalE2eCommandStep(
+              workingDirectory: context.chatAppDir,
+              executable: 'flutter',
+              arguments: const [
+                'build',
+                'web',
+                '--base-href=/example/chat_app/build/web/',
+              ],
+              description: 'Build Flutter web chat app',
+            ),
+          );
+        }
+        final smokeArguments = <String>[
+          'tool/testing/playwright_chat_app_mock_smoke.py',
+          '${context.webBuildUrl}?llamadart_mock_bridge=echo',
+        ];
+        if (context.modelUrl != null) {
+          smokeArguments.addAll(['--model-url', context.modelUrl!]);
+        }
+        steps.addAll([
+          LocalE2eCommandStep(
+            workingDirectory: context.projectRoot,
+            executable: context.python,
+            arguments: [
+              'tool/testing/serve_static_with_headers.py',
+              '--directory',
+              '.',
+              '--port',
+              '${context.port}',
+            ],
+            description: 'Serve repo root with COOP/COEP headers',
+            background: true,
+            waitForPort: context.port,
+          ),
+          LocalE2eCommandStep(
+            workingDirectory: context.projectRoot,
+            executable: context.python,
+            arguments: smokeArguments,
+            description: 'Run Playwright mock-bridge chat app smoke',
           ),
         ]);
         return steps;

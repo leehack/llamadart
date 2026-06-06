@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 import argparse
 import json
-import platform
 import re
 import time
 from typing import Any
@@ -9,43 +8,14 @@ from typing import Any
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
 
-
-def emit(event: str, **data: Any) -> None:
-    print(json.dumps({"event": event, **data}, ensure_ascii=False), flush=True)
-
-
-def truncate_text(text: str, limit: int = 3000) -> str:
-    if len(text) <= limit:
-        return text
-    return f"{text[:limit]}...<truncated {len(text) - limit} chars>"
-
-
-def browser_args(angle: str) -> list[str]:
-    args = [
-        "--disable-dev-shm-usage",
-        "--enable-unsafe-webgpu",
-    ]
-    features = ["SharedArrayBuffer"]
-
-    effective_angle = angle
-    if effective_angle == "auto":
-        effective_angle = "metal" if platform.system() == "Darwin" else "vulkan"
-
-    if effective_angle == "metal":
-        args.append("--use-angle=metal")
-    elif effective_angle == "vulkan":
-        args.append("--disable-vulkan-surface")
-        features.append("Vulkan")
-
-    args.append(f"--enable-features={','.join(features)}")
-    return args
-
-
-def safe_body_text(page) -> str:
-    try:
-        return page.locator("body").inner_text(timeout=5000)
-    except Exception as error:
-        return f"<body unavailable: {error}>"
+from playwright_chat_app_utils import (
+    append_console_log,
+    browser_args,
+    emit,
+    enable_flutter_semantics,
+    local_storage_init_script,
+    safe_body_text,
+)
 
 
 def wait_for_text(page, needle: str, timeout_ms: int, label: str) -> str:
@@ -81,17 +51,6 @@ def wait_for_text(page, needle: str, timeout_ms: int, label: str) -> str:
         time.sleep(2)
 
     raise TimeoutError(f"Timed out waiting for {label}: {needle}")
-
-
-def enable_flutter_semantics(page) -> None:
-    semantics = page.locator("flt-semantics-placeholder")
-    semantics.wait_for(timeout=120000)
-    try:
-        semantics.evaluate("(element) => element.click()")
-    except Exception:
-        semantics.focus()
-        page.keyboard.press("Enter")
-    page.wait_for_timeout(1000)
 
 
 def wait_for_bridge_response(
@@ -466,13 +425,10 @@ def main() -> int:
           EngineClass.__llamadartRealE2ePatched = true;
           clearInterval(window.__llamadartRealLiteRtLmPatchTimer);
         }}, 20);
-        const seededSettings = {json.dumps(seeded_settings)};
-        for (const [key, value] of Object.entries(seededSettings)) {{
-          localStorage.setItem(key, value);
-        }}
-        if (!("flutter.mmproj_path" in seededSettings)) {{
-          localStorage.removeItem("flutter.mmproj_path");
-        }}
+        {local_storage_init_script(
+            seeded_settings,
+            remove_keys=() if args.mmproj_url else ("flutter.mmproj_path",),
+        )}
     """
 
     with sync_playwright() as playwright:
@@ -485,18 +441,15 @@ def main() -> int:
         page.add_init_script(init_script)
 
         def on_console(message) -> None:
-            record = {
-                "type": str(message.type),
-                "text": truncate_text(str(message.text)),
-            }
-            console_logs.append(record)
-            text = record["text"]
-            if (
-                record["type"] in ("warning", "error")
-                or "llamadart" in text
-                or "WebGpuLlamaBackend" in text
-            ):
-                emit("console", **record)
+            append_console_log(
+                console_logs,
+                message,
+                echo_predicate=lambda record: (
+                    record["type"] in ("warning", "error")
+                    or "llamadart" in record["text"]
+                    or "WebGpuLlamaBackend" in record["text"]
+                ),
+            )
 
         page.on("console", on_console)
         page.on("pageerror", lambda error: page_errors.append(str(error)))
