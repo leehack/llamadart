@@ -293,7 +293,13 @@ no valid entries remain, selection falls back to `cpu_profile` (or default
   `darwin/llamadart/Package.swift`, so
   `llamadart_native_tag`, `llamadart_native_repository`, and
   `llamadart_native_path` do not change those SPM binary targets. Customize the
-  SwiftPM binary target pins instead.
+  SwiftPM binary target URL/checksum pins instead by using a path/git override
+  or fork of `llamadart`, or by placing matching local development
+  XCFrameworks under `darwin/llamadart/Artifacts/`.
+- `llamadart_native_runtimes` still chooses which runtime families the Dart
+  hook reports for Apple SPM builds, but it does not prune SwiftPM binary
+  target dependencies from the linked Apple package. Use a forked
+  `Package.swift` if you need a physically smaller Apple SPM product.
 - Flutter Apple builds use the root package's SPM path on iOS and macOS. The
   old hook-managed iOS wrapper path is disabled to avoid App Store
   `MinimumOSVersion` mismatches.

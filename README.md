@@ -497,14 +497,22 @@ Notes:
   `llamadart_native_runtimes` to include or exclude the llama.cpp or LiteRT-LM
   runtime families on Apple targets.
 - Apple Swift Package Manager builds use the root `llamadart` package's
-  `darwin/llamadart/Package.swift` pins. In that mode, Apple runtime
-  customization moves from the Dart hook to those binary target pins;
+  `darwin/llamadart/Package.swift` pins for native binary versions. In that
+  mode, Apple binary source customization moves from the Dart hook to those
+  binary target URL/checksum pins;
   `llamadart_native_tag`, `llamadart_native_repository`, and
   `llamadart_native_path` still apply to non-Apple targets and standalone Dart
-  macOS fallback mode, but they do not rewrite SPM URL/checksum pins. Flutter
-  Apple builds use SPM on both iOS and macOS so the old hook-managed wrapper
-  path cannot recreate App Store `MinimumOSVersion` mismatches. Standalone Dart
-  macOS runs keep the native-assets dylib path for compatibility.
+  macOS fallback mode, but they do not rewrite SPM URL/checksum pins. To test
+  another Apple binary version with SPM, use a path/git override or fork of
+  `llamadart` with updated `Package.swift` pins, or place matching local
+  development XCFrameworks under `darwin/llamadart/Artifacts/`.
+- `llamadart_native_runtimes` still controls which runtime families the hook
+  reports for Apple SPM builds. It does not prune the SwiftPM binary target
+  dependencies from the linked Apple package; use a forked `Package.swift` if
+  you need a physically smaller Apple SPM product. Flutter Apple builds use SPM
+  on both iOS and macOS so the old hook-managed wrapper path cannot recreate
+  App Store `MinimumOSVersion` mismatches. Standalone Dart macOS runs keep the
+  native-assets dylib path for compatibility.
 - The native-assets hook refreshes emitted files each build; if you change `hooks.user_defines` or are upgrading from older cached outputs, run `flutter clean && flutter pub get` before rebuilding.
 - Some Vulkan drivers can crash when probing cooperative matrix support. This
   is a driver-side failure in the Vulkan property query path, not a llamadart

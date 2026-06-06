@@ -94,12 +94,19 @@ assets. This avoids the old iOS wrapper path that can produce App Store
 automatically; standalone Dart macOS runs keep the native-assets fallback for
 compatibility.
 
-The SPM path keeps runtime customization, but the customization point moves
-from `hook/build.dart` to `darwin/llamadart/Package.swift`. To use a different
-Apple runtime build, edit the binary target URL/checksum pins or publish a fork
-with different pins. The Dart hook cannot rewrite SPM binary target
-URLs/checksums at build time. Hook customization still applies to non-Apple
-targets and to standalone Dart macOS fallback mode.
+The SPM path keeps runtime-family selection, but Apple binary version/source
+customization moves from `hook/build.dart` to
+`darwin/llamadart/Package.swift`. To use a different Apple runtime build, use a
+path/git override or fork of `llamadart` with edited binary target
+URL/checksum pins, or place matching local development XCFrameworks under
+`darwin/llamadart/Artifacts/`. The Dart hook cannot rewrite SPM binary target
+URLs/checksums at build time. Hook source customization still applies to
+non-Apple targets and to standalone Dart macOS fallback mode.
+
+`llamadart_native_runtimes` still decides which runtime families the hook
+reports for Apple SPM builds. It does not prune the SwiftPM binary target
+dependencies from the linked Apple package; use a forked `Package.swift` if you
+need a physically smaller Apple SPM product.
 
 ### 3. Dynamic Linking
 Using `native_assets_cli`, the downloaded dynamic libraries (`.so`, `.dylib`,
