@@ -7,6 +7,25 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
+## 0.7.1
+
+- Added Flutter iOS/macOS Swift Package Manager integration so Apple apps link
+  pinned `leehack/llamadart-native` and `leehack/litert-lm-native`
+  XCFramework artifacts through `darwin/llamadart/Package.swift`.
+- Disabled the legacy hook-managed Apple bundle path for Flutter iOS/macOS
+  builds, avoiding wrapper/framework `MinimumOSVersion` mismatches in App Store
+  uploads.
+- Raised the Flutter Apple runtime floors to iOS 16.4 and macOS 14.0 to match
+  the published XCFramework artifacts.
+- Kept Android native builds on both `llama_cpp` and `litert_lm` by default;
+  iOS, macOS, Linux, and Windows now default to `llama_cpp` only. Non-Android
+  `.litertlm` apps should opt in with `llamadart_native_runtimes`.
+- Added native release pin automation for Apple SPM checksums, excluded local
+  SwiftPM artifact caches from pub archives, and hardened main-branch CI against
+  Hugging Face tiny-model download rate limits.
+- Compatibility note: no Dart API breaking changes. Flutter Apple apps must
+  target iOS 16.4/macOS 14.0 or newer.
+
 ## 0.7.0
 
 - Added LiteRT-LM as a first-class backend for native `.litertlm` bundles and

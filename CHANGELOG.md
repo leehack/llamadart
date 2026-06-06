@@ -1,21 +1,27 @@
-## Unreleased
+## 0.7.1
 
-* Added Flutter iOS/macOS Swift Package Manager integration for Apple native
-  runtimes. Flutter Apple apps now link the pinned `leehack/llamadart-native`
-  and `leehack/litert-lm-native` XCFramework artifacts through
-  `darwin/llamadart/Package.swift`.
-* Raised the Flutter Apple runtime floors to iOS 16.4 and macOS 14.0 to match
-  the published Apple XCFramework artifacts.
-* Disabled the legacy hook-managed Apple bundle path for Flutter iOS/macOS
-  builds so downstream App Store uploads no longer see wrapper/framework
-  `MinimumOSVersion` mismatches. Standalone Dart macOS keeps the native-assets
-  dylib fallback for compatibility.
-* Changed native build-hook defaults so Android continues to include both
-  `llama_cpp` and `litert_lm`, while iOS, macOS, Linux, and Windows default to
-  `llama_cpp` only. Apps that ship `.litertlm` models on non-Android native
-  targets should opt in with `llamadart_native_runtimes`.
-* Added native release pin automation so the maintainer sync workflow updates
-  Apple SPM checksums from the published native release asset digests.
+* **Apple native runtime packaging**:
+  * Added Flutter iOS/macOS Swift Package Manager integration so Apple apps link
+    the pinned `leehack/llamadart-native` and `leehack/litert-lm-native`
+    XCFramework artifacts through `darwin/llamadart/Package.swift`.
+  * Disabled the legacy hook-managed Apple bundle path for Flutter iOS/macOS
+    builds, avoiding wrapper/framework `MinimumOSVersion` mismatches in App
+    Store uploads. Standalone Dart macOS keeps the native-assets dylib fallback.
+  * Raised the Flutter Apple runtime floors to iOS 16.4 and macOS 14.0 to match
+    the published XCFramework artifacts.
+* **Runtime defaults and release automation**:
+  * Android native builds still include both `llama_cpp` and `litert_lm` by
+    default; iOS, macOS, Linux, and Windows now default to `llama_cpp` only.
+  * Added native release pin automation so the maintainer sync workflow updates
+    Apple SPM checksums from published native release asset digests.
+* **CI reliability**:
+  * Cached and retried tiny GGUF test-model downloads used by VM integration
+    tests so main-branch CI is less exposed to Hugging Face 429 rate limits.
+  * Excluded local SwiftPM artifact caches from pub archives; Flutter Apple
+    consumers still resolve the published remote XCFramework targets.
+* **Compatibility note**: no Dart API breaking changes. Flutter Apple apps must
+  target iOS 16.4/macOS 14.0 or newer, and non-Android native apps that ship
+  `.litertlm` models should opt in with `llamadart_native_runtimes`.
 
 ## 0.7.0
 

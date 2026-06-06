@@ -26,7 +26,8 @@ JavaScript runtime.
   and web runtimes.
 - 🧩 **Model Format Routing**: `LlamaBackend()` loads GGUF models with
   llama.cpp and `.litertlm` bundles with LiteRT-LM on native and web targets.
-- 🛠️ **Zero Configuration**: Uses Pure Native Assets; no manual CMake or platform project edits.
+- 🛠️ **Zero Configuration**: Uses native assets and SwiftPM-managed Apple
+  XCFrameworks; no manual C++ build setup is required.
 - 📱 **Cross-Platform**: Android, iOS, macOS, Linux, Windows, and web.
 - ⚡ **GPU Acceleration**:
   - Apple: Metal
@@ -51,20 +52,21 @@ JavaScript runtime.
 
 ```yaml
 dependencies:
-  llamadart: ^0.7.0
+  llamadart: ^0.7.1
 ```
 
 ### 2. Run with defaults
 
 On first `dart run` / `flutter run`, `llamadart` will:
 1. Detect platform/architecture.
-2. Download the matching native runtime bundles from [`leehack/llamadart-native`](https://github.com/leehack/llamadart-native) and [`leehack/litert-lm-native`](https://github.com/leehack/litert-lm-native).
-3. Wire it into your app via native assets.
+2. Resolve matching native runtimes from [`leehack/llamadart-native`](https://github.com/leehack/llamadart-native) and [`leehack/litert-lm-native`](https://github.com/leehack/litert-lm-native).
+3. Wire them into your app through native assets, or through SwiftPM-linked
+   XCFrameworks for Flutter iOS/macOS builds.
 
 No manual binary download or C++ build steps are required.
 
-> iOS builds require a minimum deployment target of `16.4` or newer in your
-> Xcode project settings. If your app still uses CocoaPods, set the Podfile
+> Flutter Apple builds require deployment targets of iOS `16.4` or newer and
+> macOS `14.0` or newer. If an iOS app still uses CocoaPods, set the Podfile
 > platform to `16.4` or newer too.
 
 ### 3. Optional: choose native runtimes for package size

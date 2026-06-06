@@ -42,6 +42,10 @@ version alignment:
   when the next unreleased change is documented.
 - Update `MIGRATION.md` if breaking behavior changed.
 - Keep docs pages aligned with new defaults/options.
+- Keep local SwiftPM artifact caches out of pub archives:
+  `darwin/llamadart/Artifacts/` is for local/offline SPM testing only, and
+  published packages should rely on the remote binary targets in
+  `darwin/llamadart/Package.swift`.
 
 ## 3. Publish flow
 

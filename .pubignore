@@ -34,6 +34,7 @@ third_party/bin/
 third_party/build-*/
 third_party/llama_cpp/
 third_party/Vulkan-Headers/
+darwin/llamadart/Artifacts/
 
 # Local bridge build/fetch outputs
 webgpu_bridge/

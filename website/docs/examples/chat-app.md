@@ -17,8 +17,8 @@ flutter pub get
 flutter run
 ```
 
-If you run this example on iOS, set the project deployment target to `16.4` or
-newer before building.
+If you run this example on Apple platforms, set the project deployment target to
+iOS `16.4` or macOS `14.0` or newer before building.
 
 This example intentionally opts into both native runtime families in
 `pubspec.yaml` so native `.litertlm` presets work on supported targets. If your

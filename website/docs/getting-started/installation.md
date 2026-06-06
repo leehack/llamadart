@@ -1,31 +1,33 @@
 ---
 title: Installation
-description: Install llamadart, add the package to your app, and understand the native runtime bundle setup on first run.
+description: Install llamadart, add the package to your app, and understand the native runtime setup on first run.
 ---
 
 ## Prerequisites
 
 - Dart SDK `>= 3.10.7`
 - Flutter SDK `>= 3.38.0` (if you build Flutter apps)
-- iOS builds require a minimum deployment target of `16.4` or newer
+- Flutter iOS builds require a minimum deployment target of `16.4` or newer
+- Flutter macOS builds require a minimum deployment target of `14.0` or newer
 
-## iOS deployment target
+## Apple deployment targets
 
-If you build for iOS, set your app project to `16.4` or newer before running
-the app. If your app still uses CocoaPods, set the Podfile platform too.
+If you build a Flutter Apple app, set your app project deployment target before
+running the app. iOS needs `16.4` or newer; macOS needs `14.0` or newer. If
+your iOS app still uses CocoaPods, set the Podfile platform too.
 
 ```ruby
 platform :ios, '16.4'
 ```
 
-In Xcode, set `IPHONEOS_DEPLOYMENT_TARGET = 16.4` for the relevant Runner
-configurations.
+In Xcode, set `IPHONEOS_DEPLOYMENT_TARGET = 16.4` or
+`MACOSX_DEPLOYMENT_TARGET = 14.0` for the relevant Runner configurations.
 
 ## Add dependency
 
 ```yaml
 dependencies:
-  llamadart: ^0.7.0
+  llamadart: ^0.7.1
 ```
 
 Then resolve packages:
@@ -41,8 +43,10 @@ flutter pub get
 On the first `dart run` / `flutter run` for a native target, `llamadart`:
 
 1. Detects platform and architecture.
-2. Resolves the matching runtime bundle from `leehack/llamadart-native`.
-3. Wires native assets into your app process.
+2. Resolves matching runtime artifacts from `leehack/llamadart-native` and
+   `leehack/litert-lm-native`.
+3. Wires them into your app through native assets, or through SwiftPM-linked
+   XCFrameworks for Flutter iOS/macOS builds.
 
 No local C++ toolchain setup is required for consumers.
 

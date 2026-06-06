@@ -90,7 +90,31 @@ jobs:
       - name: Install Coverage tool
         run: dart pub global activate coverage
 
+      - name: Cache tiny GGUF test model
+        id: tiny-gguf-cache
+        uses: actions/cache@v5
+        with:
+          path: .dart_tool/test_models/stories15M.gguf
+          key: tiny-gguf-stories15M-${{ runner.os }}-v1
+
+      - name: Download tiny GGUF test model
+        if: steps.tiny-gguf-cache.outputs.cache-hit != 'true'
+        shell: bash
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          mkdir -p .dart_tool/test_models
+          curl_args=(--fail --location --retry 8 --retry-all-errors --retry-delay 10)
+          if [[ -n "${HF_TOKEN:-}" ]]; then
+            curl_args+=(--header "Authorization: Bearer $HF_TOKEN")
+          fi
+          curl "${curl_args[@]}" \
+            "https://huggingface.co/ggml-org/tiny-llamas/resolve/main/stories15M.gguf" \
+            --output .dart_tool/test_models/stories15M.gguf
+
       - name: Run VM tests (with coverage)
+        env:
+          LLAMADART_TEST_MODELS_DIR: ${{ github.workspace }}/.dart_tool/test_models
         run: dart test -p vm -j 1 --exclude-tags local-only --coverage=coverage
 
       - name: Format coverage
@@ -158,9 +182,32 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Cache tiny GGUF test model
+        id: tiny-gguf-cache
+        uses: actions/cache@v5
+        with:
+          path: .dart_tool/test_models/stories15M.gguf
+          key: tiny-gguf-stories15M-${{ runner.os }}-v1
+
+      - name: Download tiny GGUF test model
+        if: steps.tiny-gguf-cache.outputs.cache-hit != 'true'
+        shell: bash
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          mkdir -p .dart_tool/test_models
+          curl_args=(--fail --location --retry 8 --retry-all-errors --retry-delay 10)
+          if [[ -n "${HF_TOKEN:-}" ]]; then
+            curl_args+=(--header "Authorization: Bearer $HF_TOKEN")
+          fi
+          curl "${curl_args[@]}" \
+            "https://huggingface.co/ggml-org/tiny-llamas/resolve/main/stories15M.gguf" \
+            --output .dart_tool/test_models/stories15M.gguf
+
       - name: Run native tests
         env:
           GGML_METAL_DEVICES: "0"
+          LLAMADART_TEST_MODELS_DIR: ${{ github.workspace }}/.dart_tool/test_models
         run: dart test -p vm -j 1 --exclude-tags local-only
 
   native-prompt-reuse-parity:
