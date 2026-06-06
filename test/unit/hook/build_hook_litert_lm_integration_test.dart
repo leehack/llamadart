@@ -130,6 +130,24 @@ void main() {
     _expectSpecLibraries(source, 'windows-x64', _windowsLiteRtLibraries);
   });
 
+  test('LiteRT-LM bundle specs pin archive checksums', () {
+    final source = File('hook/build.dart').readAsStringSync();
+
+    for (final bundleKey in const [
+      'android-arm64',
+      'android-x64',
+      'ios-arm64',
+      'ios-arm64-sim',
+      'macos-arm64',
+      'macos-x64',
+      'linux-arm64',
+      'linux-x64',
+      'windows-x64',
+    ]) {
+      _expectSpecChecksum(source, bundleKey);
+    }
+  });
+
   test(
     'build hook emits Linux arm64 LiteRT-LM runtime companions when requested',
     () async {
@@ -453,6 +471,15 @@ void _expectSpecLibraries(
   for (final library in expectedLibraries) {
     expect(spec, contains("'$library'"), reason: bundleKey);
   }
+}
+
+void _expectSpecChecksum(String source, String bundleKey) {
+  final escapedKey = RegExp.escape(bundleKey);
+  final match = RegExp(
+    "_LiteRtLmBundleSpec\\(\\s*'$escapedKey',[\\s\\S]*?"
+    "sha256:\\s*'([0-9a-f]{64})',",
+  ).firstMatch(source);
+  expect(match, isNotNull, reason: bundleKey);
 }
 
 const List<String> _androidLiteRtLibraries = [

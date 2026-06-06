@@ -293,9 +293,11 @@ no valid entries remain, selection falls back to `cpu_profile` (or default
   `darwin/llamadart/Package.swift`, so
   `llamadart_native_tag`, `llamadart_native_repository`, and
   `llamadart_native_path` do not change those SPM binary targets. Customize the
-  SwiftPM binary target URL/checksum pins instead by using a path/git override
-  or fork of `llamadart`, or by placing matching local development
-  XCFrameworks under `darwin/llamadart/Artifacts/`.
+  SwiftPM binary target URL/checksum pins instead by using a path/git
+  dependency override or fork of `llamadart`, or by placing matching local
+  development XCFrameworks under `darwin/llamadart/Artifacts/` in that
+  overridden package checkout. Normal apps consuming `llamadart` from pub.dev
+  cannot customize the published package's `Package.swift` in-place.
 - `llamadart_native_runtimes` still chooses which runtime families the Dart
   hook reports for Apple SPM builds, but it does not prune SwiftPM binary
   target dependencies from the linked Apple package. Use a forked

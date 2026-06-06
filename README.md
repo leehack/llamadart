@@ -502,10 +502,12 @@ Notes:
   binary target URL/checksum pins;
   `llamadart_native_tag`, `llamadart_native_repository`, and
   `llamadart_native_path` still apply to non-Apple targets and standalone Dart
-  macOS fallback mode, but they do not rewrite SPM URL/checksum pins. To test
-  another Apple binary version with SPM, use a path/git override or fork of
-  `llamadart` with updated `Package.swift` pins, or place matching local
-  development XCFrameworks under `darwin/llamadart/Artifacts/`.
+  macOS fallback mode, but they do not rewrite SPM URL/checksum pins. Normal
+  apps consuming `llamadart` from pub.dev cannot customize the published
+  package's `Package.swift` in-place. To test another Apple binary version with
+  SPM, use a path/git dependency override or fork of `llamadart` with updated
+  `Package.swift` pins, or place matching local development XCFrameworks under
+  `darwin/llamadart/Artifacts/` in that overridden package checkout.
 - `llamadart_native_runtimes` still controls which runtime families the hook
   reports for Apple SPM builds. It does not prune the SwiftPM binary target
   dependencies from the linked Apple package; use a forked `Package.swift` if

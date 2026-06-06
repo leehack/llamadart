@@ -1,5 +1,15 @@
 ## Unreleased
 
+* Added Flutter iOS/macOS Swift Package Manager integration for Apple native
+  runtimes. Flutter Apple apps now link the pinned `leehack/llamadart-native`
+  and `leehack/litert-lm-native` XCFramework artifacts through
+  `darwin/llamadart/Package.swift`.
+* Raised the Flutter Apple runtime floors to iOS 16.4 and macOS 14.0 to match
+  the published Apple XCFramework artifacts.
+* Disabled the legacy hook-managed Apple bundle path for Flutter iOS/macOS
+  builds so downstream App Store uploads no longer see wrapper/framework
+  `MinimumOSVersion` mismatches. Standalone Dart macOS keeps the native-assets
+  dylib fallback for compatibility.
 * Changed native build-hook defaults so Android continues to include both
   `llama_cpp` and `litert_lm`, while iOS, macOS, Linux, and Windows default to
   `llama_cpp` only. Apps that ship `.litertlm` models on non-Android native

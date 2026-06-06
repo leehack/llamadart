@@ -35,6 +35,7 @@ final _litertLmBundles = Map.unmodifiable({
 const _litertLmBundleSpecs = <_LiteRtLmBundleSpec>[
   _LiteRtLmBundleSpec(
     'android-arm64',
+    sha256: '8d0c9434eec939b7ea961b78fa192e37df9090c0f8b576a0111ddf731f26cbab',
     requiredLibraries: {
       'libGemmaModelConstraintProvider.so',
       'libLiteRt.so',
@@ -48,6 +49,7 @@ const _litertLmBundleSpecs = <_LiteRtLmBundleSpec>[
   ),
   _LiteRtLmBundleSpec(
     'android-x64',
+    sha256: '92e01daa31f0429e61288402a067e41279587f6c0e39deba34c15003f165ad77',
     requiredLibraries: {
       'libGemmaModelConstraintProvider.so',
       'libLiteRt.so',
@@ -61,14 +63,17 @@ const _litertLmBundleSpecs = <_LiteRtLmBundleSpec>[
   ),
   _LiteRtLmBundleSpec(
     'ios-arm64',
+    sha256: '6e9380c8ef265cfe9c9a2426cc0d9ced3d42889a3f6d6f1988362324e57337ec',
     requiredLibraries: {'LiteRtLm', 'CLiteRTLM'},
   ),
   _LiteRtLmBundleSpec(
     'ios-arm64-sim',
+    sha256: '6b13e49937d64507422371324a9f53aa15d98b57c001682e500ec39f17d0aaab',
     requiredLibraries: {'LiteRtLm', 'CLiteRTLM'},
   ),
   _LiteRtLmBundleSpec(
     'macos-arm64',
+    sha256: 'f0af7691402cc1f68e118a1232a3b977c420f3952231ebf5777c7a366c76e1e5',
     requiredLibraries: {
       'libGemmaModelConstraintProvider.dylib',
       'libLiteRt.dylib',
@@ -79,9 +84,14 @@ const _litertLmBundleSpecs = <_LiteRtLmBundleSpec>[
       'libLiteRtWebGpuAccelerator.dylib',
     },
   ),
-  _LiteRtLmBundleSpec('macos-x64', requiredLibraries: {'libLiteRtLm.dylib'}),
+  _LiteRtLmBundleSpec(
+    'macos-x64',
+    sha256: 'a4dbbd992cf30d617ae2c1dffd5fea24ceb7c07fd655fc077a69df0f5c69318c',
+    requiredLibraries: {'libLiteRtLm.dylib'},
+  ),
   _LiteRtLmBundleSpec(
     'linux-arm64',
+    sha256: '87b67cf7e0bddcbd62ffdfa4f206a040171384d297d4793eb6377dd2e57b10f6',
     requiredLibraries: {
       'libGemmaModelConstraintProvider.so',
       'libLiteRt.so',
@@ -92,6 +102,7 @@ const _litertLmBundleSpecs = <_LiteRtLmBundleSpec>[
   ),
   _LiteRtLmBundleSpec(
     'linux-x64',
+    sha256: 'cb8625edabd364410923a821e111af443f31483c8be852cf6311c7a9df3e68df',
     requiredLibraries: {
       'libGemmaModelConstraintProvider.so',
       'libLiteRt.so',
@@ -102,6 +113,7 @@ const _litertLmBundleSpecs = <_LiteRtLmBundleSpec>[
   ),
   _LiteRtLmBundleSpec(
     'windows-x64',
+    sha256: '8a6dd70c4f286215a444294757c9ac6bd35d83f65413b5dd4bce3b7d52367a8f',
     requiredLibraries: {
       'LiteRtLm.dll',
       'libGemmaModelConstraintProvider.dll',
@@ -144,9 +156,14 @@ class _NativeBundleConfig {
 
 class _LiteRtLmBundleSpec {
   final String bundle;
+  final String sha256;
   final Set<String> requiredLibraries;
 
-  const _LiteRtLmBundleSpec(this.bundle, {required this.requiredLibraries});
+  const _LiteRtLmBundleSpec(
+    this.bundle, {
+    required this.sha256,
+    required this.requiredLibraries,
+  });
 
   String get archiveName =>
       'litert-lm-native-runtime-$bundle-v$_litertLmVersion.tar.gz';
@@ -694,6 +711,12 @@ Future<Directory> _acquireLiteRtLmBundle({
   await Directory(cacheDir).create(recursive: true);
   final archiveFile = File(path.join(cacheDir, bundleSpec.archiveName));
   if (archiveFile.existsSync() &&
+      await _verifyLiteRtLmArchiveChecksum(
+        archiveFile: archiveFile,
+        bundleSpec: bundleSpec,
+        log: log,
+        allowRefresh: true,
+      ) &&
       await _tryExtractLiteRtLmArchive(
         archiveFile: archiveFile,
         extractedDir: extractedDir,
@@ -710,6 +733,12 @@ Future<Directory> _acquireLiteRtLmBundle({
       log: log,
     );
   }
+  await _verifyLiteRtLmArchiveChecksum(
+    archiveFile: archiveFile,
+    bundleSpec: bundleSpec,
+    log: log,
+    allowRefresh: false,
+  );
 
   await _tryExtractLiteRtLmArchive(
     archiveFile: archiveFile,
@@ -719,6 +748,31 @@ Future<Directory> _acquireLiteRtLmBundle({
     allowRefresh: false,
   );
   return extractedDir;
+}
+
+Future<bool> _verifyLiteRtLmArchiveChecksum({
+  required File archiveFile,
+  required _LiteRtLmBundleSpec bundleSpec,
+  required Logger log,
+  required bool allowRefresh,
+}) async {
+  final actualSha256 = sha256
+      .convert(await archiveFile.readAsBytes())
+      .toString();
+  if (actualSha256 == bundleSpec.sha256) {
+    return true;
+  }
+
+  final message =
+      'LiteRT-LM archive ${bundleSpec.archiveName} checksum mismatch: '
+      'expected ${bundleSpec.sha256}, got $actualSha256.';
+  if (!allowRefresh) {
+    throw Exception(message);
+  }
+
+  log.warning('$message Redownloading.');
+  await archiveFile.delete();
+  return false;
 }
 
 Future<bool> _tryExtractLiteRtLmArchive({
