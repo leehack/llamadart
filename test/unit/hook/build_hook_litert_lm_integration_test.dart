@@ -250,6 +250,51 @@ void main() {
     },
   );
 
+  test('build hook ignores native source overrides for Apple SPM', () async {
+    final userDefines = PackageUserDefines(
+      workspacePubspec: PackageUserDefinesSource(
+        defines: {
+          'llamadart_native_runtimes': ['llama_cpp'],
+          'llamadart_native_tag': '../ignored-by-spm',
+          'llamadart_native_repository': '../ignored-by-spm',
+          'llamadart_native_path': './missing-native-bundles',
+          'llamadart_native_backends': {
+            'platforms': {
+              'ios-arm64': ['cuda'],
+            },
+          },
+        },
+        basePath: Directory.current.uri,
+      ),
+    );
+
+    await testCodeBuildHook(
+      mainMethod: build_hook.main,
+      targetOS: OS.iOS,
+      targetArchitecture: Architecture.arm64,
+      targetIOSSdk: IOSSdk.iPhoneOS,
+      userDefines: userDefines,
+      check: (input, output) {
+        final codeAssets = output.assets.encodedAssets
+            .where((asset) => asset.isCodeAsset)
+            .map((asset) => asset.asCodeAsset)
+            .toList(growable: false);
+
+        expect(codeAssets, hasLength(1));
+        final codeAsset = codeAssets.single;
+        expect(codeAsset.id, 'package:llamadart/llamadart');
+        expect(codeAsset.file, isNull);
+        expect(codeAsset.linkMode, isA<LookupInProcess>());
+
+        final outputDir = input.outputDirectory.toFilePath();
+        expect(
+          Directory(path.join(outputDir, 'llamadart_bin')).existsSync(),
+          isFalse,
+        );
+      },
+    );
+  });
+
   test(
     'build hook emits no bundled Apple assets for Flutter macOS SPM mode',
     () async {

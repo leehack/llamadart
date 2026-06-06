@@ -202,16 +202,6 @@ void main(List<String> args) async {
 
     log.info('Hook Start: ${spec.bundle}');
 
-    final nativeConfig = _resolveNativeBundleConfig(input.userDefines);
-    log.info('Using native runtime source: ${nativeConfig.sourceLabel}');
-    if (nativeConfig.usesOverride) {
-      log.warning(
-        'Native runtime overrides do not regenerate Dart FFI bindings. '
-        'The selected binaries must stay ABI- and symbol-compatible with '
-        '$_nativeRepoSlug@$_llamaCppTag.',
-      );
-    }
-
     final pkgRoot = input.packageRoot.toFilePath();
     final selectedRuntimes = selectNativeRuntimesForBundle(
       bundle: spec.bundle,
@@ -240,9 +230,22 @@ void main(List<String> args) async {
       output: output,
       includeLlamaCpp: includeLlamaCpp,
       includeLiteRtLm: includeLiteRtLm,
+      hasNativeSourceOverride: _hasNativeSourceOverride(input.userDefines),
+      hasNativeBackendOverride:
+          input.userDefines[nativeBackendUserDefineKey] != null,
       log: log,
     )) {
       return;
+    }
+
+    final nativeConfig = _resolveNativeBundleConfig(input.userDefines);
+    log.info('Using native runtime source: ${nativeConfig.sourceLabel}');
+    if (nativeConfig.usesOverride) {
+      log.warning(
+        'Native runtime overrides do not regenerate Dart FFI bindings. '
+        'The selected binaries must stay ABI- and symbol-compatible with '
+        '$_nativeRepoSlug@$_llamaCppTag.',
+      );
     }
 
     final reportDirPath = path.join(
@@ -361,6 +364,8 @@ Future<bool> _emitAppleSpmAssetsIfEnabled({
   required BuildOutputBuilder output,
   required bool includeLlamaCpp,
   required bool includeLiteRtLm,
+  required bool hasNativeSourceOverride,
+  required bool hasNativeBackendOverride,
   required Logger log,
 }) async {
   if (!_isAppleTarget(code.targetOS)) {
@@ -377,6 +382,19 @@ Future<bool> _emitAppleSpmAssetsIfEnabled({
     'Using package:$_packageName Swift Package Manager for Apple native '
     'runtimes; the hook will not bundle Apple dynamic libraries.',
   );
+  if (hasNativeSourceOverride) {
+    log.warning(
+      'Apple Swift Package Manager builds use Package.swift binary target '
+      'pins. $nativeTagUserDefineKey, $nativeRepositoryUserDefineKey, and '
+      '$nativePathUserDefineKey do not change Flutter Apple SPM binaries.',
+    );
+  }
+  if (hasNativeBackendOverride) {
+    log.warning(
+      'Apple Swift Package Manager builds ignore $nativeBackendUserDefineKey; '
+      'Apple frameworks include their packaged native modules.',
+    );
+  }
   if (includeLlamaCpp) {
     output.assets.code.add(
       CodeAsset(
@@ -396,6 +414,12 @@ Future<bool> _emitAppleSpmAssetsIfEnabled({
     );
   }
   return true;
+}
+
+bool _hasNativeSourceOverride(HookInputUserDefines userDefines) {
+  return userDefines[nativeTagUserDefineKey] != null ||
+      userDefines[nativeRepositoryUserDefineKey] != null ||
+      userDefines[nativePathUserDefineKey] != null;
 }
 
 bool _isAppleTarget(OS os) => os == OS.iOS || os == OS.macOS;
