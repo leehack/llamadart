@@ -122,6 +122,15 @@ jobs:
           dart pub global run coverage:format_coverage --lcov --in=coverage/test --out=coverage/lcov.info --report-on=lib --check-ignore
           dart run tool/testing/check_lcov_threshold.dart coverage/lcov.info 70
 
+      - name: Import Codecov uploader verification key
+        run: |
+          curl --fail --location --silent --show-error \
+            https://uploader.codecov.io/verification.gpg \
+            --output codecov-verification.gpg
+          gpg --batch --import codecov-verification.gpg
+          gpg --batch --fingerprint 806BB28AED779869 \
+            | grep -q "2703 4E7F DB85 0E0B BC2C  62FF 806B B28A ED77 9869"
+
       - name: Upload coverage to Codecov
         if: ${{ github.event_name != 'pull_request' || github.event.pull_request.user.login != 'dependabot[bot]' }}
         uses: codecov/codecov-action@v6
