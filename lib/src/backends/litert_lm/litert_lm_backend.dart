@@ -2,10 +2,13 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:isolate';
 
+import '../../core/models/chat/chat_message.dart';
 import '../../core/models/chat/content_part.dart';
 import '../../core/models/config/log_level.dart';
 import '../../core/models/inference/generation_params.dart';
 import '../../core/models/inference/model_params.dart';
+import '../../core/models/inference/tool_choice.dart';
+import '../../core/models/tools/tool_definition.dart';
 import '../backend.dart';
 import 'litert_lm_platform.dart';
 import 'worker.dart';
@@ -22,7 +25,8 @@ class LiteRtLmBackend
         BackendRuntimeDiagnostics,
         BackendPerformanceDiagnostics,
         BackendEmbeddingsSupport,
-        BackendStatePersistenceSupport {
+        BackendStatePersistenceSupport,
+        BackendNativeChatGeneration {
   Isolate? _isolate;
   SendPort? _sendPort;
   Future<void>? _isolateStart;
@@ -61,6 +65,9 @@ class LiteRtLmBackend
 
   @override
   bool get supportsGrammarConstraints => false;
+
+  @override
+  bool get supportsNativeChatGeneration => true;
 
   @override
   Future<int> modelLoad(String path, ModelParams params) async {
@@ -217,6 +224,113 @@ class LiteRtLmBackend
                 params,
                 port.sendPort,
                 parts: parts,
+              ),
+            );
+          } catch (error, stackTrace) {
+            if (!controller.isClosed) {
+              controller.addError(error, stackTrace);
+            }
+            cleanup();
+          }
+        }());
+      },
+      onCancel: () {
+        if (activeGeneration) {
+          cancelGeneration();
+        }
+        cleanup();
+      },
+    );
+
+    return controller.stream;
+  }
+
+  @override
+  Stream<List<int>> generateChat(
+    int contextHandle,
+    List<LlamaChatMessage> messages,
+    GenerationParams params, {
+    List<ToolDefinition>? tools,
+    ToolChoice toolChoice = ToolChoice.auto,
+    bool parallelToolCalls = false,
+    bool enableThinking = true,
+    Map<String, dynamic>? chatTemplateKwargs,
+    String? sourceLangCode,
+    String? targetLangCode,
+    DateTime? templateNow,
+  }) {
+    late final StreamController<List<int>> controller;
+    ReceivePort? responsePort;
+    var cleanedUp = false;
+    var activeGeneration = false;
+    final nativeTools = tools
+        ?.map((tool) => tool.toJson())
+        .toList(growable: false);
+
+    void cleanup() {
+      if (cleanedUp) {
+        return;
+      }
+      cleanedUp = true;
+      responsePort?.close();
+      if (!controller.isClosed) {
+        unawaited(controller.close());
+      }
+      if (_activeGenerationCleanup == cleanup) {
+        _activeGenerationCleanup = null;
+      }
+    }
+
+    controller = StreamController<List<int>>(
+      onListen: () {
+        if (_activeGenerationCleanup != null) {
+          controller.addError(
+            StateError('LiteRT-LM generation is already in progress.'),
+          );
+          cleanup();
+          return;
+        }
+
+        final port = ReceivePort();
+        responsePort = port;
+        port.listen((message) {
+          if (cleanedUp) {
+            return;
+          }
+          if (message is LiteRtLmTokenResponse) {
+            controller.add(message.bytes);
+          } else if (message is LiteRtLmDoneResponse) {
+            cleanup();
+          } else if (message is LiteRtLmErrorResponse) {
+            controller.addError(_exceptionForErrorResponse(message));
+            cleanup();
+          }
+        });
+
+        activeGeneration = true;
+        _activeGenerationCleanup = cleanup;
+        unawaited(() async {
+          try {
+            await _ensureIsolate();
+            final sendPort = _sendPort;
+            if (cleanedUp || sendPort == null) {
+              cleanup();
+              return;
+            }
+            sendPort.send(
+              LiteRtLmGenerateChatRequest(
+                contextHandle,
+                messages,
+                params,
+                port.sendPort,
+                tools: nativeTools,
+                toolChoice: toolChoice,
+                parallelToolCalls: parallelToolCalls,
+                enableThinking: enableThinking,
+                chatTemplateKwargs: chatTemplateKwargs,
+                sourceLangCode: sourceLangCode,
+                targetLangCode: targetLangCode,
+                templateNow: templateNow,
               ),
             );
           } catch (error, stackTrace) {

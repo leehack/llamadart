@@ -11,6 +11,7 @@ import '../../core/models/config/kv_cache_type.dart';
 import '../../core/models/config/log_level.dart';
 import '../../core/models/inference/generation_params.dart';
 import '../../core/models/inference/model_params.dart';
+import '../../core/models/inference/tool_choice.dart';
 import '../../core/template/chat_template_engine.dart';
 import '../backend.dart';
 import 'litert_lm_chat_template.dart';
@@ -176,6 +177,116 @@ class LiteRtLmService {
     try {
       final stream = _applyStopSequences(
         client.generate(prompt),
+        stopSequences,
+        onStop: cancelGeneration,
+      );
+      await for (final chunk in stream) {
+        if (_cancelRequested) {
+          break;
+        }
+        yield chunk;
+      }
+    } finally {
+      sw.stop();
+      try {
+        _lastMetrics = client.readMetrics(
+          wallMilliseconds: sw.elapsedMilliseconds,
+        );
+      } catch (_) {
+        _lastMetrics = null;
+      }
+    }
+  }
+
+  /// Generates UTF-8 token byte chunks using native LiteRT-LM conversation
+  /// messages/tools instead of a pre-rendered Dart prompt.
+  Stream<List<int>> generateChat(
+    int contextHandle,
+    List<LlamaChatMessage> messages,
+    GenerationParams params, {
+    List<Map<String, dynamic>>? tools,
+    ToolChoice toolChoice = ToolChoice.auto,
+    bool parallelToolCalls = false,
+    bool enableThinking = true,
+    Map<String, dynamic>? chatTemplateKwargs,
+    String? sourceLangCode,
+    String? targetLangCode,
+    DateTime? templateNow,
+  }) async* {
+    _checkContextHandle(contextHandle);
+    if (messages.isEmpty) {
+      throw ArgumentError('LiteRT-LM native chat generation needs a message.');
+    }
+    if (_hasMediaMessageParts(messages)) {
+      throw UnsupportedError(
+        'LiteRtLmBackend native chat generation does not support media parts.',
+      );
+    }
+    if (messages.last.role == LlamaChatRole.system) {
+      throw UnsupportedError(
+        'LiteRtLmBackend native chat generation cannot send a system message '
+        'as the active turn.',
+      );
+    }
+    if (toolChoice == ToolChoice.required) {
+      throw UnsupportedError(
+        'LiteRtLmBackend native chat generation does not support '
+        'ToolChoice.required; use the Dart template path instead.',
+      );
+    }
+    if (parallelToolCalls) {
+      throw UnsupportedError(
+        'LiteRtLmBackend native chat generation does not expose a parallel '
+        'tool-call switch.',
+      );
+    }
+    _validateGenerationParams(params);
+
+    _cancelRequested = false;
+    if (params.maxTokens <= 0) {
+      _lastMetrics = null;
+      return;
+    }
+
+    final client = await _ensureClientForGeneration(params);
+    if (_cancelRequested) {
+      return;
+    }
+    final backend =
+        _activeBackend ?? _backendNameFor(_modelParams ?? const ModelParams());
+    final seed = _nativeConversationSeed(messages.take(messages.length - 1));
+    final nativeTools = _nativeToolsFor(toolChoice, tools);
+    final extraContext = _nativeExtraContext(
+      chatTemplateKwargs: chatTemplateKwargs,
+      sourceLangCode: sourceLangCode,
+      targetLangCode: targetLangCode,
+      templateNow: templateNow,
+      enableThinking: enableThinking,
+    );
+    client.createConversation(
+      systemMessage: seed.systemMessage,
+      messages: seed.messages,
+      tools: nativeTools,
+      extraContext: extraContext,
+      temperature: params.temp,
+      topK: params.topK,
+      topP: params.topP,
+      seed: params.seed ?? _defaultSamplerSeed(),
+      npuBackend: backend == 'npu',
+    );
+    if (_cancelRequested) {
+      client.cancel();
+      return;
+    }
+
+    final stopSequences = params.stopSequences
+        .where((sequence) => sequence.isNotEmpty)
+        .toList(growable: false);
+    final messageJson = jsonEncode(_chatMessageToNativeJson(messages.last));
+    final sw = Stopwatch()..start();
+    try {
+      final stream = _applyStopSequences(
+        client.generateMessageJson(messageJson),
         stopSequences,
         onStop: cancelGeneration,
       );
@@ -548,6 +659,10 @@ class LiteRtLmService {
     );
   }
 
+  bool _hasMediaMessageParts(List<LlamaChatMessage> messages) {
+    return messages.any((message) => _hasMediaParts(message.parts));
+  }
+
   int _firstStopIndex(String text, List<String> stopSequences) {
     var stopIndex = -1;
     for (final stop in stopSequences) {
@@ -760,6 +875,68 @@ class LiteRtLmService {
       role: role,
       text: _contentTextFromTemplateMap(message['content']),
     );
+  }
+
+  ({String? systemMessage, List<Map<String, dynamic>>? messages})
+  _nativeConversationSeed(Iterable<LlamaChatMessage> history) {
+    final systemText = <String>[];
+    final seededMessages = <Map<String, dynamic>>[];
+    for (final message in history) {
+      if (message.role == LlamaChatRole.system) {
+        final content = message.content.trim();
+        if (content.isNotEmpty) {
+          systemText.add(content);
+        }
+        continue;
+      }
+      seededMessages.add(_chatMessageToNativeJson(message));
+    }
+
+    final systemMessage = systemText.isEmpty
+        ? null
+        : jsonEncode({
+            'role': LlamaChatRole.system.name,
+            'content': [
+              {'type': 'text', 'text': systemText.join('\n')},
+            ],
+          });
+    return (
+      systemMessage: systemMessage,
+      messages: seededMessages.isEmpty ? null : seededMessages,
+    );
+  }
+
+  Map<String, dynamic> _chatMessageToNativeJson(LlamaChatMessage message) {
+    return Map<String, dynamic>.from(message.toJsonMultimodal());
+  }
+
+  List<Map<String, dynamic>>? _nativeToolsFor(
+    ToolChoice toolChoice,
+    List<Map<String, dynamic>>? tools,
+  ) {
+    if (toolChoice == ToolChoice.none || tools == null || tools.isEmpty) {
+      return null;
+    }
+    return tools.map(Map<String, dynamic>.from).toList(growable: false);
+  }
+
+  Map<String, dynamic>? _nativeExtraContext({
+    Map<String, dynamic>? chatTemplateKwargs,
+    String? sourceLangCode,
+    String? targetLangCode,
+    DateTime? templateNow,
+    required bool enableThinking,
+  }) {
+    final extraContext = <String, dynamic>{
+      if (chatTemplateKwargs != null) ...chatTemplateKwargs,
+      if (sourceLangCode != null && sourceLangCode.isNotEmpty)
+        'source_lang_code': sourceLangCode,
+      if (targetLangCode != null && targetLangCode.isNotEmpty)
+        'target_lang_code': targetLangCode,
+      if (templateNow != null) 'now': templateNow.toIso8601String(),
+      'enable_thinking': enableThinking,
+    };
+    return extraContext.isEmpty ? null : extraContext;
   }
 
   String _contentTextFromTemplateMap(Object? content) {

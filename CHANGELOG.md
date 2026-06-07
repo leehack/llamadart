@@ -5,6 +5,11 @@
     `LlamaEngine.create(...)` for grammar-capable backends, and made strict
     response-format requests fail early on LiteRT-LM instead of silently
     degrading to unconstrained generation.
+* **LiteRT-LM chat parity**:
+  * Routed eligible native `.litertlm` text chat through LiteRT-LM Conversation
+    APIs so structured history, system messages, tool declarations, and
+    template extra context reach the runtime without a Dart-rendered prompt.
+    Unsupported cases still fall back to the existing Dart chat-template path.
 
 ## 0.7.2
 

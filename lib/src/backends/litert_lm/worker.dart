@@ -79,7 +79,8 @@ void runLiteRtLmWorkerForTesting(
       return;
     }
 
-    if (message is LiteRtLmGenerateRequest) {
+    if (message is LiteRtLmGenerateRequest ||
+        message is LiteRtLmGenerateChatRequest) {
       if (generationInFlight) {
         message.sendPort.send(
           LiteRtLmErrorResponse(
@@ -138,6 +139,47 @@ void runLiteRtLmWorkerForTesting(
                 message.prompt,
                 message.params,
                 parts: message.parts,
+              );
+              final batcher = NativeTokenStreamBatcher(
+                tokenThreshold: message.params.streamBatchTokenThreshold,
+                byteThreshold: message.params.streamBatchByteThreshold,
+              );
+
+              await for (final tokens in stream) {
+                final readyChunks = batcher.add(tokens);
+                for (final chunk in readyChunks) {
+                  message.sendPort.send(LiteRtLmTokenResponse(chunk));
+                }
+              }
+
+              final finalChunk = batcher.flush();
+              if (finalChunk != null) {
+                message.sendPort.send(LiteRtLmTokenResponse(finalChunk));
+              }
+
+              message.sendPort.send(LiteRtLmDoneResponse());
+            } catch (error) {
+              message.sendPort.send(LiteRtLmErrorResponse.from(error));
+            }
+
+          case LiteRtLmGenerateChatRequest():
+            try {
+              if (generationCancelRequested) {
+                message.sendPort.send(LiteRtLmDoneResponse());
+                return;
+              }
+              final stream = service.generateChat(
+                message.contextHandle,
+                message.messages,
+                message.params,
+                tools: message.tools,
+                toolChoice: message.toolChoice,
+                parallelToolCalls: message.parallelToolCalls,
+                enableThinking: message.enableThinking,
+                chatTemplateKwargs: message.chatTemplateKwargs,
+                sourceLangCode: message.sourceLangCode,
+                targetLangCode: message.targetLangCode,
+                templateNow: message.templateNow,
               );
               final batcher = NativeTokenStreamBatcher(
                 tokenThreshold: message.params.streamBatchTokenThreshold,
@@ -270,7 +312,8 @@ void runLiteRtLmWorkerForTesting(
       } catch (error) {
         message.sendPort.send(LiteRtLmErrorResponse.from(error));
       } finally {
-        if (message is LiteRtLmGenerateRequest) {
+        if (message is LiteRtLmGenerateRequest ||
+            message is LiteRtLmGenerateChatRequest) {
           generationCancelRequested = false;
           generationInFlight = false;
         }

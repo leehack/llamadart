@@ -8,6 +8,7 @@ import '../models/config/log_level.dart';
 import '../models/chat/chat_message.dart';
 import '../models/chat/completion_chunk.dart';
 import '../models/chat/content_part.dart';
+import '../models/chat/chat_role.dart';
 import '../models/chat/chat_template_result.dart';
 import '../llama_logger.dart';
 
@@ -529,18 +530,42 @@ class LlamaEngine {
       ...?params?.preservedTokens,
     }.toList(growable: false);
 
-    // Generate raw tokens with grammar constraint
-    final tokenStream = generate(
-      result.prompt,
-      params: (params ?? const GenerationParams()).copyWith(
-        stopSequences: stops,
-        grammar: effectiveGrammar,
-        grammarLazy: effectiveGrammarLazy,
-        grammarTriggers: effectiveGrammarTriggers,
-        preservedTokens: effectivePreservedTokens,
-      ),
-      parts: allParts,
+    // Generate raw tokens with grammar constraint. Backends that can consume
+    // structured chat natively may receive the original messages/tools, while
+    // all other backends keep the rendered prompt path.
+    final effectiveParams = (params ?? const GenerationParams()).copyWith(
+      stopSequences: stops,
+      grammar: effectiveGrammar,
+      grammarLazy: effectiveGrammarLazy,
+      grammarTriggers: effectiveGrammarTriggers,
+      preservedTokens: effectivePreservedTokens,
     );
+    final nativeChatBackend = activeBackend is BackendNativeChatGeneration
+        ? activeBackend as BackendNativeChatGeneration
+        : null;
+    final useNativeChatGeneration =
+        nativeChatBackend != null &&
+        _canUseNativeChatGeneration(
+          nativeChatBackend,
+          messages,
+          toolChoice: toolChoice ?? ToolChoice.auto,
+          parallelToolCalls: parallelToolCalls,
+        );
+    final tokenStream = useNativeChatGeneration
+        ? _generateNativeChat(
+            nativeChatBackend,
+            messages,
+            params: effectiveParams,
+            tools: effectiveTools,
+            toolChoice: toolChoice ?? ToolChoice.auto,
+            parallelToolCalls: parallelToolCalls,
+            enableThinking: enableThinking,
+            chatTemplateKwargs: chatTemplateKwargs,
+            sourceLangCode: sourceLangCode,
+            targetLangCode: targetLangCode,
+            templateNow: templateNow,
+          )
+        : generate(result.prompt, params: effectiveParams, parts: allParts);
 
     // Parse the tokens into structured chunks using the detected format
     final completionId = DateTime.now().millisecondsSinceEpoch.toString();
@@ -693,7 +718,11 @@ class LlamaEngine {
             }
           }
 
-          if (partialParsed.content.length > streamedContent.length) {
+          final suppressToolEnvelopeContent =
+              _isStructuredToolEnvelopeBuffer(buffer.toString()) &&
+              !partialParsed.hasToolCalls;
+          if (!suppressToolEnvelopeContent &&
+              partialParsed.content.length > streamedContent.length) {
             final delta = partialParsed.content.substring(
               streamedContent.length,
             );
@@ -716,7 +745,8 @@ class LlamaEngine {
           if (partialReasoning.length >= streamedReasoning.length) {
             streamedReasoning = partialReasoning;
           }
-          if (partialParsed.content.length >= streamedContent.length) {
+          if (!suppressToolEnvelopeContent &&
+              partialParsed.content.length >= streamedContent.length) {
             streamedContent = partialParsed.content;
           }
         } catch (_) {
@@ -853,11 +883,15 @@ class LlamaEngine {
         );
       }
 
-      final contentDelta = _computeFinalReconciliationDelta(
-        streamedValue: streamedContent,
-        finalValue: parsed.content,
-        channel: 'content',
-      );
+      final suppressFinalToolEnvelopeContent =
+          parsed.hasToolCalls && _isStructuredToolEnvelopeBuffer(fullOutput);
+      final contentDelta = suppressFinalToolEnvelopeContent
+          ? null
+          : _computeFinalReconciliationDelta(
+              streamedValue: streamedContent,
+              finalValue: parsed.content,
+              channel: 'content',
+            );
       if (contentDelta != null && contentDelta.isNotEmpty) {
         yield LlamaCompletionChunk(
           id: 'chatcmpl-$completionId',
@@ -1121,6 +1155,53 @@ class LlamaEngine {
     }
     final type = responseFormat['type'] as String?;
     return type == 'json_schema' || type == 'json_object';
+  }
+
+  Stream<String> _generateNativeChat(
+    BackendNativeChatGeneration nativeBackend,
+    List<LlamaChatMessage> messages, {
+    required GenerationParams params,
+    List<ToolDefinition>? tools,
+    required ToolChoice toolChoice,
+    required bool parallelToolCalls,
+    required bool enableThinking,
+    Map<String, dynamic>? chatTemplateKwargs,
+    String? sourceLangCode,
+    String? targetLangCode,
+    DateTime? templateNow,
+  }) async* {
+    _ensureReady();
+
+    try {
+      final stream = nativeBackend.generateChat(
+        _contextHandle!,
+        messages,
+        params,
+        tools: tools,
+        toolChoice: toolChoice,
+        parallelToolCalls: parallelToolCalls,
+        enableThinking: enableThinking,
+        chatTemplateKwargs: chatTemplateKwargs,
+        sourceLangCode: sourceLangCode,
+        targetLangCode: targetLangCode,
+        templateNow: templateNow,
+      );
+
+      await for (final token in stream.transform(
+        const Utf8Decoder(allowMalformed: true),
+      )) {
+        yield token;
+      }
+    } on UnsupportedError catch (error) {
+      throw _unsupportedBackendOperation('Native chat generation', error);
+    } on LlamaException {
+      rethrow;
+    } catch (error, stackTrace) {
+      Error.throwWithStackTrace(
+        LlamaInferenceException('Native chat generation failed', error),
+        stackTrace,
+      );
+    }
   }
 
   /// Immediately cancels any ongoing generation process.
@@ -1741,6 +1822,10 @@ class LlamaEngine {
         key == 'name';
   }
 
+  bool _isStructuredToolEnvelopeBuffer(String text) {
+    return RegExp(r'^\s*\{\s*"tool_calls?"\s*:').hasMatch(text);
+  }
+
   _ToolStreamingMode _decideBracketEnvelopeMode(String text) {
     const marker = '[TOOL_CALLS]';
     final upper = text.toUpperCase();
@@ -1938,6 +2023,28 @@ class LlamaEngine {
         codeUnit == 0x09 || // \t
         codeUnit == 0x0A || // \n
         codeUnit == 0x0D; // \r
+  }
+
+  bool _canUseNativeChatGeneration(
+    BackendNativeChatGeneration backend,
+    List<LlamaChatMessage> messages, {
+    required ToolChoice toolChoice,
+    required bool parallelToolCalls,
+  }) {
+    if (!backend.supportsNativeChatGeneration || messages.isEmpty) {
+      return false;
+    }
+    if (messages.last.role == LlamaChatRole.system) {
+      return false;
+    }
+    if (toolChoice == ToolChoice.required || parallelToolCalls) {
+      return false;
+    }
+    return messages
+        .expand((message) => message.parts)
+        .every(
+          (part) => part is! LlamaImageContent && part is! LlamaAudioContent,
+        );
   }
 
   /// Validates engine is ready for inference.

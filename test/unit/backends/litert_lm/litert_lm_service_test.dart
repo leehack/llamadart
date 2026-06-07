@@ -7,6 +7,8 @@ import 'dart:io';
 
 import 'package:llamadart/src/backends/litert_lm/litert_lm_service.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_runtime.dart';
+import 'package:llamadart/src/core/models/chat/chat_message.dart';
+import 'package:llamadart/src/core/models/chat/chat_role.dart';
 import 'package:llamadart/src/core/models/chat/content_part.dart';
 import 'package:llamadart/src/core/models/config/flash_attention.dart';
 import 'package:llamadart/src/core/models/config/gpu_backend.dart';
@@ -15,6 +17,8 @@ import 'package:llamadart/src/core/models/config/log_level.dart';
 import 'package:llamadart/src/core/models/config/lora_config.dart';
 import 'package:llamadart/src/core/models/inference/generation_params.dart';
 import 'package:llamadart/src/core/models/inference/model_params.dart';
+import 'package:llamadart/src/core/models/tools/tool_definition.dart';
+import 'package:llamadart/src/core/models/tools/tool_param.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -917,6 +921,130 @@ void main() {
     }
   });
 
+  test('passes native chat messages and tools to the client', () async {
+    final fakeClient = _FakeLiteRtLmRuntimeClient();
+    final service = LiteRtLmService(clientFactory: () => fakeClient);
+
+    try {
+      final modelHandle = await service.loadModel(
+        modelFile.path,
+        const ModelParams(contextSize: 3072, preferredBackend: GpuBackend.cpu),
+      );
+      final contextHandle = service.createContext(
+        modelHandle,
+        const ModelParams(contextSize: 3072, preferredBackend: GpuBackend.cpu),
+      );
+
+      final chunksFuture = service
+          .generateChat(
+            contextHandle,
+            const [
+              LlamaChatMessage.fromText(
+                role: LlamaChatRole.system,
+                text: 'Be concise.',
+              ),
+              LlamaChatMessage.fromText(
+                role: LlamaChatRole.user,
+                text: 'hello',
+              ),
+              LlamaChatMessage.fromText(
+                role: LlamaChatRole.assistant,
+                text: 'hi',
+              ),
+              LlamaChatMessage.fromText(
+                role: LlamaChatRole.user,
+                text: 'weather?',
+              ),
+            ],
+            const GenerationParams(
+              maxTokens: 7,
+              temp: 0.3,
+              topK: 5,
+              topP: 0.4,
+              seed: 9,
+            ),
+            tools: [
+              ToolDefinition(
+                name: 'get_weather',
+                description: 'Gets weather.',
+                parameters: [
+                  ToolParam.string(
+                    'city',
+                    description: 'City name.',
+                    required: true,
+                  ),
+                ],
+                handler: (_) async => 'sunny',
+              ).toJson(),
+            ],
+            chatTemplateKwargs: const {'locale': 'en_CA'},
+            sourceLangCode: 'en',
+            targetLangCode: 'fr',
+            templateNow: DateTime.utc(2026, 6, 7, 12),
+          )
+          .toList();
+
+      await fakeClient.generateStarted.future;
+      fakeClient.generated.add('native response');
+      await fakeClient.generated.close();
+
+      expect(await chunksFuture, [utf8.encode('native response')]);
+      expect(fakeClient.lastOutputTokens, 7);
+      expect(fakeClient.lastTemperature, 0.3);
+      expect(fakeClient.lastTopK, 5);
+      expect(fakeClient.lastTopP, 0.4);
+      expect(fakeClient.lastSeed, 9);
+      expect(fakeClient.lastNpuBackend, isFalse);
+
+      expect(jsonDecode(fakeClient.lastSystemMessage!), {
+        'role': 'system',
+        'content': [
+          {'type': 'text', 'text': 'Be concise.'},
+        ],
+      });
+      expect(fakeClient.lastMessages, [
+        {
+          'role': 'user',
+          'content': [
+            {'type': 'text', 'text': 'hello'},
+          ],
+        },
+        {
+          'role': 'assistant',
+          'content': [
+            {'type': 'text', 'text': 'hi'},
+          ],
+        },
+      ]);
+      expect(jsonDecode(fakeClient.lastMessageJson!), {
+        'role': 'user',
+        'content': [
+          {'type': 'text', 'text': 'weather?'},
+        ],
+      });
+      expect(fakeClient.lastTools?.single['function'], {
+        'name': 'get_weather',
+        'description': 'Gets weather.',
+        'parameters': {
+          'type': 'object',
+          'properties': {
+            'city': {'type': 'string', 'description': 'City name.'},
+          },
+          'required': ['city'],
+        },
+      });
+      expect(fakeClient.lastExtraContext, {
+        'locale': 'en_CA',
+        'source_lang_code': 'en',
+        'target_lang_code': 'fr',
+        'now': '2026-06-07T12:00:00.000Z',
+        'enable_thinking': true,
+      });
+    } finally {
+      service.dispose();
+    }
+  });
+
   test(
     'recreates LiteRT-LM client when speculative decoding changes',
     () async {
@@ -1567,9 +1695,15 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
   double? lastTopP;
   int? lastSeed;
   bool? lastNpuBackend;
+  String? lastSystemMessage;
+  List<Map<String, dynamic>>? lastMessages;
+  List<Map<String, dynamic>>? lastTools;
+  Map<String, dynamic>? lastExtraContext;
   String? lastTokenizeText;
   bool? lastTokenizeAddSpecial;
   List<int>? lastDetokenizeTokens;
+  String? lastMessageJson;
+  Map<String, dynamic>? lastMessageExtraContext;
   List<int> tokenizeResult = const <int>[];
   String detokenizeResult = '';
   LiteRtLmRuntimeMetrics? metrics;
@@ -1623,6 +1757,9 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
   @override
   void createConversation({
     String? systemMessage,
+    List<Map<String, dynamic>>? messages,
+    List<Map<String, dynamic>>? tools,
+    Map<String, dynamic>? extraContext,
     double temperature = 0.8,
     int topK = 40,
     double topP = 0.95,
@@ -1635,6 +1772,14 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
     lastTopP = topP;
     lastSeed = seed;
     lastNpuBackend = npuBackend;
+    lastSystemMessage = systemMessage;
+    lastMessages = messages
+        ?.map(Map<String, dynamic>.from)
+        .toList(growable: false);
+    lastTools = tools?.map(Map<String, dynamic>.from).toList(growable: false);
+    lastExtraContext = extraContext == null
+        ? null
+        : Map<String, dynamic>.from(extraContext);
     createConversationCount += 1;
     onCreateConversation?.call();
   }
@@ -1657,6 +1802,23 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
   @override
   Stream<String> generate(String prompt) {
     _checkNotDisposed();
+    generateCount += 1;
+    if (!generateStarted.isCompleted) {
+      generateStarted.complete();
+    }
+    return generated.stream;
+  }
+
+  @override
+  Stream<String> generateMessageJson(
+    String messageJson, {
+    Map<String, dynamic>? extraContext,
+  }) {
+    _checkNotDisposed();
+    lastMessageJson = messageJson;
+    lastMessageExtraContext = extraContext == null
+        ? null
+        : Map<String, dynamic>.from(extraContext);
     generateCount += 1;
     if (!generateStarted.isCompleted) {
       generateStarted.complete();

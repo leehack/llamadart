@@ -361,12 +361,14 @@ final class _BlockingSendMessageRequest {
   const _BlockingSendMessageRequest({
     required this.libraryPath,
     required this.conversationAddress,
-    required this.prompt,
+    required this.messageJson,
+    this.extraContextJson,
   });
 
   final String libraryPath;
   final int conversationAddress;
-  final String prompt;
+  final String messageJson;
+  final String? extraContextJson;
 }
 
 /// Low-level native LiteRT-LM runtime client.
@@ -435,9 +437,9 @@ class LiteRtLmRuntimeClient {
       dispose();
     }
 
-    final modelPathPtr = modelPath.toNativeUtf8();
-    final backendPtr = resolvedBackend.toNativeUtf8();
-    final cacheDirPtr = cacheDir?.toNativeUtf8();
+    final modelPathPtr = modelPath.toNativeUtf8(allocator: calloc);
+    final backendPtr = resolvedBackend.toNativeUtf8(allocator: calloc);
+    final cacheDirPtr = cacheDir?.toNativeUtf8(allocator: calloc);
     Pointer<_LiteRtLmEngineSettings> settings = nullptr;
 
     try {
@@ -505,6 +507,9 @@ class LiteRtLmRuntimeClient {
   /// Creates a new LiteRT-LM conversation for generation and token operations.
   void createConversation({
     String? systemMessage,
+    List<Map<String, dynamic>>? messages,
+    List<Map<String, dynamic>>? tools,
+    Map<String, dynamic>? extraContext,
     double temperature = 0.8,
     int topK = 40,
     double topP = 0.95,
@@ -533,7 +538,16 @@ class LiteRtLmRuntimeClient {
 
     final systemPtr = systemMessage == null
         ? nullptr
-        : systemMessage.toNativeUtf8();
+        : _systemMessageJson(systemMessage).toNativeUtf8(allocator: calloc);
+    final messagesPtr = messages == null || messages.isEmpty
+        ? nullptr
+        : jsonEncode(messages).toNativeUtf8(allocator: calloc);
+    final toolsPtr = tools == null || tools.isEmpty
+        ? nullptr
+        : jsonEncode(tools).toNativeUtf8(allocator: calloc);
+    final extraContextPtr = extraContext == null || extraContext.isEmpty
+        ? nullptr
+        : jsonEncode(extraContext).toNativeUtf8(allocator: calloc);
     Pointer<_LiteRtLmConversationConfig> config = nullptr;
     try {
       config = bindings.conversationConfigCreate();
@@ -543,6 +557,18 @@ class LiteRtLmRuntimeClient {
       bindings.conversationConfigSetSessionConfig(config, sessionConfig);
       if (systemPtr != nullptr) {
         bindings.conversationConfigSetSystemMessage(config, systemPtr.cast());
+      }
+      if (messagesPtr != nullptr) {
+        bindings.conversationConfigSetMessages(config, messagesPtr.cast());
+      }
+      if (toolsPtr != nullptr) {
+        bindings.conversationConfigSetTools(config, toolsPtr.cast());
+      }
+      if (extraContextPtr != nullptr) {
+        bindings.conversationConfigSetExtraContext(
+          config,
+          extraContextPtr.cast(),
+        );
       }
       bindings.conversationConfigSetEnableConstrainedDecoding(config, false);
       final conversation = bindings.conversationCreate(engine, config);
@@ -557,6 +583,15 @@ class LiteRtLmRuntimeClient {
       bindings.sessionConfigDelete(sessionConfig);
       if (systemPtr != nullptr) {
         calloc.free(systemPtr);
+      }
+      if (messagesPtr != nullptr) {
+        calloc.free(messagesPtr);
+      }
+      if (toolsPtr != nullptr) {
+        calloc.free(toolsPtr);
+      }
+      if (extraContextPtr != nullptr) {
+        calloc.free(extraContextPtr);
       }
     }
   }
@@ -613,25 +648,95 @@ class LiteRtLmRuntimeClient {
     }
   }
 
+  /// Renders a message with the active native LiteRT-LM conversation template.
+  ///
+  /// The returned string is copied into Dart before the native conversation may
+  /// invalidate the underlying buffer.
+  String renderMessageToString(Map<String, dynamic> message) {
+    final bindings = _requireBindings();
+    final conversation = _requireConversation();
+    final messagePtr = jsonEncode(message).toNativeUtf8(allocator: calloc);
+    try {
+      final renderedPtr = bindings.conversationRenderMessageToString(
+        conversation,
+        messagePtr.cast(),
+      );
+      if (renderedPtr == nullptr) {
+        throw StateError(
+          'litert_lm_conversation_render_message_to_string returned null',
+        );
+      }
+      return renderedPtr.cast<Utf8>().toDartString();
+    } finally {
+      calloc.free(messagePtr);
+    }
+  }
+
+  /// Returns the token count currently held by the active conversation KV cache.
+  int conversationTokenCount() {
+    final bindings = _requireBindings();
+    final conversation = _requireConversation();
+    final count = bindings.conversationGetTokenCount(conversation);
+    if (count < 0) {
+      throw StateError(
+        'litert_lm_conversation_get_token_count returned $count',
+      );
+    }
+    return count;
+  }
+
+  /// Replaces the active conversation with a native clone of itself.
+  void replaceConversationWithClone() {
+    final bindings = _requireBindings();
+    final conversation = _requireConversation();
+    final clone = bindings.conversationClone(conversation);
+    if (clone == nullptr) {
+      throw StateError('litert_lm_conversation_clone returned null');
+    }
+    bindings.conversationDelete(conversation);
+    _conversation = clone;
+  }
+
   /// Streams generated text from the active conversation.
   Stream<String> generate(String prompt) {
+    return generateMessageJson(_messageJson(prompt));
+  }
+
+  /// Streams generated text by sending a native LiteRT-LM message JSON object.
+  Stream<String> generateMessageJson(
+    String messageJson, {
+    Map<String, dynamic>? extraContext,
+  }) {
     // Upstream stream callback strings are only valid during the native call.
     // Dart listener callbacks run later, so streaming requires StreamProxy to
     // copy those strings across the thread/isolate boundary.
+    final extraContextJson = extraContext == null || extraContext.isEmpty
+        ? null
+        : jsonEncode(extraContext);
     if (_proxyCreate == null) {
-      return _generateBlocking(prompt);
+      return _generateBlockingMessageJson(
+        messageJson,
+        extraContextJson: extraContextJson,
+      );
     }
-    return _generateStreaming(prompt);
+    return _generateStreamingMessageJson(
+      messageJson,
+      extraContextJson: extraContextJson,
+    );
   }
 
-  Stream<String> _generateBlocking(String prompt) {
+  Stream<String> _generateBlockingMessageJson(
+    String messageJson, {
+    String? extraContextJson,
+  }) {
     final conversation = _requireConversation();
     final liteRtLmLibraryPath = _liteRtLmLibraryPath!;
     final controller = StreamController<String>(onCancel: cancel);
     final request = _BlockingSendMessageRequest(
       libraryPath: liteRtLmLibraryPath,
       conversationAddress: conversation.address,
-      prompt: prompt,
+      messageJson: messageJson,
+      extraContextJson: extraContextJson,
     );
 
     unawaited(() async {
@@ -661,10 +766,16 @@ class LiteRtLmRuntimeClient {
     return controller.stream;
   }
 
-  Stream<String> _generateStreaming(String prompt) {
+  Stream<String> _generateStreamingMessageJson(
+    String messageJson, {
+    String? extraContextJson,
+  }) {
     final bindings = _requireBindings();
     final conversation = _requireConversation();
-    final messagePtr = _messageJson(prompt).toNativeUtf8();
+    final messagePtr = messageJson.toNativeUtf8(allocator: calloc);
+    final extraContextPtr = extraContextJson == null
+        ? nullptr
+        : extraContextJson.toNativeUtf8(allocator: calloc);
     final assembler = LiteRtLmChannelAssembler(
       thinkingStartTag: _thinkingStartTag,
       thinkingEndTag: _thinkingEndTag,
@@ -685,6 +796,9 @@ class LiteRtLmRuntimeClient {
       }
       callable.close();
       calloc.free(messagePtr);
+      if (extraContextPtr != nullptr) {
+        calloc.free(extraContextPtr);
+      }
     }
 
     controller = StreamController<String>(
@@ -780,7 +894,7 @@ class LiteRtLmRuntimeClient {
       final rc = bindings.conversationSendMessageStream(
         conversation,
         messagePtr.cast(),
-        nullptr,
+        extraContextPtr.cast(),
         optionalArgs,
         callbackFn.cast(),
         callbackData,
@@ -803,7 +917,7 @@ class LiteRtLmRuntimeClient {
   List<int> _tokenizeRaw(String text) {
     final bindings = _requireBindings();
     final engine = _requireEngine();
-    final textPtr = text.toNativeUtf8();
+    final textPtr = text.toNativeUtf8(allocator: calloc);
     Pointer<_LiteRtLmTokenizeResult> result = nullptr;
     try {
       result = bindings.engineTokenize(engine, textPtr.cast());
@@ -1142,7 +1256,7 @@ class LiteRtLmRuntimeClient {
           .lookupFunction<_LoadGlobalNative, _LoadGlobalDart>(
             'stream_proxy_load_global',
           );
-      final liteRtLmName = liteRtLmPath.toNativeUtf8();
+      final liteRtLmName = liteRtLmPath.toNativeUtf8(allocator: calloc);
       try {
         loadGlobal(liteRtLmName);
       } finally {
@@ -1413,6 +1527,23 @@ String _messageJson(String text) {
   });
 }
 
+String _systemMessageJson(String textOrJson) {
+  try {
+    final decoded = jsonDecode(textOrJson);
+    if (decoded is Map<String, dynamic>) {
+      return textOrJson;
+    }
+  } on FormatException {
+    // Plain text system messages are wrapped below.
+  }
+  return jsonEncode({
+    'role': 'system',
+    'content': [
+      {'type': 'text', 'text': textOrJson},
+    ],
+  });
+}
+
 Future<String> _runBlockingSendMessageInIsolate(
   _BlockingSendMessageRequest request,
 ) {
@@ -1426,7 +1557,10 @@ String _runBlockingSendMessage(_BlockingSendMessageRequest request) {
   final conversation = Pointer<_LiteRtLmConversation>.fromAddress(
     request.conversationAddress,
   );
-  final messagePtr = _messageJson(request.prompt).toNativeUtf8();
+  final messagePtr = request.messageJson.toNativeUtf8(allocator: calloc);
+  final extraContextPtr = request.extraContextJson == null
+      ? nullptr
+      : request.extraContextJson!.toNativeUtf8(allocator: calloc);
   Pointer<_LiteRtLmConversationOptionalArgs> optionalArgs = nullptr;
   try {
     optionalArgs = bindings.conversationOptionalArgsCreate();
@@ -1439,7 +1573,7 @@ String _runBlockingSendMessage(_BlockingSendMessageRequest request) {
     final response = bindings.conversationSendMessage(
       conversation,
       messagePtr.cast(),
-      nullptr,
+      extraContextPtr.cast(),
       optionalArgs,
     );
     if (response == nullptr) {
@@ -1460,6 +1594,9 @@ String _runBlockingSendMessage(_BlockingSendMessageRequest request) {
       bindings.conversationOptionalArgsDelete(optionalArgs);
     }
     calloc.free(messagePtr);
+    if (extraContextPtr != nullptr) {
+      calloc.free(extraContextPtr);
+    }
   }
 }
 
@@ -1561,6 +1698,18 @@ class LiteRtLmChannelAssembler {
     }
 
     final content = decoded['content'];
+    if (decoded.containsKey('tool_calls')) {
+      return (
+        thought: thought,
+        content: jsonEncode({'tool_calls': decoded['tool_calls']}),
+      );
+    }
+    if (decoded.containsKey('tool_call')) {
+      return (
+        thought: thought,
+        content: jsonEncode({'tool_call': decoded['tool_call']}),
+      );
+    }
     if (content is List) {
       for (final item in content) {
         if (item is Map<String, dynamic> && item['type'] == 'text') {
@@ -1797,6 +1946,24 @@ class _LiteRtLmBindings {
         void Function(Pointer<_LiteRtLmConversationConfig>, Pointer<Char>)
       >('litert_lm_conversation_config_set_system_message');
 
+  late final conversationConfigSetTools = _library
+      .lookupFunction<
+        Void Function(Pointer<_LiteRtLmConversationConfig>, Pointer<Char>),
+        void Function(Pointer<_LiteRtLmConversationConfig>, Pointer<Char>)
+      >('litert_lm_conversation_config_set_tools');
+
+  late final conversationConfigSetMessages = _library
+      .lookupFunction<
+        Void Function(Pointer<_LiteRtLmConversationConfig>, Pointer<Char>),
+        void Function(Pointer<_LiteRtLmConversationConfig>, Pointer<Char>)
+      >('litert_lm_conversation_config_set_messages');
+
+  late final conversationConfigSetExtraContext = _library
+      .lookupFunction<
+        Void Function(Pointer<_LiteRtLmConversationConfig>, Pointer<Char>),
+        void Function(Pointer<_LiteRtLmConversationConfig>, Pointer<Char>)
+      >('litert_lm_conversation_config_set_extra_context');
+
   late final conversationConfigSetEnableConstrainedDecoding = _library
       .lookupFunction<
         Void Function(Pointer<_LiteRtLmConversationConfig>, Bool),
@@ -1826,6 +1993,12 @@ class _LiteRtLmBindings {
         Void Function(Pointer<_LiteRtLmConversation>),
         void Function(Pointer<_LiteRtLmConversation>)
       >('litert_lm_conversation_delete');
+
+  late final conversationClone = _library
+      .lookupFunction<
+        Pointer<_LiteRtLmConversation> Function(Pointer<_LiteRtLmConversation>),
+        Pointer<_LiteRtLmConversation> Function(Pointer<_LiteRtLmConversation>)
+      >('litert_lm_conversation_clone');
 
   late final conversationOptionalArgsCreate = _library
       .lookupFunction<
@@ -1887,6 +2060,12 @@ class _LiteRtLmBindings {
         )
       >('litert_lm_conversation_send_message_stream');
 
+  late final conversationRenderMessageToString = _library
+      .lookupFunction<
+        Pointer<Char> Function(Pointer<_LiteRtLmConversation>, Pointer<Char>),
+        Pointer<Char> Function(Pointer<_LiteRtLmConversation>, Pointer<Char>)
+      >('litert_lm_conversation_render_message_to_string');
+
   late final conversationCancelProcess = _library
       .lookupFunction<
         Void Function(Pointer<_LiteRtLmConversation>),
@@ -1900,6 +2079,12 @@ class _LiteRtLmBindings {
         ),
         Pointer<_LiteRtLmBenchmarkInfo> Function(Pointer<_LiteRtLmConversation>)
       >('litert_lm_conversation_get_benchmark_info');
+
+  late final conversationGetTokenCount = _library
+      .lookupFunction<
+        Int Function(Pointer<_LiteRtLmConversation>),
+        int Function(Pointer<_LiteRtLmConversation>)
+      >('litert_lm_conversation_get_token_count');
 
   late final benchmarkInfoDelete = _library
       .lookupFunction<

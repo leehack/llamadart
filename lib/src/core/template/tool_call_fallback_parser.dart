@@ -169,6 +169,14 @@ List<LlamaCompletionChunkToolCall> _toolCallsFromDecoded(
 }) {
   final decodedMap = ToolCallParsingUtils.coerceMap(decoded);
   if (decodedMap != null) {
+    final toolCallsRaw = decodedMap['tool_calls'];
+    if (toolCallsRaw != null) {
+      final calls = _toolCallsFromDecoded(toolCallsRaw, startIndex: startIndex);
+      if (calls.isNotEmpty) {
+        return calls;
+      }
+    }
+
     final call = _toolCallFromMap(decodedMap, index: startIndex);
     if (call == null) {
       return const <LlamaCompletionChunkToolCall>[];
