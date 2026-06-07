@@ -412,6 +412,8 @@ class LlamaEngine {
   /// Use [chatTemplateKwargs] to inject additional template globals (equivalent
   /// to llama.cpp `chat_template_kwargs`).
   /// Use [templateNow] to set deterministic template time context.
+  /// Pass [responseFormat] or legacy [jsonSchema] to request strict structured
+  /// output through grammar-constrained decoding on compatible backends.
   ///
   /// Example:
   /// ```dart
@@ -425,10 +427,12 @@ class LlamaEngine {
   Stream<LlamaCompletionChunk> create(
     List<LlamaChatMessage> messages, {
     GenerationParams? params,
+    Map<String, dynamic>? jsonSchema,
     List<ToolDefinition>? tools,
     ToolChoice? toolChoice,
     bool parallelToolCalls = false,
     bool enableThinking = true,
+    Map<String, dynamic>? responseFormat,
     String? sourceLangCode,
     String? targetLangCode,
     Map<String, dynamic>? chatTemplateKwargs,
@@ -439,14 +443,20 @@ class LlamaEngine {
     // Keep tools available to template routing even with toolChoice.none,
     // matching llama.cpp behavior.
     final effectiveTools = tools;
+    final effectiveResponseFormat = _effectiveResponseFormat(
+      responseFormat: responseFormat,
+      jsonSchema: jsonSchema,
+    );
 
     // Apply chat template with tools - returns grammar for constraining
     final result = await chatTemplate(
       messages,
+      jsonSchema: jsonSchema,
       tools: effectiveTools,
       toolChoice: toolChoice ?? ToolChoice.auto,
       parallelToolCalls: parallelToolCalls,
       enableThinking: enableThinking,
+      responseFormat: responseFormat,
       sourceLangCode: sourceLangCode,
       targetLangCode: targetLangCode,
       chatTemplateKwargs: chatTemplateKwargs,
@@ -480,6 +490,18 @@ class LlamaEngine {
     if (!backendSupportsGrammarConstraints && result.grammar != null) {
       LlamaLogger.instance.debug(
         '  Template grammar skipped: backend does not support grammar constraints',
+      );
+    }
+    if (!backendSupportsGrammarConstraints &&
+        result.grammar != null &&
+        _hasSchemaResponseFormat(effectiveResponseFormat)) {
+      throw LlamaUnsupportedException(
+        'Strict responseFormat/jsonSchema output requires '
+        'grammar-constrained decoding, but the active backend does not '
+        'support grammar constraints. LiteRT-LM native and web currently do '
+        'not expose public runtime wiring for JSON-schema/Lark constraints; '
+        'use a grammar-capable backend such as llama.cpp, or omit '
+        'responseFormat for best-effort JSON output.',
       );
     }
 
@@ -1078,6 +1100,27 @@ class LlamaEngine {
         stackTrace,
       );
     }
+  }
+
+  Map<String, dynamic>? _effectiveResponseFormat({
+    required Map<String, dynamic>? responseFormat,
+    required Map<String, dynamic>? jsonSchema,
+  }) {
+    return responseFormat ??
+        (jsonSchema == null
+            ? null
+            : {
+                'type': 'json_schema',
+                'json_schema': {'schema': jsonSchema},
+              });
+  }
+
+  bool _hasSchemaResponseFormat(Map<String, dynamic>? responseFormat) {
+    if (responseFormat == null) {
+      return false;
+    }
+    final type = responseFormat['type'] as String?;
+    return type == 'json_schema' || type == 'json_object';
   }
 
   /// Immediately cancels any ongoing generation process.

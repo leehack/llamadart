@@ -1168,6 +1168,86 @@ void main() {
       },
     );
 
+    test(
+      'create forwards responseFormat grammar to capable backends',
+      () async {
+        await engine.loadModel('test-model.bin');
+
+        await engine
+            .create(
+              const [
+                LlamaChatMessage.fromText(
+                  role: LlamaChatRole.user,
+                  text: 'return status',
+                ),
+              ],
+              responseFormat: const {
+                'type': 'json_schema',
+                'json_schema': {
+                  'schema': {
+                    'type': 'object',
+                    'properties': {
+                      'ok': {'type': 'boolean'},
+                    },
+                    'required': ['ok'],
+                  },
+                },
+              },
+            )
+            .drain();
+
+        expect(backend.lastGenerationParams?.grammar, isNotNull);
+        expect(backend.lastGenerationParams?.grammar, contains('ok'));
+        expect(backend.lastGenerationParams?.grammarLazy, isFalse);
+        expect(backend.lastGenerationParams?.grammarTriggers, isEmpty);
+      },
+    );
+
+    test(
+      'create rejects strict response format when backend lacks grammar',
+      () async {
+        final noGrammarBackend = NoGrammarMockLlamaBackend();
+        final noGrammarEngine = LlamaEngine(noGrammarBackend);
+
+        await noGrammarEngine.loadModel('gemma4-test.litertlm');
+
+        await expectLater(
+          noGrammarEngine
+              .create(
+                const [
+                  LlamaChatMessage.fromText(
+                    role: LlamaChatRole.user,
+                    text: 'return status',
+                  ),
+                ],
+                jsonSchema: const {
+                  'type': 'object',
+                  'properties': {
+                    'ok': {'type': 'boolean'},
+                  },
+                  'required': ['ok'],
+                },
+              )
+              .drain(),
+          throwsA(
+            isA<LlamaUnsupportedException>()
+                .having(
+                  (error) => error.message,
+                  'message',
+                  contains('Strict responseFormat/jsonSchema output requires'),
+                )
+                .having(
+                  (error) => error.message,
+                  'message',
+                  contains('LiteRT-LM native and web currently do not expose'),
+                ),
+          ),
+        );
+
+        expect(noGrammarBackend.lastGenerationPrompt, isNull);
+      },
+    );
+
     test('create does not stream raw tool-call JSON as content', () async {
       backend.generationText =
           '{"tool_call":{"name":"get_weather","arguments":{"city":"Seoul"}}}';

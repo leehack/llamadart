@@ -49,6 +49,11 @@ print(result.format);
 - `sourceLangCode` / `targetLangCode`: TranslateGemma style metadata.
 - `responseFormat`: structured-output schema hints.
 
+`engine.create(...)` also accepts `responseFormat` and legacy `jsonSchema`.
+Grammar-capable backends use those hints for strict output. LiteRT-LM native
+and web fail early for strict response formats because the current public
+runtime APIs do not expose JSON-schema/Lark constraint wiring.
+
 ## When to inspect template output
 
 Inspect template output when debugging:

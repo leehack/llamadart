@@ -14,6 +14,11 @@
     default; iOS, macOS, Linux, and Windows now default to `llama_cpp` only.
   * Added native release pin automation so the maintainer sync workflow updates
     Apple SPM checksums from published native release asset digests.
+* **Structured output**:
+  * Added `responseFormat` and legacy `jsonSchema` routing to
+    `LlamaEngine.create(...)` for grammar-capable backends, and made strict
+    response-format requests fail early on LiteRT-LM instead of silently
+    degrading to unconstrained generation.
 * **CI reliability**:
   * Cached and retried tiny GGUF test-model downloads used by VM integration
     tests so main-branch CI is less exposed to Hugging Face 429 rate limits.

@@ -345,7 +345,9 @@ generation works through the same high-level `LlamaEngine` and `ChatSession`
 APIs, including native tokenization and detokenization for exact token counts.
 On native targets, thinking and tool-call parsing run through the same
 high-level template parser for compatible models, but llama.cpp-style GBNF
-grammar constraints are not applied to `.litertlm` generation. LiteRT-LM web is
+grammar constraints are not applied to `.litertlm` generation. Strict
+`responseFormat`/`jsonSchema` requests fail early on LiteRT-LM instead of
+silently degrading to unconstrained output. LiteRT-LM web is
 currently limited to single-turn text prompts through `@litert-lm/core`; it does
 not yet preserve structured chat history, system prompts, tool declarations, or
 thinking/tool-call parsing with the same semantics as native. The current
@@ -369,7 +371,9 @@ rejects speculative decoding until the browser runtime exposes an equivalent
 control. llama.cpp-only sampling and constrained-decoding controls
 such as Min-P, repeat penalty overrides, grammar/lazy grammar triggers,
 preserved tokens, custom grammar roots, and web stream batching thresholds are
-rejected until LiteRT-LM exposes equivalent runtime controls.
+rejected until LiteRT-LM exposes equivalent runtime controls. See
+[`doc/litert_lm_structured_output.md`](doc/litert_lm_structured_output.md) for
+the current strict structured-output boundary.
 
 <details>
 <summary>Full module matrix (available modules by target)</summary>
