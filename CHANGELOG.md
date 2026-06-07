@@ -1,3 +1,11 @@
+## 0.7.3
+
+* **LiteRT-LM chat parity**:
+  * Routed eligible native `.litertlm` text chat through LiteRT-LM Conversation
+    APIs so structured history, system messages, tool declarations, and
+    template extra context reach the runtime without a Dart-rendered prompt.
+    Unsupported cases still fall back to the existing Dart chat-template path.
+
 ## 0.7.2
 
 * Added explicit pub.dev platform metadata for Android, iOS, Linux, macOS, web,
@@ -21,11 +29,6 @@
     default; iOS, macOS, Linux, and Windows now default to `llama_cpp` only.
   * Added native release pin automation so the maintainer sync workflow updates
     Apple SPM checksums from published native release asset digests.
-* **LiteRT-LM chat parity**:
-  * Routed eligible native `.litertlm` text chat through LiteRT-LM Conversation
-    APIs so structured history, system messages, tool declarations, and
-    template extra context reach the runtime without a Dart-rendered prompt.
-    Unsupported cases still fall back to the existing Dart chat-template path.
 * **CI reliability**:
   * Cached and retried tiny GGUF test-model downloads used by VM integration
     tests so main-branch CI is less exposed to Hugging Face 429 rate limits.
