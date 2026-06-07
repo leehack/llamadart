@@ -1,4 +1,4 @@
-## 0.7.3
+## Unreleased
 
 * **Structured output**:
   * Added `responseFormat` and legacy `jsonSchema` routing to
