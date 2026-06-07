@@ -193,6 +193,15 @@ class ModelParams {
   /// Set to 1 to preserve single-sequence behavior.
   final int maxParallelSequences;
 
+  /// llama.cpp recurrent-state rollback snapshots per sequence (`n_rs_seq`).
+  ///
+  /// Set this to at least the MTP draft token max when using llama.cpp MTP
+  /// speculative decoding with architectures that need bounded rollback
+  /// snapshots, such as Qwen3.5 MTP. The default `0` preserves legacy context
+  /// memory use. llama.cpp may clamp this to zero for unsupported
+  /// architectures.
+  final int speculativeRollbackTokenMax;
+
   /// `llama_model_params.use_mmap`. Default `true`.
   final bool useMmap;
 
@@ -258,6 +267,7 @@ class ModelParams {
     this.batchSize = 0,
     this.microBatchSize = 0,
     this.maxParallelSequences = 1,
+    this.speculativeRollbackTokenMax = 0,
     this.useMmap = true,
     this.useMlock = false,
     this.flashAttention = FlashAttention.auto,
@@ -290,6 +300,13 @@ class ModelParams {
         liteRtLmDispatchLibDir,
         'liteRtLmDispatchLibDir',
         'must be non-empty when provided',
+      );
+    }
+    if (speculativeRollbackTokenMax < 0) {
+      throw ArgumentError.value(
+        speculativeRollbackTokenMax,
+        'speculativeRollbackTokenMax',
+        'must be non-negative',
       );
     }
     if ((cacheTypeK != KvCacheType.f16 || cacheTypeV != KvCacheType.f16) &&
@@ -332,6 +349,7 @@ class ModelParams {
     int? batchSize,
     int? microBatchSize,
     int? maxParallelSequences,
+    int? speculativeRollbackTokenMax,
     bool? useMmap,
     bool? useMlock,
     FlashAttention? flashAttention,
@@ -378,6 +396,8 @@ class ModelParams {
       batchSize: batchSize ?? this.batchSize,
       microBatchSize: microBatchSize ?? this.microBatchSize,
       maxParallelSequences: maxParallelSequences ?? this.maxParallelSequences,
+      speculativeRollbackTokenMax:
+          speculativeRollbackTokenMax ?? this.speculativeRollbackTokenMax,
       useMmap: useMmap ?? this.useMmap,
       useMlock: useMlock ?? this.useMlock,
       flashAttention: flashAttention ?? this.flashAttention,

@@ -32,6 +32,47 @@ void main() {
     });
   });
 
+  group('Android Vulkan MTP guard', () {
+    test('rejects Android Vulkan with GPU layers by default', () {
+      expect(
+        LlamaCppService.shouldRejectAndroidVulkanMtp(
+          'Vulkan',
+          resolvedGpuLayers: 999,
+          isAndroid: true,
+        ),
+        isTrue,
+      );
+    });
+
+    test('allows CPU and explicit debug override', () {
+      expect(
+        LlamaCppService.shouldRejectAndroidVulkanMtp(
+          'CPU',
+          resolvedGpuLayers: 0,
+          isAndroid: true,
+        ),
+        isFalse,
+      );
+      expect(
+        LlamaCppService.shouldRejectAndroidVulkanMtp(
+          'Vulkan',
+          resolvedGpuLayers: 999,
+          isAndroid: true,
+          allowMtp: true,
+        ),
+        isFalse,
+      );
+      expect(
+        LlamaCppService.shouldRejectAndroidVulkanMtp(
+          'Vulkan',
+          resolvedGpuLayers: 999,
+          isAndroid: false,
+        ),
+        isFalse,
+      );
+    });
+  });
+
   group('loadModel preflight validation', () {
     late Directory tempDir;
 
@@ -101,25 +142,41 @@ void main() {
       );
     });
 
-    test('generate rejects speculative decoding', () async {
-      expect(
-        service
-            .generate(
-              -1,
-              'hello',
-              const GenerationParams(speculativeDecoding: true),
-              0,
-            )
-            .drain<void>(),
-        throwsA(
-          isA<UnsupportedError>().having(
-            (error) => error.message.toString(),
-            'message',
-            contains('speculative decoding'),
-          ),
-        ),
-      );
-    });
+    test(
+      'generate reports unknown context before speculative decoding',
+      () async {
+        expect(
+          service
+              .generate(
+                -1,
+                'hello',
+                const GenerationParams(speculativeDecoding: true),
+                0,
+              )
+              .drain<void>(),
+          throwsA(isA<Exception>()),
+        );
+      },
+    );
+
+    test(
+      'generate reports unknown context before speculative config',
+      () async {
+        expect(
+          service
+              .generate(
+                -1,
+                'hello',
+                const GenerationParams(
+                  speculativeDecodingConfig: SpeculativeDecodingConfig.mtp(),
+                ),
+                0,
+              )
+              .drain<void>(),
+          throwsA(isA<Exception>()),
+        );
+      },
+    );
 
     test('embed and embedBatch throw for unknown context handle', () {
       expect(() => service.embed(-1, 'hello'), throwsA(isA<Exception>()));

@@ -4,7 +4,7 @@ import PackageDescription
 
 let packageRoot = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
 let artifactsRoot = packageRoot.appendingPathComponent("Artifacts")
-let llamaCppTag = "b9536"
+let llamaCppTag = "b9547"
 let liteRtLmTag = "v0.13.1"
 
 func localArtifactPath(_ name: String) -> String? {
@@ -54,7 +54,7 @@ let package = Package(
             repository: "leehack/llamadart-native",
             artifactName: "llamadart-native-apple-xcframework-\(llamaCppTag).zip",
             tag: llamaCppTag,
-            checksum: "e71058acca310999c1c5ee03e52e1992bd4c31b528d97ca019e2ea132fc79ae8"
+            checksum: "df326c10018c0ac739560d0744db52598b7ea8158fd935b02f769d3ac2905237"
         ),
         nativeRepoBinaryTarget(
             name: "LiteRtLm",

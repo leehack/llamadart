@@ -114,7 +114,7 @@ hooks:
     llamadart:
       # Optional. Defaults to llamadart's tested native runtime pin.
       # Use a leehack/llamadart-native release tag when testing another build.
-      llamadart_native_tag: b9536
+      llamadart_native_tag: b9547
 
       # Optional. GitHub repository slug or github.com URL.
       llamadart_native_repository: leehack/llamadart-native
@@ -142,7 +142,7 @@ the native-assets hook fails while downloading that asset.
 
 Native source overrides are for compatibility testing. They do not regenerate
 Dart FFI bindings or symbol lookups, so the selected binary still must be ABI-
-and symbol-compatible with the default `leehack/llamadart-native@b9536` runtime.
+and symbol-compatible with the default `leehack/llamadart-native@b9547` runtime.
 
 Available native tags are published on the
 [`leehack/llamadart-native` releases page](https://github.com/leehack/llamadart-native/releases).
@@ -154,7 +154,7 @@ gh release list --repo leehack/llamadart-native --limit 20
 
 Before overriding, confirm the release includes the asset for your target. The
 hook downloads files named `llamadart-native-<bundle>-<tag>.tar.gz`, for example
-`llamadart-native-windows-x64-b9536.tar.gz`.
+`llamadart-native-windows-x64-b9547.tar.gz`.
 For local testing, `llamadart_native_path` may point directly at a bundle
 archive, at an extracted bundle directory, or at a directory containing
 `<tag>/<bundle>/`, `<bundle>/`, or the expected archive file.
@@ -203,6 +203,44 @@ other models, or to override detection, pass `ModelParams.chatTemplate`. See
 [LiteRT-LM chat templates](https://github.com/leehack/llamadart/blob/main/doc/litert_lm_templates.md)
 for the template support matrix, real-model smoke commands, and how to add a
 family.
+
+llama.cpp MTP speculative decoding is available for compatible GGUF models. For
+Qwen3.5 MTP-style models, reserve rollback snapshots on the context and enable
+MTP on the generation request:
+
+```dart
+await engine.loadModel(
+  'path/to/Qwen3.5-0.8B-MTP-Q4_K_M.gguf',
+  modelParams: const ModelParams(
+    contextSize: 2048,
+    batchSize: 512,
+    microBatchSize: 512,
+    speculativeRollbackTokenMax: 1,
+  ),
+);
+
+await for (final token in engine.generate(
+  'Explain local inference in one paragraph.',
+  params: const GenerationParams(
+    maxTokens: 128,
+    speculativeDecodingConfig: SpeculativeDecodingConfig.mtp(
+      draftTokenMax: 1,
+    ),
+  ),
+)) {
+  stdout.write(token);
+}
+```
+
+Higher `draftTokenMax` values can be faster on some models/devices, but they
+should be benchmarked with the target model because excess draft depth can add
+verification overhead.
+
+Android Vulkan MTP is currently disabled by default. The upstream llama.cpp
+`draft-mtp` backend-sampling path can abort Android Vulkan processes with
+`vk::DeviceLostError`; use CPU for Android MTP validation, or rebuild with
+`--dart-define=LLAMADART_ANDROID_VULKAN_ALLOW_MTP=true` only when reproducing
+or benchmarking that upstream path.
 
 ### 6. Download and cache a remote model file
 
@@ -372,7 +410,7 @@ overrides are rejected instead of being silently ignored. `.litertlm`
 generation honors `GenerationParams`
 `maxTokens`, `temp`, `topK`, `topP`, and `seed` on native and web, with
 `stopSequences` enforced by llamadart. Native LiteRT-LM also honors stream
-batching thresholds and the opt-in `speculativeDecoding` flag; Web LiteRT-LM
+batching thresholds and the opt-in speculative decoding APIs; Web LiteRT-LM
 rejects speculative decoding until the browser runtime exposes an equivalent
 control. llama.cpp-only sampling and constrained-decoding controls
 such as Min-P, repeat penalty overrides, grammar/lazy grammar triggers,
@@ -384,7 +422,7 @@ the current strict structured-output boundary.
 <details>
 <summary>Full module matrix (available modules by target)</summary>
 
-Available llama.cpp module matrix from the default native tag `b9536`:
+Available llama.cpp module matrix from the default native tag `b9547`:
 
 | Target | Available backend modules in bundle |
 |--------|-------------------------------------|
@@ -504,6 +542,8 @@ Notes:
 - `ModelParams.splitMode` passes through to llama.cpp `split_mode`; it defaults to upstream `layer` behavior.
 - `ModelParams.mainGpu` passes through to llama.cpp `main_gpu`. To select one GPU for the full model, use `splitMode: ModelSplitMode.none` with the desired `mainGpu` index.
 - `ModelParams.batchSize` (`n_batch`) and `ModelParams.microBatchSize` (`n_ubatch`) can be set independently for memory/performance tuning; defaults keep legacy behavior (`n_batch = n_ctx`, `n_ubatch = n_batch`).
+- `ModelParams.speculativeRollbackTokenMax` passes through to llama.cpp `n_rs_seq`. Keep the default `0` for normal generation; set it to at least the MTP draft token max when a llama.cpp MTP model needs bounded rollback snapshots, such as Qwen3.5 MTP.
+- Android Vulkan MTP is guarded by default because the upstream llama.cpp MTP backend-sampling path can crash the process. The debug-only escape hatch is `--dart-define=LLAMADART_ANDROID_VULKAN_ALLOW_MTP=true`.
 - `ModelParams.preferMemory64` and `ModelParams.modelBytesHint` are web/WebGPU only (ignored on native). They select the 64-bit (wasm64/mem64) bridge core so models larger than the ~4 GiB wasm32 address space (for example Gemma 4 E2B) can load; `null` auto-decides from the size hint (size-driven, no hardcoded model names). See the [WebGPU bridge docs](https://leehack.github.io/llamadart/docs/platforms/webgpu-bridge).
 - Apple targets use consolidated llama.cpp native libraries, so
   `llamadart_native_backends` does not split Apple backend modules. Use
@@ -700,9 +740,9 @@ Current pinned runtime artifacts:
 
 | Runtime path | Published artifact |
 |--------------|--------------------|
-| Native llama.cpp / GGUF | `leehack/llamadart-native@b9536` |
+| Native llama.cpp / GGUF | `leehack/llamadart-native@b9547` |
 | Native LiteRT-LM / `.litertlm` | `leehack/litert-lm-native@v0.13.1` |
-| Apple SPM llama.cpp / GGUF | `leehack/llamadart-native@b9536` Apple XCFramework |
+| Apple SPM llama.cpp / GGUF | `leehack/llamadart-native@b9547` Apple XCFramework |
 | Apple SPM LiteRT-LM / `.litertlm` | `leehack/litert-lm-native@v0.13.1` Apple XCFrameworks |
 | Web llama.cpp / GGUF | `leehack/llama-web-bridge-assets@v0.1.16` |
 | Web LiteRT-LM / `.litertlm` | App-provided `@litert-lm/core` module URL; the chat app defaults to jsDelivr `@litert-lm/core/+esm` |

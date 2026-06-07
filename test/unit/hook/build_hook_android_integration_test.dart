@@ -98,6 +98,7 @@ void main() {
 
         expect(emittedNames, contains('libllamadart.so'));
         expect(emittedNames, contains('libllama.so'));
+        expect(emittedNames, contains('libllama-common.so'));
         expect(emittedNames, contains('libggml.so'));
         expect(emittedNames, contains('libggml-base.so'));
         expect(emittedNames, contains('libggml-vulkan.so'));
@@ -219,6 +220,7 @@ const List<String> _androidCpuVariantLibraries = [
 const List<String> _androidArm64Libraries = [
   'libllamadart.so',
   'libllama.so',
+  'libllama-common.so',
   'libggml.so',
   'libggml-base.so',
   'libggml-vulkan.so',

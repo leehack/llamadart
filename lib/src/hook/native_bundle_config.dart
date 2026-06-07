@@ -21,6 +21,7 @@ const List<String> defaultNativeRuntimes = [nativeRuntimeLlamaCpp];
 const Set<String> _coreLibraries = {
   'llamadart',
   'llama',
+  'llama-common',
   'ggml',
   'ggml-base',
   'mtmd',

@@ -45,6 +45,23 @@
     default; iOS, macOS, Linux, and Windows now default to `llama_cpp` only.
   * Added native release pin automation so the maintainer sync workflow updates
     Apple SPM checksums from published native release asset digests.
+  * Added `SpeculativeDecodingConfig` as a backend-neutral generation option for
+    selecting speculative decoding strategies such as MTP while keeping the
+    existing `GenerationParams.speculativeDecoding` flag as a compatibility
+    switch.
+  * Added llama.cpp native MTP speculative decoding for compatible GGUF models
+    through `SpeculativeDecodingConfig.mtp(...)`, defaulting to a conservative
+    one-token draft depth unless callers tune `draftTokenMax`.
+  * Updated the default llama.cpp native runtime pin to
+    `leehack/llamadart-native@b9547`, including the MTP wrapper exports and
+    `llama-common` runtime packaging.
+  * Added `ModelParams.speculativeRollbackTokenMax` so llama.cpp contexts can
+    reserve recurrent-state rollback snapshots required by Qwen3.5 MTP-style
+    models.
+  * Guarded llama.cpp MTP on Android Vulkan by default because the upstream
+    `draft-mtp` backend-sampling path can abort with `vk::DeviceLostError`;
+    CPU and other supported backends remain available, and a dart-define debug
+    override is available for reproductions.
 * **CI reliability**:
   * Cached and retried tiny GGUF test-model downloads used by VM integration
     tests so main-branch CI is less exposed to Hugging Face 429 rate limits.

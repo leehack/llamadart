@@ -95,6 +95,14 @@ void main() {
       expect(descriptor.backend, isNull);
     });
 
+    test('classifies llama common as a core runtime library', () {
+      final descriptor = describeNativeLibrary('/tmp/libllama-common.so');
+
+      expect(descriptor.canonicalName, 'llama-common');
+      expect(descriptor.isCore, isTrue);
+      expect(descriptor.backend, isNull);
+    });
+
     test('normalizes Linux SONAME suffix for ggml base library', () {
       final descriptor = describeNativeLibrary('/tmp/libggml-base.so.1');
 
@@ -340,6 +348,7 @@ void main() {
     final libraries = [
       describeNativeLibrary('/tmp/libllamadart.so'),
       describeNativeLibrary('/tmp/libllama.so'),
+      describeNativeLibrary('/tmp/libllama-common.so'),
       describeNativeLibrary('/tmp/libggml.so'),
       describeNativeLibrary('/tmp/libggml-base.so'),
       describeNativeLibrary('/tmp/libggml-cpu.so'),
@@ -359,6 +368,7 @@ void main() {
       expect(selectedNames, contains('ggml-cpu'));
       expect(selectedNames, contains('ggml-vulkan'));
       expect(selectedNames, isNot(contains('ggml-opencl')));
+      expect(selectedNames, contains('llama-common'));
     });
 
     test('uses requested backend when available', () {
@@ -556,6 +566,7 @@ void main() {
     final libraries = [
       describeNativeLibrary('/tmp/libllamadart.so'),
       describeNativeLibrary('/tmp/libllama.so'),
+      describeNativeLibrary('/tmp/libllama-common.so'),
       describeNativeLibrary('/tmp/libggml.so'),
       describeNativeLibrary('/tmp/libggml-base.so'),
       describeNativeLibrary('/tmp/libggml-vulkan.so'),

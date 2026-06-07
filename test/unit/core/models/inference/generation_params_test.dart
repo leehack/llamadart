@@ -10,6 +10,9 @@ void main() {
       grammarRoot: 'main',
       grammarLazy: true,
       speculativeDecoding: true,
+      speculativeDecodingConfig: const SpeculativeDecodingConfig.mtp(
+        draftTokenMax: 3,
+      ),
       reusePromptPrefix: false,
       streamBatchTokenThreshold: 4,
       streamBatchByteThreshold: 256,
@@ -26,6 +29,12 @@ void main() {
     expect(updated.grammarRoot, 'main');
     expect(updated.grammarLazy, isTrue);
     expect(updated.speculativeDecoding, isTrue);
+    expect(updated.isSpeculativeDecodingEnabled, isTrue);
+    expect(
+      updated.resolvedSpeculativeDecodingConfig?.strategy,
+      SpeculativeDecodingStrategy.mtp,
+    );
+    expect(updated.resolvedSpeculativeDecodingConfig?.draftTokenMax, 3);
     expect(updated.reusePromptPrefix, isFalse);
     expect(updated.streamBatchTokenThreshold, 4);
     expect(updated.streamBatchByteThreshold, 256);
@@ -38,6 +47,9 @@ void main() {
 
     expect(params.minP, 0.0);
     expect(params.speculativeDecoding, isFalse);
+    expect(params.speculativeDecodingConfig, isNull);
+    expect(params.isSpeculativeDecodingEnabled, isFalse);
+    expect(params.resolvedSpeculativeDecodingConfig, isNull);
   });
 
   test('GenerationParams defaults stream batching thresholds', () {
@@ -46,5 +58,27 @@ void main() {
     expect(params.reusePromptPrefix, isTrue);
     expect(params.streamBatchTokenThreshold, 8);
     expect(params.streamBatchByteThreshold, 512);
+  });
+
+  test('GenerationParams resolves legacy speculative decoding as default', () {
+    const params = GenerationParams(speculativeDecoding: true);
+
+    expect(params.isSpeculativeDecodingEnabled, isTrue);
+    expect(
+      params.resolvedSpeculativeDecodingConfig?.strategy,
+      SpeculativeDecodingStrategy.backendDefault,
+    );
+  });
+
+  test('GenerationParams copyWith can clear speculative decoding config', () {
+    const params = GenerationParams(
+      speculativeDecodingConfig: SpeculativeDecodingConfig.mtp(
+        draftTokenMax: 3,
+      ),
+    );
+    final updated = params.copyWith(clearSpeculativeDecodingConfig: true);
+
+    expect(updated.speculativeDecodingConfig, isNull);
+    expect(updated.isSpeculativeDecodingEnabled, isFalse);
   });
 }

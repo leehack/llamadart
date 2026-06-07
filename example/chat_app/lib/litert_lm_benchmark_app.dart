@@ -183,7 +183,12 @@ Map<String, Object?> _summarizeRuns(List<Map<String, Object?>> runs) {
       'decodeWithSamplingTokensPerSecond',
     ),
     'wallMilliseconds': _numericSummary(runs, 'wallMilliseconds'),
+    'outputTokens': _numericSummary(runs, 'outputTokens'),
     'evalTokens': _numericSummary(runs, 'evalTokens'),
+    'targetWallTokensPerSecond': _numericSummary(
+      runs,
+      'targetWallTokensPerSecond',
+    ),
   };
 }
 
@@ -479,6 +484,7 @@ class _LiteRtLmBenchmarkAppState extends State<LiteRtLmBenchmarkApp> {
           contextSize: _maxTokens,
           gpuLayers: ModelParams.maxGpuLayers,
           preferredBackend: backendPreference,
+          speculativeRollbackTokenMax: _speculative ? 1 : 0,
         ),
       );
       loadSw.stop();
@@ -492,7 +498,13 @@ class _LiteRtLmBenchmarkAppState extends State<LiteRtLmBenchmarkApp> {
         await engine
             .generate(
               _promptController.text,
-              params: GenerationParams(maxTokens: _outputTokens, seed: 1),
+              params: GenerationParams(
+                maxTokens: _outputTokens,
+                seed: 1,
+                speculativeDecodingConfig: _speculative
+                    ? const SpeculativeDecodingConfig.mtp()
+                    : null,
+              ),
             )
             .drain<void>();
       }
@@ -506,22 +518,31 @@ class _LiteRtLmBenchmarkAppState extends State<LiteRtLmBenchmarkApp> {
         final sw = Stopwatch()..start();
         await for (final chunk in engine.generate(
           _promptController.text,
-          params: GenerationParams(maxTokens: _outputTokens, seed: 1),
+          params: GenerationParams(
+            maxTokens: _outputTokens,
+            seed: 1,
+            speculativeDecodingConfig: _speculative
+                ? const SpeculativeDecodingConfig.mtp()
+                : null,
+          ),
         )) {
           buffer.write(chunk);
         }
         sw.stop();
         wallMs = sw.elapsedMilliseconds;
         lastText = buffer.toString();
+        final outputTokenCount = lastText.isEmpty
+            ? 0
+            : await engine.getTokenCount(lastText);
         perf = await engine.getPerformanceContext();
         final runMetrics = {
           'index': i,
           'wallMilliseconds': wallMs,
+          'speculativeDecoding': _speculative,
+          'outputTokens': outputTokenCount,
           'promptEvalTokens': perf?.promptEvalTokens,
           'evalTokens': perf?.evalTokens,
-          'hitEosBeforeTarget': perf == null
-              ? null
-              : perf.evalTokens < _outputTokens,
+          'hitEosBeforeTarget': outputTokenCount < _outputTokens,
           'promptEvalMs': perf?.promptEvalMs,
           'evalMs': perf?.evalMs,
           'sampleMs': perf?.sampleMs,
@@ -535,9 +556,12 @@ class _LiteRtLmBenchmarkAppState extends State<LiteRtLmBenchmarkApp> {
               perf == null || perf.evalMs + perf.sampleMs <= 0
               ? null
               : perf.evalTokens / ((perf.evalMs + perf.sampleMs) / 1000.0),
-          'wallTokensPerSecond': wallMs <= 0 || perf == null
+          'wallTokensPerSecond': wallMs <= 0 || outputTokenCount <= 0
               ? null
-              : perf.evalTokens / (wallMs / 1000.0),
+              : outputTokenCount / (wallMs / 1000.0),
+          'targetWallTokensPerSecond': wallMs <= 0
+              ? null
+              : _outputTokens / (wallMs / 1000.0),
         };
         runsDetail.add(runMetrics);
         _append('RUN llamadart ${jsonEncode(runMetrics)}');
@@ -550,11 +574,15 @@ class _LiteRtLmBenchmarkAppState extends State<LiteRtLmBenchmarkApp> {
         'backendName': backendName,
         'resolvedGpuLayers': resolvedGpuLayers,
         'targetDecodeTokens': _outputTokens,
+        'speculativeDecoding': _speculative,
+        'outputTokens': runsDetail.isEmpty
+            ? null
+            : runsDetail.last['outputTokens'],
         'promptEvalTokens': perf?.promptEvalTokens,
         'evalTokens': perf?.evalTokens,
-        'hitEosBeforeTarget': perf == null
+        'hitEosBeforeTarget': runsDetail.isEmpty
             ? null
-            : perf.evalTokens < _outputTokens,
+            : runsDetail.last['hitEosBeforeTarget'],
         'promptEvalMs': perf?.promptEvalMs,
         'evalMs': perf?.evalMs,
         'sampleMs': perf?.sampleMs,
@@ -568,9 +596,12 @@ class _LiteRtLmBenchmarkAppState extends State<LiteRtLmBenchmarkApp> {
             perf == null || perf.evalMs + perf.sampleMs <= 0
             ? null
             : perf.evalTokens / ((perf.evalMs + perf.sampleMs) / 1000.0),
-        'wallTokensPerSecond': wallMs <= 0 || perf == null
+        'wallTokensPerSecond': runsDetail.isEmpty
             ? null
-            : perf.evalTokens / (wallMs / 1000.0),
+            : runsDetail.last['wallTokensPerSecond'],
+        'targetWallTokensPerSecond': runsDetail.isEmpty
+            ? null
+            : runsDetail.last['targetWallTokensPerSecond'],
         'runs': _runs,
         'warmups': _warmups,
         'measured': _summarizeRuns(runsDetail),

@@ -522,7 +522,7 @@ class LiteRtLmService {
   ) {
     return _ensureClientForRuntime(
       outputTokens: params.maxTokens,
-      speculativeDecoding: params.speculativeDecoding,
+      speculativeDecoding: params.isSpeculativeDecodingEnabled,
     );
   }
 
@@ -843,6 +843,7 @@ class LiteRtLmService {
     if (params.grammarRoot != defaults.grammarRoot) {
       unsupported.add('grammarRoot');
     }
+    _addUnsupportedSpeculativeDecodingOptions(params, unsupported);
 
     if (unsupported.isEmpty) {
       return;
@@ -851,8 +852,28 @@ class LiteRtLmService {
       'LiteRtLmBackend does not support llama.cpp-specific GenerationParams: '
       '${unsupported.join(', ')}. Supported LiteRT-LM generation options are '
       'maxTokens, temp, topK, topP, seed, stopSequences, '
-      'speculativeDecoding, and native stream batching thresholds.',
+      'speculativeDecoding, speculativeDecodingConfig, and native stream '
+      'batching thresholds.',
     );
+  }
+
+  void _addUnsupportedSpeculativeDecodingOptions(
+    GenerationParams params,
+    List<String> unsupported,
+  ) {
+    final config = params.resolvedSpeculativeDecodingConfig;
+    if (config == null) {
+      return;
+    }
+    if (config.draftTokenMax != null) {
+      unsupported.add('speculativeDecodingConfig.draftTokenMax');
+    }
+    if (config.draftTokenMin != null) {
+      unsupported.add('speculativeDecodingConfig.draftTokenMin');
+    }
+    if (config.minProbability != null) {
+      unsupported.add('speculativeDecodingConfig.minProbability');
+    }
   }
 
   int _defaultSamplerSeed() {

@@ -7589,11 +7589,120 @@ external int mtmd_helper_decode_image_chunk(
 @ffi.Native<ffi.Void Function(ffi.Int)>()
 external void llama_dart_set_log_level(int level);
 
+@ffi.Native<
+  ffi.Pointer<llama_dart_mtp> Function(
+    ffi.Pointer<llama_model>,
+    ffi.Pointer<llama_context>,
+    llama_context_params,
+    ffi.Int32,
+    ffi.Int32,
+    ffi.Float,
+    ffi.Bool,
+  )
+>()
+external ffi.Pointer<llama_dart_mtp> llama_dart_mtp_init(
+  ffi.Pointer<llama_model> model,
+  ffi.Pointer<llama_context> ctx_tgt,
+  llama_context_params ctx_params,
+  int draft_token_max,
+  int draft_token_min,
+  double min_probability,
+  bool backend_sampling,
+);
+
+@ffi.Native<ffi.Void Function(ffi.Pointer<llama_dart_mtp>)>()
+external void llama_dart_mtp_free(ffi.Pointer<llama_dart_mtp> mtp);
+
+@ffi.Native<ffi.Pointer<llama_context> Function(ffi.Pointer<llama_dart_mtp>)>()
+external ffi.Pointer<llama_context> llama_dart_mtp_get_draft_context(
+  ffi.Pointer<llama_dart_mtp> mtp,
+);
+
+@ffi.Native<
+  ffi.Bool Function(
+    ffi.Pointer<llama_dart_mtp>,
+    llama_seq_id,
+    ffi.Pointer<ffi.Int32>,
+    ffi.Int32,
+  )
+>()
+external bool llama_dart_mtp_begin(
+  ffi.Pointer<llama_dart_mtp> mtp,
+  int seq_id,
+  ffi.Pointer<ffi.Int32> prompt,
+  int prompt_count,
+);
+
+@ffi.Native<ffi.Bool Function(ffi.Pointer<llama_dart_mtp>, llama_batch)>()
+external bool llama_dart_mtp_process_batch(
+  ffi.Pointer<llama_dart_mtp> mtp,
+  llama_batch batch,
+);
+
+@ffi.Native<
+  ffi.Int32 Function(
+    ffi.Pointer<llama_dart_mtp>,
+    llama_seq_id,
+    llama_pos,
+    llama_token,
+    ffi.Pointer<ffi.Int32>,
+    ffi.Int32,
+    ffi.Int32,
+    ffi.Pointer<ffi.Int32>,
+    ffi.Int32,
+  )
+>()
+external int llama_dart_mtp_draft(
+  ffi.Pointer<llama_dart_mtp> mtp,
+  int seq_id,
+  int n_past,
+  int id_last,
+  ffi.Pointer<ffi.Int32> prompt,
+  int prompt_count,
+  int draft_token_max,
+  ffi.Pointer<ffi.Int32> out_tokens,
+  int out_capacity,
+);
+
+@ffi.Native<
+  ffi.Void Function(ffi.Pointer<llama_dart_mtp>, llama_seq_id, ffi.Uint16)
+>()
+external void llama_dart_mtp_accept(
+  ffi.Pointer<llama_dart_mtp> mtp,
+  int seq_id,
+  int accepted_count,
+);
+
+@ffi.Native<
+  ffi.Int32 Function(
+    ffi.Pointer<llama_sampler>,
+    ffi.Pointer<llama_context>,
+    ffi.Pointer<ffi.Int32>,
+    ffi.Int32,
+    ffi.Pointer<ffi.Int32>,
+    ffi.Int32,
+    ffi.Pointer<ffi.Int32>,
+    ffi.Int32,
+  )
+>()
+external int llama_dart_sampler_sample_and_accept_n(
+  ffi.Pointer<llama_sampler> sampler,
+  ffi.Pointer<llama_context> ctx,
+  ffi.Pointer<ffi.Int32> idxs,
+  int idx_count,
+  ffi.Pointer<ffi.Int32> draft_tokens,
+  int draft_count,
+  ffi.Pointer<ffi.Int32> out_tokens,
+  int out_capacity,
+);
+
 final class llama_vocab extends ffi.Opaque {}
 
 final class llama_model extends ffi.Opaque {}
 
 final class llama_context extends ffi.Opaque {}
+
+final class llama_dart_mtp extends ffi.Opaque {}
 
 typedef llama_token = ffi.Int32;
 typedef Dartllama_token = int;

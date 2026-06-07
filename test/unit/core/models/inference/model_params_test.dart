@@ -24,6 +24,7 @@ void main() {
     expect(params.batchSize, 0);
     expect(params.microBatchSize, 0);
     expect(params.maxParallelSequences, 1);
+    expect(params.speculativeRollbackTokenMax, 0);
     expect(params.useMmap, isTrue);
     expect(params.useMlock, isFalse);
     expect(params.flashAttention, FlashAttention.auto);
@@ -50,6 +51,7 @@ void main() {
       batchSize: 256,
       microBatchSize: 64,
       maxParallelSequences: 8,
+      speculativeRollbackTokenMax: 3,
     );
 
     expect(updated.contextSize, 1024);
@@ -65,6 +67,7 @@ void main() {
     expect(updated.batchSize, 256);
     expect(updated.microBatchSize, 64);
     expect(updated.maxParallelSequences, 8);
+    expect(updated.speculativeRollbackTokenMax, 3);
   });
 
   test('ModelParams exposes load-time tuning knobs', () {
@@ -130,6 +133,7 @@ void main() {
       batchSize: 512,
       microBatchSize: 128,
       maxParallelSequences: 4,
+      speculativeRollbackTokenMax: 3,
       useMmap: false,
       useMlock: true,
       flashAttention: FlashAttention.enabled,
@@ -161,6 +165,7 @@ void main() {
     expect(updated.batchSize, 512);
     expect(updated.microBatchSize, 128);
     expect(updated.maxParallelSequences, 4);
+    expect(updated.speculativeRollbackTokenMax, 3);
     expect(updated.useMmap, isFalse);
     expect(updated.useMlock, isTrue);
     expect(updated.flashAttention, FlashAttention.enabled);
@@ -169,6 +174,13 @@ void main() {
     expect(updated.kvUnified, isTrue);
     expect(updated.ropeFrequencyBase, 1000000.0);
     expect(updated.ropeFrequencyScale, 0.5);
+  });
+
+  group('validate(): speculative rollback settings', () {
+    test('negative speculativeRollbackTokenMax throws ArgumentError', () {
+      const p = ModelParams(speculativeRollbackTokenMax: -1);
+      expect(p.validate, throwsArgumentError);
+    });
   });
 
   group('validate(): non-F16 KV requires flash attention', () {

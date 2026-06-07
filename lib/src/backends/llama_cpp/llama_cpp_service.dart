@@ -16,6 +16,8 @@ import '../../core/models/inference/model_params.dart';
 import 'load_param_helpers.dart';
 import 'bindings.dart';
 
+const _llamadartWrapperAssetId = 'package:llamadart/llamadart_wrapper';
+
 typedef _GgmlBackendLoadNative = ggml_backend_reg_t Function(Pointer<Char>);
 typedef _GgmlBackendLoadDart = ggml_backend_reg_t Function(Pointer<Char>);
 typedef _GgmlBackendInitNative = ggml_backend_reg_t Function();
@@ -155,10 +157,195 @@ typedef _MtmdHelperEvalChunksDart =
     );
 typedef _MtmdLogSetNative = Void Function(ggml_log_callback, Pointer<Void>);
 typedef _MtmdLogSetDart = void Function(ggml_log_callback, Pointer<Void>);
+typedef _LlamaDartMtpInitNative =
+    Pointer<llama_dart_mtp> Function(
+      Pointer<llama_model>,
+      Pointer<llama_context>,
+      llama_context_params,
+      Int32,
+      Int32,
+      Float,
+      Bool,
+    );
+typedef _LlamaDartMtpInitDart =
+    Pointer<llama_dart_mtp> Function(
+      Pointer<llama_model>,
+      Pointer<llama_context>,
+      llama_context_params,
+      int,
+      int,
+      double,
+      bool,
+    );
+typedef _LlamaDartMtpFreeNative = Void Function(Pointer<llama_dart_mtp>);
+typedef _LlamaDartMtpFreeDart = void Function(Pointer<llama_dart_mtp>);
+typedef _LlamaDartMtpGetDraftContextNative =
+    Pointer<llama_context> Function(Pointer<llama_dart_mtp>);
+typedef _LlamaDartMtpGetDraftContextDart =
+    Pointer<llama_context> Function(Pointer<llama_dart_mtp>);
+typedef _LlamaDartMtpBeginNative =
+    Bool Function(Pointer<llama_dart_mtp>, llama_seq_id, Pointer<Int32>, Int32);
+typedef _LlamaDartMtpBeginDart =
+    bool Function(Pointer<llama_dart_mtp>, int, Pointer<Int32>, int);
+typedef _LlamaDartMtpProcessBatchNative =
+    Bool Function(Pointer<llama_dart_mtp>, llama_batch);
+typedef _LlamaDartMtpProcessBatchDart =
+    bool Function(Pointer<llama_dart_mtp>, llama_batch);
+typedef _LlamaDartMtpDraftNative =
+    Int32 Function(
+      Pointer<llama_dart_mtp>,
+      llama_seq_id,
+      llama_pos,
+      llama_token,
+      Pointer<Int32>,
+      Int32,
+      Int32,
+      Pointer<Int32>,
+      Int32,
+    );
+typedef _LlamaDartMtpDraftDart =
+    int Function(
+      Pointer<llama_dart_mtp>,
+      int,
+      int,
+      int,
+      Pointer<Int32>,
+      int,
+      int,
+      Pointer<Int32>,
+      int,
+    );
+typedef _LlamaDartMtpAcceptNative =
+    Void Function(Pointer<llama_dart_mtp>, llama_seq_id, Uint16);
+typedef _LlamaDartMtpAcceptDart =
+    void Function(Pointer<llama_dart_mtp>, int, int);
+typedef _LlamaDartSamplerSampleAndAcceptNNative =
+    Int32 Function(
+      Pointer<llama_sampler>,
+      Pointer<llama_context>,
+      Pointer<Int32>,
+      Int32,
+      Pointer<Int32>,
+      Int32,
+      Pointer<Int32>,
+      Int32,
+    );
+typedef _LlamaDartSamplerSampleAndAcceptNDart =
+    int Function(
+      Pointer<llama_sampler>,
+      Pointer<llama_context>,
+      Pointer<Int32>,
+      int,
+      Pointer<Int32>,
+      int,
+      Pointer<Int32>,
+      int,
+    );
+
+@Native<_LlamaDartMtpInitNative>(
+  assetId: _llamadartWrapperAssetId,
+  symbol: 'llama_dart_mtp_init',
+)
+external Pointer<llama_dart_mtp> _llamadartWrapperMtpInit(
+  Pointer<llama_model> model,
+  Pointer<llama_context> context,
+  llama_context_params contextParams,
+  int draftTokenMax,
+  int draftTokenMin,
+  double minProbability,
+  bool backendSampling,
+);
+
+@Native<_LlamaDartMtpFreeNative>(
+  assetId: _llamadartWrapperAssetId,
+  symbol: 'llama_dart_mtp_free',
+)
+external void _llamadartWrapperMtpFree(Pointer<llama_dart_mtp> mtp);
+
+@Native<_LlamaDartMtpGetDraftContextNative>(
+  assetId: _llamadartWrapperAssetId,
+  symbol: 'llama_dart_mtp_get_draft_context',
+)
+external Pointer<llama_context> _llamadartWrapperMtpGetDraftContext(
+  Pointer<llama_dart_mtp> mtp,
+);
+
+@Native<_LlamaDartMtpBeginNative>(
+  assetId: _llamadartWrapperAssetId,
+  symbol: 'llama_dart_mtp_begin',
+)
+external bool _llamadartWrapperMtpBegin(
+  Pointer<llama_dart_mtp> mtp,
+  int seqId,
+  Pointer<Int32> prompt,
+  int promptCount,
+);
+
+@Native<_LlamaDartMtpProcessBatchNative>(
+  assetId: _llamadartWrapperAssetId,
+  symbol: 'llama_dart_mtp_process_batch',
+)
+external bool _llamadartWrapperMtpProcessBatch(
+  Pointer<llama_dart_mtp> mtp,
+  llama_batch batch,
+);
+
+@Native<_LlamaDartMtpDraftNative>(
+  assetId: _llamadartWrapperAssetId,
+  symbol: 'llama_dart_mtp_draft',
+)
+external int _llamadartWrapperMtpDraft(
+  Pointer<llama_dart_mtp> mtp,
+  int seqId,
+  int nPast,
+  int idLast,
+  Pointer<Int32> prompt,
+  int promptCount,
+  int draftTokenMax,
+  Pointer<Int32> outTokens,
+  int outCapacity,
+);
+
+@Native<_LlamaDartMtpAcceptNative>(
+  assetId: _llamadartWrapperAssetId,
+  symbol: 'llama_dart_mtp_accept',
+)
+external void _llamadartWrapperMtpAccept(
+  Pointer<llama_dart_mtp> mtp,
+  int seqId,
+  int acceptedCount,
+);
+
+@Native<_LlamaDartSamplerSampleAndAcceptNNative>(
+  assetId: _llamadartWrapperAssetId,
+  symbol: 'llama_dart_sampler_sample_and_accept_n',
+)
+external int _llamadartWrapperSamplerSampleAndAcceptN(
+  Pointer<llama_sampler> sampler,
+  Pointer<llama_context> context,
+  Pointer<Int32> indexes,
+  int indexCount,
+  Pointer<Int32> draftTokens,
+  int draftCount,
+  Pointer<Int32> outTokens,
+  int outCapacity,
+);
 
 final RegExp _linuxLlamadartProcMapsPattern = RegExp(
   r'/libllamadart\.so(?:\.\d+)?$',
 );
+
+class _LlamaCppMtpConfig {
+  const _LlamaCppMtpConfig({
+    required this.draftTokenMax,
+    required this.draftTokenMin,
+    required this.minProbability,
+  });
+
+  final int draftTokenMax;
+  final int draftTokenMin;
+  final double minProbability;
+}
 
 /// Service responsible for managing Llama.cpp models and contexts.
 ///
@@ -175,6 +362,10 @@ class LlamaCppService {
   );
   static const bool _androidVulkanAllowFlashAttn = bool.fromEnvironment(
     'LLAMADART_ANDROID_VULKAN_ALLOW_FLASH_ATTN',
+    defaultValue: false,
+  );
+  static const bool _androidVulkanAllowMtp = bool.fromEnvironment(
+    'LLAMADART_ANDROID_VULKAN_ALLOW_MTP',
     defaultValue: false,
   );
 
@@ -232,6 +423,8 @@ class LlamaCppService {
   bool _mtmdFallbackLookupAttempted = false;
   bool _mtmdPrimarySymbolsUnavailable = false;
   _MtmdApi? _mtmdFallbackApi;
+  bool _mtpApiLookupAttempted = false;
+  _MtpApi? _mtpApi;
   final List<String> _startupDiagnostics = <String>[];
 
   // --- Internal State ---
@@ -338,6 +531,24 @@ class LlamaCppService {
         normalized.contains('qwen_qwen3.5-0.8b') ||
         normalized.contains('qwen_qwen3.5-2b') ||
         normalized.contains('qwen_qwen3.5-4b');
+  }
+
+  /// Returns whether Android Vulkan MTP should be rejected before generation.
+  ///
+  /// Upstream llama.cpp `draft-mtp` backend sampling currently can abort Android
+  /// Vulkan processes with `vk::DeviceLostError`. Keep the public feature usable
+  /// on CPU and other backends, but fail fast for this backend combination unless
+  /// explicitly enabled for debugging/benchmarking.
+  static bool shouldRejectAndroidVulkanMtp(
+    String? backendName, {
+    int? resolvedGpuLayers,
+    bool isAndroid = false,
+    bool allowMtp = false,
+  }) {
+    if (!isAndroid || allowMtp || (resolvedGpuLayers ?? 0) <= 0) {
+      return false;
+    }
+    return (backendName ?? '').toLowerCase().contains('vulkan');
   }
 
   /// Resolves effective context batch parameters.
@@ -2044,6 +2255,75 @@ class LlamaCppService {
     }
   }
 
+  _MtpApi _resolveMtpApi() {
+    final cached = _mtpApi;
+    if (cached != null) {
+      return cached;
+    }
+
+    if (_mtpApiLookupAttempted) {
+      throw UnsupportedError(_mtpUnavailableMessage());
+    }
+    _mtpApiLookupAttempted = true;
+
+    if (!Platform.isWindows) {
+      try {
+        final direct = _MtpApi.direct();
+        _mtpApi = direct;
+        return direct;
+      } catch (_) {}
+    }
+
+    if (Platform.isWindows) {
+      try {
+        final asset = _MtpApi.windowsAsset();
+        _mtpApi = asset;
+        return asset;
+      } catch (_) {}
+    }
+
+    for (final candidate in _llamadartWrapperLibraryCandidates()) {
+      try {
+        final library = DynamicLibrary.open(candidate);
+        final api = _MtpApi.tryLoad(library);
+        if (api != null) {
+          _mtpApi = api;
+          return api;
+        }
+      } catch (_) {
+        continue;
+      }
+    }
+
+    throw UnsupportedError(_mtpUnavailableMessage());
+  }
+
+  String _mtpUnavailableMessage() {
+    return 'llama.cpp MTP speculative decoding is unavailable in this native '
+        'runtime bundle (missing llama_dart_mtp_* wrapper symbols).';
+  }
+
+  List<String> _llamadartWrapperLibraryCandidates() {
+    final candidates = <String>[..._llamadartAssetUriCandidates()];
+    final fileNameCandidates = _llamadartLibraryCandidateFileNames();
+    final pattern = _llamadartLibraryPattern();
+    for (final directoryPath in _llamadartFallbackLookupDirectories()) {
+      for (final fileName in fileNameCandidates) {
+        candidates.add(path.join(directoryPath, fileName));
+      }
+      for (final fileName in _matchingLibraryNames(directoryPath, pattern)) {
+        candidates.add(path.join(directoryPath, fileName));
+      }
+    }
+    candidates.addAll(fileNameCandidates);
+
+    final seen = <String>{};
+    return [
+      for (final candidate in candidates)
+        if (seen.add(candidate)) candidate,
+    ];
+  }
+
   List<String> _llamadartAssetUriCandidates() {
     // Prefer asset-URI resolution so Windows split bundles can reliably resolve
     // the wrapper helper library without relying on process cwd/search paths.
@@ -2066,6 +2346,7 @@ class LlamaCppService {
     final executableDir = path.dirname(Platform.resolvedExecutable);
     directories.add(executableDir);
     directories.add(Directory.current.path);
+    directories.add(path.join(Directory.current.path, '.dart_tool', 'lib'));
 
     if (Platform.isIOS) {
       directories.add(path.normalize(path.join(executableDir, 'Frameworks')));
@@ -2620,6 +2901,7 @@ class LlamaCppService {
     ctxParams.n_batch = resolvedBatchSizes.batchSize;
     ctxParams.n_ubatch = resolvedBatchSizes.microBatchSize;
     ctxParams.n_seq_max = resolvedMaxParallelSequences;
+    ctxParams.n_rs_seq = params.speculativeRollbackTokenMax;
     ctxParams.n_threads = params.numberOfThreads;
     ctxParams.n_threads_batch = params.numberOfThreadsBatch;
     if (resolvedMaxParallelSequences > 1) {
@@ -2709,6 +2991,67 @@ class LlamaCppService {
     _contexts.remove(handle)?.dispose();
   }
 
+  _LlamaCppMtpConfig? _resolveLlamaCppMtpConfig(
+    GenerationParams params, {
+    required bool hasMediaParts,
+  }) {
+    final speculativeConfig = params.resolvedSpeculativeDecodingConfig;
+    if (speculativeConfig == null) {
+      return null;
+    }
+
+    if (hasMediaParts) {
+      throw UnsupportedError(
+        'llama.cpp MTP speculative decoding currently supports text-only '
+        'generation in llamadart.',
+      );
+    }
+    if (params.grammar != null) {
+      throw UnsupportedError(
+        'llama.cpp MTP speculative decoding does not yet support grammar '
+        'sampling in llamadart.',
+      );
+    }
+
+    switch (speculativeConfig.strategy) {
+      case SpeculativeDecodingStrategy.backendDefault:
+      case SpeculativeDecodingStrategy.mtp:
+        break;
+    }
+
+    final draftTokenMax = speculativeConfig.draftTokenMax ?? 1;
+    final draftTokenMin = speculativeConfig.draftTokenMin ?? 0;
+    final minProbability = speculativeConfig.minProbability ?? 0.0;
+
+    if (draftTokenMax <= 0) {
+      throw RangeError.value(
+        draftTokenMax,
+        'draftTokenMax',
+        'must be greater than zero for llama.cpp MTP',
+      );
+    }
+    if (draftTokenMin < 0 || draftTokenMin > draftTokenMax) {
+      throw RangeError.value(
+        draftTokenMin,
+        'draftTokenMin',
+        'must be between zero and draftTokenMax for llama.cpp MTP',
+      );
+    }
+    if (minProbability < 0.0 || minProbability > 1.0) {
+      throw RangeError.value(
+        minProbability,
+        'minProbability',
+        'must be between 0.0 and 1.0 for llama.cpp MTP',
+      );
+    }
+
+    return _LlamaCppMtpConfig(
+      draftTokenMax: draftTokenMax,
+      draftTokenMin: draftTokenMin,
+      minProbability: minProbability,
+    );
+  }
+
   /// Generates text based on the given [prompt] and [params].
   ///
   /// Returns a [Stream] of token bytes.
@@ -2720,14 +3063,6 @@ class LlamaCppService {
     int cancelTokenAddress, {
     List<LlamaContentPart>? parts,
   }) async* {
-    if (params.speculativeDecoding) {
-      throw UnsupportedError(
-        'llama.cpp speculative decoding is not exposed by llamadart yet. '
-        'Use the LiteRT-LM native backend or track llama.cpp support in '
-        'issues #168/#190.',
-      );
-    }
-
     var ctx = _contexts[contextHandle];
     if (ctx == null) throw Exception("Invalid context handle");
     _generatingContexts.update(
@@ -2742,6 +3077,8 @@ class LlamaCppService {
     Pointer<Utf8> rootPtr = nullptr;
     _LazyGrammarConfig? lazyGrammarConfig;
     Pointer<llama_sampler> sampler = nullptr;
+    Pointer<llama_dart_mtp> mtpSession = nullptr;
+    _MtpApi? mtpApi;
 
     try {
       final modelHandle = _contextToModel[contextHandle]!;
@@ -2751,13 +3088,33 @@ class LlamaCppService {
       final hasMediaParts =
           parts?.any((p) => p is LlamaImageContent || p is LlamaAudioContent) ??
           false;
+      final mtpConfig = _resolveLlamaCppMtpConfig(
+        params,
+        hasMediaParts: hasMediaParts,
+      );
+      if (mtpConfig != null &&
+          shouldRejectAndroidVulkanMtp(
+            _modelBackendNames[modelHandle],
+            resolvedGpuLayers: _modelResolvedGpuLayers[modelHandle],
+            isAndroid: Platform.isAndroid,
+            allowMtp: _androidVulkanAllowMtp,
+          )) {
+        throw UnsupportedError(
+          'llama.cpp MTP speculative decoding is disabled for Android Vulkan '
+          'because the upstream draft-mtp backend-sampling path can abort with '
+          'vk::DeviceLostError. Use the CPU backend, disable MTP, or rebuild '
+          'with LLAMADART_ANDROID_VULKAN_ALLOW_MTP=true for debugging.',
+        );
+      }
 
       // 1. Reset Context
       ctx = _resetContext(
         contextHandle,
         ctx,
-        clearMemory: hasMediaParts || !params.reusePromptPrefix,
+        clearMemory:
+            hasMediaParts || mtpConfig != null || !params.reusePromptPrefix,
       );
+      ctx.resetLastPerf();
       llama_perf_context_reset(ctx.pointer);
       final existingSampler = _samplers[contextHandle];
       if (existingSampler != null) {
@@ -2769,6 +3126,29 @@ class LlamaCppService {
       final batch = _batches[contextHandle]!;
       tokensPtr = malloc<Int32>(nCtx);
       pieceBuf = malloc<Uint8>(256);
+
+      if (mtpConfig != null) {
+        mtpApi = _resolveMtpApi();
+        mtpSession = mtpApi.init(
+          model.pointer,
+          ctx.pointer,
+          modelParams,
+          mtpConfig.draftTokenMax,
+          mtpConfig.draftTokenMin,
+          mtpConfig.minProbability,
+          true,
+        );
+        if (mtpSession == nullptr) {
+          throw UnsupportedError(
+            'llama.cpp MTP speculative decoding is not available for this '
+            'model/context. Use an MTP GGUF model, a native libllamadart build '
+            'that includes llama-common, and set '
+            'ModelParams.speculativeRollbackTokenMax >= draftTokenMax when the '
+            'target architecture needs bounded rollback snapshots.',
+          );
+        }
+        llama_perf_context_reset(ctx.pointer);
+      }
 
       if (params.grammar != null) {
         grammarPtr = params.grammar!.toNativeUtf8();
@@ -2791,7 +3171,10 @@ class LlamaCppService {
         tokensPtr,
         nCtx,
         modelParams,
-        allowTextPromptReuse: !hasMediaParts && params.reusePromptPrefix,
+        allowTextPromptReuse:
+            mtpConfig == null && !hasMediaParts && params.reusePromptPrefix,
+        mtpSession: mtpSession,
+        mtpApi: mtpApi,
       );
       promptEvalStopwatch.stop();
       ctx.lastPerfPromptEvalMs =
@@ -2799,6 +3182,10 @@ class LlamaCppService {
       ctx.lastPerfPromptEvalTokens = initialTokens;
 
       _ensureLogitsAvailableAfterPromptEval(ctx.pointer);
+      if (mtpSession != nullptr &&
+          !mtpApi!.begin(mtpSession, 0, tokensPtr, initialTokens)) {
+        throw Exception("Failed to initialize llama.cpp MTP prompt state");
+      }
 
       // 4. Initialize and Run Sampler Loop
       sampler = _initializeSampler(
@@ -2820,21 +3207,42 @@ class LlamaCppService {
         params.preservedTokens,
       );
 
-      yield* _runInferenceLoop(
-        ctx,
-        batch,
-        vocab,
-        sampler,
-        params,
-        initialTokens,
-        nCtx,
-        cancelTokenAddress,
-        pieceBuf,
-        grammarPtr,
-        preservedTokenIds,
-        effectiveStopSequences,
-      );
+      if (mtpSession != nullptr && mtpConfig != null) {
+        yield* _runMtpInferenceLoop(
+          ctx,
+          batch,
+          vocab,
+          sampler,
+          params,
+          mtpConfig,
+          initialTokens,
+          nCtx,
+          cancelTokenAddress,
+          pieceBuf,
+          preservedTokenIds,
+          effectiveStopSequences,
+          mtpSession,
+          mtpApi!,
+          tokensPtr,
+        );
+      } else {
+        yield* _runInferenceLoop(
+          ctx,
+          batch,
+          vocab,
+          sampler,
+          params,
+          initialTokens,
+          nCtx,
+          cancelTokenAddress,
+          pieceBuf,
+          grammarPtr,
+          preservedTokenIds,
+          effectiveStopSequences,
+        );
+      }
     } finally {
+      if (mtpSession != nullptr) mtpApi?.free(mtpSession);
       if (sampler != nullptr) llama_sampler_free(sampler);
       final remaining = (_generatingContexts[contextHandle] ?? 1) - 1;
       if (remaining <= 0) {
@@ -3245,6 +3653,8 @@ class LlamaCppService {
     int nCtx,
     llama_context_params modelParams, {
     required bool allowTextPromptReuse,
+    required Pointer<llama_dart_mtp> mtpSession,
+    required _MtpApi? mtpApi,
   }) {
     final mediaParts =
         parts
@@ -3273,6 +3683,8 @@ class LlamaCppService {
         ctx,
         maxBatchTokens: modelParams.n_batch,
         allowPromptReuse: allowTextPromptReuse,
+        mtpSession: mtpSession,
+        mtpApi: mtpApi,
       );
     }
   }
@@ -3511,6 +3923,8 @@ class LlamaCppService {
     _LlamaContextWrapper ctx, {
     required int maxBatchTokens,
     required bool allowPromptReuse,
+    required Pointer<llama_dart_mtp> mtpSession,
+    required _MtpApi? mtpApi,
   }) {
     final promptPtr = prompt.toNativeUtf8();
     final shouldAddSpecial = !_promptStartsWithBosToken(vocab, prompt);
@@ -3536,6 +3950,9 @@ class LlamaCppService {
         ctx,
         nTokens,
         maxBatchTokens: maxBatchTokens,
+        outputAllLogits: mtpSession != nullptr,
+        mtpSession: mtpSession,
+        mtpApi: mtpApi,
       );
     }
 
@@ -3547,6 +3964,9 @@ class LlamaCppService {
         ctx,
         nTokens,
         maxBatchTokens: maxBatchTokens,
+        outputAllLogits: mtpSession != nullptr,
+        mtpSession: mtpSession,
+        mtpApi: mtpApi,
       );
     }
 
@@ -3571,6 +3991,9 @@ class LlamaCppService {
         nTokens,
         maxBatchTokens: maxBatchTokens,
         existingCachedTokens: canReuseCachedCopy ? cachedTokens : null,
+        outputAllLogits: mtpSession != nullptr,
+        mtpSession: mtpSession,
+        mtpApi: mtpApi,
       );
     }
 
@@ -3582,6 +4005,9 @@ class LlamaCppService {
         ctx,
         nTokens,
         maxBatchTokens: maxBatchTokens,
+        outputAllLogits: mtpSession != nullptr,
+        mtpSession: mtpSession,
+        mtpApi: mtpApi,
       );
     }
 
@@ -3597,6 +4023,8 @@ class LlamaCppService {
         ctx,
         nTokens,
         maxBatchTokens: maxBatchTokens,
+        outputAllLogits: mtpSession != nullptr,
+        mtpSession: mtpSession,
       );
     }
 
@@ -3608,6 +4036,9 @@ class LlamaCppService {
       startTokenIndex: decodeStart,
       tokenCount: suffixTokenCount,
       maxBatchTokens: maxBatchTokens,
+      outputAllLogits: mtpSession != nullptr,
+      mtpSession: mtpSession,
+      mtpApi: mtpApi,
     );
 
     ctx.cachedPromptTokens = exactStateLoadMatch
@@ -3625,6 +4056,9 @@ class LlamaCppService {
     int nTokens, {
     required int maxBatchTokens,
     List<int>? existingCachedTokens,
+    bool outputAllLogits = false,
+    Pointer<llama_dart_mtp>? mtpSession,
+    _MtpApi? mtpApi,
   }) {
     _clearContextMemory(ctx.pointer);
     _decodePromptSegment(
@@ -3634,6 +4068,9 @@ class LlamaCppService {
       startTokenIndex: 0,
       tokenCount: nTokens,
       maxBatchTokens: maxBatchTokens,
+      outputAllLogits: outputAllLogits,
+      mtpSession: mtpSession,
+      mtpApi: mtpApi,
     );
     ctx.cachedPromptTokens =
         existingCachedTokens ?? _copyPromptTokens(tokensPtr, nTokens);
@@ -3655,6 +4092,9 @@ class LlamaCppService {
     required int startTokenIndex,
     required int tokenCount,
     required int maxBatchTokens,
+    bool outputAllLogits = false,
+    Pointer<llama_dart_mtp>? mtpSession,
+    _MtpApi? mtpApi,
   }) {
     if (tokenCount <= 0) {
       return;
@@ -3679,11 +4119,16 @@ class LlamaCppService {
         batch.n_seq_id[i] = 1;
         batch.seq_id[i][0] = 0;
         final isLastTokenInPrompt = decoded + i == tokenCount - 1;
-        batch.logits[i] = isLastTokenInPrompt ? 1 : 0;
+        batch.logits[i] = outputAllLogits || isLastTokenInPrompt ? 1 : 0;
       }
 
       if (llama_decode(ctx.pointer, batch) != 0) {
         throw Exception("Initial decode failed");
+      }
+      if (mtpSession != null &&
+          mtpSession != nullptr &&
+          !mtpApi!.processBatch(mtpSession, batch)) {
+        throw Exception("MTP prompt decode processing failed");
       }
 
       decoded += chunkTokenCount;
@@ -3851,6 +4296,276 @@ class LlamaCppService {
     ctx.lastPerfSampleMs = sampleMicros / 1000.0;
     ctx.lastPerfEvalTokens = generatedTokens;
     ctx.lastPerfSampleCount = generatedTokens;
+  }
+
+  Stream<List<int>> _runMtpInferenceLoop(
+    _LlamaContextWrapper ctx,
+    llama_batch batch,
+    Pointer<llama_vocab> vocab,
+    Pointer<llama_sampler> sampler,
+    GenerationParams params,
+    _LlamaCppMtpConfig mtpConfig,
+    int startPos,
+    int nCtx,
+    int cancelTokenAddress,
+    Pointer<Uint8> pieceBuf,
+    Set<int> preservedTokenIds,
+    List<String> stopSequences,
+    Pointer<llama_dart_mtp> mtpSession,
+    _MtpApi mtpApi,
+    Pointer<Int32> tokensPtr,
+  ) async* {
+    final cancelToken = Pointer<Int8>.fromAddress(cancelTokenAddress);
+    final draftCapacity = mtpConfig.draftTokenMax;
+    final draftPtr = malloc<Int32>(draftCapacity);
+    final idxPtr = malloc<Int32>(draftCapacity + 1);
+    final acceptedPtr = malloc<Int32>(draftCapacity + 1);
+
+    int currentPos = startPos;
+    int? pendingSampledToken;
+    final accumulatedBytes = <int>[];
+    final evalStopwatch = Stopwatch()..start();
+    var sampleMicros = 0;
+    var evalMicros = 0;
+    var generatedTokens = 0;
+    var shouldStop = false;
+
+    try {
+      while (!shouldStop && generatedTokens < params.maxTokens) {
+        if (cancelToken.value == 1) break;
+        if (currentPos >= nCtx) break;
+
+        int selectedToken;
+        if (pendingSampledToken != null) {
+          selectedToken = pendingSampledToken;
+          pendingSampledToken = null;
+        } else {
+          final sampleTick = Stopwatch()..start();
+          selectedToken = llama_sampler_sample(sampler, ctx.pointer, -1);
+          sampleTick.stop();
+          sampleMicros += sampleTick.elapsedMicroseconds;
+          if (llama_vocab_is_eog(vocab, selectedToken)) break;
+
+          final pieceTick = Stopwatch()..start();
+          final n = llama_token_to_piece(
+            vocab,
+            selectedToken,
+            pieceBuf.cast(),
+            256,
+            0,
+            preservedTokenIds.contains(selectedToken),
+          );
+          pieceTick.stop();
+          sampleMicros += pieceTick.elapsedMicroseconds;
+          generatedTokens++;
+
+          if (n > 0) {
+            final bytes = pieceBuf.asTypedList(n).toList();
+            yield bytes;
+            if (stopSequences.isNotEmpty) {
+              accumulatedBytes.addAll(bytes);
+              if (accumulatedBytes.length > 64) {
+                accumulatedBytes.removeRange(0, accumulatedBytes.length - 64);
+              }
+              final text = utf8.decode(accumulatedBytes, allowMalformed: true);
+              if (stopSequences.any((s) => text.endsWith(s))) {
+                shouldStop = true;
+              }
+            }
+          }
+
+          if (shouldStop || generatedTokens >= params.maxTokens) {
+            break;
+          }
+        }
+
+        final remainingToGenerate = params.maxTokens - generatedTokens;
+        final batchCapacity = math.max(1, llama_n_batch(ctx.pointer));
+        final rollbackCapacity = llama_n_rs_seq(ctx.pointer);
+        final contextDraftCapacity = rollbackCapacity > 0
+            ? math.min(nCtx - currentPos - 2, rollbackCapacity)
+            : nCtx - currentPos - 2;
+        final draftLimit = math.min(
+          mtpConfig.draftTokenMax,
+          math.min(
+            math.min(remainingToGenerate - 1, contextDraftCapacity),
+            batchCapacity - 1,
+          ),
+        );
+
+        var draftCount = 0;
+        if (draftLimit > 0) {
+          final draftTick = Stopwatch()..start();
+          draftCount = mtpApi.draft(
+            mtpSession,
+            0,
+            currentPos,
+            selectedToken,
+            tokensPtr,
+            currentPos,
+            draftLimit,
+            draftPtr,
+            draftCapacity,
+          );
+          draftTick.stop();
+          sampleMicros += draftTick.elapsedMicroseconds;
+          if (draftCount < 0) {
+            throw Exception("llama.cpp MTP draft failed");
+          }
+        }
+
+        if (draftCount <= 0) {
+          batch.n_tokens = 1;
+          batch.token[0] = selectedToken;
+          batch.pos[0] = currentPos;
+          batch.n_seq_id[0] = 1;
+          batch.seq_id[0][0] = 0;
+          batch.logits[0] = 1;
+
+          final evalTick = Stopwatch()..start();
+          final decodeStatus = llama_decode(ctx.pointer, batch);
+          if (decodeStatus == 0 && !mtpApi.processBatch(mtpSession, batch)) {
+            throw Exception("MTP decode processing failed");
+          }
+          evalTick.stop();
+          evalMicros += evalTick.elapsedMicroseconds;
+          if (decodeStatus != 0) break;
+
+          tokensPtr[currentPos] = selectedToken;
+          currentPos++;
+          continue;
+        }
+
+        final draftContext = mtpApi.getDraftContext(mtpSession);
+        final draftMemory = draftContext == nullptr
+            ? nullptr
+            : llama_get_memory(draftContext);
+        if (draftMemory == nullptr ||
+            !llama_memory_seq_rm(draftMemory, 0, currentPos, -1)) {
+          throw UnsupportedError(
+            'llama.cpp MTP draft rollback failed for this context.',
+          );
+        }
+
+        final batchTokens = draftCount + 1;
+        batch.n_tokens = batchTokens;
+        batch.token[0] = selectedToken;
+        batch.pos[0] = currentPos;
+        batch.n_seq_id[0] = 1;
+        batch.seq_id[0][0] = 0;
+        batch.logits[0] = 1;
+        for (int i = 0; i < draftCount; i++) {
+          final batchIndex = i + 1;
+          batch.token[batchIndex] = draftPtr[i];
+          batch.pos[batchIndex] = currentPos + batchIndex;
+          batch.n_seq_id[batchIndex] = 1;
+          batch.seq_id[batchIndex][0] = 0;
+          batch.logits[batchIndex] = 1;
+        }
+
+        final evalTick = Stopwatch()..start();
+        final decodeStatus = llama_decode(ctx.pointer, batch);
+        if (decodeStatus == 0 && !mtpApi.processBatch(mtpSession, batch)) {
+          throw Exception("MTP decode processing failed");
+        }
+        evalTick.stop();
+        evalMicros += evalTick.elapsedMicroseconds;
+        if (decodeStatus != 0) break;
+
+        for (int i = 0; i < batchTokens; i++) {
+          idxPtr[i] = i;
+        }
+
+        final verifyTick = Stopwatch()..start();
+        final acceptedCount = mtpApi.sampleAndAcceptN(
+          sampler,
+          ctx.pointer,
+          idxPtr,
+          batchTokens,
+          draftPtr,
+          draftCount,
+          acceptedPtr,
+          batchTokens,
+        );
+        verifyTick.stop();
+        sampleMicros += verifyTick.elapsedMicroseconds;
+        if (acceptedCount <= 0) {
+          throw Exception("llama.cpp MTP draft verification failed");
+        }
+
+        final acceptedDraftCount = acceptedCount - 1;
+        mtpApi.accept(mtpSession, 0, acceptedDraftCount);
+
+        final keepUntil = currentPos + 1 + acceptedDraftCount;
+        final targetMemory = llama_get_memory(ctx.pointer);
+        if (targetMemory == nullptr ||
+            !llama_memory_seq_rm(targetMemory, 0, keepUntil, -1) ||
+            !llama_memory_seq_rm(draftMemory, 0, keepUntil, -1)) {
+          throw UnsupportedError(
+            'llama.cpp MTP target rollback failed for this context.',
+          );
+        }
+
+        tokensPtr[currentPos] = selectedToken;
+        for (int i = 0; i < acceptedDraftCount; i++) {
+          tokensPtr[currentPos + 1 + i] = acceptedPtr[i];
+        }
+        currentPos = keepUntil;
+
+        for (int i = 0; i < acceptedCount; i++) {
+          final token = acceptedPtr[i];
+          if (llama_vocab_is_eog(vocab, token)) {
+            shouldStop = true;
+            break;
+          }
+
+          final pieceTick = Stopwatch()..start();
+          final n = llama_token_to_piece(
+            vocab,
+            token,
+            pieceBuf.cast(),
+            256,
+            0,
+            preservedTokenIds.contains(token),
+          );
+          pieceTick.stop();
+          sampleMicros += pieceTick.elapsedMicroseconds;
+          generatedTokens++;
+
+          if (n > 0) {
+            final bytes = pieceBuf.asTypedList(n).toList();
+            yield bytes;
+            if (stopSequences.isNotEmpty) {
+              accumulatedBytes.addAll(bytes);
+              if (accumulatedBytes.length > 64) {
+                accumulatedBytes.removeRange(0, accumulatedBytes.length - 64);
+              }
+              final text = utf8.decode(accumulatedBytes, allowMalformed: true);
+              if (stopSequences.any((s) => text.endsWith(s))) {
+                shouldStop = true;
+              }
+            }
+          }
+
+          if (shouldStop || generatedTokens >= params.maxTokens) {
+            break;
+          }
+        }
+
+        if (!shouldStop && generatedTokens < params.maxTokens) {
+          pendingSampledToken = acceptedPtr[acceptedCount - 1];
+        }
+      }
+    } finally {
+      malloc.free(draftPtr);
+      malloc.free(idxPtr);
+      malloc.free(acceptedPtr);
+      evalStopwatch.stop();
+      ctx.lastPerfEvalMs = evalMicros / 1000.0;
+      ctx.lastPerfSampleMs = sampleMicros / 1000.0;
+      ctx.lastPerfEvalTokens = generatedTokens;
+      ctx.lastPerfSampleCount = generatedTokens;
+    }
   }
 
   _LazyGrammarConfig? _buildLazyGrammarConfig(GenerationParams params) {
@@ -4881,20 +5596,22 @@ class LlamaCppService {
     final sampler = _samplers[contextHandle];
     final samplerPerf = sampler != null ? llama_perf_sampler(sampler) : null;
 
-    final promptEvalMs = perf.t_p_eval_ms > 0
-        ? perf.t_p_eval_ms
-        : ctx.lastPerfPromptEvalMs;
-    final evalMs = perf.t_eval_ms > 0 ? perf.t_eval_ms : ctx.lastPerfEvalMs;
-    final sampleMs = (samplerPerf?.t_sample_ms ?? 0) > 0
-        ? samplerPerf!.t_sample_ms
-        : ctx.lastPerfSampleMs;
+    final promptEvalMs = ctx.lastPerfPromptEvalMs > 0
+        ? ctx.lastPerfPromptEvalMs
+        : perf.t_p_eval_ms;
+    final evalMs = ctx.lastPerfEvalMs > 0 ? ctx.lastPerfEvalMs : perf.t_eval_ms;
+    final sampleMs = ctx.lastPerfSampleMs > 0
+        ? ctx.lastPerfSampleMs
+        : (samplerPerf?.t_sample_ms ?? 0);
     final promptEvalTokens = perf.n_p_eval > 0
         ? perf.n_p_eval
         : ctx.lastPerfPromptEvalTokens;
-    final evalTokens = perf.n_eval > 0 ? perf.n_eval : ctx.lastPerfEvalTokens;
-    final sampleCount = (samplerPerf?.n_sample ?? 0) > 0
-        ? samplerPerf!.n_sample
-        : ctx.lastPerfSampleCount;
+    final evalTokens = ctx.lastPerfEvalTokens > 0
+        ? ctx.lastPerfEvalTokens
+        : perf.n_eval;
+    final sampleCount = ctx.lastPerfSampleCount > 0
+        ? ctx.lastPerfSampleCount
+        : (samplerPerf?.n_sample ?? 0);
 
     return (
       loadMs: perf.t_load_ms,
@@ -4977,6 +5694,132 @@ class _LazyGrammarConfig {
     }
     if (triggerTokens != nullptr) {
       malloc.free(triggerTokens);
+    }
+  }
+}
+
+class _MtpApi {
+  final _LlamaDartMtpInitDart init;
+  final _LlamaDartMtpFreeDart free;
+  final _LlamaDartMtpGetDraftContextDart getDraftContext;
+  final _LlamaDartMtpBeginDart begin;
+  final _LlamaDartMtpProcessBatchDart processBatch;
+  final _LlamaDartMtpDraftDart draft;
+  final _LlamaDartMtpAcceptDart accept;
+  final _LlamaDartSamplerSampleAndAcceptNDart sampleAndAcceptN;
+
+  const _MtpApi({
+    required this.init,
+    required this.free,
+    required this.getDraftContext,
+    required this.begin,
+    required this.processBatch,
+    required this.draft,
+    required this.accept,
+    required this.sampleAndAcceptN,
+  });
+
+  factory _MtpApi.direct() {
+    final api = _MtpApi(
+      init: llama_dart_mtp_init,
+      free: llama_dart_mtp_free,
+      getDraftContext: llama_dart_mtp_get_draft_context,
+      begin: llama_dart_mtp_begin,
+      processBatch: llama_dart_mtp_process_batch,
+      draft: llama_dart_mtp_draft,
+      accept: llama_dart_mtp_accept,
+      sampleAndAcceptN: llama_dart_sampler_sample_and_accept_n,
+    );
+    api.probe();
+    return api;
+  }
+
+  factory _MtpApi.windowsAsset() {
+    _llamadartWrapperMtpFree(nullptr.cast<llama_dart_mtp>());
+    return _MtpApi(
+      init: _llamadartWrapperMtpInit,
+      free: _llamadartWrapperMtpFree,
+      getDraftContext: _llamadartWrapperMtpGetDraftContext,
+      begin: _llamadartWrapperMtpBegin,
+      processBatch: _llamadartWrapperMtpProcessBatch,
+      draft: _llamadartWrapperMtpDraft,
+      accept: _llamadartWrapperMtpAccept,
+      sampleAndAcceptN: _llamadartWrapperSamplerSampleAndAcceptN,
+    );
+  }
+
+  void probe() {
+    final nullMtp = nullptr.cast<llama_dart_mtp>();
+    final nullModel = nullptr.cast<llama_model>();
+    final nullContext = nullptr.cast<llama_context>();
+    final nullSampler = nullptr.cast<llama_sampler>();
+    final nullTokenArray = nullptr.cast<Int32>();
+    final ctxParams = llama_context_default_params();
+    final batch = llama_batch_init(1, 0, 1);
+    try {
+      init(nullModel, nullContext, ctxParams, 1, 0, 0.0, true);
+      free(nullMtp);
+      getDraftContext(nullMtp);
+      begin(nullMtp, 0, nullTokenArray, 0);
+      processBatch(nullMtp, batch);
+      draft(nullMtp, 0, 0, 0, nullTokenArray, 0, 1, nullTokenArray, 0);
+      accept(nullMtp, 0, 0);
+      sampleAndAcceptN(
+        nullSampler,
+        nullContext,
+        nullTokenArray,
+        0,
+        nullTokenArray,
+        0,
+        nullTokenArray,
+        0,
+      );
+    } finally {
+      llama_batch_free(batch);
+    }
+  }
+
+  static _MtpApi? tryLoad(DynamicLibrary library) {
+    try {
+      return _MtpApi(
+        init: library
+            .lookupFunction<_LlamaDartMtpInitNative, _LlamaDartMtpInitDart>(
+              'llama_dart_mtp_init',
+            ),
+        free: library
+            .lookupFunction<_LlamaDartMtpFreeNative, _LlamaDartMtpFreeDart>(
+              'llama_dart_mtp_free',
+            ),
+        getDraftContext: library
+            .lookupFunction<
+              _LlamaDartMtpGetDraftContextNative,
+              _LlamaDartMtpGetDraftContextDart
+            >('llama_dart_mtp_get_draft_context'),
+        begin: library
+            .lookupFunction<_LlamaDartMtpBeginNative, _LlamaDartMtpBeginDart>(
+              'llama_dart_mtp_begin',
+            ),
+        processBatch: library
+            .lookupFunction<
+              _LlamaDartMtpProcessBatchNative,
+              _LlamaDartMtpProcessBatchDart
+            >('llama_dart_mtp_process_batch'),
+        draft: library
+            .lookupFunction<_LlamaDartMtpDraftNative, _LlamaDartMtpDraftDart>(
+              'llama_dart_mtp_draft',
+            ),
+        accept: library
+            .lookupFunction<_LlamaDartMtpAcceptNative, _LlamaDartMtpAcceptDart>(
+              'llama_dart_mtp_accept',
+            ),
+        sampleAndAcceptN: library
+            .lookupFunction<
+              _LlamaDartSamplerSampleAndAcceptNNative,
+              _LlamaDartSamplerSampleAndAcceptNDart
+            >('llama_dart_sampler_sample_and_accept_n'),
+      );
+    } catch (_) {
+      return null;
     }
   }
 }
@@ -5142,6 +5985,15 @@ class _LlamaContextWrapper {
   int lastPerfEvalTokens = 0;
   int lastPerfSampleCount = 0;
   _LlamaContextWrapper(this.pointer, this._modelKeepAlive);
+  void resetLastPerf() {
+    lastPerfPromptEvalMs = 0;
+    lastPerfEvalMs = 0;
+    lastPerfSampleMs = 0;
+    lastPerfPromptEvalTokens = 0;
+    lastPerfEvalTokens = 0;
+    lastPerfSampleCount = 0;
+  }
+
   void dispose() {
     // ignore: unused_local_variable
     final _ = _modelKeepAlive;

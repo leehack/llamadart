@@ -868,6 +868,39 @@ void main() {
     }
   });
 
+  test('passes LiteRT-LM MTP config as speculative decoding', () async {
+    final fakeClient = _FakeLiteRtLmRuntimeClient();
+    final service = LiteRtLmService(clientFactory: () => fakeClient);
+
+    try {
+      final modelHandle = await service.loadModel(
+        modelFile.path,
+        const ModelParams(preferredBackend: GpuBackend.cpu),
+      );
+      final contextHandle = service.createContext(
+        modelHandle,
+        const ModelParams(preferredBackend: GpuBackend.cpu),
+      );
+
+      final subscription = service
+          .generate(
+            contextHandle,
+            'hello',
+            const GenerationParams(
+              maxTokens: 7,
+              speculativeDecodingConfig: SpeculativeDecodingConfig.mtp(),
+            ),
+          )
+          .listen((_) {});
+
+      await fakeClient.generateStarted.future;
+      expect(fakeClient.lastSpeculativeDecoding, isTrue);
+      unawaited(subscription.cancel());
+    } finally {
+      service.dispose();
+    }
+  });
+
   test('passes supported LiteRT-LM generation options to the client', () async {
     final fakeClient = _FakeLiteRtLmRuntimeClient();
     final service = LiteRtLmService(clientFactory: () => fakeClient);
@@ -1617,6 +1650,25 @@ void main() {
               contains('preservedTokens'),
               contains('grammarRoot'),
             ),
+          ),
+        ),
+      );
+
+      await expectLater(
+        service.generate(
+          contextHandle,
+          'hello',
+          const GenerationParams(
+            speculativeDecodingConfig: SpeculativeDecodingConfig.mtp(
+              draftTokenMax: 3,
+            ),
+          ),
+        ),
+        emitsError(
+          isA<UnsupportedError>().having(
+            (error) => error.message.toString(),
+            'message',
+            contains('speculativeDecodingConfig.draftTokenMax'),
           ),
         ),
       );

@@ -961,6 +961,9 @@ class LiteRtLmBackend
     if (params.speculativeDecoding) {
       unsupported.add('speculativeDecoding');
     }
+    if (params.speculativeDecodingConfig != null) {
+      unsupported.add('speculativeDecodingConfig');
+    }
     if (params.streamBatchTokenThreshold !=
         defaults.streamBatchTokenThreshold) {
       unsupported.add('streamBatchTokenThreshold');

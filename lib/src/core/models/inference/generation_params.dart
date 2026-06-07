@@ -32,6 +32,76 @@ class GenerationGrammarTrigger {
   });
 }
 
+/// Backend-neutral speculative decoding strategy.
+enum SpeculativeDecodingStrategy {
+  /// Let the selected backend choose its native speculative decoding mode.
+  backendDefault,
+
+  /// Multi-token prediction.
+  ///
+  /// llama.cpp maps this to its `draft-mtp` speculative path. LiteRT-LM native
+  /// currently maps this to its runtime speculative decoding switch.
+  mtp,
+}
+
+/// Backend-neutral speculative decoding configuration.
+///
+/// Backends map the strategy and knobs they support to their native runtime.
+/// Unsupported strategy/option combinations must fail explicitly instead of
+/// silently falling back.
+class SpeculativeDecodingConfig {
+  /// Strategy to use when speculative decoding is enabled.
+  final SpeculativeDecodingStrategy strategy;
+
+  /// Maximum number of draft tokens to propose per speculative step.
+  ///
+  /// `null` lets the backend choose its default.
+  final int? draftTokenMax;
+
+  /// Minimum number of draft tokens required for speculative verification.
+  ///
+  /// `null` lets the backend choose its default.
+  final int? draftTokenMin;
+
+  /// Minimum draft-token probability accepted by the backend.
+  ///
+  /// `null` lets the backend choose its default.
+  final double? minProbability;
+
+  /// Creates a backend-neutral speculative decoding configuration.
+  const SpeculativeDecodingConfig({
+    this.strategy = SpeculativeDecodingStrategy.backendDefault,
+    this.draftTokenMax,
+    this.draftTokenMin,
+    this.minProbability,
+  }) : assert(draftTokenMax == null || draftTokenMax >= 0),
+       assert(draftTokenMin == null || draftTokenMin >= 0),
+       assert(
+         minProbability == null ||
+             (minProbability >= 0.0 && minProbability <= 1.0),
+       );
+
+  /// Enables the backend's default speculative decoding behavior.
+  const SpeculativeDecodingConfig.backendDefault()
+    : strategy = SpeculativeDecodingStrategy.backendDefault,
+      draftTokenMax = null,
+      draftTokenMin = null,
+      minProbability = null;
+
+  /// Enables multi-token prediction speculative decoding.
+  const SpeculativeDecodingConfig.mtp({
+    this.draftTokenMax,
+    this.draftTokenMin,
+    this.minProbability,
+  }) : strategy = SpeculativeDecodingStrategy.mtp,
+       assert(draftTokenMax == null || draftTokenMax >= 0),
+       assert(draftTokenMin == null || draftTokenMin >= 0),
+       assert(
+         minProbability == null ||
+             (minProbability >= 0.0 && minProbability <= 1.0),
+       );
+}
+
 /// Parameters controlling the token sampling and generation process.
 class GenerationParams {
   /// Default prompt prefix reuse behavior for native generation.
@@ -92,10 +162,21 @@ class GenerationParams {
 
   /// Enables backend-native speculative decoding when supported.
   ///
-  /// Native LiteRT-LM currently honors this flag by forwarding it to the
-  /// runtime's speculative decoding setting. llama.cpp, WebGPU, and LiteRT-LM
-  /// web reject this option until their speculative paths are implemented.
+  /// Native LiteRT-LM forwards this flag to the runtime's speculative decoding
+  /// setting. llama.cpp maps it to the backend-default speculative strategy
+  /// when the active model/context supports that path. WebGPU and LiteRT-LM web
+  /// reject this option until their runtimes expose equivalent controls.
+  ///
+  /// Prefer [speculativeDecodingConfig] for new code that needs a specific
+  /// strategy or runtime-neutral options.
   final bool speculativeDecoding;
+
+  /// Strategy and knobs for backend-native speculative decoding.
+  ///
+  /// `null` disables speculative decoding unless [speculativeDecoding] is true.
+  /// When [speculativeDecoding] is true and this is null, backends should treat
+  /// the request as [SpeculativeDecodingStrategy.backendDefault].
+  final SpeculativeDecodingConfig? speculativeDecodingConfig;
 
   /// Reuses matching prompt prefixes from previous requests in the same native
   /// context to reduce prompt ingestion latency.
@@ -133,10 +214,25 @@ class GenerationParams {
     this.preservedTokens = const [],
     this.grammarRoot = 'root',
     this.speculativeDecoding = false,
+    this.speculativeDecodingConfig,
     this.reusePromptPrefix = defaultReusePromptPrefix,
     this.streamBatchTokenThreshold = defaultStreamBatchTokenThreshold,
     this.streamBatchByteThreshold = defaultStreamBatchByteThreshold,
   });
+
+  /// Whether speculative decoding is requested by either public API shape.
+  bool get isSpeculativeDecodingEnabled =>
+      speculativeDecoding || speculativeDecodingConfig != null;
+
+  /// Resolved speculative decoding configuration, if enabled.
+  ///
+  /// Legacy [speculativeDecoding] requests resolve to backend-default
+  /// speculative decoding.
+  SpeculativeDecodingConfig? get resolvedSpeculativeDecodingConfig =>
+      speculativeDecodingConfig ??
+      (speculativeDecoding
+          ? const SpeculativeDecodingConfig.backendDefault()
+          : null);
 
   /// Creates a copy of this [GenerationParams] with updated fields.
   GenerationParams copyWith({
@@ -154,6 +250,8 @@ class GenerationParams {
     List<String>? preservedTokens,
     String? grammarRoot,
     bool? speculativeDecoding,
+    SpeculativeDecodingConfig? speculativeDecodingConfig,
+    bool clearSpeculativeDecodingConfig = false,
     bool? reusePromptPrefix,
     int? streamBatchTokenThreshold,
     int? streamBatchByteThreshold,
@@ -173,6 +271,9 @@ class GenerationParams {
       preservedTokens: preservedTokens ?? this.preservedTokens,
       grammarRoot: grammarRoot ?? this.grammarRoot,
       speculativeDecoding: speculativeDecoding ?? this.speculativeDecoding,
+      speculativeDecodingConfig: clearSpeculativeDecodingConfig
+          ? null
+          : (speculativeDecodingConfig ?? this.speculativeDecodingConfig),
       reusePromptPrefix: reusePromptPrefix ?? this.reusePromptPrefix,
       streamBatchTokenThreshold:
           streamBatchTokenThreshold ?? this.streamBatchTokenThreshold,

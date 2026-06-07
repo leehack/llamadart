@@ -47,6 +47,7 @@ void main() {
     await _writeBundleLibraries(bundleDir, const [
       'libllamadart.so',
       'libllama.so',
+      'libllama-common.so',
       'libggml.so',
       'libggml-base.so',
       'libggml-cpu.so',
@@ -93,6 +94,8 @@ void main() {
           expect(emittedNames, contains('libllamadart.so'));
           expect(emittedNames, contains('libllama.so'));
           expect(emittedNames, contains('libllama.so.0'));
+          expect(emittedNames, contains('libllama-common.so'));
+          expect(emittedNames, contains('libllama-common.so.0'));
           expect(emittedNames, contains('libggml.so'));
           expect(emittedNames, contains('libggml.so.0'));
           expect(emittedNames, contains('libggml-base.so'));
