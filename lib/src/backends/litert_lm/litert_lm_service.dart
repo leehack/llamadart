@@ -934,7 +934,7 @@ class LiteRtLmService {
       if (targetLangCode != null && targetLangCode.isNotEmpty)
         'target_lang_code': targetLangCode,
       if (templateNow != null) 'now': templateNow.toIso8601String(),
-      if (!enableThinking) 'enable_thinking': false,
+      'enable_thinking': enableThinking,
     };
     return extraContext.isEmpty ? null : extraContext;
   }

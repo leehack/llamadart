@@ -1038,6 +1038,7 @@ void main() {
         'source_lang_code': 'en',
         'target_lang_code': 'fr',
         'now': '2026-06-07T12:00:00.000Z',
+        'enable_thinking': true,
       });
     } finally {
       service.dispose();
