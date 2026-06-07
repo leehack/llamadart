@@ -1,4 +1,4 @@
-## 0.7.2
+## 0.7.3
 
 * **LiteRT-LM LoRA diagnostics**:
   * Clarified native `.litertlm` LoRA failures so `ModelParams.loras`,
@@ -8,6 +8,13 @@
   * Documented that LoRA remains supported through llama.cpp/GGUF backends and
     requires a future `litert-lm-native` runtime with stable C wrapper
     functions before Dart FFI can support LiteRT-LM adapters.
+
+## 0.7.2
+
+* Added explicit pub.dev platform metadata for Android, iOS, Linux, macOS, web,
+  and Windows. This keeps the package listing aligned with the actual
+  cross-platform runtime support even though Flutter plugin registration is
+  only needed for Darwin app integration.
 
 ## 0.7.1
 
