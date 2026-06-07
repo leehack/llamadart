@@ -1000,10 +1000,12 @@ class _JsonResponseEngine extends MockLlamaEngine {
   Stream<LlamaCompletionChunk> create(
     List<LlamaChatMessage> messages, {
     GenerationParams? params,
+    Map<String, dynamic>? jsonSchema,
     List<ToolDefinition>? tools,
     ToolChoice? toolChoice,
     bool parallelToolCalls = false,
     bool enableThinking = true,
+    Map<String, dynamic>? responseFormat,
     String? sourceLangCode,
     String? targetLangCode,
     Map<String, dynamic>? chatTemplateKwargs,
@@ -1031,10 +1033,12 @@ class _ThinkTaggedResponseEngine extends MockLlamaEngine {
   Stream<LlamaCompletionChunk> create(
     List<LlamaChatMessage> messages, {
     GenerationParams? params,
+    Map<String, dynamic>? jsonSchema,
     List<ToolDefinition>? tools,
     ToolChoice? toolChoice,
     bool parallelToolCalls = false,
     bool enableThinking = true,
+    Map<String, dynamic>? responseFormat,
     String? sourceLangCode,
     String? targetLangCode,
     Map<String, dynamic>? chatTemplateKwargs,
@@ -1062,10 +1066,12 @@ class _MinistralPlainReasoningEngine extends MockLlamaEngine {
   Stream<LlamaCompletionChunk> create(
     List<LlamaChatMessage> messages, {
     GenerationParams? params,
+    Map<String, dynamic>? jsonSchema,
     List<ToolDefinition>? tools,
     ToolChoice? toolChoice,
     bool parallelToolCalls = false,
     bool enableThinking = true,
+    Map<String, dynamic>? responseFormat,
     String? sourceLangCode,
     String? targetLangCode,
     Map<String, dynamic>? chatTemplateKwargs,
@@ -1098,10 +1104,12 @@ class _ToolCaptureEngine extends MockLlamaEngine {
   Stream<LlamaCompletionChunk> create(
     List<LlamaChatMessage> messages, {
     GenerationParams? params,
+    Map<String, dynamic>? jsonSchema,
     List<ToolDefinition>? tools,
     ToolChoice? toolChoice,
     bool parallelToolCalls = false,
     bool enableThinking = true,
+    Map<String, dynamic>? responseFormat,
     String? sourceLangCode,
     String? targetLangCode,
     Map<String, dynamic>? chatTemplateKwargs,
@@ -1133,10 +1141,12 @@ class _SinglePassToolCallEngine extends MockLlamaEngine {
   Stream<LlamaCompletionChunk> create(
     List<LlamaChatMessage> messages, {
     GenerationParams? params,
+    Map<String, dynamic>? jsonSchema,
     List<ToolDefinition>? tools,
     ToolChoice? toolChoice,
     bool parallelToolCalls = false,
     bool enableThinking = true,
+    Map<String, dynamic>? responseFormat,
     String? sourceLangCode,
     String? targetLangCode,
     Map<String, dynamic>? chatTemplateKwargs,
@@ -1178,10 +1188,12 @@ class _ThinkingControlCaptureEngine extends MockLlamaEngine {
   Stream<LlamaCompletionChunk> create(
     List<LlamaChatMessage> messages, {
     GenerationParams? params,
+    Map<String, dynamic>? jsonSchema,
     List<ToolDefinition>? tools,
     ToolChoice? toolChoice,
     bool parallelToolCalls = false,
     bool enableThinking = true,
+    Map<String, dynamic>? responseFormat,
     String? sourceLangCode,
     String? targetLangCode,
     Map<String, dynamic>? chatTemplateKwargs,
@@ -1210,10 +1222,12 @@ class _MultimodalPromptEvalFailureEngine extends MockLlamaEngine {
   Stream<LlamaCompletionChunk> create(
     List<LlamaChatMessage> messages, {
     GenerationParams? params,
+    Map<String, dynamic>? jsonSchema,
     List<ToolDefinition>? tools,
     ToolChoice? toolChoice,
     bool parallelToolCalls = false,
     bool enableThinking = true,
+    Map<String, dynamic>? responseFormat,
     String? sourceLangCode,
     String? targetLangCode,
     Map<String, dynamic>? chatTemplateKwargs,
@@ -1317,10 +1331,12 @@ class _FunctionGemmaRawCallTextEngine extends MockLlamaEngine {
   Stream<LlamaCompletionChunk> create(
     List<LlamaChatMessage> messages, {
     GenerationParams? params,
+    Map<String, dynamic>? jsonSchema,
     List<ToolDefinition>? tools,
     ToolChoice? toolChoice,
     bool parallelToolCalls = false,
     bool enableThinking = true,
+    Map<String, dynamic>? responseFormat,
     String? sourceLangCode,
     String? targetLangCode,
     Map<String, dynamic>? chatTemplateKwargs,

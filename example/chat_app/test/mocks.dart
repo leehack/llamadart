@@ -190,10 +190,12 @@ class MockLlamaEngine extends LlamaEngine {
   Stream<LlamaCompletionChunk> create(
     List<LlamaChatMessage> messages, {
     GenerationParams? params,
+    Map<String, dynamic>? jsonSchema,
     List<ToolDefinition>? tools,
     ToolChoice? toolChoice,
     bool parallelToolCalls = false,
     bool enableThinking = true,
+    Map<String, dynamic>? responseFormat,
     String? sourceLangCode,
     String? targetLangCode,
     Map<String, dynamic>? chatTemplateKwargs,
