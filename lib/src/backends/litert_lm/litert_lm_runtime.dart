@@ -1572,8 +1572,9 @@ List<Map<String, Object>> _messageContentJson(
     };
     if (media == null) {
       throw ArgumentError(
-        'LiteRT-LM prompt contains more media markers than provided media '
-        'parts.',
+        'LiteRT-LM prompt media marker "$marker" does not have a matching '
+        'provided media part. Check that the number and modality of image/audio '
+        'content parts match the rendered prompt markers.',
       );
     }
     content.add(media.toJson());
