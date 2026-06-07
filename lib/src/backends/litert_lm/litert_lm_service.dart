@@ -35,6 +35,7 @@ class LiteRtLmService {
   String? _activeBackend;
   int? _activeOutputTokens;
   bool? _activeSpeculativeDecoding;
+  int? _activeMaxNumImages;
   int _nextModelHandle = 1;
   int _nextContextHandle = 1;
   int? _modelHandle;
@@ -79,6 +80,7 @@ class LiteRtLmService {
     _activeBackend = resolvedBackend;
     _activeOutputTokens = null;
     _activeSpeculativeDecoding = null;
+    _activeMaxNumImages = null;
     _modelHandle = _nextModelHandle++;
     _contextHandle = null;
     _lastMetrics = null;
@@ -98,6 +100,7 @@ class LiteRtLmService {
     _activeBackend = null;
     _activeOutputTokens = null;
     _activeSpeculativeDecoding = null;
+    _activeMaxNumImages = null;
     _modelHandle = null;
     _contextHandle = null;
     _lastMetrics = null;
@@ -140,10 +143,9 @@ class LiteRtLmService {
     List<LlamaContentPart>? parts,
   }) async* {
     _checkContextHandle(contextHandle);
-    if (_hasMediaParts(parts)) {
-      throw UnsupportedError('LiteRtLmBackend does not support media parts.');
-    }
     _validateGenerationParams(params);
+    final mediaInputs = await _liteRtLmMediaInputsFromParts(parts);
+    final maxNumImages = _maxNumImagesFor(mediaInputs);
 
     _cancelRequested = false;
     if (params.maxTokens <= 0) {
@@ -151,7 +153,10 @@ class LiteRtLmService {
       return;
     }
 
-    final client = await _ensureClientForGeneration(params);
+    final client = await _ensureClientForGeneration(
+      params,
+      maxNumImages: maxNumImages,
+    );
     if (_cancelRequested) {
       return;
     }
@@ -175,7 +180,7 @@ class LiteRtLmService {
     final sw = Stopwatch()..start();
     try {
       final stream = _applyStopSequences(
-        client.generate(prompt),
+        client.generate(prompt, mediaInputs: mediaInputs),
         stopSequences,
         onStop: cancelGeneration,
       );
@@ -407,17 +412,20 @@ class LiteRtLmService {
   }
 
   Future<LiteRtLmRuntimeClient> _ensureClientForGeneration(
-    GenerationParams params,
-  ) {
+    GenerationParams params, {
+    int? maxNumImages,
+  }) {
     return _ensureClientForRuntime(
       outputTokens: params.maxTokens,
       speculativeDecoding: params.speculativeDecoding,
+      maxNumImages: maxNumImages,
     );
   }
 
   Future<LiteRtLmRuntimeClient> _ensureClientForRuntime({
     int? outputTokens,
     bool? speculativeDecoding,
+    int? maxNumImages,
   }) async {
     final modelPath = _modelPath;
     final modelParams = _modelParams;
@@ -429,12 +437,14 @@ class LiteRtLmService {
         outputTokens ?? _activeOutputTokens ?? GenerationParams().maxTokens;
     final resolvedSpeculativeDecoding =
         speculativeDecoding ?? _activeSpeculativeDecoding ?? false;
+    final resolvedMaxNumImages = maxNumImages ?? _activeMaxNumImages;
     final backend = _activeBackend ?? _backendNameFor(modelParams);
     final existing = _client;
     if (existing != null &&
         (outputTokens == null || _activeOutputTokens == resolvedOutputTokens) &&
         (speculativeDecoding == null ||
             _activeSpeculativeDecoding == resolvedSpeculativeDecoding) &&
+        (maxNumImages == null || _activeMaxNumImages == resolvedMaxNumImages) &&
         _activeBackend == backend) {
       return existing;
     }
@@ -443,6 +453,7 @@ class LiteRtLmService {
     _client = null;
     _activeOutputTokens = null;
     _activeSpeculativeDecoding = null;
+    _activeMaxNumImages = null;
     final client = _clientFactory();
     final responseThinkingTags = _responseThinkingTagsForModel(modelPath);
     client.configureResponseThinkingTags(
@@ -455,6 +466,7 @@ class LiteRtLmService {
         backend: backend,
         maxTokens: modelParams.contextSize,
         outputTokens: resolvedOutputTokens,
+        maxNumImages: resolvedMaxNumImages,
         cacheDir: _defaultCacheDir(),
         speculativeDecoding: resolvedSpeculativeDecoding,
         minLogLevel: _liteRtLmMinLogLevel(_logLevel),
@@ -470,6 +482,7 @@ class LiteRtLmService {
     _client = client;
     _activeOutputTokens = resolvedOutputTokens;
     _activeSpeculativeDecoding = resolvedSpeculativeDecoding;
+    _activeMaxNumImages = resolvedMaxNumImages;
     _activeBackend = backend;
     return client;
   }
@@ -539,13 +552,112 @@ class LiteRtLmService {
     }
   }
 
-  bool _hasMediaParts(List<LlamaContentPart>? parts) {
-    if (parts == null) {
-      return false;
+  Future<List<LiteRtLmMediaInput>> _liteRtLmMediaInputsFromParts(
+    List<LlamaContentPart>? parts,
+  ) async {
+    if (parts == null || parts.isEmpty) {
+      return const <LiteRtLmMediaInput>[];
     }
-    return parts.any(
-      (part) => part is LlamaImageContent || part is LlamaAudioContent,
+
+    final inputs = <LiteRtLmMediaInput>[];
+    for (final part in parts) {
+      if (part is LlamaTextContent ||
+          part is LlamaToolCallContent ||
+          part is LlamaToolResultContent ||
+          part is LlamaThinkingContent) {
+        continue;
+      }
+      if (part is LlamaImageContent) {
+        inputs.add(await _liteRtLmImageInputFromPart(part));
+        continue;
+      }
+      if (part is LlamaAudioContent) {
+        inputs.add(await _liteRtLmAudioInputFromPart(part));
+      }
+    }
+    return inputs;
+  }
+
+  Future<LiteRtLmMediaInput> _liteRtLmImageInputFromPart(
+    LlamaImageContent part,
+  ) async {
+    if (part.url != null && part.url!.isNotEmpty) {
+      throw UnsupportedError(
+        'LiteRtLmBackend does not support remote image URLs. Download the '
+        'image and pass a local path or encoded image bytes.',
+      );
+    }
+
+    final imagePath = part.path;
+    if (imagePath != null) {
+      if (imagePath.isEmpty) {
+        throw ArgumentError.value(imagePath, 'path', 'must not be empty');
+      }
+      if (!await File(imagePath).exists()) {
+        throw ArgumentError('LiteRT-LM image file does not exist: $imagePath');
+      }
+      return LiteRtLmMediaInput.imagePath(imagePath);
+    }
+
+    final imageBytes = part.bytes;
+    if (imageBytes != null) {
+      if (imageBytes.isEmpty) {
+        throw ArgumentError.value(imageBytes, 'bytes', 'must not be empty');
+      }
+      if (part.width != null || part.height != null) {
+        throw UnsupportedError(
+          'LiteRtLmBackend cannot consume raw RGB image bytes with width or '
+          'height metadata. Pass an encoded PNG/JPEG path or encoded image '
+          'bytes instead.',
+        );
+      }
+      return LiteRtLmMediaInput.imageBlob(imageBytes);
+    }
+
+    throw ArgumentError(
+      'LiteRT-LM image content must provide a local path or encoded bytes.',
     );
+  }
+
+  Future<LiteRtLmMediaInput> _liteRtLmAudioInputFromPart(
+    LlamaAudioContent part,
+  ) async {
+    final audioPath = part.path;
+    if (audioPath != null) {
+      if (audioPath.isEmpty) {
+        throw ArgumentError.value(audioPath, 'path', 'must not be empty');
+      }
+      if (!await File(audioPath).exists()) {
+        throw ArgumentError('LiteRT-LM audio file does not exist: $audioPath');
+      }
+      return LiteRtLmMediaInput.audioPath(audioPath);
+    }
+
+    final audioBytes = part.bytes;
+    if (audioBytes != null) {
+      if (audioBytes.isEmpty) {
+        throw ArgumentError.value(audioBytes, 'bytes', 'must not be empty');
+      }
+      return LiteRtLmMediaInput.audioBlob(audioBytes);
+    }
+
+    if (part.samples != null) {
+      throw UnsupportedError(
+        'LiteRtLmBackend does not support raw PCM audio samples yet. Pass an '
+        'encoded audio file path or encoded audio bytes.',
+      );
+    }
+
+    throw ArgumentError(
+      'LiteRT-LM audio content must provide a local path or encoded bytes.',
+    );
+  }
+
+  int? _maxNumImagesFor(List<LiteRtLmMediaInput> mediaInputs) {
+    final imageCount = mediaInputs
+        .where((input) => input.type == LiteRtLmMediaType.image)
+        .length;
+    return imageCount == 0 ? null : imageCount;
   }
 
   int _firstStopIndex(String text, List<String> stopSequences) {

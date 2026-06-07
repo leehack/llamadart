@@ -4,6 +4,7 @@ library;
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:llamadart/src/backends/litert_lm/litert_lm_service.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_runtime.dart';
@@ -649,43 +650,121 @@ void main() {
     },
   );
 
-  test('rejects media parts before native runtime initialization', () async {
-    final fakeClient = _FakeLiteRtLmRuntimeClient();
-    final service = LiteRtLmService(clientFactory: () => fakeClient);
+  test(
+    'routes local image parts through native multimodal generation',
+    () async {
+      final fakeClient = _FakeLiteRtLmRuntimeClient();
+      final service = LiteRtLmService(clientFactory: () => fakeClient);
+      final imageFile = File('${tempDir.path}/image.png');
+      await imageFile.writeAsBytes(const <int>[
+        0x89,
+        0x50,
+        0x4e,
+        0x47,
+        0x0d,
+        0x0a,
+        0x1a,
+        0x0a,
+      ]);
 
-    try {
-      final modelHandle = await service.loadModel(
-        modelFile.path,
-        const ModelParams(preferredBackend: GpuBackend.cpu),
-      );
-      final contextHandle = service.createContext(
-        modelHandle,
-        const ModelParams(preferredBackend: GpuBackend.cpu),
-      );
+      try {
+        final modelHandle = await service.loadModel(
+          modelFile.path,
+          const ModelParams(preferredBackend: GpuBackend.cpu),
+        );
+        final contextHandle = service.createContext(
+          modelHandle,
+          const ModelParams(preferredBackend: GpuBackend.cpu),
+        );
 
-      await expectLater(
-        service.generate(
-          contextHandle,
-          'describe',
-          const GenerationParams(),
-          parts: const [LlamaImageContent(path: '/tmp/image.png')],
-        ),
-        emitsError(
-          isA<UnsupportedError>().having(
-            (error) => error.message.toString(),
-            'message',
-            contains('media parts'),
+        final chunksFuture = service
+            .generate(
+              contextHandle,
+              'describe <|image|>',
+              const GenerationParams(maxTokens: 8),
+              parts: [LlamaImageContent(path: imageFile.path)],
+            )
+            .toList();
+
+        await fakeClient.generateStarted.future;
+        fakeClient.generated.add('ok');
+        await fakeClient.generated.close();
+
+        expect(await chunksFuture, [utf8.encode('ok')]);
+        expect(fakeClient.lastMaxNumImages, 1);
+        expect(fakeClient.createConversationCount, 1);
+        expect(fakeClient.generateCount, 1);
+        expect(fakeClient.lastGeneratePrompt, 'describe <|image|>');
+        expect(fakeClient.lastMediaInputs, hasLength(1));
+        expect(
+          fakeClient.lastMediaInputs!.single.type,
+          LiteRtLmMediaType.image,
+        );
+        expect(fakeClient.lastMediaInputs!.single.path, imageFile.path);
+      } finally {
+        service.dispose();
+      }
+    },
+  );
+
+  test(
+    'rejects unsupported LiteRT-LM media shapes before generation',
+    () async {
+      final fakeClient = _FakeLiteRtLmRuntimeClient();
+      final service = LiteRtLmService(clientFactory: () => fakeClient);
+
+      try {
+        final modelHandle = await service.loadModel(
+          modelFile.path,
+          const ModelParams(preferredBackend: GpuBackend.cpu),
+        );
+        final contextHandle = service.createContext(
+          modelHandle,
+          const ModelParams(preferredBackend: GpuBackend.cpu),
+        );
+
+        await expectLater(
+          service.generate(
+            contextHandle,
+            'describe',
+            const GenerationParams(),
+            parts: const [LlamaImageContent(url: 'https://example.com/a.png')],
           ),
-        ),
-      );
+          emitsError(
+            isA<UnsupportedError>().having(
+              (error) => error.message.toString(),
+              'message',
+              contains('remote image URLs'),
+            ),
+          ),
+        );
 
-      expect(fakeClient.initializeStarted.isCompleted, isFalse);
-      expect(fakeClient.createConversationCount, 0);
-      expect(fakeClient.generateCount, 0);
-    } finally {
-      service.dispose();
-    }
-  });
+        await expectLater(
+          service.generate(
+            contextHandle,
+            'transcribe',
+            const GenerationParams(),
+            parts: [
+              LlamaAudioContent(samples: Float32List.fromList([0.1])),
+            ],
+          ),
+          emitsError(
+            isA<UnsupportedError>().having(
+              (error) => error.message.toString(),
+              'message',
+              contains('raw PCM audio samples'),
+            ),
+          ),
+        );
+
+        expect(fakeClient.initializeStarted.isCompleted, isFalse);
+        expect(fakeClient.createConversationCount, 0);
+        expect(fakeClient.generateCount, 0);
+      } finally {
+        service.dispose();
+      }
+    },
+  );
 
   test(
     'allows text parts already represented in the rendered prompt',
@@ -1558,6 +1637,7 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
   String? lastBackend;
   int? lastMaxTokens;
   int? lastOutputTokens;
+  int? lastMaxNumImages;
   String? lastCacheDir;
   bool? lastSpeculativeDecoding;
   int? lastMinLogLevel;
@@ -1567,6 +1647,9 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
   double? lastTopP;
   int? lastSeed;
   bool? lastNpuBackend;
+  String? lastGeneratePrompt;
+  List<LiteRtLmMediaInput>? lastMediaInputs;
+  int? lastVisualTokenBudget;
   String? lastTokenizeText;
   bool? lastTokenizeAddSpecial;
   List<int>? lastDetokenizeTokens;
@@ -1587,6 +1670,7 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
     int maxTokens = 4096,
     int outputTokens = 256,
     int? prefillTokens,
+    int? maxNumImages,
     String? cacheDir,
     bool speculativeDecoding = true,
     int minLogLevel = 3,
@@ -1595,6 +1679,7 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
     lastBackend = backend;
     lastMaxTokens = maxTokens;
     lastOutputTokens = outputTokens;
+    lastMaxNumImages = maxNumImages;
     lastCacheDir = cacheDir;
     lastSpeculativeDecoding = speculativeDecoding;
     lastMinLogLevel = minLogLevel;
@@ -1655,8 +1740,15 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
   }
 
   @override
-  Stream<String> generate(String prompt) {
+  Stream<String> generate(
+    String prompt, {
+    List<LiteRtLmMediaInput> mediaInputs = const <LiteRtLmMediaInput>[],
+    int? visualTokenBudget,
+  }) {
     _checkNotDisposed();
+    lastGeneratePrompt = prompt;
+    lastMediaInputs = List<LiteRtLmMediaInput>.from(mediaInputs);
+    lastVisualTokenBudget = visualTokenBudget;
     generateCount += 1;
     if (!generateStarted.isCompleted) {
       generateStarted.complete();

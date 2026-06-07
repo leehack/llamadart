@@ -3,6 +3,7 @@ library;
 
 import 'dart:ffi';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:llamadart/src/backends/litert_lm/litert_lm_runtime.dart';
 import 'package:test/test.dart';
@@ -45,6 +46,17 @@ void main() {
 
     expect(result.text, 'hello');
     expect(result.metrics, same(metrics));
+  });
+
+  test('LiteRtLmMediaInput serializes path and blob inputs', () {
+    expect(LiteRtLmMediaInput.imagePath('/tmp/image.png').toJson(), {
+      'type': 'image',
+      'path': '/tmp/image.png',
+    });
+    expect(LiteRtLmMediaInput.audioBlob(Uint8List.fromList([1, 2])).toJson(), {
+      'type': 'audio',
+      'blob': 'AQI=',
+    });
   });
 
   test('macOS LiteRT-LM cache lookup follows the current runtime ABI', () {
@@ -310,6 +322,16 @@ void main() {
             (error) => error.name,
             'name',
             'prefillTokens',
+          ),
+        ),
+      );
+      expect(
+        client.initialize(modelPath: 'model.litertlm', maxNumImages: 0),
+        throwsA(
+          isA<ArgumentError>().having(
+            (error) => error.name,
+            'name',
+            'maxNumImages',
           ),
         ),
       );

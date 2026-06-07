@@ -349,10 +349,13 @@ grammar constraints are not applied to `.litertlm` generation. LiteRT-LM web is
 currently limited to single-turn text prompts through `@litert-lm/core`; it does
 not yet preserve structured chat history, system prompts, tool declarations, or
 thinking/tool-call parsing with the same semantics as native. The current
-implementation does not expose embeddings, state persistence, LoRA, or
-multimodal operations through LiteRT-LM. `ChatSession` uses a conservative
-prompt-size estimate for history pruning only when exact tokenization is
-unavailable.
+implementation does not expose embeddings, state persistence, or LoRA through
+LiteRT-LM. Native LiteRT-LM accepts `LlamaImageContent` and `LlamaAudioContent`
+path/blob inputs through normal generation for `.litertlm` bundles whose native
+template/runtime supports media; it does not use external `mmproj` projector
+loading, remote media URLs, or raw PCM sample buffers. `ChatSession` uses a
+conservative prompt-size estimate for history pruning only when exact
+tokenization is unavailable.
 `LiteRtLmBackendPreference.auto` chooses GPU on Android/macOS/web and CPU on
 other current LiteRT-LM targets; set `cpu`, `gpu`, or Android-only `npu`
 explicitly when benchmarking or pinning deployment behavior.
@@ -911,6 +914,17 @@ Web-specific note:
 - Load model/mmproj with URL-based assets (`loadModelFromUrl` + URL projector).
 - For user-picked browser files, send media as bytes (`LlamaImageContent(bytes: ...)`,
   `LlamaAudioContent(bytes: ...)`) rather than local file paths.
+
+LiteRT-LM native note:
+
+- `.litertlm` bundles do not use a separate `mmproj`; load the bundle and pass
+  `LlamaImageContent` / `LlamaAudioContent` parts directly to `engine.create`
+  or `ChatSession.create`.
+- Native LiteRT-LM supports local paths and encoded media bytes (`blob`) for
+  media parts. Remote image URLs and raw PCM `Float32List` samples fail before
+  native generation with clear errors.
+- `loadMultimodalProjector`, `supportsVision`, and `supportsAudio` remain
+  projector-oriented APIs for llama.cpp/WebGPU multimodal paths.
 
 ### 💡 Model-Specific Notes
 

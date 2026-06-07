@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
 import 'dart:isolate';
+import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
 import 'package:path/path.dart' as path;
@@ -355,18 +356,85 @@ class LiteRtLmRuntimeResult {
   const LiteRtLmRuntimeResult({required this.text, required this.metrics});
 }
 
+/// LiteRT-LM media input passed through the native Conversation API.
+class LiteRtLmMediaInput {
+  LiteRtLmMediaInput._({required this.type, this.path, this.bytes});
+
+  /// Creates image input backed by a local file path.
+  factory LiteRtLmMediaInput.imagePath(String path) {
+    return LiteRtLmMediaInput._(type: LiteRtLmMediaType.image, path: path);
+  }
+
+  /// Creates image input backed by encoded image bytes.
+  factory LiteRtLmMediaInput.imageBlob(Uint8List bytes) {
+    return LiteRtLmMediaInput._(
+      type: LiteRtLmMediaType.image,
+      bytes: Uint8List.fromList(bytes),
+    );
+  }
+
+  /// Creates audio input backed by a local file path.
+  factory LiteRtLmMediaInput.audioPath(String path) {
+    return LiteRtLmMediaInput._(type: LiteRtLmMediaType.audio, path: path);
+  }
+
+  /// Creates audio input backed by encoded audio bytes.
+  factory LiteRtLmMediaInput.audioBlob(Uint8List bytes) {
+    return LiteRtLmMediaInput._(
+      type: LiteRtLmMediaType.audio,
+      bytes: Uint8List.fromList(bytes),
+    );
+  }
+
+  /// Media modality.
+  final LiteRtLmMediaType type;
+
+  /// Local file path, when file-backed.
+  final String? path;
+
+  /// Encoded media bytes, when blob-backed.
+  final Uint8List? bytes;
+
+  /// Converts this input to LiteRT-LM conversation message JSON.
+  Map<String, Object> toJson() {
+    final result = <String, Object>{'type': type.name};
+    final localPath = path;
+    if (localPath != null) {
+      result['path'] = localPath;
+      return result;
+    }
+    final blob = bytes;
+    if (blob != null) {
+      result['blob'] = base64Encode(blob);
+      return result;
+    }
+    throw StateError('LiteRT-LM media input must have a path or bytes.');
+  }
+}
+
+/// Media modality for [LiteRtLmMediaInput].
+enum LiteRtLmMediaType {
+  /// Image input.
+  image,
+
+  /// Audio input.
+  audio,
+}
+
 // coverage:ignore-start
 // Native FFI boundary: exercised by LiteRT-LM smoke tests with real libraries.
 final class _BlockingSendMessageRequest {
   const _BlockingSendMessageRequest({
     required this.libraryPath,
     required this.conversationAddress,
-    required this.prompt,
+    required this.messageJson,
+    required this.visualTokenBudget,
   });
 
   final String libraryPath;
   final int conversationAddress;
-  final String prompt;
+  final String messageJson;
+  final int? visualTokenBudget;
 }
 
 /// Low-level native LiteRT-LM runtime client.
@@ -405,6 +473,7 @@ class LiteRtLmRuntimeClient {
     int maxTokens = 4096,
     int outputTokens = 256,
     int? prefillTokens,
+    int? maxNumImages,
     String? cacheDir,
     bool speculativeDecoding = true,
     int minLogLevel = 3,
@@ -423,6 +492,13 @@ class LiteRtLmRuntimeClient {
       throw ArgumentError.value(
         prefillTokens,
         'prefillTokens',
+        'must be positive when provided',
+      );
+    }
+    if (maxNumImages != null && maxNumImages <= 0) {
+      throw ArgumentError.value(
+        maxNumImages,
+        'maxNumImages',
         'must be positive when provided',
       );
     }
@@ -457,6 +533,9 @@ class LiteRtLmRuntimeClient {
         settings,
         speculativeDecoding,
       );
+      if (maxNumImages != null) {
+        bindings.engineSettingsSetMaxNumImages(settings, maxNumImages);
+      }
       if (prefillTokens != null) {
         bindings.engineSettingsSetNumPrefillTokens(settings, prefillTokens);
       }
@@ -614,24 +693,42 @@ class LiteRtLmRuntimeClient {
   }
 
   /// Streams generated text from the active conversation.
-  Stream<String> generate(String prompt) {
+  Stream<String> generate(
+    String prompt, {
+    List<LiteRtLmMediaInput> mediaInputs = const <LiteRtLmMediaInput>[],
+    int? visualTokenBudget,
+  }) {
+    _validateVisualTokenBudget(visualTokenBudget);
     // Upstream stream callback strings are only valid during the native call.
     // Dart listener callbacks run later, so streaming requires StreamProxy to
     // copy those strings across the thread/isolate boundary.
     if (_proxyCreate == null) {
-      return _generateBlocking(prompt);
+      return _generateBlocking(
+        prompt,
+        mediaInputs: mediaInputs,
+        visualTokenBudget: visualTokenBudget,
+      );
     }
-    return _generateStreaming(prompt);
+    return _generateStreaming(
+      prompt,
+      mediaInputs: mediaInputs,
+      visualTokenBudget: visualTokenBudget,
+    );
   }
 
-  Stream<String> _generateBlocking(String prompt) {
+  Stream<String> _generateBlocking(
+    String prompt, {
+    required List<LiteRtLmMediaInput> mediaInputs,
+    required int? visualTokenBudget,
+  }) {
     final conversation = _requireConversation();
     final liteRtLmLibraryPath = _liteRtLmLibraryPath!;
     final controller = StreamController<String>(onCancel: cancel);
     final request = _BlockingSendMessageRequest(
       libraryPath: liteRtLmLibraryPath,
       conversationAddress: conversation.address,
-      prompt: prompt,
+      messageJson: _messageJson(prompt, mediaInputs: mediaInputs),
+      visualTokenBudget: visualTokenBudget,
     );
 
     unawaited(() async {
@@ -661,10 +758,17 @@ class LiteRtLmRuntimeClient {
     return controller.stream;
   }
 
-  Stream<String> _generateStreaming(String prompt) {
+  Stream<String> _generateStreaming(
+    String prompt, {
+    required List<LiteRtLmMediaInput> mediaInputs,
+    required int? visualTokenBudget,
+  }) {
     final bindings = _requireBindings();
     final conversation = _requireConversation();
-    final messagePtr = _messageJson(prompt).toNativeUtf8();
+    final messagePtr = _messageJson(
+      prompt,
+      mediaInputs: mediaInputs,
+    ).toNativeUtf8();
     final assembler = LiteRtLmChannelAssembler(
       thinkingStartTag: _thinkingStartTag,
       thinkingEndTag: _thinkingEndTag,
@@ -770,12 +874,10 @@ class LiteRtLmRuntimeClient {
 
     Pointer<_LiteRtLmConversationOptionalArgs> optionalArgs = nullptr;
     try {
-      optionalArgs = bindings.conversationOptionalArgsCreate();
-      if (optionalArgs == nullptr) {
-        throw StateError(
-          'litert_lm_conversation_optional_args_create returned null',
-        );
-      }
+      optionalArgs = _createConversationOptionalArgs(
+        bindings,
+        visualTokenBudget: visualTokenBudget,
+      );
 
       final rc = bindings.conversationSendMessageStream(
         conversation,
@@ -1404,13 +1506,91 @@ String _normalizeLiteRtLmRuntimeBackend(String backend) {
   throw ArgumentError.value(backend, 'backend', 'must be cpu, gpu, or npu');
 }
 
-String _messageJson(String text) {
+final RegExp _liteRtLmMediaMarkerPattern = RegExp(
+  r'<start_of_image>|<\|image\|>|<image_soft_token>|<__media__>|'
+  r'<start_of_audio>|<\|audio\|>|<audio_soft_token>',
+);
+
+String _messageJson(
+  String text, {
+  List<LiteRtLmMediaInput> mediaInputs = const <LiteRtLmMediaInput>[],
+}) {
+  if (mediaInputs.isEmpty) {
+    return jsonEncode({
+      'role': 'user',
+      'content': [
+        {'type': 'text', 'text': text},
+      ],
+    });
+  }
+
   return jsonEncode({
     'role': 'user',
-    'content': [
-      {'type': 'text', 'text': text},
-    ],
+    'content': _messageContentJson(text, mediaInputs),
   });
+}
+
+List<Map<String, Object>> _messageContentJson(
+  String text,
+  List<LiteRtLmMediaInput> mediaInputs,
+) {
+  final content = <Map<String, Object>>[];
+  final consumed = <int>{};
+
+  void addText(String value) {
+    if (value.isNotEmpty) {
+      content.add({'type': 'text', 'text': value});
+    }
+  }
+
+  LiteRtLmMediaInput? takeMedia(bool Function(LiteRtLmMediaInput) predicate) {
+    for (var i = 0; i < mediaInputs.length; i++) {
+      if (consumed.contains(i)) {
+        continue;
+      }
+      final input = mediaInputs[i];
+      if (predicate(input)) {
+        consumed.add(i);
+        return input;
+      }
+    }
+    return null;
+  }
+
+  var start = 0;
+  for (final match in _liteRtLmMediaMarkerPattern.allMatches(text)) {
+    addText(text.substring(start, match.start));
+    final marker = match.group(0)!;
+    final media = switch (marker) {
+      '<start_of_image>' || '<|image|>' || '<image_soft_token>' => takeMedia(
+        (input) => input.type == LiteRtLmMediaType.image,
+      ),
+      '<start_of_audio>' || '<|audio|>' || '<audio_soft_token>' => takeMedia(
+        (input) => input.type == LiteRtLmMediaType.audio,
+      ),
+      _ => takeMedia((_) => true),
+    };
+    if (media == null) {
+      throw ArgumentError(
+        'LiteRT-LM prompt contains more media markers than provided media '
+        'parts.',
+      );
+    }
+    content.add(media.toJson());
+    start = match.end;
+  }
+  addText(text.substring(start));
+
+  for (var i = 0; i < mediaInputs.length; i++) {
+    if (!consumed.contains(i)) {
+      content.add(mediaInputs[i].toJson());
+    }
+  }
+
+  if (content.isEmpty) {
+    content.add({'type': 'text', 'text': ''});
+  }
+  return content;
 }
 
 Future<String> _runBlockingSendMessageInIsolate(
@@ -1426,15 +1606,13 @@ String _runBlockingSendMessage(_BlockingSendMessageRequest request) {
   final conversation = Pointer<_LiteRtLmConversation>.fromAddress(
     request.conversationAddress,
   );
-  final messagePtr = _messageJson(request.prompt).toNativeUtf8();
+  final messagePtr = request.messageJson.toNativeUtf8();
   Pointer<_LiteRtLmConversationOptionalArgs> optionalArgs = nullptr;
   try {
-    optionalArgs = bindings.conversationOptionalArgsCreate();
-    if (optionalArgs == nullptr) {
-      throw StateError(
-        'litert_lm_conversation_optional_args_create returned null',
-      );
-    }
+    optionalArgs = _createConversationOptionalArgs(
+      bindings,
+      visualTokenBudget: request.visualTokenBudget,
+    );
 
     final response = bindings.conversationSendMessage(
       conversation,
@@ -1460,6 +1638,35 @@ String _runBlockingSendMessage(_BlockingSendMessageRequest request) {
       bindings.conversationOptionalArgsDelete(optionalArgs);
     }
     calloc.free(messagePtr);
+  }
+}
+
+Pointer<_LiteRtLmConversationOptionalArgs> _createConversationOptionalArgs(
+  _LiteRtLmBindings bindings, {
+  required int? visualTokenBudget,
+}) {
+  final optionalArgs = bindings.conversationOptionalArgsCreate();
+  if (optionalArgs == nullptr) {
+    throw StateError(
+      'litert_lm_conversation_optional_args_create returned null',
+    );
+  }
+  if (visualTokenBudget != null) {
+    bindings.conversationOptionalArgsSetVisualTokenBudget(
+      optionalArgs,
+      visualTokenBudget,
+    );
+  }
+  return optionalArgs;
+}
+
+void _validateVisualTokenBudget(int? visualTokenBudget) {
+  if (visualTokenBudget != null && visualTokenBudget <= 0) {
+    throw ArgumentError.value(
+      visualTokenBudget,
+      'visualTokenBudget',
+      'must be positive when provided',
+    );
   }
 }
 
@@ -1642,6 +1849,12 @@ class _LiteRtLmBindings {
         Void Function(Pointer<_LiteRtLmEngineSettings>, Bool),
         void Function(Pointer<_LiteRtLmEngineSettings>, bool)
       >('litert_lm_engine_settings_set_enable_speculative_decoding');
+
+  late final engineSettingsSetMaxNumImages = _library
+      .lookupFunction<
+        Void Function(Pointer<_LiteRtLmEngineSettings>, Int),
+        void Function(Pointer<_LiteRtLmEngineSettings>, int)
+      >('litert_lm_engine_settings_set_max_num_images');
 
   late final engineSettingsSetCacheDir = _library
       .lookupFunction<
@@ -1838,6 +2051,12 @@ class _LiteRtLmBindings {
         Void Function(Pointer<_LiteRtLmConversationOptionalArgs>),
         void Function(Pointer<_LiteRtLmConversationOptionalArgs>)
       >('litert_lm_conversation_optional_args_delete');
+
+  late final conversationOptionalArgsSetVisualTokenBudget = _library
+      .lookupFunction<
+        Void Function(Pointer<_LiteRtLmConversationOptionalArgs>, Int),
+        void Function(Pointer<_LiteRtLmConversationOptionalArgs>, int)
+      >('litert_lm_conversation_optional_args_set_visual_token_budget');
 
   late final conversationSendMessage = _library
       .lookupFunction<

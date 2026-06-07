@@ -146,6 +146,13 @@ the backend, not the registry:
   active delegate, so the engine drops the grammar and tool calls are parsed
   best-effort from the model output. Gemma 4 emits no grammar, so it is
   unaffected.
+- **Native media parts use LiteRT-LM's conversation message JSON.** When
+  `LlamaImageContent` or `LlamaAudioContent` reaches the native LiteRT-LM
+  backend, llamadart removes rendered media placeholders from the text prompt
+  and sends matching `type: image` / `type: audio` message items with a local
+  `path` or base64 `blob`. The native model data processor then re-renders the
+  bundle template and performs image/audio preprocessing. This is separate from
+  the llama.cpp `mmproj` lifecycle.
 
 > The web backend (`@litert-lm/core`) uses a separate response path and does not
 > share this channel reassembly; web thinking remains limited/single-turn.

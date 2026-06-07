@@ -1,5 +1,8 @@
 // coverage:ignore-file
 
+import 'dart:convert';
+import 'dart:typed_data';
+
 /// Runtime metrics shape shared with the native LiteRT-LM implementation.
 class LiteRtLmRuntimeMetrics {
   /// Number of prompt/input tokens.
@@ -58,6 +61,71 @@ class LiteRtLmRuntimeResult {
   const LiteRtLmRuntimeResult({required this.text, required this.metrics});
 }
 
+/// LiteRT-LM media input passed through the native Conversation API.
+class LiteRtLmMediaInput {
+  LiteRtLmMediaInput._({required this.type, this.path, this.bytes});
+
+  /// Creates image input backed by a local file path.
+  factory LiteRtLmMediaInput.imagePath(String path) {
+    return LiteRtLmMediaInput._(type: LiteRtLmMediaType.image, path: path);
+  }
+
+  /// Creates image input backed by encoded image bytes.
+  factory LiteRtLmMediaInput.imageBlob(Uint8List bytes) {
+    return LiteRtLmMediaInput._(
+      type: LiteRtLmMediaType.image,
+      bytes: Uint8List.fromList(bytes),
+    );
+  }
+
+  /// Creates audio input backed by a local file path.
+  factory LiteRtLmMediaInput.audioPath(String path) {
+    return LiteRtLmMediaInput._(type: LiteRtLmMediaType.audio, path: path);
+  }
+
+  /// Creates audio input backed by encoded audio bytes.
+  factory LiteRtLmMediaInput.audioBlob(Uint8List bytes) {
+    return LiteRtLmMediaInput._(
+      type: LiteRtLmMediaType.audio,
+      bytes: Uint8List.fromList(bytes),
+    );
+  }
+
+  /// Media modality.
+  final LiteRtLmMediaType type;
+
+  /// Local file path, when file-backed.
+  final String? path;
+
+  /// Encoded media bytes, when blob-backed.
+  final Uint8List? bytes;
+
+  /// Converts this input to LiteRT-LM conversation message JSON.
+  Map<String, Object> toJson() {
+    final result = <String, Object>{'type': type.name};
+    final localPath = path;
+    if (localPath != null) {
+      result['path'] = localPath;
+      return result;
+    }
+    final blob = bytes;
+    if (blob != null) {
+      result['blob'] = base64Encode(blob);
+      return result;
+    }
+    throw StateError('LiteRT-LM media input must have a path or bytes.');
+  }
+}
+
+/// Media modality for [LiteRtLmMediaInput].
+enum LiteRtLmMediaType {
+  /// Image input.
+  image,
+
+  /// Audio input.
+  audio,
+}
+
 /// Web-safe placeholder for the native-only runtime client.
 class LiteRtLmRuntimeClient {
   /// Creates a placeholder client on platforms without `dart:ffi`.
@@ -72,6 +140,7 @@ class LiteRtLmRuntimeClient {
     int maxTokens = 4096,
     int outputTokens = 256,
     int? prefillTokens,
+    int? maxNumImages,
     String? cacheDir,
     bool speculativeDecoding = true,
     int minLogLevel = 3,
@@ -107,7 +176,11 @@ class LiteRtLmRuntimeClient {
   }
 
   /// Streams generated text from the active conversation.
-  Stream<String> generate(String prompt) {
+  Stream<String> generate(
+    String prompt, {
+    List<LiteRtLmMediaInput> mediaInputs = const <LiteRtLmMediaInput>[],
+    int? visualTokenBudget,
+  }) {
     throw UnsupportedError('LiteRT-LM runtime requires a native platform.');
   }
 

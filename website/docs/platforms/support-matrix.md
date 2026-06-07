@@ -131,15 +131,18 @@ load `.litertlm` models.
 | Web (browser) | N/A (`@litert-lm/core`) | `cpu`, `gpu` | Experimental; web-compatible `.litertlm` URLs only |
 
 LiteRT-LM does not currently expose embeddings, state persistence, LoRA, or
-multimodal projector APIs through llamadart. On native LiteRT-LM targets,
-high-level thinking and tool-call parsing still run through `LlamaEngine` for
+external multimodal projector APIs through llamadart. On native LiteRT-LM
+targets, `LlamaImageContent` / `LlamaAudioContent` path/blob inputs are routed
+through the normal generation path for `.litertlm` bundles whose native
+template/runtime supports media; remote URLs and raw PCM samples are rejected.
+High-level thinking and tool-call parsing still run through `LlamaEngine` for
 compatible templates, but llama.cpp-style GBNF grammar constraints are not
 supported for `.litertlm` generation. Native LiteRT-LM can opt into runtime
 speculative decoding through `GenerationParams.speculativeDecoding`; Web
 LiteRT-LM rejects that option until the browser runtime exposes an equivalent
-control. Web LiteRT-LM also does not expose tokenizer operations and is limited
-to single-turn text prompts, so it should
-not be treated as a multi-turn `ChatSession` or tool-calling backend yet.
+control. Web LiteRT-LM also does not expose tokenizer operations or multimodal
+inputs and is limited to single-turn text prompts, so it should not be treated
+as a multi-turn `ChatSession` or tool-calling backend yet.
 `llamadart` rejects unsupported operations explicitly for `.litertlm` loads
 instead of silently ignoring llama.cpp-only settings.
 

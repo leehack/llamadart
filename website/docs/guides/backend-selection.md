@@ -75,7 +75,7 @@ JavaScript runtime.
 | LoRA adapters | Supported on native GGUF flows | Not exposed |
 | Thinking and tool-call parsing | Supported through template handlers | Native: supported through the high-level `LlamaEngine` parser for compatible templates; LiteRT-native constrained tool execution is not wired yet. Web: single-turn text only; no structured chat/tool forwarding yet. |
 | Grammar / constrained decoding | Supported by llama.cpp-backed paths | llama.cpp GBNF is not supported; template-generated grammar is skipped and explicit grammar params are rejected |
-| Multimodal projectors | Supported through llama.cpp `mtmd` paths where the model/projector supports it | Not exposed through llamadart today |
+| Multimodal inputs | Supported through llama.cpp `mtmd` paths where the model/projector supports it | Native: supported for path/blob image and audio parts when the `.litertlm` bundle/template supports media; no external `mmproj` lifecycle. Web: not exposed through `@litert-lm/core` yet. |
 | Tokenization APIs | Supported | Supported on native LiteRT-LM; not exposed on LiteRT-LM web |
 | Low-level runtime tuning | `gpuLayers`, backend preference, thread/batch fields, split mode, main GPU, KV/cache fields, and more | `liteRtLmBackend`, context size, chat template, generation length/sampling fields that LiteRT-LM exposes |
 
@@ -134,6 +134,8 @@ For `.litertlm` / LiteRT-LM, use:
 - `GenerationParams.maxTokens`, `temp`, `topK`, `topP`, and `seed`
 - `GenerationParams.speculativeDecoding` on native LiteRT-LM only
 - `stopSequences`, enforced by `llamadart`
+- `LlamaImageContent` / `LlamaAudioContent` path or encoded-byte parts on
+  native LiteRT-LM bundles that support media
 
 `llamadart` rejects unsupported backend-specific options for `.litertlm` loads
 instead of silently ignoring them. This is intentional: it prevents a GGUF tuning
@@ -163,10 +165,10 @@ kernel benchmark.
 
 - Start with GGUF / llama.cpp if you need the broadest model support or advanced
   features such as embeddings, LoRA, grammar constraints, state persistence, or
-  multimodal flows.
+  projector lifecycle/capability probes.
 - Start with LiteRT-LM if your target model is already distributed as a
-  `.litertlm` bundle and your app mainly needs text generation/chat on mobile or
-  web.
+  `.litertlm` bundle and your app mainly needs text generation/chat or native
+  path/blob media turns on mobile or desktop.
 - For Gemma 4 E2B on Pixel 9 Pro, the measured LiteRT-LM GPU path was about 9x
   faster than the measured llama.cpp Vulkan GGUF path.
 - For Gemma 4 E2B on an Apple M4 Max Mac, measured llama.cpp Metal and

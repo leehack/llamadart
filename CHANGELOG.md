@@ -1,3 +1,16 @@
+## 0.7.2
+
+* **LiteRT-LM native multimodal input**:
+  * Routed native `.litertlm` `LlamaImageContent` and `LlamaAudioContent`
+    path/blob inputs through LiteRT-LM's Conversation API, including
+    `max_num_images` engine configuration for image-bearing requests.
+  * Added `LiteRtLmMediaInput` / `LiteRtLmMediaType` for advanced native
+    runtime callers and documented that `.litertlm` bundles do not use the
+    external `mmproj` lifecycle.
+  * Unsupported LiteRT-LM media shapes now fail before native generation:
+    remote image URLs, missing media payloads, and raw PCM audio sample buffers
+    produce explicit Dart errors.
+
 ## 0.7.1
 
 * **Apple native runtime packaging**:
