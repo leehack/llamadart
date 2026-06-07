@@ -857,6 +857,18 @@ class LiteRtLmBackend
     if (params.loras.isNotEmpty) {
       unsupported.add('loras');
     }
+    if (params.liteRtLmActivationDataType != null) {
+      unsupported.add('liteRtLmActivationDataType');
+    }
+    if (params.liteRtLmPrefillChunkSize != null) {
+      unsupported.add('liteRtLmPrefillChunkSize');
+    }
+    if (params.liteRtLmParallelFileSectionLoading != null) {
+      unsupported.add('liteRtLmParallelFileSectionLoading');
+    }
+    if (params.liteRtLmDispatchLibDir != null) {
+      unsupported.add('liteRtLmDispatchLibDir');
+    }
     if (params.numberOfThreads != 0) {
       unsupported.add('numberOfThreads');
     }
@@ -901,7 +913,8 @@ class LiteRtLmBackend
       return;
     }
     throw ArgumentError(
-      'LiteRtLmBackend web does not support llama.cpp-specific ModelParams: '
+      'LiteRtLmBackend web does not support these native or '
+      'llama.cpp-specific ModelParams: '
       '${unsupported.join(', ')}. Supported LiteRT-LM web load options are '
       'contextSize, chatTemplate, preferredBackend, all-or-CPU gpuLayers '
       'hints, and liteRtLmBackend CPU/GPU selection.',

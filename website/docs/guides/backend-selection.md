@@ -77,7 +77,7 @@ JavaScript runtime.
 | Grammar / constrained decoding | Supported by llama.cpp-backed paths | llama.cpp GBNF is not supported; template-generated grammar is skipped and explicit grammar params are rejected |
 | Multimodal projectors | Supported through llama.cpp `mtmd` paths where the model/projector supports it | Not exposed through llamadart today |
 | Tokenization APIs | Supported | Supported on native LiteRT-LM; not exposed on LiteRT-LM web |
-| Low-level runtime tuning | `gpuLayers`, backend preference, thread/batch fields, split mode, main GPU, KV/cache fields, and more | `liteRtLmBackend`, context size, chat template, generation length/sampling fields that LiteRT-LM exposes |
+| Low-level runtime tuning | `gpuLayers`, backend preference, thread/batch fields, split mode, main GPU, KV/cache fields, and more | `liteRtLmBackend`, context size, chat template, native LiteRT-LM runtime fields, and generation length/sampling fields that LiteRT-LM exposes |
 
 See [Platform & Backend Matrix](../platforms/support-matrix) for the current
 bundle keys, module availability, and selector names.
@@ -131,6 +131,11 @@ For `.litertlm` / LiteRT-LM, use:
 - `liteRtLmBackend`: `auto`, `cpu`, `gpu`, or Android-native `npu`
 - `contextSize`
 - `chatTemplate`
+- `liteRtLmActivationDataType`: native activation type override
+- `liteRtLmPrefillChunkSize`: CPU dynamic-model prefill chunk size
+- `liteRtLmParallelFileSectionLoading`: native `.litertlm` file-section
+  loading override
+- `liteRtLmDispatchLibDir`: Android NPU LiteRT dispatch library directory
 - `GenerationParams.maxTokens`, `temp`, `topK`, `topP`, and `seed`
 - `GenerationParams.speculativeDecoding` on native LiteRT-LM only
 - `stopSequences`, enforced by `llamadart`
@@ -138,6 +143,30 @@ For `.litertlm` / LiteRT-LM, use:
 `llamadart` rejects unsupported backend-specific options for `.litertlm` loads
 instead of silently ignoring them. This is intentional: it prevents a GGUF tuning
 profile from appearing to work while doing something different under LiteRT-LM.
+LiteRT-LM web rejects the native-only runtime fields because the browser
+`@litert-lm/core` API does not expose matching controls.
+
+## Native LiteRT-LM Runtime Controls
+
+These fields are all opt-in. Leave them `null` to preserve the pinned
+LiteRT-LM runtime defaults.
+
+| Candidate native knob | Dart field | Decision |
+| --- | --- | --- |
+| `litert_lm_engine_settings_set_activation_data_type` | `ModelParams.liteRtLmActivationDataType` | Exposed as `float32`, `float16`, `int16`, or `int8`; benchmark before changing it for a target model. |
+| `litert_lm_engine_settings_set_prefill_chunk_size` | `ModelParams.liteRtLmPrefillChunkSize` | Exposed for CPU dynamic models; positive values only. |
+| `litert_lm_engine_settings_set_parallel_file_section_loading` | `ModelParams.liteRtLmParallelFileSectionLoading` | Exposed as a nullable boolean; `null` keeps the native default parallel loading behavior. |
+| `litert_lm_engine_settings_set_litert_dispatch_lib_dir` | `ModelParams.liteRtLmDispatchLibDir` | Exposed for Android NPU deployments that need to point LiteRT-LM at a packaged LiteRT dispatch directory; non-empty strings only. |
+
+The real-model smoke path can exercise these options:
+
+```bash
+LITERT_LM_ACTIVATION_DATA_TYPE=float16 \
+LITERT_LM_PREFILL_CHUNK_SIZE=128 \
+LITERT_LM_PARALLEL_FILE_SECTION_LOADING=false \
+LITERT_LM_DISPATCH_LIB_DIR=/path/to/dispatch \
+dart run tool/litert_lm_engine_smoke.dart /models/model.litertlm cpu
+```
 
 ## Benchmarking Fairly
 

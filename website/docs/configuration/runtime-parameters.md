@@ -98,6 +98,10 @@ Important fields:
 - `speculativeDecoding`: opt-in backend-native speculative decoding. Native
   LiteRT-LM honors this flag; llama.cpp, WebGPU, and LiteRT-LM web reject it
   until their speculative paths are implemented.
+- `liteRtLmActivationDataType`, `liteRtLmPrefillChunkSize`,
+  `liteRtLmParallelFileSectionLoading`, and `liteRtLmDispatchLibDir`: opt-in
+  native LiteRT-LM `.litertlm` engine settings. Leave them unset to preserve
+  runtime defaults; LiteRT-LM web rejects them as native-only.
 - `seed`: deterministic replay when set.
 - `grammar`: constrained decoding with GBNF.
 

@@ -119,6 +119,33 @@ Guidelines:
 - Native reuse is optimized for evolving prompts with shared prefixes. Exact
   prompt replays are re-ingested to preserve deterministic parity.
 
+## Native LiteRT-LM runtime controls
+
+Native `.litertlm` loads expose a small set of LiteRT-LM-specific
+`ModelParams` fields:
+
+- `liteRtLmActivationDataType`: override upstream activation data type
+  (`float32`, `float16`, `int16`, or `int8`).
+- `liteRtLmPrefillChunkSize`: positive CPU dynamic-model prefill chunk size.
+- `liteRtLmParallelFileSectionLoading`: `null` keeps the native default,
+  `false` disables parallel `.litertlm` file-section loading for diagnostics.
+- `liteRtLmDispatchLibDir`: Android NPU LiteRT dispatch library directory.
+
+Leave these values unset unless you have a target-model reason to change them.
+Benchmark load time, prefill throughput, decode throughput, and output quality
+on the deployment device after changing activation type or prefill chunk size.
+LiteRT-LM web rejects these native-only fields.
+
+The real-model smoke tool accepts matching environment variables and reports
+the selected values in its JSON result:
+
+```bash
+LITERT_LM_ACTIVATION_DATA_TYPE=float16 \
+LITERT_LM_PREFILL_CHUNK_SIZE=128 \
+LITERT_LM_PARALLEL_FILE_SECTION_LOADING=false \
+dart run tool/litert_lm_engine_smoke.dart /models/model.litertlm cpu
+```
+
 ## Multimodal tuning
 
 - Reduce image size before doing anything else.

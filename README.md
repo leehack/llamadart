@@ -357,11 +357,15 @@ unavailable.
 other current LiteRT-LM targets; set `cpu`, `gpu`, or Android-only `npu`
 explicitly when benchmarking or pinning deployment behavior.
 `ModelParams.contextSize`, `chatTemplate`, `preferredBackend`,
-`liteRtLmBackend`, and all-or-CPU `gpuLayers` hints are honored for
-`.litertlm` loads; llama.cpp-only tuning knobs such as partial GPU layer
-offload, batch/micro-batch sizing, KV-cache type, flash attention, mmap/mlock,
-thread counts, LoRA load configs, and rope overrides are rejected instead of
-being silently ignored. `.litertlm` generation honors `GenerationParams`
+`liteRtLmBackend`, native LiteRT-LM runtime tuning fields, and all-or-CPU
+`gpuLayers` hints are honored for native `.litertlm` loads; LiteRT-LM web
+rejects native-only tuning fields. The native fields cover activation data type,
+CPU dynamic-model prefill chunk size, parallel `.litertlm` file-section
+loading, and Android NPU dispatch library directory. llama.cpp-only tuning knobs
+such as partial GPU layer offload, batch/micro-batch sizing, KV-cache type,
+flash attention, mmap/mlock, thread counts, LoRA load configs, and rope
+overrides are rejected instead of being silently ignored. `.litertlm`
+generation honors `GenerationParams`
 `maxTokens`, `temp`, `topK`, `topP`, and `seed` on native and web, with
 `stopSequences` enforced by llamadart. Native LiteRT-LM also honors stream
 batching thresholds and the opt-in `speculativeDecoding` flag; Web LiteRT-LM

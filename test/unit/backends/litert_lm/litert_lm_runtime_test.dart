@@ -313,6 +313,26 @@ void main() {
           ),
         ),
       );
+      expect(
+        client.initialize(modelPath: 'model.litertlm', prefillChunkSize: 0),
+        throwsA(
+          isA<ArgumentError>().having(
+            (error) => error.name,
+            'name',
+            'prefillChunkSize',
+          ),
+        ),
+      );
+      expect(
+        client.initialize(modelPath: 'model.litertlm', dispatchLibDir: '  '),
+        throwsA(
+          isA<ArgumentError>().having(
+            (error) => error.name,
+            'name',
+            'dispatchLibDir',
+          ),
+        ),
+      );
     },
   );
 

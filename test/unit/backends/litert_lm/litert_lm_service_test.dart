@@ -917,6 +917,47 @@ void main() {
     }
   });
 
+  test('passes LiteRT-LM runtime tuning options to the client', () async {
+    final fakeClient = _FakeLiteRtLmRuntimeClient();
+    final service = LiteRtLmService(clientFactory: () => fakeClient);
+    const modelParams = ModelParams(
+      contextSize: 3072,
+      preferredBackend: GpuBackend.cpu,
+      liteRtLmActivationDataType: LiteRtLmActivationDataType.float16,
+      liteRtLmPrefillChunkSize: 128,
+      liteRtLmParallelFileSectionLoading: false,
+      liteRtLmDispatchLibDir: '/vendor/litert-dispatch',
+    );
+
+    try {
+      final modelHandle = await service.loadModel(modelFile.path, modelParams);
+      final contextHandle = service.createContext(modelHandle, modelParams);
+
+      final chunks = service
+          .generate(
+            contextHandle,
+            'hello',
+            const GenerationParams(maxTokens: 7),
+          )
+          .toList();
+
+      await fakeClient.generateStarted.future;
+      fakeClient.generated.add('done');
+      await fakeClient.generated.close();
+      await chunks;
+
+      expect(
+        fakeClient.lastActivationDataType,
+        LiteRtLmActivationDataType.float16,
+      );
+      expect(fakeClient.lastPrefillChunkSize, 128);
+      expect(fakeClient.lastParallelFileSectionLoading, isFalse);
+      expect(fakeClient.lastDispatchLibDir, '/vendor/litert-dispatch');
+    } finally {
+      service.dispose();
+    }
+  });
+
   test(
     'recreates LiteRT-LM client when speculative decoding changes',
     () async {
@@ -1561,6 +1602,10 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
   String? lastCacheDir;
   bool? lastSpeculativeDecoding;
   int? lastMinLogLevel;
+  LiteRtLmActivationDataType? lastActivationDataType;
+  int? lastPrefillChunkSize;
+  bool? lastParallelFileSectionLoading;
+  String? lastDispatchLibDir;
   int? lastSetMinLogLevel;
   double? lastTemperature;
   int? lastTopK;
@@ -1590,6 +1635,10 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
     String? cacheDir,
     bool speculativeDecoding = true,
     int minLogLevel = 3,
+    LiteRtLmActivationDataType? activationDataType,
+    int? prefillChunkSize,
+    bool? parallelFileSectionLoading,
+    String? dispatchLibDir,
   }) {
     lastModelPath = modelPath;
     lastBackend = backend;
@@ -1598,6 +1647,10 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
     lastCacheDir = cacheDir;
     lastSpeculativeDecoding = speculativeDecoding;
     lastMinLogLevel = minLogLevel;
+    lastActivationDataType = activationDataType;
+    lastPrefillChunkSize = prefillChunkSize;
+    lastParallelFileSectionLoading = parallelFileSectionLoading;
+    lastDispatchLibDir = dispatchLibDir;
     if (!initializeStarted.isCompleted) {
       initializeStarted.complete();
     }

@@ -143,6 +143,19 @@ not be treated as a multi-turn `ChatSession` or tool-calling backend yet.
 `llamadart` rejects unsupported operations explicitly for `.litertlm` loads
 instead of silently ignoring llama.cpp-only settings.
 
+Native LiteRT-LM exposes four advanced runtime controls through `ModelParams`.
+All are opt-in; `null` keeps the pinned `v0.13.1` runtime default.
+
+| Native C API | Dart field | Support decision |
+| --- | --- | --- |
+| `litert_lm_engine_settings_set_activation_data_type` | `liteRtLmActivationDataType` | Exposed for native `.litertlm`; typed as `float32`, `float16`, `int16`, or `int8`. |
+| `litert_lm_engine_settings_set_prefill_chunk_size` | `liteRtLmPrefillChunkSize` | Exposed for CPU dynamic models; positive values only. |
+| `litert_lm_engine_settings_set_parallel_file_section_loading` | `liteRtLmParallelFileSectionLoading` | Exposed as a nullable boolean; native default remains parallel loading. |
+| `litert_lm_engine_settings_set_litert_dispatch_lib_dir` | `liteRtLmDispatchLibDir` | Exposed for Android NPU deployments that need a packaged LiteRT dispatch directory. |
+
+LiteRT-LM web rejects these native-only fields because `@litert-lm/core` does
+not expose equivalent runtime controls.
+
 ## Runtime capability notes
 
 - **State persistence** (`LlamaEngine.stateSaveFile(...)` /

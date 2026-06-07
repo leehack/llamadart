@@ -322,6 +322,31 @@ void main() {
       await expectLater(
         () => backend.contextCreate(
           modelHandle,
+          const ModelParams(
+            liteRtLmActivationDataType: LiteRtLmActivationDataType.float16,
+            liteRtLmPrefillChunkSize: 128,
+            liteRtLmParallelFileSectionLoading: false,
+            liteRtLmDispatchLibDir: '/vendor/litert',
+          ),
+        ),
+        throwsA(
+          isA<ArgumentError>().having(
+            (error) => error.message.toString(),
+            'message',
+            allOf(
+              contains('native'),
+              contains('liteRtLmActivationDataType'),
+              contains('liteRtLmPrefillChunkSize'),
+              contains('liteRtLmParallelFileSectionLoading'),
+              contains('liteRtLmDispatchLibDir'),
+            ),
+          ),
+        ),
+      );
+
+      await expectLater(
+        () => backend.contextCreate(
+          modelHandle,
           const ModelParams(contextSize: 0),
         ),
         throwsA(

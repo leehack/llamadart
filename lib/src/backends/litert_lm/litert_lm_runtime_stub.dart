@@ -1,5 +1,7 @@
 // coverage:ignore-file
 
+import '../../core/models/inference/model_params.dart';
+
 /// Runtime metrics shape shared with the native LiteRT-LM implementation.
 class LiteRtLmRuntimeMetrics {
   /// Number of prompt/input tokens.
@@ -75,6 +77,10 @@ class LiteRtLmRuntimeClient {
     String? cacheDir,
     bool speculativeDecoding = true,
     int minLogLevel = 3,
+    LiteRtLmActivationDataType? activationDataType,
+    int? prefillChunkSize,
+    bool? parallelFileSectionLoading,
+    String? dispatchLibDir,
   }) {
     throw UnsupportedError('LiteRT-LM runtime requires a native platform.');
   }

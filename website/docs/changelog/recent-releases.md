@@ -7,6 +7,16 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
+## 0.7.2
+
+- Added opt-in native `.litertlm` `ModelParams` for activation data type,
+  prefill chunk size, parallel file-section loading, and Android NPU LiteRT
+  dispatch library directory, forwarding the pinned LiteRT-LM `v0.13.1`
+  engine-settings C APIs while keeping defaults unchanged.
+- Extended the LiteRT-LM engine smoke tool with matching environment variables
+  and documented the support decision for each candidate runtime knob.
+- Kept LiteRT-LM web rejecting these native-only settings explicitly.
+
 ## 0.7.1
 
 - Added Flutter iOS/macOS Swift Package Manager integration so Apple apps link
