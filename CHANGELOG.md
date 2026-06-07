@@ -1,3 +1,10 @@
+## 0.7.2
+
+* Added explicit pub.dev platform metadata for Android, iOS, Linux, macOS, web,
+  and Windows. This keeps the package listing aligned with the actual
+  cross-platform runtime support even though Flutter plugin registration is
+  only needed for Darwin app integration.
+
 ## 0.7.1
 
 * **Apple native runtime packaging**:
