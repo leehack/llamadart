@@ -236,9 +236,16 @@ jobs:
         run: flutter pub get
 
       - name: Download parity model
+        shell: bash
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           mkdir -p "$RUNNER_TEMP/models"
-          curl --retry 5 --retry-all-errors --retry-delay 3 --location \
+          curl_args=(--fail --location --retry 8 --retry-all-errors --retry-delay 10)
+          if [[ -n "${HF_TOKEN:-}" ]]; then
+            curl_args+=(--header "Authorization: Bearer $HF_TOKEN")
+          fi
+          curl "${curl_args[@]}" \
             "https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF/resolve/main/qwen2.5-0.5b-instruct-q4_k_m.gguf?download=true" \
             --output "$RUNNER_TEMP/models/qwen2.5-0.5b-instruct-q4_k_m.gguf"
 
