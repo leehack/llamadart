@@ -140,7 +140,8 @@ int? _parseOptionalPositiveInt(String? value, String name) {
   if (value == null) {
     return null;
   }
-  final parsed = int.parse(value);
+  final trimmed = value.trim();
+  final parsed = int.parse(trimmed);
   if (parsed <= 0) {
     throw ArgumentError.value(value, name, 'Expected a positive integer.');
   }

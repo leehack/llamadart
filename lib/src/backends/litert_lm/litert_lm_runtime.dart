@@ -455,10 +455,10 @@ class LiteRtLmRuntimeClient {
       dispose();
     }
 
-    final modelPathPtr = modelPath.toNativeUtf8();
-    final backendPtr = resolvedBackend.toNativeUtf8();
-    final cacheDirPtr = cacheDir?.toNativeUtf8();
-    final dispatchLibDirPtr = dispatchLibDir?.toNativeUtf8();
+    final modelPathPtr = modelPath.toNativeUtf8(allocator: calloc);
+    final backendPtr = resolvedBackend.toNativeUtf8(allocator: calloc);
+    final cacheDirPtr = cacheDir?.toNativeUtf8(allocator: calloc);
+    final dispatchLibDirPtr = dispatchLibDir?.toNativeUtf8(allocator: calloc);
     Pointer<_LiteRtLmEngineSettings> settings = nullptr;
 
     try {
@@ -578,7 +578,7 @@ class LiteRtLmRuntimeClient {
 
     final systemPtr = systemMessage == null
         ? nullptr
-        : systemMessage.toNativeUtf8();
+        : systemMessage.toNativeUtf8(allocator: calloc);
     Pointer<_LiteRtLmConversationConfig> config = nullptr;
     try {
       config = bindings.conversationConfigCreate();
@@ -709,7 +709,7 @@ class LiteRtLmRuntimeClient {
   Stream<String> _generateStreaming(String prompt) {
     final bindings = _requireBindings();
     final conversation = _requireConversation();
-    final messagePtr = _messageJson(prompt).toNativeUtf8();
+    final messagePtr = _messageJson(prompt).toNativeUtf8(allocator: calloc);
     final assembler = LiteRtLmChannelAssembler(
       thinkingStartTag: _thinkingStartTag,
       thinkingEndTag: _thinkingEndTag,
@@ -848,7 +848,7 @@ class LiteRtLmRuntimeClient {
   List<int> _tokenizeRaw(String text) {
     final bindings = _requireBindings();
     final engine = _requireEngine();
-    final textPtr = text.toNativeUtf8();
+    final textPtr = text.toNativeUtf8(allocator: calloc);
     Pointer<_LiteRtLmTokenizeResult> result = nullptr;
     try {
       result = bindings.engineTokenize(engine, textPtr.cast());
@@ -1187,7 +1187,7 @@ class LiteRtLmRuntimeClient {
           .lookupFunction<_LoadGlobalNative, _LoadGlobalDart>(
             'stream_proxy_load_global',
           );
-      final liteRtLmName = liteRtLmPath.toNativeUtf8();
+      final liteRtLmName = liteRtLmPath.toNativeUtf8(allocator: calloc);
       try {
         loadGlobal(liteRtLmName);
       } finally {
@@ -1471,7 +1471,9 @@ String _runBlockingSendMessage(_BlockingSendMessageRequest request) {
   final conversation = Pointer<_LiteRtLmConversation>.fromAddress(
     request.conversationAddress,
   );
-  final messagePtr = _messageJson(request.prompt).toNativeUtf8();
+  final messagePtr = _messageJson(
+    request.prompt,
+  ).toNativeUtf8(allocator: calloc);
   Pointer<_LiteRtLmConversationOptionalArgs> optionalArgs = nullptr;
   try {
     optionalArgs = bindings.conversationOptionalArgsCreate();
