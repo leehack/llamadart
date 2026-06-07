@@ -1062,6 +1062,57 @@ void main() {
       },
     );
 
+    test('create parses native structured chat tool_calls envelope', () async {
+      final nativeBackend = NativeChatMockBackend()
+        ..generationText =
+            '{"tool_calls":[{"type":"function","function":'
+            '{"name":"get_weather","arguments":{"location":"Seoul"}}}]}';
+      final nativeEngine = LlamaEngine(nativeBackend);
+
+      try {
+        await nativeEngine.loadModel('gemma-4-E2B-it.litertlm');
+
+        final chunks = await nativeEngine
+            .create(
+              const [
+                LlamaChatMessage.fromText(
+                  role: LlamaChatRole.user,
+                  text: 'weather?',
+                ),
+              ],
+              tools: [
+                ToolDefinition(
+                  name: 'get_weather',
+                  description: 'Get weather',
+                  parameters: [ToolParam.string('location')],
+                  handler: (_) async => 'sunny',
+                ),
+              ],
+              toolChoice: ToolChoice.auto,
+            )
+            .toList();
+
+        final streamedContent = chunks
+            .map((chunk) => chunk.choices.first.delta.content)
+            .whereType<String>()
+            .join();
+        final toolChunk = chunks.last;
+        final toolCalls = toolChunk.choices.first.delta.toolCalls;
+
+        expect(nativeBackend.nativeGenerateChatCalls, 1);
+        expect(streamedContent, isEmpty);
+        expect(toolChunk.choices.first.finishReason, equals('tool_calls'));
+        expect(toolCalls, hasLength(1));
+        expect(toolCalls!.first.function?.name, equals('get_weather'));
+        expect(
+          jsonDecode(toolCalls.first.function!.arguments!),
+          equals({'location': 'Seoul'}),
+        );
+      } finally {
+        await nativeEngine.dispose();
+      }
+    });
+
     test(
       'create keeps non-media history parts on native structured chat path',
       () async {

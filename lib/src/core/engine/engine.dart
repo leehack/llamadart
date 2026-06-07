@@ -696,7 +696,11 @@ class LlamaEngine {
             }
           }
 
-          if (partialParsed.content.length > streamedContent.length) {
+          final suppressToolEnvelopeContent =
+              _isStructuredToolEnvelopeBuffer(buffer.toString()) &&
+              !partialParsed.hasToolCalls;
+          if (!suppressToolEnvelopeContent &&
+              partialParsed.content.length > streamedContent.length) {
             final delta = partialParsed.content.substring(
               streamedContent.length,
             );
@@ -719,7 +723,8 @@ class LlamaEngine {
           if (partialReasoning.length >= streamedReasoning.length) {
             streamedReasoning = partialReasoning;
           }
-          if (partialParsed.content.length >= streamedContent.length) {
+          if (!suppressToolEnvelopeContent &&
+              partialParsed.content.length >= streamedContent.length) {
             streamedContent = partialParsed.content;
           }
         } catch (_) {
@@ -856,11 +861,15 @@ class LlamaEngine {
         );
       }
 
-      final contentDelta = _computeFinalReconciliationDelta(
-        streamedValue: streamedContent,
-        finalValue: parsed.content,
-        channel: 'content',
-      );
+      final suppressFinalToolEnvelopeContent =
+          parsed.hasToolCalls && _isStructuredToolEnvelopeBuffer(fullOutput);
+      final contentDelta = suppressFinalToolEnvelopeContent
+          ? null
+          : _computeFinalReconciliationDelta(
+              streamedValue: streamedContent,
+              finalValue: parsed.content,
+              channel: 'content',
+            );
       if (contentDelta != null && contentDelta.isNotEmpty) {
         yield LlamaCompletionChunk(
           id: 'chatcmpl-$completionId',
@@ -1768,6 +1777,10 @@ class LlamaEngine {
         key == 'tool_calls' ||
         key == 'response' ||
         key == 'name';
+  }
+
+  bool _isStructuredToolEnvelopeBuffer(String text) {
+    return RegExp(r'^\s*\{\s*"tool_calls?"\s*:').hasMatch(text);
   }
 
   _ToolStreamingMode _decideBracketEnvelopeMode(String text) {

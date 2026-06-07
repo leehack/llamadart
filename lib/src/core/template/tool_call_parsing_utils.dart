@@ -88,7 +88,9 @@ class ToolCallParsingUtils {
         continue;
       }
 
-      final name = _firstNonEmptyString(map, nameKeys);
+      final function = coerceMap(map['function']);
+      final nameSource = function ?? map;
+      final name = _firstNonEmptyString(nameSource, nameKeys);
       if (name == null) {
         if (failOnInvalidItem) {
           return null;
@@ -96,8 +98,15 @@ class ToolCallParsingUtils {
         continue;
       }
 
-      final id = _firstNonEmptyString(map, idKeys, stringify: true);
-      final argumentValue = _firstPresentValue(map, argumentKeys);
+      final id =
+          _firstNonEmptyString(map, idKeys, stringify: true) ??
+          (function == null
+              ? null
+              : _firstNonEmptyString(function, idKeys, stringify: true));
+      var argumentValue = _firstPresentValue(nameSource, argumentKeys);
+      if (!argumentValue.found && function != null) {
+        argumentValue = _firstPresentValue(map, argumentKeys);
+      }
       toolCalls.add(
         createFunctionToolCall(
           index: startIndex + toolCalls.length,

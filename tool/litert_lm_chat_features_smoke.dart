@@ -64,13 +64,53 @@ Future<void> main(List<String> args) async {
       toolChoice: ToolChoice.required,
     );
 
+    final nativeToolHistory = await _runScenario(
+      engine: engine,
+      messages: const [
+        LlamaChatMessage.fromText(
+          role: LlamaChatRole.system,
+          text:
+              'For weather questions, call get_weather with the requested '
+              'city. Do not answer weather questions in text.',
+        ),
+        LlamaChatMessage.fromText(
+          role: LlamaChatRole.user,
+          text: 'Remember this city: Seoul.',
+        ),
+        LlamaChatMessage.fromText(
+          role: LlamaChatRole.assistant,
+          text: 'I will remember Seoul.',
+        ),
+        LlamaChatMessage.fromText(
+          role: LlamaChatRole.user,
+          text: 'What is the weather in the remembered city? Use the tool.',
+        ),
+      ],
+      tools: [
+        ToolDefinition(
+          name: 'get_weather',
+          description: 'Returns current weather for a city.',
+          parameters: [ToolParam.string('location', description: 'City name')],
+          handler: (_) async => 'Sunny',
+        ),
+      ],
+      enableThinking: false,
+      maxTokens: 160,
+      toolChoice: ToolChoice.auto,
+    );
+
     final result = {
       'backendName': await engine.getBackendName(),
       'requestedLiteRtLmBackend': backend.name,
       'thinking': thinking.toJson(),
       'toolCall': toolCall.toJson(),
+      'nativeToolHistory': nativeToolHistory.toJson(),
     };
-    _verifyResult(thinking: thinking, toolCall: toolCall);
+    _verifyResult(
+      thinking: thinking,
+      toolCall: toolCall,
+      nativeToolHistory: nativeToolHistory,
+    );
     print('RESULT litert_lm_chat_features ${jsonEncode(result)}');
   } finally {
     await engine.dispose();
@@ -80,29 +120,46 @@ Future<void> main(List<String> args) async {
 void _verifyResult({
   required _ScenarioResult thinking,
   required _ScenarioResult toolCall,
+  required _ScenarioResult nativeToolHistory,
 }) {
   if (thinking.thinking.trim().isEmpty) {
     throw StateError('Gemma 4 thinking scenario produced no thinking delta.');
   }
-  if (toolCall.finishReason != 'tool_calls') {
+  _verifyWeatherToolCall(
+    toolCall,
+    scenarioName: 'Gemma 4 required tool scenario',
+  );
+  if (nativeToolHistory.content.trim().isNotEmpty) {
     throw StateError(
-      'Gemma 4 tool scenario finished with ${toolCall.finishReason}.',
+      'Gemma 4 native tool/history scenario streamed content: '
+      '${nativeToolHistory.content}',
     );
   }
-  if (toolCall.toolCalls.length != 1) {
+  _verifyWeatherToolCall(
+    nativeToolHistory,
+    scenarioName: 'Gemma 4 native tool/history scenario',
+  );
+}
+
+void _verifyWeatherToolCall(
+  _ScenarioResult scenario, {
+  required String scenarioName,
+}) {
+  if (scenario.finishReason != 'tool_calls') {
+    throw StateError('$scenarioName finished with ${scenario.finishReason}.');
+  }
+  if (scenario.toolCalls.length != 1) {
     throw StateError(
-      'Gemma 4 tool scenario produced ${toolCall.toolCalls.length} calls.',
+      '$scenarioName produced ${scenario.toolCalls.length} calls.',
     );
   }
-  final function = toolCall.toolCalls.first['function'];
+  final function = scenario.toolCalls.first['function'];
   if (function is! Map || function['name'] != 'get_weather') {
-    throw StateError('Gemma 4 tool scenario did not call get_weather.');
+    throw StateError('$scenarioName did not call get_weather.');
   }
   final arguments = function['arguments'];
   if (arguments is! String || !arguments.contains('"location":"Seoul"')) {
-    throw StateError(
-      'Gemma 4 tool scenario did not pass the expected location argument.',
-    );
+    throw StateError('$scenarioName did not pass the expected location.');
   }
 }
 
