@@ -1240,8 +1240,40 @@ void main() {
                   (error) => error.message,
                   'message',
                   contains('LiteRT-LM native and web currently do not expose'),
+                )
+                .having(
+                  (error) => error.message,
+                  'message',
+                  contains('omit responseFormat/jsonSchema'),
                 ),
           ),
+        );
+
+        expect(noGrammarBackend.lastGenerationPrompt, isNull);
+      },
+    );
+
+    test(
+      'create rejects malformed strict response format on no-grammar backend',
+      () async {
+        final noGrammarBackend = NoGrammarMockLlamaBackend();
+        final noGrammarEngine = LlamaEngine(noGrammarBackend);
+
+        await noGrammarEngine.loadModel('gemma4-test.litertlm');
+
+        await expectLater(
+          noGrammarEngine
+              .create(
+                const [
+                  LlamaChatMessage.fromText(
+                    role: LlamaChatRole.user,
+                    text: 'return status',
+                  ),
+                ],
+                responseFormat: const {'type': 'json_schema'},
+              )
+              .drain(),
+          throwsA(isA<LlamaUnsupportedException>()),
         );
 
         expect(noGrammarBackend.lastGenerationPrompt, isNull);

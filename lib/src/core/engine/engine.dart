@@ -493,15 +493,15 @@ class LlamaEngine {
       );
     }
     if (!backendSupportsGrammarConstraints &&
-        result.grammar != null &&
         _hasSchemaResponseFormat(effectiveResponseFormat)) {
       throw LlamaUnsupportedException(
         'Strict responseFormat/jsonSchema output requires '
         'grammar-constrained decoding, but the active backend does not '
-        'support grammar constraints. LiteRT-LM native and web currently do '
-        'not expose public runtime wiring for JSON-schema/Lark constraints; '
+        'support grammar constraints. For example, LiteRT-LM native and web '
+        'currently do not expose public runtime wiring for JSON-schema/Lark '
+        'constraints; '
         'use a grammar-capable backend such as llama.cpp, or omit '
-        'responseFormat for best-effort JSON output.',
+        'responseFormat/jsonSchema for best-effort JSON output.',
       );
     }
 
