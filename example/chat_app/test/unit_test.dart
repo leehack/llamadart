@@ -1000,7 +1000,6 @@ class _JsonResponseEngine extends MockLlamaEngine {
   Stream<LlamaCompletionChunk> create(
     List<LlamaChatMessage> messages, {
     GenerationParams? params,
-    Map<String, dynamic>? jsonSchema,
     List<ToolDefinition>? tools,
     ToolChoice? toolChoice,
     bool parallelToolCalls = false,
@@ -1033,7 +1032,6 @@ class _ThinkTaggedResponseEngine extends MockLlamaEngine {
   Stream<LlamaCompletionChunk> create(
     List<LlamaChatMessage> messages, {
     GenerationParams? params,
-    Map<String, dynamic>? jsonSchema,
     List<ToolDefinition>? tools,
     ToolChoice? toolChoice,
     bool parallelToolCalls = false,
@@ -1066,7 +1064,6 @@ class _MinistralPlainReasoningEngine extends MockLlamaEngine {
   Stream<LlamaCompletionChunk> create(
     List<LlamaChatMessage> messages, {
     GenerationParams? params,
-    Map<String, dynamic>? jsonSchema,
     List<ToolDefinition>? tools,
     ToolChoice? toolChoice,
     bool parallelToolCalls = false,
@@ -1104,7 +1101,6 @@ class _ToolCaptureEngine extends MockLlamaEngine {
   Stream<LlamaCompletionChunk> create(
     List<LlamaChatMessage> messages, {
     GenerationParams? params,
-    Map<String, dynamic>? jsonSchema,
     List<ToolDefinition>? tools,
     ToolChoice? toolChoice,
     bool parallelToolCalls = false,
@@ -1141,7 +1137,6 @@ class _SinglePassToolCallEngine extends MockLlamaEngine {
   Stream<LlamaCompletionChunk> create(
     List<LlamaChatMessage> messages, {
     GenerationParams? params,
-    Map<String, dynamic>? jsonSchema,
     List<ToolDefinition>? tools,
     ToolChoice? toolChoice,
     bool parallelToolCalls = false,
@@ -1188,7 +1183,6 @@ class _ThinkingControlCaptureEngine extends MockLlamaEngine {
   Stream<LlamaCompletionChunk> create(
     List<LlamaChatMessage> messages, {
     GenerationParams? params,
-    Map<String, dynamic>? jsonSchema,
     List<ToolDefinition>? tools,
     ToolChoice? toolChoice,
     bool parallelToolCalls = false,
@@ -1222,7 +1216,6 @@ class _MultimodalPromptEvalFailureEngine extends MockLlamaEngine {
   Stream<LlamaCompletionChunk> create(
     List<LlamaChatMessage> messages, {
     GenerationParams? params,
-    Map<String, dynamic>? jsonSchema,
     List<ToolDefinition>? tools,
     ToolChoice? toolChoice,
     bool parallelToolCalls = false,
@@ -1331,7 +1324,6 @@ class _FunctionGemmaRawCallTextEngine extends MockLlamaEngine {
   Stream<LlamaCompletionChunk> create(
     List<LlamaChatMessage> messages, {
     GenerationParams? params,
-    Map<String, dynamic>? jsonSchema,
     List<ToolDefinition>? tools,
     ToolChoice? toolChoice,
     bool parallelToolCalls = false,

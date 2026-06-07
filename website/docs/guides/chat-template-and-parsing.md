@@ -49,10 +49,16 @@ print(result.format);
 - `sourceLangCode` / `targetLangCode`: TranslateGemma style metadata.
 - `responseFormat`: structured-output schema hints.
 
-`engine.create(...)` also accepts `responseFormat` and legacy `jsonSchema`.
+`engine.create(...)` accepts `responseFormat` for strict structured output.
+Use `{'type': 'json_object'}` or
+`{'type': 'json_schema', 'json_schema': {'schema': <JSON schema>}}`.
 Grammar-capable backends use those hints for strict output. LiteRT-LM native
 and web fail early for strict response formats because the current public
 runtime APIs do not expose JSON-schema/Lark constraint wiring.
+
+`chatTemplate(...)` still accepts the deprecated `jsonSchema` shortcut for
+template inspection. Prefer `responseFormat` for new code; if both are passed,
+`responseFormat` wins.
 
 ## When to inspect template output
 

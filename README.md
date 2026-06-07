@@ -348,9 +348,9 @@ system messages, tools, and runtime context; unsupported cases fall back to the
 Dart chat-template prompt path. Thinking and tool-call parsing run through the
 same high-level template parser for compatible models, but llama.cpp-style GBNF
 grammar constraints are not applied to `.litertlm` generation. Strict
-`responseFormat`/`jsonSchema` requests fail early on LiteRT-LM instead of
-silently degrading to unconstrained output. LiteRT-LM web is
-currently limited to single-turn text prompts through `@litert-lm/core`; it does
+`responseFormat` requests fail early on LiteRT-LM instead of silently degrading
+to unconstrained output. LiteRT-LM web is currently limited to single-turn text
+prompts through `@litert-lm/core`; it does
 not yet preserve structured chat history, system prompts, tool declarations, or
 thinking/tool-call parsing with the same semantics as native. The current
 implementation does not expose embeddings, state persistence, LoRA, or

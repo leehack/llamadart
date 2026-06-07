@@ -413,8 +413,20 @@ class LlamaEngine {
   /// Use [chatTemplateKwargs] to inject additional template globals (equivalent
   /// to llama.cpp `chat_template_kwargs`).
   /// Use [templateNow] to set deterministic template time context.
-  /// Pass [responseFormat] or legacy [jsonSchema] to request strict structured
-  /// output through grammar-constrained decoding on compatible backends.
+  ///
+  /// Pass [responseFormat] to request strict structured output through
+  /// grammar-constrained decoding on compatible backends. Supported shapes are:
+  /// - `{'type': 'json_object'}`
+  /// - `{'type': 'json_schema', 'json_schema': {'schema': <JSON schema>}}`
+  ///
+  /// Backends without grammar-constrained decoding, including LiteRT-LM native
+  /// and web today, throw [LlamaUnsupportedException] for strict
+  /// [responseFormat] requests instead of silently running unconstrained
+  /// generation.
+  ///
+  /// Structured output is separate from tool-call parsing: LiteRT-LM can still
+  /// parse compatible best-effort tool-call text, but it does not currently
+  /// enforce arbitrary JSON-schema constraints.
   ///
   /// Example:
   /// ```dart
@@ -424,11 +436,23 @@ class LlamaEngine {
   /// await for (final token in engine.create(messages)) {
   ///   print(token);
   /// }
+  ///
+  /// await engine.create(messages, responseFormat: const {
+  ///   'type': 'json_schema',
+  ///   'json_schema': {
+  ///     'schema': {
+  ///       'type': 'object',
+  ///       'properties': {
+  ///         'ok': {'type': 'boolean'},
+  ///       },
+  ///       'required': ['ok'],
+  ///     },
+  ///   },
+  /// }).drain();
   /// ```
   Stream<LlamaCompletionChunk> create(
     List<LlamaChatMessage> messages, {
     GenerationParams? params,
-    Map<String, dynamic>? jsonSchema,
     List<ToolDefinition>? tools,
     ToolChoice? toolChoice,
     bool parallelToolCalls = false,
@@ -444,15 +468,10 @@ class LlamaEngine {
     // Keep tools available to template routing even with toolChoice.none,
     // matching llama.cpp behavior.
     final effectiveTools = tools;
-    final effectiveResponseFormat = _effectiveResponseFormat(
-      responseFormat: responseFormat,
-      jsonSchema: jsonSchema,
-    );
 
     // Apply chat template with tools - returns grammar for constraining
     final result = await chatTemplate(
       messages,
-      jsonSchema: jsonSchema,
       tools: effectiveTools,
       toolChoice: toolChoice ?? ToolChoice.auto,
       parallelToolCalls: parallelToolCalls,
@@ -494,15 +513,15 @@ class LlamaEngine {
       );
     }
     if (!backendSupportsGrammarConstraints &&
-        _hasSchemaResponseFormat(effectiveResponseFormat)) {
+        _hasSchemaResponseFormat(responseFormat)) {
       throw LlamaUnsupportedException(
-        'Strict responseFormat/jsonSchema output requires '
+        'Strict responseFormat output requires '
         'grammar-constrained decoding, but the active backend does not '
         'support grammar constraints. For example, LiteRT-LM native and web '
         'currently do not expose public runtime wiring for JSON-schema/Lark '
         'constraints; '
         'use a grammar-capable backend such as llama.cpp, or omit '
-        'responseFormat/jsonSchema for best-effort JSON output.',
+        'responseFormat for best-effort JSON output.',
       );
     }
 
@@ -978,8 +997,15 @@ class LlamaEngine {
   /// or for inspecting the formatted prompt for debugging purposes.
   ///
   /// Pass [customTemplate] to override default routing.
-  /// Pass [responseFormat] or legacy [jsonSchema] to request structured output
-  /// grammar generation.
+  /// Pass [responseFormat] to request structured output grammar generation.
+  /// Supported shapes are:
+  /// - `{'type': 'json_object'}`
+  /// - `{'type': 'json_schema', 'json_schema': {'schema': <JSON schema>}}`
+  ///
+  /// [jsonSchema] is a legacy shortcut for
+  /// `responseFormat: {'type': 'json_schema', 'json_schema': {'schema': ...}}`.
+  /// If both [responseFormat] and [jsonSchema] are provided, [responseFormat]
+  /// wins.
   ///
   /// For TranslateGemma-style templates, [sourceLangCode] and
   /// [targetLangCode] are forwarded to the template renderer.
@@ -994,6 +1020,10 @@ class LlamaEngine {
   Future<LlamaChatTemplateResult> chatTemplate(
     List<LlamaChatMessage> messages, {
     bool addAssistant = true,
+    @Deprecated(
+      'Use responseFormat: {"type": "json_schema", '
+      '"json_schema": {"schema": ...}} instead.',
+    )
     Map<String, dynamic>? jsonSchema,
     List<ToolDefinition>? tools,
     ToolChoice toolChoice = ToolChoice.auto,
@@ -1134,19 +1164,6 @@ class LlamaEngine {
         stackTrace,
       );
     }
-  }
-
-  Map<String, dynamic>? _effectiveResponseFormat({
-    required Map<String, dynamic>? responseFormat,
-    required Map<String, dynamic>? jsonSchema,
-  }) {
-    return responseFormat ??
-        (jsonSchema == null
-            ? null
-            : {
-                'type': 'json_schema',
-                'json_schema': {'schema': jsonSchema},
-              });
   }
 
   bool _hasSchemaResponseFormat(Map<String, dynamic>? responseFormat) {

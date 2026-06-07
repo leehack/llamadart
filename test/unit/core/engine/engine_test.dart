@@ -1482,12 +1482,17 @@ void main() {
                     text: 'return status',
                   ),
                 ],
-                jsonSchema: const {
-                  'type': 'object',
-                  'properties': {
-                    'ok': {'type': 'boolean'},
+                responseFormat: const {
+                  'type': 'json_schema',
+                  'json_schema': {
+                    'schema': {
+                      'type': 'object',
+                      'properties': {
+                        'ok': {'type': 'boolean'},
+                      },
+                      'required': ['ok'],
+                    },
                   },
-                  'required': ['ok'],
                 },
               )
               .drain(),
@@ -1496,7 +1501,7 @@ void main() {
                 .having(
                   (error) => error.message,
                   'message',
-                  contains('Strict responseFormat/jsonSchema output requires'),
+                  contains('Strict responseFormat output requires'),
                 )
                 .having(
                   (error) => error.message,
@@ -1506,7 +1511,7 @@ void main() {
                 .having(
                   (error) => error.message,
                   'message',
-                  contains('omit responseFormat/jsonSchema'),
+                  contains('omit responseFormat'),
                 ),
           ),
         );

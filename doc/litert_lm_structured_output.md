@@ -5,12 +5,14 @@ This note tracks the current boundary for strict structured output on
 
 ## Current behavior
 
-`LlamaEngine.create(...)` accepts OpenAI-style `responseFormat` and legacy
-`jsonSchema` requests. Backends that support grammar-constrained decoding use
-the generated grammar to enforce `json_object` / `json_schema` output.
+`LlamaEngine.create(...)` accepts OpenAI-style `responseFormat` requests.
+Backends that support grammar-constrained decoding use the generated grammar to
+enforce `json_object` / `json_schema` output. `LlamaEngine.chatTemplate(...)`
+keeps a deprecated legacy `jsonSchema` shortcut for template inspection, but new
+callers should use `responseFormat`.
 
 LiteRT-LM native and web do **not** currently enforce those strict response
-formats. If callers pass `responseFormat` / `jsonSchema` through
+formats. If callers pass strict `responseFormat` through
 `LlamaEngine.create(...)` while a LiteRT-LM backend is active, llamadart fails
 early with an unsupported-backend error instead of silently running
 unconstrained generation.
