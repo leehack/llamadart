@@ -7,7 +7,9 @@ import 'dart:isolate';
 import 'package:ffi/ffi.dart';
 import 'package:path/path.dart' as path;
 
-const _litertLmVersion = '0.13.1';
+/// Pinned litert-lm-native runtime version used by bundled native assets.
+const liteRtLmNativeRuntimeVersion = '0.13.1';
+const _litertLmVersion = liteRtLmNativeRuntimeVersion;
 const _litertLmLibDirEnv = 'LLAMADART_LITERT_LM_LIB_DIR';
 const _liteRtLmIosNativeAsset = 'package:llamadart/litert_lm_LiteRtLm';
 const _processLibraryCandidate = '<process>';

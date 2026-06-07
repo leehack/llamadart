@@ -20,7 +20,7 @@ import 'litert_lm_runtime.dart';
 
 const _liteRtLmLoraUnsupportedMessage =
     'LiteRtLmBackend does not support LoRA adapters with the pinned '
-    'LiteRT-LM runtime v0.13.1: the public C ABI does not export LoRA '
+    'LiteRT-LM runtime v$liteRtLmNativeRuntimeVersion: the public C ABI does not export LoRA '
     'session-config setters. Use a llama.cpp/GGUF backend for LoRA adapters '
     'or update litert-lm-native when a compatible C ABI is shipped.';
 
