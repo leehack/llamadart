@@ -1063,6 +1063,57 @@ void main() {
     );
 
     test(
+      'create keeps non-media history parts on native structured chat path',
+      () async {
+        final nativeBackend = NativeChatMockBackend()
+          ..generationText = 'native response';
+        final nativeEngine = LlamaEngine(nativeBackend);
+
+        try {
+          await nativeEngine.loadModel('gemma-4-E2B-it.litertlm');
+
+          await nativeEngine.create(const [
+            LlamaChatMessage.withContent(
+              role: LlamaChatRole.assistant,
+              content: [
+                LlamaThinkingContent('check tool state'),
+                LlamaToolCallContent(
+                  id: 'call_1',
+                  name: 'get_weather',
+                  arguments: {'city': 'Seoul'},
+                  rawJson: '{"city":"Seoul"}',
+                ),
+              ],
+            ),
+            LlamaChatMessage.withContent(
+              role: LlamaChatRole.tool,
+              content: [
+                LlamaToolResultContent(
+                  id: 'call_1',
+                  name: 'get_weather',
+                  result: 'sunny',
+                ),
+              ],
+            ),
+            LlamaChatMessage.fromText(
+              role: LlamaChatRole.user,
+              text: 'summarize',
+            ),
+          ]).drain();
+
+          expect(nativeBackend.nativeGenerateChatCalls, 1);
+          expect(nativeBackend.lastGenerationPrompt, isNull);
+          expect(
+            nativeBackend.lastNativeMessages?.map((message) => message.role),
+            [LlamaChatRole.assistant, LlamaChatRole.tool, LlamaChatRole.user],
+          );
+        } finally {
+          await nativeEngine.dispose();
+        }
+      },
+    );
+
+    test(
       'create falls back to rendered prompt for required native tools',
       () async {
         final nativeBackend = NativeChatMockBackend();

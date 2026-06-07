@@ -1986,7 +1986,9 @@ class LlamaEngine {
     }
     return messages
         .expand((message) => message.parts)
-        .every((part) => part is LlamaTextContent);
+        .every(
+          (part) => part is! LlamaImageContent && part is! LlamaAudioContent,
+        );
   }
 
   /// Validates engine is ready for inference.
