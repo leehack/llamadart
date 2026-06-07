@@ -58,6 +58,21 @@ void main() {
       expect(out, '7');
     });
 
+    test('preserves native tool-call JSON as a parser-visible envelope', () {
+      final assembler = LiteRtLmChannelAssembler();
+      final out =
+          assembler.add(
+            '{"role":"assistant","tool_calls":[{"name":"get_weather",'
+            '"arguments":{"city":"Seoul"}}]}',
+          ) +
+          assembler.flush();
+
+      expect(
+        out,
+        '{"tool_calls":[{"name":"get_weather","arguments":{"city":"Seoul"}}]}',
+      );
+    });
+
     test('closes an unterminated thought run on flush (token cutoff)', () {
       final assembler = LiteRtLmChannelAssembler();
       final out = StringBuffer()

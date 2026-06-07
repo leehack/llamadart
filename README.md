@@ -340,11 +340,13 @@ which is an early-preview text-in/text-out API and currently supports
 web-compatible Gemma 4 LiteRT-LM model variants. iOS LiteRT-LM bundles are
 derived from upstream `CLiteRTLM.xcframework` slices, embedded as app
 frameworks, and loaded by their absolute bundle path for device and simulator
-builds. Native LiteRT-LM
-generation works through the same high-level `LlamaEngine` and `ChatSession`
-APIs, including native tokenization and detokenization for exact token counts.
-On native targets, thinking and tool-call parsing run through the same
-high-level template parser for compatible models, but llama.cpp-style GBNF
+builds. Native LiteRT-LM generation works through the same high-level
+`LlamaEngine` and `ChatSession` APIs, including native tokenization and
+detokenization for exact token counts. On native targets, eligible text-only
+chat turns use LiteRT-LM's native Conversation APIs for structured history,
+system messages, tools, and runtime context; unsupported cases fall back to the
+Dart chat-template prompt path. Thinking and tool-call parsing run through the
+same high-level template parser for compatible models, but llama.cpp-style GBNF
 grammar constraints are not applied to `.litertlm` generation. LiteRT-LM web is
 currently limited to single-turn text prompts through `@litert-lm/core`; it does
 not yet preserve structured chat history, system prompts, tool declarations, or

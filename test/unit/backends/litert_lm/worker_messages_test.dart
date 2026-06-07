@@ -39,6 +39,32 @@ void main() {
       expect(generate.prompt, 'prompt');
       expect(generate.parts, isEmpty);
 
+      final generateChat = LiteRtLmGenerateChatRequest(
+        1,
+        const [
+          LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hello'),
+        ],
+        const GenerationParams(),
+        sp,
+        tools: [
+          {
+            'type': 'function',
+            'function': {
+              'name': 'get_weather',
+              'description': 'Get weather',
+              'parameters': {'type': 'object'},
+            },
+          },
+        ],
+        toolChoice: ToolChoice.none,
+        chatTemplateKwargs: const {'locale': 'en_CA'},
+      );
+      expect(generateChat.contextHandle, 1);
+      expect(generateChat.messages.single.content, 'hello');
+      expect(generateChat.tools?.single['function']['name'], 'get_weather');
+      expect(generateChat.toolChoice, ToolChoice.none);
+      expect(generateChat.chatTemplateKwargs, {'locale': 'en_CA'});
+
       expect(LiteRtLmCancelGenerationRequest(sp).sendPort, sp);
       expect(LiteRtLmTokenizeRequest(1, 'text', true, sp).text, 'text');
       expect(

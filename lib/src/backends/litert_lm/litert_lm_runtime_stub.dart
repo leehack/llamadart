@@ -87,6 +87,9 @@ class LiteRtLmRuntimeClient {
   /// Creates a conversation for generation/token operations.
   void createConversation({
     String? systemMessage,
+    List<Map<String, dynamic>>? messages,
+    List<Map<String, dynamic>>? tools,
+    Map<String, dynamic>? extraContext,
     double temperature = 0.8,
     int topK = 40,
     double topP = 0.95,
@@ -108,6 +111,29 @@ class LiteRtLmRuntimeClient {
 
   /// Streams generated text from the active conversation.
   Stream<String> generate(String prompt) {
+    throw UnsupportedError('LiteRT-LM runtime requires a native platform.');
+  }
+
+  /// Streams generated text from a native message JSON object.
+  Stream<String> generateMessageJson(
+    String messageJson, {
+    Map<String, dynamic>? extraContext,
+  }) {
+    throw UnsupportedError('LiteRT-LM runtime requires a native platform.');
+  }
+
+  /// Renders a message with the active native conversation template.
+  String renderMessageToString(Map<String, dynamic> message) {
+    throw UnsupportedError('LiteRT-LM runtime requires a native platform.');
+  }
+
+  /// Returns the active native conversation token count.
+  int conversationTokenCount() {
+    throw UnsupportedError('LiteRT-LM runtime requires a native platform.');
+  }
+
+  /// Replaces the active native conversation with a clone.
+  void replaceConversationWithClone() {
     throw UnsupportedError('LiteRT-LM runtime requires a native platform.');
   }
 

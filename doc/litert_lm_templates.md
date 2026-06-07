@@ -12,11 +12,20 @@ format, and renders/parses with the matching handler. For llama.cpp this
 template is read straight from the GGUF.
 
 `.litertlm` bundles also embed a chat template, but the LiteRT-LM native FFI
-exposes **no way to read it back** (it only offers load / generate / tokenize /
-detokenize). So the backend has to supply `tokenizer.chat_template` itself. It
-does this by detecting the model family from the bundle filename and mapping it
-to a canonical template copied verbatim from the one llama.cpp ships — which
-keeps the LiteRT-LM path byte-for-byte consistent with the llama.cpp path.
+exposes **no way to read it back**. So the backend has to supply
+`tokenizer.chat_template` itself for metadata, template inspection, Dart-side
+parsing, web generation, and fallback prompt rendering. It does this by
+detecting the model family from the bundle filename and mapping it to a
+canonical template copied verbatim from the one llama.cpp ships — which keeps
+the LiteRT-LM path byte-for-byte consistent with the llama.cpp path whenever
+the Dart renderer is active.
+
+Native LiteRT-LM text chat does not always render the full prompt in Dart. When
+`LlamaEngine.create(...)` can represent a request as structured text-only
+messages, it uses LiteRT-LM's native Conversation APIs for system/history
+messages, tools, and per-call extra context. The registry still provides the
+format handler used to parse streamed assistant output and to render prompts for
+unsupported or non-native paths.
 
 > Note: the native runtime adds the model's start token itself, so the bundled
 > templates have their leading `bos_token` stripped to avoid a doubled BOS.
@@ -129,8 +138,22 @@ You never hand-author a template — copy the canonical one llama.cpp uses.
 
 ## Runtime behavior (beyond templating)
 
-Two LiteRT-LM-specific behaviors complement the templates above; both live in
-the backend, not the registry:
+LiteRT-LM-specific behaviors complement the templates above; they live in the
+backend, not the registry:
+
+- **Eligible native text chat uses LiteRT-LM Conversation APIs.**
+  `LlamaEngine.create(...)` routes native `.litertlm` text-only chat through
+  `litert_lm_conversation_config_set_messages`,
+  `litert_lm_conversation_config_set_tools`,
+  `litert_lm_conversation_config_set_extra_context`, and native message
+  rendering/sending. This lets LiteRT-LM's model processors handle structured
+  history, tool declarations, and runtime context instead of receiving one
+  Dart-rendered prompt string.
+- **The Dart template path remains the compatibility fallback.** The engine
+  still renders prompts in Dart for web LiteRT-LM, custom template inspection
+  through `chatTemplate(...)`, multimodal messages, required tool-choice,
+  parallel tool calls, and any backend that does not expose native structured
+  chat generation.
 
 - **Thinking is reassembled from a channel stream.** The native runtime streams
   reasoning and the answer on separate channels — thought as
@@ -148,16 +171,13 @@ the backend, not the registry:
   unaffected.
 
 > The web backend (`@litert-lm/core`) uses a separate response path and does not
-> share this channel reassembly; web thinking remains limited/single-turn.
+> share the native Conversation API or channel reassembly; web thinking remains
+> limited/single-turn.
 
 ## Longer-term direction
 
-The registry is a deliberate bridge, not the end state. Two "proper" endgames,
-both larger changes, are worth tracking:
+The registry is a deliberate bridge, not the end state. The remaining "proper"
+endgame is worth tracking:
 
 1. Read the embedded template straight from the `.litertlm` bundle once the FFI
    exposes a getter — mirroring how the llama.cpp path reads it from the GGUF.
-2. Use LiteRT-LM's native conversation tool API
-   (`litert_lm_conversation_config_set_tools` / `set_messages`, already exported
-   by the shipped library) and let `Gemma4DataProcessor` format tools and parse
-   tool calls — the approach the official SDKs and `flutter_gemma` take.
