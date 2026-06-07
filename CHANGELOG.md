@@ -1,4 +1,4 @@
-## 0.7.2
+## 0.7.3
 
 * **LiteRT-LM runtime tuning controls**:
   * Added opt-in native `.litertlm` `ModelParams` for
@@ -11,6 +11,13 @@
     decode throughput, and selected runtime settings.
   * Documented support decisions for each candidate native knob and kept
     LiteRT-LM web rejecting these native-only settings explicitly.
+
+## 0.7.2
+
+* Added explicit pub.dev platform metadata for Android, iOS, Linux, macOS, web,
+  and Windows. This keeps the package listing aligned with the actual
+  cross-platform runtime support even though Flutter plugin registration is
+  only needed for Darwin app integration.
 
 ## 0.7.1
 
