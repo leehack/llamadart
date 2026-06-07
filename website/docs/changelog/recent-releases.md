@@ -7,6 +7,15 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
+## 0.7.2
+
+- Clarified native `.litertlm` LoRA failures so `ModelParams.loras`,
+  `setLora(...)`, `removeLora(...)`, and `clearLoras()` report the pinned
+  LiteRT-LM `v0.13.1` public C ABI limitation.
+- Documented that LoRA remains supported through llama.cpp/GGUF backends and
+  requires a future `litert-lm-native` runtime with stable C wrapper functions
+  before Dart FFI can support LiteRT-LM adapters.
+
 ## 0.7.1
 
 - Added Flutter iOS/macOS Swift Package Manager integration so Apple apps link

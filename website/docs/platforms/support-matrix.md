@@ -130,8 +130,11 @@ load `.litertlm` models.
 | Windows x64 | `windows-x64` | `cpu` | Supported |
 | Web (browser) | N/A (`@litert-lm/core`) | `cpu`, `gpu` | Experimental; web-compatible `.litertlm` URLs only |
 
-LiteRT-LM does not currently expose embeddings, state persistence, LoRA, or
-multimodal projector APIs through llamadart. On native LiteRT-LM targets,
+LiteRT-LM does not currently expose embeddings, state persistence, or
+multimodal projector APIs through llamadart. LoRA remains a llama.cpp/GGUF
+feature in this release: native `.litertlm` loads reject `ModelParams.loras`
+and runtime LoRA calls because `litert-lm-native@v0.13.1` does not export LoRA
+session-config setters through its public C ABI. On native LiteRT-LM targets,
 high-level thinking and tool-call parsing still run through `LlamaEngine` for
 compatible templates, but llama.cpp-style GBNF grammar constraints are not
 supported for `.litertlm` generation. Native LiteRT-LM can opt into runtime

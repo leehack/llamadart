@@ -88,7 +88,13 @@ Practical compatibility checks:
 
 ## Platform notes
 
-- Native backends implement runtime LoRA operations.
+- Native llama.cpp/GGUF backends implement runtime LoRA operations.
+- Native LiteRT-LM `.litertlm` loads reject `ModelParams.loras`,
+  `setLora(...)`, `removeLora(...)`, and `clearLoras()`. The pinned
+  `litert-lm-native@v0.13.1` runtime contains internal C++ LoRA symbols, but
+  its public C ABI does not export LoRA session-config setters for Dart FFI.
+  Use a GGUF model on a llama.cpp backend until a compatible LiteRT-LM C ABI is
+  published and pinned.
 - Web bridge runtime currently exposes no-op LoRA operations in this release;
   do not assume LoRA effect on web targets yet.
 
@@ -96,5 +102,8 @@ Practical compatibility checks:
 
 - If `setLora(...)` fails, verify the adapter path is accessible at runtime.
 - Ensure adapter/base-model compatibility (architecture/family alignment).
+- If a `.litertlm` model reports that LoRA is unsupported, switch to a
+  llama.cpp/GGUF backend or update the LiteRT-LM runtime pin only after the
+  native release exposes stable C wrapper functions for LoRA.
 - When behavior seems unchanged, confirm you are testing on a native target and
   not a web fallback path.

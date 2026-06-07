@@ -349,8 +349,12 @@ grammar constraints are not applied to `.litertlm` generation. LiteRT-LM web is
 currently limited to single-turn text prompts through `@litert-lm/core`; it does
 not yet preserve structured chat history, system prompts, tool declarations, or
 thinking/tool-call parsing with the same semantics as native. The current
-implementation does not expose embeddings, state persistence, LoRA, or
-multimodal operations through LiteRT-LM. `ChatSession` uses a conservative
+implementation does not expose embeddings, state persistence, or multimodal
+operations through LiteRT-LM. LoRA is supported for GGUF models on llama.cpp
+backends; native `.litertlm` loads reject `ModelParams.loras`,
+`setLora(...)`, `removeLora(...)`, and `clearLoras()` because the pinned
+LiteRT-LM `v0.13.1` public C ABI does not export LoRA session-config setters.
+`ChatSession` uses a conservative
 prompt-size estimate for history pruning only when exact tokenization is
 unavailable.
 `LiteRtLmBackendPreference.auto` chooses GPU on Android/macOS/web and CPU on

@@ -18,6 +18,12 @@ import 'litert_lm_chat_templates.dart';
 import 'litert_lm_platform.dart';
 import 'litert_lm_runtime.dart';
 
+const _liteRtLmLoraUnsupportedMessage =
+    'LiteRtLmBackend does not support LoRA adapters with the pinned '
+    'LiteRT-LM runtime v0.13.1: the public C ABI does not export LoRA '
+    'session-config setters. Use a llama.cpp/GGUF backend for LoRA adapters '
+    'or update litert-lm-native when a compatible C ABI is shipped.';
+
 /// Worker-owned service for the LiteRT-LM backend.
 ///
 /// This keeps all LiteRT-LM FFI state inside the backend worker isolate. The
@@ -280,7 +286,7 @@ class LiteRtLmService {
   /// Handles LiteRT-LM LoRA operations.
   void handleLora(int contextHandle, String? path, double? scale, String op) {
     _checkContextHandle(contextHandle);
-    throw UnsupportedError('LiteRtLmBackend does not support LoRA adapters.');
+    throw UnsupportedError(_liteRtLmLoraUnsupportedMessage);
   }
 
   /// Returns the active backend name.
@@ -651,7 +657,8 @@ class LiteRtLmService {
       'LiteRtLmBackend does not support llama.cpp-specific ModelParams: '
       '${unsupported.join(', ')}. Supported LiteRT-LM load options are '
       'contextSize, chatTemplate, preferredBackend, all-or-CPU gpuLayers '
-      'hints, and liteRtLmBackend for explicit CPU/GPU/NPU selection.',
+      'hints, and liteRtLmBackend for explicit CPU/GPU/NPU selection.'
+      '${params.loras.isEmpty ? '' : ' $_liteRtLmLoraUnsupportedMessage'}',
     );
   }
 

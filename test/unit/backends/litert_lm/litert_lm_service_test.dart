@@ -531,24 +531,28 @@ void main() {
           isA<ArgumentError>().having(
             (error) => error.message.toString(),
             'message',
-            predicate<String>(
-              (message) => const <String>[
-                'splitMode',
-                'mainGpu',
-                'loras',
-                'numberOfThreads',
-                'numberOfThreadsBatch',
-                'microBatchSize',
-                'maxParallelSequences',
-                'useMmap=false',
-                'flashAttention',
-                'cacheTypeK',
-                'cacheTypeV',
-                'kvUnified',
-                'ropeFrequencyBase',
-                'ropeFrequencyScale',
-              ].every(message.contains),
-              'contains every unsupported ModelParams field',
+            allOf(
+              predicate<String>(
+                (message) => const <String>[
+                  'splitMode',
+                  'mainGpu',
+                  'loras',
+                  'numberOfThreads',
+                  'numberOfThreadsBatch',
+                  'microBatchSize',
+                  'maxParallelSequences',
+                  'useMmap=false',
+                  'flashAttention',
+                  'cacheTypeK',
+                  'cacheTypeV',
+                  'kvUnified',
+                  'ropeFrequencyBase',
+                  'ropeFrequencyScale',
+                ].every(message.contains),
+                'contains every unsupported ModelParams field',
+              ),
+              contains('public C ABI'),
+              contains('v0.13.1'),
             ),
           ),
         ),
@@ -622,18 +626,28 @@ void main() {
           const ModelParams(),
         );
 
+        final loraUnsupportedError = isA<UnsupportedError>().having(
+          (error) => error.message.toString(),
+          'message',
+          allOf(
+            contains('public C ABI'),
+            contains('v0.13.1'),
+            contains('llama.cpp/GGUF backend'),
+          ),
+        );
+
         expect(
           () => service.handleLora(contextHandle, 'adapter.bin', 1.0, 'set'),
-          throwsUnsupportedError,
+          throwsA(loraUnsupportedError),
         );
         expect(
           () =>
               service.handleLora(contextHandle, 'adapter.bin', null, 'remove'),
-          throwsUnsupportedError,
+          throwsA(loraUnsupportedError),
         );
         expect(
           () => service.handleLora(contextHandle, null, null, 'clear'),
-          throwsUnsupportedError,
+          throwsA(loraUnsupportedError),
         );
         await expectLater(
           service.generate(
