@@ -8,6 +8,27 @@
   * Documented that LoRA remains supported through llama.cpp/GGUF backends and
     requires a future `litert-lm-native` runtime with stable C wrapper
     functions before Dart FFI can support LiteRT-LM adapters.
+* **Structured output**:
+  * Added `responseFormat` routing to `LlamaEngine.create(...)` for
+    grammar-capable backends, deprecated the legacy `chatTemplate(...)`
+    `jsonSchema` shortcut, and made strict response-format requests fail early
+    on LiteRT-LM instead of silently degrading to unconstrained generation.
+* **LiteRT-LM chat parity**:
+  * Routed eligible native `.litertlm` text chat through LiteRT-LM Conversation
+    APIs so structured history, system messages, tool declarations, and
+    template extra context reach the runtime without a Dart-rendered prompt.
+    Unsupported cases still fall back to the existing Dart chat-template path.
+* **LiteRT-LM runtime tuning controls**:
+  * Added opt-in native `.litertlm` `ModelParams` for
+    `liteRtLmActivationDataType`, `liteRtLmPrefillChunkSize`,
+    `liteRtLmParallelFileSectionLoading`, and `liteRtLmDispatchLibDir`,
+    forwarding the pinned LiteRT-LM `v0.13.1` engine-settings C APIs while
+    keeping defaults unchanged.
+  * Extended the LiteRT-LM engine smoke tool with matching environment
+    variables so real-model runs can validate load time, prefill throughput,
+    decode throughput, and selected runtime settings.
+  * Documented support decisions for each candidate native knob and kept
+    LiteRT-LM web rejecting these native-only settings explicitly.
 
 ## 0.7.2
 

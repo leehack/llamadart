@@ -1,7 +1,10 @@
 import '../core/models/inference/model_params.dart';
 import '../core/models/inference/generation_params.dart';
+import '../core/models/inference/tool_choice.dart';
+import '../core/models/chat/chat_message.dart';
 import '../core/models/chat/content_part.dart';
 import '../core/models/config/log_level.dart';
+import '../core/models/tools/tool_definition.dart';
 
 import 'native/native_backend.dart'
     if (dart.library.js_interop) 'web/web_backend.dart';
@@ -134,6 +137,31 @@ abstract class BackendAvailability {
 abstract class BackendGrammarConstraintsSupport {
   /// Whether [GenerationParams.grammar] and related grammar fields are supported.
   bool get supportsGrammarConstraints;
+}
+
+/// Optional backend capability for native structured chat generation.
+///
+/// Backends that implement this can receive chat messages and tools directly
+/// instead of only receiving the already-rendered prompt string. Callers should
+/// check [supportsNativeChatGeneration] before invoking [generateChat].
+abstract class BackendNativeChatGeneration {
+  /// Whether the active backend/runtime can use native structured chat input.
+  bool get supportsNativeChatGeneration;
+
+  /// Generates from structured chat state.
+  Stream<List<int>> generateChat(
+    int contextHandle,
+    List<LlamaChatMessage> messages,
+    GenerationParams params, {
+    List<ToolDefinition>? tools,
+    ToolChoice toolChoice = ToolChoice.auto,
+    bool parallelToolCalls = false,
+    bool enableThinking = true,
+    Map<String, dynamic>? chatTemplateKwargs,
+    String? sourceLangCode,
+    String? targetLangCode,
+    DateTime? templateNow,
+  });
 }
 
 /// Optional backend capability for exposing resolved runtime diagnostics.

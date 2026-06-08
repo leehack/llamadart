@@ -7,7 +7,7 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
-## 0.7.2
+## Unreleased
 
 - Clarified native `.litertlm` LoRA failures so `ModelParams.loras`,
   `setLora(...)`, `removeLora(...)`, and `clearLoras()` report the pinned
@@ -15,6 +15,20 @@ For canonical full release notes, use:
 - Documented that LoRA remains supported through llama.cpp/GGUF backends and
   requires a future `litert-lm-native` runtime with stable C wrapper functions
   before Dart FFI can support LiteRT-LM adapters.
+- Added opt-in native `.litertlm` `ModelParams` for activation data type,
+  prefill chunk size, parallel file-section loading, and Android NPU LiteRT
+  dispatch library directory, forwarding the pinned LiteRT-LM `v0.13.1`
+  engine-settings C APIs while keeping defaults unchanged.
+- Extended the LiteRT-LM engine smoke tool with matching environment variables
+  and documented the support decision for each candidate runtime knob.
+- Kept LiteRT-LM web rejecting these native-only settings explicitly.
+
+## 0.7.2
+
+- Added explicit pub.dev platform metadata for Android, iOS, Linux, macOS, web,
+  and Windows. This keeps the package listing aligned with the actual
+  cross-platform runtime support even though Flutter plugin registration is
+  only needed for Darwin app integration.
 
 ## 0.7.1
 

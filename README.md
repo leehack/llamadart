@@ -340,13 +340,17 @@ which is an early-preview text-in/text-out API and currently supports
 web-compatible Gemma 4 LiteRT-LM model variants. iOS LiteRT-LM bundles are
 derived from upstream `CLiteRTLM.xcframework` slices, embedded as app
 frameworks, and loaded by their absolute bundle path for device and simulator
-builds. Native LiteRT-LM
-generation works through the same high-level `LlamaEngine` and `ChatSession`
-APIs, including native tokenization and detokenization for exact token counts.
-On native targets, thinking and tool-call parsing run through the same
-high-level template parser for compatible models, but llama.cpp-style GBNF
-grammar constraints are not applied to `.litertlm` generation. LiteRT-LM web is
-currently limited to single-turn text prompts through `@litert-lm/core`; it does
+builds. Native LiteRT-LM generation works through the same high-level
+`LlamaEngine` and `ChatSession` APIs, including native tokenization and
+detokenization for exact token counts. On native targets, eligible text-only
+chat turns use LiteRT-LM's native Conversation APIs for structured history,
+system messages, tools, and runtime context; unsupported cases fall back to the
+Dart chat-template prompt path. Thinking and tool-call parsing run through the
+same high-level template parser for compatible models, but llama.cpp-style GBNF
+grammar constraints are not applied to `.litertlm` generation. Strict
+`responseFormat` requests fail early on LiteRT-LM instead of silently degrading
+to unconstrained output. LiteRT-LM web is currently limited to single-turn text
+prompts through `@litert-lm/core`; it does
 not yet preserve structured chat history, system prompts, tool declarations, or
 thinking/tool-call parsing with the same semantics as native. The current
 implementation does not expose embeddings, state persistence, or multimodal
@@ -361,11 +365,15 @@ unavailable.
 other current LiteRT-LM targets; set `cpu`, `gpu`, or Android-only `npu`
 explicitly when benchmarking or pinning deployment behavior.
 `ModelParams.contextSize`, `chatTemplate`, `preferredBackend`,
-`liteRtLmBackend`, and all-or-CPU `gpuLayers` hints are honored for
-`.litertlm` loads; llama.cpp-only tuning knobs such as partial GPU layer
-offload, batch/micro-batch sizing, KV-cache type, flash attention, mmap/mlock,
-thread counts, LoRA load configs, and rope overrides are rejected instead of
-being silently ignored. `.litertlm` generation honors `GenerationParams`
+`liteRtLmBackend`, native LiteRT-LM runtime tuning fields, and all-or-CPU
+`gpuLayers` hints are honored for native `.litertlm` loads; LiteRT-LM web
+rejects native-only tuning fields. The native fields cover activation data type,
+CPU dynamic-model prefill chunk size, parallel `.litertlm` file-section
+loading, and Android NPU dispatch library directory. llama.cpp-only tuning knobs
+such as partial GPU layer offload, batch/micro-batch sizing, KV-cache type,
+flash attention, mmap/mlock, thread counts, LoRA load configs, and rope
+overrides are rejected instead of being silently ignored. `.litertlm`
+generation honors `GenerationParams`
 `maxTokens`, `temp`, `topK`, `topP`, and `seed` on native and web, with
 `stopSequences` enforced by llamadart. Native LiteRT-LM also honors stream
 batching thresholds and the opt-in `speculativeDecoding` flag; Web LiteRT-LM
@@ -373,7 +381,9 @@ rejects speculative decoding until the browser runtime exposes an equivalent
 control. llama.cpp-only sampling and constrained-decoding controls
 such as Min-P, repeat penalty overrides, grammar/lazy grammar triggers,
 preserved tokens, custom grammar roots, and web stream batching thresholds are
-rejected until LiteRT-LM exposes equivalent runtime controls.
+rejected until LiteRT-LM exposes equivalent runtime controls. See
+[`doc/litert_lm_structured_output.md`](doc/litert_lm_structured_output.md) for
+the current strict structured-output boundary.
 
 <details>
 <summary>Full module matrix (available modules by target)</summary>

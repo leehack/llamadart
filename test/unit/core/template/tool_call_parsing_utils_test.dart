@@ -157,6 +157,29 @@ void main() {
       );
     });
 
+    test('parses OpenAI-style function tool call arrays', () {
+      final parsed = ToolCallParsingUtils.parseToolCallArray(<Object?>[
+        <String, Object?>{
+          'id': 'call_1',
+          'type': 'function',
+          'function': <String, Object?>{
+            'name': 'get_weather',
+            'arguments': <String, Object?>{'location': 'Seoul'},
+          },
+        },
+      ]);
+
+      expect(parsed, isNotNull);
+      expect(parsed, hasLength(1));
+      expect(parsed!.single.id, 'call_1');
+      expect(parsed.single.type, 'function');
+      expect(parsed.single.function?.name, 'get_weather');
+      expect(
+        jsonDecode(parsed.single.function!.arguments!),
+        containsPair('location', 'Seoul'),
+      );
+    });
+
     test('supports non-strict tool call arrays with custom start index', () {
       final parsed = ToolCallParsingUtils.parseToolCallArray(
         <Object?>[
