@@ -1,7 +1,10 @@
+import '../../core/models/chat/chat_message.dart';
 import '../../core/models/chat/content_part.dart';
 import '../../core/models/config/log_level.dart';
 import '../../core/models/inference/generation_params.dart';
 import '../../core/models/inference/model_params.dart';
+import '../../core/models/inference/tool_choice.dart';
+import '../../core/models/tools/tool_definition.dart';
 import '../backend.dart';
 import '../litert_lm/litert_lm_backend.dart';
 import '../llama_cpp/llama_cpp_backend.dart';
@@ -24,7 +27,8 @@ class NativeAutoBackend
         BackendBatchEmbeddings,
         BackendStatePersistence,
         BackendStatePersistenceSupport,
-        BackendGrammarConstraintsSupport {
+        BackendGrammarConstraintsSupport,
+        BackendNativeChatGeneration {
   final LlamaBackend Function() _llamaCppFactory;
   final LlamaBackend Function() _liteRtLmFactory;
 
@@ -58,6 +62,16 @@ class NativeAutoBackend
           .supportsGrammarConstraints;
     }
     return true;
+  }
+
+  @override
+  bool get supportsNativeChatGeneration {
+    final delegate = _delegate;
+    if (delegate is BackendNativeChatGeneration) {
+      return (delegate as BackendNativeChatGeneration)
+          .supportsNativeChatGeneration;
+    }
+    return false;
   }
 
   @override
@@ -109,6 +123,41 @@ class NativeAutoBackend
       prompt,
       params,
       parts: parts,
+    );
+  }
+
+  @override
+  Stream<List<int>> generateChat(
+    int contextHandle,
+    List<LlamaChatMessage> messages,
+    GenerationParams params, {
+    List<ToolDefinition>? tools,
+    ToolChoice toolChoice = ToolChoice.auto,
+    bool parallelToolCalls = false,
+    bool enableThinking = true,
+    Map<String, dynamic>? chatTemplateKwargs,
+    String? sourceLangCode,
+    String? targetLangCode,
+    DateTime? templateNow,
+  }) {
+    final delegate = _requireDelegate();
+    if (delegate is BackendNativeChatGeneration) {
+      return (delegate as BackendNativeChatGeneration).generateChat(
+        contextHandle,
+        messages,
+        params,
+        tools: tools,
+        toolChoice: toolChoice,
+        parallelToolCalls: parallelToolCalls,
+        enableThinking: enableThinking,
+        chatTemplateKwargs: chatTemplateKwargs,
+        sourceLangCode: sourceLangCode,
+        targetLangCode: targetLangCode,
+        templateNow: templateNow,
+      );
+    }
+    throw UnsupportedError(
+      'The selected native backend does not support native chat generation.',
     );
   }
 

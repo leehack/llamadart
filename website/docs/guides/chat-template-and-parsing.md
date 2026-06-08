@@ -49,6 +49,17 @@ print(result.format);
 - `sourceLangCode` / `targetLangCode`: TranslateGemma style metadata.
 - `responseFormat`: structured-output schema hints.
 
+`engine.create(...)` accepts `responseFormat` for strict structured output.
+Use `{'type': 'json_object'}` or
+`{'type': 'json_schema', 'json_schema': {'schema': <JSON schema>}}`.
+Grammar-capable backends use those hints for strict output. LiteRT-LM native
+and web fail early for strict response formats because the current public
+runtime APIs do not expose JSON-schema/Lark constraint wiring.
+
+`chatTemplate(...)` still accepts the deprecated `jsonSchema` shortcut for
+template inspection. Prefer `responseFormat` for new code; if both are passed,
+`responseFormat` wins.
+
 ## When to inspect template output
 
 Inspect template output when debugging:
@@ -78,6 +89,13 @@ GGUF models expose `tokenizer.chat_template` metadata directly through the
 llama.cpp backend. Native `.litertlm` bundles do not currently expose their
 embedded template through the LiteRT-LM FFI, so `llamadart` uses a
 filename-keyed registry for supported Gemma and Qwen LiteRT-LM families.
+
+Native LiteRT-LM `engine.create(...)` uses LiteRT-LM's Conversation APIs for
+eligible text-only chat requests so system messages, history, tools, and extra
+context stay structured inside the runtime. The Dart template registry is still
+used for template metadata, streamed output parsing, `engine.chatTemplate(...)`,
+web LiteRT-LM, and fallback prompt rendering when a request cannot use the
+native conversation path.
 
 Use `ModelParams.chatTemplate` when loading a `.litertlm` bundle whose family is
 not in the registry or whose filename has been changed. The maintained registry

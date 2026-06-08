@@ -7,7 +7,7 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
-## 0.7.2
+## Unreleased
 
 - Added opt-in native `.litertlm` `ModelParams` for activation data type,
   prefill chunk size, parallel file-section loading, and Android NPU LiteRT
@@ -16,6 +16,13 @@ For canonical full release notes, use:
 - Extended the LiteRT-LM engine smoke tool with matching environment variables
   and documented the support decision for each candidate runtime knob.
 - Kept LiteRT-LM web rejecting these native-only settings explicitly.
+
+## 0.7.2
+
+- Added explicit pub.dev platform metadata for Android, iOS, Linux, macOS, web,
+  and Windows. This keeps the package listing aligned with the actual
+  cross-platform runtime support even though Flutter plugin registration is
+  only needed for Darwin app integration.
 
 ## 0.7.1
 

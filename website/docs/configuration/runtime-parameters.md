@@ -58,6 +58,10 @@ Important fields:
 - `modelBytesHint` (web/WebGPU only): approximate model size in bytes, used to
   select the mem64 core up front instead of waiting for an out-of-memory retry.
   Ignored on non-web backends.
+- `liteRtLmActivationDataType`, `liteRtLmPrefillChunkSize`,
+  `liteRtLmParallelFileSectionLoading`, and `liteRtLmDispatchLibDir`: opt-in
+  native LiteRT-LM `.litertlm` engine settings. Leave them unset to preserve
+  runtime defaults; LiteRT-LM web rejects them as native-only.
 
 For runtime LoRA control (`setLora`, `removeLora`, `clearLoras`), see
 [LoRA Adapters](../guides/lora-adapters).
@@ -98,10 +102,6 @@ Important fields:
 - `speculativeDecoding`: opt-in backend-native speculative decoding. Native
   LiteRT-LM honors this flag; llama.cpp, WebGPU, and LiteRT-LM web reject it
   until their speculative paths are implemented.
-- `liteRtLmActivationDataType`, `liteRtLmPrefillChunkSize`,
-  `liteRtLmParallelFileSectionLoading`, and `liteRtLmDispatchLibDir`: opt-in
-  native LiteRT-LM `.litertlm` engine settings. Leave them unset to preserve
-  runtime defaults; LiteRT-LM web rejects them as native-only.
 - `seed`: deterministic replay when set.
 - `grammar`: constrained decoding with GBNF.
 

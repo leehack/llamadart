@@ -1,9 +1,11 @@
 import 'dart:isolate';
 
+import '../../core/models/chat/chat_message.dart';
 import '../../core/models/chat/content_part.dart';
 import '../../core/models/config/log_level.dart';
 import '../../core/models/inference/generation_params.dart';
 import '../../core/models/inference/model_params.dart';
+import '../../core/models/inference/tool_choice.dart';
 
 /// Base class for LiteRT-LM worker requests.
 abstract class LiteRtLmWorkerRequest {
@@ -85,6 +87,58 @@ class LiteRtLmGenerateRequest extends LiteRtLmWorkerRequest {
     this.params,
     super.sendPort, {
     this.parts,
+  });
+}
+
+/// Request to generate text from structured chat messages.
+class LiteRtLmGenerateChatRequest extends LiteRtLmWorkerRequest {
+  /// The context handle.
+  final int contextHandle;
+
+  /// Structured chat messages.
+  final List<LlamaChatMessage> messages;
+
+  /// Generation parameters.
+  final GenerationParams params;
+
+  /// Optional native tool definition JSON.
+  final List<Map<String, dynamic>>? tools;
+
+  /// Tool routing mode.
+  final ToolChoice toolChoice;
+
+  /// Whether the caller requested parallel tool calls.
+  final bool parallelToolCalls;
+
+  /// Whether thinking output should be enabled in template context.
+  final bool enableThinking;
+
+  /// Additional native template/context values.
+  final Map<String, dynamic>? chatTemplateKwargs;
+
+  /// Optional source language code.
+  final String? sourceLangCode;
+
+  /// Optional target language code.
+  final String? targetLangCode;
+
+  /// Optional deterministic template time.
+  final DateTime? templateNow;
+
+  /// Creates a structured chat generate request.
+  LiteRtLmGenerateChatRequest(
+    this.contextHandle,
+    this.messages,
+    this.params,
+    super.sendPort, {
+    this.tools,
+    this.toolChoice = ToolChoice.auto,
+    this.parallelToolCalls = false,
+    this.enableThinking = true,
+    this.chatTemplateKwargs,
+    this.sourceLangCode,
+    this.targetLangCode,
+    this.templateNow,
   });
 }
 
