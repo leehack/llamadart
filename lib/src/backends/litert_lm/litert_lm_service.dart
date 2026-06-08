@@ -8,6 +8,7 @@ import '../../core/models/chat/chat_role.dart';
 import '../../core/models/config/flash_attention.dart';
 import '../../core/models/config/gpu_backend.dart';
 import '../../core/models/config/kv_cache_type.dart';
+import '../../core/models/config/lora_config.dart';
 import '../../core/models/config/log_level.dart';
 import '../../core/models/inference/generation_params.dart';
 import '../../core/models/inference/model_params.dart';
@@ -19,11 +20,9 @@ import 'litert_lm_chat_templates.dart';
 import 'litert_lm_platform.dart';
 import 'litert_lm_runtime.dart';
 
-const _liteRtLmLoraUnsupportedMessage =
-    'LiteRtLmBackend does not support LoRA adapters with the pinned '
-    'LiteRT-LM runtime v$liteRtLmNativeRuntimeVersion: the public C ABI does not export LoRA '
-    'session-config setters. Use a llama.cpp/GGUF backend for LoRA adapters '
-    'or update litert-lm-native when a compatible C ABI is shipped.';
+const _liteRtLmLoraLimitMessage =
+    'LiteRtLmBackend supports one LiteRT-LM LoRA adapter at scale 1.0. '
+    'Multiple weighted adapters remain llama.cpp/GGUF-only.';
 
 /// Worker-owned service for the LiteRT-LM backend.
 ///
@@ -46,6 +45,7 @@ class LiteRtLmService {
   int _nextContextHandle = 1;
   int? _modelHandle;
   int? _contextHandle;
+  LoraAdapterConfig? _activeLora;
   LiteRtLmRuntimeMetrics? _lastMetrics;
   LlamaLogLevel _logLevel = LlamaLogLevel.warn;
   bool _modelLoaded = false;
@@ -88,6 +88,7 @@ class LiteRtLmService {
     _activeSpeculativeDecoding = null;
     _modelHandle = _nextModelHandle++;
     _contextHandle = null;
+    _activeLora = null;
     _lastMetrics = null;
     _cancelRequested = false;
     _modelLoaded = true;
@@ -107,6 +108,7 @@ class LiteRtLmService {
     _activeSpeculativeDecoding = null;
     _modelHandle = null;
     _contextHandle = null;
+    _activeLora = null;
     _lastMetrics = null;
     _cancelRequested = false;
     _modelLoaded = false;
@@ -121,6 +123,7 @@ class LiteRtLmService {
     _disposeContextRuntimeState();
     _modelParams = params;
     _contextHandle = _nextContextHandle++;
+    _activeLora = _loraForParams(params);
     _contextCreated = true;
     return _contextHandle!;
   }
@@ -130,6 +133,7 @@ class LiteRtLmService {
     _checkContextHandle(contextHandle);
     _disposeContextRuntimeState();
     _contextHandle = null;
+    _activeLora = null;
     _contextCreated = false;
   }
 
@@ -170,6 +174,7 @@ class LiteRtLmService {
       topP: params.topP,
       seed: params.seed ?? _defaultSamplerSeed(),
       npuBackend: backend == 'npu',
+      loraPath: _activeLora?.path,
     );
     if (_cancelRequested) {
       client.cancel();
@@ -279,6 +284,7 @@ class LiteRtLmService {
       topP: params.topP,
       seed: params.seed ?? _defaultSamplerSeed(),
       npuBackend: backend == 'npu',
+      loraPath: _activeLora?.path,
     );
     if (_cancelRequested) {
       client.cancel();
@@ -397,7 +403,28 @@ class LiteRtLmService {
   /// Handles LiteRT-LM LoRA operations.
   void handleLora(int contextHandle, String? path, double? scale, String op) {
     _checkContextHandle(contextHandle);
-    throw UnsupportedError(_liteRtLmLoraUnsupportedMessage);
+    switch (op) {
+      case 'set':
+        if (path == null) {
+          throw ArgumentError('LiteRT-LM LoRA set requires an adapter path.');
+        }
+        _activeLora = _validateLoraAdapter(
+          LoraAdapterConfig(path: path, scale: scale ?? 1.0),
+        );
+      case 'remove':
+        if (path == null) {
+          throw ArgumentError(
+            'LiteRT-LM LoRA remove requires an adapter path.',
+          );
+        }
+        if (_activeLora?.path == path) {
+          _activeLora = null;
+        }
+      case 'clear':
+        _activeLora = null;
+      default:
+        throw ArgumentError('Unsupported LiteRT-LM LoRA operation: $op');
+    }
   }
 
   /// Returns the active backend name.
@@ -510,6 +537,7 @@ class LiteRtLmService {
     _activeBackend = null;
     _modelHandle = null;
     _contextHandle = null;
+    _activeLora = null;
     _modelLoaded = false;
     _contextCreated = false;
   }
@@ -715,6 +743,13 @@ class LiteRtLmService {
     params.validate();
 
     final unsupported = <String>[];
+    String? loraError;
+    try {
+      _loraForParams(params);
+    } on ArgumentError catch (error) {
+      unsupported.add('loras');
+      loraError = error.message.toString();
+    }
     if (params.contextSize <= 0) {
       unsupported.add('contextSize=${params.contextSize}');
     }
@@ -726,9 +761,6 @@ class LiteRtLmService {
     }
     if (params.mainGpu != 0) {
       unsupported.add('mainGpu');
-    }
-    if (params.loras.isNotEmpty) {
-      unsupported.add('loras');
     }
     if (params.numberOfThreads != 0) {
       unsupported.add('numberOfThreads');
@@ -779,9 +811,37 @@ class LiteRtLmService {
       'contextSize, chatTemplate, preferredBackend, all-or-CPU gpuLayers '
       'hints, liteRtLmBackend for explicit CPU/GPU/NPU selection, '
       'liteRtLmActivationDataType, liteRtLmPrefillChunkSize, '
-      'liteRtLmParallelFileSectionLoading, and liteRtLmDispatchLibDir.'
-      '${params.loras.isEmpty ? '' : ' $_liteRtLmLoraUnsupportedMessage'}',
+      'liteRtLmParallelFileSectionLoading, liteRtLmDispatchLibDir, and '
+      'one LiteRT-LM LoRA adapter at scale 1.0.'
+      '${loraError == null ? '' : ' $loraError'}',
     );
+  }
+
+  LoraAdapterConfig? _loraForParams(ModelParams params) {
+    if (params.loras.isEmpty) {
+      return null;
+    }
+    if (params.loras.length > 1) {
+      throw ArgumentError(_liteRtLmLoraLimitMessage);
+    }
+    return _validateLoraAdapter(params.loras.single);
+  }
+
+  LoraAdapterConfig _validateLoraAdapter(LoraAdapterConfig adapter) {
+    if (adapter.scale != 1.0) {
+      throw ArgumentError(
+        '$_liteRtLmLoraLimitMessage Requested scale: ${adapter.scale}.',
+      );
+    }
+    if (adapter.path.trim().isEmpty) {
+      throw ArgumentError('LiteRT-LM LoRA adapter path must be non-empty.');
+    }
+    if (!File(adapter.path).existsSync()) {
+      throw ArgumentError(
+        'LiteRT-LM LoRA adapter does not exist: ${adapter.path}',
+      );
+    }
+    return adapter;
   }
 
   void _validateContextBackendParams(ModelParams params) {

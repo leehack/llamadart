@@ -96,6 +96,7 @@ class LiteRtLmRuntimeClient {
     List<Map<String, dynamic>>? messages,
     List<Map<String, dynamic>>? tools,
     Map<String, dynamic>? extraContext,
+    String? loraPath,
     double temperature = 0.8,
     int topK = 40,
     double topP = 0.95,

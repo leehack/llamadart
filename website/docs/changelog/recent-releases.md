@@ -9,12 +9,15 @@ For canonical full release notes, use:
 
 ## Unreleased
 
-- Clarified native `.litertlm` LoRA failures so `ModelParams.loras`,
-  `setLora(...)`, `removeLora(...)`, and `clearLoras()` report the pinned
-  LiteRT-LM `v0.13.1` public C ABI limitation.
-- Documented that LoRA remains supported through llama.cpp/GGUF backends and
-  requires a future `litert-lm-native` runtime with stable C wrapper functions
-  before Dart FFI can support LiteRT-LM adapters.
+- Added native `.litertlm` LoRA wiring for one LiteRT-LM adapter at scale
+  `1.0`, including `ModelParams.loras`, `setLora(...)`, `removeLora(...)`, and
+  `clearLoras()` on native LiteRT-LM contexts.
+- Added Dart FFI coverage for `litert_lm_session_config_set_lora_file`.
+  Generation with a LoRA adapter requires a matching `litert-lm-native`
+  runtime that exports that C symbol; older local runtime libraries fail with a
+  focused unsupported-runtime message.
+- Kept multiple weighted adapters on the llama.cpp/GGUF path and kept
+  LiteRT-LM web rejecting LoRA explicitly.
 - Added opt-in native `.litertlm` `ModelParams` for activation data type,
   prefill chunk size, parallel file-section loading, and Android NPU LiteRT
   dispatch library directory, forwarding the pinned LiteRT-LM `v0.13.1`

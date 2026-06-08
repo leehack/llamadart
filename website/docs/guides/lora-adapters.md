@@ -53,6 +53,9 @@ await engine.setLora('/models/lora/domain.gguf', scale: 0.70);
 - Use `removeLora(path)` to disable one adapter.
 - Use `clearLoras()` to reset to base model behavior.
 
+Stacking and non-`1.0` scales are GGUF llama.cpp features. Native LiteRT-LM
+`.litertlm` currently accepts one LiteRT-LM adapter at scale `1.0`.
+
 ## Training your own LoRA adapters
 
 For end-to-end training + conversion, start with the official notebook:
@@ -88,22 +91,21 @@ Practical compatibility checks:
 
 ## Platform notes
 
-- Native llama.cpp/GGUF backends implement runtime LoRA operations.
-- Native LiteRT-LM `.litertlm` loads reject `ModelParams.loras`,
-  `setLora(...)`, `removeLora(...)`, and `clearLoras()`. The pinned
-  `litert-lm-native@v0.13.1` runtime contains internal C++ LoRA symbols, but
-  its public C ABI does not export LoRA session-config setters for Dart FFI.
-  Use a GGUF model on a llama.cpp backend until a compatible LiteRT-LM C ABI is
-  published and pinned.
-- Web bridge runtime currently exposes no-op LoRA operations in this release;
-  do not assume LoRA effect on web targets yet.
+- Native llama.cpp/GGUF backends implement runtime LoRA operations with
+  multiple weighted adapters.
+- Native LiteRT-LM `.litertlm` supports one LiteRT-LM adapter at scale `1.0`
+  through `ModelParams.loras` or the runtime LoRA APIs when the loaded
+  `litert-lm-native` library exports
+  `litert_lm_session_config_set_lora_file`.
+- Web bridge and LiteRT-LM web runtimes do not expose LoRA effects.
 
 ## Troubleshooting
 
 - If `setLora(...)` fails, verify the adapter path is accessible at runtime.
 - Ensure adapter/base-model compatibility (architecture/family alignment).
-- If a `.litertlm` model reports that LoRA is unsupported, switch to a
-  llama.cpp/GGUF backend or update the LiteRT-LM runtime pin only after the
-  native release exposes stable C wrapper functions for LoRA.
+- If a `.litertlm` model reports that the LoRA C symbol is missing, use a
+  `litert-lm-native` build that exports
+  `litert_lm_session_config_set_lora_file` or switch to a GGUF model on a
+  llama.cpp backend.
 - When behavior seems unchanged, confirm you are testing on a native target and
   not a web fallback path.

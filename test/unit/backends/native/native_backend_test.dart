@@ -644,13 +644,15 @@ void main() {
   });
 
   test(
-    'high-level engine rejects LoRA operations for litertlm bundles',
+    'high-level engine supports LoRA operations for litertlm bundles',
     () async {
       final tempDir = await Directory.systemTemp.createTemp(
         'llamadart_native_auto_lora_litert_',
       );
       final modelFile = File('${tempDir.path}/gemma-4-E2B-it.litertlm');
       await modelFile.writeAsString('fake model');
+      final adapterFile = File('${tempDir.path}/adapter.lora');
+      await adapterFile.writeAsBytes(const <int>[1, 2, 3]);
       final engine = LlamaEngine(LlamaBackend());
 
       try {
@@ -659,18 +661,9 @@ void main() {
           modelParams: const ModelParams(preferredBackend: GpuBackend.cpu),
         );
 
-        await expectLater(
-          engine.setLora('adapter.bin'),
-          throwsA(isA<LlamaUnsupportedException>()),
-        );
-        await expectLater(
-          engine.removeLora('adapter.bin'),
-          throwsA(isA<LlamaUnsupportedException>()),
-        );
-        await expectLater(
-          engine.clearLoras(),
-          throwsA(isA<LlamaUnsupportedException>()),
-        );
+        await engine.setLora(adapterFile.path);
+        await engine.removeLora(adapterFile.path);
+        await engine.clearLoras();
       } finally {
         await engine.dispose();
         await tempDir.delete(recursive: true);

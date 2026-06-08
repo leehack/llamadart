@@ -517,7 +517,7 @@ void main() {
           const ModelParams(
             splitMode: ModelSplitMode.none,
             mainGpu: 1,
-            loras: [LoraAdapterConfig(path: 'adapter.bin')],
+            loras: [LoraAdapterConfig(path: 'adapter.bin', scale: 0.5)],
             numberOfThreads: 2,
             numberOfThreadsBatch: 3,
             microBatchSize: 64,
@@ -555,8 +555,8 @@ void main() {
                 ].every(message.contains),
                 'contains every unsupported ModelParams field',
               ),
-              contains('public C ABI'),
-              contains('v0.13.1'),
+              contains('scale 1.0'),
+              contains('Requested scale: 0.5'),
             ),
           ),
         ),
@@ -630,28 +630,64 @@ void main() {
           const ModelParams(),
         );
 
-        final loraUnsupportedError = isA<UnsupportedError>().having(
-          (error) => error.message.toString(),
-          'message',
-          allOf(
-            contains('public C ABI'),
-            contains('v0.13.1'),
-            contains('llama.cpp/GGUF backend'),
+        expect(
+          () => service.handleLora(contextHandle, 'adapter.bin', 1.0, 'set'),
+          throwsA(
+            isA<ArgumentError>().having(
+              (error) => error.message.toString(),
+              'message',
+              contains('does not exist'),
+            ),
+          ),
+        );
+        expect(
+          () => service.handleLora(contextHandle, 'adapter.bin', 0.5, 'set'),
+          throwsA(
+            isA<ArgumentError>().having(
+              (error) => error.message.toString(),
+              'message',
+              allOf(contains('scale 1.0'), contains('0.5')),
+            ),
           ),
         );
 
+        final adapterFile = File('${tempDir.path}/adapter.lora');
+        await adapterFile.writeAsBytes(const <int>[1, 2, 3]);
         expect(
-          () => service.handleLora(contextHandle, 'adapter.bin', 1.0, 'set'),
-          throwsA(loraUnsupportedError),
+          () => service.handleLora(contextHandle, adapterFile.path, 1.0, 'set'),
+          returnsNormally,
         );
         expect(
-          () =>
-              service.handleLora(contextHandle, 'adapter.bin', null, 'remove'),
-          throwsA(loraUnsupportedError),
+          () => service.handleLora(
+            contextHandle,
+            '${tempDir.path}/other.lora',
+            null,
+            'remove',
+          ),
+          returnsNormally,
+        );
+        expect(
+          () => service.handleLora(
+            contextHandle,
+            adapterFile.path,
+            null,
+            'remove',
+          ),
+          returnsNormally,
         );
         expect(
           () => service.handleLora(contextHandle, null, null, 'clear'),
-          throwsA(loraUnsupportedError),
+          returnsNormally,
+        );
+        expect(
+          () => service.handleLora(contextHandle, null, null, 'unknown'),
+          throwsA(
+            isA<ArgumentError>().having(
+              (error) => error.message.toString(),
+              'message',
+              contains('Unsupported LiteRT-LM LoRA operation'),
+            ),
+          ),
         );
         await expectLater(
           service.generate(
@@ -659,13 +695,55 @@ void main() {
             'hello',
             const GenerationParams(grammar: 'root ::= "x"'),
           ),
-          emitsError(isA<UnsupportedError>()),
+          emitsError(
+            isA<UnsupportedError>().having(
+              (error) => error.message.toString(),
+              'message',
+              contains('GenerationParams: grammar'),
+            ),
+          ),
         );
       } finally {
         service.dispose();
       }
     },
   );
+
+  test('passes LiteRT-LM LoRA path to native conversations', () async {
+    final fakeClient = _FakeLiteRtLmRuntimeClient();
+    final service = LiteRtLmService(clientFactory: () => fakeClient);
+    final adapterFile = File('${tempDir.path}/conversation.lora');
+    await adapterFile.writeAsBytes(const <int>[1, 2, 3]);
+
+    try {
+      final modelHandle = await service.loadModel(
+        modelFile.path,
+        const ModelParams(preferredBackend: GpuBackend.cpu),
+      );
+      final contextHandle = service.createContext(
+        modelHandle,
+        ModelParams(
+          preferredBackend: GpuBackend.cpu,
+          loras: [LoraAdapterConfig(path: adapterFile.path)],
+        ),
+      );
+
+      fakeClient.generatedOverride = Stream<String>.value('ok');
+      final chunks = await service
+          .generate(
+            contextHandle,
+            'hello',
+            const GenerationParams(maxTokens: 4),
+          )
+          .map(utf8.decode)
+          .toList();
+
+      expect(chunks, ['ok']);
+      expect(fakeClient.lastLoraPath, adapterFile.path);
+    } finally {
+      service.dispose();
+    }
+  });
 
   test('rejects media parts before native runtime initialization', () async {
     final fakeClient = _FakeLiteRtLmRuntimeClient();
@@ -1735,6 +1813,7 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
   final Completer<void> initializeStarted = Completer<void>();
   final Completer<void> generateStarted = Completer<void>();
   final StreamController<String> generated = StreamController<String>();
+  Stream<String>? generatedOverride;
   final Completer<void>? _initializeBlocker;
   final Object? initializeError;
   String? lastModelPath;
@@ -1758,6 +1837,7 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
   List<Map<String, dynamic>>? lastMessages;
   List<Map<String, dynamic>>? lastTools;
   Map<String, dynamic>? lastExtraContext;
+  String? lastLoraPath;
   String? lastTokenizeText;
   bool? lastTokenizeAddSpecial;
   List<int>? lastDetokenizeTokens;
@@ -1827,6 +1907,7 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
     List<Map<String, dynamic>>? messages,
     List<Map<String, dynamic>>? tools,
     Map<String, dynamic>? extraContext,
+    String? loraPath,
     double temperature = 0.8,
     int topK = 40,
     double topP = 0.95,
@@ -1847,6 +1928,7 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
     lastExtraContext = extraContext == null
         ? null
         : Map<String, dynamic>.from(extraContext);
+    lastLoraPath = loraPath;
     createConversationCount += 1;
     onCreateConversation?.call();
   }
@@ -1873,7 +1955,7 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
     if (!generateStarted.isCompleted) {
       generateStarted.complete();
     }
-    return generated.stream;
+    return generatedOverride ?? generated.stream;
   }
 
   @override
@@ -1890,7 +1972,7 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
     if (!generateStarted.isCompleted) {
       generateStarted.complete();
     }
-    return generated.stream;
+    return generatedOverride ?? generated.stream;
   }
 
   @override

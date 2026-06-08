@@ -354,10 +354,11 @@ prompts through `@litert-lm/core`; it does
 not yet preserve structured chat history, system prompts, tool declarations, or
 thinking/tool-call parsing with the same semantics as native. The current
 implementation does not expose embeddings, state persistence, or multimodal
-operations through LiteRT-LM. LoRA is supported for GGUF models on llama.cpp
-backends; native `.litertlm` loads reject `ModelParams.loras`,
-`setLora(...)`, `removeLora(...)`, and `clearLoras()` because the pinned
-LiteRT-LM `v0.13.1` public C ABI does not export LoRA session-config setters.
+operations through LiteRT-LM. Native `.litertlm` LoRA supports one LiteRT-LM
+adapter at scale `1.0` through `ModelParams.loras`, `setLora(...)`,
+`removeLora(...)`, and `clearLoras()` when the loaded `litert-lm-native`
+runtime exports `litert_lm_session_config_set_lora_file`. Multiple weighted
+adapters remain llama.cpp/GGUF-only, and LiteRT-LM web does not expose LoRA.
 `ChatSession` uses a conservative
 prompt-size estimate for history pruning only when exact tokenization is
 unavailable.
@@ -371,8 +372,8 @@ rejects native-only tuning fields. The native fields cover activation data type,
 CPU dynamic-model prefill chunk size, parallel `.litertlm` file-section
 loading, and Android NPU dispatch library directory. llama.cpp-only tuning knobs
 such as partial GPU layer offload, batch/micro-batch sizing, KV-cache type,
-flash attention, mmap/mlock, thread counts, LoRA load configs, and rope
-overrides are rejected instead of being silently ignored. `.litertlm`
+flash attention, mmap/mlock, thread counts, weighted/multiple LoRA configs,
+and rope overrides are rejected instead of being silently ignored. `.litertlm`
 generation honors `GenerationParams`
 `maxTokens`, `temp`, `topK`, `topP`, and `seed` on native and web, with
 `stopSequences` enforced by llamadart. Native LiteRT-LM also honors stream
@@ -957,11 +958,17 @@ void dispose() {
 
 ## 🎨 Low-Rank Adaptation (LoRA)
 
-`llamadart` supports applying multiple LoRA adapters dynamically at runtime.
+`llamadart` supports applying LoRA adapters dynamically at runtime.
 
-- **Dynamic Scaling**: Adjust the strength (`scale`) of each adapter on the fly.
+- **Dynamic Scaling**: Adjust the strength (`scale`) of each adapter on GGUF
+  llama.cpp backends.
 - **Isolate-Safe**: Native adapters are managed in a background Isolate to prevent UI jank.
-- **Efficient**: Multiple LoRAs share the memory of a single base model.
+- **Efficient**: Adapter state is tied to the active model context.
+
+GGUF llama.cpp backends support multiple weighted adapters. Native LiteRT-LM
+`.litertlm` currently supports one LiteRT-LM adapter at scale `1.0` and
+requires a `litert-lm-native` runtime that exports
+`litert_lm_session_config_set_lora_file`. LiteRT-LM web does not expose LoRA.
 
 Check out our [LoRA Training Notebook](https://github.com/leehack/llamadart/blob/main/example/training_notebook/lora_training.ipynb) to learn how to train and convert your own adapters.
 

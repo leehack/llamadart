@@ -5,6 +5,8 @@ import 'package:llamadart/llamadart.dart';
 
 const _defaultPrompt = 'What is 2+2? Answer only with the number.';
 
+enum _LoraMode { params, set }
+
 Future<void> main(List<String> args) async {
   final modelPath = args.isNotEmpty ? args[0] : _env('LITERT_LM_MODEL');
   if (modelPath == null || modelPath.trim().isEmpty) {
@@ -15,7 +17,9 @@ Future<void> main(List<String> args) async {
       'Optional env: LITERT_LM_ACTIVATION_DATA_TYPE=float32|float16|int16|int8, '
       'LITERT_LM_PREFILL_CHUNK_SIZE=<positive int>, '
       'LITERT_LM_PARALLEL_FILE_SECTION_LOADING=true|false, '
-      'LITERT_LM_DISPATCH_LIB_DIR=<dir>',
+      'LITERT_LM_DISPATCH_LIB_DIR=<dir>, '
+      'LITERT_LM_LORA=<adapter.tflite>, '
+      'LITERT_LM_LORA_MODE=params|set',
     );
     exitCode = 64;
     return;
@@ -39,6 +43,8 @@ Future<void> main(List<String> args) async {
     'LITERT_LM_PARALLEL_FILE_SECTION_LOADING',
   );
   final dispatchLibDir = _env('LITERT_LM_DISPATCH_LIB_DIR');
+  final loraPath = _env('LITERT_LM_LORA');
+  final loraMode = _parseLoraMode(_env('LITERT_LM_LORA_MODE'));
 
   final backend = _parseBackend(backendArg);
   final engine = LlamaEngine(LlamaBackend());
@@ -53,9 +59,15 @@ Future<void> main(List<String> args) async {
         liteRtLmPrefillChunkSize: prefillChunkSize,
         liteRtLmParallelFileSectionLoading: parallelFileSectionLoading,
         liteRtLmDispatchLibDir: dispatchLibDir,
+        loras: loraPath == null || loraMode == _LoraMode.set
+            ? const []
+            : [LoraAdapterConfig(path: loraPath)],
       ),
     );
     loadSw.stop();
+    if (loraPath != null && loraMode == _LoraMode.set) {
+      await engine.setLora(loraPath);
+    }
 
     final promptTokens = await engine.tokenize(prompt, addSpecial: false);
     final promptTokensWithSpecial = await engine.tokenize(
@@ -84,6 +96,8 @@ Future<void> main(List<String> args) async {
       'liteRtLmPrefillChunkSize': prefillChunkSize,
       'liteRtLmParallelFileSectionLoading': parallelFileSectionLoading,
       'liteRtLmDispatchLibDir': dispatchLibDir,
+      'loraPath': loraPath,
+      'loraMode': loraPath == null ? null : loraMode.name,
       'targetDecodeTokens': outputTokens,
       'promptTokenCount': promptTokens.length,
       'promptTokenCountWithSpecial': promptTokensWithSpecial.length,
@@ -163,6 +177,24 @@ bool? _parseOptionalBool(String? value, String name) {
       return false;
     default:
       throw ArgumentError.value(value, name, 'Expected true or false.');
+  }
+}
+
+_LoraMode _parseLoraMode(String? value) {
+  if (value == null) {
+    return _LoraMode.params;
+  }
+  switch (value.trim().toLowerCase()) {
+    case 'params':
+      return _LoraMode.params;
+    case 'set':
+      return _LoraMode.set;
+    default:
+      throw ArgumentError.value(
+        value,
+        'LITERT_LM_LORA_MODE',
+        'Expected params or set.',
+      );
   }
 }
 

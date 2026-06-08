@@ -557,6 +557,7 @@ class LiteRtLmRuntimeClient {
     List<Map<String, dynamic>>? messages,
     List<Map<String, dynamic>>? tools,
     Map<String, dynamic>? extraContext,
+    String? loraPath,
     double temperature = 0.8,
     int topK = 40,
     double topP = 0.95,
@@ -582,7 +583,7 @@ class LiteRtLmRuntimeClient {
       bindings.sessionConfigSetSamplerParams(sessionConfig, sampler);
       calloc.free(sampler);
     }
-
+    Pointer<Utf8>? loraPtr;
     final systemPtr = systemMessage == null
         ? nullptr
         : _systemMessageJson(systemMessage).toNativeUtf8(allocator: calloc);
@@ -597,6 +598,25 @@ class LiteRtLmRuntimeClient {
         : jsonEncode(extraContext).toNativeUtf8(allocator: calloc);
     Pointer<_LiteRtLmConversationConfig> config = nullptr;
     try {
+      if (loraPath != null) {
+        if (loraPath.trim().isEmpty) {
+          throw ArgumentError.value(
+            loraPath,
+            'loraPath',
+            'must be non-empty when provided',
+          );
+        }
+        loraPtr = loraPath.toNativeUtf8(allocator: calloc);
+        final loraSet = bindings.sessionConfigSetLoraFile(
+          sessionConfig,
+          loraPtr.cast(),
+        );
+        if (!loraSet) {
+          throw StateError(
+            'litert_lm_session_config_set_lora_file failed for $loraPath',
+          );
+        }
+      }
       config = bindings.conversationConfigCreate();
       if (config == nullptr) {
         throw StateError('litert_lm_conversation_config_create returned null');
@@ -639,6 +659,9 @@ class LiteRtLmRuntimeClient {
       }
       if (extraContextPtr != nullptr) {
         calloc.free(extraContextPtr);
+      }
+      if (loraPtr != null) {
+        calloc.free(loraPtr);
       }
     }
   }
@@ -1393,7 +1416,8 @@ class LiteRtLmRuntimeClient {
     final envPath = Platform.environment[_litertLmLibDirEnv];
     if (envPath != null && envPath.isNotEmpty) {
       final dir = Directory(envPath);
-      if (liteRtLmIsCacheDirectoryForAbi(dir, abi)) {
+      if (liteRtLmIsCacheDirectoryForAbi(dir, abi) ||
+          _liteRtLmOverrideDirectoryForAbi(dir, abi)) {
         return dir.absolute;
       }
     }
@@ -1418,6 +1442,11 @@ class LiteRtLmRuntimeClient {
       }
     }
     return null;
+  }
+
+  bool _liteRtLmOverrideDirectoryForAbi(Directory dir, Abi abi) {
+    final library = _liteRtLmLibraryFileNameForAbi(abi);
+    return library != null && File('${dir.path}/$library').existsSync();
   }
 
   List<Directory> _candidateSearchRoots() {
@@ -1992,6 +2021,26 @@ class _LiteRtLmBindings {
           Pointer<_LiteRtLmSamplerParams>,
         )
       >('litert_lm_session_config_set_sampler_params');
+
+  late final _sessionConfigSetLoraFile = _library
+      .lookupFunction<
+        Bool Function(Pointer<_LiteRtLmSessionConfig>, Pointer<Char>),
+        bool Function(Pointer<_LiteRtLmSessionConfig>, Pointer<Char>)
+      >('litert_lm_session_config_set_lora_file');
+
+  bool sessionConfigSetLoraFile(
+    Pointer<_LiteRtLmSessionConfig> config,
+    Pointer<Char> path,
+  ) {
+    try {
+      return _sessionConfigSetLoraFile(config, path);
+    } on ArgumentError catch (error) {
+      throw UnsupportedError(
+        'LiteRT-LM LoRA requires litert-lm-native with '
+        'litert_lm_session_config_set_lora_file. $error',
+      );
+    }
+  }
 
   late final conversationConfigCreate = _library
       .lookupFunction<

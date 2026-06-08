@@ -72,7 +72,7 @@ JavaScript runtime.
 | Web | llama.cpp WebGPU/CPU bridge for GGUF URLs | `@litert-lm/core` for web-compatible `.litertlm` URLs |
 | Embeddings | Supported on native; supported on web bridge assets with embedding APIs | Not exposed by current LiteRT-LM APIs |
 | KV-cache state persistence | Supported on native; supported on WebGPU bridge assets that expose state APIs | Not exposed |
-| LoRA adapters | Supported on native GGUF flows | Not exposed |
+| LoRA adapters | Supported on native GGUF flows, including multiple weighted adapters | Native only: one LiteRT-LM adapter at scale `1.0` with a compatible `litert-lm-native` runtime; not exposed on LiteRT-LM web |
 | Thinking and tool-call parsing | Supported through template handlers | Native: supported through the high-level `LlamaEngine` parser for compatible templates; LiteRT-native constrained tool execution is not wired yet. Web: single-turn text only; no structured chat/tool forwarding yet. |
 | Grammar / constrained decoding | Supported by llama.cpp-backed paths | llama.cpp GBNF is not supported; template-generated tool grammar is skipped, strict `responseFormat` requests fail early, and explicit grammar params are rejected |
 | Multimodal projectors | Supported through llama.cpp `mtmd` paths where the model/projector supports it | Not exposed through llamadart today |
@@ -124,7 +124,7 @@ For GGUF / llama.cpp, common load-time controls include:
 - `numberOfThreads` / `numberOfThreadsBatch`
 - `batchSize` / `microBatchSize`
 - `splitMode` / `mainGpu`
-- LoRA and state-persistence APIs
+- Multiple weighted LoRA adapters and state-persistence APIs
 
 For `.litertlm` / LiteRT-LM, use:
 
@@ -136,6 +136,11 @@ For `.litertlm` / LiteRT-LM, use:
 - `liteRtLmParallelFileSectionLoading`: native `.litertlm` file-section
   loading override
 - `liteRtLmDispatchLibDir`: Android NPU LiteRT dispatch library directory
+- `ModelParams.loras`: one LiteRT-LM adapter at scale `1.0` on native
+  LiteRT-LM when the runtime exports
+  `litert_lm_session_config_set_lora_file`
+- `setLora(...)`, `removeLora(...)`, and `clearLoras()` with the same
+  one-adapter, scale-`1.0` native LiteRT-LM limit
 - `GenerationParams.maxTokens`, `temp`, `topK`, `topP`, and `seed`
 - `GenerationParams.speculativeDecoding` on native LiteRT-LM only
 - `stopSequences`, enforced by `llamadart`

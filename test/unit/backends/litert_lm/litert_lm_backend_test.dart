@@ -228,10 +228,12 @@ void main() {
     }
   });
 
-  test('rejects unsupported load and llama.cpp-specific operations', () async {
+  test('supports LoRA state and rejects unsupported operations', () async {
     final backend = LiteRtLmBackend();
     final wrongFormat = File('${tempDir.path}/model.gguf');
     await wrongFormat.writeAsString('fake model');
+    final adapterFile = File('${tempDir.path}/adapter.lora');
+    await adapterFile.writeAsBytes(const <int>[1, 2, 3]);
 
     try {
       await expectLater(
@@ -255,17 +257,12 @@ void main() {
         const ModelParams(),
       );
 
-      expect(
-        () => backend.setLoraAdapter(contextHandle, 'adapter.bin', 1.0),
-        throwsUnsupportedError,
-      );
-      expect(
-        () => backend.removeLoraAdapter(contextHandle, 'adapter.bin'),
-        throwsUnsupportedError,
-      );
-      expect(
-        () => backend.clearLoraAdapters(contextHandle),
-        throwsUnsupportedError,
+      await backend.setLoraAdapter(contextHandle, adapterFile.path, 1.0);
+      await backend.removeLoraAdapter(contextHandle, adapterFile.path);
+      await backend.clearLoraAdapters(contextHandle);
+      await expectLater(
+        backend.setLoraAdapter(contextHandle, adapterFile.path, 0.5),
+        throwsArgumentError,
       );
       await expectLater(
         backend.multimodalContextCreate(handle, 'mmproj.bin'),
