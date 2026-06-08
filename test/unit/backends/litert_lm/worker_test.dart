@@ -184,14 +184,7 @@ void main() {
           (sendPort) =>
               LiteRtLmLoraRequest(contextHandle, 'clear', sendPort: sendPort),
         );
-        expect(
-          clearLora,
-          isA<LiteRtLmErrorResponse>().having(
-            (response) => response.kind,
-            'kind',
-            'unsupported',
-          ),
-        );
+        expect(clearLora, isA<LiteRtLmDoneResponse>());
 
         final specialDetokenize = await _sendRequest(
           worker.sendPort,
