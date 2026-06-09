@@ -166,6 +166,62 @@ List<String> liteRtLmRequiredLibrariesForAbi(Abi abi) {
   };
 }
 
+/// Internal helper used by the LiteRT-LM runtime to locate this package's
+/// source root from an app's `.dart_tool/package_config.json`.
+List<String> liteRtLmPackageRootsFromPackageConfig(
+  File packageConfig, {
+  String packageName = 'llamadart',
+}) {
+  Object? decoded;
+  try {
+    decoded = jsonDecode(packageConfig.readAsStringSync());
+  } on Object {
+    return const <String>[];
+  }
+  if (decoded is! Map<String, Object?>) {
+    return const <String>[];
+  }
+  final packages = decoded['packages'];
+  if (packages is! List) {
+    return const <String>[];
+  }
+
+  final roots = <String>[];
+  for (final entry in packages) {
+    if (entry is! Map<String, Object?> || entry['name'] != packageName) {
+      continue;
+    }
+    final rootUri = entry['rootUri'];
+    if (rootUri is! String || rootUri.trim().isEmpty) {
+      continue;
+    }
+    final root = _directoryFromPackageConfigRootUri(packageConfig, rootUri);
+    if (root != null) {
+      roots.add(path.normalize(root.absolute.path));
+    }
+  }
+  return roots;
+}
+
+Directory? _directoryFromPackageConfigRootUri(
+  File packageConfig,
+  String rootUri,
+) {
+  try {
+    final uri = Uri.parse(rootUri);
+    if (uri.hasScheme) {
+      if (uri.scheme != 'file') {
+        return null;
+      }
+      return Directory.fromUri(uri);
+    }
+    final configDir = packageConfig.absolute.parent.path;
+    return Directory(path.normalize(path.join(configDir, rootUri)));
+  } on Object {
+    return null;
+  }
+}
+
 /// Internal helper used by the LiteRT-LM runtime to validate macOS app
 /// framework directories.
 List<String> liteRtLmMacOsRequiredFrameworksForAbi(Abi abi) {
@@ -362,12 +418,14 @@ class LiteRtLmRuntimeResult {
 final class _BlockingSendMessageRequest {
   const _BlockingSendMessageRequest({
     required this.libraryPath,
+    required this.companionLibraryPaths,
     required this.conversationAddress,
     required this.messageJson,
     this.extraContextJson,
   });
 
   final String libraryPath;
+  final List<String> companionLibraryPaths;
   final int conversationAddress;
   final String messageJson;
   final String? extraContextJson;
@@ -395,10 +453,14 @@ class LiteRtLmRuntimeClient {
   // Keep a strong runtime-library reference while proxy function pointers are active.
   // ignore: unused_field
   DynamicLibrary? _proxyLibrary;
+  // Keep macOS/Linux/Windows companion libraries loaded while the runtime is active.
+  // ignore: unused_field
+  List<DynamicLibrary> _companionLibraries = const <DynamicLibrary>[];
   _ProxyCreateDart? _proxyCreate;
   _ProxyFreeStringDart? _proxyFreeString;
   _ProxyDeleteDart? _proxyDelete;
   String? _liteRtLmLibraryPath;
+  List<String> _liteRtLmCompanionLibraryPaths = const <String>[];
   Pointer<_LiteRtLmEngine>? _engine;
   Pointer<_LiteRtLmConversation>? _conversation;
 
@@ -510,20 +572,28 @@ class LiteRtLmRuntimeClient {
 
       final settingsAddress = settings.address;
       final liteRtLmLibraryPath = _liteRtLmLibraryPath!;
+      final companionLibraryPaths = _liteRtLmCompanionLibraryPaths;
       final engineAddress = await Isolate.run(() {
-        final lib = _openLiteRtLmLibraryCandidate(liteRtLmLibraryPath);
-        final create = lib
-            .lookupFunction<
-              Pointer<_LiteRtLmEngine> Function(
-                Pointer<_LiteRtLmEngineSettings>,
-              ),
-              Pointer<_LiteRtLmEngine> Function(
-                Pointer<_LiteRtLmEngineSettings>,
-              )
-            >('litert_lm_engine_create');
-        return create(
-          Pointer<_LiteRtLmEngineSettings>.fromAddress(settingsAddress),
-        ).address;
+        final companionLibraries = _openCompanionLibraries(
+          companionLibraryPaths,
+        );
+        try {
+          final lib = _openLiteRtLmLibraryCandidate(liteRtLmLibraryPath);
+          final create = lib
+              .lookupFunction<
+                Pointer<_LiteRtLmEngine> Function(
+                  Pointer<_LiteRtLmEngineSettings>,
+                ),
+                Pointer<_LiteRtLmEngine> Function(
+                  Pointer<_LiteRtLmEngineSettings>,
+                )
+              >('litert_lm_engine_create');
+          return create(
+            Pointer<_LiteRtLmEngineSettings>.fromAddress(settingsAddress),
+          ).address;
+        } finally {
+          _keepAlive(companionLibraries);
+        }
       });
       if (engineAddress == 0) {
         throw StateError(
@@ -779,6 +849,7 @@ class LiteRtLmRuntimeClient {
     final controller = StreamController<String>(onCancel: cancel);
     final request = _BlockingSendMessageRequest(
       libraryPath: liteRtLmLibraryPath,
+      companionLibraryPaths: _liteRtLmCompanionLibraryPaths,
       conversationAddress: conversation.address,
       messageJson: messageJson,
       extraContextJson: extraContextJson,
@@ -1093,17 +1164,15 @@ class LiteRtLmRuntimeClient {
       throw UnsupportedError('LiteRT-LM does not support ${Abi.current()}.');
     }
 
-    for (final companion in libraries.companions) {
-      if (File(companion).existsSync() || !path.isAbsolute(companion)) {
-        DynamicLibrary.open(companion);
-      }
-    }
+    final companionLibraries = _openCompanionLibraries(libraries.companions);
 
     final liteRtLm = _openFirstAvailableWithPath(
       libraries.liteRtLmCandidates,
       description: 'LiteRT-LM library',
     );
     _liteRtLmLibraryPath = liteRtLm.path;
+    _liteRtLmCompanionLibraryPaths = libraries.companions;
+    _companionLibraries = companionLibraries;
     _tryLoadEmbeddedStreamProxy(
       liteRtLm.library,
       liteRtLm.path,
@@ -1425,6 +1494,7 @@ class LiteRtLmRuntimeClient {
       roots.add(File(scriptPath).parent.path);
     }
     roots.add(File(Platform.resolvedExecutable).parent.path);
+    roots.addAll(_llamadartPackageRootsFromNearestPackageConfigs(roots));
     return roots.map(Directory.new).toList();
   }
 
@@ -1443,6 +1513,29 @@ class LiteRtLmRuntimeClient {
         .where((library) => library != liteRtLm)
         .map((library) => '${dir.path}/$library')
         .toList(growable: false);
+  }
+
+  List<String> _llamadartPackageRootsFromNearestPackageConfigs(
+    Iterable<String> roots,
+  ) {
+    final packageRoots = <String>{};
+    final visitedConfigs = <String>{};
+    for (final root in roots) {
+      Directory? current = Directory(root).absolute;
+      while (current != null) {
+        final packageConfig = File(
+          '${current.path}/.dart_tool/package_config.json',
+        );
+        if (packageConfig.existsSync() &&
+            visitedConfigs.add(packageConfig.path)) {
+          packageRoots.addAll(
+            liteRtLmPackageRootsFromPackageConfig(packageConfig),
+          );
+        }
+        current = current.parent.path == current.path ? null : current.parent;
+      }
+    }
+    return packageRoots.toList(growable: false);
   }
 
   String? _liteRtLmLibraryFileNameForAbi(Abi abi) {
@@ -1596,52 +1689,59 @@ Future<String> _runBlockingSendMessageInIsolate(
 }
 
 String _runBlockingSendMessage(_BlockingSendMessageRequest request) {
-  final bindings = _LiteRtLmBindings(
-    _openLiteRtLmLibraryCandidate(request.libraryPath),
+  final companionLibraries = _openCompanionLibraries(
+    request.companionLibraryPaths,
   );
-  final conversation = Pointer<_LiteRtLmConversation>.fromAddress(
-    request.conversationAddress,
-  );
-  final messagePtr = request.messageJson.toNativeUtf8(allocator: calloc);
-  final extraContextPtr = request.extraContextJson == null
-      ? nullptr
-      : request.extraContextJson!.toNativeUtf8(allocator: calloc);
-  Pointer<_LiteRtLmConversationOptionalArgs> optionalArgs = nullptr;
   try {
-    optionalArgs = bindings.conversationOptionalArgsCreate();
-    if (optionalArgs == nullptr) {
-      throw StateError(
-        'litert_lm_conversation_optional_args_create returned null',
-      );
-    }
-
-    final response = bindings.conversationSendMessage(
-      conversation,
-      messagePtr.cast(),
-      extraContextPtr.cast(),
-      optionalArgs,
+    final bindings = _LiteRtLmBindings(
+      _openLiteRtLmLibraryCandidate(request.libraryPath),
     );
-    if (response == nullptr) {
-      throw StateError('litert_lm_conversation_send_message returned null');
-    }
-
+    final conversation = Pointer<_LiteRtLmConversation>.fromAddress(
+      request.conversationAddress,
+    );
+    final messagePtr = request.messageJson.toNativeUtf8(allocator: calloc);
+    final extraContextPtr = request.extraContextJson == null
+        ? nullptr
+        : request.extraContextJson!.toNativeUtf8(allocator: calloc);
+    Pointer<_LiteRtLmConversationOptionalArgs> optionalArgs = nullptr;
     try {
-      final rawPtr = bindings.jsonResponseGetString(response);
-      if (rawPtr == nullptr) {
-        throw StateError('litert_lm_json_response_get_string returned null');
+      optionalArgs = bindings.conversationOptionalArgsCreate();
+      if (optionalArgs == nullptr) {
+        throw StateError(
+          'litert_lm_conversation_optional_args_create returned null',
+        );
       }
-      return rawPtr.cast<Utf8>().toDartString();
+
+      final response = bindings.conversationSendMessage(
+        conversation,
+        messagePtr.cast(),
+        extraContextPtr.cast(),
+        optionalArgs,
+      );
+      if (response == nullptr) {
+        throw StateError('litert_lm_conversation_send_message returned null');
+      }
+
+      try {
+        final rawPtr = bindings.jsonResponseGetString(response);
+        if (rawPtr == nullptr) {
+          throw StateError('litert_lm_json_response_get_string returned null');
+        }
+        return rawPtr.cast<Utf8>().toDartString();
+      } finally {
+        bindings.jsonResponseDelete(response);
+      }
     } finally {
-      bindings.jsonResponseDelete(response);
+      if (optionalArgs != nullptr) {
+        bindings.conversationOptionalArgsDelete(optionalArgs);
+      }
+      calloc.free(messagePtr);
+      if (extraContextPtr != nullptr) {
+        calloc.free(extraContextPtr);
+      }
     }
   } finally {
-    if (optionalArgs != nullptr) {
-      bindings.conversationOptionalArgsDelete(optionalArgs);
-    }
-    calloc.free(messagePtr);
-    if (extraContextPtr != nullptr) {
-      calloc.free(extraContextPtr);
-    }
+    _keepAlive(companionLibraries);
   }
 }
 
@@ -1650,6 +1750,18 @@ DynamicLibrary _openLiteRtLmLibraryCandidate(String candidate) {
       ? DynamicLibrary.process()
       : DynamicLibrary.open(candidate);
 }
+
+List<DynamicLibrary> _openCompanionLibraries(Iterable<String> companions) {
+  final libraries = <DynamicLibrary>[];
+  for (final companion in companions) {
+    if (File(companion).existsSync() || !path.isAbsolute(companion)) {
+      libraries.add(DynamicLibrary.open(companion));
+    }
+  }
+  return libraries;
+}
+
+void _keepAlive(Object? value) {}
 
 void _validateLiteRtLmLibrary(DynamicLibrary library) {
   library.lookup<NativeFunction<Void Function()>>(

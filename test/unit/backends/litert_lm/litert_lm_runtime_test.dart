@@ -79,6 +79,34 @@ void main() {
     expect(liteRtLmCacheDirectoryCandidatesForAbi(Abi.androidArm64), isEmpty);
   });
 
+  test('LiteRT-LM package config lookup finds the llamadart package root', () {
+    final root = Directory.systemTemp.createTempSync('litert_lm_pkg_config_');
+    addTearDown(() => root.deleteSync(recursive: true));
+
+    final appRoot = Directory('${root.path}/app')..createSync();
+    final packageRoot = Directory('${root.path}/llamadart')..createSync();
+    final dotDartTool = Directory('${appRoot.path}/.dart_tool')
+      ..createSync(recursive: true);
+    final packageConfig = File('${dotDartTool.path}/package_config.json')
+      ..writeAsStringSync('''
+{
+  "configVersion": 2,
+  "packages": [
+    {
+      "name": "llamadart",
+      "rootUri": "${packageRoot.uri}",
+      "packageUri": "lib/",
+      "languageVersion": "3.10"
+    }
+  ]
+}
+''');
+
+    expect(liteRtLmPackageRootsFromPackageConfig(packageConfig), [
+      packageRoot.absolute.path,
+    ]);
+  });
+
   test('LiteRT-LM iOS fallback identifiers include process and frameworks', () {
     // The process candidate supports the Flutter SPM bridge. The remaining
     // entries preserve the native-asset/framework fallbacks used by bundled
