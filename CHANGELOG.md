@@ -10,7 +10,8 @@
     consumers can keep using the core package without taking a Flutter SDK
     constraint.
   * Started the companion packages at `0.0.1`; native pin sync bumps only the
-    affected companion package patch version and publish automation skips
+    affected companion package patch version. Companion package publishing uses
+    package-specific tags after the first manual pub.dev publish, and skips
     companion versions that already exist on pub.dev.
   * Changed unset or empty `llamadart_native_runtimes` to include all available
     runtime families. For Flutter iOS/macOS app builds, installed companion

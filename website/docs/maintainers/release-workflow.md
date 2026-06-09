@@ -43,8 +43,9 @@ version alignment:
   package. Native pin sync bumps only the changed companion package patch
   version, updates its `pubspec.yaml`, and writes a versioned changelog entry
   that includes the native repo tag.
-- Leave unchanged companion package versions as-is. The publish workflow skips
-  companion packages whose current version already exists on pub.dev.
+- Leave unchanged companion package versions as-is. Companion packages publish
+  from package-specific tags after their first manual pub.dev publish; the
+  workflow skips a companion package version that already exists on pub.dev.
 - Move accumulated `Unreleased` entries into the new version section; remove
   the `Unreleased` heading when it would otherwise be empty. Add it back only
   when the next unreleased change is documented.
@@ -61,8 +62,27 @@ Tag with `vX.Y.Z` and push tag.
 Current workflows involved:
 
 - `publish_pubdev.yml`: publishes the core package on version tags, and
-  conditionally publishes companion packages only when the companion
-  `pubspec.yaml` version is not already on pub.dev.
+  does not publish companion packages.
+- `publish_companion_pubdev.yml`: publishes one companion package from a
+  package-specific version tag after that package already exists on pub.dev:
+  `llamadart_llama_cpp_flutter-v{{version}}` or
+  `llamadart_litert_lm_flutter-v{{version}}`. Pub.dev automated publishing
+  cannot create a new package, so publish each companion's first version
+  manually from a temporary copy, then configure automated publishing on that
+  package's pub.dev Admin tab with the matching tag pattern. Use the same
+  temp-copy shape as CI before running `flutter pub publish`:
+
+```bash
+package_path=packages/llamadart_llama_cpp_flutter
+tmp_package="$(mktemp -d)"
+rsync -a --delete \
+  --exclude='.dart_tool' \
+  --exclude='build' \
+  --exclude='pubspec.lock' \
+  "$package_path/" "$tmp_package/"
+(cd "$tmp_package" && flutter pub publish)
+```
+
 - `docs_version_cut.yml`: creates versioned docs snapshot on `v*` tags.
 - `docs_pages.yml`: deploys docs to GitHub Pages after successful
   `docs_version_cut.yml` runs (and can be manually triggered).
