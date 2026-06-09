@@ -238,7 +238,7 @@ void main() {
   });
 
   test(
-    'build hook uses process lookup for Apple runtimes by default',
+    'build hook bundles Apple native assets without companion packages',
     () async {
       await testCodeBuildHook(
         mainMethod: build_hook.main,
@@ -252,16 +252,22 @@ void main() {
               .map((asset) => asset.asCodeAsset)
               .toList(growable: false);
 
-          expect(codeAssets, hasLength(1));
-          final codeAsset = codeAssets.single;
-          expect(codeAsset.id, 'package:llamadart/llamadart');
-          expect(codeAsset.file, isNull);
-          expect(codeAsset.linkMode, isA<LookupInProcess>());
+          final codeAssetIds = codeAssets.map((asset) => asset.id).toSet();
+          expect(codeAssetIds, contains('package:llamadart/llamadart'));
+          for (final assetName in _iosLiteRtAssetNames) {
+            expect(codeAssetIds, contains('package:llamadart/$assetName'));
+          }
+          expect(
+            codeAssets.every(
+              (asset) => asset.linkMode is DynamicLoadingBundled,
+            ),
+            isTrue,
+          );
 
           final outputDir = input.outputDirectory.toFilePath();
           expect(
             Directory(path.join(outputDir, 'llamadart_bin')).existsSync(),
-            isFalse,
+            isTrue,
           );
         },
       );
@@ -269,21 +275,19 @@ void main() {
   );
 
   test('build hook ignores native source overrides for Apple SPM', () async {
-    final userDefines = PackageUserDefines(
-      workspacePubspec: PackageUserDefinesSource(
-        defines: {
-          'llamadart_native_runtimes': ['llama_cpp'],
-          'llamadart_native_tag': '../ignored-by-spm',
-          'llamadart_native_repository': '../ignored-by-spm',
-          'llamadart_native_path': './missing-native-bundles',
-          'llamadart_native_backends': {
-            'platforms': {
-              'ios-arm64': ['cuda'],
-            },
+    final userDefines = await _flutterAppleUserDefines(
+      dependencies: const ['llamadart_llama_cpp_flutter'],
+      defines: {
+        'llamadart_native_runtimes': ['litert_lm'],
+        'llamadart_native_tag': '../ignored-by-spm',
+        'llamadart_native_repository': '../ignored-by-spm',
+        'llamadart_native_path': './missing-native-bundles',
+        'llamadart_native_backends': {
+          'platforms': {
+            'ios-arm64': ['cuda'],
           },
         },
-        basePath: Directory.current.uri,
-      ),
+      },
     );
 
     await testCodeBuildHook(
@@ -314,7 +318,7 @@ void main() {
   });
 
   test(
-    'build hook emits no bundled Apple assets for Flutter macOS SPM mode',
+    'build hook emits no bundled Apple assets for Flutter LiteRT-LM SPM mode',
     () async {
       await testCodeBuildHook(
         mainMethod: build_hook.main,
@@ -339,7 +343,37 @@ void main() {
   );
 
   test(
-    'build hook uses SPM process lookup for iOS x64 simulator llama.cpp',
+    'build hook uses SPM process lookup for Flutter iOS llama.cpp companion',
+    () async {
+      await testCodeBuildHook(
+        mainMethod: build_hook.main,
+        targetOS: OS.iOS,
+        targetArchitecture: Architecture.arm64,
+        targetIOSSdk: IOSSdk.iPhoneOS,
+        userDefines: await _flutterAppleUserDefines(
+          dependencies: const ['llamadart_llama_cpp_flutter'],
+          defines: {
+            'llamadart_native_runtimes': ['litert_lm'],
+          },
+        ),
+        check: (_, output) {
+          final codeAssets = output.assets.encodedAssets
+              .where((asset) => asset.isCodeAsset)
+              .map((asset) => asset.asCodeAsset)
+              .toList(growable: false);
+
+          expect(codeAssets, hasLength(1));
+          final codeAsset = codeAssets.single;
+          expect(codeAsset.id, 'package:llamadart/llamadart');
+          expect(codeAsset.file, isNull);
+          expect(codeAsset.linkMode, isA<LookupInProcess>());
+        },
+      );
+    },
+  );
+
+  test(
+    'build hook bundles iOS x64 simulator llama.cpp without companion packages',
     () async {
       await testCodeBuildHook(
         mainMethod: build_hook.main,
@@ -348,13 +382,44 @@ void main() {
         targetIOSSdk: IOSSdk.iPhoneSimulator,
         userDefines: _llamaCppOnlyUserDefines(),
         check: (_, output) {
-          final codeAssetIds = output.assets.encodedAssets
+          final codeAssets = output.assets.encodedAssets
               .where((asset) => asset.isCodeAsset)
-              .map((asset) => asset.asCodeAsset.id)
-              .toSet();
+              .map((asset) => asset.asCodeAsset)
+              .toList(growable: false);
 
-          expect(codeAssetIds, contains('package:llamadart/llamadart'));
-          expect(codeAssetIds.where((id) => id.contains('litert_lm')), isEmpty);
+          expect(codeAssets.map((asset) => asset.id), [
+            'package:llamadart/llamadart',
+          ]);
+          expect(codeAssets.single.linkMode, isA<DynamicLoadingBundled>());
+        },
+      );
+    },
+  );
+
+  test(
+    'build hook lets runtime config win outside Flutter Apple apps',
+    () async {
+      await testCodeBuildHook(
+        mainMethod: build_hook.main,
+        targetOS: OS.iOS,
+        targetArchitecture: Architecture.arm64,
+        targetIOSSdk: IOSSdk.iPhoneOS,
+        userDefines: await _nonFlutterConsumerUserDefines(
+          dependencies: const ['llamadart_litert_lm_flutter'],
+          defines: {
+            'llamadart_native_runtimes': ['llama_cpp'],
+          },
+        ),
+        check: (_, output) {
+          final codeAssets = output.assets.encodedAssets
+              .where((asset) => asset.isCodeAsset)
+              .map((asset) => asset.asCodeAsset)
+              .toList(growable: false);
+
+          expect(codeAssets.map((asset) => asset.id), [
+            'package:llamadart/llamadart',
+          ]);
+          expect(codeAssets.single.linkMode, isA<DynamicLoadingBundled>());
         },
       );
     },
@@ -370,6 +435,31 @@ void main() {
           targetArchitecture: Architecture.x64,
           targetIOSSdk: IOSSdk.iPhoneSimulator,
           userDefines: _allRuntimeUserDefines(),
+          check: (_, _) {},
+        ),
+        throwsA(
+          isA<Exception>().having(
+            (error) => error.toString(),
+            'message',
+            contains('LiteRT-LM runtime is not available for ios-x86_64-sim'),
+          ),
+        ),
+      );
+    },
+  );
+
+  test(
+    'build hook fails when Flutter companion selects unavailable LiteRT-LM',
+    () async {
+      await expectLater(
+        testCodeBuildHook(
+          mainMethod: build_hook.main,
+          targetOS: OS.iOS,
+          targetArchitecture: Architecture.x64,
+          targetIOSSdk: IOSSdk.iPhoneSimulator,
+          userDefines: await _flutterAppleUserDefines(
+            dependencies: const ['llamadart_litert_lm_flutter'],
+          ),
           check: (_, _) {},
         ),
         throwsA(
@@ -411,9 +501,52 @@ PackageUserDefines _allRuntimeUserDefines() => PackageUserDefines(
   ),
 );
 
-Future<PackageUserDefines> _flutterLiteRtLmOnlyUserDefines() async {
+Future<PackageUserDefines> _flutterLiteRtLmOnlyUserDefines() {
+  return _flutterAppleUserDefines(
+    dependencies: const ['llamadart_litert_lm_flutter'],
+    defines: {
+      'llamadart_native_runtimes': ['llama_cpp'],
+    },
+  );
+}
+
+Future<PackageUserDefines> _nonFlutterConsumerUserDefines({
+  required List<String> dependencies,
+  Map<String, Object?> defines = const {},
+}) async {
+  final dir = await Directory.systemTemp.createTemp('llamadart_dart_consumer_');
+  addTearDown(() {
+    if (dir.existsSync()) {
+      dir.deleteSync(recursive: true);
+    }
+  });
+
+  final pubspec = File(path.join(dir.path, 'pubspec.yaml'));
+  await pubspec.writeAsString('''
+name: llamadart_dart_consumer
+publish_to: none
+
+environment:
+  sdk: ^3.10.7
+
+dependencies:
+${dependencies.map((dependency) => '  $dependency: ^0.8.0').join('\n')}
+''');
+
+  return PackageUserDefines(
+    workspacePubspec: PackageUserDefinesSource(
+      defines: defines,
+      basePath: pubspec.uri,
+    ),
+  );
+}
+
+Future<PackageUserDefines> _flutterAppleUserDefines({
+  required List<String> dependencies,
+  Map<String, Object?> defines = const {},
+}) async {
   final dir = await Directory.systemTemp.createTemp(
-    'llamadart_flutter_consumer_',
+    'llamadart_apple_consumer_',
   );
   addTearDown(() {
     if (dir.existsSync()) {
@@ -423,7 +556,7 @@ Future<PackageUserDefines> _flutterLiteRtLmOnlyUserDefines() async {
 
   final pubspec = File(path.join(dir.path, 'pubspec.yaml'));
   await pubspec.writeAsString('''
-name: llamadart_flutter_consumer
+name: llamadart_apple_consumer
 publish_to: none
 
 environment:
@@ -433,13 +566,12 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+${dependencies.map((dependency) => '  $dependency: ^0.8.0').join('\n')}
 ''');
 
   return PackageUserDefines(
     workspacePubspec: PackageUserDefinesSource(
-      defines: {
-        'llamadart_native_runtimes': ['litert_lm'],
-      },
+      defines: defines,
       basePath: pubspec.uri,
     ),
   );
@@ -494,6 +626,11 @@ const List<String> _androidLiteRtLibraries = [
 ];
 
 const List<String> _iosLiteRtLibraries = ['LiteRtLm', 'CLiteRTLM'];
+
+const List<String> _iosLiteRtAssetNames = [
+  'litert_lm_LiteRtLm',
+  'litert_lm_CLiteRTLM',
+];
 
 const List<String> _macosArm64LiteRtLibraries = [
   'libGemmaModelConstraintProvider.dylib',

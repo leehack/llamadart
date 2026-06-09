@@ -23,15 +23,15 @@ Ensure migration/changelog docs reflect behavior in the release branch.
 Before publishing a release that changes native runtime pins, verify native
 version alignment:
 
-- `hook/build.dart` native-assets pins and `darwin/llamadart/Package.swift`
-  Apple SPM pins must reference the same native repo releases.
-- `llamadart-native` owns llama.cpp bridge artifacts for both native-assets and
-  Apple SPM.
-- `litert-lm-native` owns LiteRT-LM bridge artifacts for both native-assets and
-  Apple SPM.
-- If native versions changed, prefer the `Sync Native Version, Bindings & SPM
-  Pins` workflow PR over hand-editing pins. That workflow updates Apple SPM
-  checksums from the published native release asset digests.
+- `hook/build.dart` native-assets pins and companion package `Package.swift`
+  Apple SPM pins should reference compatible native repo releases.
+- `llamadart-native` owns llama.cpp bridge artifacts for native-assets and
+  Apple SPM-compatible companion packages.
+- `litert-lm-native` owns LiteRT-LM bridge artifacts for native-assets and
+  Apple SPM-compatible companion packages.
+- If native versions changed, prefer the `Sync Native Version & Bindings`
+  workflow PR over hand-editing core pins. Update Apple SPM companion package
+  pins in their own repos when Apple XCFramework releases changed.
 
 ## 2. Version and docs updates
 
@@ -42,10 +42,9 @@ version alignment:
   when the next unreleased change is documented.
 - Update `MIGRATION.md` if breaking behavior changed.
 - Keep docs pages aligned with new defaults/options.
-- Keep local SwiftPM artifact caches out of pub archives:
-  `darwin/llamadart/Artifacts/` is for local/offline SPM testing only, and
-  published packages should rely on the remote binary targets in
-  `darwin/llamadart/Package.swift`.
+- Keep local SwiftPM artifact caches out of pub archives. Apple SPM binary
+  target pins live in the Flutter runtime companion packages, not in the core
+  `llamadart` package.
 
 ## 3. Publish flow
 

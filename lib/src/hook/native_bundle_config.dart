@@ -16,7 +16,7 @@ const List<String> allNativeRuntimes = [
   nativeRuntimeLiteRtLm,
 ];
 
-const List<String> defaultNativeRuntimes = [nativeRuntimeLlamaCpp];
+const List<String> defaultNativeRuntimes = allNativeRuntimes;
 
 const Set<String> _coreLibraries = {
   'llamadart',
@@ -393,10 +393,6 @@ List<String> selectNativeRuntimesForBundle({
 }
 
 List<String> defaultNativeRuntimesForBundle(String bundle) {
-  final canonicalBundle = canonicalizeBundleKey(bundle);
-  if (_bundleOsKeys[canonicalBundle] == 'android') {
-    return allNativeRuntimes;
-  }
   return defaultNativeRuntimes;
 }
 
@@ -896,7 +892,10 @@ List<String> _parseBackendList(Object? value) {
     for (final token in value.split(',')) {
       addToken(token);
     }
-    return (runtimes: result, invalid: invalid);
+    return (
+      runtimes: result.isEmpty ? allNativeRuntimes : result,
+      invalid: invalid,
+    );
   }
 
   if (value is List<Object?>) {
@@ -907,7 +906,10 @@ List<String> _parseBackendList(Object? value) {
         invalid.add(entry.toString());
       }
     }
-    return (runtimes: result, invalid: invalid);
+    return (
+      runtimes: result.isEmpty ? allNativeRuntimes : result,
+      invalid: invalid,
+    );
   }
 
   if (value is Map<Object?, Object?>) {

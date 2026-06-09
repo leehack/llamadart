@@ -84,10 +84,11 @@ bundle keys, module availability, and selector names.
 
 ## Package Size Controls
 
-Android native apps include both runtime families by default where available, so
-one build can load GGUF and `.litertlm` models. Other native targets default to
-`llama_cpp` only. Use `llamadart_native_runtimes` when your app needs a
-different package-size / model-format tradeoff:
+Native apps include every available runtime family by default, so one build can
+load GGUF and `.litertlm` models where both runtimes are available. Unset or
+empty `llamadart_native_runtimes` also means all runtimes. Use
+`llamadart_native_runtimes` when your app needs a different package-size /
+model-format tradeoff:
 
 ```yaml
 hooks:
@@ -113,6 +114,10 @@ runtime. It does not enable or disable LiteRT-LM.
 `android`, `linux`, `windows`) or per exact target (`android-arm64`,
 `linux-x64`, etc.); exact target keys override OS keys. Use `all` or `both` to
 include every runtime family for a target.
+
+For Flutter iOS/macOS apps, installed companion packages choose the SwiftPM
+runtime families and win over this setting. For non-Flutter projects and
+non-Apple targets, `llamadart_native_runtimes` remains the selector.
 
 ## Parameter Differences
 

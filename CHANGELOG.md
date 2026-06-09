@@ -1,5 +1,16 @@
-## Unreleased
+## 0.8.0
 
+* **Flutter Apple runtime packaging**:
+  * Split SwiftPM-linked Apple runtime packaging out of the core package into
+    `llamadart_llama_cpp_flutter` for GGUF/llama.cpp and
+    `llamadart_litert_lm_flutter` for `.litertlm`/LiteRT-LM.
+  * Removed Flutter plugin metadata from `llamadart` so pure Dart/native-assets
+    consumers can keep using the core package without taking a Flutter SDK
+    constraint.
+  * Changed unset or empty `llamadart_native_runtimes` to include all available
+    runtime families. For Flutter iOS/macOS app builds, installed companion
+    packages decide Apple SPM runtimes; for every other build,
+    `llamadart_native_runtimes` remains the selector.
 * **Structured output**:
   * Added `responseFormat` routing to `LlamaEngine.create(...)` for
     grammar-capable backends, deprecated the legacy `chatTemplate(...)`

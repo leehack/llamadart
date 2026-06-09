@@ -51,10 +51,10 @@ GitHub Releases:
 - `leehack/llamadart-native` for llama.cpp / GGUF runtime libraries.
 - `leehack/litert-lm-native` for LiteRT-LM / `.litertlm` runtime libraries.
 
-Android native builds include both runtime families by default when available.
-Other native targets default to `llama_cpp` only. Apps can enable LiteRT-LM on
-desktop/iOS, or reduce package size when they only ship one model format, with
-`hooks.user_defines.llamadart.llamadart_native_runtimes`:
+Native builds include every available runtime family by default. Unset or empty
+`hooks.user_defines.llamadart.llamadart_native_runtimes` also means all
+available runtime families. Apps can reduce package size when they only ship
+one model format with:
 
 ```yaml
 hooks:
@@ -85,33 +85,28 @@ Use `all` or `both` to include every runtime family for a target.
 
 ### Apple Swift Package Manager path
 
-Flutter Apple builds use the root `llamadart` package's Swift Package Manager
-manifest to link Apple XCFrameworks published by `leehack/llamadart-native` and
-`leehack/litert-lm-native` instead of hook-managed Apple bundles. On iOS, the
-hook always uses process-symbol lookup and does not emit the legacy Apple bundle
-assets. This avoids the old iOS wrapper path that can produce App Store
-`MinimumOSVersion` mismatches. Flutter macOS builds use the same SPM path
-automatically; standalone Dart macOS runs keep the native-assets fallback for
-compatibility.
+Flutter Apple apps use Swift Package Manager when runtime companion packages
+are present:
 
-The SPM path keeps runtime-family selection, but Apple binary version/source
-customization moves from `hook/build.dart` to
-`darwin/llamadart/Package.swift`. Normal apps consuming `llamadart` from
-pub.dev cannot customize the published package's `Package.swift` in-place, so
-Apple SPM binary version overrides are not part of the supported app-level
-customization surface. A path/git dependency override or fork of `llamadart`
-with different binary target URL/checksum pins is an advanced
-testing/maintenance escape hatch, not a pub.dev consumer configuration. The
-Dart hook cannot rewrite SPM binary target URLs/checksums at build time. Hook
-source customization still applies to non-Apple targets and to standalone Dart
-macOS fallback mode.
+- `llamadart_llama_cpp_flutter` links llama.cpp/GGUF XCFrameworks from
+  `leehack/llamadart-native`.
+- `llamadart_litert_lm_flutter` links LiteRT-LM XCFrameworks from
+  `leehack/litert-lm-native`.
 
-`llamadart_native_runtimes` still decides which runtime families the hook
-reports for Apple SPM builds. It does not prune the SwiftPM binary target
-dependencies from the linked Apple package. Physically pruning the Apple SPM
-product requires maintaining a fork/path override with different
-`Package.swift` target dependencies, which is outside the supported pub.dev app
-configuration.
+For Flutter iOS/macOS apps, installed companion packages decide the Apple SPM
+runtime families and win over `llamadart_native_runtimes`. If both companion
+packages are installed, both runtime families are linked. If neither companion
+package is installed, the core native-assets fallback is used.
+
+For non-Flutter projects and non-Apple targets, `llamadart_native_runtimes`
+remains the selector even if a companion package is accidentally present in the
+dependency graph. Native source customization through `llamadart_native_tag`,
+`llamadart_native_repository`, and `llamadart_native_path` still applies to
+hook-managed native assets in those builds.
+
+Flutter Apple companion packages own their own `Package.swift` binary target
+URL/checksum pins. Customize Apple SPM binary sources with path/git overrides or
+forks of those companion packages.
 
 ### 3. Dynamic Linking
 Using `native_assets_cli`, the downloaded dynamic libraries (`.so`, `.dylib`,
@@ -127,8 +122,9 @@ or stale `litert-lm-native` archives fail during the build rather than later at
 engine creation.
 
 On standalone Dart macOS, LiteRT-LM dylibs stay in the hook cache and the
-runtime loads them directly. Flutter macOS apps use the SwiftPM path instead,
-so the example app does not need a post-build runtime-copy phase.
+runtime loads them directly. Flutter macOS apps use the SwiftPM path when the
+matching companion package is installed, so the example app does not need a
+post-build runtime-copy phase in that configuration.
 
 ### 4. Validation and fallback safeguards
 - Runtime-family selection is explicit: `llama_cpp`, `litert_lm`, or both.

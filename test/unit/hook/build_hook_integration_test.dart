@@ -89,7 +89,7 @@ void main() {
   });
 
   test(
-    'build hook selects configured backend modules without LiteRT-LM by default',
+    'build hook selects configured backend modules and all runtimes by default',
     () async {
       final userDefines = PackageUserDefines(
         workspacePubspec: PackageUserDefinesSource(
@@ -129,13 +129,10 @@ void main() {
           expect(emittedNames, contains('ggml-windows-x64.dll'));
           expect(emittedNames, contains('ggml-base-windows-x64.dll'));
           for (final library in _windowsLiteRtLibraries) {
-            expect(emittedNames, isNot(contains(library)));
+            expect(emittedNames, contains(library));
           }
           for (final assetName in _windowsLiteRtAssetNames) {
-            expect(
-              codeAssetIds,
-              isNot(contains('package:llamadart/$assetName')),
-            );
+            expect(codeAssetIds, contains('package:llamadart/$assetName'));
           }
           expect(emittedNames, isNot(contains('ggml-cuda-windows-x64.dll')));
           expect(emittedNames, isNot(contains('cudart64_12.dll')));

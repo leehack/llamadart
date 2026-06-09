@@ -27,7 +27,17 @@ In Xcode, set `IPHONEOS_DEPLOYMENT_TARGET = 16.4` or
 
 ```yaml
 dependencies:
-  llamadart: ^0.7.1
+  llamadart: ^0.8.0
+```
+
+For Flutter iOS/macOS apps that should link Apple XCFrameworks through Swift
+Package Manager, also add the runtime companion packages you need:
+
+```yaml
+dependencies:
+  llamadart: ^0.8.0
+  llamadart_llama_cpp_flutter: ^0.8.0 # GGUF / llama.cpp
+  llamadart_litert_lm_flutter: ^0.8.0 # .litertlm / LiteRT-LM
 ```
 
 Then resolve packages:
@@ -45,8 +55,8 @@ On the first `dart run` / `flutter run` for a native target, `llamadart`:
 1. Detects platform and architecture.
 2. Resolves matching runtime artifacts from `leehack/llamadart-native` and
    `leehack/litert-lm-native`.
-3. Wires them into your app through native assets, or through SwiftPM-linked
-   XCFrameworks for Flutter iOS/macOS builds.
+3. Wires them into your app through native assets. Flutter iOS/macOS builds use
+   SwiftPM-linked XCFrameworks when the matching companion packages are present.
 
 No local C++ toolchain setup is required for consumers.
 

@@ -7,8 +7,16 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
-## Unreleased
+## 0.8.0
 
+- Split Flutter Apple SwiftPM runtime linking into companion packages:
+  `llamadart_llama_cpp_flutter` for GGUF/llama.cpp and
+  `llamadart_litert_lm_flutter` for `.litertlm`/LiteRT-LM. The core package
+  remains a native-assets package without Flutter plugin metadata.
+- Changed unset or empty `llamadart_native_runtimes` to mean all available
+  runtime families. Flutter iOS/macOS companion packages decide Apple SPM
+  runtimes when present; other builds continue to use
+  `llamadart_native_runtimes`.
 - Added opt-in native `.litertlm` `ModelParams` for activation data type,
   prefill chunk size, parallel file-section loading, and Android NPU LiteRT
   dispatch library directory, forwarding the pinned LiteRT-LM `v0.13.1`

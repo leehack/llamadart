@@ -5,7 +5,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-purple.svg)](https://opensource.org/licenses/MIT)
 [![GitHub](https://img.shields.io/github/stars/leehack/llamadart?style=social)](https://github.com/leehack/llamadart)
 
-**llamadart** is a high-performance Dart and Flutter plugin for local LLMs. It
+**llamadart** is a high-performance Dart and Flutter package for local LLMs. It
 runs GGUF models through [llama.cpp](https://github.com/ggml-org/llama.cpp)
 across native platforms and web (CPU/WebGPU bridge path), and routes
 `.litertlm` bundles through LiteRT-LM native runtimes or the LiteRT-LM web
@@ -26,8 +26,8 @@ JavaScript runtime.
   and web runtimes.
 - 🧩 **Model Format Routing**: `LlamaBackend()` loads GGUF models with
   llama.cpp and `.litertlm` bundles with LiteRT-LM on native and web targets.
-- 🛠️ **Zero Configuration**: Uses native assets and SwiftPM-managed Apple
-  XCFrameworks; no manual C++ build setup is required.
+- 🛠️ **Zero Configuration**: Uses native assets by default; Flutter Apple apps
+  can add runtime companion packages for SwiftPM-managed XCFrameworks.
 - 📱 **Cross-Platform**: Android, iOS, macOS, Linux, Windows, and web.
 - ⚡ **GPU Acceleration**:
   - Apple: Metal
@@ -52,7 +52,18 @@ JavaScript runtime.
 
 ```yaml
 dependencies:
-  llamadart: ^0.7.1
+  llamadart: ^0.8.0
+```
+
+Flutter iOS/macOS apps that want Swift Package Manager-linked Apple
+XCFrameworks should also add the runtime companion package for each model family
+they ship:
+
+```yaml
+dependencies:
+  llamadart: ^0.8.0
+  llamadart_llama_cpp_flutter: ^0.8.0 # GGUF / llama.cpp
+  llamadart_litert_lm_flutter: ^0.8.0 # .litertlm / LiteRT-LM
 ```
 
 ### 2. Run with defaults
@@ -60,26 +71,25 @@ dependencies:
 On first `dart run` / `flutter run`, `llamadart` will:
 1. Detect platform/architecture.
 2. Resolve matching native runtimes from [`leehack/llamadart-native`](https://github.com/leehack/llamadart-native) and [`leehack/litert-lm-native`](https://github.com/leehack/litert-lm-native).
-3. Wire them into your app through native assets, or through SwiftPM-linked
-   XCFrameworks for Flutter iOS/macOS builds.
+3. Wire them into your app through native assets. Flutter iOS/macOS builds use
+   SwiftPM-linked XCFrameworks when the matching companion packages are present.
 
 No manual binary download or C++ build steps are required.
 
-> Flutter Apple builds require deployment targets of iOS `16.4` or newer and
-> macOS `14.0` or newer. If an iOS app still uses CocoaPods, set the Podfile
-> platform to `16.4` or newer too.
+> Flutter Apple builds that use the companion SwiftPM packages require
+> deployment targets of iOS `16.4` or newer and macOS `14.0` or newer. If an
+> iOS app still uses CocoaPods, set the Podfile platform to `16.4` or newer too.
 
 ### 3. Optional: choose native runtimes for package size
 
-By default, Android native builds include both runtime families where available:
+By default, native builds include every available runtime family:
 
 - `llama_cpp` for GGUF models.
 - `litert_lm` for `.litertlm` model bundles.
 
-Other native targets default to `llama_cpp` only. Use
-`llamadart_native_runtimes` when an app needs a different package-size /
-model-format tradeoff, such as enabling LiteRT-LM for desktop/iOS or shipping
-only `.litertlm` models:
+Unset or empty `llamadart_native_runtimes` also means all available runtimes.
+Use `llamadart_native_runtimes` when an app needs a different package-size /
+model-format tradeoff, such as shipping only GGUF or only `.litertlm` models:
 
 ```yaml
 hooks:
@@ -104,7 +114,11 @@ hooks:
           linux-x64: [llama_cpp]
 ```
 
-Use `all` or `both` to include every runtime family for a target.
+Use `all` or `both` to include every runtime family for a target. For Flutter
+iOS/macOS apps, installed companion packages decide the SwiftPM runtimes and
+win over this setting. For non-Flutter projects and non-Apple targets,
+`llamadart_native_runtimes` remains the selector even if a companion package is
+accidentally present in the dependency graph.
 
 ### 4. Optional: choose llama.cpp backend modules per target
 
@@ -182,7 +196,8 @@ path or URL. Native callers load local bundle paths; web callers load
 web-compatible `.litertlm` URLs through the LiteRT-LM JavaScript runtime.
 Android callers can opt into the LiteRT-LM NPU delegate through `ModelParams`:
 
-Flutter Apple apps load LiteRT-LM through the package SwiftPM integration.
+Flutter Apple apps load LiteRT-LM through `llamadart_litert_lm_flutter` when
+that companion package is installed.
 Standalone desktop VM tools search the extracted
 `.dart_tool/llamadart/litert_lm/<version>/<platform>/<arch>` cache; set
 `LLAMADART_LITERT_LM_LIB_DIR` to that directory for custom CI or launcher
@@ -515,9 +530,9 @@ Notes:
   runtime revision.
 - `llamadart_native_runtimes` controls whole native runtime families:
   `llama_cpp`, `litert_lm`, or both. Use it globally, per OS, or per exact
-  target to enable LiteRT-LM outside Android or to trim package size when an
-  app only ships GGUF or only ships `.litertlm` models. Android includes
-  LiteRT-LM by default; other native targets default to `llama_cpp` only.
+  target to trim package size when an app only ships GGUF or only ships
+  `.litertlm` models. Unset or empty means all runtime families available for
+  the target.
 - `llamadart_native_backends` controls llama.cpp module files inside the
   `llama_cpp` runtime family. It does not affect LiteRT-LM assets.
 - Configurable targets always keep `cpu` bundled as a fallback.
@@ -549,28 +564,22 @@ Notes:
   `llamadart_native_backends` does not split Apple backend modules. Use
   `llamadart_native_runtimes` to include or exclude the llama.cpp or LiteRT-LM
   runtime families on Apple targets.
-- Apple Swift Package Manager builds use the root `llamadart` package's
-  `darwin/llamadart/Package.swift` pins for native binary versions. In that
-  mode, Apple binary source customization moves from the Dart hook to those
-  binary target URL/checksum pins;
-  `llamadart_native_tag`, `llamadart_native_repository`, and
-  `llamadart_native_path` still apply to non-Apple targets and standalone Dart
-  macOS fallback mode, but they do not rewrite SPM URL/checksum pins. Normal
-  apps consuming `llamadart` from pub.dev cannot customize the published
-  package's `Package.swift` in-place, so Apple SPM binary version overrides are
-  not part of the supported app-level customization surface. A path/git
-  dependency override or fork of `llamadart` with different `Package.swift`
-  pins is an advanced testing/maintenance escape hatch, not a pub.dev consumer
-  configuration.
-- `llamadart_native_runtimes` still controls which runtime families the hook
-  reports for Apple SPM builds. It does not prune the SwiftPM binary target
-  dependencies from the linked Apple package. Physically pruning the Apple SPM
-  product requires maintaining a fork/path override with different
-  `Package.swift` target dependencies, which is outside the supported pub.dev
-  app configuration. Flutter Apple builds use SPM on both iOS and macOS so the
-  old hook-managed wrapper path cannot recreate App Store `MinimumOSVersion`
-  mismatches. Standalone Dart macOS runs keep the native-assets dylib path for
-  compatibility.
+- Flutter Apple apps use Swift Package Manager only when companion packages are
+  installed. `llamadart_llama_cpp_flutter` provides the llama.cpp/GGUF
+  XCFrameworks, and `llamadart_litert_lm_flutter` provides the LiteRT-LM
+  XCFrameworks.
+- For Flutter iOS/macOS apps, installed companion packages choose the Apple SPM
+  runtime families and win over `llamadart_native_runtimes`. If both companion
+  packages are installed, both runtime families are linked. If neither is
+  installed, the core native-assets fallback is used.
+- For non-Flutter projects and non-Apple targets, `llamadart_native_runtimes`
+  remains the selector even if a Flutter companion package is accidentally
+  present in dependencies. `llamadart_native_tag`,
+  `llamadart_native_repository`, and `llamadart_native_path` still customize
+  hook-managed native assets in those builds.
+- Flutter Apple companion packages use SPM binary target URL/checksum pins from
+  their own `Package.swift` files. Customize Apple SPM binary sources by using
+  path/git overrides or forks of those companion packages.
 - The native-assets hook refreshes emitted files each build; if you change `hooks.user_defines` or are upgrading from older cached outputs, run `flutter clean && flutter pub get` before rebuilding.
 - Some Vulkan drivers can crash when probing cooperative matrix support. This
   is a driver-side failure in the Vulkan property query path, not a llamadart
@@ -742,14 +751,14 @@ Current pinned runtime artifacts:
 |--------------|--------------------|
 | Native llama.cpp / GGUF | `leehack/llamadart-native@b9547` |
 | Native LiteRT-LM / `.litertlm` | `leehack/litert-lm-native@v0.13.1` |
-| Apple SPM llama.cpp / GGUF | `leehack/llamadart-native@b9547` Apple XCFramework |
-| Apple SPM LiteRT-LM / `.litertlm` | `leehack/litert-lm-native@v0.13.1` Apple XCFrameworks |
+| Apple SPM llama.cpp / GGUF | `llamadart_llama_cpp_flutter` pins `leehack/llamadart-native@b9547` Apple XCFramework |
+| Apple SPM LiteRT-LM / `.litertlm` | `llamadart_litert_lm_flutter` pins `leehack/litert-lm-native@v0.13.1` Apple XCFrameworks |
 | Web llama.cpp / GGUF | `leehack/llama-web-bridge-assets@v0.1.16` |
 | Web LiteRT-LM / `.litertlm` | App-provided `@litert-lm/core` module URL; the chat app defaults to jsDelivr `@litert-lm/core/+esm` |
 
 When bumping native runtime pins, publish the matching native repo release
-artifacts first, then update `darwin/llamadart/Package.swift` checksums from the
-exact uploaded Apple XCFramework zips.
+artifacts first, then sync the core native-assets hook pins and update matching
+SPM checksums in the Flutter companion packages.
 
 Core abstractions in this package:
 

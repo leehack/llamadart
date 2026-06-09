@@ -97,6 +97,10 @@ full_log.txt
 a.out.js
 a.out.wasm
 
+# Python local artifacts
+__pycache__/
+*.pyc
+
 # Local web bridge artifacts fetched/built for chat_app
 example/chat_app/web/webgpu_bridge/*.js
 example/chat_app/web/webgpu_bridge/*.d.ts

@@ -20,10 +20,10 @@ flutter run
 If you run this example on Apple platforms, set the project deployment target to
 iOS `16.4` or macOS `14.0` or newer before building.
 
-This example intentionally opts into both native runtime families in
-`pubspec.yaml` so native `.litertlm` presets work on supported targets. If your
-app only ships GGUF models, set `llamadart_native_runtimes` to `[llama_cpp]` to
-avoid bundling LiteRT-LM.
+This example keeps the default all-runtime configuration so native `.litertlm`
+presets work on supported targets. If your app only ships GGUF models, set
+`llamadart_native_runtimes` to `[llama_cpp]` to avoid bundling LiteRT-LM on
+hook-managed native-assets builds.
 
 ## Test
 

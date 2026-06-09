@@ -22,6 +22,8 @@ test_output_*.txt
 test_failure_details.txt
 a.out.js
 a.out.wasm
+__pycache__/
+*.pyc
 
 # Large local model/test assets
 *.gguf

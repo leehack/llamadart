@@ -80,10 +80,8 @@ bundled:
 - `llama_cpp`: GGUF model support through llama.cpp.
 - `litert_lm`: `.litertlm` model support through LiteRT-LM.
 
-Android defaults to both runtime families where available. Other native targets
-default to `llama_cpp` only; opt into `litert_lm` when those apps ship
-`.litertlm` bundles. Apps that only ship one model format can also trim package
-size:
+Unset or empty config means all runtime families available for the target. Apps
+that only ship one model format can trim package size:
 
 ```yaml
 hooks:
@@ -283,8 +281,8 @@ no valid entries remain, selection falls back to `cpu_profile` (or default
 
 - Configurable targets start from defaults (`cpu`, `vulkan`) if available.
 - `llamadart_native_runtimes` controls whole native runtime families:
-  `llama_cpp`, `litert_lm`, or both. Android defaults to both families; other
-  native targets default to `llama_cpp` only.
+  `llama_cpp`, `litert_lm`, or both. Unset or empty means all runtime families
+  available for the target.
 - `llamadart_native_backends` controls only llama.cpp module files inside
   `llama_cpp`; it does not affect LiteRT-LM assets.
 - `cpu` is auto-added as fallback when present in the bundle.
@@ -303,25 +301,20 @@ no valid entries remain, selection falls back to `cpu_profile` (or default
 - Apple targets (`ios-*`, `macos-*`) support `cpu` + `metal`, but ignore
   per-backend module config in this hook path because runtime libraries are
   consolidated.
-- Apple SPM targets resolve runtime libraries through the root package's
-  `darwin/llamadart/Package.swift`, so
-  `llamadart_native_tag`, `llamadart_native_repository`, and
-  `llamadart_native_path` do not change those SPM binary targets. Customize the
-  SwiftPM binary target URL/checksum pins only by using a path/git dependency
-  override or fork of `llamadart`; that is an advanced testing/maintenance
-  escape hatch, not a supported pub.dev consumer configuration. Normal apps
-  consuming `llamadart` from pub.dev cannot customize the published package's
-  `Package.swift` in-place.
-- `llamadart_native_runtimes` still chooses which runtime families the Dart
-  hook reports for Apple SPM builds, but it does not prune SwiftPM binary
-  target dependencies from the linked Apple package. Physically pruning the
-  Apple SPM product requires maintaining a fork/path override with different
-  `Package.swift` target dependencies, which is outside the supported pub.dev
-  app configuration.
-- Flutter Apple builds use the root package's SPM path on iOS and macOS. The
-  old hook-managed iOS wrapper path is disabled to avoid App Store
-  `MinimumOSVersion` mismatches.
-- Standalone Dart macOS runs keep the native-assets fallback for compatibility.
+- Flutter Apple apps use Swift Package Manager only through runtime companion
+  packages: `llamadart_llama_cpp_flutter` for GGUF/llama.cpp and
+  `llamadart_litert_lm_flutter` for `.litertlm`/LiteRT-LM.
+- For Flutter iOS/macOS apps, installed companion packages choose the Apple SPM
+  runtime families and win over `llamadart_native_runtimes`. If neither
+  companion package is installed, the core native-assets fallback is used.
+- For non-Flutter projects and non-Apple targets, `llamadart_native_runtimes`
+  remains the selector even if a Flutter companion package is accidentally
+  present in dependencies.
+- `llamadart_native_tag`, `llamadart_native_repository`, and
+  `llamadart_native_path` customize hook-managed native assets. Apple SPM
+  binary target URL/checksum pins are owned by the companion packages and can be
+  customized with path/git overrides or forks of those packages.
+- Standalone Dart macOS runs keep the native-assets path for compatibility.
 - Custom standalone Dart macOS launchers can point
   `LLAMADART_LITERT_LM_LIB_DIR` at the extracted LiteRT-LM cache directory when
   the default cache search is not suitable.

@@ -166,18 +166,9 @@ void main() {
   });
 
   group('selectNativeRuntimesForBundle', () {
-    test('defaults to llama.cpp and LiteRT-LM on Android', () {
-      final selected = selectNativeRuntimesForBundle(
-        bundle: 'android-arm64',
-        rawUserConfig: null,
-        warn: (_) {},
-      );
-
-      expect(selected, [nativeRuntimeLlamaCpp, nativeRuntimeLiteRtLm]);
-    });
-
-    test('defaults to llama.cpp on non-Android targets', () {
+    test('defaults to all runtime families', () {
       for (final bundle in [
+        'android-arm64',
         'ios-arm64',
         'linux-x64',
         'macos-arm64',
@@ -189,7 +180,10 @@ void main() {
           warn: (_) {},
         );
 
-        expect(selected, [nativeRuntimeLlamaCpp], reason: bundle);
+        expect(selected, [
+          nativeRuntimeLlamaCpp,
+          nativeRuntimeLiteRtLm,
+        ], reason: bundle);
       }
     });
 
@@ -211,6 +205,29 @@ void main() {
       );
 
       expect(selected, [nativeRuntimeLlamaCpp, nativeRuntimeLiteRtLm]);
+    });
+
+    test('parses empty runtime list as all runtime families', () {
+      for (final rawUserConfig in const [
+        <String>[],
+        '',
+        {'runtimes': <String>[]},
+        {
+          'runtimes': ['llama_cpp'],
+          'platforms': {'linux-x64': <String>[]},
+        },
+      ]) {
+        final selected = selectNativeRuntimesForBundle(
+          bundle: 'linux-x64',
+          rawUserConfig: rawUserConfig,
+          warn: (_) {},
+        );
+
+        expect(selected, [
+          nativeRuntimeLlamaCpp,
+          nativeRuntimeLiteRtLm,
+        ], reason: rawUserConfig.toString());
+      }
     });
 
     test('supports per-platform runtime override', () {
@@ -305,7 +322,7 @@ void main() {
 
       expect(iosSelected, [nativeRuntimeLlamaCpp]);
       expect(macosSelected, [nativeRuntimeLiteRtLm]);
-      expect(linuxSelected, [nativeRuntimeLlamaCpp]);
+      expect(linuxSelected, [nativeRuntimeLlamaCpp, nativeRuntimeLiteRtLm]);
     });
 
     test('supports map platform shape with runtimes key', () {

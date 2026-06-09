@@ -18,17 +18,6 @@ from typing import Any
 DEFAULT_LLAMADART_NATIVE_REPO = "leehack/llamadart-native"
 DEFAULT_LITERT_LM_NATIVE_REPO = "leehack/litert-lm-native"
 
-LITERT_LM_SPM_TARGETS = (
-    "LiteRtLm",
-    "CLiteRTLM",
-    "GemmaModelConstraintProvider",
-    "LiteRt",
-    "LiteRtMetalAccelerator",
-    "LiteRtTopKMetalSampler",
-    "LiteRtTopKWebGpuSampler",
-    "LiteRtWebGpuAccelerator",
-)
-
 
 class ReleaseError(RuntimeError):
     pass
@@ -38,10 +27,8 @@ def main() -> int:
     args = parse_args()
     repo_root = Path(args.repo_root).resolve()
     hook_path = repo_root / args.hook_build
-    package_swift_path = repo_root / args.package_swift
 
     hook_text = hook_path.read_text(encoding="utf-8")
-    package_swift_text = package_swift_path.read_text(encoding="utf-8")
 
     summaries: list[str] = []
     resolved_llama_cpp_tag = ""
@@ -57,26 +44,11 @@ def main() -> int:
             args.release_json_dir,
         )
         resolved_llama_cpp_tag = release["tag_name"]
-        llama_checksum = release_asset_checksum(
-            release,
-            f"llamadart-native-apple-xcframework-{resolved_llama_cpp_tag}.zip",
-        )
         hook_text = replace_one(
             hook_text,
             r"const _llamaCppTag = '[^']+';",
             f"const _llamaCppTag = '{resolved_llama_cpp_tag}';",
             "hook llama.cpp tag",
-        )
-        package_swift_text = replace_one(
-            package_swift_text,
-            r'let llamaCppTag = "[^"]+"',
-            f'let llamaCppTag = "{resolved_llama_cpp_tag}"',
-            "Package.swift llama.cpp tag",
-        )
-        package_swift_text = replace_binary_target_checksum(
-            package_swift_text,
-            "llama",
-            llama_checksum,
         )
         summaries.append(
             f"llama.cpp -> {args.llamadart_native_repo}@{resolved_llama_cpp_tag}"
@@ -108,22 +80,6 @@ def main() -> int:
                 checksum,
             )
 
-        package_swift_text = replace_one(
-            package_swift_text,
-            r'let liteRtLmTag = "[^"]+"',
-            f'let liteRtLmTag = "{resolved_litert_lm_tag}"',
-            "Package.swift LiteRT-LM tag",
-        )
-        for target in LITERT_LM_SPM_TARGETS:
-            checksum = release_asset_checksum(
-                release,
-                f"litert-lm-native-apple-{target}-xcframework-{resolved_litert_lm_tag}.zip",
-            )
-            package_swift_text = replace_binary_target_checksum(
-                package_swift_text,
-                target,
-                checksum,
-            )
         summaries.append(
             f"LiteRT-LM -> {args.litert_lm_native_repo}@{resolved_litert_lm_tag}"
         )
@@ -136,7 +92,6 @@ def main() -> int:
         print("Dry run; no files written.")
     else:
         hook_path.write_text(hook_text, encoding="utf-8")
-        package_swift_path.write_text(package_swift_text, encoding="utf-8")
 
     for summary in summaries:
         print(f"Synced {summary}")
@@ -153,8 +108,8 @@ def main() -> int:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Update hook/build.dart and darwin/llamadart/Package.swift from "
-            "published native release asset checksums."
+            "Update hook/build.dart from published native release asset "
+            "checksums."
         )
     )
     parser.add_argument(
@@ -166,11 +121,6 @@ def parse_args() -> argparse.Namespace:
         "--hook-build",
         default="hook/build.dart",
         help="Path to hook/build.dart relative to repo root.",
-    )
-    parser.add_argument(
-        "--package-swift",
-        default="darwin/llamadart/Package.swift",
-        help="Path to Package.swift relative to repo root.",
     )
     parser.add_argument(
         "--llama-cpp-tag",
@@ -292,18 +242,6 @@ def replace_one(text: str, pattern: str, replacement: str, description: str) -> 
     updated, count = re.subn(pattern, replacement, text, count=1)
     if count != 1:
         raise ReleaseError(f"Could not replace {description}")
-    return updated
-
-
-def replace_binary_target_checksum(text: str, target: str, checksum: str) -> str:
-    pattern = re.compile(
-        rf'(nativeRepoBinaryTarget\(\s*name: "{re.escape(target)}",.*?'
-        rf'checksum: ")[0-9a-f]+(")',
-        re.DOTALL,
-    )
-    updated, count = pattern.subn(rf"\g<1>{checksum}\2", text, count=1)
-    if count != 1:
-        raise ReleaseError(f"Could not replace Package.swift checksum for {target}")
     return updated
 
 

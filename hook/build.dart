@@ -15,6 +15,8 @@ const _llamaCppTag = 'b9547';
 const _nativeRepoSlug = 'leehack/llamadart-native';
 
 const _packageName = 'llamadart';
+const _llamaCppFlutterPackageName = 'llamadart_llama_cpp_flutter';
+const _liteRtLmFlutterPackageName = 'llamadart_litert_lm_flutter';
 const _thirdPartyDir = 'third_party';
 const _binDir = 'bin';
 const _dartToolDir = '.dart_tool';
@@ -220,11 +222,20 @@ void main(List<String> args) async {
     log.info('Hook Start: ${spec.bundle}');
 
     final pkgRoot = input.packageRoot.toFilePath();
-    final selectedRuntimes = selectNativeRuntimesForBundle(
-      bundle: spec.bundle,
-      rawUserConfig: input.userDefines[nativeRuntimesUserDefineKey],
-      warn: log.warning,
+    final rawNativeRuntimeConfig =
+        input.userDefines[nativeRuntimesUserDefineKey];
+    final appleSpmRuntimes = _flutterAppleCompanionRuntimes(
+      input: input,
+      code: code,
+      log: log,
     );
+    final selectedRuntimes =
+        appleSpmRuntimes ??
+        selectNativeRuntimesForBundle(
+          bundle: spec.bundle,
+          rawUserConfig: rawNativeRuntimeConfig,
+          warn: log.warning,
+        );
     if (selectedRuntimes.isEmpty) {
       throw Exception(
         'No native runtimes selected for ${spec.bundle}. Configure '
@@ -237,16 +248,16 @@ void main(List<String> args) async {
 
     if (includeLiteRtLm &&
         _liteRtLmBundleSpecForCode(code) == null &&
-        input.userDefines[nativeRuntimesUserDefineKey] != null) {
+        (rawNativeRuntimeConfig != null || appleSpmRuntimes != null)) {
       throw Exception('LiteRT-LM runtime is not available for ${spec.bundle}.');
     }
 
     if (await _emitAppleSpmAssetsIfEnabled(
-      input: input,
-      code: code,
       output: output,
       includeLlamaCpp: includeLlamaCpp,
       includeLiteRtLm: includeLiteRtLm,
+      appleSpmRuntimes: appleSpmRuntimes,
+      rawNativeRuntimeConfig: rawNativeRuntimeConfig,
       hasNativeSourceOverride: _hasNativeSourceOverride(input.userDefines),
       hasNativeBackendOverride:
           input.userDefines[nativeBackendUserDefineKey] != null,
@@ -376,40 +387,43 @@ void main(List<String> args) async {
 }
 
 Future<bool> _emitAppleSpmAssetsIfEnabled({
-  required BuildInput input,
-  required CodeConfig code,
   required BuildOutputBuilder output,
   required bool includeLlamaCpp,
   required bool includeLiteRtLm,
+  required List<String>? appleSpmRuntimes,
+  required Object? rawNativeRuntimeConfig,
   required bool hasNativeSourceOverride,
   required bool hasNativeBackendOverride,
   required Logger log,
 }) async {
-  if (!_isAppleTarget(code.targetOS)) {
-    return false;
-  }
-
-  final enabled =
-      code.targetOS == OS.iOS || _isFlutterMacOsConsumer(input, log);
-  if (!enabled) {
+  if (appleSpmRuntimes == null) {
     return false;
   }
 
   log.info(
-    'Using package:$_packageName Swift Package Manager for Apple native '
-    'runtimes; the hook will not bundle Apple dynamic libraries.',
+    'Using Flutter Apple companion packages for native runtimes: '
+    '${appleSpmRuntimes.join(', ')}. The hook will not bundle Apple dynamic '
+    'libraries.',
   );
+  if (rawNativeRuntimeConfig != null) {
+    log.warning(
+      'Flutter Apple builds select native runtimes from companion package '
+      'dependencies ($_llamaCppFlutterPackageName and '
+      '$_liteRtLmFlutterPackageName). Ignoring $nativeRuntimesUserDefineKey '
+      'for this Apple build.',
+    );
+  }
   if (hasNativeSourceOverride) {
     log.warning(
-      'Apple Swift Package Manager builds use Package.swift binary target '
-      'pins. $nativeTagUserDefineKey, $nativeRepositoryUserDefineKey, and '
-      '$nativePathUserDefineKey do not change Flutter Apple SPM binaries.',
+      'Flutter Apple companion packages use Package.swift binary target pins. '
+      '$nativeTagUserDefineKey, $nativeRepositoryUserDefineKey, and '
+      '$nativePathUserDefineKey do not change their SPM binaries.',
     );
   }
   if (hasNativeBackendOverride) {
     log.warning(
-      'Apple Swift Package Manager builds ignore $nativeBackendUserDefineKey; '
-      'Apple frameworks include their packaged native modules.',
+      'Flutter Apple companion packages ignore $nativeBackendUserDefineKey; '
+      'their frameworks include packaged native modules.',
     );
   }
   if (includeLlamaCpp) {
@@ -441,43 +455,66 @@ bool _hasNativeSourceOverride(HookInputUserDefines userDefines) {
 
 bool _isAppleTarget(OS os) => os == OS.iOS || os == OS.macOS;
 
-bool _isFlutterMacOsConsumer(BuildInput input, Logger log) {
+List<String>? _flutterAppleCompanionRuntimes({
+  required BuildInput input,
+  required CodeConfig code,
+  required Logger log,
+}) {
+  if (!_isAppleTarget(code.targetOS)) {
+    return null;
+  }
+
   final consumerRoot = _consumerPackageRoot(input);
   if (consumerRoot == null) {
     log.info(
-      'Using bundled macOS native assets; could not resolve the invoking '
+      'Using bundled Apple native assets; could not resolve the invoking '
       'package root.',
     );
-    return false;
+    return null;
   }
 
   final packageRoot = Directory.fromUri(input.packageRoot);
   if (_sameDirectory(consumerRoot, packageRoot)) {
-    log.info(
-      'Using bundled macOS native assets for package-root builds. Flutter apps '
-      'that depend on package:$_packageName use Swift Package Manager '
-      'automatically.',
-    );
-    return false;
+    log.info('Using bundled Apple native assets for package-root builds.');
+    return null;
   }
 
   final pubspec = File(path.join(consumerRoot.path, 'pubspec.yaml'));
   if (!pubspec.existsSync()) {
     log.info(
-      'Using bundled macOS native assets; no pubspec.yaml found at '
+      'Using bundled Apple native assets; no pubspec.yaml found at '
       '${pubspec.path}.',
     );
-    return false;
+    return null;
   }
 
-  final isFlutter = _pubspecDeclaresFlutter(pubspec.readAsStringSync());
+  final pubspecSource = pubspec.readAsStringSync();
+  final isFlutter = _pubspecDeclaresFlutter(pubspecSource);
   if (!isFlutter) {
     log.info(
-      'Using bundled macOS native assets for non-Flutter package '
+      'Using bundled Apple native assets for non-Flutter package '
       '${consumerRoot.path}.',
     );
+    return null;
   }
-  return isFlutter;
+
+  final dependencies = _pubspecDependencyNames(pubspecSource);
+  final runtimes = <String>[];
+  if (dependencies.contains(_llamaCppFlutterPackageName)) {
+    runtimes.add(nativeRuntimeLlamaCpp);
+  }
+  if (dependencies.contains(_liteRtLmFlutterPackageName)) {
+    runtimes.add(nativeRuntimeLiteRtLm);
+  }
+  if (runtimes.isEmpty) {
+    log.info(
+      'Using bundled Apple native assets for Flutter package '
+      '${consumerRoot.path}; no Flutter Apple companion package dependency was '
+      'found.',
+    );
+    return null;
+  }
+  return runtimes;
 }
 
 Directory? _consumerPackageRoot(BuildInput input) {
@@ -561,6 +598,35 @@ bool _pubspecDeclaresFlutter(String source) {
     }
   }
   return false;
+}
+
+Set<String> _pubspecDependencyNames(String source) {
+  final dependencies = <String>{};
+  String? section;
+  for (final rawLine in source.split('\n')) {
+    final line = rawLine.split('#').first;
+    if (line.trim().isEmpty) {
+      continue;
+    }
+
+    final topLevel = RegExp(r'^([A-Za-z_][A-Za-z0-9_]*)\s*:').firstMatch(line);
+    if (topLevel != null) {
+      section = topLevel.group(1);
+      continue;
+    }
+
+    if (section != 'dependencies') {
+      continue;
+    }
+
+    final dependency = RegExp(
+      r'^\s+([A-Za-z_][A-Za-z0-9_]*)\s*:',
+    ).firstMatch(line);
+    if (dependency != null) {
+      dependencies.add(dependency.group(1)!);
+    }
+  }
+  return dependencies;
 }
 
 Future<void> _emitLiteRtLmAssets({

@@ -11,8 +11,8 @@ unlisted: true
 - Do not patch upstream `llama.cpp` sources in this repo.
 - Do not add local native build graph changes that belong in
   `llamadart-native`.
-- Do not add Apple SPM runtime binaries in this repo when they should be
-  produced by `llamadart-native` or `litert-lm-native`.
+- Do not add Apple SPM runtime binaries or Flutter plugin manifests in this
+  repo when they belong in the Flutter runtime companion packages.
 - Do not treat bridge runtime internals as owned by this repo; those belong in
   `llama-web-bridge`.
 
@@ -22,6 +22,8 @@ unlisted: true
   `llamadart-native`
 - LiteRT-LM native wrapper/runtime behavior and Apple SPM-compatible artifacts:
   `litert-lm-native`
+- Flutter Apple SPM package manifests:
+  `llamadart_llama_cpp_flutter` and `llamadart_litert_lm_flutter`
 - Web bridge runtime behavior: `llama-web-bridge`
 - Published bridge assets: `llama-web-bridge-assets`
 - Dart API/runtime selection/docs/tests: `llamadart`

@@ -9,27 +9,28 @@ unlisted: true
 When native behavior or bindings need updates:
 
 1. Make and release changes in `llamadart-native` or `litert-lm-native` first.
-2. Sync native version, bindings, and Apple SPM pins in this repo.
+2. Sync native version and bindings in this repo.
+3. Sync matching Apple SPM pins in the Flutter runtime companion packages when
+   Apple XCFramework releases changed.
 
-The invariant is that native-assets and Apple Swift Package Manager builds
-must resolve the same bridge runtime release. Do not point the native-assets
-hook at `leehack/*-native` artifacts while `darwin/llamadart/Package.swift`
-points at unrelated upstream Apple binaries; that creates different bridge
-behavior between pure Dart/macOS fallback and Flutter Apple builds.
+The invariant is that core native-assets builds and Flutter Apple companion
+Swift Package Manager builds should resolve compatible bridge runtime releases.
+Do not point the core hook at `leehack/*-native` artifacts while companion
+`Package.swift` files point at unrelated Apple binaries; that creates different
+bridge behavior between pure Dart/macOS fallback and Flutter Apple builds.
 
-| Runtime | Native-assets pin | Apple SPM pin |
+| Runtime | Core native-assets pin | Apple SPM companion pin |
 | --- | --- | --- |
-| llama.cpp / GGUF | `hook/build.dart` `_llamaCppTag`, default repository `leehack/llamadart-native` | `darwin/llamadart/Package.swift` binary target URL/checksum for the matching `llamadart-native` Apple XCFramework release asset |
-| LiteRT-LM / `.litertlm` | `hook/build.dart` `_litertLmVersion`, repository `leehack/litert-lm-native` | `darwin/llamadart/Package.swift` binary target URL/checksum for the matching `litert-lm-native` Apple XCFramework release asset |
+| llama.cpp / GGUF | `hook/build.dart` `_llamaCppTag`, default repository `leehack/llamadart-native` | `llamadart_llama_cpp_flutter` `Package.swift` binary target URL/checksum |
+| LiteRT-LM / `.litertlm` | `hook/build.dart` `_litertLmVersion`, repository `leehack/litert-lm-native` | `llamadart_litert_lm_flutter` `Package.swift` binary target URLs/checksums |
 
 Preferred in-repo workflow:
 
 - `.github/workflows/sync_native_bindings.yml`
 
 That workflow syncs llama.cpp headers, regenerates ffigen bindings, updates the
-native hook pins, updates Apple SPM URL/checksum pins from GitHub release asset
-digests, and opens a PR. The `native_tag` input controls the `llamadart-native`
-release. The `litert_lm_tag` input defaults to `keep`; set it to a
+native hook pins, and opens a PR. The `native_tag` input controls the
+`llamadart-native` release. The `litert_lm_tag` input defaults to `keep`; set it to a
 `litert-lm-native` tag or `latest` only when the LiteRT-LM native release should
 move in the same PR.
 
@@ -43,9 +44,9 @@ python3 tool/native/sync_native_release_pins.py \
 ```
 
 After sync, run analyze/tests/docs checks before merge. For Apple SPM pin
-changes, also run at least one Flutter iOS build and one macOS build with SPM
-enabled, then inspect the packaged frameworks to confirm the expected native
-release artifacts are present.
+changes, update the companion package repo(s), then run at least one Flutter iOS
+build and one macOS build with those packages enabled. Inspect the packaged
+frameworks to confirm the expected native release artifacts are present.
 
 ## Native version update checklist
 
@@ -54,10 +55,12 @@ Use this checklist in native sync PRs:
 - Confirm `llamadart-native` or `litert-lm-native` has published the target
   release and the required per-platform native-assets archives.
 - Confirm the same release provides Apple SPM-compatible XCFramework zip
-  artifacts, or explicitly document that Apple SPM pins are unchanged.
-- Update `hook/build.dart` native pins and `darwin/llamadart/Package.swift`
-  URL/checksum pins with `.github/workflows/sync_native_bindings.yml` or
+  artifacts when companion package pins should move.
+- Update `hook/build.dart` native pins with
+  `.github/workflows/sync_native_bindings.yml` or
   `tool/native/sync_native_release_pins.py`.
+- Update companion package `Package.swift` URL/checksum pins in their own repos
+  when Apple XCFramework releases changed.
 - Regenerate `lib/src/backends/llama_cpp/bindings.dart` whenever the
   `llamadart-native` header bundle changed.
 - Update public docs that mention the pinned native versions or source table.

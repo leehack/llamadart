@@ -26,9 +26,8 @@ The repository ships multiple examples for different integration styles.
 
 - Dart SDK `>= 3.10.7`
 - Flutter SDK `>= 3.38.0` for Flutter examples
-- Flutter Apple example builds require deployment targets of iOS `16.4` or
-  macOS `14.0` or newer
+- Flutter Apple example builds that use SwiftPM companion packages require
+  deployment targets of iOS `16.4` or macOS `14.0` or newer
 - Internet on first run (runtime bundle resolution)
-- The Chat App opts into both `llama_cpp` and `litert_lm` native runtime
-  families because it demonstrates GGUF and `.litertlm` models. The smaller
-  examples stay on the package defaults.
+- The Chat App keeps the default all-runtime native-assets configuration
+  because it demonstrates GGUF and `.litertlm` models.

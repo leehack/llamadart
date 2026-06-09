@@ -1,6 +1,6 @@
 name: llamadart
 description: Dart and Flutter local LLM inference with llama.cpp GGUF and LiteRT-LM across native platforms and web.
-version: 0.7.2
+version: 0.8.0
 homepage: https://github.com/leehack/llamadart
 repository: https://github.com/leehack/llamadart
 issue_tracker: https://github.com/leehack/llamadart/issues
@@ -11,8 +11,6 @@ topics:
   - gguf
   - litert
 
-# Pub.dev platform support is broader than the Flutter plugin registrar
-# declarations below, which are only needed for Darwin app integration.
 platforms:
   android:
   ios:
@@ -23,7 +21,6 @@ platforms:
 
 environment:
   sdk: ^3.10.7
-  flutter: ">=3.38.0"
 
 dependencies:
   archive: ^4.0.7
@@ -41,13 +38,3 @@ dev_dependencies:
   ffigen: ^20.1.1
   lints: ^6.1.0
   test: ^1.26.3
-
-flutter:
-  plugin:
-    platforms:
-      ios:
-        pluginClass: LlamadartPlugin
-        sharedDarwinSource: true
-      macos:
-        pluginClass: LlamadartPlugin
-        sharedDarwinSource: true
