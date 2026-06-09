@@ -39,6 +39,12 @@ version alignment:
 
 - Update `pubspec.yaml` version.
 - Update `CHANGELOG.md`.
+- If a companion package changed and should publish with this release, update
+  that companion package `pubspec.yaml` to the same `X.Y.Z` as the release tag
+  and move its changelog entry under `## X.Y.Z`.
+- Leave unchanged companion package versions as-is. The publish workflow skips
+  companion packages whose versions do not match the release tag, or whose
+  matching version already exists on pub.dev.
 - Move accumulated `Unreleased` entries into the new version section; remove
   the `Unreleased` heading when it would otherwise be empty. Add it back only
   when the next unreleased change is documented.
@@ -54,8 +60,10 @@ Tag with `vX.Y.Z` and push tag.
 
 Current workflows involved:
 
-- `publish_pubdev.yml`: publishes the core package and companion packages on
-  version tags.
+- `publish_pubdev.yml`: publishes the core package on version tags, and
+  conditionally publishes companion packages only when the companion
+  `pubspec.yaml` version matches the tag and that version is not already on
+  pub.dev.
 - `docs_version_cut.yml`: creates versioned docs snapshot on `v*` tags.
 - `docs_pages.yml`: deploys docs to GitHub Pages after successful
   `docs_version_cut.yml` runs (and can be manually triggered).
