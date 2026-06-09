@@ -17,6 +17,36 @@ from typing import Any
 
 DEFAULT_LLAMADART_NATIVE_REPO = "leehack/llamadart-native"
 DEFAULT_LITERT_LM_NATIVE_REPO = "leehack/litert-lm-native"
+DEFAULT_LLAMA_CPP_PACKAGE_SWIFT = (
+    "packages/llamadart_llama_cpp_flutter/darwin/"
+    "llamadart_llama_cpp_flutter/Package.swift"
+)
+DEFAULT_LITERT_LM_PACKAGE_SWIFT = (
+    "packages/llamadart_litert_lm_flutter/darwin/"
+    "llamadart_litert_lm_flutter/Package.swift"
+)
+
+LITERT_LM_APPLE_TARGETS = {
+    "LiteRtLm": "litert-lm-native-apple-LiteRtLm-xcframework-{tag}.zip",
+    "CLiteRTLM": "litert-lm-native-apple-CLiteRTLM-xcframework-{tag}.zip",
+    "GemmaModelConstraintProvider": (
+        "litert-lm-native-apple-GemmaModelConstraintProvider-"
+        "xcframework-{tag}.zip"
+    ),
+    "LiteRt": "litert-lm-native-apple-LiteRt-xcframework-{tag}.zip",
+    "LiteRtMetalAccelerator": (
+        "litert-lm-native-apple-LiteRtMetalAccelerator-xcframework-{tag}.zip"
+    ),
+    "LiteRtTopKMetalSampler": (
+        "litert-lm-native-apple-LiteRtTopKMetalSampler-xcframework-{tag}.zip"
+    ),
+    "LiteRtTopKWebGpuSampler": (
+        "litert-lm-native-apple-LiteRtTopKWebGpuSampler-xcframework-{tag}.zip"
+    ),
+    "LiteRtWebGpuAccelerator": (
+        "litert-lm-native-apple-LiteRtWebGpuAccelerator-xcframework-{tag}.zip"
+    ),
+}
 
 
 class ReleaseError(RuntimeError):
@@ -27,8 +57,11 @@ def main() -> int:
     args = parse_args()
     repo_root = Path(args.repo_root).resolve()
     hook_path = repo_root / args.hook_build
+    llama_cpp_package_swift_path = repo_root / args.llama_cpp_package_swift
+    litert_lm_package_swift_path = repo_root / args.litert_lm_package_swift
 
     hook_text = hook_path.read_text(encoding="utf-8")
+    pending_writes: dict[Path, str] = {}
 
     summaries: list[str] = []
     resolved_llama_cpp_tag = ""
@@ -50,6 +83,25 @@ def main() -> int:
             f"const _llamaCppTag = '{resolved_llama_cpp_tag}';",
             "hook llama.cpp tag",
         )
+        if llama_cpp_package_swift_path.exists():
+            checksum = release_asset_checksum(
+                release,
+                f"llamadart-native-apple-xcframework-{resolved_llama_cpp_tag}.zip",
+            )
+            swift_text = llama_cpp_package_swift_path.read_text(encoding="utf-8")
+            swift_text = replace_one(
+                swift_text,
+                r'let llamaCppTag = "[^"]+"',
+                f'let llamaCppTag = "{resolved_llama_cpp_tag}"',
+                "llama.cpp Package.swift tag",
+            )
+            swift_text = replace_swift_binary_target_checksum(
+                swift_text,
+                "llama",
+                checksum,
+            )
+            pending_writes[llama_cpp_package_swift_path] = swift_text
+
         summaries.append(
             f"llama.cpp -> {args.llamadart_native_repo}@{resolved_llama_cpp_tag}"
         )
@@ -80,6 +132,26 @@ def main() -> int:
                 checksum,
             )
 
+        if litert_lm_package_swift_path.exists():
+            swift_text = litert_lm_package_swift_path.read_text(encoding="utf-8")
+            swift_text = replace_one(
+                swift_text,
+                r'let liteRtLmTag = "[^"]+"',
+                f'let liteRtLmTag = "{resolved_litert_lm_tag}"',
+                "LiteRT-LM Package.swift tag",
+            )
+            for target_name, asset_template in LITERT_LM_APPLE_TARGETS.items():
+                checksum = release_asset_checksum(
+                    release,
+                    asset_template.format(tag=resolved_litert_lm_tag),
+                )
+                swift_text = replace_swift_binary_target_checksum(
+                    swift_text,
+                    target_name,
+                    checksum,
+                )
+            pending_writes[litert_lm_package_swift_path] = swift_text
+
         summaries.append(
             f"LiteRT-LM -> {args.litert_lm_native_repo}@{resolved_litert_lm_tag}"
         )
@@ -92,6 +164,8 @@ def main() -> int:
         print("Dry run; no files written.")
     else:
         hook_path.write_text(hook_text, encoding="utf-8")
+        for path, text in pending_writes.items():
+            path.write_text(text, encoding="utf-8")
 
     for summary in summaries:
         print(f"Synced {summary}")
@@ -121,6 +195,22 @@ def parse_args() -> argparse.Namespace:
         "--hook-build",
         default="hook/build.dart",
         help="Path to hook/build.dart relative to repo root.",
+    )
+    parser.add_argument(
+        "--llama-cpp-package-swift",
+        default=DEFAULT_LLAMA_CPP_PACKAGE_SWIFT,
+        help=(
+            "Path to the llama.cpp Flutter companion Package.swift relative "
+            "to repo root. Skipped if the file does not exist."
+        ),
+    )
+    parser.add_argument(
+        "--litert-lm-package-swift",
+        default=DEFAULT_LITERT_LM_PACKAGE_SWIFT,
+        help=(
+            "Path to the LiteRT-LM Flutter companion Package.swift relative "
+            "to repo root. Skipped if the file does not exist."
+        ),
     )
     parser.add_argument(
         "--llama-cpp-tag",
@@ -268,6 +358,22 @@ def replace_litert_lm_bundle_checksum(
     updated, count = pattern.subn(rf"\g<1>{checksum}\2", hook_text, count=1)
     if count != 1:
         raise ReleaseError(f"Could not replace LiteRT-LM checksum for {bundle}")
+    return updated
+
+
+def replace_swift_binary_target_checksum(
+    swift_text: str,
+    target_name: str,
+    checksum: str,
+) -> str:
+    pattern = re.compile(
+        rf'(nativeRepoBinaryTarget\(\s*name: "{re.escape(target_name)}",'
+        r'.*?checksum: ")[0-9a-f]+(")',
+        re.DOTALL,
+    )
+    updated, count = pattern.subn(rf"\g<1>{checksum}\2", swift_text, count=1)
+    if count != 1:
+        raise ReleaseError(f"Could not replace Package.swift checksum for {target_name}")
     return updated
 
 

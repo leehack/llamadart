@@ -1,6 +1,6 @@
 ---
 title: Native and Web Sync Flows
-description: Follow the correct cross-repo workflow when syncing native bindings or published web bridge assets.
+description: Follow the correct workflow when syncing native bindings, companion package pins, or published web bridge assets.
 unlisted: true
 ---
 
@@ -10,8 +10,8 @@ When native behavior or bindings need updates:
 
 1. Make and release changes in `llamadart-native` or `litert-lm-native` first.
 2. Sync native version and bindings in this repo.
-3. Sync matching Apple SPM pins in the Flutter runtime companion packages when
-   Apple XCFramework releases changed.
+3. Sync matching Apple SPM pins in the Flutter runtime companion packages under
+   `packages/` when Apple XCFramework releases changed.
 
 The invariant is that core native-assets builds and Flutter Apple companion
 Swift Package Manager builds should resolve compatible bridge runtime releases.
@@ -21,8 +21,8 @@ bridge behavior between pure Dart/macOS fallback and Flutter Apple builds.
 
 | Runtime | Core native-assets pin | Apple SPM companion pin |
 | --- | --- | --- |
-| llama.cpp / GGUF | `hook/build.dart` `_llamaCppTag`, default repository `leehack/llamadart-native` | `llamadart_llama_cpp_flutter` `Package.swift` binary target URL/checksum |
-| LiteRT-LM / `.litertlm` | `hook/build.dart` `_litertLmVersion`, repository `leehack/litert-lm-native` | `llamadart_litert_lm_flutter` `Package.swift` binary target URLs/checksums |
+| llama.cpp / GGUF | `hook/build.dart` `_llamaCppTag`, default repository `leehack/llamadart-native` | `packages/llamadart_llama_cpp_flutter/.../Package.swift` binary target URL/checksum |
+| LiteRT-LM / `.litertlm` | `hook/build.dart` `_litertLmVersion`, repository `leehack/litert-lm-native` | `packages/llamadart_litert_lm_flutter/.../Package.swift` binary target URLs/checksums |
 
 Preferred in-repo workflow:
 
@@ -44,9 +44,10 @@ python3 tool/native/sync_native_release_pins.py \
 ```
 
 After sync, run analyze/tests/docs checks before merge. For Apple SPM pin
-changes, update the companion package repo(s), then run at least one Flutter iOS
-build and one macOS build with those packages enabled. Inspect the packaged
-frameworks to confirm the expected native release artifacts are present.
+changes, verify the companion package changes under `packages/`, then run at
+least one Flutter iOS build and one macOS build with those packages enabled.
+Inspect the packaged frameworks to confirm the expected native release artifacts
+are present.
 
 ## Native version update checklist
 
@@ -59,7 +60,7 @@ Use this checklist in native sync PRs:
 - Update `hook/build.dart` native pins with
   `.github/workflows/sync_native_bindings.yml` or
   `tool/native/sync_native_release_pins.py`.
-- Update companion package `Package.swift` URL/checksum pins in their own repos
+- Update companion package `Package.swift` URL/checksum pins under `packages/`
   when Apple XCFramework releases changed.
 - Regenerate `lib/src/backends/llama_cpp/bindings.dart` whenever the
   `llamadart-native` header bundle changed.

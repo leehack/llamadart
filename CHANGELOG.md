@@ -3,7 +3,9 @@
 * **Flutter Apple runtime packaging**:
   * Split SwiftPM-linked Apple runtime packaging out of the core package into
     `llamadart_llama_cpp_flutter` for GGUF/llama.cpp and
-    `llamadart_litert_lm_flutter` for `.litertlm`/LiteRT-LM.
+    `llamadart_litert_lm_flutter` for `.litertlm`/LiteRT-LM. These companion
+    packages live under `packages/` in this repository and publish as separate
+    pub.dev packages.
   * Removed Flutter plugin metadata from `llamadart` so pure Dart/native-assets
     consumers can keep using the core package without taking a Flutter SDK
     constraint.

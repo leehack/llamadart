@@ -66,6 +66,9 @@ dependencies:
   llamadart_litert_lm_flutter: ^0.8.0 # .litertlm / LiteRT-LM
 ```
 
+The companion packages are published independently from the `packages/`
+subdirectories in this repository.
+
 ### 2. Run with defaults
 
 On first `dart run` / `flutter run`, `llamadart` will:
@@ -578,8 +581,8 @@ Notes:
   `llamadart_native_repository`, and `llamadart_native_path` still customize
   hook-managed native assets in those builds.
 - Flutter Apple companion packages use SPM binary target URL/checksum pins from
-  their own `Package.swift` files. Customize Apple SPM binary sources by using
-  path/git overrides or forks of those companion packages.
+  their `packages/*/darwin/*/Package.swift` files. Customize Apple SPM binary
+  sources by using path/git overrides or forks of those companion packages.
 - The native-assets hook refreshes emitted files each build; if you change `hooks.user_defines` or are upgrading from older cached outputs, run `flutter clean && flutter pub get` before rebuilding.
 - Some Vulkan drivers can crash when probing cooperative matrix support. This
   is a driver-side failure in the Vulkan property query path, not a llamadart
@@ -757,8 +760,8 @@ Current pinned runtime artifacts:
 | Web LiteRT-LM / `.litertlm` | App-provided `@litert-lm/core` module URL; the chat app defaults to jsDelivr `@litert-lm/core/+esm` |
 
 When bumping native runtime pins, publish the matching native repo release
-artifacts first, then sync the core native-assets hook pins and update matching
-SPM checksums in the Flutter companion packages.
+artifacts first, then sync the core native-assets hook pins and matching SPM
+checksums in the Flutter companion packages under `packages/`.
 
 Core abstractions in this package:
 

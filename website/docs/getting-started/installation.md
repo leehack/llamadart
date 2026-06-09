@@ -40,6 +40,9 @@ dependencies:
   llamadart_litert_lm_flutter: ^0.8.0 # .litertlm / LiteRT-LM
 ```
 
+The companion packages are published independently from the `packages/`
+subdirectories in the main `llamadart` repository.
+
 Then resolve packages:
 
 ```bash

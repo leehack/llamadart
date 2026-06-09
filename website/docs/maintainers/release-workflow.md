@@ -30,8 +30,8 @@ version alignment:
 - `litert-lm-native` owns LiteRT-LM bridge artifacts for native-assets and
   Apple SPM-compatible companion packages.
 - If native versions changed, prefer the `Sync Native Version & Bindings`
-  workflow PR over hand-editing core pins. Update Apple SPM companion package
-  pins in their own repos when Apple XCFramework releases changed.
+  workflow PR over hand-editing core pins. It also updates Apple SPM companion
+  package pins under `packages/` when Apple XCFramework releases changed.
 
 ## 2. Version and docs updates
 
@@ -52,7 +52,8 @@ Tag with `vX.Y.Z` and push tag.
 
 Current workflows involved:
 
-- `publish_pubdev.yml`: publishes package release on version tags.
+- `publish_pubdev.yml`: publishes the core package and companion packages on
+  version tags.
 - `docs_version_cut.yml`: creates versioned docs snapshot on `v*` tags.
 - `docs_pages.yml`: deploys docs to GitHub Pages after successful
   `docs_version_cut.yml` runs (and can be manually triggered).

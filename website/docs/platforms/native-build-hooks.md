@@ -104,9 +104,9 @@ dependency graph. Native source customization through `llamadart_native_tag`,
 `llamadart_native_repository`, and `llamadart_native_path` still applies to
 hook-managed native assets in those builds.
 
-Flutter Apple companion packages own their own `Package.swift` binary target
-URL/checksum pins. Customize Apple SPM binary sources with path/git overrides or
-forks of those companion packages.
+Flutter Apple companion packages own their `packages/*/darwin/*/Package.swift`
+binary target URL/checksum pins. Customize Apple SPM binary sources with
+path/git overrides or forks of those companion packages.
 
 ### 3. Dynamic Linking
 Using `native_assets_cli`, the downloaded dynamic libraries (`.so`, `.dylib`,

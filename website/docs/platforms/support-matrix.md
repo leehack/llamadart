@@ -312,8 +312,9 @@ no valid entries remain, selection falls back to `cpu_profile` (or default
   present in dependencies.
 - `llamadart_native_tag`, `llamadart_native_repository`, and
   `llamadart_native_path` customize hook-managed native assets. Apple SPM
-  binary target URL/checksum pins are owned by the companion packages and can be
-  customized with path/git overrides or forks of those packages.
+  binary target URL/checksum pins are owned by the companion packages under
+  `packages/` and can be customized with path/git overrides or forks of those
+  packages.
 - Standalone Dart macOS runs keep the native-assets path for compatibility.
 - Custom standalone Dart macOS launchers can point
   `LLAMADART_LITERT_LM_LIB_DIR` at the extracted LiteRT-LM cache directory when
