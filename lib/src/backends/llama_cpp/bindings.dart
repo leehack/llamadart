@@ -7261,6 +7261,9 @@ external bool mtmd_support_audio(ffi.Pointer<mtmd_context> ctx);
 @ffi.Native<ffi.Int Function(ffi.Pointer<mtmd_context>)>()
 external int mtmd_get_audio_sample_rate(ffi.Pointer<mtmd_context> ctx);
 
+@ffi.Native<ffi.Pointer<ffi.Char> Function(ffi.Pointer<mtmd_context>)>()
+external ffi.Pointer<ffi.Char> mtmd_get_marker(ffi.Pointer<mtmd_context> ctx);
+
 @ffi.Native<
   ffi.Pointer<mtmd_bitmap> Function(
     ffi.Uint32,
@@ -7313,6 +7316,21 @@ external ffi.Pointer<ffi.Char> mtmd_bitmap_get_id(
 external void mtmd_bitmap_set_id(
   ffi.Pointer<mtmd_bitmap> bitmap,
   ffi.Pointer<ffi.Char> id,
+);
+
+@ffi.Native<
+  ffi.Pointer<mtmd_bitmap> Function(
+    ffi.Pointer<mtmd_context>,
+    ffi.Pointer<ffi.Char>,
+    ffi.Pointer<ffi.Void>,
+    mtmd_bitmap_lazy_callback,
+  )
+>()
+external ffi.Pointer<mtmd_bitmap> mtmd_bitmap_init_lazy(
+  ffi.Pointer<mtmd_context> ctx,
+  ffi.Pointer<ffi.Char> id,
+  ffi.Pointer<ffi.Void> user_data,
+  mtmd_bitmap_lazy_callback callback,
 );
 
 @ffi.Native<ffi.Pointer<mtmd_input_chunks> Function()>()
@@ -7474,28 +7492,35 @@ external void mtmd_helper_log_set(
   ffi.Pointer<ffi.Void> user_data,
 );
 
+@ffi.Native<ffi.Bool Function(ffi.Pointer<mtmd_context>)>()
+external bool mtmd_helper_support_video(ffi.Pointer<mtmd_context> ctx);
+
 @ffi.Native<
-  ffi.Pointer<mtmd_bitmap> Function(
+  mtmd_helper_bitmap_wrapper Function(
     ffi.Pointer<mtmd_context>,
     ffi.Pointer<ffi.Char>,
+    ffi.Bool,
   )
 >()
-external ffi.Pointer<mtmd_bitmap> mtmd_helper_bitmap_init_from_file(
+external mtmd_helper_bitmap_wrapper mtmd_helper_bitmap_init_from_file(
   ffi.Pointer<mtmd_context> ctx,
   ffi.Pointer<ffi.Char> fname,
+  bool placeholder,
 );
 
 @ffi.Native<
-  ffi.Pointer<mtmd_bitmap> Function(
+  mtmd_helper_bitmap_wrapper Function(
     ffi.Pointer<mtmd_context>,
     ffi.Pointer<ffi.UnsignedChar>,
     ffi.Size,
+    ffi.Bool,
   )
 >()
-external ffi.Pointer<mtmd_bitmap> mtmd_helper_bitmap_init_from_buf(
+external mtmd_helper_bitmap_wrapper mtmd_helper_bitmap_init_from_buf(
   ffi.Pointer<mtmd_context> ctx,
   ffi.Pointer<ffi.UnsignedChar> buf,
   int len,
+  bool placeholder,
 );
 
 @ffi.Native<ffi.Size Function(ffi.Pointer<mtmd_input_chunks>)>()
@@ -7586,6 +7611,58 @@ external int mtmd_helper_decode_image_chunk(
   ffi.Pointer<llama_pos> new_n_past,
 );
 
+@ffi.Native<mtmd_helper_video_init_params Function()>()
+external mtmd_helper_video_init_params mtmd_helper_video_init_params_default();
+
+@ffi.Native<
+  ffi.Pointer<mtmd_helper_video> Function(
+    ffi.Pointer<mtmd_context>,
+    ffi.Pointer<ffi.Char>,
+    mtmd_helper_video_init_params,
+  )
+>()
+external ffi.Pointer<mtmd_helper_video> mtmd_helper_video_init(
+  ffi.Pointer<mtmd_context> mctx,
+  ffi.Pointer<ffi.Char> path,
+  mtmd_helper_video_init_params params,
+);
+
+@ffi.Native<
+  ffi.Pointer<mtmd_helper_video> Function(
+    ffi.Pointer<mtmd_context>,
+    ffi.Pointer<ffi.UnsignedChar>,
+    ffi.Size,
+    mtmd_helper_video_init_params,
+  )
+>()
+external ffi.Pointer<mtmd_helper_video> mtmd_helper_video_init_from_buf(
+  ffi.Pointer<mtmd_context> mctx,
+  ffi.Pointer<ffi.UnsignedChar> buf,
+  int len,
+  mtmd_helper_video_init_params params,
+);
+
+@ffi.Native<ffi.Void Function(ffi.Pointer<mtmd_helper_video>)>()
+external void mtmd_helper_video_free(ffi.Pointer<mtmd_helper_video> ctx);
+
+@ffi.Native<mtmd_helper_video_info Function(ffi.Pointer<mtmd_helper_video>)>()
+external mtmd_helper_video_info mtmd_helper_video_get_info(
+  ffi.Pointer<mtmd_helper_video> ctx,
+);
+
+@ffi.Native<
+  ffi.Int32 Function(
+    ffi.Pointer<mtmd_helper_video>,
+    ffi.Pointer<ffi.Pointer<mtmd_bitmap>>,
+    ffi.Pointer<ffi.Pointer<ffi.Char>>,
+  )
+>()
+external int mtmd_helper_video_read_next(
+  ffi.Pointer<mtmd_helper_video> ctx,
+  ffi.Pointer<ffi.Pointer<mtmd_bitmap>> out_bitmap,
+  ffi.Pointer<ffi.Pointer<ffi.Char>> out_text,
+);
+
 @ffi.Native<ffi.Void Function(ffi.Int)>()
 external void llama_dart_set_log_level(int level);
 
@@ -7622,14 +7699,14 @@ external ffi.Pointer<llama_context> llama_dart_mtp_get_draft_context(
   ffi.Bool Function(
     ffi.Pointer<llama_dart_mtp>,
     llama_seq_id,
-    ffi.Pointer<ffi.Int32>,
+    ffi.Pointer<llama_token>,
     ffi.Int32,
   )
 >()
 external bool llama_dart_mtp_begin(
   ffi.Pointer<llama_dart_mtp> mtp,
   int seq_id,
-  ffi.Pointer<ffi.Int32> prompt,
+  ffi.Pointer<llama_token> prompt,
   int prompt_count,
 );
 
@@ -7645,10 +7722,10 @@ external bool llama_dart_mtp_process_batch(
     llama_seq_id,
     llama_pos,
     llama_token,
-    ffi.Pointer<ffi.Int32>,
+    ffi.Pointer<llama_token>,
     ffi.Int32,
     ffi.Int32,
-    ffi.Pointer<ffi.Int32>,
+    ffi.Pointer<llama_token>,
     ffi.Int32,
   )
 >()
@@ -7657,10 +7734,10 @@ external int llama_dart_mtp_draft(
   int seq_id,
   int n_past,
   int id_last,
-  ffi.Pointer<ffi.Int32> prompt,
+  ffi.Pointer<llama_token> prompt,
   int prompt_count,
   int draft_token_max,
-  ffi.Pointer<ffi.Int32> out_tokens,
+  ffi.Pointer<llama_token> out_tokens,
   int out_capacity,
 );
 
@@ -7679,9 +7756,9 @@ external void llama_dart_mtp_accept(
     ffi.Pointer<llama_context>,
     ffi.Pointer<ffi.Int32>,
     ffi.Int32,
-    ffi.Pointer<ffi.Int32>,
+    ffi.Pointer<llama_token>,
     ffi.Int32,
-    ffi.Pointer<ffi.Int32>,
+    ffi.Pointer<llama_token>,
     ffi.Int32,
   )
 >()
@@ -7690,9 +7767,9 @@ external int llama_dart_sampler_sample_and_accept_n(
   ffi.Pointer<llama_context> ctx,
   ffi.Pointer<ffi.Int32> idxs,
   int idx_count,
-  ffi.Pointer<ffi.Int32> draft_tokens,
+  ffi.Pointer<llama_token> draft_tokens,
   int draft_count,
-  ffi.Pointer<ffi.Int32> out_tokens,
+  ffi.Pointer<llama_token> out_tokens,
   int out_capacity,
 );
 
@@ -7701,8 +7778,6 @@ final class llama_vocab extends ffi.Opaque {}
 final class llama_model extends ffi.Opaque {}
 
 final class llama_context extends ffi.Opaque {}
-
-final class llama_dart_mtp extends ffi.Opaque {}
 
 typedef llama_token = ffi.Int32;
 typedef Dartllama_token = int;
@@ -8791,6 +8866,8 @@ final class llama_context_params extends ffi.Struct {
 
   @ffi.Size()
   external int n_samplers;
+
+  external ffi.Pointer<llama_context> ctx_other;
 }
 
 final class llama_model_tensor_override extends ffi.Struct {
@@ -8920,89 +8997,91 @@ typedef llama_model_set_tensor_data_t =
 
 final class gguf_context extends ffi.Opaque {}
 
-final class __sbuf extends ffi.Struct {
-  external ffi.Pointer<ffi.UnsignedChar> _base;
+final class _IO_marker extends ffi.Opaque {}
 
+typedef __off_t = ffi.Long;
+typedef Dart__off_t = int;
+typedef _IO_lock_t = ffi.Void;
+typedef Dart_IO_lock_t = void;
+typedef __off64_t = ffi.Long;
+typedef Dart__off64_t = int;
+
+final class _IO_codecvt extends ffi.Opaque {}
+
+final class _IO_wide_data extends ffi.Opaque {}
+
+final class _IO_FILE extends ffi.Struct {
   @ffi.Int()
-  external int _size;
-}
-
-typedef __int64_t = ffi.LongLong;
-typedef Dart__int64_t = int;
-typedef __darwin_off_t = __int64_t;
-typedef fpos_t = __darwin_off_t;
-
-final class __sFILEX extends ffi.Opaque {}
-
-final class __sFILE extends ffi.Struct {
-  external ffi.Pointer<ffi.UnsignedChar> _p;
-
-  @ffi.Int()
-  external int _r;
-
-  @ffi.Int()
-  external int _w;
-
-  @ffi.Short()
   external int _flags;
 
-  @ffi.Short()
-  external int _file;
+  external ffi.Pointer<ffi.Char> _IO_read_ptr;
 
-  external __sbuf _bf;
+  external ffi.Pointer<ffi.Char> _IO_read_end;
 
-  @ffi.Int()
-  external int _lbfsize;
+  external ffi.Pointer<ffi.Char> _IO_read_base;
 
-  external ffi.Pointer<ffi.Void> _cookie;
+  external ffi.Pointer<ffi.Char> _IO_write_base;
 
-  external ffi.Pointer<
-    ffi.NativeFunction<ffi.Int Function(ffi.Pointer<ffi.Void>)>
-  >
-  _close;
+  external ffi.Pointer<ffi.Char> _IO_write_ptr;
 
-  external ffi.Pointer<
-    ffi.NativeFunction<
-      ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>, ffi.Int)
-    >
-  >
-  _read;
+  external ffi.Pointer<ffi.Char> _IO_write_end;
 
-  external ffi.Pointer<
-    ffi.NativeFunction<fpos_t Function(ffi.Pointer<ffi.Void>, fpos_t, ffi.Int)>
-  >
-  _seek;
+  external ffi.Pointer<ffi.Char> _IO_buf_base;
 
-  external ffi.Pointer<
-    ffi.NativeFunction<
-      ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>, ffi.Int)
-    >
-  >
-  _write;
+  external ffi.Pointer<ffi.Char> _IO_buf_end;
 
-  external __sbuf _ub;
+  external ffi.Pointer<ffi.Char> _IO_save_base;
 
-  external ffi.Pointer<__sFILEX> _extra;
+  external ffi.Pointer<ffi.Char> _IO_backup_base;
+
+  external ffi.Pointer<ffi.Char> _IO_save_end;
+
+  external ffi.Pointer<_IO_marker> _markers;
+
+  external ffi.Pointer<_IO_FILE> _chain;
 
   @ffi.Int()
-  external int _ur;
+  external int _fileno;
 
-  @ffi.Array.multi([3])
-  external ffi.Array<ffi.UnsignedChar> _ubuf;
+  @ffi.Int()
+  external int _flags2;
+
+  @__off_t()
+  external int _old_offset;
+
+  @ffi.UnsignedShort()
+  external int _cur_column;
+
+  @ffi.SignedChar()
+  external int _vtable_offset;
 
   @ffi.Array.multi([1])
-  external ffi.Array<ffi.UnsignedChar> _nbuf;
+  external ffi.Array<ffi.Char> _shortbuf;
 
-  external __sbuf _lb;
+  external ffi.Pointer<_IO_lock_t> _lock;
+
+  @__off64_t()
+  external int _offset;
+
+  external ffi.Pointer<_IO_codecvt> _codecvt;
+
+  external ffi.Pointer<_IO_wide_data> _wide_data;
+
+  external ffi.Pointer<_IO_FILE> _freeres_list;
+
+  external ffi.Pointer<ffi.Void> _freeres_buf;
+
+  @ffi.Size()
+  external int __pad5;
 
   @ffi.Int()
-  external int _blksize;
+  external int _mode;
 
-  @fpos_t()
-  external int _offset;
+  @ffi.Array.multi([20])
+  external ffi.Array<ffi.Char> _unused2;
 }
 
-typedef FILE = __sFILE;
+typedef FILE = _IO_FILE;
 typedef llama_state_seq_flags = ffi.Uint32;
 typedef Dartllama_state_seq_flags = int;
 
@@ -10011,6 +10090,23 @@ final class mtmd_context_params extends ffi.Struct {
   external ffi.Pointer<ffi.Void> cb_eval_user_data;
 }
 
+typedef mtmd_bitmap_lazy_callbackFunction =
+    ffi.Int Function(
+      ffi.Size chunk_idx,
+      ffi.Pointer<ffi.Void> user_data,
+      ffi.Pointer<ffi.Pointer<mtmd_bitmap>> out_bitmap,
+      ffi.Pointer<ffi.Pointer<ffi.Char>> out_text,
+    );
+typedef Dartmtmd_bitmap_lazy_callbackFunction =
+    int Function(
+      int chunk_idx,
+      ffi.Pointer<ffi.Void> user_data,
+      ffi.Pointer<ffi.Pointer<mtmd_bitmap>> out_bitmap,
+      ffi.Pointer<ffi.Pointer<ffi.Char>> out_text,
+    );
+typedef mtmd_bitmap_lazy_callback =
+    ffi.Pointer<ffi.NativeFunction<mtmd_bitmap_lazy_callbackFunction>>;
+
 final class mtmd_decoder_pos extends ffi.Struct {
   @ffi.Uint32()
   external int t;
@@ -10032,6 +10128,40 @@ final class mtmd_caps extends ffi.Struct {
   @ffi.Bool()
   external bool inp_audio;
 }
+
+final class mtmd_helper_video extends ffi.Opaque {}
+
+final class mtmd_helper_bitmap_wrapper extends ffi.Struct {
+  external ffi.Pointer<mtmd_bitmap> bitmap;
+
+  external ffi.Pointer<mtmd_helper_video> video_ctx;
+}
+
+final class mtmd_helper_video_info extends ffi.Struct {
+  @ffi.Uint32()
+  external int width;
+
+  @ffi.Uint32()
+  external int height;
+
+  @ffi.Float()
+  external double fps;
+
+  @ffi.Int32()
+  external int n_frames;
+}
+
+final class mtmd_helper_video_init_params extends ffi.Struct {
+  @ffi.Float()
+  external double fps_target;
+
+  external ffi.Pointer<ffi.Char> ffmpeg_bin_dir;
+
+  @ffi.Int64()
+  external int timestamp_interval_ms;
+}
+
+final class llama_dart_mtp extends ffi.Opaque {}
 
 const int LLAMA_DEFAULT_SEED = 4294967295;
 
