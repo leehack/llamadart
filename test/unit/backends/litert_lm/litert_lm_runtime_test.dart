@@ -5,6 +5,7 @@ import 'dart:ffi';
 import 'dart:io';
 
 import 'package:llamadart/src/backends/litert_lm/litert_lm_runtime.dart';
+import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
 
 void main() {
@@ -103,7 +104,7 @@ void main() {
 ''');
 
     expect(liteRtLmPackageRootsFromPackageConfig(packageConfig), [
-      packageRoot.absolute.path,
+      path.normalize(packageRoot.absolute.path),
     ]);
   });
 
