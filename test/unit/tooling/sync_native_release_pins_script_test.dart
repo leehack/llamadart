@@ -1,6 +1,7 @@
 @TestOn('vm')
 library;
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -83,7 +84,7 @@ const _litertLmBundleSpecs = <_LiteRtLmBundleSpec>[
       },
     );
 
-    final result = await Process.run('python3', [
+    final result = await _runPython([
       'tool/native/sync_native_release_pins.py',
       '--repo-root',
       root.path,
@@ -182,6 +183,40 @@ const _litertLmBundleSpecs = <_LiteRtLmBundleSpec>[
     );
     expect(litertChangelog, isNot(contains('## Unreleased')));
   });
+}
+
+Future<ProcessResult> _runPython(List<String> arguments) async {
+  final executable = Platform.isWindows ? 'python' : 'python3';
+  final process = await Process.start(executable, arguments);
+  final stdout = StringBuffer();
+  final stderr = StringBuffer();
+  final stdoutDone = process.stdout
+      .transform(utf8.decoder)
+      .forEach(stdout.write);
+  final stderrDone = process.stderr
+      .transform(utf8.decoder)
+      .forEach(stderr.write);
+
+  late final int exitCode;
+  try {
+    exitCode = await process.exitCode.timeout(const Duration(seconds: 20));
+  } on TimeoutException {
+    process.kill(ProcessSignal.sigkill);
+    await process.exitCode;
+    await Future.wait([stdoutDone, stderrDone]);
+    fail(
+      '$executable ${arguments.join(' ')} timed out.\n'
+      'stdout:\n$stdout\nstderr:\n$stderr',
+    );
+  }
+
+  await Future.wait([stdoutDone, stderrDone]);
+  return ProcessResult(
+    process.pid,
+    exitCode,
+    stdout.toString(),
+    stderr.toString(),
+  );
 }
 
 Future<void> _writePackageSwift(
