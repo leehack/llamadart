@@ -48,7 +48,6 @@ const _litertLmBundleSpecs = <_LiteRtLmBundleSpec>[
       root,
       'packages/llamadart_llama_cpp_flutter',
       'leehack/llamadart-native',
-      includeExistingUnreleasedEntry: true,
     );
     await _writeCompanionDocs(
       root,
@@ -126,9 +125,15 @@ const _litertLmBundleSpecs = <_LiteRtLmBundleSpec>[
         '`leehack/llamadart-native@$llamaTag`.',
       ),
     );
+    expect(llamaReadme, contains('llamadart_llama_cpp_flutter: ^0.0.2'));
+    final llamaPubspec = await File(
+      path.join(root.path, 'packages/llamadart_llama_cpp_flutter/pubspec.yaml'),
+    ).readAsString();
+    expect(llamaPubspec, contains('version: 0.0.2'));
     final llamaChangelog = await File(
       path.join(root.path, 'packages/llamadart_llama_cpp_flutter/CHANGELOG.md'),
     ).readAsString();
+    expect(llamaChangelog, startsWith('## 0.0.2'));
     expect(
       llamaChangelog,
       contains(
@@ -136,7 +141,7 @@ const _litertLmBundleSpecs = <_LiteRtLmBundleSpec>[
         '`leehack/llamadart-native@$llamaTag`.',
       ),
     );
-    expect(llamaChangelog, isNot(contains('stale')));
+    expect(llamaChangelog, isNot(contains('## Unreleased')));
 
     final litertSwift = await File(
       path.join(
@@ -159,10 +164,15 @@ const _litertLmBundleSpecs = <_LiteRtLmBundleSpec>[
         '`leehack/litert-lm-native@$litertTag`.',
       ),
     );
+    expect(litertReadme, contains('llamadart_litert_lm_flutter: ^0.0.2'));
+    final litertPubspec = await File(
+      path.join(root.path, 'packages/llamadart_litert_lm_flutter/pubspec.yaml'),
+    ).readAsString();
+    expect(litertPubspec, contains('version: 0.0.2'));
     final litertChangelog = await File(
       path.join(root.path, 'packages/llamadart_litert_lm_flutter/CHANGELOG.md'),
     ).readAsString();
-    expect(litertChangelog, startsWith('## Unreleased'));
+    expect(litertChangelog, startsWith('## 0.0.2'));
     expect(
       litertChangelog,
       contains(
@@ -170,6 +180,7 @@ const _litertLmBundleSpecs = <_LiteRtLmBundleSpec>[
         '`leehack/litert-lm-native@$litertTag`.',
       ),
     );
+    expect(litertChangelog, isNot(contains('## Unreleased')));
   });
 }
 
@@ -200,26 +211,25 @@ ${targetNames.map((target) => '''
 Future<void> _writeCompanionDocs(
   Directory root,
   String relativePackagePath,
-  String repo, {
-  bool includeExistingUnreleasedEntry = false,
-}) async {
+  String repo,
+) async {
   final packageDir = Directory(path.join(root.path, relativePackagePath));
   await packageDir.create(recursive: true);
+  final packageName = path.basename(relativePackagePath);
+  await File(path.join(packageDir.path, 'pubspec.yaml')).writeAsString('''
+name: $packageName
+version: 0.0.1
+''');
   await File(path.join(packageDir.path, 'README.md')).writeAsString('''
 # Test package
 
+dependencies:
+  $packageName: ^0.0.1
+
 The Apple SwiftPM manifest pins `$repo@old`.
 ''');
-  final unreleased = includeExistingUnreleasedEntry
-      ? '''
-## Unreleased
-
-* Updated Apple SwiftPM native pin to `$repo@stale`.
-
-'''
-      : '';
   await File(path.join(packageDir.path, 'CHANGELOG.md')).writeAsString('''
-$unreleased## 0.8.0
+## 0.0.1
 
 * Initial package.
 ''');

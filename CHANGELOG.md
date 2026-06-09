@@ -9,6 +9,9 @@
   * Removed Flutter plugin metadata from `llamadart` so pure Dart/native-assets
     consumers can keep using the core package without taking a Flutter SDK
     constraint.
+  * Started the companion packages at `0.0.1`; native pin sync bumps only the
+    affected companion package patch version and publish automation skips
+    companion versions that already exist on pub.dev.
   * Changed unset or empty `llamadart_native_runtimes` to include all available
     runtime families. For Flutter iOS/macOS app builds, installed companion
     packages decide Apple SPM runtimes; for every other build,

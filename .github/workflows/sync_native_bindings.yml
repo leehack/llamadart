@@ -75,7 +75,7 @@ jobs:
             - Regenerates `lib/src/backends/llama_cpp/bindings.dart` via ffigen.
             - Updates LiteRT-LM runtime archive checksums when `litert_lm_tag` is not `keep`.
             - Updates Apple SPM companion `Package.swift` binary target pins in `packages/`.
-            - Updates companion package README and CHANGELOG native pin notes when SPM pins change.
+            - Bumps companion package patch versions and updates their README/CHANGELOG native pin notes when SPM pins change.
 
             Native version checklist:
             - [ ] Confirm `leehack/llamadart-native` release `${{ steps.sync_headers.outputs.resolved_tag }}` includes the required native-assets archives.
@@ -86,9 +86,11 @@ jobs:
           add-paths: |
             hook/build.dart
             packages/llamadart_llama_cpp_flutter/darwin/llamadart_llama_cpp_flutter/Package.swift
+            packages/llamadart_llama_cpp_flutter/pubspec.yaml
             packages/llamadart_llama_cpp_flutter/CHANGELOG.md
             packages/llamadart_llama_cpp_flutter/README.md
             packages/llamadart_litert_lm_flutter/darwin/llamadart_litert_lm_flutter/Package.swift
+            packages/llamadart_litert_lm_flutter/pubspec.yaml
             packages/llamadart_litert_lm_flutter/CHANGELOG.md
             packages/llamadart_litert_lm_flutter/README.md
             lib/src/backends/llama_cpp/bindings.dart

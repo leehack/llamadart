@@ -32,22 +32,14 @@ jobs:
         env:
           PACKAGE_NAME: ${{ matrix.package.name }}
           PACKAGE_PATH: ${{ matrix.package.path }}
-          TAG_NAME: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          tag_version="${TAG_NAME#v}"
           package_version="$(awk '/^version:[[:space:]]*/ {print $2; exit}' "$PACKAGE_PATH/pubspec.yaml")"
           if [ -z "$package_version" ]; then
             echo "$PACKAGE_PATH/pubspec.yaml does not contain a version" >&2
             exit 1
           fi
           echo "package_version=$package_version" >> "$GITHUB_OUTPUT"
-
-          if [ "$package_version" != "$tag_version" ]; then
-            echo "should_publish=false" >> "$GITHUB_OUTPUT"
-            echo "$PACKAGE_NAME version $package_version does not match tag $tag_version; skipping companion publish."
-            exit 0
-          fi
 
           status="$(
             curl -sS -o "$RUNNER_TEMP/pubdev-version.json" -w '%{http_code}' \

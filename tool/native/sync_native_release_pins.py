@@ -88,7 +88,10 @@ def main() -> int:
                 release,
                 f"llamadart-native-apple-xcframework-{resolved_llama_cpp_tag}.zip",
             )
-            swift_text = llama_cpp_package_swift_path.read_text(encoding="utf-8")
+            original_swift_text = llama_cpp_package_swift_path.read_text(
+                encoding="utf-8"
+            )
+            swift_text = original_swift_text
             swift_text = replace_one(
                 swift_text,
                 r'let llamaCppTag = "[^"]+"',
@@ -101,11 +104,12 @@ def main() -> int:
                 checksum,
             )
             pending_writes[llama_cpp_package_swift_path] = swift_text
-            update_companion_package_docs(
+            update_companion_package_metadata(
                 pending_writes,
                 companion_package_root(llama_cpp_package_swift_path),
                 args.llamadart_native_repo,
                 resolved_llama_cpp_tag,
+                bump_version=swift_text != original_swift_text,
             )
 
         summaries.append(
@@ -139,7 +143,10 @@ def main() -> int:
             )
 
         if litert_lm_package_swift_path.exists():
-            swift_text = litert_lm_package_swift_path.read_text(encoding="utf-8")
+            original_swift_text = litert_lm_package_swift_path.read_text(
+                encoding="utf-8"
+            )
+            swift_text = original_swift_text
             swift_text = replace_one(
                 swift_text,
                 r'let liteRtLmTag = "[^"]+"',
@@ -157,11 +164,12 @@ def main() -> int:
                     checksum,
                 )
             pending_writes[litert_lm_package_swift_path] = swift_text
-            update_companion_package_docs(
+            update_companion_package_metadata(
                 pending_writes,
                 companion_package_root(litert_lm_package_swift_path),
                 args.litert_lm_native_repo,
                 resolved_litert_lm_tag,
+                bump_version=swift_text != original_swift_text,
             )
 
         summaries.append(
@@ -398,37 +406,108 @@ def companion_package_root(package_swift_path: Path) -> Path:
         ) from error
 
 
-def update_companion_package_docs(
+def update_companion_package_metadata(
     pending_writes: dict[Path, str],
     package_root: Path,
     repo: str,
     tag: str,
+    *,
+    bump_version: bool,
 ) -> None:
+    pubspec_path = package_root / "pubspec.yaml"
     readme_path = package_root / "README.md"
     changelog_path = package_root / "CHANGELOG.md"
+    if not pubspec_path.exists():
+        raise ReleaseError(f"Missing companion package pubspec {pubspec_path}")
     if not readme_path.exists():
         raise ReleaseError(f"Missing companion package README {readme_path}")
     if not changelog_path.exists():
         raise ReleaseError(f"Missing companion package CHANGELOG {changelog_path}")
 
+    pubspec_text = pubspec_path.read_text(encoding="utf-8")
+    current_version = companion_pubspec_version(pubspec_text, pubspec_path)
+    next_version = (
+        bump_patch_version(current_version) if bump_version else current_version
+    )
+    if bump_version:
+        pending_writes[pubspec_path] = replace_pubspec_version(
+            pubspec_text,
+            next_version,
+            pubspec_path,
+        )
+
     readme_text = readme_path.read_text(encoding="utf-8")
-    pending_writes[readme_path] = replace_one(
+    readme_text = replace_one(
         readme_text,
         r"The Apple SwiftPM manifest pins `[^`]+`\.",
         f"The Apple SwiftPM manifest pins `{repo}@{tag}`.",
         f"{package_root.name} README native pin",
     )
-
-    changelog_text = changelog_path.read_text(encoding="utf-8")
-    pending_writes[changelog_path] = upsert_unreleased_changelog_entry(
-        changelog_text,
-        f"* Updated Apple SwiftPM native pin to `{repo}@{tag}`.",
-        repo,
+    readme_text = replace_readme_dependency_version(
+        readme_text,
+        package_root.name,
+        next_version,
     )
+    pending_writes[readme_path] = readme_text
+
+    if bump_version:
+        changelog_text = changelog_path.read_text(encoding="utf-8")
+        pending_writes[changelog_path] = prepend_companion_changelog_release(
+            changelog_text,
+            next_version,
+            f"* Updated Apple SwiftPM native pin to `{repo}@{tag}`.",
+            repo,
+        )
 
 
-def upsert_unreleased_changelog_entry(
+def companion_pubspec_version(pubspec_text: str, pubspec_path: Path) -> str:
+    match = re.search(
+        r"^version:\s*([0-9]+\.[0-9]+\.[0-9]+)\s*$",
+        pubspec_text,
+        re.MULTILINE,
+    )
+    if not match:
+        raise ReleaseError(f"Could not read semver version from {pubspec_path}")
+    return match.group(1)
+
+
+def bump_patch_version(version: str) -> str:
+    major, minor, patch = version.split(".")
+    return f"{major}.{minor}.{int(patch) + 1}"
+
+
+def replace_pubspec_version(
+    pubspec_text: str,
+    version: str,
+    pubspec_path: Path,
+) -> str:
+    updated, count = re.subn(
+        r"^version:\s*[0-9]+\.[0-9]+\.[0-9]+\s*$",
+        f"version: {version}",
+        pubspec_text,
+        count=1,
+        flags=re.MULTILINE,
+    )
+    if count != 1:
+        raise ReleaseError(f"Could not replace version in {pubspec_path}")
+    return updated
+
+
+def replace_readme_dependency_version(
+    readme_text: str,
+    package_name: str,
+    version: str,
+) -> str:
+    pattern = rf"(\s{re.escape(package_name)}:\s*\^)[0-9]+\.[0-9]+\.[0-9]+"
+    updated, count = re.subn(pattern, rf"\g<1>{version}", readme_text, count=1)
+    if count != 1:
+        raise ReleaseError(f"Could not replace {package_name} README version")
+    return updated
+
+
+def prepend_companion_changelog_release(
     changelog_text: str,
+    version: str,
     entry: str,
     repo: str,
 ) -> str:
@@ -436,9 +515,12 @@ def upsert_unreleased_changelog_entry(
         rf"^\* Updated Apple SwiftPM native pin to `{re.escape(repo)}@[^`]+`\.\n?",
         re.MULTILINE,
     )
-    heading_match = re.search(r"(?m)^## Unreleased\s*\n+", changelog_text)
+    heading_match = re.search(
+        rf"(?m)^## {re.escape(version)}\s*\n+",
+        changelog_text,
+    )
     if not heading_match:
-        return f"## Unreleased\n\n{entry}\n\n{changelog_text.lstrip()}"
+        return f"## {version}\n\n{entry}\n\n{changelog_text.lstrip()}"
 
     body_start = heading_match.end()
     next_heading = re.search(r"(?m)^##\s+", changelog_text[body_start:])
