@@ -101,6 +101,12 @@ def main() -> int:
                 checksum,
             )
             pending_writes[llama_cpp_package_swift_path] = swift_text
+            update_companion_package_docs(
+                pending_writes,
+                companion_package_root(llama_cpp_package_swift_path),
+                args.llamadart_native_repo,
+                resolved_llama_cpp_tag,
+            )
 
         summaries.append(
             f"llama.cpp -> {args.llamadart_native_repo}@{resolved_llama_cpp_tag}"
@@ -151,6 +157,12 @@ def main() -> int:
                     checksum,
                 )
             pending_writes[litert_lm_package_swift_path] = swift_text
+            update_companion_package_docs(
+                pending_writes,
+                companion_package_root(litert_lm_package_swift_path),
+                args.litert_lm_native_repo,
+                resolved_litert_lm_tag,
+            )
 
         summaries.append(
             f"LiteRT-LM -> {args.litert_lm_native_repo}@{resolved_litert_lm_tag}"
@@ -375,6 +387,69 @@ def replace_swift_binary_target_checksum(
     if count != 1:
         raise ReleaseError(f"Could not replace Package.swift checksum for {target_name}")
     return updated
+
+
+def companion_package_root(package_swift_path: Path) -> Path:
+    try:
+        return package_swift_path.parents[2]
+    except IndexError as error:
+        raise ReleaseError(
+            f"Could not infer companion package root from {package_swift_path}"
+        ) from error
+
+
+def update_companion_package_docs(
+    pending_writes: dict[Path, str],
+    package_root: Path,
+    repo: str,
+    tag: str,
+) -> None:
+    readme_path = package_root / "README.md"
+    changelog_path = package_root / "CHANGELOG.md"
+    if not readme_path.exists():
+        raise ReleaseError(f"Missing companion package README {readme_path}")
+    if not changelog_path.exists():
+        raise ReleaseError(f"Missing companion package CHANGELOG {changelog_path}")
+
+    readme_text = readme_path.read_text(encoding="utf-8")
+    pending_writes[readme_path] = replace_one(
+        readme_text,
+        r"The Apple SwiftPM manifest pins `[^`]+`\.",
+        f"The Apple SwiftPM manifest pins `{repo}@{tag}`.",
+        f"{package_root.name} README native pin",
+    )
+
+    changelog_text = changelog_path.read_text(encoding="utf-8")
+    pending_writes[changelog_path] = upsert_unreleased_changelog_entry(
+        changelog_text,
+        f"* Updated Apple SwiftPM native pin to `{repo}@{tag}`.",
+        repo,
+    )
+
+
+def upsert_unreleased_changelog_entry(
+    changelog_text: str,
+    entry: str,
+    repo: str,
+) -> str:
+    old_entry_pattern = re.compile(
+        rf"^\* Updated Apple SwiftPM native pin to `{re.escape(repo)}@[^`]+`\.\n?",
+        re.MULTILINE,
+    )
+    heading_match = re.search(r"(?m)^## Unreleased\s*\n+", changelog_text)
+    if not heading_match:
+        return f"## Unreleased\n\n{entry}\n\n{changelog_text.lstrip()}"
+
+    body_start = heading_match.end()
+    next_heading = re.search(r"(?m)^##\s+", changelog_text[body_start:])
+    body_end = (
+        body_start + next_heading.start() if next_heading else len(changelog_text)
+    )
+    body = old_entry_pattern.sub("", changelog_text[body_start:body_end]).strip()
+    new_body = f"{entry}\n\n"
+    if body:
+        new_body = f"{entry}\n\n{body}\n\n"
+    return changelog_text[:body_start] + new_body + changelog_text[body_end:]
 
 
 def write_github_output(values: dict[str, str]) -> None:

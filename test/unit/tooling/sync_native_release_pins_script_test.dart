@@ -44,6 +44,17 @@ const _litertLmBundleSpecs = <_LiteRtLmBundleSpec>[
       'liteRtLmTag',
       _litertAppleTargets.keys,
     );
+    await _writeCompanionDocs(
+      root,
+      'packages/llamadart_llama_cpp_flutter',
+      'leehack/llamadart-native',
+      includeExistingUnreleasedEntry: true,
+    );
+    await _writeCompanionDocs(
+      root,
+      'packages/llamadart_litert_lm_flutter',
+      'leehack/litert-lm-native',
+    );
 
     const llamaTag = 'b9999';
     const litertTag = 'v9.9.9';
@@ -105,6 +116,27 @@ const _litertLmBundleSpecs = <_LiteRtLmBundleSpec>[
     ).readAsString();
     expect(llamaSwift, contains('let llamaCppTag = "$llamaTag"'));
     expect(llamaSwift, contains('checksum: "$llamaAppleChecksum"'));
+    final llamaReadme = await File(
+      path.join(root.path, 'packages/llamadart_llama_cpp_flutter/README.md'),
+    ).readAsString();
+    expect(
+      llamaReadme,
+      contains(
+        'The Apple SwiftPM manifest pins '
+        '`leehack/llamadart-native@$llamaTag`.',
+      ),
+    );
+    final llamaChangelog = await File(
+      path.join(root.path, 'packages/llamadart_llama_cpp_flutter/CHANGELOG.md'),
+    ).readAsString();
+    expect(
+      llamaChangelog,
+      contains(
+        '* Updated Apple SwiftPM native pin to '
+        '`leehack/llamadart-native@$llamaTag`.',
+      ),
+    );
+    expect(llamaChangelog, isNot(contains('stale')));
 
     final litertSwift = await File(
       path.join(
@@ -117,6 +149,27 @@ const _litertLmBundleSpecs = <_LiteRtLmBundleSpec>[
     for (final checksum in litertAppleChecksums.values) {
       expect(litertSwift, contains('checksum: "$checksum"'));
     }
+    final litertReadme = await File(
+      path.join(root.path, 'packages/llamadart_litert_lm_flutter/README.md'),
+    ).readAsString();
+    expect(
+      litertReadme,
+      contains(
+        'The Apple SwiftPM manifest pins '
+        '`leehack/litert-lm-native@$litertTag`.',
+      ),
+    );
+    final litertChangelog = await File(
+      path.join(root.path, 'packages/llamadart_litert_lm_flutter/CHANGELOG.md'),
+    ).readAsString();
+    expect(litertChangelog, startsWith('## Unreleased'));
+    expect(
+      litertChangelog,
+      contains(
+        '* Updated Apple SwiftPM native pin to '
+        '`leehack/litert-lm-native@$litertTag`.',
+      ),
+    );
   });
 }
 
@@ -141,6 +194,34 @@ ${targetNames.map((target) => '''
 ''').join()}
     ]
 )
+''');
+}
+
+Future<void> _writeCompanionDocs(
+  Directory root,
+  String relativePackagePath,
+  String repo, {
+  bool includeExistingUnreleasedEntry = false,
+}) async {
+  final packageDir = Directory(path.join(root.path, relativePackagePath));
+  await packageDir.create(recursive: true);
+  await File(path.join(packageDir.path, 'README.md')).writeAsString('''
+# Test package
+
+The Apple SwiftPM manifest pins `$repo@old`.
+''');
+  final unreleased = includeExistingUnreleasedEntry
+      ? '''
+## Unreleased
+
+* Updated Apple SwiftPM native pin to `$repo@stale`.
+
+'''
+      : '';
+  await File(path.join(packageDir.path, 'CHANGELOG.md')).writeAsString('''
+$unreleased## 0.8.0
+
+* Initial package.
 ''');
 }
 

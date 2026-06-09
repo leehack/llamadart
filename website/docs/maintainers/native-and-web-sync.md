@@ -29,8 +29,9 @@ Preferred in-repo workflow:
 - `.github/workflows/sync_native_bindings.yml`
 
 That workflow syncs llama.cpp headers, regenerates ffigen bindings, updates the
-native hook pins, and opens a PR. The `native_tag` input controls the
-`llamadart-native` release. The `litert_lm_tag` input defaults to `keep`; set it to a
+native hook pins, updates companion package SPM pins plus README/CHANGELOG pin
+notes, and opens a PR. The `native_tag` input controls the `llamadart-native`
+release. The `litert_lm_tag` input defaults to `keep`; set it to a
 `litert-lm-native` tag or `latest` only when the LiteRT-LM native release should
 move in the same PR.
 
@@ -62,6 +63,8 @@ Use this checklist in native sync PRs:
   `tool/native/sync_native_release_pins.py`.
 - Update companion package `Package.swift` URL/checksum pins under `packages/`
   when Apple XCFramework releases changed.
+- Ensure each changed companion package README and CHANGELOG names the new
+  native repo tag.
 - Regenerate `lib/src/backends/llama_cpp/bindings.dart` whenever the
   `llamadart-native` header bundle changed.
 - Update public docs that mention the pinned native versions or source table.

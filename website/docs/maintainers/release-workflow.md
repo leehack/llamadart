@@ -25,6 +25,8 @@ version alignment:
 
 - `hook/build.dart` native-assets pins and companion package `Package.swift`
   Apple SPM pins should reference compatible native repo releases.
+- Companion package README and CHANGELOG files should name the native repo tags
+  they publish.
 - `llamadart-native` owns llama.cpp bridge artifacts for native-assets and
   Apple SPM-compatible companion packages.
 - `litert-lm-native` owns LiteRT-LM bridge artifacts for native-assets and
