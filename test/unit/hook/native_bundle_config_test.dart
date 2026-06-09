@@ -353,6 +353,62 @@ void main() {
       expect(selected, [nativeRuntimeLiteRtLm]);
       expect(warnings.single, contains('onnx'));
     });
+
+    test('tracks explicit runtime requests separately from all/defaults', () {
+      for (final rawUserConfig in const [
+        null,
+        '',
+        <String>[],
+        'all',
+        ['both'],
+        {'runtimes': <String>[]},
+      ]) {
+        expect(
+          nativeRuntimeExplicitlySelectedForBundle(
+            bundle: 'ios-x86_64-sim',
+            rawUserConfig: rawUserConfig,
+            runtime: nativeRuntimeLiteRtLm,
+          ),
+          isFalse,
+          reason: rawUserConfig.toString(),
+        );
+      }
+
+      expect(
+        nativeRuntimeExplicitlySelectedForBundle(
+          bundle: 'ios-x86_64-sim',
+          rawUserConfig: ['litert_lm'],
+          runtime: nativeRuntimeLiteRtLm,
+        ),
+        isTrue,
+      );
+      expect(
+        nativeRuntimeExplicitlySelectedForBundle(
+          bundle: 'ios-x86_64-sim',
+          rawUserConfig: {
+            'runtimes': ['litert_lm'],
+            'platforms': {
+              'ios-x86_64-sim': ['all'],
+            },
+          },
+          runtime: nativeRuntimeLiteRtLm,
+        ),
+        isFalse,
+      );
+      expect(
+        nativeRuntimeExplicitlySelectedForBundle(
+          bundle: 'ios-x86_64-sim',
+          rawUserConfig: {
+            'runtimes': ['all'],
+            'platforms': {
+              'ios-x86_64-sim': ['litert_lm'],
+            },
+          },
+          runtime: nativeRuntimeLiteRtLm,
+        ),
+        isTrue,
+      );
+    });
   });
 
   group('selectLibrariesForBundling', () {

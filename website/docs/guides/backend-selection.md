@@ -86,7 +86,7 @@ bundle keys, module availability, and selector names.
 
 Native apps include every available runtime family by default, so one build can
 load GGUF and `.litertlm` models where both runtimes are available. Unset or
-empty `llamadart_native_runtimes` also means all runtimes. Use
+empty `llamadart_native_runtimes` also means all available runtimes. Use
 `llamadart_native_runtimes` when your app needs a different package-size /
 model-format tradeoff:
 
@@ -113,7 +113,7 @@ runtime. It does not enable or disable LiteRT-LM.
 `llamadart_native_runtimes` can also be configured per OS (`ios`, `macos`,
 `android`, `linux`, `windows`) or per exact target (`android-arm64`,
 `linux-x64`, etc.); exact target keys override OS keys. Use `all` or `both` to
-include every runtime family for a target.
+include every available runtime family for a target.
 
 For Flutter iOS/macOS apps, installed companion packages choose the SwiftPM
 runtime families and win over this setting. For non-Flutter projects and

@@ -36,7 +36,7 @@ let package = Package(
     ],
     products: [
         .library(
-            name: "llamadart_litert_lm_flutter",
+            name: "llamadart-litert-lm-flutter",
             type: .dynamic,
             targets: ["llamadart_litert_lm_flutter"]
         )

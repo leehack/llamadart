@@ -36,7 +36,7 @@ let package = Package(
     ],
     products: [
         .library(
-            name: "llamadart_llama_cpp_flutter",
+            name: "llamadart-llama-cpp-flutter",
             type: .dynamic,
             targets: ["llamadart_llama_cpp_flutter"]
         )

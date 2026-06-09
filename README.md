@@ -117,9 +117,9 @@ hooks:
           linux-x64: [llama_cpp]
 ```
 
-Use `all` or `both` to include every runtime family for a target. For Flutter
-iOS/macOS apps, installed companion packages decide the SwiftPM runtimes and
-win over this setting. For non-Flutter projects and non-Apple targets,
+Use `all` or `both` to include every available runtime family for a target. For
+Flutter iOS/macOS apps, installed companion packages decide the SwiftPM runtimes
+and win over this setting. For non-Flutter projects and non-Apple targets,
 `llamadart_native_runtimes` remains the selector even if a companion package is
 accidentally present in the dependency graph.
 

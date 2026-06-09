@@ -229,13 +229,36 @@ void main(List<String> args) async {
       code: code,
       log: log,
     );
-    final selectedRuntimes =
+    var selectedRuntimes =
         appleSpmRuntimes ??
         selectNativeRuntimesForBundle(
           bundle: spec.bundle,
           rawUserConfig: rawNativeRuntimeConfig,
           warn: log.warning,
         );
+    final liteRtLmBundleSpec = _liteRtLmBundleSpecForCode(code);
+    if (selectedRuntimes.contains(nativeRuntimeLiteRtLm) &&
+        liteRtLmBundleSpec == null) {
+      final explicitLiteRtLmSelection =
+          appleSpmRuntimes?.contains(nativeRuntimeLiteRtLm) == true ||
+          nativeRuntimeExplicitlySelectedForBundle(
+            bundle: spec.bundle,
+            rawUserConfig: rawNativeRuntimeConfig,
+            runtime: nativeRuntimeLiteRtLm,
+          );
+      if (explicitLiteRtLmSelection) {
+        throw Exception(
+          'LiteRT-LM runtime is not available for ${spec.bundle}.',
+        );
+      }
+      selectedRuntimes = selectedRuntimes
+          .where((runtime) => runtime != nativeRuntimeLiteRtLm)
+          .toList(growable: false);
+      log.warning(
+        'LiteRT-LM runtime is not available for ${spec.bundle}; using '
+        'available runtime families: ${selectedRuntimes.join(', ')}.',
+      );
+    }
     if (selectedRuntimes.isEmpty) {
       throw Exception(
         'No native runtimes selected for ${spec.bundle}. Configure '
@@ -245,12 +268,6 @@ void main(List<String> args) async {
     final includeLlamaCpp = selectedRuntimes.contains(nativeRuntimeLlamaCpp);
     final includeLiteRtLm = selectedRuntimes.contains(nativeRuntimeLiteRtLm);
     log.info('Selected native runtimes: ${selectedRuntimes.join(', ')}.');
-
-    if (includeLiteRtLm &&
-        _liteRtLmBundleSpecForCode(code) == null &&
-        (rawNativeRuntimeConfig != null || appleSpmRuntimes != null)) {
-      throw Exception('LiteRT-LM runtime is not available for ${spec.bundle}.');
-    }
 
     if (await _emitAppleSpmAssetsIfEnabled(
       output: output,
@@ -603,6 +620,7 @@ bool _pubspecDeclaresFlutter(String source) {
 Set<String> _pubspecDependencyNames(String source) {
   final dependencies = <String>{};
   String? section;
+  int? dependencyIndent;
   for (final rawLine in source.split('\n')) {
     final line = rawLine.split('#').first;
     if (line.trim().isEmpty) {
@@ -612,6 +630,7 @@ Set<String> _pubspecDependencyNames(String source) {
     final topLevel = RegExp(r'^([A-Za-z_][A-Za-z0-9_]*)\s*:').firstMatch(line);
     if (topLevel != null) {
       section = topLevel.group(1);
+      dependencyIndent = null;
       continue;
     }
 
@@ -620,10 +639,14 @@ Set<String> _pubspecDependencyNames(String source) {
     }
 
     final dependency = RegExp(
-      r'^\s+([A-Za-z_][A-Za-z0-9_]*)\s*:',
+      r'^(\s+)([A-Za-z_][A-Za-z0-9_]*)\s*:',
     ).firstMatch(line);
     if (dependency != null) {
-      dependencies.add(dependency.group(1)!);
+      final indent = dependency.group(1)!.length;
+      dependencyIndent ??= indent;
+      if (indent == dependencyIndent) {
+        dependencies.add(dependency.group(2)!);
+      }
     }
   }
   return dependencies;

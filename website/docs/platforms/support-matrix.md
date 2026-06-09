@@ -107,7 +107,7 @@ hooks:
 ```
 
 Accepted aliases include `llama.cpp`, `gguf`, `litert`, and `litert-lm`.
-Use `all` or `both` to include every runtime family for a target.
+Use `all` or `both` to include every available runtime family for a target.
 Explicitly selecting `litert_lm` for a target without a pinned LiteRT-LM
 runtime fails during the build hook instead of producing an app that cannot
 load `.litertlm` models.

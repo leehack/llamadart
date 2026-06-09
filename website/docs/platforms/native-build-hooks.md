@@ -81,7 +81,7 @@ hooks:
 
 Use `llamadart_native_backends` separately to filter llama.cpp modules such as
 Vulkan, CUDA, OpenCL, BLAS, and HIP inside the `llama_cpp` runtime family.
-Use `all` or `both` to include every runtime family for a target.
+Use `all` or `both` to include every available runtime family for a target.
 
 ### Apple Swift Package Manager path
 

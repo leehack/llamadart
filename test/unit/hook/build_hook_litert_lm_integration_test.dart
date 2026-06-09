@@ -396,6 +396,69 @@ void main() {
     },
   );
 
+  test('build hook drops unavailable LiteRT-LM from all selections', () async {
+    for (final userDefines in [
+      _allRuntimeUserDefines(),
+      _emptyRuntimeUserDefines(),
+    ]) {
+      await testCodeBuildHook(
+        mainMethod: build_hook.main,
+        targetOS: OS.iOS,
+        targetArchitecture: Architecture.x64,
+        targetIOSSdk: IOSSdk.iPhoneSimulator,
+        userDefines: userDefines,
+        check: (_, output) {
+          final codeAssets = output.assets.encodedAssets
+              .where((asset) => asset.isCodeAsset)
+              .map((asset) => asset.asCodeAsset)
+              .toList(growable: false);
+
+          expect(codeAssets.map((asset) => asset.id), [
+            'package:llamadart/llamadart',
+          ]);
+          expect(codeAssets.single.linkMode, isA<DynamicLoadingBundled>());
+        },
+      );
+    }
+  });
+
+  test(
+    'build hook ignores nested pubspec keys when detecting companions',
+    () async {
+      await testCodeBuildHook(
+        mainMethod: build_hook.main,
+        targetOS: OS.iOS,
+        targetArchitecture: Architecture.arm64,
+        targetIOSSdk: IOSSdk.iPhoneOS,
+        userDefines: await _flutterAppleUserDefines(
+          dependencies: const [],
+          dependenciesYaml: '''
+  not_a_companion:
+    llamadart_llama_cpp_flutter: true
+''',
+        ),
+        check: (_, output) {
+          final codeAssets = output.assets.encodedAssets
+              .where((asset) => asset.isCodeAsset)
+              .map((asset) => asset.asCodeAsset)
+              .toList(growable: false);
+
+          final codeAssetIds = codeAssets.map((asset) => asset.id).toSet();
+          expect(codeAssetIds, contains('package:llamadart/llamadart'));
+          for (final assetName in _iosLiteRtAssetNames) {
+            expect(codeAssetIds, contains('package:llamadart/$assetName'));
+          }
+          expect(
+            codeAssets.every(
+              (asset) => asset.linkMode is DynamicLoadingBundled,
+            ),
+            isTrue,
+          );
+        },
+      );
+    },
+  );
+
   test(
     'build hook lets runtime config win outside Flutter Apple apps',
     () async {
@@ -426,7 +489,7 @@ void main() {
   );
 
   test(
-    'build hook fails when requested LiteRT-LM runtime is unavailable',
+    'build hook fails when explicitly requested LiteRT-LM is unavailable',
     () async {
       await expectLater(
         testCodeBuildHook(
@@ -434,7 +497,7 @@ void main() {
           targetOS: OS.iOS,
           targetArchitecture: Architecture.x64,
           targetIOSSdk: IOSSdk.iPhoneSimulator,
-          userDefines: _allRuntimeUserDefines(),
+          userDefines: _liteRtLmOnlyUserDefines(),
           check: (_, _) {},
         ),
         throwsA(
@@ -501,6 +564,13 @@ PackageUserDefines _allRuntimeUserDefines() => PackageUserDefines(
   ),
 );
 
+PackageUserDefines _emptyRuntimeUserDefines() => PackageUserDefines(
+  workspacePubspec: PackageUserDefinesSource(
+    defines: {'llamadart_native_runtimes': <String>[]},
+    basePath: Directory.current.uri,
+  ),
+);
+
 Future<PackageUserDefines> _flutterLiteRtLmOnlyUserDefines() {
   return _flutterAppleUserDefines(
     dependencies: const ['llamadart_litert_lm_flutter'],
@@ -544,6 +614,7 @@ ${dependencies.map((dependency) => '  $dependency: ^0.8.0').join('\n')}
 Future<PackageUserDefines> _flutterAppleUserDefines({
   required List<String> dependencies,
   Map<String, Object?> defines = const {},
+  String dependenciesYaml = '',
 }) async {
   final dir = await Directory.systemTemp.createTemp(
     'llamadart_apple_consumer_',
@@ -566,6 +637,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+${dependenciesYaml.trimRight()}
 ${dependencies.map((dependency) => '  $dependency: ^0.8.0').join('\n')}
 ''');
 
