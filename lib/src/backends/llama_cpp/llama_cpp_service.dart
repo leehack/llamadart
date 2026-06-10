@@ -5303,7 +5303,7 @@ class LlamaCppService {
   ) {
     if (!_mtmdPrimarySymbolsUnavailable) {
       try {
-        return mtmd_helper_bitmap_init_from_file(ctx, pathPtr);
+        return mtmd_helper_bitmap_init_from_file(ctx, pathPtr, false).bitmap;
       } on ArgumentError {
         _mtmdPrimarySymbolsUnavailable = true;
       }
@@ -5324,7 +5324,7 @@ class LlamaCppService {
   ) {
     if (!_mtmdPrimarySymbolsUnavailable) {
       try {
-        return mtmd_helper_bitmap_init_from_buf(ctx, data, size);
+        return mtmd_helper_bitmap_init_from_buf(ctx, data, size, false).bitmap;
       } on ArgumentError {
         _mtmdPrimarySymbolsUnavailable = true;
       }
