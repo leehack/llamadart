@@ -83,7 +83,7 @@ else
   fi
 fi
 LLAMADART_DRAFT_MODEL_DEFINE=""
-if [[ -f "$LOCAL_LLAMADART_DRAFT_MODEL" ]]; then
+if [[ "$SPECULATIVE" == "true" && -f "$LOCAL_LLAMADART_DRAFT_MODEL" ]]; then
   LLAMADART_DRAFT_MODEL_DEFINE="$DEVICE_LLAMADART_DRAFT_MODEL"
 elif [[ "$SPECULATIVE" == "true" ]]; then
   echo "No GGUF draft model found for speculative llama.cpp: $LOCAL_LLAMADART_DRAFT_MODEL" >&2
