@@ -25,28 +25,9 @@ DEFAULT_LITERT_LM_PACKAGE_SWIFT = (
     "packages/llamadart_litert_lm_flutter/darwin/"
     "llamadart_litert_lm_flutter/Package.swift"
 )
-
-LITERT_LM_APPLE_TARGETS = {
-    "LiteRtLm": "litert-lm-native-apple-LiteRtLm-xcframework-{tag}.zip",
-    "CLiteRTLM": "litert-lm-native-apple-CLiteRTLM-xcframework-{tag}.zip",
-    "GemmaModelConstraintProvider": (
-        "litert-lm-native-apple-GemmaModelConstraintProvider-"
-        "xcframework-{tag}.zip"
-    ),
-    "LiteRt": "litert-lm-native-apple-LiteRt-xcframework-{tag}.zip",
-    "LiteRtMetalAccelerator": (
-        "litert-lm-native-apple-LiteRtMetalAccelerator-xcframework-{tag}.zip"
-    ),
-    "LiteRtTopKMetalSampler": (
-        "litert-lm-native-apple-LiteRtTopKMetalSampler-xcframework-{tag}.zip"
-    ),
-    "LiteRtTopKWebGpuSampler": (
-        "litert-lm-native-apple-LiteRtTopKWebGpuSampler-xcframework-{tag}.zip"
-    ),
-    "LiteRtWebGpuAccelerator": (
-        "litert-lm-native-apple-LiteRtWebGpuAccelerator-xcframework-{tag}.zip"
-    ),
-}
+DEFAULT_LITERT_LM_RUNTIME_DART = (
+    "lib/src/backends/litert_lm/litert_lm_runtime.dart"
+)
 
 
 class ReleaseError(RuntimeError):
@@ -59,6 +40,7 @@ def main() -> int:
     hook_path = repo_root / args.hook_build
     llama_cpp_package_swift_path = repo_root / args.llama_cpp_package_swift
     litert_lm_package_swift_path = repo_root / args.litert_lm_package_swift
+    litert_lm_runtime_dart_path = repo_root / args.litert_lm_runtime_dart
 
     hook_text = hook_path.read_text(encoding="utf-8")
     pending_writes: dict[Path, str] = {}
@@ -131,6 +113,19 @@ def main() -> int:
             f"const _litertLmVersion = '{litert_version}';",
             "hook LiteRT-LM version",
         )
+        if not litert_lm_runtime_dart_path.exists():
+            raise ReleaseError(
+                f"Missing LiteRT-LM Dart runtime {litert_lm_runtime_dart_path}"
+            )
+        runtime_dart_text = litert_lm_runtime_dart_path.read_text(
+            encoding="utf-8"
+        )
+        pending_writes[litert_lm_runtime_dart_path] = replace_one(
+            runtime_dart_text,
+            r"const _litertLmVersion = '[^']+';",
+            f"const _litertLmVersion = '{litert_version}';",
+            "LiteRT-LM Dart runtime version",
+        )
         for bundle in litert_lm_bundle_names(hook_text):
             checksum = release_asset_checksum(
                 release,
@@ -146,6 +141,16 @@ def main() -> int:
             original_swift_text = litert_lm_package_swift_path.read_text(
                 encoding="utf-8"
             )
+            original_litert_lm_tag = swift_variable_value(
+                original_swift_text,
+                "liteRtLmTag",
+                "LiteRT-LM Package.swift tag",
+            )
+            apple_targets = swift_native_repo_binary_targets(
+                original_swift_text,
+                tag_variable="liteRtLmTag",
+                current_tag=original_litert_lm_tag,
+            )
             swift_text = original_swift_text
             swift_text = replace_one(
                 swift_text,
@@ -153,7 +158,7 @@ def main() -> int:
                 f'let liteRtLmTag = "{resolved_litert_lm_tag}"',
                 "LiteRT-LM Package.swift tag",
             )
-            for target_name, asset_template in LITERT_LM_APPLE_TARGETS.items():
+            for target_name, asset_template in apple_targets:
                 checksum = release_asset_checksum(
                     release,
                     asset_template.format(tag=resolved_litert_lm_tag),
@@ -230,6 +235,14 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Path to the LiteRT-LM Flutter companion Package.swift relative "
             "to repo root. Skipped if the file does not exist."
+        ),
+    )
+    parser.add_argument(
+        "--litert-lm-runtime-dart",
+        default=DEFAULT_LITERT_LM_RUNTIME_DART,
+        help=(
+            "Path to the LiteRT-LM Dart runtime version pin relative "
+            "to repo root."
         ),
     )
     parser.add_argument(
@@ -395,6 +408,59 @@ def replace_swift_binary_target_checksum(
     if count != 1:
         raise ReleaseError(f"Could not replace Package.swift checksum for {target_name}")
     return updated
+
+
+def swift_variable_value(
+    swift_text: str,
+    variable_name: str,
+    description: str,
+) -> str:
+    match = re.search(
+        rf'\blet\s+{re.escape(variable_name)}\s*=\s*"([^"]+)"',
+        swift_text,
+    )
+    if not match:
+        raise ReleaseError(f"Could not read {description}")
+    return match.group(1)
+
+
+def swift_native_repo_binary_targets(
+    swift_text: str,
+    *,
+    tag_variable: str,
+    current_tag: str,
+) -> list[tuple[str, str]]:
+    pattern = re.compile(
+        r'nativeRepoBinaryTarget\(\s*name:\s*"(?P<name>[^"]+)"'
+        r'.*?artifactName:\s*"(?P<artifact_name>[^"]+)"'
+        r'.*?checksum:\s*"[0-9a-f]+"',
+        re.DOTALL,
+    )
+    targets: list[tuple[str, str]] = []
+    for match in pattern.finditer(swift_text):
+        artifact_template = swift_artifact_template(
+            match.group("artifact_name"),
+            tag_variable=tag_variable,
+            current_tag=current_tag,
+        )
+        targets.append((match.group("name"), artifact_template))
+    if not targets:
+        raise ReleaseError("Could not find nativeRepoBinaryTarget entries")
+    return targets
+
+
+def swift_artifact_template(
+    artifact_name: str,
+    *,
+    tag_variable: str,
+    current_tag: str,
+) -> str:
+    interpolated_tag = rf"\({tag_variable})"
+    if interpolated_tag in artifact_name:
+        return artifact_name.replace(interpolated_tag, "{tag}")
+    if current_tag in artifact_name:
+        return artifact_name.replace(current_tag, "{tag}")
+    return artifact_name
 
 
 def companion_package_root(package_swift_path: Path) -> Path:

@@ -25,6 +25,12 @@ void main() {
   final macosArm64LitertBundleDir = Directory(
     '.dart_tool/llamadart/litert_lm/$litertVersion/macos/arm64',
   );
+  final macosX64NativeBundleDir = Directory(
+    '.dart_tool/llamadart/native_bundles/$nativeTag/macos-x86_64/extracted',
+  );
+  final macosX64LitertBundleDir = Directory(
+    '.dart_tool/llamadart/litert_lm/$litertVersion/macos/x64',
+  );
   final iosDeviceNativeBundleDir = Directory(
     '.dart_tool/llamadart/native_bundles/$nativeTag/ios-arm64/extracted',
   );
@@ -50,6 +56,14 @@ void main() {
     (
       macosArm64LitertBundleDir,
       Directory('${macosArm64LitertBundleDir.path}.__litert_test'),
+    ),
+    (
+      macosX64NativeBundleDir,
+      Directory('${macosX64NativeBundleDir.path}.__litert_test'),
+    ),
+    (
+      macosX64LitertBundleDir,
+      Directory('${macosX64LitertBundleDir.path}.__litert_test'),
     ),
     (
       iosDeviceNativeBundleDir,
@@ -94,6 +108,13 @@ void main() {
     await _writeBundleLibraries(
       macosArm64LitertBundleDir,
       _macosArm64LiteRtLibraries,
+    );
+    await _writeBundleLibraries(macosX64NativeBundleDir, const [
+      'libllamadart.dylib',
+    ]);
+    await _writeBundleLibraries(
+      macosX64LitertBundleDir,
+      _macosX64LiteRtLibraries,
     );
     for (final directory in [
       iosDeviceNativeBundleDir,
@@ -182,29 +203,37 @@ void main() {
   test(
     'build hook keeps macOS LiteRT-LM libraries in the cache when requested',
     () async {
-      await testCodeBuildHook(
-        mainMethod: build_hook.main,
-        targetOS: OS.macOS,
-        targetArchitecture: Architecture.arm64,
-        userDefines: _allRuntimeUserDefines(),
-        check: (input, output) {
-          final codeAssets = output.assets.encodedAssets
-              .where((asset) => asset.isCodeAsset)
-              .map((asset) => asset.asCodeAsset)
-              .toList(growable: false);
+      for (final (architecture, expectedLibraries) in [
+        (Architecture.arm64, _macosArm64LiteRtLibraries),
+        (Architecture.x64, _macosX64LiteRtLibraries),
+      ]) {
+        await testCodeBuildHook(
+          mainMethod: build_hook.main,
+          targetOS: OS.macOS,
+          targetArchitecture: architecture,
+          userDefines: _allRuntimeUserDefines(),
+          check: (input, output) {
+            final codeAssets = output.assets.encodedAssets
+                .where((asset) => asset.isCodeAsset)
+                .map((asset) => asset.asCodeAsset)
+                .toList(growable: false);
 
-          final codeAssetIds = codeAssets.map((asset) => asset.id).toSet();
-          final emittedNames = codeAssets
-              .map((asset) => path.basename(asset.file!.toFilePath()))
-              .toSet();
+            final codeAssetIds = codeAssets.map((asset) => asset.id).toSet();
+            final emittedNames = codeAssets
+                .map((asset) => path.basename(asset.file!.toFilePath()))
+                .toSet();
 
-          expect(codeAssetIds, contains('package:llamadart/llamadart'));
-          expect(codeAssetIds.where((id) => id.contains('litert_lm')), isEmpty);
-          for (final library in _macosArm64LiteRtLibraries) {
-            expect(emittedNames, isNot(contains(library)));
-          }
-        },
-      );
+            expect(codeAssetIds, contains('package:llamadart/llamadart'));
+            expect(
+              codeAssetIds.where((id) => id.contains('litert_lm')),
+              isEmpty,
+            );
+            for (final library in expectedLibraries) {
+              expect(emittedNames, isNot(contains(library)));
+            }
+          },
+        );
+      }
     },
   );
 
@@ -705,16 +734,14 @@ const List<String> _iosLiteRtAssetNames = [
 ];
 
 const List<String> _macosArm64LiteRtLibraries = [
-  'libGemmaModelConstraintProvider.dylib',
-  'libLiteRt.dylib',
   'libLiteRtLm.dylib',
-  'libLiteRtMetalAccelerator.dylib',
-  'libLiteRtTopKMetalSampler.dylib',
-  'libLiteRtTopKWebGpuSampler.dylib',
-  'libLiteRtWebGpuAccelerator.dylib',
+  'libCLiteRTLM_mac.dylib',
 ];
 
-const List<String> _macosX64LiteRtLibraries = ['libLiteRtLm.dylib'];
+const List<String> _macosX64LiteRtLibraries = [
+  'libLiteRtLm.dylib',
+  'libCLiteRTLM_mac.dylib',
+];
 
 const List<String> _linuxLiteRtLibraries = [
   'libGemmaModelConstraintProvider.so',

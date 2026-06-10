@@ -4,7 +4,7 @@ import PackageDescription
 
 let packageRoot = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
 let artifactsRoot = packageRoot.appendingPathComponent("Artifacts")
-let liteRtLmTag = "v0.13.1"
+let liteRtLmTag = "v0.13.1-native.1"
 
 func localArtifactPath(_ name: String) -> String? {
     let path = artifactsRoot.appendingPathComponent(name).path
@@ -47,68 +47,28 @@ let package = Package(
             repository: "leehack/litert-lm-native",
             artifactName: "litert-lm-native-apple-LiteRtLm-xcframework-\(liteRtLmTag).zip",
             tag: liteRtLmTag,
-            checksum: "6fa9169d7c93eb1b70dc537b35640e2652cd9ee139014251404d4e6b15ad2686"
+            checksum: "52cb28c84bd13e5a0eeaf5a081a3f24fa62375ede4134e5c6b87cbe624077247"
         ),
         nativeRepoBinaryTarget(
             name: "CLiteRTLM",
             repository: "leehack/litert-lm-native",
             artifactName: "litert-lm-native-apple-CLiteRTLM-xcframework-\(liteRtLmTag).zip",
             tag: liteRtLmTag,
-            checksum: "81880c7bf84586bc08820cc645a1c52869870676ff7de123ac0ba99c2e6820f7"
+            checksum: "6127981cbb3693b0f3f50d34e56e0969a1cb955744eb5fa53b46d9845152869f"
         ),
         nativeRepoBinaryTarget(
-            name: "GemmaModelConstraintProvider",
+            name: "CLiteRTLMMac",
             repository: "leehack/litert-lm-native",
-            artifactName: "litert-lm-native-apple-GemmaModelConstraintProvider-xcframework-\(liteRtLmTag).zip",
+            artifactName: "litert-lm-native-apple-CLiteRTLMMac-xcframework-\(liteRtLmTag).zip",
             tag: liteRtLmTag,
-            checksum: "d039fe952eb3187626b7950c42b35c6f7d16340ab8d1e6b1ff63a998022446f9"
-        ),
-        nativeRepoBinaryTarget(
-            name: "LiteRt",
-            repository: "leehack/litert-lm-native",
-            artifactName: "litert-lm-native-apple-LiteRt-xcframework-\(liteRtLmTag).zip",
-            tag: liteRtLmTag,
-            checksum: "0055e5483c0aff861a37a20c66e485051eb081fb2dbded5501ffdc2cc82d0df7"
-        ),
-        nativeRepoBinaryTarget(
-            name: "LiteRtMetalAccelerator",
-            repository: "leehack/litert-lm-native",
-            artifactName: "litert-lm-native-apple-LiteRtMetalAccelerator-xcframework-\(liteRtLmTag).zip",
-            tag: liteRtLmTag,
-            checksum: "5e3ce138a722cbc4730b8986db0134fcf64f6f486876c2a3bacd922f50fdebf3"
-        ),
-        nativeRepoBinaryTarget(
-            name: "LiteRtTopKMetalSampler",
-            repository: "leehack/litert-lm-native",
-            artifactName: "litert-lm-native-apple-LiteRtTopKMetalSampler-xcframework-\(liteRtLmTag).zip",
-            tag: liteRtLmTag,
-            checksum: "f9c4f5e62be9a9c8d69298f5196c213cef8760394262fd02da0c9b13580f08a7"
-        ),
-        nativeRepoBinaryTarget(
-            name: "LiteRtTopKWebGpuSampler",
-            repository: "leehack/litert-lm-native",
-            artifactName: "litert-lm-native-apple-LiteRtTopKWebGpuSampler-xcframework-\(liteRtLmTag).zip",
-            tag: liteRtLmTag,
-            checksum: "e99fc2aef67b24e6c024bed89fee36bf8cf8bb2870c2b48dfae9ba7f42c0dcd6"
-        ),
-        nativeRepoBinaryTarget(
-            name: "LiteRtWebGpuAccelerator",
-            repository: "leehack/litert-lm-native",
-            artifactName: "litert-lm-native-apple-LiteRtWebGpuAccelerator-xcframework-\(liteRtLmTag).zip",
-            tag: liteRtLmTag,
-            checksum: "9a3de6686d37cf06475b4fd8dfb094aaa8e3f55b1cbbdc60ae38e6eb8f5f1ba1"
+            checksum: "cf29ca8d0b50a6d15845414aeabf2d9d30039ae18f6dff6a7ad5c7051f21506f"
         ),
         .target(
             name: "llamadart_litert_lm_flutter",
             dependencies: [
                 "LiteRtLm",
                 .target(name: "CLiteRTLM", condition: .when(platforms: [.iOS])),
-                .target(name: "GemmaModelConstraintProvider", condition: .when(platforms: [.macOS])),
-                .target(name: "LiteRt", condition: .when(platforms: [.macOS])),
-                .target(name: "LiteRtMetalAccelerator", condition: .when(platforms: [.macOS])),
-                .target(name: "LiteRtTopKMetalSampler", condition: .when(platforms: [.macOS])),
-                .target(name: "LiteRtTopKWebGpuSampler", condition: .when(platforms: [.macOS])),
-                .target(name: "LiteRtWebGpuAccelerator", condition: .when(platforms: [.macOS]))
+                .target(name: "CLiteRTLMMac", condition: .when(platforms: [.macOS]))
             ],
             linkerSettings: [
                 .unsafeFlags(["-Xlinker", "-reexport_framework", "-Xlinker", "LiteRtLm"]),

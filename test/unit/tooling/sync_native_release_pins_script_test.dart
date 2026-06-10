@@ -31,12 +31,27 @@ const _litertLmBundleSpecs = <_LiteRtLmBundleSpec>[
   ),
 ];
 ''');
+    final litertRuntimeDart = File(
+      path.join(
+        root.path,
+        'lib',
+        'src',
+        'backends',
+        'litert_lm',
+        'litert_lm_runtime.dart',
+      ),
+    );
+    await litertRuntimeDart.parent.create(recursive: true);
+    await litertRuntimeDart.writeAsString('''
+const _litertLmVersion = '1.0.0';
+''');
     await _writePackageSwift(
       root,
       'packages/llamadart_llama_cpp_flutter/darwin/'
           'llamadart_llama_cpp_flutter/Package.swift',
       'llamaCppTag',
       const ['llama'],
+      const {'llama': 'llamadart-native-apple-xcframework-\\(llamaCppTag).zip'},
     );
     await _writePackageSwift(
       root,
@@ -44,6 +59,10 @@ const _litertLmBundleSpecs = <_LiteRtLmBundleSpec>[
           'llamadart_litert_lm_flutter/Package.swift',
       'liteRtLmTag',
       _litertAppleTargets.keys,
+      {
+        for (final entry in _litertAppleTargets.entries)
+          entry.key: entry.value.$1.replaceAll('{tag}', '\\(liteRtLmTag)'),
+      },
     );
     await _writeCompanionDocs(
       root,
@@ -106,6 +125,11 @@ const _litertLmBundleSpecs = <_LiteRtLmBundleSpec>[
     expect(hook, contains("const _llamaCppTag = '$llamaTag';"));
     expect(hook, contains("const _litertLmVersion = '9.9.9';"));
     expect(hook, contains("sha256: '$litertRuntimeChecksum'"));
+    final litertRuntimeDartText = await litertRuntimeDart.readAsString();
+    expect(
+      litertRuntimeDartText,
+      contains("const _litertLmVersion = '9.9.9';"),
+    );
 
     final llamaSwift = await File(
       path.join(
@@ -224,6 +248,7 @@ Future<void> _writePackageSwift(
   String relativePath,
   String tagVariable,
   Iterable<String> targetNames,
+  Map<String, String> artifactNames,
 ) async {
   final file = File(path.join(root.path, relativePath));
   await file.parent.create(recursive: true);
@@ -235,6 +260,7 @@ let package = Package(
 ${targetNames.map((target) => '''
         nativeRepoBinaryTarget(
             name: "$target",
+            artifactName: "${artifactNames[target]}",
             checksum: "${_hex('0')}"
         ),
 ''').join()}
@@ -294,25 +320,8 @@ String _hex(String character) => List.filled(64, character).join();
 const Map<String, (String, String)> _litertAppleTargets = {
   'LiteRtLm': ('litert-lm-native-apple-LiteRtLm-xcframework-{tag}.zip', '3'),
   'CLiteRTLM': ('litert-lm-native-apple-CLiteRTLM-xcframework-{tag}.zip', '4'),
-  'GemmaModelConstraintProvider': (
-    'litert-lm-native-apple-GemmaModelConstraintProvider-xcframework-{tag}.zip',
+  'CLiteRTLMMac': (
+    'litert-lm-native-apple-CLiteRTLMMac-xcframework-{tag}.zip',
     '5',
-  ),
-  'LiteRt': ('litert-lm-native-apple-LiteRt-xcframework-{tag}.zip', '6'),
-  'LiteRtMetalAccelerator': (
-    'litert-lm-native-apple-LiteRtMetalAccelerator-xcframework-{tag}.zip',
-    '7',
-  ),
-  'LiteRtTopKMetalSampler': (
-    'litert-lm-native-apple-LiteRtTopKMetalSampler-xcframework-{tag}.zip',
-    '8',
-  ),
-  'LiteRtTopKWebGpuSampler': (
-    'litert-lm-native-apple-LiteRtTopKWebGpuSampler-xcframework-{tag}.zip',
-    '9',
-  ),
-  'LiteRtWebGpuAccelerator': (
-    'litert-lm-native-apple-LiteRtWebGpuAccelerator-xcframework-{tag}.zip',
-    'a',
   ),
 };

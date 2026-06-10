@@ -73,7 +73,7 @@ jobs:
             - Updates `hook/build.dart` native release pins.
             - Syncs headers from the matching `llamadart-native` release header bundle.
             - Regenerates `lib/src/backends/llama_cpp/bindings.dart` via ffigen.
-            - Updates LiteRT-LM runtime archive checksums when `litert_lm_tag` is not `keep`.
+            - Updates LiteRT-LM Dart runtime version and archive checksums when `litert_lm_tag` is not `keep`.
             - Updates Apple SPM companion `Package.swift` binary target pins in `packages/`.
             - Bumps companion package patch versions and updates their README/CHANGELOG native pin notes when SPM pins change.
 
@@ -93,5 +93,6 @@ jobs:
             packages/llamadart_litert_lm_flutter/pubspec.yaml
             packages/llamadart_litert_lm_flutter/CHANGELOG.md
             packages/llamadart_litert_lm_flutter/README.md
+            lib/src/backends/litert_lm/litert_lm_runtime.dart
             lib/src/backends/llama_cpp/bindings.dart
           delete-branch: true

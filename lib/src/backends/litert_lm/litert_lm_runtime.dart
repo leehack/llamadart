@@ -9,7 +9,7 @@ import 'package:path/path.dart' as path;
 
 import '../../core/models/inference/model_params.dart';
 
-const _litertLmVersion = '0.13.1';
+const _litertLmVersion = '0.13.1-native.1';
 const _litertLmLibDirEnv = 'LLAMADART_LITERT_LM_LIB_DIR';
 const _liteRtLmIosNativeAsset = 'package:llamadart/litert_lm_LiteRtLm';
 const _processLibraryCandidate = '<process>';
@@ -60,15 +60,13 @@ List<String> liteRtLmMacOsCacheDirectoryCandidatesForAbi(Abi abi) {
 List<String> liteRtLmMacOsRequiredLibrariesForAbi(Abi abi) {
   return switch (abi) {
     Abi.macosArm64 => const <String>[
-      'libGemmaModelConstraintProvider.dylib',
-      'libLiteRt.dylib',
       'libLiteRtLm.dylib',
-      'libLiteRtMetalAccelerator.dylib',
-      'libLiteRtTopKMetalSampler.dylib',
-      'libLiteRtTopKWebGpuSampler.dylib',
-      'libLiteRtWebGpuAccelerator.dylib',
+      'libCLiteRTLM_mac.dylib',
     ],
-    Abi.macosX64 => const <String>['libLiteRtLm.dylib'],
+    Abi.macosX64 => const <String>[
+      'libLiteRtLm.dylib',
+      'libCLiteRTLM_mac.dylib',
+    ],
     _ => const <String>[],
   };
 }
@@ -251,16 +249,11 @@ List<String> liteRtLmMacOsRequiredNativeSpmFilesForAbi(Abi abi) {
   return switch (abi) {
     Abi.macosArm64 => const <String>[
       'LiteRtLm.framework/Versions/A/LiteRtLm',
-      'libGemmaModelConstraintProvider.dylib',
-      'libLiteRt.dylib',
-      'libLiteRtMetalAccelerator.dylib',
-      'libLiteRtTopKMetalSampler.dylib',
-      'libLiteRtTopKWebGpuSampler.dylib',
-      'libLiteRtWebGpuAccelerator.dylib',
+      'libCLiteRTLM_mac.dylib',
     ],
     Abi.macosX64 => const <String>[
       'LiteRtLm.framework/Versions/A/LiteRtLm',
-      'libLiteRt.dylib',
+      'libCLiteRTLM_mac.dylib',
     ],
     _ => const <String>[],
   };
@@ -1225,10 +1218,7 @@ class LiteRtLmRuntimeClient {
             '${frameworksDir.path}/LiteRtLm.framework/Versions/A/LiteRtLm',
           ],
           companions: usesNativeSpmFramework
-              ? [
-                  for (final library in companions)
-                    '${frameworksDir.path}/$library',
-                ]
+              ? const []
               : [
                   for (final library in companions)
                     _macOsFrameworkBinaryPath(frameworksDir, library),

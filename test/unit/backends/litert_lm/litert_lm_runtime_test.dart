@@ -167,16 +167,12 @@ void main() {
 
   test('macOS LiteRT-LM cache validation follows runtime ABI files', () {
     expect(liteRtLmMacOsRequiredLibrariesForAbi(Abi.macosArm64), const <String>[
-      'libGemmaModelConstraintProvider.dylib',
-      'libLiteRt.dylib',
       'libLiteRtLm.dylib',
-      'libLiteRtMetalAccelerator.dylib',
-      'libLiteRtTopKMetalSampler.dylib',
-      'libLiteRtTopKWebGpuSampler.dylib',
-      'libLiteRtWebGpuAccelerator.dylib',
+      'libCLiteRTLM_mac.dylib',
     ]);
     expect(liteRtLmMacOsRequiredLibrariesForAbi(Abi.macosX64), const <String>[
       'libLiteRtLm.dylib',
+      'libCLiteRTLM_mac.dylib',
     ]);
     expect(liteRtLmMacOsRequiredLibrariesForAbi(Abi.linuxX64), isEmpty);
   });
@@ -251,6 +247,10 @@ void main() {
     expect(liteRtLmIsMacOsCacheDirectoryForAbi(x64Dir, Abi.macosX64), isFalse);
 
     File('${x64Dir.path}/libLiteRtLm.dylib').createSync();
+
+    expect(liteRtLmIsMacOsCacheDirectoryForAbi(x64Dir, Abi.macosX64), isFalse);
+
+    File('${x64Dir.path}/libCLiteRTLM_mac.dylib').createSync();
 
     expect(liteRtLmIsMacOsCacheDirectoryForAbi(x64Dir, Abi.macosX64), isTrue);
     expect(liteRtLmIsMacOsCacheDirectoryForAbi(x64Dir, Abi.linuxX64), isFalse);
