@@ -187,6 +187,13 @@ class BackendPerfContextData {
   /// Time spent sampling generated tokens in ms.
   final double sampleMs;
 
+  /// Time spent decoding generated tokens in ms, excluding prompt ingestion.
+  ///
+  /// Backends that do not expose a separate decode-only measurement leave this
+  /// null. For llama.cpp, this is the Dart-side `llama_decode` time measured
+  /// during generation.
+  final double? decodeMs;
+
   /// Number of prompt tokens evaluated.
   final int promptEvalTokens;
 
@@ -199,16 +206,45 @@ class BackendPerfContextData {
   /// Number of times compute graphs were reused.
   final int reusedGraphs;
 
+  /// Number of speculative draft tokens proposed by the backend.
+  final int? speculativeDraftTokens;
+
+  /// Number of speculative draft tokens accepted by the backend.
+  final int? speculativeAcceptedDraftTokens;
+
+  /// Time spent generating speculative draft tokens in ms.
+  final double? speculativeDraftMs;
+
+  /// Time spent verifying speculative draft tokens in ms.
+  final double? speculativeVerifyMs;
+
+  /// Accepted speculative draft-token ratio, when available.
+  double? get speculativeAcceptanceRate {
+    final draftTokens = speculativeDraftTokens;
+    final acceptedDraftTokens = speculativeAcceptedDraftTokens;
+    if (draftTokens == null ||
+        acceptedDraftTokens == null ||
+        draftTokens <= 0) {
+      return null;
+    }
+    return acceptedDraftTokens / draftTokens;
+  }
+
   /// Creates a new [BackendPerfContextData].
   const BackendPerfContextData({
     required this.loadMs,
     required this.promptEvalMs,
     required this.evalMs,
     required this.sampleMs,
+    this.decodeMs,
     required this.promptEvalTokens,
     required this.evalTokens,
     required this.sampleCount,
     required this.reusedGraphs,
+    this.speculativeDraftTokens,
+    this.speculativeAcceptedDraftTokens,
+    this.speculativeDraftMs,
+    this.speculativeVerifyMs,
   });
 }
 

@@ -4294,6 +4294,7 @@ class LlamaCppService {
     evalStopwatch.stop();
     ctx.lastPerfEvalMs = evalMicros / 1000.0;
     ctx.lastPerfSampleMs = sampleMicros / 1000.0;
+    ctx.lastPerfDecodeMs = evalMicros / 1000.0;
     ctx.lastPerfEvalTokens = generatedTokens;
     ctx.lastPerfSampleCount = generatedTokens;
   }
@@ -4327,7 +4328,11 @@ class LlamaCppService {
     final evalStopwatch = Stopwatch()..start();
     var sampleMicros = 0;
     var evalMicros = 0;
+    var draftMicros = 0;
+    var verifyMicros = 0;
     var generatedTokens = 0;
+    var speculativeDraftTokens = 0;
+    var speculativeAcceptedDraftTokens = 0;
     var shouldStop = false;
 
     try {
@@ -4408,10 +4413,11 @@ class LlamaCppService {
             draftCapacity,
           );
           draftTick.stop();
-          sampleMicros += draftTick.elapsedMicroseconds;
+          draftMicros += draftTick.elapsedMicroseconds;
           if (draftCount < 0) {
             throw Exception("llama.cpp MTP draft failed");
           }
+          speculativeDraftTokens += draftCount;
         }
 
         if (draftCount <= 0) {
@@ -4488,12 +4494,13 @@ class LlamaCppService {
           batchTokens,
         );
         verifyTick.stop();
-        sampleMicros += verifyTick.elapsedMicroseconds;
+        verifyMicros += verifyTick.elapsedMicroseconds;
         if (acceptedCount <= 0) {
           throw Exception("llama.cpp MTP draft verification failed");
         }
 
         final acceptedDraftCount = acceptedCount - 1;
+        speculativeAcceptedDraftTokens += acceptedDraftCount;
         mtpApi.accept(mtpSession, 0, acceptedDraftCount);
 
         final keepUntil = currentPos + 1 + acceptedDraftCount;
@@ -4563,8 +4570,14 @@ class LlamaCppService {
       evalStopwatch.stop();
       ctx.lastPerfEvalMs = evalMicros / 1000.0;
       ctx.lastPerfSampleMs = sampleMicros / 1000.0;
+      ctx.lastPerfDecodeMs = evalMicros / 1000.0;
+      ctx.lastPerfSpeculativeDraftMs = draftMicros / 1000.0;
+      ctx.lastPerfSpeculativeVerifyMs = verifyMicros / 1000.0;
       ctx.lastPerfEvalTokens = generatedTokens;
       ctx.lastPerfSampleCount = generatedTokens;
+      ctx.lastPerfSpeculativeDraftTokens = speculativeDraftTokens;
+      ctx.lastPerfSpeculativeAcceptedDraftTokens =
+          speculativeAcceptedDraftTokens;
     }
   }
 
@@ -5581,10 +5594,15 @@ class LlamaCppService {
     double promptEvalMs,
     double evalMs,
     double sampleMs,
+    double? decodeMs,
     int promptEvalTokens,
     int evalTokens,
     int sampleCount,
     int reusedGraphs,
+    int? speculativeDraftTokens,
+    int? speculativeAcceptedDraftTokens,
+    double? speculativeDraftMs,
+    double? speculativeVerifyMs,
   })
   getPerformanceContext(int contextHandle) {
     final ctx = _contexts[contextHandle];
@@ -5612,16 +5630,35 @@ class LlamaCppService {
     final sampleCount = ctx.lastPerfSampleCount > 0
         ? ctx.lastPerfSampleCount
         : (samplerPerf?.n_sample ?? 0);
+    final decodeMs = ctx.lastPerfDecodeMs > 0 ? ctx.lastPerfDecodeMs : null;
+    final speculativeDraftTokens = ctx.lastPerfSpeculativeDraftTokens > 0
+        ? ctx.lastPerfSpeculativeDraftTokens
+        : null;
+    final speculativeAcceptedDraftTokens =
+        ctx.lastPerfSpeculativeAcceptedDraftTokens > 0
+        ? ctx.lastPerfSpeculativeAcceptedDraftTokens
+        : null;
+    final speculativeDraftMs = ctx.lastPerfSpeculativeDraftMs > 0
+        ? ctx.lastPerfSpeculativeDraftMs
+        : null;
+    final speculativeVerifyMs = ctx.lastPerfSpeculativeVerifyMs > 0
+        ? ctx.lastPerfSpeculativeVerifyMs
+        : null;
 
     return (
       loadMs: perf.t_load_ms,
       promptEvalMs: promptEvalMs,
       evalMs: evalMs,
       sampleMs: sampleMs,
+      decodeMs: decodeMs,
       promptEvalTokens: promptEvalTokens,
       evalTokens: evalTokens,
       sampleCount: sampleCount,
       reusedGraphs: perf.n_reused,
+      speculativeDraftTokens: speculativeDraftTokens,
+      speculativeAcceptedDraftTokens: speculativeAcceptedDraftTokens,
+      speculativeDraftMs: speculativeDraftMs,
+      speculativeVerifyMs: speculativeVerifyMs,
     );
   }
 
@@ -5981,17 +6018,27 @@ class _LlamaContextWrapper {
   double lastPerfPromptEvalMs = 0;
   double lastPerfEvalMs = 0;
   double lastPerfSampleMs = 0;
+  double lastPerfDecodeMs = 0;
+  double lastPerfSpeculativeDraftMs = 0;
+  double lastPerfSpeculativeVerifyMs = 0;
   int lastPerfPromptEvalTokens = 0;
   int lastPerfEvalTokens = 0;
   int lastPerfSampleCount = 0;
+  int lastPerfSpeculativeDraftTokens = 0;
+  int lastPerfSpeculativeAcceptedDraftTokens = 0;
   _LlamaContextWrapper(this.pointer, this._modelKeepAlive);
   void resetLastPerf() {
     lastPerfPromptEvalMs = 0;
     lastPerfEvalMs = 0;
     lastPerfSampleMs = 0;
+    lastPerfDecodeMs = 0;
+    lastPerfSpeculativeDraftMs = 0;
+    lastPerfSpeculativeVerifyMs = 0;
     lastPerfPromptEvalTokens = 0;
     lastPerfEvalTokens = 0;
     lastPerfSampleCount = 0;
+    lastPerfSpeculativeDraftTokens = 0;
+    lastPerfSpeculativeAcceptedDraftTokens = 0;
   }
 
   void dispose() {

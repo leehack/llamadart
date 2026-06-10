@@ -22,6 +22,40 @@ void main() {
     expect(BackendStatePersistence, isNotNull);
   });
 
+  group('BackendPerfContextData', () {
+    test('computes speculative acceptance rate when counts are available', () {
+      const perf = BackendPerfContextData(
+        loadMs: 0,
+        promptEvalMs: 0,
+        evalMs: 0,
+        sampleMs: 0,
+        promptEvalTokens: 0,
+        evalTokens: 0,
+        sampleCount: 0,
+        reusedGraphs: 0,
+        speculativeDraftTokens: 8,
+        speculativeAcceptedDraftTokens: 6,
+      );
+
+      expect(perf.speculativeAcceptanceRate, 0.75);
+    });
+
+    test('returns null speculative acceptance rate without draft count', () {
+      const perf = BackendPerfContextData(
+        loadMs: 0,
+        promptEvalMs: 0,
+        evalMs: 0,
+        sampleMs: 0,
+        promptEvalTokens: 0,
+        evalTokens: 0,
+        sampleCount: 0,
+        reusedGraphs: 0,
+      );
+
+      expect(perf.speculativeAcceptanceRate, isNull);
+    });
+  });
+
   group('StateLoadResult', () {
     test('exposes the recovered token sequence', () {
       const result = StateLoadResult(tokens: [1, 2, 3]);

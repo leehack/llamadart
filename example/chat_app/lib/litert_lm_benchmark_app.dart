@@ -178,6 +178,10 @@ Map<String, Object?> _summarizeRuns(List<Map<String, Object?>> runs) {
   return {
     'wallTokensPerSecond': _numericSummary(runs, 'wallTokensPerSecond'),
     'decodeTokensPerSecond': _numericSummary(runs, 'decodeTokensPerSecond'),
+    'decodeOnlyTokensPerSecond': _numericSummary(
+      runs,
+      'decodeOnlyTokensPerSecond',
+    ),
     'decodeWithSamplingTokensPerSecond': _numericSummary(
       runs,
       'decodeWithSamplingTokensPerSecond',
@@ -185,10 +189,30 @@ Map<String, Object?> _summarizeRuns(List<Map<String, Object?>> runs) {
     'wallMilliseconds': _numericSummary(runs, 'wallMilliseconds'),
     'outputTokens': _numericSummary(runs, 'outputTokens'),
     'evalTokens': _numericSummary(runs, 'evalTokens'),
+    'speculativeAcceptanceRate': _numericSummary(
+      runs,
+      'speculativeAcceptanceRate',
+    ),
     'targetWallTokensPerSecond': _numericSummary(
       runs,
       'targetWallTokensPerSecond',
     ),
+  };
+}
+
+Map<String, Object?> _perfDiagnosticFields(BackendPerfContextData? perf) {
+  final decodeMs = perf?.decodeMs;
+  return {
+    'decodeMs': decodeMs,
+    'decodeOnlyTokensPerSecond':
+        perf == null || decodeMs == null || decodeMs <= 0
+        ? null
+        : perf.evalTokens / (decodeMs / 1000.0),
+    'speculativeDraftTokens': perf?.speculativeDraftTokens,
+    'speculativeAcceptedDraftTokens': perf?.speculativeAcceptedDraftTokens,
+    'speculativeAcceptanceRate': perf?.speculativeAcceptanceRate,
+    'speculativeDraftMs': perf?.speculativeDraftMs,
+    'speculativeVerifyMs': perf?.speculativeVerifyMs,
   };
 }
 
@@ -390,6 +414,7 @@ class _LiteRtLmBenchmarkAppState extends State<LiteRtLmBenchmarkApp> {
           'promptEvalMs': perf?.promptEvalMs,
           'evalMs': perf?.evalMs,
           'sampleMs': perf?.sampleMs,
+          ..._perfDiagnosticFields(perf),
           'prefillTokensPerSecond': perf == null || perf.promptEvalMs <= 0
               ? null
               : perf.promptEvalTokens / (perf.promptEvalMs / 1000.0),
@@ -423,6 +448,7 @@ class _LiteRtLmBenchmarkAppState extends State<LiteRtLmBenchmarkApp> {
         'promptEvalMs': perf?.promptEvalMs,
         'evalMs': perf?.evalMs,
         'sampleMs': perf?.sampleMs,
+        ..._perfDiagnosticFields(perf),
         'prefillTokensPerSecond': perf == null || perf.promptEvalMs <= 0
             ? null
             : perf.promptEvalTokens / (perf.promptEvalMs / 1000.0),
@@ -546,6 +572,7 @@ class _LiteRtLmBenchmarkAppState extends State<LiteRtLmBenchmarkApp> {
           'promptEvalMs': perf?.promptEvalMs,
           'evalMs': perf?.evalMs,
           'sampleMs': perf?.sampleMs,
+          ..._perfDiagnosticFields(perf),
           'prefillTokensPerSecond': perf == null || perf.promptEvalMs <= 0
               ? null
               : perf.promptEvalTokens / (perf.promptEvalMs / 1000.0),
@@ -586,6 +613,7 @@ class _LiteRtLmBenchmarkAppState extends State<LiteRtLmBenchmarkApp> {
         'promptEvalMs': perf?.promptEvalMs,
         'evalMs': perf?.evalMs,
         'sampleMs': perf?.sampleMs,
+        ..._perfDiagnosticFields(perf),
         'prefillTokensPerSecond': perf == null || perf.promptEvalMs <= 0
             ? null
             : perf.promptEvalTokens / (perf.promptEvalMs / 1000.0),

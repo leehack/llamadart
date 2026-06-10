@@ -189,10 +189,16 @@ void llamaWorkerEntry(SendPort initialSendPort) {
                 promptEvalMs: perf.promptEvalMs,
                 evalMs: perf.evalMs,
                 sampleMs: perf.sampleMs,
+                decodeMs: perf.decodeMs,
                 promptEvalTokens: perf.promptEvalTokens,
                 evalTokens: perf.evalTokens,
                 sampleCount: perf.sampleCount,
                 reusedGraphs: perf.reusedGraphs,
+                speculativeDraftTokens: perf.speculativeDraftTokens,
+                speculativeAcceptedDraftTokens:
+                    perf.speculativeAcceptedDraftTokens,
+                speculativeDraftMs: perf.speculativeDraftMs,
+                speculativeVerifyMs: perf.speculativeVerifyMs,
               ),
             );
 

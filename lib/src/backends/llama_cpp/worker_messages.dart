@@ -500,6 +500,9 @@ class PerformanceContextResponse {
   /// Sampling time in ms.
   final double sampleMs;
 
+  /// Decode-only generation time in ms.
+  final double? decodeMs;
+
   /// Number of prompt-evaluated tokens.
   final int promptEvalTokens;
 
@@ -512,16 +515,33 @@ class PerformanceContextResponse {
   /// Number of times graphs were reused.
   final int reusedGraphs;
 
+  /// Number of speculative draft tokens proposed.
+  final int? speculativeDraftTokens;
+
+  /// Number of speculative draft tokens accepted.
+  final int? speculativeAcceptedDraftTokens;
+
+  /// Time spent generating speculative drafts in ms.
+  final double? speculativeDraftMs;
+
+  /// Time spent verifying speculative drafts in ms.
+  final double? speculativeVerifyMs;
+
   /// Creates a new [PerformanceContextResponse].
   PerformanceContextResponse({
     required this.loadMs,
     required this.promptEvalMs,
     required this.evalMs,
     required this.sampleMs,
+    this.decodeMs,
     required this.promptEvalTokens,
     required this.evalTokens,
     required this.sampleCount,
     required this.reusedGraphs,
+    this.speculativeDraftTokens,
+    this.speculativeAcceptedDraftTokens,
+    this.speculativeDraftMs,
+    this.speculativeVerifyMs,
   });
 }
 

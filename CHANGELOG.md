@@ -20,6 +20,14 @@
   * Updated the default llama.cpp native runtime pin to
     `leehack/llamadart-native@b9587`, regenerated matching Dart FFI bindings,
     and refreshed the `llamadart_llama_cpp_flutter` Apple SwiftPM checksum.
+* **MTP benchmarking diagnostics**:
+  * Added llama.cpp speculative decoding perf diagnostics for decode timing,
+    draft/accepted token counts, draft verification timing, and acceptance
+    rate so MTP benchmarks can separate backend decode cost from drafting
+    overhead.
+  * Extended local macOS and chat app benchmark outputs with the new
+    diagnostics and added focused llama.cpp MTP smoke/benchmark tools for
+    baseline-vs-MTP comparisons.
 * **Structured output**:
   * Added `responseFormat` routing to `LlamaEngine.create(...)` for
     grammar-capable backends, deprecated the legacy `chatTemplate(...)`
