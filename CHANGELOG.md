@@ -17,6 +17,9 @@
     runtime families. For Flutter iOS/macOS app builds, installed companion
     packages decide Apple SPM runtimes; for every other build,
     `llamadart_native_runtimes` remains the selector.
+  * Updated the default llama.cpp native runtime pin to
+    `leehack/llamadart-native@b9587`, regenerated matching Dart FFI bindings,
+    and refreshed the `llamadart_llama_cpp_flutter` Apple SwiftPM checksum.
 * **Structured output**:
   * Added `responseFormat` routing to `LlamaEngine.create(...)` for
     grammar-capable backends, deprecated the legacy `chatTemplate(...)`
