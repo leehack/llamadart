@@ -25,6 +25,14 @@ For canonical full release notes, use:
 - Extended the LiteRT-LM engine smoke tool with matching environment variables
   and documented the support decision for each candidate runtime knob.
 - Kept LiteRT-LM web rejecting these native-only settings explicitly.
+- Added llama.cpp MTP benchmark diagnostics and local smoke/benchmark tools so
+  baseline-vs-MTP runs can report decode timing, draft/accepted token counts,
+  draft verification timing, and acceptance rate.
+- Added `SpeculativeDecodingConfig.mtp(draftModelPath: ...)` for llama.cpp
+  external draft-model MTP sessions.
+- Removed the Android Vulkan MTP allow-list dart define and the model-name
+  based Android Vulkan acceleration shortcut. Vulkan MTP now runs only when
+  callers explicitly request Vulkan plus MTP in runtime parameters.
 
 ## 0.7.2
 

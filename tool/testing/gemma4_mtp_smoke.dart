@@ -8,13 +8,16 @@ Future<void> main(List<String> args) async {
   if (modelPath.isEmpty) {
     stderr.writeln(
       'Usage: dart run tool/testing/gemma4_mtp_smoke.dart '
-      '<model.gguf> [max-tokens] [draft-token-max]',
+      '<model.gguf> [draft-model.gguf] [max-tokens] [draft-token-max]',
     );
     exitCode = 64;
     return;
   }
-  final maxTokens = args.length > 1 ? int.parse(args[1]) : 32;
-  final draftTokenMax = args.length > 2 ? int.parse(args[2]) : 1;
+  final draftModelPath = args.length > 1 && args[1].isNotEmpty && args[1] != '-'
+      ? args[1]
+      : null;
+  final maxTokens = args.length > 2 ? int.parse(args[2]) : 32;
+  final draftTokenMax = args.length > 3 ? int.parse(args[3]) : 1;
 
   final engine = LlamaEngine(LlamaBackend());
   const userPrompt =
@@ -59,6 +62,7 @@ Future<void> main(List<String> args) async {
           seed: 7,
           reusePromptPrefix: false,
           speculativeDecodingConfig: SpeculativeDecodingConfig.mtp(
+            draftModelPath: draftModelPath,
             draftTokenMax: draftTokenMax,
             draftTokenMin: 0,
             minProbability: 0.0,
@@ -76,6 +80,7 @@ Future<void> main(List<String> args) async {
       const JsonEncoder.withIndent('  ').convert({
         'backend': backendName,
         'model': modelPath,
+        'draftModel': draftModelPath,
         'maxTokens': maxTokens,
         'draftTokenMax': draftTokenMax,
         'baseline': baseline,

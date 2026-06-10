@@ -254,11 +254,24 @@ Higher `draftTokenMax` values can be faster on some models/devices, but they
 should be benchmarked with the target model because excess draft depth can add
 verification overhead.
 
-Android Vulkan MTP is currently disabled by default. The upstream llama.cpp
-`draft-mtp` backend-sampling path can abort Android Vulkan processes with
-`vk::DeviceLostError`; use CPU for Android MTP validation, or rebuild with
-`--dart-define=LLAMADART_ANDROID_VULKAN_ALLOW_MTP=true` only when reproducing
-or benchmarking that upstream path.
+For target/draft model pairs, pass the separate drafter GGUF with
+`draftModelPath`:
+
+```dart
+params: const GenerationParams(
+  maxTokens: 128,
+  speculativeDecodingConfig: SpeculativeDecodingConfig.mtp(
+    draftModelPath: 'path/to/draft-model.gguf',
+    draftTokenMax: 1,
+  ),
+),
+```
+
+Android Vulkan MTP is opt-in through the same runtime parameters: request
+`GpuBackend.vulkan` in `ModelParams` and pass
+`SpeculativeDecodingConfig.mtp(...)` in `GenerationParams`. Benchmark this
+combination on target devices because MTP can increase memory use and may be
+slower than baseline decoding for some draft/target model pairs.
 
 ### 6. Download and cache a remote model file
 
@@ -561,7 +574,7 @@ Notes:
 - `ModelParams.mainGpu` passes through to llama.cpp `main_gpu`. To select one GPU for the full model, use `splitMode: ModelSplitMode.none` with the desired `mainGpu` index.
 - `ModelParams.batchSize` (`n_batch`) and `ModelParams.microBatchSize` (`n_ubatch`) can be set independently for memory/performance tuning; defaults keep legacy behavior (`n_batch = n_ctx`, `n_ubatch = n_batch`).
 - `ModelParams.speculativeRollbackTokenMax` passes through to llama.cpp `n_rs_seq`. Keep the default `0` for normal generation; set it to at least the MTP draft token max when a llama.cpp MTP model needs bounded rollback snapshots, such as Qwen3.5 MTP.
-- Android Vulkan MTP is guarded by default because the upstream llama.cpp MTP backend-sampling path can crash the process. The debug-only escape hatch is `--dart-define=LLAMADART_ANDROID_VULKAN_ALLOW_MTP=true`.
+- Android Vulkan MTP is not enabled by default; it runs only when callers request both `GpuBackend.vulkan` and `SpeculativeDecodingConfig.mtp(...)`. Benchmark on target devices because MTP can increase memory use and may be slower than baseline decoding.
 - `ModelParams.preferMemory64` and `ModelParams.modelBytesHint` are web/WebGPU only (ignored on native). They select the 64-bit (wasm64/mem64) bridge core so models larger than the ~4 GiB wasm32 address space (for example Gemma 4 E2B) can load; `null` auto-decides from the size hint (size-driven, no hardcoded model names). See the [WebGPU bridge docs](https://leehack.github.io/llamadart/docs/platforms/webgpu-bridge).
 - Apple targets use consolidated llama.cpp native libraries, so
   `llamadart_native_backends` does not split Apple backend modules. Use

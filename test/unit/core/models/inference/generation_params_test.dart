@@ -12,6 +12,7 @@ void main() {
       speculativeDecoding: true,
       speculativeDecodingConfig: const SpeculativeDecodingConfig.mtp(
         draftTokenMax: 3,
+        draftModelPath: 'draft.gguf',
       ),
       reusePromptPrefix: false,
       streamBatchTokenThreshold: 4,
@@ -35,6 +36,10 @@ void main() {
       SpeculativeDecodingStrategy.mtp,
     );
     expect(updated.resolvedSpeculativeDecodingConfig?.draftTokenMax, 3);
+    expect(
+      updated.resolvedSpeculativeDecodingConfig?.draftModelPath,
+      'draft.gguf',
+    );
     expect(updated.reusePromptPrefix, isFalse);
     expect(updated.streamBatchTokenThreshold, 4);
     expect(updated.streamBatchByteThreshold, 256);

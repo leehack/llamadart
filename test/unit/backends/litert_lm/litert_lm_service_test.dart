@@ -1661,6 +1661,7 @@ void main() {
           const GenerationParams(
             speculativeDecodingConfig: SpeculativeDecodingConfig.mtp(
               draftTokenMax: 3,
+              draftModelPath: 'draft.gguf',
             ),
           ),
         ),
@@ -1668,7 +1669,10 @@ void main() {
           isA<UnsupportedError>().having(
             (error) => error.message.toString(),
             'message',
-            contains('speculativeDecodingConfig.draftTokenMax'),
+            allOf(
+              contains('speculativeDecodingConfig.draftTokenMax'),
+              contains('speculativeDecodingConfig.draftModelPath'),
+            ),
           ),
         ),
       );

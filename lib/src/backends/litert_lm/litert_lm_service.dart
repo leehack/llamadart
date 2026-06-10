@@ -874,6 +874,9 @@ class LiteRtLmService {
     if (config.minProbability != null) {
       unsupported.add('speculativeDecodingConfig.minProbability');
     }
+    if (config.draftModelPath != null) {
+      unsupported.add('speculativeDecodingConfig.draftModelPath');
+    }
   }
 
   int _defaultSamplerSeed() {

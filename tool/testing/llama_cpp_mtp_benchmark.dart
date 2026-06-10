@@ -8,7 +8,8 @@ Future<void> main(List<String> args) async {
   if (modelPath.isEmpty) {
     stderr.writeln(
       'Usage: dart run tool/testing/llama_cpp_mtp_benchmark.dart '
-      '<model.gguf> [max-tokens] [runs] [draft-token-max-list] [warmups]\n'
+      '<model.gguf> [draft-model.gguf|-] [max-tokens] [runs] '
+      '[draft-token-max-list] [warmups]\n'
       'Set LLAMADART_MTP_BENCHMARK_INSTRUCTION to override the prompt.\n'
       'Set LLAMADART_MTP_BENCHMARK_BACKEND to override the backend.\n'
       'Set LLAMADART_MTP_BENCHMARK_RAW_PROMPT=true to skip chat wrapping.',
@@ -17,12 +18,15 @@ Future<void> main(List<String> args) async {
     return;
   }
 
-  final maxTokens = args.length > 1 ? int.parse(args[1]) : 512;
-  final measuredRuns = args.length > 2 ? int.parse(args[2]) : 3;
-  final draftTokenMaxValues = args.length > 3
-      ? args[3].split(',').map(int.parse).toList(growable: false)
+  final draftModelPath = args.length > 1 && args[1].isNotEmpty && args[1] != '-'
+      ? args[1]
+      : null;
+  final maxTokens = args.length > 2 ? int.parse(args[2]) : 512;
+  final measuredRuns = args.length > 3 ? int.parse(args[3]) : 3;
+  final draftTokenMaxValues = args.length > 4
+      ? args[4].split(',').map(int.parse).toList(growable: false)
       : const <int>[1, 2, 3];
-  final warmupRuns = args.length > 4 ? int.parse(args[4]) : 1;
+  final warmupRuns = args.length > 5 ? int.parse(args[5]) : 1;
   final benchmarkInstruction =
       Platform.environment['LLAMADART_MTP_BENCHMARK_INSTRUCTION'] ??
       _defaultBenchmarkInstruction;
@@ -62,7 +66,10 @@ Future<void> main(List<String> args) async {
     final benchmarkCases = <_BenchmarkCase>[
       const _BenchmarkCase.baseline(),
       for (final draftTokenMax in draftTokenMaxValues)
-        _BenchmarkCase.mtp(draftTokenMax: draftTokenMax),
+        _BenchmarkCase.mtp(
+          draftModelPath: draftModelPath,
+          draftTokenMax: draftTokenMax,
+        ),
     ];
 
     final results = <_RunResult>[];
@@ -113,6 +120,7 @@ Future<void> main(List<String> args) async {
       const JsonEncoder.withIndent('  ').convert({
         'backend': backendName,
         'model': modelPath,
+        'draftModel': draftModelPath,
         'maxTokens': maxTokens,
         'measuredRuns': measuredRuns,
         'warmupRuns': warmupRuns,
@@ -347,10 +355,14 @@ class _BenchmarkCase {
     : name = 'baseline',
       speculativeDecodingConfig = null;
 
-  factory _BenchmarkCase.mtp({required int draftTokenMax}) {
+  factory _BenchmarkCase.mtp({
+    required String? draftModelPath,
+    required int draftTokenMax,
+  }) {
     return _BenchmarkCase._(
       'mtp_draft_$draftTokenMax',
       SpeculativeDecodingConfig.mtp(
+        draftModelPath: draftModelPath,
         draftTokenMax: draftTokenMax,
         draftTokenMin: 0,
         minProbability: 0.0,

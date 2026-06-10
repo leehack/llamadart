@@ -28,6 +28,13 @@
   * Extended local macOS and chat app benchmark outputs with the new
     diagnostics and added focused llama.cpp MTP smoke/benchmark tools for
     baseline-vs-MTP comparisons.
+* **llama.cpp MTP runtime support**:
+  * Added `SpeculativeDecodingConfig.mtp(draftModelPath: ...)` for llama.cpp
+    external draft-model MTP sessions, with draft model caching and cleanup
+    tied to the target model lifetime.
+  * Removed the Android Vulkan MTP allow-list dart define and the model-name
+    based Android Vulkan acceleration shortcut; Vulkan MTP now runs only when
+    callers explicitly request Vulkan plus MTP in runtime parameters.
 * **Structured output**:
   * Added `responseFormat` routing to `LlamaEngine.create(...)` for
     grammar-capable backends, deprecated the legacy `chatTemplate(...)`

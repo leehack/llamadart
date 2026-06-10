@@ -110,9 +110,11 @@ Guidelines:
   `streamBatchTokenThreshold` and `streamBatchByteThreshold`.
 - Lower stream thresholds improve token-by-token UI granularity, while higher
   values improve throughput by reducing isolate message overhead.
-- Use `speculativeDecoding` only for native LiteRT-LM and benchmark your target
-  model/device before enabling it; the default remains off because it is not a
-  universal speedup.
+- Use speculative decoding only after benchmarking your target model/device; the
+  default remains off because it is not a universal speedup. Native LiteRT-LM
+  uses the legacy `speculativeDecoding` boolean, while llama.cpp MTP uses
+  `SpeculativeDecodingConfig.mtp(...)` and can optionally load a separate draft
+  GGUF through `draftModelPath`.
 - `reusePromptPrefix` is enabled by default for native generation; keep it on
   for multi-turn chats and repeated prompts, and validate parity for your
   target model/workload.

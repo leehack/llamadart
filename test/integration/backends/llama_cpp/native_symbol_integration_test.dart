@@ -12,6 +12,7 @@ const _llamadartWrapperAssetId = 'package:llamadart/llamadart_wrapper';
 
 const _mtpSymbols = [
   'llama_dart_mtp_init',
+  'llama_dart_mtp_init_with_draft_model',
   'llama_dart_mtp_free',
   'llama_dart_mtp_get_draft_context',
   'llama_dart_mtp_begin',
@@ -185,6 +186,18 @@ void main() {
 
       expect(
         llama_dart_mtp_init(
+          nullModel,
+          nullContext,
+          ctxParams,
+          1,
+          0,
+          0.0,
+          true,
+        ).address,
+        0,
+      );
+      expect(
+        llama_dart_mtp_init_with_draft_model(
           nullModel,
           nullContext,
           ctxParams,

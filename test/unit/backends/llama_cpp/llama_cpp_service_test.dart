@@ -32,47 +32,6 @@ void main() {
     });
   });
 
-  group('Android Vulkan MTP guard', () {
-    test('rejects Android Vulkan with GPU layers by default', () {
-      expect(
-        LlamaCppService.shouldRejectAndroidVulkanMtp(
-          'Vulkan',
-          resolvedGpuLayers: 999,
-          isAndroid: true,
-        ),
-        isTrue,
-      );
-    });
-
-    test('allows CPU and explicit debug override', () {
-      expect(
-        LlamaCppService.shouldRejectAndroidVulkanMtp(
-          'CPU',
-          resolvedGpuLayers: 0,
-          isAndroid: true,
-        ),
-        isFalse,
-      );
-      expect(
-        LlamaCppService.shouldRejectAndroidVulkanMtp(
-          'Vulkan',
-          resolvedGpuLayers: 999,
-          isAndroid: true,
-          allowMtp: true,
-        ),
-        isFalse,
-      );
-      expect(
-        LlamaCppService.shouldRejectAndroidVulkanMtp(
-          'Vulkan',
-          resolvedGpuLayers: 999,
-          isAndroid: false,
-        ),
-        isFalse,
-      );
-    });
-  });
-
   group('loadModel preflight validation', () {
     late Directory tempDir;
 
@@ -548,51 +507,6 @@ void main() {
         LlamaCppService.shouldUseConservativeAndroidVulkanContextConfig(
           params,
           resolvedGpuLayers: 0,
-          isAndroid: true,
-        ),
-        isFalse,
-      );
-    });
-  });
-
-  group('shouldEnableExperimentalAndroidVulkanAcceleration', () {
-    test('returns false off Android', () {
-      expect(
-        LlamaCppService.shouldEnableExperimentalAndroidVulkanAcceleration(
-          'Qwen3.5-0.8B-Q4_K_M.gguf',
-        ),
-        isFalse,
-      );
-    });
-
-    test('returns true for small Qwen3.5 models on Android', () {
-      expect(
-        LlamaCppService.shouldEnableExperimentalAndroidVulkanAcceleration(
-          '/data/user/0/app_flutter/models/Qwen3.5-0.8B-Q4_K_M.gguf',
-          isAndroid: true,
-        ),
-        isTrue,
-      );
-      expect(
-        LlamaCppService.shouldEnableExperimentalAndroidVulkanAcceleration(
-          '/data/user/0/app_flutter/models/Qwen3.5-2B-Q4_K_M.gguf',
-          isAndroid: true,
-        ),
-        isTrue,
-      );
-      expect(
-        LlamaCppService.shouldEnableExperimentalAndroidVulkanAcceleration(
-          '/data/user/0/app_flutter/models/Qwen3.5-4B-Q4_K_M.gguf',
-          isAndroid: true,
-        ),
-        isTrue,
-      );
-    });
-
-    test('returns false for unrelated models on Android', () {
-      expect(
-        LlamaCppService.shouldEnableExperimentalAndroidVulkanAcceleration(
-          '/data/user/0/app_flutter/models/Llama-3.2-3B.gguf',
           isAndroid: true,
         ),
         isFalse,

@@ -68,12 +68,20 @@ class SpeculativeDecodingConfig {
   /// `null` lets the backend choose its default.
   final double? minProbability;
 
+  /// Optional draft model path for speculative decoding modes that use a
+  /// separate drafter model, such as llama.cpp `--model-draft` with
+  /// `draft-mtp`.
+  ///
+  /// Leave null for models that carry their own MTP layers.
+  final String? draftModelPath;
+
   /// Creates a backend-neutral speculative decoding configuration.
   const SpeculativeDecodingConfig({
     this.strategy = SpeculativeDecodingStrategy.backendDefault,
     this.draftTokenMax,
     this.draftTokenMin,
     this.minProbability,
+    this.draftModelPath,
   }) : assert(draftTokenMax == null || draftTokenMax >= 0),
        assert(draftTokenMin == null || draftTokenMin >= 0),
        assert(
@@ -86,13 +94,15 @@ class SpeculativeDecodingConfig {
     : strategy = SpeculativeDecodingStrategy.backendDefault,
       draftTokenMax = null,
       draftTokenMin = null,
-      minProbability = null;
+      minProbability = null,
+      draftModelPath = null;
 
   /// Enables multi-token prediction speculative decoding.
   const SpeculativeDecodingConfig.mtp({
     this.draftTokenMax,
     this.draftTokenMin,
     this.minProbability,
+    this.draftModelPath,
   }) : strategy = SpeculativeDecodingStrategy.mtp,
        assert(draftTokenMax == null || draftTokenMax >= 0),
        assert(draftTokenMin == null || draftTokenMin >= 0),
