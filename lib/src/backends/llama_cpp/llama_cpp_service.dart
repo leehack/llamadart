@@ -4444,7 +4444,7 @@ class LlamaCppService {
             }
           }
 
-          if (shouldStop || generatedTokens >= params.maxTokens) {
+          if (shouldStop) {
             break;
           }
         }
@@ -4455,13 +4455,15 @@ class LlamaCppService {
         final contextDraftCapacity = rollbackCapacity > 0
             ? math.min(nCtx - currentPos - 2, rollbackCapacity)
             : nCtx - currentPos - 2;
-        final draftLimit = math.min(
-          mtpConfig.draftTokenMax,
-          math.min(
-            math.min(remainingToGenerate - 1, contextDraftCapacity),
-            batchCapacity - 1,
-          ),
-        );
+        final draftLimit = remainingToGenerate <= 1
+            ? 0
+            : math.min(
+                mtpConfig.draftTokenMax,
+                math.min(
+                  math.min(remainingToGenerate - 1, contextDraftCapacity),
+                  batchCapacity - 1,
+                ),
+              );
 
         var draftCount = 0;
         if (draftLimit > 0) {
