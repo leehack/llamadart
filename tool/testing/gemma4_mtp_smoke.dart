@@ -29,13 +29,13 @@ Future<void> main(List<String> args) async {
     await engine.setNativeLogLevel(LlamaLogLevel.warn);
     await engine.loadModel(
       modelPath,
-      modelParams: const ModelParams(
+      modelParams: ModelParams(
         contextSize: 2048,
         preferredBackend: GpuBackend.metal,
         gpuLayers: ModelParams.maxGpuLayers,
         numberOfThreads: 4,
         numberOfThreadsBatch: 4,
-        speculativeRollbackTokenMax: 4,
+        speculativeRollbackTokenMax: draftTokenMax > 4 ? draftTokenMax : 4,
       ),
     );
 

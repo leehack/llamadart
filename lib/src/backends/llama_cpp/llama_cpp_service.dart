@@ -4341,7 +4341,6 @@ class LlamaCppService {
           if (stopSequences.any((s) => text.endsWith(s))) break;
         }
       }
-      if (generatedTokens >= params.maxTokens) break;
 
       batch.n_tokens = 1;
       batch.token[0] = selectedToken;
