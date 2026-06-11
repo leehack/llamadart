@@ -4,6 +4,10 @@
   `llamadart_litert_lm_flutter` `0.0.1` and
   the pre-`native.1` LiteRT-LM release after the 0.8.0 native pin sync moved
   LiteRT-LM Apple/runtime artifacts to `v0.13.1-native.1`.
+* Routed native `.litertlm` image/audio chat parts through LiteRT-LM
+  Conversation message JSON so bundles with native media processors can accept
+  `LlamaImageContent` / `LlamaAudioContent` path and encoded-byte inputs without
+  a separate `mmproj` projector.
 
 ## 0.8.0
 
