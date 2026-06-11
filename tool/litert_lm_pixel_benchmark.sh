@@ -18,6 +18,14 @@ if [[ ! -f "$DEFAULT_LLAMADART_MODEL" && -f "$SIBLING_LLAMADART_MODEL" ]]; then
 fi
 LOCAL_LLAMADART_MODEL="${LOCAL_LLAMADART_MODEL:-$DEFAULT_LLAMADART_MODEL}"
 DEVICE_LLAMADART_MODEL="${DEVICE_LLAMADART_MODEL:-$DEVICE_APP_FILES_DIR/$LLAMADART_MODEL_NAME}"
+LLAMADART_DRAFT_MODEL_NAME="${LLAMADART_DRAFT_MODEL_NAME:-mtp-gemma-4-E2B-it.gguf}"
+DEFAULT_LLAMADART_DRAFT_MODEL="$ROOT_DIR/models/$LLAMADART_DRAFT_MODEL_NAME"
+SIBLING_LLAMADART_DRAFT_MODEL="$(dirname "$ROOT_DIR")/llamadart/models/$LLAMADART_DRAFT_MODEL_NAME"
+if [[ ! -f "$DEFAULT_LLAMADART_DRAFT_MODEL" && -f "$SIBLING_LLAMADART_DRAFT_MODEL" ]]; then
+  DEFAULT_LLAMADART_DRAFT_MODEL="$SIBLING_LLAMADART_DRAFT_MODEL"
+fi
+LOCAL_LLAMADART_DRAFT_MODEL="${LOCAL_LLAMADART_DRAFT_MODEL:-$DEFAULT_LLAMADART_DRAFT_MODEL}"
+DEVICE_LLAMADART_DRAFT_MODEL="${DEVICE_LLAMADART_DRAFT_MODEL:-$DEVICE_APP_FILES_DIR/$LLAMADART_DRAFT_MODEL_NAME}"
 BACKEND="${BACKEND:-gpu}"
 LLAMADART_BACKEND="${LLAMADART_BACKEND:-auto}"
 TARGETS="${TARGETS:-litert_lm,llamadart}"
@@ -74,6 +82,12 @@ else
     exit 2
   fi
 fi
+LLAMADART_DRAFT_MODEL_DEFINE=""
+if [[ "$SPECULATIVE" == "true" && -f "$LOCAL_LLAMADART_DRAFT_MODEL" ]]; then
+  LLAMADART_DRAFT_MODEL_DEFINE="$DEVICE_LLAMADART_DRAFT_MODEL"
+elif [[ "$SPECULATIVE" == "true" ]]; then
+  echo "No GGUF draft model found for speculative llama.cpp: $LOCAL_LLAMADART_DRAFT_MODEL" >&2
+fi
 
 echo "Benchmark configuration:"
 echo "  device: $DEVICE"
@@ -87,6 +101,9 @@ echo "  log timeouts: LiteRT-LM=${LITERT_LM_LOG_TIMEOUT}s llamadart=${LLAMADART_
 echo "  LiteRT-LM model: $LOCAL_MODEL -> $DEVICE_MODEL"
 if [[ -n "$LLAMADART_MODEL_DEFINE" ]]; then
   echo "  GGUF model: $LOCAL_LLAMADART_MODEL -> $DEVICE_LLAMADART_MODEL"
+  if [[ -n "$LLAMADART_DRAFT_MODEL_DEFINE" ]]; then
+    echo "  GGUF draft model: $LOCAL_LLAMADART_DRAFT_MODEL -> $DEVICE_LLAMADART_DRAFT_MODEL"
+  fi
 else
   echo "  GGUF model: unavailable"
 fi
@@ -110,6 +127,7 @@ build_install_and_push() {
   local target="$1"
   local litert_model_define=""
   local llamadart_model_define=""
+  local llamadart_draft_model_define=""
 
   case "$target" in
     litert_lm)
@@ -121,10 +139,12 @@ build_install_and_push() {
         return 1
       fi
       llamadart_model_define="$DEVICE_LLAMADART_MODEL"
+      llamadart_draft_model_define="$LLAMADART_DRAFT_MODEL_DEFINE"
       ;;
     both)
       litert_model_define="$DEVICE_MODEL"
       llamadart_model_define="$LLAMADART_MODEL_DEFINE"
+      llamadart_draft_model_define="$LLAMADART_DRAFT_MODEL_DEFINE"
       ;;
     *)
       echo "Unknown TARGETS entry: $target" >&2
@@ -140,6 +160,7 @@ build_install_and_push() {
       --dart-define=BENCHMARK_AUTO_RUN=true \
       --dart-define="LITERT_LM_MODEL=$litert_model_define" \
       --dart-define="LLAMADART_MODEL=$llamadart_model_define" \
+      --dart-define="LLAMADART_DRAFT_MODEL=$llamadart_draft_model_define" \
       --dart-define="LITERT_LM_BACKEND=$BACKEND" \
       --dart-define="LLAMADART_BACKEND=$LLAMADART_BACKEND" \
       --dart-define="LITERT_LM_SPECULATIVE=$SPECULATIVE" \
@@ -161,6 +182,10 @@ build_install_and_push() {
   if [[ -n "$llamadart_model_define" ]]; then
     echo "Pushing GGUF model to $DEVICE_LLAMADART_MODEL"
     push_app_file "$LOCAL_LLAMADART_MODEL" "$LLAMADART_MODEL_NAME"
+  fi
+  if [[ -n "$llamadart_draft_model_define" ]]; then
+    echo "Pushing GGUF draft model to $DEVICE_LLAMADART_DRAFT_MODEL"
+    push_app_file "$LOCAL_LLAMADART_DRAFT_MODEL" "$LLAMADART_DRAFT_MODEL_NAME"
   fi
 }
 

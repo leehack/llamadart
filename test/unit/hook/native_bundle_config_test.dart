@@ -95,6 +95,14 @@ void main() {
       expect(descriptor.backend, isNull);
     });
 
+    test('classifies llama common as a core runtime library', () {
+      final descriptor = describeNativeLibrary('/tmp/libllama-common.so');
+
+      expect(descriptor.canonicalName, 'llama-common');
+      expect(descriptor.isCore, isTrue);
+      expect(descriptor.backend, isNull);
+    });
+
     test('normalizes Linux SONAME suffix for ggml base library', () {
       final descriptor = describeNativeLibrary('/tmp/libggml-base.so.1');
 
@@ -158,18 +166,9 @@ void main() {
   });
 
   group('selectNativeRuntimesForBundle', () {
-    test('defaults to llama.cpp and LiteRT-LM on Android', () {
-      final selected = selectNativeRuntimesForBundle(
-        bundle: 'android-arm64',
-        rawUserConfig: null,
-        warn: (_) {},
-      );
-
-      expect(selected, [nativeRuntimeLlamaCpp, nativeRuntimeLiteRtLm]);
-    });
-
-    test('defaults to llama.cpp on non-Android targets', () {
+    test('defaults to all runtime families', () {
       for (final bundle in [
+        'android-arm64',
         'ios-arm64',
         'linux-x64',
         'macos-arm64',
@@ -181,7 +180,10 @@ void main() {
           warn: (_) {},
         );
 
-        expect(selected, [nativeRuntimeLlamaCpp], reason: bundle);
+        expect(selected, [
+          nativeRuntimeLlamaCpp,
+          nativeRuntimeLiteRtLm,
+        ], reason: bundle);
       }
     });
 
@@ -203,6 +205,29 @@ void main() {
       );
 
       expect(selected, [nativeRuntimeLlamaCpp, nativeRuntimeLiteRtLm]);
+    });
+
+    test('parses empty runtime list as all runtime families', () {
+      for (final rawUserConfig in const [
+        <String>[],
+        '',
+        {'runtimes': <String>[]},
+        {
+          'runtimes': ['llama_cpp'],
+          'platforms': {'linux-x64': <String>[]},
+        },
+      ]) {
+        final selected = selectNativeRuntimesForBundle(
+          bundle: 'linux-x64',
+          rawUserConfig: rawUserConfig,
+          warn: (_) {},
+        );
+
+        expect(selected, [
+          nativeRuntimeLlamaCpp,
+          nativeRuntimeLiteRtLm,
+        ], reason: rawUserConfig.toString());
+      }
     });
 
     test('supports per-platform runtime override', () {
@@ -297,7 +322,7 @@ void main() {
 
       expect(iosSelected, [nativeRuntimeLlamaCpp]);
       expect(macosSelected, [nativeRuntimeLiteRtLm]);
-      expect(linuxSelected, [nativeRuntimeLlamaCpp]);
+      expect(linuxSelected, [nativeRuntimeLlamaCpp, nativeRuntimeLiteRtLm]);
     });
 
     test('supports map platform shape with runtimes key', () {
@@ -328,6 +353,62 @@ void main() {
       expect(selected, [nativeRuntimeLiteRtLm]);
       expect(warnings.single, contains('onnx'));
     });
+
+    test('tracks explicit runtime requests separately from all/defaults', () {
+      for (final rawUserConfig in const [
+        null,
+        '',
+        <String>[],
+        'all',
+        ['both'],
+        {'runtimes': <String>[]},
+      ]) {
+        expect(
+          nativeRuntimeExplicitlySelectedForBundle(
+            bundle: 'ios-x86_64-sim',
+            rawUserConfig: rawUserConfig,
+            runtime: nativeRuntimeLiteRtLm,
+          ),
+          isFalse,
+          reason: rawUserConfig.toString(),
+        );
+      }
+
+      expect(
+        nativeRuntimeExplicitlySelectedForBundle(
+          bundle: 'ios-x86_64-sim',
+          rawUserConfig: ['litert_lm'],
+          runtime: nativeRuntimeLiteRtLm,
+        ),
+        isTrue,
+      );
+      expect(
+        nativeRuntimeExplicitlySelectedForBundle(
+          bundle: 'ios-x86_64-sim',
+          rawUserConfig: {
+            'runtimes': ['litert_lm'],
+            'platforms': {
+              'ios-x86_64-sim': ['all'],
+            },
+          },
+          runtime: nativeRuntimeLiteRtLm,
+        ),
+        isFalse,
+      );
+      expect(
+        nativeRuntimeExplicitlySelectedForBundle(
+          bundle: 'ios-x86_64-sim',
+          rawUserConfig: {
+            'runtimes': ['all'],
+            'platforms': {
+              'ios-x86_64-sim': ['litert_lm'],
+            },
+          },
+          runtime: nativeRuntimeLiteRtLm,
+        ),
+        isTrue,
+      );
+    });
   });
 
   group('selectLibrariesForBundling', () {
@@ -340,6 +421,7 @@ void main() {
     final libraries = [
       describeNativeLibrary('/tmp/libllamadart.so'),
       describeNativeLibrary('/tmp/libllama.so'),
+      describeNativeLibrary('/tmp/libllama-common.so'),
       describeNativeLibrary('/tmp/libggml.so'),
       describeNativeLibrary('/tmp/libggml-base.so'),
       describeNativeLibrary('/tmp/libggml-cpu.so'),
@@ -359,6 +441,7 @@ void main() {
       expect(selectedNames, contains('ggml-cpu'));
       expect(selectedNames, contains('ggml-vulkan'));
       expect(selectedNames, isNot(contains('ggml-opencl')));
+      expect(selectedNames, contains('llama-common'));
     });
 
     test('uses requested backend when available', () {
@@ -556,6 +639,7 @@ void main() {
     final libraries = [
       describeNativeLibrary('/tmp/libllamadart.so'),
       describeNativeLibrary('/tmp/libllama.so'),
+      describeNativeLibrary('/tmp/libllama-common.so'),
       describeNativeLibrary('/tmp/libggml.so'),
       describeNativeLibrary('/tmp/libggml-base.so'),
       describeNativeLibrary('/tmp/libggml-vulkan.so'),

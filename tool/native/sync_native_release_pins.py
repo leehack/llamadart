@@ -17,16 +17,16 @@ from typing import Any
 
 DEFAULT_LLAMADART_NATIVE_REPO = "leehack/llamadart-native"
 DEFAULT_LITERT_LM_NATIVE_REPO = "leehack/litert-lm-native"
-
-LITERT_LM_SPM_TARGETS = (
-    "LiteRtLm",
-    "CLiteRTLM",
-    "GemmaModelConstraintProvider",
-    "LiteRt",
-    "LiteRtMetalAccelerator",
-    "LiteRtTopKMetalSampler",
-    "LiteRtTopKWebGpuSampler",
-    "LiteRtWebGpuAccelerator",
+DEFAULT_LLAMA_CPP_PACKAGE_SWIFT = (
+    "packages/llamadart_llama_cpp_flutter/darwin/"
+    "llamadart_llama_cpp_flutter/Package.swift"
+)
+DEFAULT_LITERT_LM_PACKAGE_SWIFT = (
+    "packages/llamadart_litert_lm_flutter/darwin/"
+    "llamadart_litert_lm_flutter/Package.swift"
+)
+DEFAULT_LITERT_LM_RUNTIME_DART = (
+    "lib/src/backends/litert_lm/litert_lm_runtime.dart"
 )
 
 
@@ -38,10 +38,12 @@ def main() -> int:
     args = parse_args()
     repo_root = Path(args.repo_root).resolve()
     hook_path = repo_root / args.hook_build
-    package_swift_path = repo_root / args.package_swift
+    llama_cpp_package_swift_path = repo_root / args.llama_cpp_package_swift
+    litert_lm_package_swift_path = repo_root / args.litert_lm_package_swift
+    litert_lm_runtime_dart_path = repo_root / args.litert_lm_runtime_dart
 
     hook_text = hook_path.read_text(encoding="utf-8")
-    package_swift_text = package_swift_path.read_text(encoding="utf-8")
+    pending_writes: dict[Path, str] = {}
 
     summaries: list[str] = []
     resolved_llama_cpp_tag = ""
@@ -57,27 +59,41 @@ def main() -> int:
             args.release_json_dir,
         )
         resolved_llama_cpp_tag = release["tag_name"]
-        llama_checksum = release_asset_checksum(
-            release,
-            f"llamadart-native-apple-xcframework-{resolved_llama_cpp_tag}.zip",
-        )
         hook_text = replace_one(
             hook_text,
             r"const _llamaCppTag = '[^']+';",
             f"const _llamaCppTag = '{resolved_llama_cpp_tag}';",
             "hook llama.cpp tag",
         )
-        package_swift_text = replace_one(
-            package_swift_text,
-            r'let llamaCppTag = "[^"]+"',
-            f'let llamaCppTag = "{resolved_llama_cpp_tag}"',
-            "Package.swift llama.cpp tag",
-        )
-        package_swift_text = replace_binary_target_checksum(
-            package_swift_text,
-            "llama",
-            llama_checksum,
-        )
+        if llama_cpp_package_swift_path.exists():
+            checksum = release_asset_checksum(
+                release,
+                f"llamadart-native-apple-xcframework-{resolved_llama_cpp_tag}.zip",
+            )
+            original_swift_text = llama_cpp_package_swift_path.read_text(
+                encoding="utf-8"
+            )
+            swift_text = original_swift_text
+            swift_text = replace_one(
+                swift_text,
+                r'let llamaCppTag = "[^"]+"',
+                f'let llamaCppTag = "{resolved_llama_cpp_tag}"',
+                "llama.cpp Package.swift tag",
+            )
+            swift_text = replace_swift_binary_target_checksum(
+                swift_text,
+                "llama",
+                checksum,
+            )
+            pending_writes[llama_cpp_package_swift_path] = swift_text
+            update_companion_package_metadata(
+                pending_writes,
+                companion_package_root(llama_cpp_package_swift_path),
+                args.llamadart_native_repo,
+                resolved_llama_cpp_tag,
+                bump_version=swift_text != original_swift_text,
+            )
+
         summaries.append(
             f"llama.cpp -> {args.llamadart_native_repo}@{resolved_llama_cpp_tag}"
         )
@@ -97,6 +113,19 @@ def main() -> int:
             f"const _litertLmVersion = '{litert_version}';",
             "hook LiteRT-LM version",
         )
+        if not litert_lm_runtime_dart_path.exists():
+            raise ReleaseError(
+                f"Missing LiteRT-LM Dart runtime {litert_lm_runtime_dart_path}"
+            )
+        runtime_dart_text = litert_lm_runtime_dart_path.read_text(
+            encoding="utf-8"
+        )
+        pending_writes[litert_lm_runtime_dart_path] = replace_one(
+            runtime_dart_text,
+            r"const _litertLmVersion = '[^']+';",
+            f"const _litertLmVersion = '{litert_version}';",
+            "LiteRT-LM Dart runtime version",
+        )
         for bundle in litert_lm_bundle_names(hook_text):
             checksum = release_asset_checksum(
                 release,
@@ -108,22 +137,46 @@ def main() -> int:
                 checksum,
             )
 
-        package_swift_text = replace_one(
-            package_swift_text,
-            r'let liteRtLmTag = "[^"]+"',
-            f'let liteRtLmTag = "{resolved_litert_lm_tag}"',
-            "Package.swift LiteRT-LM tag",
-        )
-        for target in LITERT_LM_SPM_TARGETS:
-            checksum = release_asset_checksum(
-                release,
-                f"litert-lm-native-apple-{target}-xcframework-{resolved_litert_lm_tag}.zip",
+        if litert_lm_package_swift_path.exists():
+            original_swift_text = litert_lm_package_swift_path.read_text(
+                encoding="utf-8"
             )
-            package_swift_text = replace_binary_target_checksum(
-                package_swift_text,
-                target,
-                checksum,
+            original_litert_lm_tag = swift_variable_value(
+                original_swift_text,
+                "liteRtLmTag",
+                "LiteRT-LM Package.swift tag",
             )
+            apple_targets = swift_native_repo_binary_targets(
+                original_swift_text,
+                tag_variable="liteRtLmTag",
+                current_tag=original_litert_lm_tag,
+            )
+            swift_text = original_swift_text
+            swift_text = replace_one(
+                swift_text,
+                r'let liteRtLmTag = "[^"]+"',
+                f'let liteRtLmTag = "{resolved_litert_lm_tag}"',
+                "LiteRT-LM Package.swift tag",
+            )
+            for target_name, asset_template in apple_targets:
+                checksum = release_asset_checksum(
+                    release,
+                    asset_template.format(tag=resolved_litert_lm_tag),
+                )
+                swift_text = replace_swift_binary_target_checksum(
+                    swift_text,
+                    target_name,
+                    checksum,
+                )
+            pending_writes[litert_lm_package_swift_path] = swift_text
+            update_companion_package_metadata(
+                pending_writes,
+                companion_package_root(litert_lm_package_swift_path),
+                args.litert_lm_native_repo,
+                resolved_litert_lm_tag,
+                bump_version=swift_text != original_swift_text,
+            )
+
         summaries.append(
             f"LiteRT-LM -> {args.litert_lm_native_repo}@{resolved_litert_lm_tag}"
         )
@@ -136,7 +189,8 @@ def main() -> int:
         print("Dry run; no files written.")
     else:
         hook_path.write_text(hook_text, encoding="utf-8")
-        package_swift_path.write_text(package_swift_text, encoding="utf-8")
+        for path, text in pending_writes.items():
+            path.write_text(text, encoding="utf-8")
 
     for summary in summaries:
         print(f"Synced {summary}")
@@ -153,8 +207,8 @@ def main() -> int:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Update hook/build.dart and darwin/llamadart/Package.swift from "
-            "published native release asset checksums."
+            "Update hook/build.dart from published native release asset "
+            "checksums."
         )
     )
     parser.add_argument(
@@ -168,9 +222,28 @@ def parse_args() -> argparse.Namespace:
         help="Path to hook/build.dart relative to repo root.",
     )
     parser.add_argument(
-        "--package-swift",
-        default="darwin/llamadart/Package.swift",
-        help="Path to Package.swift relative to repo root.",
+        "--llama-cpp-package-swift",
+        default=DEFAULT_LLAMA_CPP_PACKAGE_SWIFT,
+        help=(
+            "Path to the llama.cpp Flutter companion Package.swift relative "
+            "to repo root. Skipped if the file does not exist."
+        ),
+    )
+    parser.add_argument(
+        "--litert-lm-package-swift",
+        default=DEFAULT_LITERT_LM_PACKAGE_SWIFT,
+        help=(
+            "Path to the LiteRT-LM Flutter companion Package.swift relative "
+            "to repo root. Skipped if the file does not exist."
+        ),
+    )
+    parser.add_argument(
+        "--litert-lm-runtime-dart",
+        default=DEFAULT_LITERT_LM_RUNTIME_DART,
+        help=(
+            "Path to the LiteRT-LM Dart runtime version pin relative "
+            "to repo root."
+        ),
     )
     parser.add_argument(
         "--llama-cpp-tag",
@@ -295,18 +368,6 @@ def replace_one(text: str, pattern: str, replacement: str, description: str) -> 
     return updated
 
 
-def replace_binary_target_checksum(text: str, target: str, checksum: str) -> str:
-    pattern = re.compile(
-        rf'(nativeRepoBinaryTarget\(\s*name: "{re.escape(target)}",.*?'
-        rf'checksum: ")[0-9a-f]+(")',
-        re.DOTALL,
-    )
-    updated, count = pattern.subn(rf"\g<1>{checksum}\2", text, count=1)
-    if count != 1:
-        raise ReleaseError(f"Could not replace Package.swift checksum for {target}")
-    return updated
-
-
 def litert_lm_bundle_names(hook_text: str) -> list[str]:
     pattern = re.compile(
         r"_LiteRtLmBundleSpec\(\s*'([^']+)',\s*sha256: '[0-9a-f]+'",
@@ -331,6 +392,212 @@ def replace_litert_lm_bundle_checksum(
     if count != 1:
         raise ReleaseError(f"Could not replace LiteRT-LM checksum for {bundle}")
     return updated
+
+
+def replace_swift_binary_target_checksum(
+    swift_text: str,
+    target_name: str,
+    checksum: str,
+) -> str:
+    pattern = re.compile(
+        rf'(nativeRepoBinaryTarget\(\s*name: "{re.escape(target_name)}",'
+        r'.*?checksum: ")[0-9a-f]+(")',
+        re.DOTALL,
+    )
+    updated, count = pattern.subn(rf"\g<1>{checksum}\2", swift_text, count=1)
+    if count != 1:
+        raise ReleaseError(f"Could not replace Package.swift checksum for {target_name}")
+    return updated
+
+
+def swift_variable_value(
+    swift_text: str,
+    variable_name: str,
+    description: str,
+) -> str:
+    match = re.search(
+        rf'\blet\s+{re.escape(variable_name)}\s*=\s*"([^"]+)"',
+        swift_text,
+    )
+    if not match:
+        raise ReleaseError(f"Could not read {description}")
+    return match.group(1)
+
+
+def swift_native_repo_binary_targets(
+    swift_text: str,
+    *,
+    tag_variable: str,
+    current_tag: str,
+) -> list[tuple[str, str]]:
+    pattern = re.compile(
+        r'nativeRepoBinaryTarget\(\s*name:\s*"(?P<name>[^"]+)"'
+        r'.*?artifactName:\s*"(?P<artifact_name>[^"]+)"'
+        r'.*?checksum:\s*"[0-9a-f]+"',
+        re.DOTALL,
+    )
+    targets: list[tuple[str, str]] = []
+    for match in pattern.finditer(swift_text):
+        artifact_template = swift_artifact_template(
+            match.group("artifact_name"),
+            tag_variable=tag_variable,
+            current_tag=current_tag,
+        )
+        targets.append((match.group("name"), artifact_template))
+    if not targets:
+        raise ReleaseError("Could not find nativeRepoBinaryTarget entries")
+    return targets
+
+
+def swift_artifact_template(
+    artifact_name: str,
+    *,
+    tag_variable: str,
+    current_tag: str,
+) -> str:
+    interpolated_tag = rf"\({tag_variable})"
+    if interpolated_tag in artifact_name:
+        return artifact_name.replace(interpolated_tag, "{tag}")
+    if current_tag in artifact_name:
+        return artifact_name.replace(current_tag, "{tag}")
+    return artifact_name
+
+
+def companion_package_root(package_swift_path: Path) -> Path:
+    try:
+        return package_swift_path.parents[2]
+    except IndexError as error:
+        raise ReleaseError(
+            f"Could not infer companion package root from {package_swift_path}"
+        ) from error
+
+
+def update_companion_package_metadata(
+    pending_writes: dict[Path, str],
+    package_root: Path,
+    repo: str,
+    tag: str,
+    *,
+    bump_version: bool,
+) -> None:
+    pubspec_path = package_root / "pubspec.yaml"
+    readme_path = package_root / "README.md"
+    changelog_path = package_root / "CHANGELOG.md"
+    if not pubspec_path.exists():
+        raise ReleaseError(f"Missing companion package pubspec {pubspec_path}")
+    if not readme_path.exists():
+        raise ReleaseError(f"Missing companion package README {readme_path}")
+    if not changelog_path.exists():
+        raise ReleaseError(f"Missing companion package CHANGELOG {changelog_path}")
+
+    pubspec_text = pubspec_path.read_text(encoding="utf-8")
+    current_version = companion_pubspec_version(pubspec_text, pubspec_path)
+    next_version = (
+        bump_patch_version(current_version) if bump_version else current_version
+    )
+    if bump_version:
+        pending_writes[pubspec_path] = replace_pubspec_version(
+            pubspec_text,
+            next_version,
+            pubspec_path,
+        )
+
+    readme_text = readme_path.read_text(encoding="utf-8")
+    readme_text = replace_one(
+        readme_text,
+        r"The Apple SwiftPM manifest pins `[^`]+`\.",
+        f"The Apple SwiftPM manifest pins `{repo}@{tag}`.",
+        f"{package_root.name} README native pin",
+    )
+    readme_text = replace_readme_dependency_version(
+        readme_text,
+        package_root.name,
+        next_version,
+    )
+    pending_writes[readme_path] = readme_text
+
+    if bump_version:
+        changelog_text = changelog_path.read_text(encoding="utf-8")
+        pending_writes[changelog_path] = prepend_companion_changelog_release(
+            changelog_text,
+            next_version,
+            f"* Updated Apple SwiftPM native pin to `{repo}@{tag}`.",
+            repo,
+        )
+
+
+def companion_pubspec_version(pubspec_text: str, pubspec_path: Path) -> str:
+    match = re.search(
+        r"^version:\s*([0-9]+\.[0-9]+\.[0-9]+)\s*$",
+        pubspec_text,
+        re.MULTILINE,
+    )
+    if not match:
+        raise ReleaseError(f"Could not read semver version from {pubspec_path}")
+    return match.group(1)
+
+
+def bump_patch_version(version: str) -> str:
+    major, minor, patch = version.split(".")
+    return f"{major}.{minor}.{int(patch) + 1}"
+
+
+def replace_pubspec_version(
+    pubspec_text: str,
+    version: str,
+    pubspec_path: Path,
+) -> str:
+    updated, count = re.subn(
+        r"^version:\s*[0-9]+\.[0-9]+\.[0-9]+\s*$",
+        f"version: {version}",
+        pubspec_text,
+        count=1,
+        flags=re.MULTILINE,
+    )
+    if count != 1:
+        raise ReleaseError(f"Could not replace version in {pubspec_path}")
+    return updated
+
+
+def replace_readme_dependency_version(
+    readme_text: str,
+    package_name: str,
+    version: str,
+) -> str:
+    pattern = rf"(\s{re.escape(package_name)}:\s*\^)[0-9]+\.[0-9]+\.[0-9]+"
+    updated, count = re.subn(pattern, rf"\g<1>{version}", readme_text, count=1)
+    if count != 1:
+        raise ReleaseError(f"Could not replace {package_name} README version")
+    return updated
+
+
+def prepend_companion_changelog_release(
+    changelog_text: str,
+    version: str,
+    entry: str,
+    repo: str,
+) -> str:
+    old_entry_pattern = re.compile(
+        rf"^\* Updated Apple SwiftPM native pin to `{re.escape(repo)}@[^`]+`\.\n?",
+        re.MULTILINE,
+    )
+    heading_match = re.search(
+        rf"(?m)^## {re.escape(version)}\s*\n+",
+        changelog_text,
+    )
+    if not heading_match:
+        return f"## {version}\n\n{entry}\n\n{changelog_text.lstrip()}"
+
+    body_start = heading_match.end()
+    next_heading = re.search(r"(?m)^##\s+", changelog_text[body_start:])
+    body_end = (
+        body_start + next_heading.start() if next_heading else len(changelog_text)
+    )
+    body = old_entry_pattern.sub("", changelog_text[body_start:body_end]).strip()
+    new_body = f"{entry}\n\n"
+    if body:
+        new_body = f"{entry}\n\n{body}\n\n"
+    return changelog_text[:body_start] + new_body + changelog_text[body_end:]
 
 
 def write_github_output(values: dict[str, str]) -> None:

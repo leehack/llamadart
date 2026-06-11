@@ -16,11 +16,12 @@ const List<String> allNativeRuntimes = [
   nativeRuntimeLiteRtLm,
 ];
 
-const List<String> defaultNativeRuntimes = [nativeRuntimeLlamaCpp];
+const List<String> defaultNativeRuntimes = allNativeRuntimes;
 
 const Set<String> _coreLibraries = {
   'llamadart',
   'llama',
+  'llama-common',
   'ggml',
   'ggml-base',
   'mtmd',
@@ -391,11 +392,25 @@ List<String> selectNativeRuntimesForBundle({
   return parsed.runtimes;
 }
 
-List<String> defaultNativeRuntimesForBundle(String bundle) {
-  final canonicalBundle = canonicalizeBundleKey(bundle);
-  if (_bundleOsKeys[canonicalBundle] == 'android') {
-    return allNativeRuntimes;
+bool nativeRuntimeExplicitlySelectedForBundle({
+  required String bundle,
+  required Object? rawUserConfig,
+  required String runtime,
+}) {
+  final normalizedRuntime = _normalizeRuntime(runtime);
+  if (normalizedRuntime == null ||
+      normalizedRuntime == 'all' ||
+      normalizedRuntime == 'none') {
+    return false;
   }
+  final parsed = _parseNativeRuntimeConfigForBundle(
+    bundle: bundle,
+    rawUserConfig: rawUserConfig,
+  );
+  return parsed?.explicit.contains(normalizedRuntime) ?? false;
+}
+
+List<String> defaultNativeRuntimesForBundle(String bundle) {
   return defaultNativeRuntimes;
 }
 
@@ -456,7 +471,7 @@ List<String> selectBackendsForBundle({
   return _ensureCpuBackend(requested, availableBackends);
 }
 
-({List<String> runtimes, List<String> invalid})?
+({List<String> runtimes, List<String> invalid, Set<String> explicit})?
 _parseNativeRuntimeConfigForBundle({
   required String bundle,
   required Object? rawUserConfig,
@@ -474,6 +489,7 @@ _parseNativeRuntimeConfigForBundle({
     return (
       runtimes: defaultNativeRuntimesForBundle(bundle),
       invalid: [rawUserConfig.toString()],
+      explicit: const <String>{},
     );
   }
 
@@ -512,6 +528,7 @@ _parseNativeRuntimeConfigForBundle({
   return (
     runtimes: defaultNativeRuntimesForBundle(bundle),
     invalid: [rawUserConfig.toString()],
+    explicit: const <String>{},
   );
 }
 
@@ -860,11 +877,11 @@ List<String> _parseBackendList(Object? value) {
   return result;
 }
 
-({List<String> runtimes, List<String> invalid}) _parseRuntimeList(
-  Object? value,
-) {
+({List<String> runtimes, List<String> invalid, Set<String> explicit})
+_parseRuntimeList(Object? value) {
   final result = <String>[];
   final invalid = <String>[];
+  final explicit = <String>{};
 
   void addToken(String token) {
     final normalized = _normalizeRuntime(token);
@@ -884,18 +901,24 @@ List<String> _parseBackendList(Object? value) {
     }
     if (normalized == 'none') {
       result.clear();
+      explicit.clear();
       return;
     }
     if (!result.contains(normalized)) {
       result.add(normalized);
     }
+    explicit.add(normalized);
   }
 
   if (value is String) {
     for (final token in value.split(',')) {
       addToken(token);
     }
-    return (runtimes: result, invalid: invalid);
+    return (
+      runtimes: result.isEmpty ? allNativeRuntimes : result,
+      invalid: invalid,
+      explicit: explicit,
+    );
   }
 
   if (value is List<Object?>) {
@@ -906,7 +929,11 @@ List<String> _parseBackendList(Object? value) {
         invalid.add(entry.toString());
       }
     }
-    return (runtimes: result, invalid: invalid);
+    return (
+      runtimes: result.isEmpty ? allNativeRuntimes : result,
+      invalid: invalid,
+      explicit: explicit,
+    );
   }
 
   if (value is Map<Object?, Object?>) {
@@ -919,7 +946,7 @@ List<String> _parseBackendList(Object? value) {
   if (value != null) {
     invalid.add(value.toString());
   }
-  return (runtimes: result, invalid: invalid);
+  return (runtimes: result, invalid: invalid, explicit: explicit);
 }
 
 String? _normalizeBackend(String value) {

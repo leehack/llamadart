@@ -11,10 +11,12 @@ import 'package:path/path.dart' as path;
 
 import 'package:llamadart/src/hook/native_bundle_config.dart';
 
-const _llamaCppTag = 'b9536';
+const _llamaCppTag = 'b9587';
 const _nativeRepoSlug = 'leehack/llamadart-native';
 
 const _packageName = 'llamadart';
+const _llamaCppFlutterPackageName = 'llamadart_llama_cpp_flutter';
+const _liteRtLmFlutterPackageName = 'llamadart_litert_lm_flutter';
 const _thirdPartyDir = 'third_party';
 const _binDir = 'bin';
 const _dartToolDir = '.dart_tool';
@@ -22,7 +24,7 @@ const _cacheBaseDir = 'llamadart';
 const _bundleCacheDir = 'native_bundles';
 const _reportDir = 'llamadart_bin';
 const _allowLegacyLocalBundleEnv = 'LLAMADART_ALLOW_LEGACY_LOCAL_BUNDLES';
-const _litertLmVersion = '0.13.1';
+const _litertLmVersion = '0.13.1-native.1';
 const _litertLmNativeReleaseBaseUrl =
     'https://github.com/leehack/litert-lm-native/releases/download/'
     'v$_litertLmVersion';
@@ -35,7 +37,7 @@ final _litertLmBundles = Map.unmodifiable({
 const _litertLmBundleSpecs = <_LiteRtLmBundleSpec>[
   _LiteRtLmBundleSpec(
     'android-arm64',
-    sha256: '8d0c9434eec939b7ea961b78fa192e37df9090c0f8b576a0111ddf731f26cbab',
+    sha256: '2586a3f453a7722366210a00fd365401e84110d214e723083343fb60ac111a74',
     requiredLibraries: {
       'libGemmaModelConstraintProvider.so',
       'libLiteRt.so',
@@ -49,7 +51,7 @@ const _litertLmBundleSpecs = <_LiteRtLmBundleSpec>[
   ),
   _LiteRtLmBundleSpec(
     'android-x64',
-    sha256: '92e01daa31f0429e61288402a067e41279587f6c0e39deba34c15003f165ad77',
+    sha256: '5eb7950bbd3c237d93f9ffdcc34665da3433e15fedbd9b6e150519a6fb4b0ffc',
     requiredLibraries: {
       'libGemmaModelConstraintProvider.so',
       'libLiteRt.so',
@@ -63,35 +65,27 @@ const _litertLmBundleSpecs = <_LiteRtLmBundleSpec>[
   ),
   _LiteRtLmBundleSpec(
     'ios-arm64',
-    sha256: '6e9380c8ef265cfe9c9a2426cc0d9ced3d42889a3f6d6f1988362324e57337ec',
+    sha256: 'faad402a7d4671fa7ef9b67777ca6b05cdbf32d74dd8971ac630cc1e26a09868',
     requiredLibraries: {'LiteRtLm', 'CLiteRTLM'},
   ),
   _LiteRtLmBundleSpec(
     'ios-arm64-sim',
-    sha256: '6b13e49937d64507422371324a9f53aa15d98b57c001682e500ec39f17d0aaab',
+    sha256: '8a63cb8ab06a379cbeab4e3f26bf5671ed4372f9b8915654901b07989347d1a4',
     requiredLibraries: {'LiteRtLm', 'CLiteRTLM'},
   ),
   _LiteRtLmBundleSpec(
     'macos-arm64',
-    sha256: 'f0af7691402cc1f68e118a1232a3b977c420f3952231ebf5777c7a366c76e1e5',
-    requiredLibraries: {
-      'libGemmaModelConstraintProvider.dylib',
-      'libLiteRt.dylib',
-      'libLiteRtLm.dylib',
-      'libLiteRtMetalAccelerator.dylib',
-      'libLiteRtTopKMetalSampler.dylib',
-      'libLiteRtTopKWebGpuSampler.dylib',
-      'libLiteRtWebGpuAccelerator.dylib',
-    },
+    sha256: '52f564026617542f3e54589065dcf7d0e6f39e0da845655a9d9efad682477378',
+    requiredLibraries: {'libLiteRtLm.dylib', 'libCLiteRTLM_mac.dylib'},
   ),
   _LiteRtLmBundleSpec(
     'macos-x64',
-    sha256: 'a4dbbd992cf30d617ae2c1dffd5fea24ceb7c07fd655fc077a69df0f5c69318c',
-    requiredLibraries: {'libLiteRtLm.dylib'},
+    sha256: '29cd359545182575ffc7a0ba8231054a445c4993169a4e2d792ffbcef53c1ef1',
+    requiredLibraries: {'libLiteRtLm.dylib', 'libCLiteRTLM_mac.dylib'},
   ),
   _LiteRtLmBundleSpec(
     'linux-arm64',
-    sha256: '87b67cf7e0bddcbd62ffdfa4f206a040171384d297d4793eb6377dd2e57b10f6',
+    sha256: '737a4e7657e09487d9d124e2b80bb459415336960da717ea33430042e6fe9d5b',
     requiredLibraries: {
       'libGemmaModelConstraintProvider.so',
       'libLiteRt.so',
@@ -102,7 +96,7 @@ const _litertLmBundleSpecs = <_LiteRtLmBundleSpec>[
   ),
   _LiteRtLmBundleSpec(
     'linux-x64',
-    sha256: 'cb8625edabd364410923a821e111af443f31483c8be852cf6311c7a9df3e68df',
+    sha256: '592b9eb695d34cf9aadc4520c974aa52494b38e36f3a54a4431b2d1c149b06cf',
     requiredLibraries: {
       'libGemmaModelConstraintProvider.so',
       'libLiteRt.so',
@@ -113,7 +107,7 @@ const _litertLmBundleSpecs = <_LiteRtLmBundleSpec>[
   ),
   _LiteRtLmBundleSpec(
     'windows-x64',
-    sha256: '8a6dd70c4f286215a444294757c9ac6bd35d83f65413b5dd4bce3b7d52367a8f',
+    sha256: '14b5d61834eb8f49e1b6c9ba7f0b695e4a74aa7bd5e75d1084b62116934b2216',
     requiredLibraries: {
       'LiteRtLm.dll',
       'libGemmaModelConstraintProvider.dll',
@@ -220,11 +214,43 @@ void main(List<String> args) async {
     log.info('Hook Start: ${spec.bundle}');
 
     final pkgRoot = input.packageRoot.toFilePath();
-    final selectedRuntimes = selectNativeRuntimesForBundle(
-      bundle: spec.bundle,
-      rawUserConfig: input.userDefines[nativeRuntimesUserDefineKey],
-      warn: log.warning,
+    final rawNativeRuntimeConfig =
+        input.userDefines[nativeRuntimesUserDefineKey];
+    final appleSpmRuntimes = _flutterAppleCompanionRuntimes(
+      input: input,
+      code: code,
+      log: log,
     );
+    var selectedRuntimes =
+        appleSpmRuntimes ??
+        selectNativeRuntimesForBundle(
+          bundle: spec.bundle,
+          rawUserConfig: rawNativeRuntimeConfig,
+          warn: log.warning,
+        );
+    final liteRtLmBundleSpec = _liteRtLmBundleSpecForCode(code);
+    if (selectedRuntimes.contains(nativeRuntimeLiteRtLm) &&
+        liteRtLmBundleSpec == null) {
+      final explicitLiteRtLmSelection =
+          appleSpmRuntimes?.contains(nativeRuntimeLiteRtLm) == true ||
+          nativeRuntimeExplicitlySelectedForBundle(
+            bundle: spec.bundle,
+            rawUserConfig: rawNativeRuntimeConfig,
+            runtime: nativeRuntimeLiteRtLm,
+          );
+      if (explicitLiteRtLmSelection) {
+        throw Exception(
+          'LiteRT-LM runtime is not available for ${spec.bundle}.',
+        );
+      }
+      selectedRuntimes = selectedRuntimes
+          .where((runtime) => runtime != nativeRuntimeLiteRtLm)
+          .toList(growable: false);
+      log.warning(
+        'LiteRT-LM runtime is not available for ${spec.bundle}; using '
+        'available runtime families: ${selectedRuntimes.join(', ')}.',
+      );
+    }
     if (selectedRuntimes.isEmpty) {
       throw Exception(
         'No native runtimes selected for ${spec.bundle}. Configure '
@@ -235,18 +261,12 @@ void main(List<String> args) async {
     final includeLiteRtLm = selectedRuntimes.contains(nativeRuntimeLiteRtLm);
     log.info('Selected native runtimes: ${selectedRuntimes.join(', ')}.');
 
-    if (includeLiteRtLm &&
-        _liteRtLmBundleSpecForCode(code) == null &&
-        input.userDefines[nativeRuntimesUserDefineKey] != null) {
-      throw Exception('LiteRT-LM runtime is not available for ${spec.bundle}.');
-    }
-
     if (await _emitAppleSpmAssetsIfEnabled(
-      input: input,
-      code: code,
       output: output,
       includeLlamaCpp: includeLlamaCpp,
       includeLiteRtLm: includeLiteRtLm,
+      appleSpmRuntimes: appleSpmRuntimes,
+      rawNativeRuntimeConfig: rawNativeRuntimeConfig,
       hasNativeSourceOverride: _hasNativeSourceOverride(input.userDefines),
       hasNativeBackendOverride:
           input.userDefines[nativeBackendUserDefineKey] != null,
@@ -376,40 +396,43 @@ void main(List<String> args) async {
 }
 
 Future<bool> _emitAppleSpmAssetsIfEnabled({
-  required BuildInput input,
-  required CodeConfig code,
   required BuildOutputBuilder output,
   required bool includeLlamaCpp,
   required bool includeLiteRtLm,
+  required List<String>? appleSpmRuntimes,
+  required Object? rawNativeRuntimeConfig,
   required bool hasNativeSourceOverride,
   required bool hasNativeBackendOverride,
   required Logger log,
 }) async {
-  if (!_isAppleTarget(code.targetOS)) {
-    return false;
-  }
-
-  final enabled =
-      code.targetOS == OS.iOS || _isFlutterMacOsConsumer(input, log);
-  if (!enabled) {
+  if (appleSpmRuntimes == null) {
     return false;
   }
 
   log.info(
-    'Using package:$_packageName Swift Package Manager for Apple native '
-    'runtimes; the hook will not bundle Apple dynamic libraries.',
+    'Using Flutter Apple companion packages for native runtimes: '
+    '${appleSpmRuntimes.join(', ')}. The hook will not bundle Apple dynamic '
+    'libraries.',
   );
+  if (rawNativeRuntimeConfig != null) {
+    log.warning(
+      'Flutter Apple builds select native runtimes from companion package '
+      'dependencies ($_llamaCppFlutterPackageName and '
+      '$_liteRtLmFlutterPackageName). Ignoring $nativeRuntimesUserDefineKey '
+      'for this Apple build.',
+    );
+  }
   if (hasNativeSourceOverride) {
     log.warning(
-      'Apple Swift Package Manager builds use Package.swift binary target '
-      'pins. $nativeTagUserDefineKey, $nativeRepositoryUserDefineKey, and '
-      '$nativePathUserDefineKey do not change Flutter Apple SPM binaries.',
+      'Flutter Apple companion packages use Package.swift binary target pins. '
+      '$nativeTagUserDefineKey, $nativeRepositoryUserDefineKey, and '
+      '$nativePathUserDefineKey do not change their SPM binaries.',
     );
   }
   if (hasNativeBackendOverride) {
     log.warning(
-      'Apple Swift Package Manager builds ignore $nativeBackendUserDefineKey; '
-      'Apple frameworks include their packaged native modules.',
+      'Flutter Apple companion packages ignore $nativeBackendUserDefineKey; '
+      'their frameworks include packaged native modules.',
     );
   }
   if (includeLlamaCpp) {
@@ -441,43 +464,66 @@ bool _hasNativeSourceOverride(HookInputUserDefines userDefines) {
 
 bool _isAppleTarget(OS os) => os == OS.iOS || os == OS.macOS;
 
-bool _isFlutterMacOsConsumer(BuildInput input, Logger log) {
+List<String>? _flutterAppleCompanionRuntimes({
+  required BuildInput input,
+  required CodeConfig code,
+  required Logger log,
+}) {
+  if (!_isAppleTarget(code.targetOS)) {
+    return null;
+  }
+
   final consumerRoot = _consumerPackageRoot(input);
   if (consumerRoot == null) {
     log.info(
-      'Using bundled macOS native assets; could not resolve the invoking '
+      'Using bundled Apple native assets; could not resolve the invoking '
       'package root.',
     );
-    return false;
+    return null;
   }
 
   final packageRoot = Directory.fromUri(input.packageRoot);
   if (_sameDirectory(consumerRoot, packageRoot)) {
-    log.info(
-      'Using bundled macOS native assets for package-root builds. Flutter apps '
-      'that depend on package:$_packageName use Swift Package Manager '
-      'automatically.',
-    );
-    return false;
+    log.info('Using bundled Apple native assets for package-root builds.');
+    return null;
   }
 
   final pubspec = File(path.join(consumerRoot.path, 'pubspec.yaml'));
   if (!pubspec.existsSync()) {
     log.info(
-      'Using bundled macOS native assets; no pubspec.yaml found at '
+      'Using bundled Apple native assets; no pubspec.yaml found at '
       '${pubspec.path}.',
     );
-    return false;
+    return null;
   }
 
-  final isFlutter = _pubspecDeclaresFlutter(pubspec.readAsStringSync());
+  final pubspecSource = pubspec.readAsStringSync();
+  final isFlutter = _pubspecDeclaresFlutter(pubspecSource);
   if (!isFlutter) {
     log.info(
-      'Using bundled macOS native assets for non-Flutter package '
+      'Using bundled Apple native assets for non-Flutter package '
       '${consumerRoot.path}.',
     );
+    return null;
   }
-  return isFlutter;
+
+  final dependencies = _pubspecDependencyNames(pubspecSource);
+  final runtimes = <String>[];
+  if (dependencies.contains(_llamaCppFlutterPackageName)) {
+    runtimes.add(nativeRuntimeLlamaCpp);
+  }
+  if (dependencies.contains(_liteRtLmFlutterPackageName)) {
+    runtimes.add(nativeRuntimeLiteRtLm);
+  }
+  if (runtimes.isEmpty) {
+    log.info(
+      'Using bundled Apple native assets for Flutter package '
+      '${consumerRoot.path}; no Flutter Apple companion package dependency was '
+      'found.',
+    );
+    return null;
+  }
+  return runtimes;
 }
 
 Directory? _consumerPackageRoot(BuildInput input) {
@@ -561,6 +607,41 @@ bool _pubspecDeclaresFlutter(String source) {
     }
   }
   return false;
+}
+
+Set<String> _pubspecDependencyNames(String source) {
+  final dependencies = <String>{};
+  String? section;
+  int? dependencyIndent;
+  for (final rawLine in source.split('\n')) {
+    final line = rawLine.split('#').first;
+    if (line.trim().isEmpty) {
+      continue;
+    }
+
+    final topLevel = RegExp(r'^([A-Za-z_][A-Za-z0-9_]*)\s*:').firstMatch(line);
+    if (topLevel != null) {
+      section = topLevel.group(1);
+      dependencyIndent = null;
+      continue;
+    }
+
+    if (section != 'dependencies') {
+      continue;
+    }
+
+    final dependency = RegExp(
+      r'^(\s+)([A-Za-z_][A-Za-z0-9_]*)\s*:',
+    ).firstMatch(line);
+    if (dependency != null) {
+      final indent = dependency.group(1)!.length;
+      dependencyIndent ??= indent;
+      if (indent == dependencyIndent) {
+        dependencies.add(dependency.group(2)!);
+      }
+    }
+  }
+  return dependencies;
 }
 
 Future<void> _emitLiteRtLmAssets({

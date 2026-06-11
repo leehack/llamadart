@@ -194,6 +194,7 @@ class MockLlamaEngine extends LlamaEngine {
     ToolChoice? toolChoice,
     bool parallelToolCalls = false,
     bool enableThinking = true,
+    Map<String, dynamic>? responseFormat,
     String? sourceLangCode,
     String? targetLangCode,
     Map<String, dynamic>? chatTemplateKwargs,

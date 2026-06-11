@@ -51,6 +51,32 @@ enum LiteRtLmBackendPreference {
   const LiteRtLmBackendPreference(this.nativeName);
 }
 
+/// LiteRT-LM activation data type override for native `.litertlm` engines.
+///
+/// Values mirror upstream LiteRT-LM `ActivationDataType` integer values exposed
+/// through `litert_lm_engine_settings_set_activation_data_type`.
+enum LiteRtLmActivationDataType {
+  /// Use float32 activations.
+  float32(0, 'float32'),
+
+  /// Use float16 activations.
+  float16(1, 'float16'),
+
+  /// Use int16 activations.
+  int16(2, 'int16'),
+
+  /// Use int8 activations.
+  int8(3, 'int8');
+
+  /// Native LiteRT-LM C ABI value.
+  final int nativeValue;
+
+  /// Stable CLI/docs name.
+  final String optionName;
+
+  const LiteRtLmActivationDataType(this.nativeValue, this.optionName);
+}
+
 /// Configuration parameters for loading a Llama model.
 ///
 /// These parameters affect the initial model loading and context allocation.
@@ -86,6 +112,30 @@ class ModelParams {
   /// [preferredBackend] field is still used for `.gguf` models and as an
   /// automatic LiteRT-LM hint, but NPU is only expressible through this field.
   final LiteRtLmBackendPreference liteRtLmBackend;
+
+  /// Native LiteRT-LM activation data type override.
+  ///
+  /// `null` keeps the runtime/model default. This option is only applied by the
+  /// native LiteRT-LM `.litertlm` backend.
+  final LiteRtLmActivationDataType? liteRtLmActivationDataType;
+
+  /// Native LiteRT-LM prefill chunk size for CPU dynamic models.
+  ///
+  /// `null` keeps the runtime default. Positive values are forwarded to
+  /// `litert_lm_engine_settings_set_prefill_chunk_size`.
+  final int? liteRtLmPrefillChunkSize;
+
+  /// Native LiteRT-LM file-section loading override.
+  ///
+  /// `null` keeps the runtime default, which is parallel loading in the pinned
+  /// LiteRT-LM runtime. Set `false` to disable it for diagnostics.
+  final bool? liteRtLmParallelFileSectionLoading;
+
+  /// Native LiteRT-LM dispatch library directory for Android NPU deployments.
+  ///
+  /// `null` keeps the runtime default. This path is forwarded to
+  /// `litert_lm_engine_settings_set_litert_dispatch_lib_dir`.
+  final String? liteRtLmDispatchLibDir;
 
   /// Model tensor distribution strategy across GPU devices.
   ///
@@ -143,6 +193,15 @@ class ModelParams {
   /// Set to 1 to preserve single-sequence behavior.
   final int maxParallelSequences;
 
+  /// llama.cpp recurrent-state rollback snapshots per sequence (`n_rs_seq`).
+  ///
+  /// Set this to at least the MTP draft token max when using llama.cpp MTP
+  /// speculative decoding with architectures that need bounded rollback
+  /// snapshots, such as Qwen3.5 MTP. The default `0` preserves legacy context
+  /// memory use. llama.cpp may clamp this to zero for unsupported
+  /// architectures.
+  final int speculativeRollbackTokenMax;
+
   /// `llama_model_params.use_mmap`. Default `true`.
   final bool useMmap;
 
@@ -195,6 +254,10 @@ class ModelParams {
     this.gpuLayers = maxGpuLayers,
     this.preferredBackend = GpuBackend.auto,
     this.liteRtLmBackend = LiteRtLmBackendPreference.auto,
+    this.liteRtLmActivationDataType,
+    this.liteRtLmPrefillChunkSize,
+    this.liteRtLmParallelFileSectionLoading,
+    this.liteRtLmDispatchLibDir,
     this.splitMode = ModelSplitMode.layer,
     this.mainGpu = 0,
     this.loras = const [],
@@ -204,6 +267,7 @@ class ModelParams {
     this.batchSize = 0,
     this.microBatchSize = 0,
     this.maxParallelSequences = 1,
+    this.speculativeRollbackTokenMax = 0,
     this.useMmap = true,
     this.useMlock = false,
     this.flashAttention = FlashAttention.auto,
@@ -223,6 +287,28 @@ class ModelParams {
   /// have to remember it; exposed publicly so callers who construct
   /// `ModelParams` defensively can validate up-front.
   void validate() {
+    if (liteRtLmPrefillChunkSize != null && liteRtLmPrefillChunkSize! <= 0) {
+      throw ArgumentError.value(
+        liteRtLmPrefillChunkSize,
+        'liteRtLmPrefillChunkSize',
+        'must be positive when provided',
+      );
+    }
+    if (liteRtLmDispatchLibDir != null &&
+        liteRtLmDispatchLibDir!.trim().isEmpty) {
+      throw ArgumentError.value(
+        liteRtLmDispatchLibDir,
+        'liteRtLmDispatchLibDir',
+        'must be non-empty when provided',
+      );
+    }
+    if (speculativeRollbackTokenMax < 0) {
+      throw ArgumentError.value(
+        speculativeRollbackTokenMax,
+        'speculativeRollbackTokenMax',
+        'must be non-negative',
+      );
+    }
     if ((cacheTypeK != KvCacheType.f16 || cacheTypeV != KvCacheType.f16) &&
         flashAttention == FlashAttention.disabled) {
       throw ArgumentError(
@@ -245,6 +331,14 @@ class ModelParams {
     int? gpuLayers,
     GpuBackend? preferredBackend,
     LiteRtLmBackendPreference? liteRtLmBackend,
+    LiteRtLmActivationDataType? liteRtLmActivationDataType,
+    bool clearLiteRtLmActivationDataType = false,
+    int? liteRtLmPrefillChunkSize,
+    bool clearLiteRtLmPrefillChunkSize = false,
+    bool? liteRtLmParallelFileSectionLoading,
+    bool clearLiteRtLmParallelFileSectionLoading = false,
+    String? liteRtLmDispatchLibDir,
+    bool clearLiteRtLmDispatchLibDir = false,
     ModelSplitMode? splitMode,
     int? mainGpu,
     List<LoraAdapterConfig>? loras,
@@ -255,6 +349,7 @@ class ModelParams {
     int? batchSize,
     int? microBatchSize,
     int? maxParallelSequences,
+    int? speculativeRollbackTokenMax,
     bool? useMmap,
     bool? useMlock,
     FlashAttention? flashAttention,
@@ -276,6 +371,20 @@ class ModelParams {
       gpuLayers: gpuLayers ?? this.gpuLayers,
       preferredBackend: preferredBackend ?? this.preferredBackend,
       liteRtLmBackend: liteRtLmBackend ?? this.liteRtLmBackend,
+      liteRtLmActivationDataType: clearLiteRtLmActivationDataType
+          ? null
+          : (liteRtLmActivationDataType ?? this.liteRtLmActivationDataType),
+      liteRtLmPrefillChunkSize: clearLiteRtLmPrefillChunkSize
+          ? null
+          : (liteRtLmPrefillChunkSize ?? this.liteRtLmPrefillChunkSize),
+      liteRtLmParallelFileSectionLoading:
+          clearLiteRtLmParallelFileSectionLoading
+          ? null
+          : (liteRtLmParallelFileSectionLoading ??
+                this.liteRtLmParallelFileSectionLoading),
+      liteRtLmDispatchLibDir: clearLiteRtLmDispatchLibDir
+          ? null
+          : (liteRtLmDispatchLibDir ?? this.liteRtLmDispatchLibDir),
       splitMode: splitMode ?? this.splitMode,
       mainGpu: mainGpu ?? this.mainGpu,
       loras: loras ?? this.loras,
@@ -287,6 +396,8 @@ class ModelParams {
       batchSize: batchSize ?? this.batchSize,
       microBatchSize: microBatchSize ?? this.microBatchSize,
       maxParallelSequences: maxParallelSequences ?? this.maxParallelSequences,
+      speculativeRollbackTokenMax:
+          speculativeRollbackTokenMax ?? this.speculativeRollbackTokenMax,
       useMmap: useMmap ?? this.useMmap,
       useMlock: useMlock ?? this.useMlock,
       flashAttention: flashAttention ?? this.flashAttention,

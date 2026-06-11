@@ -1,15 +1,68 @@
 ## Unreleased
 
-* **LiteRT-LM native multimodal input**:
-  * Routed native `.litertlm` `LlamaImageContent` and `LlamaAudioContent`
-    path/blob inputs through LiteRT-LM's Conversation API, including
-    `max_num_images` engine configuration for image-bearing requests.
-  * Added `LiteRtLmMediaInput` / `LiteRtLmMediaType` for advanced native
-    runtime callers and documented that `.litertlm` bundles do not use the
-    external `mmproj` lifecycle.
-  * Unsupported LiteRT-LM media shapes now fail before native generation:
-    remote image URLs, missing media payloads, and raw PCM audio sample buffers
-    produce explicit Dart errors.
+* Fixed docs references that still pointed at
+  `llamadart_litert_lm_flutter` `0.0.1` and
+  the pre-`native.1` LiteRT-LM release after the 0.8.0 native pin sync moved
+  LiteRT-LM Apple/runtime artifacts to `v0.13.1-native.1`.
+
+## 0.8.0
+
+* **Flutter Apple runtime packaging**:
+  * Split SwiftPM-linked Apple runtime packaging out of the core package into
+    `llamadart_llama_cpp_flutter` for GGUF/llama.cpp and
+    `llamadart_litert_lm_flutter` for `.litertlm`/LiteRT-LM. These companion
+    packages live under `packages/` in this repository and publish as separate
+    pub.dev packages.
+  * Removed Flutter plugin metadata from `llamadart` so pure Dart/native-assets
+    consumers can keep using the core package without taking a Flutter SDK
+    constraint.
+  * Started the companion packages at `0.0.1`; native pin sync bumps only the
+    affected companion package patch version. Companion package publishing uses
+    package-specific tags after the first manual pub.dev publish, and skips
+    companion versions that already exist on pub.dev.
+  * Changed unset or empty `llamadart_native_runtimes` to include all available
+    runtime families. For Flutter iOS/macOS app builds, installed companion
+    packages decide Apple SPM runtimes; for every other build,
+    `llamadart_native_runtimes` remains the selector.
+  * Updated the default llama.cpp native runtime pin to
+    `leehack/llamadart-native@b9587`, regenerated matching Dart FFI bindings,
+    and refreshed the `llamadart_llama_cpp_flutter` Apple SwiftPM checksum.
+* **MTP benchmarking diagnostics**:
+  * Added llama.cpp speculative decoding perf diagnostics for decode timing,
+    draft/accepted token counts, draft verification timing, and acceptance
+    rate so MTP benchmarks can separate backend decode cost from drafting
+    overhead.
+  * Extended local macOS and chat app benchmark outputs with the new
+    diagnostics and added focused llama.cpp MTP smoke/benchmark tools for
+    baseline-vs-MTP comparisons.
+* **llama.cpp MTP runtime support**:
+  * Added `SpeculativeDecodingConfig.mtp(draftModelPath: ...)` for llama.cpp
+    external draft-model MTP sessions, with draft model caching and cleanup
+    tied to the target model lifetime.
+  * Removed the Android Vulkan MTP allow-list dart define and the model-name
+    based Android Vulkan acceleration shortcut; Vulkan MTP now runs only when
+    callers explicitly request Vulkan plus MTP in runtime parameters.
+* **Structured output**:
+  * Added `responseFormat` routing to `LlamaEngine.create(...)` for
+    grammar-capable backends, deprecated the legacy `chatTemplate(...)`
+    `jsonSchema` shortcut, and made strict response-format requests fail early
+    on LiteRT-LM instead of silently degrading to unconstrained generation.
+* **LiteRT-LM chat parity**:
+  * Routed eligible native `.litertlm` text chat through LiteRT-LM Conversation
+    APIs so structured history, system messages, tool declarations, and
+    template extra context reach the runtime without a Dart-rendered prompt.
+    Unsupported cases still fall back to the existing Dart chat-template path.
+* **LiteRT-LM runtime tuning controls**:
+  * Added opt-in native `.litertlm` `ModelParams` for
+    `liteRtLmActivationDataType`, `liteRtLmPrefillChunkSize`,
+    `liteRtLmParallelFileSectionLoading`, and `liteRtLmDispatchLibDir`,
+    forwarding the pinned LiteRT-LM `v0.13.1-native.1` engine-settings C APIs
+    while keeping defaults unchanged.
+  * Extended the LiteRT-LM engine smoke tool with matching environment
+    variables so real-model runs can validate load time, prefill throughput,
+    decode throughput, and selected runtime settings.
+  * Documented support decisions for each candidate native knob and kept
+    LiteRT-LM web rejecting these native-only settings explicitly.
 
 ## 0.7.2
 
@@ -34,6 +87,23 @@
     default; iOS, macOS, Linux, and Windows now default to `llama_cpp` only.
   * Added native release pin automation so the maintainer sync workflow updates
     Apple SPM checksums from published native release asset digests.
+  * Added `SpeculativeDecodingConfig` as a backend-neutral generation option for
+    selecting speculative decoding strategies such as MTP while keeping the
+    existing `GenerationParams.speculativeDecoding` flag as a compatibility
+    switch.
+  * Added llama.cpp native MTP speculative decoding for compatible GGUF models
+    through `SpeculativeDecodingConfig.mtp(...)`, defaulting to a conservative
+    one-token draft depth unless callers tune `draftTokenMax`.
+  * Updated the default llama.cpp native runtime pin to
+    `leehack/llamadart-native@b9547`, including the MTP wrapper exports and
+    `llama-common` runtime packaging.
+  * Added `ModelParams.speculativeRollbackTokenMax` so llama.cpp contexts can
+    reserve recurrent-state rollback snapshots required by Qwen3.5 MTP-style
+    models.
+  * Guarded llama.cpp MTP on Android Vulkan by default because the upstream
+    `draft-mtp` backend-sampling path can abort with `vk::DeviceLostError`;
+    CPU and other supported backends remain available, and a dart-define debug
+    override is available for reproductions.
 * **CI reliability**:
   * Cached and retried tiny GGUF test-model downloads used by VM integration
     tests so main-branch CI is less exposed to Hugging Face 429 rate limits.

@@ -7,6 +7,48 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
+## Unreleased
+
+- Fixed docs references that still pointed at
+  `llamadart_litert_lm_flutter` `0.0.1` and
+  the pre-`native.1` LiteRT-LM release after the 0.8.0 native pin sync moved
+  LiteRT-LM Apple/runtime artifacts to `v0.13.1-native.1`.
+
+## 0.8.0
+
+- Split Flutter Apple SwiftPM runtime linking into companion packages:
+  `llamadart_llama_cpp_flutter` for GGUF/llama.cpp and
+  `llamadart_litert_lm_flutter` for `.litertlm`/LiteRT-LM. The core package
+  remains a native-assets package without Flutter plugin metadata; the
+  companion package sources live under `packages/` in this repository.
+- Changed unset or empty `llamadart_native_runtimes` to mean all available
+  runtime families. Flutter iOS/macOS companion packages decide Apple SPM
+  runtimes when present; other builds continue to use
+  `llamadart_native_runtimes`.
+- Added opt-in native `.litertlm` `ModelParams` for activation data type,
+  prefill chunk size, parallel file-section loading, and Android NPU LiteRT
+  dispatch library directory, forwarding the pinned LiteRT-LM
+  `v0.13.1-native.1`
+  engine-settings C APIs while keeping defaults unchanged.
+- Extended the LiteRT-LM engine smoke tool with matching environment variables
+  and documented the support decision for each candidate runtime knob.
+- Kept LiteRT-LM web rejecting these native-only settings explicitly.
+- Added llama.cpp MTP benchmark diagnostics and local smoke/benchmark tools so
+  baseline-vs-MTP runs can report decode timing, draft/accepted token counts,
+  draft verification timing, and acceptance rate.
+- Added `SpeculativeDecodingConfig.mtp(draftModelPath: ...)` for llama.cpp
+  external draft-model MTP sessions.
+- Removed the Android Vulkan MTP allow-list dart define and the model-name
+  based Android Vulkan acceleration shortcut. Vulkan MTP now runs only when
+  callers explicitly request Vulkan plus MTP in runtime parameters.
+
+## 0.7.2
+
+- Added explicit pub.dev platform metadata for Android, iOS, Linux, macOS, web,
+  and Windows. This keeps the package listing aligned with the actual
+  cross-platform runtime support even though Flutter plugin registration is
+  only needed for Darwin app integration.
+
 ## 0.7.1
 
 - Added Flutter iOS/macOS Swift Package Manager integration so Apple apps link

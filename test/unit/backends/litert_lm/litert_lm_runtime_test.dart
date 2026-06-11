@@ -3,9 +3,9 @@ library;
 
 import 'dart:ffi';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:llamadart/src/backends/litert_lm/litert_lm_runtime.dart';
+import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
 
 void main() {
@@ -48,17 +48,6 @@ void main() {
     expect(result.metrics, same(metrics));
   });
 
-  test('LiteRtLmMediaInput serializes path and blob inputs', () {
-    expect(LiteRtLmMediaInput.imagePath('/tmp/image.png').toJson(), {
-      'type': 'image',
-      'path': '/tmp/image.png',
-    });
-    expect(LiteRtLmMediaInput.audioBlob(Uint8List.fromList([1, 2])).toJson(), {
-      'type': 'audio',
-      'blob': 'AQI=',
-    });
-  });
-
   test('macOS LiteRT-LM cache lookup follows the current runtime ABI', () {
     expect(
       liteRtLmMacOsCacheDirectoryCandidatesForAbi(Abi.macosArm64),
@@ -89,6 +78,34 @@ void main() {
       const <String>['windows/x64', 'windows_x64'],
     );
     expect(liteRtLmCacheDirectoryCandidatesForAbi(Abi.androidArm64), isEmpty);
+  });
+
+  test('LiteRT-LM package config lookup finds the llamadart package root', () {
+    final root = Directory.systemTemp.createTempSync('litert_lm_pkg_config_');
+    addTearDown(() => root.deleteSync(recursive: true));
+
+    final appRoot = Directory('${root.path}/app')..createSync();
+    final packageRoot = Directory('${root.path}/llamadart')..createSync();
+    final dotDartTool = Directory('${appRoot.path}/.dart_tool')
+      ..createSync(recursive: true);
+    final packageConfig = File('${dotDartTool.path}/package_config.json')
+      ..writeAsStringSync('''
+{
+  "configVersion": 2,
+  "packages": [
+    {
+      "name": "llamadart",
+      "rootUri": "${packageRoot.uri}",
+      "packageUri": "lib/",
+      "languageVersion": "3.10"
+    }
+  ]
+}
+''');
+
+    expect(liteRtLmPackageRootsFromPackageConfig(packageConfig), [
+      path.normalize(packageRoot.absolute.path),
+    ]);
   });
 
   test('LiteRT-LM iOS fallback identifiers include process and frameworks', () {
@@ -150,16 +167,12 @@ void main() {
 
   test('macOS LiteRT-LM cache validation follows runtime ABI files', () {
     expect(liteRtLmMacOsRequiredLibrariesForAbi(Abi.macosArm64), const <String>[
-      'libGemmaModelConstraintProvider.dylib',
-      'libLiteRt.dylib',
       'libLiteRtLm.dylib',
-      'libLiteRtMetalAccelerator.dylib',
-      'libLiteRtTopKMetalSampler.dylib',
-      'libLiteRtTopKWebGpuSampler.dylib',
-      'libLiteRtWebGpuAccelerator.dylib',
+      'libCLiteRTLM_mac.dylib',
     ]);
     expect(liteRtLmMacOsRequiredLibrariesForAbi(Abi.macosX64), const <String>[
       'libLiteRtLm.dylib',
+      'libCLiteRTLM_mac.dylib',
     ]);
     expect(liteRtLmMacOsRequiredLibrariesForAbi(Abi.linuxX64), isEmpty);
   });
@@ -234,6 +247,10 @@ void main() {
     expect(liteRtLmIsMacOsCacheDirectoryForAbi(x64Dir, Abi.macosX64), isFalse);
 
     File('${x64Dir.path}/libLiteRtLm.dylib').createSync();
+
+    expect(liteRtLmIsMacOsCacheDirectoryForAbi(x64Dir, Abi.macosX64), isFalse);
+
+    File('${x64Dir.path}/libCLiteRTLM_mac.dylib').createSync();
 
     expect(liteRtLmIsMacOsCacheDirectoryForAbi(x64Dir, Abi.macosX64), isTrue);
     expect(liteRtLmIsMacOsCacheDirectoryForAbi(x64Dir, Abi.linuxX64), isFalse);
@@ -335,6 +352,26 @@ void main() {
           ),
         ),
       );
+      expect(
+        client.initialize(modelPath: 'model.litertlm', prefillChunkSize: 0),
+        throwsA(
+          isA<ArgumentError>().having(
+            (error) => error.name,
+            'name',
+            'prefillChunkSize',
+          ),
+        ),
+      );
+      expect(
+        client.initialize(modelPath: 'model.litertlm', dispatchLibDir: '  '),
+        throwsA(
+          isA<ArgumentError>().having(
+            (error) => error.name,
+            'name',
+            'dispatchLibDir',
+          ),
+        ),
+      );
     },
   );
 
@@ -349,8 +386,46 @@ void main() {
           isA<ArgumentError>().having((error) => error.name, 'name', 'backend'),
         ),
       );
+      expect(
+        client.initialize(modelPath: 'model.litertlm', visionBackend: ' dsp '),
+        throwsA(
+          isA<ArgumentError>().having(
+            (error) => error.name,
+            'name',
+            'visionBackend',
+          ),
+        ),
+      );
+      expect(
+        client.initialize(modelPath: 'model.litertlm', audioBackend: ' dsp '),
+        throwsA(
+          isA<ArgumentError>().having(
+            (error) => error.name,
+            'name',
+            'audioBackend',
+          ),
+        ),
+      );
     },
   );
+
+  test('LiteRtLmRuntimeClient validates send optional args', () {
+    final client = LiteRtLmRuntimeClient();
+
+    expect(
+      () => client.generateMessageJson(
+        '{"role":"user","content":[{"type":"text","text":"hi"}]}',
+        visualTokenBudget: 0,
+      ),
+      throwsA(
+        isA<ArgumentError>().having(
+          (error) => error.name,
+          'name',
+          'visualTokenBudget',
+        ),
+      ),
+    );
+  });
 
   test('LiteRtLmRuntimeClient validates benchmark loop counts', () {
     final client = LiteRtLmRuntimeClient();

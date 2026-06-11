@@ -43,6 +43,7 @@ export 'src/backends/backend.dart'
         LlamaBackend,
         BackendAvailability,
         BackendGrammarConstraintsSupport,
+        BackendNativeChatGeneration,
         BackendRuntimeDiagnostics,
         BackendPerfContextData,
         BackendPerformanceDiagnostics,
@@ -95,12 +96,7 @@ export 'src/backends/litert_lm/litert_lm_backend_stub.dart'
     show LiteRtLmBackend;
 export 'src/backends/litert_lm/litert_lm_runtime_stub.dart'
     if (dart.library.io) 'src/backends/litert_lm/litert_lm_runtime.dart'
-    show
-        LiteRtLmMediaInput,
-        LiteRtLmMediaType,
-        LiteRtLmRuntimeClient,
-        LiteRtLmRuntimeMetrics,
-        LiteRtLmRuntimeResult;
+    show LiteRtLmRuntimeClient, LiteRtLmRuntimeMetrics, LiteRtLmRuntimeResult;
 
 // Deprecated compatibility aliases for the old benchmark API.
 export 'src/experimental/litert_lm/litert_lm_benchmark_stub.dart'

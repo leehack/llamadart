@@ -1,7 +1,10 @@
 import '../core/models/inference/model_params.dart';
 import '../core/models/inference/generation_params.dart';
+import '../core/models/inference/tool_choice.dart';
+import '../core/models/chat/chat_message.dart';
 import '../core/models/chat/content_part.dart';
 import '../core/models/config/log_level.dart';
+import '../core/models/tools/tool_definition.dart';
 
 import 'native/native_backend.dart'
     if (dart.library.js_interop) 'web/web_backend.dart';
@@ -136,6 +139,31 @@ abstract class BackendGrammarConstraintsSupport {
   bool get supportsGrammarConstraints;
 }
 
+/// Optional backend capability for native structured chat generation.
+///
+/// Backends that implement this can receive chat messages and tools directly
+/// instead of only receiving the already-rendered prompt string. Callers should
+/// check [supportsNativeChatGeneration] before invoking [generateChat].
+abstract class BackendNativeChatGeneration {
+  /// Whether the active backend/runtime can use native structured chat input.
+  bool get supportsNativeChatGeneration;
+
+  /// Generates from structured chat state.
+  Stream<List<int>> generateChat(
+    int contextHandle,
+    List<LlamaChatMessage> messages,
+    GenerationParams params, {
+    List<ToolDefinition>? tools,
+    ToolChoice toolChoice = ToolChoice.auto,
+    bool parallelToolCalls = false,
+    bool enableThinking = true,
+    Map<String, dynamic>? chatTemplateKwargs,
+    String? sourceLangCode,
+    String? targetLangCode,
+    DateTime? templateNow,
+  });
+}
+
 /// Optional backend capability for exposing resolved runtime diagnostics.
 abstract class BackendRuntimeDiagnostics {
   /// Returns resolved GPU layers used for the active model load.
@@ -159,6 +187,13 @@ class BackendPerfContextData {
   /// Time spent sampling generated tokens in ms.
   final double sampleMs;
 
+  /// Time spent decoding generated tokens in ms, excluding prompt ingestion.
+  ///
+  /// Backends that do not expose a separate decode-only measurement leave this
+  /// null. For llama.cpp, this is the Dart-side `llama_decode` time measured
+  /// during generation.
+  final double? decodeMs;
+
   /// Number of prompt tokens evaluated.
   final int promptEvalTokens;
 
@@ -171,16 +206,45 @@ class BackendPerfContextData {
   /// Number of times compute graphs were reused.
   final int reusedGraphs;
 
+  /// Number of speculative draft tokens proposed by the backend.
+  final int? speculativeDraftTokens;
+
+  /// Number of speculative draft tokens accepted by the backend.
+  final int? speculativeAcceptedDraftTokens;
+
+  /// Time spent generating speculative draft tokens in ms.
+  final double? speculativeDraftMs;
+
+  /// Time spent verifying speculative draft tokens in ms.
+  final double? speculativeVerifyMs;
+
+  /// Accepted speculative draft-token ratio, when available.
+  double? get speculativeAcceptanceRate {
+    final draftTokens = speculativeDraftTokens;
+    final acceptedDraftTokens = speculativeAcceptedDraftTokens;
+    if (draftTokens == null ||
+        acceptedDraftTokens == null ||
+        draftTokens <= 0) {
+      return null;
+    }
+    return acceptedDraftTokens / draftTokens;
+  }
+
   /// Creates a new [BackendPerfContextData].
   const BackendPerfContextData({
     required this.loadMs,
     required this.promptEvalMs,
     required this.evalMs,
     required this.sampleMs,
+    this.decodeMs,
     required this.promptEvalTokens,
     required this.evalTokens,
     required this.sampleCount,
     required this.reusedGraphs,
+    this.speculativeDraftTokens,
+    this.speculativeAcceptedDraftTokens,
+    this.speculativeDraftMs,
+    this.speculativeVerifyMs,
   });
 }
 

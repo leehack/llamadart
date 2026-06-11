@@ -1649,7 +1649,7 @@ class WebGpuLlamaBackend
     GenerationParams params, {
     List<LlamaContentPart>? parts,
   }) {
-    if (params.speculativeDecoding) {
+    if (params.isSpeculativeDecodingEnabled) {
       throw UnsupportedError(
         'WebGPU speculative decoding is not supported yet.',
       );

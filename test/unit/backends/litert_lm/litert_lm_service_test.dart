@@ -8,6 +8,8 @@ import 'dart:typed_data';
 
 import 'package:llamadart/src/backends/litert_lm/litert_lm_service.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_runtime.dart';
+import 'package:llamadart/src/core/models/chat/chat_message.dart';
+import 'package:llamadart/src/core/models/chat/chat_role.dart';
 import 'package:llamadart/src/core/models/chat/content_part.dart';
 import 'package:llamadart/src/core/models/config/flash_attention.dart';
 import 'package:llamadart/src/core/models/config/gpu_backend.dart';
@@ -16,6 +18,8 @@ import 'package:llamadart/src/core/models/config/log_level.dart';
 import 'package:llamadart/src/core/models/config/lora_config.dart';
 import 'package:llamadart/src/core/models/inference/generation_params.dart';
 import 'package:llamadart/src/core/models/inference/model_params.dart';
+import 'package:llamadart/src/core/models/tools/tool_definition.dart';
+import 'package:llamadart/src/core/models/tools/tool_param.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -650,8 +654,46 @@ void main() {
     },
   );
 
+  test('rejects media parts before native runtime initialization', () async {
+    final fakeClient = _FakeLiteRtLmRuntimeClient();
+    final service = LiteRtLmService(clientFactory: () => fakeClient);
+
+    try {
+      final modelHandle = await service.loadModel(
+        modelFile.path,
+        const ModelParams(preferredBackend: GpuBackend.cpu),
+      );
+      final contextHandle = service.createContext(
+        modelHandle,
+        const ModelParams(preferredBackend: GpuBackend.cpu),
+      );
+
+      await expectLater(
+        service.generate(
+          contextHandle,
+          'describe',
+          const GenerationParams(),
+          parts: const [LlamaImageContent(path: '/tmp/image.png')],
+        ),
+        emitsError(
+          isA<UnsupportedError>().having(
+            (error) => error.message.toString(),
+            'message',
+            contains('media parts'),
+          ),
+        ),
+      );
+
+      expect(fakeClient.initializeStarted.isCompleted, isFalse);
+      expect(fakeClient.createConversationCount, 0);
+      expect(fakeClient.generateCount, 0);
+    } finally {
+      service.dispose();
+    }
+  });
+
   test(
-    'routes local image parts through native multimodal generation',
+    'routes native chat media parts through LiteRT-LM message JSON',
     () async {
       final fakeClient = _FakeLiteRtLmRuntimeClient();
       final service = LiteRtLmService(clientFactory: () => fakeClient);
@@ -677,14 +719,18 @@ void main() {
           const ModelParams(preferredBackend: GpuBackend.cpu),
         );
 
-        final chunksFuture = service
-            .generate(
-              contextHandle,
-              'describe <|image|>',
-              const GenerationParams(maxTokens: 8),
-              parts: [LlamaImageContent(path: imageFile.path)],
-            )
-            .toList();
+        final chunksFuture = service.generateChat(contextHandle, [
+          LlamaChatMessage.withContent(
+            role: LlamaChatRole.user,
+            content: [
+              const LlamaTextContent('Describe this image and audio.'),
+              LlamaImageContent(path: imageFile.path),
+              LlamaAudioContent(
+                bytes: Uint8List.fromList(const <int>[1, 2, 3]),
+              ),
+            ],
+          ),
+        ], const GenerationParams(maxTokens: 8)).toList();
 
         await fakeClient.generateStarted.future;
         fakeClient.generated.add('ok');
@@ -692,15 +738,23 @@ void main() {
 
         expect(await chunksFuture, [utf8.encode('ok')]);
         expect(fakeClient.lastMaxNumImages, 1);
+        expect(fakeClient.lastVisionBackend, 'cpu');
+        expect(fakeClient.lastAudioBackend, 'cpu');
+        expect(fakeClient.lastVisualTokenBudget, 280);
         expect(fakeClient.createConversationCount, 1);
         expect(fakeClient.generateCount, 1);
-        expect(fakeClient.lastGeneratePrompt, 'describe <|image|>');
-        expect(fakeClient.lastMediaInputs, hasLength(1));
-        expect(
-          fakeClient.lastMediaInputs!.single.type,
-          LiteRtLmMediaType.image,
-        );
-        expect(fakeClient.lastMediaInputs!.single.path, imageFile.path);
+
+        final message =
+            jsonDecode(fakeClient.lastMessageJson!) as Map<String, dynamic>;
+        expect(message['role'], 'user');
+        expect(message['content'], [
+          {'type': 'text', 'text': 'Describe this image and audio.'},
+          {'type': 'image', 'path': imageFile.path},
+          {
+            'type': 'audio',
+            'blob': base64Encode(const <int>[1, 2, 3]),
+          },
+        ]);
       } finally {
         service.dispose();
       }
@@ -708,7 +762,7 @@ void main() {
   );
 
   test(
-    'rejects unsupported LiteRT-LM media shapes before generation',
+    'rejects unsupported native chat media shapes before runtime init',
     () async {
       final fakeClient = _FakeLiteRtLmRuntimeClient();
       final service = LiteRtLmService(clientFactory: () => fakeClient);
@@ -724,12 +778,12 @@ void main() {
         );
 
         await expectLater(
-          service.generate(
-            contextHandle,
-            'describe',
-            const GenerationParams(),
-            parts: const [LlamaImageContent(url: 'https://example.com/a.png')],
-          ),
+          service.generateChat(contextHandle, const [
+            LlamaChatMessage.withContent(
+              role: LlamaChatRole.user,
+              content: [LlamaImageContent(url: 'https://example.com/a.png')],
+            ),
+          ], const GenerationParams()),
           emitsError(
             isA<UnsupportedError>().having(
               (error) => error.message.toString(),
@@ -740,14 +794,36 @@ void main() {
         );
 
         await expectLater(
-          service.generate(
-            contextHandle,
-            'transcribe',
-            const GenerationParams(),
-            parts: [
-              LlamaAudioContent(samples: Float32List.fromList([0.1])),
-            ],
+          service.generateChat(contextHandle, [
+            LlamaChatMessage.withContent(
+              role: LlamaChatRole.user,
+              content: [
+                LlamaImageContent(
+                  bytes: Uint8List.fromList(const <int>[0, 0, 0]),
+                  width: 1,
+                  height: 1,
+                ),
+              ],
+            ),
+          ], const GenerationParams()),
+          emitsError(
+            isA<UnsupportedError>().having(
+              (error) => error.message.toString(),
+              'message',
+              contains('raw RGB image bytes'),
+            ),
           ),
+        );
+
+        await expectLater(
+          service.generateChat(contextHandle, [
+            LlamaChatMessage.withContent(
+              role: LlamaChatRole.user,
+              content: [
+                LlamaAudioContent(samples: Float32List.fromList([0.1])),
+              ],
+            ),
+          ], const GenerationParams()),
           emitsError(
             isA<UnsupportedError>().having(
               (error) => error.message.toString(),
@@ -943,6 +1019,39 @@ void main() {
     }
   });
 
+  test('passes LiteRT-LM MTP config as speculative decoding', () async {
+    final fakeClient = _FakeLiteRtLmRuntimeClient();
+    final service = LiteRtLmService(clientFactory: () => fakeClient);
+
+    try {
+      final modelHandle = await service.loadModel(
+        modelFile.path,
+        const ModelParams(preferredBackend: GpuBackend.cpu),
+      );
+      final contextHandle = service.createContext(
+        modelHandle,
+        const ModelParams(preferredBackend: GpuBackend.cpu),
+      );
+
+      final subscription = service
+          .generate(
+            contextHandle,
+            'hello',
+            const GenerationParams(
+              maxTokens: 7,
+              speculativeDecodingConfig: SpeculativeDecodingConfig.mtp(),
+            ),
+          )
+          .listen((_) {});
+
+      await fakeClient.generateStarted.future;
+      expect(fakeClient.lastSpeculativeDecoding, isTrue);
+      unawaited(subscription.cancel());
+    } finally {
+      service.dispose();
+    }
+  });
+
   test('passes supported LiteRT-LM generation options to the client', () async {
     final fakeClient = _FakeLiteRtLmRuntimeClient();
     final service = LiteRtLmService(clientFactory: () => fakeClient);
@@ -991,6 +1100,171 @@ void main() {
       expect(fakeClient.lastNpuBackend, isFalse);
       expect(utf8.decode(chunks.expand((chunk) => chunk).toList()), 'alpha ');
       expect(fakeClient.cancelCount, 1);
+    } finally {
+      service.dispose();
+    }
+  });
+
+  test('passes LiteRT-LM runtime tuning options to the client', () async {
+    final fakeClient = _FakeLiteRtLmRuntimeClient();
+    final service = LiteRtLmService(clientFactory: () => fakeClient);
+    const modelParams = ModelParams(
+      contextSize: 3072,
+      preferredBackend: GpuBackend.cpu,
+      liteRtLmActivationDataType: LiteRtLmActivationDataType.float16,
+      liteRtLmPrefillChunkSize: 128,
+      liteRtLmParallelFileSectionLoading: false,
+      liteRtLmDispatchLibDir: '/vendor/litert-dispatch',
+    );
+
+    try {
+      final modelHandle = await service.loadModel(modelFile.path, modelParams);
+      final contextHandle = service.createContext(modelHandle, modelParams);
+
+      final chunks = service
+          .generate(
+            contextHandle,
+            'hello',
+            const GenerationParams(maxTokens: 7),
+          )
+          .toList();
+
+      await fakeClient.generateStarted.future;
+      fakeClient.generated.add('done');
+      await fakeClient.generated.close();
+      await chunks;
+
+      expect(
+        fakeClient.lastActivationDataType,
+        LiteRtLmActivationDataType.float16,
+      );
+      expect(fakeClient.lastPrefillChunkSize, 128);
+      expect(fakeClient.lastParallelFileSectionLoading, isFalse);
+      expect(fakeClient.lastDispatchLibDir, '/vendor/litert-dispatch');
+    } finally {
+      service.dispose();
+    }
+  });
+
+  test('passes native chat messages and tools to the client', () async {
+    final fakeClient = _FakeLiteRtLmRuntimeClient();
+    final service = LiteRtLmService(clientFactory: () => fakeClient);
+
+    try {
+      final modelHandle = await service.loadModel(
+        modelFile.path,
+        const ModelParams(contextSize: 3072, preferredBackend: GpuBackend.cpu),
+      );
+      final contextHandle = service.createContext(
+        modelHandle,
+        const ModelParams(contextSize: 3072, preferredBackend: GpuBackend.cpu),
+      );
+
+      final chunksFuture = service
+          .generateChat(
+            contextHandle,
+            const [
+              LlamaChatMessage.fromText(
+                role: LlamaChatRole.system,
+                text: 'Be concise.',
+              ),
+              LlamaChatMessage.fromText(
+                role: LlamaChatRole.user,
+                text: 'hello',
+              ),
+              LlamaChatMessage.fromText(
+                role: LlamaChatRole.assistant,
+                text: 'hi',
+              ),
+              LlamaChatMessage.fromText(
+                role: LlamaChatRole.user,
+                text: 'weather?',
+              ),
+            ],
+            const GenerationParams(
+              maxTokens: 7,
+              temp: 0.3,
+              topK: 5,
+              topP: 0.4,
+              seed: 9,
+            ),
+            tools: [
+              ToolDefinition(
+                name: 'get_weather',
+                description: 'Gets weather.',
+                parameters: [
+                  ToolParam.string(
+                    'city',
+                    description: 'City name.',
+                    required: true,
+                  ),
+                ],
+                handler: (_) async => 'sunny',
+              ).toJson(),
+            ],
+            chatTemplateKwargs: const {'locale': 'en_CA'},
+            sourceLangCode: 'en',
+            targetLangCode: 'fr',
+            templateNow: DateTime.utc(2026, 6, 7, 12),
+          )
+          .toList();
+
+      await fakeClient.generateStarted.future;
+      fakeClient.generated.add('native response');
+      await fakeClient.generated.close();
+
+      expect(await chunksFuture, [utf8.encode('native response')]);
+      expect(fakeClient.lastOutputTokens, 7);
+      expect(fakeClient.lastTemperature, 0.3);
+      expect(fakeClient.lastTopK, 5);
+      expect(fakeClient.lastTopP, 0.4);
+      expect(fakeClient.lastSeed, 9);
+      expect(fakeClient.lastNpuBackend, isFalse);
+
+      expect(jsonDecode(fakeClient.lastSystemMessage!), {
+        'role': 'system',
+        'content': [
+          {'type': 'text', 'text': 'Be concise.'},
+        ],
+      });
+      expect(fakeClient.lastMessages, [
+        {
+          'role': 'user',
+          'content': [
+            {'type': 'text', 'text': 'hello'},
+          ],
+        },
+        {
+          'role': 'assistant',
+          'content': [
+            {'type': 'text', 'text': 'hi'},
+          ],
+        },
+      ]);
+      expect(jsonDecode(fakeClient.lastMessageJson!), {
+        'role': 'user',
+        'content': [
+          {'type': 'text', 'text': 'weather?'},
+        ],
+      });
+      expect(fakeClient.lastTools?.single['function'], {
+        'name': 'get_weather',
+        'description': 'Gets weather.',
+        'parameters': {
+          'type': 'object',
+          'properties': {
+            'city': {'type': 'string', 'description': 'City name.'},
+          },
+          'required': ['city'],
+        },
+      });
+      expect(fakeClient.lastExtraContext, {
+        'locale': 'en_CA',
+        'source_lang_code': 'en',
+        'target_lang_code': 'fr',
+        'now': '2026-06-07T12:00:00.000Z',
+        'enable_thinking': true,
+      });
     } finally {
       service.dispose();
     }
@@ -1050,6 +1324,73 @@ void main() {
         expect(firstClient.lastSpeculativeDecoding, isTrue);
         expect(firstClient.disposeCount, 1);
         expect(secondClient.lastSpeculativeDecoding, isFalse);
+        expect(nextClient, 2);
+      } finally {
+        service.dispose();
+      }
+    },
+  );
+
+  test(
+    'recreates LiteRT-LM client when audio media needs an executor',
+    () async {
+      final firstClient = _FakeLiteRtLmRuntimeClient();
+      final secondClient = _FakeLiteRtLmRuntimeClient();
+      final clients = <_FakeLiteRtLmRuntimeClient>[firstClient, secondClient];
+      var nextClient = 0;
+      final service = LiteRtLmService(
+        clientFactory: () => clients[nextClient++],
+      );
+
+      try {
+        final modelHandle = await service.loadModel(
+          modelFile.path,
+          const ModelParams(
+            contextSize: 3072,
+            preferredBackend: GpuBackend.cpu,
+          ),
+        );
+        final contextHandle = service.createContext(
+          modelHandle,
+          const ModelParams(
+            contextSize: 3072,
+            preferredBackend: GpuBackend.cpu,
+          ),
+        );
+
+        final firstChunks = service
+            .generate(
+              contextHandle,
+              'hello',
+              const GenerationParams(maxTokens: 7),
+            )
+            .toList();
+        await firstClient.generateStarted.future;
+        firstClient.generated.add('first');
+        await firstClient.generated.close();
+        await firstChunks;
+
+        final secondChunks = service.generateChat(contextHandle, [
+          LlamaChatMessage.withContent(
+            role: LlamaChatRole.user,
+            content: [
+              const LlamaTextContent('Transcribe this.'),
+              LlamaAudioContent(
+                bytes: Uint8List.fromList(const <int>[1, 2, 3]),
+              ),
+            ],
+          ),
+        ], const GenerationParams(maxTokens: 7)).toList();
+        await secondClient.generateStarted.future;
+        secondClient.generated.add('second');
+        await secondClient.generated.close();
+        await secondChunks;
+
+        expect(firstClient.disposeCount, 1);
+        expect(secondClient.lastVisionBackend, isNull);
+        expect(secondClient.lastAudioBackend, 'cpu');
+        expect(secondClient.lastMaxNumImages, isNull);
+        expect(secondClient.lastVisualTokenBudget, isNull);
         expect(nextClient, 2);
       } finally {
         service.dispose();
@@ -1530,6 +1871,29 @@ void main() {
           ),
         ),
       );
+
+      await expectLater(
+        service.generate(
+          contextHandle,
+          'hello',
+          const GenerationParams(
+            speculativeDecodingConfig: SpeculativeDecodingConfig.mtp(
+              draftTokenMax: 3,
+              draftModelPath: 'draft.gguf',
+            ),
+          ),
+        ),
+        emitsError(
+          isA<UnsupportedError>().having(
+            (error) => error.message.toString(),
+            'message',
+            allOf(
+              contains('speculativeDecodingConfig.draftTokenMax'),
+              contains('speculativeDecodingConfig.draftModelPath'),
+            ),
+          ),
+        ),
+      );
     } finally {
       service.dispose();
     }
@@ -1635,24 +1999,34 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
   final Object? initializeError;
   String? lastModelPath;
   String? lastBackend;
+  String? lastVisionBackend;
+  String? lastAudioBackend;
   int? lastMaxTokens;
   int? lastOutputTokens;
   int? lastMaxNumImages;
   String? lastCacheDir;
   bool? lastSpeculativeDecoding;
   int? lastMinLogLevel;
+  LiteRtLmActivationDataType? lastActivationDataType;
+  int? lastPrefillChunkSize;
+  bool? lastParallelFileSectionLoading;
+  String? lastDispatchLibDir;
   int? lastSetMinLogLevel;
   double? lastTemperature;
   int? lastTopK;
   double? lastTopP;
   int? lastSeed;
   bool? lastNpuBackend;
-  String? lastGeneratePrompt;
-  List<LiteRtLmMediaInput>? lastMediaInputs;
-  int? lastVisualTokenBudget;
+  String? lastSystemMessage;
+  List<Map<String, dynamic>>? lastMessages;
+  List<Map<String, dynamic>>? lastTools;
+  Map<String, dynamic>? lastExtraContext;
   String? lastTokenizeText;
   bool? lastTokenizeAddSpecial;
   List<int>? lastDetokenizeTokens;
+  String? lastMessageJson;
+  Map<String, dynamic>? lastMessageExtraContext;
+  int? lastVisualTokenBudget;
   List<int> tokenizeResult = const <int>[];
   String detokenizeResult = '';
   LiteRtLmRuntimeMetrics? metrics;
@@ -1667,6 +2041,8 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
   Future<void> initialize({
     required String modelPath,
     String backend = 'gpu',
+    String? visionBackend,
+    String? audioBackend,
     int maxTokens = 4096,
     int outputTokens = 256,
     int? prefillTokens,
@@ -1674,15 +2050,25 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
     String? cacheDir,
     bool speculativeDecoding = true,
     int minLogLevel = 3,
+    LiteRtLmActivationDataType? activationDataType,
+    int? prefillChunkSize,
+    bool? parallelFileSectionLoading,
+    String? dispatchLibDir,
   }) {
     lastModelPath = modelPath;
     lastBackend = backend;
+    lastVisionBackend = visionBackend;
+    lastAudioBackend = audioBackend;
     lastMaxTokens = maxTokens;
     lastOutputTokens = outputTokens;
     lastMaxNumImages = maxNumImages;
     lastCacheDir = cacheDir;
     lastSpeculativeDecoding = speculativeDecoding;
     lastMinLogLevel = minLogLevel;
+    lastActivationDataType = activationDataType;
+    lastPrefillChunkSize = prefillChunkSize;
+    lastParallelFileSectionLoading = parallelFileSectionLoading;
+    lastDispatchLibDir = dispatchLibDir;
     if (!initializeStarted.isCompleted) {
       initializeStarted.complete();
     }
@@ -1708,6 +2094,9 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
   @override
   void createConversation({
     String? systemMessage,
+    List<Map<String, dynamic>>? messages,
+    List<Map<String, dynamic>>? tools,
+    Map<String, dynamic>? extraContext,
     double temperature = 0.8,
     int topK = 40,
     double topP = 0.95,
@@ -1720,6 +2109,14 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
     lastTopP = topP;
     lastSeed = seed;
     lastNpuBackend = npuBackend;
+    lastSystemMessage = systemMessage;
+    lastMessages = messages
+        ?.map(Map<String, dynamic>.from)
+        .toList(growable: false);
+    lastTools = tools?.map(Map<String, dynamic>.from).toList(growable: false);
+    lastExtraContext = extraContext == null
+        ? null
+        : Map<String, dynamic>.from(extraContext);
     createConversationCount += 1;
     onCreateConversation?.call();
   }
@@ -1740,14 +2137,26 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
   }
 
   @override
-  Stream<String> generate(
-    String prompt, {
-    List<LiteRtLmMediaInput> mediaInputs = const <LiteRtLmMediaInput>[],
+  Stream<String> generate(String prompt) {
+    _checkNotDisposed();
+    generateCount += 1;
+    if (!generateStarted.isCompleted) {
+      generateStarted.complete();
+    }
+    return generated.stream;
+  }
+
+  @override
+  Stream<String> generateMessageJson(
+    String messageJson, {
+    Map<String, dynamic>? extraContext,
     int? visualTokenBudget,
   }) {
     _checkNotDisposed();
-    lastGeneratePrompt = prompt;
-    lastMediaInputs = List<LiteRtLmMediaInput>.from(mediaInputs);
+    lastMessageJson = messageJson;
+    lastMessageExtraContext = extraContext == null
+        ? null
+        : Map<String, dynamic>.from(extraContext);
     lastVisualTokenBudget = visualTokenBudget;
     generateCount += 1;
     if (!generateStarted.isCompleted) {

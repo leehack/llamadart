@@ -51,6 +51,60 @@ jobs:
       - name: Check Pana Score
         run: flutter pub global run pana . --exit-code-threshold 160
 
+  companion-packages:
+    name: Companion Package (${{ matrix.package }})
+    runs-on: macos-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        package:
+          - packages/llamadart_llama_cpp_flutter
+          - packages/llamadart_litert_lm_flutter
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        working-directory: ${{ matrix.package }}
+        run: flutter pub get
+
+      - name: Check formatting
+        working-directory: ${{ matrix.package }}
+        run: dart format --output=none --set-exit-if-changed .
+
+      - name: Analyze
+        working-directory: ${{ matrix.package }}
+        run: flutter analyze
+
+      - name: Test
+        working-directory: ${{ matrix.package }}
+        run: flutter test
+
+      - name: Validate SwiftPM manifest
+        working-directory: ${{ matrix.package }}
+        run: |
+          package_name="$(basename "$PWD")"
+          swift package --package-path "darwin/$package_name" dump-package >/dev/null
+
+      - name: Publish dry-run
+        working-directory: ${{ matrix.package }}
+        run: |
+          tmp_package="$RUNNER_TEMP/$(basename "$PWD")-publish"
+          rm -rf "$tmp_package"
+          mkdir -p "$tmp_package"
+          rsync -a --delete \
+            --exclude='.dart_tool' \
+            --exclude='build' \
+            --exclude='pubspec.lock' \
+            ./ "$tmp_package/"
+          (cd "$tmp_package" && dart pub publish --dry-run)
+
   docs-check:
     name: Docs Build Check
     runs-on: ubuntu-latest

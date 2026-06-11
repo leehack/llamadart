@@ -105,12 +105,17 @@ Future<void> main(List<String> args) async {
         'promptEvalMs': perf?.promptEvalMs,
         'evalMs': perf?.evalMs,
         'sampleMs': perf?.sampleMs,
+        'decodeMs': perf?.decodeMs,
         'prefillTokensPerSecond': perf == null || perf.promptEvalMs <= 0
             ? null
             : perf.promptEvalTokens / (perf.promptEvalMs / 1000.0),
         'decodeTokensPerSecond': perf == null || perf.evalMs <= 0
             ? null
             : perf.evalTokens / (perf.evalMs / 1000.0),
+        'decodeOnlyTokensPerSecond':
+            perf?.decodeMs == null || perf!.decodeMs! <= 0
+            ? null
+            : perf.evalTokens / (perf.decodeMs! / 1000.0),
         'decodeWithSamplingTokensPerSecond':
             perf == null || perf.evalMs + perf.sampleMs <= 0
             ? null
@@ -120,6 +125,11 @@ Future<void> main(List<String> args) async {
             : perf?.evalTokens != null
             ? perf!.evalTokens / (wallMs / 1000.0)
             : null,
+        'speculativeDraftTokens': perf?.speculativeDraftTokens,
+        'speculativeAcceptedDraftTokens': perf?.speculativeAcceptedDraftTokens,
+        'speculativeAcceptanceRate': perf?.speculativeAcceptanceRate,
+        'speculativeDraftMs': perf?.speculativeDraftMs,
+        'speculativeVerifyMs': perf?.speculativeVerifyMs,
       };
       runsDetail.add(runMetrics);
       print('RUN llamadart ${jsonEncode(runMetrics)}');
@@ -140,12 +150,17 @@ Future<void> main(List<String> args) async {
       'promptEvalMs': perf?.promptEvalMs,
       'evalMs': perf?.evalMs,
       'sampleMs': perf?.sampleMs,
+      'decodeMs': perf?.decodeMs,
       'prefillTokensPerSecond': perf == null || perf.promptEvalMs <= 0
           ? null
           : perf.promptEvalTokens / (perf.promptEvalMs / 1000.0),
       'decodeTokensPerSecond': perf == null || perf.evalMs <= 0
           ? null
           : perf.evalTokens / (perf.evalMs / 1000.0),
+      'decodeOnlyTokensPerSecond':
+          perf?.decodeMs == null || perf!.decodeMs! <= 0
+          ? null
+          : perf.evalTokens / (perf.decodeMs! / 1000.0),
       'decodeWithSamplingTokensPerSecond':
           perf == null || perf.evalMs + perf.sampleMs <= 0
           ? null
@@ -155,6 +170,11 @@ Future<void> main(List<String> args) async {
           : perf?.evalTokens != null
           ? perf!.evalTokens / (wallMs / 1000.0)
           : null,
+      'speculativeDraftTokens': perf?.speculativeDraftTokens,
+      'speculativeAcceptedDraftTokens': perf?.speculativeAcceptedDraftTokens,
+      'speculativeAcceptanceRate': perf?.speculativeAcceptanceRate,
+      'speculativeDraftMs': perf?.speculativeDraftMs,
+      'speculativeVerifyMs': perf?.speculativeVerifyMs,
       'runs': runs,
       'warmups': warmups,
       'measured': _summarizeRuns(runsDetail),

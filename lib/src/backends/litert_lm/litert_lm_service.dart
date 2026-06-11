@@ -11,12 +11,15 @@ import '../../core/models/config/kv_cache_type.dart';
 import '../../core/models/config/log_level.dart';
 import '../../core/models/inference/generation_params.dart';
 import '../../core/models/inference/model_params.dart';
+import '../../core/models/inference/tool_choice.dart';
 import '../../core/template/chat_template_engine.dart';
 import '../backend.dart';
 import 'litert_lm_chat_template.dart';
 import 'litert_lm_chat_templates.dart';
 import 'litert_lm_platform.dart';
 import 'litert_lm_runtime.dart';
+
+const int _gemma4DefaultVisualTokenBudget = 280;
 
 /// Worker-owned service for the LiteRT-LM backend.
 ///
@@ -36,6 +39,8 @@ class LiteRtLmService {
   int? _activeOutputTokens;
   bool? _activeSpeculativeDecoding;
   int? _activeMaxNumImages;
+  bool? _activeVisionEnabled;
+  bool? _activeAudioEnabled;
   int _nextModelHandle = 1;
   int _nextContextHandle = 1;
   int? _modelHandle;
@@ -80,7 +85,6 @@ class LiteRtLmService {
     _activeBackend = resolvedBackend;
     _activeOutputTokens = null;
     _activeSpeculativeDecoding = null;
-    _activeMaxNumImages = null;
     _modelHandle = _nextModelHandle++;
     _contextHandle = null;
     _lastMetrics = null;
@@ -100,7 +104,6 @@ class LiteRtLmService {
     _activeBackend = null;
     _activeOutputTokens = null;
     _activeSpeculativeDecoding = null;
-    _activeMaxNumImages = null;
     _modelHandle = null;
     _contextHandle = null;
     _lastMetrics = null;
@@ -143,9 +146,10 @@ class LiteRtLmService {
     List<LlamaContentPart>? parts,
   }) async* {
     _checkContextHandle(contextHandle);
+    if (_hasMediaParts(parts)) {
+      throw UnsupportedError('LiteRtLmBackend does not support media parts.');
+    }
     _validateGenerationParams(params);
-    final mediaInputs = await _liteRtLmMediaInputsFromParts(parts);
-    final maxNumImages = _maxNumImagesFor(mediaInputs);
 
     _cancelRequested = false;
     if (params.maxTokens <= 0) {
@@ -153,10 +157,7 @@ class LiteRtLmService {
       return;
     }
 
-    final client = await _ensureClientForGeneration(
-      params,
-      maxNumImages: maxNumImages,
-    );
+    final client = await _ensureClientForGeneration(params);
     if (_cancelRequested) {
       return;
     }
@@ -180,7 +181,125 @@ class LiteRtLmService {
     final sw = Stopwatch()..start();
     try {
       final stream = _applyStopSequences(
-        client.generate(prompt, mediaInputs: mediaInputs),
+        client.generate(prompt),
+        stopSequences,
+        onStop: cancelGeneration,
+      );
+      await for (final chunk in stream) {
+        if (_cancelRequested) {
+          break;
+        }
+        yield chunk;
+      }
+    } finally {
+      sw.stop();
+      try {
+        _lastMetrics = client.readMetrics(
+          wallMilliseconds: sw.elapsedMilliseconds,
+        );
+      } catch (_) {
+        _lastMetrics = null;
+      }
+    }
+  }
+
+  /// Generates UTF-8 token byte chunks using native LiteRT-LM conversation
+  /// messages/tools instead of a pre-rendered Dart prompt.
+  Stream<List<int>> generateChat(
+    int contextHandle,
+    List<LlamaChatMessage> messages,
+    GenerationParams params, {
+    List<Map<String, dynamic>>? tools,
+    ToolChoice toolChoice = ToolChoice.auto,
+    bool parallelToolCalls = false,
+    bool enableThinking = true,
+    Map<String, dynamic>? chatTemplateKwargs,
+    String? sourceLangCode,
+    String? targetLangCode,
+    DateTime? templateNow,
+  }) async* {
+    _checkContextHandle(contextHandle);
+    if (messages.isEmpty) {
+      throw ArgumentError('LiteRT-LM native chat generation needs a message.');
+    }
+    if (messages.last.role == LlamaChatRole.system) {
+      throw UnsupportedError(
+        'LiteRtLmBackend native chat generation cannot send a system message '
+        'as the active turn.',
+      );
+    }
+    if (toolChoice == ToolChoice.required) {
+      throw UnsupportedError(
+        'LiteRtLmBackend native chat generation does not support '
+        'ToolChoice.required; use the Dart template path instead.',
+      );
+    }
+    if (parallelToolCalls) {
+      throw UnsupportedError(
+        'LiteRtLmBackend native chat generation does not expose a parallel '
+        'tool-call switch.',
+      );
+    }
+    _validateGenerationParams(params);
+
+    _cancelRequested = false;
+    if (params.maxTokens <= 0) {
+      _lastMetrics = null;
+      return;
+    }
+
+    final seed = _nativeConversationSeed(messages.take(messages.length - 1));
+    final activeMessageJson = jsonEncode(
+      _chatMessageToNativeJson(messages.last),
+    );
+    final maxNumImages = _maxNumImagesFor(messages);
+    final enableAudio = _hasAudioFor(messages);
+    final client = await _ensureClientForGeneration(
+      params,
+      maxNumImages: maxNumImages,
+      enableAudio: enableAudio,
+    );
+    if (_cancelRequested) {
+      return;
+    }
+    final backend =
+        _activeBackend ?? _backendNameFor(_modelParams ?? const ModelParams());
+    final nativeTools = _nativeToolsFor(toolChoice, tools);
+    final extraContext = _nativeExtraContext(
+      chatTemplateKwargs: chatTemplateKwargs,
+      sourceLangCode: sourceLangCode,
+      targetLangCode: targetLangCode,
+      templateNow: templateNow,
+      enableThinking: enableThinking,
+    );
+    client.createConversation(
+      systemMessage: seed.systemMessage,
+      messages: seed.messages,
+      tools: nativeTools,
+      extraContext: extraContext,
+      temperature: params.temp,
+      topK: params.topK,
+      topP: params.topP,
+      seed: params.seed ?? _defaultSamplerSeed(),
+      npuBackend: backend == 'npu',
+    );
+    if (_cancelRequested) {
+      client.cancel();
+      return;
+    }
+
+    final stopSequences = params.stopSequences
+        .where((sequence) => sequence.isNotEmpty)
+        .toList(growable: false);
+    final sw = Stopwatch()..start();
+    try {
+      final stream = _applyStopSequences(
+        client.generateMessageJson(
+          activeMessageJson,
+          visualTokenBudget: maxNumImages == null
+              ? null
+              : _gemma4DefaultVisualTokenBudget,
+        ),
         stopSequences,
         onStop: cancelGeneration,
       );
@@ -407,6 +526,9 @@ class LiteRtLmService {
     _client = null;
     _activeOutputTokens = null;
     _activeSpeculativeDecoding = null;
+    _activeMaxNumImages = null;
+    _activeVisionEnabled = null;
+    _activeAudioEnabled = null;
     _lastMetrics = null;
     _cancelRequested = false;
   }
@@ -414,11 +536,14 @@ class LiteRtLmService {
   Future<LiteRtLmRuntimeClient> _ensureClientForGeneration(
     GenerationParams params, {
     int? maxNumImages,
+    bool? enableAudio,
   }) {
     return _ensureClientForRuntime(
       outputTokens: params.maxTokens,
-      speculativeDecoding: params.speculativeDecoding,
+      speculativeDecoding: params.isSpeculativeDecodingEnabled,
       maxNumImages: maxNumImages,
+      enableVision: maxNumImages != null,
+      enableAudio: enableAudio,
     );
   }
 
@@ -426,6 +551,8 @@ class LiteRtLmService {
     int? outputTokens,
     bool? speculativeDecoding,
     int? maxNumImages,
+    bool? enableVision,
+    bool? enableAudio,
   }) async {
     final modelPath = _modelPath;
     final modelParams = _modelParams;
@@ -438,6 +565,8 @@ class LiteRtLmService {
     final resolvedSpeculativeDecoding =
         speculativeDecoding ?? _activeSpeculativeDecoding ?? false;
     final resolvedMaxNumImages = maxNumImages ?? _activeMaxNumImages;
+    final resolvedVisionEnabled = enableVision ?? _activeVisionEnabled ?? false;
+    final resolvedAudioEnabled = enableAudio ?? _activeAudioEnabled ?? false;
     final backend = _activeBackend ?? _backendNameFor(modelParams);
     final existing = _client;
     if (existing != null &&
@@ -445,6 +574,9 @@ class LiteRtLmService {
         (speculativeDecoding == null ||
             _activeSpeculativeDecoding == resolvedSpeculativeDecoding) &&
         (maxNumImages == null || _activeMaxNumImages == resolvedMaxNumImages) &&
+        (enableVision == null ||
+            _activeVisionEnabled == resolvedVisionEnabled) &&
+        (enableAudio == null || _activeAudioEnabled == resolvedAudioEnabled) &&
         _activeBackend == backend) {
       return existing;
     }
@@ -454,6 +586,8 @@ class LiteRtLmService {
     _activeOutputTokens = null;
     _activeSpeculativeDecoding = null;
     _activeMaxNumImages = null;
+    _activeVisionEnabled = null;
+    _activeAudioEnabled = null;
     final client = _clientFactory();
     final responseThinkingTags = _responseThinkingTagsForModel(modelPath);
     client.configureResponseThinkingTags(
@@ -464,12 +598,21 @@ class LiteRtLmService {
       await client.initialize(
         modelPath: modelPath,
         backend: backend,
+        visionBackend: resolvedVisionEnabled
+            ? _mediaBackendName(backend)
+            : null,
+        audioBackend: resolvedAudioEnabled ? _mediaBackendName(backend) : null,
         maxTokens: modelParams.contextSize,
         outputTokens: resolvedOutputTokens,
         maxNumImages: resolvedMaxNumImages,
         cacheDir: _defaultCacheDir(),
         speculativeDecoding: resolvedSpeculativeDecoding,
         minLogLevel: _liteRtLmMinLogLevel(_logLevel),
+        activationDataType: modelParams.liteRtLmActivationDataType,
+        prefillChunkSize: modelParams.liteRtLmPrefillChunkSize,
+        parallelFileSectionLoading:
+            modelParams.liteRtLmParallelFileSectionLoading,
+        dispatchLibDir: modelParams.liteRtLmDispatchLibDir,
       );
     } catch (_) {
       try {
@@ -483,6 +626,8 @@ class LiteRtLmService {
     _activeOutputTokens = resolvedOutputTokens;
     _activeSpeculativeDecoding = resolvedSpeculativeDecoding;
     _activeMaxNumImages = resolvedMaxNumImages;
+    _activeVisionEnabled = resolvedVisionEnabled;
+    _activeAudioEnabled = resolvedAudioEnabled;
     _activeBackend = backend;
     return client;
   }
@@ -552,51 +697,47 @@ class LiteRtLmService {
     }
   }
 
-  Future<List<LiteRtLmMediaInput>> _liteRtLmMediaInputsFromParts(
-    List<LlamaContentPart>? parts,
-  ) async {
-    if (parts == null || parts.isEmpty) {
-      return const <LiteRtLmMediaInput>[];
+  bool _hasMediaParts(List<LlamaContentPart>? parts) {
+    if (parts == null) {
+      return false;
     }
-
-    final inputs = <LiteRtLmMediaInput>[];
-    for (final part in parts) {
-      if (part is LlamaTextContent ||
-          part is LlamaToolCallContent ||
-          part is LlamaToolResultContent ||
-          part is LlamaThinkingContent) {
-        continue;
-      }
-      if (part is LlamaImageContent) {
-        inputs.add(await _liteRtLmImageInputFromPart(part));
-        continue;
-      }
-      if (part is LlamaAudioContent) {
-        inputs.add(await _liteRtLmAudioInputFromPart(part));
-      }
-    }
-    return inputs;
+    return parts.any(
+      (part) => part is LlamaImageContent || part is LlamaAudioContent,
+    );
   }
 
-  Future<LiteRtLmMediaInput> _liteRtLmImageInputFromPart(
-    LlamaImageContent part,
-  ) async {
-    if (part.url != null && part.url!.isNotEmpty) {
-      throw UnsupportedError(
-        'LiteRtLmBackend does not support remote image URLs. Download the '
-        'image and pass a local path or encoded image bytes.',
-      );
-    }
+  int? _maxNumImagesFor(List<LlamaChatMessage> messages) {
+    final imageCount = messages
+        .expand((message) => message.parts)
+        .whereType<LlamaImageContent>()
+        .length;
+    return imageCount == 0 ? null : imageCount;
+  }
 
+  bool _hasAudioFor(List<LlamaChatMessage> messages) {
+    return messages
+        .expand((message) => message.parts)
+        .whereType<LlamaAudioContent>()
+        .isNotEmpty;
+  }
+
+  String _mediaBackendName(String backend) {
+    if (backend == liteRtLmNpuBackend) {
+      return liteRtLmCpuBackend;
+    }
+    return backend;
+  }
+
+  Map<String, dynamic> _nativeImageContent(LlamaImageContent part) {
     final imagePath = part.path;
     if (imagePath != null) {
       if (imagePath.isEmpty) {
         throw ArgumentError.value(imagePath, 'path', 'must not be empty');
       }
-      if (!await File(imagePath).exists()) {
+      if (!File(imagePath).existsSync()) {
         throw ArgumentError('LiteRT-LM image file does not exist: $imagePath');
       }
-      return LiteRtLmMediaInput.imagePath(imagePath);
+      return {'type': 'image', 'path': imagePath};
     }
 
     final imageBytes = part.bytes;
@@ -606,12 +747,19 @@ class LiteRtLmService {
       }
       if (part.width != null || part.height != null) {
         throw UnsupportedError(
-          'LiteRtLmBackend cannot consume raw RGB image bytes with width or '
-          'height metadata. Pass an encoded PNG/JPEG path or encoded image '
-          'bytes instead.',
+          'LiteRtLmBackend does not support raw RGB image bytes yet. Pass a '
+          'local encoded image file path or encoded image bytes.',
         );
       }
-      return LiteRtLmMediaInput.imageBlob(imageBytes);
+      return {'type': 'image', 'blob': base64Encode(imageBytes)};
+    }
+
+    final imageUrl = part.url;
+    if (imageUrl != null) {
+      throw UnsupportedError(
+        'LiteRtLmBackend does not support remote image URLs yet. Pass a local '
+        'image file path or encoded image bytes.',
+      );
     }
 
     throw ArgumentError(
@@ -619,18 +767,16 @@ class LiteRtLmService {
     );
   }
 
-  Future<LiteRtLmMediaInput> _liteRtLmAudioInputFromPart(
-    LlamaAudioContent part,
-  ) async {
+  Map<String, dynamic> _nativeAudioContent(LlamaAudioContent part) {
     final audioPath = part.path;
     if (audioPath != null) {
       if (audioPath.isEmpty) {
         throw ArgumentError.value(audioPath, 'path', 'must not be empty');
       }
-      if (!await File(audioPath).exists()) {
+      if (!File(audioPath).existsSync()) {
         throw ArgumentError('LiteRT-LM audio file does not exist: $audioPath');
       }
-      return LiteRtLmMediaInput.audioPath(audioPath);
+      return {'type': 'audio', 'path': audioPath};
     }
 
     final audioBytes = part.bytes;
@@ -638,7 +784,7 @@ class LiteRtLmService {
       if (audioBytes.isEmpty) {
         throw ArgumentError.value(audioBytes, 'bytes', 'must not be empty');
       }
-      return LiteRtLmMediaInput.audioBlob(audioBytes);
+      return {'type': 'audio', 'blob': base64Encode(audioBytes)};
     }
 
     if (part.samples != null) {
@@ -651,13 +797,6 @@ class LiteRtLmService {
     throw ArgumentError(
       'LiteRT-LM audio content must provide a local path or encoded bytes.',
     );
-  }
-
-  int? _maxNumImagesFor(List<LiteRtLmMediaInput> mediaInputs) {
-    final imageCount = mediaInputs
-        .where((input) => input.type == LiteRtLmMediaType.image)
-        .length;
-    return imageCount == 0 ? null : imageCount;
   }
 
   int _firstStopIndex(String text, List<String> stopSequences) {
@@ -763,7 +902,9 @@ class LiteRtLmService {
       'LiteRtLmBackend does not support llama.cpp-specific ModelParams: '
       '${unsupported.join(', ')}. Supported LiteRT-LM load options are '
       'contextSize, chatTemplate, preferredBackend, all-or-CPU gpuLayers '
-      'hints, and liteRtLmBackend for explicit CPU/GPU/NPU selection.',
+      'hints, liteRtLmBackend for explicit CPU/GPU/NPU selection, '
+      'liteRtLmActivationDataType, liteRtLmPrefillChunkSize, '
+      'liteRtLmParallelFileSectionLoading, and liteRtLmDispatchLibDir.',
     );
   }
 
@@ -833,6 +974,7 @@ class LiteRtLmService {
     if (params.grammarRoot != defaults.grammarRoot) {
       unsupported.add('grammarRoot');
     }
+    _addUnsupportedSpeculativeDecodingOptions(params, unsupported);
 
     if (unsupported.isEmpty) {
       return;
@@ -841,8 +983,31 @@ class LiteRtLmService {
       'LiteRtLmBackend does not support llama.cpp-specific GenerationParams: '
       '${unsupported.join(', ')}. Supported LiteRT-LM generation options are '
       'maxTokens, temp, topK, topP, seed, stopSequences, '
-      'speculativeDecoding, and native stream batching thresholds.',
+      'speculativeDecoding, speculativeDecodingConfig, and native stream '
+      'batching thresholds.',
     );
+  }
+
+  void _addUnsupportedSpeculativeDecodingOptions(
+    GenerationParams params,
+    List<String> unsupported,
+  ) {
+    final config = params.resolvedSpeculativeDecodingConfig;
+    if (config == null) {
+      return;
+    }
+    if (config.draftTokenMax != null) {
+      unsupported.add('speculativeDecodingConfig.draftTokenMax');
+    }
+    if (config.draftTokenMin != null) {
+      unsupported.add('speculativeDecodingConfig.draftTokenMin');
+    }
+    if (config.minProbability != null) {
+      unsupported.add('speculativeDecodingConfig.minProbability');
+    }
+    if (config.draftModelPath != null) {
+      unsupported.add('speculativeDecodingConfig.draftModelPath');
+    }
   }
 
   int _defaultSamplerSeed() {
@@ -872,6 +1037,115 @@ class LiteRtLmService {
       role: role,
       text: _contentTextFromTemplateMap(message['content']),
     );
+  }
+
+  ({String? systemMessage, List<Map<String, dynamic>>? messages})
+  _nativeConversationSeed(Iterable<LlamaChatMessage> history) {
+    final systemText = <String>[];
+    final seededMessages = <Map<String, dynamic>>[];
+    for (final message in history) {
+      if (message.role == LlamaChatRole.system) {
+        if (_hasMediaParts(message.parts)) {
+          throw UnsupportedError(
+            'LiteRtLmBackend native chat generation does not support media '
+            'parts in system messages.',
+          );
+        }
+        final content = message.content.trim();
+        if (content.isNotEmpty) {
+          systemText.add(content);
+        }
+        continue;
+      }
+      seededMessages.add(_chatMessageToNativeJson(message));
+    }
+
+    final systemMessage = systemText.isEmpty
+        ? null
+        : jsonEncode({
+            'role': LlamaChatRole.system.name,
+            'content': [
+              {'type': 'text', 'text': systemText.join('\n')},
+            ],
+          });
+    return (
+      systemMessage: systemMessage,
+      messages: seededMessages.isEmpty ? null : seededMessages,
+    );
+  }
+
+  Map<String, dynamic> _chatMessageToNativeJson(LlamaChatMessage message) {
+    if (!_hasMediaParts(message.parts)) {
+      return Map<String, dynamic>.from(message.toJsonMultimodal());
+    }
+    if (message.role == LlamaChatRole.system) {
+      throw UnsupportedError(
+        'LiteRtLmBackend native chat generation does not support media parts '
+        'in system messages.',
+      );
+    }
+
+    final content = <Map<String, dynamic>>[];
+    for (final part in message.parts) {
+      switch (part) {
+        case LlamaTextContent(:final text):
+          if (text.isNotEmpty) {
+            content.add({'type': 'text', 'text': text});
+          }
+        case LlamaImageContent():
+          content.add(_nativeImageContent(part));
+        case LlamaAudioContent():
+          content.add(_nativeAudioContent(part));
+        case LlamaThinkingContent():
+          throw UnsupportedError(
+            'LiteRtLmBackend native chat generation does not support thinking '
+            'content in the same message as media parts.',
+          );
+        case LlamaToolCallContent():
+          throw UnsupportedError(
+            'LiteRtLmBackend native chat generation does not support tool-call '
+            'content in the same message as media parts.',
+          );
+        case LlamaToolResultContent():
+          throw UnsupportedError(
+            'LiteRtLmBackend native chat generation does not support tool-result '
+            'content in the same message as media parts.',
+          );
+      }
+    }
+    if (content.isEmpty) {
+      content.add({'type': 'text', 'text': ''});
+    }
+    return {'role': message.role.name, 'content': content};
+  }
+
+  List<Map<String, dynamic>>? _nativeToolsFor(
+    ToolChoice toolChoice,
+    List<Map<String, dynamic>>? tools,
+  ) {
+    if (toolChoice == ToolChoice.none || tools == null || tools.isEmpty) {
+      return null;
+    }
+    return tools.map(Map<String, dynamic>.from).toList(growable: false);
+  }
+
+  Map<String, dynamic>? _nativeExtraContext({
+    Map<String, dynamic>? chatTemplateKwargs,
+    String? sourceLangCode,
+    String? targetLangCode,
+    DateTime? templateNow,
+    required bool enableThinking,
+  }) {
+    final extraContext = <String, dynamic>{
+      if (chatTemplateKwargs != null) ...chatTemplateKwargs,
+      if (sourceLangCode != null && sourceLangCode.isNotEmpty)
+        'source_lang_code': sourceLangCode,
+      if (targetLangCode != null && targetLangCode.isNotEmpty)
+        'target_lang_code': targetLangCode,
+      if (templateNow != null) 'now': templateNow.toIso8601String(),
+      'enable_thinking': enableThinking,
+    };
+    return extraContext.isEmpty ? null : extraContext;
   }
 
   String _contentTextFromTemplateMap(Object? content) {

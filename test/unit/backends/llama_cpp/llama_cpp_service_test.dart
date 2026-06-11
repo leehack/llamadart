@@ -101,25 +101,41 @@ void main() {
       );
     });
 
-    test('generate rejects speculative decoding', () async {
-      expect(
-        service
-            .generate(
-              -1,
-              'hello',
-              const GenerationParams(speculativeDecoding: true),
-              0,
-            )
-            .drain<void>(),
-        throwsA(
-          isA<UnsupportedError>().having(
-            (error) => error.message.toString(),
-            'message',
-            contains('speculative decoding'),
-          ),
-        ),
-      );
-    });
+    test(
+      'generate reports unknown context before speculative decoding',
+      () async {
+        expect(
+          service
+              .generate(
+                -1,
+                'hello',
+                const GenerationParams(speculativeDecoding: true),
+                0,
+              )
+              .drain<void>(),
+          throwsA(isA<Exception>()),
+        );
+      },
+    );
+
+    test(
+      'generate reports unknown context before speculative config',
+      () async {
+        expect(
+          service
+              .generate(
+                -1,
+                'hello',
+                const GenerationParams(
+                  speculativeDecodingConfig: SpeculativeDecodingConfig.mtp(),
+                ),
+                0,
+              )
+              .drain<void>(),
+          throwsA(isA<Exception>()),
+        );
+      },
+    );
 
     test('embed and embedBatch throw for unknown context handle', () {
       expect(() => service.embed(-1, 'hello'), throwsA(isA<Exception>()));
@@ -491,51 +507,6 @@ void main() {
         LlamaCppService.shouldUseConservativeAndroidVulkanContextConfig(
           params,
           resolvedGpuLayers: 0,
-          isAndroid: true,
-        ),
-        isFalse,
-      );
-    });
-  });
-
-  group('shouldEnableExperimentalAndroidVulkanAcceleration', () {
-    test('returns false off Android', () {
-      expect(
-        LlamaCppService.shouldEnableExperimentalAndroidVulkanAcceleration(
-          'Qwen3.5-0.8B-Q4_K_M.gguf',
-        ),
-        isFalse,
-      );
-    });
-
-    test('returns true for small Qwen3.5 models on Android', () {
-      expect(
-        LlamaCppService.shouldEnableExperimentalAndroidVulkanAcceleration(
-          '/data/user/0/app_flutter/models/Qwen3.5-0.8B-Q4_K_M.gguf',
-          isAndroid: true,
-        ),
-        isTrue,
-      );
-      expect(
-        LlamaCppService.shouldEnableExperimentalAndroidVulkanAcceleration(
-          '/data/user/0/app_flutter/models/Qwen3.5-2B-Q4_K_M.gguf',
-          isAndroid: true,
-        ),
-        isTrue,
-      );
-      expect(
-        LlamaCppService.shouldEnableExperimentalAndroidVulkanAcceleration(
-          '/data/user/0/app_flutter/models/Qwen3.5-4B-Q4_K_M.gguf',
-          isAndroid: true,
-        ),
-        isTrue,
-      );
-    });
-
-    test('returns false for unrelated models on Android', () {
-      expect(
-        LlamaCppService.shouldEnableExperimentalAndroidVulkanAcceleration(
-          '/data/user/0/app_flutter/models/Llama-3.2-3B.gguf',
           isAndroid: true,
         ),
         isFalse,

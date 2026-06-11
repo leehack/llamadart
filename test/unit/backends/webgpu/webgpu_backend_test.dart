@@ -802,6 +802,25 @@ void main() {
       );
     });
 
+    test('rejects speculative decoding config', () {
+      expect(
+        () => backend.generate(
+          1,
+          'Hello',
+          const GenerationParams(
+            speculativeDecodingConfig: SpeculativeDecodingConfig.mtp(),
+          ),
+        ),
+        throwsA(
+          isA<UnsupportedError>().having(
+            (error) => error.message.toString(),
+            'message',
+            contains('speculative decoding'),
+          ),
+        ),
+      );
+    });
+
     test(
       'canceling generation subscription aborts active bridge completion',
       () async {

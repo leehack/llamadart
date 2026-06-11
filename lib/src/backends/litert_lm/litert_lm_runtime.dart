@@ -3,12 +3,13 @@ import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
 import 'dart:isolate';
-import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
 import 'package:path/path.dart' as path;
 
-const _litertLmVersion = '0.13.1';
+import '../../core/models/inference/model_params.dart';
+
+const _litertLmVersion = '0.13.1-native.1';
 const _litertLmLibDirEnv = 'LLAMADART_LITERT_LM_LIB_DIR';
 const _liteRtLmIosNativeAsset = 'package:llamadart/litert_lm_LiteRtLm';
 const _processLibraryCandidate = '<process>';
@@ -59,15 +60,13 @@ List<String> liteRtLmMacOsCacheDirectoryCandidatesForAbi(Abi abi) {
 List<String> liteRtLmMacOsRequiredLibrariesForAbi(Abi abi) {
   return switch (abi) {
     Abi.macosArm64 => const <String>[
-      'libGemmaModelConstraintProvider.dylib',
-      'libLiteRt.dylib',
       'libLiteRtLm.dylib',
-      'libLiteRtMetalAccelerator.dylib',
-      'libLiteRtTopKMetalSampler.dylib',
-      'libLiteRtTopKWebGpuSampler.dylib',
-      'libLiteRtWebGpuAccelerator.dylib',
+      'libCLiteRTLM_mac.dylib',
     ],
-    Abi.macosX64 => const <String>['libLiteRtLm.dylib'],
+    Abi.macosX64 => const <String>[
+      'libLiteRtLm.dylib',
+      'libCLiteRTLM_mac.dylib',
+    ],
     _ => const <String>[],
   };
 }
@@ -165,6 +164,62 @@ List<String> liteRtLmRequiredLibrariesForAbi(Abi abi) {
   };
 }
 
+/// Internal helper used by the LiteRT-LM runtime to locate this package's
+/// source root from an app's `.dart_tool/package_config.json`.
+List<String> liteRtLmPackageRootsFromPackageConfig(
+  File packageConfig, {
+  String packageName = 'llamadart',
+}) {
+  Object? decoded;
+  try {
+    decoded = jsonDecode(packageConfig.readAsStringSync());
+  } on Object {
+    return const <String>[];
+  }
+  if (decoded is! Map<String, Object?>) {
+    return const <String>[];
+  }
+  final packages = decoded['packages'];
+  if (packages is! List) {
+    return const <String>[];
+  }
+
+  final roots = <String>[];
+  for (final entry in packages) {
+    if (entry is! Map<String, Object?> || entry['name'] != packageName) {
+      continue;
+    }
+    final rootUri = entry['rootUri'];
+    if (rootUri is! String || rootUri.trim().isEmpty) {
+      continue;
+    }
+    final root = _directoryFromPackageConfigRootUri(packageConfig, rootUri);
+    if (root != null) {
+      roots.add(path.normalize(root.absolute.path));
+    }
+  }
+  return roots;
+}
+
+Directory? _directoryFromPackageConfigRootUri(
+  File packageConfig,
+  String rootUri,
+) {
+  try {
+    final uri = Uri.parse(rootUri);
+    if (uri.hasScheme) {
+      if (uri.scheme != 'file') {
+        return null;
+      }
+      return Directory.fromUri(uri);
+    }
+    final configDir = packageConfig.absolute.parent.path;
+    return Directory(path.normalize(path.join(configDir, rootUri)));
+  } on Object {
+    return null;
+  }
+}
+
 /// Internal helper used by the LiteRT-LM runtime to validate macOS app
 /// framework directories.
 List<String> liteRtLmMacOsRequiredFrameworksForAbi(Abi abi) {
@@ -194,16 +249,11 @@ List<String> liteRtLmMacOsRequiredNativeSpmFilesForAbi(Abi abi) {
   return switch (abi) {
     Abi.macosArm64 => const <String>[
       'LiteRtLm.framework/Versions/A/LiteRtLm',
-      'libGemmaModelConstraintProvider.dylib',
-      'libLiteRt.dylib',
-      'libLiteRtMetalAccelerator.dylib',
-      'libLiteRtTopKMetalSampler.dylib',
-      'libLiteRtTopKWebGpuSampler.dylib',
-      'libLiteRtWebGpuAccelerator.dylib',
+      'libCLiteRTLM_mac.dylib',
     ],
     Abi.macosX64 => const <String>[
       'LiteRtLm.framework/Versions/A/LiteRtLm',
-      'libLiteRt.dylib',
+      'libCLiteRTLM_mac.dylib',
     ],
     _ => const <String>[],
   };
@@ -356,84 +406,23 @@ class LiteRtLmRuntimeResult {
   const LiteRtLmRuntimeResult({required this.text, required this.metrics});
 }
 
-/// LiteRT-LM media input passed through the native Conversation API.
-class LiteRtLmMediaInput {
-  LiteRtLmMediaInput._({required this.type, this.path, this.bytes});
-
-  /// Creates image input backed by a local file path.
-  factory LiteRtLmMediaInput.imagePath(String path) {
-    return LiteRtLmMediaInput._(type: LiteRtLmMediaType.image, path: path);
-  }
-
-  /// Creates image input backed by encoded image bytes.
-  factory LiteRtLmMediaInput.imageBlob(Uint8List bytes) {
-    return LiteRtLmMediaInput._(
-      type: LiteRtLmMediaType.image,
-      bytes: Uint8List.fromList(bytes),
-    );
-  }
-
-  /// Creates audio input backed by a local file path.
-  factory LiteRtLmMediaInput.audioPath(String path) {
-    return LiteRtLmMediaInput._(type: LiteRtLmMediaType.audio, path: path);
-  }
-
-  /// Creates audio input backed by encoded audio bytes.
-  factory LiteRtLmMediaInput.audioBlob(Uint8List bytes) {
-    return LiteRtLmMediaInput._(
-      type: LiteRtLmMediaType.audio,
-      bytes: Uint8List.fromList(bytes),
-    );
-  }
-
-  /// Media modality.
-  final LiteRtLmMediaType type;
-
-  /// Local file path, when file-backed.
-  final String? path;
-
-  /// Encoded media bytes, when blob-backed.
-  final Uint8List? bytes;
-
-  /// Converts this input to LiteRT-LM conversation message JSON.
-  Map<String, Object> toJson() {
-    final result = <String, Object>{'type': type.name};
-    final localPath = path;
-    if (localPath != null) {
-      result['path'] = localPath;
-      return result;
-    }
-    final blob = bytes;
-    if (blob != null) {
-      result['blob'] = base64Encode(blob);
-      return result;
-    }
-    throw StateError('LiteRT-LM media input must have a path or bytes.');
-  }
-}
-
-/// Media modality for [LiteRtLmMediaInput].
-enum LiteRtLmMediaType {
-  /// Image input.
-  image,
-
-  /// Audio input.
-  audio,
-}
-
 // coverage:ignore-start
 // Native FFI boundary: exercised by LiteRT-LM smoke tests with real libraries.
 final class _BlockingSendMessageRequest {
   const _BlockingSendMessageRequest({
     required this.libraryPath,
+    required this.companionLibraryPaths,
     required this.conversationAddress,
     required this.messageJson,
-    required this.visualTokenBudget,
+    this.extraContextJson,
+    this.visualTokenBudget,
   });
 
   final String libraryPath;
+  final List<String> companionLibraryPaths;
   final int conversationAddress;
   final String messageJson;
+  final String? extraContextJson;
   final int? visualTokenBudget;
 }
 
@@ -459,17 +448,27 @@ class LiteRtLmRuntimeClient {
   // Keep a strong runtime-library reference while proxy function pointers are active.
   // ignore: unused_field
   DynamicLibrary? _proxyLibrary;
+  // Keep macOS/Linux/Windows companion libraries loaded while the runtime is active.
+  // ignore: unused_field
+  List<DynamicLibrary> _companionLibraries = const <DynamicLibrary>[];
   _ProxyCreateDart? _proxyCreate;
   _ProxyFreeStringDart? _proxyFreeString;
   _ProxyDeleteDart? _proxyDelete;
   String? _liteRtLmLibraryPath;
+  List<String> _liteRtLmCompanionLibraryPaths = const <String>[];
   Pointer<_LiteRtLmEngine>? _engine;
   Pointer<_LiteRtLmConversation>? _conversation;
 
   /// Initializes the native LiteRT-LM engine for a `.litertlm` model bundle.
+  ///
+  /// [visionBackend] and [audioBackend] enable the native media executors for
+  /// multimodal bundles. [maxNumImages] configures the image preprocessor
+  /// capacity for conversations that may include image inputs.
   Future<void> initialize({
     required String modelPath,
     String backend = 'gpu',
+    String? visionBackend,
+    String? audioBackend,
     int maxTokens = 4096,
     int outputTokens = 256,
     int? prefillTokens,
@@ -477,6 +476,10 @@ class LiteRtLmRuntimeClient {
     String? cacheDir,
     bool speculativeDecoding = true,
     int minLogLevel = 3,
+    LiteRtLmActivationDataType? activationDataType,
+    int? prefillChunkSize,
+    bool? parallelFileSectionLoading,
+    String? dispatchLibDir,
   }) async {
     if (maxTokens <= 0) {
       throw ArgumentError.value(maxTokens, 'maxTokens', 'must be positive');
@@ -502,7 +505,30 @@ class LiteRtLmRuntimeClient {
         'must be positive when provided',
       );
     }
+    if (prefillChunkSize != null && prefillChunkSize <= 0) {
+      throw ArgumentError.value(
+        prefillChunkSize,
+        'prefillChunkSize',
+        'must be positive when provided',
+      );
+    }
+    if (dispatchLibDir != null && dispatchLibDir.trim().isEmpty) {
+      throw ArgumentError.value(
+        dispatchLibDir,
+        'dispatchLibDir',
+        'must be non-empty when provided',
+      );
+    }
     final resolvedBackend = _normalizeLiteRtLmRuntimeBackend(backend);
+    final resolvedVisionBackend = visionBackend == null
+        ? null
+        : _normalizeLiteRtLmRuntimeBackend(
+            visionBackend,
+            name: 'visionBackend',
+          );
+    final resolvedAudioBackend = audioBackend == null
+        ? null
+        : _normalizeLiteRtLmRuntimeBackend(audioBackend, name: 'audioBackend');
 
     _ensureLibrariesLoaded();
     final bindings = _bindings!;
@@ -513,15 +539,22 @@ class LiteRtLmRuntimeClient {
 
     final modelPathPtr = modelPath.toNativeUtf8(allocator: calloc);
     final backendPtr = resolvedBackend.toNativeUtf8(allocator: calloc);
+    final visionBackendPtr = resolvedVisionBackend?.toNativeUtf8(
+      allocator: calloc,
+    );
+    final audioBackendPtr = resolvedAudioBackend?.toNativeUtf8(
+      allocator: calloc,
+    );
     final cacheDirPtr = cacheDir?.toNativeUtf8(allocator: calloc);
+    final dispatchLibDirPtr = dispatchLibDir?.toNativeUtf8(allocator: calloc);
     Pointer<_LiteRtLmEngineSettings> settings = nullptr;
 
     try {
       settings = bindings.engineSettingsCreate(
         modelPathPtr.cast(),
         backendPtr.cast(),
-        nullptr,
-        nullptr,
+        visionBackendPtr?.cast() ?? nullptr,
+        audioBackendPtr?.cast() ?? nullptr,
       );
       if (settings == nullptr) {
         throw StateError('litert_lm_engine_settings_create returned null');
@@ -536,29 +569,58 @@ class LiteRtLmRuntimeClient {
       if (maxNumImages != null) {
         bindings.engineSettingsSetMaxNumImages(settings, maxNumImages);
       }
+      if (parallelFileSectionLoading != null) {
+        bindings.engineSettingsSetParallelFileSectionLoading(
+          settings,
+          parallelFileSectionLoading,
+        );
+      }
+      if (activationDataType != null) {
+        bindings.engineSettingsSetActivationDataType(
+          settings,
+          activationDataType.nativeValue,
+        );
+      }
+      if (prefillChunkSize != null) {
+        bindings.engineSettingsSetPrefillChunkSize(settings, prefillChunkSize);
+      }
       if (prefillTokens != null) {
         bindings.engineSettingsSetNumPrefillTokens(settings, prefillTokens);
       }
       if (cacheDirPtr != null) {
         bindings.engineSettingsSetCacheDir(settings, cacheDirPtr.cast());
       }
+      if (dispatchLibDirPtr != null) {
+        bindings.engineSettingsSetLiteRtDispatchLibDir(
+          settings,
+          dispatchLibDirPtr.cast(),
+        );
+      }
 
       final settingsAddress = settings.address;
       final liteRtLmLibraryPath = _liteRtLmLibraryPath!;
+      final companionLibraryPaths = _liteRtLmCompanionLibraryPaths;
       final engineAddress = await Isolate.run(() {
-        final lib = _openLiteRtLmLibraryCandidate(liteRtLmLibraryPath);
-        final create = lib
-            .lookupFunction<
-              Pointer<_LiteRtLmEngine> Function(
-                Pointer<_LiteRtLmEngineSettings>,
-              ),
-              Pointer<_LiteRtLmEngine> Function(
-                Pointer<_LiteRtLmEngineSettings>,
-              )
-            >('litert_lm_engine_create');
-        return create(
-          Pointer<_LiteRtLmEngineSettings>.fromAddress(settingsAddress),
-        ).address;
+        final companionLibraries = _openCompanionLibraries(
+          companionLibraryPaths,
+        );
+        try {
+          final lib = _openLiteRtLmLibraryCandidate(liteRtLmLibraryPath);
+          final create = lib
+              .lookupFunction<
+                Pointer<_LiteRtLmEngine> Function(
+                  Pointer<_LiteRtLmEngineSettings>,
+                ),
+                Pointer<_LiteRtLmEngine> Function(
+                  Pointer<_LiteRtLmEngineSettings>,
+                )
+              >('litert_lm_engine_create');
+          return create(
+            Pointer<_LiteRtLmEngineSettings>.fromAddress(settingsAddress),
+          ).address;
+        } finally {
+          _keepAlive(companionLibraries);
+        }
       });
       if (engineAddress == 0) {
         throw StateError(
@@ -575,8 +637,17 @@ class LiteRtLmRuntimeClient {
       }
       calloc.free(modelPathPtr);
       calloc.free(backendPtr);
+      if (visionBackendPtr != null) {
+        calloc.free(visionBackendPtr);
+      }
+      if (audioBackendPtr != null) {
+        calloc.free(audioBackendPtr);
+      }
       if (cacheDirPtr != null) {
         calloc.free(cacheDirPtr);
+      }
+      if (dispatchLibDirPtr != null) {
+        calloc.free(dispatchLibDirPtr);
       }
     }
   }
@@ -584,6 +655,9 @@ class LiteRtLmRuntimeClient {
   /// Creates a new LiteRT-LM conversation for generation and token operations.
   void createConversation({
     String? systemMessage,
+    List<Map<String, dynamic>>? messages,
+    List<Map<String, dynamic>>? tools,
+    Map<String, dynamic>? extraContext,
     double temperature = 0.8,
     int topK = 40,
     double topP = 0.95,
@@ -612,7 +686,16 @@ class LiteRtLmRuntimeClient {
 
     final systemPtr = systemMessage == null
         ? nullptr
-        : systemMessage.toNativeUtf8(allocator: calloc);
+        : _systemMessageJson(systemMessage).toNativeUtf8(allocator: calloc);
+    final messagesPtr = messages == null || messages.isEmpty
+        ? nullptr
+        : jsonEncode(messages).toNativeUtf8(allocator: calloc);
+    final toolsPtr = tools == null || tools.isEmpty
+        ? nullptr
+        : jsonEncode(tools).toNativeUtf8(allocator: calloc);
+    final extraContextPtr = extraContext == null || extraContext.isEmpty
+        ? nullptr
+        : jsonEncode(extraContext).toNativeUtf8(allocator: calloc);
     Pointer<_LiteRtLmConversationConfig> config = nullptr;
     try {
       config = bindings.conversationConfigCreate();
@@ -622,6 +705,18 @@ class LiteRtLmRuntimeClient {
       bindings.conversationConfigSetSessionConfig(config, sessionConfig);
       if (systemPtr != nullptr) {
         bindings.conversationConfigSetSystemMessage(config, systemPtr.cast());
+      }
+      if (messagesPtr != nullptr) {
+        bindings.conversationConfigSetMessages(config, messagesPtr.cast());
+      }
+      if (toolsPtr != nullptr) {
+        bindings.conversationConfigSetTools(config, toolsPtr.cast());
+      }
+      if (extraContextPtr != nullptr) {
+        bindings.conversationConfigSetExtraContext(
+          config,
+          extraContextPtr.cast(),
+        );
       }
       bindings.conversationConfigSetEnableConstrainedDecoding(config, false);
       final conversation = bindings.conversationCreate(engine, config);
@@ -636,6 +731,15 @@ class LiteRtLmRuntimeClient {
       bindings.sessionConfigDelete(sessionConfig);
       if (systemPtr != nullptr) {
         calloc.free(systemPtr);
+      }
+      if (messagesPtr != nullptr) {
+        calloc.free(messagesPtr);
+      }
+      if (toolsPtr != nullptr) {
+        calloc.free(toolsPtr);
+      }
+      if (extraContextPtr != nullptr) {
+        calloc.free(extraContextPtr);
       }
     }
   }
@@ -692,42 +796,110 @@ class LiteRtLmRuntimeClient {
     }
   }
 
+  /// Renders a message with the active native LiteRT-LM conversation template.
+  ///
+  /// The returned string is copied into Dart before the native conversation may
+  /// invalidate the underlying buffer.
+  String renderMessageToString(Map<String, dynamic> message) {
+    final bindings = _requireBindings();
+    final conversation = _requireConversation();
+    final messagePtr = jsonEncode(message).toNativeUtf8(allocator: calloc);
+    try {
+      final renderedPtr = bindings.conversationRenderMessageToString(
+        conversation,
+        messagePtr.cast(),
+      );
+      if (renderedPtr == nullptr) {
+        throw StateError(
+          'litert_lm_conversation_render_message_to_string returned null',
+        );
+      }
+      return renderedPtr.cast<Utf8>().toDartString();
+    } finally {
+      calloc.free(messagePtr);
+    }
+  }
+
+  /// Returns the token count currently held by the active conversation KV cache.
+  int conversationTokenCount() {
+    final bindings = _requireBindings();
+    final conversation = _requireConversation();
+    final count = bindings.conversationGetTokenCount(conversation);
+    if (count < 0) {
+      throw StateError(
+        'litert_lm_conversation_get_token_count returned $count',
+      );
+    }
+    return count;
+  }
+
+  /// Replaces the active conversation with a native clone of itself.
+  void replaceConversationWithClone() {
+    final bindings = _requireBindings();
+    final conversation = _requireConversation();
+    final clone = bindings.conversationClone(conversation);
+    if (clone == nullptr) {
+      throw StateError('litert_lm_conversation_clone returned null');
+    }
+    bindings.conversationDelete(conversation);
+    _conversation = clone;
+  }
+
   /// Streams generated text from the active conversation.
-  Stream<String> generate(
-    String prompt, {
-    List<LiteRtLmMediaInput> mediaInputs = const <LiteRtLmMediaInput>[],
+  Stream<String> generate(String prompt) {
+    return generateMessageJson(_messageJson(prompt));
+  }
+
+  /// Streams generated text by sending a native LiteRT-LM message JSON object.
+  ///
+  /// [visualTokenBudget] configures the native image-token budget for
+  /// multimodal messages.
+  Stream<String> generateMessageJson(
+    String messageJson, {
+    Map<String, dynamic>? extraContext,
     int? visualTokenBudget,
   }) {
-    _validateVisualTokenBudget(visualTokenBudget);
+    if (visualTokenBudget != null && visualTokenBudget <= 0) {
+      throw ArgumentError.value(
+        visualTokenBudget,
+        'visualTokenBudget',
+        'must be positive when provided',
+      );
+    }
     // Upstream stream callback strings are only valid during the native call.
     // Dart listener callbacks run later, so streaming requires StreamProxy to
     // copy those strings across the thread/isolate boundary.
+    final extraContextJson = extraContext == null || extraContext.isEmpty
+        ? null
+        : jsonEncode(extraContext);
     if (_proxyCreate == null) {
-      return _generateBlocking(
-        prompt,
-        mediaInputs: mediaInputs,
+      return _generateBlockingMessageJson(
+        messageJson,
+        extraContextJson: extraContextJson,
         visualTokenBudget: visualTokenBudget,
       );
     }
-    return _generateStreaming(
-      prompt,
-      mediaInputs: mediaInputs,
+    return _generateStreamingMessageJson(
+      messageJson,
+      extraContextJson: extraContextJson,
       visualTokenBudget: visualTokenBudget,
     );
   }
 
-  Stream<String> _generateBlocking(
-    String prompt, {
-    required List<LiteRtLmMediaInput> mediaInputs,
-    required int? visualTokenBudget,
+  Stream<String> _generateBlockingMessageJson(
+    String messageJson, {
+    String? extraContextJson,
+    int? visualTokenBudget,
   }) {
     final conversation = _requireConversation();
     final liteRtLmLibraryPath = _liteRtLmLibraryPath!;
     final controller = StreamController<String>(onCancel: cancel);
     final request = _BlockingSendMessageRequest(
       libraryPath: liteRtLmLibraryPath,
+      companionLibraryPaths: _liteRtLmCompanionLibraryPaths,
       conversationAddress: conversation.address,
-      messageJson: _messageJson(prompt, mediaInputs: mediaInputs),
+      messageJson: messageJson,
+      extraContextJson: extraContextJson,
       visualTokenBudget: visualTokenBudget,
     );
 
@@ -758,17 +930,17 @@ class LiteRtLmRuntimeClient {
     return controller.stream;
   }
 
-  Stream<String> _generateStreaming(
-    String prompt, {
-    required List<LiteRtLmMediaInput> mediaInputs,
-    required int? visualTokenBudget,
+  Stream<String> _generateStreamingMessageJson(
+    String messageJson, {
+    String? extraContextJson,
+    int? visualTokenBudget,
   }) {
     final bindings = _requireBindings();
     final conversation = _requireConversation();
-    final messagePtr = _messageJson(
-      prompt,
-      mediaInputs: mediaInputs,
-    ).toNativeUtf8(allocator: calloc);
+    final messagePtr = messageJson.toNativeUtf8(allocator: calloc);
+    final extraContextPtr = extraContextJson == null
+        ? nullptr
+        : extraContextJson.toNativeUtf8(allocator: calloc);
     final assembler = LiteRtLmChannelAssembler(
       thinkingStartTag: _thinkingStartTag,
       thinkingEndTag: _thinkingEndTag,
@@ -789,6 +961,9 @@ class LiteRtLmRuntimeClient {
       }
       callable.close();
       calloc.free(messagePtr);
+      if (extraContextPtr != nullptr) {
+        calloc.free(extraContextPtr);
+      }
     }
 
     controller = StreamController<String>(
@@ -874,15 +1049,22 @@ class LiteRtLmRuntimeClient {
 
     Pointer<_LiteRtLmConversationOptionalArgs> optionalArgs = nullptr;
     try {
-      optionalArgs = _createConversationOptionalArgs(
+      optionalArgs = bindings.conversationOptionalArgsCreate();
+      if (optionalArgs == nullptr) {
+        throw StateError(
+          'litert_lm_conversation_optional_args_create returned null',
+        );
+      }
+      _setConversationOptionalArgs(
         bindings,
+        optionalArgs,
         visualTokenBudget: visualTokenBudget,
       );
 
       final rc = bindings.conversationSendMessageStream(
         conversation,
         messagePtr.cast(),
-        nullptr,
+        extraContextPtr.cast(),
         optionalArgs,
         callbackFn.cast(),
         callbackData,
@@ -1036,17 +1218,15 @@ class LiteRtLmRuntimeClient {
       throw UnsupportedError('LiteRT-LM does not support ${Abi.current()}.');
     }
 
-    for (final companion in libraries.companions) {
-      if (File(companion).existsSync() || !path.isAbsolute(companion)) {
-        DynamicLibrary.open(companion);
-      }
-    }
+    final companionLibraries = _openCompanionLibraries(libraries.companions);
 
     final liteRtLm = _openFirstAvailableWithPath(
       libraries.liteRtLmCandidates,
       description: 'LiteRT-LM library',
     );
     _liteRtLmLibraryPath = liteRtLm.path;
+    _liteRtLmCompanionLibraryPaths = libraries.companions;
+    _companionLibraries = companionLibraries;
     _tryLoadEmbeddedStreamProxy(
       liteRtLm.library,
       liteRtLm.path,
@@ -1099,10 +1279,7 @@ class LiteRtLmRuntimeClient {
             '${frameworksDir.path}/LiteRtLm.framework/Versions/A/LiteRtLm',
           ],
           companions: usesNativeSpmFramework
-              ? [
-                  for (final library in companions)
-                    '${frameworksDir.path}/$library',
-                ]
+              ? const []
               : [
                   for (final library in companions)
                     _macOsFrameworkBinaryPath(frameworksDir, library),
@@ -1368,6 +1545,7 @@ class LiteRtLmRuntimeClient {
       roots.add(File(scriptPath).parent.path);
     }
     roots.add(File(Platform.resolvedExecutable).parent.path);
+    roots.addAll(_llamadartPackageRootsFromNearestPackageConfigs(roots));
     return roots.map(Directory.new).toList();
   }
 
@@ -1386,6 +1564,29 @@ class LiteRtLmRuntimeClient {
         .where((library) => library != liteRtLm)
         .map((library) => '${dir.path}/$library')
         .toList(growable: false);
+  }
+
+  List<String> _llamadartPackageRootsFromNearestPackageConfigs(
+    Iterable<String> roots,
+  ) {
+    final packageRoots = <String>{};
+    final visitedConfigs = <String>{};
+    for (final root in roots) {
+      Directory? current = Directory(root).absolute;
+      while (current != null) {
+        final packageConfig = File(
+          '${current.path}/.dart_tool/package_config.json',
+        );
+        if (packageConfig.existsSync() &&
+            visitedConfigs.add(packageConfig.path)) {
+          packageRoots.addAll(
+            liteRtLmPackageRootsFromPackageConfig(packageConfig),
+          );
+        }
+        current = current.parent.path == current.path ? null : current.parent;
+      }
+    }
+    return packageRoots.toList(growable: false);
   }
 
   String? _liteRtLmLibraryFileNameForAbi(Abi abi) {
@@ -1498,100 +1699,54 @@ class LiteRtLmRuntimeClient {
   }
 }
 
-String _normalizeLiteRtLmRuntimeBackend(String backend) {
+String _normalizeLiteRtLmRuntimeBackend(
+  String backend, {
+  String name = 'backend',
+}) {
   final normalized = backend.trim().toLowerCase();
   if (normalized == 'cpu' || normalized == 'gpu' || normalized == 'npu') {
     return normalized;
   }
-  throw ArgumentError.value(backend, 'backend', 'must be cpu, gpu, or npu');
+  throw ArgumentError.value(backend, name, 'must be cpu, gpu, or npu');
 }
 
-final RegExp _liteRtLmMediaMarkerPattern = RegExp(
-  r'<start_of_image>|<\|image\|>|<image_soft_token>|<__media__>|'
-  r'<start_of_audio>|<\|audio\|>|<audio_soft_token>',
-);
-
-String _messageJson(
-  String text, {
-  List<LiteRtLmMediaInput> mediaInputs = const <LiteRtLmMediaInput>[],
-}) {
-  if (mediaInputs.isEmpty) {
-    return jsonEncode({
-      'role': 'user',
-      'content': [
-        {'type': 'text', 'text': text},
-      ],
-    });
-  }
-
+String _messageJson(String text) {
   return jsonEncode({
     'role': 'user',
-    'content': _messageContentJson(text, mediaInputs),
+    'content': [
+      {'type': 'text', 'text': text},
+    ],
   });
 }
 
-List<Map<String, Object>> _messageContentJson(
-  String text,
-  List<LiteRtLmMediaInput> mediaInputs,
-) {
-  final content = <Map<String, Object>>[];
-  final consumed = <int>{};
-
-  void addText(String value) {
-    if (value.isNotEmpty) {
-      content.add({'type': 'text', 'text': value});
+String _systemMessageJson(String textOrJson) {
+  try {
+    final decoded = jsonDecode(textOrJson);
+    if (decoded is Map<String, dynamic>) {
+      return textOrJson;
     }
+  } on FormatException {
+    // Plain text system messages are wrapped below.
   }
+  return jsonEncode({
+    'role': 'system',
+    'content': [
+      {'type': 'text', 'text': textOrJson},
+    ],
+  });
+}
 
-  LiteRtLmMediaInput? takeMedia(bool Function(LiteRtLmMediaInput) predicate) {
-    for (var i = 0; i < mediaInputs.length; i++) {
-      if (consumed.contains(i)) {
-        continue;
-      }
-      final input = mediaInputs[i];
-      if (predicate(input)) {
-        consumed.add(i);
-        return input;
-      }
-    }
-    return null;
+void _setConversationOptionalArgs(
+  _LiteRtLmBindings bindings,
+  Pointer<_LiteRtLmConversationOptionalArgs> optionalArgs, {
+  int? visualTokenBudget,
+}) {
+  if (visualTokenBudget != null) {
+    bindings.conversationOptionalArgsSetVisualTokenBudget(
+      optionalArgs,
+      visualTokenBudget,
+    );
   }
-
-  var start = 0;
-  for (final match in _liteRtLmMediaMarkerPattern.allMatches(text)) {
-    addText(text.substring(start, match.start));
-    final marker = match.group(0)!;
-    final media = switch (marker) {
-      '<start_of_image>' || '<|image|>' || '<image_soft_token>' => takeMedia(
-        (input) => input.type == LiteRtLmMediaType.image,
-      ),
-      '<start_of_audio>' || '<|audio|>' || '<audio_soft_token>' => takeMedia(
-        (input) => input.type == LiteRtLmMediaType.audio,
-      ),
-      _ => takeMedia((_) => true),
-    };
-    if (media == null) {
-      throw ArgumentError(
-        'LiteRT-LM prompt media marker "$marker" does not have a matching '
-        'provided media part. Check that the number and modality of image/audio '
-        'content parts match the rendered prompt markers.',
-      );
-    }
-    content.add(media.toJson());
-    start = match.end;
-  }
-  addText(text.substring(start));
-
-  for (var i = 0; i < mediaInputs.length; i++) {
-    if (!consumed.contains(i)) {
-      content.add(mediaInputs[i].toJson());
-    }
-  }
-
-  if (content.isEmpty) {
-    content.add({'type': 'text', 'text': ''});
-  }
-  return content;
 }
 
 Future<String> _runBlockingSendMessageInIsolate(
@@ -1601,73 +1756,64 @@ Future<String> _runBlockingSendMessageInIsolate(
 }
 
 String _runBlockingSendMessage(_BlockingSendMessageRequest request) {
-  final bindings = _LiteRtLmBindings(
-    _openLiteRtLmLibraryCandidate(request.libraryPath),
+  final companionLibraries = _openCompanionLibraries(
+    request.companionLibraryPaths,
   );
-  final conversation = Pointer<_LiteRtLmConversation>.fromAddress(
-    request.conversationAddress,
-  );
-  final messagePtr = request.messageJson.toNativeUtf8(allocator: calloc);
-  Pointer<_LiteRtLmConversationOptionalArgs> optionalArgs = nullptr;
   try {
-    optionalArgs = _createConversationOptionalArgs(
-      bindings,
-      visualTokenBudget: request.visualTokenBudget,
+    final bindings = _LiteRtLmBindings(
+      _openLiteRtLmLibraryCandidate(request.libraryPath),
     );
-
-    final response = bindings.conversationSendMessage(
-      conversation,
-      messagePtr.cast(),
-      nullptr,
-      optionalArgs,
+    final conversation = Pointer<_LiteRtLmConversation>.fromAddress(
+      request.conversationAddress,
     );
-    if (response == nullptr) {
-      throw StateError('litert_lm_conversation_send_message returned null');
-    }
-
+    final messagePtr = request.messageJson.toNativeUtf8(allocator: calloc);
+    final extraContextPtr = request.extraContextJson == null
+        ? nullptr
+        : request.extraContextJson!.toNativeUtf8(allocator: calloc);
+    Pointer<_LiteRtLmConversationOptionalArgs> optionalArgs = nullptr;
     try {
-      final rawPtr = bindings.jsonResponseGetString(response);
-      if (rawPtr == nullptr) {
-        throw StateError('litert_lm_json_response_get_string returned null');
+      optionalArgs = bindings.conversationOptionalArgsCreate();
+      if (optionalArgs == nullptr) {
+        throw StateError(
+          'litert_lm_conversation_optional_args_create returned null',
+        );
       }
-      return rawPtr.cast<Utf8>().toDartString();
+      _setConversationOptionalArgs(
+        bindings,
+        optionalArgs,
+        visualTokenBudget: request.visualTokenBudget,
+      );
+
+      final response = bindings.conversationSendMessage(
+        conversation,
+        messagePtr.cast(),
+        extraContextPtr.cast(),
+        optionalArgs,
+      );
+      if (response == nullptr) {
+        throw StateError('litert_lm_conversation_send_message returned null');
+      }
+
+      try {
+        final rawPtr = bindings.jsonResponseGetString(response);
+        if (rawPtr == nullptr) {
+          throw StateError('litert_lm_json_response_get_string returned null');
+        }
+        return rawPtr.cast<Utf8>().toDartString();
+      } finally {
+        bindings.jsonResponseDelete(response);
+      }
     } finally {
-      bindings.jsonResponseDelete(response);
+      if (optionalArgs != nullptr) {
+        bindings.conversationOptionalArgsDelete(optionalArgs);
+      }
+      calloc.free(messagePtr);
+      if (extraContextPtr != nullptr) {
+        calloc.free(extraContextPtr);
+      }
     }
   } finally {
-    if (optionalArgs != nullptr) {
-      bindings.conversationOptionalArgsDelete(optionalArgs);
-    }
-    calloc.free(messagePtr);
-  }
-}
-
-Pointer<_LiteRtLmConversationOptionalArgs> _createConversationOptionalArgs(
-  _LiteRtLmBindings bindings, {
-  required int? visualTokenBudget,
-}) {
-  final optionalArgs = bindings.conversationOptionalArgsCreate();
-  if (optionalArgs == nullptr) {
-    throw StateError(
-      'litert_lm_conversation_optional_args_create returned null',
-    );
-  }
-  if (visualTokenBudget != null) {
-    bindings.conversationOptionalArgsSetVisualTokenBudget(
-      optionalArgs,
-      visualTokenBudget,
-    );
-  }
-  return optionalArgs;
-}
-
-void _validateVisualTokenBudget(int? visualTokenBudget) {
-  if (visualTokenBudget != null && visualTokenBudget <= 0) {
-    throw ArgumentError.value(
-      visualTokenBudget,
-      'visualTokenBudget',
-      'must be positive when provided',
-    );
+    _keepAlive(companionLibraries);
   }
 }
 
@@ -1676,6 +1822,18 @@ DynamicLibrary _openLiteRtLmLibraryCandidate(String candidate) {
       ? DynamicLibrary.process()
       : DynamicLibrary.open(candidate);
 }
+
+List<DynamicLibrary> _openCompanionLibraries(Iterable<String> companions) {
+  final libraries = <DynamicLibrary>[];
+  for (final companion in companions) {
+    if (File(companion).existsSync() || !path.isAbsolute(companion)) {
+      libraries.add(DynamicLibrary.open(companion));
+    }
+  }
+  return libraries;
+}
+
+void _keepAlive(Object? value) {}
 
 void _validateLiteRtLmLibrary(DynamicLibrary library) {
   library.lookup<NativeFunction<Void Function()>>(
@@ -1769,6 +1927,18 @@ class LiteRtLmChannelAssembler {
     }
 
     final content = decoded['content'];
+    if (decoded.containsKey('tool_calls')) {
+      return (
+        thought: thought,
+        content: jsonEncode({'tool_calls': decoded['tool_calls']}),
+      );
+    }
+    if (decoded.containsKey('tool_call')) {
+      return (
+        thought: thought,
+        content: jsonEncode({'tool_call': decoded['tool_call']}),
+      );
+    }
     if (content is List) {
       for (final item in content) {
         if (item is Map<String, dynamic> && item['type'] == 'text') {
@@ -1845,23 +2015,47 @@ class _LiteRtLmBindings {
         void Function(Pointer<_LiteRtLmEngineSettings>, int)
       >('litert_lm_engine_settings_set_num_decode_tokens');
 
-  late final engineSettingsSetEnableSpeculativeDecoding = _library
-      .lookupFunction<
-        Void Function(Pointer<_LiteRtLmEngineSettings>, Bool),
-        void Function(Pointer<_LiteRtLmEngineSettings>, bool)
-      >('litert_lm_engine_settings_set_enable_speculative_decoding');
-
   late final engineSettingsSetMaxNumImages = _library
       .lookupFunction<
         Void Function(Pointer<_LiteRtLmEngineSettings>, Int),
         void Function(Pointer<_LiteRtLmEngineSettings>, int)
       >('litert_lm_engine_settings_set_max_num_images');
 
+  late final engineSettingsSetEnableSpeculativeDecoding = _library
+      .lookupFunction<
+        Void Function(Pointer<_LiteRtLmEngineSettings>, Bool),
+        void Function(Pointer<_LiteRtLmEngineSettings>, bool)
+      >('litert_lm_engine_settings_set_enable_speculative_decoding');
+
   late final engineSettingsSetCacheDir = _library
       .lookupFunction<
         Void Function(Pointer<_LiteRtLmEngineSettings>, Pointer<Char>),
         void Function(Pointer<_LiteRtLmEngineSettings>, Pointer<Char>)
       >('litert_lm_engine_settings_set_cache_dir');
+
+  late final engineSettingsSetParallelFileSectionLoading = _library
+      .lookupFunction<
+        Void Function(Pointer<_LiteRtLmEngineSettings>, Bool),
+        void Function(Pointer<_LiteRtLmEngineSettings>, bool)
+      >('litert_lm_engine_settings_set_parallel_file_section_loading');
+
+  late final engineSettingsSetLiteRtDispatchLibDir = _library
+      .lookupFunction<
+        Void Function(Pointer<_LiteRtLmEngineSettings>, Pointer<Char>),
+        void Function(Pointer<_LiteRtLmEngineSettings>, Pointer<Char>)
+      >('litert_lm_engine_settings_set_litert_dispatch_lib_dir');
+
+  late final engineSettingsSetActivationDataType = _library
+      .lookupFunction<
+        Void Function(Pointer<_LiteRtLmEngineSettings>, Int),
+        void Function(Pointer<_LiteRtLmEngineSettings>, int)
+      >('litert_lm_engine_settings_set_activation_data_type');
+
+  late final engineSettingsSetPrefillChunkSize = _library
+      .lookupFunction<
+        Void Function(Pointer<_LiteRtLmEngineSettings>, Int),
+        void Function(Pointer<_LiteRtLmEngineSettings>, int)
+      >('litert_lm_engine_settings_set_prefill_chunk_size');
 
   late final engineDelete = _library
       .lookupFunction<
@@ -2011,6 +2205,24 @@ class _LiteRtLmBindings {
         void Function(Pointer<_LiteRtLmConversationConfig>, Pointer<Char>)
       >('litert_lm_conversation_config_set_system_message');
 
+  late final conversationConfigSetTools = _library
+      .lookupFunction<
+        Void Function(Pointer<_LiteRtLmConversationConfig>, Pointer<Char>),
+        void Function(Pointer<_LiteRtLmConversationConfig>, Pointer<Char>)
+      >('litert_lm_conversation_config_set_tools');
+
+  late final conversationConfigSetMessages = _library
+      .lookupFunction<
+        Void Function(Pointer<_LiteRtLmConversationConfig>, Pointer<Char>),
+        void Function(Pointer<_LiteRtLmConversationConfig>, Pointer<Char>)
+      >('litert_lm_conversation_config_set_messages');
+
+  late final conversationConfigSetExtraContext = _library
+      .lookupFunction<
+        Void Function(Pointer<_LiteRtLmConversationConfig>, Pointer<Char>),
+        void Function(Pointer<_LiteRtLmConversationConfig>, Pointer<Char>)
+      >('litert_lm_conversation_config_set_extra_context');
+
   late final conversationConfigSetEnableConstrainedDecoding = _library
       .lookupFunction<
         Void Function(Pointer<_LiteRtLmConversationConfig>, Bool),
@@ -2040,6 +2252,12 @@ class _LiteRtLmBindings {
         Void Function(Pointer<_LiteRtLmConversation>),
         void Function(Pointer<_LiteRtLmConversation>)
       >('litert_lm_conversation_delete');
+
+  late final conversationClone = _library
+      .lookupFunction<
+        Pointer<_LiteRtLmConversation> Function(Pointer<_LiteRtLmConversation>),
+        Pointer<_LiteRtLmConversation> Function(Pointer<_LiteRtLmConversation>)
+      >('litert_lm_conversation_clone');
 
   late final conversationOptionalArgsCreate = _library
       .lookupFunction<
@@ -2107,6 +2325,12 @@ class _LiteRtLmBindings {
         )
       >('litert_lm_conversation_send_message_stream');
 
+  late final conversationRenderMessageToString = _library
+      .lookupFunction<
+        Pointer<Char> Function(Pointer<_LiteRtLmConversation>, Pointer<Char>),
+        Pointer<Char> Function(Pointer<_LiteRtLmConversation>, Pointer<Char>)
+      >('litert_lm_conversation_render_message_to_string');
+
   late final conversationCancelProcess = _library
       .lookupFunction<
         Void Function(Pointer<_LiteRtLmConversation>),
@@ -2120,6 +2344,12 @@ class _LiteRtLmBindings {
         ),
         Pointer<_LiteRtLmBenchmarkInfo> Function(Pointer<_LiteRtLmConversation>)
       >('litert_lm_conversation_get_benchmark_info');
+
+  late final conversationGetTokenCount = _library
+      .lookupFunction<
+        Int Function(Pointer<_LiteRtLmConversation>),
+        int Function(Pointer<_LiteRtLmConversation>)
+      >('litert_lm_conversation_get_token_count');
 
   late final benchmarkInfoDelete = _library
       .lookupFunction<

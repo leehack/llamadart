@@ -47,6 +47,7 @@ void main() {
     await _writeBundleLibraries(bundleDir, const [
       'libllamadart.so',
       'libllama.so',
+      'libllama-common.so',
       'libggml.so',
       'libggml-base.so',
       'libggml-cpu.so',
@@ -71,7 +72,7 @@ void main() {
   });
 
   test(
-    'build hook emits linux SONAME aliases without LiteRT-LM by default',
+    'build hook emits linux SONAME aliases and all runtimes by default',
     () async {
       await testCodeBuildHook(
         mainMethod: build_hook.main,
@@ -93,18 +94,17 @@ void main() {
           expect(emittedNames, contains('libllamadart.so'));
           expect(emittedNames, contains('libllama.so'));
           expect(emittedNames, contains('libllama.so.0'));
+          expect(emittedNames, contains('libllama-common.so'));
+          expect(emittedNames, contains('libllama-common.so.0'));
           expect(emittedNames, contains('libggml.so'));
           expect(emittedNames, contains('libggml.so.0'));
           expect(emittedNames, contains('libggml-base.so'));
           expect(emittedNames, contains('libggml-base.so.0'));
           for (final library in _linuxLiteRtLibraries) {
-            expect(emittedNames, isNot(contains(library)));
+            expect(emittedNames, contains(library));
           }
           for (final assetName in _linuxLiteRtAssetNames) {
-            expect(
-              codeAssetIds,
-              isNot(contains('package:llamadart/$assetName')),
-            );
+            expect(codeAssetIds, contains('package:llamadart/$assetName'));
           }
         },
       );

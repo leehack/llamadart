@@ -8,10 +8,14 @@ import 'dart:isolate';
 import 'package:llamadart/src/backends/backend.dart';
 import 'package:llamadart/src/backends/litert_lm/litert_lm_backend.dart';
 import 'package:llamadart/src/backends/litert_lm/worker_messages.dart';
+import 'package:llamadart/src/core/models/chat/chat_message.dart';
+import 'package:llamadart/src/core/models/chat/chat_role.dart';
 import 'package:llamadart/src/core/models/config/gpu_backend.dart';
 import 'package:llamadart/src/core/models/config/log_level.dart';
 import 'package:llamadart/src/core/models/inference/generation_params.dart';
 import 'package:llamadart/src/core/models/inference/model_params.dart';
+import 'package:llamadart/src/core/models/inference/tool_choice.dart';
+import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -39,11 +43,16 @@ void main() {
     expect(backend, isA<BackendPerformanceDiagnostics>());
     expect(backend, isA<BackendEmbeddingsSupport>());
     expect(backend, isA<BackendStatePersistenceSupport>());
+    expect(backend, isA<BackendNativeChatGeneration>());
     expect(backend.supportsUrlLoading, isFalse);
     expect((backend as BackendEmbeddingsSupport).supportsEmbeddings, isFalse);
     expect(
       (backend as BackendStatePersistenceSupport).supportsStatePersistence,
       isFalse,
+    );
+    expect(
+      (backend as BackendNativeChatGeneration).supportsNativeChatGeneration,
+      isTrue,
     );
   });
 
@@ -402,6 +411,62 @@ void main() {
       expect(request.contextHandle, 7);
       expect(request.prompt, 'prompt');
       expect(request.parts, isNull);
+    } finally {
+      await backend.dispose();
+      worker.close();
+    }
+  });
+
+  test('streams native chat token bytes from the LiteRT-LM worker', () async {
+    final worker = _FakeLiteRtLmWorker(
+      tokenizeResponse: const <int>[],
+      detokenizeResponse: '',
+      generationChunks: const [
+        [110, 97],
+        [116, 105, 118, 101],
+      ],
+    );
+    final backend = LiteRtLmBackend(initialSendPort: worker.sendPort);
+
+    try {
+      expect(
+        await backend
+            .generateChat(
+              7,
+              const [
+                LlamaChatMessage.fromText(
+                  role: LlamaChatRole.user,
+                  text: 'hello',
+                ),
+              ],
+              const GenerationParams(maxTokens: 5),
+              tools: [
+                ToolDefinition(
+                  name: 'get_weather',
+                  description: 'Get weather',
+                  parameters: const [],
+                  handler: (_) async => 'sunny',
+                ),
+              ],
+              toolChoice: ToolChoice.auto,
+              chatTemplateKwargs: const {'locale': 'en_CA'},
+            )
+            .toList(),
+        [
+          [110, 97],
+          [116, 105, 118, 101],
+        ],
+      );
+
+      final request = worker.requests
+          .whereType<LiteRtLmGenerateChatRequest>()
+          .single;
+      expect(request.contextHandle, 7);
+      expect(request.messages.single.content, 'hello');
+      expect(request.params.maxTokens, 5);
+      expect(request.tools?.single['function']['name'], 'get_weather');
+      expect(request.toolChoice, ToolChoice.auto);
+      expect(request.chatTemplateKwargs, {'locale': 'en_CA'});
     } finally {
       await backend.dispose();
       worker.close();
@@ -886,6 +951,23 @@ class _FakeLiteRtLmWorker {
         if (!generateReceived.isCompleted) {
           generateReceived.complete(message);
         }
+        if (generationErrorResponse != null) {
+          message.sendPort.send(generationErrorResponse);
+          break;
+        }
+        for (final chunk in generationChunks) {
+          message.sendPort.send(LiteRtLmTokenResponse(chunk));
+        }
+        if (holdGeneration) {
+          unawaited(
+            _releaseGeneration.future.then(
+              (_) => message.sendPort.send(LiteRtLmDoneResponse()),
+            ),
+          );
+        } else {
+          message.sendPort.send(LiteRtLmDoneResponse());
+        }
+      case LiteRtLmGenerateChatRequest():
         if (generationErrorResponse != null) {
           message.sendPort.send(generationErrorResponse);
           break;

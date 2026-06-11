@@ -475,10 +475,15 @@ class NativeLlamaBackend
         promptEvalMs: res.promptEvalMs,
         evalMs: res.evalMs,
         sampleMs: res.sampleMs,
+        decodeMs: res.decodeMs,
         promptEvalTokens: res.promptEvalTokens,
         evalTokens: res.evalTokens,
         sampleCount: res.sampleCount,
         reusedGraphs: res.reusedGraphs,
+        speculativeDraftTokens: res.speculativeDraftTokens,
+        speculativeAcceptedDraftTokens: res.speculativeAcceptedDraftTokens,
+        speculativeDraftMs: res.speculativeDraftMs,
+        speculativeVerifyMs: res.speculativeVerifyMs,
       );
     }
     if (res is ErrorResponse) {

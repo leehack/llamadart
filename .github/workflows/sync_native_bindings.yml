@@ -1,4 +1,4 @@
-name: Sync Native Version, Bindings & SPM Pins
+name: Sync Native Version & Bindings
 
 on:
   workflow_dispatch:
@@ -51,7 +51,7 @@ jobs:
         run: |
           tool/native/sync_native_headers_and_bindings.sh --tag "${{ github.event.inputs.native_tag }}"
 
-      - name: Sync native hook pins and Apple SPM checksums
+      - name: Sync native hook pins
         id: sync_pins
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -73,18 +73,26 @@ jobs:
             - Updates `hook/build.dart` native release pins.
             - Syncs headers from the matching `llamadart-native` release header bundle.
             - Regenerates `lib/src/backends/llama_cpp/bindings.dart` via ffigen.
-            - Updates Apple SPM binary target checksums from GitHub release asset digests.
-            - Updates LiteRT-LM runtime archive checksums when `litert_lm_tag` is not `keep`.
+            - Updates LiteRT-LM Dart runtime version and archive checksums when `litert_lm_tag` is not `keep`.
+            - Updates Apple SPM companion `Package.swift` binary target pins in `packages/`.
+            - Bumps companion package patch versions and updates their README/CHANGELOG native pin notes when SPM pins change.
 
             Native version checklist:
             - [ ] Confirm `leehack/llamadart-native` release `${{ steps.sync_headers.outputs.resolved_tag }}` includes the required native-assets archives.
-            - [ ] Confirm Apple SPM pins in `darwin/llamadart/Package.swift` reference the same native release.
-            - [ ] If `${{ github.event.inputs.litert_lm_tag }}` is not `keep`, confirm `leehack/litert-lm-native` release `${{ steps.sync_pins.outputs.resolved_litert_lm_tag }}` includes the required runtime archives and Apple XCFramework zips.
-            - [ ] Run Apple Flutter build validation when Apple SPM pins changed.
+            - [ ] If `${{ github.event.inputs.litert_lm_tag }}` is not `keep`, confirm `leehack/litert-lm-native` release `${{ steps.sync_pins.outputs.resolved_litert_lm_tag }}` includes the required runtime archives.
+            - [ ] Confirm matching Apple SPM pins changed under `packages/` when Apple XCFramework releases changed.
           branch: "automation/native-sync-${{ steps.sync_headers.outputs.resolved_tag }}"
           labels: automation/native-sync
           add-paths: |
             hook/build.dart
+            packages/llamadart_llama_cpp_flutter/darwin/llamadart_llama_cpp_flutter/Package.swift
+            packages/llamadart_llama_cpp_flutter/pubspec.yaml
+            packages/llamadart_llama_cpp_flutter/CHANGELOG.md
+            packages/llamadart_llama_cpp_flutter/README.md
+            packages/llamadart_litert_lm_flutter/darwin/llamadart_litert_lm_flutter/Package.swift
+            packages/llamadart_litert_lm_flutter/pubspec.yaml
+            packages/llamadart_litert_lm_flutter/CHANGELOG.md
+            packages/llamadart_litert_lm_flutter/README.md
+            lib/src/backends/litert_lm/litert_lm_runtime.dart
             lib/src/backends/llama_cpp/bindings.dart
-            darwin/llamadart/Package.swift
           delete-branch: true

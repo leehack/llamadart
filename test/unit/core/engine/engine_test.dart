@@ -239,6 +239,77 @@ class NoGrammarMockLlamaBackend extends MockLlamaBackend
   bool get supportsGrammarConstraints => false;
 }
 
+class NativeChatMockBackend extends MockLlamaBackend
+    implements BackendNativeChatGeneration, BackendGrammarConstraintsSupport {
+  NativeChatMockBackend()
+    : super(
+        modelMetadataResponse: const {
+          'llm.context_length': '4096',
+          'tokenizer.chat_template':
+              '{{ bos_token }}{% for message in messages %}'
+              '{% if message["role"] == "user" %}'
+              '{{ "user: " }}'
+              '{% if message["content"] is string %}'
+              '{{ message["content"] }}'
+              '{% elif message["content"] is sequence and message["content"] is not string %}'
+              '{% for part in message["content"] %}'
+              '{% if part["type"] == "text" %}{{ part["text"] }}'
+              '{% elif part["type"] == "image" %}{{ "<image>" }}'
+              '{% elif part["type"] == "audio" %}{{ "<audio>" }}'
+              '{% endif %}{% endfor %}{% endif %}'
+              '{% elif message["role"] == "assistant" %}'
+              '{{ "assistant: " }}'
+              '{% if message["content"] is string %}'
+              '{{ message["content"] }}'
+              '{% endif %}'
+              '{% endif %}{% endfor %}'
+              '{% if add_generation_prompt %}{{ "assistant: " }}{% endif %}',
+        },
+      );
+
+  int nativeGenerateChatCalls = 0;
+  List<LlamaChatMessage>? lastNativeMessages;
+  GenerationParams? lastNativeParams;
+  List<ToolDefinition>? lastNativeTools;
+  ToolChoice? lastNativeToolChoice;
+  bool? lastNativeParallelToolCalls;
+  bool? lastNativeEnableThinking;
+  Map<String, dynamic>? lastNativeChatTemplateKwargs;
+
+  @override
+  bool get supportsGrammarConstraints => false;
+
+  @override
+  bool get supportsNativeChatGeneration => true;
+
+  @override
+  Stream<List<int>> generateChat(
+    int contextHandle,
+    List<LlamaChatMessage> messages,
+    GenerationParams params, {
+    List<ToolDefinition>? tools,
+    ToolChoice toolChoice = ToolChoice.auto,
+    bool parallelToolCalls = false,
+    bool enableThinking = true,
+    Map<String, dynamic>? chatTemplateKwargs,
+    String? sourceLangCode,
+    String? targetLangCode,
+    DateTime? templateNow,
+  }) async* {
+    nativeGenerateChatCalls += 1;
+    lastNativeMessages = List<LlamaChatMessage>.from(messages);
+    lastNativeParams = params;
+    lastNativeTools = tools == null ? null : List<ToolDefinition>.from(tools);
+    lastNativeToolChoice = toolChoice;
+    lastNativeParallelToolCalls = parallelToolCalls;
+    lastNativeEnableThinking = enableThinking;
+    lastNativeChatTemplateKwargs = chatTemplateKwargs == null
+        ? null
+        : Map<String, dynamic>.from(chatTemplateKwargs);
+    yield utf8.encode(generationText);
+  }
+}
+
 class MockModelResolver implements ModelResolver {
   MockModelResolver(this.target);
 
@@ -939,6 +1010,241 @@ void main() {
       expect(backend.modelMetadataCalls, 1);
     });
 
+    test(
+      'create uses native structured chat generation when supported',
+      () async {
+        final nativeBackend = NativeChatMockBackend()
+          ..generationText = 'native response';
+        final nativeEngine = LlamaEngine(nativeBackend);
+
+        try {
+          await nativeEngine.loadModel('gemma-4-E2B-it.litertlm');
+
+          final chunks = await nativeEngine
+              .create(
+                const [
+                  LlamaChatMessage.fromText(
+                    role: LlamaChatRole.system,
+                    text: 'Be concise.',
+                  ),
+                  LlamaChatMessage.fromText(
+                    role: LlamaChatRole.user,
+                    text: 'hello',
+                  ),
+                ],
+                params: const GenerationParams(maxTokens: 12),
+                tools: [
+                  ToolDefinition(
+                    name: 'get_weather',
+                    description: 'Get weather',
+                    parameters: const [],
+                    handler: (_) async => 'sunny',
+                  ),
+                ],
+                chatTemplateKwargs: const {'locale': 'en_CA'},
+              )
+              .toList();
+
+          expect(nativeBackend.nativeGenerateChatCalls, 1);
+          expect(nativeBackend.lastGenerationPrompt, isNull);
+          expect(
+            nativeBackend.lastNativeMessages?.map((message) => message.role),
+            [LlamaChatRole.system, LlamaChatRole.user],
+          );
+          expect(nativeBackend.lastNativeParams?.maxTokens, 12);
+          expect(nativeBackend.lastNativeTools?.single.name, 'get_weather');
+          expect(nativeBackend.lastNativeToolChoice, ToolChoice.auto);
+          expect(nativeBackend.lastNativeParallelToolCalls, isFalse);
+          expect(nativeBackend.lastNativeEnableThinking, isTrue);
+          expect(nativeBackend.lastNativeChatTemplateKwargs, {
+            'locale': 'en_CA',
+          });
+          expect(
+            chunks
+                .map((chunk) => chunk.choices.first.delta.content)
+                .whereType<String>()
+                .join(),
+            'native response',
+          );
+          expect(chunks.last.choices.first.finishReason, 'stop');
+        } finally {
+          await nativeEngine.dispose();
+        }
+      },
+    );
+
+    test('create parses native structured chat tool_calls envelope', () async {
+      final nativeBackend = NativeChatMockBackend()
+        ..generationText =
+            '{"tool_calls":[{"type":"function","function":'
+            '{"name":"get_weather","arguments":{"location":"Seoul"}}}]}';
+      final nativeEngine = LlamaEngine(nativeBackend);
+
+      try {
+        await nativeEngine.loadModel('gemma-4-E2B-it.litertlm');
+
+        final chunks = await nativeEngine
+            .create(
+              const [
+                LlamaChatMessage.fromText(
+                  role: LlamaChatRole.user,
+                  text: 'weather?',
+                ),
+              ],
+              tools: [
+                ToolDefinition(
+                  name: 'get_weather',
+                  description: 'Get weather',
+                  parameters: [ToolParam.string('location')],
+                  handler: (_) async => 'sunny',
+                ),
+              ],
+              toolChoice: ToolChoice.auto,
+            )
+            .toList();
+
+        final streamedContent = chunks
+            .map((chunk) => chunk.choices.first.delta.content)
+            .whereType<String>()
+            .join();
+        final toolChunk = chunks.last;
+        final toolCalls = toolChunk.choices.first.delta.toolCalls;
+
+        expect(nativeBackend.nativeGenerateChatCalls, 1);
+        expect(streamedContent, isEmpty);
+        expect(toolChunk.choices.first.finishReason, equals('tool_calls'));
+        expect(toolCalls, hasLength(1));
+        expect(toolCalls!.first.function?.name, equals('get_weather'));
+        expect(
+          jsonDecode(toolCalls.first.function!.arguments!),
+          equals({'location': 'Seoul'}),
+        );
+      } finally {
+        await nativeEngine.dispose();
+      }
+    });
+
+    test(
+      'create keeps non-media history parts on native structured chat path',
+      () async {
+        final nativeBackend = NativeChatMockBackend()
+          ..generationText = 'native response';
+        final nativeEngine = LlamaEngine(nativeBackend);
+
+        try {
+          await nativeEngine.loadModel('gemma-4-E2B-it.litertlm');
+
+          await nativeEngine.create(const [
+            LlamaChatMessage.withContent(
+              role: LlamaChatRole.assistant,
+              content: [
+                LlamaThinkingContent('check tool state'),
+                LlamaToolCallContent(
+                  id: 'call_1',
+                  name: 'get_weather',
+                  arguments: {'city': 'Seoul'},
+                  rawJson: '{"city":"Seoul"}',
+                ),
+              ],
+            ),
+            LlamaChatMessage.withContent(
+              role: LlamaChatRole.tool,
+              content: [
+                LlamaToolResultContent(
+                  id: 'call_1',
+                  name: 'get_weather',
+                  result: 'sunny',
+                ),
+              ],
+            ),
+            LlamaChatMessage.fromText(
+              role: LlamaChatRole.user,
+              text: 'summarize',
+            ),
+          ]).drain();
+
+          expect(nativeBackend.nativeGenerateChatCalls, 1);
+          expect(nativeBackend.lastGenerationPrompt, isNull);
+          expect(
+            nativeBackend.lastNativeMessages?.map((message) => message.role),
+            [LlamaChatRole.assistant, LlamaChatRole.tool, LlamaChatRole.user],
+          );
+        } finally {
+          await nativeEngine.dispose();
+        }
+      },
+    );
+
+    test(
+      'create keeps media messages on native structured chat path',
+      () async {
+        final nativeBackend = NativeChatMockBackend()
+          ..generationText = 'native response';
+        final nativeEngine = LlamaEngine(nativeBackend);
+
+        try {
+          await nativeEngine.loadModel('gemma-4-E2B-it.litertlm');
+
+          await nativeEngine.create(const [
+            LlamaChatMessage.withContent(
+              role: LlamaChatRole.user,
+              content: [
+                LlamaTextContent('Describe this image.'),
+                LlamaImageContent(path: '/tmp/image.png'),
+              ],
+            ),
+          ]).drain();
+
+          expect(nativeBackend.nativeGenerateChatCalls, 1);
+          expect(nativeBackend.lastGenerationPrompt, isNull);
+          expect(
+            nativeBackend.lastNativeMessages?.single.parts
+                .whereType<LlamaImageContent>(),
+            hasLength(1),
+          );
+        } finally {
+          await nativeEngine.dispose();
+        }
+      },
+    );
+
+    test(
+      'create falls back to rendered prompt for required native tools',
+      () async {
+        final nativeBackend = NativeChatMockBackend();
+        final nativeEngine = LlamaEngine(nativeBackend);
+
+        try {
+          await nativeEngine.loadModel('gemma-4-E2B-it.litertlm');
+
+          await nativeEngine
+              .create(
+                const [
+                  LlamaChatMessage.fromText(
+                    role: LlamaChatRole.user,
+                    text: 'hello',
+                  ),
+                ],
+                tools: [
+                  ToolDefinition(
+                    name: 'get_weather',
+                    description: 'Get weather',
+                    parameters: const [],
+                    handler: (_) async => 'sunny',
+                  ),
+                ],
+                toolChoice: ToolChoice.required,
+              )
+              .drain();
+
+          expect(nativeBackend.nativeGenerateChatCalls, 0);
+          expect(nativeBackend.lastGenerationPrompt, isNotNull);
+        } finally {
+          await nativeEngine.dispose();
+        }
+      },
+    );
+
     test('create disables tool-call parsing when toolChoice is none', () async {
       backend.generationText =
           '{"tool_call":{"name":"get_weather","arguments":{"city":"Seoul"}}}';
@@ -1165,6 +1471,123 @@ void main() {
           jsonDecode(toolCalls.first.function!.arguments!),
           equals({'location': 'Seoul'}),
         );
+      },
+    );
+
+    test(
+      'create forwards responseFormat grammar to capable backends',
+      () async {
+        await engine.loadModel('test-model.bin');
+
+        await engine
+            .create(
+              const [
+                LlamaChatMessage.fromText(
+                  role: LlamaChatRole.user,
+                  text: 'return status',
+                ),
+              ],
+              responseFormat: const {
+                'type': 'json_schema',
+                'json_schema': {
+                  'schema': {
+                    'type': 'object',
+                    'properties': {
+                      'ok': {'type': 'boolean'},
+                    },
+                    'required': ['ok'],
+                  },
+                },
+              },
+            )
+            .drain();
+
+        expect(backend.lastGenerationParams?.grammar, isNotNull);
+        expect(backend.lastGenerationParams?.grammar, contains('ok'));
+        expect(backend.lastGenerationParams?.grammarLazy, isFalse);
+        expect(backend.lastGenerationParams?.grammarTriggers, isEmpty);
+      },
+    );
+
+    test(
+      'create rejects strict response format when backend lacks grammar',
+      () async {
+        final noGrammarBackend = NoGrammarMockLlamaBackend();
+        final noGrammarEngine = LlamaEngine(noGrammarBackend);
+
+        await noGrammarEngine.loadModel('gemma4-test.litertlm');
+
+        await expectLater(
+          noGrammarEngine
+              .create(
+                const [
+                  LlamaChatMessage.fromText(
+                    role: LlamaChatRole.user,
+                    text: 'return status',
+                  ),
+                ],
+                responseFormat: const {
+                  'type': 'json_schema',
+                  'json_schema': {
+                    'schema': {
+                      'type': 'object',
+                      'properties': {
+                        'ok': {'type': 'boolean'},
+                      },
+                      'required': ['ok'],
+                    },
+                  },
+                },
+              )
+              .drain(),
+          throwsA(
+            isA<LlamaUnsupportedException>()
+                .having(
+                  (error) => error.message,
+                  'message',
+                  contains('Strict responseFormat output requires'),
+                )
+                .having(
+                  (error) => error.message,
+                  'message',
+                  contains('LiteRT-LM native and web currently do not expose'),
+                )
+                .having(
+                  (error) => error.message,
+                  'message',
+                  contains('omit responseFormat'),
+                ),
+          ),
+        );
+
+        expect(noGrammarBackend.lastGenerationPrompt, isNull);
+      },
+    );
+
+    test(
+      'create rejects malformed strict response format on no-grammar backend',
+      () async {
+        final noGrammarBackend = NoGrammarMockLlamaBackend();
+        final noGrammarEngine = LlamaEngine(noGrammarBackend);
+
+        await noGrammarEngine.loadModel('gemma4-test.litertlm');
+
+        await expectLater(
+          noGrammarEngine
+              .create(
+                const [
+                  LlamaChatMessage.fromText(
+                    role: LlamaChatRole.user,
+                    text: 'return status',
+                  ),
+                ],
+                responseFormat: const {'type': 'json_schema'},
+              )
+              .drain(),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
+
+        expect(noGrammarBackend.lastGenerationPrompt, isNull);
       },
     );
 

@@ -28,13 +28,16 @@ flutter pub get
 flutter run
 ```
 
-If you run this app on Apple platforms, set the Xcode project deployment target
-to iOS `16.4` or macOS `14.0` or newer first.
+If you run this app on Apple platforms with the Flutter SwiftPM companion
+packages enabled, set the Xcode project deployment target to iOS `16.4` or
+macOS `14.0` or newer first.
 
-Unlike the smaller GGUF-only examples, this app intentionally opts into both
-native runtime families in `pubspec.yaml` so native `.litertlm` presets work on
-supported targets. If you copy this app and only ship GGUF models, set
-`llamadart_native_runtimes` to `[llama_cpp]` to reduce bundle size.
+This app keeps the default all-runtime native-assets configuration so native
+`.litertlm` presets work on supported targets. If you copy this app and only
+ship GGUF models, set `llamadart_native_runtimes` to `[llama_cpp]` to reduce
+bundle size on hook-managed native-assets builds. Flutter iOS/macOS apps that
+want SwiftPM-linked Apple frameworks should add `llamadart_llama_cpp_flutter`,
+`llamadart_litert_lm_flutter`, or both beside `llamadart`.
 
 ### 1.1 Run Tests
 ```bash
