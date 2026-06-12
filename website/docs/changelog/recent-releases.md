@@ -7,7 +7,7 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
-## Unreleased
+## 0.8.1
 
 - Fixed docs references that still pointed at
   `llamadart_litert_lm_flutter` `0.0.1` and

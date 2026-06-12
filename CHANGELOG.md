@@ -1,4 +1,4 @@
-## Unreleased
+## 0.8.1
 
 * Fixed docs references that still pointed at
   `llamadart_litert_lm_flutter` `0.0.1` and

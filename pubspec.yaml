@@ -1,6 +1,6 @@
 name: llamadart
 description: Dart and Flutter local LLM inference with llama.cpp GGUF and LiteRT-LM across native platforms and web.
-version: 0.8.0
+version: 0.8.1
 homepage: https://github.com/leehack/llamadart
 repository: https://github.com/leehack/llamadart
 issue_tracker: https://github.com/leehack/llamadart/issues
