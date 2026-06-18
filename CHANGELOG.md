@@ -1,5 +1,13 @@
 ## Unreleased
 
+* Updated the default llama.cpp native runtime pin to
+  `leehack/llamadart-native@b9694`, regenerated matching Dart FFI bindings,
+  refreshed the `llamadart_llama_cpp_flutter` Apple SwiftPM checksum, and
+  updated the default WebGPU bridge asset pin to
+  `leehack/llama-web-bridge-assets@v0.1.17` (llama.cpp `b9699`). The WebGPU
+  backend now caps unset large-model browser batches so Gemma 4 mem64 loads do
+  not fall back to context-sized compute buffers.
+
 * Added `BackendGpuEnumeration.listGpuDevices({probeBackends})` (exposed via
   `LlamaEngine.listGpuDevices`) to enumerate GPU-class devices for offload
   selection — backend, per-backend `mainGpu` index, name, description, device

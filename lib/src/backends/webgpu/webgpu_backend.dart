@@ -633,6 +633,9 @@ class WebGpuLlamaBackend
         normalizedUrl.contains('qwen3.5-0.8b') ||
         normalizedUrl.contains('qwen_qwen3.5-0.8b');
     final isGemma4 = normalizedUrl.contains('gemma-4');
+    final isLargeWebModel =
+        isGemma4 ||
+        (params.modelBytesHint ?? 0) >= _wasm32SafeModelCeilingBytes;
     final hasExplicitBatchSizes =
         params.batchSize > 0 || params.microBatchSize > 0;
     final shouldUseWebGpuDefaults =
@@ -640,14 +643,14 @@ class WebGpuLlamaBackend
         params.preferredBackend != GpuBackend.cpu &&
         gpuLayers != 0;
     final shouldUseQwen35SmallTuning = shouldUseWebGpuDefaults && isQwen35Small;
-    final shouldUseBridgeBatchDefaults = shouldUseWebGpuDefaults && isGemma4;
 
     if (shouldUseQwen35SmallTuning) {
       return (nBatch: 32, nUbatch: 8);
     }
 
-    if (shouldUseBridgeBatchDefaults) {
-      return (nBatch: null, nUbatch: null);
+    if (!hasExplicitBatchSizes && isLargeWebModel) {
+      final cappedBatch = math.min(contextSize, 512);
+      return (nBatch: cappedBatch, nUbatch: cappedBatch);
     }
 
     final resolved = resolveModelContextBatchSizes(params, contextSize);

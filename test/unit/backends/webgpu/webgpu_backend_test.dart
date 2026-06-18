@@ -669,6 +669,21 @@ void main() {
       expect(lastRequestedMicroBatchSize, 4096);
     });
 
+    test('bounds size-hinted large model batches when unset', () async {
+      await backend.modelLoadFromUrl(
+        'https://example.com/local-large-model.gguf',
+        const ModelParams(
+          contextSize: 2048,
+          gpuLayers: 0,
+          modelBytesHint: 3 * 1024 * 1024 * 1024,
+        ),
+      );
+
+      expect(lastRequestedGpuLayers, 0);
+      expect(lastRequestedBatchSize, 512);
+      expect(lastRequestedMicroBatchSize, 512);
+    });
+
     test('cascades unset WebGPU encoder batches before embedBatch', () async {
       await backend.modelLoadFromUrl(
         'https://example.com/multilingual-e5-small-Q8_0.gguf',
@@ -736,7 +751,7 @@ void main() {
       },
     );
 
-    test('Gemma 4 CPU fallback uses cascaded batch sizes', () async {
+    test('Gemma 4 CPU fallback uses capped web batch sizes', () async {
       var loadCallCount = 0;
       bridge.setProperty(
         'loadModelFromUrl'.toJS,
@@ -762,8 +777,8 @@ void main() {
       );
 
       expect(requestedContextSizes, <int>[4096, 4096]);
-      expect(requestedBatchSizes, <int>[4096]);
-      expect(requestedMicroBatchSizes, <int>[4096]);
+      expect(requestedBatchSizes, <int>[512, 512]);
+      expect(requestedMicroBatchSizes, <int>[512, 512]);
       expect(lastRequestedGpuLayers, 0);
     });
 

@@ -269,14 +269,14 @@ void main() {
       await engine.dispose();
     });
 
-    test('WebGPU load leaves Gemma 4 batches to bridge defaults', () async {
+    test('WebGPU load bounds Gemma 4 batches for browser memory', () async {
       await engine.loadModelFromUrl(
         'https://example.com/gemma-4-E2B-it-Q4_K_S.gguf',
         modelParams: const ModelParams(contextSize: 4096, gpuLayers: 99),
       );
 
-      expect(lastLoadNBatch, isNull);
-      expect(lastLoadNUbatch, isNull);
+      expect(lastLoadNBatch, 512);
+      expect(lastLoadNUbatch, 512);
       expect(lastLoadUseCache, isTrue);
     });
 
