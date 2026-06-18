@@ -36,7 +36,7 @@ Package Manager, also add the runtime companion packages you need:
 ```yaml
 dependencies:
   llamadart: ^0.8.1
-  llamadart_llama_cpp_flutter: ^0.0.2 # GGUF / llama.cpp
+  llamadart_llama_cpp_flutter: ^0.0.3 # GGUF / llama.cpp
   llamadart_litert_lm_flutter: ^0.0.2 # .litertlm / LiteRT-LM
 ```
 
@@ -74,7 +74,7 @@ hooks:
     llamadart:
       # Optional. Defaults to llamadart's tested native runtime pin.
       # Use a leehack/llamadart-native release tag when testing another build.
-      llamadart_native_tag: b9587
+      llamadart_native_tag: b9694
 
       # Optional. GitHub repository slug or github.com URL.
       llamadart_native_repository: leehack/llamadart-native
@@ -100,7 +100,7 @@ per-target module list.
 
 Native source overrides are for compatibility testing. They do not regenerate
 Dart FFI bindings or symbol lookups, so the selected binary still must be ABI-
-and symbol-compatible with the default `leehack/llamadart-native@b9587` runtime.
+and symbol-compatible with the default `leehack/llamadart-native@b9694` runtime.
 
 Available native tags are published on the
 [`leehack/llamadart-native` releases page](https://github.com/leehack/llamadart-native/releases).
@@ -112,7 +112,7 @@ gh release list --repo leehack/llamadart-native --limit 20
 
 Before overriding, confirm the release includes the asset for your target. The
 hook downloads files named `llamadart-native-<bundle>-<tag>.tar.gz`, for example
-`llamadart-native-windows-x64-b9587.tar.gz`.
+`llamadart-native-windows-x64-b9694.tar.gz`.
 For local testing, `llamadart_native_path` may point directly at a bundle
 archive, at an extracted bundle directory, or at a directory containing
 `<tag>/<bundle>/`, `<bundle>/`, or the expected archive file.

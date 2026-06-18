@@ -633,21 +633,29 @@ class WebGpuLlamaBackend
         normalizedUrl.contains('qwen3.5-0.8b') ||
         normalizedUrl.contains('qwen_qwen3.5-0.8b');
     final isGemma4 = normalizedUrl.contains('gemma-4');
+    final isLargeWebModel =
+        isGemma4 ||
+        (params.modelBytesHint ?? 0) >= _wasm32SafeModelCeilingBytes;
+    final hasExplicitBatchSize = params.batchSize > 0;
+    final hasExplicitMicroBatchSize = params.microBatchSize > 0;
     final hasExplicitBatchSizes =
-        params.batchSize > 0 || params.microBatchSize > 0;
+        hasExplicitBatchSize || hasExplicitMicroBatchSize;
     final shouldUseWebGpuDefaults =
         !hasExplicitBatchSizes &&
         params.preferredBackend != GpuBackend.cpu &&
         gpuLayers != 0;
     final shouldUseQwen35SmallTuning = shouldUseWebGpuDefaults && isQwen35Small;
-    final shouldUseBridgeBatchDefaults = shouldUseWebGpuDefaults && isGemma4;
 
     if (shouldUseQwen35SmallTuning) {
       return (nBatch: 32, nUbatch: 8);
     }
 
-    if (shouldUseBridgeBatchDefaults) {
-      return (nBatch: null, nUbatch: null);
+    if (!hasExplicitBatchSize && isLargeWebModel) {
+      final cappedBatch = math.min(contextSize, 512);
+      final cappedMicroBatch = hasExplicitMicroBatchSize
+          ? math.min(params.microBatchSize, cappedBatch)
+          : cappedBatch;
+      return (nBatch: cappedBatch, nUbatch: cappedMicroBatch);
     }
 
     final resolved = resolveModelContextBatchSizes(params, contextSize);
