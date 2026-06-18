@@ -454,6 +454,21 @@ void main() {
       expect(result.format, equals(ChatFormat.contentOnly.index));
     });
 
+    test('uses content-only schema routing for Cohere2 MoE templates', () {
+      const template =
+          '<|START_TEXT|>{{ messages[0]["content"] }}<|END_TEXT|>'
+          '<|START_ACTION|>[]<|END_ACTION|>';
+
+      final result = ChatTemplateEngine.render(
+        templateSource: template,
+        messages: grammarMessages,
+        metadata: const {},
+        responseFormat: const {'type': 'json_object'},
+      );
+
+      expect(result.format, equals(ChatFormat.contentOnly.index));
+    });
+
     test('disables lazy grammar for required tool choice when needed', () {
       const template =
           '<tool_call>\n<function=\n<function>\n<parameters>\n<parameter=\n{{ messages[0]["content"] }}';

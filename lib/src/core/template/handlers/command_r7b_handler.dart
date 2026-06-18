@@ -326,6 +326,8 @@ class CommandR7BHandler extends ChatTemplateHandler {
           toolCalls: calls,
         );
       }
+
+      searchEnd = markerStart;
     }
 
     return null;

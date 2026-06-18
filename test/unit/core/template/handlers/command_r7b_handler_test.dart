@@ -120,6 +120,21 @@ void main() {
     expect(jsonDecode(parsed.toolCalls.first.function!.arguments!), isEmpty);
   });
 
+  test('parses trailing action arrays after earlier bracketed text', () {
+    final handler = CommandR7BHandler();
+    final parsed = handler.parse(
+      'Review [workspace] first.'
+      '[{"tool_name":"inspect_project","parameters":{"paths":["lib","test"]}}]',
+    );
+
+    expect(parsed.content, equals('Review [workspace] first.'));
+    expect(parsed.toolCalls, hasLength(1));
+    expect(parsed.toolCalls.first.function?.name, equals('inspect_project'));
+    expect(jsonDecode(parsed.toolCalls.first.function!.arguments!), {
+      'paths': ['lib', 'test'],
+    });
+  });
+
   test('keeps bare single-object action-like JSON as content', () {
     final handler = CommandR7BHandler();
     const input =
@@ -142,11 +157,11 @@ void main() {
     expect(parsed.toolCalls, isEmpty);
   });
 
-  test('preserves START_TEXT prelude spacing', () {
+  test('preserves prelude spacing before Cohere2 MoE START_TEXT content', () {
     final handler = CommandR7BHandler();
-    final parsed = handler.parse('Prelude <|START_TEXT|>body<|END_TEXT|>');
+    final parsed = handler.parse('Summary: <|START_TEXT|>all set<|END_TEXT|>');
 
-    expect(parsed.content, equals('Prelude body'));
+    expect(parsed.content, equals('Summary: all set'));
     expect(parsed.toolCalls, isEmpty);
   });
 

@@ -1852,7 +1852,12 @@ class LlamaEngine {
     if (marker.startsWith(upper)) {
       return _ToolStreamingMode.undecided;
     }
+    // Some Command/Cohere-family templates (including North Mini Code) emit
+    // bare action arrays instead of the documented <|START_ACTION|> wrapper.
+    return _decideBareActionArrayEnvelopeMode(text);
+  }
 
+  _ToolStreamingMode _decideBareActionArrayEnvelopeMode(String text) {
     var i = 1;
     while (i < text.length && _isWhitespaceCodeUnit(text.codeUnitAt(i))) {
       i++;
@@ -1875,22 +1880,58 @@ class LlamaEngine {
       return _ToolStreamingMode.raw;
     }
 
-    final keyFragment = text.substring(i);
-    const commandActionKeys = <String>[
-      '"tool_name"',
-      '"tool_call_id"',
-      '"parameters"',
-    ];
-    for (final key in commandActionKeys) {
-      if (keyFragment.startsWith(key)) {
-        return _ToolStreamingMode.parsed;
-      }
-      if (key.startsWith(keyFragment)) {
-        return _ToolStreamingMode.undecided;
-      }
+    final key = _readLeadingJsonObjectKey(text, i);
+    if (!key.complete) {
+      return _ToolStreamingMode.undecided;
+    }
+    if (key.value == null) {
+      return _ToolStreamingMode.raw;
     }
 
-    return _ToolStreamingMode.raw;
+    i = key.nextIndex;
+    while (i < text.length && _isWhitespaceCodeUnit(text.codeUnitAt(i))) {
+      i++;
+    }
+    if (i >= text.length) {
+      return _ToolStreamingMode.undecided;
+    }
+    if (text.codeUnitAt(i) != 0x3A) {
+      return _ToolStreamingMode.raw;
+    }
+
+    return _isCommandBareActionKey(key.value!)
+        ? _ToolStreamingMode.parsed
+        : _ToolStreamingMode.raw;
+  }
+
+  ({bool complete, String? value, int nextIndex}) _readLeadingJsonObjectKey(
+    String text,
+    int quoteIndex,
+  ) {
+    final buffer = StringBuffer();
+    var i = quoteIndex + 1;
+    while (i < text.length) {
+      final ch = text.codeUnitAt(i);
+      if (ch == 0x22) {
+        return (complete: true, value: buffer.toString(), nextIndex: i + 1);
+      }
+      if (ch == 0x5C) {
+        if (i + 1 >= text.length) {
+          return (complete: false, value: null, nextIndex: i);
+        }
+        buffer.writeCharCode(text.codeUnitAt(i + 1));
+        i += 2;
+        continue;
+      }
+      buffer.writeCharCode(ch);
+      i++;
+    }
+
+    return (complete: false, value: null, nextIndex: text.length);
+  }
+
+  bool _isCommandBareActionKey(String key) {
+    return key == 'tool_name' || key == 'tool_call_id';
   }
 
   _ToolStreamingMode _decideXmlEnvelopeMode(String text) {

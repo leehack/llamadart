@@ -80,6 +80,7 @@ class ChatTemplateEngine {
     ChatFormat.deepseekV3,
     ChatFormat.deepseekR1,
     ChatFormat.commandR7B,
+    ChatFormat.cohere2Moe,
     ChatFormat.glm45,
     ChatFormat.hermes,
   };
