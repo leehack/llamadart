@@ -71,6 +71,28 @@ Use this checklist in native sync PRs:
   `llamadart-native` header bundle changed.
 - Update public docs that mention the pinned native versions or source table.
 
+## Companion package release handoff
+
+Native sync PRs can leave the repository in a state where the companion package
+source under `packages/` is ready, but the corresponding pub.dev package version
+does not exist yet. That is expected before merge, but it must be resolved before
+tagging the next core `llamadart` release.
+
+For every companion package whose `pubspec.yaml` version changed, or whose
+version is newly referenced by current install docs:
+
+1. Confirm the `Package.swift` binary targets point at published native GitHub
+   release assets and that the pinned checksums match those assets.
+2. After the sync/release-prep PR is merged, tag the companion package version
+   first, using the package-specific tag pattern:
+   `llamadart_llama_cpp_flutter-v{{version}}` or
+   `llamadart_litert_lm_flutter-v{{version}}`.
+3. Wait for `publish_companion_pubdev.yml` to pass.
+4. Verify the version URL on pub.dev, for example
+   `https://pub.dev/api/packages/llamadart_llama_cpp_flutter/versions/{{version}}`.
+5. Only then tag the core `vX.Y.Z` release that documents or depends on that
+   companion version.
+
 ## Web bridge asset sync flow
 
 When web bridge runtime behavior changes:

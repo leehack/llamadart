@@ -57,7 +57,34 @@ version alignment:
 
 ## 3. Publish flow
 
-Tag with `vX.Y.Z` and push tag.
+Do not tag the core `vX.Y.Z` release until every companion package version named
+in the current install docs is already published on pub.dev. The release
+sequence is:
+
+1. Confirm the native GitHub releases referenced by `Package.swift` are live and
+   include the pinned XCFramework zip/checksum assets.
+2. For each companion package named in current install docs, check whether its
+   `pubspec.yaml` version exists on pub.dev:
+
+   ```bash
+   package_path=packages/llamadart_llama_cpp_flutter
+   package_name="$(awk '/^name:[[:space:]]*/ {print $2; exit}' "$package_path/pubspec.yaml")"
+   package_version="$(awk '/^version:[[:space:]]*/ {print $2; exit}' "$package_path/pubspec.yaml")"
+   curl -fsSL "https://pub.dev/api/packages/$package_name/versions/$package_version"
+   ```
+
+3. If a changed companion version is missing, tag and publish that companion
+   package first, for example:
+
+   ```bash
+   git tag llamadart_llama_cpp_flutter-v0.0.3
+   git push origin llamadart_llama_cpp_flutter-v0.0.3
+   ```
+
+   Wait for `publish_companion_pubdev.yml` to pass, then re-check the pub.dev
+   version URL.
+4. Tag `vX.Y.Z` and push the core release tag only after the companion packages
+   referenced by the release docs are resolvable from pub.dev.
 
 Current workflows involved:
 
