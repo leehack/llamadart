@@ -50,6 +50,14 @@ void main() {
       expect(ids, contains('web-chrome-runtime-smoke'));
     });
 
+    test('includes release gate for companion pub packages', () {
+      final releaseTable = formatTestMatrix(tier: 'release');
+
+      expect(releaseTable, contains('release-companion-pub-gate'));
+      expect(releaseTable, contains('publish_companion_pubdev.yml'));
+      expect(releaseTable, contains('pub.dev/api/packages'));
+    });
+
     test('formats PR evidence template with matrix ids', () {
       final template = formatPrEvidenceTemplate(tier: 'essential');
 

@@ -7,7 +7,7 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
-## Unreleased
+## 0.8.2
 
 - Updated the default llama.cpp native runtime pin to
   `leehack/llamadart-native@b9694`, regenerated matching Dart FFI bindings,
@@ -16,6 +16,9 @@ For canonical full release notes, use:
   `leehack/llama-web-bridge-assets@v0.1.17` (llama.cpp `b9699`). The WebGPU
   backend now caps unset large-model browser batches so Gemma 4 mem64 loads do
   not fall back to context-sized compute buffers.
+- Added `BackendGpuEnumeration.listGpuDevices({probeBackends})` and
+  `LlamaEngine.listGpuDevices` so apps can enumerate GPU-class devices and
+  select llama.cpp offload targets by backend-specific `mainGpu` index.
 - Added Cohere2 MoE / North Code chat-template detection and parsing so
   `<|START_TEXT|>` responses and `<|START_ACTION|>` tool-call arrays are
   handled separately from older Command-R templates.

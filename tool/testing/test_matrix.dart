@@ -383,6 +383,22 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'native bundle changes affecting Android.',
   ),
   TestMatrixRow(
+    id: 'release-companion-pub-gate',
+    tier: 'release',
+    mode: 'manual/release',
+    covers:
+        'Flutter Apple SPM companion package pub.dev availability before the core tag',
+    command:
+        'Before tagging vX.Y.Z, verify each referenced companion version with '
+        'https://pub.dev/api/packages/<package>/versions/<version>. If a '
+        'changed version is missing, push the package tag first, for example '
+        'llamadart_llama_cpp_flutter-v0.0.3, wait for '
+        'publish_companion_pubdev.yml, then tag the core release.',
+    useWhen:
+        'Any release that changes companion packages or documents companion '
+        'package versions.',
+  ),
+  TestMatrixRow(
     id: 'release-representative-smokes',
     tier: 'release',
     mode: 'manual/local',
