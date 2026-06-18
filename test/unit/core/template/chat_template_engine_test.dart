@@ -75,6 +75,7 @@ void main() {
         ChatFormat.llama3BuiltinTools:
             TemplateToolCallSerialization.normalizeOnly,
         ChatFormat.commandR7B: TemplateToolCallSerialization.normalizeOnly,
+        ChatFormat.cohere2Moe: TemplateToolCallSerialization.normalizeOnly,
         ChatFormat.glm45: TemplateToolCallSerialization.normalizeOnly,
         ChatFormat.minimaxM2: TemplateToolCallSerialization.normalizeOnly,
         ChatFormat.qwen3CoderXml: TemplateToolCallSerialization.normalizeOnly,
@@ -442,6 +443,21 @@ void main() {
 
     test('uses content-only routing for schema-disabled formats', () {
       const template = '<tool_call>{{ messages[0]["content"] }}</tool_call>';
+
+      final result = ChatTemplateEngine.render(
+        templateSource: template,
+        messages: grammarMessages,
+        metadata: const {},
+        responseFormat: const {'type': 'json_object'},
+      );
+
+      expect(result.format, equals(ChatFormat.contentOnly.index));
+    });
+
+    test('uses content-only schema routing for Cohere2 MoE templates', () {
+      const template =
+          '<|START_TEXT|>{{ messages[0]["content"] }}<|END_TEXT|>'
+          '<|START_ACTION|>[]<|END_ACTION|>';
 
       final result = ChatTemplateEngine.render(
         templateSource: template,

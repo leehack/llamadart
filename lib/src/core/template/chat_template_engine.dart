@@ -12,6 +12,7 @@ import 'chat_format.dart';
 import 'chat_parse_result.dart';
 import 'peg_chat_parser.dart';
 import 'chat_template_handler.dart';
+import 'handlers/cohere2_moe_handler.dart';
 import 'handlers/command_r7b_handler.dart';
 import 'handlers/deepseek_r1_handler.dart';
 import 'handlers/deepseek_v3_handler.dart';
@@ -79,6 +80,7 @@ class ChatTemplateEngine {
     ChatFormat.deepseekV3,
     ChatFormat.deepseekR1,
     ChatFormat.commandR7B,
+    ChatFormat.cohere2Moe,
     ChatFormat.glm45,
     ChatFormat.hermes,
   };
@@ -528,6 +530,8 @@ class ChatTemplateEngine {
         return Gemma4Handler();
       case ChatFormat.commandR7B:
         return CommandR7BHandler();
+      case ChatFormat.cohere2Moe:
+        return Cohere2MoeHandler();
       case ChatFormat.granite:
         return GraniteHandler();
       case ChatFormat.glm45:

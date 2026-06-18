@@ -8,6 +8,10 @@
   cannot crash the process during enumeration; pass specific backends to opt
   into loading just those modules first. Web/WebGPU return an empty list.
 
+* Added Cohere2 MoE / North Code chat-template detection and parsing so
+  `<|START_TEXT|>` responses and `<|START_ACTION|>` tool-call arrays are
+  handled separately from older Command-R templates.
+
 ## 0.8.1
 
 * Fixed docs references that still pointed at

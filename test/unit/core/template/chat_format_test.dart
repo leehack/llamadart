@@ -40,6 +40,13 @@ void main() {
       expect(format, equals(ChatFormat.contentOnly));
     });
 
+    test('detects Cohere2 MoE / North Code before older Command-R', () {
+      const source =
+          '<|START_THINKING|><|END_THINKING|><|START_TEXT|>{{ content }}<|END_TEXT|><|START_ACTION|>[]<|END_ACTION|>';
+      final format = detectChatFormat(source);
+      expect(format, equals(ChatFormat.cohere2Moe));
+    });
+
     test('detects GPT-OSS format', () {
       const source = '<|start|>assistant<|channel|>final<|message|>';
       final format = detectChatFormat(source);
