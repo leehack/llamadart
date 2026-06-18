@@ -1852,6 +1852,44 @@ class LlamaEngine {
     if (marker.startsWith(upper)) {
       return _ToolStreamingMode.undecided;
     }
+
+    var i = 1;
+    while (i < text.length && _isWhitespaceCodeUnit(text.codeUnitAt(i))) {
+      i++;
+    }
+    if (i >= text.length) {
+      return _ToolStreamingMode.undecided;
+    }
+    if (text.codeUnitAt(i) != 0x7B) {
+      return _ToolStreamingMode.raw;
+    }
+
+    i++;
+    while (i < text.length && _isWhitespaceCodeUnit(text.codeUnitAt(i))) {
+      i++;
+    }
+    if (i >= text.length) {
+      return _ToolStreamingMode.undecided;
+    }
+    if (text.codeUnitAt(i) != 0x22) {
+      return _ToolStreamingMode.raw;
+    }
+
+    final keyFragment = text.substring(i);
+    const commandActionKeys = <String>[
+      '"tool_name"',
+      '"tool_call_id"',
+      '"parameters"',
+    ];
+    for (final key in commandActionKeys) {
+      if (keyFragment.startsWith(key)) {
+        return _ToolStreamingMode.parsed;
+      }
+      if (key.startsWith(keyFragment)) {
+        return _ToolStreamingMode.undecided;
+      }
+    }
+
     return _ToolStreamingMode.raw;
   }
 
@@ -1861,6 +1899,8 @@ class LlamaEngine {
       '<tool_call',
       '<tool_calls',
       '<|tool_call',
+      '<|start_action|>',
+      '<|start_text|>',
       '<function',
       '<function_call',
       '<start_function_call',

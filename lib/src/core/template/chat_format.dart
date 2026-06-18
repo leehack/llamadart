@@ -113,6 +113,10 @@ enum ChatFormat {
 
   /// Ministral 3 reasoning format with `[TOOL_CALLS]name[ARGS]{...}`.
   ministral,
+
+  /// Cohere2 MoE / North Code — `<|START_TEXT|>` content or
+  /// `<|START_ACTION|>` JSON tool arrays after thinking.
+  cohere2Moe,
 }
 
 /// Detects the [ChatFormat] by scanning a Jinja template source string
@@ -135,6 +139,13 @@ ChatFormat detectChatFormat(String? templateSource) {
   // DeepSeek R1
   if (templateSource.contains('<｜tool▁calls▁begin｜>')) {
     return ChatFormat.deepseekR1;
+  }
+
+  // Cohere2 MoE / North Code. Check before Command R7B because both use
+  // <|START_ACTION|>, but START_TEXT is unique to the newer North template.
+  if (templateSource.contains('<|START_TEXT|>') &&
+      templateSource.contains('<|START_ACTION|>')) {
+    return ChatFormat.cohere2Moe;
   }
 
   // Command R7B

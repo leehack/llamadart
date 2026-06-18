@@ -75,6 +75,7 @@ void main() {
         ChatFormat.llama3BuiltinTools:
             TemplateToolCallSerialization.normalizeOnly,
         ChatFormat.commandR7B: TemplateToolCallSerialization.normalizeOnly,
+        ChatFormat.cohere2Moe: TemplateToolCallSerialization.normalizeOnly,
         ChatFormat.glm45: TemplateToolCallSerialization.normalizeOnly,
         ChatFormat.minimaxM2: TemplateToolCallSerialization.normalizeOnly,
         ChatFormat.qwen3CoderXml: TemplateToolCallSerialization.normalizeOnly,

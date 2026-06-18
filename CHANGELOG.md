@@ -1,3 +1,9 @@
+## Unreleased
+
+* Added Cohere2 MoE / North Code chat-template detection and parsing so
+  `<|START_TEXT|>` responses and `<|START_ACTION|>` tool-call arrays are
+  handled separately from older Command-R templates.
+
 ## 0.8.1
 
 * Fixed docs references that still pointed at
