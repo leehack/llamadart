@@ -4,6 +4,8 @@ import 'dart:ffi';
 import 'package:ffi/ffi.dart';
 import '../backend.dart';
 import '../../core/models/chat/content_part.dart';
+import '../../core/models/config/gpu_backend.dart';
+import '../../core/models/config/gpu_device_info.dart';
 import '../../core/models/config/log_level.dart';
 import '../../core/models/inference/model_params.dart';
 import '../../core/models/inference/generation_params.dart';
@@ -18,6 +20,7 @@ class NativeLlamaBackend
         LlamaBackend,
         BackendAvailability,
         BackendRuntimeDiagnostics,
+        BackendGpuEnumeration,
         BackendPerformanceDiagnostics,
         BackendEmbeddings,
         BackendBatchEmbeddings,
@@ -585,6 +588,21 @@ class NativeLlamaBackend
       return (total: res.totalVram, free: res.freeVram);
     }
     return (total: 0, free: 0);
+  }
+
+  @override
+  Future<List<GpuDeviceInfo>> listGpuDevices({
+    List<GpuBackend> probeBackends = const [],
+  }) async {
+    await _ensureIsolate();
+    final rp = ReceivePort();
+    _sendPort!.send(ListGpuDevicesRequest(probeBackends, rp.sendPort));
+    final res = await rp.first;
+    rp.close();
+    if (res is ListGpuDevicesResponse) {
+      return res.devices;
+    }
+    return const [];
   }
 
   @override

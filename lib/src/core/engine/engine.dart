@@ -4,6 +4,8 @@ import 'dart:convert';
 import '../../backends/backend.dart';
 import '../template/chat_template_engine.dart';
 import '../exceptions.dart';
+import '../models/config/gpu_backend.dart';
+import '../models/config/gpu_device_info.dart';
 import '../models/config/log_level.dart';
 import '../models/chat/chat_message.dart';
 import '../models/chat/completion_chunk.dart';
@@ -1586,6 +1588,22 @@ class LlamaEngine {
 
   /// Returns total and free VRAM in bytes.
   Future<({int total, int free})> getVramInfo() => backend.getVramInfo();
+
+  /// Lists GPU-class devices when the active backend supports enumeration,
+  /// otherwise an empty list. With an empty [probeBackends] only
+  /// already-registered backends are inspected (no backend module is loaded);
+  /// pass backends to opt into loading just those before enumerating.
+  Future<List<GpuDeviceInfo>> listGpuDevices({
+    List<GpuBackend> probeBackends = const [],
+  }) {
+    final candidate = backend;
+    if (candidate is BackendGpuEnumeration) {
+      return (candidate as BackendGpuEnumeration).listGpuDevices(
+        probeBackends: probeBackends,
+      );
+    }
+    return Future.value(const []);
+  }
 
   // ============================================================
   // INTERNAL HELPERS

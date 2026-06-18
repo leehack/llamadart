@@ -2,6 +2,8 @@ import 'dart:isolate';
 import '../../core/models/inference/model_params.dart';
 import '../../core/models/inference/generation_params.dart';
 import '../../core/models/chat/content_part.dart';
+import '../../core/models/config/gpu_backend.dart';
+import '../../core/models/config/gpu_device_info.dart';
 import '../../core/models/config/log_level.dart';
 
 /// Base class for all worker requests.
@@ -292,6 +294,17 @@ class SystemInfoRequest extends WorkerRequest {
   SystemInfoRequest(super.sendPort);
 }
 
+/// Request to enumerate GPU-class devices. [probeBackends] opts into loading
+/// only those backend modules before enumerating; empty means registered
+/// backends only.
+class ListGpuDevicesRequest extends WorkerRequest {
+  /// Backends to load before enumerating; empty inspects registered ones only.
+  final List<GpuBackend> probeBackends;
+
+  /// Creates a new [ListGpuDevicesRequest].
+  ListGpuDevicesRequest(this.probeBackends, super.sendPort);
+}
+
 /// Request to write the KV-cache state of [contextHandle] to [path]
 /// together with the producing token sequence (for state restore).
 class StateSaveFileRequest extends WorkerRequest {
@@ -555,6 +568,15 @@ class SystemInfoResponse {
 
   /// Creates a new [SystemInfoResponse].
   SystemInfoResponse(this.totalVram, this.freeVram);
+}
+
+/// Response carrying the enumerated GPU-class devices.
+class ListGpuDevicesResponse {
+  /// The enumerated devices (empty when none are reachable).
+  final List<GpuDeviceInfo> devices;
+
+  /// Creates a new [ListGpuDevicesResponse].
+  ListGpuDevicesResponse(this.devices);
 }
 
 /// Response containing the formatted chat template result.

@@ -785,6 +785,7 @@ Core abstractions in this package:
 - `ChatSession`: stateful helper for chat history and sliding-window context.
 - `LlamaBackend`: platform-agnostic backend interface with native/web routing.
 - Optional runtime diagnostics are exposed through `LlamaEngine` helpers such as `getBackendName()`, `getAvailableBackends()`, and `getResolvedGpuLayers()` when supported by the active backend.
+- `LlamaEngine.listGpuDevices()` enumerates GPU-class devices (backend, per-backend `mainGpu` index, name, description, device id, type, free/total memory) for offload selection. By default it inspects only already-registered backends; pass `probeBackends: [...]` to opt into loading specific backend modules first. Web/WebGPU return an empty list.
 
 ---
 ## ⚠️ Breaking Changes in 0.6.x

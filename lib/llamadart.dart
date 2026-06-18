@@ -43,6 +43,7 @@ export 'src/backends/backend.dart'
         LlamaBackend,
         BackendAvailability,
         BackendGrammarConstraintsSupport,
+        BackendGpuEnumeration,
         BackendNativeChatGeneration,
         BackendRuntimeDiagnostics,
         BackendPerfContextData,
@@ -82,6 +83,7 @@ export 'src/core/models/tools/tool_params.dart';
 export 'src/core/llama_logger.dart';
 export 'src/core/models/config/log_level.dart';
 export 'src/core/models/config/gpu_backend.dart';
+export 'src/core/models/config/gpu_device_info.dart';
 export 'src/core/models/config/flash_attention.dart';
 export 'src/core/models/config/kv_cache_type.dart';
 export 'src/core/models/config/lora_config.dart';

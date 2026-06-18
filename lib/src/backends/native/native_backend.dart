@@ -1,5 +1,7 @@
 import '../../core/models/chat/chat_message.dart';
 import '../../core/models/chat/content_part.dart';
+import '../../core/models/config/gpu_backend.dart';
+import '../../core/models/config/gpu_device_info.dart';
 import '../../core/models/config/log_level.dart';
 import '../../core/models/inference/generation_params.dart';
 import '../../core/models/inference/model_params.dart';
@@ -21,6 +23,7 @@ class NativeAutoBackend
         LlamaBackend,
         BackendAvailability,
         BackendRuntimeDiagnostics,
+        BackendGpuEnumeration,
         BackendPerformanceDiagnostics,
         BackendEmbeddings,
         BackendEmbeddingsSupport,
@@ -317,6 +320,29 @@ class NativeAutoBackend
     return _ensureDiagnosticDelegate().then(
       (diagnosticDelegate) => diagnosticDelegate.getVramInfo(),
     );
+  }
+
+  @override
+  Future<List<GpuDeviceInfo>> listGpuDevices({
+    List<GpuBackend> probeBackends = const [],
+  }) {
+    final delegate = _delegate;
+    if (delegate is BackendGpuEnumeration) {
+      return (delegate as BackendGpuEnumeration).listGpuDevices(
+        probeBackends: probeBackends,
+      );
+    }
+    // No GPU-enumeration-capable delegate is active (none loaded yet, or a
+    // backend like LiteRT-LM that doesn't enumerate). Fall back to the same
+    // diagnostic llama.cpp delegate getVramInfo uses before a model load.
+    return _ensureDiagnosticDelegate().then((diagnosticDelegate) {
+      if (diagnosticDelegate is BackendGpuEnumeration) {
+        return (diagnosticDelegate as BackendGpuEnumeration).listGpuDevices(
+          probeBackends: probeBackends,
+        );
+      }
+      return const <GpuDeviceInfo>[];
+    });
   }
 
   @override
