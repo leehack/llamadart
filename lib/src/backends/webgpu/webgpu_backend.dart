@@ -636,8 +636,10 @@ class WebGpuLlamaBackend
     final isLargeWebModel =
         isGemma4 ||
         (params.modelBytesHint ?? 0) >= _wasm32SafeModelCeilingBytes;
+    final hasExplicitBatchSize = params.batchSize > 0;
+    final hasExplicitMicroBatchSize = params.microBatchSize > 0;
     final hasExplicitBatchSizes =
-        params.batchSize > 0 || params.microBatchSize > 0;
+        hasExplicitBatchSize || hasExplicitMicroBatchSize;
     final shouldUseWebGpuDefaults =
         !hasExplicitBatchSizes &&
         params.preferredBackend != GpuBackend.cpu &&
@@ -648,9 +650,12 @@ class WebGpuLlamaBackend
       return (nBatch: 32, nUbatch: 8);
     }
 
-    if (!hasExplicitBatchSizes && isLargeWebModel) {
+    if (!hasExplicitBatchSize && isLargeWebModel) {
       final cappedBatch = math.min(contextSize, 512);
-      return (nBatch: cappedBatch, nUbatch: cappedBatch);
+      final cappedMicroBatch = hasExplicitMicroBatchSize
+          ? math.min(params.microBatchSize, cappedBatch)
+          : cappedBatch;
+      return (nBatch: cappedBatch, nUbatch: cappedMicroBatch);
     }
 
     final resolved = resolveModelContextBatchSizes(params, contextSize);

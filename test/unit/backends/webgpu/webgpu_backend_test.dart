@@ -684,6 +684,19 @@ void main() {
       expect(lastRequestedMicroBatchSize, 512);
     });
 
+    test(
+      'bounds large model batch while preserving explicit micro batch',
+      () async {
+        await backend.modelLoadFromUrl(
+          'https://example.com/gemma-4-E2B-it-Q4_K_S.gguf',
+          const ModelParams(contextSize: 4096, microBatchSize: 128),
+        );
+
+        expect(lastRequestedBatchSize, 512);
+        expect(lastRequestedMicroBatchSize, 128);
+      },
+    );
+
     test('cascades unset WebGPU encoder batches before embedBatch', () async {
       await backend.modelLoadFromUrl(
         'https://example.com/multilingual-e5-small-Q8_0.gguf',
