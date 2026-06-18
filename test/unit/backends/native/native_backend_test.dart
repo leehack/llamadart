@@ -11,6 +11,7 @@ import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
 import 'package:llamadart/src/core/models/config/gpu_backend.dart';
+import 'package:llamadart/src/core/models/config/gpu_device_info.dart';
 import 'package:llamadart/src/core/models/config/log_level.dart';
 import 'package:llamadart/src/core/models/download/model_download_manager.dart';
 import 'package:llamadart/src/core/models/inference/generation_params.dart';
@@ -84,6 +85,42 @@ void main() {
 
       expect(llama.disposeCount, 1);
       expect(litert.disposeCount, 0);
+    },
+  );
+
+  test(
+    'pre-load listGpuDevices forwards through the llama.cpp diagnostic delegate',
+    () async {
+      // The default LlamaBackend() resolves to NativeAutoBackend; listGpuDevices
+      // must reach a GPU-enumeration-capable delegate, not return an empty list.
+      const devices = [
+        GpuDeviceInfo(
+          backend: GpuBackend.vulkan,
+          mainGpu: 0,
+          name: 'Vulkan0',
+          description: 'NVIDIA GeForce RTX 5050 Laptop GPU',
+          deviceId: '0000:64:00.0',
+          type: GpuDeviceType.discreteGpu,
+          memoryFreeBytes: 7910,
+          memoryTotalBytes: 8192,
+        ),
+      ];
+      final llama = _FakeBackend(handle: 11)..gpuDevices = devices;
+      final litert = _FakeBackend(handle: 22);
+      final backend = NativeAutoBackend(
+        llamaCppFactory: () => llama,
+        liteRtLmFactory: () => litert,
+      );
+
+      try {
+        final result = await backend.listGpuDevices();
+        expect(result, hasLength(1));
+        expect(result.single.description, 'NVIDIA GeForce RTX 5050 Laptop GPU');
+        expect(result.single.type, GpuDeviceType.discreteGpu);
+        expect(litert.loadedPaths, isEmpty);
+      } finally {
+        await backend.dispose();
+      }
     },
   );
 
@@ -853,7 +890,11 @@ void main() {
   );
 }
 
-class _FakeBackend implements LlamaBackend, BackendGrammarConstraintsSupport {
+class _FakeBackend
+    implements
+        LlamaBackend,
+        BackendGrammarConstraintsSupport,
+        BackendGpuEnumeration {
   final int handle;
   bool grammarConstraintsSupported = true;
   final List<String> loadedPaths = <String>[];
@@ -869,6 +910,7 @@ class _FakeBackend implements LlamaBackend, BackendGrammarConstraintsSupport {
   List<int>? lastDetokenizeTokens;
   bool gpuSupported = false;
   ({int total, int free}) vramInfo = (total: 0, free: 0);
+  List<GpuDeviceInfo> gpuDevices = const [];
   int disposeCount = 0;
   int? lastMultimodalCreateModelHandle;
   String? lastMultimodalProjectorPath;
@@ -943,6 +985,11 @@ class _FakeBackend implements LlamaBackend, BackendGrammarConstraintsSupport {
 
   @override
   Future<({int total, int free})> getVramInfo() async => vramInfo;
+
+  @override
+  Future<List<GpuDeviceInfo>> listGpuDevices({
+    List<GpuBackend> probeBackends = const [],
+  }) async => gpuDevices;
 
   @override
   Future<int?> multimodalContextCreate(

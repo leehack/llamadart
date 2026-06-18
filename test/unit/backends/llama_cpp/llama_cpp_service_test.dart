@@ -5,6 +5,7 @@ import 'dart:io';
 
 import 'package:llamadart/src/backends/llama_cpp/llama_cpp_service.dart';
 import 'package:llamadart/src/core/models/config/gpu_backend.dart';
+import 'package:llamadart/src/core/models/config/gpu_device_info.dart';
 import 'package:llamadart/src/core/models/inference/generation_params.dart';
 import 'package:llamadart/src/core/models/inference/model_params.dart';
 import 'package:path/path.dart' as path;
@@ -29,6 +30,61 @@ void main() {
       expect(info.free, isA<int>());
       expect(info.total, greaterThanOrEqualTo(0));
       expect(info.free, greaterThanOrEqualTo(0));
+    });
+  });
+
+  group('listGpuDevices', () {
+    test('returns a List<GpuDeviceInfo> without throwing', () {
+      // Hosts with a GPU runtime return real devices; CI hosts without one
+      // return an empty list. Either way the call must not throw and every
+      // element must satisfy the field contract callers rely on. A rename or
+      // struct change in `LlamaCppService.listGpuDevices` breaks this.
+      final service = LlamaCppService();
+      final devices = service.listGpuDevices();
+      expect(devices, isA<List<GpuDeviceInfo>>());
+      for (final device in devices) {
+        expect(device.type, isNot(GpuDeviceType.cpu));
+        expect(device.mainGpu, greaterThanOrEqualTo(0));
+        expect(device.memoryFreeBytes, greaterThanOrEqualTo(0));
+        expect(device.memoryTotalBytes, greaterThanOrEqualTo(0));
+      }
+    });
+
+    test('does not throw when probing an unavailable backend', () {
+      // probeBackends opt-in must stay safe: requesting a backend whose module
+      // or symbols are absent (as on CI hosts) returns a list rather than
+      // throwing.
+      final service = LlamaCppService();
+      final devices = service.listGpuDevices(
+        probeBackends: const [GpuBackend.vulkan, GpuBackend.cuda],
+      );
+      expect(devices, isA<List<GpuDeviceInfo>>());
+    });
+  });
+
+  group('gpuBackendFromRegName', () {
+    test('maps ggml registry names (incl. Metal MTL) to GpuBackend', () {
+      expect(
+        LlamaCppService.gpuBackendFromRegName('Vulkan'),
+        GpuBackend.vulkan,
+      );
+      expect(LlamaCppService.gpuBackendFromRegName('CUDA'), GpuBackend.cuda);
+      expect(LlamaCppService.gpuBackendFromRegName('Metal'), GpuBackend.metal);
+      // Regression: macOS reports the registry name as "MTL", which previously
+      // fell through to GpuBackend.auto.
+      expect(LlamaCppService.gpuBackendFromRegName('MTL'), GpuBackend.metal);
+      expect(LlamaCppService.gpuBackendFromRegName('ROCm'), GpuBackend.hip);
+      expect(LlamaCppService.gpuBackendFromRegName('HIP'), GpuBackend.hip);
+      expect(
+        LlamaCppService.gpuBackendFromRegName('OpenCL'),
+        GpuBackend.opencl,
+      );
+      expect(LlamaCppService.gpuBackendFromRegName('BLAS'), GpuBackend.blas);
+      expect(LlamaCppService.gpuBackendFromRegName('CPU'), GpuBackend.cpu);
+      expect(
+        LlamaCppService.gpuBackendFromRegName('SomethingElse'),
+        GpuBackend.auto,
+      );
     });
   });
 

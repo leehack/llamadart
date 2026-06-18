@@ -3,6 +3,8 @@ import '../core/models/inference/generation_params.dart';
 import '../core/models/inference/tool_choice.dart';
 import '../core/models/chat/chat_message.dart';
 import '../core/models/chat/content_part.dart';
+import '../core/models/config/gpu_backend.dart';
+import '../core/models/config/gpu_device_info.dart';
 import '../core/models/config/log_level.dart';
 import '../core/models/tools/tool_definition.dart';
 
@@ -171,6 +173,23 @@ abstract class BackendRuntimeDiagnostics {
   /// This value reflects the final layer count passed to native model load
   /// after backend policy/fallback decisions.
   Future<int?> getResolvedGpuLayers();
+}
+
+/// Optional backend capability for enumerating GPU-class devices for offload
+/// selection (e.g. pinning to the discrete GPU on a laptop, or surfacing which
+/// device is in use).
+abstract class BackendGpuEnumeration {
+  /// Lists the GPU-class devices the backend exposes.
+  ///
+  /// With an empty [probeBackends] only already-registered backends are
+  /// inspected — no backend module is loaded, so an unsupported GPU runtime
+  /// cannot crash the process during enumeration. Pass specific backends in
+  /// [probeBackends] to opt into loading just those modules (each guarded)
+  /// before enumerating. Backends with no offload devices (and web/WebGPU)
+  /// return an empty list.
+  Future<List<GpuDeviceInfo>> listGpuDevices({
+    List<GpuBackend> probeBackends = const [],
+  });
 }
 
 /// Native performance timings reported by llama.cpp for the active context.

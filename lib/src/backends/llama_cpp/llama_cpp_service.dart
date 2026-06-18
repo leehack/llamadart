@@ -10,6 +10,7 @@ import 'package:path/path.dart' as path;
 import '../../core/llama_logger.dart';
 import '../../core/models/chat/content_part.dart';
 import '../../core/models/config/gpu_backend.dart';
+import '../../core/models/config/gpu_device_info.dart';
 import '../../core/models/config/log_level.dart';
 import '../../core/models/inference/generation_params.dart';
 import '../../core/models/inference/model_params.dart';
@@ -5652,6 +5653,148 @@ class LlamaCppService {
       }
     }
     return (total: 0, free: 0);
+  }
+
+  /// Enumerates GPU-class devices across registered backends.
+  ///
+  /// With an empty [probeBackends] only already-registered backends are
+  /// inspected — no backend module is loaded, so an unsupported GPU runtime
+  /// cannot crash the process during enumeration. Pass specific backends in
+  /// [probeBackends] to opt into loading just those modules (guarded; CPU/auto
+  /// are ignored) before enumerating. Walks the global device list
+  /// (`ggml_backend_dev_count` / `ggml_backend_dev_get`) through the registry
+  /// fallback wrappers so devices register on Windows split bundles, and reads
+  /// each device's description/id/memory from `ggml_backend_dev_get_props`
+  /// (with `ggml_backend_dev_memory` as a memory fallback). CPU devices are
+  /// excluded. Returns an empty list when no GPU-class device is reachable.
+  List<GpuDeviceInfo> listGpuDevices({
+    List<GpuBackend> probeBackends = const [],
+  }) {
+    for (final backend in probeBackends) {
+      if (backend == GpuBackend.auto || backend == GpuBackend.cpu) continue;
+      _tryLoadBackendModuleIfBundled(backend.name);
+    }
+
+    final count = _ggmlBackendDevCount();
+    final result = <GpuDeviceInfo>[];
+    final perBackendOrdinal = <GpuBackend, int>{};
+    for (var i = 0; i < count; i++) {
+      final dev = _ggmlBackendDevGet(i);
+      if (dev == nullptr) continue;
+
+      final propsPtr = calloc<ggml_backend_dev_props>();
+      try {
+        final hasProps = _ggmlBackendDevGetProps(dev, propsPtr);
+        final props = hasProps ? propsPtr.ref : null;
+
+        // Prefer the standalone type probe; when its symbol is unavailable
+        // (returns -1 -> unknown) fall back to the type carried in props, so a
+        // device still enumerates on runtimes missing the standalone symbol.
+        // Raw-int compares keep a future llama.cpp enum variant from crashing
+        // the high-level binding's fromValue.
+        var type = _mapGpuDeviceType(_ggmlBackendDevType(dev));
+        if (type == GpuDeviceType.unknown && props != null) {
+          type = _mapGpuDeviceType(props.typeAsInt);
+        }
+        if (type == GpuDeviceType.cpu || type == GpuDeviceType.unknown) {
+          continue;
+        }
+
+        final backend = _gpuBackendForDevice(dev);
+        final mainGpu = perBackendOrdinal[backend] ?? 0;
+        perBackendOrdinal[backend] = mainGpu + 1;
+
+        var name = '';
+        var description = '';
+        var deviceId = '';
+        var free = 0;
+        var total = 0;
+        if (props != null) {
+          name = _utf8OrEmpty(props.name);
+          description = _utf8OrEmpty(props.description);
+          deviceId = _utf8OrEmpty(props.device_id);
+          free = props.memory_free;
+          total = props.memory_total;
+        }
+        if (name.isEmpty) name = _utf8OrEmpty(_ggmlBackendDevName(dev));
+        if (total <= 0) {
+          final freePtr = calloc<Size>();
+          final totalPtr = calloc<Size>();
+          try {
+            if (_ggmlBackendDevMemory(dev, freePtr, totalPtr)) {
+              free = freePtr.value;
+              total = totalPtr.value;
+            }
+          } finally {
+            calloc.free(freePtr);
+            calloc.free(totalPtr);
+          }
+        }
+
+        result.add(
+          GpuDeviceInfo(
+            backend: backend,
+            mainGpu: mainGpu,
+            name: name,
+            description: description.isEmpty ? name : description,
+            deviceId: deviceId,
+            type: type,
+            memoryFreeBytes: free,
+            memoryTotalBytes: total,
+          ),
+        );
+      } finally {
+        calloc.free(propsPtr);
+      }
+    }
+    return result;
+  }
+
+  static String _utf8OrEmpty(Pointer<Char> ptr) =>
+      ptr == nullptr ? '' : ptr.cast<Utf8>().toDartString();
+
+  static GpuDeviceType _mapGpuDeviceType(int typeInt) {
+    if (typeInt == ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_GPU.value) {
+      return GpuDeviceType.discreteGpu;
+    }
+    if (typeInt == ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_IGPU.value) {
+      return GpuDeviceType.integratedGpu;
+    }
+    if (typeInt == ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_ACCEL.value) {
+      return GpuDeviceType.accelerator;
+    }
+    if (typeInt == ggml_backend_dev_type.GGML_BACKEND_DEVICE_TYPE_CPU.value) {
+      return GpuDeviceType.cpu;
+    }
+    return GpuDeviceType.unknown;
+  }
+
+  /// Maps a device's owning backend registry name to a [GpuBackend]. Returns
+  /// [GpuBackend.auto] when the backend can't be resolved.
+  GpuBackend _gpuBackendForDevice(ggml_backend_dev_t dev) {
+    final reg = _ggmlBackendDevBackendReg(dev);
+    if (reg == nullptr) return GpuBackend.auto;
+    final namePtr = _ggmlBackendRegName(reg);
+    if (namePtr == nullptr) return GpuBackend.auto;
+    return gpuBackendFromRegName(namePtr.cast<Utf8>().toDartString());
+  }
+
+  /// Maps a ggml backend registry name to a [GpuBackend]; returns
+  /// [GpuBackend.auto] when unrecognized. Match-by-substring because registry
+  /// names vary by build (e.g. the Metal backend registers as `Metal` on some
+  /// builds and `MTL` on others), mirroring [_backendInfoContainsBackendMarker].
+  static GpuBackend gpuBackendFromRegName(String regName) {
+    final name = regName.toLowerCase();
+    if (name.contains('vulkan')) return GpuBackend.vulkan;
+    if (name.contains('cuda')) return GpuBackend.cuda;
+    if (name.contains('metal') || name.contains('mtl')) {
+      return GpuBackend.metal;
+    }
+    if (name.contains('hip') || name.contains('rocm')) return GpuBackend.hip;
+    if (name.contains('opencl')) return GpuBackend.opencl;
+    if (name.contains('blas')) return GpuBackend.blas;
+    if (name.contains('cpu')) return GpuBackend.cpu;
+    return GpuBackend.auto;
   }
 
   /// Returns the context size for the given [contextHandle].

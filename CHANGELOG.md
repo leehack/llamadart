@@ -1,3 +1,13 @@
+## Unreleased
+
+* Added `BackendGpuEnumeration.listGpuDevices({probeBackends})` (exposed via
+  `LlamaEngine.listGpuDevices`) to enumerate GPU-class devices for offload
+  selection — backend, per-backend `mainGpu` index, name, description, device
+  id, type, and free/total memory per device. With an empty `probeBackends`
+  only already-registered backends are inspected, so an unsupported GPU runtime
+  cannot crash the process during enumeration; pass specific backends to opt
+  into loading just those modules first. Web/WebGPU return an empty list.
+
 ## 0.8.1
 
 * Fixed docs references that still pointed at
