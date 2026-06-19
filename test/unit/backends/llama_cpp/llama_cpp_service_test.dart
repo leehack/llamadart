@@ -726,7 +726,20 @@ void main() {
       expect(path.normalize(resolved!), path.normalize(overrideDir.path));
     });
 
-    test('orders CUDA redistributable DLLs for preloading', () {
+    test('uses altered search path for absolute Windows backend modules', () {
+      expect(
+        LlamaCppService.windowsBackendModuleLoadFlags(
+          path.join(tempRoot.path, 'ggml-cuda.dll'),
+        ),
+        0x00000008,
+      );
+      expect(
+        LlamaCppService.windowsBackendModuleLoadFlags('ggml-cuda.dll'),
+        isZero,
+      );
+    });
+
+    test('orders CUDA redistributable DLLs for best-effort preloading', () {
       final dependencyPaths = LlamaCppService.windowsBackendDependencyPaths(
         tempRoot.path,
         'cuda',

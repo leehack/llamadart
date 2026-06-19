@@ -46,6 +46,14 @@ typedef _GgmlBackendRegDevGetNative =
     ggml_backend_dev_t Function(ggml_backend_reg_t, Size);
 typedef _GgmlBackendRegDevGetDart =
     ggml_backend_dev_t Function(ggml_backend_reg_t, int);
+typedef _LoadLibraryExWNative =
+    Pointer<Void> Function(Pointer<Utf16>, Pointer<Void>, Uint32);
+typedef _LoadLibraryExWDart =
+    Pointer<Void> Function(Pointer<Utf16>, Pointer<Void>, int);
+typedef _FreeLibraryNative = Int32 Function(Pointer<Void>);
+typedef _FreeLibraryDart = int Function(Pointer<Void>);
+typedef _SetErrorModeNative = Uint32 Function(Uint32);
+typedef _SetErrorModeDart = int Function(int);
 typedef _GgmlBackendDevCountNative = Size Function();
 typedef _GgmlBackendDevCountDart = int Function();
 typedef _GgmlBackendDevGetNative = ggml_backend_dev_t Function(Size);
@@ -382,6 +390,8 @@ class LlamaCppService {
     defaultValue: false,
   );
   static const int _maxStartupDiagnostics = 32;
+  static const int _loadWithAlteredSearchPath = 0x00000008;
+  static const int _semFailCriticalErrors = 0x0001;
   static const Map<String, int> _androidCpuVariantPriority = <String, int>{
     'android_armv9.2_2': 0,
     'android_armv9.2_1': 1,
@@ -1844,6 +1854,10 @@ class LlamaCppService {
         continue;
       }
 
+      final alteredSearchPathHandle = _preloadWindowsBackendModule(
+        candidate,
+        backend,
+      );
       final libraryPathPtr = candidate.toNativeUtf8();
       try {
         ggml_backend_reg_t reg;
@@ -1873,6 +1887,13 @@ class LlamaCppService {
         _failedBackendModules.remove(backend);
         return true;
       } finally {
+        if (alteredSearchPathHandle != nullptr) {
+          _freeWindowsBackendModule(
+            alteredSearchPathHandle,
+            candidate,
+            backend,
+          );
+        }
         malloc.free(libraryPathPtr);
       }
     }
@@ -1902,6 +1923,78 @@ class LlamaCppService {
     }
 
     return candidates.toList(growable: false);
+  }
+
+  Pointer<Void> _preloadWindowsBackendModule(
+    String libraryPath,
+    String backend,
+  ) {
+    final flags = windowsBackendModuleLoadFlags(libraryPath);
+    if (!Platform.isWindows || flags == 0) {
+      return nullptr;
+    }
+
+    try {
+      final kernel32 = DynamicLibrary.open('kernel32.dll');
+      final setErrorMode = kernel32
+          .lookupFunction<_SetErrorModeNative, _SetErrorModeDart>(
+            'SetErrorMode',
+          );
+      final loadLibraryExW = kernel32
+          .lookupFunction<_LoadLibraryExWNative, _LoadLibraryExWDart>(
+            'LoadLibraryExW',
+          );
+      final oldMode = setErrorMode(_semFailCriticalErrors);
+      setErrorMode(oldMode | _semFailCriticalErrors);
+
+      final libraryPathPtr = libraryPath.toNativeUtf16();
+      try {
+        final handle = loadLibraryExW(libraryPathPtr, nullptr, flags);
+        if (handle == nullptr) {
+          _recordStartupDiagnostic(
+            'Failed to preload Windows backend module `$libraryPath` with '
+            'LOAD_WITH_ALTERED_SEARCH_PATH for `$backend`.',
+          );
+        }
+        return handle;
+      } finally {
+        malloc.free(libraryPathPtr);
+        setErrorMode(oldMode);
+      }
+    } catch (error) {
+      _recordStartupDiagnostic(
+        'Failed to preload Windows backend module `$libraryPath` with '
+        'LOAD_WITH_ALTERED_SEARCH_PATH for `$backend`: $error',
+      );
+      return nullptr;
+    }
+  }
+
+  void _freeWindowsBackendModule(
+    Pointer<Void> handle,
+    String libraryPath,
+    String backend,
+  ) {
+    if (!Platform.isWindows || handle == nullptr) {
+      return;
+    }
+
+    try {
+      final kernel32 = DynamicLibrary.open('kernel32.dll');
+      final freeLibrary = kernel32
+          .lookupFunction<_FreeLibraryNative, _FreeLibraryDart>('FreeLibrary');
+      if (freeLibrary(handle) == 0) {
+        _recordStartupDiagnostic(
+          'Failed to release temporary Windows backend module preload for '
+          '`$libraryPath` (`$backend`).',
+        );
+      }
+    } catch (error) {
+      _recordStartupDiagnostic(
+        'Failed to release temporary Windows backend module preload for '
+        '`$libraryPath` (`$backend`): $error',
+      );
+    }
   }
 
   void _preloadWindowsBackendDependencies(String backend) {
@@ -1938,15 +2031,26 @@ class LlamaCppService {
     }
   }
 
-  /// Returns absolute paths for backend-owned Windows dependency DLLs that
-  /// should be loaded before asking llama.cpp to dynamically load [backend].
+  /// Returns Windows `LoadLibraryExW` flags for preloading a backend module.
   ///
-  /// `ggml_backend_load()` loads backend modules by absolute path, but Windows
-  /// resolves those modules' transitive imports through the process DLL search
-  /// path, not reliably through the module directory. Native-asset builds place
-  /// CUDA redistributables beside `ggml-cuda.dll`, so preloading those DLLs by
-  /// absolute path makes the subsequent backend load independent of PATH/current
-  /// directory state.
+  /// llama.cpp currently opens dynamic backend modules with plain
+  /// `LoadLibraryW`. For absolute native-asset bundle paths, an earlier
+  /// `LOAD_WITH_ALTERED_SEARCH_PATH` load lets Windows resolve transitive DLL
+  /// imports from the backend module directory before llama.cpp registers it.
+  static int windowsBackendModuleLoadFlags(String libraryPath) {
+    if (!path.isAbsolute(libraryPath)) {
+      return 0;
+    }
+    return _loadWithAlteredSearchPath;
+  }
+
+  /// Returns absolute paths for backend-owned Windows dependency DLLs that
+  /// can be preloaded before asking llama.cpp to dynamically load [backend].
+  ///
+  /// This is only a best-effort compatibility path. The backend module itself
+  /// is also preloaded with `LOAD_WITH_ALTERED_SEARCH_PATH`, because Windows
+  /// may still fail to resolve module-owned transitive imports from the bundle
+  /// directory after individual dependency DLLs were loaded by absolute path.
   static List<String> windowsBackendDependencyPaths(
     String directoryPath,
     String backend, {
