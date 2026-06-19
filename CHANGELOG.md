@@ -1,9 +1,10 @@
-## Unreleased
+## 0.8.3
 
-* Preload Windows backend modules with `LOAD_WITH_ALTERED_SEARCH_PATH` from
-  the resolved native backend bundle directory before handing them to
-  llama.cpp, so CUDA backend discovery can resolve colocated CUDA
-  redistributables without app `PATH` changes.
+* Fixed Windows CUDA backend discovery when the native asset bundle directory is
+  not on the app `PATH`. llama.cpp backend modules are now loaded from their
+  resolved bundle path in a way that lets colocated CUDA redistributables such
+  as `cudart64_12.dll`, `cublas64_12.dll`, and `cublasLt64_12.dll` resolve
+  correctly.
 
 ## 0.8.2
 

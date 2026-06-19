@@ -7,6 +7,13 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
+## 0.8.3
+
+- Fixed Windows CUDA backend discovery when the native asset bundle directory is
+  not on the app `PATH`. Apps using the CUDA llama.cpp backend can now resolve
+  bundled CUDA redistributables beside `ggml-cuda.dll` without manually adding
+  `.dart_tool/lib` or the native bundle path to `PATH`.
+
 ## 0.8.2
 
 - Updated the default llama.cpp native runtime pin to
