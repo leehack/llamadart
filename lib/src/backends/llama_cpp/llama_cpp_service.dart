@@ -46,6 +46,14 @@ typedef _GgmlBackendRegDevGetNative =
     ggml_backend_dev_t Function(ggml_backend_reg_t, Size);
 typedef _GgmlBackendRegDevGetDart =
     ggml_backend_dev_t Function(ggml_backend_reg_t, int);
+typedef _LoadLibraryExWNative =
+    Pointer<Void> Function(Pointer<Utf16>, Pointer<Void>, Uint32);
+typedef _LoadLibraryExWDart =
+    Pointer<Void> Function(Pointer<Utf16>, Pointer<Void>, int);
+typedef _FreeLibraryNative = Int32 Function(Pointer<Void>);
+typedef _FreeLibraryDart = int Function(Pointer<Void>);
+typedef _SetErrorModeNative = Uint32 Function(Uint32);
+typedef _SetErrorModeDart = int Function(int);
 typedef _GgmlBackendDevCountNative = Size Function();
 typedef _GgmlBackendDevCountDart = int Function();
 typedef _GgmlBackendDevGetNative = ggml_backend_dev_t Function(Size);
@@ -382,6 +390,8 @@ class LlamaCppService {
     defaultValue: false,
   );
   static const int _maxStartupDiagnostics = 32;
+  static const int _loadWithAlteredSearchPath = 0x00000008;
+  static const int _semFailCriticalErrors = 0x0001;
   static const Map<String, int> _androidCpuVariantPriority = <String, int>{
     'android_armv9.2_2': 0,
     'android_armv9.2_1': 1,
@@ -398,6 +408,8 @@ class LlamaCppService {
   final Set<String> _failedBackendModules = <String>{};
   final Map<String, DynamicLibrary> _loadedBackendLibraries =
       <String, DynamicLibrary>{};
+  final Map<String, List<DynamicLibrary>> _preloadedBackendDependencyLibraries =
+      <String, List<DynamicLibrary>>{};
   final List<DynamicLibrary> _preloadedCoreLibraries = <DynamicLibrary>[];
   bool _backendLoadAllSymbolUnavailable = false;
   bool _backendLoadAllFromPathSymbolUnavailable = false;
@@ -1835,11 +1847,17 @@ class LlamaCppService {
       candidates.addAll(fileNameCandidates);
     }
 
+    _preloadWindowsBackendDependencies(backend);
+
     for (final candidate in candidates) {
       if (path.isAbsolute(candidate) && !File(candidate).existsSync()) {
         continue;
       }
 
+      final alteredSearchPathHandle = _preloadWindowsBackendModule(
+        candidate,
+        backend,
+      );
       final libraryPathPtr = candidate.toNativeUtf8();
       try {
         ggml_backend_reg_t reg;
@@ -1869,6 +1887,13 @@ class LlamaCppService {
         _failedBackendModules.remove(backend);
         return true;
       } finally {
+        if (alteredSearchPathHandle != nullptr) {
+          _freeWindowsBackendModule(
+            alteredSearchPathHandle,
+            candidate,
+            backend,
+          );
+        }
         malloc.free(libraryPathPtr);
       }
     }
@@ -1898,6 +1923,200 @@ class LlamaCppService {
     }
 
     return candidates.toList(growable: false);
+  }
+
+  Pointer<Void> _preloadWindowsBackendModule(
+    String libraryPath,
+    String backend,
+  ) {
+    final flags = windowsBackendModuleLoadFlags(libraryPath);
+    if (!Platform.isWindows || flags == 0) {
+      return nullptr;
+    }
+
+    try {
+      final kernel32 = DynamicLibrary.open('kernel32.dll');
+      final setErrorMode = kernel32
+          .lookupFunction<_SetErrorModeNative, _SetErrorModeDart>(
+            'SetErrorMode',
+          );
+      final loadLibraryExW = kernel32
+          .lookupFunction<_LoadLibraryExWNative, _LoadLibraryExWDart>(
+            'LoadLibraryExW',
+          );
+      final oldMode = setErrorMode(_semFailCriticalErrors);
+      setErrorMode(oldMode | _semFailCriticalErrors);
+
+      final libraryPathPtr = libraryPath.toNativeUtf16();
+      try {
+        final handle = loadLibraryExW(libraryPathPtr, nullptr, flags);
+        if (handle == nullptr) {
+          _recordStartupDiagnostic(
+            'Failed to preload Windows backend module `$libraryPath` with '
+            'LOAD_WITH_ALTERED_SEARCH_PATH for `$backend`.',
+          );
+        }
+        return handle;
+      } finally {
+        malloc.free(libraryPathPtr);
+        setErrorMode(oldMode);
+      }
+    } catch (error) {
+      _recordStartupDiagnostic(
+        'Failed to preload Windows backend module `$libraryPath` with '
+        'LOAD_WITH_ALTERED_SEARCH_PATH for `$backend`: $error',
+      );
+      return nullptr;
+    }
+  }
+
+  void _freeWindowsBackendModule(
+    Pointer<Void> handle,
+    String libraryPath,
+    String backend,
+  ) {
+    if (!Platform.isWindows || handle == nullptr) {
+      return;
+    }
+
+    try {
+      final kernel32 = DynamicLibrary.open('kernel32.dll');
+      final freeLibrary = kernel32
+          .lookupFunction<_FreeLibraryNative, _FreeLibraryDart>('FreeLibrary');
+      if (freeLibrary(handle) == 0) {
+        _recordStartupDiagnostic(
+          'Failed to release temporary Windows backend module preload for '
+          '`$libraryPath` (`$backend`).',
+        );
+      }
+    } catch (error) {
+      _recordStartupDiagnostic(
+        'Failed to release temporary Windows backend module preload for '
+        '`$libraryPath` (`$backend`): $error',
+      );
+    }
+  }
+
+  void _preloadWindowsBackendDependencies(String backend) {
+    if (!Platform.isWindows) {
+      return;
+    }
+
+    final backendModuleDirectory = _backendModuleDirectory;
+    if (backendModuleDirectory == null) {
+      return;
+    }
+
+    final cacheKey =
+        '$backend|${path.normalize(backendModuleDirectory).toLowerCase()}';
+    if (_preloadedBackendDependencyLibraries.containsKey(cacheKey)) {
+      return;
+    }
+
+    final handles = <DynamicLibrary>[];
+    _preloadedBackendDependencyLibraries[cacheKey] = handles;
+
+    for (final dependencyPath in windowsBackendDependencyPaths(
+      backendModuleDirectory,
+      backend,
+    )) {
+      try {
+        handles.add(DynamicLibrary.open(dependencyPath));
+      } catch (error) {
+        _recordStartupDiagnostic(
+          'Failed to preload Windows backend dependency '
+          '`$dependencyPath` for `$backend`: $error',
+        );
+      }
+    }
+  }
+
+  /// Returns Windows `LoadLibraryExW` flags for preloading a backend module.
+  ///
+  /// llama.cpp currently opens dynamic backend modules with plain
+  /// `LoadLibraryW`. For absolute native-asset bundle paths, an earlier
+  /// `LOAD_WITH_ALTERED_SEARCH_PATH` load lets Windows resolve transitive DLL
+  /// imports from the backend module directory before llama.cpp registers it.
+  static int windowsBackendModuleLoadFlags(String libraryPath) {
+    if (!path.isAbsolute(libraryPath)) {
+      return 0;
+    }
+    return _loadWithAlteredSearchPath;
+  }
+
+  /// Returns absolute paths for backend-owned Windows dependency DLLs that
+  /// can be preloaded before asking llama.cpp to dynamically load [backend].
+  ///
+  /// This is only a best-effort compatibility path. The backend module itself
+  /// is also preloaded with `LOAD_WITH_ALTERED_SEARCH_PATH`, because Windows
+  /// may still fail to resolve module-owned transitive imports from the bundle
+  /// directory after individual dependency DLLs were loaded by absolute path.
+  static List<String> windowsBackendDependencyPaths(
+    String directoryPath,
+    String backend, {
+    Iterable<String>? fileNames,
+  }) {
+    if (backend != 'cuda') {
+      return const <String>[];
+    }
+
+    final names =
+        fileNames?.toList(growable: false) ??
+        _listWindowsBackendDependencyFileNames(directoryPath);
+    final selected = <String>[];
+    for (final name in names) {
+      final lower = name.toLowerCase();
+      if (!lower.endsWith('.dll')) {
+        continue;
+      }
+      if (lower.startsWith('cudart64_') ||
+          lower.startsWith('cublas64_') ||
+          lower.startsWith('cublaslt64_')) {
+        selected.add(name);
+      }
+    }
+
+    selected.sort((a, b) {
+      final priorityCompare = _windowsCudaDependencyPriority(
+        a,
+      ).compareTo(_windowsCudaDependencyPriority(b));
+      if (priorityCompare != 0) {
+        return priorityCompare;
+      }
+      return a.toLowerCase().compareTo(b.toLowerCase());
+    });
+
+    return selected
+        .map((name) => path.join(directoryPath, name))
+        .toList(growable: false);
+  }
+
+  static List<String> _listWindowsBackendDependencyFileNames(
+    String directoryPath,
+  ) {
+    try {
+      return Directory(directoryPath)
+          .listSync()
+          .whereType<File>()
+          .map((file) => path.basename(file.path))
+          .toList(growable: false);
+    } catch (_) {
+      return const <String>[];
+    }
+  }
+
+  static int _windowsCudaDependencyPriority(String fileName) {
+    final lower = fileName.toLowerCase();
+    if (lower.startsWith('cudart64_')) {
+      return 0;
+    }
+    if (lower.startsWith('cublas64_')) {
+      return 1;
+    }
+    if (lower.startsWith('cublaslt64_')) {
+      return 2;
+    }
+    return 100;
   }
 
   bool _tryRegisterBackendModuleViaAsset(String backend) {

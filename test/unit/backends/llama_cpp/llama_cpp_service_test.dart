@@ -726,6 +726,47 @@ void main() {
       expect(path.normalize(resolved!), path.normalize(overrideDir.path));
     });
 
+    test('uses altered search path for absolute Windows backend modules', () {
+      expect(
+        LlamaCppService.windowsBackendModuleLoadFlags(
+          path.join(tempRoot.path, 'ggml-cuda.dll'),
+        ),
+        0x00000008,
+      );
+      expect(
+        LlamaCppService.windowsBackendModuleLoadFlags('ggml-cuda.dll'),
+        isZero,
+      );
+    });
+
+    test('orders CUDA redistributable DLLs for best-effort preloading', () {
+      final dependencyPaths = LlamaCppService.windowsBackendDependencyPaths(
+        tempRoot.path,
+        'cuda',
+        fileNames: const <String>[
+          'ggml-cuda.dll',
+          'cublasLt64_12.dll',
+          'notes.txt',
+          'cudart64_12.dll',
+          'cublas64_12.dll',
+        ],
+      );
+
+      expect(dependencyPaths, <String>[
+        path.join(tempRoot.path, 'cudart64_12.dll'),
+        path.join(tempRoot.path, 'cublas64_12.dll'),
+        path.join(tempRoot.path, 'cublasLt64_12.dll'),
+      ]);
+      expect(
+        LlamaCppService.windowsBackendDependencyPaths(
+          tempRoot.path,
+          'vulkan',
+          fileNames: const <String>['cudart64_12.dll'],
+        ),
+        isEmpty,
+      );
+    });
+
     test('falls back to hook cache extracted bundle directory', () {
       final extractedDir = Directory(
         path.join(
