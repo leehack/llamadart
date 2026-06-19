@@ -398,6 +398,8 @@ class LlamaCppService {
   final Set<String> _failedBackendModules = <String>{};
   final Map<String, DynamicLibrary> _loadedBackendLibraries =
       <String, DynamicLibrary>{};
+  final Map<String, List<DynamicLibrary>> _preloadedBackendDependencyLibraries =
+      <String, List<DynamicLibrary>>{};
   final List<DynamicLibrary> _preloadedCoreLibraries = <DynamicLibrary>[];
   bool _backendLoadAllSymbolUnavailable = false;
   bool _backendLoadAllFromPathSymbolUnavailable = false;
@@ -1835,6 +1837,8 @@ class LlamaCppService {
       candidates.addAll(fileNameCandidates);
     }
 
+    _preloadWindowsBackendDependencies(backend);
+
     for (final candidate in candidates) {
       if (path.isAbsolute(candidate) && !File(candidate).existsSync()) {
         continue;
@@ -1898,6 +1902,117 @@ class LlamaCppService {
     }
 
     return candidates.toList(growable: false);
+  }
+
+  void _preloadWindowsBackendDependencies(String backend) {
+    if (!Platform.isWindows) {
+      return;
+    }
+
+    final backendModuleDirectory = _backendModuleDirectory;
+    if (backendModuleDirectory == null) {
+      return;
+    }
+
+    final cacheKey =
+        '$backend|${path.normalize(backendModuleDirectory).toLowerCase()}';
+    if (_preloadedBackendDependencyLibraries.containsKey(cacheKey)) {
+      return;
+    }
+
+    final handles = <DynamicLibrary>[];
+    _preloadedBackendDependencyLibraries[cacheKey] = handles;
+
+    for (final dependencyPath in windowsBackendDependencyPaths(
+      backendModuleDirectory,
+      backend,
+    )) {
+      try {
+        handles.add(DynamicLibrary.open(dependencyPath));
+      } catch (error) {
+        _recordStartupDiagnostic(
+          'Failed to preload Windows backend dependency '
+          '`$dependencyPath` for `$backend`: $error',
+        );
+      }
+    }
+  }
+
+  /// Returns absolute paths for backend-owned Windows dependency DLLs that
+  /// should be loaded before asking llama.cpp to dynamically load [backend].
+  ///
+  /// `ggml_backend_load()` loads backend modules by absolute path, but Windows
+  /// resolves those modules' transitive imports through the process DLL search
+  /// path, not reliably through the module directory. Native-asset builds place
+  /// CUDA redistributables beside `ggml-cuda.dll`, so preloading those DLLs by
+  /// absolute path makes the subsequent backend load independent of PATH/current
+  /// directory state.
+  static List<String> windowsBackendDependencyPaths(
+    String directoryPath,
+    String backend, {
+    Iterable<String>? fileNames,
+  }) {
+    if (backend != 'cuda') {
+      return const <String>[];
+    }
+
+    final names =
+        fileNames?.toList(growable: false) ??
+        _listWindowsBackendDependencyFileNames(directoryPath);
+    final selected = <String>[];
+    for (final name in names) {
+      final lower = name.toLowerCase();
+      if (!lower.endsWith('.dll')) {
+        continue;
+      }
+      if (lower.startsWith('cudart64_') ||
+          lower.startsWith('cublas64_') ||
+          lower.startsWith('cublaslt64_')) {
+        selected.add(name);
+      }
+    }
+
+    selected.sort((a, b) {
+      final priorityCompare = _windowsCudaDependencyPriority(
+        a,
+      ).compareTo(_windowsCudaDependencyPriority(b));
+      if (priorityCompare != 0) {
+        return priorityCompare;
+      }
+      return a.toLowerCase().compareTo(b.toLowerCase());
+    });
+
+    return selected
+        .map((name) => path.join(directoryPath, name))
+        .toList(growable: false);
+  }
+
+  static List<String> _listWindowsBackendDependencyFileNames(
+    String directoryPath,
+  ) {
+    try {
+      return Directory(directoryPath)
+          .listSync()
+          .whereType<File>()
+          .map((file) => path.basename(file.path))
+          .toList(growable: false);
+    } catch (_) {
+      return const <String>[];
+    }
+  }
+
+  static int _windowsCudaDependencyPriority(String fileName) {
+    final lower = fileName.toLowerCase();
+    if (lower.startsWith('cudart64_')) {
+      return 0;
+    }
+    if (lower.startsWith('cublas64_')) {
+      return 1;
+    }
+    if (lower.startsWith('cublaslt64_')) {
+      return 2;
+    }
+    return 100;
   }
 
   bool _tryRegisterBackendModuleViaAsset(String backend) {

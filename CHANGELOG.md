@@ -1,3 +1,9 @@
+## Unreleased
+
+* Preloaded Windows CUDA redistributable DLLs from the resolved native backend
+  bundle directory before loading the CUDA backend module, so CUDA backend
+  discovery no longer depends on the app `PATH` or current working directory.
+
 ## 0.8.2
 
 * Updated the default llama.cpp native runtime pin to
