@@ -28,6 +28,12 @@ DEFAULT_LITERT_LM_PACKAGE_SWIFT = (
 DEFAULT_LITERT_LM_RUNTIME_DART = (
     "lib/src/backends/litert_lm/litert_lm_runtime.dart"
 )
+DEFAULT_LLAMA_CPP_PROJECT_DOCS = (
+    "README.md",
+    "website/docs/getting-started/installation.md",
+    "website/docs/platforms/support-matrix.md",
+)
+DEFAULT_CHANGELOG = "CHANGELOG.md"
 
 
 class ReleaseError(RuntimeError):
@@ -41,6 +47,10 @@ def main() -> int:
     llama_cpp_package_swift_path = repo_root / args.llama_cpp_package_swift
     litert_lm_package_swift_path = repo_root / args.litert_lm_package_swift
     litert_lm_runtime_dart_path = repo_root / args.litert_lm_runtime_dart
+    changelog_path = repo_root / DEFAULT_CHANGELOG
+    llama_cpp_project_doc_paths = [
+        repo_root / relative_path for relative_path in DEFAULT_LLAMA_CPP_PROJECT_DOCS
+    ]
 
     hook_text = hook_path.read_text(encoding="utf-8")
     pending_writes: dict[Path, str] = {}
@@ -93,6 +103,13 @@ def main() -> int:
                 resolved_llama_cpp_tag,
                 bump_version=swift_text != original_swift_text,
             )
+        update_llama_cpp_project_docs(
+            pending_writes,
+            llama_cpp_project_doc_paths,
+            changelog_path,
+            args.llamadart_native_repo,
+            resolved_llama_cpp_tag,
+        )
 
         summaries.append(
             f"llama.cpp -> {args.llamadart_native_repo}@{resolved_llama_cpp_tag}"
@@ -524,6 +541,104 @@ def update_companion_package_metadata(
             f"* Updated Apple SwiftPM native pin to `{repo}@{tag}`.",
             repo,
         )
+
+
+def update_llama_cpp_project_docs(
+    pending_writes: dict[Path, str],
+    doc_paths: list[Path],
+    changelog_path: Path,
+    repo: str,
+    tag: str,
+) -> None:
+    for doc_path in doc_paths:
+        if not doc_path.exists():
+            raise ReleaseError(f"Missing project native pin doc {doc_path}")
+        doc_text = doc_path.read_text(encoding="utf-8")
+        updated_doc_text = replace_llama_cpp_native_doc_references(
+            doc_text,
+            repo,
+            tag,
+        )
+        if updated_doc_text == doc_text:
+            raise ReleaseError(
+                f"Could not update llama.cpp native pin references in {doc_path}"
+            )
+        pending_writes[doc_path] = updated_doc_text
+
+    if not changelog_path.exists():
+        raise ReleaseError(f"Missing project CHANGELOG {changelog_path}")
+    changelog_text = changelog_path.read_text(encoding="utf-8")
+    pending_writes[changelog_path] = update_core_changelog_native_pin(
+        changelog_text,
+        repo,
+        tag,
+    )
+
+
+def replace_llama_cpp_native_doc_references(
+    doc_text: str,
+    repo: str,
+    tag: str,
+) -> str:
+    replacements = (
+        (r"(llamadart_native_tag:\s*)b[0-9]+", rf"\g<1>{tag}"),
+        (
+            rf"({re.escape(repo)}@)b[0-9]+",
+            rf"\g<1>{tag}",
+        ),
+        (
+            r"(llamadart-native-[a-z0-9_-]+-)b[0-9]+(?=\.tar\.gz`)",
+            rf"\g<1>{tag}",
+        ),
+        (
+            r"(default native tag `)b[0-9]+(`)",
+            rf"\g<1>{tag}\2",
+        ),
+        (
+            r"(llamadart-native` tag `)b[0-9]+(`)",
+            rf"\g<1>{tag}\2",
+        ),
+        (
+            r"(module availability by bundle \(`)b[0-9]+(`\))",
+            rf"\g<1>{tag}\2",
+        ),
+    )
+    for pattern, replacement in replacements:
+        doc_text = re.sub(pattern, replacement, doc_text)
+    return doc_text
+
+
+def update_core_changelog_native_pin(
+    changelog_text: str,
+    repo: str,
+    tag: str,
+) -> str:
+    entry = (
+        "* Updated the default llama.cpp native runtime pin to\n"
+        f"  `{repo}@{tag}`, regenerated matching Dart FFI bindings, refreshed\n"
+        "  the `llamadart_llama_cpp_flutter` Apple SwiftPM checksum, and\n"
+        "  aligned current README/website native override docs."
+    )
+    heading_match = re.search(r"(?m)^## Unreleased\s*\n+", changelog_text)
+    if not heading_match:
+        return f"## Unreleased\n\n{entry}\n\n{changelog_text.lstrip()}"
+
+    body_start = heading_match.end()
+    next_heading = re.search(r"(?m)^##\s+", changelog_text[body_start:])
+    body_end = (
+        body_start + next_heading.start() if next_heading else len(changelog_text)
+    )
+    body = changelog_text[body_start:body_end]
+    old_entry_pattern = re.compile(
+        r"^\* Updated the default llama\.cpp native runtime pin to(?:\n  .*)*\n?",
+        re.MULTILINE,
+    )
+    body = old_entry_pattern.sub("", body).lstrip()
+    return (
+        changelog_text[:body_start]
+        + f"{entry}\n\n{body}"
+        + changelog_text[body_end:]
+    )
 
 
 def companion_pubspec_version(pubspec_text: str, pubspec_path: Path) -> str:

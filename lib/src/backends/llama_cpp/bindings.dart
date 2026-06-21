@@ -9071,89 +9071,91 @@ typedef llama_model_set_tensor_data_t =
 
 final class gguf_context extends ffi.Opaque {}
 
-final class __sbuf extends ffi.Struct {
-  external ffi.Pointer<ffi.UnsignedChar> _base;
+final class _IO_marker extends ffi.Opaque {}
 
+typedef __off_t = ffi.Long;
+typedef Dart__off_t = int;
+typedef _IO_lock_t = ffi.Void;
+typedef Dart_IO_lock_t = void;
+typedef __off64_t = ffi.Long;
+typedef Dart__off64_t = int;
+
+final class _IO_codecvt extends ffi.Opaque {}
+
+final class _IO_wide_data extends ffi.Opaque {}
+
+final class _IO_FILE extends ffi.Struct {
   @ffi.Int()
-  external int _size;
-}
-
-typedef __int64_t = ffi.LongLong;
-typedef Dart__int64_t = int;
-typedef __darwin_off_t = __int64_t;
-typedef fpos_t = __darwin_off_t;
-
-final class __sFILEX extends ffi.Opaque {}
-
-final class __sFILE extends ffi.Struct {
-  external ffi.Pointer<ffi.UnsignedChar> _p;
-
-  @ffi.Int()
-  external int _r;
-
-  @ffi.Int()
-  external int _w;
-
-  @ffi.Short()
   external int _flags;
 
-  @ffi.Short()
-  external int _file;
+  external ffi.Pointer<ffi.Char> _IO_read_ptr;
 
-  external __sbuf _bf;
+  external ffi.Pointer<ffi.Char> _IO_read_end;
 
-  @ffi.Int()
-  external int _lbfsize;
+  external ffi.Pointer<ffi.Char> _IO_read_base;
 
-  external ffi.Pointer<ffi.Void> _cookie;
+  external ffi.Pointer<ffi.Char> _IO_write_base;
 
-  external ffi.Pointer<
-    ffi.NativeFunction<ffi.Int Function(ffi.Pointer<ffi.Void>)>
-  >
-  _close;
+  external ffi.Pointer<ffi.Char> _IO_write_ptr;
 
-  external ffi.Pointer<
-    ffi.NativeFunction<
-      ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>, ffi.Int)
-    >
-  >
-  _read;
+  external ffi.Pointer<ffi.Char> _IO_write_end;
 
-  external ffi.Pointer<
-    ffi.NativeFunction<fpos_t Function(ffi.Pointer<ffi.Void>, fpos_t, ffi.Int)>
-  >
-  _seek;
+  external ffi.Pointer<ffi.Char> _IO_buf_base;
 
-  external ffi.Pointer<
-    ffi.NativeFunction<
-      ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>, ffi.Int)
-    >
-  >
-  _write;
+  external ffi.Pointer<ffi.Char> _IO_buf_end;
 
-  external __sbuf _ub;
+  external ffi.Pointer<ffi.Char> _IO_save_base;
 
-  external ffi.Pointer<__sFILEX> _extra;
+  external ffi.Pointer<ffi.Char> _IO_backup_base;
+
+  external ffi.Pointer<ffi.Char> _IO_save_end;
+
+  external ffi.Pointer<_IO_marker> _markers;
+
+  external ffi.Pointer<_IO_FILE> _chain;
 
   @ffi.Int()
-  external int _ur;
+  external int _fileno;
 
-  @ffi.Array.multi([3])
-  external ffi.Array<ffi.UnsignedChar> _ubuf;
+  @ffi.Int()
+  external int _flags2;
+
+  @__off_t()
+  external int _old_offset;
+
+  @ffi.UnsignedShort()
+  external int _cur_column;
+
+  @ffi.SignedChar()
+  external int _vtable_offset;
 
   @ffi.Array.multi([1])
-  external ffi.Array<ffi.UnsignedChar> _nbuf;
+  external ffi.Array<ffi.Char> _shortbuf;
 
-  external __sbuf _lb;
+  external ffi.Pointer<_IO_lock_t> _lock;
+
+  @__off64_t()
+  external int _offset;
+
+  external ffi.Pointer<_IO_codecvt> _codecvt;
+
+  external ffi.Pointer<_IO_wide_data> _wide_data;
+
+  external ffi.Pointer<_IO_FILE> _freeres_list;
+
+  external ffi.Pointer<ffi.Void> _freeres_buf;
+
+  @ffi.Size()
+  external int __pad5;
 
   @ffi.Int()
-  external int _blksize;
+  external int _mode;
 
-  @fpos_t()
-  external int _offset;
+  @ffi.Array.multi([20])
+  external ffi.Array<ffi.Char> _unused2;
 }
 
-typedef FILE = __sFILE;
+typedef FILE = _IO_FILE;
 typedef llama_state_seq_flags = ffi.Uint32;
 typedef Dartllama_state_seq_flags = int;
 
