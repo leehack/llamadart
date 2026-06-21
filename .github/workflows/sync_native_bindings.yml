@@ -76,11 +76,13 @@ jobs:
             - Updates LiteRT-LM Dart runtime version and archive checksums when `litert_lm_tag` is not `keep`.
             - Updates Apple SPM companion `Package.swift` binary target pins in `packages/`.
             - Bumps companion package patch versions and updates their README/CHANGELOG native pin notes when SPM pins change.
+            - Updates current README/website native pin docs and the core changelog when the llama.cpp native pin changes.
 
             Native version checklist:
             - [ ] Confirm `leehack/llamadart-native` release `${{ steps.sync_headers.outputs.resolved_tag }}` includes the required native-assets archives.
-            - [ ] If `${{ github.event.inputs.litert_lm_tag }}` is not `keep`, confirm `leehack/litert-lm-native` release `${{ steps.sync_pins.outputs.resolved_litert_lm_tag }}` includes the required runtime archives.
+            - [ ] If LiteRT-LM sync was requested (`litert_lm_tag` is not `keep`), confirm `leehack/litert-lm-native` release `${{ steps.sync_pins.outputs.resolved_litert_lm_tag }}` includes the required runtime archives.
             - [ ] Confirm matching Apple SPM pins changed under `packages/` when Apple XCFramework releases changed.
+            - [ ] Confirm current README/website native pin docs and `CHANGELOG.md` describe the new default pin.
           branch: "automation/native-sync-${{ steps.sync_headers.outputs.resolved_tag }}"
           labels: automation/native-sync
           add-paths: |
@@ -95,4 +97,8 @@ jobs:
             packages/llamadart_litert_lm_flutter/README.md
             lib/src/backends/litert_lm/litert_lm_runtime.dart
             lib/src/backends/llama_cpp/bindings.dart
+            CHANGELOG.md
+            README.md
+            website/docs/getting-started/installation.md
+            website/docs/platforms/support-matrix.md
           delete-branch: true

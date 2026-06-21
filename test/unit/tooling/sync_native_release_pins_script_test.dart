@@ -74,6 +74,7 @@ const _litertLmVersion = '1.0.0';
       'packages/llamadart_litert_lm_flutter',
       'leehack/litert-lm-native',
     );
+    await _writeProjectDocs(root);
 
     const llamaTag = 'b9999';
     const litertTag = 'v9.9.9';
@@ -167,6 +168,58 @@ const _litertLmVersion = '1.0.0';
       ),
     );
     expect(llamaChangelog, isNot(contains('## Unreleased')));
+
+    final rootReadme = await File(
+      path.join(root.path, 'README.md'),
+    ).readAsString();
+    expect(rootReadme, contains('llamadart_native_tag: $llamaTag'));
+    expect(
+      rootReadme,
+      contains('default `leehack/llamadart-native@$llamaTag` runtime'),
+    );
+    expect(
+      rootReadme,
+      contains('llamadart-native-windows-x64-$llamaTag.tar.gz'),
+    );
+    expect(rootReadme, contains('default native tag `$llamaTag`'));
+    expect(
+      rootReadme,
+      contains('`leehack/llamadart-native@$llamaTag` Apple XCFramework'),
+    );
+    expect(rootReadme, isNot(contains('b0001')));
+
+    final installDoc = await File(
+      path.join(root.path, 'website/docs/getting-started/installation.md'),
+    ).readAsString();
+    expect(installDoc, contains('llamadart_native_tag: $llamaTag'));
+    expect(
+      installDoc,
+      contains('default `leehack/llamadart-native@$llamaTag` runtime'),
+    );
+    expect(
+      installDoc,
+      contains('llamadart-native-windows-x64-$llamaTag.tar.gz'),
+    );
+    expect(installDoc, isNot(contains('b0001')));
+
+    final supportMatrix = await File(
+      path.join(root.path, 'website/docs/platforms/support-matrix.md'),
+    ).readAsString();
+    expect(supportMatrix, contains('pins `llamadart-native` tag `$llamaTag`'));
+    expect(
+      supportMatrix,
+      contains('module availability by bundle (`$llamaTag`)'),
+    );
+    expect(supportMatrix, contains('llamadart_native_tag: $llamaTag'));
+    expect(supportMatrix, isNot(contains('b0001')));
+
+    final coreChangelog = await File(
+      path.join(root.path, 'CHANGELOG.md'),
+    ).readAsString();
+    expect(coreChangelog, startsWith('## Unreleased'));
+    expect(coreChangelog, contains('`leehack/llamadart-native@$llamaTag`'));
+    expect(coreChangelog, contains('* Existing unreleased note.'));
+    expect(coreChangelog, isNot(contains('b0001')));
 
     final litertSwift = await File(
       path.join(
@@ -293,6 +346,61 @@ The Apple SwiftPM manifest pins `$repo@old`.
 ## 0.0.1
 
 * Initial package.
+''');
+}
+
+Future<void> _writeProjectDocs(Directory root) async {
+  await File(path.join(root.path, 'README.md')).writeAsString('''
+llamadart_native_tag: b0001
+
+ABI-compatible with the default `leehack/llamadart-native@b0001` runtime.
+
+`llamadart-native-windows-x64-b0001.tar.gz`
+
+Available llama.cpp module matrix from the default native tag `b0001`:
+
+| Native llama.cpp / GGUF | `leehack/llamadart-native@b0001` |
+| Apple SPM llama.cpp / GGUF | `llamadart_llama_cpp_flutter` pins `leehack/llamadart-native@b0001` Apple XCFramework |
+''');
+
+  final installDoc = File(
+    path.join(root.path, 'website/docs/getting-started/installation.md'),
+  );
+  await installDoc.parent.create(recursive: true);
+  await installDoc.writeAsString('''
+llamadart_native_tag: b0001
+
+ABI-compatible with the default `leehack/llamadart-native@b0001` runtime.
+
+`llamadart-native-windows-x64-b0001.tar.gz`
+''');
+
+  final supportMatrix = File(
+    path.join(root.path, 'website/docs/platforms/support-matrix.md'),
+  );
+  await supportMatrix.parent.create(recursive: true);
+  await supportMatrix.writeAsString('''
+The native-assets hook currently pins `llamadart-native` tag `b0001` and
+`litert-lm-native` release `v0.13.1-native.1`.
+
+## Current llama.cpp module availability by bundle (`b0001`)
+
+llamadart_native_tag: b0001
+''');
+
+  await File(path.join(root.path, 'CHANGELOG.md')).writeAsString('''
+## Unreleased
+
+* Updated the default llama.cpp native runtime pin to
+  `leehack/llamadart-native@b0001`, regenerated matching Dart FFI bindings,
+  refreshed the `llamadart_llama_cpp_flutter` Apple SwiftPM checksum, and
+  aligned current README/website native override docs.
+
+* Existing unreleased note.
+
+## 0.1.0
+
+* Previous release.
 ''');
 }
 

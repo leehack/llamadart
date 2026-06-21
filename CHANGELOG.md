@@ -1,5 +1,10 @@
 ## Unreleased
 
+* Updated the default llama.cpp native runtime pin to
+  `leehack/llamadart-native@b9744`, regenerated matching Dart FFI bindings,
+  refreshed the `llamadart_llama_cpp_flutter` Apple SwiftPM checksum, and
+  aligned current README/website native override docs.
+
 * Expanded llama.cpp chat-template parity coverage for the latest upstream
   template fixtures, including Cohere2 MoE, LFM2.5 tool-call, and Granite 4.1
   templates. LFM2.5 templates that use plain `List of tools: [...]` prompts
