@@ -18,15 +18,13 @@ Future<void> main(List<String> args) async {
   }
 
   final backend = args.length > 1 ? _parseBackend(args[1]) : GpuBackend.auto;
-  final mmprojPath = args.length > 2
-      ? args[2]
-      : Platform.environment['GGUF_MMPROJ'];
-  final imagePath = args.length > 3
-      ? args[3]
-      : Platform.environment['GGUF_IMAGE'];
-  final hasMmproj = mmprojPath != null && mmprojPath.trim().isNotEmpty;
-  final hasImage = imagePath != null && imagePath.trim().isNotEmpty;
-  if (hasImage && !hasMmproj) {
+  final mmprojPath = _nonEmptyTrimmed(
+    args.length > 2 ? args[2] : Platform.environment['GGUF_MMPROJ'],
+  );
+  final imagePath = _nonEmptyTrimmed(
+    args.length > 3 ? args[3] : Platform.environment['GGUF_IMAGE'],
+  );
+  if (imagePath != null && mmprojPath == null) {
     stderr.writeln('GGUF_IMAGE/image-path requires GGUF_MMPROJ/mmproj path.');
     exitCode = 64;
     return;
@@ -45,7 +43,7 @@ Future<void> main(List<String> args) async {
         numberOfThreadsBatch: 4,
       ),
     );
-    if (hasMmproj) {
+    if (mmprojPath != null) {
       await engine.loadMultimodalProjector(mmprojPath);
     }
 
@@ -136,7 +134,7 @@ Future<void> main(List<String> args) async {
       toolChoice: ToolChoice.required,
     );
 
-    final multimodal = hasMmproj && hasImage
+    final multimodal = mmprojPath != null && imagePath != null
         ? await _runScenario(
             engine: engine,
             name: 'multimodal',
@@ -182,6 +180,11 @@ Future<void> main(List<String> args) async {
   } finally {
     await engine.dispose();
   }
+}
+
+String? _nonEmptyTrimmed(String? value) {
+  final trimmed = value?.trim();
+  return trimmed == null || trimmed.isEmpty ? null : trimmed;
 }
 
 Future<_ScenarioResult> _runScenario({
