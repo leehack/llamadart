@@ -28,6 +28,14 @@ void main() {
       expect(format, equals(ChatFormat.lfm2));
     });
 
+    test('detects LFM2.5 tool-call templates from plain tool list markers', () {
+      const source =
+          'List of tools: [{"name":"search"}]'
+          '<|tool_call_start|>[search(query="llama")]<|tool_call_end|>';
+      final format = detectChatFormat(source);
+      expect(format, equals(ChatFormat.lfm2));
+    });
+
     test('falls back to content-only for standard ChatML', () {
       const source = '<|im_start|>user\nhi<|im_end|>';
       final format = detectChatFormat(source);
@@ -45,6 +53,14 @@ void main() {
           '<|START_THINKING|><|END_THINKING|><|START_TEXT|>{{ content }}<|END_TEXT|><|START_ACTION|>[]<|END_ACTION|>';
       final format = detectChatFormat(source);
       expect(format, equals(ChatFormat.cohere2Moe));
+    });
+
+    test('detects Granite 4.1 XML tool-call template through Hermes path', () {
+      const source =
+          '<|start_of_role|>assistant<|end_of_role|>'
+          '<tool_call>{"name": "search", "arguments": {}}</tool_call>';
+      final format = detectChatFormat(source);
+      expect(format, equals(ChatFormat.hermes));
     });
 
     test('detects GPT-OSS format', () {

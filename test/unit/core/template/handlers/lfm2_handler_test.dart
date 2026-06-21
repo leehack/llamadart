@@ -2,10 +2,12 @@ import 'dart:convert';
 
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
+import 'package:llamadart/src/core/models/inference/tool_choice.dart';
 import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:llamadart/src/core/models/tools/tool_param.dart';
 import 'package:llamadart/src/core/template/chat_format.dart';
 import 'package:llamadart/src/core/template/handlers/lfm2_handler.dart';
+import 'package:llamadart/src/core/template/template_internal_metadata.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -53,6 +55,22 @@ void main() {
     expect(renderedWithMarker.grammarLazy, isTrue);
     expect(renderedWithMarker.grammarTriggers, hasLength(1));
 
+    final renderedWithRequiredChoice = handler.render(
+      templateSource: '{{ messages[0]["content"] }}',
+      messages: const [
+        LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hello'),
+      ],
+      metadata: {internalToolChoiceMetadataKey: ToolChoice.required.name},
+      tools: tools,
+    );
+    expect(renderedWithRequiredChoice.grammar, isNotNull);
+    expect(
+      renderedWithRequiredChoice.grammar,
+      contains('"<|tool_call_start|>"'),
+    );
+    expect(renderedWithRequiredChoice.grammarLazy, isFalse);
+    expect(renderedWithRequiredChoice.grammarTriggers, hasLength(1));
+
     final modern = handler.parse(
       '<|tool_call_start|>[{"name":"search","arguments":{"query":"llama"}}]<|tool_call_end|>',
     );
@@ -62,6 +80,26 @@ void main() {
       jsonDecode(modern.toolCalls.first.function!.arguments!),
       containsPair('query', 'llama'),
     );
+
+    final pythonStyle = handler.parse(
+      '<|tool_call_start|>[search(query=\'llama, dart\', limit=2, exact=true)]<|tool_call_end|>',
+    );
+    expect(pythonStyle.toolCalls, hasLength(1));
+    expect(pythonStyle.toolCalls.first.function?.name, equals('search'));
+    expect(jsonDecode(pythonStyle.toolCalls.first.function!.arguments!), {
+      'query': 'llama, dart',
+      'limit': 2,
+      'exact': true,
+    });
+
+    final parallelPythonStyle = handler.parse(
+      '<|tool_call_start|>[search(query=\'llama\'), search(query=\'dart\')]<|tool_call_end|>',
+    );
+    expect(parallelPythonStyle.toolCalls, hasLength(2));
+    expect(parallelPythonStyle.toolCalls[0].index, 0);
+    expect(parallelPythonStyle.toolCalls[1].index, 1);
+    expect(parallelPythonStyle.toolCalls[0].function?.name, equals('search'));
+    expect(parallelPythonStyle.toolCalls[1].function?.name, equals('search'));
 
     final inThinking = handler.parse(
       '<think>reasoning <|tool_call_start|>[{"name":"search","arguments":{"query":"llama"}}]<|tool_call_end|></think>',

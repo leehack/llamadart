@@ -1,3 +1,18 @@
+## Unreleased
+
+* Expanded llama.cpp chat-template parity coverage for the latest upstream
+  template fixtures, including Cohere2 MoE, LFM2.5 tool-call, and Granite 4.1
+  templates. LFM2.5 templates that use plain `List of tools: [...]` prompts
+  with `<|tool_call_start|>` / `<|tool_call_end|>` now route through the LFM2
+  handler like upstream llama.cpp, and `ToolChoice.required` now uses
+  grammar-constrained LFM2 tool-call generation.
+
+* Fixed streaming tool-call parsing so partial North/Cohere bare action arrays
+  are not emitted as content before the complete tool call is parsed.
+
+* Expanded the local GGUF chat feature smoke to cover thinking, tool-call, and
+  optional multimodal turns through the unified local E2E runner.
+
 ## 0.8.3
 
 * Fixed Windows CUDA backend discovery when the native asset bundle directory is

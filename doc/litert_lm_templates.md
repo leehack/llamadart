@@ -80,7 +80,8 @@ For GGUF / llama.cpp, `tool/gguf_chat_features_smoke.dart` loads a local GGUF
 through `LlamaEngine(LlamaBackend())`, verifies that `enableThinking: false`
 does not leak reasoning markers, and verifies that a required `get_weather`
 tool call is emitted as a final `tool_calls` chunk with no raw tool-call marker
-or content leak:
+or content leak. When passed a multimodal projector and image path, it also
+runs a short image-description turn:
 
 ```bash
 dart run tool/gguf_chat_features_smoke.dart \
@@ -88,6 +89,11 @@ dart run tool/gguf_chat_features_smoke.dart \
 
 dart run tool/gguf_chat_features_smoke.dart \
   models/gemma-4-E2B-it-Q4_K_S.gguf auto
+
+dart run tool/gguf_chat_features_smoke.dart \
+  models/Qwen3.5-0.8B-Q4_K_M.gguf cpu \
+  models/Qwen3.5-0.8B-mmproj-F16.gguf \
+  test/fixtures/image.png
 ```
 
 For native LiteRT-LM, `tool/litert_lm_chat_features_smoke.dart` checks the same

@@ -36,6 +36,7 @@ void main() {
       'Apriel-1.6-15b-Thinker-fixed.jinja': ChatFormat.contentOnly,
       'Bielik-11B-v3.0-Instruct.jinja': ChatFormat.hermes,
       'ByteDance-Seed-OSS.jinja': ChatFormat.seedOss,
+      'Cohere2MoE.jinja': ChatFormat.cohere2Moe,
       'CohereForAI-c4ai-command-r-plus-tool_use.jinja': ChatFormat.contentOnly,
       'CohereForAI-c4ai-command-r7b-12-2024-tool_use.jinja':
           ChatFormat.commandR7B,
@@ -47,6 +48,7 @@ void main() {
       'Kimi-K2-Instruct.jinja': ChatFormat.kimiK2,
       'Kimi-K2-Thinking.jinja': ChatFormat.kimiK2,
       'LFM2-8B-A1B.jinja': ChatFormat.lfm2,
+      'LFM2.5-8B-A1B.jinja': ChatFormat.lfm2,
       'LFM2.5-Instruct.jinja': ChatFormat.contentOnly,
       'MiMo-VL.jinja': ChatFormat.hermes,
       'MiniMax-M2.jinja': ChatFormat.minimaxM2,
@@ -71,6 +73,7 @@ void main() {
       'google-gemma-4-31B-it.jinja': ChatFormat.gemma4,
       'ibm-granite-granite-3.3-2B-Instruct.jinja': ChatFormat.granite,
       'ibm-granite-granite-4.0.jinja': ChatFormat.hermes,
+      'ibm-granite-granite-4.1.jinja': ChatFormat.hermes,
       'llama-cpp-deepseek-r1.jinja': ChatFormat.deepseekR1,
       'llama-cpp-rwkv-world.jinja': ChatFormat.contentOnly,
       'meetkai-functionary-medium-v3.1.jinja': ChatFormat.functionaryV31Llama31,

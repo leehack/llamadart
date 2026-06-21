@@ -504,7 +504,7 @@ void main() {
       expect(result.grammarLazy, isFalse);
     });
 
-    test('keeps strict LFM2 marker templates on LFM2 handler', () {
+    test('uses LFM2 grammar for strict LFM2 required tool choice', () {
       const template =
           'List of tools: <|tool_list_start|>[{"name":"x"}]<|tool_list_end|>'
           '<|im_start|>user\n{{ messages[0]["content"] }}<|im_end|>';
@@ -518,7 +518,8 @@ void main() {
       );
 
       expect(result.format, equals(ChatFormat.lfm2.index));
-      expect(result.grammar, isNull);
+      expect(result.grammar, isNotNull);
+      expect(result.grammarLazy, isFalse);
     });
 
     test('keeps lazy grammar for strict LFM2 force-json-schema mode', () {
@@ -540,7 +541,7 @@ void main() {
         ],
         metadata: const {},
         tools: tools,
-        toolChoice: ToolChoice.required,
+        toolChoice: ToolChoice.auto,
       );
 
       expect(result.format, equals(ChatFormat.lfm2.index));

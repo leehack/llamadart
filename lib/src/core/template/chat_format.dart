@@ -61,7 +61,7 @@ enum ChatFormat {
   /// Apertus format with `<|tools_prefix|>` and `<|tools_suffix|>`.
   apertus,
 
-  /// LFM2 — `<|tool_call_start|>/<|tool_call_end|>` special tokens.
+  /// LFM2 / LFM2.5 — `<|tool_call_start|>/<|tool_call_end|>` special tokens.
   lfm2,
 
   /// GLM 4.5 — `<|observation|>` with XML-style arg_key/arg_value.
@@ -218,9 +218,15 @@ ChatFormat detectChatFormat(String? templateSource) {
     return ChatFormat.apertus;
   }
 
-  // LFM2
-  if (templateSource.contains('List of tools: <|tool_list_start|>[') &&
-      templateSource.contains(']<|tool_list_end|>')) {
+  // LFM2 / LFM2.5. Upstream llama.cpp routes both the strict marker variant
+  // and the plain "List of tools: [...]" variant when the template also emits
+  // LFM tool-call delimiters.
+  if ((templateSource.contains('List of tools: <|tool_list_start|>[') &&
+          templateSource.contains(']<|tool_list_end|>')) ||
+      (templateSource.contains('List of tools: [') &&
+          templateSource.contains('<|tool_call_start|>') &&
+          templateSource.contains('<|tool_call_end|>') &&
+          !templateSource.contains('<|tool_list_start|>'))) {
     return ChatFormat.lfm2;
   }
 

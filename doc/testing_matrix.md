@@ -139,6 +139,12 @@ dart run tool/testing/run_local_e2e.dart --scenario gguf-chat-features-smoke \
   --model-path models/Qwen3.5-0.8B-Q4_K_M.gguf \
   --backend auto
 
+dart run tool/testing/run_local_e2e.dart --scenario gguf-chat-features-smoke \
+  --model-path models/Qwen3.5-0.8B-Q4_K_M.gguf \
+  --backend cpu \
+  --mmproj-path models/Qwen3.5-0.8B-mmproj-F16.gguf \
+  --image-path test/fixtures/image.png
+
 dart run tool/testing/run_local_e2e.dart --scenario litert-lm-chat-features-smoke \
   --model-path /path/to/gemma-4-E2B-it.litertlm \
   --backend auto
@@ -168,7 +174,7 @@ Example filled row:
 
 | Matrix row | Scope covered | Platform / model / backend | Result | Evidence / notes |
 | --- | --- | --- | --- | --- |
-| `gguf-chat-features-smoke` | real GGUF chat/tool/thinking smoke | macOS arm64, Qwen3.5-0.8B-Q4_K_M.gguf, llama.cpp auto | PASS | `RESULT gguf_chat_features ...`, no thinking marker leak, one `get_weather` tool call |
+| `gguf-chat-features-smoke` | real GGUF chat/tool/thinking/multimodal smoke | macOS arm64, Qwen3.5-0.8B-Q4_K_M.gguf, llama.cpp auto/cpu | PASS | `RESULT gguf_chat_features ...`, no thinking marker leak, one `get_weather` tool call, optional image output |
 
 ## Agentic Workflow
 

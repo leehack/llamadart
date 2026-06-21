@@ -1902,6 +1902,56 @@ void main() {
       });
     });
 
+    test('create suppresses partial Cohere bare action array content', () async {
+      final cohereBackend = MockLlamaBackend(
+        modelMetadataResponse: const {
+          'llm.context_length': '4096',
+          'tokenizer.chat_template':
+              '{% for message in messages %}{{ message["content"] }}{% endfor %}'
+              '{% if add_generation_prompt %}<|START_TEXT|>{% endif %}'
+              '{# <|START_ACTION|> #}',
+        },
+      );
+      final cohereEngine = LlamaEngine(cohereBackend);
+      cohereBackend.generationChunks = const [
+        '[{"tool_name":"get_weather",',
+        '"parameters":{"location":"Seoul"}}]',
+      ];
+      await cohereEngine.loadModel('north-code-test.gguf');
+
+      final chunks = await cohereEngine
+          .create(
+            const [
+              LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hi'),
+            ],
+            tools: [
+              ToolDefinition(
+                name: 'get_weather',
+                description: 'Get weather',
+                parameters: [ToolParam.string('location')],
+                handler: (_) async => 'ok',
+              ),
+            ],
+            toolChoice: ToolChoice.required,
+          )
+          .toList();
+
+      final streamedContent = chunks
+          .map((chunk) => chunk.choices.first.delta.content)
+          .whereType<String>()
+          .join();
+      final toolChunk = chunks.last;
+      final toolCalls = toolChunk.choices.first.delta.toolCalls;
+
+      expect(streamedContent, isEmpty);
+      expect(toolChunk.choices.first.finishReason, equals('tool_calls'));
+      expect(toolCalls, hasLength(1));
+      expect(toolCalls!.first.function?.name, equals('get_weather'));
+      expect(jsonDecode(toolCalls.first.function!.arguments!), {
+        'location': 'Seoul',
+      });
+    });
+
     test('create streams raw xml text when tools are enabled', () async {
       backend.generationChunks = const ['  <div', '>hello', '</div>\n'];
       await engine.loadModel('qwen-test.gguf');
