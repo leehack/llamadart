@@ -9,7 +9,7 @@ core package's native-assets fallback.
 
 ```yaml
 dependencies:
-  llamadart: ^0.8.3
+  llamadart: ^0.8.4
   llamadart_llama_cpp_flutter: ^0.0.4
 ```
 
