@@ -2,8 +2,9 @@ import 'dart:async';
 import 'dart:convert';
 
 import '../../backends/backend.dart';
+import 'chat_completion_request_planner.dart';
 import 'chat_completion_stream_parser.dart';
-import '../template/chat_template_engine.dart';
+import 'chat_template_renderer.dart';
 import '../exceptions.dart';
 import '../models/config/gpu_backend.dart';
 import '../models/config/gpu_device_info.dart';
@@ -11,7 +12,6 @@ import '../models/config/log_level.dart';
 import '../models/chat/chat_message.dart';
 import '../models/chat/completion_chunk.dart';
 import '../models/chat/content_part.dart';
-import '../models/chat/chat_role.dart';
 import '../models/chat/chat_template_result.dart';
 import '../llama_logger.dart';
 
@@ -450,12 +450,13 @@ class LlamaEngine {
     // Keep tools available to template routing even with toolChoice.none,
     // matching llama.cpp behavior.
     final effectiveTools = tools;
+    final effectiveToolChoice = toolChoice ?? ToolChoice.auto;
 
     // Apply chat template with tools - returns grammar for constraining
     final result = await chatTemplate(
       messages,
       tools: effectiveTools,
-      toolChoice: toolChoice ?? ToolChoice.auto,
+      toolChoice: effectiveToolChoice,
       parallelToolCalls: parallelToolCalls,
       enableThinking: enableThinking,
       responseFormat: responseFormat,
@@ -465,100 +466,27 @@ class LlamaEngine {
       templateNow: templateNow,
       includeTokenCount: false,
     );
-    final stops = {...result.stopSequences, ...?params?.stopSequences}.toList();
-
-    LlamaLogger.instance.debug('Chat template result:');
-    LlamaLogger.instance.debug('  Format: ${result.format}');
-    LlamaLogger.instance.debug('  Prompt: ${result.prompt}');
-    LlamaLogger.instance.debug('  Stop sequences: $stops');
-    LlamaLogger.instance.debug('  Grammar present: ${result.grammar != null}');
-    LlamaLogger.instance.debug('  Grammar lazy: ${result.grammarLazy}');
-    LlamaLogger.instance.debug(
-      '  Grammar triggers: ${result.grammarTriggers.length}',
+    final plan = ChatCompletionRequestPlanner.build(
+      backend: backend,
+      templateResult: result,
+      messages: messages,
+      params: params,
+      tools: effectiveTools,
+      toolChoice: effectiveToolChoice,
+      parallelToolCalls: parallelToolCalls,
+      responseFormat: responseFormat,
     );
-    LlamaLogger.instance.debug(
-      '  Thinking forced open: ${result.thinkingForcedOpen}',
-    );
-
-    // Collect media parts from all messages
-    final allParts = messages.expand((m) => m.parts).toList();
-
-    final activeBackend = backend;
-    final backendSupportsGrammarConstraints =
-        activeBackend is BackendGrammarConstraintsSupport
-        ? (activeBackend as BackendGrammarConstraintsSupport)
-              .supportsGrammarConstraints
-        : true;
-    if (!backendSupportsGrammarConstraints && result.grammar != null) {
-      LlamaLogger.instance.debug(
-        '  Template grammar skipped: backend does not support grammar constraints',
-      );
-    }
-    if (!backendSupportsGrammarConstraints &&
-        _hasSchemaResponseFormat(responseFormat)) {
-      throw LlamaUnsupportedException(
-        'Strict responseFormat output requires '
-        'grammar-constrained decoding, but the active backend does not '
-        'support grammar constraints. For example, LiteRT-LM native and web '
-        'currently do not expose public runtime wiring for JSON-schema/Lark '
-        'constraints; '
-        'use a grammar-capable backend such as llama.cpp, or omit '
-        'responseFormat for best-effort JSON output.',
-      );
-    }
-
-    final hasTemplateGrammar =
-        result.grammar != null && backendSupportsGrammarConstraints;
-    final effectiveGrammar = hasTemplateGrammar
-        ? result.grammar
-        : params?.grammar;
-    final effectiveGrammarLazy = hasTemplateGrammar
-        ? result.grammarLazy
-        : (params?.grammarLazy ?? false);
-    final effectiveGrammarTriggers = hasTemplateGrammar
-        ? result.grammarTriggers
-              .map(
-                (trigger) => GenerationGrammarTrigger(
-                  type: trigger.type,
-                  value: trigger.value,
-                  token: trigger.token,
-                ),
-              )
-              .toList(growable: false)
-        : (params?.grammarTriggers ?? const <GenerationGrammarTrigger>[]);
-    final effectivePreservedTokens = {
-      if (backendSupportsGrammarConstraints) ...result.preservedTokens,
-      ...?params?.preservedTokens,
-    }.toList(growable: false);
 
     // Generate raw tokens with grammar constraint. Backends that can consume
     // structured chat natively may receive the original messages/tools, while
     // all other backends keep the rendered prompt path.
-    final effectiveParams = (params ?? const GenerationParams()).copyWith(
-      stopSequences: stops,
-      grammar: effectiveGrammar,
-      grammarLazy: effectiveGrammarLazy,
-      grammarTriggers: effectiveGrammarTriggers,
-      preservedTokens: effectivePreservedTokens,
-    );
-    final nativeChatBackend = activeBackend is BackendNativeChatGeneration
-        ? activeBackend as BackendNativeChatGeneration
-        : null;
-    final useNativeChatGeneration =
-        nativeChatBackend != null &&
-        _canUseNativeChatGeneration(
-          nativeChatBackend,
-          messages,
-          toolChoice: toolChoice ?? ToolChoice.auto,
-          parallelToolCalls: parallelToolCalls,
-        );
-    final tokenStream = useNativeChatGeneration
+    final tokenStream = plan.usesNativeChatGeneration
         ? _generateNativeChat(
-            nativeChatBackend,
+            plan.nativeChatBackend!,
             messages,
-            params: effectiveParams,
+            params: plan.generationParams,
             tools: effectiveTools,
-            toolChoice: toolChoice ?? ToolChoice.auto,
+            toolChoice: effectiveToolChoice,
             parallelToolCalls: parallelToolCalls,
             enableThinking: enableThinking,
             chatTemplateKwargs: chatTemplateKwargs,
@@ -566,17 +494,17 @@ class LlamaEngine {
             targetLangCode: targetLangCode,
             templateNow: templateNow,
           )
-        : generate(result.prompt, params: effectiveParams, parts: allParts);
+        : generate(
+            result.prompt,
+            params: plan.generationParams,
+            parts: plan.mediaParts,
+          );
 
     final completionId = DateTime.now().millisecondsSinceEpoch.toString();
-    final parseToolCallsEnabled =
-        effectiveTools != null &&
-        effectiveTools.isNotEmpty &&
-        (toolChoice ?? ToolChoice.auto) != ToolChoice.none;
     yield* ChatCompletionStreamParser.parse(
       tokenStream: tokenStream,
-      templateResult: result,
-      parseToolCallsEnabled: parseToolCallsEnabled,
+      templateResult: plan.templateResult,
+      parseToolCallsEnabled: plan.parseToolCallsEnabled,
       enableThinking: enableThinking,
       modelName: _modelPath ?? 'llama_model',
       completionId: completionId,
@@ -630,84 +558,24 @@ class LlamaEngine {
     DateTime? templateNow,
   }) async {
     _ensureReady(requireContext: false);
-
-    String? templateSource;
-
-    // Get metadata for template source and token info
-    Map<String, String> metadata = {};
-    try {
-      metadata = await _getCachedMetadata();
-      templateSource = metadata['tokenizer.chat_template'];
-    } catch (e) {
-      LlamaLogger.instance.warning('Failed to read metadata: $e');
-    }
-
-    if (sourceLangCode != null && sourceLangCode.isNotEmpty) {
-      metadata['source_lang_code'] = sourceLangCode;
-    }
-    if (targetLangCode != null && targetLangCode.isNotEmpty) {
-      metadata['target_lang_code'] = targetLangCode;
-    }
-
-    // Use ChatTemplateEngine for format detection, rendering, and grammar
-    try {
-      final effectiveResponseFormat =
-          responseFormat ??
-          (jsonSchema == null
-              ? null
-              : {
-                  'type': 'json_schema',
-                  'json_schema': {'schema': jsonSchema},
-                });
-
-      final result = ChatTemplateEngine.render(
-        templateSource: templateSource,
-        messages: messages,
-        metadata: metadata,
-        addAssistant: addAssistant,
-        tools: tools,
-        toolChoice: toolChoice,
-        parallelToolCalls: parallelToolCalls,
-        enableThinking: enableThinking,
-        responseFormat: effectiveResponseFormat,
-        customTemplate: customTemplate,
-        chatTemplateKwargs: chatTemplateKwargs,
-        now: templateNow,
-      );
-
-      int? tokenCount;
-      if (includeTokenCount) {
-        try {
-          final tokens = await tokenize(result.prompt, addSpecial: false);
-          tokenCount = tokens.length;
-        } on UnsupportedError catch (error) {
-          LlamaLogger.instance.debug(
-            'Skipping chat template token count because backend tokenization '
-            'is unsupported: $error',
-          );
-        } on LlamaUnsupportedException catch (error) {
-          LlamaLogger.instance.debug(
-            'Skipping chat template token count because backend tokenization '
-            'is unsupported: $error',
-          );
-        }
-      }
-
-      return LlamaChatTemplateResult(
-        prompt: result.prompt,
-        format: result.format,
-        grammar: result.grammar,
-        grammarLazy: result.grammarLazy,
-        additionalStops: result.additionalStops,
-        grammarTriggers: result.grammarTriggers,
-        thinkingForcedOpen: result.thinkingForcedOpen,
-        preservedTokens: result.preservedTokens,
-        parser: result.parser,
-        tokenCount: tokenCount,
-      );
-    } catch (_) {
-      rethrow;
-    }
+    return ChatTemplateRenderer.render(
+      loadMetadata: _getCachedMetadata,
+      tokenize: tokenize,
+      messages: messages,
+      addAssistant: addAssistant,
+      jsonSchema: jsonSchema,
+      tools: tools,
+      toolChoice: toolChoice,
+      parallelToolCalls: parallelToolCalls,
+      enableThinking: enableThinking,
+      responseFormat: responseFormat,
+      customTemplate: customTemplate,
+      sourceLangCode: sourceLangCode,
+      targetLangCode: targetLangCode,
+      includeTokenCount: includeTokenCount,
+      chatTemplateKwargs: chatTemplateKwargs,
+      templateNow: templateNow,
+    );
   }
 
   // ============================================================
@@ -756,14 +624,6 @@ class LlamaEngine {
         stackTrace,
       );
     }
-  }
-
-  bool _hasSchemaResponseFormat(Map<String, dynamic>? responseFormat) {
-    if (responseFormat == null) {
-      return false;
-    }
-    final type = responseFormat['type'] as String?;
-    return type == 'json_schema' || type == 'json_object';
   }
 
   Stream<String> _generateNativeChat(
@@ -1304,24 +1164,6 @@ class LlamaEngine {
       'type': error.runtimeType.toString(),
       'message': message,
     };
-  }
-
-  bool _canUseNativeChatGeneration(
-    BackendNativeChatGeneration backend,
-    List<LlamaChatMessage> messages, {
-    required ToolChoice toolChoice,
-    required bool parallelToolCalls,
-  }) {
-    if (!backend.supportsNativeChatGeneration || messages.isEmpty) {
-      return false;
-    }
-    if (messages.last.role == LlamaChatRole.system) {
-      return false;
-    }
-    if (toolChoice == ToolChoice.required || parallelToolCalls) {
-      return false;
-    }
-    return true;
   }
 
   /// Validates engine is ready for inference.
