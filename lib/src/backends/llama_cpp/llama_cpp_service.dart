@@ -101,20 +101,30 @@ typedef _MtmdInputChunksInitDart = Pointer<mtmd_input_chunks> Function();
 typedef _MtmdInputChunksFreeNative = Void Function(Pointer<mtmd_input_chunks>);
 typedef _MtmdInputChunksFreeDart = void Function(Pointer<mtmd_input_chunks>);
 typedef _MtmdHelperBitmapInitFromFileNative =
-    Pointer<mtmd_bitmap> Function(Pointer<mtmd_context>, Pointer<Char>);
+    mtmd_helper_bitmap_wrapper Function(
+      Pointer<mtmd_context>,
+      Pointer<Char>,
+      Bool,
+    );
 typedef _MtmdHelperBitmapInitFromFileDart =
-    Pointer<mtmd_bitmap> Function(Pointer<mtmd_context>, Pointer<Char>);
+    mtmd_helper_bitmap_wrapper Function(
+      Pointer<mtmd_context>,
+      Pointer<Char>,
+      bool,
+    );
 typedef _MtmdHelperBitmapInitFromBufNative =
-    Pointer<mtmd_bitmap> Function(
+    mtmd_helper_bitmap_wrapper Function(
       Pointer<mtmd_context>,
       Pointer<UnsignedChar>,
       Size,
+      Bool,
     );
 typedef _MtmdHelperBitmapInitFromBufDart =
-    Pointer<mtmd_bitmap> Function(
+    mtmd_helper_bitmap_wrapper Function(
       Pointer<mtmd_context>,
       Pointer<UnsignedChar>,
       int,
+      bool,
     );
 typedef _MtmdBitmapInitFromAudioNative =
     Pointer<mtmd_bitmap> Function(Size, Pointer<Float>);
@@ -5620,7 +5630,7 @@ class LlamaCppService {
         _mtmdUnavailableMessage('mtmd_helper_bitmap_init_from_file'),
       );
     }
-    return fallback.helperBitmapInitFromFile(ctx, pathPtr);
+    return fallback.helperBitmapInitFromFile(ctx, pathPtr, false).bitmap;
   }
 
   Pointer<mtmd_bitmap> _mtmdHelperBitmapInitFromBuf(
@@ -5641,7 +5651,7 @@ class LlamaCppService {
         _mtmdUnavailableMessage('mtmd_helper_bitmap_init_from_buf'),
       );
     }
-    return fallback.helperBitmapInitFromBuf(ctx, data, size);
+    return fallback.helperBitmapInitFromBuf(ctx, data, size, false).bitmap;
   }
 
   Pointer<mtmd_bitmap> _mtmdBitmapInitFromAudio(int n, Pointer<Float> samples) {
