@@ -175,6 +175,47 @@ void main() {
       },
     );
 
+    test('dry-runs GGUF chat feature smoke with multimodal inputs', () async {
+      final result = await runLocalE2e(const [
+        '--scenario',
+        'gguf-chat-features-smoke',
+        '--model-path',
+        'models/Qwen3.5-0.8B-Q4_K_M.gguf',
+        '--backend',
+        'cpu',
+        '--mmproj-path',
+        'models/Qwen3.5-0.8B-mmproj-F16.gguf',
+        '--image-path',
+        'test/fixtures/image.png',
+        '--dry-run',
+      ], projectRoot: '/repo');
+
+      expect(result.exitCode, 0);
+      expect(
+        result.stdout,
+        contains(
+          'cd /repo && dart run tool/gguf_chat_features_smoke.dart '
+          'models/Qwen3.5-0.8B-Q4_K_M.gguf cpu '
+          'models/Qwen3.5-0.8B-mmproj-F16.gguf test/fixtures/image.png',
+        ),
+      );
+    });
+
+    test('requires mmproj path before GGUF image path', () async {
+      final result = await runLocalE2e(const [
+        '--scenario',
+        'gguf-chat-features-smoke',
+        '--model-path',
+        'models/Qwen3.5-0.8B-Q4_K_M.gguf',
+        '--image-path',
+        'test/fixtures/image.png',
+        '--dry-run',
+      ], projectRoot: '/repo');
+
+      expect(result.exitCode, 64);
+      expect(result.stderr, contains('--image-path requires --mmproj-path'));
+    });
+
     test('dry-runs LiteRT-LM chat feature smoke with model path', () async {
       final result = await runLocalE2e(const [
         '--scenario',

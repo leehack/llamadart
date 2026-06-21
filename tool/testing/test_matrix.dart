@@ -131,10 +131,12 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     tier: 'targeted',
     mode: 'local-only',
     covers:
-        'real GGUF llama.cpp chat, thinking suppression, streaming tool calls',
+        'real GGUF llama.cpp chat, thinking suppression, streaming tool '
+        'calls, optional multimodal input',
     command:
         'dart run tool/testing/run_local_e2e.dart --scenario '
-        'gguf-chat-features-smoke --model-path <model.gguf> --backend auto',
+        'gguf-chat-features-smoke --model-path <model.gguf> --backend auto '
+        '[--mmproj-path <mmproj.gguf> --image-path <image>]',
     useWhen:
         'Chat rendering, parser, tool calling, thinking, or GGUF feature work.',
   ),

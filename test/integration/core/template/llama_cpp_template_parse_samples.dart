@@ -13,6 +13,8 @@ const Map<ChatFormat, String> _sampleOutputsByFormat = <ChatFormat, String>{
       '<function=get_weather>{"location":"Seoul"}</function>',
   ChatFormat.granite:
       '<|tool_call|>[{"name":"get_weather","arguments":{"location":"Seoul"}}]',
+  ChatFormat.lfm2:
+      '<|tool_call_start|>[get_weather(location=\'Seoul\')]<|tool_call_end|>',
   ChatFormat.ministral: '[TOOL_CALLS]get_weather[ARGS]{"location":"Seoul"}',
   ChatFormat.kimiK2:
       '<|tool_calls_section_begin|>'

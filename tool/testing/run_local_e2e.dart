@@ -71,6 +71,8 @@ class LocalE2eRunContext {
     required this.port,
     required this.python,
     required this.modelPath,
+    required this.mmprojPath,
+    required this.imagePath,
     required this.modelUrl,
     required this.backend,
     required this.expect,
@@ -82,6 +84,8 @@ class LocalE2eRunContext {
   final int port;
   final String python;
   final String? modelPath;
+  final String? mmprojPath;
+  final String? imagePath;
   final String? modelUrl;
   final String backend;
   final String expect;
@@ -173,6 +177,12 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
         if (context.modelPath != null) {
           arguments.add(context.modelPath!);
           arguments.add(context.backend);
+          if (context.mmprojPath != null) {
+            arguments.add(context.mmprojPath!);
+          }
+          if (context.imagePath != null) {
+            arguments.add(context.imagePath!);
+          }
         }
         return [
           LocalE2eCommandStep(
@@ -571,6 +581,12 @@ Future<LocalE2eResult> runLocalE2e(
           'Unknown local E2E scenario: $scenarioName\nUse --list to inspect scenarios.\n',
     );
   }
+  if (parsed.mmprojPath != null && parsed.modelPath == null) {
+    return LocalE2eResult(64, stderr: '--mmproj-path requires --model-path.\n');
+  }
+  if (parsed.imagePath != null && parsed.mmprojPath == null) {
+    return LocalE2eResult(64, stderr: '--image-path requires --mmproj-path.\n');
+  }
 
   final context = LocalE2eRunContext(
     projectRoot: root,
@@ -578,6 +594,8 @@ Future<LocalE2eResult> runLocalE2e(
     port: parsed.port,
     python: parsed.pythonProvided ? parsed.python : _defaultPython(root),
     modelPath: parsed.modelPath,
+    mmprojPath: parsed.mmprojPath,
+    imagePath: parsed.imagePath,
     modelUrl: parsed.modelUrl,
     backend: parsed.backend,
     expect: parsed.expect,
@@ -771,6 +789,8 @@ Options:
   --port <port>                  Local web server port (default: 7358).
   --python <path>                Python executable for helper scripts (default: repo Playwright venv, then python3).
   --model-path <path>            Local model path for Dart local-only model scenarios.
+  --mmproj-path <path>           Optional multimodal projector path for GGUF chat smoke.
+  --image-path <path>            Optional image path for GGUF chat smoke multimodal variant.
   --model-url <url>              Model URL for real-model web smoke.
   --backend <name>               Backend for local model scenarios (default: auto).
   --expect <text>                Expected response text for real-model web smoke.
@@ -804,6 +824,8 @@ class _ParsedArgs {
     required this.skipBuild,
     this.scenario,
     this.modelPath,
+    this.mmprojPath,
+    this.imagePath,
     this.modelUrl,
   });
 
@@ -816,6 +838,8 @@ class _ParsedArgs {
   final String python;
   final bool pythonProvided;
   final String? modelPath;
+  final String? mmprojPath;
+  final String? imagePath;
   final String? modelUrl;
   final String backend;
   final String expect;
@@ -834,6 +858,8 @@ class _ParsedArgs {
     var skipBuild = false;
     String? scenario;
     String? modelPath;
+    String? mmprojPath;
+    String? imagePath;
     String? modelUrl;
 
     for (var index = 0; index < args.length; index++) {
@@ -858,6 +884,10 @@ class _ParsedArgs {
           pythonProvided = true;
         case '--model-path':
           modelPath = _readValue(args, ++index, arg);
+        case '--mmproj-path':
+          mmprojPath = _readValue(args, ++index, arg);
+        case '--image-path':
+          imagePath = _readValue(args, ++index, arg);
         case '--model-url':
           modelUrl = _readValue(args, ++index, arg);
         case '--backend':
@@ -879,6 +909,8 @@ class _ParsedArgs {
       python: python,
       pythonProvided: pythonProvided,
       modelPath: modelPath,
+      mmprojPath: mmprojPath,
+      imagePath: imagePath,
       modelUrl: modelUrl,
       backend: backend,
       expect: expect,

@@ -10,13 +10,28 @@ Future<void> main(List<String> args) async {
   if (modelPath == null || modelPath.trim().isEmpty) {
     stderr.writeln(
       'Usage: dart run tool/gguf_chat_features_smoke.dart '
-      '<model.gguf> [auto|cpu|metal|vulkan|cuda|opencl|hip|blas]',
+      '<model.gguf> [auto|cpu|metal|vulkan|cuda|opencl|hip|blas] '
+      '[mmproj.gguf] [image-path]',
     );
     exitCode = 64;
     return;
   }
 
   final backend = args.length > 1 ? _parseBackend(args[1]) : GpuBackend.auto;
+  final mmprojPath = args.length > 2
+      ? args[2]
+      : Platform.environment['GGUF_MMPROJ'];
+  final imagePath = args.length > 3
+      ? args[3]
+      : Platform.environment['GGUF_IMAGE'];
+  final hasMmproj = mmprojPath != null && mmprojPath.trim().isNotEmpty;
+  final hasImage = imagePath != null && imagePath.trim().isNotEmpty;
+  if (hasImage && !hasMmproj) {
+    stderr.writeln('GGUF_IMAGE/image-path requires GGUF_MMPROJ/mmproj path.');
+    exitCode = 64;
+    return;
+  }
+
   final engine = LlamaEngine(LlamaBackend());
   try {
     engine.setLogLevel(LlamaLogLevel.warn);
@@ -30,6 +45,9 @@ Future<void> main(List<String> args) async {
         numberOfThreadsBatch: 4,
       ),
     );
+    if (hasMmproj) {
+      await engine.loadMultimodalProjector(mmprojPath);
+    }
 
     final template = await engine.chatTemplate(
       const [
@@ -44,6 +62,7 @@ Future<void> main(List<String> args) async {
 
     final noThinking = await _runScenario(
       engine: engine,
+      name: 'noThinking',
       messages: const [
         LlamaChatMessage.fromText(
           role: LlamaChatRole.system,
@@ -56,11 +75,31 @@ Future<void> main(List<String> args) async {
       ],
       tools: const [],
       enableThinking: false,
-      maxTokens: 64,
+      maxTokens: 384,
     );
 
-    final toolCall = await _runScenario(
+    final thinking = await _runScenario(
       engine: engine,
+      name: 'thinking',
+      messages: const [
+        LlamaChatMessage.fromText(
+          role: LlamaChatRole.system,
+          text:
+              'Think briefly if the model supports a thinking channel, then answer directly.',
+        ),
+        LlamaChatMessage.fromText(
+          role: LlamaChatRole.user,
+          text: 'What is 3 + 5? Reply with only the final number.',
+        ),
+      ],
+      tools: const [],
+      enableThinking: true,
+      maxTokens: 384,
+    );
+
+    final toolCallNoThinking = await _runScenario(
+      engine: engine,
+      name: 'toolCallNoThinking',
       messages: const [
         LlamaChatMessage.fromText(
           role: LlamaChatRole.system,
@@ -71,29 +110,73 @@ Future<void> main(List<String> args) async {
           text: 'Call get_weather with location Seoul.',
         ),
       ],
-      tools: [
-        ToolDefinition(
-          name: 'get_weather',
-          description: 'Returns current weather for a city.',
-          parameters: [ToolParam.string('location', description: 'City name')],
-          handler: (_) async => 'Sunny',
-        ),
-      ],
+      tools: [_weatherTool],
       enableThinking: false,
       maxTokens: 160,
       toolChoice: ToolChoice.required,
     );
 
+    final toolCallWithThinking = await _runScenario(
+      engine: engine,
+      name: 'toolCallWithThinking',
+      messages: const [
+        LlamaChatMessage.fromText(
+          role: LlamaChatRole.system,
+          text:
+              'Think briefly if the model supports a thinking channel, then call get_weather. Return only the tool call.',
+        ),
+        LlamaChatMessage.fromText(
+          role: LlamaChatRole.user,
+          text: 'Call get_weather with location Seoul.',
+        ),
+      ],
+      tools: [_weatherTool],
+      enableThinking: true,
+      maxTokens: 240,
+      toolChoice: ToolChoice.required,
+    );
+
+    final multimodal = hasMmproj && hasImage
+        ? await _runScenario(
+            engine: engine,
+            name: 'multimodal',
+            messages: [
+              LlamaChatMessage.withContent(
+                role: LlamaChatRole.user,
+                content: [
+                  const LlamaTextContent(
+                    'Describe this image in one short sentence.',
+                  ),
+                  LlamaImageContent(path: imagePath),
+                ],
+              ),
+            ],
+            tools: const [],
+            enableThinking: false,
+            maxTokens: 120,
+          )
+        : null;
+
     _verifyNoThinking(noThinking);
-    _verifyNoThinking(toolCall);
-    _verifyToolCall(toolCall);
+    _verifyThinkingSeparation(thinking);
+    _verifyNoThinking(toolCallNoThinking);
+    _verifyThinkingSeparation(toolCallWithThinking);
+    _verifyToolCall(toolCallNoThinking);
+    _verifyToolCall(toolCallWithThinking);
+    if (multimodal != null) {
+      _verifyHasOutput(multimodal);
+      _verifyNoThinking(multimodal);
+    }
 
     final result = {
       'backendName': await engine.getBackendName(),
       'requestedBackend': backend.name,
       'format': template.format,
       'noThinking': noThinking.toJson(),
-      'toolCall': toolCall.toJson(),
+      'thinking': thinking.toJson(),
+      'toolCallNoThinking': toolCallNoThinking.toJson(),
+      'toolCallWithThinking': toolCallWithThinking.toJson(),
+      if (multimodal != null) 'multimodal': multimodal.toJson(),
     };
     print('RESULT gguf_chat_features ${jsonEncode(result)}');
   } finally {
@@ -103,6 +186,7 @@ Future<void> main(List<String> args) async {
 
 Future<_ScenarioResult> _runScenario({
   required LlamaEngine engine,
+  required String name,
   required List<LlamaChatMessage> messages,
   required List<ToolDefinition> tools,
   required bool enableThinking,
@@ -139,6 +223,7 @@ Future<_ScenarioResult> _runScenario({
   }
 
   return _ScenarioResult(
+    name: name,
     chunks: chunks,
     finishReason: finishReason,
     content: content.toString(),
@@ -147,14 +232,37 @@ Future<_ScenarioResult> _runScenario({
   );
 }
 
-void _verifyNoThinking(_ScenarioResult result) {
-  if (result.content.trim().isEmpty && result.toolCalls.isEmpty) {
-    throw StateError('Scenario produced no content or tool calls.');
-  }
-  if (result.thinking.trim().isNotEmpty) {
-    throw StateError('Thinking delta leaked while enableThinking=false.');
-  }
+final ToolDefinition _weatherTool = ToolDefinition(
+  name: 'get_weather',
+  description: 'Returns current weather for a city.',
+  parameters: [ToolParam.string('location', description: 'City name')],
+  handler: (_) async => 'Sunny',
+);
 
+void _verifyHasOutput(_ScenarioResult result) {
+  if (result.content.trim().isEmpty &&
+      result.thinking.trim().isEmpty &&
+      result.toolCalls.isEmpty) {
+    throw StateError('${result.name} scenario produced no output.');
+  }
+}
+
+void _verifyNoThinking(_ScenarioResult result) {
+  _verifyHasOutput(result);
+  if (result.thinking.trim().isNotEmpty) {
+    throw StateError(
+      '${result.name} scenario leaked thinking while enableThinking=false.',
+    );
+  }
+  _verifyNoThinkingMarkers(result);
+}
+
+void _verifyThinkingSeparation(_ScenarioResult result) {
+  _verifyHasOutput(result);
+  _verifyNoThinkingMarkers(result);
+}
+
+void _verifyNoThinkingMarkers(_ScenarioResult result) {
   final leakedMarkers = const [
     '<think>',
     '</think>',
@@ -162,37 +270,48 @@ void _verifyNoThinking(_ScenarioResult result) {
     '<channel|>',
   ].where(result.content.contains).toList(growable: false);
   if (leakedMarkers.isNotEmpty) {
-    throw StateError('Thinking markers leaked in content: $leakedMarkers');
+    throw StateError(
+      '${result.name} scenario leaked thinking markers in content: '
+      '$leakedMarkers',
+    );
   }
 }
 
 void _verifyToolCall(_ScenarioResult result) {
   if (result.finishReason != 'tool_calls') {
     throw StateError(
-      'Tool scenario finished with ${result.finishReason}; '
+      '${result.name} scenario finished with ${result.finishReason}; '
       'content=${_tail(result.content)}',
     );
   }
   if (result.content.trim().isNotEmpty) {
-    throw StateError('Tool scenario leaked content: ${_tail(result.content)}');
+    throw StateError(
+      '${result.name} scenario leaked content: ${_tail(result.content)}',
+    );
   }
   if (result.toolCalls.length != 1) {
-    throw StateError('Expected 1 tool call, got ${result.toolCalls.length}.');
+    throw StateError(
+      '${result.name} expected 1 tool call, got ${result.toolCalls.length}.',
+    );
   }
 
   final function = result.toolCalls.first['function'];
   if (function is! Map || function['name'] != 'get_weather') {
     throw StateError(
-      'Tool scenario did not call get_weather: ${result.toolCalls.first}',
+      '${result.name} scenario did not call get_weather: '
+      '${result.toolCalls.first}',
     );
   }
   final arguments = function['arguments'];
   if (arguments is! String) {
-    throw StateError('Tool call has no string arguments: $function');
+    throw StateError(
+      '${result.name} tool call has no string arguments: $function',
+    );
   }
   final decoded = jsonDecode(arguments);
-  if (decoded is! Map || decoded['location'] != 'Seoul') {
-    throw StateError('Unexpected tool arguments: $arguments');
+  final location = decoded is Map ? decoded['location'] : null;
+  if (location is! String || !location.toLowerCase().contains('seoul')) {
+    throw StateError('${result.name} unexpected tool arguments: $arguments');
   }
 }
 
@@ -228,6 +347,7 @@ GpuBackend _parseBackend(String value) {
 
 class _ScenarioResult {
   const _ScenarioResult({
+    required this.name,
     required this.chunks,
     required this.finishReason,
     required this.content,
@@ -235,6 +355,7 @@ class _ScenarioResult {
     required this.toolCalls,
   });
 
+  final String name;
   final int chunks;
   final String finishReason;
   final String content;
@@ -242,12 +363,14 @@ class _ScenarioResult {
   final List<Map<String, Object?>> toolCalls;
 
   Map<String, Object?> toJson() => {
+    'name': name,
     'chunks': chunks,
     'finishReason': finishReason,
     'contentLength': content.length,
     'contentTail': _tail(content),
     'thinkingLength': thinking.length,
     'thinkingTail': _tail(thinking),
+    'thinkingObserved': thinking.trim().isNotEmpty,
     'toolCallCount': toolCalls.length,
     'toolCalls': toolCalls,
   };
