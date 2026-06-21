@@ -7,6 +7,22 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
+## 0.8.4
+
+- Updated the default llama.cpp native runtime pin to
+  `leehack/llamadart-native@b9744`, regenerated matching Dart FFI bindings,
+  refreshed the `llamadart_llama_cpp_flutter` Apple SwiftPM checksum, and
+  aligned current README/website native override docs.
+- Expanded llama.cpp chat-template parity coverage for current upstream
+  fixtures, including Cohere2 MoE, LFM2.5 tool-call, and Granite 4.1 templates.
+  LFM2.5 prompts that use plain `List of tools: [...]` now route through the
+  LFM2 handler, and `ToolChoice.required` uses grammar-constrained LFM2
+  tool-call generation.
+- Fixed streaming tool-call parsing so partial North/Cohere bare action arrays
+  are not emitted as content before the complete tool call is parsed, and
+  expanded the local GGUF feature smoke coverage for thinking, tool-call, and
+  optional multimodal turns.
+
 ## 0.8.3
 
 - Fixed Windows CUDA backend discovery when the native asset bundle directory is
