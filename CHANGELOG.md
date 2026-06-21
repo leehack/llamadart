@@ -1,3 +1,9 @@
+## Unreleased
+
+* Fixed the Windows split-library mtmd fallback ABI for image and byte-buffer
+  multimodal inputs so `mtmd.dll` uses the same bitmap helper signature as the
+  generated native binding path.
+
 ## 0.8.4
 
 * Updated the default llama.cpp native runtime pin to
