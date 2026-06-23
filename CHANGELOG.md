@@ -1,8 +1,11 @@
-## Unreleased
+## 0.8.5
 
-* Fixed the Windows split-library mtmd fallback ABI for image and byte-buffer
-  multimodal inputs so `mtmd.dll` uses the same bitmap helper signature as the
-  generated native binding path.
+* Fixed the split-library mtmd fallback ABI for image and byte-buffer
+  multimodal inputs so Windows `mtmd.dll` and other split mtmd native bundles
+  use the same bitmap helper signature as the generated native binding path.
+  This avoids corrupting the first mtmd bitmap-helper call for Gemma 4/MMProj
+  style multimodal loads and adds native symbol regression coverage for the
+  fallback ABI.
 
 ## 0.8.4
 
