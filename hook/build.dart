@@ -11,7 +11,7 @@ import 'package:path/path.dart' as path;
 
 import 'package:llamadart/src/hook/native_bundle_config.dart';
 
-const _llamaCppTag = 'b9744';
+const _llamaCppTag = 'b9776';
 const _nativeRepoSlug = 'leehack/llamadart-native';
 
 const _packageName = 'llamadart';
