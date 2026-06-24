@@ -7,6 +7,13 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
+## 0.8.6
+
+- Updated the default llama.cpp native runtime pin to
+  `leehack/llamadart-native@b9776`, regenerated matching Dart FFI bindings,
+  refreshed the `llamadart_llama_cpp_flutter` Apple SwiftPM checksum, and
+  aligned README/website native override docs.
+
 ## 0.8.5
 
 - Fixed the split-library mtmd fallback ABI for image and byte-buffer
