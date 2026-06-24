@@ -254,6 +254,9 @@ external int llama_model_n_embd_out(ffi.Pointer<llama_model> model);
 external int llama_model_n_layer(ffi.Pointer<llama_model> model);
 
 @ffi.Native<ffi.Int32 Function(ffi.Pointer<llama_model>)>()
+external int llama_model_n_layer_nextn(ffi.Pointer<llama_model> model);
+
+@ffi.Native<ffi.Int32 Function(ffi.Pointer<llama_model>)>()
 external int llama_model_n_head(ffi.Pointer<llama_model> model);
 
 @ffi.Native<ffi.Int32 Function(ffi.Pointer<llama_model>)>()
@@ -10132,6 +10135,13 @@ final class mtmd_input_text extends ffi.Struct {
   external bool parse_special;
 }
 
+typedef mtmd_progress_callbackFunction =
+    ffi.Bool Function(ffi.Float progress, ffi.Pointer<ffi.Void> user_data);
+typedef Dartmtmd_progress_callbackFunction =
+    bool Function(double progress, ffi.Pointer<ffi.Void> user_data);
+typedef mtmd_progress_callback =
+    ffi.Pointer<ffi.NativeFunction<mtmd_progress_callbackFunction>>;
+
 final class mtmd_context_params extends ffi.Struct {
   @ffi.Bool()
   external bool use_gpu;
@@ -10167,6 +10177,10 @@ final class mtmd_context_params extends ffi.Struct {
 
   @ffi.Int32()
   external int batch_max_tokens;
+
+  external mtmd_progress_callback progress_callback;
+
+  external ffi.Pointer<ffi.Void> progress_callback_user_data;
 }
 
 typedef mtmd_bitmap_lazy_callbackFunction =
