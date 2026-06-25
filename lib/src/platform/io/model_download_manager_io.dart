@@ -23,11 +23,17 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
 
   /// Creates a manager using the recommended cache root for the current platform.
   ///
-  /// Desktop/server platforms use the per-user shared `llamadart/models` cache.
-  /// Android and iOS use [appPrivateCacheDirectory] because `llamadart` cannot
-  /// discover an app's durable sandbox directory without app/platform storage
-  /// APIs. Pass [cacheDirectory] to force a specific root on every platform,
-  /// including an OS-granted mobile model library directory.
+  /// Pass [cacheDirectory] to force a specific root on every platform,
+  /// including an OS-granted mobile model library directory. Otherwise,
+  /// desktop/server platforms use [defaultSharedCacheDirectory] with
+  /// [namespace], [environment], and [homeDirectory]. Android and iOS use
+  /// [appPrivateCacheDirectory] because `llamadart` cannot discover an app's
+  /// durable sandbox directory without app/platform storage APIs.
+  ///
+  /// Throws [LlamaUnsupportedException] on Android or iOS when neither
+  /// [cacheDirectory] nor [appPrivateCacheDirectory] is supplied, on web because
+  /// browser caches are origin-scoped instead of file-backed, and on unknown
+  /// platforms where no implicit shared cache root is known.
   factory DefaultModelDownloadManager.auto({
     String namespace = 'llamadart',
     String? cacheDirectory,
@@ -90,6 +96,11 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
   /// available: pass [cacheDirectory] after your app obtains an OS-supported
   /// shared/user-selected directory, or use [DefaultModelDownloadManager.appPrivate]
   /// for app-private mobile storage.
+  ///
+  /// When [cacheDirectory] is omitted, this uses [defaultSharedCacheDirectory].
+  /// That means Linux resolves under `$XDG_CACHE_HOME` or `$HOME/.cache`, macOS
+  /// resolves under `$HOME/Library/Caches`, and Windows resolves under
+  /// `%LOCALAPPDATA%`, `%APPDATA%`, or `%USERPROFILE%\AppData\Local`.
   factory DefaultModelDownloadManager.sharedCache({
     String namespace = 'llamadart',
     String? cacheDirectory,
@@ -149,6 +160,15 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
   static final Map<String, Future<void>> _cacheLocks = <String, Future<void>>{};
 
   /// Returns the default per-user shared model cache directory for desktop/CLI.
+  ///
+  /// The default [namespace] is `llamadart`, producing these roots:
+  ///
+  /// - Linux: `$XDG_CACHE_HOME/llamadart/models`, or
+  ///   `$HOME/.cache/llamadart/models` when `XDG_CACHE_HOME` is unset.
+  /// - macOS: `$HOME/Library/Caches/llamadart/models`.
+  /// - Windows: `%LOCALAPPDATA%\llamadart\models`, then
+  ///   `%APPDATA%\llamadart\models`, then
+  ///   `%USERPROFILE%\AppData\Local\llamadart\models`.
   ///
   /// Android, iOS, web, and unknown platforms throw because `llamadart` cannot
   /// safely choose a cross-app shared folder without explicit platform grants.
