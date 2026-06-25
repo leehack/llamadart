@@ -1,4 +1,4 @@
-## Unreleased
+## 0.8.7
 
 * Fixed multimodal chat-template rendering so templates that force-open
   reasoning (for example Qwen3.5 VLM prompts ending with `<think>`) preserve
