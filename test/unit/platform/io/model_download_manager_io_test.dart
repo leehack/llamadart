@@ -33,6 +33,185 @@ void main() {
       }
     });
 
+    test('resolves desktop shared model cache directories', () {
+      expect(
+        DefaultModelDownloadManager.defaultSharedCacheDirectory(
+          platform: ModelCachePlatform.linux,
+          environment: const <String, String>{
+            'XDG_CACHE_HOME': '/tmp/cache-home',
+          },
+        ),
+        '/tmp/cache-home/llamadart/models',
+      );
+      expect(
+        DefaultModelDownloadManager.defaultSharedCacheDirectory(
+          platform: ModelCachePlatform.linux,
+          environment: const <String, String>{},
+          homeDirectory: '/home/alice',
+        ),
+        '/home/alice/.cache/llamadart/models',
+      );
+      expect(
+        DefaultModelDownloadManager.defaultSharedCacheDirectory(
+          platform: ModelCachePlatform.macos,
+          environment: const <String, String>{},
+          homeDirectory: '/Users/alice',
+        ),
+        '/Users/alice/Library/Caches/llamadart/models',
+      );
+      expect(
+        DefaultModelDownloadManager.defaultSharedCacheDirectory(
+          platform: ModelCachePlatform.windows,
+          environment: const <String, String>{
+            'LOCALAPPDATA': r'C:\Users\Alice\AppData\Local',
+          },
+        ),
+        r'C:\Users\Alice\AppData\Local\llamadart\models',
+      );
+    });
+
+    test('auto uses desktop shared cache directories', () {
+      final linuxManager = DefaultModelDownloadManager.auto(
+        platform: ModelCachePlatform.linux,
+        environment: const <String, String>{
+          'XDG_CACHE_HOME': '/tmp/cache-home',
+        },
+        appPrivateCacheDirectory: path.join(tempDir.path, 'mobile-private'),
+      );
+      final macosManager = DefaultModelDownloadManager.auto(
+        platform: ModelCachePlatform.macos,
+        environment: const <String, String>{},
+        homeDirectory: '/Users/alice',
+      );
+
+      expect(
+        linuxManager.defaultCacheDirectory,
+        '/tmp/cache-home/llamadart/models',
+      );
+      expect(
+        macosManager.defaultCacheDirectory,
+        '/Users/alice/Library/Caches/llamadart/models',
+      );
+    });
+
+    test('auto uses explicit app-private directories on mobile', () {
+      final androidManager = DefaultModelDownloadManager.auto(
+        platform: ModelCachePlatform.android,
+        appPrivateCacheDirectory: path.join(tempDir.path, 'android-private'),
+      );
+      final iosManager = DefaultModelDownloadManager.auto(
+        platform: ModelCachePlatform.ios,
+        appPrivateCacheDirectory: path.join(tempDir.path, 'ios-private'),
+      );
+
+      expect(androidManager.defaultCacheDirectory, endsWith('android-private'));
+      expect(iosManager.defaultCacheDirectory, endsWith('ios-private'));
+    });
+
+    test('auto explicit cache directory overrides platform defaults', () {
+      final manager = DefaultModelDownloadManager.auto(
+        platform: ModelCachePlatform.android,
+        cacheDirectory: path.join(tempDir.path, 'user-library'),
+      );
+
+      expect(manager.defaultCacheDirectory, endsWith('user-library'));
+    });
+
+    test('auto rejects mobile without an explicit durable directory', () {
+      for (final platform in <ModelCachePlatform>[
+        ModelCachePlatform.android,
+        ModelCachePlatform.ios,
+      ]) {
+        expect(
+          () => DefaultModelDownloadManager.auto(platform: platform),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (error) => error.toString(),
+              'message',
+              contains('appPrivateCacheDirectory'),
+            ),
+          ),
+          reason: platform.name,
+        );
+      }
+    });
+
+    test('auto rejects non-file-backed and unknown platforms', () {
+      for (final platform in <ModelCachePlatform>[
+        ModelCachePlatform.web,
+        ModelCachePlatform.fuchsia,
+        ModelCachePlatform.unknown,
+      ]) {
+        expect(
+          () => DefaultModelDownloadManager.auto(platform: platform),
+          throwsA(isA<LlamaUnsupportedException>()),
+          reason: platform.name,
+        );
+      }
+    });
+
+    test('rejects implicit shared cache directories on mobile and web', () {
+      for (final platform in <ModelCachePlatform>[
+        ModelCachePlatform.android,
+        ModelCachePlatform.ios,
+        ModelCachePlatform.web,
+        ModelCachePlatform.fuchsia,
+        ModelCachePlatform.unknown,
+      ]) {
+        expect(
+          () => DefaultModelDownloadManager.defaultSharedCacheDirectory(
+            platform: platform,
+            environment: const <String, String>{},
+            homeDirectory: '/home/alice',
+          ),
+          throwsA(isA<LlamaUnsupportedException>()),
+          reason: platform.name,
+        );
+      }
+    });
+
+    test('uses explicit directories for mobile sharing modes', () {
+      final appPrivate = DefaultModelDownloadManager.appPrivate(
+        cacheDirectory: path.join(tempDir.path, 'app-private'),
+      );
+      final userSelected = DefaultModelDownloadManager.userSelected(
+        cacheDirectory: path.join(tempDir.path, 'user-selected'),
+      );
+      final appGroup = DefaultModelDownloadManager.appGroup(
+        cacheDirectory: path.join(tempDir.path, 'app-group'),
+      );
+      final explicitShared = DefaultModelDownloadManager.sharedCache(
+        cacheDirectory: path.join(tempDir.path, 'explicit-shared'),
+        platform: ModelCachePlatform.android,
+      );
+
+      expect(appPrivate.defaultCacheDirectory, endsWith('app-private'));
+      expect(userSelected.defaultCacheDirectory, endsWith('user-selected'));
+      expect(appGroup.defaultCacheDirectory, endsWith('app-group'));
+      expect(explicitShared.defaultCacheDirectory, endsWith('explicit-shared'));
+    });
+
+    test('validates shared cache namespace', () {
+      expect(
+        () => DefaultModelDownloadManager.defaultSharedCacheDirectory(
+          namespace: '../llamadart',
+          platform: ModelCachePlatform.linux,
+          environment: const <String, String>{},
+          homeDirectory: '/home/alice',
+        ),
+        throwsArgumentError,
+      );
+      expect(
+        DefaultModelDownloadManager.defaultSharedCacheDirectory(
+          namespace: 'com.example.llamadart',
+          platform: ModelCachePlatform.linux,
+          environment: const <String, String>{},
+          homeDirectory: '/home/alice',
+        ),
+        '/home/alice/.cache/com.example.llamadart/models',
+      );
+    });
+
     test(
       'downloads remote source, writes metadata, reports progress, and reuses cache',
       () async {
@@ -88,6 +267,31 @@ void main() {
         );
       },
     );
+
+    test('sharedCache managers reuse one explicit model library', () async {
+      server.payload = utf8.encode('shared-cache-model');
+      server.responseDelay = const Duration(milliseconds: 100);
+      final firstManager = DefaultModelDownloadManager.sharedCache(
+        cacheDirectory: tempDir.path,
+      );
+      final secondManager = DefaultModelDownloadManager.sharedCache(
+        cacheDirectory: tempDir.path,
+      );
+      final source = ModelSource.url(server.modelUri, fileName: 'tiny.gguf');
+
+      final entries = await Future.wait(<Future<ModelCacheEntry>>[
+        firstManager.ensureModel(source),
+        secondManager.ensureModel(source),
+      ]);
+
+      expect(server.requestCount, 1);
+      expect(server.maxActiveRequests, 1);
+      expect(entries.map((entry) => entry.filePath).toSet(), hasLength(1));
+      expect(
+        File(entries.first.filePath).readAsStringSync(),
+        'shared-cache-model',
+      );
+    });
 
     test('downloads and caches LiteRT-LM bundle files', () async {
       server.payload = utf8.encode('litert-lm-bundle-bytes');

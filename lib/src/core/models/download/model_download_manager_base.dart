@@ -6,6 +6,70 @@ import '../model_source.dart';
 typedef ModelDownloadProgressCallback =
     void Function(ModelDownloadProgress progress);
 
+/// Operating-system families relevant to model cache directory selection.
+enum ModelCachePlatform {
+  /// Android apps use app-specific storage by default and require explicit user
+  /// or app-managed grants for cross-app model libraries.
+  android,
+
+  /// Fuchsia has no implicit package-defined shared model cache.
+  fuchsia,
+
+  /// iOS apps use sandboxed storage by default and require App Groups or
+  /// user-picked files for sharing.
+  ios,
+
+  /// Linux desktop/server processes can use a per-user shared cache.
+  linux,
+
+  /// macOS desktop/server processes can use a per-user shared cache.
+  macos,
+
+  /// Windows desktop/server processes can use a per-user shared cache.
+  windows,
+
+  /// Browser runtimes use origin-scoped browser/runtime cache storage.
+  web,
+
+  /// Unknown platforms must not claim an implicit shared model cache.
+  unknown;
+
+  /// Parses a Dart `Platform.operatingSystem` style value.
+  static ModelCachePlatform parse(String operatingSystem) {
+    switch (operatingSystem.toLowerCase()) {
+      case 'android':
+        return ModelCachePlatform.android;
+      case 'fuchsia':
+        return ModelCachePlatform.fuchsia;
+      case 'ios':
+        return ModelCachePlatform.ios;
+      case 'linux':
+        return ModelCachePlatform.linux;
+      case 'macos':
+        return ModelCachePlatform.macos;
+      case 'windows':
+        return ModelCachePlatform.windows;
+      case 'web':
+        return ModelCachePlatform.web;
+      default:
+        return ModelCachePlatform.unknown;
+    }
+  }
+
+  /// Whether this platform is a phone/tablet OS with app sandboxing by default.
+  bool get isMobile {
+    return this == ModelCachePlatform.android || this == ModelCachePlatform.ios;
+  }
+
+  /// Whether `llamadart` can choose a per-user shared cache root without app or
+  /// user-specific storage grants.
+  bool get supportsImplicitSharedModelCache {
+    return this == ModelCachePlatform.linux ||
+        this == ModelCachePlatform.macos ||
+        this == ModelCachePlatform.windows;
+  }
+}
+
 /// Progress information for a package-managed model download.
 class ModelDownloadProgress {
   /// Creates download progress information.

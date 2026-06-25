@@ -279,13 +279,22 @@ slower than baseline decoding for some draft/target model pairs.
 import 'package:llamadart/llamadart.dart';
 
 Future<void> main() async {
-  final engine = LlamaEngine(LlamaBackend());
+  final String? appPrivateModelsDirectory =
+      await resolveMobileAppPrivateModelsDirectory();
+
+  // Desktop/server apps use a per-user shared cache. Android/iOS apps use the
+  // supplied app-private directory instead, so one code path works everywhere.
+  final engine = LlamaEngine(
+    LlamaBackend(),
+    modelDownloadManager: DefaultModelDownloadManager.auto(
+      appPrivateCacheDirectory: appPrivateModelsDirectory,
+    ),
+  );
   try {
     await engine.loadModelSource(
       ModelSource.parse('hf://owner/repo/model-Q4_K_M.gguf'),
       options: ModelLoadOptions(
         cachePolicy: ModelCachePolicy.preferCached,
-        cacheDirectory: '/path/to/app/model-cache',
       ),
       onProgress: (progress) {
         final fraction = progress.fraction;
@@ -300,6 +309,11 @@ Future<void> main() async {
 }
 ```
 
+`resolveMobileAppPrivateModelsDirectory()` represents your app storage layer, for
+example a Flutter `path_provider` application-support path on Android/iOS. On
+desktop/server, `auto(...)` ignores `appPrivateCacheDirectory` and uses the
+per-user shared model cache.
+
 Native/file-backed backends stream remote models into the package-managed cache,
 resume partial `.part` downloads when the server supports HTTP Range and the
 partial has a safe validator (ETag/Last-Modified) or caller-provided SHA-256,
@@ -309,6 +323,31 @@ appended. Local `ModelSource.path(...)` values are already files: only
 cancellation and optional `sha256` verification apply, while remote/download-only
 options such as cache policies, `cacheDirectory`, authenticated headers, resume,
 and retries are rejected for local paths.
+
+`DefaultModelDownloadManager.auto(...)` is the recommended cross-platform
+entrypoint: desktop/server platforms use a per-user shared cache, while
+Android/iOS use the app-private directory supplied by the app storage layer.
+`DefaultModelDownloadManager.sharedCache()` is the explicit desktop/server shared
+cache entrypoint, so multiple `llamadart` apps that use the same stable
+`ModelSource` can reuse one downloaded file. Mobile platforms do not have a safe
+implicit cross-developer model folder: use
+`DefaultModelDownloadManager.appPrivate(cacheDirectory: ...)` for normal
+Android/iOS app storage, `userSelected(cacheDirectory: ...)` after an Android
+Storage Access Framework-style user grant, or `appGroup(cacheDirectory: ...)`
+for explicitly configured iOS/macOS App Group containers. Web backends use
+origin-scoped browser/runtime caches instead of a file-backed shared directory.
+
+Desktop shared-cache roots use the default `llamadart` namespace:
+
+| Platform | Default path |
+| --- | --- |
+| Linux | `$XDG_CACHE_HOME/llamadart/models`, or `$HOME/.cache/llamadart/models` when `XDG_CACHE_HOME` is unset |
+| macOS | `$HOME/Library/Caches/llamadart/models` |
+| Windows | `%LOCALAPPDATA%\llamadart\models`, then `%APPDATA%\llamadart\models`, then `%USERPROFILE%\AppData\Local\llamadart\models` |
+
+Pass `namespace: 'your.namespace'` to `auto(...)` or `sharedCache(...)` to
+replace the `llamadart` path segment, or pass `cacheDirectory` to force an
+explicit root.
 
 `hf://` references point at one Hugging Face file, such as a `.gguf` model or
 `.litertlm` LiteRT-LM bundle:

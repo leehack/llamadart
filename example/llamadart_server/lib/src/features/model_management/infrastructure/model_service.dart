@@ -1,7 +1,6 @@
 import 'dart:io';
 
 import 'package:llamadart/llamadart.dart';
-import 'package:path/path.dart' as path;
 
 /// Resolves a model path or downloads a model URL into local cache.
 class ModelService {
@@ -10,12 +9,12 @@ class ModelService {
 
   ModelService._(String resolvedCacheDir)
     : cacheDir = resolvedCacheDir,
-      _downloadManager = DefaultModelDownloadManager(
-        defaultCacheDirectory: resolvedCacheDir,
+      _downloadManager = DefaultModelDownloadManager.auto(
+        cacheDirectory: resolvedCacheDir,
       );
 
   static String _defaultCacheDir() =>
-      path.join(Directory.current.path, 'models');
+      DefaultModelDownloadManager.auto().defaultCacheDirectory;
 
   /// Directory where downloaded model files are cached.
   final String cacheDir;

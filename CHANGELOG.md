@@ -1,3 +1,11 @@
+## Unreleased
+
+* Added `DefaultModelDownloadManager.auto(...)` plus explicit model cache root
+  constructors for shared desktop caches, app-private mobile caches,
+  user-selected model libraries, and App Group containers. Implicit shared cache
+  resolution now fails loudly on mobile and web where the OS cannot provide a
+  hidden cross-developer model folder.
+
 ## 0.8.7
 
 * Fixed multimodal chat-template rendering so templates that force-open

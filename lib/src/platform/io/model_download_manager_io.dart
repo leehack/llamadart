@@ -21,10 +21,181 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
           defaultCacheDirectory ??
           path.join(Directory.systemTemp.path, 'llamadart', 'models');
 
+  /// Creates a manager using the recommended cache root for the current platform.
+  ///
+  /// Pass [cacheDirectory] to force a specific root on every platform,
+  /// including an OS-granted mobile model library directory. Otherwise,
+  /// desktop/server platforms use [defaultSharedCacheDirectory] with
+  /// [namespace], [environment], and [homeDirectory]. Android and iOS use
+  /// [appPrivateCacheDirectory] because `llamadart` cannot discover an app's
+  /// durable sandbox directory without app/platform storage APIs.
+  ///
+  /// Throws [LlamaUnsupportedException] on Android or iOS when neither
+  /// [cacheDirectory] nor [appPrivateCacheDirectory] is supplied, on web because
+  /// browser caches are origin-scoped instead of file-backed, and on unknown
+  /// platforms where no implicit shared cache root is known.
+  factory DefaultModelDownloadManager.auto({
+    String namespace = 'llamadart',
+    String? cacheDirectory,
+    String? appPrivateCacheDirectory,
+    ModelCachePlatform? platform,
+    Map<String, String>? environment,
+    String? homeDirectory,
+  }) {
+    final explicitCacheDirectory = _nonEmpty(cacheDirectory);
+    if (explicitCacheDirectory != null) {
+      return DefaultModelDownloadManager(
+        defaultCacheDirectory: explicitCacheDirectory,
+      );
+    }
+
+    final effectivePlatform =
+        platform ?? ModelCachePlatform.parse(Platform.operatingSystem);
+    if (effectivePlatform.supportsImplicitSharedModelCache) {
+      return DefaultModelDownloadManager.sharedCache(
+        namespace: namespace,
+        platform: effectivePlatform,
+        environment: environment,
+        homeDirectory: homeDirectory,
+      );
+    }
+
+    if (effectivePlatform.isMobile) {
+      final appPrivateDirectory = _nonEmpty(appPrivateCacheDirectory);
+      if (appPrivateDirectory != null) {
+        return DefaultModelDownloadManager.appPrivate(
+          cacheDirectory: appPrivateDirectory,
+        );
+      }
+      throw LlamaUnsupportedException(
+        'DefaultModelDownloadManager.auto cannot choose a durable model cache '
+        'directory for ${effectivePlatform.name}. Pass appPrivateCacheDirectory '
+        'from your app storage layer, or pass cacheDirectory for an explicit '
+        'OS-granted model library.',
+      );
+    }
+
+    if (effectivePlatform == ModelCachePlatform.web) {
+      throw LlamaUnsupportedException(
+        'DefaultModelDownloadManager.auto cannot create a file-backed shared '
+        'cache on web. Web model caches are origin-scoped browser/runtime '
+        'caches.',
+      );
+    }
+
+    throw LlamaUnsupportedException(
+      'DefaultModelDownloadManager.auto cannot choose a model cache directory '
+      'for ${effectivePlatform.name}. Pass cacheDirectory explicitly.',
+    );
+  }
+
+  /// Creates a manager rooted at a per-user shared model cache.
+  ///
+  /// On desktop/server platforms this resolves to a conventional per-user cache
+  /// directory. On Android and iOS no implicit cross-app shared folder is
+  /// available: pass [cacheDirectory] after your app obtains an OS-supported
+  /// shared/user-selected directory, or use [DefaultModelDownloadManager.appPrivate]
+  /// for app-private mobile storage.
+  ///
+  /// When [cacheDirectory] is omitted, this uses [defaultSharedCacheDirectory].
+  /// That means Linux resolves under `$XDG_CACHE_HOME` or `$HOME/.cache`, macOS
+  /// resolves under `$HOME/Library/Caches`, and Windows resolves under
+  /// `%LOCALAPPDATA%`, `%APPDATA%`, or `%USERPROFILE%\AppData\Local`.
+  factory DefaultModelDownloadManager.sharedCache({
+    String namespace = 'llamadart',
+    String? cacheDirectory,
+    ModelCachePlatform? platform,
+    Map<String, String>? environment,
+    String? homeDirectory,
+  }) {
+    return DefaultModelDownloadManager(
+      defaultCacheDirectory:
+          cacheDirectory ??
+          defaultSharedCacheDirectory(
+            namespace: namespace,
+            platform: platform,
+            environment: environment,
+            homeDirectory: homeDirectory,
+          ),
+    );
+  }
+
+  /// Creates a manager rooted at an app-private durable cache directory.
+  ///
+  /// Flutter apps typically pass an application-support or documents directory
+  /// resolved with platform storage APIs. This avoids cross-app storage claims on
+  /// mobile while still deduping model downloads within the app.
+  factory DefaultModelDownloadManager.appPrivate({
+    required String cacheDirectory,
+  }) {
+    return DefaultModelDownloadManager(defaultCacheDirectory: cacheDirectory);
+  }
+
+  /// Creates a manager rooted at a user-selected model library directory.
+  ///
+  /// This is the intended Android cross-developer sharing shape: the user grants
+  /// each app access to the same model library using platform APIs such as the
+  /// Storage Access Framework. The returned manager is file-backed; apps that
+  /// receive only content URIs must first bridge them to a local file path or a
+  /// future file-descriptor-backed loader.
+  factory DefaultModelDownloadManager.userSelected({
+    required String cacheDirectory,
+  }) {
+    return DefaultModelDownloadManager(defaultCacheDirectory: cacheDirectory);
+  }
+
+  /// Creates a manager rooted at an app-group shared container directory.
+  ///
+  /// This supports iOS/macOS apps that are explicitly configured into the same
+  /// App Group. It is not a cross-developer global model cache.
+  factory DefaultModelDownloadManager.appGroup({
+    required String cacheDirectory,
+  }) {
+    return DefaultModelDownloadManager(defaultCacheDirectory: cacheDirectory);
+  }
+
   /// Default cache root used when [ModelLoadOptions.cacheDirectory] is absent.
   final String defaultCacheDirectory;
 
   static final Map<String, Future<void>> _cacheLocks = <String, Future<void>>{};
+
+  /// Returns the default per-user shared model cache directory for desktop/CLI.
+  ///
+  /// The default [namespace] is `llamadart`, producing these roots:
+  ///
+  /// - Linux: `$XDG_CACHE_HOME/llamadart/models`, or
+  ///   `$HOME/.cache/llamadart/models` when `XDG_CACHE_HOME` is unset.
+  /// - macOS: `$HOME/Library/Caches/llamadart/models`.
+  /// - Windows: `%LOCALAPPDATA%\llamadart\models`, then
+  ///   `%APPDATA%\llamadart\models`, then
+  ///   `%USERPROFILE%\AppData\Local\llamadart\models`.
+  ///
+  /// Android, iOS, web, and unknown platforms throw because `llamadart` cannot
+  /// safely choose a cross-app shared folder without explicit platform grants.
+  /// [environment], [homeDirectory], and [platform] are optional overrides for
+  /// deterministic tests and custom embedders; omitted values use the current
+  /// process platform and environment.
+  static String defaultSharedCacheDirectory({
+    String namespace = 'llamadart',
+    ModelCachePlatform? platform,
+    Map<String, String>? environment,
+    String? homeDirectory,
+  }) {
+    final cacheNamespace = _validateCacheNamespace(namespace);
+    final effectivePlatform =
+        platform ?? ModelCachePlatform.parse(Platform.operatingSystem);
+    final effectiveEnvironment = environment ?? Platform.environment;
+    final effectiveHomeDirectory =
+        homeDirectory ??
+        _homeDirectoryFor(effectivePlatform, effectiveEnvironment);
+
+    return _defaultSharedCacheDirectoryFor(
+      platform: effectivePlatform,
+      namespace: cacheNamespace,
+      environment: effectiveEnvironment,
+      homeDirectory: effectiveHomeDirectory,
+    );
+  }
 
   @override
   Future<ModelCacheEntry> ensureModel(
@@ -1180,4 +1351,118 @@ Future<void> _deleteIfExists(File file) async {
   } on FileSystemException {
     // Best effort cleanup; later file operations surface actionable errors.
   }
+}
+
+String _defaultSharedCacheDirectoryFor({
+  required ModelCachePlatform platform,
+  required String namespace,
+  required Map<String, String> environment,
+  required String? homeDirectory,
+}) {
+  final context = _pathContextFor(platform);
+  switch (platform) {
+    case ModelCachePlatform.linux:
+      final xdgCacheHome = _nonEmpty(environment['XDG_CACHE_HOME']);
+      if (xdgCacheHome != null) {
+        return context.join(xdgCacheHome, namespace, 'models');
+      }
+      final home = _requiredHomeDirectory(platform, homeDirectory);
+      return context.join(home, '.cache', namespace, 'models');
+    case ModelCachePlatform.macos:
+      final home = _requiredHomeDirectory(platform, homeDirectory);
+      return context.join(home, 'Library', 'Caches', namespace, 'models');
+    case ModelCachePlatform.windows:
+      final localAppData =
+          _nonEmpty(environment['LOCALAPPDATA']) ??
+          _nonEmpty(environment['APPDATA']);
+      if (localAppData != null) {
+        return context.join(localAppData, namespace, 'models');
+      }
+      final home = _requiredHomeDirectory(platform, homeDirectory);
+      return context.join(home, 'AppData', 'Local', namespace, 'models');
+    case ModelCachePlatform.android:
+      throw LlamaUnsupportedException(
+        'Android has no implicit cross-app shared model cache directory. '
+        'Use app-private storage with DefaultModelDownloadManager.appPrivate, '
+        'or pass a user-granted model library directory to '
+        'DefaultModelDownloadManager.userSelected.',
+      );
+    case ModelCachePlatform.ios:
+      throw LlamaUnsupportedException(
+        'iOS has no implicit cross-app shared model cache directory. '
+        'Use app-private storage with DefaultModelDownloadManager.appPrivate, '
+        'or pass an App Group container path to '
+        'DefaultModelDownloadManager.appGroup for same-group apps.',
+      );
+    case ModelCachePlatform.web:
+      throw LlamaUnsupportedException(
+        'Web model caches are origin-scoped browser/runtime caches; there is no '
+        'file-backed shared cache directory.',
+      );
+    case ModelCachePlatform.fuchsia:
+    case ModelCachePlatform.unknown:
+      throw LlamaUnsupportedException(
+        'No implicit shared model cache directory is known for '
+        '${platform.name}. Pass an explicit cacheDirectory.',
+      );
+  }
+}
+
+path.Context _pathContextFor(ModelCachePlatform platform) {
+  if (platform == ModelCachePlatform.windows) {
+    return path.Context(style: path.Style.windows);
+  }
+  return path.Context(style: path.Style.posix);
+}
+
+String? _homeDirectoryFor(
+  ModelCachePlatform platform,
+  Map<String, String> environment,
+) {
+  if (platform == ModelCachePlatform.windows) {
+    final userProfile = _nonEmpty(environment['USERPROFILE']);
+    if (userProfile != null) {
+      return userProfile;
+    }
+    final homeDrive = _nonEmpty(environment['HOMEDRIVE']);
+    final homePath = _nonEmpty(environment['HOMEPATH']);
+    if (homeDrive != null && homePath != null) {
+      return path.Context(style: path.Style.windows).join(homeDrive, homePath);
+    }
+  }
+  return _nonEmpty(environment['HOME']);
+}
+
+String _requiredHomeDirectory(
+  ModelCachePlatform platform,
+  String? homeDirectory,
+) {
+  final home = _nonEmpty(homeDirectory);
+  if (home != null) {
+    return home;
+  }
+  throw LlamaUnsupportedException(
+    'Cannot resolve a shared model cache directory for ${platform.name}: '
+    'no home directory was available. Pass cacheDirectory explicitly.',
+  );
+}
+
+String? _nonEmpty(String? value) {
+  if (value == null || value.trim().isEmpty) {
+    return null;
+  }
+  return value;
+}
+
+String _validateCacheNamespace(String namespace) {
+  final trimmed = namespace.trim();
+  if (!RegExp(r'^[A-Za-z0-9][A-Za-z0-9._-]*$').hasMatch(trimmed)) {
+    throw ArgumentError.value(
+      namespace,
+      'namespace',
+      'Cache namespace must contain only letters, numbers, dot, underscore, '
+          'or dash, and must not include path separators.',
+    );
+  }
+  return trimmed;
 }

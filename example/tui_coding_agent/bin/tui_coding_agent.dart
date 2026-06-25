@@ -22,8 +22,8 @@ Future<void> main(List<String> arguments) async {
     )
     ..addOption(
       'cache-dir',
-      help: 'Directory used to cache downloaded models.',
-      defaultsTo: 'models',
+      help:
+          'Directory used to cache downloaded models. Defaults to the per-user shared llamadart model cache.',
     )
     ..addOption(
       'ctx-size',
@@ -84,8 +84,10 @@ Future<void> main(List<String> arguments) async {
     return;
   }
 
-  final cacheDirRaw = results['cache-dir'] as String;
-  final cacheDirectory = p.isAbsolute(cacheDirRaw)
+  final cacheDirRaw = (results['cache-dir'] as String?)?.trim();
+  final cacheDirectory = cacheDirRaw == null || cacheDirRaw.isEmpty
+      ? DefaultModelDownloadManager.auto().defaultCacheDirectory
+      : p.isAbsolute(cacheDirRaw)
       ? p.normalize(cacheDirRaw)
       : p.normalize(p.join(workspaceRoot, cacheDirRaw));
 
