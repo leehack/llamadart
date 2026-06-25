@@ -7,6 +7,13 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
+## Unreleased
+
+- Fixed multimodal chat-template rendering so templates that force-open
+  reasoning, such as Qwen3.5 VLM prompts ending with `<think>`, preserve
+  `enable_thinking` and stream generated reasoning through `delta.thinking`
+  instead of `delta.content`.
+
 ## 0.8.6
 
 - Updated the default llama.cpp native runtime pin to

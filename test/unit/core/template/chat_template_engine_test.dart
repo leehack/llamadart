@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
@@ -61,6 +62,138 @@ void main() {
         expect(result.prompt, isNot(contains('weather')));
       },
     );
+
+    test(
+      'multimodal templates propagate enableThinking and force-open state',
+      () {
+        const template = '''
+{%- macro render_content(content) -%}
+  {%- if content is string -%}
+    {{- content -}}
+  {%- elif content is iterable and content is not mapping -%}
+    {%- for item in content -%}
+      {%- if 'image' in item or item.type == 'image' -%}
+        {{- '<|vision_start|><|image_pad|><|vision_end|>' -}}
+      {%- elif 'text' in item -%}
+        {{- item.text -}}
+      {%- endif -%}
+    {%- endfor -%}
+  {%- endif -%}
+{%- endmacro -%}
+{%- for message in messages -%}
+  {{- '<|im_start|>' + message.role + '\n' + render_content(message.content) + '<|im_end|>\n' -}}
+{%- endfor -%}
+{%- if add_generation_prompt -%}
+  {{- '<|im_start|>assistant\n' -}}
+  {%- if enable_thinking is defined and enable_thinking is true -%}
+    {{- '<think>\n' -}}
+  {%- else -%}
+    {{- '<think>\n\n</think>\n\n' -}}
+  {%- endif -%}
+{%- endif -%}
+''';
+        final multimodalMessages = [
+          LlamaChatMessage.withContent(
+            role: LlamaChatRole.user,
+            content: [
+              const LlamaTextContent('look'),
+              LlamaImageContent(
+                bytes: Uint8List.fromList([0]),
+                width: 1,
+                height: 1,
+              ),
+            ],
+          ),
+        ];
+
+        final enabled = ChatTemplateEngine.render(
+          templateSource: template,
+          messages: multimodalMessages,
+          metadata: const {},
+          enableThinking: true,
+        );
+
+        expect(
+          enabled.prompt,
+          contains('look<|vision_start|><|image_pad|><|vision_end|>'),
+        );
+        expect(enabled.prompt, endsWith('<|im_start|>assistant\n<think>\n'));
+        expect(enabled.thinkingForcedOpen, isTrue);
+
+        final disabled = ChatTemplateEngine.render(
+          templateSource: template,
+          messages: multimodalMessages,
+          metadata: const {},
+          enableThinking: false,
+        );
+
+        expect(disabled.prompt, contains('<think>\n\n</think>\n\n'));
+        expect(disabled.thinkingForcedOpen, isFalse);
+      },
+    );
+
+    test('multimodal thinking uses handler-specific reasoning tags', () {
+      const template = '''
+{%- macro render_content(content) -%}
+  {%- if content is string -%}
+    {{- content -}}
+  {%- elif content is iterable and content is not mapping -%}
+    {%- for item in content -%}
+      {%- if item.type == 'image' -%}
+        {{- '<|image|>' -}}
+      {%- elif item.type == 'text' -%}
+        {{- item.text -}}
+      {%- endif -%}
+    {%- endfor -%}
+  {%- endif -%}
+{%- endmacro -%}
+{%- for message in messages -%}
+  {{- '[INST]' + render_content(message.content) + '[/INST]' -}}
+{%- endfor -%}
+{%- if add_generation_prompt -%}
+  {%- if enable_thinking is defined and enable_thinking is true -%}
+    {{- '[THINK]\n' -}}
+  {%- else -%}
+    {{- '[THINK]\n[/THINK]\n' -}}
+  {%- endif -%}
+{%- endif -%}
+''';
+      final multimodalMessages = [
+        LlamaChatMessage.withContent(
+          role: LlamaChatRole.user,
+          content: [
+            const LlamaTextContent('look'),
+            LlamaImageContent(
+              bytes: Uint8List.fromList([0]),
+              width: 1,
+              height: 1,
+            ),
+          ],
+        ),
+      ];
+
+      final enabled = ChatTemplateEngine.render(
+        templateSource: template,
+        messages: multimodalMessages,
+        metadata: const {},
+        enableThinking: true,
+      );
+
+      expect(enabled.format, ChatFormat.magistral.index);
+      expect(enabled.prompt, endsWith('[THINK]\n'));
+      expect(enabled.thinkingForcedOpen, isTrue);
+
+      final disabled = ChatTemplateEngine.render(
+        templateSource: template,
+        messages: multimodalMessages,
+        metadata: const {},
+        enableThinking: false,
+      );
+
+      expect(disabled.prompt, contains('[THINK]\n[/THINK]\n'));
+      expect(disabled.prompt, isNot(contains('</think>')));
+      expect(disabled.thinkingForcedOpen, isFalse);
+    });
 
     test('keeps old workaround format matrix in handler policies', () {
       final expectedPolicies = <ChatFormat, TemplateToolCallSerialization>{

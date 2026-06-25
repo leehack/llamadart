@@ -8,6 +8,7 @@ import 'chat_format.dart';
 import 'chat_parse_result.dart';
 import 'template_internal_metadata.dart';
 import 'template_render_context.dart';
+import 'thinking_utils.dart';
 import 'tool_call_parsing_utils.dart';
 
 export 'template_render_context.dart' show TemplateToolCallSerialization;
@@ -166,10 +167,20 @@ abstract class ChatTemplateHandler {
         'messages': templateMessages(messages, multimodal: true),
         'add_generation_prompt': addAssistant,
         'tools': tools?.map((t) => t.toJson()).toList(),
+        'enable_thinking': enableThinking,
         'bos_token': metadata['tokenizer.ggml.bos_token'] ?? '',
         'eos_token': metadata['tokenizer.ggml.eos_token'] ?? '',
       },
     );
+
+    var thinkingForcedOpen = false;
+    if (isThinkingForcedOpen(prompt, startTag: thinkingStartTag.trimRight())) {
+      if (!enableThinking) {
+        prompt = '${prompt.trimRight()}$thinkingEndTag\n';
+      } else {
+        thinkingForcedOpen = true;
+      }
+    }
 
     // Post-process: replace model-specific image placeholders with
     // the mtmd marker so the native tokenizer can match bitmaps to markers.
@@ -199,6 +210,7 @@ abstract class ChatTemplateHandler {
         hasTools: hasTools,
         enableThinking: enableThinking,
       ),
+      thinkingForcedOpen: thinkingForcedOpen,
     );
   }
 
