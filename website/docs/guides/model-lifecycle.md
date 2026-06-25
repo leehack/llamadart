@@ -168,12 +168,17 @@ verification, explicit cache policies, retries, or resume.
 
 ```dart
 final cancelToken = ModelDownloadCancelToken();
+// Desktop/server uses the shared cache. Android/iOS uses the supplied
+// app-private directory, so the call site can stay platform-neutral.
+final manager = DefaultModelDownloadManager.auto(
+  appPrivateCacheDirectory: appSupportModelsDirectory,
+);
+final engine = LlamaEngine(LlamaBackend(), modelDownloadManager: manager);
 
 await engine.loadModelSource(
   ModelSource.url(Uri.parse('https://example.com/model.gguf')),
   options: ModelLoadOptions(
     cachePolicy: ModelCachePolicy.preferCached,
-    cacheDirectory: '/app/cache/llamadart-models',
     sha256: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
     bearerToken: 'hf_xxx',
     cancelToken: cancelToken,
@@ -198,11 +203,49 @@ Cache policies:
   `remove(entry.cacheKey)`/`clear()` when the returned file is no longer needed, or
   use thresholded `prune(...)` for age/size-based cleanup.
 
+Recommended cache roots:
+
+```dart
+// Cross-platform default: desktop shared cache, mobile app-private cache.
+final crossPlatformManager = DefaultModelDownloadManager.auto(
+  appPrivateCacheDirectory: appSupportModelsDirectory,
+);
+
+// Desktop/server: per-user cache, shared across llamadart apps using the same source.
+final desktopManager = DefaultModelDownloadManager.sharedCache();
+
+// Mobile default: app-private durable storage resolved by your app/platform layer.
+final mobileManager = DefaultModelDownloadManager.appPrivate(
+  cacheDirectory: appSupportModelsDirectory,
+);
+
+// Android cross-developer sharing: only after the user grants this directory.
+final androidUserLibrary = DefaultModelDownloadManager.userSelected(
+  cacheDirectory: userGrantedModelLibraryDirectory,
+);
+
+// iOS/macOS same-team sharing: only for apps configured into the App Group.
+final appGroupLibrary = DefaultModelDownloadManager.appGroup(
+  cacheDirectory: appGroupModelsDirectory,
+);
+```
+
+`auto(...)` is the easiest way to keep one code path: desktop/server platforms
+use the shared cache, and Android/iOS use `appPrivateCacheDirectory`. If that
+mobile directory is missing, `auto(...)` throws an actionable
+`LlamaUnsupportedException` instead of falling back to a temporary or hidden
+cross-app location. `sharedCache()` intentionally refuses to invent a mobile
+shared folder when no `cacheDirectory` is supplied. Android requires an explicit
+user or app-managed grant for a shared model library, and iOS requires an App
+Group for same-group apps. For apps from unrelated developers, iOS can load
+user-picked files but does not provide a writable hidden shared model cache. Web
+model caches remain origin-scoped browser/runtime caches.
+
 The download manager can also inspect and clean the persisted cache:
 
 ```dart
-final manager = DefaultModelDownloadManager(
-  defaultCacheDirectory: '/app/cache/llamadart-models',
+final manager = DefaultModelDownloadManager.auto(
+  appPrivateCacheDirectory: appSupportModelsDirectory,
 );
 
 final cached = await manager.list();
@@ -223,8 +266,8 @@ that lifecycle without depending on Flutter:
 
 ```dart
 final controller = ModelDownloadController(
-  manager: DefaultModelDownloadManager(
-    defaultCacheDirectory: '/app/cache/llamadart-models',
+  manager: DefaultModelDownloadManager.auto(
+    appPrivateCacheDirectory: appSupportModelsDirectory,
   ),
 );
 
@@ -315,13 +358,16 @@ strings, fragments, and userinfo are redacted from display strings and metadata.
 
 ### Mobile large-download guidance
 
-For Flutter apps, pass an app-controlled `cacheDirectory` from your storage
-strategy (for example an application-support or documents directory selected by
-`path_provider`). Surface progress/cancel controls in the UI, keep downloads
-serialized for large GGUF files, and tell users to keep the app open for the
-foreground download. Do not cancel purely because the app receives a lifecycle
-pause: Android/iOS may allow short screen-lock or app-switch interruptions to
-continue, while an eager cancellation guarantees a pause on every lock.
+For Flutter apps on Android/iOS, pass an app-controlled `cacheDirectory` from
+your storage strategy (for example an application-support or documents directory
+selected by `path_provider`) to `DefaultModelDownloadManager.appPrivate(...)`,
+or pass it as `appPrivateCacheDirectory` to `DefaultModelDownloadManager.auto(...)`
+when you want one constructor across desktop and mobile.
+Surface progress/cancel controls in the UI, keep downloads serialized for large
+GGUF files, and tell users to keep the app open for the foreground download. Do
+not cancel purely because the app receives a lifecycle pause: Android/iOS may
+allow short screen-lock or app-switch interruptions to continue, while an eager
+cancellation guarantees a pause on every lock.
 
 Foreground Dart HTTP requests are still not a substitute for native background
 downloads. If the OS suspends or kills the app, the request can fail later. The
@@ -335,11 +381,14 @@ core package.
 
 For shared device-level GGUF storage, keep the same separation: core
 `llamadart` exposes source identities, cache metadata, progress, cancellation,
-retry, and verification hooks; a future opt-in platform model-store package can
-decide how apps share files, metadata, permissions, pruning, and native
-background download execution. On Android, prefer app-private storage unless the
-app intentionally exposes model files to the user; on iOS, avoid cache
-directories that the OS may purge while a model is still needed.
+retry, and verification hooks. On Android, use
+`DefaultModelDownloadManager.userSelected(...)` only after the user grants all
+participating apps access to the same model library directory; do not request
+All Files Access as a default. On iOS, use
+`DefaultModelDownloadManager.appGroup(...)` only for apps configured into the
+same App Group. For apps from unrelated developers, support user-picked model
+files through the Files/document picker and expect copy-to-app-cache fallback
+until the native loaders grow file-descriptor/content-URI backed loading.
 
 ## State persistence
 

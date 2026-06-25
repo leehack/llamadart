@@ -116,7 +116,8 @@ In the exit confirmation dialog:
 ## Notes
 
 - The first run may take time due to model download and initialization.
-- Downloaded models are cached under `models/` by default.
+- Downloaded models use the per-user shared `llamadart` model cache by default;
+  pass `--cache-dir` to use a workspace-local or app-specific cache instead.
 - `run_command` uses a safety filter and executes from the workspace root
   (or a workspace-relative subdirectory).
 - `run_command` accepts `command` and also tolerates alias keys (`cmd`,

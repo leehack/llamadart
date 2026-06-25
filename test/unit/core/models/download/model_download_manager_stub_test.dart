@@ -16,5 +16,34 @@ void main() {
         throwsA(isA<LlamaUnsupportedException>()),
       );
     });
+
+    test('auto constructor compiles on non-IO platforms', () async {
+      const manager = DefaultModelDownloadManager.auto(
+        appPrivateCacheDirectory: '/app/models',
+      );
+
+      await expectLater(
+        manager.ensureModel(ModelSource.path('/models/model.gguf')),
+        throwsA(isA<LlamaUnsupportedException>()),
+      );
+    });
+
+    test('default cache directory getter throws unsupported exception', () {
+      const manager = DefaultModelDownloadManager.auto(
+        appPrivateCacheDirectory: '/app/models',
+      );
+
+      expect(
+        () => manager.defaultCacheDirectory,
+        throwsA(isA<LlamaUnsupportedException>()),
+      );
+    });
+
+    test('throws unsupported exception for file-backed shared cache root', () {
+      expect(
+        DefaultModelDownloadManager.defaultSharedCacheDirectory,
+        throwsA(isA<LlamaUnsupportedException>()),
+      );
+    });
   });
 }
