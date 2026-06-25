@@ -1,3 +1,10 @@
+## Unreleased
+
+* Fixed multimodal chat-template rendering so templates that force-open
+  reasoning (for example Qwen3.5 VLM prompts ending with `<think>`) preserve
+  `enable_thinking` and stream generated reasoning through `delta.thinking`
+  instead of `delta.content`.
+
 ## 0.8.6
 
 * Updated the default llama.cpp native runtime pin to
