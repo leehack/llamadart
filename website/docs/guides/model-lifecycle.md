@@ -241,6 +241,18 @@ Group for same-group apps. For apps from unrelated developers, iOS can load
 user-picked files but does not provide a writable hidden shared model cache. Web
 model caches remain origin-scoped browser/runtime caches.
 
+Desktop shared-cache roots use the default `llamadart` namespace:
+
+| Platform | Default path |
+| --- | --- |
+| Linux | `$XDG_CACHE_HOME/llamadart/models`, or `$HOME/.cache/llamadart/models` when `XDG_CACHE_HOME` is unset |
+| macOS | `$HOME/Library/Caches/llamadart/models` |
+| Windows | `%LOCALAPPDATA%\llamadart\models`, then `%APPDATA%\llamadart\models`, then `%USERPROFILE%\AppData\Local\llamadart\models` |
+
+Pass `namespace: 'your.namespace'` to `auto(...)` or `sharedCache(...)` to
+replace the `llamadart` path segment, or pass `cacheDirectory` to force an
+explicit root.
+
 The download manager can also inspect and clean the persisted cache:
 
 ```dart

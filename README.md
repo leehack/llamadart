@@ -337,6 +337,18 @@ Storage Access Framework-style user grant, or `appGroup(cacheDirectory: ...)`
 for explicitly configured iOS/macOS App Group containers. Web backends use
 origin-scoped browser/runtime caches instead of a file-backed shared directory.
 
+Desktop shared-cache roots use the default `llamadart` namespace:
+
+| Platform | Default path |
+| --- | --- |
+| Linux | `$XDG_CACHE_HOME/llamadart/models`, or `$HOME/.cache/llamadart/models` when `XDG_CACHE_HOME` is unset |
+| macOS | `$HOME/Library/Caches/llamadart/models` |
+| Windows | `%LOCALAPPDATA%\llamadart\models`, then `%APPDATA%\llamadart\models`, then `%USERPROFILE%\AppData\Local\llamadart\models` |
+
+Pass `namespace: 'your.namespace'` to `auto(...)` or `sharedCache(...)` to
+replace the `llamadart` path segment, or pass `cacheDirectory` to force an
+explicit root.
+
 `hf://` references point at one Hugging Face file, such as a `.gguf` model or
 `.litertlm` LiteRT-LM bundle:
 `hf://owner/repo/path/to/model.gguf` uses `main`,
