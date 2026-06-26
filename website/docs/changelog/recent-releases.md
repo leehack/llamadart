@@ -7,7 +7,7 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
-## Unreleased
+## 0.8.10
 
 - **Potentially breaking behavior change:** native model cache defaults changed
   without breaking Dart source compatibility. `DefaultModelDownloadManager()` now
