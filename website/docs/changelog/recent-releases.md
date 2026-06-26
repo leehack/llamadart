@@ -9,6 +9,11 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Updated the default llama.cpp native runtime pin to
+  `leehack/llamadart-native@b9803`, regenerated matching Dart FFI bindings,
+  refreshed the `llamadart_llama_cpp_flutter` Apple SwiftPM checksum, and
+  aligned current README/website native override docs.
+
 - Added `DefaultModelDownloadManager.auto(...)` plus explicit model cache root
   constructors for shared desktop caches, app-private mobile caches,
   user-selected model libraries, and App Group containers. Implicit shared cache
