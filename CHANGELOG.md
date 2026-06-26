@@ -1,4 +1,4 @@
-## Unreleased
+## 0.8.10
 
 * **Potentially breaking behavior change:** native model cache defaults changed
   without breaking Dart source compatibility. `DefaultModelDownloadManager()` now
