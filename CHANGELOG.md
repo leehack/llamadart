@@ -1,4 +1,4 @@
-## Unreleased
+## 0.8.8
 
 * Updated the default llama.cpp native runtime pin to
   `leehack/llamadart-native@b9803`, regenerated matching Dart FFI bindings, refreshed

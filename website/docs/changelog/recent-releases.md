@@ -7,7 +7,7 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
-## Unreleased
+## 0.8.8
 
 - Updated the default llama.cpp native runtime pin to
   `leehack/llamadart-native@b9803`, regenerated matching Dart FFI bindings,
