@@ -14,6 +14,7 @@ dart run tool/testing/test_matrix.dart --tier release
 dart format --output=none --set-exit-if-changed .
 dart analyze
 dart test
+dart run tool/testing/verify_release_docs_versions.dart
 ./tool/docs/build_site.sh
 ./tool/docs/validate_links.sh
 ```
@@ -44,8 +45,12 @@ version alignment:
   version, updates its `pubspec.yaml`, and writes a versioned changelog entry
   that includes the native repo tag.
 - Leave unchanged companion package versions as-is. Companion packages publish
-  from package-specific tags after their first manual pub.dev publish; the
-  workflow skips a companion package version that already exists on pub.dev.
+  only after the release-prep PR is merged and the maintainer explicitly
+  approves pushing the relevant package-specific tag; the workflow skips a
+  companion package version that already exists on pub.dev.
+- Keep current install snippets aligned with root and companion `pubspec.yaml`
+  versions. Run `dart run tool/testing/verify_release_docs_versions.dart` before
+  opening or merging the release-prep PR.
 - Move accumulated `Unreleased` entries into the new version section; remove
   the `Unreleased` heading when it would otherwise be empty. Add it back only
   when the next unreleased change is documented.
@@ -56,6 +61,10 @@ version alignment:
   `llamadart` package.
 
 ## 3. Publish flow
+
+A release-prep PR updates versions, changelogs, docs, and pins only; it must not
+publish companion packages or the core package. Merging release prep is a
+separate approval boundary from every tag push that triggers pub.dev publishing.
 
 Do not tag the core `vX.Y.Z` release until every companion package version named
 in the current install docs is already published on pub.dev. The release
@@ -73,8 +82,9 @@ sequence is:
    curl -fsSL "https://pub.dev/api/packages/$package_name/versions/$package_version"
    ```
 
-3. If a changed companion version is missing, tag and publish that companion
-   package first, for example:
+3. If a changed companion version is missing, first merge the release-prep PR.
+   Then request explicit maintainer approval to push that companion's
+   package-specific tag, for example:
 
    ```bash
    git tag llamadart_llama_cpp_flutter-v0.0.3
@@ -84,7 +94,8 @@ sequence is:
    Wait for `publish_companion_pubdev.yml` to pass, then re-check the pub.dev
    version URL.
 4. Tag `vX.Y.Z` and push the core release tag only after the companion packages
-   referenced by the release docs are resolvable from pub.dev.
+   referenced by the release docs are resolvable from pub.dev, and only after a
+   separate explicit maintainer approval for the core release tag.
 
 Current workflows involved:
 

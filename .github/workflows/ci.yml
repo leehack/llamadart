@@ -42,6 +42,9 @@ jobs:
       - name: Check platform boundaries
         run: dart run tool/testing/check_platform_boundaries.dart
 
+      - name: Verify release docs versions
+        run: dart run tool/testing/verify_release_docs_versions.dart
+
       - name: Pub Publish Dry Run
         run: flutter pub publish --dry-run
 

@@ -1,3 +1,11 @@
+## Unreleased
+
+* Added a CI release-doc version consistency check so current README/website
+  install snippets and companion package READMEs stay aligned with package
+  `pubspec.yaml` versions, and documented that companion/core package publishing
+  happens only after release-prep merge with explicit maintainer approval for
+  each tag.
+
 ## 0.8.8
 
 * Updated the default llama.cpp native runtime pin to

@@ -83,15 +83,18 @@ version is newly referenced by current install docs:
 
 1. Confirm the `Package.swift` binary targets point at published native GitHub
    release assets and that the pinned checksums match those assets.
-2. After the sync/release-prep PR is merged, tag the companion package version
-   first, using the package-specific tag pattern:
+2. Merge the sync/release-prep PR first. The PR itself must not publish the
+   companion or core package.
+3. After merge, get explicit maintainer approval before pushing each
+   package-specific companion tag:
    `llamadart_llama_cpp_flutter-v{{version}}` or
    `llamadart_litert_lm_flutter-v{{version}}`.
-3. Wait for `publish_companion_pubdev.yml` to pass.
-4. Verify the version URL on pub.dev, for example
+4. Wait for `publish_companion_pubdev.yml` to pass.
+5. Verify the version URL on pub.dev, for example
    `https://pub.dev/api/packages/llamadart_llama_cpp_flutter/versions/{{version}}`.
-5. Only then tag the core `vX.Y.Z` release that documents or depends on that
-   companion version.
+6. Only after the companion version is live, get explicit maintainer approval
+   before pushing the core `vX.Y.Z` release tag that documents or depends on
+   that companion version.
 
 ## Web bridge asset sync flow
 
