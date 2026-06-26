@@ -1,5 +1,11 @@
 ## 0.8.8
 
+* Added a CI release-doc version consistency check so current README/website
+  install snippets and companion package READMEs stay aligned with package
+  `pubspec.yaml` versions, and documented that companion/core package publishing
+  happens only after release-prep merge with explicit maintainer approval for
+  each tag.
+
 * Updated the default llama.cpp native runtime pin to
   `leehack/llamadart-native@b9803`, regenerated matching Dart FFI bindings, refreshed
   the `llamadart_llama_cpp_flutter` Apple SwiftPM checksum, and

@@ -82,6 +82,16 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     useWhen: 'Docs, README, website, migration, or changelog changes.',
   ),
   TestMatrixRow(
+    id: 'release-doc-version-consistency',
+    tier: 'targeted',
+    mode: 'CI + local',
+    covers:
+        'current README/website install snippets and companion README versions',
+    command: 'dart run tool/testing/verify_release_docs_versions.dart',
+    useWhen:
+        'Release prep, companion package version bumps, or current install docs.',
+  ),
+  TestMatrixRow(
     id: 'examples-tests',
     tier: 'targeted',
     mode: 'local',
@@ -393,9 +403,11 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     command:
         'Before tagging vX.Y.Z, verify each referenced companion version with '
         'https://pub.dev/api/packages/<package>/versions/<version>. If a '
-        'changed version is missing, push the package tag first, for example '
-        'llamadart_llama_cpp_flutter-v0.0.3, wait for '
-        'publish_companion_pubdev.yml, then tag the core release.',
+        'changed version is missing, merge the release-prep PR first, then get '
+        'explicit approval before pushing the companion package tag, for '
+        'example llamadart_llama_cpp_flutter-v0.0.3. Wait for '
+        'publish_companion_pubdev.yml, verify pub.dev, then get explicit '
+        'approval before pushing the core release tag.',
     useWhen:
         'Any release that changes companion packages or documents companion '
         'package versions.',

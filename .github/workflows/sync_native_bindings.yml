@@ -83,6 +83,7 @@ jobs:
             - [ ] If LiteRT-LM sync was requested (`litert_lm_tag` is not `keep`), confirm `leehack/litert-lm-native` release `${{ steps.sync_pins.outputs.resolved_litert_lm_tag }}` includes the required runtime archives.
             - [ ] Confirm matching Apple SPM pins changed under `packages/` when Apple XCFramework releases changed.
             - [ ] Confirm current README/website native pin docs and `CHANGELOG.md` describe the new default pin.
+            - [ ] Do not tag or publish companion/core packages from this PR. After merge, request explicit maintainer approval before pushing any package-specific companion tag or core `vX.Y.Z` tag.
           branch: "automation/native-sync-${{ steps.sync_headers.outputs.resolved_tag }}"
           labels: automation/native-sync
           add-paths: |

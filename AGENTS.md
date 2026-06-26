@@ -340,12 +340,20 @@ WEBGPU_BRIDGE_ASSETS_TAG=<tag> ./scripts/fetch_webgpu_bridge_assets.sh
   the new version section.
 - Do not leave an empty `Unreleased` section in committed release prep. Add
   `Unreleased` back only when the next unreleased change is documented.
+- Run `dart run tool/testing/verify_release_docs_versions.dart` before release
+  prep PRs and any PR that edits current install snippets; it verifies current
+  README/website snippets and companion package READMEs against package
+  `pubspec.yaml` versions while intentionally ignoring historical versioned docs.
+- Release prep PRs must not publish anything by themselves. After the release
+  prep PR is merged, ask for explicit maintainer approval before pushing any
+  package-specific companion tag or the core `vX.Y.Z` tag.
 - Before tagging the core `vX.Y.Z` release, verify any companion package
   versions referenced by current install docs are already live on pub.dev. If a
-  changed companion package version is missing, publish it first with its
-  package-specific tag, for example
-  `llamadart_llama_cpp_flutter-v0.0.3`, wait for the companion publish workflow
-  to pass, and only then tag the core release.
+  changed companion package version is missing, stop and request explicit
+  approval to push that companion's package-specific tag, for example
+  `llamadart_llama_cpp_flutter-v0.0.3`; wait for the companion publish workflow
+  to pass, verify pub.dev, then request explicit approval before pushing the
+  core release tag.
 - Treat Apple SPM release readiness as two separate checks: the native GitHub
   release must contain the XCFramework zip/checksum pinned in `Package.swift`,
   and the Flutter companion pub package carrying that `Package.swift` must be
