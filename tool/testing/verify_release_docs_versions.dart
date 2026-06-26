@@ -5,6 +5,10 @@ import 'dart:io';
 // Keep these maps in sync when adding companion packages or moving the current
 // installation docs. Historical website/versioned_docs pages are intentionally
 // excluded so archived release docs can keep their original package versions.
+//
+// During release-prep PRs, current install docs are expected to track the
+// in-repository package versions being prepared. Publishing still happens only
+// after merge and explicit maintainer approval for each release tag.
 const Map<String, String> _packagePubspecs = <String, String>{
   'llamadart': 'pubspec.yaml',
   'llamadart_llama_cpp_flutter':
