@@ -11,6 +11,8 @@ class DefaultModelDownloadManager extends ThrowingModelDownloadManager {
     String namespace = 'llamadart',
     String? cacheDirectory,
     String? appPrivateCacheDirectory,
+    String? androidAppPrivateCacheDirectory,
+    String? iosAppPrivateCacheDirectory,
     ModelCachePlatform? platform,
     Map<String, String>? environment,
     String? homeDirectory,

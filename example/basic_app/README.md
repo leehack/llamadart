@@ -7,6 +7,7 @@ A clean, organized CLI application demonstrating the capabilities of the `llamad
 - **Interactive Mode**: Have a back-and-forth conversation with an LLM in your terminal.
 - **Single Response Mode**: Pass a prompt as an argument for quick tasks.
 - **Automatic Model Management**: Automatically downloads models from Hugging Face if a URL is provided.
+- **Platform Cache Defaults**: Remote model URLs use `DefaultModelDownloadManager`, so desktop/server runs share the per-user `llamadart` model cache while explicit local paths are loaded directly.
 - **Backend Optimization**: Defaults to GPU acceleration (Metal/Vulkan) when available.
 - **LoRA Adapters**: Load one or more LoRA adapters with repeated `--lora` flags.
 - **Structured Output**: Pass `--grammar` for GBNF-constrained generation.

@@ -280,10 +280,11 @@ import 'package:llamadart/llamadart.dart';
 
 Future<void> main() async {
   final String? appPrivateModelsDirectory =
-      await resolveMobileAppPrivateModelsDirectory();
+      await resolveAppPrivateModelsDirectory();
 
   // Desktop/server apps use a per-user shared cache. Android/iOS apps use the
-  // supplied app-private directory instead, so one code path works everywhere.
+  // supplied app-private directory when available, otherwise an app-private
+  // temporary/cache fallback. One constructor works across platforms.
   final engine = LlamaEngine(
     LlamaBackend(),
     modelDownloadManager: DefaultModelDownloadManager.auto(
@@ -309,10 +310,16 @@ Future<void> main() async {
 }
 ```
 
-`resolveMobileAppPrivateModelsDirectory()` represents your app storage layer, for
-example a Flutter `path_provider` application-support path on Android/iOS. On
-desktop/server, `auto(...)` ignores `appPrivateCacheDirectory` and uses the
-per-user shared model cache.
+`resolveAppPrivateModelsDirectory()` represents your app storage layer, for
+example a Flutter `path_provider` application-support path. On desktop/server,
+`auto(...)` ignores mobile app-private directory arguments and uses the per-user
+shared model cache. On Android/iOS, pass `appPrivateCacheDirectory` when a storage
+abstraction has already resolved the current platform's model directory, or pass
+`androidAppPrivateCacheDirectory` and `iosAppPrivateCacheDirectory` when you want
+one branch-free constructor call with platform-specific directories. If no mobile
+directory is supplied, `auto(...)` falls back to the app-private system
+temporary/cache directory; this is convenient for examples and rebuildable
+downloads, but app-support storage is preferable for large durable model files.
 
 Native/file-backed backends stream remote models into the package-managed cache,
 resume partial `.part` downloads when the server supports HTTP Range and the
@@ -326,24 +333,44 @@ and retries are rejected for local paths.
 
 `DefaultModelDownloadManager.auto(...)` is the recommended cross-platform
 entrypoint: desktop/server platforms use a per-user shared cache, while
-Android/iOS use the app-private directory supplied by the app storage layer.
+Android/iOS use a supplied platform-specific or generic app-private directory,
+falling back to a best-effort system temporary/cache directory when omitted.
+The default `DefaultModelDownloadManager()` constructor also uses the per-user
+shared cache on desktop/server platforms and the same mobile app-private
+temporary/cache fallback, so a plain `LlamaEngine(...)` has a platform-appropriate
+default without application `if` branches. To preserve constructor compatibility
+in unusual desktop/server embedders where no home/cache environment is available,
+the default constructor falls back to the system temporary/cache root;
+explicit desktop/server `auto(...)` and `sharedCache(...)` resolution still
+reports cache-resolution errors so apps can choose a durable directory.
 `DefaultModelDownloadManager.sharedCache()` is the explicit desktop/server shared
 cache entrypoint, so multiple `llamadart` apps that use the same stable
 `ModelSource` can reuse one downloaded file. Mobile platforms do not have a safe
 implicit cross-developer model folder: use
 `DefaultModelDownloadManager.appPrivate(cacheDirectory: ...)` for normal
-Android/iOS app storage, `userSelected(cacheDirectory: ...)` after an Android
+Android/iOS app storage resolved by the app, `userSelected(cacheDirectory: ...)` after an Android
 Storage Access Framework-style user grant, or `appGroup(cacheDirectory: ...)`
 for explicitly configured iOS/macOS App Group containers. Web backends use
 origin-scoped browser/runtime caches instead of a file-backed shared directory.
 
-Desktop shared-cache roots use the default `llamadart` namespace:
+For Flutter apps, prefer `path_provider` over raw path guesses on mobile:
+`getApplicationCacheDirectory()` is the closest match for re-downloadable model
+caches, while `getApplicationSupportDirectory()` is appropriate only when the
+app intentionally treats model files as durable support data and handles platform
+backup/no-backup policy as needed. `getTemporaryDirectory()` also maps to
+app-scoped cache locations such as Android `Context.getCacheDir` and Apple
+`NSCachesDirectory`, but its contents may be cleared at any time. The
+`Directory.systemTemp` fallback is therefore a compatibility fallback, not the
+recommended durable mobile model-library location.
+
+Default cache roots use the default `llamadart` namespace:
 
 | Platform | Default path |
 | --- | --- |
 | Linux | `$XDG_CACHE_HOME/llamadart/models`, or `$HOME/.cache/llamadart/models` when `XDG_CACHE_HOME` is unset |
 | macOS | `$HOME/Library/Caches/llamadart/models` |
 | Windows | `%LOCALAPPDATA%\llamadart\models`, then `%APPDATA%\llamadart\models`, then `%USERPROFILE%\AppData\Local\llamadart\models` |
+| Android/iOS | supplied app-private directory, preferably app cache/support resolved by the app, or `Directory.systemTemp/llamadart/models` as a best-effort cache fallback |
 
 Pass `namespace: 'your.namespace'` to `auto(...)` or `sharedCache(...)` to
 replace the `llamadart` path segment, or pass `cacheDirectory` to force an

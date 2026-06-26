@@ -16,28 +16,40 @@ const int _metadataSchemaVersion = 1;
 /// Native file-backed package-managed model download manager.
 class DefaultModelDownloadManager implements ModelDownloadManager {
   /// Creates a native model download/cache manager.
+  ///
+  /// When [defaultCacheDirectory] is omitted, desktop/server platforms use the
+  /// same per-user shared model cache as [DefaultModelDownloadManager.auto].
+  /// Android and iOS use an app-private temporary/cache directory so constructing
+  /// the manager stays non-throwing; apps that need durable mobile storage should
+  /// pass an explicit directory or use [DefaultModelDownloadManager.appPrivate].
   DefaultModelDownloadManager({String? defaultCacheDirectory})
     : defaultCacheDirectory =
-          defaultCacheDirectory ??
-          path.join(Directory.systemTemp.path, 'llamadart', 'models');
+          defaultCacheDirectory ?? _defaultImplicitCacheDirectory();
 
   /// Creates a manager using the recommended cache root for the current platform.
   ///
   /// Pass [cacheDirectory] to force a specific root on every platform,
   /// including an OS-granted mobile model library directory. Otherwise,
   /// desktop/server platforms use [defaultSharedCacheDirectory] with
-  /// [namespace], [environment], and [homeDirectory]. Android and iOS use
-  /// [appPrivateCacheDirectory] because `llamadart` cannot discover an app's
-  /// durable sandbox directory without app/platform storage APIs.
+  /// [namespace], [environment], and [homeDirectory]. Android and iOS use, in
+  /// order, their platform-specific app-private directory argument,
+  /// [appPrivateCacheDirectory], or an app-private temporary/cache fallback.
   ///
-  /// Throws [LlamaUnsupportedException] on Android or iOS when neither
-  /// [cacheDirectory] nor [appPrivateCacheDirectory] is supplied, on web because
-  /// browser caches are origin-scoped instead of file-backed, and on unknown
-  /// platforms where no implicit shared cache root is known.
+  /// Use [androidAppPrivateCacheDirectory] and [iosAppPrivateCacheDirectory]
+  /// when an app resolves both platform directories up front and wants one
+  /// branch-free `auto(...)` call. Use [appPrivateCacheDirectory] when a storage
+  /// abstraction such as Flutter `path_provider` has already returned the
+  /// current platform's app-private model directory.
+  ///
+  /// Throws [LlamaUnsupportedException] on web because browser caches are
+  /// origin-scoped instead of file-backed, and on unknown platforms where no
+  /// implicit cache root is known.
   factory DefaultModelDownloadManager.auto({
     String namespace = 'llamadart',
     String? cacheDirectory,
     String? appPrivateCacheDirectory,
+    String? androidAppPrivateCacheDirectory,
+    String? iosAppPrivateCacheDirectory,
     ModelCachePlatform? platform,
     Map<String, String>? environment,
     String? homeDirectory,
@@ -61,17 +73,18 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
     }
 
     if (effectivePlatform.isMobile) {
-      final appPrivateDirectory = _nonEmpty(appPrivateCacheDirectory);
-      if (appPrivateDirectory != null) {
-        return DefaultModelDownloadManager.appPrivate(
-          cacheDirectory: appPrivateDirectory,
-        );
-      }
-      throw LlamaUnsupportedException(
-        'DefaultModelDownloadManager.auto cannot choose a durable model cache '
-        'directory for ${effectivePlatform.name}. Pass appPrivateCacheDirectory '
-        'from your app storage layer, or pass cacheDirectory for an explicit '
-        'OS-granted model library.',
+      return DefaultModelDownloadManager.appPrivate(
+        cacheDirectory:
+            _mobileAppPrivateCacheDirectory(
+              effectivePlatform,
+              appPrivateCacheDirectory: appPrivateCacheDirectory,
+              androidAppPrivateCacheDirectory: androidAppPrivateCacheDirectory,
+              iosAppPrivateCacheDirectory: iosAppPrivateCacheDirectory,
+            ) ??
+            _defaultImplicitCacheDirectoryFor(
+              effectivePlatform,
+              namespace: namespace,
+            ),
       );
     }
 
@@ -120,11 +133,12 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
     );
   }
 
-  /// Creates a manager rooted at an app-private durable cache directory.
+  /// Creates a manager rooted at an app-private model cache directory.
   ///
-  /// Flutter apps typically pass an application-support or documents directory
-  /// resolved with platform storage APIs. This avoids cross-app storage claims on
-  /// mobile while still deduping model downloads within the app.
+  /// Flutter apps typically pass an application cache directory for
+  /// re-downloadable models, or an application-support directory when the app
+  /// owns the platform backup/no-backup policy. This avoids cross-app storage
+  /// claims on mobile while still deduping model downloads within the app.
   factory DefaultModelDownloadManager.appPrivate({
     required String cacheDirectory,
   }) {
@@ -1452,6 +1466,54 @@ String? _nonEmpty(String? value) {
     return null;
   }
   return value;
+}
+
+String _defaultImplicitCacheDirectory() {
+  final platform = ModelCachePlatform.parse(Platform.operatingSystem);
+  try {
+    return _defaultImplicitCacheDirectoryFor(platform);
+  } on LlamaUnsupportedException {
+    // Keep the default constructor non-throwing for compatibility with older
+    // embedders and unusual host environments that do not expose a home/cache
+    // environment. Explicit auto/sharedCache calls still surface the actionable
+    // resolution error.
+    return _temporaryCacheDirectory();
+  }
+}
+
+String _defaultImplicitCacheDirectoryFor(
+  ModelCachePlatform platform, {
+  String namespace = 'llamadart',
+}) {
+  if (platform.supportsImplicitSharedModelCache) {
+    return DefaultModelDownloadManager.defaultSharedCacheDirectory(
+      platform: platform,
+      namespace: namespace,
+    );
+  }
+  return _temporaryCacheDirectory(namespace: namespace);
+}
+
+String _temporaryCacheDirectory({String namespace = 'llamadart'}) {
+  return path.join(
+    Directory.systemTemp.path,
+    _validateCacheNamespace(namespace),
+    'models',
+  );
+}
+
+String? _mobileAppPrivateCacheDirectory(
+  ModelCachePlatform platform, {
+  required String? appPrivateCacheDirectory,
+  required String? androidAppPrivateCacheDirectory,
+  required String? iosAppPrivateCacheDirectory,
+}) {
+  final platformPrivateDirectory = switch (platform) {
+    ModelCachePlatform.android => _nonEmpty(androidAppPrivateCacheDirectory),
+    ModelCachePlatform.ios => _nonEmpty(iosAppPrivateCacheDirectory),
+    _ => null,
+  };
+  return platformPrivateDirectory ?? _nonEmpty(appPrivateCacheDirectory);
 }
 
 String _validateCacheNamespace(String namespace) {

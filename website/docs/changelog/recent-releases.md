@@ -7,6 +7,28 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
+## Unreleased
+
+- **Potentially breaking behavior change:** native model cache defaults changed
+  without breaking Dart source compatibility. `DefaultModelDownloadManager()` now
+  prefers the platform shared cache on desktop/server instead of the process temp
+  directory, and mobile `DefaultModelDownloadManager.auto()` without an explicit
+  app-private directory now uses a best-effort temporary/cache fallback instead
+  of throwing. Apps or tests that asserted the old temp path or mobile exception
+  should pass an explicit cache directory or follow `MIGRATION.md`.
+
+- Added `DefaultModelDownloadManager.auto(...)` plus explicit model cache root
+  constructors for shared desktop caches, app-private mobile caches,
+  user-selected model libraries, and App Group containers. `auto(...)` now uses
+  platform-specific or generic app-private directories on Android/iOS when
+  supplied, and otherwise falls back to a best-effort temporary/cache directory
+  instead of requiring application `if` branches for simple cross-platform code.
+- Updated the default native `DefaultModelDownloadManager()` constructor to use
+  the per-user shared model cache on desktop/server platforms and the mobile
+  app-private cache fallback, so plain `LlamaEngine(...)` remote source loads use
+  a platform-appropriate default while preserving a temporary fallback for hosts
+  that cannot expose a desktop cache environment.
+
 ## 0.8.9
 
 - Broadened the `hooks` dependency constraint to support both the existing
@@ -30,12 +52,6 @@ For canonical full release notes, use:
   `leehack/llamadart-native@b9803`, regenerated matching Dart FFI bindings,
   refreshed the `llamadart_llama_cpp_flutter` Apple SwiftPM checksum, and
   aligned current README/website native override docs.
-
-- Added `DefaultModelDownloadManager.auto(...)` plus explicit model cache root
-  constructors for shared desktop caches, app-private mobile caches,
-  user-selected model libraries, and App Group containers. Implicit shared cache
-  resolution now fails loudly on mobile and web where the OS cannot provide a
-  hidden cross-developer model folder.
 
 ## 0.8.7
 
