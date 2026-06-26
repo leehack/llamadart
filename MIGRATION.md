@@ -2,6 +2,83 @@
 
 This document covers the major breaking upgrade paths.
 
+## Next release: model download/cache defaults
+
+No source migration is required for existing calls: `DefaultModelDownloadManager`
+constructors remain source-compatible, and the new mobile-specific directory
+arguments on `DefaultModelDownloadManager.auto(...)` are optional.
+
+There are two intentional runtime default changes to be aware of:
+
+1. `DefaultModelDownloadManager()` no longer defaults to the process temporary
+   directory on desktop/server platforms. It now uses the same platform cache
+   root as `DefaultModelDownloadManager.auto()`:
+
+   | Platform | New default root |
+   | --- | --- |
+   | Linux | `$XDG_CACHE_HOME/llamadart/models`, or `$HOME/.cache/llamadart/models` when `XDG_CACHE_HOME` is unset |
+   | macOS | `$HOME/Library/Caches/llamadart/models` |
+   | Windows | `%LOCALAPPDATA%\llamadart\models`, then `%APPDATA%\llamadart\models`, then `%USERPROFILE%\AppData\Local\llamadart\models` |
+
+   If a desktop/server embedder cannot expose a home/cache environment, the
+   default constructor preserves compatibility by falling back to
+   `Directory.systemTemp/llamadart/models`. Explicit `auto(...)` and
+   `sharedCache(...)` calls still report cache-resolution errors so apps can
+   choose a durable directory.
+
+2. `DefaultModelDownloadManager.auto(platform: android/ios)` without an explicit
+   mobile directory no longer throws. It now uses an app-private temporary/cache
+   fallback at `Directory.systemTemp/llamadart/models`. This is convenient for
+   examples and rebuildable downloads, but large durable mobile model files
+   should still use an app-private cache/support directory resolved by the app.
+   For Flutter apps, prefer `path_provider.getApplicationCacheDirectory()` for
+   re-downloadable model caches; use `getApplicationSupportDirectory()` only for
+   app-owned durable support files when the app also accounts for platform
+   backup/no-backup policy.
+
+Recommended cross-platform setup:
+
+```dart
+final engine = LlamaEngine(
+  LlamaBackend(),
+  modelDownloadManager: DefaultModelDownloadManager.auto(
+    // On Flutter, pass a path resolved by path_provider for the current app.
+    // For re-downloadable model caches, prefer getApplicationCacheDirectory().
+    // Desktop/server ignores this and uses the per-user shared cache.
+    appPrivateCacheDirectory: appCacheModelsDirectory,
+  ),
+);
+```
+
+If your app resolves platform-specific mobile directories ahead of time, pass
+both without adding `Platform.isAndroid` / `Platform.isIOS` branches around the
+download manager constructor:
+
+```dart
+final manager = DefaultModelDownloadManager.auto(
+  androidAppPrivateCacheDirectory: androidModelsDirectory,
+  iosAppPrivateCacheDirectory: iosModelsDirectory,
+);
+```
+
+To preserve the old temporary-cache behavior exactly on desktop/server, pass an
+explicit directory:
+
+```dart
+final manager = DefaultModelDownloadManager(
+  defaultCacheDirectory: path.join(
+    Directory.systemTemp.path,
+    'llamadart',
+    'models',
+  ),
+);
+```
+
+If your application previously called `DefaultModelDownloadManager.auto()` on
+Android/iOS and expected a `LlamaUnsupportedException`, update that test or call
+`DefaultModelDownloadManager.sharedCache()` without `cacheDirectory` when you
+specifically want to reject implicit mobile shared caches.
+
 ## `0.6.3` -> `0.6.4`
 
 No public API break, but Android arm64 native packaging defaults changed.

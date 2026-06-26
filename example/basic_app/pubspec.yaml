@@ -9,8 +9,6 @@ environment:
 dependencies:
   llamadart:
     path: ../..  # Use local version for testing
-  http: ^1.6.0
-  path: ^1.8.3
   args: ^2.4.2
   sqlite3: ^3.1.6
   sqlite_vector: ^0.9.85

@@ -57,11 +57,14 @@ flutter test --run-skipped -t local-only \
 
 ### 2. Choose and Download a Model
 1. The app will open to a **Manage Models** screen.
+   - Native mobile/desktop builds store downloaded model files under the app's
+     application-specific cache `models` directory via `path_provider`; web builds use
+     browser Cache Storage/origin-scoped runtime caches.
 2. Select one of the pre-configured models (for example: FunctionGemma 270M, Qwen3.5 0.8B/2B/4B/9B, Llama 3.2 3B, Gemma 3/3n, DeepSeek R1 distills).
    - Qwen3.5 presets now use Unsloth `Q4_K_M` GGUFs across platforms.
    - Quick picks: `0.8B` for web/older phones, `2B` for mobile + low-RAM laptops, `4B` for most native desktop/laptop runs, `9B` for desktop-class devices with more headroom.
    - Qwen3.5 small presets default to non-thinking mode for smoother latency and fewer reasoning loops; turn thinking on only when you need extra reasoning.
-3. Tap the **Download** icon. The app uses `Dio` to download the model directly to your device's documents directory.
+3. Tap the **Download** icon. The app uses `Dio` to download the model directly to your device's app-specific cache directory.
 4. Once downloaded, tap **Select** to load the model.
    - Gemma 4 E2B is included as a GGUF + `mmproj` bundle. In the current
      `llama.cpp` mtmd path used here, that projector exposes vision support but

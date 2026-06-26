@@ -20,6 +20,8 @@ void main() {
     test('auto constructor compiles on non-IO platforms', () async {
       const manager = DefaultModelDownloadManager.auto(
         appPrivateCacheDirectory: '/app/models',
+        androidAppPrivateCacheDirectory: '/android/models',
+        iosAppPrivateCacheDirectory: '/ios/models',
       );
 
       await expectLater(
@@ -31,6 +33,8 @@ void main() {
     test('default cache directory getter throws unsupported exception', () {
       const manager = DefaultModelDownloadManager.auto(
         appPrivateCacheDirectory: '/app/models',
+        androidAppPrivateCacheDirectory: '/android/models',
+        iosAppPrivateCacheDirectory: '/ios/models',
       );
 
       expect(

@@ -70,6 +70,25 @@ void main() {
       );
     });
 
+    test('constructor defaults to the platform implicit cache directory', () {
+      final manager = DefaultModelDownloadManager();
+      final platform = ModelCachePlatform.parse(Platform.operatingSystem);
+
+      if (platform.supportsImplicitSharedModelCache) {
+        expect(
+          manager.defaultCacheDirectory,
+          DefaultModelDownloadManager.defaultSharedCacheDirectory(
+            platform: platform,
+          ),
+        );
+      } else {
+        expect(
+          manager.defaultCacheDirectory,
+          path.join(Directory.systemTemp.path, 'llamadart', 'models'),
+        );
+      }
+    });
+
     test('auto uses desktop shared cache directories', () {
       final linuxManager = DefaultModelDownloadManager.auto(
         platform: ModelCachePlatform.linux,
@@ -94,7 +113,7 @@ void main() {
       );
     });
 
-    test('auto uses explicit app-private directories on mobile', () {
+    test('auto uses app-private directories on mobile', () {
       final androidManager = DefaultModelDownloadManager.auto(
         platform: ModelCachePlatform.android,
         appPrivateCacheDirectory: path.join(tempDir.path, 'android-private'),
@@ -108,6 +127,40 @@ void main() {
       expect(iosManager.defaultCacheDirectory, endsWith('ios-private'));
     });
 
+    test('auto uses platform-specific app-private directories on mobile', () {
+      final commonPrivate = path.join(tempDir.path, 'common-private');
+      final androidPrivate = path.join(tempDir.path, 'android-private');
+      final iosPrivate = path.join(tempDir.path, 'ios-private');
+
+      final androidManager = DefaultModelDownloadManager.auto(
+        platform: ModelCachePlatform.android,
+        appPrivateCacheDirectory: commonPrivate,
+        androidAppPrivateCacheDirectory: androidPrivate,
+        iosAppPrivateCacheDirectory: iosPrivate,
+      );
+      final iosManager = DefaultModelDownloadManager.auto(
+        platform: ModelCachePlatform.ios,
+        appPrivateCacheDirectory: commonPrivate,
+        androidAppPrivateCacheDirectory: androidPrivate,
+        iosAppPrivateCacheDirectory: iosPrivate,
+      );
+      final macosManager = DefaultModelDownloadManager.auto(
+        platform: ModelCachePlatform.macos,
+        environment: const <String, String>{},
+        homeDirectory: '/Users/alice',
+        appPrivateCacheDirectory: commonPrivate,
+        androidAppPrivateCacheDirectory: androidPrivate,
+        iosAppPrivateCacheDirectory: iosPrivate,
+      );
+
+      expect(androidManager.defaultCacheDirectory, androidPrivate);
+      expect(iosManager.defaultCacheDirectory, iosPrivate);
+      expect(
+        macosManager.defaultCacheDirectory,
+        '/Users/alice/Library/Caches/llamadart/models',
+      );
+    });
+
     test('auto explicit cache directory overrides platform defaults', () {
       final manager = DefaultModelDownloadManager.auto(
         platform: ModelCachePlatform.android,
@@ -117,24 +170,70 @@ void main() {
       expect(manager.defaultCacheDirectory, endsWith('user-library'));
     });
 
-    test('auto rejects mobile without an explicit durable directory', () {
+    test('auto falls back to app-private temp cache on mobile', () {
       for (final platform in <ModelCachePlatform>[
         ModelCachePlatform.android,
         ModelCachePlatform.ios,
       ]) {
+        final manager = DefaultModelDownloadManager.auto(platform: platform);
+
         expect(
-          () => DefaultModelDownloadManager.auto(platform: platform),
-          throwsA(
-            isA<LlamaUnsupportedException>().having(
-              (error) => error.toString(),
-              'message',
-              contains('appPrivateCacheDirectory'),
-            ),
-          ),
+          manager.defaultCacheDirectory,
+          path.join(Directory.systemTemp.path, 'llamadart', 'models'),
           reason: platform.name,
         );
       }
     });
+
+    test('auto applies namespace to mobile temp cache fallback', () {
+      final androidManager = DefaultModelDownloadManager.auto(
+        namespace: 'com.example.app',
+        platform: ModelCachePlatform.android,
+      );
+      final iosManager = DefaultModelDownloadManager.auto(
+        namespace: 'com.example.app',
+        platform: ModelCachePlatform.ios,
+      );
+
+      expect(
+        androidManager.defaultCacheDirectory,
+        path.join(Directory.systemTemp.path, 'com.example.app', 'models'),
+      );
+      expect(
+        iosManager.defaultCacheDirectory,
+        path.join(Directory.systemTemp.path, 'com.example.app', 'models'),
+      );
+    });
+
+    test('auto validates namespace for mobile temp cache fallback', () {
+      expect(
+        () => DefaultModelDownloadManager.auto(
+          namespace: '../bad',
+          platform: ModelCachePlatform.android,
+        ),
+        throwsArgumentError,
+      );
+    });
+
+    test(
+      'auto uses generic mobile directory when specific directory is blank',
+      () {
+        final genericPrivate = path.join(tempDir.path, 'generic-private');
+        final androidManager = DefaultModelDownloadManager.auto(
+          platform: ModelCachePlatform.android,
+          appPrivateCacheDirectory: genericPrivate,
+          androidAppPrivateCacheDirectory: '  ',
+        );
+        final iosManager = DefaultModelDownloadManager.auto(
+          platform: ModelCachePlatform.ios,
+          appPrivateCacheDirectory: genericPrivate,
+          iosAppPrivateCacheDirectory: '',
+        );
+
+        expect(androidManager.defaultCacheDirectory, genericPrivate);
+        expect(iosManager.defaultCacheDirectory, genericPrivate);
+      },
+    );
 
     test('auto rejects non-file-backed and unknown platforms', () {
       for (final platform in <ModelCachePlatform>[

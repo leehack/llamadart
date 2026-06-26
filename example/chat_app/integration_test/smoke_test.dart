@@ -37,7 +37,7 @@ void main() {
 
         final Directory dataDir;
         if (Platform.isAndroid || Platform.isIOS) {
-          dataDir = await getApplicationDocumentsDirectory();
+          dataDir = await getApplicationCacheDirectory();
         } else {
           dataDir = Directory(path.join(Directory.current.path, 'models'));
           if (!dataDir.existsSync()) dataDir.createSync(recursive: true);

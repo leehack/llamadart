@@ -32,7 +32,7 @@ class ModelServiceIO implements ModelService {
 
   @override
   Future<String> getModelsDirectory() async {
-    final dir = await getApplicationDocumentsDirectory();
+    final dir = await getApplicationCacheDirectory();
     final modelsDir = Directory(p.join(dir.path, 'models'));
     if (!await modelsDir.exists()) {
       await modelsDir.create(recursive: true);

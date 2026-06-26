@@ -171,7 +171,7 @@ final cancelToken = ModelDownloadCancelToken();
 // Desktop/server uses the shared cache. Android/iOS uses the supplied
 // app-private directory, so the call site can stay platform-neutral.
 final manager = DefaultModelDownloadManager.auto(
-  appPrivateCacheDirectory: appSupportModelsDirectory,
+  appPrivateCacheDirectory: appCacheModelsDirectory,
 );
 final engine = LlamaEngine(LlamaBackend(), modelDownloadManager: manager);
 
@@ -208,15 +208,15 @@ Recommended cache roots:
 ```dart
 // Cross-platform default: desktop shared cache, mobile app-private cache.
 final crossPlatformManager = DefaultModelDownloadManager.auto(
-  appPrivateCacheDirectory: appSupportModelsDirectory,
+  appPrivateCacheDirectory: appCacheModelsDirectory,
 );
 
 // Desktop/server: per-user cache, shared across llamadart apps using the same source.
 final desktopManager = DefaultModelDownloadManager.sharedCache();
 
-// Mobile default: app-private durable storage resolved by your app/platform layer.
+// Mobile default: app-private cache/support storage resolved by your app/platform layer.
 final mobileManager = DefaultModelDownloadManager.appPrivate(
-  cacheDirectory: appSupportModelsDirectory,
+  cacheDirectory: appCacheModelsDirectory,
 );
 
 // Android cross-developer sharing: only after the user grants this directory.
@@ -231,23 +231,41 @@ final appGroupLibrary = DefaultModelDownloadManager.appGroup(
 ```
 
 `auto(...)` is the easiest way to keep one code path: desktop/server platforms
-use the shared cache, and Android/iOS use `appPrivateCacheDirectory`. If that
-mobile directory is missing, `auto(...)` throws an actionable
-`LlamaUnsupportedException` instead of falling back to a temporary or hidden
-cross-app location. `sharedCache()` intentionally refuses to invent a mobile
-shared folder when no `cacheDirectory` is supplied. Android requires an explicit
-user or app-managed grant for a shared model library, and iOS requires an App
-Group for same-group apps. For apps from unrelated developers, iOS can load
-user-picked files but does not provide a writable hidden shared model cache. Web
-model caches remain origin-scoped browser/runtime caches.
+use the shared cache, and Android/iOS use a supplied platform-specific or generic
+app-private directory. If no mobile directory is supplied, `auto(...)` falls back
+to a best-effort system temporary/cache directory; it never invents a hidden
+cross-developer shared folder. `sharedCache()` intentionally refuses to invent a
+mobile shared folder when no `cacheDirectory` is supplied. Android requires an
+explicit user or app-managed grant for a shared model library, and iOS requires
+an App Group for same-group apps. For apps from unrelated developers, iOS can
+load user-picked files but does not provide a writable hidden shared model cache.
+Web model caches remain origin-scoped browser/runtime caches.
 
-Desktop shared-cache roots use the default `llamadart` namespace:
+The default `DefaultModelDownloadManager()` constructor follows the same desktop
+and mobile defaults. To preserve constructor compatibility in unusual desktop or
+server embedders where no home/cache environment is available, the default
+constructor falls back to the system temporary/cache root. Explicit
+desktop/server `auto(...)` and `sharedCache(...)` resolution still reports
+cache-resolution errors so apps can choose a durable directory.
+
+On Flutter mobile apps, resolve app-private paths with `path_provider` rather
+than hard-coded platform paths. Use `getApplicationCacheDirectory()` for
+re-downloadable model caches; use `getApplicationSupportDirectory()` only when
+the app intentionally owns durable support files and accounts for platform
+backup/no-backup policy. `getTemporaryDirectory()` is also app-scoped and maps to
+platform cache APIs such as Android `Context.getCacheDir` and Apple
+`NSCachesDirectory`, but those files may be cleared. The `Directory.systemTemp`
+fallback is a compatibility path for simple examples and embedders, not the
+recommended durable mobile model-library location.
+
+Default cache roots use the default `llamadart` namespace:
 
 | Platform | Default path |
 | --- | --- |
 | Linux | `$XDG_CACHE_HOME/llamadart/models`, or `$HOME/.cache/llamadart/models` when `XDG_CACHE_HOME` is unset |
 | macOS | `$HOME/Library/Caches/llamadart/models` |
 | Windows | `%LOCALAPPDATA%\llamadart\models`, then `%APPDATA%\llamadart\models`, then `%USERPROFILE%\AppData\Local\llamadart\models` |
+| Android/iOS | supplied app-private directory, preferably app cache/support resolved by the app, or `Directory.systemTemp/llamadart/models` as a best-effort cache fallback |
 
 Pass `namespace: 'your.namespace'` to `auto(...)` or `sharedCache(...)` to
 replace the `llamadart` path segment, or pass `cacheDirectory` to force an
@@ -257,7 +275,7 @@ The download manager can also inspect and clean the persisted cache:
 
 ```dart
 final manager = DefaultModelDownloadManager.auto(
-  appPrivateCacheDirectory: appSupportModelsDirectory,
+  appPrivateCacheDirectory: appCacheModelsDirectory,
 );
 
 final cached = await manager.list();
@@ -279,7 +297,7 @@ that lifecycle without depending on Flutter:
 ```dart
 final controller = ModelDownloadController(
   manager: DefaultModelDownloadManager.auto(
-    appPrivateCacheDirectory: appSupportModelsDirectory,
+    appPrivateCacheDirectory: appCacheModelsDirectory,
   ),
 );
 
@@ -370,11 +388,16 @@ strings, fragments, and userinfo are redacted from display strings and metadata.
 
 ### Mobile large-download guidance
 
-For Flutter apps on Android/iOS, pass an app-controlled `cacheDirectory` from
-your storage strategy (for example an application-support or documents directory
-selected by `path_provider`) to `DefaultModelDownloadManager.appPrivate(...)`,
-or pass it as `appPrivateCacheDirectory` to `DefaultModelDownloadManager.auto(...)`
-when you want one constructor across desktop and mobile.
+For Flutter apps on Android/iOS, prefer an app-controlled directory from your
+storage strategy. Use `path_provider.getApplicationCacheDirectory()` for
+re-downloadable model caches, or `getApplicationSupportDirectory()` only when
+the app owns the platform backup/no-backup policy. Pass the current platform's
+resolved path as `appPrivateCacheDirectory`, or pass both
+`androidAppPrivateCacheDirectory` and `iosAppPrivateCacheDirectory` if your app
+resolves them up front and wants one branch-free `DefaultModelDownloadManager.auto(...)`
+call. If omitted, `auto(...)` still uses an app-private temporary/cache fallback,
+which is convenient for rebuildable downloads but less explicit than a directory
+resolved by your app.
 Surface progress/cancel controls in the UI, keep downloads serialized for large
 GGUF files, and tell users to keep the app open for the foreground download. Do
 not cancel purely because the app receives a lifecycle pause: Android/iOS may
