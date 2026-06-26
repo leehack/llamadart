@@ -7,6 +7,17 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
+## 0.8.9
+
+- Broadened the `hooks` dependency constraint to support both the existing
+  build-hooks package family and the latest stable release, restoring the
+  pub.dev dependency freshness score without breaking downstream packages that
+  still resolve `hooks` 1.x.
+
+- Made web-safe backend stubs the default conditional import/export targets,
+  preserving native `dart:io` selection while avoiding false WASM compatibility
+  deductions in pub.dev analysis.
+
 ## 0.8.8
 
 - Added a CI release-doc version consistency check so current README/website
