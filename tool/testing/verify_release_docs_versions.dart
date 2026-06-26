@@ -2,6 +2,9 @@
 
 import 'dart:io';
 
+// Keep these maps in sync when adding companion packages or moving the current
+// installation docs. Historical website/versioned_docs pages are intentionally
+// excluded so archived release docs can keep their original package versions.
 const Map<String, String> _packagePubspecs = <String, String>{
   'llamadart': 'pubspec.yaml',
   'llamadart_llama_cpp_flutter':
@@ -35,21 +38,28 @@ const Map<String, List<String>> _currentDocDependencies =
 final RegExp _dependencyLine = RegExp(
   r'^\s+(llamadart(?:_[a-z0-9_]+)?):\s+\^([0-9]+\.[0-9]+\.[0-9]+(?:[-+][^\s#]+)?)',
 );
+final RegExp _fenceLine = RegExp(r'^\s*```\s*([^\s`]*)?\s*$');
+final RegExp _versionLine = RegExp(r'^version:\s*(\S+)\s*$');
 
 void main() {
-  final versions = <String, String>{
-    for (final entry in _packagePubspecs.entries)
-      entry.key: _readPubspecVersion(entry.value),
-  };
-
   final errors = <String>[];
-  for (final entry in _currentDocDependencies.entries) {
-    _checkCurrentDoc(
-      path: entry.key,
-      expectedPackages: entry.value,
-      versions: versions,
-      errors: errors,
-    );
+  final versions = <String, String>{};
+  for (final entry in _packagePubspecs.entries) {
+    final version = _readPubspecVersion(entry.value, errors);
+    if (version != null) {
+      versions[entry.key] = version;
+    }
+  }
+
+  if (errors.isEmpty) {
+    for (final entry in _currentDocDependencies.entries) {
+      _checkCurrentDoc(
+        path: entry.key,
+        expectedPackages: entry.value,
+        versions: versions,
+        errors: errors,
+      );
+    }
   }
 
   if (errors.isNotEmpty) {
@@ -67,15 +77,21 @@ void main() {
   );
 }
 
-String _readPubspecVersion(String path) {
-  final lines = File(path).readAsLinesSync();
+String? _readPubspecVersion(String path, List<String> errors) {
+  final lines = _readLines(path, errors);
+  if (lines == null) {
+    return null;
+  }
+
   for (final line in lines) {
-    final match = RegExp(r'^version:\s*(\S+)\s*$').firstMatch(line);
+    final match = _versionLine.firstMatch(line);
     if (match != null) {
       return match.group(1)!;
     }
   }
-  throw StateError('$path does not contain a top-level version field.');
+
+  errors.add('$path does not contain a top-level version field.');
+  return null;
 }
 
 void _checkCurrentDoc({
@@ -86,10 +102,33 @@ void _checkCurrentDoc({
 }) {
   final expectedPackageSet = expectedPackages.toSet();
   final seen = <String>{};
-  final lines = File(path).readAsLinesSync();
+  final lines = _readLines(path, errors);
+  if (lines == null) {
+    return;
+  }
 
+  var inFence = false;
+  var inYamlFence = false;
   for (var index = 0; index < lines.length; index += 1) {
-    final match = _dependencyLine.firstMatch(lines[index]);
+    final line = lines[index];
+    final fenceMatch = _fenceLine.firstMatch(line);
+    if (fenceMatch != null) {
+      if (inFence) {
+        inFence = false;
+        inYamlFence = false;
+      } else {
+        final language = fenceMatch.group(1)?.toLowerCase();
+        inFence = true;
+        inYamlFence = language == 'yaml' || language == 'yml';
+      }
+      continue;
+    }
+
+    if (!inYamlFence) {
+      continue;
+    }
+
+    final match = _dependencyLine.firstMatch(line);
     if (match == null) {
       continue;
     }
@@ -113,10 +152,25 @@ void _checkCurrentDoc({
   for (final package in expectedPackages) {
     if (!seen.contains(package)) {
       errors.add(
-        '$path is missing a current dependency snippet for '
+        '$path is missing a current YAML dependency snippet for '
         '$package ^${versions[package]}.',
       );
     }
+  }
+}
+
+List<String>? _readLines(String path, List<String> errors) {
+  final file = File(path);
+  if (!file.existsSync()) {
+    errors.add('$path does not exist.');
+    return null;
+  }
+
+  try {
+    return file.readAsLinesSync();
+  } on FileSystemException catch (error) {
+    errors.add('Could not read $path: ${error.message}.');
+    return null;
   }
 }
 
