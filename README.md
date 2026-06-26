@@ -62,7 +62,7 @@ they ship:
 ```yaml
 dependencies:
   llamadart: ^0.8.8
-  llamadart_llama_cpp_flutter: ^0.0.5 # GGUF / llama.cpp
+  llamadart_llama_cpp_flutter: ^0.0.6 # GGUF / llama.cpp
   llamadart_litert_lm_flutter: ^0.0.2 # .litertlm / LiteRT-LM
 ```
 
