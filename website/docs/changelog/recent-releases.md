@@ -17,12 +17,11 @@ For canonical full release notes, use:
   of throwing. Apps or tests that asserted the old temp path or mobile exception
   should pass an explicit cache directory or follow `MIGRATION.md`.
 
-- Added `DefaultModelDownloadManager.auto(...)` plus explicit model cache root
-  constructors for shared desktop caches, app-private mobile caches,
-  user-selected model libraries, and App Group containers. `auto(...)` now uses
-  platform-specific or generic app-private directories on Android/iOS when
-  supplied, and otherwise falls back to a best-effort temporary/cache directory
-  instead of requiring application `if` branches for simple cross-platform code.
+- Added optional `androidAppPrivateCacheDirectory` and
+  `iosAppPrivateCacheDirectory` arguments to
+  `DefaultModelDownloadManager.auto(...)` so apps can provide platform-specific
+  mobile cache roots without constructor-level `Platform.isAndroid` /
+  `Platform.isIOS` branching.
 - Updated the default native `DefaultModelDownloadManager()` constructor to use
   the per-user shared model cache on desktop/server platforms and the mobile
   app-private cache fallback, so plain `LlamaEngine(...)` remote source loads use
@@ -52,6 +51,12 @@ For canonical full release notes, use:
   `leehack/llamadart-native@b9803`, regenerated matching Dart FFI bindings,
   refreshed the `llamadart_llama_cpp_flutter` Apple SwiftPM checksum, and
   aligned current README/website native override docs.
+
+- Added `DefaultModelDownloadManager.auto(...)` plus explicit model cache root
+  constructors for shared desktop caches, app-private mobile caches,
+  user-selected model libraries, and App Group containers. Implicit shared cache
+  resolution now fails loudly on mobile and web where the OS cannot provide a
+  hidden cross-developer model folder.
 
 ## 0.8.7
 
