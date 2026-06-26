@@ -105,5 +105,5 @@ export 'src/experimental/litert_lm/litert_lm_benchmark_stub.dart'
     if (dart.library.io) 'src/experimental/litert_lm/litert_lm_benchmark.dart';
 
 // Bindings - conditional export for web/native
-export 'src/backends/llama_cpp/bindings.dart'
-    if (dart.library.js_interop) 'src/backends/llama_cpp/bindings_stub.dart';
+export 'src/backends/llama_cpp/bindings_stub.dart'
+    if (dart.library.io) 'src/backends/llama_cpp/bindings.dart';

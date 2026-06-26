@@ -8,8 +8,7 @@ import '../core/models/config/gpu_device_info.dart';
 import '../core/models/config/log_level.dart';
 import '../core/models/tools/tool_definition.dart';
 
-import 'native/native_backend.dart'
-    if (dart.library.js_interop) 'web/web_backend.dart';
+import 'web/web_backend.dart' if (dart.library.io) 'native/native_backend.dart';
 
 /// Platform-agnostic interface for local model inference.
 abstract class LlamaBackend {
