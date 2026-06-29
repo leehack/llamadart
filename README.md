@@ -183,8 +183,6 @@ Dart/Flutter targets, `loadModelSource(...)` downloads and caches the file on
 first run, then reuses the cached model on later runs.
 
 ```dart
-import 'dart:io';
-
 import 'package:llamadart/llamadart.dart';
 
 Future<void> main() async {
@@ -198,12 +196,14 @@ Future<void> main() async {
       modelParams: const ModelParams(contextSize: 1024, gpuLayers: 0),
     );
 
+    final output = StringBuffer();
     await for (final token in engine.generate(
       'Rewrite professionally: i need this done asap',
       params: const GenerationParams(maxTokens: 64, temp: 0.2),
     )) {
-      stdout.write(token);
+      output.write(token);
     }
+    print(output.toString());
   } finally {
     await engine.dispose();
   }

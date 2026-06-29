@@ -13,8 +13,6 @@ stores it in the package-managed model cache, and reuses the cached file on
 later runs.
 
 ```dart
-import 'dart:io';
-
 import 'package:llamadart/llamadart.dart';
 
 Future<void> main() async {
@@ -35,12 +33,14 @@ Future<void> main() async {
       },
     );
 
+    final output = StringBuffer();
     await for (final String token in engine.generate(
       'Rewrite professionally: i need this done asap',
       params: const GenerationParams(maxTokens: 64, temp: 0.2),
     )) {
-      stdout.write(token);
+      output.write(token);
     }
+    print(output.toString());
   } finally {
     await engine.dispose();
   }
