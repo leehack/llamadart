@@ -54,6 +54,7 @@ def main() -> int:
 
     hook_text = hook_path.read_text(encoding="utf-8")
     pending_writes: dict[Path, str] = {}
+    project_doc_dependency_versions: dict[str, str] = {}
 
     summaries: list[str] = []
     resolved_llama_cpp_tag = ""
@@ -96,12 +97,15 @@ def main() -> int:
                 checksum,
             )
             pending_writes[llama_cpp_package_swift_path] = swift_text
-            update_companion_package_metadata(
-                pending_writes,
-                companion_package_root(llama_cpp_package_swift_path),
-                args.llamadart_native_repo,
-                resolved_llama_cpp_tag,
-                bump_version=swift_text != original_swift_text,
+            package_root = companion_package_root(llama_cpp_package_swift_path)
+            project_doc_dependency_versions[package_root.name] = (
+                update_companion_package_metadata(
+                    pending_writes,
+                    package_root,
+                    args.llamadart_native_repo,
+                    resolved_llama_cpp_tag,
+                    bump_version=swift_text != original_swift_text,
+                )
             )
         update_llama_cpp_project_docs(
             pending_writes,
@@ -186,12 +190,15 @@ def main() -> int:
                     checksum,
                 )
             pending_writes[litert_lm_package_swift_path] = swift_text
-            update_companion_package_metadata(
-                pending_writes,
-                companion_package_root(litert_lm_package_swift_path),
-                args.litert_lm_native_repo,
-                resolved_litert_lm_tag,
-                bump_version=swift_text != original_swift_text,
+            package_root = companion_package_root(litert_lm_package_swift_path)
+            project_doc_dependency_versions[package_root.name] = (
+                update_companion_package_metadata(
+                    pending_writes,
+                    package_root,
+                    args.litert_lm_native_repo,
+                    resolved_litert_lm_tag,
+                    bump_version=swift_text != original_swift_text,
+                )
             )
 
         summaries.append(
@@ -201,6 +208,13 @@ def main() -> int:
     if not summaries:
         print("No native release pins requested; pass a tag or latest.")
         return 0
+
+    if project_doc_dependency_versions:
+        update_project_doc_dependency_versions(
+            pending_writes,
+            llama_cpp_project_doc_paths,
+            project_doc_dependency_versions,
+        )
 
     if args.dry_run:
         print("Dry run; no files written.")
@@ -496,7 +510,7 @@ def update_companion_package_metadata(
     tag: str,
     *,
     bump_version: bool,
-) -> None:
+) -> str:
     pubspec_path = package_root / "pubspec.yaml"
     readme_path = package_root / "README.md"
     changelog_path = package_root / "CHANGELOG.md"
@@ -541,6 +555,8 @@ def update_companion_package_metadata(
             f"* Updated Apple SwiftPM native pin to `{repo}@{tag}`.",
             repo,
         )
+
+    return next_version
 
 
 def update_llama_cpp_project_docs(
@@ -606,6 +622,41 @@ def replace_llama_cpp_native_doc_references(
     for pattern, replacement in replacements:
         doc_text = re.sub(pattern, replacement, doc_text)
     return doc_text
+
+
+def update_project_doc_dependency_versions(
+    pending_writes: dict[Path, str],
+    doc_paths: list[Path],
+    dependency_versions: dict[str, str],
+) -> None:
+    replacement_counts = {
+        package_name: 0 for package_name in dependency_versions
+    }
+    for doc_path in doc_paths:
+        if not doc_path.exists():
+            raise ReleaseError(f"Missing project dependency doc {doc_path}")
+        doc_text = pending_writes.get(doc_path)
+        if doc_text is None:
+            doc_text = doc_path.read_text(encoding="utf-8")
+        for package_name, version in dependency_versions.items():
+            doc_text, count = replace_dependency_version(
+                doc_text,
+                package_name,
+                version,
+            )
+            replacement_counts[package_name] += count
+        pending_writes[doc_path] = doc_text
+
+    missing = [
+        package_name
+        for package_name, count in replacement_counts.items()
+        if count == 0
+    ]
+    if missing:
+        raise ReleaseError(
+            "Could not replace project docs dependency versions for "
+            + ", ".join(missing)
+        )
 
 
 def update_core_changelog_native_pin(
@@ -679,11 +730,26 @@ def replace_readme_dependency_version(
     package_name: str,
     version: str,
 ) -> str:
-    pattern = rf"(\s{re.escape(package_name)}:\s*\^)[0-9]+\.[0-9]+\.[0-9]+"
-    updated, count = re.subn(pattern, rf"\g<1>{version}", readme_text, count=1)
+    updated, count = replace_dependency_version(
+        readme_text,
+        package_name,
+        version,
+        count=1,
+    )
     if count != 1:
         raise ReleaseError(f"Could not replace {package_name} README version")
     return updated
+
+
+def replace_dependency_version(
+    text: str,
+    package_name: str,
+    version: str,
+    *,
+    count: int = 0,
+) -> tuple[str, int]:
+    pattern = rf"(\s{re.escape(package_name)}:\s*\^)[0-9]+\.[0-9]+\.[0-9]+"
+    return re.subn(pattern, rf"\g<1>{version}", text, count=count)
 
 
 def prepend_companion_changelog_release(

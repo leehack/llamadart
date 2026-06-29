@@ -182,6 +182,8 @@ const _litertLmVersion = '1.0.0';
       contains('llamadart-native-windows-x64-$llamaTag.tar.gz'),
     );
     expect(rootReadme, contains('default native tag `$llamaTag`'));
+    expect(rootReadme, contains('llamadart_llama_cpp_flutter: ^0.0.2'));
+    expect(rootReadme, contains('llamadart_litert_lm_flutter: ^0.0.2'));
     expect(
       rootReadme,
       contains('`leehack/llamadart-native@$llamaTag` Apple XCFramework'),
@@ -200,6 +202,8 @@ const _litertLmVersion = '1.0.0';
       installDoc,
       contains('llamadart-native-windows-x64-$llamaTag.tar.gz'),
     );
+    expect(installDoc, contains('llamadart_llama_cpp_flutter: ^0.0.2'));
+    expect(installDoc, contains('llamadart_litert_lm_flutter: ^0.0.2'));
     expect(installDoc, isNot(contains('b0001')));
 
     final supportMatrix = await File(
@@ -355,6 +359,11 @@ llamadart_native_tag: b0001
 
 ABI-compatible with the default `leehack/llamadart-native@b0001` runtime.
 
+dependencies:
+  llamadart: ^0.1.0
+  llamadart_llama_cpp_flutter: ^0.0.1
+  llamadart_litert_lm_flutter: ^0.0.1
+
 `llamadart-native-windows-x64-b0001.tar.gz`
 
 Available llama.cpp module matrix from the default native tag `b0001`:
@@ -371,6 +380,11 @@ Available llama.cpp module matrix from the default native tag `b0001`:
 llamadart_native_tag: b0001
 
 ABI-compatible with the default `leehack/llamadart-native@b0001` runtime.
+
+dependencies:
+  llamadart: ^0.1.0
+  llamadart_llama_cpp_flutter: ^0.0.1
+  llamadart_litert_lm_flutter: ^0.0.1
 
 `llamadart-native-windows-x64-b0001.tar.gz`
 ''');
