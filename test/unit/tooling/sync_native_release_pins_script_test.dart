@@ -151,15 +151,15 @@ const _litertLmVersion = '1.0.0';
         '`leehack/llamadart-native@$llamaTag`.',
       ),
     );
-    expect(llamaReadme, contains('llamadart_llama_cpp_flutter: ^0.0.2'));
+    expect(llamaReadme, contains('llamadart_llama_cpp_flutter: ^0.0.1'));
     final llamaPubspec = await File(
       path.join(root.path, 'packages/llamadart_llama_cpp_flutter/pubspec.yaml'),
     ).readAsString();
-    expect(llamaPubspec, contains('version: 0.0.2'));
+    expect(llamaPubspec, contains('version: 0.0.1'));
     final llamaChangelog = await File(
       path.join(root.path, 'packages/llamadart_llama_cpp_flutter/CHANGELOG.md'),
     ).readAsString();
-    expect(llamaChangelog, startsWith('## 0.0.2'));
+    expect(llamaChangelog, startsWith('## Unreleased'));
     expect(
       llamaChangelog,
       contains(
@@ -167,7 +167,7 @@ const _litertLmVersion = '1.0.0';
         '`leehack/llamadart-native@$llamaTag`.',
       ),
     );
-    expect(llamaChangelog, isNot(contains('## Unreleased')));
+    expect(llamaChangelog, contains('## 0.0.1'));
 
     final rootReadme = await File(
       path.join(root.path, 'README.md'),
@@ -182,6 +182,8 @@ const _litertLmVersion = '1.0.0';
       contains('llamadart-native-windows-x64-$llamaTag.tar.gz'),
     );
     expect(rootReadme, contains('default native tag `$llamaTag`'));
+    expect(rootReadme, contains('llamadart_llama_cpp_flutter: ^0.0.1'));
+    expect(rootReadme, contains('llamadart_litert_lm_flutter: ^0.0.1'));
     expect(
       rootReadme,
       contains('`leehack/llamadart-native@$llamaTag` Apple XCFramework'),
@@ -200,6 +202,8 @@ const _litertLmVersion = '1.0.0';
       installDoc,
       contains('llamadart-native-windows-x64-$llamaTag.tar.gz'),
     );
+    expect(installDoc, contains('llamadart_llama_cpp_flutter: ^0.0.1'));
+    expect(installDoc, contains('llamadart_litert_lm_flutter: ^0.0.1'));
     expect(installDoc, isNot(contains('b0001')));
 
     final supportMatrix = await File(
@@ -242,15 +246,15 @@ const _litertLmVersion = '1.0.0';
         '`leehack/litert-lm-native@$litertTag`.',
       ),
     );
-    expect(litertReadme, contains('llamadart_litert_lm_flutter: ^0.0.2'));
+    expect(litertReadme, contains('llamadart_litert_lm_flutter: ^0.0.1'));
     final litertPubspec = await File(
       path.join(root.path, 'packages/llamadart_litert_lm_flutter/pubspec.yaml'),
     ).readAsString();
-    expect(litertPubspec, contains('version: 0.0.2'));
+    expect(litertPubspec, contains('version: 0.0.1'));
     final litertChangelog = await File(
       path.join(root.path, 'packages/llamadart_litert_lm_flutter/CHANGELOG.md'),
     ).readAsString();
-    expect(litertChangelog, startsWith('## 0.0.2'));
+    expect(litertChangelog, startsWith('## Unreleased'));
     expect(
       litertChangelog,
       contains(
@@ -258,9 +262,116 @@ const _litertLmVersion = '1.0.0';
         '`leehack/litert-lm-native@$litertTag`.',
       ),
     );
-    expect(litertChangelog, isNot(contains('## Unreleased')));
+    expect(litertChangelog, contains('## 0.0.1'));
+
+    const nextLlamaTag = 'b10000';
+    const nextLitertTag = 'v9.9.10';
+    final nextLitertRuntimeChecksum = _hex('6');
+    final nextLlamaAppleChecksum = _hex('7');
+    final nextLitertAppleChecksums = {
+      for (final entry in _litertAppleTargets.entries)
+        entry.key: _hex(entry.value.$2.toUpperCase()),
+    };
+    await _writeReleaseFixture(
+      releaseDir,
+      'leehack/llamadart-native',
+      nextLlamaTag,
+      {
+        'llamadart-native-apple-xcframework-$nextLlamaTag.zip':
+            nextLlamaAppleChecksum,
+      },
+    );
+    await _writeReleaseFixture(
+      releaseDir,
+      'leehack/litert-lm-native',
+      nextLitertTag,
+      {
+        'litert-lm-native-runtime-linux-x64-$nextLitertTag.tar.gz':
+            nextLitertRuntimeChecksum,
+        for (final entry in _litertAppleTargets.entries)
+          entry.value.$1.replaceAll('{tag}', nextLitertTag):
+              nextLitertAppleChecksums[entry.key]!,
+      },
+    );
+
+    final rerunResult = await _runPython([
+      'tool/native/sync_native_release_pins.py',
+      '--repo-root',
+      root.path,
+      '--release-json-dir',
+      releaseDir.path,
+      '--llama-cpp-tag',
+      nextLlamaTag,
+      '--litert-lm-tag',
+      nextLitertTag,
+    ]);
+
+    expect(
+      rerunResult.exitCode,
+      0,
+      reason: '${rerunResult.stdout}\n${rerunResult.stderr}',
+    );
+
+    final rerunCoreChangelog = await File(
+      path.join(root.path, 'CHANGELOG.md'),
+    ).readAsString();
+    expect(
+      rerunCoreChangelog,
+      contains('`leehack/llamadart-native@$nextLlamaTag`'),
+    );
+    expect(
+      rerunCoreChangelog,
+      isNot(contains('`leehack/llamadart-native@$llamaTag`')),
+    );
+    expect(
+      _occurrences(
+        rerunCoreChangelog,
+        '* Updated the default llama.cpp native runtime pin to',
+      ),
+      1,
+    );
+
+    final rerunLlamaChangelog = await File(
+      path.join(root.path, 'packages/llamadart_llama_cpp_flutter/CHANGELOG.md'),
+    ).readAsString();
+    expect(
+      rerunLlamaChangelog,
+      contains('`leehack/llamadart-native@$nextLlamaTag`.'),
+    );
+    expect(
+      rerunLlamaChangelog,
+      isNot(contains('`leehack/llamadart-native@$llamaTag`.')),
+    );
+    expect(
+      _occurrences(
+        rerunLlamaChangelog,
+        '* Updated Apple SwiftPM native pin to',
+      ),
+      1,
+    );
+
+    final rerunLitertChangelog = await File(
+      path.join(root.path, 'packages/llamadart_litert_lm_flutter/CHANGELOG.md'),
+    ).readAsString();
+    expect(
+      rerunLitertChangelog,
+      contains('`leehack/litert-lm-native@$nextLitertTag`.'),
+    );
+    expect(
+      rerunLitertChangelog,
+      isNot(contains('`leehack/litert-lm-native@$litertTag`.')),
+    );
+    expect(
+      _occurrences(
+        rerunLitertChangelog,
+        '* Updated Apple SwiftPM native pin to',
+      ),
+      1,
+    );
   });
 }
+
+int _occurrences(String text, String needle) => needle.allMatches(text).length;
 
 Future<ProcessResult> _runPython(List<String> arguments) async {
   final executable = Platform.isWindows ? 'python' : 'python3';
@@ -355,6 +466,11 @@ llamadart_native_tag: b0001
 
 ABI-compatible with the default `leehack/llamadart-native@b0001` runtime.
 
+dependencies:
+  llamadart: ^0.1.0
+  llamadart_llama_cpp_flutter: ^0.0.1
+  llamadart_litert_lm_flutter: ^0.0.1
+
 `llamadart-native-windows-x64-b0001.tar.gz`
 
 Available llama.cpp module matrix from the default native tag `b0001`:
@@ -371,6 +487,11 @@ Available llama.cpp module matrix from the default native tag `b0001`:
 llamadart_native_tag: b0001
 
 ABI-compatible with the default `leehack/llamadart-native@b0001` runtime.
+
+dependencies:
+  llamadart: ^0.1.0
+  llamadart_llama_cpp_flutter: ^0.0.1
+  llamadart_litert_lm_flutter: ^0.0.1
 
 `llamadart-native-windows-x64-b0001.tar.gz`
 ''');
