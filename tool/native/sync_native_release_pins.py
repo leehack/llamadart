@@ -104,7 +104,10 @@ def main() -> int:
                     package_root,
                     args.llamadart_native_repo,
                     resolved_llama_cpp_tag,
-                    bump_version=swift_text != original_swift_text,
+                    bump_version=(
+                        args.bump_companion_versions
+                        and swift_text != original_swift_text
+                    ),
                 )
             )
         update_llama_cpp_project_docs(
@@ -197,7 +200,10 @@ def main() -> int:
                     package_root,
                     args.litert_lm_native_repo,
                     resolved_litert_lm_tag,
-                    bump_version=swift_text != original_swift_text,
+                    bump_version=(
+                        args.bump_companion_versions
+                        and swift_text != original_swift_text
+                    ),
                 )
             )
 
@@ -300,6 +306,15 @@ def parse_args() -> argparse.Namespace:
         "--dry-run",
         action="store_true",
         help="Resolve releases and validate assets without writing files.",
+    )
+    parser.add_argument(
+        "--bump-companion-versions",
+        action="store_true",
+        help=(
+            "Also bump Flutter companion package pubspec versions and current "
+            "install snippets. Native sync PRs should leave this unset; "
+            "release-prep PRs may opt in."
+        ),
     )
     parser.add_argument(
         "--release-json-dir",
@@ -555,6 +570,13 @@ def update_companion_package_metadata(
             f"* Updated Apple SwiftPM native pin to `{repo}@{tag}`.",
             repo,
         )
+    else:
+        changelog_text = changelog_path.read_text(encoding="utf-8")
+        pending_writes[changelog_path] = update_companion_changelog_unreleased(
+            changelog_text,
+            f"* Updated Apple SwiftPM native pin to `{repo}@{tag}`.",
+            repo,
+        )
 
     return next_version
 
@@ -768,6 +790,31 @@ def prepend_companion_changelog_release(
     )
     if not heading_match:
         return f"## {version}\n\n{entry}\n\n{changelog_text.lstrip()}"
+
+    body_start = heading_match.end()
+    next_heading = re.search(r"(?m)^##\s+", changelog_text[body_start:])
+    body_end = (
+        body_start + next_heading.start() if next_heading else len(changelog_text)
+    )
+    body = old_entry_pattern.sub("", changelog_text[body_start:body_end]).strip()
+    new_body = f"{entry}\n\n"
+    if body:
+        new_body = f"{entry}\n\n{body}\n\n"
+    return changelog_text[:body_start] + new_body + changelog_text[body_end:]
+
+
+def update_companion_changelog_unreleased(
+    changelog_text: str,
+    entry: str,
+    repo: str,
+) -> str:
+    old_entry_pattern = re.compile(
+        rf"^\* Updated Apple SwiftPM native pin to `{re.escape(repo)}@[^`]+`\.\n?",
+        re.MULTILINE,
+    )
+    heading_match = re.search(r"(?m)^## Unreleased\s*\n+", changelog_text)
+    if not heading_match:
+        return f"## Unreleased\n\n{entry}\n\n{changelog_text.lstrip()}"
 
     body_start = heading_match.end()
     next_heading = re.search(r"(?m)^##\s+", changelog_text[body_start:])

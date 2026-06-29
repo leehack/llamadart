@@ -151,15 +151,15 @@ const _litertLmVersion = '1.0.0';
         '`leehack/llamadart-native@$llamaTag`.',
       ),
     );
-    expect(llamaReadme, contains('llamadart_llama_cpp_flutter: ^0.0.2'));
+    expect(llamaReadme, contains('llamadart_llama_cpp_flutter: ^0.0.1'));
     final llamaPubspec = await File(
       path.join(root.path, 'packages/llamadart_llama_cpp_flutter/pubspec.yaml'),
     ).readAsString();
-    expect(llamaPubspec, contains('version: 0.0.2'));
+    expect(llamaPubspec, contains('version: 0.0.1'));
     final llamaChangelog = await File(
       path.join(root.path, 'packages/llamadart_llama_cpp_flutter/CHANGELOG.md'),
     ).readAsString();
-    expect(llamaChangelog, startsWith('## 0.0.2'));
+    expect(llamaChangelog, startsWith('## Unreleased'));
     expect(
       llamaChangelog,
       contains(
@@ -167,7 +167,7 @@ const _litertLmVersion = '1.0.0';
         '`leehack/llamadart-native@$llamaTag`.',
       ),
     );
-    expect(llamaChangelog, isNot(contains('## Unreleased')));
+    expect(llamaChangelog, contains('## 0.0.1'));
 
     final rootReadme = await File(
       path.join(root.path, 'README.md'),
@@ -182,8 +182,8 @@ const _litertLmVersion = '1.0.0';
       contains('llamadart-native-windows-x64-$llamaTag.tar.gz'),
     );
     expect(rootReadme, contains('default native tag `$llamaTag`'));
-    expect(rootReadme, contains('llamadart_llama_cpp_flutter: ^0.0.2'));
-    expect(rootReadme, contains('llamadart_litert_lm_flutter: ^0.0.2'));
+    expect(rootReadme, contains('llamadart_llama_cpp_flutter: ^0.0.1'));
+    expect(rootReadme, contains('llamadart_litert_lm_flutter: ^0.0.1'));
     expect(
       rootReadme,
       contains('`leehack/llamadart-native@$llamaTag` Apple XCFramework'),
@@ -202,8 +202,8 @@ const _litertLmVersion = '1.0.0';
       installDoc,
       contains('llamadart-native-windows-x64-$llamaTag.tar.gz'),
     );
-    expect(installDoc, contains('llamadart_llama_cpp_flutter: ^0.0.2'));
-    expect(installDoc, contains('llamadart_litert_lm_flutter: ^0.0.2'));
+    expect(installDoc, contains('llamadart_llama_cpp_flutter: ^0.0.1'));
+    expect(installDoc, contains('llamadart_litert_lm_flutter: ^0.0.1'));
     expect(installDoc, isNot(contains('b0001')));
 
     final supportMatrix = await File(
@@ -246,15 +246,15 @@ const _litertLmVersion = '1.0.0';
         '`leehack/litert-lm-native@$litertTag`.',
       ),
     );
-    expect(litertReadme, contains('llamadart_litert_lm_flutter: ^0.0.2'));
+    expect(litertReadme, contains('llamadart_litert_lm_flutter: ^0.0.1'));
     final litertPubspec = await File(
       path.join(root.path, 'packages/llamadart_litert_lm_flutter/pubspec.yaml'),
     ).readAsString();
-    expect(litertPubspec, contains('version: 0.0.2'));
+    expect(litertPubspec, contains('version: 0.0.1'));
     final litertChangelog = await File(
       path.join(root.path, 'packages/llamadart_litert_lm_flutter/CHANGELOG.md'),
     ).readAsString();
-    expect(litertChangelog, startsWith('## 0.0.2'));
+    expect(litertChangelog, startsWith('## Unreleased'));
     expect(
       litertChangelog,
       contains(
@@ -262,7 +262,7 @@ const _litertLmVersion = '1.0.0';
         '`leehack/litert-lm-native@$litertTag`.',
       ),
     );
-    expect(litertChangelog, isNot(contains('## Unreleased')));
+    expect(litertChangelog, contains('## 0.0.1'));
   });
 }
 
