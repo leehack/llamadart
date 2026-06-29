@@ -41,13 +41,15 @@ version alignment:
 - Update `pubspec.yaml` version.
 - Update `CHANGELOG.md`.
 - Companion packages start at `0.0.1` and move independently from the core
-  package. Native pin sync bumps only the changed companion package patch
-  version, updates its `pubspec.yaml`, and writes a versioned changelog entry
-  that includes the native repo tag.
-- Leave unchanged companion package versions as-is. Companion packages publish
-  only after the release-prep PR is merged and the maintainer explicitly
-  approves pushing the relevant package-specific tag; the workflow skips a
-  companion package version that already exists on pub.dev.
+  package. Native pin sync records changed companion native pins under
+  `Unreleased` but does not bump companion package versions by default.
+- In the release-prep PR, bump only companion packages whose native pins or
+  publishable package contents changed, move their accumulated `Unreleased`
+  notes into the new version section, and keep unchanged companion package
+  versions as-is.
+- Companion packages publish only after the release-prep PR is merged and the
+  maintainer explicitly approves pushing the relevant package-specific tag; the
+  workflow skips a companion package version that already exists on pub.dev.
 - Keep current install snippets aligned with root and companion `pubspec.yaml`
   versions. Run `dart run tool/testing/verify_release_docs_versions.dart` before
   opening or merging the release-prep PR.
