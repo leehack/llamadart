@@ -881,6 +881,18 @@ Core abstractions in this package:
 - Optional runtime diagnostics are exposed through `LlamaEngine` helpers such as `getBackendName()`, `getAvailableBackends()`, and `getResolvedGpuLayers()` when supported by the active backend.
 - `LlamaEngine.listGpuDevices()` enumerates GPU-class devices (backend, per-backend `mainGpu` index, name, description, device id, type, free/total memory) for offload selection. By default it inspects only already-registered backends; pass `probeBackends: [...]` to opt into loading specific backend modules first. Web/WebGPU return an empty list.
 
+Generation API selection:
+
+| API | Template-aware? | Keeps history? | Use when |
+| --- | --- | --- | --- |
+| `engine.generate(prompt)` | No | No | You already have a final raw prompt, or you are benchmarking, testing prefix-cache/state flows, or doing low-level runtime work. |
+| `engine.create(messages)` | Yes | No | You have the complete `List<LlamaChatMessage>` for each request, such as a one-shot completion or an OpenAI-compatible server. |
+| `ChatSession.create(parts)` | Yes | Yes | You are building a multi-turn chat UI/CLI and want the SDK to store user/assistant turns, apply the system prompt, and trim history as context grows. |
+
+Beginner examples use `engine.create(...)` so chat templates are applied without
+introducing hidden state. Use `ChatSession` for real multi-turn chat apps unless
+your app already owns the full transcript.
+
 ---
 ## ⚠️ Breaking Changes in 0.6.x
 

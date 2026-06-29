@@ -49,6 +49,12 @@ Future<void> main() async {
 }
 ```
 
+This example uses `engine.create(...)`, the stateless chat-completion API: the
+model's chat template is applied, but no conversation history is stored between
+calls. Use [First Chat Session](./first-chat-session) when you want automatic
+multi-turn history, or [Generation and Streaming](../guides/generation-and-streaming)
+when you need to choose between raw prompts, stateless chat, and stateful chat.
+
 The small SmolLM2 GGUF above is intended for copy/paste smoke tests. For a live
 conference demo, run it once beforehand so the Hugging Face source remains in
 the code while the actual presentation path uses the local cache instead of
