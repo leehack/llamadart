@@ -52,7 +52,7 @@ JavaScript runtime.
 
 ```yaml
 dependencies:
-  llamadart: ^0.8.10
+  llamadart: ^0.8.11
 ```
 
 Flutter iOS/macOS apps that want Swift Package Manager-linked Apple
@@ -61,8 +61,8 @@ they ship:
 
 ```yaml
 dependencies:
-  llamadart: ^0.8.10
-  llamadart_llama_cpp_flutter: ^0.0.6 # GGUF / llama.cpp
+  llamadart: ^0.8.11
+  llamadart_llama_cpp_flutter: ^0.0.7 # GGUF / llama.cpp
   llamadart_litert_lm_flutter: ^0.0.2 # .litertlm / LiteRT-LM
 ```
 
