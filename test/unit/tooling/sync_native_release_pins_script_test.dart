@@ -263,8 +263,115 @@ const _litertLmVersion = '1.0.0';
       ),
     );
     expect(litertChangelog, contains('## 0.0.1'));
+
+    const nextLlamaTag = 'b10000';
+    const nextLitertTag = 'v9.9.10';
+    final nextLitertRuntimeChecksum = _hex('6');
+    final nextLlamaAppleChecksum = _hex('7');
+    final nextLitertAppleChecksums = {
+      for (final entry in _litertAppleTargets.entries)
+        entry.key: _hex(entry.value.$2.toUpperCase()),
+    };
+    await _writeReleaseFixture(
+      releaseDir,
+      'leehack/llamadart-native',
+      nextLlamaTag,
+      {
+        'llamadart-native-apple-xcframework-$nextLlamaTag.zip':
+            nextLlamaAppleChecksum,
+      },
+    );
+    await _writeReleaseFixture(
+      releaseDir,
+      'leehack/litert-lm-native',
+      nextLitertTag,
+      {
+        'litert-lm-native-runtime-linux-x64-$nextLitertTag.tar.gz':
+            nextLitertRuntimeChecksum,
+        for (final entry in _litertAppleTargets.entries)
+          entry.value.$1.replaceAll('{tag}', nextLitertTag):
+              nextLitertAppleChecksums[entry.key]!,
+      },
+    );
+
+    final rerunResult = await _runPython([
+      'tool/native/sync_native_release_pins.py',
+      '--repo-root',
+      root.path,
+      '--release-json-dir',
+      releaseDir.path,
+      '--llama-cpp-tag',
+      nextLlamaTag,
+      '--litert-lm-tag',
+      nextLitertTag,
+    ]);
+
+    expect(
+      rerunResult.exitCode,
+      0,
+      reason: '${rerunResult.stdout}\n${rerunResult.stderr}',
+    );
+
+    final rerunCoreChangelog = await File(
+      path.join(root.path, 'CHANGELOG.md'),
+    ).readAsString();
+    expect(
+      rerunCoreChangelog,
+      contains('`leehack/llamadart-native@$nextLlamaTag`'),
+    );
+    expect(
+      rerunCoreChangelog,
+      isNot(contains('`leehack/llamadart-native@$llamaTag`')),
+    );
+    expect(
+      _occurrences(
+        rerunCoreChangelog,
+        '* Updated the default llama.cpp native runtime pin to',
+      ),
+      1,
+    );
+
+    final rerunLlamaChangelog = await File(
+      path.join(root.path, 'packages/llamadart_llama_cpp_flutter/CHANGELOG.md'),
+    ).readAsString();
+    expect(
+      rerunLlamaChangelog,
+      contains('`leehack/llamadart-native@$nextLlamaTag`.'),
+    );
+    expect(
+      rerunLlamaChangelog,
+      isNot(contains('`leehack/llamadart-native@$llamaTag`.')),
+    );
+    expect(
+      _occurrences(
+        rerunLlamaChangelog,
+        '* Updated Apple SwiftPM native pin to',
+      ),
+      1,
+    );
+
+    final rerunLitertChangelog = await File(
+      path.join(root.path, 'packages/llamadart_litert_lm_flutter/CHANGELOG.md'),
+    ).readAsString();
+    expect(
+      rerunLitertChangelog,
+      contains('`leehack/litert-lm-native@$nextLitertTag`.'),
+    );
+    expect(
+      rerunLitertChangelog,
+      isNot(contains('`leehack/litert-lm-native@$litertTag`.')),
+    );
+    expect(
+      _occurrences(
+        rerunLitertChangelog,
+        '* Updated Apple SwiftPM native pin to',
+      ),
+      1,
+    );
   });
 }
+
+int _occurrences(String text, String needle) => needle.allMatches(text).length;
 
 Future<ProcessResult> _runPython(List<String> arguments) async {
   final executable = Platform.isWindows ? 'python' : 'python3';
