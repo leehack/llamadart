@@ -33,14 +33,16 @@ Future<void> main() async {
       },
     );
 
-    final output = StringBuffer();
-    await for (final String token in engine.generate(
-      'Rewrite professionally: i need this done asap',
+    final output = await engine.create(
+      const [
+        LlamaChatMessage.fromText(
+          role: LlamaChatRole.user,
+          text: 'Rewrite professionally: i need this done asap',
+        ),
+      ],
       params: const GenerationParams(maxTokens: 64, temp: 0.2),
-    )) {
-      output.write(token);
-    }
-    print(output.toString());
+    ).map((chunk) => chunk.choices.first.delta.content ?? '').join();
+    print(output);
   } finally {
     await engine.dispose();
   }

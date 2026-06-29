@@ -196,14 +196,16 @@ Future<void> main() async {
       modelParams: const ModelParams(contextSize: 1024, gpuLayers: 0),
     );
 
-    final output = StringBuffer();
-    await for (final token in engine.generate(
-      'Rewrite professionally: i need this done asap',
+    final output = await engine.create(
+      const [
+        LlamaChatMessage.fromText(
+          role: LlamaChatRole.user,
+          text: 'Rewrite professionally: i need this done asap',
+        ),
+      ],
       params: const GenerationParams(maxTokens: 64, temp: 0.2),
-    )) {
-      output.write(token);
-    }
-    print(output.toString());
+    ).map((chunk) => chunk.choices.first.delta.content ?? '').join();
+    print(output);
   } finally {
     await engine.dispose();
   }
@@ -257,8 +259,13 @@ await engine.loadModel(
   ),
 );
 
-await for (final token in engine.generate(
-  'Explain local inference in one paragraph.',
+await for (final chunk in engine.create(
+  const [
+    LlamaChatMessage.fromText(
+      role: LlamaChatRole.user,
+      text: 'Explain local inference in one paragraph.',
+    ),
+  ],
   params: const GenerationParams(
     maxTokens: 128,
     speculativeDecodingConfig: SpeculativeDecodingConfig.mtp(
@@ -266,7 +273,8 @@ await for (final token in engine.generate(
     ),
   ),
 )) {
-  stdout.write(token);
+  final text = chunk.choices.first.delta.content;
+  if (text != null) print(text);
 }
 ```
 
@@ -910,10 +918,16 @@ void main() async {
     // Initialize with a local GGUF model
     await engine.loadModel('path/to/model.gguf');
 
-    // Generate text (streaming)
-    await for (final token in engine.generate('The capital of France is')) {
-      print(token);
-    }
+    // Generate text with chat-template aware completion
+    final response = await engine.create(
+      const [
+        LlamaChatMessage.fromText(
+          role: LlamaChatRole.user,
+          text: 'What is the capital of France?',
+        ),
+      ],
+    ).map((chunk) => chunk.choices.first.delta.content ?? '').join();
+    print(response);
   } finally {
     // CRITICAL: Always dispose the engine to release native resources
     await engine.dispose();
