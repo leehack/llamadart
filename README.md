@@ -178,21 +178,41 @@ archive, at an extracted bundle directory, or at a directory containing
 
 ### 5. Minimal first model load
 
+Start with a model source instead of a machine-specific file path. On native
+Dart/Flutter targets, `loadModelSource(...)` downloads and caches the file on
+first run, then reuses the cached model on later runs.
+
 ```dart
+import 'dart:io';
+
 import 'package:llamadart/llamadart.dart';
 
 Future<void> main() async {
   final engine = LlamaEngine(LlamaBackend());
   try {
-    await engine.loadModel('path/to/model.gguf');
-    await for (final token in engine.generate('Hello')) {
-      print(token);
+    await engine.loadModelSource(
+      ModelSource.parse(
+        'hf://unsloth/SmolLM2-135M-Instruct-GGUF/'
+        'SmolLM2-135M-Instruct-Q2_K.gguf',
+      ),
+      modelParams: const ModelParams(contextSize: 1024, gpuLayers: 0),
+    );
+
+    await for (final token in engine.generate(
+      'Rewrite professionally: i need this done asap',
+      params: const GenerationParams(maxTokens: 64, temp: 0.2),
+    )) {
+      stdout.write(token);
     }
   } finally {
     await engine.dispose();
   }
 }
 ```
+
+The SmolLM2 GGUF above is a small copy/paste smoke-test model. For product demos,
+pre-cache the source before presenting so the code still shows the Hugging Face
+source while the live path uses the local cache rather than conference Wi-Fi.
 
 For LiteRT-LM bundles, use the same high-level API and pass a `.litertlm`
 path or URL. Native callers load local bundle paths; web callers load

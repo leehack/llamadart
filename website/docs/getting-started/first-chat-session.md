@@ -13,25 +13,37 @@ history management.
 
 ## Minimal chat session
 
+This example also starts from a Hugging Face source so new users can paste the
+code without first inventing a local model path. The first run downloads and
+caches the model; later runs reuse the cached GGUF.
+
 ```dart
 import 'package:llamadart/llamadart.dart';
 
 Future<void> main() async {
   final engine = LlamaEngine(LlamaBackend());
-  await engine.loadModel('path/to/model.gguf');
+  try {
+    await engine.loadModelSource(
+      ModelSource.parse(
+        'hf://unsloth/SmolLM2-135M-Instruct-GGUF/'
+        'SmolLM2-135M-Instruct-Q2_K.gguf',
+      ),
+      modelParams: const ModelParams(contextSize: 1024, gpuLayers: 0),
+    );
 
-  final session = ChatSession(engine, systemPrompt: 'You are concise.');
+    final session = ChatSession(engine, systemPrompt: 'You are concise.');
 
-  await for (final chunk in session.create([
-    const LlamaTextContent('What is quantization in one sentence?'),
-  ])) {
-    final text = chunk.choices.first.delta.content;
-    if (text != null) {
-      print(text);
+    await for (final chunk in session.create([
+      const LlamaTextContent('What is quantization in one sentence?'),
+    ])) {
+      final text = chunk.choices.first.delta.content;
+      if (text != null) {
+        print(text);
+      }
     }
+  } finally {
+    await engine.dispose();
   }
-
-  await engine.dispose();
 }
 ```
 

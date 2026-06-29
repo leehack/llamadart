@@ -16,8 +16,10 @@ class ModelService {
   String get cacheDir => _downloadManager.defaultCacheDirectory;
 
   /// Ensures the model at [urlOrPath] is available locally.
-  /// If it's a URL, it downloads it through the package-managed model cache.
-  /// If it's a path, it verifies existence.
+  ///
+  /// Supports local filesystem paths, HTTP(S) URLs, and `hf://` Hugging Face
+  /// sources. Remote sources are resolved through the package-managed model
+  /// cache and returned as local files for native loading.
   Future<File> ensureModel(String urlOrPath) async {
     final source = ModelSource.parse(urlOrPath);
     if (source.isLocal) {

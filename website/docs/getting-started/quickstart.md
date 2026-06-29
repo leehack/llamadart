@@ -7,25 +7,50 @@ This quickstart uses the core `LlamaEngine` API.
 
 ## Minimal generation example
 
+Start with a model source instead of a machine-specific file path. On native
+Dart/Flutter targets, `loadModelSource(...)` downloads the file on first run,
+stores it in the package-managed model cache, and reuses the cached file on
+later runs.
+
 ```dart
+import 'dart:io';
+
 import 'package:llamadart/llamadart.dart';
 
 Future<void> main() async {
   final LlamaEngine engine = LlamaEngine(LlamaBackend());
 
   try {
-    await engine.loadModel('path/to/model.gguf');
+    await engine.loadModelSource(
+      ModelSource.parse(
+        'hf://unsloth/SmolLM2-135M-Instruct-GGUF/'
+        'SmolLM2-135M-Instruct-Q2_K.gguf',
+      ),
+      modelParams: const ModelParams(contextSize: 1024, gpuLayers: 0),
+      onProgress: (progress) {
+        final fraction = progress.fraction;
+        if (fraction != null) {
+          print('download ${(fraction * 100).toStringAsFixed(1)}%');
+        }
+      },
+    );
 
     await for (final String token in engine.generate(
-      'Write one short sentence about local inference.',
+      'Rewrite professionally: i need this done asap',
+      params: const GenerationParams(maxTokens: 64, temp: 0.2),
     )) {
-      print(token);
+      stdout.write(token);
     }
   } finally {
     await engine.dispose();
   }
 }
 ```
+
+The small SmolLM2 GGUF above is intended for copy/paste smoke tests. For a live
+conference demo, run it once beforehand so the Hugging Face source remains in
+the code while the actual presentation path uses the local cache instead of
+conference Wi-Fi.
 
 LiteRT-LM `.litertlm` bundles load through the same engine. Native targets load
 local bundle paths, including paths resolved by `loadModelSource(...)`; web

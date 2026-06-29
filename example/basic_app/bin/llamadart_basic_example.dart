@@ -4,16 +4,17 @@ import 'package:llamadart/llamadart.dart';
 import 'package:llamadart_basic_example/services/model_service.dart';
 import 'package:llamadart_basic_example/services/llama_service.dart';
 
-const defaultModelUrl =
-    'https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-Q4_K_M.gguf?download=true';
+const defaultModelSource =
+    'hf://unsloth/Qwen3.5-0.8B-GGUF/Qwen3.5-0.8B-Q4_K_M.gguf';
 
 void main(List<String> arguments) async {
   final parser = ArgParser()
     ..addOption(
       'model',
       abbr: 'm',
-      help: 'Path or URL to the GGUF model file.',
-      defaultsTo: defaultModelUrl,
+      help:
+          'Local path, HTTP(S) URL, or hf:// Hugging Face source for a GGUF model.',
+      defaultsTo: defaultModelSource,
     )
     ..addMultiOption(
       'lora',
