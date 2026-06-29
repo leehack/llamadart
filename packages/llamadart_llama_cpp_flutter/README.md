@@ -10,13 +10,13 @@ core package's native-assets fallback.
 ```yaml
 dependencies:
   llamadart: ^0.8.10
-  llamadart_llama_cpp_flutter: ^0.0.6
+  llamadart_llama_cpp_flutter: ^0.0.7
 ```
 
 This package has no runtime Dart API of its own. Import `package:llamadart`
 normally from the core package and use `LlamaBackend()` / `LlamaEngine` there.
 
-The Apple SwiftPM manifest pins `leehack/llamadart-native@b9803`.
+The Apple SwiftPM manifest pins `leehack/llamadart-native@b9829`.
 
 Source for this package lives in
 `packages/llamadart_llama_cpp_flutter` in the
