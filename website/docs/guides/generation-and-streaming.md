@@ -2,10 +2,25 @@
 title: Generation and Streaming
 ---
 
-`llamadart` exposes two generation styles:
+`llamadart` exposes three generation entry points:
 
 - `engine.generate(prompt)` for raw prompt strings.
-- `engine.create(messages)` for chat-template aware completions.
+- `engine.create(messages)` for stateless, chat-template aware completions.
+- `ChatSession.create(parts)` for stateful, multi-turn chat with automatic
+  history management.
+
+## Choosing the right API
+
+| API | Template-aware? | Keeps history? | Use when |
+| --- | --- | --- | --- |
+| `engine.generate(prompt)` | No | No | You already rendered the final raw prompt, or you are benchmarking, testing prefix-cache/state flows, or doing other low-level runtime work. |
+| `engine.create(messages)` | Yes | No | You have the complete `List<LlamaChatMessage>` for each request, such as an OpenAI-compatible server, a one-shot completion, or an app that owns its transcript. |
+| `ChatSession.create(parts)` | Yes | Yes | You are building a multi-turn chat UI/CLI and want the SDK to append user/assistant turns, apply the system prompt, and trim history as the context grows. |
+
+For beginner or one-shot instruction examples, prefer `engine.create(...)` so the
+model's chat template is applied without introducing session state. For real
+chat applications, prefer `ChatSession` unless your app already stores and sends
+the full message list itself.
 
 ## Generation pipeline (visual)
 
@@ -18,7 +33,11 @@ sequenceDiagram
     participant Backend as Native/Web backend
     participant Parser as Stream parser
 
-    App->>Engine: generate(prompt) or create(messages)
+    App->>Engine: generate(prompt), create(messages), or ChatSession.create(parts)
+    alt ChatSession.create(parts)
+        App->>App: append turn to session history
+        App->>Engine: create(full session messages)
+    end
     alt create(messages)
         Engine->>Template: detect format + render template
         Template-->>Engine: prompt + stops + grammar
@@ -99,9 +118,18 @@ final count = await engine.getTokenCount('hello world');
 
 These helpers are useful for context budgeting and prompt diagnostics.
 
-## When to use which API
+## Stateless vs stateful chat
 
-- Use `generate(...)` when you already have a final raw prompt and do not need
-  chat-template tooling.
-- Use `create(...)` for OpenAI-style message arrays, template routing, and
-  tool-calling workflows.
+`engine.create(...)` is stateless: it uses exactly the messages you pass for that
+request and does not remember the assistant response. If you want a follow-up
+turn to see prior context, append both the user message and assistant response to
+your own `messages` list before calling `engine.create(...)` again.
+
+`ChatSession.create(...)` is stateful: it adds the new user content to session
+history, streams through `engine.create(...)`, then stores the assistant message
+for later turns. Use `session.addMessage(...)` when you need to restore history or
+insert tool results manually, and `session.reset(...)` when a conversation should
+start over.
+
+See [First Chat Session](../getting-started/first-chat-session) for a minimal
+multi-turn example.

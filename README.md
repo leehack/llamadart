@@ -178,21 +178,43 @@ archive, at an extracted bundle directory, or at a directory containing
 
 ### 5. Minimal first model load
 
+Start with a model source instead of a machine-specific file path. On native
+Dart/Flutter targets, `loadModelSource(...)` downloads and caches the file on
+first run, then reuses the cached model on later runs.
+
 ```dart
 import 'package:llamadart/llamadart.dart';
 
 Future<void> main() async {
   final engine = LlamaEngine(LlamaBackend());
   try {
-    await engine.loadModel('path/to/model.gguf');
-    await for (final token in engine.generate('Hello')) {
-      print(token);
-    }
+    await engine.loadModelSource(
+      ModelSource.parse(
+        'hf://unsloth/SmolLM2-135M-Instruct-GGUF/'
+        'SmolLM2-135M-Instruct-Q2_K.gguf',
+      ),
+      modelParams: const ModelParams(contextSize: 1024, gpuLayers: 0),
+    );
+
+    final output = await engine.create(
+      const [
+        LlamaChatMessage.fromText(
+          role: LlamaChatRole.user,
+          text: 'Rewrite professionally: i need this done asap',
+        ),
+      ],
+      params: const GenerationParams(maxTokens: 64, temp: 0.2),
+    ).map((chunk) => chunk.choices.first.delta.content ?? '').join();
+    print(output);
   } finally {
     await engine.dispose();
   }
 }
 ```
+
+The SmolLM2 GGUF above is a small copy/paste smoke-test model. For product demos,
+pre-cache the source before presenting so the code still shows the Hugging Face
+source while the live path uses the local cache rather than conference Wi-Fi.
 
 For LiteRT-LM bundles, use the same high-level API and pass a `.litertlm`
 path or URL. Native callers load local bundle paths; web callers load
@@ -237,8 +259,13 @@ await engine.loadModel(
   ),
 );
 
-await for (final token in engine.generate(
-  'Explain local inference in one paragraph.',
+await for (final chunk in engine.create(
+  const [
+    LlamaChatMessage.fromText(
+      role: LlamaChatRole.user,
+      text: 'Explain local inference in one paragraph.',
+    ),
+  ],
   params: const GenerationParams(
     maxTokens: 128,
     speculativeDecodingConfig: SpeculativeDecodingConfig.mtp(
@@ -246,7 +273,8 @@ await for (final token in engine.generate(
     ),
   ),
 )) {
-  stdout.write(token);
+  final text = chunk.choices.first.delta.content;
+  if (text != null) print(text);
 }
 ```
 
@@ -853,6 +881,18 @@ Core abstractions in this package:
 - Optional runtime diagnostics are exposed through `LlamaEngine` helpers such as `getBackendName()`, `getAvailableBackends()`, and `getResolvedGpuLayers()` when supported by the active backend.
 - `LlamaEngine.listGpuDevices()` enumerates GPU-class devices (backend, per-backend `mainGpu` index, name, description, device id, type, free/total memory) for offload selection. By default it inspects only already-registered backends; pass `probeBackends: [...]` to opt into loading specific backend modules first. Web/WebGPU return an empty list.
 
+Generation API selection:
+
+| API | Template-aware? | Keeps history? | Use when |
+| --- | --- | --- | --- |
+| `engine.generate(prompt)` | No | No | You already have a final raw prompt, or you are benchmarking, testing prefix-cache/state flows, or doing low-level runtime work. |
+| `engine.create(messages)` | Yes | No | You have the complete `List<LlamaChatMessage>` for each request, such as a one-shot completion or an OpenAI-compatible server. |
+| `ChatSession.create(parts)` | Yes | Yes | You are building a multi-turn chat UI/CLI and want the SDK to store user/assistant turns, apply the system prompt, and trim history as context grows. |
+
+Beginner examples use `engine.create(...)` so chat templates are applied without
+introducing hidden state. Use `ChatSession` for real multi-turn chat apps unless
+your app already owns the full transcript.
+
 ---
 ## ⚠️ Breaking Changes in 0.6.x
 
@@ -890,10 +930,16 @@ void main() async {
     // Initialize with a local GGUF model
     await engine.loadModel('path/to/model.gguf');
 
-    // Generate text (streaming)
-    await for (final token in engine.generate('The capital of France is')) {
-      print(token);
-    }
+    // Generate text with chat-template aware completion
+    final response = await engine.create(
+      const [
+        LlamaChatMessage.fromText(
+          role: LlamaChatRole.user,
+          text: 'What is the capital of France?',
+        ),
+      ],
+    ).map((chunk) => chunk.choices.first.delta.content ?? '').join();
+    print(response);
   } finally {
     // CRITICAL: Always dispose the engine to release native resources
     await engine.dispose();

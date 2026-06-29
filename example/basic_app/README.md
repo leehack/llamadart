@@ -6,7 +6,7 @@ A clean, organized CLI application demonstrating the capabilities of the `llamad
 
 - **Interactive Mode**: Have a back-and-forth conversation with an LLM in your terminal.
 - **Single Response Mode**: Pass a prompt as an argument for quick tasks.
-- **Automatic Model Management**: Automatically downloads models from Hugging Face if a URL is provided.
+- **Automatic Model Management**: Accepts local paths, HTTP(S) URLs, and `hf://` Hugging Face model sources, then resolves remote sources through the package-managed cache.
 - **Platform Cache Defaults**: Remote model URLs use `DefaultModelDownloadManager`, so desktop/server runs share the per-user `llamadart` model cache while explicit local paths are loaded directly.
 - **Backend Optimization**: Defaults to GPU acceleration (Metal/Vulkan) when available.
 - **LoRA Adapters**: Load one or more LoRA adapters with repeated `--lora` flags.
@@ -28,17 +28,25 @@ dart pub get
 
 ### 2. Run Interactive Mode (Default)
 
-This will download a small default model (Qwen 2.5 0.5B) if not already present and start a chat session.
+This uses a default Hugging Face source, downloads it on first run, and reuses
+the package-managed cache on later runs.
 
 ```bash
 dart run
 ```
 
+Default model source:
+
+```text
+hf://unsloth/Qwen3.5-0.8B-GGUF/Qwen3.5-0.8B-Q4_K_M.gguf
+```
+
 ### 3. Run with a Specific Model
 
-You can provide a local path or a Hugging Face GGUF URL.
+You can provide a local path, an HTTP(S) URL, or an `hf://` Hugging Face source.
 
 ```bash
+dart run -- -m "hf://unsloth/SmolLM2-135M-Instruct-GGUF/SmolLM2-135M-Instruct-Q2_K.gguf"
 dart run -- -m "path/to/model.gguf"
 ```
 
@@ -159,7 +167,7 @@ How to translate result values:
 
 ## Options
 
-- `-m, --model`: Path or URL to the GGUF model file.
+- `-m, --model`: Local path, HTTP(S) URL, or `hf://` Hugging Face source for a GGUF model.
 - `-l, --lora`: Path to LoRA adapter(s). Can be set multiple times.
 - `-p, --prompt`: Prompt for single response mode.
 - `-i, --interactive`: Start in interactive mode (default if no prompt provided).

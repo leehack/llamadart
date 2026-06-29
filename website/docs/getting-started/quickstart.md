@@ -7,6 +7,11 @@ This quickstart uses the core `LlamaEngine` API.
 
 ## Minimal generation example
 
+Start with a model source instead of a machine-specific file path. On native
+Dart/Flutter targets, `loadModelSource(...)` downloads the file on first run,
+stores it in the package-managed model cache, and reuses the cached file on
+later runs.
+
 ```dart
 import 'package:llamadart/llamadart.dart';
 
@@ -14,18 +19,46 @@ Future<void> main() async {
   final LlamaEngine engine = LlamaEngine(LlamaBackend());
 
   try {
-    await engine.loadModel('path/to/model.gguf');
+    await engine.loadModelSource(
+      ModelSource.parse(
+        'hf://unsloth/SmolLM2-135M-Instruct-GGUF/'
+        'SmolLM2-135M-Instruct-Q2_K.gguf',
+      ),
+      modelParams: const ModelParams(contextSize: 1024, gpuLayers: 0),
+      onProgress: (progress) {
+        final fraction = progress.fraction;
+        if (fraction != null) {
+          print('download ${(fraction * 100).toStringAsFixed(1)}%');
+        }
+      },
+    );
 
-    await for (final String token in engine.generate(
-      'Write one short sentence about local inference.',
-    )) {
-      print(token);
-    }
+    final output = await engine.create(
+      const [
+        LlamaChatMessage.fromText(
+          role: LlamaChatRole.user,
+          text: 'Rewrite professionally: i need this done asap',
+        ),
+      ],
+      params: const GenerationParams(maxTokens: 64, temp: 0.2),
+    ).map((chunk) => chunk.choices.first.delta.content ?? '').join();
+    print(output);
   } finally {
     await engine.dispose();
   }
 }
 ```
+
+This example uses `engine.create(...)`, the stateless chat-completion API: the
+model's chat template is applied, but no conversation history is stored between
+calls. Use [First Chat Session](./first-chat-session) when you want automatic
+multi-turn history, or [Generation and Streaming](../guides/generation-and-streaming)
+when you need to choose between raw prompts, stateless chat, and stateful chat.
+
+The small SmolLM2 GGUF above is intended for copy/paste smoke tests. For a live
+conference demo, run it once beforehand so the Hugging Face source remains in
+the code while the actual presentation path uses the local cache instead of
+conference Wi-Fi.
 
 LiteRT-LM `.litertlm` bundles load through the same engine. Native targets load
 local bundle paths, including paths resolved by `loadModelSource(...)`; web
