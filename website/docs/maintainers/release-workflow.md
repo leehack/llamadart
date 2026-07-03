@@ -77,6 +77,26 @@ or use a versioned release-prep branch name such as `release/prep-0.8.12` or
 repository secret containing a fine-scoped PAT or GitHub App token that can push
 tags and trigger tag-based workflows. Do not use the default `GITHUB_TOKEN` for
 this step because GitHub suppresses most workflow runs caused by that token.
+Prefer a GitHub App token or fine-scoped PAT with only the repository permissions
+needed to create tags, and rotate it on a regular maintainer cadence. Never echo
+the token or derived credential-bearing URLs in workflow logs.
+
+Release automation and publication-sensitive files are covered by
+`.github/CODEOWNERS`. CODEOWNERS is only advisory until the repository's branch
+protection or ruleset requires code-owner review, so keep that setting enabled
+before relying on the post-merge workflow as the publication approval boundary.
+When adding new workflow, release, version, or native-runtime publication
+surfaces, update `.github/CODEOWNERS` in the same PR.
+
+The post-merge workflow waits for pub.dev and GitHub Release propagation using
+repository-variable defaults that can be tuned without editing the workflow:
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `RELEASE_AUTOMATION_PUBDEV_WAIT_ATTEMPTS` | `180` | Number of pub.dev version URL checks. |
+| `RELEASE_AUTOMATION_PUBDEV_WAIT_INTERVAL_SECONDS` | `10` | Delay between pub.dev checks. |
+| `RELEASE_AUTOMATION_GITHUB_RELEASE_WAIT_ATTEMPTS` | `180` | Number of GitHub Release existence checks. |
+| `RELEASE_AUTOMATION_GITHUB_RELEASE_WAIT_INTERVAL_SECONDS` | `10` | Delay between GitHub Release checks. |
 
 Do not tag the core `vX.Y.Z` release until every companion package version named
 in the current install docs is already published on pub.dev. The release
