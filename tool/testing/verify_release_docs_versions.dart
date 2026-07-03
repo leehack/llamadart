@@ -8,7 +8,8 @@ import 'dart:io';
 //
 // During release-prep PRs, current install docs are expected to track the
 // in-repository package versions being prepared. Publishing still happens only
-// after merge and explicit maintainer approval for each release tag.
+// after merge; the release-prep PR merge is the approval boundary for the
+// post-merge release automation.
 const Map<String, String> _packagePubspecs = <String, String>{
   'llamadart': 'pubspec.yaml',
   'llamadart_llama_cpp_flutter':

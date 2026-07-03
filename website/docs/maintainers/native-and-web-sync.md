@@ -85,16 +85,16 @@ version is newly referenced by current install docs:
    release assets and that the pinned checksums match those assets.
 2. Merge the sync/release-prep PR first. The PR itself must not publish the
    companion or core package.
-3. After merge, get explicit maintainer approval before pushing each
-   package-specific companion tag:
+3. After merge, `release_on_prep_merge.yml` uses the release-prep PR merge as
+   the publishing approval boundary and pushes each missing package-specific
+   companion tag:
    `llamadart_llama_cpp_flutter-v{{version}}` or
    `llamadart_litert_lm_flutter-v{{version}}`.
 4. Wait for `publish_companion_pubdev.yml` to pass.
 5. Verify the version URL on pub.dev, for example
    `https://pub.dev/api/packages/llamadart_llama_cpp_flutter/versions/{{version}}`.
-6. Only after the companion version is live, get explicit maintainer approval
-   before pushing the core `vX.Y.Z` release tag that documents or depends on
-   that companion version.
+6. Only after the companion version is live, the automation pushes the core
+   `vX.Y.Z` release tag that documents or depends on that companion version.
 
 ## Web bridge asset sync flow
 
