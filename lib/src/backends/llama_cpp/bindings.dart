@@ -13,6 +13,14 @@ library;
 
 import 'dart:ffi' as ffi;
 
+@ffi.Native<ffi.Pointer<ffi.Char> Function(ffi.UnsignedInt)>(
+  symbol: 'llama_ftype_name',
+)
+external ffi.Pointer<ffi.Char> _llama_ftype_name(int ftype);
+
+ffi.Pointer<ffi.Char> llama_ftype_name(llama_ftype ftype) =>
+    _llama_ftype_name(ftype.value);
+
 @ffi.Native<ffi.Pointer<ffi.Char> Function(ffi.Int)>(
   symbol: 'llama_flash_attn_type_name',
 )
@@ -356,6 +364,14 @@ external int llama_model_desc(
   ffi.Pointer<ffi.Char> buf,
   int buf_size,
 );
+
+@ffi.Native<ffi.UnsignedInt Function(ffi.Pointer<llama_model>)>(
+  symbol: 'llama_model_ftype',
+)
+external int _llama_model_ftype(ffi.Pointer<llama_model> model);
+
+llama_ftype llama_model_ftype(ffi.Pointer<llama_model> model) =>
+    llama_ftype.fromValue(_llama_model_ftype(model));
 
 @ffi.Native<ffi.Uint64 Function(ffi.Pointer<llama_model>)>()
 external int llama_model_size(ffi.Pointer<llama_model> model);
