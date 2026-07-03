@@ -9,6 +9,7 @@ import '../exceptions.dart';
 import '../models/config/gpu_backend.dart';
 import '../models/config/gpu_device_info.dart';
 import '../models/config/log_level.dart';
+import '../models/diagnostics/model_file_type.dart';
 import '../models/chat/chat_message.dart';
 import '../models/chat/completion_chunk.dart';
 import '../models/chat/content_part.dart';
@@ -1016,6 +1017,26 @@ class LlamaEngine {
       return (candidate as BackendRuntimeDiagnostics).getResolvedGpuLayers();
     }
     return Future<int?>.value(null);
+  }
+
+  /// Returns model file type or quantization metadata when available.
+  ///
+  /// llama.cpp/GGUF backends expose this via the native `llama_model_ftype` and
+  /// `llama_ftype_name` APIs. Backends that do not expose equivalent metadata,
+  /// such as LiteRT-LM or older web bridge assets, return null.
+  Future<ModelFileType?> getModelFileType() {
+    final modelHandle = _modelHandle;
+    if (!_isReady || modelHandle == null) {
+      return Future<ModelFileType?>.value(null);
+    }
+
+    final candidate = backend;
+    if (candidate is BackendModelFileTypeDiagnostics) {
+      return (candidate as BackendModelFileTypeDiagnostics).getModelFileType(
+        modelHandle,
+      );
+    }
+    return Future<ModelFileType?>.value(null);
   }
 
   /// Returns native llama.cpp perf timings for the active context when available.

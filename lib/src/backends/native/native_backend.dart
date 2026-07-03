@@ -3,6 +3,7 @@ import '../../core/models/chat/content_part.dart';
 import '../../core/models/config/gpu_backend.dart';
 import '../../core/models/config/gpu_device_info.dart';
 import '../../core/models/config/log_level.dart';
+import '../../core/models/diagnostics/model_file_type.dart';
 import '../../core/models/inference/generation_params.dart';
 import '../../core/models/inference/model_params.dart';
 import '../../core/models/inference/tool_choice.dart';
@@ -23,6 +24,7 @@ class NativeAutoBackend
         LlamaBackend,
         BackendAvailability,
         BackendRuntimeDiagnostics,
+        BackendModelFileTypeDiagnostics,
         BackendGpuEnumeration,
         BackendPerformanceDiagnostics,
         BackendEmbeddings,
@@ -236,6 +238,17 @@ class NativeAutoBackend
       return (delegate as BackendRuntimeDiagnostics).getResolvedGpuLayers();
     }
     return Future<int?>.value(null);
+  }
+
+  @override
+  Future<ModelFileType?> getModelFileType(int modelHandle) {
+    final delegate = _delegate;
+    if (delegate is BackendModelFileTypeDiagnostics) {
+      return (delegate as BackendModelFileTypeDiagnostics).getModelFileType(
+        modelHandle,
+      );
+    }
+    return Future<ModelFileType?>.value(null);
   }
 
   @override
