@@ -282,6 +282,20 @@ test -d ../llama-web-bridge-assets
 
 ## Development Workflow
 
+### AGENTS.md Maintenance
+- Treat `AGENTS.md` as a living source of repo guidance. When a task reveals a
+  durable workflow rule, command, ownership boundary, release gate, or validation
+  expectation that would help future agents, update this file in the same PR.
+- Remove or replace outdated guidance when the repo, workflows, or release
+  process change. Do not preserve historical instructions that now contradict
+  the current source of truth.
+- Keep entries actionable and concise. Avoid session logs, one-off incident
+  details, and duplicated advice; prefer stable commands, decision rules, and
+  pointers to discoverable tooling.
+- If this file becomes too long or noisy while adding guidance, compress nearby
+  sections by merging duplicates and trimming obsolete detail while preserving
+  critical safety constraints, validation commands, and release requirements.
+
 ### Before Committing
 1. Run `dart format .` to ensure code is properly formatted
 2. Run `dart analyze` to fix all warnings and lint errors
