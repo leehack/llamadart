@@ -17,7 +17,7 @@ dependencies:
 This package has no runtime Dart API of its own. Import `package:llamadart`
 normally from the core package and use `LlamaBackend()` / `LlamaEngine` there.
 
-The Apple SwiftPM manifest pins `leehack/litert-lm-native@v0.13.1-native.1`.
+The Apple SwiftPM manifest pins `leehack/litert-lm-native@v0.14.0-native.1`.
 
 Source for this package lives in
 `packages/llamadart_litert_lm_flutter` in the

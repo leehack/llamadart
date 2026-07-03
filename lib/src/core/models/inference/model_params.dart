@@ -154,6 +154,11 @@ class ModelParams {
   final int mainGpu;
 
   /// Initial LoRA adapters to load along with the model.
+  ///
+  /// llama.cpp backends support multiple adapters with custom scales. Native
+  /// LiteRT-LM supports one default-scale text LoRA adapter at model load;
+  /// runtime adapter updates, stacking, custom scales, and LiteRT-LM web LoRA
+  /// are unsupported.
   final List<LoraAdapterConfig> loras;
 
   /// Optional chat template to override the model's default template.

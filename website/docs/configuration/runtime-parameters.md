@@ -62,6 +62,11 @@ Important fields:
   `liteRtLmParallelFileSectionLoading`, and `liteRtLmDispatchLibDir`: opt-in
   native LiteRT-LM `.litertlm` engine settings. Leave them unset to preserve
   runtime defaults; LiteRT-LM web rejects them as native-only.
+- `numberOfThreads`: honored by native LiteRT-LM; `0` keeps automatic
+  selection.
+- `loras`: native LiteRT-LM accepts one default-scale initial text adapter at
+  model load. Runtime LoRA control APIs, adapter stacking, and custom scales
+  remain llama.cpp-only.
 
 For runtime LoRA control (`setLora`, `removeLora`, `clearLoras`), see
 [LoRA Adapters](../guides/lora-adapters).

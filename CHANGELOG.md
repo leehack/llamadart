@@ -1,5 +1,10 @@
 ## Unreleased
 
+* Updated the default LiteRT-LM native runtime pin to
+  `leehack/litert-lm-native@v0.14.0-native.1`, refreshed matching native-assets
+  checksums, aligned the `llamadart_litert_lm_flutter` Apple SwiftPM checksums,
+  and documented the newly exposed native LiteRT-LM load/generation controls.
+
 * Updated the default llama.cpp native runtime pin to
   `leehack/llamadart-native@b9860`, regenerated matching Dart FFI bindings, refreshed
   the `llamadart_llama_cpp_flutter` Apple SwiftPM checksum, and

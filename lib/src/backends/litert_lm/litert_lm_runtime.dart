@@ -9,7 +9,7 @@ import 'package:path/path.dart' as path;
 
 import '../../core/models/inference/model_params.dart';
 
-const _litertLmVersion = '0.13.1-native.1';
+const _litertLmVersion = '0.14.0-native.1';
 const _litertLmLibDirEnv = 'LLAMADART_LITERT_LM_LIB_DIR';
 const _liteRtLmIosNativeAsset = 'package:llamadart/litert_lm_LiteRtLm';
 const _processLibraryCandidate = '<process>';
