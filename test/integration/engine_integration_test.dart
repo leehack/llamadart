@@ -60,6 +60,12 @@ void main() async {
       expect(metadata, isNotEmpty);
       expect(metadata['general.architecture'], 'llama');
 
+      final modelFileType = await engine.getModelFileType();
+      expect(modelFileType, isNotNull);
+      final fileType = modelFileType!;
+      expect(fileType.id, greaterThanOrEqualTo(0));
+      expect(fileType.name, isNotEmpty);
+
       // 6. Backend Info
       expect(await engine.getBackendName(), isNotEmpty);
       expect(await engine.isGpuSupported(), isA<bool>());

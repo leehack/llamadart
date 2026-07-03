@@ -7,6 +7,7 @@ import '../../core/models/chat/content_part.dart';
 import '../../core/models/config/gpu_backend.dart';
 import '../../core/models/config/gpu_device_info.dart';
 import '../../core/models/config/log_level.dart';
+import '../../core/models/diagnostics/model_file_type.dart';
 import '../../core/models/inference/model_params.dart';
 import '../../core/models/inference/generation_params.dart';
 import 'worker.dart';
@@ -20,6 +21,7 @@ class NativeLlamaBackend
         LlamaBackend,
         BackendAvailability,
         BackendRuntimeDiagnostics,
+        BackendModelFileTypeDiagnostics,
         BackendGpuEnumeration,
         BackendPerformanceDiagnostics,
         BackendEmbeddings,
@@ -347,6 +349,17 @@ class NativeLlamaBackend
     rp.close();
     if (res is MetadataResponse) return res.metadata;
     return {};
+  }
+
+  @override
+  Future<ModelFileType?> getModelFileType(int modelHandle) async {
+    final rp = ReceivePort();
+    _sendPort!.send(ModelFileTypeRequest(modelHandle, rp.sendPort));
+    final res = await rp.first;
+    rp.close();
+    if (res is ModelFileTypeResponse) return res.modelFileType;
+    if (res is ErrorResponse) throw Exception(res.message);
+    return null;
   }
 
   @override

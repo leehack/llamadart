@@ -46,6 +46,7 @@ export 'src/backends/backend.dart'
         BackendGpuEnumeration,
         BackendNativeChatGeneration,
         BackendRuntimeDiagnostics,
+        BackendModelFileTypeDiagnostics,
         BackendPerfContextData,
         BackendPerformanceDiagnostics,
         BackendEmbeddings,
@@ -87,6 +88,7 @@ export 'src/core/models/config/gpu_device_info.dart';
 export 'src/core/models/config/flash_attention.dart';
 export 'src/core/models/config/kv_cache_type.dart';
 export 'src/core/models/config/lora_config.dart';
+export 'src/core/models/diagnostics/model_file_type.dart';
 
 // Utils
 export 'src/core/exceptions.dart';

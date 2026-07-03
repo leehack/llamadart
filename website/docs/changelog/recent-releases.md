@@ -7,6 +7,16 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
+## Unreleased
+
+- Hardened release automation by adding CODEOWNERS coverage for
+  publication-sensitive files and making pub.dev/GitHub Release propagation
+  waits configurable with longer defaults.
+
+- Added post-merge release automation so a merged release-prep PR can publish
+  missing companion package versions, push the core release tag, wait for
+  pub.dev, and confirm the GitHub Release without a separate manual tag step.
+
 ## 0.8.11
 
 - Updated the default llama.cpp native runtime pin to

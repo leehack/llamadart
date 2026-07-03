@@ -37,6 +37,7 @@ import 'handlers/magistral_handler.dart';
 import 'handlers/minimax_m2_handler.dart';
 import 'handlers/ministral_handler.dart';
 import 'handlers/mistral_handler.dart';
+import 'handlers/minicpm5_handler.dart';
 import 'handlers/nemotron_v2_handler.dart';
 import 'handlers/qwen3_coder_xml_handler.dart';
 import 'handlers/seed_oss_handler.dart';
@@ -542,6 +543,8 @@ class ChatTemplateEngine {
         return Qwen3CoderXmlHandler();
       case ChatFormat.minimaxM2:
         return MinimaxM2Handler();
+      case ChatFormat.minicpm5:
+        return MiniCpm5Handler();
       case ChatFormat.gptOss:
         return GptOssHandler();
       case ChatFormat.seedOss:

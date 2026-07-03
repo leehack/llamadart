@@ -47,9 +47,11 @@ jobs:
             exit 1
           fi
 
-          echo "name=$package_name" >> "$GITHUB_OUTPUT"
-          echo "path=$package_path" >> "$GITHUB_OUTPUT"
-          echo "version=$package_version" >> "$GITHUB_OUTPUT"
+          {
+            echo "name=$package_name"
+            echo "path=$package_path"
+            echo "version=$package_version"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Decide whether to publish
         id: publish

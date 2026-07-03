@@ -5,6 +5,7 @@ import '../../core/models/chat/content_part.dart';
 import '../../core/models/config/gpu_backend.dart';
 import '../../core/models/config/gpu_device_info.dart';
 import '../../core/models/config/log_level.dart';
+import '../../core/models/diagnostics/model_file_type.dart';
 
 /// Base class for all worker requests.
 abstract class WorkerRequest {
@@ -162,6 +163,15 @@ class MetadataRequest extends WorkerRequest {
 
   /// Creates a new [MetadataRequest].
   MetadataRequest(this.modelHandle, super.sendPort);
+}
+
+/// Request to get model file type metadata.
+class ModelFileTypeRequest extends WorkerRequest {
+  /// The handle of the model.
+  final int modelHandle;
+
+  /// Creates a new [ModelFileTypeRequest].
+  ModelFileTypeRequest(this.modelHandle, super.sendPort);
 }
 
 /// Request for LoRA operations.
@@ -433,6 +443,15 @@ class MetadataResponse {
 
   /// Creates a new [MetadataResponse].
   MetadataResponse(this.metadata);
+}
+
+/// Response containing model file type metadata.
+class ModelFileTypeResponse {
+  /// The model file type metadata, or null when unavailable.
+  final ModelFileType? modelFileType;
+
+  /// Creates a new [ModelFileTypeResponse].
+  ModelFileTypeResponse(this.modelFileType);
 }
 
 /// Response containing the context size.

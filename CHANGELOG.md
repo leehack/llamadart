@@ -5,6 +5,21 @@
   checksums, aligned the `llamadart_litert_lm_flutter` Apple SwiftPM checksums,
   and documented the newly exposed native LiteRT-LM load/generation controls.
 
+* Hardened release automation by adding CODEOWNERS coverage for
+  publication-sensitive files and making pub.dev/GitHub Release propagation
+  waits configurable with longer defaults.
+
+* Added post-merge release automation so a merged release-prep PR can publish
+  missing companion package versions, push the core release tag, wait for
+  pub.dev, and confirm the GitHub Release without a separate manual tag step.
+
+* Added `LlamaEngine.getModelFileType()` for llama.cpp/GGUF models, exposing
+  native model file type / quantization metadata from `llama_model_ftype` and
+  `llama_ftype_name` when available.
+
+* Refreshed llama.cpp `b9860` template parity for DeepSeek V4 and MiniCPM5,
+  including MiniCPM5 XML tool-call detection, rendering, and parsing.
+
 * Updated the default llama.cpp native runtime pin to
   `leehack/llamadart-native@b9860`, regenerated matching Dart FFI bindings, refreshed
   the `llamadart_llama_cpp_flutter` Apple SwiftPM checksum, and

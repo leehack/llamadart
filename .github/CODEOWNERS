@@ -1,0 +1,18 @@
+# Release automation and publication-sensitive files require maintainer review.
+.github/CODEOWNERS @leehack
+.github/dependabot.yml @leehack
+.github/pull_request_template.md @leehack
+.github/workflows/ @leehack
+
+# Version, release, and native-runtime publication surfaces.
+pubspec.yaml @leehack
+CHANGELOG.md @leehack
+doc/testing_matrix.md @leehack
+hook/build.dart @leehack
+tool/testing/verify_release_docs_versions.dart @leehack
+website/docs/changelog/recent-releases.md @leehack
+website/docs/maintainers/native-and-web-sync.md @leehack
+website/docs/maintainers/release-workflow.md @leehack
+packages/*/CHANGELOG.md @leehack
+packages/*/Package.swift @leehack
+packages/*/pubspec.yaml @leehack
