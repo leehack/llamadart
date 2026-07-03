@@ -4,6 +4,9 @@
   native model file type / quantization metadata from `llama_model_ftype` and
   `llama_ftype_name` when available.
 
+* Refreshed llama.cpp `b9860` template parity for DeepSeek V4 and MiniCPM5,
+  including MiniCPM5 XML tool-call detection, rendering, and parsing.
+
 * Updated the default llama.cpp native runtime pin to
   `leehack/llamadart-native@b9860`, regenerated matching Dart FFI bindings, refreshed
   the `llamadart_llama_cpp_flutter` Apple SwiftPM checksum, and
