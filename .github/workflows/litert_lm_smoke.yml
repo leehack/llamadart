@@ -101,7 +101,12 @@ jobs:
         shell: bash
         env:
           LLAMADART_LITERT_LM_LIB_DIR: ${{ github.workspace }}/.dart_tool/llamadart/litert_lm/${{ steps.litert-version.outputs.version }}/${{ matrix.litert_lib_subdir }}
-        run: dart run tool/litert_lm_library_smoke.dart
+        run: |
+          set -euo pipefail
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            export LD_LIBRARY_PATH="$LLAMADART_LITERT_LM_LIB_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          fi
+          dart run tool/litert_lm_library_smoke.dart
 
       - name: Cache tiny LiteRT-LM model
         uses: actions/cache@v5
@@ -150,6 +155,10 @@ jobs:
           LLAMADART_LITERT_LM_LIB_DIR: ${{ github.workspace }}/.dart_tool/llamadart/litert_lm/${{ steps.litert-version.outputs.version }}/${{ matrix.litert_lib_subdir }}
           LITERT_LM_MODEL_PATH: ${{ github.workspace }}/.dart_tool/litert_lm_models/Qwen3-0.6B.litertlm
         run: |
+          set -euo pipefail
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            export LD_LIBRARY_PATH="$LLAMADART_LITERT_LM_LIB_DIR${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          fi
           dart run tool/litert_lm_engine_smoke.dart \
             "$LITERT_LM_MODEL_PATH" \
             cpu \
