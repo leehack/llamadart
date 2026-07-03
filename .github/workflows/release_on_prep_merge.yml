@@ -20,7 +20,12 @@ jobs:
     name: Publish merged release prep
     if: ${{ github.event.pull_request.merged == true }}
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 150
+    env:
+      GITHUB_RELEASE_WAIT_ATTEMPTS: ${{ vars.RELEASE_AUTOMATION_GITHUB_RELEASE_WAIT_ATTEMPTS || '180' }}
+      GITHUB_RELEASE_WAIT_INTERVAL_SECONDS: ${{ vars.RELEASE_AUTOMATION_GITHUB_RELEASE_WAIT_INTERVAL_SECONDS || '10' }}
+      PUBDEV_WAIT_ATTEMPTS: ${{ vars.RELEASE_AUTOMATION_PUBDEV_WAIT_ATTEMPTS || '180' }}
+      PUBDEV_WAIT_INTERVAL_SECONDS: ${{ vars.RELEASE_AUTOMATION_PUBDEV_WAIT_INTERVAL_SECONDS || '10' }}
     steps:
       - name: Check release-prep gate
         id: gate
@@ -119,6 +124,20 @@ jobs:
             exit 1
           fi
 
+          require_positive_integer() {
+            local name="$1"
+            local value="$2"
+            if [[ ! "$value" =~ ^[1-9][0-9]*$ ]]; then
+              echo "$name must be a positive integer; got '$value'." >&2
+              exit 1
+            fi
+          }
+
+          require_positive_integer "PUBDEV_WAIT_ATTEMPTS" "$PUBDEV_WAIT_ATTEMPTS"
+          require_positive_integer "PUBDEV_WAIT_INTERVAL_SECONDS" "$PUBDEV_WAIT_INTERVAL_SECONDS"
+          require_positive_integer "GITHUB_RELEASE_WAIT_ATTEMPTS" "$GITHUB_RELEASE_WAIT_ATTEMPTS"
+          require_positive_integer "GITHUB_RELEASE_WAIT_INTERVAL_SECONDS" "$GITHUB_RELEASE_WAIT_INTERVAL_SECONDS"
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
@@ -134,14 +153,16 @@ jobs:
             local package_name="$1"
             local package_version="$2"
             local version_url="https://pub.dev/api/packages/$package_name/versions/$package_version"
+            local attempts="$PUBDEV_WAIT_ATTEMPTS"
+            local interval_seconds="$PUBDEV_WAIT_INTERVAL_SECONDS"
 
-            for attempt in $(seq 1 90); do
+            for attempt in $(seq 1 "$attempts"); do
               if curl -fsSL "$version_url" >/dev/null; then
                 echo "$package_name $package_version is live on pub.dev."
                 return 0
               fi
-              echo "Waiting for $package_name $package_version on pub.dev ($attempt/90)."
-              sleep 10
+              echo "Waiting for $package_name $package_version on pub.dev ($attempt/$attempts)."
+              sleep "$interval_seconds"
             done
 
             echo "$package_name $package_version did not appear on pub.dev." >&2
@@ -150,13 +171,16 @@ jobs:
 
           wait_for_github_release() {
             local tag="$1"
-            for attempt in $(seq 1 90); do
+            local attempts="$GITHUB_RELEASE_WAIT_ATTEMPTS"
+            local interval_seconds="$GITHUB_RELEASE_WAIT_INTERVAL_SECONDS"
+
+            for attempt in $(seq 1 "$attempts"); do
               if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
                 echo "GitHub Release $tag exists."
                 return 0
               fi
-              echo "Waiting for GitHub Release $tag ($attempt/90)."
-              sleep 10
+              echo "Waiting for GitHub Release $tag ($attempt/$attempts)."
+              sleep "$interval_seconds"
             done
 
             echo "GitHub Release $tag was not created." >&2

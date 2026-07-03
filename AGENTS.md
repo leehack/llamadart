@@ -363,6 +363,22 @@ WEBGPU_BRIDGE_ASSETS_TAG=<tag> ./scripts/fetch_webgpu_bridge_assets.sh
   publishing approval boundary. Do not manually push package-specific companion
   tags or the core `vX.Y.Z` tag unless that automation is disabled, blocked, or
   being repaired.
+- Keep release-sensitive paths covered by `.github/CODEOWNERS`, especially
+  `.github/workflows/`, `.github/CODEOWNERS`, `pubspec.yaml`, changelogs,
+  maintainer release docs, `hook/build.dart`, and companion package publish
+  metadata. CODEOWNERS only enforces review when GitHub branch protection or a
+  ruleset requires code-owner review.
+- `RELEASE_AUTOMATION_TOKEN` must stay a fine-scoped PAT or GitHub App token
+  that can push tags and trigger tag workflows. Prefer a GitHub App token where
+  practical, rotate the credential regularly, and never log it or derived
+  credential-bearing remotes.
+- `release_on_prep_merge.yml` defaults to 180 attempts at 10 seconds for both
+  pub.dev and GitHub Release propagation checks. Tune
+  `RELEASE_AUTOMATION_PUBDEV_WAIT_ATTEMPTS`,
+  `RELEASE_AUTOMATION_PUBDEV_WAIT_INTERVAL_SECONDS`,
+  `RELEASE_AUTOMATION_GITHUB_RELEASE_WAIT_ATTEMPTS`, and
+  `RELEASE_AUTOMATION_GITHUB_RELEASE_WAIT_INTERVAL_SECONDS` as repository
+  variables rather than editing the workflow for routine propagation variance.
 - Before merging the release-prep PR, verify any companion package versions
   referenced by current install docs are either already live on pub.dev or ready
   for the post-merge automation to publish. If a changed companion package
