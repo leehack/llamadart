@@ -117,6 +117,9 @@ enum ChatFormat {
   /// Cohere2 MoE / North Code — `<|START_TEXT|>` content or
   /// `<|START_ACTION|>` JSON tool arrays after thinking.
   cohere2Moe,
+
+  /// MiniCPM5 — ChatML turns with `<function name="...">` XML tool calls.
+  minicpm5,
 }
 
 /// Detects the [ChatFormat] by scanning a Jinja template source string
@@ -146,6 +149,13 @@ ChatFormat detectChatFormat(String? templateSource) {
   if (templateSource.contains('<|START_TEXT|>') &&
       templateSource.contains('<|START_ACTION|>')) {
     return ChatFormat.cohere2Moe;
+  }
+
+  // MiniCPM5
+  if (templateSource.contains('Tool usage guidelines:') &&
+      templateSource.contains('<function name="') &&
+      templateSource.contains('<param name="')) {
+    return ChatFormat.minicpm5;
   }
 
   // Command R7B

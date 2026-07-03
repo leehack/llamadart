@@ -104,6 +104,18 @@ class XmlToolCallFormat {
     scopeEnd: '</minimax:tool_call>',
   );
 
+  /// MiniCPM5 XML function-call format.
+  static const minicpm5 = XmlToolCallFormat(
+    scopeStart: '',
+    toolStart: '<function name="',
+    toolSep: '">',
+    keyStart: '<param name="',
+    keyValSep: '">',
+    valEnd: '</param>',
+    toolEnd: '</function>',
+    scopeEnd: '',
+  );
+
   /// Seed-OSS format.
   static const seedOss = XmlToolCallFormat(
     scopeStart: '<seed:tool_call>',
@@ -189,7 +201,7 @@ String? buildXmlToolCallGrammar(
   final scopeEnd = format.scopeEnd.isEmpty
       ? ''
       : ' ${_literal(format.scopeEnd)}';
-  const commonRules = r'''
+  const jsonValueRules = r'''
 identifier ::= [A-Za-z_] [A-Za-z0-9_-]*
 space ::= " "?
 string ::= "\"" ([^"\\] | "\\\\" .)* "\""
@@ -201,13 +213,26 @@ arr ::= "[" space (value ("," space value)*)? space "]"
 obj ::= "{" space (string ":" space value ("," space string ":" space value)*)? space "}"
 ''';
 
+  if (format == XmlToolCallFormat.minicpm5) {
+    return '''
+root ::= ${scopeStart}tool-call+$scopeEnd
+tool-call ::= ${_literal(format.toolStart)} tool-name ${_literal(format.toolSep)} param* ${_literal(format.toolEnd)}
+param ::= ${_literal(format.keyStart)} param-name ${_literal(format.keyValSep)} minicpm-value ${_literal(format.valEnd)}
+tool-name ::= $toolNameRule
+param-name ::= $paramNameRule
+minicpm-value ::= raw-text | value
+raw-text ::= ([^<])*
+$jsonValueRules
+''';
+  }
+
   return '''
 root ::= ${scopeStart}tool-call+$scopeEnd
 tool-call ::= ${_literal(format.toolStart)} tool-name ${_literal(format.toolSep)} param* ${_literal(format.toolEnd)}
 param ::= ${_literal(format.keyStart)} param-name ${_literal(format.keyValSep)} value ${_literal(format.valEnd)}
 tool-name ::= $toolNameRule
 param-name ::= $paramNameRule
-$commonRules
+$jsonValueRules
 ''';
 }
 
@@ -229,6 +254,7 @@ ChatParseResult parseXmlToolCalls(
   String startThink = '<think>',
   String endThink = '</think>',
   bool parseToolCalls = true,
+  bool thinkingForcedOpen = false,
 }) {
   String? reasoning;
   var content = input;
@@ -238,6 +264,7 @@ ChatParseResult parseXmlToolCalls(
     content,
     startTag: startThink,
     endTag: endThink,
+    thinkingForcedOpen: thinkingForcedOpen,
   );
   reasoning = thinkResult.reasoning;
   content = thinkResult.content;
@@ -426,6 +453,13 @@ _ParsedXmlArguments? _parseXmlArguments(
     final valEndIdx = format.valEnd.isEmpty
         ? pos
         : content.indexOf(format.valEnd, pos);
+    final cdataValue = _parseCdataValue(content, pos, format);
+    if (cdataValue != null) {
+      _setArgValue(args, key, cdataValue.value, format);
+      pos = cdataValue.nextPos;
+      continue;
+    }
+
     final toolEndIdx = _findNextToolEndIndex(content, pos, format);
     if (valEndIdx == -1 || (toolEndIdx != -1 && toolEndIdx < valEndIdx)) {
       if (toolEndIdx != -1) {
@@ -452,6 +486,34 @@ _ParsedXmlArguments? _parseXmlArguments(
   }
 
   return _ParsedXmlArguments(arguments: args, nextPos: pos);
+}
+
+_ParsedCdataValue? _parseCdataValue(
+  String content,
+  int start,
+  XmlToolCallFormat format,
+) {
+  const cdataStart = '<![CDATA[';
+  const cdataEnd = ']]>';
+  if (!content.startsWith(cdataStart, start)) {
+    return null;
+  }
+
+  final cdataEndIdx = content.indexOf(cdataEnd, start + cdataStart.length);
+  if (cdataEndIdx == -1) {
+    return null;
+  }
+
+  final valEndStart = cdataEndIdx + cdataEnd.length;
+  if (format.valEnd.isNotEmpty &&
+      !content.startsWith(format.valEnd, valEndStart)) {
+    return null;
+  }
+
+  return _ParsedCdataValue(
+    value: content.substring(start + cdataStart.length, cdataEndIdx),
+    nextPos: valEndStart + format.valEnd.length,
+  );
 }
 
 int? _matchToolEnd(String text, int at, XmlToolCallFormat format) {
@@ -526,6 +588,13 @@ void _setArgValue(
   }
 
   args[key] = ToolCallParsingUtils.decodeJsonValueOrString(value);
+}
+
+final class _ParsedCdataValue {
+  final String value;
+  final int nextPos;
+
+  const _ParsedCdataValue({required this.value, required this.nextPos});
 }
 
 final class _ParsedXmlToolCall {
