@@ -331,7 +331,9 @@ final class _LiteRtLmDetokenizeResult extends Opaque {}
 
 final class _LiteRtLmTokenUnion extends Opaque {}
 
-final class _LiteRtLmSamplerParams extends Struct {
+final class _LiteRtLmSamplerParams extends Opaque {}
+
+final class _LegacyLiteRtLmSamplerParams extends Struct {
   @Int32()
   external int type;
 
@@ -416,6 +418,7 @@ final class _BlockingSendMessageRequest {
     required this.messageJson,
     this.extraContextJson,
     this.visualTokenBudget,
+    this.maxOutputTokens,
   });
 
   final String libraryPath;
@@ -424,6 +427,7 @@ final class _BlockingSendMessageRequest {
   final String messageJson;
   final String? extraContextJson;
   final int? visualTokenBudget;
+  final int? maxOutputTokens;
 }
 
 /// Low-level native LiteRT-LM runtime client.
@@ -480,6 +484,7 @@ class LiteRtLmRuntimeClient {
     int? prefillChunkSize,
     bool? parallelFileSectionLoading,
     String? dispatchLibDir,
+    int? numberOfThreads,
   }) async {
     if (maxTokens <= 0) {
       throw ArgumentError.value(maxTokens, 'maxTokens', 'must be positive');
@@ -517,6 +522,13 @@ class LiteRtLmRuntimeClient {
         dispatchLibDir,
         'dispatchLibDir',
         'must be non-empty when provided',
+      );
+    }
+    if (numberOfThreads != null && numberOfThreads <= 0) {
+      throw ArgumentError.value(
+        numberOfThreads,
+        'numberOfThreads',
+        'must be positive when provided',
       );
     }
     final resolvedBackend = _normalizeLiteRtLmRuntimeBackend(backend);
@@ -596,6 +608,17 @@ class LiteRtLmRuntimeClient {
           dispatchLibDirPtr.cast(),
         );
       }
+      if (numberOfThreads != null) {
+        final setter = bindings.engineSettingsSetNumThreads;
+        if (setter == null) {
+          throw UnsupportedError(
+            'LiteRT-LM numberOfThreads requires native runtime v0.14.0 or '
+            'newer because litert_lm_engine_settings_set_num_threads is '
+            'missing.',
+          );
+        }
+        setter(settings, numberOfThreads);
+      }
 
       final settingsAddress = settings.address;
       final liteRtLmLibraryPath = _liteRtLmLibraryPath!;
@@ -663,6 +686,7 @@ class LiteRtLmRuntimeClient {
     double topP = 0.95,
     int seed = 1,
     bool npuBackend = false,
+    String? loraPath,
   }) {
     final bindings = _requireBindings();
     final engine = _requireEngine();
@@ -673,16 +697,16 @@ class LiteRtLmRuntimeClient {
       throw StateError('litert_lm_session_config_create returned null');
     }
     if (!npuBackend) {
-      final sampler = calloc<_LiteRtLmSamplerParams>();
-      sampler.ref
-        ..type = 2
-        ..topK = topK
-        ..topP = topP
-        ..temperature = temperature
-        ..seed = seed;
-      bindings.sessionConfigSetSamplerParams(sessionConfig, sampler);
-      calloc.free(sampler);
+      _setSessionSamplerParams(
+        bindings,
+        sessionConfig,
+        topK: topK,
+        topP: topP,
+        temperature: temperature,
+        seed: seed,
+      );
     }
+    _setSessionLoraPath(bindings, sessionConfig, loraPath);
 
     final systemPtr = systemMessage == null
         ? nullptr
@@ -846,8 +870,11 @@ class LiteRtLmRuntimeClient {
   }
 
   /// Streams generated text from the active conversation.
-  Stream<String> generate(String prompt) {
-    return generateMessageJson(_messageJson(prompt));
+  Stream<String> generate(String prompt, {int? maxOutputTokens}) {
+    return generateMessageJson(
+      _messageJson(prompt),
+      maxOutputTokens: maxOutputTokens,
+    );
   }
 
   /// Streams generated text by sending a native LiteRT-LM message JSON object.
@@ -858,11 +885,19 @@ class LiteRtLmRuntimeClient {
     String messageJson, {
     Map<String, dynamic>? extraContext,
     int? visualTokenBudget,
+    int? maxOutputTokens,
   }) {
     if (visualTokenBudget != null && visualTokenBudget <= 0) {
       throw ArgumentError.value(
         visualTokenBudget,
         'visualTokenBudget',
+        'must be positive when provided',
+      );
+    }
+    if (maxOutputTokens != null && maxOutputTokens <= 0) {
+      throw ArgumentError.value(
+        maxOutputTokens,
+        'maxOutputTokens',
         'must be positive when provided',
       );
     }
@@ -877,12 +912,14 @@ class LiteRtLmRuntimeClient {
         messageJson,
         extraContextJson: extraContextJson,
         visualTokenBudget: visualTokenBudget,
+        maxOutputTokens: maxOutputTokens,
       );
     }
     return _generateStreamingMessageJson(
       messageJson,
       extraContextJson: extraContextJson,
       visualTokenBudget: visualTokenBudget,
+      maxOutputTokens: maxOutputTokens,
     );
   }
 
@@ -890,6 +927,7 @@ class LiteRtLmRuntimeClient {
     String messageJson, {
     String? extraContextJson,
     int? visualTokenBudget,
+    int? maxOutputTokens,
   }) {
     final conversation = _requireConversation();
     final liteRtLmLibraryPath = _liteRtLmLibraryPath!;
@@ -901,6 +939,7 @@ class LiteRtLmRuntimeClient {
       messageJson: messageJson,
       extraContextJson: extraContextJson,
       visualTokenBudget: visualTokenBudget,
+      maxOutputTokens: maxOutputTokens,
     );
 
     unawaited(() async {
@@ -934,6 +973,7 @@ class LiteRtLmRuntimeClient {
     String messageJson, {
     String? extraContextJson,
     int? visualTokenBudget,
+    int? maxOutputTokens,
   }) {
     final bindings = _requireBindings();
     final conversation = _requireConversation();
@@ -1059,6 +1099,7 @@ class LiteRtLmRuntimeClient {
         bindings,
         optionalArgs,
         visualTokenBudget: visualTokenBudget,
+        maxOutputTokens: maxOutputTokens,
       );
 
       final rc = bindings.conversationSendMessageStream(
@@ -1740,12 +1781,105 @@ void _setConversationOptionalArgs(
   _LiteRtLmBindings bindings,
   Pointer<_LiteRtLmConversationOptionalArgs> optionalArgs, {
   int? visualTokenBudget,
+  int? maxOutputTokens,
 }) {
   if (visualTokenBudget != null) {
     bindings.conversationOptionalArgsSetVisualTokenBudget(
       optionalArgs,
       visualTokenBudget,
     );
+  }
+  if (maxOutputTokens != null) {
+    final setter = bindings.conversationOptionalArgsSetMaxOutputTokens;
+    if (setter == null) {
+      throw UnsupportedError(
+        'LiteRT-LM per-request maxOutputTokens requires native runtime '
+        'v0.14.0 or newer because '
+        'litert_lm_conversation_optional_args_set_max_output_tokens is '
+        'missing.',
+      );
+    }
+    setter(optionalArgs, maxOutputTokens);
+  }
+}
+
+void _setSessionSamplerParams(
+  _LiteRtLmBindings bindings,
+  Pointer<_LiteRtLmSessionConfig> sessionConfig, {
+  required int topK,
+  required double topP,
+  required double temperature,
+  required int seed,
+}) {
+  final create = bindings.samplerParamsCreate;
+  final delete = bindings.samplerParamsDelete;
+  if (create != null && delete != null) {
+    final setTopK = bindings.samplerParamsSetTopK;
+    final setTopP = bindings.samplerParamsSetTopP;
+    final setTemperature = bindings.samplerParamsSetTemperature;
+    final setSeed = bindings.samplerParamsSetSeed;
+    if (setTopK == null ||
+        setTopP == null ||
+        setTemperature == null ||
+        setSeed == null) {
+      throw UnsupportedError(
+        'LiteRT-LM opaque sampler params require native runtime v0.14.0 or '
+        'newer with all sampler setter symbols available.',
+      );
+    }
+    final sampler = create(2);
+    if (sampler == nullptr) {
+      throw StateError('litert_lm_sampler_params_create returned null');
+    }
+    try {
+      setTopK(sampler, topK);
+      setTopP(sampler, topP);
+      setTemperature(sampler, temperature);
+      setSeed(sampler, seed);
+      bindings.sessionConfigSetSamplerParams(sessionConfig, sampler.cast());
+    } finally {
+      delete(sampler);
+    }
+    return;
+  }
+
+  final sampler = calloc<_LegacyLiteRtLmSamplerParams>();
+  try {
+    sampler.ref
+      ..type = 2
+      ..topK = topK
+      ..topP = topP
+      ..temperature = temperature
+      ..seed = seed;
+    bindings.sessionConfigSetSamplerParams(sessionConfig, sampler.cast());
+  } finally {
+    calloc.free(sampler);
+  }
+}
+
+void _setSessionLoraPath(
+  _LiteRtLmBindings bindings,
+  Pointer<_LiteRtLmSessionConfig> sessionConfig,
+  String? loraPath,
+) {
+  if (loraPath == null) {
+    return;
+  }
+  final setter = bindings.sessionConfigSetLoraPath;
+  if (setter == null) {
+    throw UnsupportedError(
+      'LiteRT-LM initial LoRA adapters require native runtime v0.14.0 or '
+      'newer because litert_lm_session_config_set_lora_path is missing.',
+    );
+  }
+  final loraPathPtr = loraPath.toNativeUtf8(allocator: calloc);
+  try {
+    final result = setter(sessionConfig, loraPathPtr.cast());
+    if (result != 0) {
+      throw StateError('litert_lm_session_config_set_lora_path failed.');
+    }
+  } finally {
+    calloc.free(loraPathPtr);
   }
 }
 
@@ -1782,6 +1916,7 @@ String _runBlockingSendMessage(_BlockingSendMessageRequest request) {
         bindings,
         optionalArgs,
         visualTokenBudget: request.visualTokenBudget,
+        maxOutputTokens: request.maxOutputTokens,
       );
 
       final response = bindings.conversationSendMessage(
@@ -1964,6 +2099,15 @@ class _LiteRtLmBindings {
 
   _LiteRtLmBindings(this._library);
 
+  Pointer<NativeFunction<NativeF>>?
+  _lookupOptionalNative<NativeF extends Function>(String symbol) {
+    try {
+      return _library.lookup<NativeFunction<NativeF>>(symbol);
+    } on ArgumentError {
+      return null;
+    }
+  }
+
   late final setMinLogLevel = _library
       .lookupFunction<Void Function(Int), void Function(int)>(
         'litert_lm_set_min_log_level',
@@ -2056,6 +2200,12 @@ class _LiteRtLmBindings {
         Void Function(Pointer<_LiteRtLmEngineSettings>, Int),
         void Function(Pointer<_LiteRtLmEngineSettings>, int)
       >('litert_lm_engine_settings_set_prefill_chunk_size');
+
+  late final engineSettingsSetNumThreads =
+      _lookupOptionalNative<
+            Void Function(Pointer<_LiteRtLmEngineSettings>, Int)
+          >('litert_lm_engine_settings_set_num_threads')
+          ?.asFunction<void Function(Pointer<_LiteRtLmEngineSettings>, int)>();
 
   late final engineDelete = _library
       .lookupFunction<
@@ -2171,15 +2321,55 @@ class _LiteRtLmBindings {
 
   late final sessionConfigSetSamplerParams = _library
       .lookupFunction<
-        Void Function(
-          Pointer<_LiteRtLmSessionConfig>,
-          Pointer<_LiteRtLmSamplerParams>,
-        ),
-        void Function(
-          Pointer<_LiteRtLmSessionConfig>,
-          Pointer<_LiteRtLmSamplerParams>,
-        )
+        Void Function(Pointer<_LiteRtLmSessionConfig>, Pointer<Void>),
+        void Function(Pointer<_LiteRtLmSessionConfig>, Pointer<Void>)
       >('litert_lm_session_config_set_sampler_params');
+
+  late final sessionConfigSetLoraPath =
+      _lookupOptionalNative<
+            Int Function(Pointer<_LiteRtLmSessionConfig>, Pointer<Char>)
+          >('litert_lm_session_config_set_lora_path')
+          ?.asFunction<
+            int Function(Pointer<_LiteRtLmSessionConfig>, Pointer<Char>)
+          >();
+
+  late final samplerParamsCreate =
+      _lookupOptionalNative<Pointer<_LiteRtLmSamplerParams> Function(Int32)>(
+        'litert_lm_sampler_params_create',
+      )?.asFunction<Pointer<_LiteRtLmSamplerParams> Function(int)>();
+
+  late final samplerParamsDelete =
+      _lookupOptionalNative<Void Function(Pointer<_LiteRtLmSamplerParams>)>(
+        'litert_lm_sampler_params_delete',
+      )?.asFunction<void Function(Pointer<_LiteRtLmSamplerParams>)>();
+
+  late final samplerParamsSetTopK =
+      _lookupOptionalNative<
+            Void Function(Pointer<_LiteRtLmSamplerParams>, Int32)
+          >('litert_lm_sampler_params_set_top_k')
+          ?.asFunction<void Function(Pointer<_LiteRtLmSamplerParams>, int)>();
+
+  late final samplerParamsSetTopP =
+      _lookupOptionalNative<
+            Void Function(Pointer<_LiteRtLmSamplerParams>, Float)
+          >('litert_lm_sampler_params_set_top_p')
+          ?.asFunction<
+            void Function(Pointer<_LiteRtLmSamplerParams>, double)
+          >();
+
+  late final samplerParamsSetTemperature =
+      _lookupOptionalNative<
+            Void Function(Pointer<_LiteRtLmSamplerParams>, Float)
+          >('litert_lm_sampler_params_set_temperature')
+          ?.asFunction<
+            void Function(Pointer<_LiteRtLmSamplerParams>, double)
+          >();
+
+  late final samplerParamsSetSeed =
+      _lookupOptionalNative<
+            Void Function(Pointer<_LiteRtLmSamplerParams>, Int32)
+          >('litert_lm_sampler_params_set_seed')
+          ?.asFunction<void Function(Pointer<_LiteRtLmSamplerParams>, int)>();
 
   late final conversationConfigCreate = _library
       .lookupFunction<
@@ -2276,6 +2466,14 @@ class _LiteRtLmBindings {
         Void Function(Pointer<_LiteRtLmConversationOptionalArgs>, Int),
         void Function(Pointer<_LiteRtLmConversationOptionalArgs>, int)
       >('litert_lm_conversation_optional_args_set_visual_token_budget');
+
+  late final conversationOptionalArgsSetMaxOutputTokens =
+      _lookupOptionalNative<
+            Void Function(Pointer<_LiteRtLmConversationOptionalArgs>, Int)
+          >('litert_lm_conversation_optional_args_set_max_output_tokens')
+          ?.asFunction<
+            void Function(Pointer<_LiteRtLmConversationOptionalArgs>, int)
+          >();
 
   late final conversationSendMessage = _library
       .lookupFunction<

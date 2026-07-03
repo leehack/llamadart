@@ -372,6 +372,16 @@ void main() {
           ),
         ),
       );
+      expect(
+        client.initialize(modelPath: 'model.litertlm', numberOfThreads: 0),
+        throwsA(
+          isA<ArgumentError>().having(
+            (error) => error.name,
+            'name',
+            'numberOfThreads',
+          ),
+        ),
+      );
     },
   );
 
@@ -422,6 +432,19 @@ void main() {
           (error) => error.name,
           'name',
           'visualTokenBudget',
+        ),
+      ),
+    );
+    expect(
+      () => client.generateMessageJson(
+        '{"role":"user","content":[{"type":"text","text":"hi"}]}',
+        maxOutputTokens: 0,
+      ),
+      throwsA(
+        isA<ArgumentError>().having(
+          (error) => error.name,
+          'name',
+          'maxOutputTokens',
         ),
       ),
     );
