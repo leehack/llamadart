@@ -36,7 +36,8 @@ jobs:
           if printf '%s\n' "$labels" | grep -Fxq "release-prep"; then
             should_release=true
             reason="release-prep label"
-          elif [[ "$head_ref" == release/prep-* || "$head_ref" == release/*-prep ]]; then
+          elif [[ "$head_ref" =~ ^release/prep-[0-9]+\.[0-9]+\.[0-9]+([-+][A-Za-z0-9._-]+)?$ ||
+            "$head_ref" =~ ^release/[0-9]+\.[0-9]+\.[0-9]+([-+][A-Za-z0-9._-]+)?-prep$ ]]; then
             should_release=true
             reason="release-prep branch $head_ref"
           fi

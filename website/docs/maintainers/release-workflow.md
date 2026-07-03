@@ -72,7 +72,7 @@ release-prep PR is the explicit approval boundary for publishing. After merge,
 `vX.Y.Z` tag, pub.dev publication, docs versioning, and GitHub Release creation.
 
 For automation to run, the merged PR must either carry the `release-prep` label
-or use a release-prep branch name such as `release/prep-0.8.12` or
+or use a versioned release-prep branch name such as `release/prep-0.8.12` or
 `release/0.8.12-prep`. The automation requires a `RELEASE_AUTOMATION_TOKEN`
 repository secret containing a fine-scoped PAT or GitHub App token that can push
 tags and trigger tag-based workflows. Do not use the default `GITHUB_TOKEN` for
