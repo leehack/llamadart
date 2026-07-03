@@ -229,24 +229,24 @@ const List<String> _androidArm64Libraries = [
 
 const List<String> _androidLiteRtLibraries = [
   'libGemmaModelConstraintProvider.so',
-  'libLiteRt.so',
   'libLiteRtGpuAccelerator.so',
   'libLiteRtLm.so',
   'libLiteRtOpenClAccelerator.so',
   'libLiteRtTopKOpenClSampler.so',
   'libLiteRtTopKWebGpuSampler.so',
   'libLiteRtWebGpuAccelerator.so',
+  'libwebgpu_dawn.so',
 ];
 
 const List<String> _androidLiteRtAssetNames = [
   'litert_lm_GemmaModelConstraintProvider',
-  'litert_lm_LiteRt',
   'litert_lm_LiteRtGpuAccelerator',
   'litert_lm_LiteRtLm',
   'litert_lm_LiteRtOpenClAccelerator',
   'litert_lm_LiteRtTopKOpenClSampler',
   'litert_lm_LiteRtTopKWebGpuSampler',
   'litert_lm_LiteRtWebGpuAccelerator',
+  'litert_lm_webgpu_dawn',
 ];
 
 String _readHookNativeTag() {

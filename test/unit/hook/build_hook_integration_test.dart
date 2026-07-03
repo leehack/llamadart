@@ -706,6 +706,7 @@ const List<String> _windowsLiteRtLibraries = [
   'LiteRtLm.dll',
   'libGemmaModelConstraintProvider.dll',
   'libLiteRt.dll',
+  'libwebgpu_dawn.dll',
   'libLiteRtTopKWebGpuSampler.dll',
   'libLiteRtWebGpuAccelerator.dll',
 ];
@@ -714,6 +715,7 @@ const List<String> _windowsLiteRtAssetNames = [
   'litert_lm_LiteRtLm',
   'litert_lm_GemmaModelConstraintProvider',
   'litert_lm_LiteRt',
+  'litert_lm_webgpu_dawn',
   'litert_lm_LiteRtTopKWebGpuSampler',
   'litert_lm_LiteRtWebGpuAccelerator',
 ];

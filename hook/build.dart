@@ -40,13 +40,13 @@ const _litertLmBundleSpecs = <_LiteRtLmBundleSpec>[
     sha256: '8550c394256343c3fd9e1c23ef667fb89dabdc378792c5e2fe133f3c3f92b4b2',
     requiredLibraries: {
       'libGemmaModelConstraintProvider.so',
-      'libLiteRt.so',
       'libLiteRtGpuAccelerator.so',
       'libLiteRtLm.so',
       'libLiteRtOpenClAccelerator.so',
       'libLiteRtTopKOpenClSampler.so',
       'libLiteRtTopKWebGpuSampler.so',
       'libLiteRtWebGpuAccelerator.so',
+      'libwebgpu_dawn.so',
     },
   ),
   _LiteRtLmBundleSpec(
@@ -54,13 +54,13 @@ const _litertLmBundleSpecs = <_LiteRtLmBundleSpec>[
     sha256: '7a5df0d7e2ba9f4be2ddbdfe02043a41c1d29d4ea5dae334e3798063a9680830',
     requiredLibraries: {
       'libGemmaModelConstraintProvider.so',
-      'libLiteRt.so',
       'libLiteRtGpuAccelerator.so',
       'libLiteRtLm.so',
       'libLiteRtOpenClAccelerator.so',
       'libLiteRtTopKOpenClSampler.so',
       'libLiteRtTopKWebGpuSampler.so',
       'libLiteRtWebGpuAccelerator.so',
+      'libwebgpu_dawn.so',
     },
   ),
   _LiteRtLmBundleSpec(
@@ -92,6 +92,7 @@ const _litertLmBundleSpecs = <_LiteRtLmBundleSpec>[
       'libLiteRtLm.so',
       'libLiteRtTopKWebGpuSampler.so',
       'libLiteRtWebGpuAccelerator.so',
+      'libwebgpu_dawn.so',
     },
   ),
   _LiteRtLmBundleSpec(
@@ -103,6 +104,7 @@ const _litertLmBundleSpecs = <_LiteRtLmBundleSpec>[
       'libLiteRtLm.so',
       'libLiteRtTopKWebGpuSampler.so',
       'libLiteRtWebGpuAccelerator.so',
+      'libwebgpu_dawn.so',
     },
   ),
   _LiteRtLmBundleSpec(
@@ -114,6 +116,7 @@ const _litertLmBundleSpecs = <_LiteRtLmBundleSpec>[
       'libLiteRt.dll',
       'libLiteRtTopKWebGpuSampler.dll',
       'libLiteRtWebGpuAccelerator.dll',
+      'libwebgpu_dawn.dll',
     },
   ),
 ];

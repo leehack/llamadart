@@ -717,13 +717,13 @@ void _expectSpecChecksum(String source, String bundleKey) {
 
 const List<String> _androidLiteRtLibraries = [
   'libGemmaModelConstraintProvider.so',
-  'libLiteRt.so',
   'libLiteRtGpuAccelerator.so',
   'libLiteRtLm.so',
   'libLiteRtOpenClAccelerator.so',
   'libLiteRtTopKOpenClSampler.so',
   'libLiteRtTopKWebGpuSampler.so',
   'libLiteRtWebGpuAccelerator.so',
+  'libwebgpu_dawn.so',
 ];
 
 const List<String> _iosLiteRtLibraries = ['LiteRtLm', 'CLiteRTLM'];
@@ -747,6 +747,7 @@ const List<String> _linuxLiteRtLibraries = [
   'libGemmaModelConstraintProvider.so',
   'libLiteRt.so',
   'libLiteRtLm.so',
+  'libwebgpu_dawn.so',
   'libLiteRtTopKWebGpuSampler.so',
   'libLiteRtWebGpuAccelerator.so',
 ];
@@ -755,6 +756,7 @@ const List<String> _linuxLiteRtAssetNames = [
   'litert_lm_GemmaModelConstraintProvider',
   'litert_lm_LiteRt',
   'litert_lm_LiteRtLm',
+  'litert_lm_webgpu_dawn',
   'litert_lm_LiteRtTopKWebGpuSampler',
   'litert_lm_LiteRtWebGpuAccelerator',
 ];
@@ -763,6 +765,7 @@ const List<String> _windowsLiteRtLibraries = [
   'LiteRtLm.dll',
   'libGemmaModelConstraintProvider.dll',
   'libLiteRt.dll',
+  'libwebgpu_dawn.dll',
   'libLiteRtTopKWebGpuSampler.dll',
   'libLiteRtWebGpuAccelerator.dll',
 ];

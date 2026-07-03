@@ -182,6 +182,7 @@ void main() {
       'libGemmaModelConstraintProvider.so',
       'libLiteRt.so',
       'libLiteRtLm.so',
+      'libwebgpu_dawn.so',
       'libLiteRtTopKWebGpuSampler.so',
       'libLiteRtWebGpuAccelerator.so',
     ]);
@@ -189,6 +190,7 @@ void main() {
       'LiteRtLm.dll',
       'libGemmaModelConstraintProvider.dll',
       'libLiteRt.dll',
+      'libwebgpu_dawn.dll',
       'libLiteRtTopKWebGpuSampler.dll',
       'libLiteRtWebGpuAccelerator.dll',
     ]);
