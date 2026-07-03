@@ -6,6 +6,7 @@ import '../core/models/chat/content_part.dart';
 import '../core/models/config/gpu_backend.dart';
 import '../core/models/config/gpu_device_info.dart';
 import '../core/models/config/log_level.dart';
+import '../core/models/diagnostics/model_file_type.dart';
 import '../core/models/tools/tool_definition.dart';
 
 import 'web/web_backend.dart' if (dart.library.io) 'native/native_backend.dart';
@@ -172,6 +173,16 @@ abstract class BackendRuntimeDiagnostics {
   /// This value reflects the final layer count passed to native model load
   /// after backend policy/fallback decisions.
   Future<int?> getResolvedGpuLayers();
+}
+
+/// Optional backend capability for exposing loaded model file type metadata.
+///
+/// Backends that can identify the loaded model's native file type or
+/// quantization format return a [ModelFileType]. Backends that do not expose
+/// this data should omit this capability so high-level APIs return null.
+abstract class BackendModelFileTypeDiagnostics {
+  /// Returns file type metadata for [modelHandle], or null when unavailable.
+  Future<ModelFileType?> getModelFileType(int modelHandle);
 }
 
 /// Optional backend capability for enumerating GPU-class devices for offload

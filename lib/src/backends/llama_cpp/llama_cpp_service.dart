@@ -12,10 +12,12 @@ import '../../core/models/chat/content_part.dart';
 import '../../core/models/config/gpu_backend.dart';
 import '../../core/models/config/gpu_device_info.dart';
 import '../../core/models/config/log_level.dart';
+import '../../core/models/diagnostics/model_file_type.dart';
 import '../../core/models/inference/generation_params.dart';
 import '../../core/models/inference/model_params.dart';
 import 'load_param_helpers.dart';
 import 'bindings.dart';
+import 'llama_cpp_raw_bindings.dart' as raw_bindings;
 
 const _llamadartWrapperAssetId = 'package:llamadart/llamadart_wrapper';
 
@@ -5200,6 +5202,19 @@ class LlamaCppService {
     malloc.free(keyBuf);
     malloc.free(valBuf);
     return metadata;
+  }
+
+  /// Returns model file type or quantization metadata for [modelHandle].
+  ModelFileType? getModelFileType(int modelHandle) {
+    final model = _models[modelHandle];
+    if (model == null) return null;
+
+    final ftype = raw_bindings.llama_model_ftype_raw(model.pointer);
+    final namePtr = raw_bindings.llama_ftype_name_raw(ftype);
+    if (namePtr == nullptr) return null;
+
+    final name = namePtr.cast<Utf8>().toDartString();
+    return ModelFileType(id: ftype, name: name);
   }
 
   /// Handles LoRA adapter operations.

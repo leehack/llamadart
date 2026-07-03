@@ -160,6 +160,10 @@ void llamaWorkerEntry(SendPort initialSendPort) {
             final metadata = service.getMetadata(message.modelHandle);
             message.sendPort.send(MetadataResponse(metadata));
 
+          case ModelFileTypeRequest():
+            final modelFileType = service.getModelFileType(message.modelHandle);
+            message.sendPort.send(ModelFileTypeResponse(modelFileType));
+
           case LoraRequest():
             service.handleLora(
               message.contextHandle,
