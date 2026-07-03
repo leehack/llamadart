@@ -1,5 +1,9 @@
 ## Unreleased
 
+* Added post-merge release automation so a merged release-prep PR can publish
+  missing companion package versions, push the core release tag, wait for
+  pub.dev, and confirm the GitHub Release without a separate manual tag step.
+
 * Added `LlamaEngine.getModelFileType()` for llama.cpp/GGUF models, exposing
   native model file type / quantization metadata from `llama_model_ftype` and
   `llama_ftype_name` when available.

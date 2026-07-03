@@ -47,9 +47,10 @@ version alignment:
   publishable package contents changed, move their accumulated `Unreleased`
   notes into the new version section, and keep unchanged companion package
   versions as-is.
-- Companion packages publish only after the release-prep PR is merged and the
-  maintainer explicitly approves pushing the relevant package-specific tag; the
-  workflow skips a companion package version that already exists on pub.dev.
+- Companion packages publish only after the release-prep PR is merged. The
+  release-prep PR merge is the approval boundary; automation pushes the relevant
+  package-specific tags, and the publish workflow skips a companion package
+  version that already exists on pub.dev.
 - Keep current install snippets aligned with root and companion `pubspec.yaml`
   versions. Run `dart run tool/testing/verify_release_docs_versions.dart` before
   opening or merging the release-prep PR.
@@ -65,8 +66,17 @@ version alignment:
 ## 3. Publish flow
 
 A release-prep PR updates versions, changelogs, docs, and pins only; it must not
-publish companion packages or the core package. Merging release prep is a
-separate approval boundary from every tag push that triggers pub.dev publishing.
+publish companion packages or the core package before merge. Merging a
+release-prep PR is the explicit approval boundary for publishing. After merge,
+`release_on_prep_merge.yml` owns companion package tag ordering, the core
+`vX.Y.Z` tag, pub.dev publication, docs versioning, and GitHub Release creation.
+
+For automation to run, the merged PR must either carry the `release-prep` label
+or use a versioned release-prep branch name such as `release/prep-0.8.12` or
+`release/0.8.12-prep`. The automation requires a `RELEASE_AUTOMATION_TOKEN`
+repository secret containing a fine-scoped PAT or GitHub App token that can push
+tags and trigger tag-based workflows. Do not use the default `GITHUB_TOKEN` for
+this step because GitHub suppresses most workflow runs caused by that token.
 
 Do not tag the core `vX.Y.Z` release until every companion package version named
 in the current install docs is already published on pub.dev. The release
@@ -85,24 +95,25 @@ sequence is:
    ```
 
 3. If a changed companion version is missing, first merge the release-prep PR.
-   Then request explicit maintainer approval to push that companion's
-   package-specific tag, for example:
+   The post-merge release workflow then pushes that companion's package-specific
+   tag, for example:
 
    ```bash
    git tag llamadart_llama_cpp_flutter-v0.0.3
    git push origin llamadart_llama_cpp_flutter-v0.0.3
    ```
 
-   Wait for `publish_companion_pubdev.yml` to pass, then re-check the pub.dev
-   version URL.
+   The workflow waits for `publish_companion_pubdev.yml` to publish the package
+   and re-checks the pub.dev version URL.
 4. Tag `vX.Y.Z` and push the core release tag only after the companion packages
-   referenced by the release docs are resolvable from pub.dev, and only after a
-   separate explicit maintainer approval for the core release tag.
+   referenced by the release docs are resolvable from pub.dev. Automation pushes
+   the core tag after that gate passes.
 
 Current workflows involved:
 
-- `publish_pubdev.yml`: publishes the core package on version tags, and
-  does not publish companion packages.
+- `publish_pubdev.yml`: publishes the core package on version tags, creates or
+  updates the GitHub Release after pub.dev publishing succeeds, and does not
+  publish companion packages.
 - `publish_companion_pubdev.yml`: publishes one companion package from a
   package-specific version tag after that package already exists on pub.dev:
   `llamadart_llama_cpp_flutter-v{{version}}` or
@@ -126,10 +137,18 @@ rsync -a --delete \
 - `docs_version_cut.yml`: creates versioned docs snapshot on `v*` tags.
 - `docs_pages.yml`: deploys docs to GitHub Pages after successful
   `docs_version_cut.yml` runs (and can be manually triggered).
+- `release_on_prep_merge.yml`: runs after a release-prep PR is merged into
+  `main`, validates the prepared version, publishes any missing companion
+  package versions first, pushes the core release tag, waits for pub.dev, and
+  confirms the GitHub Release exists.
 
 ## 4. Post-release verification
 
+- Verify `release_on_prep_merge.yml`, `publish_pubdev.yml`,
+  `publish_companion_pubdev.yml` when relevant, `docs_version_cut.yml`, and
+  `docs_pages.yml` all completed successfully.
 - Verify pub.dev package page and API docs for the new version.
+- Verify the GitHub Release exists and is marked latest.
 - Verify docs version selector includes the new release.
 - Re-run smoke checks for representative examples.
 

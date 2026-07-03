@@ -1,0 +1,197 @@
+name: Release on prep merge
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - closed
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: release-on-prep-merge
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Publish merged release prep
+    if: ${{ github.event.pull_request.merged == true }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Check release-prep gate
+        id: gate
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          head_ref="$(jq -r '.pull_request.head.ref // ""' "$GITHUB_EVENT_PATH")"
+          labels="$(jq -r '.pull_request.labels[].name // empty' "$GITHUB_EVENT_PATH")"
+
+          should_release=false
+          reason="missing release-prep label or branch pattern"
+          if printf '%s\n' "$labels" | grep -Fxq "release-prep"; then
+            should_release=true
+            reason="release-prep label"
+          elif [[ "$head_ref" =~ ^release/prep-[0-9]+\.[0-9]+\.[0-9]+([-+][A-Za-z0-9._-]+)?$ ||
+            "$head_ref" =~ ^release/[0-9]+\.[0-9]+\.[0-9]+([-+][A-Za-z0-9._-]+)?-prep$ ]]; then
+            should_release=true
+            reason="release-prep branch $head_ref"
+          fi
+
+          {
+            echo "should_release=$should_release"
+            echo "reason=$reason"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Skip non-release PR
+        if: steps.gate.outputs.should_release != 'true'
+        run: |
+          echo "Skipping release automation: ${{ steps.gate.outputs.reason }}."
+
+      - uses: actions/checkout@v6
+        if: steps.gate.outputs.should_release == 'true'
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: dart-lang/setup-dart@v1
+        if: steps.gate.outputs.should_release == 'true'
+
+      - name: Validate release state
+        if: steps.gate.outputs.should_release == 'true'
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          version="$(awk '/^version:[[:space:]]*/ {print $2; exit}' pubspec.yaml)"
+          if [[ -z "$version" ]]; then
+            echo "pubspec.yaml does not contain a top-level version." >&2
+            exit 1
+          fi
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][A-Za-z0-9._-]+)?$ ]]; then
+            echo "Unsupported release version: $version" >&2
+            exit 1
+          fi
+
+          first_heading="$(awk '/^## / {print; exit}' CHANGELOG.md)"
+          if [[ "$first_heading" != "## $version" ]]; then
+            echo "CHANGELOG.md must start with ## $version before publishing." >&2
+            echo "Found: ${first_heading:-<none>}" >&2
+            exit 1
+          fi
+
+          dart run tool/testing/verify_release_docs_versions.dart
+
+          core_tag="v$version"
+          if git ls-remote --exit-code --tags origin "refs/tags/$core_tag" >/dev/null 2>&1; then
+            echo "Release tag $core_tag already exists. Refusing to publish again." >&2
+            exit 1
+          fi
+
+          release_sha="$(git rev-parse HEAD)"
+          {
+            echo "version=$version"
+            echo "core_tag=$core_tag"
+            echo "release_sha=$release_sha"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Publish companion packages and core tag
+        if: steps.gate.outputs.should_release == 'true'
+        env:
+          CORE_TAG: ${{ steps.release.outputs.core_tag }}
+          CORE_VERSION: ${{ steps.release.outputs.version }}
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_SHA: ${{ steps.release.outputs.release_sha }}
+          RELEASE_TOKEN: ${{ secrets.RELEASE_AUTOMATION_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${RELEASE_TOKEN:-}" ]]; then
+            echo "Missing RELEASE_AUTOMATION_TOKEN." >&2
+            echo "Configure a fine-scoped PAT or GitHub App token that can create tags and trigger tag workflows." >&2
+            exit 1
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          push_tag() {
+            local tag="$1"
+            echo "Creating tag $tag at $RELEASE_SHA"
+            git tag "$tag" "$RELEASE_SHA"
+            git -c http.extraHeader="AUTHORIZATION: bearer $RELEASE_TOKEN" \
+              push origin "refs/tags/$tag"
+          }
+
+          wait_for_pub_version() {
+            local package_name="$1"
+            local package_version="$2"
+            local version_url="https://pub.dev/api/packages/$package_name/versions/$package_version"
+
+            for attempt in $(seq 1 90); do
+              if curl -fsSL "$version_url" >/dev/null; then
+                echo "$package_name $package_version is live on pub.dev."
+                return 0
+              fi
+              echo "Waiting for $package_name $package_version on pub.dev ($attempt/90)."
+              sleep 10
+            done
+
+            echo "$package_name $package_version did not appear on pub.dev." >&2
+            exit 1
+          }
+
+          wait_for_github_release() {
+            local tag="$1"
+            for attempt in $(seq 1 90); do
+              if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+                echo "GitHub Release $tag exists."
+                return 0
+              fi
+              echo "Waiting for GitHub Release $tag ($attempt/90)."
+              sleep 10
+            done
+
+            echo "GitHub Release $tag was not created." >&2
+            exit 1
+          }
+
+          companion_paths=(
+            packages/llamadart_llama_cpp_flutter
+            packages/llamadart_litert_lm_flutter
+          )
+
+          for package_path in "${companion_paths[@]}"; do
+            package_name="$(awk '/^name:[[:space:]]*/ {print $2; exit}' "$package_path/pubspec.yaml")"
+            package_version="$(awk '/^version:[[:space:]]*/ {print $2; exit}' "$package_path/pubspec.yaml")"
+            if [[ -z "$package_name" || -z "$package_version" ]]; then
+              echo "$package_path/pubspec.yaml must contain name and version." >&2
+              exit 1
+            fi
+
+            if curl -fsSL "https://pub.dev/api/packages/$package_name/versions/$package_version" >/dev/null; then
+              echo "$package_name $package_version already exists on pub.dev."
+              continue
+            fi
+
+            companion_tag="$package_name-v$package_version"
+            if git ls-remote --exit-code --tags origin "refs/tags/$companion_tag" >/dev/null 2>&1; then
+              echo "$companion_tag already exists, but $package_name $package_version is missing on pub.dev." >&2
+              echo "Inspect publish_companion_pubdev.yml before retrying the core release." >&2
+              exit 1
+            fi
+
+            push_tag "$companion_tag"
+            wait_for_pub_version "$package_name" "$package_version"
+          done
+
+          push_tag "$CORE_TAG"
+          wait_for_pub_version "llamadart" "$CORE_VERSION"
+          wait_for_github_release "$CORE_TAG"

@@ -282,6 +282,20 @@ test -d ../llama-web-bridge-assets
 
 ## Development Workflow
 
+### AGENTS.md Maintenance
+- Treat `AGENTS.md` as a living source of repo guidance. When a task reveals a
+  durable workflow rule, command, ownership boundary, release gate, or validation
+  expectation that would help future agents, update this file in the same PR.
+- Remove or replace outdated guidance when the repo, workflows, or release
+  process change. Do not preserve historical instructions that now contradict
+  the current source of truth.
+- Keep entries actionable and concise. Avoid session logs, one-off incident
+  details, and duplicated advice; prefer stable commands, decision rules, and
+  pointers to discoverable tooling.
+- If this file becomes too long or noisy while adding guidance, compress nearby
+  sections by merging duplicates and trimming obsolete detail while preserving
+  critical safety constraints, validation commands, and release requirements.
+
 ### Before Committing
 1. Run `dart format .` to ensure code is properly formatted
 2. Run `dart analyze` to fix all warnings and lint errors
@@ -345,15 +359,21 @@ WEBGPU_BRIDGE_ASSETS_TAG=<tag> ./scripts/fetch_webgpu_bridge_assets.sh
   README/website snippets and companion package READMEs against package
   `pubspec.yaml` versions while intentionally ignoring historical versioned docs.
 - Release prep PRs must not publish anything by themselves. After the release
-  prep PR is merged, ask for explicit maintainer approval before pushing any
-  package-specific companion tag or the core `vX.Y.Z` tag.
-- Before tagging the core `vX.Y.Z` release, verify any companion package
-  versions referenced by current install docs are already live on pub.dev. If a
-  changed companion package version is missing, stop and request explicit
-  approval to push that companion's package-specific tag, for example
-  `llamadart_llama_cpp_flutter-v0.0.3`; wait for the companion publish workflow
-  to pass, verify pub.dev, then request explicit approval before pushing the
+  prep PR is merged, `release_on_prep_merge.yml` treats the merge as the
+  publishing approval boundary. Do not manually push package-specific companion
+  tags or the core `vX.Y.Z` tag unless that automation is disabled, blocked, or
+  being repaired.
+- Before merging the release-prep PR, verify any companion package versions
+  referenced by current install docs are either already live on pub.dev or ready
+  for the post-merge automation to publish. If a changed companion package
+  version is missing, keep the PR scoped to release prep; after merge,
+  `release_on_prep_merge.yml` pushes the companion tag, waits for
+  `publish_companion_pubdev.yml`, verifies pub.dev, and only then pushes the
   core release tag.
+- After release automation runs, verify `release_on_prep_merge.yml`,
+  `publish_pubdev.yml`, any relevant `publish_companion_pubdev.yml` run,
+  `docs_version_cut.yml`, `docs_pages.yml`, the pub.dev version URL, the GitHub
+  Release, and the docs version selector before calling the release complete.
 - Treat Apple SPM release readiness as two separate checks: the native GitHub
   release must contain the XCFramework zip/checksum pinned in `Package.swift`,
   and the Flutter companion pub package carrying that `Package.swift` must be

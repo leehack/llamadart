@@ -127,10 +127,10 @@ For releases that change or newly document Flutter Apple SwiftPM companion
 package versions, include `release-companion-pub-gate` in the release evidence.
 That row requires verifying each referenced companion version on pub.dev before
 tagging the core `vX.Y.Z` release. If a companion version is missing, merge the
-release-prep PR first, then get explicit maintainer approval before pushing that
-companion's package-specific tag. Wait for `publish_companion_pubdev.yml`, verify
-the pub.dev version URL, and get explicit maintainer approval again before
-pushing the core release tag.
+release-prep PR first. `release_on_prep_merge.yml` then publishes missing
+companion versions, waits for `publish_companion_pubdev.yml`, verifies the
+pub.dev version URL, and pushes the core release tag after the companion gate
+passes.
 
 ## Local Model Scenarios
 
