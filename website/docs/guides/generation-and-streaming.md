@@ -141,10 +141,10 @@ final classification = await engine.createStructuredJson(
 );
 ```
 
-For live rendering, call `engine.create(..., responseFormat:
-output.responseFormat)` and then finalize the stream with
-`parseStructuredJson(output)`. Validation is a final-output step because partial
-stream chunks are often not valid JSON yet.
+For live rendering, keep the returned stream, call `engine.create(...,
+responseFormat: output.responseFormat)`, and then finalize it with
+`await stream.parseStructuredJson(output)`. Validation is a final-output step
+because partial stream chunks are often not valid JSON yet.
 
 Supported schema features match the built-in JSON-schema-to-GBNF subset:
 primitive types, objects with `properties`, `required`, and

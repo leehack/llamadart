@@ -63,6 +63,62 @@ void main() {
       );
     });
 
+    test('accepts annotation-only siblings on ref schemas', () {
+      final output = LlamaStructuredOutput<Map<String, dynamic>>.jsonSchema(
+        schema: const {
+          'type': 'object',
+          'properties': {
+            'contact': {
+              r'$ref': '#/\$defs/contact',
+              'title': 'Contact',
+              'description': 'Reference annotations are ignored.',
+              r'$comment': 'Safe alongside ref.',
+            },
+          },
+          'required': ['contact'],
+          r'$defs': {
+            'contact': {
+              'type': 'object',
+              'properties': {
+                'name': {'type': 'string'},
+              },
+              'required': ['name'],
+              'additionalProperties': false,
+            },
+          },
+        },
+        decoder: (json) => json,
+      );
+
+      expect(output.parse('{"contact":{"name":"Ada Lovelace"}}'), {
+        'contact': {'name': 'Ada Lovelace'},
+      });
+    });
+
+    test('rejects validation siblings on ref schemas', () {
+      expect(
+        () => LlamaStructuredOutput<Map<String, dynamic>>.jsonSchema(
+          schema: const {
+            'type': 'object',
+            'properties': {
+              'contact': {r'$ref': '#/\$defs/contact', 'type': 'object'},
+            },
+            r'$defs': {
+              'contact': {'type': 'object'},
+            },
+          },
+          decoder: (json) => json,
+        ),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            contains(r'$ref cannot be combined'),
+          ),
+        ),
+      );
+    });
+
     test('rejects schema that cannot be represented safely', () {
       expect(
         () => LlamaStructuredOutput<List<Object?>>.jsonValueSchema(

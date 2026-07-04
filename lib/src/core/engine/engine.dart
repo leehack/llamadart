@@ -521,7 +521,7 @@ class LlamaEngine {
   /// content deltas, validates the completed JSON value, and returns the typed
   /// value produced by [output]'s decoder. Use [create] directly when you need
   /// to render tokens live; the returned stream can still be finalized with
-  /// `parseStructuredJson(output)`.
+  /// `await stream.parseStructuredJson(output)`.
   Future<T> createStructuredJson<T>(
     List<LlamaChatMessage> messages, {
     required LlamaStructuredOutput<T> output,

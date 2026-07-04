@@ -261,6 +261,19 @@ const _supportedSchemaKeywords = <String>{
   'writeOnly',
 };
 
+const _annotationSchemaKeywords = <String>{
+  r'$comment',
+  r'$id',
+  r'$schema',
+  'default',
+  'deprecated',
+  'description',
+  'examples',
+  'readOnly',
+  'title',
+  'writeOnly',
+};
+
 void _validateSupportedSchemaSubset(Map<String, dynamic> schema, String path) {
   for (final keyword in schema.keys) {
     if (!_supportedSchemaKeywords.contains(keyword)) {
@@ -335,7 +348,10 @@ void _validateRefSchemaShape(Map<String, dynamic> schema, String path) {
 
   final siblingKeywords = schema.keys.where(
     (keyword) =>
-        keyword != r'$ref' && keyword != 'definitions' && keyword != r'$defs',
+        keyword != r'$ref' &&
+        keyword != 'definitions' &&
+        keyword != r'$defs' &&
+        !_annotationSchemaKeywords.contains(keyword),
   );
   if (siblingKeywords.isNotEmpty) {
     throw LlamaUnsupportedException(
