@@ -120,7 +120,7 @@ jobs:
 
           if [[ -z "${RELEASE_TOKEN:-}" ]]; then
             echo "Missing RELEASE_AUTOMATION_TOKEN." >&2
-            echo "Configure a fine-scoped PAT or GitHub App token that can create tags and trigger tag workflows." >&2
+            echo "Configure a fine-scoped PAT or GitHub App token that can create tag refs and trigger tag workflows." >&2
             exit 1
           fi
 
@@ -138,15 +138,15 @@ jobs:
           require_positive_integer "GITHUB_RELEASE_WAIT_ATTEMPTS" "$GITHUB_RELEASE_WAIT_ATTEMPTS"
           require_positive_integer "GITHUB_RELEASE_WAIT_INTERVAL_SECONDS" "$GITHUB_RELEASE_WAIT_INTERVAL_SECONDS"
 
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
           push_tag() {
             local tag="$1"
             echo "Creating tag $tag at $RELEASE_SHA"
-            git tag "$tag" "$RELEASE_SHA"
-            git -c http.extraHeader="AUTHORIZATION: bearer $RELEASE_TOKEN" \
-              push origin "refs/tags/$tag"
+            GH_TOKEN="$RELEASE_TOKEN" gh api \
+              --method POST \
+              "repos/$GITHUB_REPOSITORY/git/refs" \
+              -f "ref=refs/tags/$tag" \
+              -f "sha=$RELEASE_SHA" \
+              >/dev/null
           }
 
           wait_for_pub_version() {

@@ -369,9 +369,9 @@ WEBGPU_BRIDGE_ASSETS_TAG=<tag> ./scripts/fetch_webgpu_bridge_assets.sh
   metadata. CODEOWNERS only enforces review when GitHub branch protection or a
   ruleset requires code-owner review.
 - `RELEASE_AUTOMATION_TOKEN` must stay a fine-scoped PAT or GitHub App token
-  that can push tags and trigger tag workflows. Prefer a GitHub App token where
-  practical, rotate the credential regularly, and never log it or derived
-  credential-bearing remotes.
+  that can create tag refs through the GitHub API and trigger tag workflows.
+  Prefer a GitHub App token where practical, rotate the credential regularly,
+  and never log it or derived credential-bearing remotes.
 - `release_on_prep_merge.yml` defaults to 180 attempts at 10 seconds for both
   pub.dev and GitHub Release propagation checks. Tune
   `RELEASE_AUTOMATION_PUBDEV_WAIT_ATTEMPTS`,
