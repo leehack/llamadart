@@ -154,12 +154,155 @@ abstract class WebCachePrefetchModelService {
   Future<bool> supportsWebCachePrefetch();
 }
 
+class ModelAssetCacheState {
+  final ModelAssetRole role;
+  final String label;
+  final bool isAvailable;
+
+  const ModelAssetCacheState({
+    required this.role,
+    required this.label,
+    required this.isAvailable,
+  });
+}
+
+class ModelProfileCacheState {
+  final ModelAssetCacheState model;
+  final ModelAssetCacheState? multimodalProjector;
+
+  const ModelProfileCacheState({required this.model, this.multimodalProjector});
+
+  bool get isReady => model.isAvailable && _projectorReady;
+
+  bool get hasPartialAssets =>
+      !isReady &&
+      (model.isAvailable || (multimodalProjector?.isAvailable ?? false));
+
+  List<String> get availableAssetLabels => <String>[
+    if (model.isAvailable) 'model',
+    if (multimodalProjector?.isAvailable ?? false) 'mmproj',
+  ];
+
+  List<String> get missingAssetLabels => <String>[
+    if (!model.isAvailable) 'model',
+    if (multimodalProjector != null && !multimodalProjector!.isAvailable)
+      'mmproj',
+  ];
+
+  bool get _projectorReady =>
+      multimodalProjector == null || multimodalProjector!.isAvailable;
+}
+
+/// Tracks persisted cache markers by asset cache key.
+class ModelAssetCacheMarkers {
+  final Set<String> _cacheKeys;
+
+  ModelAssetCacheMarkers(Iterable<String> cacheKeys)
+    : _cacheKeys = cacheKeys.toSet();
+
+  Set<String> toSet() => _cacheKeys.toSet();
+
+  bool containsAsset(ModelAssetSource source) {
+    return source is RemoteModelAssetSource &&
+        _cacheKeys.contains(source.cacheKey);
+  }
+
+  bool containsMarker(String value) => _cacheKeys.contains(value);
+
+  void markAssetCached(RemoteModelAssetSource source) {
+    _cacheKeys.add(source.cacheKey);
+  }
+
+  void markAssetsCached(Iterable<RemoteModelAssetSource> sources) {
+    for (final source in sources) {
+      markAssetCached(source);
+    }
+  }
+
+  void removeMarker(String value) {
+    _cacheKeys.remove(value);
+  }
+
+  void removeAssets(Iterable<RemoteModelAssetSource> sources) {
+    for (final source in sources) {
+      _cacheKeys.remove(source.cacheKey);
+    }
+  }
+
+  bool isProfileCached(DownloadableModel model, {required bool web}) {
+    final sources = _remoteSourcesFor(model, web: web);
+    if (sources.length != _assetSourcesFor(model, web: web).length) {
+      return false;
+    }
+    return sources.every(containsAsset);
+  }
+
+  bool migrateLegacyProfileMarker(
+    DownloadableModel model, {
+    required bool web,
+  }) {
+    final sources = _remoteSourcesFor(model, web: web);
+    if (!containsMarker(model.filename) ||
+        sources.length != _assetSourcesFor(model, web: web).length) {
+      return false;
+    }
+    removeMarker(model.filename);
+    markAssetsCached(sources);
+    return true;
+  }
+
+  ModelProfileCacheState modelCacheState(
+    DownloadableModel model, {
+    required bool web,
+  }) {
+    final modelSource = model.modelSourceFor(web: web);
+    final mmprojSource = model.multimodalProjectorSourceFor(web: web);
+    return ModelProfileCacheState(
+      model: _assetCacheState(ModelAssetRole.model, modelSource),
+      multimodalProjector: mmprojSource == null
+          ? null
+          : _assetCacheState(ModelAssetRole.multimodalProjector, mmprojSource),
+    );
+  }
+
+  ModelAssetCacheState _assetCacheState(
+    ModelAssetRole role,
+    ModelAssetSource source,
+  ) {
+    return ModelAssetCacheState(
+      role: role,
+      label: source.displayName,
+      isAvailable: containsAsset(source),
+    );
+  }
+
+  List<ModelAssetSource> _assetSourcesFor(
+    DownloadableModel model, {
+    required bool web,
+  }) {
+    final projector = model.multimodalProjectorSourceFor(web: web);
+    return <ModelAssetSource>[model.modelSourceFor(web: web), ?projector];
+  }
+
+  List<RemoteModelAssetSource> _remoteSourcesFor(
+    DownloadableModel model, {
+    required bool web,
+  }) {
+    return _assetSourcesFor(
+      model,
+      web: web,
+    ).whereType<RemoteModelAssetSource>().toList(growable: false);
+  }
+}
+
 abstract class ModelService {
   factory ModelService() => createModelService();
 
   Future<String> getModelsDirectory();
 
   Future<Set<String>> getDownloadedModels(List<DownloadableModel> models);
+
+  Future<ModelProfileCacheState> getModelCacheState(DownloadableModel model);
 
   Future<void> downloadModel({
     required DownloadableModel model,

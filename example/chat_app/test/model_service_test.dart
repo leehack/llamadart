@@ -14,6 +14,7 @@ void main() {
   late ModelService service;
   late List<int> testData;
   late List<int> mmprojData;
+  late Map<String, int> getRequestCountByPath;
 
   const int testDataSize = 1024 * 1024 * 5; // 5 MB
   const int mmprojDataSize = 1024 * 1024 * 2; // 2 MB
@@ -22,6 +23,7 @@ void main() {
     // Generate random test data
     testData = List.generate(testDataSize, (i) => i % 256);
     mmprojData = List.generate(mmprojDataSize, (i) => (i * 7) % 256);
+    getRequestCountByPath = <String, int>{};
     tempDir = await Directory.systemTemp.createTemp('model_service_test');
     service = TestModelService(tempDir);
 
@@ -40,6 +42,7 @@ void main() {
           request.response.statusCode = HttpStatus.ok;
           await request.response.close();
         } else if (request.method == 'GET') {
+          getRequestCountByPath[path] = (getRequestCountByPath[path] ?? 0) + 1;
           final rangeHeader = request.headers.value('range');
           int start = 0;
           int end = payloadSize - 1;
@@ -163,6 +166,63 @@ void main() {
     expect(updates.last.stageCount, 2);
     expect(updates.last.overallProgress, closeTo(1.0, 0.0001));
   });
+
+  test(
+    'Multimodal download skips cached model when mmproj is missing',
+    () async {
+      final model = DownloadableModel(
+        name: 'Partially cached VLM',
+        description: 'Test',
+        url: '$baseUrl/model.gguf',
+        filename: 'cached-vlm-model.gguf',
+        mmprojUrl: '$baseUrl/mmproj.gguf',
+        mmprojFilename: 'cached-vlm-mmproj.gguf',
+        sizeBytes: testDataSize + mmprojDataSize,
+        supportsVision: true,
+      );
+      await File(p.join(tempDir.path, model.filename)).writeAsBytes(testData);
+
+      final before = await service.getModelCacheState(model);
+      expect(before.model.isAvailable, isTrue);
+      expect(before.multimodalProjector?.isAvailable, isFalse);
+      expect(before.hasPartialAssets, isTrue);
+
+      final updates = <ModelDownloadProgress>[];
+
+      await service.downloadModel(
+        model: model,
+        modelsDir: tempDir.path,
+        cancelToken: CancelToken(),
+        onProgress: (_) {},
+        onProgressDetail: updates.add,
+        onSuccess: (_) {},
+        onError: (e) => fail('Download failed: $e'),
+      );
+
+      expect(getRequestCountByPath['/model.gguf'] ?? 0, 0);
+      expect(getRequestCountByPath['/mmproj.gguf'] ?? 0, 1);
+      expect(
+        updates.where((u) => u.stage == ModelDownloadStage.model),
+        isEmpty,
+      );
+      expect(
+        updates.every(
+          (u) =>
+              u.stage == ModelDownloadStage.multimodalProjector &&
+              u.stageIndex == 1 &&
+              u.stageCount == 1,
+        ),
+        isTrue,
+      );
+
+      final after = await service.getModelCacheState(model);
+      expect(after.isReady, isTrue);
+      expect(
+        await service.getDownloadedModels([model]),
+        contains(model.filename),
+      );
+    },
+  );
 
   test(
     'Local model with remote mmproj reports a single projector stage',

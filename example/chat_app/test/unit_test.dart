@@ -1288,6 +1288,27 @@ class _RecordingModelService
   }
 
   @override
+  Future<app_model_service.ModelProfileCacheState> getModelCacheState(
+    DownloadableModel model,
+  ) async {
+    final mmprojSource = model.multimodalProjectorSource;
+    return app_model_service.ModelProfileCacheState(
+      model: app_model_service.ModelAssetCacheState(
+        role: ModelAssetRole.model,
+        label: model.modelSource.displayName,
+        isAvailable: false,
+      ),
+      multimodalProjector: mmprojSource == null
+          ? null
+          : app_model_service.ModelAssetCacheState(
+              role: ModelAssetRole.multimodalProjector,
+              label: mmprojSource.displayName,
+              isAvailable: false,
+            ),
+    );
+  }
+
+  @override
   Future<void> downloadModel({
     required DownloadableModel model,
     required String modelsDir,

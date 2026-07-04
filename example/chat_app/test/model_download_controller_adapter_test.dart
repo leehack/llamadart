@@ -199,6 +199,28 @@ class _FakeModelService implements ModelService {
   }
 
   @override
+  Future<ModelProfileCacheState> getModelCacheState(
+    DownloadableModel model,
+  ) async {
+    final isAvailable = downloadedFiles.contains(model.filename);
+    final mmprojSource = model.multimodalProjectorSource;
+    return ModelProfileCacheState(
+      model: ModelAssetCacheState(
+        role: ModelAssetRole.model,
+        label: model.modelSource.displayName,
+        isAvailable: isAvailable,
+      ),
+      multimodalProjector: mmprojSource == null
+          ? null
+          : ModelAssetCacheState(
+              role: ModelAssetRole.multimodalProjector,
+              label: mmprojSource.displayName,
+              isAvailable: isAvailable,
+            ),
+    );
+  }
+
+  @override
   Future<void> downloadModel({
     required DownloadableModel model,
     required String modelsDir,

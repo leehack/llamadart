@@ -48,26 +48,21 @@ class ModelServiceIO implements ModelService {
     final Set<String> downloaded = {};
 
     for (final model in models) {
-      final hasModel = await _isAssetAvailable(
-        dirPath,
-        model.modelSource,
-        role: ModelAssetRole.model,
-      );
-      final mmprojSource = model.multimodalProjectorSource;
-      final hasMmproj =
-          mmprojSource == null ||
-          await _isAssetAvailable(
-            dirPath,
-            mmprojSource,
-            role: ModelAssetRole.multimodalProjector,
-          );
-
-      if (hasModel && hasMmproj) {
+      final cacheState = await _modelCacheState(model, dirPath);
+      if (cacheState.isReady) {
         downloaded.add(model.filename);
       }
     }
 
     return downloaded;
+  }
+
+  @override
+  Future<ModelProfileCacheState> getModelCacheState(
+    DownloadableModel model,
+  ) async {
+    final dirPath = await getModelsDirectory();
+    return _modelCacheState(model, dirPath);
   }
 
   @override
@@ -87,35 +82,55 @@ class ModelServiceIO implements ModelService {
         model.multimodalProjectorSource is RemoteModelAssetSource
         ? model.multimodalProjectorSource as RemoteModelAssetSource
         : null;
-    final stageCount = [
-      modelRemoteSource,
-      mmprojRemoteSource,
-    ].whereType<RemoteModelAssetSource>().length;
-    final modelStageIndex = modelRemoteSource == null ? 0 : 1;
-    final mmprojStageIndex = mmprojRemoteSource == null
-        ? 0
-        : modelRemoteSource == null
-        ? 1
-        : 2;
-    final providedTotalBytes =
-        modelRemoteSource == null && mmprojRemoteSource != null
-        ? mmprojRemoteSource.sizeBytes
-        : (model.sizeBytes > 0 ? model.sizeBytes : null);
     final progressDispatcher = _ProgressDispatcher(
       onProgress: onProgress,
       onProgressDetail: onProgressDetail,
     );
-    final aggregate = ModelDownloadProgressTracker(
-      includeMmproj: mmprojRemoteSource != null,
-      providedTotalBytes: providedTotalBytes,
-    );
 
     try {
       await _validateLocalSource(model.modelSource);
-      if (modelRemoteSource != null) {
-        final modelSavePath = _assetPath(modelsDir, modelRemoteSource);
+      final modelNeedsDownload =
+          modelRemoteSource != null &&
+          !await _isAssetAvailable(
+            modelsDir,
+            modelRemoteSource,
+            role: ModelAssetRole.model,
+          );
+
+      final mmprojSource = model.multimodalProjectorSource;
+      await _validateLocalSource(mmprojSource);
+      final mmprojNeedsDownload =
+          mmprojRemoteSource != null &&
+          !await _isAssetAvailable(
+            modelsDir,
+            mmprojRemoteSource,
+            role: ModelAssetRole.multimodalProjector,
+          );
+
+      final stageCount = [
+        if (modelNeedsDownload) modelRemoteSource,
+        if (mmprojNeedsDownload) mmprojRemoteSource,
+      ].whereType<RemoteModelAssetSource>().length;
+      final modelStageIndex = modelNeedsDownload ? 1 : 0;
+      final mmprojStageIndex = mmprojNeedsDownload
+          ? (modelNeedsDownload ? 2 : 1)
+          : 0;
+      final aggregate = ModelDownloadProgressTracker(
+        includeMmproj: mmprojNeedsDownload,
+        providedTotalBytes: _providedDownloadTotalBytes(
+          model: model,
+          modelSource: modelRemoteSource,
+          modelNeedsDownload: modelNeedsDownload,
+          mmprojSource: mmprojRemoteSource,
+          mmprojNeedsDownload: mmprojNeedsDownload,
+        ),
+      );
+
+      if (modelNeedsDownload) {
+        final source = modelRemoteSource;
+        final modelSavePath = _assetPath(modelsDir, source);
         await _downloadFileWithResume(
-          url: modelRemoteSource.url,
+          url: source.url,
           savePath: modelSavePath,
           cancelToken: cancelToken,
           onProgress: (downloadedBytes, totalBytes, resumed) {
@@ -134,12 +149,11 @@ class ModelServiceIO implements ModelService {
         );
       }
 
-      final mmprojSource = model.multimodalProjectorSource;
-      await _validateLocalSource(mmprojSource);
-      if (mmprojRemoteSource != null) {
-        final mmprojSavePath = _assetPath(modelsDir, mmprojRemoteSource);
+      if (mmprojNeedsDownload) {
+        final source = mmprojRemoteSource;
+        final mmprojSavePath = _assetPath(modelsDir, source);
         await _downloadFileWithResume(
-          url: mmprojRemoteSource.url,
+          url: source.url,
           savePath: mmprojSavePath,
           cancelToken: cancelToken,
           onProgress: (downloadedBytes, totalBytes, resumed) {
@@ -169,6 +183,56 @@ class ModelServiceIO implements ModelService {
     } catch (e) {
       onError(e);
     }
+  }
+
+  Future<ModelProfileCacheState> _modelCacheState(
+    DownloadableModel model,
+    String modelsDir,
+  ) async {
+    final modelSource = model.modelSource;
+    final mmprojSource = model.multimodalProjectorSource;
+    return ModelProfileCacheState(
+      model: ModelAssetCacheState(
+        role: ModelAssetRole.model,
+        label: modelSource.displayName,
+        isAvailable: await _isAssetAvailable(
+          modelsDir,
+          modelSource,
+          role: ModelAssetRole.model,
+        ),
+      ),
+      multimodalProjector: mmprojSource == null
+          ? null
+          : ModelAssetCacheState(
+              role: ModelAssetRole.multimodalProjector,
+              label: mmprojSource.displayName,
+              isAvailable: await _isAssetAvailable(
+                modelsDir,
+                mmprojSource,
+                role: ModelAssetRole.multimodalProjector,
+              ),
+            ),
+    );
+  }
+
+  int? _providedDownloadTotalBytes({
+    required DownloadableModel model,
+    required RemoteModelAssetSource? modelSource,
+    required bool modelNeedsDownload,
+    required RemoteModelAssetSource? mmprojSource,
+    required bool mmprojNeedsDownload,
+  }) {
+    if (modelNeedsDownload && mmprojNeedsDownload && model.sizeBytes > 0) {
+      return model.sizeBytes;
+    }
+    if (modelNeedsDownload) {
+      return modelSource?.sizeBytes ??
+          (model.sizeBytes > 0 ? model.sizeBytes : null);
+    }
+    if (mmprojNeedsDownload) {
+      return mmprojSource?.sizeBytes;
+    }
+    return null;
   }
 
   Future<bool> _isAssetAvailable(

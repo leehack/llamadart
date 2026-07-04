@@ -21,42 +21,36 @@ class ModelServiceWeb implements ModelService, WebCachePrefetchModelService {
   ) async {
     final prefs = await SharedPreferences.getInstance();
     final downloaded = prefs.getStringList(_downloadedModelsKey) ?? const [];
-    final downloadedSet = downloaded.toSet();
+    final markers = ModelAssetCacheMarkers(downloaded);
     final cachedModels = <String>{};
     var migratedLegacyMarkers = false;
 
     for (final model in models) {
-      if (_isProfileCached(model, downloadedSet)) {
+      if (markers.isProfileCached(model, web: true)) {
         cachedModels.add(model.filename);
         continue;
       }
 
-      final sources = _remoteSourcesFor(model);
-      if (downloadedSet.contains(model.filename) &&
-          sources.length == _assetSourcesFor(model).length) {
-        downloadedSet.remove(model.filename);
-        for (final source in sources) {
-          downloadedSet.add(source.cacheKey);
-        }
+      if (markers.migrateLegacyProfileMarker(model, web: true)) {
         cachedModels.add(model.filename);
         migratedLegacyMarkers = true;
       }
     }
 
     if (migratedLegacyMarkers) {
-      await prefs.setStringList(_downloadedModelsKey, downloadedSet.toList());
+      await prefs.setStringList(_downloadedModelsKey, markers.toSet().toList());
     }
 
     return cachedModels;
   }
 
-  bool _isProfileCached(DownloadableModel model, Set<String> downloaded) {
-    final sources = _remoteSourcesFor(model);
-    if (sources.length != _assetSourcesFor(model).length) {
-      return false;
-    }
-
-    return sources.every((source) => downloaded.contains(source.cacheKey));
+  @override
+  Future<ModelProfileCacheState> getModelCacheState(
+    DownloadableModel model,
+  ) async {
+    final prefs = await SharedPreferences.getInstance();
+    final downloaded = prefs.getStringList(_downloadedModelsKey) ?? const [];
+    return ModelAssetCacheMarkers(downloaded).modelCacheState(model, web: true);
   }
 
   List<ModelAssetSource> _assetSourcesFor(DownloadableModel model) {
@@ -89,20 +83,46 @@ class ModelServiceWeb implements ModelService, WebCachePrefetchModelService {
       return;
     }
     final remoteModelSource = modelSource as RemoteModelAssetSource;
-    final mmprojUrl =
-        (model.multimodalProjectorSourceFor(web: true)
-                as RemoteModelAssetSource?)
-            ?.url;
-    final stageCount = mmprojUrl == null ? 1 : 2;
+    final remoteMmprojSource =
+        model.multimodalProjectorSourceFor(web: true)
+            as RemoteModelAssetSource?;
+    final prefs = await SharedPreferences.getInstance();
+    final downloaded =
+        prefs.getStringList(_downloadedModelsKey)?.toSet() ?? <String>{};
+    final markers = ModelAssetCacheMarkers(downloaded);
+    if (markers.migrateLegacyProfileMarker(model, web: true)) {
+      await prefs.setStringList(_downloadedModelsKey, markers.toSet().toList());
+    }
+    final pendingAssets = <_PendingWebCacheAsset>[
+      if (!markers.containsAsset(remoteModelSource))
+        _PendingWebCacheAsset(
+          source: remoteModelSource,
+          stage: ModelDownloadStage.model,
+        ),
+      if (remoteMmprojSource != null &&
+          !markers.containsAsset(remoteMmprojSource))
+        _PendingWebCacheAsset(
+          source: remoteMmprojSource,
+          stage: ModelDownloadStage.multimodalProjector,
+        ),
+    ];
+    final stageCount = pendingAssets.length;
     final aggregate = ModelDownloadProgressTracker(
-      includeMmproj: mmprojUrl != null,
-      providedTotalBytes: model.sizeBytesFor(web: true) > 0
-          ? model.sizeBytesFor(web: true)
-          : null,
+      includeMmproj: pendingAssets.any(
+        (asset) => asset.stage == ModelDownloadStage.multimodalProjector,
+      ),
+      providedTotalBytes: _providedDownloadTotalBytes(
+        model: model,
+        pendingAssets: pendingAssets,
+      ),
     );
-    if (_remoteSourcesFor(
-      model,
-    ).any((source) => _hasPersistentCacheSensitiveUrlParts(source.url))) {
+    if (pendingAssets.isEmpty) {
+      onSuccess(model.filename);
+      return;
+    }
+    if (pendingAssets.any(
+      (asset) => _hasPersistentCacheSensitiveUrlParts(asset.source.url),
+    )) {
       onError(
         UnsupportedError(
           'Browser cache prefetch skipped for credentialed remote URL; load the model directly to avoid storing sensitive URL parts.',
@@ -150,43 +170,31 @@ class ModelServiceWeb implements ModelService, WebCachePrefetchModelService {
       // A prefetch failure (including an old bridge that lacks
       // prefetchModelToCache) now surfaces as a real error instead of silently
       // marking the model cached.
-      await _prefetchStage(
-        bridge,
-        remoteModelSource.url,
-        stage: ModelDownloadStage.model,
-        stageIndex: 1,
-        stageCount: stageCount,
-        aggregate: aggregate,
-        updateStage: aggregate.updateModel,
-        onProgress: onProgress,
-        onProgressDetail: onProgressDetail,
-      );
-
-      if (mmprojUrl != null) {
+      for (var i = 0; i < pendingAssets.length; i++) {
+        final asset = pendingAssets[i];
         await _prefetchStage(
           bridge,
-          mmprojUrl,
-          stage: ModelDownloadStage.multimodalProjector,
-          stageIndex: 2,
+          asset.source.url,
+          stage: asset.stage,
+          stageIndex: i + 1,
           stageCount: stageCount,
           aggregate: aggregate,
-          updateStage: aggregate.updateMmproj,
+          updateStage: asset.stage == ModelDownloadStage.model
+              ? aggregate.updateModel
+              : aggregate.updateMmproj,
           onProgress: onProgress,
           onProgressDetail: onProgressDetail,
+        );
+        markers.markAssetCached(asset.source);
+        await prefs.setStringList(
+          _downloadedModelsKey,
+          markers.toSet().toList(),
         );
       }
 
       final finalDetail = aggregate.finalProgress(stageCount: stageCount);
       onProgress(finalDetail.overallProgress);
       onProgressDetail?.call(finalDetail);
-
-      final prefs = await SharedPreferences.getInstance();
-      final downloaded =
-          prefs.getStringList(_downloadedModelsKey)?.toSet() ?? <String>{};
-      for (final source in _remoteSourcesFor(model)) {
-        downloaded.add(source.cacheKey);
-      }
-      await prefs.setStringList(_downloadedModelsKey, downloaded.toList());
 
       onSuccess(model.filename);
     } catch (error) {
@@ -247,6 +255,19 @@ class ModelServiceWeb implements ModelService, WebCachePrefetchModelService {
     } catch (_) {
       return false;
     }
+  }
+
+  int? _providedDownloadTotalBytes({
+    required DownloadableModel model,
+    required List<_PendingWebCacheAsset> pendingAssets,
+  }) {
+    if (pendingAssets.length > 1 && model.sizeBytesFor(web: true) > 0) {
+      return model.sizeBytesFor(web: true);
+    }
+    if (pendingAssets.length == 1) {
+      return pendingAssets.single.source.sizeBytes;
+    }
+    return null;
   }
 
   bool _hasPersistentCacheSensitiveUrlParts(String value) {
@@ -491,10 +512,9 @@ class ModelServiceWeb implements ModelService, WebCachePrefetchModelService {
     final prefs = await SharedPreferences.getInstance();
     final downloaded =
         prefs.getStringList(_downloadedModelsKey)?.toSet() ?? <String>{};
-    for (final source in _remoteSourcesFor(model)) {
-      downloaded.remove(source.cacheKey);
-    }
-    await prefs.setStringList(_downloadedModelsKey, downloaded.toList());
+    final markers = ModelAssetCacheMarkers(downloaded)
+      ..removeAssets(_remoteSourcesFor(model));
+    await prefs.setStringList(_downloadedModelsKey, markers.toSet().toList());
 
     final bridge = _tryCreateBridge();
     if (bridge == null) {
@@ -531,6 +551,13 @@ class _BridgeProgressSnapshot {
   final int? total;
 
   const _BridgeProgressSnapshot({required this.loaded, required this.total});
+}
+
+class _PendingWebCacheAsset {
+  final RemoteModelAssetSource source;
+  final ModelDownloadStage stage;
+
+  const _PendingWebCacheAsset({required this.source, required this.stage});
 }
 
 @JS('LlamaWebGpuBridge')

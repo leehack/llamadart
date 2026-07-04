@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:llamadart_chat_example/models/downloadable_model.dart';
+import 'package:llamadart_chat_example/services/model_service_base.dart';
 
 void main() {
   group('Model asset sources', () {
@@ -81,6 +82,83 @@ void main() {
       expect(profile.url, 'https://example.com/model.gguf');
       expect(profile.mmprojUrl, 'https://cdn.example.net/mmproj.gguf');
       expect(profile.mmprojFilename, 'mmproj.gguf');
+    });
+
+    test(
+      'cache markers surface model availability after mmproj prefetch failure',
+      () {
+        final profile = DownloadableModel(
+          name: 'Partial VLM',
+          description: 'Remote model cached before projector failure',
+          url: 'https://example.com/model.gguf',
+          filename: 'model.gguf',
+          mmprojUrl: 'https://example.com/mmproj.gguf',
+          mmprojFilename: 'mmproj.gguf',
+          sizeBytes: 2048,
+          supportsVision: true,
+        );
+        final modelSource = profile.modelSource as RemoteModelAssetSource;
+        final mmprojSource =
+            profile.multimodalProjectorSource as RemoteModelAssetSource;
+        final markers = ModelAssetCacheMarkers(<String>[]);
+
+        markers.markAssetCached(modelSource);
+
+        final state = markers.modelCacheState(profile, web: true);
+        expect(markers.isProfileCached(profile, web: true), isFalse);
+        expect(state.isReady, isFalse);
+        expect(state.hasPartialAssets, isTrue);
+        expect(state.model.isAvailable, isTrue);
+        expect(state.multimodalProjector?.isAvailable, isFalse);
+        expect(markers.toSet(), contains(modelSource.cacheKey));
+        expect(markers.toSet(), isNot(contains(mmprojSource.cacheKey)));
+      },
+    );
+
+    test('legacy profile marker migrates to per-asset remote markers', () {
+      final profile = DownloadableModel(
+        name: 'Legacy Cached VLM',
+        description: 'Remote model and projector',
+        url: 'https://example.com/model.gguf',
+        filename: 'model.gguf',
+        mmprojUrl: 'https://example.com/mmproj.gguf',
+        mmprojFilename: 'mmproj.gguf',
+        sizeBytes: 2048,
+        supportsVision: true,
+      );
+      final modelSource = profile.modelSource as RemoteModelAssetSource;
+      final mmprojSource =
+          profile.multimodalProjectorSource as RemoteModelAssetSource;
+      final markers = ModelAssetCacheMarkers(<String>{profile.filename});
+
+      expect(markers.migrateLegacyProfileMarker(profile, web: true), isTrue);
+
+      expect(markers.containsMarker(profile.filename), isFalse);
+      expect(markers.containsAsset(modelSource), isTrue);
+      expect(markers.containsAsset(mmprojSource), isTrue);
+      expect(markers.isProfileCached(profile, web: true), isTrue);
+    });
+
+    test('legacy profile marker is not migrated for local assets', () {
+      final profile = DownloadableModel.fromSources(
+        name: 'Mixed Legacy VLM',
+        description: 'Remote model with local projector',
+        modelSource: const RemoteModelAssetSource(
+          url: 'https://example.com/model.gguf',
+          filename: 'model.gguf',
+        ),
+        multimodalProjectorSource: const LocalModelAssetSource(
+          '/models/mmproj.gguf',
+        ),
+        sizeBytes: 2048,
+        supportsVision: true,
+      );
+      final markers = ModelAssetCacheMarkers(<String>{profile.filename});
+
+      expect(markers.migrateLegacyProfileMarker(profile, web: true), isFalse);
+
+      expect(markers.containsMarker(profile.filename), isTrue);
+      expect(markers.isProfileCached(profile, web: true), isFalse);
     });
 
     test('platform-specific web source can differ from native source', () {

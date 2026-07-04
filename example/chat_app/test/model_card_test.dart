@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:llamadart_chat_example/models/downloadable_model.dart';
+import 'package:llamadart_chat_example/services/model_service_base.dart';
 import 'package:llamadart_chat_example/widgets/model_card.dart';
 
 void main() {
@@ -68,6 +69,56 @@ void main() {
 
     expect(find.textContaining('very large LiteRT-LM'), findsNothing);
   });
+
+  testWidgets('partial multimodal cache shows missing mmproj state', (
+    tester,
+  ) async {
+    var downloadCalls = 0;
+    var deleteCalls = 0;
+
+    await _pumpCard(
+      tester,
+      model: _vlmModel(),
+      isWeb: false,
+      isDownloaded: false,
+      cacheState: const ModelProfileCacheState(
+        model: ModelAssetCacheState(
+          role: ModelAssetRole.model,
+          label: 'model.gguf',
+          isAvailable: true,
+        ),
+        multimodalProjector: ModelAssetCacheState(
+          role: ModelAssetRole.multimodalProjector,
+          label: 'mmproj.gguf',
+          isAvailable: false,
+        ),
+      ),
+      onSelect: () {},
+      onDownload: () => downloadCalls += 1,
+      onDelete: () => deleteCalls += 1,
+    );
+
+    expect(find.text('Model cached'), findsOneWidget);
+    expect(find.text('mmproj missing'), findsOneWidget);
+    expect(
+      find.text(
+        'Model cached; mmproj missing. Download will fetch only missing assets.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Download Missing Assets'), findsOneWidget);
+    expect(find.byTooltip('Delete cached assets'), findsOneWidget);
+
+    await tester.tap(find.text('Download Missing Assets'));
+    await tester.pump();
+
+    expect(downloadCalls, 1);
+
+    await tester.tap(find.byTooltip('Delete cached assets'));
+    await tester.pump();
+
+    expect(deleteCalls, 1);
+  });
 }
 
 Future<void> _pumpCard(
@@ -75,8 +126,10 @@ Future<void> _pumpCard(
   required DownloadableModel model,
   required bool isWeb,
   required bool isDownloaded,
+  ModelProfileCacheState? cacheState,
   required VoidCallback onSelect,
   required VoidCallback onDownload,
+  VoidCallback? onDelete,
 }) async {
   await tester.pumpWidget(
     MaterialApp(
@@ -85,6 +138,7 @@ Future<void> _pumpCard(
           child: ModelCard(
             model: model,
             isDownloaded: isDownloaded,
+            cacheState: cacheState,
             isDownloading: false,
             progress: 0,
             isWeb: isWeb,
@@ -95,11 +149,24 @@ Future<void> _pumpCard(
             onContextSizeChanged: (_) {},
             onSelect: onSelect,
             onDownload: onDownload,
-            onDelete: () {},
+            onDelete: onDelete ?? () {},
           ),
         ),
       ),
     ),
+  );
+}
+
+DownloadableModel _vlmModel() {
+  return const DownloadableModel(
+    name: 'VLM Test Model',
+    description: 'Fake multimodal model for widget tests.',
+    url: 'https://example.com/model.gguf',
+    filename: 'model.gguf',
+    mmprojUrl: 'https://example.com/mmproj.gguf',
+    mmprojFilename: 'mmproj.gguf',
+    sizeBytes: 10,
+    supportsVision: true,
   );
 }
 

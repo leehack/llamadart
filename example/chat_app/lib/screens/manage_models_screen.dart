@@ -54,6 +54,7 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
 
   final Map<String, ValueNotifier<_ModelDownloadUiState>>
   _downloadUiStateByFile = {};
+  final Map<String, ModelProfileCacheState> _cacheStateByFile = {};
   final Map<String, int> _lastDownloadedBytes = {};
   final Map<String, DateTime> _lastDownloadSampleAt = {};
   final Map<String, double> _smoothedDownloadRateBytesPerSec = {};
@@ -97,8 +98,16 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
     await _loadCustomModels();
     _modelsDir = await _modelService.getModelsDirectory();
     _downloadedFiles = await _modelService.getDownloadedModels(_models);
+    await _refreshCacheStates(_models);
     if (mounted) {
       setState(() {});
+    }
+  }
+
+  Future<void> _refreshCacheStates(Iterable<DownloadableModel> models) async {
+    for (final model in models) {
+      _cacheStateByFile[model.filename] = await _modelService
+          .getModelCacheState(model);
     }
   }
 
@@ -233,6 +242,7 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
     });
 
     _downloadedFiles = await _modelService.getDownloadedModels(_models);
+    await _refreshCacheStates(<DownloadableModel>[model]);
     if (mounted) {
       setState(() {});
     }
@@ -253,6 +263,81 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
       }
     }
     return null;
+  }
+
+  List<String> _credentialLikeCustomUrlLabels({
+    required String modelUrl,
+    required String? mmprojUrl,
+  }) {
+    return <String>[
+      if (_hasCredentialLikePersistentUrlParts(modelUrl)) 'GGUF URL',
+      if (mmprojUrl != null &&
+          mmprojUrl.isNotEmpty &&
+          _hasCredentialLikePersistentUrlParts(mmprojUrl))
+        'MMProj URL',
+    ];
+  }
+
+  bool _hasCredentialLikePersistentUrlParts(String value) {
+    final uri = Uri.tryParse(value.trim());
+    if (uri == null) {
+      return false;
+    }
+    if (uri.userInfo.isNotEmpty || uri.fragment.isNotEmpty) {
+      return true;
+    }
+
+    const benignQueryKeys = {'download'};
+    return uri.queryParameters.keys.any((key) {
+      final lower = key.toLowerCase();
+      if (benignQueryKeys.contains(lower)) {
+        return false;
+      }
+      return lower.contains('token') ||
+          lower.contains('sig') ||
+          lower.contains('signature') ||
+          lower.contains('expires') ||
+          lower.contains('credential') ||
+          lower.contains('key') ||
+          lower.contains('secret') ||
+          lower.contains('auth') ||
+          lower.contains('session') ||
+          lower.startsWith('x-amz');
+    });
+  }
+
+  Future<bool> _confirmSavingCredentialLikeCustomUrls(
+    BuildContext context,
+    List<String> labels,
+  ) async {
+    final labelText = labels.length == 1
+        ? labels.single
+        : '${labels.take(labels.length - 1).join(', ')} and ${labels.last}';
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Save credentialed URL?'),
+          content: Text(
+            '$labelText includes user info, a fragment, or credential-like '
+            'query parameters. Custom model URLs are saved in local '
+            'preferences. Prefer a public ?download=true URL or runtime '
+            'headers for private access.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Review URL'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Save anyway'),
+            ),
+          ],
+        );
+      },
+    );
+    return confirmed ?? false;
   }
 
   Future<void> _showAddHuggingFaceDialog() async {
@@ -374,6 +459,22 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
                         errorText = 'This model is already in your list.';
                       });
                       return;
+                    }
+
+                    final credentialUrlLabels = _credentialLikeCustomUrlLabels(
+                      modelUrl: url,
+                      mmprojUrl: mmprojUrl.isEmpty ? null : mmprojUrl,
+                    );
+                    if (credentialUrlLabels.isNotEmpty) {
+                      if (!dialogContext.mounted) return;
+                      final confirmed =
+                          await _confirmSavingCredentialLikeCustomUrls(
+                            dialogContext,
+                            credentialUrlLabels,
+                          );
+                      if (!confirmed) {
+                        return;
+                      }
                     }
 
                     await _addCustomModelEntry(customModel);
@@ -739,8 +840,13 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
         clearTask: true,
       );
       _clearDownloadTracking(model.filename);
+      final downloadedFiles = await _modelService.getDownloadedModels(_models);
+      await _refreshCacheStates(_models);
+      if (!mounted) {
+        return;
+      }
       setState(() {
-        _downloadedFiles.add(model.filename);
+        _downloadedFiles = downloadedFiles;
       });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('${model.name} downloaded successfully.')),
@@ -763,6 +869,15 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
       if (!isCancel) {
         _clearDownloadTracking(model.filename);
       }
+
+      final downloadedFiles = await _modelService.getDownloadedModels(_models);
+      await _refreshCacheStates(_models);
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _downloadedFiles = downloadedFiles;
+      });
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -837,8 +952,13 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
     });
 
     if (provider.error == null) {
+      final capabilityWarning = _runtimeCapabilityWarning(model, provider);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${model.name} loaded successfully.')),
+        SnackBar(
+          content: Text(
+            capabilityWarning ?? '${model.name} loaded successfully.',
+          ),
+        ),
       );
       widget.onModelActivated?.call();
     }
@@ -862,9 +982,12 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
     );
     _clearDownloadTracking(model.filename);
     await _disposeDownloadController(model.filename);
+    final downloadedFiles = await _modelService.getDownloadedModels(_models);
+    await _refreshCacheStates(_models);
+    if (!mounted) return;
 
     setState(() {
-      _downloadedFiles.remove(model.filename);
+      _downloadedFiles = downloadedFiles;
     });
   }
 
@@ -932,6 +1055,8 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
     }
     _downloadControllers.clear();
     _downloadedFiles = await _modelService.getDownloadedModels(_models);
+    _cacheStateByFile.clear();
+    await _refreshCacheStates(_models);
 
     await _saveCustomModels();
 
@@ -1058,6 +1183,24 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
     return model.supportsVision || model.supportsAudio
         ? _resolveModelLoadReference(model)
         : null;
+  }
+
+  String? _runtimeCapabilityWarning(
+    DownloadableModel model,
+    ChatProvider provider,
+  ) {
+    final missing = <String>[
+      if (model.supportsVision && !provider.supportsVision) 'vision',
+      if (model.supportsAudio && !provider.supportsAudio) 'audio',
+    ];
+    if (missing.isEmpty) {
+      return null;
+    }
+
+    final capabilityLabel = missing.length == 1
+        ? missing.single
+        : '${missing.take(missing.length - 1).join(', ')} and ${missing.last}';
+    return 'Loaded, but the active runtime/projector did not report $capabilityLabel support. Media controls stay disabled for unsupported inputs.';
   }
 
   Future<void> _setSelectedModelMmprojMode(
@@ -1339,6 +1482,7 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
                               isDownloaded: _downloadedFiles.contains(
                                 model.filename,
                               ),
+                              cacheState: _cacheStateByFile[model.filename],
                               isDownloading: downloadState.isDownloading,
                               progress: downloadState.progress,
                               downloadStatusLabel: detail == null

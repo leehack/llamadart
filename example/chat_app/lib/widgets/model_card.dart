@@ -2,10 +2,12 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../models/downloadable_model.dart';
+import '../services/model_service_base.dart';
 
 class ModelCard extends StatelessWidget {
   final DownloadableModel model;
   final bool isDownloaded;
+  final ModelProfileCacheState? cacheState;
   final bool isDownloading;
   final double progress;
   final String? downloadStatusLabel;
@@ -25,6 +27,7 @@ class ModelCard extends StatelessWidget {
     super.key,
     required this.model,
     required this.isDownloaded,
+    this.cacheState,
     required this.isDownloading,
     required this.progress,
     this.downloadStatusLabel,
@@ -50,6 +53,10 @@ class ModelCard extends StatelessWidget {
     final effectiveModelSizeBytes = model.sizeBytesFor(web: isWeb);
     final showWebLargeModelWarning =
         isWeb && effectiveModelSizeBytes >= webLargeModelWarningThresholdBytes;
+    final partialCacheMessage = _partialCacheMessage(cacheState, isWeb: isWeb);
+    final hasPartialCache = partialCacheMessage != null;
+    final hasAnyCachedAsset =
+        isDownloaded || (cacheState?.availableAssetLabels.isNotEmpty ?? false);
     final showMobileDownloadGuidance =
         isDownloading &&
         !isWeb &&
@@ -107,6 +114,34 @@ class ModelCard extends StatelessWidget {
                           ),
                       ],
                     ),
+                    if (cacheState != null) ...[
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          _buildCapabilityChip(
+                            context,
+                            icon: Icons.inventory_2_outlined,
+                            label: cacheState!.model.isAvailable
+                                ? 'Model cached'
+                                : 'Model missing',
+                            supported: cacheState!.model.isAvailable,
+                          ),
+                          if (cacheState!.multimodalProjector != null)
+                            _buildCapabilityChip(
+                              context,
+                              icon: Icons.visibility_outlined,
+                              label:
+                                  cacheState!.multimodalProjector!.isAvailable
+                                  ? 'mmproj cached'
+                                  : 'mmproj missing',
+                              supported:
+                                  cacheState!.multimodalProjector!.isAvailable,
+                            ),
+                        ],
+                      ),
+                    ],
                     const SizedBox(height: 10),
                     Wrap(
                       spacing: 8,
@@ -152,7 +187,7 @@ class ModelCard extends StatelessWidget {
                   ],
                 ),
               ),
-              if (isDownloaded || (progress > 0 && !isDownloaded))
+              if (hasAnyCachedAsset || (progress > 0 && !isDownloaded))
                 IconButton(
                   icon: Icon(
                     Icons.delete_outline_rounded,
@@ -161,7 +196,11 @@ class ModelCard extends StatelessWidget {
                   onPressed: onDelete,
                   tooltip: progress > 0 && !isDownloaded
                       ? 'Cancel & Discard'
-                      : 'Delete Model',
+                      : hasPartialCache
+                      ? 'Delete cached assets'
+                      : model.multimodalProjectorSourceFor(web: isWeb) == null
+                      ? 'Delete Model'
+                      : 'Delete model and mmproj',
                 ),
             ],
           ),
@@ -174,6 +213,29 @@ class ModelCard extends StatelessWidget {
               height: 1.4,
             ),
           ),
+          if (partialCacheMessage != null) ...[
+            const SizedBox(height: 10),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: colorScheme.secondaryContainer.withValues(alpha: 0.45),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: colorScheme.outlineVariant.withValues(alpha: 0.45),
+                ),
+              ),
+              child: Text(
+                partialCacheMessage,
+                style: GoogleFonts.outfit(
+                  fontSize: 12,
+                  height: 1.3,
+                  color: colorScheme.onSecondaryContainer,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ],
           if (showWebLargeModelWarning) ...[
             const SizedBox(height: 10),
             Container(
@@ -448,8 +510,16 @@ class ModelCard extends StatelessWidget {
                       ),
                       label: Text(
                         isWeb
-                            ? (progress > 0 ? 'Resume Cache' : 'Cache Model')
-                            : (progress > 0 ? 'Resume Download' : 'Download'),
+                            ? (progress > 0
+                                  ? 'Resume Cache'
+                                  : hasPartialCache
+                                  ? 'Cache Missing Assets'
+                                  : 'Cache Model')
+                            : (progress > 0
+                                  ? 'Resume Download'
+                                  : hasPartialCache
+                                  ? 'Download Missing Assets'
+                                  : 'Download'),
                       ),
                       style: OutlinedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 16),
@@ -467,6 +537,36 @@ class ModelCard extends StatelessWidget {
 
   bool _isLiteRtLmModel(DownloadableModel model) {
     return model.filenameFor(web: true).toLowerCase().endsWith('.litertlm');
+  }
+
+  String? _partialCacheMessage(
+    ModelProfileCacheState? state, {
+    required bool isWeb,
+  }) {
+    if (state == null || !state.hasPartialAssets) {
+      return null;
+    }
+    final available = _joinAssetLabels(state.availableAssetLabels);
+    final missing = _joinAssetLabels(state.missingAssetLabels);
+    final action = isWeb ? 'Cache' : 'Download';
+    return '${_capitalize(available)} cached; $missing missing. $action will fetch only missing assets.';
+  }
+
+  String _joinAssetLabels(List<String> labels) {
+    if (labels.isEmpty) {
+      return 'asset';
+    }
+    if (labels.length == 1) {
+      return labels.single;
+    }
+    return '${labels.take(labels.length - 1).join(', ')} and ${labels.last}';
+  }
+
+  String _capitalize(String value) {
+    if (value.isEmpty) {
+      return value;
+    }
+    return value[0].toUpperCase() + value.substring(1);
   }
 
   Widget _buildMetaChip(
