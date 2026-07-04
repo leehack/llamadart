@@ -151,8 +151,10 @@ primitive types, objects with `properties`, `required`, and
 `additionalProperties`, arrays with `items` or fixed `prefixItems`,
 `enum`/`const`, local `$ref`, `anyOf`, `oneOf`, `allOf`, `minLength`,
 `maxLength`, `minItems`, and `maxItems`. Unsupported schemas fail before
-generation. Backends without grammar constraints, including current LiteRT-LM
-native and web paths, still fail early for strict structured output.
+generation. Annotation metadata such as `title`, `description`, and `default`
+is preserved but not enforced as a decoding constraint. Backends without
+grammar constraints, including current LiteRT-LM native and web paths, still
+fail early for strict structured output.
 
 ## `create(...)` flow at a glance
 

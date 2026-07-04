@@ -1009,7 +1009,9 @@ Streaming callers can pass `responseFormat: output.responseFormat` to
 `engine.create(...)` and call `parseStructuredJson(output)` after the stream
 completes. Supported schemas cover the practical JSON-schema-to-GBNF subset:
 primitive types, objects, arrays, `enum`/`const`, local `$ref`, `anyOf`,
-`oneOf`, `allOf`, string length, and array item-count bounds.
+`oneOf`, `allOf`, string length, and array item-count bounds. Annotation
+metadata such as `title`, `description`, and `default` is preserved but not
+enforced as a decoding constraint.
 
 ### 3. Advanced Usage (ChatSession)
 

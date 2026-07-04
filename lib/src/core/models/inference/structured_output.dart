@@ -66,7 +66,9 @@ class LlamaStructuredOutput<T> {
   /// primitives, objects with properties/required/additionalProperties, arrays
   /// with `items` or fixed `prefixItems`, enum/const, local `$ref`, `anyOf`,
   /// `oneOf`, `allOf`, string length, and array item-count bounds. Unsupported
-  /// or malformed schemas throw [LlamaUnsupportedException] before generation.
+  /// constraint keywords throw [LlamaUnsupportedException] before generation.
+  /// Annotation metadata such as `title` and `description` is preserved but not
+  /// enforced by constrained decoding.
   ///
   /// [decoder] receives the validated JSON object.
   factory LlamaStructuredOutput.jsonSchema({
@@ -229,14 +231,21 @@ const _supportedSchemaTypes = <String>{
 };
 
 const _supportedSchemaKeywords = <String>{
+  r'$comment',
   r'$defs',
+  r'$id',
   r'$ref',
+  r'$schema',
   'additionalProperties',
   'allOf',
   'anyOf',
   'const',
+  'default',
   'definitions',
+  'deprecated',
+  'description',
   'enum',
+  'examples',
   'items',
   'maxItems',
   'maxLength',
@@ -245,8 +254,11 @@ const _supportedSchemaKeywords = <String>{
   'oneOf',
   'prefixItems',
   'properties',
+  'readOnly',
   'required',
+  'title',
   'type',
+  'writeOnly',
 };
 
 void _validateSupportedSchemaSubset(Map<String, dynamic> schema, String path) {

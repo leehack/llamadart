@@ -29,6 +29,40 @@ void main() {
       expect(contact.email, 'ada@example.com');
     });
 
+    test('accepts JSON Schema annotation metadata', () {
+      final output = LlamaStructuredOutput<Map<String, dynamic>>.jsonSchema(
+        schema: const {
+          r'$schema': 'https://json-schema.org/draft/2020-12/schema',
+          r'$id': 'https://example.com/contact.schema.json',
+          r'$comment': 'Annotations are ignored by constrained decoding.',
+          'title': 'Contact',
+          'description': 'Extracted contact fields.',
+          'type': 'object',
+          'properties': {
+            'name': {
+              'title': 'Name',
+              'description': 'Display name.',
+              'type': 'string',
+              'default': 'Unknown',
+              'examples': ['Ada Lovelace'],
+            },
+          },
+          'required': ['name'],
+          'additionalProperties': false,
+          'readOnly': true,
+          'writeOnly': false,
+          'deprecated': false,
+        },
+        decoder: (json) => json,
+      );
+
+      expect(output.parse('{"name":"Ada Lovelace"}'), {'name': 'Ada Lovelace'});
+      expect(
+        output.responseFormat['json_schema']['schema']['properties']['name'],
+        containsPair('description', 'Display name.'),
+      );
+    });
+
     test('rejects schema that cannot be represented safely', () {
       expect(
         () => LlamaStructuredOutput<List<Object?>>.jsonValueSchema(
