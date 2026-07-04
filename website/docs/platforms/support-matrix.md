@@ -67,6 +67,14 @@ currently forwards only single-turn text prompts through `@litert-lm/core`, so
 it does not preserve `ChatSession` history, system prompts, or tool
 declarations with native LiteRT-LM semantics yet.
 
+For GGUF multimodal projectors, `loadMultimodalProjectorSource(...)` uses the
+same `ModelSource` and native download/cache APIs as `loadModelSource(...)`.
+Native/file-backed targets load the cached local projector path. URL-loading web
+targets accept remote unauthenticated projector URLs and reject local filesystem
+sources plus options that require native cache IO, including auth headers,
+checksum verification, explicit cache policy changes, custom cache directories,
+disabled resume, and custom retry counts.
+
 Select LiteRT-LM CPU/GPU/NPU with `ModelParams.liteRtLmBackend`.
 `LiteRtLmBackendPreference.auto` currently maps to GPU on Android, macOS, and
 web, and CPU on other LiteRT-LM targets. NPU selection is Android native only;

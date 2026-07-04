@@ -293,6 +293,85 @@ class LlamaEngine {
     return _withMmLifecycle(() => _loadMultimodalProjectorLocked(mmProjPath));
   }
 
+  /// Loads a multimodal projector from a structured [source].
+  ///
+  /// A model must already be loaded with [loadModel], [loadModelSource], or
+  /// [loadModelFromUrl]. Calling this before the model is ready throws a
+  /// [LlamaContextException].
+  ///
+  /// This method is lifecycle-compatible with [loadMultimodalProjector]:
+  /// source resolution, package-managed download/cache work, and the final
+  /// backend projector load are serialized with direct path projector loads and
+  /// unloads. Concurrent projector lifecycle calls are applied in call order,
+  /// and loading a new projector replaces any active projector.
+  ///
+  /// Local path sources are validated by the configured
+  /// [modelDownloadManager], then loaded from their local file path. Remote
+  /// sources use the native download/cache manager on file-backed backends. On
+  /// URL-loading backends, remote unauthenticated sources are passed directly to
+  /// the backend; package-managed auth, headers, checksum verification, cache
+  /// policy changes, cache directories, cancellation, retry/resume settings,
+  /// and progress reporting are not available because the backend/browser owns
+  /// the network and cache behavior.
+  ///
+  /// Throws [LlamaUnsupportedException] when the active backend cannot load
+  /// multimodal projectors, when a local path is used with a URL-loading
+  /// backend, when the resolver returns a remote target that disallows
+  /// browser/backend caching, or when URL-backend loading is requested with
+  /// options that require the package-managed download/cache manager.
+  Future<void> loadMultimodalProjectorSource(
+    ModelSource source, {
+    ModelLoadOptions options = ModelLoadOptions.defaults,
+    ModelDownloadProgressCallback? onProgress,
+  }) {
+    return _withMmLifecycle(() async {
+      _ensureReady(requireContext: false);
+
+      final target = await modelResolver.resolve(
+        source,
+        ModelResolveRequest(options: options, onProgress: onProgress),
+      );
+
+      switch (target) {
+        case LocalModelFile(:final path):
+          if (backend.supportsUrlLoading) {
+            throw LlamaUnsupportedException(
+              'Explicit local multimodal projector paths are not supported by URL-loading backends.',
+            );
+          }
+          final localSource = ModelSource.path(path);
+          final entry = await modelDownloadManager.ensureModel(
+            localSource,
+            options: options,
+            onProgress: onProgress,
+          );
+          return _loadMultimodalProjectorLocked(entry.filePath);
+        case RemoteModelUrl(:final url, :final useBrowserCache):
+          if (!useBrowserCache) {
+            throw LlamaUnsupportedException(
+              'Remote multimodal projector loading without browser/backend cache is not supported yet.',
+            );
+          }
+          if (!backend.supportsUrlLoading) {
+            final downloadSource = source.isRemote
+                ? source.withResolvedUri(url)
+                : ModelSource.url(url, fileName: source.fileName);
+            final entry = await modelDownloadManager.ensureModel(
+              downloadSource,
+              options: options,
+              onProgress: onProgress,
+            );
+            return _loadMultimodalProjectorLocked(entry.filePath);
+          }
+          _rejectUnsupportedUrlBackendOptions(
+            options,
+            assetType: 'multimodal projector',
+          );
+          return _loadMultimodalProjectorLocked(url.toString());
+      }
+    });
+  }
+
   Future<void> _loadMultimodalProjectorLocked(String mmProjPath) async {
     final mmProjName = _displayNameForSource(mmProjPath);
     LlamaLogger.instance.info('Loading multimodal projector: $mmProjName');
@@ -1148,15 +1227,19 @@ class LlamaEngine {
     _isReady = false;
   }
 
-  void _rejectUnsupportedUrlBackendOptions(ModelLoadOptions options) {
+  void _rejectUnsupportedUrlBackendOptions(
+    ModelLoadOptions options, {
+    String assetType = 'model',
+  }) {
+    final isModel = assetType == 'model';
     if (options.cachePolicy != ModelCachePolicy.preferCached) {
       throw LlamaUnsupportedException(
-        '${options.cachePolicy.name} model loading requires the native download/cache manager.',
+        '${options.cachePolicy.name} $assetType loading requires the native download/cache manager.',
       );
     }
     if (options.bearerToken != null || options.headers.isNotEmpty) {
       throw LlamaUnsupportedException(
-        'Authenticated model URL loading requires the native download/cache manager.',
+        'Authenticated $assetType URL loading requires the native download/cache manager.',
       );
     }
     if (options.cancelToken != null) {
@@ -1166,22 +1249,30 @@ class LlamaEngine {
     }
     if (options.sha256 != null) {
       throw LlamaUnsupportedException(
-        'Checksum verification requires the native download/cache manager.',
+        isModel
+            ? 'Checksum verification requires the native download/cache manager.'
+            : 'Checksum verification for $assetType loading requires the native download/cache manager.',
       );
     }
     if (options.cacheDirectory != null) {
       throw LlamaUnsupportedException(
-        'cacheDirectory is not supported by URL-loading backends.',
+        isModel
+            ? 'cacheDirectory is not supported by URL-loading backends.'
+            : 'cacheDirectory is not supported for $assetType loading by URL-loading backends.',
       );
     }
     if (!options.resume) {
       throw LlamaUnsupportedException(
-        'Disabling resume is not supported by URL-loading backends.',
+        isModel
+            ? 'Disabling resume is not supported by URL-loading backends.'
+            : 'Disabling resume is not supported for $assetType loading by URL-loading backends.',
       );
     }
     if (options.maxRetries != ModelLoadOptions.defaults.maxRetries) {
       throw LlamaUnsupportedException(
-        'Custom maxRetries is not supported by URL-loading backends.',
+        isModel
+            ? 'Custom maxRetries is not supported by URL-loading backends.'
+            : 'Custom maxRetries is not supported for $assetType loading by URL-loading backends.',
       );
     }
   }

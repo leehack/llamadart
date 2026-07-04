@@ -13,6 +13,10 @@ For canonical full release notes, use:
   helpers for strict JSON-object / JSON-schema generation with final-output
   validation and typed decoding.
 
+- Added `LlamaEngine.loadMultimodalProjectorSource(...)` so GGUF multimodal
+  projector files can use the same `ModelSource` resolver and native
+  download/cache options as `loadModelSource(...)`.
+
 ## 0.8.12
 
 - Updated the default LiteRT-LM native runtime pin to

@@ -422,7 +422,25 @@ For LiteRT-LM bundles, use the same `loadModelSource(...)` path with a
 CPU, GPU, or Android NPU execution after the file is cached.
 `llamadart` does not list Hugging Face files or expand sharded GGUF manifests;
 pick the exact `.gguf` file path from the repository, and use separate model and
-`mmproj` sources for multimodal assets.
+`mmproj` sources for multimodal assets. After the GGUF model is loaded, call
+`loadMultimodalProjectorSource(...)` to resolve, download, cache, and load the
+projector through the same source/cache layer:
+
+```dart
+await engine.loadModelSource(
+  ModelSource.parse('hf://owner/repo/model-Q4_K_M.gguf'),
+);
+await engine.loadMultimodalProjectorSource(
+  ModelSource.parse('hf://owner/repo/mmproj.gguf'),
+  options: ModelLoadOptions(cachePolicy: ModelCachePolicy.preferCached),
+);
+```
+
+Native/file-backed backends load the cached local projector path. URL-loading
+web backends pass unauthenticated remote projector URLs directly to the bridge;
+authenticated headers, checksum verification, explicit cache policy changes,
+custom cache directories, and local filesystem path sources require a
+file-backed native cache manager.
 
 ### 7. Generate embeddings
 
@@ -1139,6 +1157,10 @@ void main() async {
   try {
     await engine.loadModel('vision-model.gguf');
     await engine.loadMultimodalProjector('mmproj.gguf');
+    // Or use ModelSource when the projector should be downloaded/cached:
+    // await engine.loadMultimodalProjectorSource(
+    //   ModelSource.parse('hf://owner/repo/mmproj.gguf'),
+    // );
 
     final session = ChatSession(engine);
 
@@ -1166,7 +1188,9 @@ void main() async {
 
 Web-specific note:
 
-- Load model/mmproj with URL-based assets (`loadModelFromUrl` + URL projector).
+- Load model/mmproj with URL-based assets (`loadModelSource` /
+  `loadModelFromUrl` + URL projector). `loadMultimodalProjectorSource` supports
+  remote unauthenticated projector URLs on URL-loading web backends.
 - For user-picked browser files, send media as bytes (`LlamaImageContent(bytes: ...)`,
   `LlamaAudioContent(bytes: ...)`) rather than local file paths.
 
@@ -1178,8 +1202,9 @@ LiteRT-LM native note:
 - Native LiteRT-LM supports local paths and encoded media bytes (`blob`) for
   media parts. Remote image URLs and raw PCM `Float32List` samples fail before
   native generation with clear errors.
-- `loadMultimodalProjector`, `supportsVision`, and `supportsAudio` remain
-  projector-oriented APIs for llama.cpp/WebGPU multimodal paths.
+- `loadMultimodalProjector`, `loadMultimodalProjectorSource`,
+  `supportsVision`, and `supportsAudio` remain projector-oriented APIs for
+  llama.cpp/WebGPU multimodal paths.
 
 ### 💡 Model-Specific Notes
 
