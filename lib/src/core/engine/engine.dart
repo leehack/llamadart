@@ -1244,7 +1244,9 @@ class LlamaEngine {
     }
     if (options.cancelToken != null) {
       throw LlamaUnsupportedException(
-        'Cancellation tokens require the native download/cache manager.',
+        isModel
+            ? 'Cancellation tokens require the native download/cache manager.'
+            : 'Cancellation tokens for $assetType loading require the native download/cache manager.',
       );
     }
     if (options.sha256 != null) {

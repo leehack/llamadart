@@ -1049,6 +1049,23 @@ void main() {
           contains('Authenticated multimodal projector URL loading'),
         );
         expect(webBackend.multimodalContextCreateCalls, 0);
+
+        Object? cancellationError;
+        try {
+          await webEngine.loadMultimodalProjectorSource(
+            ModelSource.url(Uri.parse('https://example.com/mmproj.gguf')),
+            options: ModelLoadOptions(cancelToken: ModelDownloadCancelToken()),
+          );
+        } catch (error) {
+          cancellationError = error;
+        }
+
+        expect(cancellationError, isA<LlamaUnsupportedException>());
+        expect(
+          cancellationError.toString(),
+          contains('Cancellation tokens for multimodal projector loading'),
+        );
+        expect(webBackend.multimodalContextCreateCalls, 0);
       },
     );
 
