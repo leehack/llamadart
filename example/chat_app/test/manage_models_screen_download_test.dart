@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
@@ -162,6 +163,163 @@ void main() {
 
       expect(modelService.lastCancelToken?.isCancelled, isTrue);
     });
+
+    testWidgets(
+      'selection warns when runtime lacks advertised vision support',
+      (tester) async {
+        SharedPreferences.setMockInitialValues({});
+        final model = _remoteVisionModel();
+        final modelService = _HoldingModelService(
+          downloadedFiles: {model.filename},
+        );
+        final provider = ChatProvider(
+          chatService: MockChatService(engine: _NoVisionEngine()),
+          settingsService: MockSettingsService(),
+        );
+        addTearDown(provider.dispose);
+
+        await _pumpScreen(
+          tester,
+          modelService: modelService,
+          models: [model],
+          provider: provider,
+        );
+
+        expect(find.text('Use this model'), findsOneWidget);
+
+        await tester.ensureVisible(find.text('Use this model'));
+        await tester.pump();
+        await tester.tap(find.text('Use this model'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+
+        expect(
+          find.textContaining(
+            'active runtime/projector did not report vision support',
+          ),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets('delete refreshes other profiles that share cached assets', (
+      tester,
+    ) async {
+      SharedPreferences.setMockInitialValues({});
+      final sharedMmproj = const RemoteModelAssetSource(
+        url: 'https://example.com/shared-mmproj.gguf',
+        filename: 'shared-mmproj.gguf',
+      );
+      final first = DownloadableModel.fromSources(
+        id: 'first-vlm',
+        name: 'First VLM',
+        description: 'First profile with shared projector.',
+        modelSource: const RemoteModelAssetSource(
+          url: 'https://example.com/first.gguf',
+          filename: 'first.gguf',
+        ),
+        multimodalProjectorSource: sharedMmproj,
+        supportsVision: true,
+      );
+      final second = DownloadableModel.fromSources(
+        id: 'second-vlm',
+        name: 'Second VLM',
+        description: 'Second profile with shared projector.',
+        modelSource: const RemoteModelAssetSource(
+          url: 'https://example.com/second.gguf',
+          filename: 'second.gguf',
+        ),
+        multimodalProjectorSource: sharedMmproj,
+        supportsVision: true,
+      );
+      final modelService = _HoldingModelService(
+        cachedAssetKeys: {
+          (first.modelSource as RemoteModelAssetSource).cacheKey,
+          (second.modelSource as RemoteModelAssetSource).cacheKey,
+          sharedMmproj.cacheKey,
+        },
+      );
+
+      await _pumpScreen(
+        tester,
+        modelService: modelService,
+        models: [first, second],
+      );
+
+      expect(find.text('First VLM'), findsOneWidget);
+      expect(find.text('Second VLM'), findsOneWidget);
+      expect(
+        find.text(
+          'Model cached; mmproj missing. Download will fetch only missing assets.',
+        ),
+        findsNothing,
+      );
+
+      await tester.tap(find.byTooltip('Delete model and mmproj').first);
+      await tester.pumpAndSettle();
+
+      expect(modelService.deleteCalls, 1);
+      expect(
+        find.text(
+          'Model cached; mmproj missing. Download will fetch only missing assets.',
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('signed custom URLs require confirmation before saving', (
+      tester,
+    ) async {
+      SharedPreferences.setMockInitialValues({});
+      final modelService = _HoldingModelService();
+
+      await _pumpScreen(tester, modelService: modelService, models: []);
+
+      await tester.tap(find.text('Add GGUF (HF)'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.widgetWithText(TextField, 'GGUF URL (Hugging Face)'),
+        'https://huggingface.co/owner/repo/resolve/main/model.gguf?token=secret',
+      );
+
+      await tester.tap(find.text('Add model'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Save credentialed URL?'), findsOneWidget);
+      final warningDialog = find.ancestor(
+        of: find.text('Save credentialed URL?'),
+        matching: find.byType(AlertDialog),
+      );
+      expect(
+        find.descendant(
+          of: warningDialog,
+          matching: find.textContaining('token=secret'),
+        ),
+        findsNothing,
+      );
+
+      await tester.tap(find.text('Review URL'));
+      await tester.pumpAndSettle();
+
+      var prefs = await SharedPreferences.getInstance();
+      expect(prefs.getStringList('custom_hf_models_v1'), isNull);
+      expect(find.text('Add Hugging Face GGUF'), findsOneWidget);
+
+      await tester.tap(find.text('Add model'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Save anyway'));
+      await tester.pumpAndSettle();
+
+      prefs = await SharedPreferences.getInstance();
+      final entries = prefs.getStringList('custom_hf_models_v1');
+      expect(entries, hasLength(1));
+      final saved = jsonDecode(entries!.single) as Map<String, dynamic>;
+      expect(
+        saved['url'],
+        'https://huggingface.co/owner/repo/resolve/main/model.gguf?token=secret',
+      );
+      expect(find.text('Added model.gguf'), findsOneWidget);
+    });
   });
 }
 
@@ -171,16 +329,21 @@ Future<void> _pumpScreen(
   WidgetTester tester, {
   required _HoldingModelService modelService,
   required List<DownloadableModel> models,
+  ChatProvider? provider,
 }) async {
-  final provider = ChatProvider(
-    chatService: MockChatService(),
-    settingsService: MockSettingsService(),
-  );
-  addTearDown(provider.dispose);
+  final effectiveProvider =
+      provider ??
+      ChatProvider(
+        chatService: MockChatService(),
+        settingsService: MockSettingsService(),
+      );
+  if (provider == null) {
+    addTearDown(effectiveProvider.dispose);
+  }
 
   await tester.pumpWidget(
     ChangeNotifierProvider<ChatProvider>.value(
-      value: provider,
+      value: effectiveProvider,
       child: MaterialApp(
         home: Scaffold(
           body: ManageModelsScreen(
@@ -206,11 +369,33 @@ DownloadableModel _remoteModel() {
   );
 }
 
+DownloadableModel _remoteVisionModel() {
+  return const DownloadableModel(
+    name: 'Tiny Vision Model',
+    description: 'Small fake VLM for screen tests.',
+    url: 'https://example.com/tiny-vlm.gguf',
+    filename: 'tiny-vlm.gguf',
+    mmprojUrl: 'https://example.com/tiny-mmproj.gguf',
+    mmprojFilename: 'tiny-mmproj.gguf',
+    sizeBytes: 20,
+    supportsVision: true,
+  );
+}
+
 class _HoldingModelService implements ModelService {
+  _HoldingModelService({
+    Set<String>? downloadedFiles,
+    Set<String>? cachedAssetKeys,
+  }) : downloadedFiles = downloadedFiles ?? <String>{},
+       cachedAssetKeys = cachedAssetKeys?.toSet();
+
   final Completer<void> downloadStarted = Completer<void>();
   final Completer<void> downloadCancelled = Completer<void>();
+  final Set<String> downloadedFiles;
+  final Set<String>? cachedAssetKeys;
 
   int downloadCalls = 0;
+  int deleteCalls = 0;
   CancelToken? lastCancelToken;
 
   @override
@@ -220,7 +405,28 @@ class _HoldingModelService implements ModelService {
   Future<Set<String>> getDownloadedModels(
     List<DownloadableModel> models,
   ) async {
-    return <String>{};
+    return models.where(_isProfileReady).map((model) => model.filename).toSet();
+  }
+
+  @override
+  Future<ModelProfileCacheState> getModelCacheState(
+    DownloadableModel model,
+  ) async {
+    final mmprojSource = model.multimodalProjectorSource;
+    return ModelProfileCacheState(
+      model: ModelAssetCacheState(
+        role: ModelAssetRole.model,
+        label: model.modelSource.displayName,
+        isAvailable: _isAssetAvailable(model, model.modelSource),
+      ),
+      multimodalProjector: mmprojSource == null
+          ? null
+          : ModelAssetCacheState(
+              role: ModelAssetRole.multimodalProjector,
+              label: mmprojSource.displayName,
+              isAvailable: _isAssetAvailable(model, mmprojSource),
+            ),
+    );
   }
 
   @override
@@ -268,5 +474,55 @@ class _HoldingModelService implements ModelService {
   }
 
   @override
-  Future<void> deleteModel(String modelsDir, DownloadableModel model) async {}
+  Future<void> deleteModel(String modelsDir, DownloadableModel model) async {
+    deleteCalls += 1;
+    final keys = cachedAssetKeys;
+    if (keys == null) {
+      downloadedFiles.remove(model.filename);
+      return;
+    }
+
+    for (final source in _remoteSourcesFor(model)) {
+      keys.remove(source.cacheKey);
+    }
+  }
+
+  bool _isProfileReady(DownloadableModel model) {
+    final keys = cachedAssetKeys;
+    if (keys == null) {
+      return downloadedFiles.contains(model.filename);
+    }
+    final sources = _assetSourcesFor(model);
+    return sources.every(
+      (source) =>
+          source is RemoteModelAssetSource && keys.contains(source.cacheKey),
+    );
+  }
+
+  bool _isAssetAvailable(DownloadableModel model, ModelAssetSource source) {
+    final keys = cachedAssetKeys;
+    if (keys == null) {
+      return downloadedFiles.contains(model.filename);
+    }
+    return source is RemoteModelAssetSource && keys.contains(source.cacheKey);
+  }
+
+  List<ModelAssetSource> _assetSourcesFor(DownloadableModel model) {
+    final mmprojSource = model.multimodalProjectorSource;
+    return <ModelAssetSource>[model.modelSource, ?mmprojSource];
+  }
+
+  List<RemoteModelAssetSource> _remoteSourcesFor(DownloadableModel model) {
+    return _assetSourcesFor(
+      model,
+    ).whereType<RemoteModelAssetSource>().toList(growable: false);
+  }
+}
+
+class _NoVisionEngine extends MockLlamaEngine {
+  @override
+  Future<bool> get supportsVision async => false;
+
+  @override
+  Future<bool> get supportsAudio async => false;
 }

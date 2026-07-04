@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:llamadart_chat_example/models/downloadable_model.dart';
+import 'package:llamadart_chat_example/services/model_service_base.dart';
 
 void main() {
   group('Model asset sources', () {
@@ -82,6 +83,37 @@ void main() {
       expect(profile.mmprojUrl, 'https://cdn.example.net/mmproj.gguf');
       expect(profile.mmprojFilename, 'mmproj.gguf');
     });
+
+    test(
+      'cache markers surface model availability after mmproj prefetch failure',
+      () {
+        final profile = DownloadableModel(
+          name: 'Partial VLM',
+          description: 'Remote model cached before projector failure',
+          url: 'https://example.com/model.gguf',
+          filename: 'model.gguf',
+          mmprojUrl: 'https://example.com/mmproj.gguf',
+          mmprojFilename: 'mmproj.gguf',
+          sizeBytes: 2048,
+          supportsVision: true,
+        );
+        final modelSource = profile.modelSource as RemoteModelAssetSource;
+        final mmprojSource =
+            profile.multimodalProjectorSource as RemoteModelAssetSource;
+        final markers = ModelAssetCacheMarkers(<String>[]);
+
+        markers.markAssetCached(modelSource);
+
+        final state = markers.modelCacheState(profile, web: true);
+        expect(markers.isProfileCached(profile, web: true), isFalse);
+        expect(state.isReady, isFalse);
+        expect(state.hasPartialAssets, isTrue);
+        expect(state.model.isAvailable, isTrue);
+        expect(state.multimodalProjector?.isAvailable, isFalse);
+        expect(markers.toSet(), contains(modelSource.cacheKey));
+        expect(markers.toSet(), isNot(contains(mmprojSource.cacheKey)));
+      },
+    );
 
     test('platform-specific web source can differ from native source', () {
       final profile = DownloadableModel.fromSources(

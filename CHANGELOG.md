@@ -10,6 +10,12 @@
   options as `loadModelSource(...)`, while preserving the existing
   `loadMultimodalProjector(...)` path/string API.
 
+* Improved the runnable chat app's Manage Models cache UX so model and mmproj
+  asset cache states are shown separately, missing multimodal projectors can be
+  re-cached without re-fetching already cached model assets, and runtime media
+  capability mismatches surface as user-readable warnings. Custom signed or
+  tokenized Hugging Face URLs now require confirmation before they are saved.
+
 ## 0.8.12
 
 * Updated the default LiteRT-LM native runtime pin to
