@@ -1,9 +1,18 @@
-## Unreleased
+## 0.8.12
 
 * Updated the default LiteRT-LM native runtime pin to
   `leehack/litert-lm-native@v0.14.0-native.1`, refreshed matching native-assets
   checksums, aligned the `llamadart_litert_lm_flutter` Apple SwiftPM checksums,
-  and documented the newly exposed native LiteRT-LM load/generation controls.
+  and documented the newly exposed native LiteRT-LM load/generation controls:
+  per-request max output tokens, native sampler params, thread count, one
+  default-scale initial text LoRA adapter, activation data type, prefill chunk
+  size, parallel file-section loading, and Android LiteRT dispatch library
+  directory.
+
+* Hardened LiteRT-LM runtime packaging and local runtime preparation for the
+  0.14 line, including Linux/Windows runtime dependency resolution, Android
+  Dawn companion libraries, Apple SwiftPM checksums, and macOS fallback app
+  runtime copying.
 
 * Hardened release automation by adding CODEOWNERS coverage for
   publication-sensitive files and making pub.dev/GitHub Release propagation
