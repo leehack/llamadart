@@ -92,6 +92,70 @@ await for (final chunk in engine.create(
 }
 ```
 
+## Structured JSON output
+
+Use `LlamaStructuredOutput` when you want strict JSON plus final validation and
+typed decoding. The helper builds the `responseFormat` map for grammar-capable
+backends and validates the completed model output before returning your value.
+
+```dart
+class TicketClassification {
+  TicketClassification({required this.priority, required this.category});
+
+  final String priority;
+  final String category;
+
+  static TicketClassification fromJson(Map<String, dynamic> json) {
+    return TicketClassification(
+      priority: json['priority'] as String,
+      category: json['category'] as String,
+    );
+  }
+}
+
+final output = LlamaStructuredOutput<TicketClassification>.jsonSchema(
+  schema: const {
+    'type': 'object',
+    'properties': {
+      'priority': {
+        'type': 'string',
+        'enum': ['low', 'medium', 'high'],
+      },
+      'category': {'type': 'string'},
+    },
+    'required': ['priority', 'category'],
+    'additionalProperties': false,
+  },
+  decoder: TicketClassification.fromJson,
+);
+
+final classification = await engine.createStructuredJson(
+  [
+    LlamaChatMessage.fromText(
+      role: LlamaChatRole.user,
+      text: 'Classify this ticket: checkout fails with card declined.',
+    ),
+  ],
+  output: output,
+  params: const GenerationParams(maxTokens: 96, temp: 0),
+);
+```
+
+For live rendering, keep the returned stream, call `engine.create(...,
+responseFormat: output.responseFormat)`, and then finalize it with
+`await stream.parseStructuredJson(output)`. Validation is a final-output step
+because partial stream chunks are often not valid JSON yet.
+
+Supported schema features match the built-in JSON-schema-to-GBNF subset:
+primitive types, objects with `properties`, `required`, and
+`additionalProperties`, arrays with `items` or fixed `prefixItems`,
+`enum`/`const`, local `$ref`, `anyOf`, `oneOf`, `allOf`, `minLength`,
+`maxLength`, `minItems`, and `maxItems`. Unsupported schemas fail before
+generation. Annotation metadata such as `title`, `description`, and `default`
+is preserved but not enforced as a decoding constraint. Backends without
+grammar constraints, including current LiteRT-LM native and web paths, still
+fail early for strict structured output.
+
 ## `create(...)` flow at a glance
 
 1. Build your `List<LlamaChatMessage>`.

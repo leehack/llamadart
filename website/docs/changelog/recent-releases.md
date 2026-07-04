@@ -7,6 +7,12 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
+## Unreleased
+
+- Added `LlamaStructuredOutput` and `LlamaEngine.createStructuredJson(...)`
+  helpers for strict JSON-object / JSON-schema generation with final-output
+  validation and typed decoding.
+
 ## 0.8.12
 
 - Updated the default LiteRT-LM native runtime pin to

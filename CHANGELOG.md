@@ -1,3 +1,9 @@
+## Unreleased
+
+* Added `LlamaStructuredOutput` and `LlamaEngine.createStructuredJson(...)`
+  helpers for strict JSON-object / JSON-schema generation with final-output
+  validation and typed decoding.
+
 ## 0.8.12
 
 * Updated the default LiteRT-LM native runtime pin to

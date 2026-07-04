@@ -59,6 +59,7 @@ export 'src/backends/backend.dart'
 // Models - Inference
 export 'src/core/models/inference/model_params.dart';
 export 'src/core/models/inference/generation_params.dart';
+export 'src/core/models/inference/structured_output.dart';
 export 'src/core/models/inference/tool_choice.dart';
 
 // Models - Sources, resolution, and downloads

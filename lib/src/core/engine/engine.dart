@@ -18,6 +18,7 @@ import '../llama_logger.dart';
 
 import '../models/inference/model_params.dart';
 import '../models/inference/generation_params.dart';
+import '../models/inference/structured_output.dart';
 import '../models/inference/tool_choice.dart';
 import '../models/model_load_options.dart';
 import '../models/model_resolver.dart';
@@ -401,6 +402,8 @@ class LlamaEngine {
   /// grammar-constrained decoding on compatible backends. Supported shapes are:
   /// - `{'type': 'json_object'}`
   /// - `{'type': 'json_schema', 'json_schema': {'schema': <JSON schema>}}`
+  /// Use [LlamaStructuredOutput.responseFormat] or [createStructuredJson] for a
+  /// typed helper that also validates and decodes the final JSON output.
   ///
   /// Backends without grammar-constrained decoding, including LiteRT-LM native
   /// and web today, throw [LlamaUnsupportedException] for strict
@@ -512,6 +515,41 @@ class LlamaEngine {
     );
   }
 
+  /// Generates strict structured JSON and decodes the final output.
+  ///
+  /// This helper applies [output.responseFormat] to [create], collects streamed
+  /// content deltas, validates the completed JSON value, and returns the typed
+  /// value produced by [output]'s decoder. Use [create] directly when you need
+  /// to render tokens live; the returned stream can still be finalized with
+  /// `await stream.parseStructuredJson(output)`.
+  Future<T> createStructuredJson<T>(
+    List<LlamaChatMessage> messages, {
+    required LlamaStructuredOutput<T> output,
+    GenerationParams? params,
+    List<ToolDefinition>? tools,
+    ToolChoice? toolChoice,
+    bool parallelToolCalls = false,
+    bool enableThinking = true,
+    String? sourceLangCode,
+    String? targetLangCode,
+    Map<String, dynamic>? chatTemplateKwargs,
+    DateTime? templateNow,
+  }) {
+    return create(
+      messages,
+      params: params,
+      tools: tools,
+      toolChoice: toolChoice,
+      parallelToolCalls: parallelToolCalls,
+      enableThinking: enableThinking,
+      responseFormat: output.responseFormat,
+      sourceLangCode: sourceLangCode,
+      targetLangCode: targetLangCode,
+      chatTemplateKwargs: chatTemplateKwargs,
+      templateNow: templateNow,
+    ).parseStructuredJson(output);
+  }
+
   /// Formats a list of [messages] into a prompt string using the model's template.
   ///
   /// This is useful for preparing messages before calling [generate] directly,
@@ -522,6 +560,8 @@ class LlamaEngine {
   /// Supported shapes are:
   /// - `{'type': 'json_object'}`
   /// - `{'type': 'json_schema', 'json_schema': {'schema': <JSON schema>}}`
+  /// Use [LlamaStructuredOutput.responseFormat] to avoid hand-writing these
+  /// maps in application code.
   ///
   /// [jsonSchema] is a legacy shortcut for
   /// `responseFormat: {'type': 'json_schema', 'json_schema': {'schema': ...}}`.
