@@ -19,12 +19,15 @@ class MockLlamaBackend
   String? lastModelPath;
   String? lastLoraPath;
   String? lastModelUrl;
+  String? lastMultimodalProjectorPath;
   double? lastLoraScale;
   int resolvedGpuLayers = 0;
   int modelLoadCalls = 0;
   int modelLoadFromUrlCalls = 0;
   int modelFreeCalls = 0;
   int contextFreeCalls = 0;
+  int multimodalContextCreateCalls = 0;
+  final List<String> multimodalProjectorPaths = <String>[];
   int tokenizeCalls = 0;
   int modelMetadataCalls = 0;
   String generationText = 'response';
@@ -185,7 +188,12 @@ class MockLlamaBackend
   Future<int?> multimodalContextCreate(
     int modelHandle,
     String mmProjPath,
-  ) async => 2;
+  ) async {
+    multimodalContextCreateCalls += 1;
+    lastMultimodalProjectorPath = mmProjPath;
+    multimodalProjectorPaths.add(mmProjPath);
+    return 2;
+  }
 
   @override
   Future<void> multimodalContextFree(int mmContextHandle) async {}
@@ -327,12 +335,22 @@ class MockModelResolver implements ModelResolver {
 }
 
 class MockModelDownloadManager implements ModelDownloadManager {
-  MockModelDownloadManager(this.entry);
+  MockModelDownloadManager(ModelCacheEntry entry)
+    : entriesByCacheKey = <String, ModelCacheEntry>{entry.cacheKey: entry};
 
-  final ModelCacheEntry entry;
+  MockModelDownloadManager.forEntries(Iterable<ModelCacheEntry> entries)
+    : entriesByCacheKey = <String, ModelCacheEntry>{
+        for (final entry in entries) entry.cacheKey: entry,
+      };
+
+  final Map<String, ModelCacheEntry> entriesByCacheKey;
   ModelSource? lastSource;
   ModelLoadOptions? lastOptions;
+  final List<ModelSource> sources = <ModelSource>[];
+  final List<ModelLoadOptions> options = <ModelLoadOptions>[];
   int ensureModelCalls = 0;
+
+  ModelCacheEntry get entry => entriesByCacheKey.values.first;
 
   @override
   Future<ModelCacheEntry> ensureModel(
@@ -343,10 +361,12 @@ class MockModelDownloadManager implements ModelDownloadManager {
     ensureModelCalls += 1;
     lastSource = source;
     lastOptions = options;
+    sources.add(source);
+    this.options.add(options);
     onProgress?.call(
       const ModelDownloadProgress(receivedBytes: 1, totalBytes: 2),
     );
-    return entry;
+    return entriesByCacheKey[source.cacheKey] ?? entry;
   }
 
   @override
@@ -371,6 +391,42 @@ class MockModelDownloadManager implements ModelDownloadManager {
 
   @override
   Future<void> remove(String cacheKey, {String? cacheDirectory}) async {}
+}
+
+class ControlledModelDownloadManager extends MockModelDownloadManager {
+  ControlledModelDownloadManager({
+    required Iterable<ModelCacheEntry> entries,
+    this.gatesByCacheKey = const <String, Completer<void>>{},
+    this.startedByCacheKey = const <String, Completer<void>>{},
+  }) : super.forEntries(entries);
+
+  final Map<String, Completer<void>> gatesByCacheKey;
+  final Map<String, Completer<void>> startedByCacheKey;
+
+  @override
+  Future<ModelCacheEntry> ensureModel(
+    ModelSource source, {
+    ModelLoadOptions options = ModelLoadOptions.defaults,
+    ModelDownloadProgressCallback? onProgress,
+  }) async {
+    ensureModelCalls += 1;
+    lastSource = source;
+    lastOptions = options;
+    sources.add(source);
+    this.options.add(options);
+    final started = startedByCacheKey[source.cacheKey];
+    if (started != null && !started.isCompleted) {
+      started.complete();
+    }
+    final gate = gatesByCacheKey[source.cacheKey];
+    if (gate != null) {
+      await gate.future;
+    }
+    onProgress?.call(
+      const ModelDownloadProgress(receivedBytes: 1, totalBytes: 2),
+    );
+    return entriesByCacheKey[source.cacheKey] ?? entry;
+  }
 }
 
 class MockEmbeddingBackend extends MockLlamaBackend
@@ -710,6 +766,306 @@ void main() {
           source.cacheDirectoryName,
         );
         expect(nativeBackend.lastModelPath, '/cache/resolved.gguf');
+      },
+    );
+
+    test(
+      'native loadMultimodalProjectorSource supports local and remote model/projector combinations',
+      () async {
+        ModelCacheEntry entryFor(ModelSource source, String filePath) {
+          return ModelCacheEntry(
+            sourceCanonicalKey: source.metadataSourceKey,
+            cacheKey: source.cacheKey,
+            fileName: source.fileName,
+            filePath: filePath,
+            createdAt: DateTime.utc(2026),
+            updatedAt: DateTime.utc(2026),
+          );
+        }
+
+        final cases =
+            <
+              ({
+                String label,
+                ModelSource modelSource,
+                String modelPath,
+                ModelSource projectorSource,
+                String projectorPath,
+              })
+            >[
+              (
+                label: 'local model + local projector',
+                modelSource: ModelSource.path('/models/local-model.gguf'),
+                modelPath: '/models/local-model.gguf',
+                projectorSource: ModelSource.path('/models/local-mmproj.gguf'),
+                projectorPath: '/models/local-mmproj.gguf',
+              ),
+              (
+                label: 'local model + remote projector',
+                modelSource: ModelSource.path('/models/local-model.gguf'),
+                modelPath: '/models/local-model.gguf',
+                projectorSource: ModelSource.url(
+                  Uri.parse('https://example.com/remote-mmproj.gguf'),
+                ),
+                projectorPath: '/cache/remote-mmproj.gguf',
+              ),
+              (
+                label: 'remote model + local projector',
+                modelSource: ModelSource.url(
+                  Uri.parse('https://example.com/remote-model.gguf'),
+                ),
+                modelPath: '/cache/remote-model.gguf',
+                projectorSource: ModelSource.path('/models/local-mmproj.gguf'),
+                projectorPath: '/models/local-mmproj.gguf',
+              ),
+              (
+                label: 'remote model + remote projector',
+                modelSource: ModelSource.url(
+                  Uri.parse('https://example.com/remote-model.gguf'),
+                ),
+                modelPath: '/cache/remote-model.gguf',
+                projectorSource: ModelSource.url(
+                  Uri.parse('https://example.com/remote-mmproj.gguf'),
+                ),
+                projectorPath: '/cache/remote-mmproj.gguf',
+              ),
+            ];
+
+        for (final testCase in cases) {
+          final nativeBackend = MockLlamaBackend();
+          final downloadManager = MockModelDownloadManager.forEntries([
+            entryFor(testCase.modelSource, testCase.modelPath),
+            entryFor(testCase.projectorSource, testCase.projectorPath),
+          ]);
+          final nativeEngine = LlamaEngine(
+            nativeBackend,
+            modelDownloadManager: downloadManager,
+          );
+
+          await nativeEngine.loadModelSource(testCase.modelSource);
+          await nativeEngine.loadMultimodalProjectorSource(
+            testCase.projectorSource,
+          );
+
+          expect(
+            nativeBackend.lastModelPath,
+            testCase.modelPath,
+            reason: testCase.label,
+          );
+          expect(
+            nativeBackend.lastMultimodalProjectorPath,
+            testCase.projectorPath,
+            reason: testCase.label,
+          );
+          expect(downloadManager.ensureModelCalls, 2, reason: testCase.label);
+          expect(
+            downloadManager.sources.map((source) => source.cacheKey),
+            [testCase.modelSource.cacheKey, testCase.projectorSource.cacheKey],
+            reason: testCase.label,
+          );
+        }
+      },
+    );
+
+    test(
+      'native loadMultimodalProjectorSource forwards options and progress',
+      () async {
+        final source = ModelSource.url(
+          Uri.parse('https://example.com/mmproj.gguf'),
+        );
+        final entry = ModelCacheEntry(
+          sourceCanonicalKey: source.metadataSourceKey,
+          cacheKey: source.cacheKey,
+          fileName: source.fileName,
+          filePath: '/cache/mmproj.gguf',
+          createdAt: DateTime.utc(2026),
+          updatedAt: DateTime.utc(2026),
+        );
+        final downloadManager = MockModelDownloadManager(entry);
+        final nativeBackend = MockLlamaBackend();
+        final nativeEngine = LlamaEngine(
+          nativeBackend,
+          modelDownloadManager: downloadManager,
+        );
+        final options = ModelLoadOptions(
+          cachePolicy: ModelCachePolicy.refresh,
+          bearerToken: 'secret-token',
+        );
+        final progressEvents = <ModelDownloadProgress>[];
+
+        await nativeEngine.loadModel('model.gguf');
+        await nativeEngine.loadMultimodalProjectorSource(
+          source,
+          options: options,
+          onProgress: progressEvents.add,
+        );
+
+        expect(downloadManager.ensureModelCalls, 1);
+        expect(downloadManager.lastSource?.resolvedUri, source.resolvedUri);
+        expect(downloadManager.lastOptions, same(options));
+        expect(nativeBackend.lastMultimodalProjectorPath, '/cache/mmproj.gguf');
+        expect(progressEvents.single.fraction, 0.5);
+      },
+    );
+
+    test(
+      'loadMultimodalProjectorSource serializes source work before backend load',
+      () async {
+        ModelCacheEntry entryFor(ModelSource source, String filePath) {
+          return ModelCacheEntry(
+            sourceCanonicalKey: source.metadataSourceKey,
+            cacheKey: source.cacheKey,
+            fileName: source.fileName,
+            filePath: filePath,
+            createdAt: DateTime.utc(2026),
+            updatedAt: DateTime.utc(2026),
+          );
+        }
+
+        final firstSource = ModelSource.url(
+          Uri.parse('https://example.com/first-mmproj.gguf'),
+        );
+        final secondSource = ModelSource.url(
+          Uri.parse('https://example.com/second-mmproj.gguf'),
+        );
+        final firstGate = Completer<void>();
+        final firstStarted = Completer<void>();
+        final secondStarted = Completer<void>();
+        final downloadManager = ControlledModelDownloadManager(
+          entries: [
+            entryFor(firstSource, '/cache/first-mmproj.gguf'),
+            entryFor(secondSource, '/cache/second-mmproj.gguf'),
+          ],
+          gatesByCacheKey: {firstSource.cacheKey: firstGate},
+          startedByCacheKey: {
+            firstSource.cacheKey: firstStarted,
+            secondSource.cacheKey: secondStarted,
+          },
+        );
+        final nativeBackend = MockLlamaBackend();
+        final nativeEngine = LlamaEngine(
+          nativeBackend,
+          modelDownloadManager: downloadManager,
+        );
+
+        await nativeEngine.loadModel('model.gguf');
+
+        final firstLoad = nativeEngine.loadMultimodalProjectorSource(
+          firstSource,
+        );
+        await firstStarted.future;
+
+        final secondLoad = nativeEngine.loadMultimodalProjectorSource(
+          secondSource,
+        );
+        await pumpEventQueue();
+
+        expect(secondStarted.isCompleted, isFalse);
+        expect(downloadManager.sources.map((source) => source.cacheKey), [
+          firstSource.cacheKey,
+        ]);
+        expect(nativeBackend.multimodalProjectorPaths, isEmpty);
+
+        firstGate.complete();
+        await Future.wait<void>([firstLoad, secondLoad]);
+
+        expect(secondStarted.isCompleted, isTrue);
+        expect(downloadManager.sources.map((source) => source.cacheKey), [
+          firstSource.cacheKey,
+          secondSource.cacheKey,
+        ]);
+        expect(nativeBackend.multimodalProjectorPaths, [
+          '/cache/first-mmproj.gguf',
+          '/cache/second-mmproj.gguf',
+        ]);
+      },
+    );
+
+    test(
+      'loadMultimodalProjectorSource loads remote URL directly on URL backends',
+      () async {
+        final webBackend = MockLlamaBackend(urlLoadingSupported: true);
+        final webEngine = LlamaEngine(webBackend);
+
+        await webEngine.loadModelSource(
+          ModelSource.url(Uri.parse('https://example.com/model.gguf')),
+        );
+        await webEngine.loadMultimodalProjectorSource(
+          ModelSource.url(Uri.parse('https://example.com/mmproj.gguf')),
+        );
+
+        expect(webBackend.lastModelUrl, 'https://example.com/model.gguf');
+        expect(
+          webBackend.lastMultimodalProjectorPath,
+          'https://example.com/mmproj.gguf',
+        );
+        expect(webBackend.multimodalContextCreateCalls, 1);
+      },
+    );
+
+    test(
+      'loadMultimodalProjectorSource rejects local paths on URL backends',
+      () async {
+        final webBackend = MockLlamaBackend(urlLoadingSupported: true);
+        final webEngine = LlamaEngine(webBackend);
+
+        await webEngine.loadModelSource(
+          ModelSource.url(Uri.parse('https://example.com/model.gguf')),
+        );
+
+        await expectLater(
+          () => webEngine.loadMultimodalProjectorSource(
+            ModelSource.path('/models/mmproj.gguf'),
+          ),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
+        expect(webBackend.multimodalContextCreateCalls, 0);
+      },
+    );
+
+    test(
+      'loadMultimodalProjectorSource rejects URL-backend cache IO options',
+      () async {
+        final webBackend = MockLlamaBackend(urlLoadingSupported: true);
+        final webEngine = LlamaEngine(webBackend);
+
+        await webEngine.loadModelSource(
+          ModelSource.url(Uri.parse('https://example.com/model.gguf')),
+        );
+
+        Object? thrown;
+        try {
+          await webEngine.loadMultimodalProjectorSource(
+            ModelSource.url(Uri.parse('https://example.com/mmproj.gguf')),
+            options: ModelLoadOptions(bearerToken: 'secret-token'),
+          );
+        } catch (error) {
+          thrown = error;
+        }
+
+        expect(thrown, isA<LlamaUnsupportedException>());
+        expect(
+          thrown.toString(),
+          contains('Authenticated multimodal projector URL loading'),
+        );
+        expect(webBackend.multimodalContextCreateCalls, 0);
+
+        Object? cancellationError;
+        try {
+          await webEngine.loadMultimodalProjectorSource(
+            ModelSource.url(Uri.parse('https://example.com/mmproj.gguf')),
+            options: ModelLoadOptions(cancelToken: ModelDownloadCancelToken()),
+          );
+        } catch (error) {
+          cancellationError = error;
+        }
+
+        expect(cancellationError, isA<LlamaUnsupportedException>());
+        expect(
+          cancellationError.toString(),
+          contains('Cancellation tokens for multimodal projector loading'),
+        );
+        expect(webBackend.multimodalContextCreateCalls, 0);
       },
     );
 

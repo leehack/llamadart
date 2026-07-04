@@ -493,6 +493,26 @@ final canHear = await engine.supportsAudio;
 print('vision=$canSee audio=$canHear');
 ```
 
+Use `loadMultimodalProjectorSource(...)` when the projector should use the same
+`ModelSource` resolver, native download/cache manager, checksums, auth headers,
+and progress callback shape as `loadModelSource(...)`:
+
+```dart
+await engine.loadModelSource(
+  ModelSource.parse('hf://owner/repo/model-Q4_K_M.gguf'),
+);
+await engine.loadMultimodalProjectorSource(
+  ModelSource.parse('hf://owner/repo/mmproj.gguf'),
+  options: ModelLoadOptions(cachePolicy: ModelCachePolicy.preferCached),
+);
+```
+
+Native/file-backed backends resolve remote projector sources to cached local
+files before loading. URL-loading web backends accept remote unauthenticated
+projector URLs and reject local filesystem sources, auth headers, checksum
+verification, explicit cache policy changes, custom cache directories, disabled
+resume, and custom retry counts because those require native cache IO.
+
 Projector resources are released by `unloadModel()` or `dispose()`.
 
 ## LoRA adapters at runtime

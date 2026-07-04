@@ -14,6 +14,25 @@ await engine.loadModel('/path/to/model.gguf');
 await engine.loadMultimodalProjector('/path/to/mmproj.gguf');
 ```
 
+Use source-based loading when the projector should be resolved, downloaded, and
+cached like a remote model source:
+
+```dart
+await engine.loadModelSource(
+  ModelSource.parse('hf://owner/repo/model-Q4_K_M.gguf'),
+);
+await engine.loadMultimodalProjectorSource(
+  ModelSource.parse('hf://owner/repo/mmproj.gguf'),
+);
+```
+
+Native/file-backed backends download remote projectors through the configured
+`ModelDownloadManager` before loading the cached local path. URL-loading web
+backends support remote unauthenticated projector URLs directly and reject local
+filesystem paths or options that require native cache IO such as auth headers,
+checksum verification, explicit cache policy changes, custom cache directories,
+disabled resume, and custom retry counts.
+
 Projector offload follows effective model-load configuration. If model loading
 is CPU-only (`preferredBackend: GpuBackend.cpu` or `gpuLayers: 0`), projector
 initialization also runs CPU-only.
@@ -76,14 +95,17 @@ the current Gemma 4 E2B/E4B GGUF projector path in `llama.cpp` mtmd exposes
 vision, but not audio, in `llamadart`.
 
 For native LiteRT-LM `.litertlm` bundles, capability depends on the bundle's
-native template/model processors. `loadMultimodalProjector`, `supportsVision`,
-and `supportsAudio` are projector-oriented APIs and are not used by the
-LiteRT-LM bundle flow.
+native template/model processors. `loadMultimodalProjector`,
+`loadMultimodalProjectorSource`, `supportsVision`, and `supportsAudio` are
+projector-oriented APIs and are not used by the LiteRT-LM bundle flow.
 
 ## Web notes
 
 - Web uses bridge runtime paths.
 - Multimodal projector loading on web is URL-based.
+- `loadMultimodalProjectorSource(...)` accepts remote unauthenticated projector
+  URLs on URL-loading web backends; source options that require the native
+  download/cache manager are unsupported there.
 - Local file path media inputs are native-first; web flows use browser file
   bytes/URLs.
 - LiteRT-LM web through `@litert-lm/core` remains text-only in `llamadart`.
