@@ -960,7 +960,58 @@ void main() async {
 }
 ```
 
-### 2. Advanced Usage (ChatSession)
+### 2. Structured JSON Output
+
+Use `LlamaStructuredOutput` for strict JSON generation with final validation and
+typed decoding on grammar-capable backends.
+
+```dart
+class Contact {
+  Contact({required this.name, required this.email});
+
+  final String name;
+  final String email;
+
+  static Contact fromJson(Map<String, dynamic> json) {
+    return Contact(
+      name: json['name'] as String,
+      email: json['email'] as String,
+    );
+  }
+}
+
+final output = LlamaStructuredOutput<Contact>.jsonSchema(
+  schema: const {
+    'type': 'object',
+    'properties': {
+      'name': {'type': 'string'},
+      'email': {'type': 'string'},
+    },
+    'required': ['name', 'email'],
+    'additionalProperties': false,
+  },
+  decoder: Contact.fromJson,
+);
+
+final contact = await engine.createStructuredJson(
+  const [
+    LlamaChatMessage.fromText(
+      role: LlamaChatRole.user,
+      text: 'Extract a contact from: Ada Lovelace <ada@example.com>',
+    ),
+  ],
+  output: output,
+  params: const GenerationParams(temp: 0, maxTokens: 96),
+);
+```
+
+Streaming callers can pass `responseFormat: output.responseFormat` to
+`engine.create(...)` and call `parseStructuredJson(output)` after the stream
+completes. Supported schemas cover the practical JSON-schema-to-GBNF subset:
+primitive types, objects, arrays, `enum`/`const`, local `$ref`, `anyOf`,
+`oneOf`, `allOf`, string length, and array item-count bounds.
+
+### 3. Advanced Usage (ChatSession)
 
 Use `ChatSession` for most chat applications. It automatically manages conversation history, system prompts, and handles context window limits.
 
@@ -989,7 +1040,7 @@ void main() async {
 }
 ```
 
-### 3. Tool Calling
+### 4. Tool Calling
   
 `llamadart` supports intelligent tool calling where the model can use external functions to help it answer questions.
   
@@ -1026,7 +1077,7 @@ Notes:
 - Some handlers use lazy grammar activation (triggered when a tool-call prefix appears) to match llama.cpp behavior.
 - If you implement a custom handler grammar, prefer Dart raw strings (`r'''...'''`) for GBNF blocks to avoid escaping bugs.
 
-### 3.5 Template Routing (Strict llama.cpp parity)
+### 5. Template Routing (Strict llama.cpp parity)
 
 Template/render/parse routing is intentionally strict to match llama.cpp:
 
@@ -1053,7 +1104,7 @@ final result = await engine.chatTemplate(
 print(result.prompt);
 ```
 
-### 3.6 Logging Control
+### 6. Logging Control
 
 Use separate log levels for Dart and native output when debugging:
 
@@ -1072,7 +1123,7 @@ await engine.setNativeLogLevel(LlamaLogLevel.warn);
 await engine.setLogLevel(LlamaLogLevel.none);
 ```
 
-### 4. Multimodal Usage (Vision/Audio)
+### 7. Multimodal Usage (Vision/Audio)
 
 `llamadart` supports multimodal models (vision and audio) using `LlamaChatMessage.withContent`.
 

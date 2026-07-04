@@ -52,6 +52,11 @@ print(result.format);
 `engine.create(...)` accepts `responseFormat` for strict structured output.
 Use `{'type': 'json_object'}` or
 `{'type': 'json_schema', 'json_schema': {'schema': <JSON schema>}}`.
+Application code can build those maps with `LlamaStructuredOutput`, or call
+`engine.createStructuredJson(...)` to collect streamed content and validate the
+final JSON before decoding it into an app type. Streaming UI code can still pass
+`responseFormat: output.responseFormat` and finish with
+`parseStructuredJson(output)` after the stream completes.
 Grammar-capable backends use those hints for strict output. LiteRT-LM native
 and web fail early for strict response formats because the current public
 runtime APIs do not expose JSON-schema/Lark constraint wiring.

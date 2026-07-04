@@ -1510,6 +1510,38 @@ void main() {
     );
 
     test(
+      'createStructuredJson forwards grammar and decodes typed output',
+      () async {
+        backend.generationText = '{"ok":true}';
+        await engine.loadModel('test-model.bin');
+
+        final result = await engine.createStructuredJson<bool>(
+          const [
+            LlamaChatMessage.fromText(
+              role: LlamaChatRole.user,
+              text: 'return status',
+            ),
+          ],
+          output: LlamaStructuredOutput<bool>.jsonSchema(
+            schema: const {
+              'type': 'object',
+              'properties': {
+                'ok': {'type': 'boolean'},
+              },
+              'required': ['ok'],
+              'additionalProperties': false,
+            },
+            decoder: (json) => json['ok'] as bool,
+          ),
+        );
+
+        expect(result, isTrue);
+        expect(backend.lastGenerationParams?.grammar, isNotNull);
+        expect(backend.lastGenerationParams?.grammar, contains('ok'));
+      },
+    );
+
+    test(
       'create rejects strict response format when backend lacks grammar',
       () async {
         final noGrammarBackend = NoGrammarMockLlamaBackend();
