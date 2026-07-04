@@ -116,8 +116,8 @@ load `.litertlm` models.
 
 | Platform target | LiteRT-LM bundle key | Selectable backends | Status |
 | --- | --- | --- | --- |
-| Android arm64 | `android-arm64` | `cpu`, `gpu`, `npu` | Supported |
-| Android x64 | `android-x64` | `cpu`, `gpu`, `npu` | Supported for emulator/test targets |
+| Android arm64 | `android-arm64` | `cpu`, `gpu`, `npu` | CPU/GPU supported. NPU is selectable only for compatible device/model/runtime deployments and may require a packaged LiteRT dispatch directory. |
+| Android x64 | `android-x64` | `cpu`, `gpu`, `npu` | CPU/GPU supported for emulator/test targets; NPU is deployment-specific and not validated for generic emulators. |
 | iOS arm64 (device) | `ios-arm64` | `cpu` | Supported |
 | iOS arm64 (simulator) | `ios-arm64-sim` | `cpu` | Supported |
 | iOS x86_64 (simulator) | Not published | N/A | Unsupported; exclude `litert_lm` for this target |
@@ -162,6 +162,11 @@ default.
 
 LiteRT-LM web rejects these native-only fields because `@litert-lm/core` does
 not expose equivalent runtime controls.
+
+Android NPU support is not implied by the backend selector alone. A target app
+still needs a `.litertlm` model bundle and LiteRT dispatch library set that
+support the device SoC. If native LiteRT-LM cannot create an NPU engine for the
+device/model bundle, use `cpu` or `gpu` for that artifact.
 
 ## Runtime capability notes
 

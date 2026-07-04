@@ -219,7 +219,7 @@ source while the live path uses the local cache rather than conference Wi-Fi.
 For LiteRT-LM bundles, use the same high-level API and pass a `.litertlm`
 path or URL. Native callers load local bundle paths; web callers load
 web-compatible `.litertlm` URLs through the LiteRT-LM JavaScript runtime.
-Android callers can opt into the LiteRT-LM NPU delegate through `ModelParams`:
+Android callers can opt into the LiteRT-LM GPU delegate through `ModelParams`:
 
 Flutter Apple apps load LiteRT-LM through `llamadart_litert_lm_flutter` when
 that companion package is installed.
@@ -232,10 +232,16 @@ layouts.
 await engine.loadModel(
   'path/to/gemma-4-E2B-it.litertlm',
   modelParams: const ModelParams(
-    liteRtLmBackend: LiteRtLmBackendPreference.npu,
+    liteRtLmBackend: LiteRtLmBackendPreference.gpu,
   ),
 );
 ```
+
+Android NPU selection is available through `LiteRtLmBackendPreference.npu`, but
+it requires a device/model/runtime combination that supports the LiteRT-LM NPU
+delegate and may require a packaged LiteRT dispatch directory through
+`ModelParams.liteRtLmDispatchLibDir`. Validate that path on the target device;
+use CPU or GPU for `.litertlm` artifacts whose NPU variant has not been proven.
 
 Chat templates for `.litertlm` bundles are resolved from a built-in,
 filename-keyed registry (Gemma 4/3/3n and Qwen 2.5/3 are supported today). For
@@ -527,8 +533,10 @@ media URLs, or raw PCM sample buffers. `ChatSession` uses a conservative
 prompt-size estimate for history pruning only when exact tokenization is
 unavailable.
 `LiteRtLmBackendPreference.auto` chooses GPU on Android/macOS/web and CPU on
-other current LiteRT-LM targets; set `cpu`, `gpu`, or Android-only `npu`
-explicitly when benchmarking or pinning deployment behavior.
+other current LiteRT-LM targets; set `cpu` or `gpu` explicitly when
+benchmarking or pinning deployment behavior. Android-only `npu` is a
+device/model/runtime-specific deployment path and may require a matching LiteRT
+dispatch library directory.
 `ModelParams.contextSize`, `chatTemplate`, `preferredBackend`,
 `liteRtLmBackend`, native LiteRT-LM runtime tuning fields, and all-or-CPU
 `gpuLayers` hints are honored for native `.litertlm` loads; LiteRT-LM web
