@@ -24,7 +24,7 @@ const _cacheBaseDir = 'llamadart';
 const _bundleCacheDir = 'native_bundles';
 const _reportDir = 'llamadart_bin';
 const _allowLegacyLocalBundleEnv = 'LLAMADART_ALLOW_LEGACY_LOCAL_BUNDLES';
-const _litertLmVersion = '0.13.1-native.1';
+const _litertLmVersion = '0.14.0-native.1';
 const _litertLmNativeReleaseBaseUrl =
     'https://github.com/leehack/litert-lm-native/releases/download/'
     'v$_litertLmVersion';
@@ -37,83 +37,86 @@ final _litertLmBundles = Map.unmodifiable({
 const _litertLmBundleSpecs = <_LiteRtLmBundleSpec>[
   _LiteRtLmBundleSpec(
     'android-arm64',
-    sha256: '2586a3f453a7722366210a00fd365401e84110d214e723083343fb60ac111a74',
+    sha256: '8550c394256343c3fd9e1c23ef667fb89dabdc378792c5e2fe133f3c3f92b4b2',
     requiredLibraries: {
       'libGemmaModelConstraintProvider.so',
-      'libLiteRt.so',
       'libLiteRtGpuAccelerator.so',
       'libLiteRtLm.so',
       'libLiteRtOpenClAccelerator.so',
       'libLiteRtTopKOpenClSampler.so',
       'libLiteRtTopKWebGpuSampler.so',
       'libLiteRtWebGpuAccelerator.so',
+      'libwebgpu_dawn.so',
     },
   ),
   _LiteRtLmBundleSpec(
     'android-x64',
-    sha256: '5eb7950bbd3c237d93f9ffdcc34665da3433e15fedbd9b6e150519a6fb4b0ffc',
+    sha256: '7a5df0d7e2ba9f4be2ddbdfe02043a41c1d29d4ea5dae334e3798063a9680830',
     requiredLibraries: {
       'libGemmaModelConstraintProvider.so',
-      'libLiteRt.so',
       'libLiteRtGpuAccelerator.so',
       'libLiteRtLm.so',
       'libLiteRtOpenClAccelerator.so',
       'libLiteRtTopKOpenClSampler.so',
       'libLiteRtTopKWebGpuSampler.so',
       'libLiteRtWebGpuAccelerator.so',
+      'libwebgpu_dawn.so',
     },
   ),
   _LiteRtLmBundleSpec(
     'ios-arm64',
-    sha256: 'faad402a7d4671fa7ef9b67777ca6b05cdbf32d74dd8971ac630cc1e26a09868',
+    sha256: '154c746c9028dee6ec77ad451f97bf34227b08d6c22f7daf381c47c76312f9b3',
     requiredLibraries: {'LiteRtLm', 'CLiteRTLM'},
   ),
   _LiteRtLmBundleSpec(
     'ios-arm64-sim',
-    sha256: '8a63cb8ab06a379cbeab4e3f26bf5671ed4372f9b8915654901b07989347d1a4',
+    sha256: '768d07af49d6715d4198ac35dc8f6f726cf3ba9ab46b465317aee54bfa65a050',
     requiredLibraries: {'LiteRtLm', 'CLiteRTLM'},
   ),
   _LiteRtLmBundleSpec(
     'macos-arm64',
-    sha256: '52f564026617542f3e54589065dcf7d0e6f39e0da845655a9d9efad682477378',
+    sha256: 'bcc179b68763f300631d53516a4e234c9cc2cb1b3e482db73080a7af74c5c12f',
     requiredLibraries: {'libLiteRtLm.dylib', 'libCLiteRTLM_mac.dylib'},
   ),
   _LiteRtLmBundleSpec(
     'macos-x64',
-    sha256: '29cd359545182575ffc7a0ba8231054a445c4993169a4e2d792ffbcef53c1ef1',
+    sha256: '4ae3b52f830e6a8c75e352ca068ad8c02370b791b067ac299901e83df262bf91',
     requiredLibraries: {'libLiteRtLm.dylib', 'libCLiteRTLM_mac.dylib'},
   ),
   _LiteRtLmBundleSpec(
     'linux-arm64',
-    sha256: '737a4e7657e09487d9d124e2b80bb459415336960da717ea33430042e6fe9d5b',
+    sha256: 'f532ea78f15f460834a6096c76e11c977f1b1f868d1f5882e3cf4953ff1ced6c',
     requiredLibraries: {
       'libGemmaModelConstraintProvider.so',
       'libLiteRt.so',
       'libLiteRtLm.so',
       'libLiteRtTopKWebGpuSampler.so',
       'libLiteRtWebGpuAccelerator.so',
+      'libwebgpu_dawn.so',
     },
   ),
   _LiteRtLmBundleSpec(
     'linux-x64',
-    sha256: '592b9eb695d34cf9aadc4520c974aa52494b38e36f3a54a4431b2d1c149b06cf',
+    sha256: '25b717027f7e6355f9964bee4c931e7b90482b395d355cb7f9bc2ed3b64bca42',
     requiredLibraries: {
       'libGemmaModelConstraintProvider.so',
       'libLiteRt.so',
       'libLiteRtLm.so',
       'libLiteRtTopKWebGpuSampler.so',
       'libLiteRtWebGpuAccelerator.so',
+      'libwebgpu_dawn.so',
     },
   ),
   _LiteRtLmBundleSpec(
     'windows-x64',
-    sha256: '14b5d61834eb8f49e1b6c9ba7f0b695e4a74aa7bd5e75d1084b62116934b2216',
+    sha256: '20b26520e82424845282b5ab2c675236473505398df7e6ee9fad0cb6c91405a7',
     requiredLibraries: {
       'LiteRtLm.dll',
       'libGemmaModelConstraintProvider.dll',
       'libLiteRt.dll',
       'libLiteRtTopKWebGpuSampler.dll',
       'libLiteRtWebGpuAccelerator.dll',
+      'libwebgpu_dawn.dll',
     },
   ),
 ];

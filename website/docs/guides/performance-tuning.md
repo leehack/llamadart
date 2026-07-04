@@ -132,6 +132,10 @@ Native `.litertlm` loads expose a small set of LiteRT-LM-specific
 - `liteRtLmParallelFileSectionLoading`: `null` keeps the native default,
   `false` disables parallel `.litertlm` file-section loading for diagnostics.
 - `liteRtLmDispatchLibDir`: Android NPU LiteRT dispatch library directory.
+- `numberOfThreads`: generation thread count; `0` keeps LiteRT-LM automatic
+  selection.
+- `loras`: one default-scale initial text LoRA adapter for native `.litertlm`
+  loads. Runtime adapter updates, stacking, and scaling remain llama.cpp-only.
 
 Leave these values unset unless you have a target-model reason to change them.
 Benchmark load time, prefill throughput, decode throughput, and output quality

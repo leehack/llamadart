@@ -136,6 +136,7 @@ const List<String> _linuxLiteRtLibraries = [
   'libGemmaModelConstraintProvider.so',
   'libLiteRt.so',
   'libLiteRtLm.so',
+  'libwebgpu_dawn.so',
   'libLiteRtTopKWebGpuSampler.so',
   'libLiteRtWebGpuAccelerator.so',
 ];
@@ -144,6 +145,7 @@ const List<String> _linuxLiteRtAssetNames = [
   'litert_lm_GemmaModelConstraintProvider',
   'litert_lm_LiteRt',
   'litert_lm_LiteRtLm',
+  'litert_lm_webgpu_dawn',
   'litert_lm_LiteRtTopKWebGpuSampler',
   'litert_lm_LiteRtWebGpuAccelerator',
 ];

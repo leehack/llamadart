@@ -8,7 +8,7 @@ backend-module configuration for
 `llamadart`.
 
 The native-assets hook currently pins `llamadart-native` tag `b9860` and
-`litert-lm-native` release `v0.13.1-native.1` (`hook/build.dart`). Apps can
+`litert-lm-native` release `v0.14.0-native.1` (`hook/build.dart`). Apps can
 override the llama.cpp native GitHub source with
 `hooks.user_defines.llamadart.llamadart_native_tag` and
 `hooks.user_defines.llamadart.llamadart_native_repository`, or use a local
@@ -112,12 +112,12 @@ Explicitly selecting `litert_lm` for a target without a pinned LiteRT-LM
 runtime fails during the build hook instead of producing an app that cannot
 load `.litertlm` models.
 
-## LiteRT-LM runtime coverage (`v0.13.1-native.1`)
+## LiteRT-LM runtime coverage (`v0.14.0-native.1`)
 
 | Platform target | LiteRT-LM bundle key | Selectable backends | Status |
 | --- | --- | --- | --- |
-| Android arm64 | `android-arm64` | `cpu`, `gpu`, `npu` | Supported |
-| Android x64 | `android-x64` | `cpu`, `gpu`, `npu` | Supported for emulator/test targets |
+| Android arm64 | `android-arm64` | `cpu`, `gpu`, `npu` | CPU/GPU supported. NPU is selectable only for compatible device/model/runtime deployments and may require a packaged LiteRT dispatch directory. |
+| Android x64 | `android-x64` | `cpu`, `gpu`, `npu` | CPU/GPU supported for emulator/test targets; NPU is deployment-specific and not validated for generic emulators. |
 | iOS arm64 (device) | `ios-arm64` | `cpu` | Supported |
 | iOS arm64 (simulator) | `ios-arm64-sim` | `cpu` | Supported |
 | iOS x86_64 (simulator) | Not published | N/A | Unsupported; exclude `litert_lm` for this target |
@@ -128,11 +128,14 @@ load `.litertlm` models.
 | Windows x64 | `windows-x64` | `cpu` | Supported |
 | Web (browser) | N/A (`@litert-lm/core`) | `cpu`, `gpu` | Experimental; web-compatible `.litertlm` URLs only |
 
-LiteRT-LM does not currently expose embeddings, state persistence, LoRA, or
-external multimodal projector APIs through llamadart. On native LiteRT-LM
-targets, `LlamaImageContent` / `LlamaAudioContent` path/blob inputs are routed
-through the normal generation path for `.litertlm` bundles whose native
+LiteRT-LM does not currently expose embeddings, state persistence, or external
+multimodal projector APIs through llamadart. On native LiteRT-LM targets,
+`LlamaImageContent` / `LlamaAudioContent` path/blob inputs are routed through
+the normal generation path for `.litertlm` bundles whose native
 template/runtime supports media; remote URLs and raw PCM samples are rejected.
+Native `.litertlm` loads can also pass one default-scale text LoRA adapter from
+`ModelParams.loras`; runtime `setLora` / `removeLora`, adapter stacking,
+adapter scaling, and LiteRT-LM web LoRA remain unsupported.
 High-level thinking and tool-call parsing still run through `LlamaEngine` for
 compatible templates, but llama.cpp-style GBNF grammar constraints are not
 supported for `.litertlm` generation. Native LiteRT-LM can opt into runtime
@@ -144,11 +147,14 @@ as a multi-turn `ChatSession` or tool-calling backend yet.
 `llamadart` rejects unsupported operations explicitly for `.litertlm` loads
 instead of silently ignoring llama.cpp-only settings.
 
-Native LiteRT-LM exposes four advanced runtime controls through `ModelParams`.
-All are opt-in; `null` keeps the pinned `v0.13.1-native.1` runtime default.
+Native LiteRT-LM exposes these load-time runtime controls through
+`ModelParams`. Nullable fields keep the pinned `v0.14.0-native.1` runtime
+default.
 
 | Native C API | Dart field | Support decision |
 | --- | --- | --- |
+| `litert_lm_engine_settings_set_num_threads` | `numberOfThreads` | Exposed for native `.litertlm`; `0` keeps LiteRT-LM automatic thread selection. |
+| `litert_lm_session_config_set_lora_path` | `loras` | Exposed for one default-scale text LoRA adapter at model load; multiple adapters, custom scales, and runtime LoRA updates are rejected. |
 | `litert_lm_engine_settings_set_activation_data_type` | `liteRtLmActivationDataType` | Exposed for native `.litertlm`; typed as `float32`, `float16`, `int16`, or `int8`. |
 | `litert_lm_engine_settings_set_prefill_chunk_size` | `liteRtLmPrefillChunkSize` | Exposed for CPU dynamic models; positive values only. |
 | `litert_lm_engine_settings_set_parallel_file_section_loading` | `liteRtLmParallelFileSectionLoading` | Exposed as a nullable boolean; native default remains parallel loading. |
@@ -156,6 +162,11 @@ All are opt-in; `null` keeps the pinned `v0.13.1-native.1` runtime default.
 
 LiteRT-LM web rejects these native-only fields because `@litert-lm/core` does
 not expose equivalent runtime controls.
+
+Android NPU support is not implied by the backend selector alone. A target app
+still needs a `.litertlm` model bundle and LiteRT dispatch library set that
+support the device SoC. If native LiteRT-LM cannot create an NPU engine for the
+device/model bundle, use `cpu` or `gpu` for that artifact.
 
 ## Runtime capability notes
 

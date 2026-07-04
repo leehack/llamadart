@@ -219,7 +219,7 @@ source while the live path uses the local cache rather than conference Wi-Fi.
 For LiteRT-LM bundles, use the same high-level API and pass a `.litertlm`
 path or URL. Native callers load local bundle paths; web callers load
 web-compatible `.litertlm` URLs through the LiteRT-LM JavaScript runtime.
-Android callers can opt into the LiteRT-LM NPU delegate through `ModelParams`:
+Android callers can opt into the LiteRT-LM GPU delegate through `ModelParams`:
 
 Flutter Apple apps load LiteRT-LM through `llamadart_litert_lm_flutter` when
 that companion package is installed.
@@ -232,10 +232,16 @@ layouts.
 await engine.loadModel(
   'path/to/gemma-4-E2B-it.litertlm',
   modelParams: const ModelParams(
-    liteRtLmBackend: LiteRtLmBackendPreference.npu,
+    liteRtLmBackend: LiteRtLmBackendPreference.gpu,
   ),
 );
 ```
+
+Android NPU selection is available through `LiteRtLmBackendPreference.npu`, but
+it requires a device/model/runtime combination that supports the LiteRT-LM NPU
+delegate and may require a packaged LiteRT dispatch directory through
+`ModelParams.liteRtLmDispatchLibDir`. Validate that path on the target device;
+use CPU or GPU for `.litertlm` artifacts whose NPU variant has not been proven.
 
 Chat templates for `.litertlm` bundles are resolved from a built-in,
 filename-keyed registry (Gemma 4/3/3n and Qwen 2.5/3 are supported today). For
@@ -516,25 +522,32 @@ to unconstrained output. LiteRT-LM web is currently limited to single-turn text
 prompts through `@litert-lm/core`; it does
 not yet preserve structured chat history, system prompts, tool declarations, or
 thinking/tool-call parsing with the same semantics as native. The current
-implementation does not expose embeddings, state persistence, or LoRA through
-LiteRT-LM. Native LiteRT-LM accepts `LlamaImageContent` and `LlamaAudioContent`
-path/blob inputs through normal generation for `.litertlm` bundles whose native
-template/runtime supports media; it does not use external `mmproj` projector
-loading, remote media URLs, or raw PCM sample buffers. `ChatSession` uses a
-conservative prompt-size estimate for history pruning only when exact
-tokenization is unavailable.
+implementation does not expose embeddings or state persistence through
+LiteRT-LM. Native `.litertlm` loads can pass one default-scale text LoRA adapter
+from `ModelParams.loras`; runtime `setLora` / `removeLora`, adapter stacking,
+adapter scaling, and LiteRT-LM web LoRA remain unsupported. Native LiteRT-LM
+accepts `LlamaImageContent` and `LlamaAudioContent` path/blob inputs through
+normal generation for `.litertlm` bundles whose native template/runtime
+supports media; it does not use external `mmproj` projector loading, remote
+media URLs, or raw PCM sample buffers. `ChatSession` uses a conservative
+prompt-size estimate for history pruning only when exact tokenization is
+unavailable.
 `LiteRtLmBackendPreference.auto` chooses GPU on Android/macOS/web and CPU on
-other current LiteRT-LM targets; set `cpu`, `gpu`, or Android-only `npu`
-explicitly when benchmarking or pinning deployment behavior.
+other current LiteRT-LM targets; set `cpu` or `gpu` explicitly when
+benchmarking or pinning deployment behavior. Android-only `npu` is a
+device/model/runtime-specific deployment path and may require a matching LiteRT
+dispatch library directory.
 `ModelParams.contextSize`, `chatTemplate`, `preferredBackend`,
 `liteRtLmBackend`, native LiteRT-LM runtime tuning fields, and all-or-CPU
 `gpuLayers` hints are honored for native `.litertlm` loads; LiteRT-LM web
-rejects native-only tuning fields. The native fields cover activation data type,
-CPU dynamic-model prefill chunk size, parallel `.litertlm` file-section
-loading, and Android NPU dispatch library directory. llama.cpp-only tuning knobs
-such as partial GPU layer offload, batch/micro-batch sizing, KV-cache type,
-flash attention, mmap/mlock, thread counts, LoRA load configs, and rope
-overrides are rejected instead of being silently ignored. `.litertlm`
+rejects native-only tuning fields. The native fields cover generation thread
+count, one default-scale initial text LoRA adapter, activation data type, CPU
+dynamic-model prefill chunk size, parallel `.litertlm` file-section loading,
+and Android NPU dispatch library directory. llama.cpp-only tuning knobs such as
+partial GPU layer offload, batch/micro-batch sizing, KV-cache type, flash
+attention, mmap/mlock, batch-thread count, LoRA stacking/scaling/runtime
+updates, and rope overrides are rejected instead of being silently ignored.
+`.litertlm`
 generation honors `GenerationParams`
 `maxTokens`, `temp`, `topK`, `topP`, and `seed` on native and web, with
 `stopSequences` enforced by llamadart. Native LiteRT-LM also honors stream
@@ -863,9 +876,9 @@ Current pinned runtime artifacts:
 | Runtime path | Published artifact |
 |--------------|--------------------|
 | Native llama.cpp / GGUF | `leehack/llamadart-native@b9860` |
-| Native LiteRT-LM / `.litertlm` | `leehack/litert-lm-native@v0.13.1-native.1` |
+| Native LiteRT-LM / `.litertlm` | `leehack/litert-lm-native@v0.14.0-native.1` |
 | Apple SPM llama.cpp / GGUF | `llamadart_llama_cpp_flutter` pins `leehack/llamadart-native@b9860` Apple XCFramework |
-| Apple SPM LiteRT-LM / `.litertlm` | `llamadart_litert_lm_flutter` pins `leehack/litert-lm-native@v0.13.1-native.1` Apple XCFrameworks |
+| Apple SPM LiteRT-LM / `.litertlm` | `llamadart_litert_lm_flutter` pins `leehack/litert-lm-native@v0.14.0-native.1` Apple XCFrameworks |
 | Web llama.cpp / GGUF | `leehack/llama-web-bridge-assets@v0.1.17` |
 | Web LiteRT-LM / `.litertlm` | App-provided `@litert-lm/core` module URL; the chat app defaults to jsDelivr `@litert-lm/core/+esm` |
 

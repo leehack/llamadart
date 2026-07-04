@@ -34,6 +34,7 @@ echo "== LiteRT-LM Metal =="
   rm -rf \
     "$CHAT_APP_DIR/.dart_tool/flutter_build" \
     "$CHAT_APP_DIR/build/native_assets/macos" \
+    "$APP/Contents/Frameworks/LiteRtLmRuntime" \
     "$APP/Contents/Frameworks/LiteRtMetalAccelerator.framework" \
     "$APP/Contents/Frameworks/LiteRtTopKMetalSampler.framework" \
     "$APP/Contents/Frameworks/LiteRtTopKWebGpuSampler.framework" \

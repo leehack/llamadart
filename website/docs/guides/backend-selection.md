@@ -72,7 +72,7 @@ JavaScript runtime.
 | Web | llama.cpp WebGPU/CPU bridge for GGUF URLs | `@litert-lm/core` for web-compatible `.litertlm` URLs |
 | Embeddings | Supported on native; supported on web bridge assets with embedding APIs | Not exposed by current LiteRT-LM APIs |
 | KV-cache state persistence | Supported on native; supported on WebGPU bridge assets that expose state APIs | Not exposed |
-| LoRA adapters | Supported on native GGUF flows | Not exposed |
+| LoRA adapters | Supported on native GGUF flows | Native: one default-scale text LoRA adapter at model load. Web: not exposed. Runtime updates, stacking, and scaling are not exposed for `.litertlm`. |
 | Thinking and tool-call parsing | Supported through template handlers | Native: supported through the high-level `LlamaEngine` parser for compatible templates; LiteRT-native constrained tool execution is not wired yet. Web: single-turn text only; no structured chat/tool forwarding yet. |
 | Grammar / constrained decoding | Supported by llama.cpp-backed paths | llama.cpp GBNF is not supported; template-generated tool grammar is skipped, strict `responseFormat` requests fail early, and explicit grammar params are rejected |
 | Multimodal projectors | Supported through llama.cpp `mtmd` paths where the model/projector supports it | Not exposed through llamadart today |
@@ -136,6 +136,8 @@ For `.litertlm` / LiteRT-LM, use:
 - `liteRtLmBackend`: `auto`, `cpu`, `gpu`, or Android-native `npu`
 - `contextSize`
 - `chatTemplate`
+- `numberOfThreads`
+- one default-scale initial text LoRA adapter through `ModelParams.loras`
 - `liteRtLmActivationDataType`: native activation type override
 - `liteRtLmPrefillChunkSize`: CPU dynamic-model prefill chunk size
 - `liteRtLmParallelFileSectionLoading`: native `.litertlm` file-section
@@ -196,8 +198,8 @@ kernel benchmark.
 ## Practical Recommendations
 
 - Start with GGUF / llama.cpp if you need the broadest model support or advanced
-  features such as embeddings, LoRA, grammar constraints, state persistence, or
-  multimodal flows.
+  features such as embeddings, dynamic LoRA adapters, grammar constraints, state
+  persistence, or multimodal projector flows.
 - Start with LiteRT-LM if your target model is already distributed as a
   `.litertlm` bundle and your app mainly needs text generation/chat on mobile or
   web.

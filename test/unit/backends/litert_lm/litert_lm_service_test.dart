@@ -518,8 +518,10 @@ void main() {
           const ModelParams(
             splitMode: ModelSplitMode.none,
             mainGpu: 1,
-            loras: [LoraAdapterConfig(path: 'adapter.bin')],
-            numberOfThreads: 2,
+            loras: [
+              LoraAdapterConfig(path: 'adapter-a.bin'),
+              LoraAdapterConfig(path: 'adapter-b.bin', scale: 0.5),
+            ],
             numberOfThreadsBatch: 3,
             microBatchSize: 64,
             maxParallelSequences: 2,
@@ -540,8 +542,8 @@ void main() {
               (message) => const <String>[
                 'splitMode',
                 'mainGpu',
-                'loras',
-                'numberOfThreads',
+                'loras.length=2',
+                'loras.scale',
                 'numberOfThreadsBatch',
                 'microBatchSize',
                 'maxParallelSequences',
@@ -741,6 +743,7 @@ void main() {
         expect(fakeClient.lastVisionBackend, 'cpu');
         expect(fakeClient.lastAudioBackend, 'cpu');
         expect(fakeClient.lastVisualTokenBudget, 280);
+        expect(fakeClient.lastMaxOutputTokens, 8);
         expect(fakeClient.createConversationCount, 1);
         expect(fakeClient.generateCount, 1);
 
@@ -813,6 +816,7 @@ void main() {
         expect(fakeClient.lastVisionBackend, 'cpu');
         expect(fakeClient.lastAudioBackend, 'cpu');
         expect(fakeClient.lastVisualTokenBudget, 280);
+        expect(fakeClient.lastMaxOutputTokens, 8);
 
         final message =
             jsonDecode(fakeClient.lastMessageJson!) as Map<String, dynamic>;
@@ -1346,6 +1350,7 @@ void main() {
       expect(fakeClient.lastBackend, 'cpu');
       expect(fakeClient.lastMaxTokens, 3072);
       expect(fakeClient.lastOutputTokens, 7);
+      expect(fakeClient.lastMaxOutputTokens, 7);
       expect(fakeClient.lastTemperature, 0.3);
       expect(fakeClient.lastTopK, 5);
       expect(fakeClient.lastTopP, 0.4);
@@ -1369,6 +1374,8 @@ void main() {
       liteRtLmPrefillChunkSize: 128,
       liteRtLmParallelFileSectionLoading: false,
       liteRtLmDispatchLibDir: '/vendor/litert-dispatch',
+      loras: [LoraAdapterConfig(path: '/tmp/adapter.lora')],
+      numberOfThreads: 4,
     );
 
     try {
@@ -1395,6 +1402,8 @@ void main() {
       expect(fakeClient.lastPrefillChunkSize, 128);
       expect(fakeClient.lastParallelFileSectionLoading, isFalse);
       expect(fakeClient.lastDispatchLibDir, '/vendor/litert-dispatch');
+      expect(fakeClient.lastLoraPath, '/tmp/adapter.lora');
+      expect(fakeClient.lastNumberOfThreads, 4);
     } finally {
       service.dispose();
     }
@@ -2265,12 +2274,14 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
   int? lastPrefillChunkSize;
   bool? lastParallelFileSectionLoading;
   String? lastDispatchLibDir;
+  int? lastNumberOfThreads;
   int? lastSetMinLogLevel;
   double? lastTemperature;
   int? lastTopK;
   double? lastTopP;
   int? lastSeed;
   bool? lastNpuBackend;
+  String? lastLoraPath;
   String? lastSystemMessage;
   List<Map<String, dynamic>>? lastMessages;
   List<Map<String, dynamic>>? lastTools;
@@ -2281,6 +2292,7 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
   String? lastMessageJson;
   Map<String, dynamic>? lastMessageExtraContext;
   int? lastVisualTokenBudget;
+  int? lastMaxOutputTokens;
   List<int> tokenizeResult = const <int>[];
   String detokenizeResult = '';
   LiteRtLmRuntimeMetrics? metrics;
@@ -2308,6 +2320,7 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
     int? prefillChunkSize,
     bool? parallelFileSectionLoading,
     String? dispatchLibDir,
+    int? numberOfThreads,
   }) {
     lastModelPath = modelPath;
     lastBackend = backend;
@@ -2323,6 +2336,7 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
     lastPrefillChunkSize = prefillChunkSize;
     lastParallelFileSectionLoading = parallelFileSectionLoading;
     lastDispatchLibDir = dispatchLibDir;
+    lastNumberOfThreads = numberOfThreads;
     if (!initializeStarted.isCompleted) {
       initializeStarted.complete();
     }
@@ -2356,6 +2370,7 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
     double topP = 0.95,
     int seed = 1,
     bool npuBackend = false,
+    String? loraPath,
   }) {
     _checkNotDisposed();
     lastTemperature = temperature;
@@ -2363,6 +2378,7 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
     lastTopP = topP;
     lastSeed = seed;
     lastNpuBackend = npuBackend;
+    lastLoraPath = loraPath;
     lastSystemMessage = systemMessage;
     lastMessages = messages
         ?.map(Map<String, dynamic>.from)
@@ -2391,8 +2407,9 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
   }
 
   @override
-  Stream<String> generate(String prompt) {
+  Stream<String> generate(String prompt, {int? maxOutputTokens}) {
     _checkNotDisposed();
+    lastMaxOutputTokens = maxOutputTokens;
     generateCount += 1;
     if (!generateStarted.isCompleted) {
       generateStarted.complete();
@@ -2405,6 +2422,7 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
     String messageJson, {
     Map<String, dynamic>? extraContext,
     int? visualTokenBudget,
+    int? maxOutputTokens,
   }) {
     _checkNotDisposed();
     lastMessageJson = messageJson;
@@ -2412,6 +2430,7 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
         ? null
         : Map<String, dynamic>.from(extraContext);
     lastVisualTokenBudget = visualTokenBudget;
+    lastMaxOutputTokens = maxOutputTokens;
     generateCount += 1;
     if (!generateStarted.isCompleted) {
       generateStarted.complete();

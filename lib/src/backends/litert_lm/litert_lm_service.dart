@@ -163,12 +163,14 @@ class LiteRtLmService {
     }
     final backend =
         _activeBackend ?? _backendNameFor(_modelParams ?? const ModelParams());
+    final loraPath = _activeTextLoraPath();
     client.createConversation(
       temperature: params.temp,
       topK: params.topK,
       topP: params.topP,
       seed: params.seed ?? _defaultSamplerSeed(),
       npuBackend: backend == 'npu',
+      loraPath: loraPath,
     );
     if (_cancelRequested) {
       client.cancel();
@@ -181,7 +183,7 @@ class LiteRtLmService {
     final sw = Stopwatch()..start();
     try {
       final stream = _applyStopSequences(
-        client.generate(prompt),
+        client.generate(prompt, maxOutputTokens: params.maxTokens),
         stopSequences,
         onStop: cancelGeneration,
       );
@@ -265,6 +267,7 @@ class LiteRtLmService {
     final backend =
         _activeBackend ?? _backendNameFor(_modelParams ?? const ModelParams());
     final nativeTools = _nativeToolsFor(toolChoice, tools);
+    final loraPath = _activeTextLoraPath();
     final extraContext = _nativeExtraContext(
       chatTemplateKwargs: chatTemplateKwargs,
       sourceLangCode: sourceLangCode,
@@ -282,6 +285,7 @@ class LiteRtLmService {
       topP: params.topP,
       seed: params.seed ?? _defaultSamplerSeed(),
       npuBackend: backend == 'npu',
+      loraPath: loraPath,
     );
     if (_cancelRequested) {
       client.cancel();
@@ -299,6 +303,7 @@ class LiteRtLmService {
           visualTokenBudget: maxNumImages == null
               ? null
               : _gemma4DefaultVisualTokenBudget,
+          maxOutputTokens: params.maxTokens,
         ),
         stopSequences,
         onStop: cancelGeneration,
@@ -613,6 +618,9 @@ class LiteRtLmService {
         parallelFileSectionLoading:
             modelParams.liteRtLmParallelFileSectionLoading,
         dispatchLibDir: modelParams.liteRtLmDispatchLibDir,
+        numberOfThreads: modelParams.numberOfThreads == 0
+            ? null
+            : modelParams.numberOfThreads,
       );
     } catch (_) {
       try {
@@ -852,11 +860,11 @@ class LiteRtLmService {
     if (params.mainGpu != 0) {
       unsupported.add('mainGpu');
     }
-    if (params.loras.isNotEmpty) {
-      unsupported.add('loras');
+    if (params.loras.length > 1) {
+      unsupported.add('loras.length=${params.loras.length}');
     }
-    if (params.numberOfThreads != 0) {
-      unsupported.add('numberOfThreads');
+    if (params.loras.any((lora) => lora.scale != 1.0)) {
+      unsupported.add('loras.scale');
     }
     if (params.numberOfThreadsBatch != 0) {
       unsupported.add('numberOfThreadsBatch');
@@ -903,9 +911,18 @@ class LiteRtLmService {
       '${unsupported.join(', ')}. Supported LiteRT-LM load options are '
       'contextSize, chatTemplate, preferredBackend, all-or-CPU gpuLayers '
       'hints, liteRtLmBackend for explicit CPU/GPU/NPU selection, '
+      'numberOfThreads, one default-scale initial LoRA adapter, '
       'liteRtLmActivationDataType, liteRtLmPrefillChunkSize, '
       'liteRtLmParallelFileSectionLoading, and liteRtLmDispatchLibDir.',
     );
+  }
+
+  String? _activeTextLoraPath() {
+    final loras = _modelParams?.loras ?? const [];
+    if (loras.isEmpty) {
+      return null;
+    }
+    return loras.single.path;
   }
 
   void _validateContextBackendParams(ModelParams params) {
@@ -1137,7 +1154,7 @@ class LiteRtLmService {
     required bool enableThinking,
   }) {
     final extraContext = <String, dynamic>{
-      if (chatTemplateKwargs != null) ...chatTemplateKwargs,
+      ...?chatTemplateKwargs,
       if (sourceLangCode != null && sourceLangCode.isNotEmpty)
         'source_lang_code': sourceLangCode,
       if (targetLangCode != null && targetLangCode.isNotEmpty)

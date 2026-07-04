@@ -84,6 +84,7 @@ class LiteRtLmRuntimeClient {
     int? prefillChunkSize,
     bool? parallelFileSectionLoading,
     String? dispatchLibDir,
+    int? numberOfThreads,
   }) {
     throw UnsupportedError('LiteRT-LM runtime requires a native platform.');
   }
@@ -104,6 +105,7 @@ class LiteRtLmRuntimeClient {
     double topP = 0.95,
     int seed = 1,
     bool npuBackend = false,
+    String? loraPath,
   }) {
     throw UnsupportedError('LiteRT-LM runtime requires a native platform.');
   }
@@ -119,7 +121,7 @@ class LiteRtLmRuntimeClient {
   }
 
   /// Streams generated text from the active conversation.
-  Stream<String> generate(String prompt) {
+  Stream<String> generate(String prompt, {int? maxOutputTokens}) {
     throw UnsupportedError('LiteRT-LM runtime requires a native platform.');
   }
 
@@ -128,6 +130,7 @@ class LiteRtLmRuntimeClient {
     String messageJson, {
     Map<String, dynamic>? extraContext,
     int? visualTokenBudget,
+    int? maxOutputTokens,
   }) {
     throw UnsupportedError('LiteRT-LM runtime requires a native platform.');
   }

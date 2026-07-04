@@ -28,6 +28,8 @@ void main() {
           result.stderr,
           contains('libGemmaModelConstraintProvider.dylib'),
         );
+        expect(result.stderr, contains('libCLiteRTLM_mac.dylib'));
+        expect(result.stderr, contains('libwebgpu_dawn.dylib'));
         expect(
           Directory(
             path.join(appDir.path, 'Contents', 'Frameworks'),
@@ -72,6 +74,78 @@ void main() {
             reason: framework,
           );
         }
+      },
+      skip: Platform.isWindows ? 'requires bash and POSIX symlinks' : false,
+    );
+
+    test(
+      'does not treat unrelated Flutter frameworks as LiteRT-LM runtime',
+      () async {
+        final root = await Directory.systemTemp.createTemp(
+          'litert_prepare_flutter_framework_',
+        );
+        addTearDown(() => root.delete(recursive: true));
+
+        final libDir = Directory(path.join(root.path, 'litert'))..createSync();
+        for (final library in _arm64Libraries) {
+          await File(path.join(libDir.path, library)).create();
+        }
+
+        final appDir = Directory(path.join(root.path, 'Test.app'));
+        Directory(
+          path.join(
+            appDir.path,
+            'Contents',
+            'Frameworks',
+            'llamadart.framework',
+          ),
+        ).createSync(recursive: true);
+
+        final result = await _runPrepareApp(appDir, libDir, arch: 'arm64');
+
+        expect(result.exitCode, 0, reason: result.stderr.toString());
+        expect(result.stdout, contains('Prepared LiteRT-LM macOS'));
+        expect(
+          File(
+            path.join(
+              appDir.path,
+              'Contents',
+              'Frameworks',
+              'LiteRtLmRuntime',
+              'libCLiteRTLM_mac.dylib',
+            ),
+          ).existsSync(),
+          isTrue,
+        );
+      },
+      skip: Platform.isWindows ? 'requires bash and POSIX symlinks' : false,
+    );
+
+    test(
+      'skips when a complete fallback runtime is already bundled',
+      () async {
+        final root = await Directory.systemTemp.createTemp(
+          'litert_prepare_skip_bundled_',
+        );
+        addTearDown(() => root.delete(recursive: true));
+
+        final libDir = Directory(path.join(root.path, 'litert'))..createSync();
+        for (final library in _arm64Libraries) {
+          await File(path.join(libDir.path, library)).create();
+        }
+
+        final appDir = Directory(path.join(root.path, 'Test.app'));
+        final runtimeDir = Directory(
+          path.join(appDir.path, 'Contents', 'Frameworks', 'LiteRtLmRuntime'),
+        )..createSync(recursive: true);
+        for (final library in _arm64Libraries) {
+          await File(path.join(runtimeDir.path, library)).create();
+        }
+
+        final result = await _runPrepareApp(appDir, libDir, arch: 'arm64');
+
+        expect(result.exitCode, 0, reason: result.stderr.toString());
+        expect(result.stdout, contains('Complete LiteRT-LM runtime detected'));
       },
       skip: Platform.isWindows ? 'requires bash and POSIX symlinks' : false,
     );
@@ -141,6 +215,7 @@ Future<ProcessResult> _runPrepareApp(
 }
 
 const List<String> _arm64Libraries = [
+  'libCLiteRTLM_mac.dylib',
   'libGemmaModelConstraintProvider.dylib',
   'libLiteRt.dylib',
   'libLiteRtLm.dylib',
@@ -148,6 +223,7 @@ const List<String> _arm64Libraries = [
   'libLiteRtTopKMetalSampler.dylib',
   'libLiteRtTopKWebGpuSampler.dylib',
   'libLiteRtWebGpuAccelerator.dylib',
+  'libwebgpu_dawn.dylib',
 ];
 
 const List<String> _oldFrameworks = [
@@ -160,4 +236,7 @@ const List<String> _oldFrameworks = [
   'LiteRtWebGpuAccelerator',
 ];
 
-const List<String> _x64Libraries = ['libLiteRtLm.dylib'];
+const List<String> _x64Libraries = [
+  'libCLiteRTLM_mac.dylib',
+  'libLiteRtLm.dylib',
+];

@@ -6,15 +6,6 @@ APP_PATH="${1:?usage: $0 /path/to/App.app}"
 FRAMEWORKS_DIR="$APP_PATH/Contents/Frameworks"
 RUNTIME_DIR="$FRAMEWORKS_DIR/LiteRtLmRuntime"
 
-if [[ "${LLAMADART_FORCE_LITERT_LM_PREPARE:-}" != "1" ]] && \
-   { [[ -f "$FRAMEWORKS_DIR/libCLiteRTLM_mac.dylib" ]] || \
-     [[ -d "$FRAMEWORKS_DIR/LiteRtLm.framework" ]] || \
-     [[ -d "$FRAMEWORKS_DIR/llama.framework" ]] || \
-     [[ -d "$FRAMEWORKS_DIR/llamadart.framework" ]]; }; then
-  echo "LiteRT-LM SPM runtime detected; skipping legacy macOS runtime copy."
-  exit 0
-fi
-
 resolve_litert_arch() {
   local arch="${LLAMADART_LITERT_LM_ARCH:-$(uname -m)}"
   case "$arch" in
@@ -37,16 +28,19 @@ required_libraries() {
   case "$LITERT_ARCH" in
     arm64)
       printf '%s\n' \
+        "libCLiteRTLM_mac.dylib" \
         "libGemmaModelConstraintProvider.dylib" \
         "libLiteRt.dylib" \
         "libLiteRtLm.dylib" \
         "libLiteRtMetalAccelerator.dylib" \
         "libLiteRtTopKMetalSampler.dylib" \
         "libLiteRtTopKWebGpuSampler.dylib" \
-        "libLiteRtWebGpuAccelerator.dylib"
+        "libLiteRtWebGpuAccelerator.dylib" \
+        "libwebgpu_dawn.dylib"
       ;;
     x64)
       printf '%s\n' \
+        "libCLiteRTLM_mac.dylib" \
         "libLiteRtLm.dylib"
       ;;
   esac
@@ -78,6 +72,13 @@ validate_litert_dir() {
   return 1
 }
 
+has_complete_embedded_runtime() {
+  validate_litert_dir "$RUNTIME_DIR" && return 0
+
+  [[ -f "$FRAMEWORKS_DIR/libCLiteRTLM_mac.dylib" ]] && \
+    [[ -d "$FRAMEWORKS_DIR/LiteRtLm.framework" ]]
+}
+
 resolve_litert_dir() {
   if [[ -n "${LLAMADART_LITERT_LM_LIB_DIR:-}" ]]; then
     validate_litert_dir "$LLAMADART_LITERT_LM_LIB_DIR" "explicit"
@@ -86,8 +87,8 @@ resolve_litert_dir() {
   fi
 
   local candidates=(
-    "$ROOT_DIR/.dart_tool/llamadart/litert_lm/0.13.1/macos_$LITERT_ARCH"
-    "$ROOT_DIR/.dart_tool/llamadart/litert_lm/0.13.1/macos/$LITERT_ARCH"
+    "$ROOT_DIR/.dart_tool/llamadart/litert_lm/0.14.0-native.1/macos_$LITERT_ARCH"
+    "$ROOT_DIR/.dart_tool/llamadart/litert_lm/0.14.0-native.1/macos/$LITERT_ARCH"
   )
   local candidate
   for candidate in "${candidates[@]}"; do
@@ -123,20 +124,19 @@ install_library() {
   sign_if_needed "$target"
 }
 
+if [[ "${LLAMADART_FORCE_LITERT_LM_PREPARE:-}" != "1" ]] && \
+   has_complete_embedded_runtime; then
+  echo "Complete LiteRT-LM runtime detected; skipping legacy macOS runtime copy."
+  exit 0
+fi
+
 LITERT_DIR="$(resolve_litert_dir)"
 
 rm -rf "$RUNTIME_DIR"
 mkdir -p "$RUNTIME_DIR"
 
-install_library "libLiteRtLm.dylib"
-
-if [[ "$LITERT_ARCH" == "arm64" ]]; then
-  install_library "libLiteRt.dylib"
-  install_library "libLiteRtMetalAccelerator.dylib"
-  install_library "libGemmaModelConstraintProvider.dylib"
-  install_library "libLiteRtTopKMetalSampler.dylib"
-  install_library "libLiteRtTopKWebGpuSampler.dylib"
-  install_library "libLiteRtWebGpuAccelerator.dylib"
-fi
+while IFS= read -r library; do
+  install_library "$library"
+done < <(required_libraries)
 
 echo "Prepared LiteRT-LM macOS runtime libraries in $RUNTIME_DIR"
