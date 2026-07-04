@@ -7,7 +7,15 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
-## Unreleased
+## 0.8.12
+
+- Updated the default LiteRT-LM native runtime pin to
+  `leehack/litert-lm-native@v0.14.0-native.1`, refreshed native-assets and
+  Apple SwiftPM checksums, and exposed the new native LiteRT-LM 0.14
+  load/generation controls.
+
+- Hardened LiteRT-LM 0.14 runtime packaging across Linux, Windows, Android,
+  Apple SwiftPM, and macOS local runtime-prep paths.
 
 - Hardened release automation by adding CODEOWNERS coverage for
   publication-sensitive files and making pub.dev/GitHub Release propagation
@@ -16,6 +24,11 @@ For canonical full release notes, use:
 - Added post-merge release automation so a merged release-prep PR can publish
   missing companion package versions, push the core release tag, wait for
   pub.dev, and confirm the GitHub Release without a separate manual tag step.
+
+- Added `LlamaEngine.getModelFileType()` for llama.cpp/GGUF models.
+
+- Refreshed llama.cpp `b9860` native runtime pins and template parity for
+  DeepSeek V4 and MiniCPM5, including MiniCPM5 XML tool-call handling.
 
 ## 0.8.11
 
