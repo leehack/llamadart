@@ -237,6 +237,20 @@ class ModelAssetCacheMarkers {
     return sources.every(containsAsset);
   }
 
+  bool migrateLegacyProfileMarker(
+    DownloadableModel model, {
+    required bool web,
+  }) {
+    final sources = _remoteSourcesFor(model, web: web);
+    if (!containsMarker(model.filename) ||
+        sources.length != _assetSourcesFor(model, web: web).length) {
+      return false;
+    }
+    removeMarker(model.filename);
+    markAssetsCached(sources);
+    return true;
+  }
+
   ModelProfileCacheState modelCacheState(
     DownloadableModel model, {
     required bool web,

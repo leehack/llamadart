@@ -115,6 +115,52 @@ void main() {
       },
     );
 
+    test('legacy profile marker migrates to per-asset remote markers', () {
+      final profile = DownloadableModel(
+        name: 'Legacy Cached VLM',
+        description: 'Remote model and projector',
+        url: 'https://example.com/model.gguf',
+        filename: 'model.gguf',
+        mmprojUrl: 'https://example.com/mmproj.gguf',
+        mmprojFilename: 'mmproj.gguf',
+        sizeBytes: 2048,
+        supportsVision: true,
+      );
+      final modelSource = profile.modelSource as RemoteModelAssetSource;
+      final mmprojSource =
+          profile.multimodalProjectorSource as RemoteModelAssetSource;
+      final markers = ModelAssetCacheMarkers(<String>{profile.filename});
+
+      expect(markers.migrateLegacyProfileMarker(profile, web: true), isTrue);
+
+      expect(markers.containsMarker(profile.filename), isFalse);
+      expect(markers.containsAsset(modelSource), isTrue);
+      expect(markers.containsAsset(mmprojSource), isTrue);
+      expect(markers.isProfileCached(profile, web: true), isTrue);
+    });
+
+    test('legacy profile marker is not migrated for local assets', () {
+      final profile = DownloadableModel.fromSources(
+        name: 'Mixed Legacy VLM',
+        description: 'Remote model with local projector',
+        modelSource: const RemoteModelAssetSource(
+          url: 'https://example.com/model.gguf',
+          filename: 'model.gguf',
+        ),
+        multimodalProjectorSource: const LocalModelAssetSource(
+          '/models/mmproj.gguf',
+        ),
+        sizeBytes: 2048,
+        supportsVision: true,
+      );
+      final markers = ModelAssetCacheMarkers(<String>{profile.filename});
+
+      expect(markers.migrateLegacyProfileMarker(profile, web: true), isFalse);
+
+      expect(markers.containsMarker(profile.filename), isTrue);
+      expect(markers.isProfileCached(profile, web: true), isFalse);
+    });
+
     test('platform-specific web source can differ from native source', () {
       final profile = DownloadableModel.fromSources(
         id: 'litert-gemma',

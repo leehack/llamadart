@@ -31,11 +31,7 @@ class ModelServiceWeb implements ModelService, WebCachePrefetchModelService {
         continue;
       }
 
-      final sources = _remoteSourcesFor(model);
-      if (markers.containsMarker(model.filename) &&
-          sources.length == _assetSourcesFor(model).length) {
-        markers.removeMarker(model.filename);
-        markers.markAssetsCached(sources);
+      if (markers.migrateLegacyProfileMarker(model, web: true)) {
         cachedModels.add(model.filename);
         migratedLegacyMarkers = true;
       }
@@ -94,6 +90,9 @@ class ModelServiceWeb implements ModelService, WebCachePrefetchModelService {
     final downloaded =
         prefs.getStringList(_downloadedModelsKey)?.toSet() ?? <String>{};
     final markers = ModelAssetCacheMarkers(downloaded);
+    if (markers.migrateLegacyProfileMarker(model, web: true)) {
+      await prefs.setStringList(_downloadedModelsKey, markers.toSet().toList());
+    }
     final pendingAssets = <_PendingWebCacheAsset>[
       if (!markers.containsAsset(remoteModelSource))
         _PendingWebCacheAsset(
