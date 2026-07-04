@@ -62,6 +62,13 @@ List<String> liteRtLmMacOsRequiredLibrariesForAbi(Abi abi) {
     Abi.macosArm64 => const <String>[
       'libLiteRtLm.dylib',
       'libCLiteRTLM_mac.dylib',
+      'libGemmaModelConstraintProvider.dylib',
+      'libLiteRt.dylib',
+      'libLiteRtMetalAccelerator.dylib',
+      'libLiteRtTopKMetalSampler.dylib',
+      'libLiteRtTopKWebGpuSampler.dylib',
+      'libLiteRtWebGpuAccelerator.dylib',
+      'libwebgpu_dawn.dylib',
     ],
     Abi.macosX64 => const <String>[
       'libLiteRtLm.dylib',
