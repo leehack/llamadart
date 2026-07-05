@@ -5154,20 +5154,13 @@ class LlamaCppService {
       return action();
     }
 
-    final previousLogits = List<int>.generate(
-      tokenCount,
-      (index) => logits[index],
-      growable: false,
-    );
+    final logitView = logits.asTypedList(tokenCount);
+    final previousLogits = List<int>.of(logitView, growable: false);
     try {
-      for (var i = 0; i < tokenCount; i++) {
-        logits[i] = 0;
-      }
+      logitView.fillRange(0, tokenCount, 0);
       return action();
     } finally {
-      for (var i = 0; i < previousLogits.length; i++) {
-        logits[i] = previousLogits[i];
-      }
+      logitView.setAll(0, previousLogits);
     }
   }
 

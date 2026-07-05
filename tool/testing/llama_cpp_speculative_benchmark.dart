@@ -1011,7 +1011,7 @@ List<String> _parseCases(String? value) {
     if (!_allRequestedCases.contains(canonical)) {
       stderr.writeln(
         'Invalid --cases entry: $raw. Allowed values: '
-        '${_allRequestedCases.join(', ')}, all, draftless.',
+        '${_allRequestedCases.join(', ')}, all, draftless, ngram.',
       );
       exit(64);
     }
@@ -1237,7 +1237,7 @@ Required:
 Case selection:
   --cases <list>                       Comma-separated cases. Defaults to:
                                        ${_defaultRequestedCases.join(', ')}
-  --cases draftless                    Baseline plus all draftless n-gram cases.
+  --cases draftless | ngram            Baseline plus all draftless n-gram cases.
   --cases all                          Every supported case; draft-model cases
                                        require --draft-model.
   --draft-model <draft.gguf>           Draft model for draft-simple, eagle3,
