@@ -85,6 +85,8 @@ class LocalE2eRunContext {
     required this.ngramSize,
     required this.ngramCacheStaticPath,
     required this.ngramCacheDynamicPath,
+    required this.ngramCacheBuildStaticPath,
+    required this.ngramCacheBuildText,
     required this.expect,
     required this.skipBuild,
   });
@@ -108,6 +110,8 @@ class LocalE2eRunContext {
   final String? ngramSize;
   final String? ngramCacheStaticPath;
   final String? ngramCacheDynamicPath;
+  final String? ngramCacheBuildStaticPath;
+  final String? ngramCacheBuildText;
   final String expect;
   final bool skipBuild;
 
@@ -259,6 +263,17 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
             '--ngram-cache-dynamic-path',
             ngramCacheDynamicPath,
           ]);
+        }
+        final ngramCacheBuildStaticPath = context.ngramCacheBuildStaticPath;
+        if (ngramCacheBuildStaticPath != null) {
+          arguments.addAll([
+            '--ngram-cache-build-static-path',
+            ngramCacheBuildStaticPath,
+          ]);
+        }
+        final ngramCacheBuildText = context.ngramCacheBuildText;
+        if (ngramCacheBuildText != null) {
+          arguments.addAll(['--ngram-cache-build-text', ngramCacheBuildText]);
         }
         return [
           LocalE2eCommandStep(
@@ -691,6 +706,8 @@ Future<LocalE2eResult> runLocalE2e(
     ngramSize: parsed.ngramSize,
     ngramCacheStaticPath: parsed.ngramCacheStaticPath,
     ngramCacheDynamicPath: parsed.ngramCacheDynamicPath,
+    ngramCacheBuildStaticPath: parsed.ngramCacheBuildStaticPath,
+    ngramCacheBuildText: parsed.ngramCacheBuildText,
     expect: parsed.expect,
     skipBuild: parsed.skipBuild,
   );
@@ -896,6 +913,9 @@ Options:
   --ngram-size <n>               Optional n-gram size for speculative benchmark.
   --ngram-cache-static-path <p>  Optional ngram-cache static path for speculative benchmark.
   --ngram-cache-dynamic-path <p> Optional ngram-cache dynamic path for speculative benchmark.
+  --ngram-cache-build-static-path <p>
+                                 Build a static ngram-cache file before speculative benchmark.
+  --ngram-cache-build-text <txt> Source text for generated ngram-cache static file.
   --expect <text>                Expected response text for real-model web smoke.
   --skip-build                   Reuse an existing Flutter web build where supported.
   -h, --help                     Show this help.
@@ -940,6 +960,8 @@ class _ParsedArgs {
     this.ngramSize,
     this.ngramCacheStaticPath,
     this.ngramCacheDynamicPath,
+    this.ngramCacheBuildStaticPath,
+    this.ngramCacheBuildText,
   });
 
   final bool list;
@@ -965,6 +987,8 @@ class _ParsedArgs {
   final String? ngramSize;
   final String? ngramCacheStaticPath;
   final String? ngramCacheDynamicPath;
+  final String? ngramCacheBuildStaticPath;
+  final String? ngramCacheBuildText;
   final String expect;
   final bool skipBuild;
 
@@ -995,6 +1019,8 @@ class _ParsedArgs {
     String? ngramSize;
     String? ngramCacheStaticPath;
     String? ngramCacheDynamicPath;
+    String? ngramCacheBuildStaticPath;
+    String? ngramCacheBuildText;
 
     for (var index = 0; index < args.length; index++) {
       final arg = args[index];
@@ -1046,6 +1072,10 @@ class _ParsedArgs {
           ngramCacheStaticPath = _readValue(args, ++index, arg);
         case '--ngram-cache-dynamic-path':
           ngramCacheDynamicPath = _readValue(args, ++index, arg);
+        case '--ngram-cache-build-static-path':
+          ngramCacheBuildStaticPath = _readValue(args, ++index, arg);
+        case '--ngram-cache-build-text':
+          ngramCacheBuildText = _readValue(args, ++index, arg);
         case '--expect':
           expect = _readValue(args, ++index, arg);
         default:
@@ -1077,6 +1107,8 @@ class _ParsedArgs {
       ngramSize: ngramSize,
       ngramCacheStaticPath: ngramCacheStaticPath,
       ngramCacheDynamicPath: ngramCacheDynamicPath,
+      ngramCacheBuildStaticPath: ngramCacheBuildStaticPath,
+      ngramCacheBuildText: ngramCacheBuildText,
       expect: expect,
       skipBuild: skipBuild,
     );

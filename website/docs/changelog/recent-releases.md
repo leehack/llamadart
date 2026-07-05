@@ -13,7 +13,9 @@ For canonical full release notes, use:
   `SpeculativeDecodingConfig` constructors for draft-simple, EAGLE3, MTP,
   DFlash, ngram-simple, ngram-map-k, ngram-map-k4v, ngram-mod, ngram-cache,
   and mixed n-gram plus one draft-model strategy, including generic native
-  wrapper bindings, docs, and local benchmark matrix coverage.
+  wrapper bindings, docs, and local benchmark matrix coverage. The benchmark
+  tooling can generate a llama.cpp-compatible static n-gram cache file for
+  `ngram-cache` E2E validation.
 
 - Updated the default llama.cpp native runtime pin to
   `leehack/llamadart-native@b9873`, refreshed the

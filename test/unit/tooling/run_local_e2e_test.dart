@@ -292,6 +292,37 @@ void main() {
       );
     });
 
+    test(
+      'dry-runs llama.cpp speculative benchmark with generated ngram cache',
+      () async {
+        final result = await runLocalE2e(const [
+          '--scenario',
+          'llama-cpp-speculative-benchmark',
+          '--model-path',
+          'models/Qwen3.5-0.8B-Q4_K_M.gguf',
+          '--speculative-cases',
+          'baseline,ngram-cache',
+          '--ngram-cache-build-static-path',
+          '/tmp/llamadart-ngram-cache.bin',
+          '--ngram-cache-build-text',
+          'alpha beta gamma alpha beta delta',
+          '--dry-run',
+        ], projectRoot: '/repo');
+
+        expect(result.exitCode, 0);
+        expect(
+          result.stdout,
+          contains(
+            '--cases baseline,ngram-cache --backend auto --gpu-layers 0 '
+            '--max-tokens 128 --runs 3 --draft-token-max 1,2 --warmups 1 '
+            '--ngram-cache-build-static-path '
+            '/tmp/llamadart-ngram-cache.bin --ngram-cache-build-text '
+            "'alpha beta gamma alpha beta delta'",
+          ),
+        );
+      },
+    );
+
     test('requires model path for llama.cpp speculative benchmark', () async {
       final result = await runLocalE2e(const [
         '--scenario',
