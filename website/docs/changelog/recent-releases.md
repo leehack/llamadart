@@ -15,6 +15,15 @@ For canonical full release notes, use:
   and mixed n-gram plus one draft-model strategy, including generic native
   wrapper bindings, docs, and local benchmark matrix coverage.
 
+- Updated the default llama.cpp native runtime pin to
+  `leehack/llamadart-native@b9873`, refreshed the
+  `llamadart_llama_cpp_flutter` Apple SwiftPM checksum, and aligned current
+  README/website native override docs.
+
+- Hardened LiteRT-LM generation validation so llama.cpp-only speculative
+  decoding knobs fail loudly instead of silently degrading to LiteRT-LM's
+  boolean speculative toggle.
+
 - Added `LlamaStructuredOutput` and `LlamaEngine.createStructuredJson(...)`
   helpers for strict JSON-object / JSON-schema generation with final-output
   validation and typed decoding.

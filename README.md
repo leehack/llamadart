@@ -754,7 +754,10 @@ Notes:
 - Flutter Apple companion packages use SPM binary target URL/checksum pins from
   their `packages/*/darwin/*/Package.swift` files. Customize Apple SPM binary
   sources by using path/git overrides or forks of those companion packages.
-- The native-assets hook refreshes emitted files each build; if you change `hooks.user_defines` or are upgrading from older cached outputs, run `flutter clean && flutter pub get` before rebuilding.
+- The native-assets hook refreshes emitted files each build; if you change
+  `hooks.user_defines`, upgrade from older cached outputs, or a native release
+  tag was republished with refreshed assets, run
+  `flutter clean && flutter pub get` before rebuilding.
 - Some Vulkan drivers can crash when probing cooperative matrix support. This
   is a driver-side failure in the Vulkan property query path, not a llamadart
   loader failure. Use upstream ggml-vulkan's opt-out environment variables

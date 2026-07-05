@@ -359,6 +359,9 @@ no valid entries remain, selection falls back to `cpu_profile` (or default
   `llamadart_native_path`, `llamadart_native_runtimes`, or
   `llamadart_native_backends`, run `flutter clean` once to clear stale
   native-asset outputs.
+- If a native release tag is republished with refreshed assets, also run
+  `flutter clean` before rebuilding so an older same-tag extracted bundle does
+  not stay in use.
 
 ## Vulkan cooperative matrix driver crashes
 

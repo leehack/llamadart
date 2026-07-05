@@ -267,6 +267,17 @@ bool _fileContainsAscii(File file, String text) {
   return false;
 }
 
+void _expectDynamicLibraryExports(File libraryFile, Iterable<String> symbols) {
+  final library = ffi.DynamicLibrary.open(libraryFile.path);
+  for (final symbol in symbols) {
+    expect(
+      library.lookup<ffi.NativeFunction<ffi.Void Function()>>(symbol).address,
+      isNot(0),
+      reason: symbol,
+    );
+  }
+}
+
 String? _nativeAssetFilePath(String assetId) {
   final configFile = File('.dart_tool/native_assets.yaml');
   if (!configFile.existsSync()) {
@@ -491,6 +502,10 @@ void main() {
         );
         return;
       }
+      if (Platform.isWindows) {
+        _expectDynamicLibraryExports(wrapper, _ngramSymbols);
+        return;
+      }
 
       final nullNgram = ffi.nullptr.cast<llama_dart_ngram>();
       final nullTokenArray = ffi.nullptr.cast<ffi.Int32>();
@@ -561,6 +576,10 @@ void main() {
           'Current native bundle does not export generic speculative wrapper '
           'symbols: ${missing.join(', ')}.',
         );
+        return;
+      }
+      if (Platform.isWindows) {
+        _expectDynamicLibraryExports(wrapper, _genericSpeculativeSymbols);
         return;
       }
 

@@ -5,6 +5,10 @@
   refreshed the `llamadart_llama_cpp_flutter` Apple SwiftPM checksum, and
   aligned current README/website native override docs.
 
+* Hardened LiteRT-LM generation validation so llama.cpp-only speculative
+  decoding knobs fail loudly instead of silently degrading to LiteRT-LM's
+  boolean speculative toggle.
+
 * Added llama.cpp upstream speculative decoding parity through
   `SpeculativeDecodingConfig` constructors for draft-simple, EAGLE3, MTP,
   DFlash, ngram-simple, ngram-map-k, ngram-map-k4v, ngram-mod, ngram-cache,
