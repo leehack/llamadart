@@ -9,6 +9,17 @@ import '../../../tool/testing/run_local_e2e.dart';
 
 void main() {
   group('run_local_e2e', () {
+    test('documents generated ngram cache text default', () async {
+      final result = await runLocalE2e(const ['--help'], projectRoot: '/repo');
+
+      expect(result.exitCode, 0);
+      expect(result.stdout, contains('--ngram-cache-build-text <txt>'));
+      expect(
+        result.stdout,
+        contains('defaults to the resolved benchmark prompt'),
+      );
+    });
+
     test('lists local-only Dart, Flutter, and Web smoke scenarios', () async {
       final result = await runLocalE2e(const ['--list'], projectRoot: '/repo');
 

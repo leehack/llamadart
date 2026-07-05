@@ -836,8 +836,7 @@ class _BenchmarkOptions {
     );
     if (ngramCacheStaticPath != null &&
         ngramCacheBuildStaticPath != null &&
-        File(ngramCacheStaticPath).absolute.path !=
-            File(ngramCacheBuildStaticPath).absolute.path) {
+        !_sameAbsolutePath(ngramCacheStaticPath, ngramCacheBuildStaticPath)) {
       stderr.writeln(
         '--ngram-cache-build-static-path also provides the static cache used '
         'by ngram-cache; omit --ngram-cache-static-path or point both flags '
@@ -1235,7 +1234,8 @@ void _validate(_BenchmarkOptions options) {
     options.ngramCacheDynamicPath,
   ];
   for (final path in ngramCachePaths.whereType<String>()) {
-    if (path == options.ngramCacheBuildStaticPath) {
+    final buildPath = options.ngramCacheBuildStaticPath;
+    if (buildPath != null && _sameAbsolutePath(path, buildPath)) {
       continue;
     }
     if (!File(path).existsSync()) {
@@ -1244,6 +1244,9 @@ void _validate(_BenchmarkOptions options) {
     }
   }
 }
+
+bool _sameAbsolutePath(String first, String second) =>
+    File(first).absolute.path == File(second).absolute.path;
 
 GpuBackend _parsePreferredBackend(String? value) {
   final normalized = value?.trim().toLowerCase();

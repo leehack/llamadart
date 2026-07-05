@@ -120,5 +120,42 @@ void main() {
         ),
       );
     });
+
+    test(
+      'allows generated static cache path with equivalent absolute path',
+      () async {
+        final relativePath = 'relative-ngram-cache.bin';
+        final absolutePath = '${Directory.current.path}/$relativePath';
+        addTearDown(() async {
+          final file = File(relativePath);
+          if (await file.exists()) {
+            await file.delete();
+          }
+        });
+
+        final result = await Process.run(Platform.resolvedExecutable, [
+          '--disable-dart-dev',
+          'tool/testing/llama_cpp_speculative_benchmark.dart',
+          '--model',
+          'missing.gguf',
+          '--cases',
+          'ngram-cache',
+          '--ngram-cache-static-path',
+          relativePath,
+          '--ngram-cache-build-static-path',
+          absolutePath,
+        ]);
+
+        expect(result.exitCode, isNot(0));
+        expect(
+          result.stderr,
+          isNot(contains('N-gram cache path does not exist')),
+        );
+        expect(
+          result.stderr,
+          isNot(contains('omit --ngram-cache-static-path')),
+        );
+      },
+    );
   });
 }

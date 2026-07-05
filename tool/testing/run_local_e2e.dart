@@ -915,7 +915,8 @@ Options:
   --ngram-cache-dynamic-path <p> Optional ngram-cache dynamic path for speculative benchmark.
   --ngram-cache-build-static-path <p>
                                  Build a static ngram-cache file before speculative benchmark.
-  --ngram-cache-build-text <txt> Source text for generated ngram-cache static file.
+  --ngram-cache-build-text <txt> Optional source text for generated ngram-cache static file
+                                 (defaults to the resolved benchmark prompt).
   --expect <text>                Expected response text for real-model web smoke.
   --skip-build                   Reuse an existing Flutter web build where supported.
   -h, --help                     Show this help.
