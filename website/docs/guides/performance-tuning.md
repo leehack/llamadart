@@ -120,6 +120,14 @@ Guidelines:
   draft-model strategy. Draft-model strategies can load a separate GGUF through
   `draftModelPath`; draftless n-gram strategies are workload-dependent and can
   be slower than baseline on prompts with little repetition.
+- DFlash draft models must use upstream-compatible GGUF metadata:
+  `general.architecture=dflash` plus the `dflash.*` metadata block, including
+  `dflash.target_layers`. A known-good public pair is target
+  `unsloth/Qwen3.5-4B-GGUF` (`Qwen3.5-4B-Q4_K_M.gguf`) with draft
+  `EntityDeletr/Qwen3.5-4B-DFlash-GGUF` (`Qwen3.5-4B-DFlash.gguf`). If a draft
+  artifact reports `general.architecture=dflash-draft` or lacks
+  `dflash.target_layers`, reconvert or replace the GGUF instead of trying to
+  compensate in Dart code.
 - `reusePromptPrefix` is enabled by default for native generation; keep it on
   for multi-turn chats and repeated prompts, and validate parity for your
   target model/workload.

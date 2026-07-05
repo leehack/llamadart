@@ -353,6 +353,19 @@ params: const GenerationParams(
 ),
 ```
 
+DFlash draft GGUFs are metadata-sensitive. The draft model must be an
+upstream-compatible DFlash artifact with `general.architecture=dflash` and
+the DFlash metadata block, including `dflash.target_layers`. A validated public
+pair is target `unsloth/Qwen3.5-4B-GGUF` (`Qwen3.5-4B-Q4_K_M.gguf`) with draft
+`EntityDeletr/Qwen3.5-4B-DFlash-GGUF` (`Qwen3.5-4B-DFlash.gguf`). Artifacts
+with `general.architecture=dflash-draft`, such as
+`Anbeeld/Qwen3.5-4B-DFlash-GGUF`, are not registered by the current upstream
+llama.cpp runtime and fail with errors like
+`unknown model architecture: 'dflash-draft'`. Artifacts missing
+`dflash.target_layers`, such as early `lym00/Qwen3-4B-DFlash-GGUF-Test`
+conversions, need to be reconverted or regenerated upstream; there is no
+Dart-side metadata workaround.
+
 Android Vulkan MTP is opt-in through the same runtime parameters: request
 `GpuBackend.vulkan` in `ModelParams` and pass
 `SpeculativeDecodingConfig.mtp(...)` in `GenerationParams`. Benchmark this

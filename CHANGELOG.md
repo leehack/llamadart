@@ -8,6 +8,10 @@
   generic fallback instead of silently falling back to a hard-coded Gemma
   prompt.
 
+* Documented compatible DFlash GGUF metadata, a known-good public target/draft
+  model pair, and troubleshooting guidance for incompatible `dflash-draft` or
+  missing `dflash.target_layers` artifacts.
+
 * Hardened generic llama.cpp external draft-model speculative decoding so
   draft-context processing does not request unused logits, avoiding a
   `draft-simple` native abort while preserving target verification logits.
