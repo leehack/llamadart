@@ -75,6 +75,25 @@ void main() {
     );
   });
 
+  test('SpeculativeDecodingConfig.ngramSimple stores n-gram controls', () {
+    const config = SpeculativeDecodingConfig.ngramSimple(
+      draftTokenMax: 6,
+      ngramSize: 10,
+    );
+    const params = GenerationParams(speculativeDecodingConfig: config);
+
+    expect(params.isSpeculativeDecodingEnabled, isTrue);
+    expect(
+      params.resolvedSpeculativeDecodingConfig?.strategy,
+      SpeculativeDecodingStrategy.ngramSimple,
+    );
+    expect(params.resolvedSpeculativeDecodingConfig?.draftTokenMax, 6);
+    expect(params.resolvedSpeculativeDecodingConfig?.ngramSize, 10);
+    expect(params.resolvedSpeculativeDecodingConfig?.draftModelPath, isNull);
+    expect(params.resolvedSpeculativeDecodingConfig?.draftTokenMin, isNull);
+    expect(params.resolvedSpeculativeDecodingConfig?.minProbability, isNull);
+  });
+
   test('GenerationParams copyWith can clear speculative decoding config', () {
     const params = GenerationParams(
       speculativeDecodingConfig: SpeculativeDecodingConfig.mtp(

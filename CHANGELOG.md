@@ -1,5 +1,9 @@
 ## Unreleased
 
+* Added llama.cpp ngram-simple speculative decoding via
+  `SpeculativeDecodingConfig.ngramSimple(...)`, including Dart routing, native
+  wrapper bindings, docs, and local benchmark matrix coverage.
+
 * Added `LlamaStructuredOutput` and `LlamaEngine.createStructuredJson(...)`
   helpers for strict JSON-object / JSON-schema generation with final-output
   validation and typed decoding.

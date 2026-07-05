@@ -288,6 +288,27 @@ Higher `draftTokenMax` values can be faster on some models/devices, but they
 should be benchmarked with the target model because excess draft depth can add
 verification overhead.
 
+For GGUF models without an MTP or separate draft model, llama.cpp ngram-simple
+speculative decoding uses recent token history as the drafter:
+
+```dart
+params: const GenerationParams(
+  maxTokens: 128,
+  speculativeDecodingConfig: SpeculativeDecodingConfig.ngramSimple(
+    draftTokenMax: 4,
+    ngramSize: 12,
+  ),
+),
+```
+
+Reserve `ModelParams.speculativeRollbackTokenMax` at least as large as
+`draftTokenMax` before using ngram-simple. It is workload-dependent and can be
+slower than baseline decoding on prompts with little repetition, so validate it
+with your model and prompt shape. For local measurements, set
+`LLAMADART_MTP_BENCHMARK_NGRAM=true` and
+`LLAMADART_MTP_BENCHMARK_NGRAM_ONLY=true` when running
+`tool/testing/llama_cpp_mtp_benchmark.dart`.
+
 For target/draft model pairs, pass the separate drafter GGUF with
 `draftModelPath`:
 

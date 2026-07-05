@@ -42,6 +42,12 @@ enum SpeculativeDecodingStrategy {
   /// llama.cpp maps this to its `draft-mtp` speculative path. LiteRT-LM native
   /// currently maps this to its runtime speculative decoding switch.
   mtp,
+
+  /// Self-speculative n-gram pattern matching.
+  ///
+  /// llama.cpp maps this to its `ngram-simple` path. It uses token history
+  /// rather than a separate draft model.
+  ngramSimple,
 }
 
 /// Backend-neutral speculative decoding configuration.
@@ -75,6 +81,12 @@ class SpeculativeDecodingConfig {
   /// Leave null for models that carry their own MTP layers.
   final String? draftModelPath;
 
+  /// Lookup n-gram size for n-gram self-speculative decoding.
+  ///
+  /// `null` lets the backend choose its default. This is currently only used by
+  /// [SpeculativeDecodingStrategy.ngramSimple].
+  final int? ngramSize;
+
   /// Creates a backend-neutral speculative decoding configuration.
   const SpeculativeDecodingConfig({
     this.strategy = SpeculativeDecodingStrategy.backendDefault,
@@ -82,8 +94,10 @@ class SpeculativeDecodingConfig {
     this.draftTokenMin,
     this.minProbability,
     this.draftModelPath,
+    this.ngramSize,
   }) : assert(draftTokenMax == null || draftTokenMax >= 0),
        assert(draftTokenMin == null || draftTokenMin >= 0),
+       assert(ngramSize == null || ngramSize > 0),
        assert(
          minProbability == null ||
              (minProbability >= 0.0 && minProbability <= 1.0),
@@ -95,7 +109,8 @@ class SpeculativeDecodingConfig {
       draftTokenMax = null,
       draftTokenMin = null,
       minProbability = null,
-      draftModelPath = null;
+      draftModelPath = null,
+      ngramSize = null;
 
   /// Enables multi-token prediction speculative decoding.
   const SpeculativeDecodingConfig.mtp({
@@ -104,12 +119,24 @@ class SpeculativeDecodingConfig {
     this.minProbability,
     this.draftModelPath,
   }) : strategy = SpeculativeDecodingStrategy.mtp,
+       ngramSize = null,
        assert(draftTokenMax == null || draftTokenMax >= 0),
        assert(draftTokenMin == null || draftTokenMin >= 0),
        assert(
          minProbability == null ||
              (minProbability >= 0.0 && minProbability <= 1.0),
        );
+
+  /// Enables llama.cpp ngram-simple speculative decoding.
+  const SpeculativeDecodingConfig.ngramSimple({
+    this.draftTokenMax,
+    this.ngramSize,
+  }) : strategy = SpeculativeDecodingStrategy.ngramSimple,
+       draftTokenMin = null,
+       minProbability = null,
+       draftModelPath = null,
+       assert(draftTokenMax == null || draftTokenMax >= 0),
+       assert(ngramSize == null || ngramSize > 0);
 }
 
 /// Parameters controlling the token sampling and generation process.

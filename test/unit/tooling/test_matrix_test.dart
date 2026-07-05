@@ -28,6 +28,7 @@ void main() {
       expect(ids, contains('gguf-chat-features-smoke'));
       expect(ids, contains('litert-lm-chat-features-smoke'));
       expect(ids, contains('native-inference-benchmark'));
+      expect(ids, contains('llama-cpp-speculative-benchmark'));
       expect(ids, contains('web-mock-chat-smoke'));
       expect(ids, contains('web-real-model-smoke'));
       expect(ids, contains('webgpu-multimodal-regression'));
@@ -72,6 +73,7 @@ void main() {
 
       expect(table, contains('| ID | Tier | Mode |'));
       expect(table, contains('gguf-chat-features-smoke'));
+      expect(table, contains('LLAMADART_MTP_BENCHMARK_NGRAM_ONLY=true'));
       expect(table, contains('run_local_e2e.dart'));
       expect(table, isNot(contains('static-format-analyze')));
     });

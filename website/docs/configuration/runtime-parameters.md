@@ -109,8 +109,11 @@ Important fields:
   speculative decoding. Native LiteRT-LM honors the legacy boolean flag.
   llama.cpp supports `SpeculativeDecodingConfig.mtp(...)` for compatible MTP
   GGUF models, including separate target/draft model pairs through
-  `draftModelPath`. WebGPU and LiteRT-LM web reject speculative decoding until
-  their speculative paths are implemented.
+  `draftModelPath`. Native llama.cpp bundles that export the
+  `llama_dart_ngram_*` wrapper symbols also support
+  `SpeculativeDecodingConfig.ngramSimple(...)` for token-history n-gram
+  speculation without a draft model. WebGPU and LiteRT-LM web reject speculative
+  decoding until their speculative paths are implemented.
 - `seed`: deterministic replay when set.
 - `grammar`: constrained decoding with GBNF.
 

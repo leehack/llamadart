@@ -10,6 +10,7 @@ import 'package:llamadart/src/backends/llama_cpp/bindings.dart';
 import 'package:test/test.dart';
 
 const _llamadartWrapperAssetId = 'package:llamadart/llamadart_wrapper';
+const _llamadartPrimaryAssetId = 'package:llamadart/llamadart';
 
 const _mtpSymbols = [
   'llama_dart_mtp_init',
@@ -21,6 +22,15 @@ const _mtpSymbols = [
   'llama_dart_mtp_draft',
   'llama_dart_mtp_accept',
   'llama_dart_sampler_sample_and_accept_n',
+];
+
+const _ngramSymbols = [
+  'llama_dart_ngram_simple_init',
+  'llama_dart_ngram_free',
+  'llama_dart_ngram_begin',
+  'llama_dart_ngram_process_batch',
+  'llama_dart_ngram_draft',
+  'llama_dart_ngram_accept',
 ];
 
 const _transparentPngBytes = <int>[
@@ -116,6 +126,25 @@ typedef _MtmdBitmapFreeDart = void Function(ffi.Pointer<mtmd_bitmap>);
 )
 external void _windowsMtpFree(ffi.Pointer<llama_dart_mtp> mtp);
 
+File? _llamadartWrapperLibraryFileOrNull() {
+  if (Platform.isWindows) {
+    try {
+      return _windowsMtpWrapperLibraryFile();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  final nativeAssetPath =
+      _nativeAssetFilePath(_llamadartWrapperAssetId) ??
+      _nativeAssetFilePath(_llamadartPrimaryAssetId);
+  if (nativeAssetPath == null) {
+    return null;
+  }
+  final file = File(nativeAssetPath);
+  return file.existsSync() ? file : null;
+}
+
 File _windowsMtpWrapperLibraryFile() {
   final dartToolLibPath = [
     Directory.current.path,
@@ -125,6 +154,7 @@ File _windowsMtpWrapperLibraryFile() {
   final dartToolLibDir = Directory(dartToolLibPath);
   final candidates = <String>[
     ?_nativeAssetFilePath(_llamadartWrapperAssetId),
+    ?_nativeAssetFilePath(_llamadartPrimaryAssetId),
     ..._matchingWindowsLibraryPaths(
       dartToolLibDir,
       RegExp(r'^llamadart(?:[-_][^.\\/]+)*\.dll$'),
@@ -165,7 +195,9 @@ File? _mtmdFallbackLibraryFile() {
     'lib',
   ].join(Platform.pathSeparator);
   final directories = <Directory>[];
-  final nativeAssetPath = _nativeAssetFilePath(_llamadartWrapperAssetId);
+  final nativeAssetPath =
+      _nativeAssetFilePath(_llamadartWrapperAssetId) ??
+      _nativeAssetFilePath(_llamadartPrimaryAssetId);
   if (nativeAssetPath != null) {
     directories.add(File(nativeAssetPath).parent);
   }
@@ -327,12 +359,12 @@ void _expectBitmapHelperDecodesTransparentPng(
 
 void main() {
   group('Native Symbol Availability', () {
-    test('Verify MTP symbols are declared in generated bindings', () {
+    test('Verify speculative symbols are declared in generated bindings', () {
       final bindingsSource = File(
         'lib/src/backends/llama_cpp/bindings.dart',
       ).readAsStringSync();
 
-      for (final symbol in _mtpSymbols) {
+      for (final symbol in [..._mtpSymbols, ..._ngramSymbols]) {
         expect(
           bindingsSource,
           matches(RegExp(r'external\s+[\s\S]*?\b' + RegExp.escape(symbol))),
@@ -423,6 +455,78 @@ void main() {
         expect(llama_dart_mtp_process_batch(nullMtp, batch), isFalse);
       } finally {
         llama_batch_free(batch);
+      }
+    });
+
+    test('Verify ngram wrapper symbols are resolvable when exported', () {
+      final wrapper = _llamadartWrapperLibraryFileOrNull();
+      if (wrapper == null) {
+        markTestSkipped('Unable to locate the llama.cpp wrapper library.');
+        return;
+      }
+
+      final missing = _ngramSymbols
+          .where((symbol) => !_fileContainsAscii(wrapper, symbol))
+          .toList(growable: false);
+      if (missing.isNotEmpty) {
+        markTestSkipped(
+          'Current native bundle does not export ngram wrapper symbols: '
+          '${missing.join(', ')}.',
+        );
+        return;
+      }
+
+      final nullNgram = ffi.nullptr.cast<llama_dart_ngram>();
+      final nullTokenArray = ffi.nullptr.cast<ffi.Int32>();
+      final session = llama_dart_ngram_simple_init(1, 1);
+      expect(session.address, isNot(0));
+
+      try {
+        expect(() => llama_dart_ngram_free(nullNgram), returnsNormally);
+        expect(
+          llama_dart_ngram_begin(nullNgram, 0, nullTokenArray, 0),
+          isFalse,
+        );
+        expect(llama_dart_ngram_begin(session, 1, nullTokenArray, 0), isFalse);
+        expect(
+          llama_dart_ngram_draft(
+            nullNgram,
+            0,
+            0,
+            0,
+            nullTokenArray,
+            0,
+            1,
+            nullTokenArray,
+            0,
+          ),
+          -1,
+        );
+        expect(
+          llama_dart_ngram_draft(
+            session,
+            1,
+            0,
+            0,
+            nullTokenArray,
+            0,
+            1,
+            nullTokenArray,
+            0,
+          ),
+          -1,
+        );
+        expect(() => llama_dart_ngram_accept(nullNgram, 0, 0), returnsNormally);
+        expect(() => llama_dart_ngram_accept(session, 0, 0), returnsNormally);
+
+        final batch = llama_batch_init(1, 0, 1);
+        try {
+          expect(llama_dart_ngram_process_batch(nullNgram, batch), isFalse);
+        } finally {
+          llama_batch_free(batch);
+        }
+      } finally {
+        llama_dart_ngram_free(session);
       }
     });
 

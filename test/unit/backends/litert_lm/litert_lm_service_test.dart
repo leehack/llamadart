@@ -2157,6 +2157,30 @@ void main() {
           ),
         ),
       );
+
+      await expectLater(
+        service.generate(
+          contextHandle,
+          'hello',
+          const GenerationParams(
+            speculativeDecodingConfig: SpeculativeDecodingConfig.ngramSimple(
+              draftTokenMax: 4,
+              ngramSize: 12,
+            ),
+          ),
+        ),
+        emitsError(
+          isA<UnsupportedError>().having(
+            (error) => error.message.toString(),
+            'message',
+            allOf(
+              contains('speculativeDecodingConfig.strategy'),
+              contains('speculativeDecodingConfig.draftTokenMax'),
+              contains('speculativeDecodingConfig.ngramSize'),
+            ),
+          ),
+        ),
+      );
     } finally {
       service.dispose();
     }

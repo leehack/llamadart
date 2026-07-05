@@ -114,7 +114,10 @@ Guidelines:
   default remains off because it is not a universal speedup. Native LiteRT-LM
   uses the legacy `speculativeDecoding` boolean, while llama.cpp MTP uses
   `SpeculativeDecodingConfig.mtp(...)` and can optionally load a separate draft
-  GGUF through `draftModelPath`.
+  GGUF through `draftModelPath`. llama.cpp ngram-simple uses
+  `SpeculativeDecodingConfig.ngramSimple(...)` for draft-model-free
+  token-history speculation when the native bundle exports the required
+  `llama_dart_ngram_*` symbols.
 - `reusePromptPrefix` is enabled by default for native generation; keep it on
   for multi-turn chats and repeated prompts, and validate parity for your
   target model/workload.

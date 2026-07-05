@@ -240,6 +240,53 @@ typedef _LlamaDartMtpAcceptNative =
     Void Function(Pointer<llama_dart_mtp>, llama_seq_id, Uint16);
 typedef _LlamaDartMtpAcceptDart =
     void Function(Pointer<llama_dart_mtp>, int, int);
+typedef _LlamaDartNgramSimpleInitNative =
+    Pointer<llama_dart_ngram> Function(Int32, Int32);
+typedef _LlamaDartNgramSimpleInitDart =
+    Pointer<llama_dart_ngram> Function(int, int);
+typedef _LlamaDartNgramFreeNative = Void Function(Pointer<llama_dart_ngram>);
+typedef _LlamaDartNgramFreeDart = void Function(Pointer<llama_dart_ngram>);
+typedef _LlamaDartNgramBeginNative =
+    Bool Function(
+      Pointer<llama_dart_ngram>,
+      llama_seq_id,
+      Pointer<Int32>,
+      Int32,
+    );
+typedef _LlamaDartNgramBeginDart =
+    bool Function(Pointer<llama_dart_ngram>, int, Pointer<Int32>, int);
+typedef _LlamaDartNgramProcessBatchNative =
+    Bool Function(Pointer<llama_dart_ngram>, llama_batch);
+typedef _LlamaDartNgramProcessBatchDart =
+    bool Function(Pointer<llama_dart_ngram>, llama_batch);
+typedef _LlamaDartNgramDraftNative =
+    Int32 Function(
+      Pointer<llama_dart_ngram>,
+      llama_seq_id,
+      llama_pos,
+      llama_token,
+      Pointer<Int32>,
+      Int32,
+      Int32,
+      Pointer<Int32>,
+      Int32,
+    );
+typedef _LlamaDartNgramDraftDart =
+    int Function(
+      Pointer<llama_dart_ngram>,
+      int,
+      int,
+      int,
+      Pointer<Int32>,
+      int,
+      int,
+      Pointer<Int32>,
+      int,
+    );
+typedef _LlamaDartNgramAcceptNative =
+    Void Function(Pointer<llama_dart_ngram>, llama_seq_id, Uint16);
+typedef _LlamaDartNgramAcceptDart =
+    void Function(Pointer<llama_dart_ngram>, int, int);
 typedef _LlamaDartSamplerSampleAndAcceptNNative =
     Int32 Function(
       Pointer<llama_sampler>,
@@ -351,6 +398,67 @@ external void _llamadartWrapperMtpAccept(
   int acceptedCount,
 );
 
+@Native<_LlamaDartNgramSimpleInitNative>(
+  assetId: _llamadartWrapperAssetId,
+  symbol: 'llama_dart_ngram_simple_init',
+)
+external Pointer<llama_dart_ngram> _llamadartWrapperNgramSimpleInit(
+  int ngramSize,
+  int draftTokenMax,
+);
+
+@Native<_LlamaDartNgramFreeNative>(
+  assetId: _llamadartWrapperAssetId,
+  symbol: 'llama_dart_ngram_free',
+)
+external void _llamadartWrapperNgramFree(Pointer<llama_dart_ngram> ngram);
+
+@Native<_LlamaDartNgramBeginNative>(
+  assetId: _llamadartWrapperAssetId,
+  symbol: 'llama_dart_ngram_begin',
+)
+external bool _llamadartWrapperNgramBegin(
+  Pointer<llama_dart_ngram> ngram,
+  int seqId,
+  Pointer<Int32> prompt,
+  int promptCount,
+);
+
+@Native<_LlamaDartNgramProcessBatchNative>(
+  assetId: _llamadartWrapperAssetId,
+  symbol: 'llama_dart_ngram_process_batch',
+)
+external bool _llamadartWrapperNgramProcessBatch(
+  Pointer<llama_dart_ngram> ngram,
+  llama_batch batch,
+);
+
+@Native<_LlamaDartNgramDraftNative>(
+  assetId: _llamadartWrapperAssetId,
+  symbol: 'llama_dart_ngram_draft',
+)
+external int _llamadartWrapperNgramDraft(
+  Pointer<llama_dart_ngram> ngram,
+  int seqId,
+  int nPast,
+  int idLast,
+  Pointer<Int32> prompt,
+  int promptCount,
+  int draftTokenMax,
+  Pointer<Int32> outTokens,
+  int outCapacity,
+);
+
+@Native<_LlamaDartNgramAcceptNative>(
+  assetId: _llamadartWrapperAssetId,
+  symbol: 'llama_dart_ngram_accept',
+)
+external void _llamadartWrapperNgramAccept(
+  Pointer<llama_dart_ngram> ngram,
+  int seqId,
+  int acceptedCount,
+);
+
 @Native<_LlamaDartSamplerSampleAndAcceptNNative>(
   assetId: _llamadartWrapperAssetId,
   symbol: 'llama_dart_sampler_sample_and_accept_n',
@@ -382,6 +490,16 @@ class _LlamaCppMtpConfig {
   final int draftTokenMin;
   final double minProbability;
   final String? draftModelPath;
+}
+
+class _LlamaCppNgramSimpleConfig {
+  const _LlamaCppNgramSimpleConfig({
+    required this.draftTokenMax,
+    required this.ngramSize,
+  });
+
+  final int draftTokenMax;
+  final int ngramSize;
 }
 
 /// Service responsible for managing Llama.cpp models and contexts.
@@ -461,6 +579,8 @@ class LlamaCppService {
   _MtmdApi? _mtmdFallbackApi;
   bool _mtpApiLookupAttempted = false;
   _MtpApi? _mtpApi;
+  bool _ngramApiLookupAttempted = false;
+  _NgramApi? _ngramApi;
   final List<String> _startupDiagnostics = <String>[];
 
   // --- Internal State ---
@@ -2603,6 +2723,54 @@ class LlamaCppService {
         'runtime bundle (missing llama_dart_mtp_* wrapper symbols).';
   }
 
+  _NgramApi _resolveNgramApi() {
+    final cached = _ngramApi;
+    if (cached != null) {
+      return cached;
+    }
+
+    if (_ngramApiLookupAttempted) {
+      throw UnsupportedError(_ngramUnavailableMessage());
+    }
+    _ngramApiLookupAttempted = true;
+
+    if (!Platform.isWindows) {
+      try {
+        final direct = _NgramApi.direct();
+        _ngramApi = direct;
+        return direct;
+      } catch (_) {}
+    }
+
+    if (Platform.isWindows) {
+      try {
+        final asset = _NgramApi.windowsAsset();
+        _ngramApi = asset;
+        return asset;
+      } catch (_) {}
+    }
+
+    for (final candidate in _llamadartWrapperLibraryCandidates()) {
+      try {
+        final library = DynamicLibrary.open(candidate);
+        final api = _NgramApi.tryLoad(library);
+        if (api != null) {
+          _ngramApi = api;
+          return api;
+        }
+      } catch (_) {
+        continue;
+      }
+    }
+
+    throw UnsupportedError(_ngramUnavailableMessage());
+  }
+
+  String _ngramUnavailableMessage() {
+    return 'llama.cpp ngram-simple speculative decoding is unavailable in this '
+        'native runtime bundle (missing llama_dart_ngram_* wrapper symbols).';
+  }
+
   List<String> _llamadartWrapperLibraryCandidates() {
     final candidates = <String>[..._llamadartAssetUriCandidates()];
     final fileNameCandidates = _llamadartLibraryCandidateFileNames();
@@ -3286,7 +3454,7 @@ class LlamaCppService {
     _contexts.remove(handle)?.dispose();
   }
 
-  _LlamaCppMtpConfig? _resolveLlamaCppMtpConfig(
+  Object? _resolveLlamaCppSpeculativeConfig(
     GenerationParams params, {
     required bool hasMediaParts,
   }) {
@@ -3297,13 +3465,13 @@ class LlamaCppService {
 
     if (hasMediaParts) {
       throw UnsupportedError(
-        'llama.cpp MTP speculative decoding currently supports text-only '
+        'llama.cpp speculative decoding currently supports text-only '
         'generation in llamadart.',
       );
     }
     if (params.grammar != null) {
       throw UnsupportedError(
-        'llama.cpp MTP speculative decoding does not yet support grammar '
+        'llama.cpp speculative decoding does not yet support grammar '
         'sampling in llamadart.',
       );
     }
@@ -3311,49 +3479,87 @@ class LlamaCppService {
     switch (speculativeConfig.strategy) {
       case SpeculativeDecodingStrategy.backendDefault:
       case SpeculativeDecodingStrategy.mtp:
-        break;
-    }
+        final draftTokenMax = speculativeConfig.draftTokenMax ?? 1;
+        final draftTokenMin = speculativeConfig.draftTokenMin ?? 0;
+        final minProbability = speculativeConfig.minProbability ?? 0.0;
+        final draftModelPath = speculativeConfig.draftModelPath;
+        final ngramSize = speculativeConfig.ngramSize;
 
-    final draftTokenMax = speculativeConfig.draftTokenMax ?? 1;
-    final draftTokenMin = speculativeConfig.draftTokenMin ?? 0;
-    final minProbability = speculativeConfig.minProbability ?? 0.0;
-    final draftModelPath = speculativeConfig.draftModelPath;
+        if (draftTokenMax <= 0) {
+          throw RangeError.value(
+            draftTokenMax,
+            'draftTokenMax',
+            'must be greater than zero for llama.cpp MTP',
+          );
+        }
+        if (draftTokenMin < 0 || draftTokenMin > draftTokenMax) {
+          throw RangeError.value(
+            draftTokenMin,
+            'draftTokenMin',
+            'must be between zero and draftTokenMax for llama.cpp MTP',
+          );
+        }
+        if (minProbability < 0.0 || minProbability > 1.0) {
+          throw RangeError.value(
+            minProbability,
+            'minProbability',
+            'must be between 0.0 and 1.0 for llama.cpp MTP',
+          );
+        }
+        if (draftModelPath != null && draftModelPath.trim().isEmpty) {
+          throw ArgumentError.value(
+            draftModelPath,
+            'draftModelPath',
+            'must be null or a non-empty path for llama.cpp MTP',
+          );
+        }
+        if (ngramSize != null) {
+          throw UnsupportedError(
+            'llama.cpp MTP speculative decoding does not use ngramSize. '
+            'Use SpeculativeDecodingConfig.ngramSimple for n-gram '
+            'self-speculative decoding.',
+          );
+        }
 
-    if (draftTokenMax <= 0) {
-      throw RangeError.value(
-        draftTokenMax,
-        'draftTokenMax',
-        'must be greater than zero for llama.cpp MTP',
-      );
-    }
-    if (draftTokenMin < 0 || draftTokenMin > draftTokenMax) {
-      throw RangeError.value(
-        draftTokenMin,
-        'draftTokenMin',
-        'must be between zero and draftTokenMax for llama.cpp MTP',
-      );
-    }
-    if (minProbability < 0.0 || minProbability > 1.0) {
-      throw RangeError.value(
-        minProbability,
-        'minProbability',
-        'must be between 0.0 and 1.0 for llama.cpp MTP',
-      );
-    }
-    if (draftModelPath != null && draftModelPath.trim().isEmpty) {
-      throw ArgumentError.value(
-        draftModelPath,
-        'draftModelPath',
-        'must be null or a non-empty path for llama.cpp MTP',
-      );
-    }
+        return _LlamaCppMtpConfig(
+          draftTokenMax: draftTokenMax,
+          draftTokenMin: draftTokenMin,
+          minProbability: minProbability,
+          draftModelPath: draftModelPath,
+        );
+      case SpeculativeDecodingStrategy.ngramSimple:
+        if (speculativeConfig.draftTokenMin != null ||
+            speculativeConfig.minProbability != null ||
+            speculativeConfig.draftModelPath != null) {
+          throw UnsupportedError(
+            'llama.cpp ngram-simple speculative decoding uses token history '
+            'and does not support draftTokenMin, minProbability, or '
+            'draftModelPath.',
+          );
+        }
 
-    return _LlamaCppMtpConfig(
-      draftTokenMax: draftTokenMax,
-      draftTokenMin: draftTokenMin,
-      minProbability: minProbability,
-      draftModelPath: draftModelPath,
-    );
+        final draftTokenMax = speculativeConfig.draftTokenMax ?? 48;
+        final ngramSize = speculativeConfig.ngramSize ?? 12;
+        if (draftTokenMax <= 0) {
+          throw RangeError.value(
+            draftTokenMax,
+            'draftTokenMax',
+            'must be greater than zero for llama.cpp ngram-simple',
+          );
+        }
+        if (ngramSize <= 0) {
+          throw RangeError.value(
+            ngramSize,
+            'ngramSize',
+            'must be greater than zero for llama.cpp ngram-simple',
+          );
+        }
+
+        return _LlamaCppNgramSimpleConfig(
+          draftTokenMax: draftTokenMax,
+          ngramSize: ngramSize,
+        );
+    }
   }
 
   /// Generates text based on the given [prompt] and [params].
@@ -3383,6 +3589,8 @@ class LlamaCppService {
     Pointer<llama_sampler> sampler = nullptr;
     Pointer<llama_dart_mtp> mtpSession = nullptr;
     _MtpApi? mtpApi;
+    Pointer<llama_dart_ngram> ngramSession = nullptr;
+    _NgramApi? ngramApi;
 
     try {
       final modelHandle = _contextToModel[contextHandle]!;
@@ -3392,7 +3600,7 @@ class LlamaCppService {
       final hasMediaParts =
           parts?.any((p) => p is LlamaImageContent || p is LlamaAudioContent) ??
           false;
-      final mtpConfig = _resolveLlamaCppMtpConfig(
+      final speculativeConfig = _resolveLlamaCppSpeculativeConfig(
         params,
         hasMediaParts: hasMediaParts,
       );
@@ -3401,7 +3609,9 @@ class LlamaCppService {
         contextHandle,
         ctx,
         clearMemory:
-            hasMediaParts || mtpConfig != null || !params.reusePromptPrefix,
+            hasMediaParts ||
+            speculativeConfig != null ||
+            !params.reusePromptPrefix,
       );
       ctx.resetLastPerf();
       llama_perf_context_reset(ctx.pointer);
@@ -3416,9 +3626,9 @@ class LlamaCppService {
       tokensPtr = malloc<Int32>(nCtx);
       pieceBuf = malloc<Uint8>(256);
 
-      if (mtpConfig != null) {
+      if (speculativeConfig is _LlamaCppMtpConfig) {
         mtpApi = _resolveMtpApi();
-        final draftModelPath = mtpConfig.draftModelPath;
+        final draftModelPath = speculativeConfig.draftModelPath;
         final draftModel = draftModelPath == null
             ? null
             : _loadMtpDraftModel(modelHandle, draftModelPath);
@@ -3427,9 +3637,9 @@ class LlamaCppService {
           draftModel: draftModel?.pointer,
           targetContext: ctx.pointer,
           contextParams: modelParams,
-          draftTokenMax: mtpConfig.draftTokenMax,
-          draftTokenMin: mtpConfig.draftTokenMin,
-          minProbability: mtpConfig.minProbability,
+          draftTokenMax: speculativeConfig.draftTokenMax,
+          draftTokenMin: speculativeConfig.draftTokenMin,
+          minProbability: speculativeConfig.minProbability,
           backendSampling: true,
         );
         if (mtpSession == nullptr) {
@@ -3445,6 +3655,19 @@ class LlamaCppService {
           );
         }
         llama_perf_context_reset(ctx.pointer);
+      } else if (speculativeConfig is _LlamaCppNgramSimpleConfig) {
+        ngramApi = _resolveNgramApi();
+        ngramSession = ngramApi.initSimple(
+          speculativeConfig.ngramSize,
+          speculativeConfig.draftTokenMax,
+        );
+        if (ngramSession == nullptr) {
+          throw UnsupportedError(
+            'llama.cpp ngram-simple speculative decoding is not available for '
+            'this native runtime bundle. Use a libllamadart build that exports '
+            'llama_dart_ngram_* wrapper symbols.',
+          );
+        }
       }
 
       if (params.grammar != null) {
@@ -3469,7 +3692,9 @@ class LlamaCppService {
         nCtx,
         modelParams,
         allowTextPromptReuse:
-            mtpConfig == null && !hasMediaParts && params.reusePromptPrefix,
+            speculativeConfig == null &&
+            !hasMediaParts &&
+            params.reusePromptPrefix,
         mtpSession: mtpSession,
         mtpApi: mtpApi,
       );
@@ -3482,6 +3707,12 @@ class LlamaCppService {
       if (mtpSession != nullptr &&
           !mtpApi!.begin(mtpSession, 0, tokensPtr, initialTokens)) {
         throw Exception("Failed to initialize llama.cpp MTP prompt state");
+      }
+      if (ngramSession != nullptr &&
+          !ngramApi!.begin(ngramSession, 0, tokensPtr, initialTokens)) {
+        throw Exception(
+          "Failed to initialize llama.cpp ngram-simple prompt state",
+        );
       }
 
       // 4. Initialize and Run Sampler Loop
@@ -3504,14 +3735,14 @@ class LlamaCppService {
         params.preservedTokens,
       );
 
-      if (mtpSession != nullptr && mtpConfig != null) {
+      if (mtpSession != nullptr && speculativeConfig is _LlamaCppMtpConfig) {
         yield* _runMtpInferenceLoop(
           ctx,
           batch,
           vocab,
           sampler,
           params,
-          mtpConfig,
+          speculativeConfig,
           initialTokens,
           nCtx,
           cancelTokenAddress,
@@ -3520,6 +3751,25 @@ class LlamaCppService {
           effectiveStopSequences,
           mtpSession,
           mtpApi!,
+          tokensPtr,
+        );
+      } else if (ngramSession != nullptr &&
+          speculativeConfig is _LlamaCppNgramSimpleConfig) {
+        yield* _runNgramInferenceLoop(
+          ctx,
+          batch,
+          vocab,
+          sampler,
+          params,
+          speculativeConfig,
+          initialTokens,
+          nCtx,
+          cancelTokenAddress,
+          pieceBuf,
+          preservedTokenIds,
+          effectiveStopSequences,
+          ngramSession,
+          ngramApi!,
           tokensPtr,
         );
       } else {
@@ -3540,6 +3790,7 @@ class LlamaCppService {
       }
     } finally {
       if (mtpSession != nullptr) mtpApi?.free(mtpSession);
+      if (ngramSession != nullptr) ngramApi?.free(ngramSession);
       if (sampler != nullptr) llama_sampler_free(sampler);
       final remaining = (_generatingContexts[contextHandle] ?? 1) - 1;
       if (remaining <= 0) {
@@ -4709,7 +4960,7 @@ class LlamaCppService {
             currentPos,
             draftLimit,
             draftPtr,
-            draftCapacity,
+            draftLimit,
           );
           draftTick.stop();
           draftMicros += draftTick.elapsedMicroseconds;
@@ -4809,6 +5060,281 @@ class LlamaCppService {
             !llama_memory_seq_rm(draftMemory, 0, keepUntil, -1)) {
           throw UnsupportedError(
             'llama.cpp MTP target rollback failed for this context.',
+          );
+        }
+
+        tokensPtr[currentPos] = selectedToken;
+        for (int i = 0; i < acceptedDraftCount; i++) {
+          tokensPtr[currentPos + 1 + i] = acceptedPtr[i];
+        }
+        currentPos = keepUntil;
+
+        for (int i = 0; i < acceptedCount; i++) {
+          final token = acceptedPtr[i];
+          if (llama_vocab_is_eog(vocab, token)) {
+            shouldStop = true;
+            break;
+          }
+
+          final pieceTick = Stopwatch()..start();
+          final n = llama_token_to_piece(
+            vocab,
+            token,
+            pieceBuf.cast(),
+            256,
+            0,
+            preservedTokenIds.contains(token),
+          );
+          pieceTick.stop();
+          sampleMicros += pieceTick.elapsedMicroseconds;
+          generatedTokens++;
+
+          if (n > 0) {
+            final bytes = pieceBuf.asTypedList(n).toList();
+            yield bytes;
+            if (stopSequences.isNotEmpty) {
+              accumulatedBytes.addAll(bytes);
+              if (accumulatedBytes.length > 64) {
+                accumulatedBytes.removeRange(0, accumulatedBytes.length - 64);
+              }
+              final text = utf8.decode(accumulatedBytes, allowMalformed: true);
+              if (stopSequences.any((s) => text.endsWith(s))) {
+                shouldStop = true;
+              }
+            }
+          }
+
+          if (shouldStop || generatedTokens >= params.maxTokens) {
+            break;
+          }
+        }
+
+        if (!shouldStop && generatedTokens < params.maxTokens) {
+          pendingSampledToken = acceptedPtr[acceptedCount - 1];
+        }
+      }
+    } finally {
+      malloc.free(draftPtr);
+      malloc.free(idxPtr);
+      malloc.free(acceptedPtr);
+      evalStopwatch.stop();
+      ctx.lastPerfEvalMs = evalMicros / 1000.0;
+      ctx.lastPerfSampleMs = sampleMicros / 1000.0;
+      ctx.lastPerfDecodeMs = evalMicros / 1000.0;
+      ctx.lastPerfSpeculativeDraftMs = draftMicros / 1000.0;
+      ctx.lastPerfSpeculativeVerifyMs = verifyMicros / 1000.0;
+      ctx.lastPerfEvalTokens = generatedTokens;
+      ctx.lastPerfSampleCount = generatedTokens;
+      ctx.lastPerfSpeculativeDraftTokens = speculativeDraftTokens;
+      ctx.lastPerfSpeculativeAcceptedDraftTokens =
+          speculativeAcceptedDraftTokens;
+    }
+  }
+
+  Stream<List<int>> _runNgramInferenceLoop(
+    _LlamaContextWrapper ctx,
+    llama_batch batch,
+    Pointer<llama_vocab> vocab,
+    Pointer<llama_sampler> sampler,
+    GenerationParams params,
+    _LlamaCppNgramSimpleConfig ngramConfig,
+    int startPos,
+    int nCtx,
+    int cancelTokenAddress,
+    Pointer<Uint8> pieceBuf,
+    Set<int> preservedTokenIds,
+    List<String> stopSequences,
+    Pointer<llama_dart_ngram> ngramSession,
+    _NgramApi ngramApi,
+    Pointer<Int32> tokensPtr,
+  ) async* {
+    final cancelToken = Pointer<Int8>.fromAddress(cancelTokenAddress);
+    final draftCapacity = ngramConfig.draftTokenMax;
+    final draftPtr = malloc<Int32>(draftCapacity);
+    final idxPtr = malloc<Int32>(draftCapacity + 1);
+    final acceptedPtr = malloc<Int32>(draftCapacity + 1);
+
+    int currentPos = startPos;
+    int? pendingSampledToken;
+    final accumulatedBytes = <int>[];
+    final evalStopwatch = Stopwatch()..start();
+    var sampleMicros = 0;
+    var evalMicros = 0;
+    var draftMicros = 0;
+    var verifyMicros = 0;
+    var generatedTokens = 0;
+    var speculativeDraftTokens = 0;
+    var speculativeAcceptedDraftTokens = 0;
+    var shouldStop = false;
+
+    try {
+      while (!shouldStop && generatedTokens < params.maxTokens) {
+        if (cancelToken.value == 1) break;
+        if (currentPos >= nCtx) break;
+
+        int selectedToken;
+        if (pendingSampledToken != null) {
+          selectedToken = pendingSampledToken;
+          pendingSampledToken = null;
+        } else {
+          final sampleTick = Stopwatch()..start();
+          selectedToken = llama_sampler_sample(sampler, ctx.pointer, -1);
+          sampleTick.stop();
+          sampleMicros += sampleTick.elapsedMicroseconds;
+          if (llama_vocab_is_eog(vocab, selectedToken)) break;
+
+          final pieceTick = Stopwatch()..start();
+          final n = llama_token_to_piece(
+            vocab,
+            selectedToken,
+            pieceBuf.cast(),
+            256,
+            0,
+            preservedTokenIds.contains(selectedToken),
+          );
+          pieceTick.stop();
+          sampleMicros += pieceTick.elapsedMicroseconds;
+          generatedTokens++;
+
+          if (n > 0) {
+            final bytes = pieceBuf.asTypedList(n).toList();
+            yield bytes;
+            if (stopSequences.isNotEmpty) {
+              accumulatedBytes.addAll(bytes);
+              if (accumulatedBytes.length > 64) {
+                accumulatedBytes.removeRange(0, accumulatedBytes.length - 64);
+              }
+              final text = utf8.decode(accumulatedBytes, allowMalformed: true);
+              if (stopSequences.any((s) => text.endsWith(s))) {
+                shouldStop = true;
+              }
+            }
+          }
+
+          if (shouldStop) {
+            break;
+          }
+        }
+
+        final remainingToGenerate = params.maxTokens - generatedTokens;
+        final batchCapacity = math.max(1, llama_n_batch(ctx.pointer));
+        final rollbackCapacity = llama_n_rs_seq(ctx.pointer);
+        final contextDraftCapacity = rollbackCapacity > 0
+            ? math.min(nCtx - currentPos - 2, rollbackCapacity)
+            : nCtx - currentPos - 2;
+        final draftLimit = remainingToGenerate <= 1
+            ? 0
+            : math.min(
+                ngramConfig.draftTokenMax,
+                math.min(
+                  math.min(remainingToGenerate - 1, contextDraftCapacity),
+                  batchCapacity - 1,
+                ),
+              );
+
+        var draftCount = 0;
+        if (draftLimit > 0) {
+          final draftTick = Stopwatch()..start();
+          draftCount = ngramApi.draft(
+            ngramSession,
+            0,
+            currentPos,
+            selectedToken,
+            tokensPtr,
+            currentPos,
+            draftLimit,
+            draftPtr,
+            draftLimit,
+          );
+          draftTick.stop();
+          draftMicros += draftTick.elapsedMicroseconds;
+          if (draftCount < 0) {
+            throw Exception("llama.cpp ngram-simple draft failed");
+          }
+          speculativeDraftTokens += draftCount;
+        }
+
+        if (draftCount <= 0) {
+          batch.n_tokens = 1;
+          batch.token[0] = selectedToken;
+          batch.pos[0] = currentPos;
+          batch.n_seq_id[0] = 1;
+          batch.seq_id[0][0] = 0;
+          batch.logits[0] = 1;
+
+          final evalTick = Stopwatch()..start();
+          final decodeStatus = llama_decode(ctx.pointer, batch);
+          if (decodeStatus == 0 &&
+              !ngramApi.processBatch(ngramSession, batch)) {
+            throw Exception("ngram-simple decode processing failed");
+          }
+          evalTick.stop();
+          evalMicros += evalTick.elapsedMicroseconds;
+          if (decodeStatus != 0) break;
+
+          tokensPtr[currentPos] = selectedToken;
+          currentPos++;
+          continue;
+        }
+
+        final batchTokens = draftCount + 1;
+        batch.n_tokens = batchTokens;
+        batch.token[0] = selectedToken;
+        batch.pos[0] = currentPos;
+        batch.n_seq_id[0] = 1;
+        batch.seq_id[0][0] = 0;
+        batch.logits[0] = 1;
+        for (int i = 0; i < draftCount; i++) {
+          final batchIndex = i + 1;
+          batch.token[batchIndex] = draftPtr[i];
+          batch.pos[batchIndex] = currentPos + batchIndex;
+          batch.n_seq_id[batchIndex] = 1;
+          batch.seq_id[batchIndex][0] = 0;
+          batch.logits[batchIndex] = 1;
+        }
+
+        final evalTick = Stopwatch()..start();
+        final decodeStatus = llama_decode(ctx.pointer, batch);
+        if (decodeStatus == 0 && !ngramApi.processBatch(ngramSession, batch)) {
+          throw Exception("ngram-simple decode processing failed");
+        }
+        evalTick.stop();
+        evalMicros += evalTick.elapsedMicroseconds;
+        if (decodeStatus != 0) break;
+
+        for (int i = 0; i < batchTokens; i++) {
+          idxPtr[i] = i;
+        }
+
+        final verifyTick = Stopwatch()..start();
+        final acceptedCount = ngramApi.sampleAndAcceptN(
+          sampler,
+          ctx.pointer,
+          idxPtr,
+          batchTokens,
+          draftPtr,
+          draftCount,
+          acceptedPtr,
+          batchTokens,
+        );
+        verifyTick.stop();
+        verifyMicros += verifyTick.elapsedMicroseconds;
+        if (acceptedCount <= 0) {
+          throw Exception("llama.cpp ngram-simple draft verification failed");
+        }
+
+        final acceptedDraftCount = acceptedCount - 1;
+        speculativeAcceptedDraftTokens += acceptedDraftCount;
+        ngramApi.accept(ngramSession, 0, acceptedDraftCount);
+
+        final keepUntil = currentPos + 1 + acceptedDraftCount;
+        final targetMemory = llama_get_memory(ctx.pointer);
+        if (targetMemory == nullptr ||
+            !llama_memory_seq_rm(targetMemory, 0, keepUntil, -1)) {
+          throw UnsupportedError(
+            'llama.cpp ngram-simple target rollback failed for this context. '
+            'Set ModelParams.speculativeRollbackTokenMax >= draftTokenMax if '
+            'this model/backend uses bounded rollback snapshots.',
           );
         }
 
@@ -6371,6 +6897,132 @@ class _MtpApi {
             .lookupFunction<_LlamaDartMtpAcceptNative, _LlamaDartMtpAcceptDart>(
               'llama_dart_mtp_accept',
             ),
+        sampleAndAcceptN: library
+            .lookupFunction<
+              _LlamaDartSamplerSampleAndAcceptNNative,
+              _LlamaDartSamplerSampleAndAcceptNDart
+            >('llama_dart_sampler_sample_and_accept_n'),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+}
+
+class _NgramApi {
+  final _LlamaDartNgramSimpleInitDart initSimple;
+  final _LlamaDartNgramFreeDart free;
+  final _LlamaDartNgramBeginDart begin;
+  final _LlamaDartNgramProcessBatchDart processBatch;
+  final _LlamaDartNgramDraftDart draft;
+  final _LlamaDartNgramAcceptDart accept;
+  final _LlamaDartSamplerSampleAndAcceptNDart sampleAndAcceptN;
+
+  const _NgramApi({
+    required this.initSimple,
+    required this.free,
+    required this.begin,
+    required this.processBatch,
+    required this.draft,
+    required this.accept,
+    required this.sampleAndAcceptN,
+  });
+
+  factory _NgramApi.direct() {
+    final api = _NgramApi(
+      initSimple: llama_dart_ngram_simple_init,
+      free: llama_dart_ngram_free,
+      begin: llama_dart_ngram_begin,
+      processBatch: llama_dart_ngram_process_batch,
+      draft: llama_dart_ngram_draft,
+      accept: llama_dart_ngram_accept,
+      sampleAndAcceptN: llama_dart_sampler_sample_and_accept_n,
+    );
+    api.probe();
+    return api;
+  }
+
+  factory _NgramApi.windowsAsset() {
+    _llamadartWrapperNgramFree(nullptr.cast<llama_dart_ngram>());
+    return _NgramApi(
+      initSimple: _llamadartWrapperNgramSimpleInit,
+      free: _llamadartWrapperNgramFree,
+      begin: _llamadartWrapperNgramBegin,
+      processBatch: _llamadartWrapperNgramProcessBatch,
+      draft: _llamadartWrapperNgramDraft,
+      accept: _llamadartWrapperNgramAccept,
+      sampleAndAcceptN: _llamadartWrapperSamplerSampleAndAcceptN,
+    );
+  }
+
+  void probe() {
+    final nullNgram = nullptr.cast<llama_dart_ngram>();
+    final nullSampler = nullptr.cast<llama_sampler>();
+    final nullContext = nullptr.cast<llama_context>();
+    final nullTokenArray = nullptr.cast<Int32>();
+    final batch = llama_batch_init(1, 0, 1);
+    Pointer<llama_dart_ngram> probeSession = nullptr;
+    try {
+      probeSession = initSimple(12, 1);
+      if (probeSession != nullptr) {
+        free(probeSession);
+        probeSession = nullptr;
+      }
+      free(nullNgram);
+      begin(nullNgram, 0, nullTokenArray, 0);
+      processBatch(nullNgram, batch);
+      draft(nullNgram, 0, 0, 0, nullTokenArray, 0, 1, nullTokenArray, 0);
+      accept(nullNgram, 0, 0);
+      sampleAndAcceptN(
+        nullSampler,
+        nullContext,
+        nullTokenArray,
+        0,
+        nullTokenArray,
+        0,
+        nullTokenArray,
+        0,
+      );
+    } finally {
+      if (probeSession != nullptr) {
+        free(probeSession);
+      }
+      llama_batch_free(batch);
+    }
+  }
+
+  static _NgramApi? tryLoad(DynamicLibrary library) {
+    try {
+      return _NgramApi(
+        initSimple: library
+            .lookupFunction<
+              _LlamaDartNgramSimpleInitNative,
+              _LlamaDartNgramSimpleInitDart
+            >('llama_dart_ngram_simple_init'),
+        free: library
+            .lookupFunction<_LlamaDartNgramFreeNative, _LlamaDartNgramFreeDart>(
+              'llama_dart_ngram_free',
+            ),
+        begin: library
+            .lookupFunction<
+              _LlamaDartNgramBeginNative,
+              _LlamaDartNgramBeginDart
+            >('llama_dart_ngram_begin'),
+        processBatch: library
+            .lookupFunction<
+              _LlamaDartNgramProcessBatchNative,
+              _LlamaDartNgramProcessBatchDart
+            >('llama_dart_ngram_process_batch'),
+        draft: library
+            .lookupFunction<
+              _LlamaDartNgramDraftNative,
+              _LlamaDartNgramDraftDart
+            >('llama_dart_ngram_draft'),
+        accept: library
+            .lookupFunction<
+              _LlamaDartNgramAcceptNative,
+              _LlamaDartNgramAcceptDart
+            >('llama_dart_ngram_accept'),
         sampleAndAcceptN: library
             .lookupFunction<
               _LlamaDartSamplerSampleAndAcceptNNative,

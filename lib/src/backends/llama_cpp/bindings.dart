@@ -7841,6 +7841,70 @@ external void llama_dart_mtp_accept(
   int accepted_count,
 );
 
+@ffi.Native<ffi.Pointer<llama_dart_ngram> Function(ffi.Int32, ffi.Int32)>()
+external ffi.Pointer<llama_dart_ngram> llama_dart_ngram_simple_init(
+  int ngram_size,
+  int draft_token_max,
+);
+
+@ffi.Native<ffi.Void Function(ffi.Pointer<llama_dart_ngram>)>()
+external void llama_dart_ngram_free(ffi.Pointer<llama_dart_ngram> ngram);
+
+@ffi.Native<
+  ffi.Bool Function(
+    ffi.Pointer<llama_dart_ngram>,
+    llama_seq_id,
+    ffi.Pointer<llama_token>,
+    ffi.Int32,
+  )
+>()
+external bool llama_dart_ngram_begin(
+  ffi.Pointer<llama_dart_ngram> ngram,
+  int seq_id,
+  ffi.Pointer<llama_token> prompt,
+  int prompt_count,
+);
+
+@ffi.Native<ffi.Bool Function(ffi.Pointer<llama_dart_ngram>, llama_batch)>()
+external bool llama_dart_ngram_process_batch(
+  ffi.Pointer<llama_dart_ngram> ngram,
+  llama_batch batch,
+);
+
+@ffi.Native<
+  ffi.Int32 Function(
+    ffi.Pointer<llama_dart_ngram>,
+    llama_seq_id,
+    llama_pos,
+    llama_token,
+    ffi.Pointer<llama_token>,
+    ffi.Int32,
+    ffi.Int32,
+    ffi.Pointer<llama_token>,
+    ffi.Int32,
+  )
+>()
+external int llama_dart_ngram_draft(
+  ffi.Pointer<llama_dart_ngram> ngram,
+  int seq_id,
+  int n_past,
+  int id_last,
+  ffi.Pointer<llama_token> prompt,
+  int prompt_count,
+  int draft_token_max,
+  ffi.Pointer<llama_token> out_tokens,
+  int out_capacity,
+);
+
+@ffi.Native<
+  ffi.Void Function(ffi.Pointer<llama_dart_ngram>, llama_seq_id, ffi.Uint16)
+>()
+external void llama_dart_ngram_accept(
+  ffi.Pointer<llama_dart_ngram> ngram,
+  int seq_id,
+  int accepted_count,
+);
+
 @ffi.Native<
   ffi.Int32 Function(
     ffi.Pointer<llama_sampler>,
@@ -10278,6 +10342,8 @@ final class mtmd_helper_video_init_params extends ffi.Struct {
 }
 
 final class llama_dart_mtp extends ffi.Opaque {}
+
+final class llama_dart_ngram extends ffi.Opaque {}
 
 const int LLAMA_DEFAULT_SEED = 4294967295;
 

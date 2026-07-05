@@ -1013,6 +1013,10 @@ class LiteRtLmService {
     if (config == null) {
       return;
     }
+    if (config.strategy != SpeculativeDecodingStrategy.backendDefault &&
+        config.strategy != SpeculativeDecodingStrategy.mtp) {
+      unsupported.add('speculativeDecodingConfig.strategy');
+    }
     if (config.draftTokenMax != null) {
       unsupported.add('speculativeDecodingConfig.draftTokenMax');
     }
@@ -1024,6 +1028,9 @@ class LiteRtLmService {
     }
     if (config.draftModelPath != null) {
       unsupported.add('speculativeDecodingConfig.draftModelPath');
+    }
+    if (config.ngramSize != null) {
+      unsupported.add('speculativeDecodingConfig.ngramSize');
     }
   }
 
