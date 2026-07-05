@@ -686,6 +686,13 @@ class _LlamaCppSpeculativeConfig {
         strategy == SpeculativeDecodingStrategy.draftEagle3 ||
         strategy == SpeculativeDecodingStrategy.draftDflash,
   );
+
+  bool get suppressDraftProcessLogits => strategies.any(
+    (strategy) =>
+        strategy == SpeculativeDecodingStrategy.draftSimple ||
+        strategy == SpeculativeDecodingStrategy.draftEagle3 ||
+        strategy == SpeculativeDecodingStrategy.draftDflash,
+  );
 }
 
 class _LlamaCppMtpConfig {
@@ -3931,6 +3938,28 @@ class LlamaCppService {
     )?.typeNames;
   }
 
+  /// Resolves whether llama.cpp speculative prompt processing suppresses logits.
+  bool debugSuppressesDraftProcessLogitsForTesting(
+    GenerationParams params, {
+    bool hasMediaParts = false,
+  }) {
+    return _resolveLlamaCppSpeculativeConfig(
+          params,
+          hasMediaParts: hasMediaParts,
+        )?.suppressDraftProcessLogits ??
+        false;
+  }
+
+  /// Runs [action] while native batch logits are temporarily zeroed.
+  static T debugWithSuppressedBatchLogitsForTesting<T>(
+    Pointer<Int8> logits,
+    int tokenCount,
+    bool suppress,
+    T Function() action,
+  ) {
+    return _withSuppressedBatchLogits(logits, tokenCount, suppress, action);
+  }
+
   int _resolveLlamaCppSpeculativeDraftTokenMax(
     List<SpeculativeDecodingStrategy> strategies,
     SpeculativeDecodingConfig config,
@@ -4113,6 +4142,7 @@ class LlamaCppService {
             params.reusePromptPrefix,
         speculativeSession: speculativeSession,
         speculativeApi: speculativeApi,
+        speculativeConfig: speculativeConfig,
       );
       promptEvalStopwatch.stop();
       ctx.lastPerfPromptEvalMs =
@@ -4602,6 +4632,7 @@ class LlamaCppService {
     required bool allowTextPromptReuse,
     required Pointer<llama_dart_speculative> speculativeSession,
     required _SpeculativeApi? speculativeApi,
+    required _LlamaCppSpeculativeConfig? speculativeConfig,
   }) {
     final mediaParts =
         parts
@@ -4632,6 +4663,7 @@ class LlamaCppService {
         allowPromptReuse: allowTextPromptReuse,
         speculativeSession: speculativeSession,
         speculativeApi: speculativeApi,
+        speculativeConfig: speculativeConfig,
       );
     }
   }
@@ -4872,6 +4904,7 @@ class LlamaCppService {
     required bool allowPromptReuse,
     required Pointer<llama_dart_speculative> speculativeSession,
     required _SpeculativeApi? speculativeApi,
+    required _LlamaCppSpeculativeConfig? speculativeConfig,
   }) {
     final promptPtr = prompt.toNativeUtf8();
     final shouldAddSpecial = !_promptStartsWithBosToken(vocab, prompt);
@@ -4900,6 +4933,7 @@ class LlamaCppService {
         outputAllLogits: speculativeSession != nullptr,
         speculativeSession: speculativeSession,
         speculativeApi: speculativeApi,
+        speculativeConfig: speculativeConfig,
       );
     }
 
@@ -4914,6 +4948,7 @@ class LlamaCppService {
         outputAllLogits: speculativeSession != nullptr,
         speculativeSession: speculativeSession,
         speculativeApi: speculativeApi,
+        speculativeConfig: speculativeConfig,
       );
     }
 
@@ -4941,6 +4976,7 @@ class LlamaCppService {
         outputAllLogits: speculativeSession != nullptr,
         speculativeSession: speculativeSession,
         speculativeApi: speculativeApi,
+        speculativeConfig: speculativeConfig,
       );
     }
 
@@ -4955,6 +4991,7 @@ class LlamaCppService {
         outputAllLogits: speculativeSession != nullptr,
         speculativeSession: speculativeSession,
         speculativeApi: speculativeApi,
+        speculativeConfig: speculativeConfig,
       );
     }
 
@@ -4973,6 +5010,7 @@ class LlamaCppService {
         outputAllLogits: speculativeSession != nullptr,
         speculativeSession: speculativeSession,
         speculativeApi: speculativeApi,
+        speculativeConfig: speculativeConfig,
       );
     }
 
@@ -4987,6 +5025,7 @@ class LlamaCppService {
       outputAllLogits: speculativeSession != nullptr,
       speculativeSession: speculativeSession,
       speculativeApi: speculativeApi,
+      speculativeConfig: speculativeConfig,
     );
 
     ctx.cachedPromptTokens = exactStateLoadMatch
@@ -5007,6 +5046,7 @@ class LlamaCppService {
     bool outputAllLogits = false,
     Pointer<llama_dart_speculative>? speculativeSession,
     _SpeculativeApi? speculativeApi,
+    _LlamaCppSpeculativeConfig? speculativeConfig,
   }) {
     _clearContextMemory(ctx.pointer);
     _decodePromptSegment(
@@ -5019,6 +5059,7 @@ class LlamaCppService {
       outputAllLogits: outputAllLogits,
       speculativeSession: speculativeSession,
       speculativeApi: speculativeApi,
+      speculativeConfig: speculativeConfig,
     );
     ctx.cachedPromptTokens =
         existingCachedTokens ?? _copyPromptTokens(tokensPtr, nTokens);
@@ -5043,6 +5084,7 @@ class LlamaCppService {
     bool outputAllLogits = false,
     Pointer<llama_dart_speculative>? speculativeSession,
     _SpeculativeApi? speculativeApi,
+    _LlamaCppSpeculativeConfig? speculativeConfig,
   }) {
     if (tokenCount <= 0) {
       return;
@@ -5075,11 +5117,57 @@ class LlamaCppService {
       }
       if (speculativeSession != null &&
           speculativeSession != nullptr &&
-          !speculativeApi!.processBatch(speculativeSession, batch)) {
+          !_processSpeculativeBatch(
+            speculativeApi!,
+            speculativeSession,
+            batch,
+            speculativeConfig,
+          )) {
         throw Exception("Speculative prompt decode processing failed");
       }
 
       decoded += chunkTokenCount;
+    }
+  }
+
+  bool _processSpeculativeBatch(
+    _SpeculativeApi speculativeApi,
+    Pointer<llama_dart_speculative> speculativeSession,
+    llama_batch batch,
+    _LlamaCppSpeculativeConfig? speculativeConfig,
+  ) {
+    return _withSuppressedBatchLogits(
+      batch.logits,
+      batch.n_tokens,
+      speculativeConfig?.suppressDraftProcessLogits == true,
+      () => speculativeApi.processBatch(speculativeSession, batch),
+    );
+  }
+
+  static T _withSuppressedBatchLogits<T>(
+    Pointer<Int8> logits,
+    int tokenCount,
+    bool suppress,
+    T Function() action,
+  ) {
+    if (!suppress || logits == nullptr || tokenCount <= 0) {
+      return action();
+    }
+
+    final previousLogits = List<int>.generate(
+      tokenCount,
+      (index) => logits[index],
+      growable: false,
+    );
+    try {
+      for (var i = 0; i < tokenCount; i++) {
+        logits[i] = 0;
+      }
+      return action();
+    } finally {
+      for (var i = 0; i < previousLogits.length; i++) {
+        logits[i] = previousLogits[i];
+      }
     }
   }
 
@@ -5383,7 +5471,12 @@ class LlamaCppService {
           final evalTick = Stopwatch()..start();
           final decodeStatus = llama_decode(ctx.pointer, batch);
           if (decodeStatus == 0 &&
-              !speculativeApi.processBatch(speculativeSession, batch)) {
+              !_processSpeculativeBatch(
+                speculativeApi,
+                speculativeSession,
+                batch,
+                speculativeConfig,
+              )) {
             throw Exception("Speculative decode processing failed");
           }
           evalTick.stop();
@@ -5453,7 +5546,12 @@ class LlamaCppService {
           final evalTick = Stopwatch()..start();
           final decodeStatus = llama_decode(ctx.pointer, batch);
           if (decodeStatus == 0 &&
-              !speculativeApi.processBatch(speculativeSession, batch)) {
+              !_processSpeculativeBatch(
+                speculativeApi,
+                speculativeSession,
+                batch,
+                speculativeConfig,
+              )) {
             throw Exception("Speculative decode processing failed");
           }
           if (decodeStatus == 0) {
@@ -5536,7 +5634,12 @@ class LlamaCppService {
             final replayTick = Stopwatch()..start();
             final replayStatus = llama_decode(ctx.pointer, batch);
             if (replayStatus == 0 &&
-                !speculativeApi.processBatch(speculativeSession, batch)) {
+                !_processSpeculativeBatch(
+                  speculativeApi,
+                  speculativeSession,
+                  batch,
+                  speculativeConfig,
+                )) {
               throw Exception("Speculative replay processing failed");
             }
             if (replayStatus == 0) {

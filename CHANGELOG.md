@@ -1,5 +1,13 @@
 ## Unreleased
 
+* Added a durable flag-based llama.cpp speculative benchmark runner and wired
+  it into the local E2E scenario list, testing matrix, README, and website
+  performance guide.
+
+* Hardened generic llama.cpp external draft-model speculative decoding so
+  draft-context processing does not request unused logits, avoiding a
+  `draft-simple` native abort while preserving target verification logits.
+
 * Updated the default llama.cpp native runtime pin to
   `leehack/llamadart-native@b9873`, regenerated matching Dart FFI bindings,
   refreshed the `llamadart_llama_cpp_flutter` Apple SwiftPM checksum, and

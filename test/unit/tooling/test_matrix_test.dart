@@ -73,9 +73,26 @@ void main() {
 
       expect(table, contains('| ID | Tier | Mode |'));
       expect(table, contains('gguf-chat-features-smoke'));
-      expect(table, contains('LLAMADART_MTP_BENCHMARK_NGRAM_ONLY=true'));
-      expect(table, contains('llama_cpp_mtp_benchmark.dart <model.gguf>'));
-      expect(table, contains('1,2 1'));
+      expect(
+        table,
+        contains(
+          'run_local_e2e.dart --scenario llama-cpp-speculative-benchmark',
+        ),
+      );
+      expect(
+        table,
+        contains(
+          '--speculative-cases baseline,ngram-simple,ngram-map-k,ngram-map-k4v,'
+          'ngram-mod,mixed-ngram',
+        ),
+      );
+      expect(table, contains('--draft-token-max 1,2 --benchmark-warmups 1'));
+      expect(
+        table,
+        contains('Draft-model strategies require --draft-model-path'),
+      );
+      expect(table, isNot(contains('LLAMADART_MTP_BENCHMARK')));
+      expect(table, isNot(contains('llama_cpp_mtp_benchmark.dart')));
       expect(table, contains('run_local_e2e.dart'));
       expect(table, isNot(contains('static-format-analyze')));
     });

@@ -226,6 +226,17 @@ dart run tool/testing/native_inference_benchmark.dart \
   --runs 3 \
   --max-tokens 128
 
+# Benchmark llama.cpp speculative decoding strategies
+dart run tool/testing/llama_cpp_speculative_benchmark.dart \
+  --model path/to/model.gguf \
+  --cases baseline,ngram-simple,ngram-map-k,ngram-map-k4v,ngram-mod,mixed-ngram \
+  --backend cpu \
+  --gpu-layers 0 \
+  --max-tokens 128 \
+  --runs 3 \
+  --draft-token-max 1,2 \
+  --warmups 1
+
 # Benchmark embeddings (sequential vs batch)
 dart run tool/testing/native_embedding_benchmark.dart \
   --model path/to/model.gguf \
@@ -241,6 +252,9 @@ dart run tool/testing/native_embedding_sweep.dart \
   --max-seq-values 1,2,4,8 \
   --csv-out embedding_speedup.csv
 ```
+
+For the speculative benchmark runner, draft-model strategies require
+`--draft-model`; the n-gram cache strategy requires cache paths.
 
 Compare llama.cpp/GGUF and LiteRT-LM with the bundled fair benchmark scripts:
 

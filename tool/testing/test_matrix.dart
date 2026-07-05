@@ -141,17 +141,21 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     tier: 'targeted',
     mode: 'local-only',
     covers:
-        'real GGUF llama.cpp speculative decoding baseline, draft-model, and '
-        'n-gram throughput/acceptance metrics',
+        'real GGUF llama.cpp speculative decoding baseline, n-gram, '
+        'draft-model, and cache throughput/acceptance metrics',
     command:
-        'LLAMADART_MTP_BENCHMARK_NGRAM=true '
-        'LLAMADART_MTP_BENCHMARK_NGRAM_ONLY=true '
-        'LLAMADART_MTP_BENCHMARK_NGRAM_SIZE=1 dart run '
-        'tool/testing/llama_cpp_mtp_benchmark.dart <model.gguf> - 128 3 '
-        '1,2 1',
+        'dart run tool/testing/run_local_e2e.dart --scenario '
+        'llama-cpp-speculative-benchmark --model-path <model.gguf> '
+        '--backend cpu --speculative-cases baseline,ngram-simple,'
+        'ngram-map-k,ngram-map-k4v,ngram-mod,mixed-ngram '
+        '--benchmark-gpu-layers 0 --benchmark-max-tokens 128 '
+        '--benchmark-runs 3 --draft-token-max 1,2 '
+        '--benchmark-warmups 1',
     useWhen:
         'llama.cpp speculative decoding strategy, wrapper, rollback, or '
-        'performance changes.',
+        'performance changes. Draft-model strategies require '
+        '--draft-model-path in the local E2E scenario; ngram-cache requires '
+        'cache paths.',
   ),
   TestMatrixRow(
     id: 'gguf-chat-features-smoke',

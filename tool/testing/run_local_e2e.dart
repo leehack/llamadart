@@ -71,10 +71,20 @@ class LocalE2eRunContext {
     required this.port,
     required this.python,
     required this.modelPath,
+    required this.draftModelPath,
     required this.mmprojPath,
     required this.imagePath,
     required this.modelUrl,
     required this.backend,
+    required this.speculativeCases,
+    required this.benchmarkGpuLayers,
+    required this.benchmarkMaxTokens,
+    required this.benchmarkRuns,
+    required this.benchmarkWarmups,
+    required this.draftTokenMaxList,
+    required this.ngramSize,
+    required this.ngramCacheStaticPath,
+    required this.ngramCacheDynamicPath,
     required this.expect,
     required this.skipBuild,
   });
@@ -84,10 +94,20 @@ class LocalE2eRunContext {
   final int port;
   final String python;
   final String? modelPath;
+  final String? draftModelPath;
   final String? mmprojPath;
   final String? imagePath;
   final String? modelUrl;
   final String backend;
+  final String speculativeCases;
+  final String benchmarkGpuLayers;
+  final String benchmarkMaxTokens;
+  final String benchmarkRuns;
+  final String benchmarkWarmups;
+  final String draftTokenMaxList;
+  final String? ngramSize;
+  final String? ngramCacheStaticPath;
+  final String? ngramCacheDynamicPath;
   final String expect;
   final bool skipBuild;
 
@@ -190,6 +210,62 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
             executable: 'dart',
             arguments: arguments,
             description: 'GGUF chat feature smoke',
+          ),
+        ];
+      },
+    ),
+    LocalE2eScenario(
+      name: 'llama-cpp-speculative-benchmark',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description:
+          'Benchmark real GGUF llama.cpp speculative decoding strategies.',
+      requiresDevice: false,
+      stepsBuilder: (context) {
+        final arguments = <String>[
+          'run',
+          'tool/testing/llama_cpp_speculative_benchmark.dart',
+          '--model',
+          context.modelPath!,
+          '--cases',
+          context.speculativeCases,
+          '--backend',
+          context.backend,
+          '--gpu-layers',
+          context.benchmarkGpuLayers,
+          '--max-tokens',
+          context.benchmarkMaxTokens,
+          '--runs',
+          context.benchmarkRuns,
+          '--draft-token-max',
+          context.draftTokenMaxList,
+          '--warmups',
+          context.benchmarkWarmups,
+        ];
+        final draftModelPath = context.draftModelPath;
+        if (draftModelPath != null) {
+          arguments.addAll(['--draft-model', draftModelPath]);
+        }
+        final ngramSize = context.ngramSize;
+        if (ngramSize != null) {
+          arguments.addAll(['--ngram-size', ngramSize]);
+        }
+        final ngramCacheStaticPath = context.ngramCacheStaticPath;
+        if (ngramCacheStaticPath != null) {
+          arguments.addAll(['--ngram-cache-static-path', ngramCacheStaticPath]);
+        }
+        final ngramCacheDynamicPath = context.ngramCacheDynamicPath;
+        if (ngramCacheDynamicPath != null) {
+          arguments.addAll([
+            '--ngram-cache-dynamic-path',
+            ngramCacheDynamicPath,
+          ]);
+        }
+        return [
+          LocalE2eCommandStep(
+            workingDirectory: context.projectRoot,
+            executable: 'dart',
+            arguments: arguments,
+            description: 'llama.cpp speculative benchmark',
           ),
         ];
       },
@@ -587,6 +663,13 @@ Future<LocalE2eResult> runLocalE2e(
   if (parsed.imagePath != null && parsed.mmprojPath == null) {
     return LocalE2eResult(64, stderr: '--image-path requires --mmproj-path.\n');
   }
+  if (scenario.name == 'llama-cpp-speculative-benchmark' &&
+      parsed.modelPath == null) {
+    return LocalE2eResult(
+      64,
+      stderr: '--model-path is required for llama-cpp-speculative-benchmark.\n',
+    );
+  }
 
   final context = LocalE2eRunContext(
     projectRoot: root,
@@ -594,10 +677,20 @@ Future<LocalE2eResult> runLocalE2e(
     port: parsed.port,
     python: parsed.pythonProvided ? parsed.python : _defaultPython(root),
     modelPath: parsed.modelPath,
+    draftModelPath: parsed.draftModelPath,
     mmprojPath: parsed.mmprojPath,
     imagePath: parsed.imagePath,
     modelUrl: parsed.modelUrl,
     backend: parsed.backend,
+    speculativeCases: parsed.speculativeCases,
+    benchmarkGpuLayers: parsed.benchmarkGpuLayers,
+    benchmarkMaxTokens: parsed.benchmarkMaxTokens,
+    benchmarkRuns: parsed.benchmarkRuns,
+    benchmarkWarmups: parsed.benchmarkWarmups,
+    draftTokenMaxList: parsed.draftTokenMaxList,
+    ngramSize: parsed.ngramSize,
+    ngramCacheStaticPath: parsed.ngramCacheStaticPath,
+    ngramCacheDynamicPath: parsed.ngramCacheDynamicPath,
     expect: parsed.expect,
     skipBuild: parsed.skipBuild,
   );
@@ -789,10 +882,20 @@ Options:
   --port <port>                  Local web server port (default: 7358).
   --python <path>                Python executable for helper scripts (default: repo Playwright venv, then python3).
   --model-path <path>            Local model path for Dart local-only model scenarios.
+  --draft-model-path <path>      Optional draft GGUF model path for llama.cpp speculative benchmark.
   --mmproj-path <path>           Optional multimodal projector path for GGUF chat smoke.
   --image-path <path>            Optional image path for GGUF chat smoke multimodal variant.
   --model-url <url>              Model URL for real-model web smoke.
   --backend <name>               Backend for local model scenarios (default: auto).
+  --speculative-cases <list>     Benchmark cases for llama.cpp speculative benchmark.
+  --benchmark-gpu-layers <n>     GPU layers for benchmark scenarios (default: 0).
+  --benchmark-max-tokens <n>     Max tokens for benchmark scenarios (default: 128).
+  --benchmark-runs <n>           Measured runs for benchmark scenarios (default: 3).
+  --benchmark-warmups <n>        Warmup runs for benchmark scenarios (default: 1).
+  --draft-token-max <list>       Draft-token sweep for speculative benchmark (default: 1,2).
+  --ngram-size <n>               Optional n-gram size for speculative benchmark.
+  --ngram-cache-static-path <p>  Optional ngram-cache static path for speculative benchmark.
+  --ngram-cache-dynamic-path <p> Optional ngram-cache dynamic path for speculative benchmark.
   --expect <text>                Expected response text for real-model web smoke.
   --skip-build                   Reuse an existing Flutter web build where supported.
   -h, --help                     Show this help.
@@ -820,13 +923,23 @@ class _ParsedArgs {
     required this.python,
     required this.pythonProvided,
     required this.backend,
+    required this.speculativeCases,
+    required this.benchmarkGpuLayers,
+    required this.benchmarkMaxTokens,
+    required this.benchmarkRuns,
+    required this.benchmarkWarmups,
+    required this.draftTokenMaxList,
     required this.expect,
     required this.skipBuild,
     this.scenario,
     this.modelPath,
+    this.draftModelPath,
     this.mmprojPath,
     this.imagePath,
     this.modelUrl,
+    this.ngramSize,
+    this.ngramCacheStaticPath,
+    this.ngramCacheDynamicPath,
   });
 
   final bool list;
@@ -838,10 +951,20 @@ class _ParsedArgs {
   final String python;
   final bool pythonProvided;
   final String? modelPath;
+  final String? draftModelPath;
   final String? mmprojPath;
   final String? imagePath;
   final String? modelUrl;
   final String backend;
+  final String speculativeCases;
+  final String benchmarkGpuLayers;
+  final String benchmarkMaxTokens;
+  final String benchmarkRuns;
+  final String benchmarkWarmups;
+  final String draftTokenMaxList;
+  final String? ngramSize;
+  final String? ngramCacheStaticPath;
+  final String? ngramCacheDynamicPath;
   final String expect;
   final bool skipBuild;
 
@@ -854,13 +977,24 @@ class _ParsedArgs {
     var python = 'python3';
     var pythonProvided = false;
     var backend = 'auto';
+    var speculativeCases =
+        'baseline,ngram-simple,ngram-map-k,ngram-map-k4v,ngram-mod,mixed-ngram';
+    var benchmarkGpuLayers = '0';
+    var benchmarkMaxTokens = '128';
+    var benchmarkRuns = '3';
+    var benchmarkWarmups = '1';
+    var draftTokenMaxList = '1,2';
     var expect = '4';
     var skipBuild = false;
     String? scenario;
     String? modelPath;
+    String? draftModelPath;
     String? mmprojPath;
     String? imagePath;
     String? modelUrl;
+    String? ngramSize;
+    String? ngramCacheStaticPath;
+    String? ngramCacheDynamicPath;
 
     for (var index = 0; index < args.length; index++) {
       final arg = args[index];
@@ -884,6 +1018,8 @@ class _ParsedArgs {
           pythonProvided = true;
         case '--model-path':
           modelPath = _readValue(args, ++index, arg);
+        case '--draft-model-path':
+          draftModelPath = _readValue(args, ++index, arg);
         case '--mmproj-path':
           mmprojPath = _readValue(args, ++index, arg);
         case '--image-path':
@@ -892,6 +1028,24 @@ class _ParsedArgs {
           modelUrl = _readValue(args, ++index, arg);
         case '--backend':
           backend = _readValue(args, ++index, arg);
+        case '--speculative-cases':
+          speculativeCases = _readValue(args, ++index, arg);
+        case '--benchmark-gpu-layers':
+          benchmarkGpuLayers = _readValue(args, ++index, arg);
+        case '--benchmark-max-tokens':
+          benchmarkMaxTokens = _readValue(args, ++index, arg);
+        case '--benchmark-runs':
+          benchmarkRuns = _readValue(args, ++index, arg);
+        case '--benchmark-warmups':
+          benchmarkWarmups = _readValue(args, ++index, arg);
+        case '--draft-token-max':
+          draftTokenMaxList = _readValue(args, ++index, arg);
+        case '--ngram-size':
+          ngramSize = _readValue(args, ++index, arg);
+        case '--ngram-cache-static-path':
+          ngramCacheStaticPath = _readValue(args, ++index, arg);
+        case '--ngram-cache-dynamic-path':
+          ngramCacheDynamicPath = _readValue(args, ++index, arg);
         case '--expect':
           expect = _readValue(args, ++index, arg);
         default:
@@ -909,10 +1063,20 @@ class _ParsedArgs {
       python: python,
       pythonProvided: pythonProvided,
       modelPath: modelPath,
+      draftModelPath: draftModelPath,
       mmprojPath: mmprojPath,
       imagePath: imagePath,
       modelUrl: modelUrl,
       backend: backend,
+      speculativeCases: speculativeCases,
+      benchmarkGpuLayers: benchmarkGpuLayers,
+      benchmarkMaxTokens: benchmarkMaxTokens,
+      benchmarkRuns: benchmarkRuns,
+      benchmarkWarmups: benchmarkWarmups,
+      draftTokenMaxList: draftTokenMaxList,
+      ngramSize: ngramSize,
+      ngramCacheStaticPath: ngramCacheStaticPath,
+      ngramCacheDynamicPath: ngramCacheDynamicPath,
       expect: expect,
       skipBuild: skipBuild,
     );
