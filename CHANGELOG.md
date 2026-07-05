@@ -3,7 +3,10 @@
 * Added a durable flag-based llama.cpp speculative benchmark runner and wired
   it into the local E2E scenario list, testing matrix, README, and website
   performance guide. The runner can now generate a llama.cpp-compatible
-  static n-gram cache file for `ngram-cache` E2E validation.
+  static n-gram cache file for `ngram-cache` E2E validation, and renders
+  benchmark prompts with configured or loaded GGUF chat templates before the
+  generic fallback instead of silently falling back to a hard-coded Gemma
+  prompt.
 
 * Hardened generic llama.cpp external draft-model speculative decoding so
   draft-context processing does not request unused logits, avoiding a

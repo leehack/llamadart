@@ -73,6 +73,7 @@ void main() {
 
       expect(table, contains('| ID | Tier | Mode |'));
       expect(table, contains('gguf-chat-features-smoke'));
+      expect(table, contains('llama-cpp-chat-template-smoke'));
       expect(
         table,
         contains(

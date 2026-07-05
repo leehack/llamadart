@@ -286,6 +286,35 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       },
     ),
     LocalE2eScenario(
+      name: 'llama-cpp-chat-template-smoke',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description:
+          'Run real GGUF llama.cpp direct backend chat-template smoke.',
+      requiresDevice: false,
+      stepsBuilder: (context) {
+        final environment = <String, String>{};
+        final modelPath = context.modelPath;
+        if (modelPath != null) {
+          environment['LLAMADART_LLAMA_CPP_TEMPLATE_MODEL_PATH'] = modelPath;
+        }
+        return [
+          LocalE2eCommandStep(
+            workingDirectory: context.projectRoot,
+            executable: 'dart',
+            arguments: const [
+              'test',
+              '--run-skipped',
+              '-t',
+              'local-only',
+              'test/e2e/backends/llama_cpp_chat_template_backend_e2e_test.dart',
+            ],
+            environment: environment,
+            description: 'llama.cpp chat-template backend smoke',
+          ),
+        ];
+      },
+    ),
+    LocalE2eScenario(
       name: 'litert-lm-chat-features-smoke',
       group: LocalE2eScenarioGroup.dartLocalOnly,
       description: 'Run real LiteRT-LM chat, thinking, and tool-call smoke.',
@@ -678,11 +707,12 @@ Future<LocalE2eResult> runLocalE2e(
   if (parsed.imagePath != null && parsed.mmprojPath == null) {
     return LocalE2eResult(64, stderr: '--image-path requires --mmproj-path.\n');
   }
-  if (scenario.name == 'llama-cpp-speculative-benchmark' &&
+  if ((scenario.name == 'llama-cpp-speculative-benchmark' ||
+          scenario.name == 'llama-cpp-chat-template-smoke') &&
       parsed.modelPath == null) {
     return LocalE2eResult(
       64,
-      stderr: '--model-path is required for llama-cpp-speculative-benchmark.\n',
+      stderr: '--model-path is required for ${scenario.name}.\n',
     );
   }
 

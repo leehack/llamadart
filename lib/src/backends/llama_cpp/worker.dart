@@ -245,7 +245,14 @@ void llamaWorkerEntry(SendPort initialSendPort) {
 
           case ChatTemplateRequest():
             message.sendPort.send(
-              ErrorResponse("Chat template not implemented in service yet"),
+              ChatTemplateResponse(
+                service.applyChatTemplate(
+                  message.modelHandle,
+                  message.messages,
+                  customTemplate: message.customTemplate,
+                  addAssistant: message.addAssistant,
+                ),
+              ),
             );
 
           case StateSaveFileRequest():

@@ -334,7 +334,10 @@ In the local E2E scenario, draft-model strategies require
 build a static cache with `--ngram-cache-build-static-path`. Use
 `tool/testing/llama_cpp_speculative_benchmark.dart` directly for advanced
 strategy-specific benchmark knobs; the raw runner's draft-model flag is
-`--draft-model`.
+`--draft-model`. Benchmark prompts use an explicit `ModelParams.chatTemplate`
+or the loaded GGUF model's chat template before the engine's generic fallback,
+so upstream `--jinja` comparisons are not mixed with a hard-coded Gemma
+fallback; pass `--raw-prompt` only for intentional raw-prompt comparisons.
 
 For target/draft model pairs, pass the separate drafter GGUF with
 `draftModelPath`. Use `draftSimple`, `draftEagle3`, `mtp`, or `draftDflash`

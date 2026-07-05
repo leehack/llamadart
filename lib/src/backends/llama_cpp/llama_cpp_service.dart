@@ -8,6 +8,8 @@ import 'package:ffi/ffi.dart';
 import 'package:path/path.dart' as path;
 
 import '../../core/llama_logger.dart';
+import '../../core/models/chat/chat_message.dart';
+import '../../core/models/chat/chat_role.dart';
 import '../../core/models/chat/content_part.dart';
 import '../../core/models/config/gpu_backend.dart';
 import '../../core/models/config/gpu_device_info.dart';
@@ -15,6 +17,7 @@ import '../../core/models/config/log_level.dart';
 import '../../core/models/diagnostics/model_file_type.dart';
 import '../../core/models/inference/generation_params.dart';
 import '../../core/models/inference/model_params.dart';
+import '../../core/template/chat_template_engine.dart';
 import 'load_param_helpers.dart';
 import 'bindings.dart';
 import 'llama_cpp_raw_bindings.dart' as raw_bindings;
@@ -6740,6 +6743,112 @@ class LlamaCppService {
 
     final name = namePtr.cast<Utf8>().toDartString();
     return ModelFileType(id: ftype, name: name);
+  }
+
+  /// Applies the configured or loaded model chat template to [messages].
+  String applyChatTemplate(
+    int modelHandle,
+    List<Map<String, dynamic>> messages, {
+    String? customTemplate,
+    bool addAssistant = true,
+  }) {
+    if (!_models.containsKey(modelHandle)) {
+      throw Exception('Invalid model handle');
+    }
+    final metadata = getMetadata(modelHandle);
+    final modelParamsTemplate = _modelLoadParams[modelHandle]?.chatTemplate;
+    final templateSource = customTemplate == null
+        ? modelParamsTemplate ?? _modelChatTemplate(modelHandle)
+        : null;
+    final result = ChatTemplateEngine.render(
+      templateSource: templateSource ?? metadata['tokenizer.chat_template'],
+      messages: messages.map(_messageFromTemplateMap).toList(growable: false),
+      metadata: metadata,
+      addAssistant: addAssistant,
+      customTemplate: customTemplate,
+    );
+    return result.prompt;
+  }
+
+  String? _modelChatTemplate(int modelHandle) {
+    final model = _models[modelHandle];
+    if (model == null) {
+      return null;
+    }
+    final templatePtr = llama_model_chat_template(model.pointer, nullptr);
+    if (templatePtr == nullptr) {
+      return null;
+    }
+    final template = templatePtr.cast<Utf8>().toDartString();
+    return template.isEmpty ? null : template;
+  }
+
+  LlamaChatMessage _messageFromTemplateMap(Map<String, dynamic> message) {
+    final roleName = message['role']?.toString() ?? LlamaChatRole.user.name;
+    final role = LlamaChatRole.values.byName(roleName);
+    return LlamaChatMessage.fromText(
+      role: role,
+      text: _contentTextFromTemplateMap(message['content']),
+    );
+  }
+
+  String _contentTextFromTemplateMap(Object? content) {
+    if (content == null) {
+      return '';
+    }
+    if (content is String) {
+      return content;
+    }
+    if (content is Map) {
+      if (_isUnsupportedTemplateContentPart(content)) {
+        throw UnsupportedError(
+          'LlamaCppBackend does not support multimodal chat-template content.',
+        );
+      }
+      if (content['type']?.toString() == 'text' && content['text'] != null) {
+        return content['text'].toString();
+      }
+      return content.toString();
+    }
+    if (content is Iterable) {
+      final buffer = StringBuffer();
+      for (final part in content) {
+        if (part is Map) {
+          if (_isUnsupportedTemplateContentPart(part)) {
+            throw UnsupportedError(
+              'LlamaCppBackend does not support multimodal chat-template '
+              'content.',
+            );
+          }
+          final type = part['type']?.toString();
+          if (type == 'text' && part['text'] != null) {
+            buffer.write(part['text']);
+            continue;
+          }
+        }
+        buffer.write(part);
+      }
+      return buffer.toString();
+    }
+    return content.toString();
+  }
+
+  bool _isUnsupportedTemplateContentPart(Map<dynamic, dynamic> part) {
+    final type = part['type']?.toString().toLowerCase();
+    if (type == 'image' ||
+        type == 'image_url' ||
+        type == 'input_image' ||
+        type == 'audio' ||
+        type == 'input_audio' ||
+        type == 'video' ||
+        type == 'input_video') {
+      return true;
+    }
+    return part.containsKey('image') ||
+        part.containsKey('image_url') ||
+        part.containsKey('input_audio') ||
+        part.containsKey('audio') ||
+        part.containsKey('video');
   }
 
   /// Handles LoRA adapter operations.

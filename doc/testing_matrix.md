@@ -65,7 +65,7 @@ Pick targeted rows based on the touched surface:
 | --- | --- |
 | Native-assets hook, runtime pin, bundle layout | `native-hook-bundles`, `litert-lm-engine-smoke`, and relevant `platform` rows such as `android-arm64-device-smoke` |
 | llama.cpp / GGUF generation, prompt reuse, context reuse | `native-prompt-reuse-parity`, `native-inference-benchmark`, `gguf-chat-features-smoke` |
-| Chat template, parser, tools, thinking extraction | `template-parity`, `gguf-chat-features-smoke`, `litert-lm-chat-features-smoke` |
+| Chat template, parser, tools, thinking extraction | `template-parity`, `llama-cpp-chat-template-smoke`, `gguf-chat-features-smoke`, `litert-lm-chat-features-smoke` |
 | LiteRT-LM native backend | `litert-lm-engine-smoke`, `litert-lm-chat-features-smoke` |
 | Web bridge bootstrap or interop | `web-bridge-smoke`, `web-mock-chat-smoke`, `web-real-model-smoke` |
 | WebGPU multimodal | `webgpu-multimodal-regression` |
@@ -176,6 +176,14 @@ dart run tool/testing/run_local_e2e.dart \
 In the local E2E scenario, draft-model strategies require
 `--draft-model-path`; the n-gram cache strategy can use existing cache paths or
 build a static cache with `--ngram-cache-build-static-path`.
+Speculative benchmark prompts use the loaded model's chat template by default;
+use raw-prompt options only for intentional raw-vs-template comparisons.
+
+```bash
+dart run tool/testing/run_local_e2e.dart \
+  --scenario llama-cpp-chat-template-smoke \
+  --model-path models/Qwen3.5-0.8B-Q4_K_M.gguf
+```
 
 Use `--dry-run` first when a scenario starts servers, builds Flutter web, or
 requires local model URLs.
