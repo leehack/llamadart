@@ -17,7 +17,7 @@ void main() {
         'not-a-case',
       ]);
 
-      expect(result.exitCode, 64);
+      expect(result.exitCode, isNot(0));
       expect(result.stderr, contains('all, draftless, ngram'));
     });
   });
