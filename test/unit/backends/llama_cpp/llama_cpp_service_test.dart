@@ -134,6 +134,119 @@ void main() {
     });
   });
 
+  group('speculative validation', () {
+    late LlamaCppService service;
+    late Directory tempDir;
+
+    setUp(() {
+      service = LlamaCppService();
+      tempDir = Directory.systemTemp.createTempSync('llamadart-spec-');
+    });
+
+    tearDown(() {
+      if (tempDir.existsSync()) {
+        tempDir.deleteSync(recursive: true);
+      }
+    });
+
+    test('de-duplicates mixed strategies before native mapping', () {
+      final typeNames = service.debugResolveSpeculativeTypeNamesForTesting(
+        const GenerationParams(
+          speculativeDecodingConfig: SpeculativeDecodingConfig.mixed(
+            strategies: [
+              SpeculativeDecodingStrategy.ngramMod,
+              SpeculativeDecodingStrategy.ngramMod,
+              SpeculativeDecodingStrategy.mtp,
+              SpeculativeDecodingStrategy.mtp,
+            ],
+            draftTokenMax: 4,
+          ),
+        ),
+      );
+
+      expect(typeNames, 'ngram-mod,draft-mtp');
+    });
+
+    test('rejects mixed configs with more than one draft strategy', () {
+      expect(
+        () => service.debugResolveSpeculativeTypeNamesForTesting(
+          const GenerationParams(
+            speculativeDecodingConfig: SpeculativeDecodingConfig.mixed(
+              strategies: [
+                SpeculativeDecodingStrategy.mtp,
+                SpeculativeDecodingStrategy.draftSimple,
+              ],
+              draftModelPath: 'draft.gguf',
+            ),
+          ),
+        ),
+        throwsA(
+          isA<UnsupportedError>().having(
+            (error) => error.message,
+            'message',
+            contains('at most one draft-model strategy'),
+          ),
+        ),
+      );
+    });
+
+    test('requires draftModelPath for external draft strategies', () {
+      expect(
+        () => service.debugResolveSpeculativeTypeNamesForTesting(
+          const GenerationParams(
+            speculativeDecodingConfig: SpeculativeDecodingConfig.mixed(
+              strategies: [SpeculativeDecodingStrategy.draftEagle3],
+            ),
+          ),
+        ),
+        throwsA(
+          isA<ArgumentError>().having(
+            (error) => error.message,
+            'message',
+            contains('requires draftModelPath'),
+          ),
+        ),
+      );
+    });
+
+    test('rejects invalid ngram-cache paths', () {
+      expect(
+        () => service.debugResolveSpeculativeTypeNamesForTesting(
+          const GenerationParams(
+            speculativeDecodingConfig: SpeculativeDecodingConfig.ngramCache(
+              ngramCacheStaticPath: ' ',
+            ),
+          ),
+        ),
+        throwsA(
+          isA<ArgumentError>().having(
+            (error) => error.message,
+            'message',
+            contains('must be null or a non-empty path'),
+          ),
+        ),
+      );
+
+      final missingPath = path.join(tempDir.path, 'missing.ngram');
+      expect(
+        () => service.debugResolveSpeculativeTypeNamesForTesting(
+          GenerationParams(
+            speculativeDecodingConfig: SpeculativeDecodingConfig.ngramCache(
+              ngramCacheStaticPath: missingPath,
+            ),
+          ),
+        ),
+        throwsA(
+          isA<ArgumentError>().having(
+            (error) => error.message,
+            'message',
+            contains('must exist before enabling llama.cpp ngram-cache'),
+          ),
+        ),
+      );
+    });
+  });
+
   group('invalid-handle guard rails', () {
     late LlamaCppService service;
 

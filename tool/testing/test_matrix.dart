@@ -137,6 +137,23 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'Generation latency, streaming, batching, prompt reuse, or performance changes.',
   ),
   TestMatrixRow(
+    id: 'llama-cpp-speculative-benchmark',
+    tier: 'targeted',
+    mode: 'local-only',
+    covers:
+        'real GGUF llama.cpp speculative decoding baseline, draft-model, and '
+        'n-gram throughput/acceptance metrics',
+    command:
+        'LLAMADART_MTP_BENCHMARK_NGRAM=true '
+        'LLAMADART_MTP_BENCHMARK_NGRAM_ONLY=true '
+        'LLAMADART_MTP_BENCHMARK_NGRAM_SIZE=1 dart run '
+        'tool/testing/llama_cpp_mtp_benchmark.dart <model.gguf> - 128 3 '
+        '1,2 1',
+    useWhen:
+        'llama.cpp speculative decoding strategy, wrapper, rollback, or '
+        'performance changes.',
+  ),
+  TestMatrixRow(
     id: 'gguf-chat-features-smoke',
     tier: 'targeted',
     mode: 'local-only',

@@ -131,7 +131,7 @@ hooks:
     llamadart:
       # Optional. Defaults to llamadart's tested native runtime pin.
       # Use a leehack/llamadart-native release tag when testing another build.
-      llamadart_native_tag: b9860
+      llamadart_native_tag: b9873
 
       # Optional. GitHub repository slug or github.com URL.
       llamadart_native_repository: leehack/llamadart-native
@@ -159,7 +159,7 @@ the native-assets hook fails while downloading that asset.
 
 Native source overrides are for compatibility testing. They do not regenerate
 Dart FFI bindings or symbol lookups, so the selected binary still must be ABI-
-and symbol-compatible with the default `leehack/llamadart-native@b9860` runtime.
+and symbol-compatible with the default `leehack/llamadart-native@b9873` runtime.
 
 Available native tags are published on the
 [`leehack/llamadart-native` releases page](https://github.com/leehack/llamadart-native/releases).
@@ -171,7 +171,7 @@ gh release list --repo leehack/llamadart-native --limit 20
 
 Before overriding, confirm the release includes the asset for your target. The
 hook downloads files named `llamadart-native-<bundle>-<tag>.tar.gz`, for example
-`llamadart-native-windows-x64-b9860.tar.gz`.
+`llamadart-native-windows-x64-b9873.tar.gz`.
 For local testing, `llamadart_native_path` may point directly at a bundle
 archive, at an extracted bundle directory, or at a directory containing
 `<tag>/<bundle>/`, `<bundle>/`, or the expected archive file.
@@ -250,9 +250,14 @@ other models, or to override detection, pass `ModelParams.chatTemplate`. See
 for the template support matrix, real-model smoke commands, and how to add a
 family.
 
-llama.cpp MTP speculative decoding is available for compatible GGUF models. For
-Qwen3.5 MTP-style models, reserve rollback snapshots on the context and enable
-MTP on the generation request:
+llama.cpp speculative decoding is available for compatible GGUF models. The
+Dart API mirrors the upstream strategy surface: `draft-simple`,
+`draft-eagle3`, `draft-mtp`, `draft-dflash`, `ngram-simple`, `ngram-map-k`,
+`ngram-map-k4v`, `ngram-mod`, and `ngram-cache`. Upstream allows draftless
+n-gram strategies to be mixed with one draft-model strategy; use
+`SpeculativeDecodingConfig.mixed(...)` for that shape. For Qwen3.5 MTP-style
+models, reserve rollback snapshots on the context and enable MTP on the
+generation request:
 
 ```dart
 await engine.loadModel(
@@ -288,15 +293,40 @@ Higher `draftTokenMax` values can be faster on some models/devices, but they
 should be benchmarked with the target model because excess draft depth can add
 verification overhead.
 
-For target/draft model pairs, pass the separate drafter GGUF with
-`draftModelPath`:
+For GGUF models without an MTP or separate draft model, llama.cpp n-gram
+speculative decoding uses recent token history as the drafter:
 
 ```dart
 params: const GenerationParams(
   maxTokens: 128,
-  speculativeDecodingConfig: SpeculativeDecodingConfig.mtp(
+  speculativeDecodingConfig: SpeculativeDecodingConfig.ngramSimple(
+    draftTokenMax: 48,
+    ngramSize: 12,
+  ),
+),
+```
+
+Reserve `ModelParams.speculativeRollbackTokenMax` at least as large as
+`draftTokenMax` before using speculative decoding. N-gram speculation is
+workload-dependent and can be slower than baseline decoding on prompts with
+little repetition, so validate it with your model and prompt shape. Upstream
+`--spec-default` maps to `ngram-mod`; in llamadart, legacy
+`GenerationParams(speculativeDecoding: true)` uses that llama.cpp default. For
+local measurements, set
+`LLAMADART_MTP_BENCHMARK_NGRAM=true` and
+`LLAMADART_MTP_BENCHMARK_NGRAM_ONLY=true` when running
+`tool/testing/llama_cpp_mtp_benchmark.dart`.
+
+For target/draft model pairs, pass the separate drafter GGUF with
+`draftModelPath`. Use `draftSimple`, `draftEagle3`, `mtp`, or `draftDflash`
+depending on the draft model type:
+
+```dart
+params: const GenerationParams(
+  maxTokens: 128,
+  speculativeDecodingConfig: SpeculativeDecodingConfig.draftEagle3(
     draftModelPath: 'path/to/draft-model.gguf',
-    draftTokenMax: 1,
+    draftTokenMax: 3,
   ),
 ),
 ```
@@ -581,7 +611,7 @@ the current strict structured-output boundary.
 <details>
 <summary>Full module matrix (available modules by target)</summary>
 
-Available llama.cpp module matrix from the default native tag `b9860`:
+Available llama.cpp module matrix from the default native tag `b9873`:
 
 | Target | Available backend modules in bundle |
 |--------|-------------------------------------|
@@ -724,7 +754,10 @@ Notes:
 - Flutter Apple companion packages use SPM binary target URL/checksum pins from
   their `packages/*/darwin/*/Package.swift` files. Customize Apple SPM binary
   sources by using path/git overrides or forks of those companion packages.
-- The native-assets hook refreshes emitted files each build; if you change `hooks.user_defines` or are upgrading from older cached outputs, run `flutter clean && flutter pub get` before rebuilding.
+- The native-assets hook refreshes emitted files each build; if you change
+  `hooks.user_defines`, upgrade from older cached outputs, or a native release
+  tag was republished with refreshed assets, run
+  `flutter clean && flutter pub get` before rebuilding.
 - Some Vulkan drivers can crash when probing cooperative matrix support. This
   is a driver-side failure in the Vulkan property query path, not a llamadart
   loader failure. Use upstream ggml-vulkan's opt-out environment variables
@@ -893,9 +926,9 @@ Current pinned runtime artifacts:
 
 | Runtime path | Published artifact |
 |--------------|--------------------|
-| Native llama.cpp / GGUF | `leehack/llamadart-native@b9860` |
+| Native llama.cpp / GGUF | `leehack/llamadart-native@b9873` |
 | Native LiteRT-LM / `.litertlm` | `leehack/litert-lm-native@v0.14.0-native.1` |
-| Apple SPM llama.cpp / GGUF | `llamadart_llama_cpp_flutter` pins `leehack/llamadart-native@b9860` Apple XCFramework |
+| Apple SPM llama.cpp / GGUF | `llamadart_llama_cpp_flutter` pins `leehack/llamadart-native@b9873` Apple XCFramework |
 | Apple SPM LiteRT-LM / `.litertlm` | `llamadart_litert_lm_flutter` pins `leehack/litert-lm-native@v0.14.0-native.1` Apple XCFrameworks |
 | Web llama.cpp / GGUF | `leehack/llama-web-bridge-assets@v0.1.17` |
 | Web LiteRT-LM / `.litertlm` | App-provided `@litert-lm/core` module URL; the chat app defaults to jsDelivr `@litert-lm/core/+esm` |

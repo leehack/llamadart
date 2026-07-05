@@ -7,7 +7,7 @@ This page combines platform support, runtime-family selection, and
 backend-module configuration for
 `llamadart`.
 
-The native-assets hook currently pins `llamadart-native` tag `b9860` and
+The native-assets hook currently pins `llamadart-native` tag `b9873` and
 `litert-lm-native` release `v0.14.0-native.1` (`hook/build.dart`). Apps can
 override the llama.cpp native GitHub source with
 `hooks.user_defines.llamadart.llamadart_native_tag` and
@@ -191,7 +191,7 @@ device/model bundle, use `cpu` or `gpu` for that artifact.
   a web load failure as a package bug. The [WebGPU Bridge](./webgpu-bridge)
   page has the browser-console probe and Flutter Web smoke-test path.
 
-## Current llama.cpp module availability by bundle (`b9860`)
+## Current llama.cpp module availability by bundle (`b9873`)
 
 | Bundle key | Available backend modules in bundle |
 | --- | --- |
@@ -239,7 +239,7 @@ hooks:
   user_defines:
     llamadart:
       # Optional. Defaults to llamadart's tested native runtime pin.
-      llamadart_native_tag: b9860
+      llamadart_native_tag: b9873
 
       # Optional. GitHub repository slug or github.com URL.
       llamadart_native_repository: leehack/llamadart-native
@@ -359,6 +359,9 @@ no valid entries remain, selection falls back to `cpu_profile` (or default
   `llamadart_native_path`, `llamadart_native_runtimes`, or
   `llamadart_native_backends`, run `flutter clean` once to clear stale
   native-asset outputs.
+- If a native release tag is republished with refreshed assets, also run
+  `flutter clean` before rebuilding so an older same-tag extracted bundle does
+  not stay in use.
 
 ## Vulkan cooperative matrix driver crashes
 

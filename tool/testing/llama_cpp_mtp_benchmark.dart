@@ -12,7 +12,11 @@ Future<void> main(List<String> args) async {
       '[draft-token-max-list] [warmups]\n'
       'Set LLAMADART_MTP_BENCHMARK_INSTRUCTION to override the prompt.\n'
       'Set LLAMADART_MTP_BENCHMARK_BACKEND to override the backend.\n'
-      'Set LLAMADART_MTP_BENCHMARK_RAW_PROMPT=true to skip chat wrapping.',
+      'Set LLAMADART_MTP_BENCHMARK_RAW_PROMPT=true to skip chat wrapping.\n'
+      'Set LLAMADART_MTP_BENCHMARK_NGRAM=true to include ngram-simple cases.\n'
+      'Set LLAMADART_MTP_BENCHMARK_NGRAM_ONLY=true to omit MTP cases.\n'
+      'Set LLAMADART_MTP_BENCHMARK_NGRAM_SIZE to override ngram-simple size.\n'
+      'Set LLAMADART_MTP_BENCHMARK_PENALTY to override the repeat penalty.',
     );
     exitCode = 64;
     return;
@@ -35,11 +39,26 @@ Future<void> main(List<String> args) async {
   );
   final rawPrompt =
       Platform.environment['LLAMADART_MTP_BENCHMARK_RAW_PROMPT'] == 'true';
+  final ngramOnly =
+      Platform.environment['LLAMADART_MTP_BENCHMARK_NGRAM_ONLY'] == 'true';
+  final includeNgramSimple =
+      ngramOnly ||
+      Platform.environment['LLAMADART_MTP_BENCHMARK_NGRAM'] == 'true';
+  final ngramSize =
+      int.tryParse(
+        Platform.environment['LLAMADART_MTP_BENCHMARK_NGRAM_SIZE'] ?? '',
+      ) ??
+      12;
 
   final maxDraftTokenMax = draftTokenMaxValues.fold<int>(
     1,
     (max, value) => value > max ? value : max,
   );
+  final generationPenalty =
+      double.tryParse(
+        Platform.environment['LLAMADART_MTP_BENCHMARK_PENALTY'] ?? '',
+      ) ??
+      1.1;
   final baselineModelParams = ModelParams(
     contextSize: 2048,
     preferredBackend: preferredBackend,
@@ -65,11 +84,18 @@ Future<void> main(List<String> args) async {
 
     final benchmarkCases = <_BenchmarkCase>[
       const _BenchmarkCase.baseline(),
-      for (final draftTokenMax in draftTokenMaxValues)
-        _BenchmarkCase.mtp(
-          draftModelPath: draftModelPath,
-          draftTokenMax: draftTokenMax,
-        ),
+      if (!ngramOnly)
+        for (final draftTokenMax in draftTokenMaxValues)
+          _BenchmarkCase.mtp(
+            draftModelPath: draftModelPath,
+            draftTokenMax: draftTokenMax,
+          ),
+      if (includeNgramSimple)
+        for (final draftTokenMax in draftTokenMaxValues)
+          _BenchmarkCase.ngramSimple(
+            draftTokenMax: draftTokenMax,
+            ngramSize: ngramSize,
+          ),
     ];
 
     final results = <_RunResult>[];
@@ -84,6 +110,7 @@ Future<void> main(List<String> args) async {
               : baselineModelParams,
           prompt: prompt,
           maxTokens: maxTokens,
+          generationPenalty: generationPenalty,
           benchmarkCase: benchmarkCase,
           runIndex: i,
           warmup: true,
@@ -102,6 +129,7 @@ Future<void> main(List<String> args) async {
               : baselineModelParams,
           prompt: prompt,
           maxTokens: maxTokens,
+          generationPenalty: generationPenalty,
           benchmarkCase: benchmarkCase,
           runIndex: i,
           warmup: false,
@@ -121,6 +149,10 @@ Future<void> main(List<String> args) async {
         'backend': backendName,
         'model': modelPath,
         'draftModel': draftModelPath,
+        'includeNgramSimple': includeNgramSimple,
+        'ngramOnly': ngramOnly,
+        'ngramSize': includeNgramSimple ? ngramSize : null,
+        'penalty': generationPenalty,
         'maxTokens': maxTokens,
         'measuredRuns': measuredRuns,
         'warmupRuns': warmupRuns,
@@ -191,6 +223,7 @@ Future<_RunResult> _runCase({
   required ModelParams modelParams,
   required String prompt,
   required int maxTokens,
+  required double generationPenalty,
   required _BenchmarkCase benchmarkCase,
   required int runIndex,
   required bool warmup,
@@ -210,6 +243,7 @@ Future<_RunResult> _runCase({
       GenerationParams(
         maxTokens: maxTokens,
         temp: 0.0,
+        penalty: generationPenalty,
         seed: 7,
         reusePromptPrefix: false,
         speculativeDecodingConfig: benchmarkCase.speculativeDecodingConfig,
@@ -366,6 +400,19 @@ class _BenchmarkCase {
         draftTokenMax: draftTokenMax,
         draftTokenMin: 0,
         minProbability: 0.0,
+      ),
+    );
+  }
+
+  factory _BenchmarkCase.ngramSimple({
+    required int draftTokenMax,
+    required int ngramSize,
+  }) {
+    return _BenchmarkCase._(
+      'ngram_simple_n${ngramSize}_draft_$draftTokenMax',
+      SpeculativeDecodingConfig.ngramSimple(
+        draftTokenMax: draftTokenMax,
+        ngramSize: ngramSize,
       ),
     );
   }

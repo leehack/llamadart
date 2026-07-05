@@ -2157,6 +2157,108 @@ void main() {
           ),
         ),
       );
+
+      await expectLater(
+        service.generate(
+          contextHandle,
+          'hello',
+          const GenerationParams(
+            speculativeDecodingConfig: SpeculativeDecodingConfig.ngramSimple(
+              draftTokenMax: 4,
+              ngramSize: 12,
+              ngramSizeM: 16,
+              ngramMinHits: 2,
+            ),
+          ),
+        ),
+        emitsError(
+          isA<UnsupportedError>().having(
+            (error) => error.message.toString(),
+            'message',
+            allOf(
+              contains('speculativeDecodingConfig.strategy'),
+              contains('speculativeDecodingConfig.draftTokenMax'),
+              contains('speculativeDecodingConfig.ngramSize'),
+              contains('speculativeDecodingConfig.ngramSizeN'),
+              contains('speculativeDecodingConfig.ngramSizeM'),
+              contains('speculativeDecodingConfig.ngramMinHits'),
+            ),
+          ),
+        ),
+      );
+
+      await expectLater(
+        service.generate(
+          contextHandle,
+          'hello',
+          const GenerationParams(
+            speculativeDecodingConfig: SpeculativeDecodingConfig.mtp(
+              draftSplitProbability: 0.1,
+            ),
+          ),
+        ),
+        emitsError(
+          isA<UnsupportedError>().having(
+            (error) => error.message.toString(),
+            'message',
+            contains('speculativeDecodingConfig.draftSplitProbability'),
+          ),
+        ),
+      );
+
+      await expectLater(
+        service.generate(
+          contextHandle,
+          'hello',
+          const GenerationParams(
+            speculativeDecodingConfig: SpeculativeDecodingConfig.mixed(
+              strategies: [
+                SpeculativeDecodingStrategy.ngramMod,
+                SpeculativeDecodingStrategy.mtp,
+              ],
+              ngramMatch: 2,
+              ngramTokenMin: 1,
+              ngramTokenMax: 4,
+            ),
+          ),
+        ),
+        emitsError(
+          isA<UnsupportedError>().having(
+            (error) => error.message.toString(),
+            'message',
+            allOf(
+              contains('speculativeDecodingConfig.strategy'),
+              contains('speculativeDecodingConfig.ngramMatch'),
+              contains('speculativeDecodingConfig.ngramTokenMin'),
+              contains('speculativeDecodingConfig.ngramTokenMax'),
+            ),
+          ),
+        ),
+      );
+
+      await expectLater(
+        service.generate(
+          contextHandle,
+          'hello',
+          const GenerationParams(
+            speculativeDecodingConfig: SpeculativeDecodingConfig.ngramCache(
+              ngramCacheStaticPath: 'static.ngram',
+              ngramCacheDynamicPath: 'dynamic.ngram',
+            ),
+          ),
+        ),
+        emitsError(
+          isA<UnsupportedError>().having(
+            (error) => error.message.toString(),
+            'message',
+            allOf(
+              contains('speculativeDecodingConfig.strategy'),
+              contains('speculativeDecodingConfig.ngramCacheStaticPath'),
+              contains('speculativeDecodingConfig.ngramCacheDynamicPath'),
+            ),
+          ),
+        ),
+      );
     } finally {
       service.dispose();
     }

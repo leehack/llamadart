@@ -42,6 +42,33 @@ enum SpeculativeDecodingStrategy {
   /// llama.cpp maps this to its `draft-mtp` speculative path. LiteRT-LM native
   /// currently maps this to its runtime speculative decoding switch.
   mtp,
+
+  /// Self-speculative n-gram pattern matching.
+  ///
+  /// llama.cpp maps this to its `ngram-simple` path. It uses token history
+  /// rather than a separate draft model.
+  ngramSimple,
+
+  /// Standalone draft-model speculative decoding.
+  draftSimple,
+
+  /// EAGLE-3 draft-model speculative decoding.
+  draftEagle3,
+
+  /// DFlash block-diffusion draft-model speculative decoding.
+  draftDflash,
+
+  /// Self-speculative n-gram map with key-only lookup.
+  ngramMapK,
+
+  /// Self-speculative n-gram map with up to four values per key.
+  ngramMapK4v,
+
+  /// Self-speculative n-gram hasher with a shared token pool.
+  ngramMod,
+
+  /// Self-speculative three-level n-gram cache.
+  ngramCache,
 }
 
 /// Backend-neutral speculative decoding configuration.
@@ -51,7 +78,17 @@ enum SpeculativeDecodingStrategy {
 /// silently falling back.
 class SpeculativeDecodingConfig {
   /// Strategy to use when speculative decoding is enabled.
+  ///
+  /// For single-strategy configs this mirrors [strategies].first. For mixed
+  /// llama.cpp configs, use [strategies].
   final SpeculativeDecodingStrategy strategy;
+
+  /// Ordered speculative decoding strategies to enable.
+  ///
+  /// llama.cpp follows upstream `--spec-type` semantics: draftless n-gram
+  /// strategies can be mixed with one draft-model strategy. Other backends may
+  /// reject mixed strategy sets until they expose equivalent controls.
+  final List<SpeculativeDecodingStrategy> strategies;
 
   /// Maximum number of draft tokens to propose per speculative step.
   ///
@@ -68,48 +105,385 @@ class SpeculativeDecodingConfig {
   /// `null` lets the backend choose its default.
   final double? minProbability;
 
+  /// Split probability for draft-model speculative decoding.
+  ///
+  /// `null` lets the backend choose its default.
+  final double? draftSplitProbability;
+
   /// Optional draft model path for speculative decoding modes that use a
   /// separate drafter model, such as llama.cpp `--model-draft` with
-  /// `draft-mtp`.
+  /// `draft-simple`, `draft-eagle3`, `draft-mtp`, or `draft-dflash`.
   ///
   /// Leave null for models that carry their own MTP layers.
   final String? draftModelPath;
 
+  /// Lookup n-gram size for n-gram self-speculative decoding.
+  ///
+  /// Alias for [ngramSizeN] retained for source compatibility with the first
+  /// ngram-simple API. New code should prefer [ngramSizeN].
+  final int? ngramSize;
+
+  /// Lookup n-gram size N for upstream n-gram speculative strategies.
+  final int? ngramSizeN;
+
+  /// Draft m-gram size M for ngram-simple/map strategies.
+  final int? ngramSizeM;
+
+  /// Minimum number of matching hits for ngram-simple/map strategies.
+  final int? ngramMinHits;
+
+  /// Lookup length for ngram-mod.
+  final int? ngramMatch;
+
+  /// Minimum accepted draft length for ngram-mod.
+  final int? ngramTokenMin;
+
+  /// Maximum draft length for ngram-mod.
+  final int? ngramTokenMax;
+
+  /// Optional static n-gram cache path for ngram-cache.
+  final String? ngramCacheStaticPath;
+
+  /// Optional dynamic n-gram cache path for ngram-cache.
+  final String? ngramCacheDynamicPath;
+
   /// Creates a backend-neutral speculative decoding configuration.
   const SpeculativeDecodingConfig({
     this.strategy = SpeculativeDecodingStrategy.backendDefault,
+    this.strategies = const [],
     this.draftTokenMax,
     this.draftTokenMin,
     this.minProbability,
+    this.draftSplitProbability,
     this.draftModelPath,
+    this.ngramSize,
+    this.ngramSizeN,
+    this.ngramSizeM,
+    this.ngramMinHits,
+    this.ngramMatch,
+    this.ngramTokenMin,
+    this.ngramTokenMax,
+    this.ngramCacheStaticPath,
+    this.ngramCacheDynamicPath,
   }) : assert(draftTokenMax == null || draftTokenMax >= 0),
        assert(draftTokenMin == null || draftTokenMin >= 0),
+       assert(ngramSize == null || ngramSize > 0),
+       assert(ngramSizeN == null || ngramSizeN > 0),
+       assert(ngramSizeM == null || ngramSizeM > 0),
+       assert(ngramMinHits == null || ngramMinHits > 0),
+       assert(ngramMatch == null || ngramMatch > 0),
+       assert(ngramTokenMin == null || ngramTokenMin >= 0),
+       assert(ngramTokenMax == null || ngramTokenMax >= 0),
        assert(
          minProbability == null ||
              (minProbability >= 0.0 && minProbability <= 1.0),
+       ),
+       assert(
+         draftSplitProbability == null ||
+             (draftSplitProbability >= 0.0 && draftSplitProbability <= 1.0),
        );
 
   /// Enables the backend's default speculative decoding behavior.
   const SpeculativeDecodingConfig.backendDefault()
     : strategy = SpeculativeDecodingStrategy.backendDefault,
+      strategies = const [SpeculativeDecodingStrategy.backendDefault],
       draftTokenMax = null,
       draftTokenMin = null,
       minProbability = null,
-      draftModelPath = null;
+      draftSplitProbability = null,
+      draftModelPath = null,
+      ngramSize = null,
+      ngramSizeN = null,
+      ngramSizeM = null,
+      ngramMinHits = null,
+      ngramMatch = null,
+      ngramTokenMin = null,
+      ngramTokenMax = null,
+      ngramCacheStaticPath = null,
+      ngramCacheDynamicPath = null;
 
   /// Enables multi-token prediction speculative decoding.
   const SpeculativeDecodingConfig.mtp({
     this.draftTokenMax,
     this.draftTokenMin,
     this.minProbability,
+    this.draftSplitProbability,
     this.draftModelPath,
   }) : strategy = SpeculativeDecodingStrategy.mtp,
+       strategies = const [SpeculativeDecodingStrategy.mtp],
+       ngramSize = null,
+       ngramSizeN = null,
+       ngramSizeM = null,
+       ngramMinHits = null,
+       ngramMatch = null,
+       ngramTokenMin = null,
+       ngramTokenMax = null,
+       ngramCacheStaticPath = null,
+       ngramCacheDynamicPath = null,
        assert(draftTokenMax == null || draftTokenMax >= 0),
        assert(draftTokenMin == null || draftTokenMin >= 0),
        assert(
          minProbability == null ||
              (minProbability >= 0.0 && minProbability <= 1.0),
+       ),
+       assert(
+         draftSplitProbability == null ||
+             (draftSplitProbability >= 0.0 && draftSplitProbability <= 1.0),
        );
+
+  /// Enables standalone draft-model speculative decoding.
+  const SpeculativeDecodingConfig.draftSimple({
+    this.draftTokenMax,
+    this.draftTokenMin,
+    this.minProbability,
+    this.draftSplitProbability,
+    required this.draftModelPath,
+  }) : strategy = SpeculativeDecodingStrategy.draftSimple,
+       strategies = const [SpeculativeDecodingStrategy.draftSimple],
+       ngramSize = null,
+       ngramSizeN = null,
+       ngramSizeM = null,
+       ngramMinHits = null,
+       ngramMatch = null,
+       ngramTokenMin = null,
+       ngramTokenMax = null,
+       ngramCacheStaticPath = null,
+       ngramCacheDynamicPath = null,
+       assert(draftTokenMax == null || draftTokenMax >= 0),
+       assert(draftTokenMin == null || draftTokenMin >= 0),
+       assert(
+         minProbability == null ||
+             (minProbability >= 0.0 && minProbability <= 1.0),
+       ),
+       assert(
+         draftSplitProbability == null ||
+             (draftSplitProbability >= 0.0 && draftSplitProbability <= 1.0),
+       );
+
+  /// Enables EAGLE-3 draft-model speculative decoding.
+  const SpeculativeDecodingConfig.draftEagle3({
+    this.draftTokenMax,
+    this.draftTokenMin,
+    this.minProbability,
+    this.draftSplitProbability,
+    required this.draftModelPath,
+  }) : strategy = SpeculativeDecodingStrategy.draftEagle3,
+       strategies = const [SpeculativeDecodingStrategy.draftEagle3],
+       ngramSize = null,
+       ngramSizeN = null,
+       ngramSizeM = null,
+       ngramMinHits = null,
+       ngramMatch = null,
+       ngramTokenMin = null,
+       ngramTokenMax = null,
+       ngramCacheStaticPath = null,
+       ngramCacheDynamicPath = null,
+       assert(draftTokenMax == null || draftTokenMax >= 0),
+       assert(draftTokenMin == null || draftTokenMin >= 0),
+       assert(
+         minProbability == null ||
+             (minProbability >= 0.0 && minProbability <= 1.0),
+       ),
+       assert(
+         draftSplitProbability == null ||
+             (draftSplitProbability >= 0.0 && draftSplitProbability <= 1.0),
+       );
+
+  /// Enables DFlash draft-model speculative decoding.
+  const SpeculativeDecodingConfig.draftDflash({
+    this.draftTokenMax,
+    this.draftTokenMin,
+    this.minProbability,
+    this.draftSplitProbability,
+    required this.draftModelPath,
+  }) : strategy = SpeculativeDecodingStrategy.draftDflash,
+       strategies = const [SpeculativeDecodingStrategy.draftDflash],
+       ngramSize = null,
+       ngramSizeN = null,
+       ngramSizeM = null,
+       ngramMinHits = null,
+       ngramMatch = null,
+       ngramTokenMin = null,
+       ngramTokenMax = null,
+       ngramCacheStaticPath = null,
+       ngramCacheDynamicPath = null,
+       assert(draftTokenMax == null || draftTokenMax >= 0),
+       assert(draftTokenMin == null || draftTokenMin >= 0),
+       assert(
+         minProbability == null ||
+             (minProbability >= 0.0 && minProbability <= 1.0),
+       ),
+       assert(
+         draftSplitProbability == null ||
+             (draftSplitProbability >= 0.0 && draftSplitProbability <= 1.0),
+       );
+
+  /// Enables llama.cpp ngram-simple speculative decoding.
+  ///
+  /// Ngram-simple uses previous tokens as its draft source and maps to upstream
+  /// `ngram-simple`.
+  const SpeculativeDecodingConfig.ngramSimple({
+    this.draftTokenMax,
+    int? ngramSize,
+    int? ngramSizeN,
+    this.ngramSizeM,
+    this.ngramMinHits,
+  }) : strategy = SpeculativeDecodingStrategy.ngramSimple,
+       strategies = const [SpeculativeDecodingStrategy.ngramSimple],
+       draftTokenMin = null,
+       minProbability = null,
+       draftSplitProbability = null,
+       draftModelPath = null,
+       ngramSize = ngramSizeN ?? ngramSize,
+       ngramSizeN = ngramSizeN ?? ngramSize,
+       ngramMatch = null,
+       ngramTokenMin = null,
+       ngramTokenMax = null,
+       ngramCacheStaticPath = null,
+       ngramCacheDynamicPath = null,
+       assert(draftTokenMax == null || draftTokenMax >= 0),
+       assert(ngramSize == null || ngramSize > 0),
+       assert(ngramSizeN == null || ngramSizeN > 0),
+       assert(ngramSizeM == null || ngramSizeM > 0),
+       assert(ngramMinHits == null || ngramMinHits > 0);
+
+  /// Enables llama.cpp ngram-map-k speculative decoding.
+  const SpeculativeDecodingConfig.ngramMapK({
+    this.draftTokenMax,
+    int? ngramSize,
+    int? ngramSizeN,
+    this.ngramSizeM,
+    this.ngramMinHits,
+  }) : strategy = SpeculativeDecodingStrategy.ngramMapK,
+       strategies = const [SpeculativeDecodingStrategy.ngramMapK],
+       draftTokenMin = null,
+       minProbability = null,
+       draftSplitProbability = null,
+       draftModelPath = null,
+       ngramSize = ngramSizeN ?? ngramSize,
+       ngramSizeN = ngramSizeN ?? ngramSize,
+       ngramMatch = null,
+       ngramTokenMin = null,
+       ngramTokenMax = null,
+       ngramCacheStaticPath = null,
+       ngramCacheDynamicPath = null,
+       assert(draftTokenMax == null || draftTokenMax >= 0),
+       assert(ngramSize == null || ngramSize > 0),
+       assert(ngramSizeN == null || ngramSizeN > 0),
+       assert(ngramSizeM == null || ngramSizeM > 0),
+       assert(ngramMinHits == null || ngramMinHits > 0);
+
+  /// Enables llama.cpp ngram-map-k4v speculative decoding.
+  const SpeculativeDecodingConfig.ngramMapK4v({
+    this.draftTokenMax,
+    int? ngramSize,
+    int? ngramSizeN,
+    this.ngramSizeM,
+    this.ngramMinHits,
+  }) : strategy = SpeculativeDecodingStrategy.ngramMapK4v,
+       strategies = const [SpeculativeDecodingStrategy.ngramMapK4v],
+       draftTokenMin = null,
+       minProbability = null,
+       draftSplitProbability = null,
+       draftModelPath = null,
+       ngramSize = ngramSizeN ?? ngramSize,
+       ngramSizeN = ngramSizeN ?? ngramSize,
+       ngramMatch = null,
+       ngramTokenMin = null,
+       ngramTokenMax = null,
+       ngramCacheStaticPath = null,
+       ngramCacheDynamicPath = null,
+       assert(draftTokenMax == null || draftTokenMax >= 0),
+       assert(ngramSize == null || ngramSize > 0),
+       assert(ngramSizeN == null || ngramSizeN > 0),
+       assert(ngramSizeM == null || ngramSizeM > 0),
+       assert(ngramMinHits == null || ngramMinHits > 0);
+
+  /// Enables llama.cpp ngram-mod speculative decoding.
+  const SpeculativeDecodingConfig.ngramMod({
+    this.draftTokenMax,
+    this.ngramMatch,
+    this.ngramTokenMin,
+    this.ngramTokenMax,
+  }) : strategy = SpeculativeDecodingStrategy.ngramMod,
+       strategies = const [SpeculativeDecodingStrategy.ngramMod],
+       draftTokenMin = null,
+       minProbability = null,
+       draftSplitProbability = null,
+       draftModelPath = null,
+       ngramSize = null,
+       ngramSizeN = null,
+       ngramSizeM = null,
+       ngramMinHits = null,
+       ngramCacheStaticPath = null,
+       ngramCacheDynamicPath = null,
+       assert(draftTokenMax == null || draftTokenMax >= 0),
+       assert(ngramMatch == null || ngramMatch > 0),
+       assert(ngramTokenMin == null || ngramTokenMin >= 0),
+       assert(ngramTokenMax == null || ngramTokenMax >= 0);
+
+  /// Enables llama.cpp ngram-cache speculative decoding.
+  const SpeculativeDecodingConfig.ngramCache({
+    this.draftTokenMax,
+    this.ngramCacheStaticPath,
+    this.ngramCacheDynamicPath,
+  }) : strategy = SpeculativeDecodingStrategy.ngramCache,
+       strategies = const [SpeculativeDecodingStrategy.ngramCache],
+       draftTokenMin = null,
+       minProbability = null,
+       draftSplitProbability = null,
+       draftModelPath = null,
+       ngramSize = null,
+       ngramSizeN = null,
+       ngramSizeM = null,
+       ngramMinHits = null,
+       ngramMatch = null,
+       ngramTokenMin = null,
+       ngramTokenMax = null,
+       assert(draftTokenMax == null || draftTokenMax >= 0);
+
+  /// Enables a mixed llama.cpp speculative configuration.
+  ///
+  /// This mirrors upstream comma-separated `--spec-type`. Use at most one
+  /// draft-model strategy and any number of draftless n-gram strategies.
+  const SpeculativeDecodingConfig.mixed({
+    required this.strategies,
+    this.draftTokenMax,
+    this.draftTokenMin,
+    this.minProbability,
+    this.draftSplitProbability,
+    this.draftModelPath,
+    this.ngramSize,
+    this.ngramSizeN,
+    this.ngramSizeM,
+    this.ngramMinHits,
+    this.ngramMatch,
+    this.ngramTokenMin,
+    this.ngramTokenMax,
+    this.ngramCacheStaticPath,
+    this.ngramCacheDynamicPath,
+  }) : strategy = SpeculativeDecodingStrategy.backendDefault,
+       assert(draftTokenMax == null || draftTokenMax >= 0),
+       assert(draftTokenMin == null || draftTokenMin >= 0),
+       assert(ngramSize == null || ngramSize > 0),
+       assert(ngramSizeN == null || ngramSizeN > 0),
+       assert(ngramSizeM == null || ngramSizeM > 0),
+       assert(ngramMinHits == null || ngramMinHits > 0),
+       assert(ngramMatch == null || ngramMatch > 0),
+       assert(ngramTokenMin == null || ngramTokenMin >= 0),
+       assert(ngramTokenMax == null || ngramTokenMax >= 0),
+       assert(
+         minProbability == null ||
+             (minProbability >= 0.0 && minProbability <= 1.0),
+       ),
+       assert(
+         draftSplitProbability == null ||
+             (draftSplitProbability >= 0.0 && draftSplitProbability <= 1.0),
+       );
+
+  /// Effective strategy list for backends that support upstream-style mixing.
+  List<SpeculativeDecodingStrategy> get effectiveStrategies =>
+      strategies.isEmpty ? <SpeculativeDecodingStrategy>[strategy] : strategies;
 }
 
 /// Parameters controlling the token sampling and generation process.

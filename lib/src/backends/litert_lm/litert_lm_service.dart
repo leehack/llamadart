@@ -1013,6 +1013,17 @@ class LiteRtLmService {
     if (config == null) {
       return;
     }
+    final strategies = config.effectiveStrategies;
+    final unsupportedStrategy =
+        strategies.length > 1 ||
+        strategies.any(
+          (strategy) =>
+              strategy != SpeculativeDecodingStrategy.backendDefault &&
+              strategy != SpeculativeDecodingStrategy.mtp,
+        );
+    if (unsupportedStrategy) {
+      unsupported.add('speculativeDecodingConfig.strategy');
+    }
     if (config.draftTokenMax != null) {
       unsupported.add('speculativeDecodingConfig.draftTokenMax');
     }
@@ -1022,8 +1033,38 @@ class LiteRtLmService {
     if (config.minProbability != null) {
       unsupported.add('speculativeDecodingConfig.minProbability');
     }
+    if (config.draftSplitProbability != null) {
+      unsupported.add('speculativeDecodingConfig.draftSplitProbability');
+    }
     if (config.draftModelPath != null) {
       unsupported.add('speculativeDecodingConfig.draftModelPath');
+    }
+    if (config.ngramSize != null) {
+      unsupported.add('speculativeDecodingConfig.ngramSize');
+    }
+    if (config.ngramSizeN != null) {
+      unsupported.add('speculativeDecodingConfig.ngramSizeN');
+    }
+    if (config.ngramSizeM != null) {
+      unsupported.add('speculativeDecodingConfig.ngramSizeM');
+    }
+    if (config.ngramMinHits != null) {
+      unsupported.add('speculativeDecodingConfig.ngramMinHits');
+    }
+    if (config.ngramMatch != null) {
+      unsupported.add('speculativeDecodingConfig.ngramMatch');
+    }
+    if (config.ngramTokenMin != null) {
+      unsupported.add('speculativeDecodingConfig.ngramTokenMin');
+    }
+    if (config.ngramTokenMax != null) {
+      unsupported.add('speculativeDecodingConfig.ngramTokenMax');
+    }
+    if (config.ngramCacheStaticPath != null) {
+      unsupported.add('speculativeDecodingConfig.ngramCacheStaticPath');
+    }
+    if (config.ngramCacheDynamicPath != null) {
+      unsupported.add('speculativeDecodingConfig.ngramCacheDynamicPath');
     }
   }
 

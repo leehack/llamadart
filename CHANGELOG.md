@@ -1,5 +1,20 @@
 ## Unreleased
 
+* Updated the default llama.cpp native runtime pin to
+  `leehack/llamadart-native@b9873`, regenerated matching Dart FFI bindings,
+  refreshed the `llamadart_llama_cpp_flutter` Apple SwiftPM checksum, and
+  aligned current README/website native override docs.
+
+* Hardened LiteRT-LM generation validation so llama.cpp-only speculative
+  decoding knobs fail loudly instead of silently degrading to LiteRT-LM's
+  boolean speculative toggle.
+
+* Added llama.cpp upstream speculative decoding parity through
+  `SpeculativeDecodingConfig` constructors for draft-simple, EAGLE3, MTP,
+  DFlash, ngram-simple, ngram-map-k, ngram-map-k4v, ngram-mod, ngram-cache,
+  and mixed n-gram plus one draft-model strategy, including generic native
+  wrapper bindings, docs, and local benchmark matrix coverage.
+
 * Added `LlamaStructuredOutput` and `LlamaEngine.createStructuredJson(...)`
   helpers for strict JSON-object / JSON-schema generation with final-output
   validation and typed decoding.
