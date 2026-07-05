@@ -15,7 +15,8 @@ Future<void> main(List<String> args) async {
       'Set LLAMADART_MTP_BENCHMARK_RAW_PROMPT=true to skip chat wrapping.\n'
       'Set LLAMADART_MTP_BENCHMARK_NGRAM=true to include ngram-simple cases.\n'
       'Set LLAMADART_MTP_BENCHMARK_NGRAM_ONLY=true to omit MTP cases.\n'
-      'Set LLAMADART_MTP_BENCHMARK_NGRAM_SIZE to override ngram-simple size.',
+      'Set LLAMADART_MTP_BENCHMARK_NGRAM_SIZE to override ngram-simple size.\n'
+      'Set LLAMADART_MTP_BENCHMARK_PENALTY to override the repeat penalty.',
     );
     exitCode = 64;
     return;
@@ -53,6 +54,11 @@ Future<void> main(List<String> args) async {
     1,
     (max, value) => value > max ? value : max,
   );
+  final generationPenalty =
+      double.tryParse(
+        Platform.environment['LLAMADART_MTP_BENCHMARK_PENALTY'] ?? '',
+      ) ??
+      (includeNgramSimple && maxDraftTokenMax > 2 ? 1.0 : 1.1);
   final baselineModelParams = ModelParams(
     contextSize: 2048,
     preferredBackend: preferredBackend,
@@ -104,6 +110,7 @@ Future<void> main(List<String> args) async {
               : baselineModelParams,
           prompt: prompt,
           maxTokens: maxTokens,
+          generationPenalty: generationPenalty,
           benchmarkCase: benchmarkCase,
           runIndex: i,
           warmup: true,
@@ -122,6 +129,7 @@ Future<void> main(List<String> args) async {
               : baselineModelParams,
           prompt: prompt,
           maxTokens: maxTokens,
+          generationPenalty: generationPenalty,
           benchmarkCase: benchmarkCase,
           runIndex: i,
           warmup: false,
@@ -144,6 +152,7 @@ Future<void> main(List<String> args) async {
         'includeNgramSimple': includeNgramSimple,
         'ngramOnly': ngramOnly,
         'ngramSize': includeNgramSimple ? ngramSize : null,
+        'penalty': generationPenalty,
         'maxTokens': maxTokens,
         'measuredRuns': measuredRuns,
         'warmupRuns': warmupRuns,
@@ -214,6 +223,7 @@ Future<_RunResult> _runCase({
   required ModelParams modelParams,
   required String prompt,
   required int maxTokens,
+  required double generationPenalty,
   required _BenchmarkCase benchmarkCase,
   required int runIndex,
   required bool warmup,
@@ -233,6 +243,7 @@ Future<_RunResult> _runCase({
       GenerationParams(
         maxTokens: maxTokens,
         temp: 0.0,
+        penalty: generationPenalty,
         seed: 7,
         reusePromptPrefix: false,
         speculativeDecodingConfig: benchmarkCase.speculativeDecodingConfig,

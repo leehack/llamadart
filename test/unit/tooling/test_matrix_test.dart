@@ -74,6 +74,7 @@ void main() {
       expect(table, contains('| ID | Tier | Mode |'));
       expect(table, contains('gguf-chat-features-smoke'));
       expect(table, contains('LLAMADART_MTP_BENCHMARK_NGRAM_ONLY=true'));
+      expect(table, contains('LLAMADART_MTP_BENCHMARK_PENALTY=1.0'));
       expect(table, contains('run_local_e2e.dart'));
       expect(table, isNot(contains('static-format-analyze')));
     });

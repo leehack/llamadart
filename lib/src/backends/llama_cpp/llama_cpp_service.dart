@@ -7,6 +7,7 @@ import 'dart:math' as math;
 import 'package:ffi/ffi.dart';
 import 'package:path/path.dart' as path;
 
+import '../../core/exceptions.dart';
 import '../../core/llama_logger.dart';
 import '../../core/models/chat/content_part.dart';
 import '../../core/models/config/gpu_backend.dart';
@@ -3554,6 +3555,15 @@ class LlamaCppService {
             'must be greater than zero for llama.cpp ngram-simple',
           );
         }
+        if (draftTokenMax > 2 && params.penalty != 1.0) {
+          throw LlamaUnsupportedException(
+            'llama.cpp ngram-simple speculative decoding with '
+            'draftTokenMax > 2 requires GenerationParams.penalty == 1.0 in '
+            'llamadart. Repeat penalties can make deeper n-gram verification '
+            'diverge after rejected draft tails. Set penalty: 1.0 for deeper '
+            'ngram-simple drafts, or use draftTokenMax <= 2.',
+          );
+        }
 
         return _LlamaCppNgramSimpleConfig(
           draftTokenMax: draftTokenMax,
@@ -4882,7 +4892,6 @@ class LlamaCppService {
     var speculativeDraftTokens = 0;
     var speculativeAcceptedDraftTokens = 0;
     var shouldStop = false;
-
     try {
       while (!shouldStop && generatedTokens < params.maxTokens) {
         if (cancelToken.value == 1) break;
@@ -5278,114 +5287,215 @@ class LlamaCppService {
         }
 
         final batchTokens = draftCount + 1;
-        batch.n_tokens = batchTokens;
-        batch.token[0] = selectedToken;
-        batch.pos[0] = currentPos;
-        batch.n_seq_id[0] = 1;
-        batch.seq_id[0][0] = 0;
-        batch.logits[0] = 1;
-        for (int i = 0; i < draftCount; i++) {
-          final batchIndex = i + 1;
-          batch.token[batchIndex] = draftPtr[i];
-          batch.pos[batchIndex] = currentPos + batchIndex;
-          batch.n_seq_id[batchIndex] = 1;
-          batch.seq_id[batchIndex][0] = 0;
-          batch.logits[batchIndex] = 1;
-        }
-
-        final evalTick = Stopwatch()..start();
-        final decodeStatus = llama_decode(ctx.pointer, batch);
-        if (decodeStatus == 0 && !ngramApi.processBatch(ngramSession, batch)) {
-          throw Exception("ngram-simple decode processing failed");
-        }
-        evalTick.stop();
-        evalMicros += evalTick.elapsedMicroseconds;
-        if (decodeStatus != 0) break;
-
-        for (int i = 0; i < batchTokens; i++) {
-          idxPtr[i] = i;
-        }
-
-        final verifyTick = Stopwatch()..start();
-        final acceptedCount = ngramApi.sampleAndAcceptN(
-          sampler,
-          ctx.pointer,
-          idxPtr,
-          batchTokens,
-          draftPtr,
-          draftCount,
-          acceptedPtr,
-          batchTokens,
-        );
-        verifyTick.stop();
-        verifyMicros += verifyTick.elapsedMicroseconds;
-        if (acceptedCount <= 0) {
-          throw Exception("llama.cpp ngram-simple draft verification failed");
-        }
-
-        final acceptedDraftCount = acceptedCount - 1;
-        speculativeAcceptedDraftTokens += acceptedDraftCount;
-        ngramApi.accept(ngramSession, 0, acceptedDraftCount);
-
-        final keepUntil = currentPos + 1 + acceptedDraftCount;
-        final targetMemory = llama_get_memory(ctx.pointer);
-        if (targetMemory == nullptr ||
-            !llama_memory_seq_rm(targetMemory, 0, keepUntil, -1)) {
-          throw UnsupportedError(
-            'llama.cpp ngram-simple target rollback failed for this context. '
-            'Set ModelParams.speculativeRollbackTokenMax >= draftTokenMax if '
-            'this model/backend uses bounded rollback snapshots.',
-          );
-        }
-
-        tokensPtr[currentPos] = selectedToken;
-        for (int i = 0; i < acceptedDraftCount; i++) {
-          tokensPtr[currentPos + 1 + i] = acceptedPtr[i];
-        }
-        currentPos = keepUntil;
-
-        for (int i = 0; i < acceptedCount; i++) {
-          final token = acceptedPtr[i];
-          if (llama_vocab_is_eog(vocab, token)) {
-            shouldStop = true;
-            break;
-          }
-
-          final pieceTick = Stopwatch()..start();
-          final n = llama_token_to_piece(
-            vocab,
-            token,
-            pieceBuf.cast(),
-            256,
+        Pointer<Uint8> seqCheckpoint = nullptr;
+        var seqCheckpointSize = 0;
+        try {
+          llama_synchronize(ctx.pointer);
+          seqCheckpointSize = llama_state_seq_get_size_ext(
+            ctx.pointer,
             0,
-            preservedTokenIds.contains(token),
+            LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY,
           );
-          pieceTick.stop();
-          sampleMicros += pieceTick.elapsedMicroseconds;
-          generatedTokens++;
-
-          if (n > 0) {
-            final bytes = pieceBuf.asTypedList(n).toList();
-            yield bytes;
-            if (stopSequences.isNotEmpty) {
-              accumulatedBytes.addAll(bytes);
-              if (accumulatedBytes.length > 64) {
-                accumulatedBytes.removeRange(0, accumulatedBytes.length - 64);
-              }
-              final text = utf8.decode(accumulatedBytes, allowMalformed: true);
-              if (stopSequences.any((s) => text.endsWith(s))) {
-                shouldStop = true;
-              }
+          if (seqCheckpointSize > 0) {
+            seqCheckpoint = malloc<Uint8>(seqCheckpointSize);
+            final written = llama_state_seq_get_data_ext(
+              ctx.pointer,
+              seqCheckpoint,
+              seqCheckpointSize,
+              0,
+              LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY,
+            );
+            if (written != seqCheckpointSize) {
+              throw Exception(
+                'ngram-simple checkpoint capture failed '
+                '(expected $seqCheckpointSize bytes, got $written)',
+              );
             }
           }
 
-          if (shouldStop || generatedTokens >= params.maxTokens) {
-            break;
+          batch.n_tokens = batchTokens;
+          batch.token[0] = selectedToken;
+          batch.pos[0] = currentPos;
+          batch.n_seq_id[0] = 1;
+          batch.seq_id[0][0] = 0;
+          batch.logits[0] = 1;
+          for (int i = 0; i < draftCount; i++) {
+            final batchIndex = i + 1;
+            batch.token[batchIndex] = draftPtr[i];
+            batch.pos[batchIndex] = currentPos + batchIndex;
+            batch.n_seq_id[batchIndex] = 1;
+            batch.seq_id[batchIndex][0] = 0;
+            batch.logits[batchIndex] = 1;
           }
-        }
 
-        if (!shouldStop && generatedTokens < params.maxTokens) {
-          pendingSampledToken = acceptedPtr[acceptedCount - 1];
+          final evalTick = Stopwatch()..start();
+          final decodeStatus = llama_decode(ctx.pointer, batch);
+          if (decodeStatus == 0 &&
+              !ngramApi.processBatch(ngramSession, batch)) {
+            throw Exception("ngram-simple decode processing failed");
+          }
+          if (decodeStatus == 0) {
+            llama_synchronize(ctx.pointer);
+          }
+          evalTick.stop();
+          evalMicros += evalTick.elapsedMicroseconds;
+          if (decodeStatus != 0) break;
+
+          for (int i = 0; i < batchTokens; i++) {
+            idxPtr[i] = i;
+          }
+
+          final verifyTick = Stopwatch()..start();
+          final acceptedCount = ngramApi.sampleAndAcceptN(
+            sampler,
+            ctx.pointer,
+            idxPtr,
+            batchTokens,
+            draftPtr,
+            draftCount,
+            acceptedPtr,
+            batchTokens,
+          );
+          verifyTick.stop();
+          verifyMicros += verifyTick.elapsedMicroseconds;
+          if (acceptedCount <= 0) {
+            throw Exception("llama.cpp ngram-simple draft verification failed");
+          }
+
+          final acceptedDraftCount = acceptedCount - 1;
+          final rejectedTailCount = batchTokens - acceptedCount;
+          if (rejectedTailCount > 0) {
+            if (seqCheckpoint == nullptr) {
+              throw UnsupportedError(
+                'llama.cpp ngram-simple checkpoint rollback is unavailable '
+                'for this context.',
+              );
+            }
+
+            final restored = llama_state_seq_set_data_ext(
+              ctx.pointer,
+              seqCheckpoint,
+              seqCheckpointSize,
+              0,
+              LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY,
+            );
+            if (restored != seqCheckpointSize) {
+              throw Exception(
+                'ngram-simple checkpoint restore failed '
+                '(expected $seqCheckpointSize bytes, got $restored)',
+              );
+            }
+
+            final targetMemory = llama_get_memory(ctx.pointer);
+            if (targetMemory == nullptr ||
+                !llama_memory_seq_rm(targetMemory, 0, currentPos, -1)) {
+              throw UnsupportedError(
+                'llama.cpp ngram-simple checkpoint rollback failed for this '
+                'context.',
+              );
+            }
+
+            final replayTokens = 1 + acceptedDraftCount;
+            batch.n_tokens = replayTokens;
+            batch.token[0] = selectedToken;
+            batch.pos[0] = currentPos;
+            batch.n_seq_id[0] = 1;
+            batch.seq_id[0][0] = 0;
+            batch.logits[0] = 0;
+            for (int i = 0; i < acceptedDraftCount; i++) {
+              final batchIndex = i + 1;
+              batch.token[batchIndex] = acceptedPtr[i];
+              batch.pos[batchIndex] = currentPos + batchIndex;
+              batch.n_seq_id[batchIndex] = 1;
+              batch.seq_id[batchIndex][0] = 0;
+              batch.logits[batchIndex] = 0;
+            }
+
+            final replayTick = Stopwatch()..start();
+            final replayStatus = llama_decode(ctx.pointer, batch);
+            if (replayStatus == 0 &&
+                !ngramApi.processBatch(ngramSession, batch)) {
+              throw Exception("ngram-simple replay processing failed");
+            }
+            if (replayStatus == 0) {
+              llama_synchronize(ctx.pointer);
+            }
+            replayTick.stop();
+            evalMicros += replayTick.elapsedMicroseconds;
+            if (replayStatus != 0) {
+              throw Exception("ngram-simple replay decode failed");
+            }
+          }
+          speculativeAcceptedDraftTokens += acceptedDraftCount;
+          ngramApi.accept(ngramSession, 0, acceptedDraftCount);
+
+          final keepUntil = currentPos + 1 + acceptedDraftCount;
+          final targetMemory = llama_get_memory(ctx.pointer);
+          if (targetMemory == nullptr ||
+              !llama_memory_seq_rm(targetMemory, 0, keepUntil, -1)) {
+            throw UnsupportedError(
+              'llama.cpp ngram-simple target rollback failed for this context. '
+              'Set ModelParams.speculativeRollbackTokenMax >= draftTokenMax if '
+              'this model/backend uses bounded rollback snapshots.',
+            );
+          }
+
+          tokensPtr[currentPos] = selectedToken;
+          for (int i = 0; i < acceptedDraftCount; i++) {
+            tokensPtr[currentPos + 1 + i] = acceptedPtr[i];
+          }
+          currentPos = keepUntil;
+
+          for (int i = 0; i < acceptedCount; i++) {
+            final token = acceptedPtr[i];
+            if (llama_vocab_is_eog(vocab, token)) {
+              shouldStop = true;
+              break;
+            }
+
+            final pieceTick = Stopwatch()..start();
+            final n = llama_token_to_piece(
+              vocab,
+              token,
+              pieceBuf.cast(),
+              256,
+              0,
+              preservedTokenIds.contains(token),
+            );
+            pieceTick.stop();
+            sampleMicros += pieceTick.elapsedMicroseconds;
+            generatedTokens++;
+
+            if (n > 0) {
+              final bytes = pieceBuf.asTypedList(n).toList();
+              yield bytes;
+              if (stopSequences.isNotEmpty) {
+                accumulatedBytes.addAll(bytes);
+                if (accumulatedBytes.length > 64) {
+                  accumulatedBytes.removeRange(0, accumulatedBytes.length - 64);
+                }
+                final text = utf8.decode(
+                  accumulatedBytes,
+                  allowMalformed: true,
+                );
+                if (stopSequences.any((s) => text.endsWith(s))) {
+                  shouldStop = true;
+                }
+              }
+            }
+
+            if (shouldStop || generatedTokens >= params.maxTokens) {
+              break;
+            }
+          }
+
+          if (!shouldStop && generatedTokens < params.maxTokens) {
+            pendingSampledToken = acceptedPtr[acceptedCount - 1];
+          }
+        } finally {
+          if (seqCheckpoint != nullptr) {
+            malloc.free(seqCheckpoint);
+          }
         }
       }
     } finally {

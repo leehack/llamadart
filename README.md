@@ -294,6 +294,7 @@ speculative decoding uses recent token history as the drafter:
 ```dart
 params: const GenerationParams(
   maxTokens: 128,
+  penalty: 1.0,
   speculativeDecodingConfig: SpeculativeDecodingConfig.ngramSimple(
     draftTokenMax: 4,
     ngramSize: 12,
@@ -302,7 +303,10 @@ params: const GenerationParams(
 ```
 
 Reserve `ModelParams.speculativeRollbackTokenMax` at least as large as
-`draftTokenMax` before using ngram-simple. It is workload-dependent and can be
+`draftTokenMax` before using ngram-simple. Deeper ngram-simple drafts
+(`draftTokenMax > 2`) require `GenerationParams.penalty: 1.0`; with repeat
+penalties, keep `draftTokenMax <= 2` so rejected draft tails cannot disturb
+deterministic sampler parity. Ngram-simple is workload-dependent and can be
 slower than baseline decoding on prompts with little repetition, so validate it
 with your model and prompt shape. For local measurements, set
 `LLAMADART_MTP_BENCHMARK_NGRAM=true` and

@@ -112,8 +112,10 @@ Important fields:
   `draftModelPath`. Native llama.cpp bundles that export the
   `llama_dart_ngram_*` wrapper symbols also support
   `SpeculativeDecodingConfig.ngramSimple(...)` for token-history n-gram
-  speculation without a draft model. WebGPU and LiteRT-LM web reject speculative
-  decoding until their speculative paths are implemented.
+  speculation without a draft model. For ngram-simple with
+  `draftTokenMax > 2`, set `penalty: 1.0`; otherwise keep `draftTokenMax <= 2`
+  with repeat penalties. WebGPU and LiteRT-LM web reject speculative decoding
+  until their speculative paths are implemented.
 - `seed`: deterministic replay when set.
 - `grammar`: constrained decoding with GBNF.
 
