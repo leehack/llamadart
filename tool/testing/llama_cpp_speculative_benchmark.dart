@@ -35,12 +35,20 @@ Future<void> main(List<String> arguments) async {
       options.modelPath,
       baselineModelParams,
     );
-    final prompt = await _resolvePrompt(
-      backend,
-      modelHandle,
-      options.prompt,
-      rawPrompt: options.rawPrompt,
-    );
+    final prompt =
+        await _resolvePrompt(
+          backend,
+          modelHandle,
+          options.prompt,
+          rawPrompt: options.rawPrompt,
+        ).onError<StateError>((error, stackTrace) {
+          stderr.writeln(error.message);
+          exitCode = 64;
+          return '';
+        });
+    if (exitCode == 64) {
+      return;
+    }
     await _prepareGeneratedNgramCache(
       backend: backend,
       modelHandle: modelHandle,
@@ -211,14 +219,11 @@ Future<String> _resolvePrompt(
       {'role': 'user', 'content': benchmarkInstruction},
     ]);
   } catch (error) {
-    stderr.writeln(
-      'Falling back to raw Gemma-style prompt because backend chat-template '
-      'rendering failed: $error',
+    throw StateError(
+      'Failed to apply the model chat template for the speculative '
+      'benchmark: $error. Pass --raw-prompt only when intentionally '
+      'comparing raw prompt behavior.',
     );
-    return '<start_of_turn>user\n'
-        '$benchmarkInstruction'
-        '<end_of_turn>\n'
-        '<start_of_turn>model\n';
   }
 }
 
@@ -1418,7 +1423,8 @@ Generation:
   --runs <n>                           Measured runs per case. Default: 3.
   --warmups <n>                        Warmup runs per case. Default: 1.
   --prompt <text>                      Override benchmark prompt.
-  --raw-prompt                         Skip chat-template wrapping.
+  --raw-prompt                         Skip model chat-template wrapping for
+                                       intentional raw-prompt comparisons.
   --seed <n>                           Default: 7.
   --temp <n>                           Default: 0.0.
   --repeat-penalty <n>                 Default: 1.1.

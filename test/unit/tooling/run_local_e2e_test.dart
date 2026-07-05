@@ -28,6 +28,7 @@ void main() {
       expect(result.stdout, contains('qwen35-multimodal-macos-repro'));
       expect(result.stdout, contains('gguf-chat-features-smoke'));
       expect(result.stdout, contains('llama-cpp-speculative-benchmark'));
+      expect(result.stdout, contains('llama-cpp-chat-template-smoke'));
       expect(result.stdout, contains('litert-lm-chat-features-smoke'));
       expect(result.stdout, contains('webgpu-multimodal-regression'));
       expect(result.stdout, contains('chat-app-model-cache'));
@@ -347,6 +348,46 @@ void main() {
         contains(
           '--model-path is required for llama-cpp-speculative-benchmark',
         ),
+      );
+    });
+
+    test('dry-runs llama.cpp chat-template smoke with model path', () async {
+      final result = await runLocalE2e(const [
+        '--scenario',
+        'llama-cpp-chat-template-smoke',
+        '--model-path',
+        'models/Qwen3.5-0.8B-Q4_K_M.gguf',
+        '--dry-run',
+      ], projectRoot: '/repo');
+
+      expect(result.exitCode, 0);
+      expect(result.stdout, contains('llama-cpp-chat-template-smoke'));
+      expect(
+        result.stdout,
+        contains(
+          'LLAMADART_LLAMA_CPP_TEMPLATE_MODEL_PATH='
+          'models/Qwen3.5-0.8B-Q4_K_M.gguf',
+        ),
+      );
+      expect(
+        result.stdout,
+        contains(
+          'dart test --run-skipped -t local-only '
+          'test/e2e/backends/llama_cpp_chat_template_backend_e2e_test.dart',
+        ),
+      );
+    });
+
+    test('requires model path for llama.cpp chat-template smoke', () async {
+      final result = await runLocalE2e(const [
+        '--scenario',
+        'llama-cpp-chat-template-smoke',
+      ], projectRoot: '/repo');
+
+      expect(result.exitCode, 64);
+      expect(
+        result.stderr,
+        contains('--model-path is required for llama-cpp-chat-template-smoke'),
       );
     });
 

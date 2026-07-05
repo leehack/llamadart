@@ -24,6 +24,8 @@ void main() {
       expect(result.stdout, contains('auto, enabled, disabled'));
       expect(result.stdout, contains('--ngram-cache-build-static-path <p>'));
       expect(result.stdout, contains('--ngram-cache-build-text <text>'));
+      expect(result.stdout, contains('--raw-prompt'));
+      expect(result.stdout, contains('intentional raw-prompt comparisons'));
     });
 
     test('builds llama.cpp static ngram cache bytes', () {

@@ -15,7 +15,9 @@ For canonical full release notes, use:
   and mixed n-gram plus one draft-model strategy, including generic native
   wrapper bindings, docs, and local benchmark matrix coverage. The benchmark
   tooling can generate a llama.cpp-compatible static n-gram cache file for
-  `ngram-cache` E2E validation.
+  `ngram-cache` E2E validation. Speculative benchmark prompts now render with
+  configured or loaded GGUF chat templates before the generic fallback instead
+  of silently falling back to a hard-coded Gemma prompt.
 
 - Updated the default llama.cpp native runtime pin to
   `leehack/llamadart-native@b9873`, refreshed the

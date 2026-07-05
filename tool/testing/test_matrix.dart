@@ -173,6 +173,20 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'Chat rendering, parser, tool calling, thinking, or GGUF feature work.',
   ),
   TestMatrixRow(
+    id: 'llama-cpp-chat-template-smoke',
+    tier: 'targeted',
+    mode: 'local-only',
+    covers:
+        'real GGUF llama.cpp direct backend chat-template rendering, custom '
+        'template override, and unsupported multimodal template diagnostics',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario '
+        'llama-cpp-chat-template-smoke --model-path <model.gguf>',
+    useWhen:
+        'llama.cpp backend applyChatTemplate, speculative benchmark prompt '
+        'wrapping, or raw-vs-template parity changes.',
+  ),
+  TestMatrixRow(
     id: 'template-parity',
     tier: 'targeted',
     mode: 'local-only',
