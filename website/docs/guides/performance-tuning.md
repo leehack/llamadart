@@ -117,9 +117,9 @@ Guidelines:
   GGUF through `draftModelPath`. llama.cpp ngram-simple uses
   `SpeculativeDecodingConfig.ngramSimple(...)` for draft-model-free
   token-history speculation when the native bundle exports the required
-  `llama_dart_ngram_*` symbols. Use `penalty: 1.0` for ngram-simple
-  `draftTokenMax > 2`; with repeat penalties, keep ngram-simple draft depth at
-  `2` or lower.
+  `llama_dart_ngram_*` symbols. llamadart currently supports ngram-simple
+  `draftTokenMax <= 2`; deeper drafts can diverge from non-speculative decoding
+  on some model/backend combinations.
 - `reusePromptPrefix` is enabled by default for native generation; keep it on
   for multi-turn chats and repeated prompts, and validate parity for your
   target model/workload.

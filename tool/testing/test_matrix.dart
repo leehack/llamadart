@@ -146,10 +146,9 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     command:
         'LLAMADART_MTP_BENCHMARK_NGRAM=true '
         'LLAMADART_MTP_BENCHMARK_NGRAM_ONLY=true '
-        'LLAMADART_MTP_BENCHMARK_NGRAM_SIZE=1 '
-        'LLAMADART_MTP_BENCHMARK_PENALTY=1.0 dart run '
+        'LLAMADART_MTP_BENCHMARK_NGRAM_SIZE=1 dart run '
         'tool/testing/llama_cpp_mtp_benchmark.dart <model.gguf> - 128 3 '
-        '1,2,4 1',
+        '1,2 1',
     useWhen:
         'llama.cpp speculative decoding strategy, wrapper, rollback, or '
         'performance changes.',

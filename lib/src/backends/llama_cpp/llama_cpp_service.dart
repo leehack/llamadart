@@ -3555,13 +3555,12 @@ class LlamaCppService {
             'must be greater than zero for llama.cpp ngram-simple',
           );
         }
-        if (draftTokenMax > 2 && params.penalty != 1.0) {
+        if (draftTokenMax > 2) {
           throw LlamaUnsupportedException(
             'llama.cpp ngram-simple speculative decoding with '
-            'draftTokenMax > 2 requires GenerationParams.penalty == 1.0 in '
-            'llamadart. Repeat penalties can make deeper n-gram verification '
-            'diverge after rejected draft tails. Set penalty: 1.0 for deeper '
-            'ngram-simple drafts, or use draftTokenMax <= 2.',
+            'draftTokenMax > 2 is not enabled in llamadart yet. Deeper '
+            'ngram-simple drafts can diverge from non-speculative decoding on '
+            'some model/backend combinations. Use draftTokenMax <= 2.',
           );
         }
 

@@ -58,7 +58,7 @@ Future<void> main(List<String> args) async {
       double.tryParse(
         Platform.environment['LLAMADART_MTP_BENCHMARK_PENALTY'] ?? '',
       ) ??
-      (includeNgramSimple && maxDraftTokenMax > 2 ? 1.0 : 1.1);
+      1.1;
   final baselineModelParams = ModelParams(
     contextSize: 2048,
     preferredBackend: preferredBackend,

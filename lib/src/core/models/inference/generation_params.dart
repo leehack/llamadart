@@ -63,9 +63,9 @@ class SpeculativeDecodingConfig {
   ///
   /// `null` lets the backend choose its default.
   ///
-  /// For llama.cpp ngram-simple, the backend default can be greater than 2.
-  /// When using repeat penalties, pass `draftTokenMax: 2` or lower; deeper
-  /// ngram-simple drafts require [GenerationParams.penalty] to be `1.0`.
+  /// For llama.cpp ngram-simple, pass `draftTokenMax: 2` or lower. Deeper
+  /// ngram-simple drafts are not enabled yet because they can diverge from
+  /// non-speculative decoding on some model/backend combinations.
   final int? draftTokenMax;
 
   /// Minimum number of draft tokens required for speculative verification.
@@ -134,9 +134,9 @@ class SpeculativeDecodingConfig {
   /// Enables llama.cpp ngram-simple speculative decoding.
   ///
   /// Ngram-simple uses previous tokens as its draft source. In llama.cpp,
-  /// `draftTokenMax` values above 2 require [GenerationParams.penalty] to be
-  /// `1.0`; with repeat penalties, pass `draftTokenMax: 2` or lower. Leaving
-  /// `draftTokenMax` null allows the backend default, which can be above 2.
+  /// pass `draftTokenMax: 2` or lower. Leaving `draftTokenMax` null allows the
+  /// backend default, which can be above 2 and may be rejected by a backend
+  /// that requires deterministic parity with non-speculative decoding.
   const SpeculativeDecodingConfig.ngramSimple({
     this.draftTokenMax,
     this.ngramSize,
