@@ -2,7 +2,8 @@
 
 * Added a durable flag-based llama.cpp speculative benchmark runner and wired
   it into the local E2E scenario list, testing matrix, README, and website
-  performance guide.
+  performance guide. The runner can now generate a llama.cpp-compatible
+  static n-gram cache file for `ngram-cache` E2E validation.
 
 * Hardened generic llama.cpp external draft-model speculative decoding so
   draft-context processing does not request unused logits, avoiding a

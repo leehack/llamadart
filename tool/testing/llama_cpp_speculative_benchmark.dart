@@ -1,7 +1,9 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:llamadart/llamadart.dart';
+import 'package:path/path.dart' as path;
 
 Future<void> main(List<String> arguments) async {
   final options = _BenchmarkOptions.parse(arguments);
@@ -38,6 +40,12 @@ Future<void> main(List<String> arguments) async {
       modelHandle,
       options.prompt,
       rawPrompt: options.rawPrompt,
+    );
+    await _prepareGeneratedNgramCache(
+      backend: backend,
+      modelHandle: modelHandle,
+      options: options,
+      prompt: prompt,
     );
 
     for (var i = 0; i < options.warmupRuns; i++) {
@@ -102,6 +110,91 @@ Future<void> main(List<String> arguments) async {
     }
     await backend.dispose();
   }
+}
+
+Future<void> _prepareGeneratedNgramCache({
+  required LlamaBackend backend,
+  required int modelHandle,
+  required _BenchmarkOptions options,
+  required String prompt,
+}) async {
+  final staticBuildPath = options.ngramCacheBuildStaticPath;
+  if (staticBuildPath == null) {
+    return;
+  }
+
+  final sourceText = options.ngramCacheBuildText ?? prompt;
+  final tokens = await backend.tokenize(modelHandle, sourceText);
+  final cacheBytes = buildLlamaCppStaticNgramCacheBytes(tokens);
+  if (cacheBytes.isEmpty) {
+    throw StateError(
+      'N-gram cache source produced ${tokens.length} token(s); at least '
+      'three tokens are required to build a static llama.cpp n-gram cache.',
+    );
+  }
+
+  final file = File(staticBuildPath);
+  await file.parent.create(recursive: true);
+  await file.writeAsBytes(cacheBytes, flush: true);
+  stderr.writeln(
+    'Wrote llama.cpp static n-gram cache to $staticBuildPath '
+    '(${tokens.length} tokens, ${cacheBytes.length} bytes).',
+  );
+}
+
+/// Builds bytes compatible with upstream llama.cpp `common_ngram_cache_save`.
+///
+/// The current upstream static lookup cache uses bigram keys
+/// (`LLAMA_NGRAM_STATIC == 2`) padded to `LLAMA_NGRAM_MAX == 4` with
+/// `LLAMA_TOKEN_NULL == -1`.
+List<int> buildLlamaCppStaticNgramCacheBytes(List<int> tokens) {
+  const ngramStatic = 2;
+  const ngramMax = 4;
+  const tokenNull = -1;
+  final cache = <(int, int), Map<int, int>>{};
+
+  for (var index = ngramStatic; index < tokens.length; index++) {
+    final ngram = (tokens[index - 2], tokens[index - 1]);
+    final tokenCounts = cache.putIfAbsent(ngram, () => <int, int>{});
+    final token = tokens[index];
+    tokenCounts[token] = (tokenCounts[token] ?? 0) + 1;
+  }
+
+  final bytes = BytesBuilder(copy: false);
+  final ngrams = cache.entries.toList()
+    ..sort((a, b) {
+      final first = a.key.$1.compareTo(b.key.$1);
+      if (first != 0) {
+        return first;
+      }
+      return a.key.$2.compareTo(b.key.$2);
+    });
+
+  for (final entry in ngrams) {
+    final paddedNgram = <int>[
+      entry.key.$1,
+      entry.key.$2,
+      for (var i = ngramStatic; i < ngramMax; i++) tokenNull,
+    ];
+    for (final token in paddedNgram) {
+      _addNativeInt32(bytes, token);
+    }
+
+    final tokenCounts = entry.value.entries.toList()
+      ..sort((a, b) => a.key.compareTo(b.key));
+    _addNativeInt32(bytes, tokenCounts.length);
+    for (final tokenCount in tokenCounts) {
+      _addNativeInt32(bytes, tokenCount.key);
+      _addNativeInt32(bytes, tokenCount.value);
+    }
+  }
+
+  return bytes.takeBytes();
+}
+
+void _addNativeInt32(BytesBuilder bytes, int value) {
+  final data = ByteData(4)..setInt32(0, value, Endian.host);
+  bytes.add(data.buffer.asUint8List());
 }
 
 Future<String> _resolvePrompt(
@@ -709,6 +802,8 @@ class _BenchmarkOptions {
     required this.ngramTokenMax,
     required this.ngramCacheStaticPath,
     required this.ngramCacheDynamicPath,
+    required this.ngramCacheBuildStaticPath,
+    required this.ngramCacheBuildText,
     required this.rawPrompt,
     required this.prompt,
     required this.streamBatchTokenThreshold,
@@ -734,6 +829,20 @@ class _BenchmarkOptions {
     );
     if (draftTokenMaxValues.any((value) => value <= 0)) {
       stderr.writeln('--draft-token-max values must be greater than zero.');
+      exit(64);
+    }
+    final ngramCacheStaticPath = _emptyToNull(map['ngram-cache-static-path']);
+    final ngramCacheBuildStaticPath = _emptyToNull(
+      map['ngram-cache-build-static-path'],
+    );
+    if (ngramCacheStaticPath != null &&
+        ngramCacheBuildStaticPath != null &&
+        !_sameAbsolutePath(ngramCacheStaticPath, ngramCacheBuildStaticPath)) {
+      stderr.writeln(
+        '--ngram-cache-build-static-path also provides the static cache used '
+        'by ngram-cache; omit --ngram-cache-static-path or point both flags '
+        'at the same file.',
+      );
       exit(64);
     }
 
@@ -795,8 +904,10 @@ class _BenchmarkOptions {
       ngramMatch: _parseOptionalInt(map['ngram-match']),
       ngramTokenMin: _parseOptionalInt(map['ngram-token-min']),
       ngramTokenMax: _parseOptionalInt(map['ngram-token-max']),
-      ngramCacheStaticPath: _emptyToNull(map['ngram-cache-static-path']),
+      ngramCacheStaticPath: ngramCacheStaticPath ?? ngramCacheBuildStaticPath,
       ngramCacheDynamicPath: _emptyToNull(map['ngram-cache-dynamic-path']),
+      ngramCacheBuildStaticPath: ngramCacheBuildStaticPath,
+      ngramCacheBuildText: _emptyToNull(map['ngram-cache-build-text']),
       rawPrompt: _parseBool(
         map['raw-prompt'],
         fallback: false,
@@ -851,6 +962,8 @@ class _BenchmarkOptions {
   final int? ngramTokenMax;
   final String? ngramCacheStaticPath;
   final String? ngramCacheDynamicPath;
+  final String? ngramCacheBuildStaticPath;
+  final String? ngramCacheBuildText;
   final bool rawPrompt;
   final String prompt;
   final int streamBatchTokenThreshold;
@@ -902,6 +1015,12 @@ class _BenchmarkOptions {
       'ngramTokenMax': ngramTokenMax,
       'ngramCacheStaticPath': ngramCacheStaticPath,
       'ngramCacheDynamicPath': ngramCacheDynamicPath,
+      'ngramCacheBuildStaticPath': ngramCacheBuildStaticPath,
+      'ngramCacheBuildTextPreview': ngramCacheBuildText == null
+          ? null
+          : ngramCacheBuildText!.length <= 120
+          ? ngramCacheBuildText
+          : ngramCacheBuildText!.substring(0, 120),
       'rawPrompt': rawPrompt,
       'promptPreview': prompt.length <= 120 ? prompt : prompt.substring(0, 120),
       'streamBatchTokenThreshold': streamBatchTokenThreshold,
@@ -1087,6 +1206,13 @@ void _validate(_BenchmarkOptions options) {
   if (options.showHelp) {
     return;
   }
+  if (options.ngramCacheBuildText != null &&
+      options.ngramCacheBuildStaticPath == null) {
+    stderr.writeln(
+      '--ngram-cache-build-text requires --ngram-cache-build-static-path.',
+    );
+    exit(64);
+  }
   for (final requestedCase in options.requestedCases) {
     if (_draftModelRequiredCases.contains(requestedCase) &&
         options.draftModelPath == null) {
@@ -1097,8 +1223,8 @@ void _validate(_BenchmarkOptions options) {
         options.ngramCacheStaticPath == null &&
         options.ngramCacheDynamicPath == null) {
       stderr.writeln(
-        'ngram-cache requires --ngram-cache-static-path or '
-        '--ngram-cache-dynamic-path.',
+        'ngram-cache requires --ngram-cache-static-path, '
+        '--ngram-cache-dynamic-path, or --ngram-cache-build-static-path.',
       );
       exit(64);
     }
@@ -1109,12 +1235,19 @@ void _validate(_BenchmarkOptions options) {
     options.ngramCacheDynamicPath,
   ];
   for (final path in ngramCachePaths.whereType<String>()) {
+    final buildPath = options.ngramCacheBuildStaticPath;
+    if (buildPath != null && _sameAbsolutePath(path, buildPath)) {
+      continue;
+    }
     if (!File(path).existsSync()) {
       stderr.writeln('N-gram cache path does not exist: $path');
       exit(64);
     }
   }
 }
+
+bool _sameAbsolutePath(String first, String second) =>
+    path.equals(path.absolute(first), path.absolute(second));
 
 GpuBackend _parsePreferredBackend(String? value) {
   final normalized = value?.trim().toLowerCase();
@@ -1302,6 +1435,10 @@ Speculative knobs:
   --ngram-token-max <n>
   --ngram-cache-static-path <path>     Optional existing cache file.
   --ngram-cache-dynamic-path <path>    Optional existing cache file.
+  --ngram-cache-build-static-path <p>  Build a static cache file before the run
+                                       and use it as ngram-cache input.
+  --ngram-cache-build-text <text>      Source text for the generated static
+                                       cache. Defaults to the resolved prompt.
 
 Examples:
   dart run tool/testing/llama_cpp_speculative_benchmark.dart \\

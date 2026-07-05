@@ -163,17 +163,19 @@ dart run tool/testing/native_inference_benchmark.dart \
 dart run tool/testing/run_local_e2e.dart \
   --scenario llama-cpp-speculative-benchmark \
   --model-path models/Qwen3.5-0.8B-Q4_K_M.gguf \
-  --speculative-cases baseline,ngram-simple,ngram-map-k,ngram-map-k4v,ngram-mod,mixed-ngram \
+  --speculative-cases baseline,ngram-simple,ngram-map-k,ngram-map-k4v,ngram-mod,ngram-cache,mixed-ngram \
   --backend cpu \
   --benchmark-gpu-layers 0 \
   --benchmark-max-tokens 128 \
   --benchmark-runs 3 \
   --draft-token-max 1,2 \
-  --benchmark-warmups 1
+  --benchmark-warmups 1 \
+  --ngram-cache-build-static-path /tmp/llamadart-ngram-cache.bin
 ```
 
 In the local E2E scenario, draft-model strategies require
-`--draft-model-path`; the n-gram cache strategy requires cache paths.
+`--draft-model-path`; the n-gram cache strategy can use existing cache paths or
+build a static cache with `--ngram-cache-build-static-path`.
 
 Use `--dry-run` first when a scenario starts servers, builds Flutter web, or
 requires local model URLs.

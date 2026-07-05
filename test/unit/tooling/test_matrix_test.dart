@@ -83,14 +83,21 @@ void main() {
         table,
         contains(
           '--speculative-cases baseline,ngram-simple,ngram-map-k,ngram-map-k4v,'
-          'ngram-mod,mixed-ngram',
+          'ngram-mod,ngram-cache,mixed-ngram',
         ),
       );
       expect(table, contains('--draft-token-max 1,2 --benchmark-warmups 1'));
       expect(
         table,
+        contains(
+          '--ngram-cache-build-static-path /tmp/llamadart-ngram-cache.bin',
+        ),
+      );
+      expect(
+        table,
         contains('Draft-model strategies require --draft-model-path'),
       );
+      expect(table, contains('ngram-cache can use'));
       expect(table, isNot(contains('LLAMADART_MTP_BENCHMARK')));
       expect(table, isNot(contains('llama_cpp_mtp_benchmark.dart')));
       expect(table, contains('run_local_e2e.dart'));
