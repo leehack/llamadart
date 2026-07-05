@@ -19,6 +19,7 @@ Future<void> main(List<String> arguments) async {
     numberOfThreadsBatch: options.threadsBatch,
     batchSize: options.batchSize,
     microBatchSize: options.microBatchSize,
+    flashAttention: options.flashAttention,
   );
   final speculativeModelParams = baselineModelParams.copyWith(
     speculativeRollbackTokenMax: options.maxDraftTokenMax,
@@ -686,6 +687,7 @@ class _BenchmarkOptions {
     required this.contextSize,
     required this.preferredBackend,
     required this.gpuLayers,
+    required this.flashAttention,
     required this.threads,
     required this.threadsBatch,
     required this.batchSize,
@@ -759,6 +761,7 @@ class _BenchmarkOptions {
       ),
       preferredBackend: _parsePreferredBackend(map['backend']),
       gpuLayers: _parseInt(map['gpu-layers'], fallback: 0, name: 'gpu-layers'),
+      flashAttention: _parseFlashAttention(map['flash-attention']),
       threads: _parseInt(map['threads'], fallback: 4, name: 'threads'),
       threadsBatch: _parseInt(
         map['threads-batch'],
@@ -826,6 +829,7 @@ class _BenchmarkOptions {
   final int contextSize;
   final GpuBackend preferredBackend;
   final int gpuLayers;
+  final FlashAttention flashAttention;
   final int threads;
   final int threadsBatch;
   final int batchSize;
@@ -876,6 +880,7 @@ class _BenchmarkOptions {
       'contextSize': contextSize,
       'preferredBackend': preferredBackend.name,
       'gpuLayers': gpuLayers,
+      'flashAttention': flashAttention.name,
       'threads': threads,
       'threadsBatch': threadsBatch,
       'batchSize': batchSize,
@@ -1128,6 +1133,23 @@ GpuBackend _parsePreferredBackend(String? value) {
   exit(64);
 }
 
+FlashAttention _parseFlashAttention(String? value) {
+  final normalized = value?.trim().toLowerCase();
+  if (normalized == null || normalized.isEmpty) {
+    return FlashAttention.auto;
+  }
+  for (final mode in FlashAttention.values) {
+    if (mode.name == normalized) {
+      return mode;
+    }
+  }
+  stderr.writeln(
+    'Invalid --flash-attention: $value. Allowed values: '
+    '${FlashAttention.values.map((mode) => mode.name).join(', ')}.',
+  );
+  exit(64);
+}
+
 List<int> _parseIntList(
   String? value, {
   required List<int> fallback,
@@ -1251,6 +1273,7 @@ Supported cases:
 Runtime:
   --backend <name>                     ${GpuBackend.values.map((b) => b.name).join(', ')}. Default: cpu.
   --gpu-layers <n>                     Default: 0.
+  --flash-attention <mode>             ${FlashAttention.values.map((m) => m.name).join(', ')}. Default: auto.
   --context-size <n>                   Default: 2048.
   --threads <n>                        Default: 4.
   --threads-batch <n>                  Default: 4.
