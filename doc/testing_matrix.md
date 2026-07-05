@@ -178,6 +178,11 @@ In the local E2E scenario, draft-model strategies require
 build a static cache with `--ngram-cache-build-static-path`.
 Speculative benchmark prompts use the loaded model's chat template by default;
 use raw-prompt options only for intentional raw-vs-template comparisons.
+When a speculative performance issue is being closed, include the matching
+upstream `llama-cli` or `llama-server` command where a comparable tool binary is
+available. If the exact packaged native tag does not publish standalone tools,
+state the closest upstream build used and keep any remaining artifact-parity gap
+linked as a follow-up.
 
 ```bash
 dart run tool/testing/run_local_e2e.dart \

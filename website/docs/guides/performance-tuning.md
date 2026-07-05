@@ -119,7 +119,11 @@ Guidelines:
   `ngramCache(...)`, and `mixed(...)` for draftless n-gram strategies plus one
   draft-model strategy. Draft-model strategies can load a separate GGUF through
   `draftModelPath`; draftless n-gram strategies are workload-dependent and can
-  be slower than baseline on prompts with little repetition.
+  be slower than baseline on prompts with little repetition. For ngram-simple
+  and ngram-map strategies, `draftTokenMax` caps each speculative step while
+  `ngramSizeM` controls upstream's draft m-gram window; set `ngramSizeM`
+  explicitly only when intentionally changing the upstream n-gram lookup
+  behavior.
 - DFlash draft models must use upstream-compatible GGUF metadata:
   `general.architecture=dflash` plus the `dflash.*` metadata block, including
   `dflash.target_layers`. A known-good public pair is target
@@ -262,7 +266,9 @@ dart run tool/testing/native_embedding_sweep.dart \
 ```
 
 For the speculative benchmark runner, draft-model strategies require
-`--draft-model`; the n-gram cache strategy requires cache paths.
+`--draft-model`; the n-gram cache strategy requires cache paths. Current
+measured llama.cpp n-gram parity results, including exact upstream comparison
+commands, are recorded in [Backend Benchmarks](./backend-benchmarks).
 
 Compare llama.cpp/GGUF and LiteRT-LM with the bundled fair benchmark scripts:
 
