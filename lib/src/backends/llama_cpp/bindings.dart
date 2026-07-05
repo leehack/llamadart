@@ -7737,6 +7737,106 @@ external int mtmd_helper_video_read_next(
 external void llama_dart_set_log_level(int level);
 
 @ffi.Native<
+  ffi.Pointer<llama_dart_speculative> Function(
+    ffi.Pointer<llama_model>,
+    ffi.Pointer<llama_model>,
+    ffi.Pointer<llama_context>,
+    llama_context_params,
+    ffi.Pointer<llama_dart_speculative_params>,
+  )
+>()
+external ffi.Pointer<llama_dart_speculative> llama_dart_speculative_init(
+  ffi.Pointer<llama_model> target_model,
+  ffi.Pointer<llama_model> draft_model,
+  ffi.Pointer<llama_context> target_context,
+  llama_context_params context_params,
+  ffi.Pointer<llama_dart_speculative_params> params,
+);
+
+@ffi.Native<ffi.Void Function(ffi.Pointer<llama_dart_speculative>)>()
+external void llama_dart_speculative_free(
+  ffi.Pointer<llama_dart_speculative> speculative,
+);
+
+@ffi.Native<
+  ffi.Pointer<llama_context> Function(ffi.Pointer<llama_dart_speculative>)
+>()
+external ffi.Pointer<llama_context> llama_dart_speculative_get_draft_context(
+  ffi.Pointer<llama_dart_speculative> speculative,
+);
+
+@ffi.Native<ffi.Bool Function(ffi.Pointer<llama_dart_speculative>)>()
+external bool llama_dart_speculative_need_embd(
+  ffi.Pointer<llama_dart_speculative> speculative,
+);
+
+@ffi.Native<ffi.Bool Function(ffi.Pointer<llama_dart_speculative>)>()
+external bool llama_dart_speculative_need_embd_nextn(
+  ffi.Pointer<llama_dart_speculative> speculative,
+);
+
+@ffi.Native<
+  ffi.Bool Function(
+    ffi.Pointer<llama_dart_speculative>,
+    llama_seq_id,
+    ffi.Pointer<llama_token>,
+    ffi.Int32,
+  )
+>()
+external bool llama_dart_speculative_begin(
+  ffi.Pointer<llama_dart_speculative> speculative,
+  int seq_id,
+  ffi.Pointer<llama_token> prompt,
+  int prompt_count,
+);
+
+@ffi.Native<
+  ffi.Bool Function(ffi.Pointer<llama_dart_speculative>, llama_batch)
+>()
+external bool llama_dart_speculative_process_batch(
+  ffi.Pointer<llama_dart_speculative> speculative,
+  llama_batch batch,
+);
+
+@ffi.Native<
+  ffi.Int32 Function(
+    ffi.Pointer<llama_dart_speculative>,
+    llama_seq_id,
+    llama_pos,
+    llama_token,
+    ffi.Pointer<llama_token>,
+    ffi.Int32,
+    ffi.Int32,
+    ffi.Pointer<llama_token>,
+    ffi.Int32,
+  )
+>()
+external int llama_dart_speculative_draft(
+  ffi.Pointer<llama_dart_speculative> speculative,
+  int seq_id,
+  int n_past,
+  int id_last,
+  ffi.Pointer<llama_token> prompt,
+  int prompt_count,
+  int draft_token_max,
+  ffi.Pointer<llama_token> out_tokens,
+  int out_capacity,
+);
+
+@ffi.Native<
+  ffi.Void Function(
+    ffi.Pointer<llama_dart_speculative>,
+    llama_seq_id,
+    ffi.Uint16,
+  )
+>()
+external void llama_dart_speculative_accept(
+  ffi.Pointer<llama_dart_speculative> speculative,
+  int seq_id,
+  int accepted_count,
+);
+
+@ffi.Native<
   ffi.Pointer<llama_dart_mtp> Function(
     ffi.Pointer<llama_model>,
     ffi.Pointer<llama_context>,
@@ -10340,6 +10440,52 @@ final class mtmd_helper_video_init_params extends ffi.Struct {
   @ffi.Int64()
   external int timestamp_interval_ms;
 }
+
+final class llama_dart_speculative_params extends ffi.Struct {
+  external ffi.Pointer<ffi.Char> type_names;
+
+  @ffi.Uint32()
+  external int type_mask;
+
+  @ffi.Int32()
+  external int draft_token_max;
+
+  @ffi.Int32()
+  external int draft_token_min;
+
+  @ffi.Float()
+  external double draft_min_probability;
+
+  @ffi.Float()
+  external double draft_split_probability;
+
+  @ffi.Bool()
+  external bool backend_sampling;
+
+  @ffi.Int32()
+  external int ngram_size_n;
+
+  @ffi.Int32()
+  external int ngram_size_m;
+
+  @ffi.Int32()
+  external int ngram_min_hits;
+
+  @ffi.Int32()
+  external int ngram_match;
+
+  @ffi.Int32()
+  external int ngram_token_min;
+
+  @ffi.Int32()
+  external int ngram_token_max;
+
+  external ffi.Pointer<ffi.Char> ngram_cache_static_path;
+
+  external ffi.Pointer<ffi.Char> ngram_cache_dynamic_path;
+}
+
+final class llama_dart_speculative extends ffi.Opaque {}
 
 final class llama_dart_mtp extends ffi.Opaque {}
 

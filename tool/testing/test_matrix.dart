@@ -141,8 +141,8 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     tier: 'targeted',
     mode: 'local-only',
     covers:
-        'real GGUF llama.cpp speculative decoding baseline, MTP, and optional '
-        'ngram-simple throughput/acceptance metrics',
+        'real GGUF llama.cpp speculative decoding baseline, draft-model, and '
+        'n-gram throughput/acceptance metrics',
     command:
         'LLAMADART_MTP_BENCHMARK_NGRAM=true '
         'LLAMADART_MTP_BENCHMARK_NGRAM_ONLY=true '

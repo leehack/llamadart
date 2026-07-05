@@ -33,6 +33,18 @@ const _ngramSymbols = [
   'llama_dart_ngram_accept',
 ];
 
+const _genericSpeculativeSymbols = [
+  'llama_dart_speculative_init',
+  'llama_dart_speculative_free',
+  'llama_dart_speculative_get_draft_context',
+  'llama_dart_speculative_need_embd',
+  'llama_dart_speculative_need_embd_nextn',
+  'llama_dart_speculative_begin',
+  'llama_dart_speculative_process_batch',
+  'llama_dart_speculative_draft',
+  'llama_dart_speculative_accept',
+];
+
 const _transparentPngBytes = <int>[
   0x89,
   0x50,
@@ -364,7 +376,11 @@ void main() {
         'lib/src/backends/llama_cpp/bindings.dart',
       ).readAsStringSync();
 
-      for (final symbol in [..._mtpSymbols, ..._ngramSymbols]) {
+      for (final symbol in [
+        ..._mtpSymbols,
+        ..._ngramSymbols,
+        ..._genericSpeculativeSymbols,
+      ]) {
         expect(
           bindingsSource,
           matches(RegExp(r'external\s+[\s\S]*?\b' + RegExp.escape(symbol))),
@@ -527,6 +543,85 @@ void main() {
         }
       } finally {
         llama_dart_ngram_free(session);
+      }
+    });
+
+    test('Verify generic speculative symbols are resolvable when exported', () {
+      final wrapper = _llamadartWrapperLibraryFileOrNull();
+      if (wrapper == null) {
+        markTestSkipped('Unable to locate the llama.cpp wrapper library.');
+        return;
+      }
+
+      final missing = _genericSpeculativeSymbols
+          .where((symbol) => !_fileContainsAscii(wrapper, symbol))
+          .toList(growable: false);
+      if (missing.isNotEmpty) {
+        markTestSkipped(
+          'Current native bundle does not export generic speculative wrapper '
+          'symbols: ${missing.join(', ')}.',
+        );
+        return;
+      }
+
+      final nullSpeculative = ffi.nullptr.cast<llama_dart_speculative>();
+      final nullModel = ffi.nullptr.cast<llama_model>();
+      final nullContext = ffi.nullptr.cast<llama_context>();
+      final nullTokenArray = ffi.nullptr.cast<ffi.Int32>();
+      final nullParams = ffi.nullptr.cast<llama_dart_speculative_params>();
+      final ctxParams = llama_context_default_params();
+
+      expect(
+        llama_dart_speculative_init(
+          nullModel,
+          nullModel,
+          nullContext,
+          ctxParams,
+          nullParams,
+        ).address,
+        0,
+      );
+      expect(
+        () => llama_dart_speculative_free(nullSpeculative),
+        returnsNormally,
+      );
+      expect(
+        llama_dart_speculative_get_draft_context(nullSpeculative).address,
+        0,
+      );
+      expect(llama_dart_speculative_need_embd(nullSpeculative), isFalse);
+      expect(llama_dart_speculative_need_embd_nextn(nullSpeculative), isFalse);
+      expect(
+        llama_dart_speculative_begin(nullSpeculative, 0, nullTokenArray, 0),
+        isFalse,
+      );
+      expect(
+        llama_dart_speculative_draft(
+          nullSpeculative,
+          0,
+          0,
+          0,
+          nullTokenArray,
+          0,
+          1,
+          nullTokenArray,
+          0,
+        ),
+        -1,
+      );
+      expect(
+        () => llama_dart_speculative_accept(nullSpeculative, 0, 0),
+        returnsNormally,
+      );
+
+      final batch = llama_batch_init(1, 0, 1);
+      try {
+        expect(
+          llama_dart_speculative_process_batch(nullSpeculative, batch),
+          isFalse,
+        );
+      } finally {
+        llama_batch_free(batch);
       }
     });
 

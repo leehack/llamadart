@@ -250,9 +250,14 @@ other models, or to override detection, pass `ModelParams.chatTemplate`. See
 for the template support matrix, real-model smoke commands, and how to add a
 family.
 
-llama.cpp MTP speculative decoding is available for compatible GGUF models. For
-Qwen3.5 MTP-style models, reserve rollback snapshots on the context and enable
-MTP on the generation request:
+llama.cpp speculative decoding is available for compatible GGUF models. The
+Dart API mirrors the upstream strategy surface: `draft-simple`,
+`draft-eagle3`, `draft-mtp`, `draft-dflash`, `ngram-simple`, `ngram-map-k`,
+`ngram-map-k4v`, `ngram-mod`, and `ngram-cache`. Upstream allows draftless
+n-gram strategies to be mixed with one draft-model strategy; use
+`SpeculativeDecodingConfig.mixed(...)` for that shape. For Qwen3.5 MTP-style
+models, reserve rollback snapshots on the context and enable MTP on the
+generation request:
 
 ```dart
 await engine.loadModel(
@@ -288,39 +293,40 @@ Higher `draftTokenMax` values can be faster on some models/devices, but they
 should be benchmarked with the target model because excess draft depth can add
 verification overhead.
 
-For GGUF models without an MTP or separate draft model, llama.cpp ngram-simple
+For GGUF models without an MTP or separate draft model, llama.cpp n-gram
 speculative decoding uses recent token history as the drafter:
 
 ```dart
 params: const GenerationParams(
   maxTokens: 128,
   speculativeDecodingConfig: SpeculativeDecodingConfig.ngramSimple(
-    draftTokenMax: 2,
+    draftTokenMax: 48,
     ngramSize: 12,
   ),
 ),
 ```
 
 Reserve `ModelParams.speculativeRollbackTokenMax` at least as large as
-`draftTokenMax` before using ngram-simple. llamadart currently supports
-ngram-simple `draftTokenMax <= 2`; deeper drafts can diverge from
-non-speculative decoding on some model/backend combinations. Ngram-simple is
+`draftTokenMax` before using speculative decoding. N-gram speculation is
 workload-dependent and can be slower than baseline decoding on prompts with
-little repetition, so validate it with your model and prompt shape. For local
-measurements, set
+little repetition, so validate it with your model and prompt shape. Upstream
+`--spec-default` maps to `ngram-mod`; in llamadart, legacy
+`GenerationParams(speculativeDecoding: true)` uses that llama.cpp default. For
+local measurements, set
 `LLAMADART_MTP_BENCHMARK_NGRAM=true` and
 `LLAMADART_MTP_BENCHMARK_NGRAM_ONLY=true` when running
 `tool/testing/llama_cpp_mtp_benchmark.dart`.
 
 For target/draft model pairs, pass the separate drafter GGUF with
-`draftModelPath`:
+`draftModelPath`. Use `draftSimple`, `draftEagle3`, `mtp`, or `draftDflash`
+depending on the draft model type:
 
 ```dart
 params: const GenerationParams(
   maxTokens: 128,
-  speculativeDecodingConfig: SpeculativeDecodingConfig.mtp(
+  speculativeDecodingConfig: SpeculativeDecodingConfig.draftEagle3(
     draftModelPath: 'path/to/draft-model.gguf',
-    draftTokenMax: 1,
+    draftTokenMax: 3,
   ),
 ),
 ```

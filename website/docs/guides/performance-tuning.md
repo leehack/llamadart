@@ -112,14 +112,14 @@ Guidelines:
   values improve throughput by reducing isolate message overhead.
 - Use speculative decoding only after benchmarking your target model/device; the
   default remains off because it is not a universal speedup. Native LiteRT-LM
-  uses the legacy `speculativeDecoding` boolean, while llama.cpp MTP uses
-  `SpeculativeDecodingConfig.mtp(...)` and can optionally load a separate draft
-  GGUF through `draftModelPath`. llama.cpp ngram-simple uses
-  `SpeculativeDecodingConfig.ngramSimple(...)` for draft-model-free
-  token-history speculation when the native bundle exports the required
-  `llama_dart_ngram_*` symbols. llamadart currently supports ngram-simple
-  `draftTokenMax <= 2`; deeper drafts can diverge from non-speculative decoding
-  on some model/backend combinations.
+  uses the legacy `speculativeDecoding` boolean. llama.cpp mirrors upstream
+  `common_speculative`: `SpeculativeDecodingConfig.mtp(...)`,
+  `draftSimple(...)`, `draftEagle3(...)`, `draftDflash(...)`,
+  `ngramSimple(...)`, `ngramMapK(...)`, `ngramMapK4v(...)`, `ngramMod(...)`,
+  `ngramCache(...)`, and `mixed(...)` for draftless n-gram strategies plus one
+  draft-model strategy. Draft-model strategies can load a separate GGUF through
+  `draftModelPath`; draftless n-gram strategies are workload-dependent and can
+  be slower than baseline on prompts with little repetition.
 - `reusePromptPrefix` is enabled by default for native generation; keep it on
   for multi-turn chats and repeated prompts, and validate parity for your
   target model/workload.

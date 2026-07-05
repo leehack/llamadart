@@ -1,7 +1,9 @@
 ## Unreleased
 
-* Added llama.cpp ngram-simple speculative decoding via
-  `SpeculativeDecodingConfig.ngramSimple(...)`, including Dart routing, native
+* Added llama.cpp upstream speculative decoding parity through
+  `SpeculativeDecodingConfig` constructors for draft-simple, EAGLE3, MTP,
+  DFlash, ngram-simple, ngram-map-k, ngram-map-k4v, ngram-mod, ngram-cache,
+  and mixed n-gram plus one draft-model strategy, including generic native
   wrapper bindings, docs, and local benchmark matrix coverage.
 
 * Added `LlamaStructuredOutput` and `LlamaEngine.createStructuredJson(...)`
