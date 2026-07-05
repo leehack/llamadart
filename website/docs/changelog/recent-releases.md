@@ -9,6 +9,11 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Fixed llama.cpp n-gram speculative configuration mapping so
+  `draftTokenMax` no longer implicitly overrides upstream `ngramSizeM`, and
+  documented upstream comparison commands plus measured n-gram benchmark
+  results.
+
 - Added llama.cpp upstream speculative decoding parity through
   `SpeculativeDecodingConfig` constructors for draft-simple, EAGLE3, MTP,
   DFlash, ngram-simple, ngram-map-k, ngram-map-k4v, ngram-mod, ngram-cache,

@@ -169,6 +169,43 @@ void main() {
       expect(typeNames, 'ngram-mod,draft-mtp');
     });
 
+    test('keeps ngram size M separate from draft token cap', () {
+      final defaults = service.debugResolveSpeculativeNativeParamsForTesting(
+        const GenerationParams(
+          speculativeDecodingConfig: SpeculativeDecodingConfig.ngramMapK(
+            draftTokenMax: 8,
+          ),
+        ),
+      );
+
+      expect(defaults['typeNames'], 'ngram-map-k');
+      expect(defaults['draftTokenMax'], 8);
+      expect(defaults['ngramSizeM'], isNull);
+
+      final explicit = service.debugResolveSpeculativeNativeParamsForTesting(
+        const GenerationParams(
+          speculativeDecodingConfig: SpeculativeDecodingConfig.ngramMapK(
+            draftTokenMax: 8,
+            ngramSizeM: 16,
+          ),
+        ),
+      );
+
+      expect(explicit['draftTokenMax'], 8);
+      expect(explicit['ngramSizeM'], 16);
+    });
+
+    test('uses upstream ngram size M default when draft cap is omitted', () {
+      final resolved = service.debugResolveSpeculativeNativeParamsForTesting(
+        const GenerationParams(
+          speculativeDecodingConfig: SpeculativeDecodingConfig.ngramMapK(),
+        ),
+      );
+
+      expect(resolved['draftTokenMax'], 48);
+      expect(resolved['ngramSizeM'], isNull);
+    });
+
     test('rejects mixed configs with more than one draft strategy', () {
       expect(
         () => service.debugResolveSpeculativeTypeNamesForTesting(

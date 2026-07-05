@@ -3913,10 +3913,7 @@ class LlamaCppService {
       draftSplitProbability: speculativeConfig.draftSplitProbability,
       draftModelPath: draftModelPath,
       ngramSizeN: speculativeConfig.ngramSizeN ?? speculativeConfig.ngramSize,
-      ngramSizeM: _resolveLlamaCppNgramSizeM(
-        uniqueStrategies,
-        speculativeConfig,
-      ),
+      ngramSizeM: speculativeConfig.ngramSizeM,
       ngramMinHits: speculativeConfig.ngramMinHits,
       ngramMatch: speculativeConfig.ngramMatch,
       ngramTokenMin: ngramTokenMin,
@@ -3951,6 +3948,24 @@ class LlamaCppService {
           hasMediaParts: hasMediaParts,
         )?.suppressDraftProcessLogits ??
         false;
+  }
+
+  /// Resolves llama.cpp speculative native params for unit tests.
+  Map<String, Object?> debugResolveSpeculativeNativeParamsForTesting(
+    GenerationParams params, {
+    bool hasMediaParts = false,
+  }) {
+    final config = _resolveLlamaCppSpeculativeConfig(
+      params,
+      hasMediaParts: hasMediaParts,
+    );
+    return <String, Object?>{
+      'typeNames': config?.typeNames,
+      'draftTokenMax': config?.draftTokenMax,
+      'ngramSizeN': config?.ngramSizeN,
+      'ngramSizeM': config?.ngramSizeM,
+      'ngramTokenMax': config?.ngramTokenMax,
+    };
   }
 
   /// Runs [action] while native batch logits are temporarily zeroed.
@@ -3998,26 +4013,6 @@ class LlamaCppService {
       }
     }
     return max == 0 ? 64 : max;
-  }
-
-  int? _resolveLlamaCppNgramSizeM(
-    List<SpeculativeDecodingStrategy> strategies,
-    SpeculativeDecodingConfig config,
-  ) {
-    final explicit = config.ngramSizeM;
-    if (explicit != null) {
-      return explicit;
-    }
-    if (config.draftTokenMax == null) {
-      return null;
-    }
-    final hasMapStrategy = strategies.any(
-      (strategy) =>
-          strategy == SpeculativeDecodingStrategy.ngramSimple ||
-          strategy == SpeculativeDecodingStrategy.ngramMapK ||
-          strategy == SpeculativeDecodingStrategy.ngramMapK4v,
-    );
-    return hasMapStrategy ? config.draftTokenMax : null;
   }
 
   /// Generates text based on the given [prompt] and [params].

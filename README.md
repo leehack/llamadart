@@ -291,7 +291,12 @@ await for (final chunk in engine.create(
 
 Higher `draftTokenMax` values can be faster on some models/devices, but they
 should be benchmarked with the target model because excess draft depth can add
-verification overhead.
+verification overhead. For llama.cpp n-gram strategies, `draftTokenMax` caps
+the per-step draft length; use `ngramSizeM` when intentionally changing
+upstream's n-gram draft window. Measured parity results and upstream comparison
+commands are recorded in the
+[Backend Benchmarks](https://llamadart.leehack.com/docs/guides/backend-benchmarks)
+guide.
 
 For GGUF models without an MTP or separate draft model, llama.cpp n-gram
 speculative decoding uses recent token history as the drafter:

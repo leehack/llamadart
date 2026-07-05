@@ -69,6 +69,44 @@ and reported that the Android NPU delegate may not support the device, OS,
 model, or bundle. Use GPU or CPU for this artifact unless a newer LiteRT-LM
 bundle/runtime combination validates NPU support.
 
+### llama.cpp upstream speculative parity check
+
+The llama.cpp speculative investigation on 2026-07-05 found no package-level
+model-cache issue and no evidence that upstream speculative decoding is
+universally faster. It is workload- and knob-sensitive. The clear local speedup
+came from an explicit repeated-context workload with smaller n-gram lookup
+settings.
+
+The current package runtime pin was `leehack/llamadart-native@b9873`. That
+release does not publish standalone `llama-cli` / `llama-server` tool binaries,
+so upstream CLI comparison used the closest local llama.cpp tool build available
+from `llamadart-native` (`build b1-e3471b3e7`, from the b9571 line). Treat the
+CLI rows as behavior references, not exact artifact parity for b9873.
+
+| Runtime | Prompt / config | Backend | Baseline | Speculative | Relative | Notes |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| llamadart runner | Raw repeated sequence, `ngram-map-k`, `draftTokenMax=8`, `ngramSizeN=4`, `ngramSizeM=8` | CPU | 135.71 wall tok/s | 222.24 wall tok/s | 1.64x | 112/112 drafts accepted, output hash matched |
+| llamadart runner | Same, `ngram-map-k4v`, `draftTokenMax=8`, `ngramSizeN=4`, `ngramSizeM=8` | CPU | 135.71 wall tok/s | 212.21 wall tok/s | 1.56x | 112/112 drafts accepted, output hash matched |
+| llamadart runner | Qwen chat-template code prompt, default `ngram-map-k` sizing | CPU | 103.11 wall tok/s | 67.82 wall tok/s | 0.66x | auxiliary observation from the investigation; zero drafts produced |
+| llamadart runner | Raw code prompt, default n-gram sizing | Metal | 250.63 wall tok/s | 125.61 wall tok/s | 0.50x | auxiliary observation from the investigation; zero drafts produced |
+| upstream `llama-cli` | Same repeated text through `llama-cli` single-turn chat/conversation path, same n-gram knobs as first row | CPU, `--device none` | 138.7 generation tok/s | 164.1 generation tok/s | 1.18x | local b9571 CLI; metric excludes prompt handling |
+
+Conclusion: draftless n-gram speculation can be faster in llamadart when the
+prompt has reusable repeated context and the n-gram knobs match the workload.
+For natural short prompts or code prompts without a matching recent history,
+the draftless n-gram strategies can produce no drafts, so the extra speculative
+loop work is slower than baseline. Keep `draftTokenMax` as the per-step draft
+cap; set `ngramSizeM` explicitly only when intentionally changing upstream's
+n-gram draft window from its default.
+
+Remaining actionable work was split out instead of being folded into this
+benchmark documentation: [llamadart#278](https://github.com/leehack/llamadart/issues/278)
+tracks generic n-gram rollback/metrics optimization,
+[llamadart-native#25](https://github.com/leehack/llamadart-native/issues/25)
+tracks the native sampler accept bug, and
+[llamadart-native#26](https://github.com/leehack/llamadart-native/issues/26)
+tracks exact native tool artifacts for future same-tag upstream comparisons.
+
 ## Interpretation
 
 On Pixel 9 Pro, LiteRT-LM GPU was about 9x faster than llama.cpp Vulkan for this
@@ -139,3 +177,79 @@ single-threaded file servers can make large browser model loads fail before the
 runtime sees real GGUF bytes. `python -m http.server` is not a good substitute
 for this benchmark because it does not provide the same browser isolation and
 large-file behavior.
+
+Speculative n-gram parity:
+
+Set `MODEL_PATH` to the cached GGUF location on your machine. Set `LLAMA_CLI`
+to the upstream `llama-cli` build you are comparing; the table above used a
+local b9571-line tool because the b9873 native release did not publish
+standalone CLI artifacts.
+
+```bash
+MODEL_PATH="${MODEL_PATH:-$HOME/Library/Caches/llamadart/models/Qwen3.5-0.8B-Q4_K_M.gguf}"
+LLAMA_CLI="${LLAMA_CLI:-/path/to/llama-cli}"
+
+PROMPT_REPEAT='Repeat and continue this sequence exactly:
+alpha beta gamma delta epsilon zeta eta theta
+alpha beta gamma delta epsilon zeta eta theta
+alpha beta gamma delta epsilon zeta eta theta
+alpha beta gamma delta epsilon zeta eta theta
+alpha beta gamma delta epsilon zeta eta theta'
+
+dart run tool/testing/llama_cpp_speculative_benchmark.dart \
+  --model "$MODEL_PATH" \
+  --cases baseline,ngram-map-k,ngram-map-k4v \
+  --backend cpu \
+  --gpu-layers 0 \
+  --context-size 4096 \
+  --max-tokens 128 \
+  --runs 2 \
+  --warmups 1 \
+  --draft-token-max 8 \
+  --ngram-size-n 4 \
+  --ngram-size-m 8 \
+  --ngram-min-hits 1 \
+  --temp 0 \
+  --repeat-penalty 1.0 \
+  --raw-prompt \
+  --prompt "$PROMPT_REPEAT"
+
+"$LLAMA_CLI" \
+  -m "$MODEL_PATH" \
+  --device none \
+  -ngl 0 \
+  -c 4096 \
+  -n 128 \
+  --temp 0 \
+  --repeat-penalty 1.0 \
+  --top-k 40 \
+  --top-p 0.95 \
+  --min-p 0.05 \
+  --seed 7 \
+  --single-turn \
+  --no-display-prompt \
+  --simple-io \
+  -p "$PROMPT_REPEAT"
+
+"$LLAMA_CLI" \
+  -m "$MODEL_PATH" \
+  --device none \
+  -ngl 0 \
+  -c 4096 \
+  -n 128 \
+  --temp 0 \
+  --repeat-penalty 1.0 \
+  --top-k 40 \
+  --top-p 0.95 \
+  --min-p 0.05 \
+  --seed 7 \
+  --single-turn \
+  --no-display-prompt \
+  --simple-io \
+  --spec-type ngram-map-k \
+  --spec-draft-n-max 8 \
+  --spec-ngram-map-k-size-n 4 \
+  --spec-ngram-map-k-size-m 8 \
+  --spec-ngram-map-k-min-hits 1 \
+  -p "$PROMPT_REPEAT"
+```

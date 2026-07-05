@@ -1,5 +1,10 @@
 ## Unreleased
 
+* Fixed llama.cpp n-gram speculative configuration mapping so
+  `draftTokenMax` no longer implicitly overrides upstream `ngramSizeM`, and
+  documented upstream comparison commands plus measured n-gram benchmark
+  results.
+
 * Added a durable flag-based llama.cpp speculative benchmark runner and wired
   it into the local E2E scenario list, testing matrix, README, and website
   performance guide. The runner can now generate a llama.cpp-compatible
