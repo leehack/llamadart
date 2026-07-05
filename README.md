@@ -312,10 +312,27 @@ workload-dependent and can be slower than baseline decoding on prompts with
 little repetition, so validate it with your model and prompt shape. Upstream
 `--spec-default` maps to `ngram-mod`; in llamadart, legacy
 `GenerationParams(speculativeDecoding: true)` uses that llama.cpp default. For
-local measurements, set
-`LLAMADART_MTP_BENCHMARK_NGRAM=true` and
-`LLAMADART_MTP_BENCHMARK_NGRAM_ONLY=true` when running
-`tool/testing/llama_cpp_mtp_benchmark.dart`.
+local measurements, run the discoverable local E2E benchmark scenario with
+explicit cases:
+
+```bash
+dart run tool/testing/run_local_e2e.dart \
+  --scenario llama-cpp-speculative-benchmark \
+  --model-path path/to/model.gguf \
+  --speculative-cases baseline,ngram-simple,ngram-map-k,ngram-map-k4v,ngram-mod,mixed-ngram \
+  --backend cpu \
+  --benchmark-gpu-layers 0 \
+  --benchmark-max-tokens 128 \
+  --benchmark-runs 3 \
+  --draft-token-max 1,2 \
+  --benchmark-warmups 1
+```
+
+In the local E2E scenario, draft-model strategies require
+`--draft-model-path`; the n-gram cache strategy requires cache paths. Use
+`tool/testing/llama_cpp_speculative_benchmark.dart` directly for advanced
+strategy-specific benchmark knobs; the raw runner's draft-model flag is
+`--draft-model`.
 
 For target/draft model pairs, pass the separate drafter GGUF with
 `draftModelPath`. Use `draftSimple`, `draftEagle3`, `mtp`, or `draftDflash`

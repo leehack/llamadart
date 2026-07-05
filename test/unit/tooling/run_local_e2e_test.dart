@@ -16,6 +16,7 @@ void main() {
       expect(result.stdout, contains('root-template-e2e'));
       expect(result.stdout, contains('qwen35-multimodal-macos-repro'));
       expect(result.stdout, contains('gguf-chat-features-smoke'));
+      expect(result.stdout, contains('llama-cpp-speculative-benchmark'));
       expect(result.stdout, contains('litert-lm-chat-features-smoke'));
       expect(result.stdout, contains('webgpu-multimodal-regression'));
       expect(result.stdout, contains('chat-app-model-cache'));
@@ -214,6 +215,97 @@ void main() {
 
       expect(result.exitCode, 64);
       expect(result.stderr, contains('--image-path requires --mmproj-path'));
+    });
+
+    test(
+      'dry-runs llama.cpp speculative benchmark with matrix options',
+      () async {
+        final result = await runLocalE2e(const [
+          '--scenario',
+          'llama-cpp-speculative-benchmark',
+          '--model-path',
+          'models/Qwen3.5-0.8B-Q4_K_M.gguf',
+          '--backend',
+          'cpu',
+          '--speculative-cases',
+          'baseline,ngram-simple,ngram-map-k,ngram-map-k4v,ngram-mod,mixed-ngram',
+          '--benchmark-max-tokens',
+          '128',
+          '--benchmark-runs',
+          '3',
+          '--draft-token-max',
+          '1,2',
+          '--benchmark-warmups',
+          '1',
+          '--dry-run',
+        ], projectRoot: '/repo');
+
+        expect(result.exitCode, 0);
+        expect(result.stdout, contains('llama-cpp-speculative-benchmark'));
+        expect(
+          result.stdout,
+          contains(
+            'cd /repo && dart run '
+            'tool/testing/llama_cpp_speculative_benchmark.dart '
+            '--model models/Qwen3.5-0.8B-Q4_K_M.gguf '
+            '--cases baseline,ngram-simple,ngram-map-k,ngram-map-k4v,'
+            'ngram-mod,mixed-ngram --backend cpu --gpu-layers 0 '
+            '--max-tokens 128 --runs 3 --draft-token-max 1,2 --warmups 1',
+          ),
+        );
+      },
+    );
+
+    test('dry-runs llama.cpp speculative benchmark with draft model', () async {
+      final result = await runLocalE2e(const [
+        '--scenario',
+        'llama-cpp-speculative-benchmark',
+        '--model-path',
+        'models/qwen2.5-1.5b-instruct-q4_k_m.gguf',
+        '--draft-model-path',
+        'models/qwen2.5-0.5b-instruct-q4_k_m.gguf',
+        '--speculative-cases',
+        'baseline,draft-simple,mixed-ngram-draft-simple',
+        '--benchmark-max-tokens',
+        '16',
+        '--benchmark-runs',
+        '1',
+        '--draft-token-max',
+        '1',
+        '--benchmark-warmups',
+        '0',
+        '--dry-run',
+      ], projectRoot: '/repo');
+
+      expect(result.exitCode, 0);
+      expect(
+        result.stdout,
+        contains(
+          'cd /repo && dart run '
+          'tool/testing/llama_cpp_speculative_benchmark.dart '
+          '--model models/qwen2.5-1.5b-instruct-q4_k_m.gguf '
+          '--cases baseline,draft-simple,mixed-ngram-draft-simple '
+          '--backend auto --gpu-layers 0 --max-tokens 16 --runs 1 '
+          '--draft-token-max 1 --warmups 0 '
+          '--draft-model models/qwen2.5-0.5b-instruct-q4_k_m.gguf',
+        ),
+      );
+    });
+
+    test('requires model path for llama.cpp speculative benchmark', () async {
+      final result = await runLocalE2e(const [
+        '--scenario',
+        'llama-cpp-speculative-benchmark',
+        '--dry-run',
+      ], projectRoot: '/repo');
+
+      expect(result.exitCode, 64);
+      expect(
+        result.stderr,
+        contains(
+          '--model-path is required for llama-cpp-speculative-benchmark',
+        ),
+      );
     });
 
     test('dry-runs LiteRT-LM chat feature smoke with model path', () async {

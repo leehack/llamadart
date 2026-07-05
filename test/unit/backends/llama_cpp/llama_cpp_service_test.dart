@@ -1,8 +1,10 @@
 @TestOn('vm')
 library;
 
+import 'dart:ffi';
 import 'dart:io';
 
+import 'package:ffi/ffi.dart';
 import 'package:llamadart/src/backends/llama_cpp/llama_cpp_service.dart';
 import 'package:llamadart/src/core/models/config/gpu_backend.dart';
 import 'package:llamadart/src/core/models/config/gpu_device_info.dart';
@@ -207,6 +209,89 @@ void main() {
           ),
         ),
       );
+    });
+
+    test('suppresses process logits only for external draft strategies', () {
+      expect(
+        service.debugSuppressesDraftProcessLogitsForTesting(
+          const GenerationParams(
+            speculativeDecodingConfig: SpeculativeDecodingConfig.draftSimple(
+              draftModelPath: 'draft.gguf',
+            ),
+          ),
+        ),
+        isTrue,
+      );
+      expect(
+        service.debugSuppressesDraftProcessLogitsForTesting(
+          const GenerationParams(
+            speculativeDecodingConfig: SpeculativeDecodingConfig.draftEagle3(
+              draftModelPath: 'draft.gguf',
+            ),
+          ),
+        ),
+        isTrue,
+      );
+      expect(
+        service.debugSuppressesDraftProcessLogitsForTesting(
+          const GenerationParams(
+            speculativeDecodingConfig: SpeculativeDecodingConfig.mtp(),
+          ),
+        ),
+        isFalse,
+      );
+      expect(
+        service.debugSuppressesDraftProcessLogitsForTesting(
+          const GenerationParams(
+            speculativeDecodingConfig: SpeculativeDecodingConfig.ngramSimple(),
+          ),
+        ),
+        isFalse,
+      );
+    });
+
+    test('temporarily zeros and restores suppressed batch logits', () {
+      final logits = malloc<Int8>(3);
+      addTearDown(() => malloc.free(logits));
+      logits[0] = 1;
+      logits[1] = 0;
+      logits[2] = 1;
+
+      final seenLogits = <int>[];
+      final result = LlamaCppService.debugWithSuppressedBatchLogitsForTesting(
+        logits,
+        3,
+        true,
+        () {
+          seenLogits.addAll([logits[0], logits[1], logits[2]]);
+          logits[1] = 7;
+          return 'processed';
+        },
+      );
+
+      expect(result, 'processed');
+      expect(seenLogits, [0, 0, 0]);
+      expect([logits[0], logits[1], logits[2]], [1, 0, 1]);
+    });
+
+    test('leaves batch logits untouched when suppression is disabled', () {
+      final logits = malloc<Int8>(2);
+      addTearDown(() => malloc.free(logits));
+      logits[0] = 1;
+      logits[1] = 0;
+
+      final seenLogits = <int>[];
+      LlamaCppService.debugWithSuppressedBatchLogitsForTesting(
+        logits,
+        2,
+        false,
+        () {
+          seenLogits.addAll([logits[0], logits[1]]);
+        },
+      );
+
+      expect(seenLogits, [1, 0]);
+      expect([logits[0], logits[1]], [1, 0]);
     });
 
     test('rejects invalid ngram-cache paths', () {
