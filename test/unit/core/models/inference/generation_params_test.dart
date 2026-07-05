@@ -99,6 +99,31 @@ void main() {
     expect(params.resolvedSpeculativeDecodingConfig?.minProbability, isNull);
   });
 
+  test(
+    'SpeculativeDecodingConfig resolves ngramSize alias from ngramSizeN',
+    () {
+      const simple = SpeculativeDecodingConfig.ngramSimple(
+        ngramSize: 8,
+        ngramSizeN: 4,
+      );
+      const mapK = SpeculativeDecodingConfig.ngramMapK(
+        ngramSize: 8,
+        ngramSizeN: 4,
+      );
+      const mapK4v = SpeculativeDecodingConfig.ngramMapK4v(
+        ngramSize: 8,
+        ngramSizeN: 4,
+      );
+
+      expect(simple.ngramSize, 4);
+      expect(simple.ngramSizeN, 4);
+      expect(mapK.ngramSize, 4);
+      expect(mapK.ngramSizeN, 4);
+      expect(mapK4v.ngramSize, 4);
+      expect(mapK4v.ngramSizeN, 4);
+    },
+  );
+
   test('SpeculativeDecodingConfig stores draft model strategies', () {
     const eagle = SpeculativeDecodingConfig.draftEagle3(
       draftTokenMax: 4,

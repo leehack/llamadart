@@ -3770,15 +3770,17 @@ class LlamaCppService {
         else
           strategy,
     ];
-    final uniqueStrategies = <SpeculativeDecodingStrategy>[
-      for (final strategy in strategies)
-        if (!_llamaCppSpeculativeTypeNames.containsKey(strategy))
-          throw UnsupportedError(
-            'llama.cpp does not support speculative strategy $strategy.',
-          )
-        else
-          strategy,
-    ];
+    final uniqueStrategies = <SpeculativeDecodingStrategy>[];
+    for (final strategy in strategies) {
+      if (!_llamaCppSpeculativeTypeNames.containsKey(strategy)) {
+        throw UnsupportedError(
+          'llama.cpp does not support speculative strategy $strategy.',
+        );
+      }
+      if (!uniqueStrategies.contains(strategy)) {
+        uniqueStrategies.add(strategy);
+      }
+    }
 
     final draftStrategyCount = uniqueStrategies
         .where(_llamaCppDraftStrategies.contains)
@@ -3916,6 +3918,17 @@ class LlamaCppService {
       ngramCacheStaticPath: speculativeConfig.ngramCacheStaticPath,
       ngramCacheDynamicPath: speculativeConfig.ngramCacheDynamicPath,
     );
+  }
+
+  /// Resolves llama.cpp speculative strategy type names for unit tests.
+  String? debugResolveSpeculativeTypeNamesForTesting(
+    GenerationParams params, {
+    bool hasMediaParts = false,
+  }) {
+    return _resolveLlamaCppSpeculativeConfig(
+      params,
+      hasMediaParts: hasMediaParts,
+    )?.typeNames;
   }
 
   int _resolveLlamaCppSpeculativeDraftTokenMax(
