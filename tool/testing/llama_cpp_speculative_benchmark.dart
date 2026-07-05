@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:llamadart/llamadart.dart';
+import 'package:path/path.dart' as path;
 
 Future<void> main(List<String> arguments) async {
   final options = _BenchmarkOptions.parse(arguments);
@@ -1246,7 +1247,7 @@ void _validate(_BenchmarkOptions options) {
 }
 
 bool _sameAbsolutePath(String first, String second) =>
-    File(first).absolute.path == File(second).absolute.path;
+    path.equals(path.absolute(first), path.absolute(second));
 
 GpuBackend _parsePreferredBackend(String? value) {
   final normalized = value?.trim().toLowerCase();

@@ -4,6 +4,7 @@ library;
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
 
 import '../../../tool/testing/llama_cpp_speculative_benchmark.dart'
@@ -125,7 +126,7 @@ void main() {
       'allows generated static cache path with equivalent absolute path',
       () async {
         final relativePath = 'relative-ngram-cache.bin';
-        final absolutePath = '${Directory.current.path}/$relativePath';
+        final absolutePath = path.absolute(relativePath);
         addTearDown(() async {
           final file = File(relativePath);
           if (await file.exists()) {
