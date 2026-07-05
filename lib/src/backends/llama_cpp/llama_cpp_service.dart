@@ -6753,10 +6753,12 @@ class LlamaCppService {
     bool addAssistant = true,
   }) {
     if (!_models.containsKey(modelHandle)) {
-      throw Exception('Invalid model handle');
+      throw StateError('Invalid model handle for chat template: $modelHandle');
     }
     final metadata = getMetadata(modelHandle);
-    final modelParamsTemplate = _modelLoadParams[modelHandle]?.chatTemplate;
+    final modelParamsTemplate = _nonEmptyTemplate(
+      _modelLoadParams[modelHandle]?.chatTemplate,
+    );
     final templateSource = customTemplate == null
         ? modelParamsTemplate ?? _modelChatTemplate(modelHandle)
         : null;
@@ -6768,6 +6770,13 @@ class LlamaCppService {
       customTemplate: customTemplate,
     );
     return result.prompt;
+  }
+
+  String? _nonEmptyTemplate(String? template) {
+    if (template == null || template.isEmpty) {
+      return null;
+    }
+    return template;
   }
 
   String? _modelChatTemplate(int modelHandle) {

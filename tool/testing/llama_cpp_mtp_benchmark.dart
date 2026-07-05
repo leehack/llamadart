@@ -75,12 +75,20 @@ Future<void> main(List<String> args) async {
   try {
     await backend.setLogLevel(LlamaLogLevel.warn);
     modelHandle = await backend.modelLoad(modelPath, baselineModelParams);
-    final prompt = await _resolvePrompt(
-      backend,
-      modelHandle,
-      benchmarkInstruction,
-      rawPrompt: rawPrompt,
-    );
+    final prompt =
+        await _resolvePrompt(
+          backend,
+          modelHandle,
+          benchmarkInstruction,
+          rawPrompt: rawPrompt,
+        ).onError<StateError>((error, stackTrace) {
+          stderr.writeln(error.message);
+          exitCode = 64;
+          return '';
+        });
+    if (exitCode == 64) {
+      return;
+    }
 
     final benchmarkCases = <_BenchmarkCase>[
       const _BenchmarkCase.baseline(),

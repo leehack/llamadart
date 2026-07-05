@@ -109,6 +109,7 @@ void main() {
           (chatTemplate as ErrorResponse).message,
           contains('Invalid model handle'),
         );
+        expect(chatTemplate.message, contains('1'));
         expect(chatTemplate.message, isNot(contains('not implemented')));
 
         final tokenize = await _sendRequest(

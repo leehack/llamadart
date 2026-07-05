@@ -99,6 +99,28 @@ void main() {
           expect(perCallCustom, contains('PERCALL:Use the per-call template.'));
           expect(perCallCustom, isNot(contains('MODELPARAM:')));
 
+          await backend.modelFree(modelHandle);
+          modelHandle = null;
+          modelHandle = await backend.modelLoad(
+            modelPath,
+            const ModelParams(
+              contextSize: 512,
+              preferredBackend: GpuBackend.cpu,
+              gpuLayers: 0,
+              numberOfThreads: 2,
+              numberOfThreadsBatch: 2,
+              chatTemplate: '',
+            ),
+          );
+
+          final emptyTemplateRendered = await backend.applyChatTemplate(
+            modelHandle,
+            const [
+              {'role': 'user', 'content': 'Say hello.'},
+            ],
+          );
+          expect(emptyTemplateRendered, rendered);
+
           await expectLater(
             backend.applyChatTemplate(modelHandle, const [
               {

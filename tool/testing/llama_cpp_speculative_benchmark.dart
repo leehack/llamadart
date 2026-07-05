@@ -35,12 +35,20 @@ Future<void> main(List<String> arguments) async {
       options.modelPath,
       baselineModelParams,
     );
-    final prompt = await _resolvePrompt(
-      backend,
-      modelHandle,
-      options.prompt,
-      rawPrompt: options.rawPrompt,
-    );
+    final prompt =
+        await _resolvePrompt(
+          backend,
+          modelHandle,
+          options.prompt,
+          rawPrompt: options.rawPrompt,
+        ).onError<StateError>((error, stackTrace) {
+          stderr.writeln(error.message);
+          exitCode = 64;
+          return '';
+        });
+    if (exitCode == 64) {
+      return;
+    }
     await _prepareGeneratedNgramCache(
       backend: backend,
       modelHandle: modelHandle,
