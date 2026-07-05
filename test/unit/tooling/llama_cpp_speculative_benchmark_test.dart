@@ -9,7 +9,7 @@ void main() {
   group('llama_cpp_speculative_benchmark', () {
     test('lists all case aliases in invalid cases errors', () async {
       final result = await Process.run(Platform.resolvedExecutable, [
-        'run',
+        '--disable-dart-dev',
         'tool/testing/llama_cpp_speculative_benchmark.dart',
         '--model',
         'missing.gguf',
