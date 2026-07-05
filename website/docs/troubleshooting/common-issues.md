@@ -35,6 +35,27 @@ Checks:
 2. Tune `contextSize` and generation length (`maxTokens`).
 3. Use appropriate backend and GPU offload (`gpuLayers`).
 
+## DFlash draft model load failures
+
+Symptoms:
+
+- DFlash speculative decoding fails while loading the draft GGUF.
+- Native logs mention `unknown model architecture: 'dflash-draft'`.
+- Native logs mention missing DFlash target-layer metadata.
+
+Checks:
+
+1. Inspect the draft GGUF metadata. Compatible DFlash artifacts use
+   `general.architecture=dflash`, not `dflash-draft`.
+2. Confirm the draft contains the DFlash metadata block, especially
+   `dflash.target_layers`.
+3. Use an upstream-compatible target/draft pair. One validated public pair is
+   target `unsloth/Qwen3.5-4B-GGUF` (`Qwen3.5-4B-Q4_K_M.gguf`) with draft
+   `EntityDeletr/Qwen3.5-4B-DFlash-GGUF` (`Qwen3.5-4B-DFlash.gguf`).
+4. If the artifact uses `dflash-draft` or lacks `dflash.target_layers`, replace
+   or reconvert the draft GGUF. llamadart does not patch draft metadata at
+   runtime.
+
 ## Tool calling seems unstable
 
 Checks:

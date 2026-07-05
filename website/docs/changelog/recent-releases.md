@@ -19,6 +19,10 @@ For canonical full release notes, use:
   configured or loaded GGUF chat templates before the generic fallback instead
   of silently falling back to a hard-coded Gemma prompt.
 
+- Documented compatible DFlash GGUF metadata, a known-good public target/draft
+  model pair, and troubleshooting guidance for incompatible `dflash-draft` or
+  missing `dflash.target_layers` artifacts.
+
 - Updated the default llama.cpp native runtime pin to
   `leehack/llamadart-native@b9873`, refreshed the
   `llamadart_llama_cpp_flutter` Apple SwiftPM checksum, and aligned current
