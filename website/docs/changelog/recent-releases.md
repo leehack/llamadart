@@ -29,8 +29,10 @@ For canonical full release notes, use:
   missing `dflash.target_layers` artifacts.
 
 - Updated the default llama.cpp native runtime pin to
-  `leehack/llamadart-native@b9873`, refreshed the
-  `llamadart_llama_cpp_flutter` Apple SwiftPM checksum, and aligned current
+  `leehack/llamadart-native@b9873-llamadart.2`, keeping the `b9873`
+  llama.cpp ABI/bindings while picking up wrapper fixes for native release
+  provenance and backend-selected speculative sampler acceptance. Refreshed
+  the `llamadart_llama_cpp_flutter` Apple SwiftPM checksum and aligned current
   README/website native override docs.
 
 - Hardened LiteRT-LM generation validation so llama.cpp-only speculative
