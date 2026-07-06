@@ -5364,6 +5364,9 @@ class LlamaCppService {
     var generatedTokens = 0;
     var speculativeDraftTokens = 0;
     var speculativeAcceptedDraftTokens = 0;
+    var speculativeDraftAttempts = 0;
+    var speculativeVerifyTokens = 0;
+    var speculativeReplayTokens = 0;
     var shouldStop = false;
 
     try {
@@ -5433,6 +5436,7 @@ class LlamaCppService {
 
         var draftCount = 0;
         if (draftLimit > 0) {
+          speculativeDraftAttempts++;
           final draftTick = Stopwatch()..start();
           draftCount = speculativeApi.draft(
             speculativeSession,
@@ -5553,6 +5557,7 @@ class LlamaCppService {
           evalTick.stop();
           evalMicros += evalTick.elapsedMicroseconds;
           if (decodeStatus != 0) break;
+          speculativeVerifyTokens += batchTokens;
 
           for (int i = 0; i < batchTokens; i++) {
             idxPtr[i] = i;
@@ -5652,6 +5657,7 @@ class LlamaCppService {
               if (replayStatus != 0) {
                 throw Exception("Speculative replay decode failed");
               }
+              speculativeReplayTokens += replayTokens;
               targetTailReconciled = true;
             }
           }
@@ -5753,6 +5759,10 @@ class LlamaCppService {
       ctx.lastPerfSpeculativeDraftTokens = speculativeDraftTokens;
       ctx.lastPerfSpeculativeAcceptedDraftTokens =
           speculativeAcceptedDraftTokens;
+      ctx.lastPerfSpeculativeDraftAttempts = speculativeDraftAttempts;
+      ctx.lastPerfSpeculativeVerifyTokens = speculativeVerifyTokens;
+      ctx.lastPerfSpeculativeReplayTokens = speculativeReplayTokens;
+      ctx.lastPerfSpeculativeRan = true;
     }
   }
 
@@ -5792,6 +5802,9 @@ class LlamaCppService {
     var generatedTokens = 0;
     var speculativeDraftTokens = 0;
     var speculativeAcceptedDraftTokens = 0;
+    var speculativeDraftAttempts = 0;
+    var speculativeVerifyTokens = 0;
+    var speculativeReplayTokens = 0;
     var shouldStop = false;
     try {
       while (!shouldStop && generatedTokens < params.maxTokens) {
@@ -5860,6 +5873,7 @@ class LlamaCppService {
 
         var draftCount = 0;
         if (draftLimit > 0) {
+          speculativeDraftAttempts++;
           final draftTick = Stopwatch()..start();
           draftCount = mtpApi.draft(
             mtpSession,
@@ -5937,6 +5951,7 @@ class LlamaCppService {
         evalTick.stop();
         evalMicros += evalTick.elapsedMicroseconds;
         if (decodeStatus != 0) break;
+        speculativeVerifyTokens += batchTokens;
 
         for (int i = 0; i < batchTokens; i++) {
           idxPtr[i] = i;
@@ -6038,6 +6053,10 @@ class LlamaCppService {
       ctx.lastPerfSpeculativeDraftTokens = speculativeDraftTokens;
       ctx.lastPerfSpeculativeAcceptedDraftTokens =
           speculativeAcceptedDraftTokens;
+      ctx.lastPerfSpeculativeDraftAttempts = speculativeDraftAttempts;
+      ctx.lastPerfSpeculativeVerifyTokens = speculativeVerifyTokens;
+      ctx.lastPerfSpeculativeReplayTokens = speculativeReplayTokens;
+      ctx.lastPerfSpeculativeRan = true;
     }
   }
 
@@ -6078,6 +6097,9 @@ class LlamaCppService {
     var generatedTokens = 0;
     var speculativeDraftTokens = 0;
     var speculativeAcceptedDraftTokens = 0;
+    var speculativeDraftAttempts = 0;
+    var speculativeVerifyTokens = 0;
+    var speculativeReplayTokens = 0;
     var shouldStop = false;
 
     try {
@@ -6147,6 +6169,7 @@ class LlamaCppService {
 
         var draftCount = 0;
         if (draftLimit > 0) {
+          speculativeDraftAttempts++;
           final draftTick = Stopwatch()..start();
           draftCount = ngramApi.draft(
             ngramSession,
@@ -6244,6 +6267,7 @@ class LlamaCppService {
           evalTick.stop();
           evalMicros += evalTick.elapsedMicroseconds;
           if (decodeStatus != 0) break;
+          speculativeVerifyTokens += batchTokens;
 
           for (int i = 0; i < batchTokens; i++) {
             idxPtr[i] = i;
@@ -6338,6 +6362,7 @@ class LlamaCppService {
               if (replayStatus != 0) {
                 throw Exception("ngram-simple replay decode failed");
               }
+              speculativeReplayTokens += replayTokens;
               targetTailReconciled = true;
             }
           }
@@ -6428,6 +6453,10 @@ class LlamaCppService {
       ctx.lastPerfSpeculativeDraftTokens = speculativeDraftTokens;
       ctx.lastPerfSpeculativeAcceptedDraftTokens =
           speculativeAcceptedDraftTokens;
+      ctx.lastPerfSpeculativeDraftAttempts = speculativeDraftAttempts;
+      ctx.lastPerfSpeculativeVerifyTokens = speculativeVerifyTokens;
+      ctx.lastPerfSpeculativeReplayTokens = speculativeReplayTokens;
+      ctx.lastPerfSpeculativeRan = true;
     }
   }
 
@@ -7727,6 +7756,9 @@ class LlamaCppService {
     int reusedGraphs,
     int? speculativeDraftTokens,
     int? speculativeAcceptedDraftTokens,
+    int? speculativeDraftAttempts,
+    int? speculativeVerifyTokens,
+    int? speculativeReplayTokens,
     double? speculativeDraftMs,
     double? speculativeVerifyMs,
   })
@@ -7757,16 +7789,25 @@ class LlamaCppService {
         ? ctx.lastPerfSampleCount
         : (samplerPerf?.n_sample ?? 0);
     final decodeMs = ctx.lastPerfDecodeMs > 0 ? ctx.lastPerfDecodeMs : null;
-    final speculativeDraftTokens = ctx.lastPerfSpeculativeDraftTokens > 0
+    final speculativeDraftTokens = ctx.lastPerfSpeculativeRan
         ? ctx.lastPerfSpeculativeDraftTokens
         : null;
-    final speculativeAcceptedDraftTokens = speculativeDraftTokens != null
+    final speculativeAcceptedDraftTokens = ctx.lastPerfSpeculativeRan
         ? ctx.lastPerfSpeculativeAcceptedDraftTokens
         : null;
-    final speculativeDraftMs = ctx.lastPerfSpeculativeDraftMs > 0
+    final speculativeDraftAttempts = ctx.lastPerfSpeculativeRan
+        ? ctx.lastPerfSpeculativeDraftAttempts
+        : null;
+    final speculativeVerifyTokens = ctx.lastPerfSpeculativeRan
+        ? ctx.lastPerfSpeculativeVerifyTokens
+        : null;
+    final speculativeReplayTokens = ctx.lastPerfSpeculativeRan
+        ? ctx.lastPerfSpeculativeReplayTokens
+        : null;
+    final speculativeDraftMs = ctx.lastPerfSpeculativeRan
         ? ctx.lastPerfSpeculativeDraftMs
         : null;
-    final speculativeVerifyMs = ctx.lastPerfSpeculativeVerifyMs > 0
+    final speculativeVerifyMs = ctx.lastPerfSpeculativeRan
         ? ctx.lastPerfSpeculativeVerifyMs
         : null;
 
@@ -7782,6 +7823,9 @@ class LlamaCppService {
       reusedGraphs: perf.n_reused,
       speculativeDraftTokens: speculativeDraftTokens,
       speculativeAcceptedDraftTokens: speculativeAcceptedDraftTokens,
+      speculativeDraftAttempts: speculativeDraftAttempts,
+      speculativeVerifyTokens: speculativeVerifyTokens,
+      speculativeReplayTokens: speculativeReplayTokens,
       speculativeDraftMs: speculativeDraftMs,
       speculativeVerifyMs: speculativeVerifyMs,
     );
@@ -8543,6 +8587,10 @@ class _LlamaContextWrapper {
   int lastPerfSampleCount = 0;
   int lastPerfSpeculativeDraftTokens = 0;
   int lastPerfSpeculativeAcceptedDraftTokens = 0;
+  int lastPerfSpeculativeDraftAttempts = 0;
+  int lastPerfSpeculativeVerifyTokens = 0;
+  int lastPerfSpeculativeReplayTokens = 0;
+  bool lastPerfSpeculativeRan = false;
   _LlamaContextWrapper(this.pointer, this._modelKeepAlive);
   void resetLastPerf() {
     lastPerfPromptEvalMs = 0;
@@ -8556,6 +8604,10 @@ class _LlamaContextWrapper {
     lastPerfSampleCount = 0;
     lastPerfSpeculativeDraftTokens = 0;
     lastPerfSpeculativeAcceptedDraftTokens = 0;
+    lastPerfSpeculativeDraftAttempts = 0;
+    lastPerfSpeculativeVerifyTokens = 0;
+    lastPerfSpeculativeReplayTokens = 0;
+    lastPerfSpeculativeRan = false;
   }
 
   void dispose() {

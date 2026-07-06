@@ -156,6 +156,33 @@ void main() {
       );
       expect(DoneResponse(), isNotNull);
     });
+
+    test('PerformanceContextResponse keeps speculative counters', () {
+      final res = PerformanceContextResponse(
+        loadMs: 1,
+        promptEvalMs: 2,
+        evalMs: 3,
+        sampleMs: 4,
+        decodeMs: 5,
+        promptEvalTokens: 6,
+        evalTokens: 7,
+        sampleCount: 8,
+        reusedGraphs: 9,
+        speculativeDraftTokens: 0,
+        speculativeAcceptedDraftTokens: 0,
+        speculativeDraftAttempts: 10,
+        speculativeVerifyTokens: 11,
+        speculativeReplayTokens: 12,
+        speculativeDraftMs: 0,
+        speculativeVerifyMs: 13,
+      );
+
+      expect(res.speculativeDraftTokens, 0);
+      expect(res.speculativeAcceptedDraftTokens, 0);
+      expect(res.speculativeDraftAttempts, 10);
+      expect(res.speculativeVerifyTokens, 11);
+      expect(res.speculativeReplayTokens, 12);
+    });
   });
 
   // Close the port to avoid hanging

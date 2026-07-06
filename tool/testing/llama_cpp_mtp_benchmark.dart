@@ -362,6 +362,26 @@ Map<String, Object?> _summarize(List<_RunResult> results) {
               .whereType<double>()
               .toList(),
         ),
+        'medianSpeculativeDraftAttempts': _median(
+          entry.value
+              .map(
+                (result) => result.perf?.speculativeDraftAttempts?.toDouble(),
+              )
+              .whereType<double>()
+              .toList(),
+        ),
+        'medianSpeculativeVerifyTokens': _median(
+          entry.value
+              .map((result) => result.perf?.speculativeVerifyTokens?.toDouble())
+              .whereType<double>()
+              .toList(),
+        ),
+        'medianSpeculativeReplayTokens': _median(
+          entry.value
+              .map((result) => result.perf?.speculativeReplayTokens?.toDouble())
+              .whereType<double>()
+              .toList(),
+        ),
       },
   };
 }
@@ -505,6 +525,9 @@ class _RunResult {
               'speculativeDraftTokens': perf.speculativeDraftTokens,
               'speculativeAcceptedDraftTokens':
                   perf.speculativeAcceptedDraftTokens,
+              'speculativeDraftAttempts': perf.speculativeDraftAttempts,
+              'speculativeVerifyTokens': perf.speculativeVerifyTokens,
+              'speculativeReplayTokens': perf.speculativeReplayTokens,
               'speculativeAcceptanceRate': perf.speculativeAcceptanceRate,
               'speculativeDraftMs': perf.speculativeDraftMs,
               'speculativeVerifyMs': perf.speculativeVerifyMs,

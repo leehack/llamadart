@@ -496,6 +496,24 @@ Map<String, Object?> _summarizeCase(
           .whereType<double>()
           .toList(),
     ),
+    'medianSpeculativeDraftAttempts': _median(
+      results
+          .map((result) => result.perf?.speculativeDraftAttempts?.toDouble())
+          .whereType<double>()
+          .toList(),
+    ),
+    'medianSpeculativeVerifyTokens': _median(
+      results
+          .map((result) => result.perf?.speculativeVerifyTokens?.toDouble())
+          .whereType<double>()
+          .toList(),
+    ),
+    'medianSpeculativeReplayTokens': _median(
+      results
+          .map((result) => result.perf?.speculativeReplayTokens?.toDouble())
+          .whereType<double>()
+          .toList(),
+    ),
     'uniqueOutputHashes': uniqueOutputHashes.toList()..sort(),
     'outputHashMatchesBaselineRuns': baselineOutputHashes.isEmpty
         ? null
@@ -825,6 +843,9 @@ class _RunResult {
               'speculativeDraftTokens': perf.speculativeDraftTokens,
               'speculativeAcceptedDraftTokens':
                   perf.speculativeAcceptedDraftTokens,
+              'speculativeDraftAttempts': perf.speculativeDraftAttempts,
+              'speculativeVerifyTokens': perf.speculativeVerifyTokens,
+              'speculativeReplayTokens': perf.speculativeReplayTokens,
               'speculativeAcceptanceRate': perf.speculativeAcceptanceRate,
               'speculativeDraftMs': perf.speculativeDraftMs,
               'speculativeVerifyMs': perf.speculativeVerifyMs,

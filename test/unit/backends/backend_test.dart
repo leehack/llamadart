@@ -54,6 +54,35 @@ void main() {
 
       expect(perf.speculativeAcceptanceRate, isNull);
     });
+
+    test('keeps explicit zero speculative counters', () {
+      const perf = BackendPerfContextData(
+        loadMs: 0,
+        promptEvalMs: 0,
+        evalMs: 0,
+        sampleMs: 0,
+        promptEvalTokens: 0,
+        evalTokens: 0,
+        sampleCount: 0,
+        reusedGraphs: 0,
+        speculativeDraftTokens: 0,
+        speculativeAcceptedDraftTokens: 0,
+        speculativeDraftAttempts: 0,
+        speculativeVerifyTokens: 0,
+        speculativeReplayTokens: 0,
+        speculativeDraftMs: 0,
+        speculativeVerifyMs: 0,
+      );
+
+      expect(perf.speculativeDraftTokens, 0);
+      expect(perf.speculativeAcceptedDraftTokens, 0);
+      expect(perf.speculativeDraftAttempts, 0);
+      expect(perf.speculativeVerifyTokens, 0);
+      expect(perf.speculativeReplayTokens, 0);
+      expect(perf.speculativeDraftMs, 0);
+      expect(perf.speculativeVerifyMs, 0);
+      expect(perf.speculativeAcceptanceRate, isNull);
+    });
   });
 
   group('StateLoadResult', () {

@@ -241,6 +241,15 @@ class BackendPerfContextData {
   /// Number of speculative draft tokens accepted by the backend.
   final int? speculativeAcceptedDraftTokens;
 
+  /// Number of speculative draft attempts made by the backend.
+  final int? speculativeDraftAttempts;
+
+  /// Number of target-model tokens decoded to verify speculative drafts.
+  final int? speculativeVerifyTokens;
+
+  /// Number of target-model tokens decoded to replay accepted speculative work.
+  final int? speculativeReplayTokens;
+
   /// Time spent generating speculative draft tokens in ms.
   final double? speculativeDraftMs;
 
@@ -272,6 +281,9 @@ class BackendPerfContextData {
     required this.reusedGraphs,
     this.speculativeDraftTokens,
     this.speculativeAcceptedDraftTokens,
+    this.speculativeDraftAttempts,
+    this.speculativeVerifyTokens,
+    this.speculativeReplayTokens,
     this.speculativeDraftMs,
     this.speculativeVerifyMs,
   });

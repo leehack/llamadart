@@ -201,6 +201,9 @@ void llamaWorkerEntry(SendPort initialSendPort) {
                 speculativeDraftTokens: perf.speculativeDraftTokens,
                 speculativeAcceptedDraftTokens:
                     perf.speculativeAcceptedDraftTokens,
+                speculativeDraftAttempts: perf.speculativeDraftAttempts,
+                speculativeVerifyTokens: perf.speculativeVerifyTokens,
+                speculativeReplayTokens: perf.speculativeReplayTokens,
                 speculativeDraftMs: perf.speculativeDraftMs,
                 speculativeVerifyMs: perf.speculativeVerifyMs,
               ),

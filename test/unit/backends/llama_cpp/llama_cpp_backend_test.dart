@@ -181,6 +181,14 @@ void main() {
       expect(await backend.isGpuSupported(), isTrue);
       expect(await backend.getVramInfo(), (total: 100, free: 40));
 
+      final perf = await backend.getPerformanceContext(1);
+      expect(perf, isNotNull);
+      expect(perf!.speculativeDraftTokens, 0);
+      expect(perf.speculativeAcceptedDraftTokens, 0);
+      expect(perf.speculativeDraftAttempts, 10);
+      expect(perf.speculativeVerifyTokens, 11);
+      expect(perf.speculativeReplayTokens, 12);
+
       final mmHandle = await backend.multimodalContextCreate(1, 'mmproj.gguf');
       expect(mmHandle, 33);
       expect(await backend.supportsAudio(mmHandle!), isTrue);
@@ -327,6 +335,27 @@ class _FakeWorkerHarness {
           message.sendPort.send(GpuSupportResponse(true));
         case SystemInfoRequest():
           message.sendPort.send(SystemInfoResponse(100, 40));
+        case PerformanceContextRequest():
+          message.sendPort.send(
+            PerformanceContextResponse(
+              loadMs: 1,
+              promptEvalMs: 2,
+              evalMs: 3,
+              sampleMs: 4,
+              decodeMs: 5,
+              promptEvalTokens: 6,
+              evalTokens: 7,
+              sampleCount: 8,
+              reusedGraphs: 9,
+              speculativeDraftTokens: 0,
+              speculativeAcceptedDraftTokens: 0,
+              speculativeDraftAttempts: 10,
+              speculativeVerifyTokens: 11,
+              speculativeReplayTokens: 12,
+              speculativeDraftMs: 0,
+              speculativeVerifyMs: 13,
+            ),
+          );
         case MultimodalContextCreateRequest():
           if (message.modelHandle < 0) {
             message.sendPort.send(ErrorResponse('mm create failed'));
