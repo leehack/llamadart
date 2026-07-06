@@ -44,12 +44,29 @@ import '../models/tools/tool_definition.dart';
 /// ];
 ///
 /// // Create completion
-/// final response = await engine.create(messages).join();
+/// final response = StringBuffer();
+/// await for (final chunk in engine.create(messages)) {
+///   final text = chunk.choices.first.delta.content;
+///   if (text != null) {
+///     response.write(text);
+///   }
+/// }
 ///
 /// // Append response and continue conversation
-/// messages.add(LlamaChatMessage.fromText(role: LlamaChatRole.assistant, text: response));
+/// messages.add(
+///   LlamaChatMessage.fromText(
+///     role: LlamaChatRole.assistant,
+///     text: response.toString(),
+///   ),
+/// );
 /// messages.add(LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'Follow up?'));
-/// final response2 = await engine.create(messages).join();
+/// final response2 = StringBuffer();
+/// await for (final chunk in engine.create(messages)) {
+///   final text = chunk.choices.first.delta.content;
+///   if (text != null) {
+///     response2.write(text);
+///   }
+/// }
 /// ```
 class LlamaEngine {
   /// The backend implementation used for inference.
@@ -596,7 +613,7 @@ class LlamaEngine {
 
   /// Generates strict structured JSON and decodes the final output.
   ///
-  /// This helper applies [output.responseFormat] to [create], collects streamed
+  /// This helper applies `output.responseFormat` to [create], collects streamed
   /// content deltas, validates the completed JSON value, and returns the typed
   /// value produced by [output]'s decoder. Use [create] directly when you need
   /// to render tokens live; the returned stream can still be finalized with
@@ -929,11 +946,11 @@ class LlamaEngine {
 
   /// Whether the active backend reports state save/load support.
   ///
-  /// Native backends persist to disk. WebGPU backends report support only after
-  /// the active JavaScript bridge exposes the `stateSaveFile` and
-  /// `stateLoadFile` APIs introduced in bridge assets `v0.1.15`; older or
-  /// custom bridge assets report false and calls throw [LlamaUnsupportedException]
-  /// before reaching the bridge.
+  /// Supported native llama.cpp backends persist to disk. WebGPU backends report
+  /// support only after the active JavaScript bridge exposes the `stateSaveFile`
+  /// and `stateLoadFile` APIs introduced in bridge assets `v0.1.15`; older or
+  /// custom bridge assets report false and calls throw
+  /// [LlamaUnsupportedException] before reaching the bridge.
   bool get supportsStatePersistence {
     final candidate = backend;
     if (candidate is BackendStatePersistenceSupport) {

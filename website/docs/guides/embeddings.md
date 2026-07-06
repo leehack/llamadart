@@ -36,7 +36,8 @@ Future<void> main() async {
 - Embeddings are an optional backend capability.
 - If the active backend does not support embeddings, `LlamaEngine.embed(...)`
   and `embedBatch(...)` throw `LlamaUnsupportedException`.
-- Native backend supports embeddings, including batched embeddings.
+- Native llama.cpp/GGUF backends support embeddings, including batched
+  embeddings, when the loaded model was built for embedding output.
 - Web backend supports embeddings when bridge assets expose embedding APIs
   (`v0.1.7` or newer).
 - If web bridge assets are older than `v0.1.7`, embedding calls can fail with

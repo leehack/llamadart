@@ -25,8 +25,11 @@ import '../models/tools/tool_definition.dart';
 /// final session = ChatSession(engine);
 /// session.systemPrompt = 'You are a helpful assistant.';
 ///
-/// await for (final token in session.create([LlamaTextContent('Hello!')])) {
-///   print(token);
+/// await for (final chunk in session.create([LlamaTextContent('Hello!')])) {
+///   final text = chunk.choices.first.delta.content;
+///   if (text != null) {
+///     print(text);
+///   }
 /// }
 /// ```
 class ChatSession {
@@ -94,15 +97,31 @@ class ChatSession {
   ///
   /// Example with tools:
   /// ```dart
-  /// final response = await session.create(
+  /// final response = StringBuffer();
+  /// await for (final chunk in session.create(
   ///   [LlamaTextContent('What time is it?')],
   ///   tools: [getTimeTool],
-  /// ).join();
+  /// )) {
+  ///   final text = chunk.choices.first.delta.content;
+  ///   if (text != null) {
+  ///     response.write(text);
+  ///   }
+  /// }
   ///
-  /// if (isToolCall(response)) {
-  ///   final result = await executeMyTool(parseToolCall(response));
-  ///   session.addMessage(LlamaChatMessage.toolResult(name, result));
-  ///   final finalResponse = await session.create([]).join();
+  /// if (isToolCall(response.toString())) {
+  ///   final result = await executeMyTool(parseToolCall(response.toString()));
+  ///   session.addMessage(
+  ///     LlamaChatMessage.withContent(
+  ///       role: LlamaChatRole.tool,
+  ///       content: [LlamaToolResultContent(name: name, result: result)],
+  ///     ),
+  ///   );
+  ///   await for (final chunk in session.create([])) {
+  ///     final text = chunk.choices.first.delta.content;
+  ///     if (text != null) {
+  ///       print(text);
+  ///     }
+  ///   }
   /// }
   /// ```
   Stream<LlamaCompletionChunk> create(

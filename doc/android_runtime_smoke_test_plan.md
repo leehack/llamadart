@@ -50,7 +50,9 @@ adb install -r build/app/outputs/flutter-apk/app-release.apk
 Use the helper to run build/install/log capture in one command:
 
 ```bash
-./scripts/android_runtime_smoke.sh --app-id com.example.chat_app
+./scripts/android_runtime_smoke.sh \
+  --project-dir example/chat_app \
+  --app-id com.example.llamadart_chat_example
 ```
 
 Useful options:
@@ -61,8 +63,10 @@ Useful options:
 - `--skip-clean|--skip-build|--skip-install|--skip-launch`: skip steps when
   iterating quickly.
 
-The script exits non-zero when crash signatures are detected (`SIGILL`,
-`SIGSEGV`, fatal signals).
+The script builds, installs, launches, and captures logcat. It exits non-zero
+when crash signatures are detected (`SIGILL`, `SIGSEGV`, fatal signals). It
+does not drive the UI or generate tokens; run the manual smoke scenario below
+after the helper completes when model load/generation proof is required.
 
 ## Smoke Scenario (each config x device)
 

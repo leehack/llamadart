@@ -4,6 +4,9 @@ This directory contains the Docusaurus site for `llamadart`.
 
 ## Local development
 
+Use Node.js 20.x. The docs CI pins Node 20, and newer major versions can expose
+toolchain incompatibilities before Docusaurus and its plugins declare support.
+
 ```bash
 cd website
 npm ci

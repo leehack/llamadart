@@ -125,12 +125,12 @@ dart run tool/testing/test_matrix.dart --tier release
 
 For releases that change or newly document Flutter Apple SwiftPM companion
 package versions, include `release-companion-pub-gate` in the release evidence.
-That row requires verifying each referenced companion version on pub.dev before
-tagging the core `vX.Y.Z` release. If a companion version is missing, merge the
-release-prep PR first. `release_on_prep_merge.yml` then publishes missing
-companion versions, waits for `publish_companion_pubdev.yml`, verifies the
-pub.dev version URL, and pushes the core release tag after the companion gate
-passes.
+That row requires checking each referenced companion version on pub.dev before
+the release-prep PR is merged. If a companion version is missing, keep the PR
+scoped to release prep; after merge, `release_on_prep_merge.yml` publishes
+missing companion versions, waits for `publish_companion_pubdev.yml`, verifies
+the pub.dev version URL, and pushes the core release tag after the companion
+gate passes.
 
 ## Local Model Scenarios
 

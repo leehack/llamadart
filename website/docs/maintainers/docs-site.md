@@ -1,7 +1,6 @@
 ---
 title: Maintainer Overview
 description: Repo-specific maintenance checklist for the llamadart docs site, releases, and verification flow.
-unlisted: true
 ---
 
 This section is for `llamadart` maintainers, not general Docusaurus usage.
@@ -57,4 +56,5 @@ release-related merges.
 - Keep `website/static/robots.txt`, sitemap generation, and the social card in
   sync with the production domain `https://llamadart.leehack.com`.
 - Latest stable user-facing docs stay indexable, `/docs/next` plus archived
-  versions are `noIndex`, and maintainer pages remain reachable but unlisted.
+  versions are `noIndex`, and maintainer pages are listed under Help &
+  Reference for contributors.

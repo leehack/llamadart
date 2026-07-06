@@ -46,8 +46,9 @@ hf://unsloth/Qwen3.5-0.8B-GGUF/Qwen3.5-0.8B-Q4_K_M.gguf
 You can provide a local path, an HTTP(S) URL, or an `hf://` Hugging Face source.
 
 ```bash
-dart run -- -m "hf://unsloth/SmolLM2-135M-Instruct-GGUF/SmolLM2-135M-Instruct-Q2_K.gguf"
-dart run -- -m "path/to/model.gguf"
+dart run bin/llamadart_basic_example.dart \
+  -m "hf://unsloth/SmolLM2-135M-Instruct-GGUF/SmolLM2-135M-Instruct-Q2_K.gguf"
+dart run bin/llamadart_basic_example.dart -m "path/to/model.gguf"
 ```
 
 ### 4. Single Response Mode
@@ -55,7 +56,8 @@ dart run -- -m "path/to/model.gguf"
 Useful for scripting or quick queries.
 
 ```bash
-dart run -- -p "What is the capital of France?"
+dart run bin/llamadart_basic_example.dart \
+  -p "What is the capital of France?"
 ```
 
 ### 5. Embedding Example
@@ -174,10 +176,10 @@ How to translate result values:
 - `-g, --log`: Enable native engine logging output (defaults to off).
 - `-G, --grammar`: GBNF grammar string for constrained output.
 - `-t, --tool-test`: Enables sample `get_weather` tool-calling flow.
-- `--temp`: Temperature (default `0.8`).
+- `--temp`: Temperature (default `0.7`).
 - `--top-k`: Top-k sampling (default `40`).
-- `--top-p`: Top-p sampling (default `0.95`).
-- `--penalty`: Repeat penalty (default `1.1`).
+- `--top-p`: Top-p sampling (default `0.8`).
+- `--penalty`: Repeat penalty (default `1.0`).
 - `-h, --help`: Show help message.
 
 ## Tests

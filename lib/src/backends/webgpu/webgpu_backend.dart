@@ -2176,13 +2176,28 @@ class WebGpuLlamaBackend
     int contextHandle,
     String path,
     double scale,
-  ) async {}
+  ) async {
+    throw UnsupportedError(
+      'WebGPU LoRA runtime updates are not supported by the current bridge. '
+      'Use a native llama.cpp backend for setLora/removeLora/clearLoras.',
+    );
+  }
 
   @override
-  Future<void> removeLoraAdapter(int contextHandle, String path) async {}
+  Future<void> removeLoraAdapter(int contextHandle, String path) async {
+    throw UnsupportedError(
+      'WebGPU LoRA runtime updates are not supported by the current bridge. '
+      'Use a native llama.cpp backend for setLora/removeLora/clearLoras.',
+    );
+  }
 
   @override
-  Future<void> clearLoraAdapters(int contextHandle) async {}
+  Future<void> clearLoraAdapters(int contextHandle) async {
+    throw UnsupportedError(
+      'WebGPU LoRA runtime updates are not supported by the current bridge. '
+      'Use a native llama.cpp backend for setLora/removeLora/clearLoras.',
+    );
+  }
 
   @override
   Future<String> getBackendName() async {

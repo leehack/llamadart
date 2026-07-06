@@ -1,5 +1,11 @@
 ## Unreleased
 
+* Reworked the README into a shorter entry point, fixed stale docs/examples
+  found during the documentation review, and aligned release, Android smoke,
+  WebGPU mem64, native sync, and capability-support wording with the current
+  workflows and runtime behavior. WebGPU runtime LoRA calls now throw an
+  unsupported-operation error instead of reporting no-op success.
+
 * Updated the default llama.cpp native runtime pin to
   `leehack/llamadart-native@b9873-llamadart.2`, keeping the `b9873` llama.cpp
   ABI/bindings while picking up wrapper fixes for native release

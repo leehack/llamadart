@@ -103,12 +103,9 @@ For `ngram-simple`, `ngram-map-k`, and `ngram-map-k4v`, tune the effective
 draft length with `ngramSizeM` to match upstream's n-gram draft window.
 
 Remaining actionable work was split out instead of being folded into this
-benchmark documentation: [llamadart#278](https://github.com/leehack/llamadart/issues/278)
-tracks generic n-gram rollback/metrics optimization,
-[llamadart-native#25](https://github.com/leehack/llamadart-native/issues/25)
-tracks the native sampler accept bug, and
-[llamadart-native#26](https://github.com/leehack/llamadart-native/issues/26)
-tracks exact native tool artifacts for future same-tag upstream comparisons.
+benchmark documentation. [llamadart-native#26](https://github.com/leehack/llamadart-native/issues/26)
+tracks exact native tool artifacts for future same-tag upstream comparisons;
+the earlier n-gram rollback and native sampler fixes have landed.
 
 ## Interpretation
 

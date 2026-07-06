@@ -222,10 +222,6 @@ await prefs.setString('model_path', modelPath);
 await prefs.setInt('preferred_backend', backendIndex);
 ```
 
-## Screenshots
-
-_(Add screenshots here when complete)_
-
 ## Troubleshooting
 
 **"Failed to load library" or "Native asset not found" on first run:**

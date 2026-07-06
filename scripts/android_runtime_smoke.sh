@@ -17,10 +17,13 @@ Usage:
     [--skip-clean] [--skip-build] [--skip-install] [--skip-launch]
 
 Examples:
-  ./scripts/android_runtime_smoke.sh --app-id com.example.chat_app
+  ./scripts/android_runtime_smoke.sh \
+    --project-dir example/chat_app \
+    --app-id com.example.llamadart_chat_example
 
   ./scripts/android_runtime_smoke.sh \
-    --app-id com.example.chat_app \
+    --project-dir example/chat_app \
+    --app-id com.example.llamadart_chat_example \
     --activity .MainActivity \
     --serial emulator-5554 \
     --wait-seconds 30
