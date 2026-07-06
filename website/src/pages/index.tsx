@@ -178,15 +178,34 @@ export default function Home(): JSX.Element {
 {`dart pub add llamadart`}
             </CodeBlock>
             <CodeBlock language="dart" title="minimal generation">
-{`import 'package:llamadart/llamadart.dart';
+{`import 'dart:io';
+
+import 'package:llamadart/llamadart.dart';
 
 Future<void> main() async {
   final LlamaEngine engine = LlamaEngine(LlamaBackend());
 
   try {
-    await engine.loadModel('path/to/model.gguf');
-    await for (final token in engine.generate('Hello from llamadart')) {
-      print(token);
+    await engine.loadModelSource(
+      ModelSource.parse(
+        'hf://unsloth/SmolLM2-135M-Instruct-GGUF/'
+        'SmolLM2-135M-Instruct-Q2_K.gguf',
+      ),
+    );
+
+    await for (final chunk in engine.create(
+      const [
+        LlamaChatMessage.fromText(
+          role: LlamaChatRole.user,
+          text: 'Explain local inference in one sentence.',
+        ),
+      ],
+      params: const GenerationParams(maxTokens: 48),
+    )) {
+      final text = chunk.choices.first.delta.content;
+      if (text != null) {
+        stdout.write(text);
+      }
     }
   } finally {
     await engine.dispose();
