@@ -113,7 +113,9 @@ class ChatSession {
   ///   session.addMessage(
   ///     LlamaChatMessage.withContent(
   ///       role: LlamaChatRole.tool,
-  ///       content: [LlamaToolResultContent(name: name, result: result)],
+  ///       content: [
+  ///         LlamaToolResultContent(name: getTimeTool.name, result: result),
+  ///       ],
   ///     ),
   ///   );
   ///   await for (final chunk in session.create([])) {

@@ -73,8 +73,6 @@ flutter pub get
 ## First Generation
 
 ```dart
-import 'dart:io';
-
 import 'package:llamadart/llamadart.dart';
 
 Future<void> main() async {
@@ -88,6 +86,7 @@ Future<void> main() async {
       ),
     );
 
+    final output = StringBuffer();
     await for (final chunk in engine.create(
       const [
         LlamaChatMessage.fromText(
@@ -99,9 +98,10 @@ Future<void> main() async {
     )) {
       final text = chunk.choices.first.delta.content;
       if (text != null) {
-        stdout.write(text);
+        output.write(text);
       }
     }
+    print(output.toString());
   } finally {
     await engine.dispose();
   }
