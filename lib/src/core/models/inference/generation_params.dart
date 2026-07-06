@@ -92,6 +92,11 @@ class SpeculativeDecodingConfig {
 
   /// Maximum number of draft tokens to propose per speculative step.
   ///
+  /// llama.cpp draft-model strategies map this to upstream
+  /// `--spec-draft-n-max`. Draftless `ngram-simple`, `ngram-map-k`, and
+  /// `ngram-map-k4v` use [ngramSizeM] as their effective draft length instead,
+  /// matching upstream n-gram map semantics.
+  ///
   /// `null` lets the backend choose its default.
   final int? draftTokenMax;
 
@@ -127,6 +132,9 @@ class SpeculativeDecodingConfig {
   final int? ngramSizeN;
 
   /// Draft m-gram size M for ngram-simple/map strategies.
+  ///
+  /// For llama.cpp `ngram-simple`, `ngram-map-k`, and `ngram-map-k4v`, this is
+  /// also the effective draft length passed to the n-gram strategy.
   final int? ngramSizeM;
 
   /// Minimum number of matching hits for ngram-simple/map strategies.

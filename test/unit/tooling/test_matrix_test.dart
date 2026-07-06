@@ -87,7 +87,12 @@ void main() {
           'ngram-mod,ngram-cache,mixed-ngram',
         ),
       );
-      expect(table, contains('--draft-token-max 1,2 --benchmark-warmups 1'));
+      expect(
+        table,
+        contains(
+          '--draft-token-max 1,2 --ngram-size-m 8,16 --benchmark-warmups 1',
+        ),
+      );
       expect(
         table,
         contains(

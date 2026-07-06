@@ -62,6 +62,12 @@ dart run tool/testing/run_local_e2e.dart --scenario gguf-chat-features-smoke --m
 dart run tool/testing/run_local_e2e.dart --scenario litert-lm-chat-features-smoke --model-path /path/to/gemma-4-E2B-it.litertlm --backend auto
 ```
 
+For llama.cpp n-gram speculative output-hash mismatches, compare the same
+prompt and sampling settings against upstream `llama-server` before classifying
+the mismatch as Dart-only. Upstream `ngram-map-k` can diverge from baseline
+when repeat penalties and accepted drafts are involved; use the benchmark
+runner's `--include-output` flag to capture exact generated text in JSON.
+
 ### Local Chat App Web E2E
 Use the scenario runner for chat app web validation after bridge/runtime or UI
 updates. This catches issues that direct bridge probes miss while keeping build,

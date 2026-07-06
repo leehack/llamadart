@@ -3982,11 +3982,6 @@ class LlamaCppService {
     List<SpeculativeDecodingStrategy> strategies,
     SpeculativeDecodingConfig config,
   ) {
-    final explicit = config.draftTokenMax;
-    if (explicit != null) {
-      return explicit;
-    }
-
     var max = 0;
     for (final strategy in strategies) {
       switch (strategy) {
@@ -3994,7 +3989,7 @@ class LlamaCppService {
         case SpeculativeDecodingStrategy.draftEagle3:
         case SpeculativeDecodingStrategy.mtp:
         case SpeculativeDecodingStrategy.draftDflash:
-          max = math.max(max, 3);
+          max = math.max(max, config.draftTokenMax ?? 3);
           break;
         case SpeculativeDecodingStrategy.ngramSimple:
         case SpeculativeDecodingStrategy.ngramMapK:
@@ -4002,13 +3997,16 @@ class LlamaCppService {
           max = math.max(max, config.ngramSizeM ?? 48);
           break;
         case SpeculativeDecodingStrategy.ngramMod:
-          max = math.max(max, config.ngramTokenMax ?? 64);
+          max = math.max(
+            max,
+            config.ngramTokenMax ?? config.draftTokenMax ?? 64,
+          );
           break;
         case SpeculativeDecodingStrategy.ngramCache:
-          max = math.max(max, 8);
+          max = math.max(max, config.draftTokenMax ?? 8);
           break;
         case SpeculativeDecodingStrategy.backendDefault:
-          max = math.max(max, 64);
+          max = math.max(max, config.draftTokenMax ?? 64);
           break;
       }
     }
@@ -4103,8 +4101,12 @@ class LlamaCppService {
             'is not available for this model/context. $draftHint, use a '
             'native libllamadart build that includes llama-common generic '
             'speculative wrapper symbols, and set '
-            'ModelParams.speculativeRollbackTokenMax >= draftTokenMax when '
-            'the target architecture needs bounded rollback snapshots.',
+            'ModelParams.speculativeRollbackTokenMax >= the effective '
+            'speculative draft length (draftTokenMax for draft-model or '
+            'ngram-cache strategies; ngramTokenMax when set for ngram-mod, '
+            'otherwise draftTokenMax/default; ngramSizeM for ngram-simple, '
+            'ngram-map-k, or ngram-map-k4v) when the target architecture '
+            'needs bounded rollback snapshots.',
           );
         }
         if (speculativeApi.needEmbd(speculativeSession)) {
@@ -5575,82 +5577,93 @@ class LlamaCppService {
 
           final acceptedDraftCount = acceptedCount - 1;
           final rejectedTailCount = batchTokens - acceptedCount;
+          final keepUntil = currentPos + 1 + acceptedDraftCount;
+          var targetTailReconciled = false;
           if (!hasDraftContext && rejectedTailCount > 0) {
-            if (seqCheckpoint == nullptr) {
-              throw UnsupportedError(
-                'llama.cpp speculative checkpoint rollback is unavailable '
-                'for this context.',
-              );
-            }
-
-            final restored = llama_state_seq_set_data_ext(
-              ctx.pointer,
-              seqCheckpoint,
-              seqCheckpointSize,
-              0,
-              LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY,
-            );
-            if (restored != seqCheckpointSize) {
-              throw Exception(
-                'speculative checkpoint restore failed '
-                '(expected $seqCheckpointSize bytes, got $restored)',
-              );
-            }
-
             final targetMemory = llama_get_memory(ctx.pointer);
-            if (targetMemory == nullptr ||
-                !llama_memory_seq_rm(targetMemory, 0, currentPos, -1)) {
-              throw UnsupportedError(
-                'llama.cpp speculative checkpoint rollback failed for this '
-                'context.',
+            final trimmedRejectedTail =
+                targetMemory != nullptr &&
+                llama_memory_seq_rm(targetMemory, 0, keepUntil, -1);
+            if (trimmedRejectedTail) {
+              targetTailReconciled = true;
+            } else {
+              if (seqCheckpoint == nullptr) {
+                throw UnsupportedError(
+                  'llama.cpp speculative checkpoint rollback is unavailable '
+                  'for this context.',
+                );
+              }
+
+              final restored = llama_state_seq_set_data_ext(
+                ctx.pointer,
+                seqCheckpoint,
+                seqCheckpointSize,
+                0,
+                LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY,
               );
-            }
+              if (restored != seqCheckpointSize) {
+                throw Exception(
+                  'speculative checkpoint restore failed '
+                  '(expected $seqCheckpointSize bytes, got $restored)',
+                );
+              }
 
-            final replayTokens = 1 + acceptedDraftCount;
-            batch.n_tokens = replayTokens;
-            batch.token[0] = selectedToken;
-            batch.pos[0] = currentPos;
-            batch.n_seq_id[0] = 1;
-            batch.seq_id[0][0] = 0;
-            batch.logits[0] = 0;
-            for (int i = 0; i < acceptedDraftCount; i++) {
-              final batchIndex = i + 1;
-              batch.token[batchIndex] = acceptedPtr[i];
-              batch.pos[batchIndex] = currentPos + batchIndex;
-              batch.n_seq_id[batchIndex] = 1;
-              batch.seq_id[batchIndex][0] = 0;
-              batch.logits[batchIndex] = 0;
-            }
+              final targetMemory = llama_get_memory(ctx.pointer);
+              if (targetMemory == nullptr ||
+                  !llama_memory_seq_rm(targetMemory, 0, currentPos, -1)) {
+                throw UnsupportedError(
+                  'llama.cpp speculative checkpoint rollback failed for this '
+                  'context.',
+                );
+              }
 
-            final replayTick = Stopwatch()..start();
-            final replayStatus = llama_decode(ctx.pointer, batch);
-            if (replayStatus == 0 &&
-                !_processSpeculativeBatch(
-                  speculativeApi,
-                  speculativeSession,
-                  batch,
-                  speculativeConfig,
-                )) {
-              throw Exception("Speculative replay processing failed");
-            }
-            if (replayStatus == 0) {
-              llama_synchronize(ctx.pointer);
-            }
-            replayTick.stop();
-            evalMicros += replayTick.elapsedMicroseconds;
-            if (replayStatus != 0) {
-              throw Exception("Speculative replay decode failed");
+              final replayTokens = 1 + acceptedDraftCount;
+              batch.n_tokens = replayTokens;
+              batch.token[0] = selectedToken;
+              batch.pos[0] = currentPos;
+              batch.n_seq_id[0] = 1;
+              batch.seq_id[0][0] = 0;
+              batch.logits[0] = 0;
+              for (int i = 0; i < acceptedDraftCount; i++) {
+                final batchIndex = i + 1;
+                batch.token[batchIndex] = acceptedPtr[i];
+                batch.pos[batchIndex] = currentPos + batchIndex;
+                batch.n_seq_id[batchIndex] = 1;
+                batch.seq_id[batchIndex][0] = 0;
+                batch.logits[batchIndex] = 0;
+              }
+
+              final replayTick = Stopwatch()..start();
+              final replayStatus = llama_decode(ctx.pointer, batch);
+              if (replayStatus == 0 &&
+                  !_processSpeculativeBatch(
+                    speculativeApi,
+                    speculativeSession,
+                    batch,
+                    speculativeConfig,
+                  )) {
+                throw Exception("Speculative replay processing failed");
+              }
+              if (replayStatus == 0) {
+                llama_synchronize(ctx.pointer);
+              }
+              replayTick.stop();
+              evalMicros += replayTick.elapsedMicroseconds;
+              if (replayStatus != 0) {
+                throw Exception("Speculative replay decode failed");
+              }
+              targetTailReconciled = true;
             }
           }
 
           speculativeAcceptedDraftTokens += acceptedDraftCount;
           speculativeApi.accept(speculativeSession, 0, acceptedDraftCount);
 
-          final keepUntil = currentPos + 1 + acceptedDraftCount;
           final targetMemory = llama_get_memory(ctx.pointer);
           final targetRollbackOk =
+              targetTailReconciled ||
               targetMemory != nullptr &&
-              llama_memory_seq_rm(targetMemory, 0, keepUntil, -1);
+                  llama_memory_seq_rm(targetMemory, 0, keepUntil, -1);
           final draftRollbackOk =
               !hasDraftContext ||
               (draftMemory != nullptr &&
@@ -5658,8 +5671,12 @@ class LlamaCppService {
           if (!targetRollbackOk || !draftRollbackOk) {
             throw UnsupportedError(
               'llama.cpp speculative target rollback failed for this context. '
-              'Set ModelParams.speculativeRollbackTokenMax >= draftTokenMax if '
-              'this model/backend uses bounded rollback snapshots.',
+              'Set ModelParams.speculativeRollbackTokenMax >= the effective '
+              'speculative draft length (draftTokenMax for draft-model or '
+              'ngram-cache strategies; ngramTokenMax when set for ngram-mod, '
+              'otherwise draftTokenMax/default; ngramSizeM for ngram-simple, '
+              'ngram-map-k, or ngram-map-k4v) if this model/backend uses '
+              'bounded rollback snapshots.',
             );
           }
 
@@ -6251,78 +6268,89 @@ class LlamaCppService {
 
           final acceptedDraftCount = acceptedCount - 1;
           final rejectedTailCount = batchTokens - acceptedCount;
+          final keepUntil = currentPos + 1 + acceptedDraftCount;
+          var targetTailReconciled = false;
           if (rejectedTailCount > 0) {
-            if (seqCheckpoint == nullptr) {
-              throw UnsupportedError(
-                'llama.cpp ngram-simple checkpoint rollback is unavailable '
-                'for this context.',
-              );
-            }
-
-            final restored = llama_state_seq_set_data_ext(
-              ctx.pointer,
-              seqCheckpoint,
-              seqCheckpointSize,
-              0,
-              LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY,
-            );
-            if (restored != seqCheckpointSize) {
-              throw Exception(
-                'ngram-simple checkpoint restore failed '
-                '(expected $seqCheckpointSize bytes, got $restored)',
-              );
-            }
-
             final targetMemory = llama_get_memory(ctx.pointer);
-            if (targetMemory == nullptr ||
-                !llama_memory_seq_rm(targetMemory, 0, currentPos, -1)) {
-              throw UnsupportedError(
-                'llama.cpp ngram-simple checkpoint rollback failed for this '
-                'context.',
+            final trimmedRejectedTail =
+                targetMemory != nullptr &&
+                llama_memory_seq_rm(targetMemory, 0, keepUntil, -1);
+            if (trimmedRejectedTail) {
+              targetTailReconciled = true;
+            } else {
+              if (seqCheckpoint == nullptr) {
+                throw UnsupportedError(
+                  'llama.cpp ngram-simple checkpoint rollback is unavailable '
+                  'for this context.',
+                );
+              }
+
+              final restored = llama_state_seq_set_data_ext(
+                ctx.pointer,
+                seqCheckpoint,
+                seqCheckpointSize,
+                0,
+                LLAMA_STATE_SEQ_FLAGS_PARTIAL_ONLY,
               );
-            }
+              if (restored != seqCheckpointSize) {
+                throw Exception(
+                  'ngram-simple checkpoint restore failed '
+                  '(expected $seqCheckpointSize bytes, got $restored)',
+                );
+              }
 
-            final replayTokens = 1 + acceptedDraftCount;
-            batch.n_tokens = replayTokens;
-            batch.token[0] = selectedToken;
-            batch.pos[0] = currentPos;
-            batch.n_seq_id[0] = 1;
-            batch.seq_id[0][0] = 0;
-            batch.logits[0] = 0;
-            for (int i = 0; i < acceptedDraftCount; i++) {
-              final batchIndex = i + 1;
-              batch.token[batchIndex] = acceptedPtr[i];
-              batch.pos[batchIndex] = currentPos + batchIndex;
-              batch.n_seq_id[batchIndex] = 1;
-              batch.seq_id[batchIndex][0] = 0;
-              batch.logits[batchIndex] = 0;
-            }
+              final targetMemory = llama_get_memory(ctx.pointer);
+              if (targetMemory == nullptr ||
+                  !llama_memory_seq_rm(targetMemory, 0, currentPos, -1)) {
+                throw UnsupportedError(
+                  'llama.cpp ngram-simple checkpoint rollback failed for this '
+                  'context.',
+                );
+              }
 
-            final replayTick = Stopwatch()..start();
-            final replayStatus = llama_decode(ctx.pointer, batch);
-            if (replayStatus == 0 &&
-                !ngramApi.processBatch(ngramSession, batch)) {
-              throw Exception("ngram-simple replay processing failed");
-            }
-            if (replayStatus == 0) {
-              llama_synchronize(ctx.pointer);
-            }
-            replayTick.stop();
-            evalMicros += replayTick.elapsedMicroseconds;
-            if (replayStatus != 0) {
-              throw Exception("ngram-simple replay decode failed");
+              final replayTokens = 1 + acceptedDraftCount;
+              batch.n_tokens = replayTokens;
+              batch.token[0] = selectedToken;
+              batch.pos[0] = currentPos;
+              batch.n_seq_id[0] = 1;
+              batch.seq_id[0][0] = 0;
+              batch.logits[0] = 0;
+              for (int i = 0; i < acceptedDraftCount; i++) {
+                final batchIndex = i + 1;
+                batch.token[batchIndex] = acceptedPtr[i];
+                batch.pos[batchIndex] = currentPos + batchIndex;
+                batch.n_seq_id[batchIndex] = 1;
+                batch.seq_id[batchIndex][0] = 0;
+                batch.logits[batchIndex] = 0;
+              }
+
+              final replayTick = Stopwatch()..start();
+              final replayStatus = llama_decode(ctx.pointer, batch);
+              if (replayStatus == 0 &&
+                  !ngramApi.processBatch(ngramSession, batch)) {
+                throw Exception("ngram-simple replay processing failed");
+              }
+              if (replayStatus == 0) {
+                llama_synchronize(ctx.pointer);
+              }
+              replayTick.stop();
+              evalMicros += replayTick.elapsedMicroseconds;
+              if (replayStatus != 0) {
+                throw Exception("ngram-simple replay decode failed");
+              }
+              targetTailReconciled = true;
             }
           }
           speculativeAcceptedDraftTokens += acceptedDraftCount;
           ngramApi.accept(ngramSession, 0, acceptedDraftCount);
 
-          final keepUntil = currentPos + 1 + acceptedDraftCount;
           final targetMemory = llama_get_memory(ctx.pointer);
-          if (targetMemory == nullptr ||
-              !llama_memory_seq_rm(targetMemory, 0, keepUntil, -1)) {
+          if (!targetTailReconciled &&
+              (targetMemory == nullptr ||
+                  !llama_memory_seq_rm(targetMemory, 0, keepUntil, -1))) {
             throw UnsupportedError(
               'llama.cpp ngram-simple target rollback failed for this context. '
-              'Set ModelParams.speculativeRollbackTokenMax >= draftTokenMax if '
+              'Set ModelParams.speculativeRollbackTokenMax >= ngramSizeM if '
               'this model/backend uses bounded rollback snapshots.',
             );
           }

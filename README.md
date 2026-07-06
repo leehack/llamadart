@@ -291,10 +291,11 @@ await for (final chunk in engine.create(
 
 Higher `draftTokenMax` values can be faster on some models/devices, but they
 should be benchmarked with the target model because excess draft depth can add
-verification overhead. For llama.cpp n-gram strategies, `draftTokenMax` caps
-the per-step draft length; use `ngramSizeM` when intentionally changing
-upstream's n-gram draft window. Measured parity results and upstream comparison
-commands are recorded in the
+verification overhead. For llama.cpp `ngram-simple`, `ngram-map-k`, and
+`ngram-map-k4v`, `ngramSizeM` is the effective draft length and mirrors
+upstream's n-gram window; `draftTokenMax` does not cap those pure n-gram map
+strategies. Measured parity results and upstream comparison commands are
+recorded in the
 [Backend Benchmarks](https://llamadart.leehack.com/docs/guides/backend-benchmarks)
 guide.
 
@@ -305,20 +306,23 @@ speculative decoding uses recent token history as the drafter:
 params: const GenerationParams(
   maxTokens: 128,
   speculativeDecodingConfig: SpeculativeDecodingConfig.ngramSimple(
-    draftTokenMax: 48,
     ngramSize: 12,
+    ngramSizeM: 48,
   ),
 ),
 ```
 
 Reserve `ModelParams.speculativeRollbackTokenMax` at least as large as
-`draftTokenMax` before using speculative decoding. N-gram speculation is
-workload-dependent and can be slower than baseline decoding on prompts with
-little repetition, so validate it with your model and prompt shape. Upstream
-`--spec-default` maps to `ngram-mod`; in llamadart, legacy
-`GenerationParams(speculativeDecoding: true)` uses that llama.cpp default. For
-local measurements, run the discoverable local E2E benchmark scenario with
-explicit cases:
+the largest effective draft length before using speculative decoding. For
+draft-model and `ngram-cache` strategies that is `draftTokenMax`; for
+`ngram-mod` it is `ngramTokenMax` when set, otherwise `draftTokenMax` or the
+llama.cpp default; for `ngram-simple`, `ngram-map-k`, and `ngram-map-k4v` it is
+`ngramSizeM`. N-gram speculation is workload-dependent and can be slower than
+baseline decoding on prompts with little repetition, so validate it with your
+model and prompt shape. Upstream `--spec-default` maps to `ngram-mod`; in
+llamadart, legacy `GenerationParams(speculativeDecoding: true)` uses that
+llama.cpp default. For local measurements, run the discoverable local E2E
+benchmark scenario with explicit cases:
 
 ```bash
 dart run tool/testing/run_local_e2e.dart \
@@ -330,6 +334,7 @@ dart run tool/testing/run_local_e2e.dart \
   --benchmark-max-tokens 128 \
   --benchmark-runs 3 \
   --draft-token-max 1,2 \
+  --ngram-size-m 8,16 \
   --benchmark-warmups 1 \
   --ngram-cache-build-static-path /tmp/llamadart-ngram-cache.bin
 ```
@@ -771,7 +776,13 @@ Notes:
 - `ModelParams.splitMode` passes through to llama.cpp `split_mode`; it defaults to upstream `layer` behavior.
 - `ModelParams.mainGpu` passes through to llama.cpp `main_gpu`. To select one GPU for the full model, use `splitMode: ModelSplitMode.none` with the desired `mainGpu` index.
 - `ModelParams.batchSize` (`n_batch`) and `ModelParams.microBatchSize` (`n_ubatch`) can be set independently for memory/performance tuning; defaults keep legacy behavior (`n_batch = n_ctx`, `n_ubatch = n_batch`).
-- `ModelParams.speculativeRollbackTokenMax` passes through to llama.cpp `n_rs_seq`. Keep the default `0` for normal generation; set it to at least the MTP draft token max when a llama.cpp MTP model needs bounded rollback snapshots, such as Qwen3.5 MTP.
+- `ModelParams.speculativeRollbackTokenMax` passes through to llama.cpp
+  `n_rs_seq`. Keep the default `0` for normal generation; set it to at least
+  the effective speculative draft length when a llama.cpp strategy needs
+  bounded rollback snapshots. For draft-model and `ngram-cache` strategies that
+  is `draftTokenMax`; for `ngram-mod` it is `ngramTokenMax` when set, otherwise
+  `draftTokenMax` or the llama.cpp default; for `ngram-simple`, `ngram-map-k`,
+  and `ngram-map-k4v` it is `ngramSizeM`.
 - Android Vulkan MTP is not enabled by default; it runs only when callers request both `GpuBackend.vulkan` and `SpeculativeDecodingConfig.mtp(...)`. Benchmark on target devices because MTP can increase memory use and may be slower than baseline decoding.
 - `ModelParams.preferMemory64` and `ModelParams.modelBytesHint` are web/WebGPU only (ignored on native). They select the 64-bit (wasm64/mem64) bridge core so models larger than the ~4 GiB wasm32 address space (for example Gemma 4 E2B) can load; `null` auto-decides from the size hint (size-driven, no hardcoded model names). See the [WebGPU bridge docs](https://leehack.github.io/llamadart/docs/platforms/webgpu-bridge).
 - Apple targets use consolidated llama.cpp native libraries, so

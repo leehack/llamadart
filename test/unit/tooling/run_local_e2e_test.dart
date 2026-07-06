@@ -14,6 +14,7 @@ void main() {
 
       expect(result.exitCode, 0);
       expect(result.stdout, contains('--ngram-cache-build-text <txt>'));
+      expect(result.stdout, contains('--ngram-token-max <n>'));
       expect(
         result.stdout,
         contains('defaults to the resolved benchmark prompt'),
@@ -247,6 +248,10 @@ void main() {
           '3',
           '--draft-token-max',
           '1,2',
+          '--ngram-size-m',
+          '8,16',
+          '--ngram-token-max',
+          '64',
           '--benchmark-warmups',
           '1',
           '--dry-run',
@@ -262,7 +267,8 @@ void main() {
             '--model models/Qwen3.5-0.8B-Q4_K_M.gguf '
             '--cases baseline,ngram-simple,ngram-map-k,ngram-map-k4v,'
             'ngram-mod,mixed-ngram --backend cpu --gpu-layers 0 '
-            '--max-tokens 128 --runs 3 --draft-token-max 1,2 --warmups 1',
+            '--max-tokens 128 --runs 3 --draft-token-max 1,2 --warmups 1 '
+            '--ngram-size-m 8,16 --ngram-token-max 64',
           ),
         );
       },

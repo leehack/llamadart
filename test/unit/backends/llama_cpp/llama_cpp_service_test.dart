@@ -169,30 +169,53 @@ void main() {
       expect(typeNames, 'ngram-mod,draft-mtp');
     });
 
-    test('keeps ngram size M separate from draft token cap', () {
-      final defaults = service.debugResolveSpeculativeNativeParamsForTesting(
-        const GenerationParams(
-          speculativeDecodingConfig: SpeculativeDecodingConfig.ngramMapK(
-            draftTokenMax: 8,
-          ),
+    test('uses ngram size M as native draft cap for map strategies', () {
+      final configs = <String, SpeculativeDecodingConfig>{
+        'ngram-simple': const SpeculativeDecodingConfig.ngramSimple(
+          draftTokenMax: 8,
         ),
-      );
-
-      expect(defaults['typeNames'], 'ngram-map-k');
-      expect(defaults['draftTokenMax'], 8);
-      expect(defaults['ngramSizeM'], isNull);
-
-      final explicit = service.debugResolveSpeculativeNativeParamsForTesting(
-        const GenerationParams(
-          speculativeDecodingConfig: SpeculativeDecodingConfig.ngramMapK(
-            draftTokenMax: 8,
-            ngramSizeM: 16,
-          ),
+        'ngram-map-k': const SpeculativeDecodingConfig.ngramMapK(
+          draftTokenMax: 8,
         ),
-      );
+        'ngram-map-k4v': const SpeculativeDecodingConfig.ngramMapK4v(
+          draftTokenMax: 8,
+        ),
+      };
 
-      expect(explicit['draftTokenMax'], 8);
-      expect(explicit['ngramSizeM'], 16);
+      for (final entry in configs.entries) {
+        final defaults = service.debugResolveSpeculativeNativeParamsForTesting(
+          GenerationParams(speculativeDecodingConfig: entry.value),
+        );
+
+        expect(defaults['typeNames'], entry.key);
+        expect(defaults['draftTokenMax'], 48);
+        expect(defaults['ngramSizeM'], isNull);
+      }
+
+      final explicitConfigs = <String, SpeculativeDecodingConfig>{
+        'ngram-simple': const SpeculativeDecodingConfig.ngramSimple(
+          draftTokenMax: 8,
+          ngramSizeM: 16,
+        ),
+        'ngram-map-k': const SpeculativeDecodingConfig.ngramMapK(
+          draftTokenMax: 8,
+          ngramSizeM: 16,
+        ),
+        'ngram-map-k4v': const SpeculativeDecodingConfig.ngramMapK4v(
+          draftTokenMax: 8,
+          ngramSizeM: 16,
+        ),
+      };
+
+      for (final entry in explicitConfigs.entries) {
+        final explicit = service.debugResolveSpeculativeNativeParamsForTesting(
+          GenerationParams(speculativeDecodingConfig: entry.value),
+        );
+
+        expect(explicit['typeNames'], entry.key);
+        expect(explicit['draftTokenMax'], 16);
+        expect(explicit['ngramSizeM'], 16);
+      }
     });
 
     test('uses upstream ngram size M default when draft cap is omitted', () {

@@ -169,6 +169,7 @@ dart run tool/testing/run_local_e2e.dart \
   --benchmark-max-tokens 128 \
   --benchmark-runs 3 \
   --draft-token-max 1,2 \
+  --ngram-size-m 8,16 \
   --benchmark-warmups 1 \
   --ngram-cache-build-static-path /tmp/llamadart-ngram-cache.bin
 ```
@@ -176,8 +177,19 @@ dart run tool/testing/run_local_e2e.dart \
 In the local E2E scenario, draft-model strategies require
 `--draft-model-path`; the n-gram cache strategy can use existing cache paths or
 build a static cache with `--ngram-cache-build-static-path`.
+For `ngram-simple`, `ngram-map-k`, and `ngram-map-k4v`, `--ngram-size-m`
+sweeps the effective n-gram draft length; `--draft-token-max` is still useful
+for draft-model, ngram-cache, and mixed draft-model cases. Use
+`--ngram-token-max` to cap ngram-mod when it should differ from
+`--draft-token-max`.
 Speculative benchmark prompts use the loaded model's chat template by default;
 use raw-prompt options only for intentional raw-vs-template comparisons.
+When investigating output-hash mismatches for n-gram speculation, compare the
+same prompt and sampling settings against upstream `llama-server` before
+classifying the mismatch as a Dart-only regression; upstream `ngram-map-k` can
+diverge from baseline once repeat penalties and accepted drafts are involved.
+Use `--include-output` when the exact divergence text is needed in the JSON
+report.
 When a speculative performance issue is being closed, include the matching
 upstream `llama-cli` or `llama-server` command where a comparable tool binary is
 available. If the exact packaged native tag does not publish standalone tools,

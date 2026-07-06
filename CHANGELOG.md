@@ -1,5 +1,11 @@
 ## Unreleased
 
+* Aligned llama.cpp n-gram speculative rejected-tail rollback with upstream
+  server behavior by trimming rejected target tokens before falling back to
+  checkpoint replay, avoiding early token-count/EOG drift in accepted-draft
+  `ngram-map-k` runs. The speculative benchmark can now emit full generated
+  text with `--include-output` for parity investigations.
+
 * Fixed llama.cpp n-gram speculative configuration mapping so
   `draftTokenMax` no longer implicitly overrides upstream `ngramSizeM`, and
   documented upstream comparison commands plus measured n-gram benchmark
