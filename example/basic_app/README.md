@@ -177,7 +177,7 @@ How to translate result values:
 - `-G, --grammar`: GBNF grammar string for constrained output.
 - `-t, --tool-test`: Enables sample `get_weather` tool-calling flow.
 - `--temp`: Temperature (default `0.7`).
-- `--top-k`: Top-k sampling (default `40`).
+- `--top-k`: Top-k sampling (default `20`).
 - `--top-p`: Top-p sampling (default `0.8`).
 - `--penalty`: Repeat penalty (default `1.0`).
 - `-h, --help`: Show help message.

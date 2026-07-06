@@ -391,11 +391,11 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     mode: 'manual/device',
     covers:
         'Android arm64 app build/install/launch, CPU profiles, crash signatures; '
-        'pair with manual model load/generation when runtime behavior is at risk',
+        'pair with manual model load/generation evidence when runtime behavior '
+        'is at risk',
     command:
         './scripts/android_runtime_smoke.sh --project-dir example/chat_app '
-        '--app-id com.example.llamadart_chat_example; then load a known small '
-        'model in the app and record first-token generation evidence',
+        '--app-id com.example.llamadart_chat_example',
     useWhen:
         'Android arm64 runtime selection, CPU variants, native bundle changes, '
         'or release candidates.',
