@@ -26,6 +26,7 @@ void main() {
       expect(result.stdout, contains('--ngram-cache-build-text <text>'));
       expect(result.stdout, contains('--raw-prompt'));
       expect(result.stdout, contains('intentional raw-prompt comparisons'));
+      expect(result.stdout, contains('--include-output'));
     });
 
     test('builds llama.cpp static ngram cache bytes', () {
@@ -85,6 +86,78 @@ void main() {
 
       expect(result.exitCode, isNot(0));
       expect(result.stderr, contains('all, draftless, ngram'));
+    });
+
+    test('expands pure ngram cases by ngram size M', () {
+      final names = speculative_benchmark
+          .debugBuildBenchmarkCaseNamesForTesting(const [
+            '--model',
+            'missing.gguf',
+            '--cases',
+            'baseline,ngram-map-k',
+            '--draft-token-max',
+            '4,8',
+            '--ngram-size-m',
+            '8,16',
+          ]);
+
+      expect(names, ['baseline', 'ngram-map-k_m_8', 'ngram-map-k_m_16']);
+    });
+
+    test('expands mixed ngram cases by draft depth and ngram size M', () {
+      final names = speculative_benchmark
+          .debugBuildBenchmarkCaseNamesForTesting(const [
+            '--model',
+            'missing.gguf',
+            '--cases',
+            'mixed-ngram',
+            '--draft-token-max',
+            '1,2',
+            '--ngram-size-m',
+            '8,16',
+          ]);
+
+      expect(names, [
+        'mixed-ngram_draft_1_m_8',
+        'mixed-ngram_draft_1_m_16',
+        'mixed-ngram_draft_2_m_8',
+        'mixed-ngram_draft_2_m_16',
+      ]);
+    });
+
+    test('reserves rollback capacity for explicit ngram token max', () {
+      final capacity = speculative_benchmark
+          .debugResolveSpeculativeRollbackCapacityForTesting(const [
+            '--model',
+            'missing.gguf',
+            '--cases',
+            'mixed-ngram',
+            '--draft-token-max',
+            '2',
+            '--ngram-size-m',
+            '8',
+            '--ngram-token-max',
+            '64',
+          ]);
+
+      expect(capacity, 64);
+    });
+
+    test('rejects non-positive ngram token max', () async {
+      final result = await Process.run(Platform.resolvedExecutable, [
+        '--disable-dart-dev',
+        'tool/testing/llama_cpp_speculative_benchmark.dart',
+        '--model',
+        'missing.gguf',
+        '--ngram-token-max',
+        '0',
+      ]);
+
+      expect(result.exitCode, isNot(0));
+      expect(
+        result.stderr,
+        contains('--ngram-token-max must be greater than zero.'),
+      );
     });
 
     test('rejects invalid flash-attention values', () async {

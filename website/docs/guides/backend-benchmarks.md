@@ -85,8 +85,8 @@ CLI rows as behavior references, not exact artifact parity for b9873.
 
 | Runtime | Prompt / config | Backend | Baseline | Speculative | Relative | Notes |
 | --- | --- | --- | ---: | ---: | ---: | --- |
-| llamadart runner | Raw repeated sequence, `ngram-map-k`, `draftTokenMax=8`, `ngramSizeN=4`, `ngramSizeM=8` | CPU | 135.71 wall tok/s | 222.24 wall tok/s | 1.64x | 112/112 drafts accepted, output hash matched |
-| llamadart runner | Same, `ngram-map-k4v`, `draftTokenMax=8`, `ngramSizeN=4`, `ngramSizeM=8` | CPU | 135.71 wall tok/s | 212.21 wall tok/s | 1.56x | 112/112 drafts accepted, output hash matched |
+| llamadart runner | Raw repeated sequence, `ngram-map-k`, `ngramSizeN=4`, `ngramSizeM=8` | CPU | 135.71 wall tok/s | 222.24 wall tok/s | 1.64x | 112/112 drafts accepted, output hash matched |
+| llamadart runner | Same, `ngram-map-k4v`, `ngramSizeN=4`, `ngramSizeM=8` | CPU | 135.71 wall tok/s | 212.21 wall tok/s | 1.56x | 112/112 drafts accepted, output hash matched |
 | llamadart runner | Qwen chat-template code prompt, default `ngram-map-k` sizing | CPU | 103.11 wall tok/s | 67.82 wall tok/s | 0.66x | auxiliary observation from the investigation; zero drafts produced |
 | llamadart runner | Raw code prompt, default n-gram sizing | Metal | 250.63 wall tok/s | 125.61 wall tok/s | 0.50x | auxiliary observation from the investigation; zero drafts produced |
 | upstream `llama-cli` | Same repeated text through `llama-cli` single-turn chat/conversation path, same n-gram knobs as first row | CPU, `--device none` | 138.7 generation tok/s | 164.1 generation tok/s | 1.18x | local b9571 CLI; metric excludes prompt handling |
@@ -95,9 +95,11 @@ Conclusion: draftless n-gram speculation can be faster in llamadart when the
 prompt has reusable repeated context and the n-gram knobs match the workload.
 For natural short prompts or code prompts without a matching recent history,
 the draftless n-gram strategies can produce no drafts, so the extra speculative
-loop work is slower than baseline. Keep `draftTokenMax` as the per-step draft
-cap; set `ngramSizeM` explicitly only when intentionally changing upstream's
-n-gram draft window from its default.
+loop work is slower than baseline. For draft-model and `ngram-cache`
+strategies, use `draftTokenMax` as the per-step draft cap. For `ngram-mod`, use
+`ngramTokenMax` when set, otherwise `draftTokenMax` or the llama.cpp default.
+For `ngram-simple`, `ngram-map-k`, and `ngram-map-k4v`, tune the effective
+draft length with `ngramSizeM` to match upstream's n-gram draft window.
 
 Remaining actionable work was split out instead of being folded into this
 benchmark documentation: [llamadart#278](https://github.com/leehack/llamadart/issues/278)
@@ -207,7 +209,7 @@ dart run tool/testing/llama_cpp_speculative_benchmark.dart \
   --warmups 1 \
   --draft-token-max 8 \
   --ngram-size-n 4 \
-  --ngram-size-m 8 \
+  --ngram-size-m 8,16 \
   --ngram-min-hits 1 \
   --temp 0 \
   --repeat-penalty 1.0 \

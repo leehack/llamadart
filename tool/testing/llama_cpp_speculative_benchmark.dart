@@ -24,7 +24,7 @@ Future<void> main(List<String> arguments) async {
     flashAttention: options.flashAttention,
   );
   final speculativeModelParams = baselineModelParams.copyWith(
-    speculativeRollbackTokenMax: options.maxDraftTokenMax,
+    speculativeRollbackTokenMax: options.maxSpeculativeDraftCapacity,
   );
 
   final backend = LlamaBackend();
@@ -293,6 +293,7 @@ Future<_RunResult> _runCase({
       outputChars: text.length,
       outputHash: _fnv1a32(text),
       outputPreview: text.length <= 180 ? text : text.substring(0, 180),
+      outputText: options.includeOutput ? text : null,
       perf: perf,
     );
   } finally {
@@ -309,6 +310,40 @@ List<_BenchmarkCase> _buildBenchmarkCases(_BenchmarkOptions options) {
       continue;
     }
 
+    if (_usesNgramSizeMSweep(requestedCase)) {
+      for (final ngramSizeM in options.ngramSizeMValues) {
+        _addCase(
+          cases,
+          seen,
+          _BenchmarkCase.fromRequestedCase(
+            requestedCase,
+            options: options,
+            draftTokenMax: options.maxDraftTokenMax,
+            ngramSizeM: ngramSizeM,
+          ),
+        );
+      }
+      continue;
+    }
+
+    if (requestedCase == 'mixed-ngram') {
+      for (final draftTokenMax in options.draftTokenMaxValues) {
+        for (final ngramSizeM in options.ngramSizeMValues) {
+          _addCase(
+            cases,
+            seen,
+            _BenchmarkCase.fromRequestedCase(
+              requestedCase,
+              options: options,
+              draftTokenMax: draftTokenMax,
+              ngramSizeM: ngramSizeM,
+            ),
+          );
+        }
+      }
+      continue;
+    }
+
     for (final draftTokenMax in options.draftTokenMaxValues) {
       _addCase(
         cases,
@@ -322,6 +357,30 @@ List<_BenchmarkCase> _buildBenchmarkCases(_BenchmarkOptions options) {
     }
   }
   return cases;
+}
+
+bool _usesNgramSizeMSweep(String requestedCase) {
+  return requestedCase == 'ngram-simple' ||
+      requestedCase == 'ngram-map-k' ||
+      requestedCase == 'ngram-map-k4v';
+}
+
+/// Builds benchmark case names without loading a model.
+///
+/// Intended for unit tests of case expansion and option semantics.
+List<String> debugBuildBenchmarkCaseNamesForTesting(List<String> arguments) {
+  final options = _BenchmarkOptions.parse(arguments);
+  return [
+    for (final benchmarkCase in _buildBenchmarkCases(options))
+      benchmarkCase.name,
+  ];
+}
+
+/// Resolves the benchmark rollback reservation without loading a model.
+///
+/// Intended for unit tests of option semantics.
+int debugResolveSpeculativeRollbackCapacityForTesting(List<String> arguments) {
+  return _BenchmarkOptions.parse(arguments).maxSpeculativeDraftCapacity;
 }
 
 void _addCase(
@@ -487,7 +546,9 @@ class _BenchmarkCase {
     String requestedCase, {
     required _BenchmarkOptions options,
     required int draftTokenMax,
+    int? ngramSizeM,
   }) {
+    final effectiveNgramSizeM = ngramSizeM ?? options.ngramSizeMValues.first;
     switch (requestedCase) {
       case 'backend-default':
         return _BenchmarkCase._(
@@ -552,37 +613,34 @@ class _BenchmarkCase {
         );
       case 'ngram-simple':
         return _BenchmarkCase._(
-          name: 'ngram-simple_draft_$draftTokenMax',
+          name: 'ngram-simple_m_$effectiveNgramSizeM',
           caseType: requestedCase,
           strategies: const <String>['ngram-simple'],
           speculativeDecodingConfig: SpeculativeDecodingConfig.ngramSimple(
-            draftTokenMax: draftTokenMax,
             ngramSizeN: options.ngramSizeN,
-            ngramSizeM: options.ngramSizeM,
+            ngramSizeM: effectiveNgramSizeM,
             ngramMinHits: options.ngramMinHits,
           ),
         );
       case 'ngram-map-k':
         return _BenchmarkCase._(
-          name: 'ngram-map-k_draft_$draftTokenMax',
+          name: 'ngram-map-k_m_$effectiveNgramSizeM',
           caseType: requestedCase,
           strategies: const <String>['ngram-map-k'],
           speculativeDecodingConfig: SpeculativeDecodingConfig.ngramMapK(
-            draftTokenMax: draftTokenMax,
             ngramSizeN: options.ngramSizeN,
-            ngramSizeM: options.ngramSizeM,
+            ngramSizeM: effectiveNgramSizeM,
             ngramMinHits: options.ngramMinHits,
           ),
         );
       case 'ngram-map-k4v':
         return _BenchmarkCase._(
-          name: 'ngram-map-k4v_draft_$draftTokenMax',
+          name: 'ngram-map-k4v_m_$effectiveNgramSizeM',
           caseType: requestedCase,
           strategies: const <String>['ngram-map-k4v'],
           speculativeDecodingConfig: SpeculativeDecodingConfig.ngramMapK4v(
-            draftTokenMax: draftTokenMax,
             ngramSizeN: options.ngramSizeN,
-            ngramSizeM: options.ngramSizeM,
+            ngramSizeM: effectiveNgramSizeM,
             ngramMinHits: options.ngramMinHits,
           ),
         );
@@ -611,7 +669,7 @@ class _BenchmarkCase {
         );
       case 'mixed-ngram':
         return _BenchmarkCase._(
-          name: 'mixed-ngram_draft_$draftTokenMax',
+          name: 'mixed-ngram_draft_${draftTokenMax}_m_$effectiveNgramSizeM',
           caseType: requestedCase,
           strategies: const <String>['ngram-mod', 'ngram-map-k'],
           speculativeDecodingConfig: SpeculativeDecodingConfig.mixed(
@@ -621,7 +679,7 @@ class _BenchmarkCase {
             ],
             draftTokenMax: draftTokenMax,
             ngramSizeN: options.ngramSizeN,
-            ngramSizeM: options.ngramSizeM,
+            ngramSizeM: effectiveNgramSizeM,
             ngramMinHits: options.ngramMinHits,
             ngramMatch: options.ngramMatch,
             ngramTokenMin: options.ngramTokenMin,
@@ -698,6 +756,7 @@ class _RunResult {
     required this.outputChars,
     required this.outputHash,
     required this.outputPreview,
+    required this.outputText,
     required this.perf,
   });
 
@@ -713,6 +772,7 @@ class _RunResult {
   final int outputChars;
   final String outputHash;
   final String outputPreview;
+  final String? outputText;
   final BackendPerfContextData? perf;
 
   double? get evalTokensPerSecond {
@@ -747,6 +807,7 @@ class _RunResult {
       'outputChars': outputChars,
       'outputHash': outputHash,
       'outputPreview': outputPreview,
+      if (outputText != null) 'outputText': outputText,
       'perf': perf == null
           ? null
           : {
@@ -800,7 +861,7 @@ class _BenchmarkOptions {
     required this.minProbability,
     required this.draftSplitProbability,
     required this.ngramSizeN,
-    required this.ngramSizeM,
+    required this.ngramSizeMValues,
     required this.ngramMinHits,
     required this.ngramMatch,
     required this.ngramTokenMin,
@@ -811,6 +872,7 @@ class _BenchmarkOptions {
     required this.ngramCacheBuildText,
     required this.rawPrompt,
     required this.prompt,
+    required this.includeOutput,
     required this.streamBatchTokenThreshold,
     required this.streamBatchByteThreshold,
   });
@@ -834,6 +896,20 @@ class _BenchmarkOptions {
     );
     if (draftTokenMaxValues.any((value) => value <= 0)) {
       stderr.writeln('--draft-token-max values must be greater than zero.');
+      exit(64);
+    }
+    final ngramSizeMValues = _parseIntList(
+      map['ngram-size-m'],
+      fallback: const <int>[48],
+      name: 'ngram-size-m',
+    );
+    if (ngramSizeMValues.any((value) => value <= 0)) {
+      stderr.writeln('--ngram-size-m values must be greater than zero.');
+      exit(64);
+    }
+    final ngramTokenMax = _parseOptionalInt(map['ngram-token-max']);
+    if (ngramTokenMax != null && ngramTokenMax <= 0) {
+      stderr.writeln('--ngram-token-max must be greater than zero.');
       exit(64);
     }
     final ngramCacheStaticPath = _emptyToNull(map['ngram-cache-static-path']);
@@ -904,11 +980,11 @@ class _BenchmarkOptions {
         map['draft-split-probability'],
       ),
       ngramSizeN: _parseOptionalInt(map['ngram-size-n'] ?? map['ngram-size']),
-      ngramSizeM: _parseOptionalInt(map['ngram-size-m']),
+      ngramSizeMValues: ngramSizeMValues,
       ngramMinHits: _parseOptionalInt(map['ngram-min-hits']),
       ngramMatch: _parseOptionalInt(map['ngram-match']),
       ngramTokenMin: _parseOptionalInt(map['ngram-token-min']),
-      ngramTokenMax: _parseOptionalInt(map['ngram-token-max']),
+      ngramTokenMax: ngramTokenMax,
       ngramCacheStaticPath: ngramCacheStaticPath ?? ngramCacheBuildStaticPath,
       ngramCacheDynamicPath: _emptyToNull(map['ngram-cache-dynamic-path']),
       ngramCacheBuildStaticPath: ngramCacheBuildStaticPath,
@@ -919,6 +995,11 @@ class _BenchmarkOptions {
         name: 'raw-prompt',
       ),
       prompt: map['prompt'] ?? _defaultBenchmarkInstruction,
+      includeOutput: _parseBool(
+        map['include-output'],
+        fallback: false,
+        name: 'include-output',
+      ),
       streamBatchTokenThreshold: _parseInt(
         map['stream-batch-tokens'],
         fallback: GenerationParams.defaultStreamBatchTokenThreshold,
@@ -960,7 +1041,7 @@ class _BenchmarkOptions {
   final double? minProbability;
   final double? draftSplitProbability;
   final int? ngramSizeN;
-  final int? ngramSizeM;
+  final List<int> ngramSizeMValues;
   final int? ngramMinHits;
   final int? ngramMatch;
   final int? ngramTokenMin;
@@ -971,6 +1052,7 @@ class _BenchmarkOptions {
   final String? ngramCacheBuildText;
   final bool rawPrompt;
   final String prompt;
+  final bool includeOutput;
   final int streamBatchTokenThreshold;
   final int streamBatchByteThreshold;
 
@@ -978,6 +1060,19 @@ class _BenchmarkOptions {
     1,
     (max, value) => value > max ? value : max,
   );
+
+  int get maxNgramSizeM =>
+      ngramSizeMValues.fold<int>(1, (max, value) => value > max ? value : max);
+
+  int get maxSpeculativeDraftCapacity {
+    final draftMax = maxDraftTokenMax;
+    final ngramMax = maxNgramSizeM;
+    final ngramTokenMax = this.ngramTokenMax;
+    final ngramEffectiveMax = ngramTokenMax != null && ngramTokenMax > ngramMax
+        ? ngramTokenMax
+        : ngramMax;
+    return draftMax > ngramEffectiveMax ? draftMax : ngramEffectiveMax;
+  }
 
   String requiredDraftModelPath(String requestedCase) {
     final path = draftModelPath;
@@ -1013,7 +1108,10 @@ class _BenchmarkOptions {
       'minProbability': minProbability,
       'draftSplitProbability': draftSplitProbability,
       'ngramSizeN': ngramSizeN,
-      'ngramSizeM': ngramSizeM,
+      'ngramSizeM': ngramSizeMValues.length == 1
+          ? ngramSizeMValues.single
+          : null,
+      'ngramSizeMValues': ngramSizeMValues,
       'ngramMinHits': ngramMinHits,
       'ngramMatch': ngramMatch,
       'ngramTokenMin': ngramTokenMin,
@@ -1027,6 +1125,7 @@ class _BenchmarkOptions {
           ? ngramCacheBuildText
           : ngramCacheBuildText!.substring(0, 120),
       'rawPrompt': rawPrompt,
+      'includeOutput': includeOutput,
       'promptPreview': prompt.length <= 120 ? prompt : prompt.substring(0, 120),
       'streamBatchTokenThreshold': streamBatchTokenThreshold,
       'streamBatchByteThreshold': streamBatchByteThreshold,
@@ -1402,8 +1501,9 @@ Case selection:
                                        require --draft-model.
   --draft-model <draft.gguf>           Draft model for draft-simple, eagle3,
                                        dflash, and mixed draft-simple cases.
-  --draft-token-max <list>             Comma-separated draft-token depths.
-                                       Default: 1,2.
+  --draft-token-max <list>             Comma-separated draft-token depths for
+                                       draft-model, ngram-mod, and ngram-cache
+                                       cases. Default: 1,2.
 
 Supported cases:
   ${_allRequestedCases.join(', ')}
@@ -1425,6 +1525,7 @@ Generation:
   --prompt <text>                      Override benchmark prompt.
   --raw-prompt                         Skip model chat-template wrapping for
                                        intentional raw-prompt comparisons.
+  --include-output                     Include full generated output in JSON.
   --seed <n>                           Default: 7.
   --temp <n>                           Default: 0.0.
   --repeat-penalty <n>                 Default: 1.1.
@@ -1434,7 +1535,9 @@ Speculative knobs:
   --min-probability <n>
   --draft-split-probability <n>
   --ngram-size-n <n>                   Also accepts --ngram-size.
-  --ngram-size-m <n>
+  --ngram-size-m <list>                Comma-separated effective draft lengths
+                                       for ngram-simple/map-k/map-k4v.
+                                       Default: 48.
   --ngram-min-hits <n>
   --ngram-match <n>
   --ngram-token-min <n>
@@ -1451,7 +1554,7 @@ Examples:
     --model models/Qwen3.5-0.8B-Q4_K_M.gguf \\
     --cases baseline,ngram-simple,ngram-map-k,ngram-map-k4v,ngram-mod,mixed-ngram \\
     --backend cpu --gpu-layers 0 --max-tokens 128 --runs 3 \\
-    --draft-token-max 1,2 --warmups 1
+    --draft-token-max 1,2 --ngram-size-m 8,16 --warmups 1
 
   dart run tool/testing/llama_cpp_speculative_benchmark.dart \\
     --model models/gemma-4-E2B-it-Q4_K_S.gguf \\

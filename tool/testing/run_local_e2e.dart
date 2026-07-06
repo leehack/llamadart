@@ -83,6 +83,8 @@ class LocalE2eRunContext {
     required this.benchmarkWarmups,
     required this.draftTokenMaxList,
     required this.ngramSize,
+    required this.ngramSizeM,
+    required this.ngramTokenMax,
     required this.ngramCacheStaticPath,
     required this.ngramCacheDynamicPath,
     required this.ngramCacheBuildStaticPath,
@@ -108,6 +110,8 @@ class LocalE2eRunContext {
   final String benchmarkWarmups;
   final String draftTokenMaxList;
   final String? ngramSize;
+  final String? ngramSizeM;
+  final String? ngramTokenMax;
   final String? ngramCacheStaticPath;
   final String? ngramCacheDynamicPath;
   final String? ngramCacheBuildStaticPath;
@@ -252,6 +256,14 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
         final ngramSize = context.ngramSize;
         if (ngramSize != null) {
           arguments.addAll(['--ngram-size', ngramSize]);
+        }
+        final ngramSizeM = context.ngramSizeM;
+        if (ngramSizeM != null) {
+          arguments.addAll(['--ngram-size-m', ngramSizeM]);
+        }
+        final ngramTokenMax = context.ngramTokenMax;
+        if (ngramTokenMax != null) {
+          arguments.addAll(['--ngram-token-max', ngramTokenMax]);
         }
         final ngramCacheStaticPath = context.ngramCacheStaticPath;
         if (ngramCacheStaticPath != null) {
@@ -734,6 +746,8 @@ Future<LocalE2eResult> runLocalE2e(
     benchmarkWarmups: parsed.benchmarkWarmups,
     draftTokenMaxList: parsed.draftTokenMaxList,
     ngramSize: parsed.ngramSize,
+    ngramSizeM: parsed.ngramSizeM,
+    ngramTokenMax: parsed.ngramTokenMax,
     ngramCacheStaticPath: parsed.ngramCacheStaticPath,
     ngramCacheDynamicPath: parsed.ngramCacheDynamicPath,
     ngramCacheBuildStaticPath: parsed.ngramCacheBuildStaticPath,
@@ -941,6 +955,8 @@ Options:
   --benchmark-warmups <n>        Warmup runs for benchmark scenarios (default: 1).
   --draft-token-max <list>       Draft-token sweep for speculative benchmark (default: 1,2).
   --ngram-size <n>               Optional n-gram size for speculative benchmark.
+  --ngram-size-m <list>          Effective draft length sweep for ngram-simple/map benchmark cases.
+  --ngram-token-max <n>          Optional ngram-mod token cap for speculative benchmark.
   --ngram-cache-static-path <p>  Optional ngram-cache static path for speculative benchmark.
   --ngram-cache-dynamic-path <p> Optional ngram-cache dynamic path for speculative benchmark.
   --ngram-cache-build-static-path <p>
@@ -989,6 +1005,8 @@ class _ParsedArgs {
     this.imagePath,
     this.modelUrl,
     this.ngramSize,
+    this.ngramSizeM,
+    this.ngramTokenMax,
     this.ngramCacheStaticPath,
     this.ngramCacheDynamicPath,
     this.ngramCacheBuildStaticPath,
@@ -1016,6 +1034,8 @@ class _ParsedArgs {
   final String benchmarkWarmups;
   final String draftTokenMaxList;
   final String? ngramSize;
+  final String? ngramSizeM;
+  final String? ngramTokenMax;
   final String? ngramCacheStaticPath;
   final String? ngramCacheDynamicPath;
   final String? ngramCacheBuildStaticPath;
@@ -1048,6 +1068,8 @@ class _ParsedArgs {
     String? imagePath;
     String? modelUrl;
     String? ngramSize;
+    String? ngramSizeM;
+    String? ngramTokenMax;
     String? ngramCacheStaticPath;
     String? ngramCacheDynamicPath;
     String? ngramCacheBuildStaticPath;
@@ -1099,6 +1121,10 @@ class _ParsedArgs {
           draftTokenMaxList = _readValue(args, ++index, arg);
         case '--ngram-size':
           ngramSize = _readValue(args, ++index, arg);
+        case '--ngram-size-m':
+          ngramSizeM = _readValue(args, ++index, arg);
+        case '--ngram-token-max':
+          ngramTokenMax = _readValue(args, ++index, arg);
         case '--ngram-cache-static-path':
           ngramCacheStaticPath = _readValue(args, ++index, arg);
         case '--ngram-cache-dynamic-path':
@@ -1136,6 +1162,8 @@ class _ParsedArgs {
       benchmarkWarmups: benchmarkWarmups,
       draftTokenMaxList: draftTokenMaxList,
       ngramSize: ngramSize,
+      ngramSizeM: ngramSizeM,
+      ngramTokenMax: ngramTokenMax,
       ngramCacheStaticPath: ngramCacheStaticPath,
       ngramCacheDynamicPath: ngramCacheDynamicPath,
       ngramCacheBuildStaticPath: ngramCacheBuildStaticPath,

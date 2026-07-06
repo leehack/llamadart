@@ -120,10 +120,11 @@ Guidelines:
   draft-model strategy. Draft-model strategies can load a separate GGUF through
   `draftModelPath`; draftless n-gram strategies are workload-dependent and can
   be slower than baseline on prompts with little repetition. For ngram-simple
-  and ngram-map strategies, `draftTokenMax` caps each speculative step while
-  `ngramSizeM` controls upstream's draft m-gram window; set `ngramSizeM`
-  explicitly only when intentionally changing the upstream n-gram lookup
-  behavior.
+  and ngram-map strategies, `ngramSizeM` is the effective draft length and
+  mirrors upstream's draft m-gram window; `draftTokenMax` does not cap those
+  pure n-gram map strategies. For ngram-mod, `ngramTokenMax` is the effective
+  draft cap when set; otherwise it falls back to `draftTokenMax` or the
+  llama.cpp default.
 - DFlash draft models must use upstream-compatible GGUF metadata:
   `general.architecture=dflash` plus the `dflash.*` metadata block, including
   `dflash.target_layers`. A known-good public pair is target
@@ -247,6 +248,7 @@ dart run tool/testing/llama_cpp_speculative_benchmark.dart \
   --max-tokens 128 \
   --runs 3 \
   --draft-token-max 1,2 \
+  --ngram-size-m 8,16 \
   --warmups 1
 
 # Benchmark embeddings (sequential vs batch)

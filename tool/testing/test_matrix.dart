@@ -150,7 +150,8 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'ngram-map-k,ngram-map-k4v,ngram-mod,ngram-cache,mixed-ngram '
         '--benchmark-gpu-layers 0 --benchmark-max-tokens 128 '
         '--benchmark-runs 3 --draft-token-max 1,2 '
-        '--benchmark-warmups 1 --ngram-cache-build-static-path '
+        '--ngram-size-m 8,16 --benchmark-warmups 1 '
+        '--ngram-cache-build-static-path '
         '/tmp/llamadart-ngram-cache.bin',
     useWhen:
         'llama.cpp speculative decoding strategy, wrapper, rollback, or '
