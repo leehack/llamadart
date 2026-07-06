@@ -695,9 +695,10 @@ def update_core_changelog_native_pin(
         entry = (
             "* Updated the default llama.cpp native runtime pin to\n"
             f"  `{repo}@{tag}`, keeping the `{base_tag}` llama.cpp\n"
-            "  ABI/bindings while picking up wrapper-only native fixes. Refreshed the\n"
-            "  `llamadart_llama_cpp_flutter` Apple SwiftPM checksum and aligned\n"
-            "  current README/website native override docs."
+            "  ABI/bindings while picking up wrapper fixes for native release\n"
+            "  provenance and backend-selected speculative sampler acceptance. Refreshed\n"
+            "  the `llamadart_llama_cpp_flutter` Apple SwiftPM checksum and aligned current\n"
+            "  README/website native override docs."
         )
     else:
         entry = (
