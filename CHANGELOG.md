@@ -34,6 +34,10 @@
   draft-context processing does not request unused logits, avoiding a
   `draft-simple` native abort while preserving target verification logits.
 
+* Extended llama.cpp speculative performance diagnostics with draft-attempt,
+  target-verification-token, and replay-token counters. Enabled speculative
+  runs now preserve explicit zero counters instead of collapsing them to null,
+  and local benchmark JSON includes the new fields.
 
 * Hardened LiteRT-LM generation validation so llama.cpp-only speculative
   decoding knobs fail loudly instead of silently degrading to LiteRT-LM's

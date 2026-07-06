@@ -145,6 +145,9 @@ Future<Map<String, Object?>> _run(
             'speculativeDraftTokens': perf.speculativeDraftTokens,
             'speculativeAcceptedDraftTokens':
                 perf.speculativeAcceptedDraftTokens,
+            'speculativeDraftAttempts': perf.speculativeDraftAttempts,
+            'speculativeVerifyTokens': perf.speculativeVerifyTokens,
+            'speculativeReplayTokens': perf.speculativeReplayTokens,
             'speculativeAcceptanceRate': perf.speculativeAcceptanceRate,
             'speculativeDraftMs': perf.speculativeDraftMs,
             'speculativeVerifyMs': perf.speculativeVerifyMs,

@@ -553,6 +553,15 @@ class PerformanceContextResponse {
   /// Number of speculative draft tokens accepted.
   final int? speculativeAcceptedDraftTokens;
 
+  /// Number of speculative draft attempts made.
+  final int? speculativeDraftAttempts;
+
+  /// Number of target-model tokens decoded to verify speculative drafts.
+  final int? speculativeVerifyTokens;
+
+  /// Number of target-model tokens decoded to replay accepted speculative work.
+  final int? speculativeReplayTokens;
+
   /// Time spent generating speculative drafts in ms.
   final double? speculativeDraftMs;
 
@@ -572,6 +581,9 @@ class PerformanceContextResponse {
     required this.reusedGraphs,
     this.speculativeDraftTokens,
     this.speculativeAcceptedDraftTokens,
+    this.speculativeDraftAttempts,
+    this.speculativeVerifyTokens,
+    this.speculativeReplayTokens,
     this.speculativeDraftMs,
     this.speculativeVerifyMs,
   });

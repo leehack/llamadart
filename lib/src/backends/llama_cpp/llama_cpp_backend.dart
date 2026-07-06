@@ -498,6 +498,9 @@ class NativeLlamaBackend
         reusedGraphs: res.reusedGraphs,
         speculativeDraftTokens: res.speculativeDraftTokens,
         speculativeAcceptedDraftTokens: res.speculativeAcceptedDraftTokens,
+        speculativeDraftAttempts: res.speculativeDraftAttempts,
+        speculativeVerifyTokens: res.speculativeVerifyTokens,
+        speculativeReplayTokens: res.speculativeReplayTokens,
         speculativeDraftMs: res.speculativeDraftMs,
         speculativeVerifyMs: res.speculativeVerifyMs,
       );
