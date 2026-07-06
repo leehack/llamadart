@@ -36,6 +36,9 @@ class WebGpuLlamaBackend
   static const int _gpuMultimodalMaxImagePixels = 1048576;
   static const int _gpuMultimodalMaxImageEdge = 1280;
   static const Duration _webGpuMultimodalWarmupTimeout = Duration(seconds: 12);
+  static const String _runtimeLoraUnsupportedMessage =
+      'WebGPU LoRA runtime updates are not supported by the current bridge. '
+      'Use a native llama.cpp backend for setLora/removeLora/clearLoras.';
   static final Uint8List _webGpuWarmupRgbBytes = Uint8List.fromList(const <int>[
     0,
     0,
@@ -2177,26 +2180,17 @@ class WebGpuLlamaBackend
     String path,
     double scale,
   ) async {
-    throw UnsupportedError(
-      'WebGPU LoRA runtime updates are not supported by the current bridge. '
-      'Use a native llama.cpp backend for setLora/removeLora/clearLoras.',
-    );
+    throw UnsupportedError(_runtimeLoraUnsupportedMessage);
   }
 
   @override
   Future<void> removeLoraAdapter(int contextHandle, String path) async {
-    throw UnsupportedError(
-      'WebGPU LoRA runtime updates are not supported by the current bridge. '
-      'Use a native llama.cpp backend for setLora/removeLora/clearLoras.',
-    );
+    throw UnsupportedError(_runtimeLoraUnsupportedMessage);
   }
 
   @override
   Future<void> clearLoraAdapters(int contextHandle) async {
-    throw UnsupportedError(
-      'WebGPU LoRA runtime updates are not supported by the current bridge. '
-      'Use a native llama.cpp backend for setLora/removeLora/clearLoras.',
-    );
+    throw UnsupportedError(_runtimeLoraUnsupportedMessage);
   }
 
   @override
