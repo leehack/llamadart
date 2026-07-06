@@ -77,11 +77,12 @@ universally faster. It is workload- and knob-sensitive. The clear local speedup
 came from an explicit repeated-context workload with smaller n-gram lookup
 settings.
 
-The current package runtime pin was `leehack/llamadart-native@b9873`. That
-release does not publish standalone `llama-cli` / `llama-server` tool binaries,
-so upstream CLI comparison used the closest local llama.cpp tool build available
-from `llamadart-native` (`build b1-e3471b3e7`, from the b9571 line). Treat the
-CLI rows as behavior references, not exact artifact parity for b9873.
+At the time of this investigation, the package runtime pin was
+`leehack/llamadart-native@b9873`. That release did not publish standalone
+`llama-cli` / `llama-server` tool binaries, so upstream CLI comparison used the
+closest local llama.cpp tool build available from `llamadart-native`
+(`build b1-e3471b3e7`, from the b9571 line). Treat the CLI rows as historical
+behavior references, not exact artifact parity for the current runtime pin.
 
 | Runtime | Prompt / config | Backend | Baseline | Speculative | Relative | Notes |
 | --- | --- | --- | ---: | ---: | ---: | --- |

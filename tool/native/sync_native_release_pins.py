@@ -598,10 +598,12 @@ def update_llama_cpp_project_docs(
             tag,
         )
         if updated_doc_text == doc_text:
-            raise ReleaseError(
-                f"Could not update llama.cpp native pin references in {doc_path}"
-            )
-        pending_writes[doc_path] = updated_doc_text
+            if tag not in doc_text:
+                raise ReleaseError(
+                    f"Could not update llama.cpp native pin references in {doc_path}"
+                )
+        else:
+            pending_writes[doc_path] = updated_doc_text
 
     if not changelog_path.exists():
         raise ReleaseError(f"Missing project CHANGELOG {changelog_path}")
@@ -618,26 +620,28 @@ def replace_llama_cpp_native_doc_references(
     repo: str,
     tag: str,
 ) -> str:
+    native_tag_pattern = r"b[0-9]+(?:-[A-Za-z0-9._-]+)?"
     replacements = (
-        (r"(llamadart_native_tag:\s*)b[0-9]+", rf"\g<1>{tag}"),
+        (rf"(llamadart_native_tag:\s*){native_tag_pattern}", rf"\g<1>{tag}"),
         (
-            rf"({re.escape(repo)}@)b[0-9]+",
+            rf"({re.escape(repo)}@){native_tag_pattern}",
             rf"\g<1>{tag}",
         ),
         (
-            r"(llamadart-native-[a-z0-9_-]+-)b[0-9]+(?=\.tar\.gz`)",
+            rf"(llamadart-native-[a-z0-9_-]+-)"
+            rf"{native_tag_pattern}(?=\.tar\.gz`)",
             rf"\g<1>{tag}",
         ),
         (
-            r"(default native tag `)b[0-9]+(`)",
+            rf"(default native tag `){native_tag_pattern}(`)",
             rf"\g<1>{tag}\2",
         ),
         (
-            r"(llamadart-native` tag `)b[0-9]+(`)",
+            rf"(llamadart-native` tag `){native_tag_pattern}(`)",
             rf"\g<1>{tag}\2",
         ),
         (
-            r"(module availability by bundle \(`)b[0-9]+(`\))",
+            rf"(module availability by bundle \(`){native_tag_pattern}(`\))",
             rf"\g<1>{tag}\2",
         ),
     )
@@ -686,12 +690,22 @@ def update_core_changelog_native_pin(
     repo: str,
     tag: str,
 ) -> str:
-    entry = (
-        "* Updated the default llama.cpp native runtime pin to\n"
-        f"  `{repo}@{tag}`, regenerated matching Dart FFI bindings, refreshed\n"
-        "  the `llamadart_llama_cpp_flutter` Apple SwiftPM checksum, and\n"
-        "  aligned current README/website native override docs."
-    )
+    if re.fullmatch(r"b[0-9]+-llamadart\.[0-9]+", tag):
+        base_tag = tag.split("-", maxsplit=1)[0]
+        entry = (
+            "* Updated the default llama.cpp native runtime pin to\n"
+            f"  `{repo}@{tag}`, keeping the `{base_tag}` llama.cpp\n"
+            "  ABI/bindings while picking up wrapper-only native fixes. Refreshed the\n"
+            "  `llamadart_llama_cpp_flutter` Apple SwiftPM checksum and aligned\n"
+            "  current README/website native override docs."
+        )
+    else:
+        entry = (
+            "* Updated the default llama.cpp native runtime pin to\n"
+            f"  `{repo}@{tag}`, regenerated matching Dart FFI bindings, refreshed\n"
+            "  the `llamadart_llama_cpp_flutter` Apple SwiftPM checksum, and\n"
+            "  aligned current README/website native override docs."
+        )
     heading_match = re.search(r"(?m)^## Unreleased\s*\n+", changelog_text)
     if not heading_match:
         return f"## Unreleased\n\n{entry}\n\n{changelog_text.lstrip()}"

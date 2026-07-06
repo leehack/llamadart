@@ -462,21 +462,21 @@ The Apple SwiftPM manifest pins `$repo@old`.
 
 Future<void> _writeProjectDocs(Directory root) async {
   await File(path.join(root.path, 'README.md')).writeAsString('''
-llamadart_native_tag: b0001
+llamadart_native_tag: b0001-llamadart.1
 
-ABI-compatible with the default `leehack/llamadart-native@b0001` runtime.
+ABI-compatible with the default `leehack/llamadart-native@b0001-llamadart.1` runtime.
 
 dependencies:
   llamadart: ^0.1.0
   llamadart_llama_cpp_flutter: ^0.0.1
   llamadart_litert_lm_flutter: ^0.0.1
 
-`llamadart-native-windows-x64-b0001.tar.gz`
+`llamadart-native-windows-x64-b0001-llamadart.1.tar.gz`
 
-Available llama.cpp module matrix from the default native tag `b0001`:
+Available llama.cpp module matrix from the default native tag `b0001-llamadart.1`:
 
-| Native llama.cpp / GGUF | `leehack/llamadart-native@b0001` |
-| Apple SPM llama.cpp / GGUF | `llamadart_llama_cpp_flutter` pins `leehack/llamadart-native@b0001` Apple XCFramework |
+| Native llama.cpp / GGUF | `leehack/llamadart-native@b0001-llamadart.1` |
+| Apple SPM llama.cpp / GGUF | `llamadart_llama_cpp_flutter` pins `leehack/llamadart-native@b0001-llamadart.1` Apple XCFramework |
 ''');
 
   final installDoc = File(
@@ -484,16 +484,16 @@ Available llama.cpp module matrix from the default native tag `b0001`:
   );
   await installDoc.parent.create(recursive: true);
   await installDoc.writeAsString('''
-llamadart_native_tag: b0001
+llamadart_native_tag: b0001-llamadart.1
 
-ABI-compatible with the default `leehack/llamadart-native@b0001` runtime.
+ABI-compatible with the default `leehack/llamadart-native@b0001-llamadart.1` runtime.
 
 dependencies:
   llamadart: ^0.1.0
   llamadart_llama_cpp_flutter: ^0.0.1
   llamadart_litert_lm_flutter: ^0.0.1
 
-`llamadart-native-windows-x64-b0001.tar.gz`
+`llamadart-native-windows-x64-b0001-llamadart.1.tar.gz`
 ''');
 
   final supportMatrix = File(
@@ -501,12 +501,12 @@ dependencies:
   );
   await supportMatrix.parent.create(recursive: true);
   await supportMatrix.writeAsString('''
-The native-assets hook currently pins `llamadart-native` tag `b0001` and
+The native-assets hook currently pins `llamadart-native` tag `b0001-llamadart.1` and
 `litert-lm-native` release `v0.13.1-native.1`.
 
-## Current llama.cpp module availability by bundle (`b0001`)
+## Current llama.cpp module availability by bundle (`b0001-llamadart.1`)
 
-llamadart_native_tag: b0001
+llamadart_native_tag: b0001-llamadart.1
 ''');
 
   await File(path.join(root.path, 'CHANGELOG.md')).writeAsString('''

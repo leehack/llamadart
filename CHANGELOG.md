@@ -1,5 +1,12 @@
 ## Unreleased
 
+* Updated the default llama.cpp native runtime pin to
+  `leehack/llamadart-native@b9873-llamadart.2`, keeping the `b9873`
+  llama.cpp ABI/bindings while picking up wrapper fixes for native release
+  provenance and backend-selected speculative sampler acceptance. Refreshed
+  the `llamadart_llama_cpp_flutter` Apple SwiftPM checksum and aligned current
+  README/website native override docs.
+
 * Aligned llama.cpp n-gram speculative rejected-tail rollback with upstream
   server behavior by trimming rejected target tokens before falling back to
   checkpoint replay, avoiding early token-count/EOG drift in accepted-draft
@@ -27,10 +34,6 @@
   draft-context processing does not request unused logits, avoiding a
   `draft-simple` native abort while preserving target verification logits.
 
-* Updated the default llama.cpp native runtime pin to
-  `leehack/llamadart-native@b9873`, regenerated matching Dart FFI bindings,
-  refreshed the `llamadart_llama_cpp_flutter` Apple SwiftPM checksum, and
-  aligned current README/website native override docs.
 
 * Hardened LiteRT-LM generation validation so llama.cpp-only speculative
   decoding knobs fail loudly instead of silently degrading to LiteRT-LM's
