@@ -38,7 +38,8 @@ class WebGpuLlamaBackend
   static const Duration _webGpuMultimodalWarmupTimeout = Duration(seconds: 12);
   static const String _runtimeLoraUnsupportedMessage =
       'WebGPU LoRA runtime updates are not supported by the current bridge. '
-      'Use a native llama.cpp backend for setLora/removeLora/clearLoras.';
+      'Use a native llama.cpp backend when runtime LoRA adapter changes are '
+      'required.';
   static final Uint8List _webGpuWarmupRgbBytes = Uint8List.fromList(const <int>[
     0,
     0,
