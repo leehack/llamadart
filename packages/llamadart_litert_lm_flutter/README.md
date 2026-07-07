@@ -12,8 +12,8 @@ for the selected architecture.
 
 ```yaml
 dependencies:
-  llamadart: ^0.8.12
-  llamadart_litert_lm_flutter: ^0.0.3
+  llamadart: ^0.8.13
+  llamadart_litert_lm_flutter: ^0.0.4
 ```
 
 This package has no runtime Dart API of its own. Import `package:llamadart`
