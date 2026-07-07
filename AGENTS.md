@@ -1,267 +1,145 @@
 # AGENTS.md
 
-This file provides guidance for agentic coding assistants working in the llamadart repository.
+Guidance for agentic coding assistants working in this repository. Keep this
+file as the compact entrypoint for durable repo rules; put detailed matrices and
+long procedures in discoverable docs.
 
-## Build / Lint / Test Commands
+## Quick Commands
 
-### Development Commands
 ```bash
-dart pub get                              # Install dependencies
-dart format .                             # Format all Dart files
-dart format --output=none --set-exit-if-changed .  # Check only, CI-friendly
-dart analyze                              # Run static analysis/linting
-dart analyze --fatal-infos              # Optional stricter local check for info-level lints
+dart pub get
+dart format .
+dart format --output=none --set-exit-if-changed .
+dart analyze
+dart test -p vm -j 1 --exclude-tags local-only
+dart test -p chrome --exclude-tags local-only
 ```
 
-### Testing Commands
-```bash
-dart test                                 # Run all platform-compatible tests (VM or browser)
-dart test -p vm                           # Run only VM (native) tests
-dart test -p chrome                       # Run only Chrome (web) tests
-dart run tool/testing/run_local_e2e.dart --list  # Discover local-only E2E scenarios
-dart test --run-skipped -t local-only     # Run root local-only Dart E2E scenarios
-dart test test/path/to/test_file.dart     # Run a single test file
-dart test -p vm --coverage=coverage       # Run VM tests and collect coverage
-dart pub global run coverage:format_coverage --lcov --in=coverage/test --out=coverage/lcov.info --report-on=lib --check-ignore
-dart run tool/testing/check_lcov_threshold.dart coverage/lcov.info 70
-```
-
-### Local-Only E2E Runner
-Use the scenario runner as the discovery entry point for heavyweight manual checks:
+Use the testing matrix to choose validation for non-trivial changes:
 
 ```bash
 dart run tool/testing/test_matrix.dart --list
 dart run tool/testing/test_matrix.dart --pr-template
-dart run tool/testing/test_matrix.dart --tier platform
+dart run tool/testing/test_matrix.dart --tier essential
 dart run tool/testing/run_local_e2e.dart --list
 dart run tool/testing/run_local_e2e.dart --scenario <name> --dry-run
-dart run tool/testing/run_local_e2e.dart --scenario chat-app-model-cache --device macos
 ```
 
-Heavy scenarios remain skipped by default and out of CI unless explicitly requested.
-Use `--dry-run` before Web smoke scenarios to see the required build/server/
-Playwright steps and model URL defaults.
+For docs and release-sensitive snippets:
+
+```bash
+./tool/docs/build_site.sh
+./tool/docs/validate_links.sh
+dart run tool/testing/verify_release_docs_versions.dart
+```
+
+For coverage when `lib/` behavior changes or coverage is in doubt:
+
+```bash
+dart test -p vm --coverage=coverage
+dart pub global run coverage:format_coverage --lcov --in=coverage/test --out=coverage/lcov.info --report-on=lib --check-ignore
+dart run tool/testing/check_lcov_threshold.dart coverage/lcov.info 70
+```
+
+Heavy or device/model-backed scenarios stay out of default CI. Discover them
+through `tool/testing/test_matrix.dart` and `tool/testing/run_local_e2e.dart`,
+then record row ID, command or CI workflow, platform/device, model, backend,
+PASS/FAIL/N/A, and log/artifact notes in the PR.
 
 Do not add one-off repro scripts under `tool/testing/` unless they are wired
 into `tool/testing/run_local_e2e.dart`, represented in
-`tool/testing/test_matrix.dart`, and documented where contributors can discover
+`tool/testing/test_matrix.dart`, and documented where contributors can find
 them. Prefer durable assertions in `test/unit/`, `test/integration/`, or
-`test/e2e/` over standalone scripts.
+`test/e2e/`.
 
-When preparing or updating a PR, pick the applicable rows from
-`doc/testing_matrix.md` / `tool/testing/test_matrix.dart` and record evidence in
-the PR. Include row ID, exact command or CI workflow, platform/device, model,
-backend, PASS/FAIL/N/A status, and any log/artifact pointer. If a row cannot run
-locally, state why and whether CI, a manual device run, or a follow-up issue
-covers it.
+For Web chat app validation after bridge/runtime or UI changes, use the local
+E2E runner instead of ad hoc build/server steps. Preserve the runner's
+`--base-href`, static headers, Playwright options, and macOS Chromium ANGLE
+settings when debugging helpers directly.
 
-Representative local real-model feature smokes:
+For llama.cpp n-gram speculative output-hash mismatches, compare the same prompt
+and sampling settings against upstream `llama-server` before classifying the
+mismatch as Dart-only. Use the benchmark runner's `--include-output` flag when
+the exact generated text matters.
 
-```bash
-dart run tool/testing/run_local_e2e.dart --scenario gguf-chat-features-smoke --model-path models/Qwen3.5-0.8B-Q4_K_M.gguf --backend auto
-dart run tool/testing/run_local_e2e.dart --scenario litert-lm-chat-features-smoke --model-path /path/to/gemma-4-E2B-it.litertlm --backend auto
-```
+## Code Style
 
-For llama.cpp n-gram speculative output-hash mismatches, compare the same
-prompt and sampling settings against upstream `llama-server` before classifying
-the mismatch as Dart-only. Upstream `ngram-map-k` can diverge from baseline
-when repeat penalties and accepted drafts are involved; use the benchmark
-runner's `--include-output` flag to capture exact generated text in JSON.
+### Dart Style
 
-### Local Chat App Web E2E
-Use the scenario runner for chat app web validation after bridge/runtime or UI
-updates. This catches issues that direct bridge probes miss while keeping build,
-server, and Playwright steps discoverable.
+- Use `dart format` defaults.
+- Keep imports ordered as SDK, package, then relative imports, separated by blank
+  lines.
+- Avoid `show`/`hide` unless needed for deconfliction.
+- Public APIs need explicit parameter, return, and field types.
+- Local `var`/`final` inference is fine when the type is obvious.
+- Public members require `///` Dartdoc with useful Markdown.
+- Avoid new TODO/FIXME comments in source. Existing generated/template platform
+  files may contain upstream TODOs; do not copy that pattern into maintained
+  Dart or workflow code.
 
-```bash
-dart run tool/testing/run_local_e2e.dart --scenario chat-app-web-mock-smoke --dry-run
-dart run tool/testing/run_local_e2e.dart --scenario chat-app-web-real-model-smoke \
-  --model-url http://127.0.0.1:7358/example/llamadart_server/models/Qwen3.5-0.8B-Q4_K_M.gguf \
-  --expect 4
-```
+### Names And Structure
 
-For the WebGPU/llama.cpp Gemma 4 path specifically, use the
-`chat-app-web-gemma4-webgpu-smoke` scenario, which forces the mem64 core and a
-bounded context. It expects `gemma-4-E2B-it-Q4_K_S.gguf` to be served locally
-(for example under `example/llamadart_server/models/`).
-
-The runner builds web with the matching `--base-href`, serves with
-`tool/testing/serve_static_with_headers.py`, and invokes the appropriate
-Playwright helper. If debugging a helper directly, preserve those same serving
-and browser options. On macOS headless Chromium, use the smoke script's default
-`--browser-angle auto` or pass `--browser-angle metal`; without Metal ANGLE the
-adapter may lack `shader-f16` and llama.cpp can abort in `ggml-webgpu` even for
-CPU/gpuLayers=0 runs. For larger models such as Gemma 4, pass `--mem64` and a
-smaller `--context-size` to keep the smoke bounded.
-
-### CI Standards
-- `dart format --output=none --set-exit-if-changed .` checks formatting
-- `dart analyze` runs the linter
-- `dart test -p vm -j 1 --exclude-tags local-only` runs native tests sequentially (required for some OS)
-- CI enforces >=70% line coverage for maintainable `lib/` code using `--check-ignore` (generated files marked with `// coverage:ignore-file` are excluded)
-
-## Code Style Guidelines
-
-### Imports
-- Start with Dart SDK imports (`dart:core`, `dart:async`, etc.)
-- Follow with package imports from external dependencies
-- Use relative path imports for same-package files (`'../backends/backend.dart'`)
-- Group imports with blank lines between categories
-- No `show`/`hide` unless necessary for deconfliction
-
-### Formatting
-- Use `dart format` with default settings (no trailing comma, 80 character line length)
-- Single blank line between top-level declarations
-- Two blank lines between class-level sections
-
-### Types & Declarations
-- Explicit types on all public APIs: parameters, return types, fields
-- Type inference (`var`, `final`) can be used for obvious local types
-- Immutable data classes use `const` constructors where possible
-- Private fields use leading underscore (`_modelHandle`)
-
-### Naming Conventions
-- Classes: `PascalCase` (e.g., `LlamaEngine`, `ChatSession`)
-- Functions/methods: `camelCase` (e.g., `loadModel`, `setLogLevel`)
-- Variables/params: `camelCase` with descriptive names
-- Private members: leading underscore (`_isReady`)
-- Constants: `lowerCamelCase` (e.g., `contextSize`, `gpuLayers`)
-- Files: `snake_case.dart`
-- Directories: `snake_case`
-
-### Documentation
-- All public members require Dart doc comments (`///`)
-- Use triple-slash doc format with proper Markdown
-- Include usage examples in class-level documentation
-- Parameter and return types documented
-- No TODO/FIXME comments in committed code
-
-### Changelog Discipline
-- Never add unreleased work to an already-published version section in
-  `CHANGELOG.md` or `website/docs/changelog/recent-releases.md`.
-- Before editing release notes, check the top of `CHANGELOG.md`. If the latest
-  section is a concrete released version (for example `## 0.6.12`), create a
-  new `## Unreleased` section above it and place new PR entries there.
-- Only move entries from `## Unreleased` into a numbered version section as part
-  of an explicit release/version-bump task.
+- Classes: `PascalCase`.
+- Functions, methods, variables, parameters, and constants: `lowerCamelCase`.
+- Files and directories: `snake_case`.
+- Public exports live in `lib/llamadart.dart`; implementation stays under
+  `lib/src/`.
+- Keep `LlamaEngine` free of `dart:ffi` and `dart:io` so web support remains
+  viable.
+- Use conditional imports for platform-specific backends.
+- Tests should mirror source structure under `test/unit/` or
+  `test/integration/`.
 
 ### Error Handling
-- Use custom `LlamaException` hierarchy (defined in `lib/src/core/exceptions.dart`)
-- Subtypes: `LlamaModelException`, `LlamaContextException`, `LlamaInferenceException`, `LlamaStateException`, `LlamaUnsupportedException`
-- Accept optional `details` parameter for additional context
-- Include human-readable message in `toString()`
 
-### Library Structure
-- Use `library;` directive in top-level export files
-- Export clean public APIs via `lib/llamadart.dart`
-- Keep implementation details in `lib/src/` subdirectories
+- Use the `LlamaException` hierarchy from `lib/src/core/exceptions.dart`.
+- Throw `LlamaUnsupportedException` or a typed subtype for unsupported public
+  paths instead of silently reporting success.
+- Include actionable diagnostics: missing capability, platform/runtime
+  condition, and version requirement where known.
 
-### Platform Compatibility
-- Use conditional imports for platform-specific backends (`if (dart.library.js_interop)`)
-- Tag tests with `@TestOn('vm')` or `@TestOn('browser')`
-- Keep `LlamaEngine` free of `dart:ffi` and `dart:io` for web support
+### Compatibility
 
-### Architecture Principles
-- Zero-Patch Strategy: Never patch upstream native sources in this repository
-- Use wrappers and hooks for necessary integrations
-- Modular separation: `engine/`, `backends/`, `models/`, `utils/`
-- Abstract interfaces in `backends/backend.dart`
+- New public APIs require tests and Dartdoc.
+- Capability-dependent behavior needs both happy-path and unsupported or
+  version-skew tests.
+- Generated files that should not count against coverage must include
+  `// coverage:ignore-file`.
+- Close ports, streams, and controllers in test cleanup.
 
-### Capability & Runtime Semantics
-- Prefer explicit capability probes over structural/interface checks when behavior
-  depends on runtime assets, platform support, browser APIs, or native feature
-  availability. For example, user-facing state persistence checks should use
-  `LlamaEngine.supportsStatePersistence` rather than assuming that a backend
-  implementing `BackendStatePersistence` is currently usable.
-- Unsupported paths must fail loudly with actionable diagnostics. Include the
-  missing capability, platform/runtime condition, and version requirement where
-  known (for example, a named WebGPU bridge API plus the minimum bridge asset
-  version or runtime flag required for that feature).
-- Do not silently report success for unsupported platform/option combinations.
-  Public engine/API paths should either gate behavior with an explicit support
-  flag or throw a typed `LlamaUnsupportedException` before mutating state.
+## Architecture Rules
 
-### Web / WebGPU Bridge Expectations
-- WebGPU bridge features are versioned runtime capabilities. When changing bridge
-  behavior, verify the pinned asset tag/manifest, direct bridge calls, worker
-  path, Dart interop wrapper, public engine API, docs, and examples together.
-- Document browser durability precisely. Web bridge filesystem paths may be
-  virtual or in-memory unless the active bridge documents durable backing
-  storage; durable browser storage can require app-level export/import outside
-  Dart file helpers.
-- Add regression coverage for both happy and negative paths: missing bridge API,
-  old bridge assets, `supports* == false`, correctly awaited sync/async errors,
-  and alternate JS interop return shapes.
+- Zero-patch strategy: do not patch upstream native or web bridge sources in
+  this repository.
+- Native build/source ownership lives in `llamadart-native`.
+- Web bridge source/build ownership lives in `llama-web-bridge`.
+- Web bridge runtime asset publishing lives in `llama-web-bridge-assets`.
+- Keep local native integration focused on hook/config/bindings consumption.
+- Keep local web integration focused on bridge tag pinning, fetch flow, and
+  runtime wiring.
+- Prefer explicit capability probes over structural/interface checks when
+  behavior depends on runtime assets, platform support, browser APIs, or native
+  feature availability.
 - Keep README, website docs/support matrix, examples, and changelog aligned with
   any public capability or platform-support change.
 
-### Testing Standards
-- New public APIs require unit or integration tests
-- Test both Native (VM) and Web implementations for refactored shared logic
-- Capability-dependent behavior needs tests for unsupported and version-skew
-  paths, not just the happy path. Assert error messages when they are intended
-  to guide users toward a specific bridge/runtime version or configuration.
-- Mark generated files with `// coverage:ignore-file` so coverage gates exclude them
-- Use `expect` matchers over `assert`
-- Close ports/streams in `setUp`/`tearDown` to avoid hanging
-- Use `group` for logical test organization
+## Web And WebGPU
 
-### File Organization
-- Library entry point: `lib/llamadart.dart`
-- Public APIs in `lib/src/core/` with clear separation: `engine/`, `models/`, `template/`
-- Tests mirror lib structure: `test/unit/` and `test/integration/`
-- Native assets hook: `hook/build.dart` (downloads precompiled binaries)
+WebGPU bridge features are versioned runtime capabilities. When changing bridge
+behavior, verify the pinned asset tag/manifest, direct bridge calls, worker
+path, Dart interop wrapper, public engine API, docs, and examples together.
 
-### Const & Immutability
-- Use `const` constructors wherever possible for immutable classes
-- Data classes should have `const` constructors with `const` fields
-- Factory constructors can be used but prefer `const` when feasible
+Document browser durability precisely. Web bridge filesystem paths may be
+virtual or in-memory unless the active bridge documents durable backing storage;
+durable browser storage can require app-level export/import outside Dart file
+helpers.
 
-### Async Patterns
-- Use `Future<T>` and `Stream<T>` from `dart:async`
-- Prefer async/await over chained `.then()` calls
-- Use `StreamController` for custom streams with proper cleanup
-- Cancel streams in `dispose()` methods
+Unsupported platform or option combinations must fail loudly with typed,
+actionable errors or be explicitly disabled/documented.
 
-### Import Examples
-```dart
-// Correct import order:
-import 'dart:async';
-import 'dart:io';
+## Multi-Repo Ownership
 
-import 'package:flutter/material.dart';
-
-import '../core/engine/engine.dart';
-import '../backends/backend.dart';
-```
-
-### Exception Examples
-```dart
-// Throwing proper exceptions:
-throw LlamaModelException('Failed to load model', 'Invalid GGUF format');
-
-// Throwing unsupported:
-throw LlamaUnsupportedException('GPU acceleration not available on this platform');
-```
-
-### Zero-Patch Strategy Details
-- Native build/source ownership lives in `llamadart-native`
-- This repository should not add local `llama.cpp` patches or build scripts
-- Keep local native integration focused on hook/config/bindings consumption
-- Web bridge source/build ownership lives in `llama-web-bridge`
-- Web bridge runtime asset publishing ownership lives in `llama-web-bridge-assets`
-- Keep local web integration focused on bridge tag pinning, fetch flow, and runtime wiring
-
-## Multi-Repo Workspace Guidance
-
-### Ownership Map
-- `llamadart` (this repo): Dart API, hook integration, runtime selection, docs/tests
-- `llamadart-native`: native build graph, C/C++ wrapper behavior, backend bundle matrix, releases
-- `llama-web-bridge`: web bridge source/runtime behavior
-- `llama-web-bridge-assets`: published bridge artifacts consumed by this repo
-
-### Local Path Convention
-Many maintainer environments keep sibling checkouts one level above this repo:
+Many maintainer checkouts keep sibling repos one level above this repo:
 
 ```text
 ../llamadart
@@ -270,148 +148,87 @@ Many maintainer environments keep sibling checkouts one level above this repo:
 ../llama-web-bridge-assets
 ```
 
-This is a convenience convention and may differ by environment.
-Before operating on sibling repos, verify they exist:
+Verify sibling paths before operating on them. Cross-repo runtime changes should
+flow in ownership order:
 
-```bash
-test -d ../llamadart-native
-test -d ../llama-web-bridge
-test -d ../llama-web-bridge-assets
-```
+1. Change the owning repo (`llamadart-native` or `llama-web-bridge`).
+2. Commit and push there.
+3. Publish/update owning artifacts.
+4. Update pins, tags, hooks, docs, and tests in `llamadart`.
+5. Run `dart analyze` and relevant tests here before the final commit.
 
-### Cross-Repo Change Flow
-1. Make/runtime-fix changes in the owning repository (`llamadart-native` or `llama-web-bridge`).
-2. Commit/push there first.
-3. Publish/update artifacts in the owning release/assets repo.
-4. Update pins/tags/hook/docs in `llamadart`.
-5. Run `dart analyze` and relevant tests in `llamadart` before final commit.
+## Native And Web Asset Sync
 
-## Development Workflow
+Prefer the repository workflow for native version and binding updates:
+`.github/workflows/sync_native_bindings.yml`.
 
-### AGENTS.md Maintenance
-- Treat `AGENTS.md` as a living source of repo guidance. When a task reveals a
-  durable workflow rule, command, ownership boundary, release gate, or validation
-  expectation that would help future agents, update this file in the same PR.
-- Remove or replace outdated guidance when the repo, workflows, or release
-  process change. Do not preserve historical instructions that now contradict
-  the current source of truth.
-- Keep entries actionable and concise. Avoid session logs, one-off incident
-  details, and duplicated advice; prefer stable commands, decision rules, and
-  pointers to discoverable tooling.
-- If this file becomes too long or noisy while adding guidance, compress nearby
-  sections by merging duplicates and trimming obsolete detail while preserving
-  critical safety constraints, validation commands, and release requirements.
+For local native regeneration:
 
-### Before Committing
-1. Run `dart format .` to ensure code is properly formatted
-2. Run `dart analyze` to fix all warnings and lint errors
-3. Run `dart test` to verify all tests pass
-4. For new features, add tests to maintain >=70% coverage on maintainable source code (generated files are excluded via `// coverage:ignore-file`)
-
-### Production-Readiness Gate
-Treat `main` as production-ready. Before opening or updating a non-trivial PR,
-make sure the PR template can honestly answer:
-
-- **User-facing scope**: what users can do after merge, and what is explicitly
-  out of scope.
-- **Platform matrix**: native, WebGPU, Flutter examples, docs-only, or other
-  relevant paths are listed with actual validation evidence.
-- **Matrix evidence**: applicable rows from `tool/testing/test_matrix.dart` are
-  recorded with exact command, platform/device, model, backend, result, and
-  notes.
-- **Unsupported combinations**: unsupported platforms/options fail loudly with a
-  typed/actionable error, disabled UI, or documented fallback; never report
-  success for a path that is not implemented.
-- **Docs/release notes**: README, website docs, examples, support matrices, and
-  changelog entries are updated when public behavior changes.
-- **Regression coverage**: tests cover the issue plus important negative or
-  version-skew paths where applicable.
-- **Security/privacy**: logs, cache keys, metadata, errors, and snapshots do not
-  expose credentials, bearer tokens, signed URLs, or raw secret-bearing paths.
-- **Follow-ups**: useful but non-blocking work is tracked in GitHub Issues before
-  merge and linked from the PR body.
-
-If the implementation cannot satisfy the full originally planned scope, reduce
-and state the scope instead of merging incomplete behavior. For docs-only PRs,
-state that runtime behavior is unchanged and list the docs validation performed.
-
-### Syncing Native Version
-When you need to update native version + bindings in this repository:
-```bash
-# Preferred: run the repository workflow
-# .github/workflows/sync_native_bindings.yml
-```
-
-For local regeneration workflows, sync headers from `llamadart-native` and run:
 ```bash
 tool/native/sync_native_headers_and_bindings.sh --tag latest
 ```
 
-### Syncing Web Bridge Assets
-To refresh local pinned bridge assets for `example/chat_app/web`:
+For local WebGPU bridge asset refreshes in `example/chat_app/web`:
 
 ```bash
 WEBGPU_BRIDGE_ASSETS_TAG=<tag> ./scripts/fetch_webgpu_bridge_assets.sh
 ```
 
-### Preparing Releases
-- When cutting a release, move accumulated `CHANGELOG.md` and
-  `website/docs/changelog/recent-releases.md` entries from `Unreleased` into
-  the new version section.
-- Do not leave an empty `Unreleased` section in committed release prep. Add
-  `Unreleased` back only when the next unreleased change is documented.
-- Run `dart run tool/testing/verify_release_docs_versions.dart` before release
-  prep PRs and any PR that edits current install snippets; it verifies current
-  README/website snippets and companion package READMEs against package
-  `pubspec.yaml` versions while intentionally ignoring historical versioned docs.
-- Release prep PRs must not publish anything by themselves. After the release
-  prep PR is merged, `release_on_prep_merge.yml` treats the merge as the
-  publishing approval boundary. Do not manually push package-specific companion
-  tags or the core `vX.Y.Z` tag unless that automation is disabled, blocked, or
-  being repaired.
-- Keep release-sensitive paths covered by `.github/CODEOWNERS`, especially
-  `.github/workflows/`, `.github/CODEOWNERS`, `pubspec.yaml`, changelogs,
-  maintainer release docs, `hook/build.dart`, and companion package publish
-  metadata. CODEOWNERS only enforces review when GitHub branch protection or a
-  ruleset requires code-owner review.
-- `RELEASE_AUTOMATION_TOKEN` must stay a fine-scoped PAT or GitHub App token
-  that can create tag refs through the GitHub API and trigger tag workflows.
-  Prefer a GitHub App token where practical, rotate the credential regularly,
-  and never log it or derived credential-bearing remotes.
-- `release_on_prep_merge.yml` defaults to 180 attempts at 10 seconds for both
-  pub.dev and GitHub Release propagation checks. Tune
-  `RELEASE_AUTOMATION_PUBDEV_WAIT_ATTEMPTS`,
-  `RELEASE_AUTOMATION_PUBDEV_WAIT_INTERVAL_SECONDS`,
-  `RELEASE_AUTOMATION_GITHUB_RELEASE_WAIT_ATTEMPTS`, and
-  `RELEASE_AUTOMATION_GITHUB_RELEASE_WAIT_INTERVAL_SECONDS` as repository
-  variables rather than editing the workflow for routine propagation variance.
-- Before merging the release-prep PR, verify any companion package versions
-  referenced by current install docs are either already live on pub.dev or ready
-  for the post-merge automation to publish. If a changed companion package
-  version is missing, keep the PR scoped to release prep; after merge,
-  `release_on_prep_merge.yml` pushes the companion tag, waits for
-  `publish_companion_pubdev.yml`, verifies pub.dev, and only then pushes the
-  core release tag.
-- After release automation runs, verify `release_on_prep_merge.yml`,
-  `publish_pubdev.yml`, any relevant `publish_companion_pubdev.yml` run,
-  `docs_version_cut.yml`, `docs_pages.yml`, the pub.dev version URL, the GitHub
-  Release, and the docs version selector before calling the release complete.
-- Treat Apple SPM release readiness as two separate checks: the native GitHub
-  release must contain the XCFramework zip/checksum pinned in `Package.swift`,
-  and the Flutter companion pub package carrying that `Package.swift` must be
-  published before users can resolve the documented dependency.
+See `website/docs/maintainers/native-and-web-sync.md` for the full maintainer
+procedure.
 
-### Adding New Features
-1. Create public API in appropriate `lib/src/` subdirectory
-2. Export via `lib/src/api/llamadart.dart` if part of public API
-3. Add unit tests in `test/unit/` and integration tests in `test/integration/`
-4. Update documentation with examples for new APIs
-5. Ensure both VM and web implementations work (for shared logic)
+## Changelog And Releases
 
-### Code Review Checklist
-- Public APIs documented with `///` Dart doc comments
-- Types explicitly declared on public APIs
-- Imports ordered correctly (SDK, packages, relative)
-- Exceptions use `LlamaException` hierarchy
-- Tests added for new functionality
-- No `@ignore` for lints without clear justification
+- Never add unreleased work to an already-published version section in
+  `CHANGELOG.md` or `website/docs/changelog/recent-releases.md`.
+- If the latest section is a concrete released version, create `## Unreleased`
+  above it for new PR entries.
+- Only move `Unreleased` entries into a numbered version section during an
+  explicit release/version-bump task.
+- Release prep PRs must not publish by themselves. After merge,
+  `release_on_prep_merge.yml` is the publishing approval boundary.
+- Do not manually push companion or core release tags unless release automation
+  is disabled, blocked, or being repaired.
+- Keep release-sensitive paths covered by `.github/CODEOWNERS`; enforcement
+  depends on GitHub branch protection or rulesets.
+- Never log `RELEASE_AUTOMATION_TOKEN` or remotes/URLs derived from credentials.
+
+Before release prep or current install-snippet changes, run:
+
+```bash
+dart run tool/testing/verify_release_docs_versions.dart
+```
+
+After release automation runs, verify the release workflow, package publication,
+GitHub Release, docs cut, docs pages deployment, and docs version selector
+before calling the release complete. Use
+`website/docs/maintainers/release-workflow.md` for the detailed checklist.
+
+## PR Readiness
+
+Treat `main` as production-ready. Before opening or updating a non-trivial PR,
+make sure the PR template can honestly state:
+
+- User-facing scope and explicit out-of-scope behavior.
+- Platform matrix rows and validation evidence.
+- Unsupported combinations fail loudly or are clearly documented.
+- README, website docs, examples, support matrices, and changelog match public
+  behavior.
+- Regression coverage covers the issue plus important negative/version-skew
+  paths where applicable.
+- Logs, cache keys, metadata, errors, and snapshots avoid credentials, bearer
+  tokens, signed URLs, and raw secret-bearing paths.
+- Useful non-blocking follow-ups are tracked in GitHub Issues before merge.
+
+For docs-only PRs, state that runtime behavior is unchanged and list docs
+validation. If implementation scope changed, reduce and state the scope rather
+than merging incomplete behavior.
+
+## AGENTS.md Maintenance
+
+- Update this file when a task reveals a durable workflow rule, command,
+  ownership boundary, release gate, or validation expectation.
+- Remove or replace outdated guidance when repo workflows change.
+- Keep this file concise. Prefer pointers to `doc/testing_matrix.md` and
+  maintainer website docs over copying long checklists here.
+- Avoid session logs, one-off incident details, and duplicated advice.
