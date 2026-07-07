@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:isolate';
 
 import 'llama_cpp_service.dart';
@@ -20,6 +21,7 @@ void runLlamaWorkerForTesting(
   SendPort initialSendPort,
   LlamaCppService service, {
   bool exitOnDispose = true,
+  Duration disposeActiveGenerateTimeout = const Duration(seconds: 5),
 }) {
   final receivePort = ReceivePort();
   initialSendPort.send(receivePort.sendPort);
@@ -33,11 +35,20 @@ void runLlamaWorkerForTesting(
   // in-flight generate with no DoneResponse, hanging the consumer's stream.
   Future<void> activeGenerate = Future<void>.value();
 
-  Future<void> waitForActiveGenerate() async {
+  Future<bool> waitForActiveGenerate({Duration? timeout}) async {
     try {
-      await activeGenerate;
+      final generate = activeGenerate;
+      if (timeout == null) {
+        await generate;
+      } else {
+        await generate.timeout(timeout);
+      }
+      return true;
+    } on TimeoutException {
+      return false;
     } catch (_) {
       // Generation has already stopped if its future completed with an error.
+      return true;
     }
   }
 
@@ -46,11 +57,18 @@ void runLlamaWorkerForTesting(
       shuttingDown = true;
       // Let any in-flight generation observe the cancel flag and finish
       // emitting its terminal response before we dispose native resources.
-      await waitForActiveGenerate();
-      try {
-        service.dispose();
-      } catch (e) {
-        // Ignore errors during dispose
+      final generationStopped = await waitForActiveGenerate(
+        timeout: disposeActiveGenerateTimeout,
+      );
+      // If native generation wedges, acknowledge dispose and exit the worker
+      // instead of hanging the caller forever. Skipping service.dispose() leaks
+      // native handles only in this edge case, but avoids use-after-free.
+      if (generationStopped) {
+        try {
+          service.dispose();
+        } catch (e) {
+          // Ignore errors during dispose
+        }
       }
       message.sendPort.send(null);
       receivePort.close();

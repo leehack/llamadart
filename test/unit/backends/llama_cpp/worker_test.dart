@@ -213,6 +213,44 @@ void main() {
       await _expectDoneResponse(generationPort);
       disposeResponse.close();
     });
+
+    test(
+      'dispose times out wedged generation without disposing service',
+      () async {
+        final service = _BlockingLlamaCppService();
+        final worker = await _startWorkerInCurrentIsolate(
+          service,
+          disposeActiveGenerateTimeout: const Duration(milliseconds: 30),
+        );
+
+        final generationPort = ReceivePort();
+        final disposeResponse = _PendingResponse();
+        try {
+          worker.sendPort.send(
+            GenerateRequest(
+              1,
+              'hold',
+              const GenerationParams(),
+              0,
+              generationPort.sendPort,
+            ),
+          );
+          await service.generateStarted.future;
+
+          worker.sendPort.send(DisposeRequest(disposeResponse.sendPort));
+
+          await disposeResponse.expectNoResponse();
+          expect(await disposeResponse.nextResponse, isNull);
+          expect(service.disposeCalls, 0);
+
+          service.releaseGeneration();
+          await _expectDoneResponse(generationPort);
+        } finally {
+          disposeResponse.close();
+          generationPort.close();
+        }
+      },
+    );
   });
 }
 
@@ -225,10 +263,16 @@ Future<({Isolate isolate, SendPort sendPort})> _spawnWorker() async {
 }
 
 Future<({Isolate? isolate, SendPort sendPort})> _startWorkerInCurrentIsolate(
-  LlamaCppService service,
-) async {
+  LlamaCppService service, {
+  Duration disposeActiveGenerateTimeout = const Duration(seconds: 5),
+}) async {
   final receivePort = ReceivePort();
-  runLlamaWorkerForTesting(receivePort.sendPort, service, exitOnDispose: false);
+  runLlamaWorkerForTesting(
+    receivePort.sendPort,
+    service,
+    exitOnDispose: false,
+    disposeActiveGenerateTimeout: disposeActiveGenerateTimeout,
+  );
   final sendPort = await receivePort.first as SendPort;
   receivePort.close();
   sendPort.send(WorkerHandshake(LlamaLogLevel.warn));
