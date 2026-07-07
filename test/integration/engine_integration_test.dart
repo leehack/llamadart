@@ -139,10 +139,16 @@ void main() async {
     test(
       'loadModelFromUrl throws LlamaUnsupportedException on Native',
       () async {
-        expect(
-          engine.loadModelFromUrl('http://test'),
-          throwsA(isA<LlamaUnsupportedException>()),
-        );
+        final freshBackend = LlamaBackend();
+        final freshEngine = LlamaEngine(freshBackend);
+        try {
+          await expectLater(
+            freshEngine.loadModelFromUrl('http://test'),
+            throwsA(isA<LlamaUnsupportedException>()),
+          );
+        } finally {
+          await freshEngine.dispose();
+        }
       },
     );
 

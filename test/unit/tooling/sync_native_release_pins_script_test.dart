@@ -549,8 +549,8 @@ String _hex(String character) => List.filled(64, character).join();
 const Map<String, (String, String)> _litertAppleTargets = {
   'LiteRtLm': ('litert-lm-native-apple-LiteRtLm-xcframework-{tag}.zip', '3'),
   'CLiteRTLM': ('litert-lm-native-apple-CLiteRTLM-xcframework-{tag}.zip', '4'),
-  'CLiteRTLMMac': (
-    'litert-lm-native-apple-CLiteRTLMMac-xcframework-{tag}.zip',
-    '5',
+  'GemmaModelConstraintProvider': (
+    'litert-lm-native-apple-GemmaModelConstraintProvider-xcframework-{tag}.zip',
+    '8',
   ),
 };

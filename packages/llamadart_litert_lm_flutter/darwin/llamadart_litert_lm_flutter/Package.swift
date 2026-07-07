@@ -57,21 +57,24 @@ let package = Package(
             checksum: "f9b8b0dc9cc7ea1cef919e075a512806342395538a1996f8be2e267737d62312"
         ),
         nativeRepoBinaryTarget(
-            name: "CLiteRTLMMac",
+            name: "GemmaModelConstraintProvider",
             repository: "leehack/litert-lm-native",
-            artifactName: "litert-lm-native-apple-CLiteRTLMMac-xcframework-\(liteRtLmTag).zip",
+            artifactName: "litert-lm-native-apple-GemmaModelConstraintProvider-xcframework-\(liteRtLmTag).zip",
             tag: liteRtLmTag,
-            checksum: "2c338647e978d8506ba4427cd1a826fcd872e7744362b306edc4f03095976fe1"
+            checksum: "5abce5c59149bca419f1cdffdd2b6e2fbca355dae21cd0ae94253788ac35e597"
         ),
         .target(
             name: "llamadart_litert_lm_flutter",
             dependencies: [
-                "LiteRtLm",
-                .target(name: "CLiteRTLM", condition: .when(platforms: [.iOS])),
-                .target(name: "CLiteRTLMMac", condition: .when(platforms: [.macOS]))
+                .target(name: "LiteRtLm", condition: .when(platforms: [.iOS])),
+                .target(
+                    name: "GemmaModelConstraintProvider",
+                    condition: .when(platforms: [.iOS])
+                ),
+                .target(name: "CLiteRTLM", condition: .when(platforms: [.iOS]))
             ],
             linkerSettings: [
-                .unsafeFlags(["-Xlinker", "-reexport_framework", "-Xlinker", "LiteRtLm"]),
+                .unsafeFlags(["-Xlinker", "-reexport_framework", "-Xlinker", "LiteRtLm"], .when(platforms: [.iOS])),
                 .unsafeFlags(["-Xlinker", "-reexport_framework", "-Xlinker", "CLiteRTLM"], .when(platforms: [.iOS]))
             ]
         )

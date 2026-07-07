@@ -29,6 +29,7 @@ class NativeLlamaBackend
         BackendStatePersistence {
   Isolate? _isolate;
   SendPort? _sendPort;
+  Future<void>? _isolateStart;
   final ReceivePort _responsesPort = ReceivePort();
   Pointer<Int8>? _activeCancelToken;
   void Function()? _activeGenerationCleanup;
@@ -62,12 +63,40 @@ class NativeLlamaBackend
     }
   }
 
+  void _expectDoneResponse(Object? response, String operation) {
+    if (response is DoneResponse) {
+      return;
+    }
+    if (response is ErrorResponse) {
+      throw Exception(response.message);
+    }
+    throw Exception('Unknown response during $operation');
+  }
+
   Future<void> _ensureIsolate() async {
     if (_sendPort != null) {
       _isReady = true;
       return;
     }
+    final existingStart = _isolateStart;
+    if (existingStart != null) {
+      await existingStart;
+      _isReady = _sendPort != null;
+      return;
+    }
 
+    final start = _startIsolate();
+    _isolateStart = start;
+    try {
+      await start;
+    } finally {
+      if (_isolateStart == start) {
+        _isolateStart = null;
+      }
+    }
+  }
+
+  Future<void> _startIsolate() async {
     final completer = Completer<void>();
     final tempPort = ReceivePort();
     tempPort.listen((msg) {
@@ -83,9 +112,14 @@ class NativeLlamaBackend
         completer.complete();
       }
     });
-    _isolate = await Isolate.spawn(llamaWorkerEntry, tempPort.sendPort);
-    await completer.future;
-    _isReady = true;
+    try {
+      _isolate = await Isolate.spawn(llamaWorkerEntry, tempPort.sendPort);
+      await completer.future;
+      _isReady = true;
+    } catch (_) {
+      tempPort.close();
+      rethrow;
+    }
   }
 
   @override
@@ -130,8 +164,9 @@ class NativeLlamaBackend
     if (_sendPort == null) return;
     final rp = ReceivePort();
     _sendPort!.send(ModelFreeRequest(modelHandle, rp.sendPort));
-    await rp.first;
+    final res = await rp.first;
     rp.close();
+    _expectDoneResponse(res, 'model free');
   }
 
   @override
@@ -151,8 +186,9 @@ class NativeLlamaBackend
     if (_sendPort == null) return;
     final rp = ReceivePort();
     _sendPort!.send(ContextFreeRequest(contextHandle, rp.sendPort));
-    await rp.first;
+    final res = await rp.first;
     rp.close();
+    _expectDoneResponse(res, 'context free');
   }
 
   @override
@@ -173,6 +209,12 @@ class NativeLlamaBackend
     GenerationParams params, {
     List<LlamaContentPart>? parts,
   }) {
+    if (_activeCancelToken != null || _activeGenerationCleanup != null) {
+      return Stream<List<int>>.error(
+        StateError('llama.cpp generation is already in progress.'),
+      );
+    }
+
     late final StreamController<List<int>> controller;
     final rp = ReceivePort();
 
@@ -571,8 +613,9 @@ class NativeLlamaBackend
   Future<void> multimodalContextFree(int mmContextHandle) async {
     final rp = ReceivePort();
     _sendPort!.send(MultimodalContextFreeRequest(mmContextHandle, rp.sendPort));
-    await rp.first;
+    final res = await rp.first;
     rp.close();
+    _expectDoneResponse(res, 'multimodal context free');
   }
 
   @override

@@ -136,6 +136,27 @@ void main() {
       },
     );
 
+    test('normalizes LiteRT-LM auto context size to backend default', () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      final engine = MockLlamaEngine();
+      final service = ChatService(engine: engine);
+
+      await service.init(
+        const ChatSettings(
+          modelPath: 'gemma-4-E2B-it.litertlm',
+          preferredBackend: GpuBackend.auto,
+          contextSize: 0,
+          gpuLayers: 0,
+        ),
+        eagerLoadMultimodalProjector: false,
+      );
+
+      expect(engine.lastModelParams, isNotNull);
+      expect(engine.lastModelParams!.contextSize, 4096);
+      expect(engine.lastModelParams!.gpuLayers, ModelParams.maxGpuLayers);
+      expect(engine.lastModelParams!.preferredBackend, GpuBackend.auto);
+    });
+
     test(
       'keeps LiteRT-LM auto on GPU when saved GPU layers are stale zero',
       () async {

@@ -59,8 +59,12 @@ Package Manager should also add the runtime companion packages they need:
 dependencies:
   llamadart: ^0.8.12
   llamadart_llama_cpp_flutter: ^0.0.8 # GGUF / llama.cpp
-  llamadart_litert_lm_flutter: ^0.0.3 # .litertlm / LiteRT-LM
+  llamadart_litert_lm_flutter: ^0.0.3 # iOS .litertlm / LiteRT-LM
 ```
+
+At the current LiteRT-LM native pin, Flutter macOS `.litertlm` builds keep
+using the core native-assets fallback when the SwiftPM artifact set is
+incomplete for the selected architecture.
 
 Then run:
 

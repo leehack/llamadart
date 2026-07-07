@@ -397,6 +397,19 @@ void main() {
       );
     });
 
+    test('requires model path for LiteRT-LM chat feature smoke', () async {
+      final result = await runLocalE2e(const [
+        '--scenario',
+        'litert-lm-chat-features-smoke',
+      ], projectRoot: '/repo');
+
+      expect(result.exitCode, 64);
+      expect(
+        result.stderr,
+        contains('--model-path is required for litert-lm-chat-features-smoke'),
+      );
+    });
+
     test('dry-runs LiteRT-LM chat feature smoke with model path', () async {
       final result = await runLocalE2e(const [
         '--scenario',

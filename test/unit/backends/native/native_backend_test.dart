@@ -903,6 +903,7 @@ class _FakeBackend
   final List<int> freedModels = <int>[];
   final List<int> freedContexts = <int>[];
   final List<LlamaLogLevel> logLevels = <LlamaLogLevel>[];
+  int cancelGenerationCalls = 0;
   List<int> tokenizeResult = const <int>[];
   String detokenizeResult = '';
   String? lastTokenizeText;
@@ -954,6 +955,11 @@ class _FakeBackend
   @override
   Future<void> contextFree(int contextHandle) async {
     freedContexts.add(contextHandle);
+  }
+
+  @override
+  void cancelGeneration() {
+    cancelGenerationCalls += 1;
   }
 
   @override

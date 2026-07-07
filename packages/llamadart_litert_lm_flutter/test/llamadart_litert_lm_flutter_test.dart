@@ -14,5 +14,31 @@ void main() {
     ).readAsStringSync();
 
     expect(manifest, contains('name: "llamadart-litert-lm-flutter"'));
+    expect(manifest, contains('name: "GemmaModelConstraintProvider"'));
+    expect(
+      manifest,
+      contains('name: "LiteRtLm", condition: .when(platforms: [.iOS])'),
+    );
+    expect(
+      manifest,
+      contains(
+        'name: "GemmaModelConstraintProvider",\n'
+        '                    condition: .when(platforms: [.iOS])',
+      ),
+    );
+    expect(manifest, isNot(contains('name: "CLiteRTLMMac"')));
+  });
+
+  test('does not import LiteRT-LM binaries on macOS', () {
+    final pluginSource = File(
+      'darwin/llamadart_litert_lm_flutter/Sources/'
+      'llamadart_litert_lm_flutter/LlamadartLiteRtLmPlugin.swift',
+    ).readAsStringSync();
+
+    final macosBlock = RegExp(
+      r'#elseif os\(macOS\)([\s\S]*?)#endif',
+    ).firstMatch(pluginSource);
+    expect(macosBlock, isNotNull);
+    expect(macosBlock!.group(1), isNot(contains('import LiteRtLm')));
   });
 }

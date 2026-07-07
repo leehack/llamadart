@@ -81,6 +81,41 @@ void main() {
       );
     });
 
+    test('free operations surface worker errors', () async {
+      await expectLater(
+        () => backend.contextFree(-1),
+        throwsA(
+          isA<Exception>().having(
+            (error) => error.toString(),
+            'message',
+            contains('context free failed'),
+          ),
+        ),
+      );
+
+      await expectLater(
+        () => backend.modelFree(-1),
+        throwsA(
+          isA<Exception>().having(
+            (error) => error.toString(),
+            'message',
+            contains('model free failed'),
+          ),
+        ),
+      );
+
+      await expectLater(
+        () => backend.multimodalContextFree(-1),
+        throwsA(
+          isA<Exception>().having(
+            (error) => error.toString(),
+            'message',
+            contains('mm free failed'),
+          ),
+        ),
+      );
+    });
+
     test('tokenize detokenize metadata and context-size requests', () async {
       expect(await backend.tokenize(1, 'hello'), <int>[1, 2, 3]);
       expect(await backend.detokenize(1, const <int>[1, 2]), 'decoded');
@@ -164,6 +199,42 @@ void main() {
         await Future<void>.delayed(Duration.zero);
 
         // The backend remains healthy: a subsequent generation still streams.
+        final chunks = await backend
+            .generate(1, 'ok', const GenerationParams())
+            .toList();
+        expect(chunks, <List<int>>[
+          <int>[65],
+          <int>[66],
+        ]);
+      },
+    );
+
+    test(
+      'rejects overlapping generations until the active worker response ends',
+      () async {
+        final subscription = backend
+            .generate(1, 'pending', const GenerationParams())
+            .listen((_) {});
+        await Future<void>.delayed(Duration.zero);
+
+        await expectLater(
+          backend.generate(1, 'ok', const GenerationParams()).drain<void>(),
+          throwsA(isA<StateError>()),
+        );
+
+        final generateRequest = harness.received
+            .whereType<GenerateRequest>()
+            .last;
+        await subscription.cancel();
+
+        await expectLater(
+          backend.generate(1, 'ok', const GenerationParams()).drain<void>(),
+          throwsA(isA<StateError>()),
+        );
+
+        generateRequest.sendPort.send(DoneResponse());
+        await Future<void>.delayed(Duration.zero);
+
         final chunks = await backend
             .generate(1, 'ok', const GenerationParams())
             .toList();
@@ -288,9 +359,17 @@ class _FakeWorkerHarness {
             message.sendPort.send(HandleResponse(22));
           }
         case ModelFreeRequest():
-          message.sendPort.send(DoneResponse());
+          if (message.modelHandle < 0) {
+            message.sendPort.send(ErrorResponse('model free failed'));
+          } else {
+            message.sendPort.send(DoneResponse());
+          }
         case ContextFreeRequest():
-          message.sendPort.send(DoneResponse());
+          if (message.contextHandle < 0) {
+            message.sendPort.send(ErrorResponse('context free failed'));
+          } else {
+            message.sendPort.send(DoneResponse());
+          }
         case TokenizeRequest():
           message.sendPort.send(TokenizeResponse(<int>[1, 2, 3]));
         case DetokenizeRequest():
@@ -363,7 +442,11 @@ class _FakeWorkerHarness {
             message.sendPort.send(HandleResponse(33));
           }
         case MultimodalContextFreeRequest():
-          message.sendPort.send(DoneResponse());
+          if (message.mmContextHandle < 0) {
+            message.sendPort.send(ErrorResponse('mm free failed'));
+          } else {
+            message.sendPort.send(DoneResponse());
+          }
         case SupportsAudioRequest():
           message.sendPort.send(true);
         case SupportsVisionRequest():

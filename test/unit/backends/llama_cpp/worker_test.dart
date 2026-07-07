@@ -1,11 +1,14 @@
 @TestOn('vm')
 library;
 
+import 'dart:async';
 import 'dart:isolate';
 
 import 'package:llamadart/src/core/models/config/log_level.dart';
+import 'package:llamadart/src/core/models/chat/content_part.dart';
 import 'package:llamadart/src/core/models/inference/generation_params.dart';
 import 'package:llamadart/src/core/models/inference/model_params.dart';
+import 'package:llamadart/src/backends/llama_cpp/llama_cpp_service.dart';
 import 'package:llamadart/src/backends/llama_cpp/worker.dart';
 import 'package:test/test.dart';
 
@@ -127,6 +130,127 @@ void main() {
         await _disposeWorker(worker);
       }
     });
+
+    test('waits for active generation before freeing native handles', () async {
+      final service = _BlockingLlamaCppService();
+      final worker = await _startWorkerInCurrentIsolate(service);
+
+      try {
+        final generationPort = ReceivePort();
+        worker.sendPort.send(
+          GenerateRequest(
+            1,
+            'hold',
+            const GenerationParams(),
+            0,
+            generationPort.sendPort,
+          ),
+        );
+        await service.generateStarted.future;
+
+        final modelFree = _PendingResponse();
+        worker.sendPort.send(ModelFreeRequest(11, modelFree.sendPort));
+        final contextFree = _PendingResponse();
+        worker.sendPort.send(ContextFreeRequest(22, contextFree.sendPort));
+        final multimodalFree = _PendingResponse();
+        worker.sendPort.send(
+          MultimodalContextFreeRequest(33, multimodalFree.sendPort),
+        );
+
+        await Future<void>.delayed(Duration.zero);
+        expect(service.freeModelCalls, 0);
+        expect(service.freeContextCalls, 0);
+        expect(service.freeMultimodalContextCalls, 0);
+        await modelFree.expectNoResponse();
+        await contextFree.expectNoResponse();
+        await multimodalFree.expectNoResponse();
+
+        service.releaseGeneration();
+
+        expect(await modelFree.nextResponse, isA<DoneResponse>());
+        expect(await contextFree.nextResponse, isA<DoneResponse>());
+        expect(await multimodalFree.nextResponse, isA<DoneResponse>());
+        expect(service.freeModelCalls, 1);
+        expect(service.freeContextCalls, 1);
+        expect(service.freeMultimodalContextCalls, 1);
+
+        await _expectDoneResponse(generationPort);
+        modelFree.close();
+        contextFree.close();
+        multimodalFree.close();
+      } finally {
+        await _disposeWorker(worker);
+      }
+    });
+
+    test('waits for active generation before disposing service', () async {
+      final service = _BlockingLlamaCppService();
+      final worker = await _startWorkerInCurrentIsolate(service);
+
+      final generationPort = ReceivePort();
+      worker.sendPort.send(
+        GenerateRequest(
+          1,
+          'hold',
+          const GenerationParams(),
+          0,
+          generationPort.sendPort,
+        ),
+      );
+      await service.generateStarted.future;
+
+      final disposeResponse = _PendingResponse();
+      worker.sendPort.send(DisposeRequest(disposeResponse.sendPort));
+
+      await Future<void>.delayed(Duration.zero);
+      expect(service.disposeCalls, 0);
+      await disposeResponse.expectNoResponse();
+
+      service.releaseGeneration();
+
+      expect(await disposeResponse.nextResponse, isNull);
+      expect(service.disposeCalls, 1);
+      await _expectDoneResponse(generationPort);
+      disposeResponse.close();
+    });
+
+    test(
+      'dispose times out wedged generation without disposing service',
+      () async {
+        final service = _BlockingLlamaCppService();
+        final worker = await _startWorkerInCurrentIsolate(
+          service,
+          disposeActiveGenerateTimeout: const Duration(milliseconds: 30),
+        );
+
+        final generationPort = ReceivePort();
+        final disposeResponse = _PendingResponse();
+        try {
+          worker.sendPort.send(
+            GenerateRequest(
+              1,
+              'hold',
+              const GenerationParams(),
+              0,
+              generationPort.sendPort,
+            ),
+          );
+          await service.generateStarted.future;
+
+          worker.sendPort.send(DisposeRequest(disposeResponse.sendPort));
+
+          await disposeResponse.expectNoResponse();
+          expect(await disposeResponse.nextResponse, isNull);
+          expect(service.disposeCalls, 0);
+
+          service.releaseGeneration();
+          await _expectDoneResponse(generationPort);
+        } finally {
+          disposeResponse.close();
+          generationPort.close();
+        }
+      },
+    );
   });
 }
 
@@ -136,6 +260,23 @@ Future<({Isolate isolate, SendPort sendPort})> _spawnWorker() async {
   final sendPort = await receivePort.first as SendPort;
   sendPort.send(WorkerHandshake(LlamaLogLevel.warn));
   return (isolate: isolate, sendPort: sendPort);
+}
+
+Future<({Isolate? isolate, SendPort sendPort})> _startWorkerInCurrentIsolate(
+  LlamaCppService service, {
+  Duration disposeActiveGenerateTimeout = const Duration(seconds: 5),
+}) async {
+  final receivePort = ReceivePort();
+  runLlamaWorkerForTesting(
+    receivePort.sendPort,
+    service,
+    exitOnDispose: false,
+    disposeActiveGenerateTimeout: disposeActiveGenerateTimeout,
+  );
+  final sendPort = await receivePort.first as SendPort;
+  receivePort.close();
+  sendPort.send(WorkerHandshake(LlamaLogLevel.warn));
+  return (isolate: null, sendPort: sendPort);
 }
 
 Future<dynamic> _sendRequest(
@@ -150,11 +291,102 @@ Future<dynamic> _sendRequest(
 }
 
 Future<void> _disposeWorker(
-  ({Isolate isolate, SendPort sendPort}) worker,
+  ({Isolate? isolate, SendPort sendPort}) worker,
 ) async {
   final responsePort = ReceivePort();
   worker.sendPort.send(DisposeRequest(responsePort.sendPort));
   await responsePort.first;
   responsePort.close();
-  worker.isolate.kill(priority: Isolate.immediate);
+  worker.isolate?.kill(priority: Isolate.immediate);
+}
+
+Future<void> _expectDoneResponse(ReceivePort responsePort) async {
+  final response = await responsePort.first;
+  expect(response, isA<DoneResponse>());
+  responsePort.close();
+}
+
+class _PendingResponse {
+  final ReceivePort _port = ReceivePort();
+  final Completer<Object?> _nextResponse = Completer<Object?>();
+  late final StreamSubscription<Object?> _subscription;
+
+  _PendingResponse() {
+    _subscription = _port.listen((response) {
+      if (!_nextResponse.isCompleted) {
+        _nextResponse.complete(response);
+      }
+    });
+  }
+
+  SendPort get sendPort => _port.sendPort;
+
+  Future<Object?> get nextResponse => _nextResponse.future;
+
+  Future<void> expectNoResponse() async {
+    await expectLater(
+      _nextResponse.future.timeout(const Duration(milliseconds: 20)),
+      throwsA(isA<TimeoutException>()),
+    );
+  }
+
+  void close() {
+    _subscription.cancel();
+    _port.close();
+  }
+}
+
+class _BlockingLlamaCppService extends LlamaCppService {
+  final Completer<void> generateStarted = Completer<void>();
+  final Completer<void> _releaseGeneration = Completer<void>();
+  int freeModelCalls = 0;
+  int freeContextCalls = 0;
+  int freeMultimodalContextCalls = 0;
+  int disposeCalls = 0;
+
+  void releaseGeneration() {
+    if (!_releaseGeneration.isCompleted) {
+      _releaseGeneration.complete();
+    }
+  }
+
+  @override
+  void initializeBackend() {}
+
+  @override
+  void setLogLevel(LlamaLogLevel level) {}
+
+  @override
+  Stream<List<int>> generate(
+    int contextHandle,
+    String prompt,
+    GenerationParams params,
+    int cancelTokenAddress, {
+    List<LlamaContentPart>? parts,
+  }) async* {
+    if (!generateStarted.isCompleted) {
+      generateStarted.complete();
+    }
+    await _releaseGeneration.future;
+  }
+
+  @override
+  void freeModel(int modelHandle) {
+    freeModelCalls += 1;
+  }
+
+  @override
+  void freeContext(int contextHandle) {
+    freeContextCalls += 1;
+  }
+
+  @override
+  void freeMultimodalContext(int mmContextHandle) {
+    freeMultimodalContextCalls += 1;
+  }
+
+  @override
+  void dispose() {
+    disposeCalls += 1;
+  }
 }

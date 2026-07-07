@@ -83,6 +83,7 @@ class LlamaEngine {
   // Serializes multimodal projector load/unload so concurrent calls cannot
   // race the native create/free (which could leak or double-free the context).
   Future<void> _mmLifecycle = Future<void>.value();
+  Future<void>? _modelLifecycleOperation;
   bool _isReady = false;
   String? _modelPath;
   Map<String, String>? _cachedModelMetadata;
@@ -151,7 +152,18 @@ class LlamaEngine {
   Future<void> loadModel(
     String path, {
     ModelParams modelParams = const ModelParams(),
+  }) {
+    return _withModelLifecycle(
+      'load a model',
+      () => _loadModel(path, modelParams: modelParams),
+    );
+  }
+
+  Future<void> _loadModel(
+    String path, {
+    ModelParams modelParams = const ModelParams(),
   }) async {
+    _ensureNotReady();
     final modelName = _displayNameForSource(path);
     LlamaLogger.instance.info('Loading model: $modelName');
 
@@ -159,12 +171,11 @@ class LlamaEngine {
       LlamaLogger.instance.info(
         'Backend supports URL loading, attempting loadModelFromUrl.',
       );
-      return loadModelFromUrl(path, modelParams: modelParams);
+      return _loadModelFromUrl(path, modelParams: modelParams);
     }
 
     try {
       await backend.setLogLevel(_nativeLogLevel);
-      _ensureNotReady();
       _modelPath = path;
       _cachedModelMetadata = null;
       _modelHandle = await backend.modelLoad(path, modelParams);
@@ -180,6 +191,12 @@ class LlamaEngine {
         e,
         stackTrace,
       );
+      if (e is LlamaUnsupportedException) {
+        rethrow;
+      }
+      if (e is UnsupportedError) {
+        throw _unsupportedBackendOperation('Model loading', e);
+      }
       throw LlamaModelException('Failed to load model from $path', e);
     }
   }
@@ -252,7 +269,23 @@ class LlamaEngine {
     String url, {
     ModelParams modelParams = const ModelParams(),
     Function(double progress)? onProgress,
+  }) {
+    return _withModelLifecycle(
+      'load a model from URL',
+      () => _loadModelFromUrl(
+        url,
+        modelParams: modelParams,
+        onProgress: onProgress,
+      ),
+    );
+  }
+
+  Future<void> _loadModelFromUrl(
+    String url, {
+    ModelParams modelParams = const ModelParams(),
+    Function(double progress)? onProgress,
   }) async {
+    _ensureNotReady();
     final modelName = _displayNameForSource(url);
     final redactedUrl = _redactedUriForLogs(url);
     LlamaLogger.instance.info('Loading model from URL: $modelName');
@@ -265,7 +298,6 @@ class LlamaEngine {
 
     try {
       await backend.setLogLevel(_nativeLogLevel);
-      _ensureNotReady();
       _modelPath = redactedUrl;
       _cachedModelMetadata = null;
 
@@ -288,6 +320,12 @@ class LlamaEngine {
         _redactedErrorDetails(e),
         stackTrace,
       );
+      if (e is LlamaUnsupportedException) {
+        rethrow;
+      }
+      if (e is UnsupportedError) {
+        throw _unsupportedBackendOperation('Model URL loading', e);
+      }
       throw LlamaModelException(
         'Failed to load model from $redactedUrl',
         _redactedErrorDetails(e),
@@ -441,14 +479,49 @@ class LlamaEngine {
 
   /// Releases all allocated resources.
   Future<void> dispose() async {
-    await unloadModel();
-    await backend.dispose();
+    final activeLifecycle = _modelLifecycleOperation;
+    if (activeLifecycle != null) {
+      try {
+        await activeLifecycle;
+      } catch (_) {
+        // Disposal still needs to release backend resources after a failed
+        // lifecycle operation.
+      }
+    }
+
+    Object? unloadError;
+    StackTrace? unloadStackTrace;
+    try {
+      await unloadModel();
+    } catch (error, stackTrace) {
+      unloadError = error;
+      unloadStackTrace = stackTrace;
+    }
+
+    try {
+      await backend.dispose();
+    } catch (error, stackTrace) {
+      if (unloadError == null) {
+        unloadError = error;
+        unloadStackTrace = stackTrace;
+      }
+    }
+
+    if (unloadError != null) {
+      Error.throwWithStackTrace(unloadError, unloadStackTrace!);
+    }
   }
 
   /// Unloads the currently loaded model and frees its resources.
-  Future<void> unloadModel() async {
+  Future<void> unloadModel() {
+    return _withModelLifecycle('unload the current model', _unloadModel);
+  }
+
+  Future<void> _unloadModel() async {
     if (!isReady && _modelHandle == null && _mmContextHandle == null) return;
     LlamaLogger.instance.info('Unloading model...');
+    _isReady = false;
+    backend.cancelGeneration();
     if (_contextHandle != null) {
       await backend.contextFree(_contextHandle!);
       _contextHandle = null;
@@ -1224,6 +1297,26 @@ class LlamaEngine {
     final metadata = await getMetadata();
     _cachedModelMetadata = Map<String, String>.from(metadata);
     return Map<String, String>.from(_cachedModelMetadata!);
+  }
+
+  Future<void> _withModelLifecycle(
+    String operation,
+    Future<void> Function() action,
+  ) async {
+    if (_modelLifecycleOperation != null) {
+      throw LlamaStateException(
+        'Cannot $operation while another model lifecycle operation is in progress.',
+      );
+    }
+    final lifecycleOperation = action();
+    _modelLifecycleOperation = lifecycleOperation;
+    try {
+      await lifecycleOperation;
+    } finally {
+      if (identical(_modelLifecycleOperation, lifecycleOperation)) {
+        _modelLifecycleOperation = null;
+      }
+    }
   }
 
   Future<void> _cleanupFailedLoadState() async {

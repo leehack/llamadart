@@ -66,17 +66,41 @@ const _litertLmBundleSpecs = <_LiteRtLmBundleSpec>[
   _LiteRtLmBundleSpec(
     'ios-arm64',
     sha256: '154c746c9028dee6ec77ad451f97bf34227b08d6c22f7daf381c47c76312f9b3',
-    requiredLibraries: {'LiteRtLm', 'CLiteRTLM'},
+    requiredLibraries: {
+      'LiteRtLm',
+      'CLiteRTLM',
+      'libLiteRtLm.dylib',
+      'libGemmaModelConstraintProvider.dylib',
+      'libLiteRt.dylib',
+      'libLiteRtMetalAccelerator.dylib',
+    },
   ),
   _LiteRtLmBundleSpec(
     'ios-arm64-sim',
     sha256: '768d07af49d6715d4198ac35dc8f6f726cf3ba9ab46b465317aee54bfa65a050',
-    requiredLibraries: {'LiteRtLm', 'CLiteRTLM'},
+    requiredLibraries: {
+      'LiteRtLm',
+      'CLiteRTLM',
+      'libLiteRtLm.dylib',
+      'libGemmaModelConstraintProvider.dylib',
+      'libLiteRt.dylib',
+      'libLiteRtMetalAccelerator.dylib',
+    },
   ),
   _LiteRtLmBundleSpec(
     'macos-arm64',
     sha256: 'bcc179b68763f300631d53516a4e234c9cc2cb1b3e482db73080a7af74c5c12f',
-    requiredLibraries: {'libLiteRtLm.dylib', 'libCLiteRTLM_mac.dylib'},
+    requiredLibraries: {
+      'libLiteRtLm.dylib',
+      'libCLiteRTLM_mac.dylib',
+      'libGemmaModelConstraintProvider.dylib',
+      'libLiteRt.dylib',
+      'libLiteRtMetalAccelerator.dylib',
+      'libLiteRtTopKMetalSampler.dylib',
+      'libLiteRtTopKWebGpuSampler.dylib',
+      'libLiteRtWebGpuAccelerator.dylib',
+      'libwebgpu_dawn.dylib',
+    },
   ),
   _LiteRtLmBundleSpec(
     'macos-x64',
@@ -260,23 +284,30 @@ void main(List<String> args) async {
         '$nativeRuntimesUserDefineKey with llama_cpp, litert_lm, or both.',
       );
     }
-    final includeLlamaCpp = selectedRuntimes.contains(nativeRuntimeLlamaCpp);
-    final includeLiteRtLm = selectedRuntimes.contains(nativeRuntimeLiteRtLm);
     log.info('Selected native runtimes: ${selectedRuntimes.join(', ')}.');
 
-    if (await _emitAppleSpmAssetsIfEnabled(
+    final appleSpmHandledRuntimes = await _emitAppleSpmAssetsIfEnabled(
+      code: code,
       output: output,
-      includeLlamaCpp: includeLlamaCpp,
-      includeLiteRtLm: includeLiteRtLm,
+      includeLlamaCpp: selectedRuntimes.contains(nativeRuntimeLlamaCpp),
+      includeLiteRtLm: selectedRuntimes.contains(nativeRuntimeLiteRtLm),
       appleSpmRuntimes: appleSpmRuntimes,
       rawNativeRuntimeConfig: rawNativeRuntimeConfig,
       hasNativeSourceOverride: _hasNativeSourceOverride(input.userDefines),
       hasNativeBackendOverride:
           input.userDefines[nativeBackendUserDefineKey] != null,
       log: log,
-    )) {
-      return;
+    );
+    if (appleSpmHandledRuntimes != null) {
+      selectedRuntimes = selectedRuntimes
+          .where((runtime) => !appleSpmHandledRuntimes.contains(runtime))
+          .toList(growable: false);
+      if (selectedRuntimes.isEmpty) {
+        return;
+      }
     }
+    final includeLlamaCpp = selectedRuntimes.contains(nativeRuntimeLlamaCpp);
+    final includeLiteRtLm = selectedRuntimes.contains(nativeRuntimeLiteRtLm);
 
     final nativeConfig = _resolveNativeBundleConfig(input.userDefines);
     log.info('Using native runtime source: ${nativeConfig.sourceLabel}');
@@ -398,7 +429,8 @@ void main(List<String> args) async {
   });
 }
 
-Future<bool> _emitAppleSpmAssetsIfEnabled({
+Future<List<String>?> _emitAppleSpmAssetsIfEnabled({
+  required CodeConfig code,
   required BuildOutputBuilder output,
   required bool includeLlamaCpp,
   required bool includeLiteRtLm,
@@ -409,13 +441,12 @@ Future<bool> _emitAppleSpmAssetsIfEnabled({
   required Logger log,
 }) async {
   if (appleSpmRuntimes == null) {
-    return false;
+    return null;
   }
 
   log.info(
-    'Using Flutter Apple companion packages for native runtimes: '
-    '${appleSpmRuntimes.join(', ')}. The hook will not bundle Apple dynamic '
-    'libraries.',
+    'Detected Flutter Apple companion packages for native runtimes: '
+    '${appleSpmRuntimes.join(', ')}.',
   );
   if (rawNativeRuntimeConfig != null) {
     log.warning(
@@ -438,6 +469,7 @@ Future<bool> _emitAppleSpmAssetsIfEnabled({
       'their frameworks include packaged native modules.',
     );
   }
+  final handledRuntimes = <String>[];
   if (includeLlamaCpp) {
     output.assets.code.add(
       CodeAsset(
@@ -450,13 +482,22 @@ Future<bool> _emitAppleSpmAssetsIfEnabled({
       'Reporting package:$_packageName/$_packageName as an in-process code '
       'asset for the SPM-linked llama.cpp runtime.',
     );
+    handledRuntimes.add(nativeRuntimeLlamaCpp);
   }
   if (includeLiteRtLm) {
-    log.info(
-      'LiteRT-LM will resolve symbols from the SPM-linked process image.',
-    );
+    if (code.targetOS == OS.macOS) {
+      log.info(
+        'Using bundled Apple native assets because the current LiteRT-LM macOS '
+        'SwiftPM artifacts do not provide a complete universal runtime.',
+      );
+    } else {
+      log.info(
+        'LiteRT-LM will resolve symbols from the SPM-linked process image.',
+      );
+      handledRuntimes.add(nativeRuntimeLiteRtLm);
+    }
   }
-  return true;
+  return handledRuntimes;
 }
 
 bool _hasNativeSourceOverride(HookInputUserDefines userDefines) {
@@ -768,7 +809,8 @@ String _liteRtLmTargetLabel(CodeConfig code) {
 
 String _liteRtLmAssetName(String fileName) {
   var name = path.basenameWithoutExtension(fileName);
-  if (name.startsWith('lib')) {
+  final extension = path.extension(fileName).toLowerCase();
+  if (name.startsWith('lib') && extension != '.dylib') {
     name = name.substring(3);
   }
   return 'litert_lm_$name';

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:isolate';
 
 import 'llama_cpp_service.dart';
@@ -9,11 +10,22 @@ export 'worker_messages.dart';
 
 /// Entry point for the llama worker isolate.
 void llamaWorkerEntry(SendPort initialSendPort) {
+  runLlamaWorkerForTesting(initialSendPort, LlamaCppService());
+}
+
+/// Runs the llama.cpp worker loop with an injected service.
+///
+/// This is public only for VM unit tests; production callers should use
+/// [llamaWorkerEntry].
+void runLlamaWorkerForTesting(
+  SendPort initialSendPort,
+  LlamaCppService service, {
+  bool exitOnDispose = true,
+  Duration disposeActiveGenerateTimeout = const Duration(seconds: 5),
+}) {
   final receivePort = ReceivePort();
   initialSendPort.send(receivePort.sendPort);
 
-  // Service
-  final service = LlamaCppService();
   var isInitialized = false;
   var shuttingDown = false;
 
@@ -23,24 +35,47 @@ void llamaWorkerEntry(SendPort initialSendPort) {
   // in-flight generate with no DoneResponse, hanging the consumer's stream.
   Future<void> activeGenerate = Future<void>.value();
 
+  Future<bool> waitForActiveGenerate({Duration? timeout}) async {
+    try {
+      final generate = activeGenerate;
+      if (timeout == null) {
+        await generate;
+      } else {
+        await generate.timeout(timeout);
+      }
+      return true;
+    } on TimeoutException {
+      return false;
+    } catch (_) {
+      // Generation has already stopped if its future completed with an error.
+      return true;
+    }
+  }
+
   receivePort.listen((message) async {
     if (message is DisposeRequest) {
       shuttingDown = true;
       // Let any in-flight generation observe the cancel flag and finish
       // emitting its terminal response before we dispose native resources.
-      try {
-        await activeGenerate.timeout(const Duration(seconds: 5));
-      } catch (_) {
-        // Timed out or errored; proceed with teardown regardless.
-      }
-      try {
-        service.dispose();
-      } catch (e) {
-        // Ignore errors during dispose
+      final generationStopped = await waitForActiveGenerate(
+        timeout: disposeActiveGenerateTimeout,
+      );
+      // If native generation wedges, acknowledge dispose and exit the worker
+      // instead of hanging the caller forever. Skipping service.dispose() leaks
+      // native handles only in this edge case, but avoids use-after-free.
+      if (generationStopped) {
+        try {
+          service.dispose();
+        } catch (e) {
+          // Ignore errors during dispose
+        }
       }
       message.sendPort.send(null);
       receivePort.close();
-      Isolate.exit();
+      if (exitOnDispose) {
+        Isolate.exit();
+      }
+      return;
     }
 
     // Handshake
@@ -72,6 +107,7 @@ void llamaWorkerEntry(SendPort initialSendPort) {
             message.sendPort.send(DoneResponse());
 
           case ModelFreeRequest():
+            await waitForActiveGenerate();
             service.freeModel(message.modelHandle);
             message.sendPort.send(DoneResponse());
 
@@ -83,6 +119,7 @@ void llamaWorkerEntry(SendPort initialSendPort) {
             message.sendPort.send(HandleResponse(handle));
 
           case ContextFreeRequest():
+            await waitForActiveGenerate();
             service.freeContext(message.contextHandle);
             message.sendPort.send(DoneResponse());
 
@@ -221,6 +258,7 @@ void llamaWorkerEntry(SendPort initialSendPort) {
             message.sendPort.send(HandleResponse(handle));
 
           case MultimodalContextFreeRequest():
+            await waitForActiveGenerate();
             service.freeMultimodalContext(message.mmContextHandle);
             message.sendPort.send(DoneResponse());
 
