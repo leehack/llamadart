@@ -1,7 +1,9 @@
 ## Unreleased
 
 * Added the `GemmaModelConstraintProvider` SwiftPM binary target required by
-  the pinned LiteRT-LM Apple frameworks.
+  the pinned LiteRT-LM iOS Apple frameworks.
+* Stopped linking the incomplete macOS LiteRT-LM SwiftPM artifact set; Flutter
+  macOS `.litertlm` builds use the core package's native-assets fallback.
 
 ## 0.0.3
 

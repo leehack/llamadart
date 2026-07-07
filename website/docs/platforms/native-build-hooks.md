@@ -90,13 +90,14 @@ are present:
 
 - `llamadart_llama_cpp_flutter` links llama.cpp/GGUF XCFrameworks from
   `leehack/llamadart-native`.
-- `llamadart_litert_lm_flutter` links LiteRT-LM XCFrameworks from
+- `llamadart_litert_lm_flutter` links LiteRT-LM iOS XCFrameworks from
   `leehack/litert-lm-native`.
 
-For Flutter iOS/macOS apps, installed companion packages decide the Apple SPM
-runtime families and win over `llamadart_native_runtimes`. If both companion
-packages are installed, both runtime families are linked. If neither companion
-package is installed, the core native-assets fallback is used.
+For Flutter iOS apps, installed companion packages decide the Apple SPM runtime
+families and win over `llamadart_native_runtimes`. Flutter macOS LiteRT-LM
+builds use the core native-assets fallback when the current SwiftPM artifact set
+is incomplete for the selected architecture. If neither companion package is
+installed, the core native-assets fallback is used.
 
 For non-Flutter projects and non-Apple targets, `llamadart_native_runtimes`
 remains the selector even if a companion package is accidentally present in the
@@ -122,9 +123,9 @@ or stale `litert-lm-native` archives fail during the build rather than later at
 engine creation.
 
 On standalone Dart macOS, LiteRT-LM dylibs stay in the hook cache and the
-runtime loads them directly. Flutter macOS apps use the SwiftPM path when the
-matching companion package is installed, so the example app does not need a
-post-build runtime-copy phase in that configuration.
+runtime loads them directly. Flutter macOS LiteRT-LM apps follow the same
+hook-managed cache path unless the app bundle contains a complete SwiftPM
+runtime layout for the selected architecture.
 
 ### 4. Validation and fallback safeguards
 - Runtime-family selection is explicit: `llama_cpp`, `litert_lm`, or both.

@@ -8,7 +8,9 @@
   complete macOS arm64 runtime caches, requiring an explicit model path for the
   LiteRT-LM chat feature smoke scenario, normalizing the chat app's LiteRT-LM
   auto context size, and adding the missing iOS-compatible SwiftPM Gemma
-  provider target.
+  provider target. Flutter macOS LiteRT-LM companion-package builds now fall
+  back to hook-managed native assets, and the companion package no longer links
+  the incomplete macOS LiteRT-LM SwiftPM artifact set.
 
 * Reworked the README into a shorter entry point, fixed stale docs/examples
   found during the documentation review, and aligned release, Android smoke,

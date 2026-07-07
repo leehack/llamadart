@@ -228,6 +228,33 @@ void main() {
     expect(liteRtLmMacOsRequiredFrameworksForAbi(Abi.linuxX64), isEmpty);
   });
 
+  test('macOS LiteRT-LM native SPM validation follows runtime ABI', () {
+    expect(
+      liteRtLmMacOsRequiredNativeSpmFilesForAbi(Abi.macosArm64),
+      const <String>[
+        'GemmaModelConstraintProvider.framework/Versions/A/'
+            'GemmaModelConstraintProvider',
+        'LiteRtLm.framework/Versions/A/LiteRtLm',
+        'libCLiteRTLM_mac.dylib',
+        'libGemmaModelConstraintProvider.dylib',
+        'libLiteRt.dylib',
+        'libLiteRtMetalAccelerator.dylib',
+        'libLiteRtTopKMetalSampler.dylib',
+        'libLiteRtTopKWebGpuSampler.dylib',
+        'libLiteRtWebGpuAccelerator.dylib',
+        'libwebgpu_dawn.dylib',
+      ],
+    );
+    expect(
+      liteRtLmMacOsRequiredNativeSpmFilesForAbi(Abi.macosX64),
+      const <String>[
+        'LiteRtLm.framework/Versions/A/LiteRtLm',
+        'libCLiteRTLM_mac.dylib',
+      ],
+    );
+    expect(liteRtLmMacOsRequiredNativeSpmFilesForAbi(Abi.linuxX64), isEmpty);
+  });
+
   test('macOS LiteRT-LM cache validation rejects partial caches', () {
     final root = Directory.systemTemp.createTempSync('litert_lm_cache_test_');
     addTearDown(() => root.deleteSync(recursive: true));

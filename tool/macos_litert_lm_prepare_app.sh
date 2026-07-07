@@ -72,11 +72,41 @@ validate_litert_dir() {
   return 1
 }
 
+required_native_spm_files() {
+  case "$LITERT_ARCH" in
+    arm64)
+      printf '%s\n' \
+        "GemmaModelConstraintProvider.framework/Versions/A/GemmaModelConstraintProvider" \
+        "LiteRtLm.framework/Versions/A/LiteRtLm" \
+        "libCLiteRTLM_mac.dylib" \
+        "libGemmaModelConstraintProvider.dylib" \
+        "libLiteRt.dylib" \
+        "libLiteRtMetalAccelerator.dylib" \
+        "libLiteRtTopKMetalSampler.dylib" \
+        "libLiteRtTopKWebGpuSampler.dylib" \
+        "libLiteRtWebGpuAccelerator.dylib" \
+        "libwebgpu_dawn.dylib"
+      ;;
+    x64)
+      printf '%s\n' \
+        "LiteRtLm.framework/Versions/A/LiteRtLm" \
+        "libCLiteRTLM_mac.dylib"
+      ;;
+  esac
+}
+
+has_complete_native_spm_runtime() {
+  local file
+
+  [[ -d "$FRAMEWORKS_DIR" ]] || return 1
+  while IFS= read -r file; do
+    [[ -f "$FRAMEWORKS_DIR/$file" ]] || return 1
+  done < <(required_native_spm_files)
+}
+
 has_complete_embedded_runtime() {
   validate_litert_dir "$RUNTIME_DIR" && return 0
-
-  [[ -f "$FRAMEWORKS_DIR/libCLiteRTLM_mac.dylib" ]] && \
-    [[ -d "$FRAMEWORKS_DIR/LiteRtLm.framework" ]]
+  has_complete_native_spm_runtime
 }
 
 resolve_litert_dir() {

@@ -347,7 +347,33 @@ void main() {
   });
 
   test(
-    'build hook emits no bundled Apple assets for Flutter LiteRT-LM SPM mode',
+    'build hook emits no bundled Apple assets for Flutter iOS LiteRT-LM SPM mode',
+    () async {
+      await testCodeBuildHook(
+        mainMethod: build_hook.main,
+        targetOS: OS.iOS,
+        targetArchitecture: Architecture.arm64,
+        targetIOSSdk: IOSSdk.iPhoneOS,
+        userDefines: await _flutterLiteRtLmOnlyUserDefines(),
+        check: (input, output) {
+          final codeAssets = output.assets.encodedAssets
+              .where((asset) => asset.isCodeAsset)
+              .map((asset) => asset.asCodeAsset)
+              .toList(growable: false);
+
+          expect(codeAssets, isEmpty);
+          final outputDir = input.outputDirectory.toFilePath();
+          expect(
+            Directory(path.join(outputDir, 'llamadart_bin')).existsSync(),
+            isFalse,
+          );
+        },
+      );
+    },
+  );
+
+  test(
+    'build hook keeps Flutter macOS LiteRT-LM on hook-managed assets',
     () async {
       await testCodeBuildHook(
         mainMethod: build_hook.main,
@@ -364,7 +390,42 @@ void main() {
           final outputDir = input.outputDirectory.toFilePath();
           expect(
             Directory(path.join(outputDir, 'llamadart_bin')).existsSync(),
-            isFalse,
+            isTrue,
+          );
+        },
+      );
+    },
+  );
+
+  test(
+    'build hook mixes macOS llama.cpp SPM with LiteRT-LM hook assets',
+    () async {
+      await testCodeBuildHook(
+        mainMethod: build_hook.main,
+        targetOS: OS.macOS,
+        targetArchitecture: Architecture.arm64,
+        userDefines: await _flutterAppleUserDefines(
+          dependencies: const [
+            'llamadart_llama_cpp_flutter',
+            'llamadart_litert_lm_flutter',
+          ],
+        ),
+        check: (input, output) {
+          final codeAssets = output.assets.encodedAssets
+              .where((asset) => asset.isCodeAsset)
+              .map((asset) => asset.asCodeAsset)
+              .toList(growable: false);
+
+          expect(codeAssets, hasLength(1));
+          final codeAsset = codeAssets.single;
+          expect(codeAsset.id, 'package:llamadart/llamadart');
+          expect(codeAsset.file, isNull);
+          expect(codeAsset.linkMode, isA<LookupInProcess>());
+
+          final outputDir = input.outputDirectory.toFilePath();
+          expect(
+            Directory(path.join(outputDir, 'llamadart_bin')).existsSync(),
+            isTrue,
           );
         },
       );

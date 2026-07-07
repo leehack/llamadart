@@ -37,11 +37,14 @@ Package Manager, also add the runtime companion packages you need:
 dependencies:
   llamadart: ^0.8.12
   llamadart_llama_cpp_flutter: ^0.0.8 # GGUF / llama.cpp
-  llamadart_litert_lm_flutter: ^0.0.3 # .litertlm / LiteRT-LM
+  llamadart_litert_lm_flutter: ^0.0.3 # iOS .litertlm / LiteRT-LM
 ```
 
 The companion packages are published independently from the `packages/`
 subdirectories in the main `llamadart` repository.
+At the current LiteRT-LM native pin, Flutter macOS `.litertlm` builds keep the
+core native-assets fallback when the SwiftPM artifact set is incomplete for the
+selected architecture.
 
 Then resolve packages:
 
@@ -58,8 +61,9 @@ On the first `dart run` / `flutter run` for a native target, `llamadart`:
 1. Detects platform and architecture.
 2. Resolves matching runtime artifacts from `leehack/llamadart-native` and
    `leehack/litert-lm-native`.
-3. Wires them into your app through native assets. Flutter iOS/macOS builds use
-   SwiftPM-linked XCFrameworks when the matching companion packages are present.
+3. Wires them into your app through native assets. Flutter iOS builds use
+   SwiftPM-linked XCFrameworks when the matching companion packages are present;
+   Flutter macOS LiteRT-LM can fall back to hook-managed native assets.
 
 No local C++ toolchain setup is required for consumers.
 

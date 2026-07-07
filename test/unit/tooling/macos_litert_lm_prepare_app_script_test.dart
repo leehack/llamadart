@@ -151,6 +151,49 @@ void main() {
     );
 
     test(
+      'does not treat partial arm64 native SPM runtime as complete',
+      () async {
+        final root = await Directory.systemTemp.createTemp(
+          'litert_prepare_partial_spm_',
+        );
+        addTearDown(() => root.delete(recursive: true));
+
+        final libDir = Directory(path.join(root.path, 'litert'))..createSync();
+        for (final library in _arm64Libraries) {
+          await File(path.join(libDir.path, library)).create();
+        }
+
+        final appDir = Directory(path.join(root.path, 'Test.app'));
+        final frameworksDir = Directory(
+          path.join(appDir.path, 'Contents', 'Frameworks'),
+        )..createSync(recursive: true);
+        final liteRtLmDir = Directory(
+          path.join(frameworksDir.path, 'LiteRtLm.framework', 'Versions', 'A'),
+        )..createSync(recursive: true);
+        await File(path.join(liteRtLmDir.path, 'LiteRtLm')).create();
+        await File(
+          path.join(frameworksDir.path, 'libCLiteRTLM_mac.dylib'),
+        ).create();
+
+        final result = await _runPrepareApp(appDir, libDir, arch: 'arm64');
+
+        expect(result.exitCode, 0, reason: result.stderr.toString());
+        expect(result.stdout, contains('Prepared LiteRT-LM macOS'));
+        expect(
+          File(
+            path.join(
+              frameworksDir.path,
+              'LiteRtLmRuntime',
+              'libwebgpu_dawn.dylib',
+            ),
+          ).existsSync(),
+          isTrue,
+        );
+      },
+      skip: Platform.isWindows ? 'requires bash and POSIX symlinks' : false,
+    );
+
+    test(
       'installs the x64 runtime library set',
       () async {
         final root = await Directory.systemTemp.createTemp(
