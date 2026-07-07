@@ -64,6 +64,16 @@ the exact generated text matters.
 
 ## Code Style
 
+### Design Principles
+
+- Favor SOLID, DRY, and KISS: keep responsibilities focused, remove meaningful
+  duplication, and choose the simplest design that satisfies the current
+  requirement.
+- Add abstractions only when they reduce real complexity, protect a stable
+  boundary, or match an established repo pattern.
+- Prefer small, reviewable changes over broad refactors unless the broader
+  cleanup is necessary for correctness or maintainability.
+
 ### Dart Style
 
 - Use `dart format` defaults.
