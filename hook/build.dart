@@ -792,7 +792,8 @@ String _liteRtLmTargetLabel(CodeConfig code) {
 
 String _liteRtLmAssetName(String fileName) {
   var name = path.basenameWithoutExtension(fileName);
-  if (name.startsWith('lib')) {
+  final extension = path.extension(fileName).toLowerCase();
+  if (name.startsWith('lib') && extension != '.dylib') {
     name = name.substring(3);
   }
   return 'litert_lm_$name';

@@ -63,6 +63,16 @@ class NativeLlamaBackend
     }
   }
 
+  void _expectDoneResponse(Object? response, String operation) {
+    if (response is DoneResponse) {
+      return;
+    }
+    if (response is ErrorResponse) {
+      throw Exception(response.message);
+    }
+    throw Exception('Unknown response during $operation');
+  }
+
   Future<void> _ensureIsolate() async {
     if (_sendPort != null) {
       _isReady = true;
@@ -154,8 +164,9 @@ class NativeLlamaBackend
     if (_sendPort == null) return;
     final rp = ReceivePort();
     _sendPort!.send(ModelFreeRequest(modelHandle, rp.sendPort));
-    await rp.first;
+    final res = await rp.first;
     rp.close();
+    _expectDoneResponse(res, 'model free');
   }
 
   @override
@@ -175,8 +186,9 @@ class NativeLlamaBackend
     if (_sendPort == null) return;
     final rp = ReceivePort();
     _sendPort!.send(ContextFreeRequest(contextHandle, rp.sendPort));
-    await rp.first;
+    final res = await rp.first;
     rp.close();
+    _expectDoneResponse(res, 'context free');
   }
 
   @override
@@ -601,8 +613,9 @@ class NativeLlamaBackend
   Future<void> multimodalContextFree(int mmContextHandle) async {
     final rp = ReceivePort();
     _sendPort!.send(MultimodalContextFreeRequest(mmContextHandle, rp.sendPort));
-    await rp.first;
+    final res = await rp.first;
     rp.close();
+    _expectDoneResponse(res, 'multimodal context free');
   }
 
   @override

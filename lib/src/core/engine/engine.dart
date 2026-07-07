@@ -83,7 +83,7 @@ class LlamaEngine {
   // Serializes multimodal projector load/unload so concurrent calls cannot
   // race the native create/free (which could leak or double-free the context).
   Future<void> _mmLifecycle = Future<void>.value();
-  bool _modelLifecycleActive = false;
+  Future<void>? _modelLifecycleOperation;
   bool _isReady = false;
   String? _modelPath;
   Map<String, String>? _cachedModelMetadata;
@@ -479,8 +479,37 @@ class LlamaEngine {
 
   /// Releases all allocated resources.
   Future<void> dispose() async {
-    await unloadModel();
-    await backend.dispose();
+    final activeLifecycle = _modelLifecycleOperation;
+    if (activeLifecycle != null) {
+      try {
+        await activeLifecycle;
+      } catch (_) {
+        // Disposal still needs to release backend resources after a failed
+        // lifecycle operation.
+      }
+    }
+
+    Object? unloadError;
+    StackTrace? unloadStackTrace;
+    try {
+      await unloadModel();
+    } catch (error, stackTrace) {
+      unloadError = error;
+      unloadStackTrace = stackTrace;
+    }
+
+    try {
+      await backend.dispose();
+    } catch (error, stackTrace) {
+      if (unloadError == null) {
+        unloadError = error;
+        unloadStackTrace = stackTrace;
+      }
+    }
+
+    if (unloadError != null) {
+      Error.throwWithStackTrace(unloadError, unloadStackTrace!);
+    }
   }
 
   /// Unloads the currently loaded model and frees its resources.
@@ -1274,16 +1303,19 @@ class LlamaEngine {
     String operation,
     Future<void> Function() action,
   ) async {
-    if (_modelLifecycleActive) {
+    if (_modelLifecycleOperation != null) {
       throw LlamaStateException(
         'Cannot $operation while another model lifecycle operation is in progress.',
       );
     }
-    _modelLifecycleActive = true;
+    final lifecycleOperation = action();
+    _modelLifecycleOperation = lifecycleOperation;
     try {
-      await action();
+      await lifecycleOperation;
     } finally {
-      _modelLifecycleActive = false;
+      if (identical(_modelLifecycleOperation, lifecycleOperation)) {
+        _modelLifecycleOperation = null;
+      }
     }
   }
 

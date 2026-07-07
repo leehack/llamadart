@@ -14,6 +14,7 @@ class MockLlamaBackend
     this.unsupportedModelLoad = false,
     this.unsupportedModelLoadFromUrl = false,
     this.failContextCreate = false,
+    this.failContextFree = false,
     this.modelMetadataResponse,
     this.modelLoadDelay,
     this.modelLoadFromUrlDelay,
@@ -32,6 +33,7 @@ class MockLlamaBackend
   int modelFreeCalls = 0;
   int contextFreeCalls = 0;
   int cancelGenerationCalls = 0;
+  int disposeCalls = 0;
   int multimodalContextCreateCalls = 0;
   final List<String> multimodalProjectorPaths = <String>[];
   int tokenizeCalls = 0;
@@ -47,6 +49,7 @@ class MockLlamaBackend
   final bool unsupportedModelLoad;
   final bool unsupportedModelLoadFromUrl;
   final bool failContextCreate;
+  final bool failContextFree;
   final Map<String, String>? modelMetadataResponse;
   Future<void>? modelLoadDelay;
   Future<void>? modelLoadFromUrlDelay;
@@ -106,6 +109,9 @@ class MockLlamaBackend
   @override
   Future<void> contextFree(int contextHandle) async {
     contextFreeCalls += 1;
+    if (failContextFree) {
+      throw Exception('context free failed');
+    }
     await contextFreeDelay;
   }
 
@@ -203,6 +209,7 @@ class MockLlamaBackend
 
   @override
   Future<void> dispose() async {
+    disposeCalls += 1;
     _isReady = false;
   }
 
@@ -1331,6 +1338,53 @@ void main() {
       expect(unloadingBackend.modelFreeCalls, 1);
       expect(unloadingEngine.modelHandle, isNull);
       expect(unloadingEngine.contextHandle, isNull);
+    });
+
+    test(
+      'dispose waits for active lifecycle before unloading backend resources',
+      () async {
+        final loadGate = Completer<void>();
+        final slowBackend = MockLlamaBackend(modelLoadDelay: loadGate.future);
+        final slowEngine = LlamaEngine(slowBackend);
+
+        final load = slowEngine.loadModel('qwen-test.gguf');
+        await Future<void>.delayed(Duration.zero);
+
+        final dispose = slowEngine.dispose();
+        await Future<void>.delayed(Duration.zero);
+
+        expect(slowBackend.disposeCalls, 0);
+        expect(slowBackend.contextFreeCalls, 0);
+        expect(slowBackend.modelFreeCalls, 0);
+
+        loadGate.complete();
+        await load;
+        await dispose;
+
+        expect(slowBackend.contextFreeCalls, 1);
+        expect(slowBackend.modelFreeCalls, 1);
+        expect(slowBackend.disposeCalls, 1);
+        expect(slowEngine.isReady, isFalse);
+      },
+    );
+
+    test('dispose releases backend even when unload fails', () async {
+      final failingBackend = MockLlamaBackend(failContextFree: true);
+      final failingEngine = LlamaEngine(failingBackend);
+      await failingEngine.loadModel('qwen-test.gguf');
+
+      await expectLater(
+        () => failingEngine.dispose(),
+        throwsA(
+          isA<Exception>().having(
+            (error) => error.toString(),
+            'message',
+            contains('context free failed'),
+          ),
+        ),
+      );
+
+      expect(failingBackend.disposeCalls, 1);
     });
 
     test('create throws when not ready', () {

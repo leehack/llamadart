@@ -9,11 +9,21 @@ export 'worker_messages.dart';
 
 /// Entry point for the llama worker isolate.
 void llamaWorkerEntry(SendPort initialSendPort) {
+  runLlamaWorkerForTesting(initialSendPort, LlamaCppService());
+}
+
+/// Runs the llama.cpp worker loop with an injected service.
+///
+/// This is public only for VM unit tests; production callers should use
+/// [llamaWorkerEntry].
+void runLlamaWorkerForTesting(
+  SendPort initialSendPort,
+  LlamaCppService service, {
+  bool exitOnDispose = true,
+}) {
   final receivePort = ReceivePort();
   initialSendPort.send(receivePort.sendPort);
 
-  // Service
-  final service = LlamaCppService();
   var isInitialized = false;
   var shuttingDown = false;
 
@@ -25,9 +35,9 @@ void llamaWorkerEntry(SendPort initialSendPort) {
 
   Future<void> waitForActiveGenerate() async {
     try {
-      await activeGenerate.timeout(const Duration(seconds: 5));
+      await activeGenerate;
     } catch (_) {
-      // Timed out or errored; proceed with teardown regardless.
+      // Generation has already stopped if its future completed with an error.
     }
   }
 
@@ -44,7 +54,10 @@ void llamaWorkerEntry(SendPort initialSendPort) {
       }
       message.sendPort.send(null);
       receivePort.close();
-      Isolate.exit();
+      if (exitOnDispose) {
+        Isolate.exit();
+      }
+      return;
     }
 
     // Handshake
