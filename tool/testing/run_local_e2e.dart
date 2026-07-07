@@ -720,7 +720,8 @@ Future<LocalE2eResult> runLocalE2e(
     return LocalE2eResult(64, stderr: '--image-path requires --mmproj-path.\n');
   }
   if ((scenario.name == 'llama-cpp-speculative-benchmark' ||
-          scenario.name == 'llama-cpp-chat-template-smoke') &&
+          scenario.name == 'llama-cpp-chat-template-smoke' ||
+          scenario.name == 'litert-lm-chat-features-smoke') &&
       parsed.modelPath == null) {
     return LocalE2eResult(
       64,

@@ -186,7 +186,7 @@ class ChatService {
       return ModelParams(
         gpuLayers: liteRtLmGpuLayers,
         preferredBackend: settings.preferredBackend,
-        contextSize: settings.contextSize,
+        contextSize: safeContextSize,
       );
     }
 

@@ -29,6 +29,7 @@ class NativeLlamaBackend
         BackendStatePersistence {
   Isolate? _isolate;
   SendPort? _sendPort;
+  Future<void>? _isolateStart;
   final ReceivePort _responsesPort = ReceivePort();
   Pointer<Int8>? _activeCancelToken;
   void Function()? _activeGenerationCleanup;
@@ -67,7 +68,25 @@ class NativeLlamaBackend
       _isReady = true;
       return;
     }
+    final existingStart = _isolateStart;
+    if (existingStart != null) {
+      await existingStart;
+      _isReady = _sendPort != null;
+      return;
+    }
 
+    final start = _startIsolate();
+    _isolateStart = start;
+    try {
+      await start;
+    } finally {
+      if (_isolateStart == start) {
+        _isolateStart = null;
+      }
+    }
+  }
+
+  Future<void> _startIsolate() async {
     final completer = Completer<void>();
     final tempPort = ReceivePort();
     tempPort.listen((msg) {
@@ -83,9 +102,14 @@ class NativeLlamaBackend
         completer.complete();
       }
     });
-    _isolate = await Isolate.spawn(llamaWorkerEntry, tempPort.sendPort);
-    await completer.future;
-    _isReady = true;
+    try {
+      _isolate = await Isolate.spawn(llamaWorkerEntry, tempPort.sendPort);
+      await completer.future;
+      _isReady = true;
+    } catch (_) {
+      tempPort.close();
+      rethrow;
+    }
   }
 
   @override
@@ -173,6 +197,12 @@ class NativeLlamaBackend
     GenerationParams params, {
     List<LlamaContentPart>? parts,
   }) {
+    if (_activeCancelToken != null || _activeGenerationCleanup != null) {
+      return Stream<List<int>>.error(
+        StateError('llama.cpp generation is already in progress.'),
+      );
+    }
+
     late final StreamController<List<int>> controller;
     final rp = ReceivePort();
 

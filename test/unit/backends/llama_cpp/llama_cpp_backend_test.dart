@@ -174,6 +174,42 @@ void main() {
       },
     );
 
+    test(
+      'rejects overlapping generations until the active worker response ends',
+      () async {
+        final subscription = backend
+            .generate(1, 'pending', const GenerationParams())
+            .listen((_) {});
+        await Future<void>.delayed(Duration.zero);
+
+        await expectLater(
+          backend.generate(1, 'ok', const GenerationParams()).drain<void>(),
+          throwsA(isA<StateError>()),
+        );
+
+        final generateRequest = harness.received
+            .whereType<GenerateRequest>()
+            .last;
+        await subscription.cancel();
+
+        await expectLater(
+          backend.generate(1, 'ok', const GenerationParams()).drain<void>(),
+          throwsA(isA<StateError>()),
+        );
+
+        generateRequest.sendPort.send(DoneResponse());
+        await Future<void>.delayed(Duration.zero);
+
+        final chunks = await backend
+            .generate(1, 'ok', const GenerationParams())
+            .toList();
+        expect(chunks, <List<int>>[
+          <int>[65],
+          <int>[66],
+        ]);
+      },
+    );
+
     test('diagnostic and multimodal endpoints route correctly', () async {
       expect(await backend.getBackendName(), 'CPU');
       expect(await backend.getAvailableBackends(), 'CPU, METAL');

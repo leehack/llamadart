@@ -1,3 +1,8 @@
+## Unreleased
+
+* Added the `GemmaModelConstraintProvider` SwiftPM binary target required by
+  the pinned LiteRT-LM Apple frameworks.
+
 ## 0.0.3
 
 * Updated Apple SwiftPM native pin to `leehack/litert-lm-native@v0.14.0-native.1`.

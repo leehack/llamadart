@@ -14,5 +14,13 @@ void main() {
     ).readAsStringSync();
 
     expect(manifest, contains('name: "llamadart-litert-lm-flutter"'));
+    expect(manifest, contains('name: "GemmaModelConstraintProvider"'));
+    expect(
+      manifest,
+      contains(
+        'name: "GemmaModelConstraintProvider",\n'
+        '                    condition: .when(platforms: [.iOS])',
+      ),
+    );
   });
 }

@@ -553,4 +553,8 @@ const Map<String, (String, String)> _litertAppleTargets = {
     'litert-lm-native-apple-CLiteRTLMMac-xcframework-{tag}.zip',
     '5',
   ),
+  'GemmaModelConstraintProvider': (
+    'litert-lm-native-apple-GemmaModelConstraintProvider-xcframework-{tag}.zip',
+    '8',
+  ),
 };

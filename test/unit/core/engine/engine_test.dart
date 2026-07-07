@@ -11,8 +11,13 @@ class MockLlamaBackend
     this.urlLoadingSupported = false,
     this.failModelLoad = false,
     this.failModelLoadFromUrl = false,
+    this.unsupportedModelLoad = false,
+    this.unsupportedModelLoadFromUrl = false,
     this.failContextCreate = false,
     this.modelMetadataResponse,
+    this.modelLoadDelay,
+    this.modelLoadFromUrlDelay,
+    this.contextFreeDelay,
   });
 
   bool _isReady = false;
@@ -26,6 +31,7 @@ class MockLlamaBackend
   int modelLoadFromUrlCalls = 0;
   int modelFreeCalls = 0;
   int contextFreeCalls = 0;
+  int cancelGenerationCalls = 0;
   int multimodalContextCreateCalls = 0;
   final List<String> multimodalProjectorPaths = <String>[];
   int tokenizeCalls = 0;
@@ -38,8 +44,13 @@ class MockLlamaBackend
   final bool urlLoadingSupported;
   final bool failModelLoad;
   final bool failModelLoadFromUrl;
+  final bool unsupportedModelLoad;
+  final bool unsupportedModelLoadFromUrl;
   final bool failContextCreate;
   final Map<String, String>? modelMetadataResponse;
+  Future<void>? modelLoadDelay;
+  Future<void>? modelLoadFromUrlDelay;
+  Future<void>? contextFreeDelay;
 
   @override
   bool get isReady => _isReady;
@@ -48,9 +59,13 @@ class MockLlamaBackend
   Future<int> modelLoad(String path, ModelParams params) async {
     modelLoadCalls += 1;
     lastModelPath = path;
+    if (unsupportedModelLoad) {
+      throw UnsupportedError('model loading unsupported');
+    }
     if (failModelLoad) {
       throw Exception('model load failed');
     }
+    await modelLoadDelay;
     _isReady = true;
     return 1;
   }
@@ -64,9 +79,13 @@ class MockLlamaBackend
     modelLoadFromUrlCalls += 1;
     lastModelUrl = url;
     onProgress?.call(0.25);
+    if (unsupportedModelLoadFromUrl) {
+      throw UnsupportedError('URL runtime unsupported');
+    }
     if (failModelLoadFromUrl) {
       throw Exception('url model load failed: $url');
     }
+    await modelLoadFromUrlDelay;
     _isReady = true;
     return 1;
   }
@@ -87,6 +106,7 @@ class MockLlamaBackend
   @override
   Future<void> contextFree(int contextHandle) async {
     contextFreeCalls += 1;
+    await contextFreeDelay;
   }
 
   @override
@@ -111,7 +131,9 @@ class MockLlamaBackend
   }
 
   @override
-  void cancelGeneration() {}
+  void cancelGeneration() {
+    cancelGenerationCalls += 1;
+  }
 
   @override
   Future<List<int>> tokenize(
@@ -516,6 +538,49 @@ void main() {
       },
     );
 
+    test('loadModel while ready preserves the active model', () async {
+      await engine.loadModel('qwen-test.gguf');
+
+      await expectLater(
+        () => engine.loadModel('other.gguf'),
+        throwsA(isA<LlamaStateException>()),
+      );
+
+      expect(engine.isReady, isTrue);
+      expect(engine.modelHandle, isNotNull);
+      expect(engine.contextHandle, isNotNull);
+      expect(backend.modelLoadCalls, 1);
+      expect(backend.modelFreeCalls, 0);
+      expect(backend.contextFreeCalls, 0);
+      expect(backend.lastModelPath, 'qwen-test.gguf');
+    });
+
+    test(
+      'rejects concurrent model loads before handles are assigned',
+      () async {
+        final loadGate = Completer<void>();
+        final slowBackend = MockLlamaBackend(modelLoadDelay: loadGate.future);
+        final slowEngine = LlamaEngine(slowBackend);
+
+        final firstLoad = slowEngine.loadModel('qwen-test.gguf');
+        await Future<void>.delayed(Duration.zero);
+
+        await expectLater(
+          () => slowEngine.loadModel('other.gguf'),
+          throwsA(isA<LlamaStateException>()),
+        );
+
+        loadGate.complete();
+        await firstLoad;
+
+        expect(slowBackend.modelLoadCalls, 1);
+        expect(slowBackend.modelFreeCalls, 0);
+        expect(slowBackend.contextFreeCalls, 0);
+        expect(slowEngine.isReady, isTrue);
+        expect(slowBackend.lastModelPath, 'qwen-test.gguf');
+      },
+    );
+
     test('loadModel routes through URL loader when supported', () async {
       final webBackend = MockLlamaBackend(urlLoadingSupported: true);
       final webEngine = LlamaEngine(webBackend);
@@ -526,6 +591,37 @@ void main() {
       expect(webBackend.modelLoadFromUrlCalls, 1);
       expect(webEngine.isReady, isTrue);
     });
+
+    test(
+      'rejects concurrent URL model loads before handles are assigned',
+      () async {
+        final loadGate = Completer<void>();
+        final webBackend = MockLlamaBackend(
+          urlLoadingSupported: true,
+          modelLoadFromUrlDelay: loadGate.future,
+        );
+        final webEngine = LlamaEngine(webBackend);
+
+        final firstLoad = webEngine.loadModelFromUrl(
+          'https://example.com/model.gguf',
+        );
+        await Future<void>.delayed(Duration.zero);
+
+        await expectLater(
+          () => webEngine.loadModelFromUrl('https://example.com/other.gguf'),
+          throwsA(isA<LlamaStateException>()),
+        );
+
+        loadGate.complete();
+        await firstLoad;
+
+        expect(webBackend.modelLoadFromUrlCalls, 1);
+        expect(webBackend.modelFreeCalls, 0);
+        expect(webBackend.contextFreeCalls, 0);
+        expect(webEngine.isReady, isTrue);
+        expect(webBackend.lastModelUrl, 'https://example.com/model.gguf');
+      },
+    );
 
     test(
       'loadModelSource rejects explicit local paths on URL backends',
@@ -1102,6 +1198,31 @@ void main() {
       },
     );
 
+    test('loadModelFromUrl preserves unsupported load diagnostics', () async {
+      final webBackend = MockLlamaBackend(
+        urlLoadingSupported: true,
+        unsupportedModelLoadFromUrl: true,
+      );
+      final webEngine = LlamaEngine(webBackend);
+
+      await expectLater(
+        () => webEngine.loadModelFromUrl('https://example.com/model.gguf'),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            allOf(
+              contains('Model URL loading'),
+              contains('URL runtime unsupported'),
+            ),
+          ),
+        ),
+      );
+      expect(webEngine.isReady, isFalse);
+      expect(webEngine.modelHandle, isNull);
+      expect(webEngine.contextHandle, isNull);
+    });
+
     test(
       'loadModelFromUrl redacts credentials from thrown exception messages',
       () async {
@@ -1169,6 +1290,48 @@ void main() {
         expect(failingEngine.contextHandle, isNull);
       },
     );
+
+    test(
+      'unloadModel cancels any active generation before freeing handles',
+      () async {
+        await engine.loadModel('qwen-test.gguf');
+
+        await engine.unloadModel();
+
+        expect(backend.cancelGenerationCalls, 1);
+        expect(backend.contextFreeCalls, 1);
+        expect(backend.modelFreeCalls, 1);
+        expect(engine.isReady, isFalse);
+      },
+    );
+
+    test('unloadModel marks engine not ready before freeing handles', () async {
+      final unloadGate = Completer<void>();
+      final unloadingBackend = MockLlamaBackend(
+        contextFreeDelay: unloadGate.future,
+      );
+      final unloadingEngine = LlamaEngine(unloadingBackend);
+
+      await unloadingEngine.loadModel('qwen-test.gguf');
+
+      final unload = unloadingEngine.unloadModel();
+      await Future<void>.delayed(Duration.zero);
+
+      expect(unloadingBackend.cancelGenerationCalls, 1);
+      expect(unloadingBackend.contextFreeCalls, 1);
+      expect(unloadingEngine.isReady, isFalse);
+      await expectLater(
+        unloadingEngine.generate('hello').drain<void>(),
+        throwsA(isA<LlamaContextException>()),
+      );
+
+      unloadGate.complete();
+      await unload;
+
+      expect(unloadingBackend.modelFreeCalls, 1);
+      expect(unloadingEngine.modelHandle, isNull);
+      expect(unloadingEngine.contextHandle, isNull);
+    });
 
     test('create throws when not ready', () {
       expect(

@@ -23,16 +23,20 @@ void llamaWorkerEntry(SendPort initialSendPort) {
   // in-flight generate with no DoneResponse, hanging the consumer's stream.
   Future<void> activeGenerate = Future<void>.value();
 
+  Future<void> waitForActiveGenerate() async {
+    try {
+      await activeGenerate.timeout(const Duration(seconds: 5));
+    } catch (_) {
+      // Timed out or errored; proceed with teardown regardless.
+    }
+  }
+
   receivePort.listen((message) async {
     if (message is DisposeRequest) {
       shuttingDown = true;
       // Let any in-flight generation observe the cancel flag and finish
       // emitting its terminal response before we dispose native resources.
-      try {
-        await activeGenerate.timeout(const Duration(seconds: 5));
-      } catch (_) {
-        // Timed out or errored; proceed with teardown regardless.
-      }
+      await waitForActiveGenerate();
       try {
         service.dispose();
       } catch (e) {
@@ -72,6 +76,7 @@ void llamaWorkerEntry(SendPort initialSendPort) {
             message.sendPort.send(DoneResponse());
 
           case ModelFreeRequest():
+            await waitForActiveGenerate();
             service.freeModel(message.modelHandle);
             message.sendPort.send(DoneResponse());
 
@@ -83,6 +88,7 @@ void llamaWorkerEntry(SendPort initialSendPort) {
             message.sendPort.send(HandleResponse(handle));
 
           case ContextFreeRequest():
+            await waitForActiveGenerate();
             service.freeContext(message.contextHandle);
             message.sendPort.send(DoneResponse());
 
@@ -221,6 +227,7 @@ void llamaWorkerEntry(SendPort initialSendPort) {
             message.sendPort.send(HandleResponse(handle));
 
           case MultimodalContextFreeRequest():
+            await waitForActiveGenerate();
             service.freeMultimodalContext(message.mmContextHandle);
             message.sendPort.send(DoneResponse());
 

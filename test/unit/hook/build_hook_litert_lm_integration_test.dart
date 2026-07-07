@@ -726,16 +726,33 @@ const List<String> _androidLiteRtLibraries = [
   'libwebgpu_dawn.so',
 ];
 
-const List<String> _iosLiteRtLibraries = ['LiteRtLm', 'CLiteRTLM'];
+const List<String> _iosLiteRtLibraries = [
+  'LiteRtLm',
+  'CLiteRTLM',
+  'libLiteRtLm.dylib',
+  'libGemmaModelConstraintProvider.dylib',
+  'libLiteRt.dylib',
+  'libLiteRtMetalAccelerator.dylib',
+];
 
 const List<String> _iosLiteRtAssetNames = [
   'litert_lm_LiteRtLm',
   'litert_lm_CLiteRTLM',
+  'litert_lm_GemmaModelConstraintProvider',
+  'litert_lm_LiteRt',
+  'litert_lm_LiteRtMetalAccelerator',
 ];
 
 const List<String> _macosArm64LiteRtLibraries = [
   'libLiteRtLm.dylib',
   'libCLiteRTLM_mac.dylib',
+  'libGemmaModelConstraintProvider.dylib',
+  'libLiteRt.dylib',
+  'libLiteRtMetalAccelerator.dylib',
+  'libLiteRtTopKMetalSampler.dylib',
+  'libLiteRtTopKWebGpuSampler.dylib',
+  'libLiteRtWebGpuAccelerator.dylib',
+  'libwebgpu_dawn.dylib',
 ];
 
 const List<String> _macosX64LiteRtLibraries = [
