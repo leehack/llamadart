@@ -27,7 +27,7 @@ In Xcode, set `IPHONEOS_DEPLOYMENT_TARGET = 16.4` or
 
 ```yaml
 dependencies:
-  llamadart: ^0.8.12
+  llamadart: ^0.8.13
 ```
 
 For Flutter iOS/macOS apps that should link Apple XCFrameworks through Swift
@@ -35,9 +35,9 @@ Package Manager, also add the runtime companion packages you need:
 
 ```yaml
 dependencies:
-  llamadart: ^0.8.12
+  llamadart: ^0.8.13
   llamadart_llama_cpp_flutter: ^0.0.8 # GGUF / llama.cpp
-  llamadart_litert_lm_flutter: ^0.0.3 # iOS .litertlm / LiteRT-LM
+  llamadart_litert_lm_flutter: ^0.0.4 # iOS .litertlm / LiteRT-LM
 ```
 
 The companion packages are published independently from the `packages/`

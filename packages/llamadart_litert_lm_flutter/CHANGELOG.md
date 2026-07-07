@@ -1,4 +1,4 @@
-## Unreleased
+## 0.0.4
 
 * Added the `GemmaModelConstraintProvider` SwiftPM binary target required by
   the pinned LiteRT-LM iOS Apple frameworks.

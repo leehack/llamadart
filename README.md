@@ -49,7 +49,7 @@ For Dart or Flutter apps:
 
 ```yaml
 dependencies:
-  llamadart: ^0.8.12
+  llamadart: ^0.8.13
 ```
 
 Flutter iOS/macOS apps that should link Apple XCFrameworks through Swift
@@ -57,9 +57,9 @@ Package Manager should also add the runtime companion packages they need:
 
 ```yaml
 dependencies:
-  llamadart: ^0.8.12
+  llamadart: ^0.8.13
   llamadart_llama_cpp_flutter: ^0.0.8 # GGUF / llama.cpp
-  llamadart_litert_lm_flutter: ^0.0.3 # iOS .litertlm / LiteRT-LM
+  llamadart_litert_lm_flutter: ^0.0.4 # iOS .litertlm / LiteRT-LM
 ```
 
 At the current LiteRT-LM native pin, Flutter macOS `.litertlm` builds keep

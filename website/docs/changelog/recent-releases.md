@@ -7,7 +7,17 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
-## Unreleased
+## 0.8.13
+
+- Fixed load lifecycle guards so repeated model loads preserve the active
+  model state, URL load unsupported-runtime diagnostics stay typed, and unload
+  cancels active generation before freeing llama.cpp handles.
+
+- Tightened LiteRT-LM runtime validation and local smoke coverage by requiring
+  complete macOS arm64 runtime caches, adding the missing iOS-compatible
+  SwiftPM Gemma provider target, and keeping Flutter macOS LiteRT-LM
+  companion-package builds on hook-managed native assets while the current
+  SwiftPM artifact set is incomplete.
 
 - Reworked the README into a shorter entry point, fixed stale docs/examples
   found during the documentation review, and aligned release, Android smoke,

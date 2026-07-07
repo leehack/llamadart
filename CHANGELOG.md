@@ -1,4 +1,4 @@
-## Unreleased
+## 0.8.13
 
 * Fixed load lifecycle guards so repeated model loads preserve the active
   model state, URL load unsupported-runtime diagnostics stay typed, and unload
