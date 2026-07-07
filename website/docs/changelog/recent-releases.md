@@ -9,6 +9,12 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Reworked the README into a shorter entry point, fixed stale docs/examples
+  found during the documentation review, and aligned release, Android smoke,
+  WebGPU mem64, native sync, and capability-support wording with the current
+  workflows and runtime behavior. WebGPU runtime LoRA calls now throw an
+  unsupported-operation error instead of reporting no-op success.
+
 - Fixed llama.cpp n-gram speculative configuration mapping so
   `draftTokenMax` no longer implicitly overrides upstream `ngramSizeM`, and
   documented upstream comparison commands plus measured n-gram benchmark

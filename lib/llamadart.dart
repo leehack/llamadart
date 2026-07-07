@@ -19,9 +19,14 @@
 /// await engine.loadModel('path/to/model.gguf'); // or model.litertlm
 ///
 /// final session = ChatSession(engine);
-/// await for (final token in session.create([LlamaTextContent('Hello!')])) {
-///   stdout.write(token);
+/// final response = StringBuffer();
+/// await for (final chunk in session.create([LlamaTextContent('Hello!')])) {
+///   final text = chunk.choices.first.delta.content;
+///   if (text != null) {
+///     response.write(text);
+///   }
 /// }
+/// print(response.toString());
 ///
 /// await engine.dispose();
 /// ```

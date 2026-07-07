@@ -268,9 +268,9 @@ html[data-theme='dark'] .button--secondary:hover {
 
 .heroShell {
   width: 100%;
-  max-width: 1200px;
+  max-width: 1480px;
   display: grid;
-  grid-template-columns: 1.2fr 1fr;
+  grid-template-columns: minmax(0, 0.95fr) minmax(620px, 1.05fr);
   gap: 1.5rem;
 }
 

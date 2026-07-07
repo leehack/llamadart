@@ -285,7 +285,8 @@ To contribute new examples:
 2. Add a pubspec.yaml with llamadart as dependency
 3. Include a README.md with setup instructions
 4. Test on multiple platforms if possible
-5. Add integration test to runner.dart if applicable
+5. Add durable coverage to `test/`, `tool/testing/run_local_e2e.dart`, or
+   `tool/testing/test_matrix.dart` when the example needs repeatable validation
 
 ## License
 

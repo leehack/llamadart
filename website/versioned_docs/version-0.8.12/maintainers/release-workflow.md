@@ -1,7 +1,6 @@
 ---
 title: Release Checklist
 description: Use this checklist to cut a llamadart release, snapshot docs, and verify the published artifacts afterward.
-unlisted: true
 ---
 
 Use this checklist when releasing `llamadart`.
@@ -98,9 +97,9 @@ repository-variable defaults that can be tuned without editing the workflow:
 | `RELEASE_AUTOMATION_GITHUB_RELEASE_WAIT_ATTEMPTS` | `180` | Number of GitHub Release existence checks. |
 | `RELEASE_AUTOMATION_GITHUB_RELEASE_WAIT_INTERVAL_SECONDS` | `10` | Delay between GitHub Release checks. |
 
-Do not tag the core `vX.Y.Z` release until every companion package version named
-in the current install docs is already published on pub.dev. The release
-sequence is:
+Release automation must not push the core `vX.Y.Z` release tag until every
+companion package version named in the current install docs is already
+published on pub.dev. The release sequence is:
 
 1. Confirm the native GitHub releases referenced by `Package.swift` are live and
    include the pinned XCFramework zip/checksum assets.
@@ -114,20 +113,13 @@ sequence is:
    curl -fsSL "https://pub.dev/api/packages/$package_name/versions/$package_version"
    ```
 
-3. If a changed companion version is missing, first merge the release-prep PR.
-   The post-merge release workflow then pushes that companion's package-specific
-   tag, for example:
-
-   ```bash
-   git tag llamadart_llama_cpp_flutter-v0.0.3
-   git push origin llamadart_llama_cpp_flutter-v0.0.3
-   ```
-
-   The workflow waits for `publish_companion_pubdev.yml` to publish the package
-   and re-checks the pub.dev version URL.
-4. Tag `vX.Y.Z` and push the core release tag only after the companion packages
-   referenced by the release docs are resolvable from pub.dev. Automation pushes
-   the core tag after that gate passes.
+3. If a changed companion version is missing, keep the PR scoped to release
+   prep and merge it only when the release is approved. The post-merge release
+   workflow then pushes that companion's package-specific tag, waits for
+   `publish_companion_pubdev.yml` to publish the package, and re-checks the
+   pub.dev version URL.
+4. Automation pushes the core `vX.Y.Z` tag only after the companion packages
+   referenced by the release docs are resolvable from pub.dev.
 
 Current workflows involved:
 
@@ -180,5 +172,5 @@ branch protections), run the version cut locally and open a PR:
 ```bash
 cd website
 npm ci
-npm run docusaurus docs:version 0.6.2
+npm run docusaurus docs:version <release-version>
 ```

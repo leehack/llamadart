@@ -237,9 +237,11 @@ as a model/configuration pressure issue first, not a bridge-load failure.
 
 ### Large models and the 64-bit (mem64) core
 
-Models larger than the ~4 GiB wasm32 address space (for example Gemma 4 E2B,
-~2.8 GB of weights) cannot load on the default 32-bit core. Select the 64-bit
-(wasm64/mem64) core up front with `ModelParams`:
+The default 32-bit core has a 4 GiB address-space limit, but large models also
+need room for the KV cache and intermediate buffers. The current automatic
+threshold opts into the 64-bit (wasm64/mem64) core when `modelBytesHint` is at
+or above about 2 GiB of model bytes. You can also select mem64 explicitly with
+`ModelParams`:
 
 ```dart
 await engine.loadModelFromUrl(

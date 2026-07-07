@@ -237,11 +237,12 @@ class ModelParams {
 
   /// Web/WebGPU only: prefer the 64-bit (wasm64/mem64) bridge core.
   ///
-  /// Models larger than the ~4 GiB wasm32 address space (for example Gemma 4
-  /// E2B) cannot load on the default 32-bit core. `null` (default) lets
-  /// llamadart auto-decide from [modelBytesHint] and the model name; `true`
-  /// forces the mem64 core; `false` forces wasm32. Ignored on every non-web
-  /// backend (native llama.cpp uses the host address space).
+  /// The default 32-bit core has a 4 GiB linear-memory limit, but large models
+  /// need headroom for the KV cache and intermediate buffers. `null` (default)
+  /// lets llamadart auto-decide from [modelBytesHint] using the current
+  /// wasm32-safe ceiling; `true` forces the mem64 core; `false` forces wasm32.
+  /// Ignored on every non-web backend (native llama.cpp uses the host address
+  /// space).
   final bool? preferMemory64;
 
   /// Web/WebGPU only: approximate model size in bytes, used to decide whether

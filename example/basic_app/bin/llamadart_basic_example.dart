@@ -153,10 +153,10 @@ void main(List<String> arguments) async {
 
     final generationParams = GenerationParams(
       grammar: grammar,
-      temp: double.tryParse(results['temp'] as String) ?? 0.8,
-      topK: int.tryParse(results['top-k'] as String) ?? 40,
-      topP: double.tryParse(results['top-p'] as String) ?? 0.95,
-      penalty: double.tryParse(results['penalty'] as String) ?? 1.1,
+      temp: double.tryParse(results['temp'] as String) ?? 0.7,
+      topK: int.tryParse(results['top-k'] as String) ?? 20,
+      topP: double.tryParse(results['top-p'] as String) ?? 0.8,
+      penalty: double.tryParse(results['penalty'] as String) ?? 1.0,
     );
 
     if (singlePrompt != null) {

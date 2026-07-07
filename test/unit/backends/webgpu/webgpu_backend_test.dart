@@ -293,25 +293,29 @@ void main() {
           }
 
           final parts = opts.getProperty('parts'.toJS);
-          if (parts.isA<JSArray>() && (parts as JSArray).length != 0) {
-            sawMediaParts = true;
+          if (parts.isA<JSArray>()) {
+            final jsParts = parts as JSArray;
+            final partCount = jsParts.length;
+            if (partCount > 0) {
+              sawMediaParts = true;
 
-            for (int i = 0; i < parts.length; i++) {
-              final rawPart = parts.getProperty(i.toJS);
-              if (!rawPart.isA<JSObject>()) {
-                continue;
-              }
+              for (int i = 0; i < partCount; i++) {
+                final rawPart = jsParts.getProperty(i.toJS);
+                if (!rawPart.isA<JSObject>()) {
+                  continue;
+                }
 
-              final part = rawPart as JSObject;
-              final type = part.getProperty('type'.toJS);
-              if (type.isA<JSString>() &&
-                  (type as JSString).toDart == 'audio') {
-                sawAudioParts = true;
+                final part = rawPart as JSObject;
+                final type = part.getProperty('type'.toJS);
+                if (type.isA<JSString>() &&
+                    (type as JSString).toDart == 'audio') {
+                  sawAudioParts = true;
 
-                final bytes = part.getProperty('bytes'.toJS);
-                if (bytes.isA<JSUint8Array>() &&
-                    (bytes as JSUint8Array).toDart.isNotEmpty) {
-                  sawAudioBytes = true;
+                  final bytes = part.getProperty('bytes'.toJS);
+                  if (bytes.isA<JSUint8Array>() &&
+                      (bytes as JSUint8Array).toDart.isNotEmpty) {
+                    sawAudioBytes = true;
+                  }
                 }
               }
             }
@@ -956,6 +960,34 @@ void main() {
           ),
         ),
       );
+    });
+
+    test('throws clear error for unsupported runtime LoRA updates', () async {
+      await backend.modelLoadFromUrl(
+        'https://example.com/model.gguf',
+        const ModelParams(),
+      );
+
+      Future<void> expectLoraUnsupported(Future<void> Function() action) {
+        return expectLater(
+          action,
+          throwsA(
+            isA<UnsupportedError>().having(
+              (UnsupportedError error) => error.message,
+              'message',
+              allOf(contains('WebGPU LoRA'), contains('native llama.cpp')),
+            ),
+          ),
+        );
+      }
+
+      await expectLoraUnsupported(
+        () => backend.setLoraAdapter(1, '/adapter.gguf', 0.7),
+      );
+      await expectLoraUnsupported(
+        () => backend.removeLoraAdapter(1, '/adapter.gguf'),
+      );
+      await expectLoraUnsupported(() => backend.clearLoraAdapters(1));
     });
 
     test('forwards state persistence calls to bridge', () async {

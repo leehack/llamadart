@@ -51,10 +51,11 @@ Important fields:
   sequence workloads (for example, batched embeddings).
 - `chatTemplate`: optional template override.
 - `preferMemory64` (web/WebGPU only): prefer the 64-bit (wasm64/mem64) bridge
-  core. Models larger than the ~4 GiB wasm32 address space (for example Gemma 4
-  E2B) cannot load on the default 32-bit core. `null` (default) lets llamadart
-  decide from `modelBytesHint`; `true` forces mem64; `false`
-  forces wasm32. Ignored on non-web backends.
+  core. The default 32-bit core has a 4 GiB address-space limit, but large
+  models need room for KV cache and intermediate buffers. `null` (default) lets
+  llamadart decide from `modelBytesHint` using the current wasm32-safe ceiling
+  (about 2 GiB of model bytes); `true` forces mem64; `false` forces wasm32.
+  Ignored on non-web backends.
 - `modelBytesHint` (web/WebGPU only): approximate model size in bytes, used to
   select the mem64 core up front instead of waiting for an out-of-memory retry.
   Ignored on non-web backends.

@@ -390,8 +390,12 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     tier: 'platform',
     mode: 'manual/device',
     covers:
-        'Android arm64 device load/generate, CPU profiles, crash signatures',
-    command: './scripts/android_runtime_smoke.sh --app-id <app-id>',
+        'Android arm64 app build/install/launch, CPU profiles, crash signatures; '
+        'pair with manual model load/generation evidence when runtime behavior '
+        'is at risk',
+    command:
+        './scripts/android_runtime_smoke.sh --project-dir example/chat_app '
+        '--app-id com.example.llamadart_chat_example',
     useWhen:
         'Android arm64 runtime selection, CPU variants, native bundle changes, '
         'or release candidates.',
@@ -422,7 +426,8 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     tier: 'release',
     mode: 'manual/device',
     covers:
-        'Android old/modern arm64 runtime load, CPU profiles, crash signatures',
+        'Android old/modern arm64 app launch, manual runtime load/generate, '
+        'CPU profiles, crash signatures',
     command:
         'Run android-arm64-device-smoke on old and modern arm64 devices with '
         'the cpu_profile full and compact configurations; see '
@@ -436,15 +441,16 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     tier: 'release',
     mode: 'manual/release',
     covers:
-        'Flutter Apple SPM companion package pub.dev availability before the core tag',
+        'Flutter Apple SPM companion package pub.dev availability before the '
+        'post-merge core tag',
     command:
-        'Before tagging vX.Y.Z, verify each referenced companion version with '
+        'Before merging the release-prep PR, verify each referenced companion '
+        'version with '
         'https://pub.dev/api/packages/<package>/versions/<version>. If a '
-        'changed version is missing, merge the release-prep PR first, then get '
-        'explicit approval before pushing the companion package tag, for '
-        'example llamadart_llama_cpp_flutter-v0.0.3. Wait for '
-        'publish_companion_pubdev.yml, verify pub.dev, then get explicit '
-        'approval before pushing the core release tag.',
+        'changed version is missing, keep the PR scoped to release prep; after '
+        'merge, release_on_prep_merge.yml pushes the missing companion tag, '
+        'waits for publish_companion_pubdev.yml, verifies pub.dev, and only '
+        'then pushes the core release tag.',
     useWhen:
         'Any release that changes companion packages or documents companion '
         'package versions.',
@@ -455,7 +461,7 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     mode: 'manual/local',
     covers: 'representative examples before publishing a package release',
     command: 'Follow website/docs/maintainers/release-workflow.md.',
-    useWhen: 'Before tagging and publishing a release.',
+    useWhen: 'Before publishing a release.',
   ),
 ];
 

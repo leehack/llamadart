@@ -96,13 +96,16 @@ Practical compatibility checks:
 
 ## Platform notes
 
-- Native backends implement runtime LoRA operations.
-- Web bridge runtime currently exposes no-op LoRA operations in this release;
-  do not assume LoRA effect on web targets yet.
+- Runtime LoRA operations are supported by native llama.cpp/GGUF backends.
+- Native LiteRT-LM can accept one default-scale text LoRA adapter at model load
+  through `ModelParams.loras`; runtime LoRA updates, stacking, and custom scales
+  remain unsupported there.
+- WebGPU and LiteRT-LM web throw an unsupported-operation error for runtime
+  LoRA APIs instead of reporting no-op success.
 
 ## Troubleshooting
 
 - If `setLora(...)` fails, verify the adapter path is accessible at runtime.
 - Ensure adapter/base-model compatibility (architecture/family alignment).
-- When behavior seems unchanged, confirm you are testing on a native target and
-  not a web fallback path.
+- When behavior seems unchanged, confirm you are testing on a native
+  llama.cpp/GGUF target and not a web or LiteRT-LM path.
