@@ -12,7 +12,7 @@ for the selected architecture.
 
 ```yaml
 dependencies:
-  llamadart: ^0.8.13
+  llamadart: ^0.8.14
   llamadart_litert_lm_flutter: ^0.0.4
 ```
 

@@ -1,4 +1,4 @@
-## Unreleased
+## 0.8.14
 
 * Updated the runnable chat app's web runtimes to pinned WebGPU bridge assets
   `v0.1.18` (llama.cpp `b9915`) and `@litert-lm/core@0.14.0`, keeping hosted
