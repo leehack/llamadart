@@ -1770,9 +1770,6 @@ Future<void> _downloadRuntimeBundle({
         break;
       }
 
-      if (destination.existsSync()) {
-        await destination.delete();
-      }
       final retryDelay = Duration(
         seconds: _runtimeBundleDownloadRetryBaseDelay.inSeconds * attempt,
       );
