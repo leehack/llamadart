@@ -8104,7 +8104,8 @@ enum ggml_type {
   GGML_TYPE_MXFP4(39),
   GGML_TYPE_NVFP4(40),
   GGML_TYPE_Q1_0(41),
-  GGML_TYPE_COUNT(42);
+  GGML_TYPE_Q2_0(42),
+  GGML_TYPE_COUNT(43);
 
   final int value;
   const ggml_type(this.value);
@@ -8144,7 +8145,8 @@ enum ggml_type {
     39 => GGML_TYPE_MXFP4,
     40 => GGML_TYPE_NVFP4,
     41 => GGML_TYPE_Q1_0,
-    42 => GGML_TYPE_COUNT,
+    42 => GGML_TYPE_Q2_0,
+    43 => GGML_TYPE_COUNT,
     _ => throw ArgumentError('Unknown value for ggml_type: $value'),
   };
 }
@@ -8647,6 +8649,7 @@ enum llama_ftype {
   LLAMA_FTYPE_MOSTLY_MXFP4_MOE(38),
   LLAMA_FTYPE_MOSTLY_NVFP4(39),
   LLAMA_FTYPE_MOSTLY_Q1_0(40),
+  LLAMA_FTYPE_MOSTLY_Q2_0(41),
   LLAMA_FTYPE_GUESSED(1024);
 
   final int value;
@@ -8688,6 +8691,7 @@ enum llama_ftype {
     38 => LLAMA_FTYPE_MOSTLY_MXFP4_MOE,
     39 => LLAMA_FTYPE_MOSTLY_NVFP4,
     40 => LLAMA_FTYPE_MOSTLY_Q1_0,
+    41 => LLAMA_FTYPE_MOSTLY_Q2_0,
     1024 => LLAMA_FTYPE_GUESSED,
     _ => throw ArgumentError('Unknown value for llama_ftype: $value'),
   };
@@ -9619,7 +9623,8 @@ enum ggml_ftype {
   GGML_FTYPE_MOSTLY_BF16(24),
   GGML_FTYPE_MOSTLY_MXFP4(25),
   GGML_FTYPE_MOSTLY_NVFP4(26),
-  GGML_FTYPE_MOSTLY_Q1_0(27);
+  GGML_FTYPE_MOSTLY_Q1_0(27),
+  GGML_FTYPE_MOSTLY_Q2_0(28);
 
   final int value;
   const ggml_ftype(this.value);
@@ -9652,6 +9657,7 @@ enum ggml_ftype {
     25 => GGML_FTYPE_MOSTLY_MXFP4,
     26 => GGML_FTYPE_MOSTLY_NVFP4,
     27 => GGML_FTYPE_MOSTLY_Q1_0,
+    28 => GGML_FTYPE_MOSTLY_Q2_0,
     _ => throw ArgumentError('Unknown value for ggml_ftype: $value'),
   };
 }
@@ -10441,6 +10447,12 @@ final class mtmd_helper_video_init_params extends ffi.Struct {
   external int timestamp_interval_ms;
 }
 
+final class llama_dart_mtp extends ffi.Opaque {}
+
+final class llama_dart_ngram extends ffi.Opaque {}
+
+final class llama_dart_speculative extends ffi.Opaque {}
+
 final class llama_dart_speculative_params extends ffi.Struct {
   external ffi.Pointer<ffi.Char> type_names;
 
@@ -10484,12 +10496,6 @@ final class llama_dart_speculative_params extends ffi.Struct {
 
   external ffi.Pointer<ffi.Char> ngram_cache_dynamic_path;
 }
-
-final class llama_dart_speculative extends ffi.Opaque {}
-
-final class llama_dart_mtp extends ffi.Opaque {}
-
-final class llama_dart_ngram extends ffi.Opaque {}
 
 const int LLAMA_DEFAULT_SEED = 4294967295;
 
