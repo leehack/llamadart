@@ -16,21 +16,48 @@ bool hasPersistentCacheSensitiveUrlParts(String value) {
     return true;
   }
 
-  const benignQueryKeys = {'download'};
   return uri.queryParameters.keys.any((key) {
     final lower = key.toLowerCase();
-    if (benignQueryKeys.contains(lower)) {
+    if (_benignPersistentQueryKeys.contains(lower)) {
       return false;
     }
-    return lower.contains('token') ||
-        lower.contains('sig') ||
-        lower.contains('signature') ||
-        lower.contains('expires') ||
-        lower.contains('credential') ||
-        lower.contains('key') ||
-        lower.contains('secret') ||
-        lower.contains('auth') ||
-        lower.contains('session') ||
-        lower.startsWith('x-amz');
+    if (_sensitivePersistentQueryKeys.contains(lower) ||
+        _sensitivePersistentQueryPrefixes.any(lower.startsWith)) {
+      return true;
+    }
+    final segments = lower.split(RegExp(r'[._-]+'));
+    return segments.any(_sensitivePersistentQueryKeySegments.contains);
   });
 }
+
+const _benignPersistentQueryKeys = {'download'};
+
+const _sensitivePersistentQueryKeys = {
+  'apikey',
+  'authorization',
+  'awsaccesskeyid',
+  'credential',
+  'expires',
+  'key',
+  'key-pair-id',
+  'policy',
+  'secret',
+  'session',
+  'sessionid',
+  'sig',
+  'signature',
+  'token',
+};
+
+const _sensitivePersistentQueryKeySegments = {
+  'auth',
+  'credential',
+  'key',
+  'secret',
+  'session',
+  'sig',
+  'signature',
+  'token',
+};
+
+const _sensitivePersistentQueryPrefixes = {'x-amz', 'x-goog'};
