@@ -76,7 +76,7 @@ jobs:
 
       - name: Install Hugging Face Hub client
         run: |
-          python -m pip install --upgrade "huggingface_hub>=0.36.0"
+          python3 -m pip install --upgrade "huggingface_hub>=0.36.0"
 
       - name: Deploy to Hugging Face Space
         env:
@@ -105,7 +105,7 @@ jobs:
           SHORT_SHA="$(printf '%s' "$GITHUB_SHA" | cut -c1-7)"
           export SHORT_SHA
 
-          python - <<'PY'
+          python3 - <<'PY'
           import os
 
           from huggingface_hub import HfApi
