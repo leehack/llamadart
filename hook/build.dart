@@ -1,3 +1,4 @@
+import 'dart:async' show TimeoutException;
 import 'dart:convert' show utf8;
 import 'dart:io';
 
@@ -29,6 +30,9 @@ const _litertLmNativeReleaseBaseUrl =
     'https://github.com/leehack/litert-lm-native/releases/download/'
     'v$_litertLmVersion';
 const _litertLmCacheDir = 'litert_lm';
+const _runtimeBundleDownloadMaxAttempts = 5;
+const _runtimeBundleDownloadRequestTimeout = Duration(seconds: 60);
+const _runtimeBundleDownloadRetryBaseDelay = Duration(seconds: 3);
 
 final _litertLmBundles = Map.unmodifiable({
   for (final bundle in _litertLmBundleSpecs) bundle.bundle: bundle,
@@ -989,13 +993,12 @@ Future<void> _downloadLiteRtLmArchive({
   required Logger log,
 }) async {
   log.info('Downloading LiteRT-LM bundle from ${bundleSpec.releaseUrl}');
-  final response = await http.get(Uri.parse(bundleSpec.releaseUrl));
-  if (response.statusCode != 200) {
-    throw Exception(
-      'Failed to download LiteRT-LM bundle: HTTP ${response.statusCode}',
-    );
-  }
-  await destination.writeAsBytes(response.bodyBytes);
+  await _downloadRuntimeBundle(
+    url: bundleSpec.releaseUrl,
+    destination: destination,
+    description: 'LiteRT-LM bundle',
+    log: log,
+  );
 }
 
 bool _isLiteRtLmEntrySelected(
@@ -1726,27 +1729,131 @@ Future<void> _downloadReleaseAsset({
       'https://github.com/$repository/releases/download/$nativeTag/$assetName';
   log.info('Downloading native bundle: $url');
 
-  final destination = File(destinationPath);
+  await _downloadRuntimeBundle(
+    url: url,
+    destination: File(destinationPath),
+    description: 'native bundle',
+    log: log,
+  );
+}
+
+Future<void> _downloadRuntimeBundle({
+  required String url,
+  required File destination,
+  required String description,
+  required Logger log,
+}) async {
   await destination.parent.create(recursive: true);
 
-  final client = http.Client();
-  try {
-    final request = http.Request('GET', Uri.parse(url));
-    final response = await client.send(request);
+  Exception? lastError;
+  for (
+    var attempt = 1;
+    attempt <= _runtimeBundleDownloadMaxAttempts;
+    attempt++
+  ) {
+    try {
+      await _downloadRuntimeBundleOnce(url: url, destination: destination);
+      log.info('Saved $description to ${destination.path}');
+      return;
+    } on Exception catch (error) {
+      lastError = error;
+      final shouldRetry =
+          attempt < _runtimeBundleDownloadMaxAttempts &&
+          _isRetryableRuntimeBundleDownloadError(error);
+      if (!shouldRetry) {
+        if (attempt == 1) {
+          rethrow;
+        }
+        throw Exception(
+          'Failed to download $url after $attempt attempts: $error',
+        );
+      }
 
-    if (response.statusCode != 200) {
-      throw Exception('Failed to download $url (${response.statusCode}).');
+      if (destination.existsSync()) {
+        await destination.delete();
+      }
+      final retryDelay = Duration(
+        seconds: _runtimeBundleDownloadRetryBaseDelay.inSeconds * attempt,
+      );
+      log.warning(
+        '$description download failed ($error); retrying in '
+        '${retryDelay.inSeconds}s '
+        '(attempt ${attempt + 1}/$_runtimeBundleDownloadMaxAttempts).',
+      );
+      await Future<void>.delayed(retryDelay);
     }
-
-    final sink = destination.openWrite();
-    await response.stream.pipe(sink);
-    await sink.flush();
-    await sink.close();
-  } finally {
-    client.close();
   }
 
-  log.info('Saved native bundle to $destinationPath');
+  throw Exception(
+    'Failed to download $url after $_runtimeBundleDownloadMaxAttempts attempts: '
+    '$lastError',
+  );
+}
+
+Future<void> _downloadRuntimeBundleOnce({
+  required String url,
+  required File destination,
+}) async {
+  final client = http.Client();
+  final temporaryDestination = File('${destination.path}.tmp');
+  try {
+    if (temporaryDestination.existsSync()) {
+      await temporaryDestination.delete();
+    }
+
+    final request = http.Request('GET', Uri.parse(url));
+    final response = await client
+        .send(request)
+        .timeout(_runtimeBundleDownloadRequestTimeout);
+
+    if (response.statusCode != 200) {
+      throw _RuntimeBundleDownloadHttpException(url, response.statusCode);
+    }
+
+    final sink = temporaryDestination.openWrite();
+    var sinkClosed = false;
+    try {
+      await response.stream.pipe(sink);
+      sinkClosed = true;
+    } finally {
+      if (!sinkClosed) {
+        await sink.close();
+      }
+    }
+
+    if (destination.existsSync()) {
+      await destination.delete();
+    }
+    await temporaryDestination.rename(destination.path);
+  } finally {
+    client.close();
+    if (temporaryDestination.existsSync()) {
+      await temporaryDestination.delete();
+    }
+  }
+}
+
+bool _isRetryableRuntimeBundleDownloadError(Exception error) {
+  if (error is _RuntimeBundleDownloadHttpException) {
+    return error.statusCode == 408 ||
+        error.statusCode == 429 ||
+        (error.statusCode >= 500 && error.statusCode < 600);
+  }
+  return error is http.ClientException ||
+      error is SocketException ||
+      error is HandshakeException ||
+      error is HttpException ||
+      error is TimeoutException;
+}
+
+final class _RuntimeBundleDownloadHttpException implements Exception {
+  const _RuntimeBundleDownloadHttpException(this.url, this.statusCode);
+
+  final String url;
+  final int statusCode;
+
+  @override
+  String toString() => 'Failed to download $url ($statusCode).';
 }
 
 Future<void> _extractArchive({
