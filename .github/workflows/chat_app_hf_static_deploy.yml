@@ -74,20 +74,14 @@ jobs:
         run: |
           (cd example/chat_app && flutter build web --release)
 
-      - name: Install Hugging Face CLI
+      - name: Install Hugging Face Hub client
         run: |
-          if ! command -v hf >/dev/null 2>&1; then
-            curl -LsSf https://hf.co/cli/install.sh | bash
-            echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          fi
+          python3 -m pip install --upgrade "huggingface_hub>=0.36.0,<0.37.0"
 
       - name: Deploy to Hugging Face Space
         env:
           SPACE_REPO: ${{ steps.target.outputs.space_repo }}
         run: |
-          export PATH="$HOME/.local/bin:$PATH"
-          hf version
-
           rm -rf hf-space-sync
           mkdir -p hf-space-sync
 
@@ -109,9 +103,29 @@ jobs:
           } > "hf-space-sync/README.md"
 
           SHORT_SHA="$(printf '%s' "$GITHUB_SHA" | cut -c1-7)"
-          hf upload "$SPACE_REPO" "hf-space-sync/" "." \
-            --repo-type space \
-            --revision main \
-            --token "$HF_TOKEN" \
-            --delete "*" \
-            --commit-message "chore: deploy chat app ${SHORT_SHA}"
+          export SHORT_SHA
+
+          python3 - <<'PY'
+          import os
+
+          from huggingface_hub import HfApi
+
+          api = HfApi(token=os.environ["HF_TOKEN"])
+          space_repo = os.environ["SPACE_REPO"]
+          short_sha = os.environ["SHORT_SHA"]
+
+          api.create_repo(
+              repo_id=space_repo,
+              repo_type="space",
+              space_sdk="static",
+              exist_ok=True,
+          )
+          api.upload_folder(
+              repo_id=space_repo,
+              repo_type="space",
+              folder_path="hf-space-sync",
+              revision="main",
+              commit_message=f"chore: deploy chat app {short_sha}",
+              delete_patterns=["*", "**/*"],
+          )
+          PY
