@@ -1,4 +1,4 @@
-import 'dart:async' show TimeoutException;
+import 'dart:async' show Completer, Timer, TimeoutException, unawaited;
 import 'dart:convert' show utf8;
 import 'dart:io';
 
@@ -1814,9 +1814,19 @@ Future<void> _downloadRuntimeBundleOnce({
     final request = http.Request('GET', Uri.parse(url));
     request.headers[HttpHeaders.acceptHeader] = 'application/octet-stream';
     request.headers[HttpHeaders.userAgentHeader] = 'llamadart-build-hook';
-    final response = await client
-        .send(request)
-        .timeout(_runtimeBundleDownloadRequestTimeout);
+    final sendFuture = client.send(request);
+    unawaited(sendFuture.then<void>((_) {}, onError: (_, _) {}));
+    final response = await sendFuture.timeout(
+      _runtimeBundleDownloadRequestTimeout,
+      onTimeout: () {
+        client.close();
+        throw TimeoutException(
+          'Runtime bundle request timed out after '
+          '${_runtimeBundleDownloadRequestTimeout.inSeconds}s.',
+          _runtimeBundleDownloadRequestTimeout,
+        );
+      },
+    );
 
     if (response.statusCode != 200) {
       throw _RuntimeBundleDownloadHttpException(url, response.statusCode);
@@ -1825,9 +1835,12 @@ Future<void> _downloadRuntimeBundleOnce({
     final sink = temporaryDestination.openWrite();
     var sinkClosed = false;
     try {
-      await response.stream
-          .pipe(sink)
-          .timeout(_runtimeBundleDownloadTransferTimeout);
+      await _writeRuntimeBundleResponse(
+        stream: response.stream,
+        sink: sink,
+        timeout: _runtimeBundleDownloadTransferTimeout,
+      );
+      await sink.close();
       sinkClosed = true;
     } finally {
       if (!sinkClosed) {
@@ -1844,6 +1857,48 @@ Future<void> _downloadRuntimeBundleOnce({
     if (temporaryDestination.existsSync()) {
       await temporaryDestination.delete();
     }
+  }
+}
+
+Future<void> _writeRuntimeBundleResponse({
+  required Stream<List<int>> stream,
+  required IOSink sink,
+  required Duration timeout,
+}) async {
+  final completed = Completer<void>();
+  late final subscription = stream.listen(
+    sink.add,
+    onError: (Object error, StackTrace stackTrace) {
+      if (!completed.isCompleted) {
+        completed.completeError(error, stackTrace);
+      }
+    },
+    onDone: () {
+      if (!completed.isCompleted) {
+        completed.complete();
+      }
+    },
+    cancelOnError: true,
+  );
+  final timeoutTimer = Timer(timeout, () {
+    final timeoutError = TimeoutException(
+      'Runtime bundle body download timed out after ${timeout.inSeconds}s.',
+      timeout,
+    );
+    final timeoutStackTrace = StackTrace.current;
+    unawaited(
+      subscription.cancel().catchError((_) {}).whenComplete(() {
+        if (!completed.isCompleted) {
+          completed.completeError(timeoutError, timeoutStackTrace);
+        }
+      }),
+    );
+  });
+
+  try {
+    await completed.future;
+  } finally {
+    timeoutTimer.cancel();
   }
 }
 
