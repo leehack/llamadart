@@ -1757,16 +1757,17 @@ Future<void> _downloadRuntimeBundle({
       return;
     } on Exception catch (error) {
       lastError = error;
-      final shouldRetry =
-          attempt < _runtimeBundleDownloadMaxAttempts &&
-          _isRetryableRuntimeBundleDownloadError(error);
-      if (!shouldRetry) {
+      final isRetryable = _isRetryableRuntimeBundleDownloadError(error);
+      if (!isRetryable) {
         if (attempt == 1) {
           rethrow;
         }
         throw Exception(
           'Failed to download $url after $attempt attempts: $error',
         );
+      }
+      if (attempt == _runtimeBundleDownloadMaxAttempts) {
+        break;
       }
 
       if (destination.existsSync()) {
@@ -1782,6 +1783,17 @@ Future<void> _downloadRuntimeBundle({
       );
       await Future<void>.delayed(retryDelay);
     }
+  }
+
+  if (lastError != null &&
+      await _downloadRuntimeBundleWithCurl(
+        url: url,
+        destination: destination,
+        description: description,
+        log: log,
+      )) {
+    log.info('Saved $description to ${destination.path}');
+    return;
   }
 
   throw Exception(
@@ -1802,6 +1814,8 @@ Future<void> _downloadRuntimeBundleOnce({
     }
 
     final request = http.Request('GET', Uri.parse(url));
+    request.headers[HttpHeaders.acceptHeader] = 'application/octet-stream';
+    request.headers[HttpHeaders.userAgentHeader] = 'llamadart-build-hook';
     final response = await client
         .send(request)
         .timeout(_runtimeBundleDownloadRequestTimeout);
@@ -1827,6 +1841,66 @@ Future<void> _downloadRuntimeBundleOnce({
     await temporaryDestination.rename(destination.path);
   } finally {
     client.close();
+    if (temporaryDestination.existsSync()) {
+      await temporaryDestination.delete();
+    }
+  }
+}
+
+Future<bool> _downloadRuntimeBundleWithCurl({
+  required String url,
+  required File destination,
+  required String description,
+  required Logger log,
+}) async {
+  final temporaryDestination = File('${destination.path}.curl.tmp');
+  try {
+    if (temporaryDestination.existsSync()) {
+      await temporaryDestination.delete();
+    }
+
+    log.warning(
+      'Trying curl fallback for $description after Dart HTTP retries failed.',
+    );
+    final result = await Process.run('curl', [
+      '--fail',
+      '--location',
+      '--retry',
+      '5',
+      '--retry-all-errors',
+      '--retry-delay',
+      '3',
+      '--connect-timeout',
+      '30',
+      '--max-time',
+      '600',
+      '--silent',
+      '--show-error',
+      '--header',
+      'Accept: application/octet-stream',
+      '--header',
+      'User-Agent: llamadart-build-hook',
+      '--output',
+      temporaryDestination.path,
+      url,
+    ]);
+    if (result.exitCode != 0) {
+      log.warning(
+        'curl fallback failed for $description with exit code '
+        '${result.exitCode}: ${result.stderr}',
+      );
+      return false;
+    }
+
+    if (destination.existsSync()) {
+      await destination.delete();
+    }
+    await temporaryDestination.rename(destination.path);
+    return true;
+  } on ProcessException catch (error) {
+    log.warning('curl fallback unavailable for $description: $error');
+    return false;
+  } finally {
     if (temporaryDestination.existsSync()) {
       await temporaryDestination.delete();
     }
