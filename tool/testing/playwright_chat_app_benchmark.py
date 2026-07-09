@@ -14,6 +14,7 @@ from playwright_chat_app_utils import (
     browser_args,
     emit,
     enable_flutter_semantics,
+    enter_chat_prompt,
     local_storage_init_script,
     safe_body_text,
 )
@@ -197,7 +198,6 @@ def run_chat_benchmark(
 
     runs: list[dict[str, Any]] = []
     total_runs = args.warmups + args.runs
-    textbox = page.get_by_role("textbox").last
     for index in range(total_runs):
         measured = index >= args.warmups
         page.evaluate(
@@ -209,7 +209,7 @@ def run_chat_benchmark(
               window.__llamadartRealLiteRtLmLastChunks = [];
             }"""
         )
-        textbox.fill(args.prompt)
+        enter_chat_prompt(page, args.prompt)
         generation_started = time.monotonic()
         page.get_by_role("button", name="Send message").click()
         try:

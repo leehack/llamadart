@@ -19,6 +19,7 @@ class ChatAppModelDownloadManager implements llama.ModelDownloadManager {
     required this.model,
     required this.modelsDir,
     this.useWebSources = false,
+    this.includeProjector = true,
     this.onProgressDetail,
   }) : source = sourceFor(model, useWebSources: useWebSources);
 
@@ -26,6 +27,7 @@ class ChatAppModelDownloadManager implements llama.ModelDownloadManager {
   final DownloadableModel model;
   final String modelsDir;
   final bool useWebSources;
+  final bool includeProjector;
   final void Function(ModelDownloadProgress progress)? onProgressDetail;
   final llama.ModelSource source;
 
@@ -71,8 +73,11 @@ class ChatAppModelDownloadManager implements llama.ModelDownloadManager {
     );
 
     try {
+      final downloadModel = includeProjector
+          ? model
+          : _modelWithoutProjector(model);
       await modelService.downloadModel(
-        model: model,
+        model: downloadModel,
         modelsDir: modelsDir,
         cancelToken: cancelToken,
         onProgress: (progress) {
@@ -210,6 +215,25 @@ class ChatAppModelDownloadManager implements llama.ModelDownloadManager {
       updatedAt: now,
     );
   }
+}
+
+DownloadableModel _modelWithoutProjector(DownloadableModel model) {
+  return DownloadableModel.fromSources(
+    id: model.id,
+    name: model.name,
+    description: model.description,
+    modelSource: model.modelSource,
+    webModelSource: model.webModelSource,
+    sizeBytes: model.sizeBytes,
+    webSizeBytes: model.webSizeBytes,
+    supportsVision: false,
+    supportsAudio: false,
+    supportsVideo: false,
+    supportsToolCalling: model.supportsToolCalling,
+    supportsThinking: model.supportsThinking,
+    minRamGb: model.minRamGb,
+    preset: model.preset,
+  );
 }
 
 llama.ModelSource _sourceForAsset(ModelAssetSource source) {

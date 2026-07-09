@@ -3,6 +3,7 @@ import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
 
 import 'package:dio/dio.dart';
+import 'package:llamadart/llamadart.dart' as llama;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/downloadable_model.dart';
@@ -23,21 +24,40 @@ class ModelServiceWeb implements ModelService, WebCachePrefetchModelService {
     final downloaded = prefs.getStringList(_downloadedModelsKey) ?? const [];
     final markers = ModelAssetCacheMarkers(downloaded);
     final cachedModels = <String>{};
-    var migratedLegacyMarkers = false;
+    final cache = await _openModelCache();
+    var markersChanged = false;
 
     for (final model in models) {
+      markersChanged =
+          await _syncMarkersWithCache(
+            markers,
+            _remoteSourcesFor(model),
+            cache: cache,
+          ) ||
+          markersChanged;
+
       if (markers.isProfileCached(model, web: true)) {
         cachedModels.add(model.filename);
         continue;
       }
 
       if (markers.migrateLegacyProfileMarker(model, web: true)) {
+        markersChanged = true;
+        markersChanged =
+            await _syncMarkersWithCache(
+              markers,
+              _remoteSourcesFor(model),
+              cache: cache,
+            ) ||
+            markersChanged;
+      }
+
+      if (markers.isProfileCached(model, web: true)) {
         cachedModels.add(model.filename);
-        migratedLegacyMarkers = true;
       }
     }
 
-    if (migratedLegacyMarkers) {
+    if (markersChanged) {
       await prefs.setStringList(_downloadedModelsKey, markers.toSet().toList());
     }
 
@@ -50,7 +70,17 @@ class ModelServiceWeb implements ModelService, WebCachePrefetchModelService {
   ) async {
     final prefs = await SharedPreferences.getInstance();
     final downloaded = prefs.getStringList(_downloadedModelsKey) ?? const [];
-    return ModelAssetCacheMarkers(downloaded).modelCacheState(model, web: true);
+    final markers = ModelAssetCacheMarkers(downloaded);
+    final cache = await _openModelCache();
+    final changed = await _syncMarkersWithCache(
+      markers,
+      _remoteSourcesFor(model),
+      cache: cache,
+    );
+    if (changed) {
+      await prefs.setStringList(_downloadedModelsKey, markers.toSet().toList());
+    }
+    return markers.modelCacheState(model, web: true);
   }
 
   List<ModelAssetSource> _assetSourcesFor(DownloadableModel model) {
@@ -90,7 +120,16 @@ class ModelServiceWeb implements ModelService, WebCachePrefetchModelService {
     final downloaded =
         prefs.getStringList(_downloadedModelsKey)?.toSet() ?? <String>{};
     final markers = ModelAssetCacheMarkers(downloaded);
-    if (markers.migrateLegacyProfileMarker(model, web: true)) {
+    final cache = await _openModelCache();
+    var markersChanged = markers.migrateLegacyProfileMarker(model, web: true);
+    markersChanged =
+        await _syncMarkersWithCache(
+          markers,
+          _remoteSourcesFor(model),
+          cache: cache,
+        ) ||
+        markersChanged;
+    if (markersChanged) {
       await prefs.setStringList(_downloadedModelsKey, markers.toSet().toList());
     }
     final pendingAssets = <_PendingWebCacheAsset>[
@@ -121,7 +160,7 @@ class ModelServiceWeb implements ModelService, WebCachePrefetchModelService {
       return;
     }
     if (pendingAssets.any(
-      (asset) => _hasPersistentCacheSensitiveUrlParts(asset.source.url),
+      (asset) => llama.hasPersistentCacheSensitiveUrlParts(asset.source.url),
     )) {
       onError(
         UnsupportedError(
@@ -185,6 +224,12 @@ class ModelServiceWeb implements ModelService, WebCachePrefetchModelService {
           onProgress: onProgress,
           onProgressDetail: onProgressDetail,
         );
+        if (!await _isRemoteAssetInCache(asset.source, cache: cache)) {
+          throw StateError(
+            'Browser cache prefetch completed, but ${asset.source.filename} '
+            'was not found in Cache Storage. Reload the page and try again.',
+          );
+        }
         markers.markAssetCached(asset.source);
         await prefs.setStringList(
           _downloadedModelsKey,
@@ -257,6 +302,60 @@ class ModelServiceWeb implements ModelService, WebCachePrefetchModelService {
     }
   }
 
+  Future<bool> _syncMarkersWithCache(
+    ModelAssetCacheMarkers markers,
+    Iterable<RemoteModelAssetSource> sources, {
+    _BrowserCache? cache,
+  }) async {
+    var changed = false;
+    for (final source in sources) {
+      final marked = markers.containsAsset(source);
+      final cached = await _isRemoteAssetInCache(source, cache: cache);
+      if (cached && !marked) {
+        markers.markAssetCached(source);
+        changed = true;
+      } else if (!cached && marked) {
+        markers.removeAssets(<RemoteModelAssetSource>[source]);
+        changed = true;
+      }
+    }
+    return changed;
+  }
+
+  Future<_BrowserCache?> _openModelCache() async {
+    if (!_hasCacheStorageApi()) {
+      return null;
+    }
+
+    try {
+      final caches = globalContext.getProperty<JSAny?>('caches'.toJS);
+      if (caches == null || !caches.isA<JSObject>()) {
+        return null;
+      }
+      final cacheStorage = caches as _BrowserCacheStorage;
+      return await cacheStorage.open(_modelCacheName).toDart;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<bool> _isRemoteAssetInCache(
+    RemoteModelAssetSource source, {
+    _BrowserCache? cache,
+  }) async {
+    final modelCache = cache ?? await _openModelCache();
+    if (modelCache == null) {
+      return false;
+    }
+
+    try {
+      final response = await modelCache.match(source.url).toDart;
+      return response != null;
+    } catch (_) {
+      return false;
+    }
+  }
+
   int? _providedDownloadTotalBytes({
     required DownloadableModel model,
     required List<_PendingWebCacheAsset> pendingAssets,
@@ -268,35 +367,6 @@ class ModelServiceWeb implements ModelService, WebCachePrefetchModelService {
       return pendingAssets.single.source.sizeBytes;
     }
     return null;
-  }
-
-  bool _hasPersistentCacheSensitiveUrlParts(String value) {
-    final uri = Uri.tryParse(value);
-    if (uri == null) {
-      return false;
-    }
-    if (uri.userInfo.isNotEmpty || uri.fragment.isNotEmpty) {
-      return true;
-    }
-    // Only block queries that look like signed credentials. Benign flags such
-    // as Hugging Face's `?download=true` are safe to persist in the cache key.
-    const benignQueryKeys = {'download'};
-    return uri.queryParameters.keys.any((key) {
-      final lower = key.toLowerCase();
-      if (benignQueryKeys.contains(lower)) {
-        return false;
-      }
-      return lower.contains('token') ||
-          lower.contains('sig') ||
-          lower.contains('signature') ||
-          lower.contains('expires') ||
-          lower.contains('credential') ||
-          lower.contains('key') ||
-          lower.contains('secret') ||
-          lower.contains('auth') ||
-          lower.contains('session') ||
-          lower.startsWith('x-amz');
-    });
   }
 
   /// Awaits the bridge-readiness signal published by `web/index.html`.
@@ -597,6 +667,14 @@ extension type _WebModelCacheOptions._(JSObject _) implements JSObject {
     JSString? cacheName,
     JSFunction? progressCallback,
   });
+}
+
+extension type _BrowserCacheStorage._(JSObject _) implements JSObject {
+  external JSPromise<_BrowserCache> open(String cacheName);
+}
+
+extension type _BrowserCache._(JSObject _) implements JSObject {
+  external JSPromise<JSAny?> match(String request);
 }
 
 ModelService createModelService() => ModelServiceWeb();

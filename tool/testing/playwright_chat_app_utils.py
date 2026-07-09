@@ -1,6 +1,9 @@
 import json
 import platform
+import time
 from typing import Any, Callable
+
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 
 def emit(event: str, **data: Any) -> None:
@@ -89,3 +92,26 @@ def append_console_log(
     if echo_predicate is not None and echo_predicate(record):
         emit("console", **record)
     return record
+
+
+def enter_chat_prompt(page, prompt: str, *, timeout_ms: int = 30000) -> None:
+    textbox = page.get_by_role("textbox").last
+    textbox.click()
+    modifier = "Meta" if platform.system() == "Darwin" else "Control"
+    page.keyboard.press(f"{modifier}+A")
+    page.keyboard.press("Backspace")
+    page.keyboard.type(prompt)
+    wait_for_send_enabled(page, timeout_ms=timeout_ms)
+
+
+def wait_for_send_enabled(page, *, timeout_ms: int = 30000) -> None:
+    deadline = time.monotonic() + (timeout_ms / 1000)
+    button = page.get_by_role("button", name="Send message")
+    while time.monotonic() < deadline:
+        try:
+            if button.is_enabled(timeout=250):
+                return
+        except PlaywrightTimeoutError:
+            pass
+        time.sleep(0.05)
+    raise TimeoutError("Timed out waiting for Send message button to enable")

@@ -369,31 +369,33 @@ void main() {
       expect(provider.currentTokens, 1);
     });
 
-    test('web remote load skips cache prefetch for .litertlm models', () async {
-      final webEngine = MockLlamaEngine();
-      final modelService = _RecordingModelService();
-      final webProvider = ChatProvider(
-        chatService: ChatService(engine: webEngine),
-        settingsService: mockSettingsService,
-        modelService: modelService,
-        enableWebModelPrefetch: true,
-        initialSettings: const ChatSettings(
-          modelPath: 'https://example.com/models/gemma-4-E2B-it-web.litertlm',
-        ),
-      );
-      addTearDown(webProvider.dispose);
+    test(
+      'web remote load prefetches .litertlm models before runtime load',
+      () async {
+        final webEngine = MockLlamaEngine();
+        final modelService = _RecordingModelService();
+        final webProvider = ChatProvider(
+          chatService: ChatService(engine: webEngine),
+          settingsService: mockSettingsService,
+          modelService: modelService,
+          enableWebModelPrefetch: true,
+          initialSettings: const ChatSettings(
+            modelPath:
+                'https://example.com/models/gemma-4-E2B-it-web.litertlm?download=true',
+          ),
+        );
+        addTearDown(webProvider.dispose);
 
-      await webProvider.loadModel();
+        await webProvider.loadModel();
 
-      // The @litert-lm/core engine fetches the URL itself and cannot read the
-      // WebGPU CacheStorage bucket the prefetch fills, so prefetching would
-      // download the whole model an extra time. It must be skipped for
-      // .litertlm (a .gguf URL still prefetches; see the test above).
-      expect(modelService.downloadCalls, 0);
-      expect(webEngine.lastLoadedModelUrl, webProvider.settings.modelPath);
-      expect(webProvider.isLoaded, isTrue);
-      expect(webProvider.error, isNull);
-    });
+        // LiteRT-LM web can consume cached browser bytes as a Blob, so the app
+        // should prefetch once and let the backend initialize from CacheStorage.
+        expect(modelService.downloadCalls, 1);
+        expect(webEngine.lastLoadedModelUrl, webProvider.settings.modelPath);
+        expect(webProvider.isLoaded, isTrue);
+        expect(webProvider.error, isNull);
+      },
+    );
 
     test(
       'sendMessage swallows unsupported getTokenCount without an error bubble',

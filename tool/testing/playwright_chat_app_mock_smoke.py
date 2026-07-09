@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 import argparse
 import json
+import re
 
 from playwright.sync_api import sync_playwright
 
 from playwright_chat_app_utils import (
     append_console_log,
     enable_flutter_semantics,
+    enter_chat_prompt,
     local_storage_init_script,
 )
 
@@ -54,11 +56,10 @@ def main() -> int:
 
         enable_flutter_semantics(page)
 
-        page.get_by_role("button", name="Load Model").click()
+        page.get_by_role("button", name=re.compile(r"Load Model", re.I)).click()
         page.get_by_text("Model loaded successfully! Ready to chat.").wait_for()
 
-        textbox = page.get_by_role("textbox")
-        textbox.fill("hi")
+        enter_chat_prompt(page, "hi")
         page.get_by_role("button", name="Send message").click()
 
         page.wait_for_function(

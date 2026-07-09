@@ -5,7 +5,7 @@ import 'package:llamadart_chat_example/services/model_service_base.dart';
 import 'package:llamadart_chat_example/widgets/model_card.dart';
 
 void main() {
-  testWidgets('web LiteRT-LM presets load directly instead of showing cache', (
+  testWidgets('web LiteRT-LM presets load and cache on first use', (
     tester,
   ) async {
     var selectCalls = 0;
@@ -20,14 +20,36 @@ void main() {
       onDownload: () => downloadCalls += 1,
     );
 
-    expect(find.text('Load Web Model'), findsOneWidget);
+    expect(find.text('Load & Cache Model'), findsOneWidget);
     expect(find.text('Cache Model'), findsNothing);
 
-    await tester.tap(find.text('Load Web Model'));
+    await tester.tap(find.text('Load & Cache Model'));
     await tester.pump();
 
     expect(selectCalls, 1);
     expect(downloadCalls, 0);
+  });
+
+  testWidgets('web LiteRT-LM cached presets show cached load action', (
+    tester,
+  ) async {
+    var selectCalls = 0;
+
+    await _pumpCard(
+      tester,
+      model: _litertLmModel(),
+      isWeb: true,
+      isDownloaded: true,
+      onSelect: () => selectCalls += 1,
+      onDownload: () {},
+    );
+
+    expect(find.text('Use Cached Model'), findsOneWidget);
+
+    await tester.tap(find.text('Use Cached Model'));
+    await tester.pump();
+
+    expect(selectCalls, 1);
   });
 
   testWidgets('web GGUF presets still show the cache action before download', (
@@ -70,11 +92,10 @@ void main() {
     expect(find.textContaining('very large LiteRT-LM'), findsNothing);
   });
 
-  testWidgets('partial multimodal cache shows missing mmproj state', (
-    tester,
-  ) async {
+  testWidgets('partial multimodal cache allows text-only load', (tester) async {
     var downloadCalls = 0;
     var deleteCalls = 0;
+    var includeProjector = true;
 
     await _pumpCard(
       tester,
@@ -96,6 +117,8 @@ void main() {
       onSelect: () {},
       onDownload: () => downloadCalls += 1,
       onDelete: () => deleteCalls += 1,
+      includeProjector: includeProjector,
+      onIncludeProjectorChanged: (value) => includeProjector = value,
     );
 
     expect(find.text('Model cached'), findsOneWidget);
@@ -106,10 +129,12 @@ void main() {
       ),
       findsOneWidget,
     );
-    expect(find.text('Download Missing Assets'), findsOneWidget);
+    expect(find.text('Download projector'), findsOneWidget);
+    expect(find.text('Use Text Only'), findsOneWidget);
+    expect(find.text('Download Projector'), findsOneWidget);
     expect(find.byTooltip('Delete cached assets'), findsOneWidget);
 
-    await tester.tap(find.text('Download Missing Assets'));
+    await tester.tap(find.text('Download Projector'));
     await tester.pump();
 
     expect(downloadCalls, 1);
@@ -119,6 +144,32 @@ void main() {
 
     expect(deleteCalls, 1);
   });
+
+  testWidgets('download progress row does not overflow narrow cards', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await _pumpCard(
+      tester,
+      model: _vlmModel(),
+      isWeb: true,
+      isDownloaded: false,
+      isDownloading: true,
+      progress: 0.67,
+      downloadStatusLabel:
+          'Caching multimodal projector with an unusually long status label (2/2)',
+      downloadTransferLabel: '123.45 MB/s | 12m 34s left',
+      onSelect: () {},
+      onDownload: () {},
+    );
+
+    expect(tester.takeException(), isNull);
+    expect(find.byTooltip('Pause Download'), findsOneWidget);
+  });
 }
 
 Future<void> _pumpCard(
@@ -127,9 +178,15 @@ Future<void> _pumpCard(
   required bool isWeb,
   required bool isDownloaded,
   ModelProfileCacheState? cacheState,
+  bool isDownloading = false,
+  double progress = 0,
+  String? downloadStatusLabel,
+  String? downloadTransferLabel,
   required VoidCallback onSelect,
   required VoidCallback onDownload,
   VoidCallback? onDelete,
+  bool includeProjector = true,
+  ValueChanged<bool>? onIncludeProjectorChanged,
 }) async {
   await tester.pumpWidget(
     MaterialApp(
@@ -139,8 +196,10 @@ Future<void> _pumpCard(
             model: model,
             isDownloaded: isDownloaded,
             cacheState: cacheState,
-            isDownloading: false,
-            progress: 0,
+            isDownloading: isDownloading,
+            progress: progress,
+            downloadStatusLabel: downloadStatusLabel,
+            downloadTransferLabel: downloadTransferLabel,
             isWeb: isWeb,
             isSelected: false,
             gpuLayers: 0,
@@ -150,6 +209,8 @@ Future<void> _pumpCard(
             onSelect: onSelect,
             onDownload: onDownload,
             onDelete: onDelete ?? () {},
+            includeProjector: includeProjector,
+            onIncludeProjectorChanged: onIncludeProjectorChanged,
           ),
         ),
       ),

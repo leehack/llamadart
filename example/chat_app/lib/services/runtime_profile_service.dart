@@ -45,16 +45,22 @@ class RuntimeProfileService {
       runtimeModelSource: _metadataValue(
         metadata,
         'llamadart.webgpu.model_source',
+        fallbackKey: 'llamadart.litert_lm_web.model_source',
       ),
       runtimeModelCacheState: _metadataValue(
         metadata,
         'llamadart.webgpu.model_cache_state',
+        fallbackKey: 'llamadart.litert_lm_web.model_cache_state',
       ),
     );
   }
 
-  String? _metadataValue(Map<String, String> metadata, String key) {
-    final value = metadata[key]?.trim();
+  String? _metadataValue(
+    Map<String, String> metadata,
+    String key, {
+    String? fallbackKey,
+  }) {
+    final value = (metadata[key] ?? metadata[fallbackKey])?.trim();
     if (value == null || value.isEmpty) {
       return null;
     }

@@ -8,6 +8,7 @@ import 'dart:typed_data';
 import 'package:web/web.dart';
 
 import '../../core/models/chat/content_part.dart';
+import '../../core/cache_policy.dart';
 import '../../core/models/config/gpu_backend.dart';
 import '../../core/models/config/llama_cpp_param_values.dart';
 import '../../core/models/config/log_level.dart';
@@ -36,6 +37,8 @@ class WebGpuLlamaBackend
   static const int _gpuMultimodalMaxImagePixels = 1048576;
   static const int _gpuMultimodalMaxImageEdge = 1280;
   static const Duration _webGpuMultimodalWarmupTimeout = Duration(seconds: 12);
+  static const String _defaultModelCacheName =
+      'llamadart-webgpu-model-cache-v1';
   static const String _runtimeLoraUnsupportedMessage =
       'WebGPU LoRA runtime updates are not supported by the current bridge. '
       'Use a native llama.cpp backend when runtime LoRA adapter changes are '
@@ -571,18 +574,6 @@ class WebGpuLlamaBackend
         lowered.contains('error 138');
   }
 
-  bool _urlHasPersistentCacheSensitiveParts(String value) {
-    final uri = Uri.tryParse(value);
-    if (uri == null ||
-        (uri.scheme != 'http' && uri.scheme != 'https') ||
-        uri.host.isEmpty) {
-      return false;
-    }
-    return uri.userInfo.isNotEmpty ||
-        uri.query.isNotEmpty ||
-        uri.fragment.isNotEmpty;
-  }
-
   List<({int contextSize, int gpuLayers})> _buildLoadAttempts({
     required int requestedContextSize,
     required int requestedGpuLayers,
@@ -972,6 +963,7 @@ class WebGpuLlamaBackend
       requestedContextSize: params.contextSize,
       requestedGpuLayers: requestedGpuLayers,
     );
+    final cachedWebModel = await _isModelResponseCachedForUrl(url);
     Object? lastError;
     Map<String, String> lastRuntimeHints = const <String, String>{};
     var retriedWithWasm32 = false;
@@ -1012,6 +1004,8 @@ class WebGpuLlamaBackend
           forceRemoteFetchBackend = _forceRemoteFetchBackendOverride;
         } else if (_getGlobalBool('__llamadartBridgeForceRemoteFetchBackend')) {
           forceRemoteFetchBackend = true;
+        } else if (cachedWebModel) {
+          forceRemoteFetchBackend = false;
         }
 
         final loadPromise = bridge.loadModelFromUrl(
@@ -1034,7 +1028,7 @@ class WebGpuLlamaBackend
             ropeFrequencyScale: params.ropeFrequencyScale,
             splitMode: params.splitMode.llamaCppValue,
             mainGpu: params.mainGpu,
-            useCache: !_urlHasPersistentCacheSensitiveParts(url),
+            useCache: !hasPersistentCacheSensitiveUrlParts(url),
             forceRemoteFetchBackend: forceRemoteFetchBackend,
             remoteFetchChunkBytes: remoteFetchChunkBytesOverride,
             modelBytesHint: params.modelBytesHint,
@@ -2244,23 +2238,85 @@ class WebGpuLlamaBackend
     String mmProjPath,
   ) async {
     final bridge = _requireBridge();
-    final result = await _toFuture(bridge.loadMultimodalProjector(mmProjPath));
-    _mmContextActive = true;
-    _resetWebGpuMultimodalWarmupState();
-    await _ensureWebGpuMultimodalWarmup(
-      bridge,
-      isCpuMultimodalRuntime: _isCpuRuntimeForMultimodal(bridge),
-    );
+    final cachedBlobUrl = await _cachedModelBlobUrlFor(mmProjPath);
+    final projectorPath = cachedBlobUrl ?? mmProjPath;
 
-    if (result == null) {
+    try {
+      final result = await _toFuture(
+        bridge.loadMultimodalProjector(projectorPath),
+      );
+      _mmContextActive = true;
+      _resetWebGpuMultimodalWarmupState();
+      await _ensureWebGpuMultimodalWarmup(
+        bridge,
+        isCpuMultimodalRuntime: _isCpuRuntimeForMultimodal(bridge),
+      );
+
+      if (result == null) {
+        return 1;
+      }
+
+      if (result.isA<JSNumber>()) {
+        return (result as JSNumber).toDartInt;
+      }
+
       return 1;
+    } finally {
+      if (cachedBlobUrl != null) {
+        URL.revokeObjectURL(cachedBlobUrl);
+      }
+    }
+  }
+
+  Future<String?> _cachedModelBlobUrlFor(String sourceUrl) async {
+    final uri = Uri.tryParse(sourceUrl);
+    if (uri == null || !(uri.isScheme('http') || uri.isScheme('https'))) {
+      return null;
+    }
+    if (hasPersistentCacheSensitiveUrlParts(sourceUrl)) {
+      return null;
     }
 
-    if (result.isA<JSNumber>()) {
-      return (result as JSNumber).toDartInt;
+    try {
+      final caches = globalContext.getProperty<JSAny?>('caches'.toJS);
+      if (caches == null || !caches.isA<JSObject>()) {
+        return null;
+      }
+
+      final cache = await window.caches.open(_defaultModelCacheName).toDart;
+      final cachedResponse = await cache.match(sourceUrl.toJS).toDart;
+      if (cachedResponse == null) {
+        return null;
+      }
+
+      final blob = await cachedResponse.blob().toDart;
+      return URL.createObjectURL(blob);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<bool> _isModelResponseCachedForUrl(String sourceUrl) async {
+    final uri = Uri.tryParse(sourceUrl);
+    if (uri == null || !(uri.isScheme('http') || uri.isScheme('https'))) {
+      return false;
+    }
+    if (hasPersistentCacheSensitiveUrlParts(sourceUrl)) {
+      return false;
     }
 
-    return 1;
+    try {
+      final caches = globalContext.getProperty<JSAny?>('caches'.toJS);
+      if (caches == null || !caches.isA<JSObject>()) {
+        return false;
+      }
+
+      final cache = await window.caches.open(_defaultModelCacheName).toDart;
+      final cachedResponse = await cache.match(sourceUrl.toJS).toDart;
+      return cachedResponse != null;
+    } catch (_) {
+      return false;
+    }
   }
 
   @override

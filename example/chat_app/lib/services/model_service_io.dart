@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:dio/dio.dart';
+import 'package:llamadart/llamadart.dart' as llama;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -32,12 +33,25 @@ class ModelServiceIO implements ModelService {
 
   @override
   Future<String> getModelsDirectory() async {
-    final dir = await getApplicationCacheDirectory();
-    final modelsDir = Directory(p.join(dir.path, 'models'));
+    final modelsDir = Directory(await _defaultModelsDirectory());
     if (!await modelsDir.exists()) {
       await modelsDir.create(recursive: true);
     }
     return modelsDir.path;
+  }
+
+  Future<String> _defaultModelsDirectory() async {
+    if (Platform.isAndroid || Platform.isIOS) {
+      final dir = await getApplicationCacheDirectory();
+      return p.join(dir.path, 'models');
+    }
+
+    try {
+      return llama.DefaultModelDownloadManager.auto().defaultCacheDirectory;
+    } catch (_) {
+      final dir = await getApplicationCacheDirectory();
+      return p.join(dir.path, 'models');
+    }
   }
 
   @override

@@ -1,5 +1,10 @@
 ## Unreleased
 
+* Improved the runnable chat app's model-cache UX by reusing cached GGUF and
+  LiteRT-LM web bundles for benign catalog URLs such as `?download=true`,
+  preserving browser model caches during app cache cleanup, adding a text-only
+  projector skip path, and polishing download/load progress states.
+
 * Updated the default llama.cpp native runtime pin to
   `leehack/llamadart-native@b9935`, regenerated matching Dart FFI bindings, refreshed
   the `llamadart_llama_cpp_flutter` Apple SwiftPM checksum, and

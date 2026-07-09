@@ -365,20 +365,8 @@ class ChatProvider extends ChangeNotifier {
     if (targetModelPath == null || targetModelPath.isEmpty) {
       _session = null;
       _isLoaded = false;
-      _supportsVision = false;
-      _supportsAudio = false;
-      _mmprojLoaded = false;
-      _templateSupportsTools = true;
-      _thinkingControlsSupported = true;
-      _runtimeGpuLayers = null;
-      _runtimeThreads = null;
-      _runtimeThreadPoolSize = null;
-      _runtimeExecution = null;
-      _runtimeCoreVariant = null;
-      _runtimeWorkerFallbackReason = null;
-      _runtimeNotes = null;
-      _runtimeModelSource = null;
-      _runtimeModelCacheState = null;
+      _resetRuntimeCapabilities();
+      _clearRuntimeDiagnostics();
       notifyListeners();
       return;
     }
@@ -451,13 +439,13 @@ class ChatProvider extends ChangeNotifier {
     try {
       availableBackendInfo = await _chatService.engine.getAvailableBackends();
     } catch (e) {
-      debugPrint("Error fetching available backends: $e");
+      _logDart(LlamaLogLevel.warn, "Error fetching available backends: $e");
     }
 
     try {
       activeBackendInfo = await _chatService.engine.getBackendName();
     } catch (e) {
-      debugPrint("Error fetching active backend: $e");
+      _logDart(LlamaLogLevel.warn, "Error fetching active backend: $e");
     }
 
     if (availableBackendInfo != null) {
@@ -482,6 +470,14 @@ class ChatProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  void _logDart(LlamaLogLevel level, String message) {
+    final configured = _settings.logLevel;
+    if (configured == LlamaLogLevel.none || level.index < configured.index) {
+      return;
+    }
+    debugPrint(message);
+  }
+
   bool _isRemoteUrl(String? value) {
     if (value == null || value.isEmpty) {
       return false;
@@ -498,18 +494,8 @@ class ChatProvider extends ChangeNotifier {
     return withoutQuery.toLowerCase().endsWith('.litertlm');
   }
 
-  bool _hasPersistentCacheSensitiveUrlParts(String? value) {
-    if (!_isRemoteUrl(value)) {
-      return false;
-    }
-    final uri = Uri.parse(value!);
-    return uri.userInfo.isNotEmpty ||
-        uri.query.isNotEmpty ||
-        uri.fragment.isNotEmpty;
-  }
-
   bool _webCachePrefetchWouldPersistSensitiveUrl() {
-    return _hasPersistentCacheSensitiveUrlParts(_settings.modelPath);
+    return hasPersistentCacheSensitiveUrlParts(_settings.modelPath ?? '');
   }
 
   String _filenameFromPathOrUrl(
@@ -547,19 +533,56 @@ class ChatProvider extends ChangeNotifier {
     _activeModelPrefetchCancelToken = null;
   }
 
+  void _resetRuntimeCapabilities() {
+    _supportsVision = false;
+    _supportsAudio = false;
+    _mmprojLoaded = false;
+    _templateSupportsTools = true;
+    _thinkingControlsSupported = true;
+  }
+
+  void _clearRuntimeDiagnostics() {
+    _runtimeGpuLayers = null;
+    _runtimeThreads = null;
+    _runtimeThreadPoolSize = null;
+    _runtimeExecution = null;
+    _runtimeCoreVariant = null;
+    _runtimeWorkerFallbackReason = null;
+    _runtimeNotes = null;
+    _runtimeModelSource = null;
+    _runtimeModelCacheState = null;
+  }
+
+  void _clearGenerationMetrics() {
+    _lastTokensPerSecond = null;
+    _lastDecodeTokensPerSecond = null;
+    _lastNativePromptEvalMs = null;
+    _lastNativeEvalMs = null;
+    _lastNativeSampleMs = null;
+    _lastNativePromptEvalTokens = null;
+    _lastNativeEvalTokens = null;
+    _lastNativeReusedGraphs = null;
+  }
+
+  void _clearLoadedRuntimeState({String? activeBackend, int? contextLimit}) {
+    _isLoaded = false;
+    if (activeBackend != null) {
+      _activeBackend = activeBackend;
+    }
+    if (contextLimit != null) {
+      _contextLimit = contextLimit;
+    }
+    _loadedModelPath = null;
+    _loadedMmprojPath = null;
+    _resetRuntimeCapabilities();
+    _clearRuntimeDiagnostics();
+  }
+
   Future<bool> _prefetchWebRemoteModelIfNeeded(
     void Function(double value, {String? backendLabel, bool forceNotify})
     updateLoadingUi,
   ) async {
     if (!_enableWebModelPrefetch || !_isRemoteUrl(_settings.modelPath)) {
-      return false;
-    }
-    // The WebGPU bridge prefetch stores into a CacheStorage bucket that only
-    // the llama.cpp/GGUF bridge reads back. The @litert-lm/core engine fetches
-    // the .litertlm URL itself and has no access to that cache, so prefetching
-    // here just downloads the whole model an extra time before the engine
-    // re-downloads it. Skip it and let the engine fetch once.
-    if (_isLiteRtLmModelPath(_settings.modelPath)) {
       return false;
     }
     if (_webCachePrefetchWouldPersistSensitiveUrl()) {
@@ -663,7 +686,9 @@ class ChatProvider extends ChangeNotifier {
 
     updateLoadingUi(
       0.72,
-      backendLabel: 'Preparing WebGPU runtime...',
+      backendLabel: _isLiteRtLmModelPath(_settings.modelPath)
+          ? 'Preparing LiteRT-LM runtime...'
+          : 'Preparing WebGPU runtime...',
       forceNotify: true,
     );
     return true;
@@ -683,20 +708,8 @@ class ChatProvider extends ChangeNotifier {
     _error = null;
     _loadingProgress = 0.0;
     _activeBackend = 'Loading model...';
-    _supportsVision = false;
-    _supportsAudio = false;
-    _mmprojLoaded = false;
-    _templateSupportsTools = true;
-    _thinkingControlsSupported = true;
-    _runtimeGpuLayers = null;
-    _runtimeThreads = null;
-    _runtimeThreadPoolSize = null;
-    _runtimeExecution = null;
-    _runtimeCoreVariant = null;
-    _runtimeWorkerFallbackReason = null;
-    _runtimeNotes = null;
-    _runtimeModelSource = null;
-    _runtimeModelCacheState = null;
+    _resetRuntimeCapabilities();
+    _clearRuntimeDiagnostics();
     notifyListeners();
 
     DateTime lastProgressNotifyAt = DateTime.now();
@@ -753,7 +766,7 @@ class ChatProvider extends ChangeNotifier {
       try {
         await estimateDynamicSettings();
       } catch (e) {
-        debugPrint("Dynamic estimation failed: $e");
+        _logDart(LlamaLogLevel.warn, "Dynamic estimation failed: $e");
       }
     }
 
@@ -770,11 +783,6 @@ class ChatProvider extends ChangeNotifier {
       }
       updateLoadingUi(0.14);
 
-      final prefetchedWebModel = await _prefetchWebRemoteModelIfNeeded(
-        updateLoadingUi,
-      );
-      final modelLoadStart = prefetchedWebModel ? 0.72 : 0.14;
-      final modelLoadSpan = prefetchedWebModel ? 0.12 : 0.7;
       // On web the LiteRT-LM backend downloads + initializes the model through
       // @litert-lm/core and only reports 0%/100%, so a percentage would sit at
       // "0%" for the whole download and look frozen. Show an honest
@@ -782,12 +790,21 @@ class ChatProvider extends ChangeNotifier {
       // file path (no download), so they keep the generic progress label.
       final isLiteRtLmLoad =
           kIsWeb && _isLiteRtLmModelPath(_settings.modelPath);
+      final prefetchedWebModel = await _prefetchWebRemoteModelIfNeeded(
+        updateLoadingUi,
+      );
+      final modelLoadStart = prefetchedWebModel ? 0.72 : 0.14;
+      final modelLoadSpan = prefetchedWebModel ? 0.12 : 0.7;
       const liteRtLmLoadingLabel =
           'Downloading and initializing model (first load may take a while)...';
+      const liteRtLmCachedLoadingLabel =
+          'Initializing cached LiteRT-LM model...';
       if (prefetchedWebModel) {
         updateLoadingUi(
           modelLoadStart,
-          backendLabel: 'Loading model into memory...',
+          backendLabel: isLiteRtLmLoad
+              ? liteRtLmCachedLoadingLabel
+              : 'Loading model into memory...',
           forceNotify: true,
         );
       } else if (isLiteRtLmLoad) {
@@ -798,14 +815,21 @@ class ChatProvider extends ChangeNotifier {
         );
       }
 
+      if (isLiteRtLmLoad) {
+        await Future<void>.delayed(Duration.zero);
+      }
+
       await _chatService.init(
         _settings,
         eagerLoadMultimodalProjector: eagerLoadMmproj,
+        eagerWarmUpLiteRtLmRuntime: !isLiteRtLmLoad,
         onProgress: (progress) {
           final normalized = progress.clamp(0.0, 1.0);
           final staged = modelLoadStart + (normalized * modelLoadSpan);
           final String backendLabel;
-          if (prefetchedWebModel) {
+          if (prefetchedWebModel && isLiteRtLmLoad) {
+            backendLabel = liteRtLmCachedLoadingLabel;
+          } else if (prefetchedWebModel) {
             backendLabel =
                 'Loading model into memory ${(normalized * 100).toStringAsFixed(0)}%';
           } else if (isLiteRtLmLoad) {
@@ -920,16 +944,12 @@ class ChatProvider extends ChangeNotifier {
         return;
       }
       final displayError = _formatDisplayError(e);
-      debugPrint('Error loading model: $displayError');
-      debugPrint(stackTrace.toString());
+      _logDart(LlamaLogLevel.error, 'Error loading model: $displayError');
+      _logDart(LlamaLogLevel.debug, stackTrace.toString());
       _error = displayError;
       _loadedModelPath = null;
       _loadedMmprojPath = null;
-      _supportsVision = false;
-      _supportsAudio = false;
-      _mmprojLoaded = false;
-      _templateSupportsTools = true;
-      _thinkingControlsSupported = true;
+      _resetRuntimeCapabilities();
     } finally {
       _isInitializing = false;
       if (!_isDisposed) {
@@ -995,14 +1015,7 @@ class ChatProvider extends ChangeNotifier {
     _isPruning = false;
     _isGenerating = false;
     _stagedParts.clear();
-    _lastTokensPerSecond = null;
-    _lastDecodeTokensPerSecond = null;
-    _lastNativePromptEvalMs = null;
-    _lastNativeEvalMs = null;
-    _lastNativeSampleMs = null;
-    _lastNativePromptEvalTokens = null;
-    _lastNativeEvalTokens = null;
-    _lastNativeReusedGraphs = null;
+    _clearGenerationMetrics();
     _messages.add(
       ChatMessage(
         text: 'Conversation cleared. Ready for a new topic!',
@@ -1751,7 +1764,7 @@ class ChatProvider extends ChangeNotifier {
       _addInfoMessage(fileReadError);
       notifyListeners();
     } catch (error) {
-      debugPrint('Error picking $debugLabel: $error');
+      _logDart(LlamaLogLevel.warn, 'Error picking $debugLabel: $error');
     }
   }
 
@@ -1760,7 +1773,10 @@ class ChatProvider extends ChangeNotifier {
       final bytes = await File(path).readAsBytes();
       return _prepareImagePartFromBytes(bytes);
     } catch (error) {
-      debugPrint('Error preparing image bytes from path: $error');
+      _logDart(
+        LlamaLogLevel.warn,
+        'Error preparing image bytes from path: $error',
+      );
       return null;
     }
   }
@@ -1960,26 +1976,8 @@ class ChatProvider extends ChangeNotifier {
 
     _isInitializing = false;
     _loadingProgress = 0.0;
-    _isLoaded = false;
     _error = null;
-    _activeBackend = 'Unloaded';
-    _contextLimit = 0;
-    _loadedModelPath = null;
-    _loadedMmprojPath = null;
-    _supportsVision = false;
-    _supportsAudio = false;
-    _mmprojLoaded = false;
-    _templateSupportsTools = true;
-    _thinkingControlsSupported = true;
-    _runtimeGpuLayers = null;
-    _runtimeThreads = null;
-    _runtimeThreadPoolSize = null;
-    _runtimeExecution = null;
-    _runtimeCoreVariant = null;
-    _runtimeWorkerFallbackReason = null;
-    _runtimeNotes = null;
-    _runtimeModelSource = null;
-    _runtimeModelCacheState = null;
+    _clearLoadedRuntimeState(activeBackend: 'Unloaded', contextLimit: 0);
     _syncActiveConversationSnapshot(touchUpdatedAt: false);
     notifyListeners();
   }
@@ -2198,7 +2196,7 @@ class ChatProvider extends ChangeNotifier {
       try {
         await _chatService.unloadMultimodalProjector();
       } catch (error) {
-        debugPrint('Failed to unload active mmproj: $error');
+        _logDart(LlamaLogLevel.warn, 'Failed to unload active mmproj: $error');
         _addInfoMessage(
           'Failed to unload the active mmproj cleanly. Reload the model if text output still looks wrong.',
         );
@@ -2298,7 +2296,7 @@ class ChatProvider extends ChangeNotifier {
         ),
       );
     } catch (e) {
-      debugPrint("Error estimating dynamic settings: $e");
+      _logDart(LlamaLogLevel.warn, "Error estimating dynamic settings: $e");
     }
   }
 }

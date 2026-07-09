@@ -71,8 +71,7 @@
           const flutterLikeKeys = keys.filter((key) =>
             key.startsWith('flutter-') ||
             key.startsWith('workbox-') ||
-            key.includes('flutter-app-cache') ||
-            key.includes('llamadart-webgpu')
+            key.includes('flutter-app-cache')
           );
           await Promise.allSettled(
             flutterLikeKeys.map((key) => caches.delete(key)),

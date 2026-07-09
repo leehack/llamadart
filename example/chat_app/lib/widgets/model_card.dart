@@ -18,10 +18,12 @@ class ModelCard extends StatelessWidget {
   final int contextSize;
   final ValueChanged<int> onGpuLayersChanged;
   final ValueChanged<int> onContextSizeChanged;
-  final VoidCallback onSelect;
+  final VoidCallback? onSelect;
   final VoidCallback onDownload;
   final VoidCallback onDelete;
   final VoidCallback? onCancel;
+  final bool includeProjector;
+  final ValueChanged<bool>? onIncludeProjectorChanged;
 
   const ModelCard({
     super.key,
@@ -42,6 +44,8 @@ class ModelCard extends StatelessWidget {
     required this.onDownload,
     required this.onDelete,
     this.onCancel,
+    this.includeProjector = true,
+    this.onIncludeProjectorChanged,
   });
 
   @override
@@ -49,7 +53,14 @@ class ModelCard extends StatelessWidget {
     final colorScheme = Theme.of(context).colorScheme;
     const webLargeModelWarningThresholdBytes = 1900 * 1024 * 1024;
     final isWebLiteRtLmModel = isWeb && _isLiteRtLmModel(model);
-    final canLoadModel = isDownloaded || isWebLiteRtLmModel;
+    final isModelCached =
+        isDownloaded || (cacheState?.model.isAvailable ?? false);
+    final projectorSource = model.multimodalProjectorSourceFor(web: isWeb);
+    final hasProjector = projectorSource != null;
+    final isProjectorCached =
+        cacheState?.multimodalProjector?.isAvailable ?? false;
+    final isProjectorMissing = hasProjector && !isProjectorCached;
+    final canLoadModel = isModelCached || isWebLiteRtLmModel;
     final effectiveModelSizeBytes = model.sizeBytesFor(web: isWeb);
     final showWebLargeModelWarning =
         isWeb && effectiveModelSizeBytes >= webLargeModelWarningThresholdBytes;
@@ -62,16 +73,25 @@ class ModelCard extends StatelessWidget {
         !isWeb &&
         (defaultTargetPlatform == TargetPlatform.android ||
             defaultTargetPlatform == TargetPlatform.iOS);
+    final shouldShowProjectorOption =
+        isProjectorMissing &&
+        !isDownloading &&
+        onIncludeProjectorChanged != null &&
+        !isWebLiteRtLmModel;
+    final shouldShowProjectorDownloadAction =
+        canLoadModel && isProjectorMissing && includeProjector;
+    final willLoadTextOnly = canLoadModel && isProjectorMissing;
+    final clampedProgress = progress.clamp(0.0, 1.0).toDouble();
 
     return Container(
       decoration: BoxDecoration(
         color: colorScheme.surfaceContainer,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(8),
         border: Border.all(
-          color: colorScheme.outlineVariant.withValues(alpha: 0.1),
+          color: colorScheme.outlineVariant.withValues(alpha: 0.24),
         ),
       ),
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -262,6 +282,50 @@ class ModelCard extends StatelessWidget {
             ),
           ],
           const SizedBox(height: 12),
+          if (shouldShowProjectorOption) ...[
+            Divider(
+              height: 1,
+              color: colorScheme.outlineVariant.withValues(alpha: 0.35),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Icon(
+                  Icons.visibility_outlined,
+                  size: 18,
+                  color: colorScheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    isWeb ? 'Cache projector for media' : 'Download projector',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: colorScheme.onSurface,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                Switch(
+                  value: includeProjector,
+                  onChanged: onIncludeProjectorChanged,
+                ),
+              ],
+            ),
+            Text(
+              'Off keeps this model text-only and skips the mmproj file.',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 11,
+                height: 1.25,
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
           Wrap(
             spacing: 8,
             runSpacing: 8,
@@ -285,30 +349,40 @@ class ModelCard extends StatelessWidget {
           const SizedBox(height: 16),
           if (isDownloading || (progress > 0 && !isDownloaded)) ...[
             ClipRRect(
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(4),
               child: LinearProgressIndicator(
-                value: progress,
+                value: clampedProgress,
                 backgroundColor: colorScheme.surfaceContainerHighest,
+                minHeight: 7,
               ),
             ),
             const SizedBox(height: 8),
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  isDownloading
-                      ? (downloadStatusLabel ??
-                            (isWeb ? 'Caching model...' : 'Downloading...'))
-                      : 'Paused',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: isDownloading ? colorScheme.primary : Colors.orange,
+                Expanded(
+                  child: Text(
+                    isDownloading
+                        ? (downloadStatusLabel ??
+                              (isWeb ? 'Caching model...' : 'Downloading...'))
+                        : 'Paused',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12,
+                      height: 1.2,
+                      color: isDownloading
+                          ? colorScheme.primary
+                          : Colors.orange,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
+                const SizedBox(width: 12),
                 Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      '${(progress * 100).toStringAsFixed(0)}%',
+                      '${(clampedProgress * 100).toStringAsFixed(0)}%',
                       style: TextStyle(
                         fontSize: 12,
                         color: isDownloading
@@ -345,6 +419,8 @@ class ModelCard extends StatelessWidget {
               const SizedBox(height: 6),
               Text(
                 downloadTransferLabel!,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   fontSize: 11,
                   color: colorScheme.onSurfaceVariant,
@@ -483,20 +559,28 @@ class ModelCard extends StatelessWidget {
                       label: Text(
                         isWebLiteRtLmModel
                             ? (isSelected
-                                  ? 'Reload Web Model'
-                                  : 'Load Web Model')
+                                  ? isModelCached
+                                        ? 'Reload Cached Model'
+                                        : 'Reload Web Model'
+                                  : isModelCached
+                                  ? 'Use Cached Model'
+                                  : 'Load & Cache Model')
                             : isWeb
                             ? (isSelected
                                   ? 'Reload Cached Model'
+                                  : willLoadTextOnly
+                                  ? 'Use Text Only'
                                   : 'Use Cached Model')
                             : (isSelected
                                   ? 'Reload Selected Model'
+                                  : willLoadTextOnly
+                                  ? 'Use Text Only'
                                   : 'Use this model'),
                       ),
                       style: FilledButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 16),
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: BorderRadius.circular(8),
                         ),
                       ),
                     )
@@ -514,21 +598,46 @@ class ModelCard extends StatelessWidget {
                                   ? 'Resume Cache'
                                   : hasPartialCache
                                   ? 'Cache Missing Assets'
+                                  : isProjectorMissing && !includeProjector
+                                  ? 'Cache Model Only'
+                                  : isProjectorMissing
+                                  ? 'Cache Model + Projector'
                                   : 'Cache Model')
                             : (progress > 0
                                   ? 'Resume Download'
                                   : hasPartialCache
                                   ? 'Download Missing Assets'
+                                  : isProjectorMissing && !includeProjector
+                                  ? 'Download Model Only'
+                                  : isProjectorMissing
+                                  ? 'Download Model + Projector'
                                   : 'Download'),
                       ),
                       style: OutlinedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(vertical: 16),
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: BorderRadius.circular(8),
                         ),
                       ),
                     ),
             ),
+            if (shouldShowProjectorDownloadAction) ...[
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: onDownload,
+                  icon: const Icon(Icons.visibility_outlined, size: 18),
+                  label: Text(isWeb ? 'Cache Projector' : 'Download Projector'),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ],
         ],
       ),
@@ -587,7 +696,7 @@ class ModelCard extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
         color: background,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(6),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -625,7 +734,7 @@ class ModelCard extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
         color: background,
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(6),
         border: supported
             ? null
             : Border.all(
@@ -662,7 +771,7 @@ class ModelCard extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
         color: colorScheme.tertiaryContainer.withValues(alpha: 0.45),
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(6),
       ),
       child: Text(
         label,
