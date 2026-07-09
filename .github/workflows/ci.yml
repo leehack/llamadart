@@ -106,7 +106,7 @@ jobs:
             --exclude='build' \
             --exclude='pubspec.lock' \
             ./ "$tmp_package/"
-          (cd "$tmp_package" && dart pub publish --dry-run)
+          (cd "$tmp_package" && flutter pub publish --dry-run)
 
   docs-check:
     name: Docs Build Check
