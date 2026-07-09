@@ -1864,7 +1864,11 @@ Future<void> _downloadRuntimeBundleOnce({
       sinkClosed = true;
     } finally {
       if (!sinkClosed) {
-        await sink.close();
+        try {
+          await sink.close();
+        } catch (_) {
+          // Preserve the original write or close failure; this is cleanup.
+        }
       }
     }
 
