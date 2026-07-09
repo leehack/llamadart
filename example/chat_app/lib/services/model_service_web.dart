@@ -3,6 +3,7 @@ import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
 
 import 'package:dio/dio.dart';
+import 'package:llamadart/llamadart.dart' as llama;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/downloadable_model.dart';
@@ -159,7 +160,7 @@ class ModelServiceWeb implements ModelService, WebCachePrefetchModelService {
       return;
     }
     if (pendingAssets.any(
-      (asset) => _hasPersistentCacheSensitiveUrlParts(asset.source.url),
+      (asset) => llama.hasPersistentCacheSensitiveUrlParts(asset.source.url),
     )) {
       onError(
         UnsupportedError(
@@ -366,35 +367,6 @@ class ModelServiceWeb implements ModelService, WebCachePrefetchModelService {
       return pendingAssets.single.source.sizeBytes;
     }
     return null;
-  }
-
-  bool _hasPersistentCacheSensitiveUrlParts(String value) {
-    final uri = Uri.tryParse(value);
-    if (uri == null) {
-      return false;
-    }
-    if (uri.userInfo.isNotEmpty || uri.fragment.isNotEmpty) {
-      return true;
-    }
-    // Only block queries that look like signed credentials. Benign flags such
-    // as Hugging Face's `?download=true` are safe to persist in the cache key.
-    const benignQueryKeys = {'download'};
-    return uri.queryParameters.keys.any((key) {
-      final lower = key.toLowerCase();
-      if (benignQueryKeys.contains(lower)) {
-        return false;
-      }
-      return lower.contains('token') ||
-          lower.contains('sig') ||
-          lower.contains('signature') ||
-          lower.contains('expires') ||
-          lower.contains('credential') ||
-          lower.contains('key') ||
-          lower.contains('secret') ||
-          lower.contains('auth') ||
-          lower.contains('session') ||
-          lower.startsWith('x-amz');
-    });
   }
 
   /// Awaits the bridge-readiness signal published by `web/index.html`.

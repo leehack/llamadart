@@ -160,9 +160,8 @@ class ModelDownloadUiController {
 
   void clearUiState() {
     for (final notifier in _uiStateByFile.values) {
-      notifier.dispose();
+      notifier.value = const ModelDownloadUiState();
     }
-    _uiStateByFile.clear();
   }
 
   void dispose() {
@@ -175,7 +174,10 @@ class ModelDownloadUiController {
       unawaited(controller.dispose());
     }
     _downloadControllers.clear();
-    clearUiState();
+    for (final notifier in _uiStateByFile.values) {
+      notifier.dispose();
+    }
+    _uiStateByFile.clear();
     clearRateTracking();
   }
 }

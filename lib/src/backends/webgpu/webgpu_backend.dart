@@ -8,6 +8,7 @@ import 'dart:typed_data';
 import 'package:web/web.dart';
 
 import '../../core/models/chat/content_part.dart';
+import '../../core/cache_policy.dart';
 import '../../core/models/config/gpu_backend.dart';
 import '../../core/models/config/llama_cpp_param_values.dart';
 import '../../core/models/config/log_level.dart';
@@ -573,36 +574,6 @@ class WebGpuLlamaBackend
         lowered.contains('error 138');
   }
 
-  bool _urlHasPersistentCacheSensitiveParts(String value) {
-    final uri = Uri.tryParse(value);
-    if (uri == null ||
-        (uri.scheme != 'http' && uri.scheme != 'https') ||
-        uri.host.isEmpty) {
-      return false;
-    }
-    if (uri.userInfo.isNotEmpty || uri.fragment.isNotEmpty) {
-      return true;
-    }
-
-    const benignQueryKeys = {'download'};
-    return uri.queryParameters.keys.any((key) {
-      final lower = key.toLowerCase();
-      if (benignQueryKeys.contains(lower)) {
-        return false;
-      }
-      return lower.contains('token') ||
-          lower.contains('sig') ||
-          lower.contains('signature') ||
-          lower.contains('expires') ||
-          lower.contains('credential') ||
-          lower.contains('key') ||
-          lower.contains('secret') ||
-          lower.contains('auth') ||
-          lower.contains('session') ||
-          lower.startsWith('x-amz');
-    });
-  }
-
   List<({int contextSize, int gpuLayers})> _buildLoadAttempts({
     required int requestedContextSize,
     required int requestedGpuLayers,
@@ -1057,7 +1028,7 @@ class WebGpuLlamaBackend
             ropeFrequencyScale: params.ropeFrequencyScale,
             splitMode: params.splitMode.llamaCppValue,
             mainGpu: params.mainGpu,
-            useCache: !_urlHasPersistentCacheSensitiveParts(url),
+            useCache: !hasPersistentCacheSensitiveUrlParts(url),
             forceRemoteFetchBackend: forceRemoteFetchBackend,
             remoteFetchChunkBytes: remoteFetchChunkBytesOverride,
             modelBytesHint: params.modelBytesHint,
@@ -2302,7 +2273,7 @@ class WebGpuLlamaBackend
     if (uri == null || !(uri.isScheme('http') || uri.isScheme('https'))) {
       return null;
     }
-    if (_urlHasPersistentCacheSensitiveParts(sourceUrl)) {
+    if (hasPersistentCacheSensitiveUrlParts(sourceUrl)) {
       return null;
     }
 
@@ -2330,7 +2301,7 @@ class WebGpuLlamaBackend
     if (uri == null || !(uri.isScheme('http') || uri.isScheme('https'))) {
       return false;
     }
-    if (_urlHasPersistentCacheSensitiveParts(sourceUrl)) {
+    if (hasPersistentCacheSensitiveUrlParts(sourceUrl)) {
       return false;
     }
 

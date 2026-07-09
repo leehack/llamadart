@@ -157,6 +157,8 @@ def main() -> int:
     )
     parser.add_argument("--headed", action="store_true")
     args = parser.parse_args()
+    if args.expect_mmproj_cache_hit and not args.prefetch_mmproj_cache:
+        parser.error("--expect-mmproj-cache-hit requires --prefetch-mmproj-cache")
 
     console_logs: list[dict[str, str]] = []
     page_errors: list[str] = []

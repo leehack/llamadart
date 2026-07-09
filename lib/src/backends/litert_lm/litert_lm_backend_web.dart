@@ -10,6 +10,7 @@ import 'dart:math' as math;
 import 'package:web/web.dart';
 
 import '../../core/models/chat/content_part.dart';
+import '../../core/cache_policy.dart';
 import '../../core/models/config/flash_attention.dart';
 import '../../core/models/config/gpu_backend.dart';
 import '../../core/models/config/kv_cache_type.dart';
@@ -865,7 +866,7 @@ class LiteRtLmBackend
         uri.host.isEmpty) {
       return null;
     }
-    if (_urlHasPersistentCacheSensitiveParts(sourceUrl)) {
+    if (hasPersistentCacheSensitiveUrlParts(sourceUrl)) {
       return null;
     }
 
@@ -885,36 +886,6 @@ class LiteRtLmBackend
     } catch (_) {
       return null;
     }
-  }
-
-  bool _urlHasPersistentCacheSensitiveParts(String value) {
-    final uri = Uri.tryParse(value);
-    if (uri == null ||
-        (uri.scheme != 'http' && uri.scheme != 'https') ||
-        uri.host.isEmpty) {
-      return false;
-    }
-    if (uri.userInfo.isNotEmpty || uri.fragment.isNotEmpty) {
-      return true;
-    }
-
-    const benignQueryKeys = {'download'};
-    return uri.queryParameters.keys.any((key) {
-      final lower = key.toLowerCase();
-      if (benignQueryKeys.contains(lower)) {
-        return false;
-      }
-      return lower.contains('token') ||
-          lower.contains('sig') ||
-          lower.contains('signature') ||
-          lower.contains('expires') ||
-          lower.contains('credential') ||
-          lower.contains('key') ||
-          lower.contains('secret') ||
-          lower.contains('auth') ||
-          lower.contains('session') ||
-          lower.startsWith('x-amz');
-    });
   }
 
   Stream<String> _withScopedConsoleGuardedStream(Stream<String> source) async* {

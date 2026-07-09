@@ -3,6 +3,8 @@ import platform
 import time
 from typing import Any, Callable
 
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
+
 
 def emit(event: str, **data: Any) -> None:
     print(json.dumps({"event": event, **data}, ensure_ascii=False), flush=True)
@@ -106,6 +108,10 @@ def wait_for_send_enabled(page, *, timeout_ms: int = 30000) -> None:
     deadline = time.monotonic() + (timeout_ms / 1000)
     button = page.get_by_role("button", name="Send message")
     while time.monotonic() < deadline:
-        if button.is_enabled(timeout=1000):
-            return
+        try:
+            if button.is_enabled(timeout=250):
+                return
+        except PlaywrightTimeoutError:
+            pass
+        time.sleep(0.05)
     raise TimeoutError("Timed out waiting for Send message button to enable")

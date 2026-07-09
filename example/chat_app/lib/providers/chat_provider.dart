@@ -494,38 +494,8 @@ class ChatProvider extends ChangeNotifier {
     return withoutQuery.toLowerCase().endsWith('.litertlm');
   }
 
-  bool _hasPersistentCacheSensitiveUrlParts(String? value) {
-    if (!_isRemoteUrl(value)) {
-      return false;
-    }
-    final uri = Uri.parse(value!);
-    if (uri.userInfo.isNotEmpty || uri.fragment.isNotEmpty) {
-      return true;
-    }
-    // Match the browser-cache service/backend policy: normal catalog flags
-    // such as Hugging Face's `?download=true` may be persisted as cache keys,
-    // while token/signature-like query keys are loaded directly from network.
-    const benignQueryKeys = {'download'};
-    return uri.queryParameters.keys.any((key) {
-      final lower = key.toLowerCase();
-      if (benignQueryKeys.contains(lower)) {
-        return false;
-      }
-      return lower.contains('token') ||
-          lower.contains('sig') ||
-          lower.contains('signature') ||
-          lower.contains('expires') ||
-          lower.contains('credential') ||
-          lower.contains('key') ||
-          lower.contains('secret') ||
-          lower.contains('auth') ||
-          lower.contains('session') ||
-          lower.startsWith('x-amz');
-    });
-  }
-
   bool _webCachePrefetchWouldPersistSensitiveUrl() {
-    return _hasPersistentCacheSensitiveUrlParts(_settings.modelPath);
+    return hasPersistentCacheSensitiveUrlParts(_settings.modelPath ?? '');
   }
 
   String _filenameFromPathOrUrl(

@@ -98,6 +98,7 @@ export 'src/core/models/diagnostics/model_file_type.dart';
 
 // Utils
 export 'src/core/exceptions.dart';
+export 'src/core/cache_policy.dart' show hasPersistentCacheSensitiveUrlParts;
 
 // LiteRT-LM native APIs
 export 'src/backends/litert_lm/litert_lm_backend_stub.dart'

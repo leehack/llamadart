@@ -289,31 +289,7 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
   }
 
   bool _hasCredentialLikePersistentUrlParts(String value) {
-    final uri = Uri.tryParse(value.trim());
-    if (uri == null) {
-      return false;
-    }
-    if (uri.userInfo.isNotEmpty || uri.fragment.isNotEmpty) {
-      return true;
-    }
-
-    const benignQueryKeys = {'download'};
-    return uri.queryParameters.keys.any((key) {
-      final lower = key.toLowerCase();
-      if (benignQueryKeys.contains(lower)) {
-        return false;
-      }
-      return lower.contains('token') ||
-          lower.contains('sig') ||
-          lower.contains('signature') ||
-          lower.contains('expires') ||
-          lower.contains('credential') ||
-          lower.contains('key') ||
-          lower.contains('secret') ||
-          lower.contains('auth') ||
-          lower.contains('session') ||
-          lower.startsWith('x-amz');
-    });
+    return hasPersistentCacheSensitiveUrlParts(value.trim());
   }
 
   Future<bool> _confirmSavingCredentialLikeCustomUrls(
