@@ -1922,7 +1922,6 @@ Future<bool> _downloadRuntimeBundleWithCurl({
       '--location',
       '--retry',
       '5',
-      '--retry-all-errors',
       '--retry-delay',
       '3',
       '--connect-timeout',
