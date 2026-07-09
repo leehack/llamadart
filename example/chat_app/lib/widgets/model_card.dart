@@ -559,8 +559,12 @@ class ModelCard extends StatelessWidget {
                       label: Text(
                         isWebLiteRtLmModel
                             ? (isSelected
-                                  ? 'Reload Web Model'
-                                  : 'Load Web Model')
+                                  ? isModelCached
+                                        ? 'Reload Cached Model'
+                                        : 'Reload Web Model'
+                                  : isModelCached
+                                  ? 'Use Cached Model'
+                                  : 'Load & Cache Model')
                             : isWeb
                             ? (isSelected
                                   ? 'Reload Cached Model'

@@ -35,6 +35,8 @@ class LiteRtLmBackend
         BackendStatePersistenceSupport {
   static const Duration _engineReadyTimeout = Duration(seconds: 12);
   static const Duration _enginePollInterval = Duration(milliseconds: 100);
+  static const String _defaultModelCacheName =
+      'llamadart-webgpu-model-cache-v1';
   // The current @litert-lm/core web API accepts one string prompt and applies
   // the model's chat wrapper internally. Until the JS API exposes structured
   // messages/tools, keep the Dart template intentionally single-turn.
@@ -52,6 +54,7 @@ class LiteRtLmBackend
 
   _LiteRtLmWebEngine? _engine;
   _LiteRtLmWebConversation? _activeConversation;
+  LlamaLogLevel _logLevel = LlamaLogLevel.warn;
   bool _isReady = false;
   bool _hasContext = false;
   bool _cancelRequested = false;
@@ -61,6 +64,8 @@ class LiteRtLmBackend
   int? _contextHandle;
   ModelParams? _modelParams;
   String? _modelUrl;
+  String? _modelSource;
+  String? _modelCacheState;
   String? _activeBackend;
   String? _chatTemplate;
 
@@ -109,19 +114,25 @@ class LiteRtLmBackend
 
     onProgress?.call(0);
     final constructor = await _ensureEngineConstructor();
+    final cachedModelBlob = await _cachedModelBlobFor(url);
+    final modelValue = cachedModelBlob ?? url.toJS;
     final settings = _createEngineSettings(
-      model: url,
+      model: modelValue,
       params: params,
       backend: backend,
     );
 
     await _disposeEngine();
     _modelUrl = url;
+    _modelSource = cachedModelBlob == null ? 'network' : 'cache';
+    _modelCacheState = cachedModelBlob == null ? 'miss' : 'hit';
     _modelParams = params;
     _chatTemplate = params.chatTemplate;
     _activeBackend = backend;
     _hasContext = false;
 
+    _setLiteRtLmConsoleLogLevel();
+    final consoleGuard = _installScopedConsoleGuard();
     try {
       _engine = await constructor.create(settings).toDart;
       _modelHandle = _nextModelHandle++;
@@ -133,10 +144,14 @@ class LiteRtLmBackend
       _modelHandle = null;
       _contextHandle = null;
       _modelUrl = null;
+      _modelSource = null;
+      _modelCacheState = null;
       _modelParams = null;
       _chatTemplate = null;
       _activeBackend = null;
       throw StateError('LiteRT-LM web engine creation failed: $error');
+    } finally {
+      consoleGuard?.restore();
     }
   }
 
@@ -205,7 +220,9 @@ class LiteRtLmBackend
         .where((sequence) => sequence.isNotEmpty)
         .toList(growable: false);
     try {
-      final stream = _streamConversation(conversation, prompt);
+      final stream = _withScopedConsoleGuardedStream(
+        _streamConversation(conversation, prompt),
+      );
       await for (final chunk in _applyStopSequences(
         stream,
         stopSequences,
@@ -281,6 +298,12 @@ class LiteRtLmBackend
     if (_modelParams case final params?) {
       metadata['llm.context_length'] = params.contextSize.toString();
     }
+    if (_modelSource case final source?) {
+      metadata['llamadart.litert_lm_web.model_source'] = source;
+    }
+    if (_modelCacheState case final state?) {
+      metadata['llamadart.litert_lm_web.model_cache_state'] = state;
+    }
     final activeBackend = _activeBackend;
     if (activeBackend != null) {
       metadata['litert_lm.backend'] = activeBackend;
@@ -331,7 +354,10 @@ class LiteRtLmBackend
   }
 
   @override
-  Future<void> setLogLevel(LlamaLogLevel level) async {}
+  Future<void> setLogLevel(LlamaLogLevel level) async {
+    _logLevel = level;
+    _setLiteRtLmConsoleLogLevel();
+  }
 
   @override
   Future<void> dispose() async {
@@ -522,12 +548,12 @@ class LiteRtLmBackend
   }
 
   JSObject _createEngineSettings({
-    required String model,
+    required JSAny model,
     required ModelParams params,
     required String backend,
   }) {
     final settings = JSObject();
-    settings.setProperty('model'.toJS, model.toJS);
+    settings.setProperty('model'.toJS, model);
     settings.setProperty('backend'.toJS, _backendValueFor(backend).toJS);
 
     final executorSettings = JSObject();
@@ -797,6 +823,8 @@ class LiteRtLmBackend
     _modelHandle = null;
     _contextHandle = null;
     _modelUrl = null;
+    _modelSource = null;
+    _modelCacheState = null;
     _modelParams = null;
     _chatTemplate = null;
     _activeBackend = null;
@@ -828,6 +856,181 @@ class LiteRtLmBackend
         'LiteRtLmBackend web expects a .litertlm model URL/path; got $source',
       );
     }
+  }
+
+  Future<Blob?> _cachedModelBlobFor(String sourceUrl) async {
+    final uri = Uri.tryParse(sourceUrl);
+    if (uri == null ||
+        (uri.scheme != 'http' && uri.scheme != 'https') ||
+        uri.host.isEmpty) {
+      return null;
+    }
+    if (_urlHasPersistentCacheSensitiveParts(sourceUrl)) {
+      return null;
+    }
+
+    try {
+      final caches = globalContext.getProperty<JSAny?>('caches'.toJS);
+      if (caches == null || !caches.isA<JSObject>()) {
+        return null;
+      }
+
+      final cache = await window.caches.open(_defaultModelCacheName).toDart;
+      final cachedResponse = await cache.match(sourceUrl.toJS).toDart;
+      if (cachedResponse == null) {
+        return null;
+      }
+
+      return await cachedResponse.blob().toDart;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  bool _urlHasPersistentCacheSensitiveParts(String value) {
+    final uri = Uri.tryParse(value);
+    if (uri == null ||
+        (uri.scheme != 'http' && uri.scheme != 'https') ||
+        uri.host.isEmpty) {
+      return false;
+    }
+    if (uri.userInfo.isNotEmpty || uri.fragment.isNotEmpty) {
+      return true;
+    }
+
+    const benignQueryKeys = {'download'};
+    return uri.queryParameters.keys.any((key) {
+      final lower = key.toLowerCase();
+      if (benignQueryKeys.contains(lower)) {
+        return false;
+      }
+      return lower.contains('token') ||
+          lower.contains('sig') ||
+          lower.contains('signature') ||
+          lower.contains('expires') ||
+          lower.contains('credential') ||
+          lower.contains('key') ||
+          lower.contains('secret') ||
+          lower.contains('auth') ||
+          lower.contains('session') ||
+          lower.startsWith('x-amz');
+    });
+  }
+
+  Stream<String> _withScopedConsoleGuardedStream(Stream<String> source) async* {
+    _setLiteRtLmConsoleLogLevel();
+    final consoleGuard = _installScopedConsoleGuard();
+    try {
+      await for (final chunk in source) {
+        yield chunk;
+      }
+    } finally {
+      consoleGuard?.restore();
+    }
+  }
+
+  void _setLiteRtLmConsoleLogLevel() {
+    globalContext.setProperty(
+      '__llamadartLiteRtLmLogLevel'.toJS,
+      _logLevel.index.toJS,
+    );
+  }
+
+  _LiteRtLmConsoleGuard? _installScopedConsoleGuard() {
+    _ensureConsoleGuardInstaller();
+    final rawInstaller = globalContext.getProperty<JSAny?>(
+      '__llamadartInstallLiteRtLmConsoleGuard'.toJS,
+    );
+    if (rawInstaller == null || !rawInstaller.isA<JSFunction>()) {
+      return null;
+    }
+
+    try {
+      final rawGuard = (rawInstaller as JSFunction).callAsFunction(null);
+      if (rawGuard != null && rawGuard.isA<JSObject>()) {
+        return _LiteRtLmConsoleGuard._(rawGuard as JSObject);
+      }
+    } catch (_) {
+      return null;
+    }
+    return null;
+  }
+
+  void _ensureConsoleGuardInstaller() {
+    if (globalContext.has('__llamadartInstallLiteRtLmConsoleGuard')) {
+      return;
+    }
+
+    final script = HTMLScriptElement();
+    script.text = r'''
+(() => {
+  if (window.__llamadartInstallLiteRtLmConsoleGuard) {
+    return;
+  }
+
+  window.__llamadartLiteRtLmLogLevel =
+    Number.isFinite(Number(window.__llamadartLiteRtLmLogLevel))
+      ? Number(window.__llamadartLiteRtLmLogLevel)
+      : 0;
+
+  const methods = ['debug', 'log', 'info', 'warn', 'error'];
+  const methodLevels = { debug: 1, log: 2, info: 2, warn: 3, error: 4 };
+
+  window.__llamadartInstallLiteRtLmConsoleGuard = function () {
+    if (typeof console === 'undefined') {
+      return { restore() {} };
+    }
+
+    const originals = {};
+    const wrappers = {};
+    for (const method of methods) {
+      originals[method] = console[method];
+    }
+
+    function targetFor(method) {
+      const candidate =
+        originals[method] ||
+        (method === 'info' ? originals.log : undefined) ||
+        originals.log ||
+        originals.error ||
+        originals.warn ||
+        originals.debug;
+      return typeof candidate === 'function' ? candidate : null;
+    }
+
+    for (const method of methods) {
+      const original = originals[method];
+      if (typeof original !== 'function') {
+        continue;
+      }
+      wrappers[method] = function (...args) {
+        const configured = Number(window.__llamadartLiteRtLmLogLevel ?? 0);
+        const threshold = Number.isFinite(configured) ? configured : 0;
+        if (threshold === 0 || threshold > methodLevels[method]) {
+          return;
+        }
+        const target = targetFor(method);
+        if (target) {
+          target.apply(console, args);
+        }
+      };
+      console[method] = wrappers[method];
+    }
+
+    return {
+      restore() {
+        for (const method of methods) {
+          if (wrappers[method] && console[method] === wrappers[method]) {
+            console[method] = originals[method];
+          }
+        }
+      },
+    };
+  };
+})();
+''';
+    document.head?.append(script);
+    script.remove();
   }
 
   String _sourcePath(String source) {
@@ -1085,6 +1288,11 @@ class LiteRtLmBackend
       'LiteRtLmBackend backend must be cpu, gpu, or npu; got $backend',
     );
   }
+}
+
+@JS()
+extension type _LiteRtLmConsoleGuard._(JSObject _) implements JSObject {
+  external void restore();
 }
 
 @JS()

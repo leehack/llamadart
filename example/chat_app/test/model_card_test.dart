@@ -5,7 +5,7 @@ import 'package:llamadart_chat_example/services/model_service_base.dart';
 import 'package:llamadart_chat_example/widgets/model_card.dart';
 
 void main() {
-  testWidgets('web LiteRT-LM presets load directly instead of showing cache', (
+  testWidgets('web LiteRT-LM presets load and cache on first use', (
     tester,
   ) async {
     var selectCalls = 0;
@@ -20,14 +20,36 @@ void main() {
       onDownload: () => downloadCalls += 1,
     );
 
-    expect(find.text('Load Web Model'), findsOneWidget);
+    expect(find.text('Load & Cache Model'), findsOneWidget);
     expect(find.text('Cache Model'), findsNothing);
 
-    await tester.tap(find.text('Load Web Model'));
+    await tester.tap(find.text('Load & Cache Model'));
     await tester.pump();
 
     expect(selectCalls, 1);
     expect(downloadCalls, 0);
+  });
+
+  testWidgets('web LiteRT-LM cached presets show cached load action', (
+    tester,
+  ) async {
+    var selectCalls = 0;
+
+    await _pumpCard(
+      tester,
+      model: _litertLmModel(),
+      isWeb: true,
+      isDownloaded: true,
+      onSelect: () => selectCalls += 1,
+      onDownload: () {},
+    );
+
+    expect(find.text('Use Cached Model'), findsOneWidget);
+
+    await tester.tap(find.text('Use Cached Model'));
+    await tester.pump();
+
+    expect(selectCalls, 1);
   });
 
   testWidgets('web GGUF presets still show the cache action before download', (
@@ -70,9 +92,7 @@ void main() {
     expect(find.textContaining('very large LiteRT-LM'), findsNothing);
   });
 
-  testWidgets('partial multimodal cache allows text-only load', (
-    tester,
-  ) async {
+  testWidgets('partial multimodal cache allows text-only load', (tester) async {
     var downloadCalls = 0;
     var deleteCalls = 0;
     var includeProjector = true;

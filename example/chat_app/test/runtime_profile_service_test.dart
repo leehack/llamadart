@@ -36,6 +36,21 @@ void main() {
       expect(diagnostics.runtimeModelCacheState, 'hit');
     });
 
+    test(
+      'uses LiteRT-LM web cache diagnostics when WebGPU keys are absent',
+      () {
+        final diagnostics = service.buildDiagnostics(
+          metadata: const <String, String>{
+            'llamadart.litert_lm_web.model_source': 'cache',
+            'llamadart.litert_lm_web.model_cache_state': 'hit',
+          },
+        );
+
+        expect(diagnostics.runtimeModelSource, 'cache');
+        expect(diagnostics.runtimeModelCacheState, 'hit');
+      },
+    );
+
     test('returns fallback estimate when VRAM unavailable', () {
       final estimate = service.estimateDynamicSettings(
         totalVramBytes: 0,

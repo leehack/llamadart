@@ -183,6 +183,26 @@ void main() {
       },
     );
 
+    test('can skip LiteRT-LM runtime warmup during model load', () async {
+      final engine = MockLlamaEngine();
+      final service = ChatService(engine: engine);
+
+      await service.init(
+        const ChatSettings(
+          modelPath: 'gemma-4-E2B-it.litertlm',
+          preferredBackend: GpuBackend.auto,
+          contextSize: 8192,
+          maxTokens: 32,
+          gpuLayers: 0,
+        ),
+        eagerLoadMultimodalProjector: false,
+        eagerWarmUpLiteRtLmRuntime: false,
+      );
+
+      expect(engine.lastModelParams, isNotNull);
+      expect(engine.createCalls, 0);
+    });
+
     test('keeps explicit CPU loads on LiteRT-LM models', () async {
       debugDefaultTargetPlatformOverride = TargetPlatform.android;
       final engine = MockLlamaEngine();

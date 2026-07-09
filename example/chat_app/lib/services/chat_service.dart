@@ -24,6 +24,7 @@ class ChatService {
     ChatSettings settings, {
     Function(double progress)? onProgress,
     bool eagerLoadMultimodalProjector = true,
+    bool eagerWarmUpLiteRtLmRuntime = true,
   }) async {
     if (settings.modelPath == null) throw Exception("Model path is null");
 
@@ -85,7 +86,7 @@ class ChatService {
         await _engine.loadModel(settings.modelPath!, modelParams: modelParams);
       }
 
-      if (_isLiteRtLmModel(settings.modelPath)) {
+      if (eagerWarmUpLiteRtLmRuntime && _isLiteRtLmModel(settings.modelPath)) {
         emitProgress(0.92);
         await _warmUpLiteRtLmRuntime(settings);
       }

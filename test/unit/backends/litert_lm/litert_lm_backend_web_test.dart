@@ -10,10 +10,12 @@ import 'package:llamadart/src/core/engine/engine.dart';
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
 import 'package:llamadart/src/core/models/config/gpu_backend.dart';
+import 'package:llamadart/src/core/models/config/log_level.dart';
 import 'package:llamadart/src/core/models/inference/generation_params.dart';
 import 'package:llamadart/src/core/models/inference/model_params.dart';
 import 'package:llamadart/src/core/template/chat_template_engine.dart';
 import 'package:test/test.dart';
+import 'package:web/web.dart';
 
 void main() {
   setUp(_clearGlobals);
@@ -102,6 +104,88 @@ void main() {
       0.2,
     );
     expect((sampler.getProperty('seed'.toJS) as JSNumber).toDartInt, 42);
+  });
+
+  test('loads cached .litertlm URL through CacheStorage Blob', () async {
+    const cacheName = 'llamadart-webgpu-model-cache-v1';
+    const modelUrl = 'https://example.com/gemma-web.litertlm?download=true';
+    final cache = await window.caches.open(cacheName).toDart;
+    await cache.put(modelUrl.toJS, Response('cached litert'.toJS)).toDart;
+    addTearDown(() async {
+      await window.caches.delete(cacheName).toDart;
+    });
+
+    JSAny? lastModelSetting;
+    _installFakeEngine(
+      onCreate: (settings) {
+        lastModelSetting = settings.getProperty('model'.toJS);
+      },
+      chunks: <JSAny?>[_messageChunk('ok')],
+    );
+
+    final backend = LiteRtLmBackend();
+    final modelHandle = await backend.modelLoadFromUrl(
+      modelUrl,
+      const ModelParams(),
+    );
+
+    expect(lastModelSetting, isNotNull);
+    expect(lastModelSetting!.isA<Blob>(), isTrue);
+    expect(
+      await backend.modelMetadata(modelHandle),
+      containsPair('llamadart.litert_lm_web.model_source', 'cache'),
+    );
+    expect(
+      await backend.modelMetadata(modelHandle),
+      containsPair('llamadart.litert_lm_web.model_cache_state', 'hit'),
+    );
+  });
+
+  test('does not use cached Blob for credential-like .litertlm URLs', () async {
+    const cacheName = 'llamadart-webgpu-model-cache-v1';
+    const modelUrl = 'https://example.com/gemma-web.litertlm?token=secret';
+    final cache = await window.caches.open(cacheName).toDart;
+    await cache.put(modelUrl.toJS, Response('cached litert'.toJS)).toDart;
+    addTearDown(() async {
+      await window.caches.delete(cacheName).toDart;
+    });
+
+    JSAny? lastModelSetting;
+    _installFakeEngine(
+      onCreate: (settings) {
+        lastModelSetting = settings.getProperty('model'.toJS);
+      },
+      chunks: <JSAny?>[_messageChunk('ok')],
+    );
+
+    final backend = LiteRtLmBackend();
+    final modelHandle = await backend.modelLoadFromUrl(
+      modelUrl,
+      const ModelParams(),
+    );
+
+    expect(lastModelSetting, isA<JSString>());
+    expect((lastModelSetting as JSString).toDart, modelUrl);
+    expect(
+      await backend.modelMetadata(modelHandle),
+      containsPair('llamadart.litert_lm_web.model_source', 'network'),
+    );
+    expect(
+      await backend.modelMetadata(modelHandle),
+      containsPair('llamadart.litert_lm_web.model_cache_state', 'miss'),
+    );
+  });
+
+  test('setLogLevel updates LiteRT-LM web console log level', () async {
+    final backend = LiteRtLmBackend();
+
+    await backend.setLogLevel(LlamaLogLevel.error);
+
+    final raw = globalContext.getProperty<JSAny?>(
+      '__llamadartLiteRtLmLogLevel'.toJS,
+    );
+    expect(raw, isA<JSNumber>());
+    expect((raw as JSNumber).toDartInt, LlamaLogLevel.error.index);
   });
 
   test(
@@ -797,4 +881,6 @@ void _clearGlobals() {
   globalContext.delete('__llamadartLiteRtLmModuleSettings'.toJS);
   globalContext.delete('__llamadartLiteRtLmModuleConversationConfig'.toJS);
   globalContext.delete('__llamadartLiteRtLmModulePrompt'.toJS);
+  globalContext.delete('__llamadartLiteRtLmLogLevel'.toJS);
+  globalContext.delete('__llamadartInstallLiteRtLmConsoleGuard'.toJS);
 }

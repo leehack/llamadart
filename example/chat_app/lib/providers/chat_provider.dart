@@ -439,13 +439,13 @@ class ChatProvider extends ChangeNotifier {
     try {
       availableBackendInfo = await _chatService.engine.getAvailableBackends();
     } catch (e) {
-      debugPrint("Error fetching available backends: $e");
+      _logDart(LlamaLogLevel.warn, "Error fetching available backends: $e");
     }
 
     try {
       activeBackendInfo = await _chatService.engine.getBackendName();
     } catch (e) {
-      debugPrint("Error fetching active backend: $e");
+      _logDart(LlamaLogLevel.warn, "Error fetching active backend: $e");
     }
 
     if (availableBackendInfo != null) {
@@ -470,6 +470,14 @@ class ChatProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  void _logDart(LlamaLogLevel level, String message) {
+    final configured = _settings.logLevel;
+    if (configured == LlamaLogLevel.none || level.index < configured.index) {
+      return;
+    }
+    debugPrint(message);
+  }
+
   bool _isRemoteUrl(String? value) {
     if (value == null || value.isEmpty) {
       return false;
@@ -491,9 +499,29 @@ class ChatProvider extends ChangeNotifier {
       return false;
     }
     final uri = Uri.parse(value!);
-    return uri.userInfo.isNotEmpty ||
-        uri.query.isNotEmpty ||
-        uri.fragment.isNotEmpty;
+    if (uri.userInfo.isNotEmpty || uri.fragment.isNotEmpty) {
+      return true;
+    }
+    // Match the browser-cache service/backend policy: normal catalog flags
+    // such as Hugging Face's `?download=true` may be persisted as cache keys,
+    // while token/signature-like query keys are loaded directly from network.
+    const benignQueryKeys = {'download'};
+    return uri.queryParameters.keys.any((key) {
+      final lower = key.toLowerCase();
+      if (benignQueryKeys.contains(lower)) {
+        return false;
+      }
+      return lower.contains('token') ||
+          lower.contains('sig') ||
+          lower.contains('signature') ||
+          lower.contains('expires') ||
+          lower.contains('credential') ||
+          lower.contains('key') ||
+          lower.contains('secret') ||
+          lower.contains('auth') ||
+          lower.contains('session') ||
+          lower.startsWith('x-amz');
+    });
   }
 
   bool _webCachePrefetchWouldPersistSensitiveUrl() {
@@ -585,14 +613,6 @@ class ChatProvider extends ChangeNotifier {
     updateLoadingUi,
   ) async {
     if (!_enableWebModelPrefetch || !_isRemoteUrl(_settings.modelPath)) {
-      return false;
-    }
-    // The WebGPU bridge prefetch stores into a CacheStorage bucket that only
-    // the llama.cpp/GGUF bridge reads back. The @litert-lm/core engine fetches
-    // the .litertlm URL itself and has no access to that cache, so prefetching
-    // here just downloads the whole model an extra time before the engine
-    // re-downloads it. Skip it and let the engine fetch once.
-    if (_isLiteRtLmModelPath(_settings.modelPath)) {
       return false;
     }
     if (_webCachePrefetchWouldPersistSensitiveUrl()) {
@@ -696,7 +716,9 @@ class ChatProvider extends ChangeNotifier {
 
     updateLoadingUi(
       0.72,
-      backendLabel: 'Preparing WebGPU runtime...',
+      backendLabel: _isLiteRtLmModelPath(_settings.modelPath)
+          ? 'Preparing LiteRT-LM runtime...'
+          : 'Preparing WebGPU runtime...',
       forceNotify: true,
     );
     return true;
@@ -774,7 +796,7 @@ class ChatProvider extends ChangeNotifier {
       try {
         await estimateDynamicSettings();
       } catch (e) {
-        debugPrint("Dynamic estimation failed: $e");
+        _logDart(LlamaLogLevel.warn, "Dynamic estimation failed: $e");
       }
     }
 
@@ -791,11 +813,6 @@ class ChatProvider extends ChangeNotifier {
       }
       updateLoadingUi(0.14);
 
-      final prefetchedWebModel = await _prefetchWebRemoteModelIfNeeded(
-        updateLoadingUi,
-      );
-      final modelLoadStart = prefetchedWebModel ? 0.72 : 0.14;
-      final modelLoadSpan = prefetchedWebModel ? 0.12 : 0.7;
       // On web the LiteRT-LM backend downloads + initializes the model through
       // @litert-lm/core and only reports 0%/100%, so a percentage would sit at
       // "0%" for the whole download and look frozen. Show an honest
@@ -803,12 +820,21 @@ class ChatProvider extends ChangeNotifier {
       // file path (no download), so they keep the generic progress label.
       final isLiteRtLmLoad =
           kIsWeb && _isLiteRtLmModelPath(_settings.modelPath);
+      final prefetchedWebModel = await _prefetchWebRemoteModelIfNeeded(
+        updateLoadingUi,
+      );
+      final modelLoadStart = prefetchedWebModel ? 0.72 : 0.14;
+      final modelLoadSpan = prefetchedWebModel ? 0.12 : 0.7;
       const liteRtLmLoadingLabel =
           'Downloading and initializing model (first load may take a while)...';
+      const liteRtLmCachedLoadingLabel =
+          'Initializing cached LiteRT-LM model...';
       if (prefetchedWebModel) {
         updateLoadingUi(
           modelLoadStart,
-          backendLabel: 'Loading model into memory...',
+          backendLabel: isLiteRtLmLoad
+              ? liteRtLmCachedLoadingLabel
+              : 'Loading model into memory...',
           forceNotify: true,
         );
       } else if (isLiteRtLmLoad) {
@@ -819,14 +845,21 @@ class ChatProvider extends ChangeNotifier {
         );
       }
 
+      if (isLiteRtLmLoad) {
+        await Future<void>.delayed(Duration.zero);
+      }
+
       await _chatService.init(
         _settings,
         eagerLoadMultimodalProjector: eagerLoadMmproj,
+        eagerWarmUpLiteRtLmRuntime: !isLiteRtLmLoad,
         onProgress: (progress) {
           final normalized = progress.clamp(0.0, 1.0);
           final staged = modelLoadStart + (normalized * modelLoadSpan);
           final String backendLabel;
-          if (prefetchedWebModel) {
+          if (prefetchedWebModel && isLiteRtLmLoad) {
+            backendLabel = liteRtLmCachedLoadingLabel;
+          } else if (prefetchedWebModel) {
             backendLabel =
                 'Loading model into memory ${(normalized * 100).toStringAsFixed(0)}%';
           } else if (isLiteRtLmLoad) {
@@ -941,8 +974,8 @@ class ChatProvider extends ChangeNotifier {
         return;
       }
       final displayError = _formatDisplayError(e);
-      debugPrint('Error loading model: $displayError');
-      debugPrint(stackTrace.toString());
+      _logDart(LlamaLogLevel.error, 'Error loading model: $displayError');
+      _logDart(LlamaLogLevel.debug, stackTrace.toString());
       _error = displayError;
       _loadedModelPath = null;
       _loadedMmprojPath = null;
@@ -1761,7 +1794,7 @@ class ChatProvider extends ChangeNotifier {
       _addInfoMessage(fileReadError);
       notifyListeners();
     } catch (error) {
-      debugPrint('Error picking $debugLabel: $error');
+      _logDart(LlamaLogLevel.warn, 'Error picking $debugLabel: $error');
     }
   }
 
@@ -1770,7 +1803,10 @@ class ChatProvider extends ChangeNotifier {
       final bytes = await File(path).readAsBytes();
       return _prepareImagePartFromBytes(bytes);
     } catch (error) {
-      debugPrint('Error preparing image bytes from path: $error');
+      _logDart(
+        LlamaLogLevel.warn,
+        'Error preparing image bytes from path: $error',
+      );
       return null;
     }
   }
@@ -2190,7 +2226,7 @@ class ChatProvider extends ChangeNotifier {
       try {
         await _chatService.unloadMultimodalProjector();
       } catch (error) {
-        debugPrint('Failed to unload active mmproj: $error');
+        _logDart(LlamaLogLevel.warn, 'Failed to unload active mmproj: $error');
         _addInfoMessage(
           'Failed to unload the active mmproj cleanly. Reload the model if text output still looks wrong.',
         );
@@ -2290,7 +2326,7 @@ class ChatProvider extends ChangeNotifier {
         ),
       );
     } catch (e) {
-      debugPrint("Error estimating dynamic settings: $e");
+      _logDart(LlamaLogLevel.warn, "Error estimating dynamic settings: $e");
     }
   }
 }
