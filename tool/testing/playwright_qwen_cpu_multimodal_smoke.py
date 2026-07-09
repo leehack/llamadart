@@ -30,6 +30,7 @@ def main() -> int:
     parser.add_argument("--max-first-token-latency-ms", type=int, default=0)
     parser.add_argument("--max-inference-ms", type=int, default=0)
     parser.add_argument("--min-token-count", type=int, default=0)
+    parser.add_argument("--expect-text", type=str, default="")
     parser.add_argument("--expect-n-gpu-layers", type=int, default=-1)
     parser.add_argument("--channel", type=str, default="chromium")
     parser.add_argument("--headed", action="store_true")
@@ -174,10 +175,11 @@ def main() -> int:
                     'what do you see?',
                     {
                       nPredict,
-                      temp: 0.6,
-                      topK: 20,
-                      topP: 0.95,
+                      temp: 0.0,
+                      topK: 1,
+                      topP: 1.0,
                       penalty: 1.0,
+                      seed: 42,
                       onToken: () => {
                         if (firstTokenAtMs === null) {
                           firstTokenAtMs = performance.now() - inferStart;
@@ -357,6 +359,16 @@ def main() -> int:
             f"Token count {token_count} is below required minimum "
             f"{args.min_token_count}.",
         )
+
+    expected_text = args.expect_text.strip()
+    if expected_text:
+        output_text = result.get("output")
+        if not isinstance(output_text, str) or (
+            expected_text.casefold() not in output_text.casefold()
+        ):
+            gate_errors.append(
+                f"Multimodal output did not contain expected text: {expected_text!r}.",
+            )
 
     if args.expect_n_gpu_layers >= 0:
         resolved_gpu_layers = None

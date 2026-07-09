@@ -214,13 +214,13 @@
     const bridgeAssetsTag =
       typeof configuredTag === 'string' && configuredTag.length > 0
         ? configuredTag
-        : 'v0.1.17';
+        : 'v0.1.18';
     window.__llamadartLiteRtLmModuleUrl =
       typeof window.__llamadartLiteRtLmModuleUrl === 'string' &&
       window.__llamadartLiteRtLmModuleUrl.length > 0
         ? window.__llamadartLiteRtLmModuleUrl
-        : 'https://cdn.jsdelivr.net/npm/@litert-lm/core/+esm';
-    const localBridgeVersion = 'v0.1.17-local-b9699';
+        : 'https://cdn.jsdelivr.net/npm/@litert-lm/core@0.14.0/+esm';
+    const localBridgeVersion = 'v0.1.18-local-b9915';
     window.__llamadartBridgeLocalVersion = localBridgeVersion;
 
     const localBridgeUrl = `./webgpu_bridge/llama_webgpu_bridge.js?v=${localBridgeVersion}`;

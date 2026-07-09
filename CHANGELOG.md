@@ -1,5 +1,9 @@
 ## Unreleased
 
+* Updated the runnable chat app's web runtimes to pinned WebGPU bridge assets
+  `v0.1.18` (llama.cpp `b9915`) and `@litert-lm/core@0.14.0`, keeping hosted
+  and local inference on reproducible runtime versions.
+
 * Improved the runnable chat app's model-cache UX by reusing cached GGUF and
   LiteRT-LM web bundles for benign catalog URLs such as `?download=true`,
   preserving browser model caches during app cache cleanup, adding a text-only
