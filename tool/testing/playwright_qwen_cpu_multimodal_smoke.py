@@ -244,6 +244,7 @@ def main() -> int:
                   version: window.__llamadartBridgeLocalVersion || null,
                   coi: window.crossOriginIsolated,
                   output: outputText.slice(0, 280),
+                  outputFull: outputText,
                   tokenCount,
                   timings,
                   debug: {
@@ -311,6 +312,7 @@ def main() -> int:
     print("[e2e] evaluation finished", flush=True)
 
     result: dict[str, Any] = payload.get("result", {})
+    full_output_text = result.pop("outputFull", None)
     gate_errors: list[str] = []
 
     debug = result.get("debug")
@@ -362,9 +364,8 @@ def main() -> int:
 
     expected_text = args.expect_text.strip()
     if result.get("ok") is True and expected_text:
-        output_text = result.get("output")
-        if not isinstance(output_text, str) or (
-            expected_text.casefold() not in output_text.casefold()
+        if not isinstance(full_output_text, str) or (
+            expected_text.casefold() not in full_output_text.casefold()
         ):
             gate_errors.append(
                 f"Multimodal output did not contain expected text: {expected_text!r}.",

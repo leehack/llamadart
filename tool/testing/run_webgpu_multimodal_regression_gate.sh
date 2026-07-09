@@ -80,7 +80,7 @@ fi
 if [[ -n "${QWEN_MM_IMAGE_PATH:-}" ]]; then
   common_args+=(--image-path "${QWEN_MM_IMAGE_PATH}")
 else
-  common_args+=(--expect-text HELLO)
+  common_args+=(--expect-text "HELLO")
 fi
 
 echo "[gate] running CPU multimodal regression check"
