@@ -361,7 +361,7 @@ def main() -> int:
         )
 
     expected_text = args.expect_text.strip()
-    if expected_text:
+    if result.get("ok") is True and expected_text:
         output_text = result.get("output")
         if not isinstance(output_text, str) or (
             expected_text.casefold() not in output_text.casefold()
