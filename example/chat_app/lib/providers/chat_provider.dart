@@ -365,20 +365,8 @@ class ChatProvider extends ChangeNotifier {
     if (targetModelPath == null || targetModelPath.isEmpty) {
       _session = null;
       _isLoaded = false;
-      _supportsVision = false;
-      _supportsAudio = false;
-      _mmprojLoaded = false;
-      _templateSupportsTools = true;
-      _thinkingControlsSupported = true;
-      _runtimeGpuLayers = null;
-      _runtimeThreads = null;
-      _runtimeThreadPoolSize = null;
-      _runtimeExecution = null;
-      _runtimeCoreVariant = null;
-      _runtimeWorkerFallbackReason = null;
-      _runtimeNotes = null;
-      _runtimeModelSource = null;
-      _runtimeModelCacheState = null;
+      _resetRuntimeCapabilities();
+      _clearRuntimeDiagnostics();
       notifyListeners();
       return;
     }
@@ -547,6 +535,51 @@ class ChatProvider extends ChangeNotifier {
     _activeModelPrefetchCancelToken = null;
   }
 
+  void _resetRuntimeCapabilities() {
+    _supportsVision = false;
+    _supportsAudio = false;
+    _mmprojLoaded = false;
+    _templateSupportsTools = true;
+    _thinkingControlsSupported = true;
+  }
+
+  void _clearRuntimeDiagnostics() {
+    _runtimeGpuLayers = null;
+    _runtimeThreads = null;
+    _runtimeThreadPoolSize = null;
+    _runtimeExecution = null;
+    _runtimeCoreVariant = null;
+    _runtimeWorkerFallbackReason = null;
+    _runtimeNotes = null;
+    _runtimeModelSource = null;
+    _runtimeModelCacheState = null;
+  }
+
+  void _clearGenerationMetrics() {
+    _lastTokensPerSecond = null;
+    _lastDecodeTokensPerSecond = null;
+    _lastNativePromptEvalMs = null;
+    _lastNativeEvalMs = null;
+    _lastNativeSampleMs = null;
+    _lastNativePromptEvalTokens = null;
+    _lastNativeEvalTokens = null;
+    _lastNativeReusedGraphs = null;
+  }
+
+  void _clearLoadedRuntimeState({String? activeBackend, int? contextLimit}) {
+    _isLoaded = false;
+    if (activeBackend != null) {
+      _activeBackend = activeBackend;
+    }
+    if (contextLimit != null) {
+      _contextLimit = contextLimit;
+    }
+    _loadedModelPath = null;
+    _loadedMmprojPath = null;
+    _resetRuntimeCapabilities();
+    _clearRuntimeDiagnostics();
+  }
+
   Future<bool> _prefetchWebRemoteModelIfNeeded(
     void Function(double value, {String? backendLabel, bool forceNotify})
     updateLoadingUi,
@@ -683,20 +716,8 @@ class ChatProvider extends ChangeNotifier {
     _error = null;
     _loadingProgress = 0.0;
     _activeBackend = 'Loading model...';
-    _supportsVision = false;
-    _supportsAudio = false;
-    _mmprojLoaded = false;
-    _templateSupportsTools = true;
-    _thinkingControlsSupported = true;
-    _runtimeGpuLayers = null;
-    _runtimeThreads = null;
-    _runtimeThreadPoolSize = null;
-    _runtimeExecution = null;
-    _runtimeCoreVariant = null;
-    _runtimeWorkerFallbackReason = null;
-    _runtimeNotes = null;
-    _runtimeModelSource = null;
-    _runtimeModelCacheState = null;
+    _resetRuntimeCapabilities();
+    _clearRuntimeDiagnostics();
     notifyListeners();
 
     DateTime lastProgressNotifyAt = DateTime.now();
@@ -925,11 +946,7 @@ class ChatProvider extends ChangeNotifier {
       _error = displayError;
       _loadedModelPath = null;
       _loadedMmprojPath = null;
-      _supportsVision = false;
-      _supportsAudio = false;
-      _mmprojLoaded = false;
-      _templateSupportsTools = true;
-      _thinkingControlsSupported = true;
+      _resetRuntimeCapabilities();
     } finally {
       _isInitializing = false;
       if (!_isDisposed) {
@@ -995,14 +1012,7 @@ class ChatProvider extends ChangeNotifier {
     _isPruning = false;
     _isGenerating = false;
     _stagedParts.clear();
-    _lastTokensPerSecond = null;
-    _lastDecodeTokensPerSecond = null;
-    _lastNativePromptEvalMs = null;
-    _lastNativeEvalMs = null;
-    _lastNativeSampleMs = null;
-    _lastNativePromptEvalTokens = null;
-    _lastNativeEvalTokens = null;
-    _lastNativeReusedGraphs = null;
+    _clearGenerationMetrics();
     _messages.add(
       ChatMessage(
         text: 'Conversation cleared. Ready for a new topic!',
@@ -1960,26 +1970,8 @@ class ChatProvider extends ChangeNotifier {
 
     _isInitializing = false;
     _loadingProgress = 0.0;
-    _isLoaded = false;
     _error = null;
-    _activeBackend = 'Unloaded';
-    _contextLimit = 0;
-    _loadedModelPath = null;
-    _loadedMmprojPath = null;
-    _supportsVision = false;
-    _supportsAudio = false;
-    _mmprojLoaded = false;
-    _templateSupportsTools = true;
-    _thinkingControlsSupported = true;
-    _runtimeGpuLayers = null;
-    _runtimeThreads = null;
-    _runtimeThreadPoolSize = null;
-    _runtimeExecution = null;
-    _runtimeCoreVariant = null;
-    _runtimeWorkerFallbackReason = null;
-    _runtimeNotes = null;
-    _runtimeModelSource = null;
-    _runtimeModelCacheState = null;
+    _clearLoadedRuntimeState(activeBackend: 'Unloaded', contextLimit: 0);
     _syncActiveConversationSnapshot(touchUpdatedAt: false);
     notifyListeners();
   }

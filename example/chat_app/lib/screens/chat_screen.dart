@@ -11,8 +11,13 @@ import 'manage_models_screen.dart';
 
 class ChatScreen extends StatefulWidget {
   final VoidCallback? onOpenModelSelection;
+  final bool showModelSelectionAction;
 
-  const ChatScreen({super.key, this.onOpenModelSelection});
+  const ChatScreen({
+    super.key,
+    this.onOpenModelSelection,
+    this.showModelSelectionAction = true,
+  });
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
@@ -181,34 +186,6 @@ class _ChatScreenState extends State<ChatScreen> {
       ),
       child: Stack(
         children: [
-          Positioned(
-            top: -100,
-            right: -64,
-            child: IgnorePointer(
-              child: Container(
-                width: 250,
-                height: 250,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: colorScheme.primary.withValues(alpha: 0.07),
-                ),
-              ),
-            ),
-          ),
-          Positioned(
-            bottom: -130,
-            left: -90,
-            child: IgnorePointer(
-              child: Container(
-                width: 300,
-                height: 300,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: colorScheme.tertiary.withValues(alpha: 0.06),
-                ),
-              ),
-            ),
-          ),
           Column(
             children: [
               const PruningIndicator(),
@@ -223,7 +200,9 @@ class _ChatScreenState extends State<ChatScreen> {
                         isLoaded: provider.isLoaded,
                         loadingProgress: provider.loadingProgress,
                         onRetry: () => provider.loadModel(),
-                        onSelectModel: _openModelSelection,
+                        onSelectModel: widget.showModelSelectionAction
+                            ? _openModelSelection
+                            : null,
                       );
                     }
 

@@ -13,6 +13,7 @@ from playwright_chat_app_utils import (
     browser_args,
     emit,
     enable_flutter_semantics,
+    enter_chat_prompt,
     local_storage_init_script,
     safe_body_text,
 )
@@ -128,6 +129,8 @@ def main() -> int:
     parser.add_argument("app_url")
     parser.add_argument("--model-url", required=True)
     parser.add_argument("--mmproj-url")
+    parser.add_argument("--prefetch-mmproj-cache", action="store_true")
+    parser.add_argument("--expect-mmproj-cache-hit", action="store_true")
     parser.add_argument("--prompt", default="What is 2+2? Answer in one short sentence.")
     parser.add_argument("--expect", default="4")
     parser.add_argument("--allow-any-response", action="store_true")
@@ -158,6 +161,7 @@ def main() -> int:
     console_logs: list[dict[str, str]] = []
     page_errors: list[str] = []
     request_failures: list[str] = []
+    mmproj_requests: list[str] = []
     started_at = time.monotonic()
 
     seeded_settings = {
@@ -453,6 +457,15 @@ def main() -> int:
 
         page.on("console", on_console)
         page.on("pageerror", lambda error: page_errors.append(str(error)))
+        if args.mmproj_url:
+            page.on(
+                "request",
+                lambda request: (
+                    mmproj_requests.append(request.url)
+                    if request.url == args.mmproj_url
+                    else None
+                ),
+            )
         page.on(
             "requestfailed",
             lambda request: request_failures.append(
@@ -465,7 +478,27 @@ def main() -> int:
 
         enable_flutter_semantics(page)
 
-        button = page.get_by_role("button", name=re.compile(r"Load Model"))
+        if args.prefetch_mmproj_cache:
+            if not args.mmproj_url:
+                raise ValueError("--prefetch-mmproj-cache requires --mmproj-url")
+            cached = page.evaluate(
+                """async (url) => {
+                  const cache = await caches.open('llamadart-webgpu-model-cache-v1');
+                  await cache.add(url);
+                  return Boolean(await cache.match(url));
+                }""",
+                args.mmproj_url,
+            )
+            emit(
+                "mmproj_cache_prefetch",
+                mmproj_url=args.mmproj_url,
+                cached=bool(cached),
+                request_count=len(mmproj_requests),
+            )
+            if not cached:
+                raise RuntimeError("mmproj prefetch did not populate CacheStorage")
+
+        button = page.get_by_role("button", name=re.compile(r"Load Model", re.I))
         button.wait_for(timeout=120000)
         emit("load_click", model_url=args.model_url, mmproj_url=args.mmproj_url)
         button.click()
@@ -482,8 +515,7 @@ def main() -> int:
             body_tail=body_after_load[-500:],
         )
 
-        textbox = page.get_by_role("textbox").last
-        textbox.fill(args.prompt)
+        enter_chat_prompt(page, args.prompt)
         page.get_by_role("button", name="Send message").click()
 
         try:
@@ -516,6 +548,11 @@ def main() -> int:
               liteRtLmPatched: window.LiteRtLmEngine?.__llamadartRealE2ePatched ?? null,
             })"""
         )
+        if args.expect_mmproj_cache_hit and len(mmproj_requests) != 1:
+            raise RuntimeError(
+                "Expected one mmproj network request from CacheStorage prefetch, "
+                f"but saw {len(mmproj_requests)} requests: {mmproj_requests}"
+            )
         emit(
             "result",
             ok=True,
@@ -524,6 +561,7 @@ def main() -> int:
             mmprojUrl=args.mmproj_url,
             expectedText=args.expect,
             bridgeResponse=bridge_response,
+            mmprojRequestCount=len(mmproj_requests),
             bridgeGlobals=bridge_globals,
             bodyTail=body_after_response[-1200:],
             consoleTail=console_logs[-30:],

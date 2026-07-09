@@ -23,21 +23,40 @@ class ModelServiceWeb implements ModelService, WebCachePrefetchModelService {
     final downloaded = prefs.getStringList(_downloadedModelsKey) ?? const [];
     final markers = ModelAssetCacheMarkers(downloaded);
     final cachedModels = <String>{};
-    var migratedLegacyMarkers = false;
+    final cache = await _openModelCache();
+    var markersChanged = false;
 
     for (final model in models) {
+      markersChanged =
+          await _syncMarkersWithCache(
+            markers,
+            _remoteSourcesFor(model),
+            cache: cache,
+          ) ||
+          markersChanged;
+
       if (markers.isProfileCached(model, web: true)) {
         cachedModels.add(model.filename);
         continue;
       }
 
       if (markers.migrateLegacyProfileMarker(model, web: true)) {
+        markersChanged = true;
+        markersChanged =
+            await _syncMarkersWithCache(
+              markers,
+              _remoteSourcesFor(model),
+              cache: cache,
+            ) ||
+            markersChanged;
+      }
+
+      if (markers.isProfileCached(model, web: true)) {
         cachedModels.add(model.filename);
-        migratedLegacyMarkers = true;
       }
     }
 
-    if (migratedLegacyMarkers) {
+    if (markersChanged) {
       await prefs.setStringList(_downloadedModelsKey, markers.toSet().toList());
     }
 
@@ -50,7 +69,17 @@ class ModelServiceWeb implements ModelService, WebCachePrefetchModelService {
   ) async {
     final prefs = await SharedPreferences.getInstance();
     final downloaded = prefs.getStringList(_downloadedModelsKey) ?? const [];
-    return ModelAssetCacheMarkers(downloaded).modelCacheState(model, web: true);
+    final markers = ModelAssetCacheMarkers(downloaded);
+    final cache = await _openModelCache();
+    final changed = await _syncMarkersWithCache(
+      markers,
+      _remoteSourcesFor(model),
+      cache: cache,
+    );
+    if (changed) {
+      await prefs.setStringList(_downloadedModelsKey, markers.toSet().toList());
+    }
+    return markers.modelCacheState(model, web: true);
   }
 
   List<ModelAssetSource> _assetSourcesFor(DownloadableModel model) {
@@ -90,7 +119,16 @@ class ModelServiceWeb implements ModelService, WebCachePrefetchModelService {
     final downloaded =
         prefs.getStringList(_downloadedModelsKey)?.toSet() ?? <String>{};
     final markers = ModelAssetCacheMarkers(downloaded);
-    if (markers.migrateLegacyProfileMarker(model, web: true)) {
+    final cache = await _openModelCache();
+    var markersChanged = markers.migrateLegacyProfileMarker(model, web: true);
+    markersChanged =
+        await _syncMarkersWithCache(
+          markers,
+          _remoteSourcesFor(model),
+          cache: cache,
+        ) ||
+        markersChanged;
+    if (markersChanged) {
       await prefs.setStringList(_downloadedModelsKey, markers.toSet().toList());
     }
     final pendingAssets = <_PendingWebCacheAsset>[
@@ -185,6 +223,12 @@ class ModelServiceWeb implements ModelService, WebCachePrefetchModelService {
           onProgress: onProgress,
           onProgressDetail: onProgressDetail,
         );
+        if (!await _isRemoteAssetInCache(asset.source, cache: cache)) {
+          throw StateError(
+            'Browser cache prefetch completed, but ${asset.source.filename} '
+            'was not found in Cache Storage. Reload the page and try again.',
+          );
+        }
         markers.markAssetCached(asset.source);
         await prefs.setStringList(
           _downloadedModelsKey,
@@ -252,6 +296,60 @@ class ModelServiceWeb implements ModelService, WebCachePrefetchModelService {
       }
       final openMember = (caches as JSObject).getProperty<JSAny?>('open'.toJS);
       return openMember != null && openMember.isA<JSFunction>();
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<bool> _syncMarkersWithCache(
+    ModelAssetCacheMarkers markers,
+    Iterable<RemoteModelAssetSource> sources, {
+    _BrowserCache? cache,
+  }) async {
+    var changed = false;
+    for (final source in sources) {
+      final marked = markers.containsAsset(source);
+      final cached = await _isRemoteAssetInCache(source, cache: cache);
+      if (cached && !marked) {
+        markers.markAssetCached(source);
+        changed = true;
+      } else if (!cached && marked) {
+        markers.removeAssets(<RemoteModelAssetSource>[source]);
+        changed = true;
+      }
+    }
+    return changed;
+  }
+
+  Future<_BrowserCache?> _openModelCache() async {
+    if (!_hasCacheStorageApi()) {
+      return null;
+    }
+
+    try {
+      final caches = globalContext.getProperty<JSAny?>('caches'.toJS);
+      if (caches == null || !caches.isA<JSObject>()) {
+        return null;
+      }
+      final cacheStorage = caches as _BrowserCacheStorage;
+      return await cacheStorage.open(_modelCacheName).toDart;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<bool> _isRemoteAssetInCache(
+    RemoteModelAssetSource source, {
+    _BrowserCache? cache,
+  }) async {
+    final modelCache = cache ?? await _openModelCache();
+    if (modelCache == null) {
+      return false;
+    }
+
+    try {
+      final response = await modelCache.match(source.url).toDart;
+      return response != null;
     } catch (_) {
       return false;
     }
@@ -597,6 +695,14 @@ extension type _WebModelCacheOptions._(JSObject _) implements JSObject {
     JSString? cacheName,
     JSFunction? progressCallback,
   });
+}
+
+extension type _BrowserCacheStorage._(JSObject _) implements JSObject {
+  external JSPromise<_BrowserCache> open(String cacheName);
+}
+
+extension type _BrowserCache._(JSObject _) implements JSObject {
+  external JSPromise<JSAny?> match(String request);
 }
 
 ModelService createModelService() => ModelServiceWeb();

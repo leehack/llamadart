@@ -124,7 +124,8 @@ class _AppShellScreenState extends State<AppShellScreen> {
                               child: ChatScreen(
                                 onOpenModelSelection: showSlidingSettings
                                     ? _openSettingsPanel
-                                    : () {},
+                                    : null,
+                                showModelSelectionAction: showSlidingSettings,
                               ),
                             ),
                           ),
@@ -207,25 +208,33 @@ class _ShellTopBar extends StatelessWidget {
       child: Row(
         children: [
           if (showMenuButton)
-            IconButton(
-              onPressed: onMenuPressed,
-              icon: const Icon(Icons.menu_rounded),
-              tooltip: 'Menu',
+            Semantics(
+              button: true,
+              label: 'Open navigation menu',
+              child: IconButton(
+                onPressed: onMenuPressed,
+                icon: const Icon(Icons.menu_rounded),
+                tooltip: 'Open navigation menu',
+              ),
             ),
           const SizedBox(width: 6),
           Text(
             'llamadart chat',
             style: Theme.of(context).textTheme.headlineSmall?.copyWith(
               fontWeight: FontWeight.w800,
-              letterSpacing: -0.4,
+              letterSpacing: 0,
             ),
           ),
           const Spacer(),
           if (showSettingsButton)
-            IconButton(
-              onPressed: onOpenSettings,
-              tooltip: 'Inference settings',
-              icon: const Icon(Icons.tune_rounded),
+            Semantics(
+              button: true,
+              label: 'Open model and inference settings',
+              child: IconButton(
+                onPressed: onOpenSettings,
+                tooltip: 'Open model and inference settings',
+                icon: const Icon(Icons.tune_rounded),
+              ),
             ),
         ],
       ),
@@ -421,14 +430,18 @@ class _ConversationTileState extends State<_ConversationTile> {
                 AnimatedOpacity(
                   opacity: (_hovered || widget.selected) ? 1.0 : 0.0,
                   duration: const Duration(milliseconds: 120),
-                  child: IconButton(
-                    onPressed: widget.onDelete,
-                    visualDensity: VisualDensity.compact,
-                    iconSize: 17,
-                    tooltip: 'Delete conversation',
-                    icon: Icon(
-                      Icons.delete_outline_rounded,
-                      color: colorScheme.error,
+                  child: Semantics(
+                    button: true,
+                    label: 'Delete conversation',
+                    child: IconButton(
+                      onPressed: widget.onDelete,
+                      visualDensity: VisualDensity.compact,
+                      iconSize: 17,
+                      tooltip: 'Delete conversation',
+                      icon: Icon(
+                        Icons.delete_outline_rounded,
+                        color: colorScheme.error,
+                      ),
                     ),
                   ),
                 ),

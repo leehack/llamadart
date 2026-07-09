@@ -13,6 +13,7 @@ import '../models/downloadable_model.dart';
 import '../providers/chat_provider.dart';
 import '../services/hugging_face_model_discovery_service.dart';
 import '../services/model_download_controller_adapter.dart';
+import '../services/model_download_ui_controller.dart';
 import '../services/model_service_base.dart';
 import '../utils/backend_utils.dart';
 import '../widgets/model_card.dart';
@@ -52,15 +53,9 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
   final List<DownloadableModel> _models = <DownloadableModel>[];
   final List<DownloadableModel> _customModels = <DownloadableModel>[];
 
-  final Map<String, ValueNotifier<_ModelDownloadUiState>>
-  _downloadUiStateByFile = {};
   final Map<String, ModelProfileCacheState> _cacheStateByFile = {};
-  final Map<String, int> _lastDownloadedBytes = {};
-  final Map<String, DateTime> _lastDownloadSampleAt = {};
-  final Map<String, double> _smoothedDownloadRateBytesPerSec = {};
-  final Map<String, ModelDownloadController> _downloadControllers = {};
-  final Map<String, StreamSubscription<ModelDownloadTaskSnapshot>>
-  _downloadSubscriptions = {};
+  final Map<String, bool> _includeProjectorByFile = {};
+  final ModelDownloadUiController _downloadUi = ModelDownloadUiController();
 
   Set<String> _downloadedFiles = {};
   String? _modelsDir;
@@ -97,17 +92,33 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
   Future<void> _initModelService() async {
     await _loadCustomModels();
     _modelsDir = await _modelService.getModelsDirectory();
-    _downloadedFiles = await _modelService.getDownloadedModels(_models);
-    await _refreshCacheStates(_models);
+    await _refreshDownloadedModelState();
     if (mounted) {
       setState(() {});
     }
   }
 
+  Future<void> _refreshDownloadedModelState({
+    Iterable<DownloadableModel>? cacheModels,
+    bool clearCacheStates = false,
+  }) async {
+    final downloadedFiles = await _modelService.getDownloadedModels(_models);
+    if (clearCacheStates) {
+      _cacheStateByFile.clear();
+    }
+    await _refreshCacheStates(cacheModels ?? _models);
+    _downloadedFiles = downloadedFiles;
+  }
+
   Future<void> _refreshCacheStates(Iterable<DownloadableModel> models) async {
-    for (final model in models) {
-      _cacheStateByFile[model.filename] = await _modelService
-          .getModelCacheState(model);
+    final entries = await Future.wait(
+      models.map((model) async {
+        final state = await _modelService.getModelCacheState(model);
+        return MapEntry(model.filename, state);
+      }),
+    );
+    for (final entry in entries) {
+      _cacheStateByFile[entry.key] = entry.value;
     }
   }
 
@@ -241,8 +252,7 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
       _showModelLibrary = true;
     });
 
-    _downloadedFiles = await _modelService.getDownloadedModels(_models);
-    await _refreshCacheStates(<DownloadableModel>[model]);
+    await _refreshDownloadedModelState(cacheModels: <DownloadableModel>[model]);
     if (mounted) {
       setState(() {});
     }
@@ -563,38 +573,6 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
     return value.toString();
   }
 
-  String _downloadStageLabel(ModelDownloadProgress detail) {
-    final actionText = detail.resumed
-        ? (kIsWeb ? 'Resuming cache' : 'Resuming')
-        : (kIsWeb ? 'Caching' : 'Downloading');
-    final stageText = switch (detail.stage) {
-      ModelDownloadStage.model => '$actionText model',
-      ModelDownloadStage.multimodalProjector => '$actionText mmproj',
-    };
-
-    if (detail.stageCount > 1) {
-      return '$stageText (${detail.stageIndex}/${detail.stageCount})';
-    }
-    return stageText;
-  }
-
-  String? _downloadTaskLabel(ModelDownloadTaskSnapshot? task) {
-    if (task == null) {
-      return null;
-    }
-    return switch (task.stage) {
-      ModelDownloadTaskStage.idle => null,
-      ModelDownloadTaskStage.resolving => 'Resolving model',
-      ModelDownloadTaskStage.checkingCache => 'Checking cache',
-      ModelDownloadTaskStage.downloading =>
-        kIsWeb ? 'Caching model' : 'Downloading model',
-      ModelDownloadTaskStage.verifying => 'Verifying model',
-      ModelDownloadTaskStage.ready => 'Ready',
-      ModelDownloadTaskStage.failed => task.errorMessage ?? 'Download failed',
-      ModelDownloadTaskStage.cancelled => 'Paused',
-    };
-  }
-
   String _downloadFailureMessage(dynamic error) {
     if (error is DioException) {
       final normalized = '${error.message ?? ''} ${error.error ?? ''}'
@@ -626,88 +604,14 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
     return 'Download failed. Please retry.';
   }
 
-  void _updateDownloadRate(String filename, ModelDownloadProgress detail) {
-    final now = DateTime.now();
-    final previousBytes = _lastDownloadedBytes[filename];
-    final previousSampleAt = _lastDownloadSampleAt[filename];
-
-    if (previousBytes != null && previousSampleAt != null) {
-      final elapsedMs = now.difference(previousSampleAt).inMilliseconds;
-      final deltaBytes = detail.downloadedBytes - previousBytes;
-      if (elapsedMs > 0 && deltaBytes > 0) {
-        final instantRate = (deltaBytes * 1000.0) / elapsedMs;
-        final previousRate = _smoothedDownloadRateBytesPerSec[filename];
-        _smoothedDownloadRateBytesPerSec[filename] = previousRate == null
-            ? instantRate
-            : ((previousRate * 0.72) + (instantRate * 0.28));
-      }
-    }
-
-    _lastDownloadedBytes[filename] = detail.downloadedBytes;
-    _lastDownloadSampleAt[filename] = now;
+  bool _includeProjectorFor(DownloadableModel model) {
+    return _includeProjectorByFile[model.filename] ?? true;
   }
 
-  String? _downloadTransferLabel(
-    String filename,
-    ModelDownloadProgress detail,
-  ) {
-    final bytesPerSecond = _smoothedDownloadRateBytesPerSec[filename];
-    if (bytesPerSecond == null || bytesPerSecond <= 0) {
-      return null;
-    }
-
-    final speedLabel = _formatByteRate(bytesPerSecond);
-    final totalBytes = detail.totalBytes;
-    if (totalBytes == null || totalBytes <= 0) {
-      return speedLabel;
-    }
-
-    final remainingBytes = totalBytes - detail.downloadedBytes;
-    if (remainingBytes <= 0) {
-      return speedLabel;
-    }
-
-    final etaSeconds = (remainingBytes / bytesPerSecond).ceil();
-    final etaLabel = _formatEta(Duration(seconds: etaSeconds));
-    return '$speedLabel | $etaLabel left';
-  }
-
-  String _formatByteRate(double bytesPerSecond) {
-    if (bytesPerSecond >= 1024 * 1024 * 1024) {
-      return '${(bytesPerSecond / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB/s';
-    }
-    if (bytesPerSecond >= 1024 * 1024) {
-      return '${(bytesPerSecond / (1024 * 1024)).toStringAsFixed(2)} MB/s';
-    }
-    if (bytesPerSecond >= 1024) {
-      return '${(bytesPerSecond / 1024).toStringAsFixed(1)} KB/s';
-    }
-    return '${bytesPerSecond.toStringAsFixed(0)} B/s';
-  }
-
-  String _formatEta(Duration duration) {
-    if (duration.inHours > 0) {
-      final minutes = duration.inMinutes
-          .remainder(60)
-          .toString()
-          .padLeft(2, '0');
-      return '${duration.inHours}h ${minutes}m';
-    }
-    if (duration.inMinutes > 0) {
-      final seconds = duration.inSeconds
-          .remainder(60)
-          .toString()
-          .padLeft(2, '0');
-      return '${duration.inMinutes}m ${seconds}s';
-    }
-    return '${duration.inSeconds}s';
-  }
-
-  ValueNotifier<_ModelDownloadUiState> _downloadUiStateFor(String filename) {
-    return _downloadUiStateByFile.putIfAbsent(
-      filename,
-      () => ValueNotifier<_ModelDownloadUiState>(const _ModelDownloadUiState()),
-    );
+  void _setIncludeProjector(DownloadableModel model, bool value) {
+    setState(() {
+      _includeProjectorByFile[model.filename] = value;
+    });
   }
 
   void _updateDownloadUiState(
@@ -720,9 +624,8 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
     bool clearTask = false,
     bool clearProgress = false,
   }) {
-    final notifier = _downloadUiStateFor(filename);
-    final current = notifier.value;
-    notifier.value = current.copyWith(
+    _downloadUi.updateState(
+      filename,
       isDownloading: isDownloading,
       progress: clearProgress ? 0.0 : progress,
       detail: detail,
@@ -733,17 +636,11 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
   }
 
   void _clearDownloadTracking(String filename) {
-    _lastDownloadedBytes.remove(filename);
-    _lastDownloadSampleAt.remove(filename);
-    _smoothedDownloadRateBytesPerSec.remove(filename);
+    _downloadUi.clearTracking(filename);
   }
 
   void _pauseActiveDownloads() {
-    for (final controller in _downloadControllers.values) {
-      if (controller.snapshot.isRunning) {
-        controller.cancel();
-      }
-    }
+    _downloadUi.pauseActiveDownloads();
   }
 
   Future<void> _disposeDownloadController(
@@ -751,19 +648,11 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
     ModelDownloadController? controller,
     StreamSubscription<ModelDownloadTaskSnapshot>? subscription,
   }) async {
-    final currentSubscription = _downloadSubscriptions[filename];
-    if (subscription == null || identical(currentSubscription, subscription)) {
-      await _downloadSubscriptions.remove(filename)?.cancel();
-    } else {
-      await subscription.cancel();
-    }
-
-    final currentController = _downloadControllers[filename];
-    if (controller == null || identical(currentController, controller)) {
-      await _downloadControllers.remove(filename)?.dispose();
-    } else {
-      await controller.dispose();
-    }
+    await _downloadUi.disposeDownload(
+      filename,
+      controller: controller,
+      subscription: subscription,
+    );
   }
 
   void _handleDownloadSnapshot(
@@ -781,11 +670,14 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
     );
   }
 
-  Future<void> _downloadModel(DownloadableModel model) async {
+  Future<void> _downloadModel(
+    DownloadableModel model, {
+    bool? includeProjector,
+  }) async {
     if (!kIsWeb && _modelsDir == null) {
       return;
     }
-    if (_downloadControllers[model.filename]?.snapshot.isRunning ?? false) {
+    if (_downloadUi.isRunning(model.filename)) {
       return;
     }
 
@@ -804,16 +696,19 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
     _clearDownloadTracking(model.filename);
 
     try {
+      final shouldIncludeProjector =
+          includeProjector ?? _includeProjectorFor(model);
       final manager = ChatAppModelDownloadManager(
         modelService: _modelService,
         model: model,
         modelsDir: _modelsDir ?? '',
         useWebSources: kIsWeb,
+        includeProjector: shouldIncludeProjector,
         onProgressDetail: (detail) {
           if (!mounted) {
             return;
           }
-          _updateDownloadRate(model.filename, detail);
+          _downloadUi.updateDownloadRate(model.filename, detail);
           _updateDownloadUiState(
             model.filename,
             progress: detail.overallProgress,
@@ -822,11 +717,14 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
         },
       );
       controller = ModelDownloadController(manager: manager);
-      _downloadControllers[model.filename] = controller;
       subscription = controller.snapshots.listen(
         (snapshot) => _handleDownloadSnapshot(model, snapshot),
       );
-      _downloadSubscriptions[model.filename] = subscription;
+      _downloadUi.registerDownload(
+        filename: model.filename,
+        controller: controller,
+        subscription: subscription,
+      );
 
       await controller.start(manager.source);
       if (!mounted) {
@@ -840,17 +738,17 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
         clearTask: true,
       );
       _clearDownloadTracking(model.filename);
-      final downloadedFiles = await _modelService.getDownloadedModels(_models);
-      await _refreshCacheStates(_models);
+      await _refreshDownloadedModelState();
       if (!mounted) {
         return;
       }
-      setState(() {
-        _downloadedFiles = downloadedFiles;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${model.name} downloaded successfully.')),
-      );
+      setState(() {});
+      final successAction = shouldIncludeProjector
+          ? 'downloaded successfully'
+          : 'downloaded for text-only chat';
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('${model.name} $successAction.')));
     } catch (error) {
       if (!mounted) {
         return;
@@ -870,14 +768,11 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
         _clearDownloadTracking(model.filename);
       }
 
-      final downloadedFiles = await _modelService.getDownloadedModels(_models);
-      await _refreshCacheStates(_models);
+      await _refreshDownloadedModelState();
       if (!mounted) {
         return;
       }
-      setState(() {
-        _downloadedFiles = downloadedFiles;
-      });
+      setState(() {});
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -900,7 +795,7 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
   }
 
   void _cancelDownload(DownloadableModel model) {
-    _downloadControllers[model.filename]?.cancel();
+    _downloadUi.cancel(model.filename);
   }
 
   Future<void> _selectModel(DownloadableModel model) async {
@@ -925,7 +820,14 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
 
     if (model.isMultimodal) {
       final mmprojPath = _resolveMmprojPathForModel(model);
-      provider.updateMmprojPath(mmprojPath ?? '');
+      final mmprojSource = model.multimodalProjectorSourceFor(web: kIsWeb);
+      final projectorIsAvailable =
+          mmprojSource == null ||
+          (_cacheStateByFile[model.filename]
+                  ?.multimodalProjector
+                  ?.isAvailable ??
+              false);
+      provider.updateMmprojPath(projectorIsAvailable ? (mmprojPath ?? '') : '');
     } else {
       provider.updateMmprojPath('');
     }
@@ -967,7 +869,7 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
   Future<void> _deleteModel(DownloadableModel model) async {
     if (_modelsDir == null) return;
 
-    if (_downloadUiStateFor(model.filename).value.isDownloading) {
+    if (_downloadUi.listenableFor(model.filename).value.isDownloading) {
       _cancelDownload(model);
     }
 
@@ -982,13 +884,10 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
     );
     _clearDownloadTracking(model.filename);
     await _disposeDownloadController(model.filename);
-    final downloadedFiles = await _modelService.getDownloadedModels(_models);
-    await _refreshCacheStates(_models);
+    await _refreshDownloadedModelState();
     if (!mounted) return;
 
-    setState(() {
-      _downloadedFiles = downloadedFiles;
-    });
+    setState(() {});
   }
 
   Future<void> _removeAllModels() async {
@@ -1039,24 +938,11 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
       ..clear()
       ..addAll(_initialModelCatalog());
     _customModels.clear();
-    for (final notifier in _downloadUiStateByFile.values) {
-      notifier.dispose();
-    }
-    _downloadUiStateByFile.clear();
-    _lastDownloadedBytes.clear();
-    _lastDownloadSampleAt.clear();
-    _smoothedDownloadRateBytesPerSec.clear();
-    for (final subscription in _downloadSubscriptions.values) {
-      await subscription.cancel();
-    }
-    _downloadSubscriptions.clear();
-    for (final controller in _downloadControllers.values) {
-      await controller.dispose();
-    }
-    _downloadControllers.clear();
-    _downloadedFiles = await _modelService.getDownloadedModels(_models);
-    _cacheStateByFile.clear();
-    await _refreshCacheStates(_models);
+    _downloadUi.clearUiState();
+    _downloadUi.clearRateTracking();
+    _includeProjectorByFile.clear();
+    await _downloadUi.disposeDownloads();
+    await _refreshDownloadedModelState(clearCacheStates: true);
 
     await _saveCustomModels();
 
@@ -1465,16 +1351,16 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
                       ..._models.map((model) {
                         final selectedPath = _resolveModelLoadReference(model);
                         final isActivating = _activatingModel == model.filename;
-                        final downloadStateListenable = _downloadUiStateFor(
-                          model.filename,
-                        );
+                        final downloadStateListenable = _downloadUi
+                            .listenableFor(model.filename);
 
-                        return ValueListenableBuilder<_ModelDownloadUiState>(
+                        return ValueListenableBuilder<ModelDownloadUiState>(
                           valueListenable: downloadStateListenable,
                           builder: (context, downloadState, _) {
                             final detail = downloadState.detail;
-                            final taskLabel = _downloadTaskLabel(
+                            final taskLabel = downloadTaskLabel(
                               downloadState.task,
+                              isWeb: kIsWeb,
                             );
 
                             final card = ModelCard(
@@ -1487,10 +1373,10 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
                               progress: downloadState.progress,
                               downloadStatusLabel: detail == null
                                   ? taskLabel
-                                  : _downloadStageLabel(detail),
+                                  : downloadStageLabel(detail, isWeb: kIsWeb),
                               downloadTransferLabel: detail == null
                                   ? null
-                                  : _downloadTransferLabel(
+                                  : _downloadUi.transferLabel(
                                       model.filename,
                                       detail,
                                     ),
@@ -1501,12 +1387,15 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
                               onGpuLayersChanged: provider.updateGpuLayers,
                               onContextSizeChanged: provider.updateContextSize,
                               onSelect: isActivating
-                                  ? () {}
+                                  ? null
                                   : () => unawaited(_selectModel(model)),
                               onDownload: () =>
                                   unawaited(_downloadModel(model)),
                               onDelete: () => unawaited(_deleteModel(model)),
                               onCancel: () => _cancelDownload(model),
+                              includeProjector: _includeProjectorFor(model),
+                              onIncludeProjectorChanged: (value) =>
+                                  _setIncludeProjector(model, value),
                             );
 
                             return Padding(
@@ -2090,53 +1979,8 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _pauseActiveDownloads();
-    for (final subscription in _downloadSubscriptions.values) {
-      unawaited(subscription.cancel());
-    }
-    _downloadSubscriptions.clear();
-    for (final controller in _downloadControllers.values) {
-      unawaited(controller.dispose());
-    }
-    _downloadControllers.clear();
-    for (final notifier in _downloadUiStateByFile.values) {
-      notifier.dispose();
-    }
-    _downloadUiStateByFile.clear();
+    _downloadUi.dispose();
     super.dispose();
-  }
-}
-
-class _ModelDownloadUiState {
-  final bool isDownloading;
-  final double progress;
-  final ModelDownloadProgress? detail;
-  final ModelDownloadTaskSnapshot? task;
-
-  const _ModelDownloadUiState({
-    this.isDownloading = false,
-    this.progress = 0.0,
-    this.detail,
-    this.task,
-  });
-
-  _ModelDownloadUiState copyWith({
-    bool? isDownloading,
-    double? progress,
-    ModelDownloadProgress? detail,
-    ModelDownloadTaskSnapshot? task,
-    bool clearDetail = false,
-    bool clearTask = false,
-  }) {
-    final normalizedProgress =
-        ((progress ?? this.progress).clamp(0.0, 1.0) as num).toDouble();
-
-    return _ModelDownloadUiState(
-      isDownloading: isDownloading ?? this.isDownloading,
-      progress: normalizedProgress,
-      detail: clearDetail ? null : (detail ?? this.detail),
-      task: clearTask ? null : (task ?? this.task),
-    );
   }
 }
 

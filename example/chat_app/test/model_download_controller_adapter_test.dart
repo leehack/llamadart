@@ -127,6 +127,28 @@ void main() {
       },
     );
 
+    test('can download only the base model without projector', () async {
+      final model = _remoteVlmModel();
+      final service = _FakeModelService();
+      final manager = ChatAppModelDownloadManager(
+        modelService: service,
+        model: model,
+        modelsDir: '/models',
+        includeProjector: false,
+      );
+
+      await manager.ensureModel(
+        manager.source,
+        options: llama.ModelLoadOptions(
+          cachePolicy: llama.ModelCachePolicy.refresh,
+        ),
+      );
+
+      expect(service.downloadCalls, 1);
+      expect(service.lastModel?.filename, model.filename);
+      expect(service.lastModel?.multimodalProjectorSource, isNull);
+    });
+
     test(
       'bridges controller cancellation into the chat app Dio cancel token',
       () async {
@@ -163,6 +185,19 @@ DownloadableModel _remoteModel() {
     url: 'https://example.com/tiny.gguf?token=secret',
     filename: 'tiny.gguf',
     sizeBytes: 10,
+  );
+}
+
+DownloadableModel _remoteVlmModel() {
+  return const DownloadableModel(
+    name: 'Tiny VLM Test Model',
+    description: 'Small fake VLM for adapter tests.',
+    url: 'https://example.com/tiny-vlm.gguf?download=true',
+    filename: 'tiny-vlm.gguf',
+    mmprojUrl: 'https://example.com/tiny-mmproj.gguf?download=true',
+    mmprojFilename: 'tiny-mmproj.gguf',
+    sizeBytes: 10,
+    supportsVision: true,
   );
 }
 

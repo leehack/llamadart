@@ -11,6 +11,7 @@ import 'package:llamadart/llamadart.dart';
 import 'package:llamadart/src/backends/webgpu/interop.dart';
 import 'package:llamadart/src/backends/webgpu/webgpu_backend.dart';
 import 'package:test/test.dart';
+import 'package:web/web.dart' show Response, window;
 
 @JS('Promise.reject')
 external JSPromise<JSAny?> _rejectPromise(JSAny? reason);
@@ -35,6 +36,8 @@ void main() {
     int? lastRequestedFlashAttention;
     int? lastRequestedCacheTypeK;
     int? lastRequestedCacheTypeV;
+    bool? lastRequestedUseCache;
+    bool? lastRequestedForceRemoteFetchBackend;
     bool? lastRequestedKvUnified;
     double? lastRequestedRopeFrequencyBase;
     double? lastRequestedRopeFrequencyScale;
@@ -48,6 +51,7 @@ void main() {
     String? lastTokenEventEncoding;
     int? lastTokenEventFlushMs;
     int? lastTokenEventFlushChars;
+    String? lastMmprojPath;
     String? lastPrompt;
     String? lastStateSavePath;
     List<int>? lastStateSaveTokens;
@@ -135,6 +139,19 @@ void main() {
         lastRequestedCacheTypeV = (cacheTypeV as JSNumber).toDartInt;
       }
 
+      final useCache = config.getProperty('useCache'.toJS);
+      if (useCache.isA<JSBoolean>()) {
+        lastRequestedUseCache = (useCache as JSBoolean).toDart;
+      }
+
+      final forceRemoteFetchBackend = config.getProperty(
+        'forceRemoteFetchBackend'.toJS,
+      );
+      if (forceRemoteFetchBackend.isA<JSBoolean>()) {
+        lastRequestedForceRemoteFetchBackend =
+            (forceRemoteFetchBackend as JSBoolean).toDart;
+      }
+
       final kvUnified = config.getProperty('kvUnified'.toJS);
       if (kvUnified.isA<JSBoolean>()) {
         lastRequestedKvUnified = (kvUnified as JSBoolean).toDart;
@@ -183,6 +200,8 @@ void main() {
       lastRequestedFlashAttention = null;
       lastRequestedCacheTypeK = null;
       lastRequestedCacheTypeV = null;
+      lastRequestedUseCache = null;
+      lastRequestedForceRemoteFetchBackend = null;
       lastRequestedKvUnified = null;
       lastRequestedRopeFrequencyBase = null;
       lastRequestedRopeFrequencyScale = null;
@@ -196,6 +215,7 @@ void main() {
       lastTokenEventEncoding = null;
       lastTokenEventFlushMs = null;
       lastTokenEventFlushChars = null;
+      lastMmprojPath = null;
       lastPrompt = null;
       lastStateSavePath = null;
       lastStateSaveTokens = null;
@@ -333,6 +353,7 @@ void main() {
         'loadMultimodalProjector'.toJS,
         ((String path) {
           mmLoaded = true;
+          lastMmprojPath = path;
           return Future<JSNumber>.value(1.toJS).toJS;
         }).toJS,
       );
@@ -570,6 +591,42 @@ void main() {
         const ModelParams(),
       );
       expect(capturedPreferMemory64(), isNull);
+    });
+
+    test('keeps cache enabled for benign download query URLs', () async {
+      await backend.modelLoadFromUrl(
+        'https://example.com/model.gguf?download=true',
+        const ModelParams(),
+      );
+
+      expect(lastRequestedUseCache, isTrue);
+    });
+
+    test('disables cache for signed query URLs', () async {
+      await backend.modelLoadFromUrl(
+        'https://example.com/model.gguf?token=secret',
+        const ModelParams(),
+      );
+
+      expect(lastRequestedUseCache, isFalse);
+    });
+
+    test('prefers cached model stream over remote fetch backend', () async {
+      const cacheName = 'llamadart-webgpu-model-cache-v1';
+      const modelUrl = 'https://example.com/model.gguf?download=true';
+      final cache = await window.caches.open(cacheName).toDart;
+      await cache.put(modelUrl.toJS, Response('cached model'.toJS)).toDart;
+      addTearDown(() async {
+        await window.caches.delete(cacheName).toDart;
+      });
+
+      await backend.modelLoadFromUrl(
+        modelUrl,
+        const ModelParams(modelBytesHint: 3 * 1024 * 1024 * 1024),
+      );
+
+      expect(lastRequestedUseCache, isTrue);
+      expect(lastRequestedForceRemoteFetchBackend, isFalse);
     });
 
     test('forwards batch threading and batching model params', () async {
@@ -1686,6 +1743,27 @@ void main() {
       await backend.multimodalContextFree(mmHandle);
       expect(mmLoaded, isFalse);
       expect(await backend.supportsVision(mmHandle), isFalse);
+    });
+
+    test('loads cached projector through blob URL', () async {
+      const cacheName = 'llamadart-webgpu-model-cache-v1';
+      const mmprojUrl = 'https://example.com/mmproj-cached.gguf?download=true';
+      final cache = await window.caches.open(cacheName).toDart;
+      await cache.put(mmprojUrl.toJS, Response('cached projector'.toJS)).toDart;
+      addTearDown(() async {
+        await window.caches.delete(cacheName).toDart;
+      });
+
+      await backend.modelLoadFromUrl(
+        'https://example.com/model.gguf',
+        const ModelParams(),
+      );
+
+      final mmHandle = await backend.multimodalContextCreate(1, mmprojUrl);
+
+      expect(mmHandle, 1);
+      expect(lastMmprojPath, startsWith('blob:'));
+      expect(lastMmprojPath, isNot(mmprojUrl));
     });
 
     test('runs WebGPU multimodal warmup once per projector load', () async {
