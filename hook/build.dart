@@ -32,6 +32,7 @@ const _litertLmNativeReleaseBaseUrl =
 const _litertLmCacheDir = 'litert_lm';
 const _runtimeBundleDownloadMaxAttempts = 5;
 const _runtimeBundleDownloadRequestTimeout = Duration(seconds: 60);
+const _runtimeBundleDownloadTransferTimeout = Duration(minutes: 10);
 const _runtimeBundleDownloadRetryBaseDelay = Duration(seconds: 3);
 
 final _litertLmBundles = Map.unmodifiable({
@@ -1824,7 +1825,9 @@ Future<void> _downloadRuntimeBundleOnce({
     final sink = temporaryDestination.openWrite();
     var sinkClosed = false;
     try {
-      await response.stream.pipe(sink);
+      await response.stream
+          .pipe(sink)
+          .timeout(_runtimeBundleDownloadTransferTimeout);
       sinkClosed = true;
     } finally {
       if (!sinkClosed) {
