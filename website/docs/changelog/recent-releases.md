@@ -7,6 +7,22 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
+## 0.8.14
+
+- Improved the runnable chat app's web model-cache and loading experience by
+  reusing cached GGUF and LiteRT-LM bundles, preserving browser model caches
+  during app cache cleanup, allowing text-only downloads without a multimodal
+  projector, and polishing download/load progress states.
+
+- Updated the chat app's web runtimes to pinned WebGPU bridge assets `v0.1.18`
+  (llama.cpp `b9915`) and `@litert-lm/core@0.14.0` for reproducible hosted and
+  local inference.
+
+- Updated the default native llama.cpp runtime to
+  `leehack/llamadart-native@b9935`, regenerated matching Dart FFI bindings,
+  refreshed the Apple SwiftPM companion checksum, and aligned current runtime
+  documentation.
+
 ## 0.8.13
 
 - Fixed load lifecycle guards so repeated model loads preserve the active
