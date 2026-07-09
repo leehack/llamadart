@@ -1,4 +1,5 @@
-import 'dart:async' show Completer, Timer, TimeoutException, unawaited;
+import 'dart:async'
+    show Completer, StreamSubscription, Timer, TimeoutException, unawaited;
 import 'dart:convert' show utf8;
 import 'dart:io';
 
@@ -34,6 +35,14 @@ const _runtimeBundleDownloadMaxAttempts = 5;
 const _runtimeBundleDownloadRequestTimeout = Duration(seconds: 60);
 const _runtimeBundleDownloadTransferTimeout = Duration(minutes: 10);
 const _runtimeBundleDownloadRetryBaseDelay = Duration(seconds: 3);
+
+typedef RuntimeBundleDownloadFallbackForTesting =
+    Future<bool> Function({
+      required String url,
+      required File destination,
+      required String description,
+      required Logger log,
+    });
 
 final _litertLmBundles = Map.unmodifiable({
   for (final bundle in _litertLmBundleSpecs) bundle.bundle: bundle,
@@ -1743,17 +1752,26 @@ Future<void> _downloadRuntimeBundle({
   required File destination,
   required String description,
   required Logger log,
+  int maxAttempts = _runtimeBundleDownloadMaxAttempts,
+  Duration requestTimeout = _runtimeBundleDownloadRequestTimeout,
+  Duration transferTimeout = _runtimeBundleDownloadTransferTimeout,
+  Duration retryBaseDelay = _runtimeBundleDownloadRetryBaseDelay,
+  bool useCurlFallback = true,
+  http.Client Function()? createClient,
+  RuntimeBundleDownloadFallbackForTesting? curlFallback,
 }) async {
   await destination.parent.create(recursive: true);
 
   Exception? lastError;
-  for (
-    var attempt = 1;
-    attempt <= _runtimeBundleDownloadMaxAttempts;
-    attempt++
-  ) {
+  for (var attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      await _downloadRuntimeBundleOnce(url: url, destination: destination);
+      await _downloadRuntimeBundleOnce(
+        url: url,
+        destination: destination,
+        requestTimeout: requestTimeout,
+        transferTimeout: transferTimeout,
+        createClient: createClient,
+      );
       log.info('Saved $description to ${destination.path}');
       return;
     } on Exception catch (error) {
@@ -1767,24 +1785,25 @@ Future<void> _downloadRuntimeBundle({
           'Failed to download $url after $attempt attempts: $error',
         );
       }
-      if (attempt == _runtimeBundleDownloadMaxAttempts) {
+      if (attempt == maxAttempts) {
         break;
       }
 
       final retryDelay = Duration(
-        seconds: _runtimeBundleDownloadRetryBaseDelay.inSeconds * attempt,
+        microseconds: retryBaseDelay.inMicroseconds * attempt,
       );
       log.warning(
         '$description download failed ($error); retrying in '
         '${retryDelay.inSeconds}s '
-        '(attempt ${attempt + 1}/$_runtimeBundleDownloadMaxAttempts).',
+        '(attempt ${attempt + 1}/$maxAttempts).',
       );
       await Future<void>.delayed(retryDelay);
     }
   }
 
-  if (lastError != null &&
-      await _downloadRuntimeBundleWithCurl(
+  if (useCurlFallback &&
+      lastError != null &&
+      await (curlFallback ?? _downloadRuntimeBundleWithCurl)(
         url: url,
         destination: destination,
         description: description,
@@ -1795,16 +1814,18 @@ Future<void> _downloadRuntimeBundle({
   }
 
   throw Exception(
-    'Failed to download $url after $_runtimeBundleDownloadMaxAttempts attempts: '
-    '$lastError',
+    'Failed to download $url after $maxAttempts attempts: $lastError',
   );
 }
 
 Future<void> _downloadRuntimeBundleOnce({
   required String url,
   required File destination,
+  required Duration requestTimeout,
+  required Duration transferTimeout,
+  required http.Client Function()? createClient,
 }) async {
-  final client = http.Client();
+  final client = (createClient ?? http.Client.new)();
   final temporaryDestination = File('${destination.path}.tmp');
   try {
     if (temporaryDestination.existsSync()) {
@@ -1817,17 +1838,16 @@ Future<void> _downloadRuntimeBundleOnce({
     final sendFuture = client.send(request);
     unawaited(sendFuture.then<void>((_) {}, onError: (_, _) {}));
     final response = await sendFuture.timeout(
-      _runtimeBundleDownloadRequestTimeout,
+      requestTimeout,
       onTimeout: () {
         client.close();
         throw TimeoutException(
           'Runtime bundle request timed out after '
-          '${_runtimeBundleDownloadRequestTimeout.inSeconds}s.',
-          _runtimeBundleDownloadRequestTimeout,
+          '${requestTimeout.inSeconds}s.',
+          requestTimeout,
         );
       },
     );
-
     if (response.statusCode != 200) {
       throw _RuntimeBundleDownloadHttpException(url, response.statusCode);
     }
@@ -1838,7 +1858,7 @@ Future<void> _downloadRuntimeBundleOnce({
       await _writeRuntimeBundleResponse(
         stream: response.stream,
         sink: sink,
-        timeout: _runtimeBundleDownloadTransferTimeout,
+        timeout: transferTimeout,
       );
       await sink.close();
       sinkClosed = true;
@@ -1860,14 +1880,49 @@ Future<void> _downloadRuntimeBundleOnce({
   }
 }
 
+/// Downloads a runtime bundle through the hardened build-hook download path.
+///
+/// This is intended for hook tests that need shorter retry delays and timeouts;
+/// production code should use the build hook entrypoint.
+Future<void> downloadRuntimeBundleForTesting({
+  required String url,
+  required File destination,
+  required String description,
+  required Logger log,
+  int maxAttempts = _runtimeBundleDownloadMaxAttempts,
+  Duration requestTimeout = _runtimeBundleDownloadRequestTimeout,
+  Duration transferTimeout = _runtimeBundleDownloadTransferTimeout,
+  Duration retryBaseDelay = _runtimeBundleDownloadRetryBaseDelay,
+  bool useCurlFallback = false,
+  http.Client Function()? createClient,
+  RuntimeBundleDownloadFallbackForTesting? curlFallback,
+}) {
+  return _downloadRuntimeBundle(
+    url: url,
+    destination: destination,
+    description: description,
+    log: log,
+    maxAttempts: maxAttempts,
+    requestTimeout: requestTimeout,
+    transferTimeout: transferTimeout,
+    retryBaseDelay: retryBaseDelay,
+    useCurlFallback: useCurlFallback,
+    createClient: createClient,
+    curlFallback: curlFallback,
+  );
+}
+
 Future<void> _writeRuntimeBundleResponse({
   required Stream<List<int>> stream,
   required IOSink sink,
   required Duration timeout,
 }) async {
   final completed = Completer<void>();
-  late final subscription = stream.listen(
-    sink.add,
+  late final StreamSubscription<List<int>> subscription;
+  subscription = stream.listen(
+    (chunk) {
+      sink.add(chunk);
+    },
     onError: (Object error, StackTrace stackTrace) {
       if (!completed.isCompleted) {
         completed.completeError(error, stackTrace);

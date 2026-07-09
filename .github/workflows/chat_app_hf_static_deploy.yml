@@ -76,7 +76,7 @@ jobs:
 
       - name: Install Hugging Face Hub client
         run: |
-          python3 -m pip install --upgrade "huggingface_hub>=0.36.0"
+          python3 -m pip install --upgrade "huggingface_hub>=0.36.0,<0.37.0"
 
       - name: Deploy to Hugging Face Space
         env:
