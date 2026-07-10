@@ -12,6 +12,9 @@ class ChatMessage {
   final LlamaChatRole? role;
   int? tokenCount; // Cache token count for sliding window optimization
 
+  /// This response's contribution to the runtime context counter.
+  int? generatedTokenCount;
+
   ChatMessage({
     required String text,
     required this.isUser,
@@ -21,6 +24,7 @@ class ChatMessage {
     this.role,
     DateTime? timestamp,
     this.tokenCount,
+    this.generatedTokenCount,
   }) : text = sanitizeForTextLayout(text),
        timestamp = timestamp ?? DateTime.now();
 
@@ -57,6 +61,7 @@ class ChatMessage {
     LlamaChatRole? role,
     DateTime? timestamp,
     int? tokenCount,
+    int? generatedTokenCount,
   }) {
     return ChatMessage(
       text: text ?? this.text,
@@ -67,6 +72,7 @@ class ChatMessage {
       role: role ?? this.role,
       timestamp: timestamp ?? this.timestamp,
       tokenCount: tokenCount ?? this.tokenCount,
+      generatedTokenCount: generatedTokenCount ?? this.generatedTokenCount,
     );
   }
 }

@@ -106,7 +106,7 @@ void main() {
       final available = BackendUtils.availableBackends(
         devices: const <String>['metal', 'cpu'],
         activeBackend: 'cuda',
-        includeAutoOnWeb: true,
+        includeAuto: true,
       );
 
       expect(

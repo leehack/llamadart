@@ -29,6 +29,9 @@ class ManageModelsScreen extends StatefulWidget {
   final List<DownloadableModel>? initialModels;
   final bool? showModelLibraryInitially;
 
+  /// App-owned download state that outlives transient drawer and panel views.
+  final ModelDownloadUiController? downloadUiController;
+
   const ManageModelsScreen({
     super.key,
     this.onModelActivated,
@@ -36,6 +39,7 @@ class ManageModelsScreen extends StatefulWidget {
     this.modelService,
     this.initialModels,
     this.showModelLibraryInitially,
+    this.downloadUiController,
   });
 
   @override
@@ -55,7 +59,9 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
 
   final Map<String, ModelProfileCacheState> _cacheStateByFile = {};
   final Map<String, bool> _includeProjectorByFile = {};
-  final ModelDownloadUiController _downloadUi = ModelDownloadUiController();
+  late final ModelDownloadUiController _downloadUi;
+  late final bool _ownsDownloadUi;
+  StreamSubscription<String>? _downloadFinishedSubscription;
 
   Set<String> _downloadedFiles = {};
   String? _modelsDir;
@@ -63,12 +69,18 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
   bool _showModelLibrary = true;
   bool _modelParametersExpanded = false;
   bool _inferenceParametersExpanded = false;
+  bool _advancedExpanded = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _modelService = widget.modelService ?? ModelService();
+    _downloadUi = widget.downloadUiController ?? ModelDownloadUiController();
+    _ownsDownloadUi = widget.downloadUiController == null;
+    _downloadFinishedSubscription = _downloadUi.downloadsFinished.listen(
+      _handleDownloadFinished,
+    );
     _models.addAll(_initialModelCatalog());
     _showModelLibrary = widget.showModelLibraryInitially ?? false;
     _initModelService();
@@ -119,6 +131,20 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
     );
     for (final entry in entries) {
       _cacheStateByFile[entry.key] = entry.value;
+    }
+  }
+
+  Future<void> _handleDownloadFinished(String filename) async {
+    final model = _models
+        .where((model) => model.filename == filename)
+        .firstOrNull;
+    if (model == null) {
+      return;
+    }
+
+    await _refreshDownloadedModelState(cacheModels: <DownloadableModel>[model]);
+    if (mounted) {
+      setState(() {});
     }
   }
 
@@ -635,9 +661,6 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
     DownloadableModel model,
     ModelDownloadTaskSnapshot snapshot,
   ) {
-    if (!mounted) {
-      return;
-    }
     _updateDownloadUiState(
       model.filename,
       isDownloading: snapshot.isRunning,
@@ -681,9 +704,6 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
         useWebSources: kIsWeb,
         includeProjector: shouldIncludeProjector,
         onProgressDetail: (detail) {
-          if (!mounted) {
-            return;
-          }
           _downloadUi.updateDownloadRate(model.filename, detail);
           _updateDownloadUiState(
             model.filename,
@@ -703,9 +723,6 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
       );
 
       await controller.start(manager.source);
-      if (!mounted) {
-        return;
-      }
       _updateDownloadUiState(
         model.filename,
         isDownloading: false,
@@ -714,11 +731,10 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
         clearTask: true,
       );
       _clearDownloadTracking(model.filename);
-      await _refreshDownloadedModelState();
+      _downloadUi.notifyDownloadFinished(model.filename);
       if (!mounted) {
         return;
       }
-      setState(() {});
       final successAction = shouldIncludeProjector
           ? 'downloaded successfully'
           : 'downloaded for text-only chat';
@@ -726,9 +742,6 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
         context,
       ).showSnackBar(SnackBar(content: Text('${model.name} $successAction.')));
     } catch (error) {
-      if (!mounted) {
-        return;
-      }
       final snapshot = controller?.snapshot;
       final isCancel =
           snapshot?.stage == ModelDownloadTaskStage.cancelled ||
@@ -743,12 +756,10 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
       if (!isCancel) {
         _clearDownloadTracking(model.filename);
       }
-
-      await _refreshDownloadedModelState();
+      _downloadUi.notifyDownloadFinished(model.filename);
       if (!mounted) {
         return;
       }
-      setState(() {});
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -1153,13 +1164,15 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
         final threadBatchLabel = provider.numberOfThreadsBatch == 0
             ? '(auto detected)'
             : provider.numberOfThreadsBatch.toString();
-        final isAutoGpuLayers = provider.gpuLayers >= 99;
-        final gpuLayersLabel = isAutoGpuLayers
-            ? 'Auto'
+        final isMaximumGpuLayers = provider.gpuLayers >= 99;
+        final gpuLayersLabel = isMaximumGpuLayers
+            ? 'Max'
             : provider.gpuLayers.toString();
-        final gpuLayersSliderValue = isAutoGpuLayers
+        final gpuLayersSliderValue = isMaximumGpuLayers
             ? 99.0
             : provider.gpuLayers.clamp(0, 98).toDouble();
+        final gpuOffloadDisabled =
+            selectedBackend != GpuBackend.cpu && provider.gpuLayers == 0;
         final hasLoadProgress =
             provider.loadingProgress > 0 && provider.loadingProgress < 1;
         final loadProgressLabel = hasLoadProgress
@@ -1557,6 +1570,19 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
                         }
                       },
                     ),
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        provider.isLoaded
+                            ? 'Active backend: ${provider.activeBackend}'
+                            : 'Active backend is shown after the model loads.',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
                     const SizedBox(height: 10),
                     Align(
                       alignment: Alignment.centerLeft,
@@ -1627,12 +1653,17 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
                     Align(
                       alignment: Alignment.centerLeft,
                       child: Text(
-                        hasMmprojPath
-                            ? 'mmproj is configured for this model. Use Text only to disable it, or Load mmproj to attach it without a full reload. '
-                                  'Set GPU layers to 99 for Auto. Runtime values apply on next model load.'
-                            : 'Set GPU layers to 99 for Auto. Runtime values apply on next model load.',
+                        [
+                          if (hasMmprojPath)
+                            'mmproj is configured for this model. Use Text only to disable it, or Load mmproj to attach it without a full reload.',
+                          if (gpuOffloadDisabled)
+                            'GPU layers is 0, so inference will run on CPU. Increase it or choose Max to enable GPU offload.',
+                          'Auto selects Metal on supported Macs. GPU layers controls how much of the model is offloaded; Max requests full offload. Changes apply on next model load.',
+                        ].join(' '),
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          color: gpuOffloadDisabled
+                              ? Theme.of(context).colorScheme.error
+                              : Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
                       ),
                     ),
@@ -1837,13 +1868,6 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
               ),
             ),
             const SizedBox(height: 24),
-            Text(
-              'Diagnostics',
-              style: Theme.of(
-                context,
-              ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 12),
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
@@ -1855,53 +1879,78 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
                   ).colorScheme.outlineVariant.withValues(alpha: 0.45),
                 ),
               ),
-              child: Column(
-                children: [
-                  DropdownButtonFormField<LlamaLogLevel>(
-                    initialValue: provider.dartLogLevel,
-                    decoration: const InputDecoration(
-                      labelText: 'Dart log level',
+              child: Theme(
+                data: Theme.of(
+                  context,
+                ).copyWith(dividerColor: Colors.transparent),
+                child: ExpansionTile(
+                  initiallyExpanded: _advancedExpanded,
+                  onExpansionChanged: (expanded) {
+                    setState(() {
+                      _advancedExpanded = expanded;
+                    });
+                  },
+                  tilePadding: EdgeInsets.zero,
+                  childrenPadding: const EdgeInsets.only(top: 8),
+                  shape: const RoundedRectangleBorder(),
+                  collapsedShape: const RoundedRectangleBorder(),
+                  title: Text(
+                    'Advanced',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
                     ),
-                    items: LlamaLogLevel.values
-                        .map(
-                          (level) => DropdownMenuItem<LlamaLogLevel>(
-                            value: level,
-                            child: Text(_logLevelLabel(level)),
-                          ),
-                        )
-                        .toList(growable: false),
-                    onChanged: (value) {
-                      if (value != null) {
-                        provider.updateLogLevel(value);
-                      }
-                    },
                   ),
-                  const SizedBox(height: 10),
-                  DropdownButtonFormField<LlamaLogLevel>(
-                    initialValue: provider.nativeLogLevel,
-                    decoration: InputDecoration(
-                      labelText: kIsWeb
-                          ? 'Bridge/runtime log level'
-                          : 'Native log level',
-                      helperText: kIsWeb
-                          ? 'Applies to bridge/core logs. For startup diagnostics set window.__llamadartBridgeBootstrapVerbose = true; for pthread warnings align window.__llamadartBridgeThreadPoolSize.'
-                          : null,
+                  subtitle: Text(
+                    'Diagnostics and runtime logging',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  children: [
+                    DropdownButtonFormField<LlamaLogLevel>(
+                      initialValue: provider.dartLogLevel,
+                      decoration: const InputDecoration(
+                        labelText: 'Dart log level',
+                      ),
+                      items: LlamaLogLevel.values
+                          .map(
+                            (level) => DropdownMenuItem<LlamaLogLevel>(
+                              value: level,
+                              child: Text(_logLevelLabel(level)),
+                            ),
+                          )
+                          .toList(growable: false),
+                      onChanged: (value) {
+                        if (value != null) {
+                          provider.updateLogLevel(value);
+                        }
+                      },
                     ),
-                    items: LlamaLogLevel.values
-                        .map(
-                          (level) => DropdownMenuItem<LlamaLogLevel>(
-                            value: level,
-                            child: Text(_logLevelLabel(level)),
-                          ),
-                        )
-                        .toList(growable: false),
-                    onChanged: (value) {
-                      if (value != null) {
-                        provider.updateNativeLogLevel(value);
-                      }
-                    },
-                  ),
-                ],
+                    const SizedBox(height: 10),
+                    DropdownButtonFormField<LlamaLogLevel>(
+                      initialValue: provider.nativeLogLevel,
+                      decoration: InputDecoration(
+                        labelText: kIsWeb
+                            ? 'Bridge/runtime log level'
+                            : 'Native log level',
+                        helperText: kIsWeb
+                            ? 'Applies to bridge/core logs. For startup diagnostics set window.__llamadartBridgeBootstrapVerbose = true; for pthread warnings align window.__llamadartBridgeThreadPoolSize.'
+                            : null,
+                      ),
+                      items: LlamaLogLevel.values
+                          .map(
+                            (level) => DropdownMenuItem<LlamaLogLevel>(
+                              value: level,
+                              child: Text(_logLevelLabel(level)),
+                            ),
+                          )
+                          .toList(growable: false),
+                      onChanged: (value) {
+                        if (value != null) {
+                          provider.updateNativeLogLevel(value);
+                        }
+                      },
+                    ),
+                  ],
+                ),
               ),
             ),
           ],
@@ -1920,7 +1969,7 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
     return BackendUtils.availableBackends(
       devices: provider.availableDevices,
       activeBackend: provider.activeBackend,
-      includeAutoOnWeb: true,
+      includeAuto: true,
     );
   }
 
@@ -1955,7 +2004,10 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _downloadUi.dispose();
+    unawaited(_downloadFinishedSubscription?.cancel());
+    if (_ownsDownloadUi) {
+      _downloadUi.dispose();
+    }
     super.dispose();
   }
 }
@@ -2341,7 +2393,10 @@ class _PopularModelsDiscoverySheetState
                           unawaited(_load(forceRefresh: true));
                         },
                   tooltip: 'Refresh popularity',
-                  icon: const Icon(Icons.refresh_rounded),
+                  icon: const Icon(
+                    Icons.refresh_rounded,
+                    semanticLabel: kIsWeb ? null : 'Refresh popularity',
+                  ),
                 ),
               ],
             ),
@@ -2391,7 +2446,10 @@ class _PopularModelsDiscoverySheetState
                                 });
                                 _scheduleRefresh();
                               },
-                              icon: const Icon(Icons.clear_rounded),
+                              icon: const Icon(
+                                Icons.clear_rounded,
+                                semanticLabel: kIsWeb ? null : 'Clear search',
+                              ),
                             ),
                     ),
                   ),

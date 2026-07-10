@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -171,28 +174,19 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-
     return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            colorScheme.surfaceContainerLowest.withValues(alpha: 0.94),
-            colorScheme.surface,
-          ],
-        ),
-      ),
+      color: Colors.transparent,
       child: Stack(
         children: [
           Column(
             children: [
               const PruningIndicator(),
+              const RuntimeStatusPanel(),
               Expanded(
                 child: Consumer<ChatProvider>(
                   builder: (context, provider, _) {
-                    if (provider.messages.isEmpty) {
+                    final messages = provider.messages;
+                    if (messages.isEmpty) {
                       return WelcomeView(
                         isInitializing: provider.isInitializing,
                         error: provider.error,
@@ -206,29 +200,32 @@ class _ChatScreenState extends State<ChatScreen> {
                       );
                     }
 
-                    final topPadding = provider.isReady ? 88.0 : 28.0;
-
                     return ListView.builder(
                       controller: _scrollController,
-                      padding: EdgeInsets.fromLTRB(16, topPadding, 16, 24),
-                      itemCount: provider.messages.length,
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+                      itemCount: messages.length,
                       itemBuilder: (context, index) {
-                        final message = provider.messages[index];
+                        final message = messages[index];
                         var isNextSame = false;
-                        if (index + 1 < provider.messages.length) {
+                        if (index + 1 < messages.length) {
                           isNextSame =
-                              provider.messages[index + 1].isUser ==
-                              message.isUser;
+                              messages[index + 1].isUser == message.isUser;
                         }
                         final isStreamingMessage =
                             provider.isGenerating &&
                             !message.isUser &&
                             !message.isInfo &&
-                            index == provider.messages.length - 1;
+                            index == messages.length - 1;
                         return MessageBubble(
                           message: message,
                           isNextSame: isNextSame,
                           isStreaming: isStreamingMessage,
+                          onRegenerate:
+                              index == messages.length - 1 &&
+                                  provider.canRegenerateLastResponse
+                              ? () =>
+                                    unawaited(provider.regenerateLastResponse())
+                              : null,
                         );
                       },
                     );
@@ -242,12 +239,6 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
             ],
           ),
-          const Positioned(
-            top: 8,
-            left: 0,
-            right: 0,
-            child: RuntimeStatusPanel(),
-          ),
           if (_showScrollToBottom)
             Positioned(
               right: 20,
@@ -256,7 +247,10 @@ class _ChatScreenState extends State<ChatScreen> {
                 heroTag: 'scroll-to-bottom',
                 onPressed: _scrollToBottom,
                 tooltip: 'Jump to latest',
-                child: const Icon(Icons.keyboard_arrow_down_rounded),
+                child: const Icon(
+                  Icons.keyboard_arrow_down_rounded,
+                  semanticLabel: kIsWeb ? null : 'Jump to latest',
+                ),
               ),
             ),
         ],

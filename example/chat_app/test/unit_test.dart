@@ -46,6 +46,20 @@ void main() {
       expect(provider.settings.toolsEnabled, isFalse);
     });
 
+    test('active model name omits remote URL credentials', () {
+      final credentialedProvider = ChatProvider(
+        chatService: MockChatService(),
+        settingsService: MockSettingsService(),
+        initialSettings: const ChatSettings(
+          modelPath:
+              'https://example.com/models/tiny.gguf?token=secret#signed-fragment',
+        ),
+      );
+      addTearDown(credentialedProvider.dispose);
+
+      expect(credentialedProvider.activeModelName, 'tiny.gguf');
+    });
+
     test('loadModel success', () async {
       await provider.loadModel();
 
@@ -369,6 +383,56 @@ void main() {
       expect(provider.currentTokens, 1);
     });
 
+    test('empty generation does not leave a ghost assistant row', () async {
+      final emptyEngine = MockLlamaEngine()..createChunkContents = const [];
+      final emptyProvider = ChatProvider(
+        chatService: MockChatService(engine: emptyEngine),
+        settingsService: mockSettingsService,
+        initialSettings: const ChatSettings(modelPath: 'test_model.gguf'),
+      );
+      addTearDown(emptyProvider.dispose);
+
+      await emptyProvider.loadModel();
+      await emptyProvider.sendMessage('Hello');
+
+      expect(
+        emptyProvider.messages.where((message) => message.isUser),
+        hasLength(1),
+      );
+      expect(
+        emptyProvider.messages.where(
+          (message) => !message.isUser && !message.isInfo,
+        ),
+        isEmpty,
+      );
+    });
+
+    test('generation errors redact credentialed URLs', () async {
+      final failingProvider = ChatProvider(
+        chatService: MockChatService(
+          engine: _FailingCreateEngine(
+            Exception(
+              'Request failed for '
+              'https://example.com/model.gguf?token=secret#signed-fragment',
+            ),
+          ),
+        ),
+        settingsService: mockSettingsService,
+        initialSettings: const ChatSettings(modelPath: 'test_model.gguf'),
+      );
+      addTearDown(failingProvider.dispose);
+
+      await failingProvider.loadModel();
+      await failingProvider.sendMessage('Hello');
+
+      final errorMessage = failingProvider.messages.last;
+      expect(errorMessage.isInfo, isTrue);
+      expect(failingProvider.canRegenerateLastResponse, isFalse);
+      expect(errorMessage.text, contains('https://example.com/model.gguf'));
+      expect(errorMessage.text, isNot(contains('token=secret')));
+      expect(errorMessage.text, isNot(contains('signed-fragment')));
+    });
+
     test(
       'web remote load prefetches .litertlm models before runtime load',
       () async {
@@ -436,6 +500,7 @@ void main() {
               .where((m) => !m.isUser && !m.isInfo)
               .last;
           expect(assistant.text, 'Hi there');
+          expect(assistant.tokenCount, greaterThan(0));
         }
       },
     );
@@ -706,6 +771,33 @@ void main() {
       expect(provider.currentTokens, 0);
     });
 
+    test('regenerate replaces the latest assistant response', () async {
+      await provider.loadModel();
+      mockEngine.createChunkContents = const ['First response'];
+      await provider.sendMessage('Hello');
+
+      expect(provider.canRegenerateLastResponse, isTrue);
+      expect(mockEngine.createCalls, 1);
+      expect(
+        provider.messages.where((message) => message.isUser),
+        hasLength(1),
+      );
+      final firstGenerationTokens = provider.currentTokens;
+      expect(provider.messages.last.generatedTokenCount, firstGenerationTokens);
+
+      mockEngine.createChunkContents = const ['Replacement response'];
+      await provider.regenerateLastResponse();
+
+      expect(mockEngine.createCalls, 2);
+      expect(
+        provider.messages.where((message) => message.isUser),
+        hasLength(1),
+      );
+      expect(provider.messages.last.text, 'Replacement response');
+      expect(provider.canRegenerateLastResponse, isTrue);
+      expect(provider.currentTokens, firstGenerationTokens);
+    });
+
     test('delete last conversation resets to a fresh one', () async {
       final initialId = provider.activeConversationId;
 
@@ -739,7 +831,12 @@ void main() {
     test(
       'shows multimodal context overflow guidance on prompt eval failure',
       () async {
-        final engine = _MultimodalPromptEvalFailureEngine();
+        final engine = _FailingCreateEngine(
+          Exception(
+            'Multimodal prompt evaluation failed: 1. '
+            'The active context window may be too small for this image and conversation history.',
+          ),
+        );
         final customProvider = ChatProvider(
           chatService: MockChatService(engine: engine),
           settingsService: mockSettingsService,
@@ -753,6 +850,12 @@ void main() {
         expect(
           infoMessage.text,
           contains('exceeded the active context window'),
+        );
+        expect(
+          customProvider.messages.any(
+            (message) => !message.isUser && message.text.trim() == '...',
+          ),
+          isFalse,
         );
       },
     );
@@ -796,6 +899,25 @@ void main() {
       expect(provider.settings.gpuLayers, 48);
       expect(provider.activeBackend, backendBeforeChange);
     });
+
+    test(
+      'switching from zero-layer CPU to auto restores GPU offload',
+      () async {
+        provider.updateGpuLayers(0);
+        await provider.updatePreferredBackend(GpuBackend.cpu);
+        final backendBeforeChange = provider.activeBackend;
+
+        await provider.updatePreferredBackend(GpuBackend.auto);
+
+        expect(provider.settings.preferredBackend, GpuBackend.auto);
+        expect(provider.settings.gpuLayers, 99);
+        expect(provider.activeBackend, backendBeforeChange);
+        expect(
+          provider.messages.last.text,
+          contains('GPU offload restored to Max'),
+        );
+      },
+    );
 
     test('applyModelPreset updates generation and tool settings', () {
       const model = DownloadableModel(
@@ -1213,28 +1335,6 @@ class _ThinkingControlCaptureEngine extends MockLlamaEngine {
   }
 }
 
-class _MultimodalPromptEvalFailureEngine extends MockLlamaEngine {
-  @override
-  Stream<LlamaCompletionChunk> create(
-    List<LlamaChatMessage> messages, {
-    GenerationParams? params,
-    List<ToolDefinition>? tools,
-    ToolChoice? toolChoice,
-    bool parallelToolCalls = false,
-    bool enableThinking = true,
-    Map<String, dynamic>? responseFormat,
-    String? sourceLangCode,
-    String? targetLangCode,
-    Map<String, dynamic>? chatTemplateKwargs,
-    DateTime? templateNow,
-  }) {
-    throw Exception(
-      'Multimodal prompt evaluation failed: 1. '
-      'The active context window may be too small for this image and conversation history.',
-    );
-  }
-}
-
 class _MacFallbackEstimateEngine extends MockLlamaEngine {
   @override
   Future<({int total, int free})> getVramInfo() async => (total: 0, free: 0);
@@ -1263,6 +1363,29 @@ class _TokenizerlessEngine extends MockLlamaEngine {
 
   @override
   Future<int> getTokenCount(String text) async => throw tokenCountError;
+}
+
+class _FailingCreateEngine extends MockLlamaEngine {
+  _FailingCreateEngine(this.error);
+
+  final Object error;
+
+  @override
+  Stream<LlamaCompletionChunk> create(
+    List<LlamaChatMessage> messages, {
+    GenerationParams? params,
+    List<ToolDefinition>? tools,
+    ToolChoice? toolChoice,
+    bool parallelToolCalls = false,
+    bool enableThinking = true,
+    Map<String, dynamic>? responseFormat,
+    String? sourceLangCode,
+    String? targetLangCode,
+    Map<String, dynamic>? chatTemplateKwargs,
+    DateTime? templateNow,
+  }) {
+    throw error;
+  }
 }
 
 class _RecordingModelService

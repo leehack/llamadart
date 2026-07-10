@@ -35,6 +35,9 @@ flutter test
 ## What it demonstrates
 
 - Real-time streaming chat UI.
+- Responsive conversation-first navigation with full-screen mobile settings.
+- Compact runtime status with detailed performance diagnostics on demand.
+- Copy and regenerate actions for plain assistant responses.
 - Model selection and download flow.
 - The runnable chat app wires `ModelDownloadController` into its model-management
   flow through a small adapter, so cache checks, progress, cancel, retry, and
@@ -69,7 +72,7 @@ audio input disabled for that model.
 
 On web, this example prefers local bridge assets on `localhost` for development
 validation and otherwise prefers CDN assets with local fallback. The runtime
-status panel exposes the active bridge/core variant, fallback reason, model
+details view exposes the active bridge/core variant, fallback reason, model
 source, cache state, and runtime notes so you can distinguish browser capability
 problems from model/configuration pressure.
 
@@ -98,8 +101,9 @@ against a small Qwen3.5 model.
   process; production apps that need guaranteed completion should use a
   foreground service or system download integration behind a custom
   `ModelDownloadManager`.
-- Runtime chips expose native llama.cpp timing breakdowns (`p_eval`, `eval`,
-  `sample`, `reuse`) so Android CPU vs Vulkan comparisons are visible in-app.
+- Runtime details expose native llama.cpp timing breakdowns (`p_eval`, `eval`,
+  `sample`, `reuse`) so Android CPU vs Vulkan comparisons remain visible
+  without crowding the conversation.
 - For general model/backend tuning workflow, use
   [Performance Tuning](../guides/performance-tuning) rather than treating these
   example defaults as universal rules.

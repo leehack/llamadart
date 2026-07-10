@@ -42,6 +42,49 @@ void main() {
     await tester.enterText(find.byType(TextField), 'draft next prompt');
     expect(controller.text, 'draft next prompt');
   });
+
+  testWidgets('uses mobile submit behavior without desktop shortcut copy', (
+    tester,
+  ) async {
+    final oldSize = tester.view.physicalSize;
+    final oldRatio = tester.view.devicePixelRatio;
+    tester.view
+      ..physicalSize = const Size(390, 844)
+      ..devicePixelRatio = 1.0;
+    addTearDown(() {
+      tester.view
+        ..physicalSize = oldSize
+        ..devicePixelRatio = oldRatio;
+    });
+
+    final provider = _GeneratingReadyProvider();
+    addTearDown(provider.dispose);
+    final controller = TextEditingController();
+    final focusNode = FocusNode();
+    addTearDown(controller.dispose);
+    addTearDown(focusNode.dispose);
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider<ChatProvider>.value(
+        value: provider,
+        child: MaterialApp(
+          home: Scaffold(
+            body: ChatInput(
+              controller: controller,
+              focusNode: focusNode,
+              onSend: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+
+    final textField = tester.widget<TextField>(find.byType(TextField));
+    expect(textField.textInputAction, TextInputAction.send);
+    expect(find.textContaining('Cmd/Ctrl'), findsNothing);
+    expect(find.textContaining('option + enter'), findsNothing);
+    expect(find.text('Ask anything…'), findsOneWidget);
+  });
 }
 
 class _GeneratingReadyProvider extends ChatProvider {

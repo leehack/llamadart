@@ -60,9 +60,8 @@ class _ChatInputState extends State<ChatInput> {
     });
   }
 
-  bool _showDesktopShortcutsHint(TargetPlatform platform) {
-    return kIsWeb ||
-        platform == TargetPlatform.macOS ||
+  bool _supportsDesktopShortcuts(TargetPlatform platform) {
+    return platform == TargetPlatform.macOS ||
         platform == TargetPlatform.windows ||
         platform == TargetPlatform.linux;
   }
@@ -73,15 +72,18 @@ class _ChatInputState extends State<ChatInput> {
       builder: (context, provider, _) {
         final isGenerating = provider.isGenerating;
         final isReady = provider.isReady;
-        final hasAttachments = provider.stagedParts.isNotEmpty;
+        final stagedParts = provider.stagedParts;
+        final hasAttachments = stagedParts.isNotEmpty;
         final canSubmit =
             !isGenerating && isReady && (_hasDraftText || hasAttachments);
+        final sendActionLabel = isGenerating
+            ? 'Stop generation'
+            : 'Send message';
         final colorScheme = Theme.of(context).colorScheme;
-        final showShortcutHint = _showDesktopShortcutsHint(
-          Theme.of(context).platform,
-        );
         final width = MediaQuery.sizeOf(context).width;
         final isDesktop = width >= 900;
+        final useDesktopShortcuts =
+            isDesktop && _supportsDesktopShortcuts(Theme.of(context).platform);
         final safeBottom = MediaQuery.paddingOf(context).bottom;
 
         return Container(
@@ -91,31 +93,18 @@ class _ChatInputState extends State<ChatInput> {
             isDesktop ? 22 : 12,
             (isDesktop ? 14 : 10) + safeBottom,
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
+          child: Align(
+            alignment: Alignment.bottomCenter,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 920),
+              child: Container(
                 padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
                 decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      colorScheme.surfaceContainerLow.withValues(alpha: 0.92),
-                      colorScheme.surfaceContainerHigh.withValues(alpha: 0.9),
-                    ],
-                  ),
-                  borderRadius: BorderRadius.circular(isDesktop ? 26 : 20),
+                  color: colorScheme.surfaceContainerLow,
+                  borderRadius: BorderRadius.circular(isDesktop ? 20 : 18),
                   border: Border.all(
-                    color: colorScheme.outlineVariant.withValues(alpha: 0.45),
+                    color: colorScheme.outlineVariant.withValues(alpha: 0.5),
                   ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.24),
-                      blurRadius: 20,
-                      offset: const Offset(0, 10),
-                    ),
-                  ],
                 ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -124,72 +113,56 @@ class _ChatInputState extends State<ChatInput> {
                       _buildFunctionCallingRow(context, provider),
                       const SizedBox(height: 10),
                     ],
-                    if (provider.stagedParts.isNotEmpty)
-                      _buildStagedPartsStrip(context, provider),
+                    if (hasAttachments)
+                      _buildStagedPartsStrip(context, provider, stagedParts),
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
                         if (provider.canAttachMedia)
                           _buildAttachmentMenu(context, provider),
                         Expanded(
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: colorScheme.surface.withValues(
-                                alpha: 0.68,
-                              ),
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(
-                                color: colorScheme.outlineVariant.withValues(
-                                  alpha: 0.42,
-                                ),
-                              ),
-                            ),
-                            child: CallbackShortcuts(
-                              bindings: {
-                                const SingleActivator(
-                                  LogicalKeyboardKey.enter,
-                                  control: true,
-                                  includeRepeats: false,
-                                ): () {
-                                  if (canSubmit) {
-                                    widget.onSend();
-                                  }
-                                },
-                                const SingleActivator(
-                                  LogicalKeyboardKey.enter,
-                                  meta: true,
-                                  includeRepeats: false,
-                                ): () {
-                                  if (canSubmit) {
-                                    widget.onSend();
-                                  }
-                                },
+                          child: CallbackShortcuts(
+                            bindings: {
+                              const SingleActivator(
+                                LogicalKeyboardKey.enter,
+                                control: true,
+                                includeRepeats: false,
+                              ): () {
+                                if (canSubmit) {
+                                  widget.onSend();
+                                }
                               },
-                              child: TextField(
-                                controller: widget.controller,
-                                focusNode: widget.focusNode,
-                                enabled: isReady,
-                                maxLines: 6,
-                                minLines: 1,
-                                textCapitalization:
-                                    TextCapitalization.sentences,
-                                textInputAction: showShortcutHint
-                                    ? TextInputAction.newline
-                                    : TextInputAction.send,
-                                onSubmitted: (_) {
-                                  if (!showShortcutHint && canSubmit) {
-                                    widget.onSend();
-                                  }
-                                },
-                                decoration: InputDecoration(
-                                  hintText: showShortcutHint
-                                      ? 'Start typing a prompt, use option + enter to append'
-                                      : 'Type a message...',
-                                  border: InputBorder.none,
-                                  contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 14,
-                                    vertical: 12,
-                                  ),
+                              const SingleActivator(
+                                LogicalKeyboardKey.enter,
+                                meta: true,
+                                includeRepeats: false,
+                              ): () {
+                                if (canSubmit) {
+                                  widget.onSend();
+                                }
+                              },
+                            },
+                            child: TextField(
+                              controller: widget.controller,
+                              focusNode: widget.focusNode,
+                              enabled: isReady,
+                              maxLines: 6,
+                              minLines: 1,
+                              textCapitalization: TextCapitalization.sentences,
+                              textInputAction: useDesktopShortcuts
+                                  ? TextInputAction.newline
+                                  : TextInputAction.send,
+                              onSubmitted: (_) {
+                                if (!useDesktopShortcuts && canSubmit) {
+                                  widget.onSend();
+                                }
+                              },
+                              decoration: const InputDecoration(
+                                hintText: 'Ask anything…',
+                                border: InputBorder.none,
+                                contentPadding: EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 12,
                                 ),
                               ),
                             ),
@@ -201,28 +174,34 @@ class _ChatInputState extends State<ChatInput> {
                           width: 44,
                           height: 44,
                           decoration: BoxDecoration(
-                            color: canSubmit
+                            color: isGenerating
+                                ? colorScheme.errorContainer
+                                : canSubmit
                                 ? colorScheme.primary
                                 : colorScheme.surfaceContainerHighest,
-                            borderRadius: BorderRadius.circular(12),
+                            shape: BoxShape.circle,
                           ),
                           child: IconButton(
-                            tooltip: isGenerating
-                                ? 'Stop generation'
-                                : 'Send message',
+                            tooltip: sendActionLabel,
                             onPressed: isGenerating
                                 ? () => provider.stopGeneration()
                                 : (canSubmit ? widget.onSend : null),
                             icon: isGenerating
                                 ? Icon(
                                     Icons.stop_rounded,
-                                    color: colorScheme.error,
+                                    color: colorScheme.onErrorContainer,
+                                    semanticLabel: kIsWeb
+                                        ? null
+                                        : sendActionLabel,
                                   )
                                 : Icon(
                                     Icons.arrow_upward_rounded,
                                     color: canSubmit
                                         ? colorScheme.onPrimary
                                         : colorScheme.onSurfaceVariant,
+                                    semanticLabel: kIsWeb
+                                        ? null
+                                        : sendActionLabel,
                                   ),
                           ),
                         ),
@@ -231,30 +210,18 @@ class _ChatInputState extends State<ChatInput> {
                   ],
                 ),
               ),
-              if (showShortcutHint)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8, right: 4),
-                  child: Align(
-                    alignment: Alignment.centerRight,
-                    child: Text(
-                      'Tip: Cmd/Ctrl + Enter to send',
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: colorScheme.onSurfaceVariant.withValues(
-                          alpha: 0.9,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-            ],
+            ),
           ),
         );
       },
     );
   }
 
-  Widget _buildStagedPartsStrip(BuildContext context, ChatProvider provider) {
+  Widget _buildStagedPartsStrip(
+    BuildContext context,
+    ChatProvider provider,
+    List<LlamaContentPart> stagedParts,
+  ) {
     final colorScheme = Theme.of(context).colorScheme;
 
     return Container(
@@ -262,10 +229,10 @@ class _ChatInputState extends State<ChatInput> {
       margin: const EdgeInsets.only(bottom: 12),
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
-        itemCount: provider.stagedParts.length,
+        itemCount: stagedParts.length,
         separatorBuilder: (context, index) => const SizedBox(width: 8),
         itemBuilder: (context, index) {
-          final part = provider.stagedParts[index];
+          final part = stagedParts[index];
           return Stack(
             children: [
               Container(
@@ -289,7 +256,11 @@ class _ChatInputState extends State<ChatInput> {
                     minimumSize: const Size(24, 24),
                   ),
                   onPressed: () => provider.removeStagedPart(index),
-                  icon: const Icon(Icons.close_rounded, size: 14),
+                  icon: const Icon(
+                    Icons.close_rounded,
+                    size: 14,
+                    semanticLabel: kIsWeb ? null : 'Remove attachment',
+                  ),
                   tooltip: 'Remove attachment',
                 ),
               ),
@@ -385,7 +356,11 @@ class _ChatInputState extends State<ChatInput> {
         !provider.supportsAudio;
 
     return PopupMenuButton<String>(
-      icon: Icon(Icons.add_circle_outline_rounded, color: colorScheme.primary),
+      icon: Icon(
+        Icons.add_circle_outline_rounded,
+        color: colorScheme.primary,
+        semanticLabel: kIsWeb ? null : 'Add attachment',
+      ),
       tooltip: 'Add attachment',
       onSelected: (value) {
         if (value == 'image') {

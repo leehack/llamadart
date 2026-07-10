@@ -1,6 +1,5 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import '../models/downloadable_model.dart';
 import '../services/model_service_base.dart';
 
@@ -82,6 +81,16 @@ class ModelCard extends StatelessWidget {
         canLoadModel && isProjectorMissing && includeProjector;
     final willLoadTextOnly = canLoadModel && isProjectorMissing;
     final clampedProgress = progress.clamp(0.0, 1.0).toDouble();
+    final deleteActionLabel = progress > 0 && !isDownloaded
+        ? 'Cancel & Discard'
+        : hasPartialCache
+        ? 'Delete cached assets'
+        : model.multimodalProjectorSourceFor(web: isWeb) == null
+        ? 'Delete Model'
+        : 'Delete model and mmproj';
+    final downloadToggleLabel = isDownloading
+        ? 'Pause Download'
+        : 'Resume Download';
 
     return Container(
       decoration: BoxDecoration(
@@ -104,7 +113,7 @@ class ModelCard extends StatelessWidget {
                   children: [
                     Text(
                       model.name,
-                      style: GoogleFonts.outfit(
+                      style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
                         color: colorScheme.onSurface,
@@ -212,22 +221,17 @@ class ModelCard extends StatelessWidget {
                   icon: Icon(
                     Icons.delete_outline_rounded,
                     color: colorScheme.error,
+                    semanticLabel: kIsWeb ? null : deleteActionLabel,
                   ),
                   onPressed: onDelete,
-                  tooltip: progress > 0 && !isDownloaded
-                      ? 'Cancel & Discard'
-                      : hasPartialCache
-                      ? 'Delete cached assets'
-                      : model.multimodalProjectorSourceFor(web: isWeb) == null
-                      ? 'Delete Model'
-                      : 'Delete model and mmproj',
+                  tooltip: deleteActionLabel,
                 ),
             ],
           ),
           const SizedBox(height: 12),
           Text(
             model.description,
-            style: GoogleFonts.outfit(
+            style: TextStyle(
               color: colorScheme.onSurfaceVariant,
               fontSize: 14,
               height: 1.4,
@@ -247,7 +251,7 @@ class ModelCard extends StatelessWidget {
               ),
               child: Text(
                 partialCacheMessage,
-                style: GoogleFonts.outfit(
+                style: TextStyle(
                   fontSize: 12,
                   height: 1.3,
                   color: colorScheme.onSecondaryContainer,
@@ -272,7 +276,7 @@ class ModelCard extends StatelessWidget {
                 isWebLiteRtLmModel
                     ? 'Web warning: very large LiteRT-LM model. Browser memory limits may still prevent engine initialization.'
                     : 'Web warning: very large model. Download can succeed, but browser memory limits may still prevent loading.',
-                style: GoogleFonts.outfit(
+                style: TextStyle(
                   fontSize: 12,
                   height: 1.3,
                   color: colorScheme.onSurface,
@@ -404,11 +408,10 @@ class ModelCard extends StatelessWidget {
                           color: isDownloading
                               ? colorScheme.primary
                               : Colors.orange,
+                          semanticLabel: kIsWeb ? null : downloadToggleLabel,
                         ),
                         onPressed: isDownloading ? onCancel : onDownload,
-                        tooltip: isDownloading
-                            ? 'Pause Download'
-                            : 'Resume Download',
+                        tooltip: downloadToggleLabel,
                       ),
                     ),
                   ],
@@ -449,10 +452,7 @@ class ModelCard extends StatelessWidget {
                 child: ExpansionTile(
                   title: Text(
                     'Advanced Settings (Selected)',
-                    style: GoogleFonts.outfit(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                    ),
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
                   ),
                   tilePadding: EdgeInsets.zero,
                   childrenPadding: const EdgeInsets.only(bottom: 16),
@@ -466,11 +466,11 @@ class ModelCard extends StatelessWidget {
                           children: [
                             Text(
                               'GPU Offloading (Layers)',
-                              style: GoogleFonts.outfit(fontSize: 13),
+                              style: const TextStyle(fontSize: 13),
                             ),
                             Text(
-                              gpuLayers >= 99 ? 'Auto' : gpuLayers.toString(),
-                              style: GoogleFonts.outfit(
+                              gpuLayers >= 99 ? 'Max' : gpuLayers.toString(),
+                              style: TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.bold,
                                 color: colorScheme.primary,
@@ -485,13 +485,11 @@ class ModelCard extends StatelessWidget {
                           min: 0,
                           max: 99,
                           divisions: 99,
-                          label: gpuLayers >= 99
-                              ? 'Auto'
-                              : gpuLayers.toString(),
+                          label: gpuLayers >= 99 ? 'Max' : gpuLayers.toString(),
                           onChanged: (v) => onGpuLayersChanged(v.round()),
                         ),
                         Text(
-                          'Set to 99 for Auto',
+                          'Max requests full GPU offload',
                           style: TextStyle(
                             fontSize: 11,
                             color: colorScheme.onSurfaceVariant.withValues(
@@ -505,11 +503,11 @@ class ModelCard extends StatelessWidget {
                           children: [
                             Text(
                               'Context Size (Tokens)',
-                              style: GoogleFonts.outfit(fontSize: 13),
+                              style: const TextStyle(fontSize: 13),
                             ),
                             Text(
                               contextSize.toString(),
-                              style: GoogleFonts.outfit(
+                              style: TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.bold,
                                 color: colorScheme.primary,
@@ -703,12 +701,16 @@ class ModelCard extends StatelessWidget {
         children: [
           Icon(icon, size: 12, color: foreground),
           const SizedBox(width: 4),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 12,
-              color: foreground,
-              fontWeight: FontWeight.w600,
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 12,
+                color: foreground,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
         ],
@@ -746,12 +748,16 @@ class ModelCard extends StatelessWidget {
         children: [
           Icon(icon, size: 12, color: foreground),
           const SizedBox(width: 4),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 11,
-              color: foreground,
-              fontWeight: FontWeight.w500,
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 11,
+                color: foreground,
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ),
           const SizedBox(width: 4),

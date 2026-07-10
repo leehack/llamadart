@@ -137,6 +137,29 @@ class ChatProvider extends ChangeNotifier {
   double get loadingProgress => _loadingProgress;
   bool get isLoaded => _isLoaded;
   bool get isGenerating => _isGenerating;
+
+  /// Whether the latest plain assistant response can be generated again.
+  bool get canRegenerateLastResponse {
+    if (_isGenerating ||
+        _session == null ||
+        !_chatService.engine.isReady ||
+        _messages.length < 2) {
+      return false;
+    }
+
+    final assistant = _messages.last;
+    if (assistant.isUser ||
+        assistant.isInfo ||
+        assistant.isToolCall ||
+        assistant.role == LlamaChatRole.tool) {
+      return false;
+    }
+
+    return _messages
+        .take(_messages.length - 1)
+        .any((message) => message.isUser && !message.isInfo);
+  }
+
   bool get supportsVision => _supportsVision;
   bool get supportsAudio => _supportsAudio;
   bool get templateSupportsTools => _templateSupportsTools;
@@ -187,10 +210,10 @@ class ChatProvider extends ChangeNotifier {
     if (modelPath == null || modelPath.isEmpty) {
       return 'No model';
     }
-    final normalized = modelPath.replaceAll('\\', '/');
-    final pieces = normalized.split('/');
-    final file = pieces.isNotEmpty ? pieces.last : modelPath;
-    return file.split('?').first;
+    final withoutSensitiveSuffix = modelPath.split('?').first.split('#').first;
+    final normalized = withoutSensitiveSuffix.replaceAll('\\', '/');
+    final pieces = normalized.split('/').where((part) => part.isNotEmpty);
+    return pieces.isEmpty ? 'Selected model' : pieces.last;
   }
 
   bool get toolsEnabled => _settings.toolsEnabled;
@@ -1072,6 +1095,57 @@ class ChatProvider extends ChangeNotifier {
     await _generateResponse(text, parts: parts.isEmpty ? null : parts);
   }
 
+  /// Removes the latest plain assistant response and generates a replacement.
+  Future<void> regenerateLastResponse() async {
+    if (!canRegenerateLastResponse) return;
+
+    final replacedTokenCount =
+        _messages.last.generatedTokenCount ?? _messages.last.tokenCount ?? 0;
+    var userIndex = -1;
+    for (var index = _messages.length - 2; index >= 0; index--) {
+      if (_messages[index].isUser && !_messages[index].isInfo) {
+        userIndex = index;
+        break;
+      }
+    }
+    if (userIndex < 0) return;
+
+    final userMessage = _messages[userIndex];
+    final mediaParts = userMessage.parts
+        ?.where((part) => part is! LlamaTextContent)
+        .toList(growable: false);
+    if (mediaParts != null &&
+        mediaParts.isNotEmpty &&
+        !await _ensureMultimodalProjectorForMedia(mediaParts)) {
+      return;
+    }
+
+    _messages.removeLast();
+    _currentTokens = math.max(0, _currentTokens - replacedTokenCount);
+    _lastFirstTokenLatencyMs = null;
+    _lastGenerationLatencyMs = null;
+    _clearGenerationMetrics();
+
+    final history = _settings.singleTurnMode
+        ? const <ChatMessage>[]
+        : _messages.take(userIndex);
+    _session = _chatSessionService.rebuildFromMessages(
+      engine: _chatService.engine,
+      contextSize: _settings.contextSize,
+      systemPrompt: _sessionSystemPrompt(),
+      messages: history,
+    );
+    _isGenerating = true;
+    _syncActiveConversationSnapshot();
+    notifyListeners();
+
+    await _yieldUiFrame();
+    await _generateResponse(
+      userMessage.text,
+      parts: mediaParts == null || mediaParts.isEmpty ? null : mediaParts,
+    );
+  }
+
   Map<String, dynamic>? _thinkingTemplateKwargs() {
     if (_settings.thinkingEnabled && _settings.thinkingBudgetTokens <= 0) {
       return null;
@@ -1392,20 +1466,22 @@ class ChatProvider extends ChangeNotifier {
             debugBadges: debugBadges,
           );
           // Some backends (e.g. LiteRT-LM on web) don't expose tokenizer
-          // operations, so getTokenCount throws. The count is only a cached
-          // hint, so swallow the unsupported case instead of failing the turn.
+          // operations, so retain the generated-token count as the cache hint
+          // instead of failing the turn.
           try {
             _messages.last.tokenCount = await _chatService.engine.getTokenCount(
               finalText,
             );
           } on LlamaUnsupportedException {
-            // Backend can't tokenize; leave the cached count unset.
+            _messages.last.tokenCount = generationResult.generatedTokens;
           } on UnsupportedError {
-            // Same as above for backends that surface the raw Dart error.
+            _messages.last.tokenCount = generationResult.generatedTokens;
           }
         }
       }
+      _removeEmptyAssistantPlaceholder();
     } catch (e) {
+      _removeEmptyAssistantPlaceholder();
       final errorText = e.toString();
       if (e is TimeoutException) {
         _chatService.cancelGeneration();
@@ -1476,7 +1552,13 @@ class ChatProvider extends ChangeNotifier {
           ),
         );
       } else {
-        _messages.add(ChatMessage(text: 'Error: $e', isUser: false));
+        _messages.add(
+          ChatMessage(
+            text: 'Error: ${_formatDisplayError(e)}',
+            isUser: false,
+            isInfo: true,
+          ),
+        );
       }
     } finally {
       final generatedTokens = generationResult.generatedTokens;
@@ -1514,6 +1596,11 @@ class ChatProvider extends ChangeNotifier {
       }
 
       final effectiveGeneratedTokens = nativeEvalTokens ?? generatedTokens;
+      if (_messages.isNotEmpty &&
+          !_messages.last.isUser &&
+          !_messages.last.isInfo) {
+        _messages.last.generatedTokenCount = effectiveGeneratedTokens;
+      }
       if (nativeEvalTokens != null &&
           nativeEvalTokens != appliedGeneratedTokenDeltas) {
         _currentTokens = math.max(
@@ -1546,6 +1633,22 @@ class ChatProvider extends ChangeNotifier {
       _isGenerating = false;
       _syncActiveConversationSnapshot();
       notifyListeners();
+    }
+  }
+
+  void _removeEmptyAssistantPlaceholder() {
+    if (_messages.isEmpty) {
+      return;
+    }
+
+    final last = _messages.last;
+    final hasContentParts = last.parts?.isNotEmpty ?? false;
+    final text = last.text.trim();
+    if (!last.isUser &&
+        !last.isInfo &&
+        !hasContentParts &&
+        (text.isEmpty || text == '...')) {
+      _messages.removeLast();
     }
   }
 
@@ -2215,11 +2318,19 @@ class ChatProvider extends ChangeNotifier {
   }
 
   Future<void> updatePreferredBackend(GpuBackend backend) {
-    _updateSettings(_settings.copyWith(preferredBackend: backend));
+    final restoresGpuOffload =
+        backend != GpuBackend.cpu && _settings.gpuLayers == 0;
+    _updateSettings(
+      _settings.copyWith(
+        preferredBackend: backend,
+        gpuLayers: restoresGpuOffload ? 99 : _settings.gpuLayers,
+      ),
+    );
     _messages.add(
       ChatMessage(
-        text:
-            'Backend preference set to ${backend.name}. Reload model to apply.',
+        text: restoresGpuOffload
+            ? 'Backend preference set to ${backend.name}. GPU offload restored to Max; reload model to apply.'
+            : 'Backend preference set to ${backend.name}. Reload model to apply.',
         isUser: false,
         isInfo: true,
       ),

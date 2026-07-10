@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:llamadart_chat_example/models/downloadable_model.dart';
 import 'package:llamadart_chat_example/providers/chat_provider.dart';
 import 'package:llamadart_chat_example/screens/manage_models_screen.dart';
+import 'package:llamadart_chat_example/services/model_download_ui_controller.dart';
 import 'package:llamadart_chat_example/services/model_service_base.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -163,6 +164,98 @@ void main() {
 
       expect(modelService.lastCancelToken?.isCancelled, isTrue);
     });
+
+    testWidgets(
+      'app-owned download continues when the transient screen is replaced',
+      (tester) async {
+        SharedPreferences.setMockInitialValues({});
+        final model = _remoteModel();
+        final modelService = _HoldingModelService();
+        final downloadUi = ModelDownloadUiController();
+        addTearDown(downloadUi.dispose);
+
+        await _pumpScreen(
+          tester,
+          modelService: modelService,
+          models: [model],
+          downloadUiController: downloadUi,
+        );
+
+        await tester.tap(find.text('Download'));
+        await modelService.downloadStarted.future.timeout(_testTimeout);
+        await tester.pump();
+
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump(const Duration(milliseconds: 150));
+
+        expect(modelService.lastCancelToken?.isCancelled, isFalse);
+        expect(modelService.downloadCancelled.isCompleted, isFalse);
+
+        await _pumpScreen(
+          tester,
+          modelService: modelService,
+          models: [model],
+          downloadUiController: downloadUi,
+        );
+
+        expect(find.text('Downloading model'), findsOneWidget);
+        expect(find.text('25%'), findsOneWidget);
+
+        String? finishedFilename;
+        final finishedSubscription = downloadUi.downloadsFinished.listen(
+          (filename) => finishedFilename = filename,
+        );
+        addTearDown(finishedSubscription.cancel);
+        await tester.tap(find.byTooltip('Pause Download'));
+        await tester.pump(const Duration(milliseconds: 150));
+        await modelService.downloadCancelled.future.timeout(_testTimeout);
+        expect(finishedFilename, model.filename);
+      },
+    );
+
+    testWidgets(
+      'replacement screen refreshes when app-owned download completes',
+      (tester) async {
+        SharedPreferences.setMockInitialValues({});
+        final model = _remoteModel();
+        final modelService = _HoldingModelService();
+        final downloadUi = ModelDownloadUiController();
+        addTearDown(downloadUi.dispose);
+
+        await _pumpScreen(
+          tester,
+          modelService: modelService,
+          models: [model],
+          downloadUiController: downloadUi,
+        );
+
+        await tester.tap(find.text('Download'));
+        await modelService.downloadStarted.future.timeout(_testTimeout);
+        await tester.pump();
+
+        await _pumpScreen(
+          tester,
+          modelService: modelService,
+          models: [model],
+          downloadUiController: downloadUi,
+        );
+        expect(find.text('Downloading model'), findsOneWidget);
+
+        String? finishedFilename;
+        final finishedSubscription = downloadUi.downloadsFinished.listen(
+          (filename) => finishedFilename = filename,
+        );
+        addTearDown(finishedSubscription.cancel);
+        modelService.completeDownload();
+        await tester.pump(const Duration(milliseconds: 20));
+        await modelService.downloadCompleted.future.timeout(_testTimeout);
+        await tester.pump(const Duration(milliseconds: 300));
+
+        expect(finishedFilename, model.filename);
+        expect(find.text('Use this model'), findsOneWidget);
+        expect(find.text('Downloading model'), findsNothing);
+      },
+    );
 
     testWidgets(
       'selection warns when runtime lacks advertised vision support',
@@ -330,6 +423,7 @@ Future<void> _pumpScreen(
   required _HoldingModelService modelService,
   required List<DownloadableModel> models,
   ChatProvider? provider,
+  ModelDownloadUiController? downloadUiController,
 }) async {
   final effectiveProvider =
       provider ??
@@ -351,6 +445,7 @@ Future<void> _pumpScreen(
             modelService: modelService,
             initialModels: models,
             showModelLibraryInitially: true,
+            downloadUiController: downloadUiController,
           ),
         ),
       ),
@@ -391,12 +486,20 @@ class _HoldingModelService implements ModelService {
 
   final Completer<void> downloadStarted = Completer<void>();
   final Completer<void> downloadCancelled = Completer<void>();
+  final Completer<void> downloadCompleted = Completer<void>();
+  final Completer<void> _finishDownload = Completer<void>();
   final Set<String> downloadedFiles;
   final Set<String>? cachedAssetKeys;
 
   int downloadCalls = 0;
   int deleteCalls = 0;
   CancelToken? lastCancelToken;
+
+  void completeDownload() {
+    if (!_finishDownload.isCompleted) {
+      _finishDownload.complete();
+    }
+  }
 
   @override
   Future<String> getModelsDirectory() async => '/models';
@@ -458,8 +561,17 @@ class _HoldingModelService implements ModelService {
       downloadStarted.complete();
     }
 
-    while (!cancelToken.isCancelled) {
+    while (!cancelToken.isCancelled && !_finishDownload.isCompleted) {
       await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+    if (_finishDownload.isCompleted && !cancelToken.isCancelled) {
+      downloadedFiles.add(model.filename);
+      onProgress(1);
+      onSuccess(model.filename);
+      if (!downloadCompleted.isCompleted) {
+        downloadCompleted.complete();
+      }
+      return;
     }
     if (!downloadCancelled.isCompleted) {
       downloadCancelled.complete();

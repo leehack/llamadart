@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:llamadart/llamadart.dart';
 
@@ -18,12 +19,14 @@ class MessageBubble extends StatelessWidget {
   final ChatMessage message;
   final bool isNextSame;
   final bool isStreaming;
+  final VoidCallback? onRegenerate;
 
   const MessageBubble({
     super.key,
     required this.message,
     required this.isNextSame,
     this.isStreaming = false,
+    this.onRegenerate,
   });
 
   @override
@@ -51,18 +54,18 @@ class MessageBubble extends StatelessWidget {
 
     final bubbleColor = isUser
         ? Color.alphaBlend(
-            colorScheme.primary.withValues(alpha: 0.22),
+            colorScheme.primary.withValues(alpha: 0.18),
             colorScheme.surfaceContainerHighest,
           )
-        : colorScheme.surfaceContainerHigh.withValues(alpha: 0.72);
+        : Colors.transparent;
     final textColor = colorScheme.onSurface;
 
-    const borderRadius = 24.0;
+    const borderRadius = 18.0;
     final border = BorderRadius.only(
       topLeft: const Radius.circular(borderRadius),
       topRight: const Radius.circular(borderRadius),
-      bottomLeft: Radius.circular(isUser ? borderRadius : 8),
-      bottomRight: Radius.circular(isUser ? 8 : borderRadius),
+      bottomLeft: Radius.circular(isUser ? borderRadius : 4),
+      bottomRight: Radius.circular(isUser ? 4 : borderRadius),
     );
 
     final thinkingTextRaw = message.thinkingText;
@@ -102,9 +105,7 @@ class MessageBubble extends StatelessWidget {
                     ? _buildStreamingTextBubble(
                         context,
                         messageText,
-                        bubbleColor: bubbleColor,
                         textColor: textColor,
-                        border: border,
                       )
                     : _buildResponseBubble(
                         context,
@@ -114,6 +115,15 @@ class MessageBubble extends StatelessWidget {
                         border: border,
                         isUser: isUser,
                       ),
+              if (!isUser &&
+                  !isTypingPlaceholder &&
+                  !isStreaming &&
+                  !message.isToolCall &&
+                  messageText.isNotEmpty)
+                _AssistantActions(
+                  text: messageText,
+                  onRegenerate: onRegenerate,
+                ),
             ],
           ),
         ),
@@ -130,19 +140,11 @@ class MessageBubble extends StatelessWidget {
   }
 
   Widget _buildRoleAndTimeLabel(BuildContext context, {required bool isUser}) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final roleLabel = isUser ? 'User' : 'Model';
-
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
-      child: Text(
-        '$roleLabel  •  ${_formatTimestamp(context)}',
-        style: TextStyle(
-          fontSize: 12,
-          color: colorScheme.onSurfaceVariant.withValues(alpha: 0.9),
-          fontWeight: FontWeight.w500,
-          letterSpacing: 0.15,
-        ),
+      child: _MessageMeta(
+        roleLabel: isUser ? 'You' : 'llamadart',
+        timestamp: _formatTimestamp(context),
       ),
     );
   }
@@ -242,23 +244,18 @@ class MessageBubble extends StatelessWidget {
     final safeText = sanitizeForTextLayout(text);
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-      decoration: BoxDecoration(
-        color: bubbleColor,
-        borderRadius: border,
-        border: Border.all(
-          color: colorScheme.outlineVariant.withValues(
-            alpha: isUser ? 0.2 : 0.35,
-          ),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.16),
-            blurRadius: 14,
-            offset: const Offset(0, 6),
-          ),
-        ],
-      ),
+      padding: isUser
+          ? const EdgeInsets.symmetric(horizontal: 16, vertical: 12)
+          : EdgeInsets.zero,
+      decoration: isUser
+          ? BoxDecoration(
+              color: bubbleColor,
+              borderRadius: border,
+              border: Border.all(
+                color: colorScheme.outlineVariant.withValues(alpha: 0.24),
+              ),
+            )
+          : null,
       child: SelectableText(
         safeText,
         style: TextStyle(
@@ -282,23 +279,18 @@ class MessageBubble extends StatelessWidget {
     final safeText = sanitizeForTextLayout(text);
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-      decoration: BoxDecoration(
-        color: bubbleColor,
-        borderRadius: border,
-        border: Border.all(
-          color: colorScheme.outlineVariant.withValues(
-            alpha: isUser ? 0.2 : 0.35,
-          ),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.16),
-            blurRadius: 14,
-            offset: const Offset(0, 6),
-          ),
-        ],
-      ),
+      padding: isUser
+          ? const EdgeInsets.symmetric(horizontal: 16, vertical: 12)
+          : EdgeInsets.zero,
+      decoration: isUser
+          ? BoxDecoration(
+              color: bubbleColor,
+              borderRadius: border,
+              border: Border.all(
+                color: colorScheme.outlineVariant.withValues(alpha: 0.24),
+              ),
+            )
+          : null,
       child: MarkdownBody(
         data: safeText,
         selectable: true,
@@ -358,29 +350,12 @@ class MessageBubble extends StatelessWidget {
   Widget _buildStreamingTextBubble(
     BuildContext context,
     String text, {
-    required Color bubbleColor,
     required Color textColor,
-    required BorderRadius border,
   }) {
-    final colorScheme = Theme.of(context).colorScheme;
     final safeText = sanitizeForTextLayout(text);
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-      decoration: BoxDecoration(
-        color: bubbleColor,
-        borderRadius: border,
-        border: Border.all(
-          color: colorScheme.outlineVariant.withValues(alpha: 0.35),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.16),
-            blurRadius: 14,
-            offset: const Offset(0, 6),
-          ),
-        ],
-      ),
+    return Padding(
+      padding: EdgeInsets.zero,
       child: Text(
         safeText,
         style: TextStyle(
@@ -393,18 +368,9 @@ class MessageBubble extends StatelessWidget {
   }
 
   Widget _buildTypingBubble(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerHigh.withValues(alpha: 0.78),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: colorScheme.outlineVariant.withValues(alpha: 0.4),
-        ),
-      ),
-      child: const _TypingDots(),
+    return const Padding(
+      padding: EdgeInsets.symmetric(vertical: 10),
+      child: _TypingDots(),
     );
   }
 
@@ -551,6 +517,143 @@ class MessageBubble extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _AssistantActions extends StatefulWidget {
+  final String text;
+  final VoidCallback? onRegenerate;
+
+  const _AssistantActions({required this.text, this.onRegenerate});
+
+  @override
+  State<_AssistantActions> createState() => _AssistantActionsState();
+}
+
+class _AssistantActionsState extends State<_AssistantActions> {
+  bool _hovered = false;
+
+  Future<void> _copyResponse() async {
+    try {
+      await Clipboard.setData(ClipboardData(text: widget.text));
+    } catch (_) {
+      if (!mounted) return;
+      _showCopyFeedback('Could not copy response');
+      return;
+    }
+    if (!mounted) return;
+
+    _showCopyFeedback('Response copied');
+  }
+
+  void _showCopyFeedback(String message) {
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    messenger
+      ?..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(message),
+          duration: const Duration(milliseconds: 1400),
+        ),
+      );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      child: AnimatedOpacity(
+        opacity: _hovered ? 1 : 0.55,
+        duration: const Duration(milliseconds: 140),
+        child: Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                onPressed: _copyResponse,
+                tooltip: 'Copy response',
+                visualDensity: VisualDensity.compact,
+                iconSize: 17,
+                color: colorScheme.onSurfaceVariant,
+                icon: const Icon(
+                  Icons.content_copy_rounded,
+                  semanticLabel: kIsWeb ? null : 'Copy response',
+                ),
+              ),
+              if (widget.onRegenerate != null)
+                IconButton(
+                  onPressed: widget.onRegenerate,
+                  tooltip: 'Regenerate response',
+                  visualDensity: VisualDensity.compact,
+                  iconSize: 18,
+                  color: colorScheme.onSurfaceVariant,
+                  icon: const Icon(
+                    Icons.refresh_rounded,
+                    semanticLabel: kIsWeb ? null : 'Regenerate response',
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MessageMeta extends StatefulWidget {
+  final String roleLabel;
+  final String timestamp;
+
+  const _MessageMeta({required this.roleLabel, required this.timestamp});
+
+  @override
+  State<_MessageMeta> createState() => _MessageMetaState();
+}
+
+class _MessageMetaState extends State<_MessageMeta> {
+  bool _showTimestamp = false;
+
+  void _setTimestampVisible(bool visible) {
+    if (_showTimestamp == visible) return;
+    setState(() {
+      _showTimestamp = visible;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+
+    return MouseRegion(
+      onEnter: (_) => _setTimestampVisible(true),
+      onExit: (_) => _setTimestampVisible(false),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onLongPress: () => _setTimestampVisible(!_showTimestamp),
+        child: Tooltip(
+          message: widget.timestamp,
+          child: AnimatedSize(
+            duration: const Duration(milliseconds: 140),
+            curve: Curves.easeOutCubic,
+            child: Text(
+              _showTimestamp
+                  ? '${widget.roleLabel}  ·  ${widget.timestamp}'
+                  : widget.roleLabel,
+              style: TextStyle(
+                fontSize: 12,
+                color: colorScheme.onSurfaceVariant,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.1,
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
