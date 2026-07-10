@@ -3,7 +3,8 @@
 * Redesigned the runnable chat app with a quieter responsive shell, compact
   runtime details, full-screen mobile settings, streamlined message/composer
   surfaces, accessible controls, protected conversation deletion, and
-  copy/regenerate actions for assistant responses.
+  copy/regenerate actions for assistant responses. Model downloads now remain
+  active when settings closes or switches between drawer and pinned layouts.
 
 ## 0.8.14
 

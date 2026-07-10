@@ -5,6 +5,7 @@ import 'package:llamadart/llamadart.dart' hide ModelDownloadProgress;
 
 import 'model_service_base.dart';
 
+/// Owns model-download tasks and their presentation state for the chat app.
 class ModelDownloadUiController {
   final Map<String, ValueNotifier<ModelDownloadUiState>> _uiStateByFile = {};
   final Map<String, int> _lastDownloadedBytes = {};
@@ -13,6 +14,22 @@ class ModelDownloadUiController {
   final Map<String, ModelDownloadController> _downloadControllers = {};
   final Map<String, StreamSubscription<ModelDownloadTaskSnapshot>>
   _downloadSubscriptions = {};
+  final StreamController<String> _downloadsFinished =
+      StreamController<String>.broadcast(sync: true);
+  bool _isDisposed = false;
+
+  /// Emits a filename whenever a download succeeds, fails, or is cancelled.
+  ///
+  /// Screens use this to refresh persistent cache state even when the widget
+  /// that started the transfer has already been replaced.
+  Stream<String> get downloadsFinished => _downloadsFinished.stream;
+
+  /// Notifies active views that the cached state for [filename] may have changed.
+  void notifyDownloadFinished(String filename) {
+    if (!_isDisposed && !_downloadsFinished.isClosed) {
+      _downloadsFinished.add(filename);
+    }
+  }
 
   ValueNotifier<ModelDownloadUiState> listenableFor(String filename) {
     return _uiStateByFile.putIfAbsent(
@@ -48,6 +65,9 @@ class ModelDownloadUiController {
     bool clearTask = false,
     bool clearProgress = false,
   }) {
+    if (_isDisposed) {
+      return;
+    }
     final notifier = listenableFor(filename);
     final current = notifier.value;
     notifier.value = current.copyWith(
@@ -61,6 +81,9 @@ class ModelDownloadUiController {
   }
 
   void updateDownloadRate(String filename, ModelDownloadProgress detail) {
+    if (_isDisposed) {
+      return;
+    }
     final now = DateTime.now();
     final previousBytes = _lastDownloadedBytes[filename];
     final previousSampleAt = _lastDownloadSampleAt[filename];
@@ -165,6 +188,10 @@ class ModelDownloadUiController {
   }
 
   void dispose() {
+    if (_isDisposed) {
+      return;
+    }
+    _isDisposed = true;
     pauseActiveDownloads();
     for (final subscription in _downloadSubscriptions.values) {
       unawaited(subscription.cancel());
@@ -179,6 +206,7 @@ class ModelDownloadUiController {
     }
     _uiStateByFile.clear();
     clearRateTracking();
+    unawaited(_downloadsFinished.close());
   }
 }
 

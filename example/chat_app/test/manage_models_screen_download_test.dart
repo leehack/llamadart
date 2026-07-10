@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:llamadart_chat_example/models/downloadable_model.dart';
 import 'package:llamadart_chat_example/providers/chat_provider.dart';
 import 'package:llamadart_chat_example/screens/manage_models_screen.dart';
+import 'package:llamadart_chat_example/services/model_download_ui_controller.dart';
 import 'package:llamadart_chat_example/services/model_service_base.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -163,6 +164,48 @@ void main() {
 
       expect(modelService.lastCancelToken?.isCancelled, isTrue);
     });
+
+    testWidgets(
+      'app-owned download continues when the transient screen is replaced',
+      (tester) async {
+        SharedPreferences.setMockInitialValues({});
+        final model = _remoteModel();
+        final modelService = _HoldingModelService();
+        final downloadUi = ModelDownloadUiController();
+        addTearDown(downloadUi.dispose);
+
+        await _pumpScreen(
+          tester,
+          modelService: modelService,
+          models: [model],
+          downloadUiController: downloadUi,
+        );
+
+        await tester.tap(find.text('Download'));
+        await modelService.downloadStarted.future.timeout(_testTimeout);
+        await tester.pump();
+
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump(const Duration(milliseconds: 150));
+
+        expect(modelService.lastCancelToken?.isCancelled, isFalse);
+        expect(modelService.downloadCancelled.isCompleted, isFalse);
+
+        await _pumpScreen(
+          tester,
+          modelService: modelService,
+          models: [model],
+          downloadUiController: downloadUi,
+        );
+
+        expect(find.text('Downloading model'), findsOneWidget);
+        expect(find.text('25%'), findsOneWidget);
+
+        await tester.tap(find.byTooltip('Pause Download'));
+        await tester.pump(const Duration(milliseconds: 150));
+        await modelService.downloadCancelled.future.timeout(_testTimeout);
+      },
+    );
 
     testWidgets(
       'selection warns when runtime lacks advertised vision support',
@@ -330,6 +373,7 @@ Future<void> _pumpScreen(
   required _HoldingModelService modelService,
   required List<DownloadableModel> models,
   ChatProvider? provider,
+  ModelDownloadUiController? downloadUiController,
 }) async {
   final effectiveProvider =
       provider ??
@@ -351,6 +395,7 @@ Future<void> _pumpScreen(
             modelService: modelService,
             initialModels: models,
             showModelLibraryInitially: true,
+            downloadUiController: downloadUiController,
           ),
         ),
       ),

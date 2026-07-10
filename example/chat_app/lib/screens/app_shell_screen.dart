@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../providers/chat_provider.dart';
+import '../services/model_download_ui_controller.dart';
 import 'chat_screen.dart';
 import 'manage_models_screen.dart';
 
@@ -17,7 +18,14 @@ class AppShellScreen extends StatefulWidget {
 
 class _AppShellScreenState extends State<AppShellScreen> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+  final ModelDownloadUiController _downloadUi = ModelDownloadUiController();
   bool _pinnedSettingsOpen = false;
+
+  @override
+  void dispose() {
+    _downloadUi.dispose();
+    super.dispose();
+  }
 
   void _startNewConversation() {
     context.read<ChatProvider>().createConversation();
@@ -127,8 +135,11 @@ class _AppShellScreenState extends State<AppShellScreen> {
                               ],
                             ),
                           ),
-                        const Expanded(
-                          child: ManageModelsScreen(embeddedPanel: true),
+                        Expanded(
+                          child: ManageModelsScreen(
+                            embeddedPanel: true,
+                            downloadUiController: _downloadUi,
+                          ),
                         ),
                       ],
                     ),
@@ -221,8 +232,9 @@ class _AppShellScreenState extends State<AppShellScreen> {
                                         .withValues(alpha: 0.35),
                                   ),
                                 ),
-                                child: const ManageModelsScreen(
+                                child: ManageModelsScreen(
                                   embeddedPanel: true,
+                                  downloadUiController: _downloadUi,
                                 ),
                               ),
                             ),

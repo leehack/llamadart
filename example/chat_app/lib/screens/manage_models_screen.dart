@@ -29,6 +29,9 @@ class ManageModelsScreen extends StatefulWidget {
   final List<DownloadableModel>? initialModels;
   final bool? showModelLibraryInitially;
 
+  /// App-owned download state that outlives transient drawer and panel views.
+  final ModelDownloadUiController? downloadUiController;
+
   const ManageModelsScreen({
     super.key,
     this.onModelActivated,
@@ -36,6 +39,7 @@ class ManageModelsScreen extends StatefulWidget {
     this.modelService,
     this.initialModels,
     this.showModelLibraryInitially,
+    this.downloadUiController,
   });
 
   @override
@@ -55,7 +59,9 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
 
   final Map<String, ModelProfileCacheState> _cacheStateByFile = {};
   final Map<String, bool> _includeProjectorByFile = {};
-  final ModelDownloadUiController _downloadUi = ModelDownloadUiController();
+  late final ModelDownloadUiController _downloadUi;
+  late final bool _ownsDownloadUi;
+  StreamSubscription<String>? _downloadFinishedSubscription;
 
   Set<String> _downloadedFiles = {};
   String? _modelsDir;
@@ -70,6 +76,11 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _modelService = widget.modelService ?? ModelService();
+    _downloadUi = widget.downloadUiController ?? ModelDownloadUiController();
+    _ownsDownloadUi = widget.downloadUiController == null;
+    _downloadFinishedSubscription = _downloadUi.downloadsFinished.listen(
+      _handleDownloadFinished,
+    );
     _models.addAll(_initialModelCatalog());
     _showModelLibrary = widget.showModelLibraryInitially ?? false;
     _initModelService();
@@ -120,6 +131,20 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
     );
     for (final entry in entries) {
       _cacheStateByFile[entry.key] = entry.value;
+    }
+  }
+
+  Future<void> _handleDownloadFinished(String filename) async {
+    final model = _models
+        .where((model) => model.filename == filename)
+        .firstOrNull;
+    if (model == null) {
+      return;
+    }
+
+    await _refreshDownloadedModelState(cacheModels: <DownloadableModel>[model]);
+    if (mounted) {
+      setState(() {});
     }
   }
 
@@ -636,9 +661,6 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
     DownloadableModel model,
     ModelDownloadTaskSnapshot snapshot,
   ) {
-    if (!mounted) {
-      return;
-    }
     _updateDownloadUiState(
       model.filename,
       isDownloading: snapshot.isRunning,
@@ -682,9 +704,6 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
         useWebSources: kIsWeb,
         includeProjector: shouldIncludeProjector,
         onProgressDetail: (detail) {
-          if (!mounted) {
-            return;
-          }
           _downloadUi.updateDownloadRate(model.filename, detail);
           _updateDownloadUiState(
             model.filename,
@@ -715,11 +734,10 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
         clearTask: true,
       );
       _clearDownloadTracking(model.filename);
-      await _refreshDownloadedModelState();
+      _downloadUi.notifyDownloadFinished(model.filename);
       if (!mounted) {
         return;
       }
-      setState(() {});
       final successAction = shouldIncludeProjector
           ? 'downloaded successfully'
           : 'downloaded for text-only chat';
@@ -744,12 +762,10 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
       if (!isCancel) {
         _clearDownloadTracking(model.filename);
       }
-
-      await _refreshDownloadedModelState();
+      _downloadUi.notifyDownloadFinished(model.filename);
       if (!mounted) {
         return;
       }
-      setState(() {});
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -1974,7 +1990,10 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    _downloadUi.dispose();
+    unawaited(_downloadFinishedSubscription?.cancel());
+    if (_ownsDownloadUi) {
+      _downloadUi.dispose();
+    }
     super.dispose();
   }
 }
