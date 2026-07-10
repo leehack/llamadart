@@ -2314,11 +2314,19 @@ class ChatProvider extends ChangeNotifier {
   }
 
   Future<void> updatePreferredBackend(GpuBackend backend) {
-    _updateSettings(_settings.copyWith(preferredBackend: backend));
+    final restoresGpuOffload =
+        backend != GpuBackend.cpu && _settings.gpuLayers == 0;
+    _updateSettings(
+      _settings.copyWith(
+        preferredBackend: backend,
+        gpuLayers: restoresGpuOffload ? 99 : _settings.gpuLayers,
+      ),
+    );
     _messages.add(
       ChatMessage(
-        text:
-            'Backend preference set to ${backend.name}. Reload model to apply.',
+        text: restoresGpuOffload
+            ? 'Backend preference set to ${backend.name}. GPU offload restored to Max; reload model to apply.'
+            : 'Backend preference set to ${backend.name}. Reload model to apply.',
         isUser: false,
         isInfo: true,
       ),

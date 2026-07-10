@@ -35,7 +35,10 @@ void main() {
       final provider = ChatProvider(
         chatService: MockChatService(),
         settingsService: MockSettingsService(),
-        initialSettings: const ChatSettings(modelPath: 'test_model.gguf'),
+        initialSettings: const ChatSettings(
+          modelPath: 'test_model.gguf',
+          gpuLayers: 99,
+        ),
       );
 
       await tester.pumpWidget(
@@ -61,6 +64,25 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.text('Inference parameters'), findsOneWidget);
+
+      await tester.tap(find.text('Model parameters'));
+      await tester.pumpAndSettle();
+      expect(find.text('Max'), findsOneWidget);
+      expect(
+        find.textContaining('Auto selects Metal on supported Macs.'),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('Set GPU layers to 99 for Auto'),
+        findsNothing,
+      );
+
+      provider.updateGpuLayers(0);
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(
+        find.textContaining('GPU layers is 0, so inference will run on CPU.'),
+        findsOneWidget,
+      );
     });
 
     testWidgets('shows change model action when settings panel is hidden', (

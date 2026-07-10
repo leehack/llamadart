@@ -898,6 +898,25 @@ void main() {
       expect(provider.activeBackend, backendBeforeChange);
     });
 
+    test(
+      'switching from zero-layer CPU to auto restores GPU offload',
+      () async {
+        provider.updateGpuLayers(0);
+        await provider.updatePreferredBackend(GpuBackend.cpu);
+        final backendBeforeChange = provider.activeBackend;
+
+        await provider.updatePreferredBackend(GpuBackend.auto);
+
+        expect(provider.settings.preferredBackend, GpuBackend.auto);
+        expect(provider.settings.gpuLayers, 99);
+        expect(provider.activeBackend, backendBeforeChange);
+        expect(
+          provider.messages.last.text,
+          contains('GPU offload restored to Max'),
+        );
+      },
+    );
+
     test('applyModelPreset updates generation and tool settings', () {
       const model = DownloadableModel(
         name: 'Preset model',

@@ -12,6 +12,10 @@
   response; and redacted signed model URL parameters from labels and generation
   errors.
 
+* Clarified the chat app's backend and GPU-layer controls, exposed the active
+  loaded backend beside its preference, and restored GPU offload when switching
+  from a zero-layer CPU configuration back to Auto or a GPU backend.
+
 ## 0.8.14
 
 * Updated the runnable chat app's web runtimes to pinned WebGPU bridge assets

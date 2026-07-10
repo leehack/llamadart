@@ -1170,13 +1170,15 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
         final threadBatchLabel = provider.numberOfThreadsBatch == 0
             ? '(auto detected)'
             : provider.numberOfThreadsBatch.toString();
-        final isAutoGpuLayers = provider.gpuLayers >= 99;
-        final gpuLayersLabel = isAutoGpuLayers
-            ? 'Auto'
+        final isMaximumGpuLayers = provider.gpuLayers >= 99;
+        final gpuLayersLabel = isMaximumGpuLayers
+            ? 'Max'
             : provider.gpuLayers.toString();
-        final gpuLayersSliderValue = isAutoGpuLayers
+        final gpuLayersSliderValue = isMaximumGpuLayers
             ? 99.0
             : provider.gpuLayers.clamp(0, 98).toDouble();
+        final gpuOffloadDisabled =
+            selectedBackend != GpuBackend.cpu && provider.gpuLayers == 0;
         final hasLoadProgress =
             provider.loadingProgress > 0 && provider.loadingProgress < 1;
         final loadProgressLabel = hasLoadProgress
@@ -1574,6 +1576,19 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
                         }
                       },
                     ),
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        provider.isLoaded
+                            ? 'Active backend: ${provider.activeBackend}'
+                            : 'Active backend is shown after the model loads.',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
                     const SizedBox(height: 10),
                     Align(
                       alignment: Alignment.centerLeft,
@@ -1644,12 +1659,17 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
                     Align(
                       alignment: Alignment.centerLeft,
                       child: Text(
-                        hasMmprojPath
-                            ? 'mmproj is configured for this model. Use Text only to disable it, or Load mmproj to attach it without a full reload. '
-                                  'Set GPU layers to 99 for Auto. Runtime values apply on next model load.'
-                            : 'Set GPU layers to 99 for Auto. Runtime values apply on next model load.',
+                        [
+                          if (hasMmprojPath)
+                            'mmproj is configured for this model. Use Text only to disable it, or Load mmproj to attach it without a full reload.',
+                          if (gpuOffloadDisabled)
+                            'GPU layers is 0, so inference will run on CPU. Increase it or choose Max to enable GPU offload.',
+                          'Auto selects Metal on supported Macs. GPU layers controls how much of the model is offloaded; Max requests full offload. Changes apply on next model load.',
+                        ].join(' '),
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          color: gpuOffloadDisabled
+                              ? Theme.of(context).colorScheme.error
+                              : Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
                       ),
                     ),
