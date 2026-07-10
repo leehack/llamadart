@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 class WelcomeView extends StatelessWidget {
   final bool isInitializing;
@@ -47,7 +46,7 @@ class WelcomeView extends StatelessWidget {
                   loadingProgress > 0
                       ? 'Loading model ${(loadingProgress * 100).toStringAsFixed(0)}%'
                       : 'Loading model...',
-                  style: GoogleFonts.outfit(
+                  style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
                     color: Theme.of(context).colorScheme.secondary,
@@ -84,7 +83,7 @@ class WelcomeView extends StatelessWidget {
                 const SizedBox(height: 14),
                 Text(
                   'Model failed to load',
-                  style: GoogleFonts.outfit(
+                  style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
                     color: colorScheme.error,
@@ -151,7 +150,7 @@ class WelcomeView extends StatelessWidget {
               Text(
                 isLoaded ? 'Ready to chat' : 'Load a model to begin',
                 textAlign: TextAlign.center,
-                style: GoogleFonts.outfit(
+                style: const TextStyle(
                   fontSize: 24,
                   fontWeight: FontWeight.bold,
                 ),

@@ -17,7 +17,8 @@ A Flutter chat application demonstrating real-world usage of llamadart with UI.
 - 💾 Settings persistence
 - 🔇 Separate Dart vs native log level controls
 - 🔄 Streaming generation
-- 🎨 User and AI message bubbles
+- 🎨 Restrained user bubbles with readable, copyable assistant responses
+- 📊 Compact runtime status with detailed performance diagnostics on demand
 
 ## Setup
 
@@ -56,7 +57,8 @@ flutter test --run-skipped -t local-only \
 ```
 
 ### 2. Choose and Download a Model
-1. The app will open to a **Manage Models** screen.
+1. The app opens to the chat shell. Tap **Select model** in the welcome view or
+   the settings control in the top bar to open the model library.
    - Native mobile/desktop builds store downloaded model files under the app's
      application-specific cache `models` directory via `path_provider`; web builds use
      browser Cache Storage/origin-scoped runtime caches.
@@ -90,8 +92,9 @@ flutter test --run-skipped -t local-only \
      bundle is published.
 
 ### 3. Advanced Configuration (Optional)
-1. Tap the settings icon (⚙️) in the app bar.
-2. Adjust **GPU Layers**, **Context Size**, **Preferred Backend**, **Dart Log Level**, and **Native Log Level**.
+1. Tap the settings control in the top bar.
+2. Adjust **GPU Layers**, **Context Size**, and **Preferred Backend**. Expand
+   **Advanced** for Dart and native/bridge log levels.
    - Backend choices are concrete runtime-detected options (for example:
      CPU/Vulkan/CUDA for GGUF, or CPU/GPU/NPU where LiteRT-LM exposes them), not
      `Auto`.
@@ -387,8 +390,9 @@ await prefs.setInt('preferred_backend', backendIndex);
   transfer, but engine creation still has to initialize the large model and GPU
   resources on each load. Per-message token counts are also not shown for web
   LiteRT-LM models because the backend exposes no tokenizer API.
-- Runtime status chips expose execution mode/core/cache/worker fallback/runtime notes,
-  so non-COI or worker fallback perf constraints are visible in-app.
+- Runtime details expose execution mode, core, cache, worker fallback, and
+  runtime notes, so non-COI or worker fallback constraints remain visible
+  without crowding the conversation.
 - On web, multimodal projector loading is eager by default for stability: if an
   mmproj is configured, it is loaded together with the model.
 
@@ -399,8 +403,8 @@ await prefs.setInt('preferred_backend', backendIndex);
   prefers `CPU` for those two models.
 - Qwen3.5 `4B` is closer: `CPU` still wins on short prompts, but `Vulkan` is now
   much faster than before and may be worth comparing for longer generations.
-- Runtime chips now include native llama.cpp timing breakdowns: `p_eval`,
-  `eval`, `sample`, and `reuse`.
+- Runtime details include native llama.cpp timing breakdowns: `p_eval`, `eval`,
+  `sample`, and `reuse`.
 - Android text-only chat is stable even when `mmproj` is loaded.
 - Android real image prompting is currently recommended in `CPU` mode for
   Qwen3.5 `0.8B`; `Vulkan` multimodal is still not reliable enough.

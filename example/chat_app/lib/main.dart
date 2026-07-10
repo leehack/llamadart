@@ -55,6 +55,23 @@ class _MyAppState extends State<MyApp> {
 
   @override
   Widget build(BuildContext context) {
+    final darkColorScheme =
+        ColorScheme.fromSeed(
+          seedColor: const Color(0xFF9CB2FF),
+          brightness: Brightness.dark,
+        ).copyWith(
+          primary: const Color(0xFFAFC1FF),
+          onPrimary: const Color(0xFF14214A),
+          surface: const Color(0xFF0D1118),
+          surfaceContainerLowest: const Color(0xFF090C12),
+          surfaceContainerLow: const Color(0xFF11161F),
+          surfaceContainer: const Color(0xFF151A23),
+          surfaceContainerHigh: const Color(0xFF191F29),
+          surfaceContainerHighest: const Color(0xFF212834),
+          outline: const Color(0xFF566171),
+          outlineVariant: const Color(0xFF303845),
+        );
+
     return ChangeNotifierProvider.value(
       value: _chatProvider,
       child: MaterialApp(
@@ -71,11 +88,8 @@ class _MyAppState extends State<MyApp> {
           appBarTheme: const AppBarTheme(centerTitle: true, elevation: 0),
         ),
         darkTheme: ThemeData(
-          colorScheme: ColorScheme.fromSeed(
-            seedColor: const Color(0xFF5D89FF),
-            brightness: Brightness.dark,
-            surface: const Color(0xFF0B101A),
-          ),
+          colorScheme: darkColorScheme,
+          scaffoldBackgroundColor: darkColorScheme.surfaceContainerLowest,
           useMaterial3: true,
           fontFamilyFallback: _emojiFontFallback,
           textTheme: GoogleFonts.manropeTextTheme(ThemeData.dark().textTheme),
@@ -83,6 +97,15 @@ class _MyAppState extends State<MyApp> {
             centerTitle: true,
             elevation: 0,
             backgroundColor: Colors.transparent,
+          ),
+          cardTheme: const CardThemeData(elevation: 0),
+          drawerTheme: DrawerThemeData(
+            backgroundColor: darkColorScheme.surface,
+            scrimColor: Colors.black.withValues(alpha: 0.68),
+          ),
+          dividerTheme: DividerThemeData(
+            color: darkColorScheme.outlineVariant.withValues(alpha: 0.55),
+            thickness: 1,
           ),
         ),
         themeMode: ThemeMode.dark,

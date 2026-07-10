@@ -17,13 +17,62 @@ class AppShellScreen extends StatefulWidget {
 
 class _AppShellScreenState extends State<AppShellScreen> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+  bool _pinnedSettingsOpen = false;
 
   void _startNewConversation() {
     context.read<ChatProvider>().createConversation();
   }
 
-  void _openSettingsPanel() {
+  void _openSettingsPanel({required bool canPin}) {
+    if (canPin) {
+      setState(() {
+        _pinnedSettingsOpen = true;
+      });
+      return;
+    }
+
     _scaffoldKey.currentState?.openEndDrawer();
+  }
+
+  void _toggleSettingsPanel({required bool canPin}) {
+    if (canPin) {
+      setState(() {
+        _pinnedSettingsOpen = !_pinnedSettingsOpen;
+      });
+      return;
+    }
+
+    _scaffoldKey.currentState?.openEndDrawer();
+  }
+
+  Future<void> _confirmDeleteConversation(
+    String conversationId,
+    String conversationTitle,
+  ) async {
+    final shouldDelete = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete conversation?'),
+        content: Text('“$conversationTitle” will be permanently removed.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+              foregroundColor: Theme.of(context).colorScheme.onError,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (shouldDelete != true || !mounted) return;
+    await context.read<ChatProvider>().deleteConversation(conversationId);
   }
 
   @override
@@ -31,8 +80,9 @@ class _AppShellScreenState extends State<AppShellScreen> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final isDesktop = constraints.maxWidth >= 1040;
-        final showPinnedSettingsPanel = constraints.maxWidth >= 1360;
-        final showSlidingSettings = !showPinnedSettingsPanel;
+        final canPinSettingsPanel = constraints.maxWidth >= 1600;
+        final showPinnedSettingsPanel =
+            canPinSettingsPanel && _pinnedSettingsOpen;
 
         return Scaffold(
           key: _scaffoldKey,
@@ -42,47 +92,68 @@ class _AppShellScreenState extends State<AppShellScreen> {
                   child: SafeArea(
                     child: _ShellSidebar(
                       onNewConversation: _startNewConversation,
+                      onDeleteConversation: _confirmDeleteConversation,
                       onConversationActivated: () {
                         Navigator.of(context).pop();
                       },
                     ),
                   ),
                 ),
-          endDrawer: showSlidingSettings
-              ? const Drawer(
+          endDrawer: canPinSettingsPanel
+              ? null
+              : Drawer(
+                  width: constraints.maxWidth < 720
+                      ? constraints.maxWidth
+                      : 420,
                   child: SafeArea(
-                    child: ManageModelsScreen(embeddedPanel: true),
+                    child: Column(
+                      children: [
+                        if (constraints.maxWidth < 720)
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(8, 6, 12, 0),
+                            child: Row(
+                              children: [
+                                IconButton(
+                                  onPressed: () => Navigator.of(context).pop(),
+                                  tooltip: 'Close settings',
+                                  icon: const Icon(Icons.close_rounded),
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'Settings',
+                                  style: Theme.of(context).textTheme.titleLarge
+                                      ?.copyWith(fontWeight: FontWeight.w700),
+                                ),
+                              ],
+                            ),
+                          ),
+                        const Expanded(
+                          child: ManageModelsScreen(embeddedPanel: true),
+                        ),
+                      ],
+                    ),
                   ),
-                )
-              : null,
+                ),
           body: Container(
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Color(0xFF0A0E17),
-                  Color(0xFF090D15),
-                  Color(0xFF070B13),
-                ],
-              ),
-            ),
+            color: Theme.of(context).colorScheme.surfaceContainerLowest,
             child: Column(
               children: [
                 _ShellTopBar(
                   showMenuButton: !isDesktop,
-                  showSettingsButton: showSlidingSettings,
+                  settingsPanelOpen: showPinnedSettingsPanel,
                   onMenuPressed: () => _scaffoldKey.currentState?.openDrawer(),
-                  onOpenSettings: _openSettingsPanel,
+                  onOpenSettings: () =>
+                      _toggleSettingsPanel(canPin: canPinSettingsPanel),
                 ),
                 Expanded(
                   child: Row(
                     children: [
                       if (isDesktop)
                         SizedBox(
-                          width: 292,
+                          width: 248,
                           child: _ShellSidebar(
                             onNewConversation: _startNewConversation,
+                            onDeleteConversation: _confirmDeleteConversation,
                           ),
                         ),
                       if (isDesktop)
@@ -95,10 +166,10 @@ class _AppShellScreenState extends State<AppShellScreen> {
                       Expanded(
                         child: Padding(
                           padding: EdgeInsets.fromLTRB(
-                            isDesktop ? 20 : 10,
+                            isDesktop ? 16 : 8,
+                            8,
+                            isDesktop ? 16 : 8,
                             10,
-                            isDesktop ? 20 : 10,
-                            14,
                           ),
                           child: ClipRRect(
                             borderRadius: BorderRadius.circular(
@@ -106,26 +177,19 @@ class _AppShellScreenState extends State<AppShellScreen> {
                             ),
                             child: DecoratedBox(
                               decoration: BoxDecoration(
+                                color: Theme.of(context).colorScheme.surface,
                                 border: Border.all(
                                   color: Theme.of(context)
                                       .colorScheme
                                       .outlineVariant
                                       .withValues(alpha: 0.35),
                                 ),
-                                gradient: const LinearGradient(
-                                  begin: Alignment.topLeft,
-                                  end: Alignment.bottomRight,
-                                  colors: [
-                                    Color(0xCC101826),
-                                    Color(0xCC0C1422),
-                                  ],
-                                ),
                               ),
                               child: ChatScreen(
-                                onOpenModelSelection: showSlidingSettings
-                                    ? _openSettingsPanel
-                                    : null,
-                                showModelSelectionAction: showSlidingSettings,
+                                onOpenModelSelection: () => _openSettingsPanel(
+                                  canPin: canPinSettingsPanel,
+                                ),
+                                showModelSelectionAction: true,
                               ),
                             ),
                           ),
@@ -140,7 +204,7 @@ class _AppShellScreenState extends State<AppShellScreen> {
                         ),
                       if (showPinnedSettingsPanel)
                         SizedBox(
-                          width: 430,
+                          width: 380,
                           child: Padding(
                             padding: const EdgeInsets.fromLTRB(12, 10, 14, 14),
                             child: ClipRRect(
@@ -178,13 +242,13 @@ class _AppShellScreenState extends State<AppShellScreen> {
 
 class _ShellTopBar extends StatelessWidget {
   final bool showMenuButton;
-  final bool showSettingsButton;
+  final bool settingsPanelOpen;
   final VoidCallback onMenuPressed;
   final VoidCallback onOpenSettings;
 
   const _ShellTopBar({
     required this.showMenuButton,
-    required this.showSettingsButton,
+    required this.settingsPanelOpen,
     required this.onMenuPressed,
     required this.onOpenSettings,
   });
@@ -208,34 +272,32 @@ class _ShellTopBar extends StatelessWidget {
       child: Row(
         children: [
           if (showMenuButton)
-            Semantics(
-              button: true,
-              label: 'Open navigation menu',
-              child: IconButton(
-                onPressed: onMenuPressed,
-                icon: const Icon(Icons.menu_rounded),
-                tooltip: 'Open navigation menu',
-              ),
+            IconButton(
+              onPressed: onMenuPressed,
+              icon: const Icon(Icons.menu_rounded),
+              tooltip: 'Open navigation menu',
             ),
           const SizedBox(width: 6),
-          Text(
-            'llamadart chat',
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-              fontWeight: FontWeight.w800,
-              letterSpacing: 0,
-            ),
-          ),
-          const Spacer(),
-          if (showSettingsButton)
-            Semantics(
-              button: true,
-              label: 'Open model and inference settings',
-              child: IconButton(
-                onPressed: onOpenSettings,
-                tooltip: 'Open model and inference settings',
-                icon: const Icon(Icons.tune_rounded),
+          Expanded(
+            child: Text(
+              'llamadart chat',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0,
               ),
             ),
+          ),
+          IconButton(
+            onPressed: onOpenSettings,
+            tooltip: settingsPanelOpen
+                ? 'Close model and inference settings'
+                : 'Open model and inference settings',
+            icon: Icon(
+              settingsPanelOpen ? Icons.close_rounded : Icons.tune_rounded,
+            ),
+          ),
         ],
       ),
     );
@@ -249,10 +311,13 @@ class _ShellSidebar extends StatelessWidget {
   static final Uri _pubDevUri = Uri.parse('https://pub.dev/packages/llamadart');
 
   final VoidCallback onNewConversation;
+  final Future<void> Function(String conversationId, String conversationTitle)
+  onDeleteConversation;
   final VoidCallback? onConversationActivated;
 
   const _ShellSidebar({
     required this.onNewConversation,
+    required this.onDeleteConversation,
     this.onConversationActivated,
   });
 
@@ -303,7 +368,10 @@ class _ShellSidebar extends StatelessWidget {
                         onConversationActivated?.call();
                       },
                       onDelete: () => unawaited(
-                        provider.deleteConversation(conversation.id),
+                        onDeleteConversation(
+                          conversation.id,
+                          conversation.title,
+                        ),
                       ),
                     );
                   },
@@ -427,12 +495,11 @@ class _ConversationTileState extends State<_ConversationTile> {
                 ),
               ),
               if (widget.canDelete)
-                AnimatedOpacity(
-                  opacity: (_hovered || widget.selected) ? 1.0 : 0.0,
-                  duration: const Duration(milliseconds: 120),
-                  child: Semantics(
-                    button: true,
-                    label: 'Delete conversation',
+                IgnorePointer(
+                  ignoring: !_hovered && !widget.selected,
+                  child: AnimatedOpacity(
+                    opacity: (_hovered || widget.selected) ? 1.0 : 0.0,
+                    duration: const Duration(milliseconds: 120),
                     child: IconButton(
                       onPressed: widget.onDelete,
                       visualDensity: VisualDensity.compact,

@@ -436,6 +436,7 @@ void main() {
               .where((m) => !m.isUser && !m.isInfo)
               .last;
           expect(assistant.text, 'Hi there');
+          expect(assistant.tokenCount, greaterThan(0));
         }
       },
     );
@@ -704,6 +705,32 @@ void main() {
       provider.clearConversation();
 
       expect(provider.currentTokens, 0);
+    });
+
+    test('regenerate replaces the latest assistant response', () async {
+      await provider.loadModel();
+      mockEngine.createChunkContents = const ['First response'];
+      await provider.sendMessage('Hello');
+
+      expect(provider.canRegenerateLastResponse, isTrue);
+      expect(mockEngine.createCalls, 1);
+      expect(
+        provider.messages.where((message) => message.isUser),
+        hasLength(1),
+      );
+      final firstGenerationTokens = provider.currentTokens;
+
+      mockEngine.createChunkContents = const ['Replacement response'];
+      await provider.regenerateLastResponse();
+
+      expect(mockEngine.createCalls, 2);
+      expect(
+        provider.messages.where((message) => message.isUser),
+        hasLength(1),
+      );
+      expect(provider.messages.last.text, 'Replacement response');
+      expect(provider.canRegenerateLastResponse, isTrue);
+      expect(provider.currentTokens, firstGenerationTokens);
     });
 
     test('delete last conversation resets to a fresh one', () async {

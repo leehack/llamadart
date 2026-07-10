@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -171,24 +173,14 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-
     return Container(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            colorScheme.surfaceContainerLowest.withValues(alpha: 0.94),
-            colorScheme.surface,
-          ],
-        ),
-      ),
+      color: Colors.transparent,
       child: Stack(
         children: [
           Column(
             children: [
               const PruningIndicator(),
+              const RuntimeStatusPanel(),
               Expanded(
                 child: Consumer<ChatProvider>(
                   builder: (context, provider, _) {
@@ -206,11 +198,9 @@ class _ChatScreenState extends State<ChatScreen> {
                       );
                     }
 
-                    final topPadding = provider.isReady ? 88.0 : 28.0;
-
                     return ListView.builder(
                       controller: _scrollController,
-                      padding: EdgeInsets.fromLTRB(16, topPadding, 16, 24),
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
                       itemCount: provider.messages.length,
                       itemBuilder: (context, index) {
                         final message = provider.messages[index];
@@ -229,6 +219,12 @@ class _ChatScreenState extends State<ChatScreen> {
                           message: message,
                           isNextSame: isNextSame,
                           isStreaming: isStreamingMessage,
+                          onRegenerate:
+                              index == provider.messages.length - 1 &&
+                                  provider.canRegenerateLastResponse
+                              ? () =>
+                                    unawaited(provider.regenerateLastResponse())
+                              : null,
                         );
                       },
                     );
@@ -241,12 +237,6 @@ class _ChatScreenState extends State<ChatScreen> {
                 focusNode: _focusNode,
               ),
             ],
-          ),
-          const Positioned(
-            top: 8,
-            left: 0,
-            right: 0,
-            child: RuntimeStatusPanel(),
           ),
           if (_showScrollToBottom)
             Positioned(

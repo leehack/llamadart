@@ -1,3 +1,10 @@
+## Unreleased
+
+* Redesigned the runnable chat app with a quieter responsive shell, compact
+  runtime details, full-screen mobile settings, streamlined message/composer
+  surfaces, accessible controls, protected conversation deletion, and
+  copy/regenerate actions for assistant responses.
+
 ## 0.8.14
 
 * Updated the runnable chat app's web runtimes to pinned WebGPU bridge assets

@@ -1,6 +1,5 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 import '../models/downloadable_model.dart';
 import '../services/model_service_base.dart';
 
@@ -104,7 +103,7 @@ class ModelCard extends StatelessWidget {
                   children: [
                     Text(
                       model.name,
-                      style: GoogleFonts.outfit(
+                      style: TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
                         color: colorScheme.onSurface,
@@ -227,7 +226,7 @@ class ModelCard extends StatelessWidget {
           const SizedBox(height: 12),
           Text(
             model.description,
-            style: GoogleFonts.outfit(
+            style: TextStyle(
               color: colorScheme.onSurfaceVariant,
               fontSize: 14,
               height: 1.4,
@@ -247,7 +246,7 @@ class ModelCard extends StatelessWidget {
               ),
               child: Text(
                 partialCacheMessage,
-                style: GoogleFonts.outfit(
+                style: TextStyle(
                   fontSize: 12,
                   height: 1.3,
                   color: colorScheme.onSecondaryContainer,
@@ -272,7 +271,7 @@ class ModelCard extends StatelessWidget {
                 isWebLiteRtLmModel
                     ? 'Web warning: very large LiteRT-LM model. Browser memory limits may still prevent engine initialization.'
                     : 'Web warning: very large model. Download can succeed, but browser memory limits may still prevent loading.',
-                style: GoogleFonts.outfit(
+                style: TextStyle(
                   fontSize: 12,
                   height: 1.3,
                   color: colorScheme.onSurface,
@@ -449,10 +448,7 @@ class ModelCard extends StatelessWidget {
                 child: ExpansionTile(
                   title: Text(
                     'Advanced Settings (Selected)',
-                    style: GoogleFonts.outfit(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                    ),
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
                   ),
                   tilePadding: EdgeInsets.zero,
                   childrenPadding: const EdgeInsets.only(bottom: 16),
@@ -466,11 +462,11 @@ class ModelCard extends StatelessWidget {
                           children: [
                             Text(
                               'GPU Offloading (Layers)',
-                              style: GoogleFonts.outfit(fontSize: 13),
+                              style: const TextStyle(fontSize: 13),
                             ),
                             Text(
                               gpuLayers >= 99 ? 'Auto' : gpuLayers.toString(),
-                              style: GoogleFonts.outfit(
+                              style: TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.bold,
                                 color: colorScheme.primary,
@@ -505,11 +501,11 @@ class ModelCard extends StatelessWidget {
                           children: [
                             Text(
                               'Context Size (Tokens)',
-                              style: GoogleFonts.outfit(fontSize: 13),
+                              style: const TextStyle(fontSize: 13),
                             ),
                             Text(
                               contextSize.toString(),
-                              style: GoogleFonts.outfit(
+                              style: TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.bold,
                                 color: colorScheme.primary,

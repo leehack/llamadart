@@ -63,6 +63,7 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
   bool _showModelLibrary = true;
   bool _modelParametersExpanded = false;
   bool _inferenceParametersExpanded = false;
+  bool _advancedExpanded = false;
 
   @override
   void initState() {
@@ -1837,13 +1838,6 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
               ),
             ),
             const SizedBox(height: 24),
-            Text(
-              'Diagnostics',
-              style: Theme.of(
-                context,
-              ).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 12),
             Container(
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
@@ -1855,53 +1849,78 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
                   ).colorScheme.outlineVariant.withValues(alpha: 0.45),
                 ),
               ),
-              child: Column(
-                children: [
-                  DropdownButtonFormField<LlamaLogLevel>(
-                    initialValue: provider.dartLogLevel,
-                    decoration: const InputDecoration(
-                      labelText: 'Dart log level',
+              child: Theme(
+                data: Theme.of(
+                  context,
+                ).copyWith(dividerColor: Colors.transparent),
+                child: ExpansionTile(
+                  initiallyExpanded: _advancedExpanded,
+                  onExpansionChanged: (expanded) {
+                    setState(() {
+                      _advancedExpanded = expanded;
+                    });
+                  },
+                  tilePadding: EdgeInsets.zero,
+                  childrenPadding: const EdgeInsets.only(top: 8),
+                  shape: const RoundedRectangleBorder(),
+                  collapsedShape: const RoundedRectangleBorder(),
+                  title: Text(
+                    'Advanced',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
                     ),
-                    items: LlamaLogLevel.values
-                        .map(
-                          (level) => DropdownMenuItem<LlamaLogLevel>(
-                            value: level,
-                            child: Text(_logLevelLabel(level)),
-                          ),
-                        )
-                        .toList(growable: false),
-                    onChanged: (value) {
-                      if (value != null) {
-                        provider.updateLogLevel(value);
-                      }
-                    },
                   ),
-                  const SizedBox(height: 10),
-                  DropdownButtonFormField<LlamaLogLevel>(
-                    initialValue: provider.nativeLogLevel,
-                    decoration: InputDecoration(
-                      labelText: kIsWeb
-                          ? 'Bridge/runtime log level'
-                          : 'Native log level',
-                      helperText: kIsWeb
-                          ? 'Applies to bridge/core logs. For startup diagnostics set window.__llamadartBridgeBootstrapVerbose = true; for pthread warnings align window.__llamadartBridgeThreadPoolSize.'
-                          : null,
+                  subtitle: Text(
+                    'Diagnostics and runtime logging',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  children: [
+                    DropdownButtonFormField<LlamaLogLevel>(
+                      initialValue: provider.dartLogLevel,
+                      decoration: const InputDecoration(
+                        labelText: 'Dart log level',
+                      ),
+                      items: LlamaLogLevel.values
+                          .map(
+                            (level) => DropdownMenuItem<LlamaLogLevel>(
+                              value: level,
+                              child: Text(_logLevelLabel(level)),
+                            ),
+                          )
+                          .toList(growable: false),
+                      onChanged: (value) {
+                        if (value != null) {
+                          provider.updateLogLevel(value);
+                        }
+                      },
                     ),
-                    items: LlamaLogLevel.values
-                        .map(
-                          (level) => DropdownMenuItem<LlamaLogLevel>(
-                            value: level,
-                            child: Text(_logLevelLabel(level)),
-                          ),
-                        )
-                        .toList(growable: false),
-                    onChanged: (value) {
-                      if (value != null) {
-                        provider.updateNativeLogLevel(value);
-                      }
-                    },
-                  ),
-                ],
+                    const SizedBox(height: 10),
+                    DropdownButtonFormField<LlamaLogLevel>(
+                      initialValue: provider.nativeLogLevel,
+                      decoration: InputDecoration(
+                        labelText: kIsWeb
+                            ? 'Bridge/runtime log level'
+                            : 'Native log level',
+                        helperText: kIsWeb
+                            ? 'Applies to bridge/core logs. For startup diagnostics set window.__llamadartBridgeBootstrapVerbose = true; for pthread warnings align window.__llamadartBridgeThreadPoolSize.'
+                            : null,
+                      ),
+                      items: LlamaLogLevel.values
+                          .map(
+                            (level) => DropdownMenuItem<LlamaLogLevel>(
+                              value: level,
+                              child: Text(_logLevelLabel(level)),
+                            ),
+                          )
+                          .toList(growable: false),
+                      onChanged: (value) {
+                        if (value != null) {
+                          provider.updateNativeLogLevel(value);
+                        }
+                      },
+                    ),
+                  ],
+                ),
               ),
             ),
           ],
