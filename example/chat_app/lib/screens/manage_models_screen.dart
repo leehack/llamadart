@@ -723,9 +723,6 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
       );
 
       await controller.start(manager.source);
-      if (!mounted) {
-        return;
-      }
       _updateDownloadUiState(
         model.filename,
         isDownloading: false,
@@ -745,9 +742,6 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
         context,
       ).showSnackBar(SnackBar(content: Text('${model.name} $successAction.')));
     } catch (error) {
-      if (!mounted) {
-        return;
-      }
       final snapshot = controller?.snapshot;
       final isCancel =
           snapshot?.stage == ModelDownloadTaskStage.cancelled ||
