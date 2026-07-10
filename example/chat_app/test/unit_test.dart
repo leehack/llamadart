@@ -874,6 +874,14 @@ void main() {
       expect(provider.settings.nativeLogLevel, LlamaLogLevel.warn);
     });
 
+    test('Max enables Auto tuning and a manual layer disables it', () {
+      provider.updateGpuLayers(99);
+      expect(provider.settings.autoTuneModelParams, isTrue);
+
+      provider.updateGpuLayers(48);
+      expect(provider.settings.autoTuneModelParams, isFalse);
+    });
+
     test('updateContextSize supports auto mode', () {
       provider.updateContextSize(0);
       expect(provider.settings.contextSize, 0);
@@ -945,7 +953,32 @@ void main() {
       expect(provider.settings.contextSize, 8192);
       expect(provider.settings.maxTokens, 512);
       expect(provider.settings.gpuLayers, 99);
+      expect(provider.settings.autoTuneModelParams, isTrue);
+      expect(provider.settings.modelBytesHint, model.sizeBytes);
       expect(provider.settings.toolsEnabled, isFalse);
+    });
+
+    test('persisted Auto intent re-estimates a partial prior result', () async {
+      final engine = _LargeMemoryEstimateEngine();
+      final customProvider = ChatProvider(
+        chatService: MockChatService(engine: engine),
+        settingsService: mockSettingsService,
+        initialSettings: const ChatSettings(
+          modelPath: 'large-model.gguf',
+          preferredBackend: GpuBackend.auto,
+          gpuLayers: 66,
+          contextSize: 4096,
+          modelBytesHint: 20 * 1024 * 1024 * 1024,
+          autoTuneModelParams: true,
+          autoTuneRequestedContextSize: 16384,
+        ),
+      );
+
+      await customProvider.loadModel();
+
+      expect(customProvider.settings.gpuLayers, ModelParams.maxGpuLayers);
+      expect(customProvider.settings.contextSize, 16384);
+      expect(customProvider.settings.autoTuneModelParams, isTrue);
     });
 
     test('applyModelPreset disables tools when unsupported', () {
@@ -1028,12 +1061,37 @@ void main() {
       },
     );
 
-    test('Qwen3.5 small presets use Unsloth Q4_K_M non-thinking defaults', () {
+    test('built-in catalog is focused and Unsloth-first', () {
+      expect(
+        DownloadableModel.defaultModels.map((model) => model.name),
+        orderedEquals(const [
+          'FunctionGemma 270M',
+          'Qwen3.5 0.8B Instruct',
+          'Gemma 4 E2B it',
+          'Gemma 4 E2B LiteRT-LM',
+          'Gemma 4 E4B it',
+          'Gemma 4 12B it',
+          'Gemma 4 26B A4B it',
+          'Gemma 4 31B it',
+          'Qwen3.6 35B A3B',
+        ]),
+      );
+
+      final ggufModels = DownloadableModel.defaultModels.where(
+        (model) => model.filename.endsWith('.gguf'),
+      );
+      for (final model in ggufModels) {
+        expect(model.distribution, 'Unsloth');
+        expect(model.url, contains('huggingface.co/unsloth/'));
+      }
+    });
+
+    test('Qwen3.5 0.8B uses Unsloth Q4_K_M non-thinking defaults', () {
       final qwenModels = DownloadableModel.defaultModels
           .where((model) => model.name.startsWith('Qwen3.5 '))
           .toList(growable: false);
 
-      expect(qwenModels, hasLength(4));
+      expect(qwenModels, hasLength(1));
 
       for (final model in qwenModels) {
         expect(model.url, contains('huggingface.co/unsloth/Qwen3.5-'));
@@ -1050,30 +1108,91 @@ void main() {
         (model) => model.name == 'Qwen3.5 0.8B Instruct',
       );
       expect(small.preset.contextSize, 4096);
-
-      final larger = qwenModels.where(
-        (model) => model.name != 'Qwen3.5 0.8B Instruct',
-      );
-      for (final model in larger) {
-        expect(model.preset.contextSize, 8192);
-      }
     });
 
-    test('applyModelPreset prefers CPU for Qwen3.5 0.8B and 2B on Android', () {
-      debugDefaultTargetPlatformOverride = TargetPlatform.android;
-      for (final modelName in const [
-        'Qwen3.5 0.8B Instruct',
-        'Qwen3.5 2B Instruct',
-      ]) {
-        final qwenModel = DownloadableModel.defaultModels.singleWhere(
-          (model) => model.name == modelName,
+    test('large models are native-desktop-only while Gemma E4B is not', () {
+      final desktopModels = DownloadableModel.defaultModels
+          .where((model) => model.isNativeDesktopOnly)
+          .toList(growable: false);
+
+      expect(
+        desktopModels.map((model) => model.name),
+        orderedEquals(const [
+          'Gemma 4 12B it',
+          'Gemma 4 26B A4B it',
+          'Gemma 4 31B it',
+          'Qwen3.6 35B A3B',
+        ]),
+      );
+      for (final model in desktopModels) {
+        expect(model.isAvailableFor(web: false, mobile: false), isTrue);
+        expect(model.isAvailableFor(web: false, mobile: true), isFalse);
+        expect(model.isAvailableFor(web: true, mobile: false), isFalse);
+      }
+
+      final gemmaE4b = DownloadableModel.defaultModels.singleWhere(
+        (model) => model.name == 'Gemma 4 E4B it',
+      );
+      expect(gemmaE4b.isNativeDesktopOnly, isFalse);
+      expect(gemmaE4b.isAvailableFor(web: false, mobile: true), isTrue);
+      expect(gemmaE4b.supportsAudioFor(web: false), isTrue);
+    });
+
+    test('Gemma 4 presets expose platform-specific audio capabilities', () {
+      final ggufModel = DownloadableModel.defaultModels.singleWhere(
+        (model) => model.name == 'Gemma 4 E2B it',
+      );
+      final liteRtModel = DownloadableModel.defaultModels.singleWhere(
+        (model) => model.name == 'Gemma 4 E2B LiteRT-LM',
+      );
+
+      expect(ggufModel.supportsAudioFor(web: false), isTrue);
+      expect(ggufModel.supportsAudioFor(web: true), isFalse);
+      expect(
+        ggufModel.mediaInputModeFor(web: false),
+        ModelMediaInputMode.externalProjector,
+      );
+      expect(liteRtModel.supportsAudioFor(web: false), isTrue);
+      expect(liteRtModel.supportsAudioFor(web: true), isFalse);
+      expect(
+        liteRtModel.mediaInputModeFor(web: false),
+        ModelMediaInputMode.direct,
+      );
+      expect(
+        liteRtModel.mediaInputModeFor(web: true),
+        ModelMediaInputMode.none,
+      );
+    });
+
+    test(
+      'native LiteRT-LM preset enables direct audio after model load',
+      () async {
+        final liteRtModel = DownloadableModel.defaultModels.singleWhere(
+          (model) => model.name == 'Gemma 4 E2B LiteRT-LM',
         );
 
-        provider.applyModelPreset(qwenModel);
+        provider.updateModelPath('gemma-4-E2B-it.litertlm');
+        provider.applyModelPreset(liteRtModel);
+        await provider.loadModel();
 
-        expect(provider.settings.preferredBackend, GpuBackend.cpu);
-        expect(provider.settings.gpuLayers, 0);
-      }
+        expect(provider.settings.modelSupportsAudio, isTrue);
+        expect(provider.settings.directMediaInput, isTrue);
+        expect(provider.supportsAudio, isTrue);
+        expect(provider.canAttachMedia, isTrue);
+        expect(provider.hasConfiguredMmproj, isFalse);
+      },
+    );
+
+    test('applyModelPreset prefers CPU for Qwen3.5 0.8B on Android', () {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      final qwenModel = DownloadableModel.defaultModels.singleWhere(
+        (model) => model.name == 'Qwen3.5 0.8B Instruct',
+      );
+
+      provider.applyModelPreset(qwenModel);
+
+      expect(provider.settings.preferredBackend, GpuBackend.cpu);
+      expect(provider.settings.gpuLayers, 0);
     });
 
     test('applyModelPreset reduces Android context for Qwen3.5 0.8B', () {
@@ -1341,6 +1460,18 @@ class _MacFallbackEstimateEngine extends MockLlamaEngine {
 
   @override
   Future<String> getBackendName() async => 'CPU, METAL';
+
+  @override
+  Future<String> getAvailableBackends() async => 'CPU, METAL';
+}
+
+class _LargeMemoryEstimateEngine extends MockLlamaEngine {
+  @override
+  Future<({int total, int free})> getVramInfo() async =>
+      (total: 64 * 1024 * 1024 * 1024, free: 56 * 1024 * 1024 * 1024);
+
+  @override
+  Future<String> getBackendName() async => 'METAL';
 
   @override
   Future<String> getAvailableBackends() async => 'CPU, METAL';

@@ -5,6 +5,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:llamadart_chat_example/models/chat_settings.dart';
 import 'package:llamadart_chat_example/models/downloadable_model.dart';
 import 'package:llamadart_chat_example/providers/chat_provider.dart';
 import 'package:llamadart_chat_example/screens/manage_models_screen.dart';
@@ -19,6 +20,185 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   group('ManageModelsScreen model download controller wiring', () {
+    testWidgets('uncached custom model can be removed from library', (
+      tester,
+    ) async {
+      final model = _remoteModel();
+      SharedPreferences.setMockInitialValues({
+        'custom_hf_models_v1': [
+          jsonEncode({
+            'name': model.name,
+            'description': model.description,
+            'url': model.url,
+            'filename': model.filename,
+            'sizeBytes': model.sizeBytes,
+          }),
+        ],
+      });
+
+      await _pumpScreen(
+        tester,
+        modelService: _HoldingModelService(),
+        models: const [],
+      );
+
+      expect(find.text(model.name), findsOneWidget);
+      await tester.tap(find.byTooltip('Model actions'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Remove from library'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Remove from library?'), findsOneWidget);
+      expect(find.text('Delete files & remove'), findsNothing);
+      await tester.tap(find.widgetWithText(FilledButton, 'Remove'));
+      await tester.pumpAndSettle();
+
+      expect(find.text(model.name), findsNothing);
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getStringList('custom_hf_models_v1'), isEmpty);
+    });
+
+    testWidgets('selected multimodal model waits for models directory', (
+      tester,
+    ) async {
+      SharedPreferences.setMockInitialValues({});
+      final directory = Completer<String>();
+      final model = _remoteVisionModel();
+      final provider = ChatProvider(
+        chatService: MockChatService(),
+        settingsService: MockSettingsService(),
+        initialSettings: ChatSettings(modelPath: '/models/${model.filename}'),
+      );
+      addTearDown(provider.dispose);
+
+      await _pumpScreen(
+        tester,
+        modelService: _HoldingModelService(
+          modelsDirectoryFuture: directory.future,
+        ),
+        models: [model],
+        provider: provider,
+        settle: false,
+      );
+
+      expect(tester.takeException(), isNull);
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+
+      directory.complete('/models');
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(find.text(model.name), findsOneWidget);
+    });
+
+    testWidgets('desktop-only presets are hidden on mobile', (tester) async {
+      final mobileModel = _remoteModel();
+      const desktopModel = DownloadableModel(
+        name: 'Desktop Test Model',
+        description: 'Large fake desktop model.',
+        url: 'https://example.com/desktop.gguf',
+        filename: 'desktop.gguf',
+        sizeBytes: 20,
+        availability: ModelAvailability.nativeDesktop,
+      );
+
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      try {
+        SharedPreferences.setMockInitialValues({});
+        await _pumpScreen(
+          tester,
+          modelService: _HoldingModelService(),
+          models: [mobileModel, desktopModel],
+        );
+
+        expect(find.text(mobileModel.name), findsOneWidget);
+        expect(find.text(desktopModel.name), findsNothing);
+
+        await tester.tap(find.widgetWithText(ChoiceChip, 'Desktop'));
+        await tester.pumpAndSettle();
+        expect(find.text(desktopModel.name), findsOneWidget);
+        expect(find.text('Available on desktop'), findsOneWidget);
+
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pumpAndSettle();
+        debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+        await _pumpScreen(
+          tester,
+          modelService: _HoldingModelService(),
+          models: [mobileModel, desktopModel],
+        );
+
+        expect(find.text(desktopModel.name), findsOneWidget);
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
+    });
+
+    testWidgets('downloaded models are promoted ahead of catalog order', (
+      tester,
+    ) async {
+      SharedPreferences.setMockInitialValues({});
+      final available = _remoteModel();
+      final downloaded = _secondRemoteModel();
+
+      await _pumpScreen(
+        tester,
+        modelService: _HoldingModelService(
+          downloadedFiles: {downloaded.filename},
+        ),
+        models: [available, downloaded],
+      );
+
+      expect(find.text('1 downloaded · 2 total'), findsOneWidget);
+      expect(
+        tester.getTopLeft(find.text(downloaded.name)).dy,
+        lessThan(tester.getTopLeft(find.text(available.name)).dy),
+      );
+      expect(find.text('Downloaded'), findsOneWidget);
+    });
+
+    testWidgets('platform and capability search narrow the model library', (
+      tester,
+    ) async {
+      SharedPreferences.setMockInitialValues({});
+      final general = _remoteModel();
+      final vision = _remoteVisionModel();
+      const desktop = DownloadableModel(
+        name: 'Desktop Specialist',
+        description: 'Large desktop-only model.',
+        url: 'https://example.com/desktop.gguf',
+        filename: 'desktop.gguf',
+        sizeBytes: 20,
+        availability: ModelAvailability.nativeDesktop,
+      );
+
+      await _pumpScreen(
+        tester,
+        modelService: _HoldingModelService(),
+        models: [general, vision, desktop],
+      );
+
+      expect(find.widgetWithText(ChoiceChip, 'Mobile & Web'), findsOneWidget);
+      expect(find.widgetWithText(ChoiceChip, 'Mobile'), findsNothing);
+      expect(find.widgetWithText(ChoiceChip, 'Web'), findsNothing);
+
+      await tester.tap(find.widgetWithText(ChoiceChip, 'Desktop'));
+      await tester.pumpAndSettle();
+      expect(find.text(desktop.name), findsOneWidget);
+      await tester.tap(find.widgetWithText(ChoiceChip, 'Mobile & Web'));
+      await tester.pumpAndSettle();
+      expect(find.text(desktop.name), findsNothing);
+
+      await tester.enterText(find.byType(TextField).first, 'vision');
+      await tester.pump();
+      expect(find.text(vision.name), findsOneWidget);
+      expect(find.text(general.name), findsNothing);
+
+      await tester.tap(find.byTooltip('Clear model search'));
+      await tester.pump();
+      expect(find.text(general.name), findsOneWidget);
+    });
+
     testWidgets('pause button cancels the active controller download', (
       tester,
     ) async {
@@ -33,7 +213,7 @@ void main() {
         expect(find.text(model.name), findsOneWidget);
         expect(find.text('Download'), findsOneWidget);
 
-        await tester.tap(find.text('Download'));
+        await _tapVisible(tester, find.text('Download'));
         await modelService.downloadStarted.future.timeout(_testTimeout);
         await tester.pump();
 
@@ -42,7 +222,7 @@ void main() {
         expect(find.text('25%'), findsOneWidget);
         expect(find.textContaining('Keep the app open'), findsOneWidget);
 
-        await tester.tap(find.byTooltip('Pause Download'));
+        await _tapVisible(tester, find.byTooltip('Pause Download'));
         await tester.pump(const Duration(milliseconds: 150));
         await modelService.downloadCancelled.future.timeout(_testTimeout);
         await tester.pump();
@@ -65,7 +245,7 @@ void main() {
 
         await _pumpScreen(tester, modelService: modelService, models: [model]);
 
-        await tester.tap(find.text('Download'));
+        await _tapVisible(tester, find.text('Download'));
         await modelService.downloadStarted.future.timeout(_testTimeout);
         await tester.pump();
 
@@ -103,7 +283,7 @@ void main() {
 
         await _pumpScreen(tester, modelService: modelService, models: [model]);
 
-        await tester.tap(find.text('Download'));
+        await _tapVisible(tester, find.text('Download'));
         await modelService.downloadStarted.future.timeout(_testTimeout);
         await tester.pump();
 
@@ -128,11 +308,11 @@ void main() {
 
       await _pumpScreen(tester, modelService: modelService, models: [model]);
 
-      await tester.tap(find.text('Download'));
+      await _tapVisible(tester, find.text('Download'));
       await modelService.downloadStarted.future.timeout(_testTimeout);
       await tester.pump();
 
-      await tester.tap(find.byTooltip('Cancel & Discard'));
+      await _tapVisible(tester, find.byTooltip('Cancel & Discard'));
       await tester.pump(const Duration(milliseconds: 150));
       await modelService.downloadCancelled.future.timeout(_testTimeout);
       await tester.pump();
@@ -154,7 +334,7 @@ void main() {
         models: [_remoteModel()],
       );
 
-      await tester.tap(find.text('Download'));
+      await _tapVisible(tester, find.text('Download'));
       await modelService.downloadStarted.future.timeout(_testTimeout);
       await tester.pump();
 
@@ -181,7 +361,7 @@ void main() {
           downloadUiController: downloadUi,
         );
 
-        await tester.tap(find.text('Download'));
+        await _tapVisible(tester, find.text('Download'));
         await modelService.downloadStarted.future.timeout(_testTimeout);
         await tester.pump();
 
@@ -206,7 +386,7 @@ void main() {
           (filename) => finishedFilename = filename,
         );
         addTearDown(finishedSubscription.cancel);
-        await tester.tap(find.byTooltip('Pause Download'));
+        await _tapVisible(tester, find.byTooltip('Pause Download'));
         await tester.pump(const Duration(milliseconds: 150));
         await modelService.downloadCancelled.future.timeout(_testTimeout);
         expect(finishedFilename, model.filename);
@@ -229,7 +409,7 @@ void main() {
           downloadUiController: downloadUi,
         );
 
-        await tester.tap(find.text('Download'));
+        await _tapVisible(tester, find.text('Download'));
         await modelService.downloadStarted.future.timeout(_testTimeout);
         await tester.pump();
 
@@ -256,6 +436,57 @@ void main() {
         expect(find.text('Downloading model'), findsNothing);
       },
     );
+
+    testWidgets('second model waits while first download is active', (
+      tester,
+    ) async {
+      SharedPreferences.setMockInitialValues({});
+      final firstModel = _remoteModel();
+      final secondModel = _secondRemoteModel();
+      final modelService = _HoldingModelService();
+      final downloadUi = ModelDownloadUiController();
+      addTearDown(downloadUi.dispose);
+
+      await _pumpScreen(
+        tester,
+        modelService: modelService,
+        models: [firstModel, secondModel],
+        downloadUiController: downloadUi,
+      );
+
+      final downloadButtons = find.widgetWithText(OutlinedButton, 'Download');
+      expect(downloadButtons, findsNWidgets(2));
+      await _tapVisible(tester, downloadButtons.first);
+      await modelService.downloadStarted.future.timeout(_testTimeout);
+      await tester.pump();
+
+      final secondDownloadButton = find.widgetWithText(
+        OutlinedButton,
+        'Download',
+      );
+      expect(secondDownloadButton, findsOneWidget);
+      await tester.ensureVisible(secondDownloadButton);
+      await tester.pump();
+      await tester.tap(secondDownloadButton);
+      await tester.pump(const Duration(milliseconds: 50));
+
+      expect(modelService.downloadCalls, 1);
+      final queuedLabel = find.text('Queued for download • Position 1');
+      await tester.ensureVisible(queuedLabel);
+      await tester.pump();
+      expect(queuedLabel, findsOneWidget);
+
+      downloadUi.cancel(secondModel.filename);
+      downloadUi.cancel(firstModel.filename);
+      await tester.pump(const Duration(milliseconds: 150));
+      await modelService.downloadCancelled.future.timeout(_testTimeout);
+      for (var i = 0; i < 20 && downloadUi.hasPendingDownloads; i += 1) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+
+      expect(modelService.downloadCalls, 1);
+      expect(downloadUi.hasPendingDownloads, isFalse);
+    });
 
     testWidgets(
       'selection warns when runtime lacks advertised vision support',
@@ -368,14 +599,14 @@ void main() {
 
       await _pumpScreen(tester, modelService: modelService, models: []);
 
-      await tester.tap(find.text('Add GGUF (HF)'));
+      await tester.tap(find.widgetWithText(OutlinedButton, 'Add model'));
       await tester.pumpAndSettle();
       await tester.enterText(
         find.widgetWithText(TextField, 'GGUF URL (Hugging Face)'),
         'https://huggingface.co/owner/repo/resolve/main/model.gguf?token=secret',
       );
 
-      await tester.tap(find.text('Add model'));
+      await tester.tap(find.widgetWithText(FilledButton, 'Add model'));
       await tester.pumpAndSettle();
 
       expect(find.text('Save credentialed URL?'), findsOneWidget);
@@ -398,7 +629,7 @@ void main() {
       expect(prefs.getStringList('custom_hf_models_v1'), isNull);
       expect(find.text('Add Hugging Face GGUF'), findsOneWidget);
 
-      await tester.tap(find.text('Add model'));
+      await tester.tap(find.widgetWithText(FilledButton, 'Add model'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Save anyway'));
       await tester.pumpAndSettle();
@@ -418,12 +649,19 @@ void main() {
 
 const _testTimeout = Duration(seconds: 2);
 
+Future<void> _tapVisible(WidgetTester tester, Finder finder) async {
+  await tester.ensureVisible(finder);
+  await tester.pump();
+  await tester.tap(finder);
+}
+
 Future<void> _pumpScreen(
   WidgetTester tester, {
   required _HoldingModelService modelService,
   required List<DownloadableModel> models,
   ChatProvider? provider,
   ModelDownloadUiController? downloadUiController,
+  bool settle = true,
 }) async {
   final effectiveProvider =
       provider ??
@@ -451,7 +689,11 @@ Future<void> _pumpScreen(
       ),
     ),
   );
-  await tester.pumpAndSettle();
+  if (settle) {
+    await tester.pumpAndSettle();
+  } else {
+    await tester.pump();
+  }
 }
 
 DownloadableModel _remoteModel() {
@@ -477,10 +719,21 @@ DownloadableModel _remoteVisionModel() {
   );
 }
 
+DownloadableModel _secondRemoteModel() {
+  return const DownloadableModel(
+    name: 'Second Test Model',
+    description: 'Another fake model for queue tests.',
+    url: 'https://example.com/second.gguf',
+    filename: 'second.gguf',
+    sizeBytes: 10,
+  );
+}
+
 class _HoldingModelService implements ModelService {
   _HoldingModelService({
     Set<String>? downloadedFiles,
     Set<String>? cachedAssetKeys,
+    this.modelsDirectoryFuture,
   }) : downloadedFiles = downloadedFiles ?? <String>{},
        cachedAssetKeys = cachedAssetKeys?.toSet();
 
@@ -490,6 +743,7 @@ class _HoldingModelService implements ModelService {
   final Completer<void> _finishDownload = Completer<void>();
   final Set<String> downloadedFiles;
   final Set<String>? cachedAssetKeys;
+  final Future<String>? modelsDirectoryFuture;
 
   int downloadCalls = 0;
   int deleteCalls = 0;
@@ -502,7 +756,8 @@ class _HoldingModelService implements ModelService {
   }
 
   @override
-  Future<String> getModelsDirectory() async => '/models';
+  Future<String> getModelsDirectory() async =>
+      await modelsDirectoryFuture ?? '/models';
 
   @override
   Future<Set<String>> getDownloadedModels(

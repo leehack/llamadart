@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:llamadart/llamadart.dart';
@@ -16,6 +17,9 @@ class SettingsService {
   static const _keyContext = 'context_size';
   static const _keyMaxTokens = 'max_tokens';
   static const _keyGpuLayers = 'gpu_layers';
+  static const _keyAutoTuneModelParams = 'auto_tune_model_params';
+  static const _keyAutoTuneRequestedContext =
+      'auto_tune_requested_context_size';
   static const _keyThreads = 'threads';
   static const _keyThreadsBatch = 'threads_batch';
   static const _keyLogLevel = 'log_level';
@@ -25,6 +29,9 @@ class SettingsService {
   static const _keyThinkingEnabled = 'thinking_enabled';
   static const _keyThinkingBudgetTokens = 'thinking_budget_tokens';
   static const _keySingleTurnMode = 'single_turn_mode';
+  static const _keyModelSupportsVision = 'model_supports_vision';
+  static const _keyModelSupportsAudio = 'model_supports_audio';
+  static const _keyDirectMediaInput = 'direct_media_input';
   static const _keyModelBytesHint = 'model_bytes_hint';
 
   static const Map<String, String> _modelPathMigrations = {
@@ -45,6 +52,20 @@ class SettingsService {
     return LlamaLogLevel.values[index];
   }
 
+  bool _isNativeGemma4LiteRtLm(String? modelPath) {
+    if (kIsWeb || modelPath == null) {
+      return false;
+    }
+    final normalized = modelPath
+        .split('?')
+        .first
+        .split('#')
+        .first
+        .toLowerCase();
+    return normalized.endsWith('.litertlm') &&
+        (normalized.contains('gemma-4') || normalized.contains('gemma4'));
+  }
+
   Future<ChatSettings> loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
     final savedModelPath = prefs.getString(_keyModelPath);
@@ -62,12 +83,14 @@ class SettingsService {
         ? GpuBackend.values[backendIndex]
         : GpuBackend.auto;
     final savedContextSize = prefs.getInt(_keyContext);
+    final savedGpuLayers = prefs.getInt(_keyGpuLayers);
     final effectiveContextSize = switch (savedContextSize) {
       null => 4096,
       0 => 0,
       < 512 => 4096,
       _ => savedContextSize,
     };
+    final migrateNativeGemma4Audio = _isNativeGemma4LiteRtLm(migratedModelPath);
 
     return ChatSettings(
       modelPath: migratedModelPath,
@@ -80,7 +103,15 @@ class SettingsService {
       penalty: prefs.getDouble(_keyPenalty) ?? 1.1,
       contextSize: effectiveContextSize,
       maxTokens: prefs.getInt(_keyMaxTokens) ?? 4096,
-      gpuLayers: prefs.getInt(_keyGpuLayers) ?? 32,
+      gpuLayers: savedGpuLayers ?? 32,
+      autoTuneModelParams:
+          prefs.getBool(_keyAutoTuneModelParams) ??
+          (preferredBackend == GpuBackend.auto &&
+              (savedGpuLayers == null ||
+                  savedGpuLayers == 32 ||
+                  savedGpuLayers >= 99)),
+      autoTuneRequestedContextSize:
+          prefs.getInt(_keyAutoTuneRequestedContext) ?? effectiveContextSize,
       numberOfThreads: prefs.getInt(_keyThreads) ?? 0,
       numberOfThreadsBatch: prefs.getInt(_keyThreadsBatch) ?? 0,
       logLevel: _parseLogLevel(prefs.getInt(_keyLogLevel), LlamaLogLevel.none),
@@ -93,6 +124,11 @@ class SettingsService {
       thinkingEnabled: prefs.getBool(_keyThinkingEnabled) ?? true,
       thinkingBudgetTokens: prefs.getInt(_keyThinkingBudgetTokens) ?? 0,
       singleTurnMode: prefs.getBool(_keySingleTurnMode) ?? false,
+      modelSupportsVision: prefs.getBool(_keyModelSupportsVision) ?? false,
+      modelSupportsAudio:
+          prefs.getBool(_keyModelSupportsAudio) ?? migrateNativeGemma4Audio,
+      directMediaInput:
+          prefs.getBool(_keyDirectMediaInput) ?? migrateNativeGemma4Audio,
       modelBytesHint: prefs.getInt(_keyModelBytesHint),
     );
   }
@@ -116,6 +152,16 @@ class SettingsService {
     await prefs.setInt(_keyContext, settings.contextSize);
     await prefs.setInt(_keyMaxTokens, settings.maxTokens);
     await prefs.setInt(_keyGpuLayers, settings.gpuLayers);
+    await prefs.setBool(_keyAutoTuneModelParams, settings.autoTuneModelParams);
+    final autoTuneRequestedContextSize = settings.autoTuneRequestedContextSize;
+    if (autoTuneRequestedContextSize != null) {
+      await prefs.setInt(
+        _keyAutoTuneRequestedContext,
+        autoTuneRequestedContextSize,
+      );
+    } else {
+      await prefs.remove(_keyAutoTuneRequestedContext);
+    }
     await prefs.setInt(_keyThreads, settings.numberOfThreads);
     await prefs.setInt(_keyThreadsBatch, settings.numberOfThreadsBatch);
     await prefs.setInt(_keyLogLevel, settings.logLevel.index);
@@ -125,6 +171,9 @@ class SettingsService {
     await prefs.setBool(_keyThinkingEnabled, settings.thinkingEnabled);
     await prefs.setInt(_keyThinkingBudgetTokens, settings.thinkingBudgetTokens);
     await prefs.setBool(_keySingleTurnMode, settings.singleTurnMode);
+    await prefs.setBool(_keyModelSupportsVision, settings.modelSupportsVision);
+    await prefs.setBool(_keyModelSupportsAudio, settings.modelSupportsAudio);
+    await prefs.setBool(_keyDirectMediaInput, settings.directMediaInput);
     final modelBytesHint = settings.modelBytesHint;
     if (modelBytesHint != null && modelBytesHint > 0) {
       await prefs.setInt(_keyModelBytesHint, modelBytesHint);

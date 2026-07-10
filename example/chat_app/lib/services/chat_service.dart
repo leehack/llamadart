@@ -172,6 +172,11 @@ class ChatService {
         !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
     final isLiteRtLm = _isLiteRtLmModel(settings.modelPath);
     final usesGpuBackend = settings.preferredBackend != GpuBackend.cpu;
+    final resolvedGpuLayers = !usesGpuBackend
+        ? 0
+        : !kIsWeb && settings.gpuLayers >= 99
+        ? ModelParams.maxGpuLayers
+        : settings.gpuLayers;
     final usesVulkanBackend =
         settings.preferredBackend == GpuBackend.vulkan ||
         settings.preferredBackend == GpuBackend.auto;
@@ -233,7 +238,7 @@ class ChatService {
     final int? modelBytesHint = kIsWeb && hint > 0 ? hint : null;
 
     return ModelParams(
-      gpuLayers: settings.gpuLayers,
+      gpuLayers: resolvedGpuLayers,
       preferredBackend: settings.preferredBackend,
       contextSize: settings.contextSize,
       numberOfThreads: resolvedThreads,

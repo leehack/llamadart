@@ -39,34 +39,78 @@ flutter test
 - Compact runtime status with detailed performance diagnostics on demand.
 - Copy and regenerate actions for plain assistant responses.
 - Model selection and download flow.
+- App-owned FIFO download scheduling, with queue positions and cancellation for
+  waiting items. A responsive progress pill remains visible in the shell after
+  the settings panel closes and reopens download details when tapped.
 - The runnable chat app wires `ModelDownloadController` into its model-management
   flow through a small adapter, so cache checks, progress, cancel, retry, and
   clear ready/failure states come from the same package helper app code can
   reuse. The adapter keeps the example's platform-specific service layer for
   multi-asset model + `mmproj` downloads and browser cache behavior.
 - On mobile, active downloads are treated as foreground work: the app no longer
-  cancels them just because Android/iOS reports a lifecycle pause, and the card
-  tells users to keep the app open. If the OS interrupts the socket anyway, the
-  next foreground download attempt reuses the partial file when the server
-  honors Range resume. A true sleep-proof UX should be built as an opt-in native
+  cancels them just because Android/iOS reports a lifecycle pause. The card
+  tells users to keep the app open, and shell-level progress remains visible
+  when settings closes. If the OS interrupts the socket anyway, the next
+  foreground download attempt reuses the partial file when the server honors
+  Range resume. A true sleep-proof UX should be built as an opt-in native
   background downloader/model-store manager and injected through
   `ModelDownloadManager`.
 - Runtime backend preference and GPU layer controls.
 - Persistent settings and split Dart/native logging controls.
 - Tool-calling toggles and model capability badges.
-- Runtime-verified multimodal capability gating after `mmproj` load. The app
-  hides unsupported attachment types even if a model family advertises broader
-  multimodal support.
+- Runtime-verified multimodal capability gating after `mmproj` load, plus
+  declared direct-media capabilities for native model bundles such as
+  LiteRT-LM. The app hides unsupported attachment types for the active platform.
 - Native and web `.litertlm` routing through LiteRT-LM. Native LiteRT-LM is
   enabled for supported targets; iOS x86_64 simulator and Windows arm64 remain
   GGUF-only because no matching LiteRT-LM native bundle is published.
 
+## Built-in model catalog
+
+The built-in library is intentionally small and Unsloth-first:
+
+- Cross-platform: FunctionGemma 270M, Qwen3.5 0.8B, Gemma 4 E2B GGUF,
+  Gemma 4 E2B LiteRT-LM, and Gemma 4 E4B GGUF.
+- Native desktop: Gemma 4 12B, Gemma 4 26B A4B, Gemma 4 31B, and
+  Qwen3.6 35B A3B.
+
+Every GGUF preset uses an [Unsloth distribution](https://huggingface.co/unsloth)
+and identifies Unsloth in the model card. The LiteRT-LM preset is the only
+exception because the required `.litertlm` artifacts are published by
+`litert-community`. The library defaults to the current platform, promotes
+downloaded models, and supports name/capability search plus Mobile, Web, and
+Desktop filters. Browsing another platform keeps incompatible model actions
+disabled and explains why. Gemma 4 E4B remains cross-platform because it is
+designed for capable edge/mobile devices as well as desktops.
+
+Model cards prioritize size, RAM, compatibility, capabilities, cache state, and
+the primary download/load action. Recommended context and output limits remain
+visible without repeating every sampling parameter on every card.
+
+Availability filters match the catalog's two actual platform tiers: **Mobile &
+Web** for portable models and **Desktop** for the complete native catalog.
+
+For native GGUF models, Auto runtime planning uses the selected model size,
+reported device memory, conservative system headroom, and requested context. It
+chooses full offload when the model fits, reduces context before partial
+offload when memory is tight, and maps the UI's **Max** setting to llama.cpp's
+full-offload sentinel. Auto intent is stored independently from its resolved
+layer and context values, so headroom is recalculated on every model load and
+after app restarts. Selecting a lower GPU-layer value disables that tuning and
+keeps the manual value fixed.
+
+Custom and discovered model cards expose a dedicated actions menu. Removing an
+entry from the library is separate from deleting its downloaded files, and the
+confirmation dialog offers both choices when cached assets exist.
+
 ## Gemma 4 note
 
-The download library includes a Gemma 4 E2B GGUF + projector pair. On the
-current `llama.cpp` mtmd path used by `llamadart`, that projector exposes
-vision support but not audio support, so the app keeps image input enabled and
-audio input disabled for that model.
+The download library includes Gemma 4 E2B, E4B, 12B, 26B A4B, and 31B GGUF
+tiers. E2B, E4B, and 12B expose image, audio, and video input on the current
+native `llama.cpp` mtmd path; 26B A4B and 31B expose image/video input but do
+not support audio. The native Gemma 4 E2B LiteRT-LM bundle accepts audio
+directly without an external projector. Web GGUF audio remains runtime-gated,
+and LiteRT-LM Web remains text-only.
 
 ## Web notes
 
@@ -93,8 +137,8 @@ against a small Qwen3.5 model.
 
 ## Android notes
 
-- Qwen3.5 `0.8B` and `2B` currently default to `CPU` on Android because that was
-  the fastest verified path on the maintainer Pixel test device.
+- Qwen3.5 `0.8B` currently defaults to `CPU` on Android because that was the
+  fastest verified path on the maintainer Pixel test device.
 - GGUF downloads in this example run through the app's foreground Dart process.
   Keep the app visible/unlocked for the most reliable download. The app avoids
   deliberately cancelling on screen lock, but Android can still suspend the

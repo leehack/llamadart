@@ -1,5 +1,24 @@
 ## Unreleased
 
+* Added an app-owned FIFO model-download queue to the runnable chat app. Only
+  one model transfers at a time, queued cards show their position and can leave
+  the queue independently, and a responsive shell progress pill keeps the
+  active download visible after the settings panel closes.
+
+* Replaced the runnable chat app's broad built-in model catalog with a focused
+  Unsloth-first set. Added cross-platform Gemma 4 E4B plus native-desktop Gemma
+  4 12B/26B-A4B/31B and Qwen3.6 35B-A3B presets. The model library now promotes
+  downloaded models, supports name/capability search and Mobile & Web/Desktop
+  filters, explains incompatible choices, and uses quieter cards with compact
+  compatibility, capability, and recommended-setting summaries. Custom entries
+  retain independent remove-from-library and downloaded-file actions.
+
+* Enabled Gemma 4 audio attachments in the runnable chat app for the current
+  native GGUF projector and LiteRT-LM bundle, while keeping LiteRT-LM Web
+  correctly text-only. Model capability settings now distinguish direct media
+  input from external `mmproj` input and persist that distinction across app
+  launches.
+
 * Redesigned the runnable chat app with a quieter responsive shell, compact
   runtime details, full-screen mobile settings, streamlined message/composer
   surfaces, accessible controls, protected conversation deletion, and
@@ -14,7 +33,12 @@
 
 * Clarified the chat app's backend and GPU-layer controls, exposed the active
   loaded backend beside its preference, and restored GPU offload when switching
-  from a zero-layer CPU configuration back to Auto or a GPU backend.
+  from a zero-layer CPU configuration back to Auto or a GPU backend. Native
+  **Max** now maps to full llama.cpp offload, while Auto uses model size,
+  available device memory, safe system headroom, and requested context to choose
+  full or partial offload and only reduces context when the model does not fit.
+  Auto intent now persists separately from resolved layer/context values so
+  device headroom is recalculated on every model load and after app restarts.
 
 ## 0.8.14
 

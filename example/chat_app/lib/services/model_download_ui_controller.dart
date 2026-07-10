@@ -6,7 +6,7 @@ import 'package:llamadart/llamadart.dart' hide ModelDownloadProgress;
 import 'model_service_base.dart';
 
 /// Owns model-download tasks and their presentation state for the chat app.
-class ModelDownloadUiController {
+class ModelDownloadUiController extends ChangeNotifier {
   final Map<String, ValueNotifier<ModelDownloadUiState>> _uiStateByFile = {};
   final Map<String, int> _lastDownloadedBytes = {};
   final Map<String, DateTime> _lastDownloadSampleAt = {};
@@ -16,7 +16,24 @@ class ModelDownloadUiController {
   _downloadSubscriptions = {};
   final StreamController<String> _downloadsFinished =
       StreamController<String>.broadcast(sync: true);
+  final List<_QueuedDownloadRequest> _queue = [];
+  final Map<String, String> _displayNameByFile = {};
+  String? _activeFilename;
   bool _isDisposed = false;
+
+  String? get activeFilename => _activeFilename;
+
+  String? get activeDisplayName =>
+      _activeFilename == null ? null : _displayNameByFile[_activeFilename!];
+
+  ModelDownloadUiState? get activeState =>
+      _activeFilename == null ? null : _uiStateByFile[_activeFilename!]?.value;
+
+  int get queuedCount => _queue.length;
+
+  int get pendingCount => (_activeFilename == null ? 0 : 1) + _queue.length;
+
+  bool get hasPendingDownloads => pendingCount > 0;
 
   /// Emits a filename whenever a download succeeds, fails, or is cancelled.
   ///
@@ -46,6 +63,48 @@ class ModelDownloadUiController {
     return _downloadControllers[filename]?.snapshot.isRunning ?? false;
   }
 
+  bool isQueued(String filename) {
+    return _queue.any((request) => request.filename == filename);
+  }
+
+  bool isPending(String filename) {
+    return _activeFilename == filename || isQueued(filename);
+  }
+
+  Future<bool> enqueueDownload({
+    required String filename,
+    required String displayName,
+  }) {
+    if (_isDisposed || isPending(filename)) {
+      return Future.value(false);
+    }
+
+    final request = _QueuedDownloadRequest(filename: filename);
+    _displayNameByFile[filename] = displayName;
+    _queue.add(request);
+    _startNextDownload();
+    _syncQueuedStates();
+    _notifyGlobalListeners();
+    return request.ready.future;
+  }
+
+  void completeActiveDownload(String filename) {
+    if (_activeFilename != filename) {
+      return;
+    }
+    _activeFilename = null;
+    _displayNameByFile.remove(filename);
+    updateState(
+      filename,
+      isDownloading: false,
+      clearQueue: true,
+      notifyGlobalListeners: false,
+    );
+    _startNextDownload();
+    _syncQueuedStates();
+    _notifyGlobalListeners();
+  }
+
   void registerDownload({
     required String filename,
     required ModelDownloadController controller,
@@ -64,6 +123,10 @@ class ModelDownloadUiController {
     bool clearDetail = false,
     bool clearTask = false,
     bool clearProgress = false,
+    bool? isQueued,
+    int? queuePosition,
+    bool clearQueue = false,
+    bool notifyGlobalListeners = true,
   }) {
     if (_isDisposed) {
       return;
@@ -77,7 +140,13 @@ class ModelDownloadUiController {
       task: task,
       clearDetail: clearDetail,
       clearTask: clearTask,
+      isQueued: isQueued,
+      queuePosition: queuePosition,
+      clearQueue: clearQueue,
     );
+    if (notifyGlobalListeners) {
+      _notifyGlobalListeners();
+    }
   }
 
   void updateDownloadRate(String filename, ModelDownloadProgress detail) {
@@ -139,6 +208,28 @@ class ModelDownloadUiController {
   }
 
   void cancel(String filename) {
+    final queuedIndex = _queue.indexWhere(
+      (request) => request.filename == filename,
+    );
+    if (queuedIndex >= 0) {
+      final request = _queue.removeAt(queuedIndex);
+      _displayNameByFile.remove(filename);
+      if (!request.ready.isCompleted) {
+        request.ready.complete(false);
+      }
+      updateState(
+        filename,
+        isDownloading: false,
+        clearProgress: true,
+        clearDetail: true,
+        clearTask: true,
+        clearQueue: true,
+        notifyGlobalListeners: false,
+      );
+      _syncQueuedStates();
+      _notifyGlobalListeners();
+      return;
+    }
     _downloadControllers[filename]?.cancel();
   }
 
@@ -171,6 +262,7 @@ class ModelDownloadUiController {
   }
 
   Future<void> disposeDownloads() async {
+    _clearQueuedDownloads();
     for (final subscription in _downloadSubscriptions.values) {
       await subscription.cancel();
     }
@@ -179,20 +271,80 @@ class ModelDownloadUiController {
       await controller.dispose();
     }
     _downloadControllers.clear();
+    _notifyGlobalListeners();
   }
 
   void clearUiState() {
     for (final notifier in _uiStateByFile.values) {
       notifier.value = const ModelDownloadUiState();
     }
+    _notifyGlobalListeners();
   }
 
+  void _startNextDownload() {
+    if (_isDisposed || _activeFilename != null || _queue.isEmpty) {
+      return;
+    }
+    final request = _queue.removeAt(0);
+    _activeFilename = request.filename;
+    updateState(
+      request.filename,
+      isDownloading: true,
+      clearQueue: true,
+      notifyGlobalListeners: false,
+    );
+    if (!request.ready.isCompleted) {
+      request.ready.complete(true);
+    }
+  }
+
+  void _syncQueuedStates() {
+    for (var index = 0; index < _queue.length; index += 1) {
+      final request = _queue[index];
+      updateState(
+        request.filename,
+        isDownloading: false,
+        isQueued: true,
+        queuePosition: index + 1,
+        notifyGlobalListeners: false,
+      );
+    }
+  }
+
+  void _clearQueuedDownloads() {
+    final queued = List<_QueuedDownloadRequest>.from(_queue);
+    _queue.clear();
+    for (final request in queued) {
+      _displayNameByFile.remove(request.filename);
+      if (!request.ready.isCompleted) {
+        request.ready.complete(false);
+      }
+      updateState(
+        request.filename,
+        isDownloading: false,
+        clearProgress: true,
+        clearDetail: true,
+        clearTask: true,
+        clearQueue: true,
+        notifyGlobalListeners: false,
+      );
+    }
+  }
+
+  void _notifyGlobalListeners() {
+    if (!_isDisposed) {
+      notifyListeners();
+    }
+  }
+
+  @override
   void dispose() {
     if (_isDisposed) {
       return;
     }
     _isDisposed = true;
     pauseActiveDownloads();
+    _clearQueuedDownloads();
     for (final subscription in _downloadSubscriptions.values) {
       unawaited(subscription.cancel());
     }
@@ -207,7 +359,15 @@ class ModelDownloadUiController {
     _uiStateByFile.clear();
     clearRateTracking();
     unawaited(_downloadsFinished.close());
+    super.dispose();
   }
+}
+
+class _QueuedDownloadRequest {
+  final String filename;
+  final Completer<bool> ready = Completer<bool>();
+
+  _QueuedDownloadRequest({required this.filename});
 }
 
 class ModelDownloadUiState {
@@ -215,12 +375,16 @@ class ModelDownloadUiState {
   final double progress;
   final ModelDownloadProgress? detail;
   final ModelDownloadTaskSnapshot? task;
+  final bool isQueued;
+  final int? queuePosition;
 
   const ModelDownloadUiState({
     this.isDownloading = false,
     this.progress = 0.0,
     this.detail,
     this.task,
+    this.isQueued = false,
+    this.queuePosition,
   });
 
   ModelDownloadUiState copyWith({
@@ -230,6 +394,9 @@ class ModelDownloadUiState {
     ModelDownloadTaskSnapshot? task,
     bool clearDetail = false,
     bool clearTask = false,
+    bool? isQueued,
+    int? queuePosition,
+    bool clearQueue = false,
   }) {
     final normalizedProgress =
         ((progress ?? this.progress).clamp(0.0, 1.0) as num).toDouble();
@@ -239,6 +406,8 @@ class ModelDownloadUiState {
       progress: normalizedProgress,
       detail: clearDetail ? null : (detail ?? this.detail),
       task: clearTask ? null : (task ?? this.task),
+      isQueued: clearQueue ? false : (isQueued ?? this.isQueued),
+      queuePosition: clearQueue ? null : (queuePosition ?? this.queuePosition),
     );
   }
 }

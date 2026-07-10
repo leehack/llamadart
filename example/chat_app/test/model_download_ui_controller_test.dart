@@ -3,6 +3,89 @@ import 'package:llamadart_chat_example/services/model_download_ui_controller.dar
 
 void main() {
   group('ModelDownloadUiController', () {
+    test('runs queued downloads in FIFO order', () async {
+      final controller = ModelDownloadUiController();
+      addTearDown(controller.dispose);
+
+      final first = controller.enqueueDownload(
+        filename: 'first.gguf',
+        displayName: 'First model',
+      );
+      final second = controller.enqueueDownload(
+        filename: 'second.gguf',
+        displayName: 'Second model',
+      );
+      final third = controller.enqueueDownload(
+        filename: 'third.gguf',
+        displayName: 'Third model',
+      );
+
+      expect(await first, isTrue);
+      expect(controller.activeFilename, 'first.gguf');
+      expect(controller.queuedCount, 2);
+      expect(controller.listenableFor('second.gguf').value.queuePosition, 1);
+      expect(controller.listenableFor('third.gguf').value.queuePosition, 2);
+
+      controller.completeActiveDownload('first.gguf');
+      expect(await second, isTrue);
+      expect(controller.activeFilename, 'second.gguf');
+      expect(controller.listenableFor('third.gguf').value.queuePosition, 1);
+
+      controller.completeActiveDownload('second.gguf');
+      expect(await third, isTrue);
+      expect(controller.activeFilename, 'third.gguf');
+      controller.completeActiveDownload('third.gguf');
+      expect(controller.hasPendingDownloads, isFalse);
+    });
+
+    test('queued download can be removed before it starts', () async {
+      final controller = ModelDownloadUiController();
+      addTearDown(controller.dispose);
+
+      await controller.enqueueDownload(
+        filename: 'active.gguf',
+        displayName: 'Active model',
+      );
+      final queued = controller.enqueueDownload(
+        filename: 'queued.gguf',
+        displayName: 'Queued model',
+      );
+
+      expect(controller.isQueued('queued.gguf'), isTrue);
+      controller.cancel('queued.gguf');
+
+      expect(await queued, isFalse);
+      expect(controller.isQueued('queued.gguf'), isFalse);
+      expect(controller.listenableFor('queued.gguf').value.isQueued, isFalse);
+      expect(controller.pendingCount, 1);
+    });
+
+    test('queue mutations notify shell listeners once per operation', () async {
+      final controller = ModelDownloadUiController();
+      addTearDown(controller.dispose);
+      var notifications = 0;
+      controller.addListener(() => notifications += 1);
+
+      await controller.enqueueDownload(
+        filename: 'active.gguf',
+        displayName: 'Active model',
+      );
+      expect(notifications, 1);
+
+      final queued = controller.enqueueDownload(
+        filename: 'queued.gguf',
+        displayName: 'Queued model',
+      );
+      expect(notifications, 2);
+
+      controller.cancel('queued.gguf');
+      expect(await queued, isFalse);
+      expect(notifications, 3);
+
+      controller.completeActiveDownload('active.gguf');
+      expect(notifications, 4);
+    });
+
     test('clearUiState resets active notifiers without disposing them', () {
       final controller = ModelDownloadUiController();
       addTearDown(controller.dispose);

@@ -19,6 +19,12 @@ import '../utils/backend_utils.dart';
 import '../widgets/model_card.dart';
 import '../widgets/tool_declarations_dialog.dart';
 
+enum _CustomModelRemoval { entryOnly, entryAndFiles }
+
+enum _ModelPlatformFilter { all, mobileAndWeb, desktop }
+
+enum _ModelLibraryMenuAction { removeAll }
+
 class ManageModelsScreen extends StatefulWidget {
   final VoidCallback? onModelActivated;
   final bool embeddedPanel;
@@ -54,6 +60,7 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
   late final ModelService _modelService;
   final HuggingFaceModelDiscoveryService _hfDiscoveryService =
       HuggingFaceModelDiscoveryService();
+  final TextEditingController _modelSearchController = TextEditingController();
   final List<DownloadableModel> _models = <DownloadableModel>[];
   final List<DownloadableModel> _customModels = <DownloadableModel>[];
 
@@ -70,6 +77,8 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
   bool _modelParametersExpanded = false;
   bool _inferenceParametersExpanded = false;
   bool _advancedExpanded = false;
+  String _modelSearchQuery = '';
+  late _ModelPlatformFilter _modelPlatformFilter;
 
   @override
   void initState() {
@@ -81,6 +90,7 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
     _downloadFinishedSubscription = _downloadUi.downloadsFinished.listen(
       _handleDownloadFinished,
     );
+    _modelPlatformFilter = _currentPlatformFilter;
     _models.addAll(_initialModelCatalog());
     _showModelLibrary = widget.showModelLibraryInitially ?? false;
     _initModelService();
@@ -90,6 +100,71 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
     return List<DownloadableModel>.from(
       widget.initialModels ?? DownloadableModel.defaultModels,
     );
+  }
+
+  bool get _isMobilePlatform =>
+      !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.android ||
+          defaultTargetPlatform == TargetPlatform.iOS);
+
+  _ModelPlatformFilter get _currentPlatformFilter {
+    if (kIsWeb || _isMobilePlatform) {
+      return _ModelPlatformFilter.mobileAndWeb;
+    }
+    return _ModelPlatformFilter.desktop;
+  }
+
+  bool _isAvailableOnCurrentPlatform(DownloadableModel model) {
+    return model.isAvailableFor(web: kIsWeb, mobile: _isMobilePlatform);
+  }
+
+  bool _matchesPlatformFilter(DownloadableModel model) {
+    return switch (_modelPlatformFilter) {
+      _ModelPlatformFilter.all => true,
+      _ModelPlatformFilter.mobileAndWeb => model.isAvailableFor(
+        web: true,
+        mobile: false,
+      ),
+      _ModelPlatformFilter.desktop => model.isAvailableFor(
+        web: false,
+        mobile: false,
+      ),
+    };
+  }
+
+  bool _matchesModelSearch(DownloadableModel model) {
+    final query = _modelSearchQuery.trim().toLowerCase();
+    if (query.isEmpty) {
+      return true;
+    }
+    final searchable = <String>[
+      model.name,
+      model.description,
+      model.distribution ?? '',
+      model.filename,
+      if (model.supportsToolCalling) 'tools function calling',
+      if (model.supportsThinking) 'thinking reasoning',
+      if (model.supportsVisionFor(web: kIsWeb)) 'vision image',
+      if (model.supportsAudioFor(web: kIsWeb)) 'audio voice',
+      if (model.supportsVideoFor(web: kIsWeb)) 'video',
+    ].join(' ').toLowerCase();
+    return query.split(RegExp(r'\s+')).every(searchable.contains);
+  }
+
+  bool _isModelDownloaded(DownloadableModel model) {
+    return _downloadedFiles.contains(model.filename) ||
+        (_cacheStateByFile[model.filename]?.model.isAvailable ?? false);
+  }
+
+  List<DownloadableModel> _visibleModels() {
+    final visible = _models
+        .where(_matchesPlatformFilter)
+        .where(_matchesModelSearch)
+        .toList(growable: false);
+    return [
+      ...visible.where(_isModelDownloaded),
+      ...visible.where((model) => !_isModelDownloaded(model)),
+    ];
   }
 
   @override
@@ -676,27 +751,34 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
     if (!kIsWeb && _modelsDir == null) {
       return;
     }
-    if (_downloadUi.isRunning(model.filename)) {
+    if (_downloadUi.isPending(model.filename)) {
       return;
     }
 
-    await _disposeDownloadController(model.filename);
+    final shouldIncludeProjector =
+        includeProjector ?? _includeProjectorFor(model);
+    final ready = await _downloadUi.enqueueDownload(
+      filename: model.filename,
+      displayName: model.name,
+    );
+    if (!ready) {
+      return;
+    }
 
     ModelDownloadController? controller;
     StreamSubscription<ModelDownloadTaskSnapshot>? subscription;
 
-    _updateDownloadUiState(
-      model.filename,
-      isDownloading: true,
-      clearDetail: true,
-      clearTask: true,
-      clearProgress: true,
-    );
-    _clearDownloadTracking(model.filename);
-
     try {
-      final shouldIncludeProjector =
-          includeProjector ?? _includeProjectorFor(model);
+      await _disposeDownloadController(model.filename);
+      _updateDownloadUiState(
+        model.filename,
+        isDownloading: true,
+        clearDetail: true,
+        clearTask: true,
+        clearProgress: true,
+      );
+      _clearDownloadTracking(model.filename);
+
       final manager = ChatAppModelDownloadManager(
         modelService: _modelService,
         model: model,
@@ -773,6 +855,7 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
         ),
       );
     } finally {
+      _downloadUi.completeActiveDownload(model.filename);
       await _disposeDownloadController(
         model.filename,
         controller: controller,
@@ -805,7 +888,9 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
     provider.updateModelPath(pathOrUrl);
     provider.applyModelPreset(model);
 
-    if (model.isMultimodal) {
+    if (model.isMultimodalFor(web: kIsWeb) &&
+        model.mediaInputModeFor(web: kIsWeb) ==
+            ModelMediaInputMode.externalProjector) {
       final mmprojPath = _resolveMmprojPathForModel(model);
       final mmprojSource = model.multimodalProjectorSourceFor(web: kIsWeb);
       final projectorIsAvailable =
@@ -875,6 +960,77 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
     if (!mounted) return;
 
     setState(() {});
+  }
+
+  Future<void> _removeCustomModelEntry(DownloadableModel model) async {
+    final isCustom = _customModels.any(
+      (entry) => entry.filename == model.filename && entry.url == model.url,
+    );
+    if (!isCustom) {
+      return;
+    }
+
+    final cacheState = _cacheStateByFile[model.filename];
+    final hasCachedAssets =
+        _downloadedFiles.contains(model.filename) ||
+        (cacheState?.availableAssetLabels.isNotEmpty ?? false);
+    final removal = await showDialog<_CustomModelRemoval>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Remove from library?'),
+        content: Text(
+          hasCachedAssets
+              ? 'Remove ${model.name} from your model library? You can keep its downloaded files or delete them too.'
+              : 'Remove ${model.name} from your model library?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Cancel'),
+          ),
+          if (hasCachedAssets)
+            TextButton(
+              onPressed: () =>
+                  Navigator.of(context).pop(_CustomModelRemoval.entryOnly),
+              child: const Text('Remove only'),
+            ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(
+              hasCachedAssets
+                  ? _CustomModelRemoval.entryAndFiles
+                  : _CustomModelRemoval.entryOnly,
+            ),
+            child: Text(hasCachedAssets ? 'Delete files & remove' : 'Remove'),
+          ),
+        ],
+      ),
+    );
+    if (removal == null || !mounted) {
+      return;
+    }
+
+    if (removal == _CustomModelRemoval.entryAndFiles) {
+      await _deleteModel(model);
+      if (!mounted) {
+        return;
+      }
+    }
+
+    setState(() {
+      _models.removeWhere(
+        (entry) => entry.filename == model.filename && entry.url == model.url,
+      );
+      _customModels.removeWhere(
+        (entry) => entry.filename == model.filename && entry.url == model.url,
+      );
+    });
+    await _saveCustomModels();
+    if (!mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Removed ${model.name} from the library.')),
+    );
   }
 
   Future<void> _removeAllModels() async {
@@ -1044,7 +1200,9 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
   }
 
   String? _resolveMmprojPathForModel(DownloadableModel model) {
-    if (!model.isMultimodal) {
+    if (!model.isMultimodalFor(web: kIsWeb) ||
+        model.mediaInputModeFor(web: kIsWeb) !=
+            ModelMediaInputMode.externalProjector) {
       return null;
     }
 
@@ -1053,7 +1211,8 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
       return _resolveAssetLoadReference(source);
     }
 
-    return model.supportsVision || model.supportsAudio
+    return model.supportsVisionFor(web: kIsWeb) ||
+            model.supportsAudioFor(web: kIsWeb)
         ? _resolveModelLoadReference(model)
         : null;
   }
@@ -1063,8 +1222,10 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
     ChatProvider provider,
   ) {
     final missing = <String>[
-      if (model.supportsVision && !provider.supportsVision) 'vision',
-      if (model.supportsAudio && !provider.supportsAudio) 'audio',
+      if (model.supportsVisionFor(web: kIsWeb) && !provider.supportsVision)
+        'vision',
+      if (model.supportsAudioFor(web: kIsWeb) && !provider.supportsAudio)
+        'audio',
     ];
     if (missing.isEmpty) {
       return null;
@@ -1144,7 +1305,8 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
         final isWide = width >= 980 && !isEmbedded;
         final horizontalPadding = isEmbedded ? 12.0 : (isWide ? 28.0 : 16.0);
         final selectedModel = _findSelectedModel(provider);
-        final selectedModelMmprojPath = selectedModel == null
+        final selectedModelMmprojPath =
+            selectedModel == null || (!kIsWeb && _modelsDir == null)
             ? null
             : _resolveMmprojPathForModel(selectedModel);
         final selectedBackend = _resolveSelectedBackend(provider);
@@ -1165,7 +1327,11 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
             ? '(auto detected)'
             : provider.numberOfThreadsBatch.toString();
         final isMaximumGpuLayers = provider.gpuLayers >= 99;
-        final gpuLayersLabel = isMaximumGpuLayers
+        final gpuLayersLabel = provider.autoTuneModelParams
+            ? isMaximumGpuLayers
+                  ? 'Auto · Max'
+                  : 'Auto · ${provider.gpuLayers}'
+            : isMaximumGpuLayers
             ? 'Max'
             : provider.gpuLayers.toString();
         final gpuLayersSliderValue = isMaximumGpuLayers
@@ -1178,6 +1344,10 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
         final loadProgressLabel = hasLoadProgress
             ? '${(provider.loadingProgress * 100).toStringAsFixed(0)}%'
             : null;
+        final visibleModels = _visibleModels();
+        final visibleDownloadedCount = visibleModels
+            .where(_isModelDownloaded)
+            .length;
 
         return ListView(
           padding: EdgeInsets.fromLTRB(
@@ -1296,38 +1466,159 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
                     ),
                   ),
                   if (_showModelLibrary) ...[
-                    const SizedBox(height: 8),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                    const SizedBox(height: 14),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            'Model library',
+                            style: Theme.of(context).textTheme.titleMedium
+                                ?.copyWith(fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                        Text(
+                          visibleDownloadedCount == 0
+                              ? '${visibleModels.length} models'
+                              : '$visibleDownloadedCount downloaded · ${visibleModels.length} total',
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: Theme.of(
+                                  context,
+                                ).colorScheme.onSurfaceVariant,
+                              ),
+                        ),
+                        const SizedBox(width: 4),
+                        PopupMenuButton<_ModelLibraryMenuAction>(
+                          tooltip: 'Model library actions',
+                          icon: const Icon(Icons.more_horiz_rounded),
+                          onSelected: (action) {
+                            switch (action) {
+                              case _ModelLibraryMenuAction.removeAll:
+                                unawaited(_removeAllModels());
+                            }
+                          },
+                          itemBuilder: (context) => [
+                            PopupMenuItem(
+                              value: _ModelLibraryMenuAction.removeAll,
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.delete_sweep_outlined,
+                                    size: 19,
+                                    color: Theme.of(context).colorScheme.error,
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Text(
+                                    'Remove all models',
+                                    style: TextStyle(
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.error,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: _modelSearchController,
+                      onChanged: (value) {
+                        setState(() {
+                          _modelSearchQuery = value;
+                        });
+                      },
+                      textInputAction: TextInputAction.search,
+                      decoration: InputDecoration(
+                        hintText: 'Search models or capabilities',
+                        prefixIcon: const Icon(Icons.search_rounded),
+                        suffixIcon: _modelSearchQuery.isEmpty
+                            ? null
+                            : IconButton(
+                                onPressed: () {
+                                  FocusScope.of(context).unfocus();
+                                  _modelSearchController.clear();
+                                  setState(() {
+                                    _modelSearchQuery = '';
+                                  });
+                                },
+                                tooltip: 'Clear model search',
+                                icon: const Icon(Icons.close_rounded),
+                              ),
+                        filled: true,
+                        fillColor: Theme.of(
+                          context,
+                        ).colorScheme.surfaceContainerLowest,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide.none,
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 12,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: _ModelPlatformFilter.values
+                            .map((filter) {
+                              final (label, icon) = switch (filter) {
+                                _ModelPlatformFilter.all => (
+                                  'All',
+                                  Icons.apps_rounded,
+                                ),
+                                _ModelPlatformFilter.mobileAndWeb => (
+                                  'Mobile & Web',
+                                  Icons.smartphone_rounded,
+                                ),
+                                _ModelPlatformFilter.desktop => (
+                                  'Desktop',
+                                  Icons.desktop_mac_outlined,
+                                ),
+                              };
+                              return Padding(
+                                padding: const EdgeInsets.only(right: 8),
+                                child: ChoiceChip(
+                                  selected: _modelPlatformFilter == filter,
+                                  materialTapTargetSize:
+                                      MaterialTapTargetSize.shrinkWrap,
+                                  visualDensity: VisualDensity.compact,
+                                  labelPadding: const EdgeInsets.symmetric(
+                                    horizontal: 4,
+                                  ),
+                                  onSelected: (_) {
+                                    setState(() {
+                                      _modelPlatformFilter = filter;
+                                    });
+                                  },
+                                  avatar: Icon(icon, size: 16),
+                                  label: Text(label),
+                                ),
+                              );
+                            })
+                            .toList(growable: false),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
                       children: [
                         OutlinedButton.icon(
-                          style: OutlinedButton.styleFrom(
-                            minimumSize: const Size.fromHeight(44),
-                            alignment: Alignment.centerLeft,
-                          ),
                           onPressed: _showDiscoverPopularModelsDialog,
                           icon: const Icon(Icons.auto_awesome_rounded),
-                          label: const Text('Discover popular'),
+                          label: const Text('Discover'),
                         ),
-                        const SizedBox(height: 8),
                         OutlinedButton.icon(
-                          style: OutlinedButton.styleFrom(
-                            minimumSize: const Size.fromHeight(44),
-                            alignment: Alignment.centerLeft,
-                          ),
                           onPressed: _showAddHuggingFaceDialog,
                           icon: const Icon(Icons.add_link_rounded),
-                          label: const Text('Add GGUF (HF)'),
-                        ),
-                        const SizedBox(height: 8),
-                        OutlinedButton.icon(
-                          style: OutlinedButton.styleFrom(
-                            minimumSize: const Size.fromHeight(44),
-                            alignment: Alignment.centerLeft,
-                          ),
-                          onPressed: _removeAllModels,
-                          icon: const Icon(Icons.delete_sweep_outlined),
-                          label: const Text('Remove all'),
+                          label: const Text('Add model'),
                         ),
                       ],
                     ),
@@ -1336,8 +1627,39 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
                         padding: EdgeInsets.symmetric(vertical: 40),
                         child: Center(child: CircularProgressIndicator()),
                       )
+                    else if (visibleModels.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 32),
+                        child: Column(
+                          children: [
+                            Icon(
+                              Icons.search_off_rounded,
+                              size: 32,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurfaceVariant,
+                            ),
+                            const SizedBox(height: 10),
+                            Text(
+                              'No models match these filters',
+                              style: Theme.of(context).textTheme.titleSmall,
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Try another platform or a broader search.',
+                              textAlign: TextAlign.center,
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant,
+                                  ),
+                            ),
+                          ],
+                        ),
+                      )
                     else
-                      ..._models.map((model) {
+                      ...visibleModels.map((model) {
                         final selectedPath = _resolveModelLoadReference(model);
                         final isActivating = _activatingModel == model.filename;
                         final downloadStateListenable = _downloadUi
@@ -1351,6 +1673,9 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
                               downloadState.task,
                               isWeb: kIsWeb,
                             );
+                            final queueLabel = downloadState.isQueued
+                                ? 'Queued${downloadState.queuePosition == null ? '' : ' (#${downloadState.queuePosition})'}'
+                                : null;
 
                             final card = ModelCard(
                               model: model,
@@ -1359,9 +1684,11 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
                               ),
                               cacheState: _cacheStateByFile[model.filename],
                               isDownloading: downloadState.isDownloading,
+                              isQueued: downloadState.isQueued,
+                              queuePosition: downloadState.queuePosition,
                               progress: downloadState.progress,
                               downloadStatusLabel: detail == null
-                                  ? taskLabel
+                                  ? (queueLabel ?? taskLabel)
                                   : downloadStageLabel(detail, isWeb: kIsWeb),
                               downloadTransferLabel: detail == null
                                   ? null
@@ -1370,6 +1697,8 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
                                       detail,
                                     ),
                               isWeb: kIsWeb,
+                              isAvailableOnCurrentPlatform:
+                                  _isAvailableOnCurrentPlatform(model),
                               isSelected: provider.modelPath == selectedPath,
                               gpuLayers: provider.gpuLayers,
                               contextSize: provider.contextSize,
@@ -1381,6 +1710,9 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
                               onDownload: () =>
                                   unawaited(_downloadModel(model)),
                               onDelete: () => unawaited(_deleteModel(model)),
+                              isCustom: _customModels.contains(model),
+                              onRemoveFromLibrary: () =>
+                                  unawaited(_removeCustomModelEntry(model)),
                               onCancel: () => _cancelDownload(model),
                               includeProjector: _includeProjectorFor(model),
                               onIncludeProjectorChanged: (value) =>
@@ -1658,7 +1990,9 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
                             'mmproj is configured for this model. Use Text only to disable it, or Load mmproj to attach it without a full reload.',
                           if (gpuOffloadDisabled)
                             'GPU layers is 0, so inference will run on CPU. Increase it or choose Max to enable GPU offload.',
-                          'Auto selects Metal on supported Macs. GPU layers controls how much of the model is offloaded; Max requests full offload. Changes apply on next model load.',
+                          provider.autoTuneModelParams
+                              ? 'Auto tuning recalculates GPU layers and context headroom on every model load. Auto selects Metal on supported Macs.'
+                              : 'GPU layers controls how much of the model is offloaded; Max enables Auto tuning with the Auto backend. Changes apply on next model load.',
                         ].join(' '),
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: gpuOffloadDisabled
@@ -2004,6 +2338,7 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _modelSearchController.dispose();
     unawaited(_downloadFinishedSubscription?.cancel());
     if (_ownsDownloadUi) {
       _downloadUi.dispose();
@@ -2335,7 +2670,7 @@ class _PopularModelsDiscoverySheetState
     }
 
     if (entry.model.sizeBytes > 0) {
-      details.add('${entry.model.sizeMb} MB');
+      details.add(entry.model.sizeLabelFor(web: kIsWeb));
     }
 
     if (entry.model.minRamGb > 0) {
@@ -2622,11 +2957,15 @@ class _PopularModelsDiscoverySheetState
                                           spacing: 6,
                                           runSpacing: 6,
                                           children: [
-                                            if (model.supportsVision)
+                                            if (model.supportsVisionFor(
+                                              web: kIsWeb,
+                                            ))
                                               const _CapabilityPill(
                                                 label: 'Vision',
                                               ),
-                                            if (model.supportsAudio)
+                                            if (model.supportsAudioFor(
+                                              web: kIsWeb,
+                                            ))
                                               const _CapabilityPill(
                                                 label: 'Audio',
                                               ),
