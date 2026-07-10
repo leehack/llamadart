@@ -60,6 +60,39 @@ void main() {
       expect(controller.pendingCount, 1);
     });
 
+    test(
+      'active download can be cancelled before controller registration',
+      () async {
+        final controller = ModelDownloadUiController();
+        addTearDown(controller.dispose);
+
+        await controller.enqueueDownload(
+          filename: 'active.gguf',
+          displayName: 'Active model',
+        );
+        final queued = controller.enqueueDownload(
+          filename: 'queued.gguf',
+          displayName: 'Queued model',
+        );
+
+        controller.cancel('active.gguf');
+
+        expect(
+          controller.listenableFor('active.gguf').value.isDownloading,
+          isFalse,
+        );
+        expect(controller.activeFilename, 'active.gguf');
+        expect(controller.canRegisterDownload('active.gguf'), isFalse);
+        controller.completeActiveDownload('active.gguf');
+        expect(await queued, isTrue);
+        expect(controller.activeFilename, 'queued.gguf');
+        expect(
+          controller.listenableFor('queued.gguf').value.isDownloading,
+          isTrue,
+        );
+      },
+    );
+
     test('queue mutations notify shell listeners once per operation', () async {
       final controller = ModelDownloadUiController();
       addTearDown(controller.dispose);

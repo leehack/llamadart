@@ -18,6 +18,8 @@ class ModelDownloadUiController extends ChangeNotifier {
       StreamController<String>.broadcast(sync: true);
   final List<_QueuedDownloadRequest> _queue = [];
   final Map<String, String> _displayNameByFile = {};
+  final Set<String> _registeredActiveDownloads = {};
+  final Set<String> _cancelledBeforeRegistration = {};
   String? _activeFilename;
   bool _isDisposed = false;
 
@@ -92,6 +94,8 @@ class ModelDownloadUiController extends ChangeNotifier {
     if (_activeFilename != filename) {
       return;
     }
+    _registeredActiveDownloads.remove(filename);
+    _cancelledBeforeRegistration.remove(filename);
     _activeFilename = null;
     _displayNameByFile.remove(filename);
     updateState(
@@ -112,6 +116,16 @@ class ModelDownloadUiController extends ChangeNotifier {
   }) {
     _downloadControllers[filename] = controller;
     _downloadSubscriptions[filename] = subscription;
+    if (_activeFilename == filename) {
+      _registeredActiveDownloads.add(filename);
+    }
+  }
+
+  /// Whether the promoted request may register its low-level controller.
+  bool canRegisterDownload(String filename) {
+    return !_isDisposed &&
+        _activeFilename == filename &&
+        !_cancelledBeforeRegistration.contains(filename);
   }
 
   void updateState(
@@ -230,6 +244,23 @@ class ModelDownloadUiController extends ChangeNotifier {
       _notifyGlobalListeners();
       return;
     }
+    if (_activeFilename == filename &&
+        !_registeredActiveDownloads.contains(filename)) {
+      // The queue promotes a request before the screen can register its
+      // low-level controller. Preserve the active slot until the screen
+      // observes this cancellation, preventing a same-file retry from racing
+      // the old attempt's cleanup.
+      _cancelledBeforeRegistration.add(filename);
+      updateState(
+        filename,
+        isDownloading: false,
+        clearProgress: true,
+        clearDetail: true,
+        clearTask: true,
+        clearQueue: true,
+      );
+      return;
+    }
     _downloadControllers[filename]?.cancel();
   }
 
@@ -255,6 +286,7 @@ class ModelDownloadUiController extends ChangeNotifier {
 
     final currentController = _downloadControllers[filename];
     if (controller == null || identical(currentController, controller)) {
+      _registeredActiveDownloads.remove(filename);
       await _downloadControllers.remove(filename)?.dispose();
     } else {
       await controller.dispose();
@@ -266,6 +298,8 @@ class ModelDownloadUiController extends ChangeNotifier {
     final activeFilename = _activeFilename;
     _activeFilename = null;
     _displayNameByFile.clear();
+    _registeredActiveDownloads.clear();
+    _cancelledBeforeRegistration.clear();
     if (activeFilename != null) {
       updateState(
         activeFilename,
@@ -367,6 +401,8 @@ class ModelDownloadUiController extends ChangeNotifier {
       unawaited(controller.dispose());
     }
     _downloadControllers.clear();
+    _registeredActiveDownloads.clear();
+    _cancelledBeforeRegistration.clear();
     for (final notifier in _uiStateByFile.values) {
       notifier.dispose();
     }

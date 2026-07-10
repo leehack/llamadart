@@ -769,12 +769,23 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
     if (!ready) {
       return;
     }
+    if (!_downloadUi.canRegisterDownload(model.filename)) {
+      _downloadUi.completeActiveDownload(model.filename);
+      return;
+    }
+
+    await _disposeDownloadController(model.filename);
+    // The user may cancel while the previous controller is being disposed,
+    // before this attempt has registered a cancellable controller.
+    if (!_downloadUi.canRegisterDownload(model.filename)) {
+      _downloadUi.completeActiveDownload(model.filename);
+      return;
+    }
 
     ModelDownloadController? controller;
     StreamSubscription<ModelDownloadTaskSnapshot>? subscription;
 
     try {
-      await _disposeDownloadController(model.filename);
       _updateDownloadUiState(
         model.filename,
         isDownloading: true,
