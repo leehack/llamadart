@@ -1553,7 +1553,11 @@ class ChatProvider extends ChangeNotifier {
         );
       } else {
         _messages.add(
-          ChatMessage(text: 'Error: ${_formatDisplayError(e)}', isUser: false),
+          ChatMessage(
+            text: 'Error: ${_formatDisplayError(e)}',
+            isUser: false,
+            isInfo: true,
+          ),
         );
       }
     } finally {

@@ -425,10 +425,12 @@ void main() {
       await failingProvider.loadModel();
       await failingProvider.sendMessage('Hello');
 
-      final errorMessage = failingProvider.messages.last.text;
-      expect(errorMessage, contains('https://example.com/model.gguf'));
-      expect(errorMessage, isNot(contains('token=secret')));
-      expect(errorMessage, isNot(contains('signed-fragment')));
+      final errorMessage = failingProvider.messages.last;
+      expect(errorMessage.isInfo, isTrue);
+      expect(failingProvider.canRegenerateLastResponse, isFalse);
+      expect(errorMessage.text, contains('https://example.com/model.gguf'));
+      expect(errorMessage.text, isNot(contains('token=secret')));
+      expect(errorMessage.text, isNot(contains('signed-fragment')));
     });
 
     test(

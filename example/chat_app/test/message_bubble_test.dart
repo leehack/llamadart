@@ -44,4 +44,35 @@ void main() {
     await tester.tap(find.byTooltip('Regenerate response'));
     expect(regenerateCalls, 1);
   });
+
+  testWidgets('copy failure shows feedback without throwing', (tester) async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(SystemChannels.platform, (call) async {
+          if (call.method == 'Clipboard.setData') {
+            throw PlatformException(code: 'clipboard-denied');
+          }
+          return null;
+        });
+    addTearDown(() {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, null);
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: MessageBubble(
+            message: ChatMessage(text: 'A concise answer', isUser: false),
+            isNextSame: false,
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byTooltip('Copy response'));
+    await tester.pump();
+
+    expect(find.text('Could not copy response'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 }

@@ -536,16 +536,26 @@ class _AssistantActionsState extends State<_AssistantActions> {
   bool _hovered = false;
 
   Future<void> _copyResponse() async {
-    await Clipboard.setData(ClipboardData(text: widget.text));
+    try {
+      await Clipboard.setData(ClipboardData(text: widget.text));
+    } catch (_) {
+      if (!mounted) return;
+      _showCopyFeedback('Could not copy response');
+      return;
+    }
     if (!mounted) return;
 
+    _showCopyFeedback('Response copied');
+  }
+
+  void _showCopyFeedback(String message) {
     final messenger = ScaffoldMessenger.maybeOf(context);
     messenger
       ?..hideCurrentSnackBar()
       ..showSnackBar(
-        const SnackBar(
-          content: Text('Response copied'),
-          duration: Duration(milliseconds: 1400),
+        SnackBar(
+          content: Text(message),
+          duration: const Duration(milliseconds: 1400),
         ),
       );
   }
