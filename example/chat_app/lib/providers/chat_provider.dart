@@ -958,7 +958,11 @@ class ChatProvider extends ChangeNotifier {
           normalizedModelPath.contains('gemma-4') ||
           normalizedModelPath.contains('gemma_4') ||
           normalizedModelPath.contains('gemma4');
-      if (isGemma4 && _mmprojLoaded && _supportsVision && !_supportsAudio) {
+      if (isGemma4 &&
+          _settings.modelSupportsAudio &&
+          _mmprojLoaded &&
+          _supportsVision &&
+          !_supportsAudio) {
         _addInfoMessage(
           'This Gemma 4 GGUF projector currently exposes vision only in the '
           'llama.cpp mtmd runtime. Image input is available, but audio input is disabled.',

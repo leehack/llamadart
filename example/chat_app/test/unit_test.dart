@@ -354,6 +354,36 @@ void main() {
       expect(mockEngine.unloadMultimodalProjectorCalls, 1);
     });
 
+    test(
+      'Gemma projector audio warning requires declared audio capability',
+      () async {
+        for (final declaresAudio in [false, true]) {
+          final gemmaProvider = ChatProvider(
+            chatService: MockChatService(engine: MockLlamaEngine()),
+            settingsService: mockSettingsService,
+            initialSettings: ChatSettings(
+              modelPath: 'gemma-4-test.gguf',
+              mmprojPath: 'gemma-4-mmproj.gguf',
+              modelSupportsVision: true,
+              modelSupportsAudio: declaresAudio,
+            ),
+          );
+          addTearDown(gemmaProvider.dispose);
+
+          await gemmaProvider.loadModel();
+
+          expect(
+            gemmaProvider.messages.any(
+              (message) => message.text.contains(
+                'Gemma 4 GGUF projector currently exposes vision only',
+              ),
+            ),
+            declaresAudio,
+          );
+        }
+      },
+    );
+
     test('loadModel failure', () async {
       final failingProvider = ChatProvider(
         chatService: mockChatService,
