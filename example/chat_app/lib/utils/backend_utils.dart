@@ -137,10 +137,10 @@ class BackendUtils {
   static List<GpuBackend> availableBackends({
     required Iterable<String> devices,
     String? activeBackend,
-    bool includeAutoOnWeb = false,
+    bool includeAuto = false,
   }) {
     final backends = <GpuBackend>{GpuBackend.cpu};
-    if (includeAutoOnWeb) {
+    if (includeAuto) {
       backends.add(GpuBackend.auto);
     }
 

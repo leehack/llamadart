@@ -469,7 +469,7 @@ class ModelCard extends StatelessWidget {
                               style: const TextStyle(fontSize: 13),
                             ),
                             Text(
-                              gpuLayers >= 99 ? 'Auto' : gpuLayers.toString(),
+                              gpuLayers >= 99 ? 'Max' : gpuLayers.toString(),
                               style: TextStyle(
                                 fontSize: 13,
                                 fontWeight: FontWeight.bold,
@@ -485,13 +485,11 @@ class ModelCard extends StatelessWidget {
                           min: 0,
                           max: 99,
                           divisions: 99,
-                          label: gpuLayers >= 99
-                              ? 'Auto'
-                              : gpuLayers.toString(),
+                          label: gpuLayers >= 99 ? 'Max' : gpuLayers.toString(),
                           onChanged: (v) => onGpuLayersChanged(v.round()),
                         ),
                         Text(
-                          'Set to 99 for Auto',
+                          'Max requests full GPU offload',
                           style: TextStyle(
                             fontSize: 11,
                             color: colorScheme.onSurfaceVariant.withValues(

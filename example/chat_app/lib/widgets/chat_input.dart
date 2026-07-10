@@ -72,7 +72,8 @@ class _ChatInputState extends State<ChatInput> {
       builder: (context, provider, _) {
         final isGenerating = provider.isGenerating;
         final isReady = provider.isReady;
-        final hasAttachments = provider.stagedParts.isNotEmpty;
+        final stagedParts = provider.stagedParts;
+        final hasAttachments = stagedParts.isNotEmpty;
         final canSubmit =
             !isGenerating && isReady && (_hasDraftText || hasAttachments);
         final sendActionLabel = isGenerating
@@ -112,8 +113,8 @@ class _ChatInputState extends State<ChatInput> {
                       _buildFunctionCallingRow(context, provider),
                       const SizedBox(height: 10),
                     ],
-                    if (provider.stagedParts.isNotEmpty)
-                      _buildStagedPartsStrip(context, provider),
+                    if (hasAttachments)
+                      _buildStagedPartsStrip(context, provider, stagedParts),
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
@@ -216,7 +217,11 @@ class _ChatInputState extends State<ChatInput> {
     );
   }
 
-  Widget _buildStagedPartsStrip(BuildContext context, ChatProvider provider) {
+  Widget _buildStagedPartsStrip(
+    BuildContext context,
+    ChatProvider provider,
+    List<LlamaContentPart> stagedParts,
+  ) {
     final colorScheme = Theme.of(context).colorScheme;
 
     return Container(
@@ -224,10 +229,10 @@ class _ChatInputState extends State<ChatInput> {
       margin: const EdgeInsets.only(bottom: 12),
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
-        itemCount: provider.stagedParts.length,
+        itemCount: stagedParts.length,
         separatorBuilder: (context, index) => const SizedBox(width: 8),
         itemBuilder: (context, index) {
-          final part = provider.stagedParts[index];
+          final part = stagedParts[index];
           return Stack(
             children: [
               Container(

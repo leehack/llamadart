@@ -1975,7 +1975,7 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
     return BackendUtils.availableBackends(
       devices: provider.availableDevices,
       activeBackend: provider.activeBackend,
-      includeAutoOnWeb: true,
+      includeAuto: true,
     );
   }
 

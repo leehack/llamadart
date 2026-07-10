@@ -185,7 +185,8 @@ class _ChatScreenState extends State<ChatScreen> {
               Expanded(
                 child: Consumer<ChatProvider>(
                   builder: (context, provider, _) {
-                    if (provider.messages.isEmpty) {
+                    final messages = provider.messages;
+                    if (messages.isEmpty) {
                       return WelcomeView(
                         isInitializing: provider.isInitializing,
                         error: provider.error,
@@ -202,26 +203,25 @@ class _ChatScreenState extends State<ChatScreen> {
                     return ListView.builder(
                       controller: _scrollController,
                       padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-                      itemCount: provider.messages.length,
+                      itemCount: messages.length,
                       itemBuilder: (context, index) {
-                        final message = provider.messages[index];
+                        final message = messages[index];
                         var isNextSame = false;
-                        if (index + 1 < provider.messages.length) {
+                        if (index + 1 < messages.length) {
                           isNextSame =
-                              provider.messages[index + 1].isUser ==
-                              message.isUser;
+                              messages[index + 1].isUser == message.isUser;
                         }
                         final isStreamingMessage =
                             provider.isGenerating &&
                             !message.isUser &&
                             !message.isInfo &&
-                            index == provider.messages.length - 1;
+                            index == messages.length - 1;
                         return MessageBubble(
                           message: message,
                           isNextSame: isNextSame,
                           isStreaming: isStreamingMessage,
                           onRegenerate:
-                              index == provider.messages.length - 1 &&
+                              index == messages.length - 1 &&
                                   provider.canRegenerateLastResponse
                               ? () =>
                                     unawaited(provider.regenerateLastResponse())

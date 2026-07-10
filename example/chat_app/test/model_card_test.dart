@@ -206,6 +206,28 @@ void main() {
     expect(find.text('Download Projector'), findsOneWidget);
     expect(find.text('Use Text Only'), findsOneWidget);
   });
+
+  testWidgets('maximum GPU layers is not labeled as backend Auto', (
+    tester,
+  ) async {
+    await _pumpCard(
+      tester,
+      model: _ggufModel(),
+      isWeb: false,
+      isDownloaded: true,
+      isSelected: true,
+      gpuLayers: 99,
+      onSelect: () {},
+      onDownload: () {},
+    );
+
+    await tester.tap(find.text('Advanced Settings (Selected)'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Max'), findsOneWidget);
+    expect(find.text('Max requests full GPU offload'), findsOneWidget);
+    expect(find.text('Set to 99 for Auto'), findsNothing);
+  });
 }
 
 Future<void> _pumpCard(
@@ -224,6 +246,8 @@ Future<void> _pumpCard(
   bool includeProjector = true,
   ValueChanged<bool>? onIncludeProjectorChanged,
   double textScale = 1.0,
+  bool isSelected = false,
+  int gpuLayers = 0,
 }) async {
   await tester.pumpWidget(
     MaterialApp(
@@ -244,8 +268,8 @@ Future<void> _pumpCard(
             downloadStatusLabel: downloadStatusLabel,
             downloadTransferLabel: downloadTransferLabel,
             isWeb: isWeb,
-            isSelected: false,
-            gpuLayers: 0,
+            isSelected: isSelected,
+            gpuLayers: gpuLayers,
             contextSize: 2048,
             onGpuLayersChanged: (_) {},
             onContextSizeChanged: (_) {},

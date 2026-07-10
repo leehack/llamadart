@@ -95,9 +95,11 @@ flutter test --run-skipped -t local-only \
 1. Tap the settings control in the top bar.
 2. Adjust **GPU Layers**, **Context Size**, and **Preferred Backend**. Expand
    **Advanced** for Dart and native/bridge log levels.
-   - Backend choices are concrete runtime-detected options (for example:
-     CPU/Vulkan/CUDA for GGUF, or CPU/GPU/NPU where LiteRT-LM exposes them), not
-     `Auto`.
+   - `Auto` selects the best supported runtime; on supported Macs it prefers
+     Metal. The selector also lists concrete runtime-detected options such as
+     CPU/Vulkan/CUDA for GGUF or CPU/GPU/NPU for LiteRT-LM.
+   - **GPU Layers** controls model offload separately: `0` runs on CPU, while
+     **Max** requests full GPU offload. Reload the model to apply changes.
 3. Optionally enable **Function Calling** and edit tool declarations depending on model/template support.
 4. Tap **Load Model** to apply changes.
 
@@ -280,8 +282,10 @@ await prefs.setInt('preferred_backend', backendIndex);
   `flutter run --dart-define=LLAMADART_CHAT_PARALLEL_DOWNLOAD=true`
 
 **Backend list/selection notes:**
-- The settings sheet shows detected runtime backends/devices, not only packaged modules.
-- Legacy saved `Auto` backend preferences are resolved to the best detected backend at runtime.
+- The settings sheet shows `Auto` plus detected runtime backends/devices, not
+  only packaged modules.
+- `Auto` backend preferences are resolved to the best detected backend at model
+  load time.
 
 
 **App crashes on startup:**
