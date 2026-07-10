@@ -81,6 +81,16 @@ class ModelCard extends StatelessWidget {
         canLoadModel && isProjectorMissing && includeProjector;
     final willLoadTextOnly = canLoadModel && isProjectorMissing;
     final clampedProgress = progress.clamp(0.0, 1.0).toDouble();
+    final deleteActionLabel = progress > 0 && !isDownloaded
+        ? 'Cancel & Discard'
+        : hasPartialCache
+        ? 'Delete cached assets'
+        : model.multimodalProjectorSourceFor(web: isWeb) == null
+        ? 'Delete Model'
+        : 'Delete model and mmproj';
+    final downloadToggleLabel = isDownloading
+        ? 'Pause Download'
+        : 'Resume Download';
 
     return Container(
       decoration: BoxDecoration(
@@ -211,15 +221,10 @@ class ModelCard extends StatelessWidget {
                   icon: Icon(
                     Icons.delete_outline_rounded,
                     color: colorScheme.error,
+                    semanticLabel: kIsWeb ? null : deleteActionLabel,
                   ),
                   onPressed: onDelete,
-                  tooltip: progress > 0 && !isDownloaded
-                      ? 'Cancel & Discard'
-                      : hasPartialCache
-                      ? 'Delete cached assets'
-                      : model.multimodalProjectorSourceFor(web: isWeb) == null
-                      ? 'Delete Model'
-                      : 'Delete model and mmproj',
+                  tooltip: deleteActionLabel,
                 ),
             ],
           ),
@@ -403,11 +408,10 @@ class ModelCard extends StatelessWidget {
                           color: isDownloading
                               ? colorScheme.primary
                               : Colors.orange,
+                          semanticLabel: kIsWeb ? null : downloadToggleLabel,
                         ),
                         onPressed: isDownloading ? onCancel : onDownload,
-                        tooltip: isDownloading
-                            ? 'Pause Download'
-                            : 'Resume Download',
+                        tooltip: downloadToggleLabel,
                       ),
                     ),
                   ],
@@ -699,12 +703,16 @@ class ModelCard extends StatelessWidget {
         children: [
           Icon(icon, size: 12, color: foreground),
           const SizedBox(width: 4),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 12,
-              color: foreground,
-              fontWeight: FontWeight.w600,
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 12,
+                color: foreground,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
         ],
@@ -742,12 +750,16 @@ class ModelCard extends StatelessWidget {
         children: [
           Icon(icon, size: 12, color: foreground),
           const SizedBox(width: 4),
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 11,
-              color: foreground,
-              fontWeight: FontWeight.w500,
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 11,
+                color: foreground,
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ),
           const SizedBox(width: 4),

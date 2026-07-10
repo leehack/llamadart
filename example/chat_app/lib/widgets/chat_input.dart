@@ -75,6 +75,9 @@ class _ChatInputState extends State<ChatInput> {
         final hasAttachments = provider.stagedParts.isNotEmpty;
         final canSubmit =
             !isGenerating && isReady && (_hasDraftText || hasAttachments);
+        final sendActionLabel = isGenerating
+            ? 'Stop generation'
+            : 'Send message';
         final colorScheme = Theme.of(context).colorScheme;
         final width = MediaQuery.sizeOf(context).width;
         final isDesktop = width >= 900;
@@ -178,9 +181,7 @@ class _ChatInputState extends State<ChatInput> {
                             shape: BoxShape.circle,
                           ),
                           child: IconButton(
-                            tooltip: isGenerating
-                                ? 'Stop generation'
-                                : 'Send message',
+                            tooltip: sendActionLabel,
                             onPressed: isGenerating
                                 ? () => provider.stopGeneration()
                                 : (canSubmit ? widget.onSend : null),
@@ -188,12 +189,18 @@ class _ChatInputState extends State<ChatInput> {
                                 ? Icon(
                                     Icons.stop_rounded,
                                     color: colorScheme.onErrorContainer,
+                                    semanticLabel: kIsWeb
+                                        ? null
+                                        : sendActionLabel,
                                   )
                                 : Icon(
                                     Icons.arrow_upward_rounded,
                                     color: canSubmit
                                         ? colorScheme.onPrimary
                                         : colorScheme.onSurfaceVariant,
+                                    semanticLabel: kIsWeb
+                                        ? null
+                                        : sendActionLabel,
                                   ),
                           ),
                         ),
@@ -244,7 +251,11 @@ class _ChatInputState extends State<ChatInput> {
                     minimumSize: const Size(24, 24),
                   ),
                   onPressed: () => provider.removeStagedPart(index),
-                  icon: const Icon(Icons.close_rounded, size: 14),
+                  icon: const Icon(
+                    Icons.close_rounded,
+                    size: 14,
+                    semanticLabel: kIsWeb ? null : 'Remove attachment',
+                  ),
                   tooltip: 'Remove attachment',
                 ),
               ),
@@ -340,7 +351,11 @@ class _ChatInputState extends State<ChatInput> {
         !provider.supportsAudio;
 
     return PopupMenuButton<String>(
-      icon: Icon(Icons.add_circle_outline_rounded, color: colorScheme.primary),
+      icon: Icon(
+        Icons.add_circle_outline_rounded,
+        color: colorScheme.primary,
+        semanticLabel: kIsWeb ? null : 'Add attachment',
+      ),
       tooltip: 'Add attachment',
       onSelected: (value) {
         if (value == 'image') {

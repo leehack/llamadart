@@ -2379,7 +2379,10 @@ class _PopularModelsDiscoverySheetState
                           unawaited(_load(forceRefresh: true));
                         },
                   tooltip: 'Refresh popularity',
-                  icon: const Icon(Icons.refresh_rounded),
+                  icon: const Icon(
+                    Icons.refresh_rounded,
+                    semanticLabel: kIsWeb ? null : 'Refresh popularity',
+                  ),
                 ),
               ],
             ),
@@ -2429,7 +2432,10 @@ class _PopularModelsDiscoverySheetState
                                 });
                                 _scheduleRefresh();
                               },
-                              icon: const Icon(Icons.clear_rounded),
+                              icon: const Icon(
+                                Icons.clear_rounded,
+                                semanticLabel: kIsWeb ? null : 'Clear search',
+                              ),
                             ),
                     ),
                   ),

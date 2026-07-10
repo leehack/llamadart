@@ -210,10 +210,10 @@ class ChatProvider extends ChangeNotifier {
     if (modelPath == null || modelPath.isEmpty) {
       return 'No model';
     }
-    final normalized = modelPath.replaceAll('\\', '/');
-    final pieces = normalized.split('/');
-    final file = pieces.isNotEmpty ? pieces.last : modelPath;
-    return file.split('?').first;
+    final withoutSensitiveSuffix = modelPath.split('?').first.split('#').first;
+    final normalized = withoutSensitiveSuffix.replaceAll('\\', '/');
+    final pieces = normalized.split('/').where((part) => part.isNotEmpty);
+    return pieces.isEmpty ? 'Selected model' : pieces.last;
   }
 
   bool get toolsEnabled => _settings.toolsEnabled;
@@ -1099,7 +1099,8 @@ class ChatProvider extends ChangeNotifier {
   Future<void> regenerateLastResponse() async {
     if (!canRegenerateLastResponse) return;
 
-    final replacedTokenCount = _messages.last.tokenCount ?? 0;
+    final replacedTokenCount =
+        _messages.last.generatedTokenCount ?? _messages.last.tokenCount ?? 0;
     var userIndex = -1;
     for (var index = _messages.length - 2; index >= 0; index--) {
       if (_messages[index].isUser && !_messages[index].isInfo) {
@@ -1478,7 +1479,9 @@ class ChatProvider extends ChangeNotifier {
           }
         }
       }
+      _removeEmptyAssistantPlaceholder();
     } catch (e) {
+      _removeEmptyAssistantPlaceholder();
       final errorText = e.toString();
       if (e is TimeoutException) {
         _chatService.cancelGeneration();
@@ -1549,7 +1552,9 @@ class ChatProvider extends ChangeNotifier {
           ),
         );
       } else {
-        _messages.add(ChatMessage(text: 'Error: $e', isUser: false));
+        _messages.add(
+          ChatMessage(text: 'Error: ${_formatDisplayError(e)}', isUser: false),
+        );
       }
     } finally {
       final generatedTokens = generationResult.generatedTokens;
@@ -1587,6 +1592,11 @@ class ChatProvider extends ChangeNotifier {
       }
 
       final effectiveGeneratedTokens = nativeEvalTokens ?? generatedTokens;
+      if (_messages.isNotEmpty &&
+          !_messages.last.isUser &&
+          !_messages.last.isInfo) {
+        _messages.last.generatedTokenCount = effectiveGeneratedTokens;
+      }
       if (nativeEvalTokens != null &&
           nativeEvalTokens != appliedGeneratedTokenDeltas) {
         _currentTokens = math.max(
@@ -1619,6 +1629,22 @@ class ChatProvider extends ChangeNotifier {
       _isGenerating = false;
       _syncActiveConversationSnapshot();
       notifyListeners();
+    }
+  }
+
+  void _removeEmptyAssistantPlaceholder() {
+    if (_messages.isEmpty) {
+      return;
+    }
+
+    final last = _messages.last;
+    final hasContentParts = last.parts?.isNotEmpty ?? false;
+    final text = last.text.trim();
+    if (!last.isUser &&
+        !last.isInfo &&
+        !hasContentParts &&
+        (text.isEmpty || text == '...')) {
+      _messages.removeLast();
     }
   }
 

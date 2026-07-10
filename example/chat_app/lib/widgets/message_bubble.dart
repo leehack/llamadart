@@ -571,7 +571,10 @@ class _AssistantActionsState extends State<_AssistantActions> {
                 visualDensity: VisualDensity.compact,
                 iconSize: 17,
                 color: colorScheme.onSurfaceVariant,
-                icon: const Icon(Icons.content_copy_rounded),
+                icon: const Icon(
+                  Icons.content_copy_rounded,
+                  semanticLabel: kIsWeb ? null : 'Copy response',
+                ),
               ),
               if (widget.onRegenerate != null)
                 IconButton(
@@ -580,7 +583,10 @@ class _AssistantActionsState extends State<_AssistantActions> {
                   visualDensity: VisualDensity.compact,
                   iconSize: 18,
                   color: colorScheme.onSurfaceVariant,
-                  icon: const Icon(Icons.refresh_rounded),
+                  icon: const Icon(
+                    Icons.refresh_rounded,
+                    semanticLabel: kIsWeb ? null : 'Regenerate response',
+                  ),
                 ),
             ],
           ),

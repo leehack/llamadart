@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:llamadart/llamadart.dart';
 import 'package:provider/provider.dart';
@@ -279,7 +280,10 @@ class RuntimeStatusPanel extends StatelessWidget {
                   IconButton(
                     onPressed: () => Navigator.of(context).pop(),
                     tooltip: 'Close runtime details',
-                    icon: const Icon(Icons.close_rounded),
+                    icon: const Icon(
+                      Icons.close_rounded,
+                      semanticLabel: kIsWeb ? null : 'Close runtime details',
+                    ),
                   ),
                 ],
               ),

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -124,13 +125,24 @@ class _AppShellScreenState extends State<AppShellScreen> {
                                 IconButton(
                                   onPressed: () => Navigator.of(context).pop(),
                                   tooltip: 'Close settings',
-                                  icon: const Icon(Icons.close_rounded),
+                                  icon: const Icon(
+                                    Icons.close_rounded,
+                                    semanticLabel: kIsWeb
+                                        ? null
+                                        : 'Close settings',
+                                  ),
                                 ),
                                 const SizedBox(width: 4),
-                                Text(
-                                  'Settings',
-                                  style: Theme.of(context).textTheme.titleLarge
-                                      ?.copyWith(fontWeight: FontWeight.w700),
+                                Expanded(
+                                  child: Text(
+                                    'Settings',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleLarge
+                                        ?.copyWith(fontWeight: FontWeight.w700),
+                                  ),
                                 ),
                               ],
                             ),
@@ -268,6 +280,9 @@ class _ShellTopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final topInset = MediaQuery.paddingOf(context).top;
+    final settingsActionLabel = settingsPanelOpen
+        ? 'Close model and inference settings'
+        : 'Open model and inference settings';
 
     return Container(
       padding: EdgeInsets.fromLTRB(12, topInset + 10, 12, 10),
@@ -286,7 +301,10 @@ class _ShellTopBar extends StatelessWidget {
           if (showMenuButton)
             IconButton(
               onPressed: onMenuPressed,
-              icon: const Icon(Icons.menu_rounded),
+              icon: const Icon(
+                Icons.menu_rounded,
+                semanticLabel: kIsWeb ? null : 'Open navigation menu',
+              ),
               tooltip: 'Open navigation menu',
             ),
           const SizedBox(width: 6),
@@ -303,11 +321,10 @@ class _ShellTopBar extends StatelessWidget {
           ),
           IconButton(
             onPressed: onOpenSettings,
-            tooltip: settingsPanelOpen
-                ? 'Close model and inference settings'
-                : 'Open model and inference settings',
+            tooltip: settingsActionLabel,
             icon: Icon(
               settingsPanelOpen ? Icons.close_rounded : Icons.tune_rounded,
+              semanticLabel: kIsWeb ? null : settingsActionLabel,
             ),
           ),
         ],
@@ -520,6 +537,7 @@ class _ConversationTileState extends State<_ConversationTile> {
                       icon: Icon(
                         Icons.delete_outline_rounded,
                         color: colorScheme.error,
+                        semanticLabel: kIsWeb ? null : 'Delete conversation',
                       ),
                     ),
                   ),

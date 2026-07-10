@@ -6,6 +6,12 @@
   copy/regenerate actions for assistant responses. Model downloads now remain
   active when settings closes or switches between drawer and pinned layouts.
 
+* Hardened the runnable chat app for narrow windows, 200% text scaling, and
+  macOS assistive technology; removed stale assistant placeholders after empty
+  or failed generations; kept context accounting stable when regenerating a
+  response; and redacted signed model URL parameters from labels and generation
+  errors.
+
 ## 0.8.14
 
 * Updated the runnable chat app's web runtimes to pinned WebGPU bridge assets

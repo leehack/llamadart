@@ -56,4 +56,21 @@ void main() {
     expect(find.widgetWithText(FilledButton, 'Select model'), findsNothing);
     expect(find.widgetWithText(OutlinedButton, 'Change model'), findsNothing);
   });
+
+  testWidgets('does not expose remote URL credentials in the model label', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      buildSubject(
+        modelPath:
+            'https://example.com/models/tiny.gguf?token=secret#signed-fragment',
+        onSelectModel: () {},
+        onRetry: () {},
+      ),
+    );
+
+    expect(find.text('tiny.gguf'), findsOneWidget);
+    expect(find.textContaining('token=secret'), findsNothing);
+    expect(find.textContaining('signed-fragment'), findsNothing);
+  });
 }

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -246,7 +247,10 @@ class _ChatScreenState extends State<ChatScreen> {
                 heroTag: 'scroll-to-bottom',
                 onPressed: _scrollToBottom,
                 tooltip: 'Jump to latest',
-                child: const Icon(Icons.keyboard_arrow_down_rounded),
+                child: const Icon(
+                  Icons.keyboard_arrow_down_rounded,
+                  semanticLabel: kIsWeb ? null : 'Jump to latest',
+                ),
               ),
             ),
         ],
