@@ -263,6 +263,20 @@ class ModelDownloadUiController extends ChangeNotifier {
 
   Future<void> disposeDownloads() async {
     _clearQueuedDownloads();
+    final activeFilename = _activeFilename;
+    _activeFilename = null;
+    _displayNameByFile.clear();
+    if (activeFilename != null) {
+      updateState(
+        activeFilename,
+        isDownloading: false,
+        clearProgress: true,
+        clearDetail: true,
+        clearTask: true,
+        clearQueue: true,
+        notifyGlobalListeners: false,
+      );
+    }
     for (final subscription in _downloadSubscriptions.values) {
       await subscription.cancel();
     }

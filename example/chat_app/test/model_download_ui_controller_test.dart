@@ -86,6 +86,33 @@ void main() {
       expect(notifications, 4);
     });
 
+    test('disposeDownloads clears active and queued shell state', () async {
+      final controller = ModelDownloadUiController();
+      addTearDown(controller.dispose);
+
+      await controller.enqueueDownload(
+        filename: 'active.gguf',
+        displayName: 'Active model',
+      );
+      final queued = controller.enqueueDownload(
+        filename: 'queued.gguf',
+        displayName: 'Queued model',
+      );
+
+      await controller.disposeDownloads();
+
+      expect(await queued, isFalse);
+      expect(controller.activeFilename, isNull);
+      expect(controller.activeDisplayName, isNull);
+      expect(controller.pendingCount, 0);
+      expect(controller.hasPendingDownloads, isFalse);
+      expect(
+        controller.listenableFor('active.gguf').value.isDownloading,
+        isFalse,
+      );
+      expect(controller.listenableFor('queued.gguf').value.isQueued, isFalse);
+    });
+
     test('clearUiState resets active notifiers without disposing them', () {
       final controller = ModelDownloadUiController();
       addTearDown(controller.dispose);

@@ -1071,6 +1071,7 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
     final provider = context.read<ChatProvider>();
 
     _pauseActiveDownloads();
+    await _downloadUi.disposeDownloads();
 
     final snapshot = List<DownloadableModel>.from(_models);
     for (final model in snapshot) {
@@ -1084,7 +1085,6 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
     _downloadUi.clearUiState();
     _downloadUi.clearRateTracking();
     _includeProjectorByFile.clear();
-    await _downloadUi.disposeDownloads();
     await _refreshDownloadedModelState(clearCacheStates: true);
 
     await _saveCustomModels();
@@ -1491,12 +1491,7 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
                         PopupMenuButton<_ModelLibraryMenuAction>(
                           tooltip: 'Model library actions',
                           icon: const Icon(Icons.more_horiz_rounded),
-                          onSelected: (action) {
-                            switch (action) {
-                              case _ModelLibraryMenuAction.removeAll:
-                                unawaited(_removeAllModels());
-                            }
-                          },
+                          onSelected: (_) => unawaited(_removeAllModels()),
                           itemBuilder: (context) => [
                             PopupMenuItem(
                               value: _ModelLibraryMenuAction.removeAll,

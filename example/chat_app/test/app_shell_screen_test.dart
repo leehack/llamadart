@@ -73,6 +73,54 @@ void main() {
       downloadUi.completeActiveDownload('active.gguf');
     });
 
+    testWidgets('download activity keeps an open pinned settings panel open', (
+      tester,
+    ) async {
+      final oldSize = tester.view.physicalSize;
+      final oldRatio = tester.view.devicePixelRatio;
+      tester.view
+        ..physicalSize = const Size(1800, 900)
+        ..devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view
+          ..physicalSize = oldSize
+          ..devicePixelRatio = oldRatio;
+      });
+
+      final provider = ChatProvider(
+        chatService: MockChatService(),
+        settingsService: MockSettingsService(),
+      );
+      addTearDown(provider.dispose);
+      final downloadUi = ModelDownloadUiController();
+      addTearDown(downloadUi.dispose);
+      await downloadUi.enqueueDownload(
+        filename: 'active.gguf',
+        displayName: 'Active model',
+      );
+      downloadUi.updateState('active.gguf', progress: 0.1);
+
+      await tester.pumpWidget(
+        ChangeNotifierProvider<ChatProvider>.value(
+          value: provider,
+          child: MaterialApp(
+            home: AppShellScreen(downloadUiController: downloadUi),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byTooltip('Open model and inference settings'));
+      await tester.pumpAndSettle();
+      expect(find.text('Model parameters'), findsOneWidget);
+
+      await tester.tap(find.text('Active model'));
+      await tester.pumpAndSettle();
+      expect(find.text('Model parameters'), findsOneWidget);
+
+      downloadUi.completeActiveDownload('active.gguf');
+    });
+
     testWidgets('keeps desktop settings opt-in and opens manage models view', (
       tester,
     ) async {

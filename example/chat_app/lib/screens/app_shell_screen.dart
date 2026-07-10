@@ -178,6 +178,8 @@ class _AppShellScreenState extends State<AppShellScreen> {
                   showMenuButton: !isDesktop,
                   settingsPanelOpen: showPinnedSettingsPanel,
                   onMenuPressed: () => _scaffoldKey.currentState?.openDrawer(),
+                  onOpenDownloadDetails: () =>
+                      _openSettingsPanel(canPin: canPinSettingsPanel),
                   onOpenSettings: () =>
                       _toggleSettingsPanel(canPin: canPinSettingsPanel),
                 ),
@@ -282,6 +284,7 @@ class _ShellTopBar extends StatelessWidget {
   final bool showMenuButton;
   final bool settingsPanelOpen;
   final VoidCallback onMenuPressed;
+  final VoidCallback onOpenDownloadDetails;
   final VoidCallback onOpenSettings;
 
   const _ShellTopBar({
@@ -289,6 +292,7 @@ class _ShellTopBar extends StatelessWidget {
     required this.showMenuButton,
     required this.settingsPanelOpen,
     required this.onMenuPressed,
+    required this.onOpenDownloadDetails,
     required this.onOpenSettings,
   });
 
@@ -336,7 +340,7 @@ class _ShellTopBar extends StatelessWidget {
           ),
           _DownloadActivityButton(
             controller: downloadUi,
-            onPressed: onOpenSettings,
+            onPressed: onOpenDownloadDetails,
           ),
           const SizedBox(width: 6),
           IconButton(

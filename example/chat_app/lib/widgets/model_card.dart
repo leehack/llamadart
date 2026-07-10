@@ -284,11 +284,10 @@ class ModelCard extends StatelessWidget {
                   tooltip: 'Model actions',
                   icon: const Icon(Icons.more_horiz_rounded),
                   onSelected: (action) {
-                    switch (action) {
-                      case _ModelCardMenuAction.removeFromLibrary:
-                        onRemoveFromLibrary?.call();
-                      case _ModelCardMenuAction.deleteCachedAssets:
-                        onDelete();
+                    if (action == _ModelCardMenuAction.removeFromLibrary) {
+                      onRemoveFromLibrary?.call();
+                    } else {
+                      onDelete();
                     }
                   },
                   itemBuilder: (context) => [
