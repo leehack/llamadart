@@ -199,6 +199,34 @@ void main() {
       expect(find.text(general.name), findsOneWidget);
     });
 
+    testWidgets('desktop search uses native capability profile', (
+      tester,
+    ) async {
+      SharedPreferences.setMockInitialValues({});
+      const desktopAudio = DownloadableModel(
+        name: 'Desktop Audio Model',
+        description: 'Desktop model with native-only audio.',
+        url: 'https://example.com/desktop-audio.gguf',
+        filename: 'desktop-audio.gguf',
+        sizeBytes: 20,
+        availability: ModelAvailability.nativeDesktop,
+        supportsAudio: true,
+        webSupportsAudio: false,
+      );
+
+      await _pumpScreen(
+        tester,
+        modelService: _HoldingModelService(),
+        models: const [desktopAudio],
+      );
+
+      await tester.tap(find.widgetWithText(ChoiceChip, 'Desktop'));
+      await tester.enterText(find.byType(TextField).first, 'audio');
+      await tester.pump();
+
+      expect(find.text(desktopAudio.name), findsOneWidget);
+    });
+
     testWidgets('pause button cancels the active controller download', (
       tester,
     ) async {

@@ -137,6 +137,11 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
     if (query.isEmpty) {
       return true;
     }
+    // A Web user can browse the Desktop catalog. In that scope, search the
+    // native capability profile rather than hiding features unavailable only
+    // in the browser runtime.
+    final useWebCapabilities =
+        kIsWeb && _modelPlatformFilter != _ModelPlatformFilter.desktop;
     final searchable = <String>[
       model.name,
       model.description,
@@ -144,9 +149,9 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
       model.filename,
       if (model.supportsToolCalling) 'tools function calling',
       if (model.supportsThinking) 'thinking reasoning',
-      if (model.supportsVisionFor(web: kIsWeb)) 'vision image',
-      if (model.supportsAudioFor(web: kIsWeb)) 'audio voice',
-      if (model.supportsVideoFor(web: kIsWeb)) 'video',
+      if (model.supportsVisionFor(web: useWebCapabilities)) 'vision image',
+      if (model.supportsAudioFor(web: useWebCapabilities)) 'audio voice',
+      if (model.supportsVideoFor(web: useWebCapabilities)) 'video',
     ].join(' ').toLowerCase();
     return query.split(RegExp(r'\s+')).every(searchable.contains);
   }
