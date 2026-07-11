@@ -187,7 +187,7 @@ class _ChatInputState extends State<ChatInput> {
     }
     final message = error is ClipboardAttachmentException
         ? error.message
-        : 'Couldn\'t read the clipboard attachment.';
+        : 'Could not read the clipboard attachment.';
     _showMessage(message);
   }
 

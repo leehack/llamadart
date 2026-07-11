@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:ui' show Tristate;
 
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
@@ -37,14 +36,13 @@ void main() {
       );
 
       expect(find.text('Model library'), findsOneWidget);
-      final focusedCard = find.byKey(
-        ValueKey('model-card-focus-${model.filename}'),
+      final highlightedCard = find.byKey(
+        ValueKey('model-card-highlight-${model.filename}'),
       );
-      expect(focusedCard, findsOneWidget);
-      expect(
-        tester.getSemantics(focusedCard).flagsCollection.isFocused,
-        Tristate.isTrue,
-      );
+      expect(highlightedCard, findsOneWidget);
+      final container = tester.widget<AnimatedContainer>(highlightedCard);
+      final decoration = container.decoration! as BoxDecoration;
+      expect(decoration.border, isNotNull);
     });
 
     testWidgets('uncached custom model can be removed from library', (

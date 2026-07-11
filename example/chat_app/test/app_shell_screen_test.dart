@@ -69,8 +69,10 @@ void main() {
       expect(find.text('1 queued'), findsOneWidget);
 
       await tester.tap(find.textContaining('42%'));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 600));
+      await _pumpUntil(
+        tester,
+        () => find.text('Model library').evaluate().isNotEmpty,
+      );
       expect(find.text('Model library'), findsOneWidget);
       final settings = tester.widget<ManageModelsScreen>(
         find.byType(ManageModelsScreen),
@@ -126,8 +128,12 @@ void main() {
       expect(find.text('Model parameters'), findsOneWidget);
 
       await tester.tap(find.text(activeModel.name).first);
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 600));
+      await _pumpUntil(tester, () {
+        final screen = find.byType(ManageModelsScreen);
+        return screen.evaluate().length == 1 &&
+            tester.widget<ManageModelsScreen>(screen).focusModelFilename ==
+                activeModel.filename;
+      });
       expect(find.text('Model parameters'), findsOneWidget);
       final settings = tester.widget<ManageModelsScreen>(
         find.byType(ManageModelsScreen),
@@ -469,4 +475,14 @@ void main() {
       expect(provider.conversations, hasLength(1));
     });
   });
+}
+
+Future<void> _pumpUntil(WidgetTester tester, bool Function() condition) async {
+  for (var attempt = 0; attempt < 100; attempt++) {
+    await tester.pump(const Duration(milliseconds: 16));
+    if (condition()) {
+      return;
+    }
+  }
+  fail('Timed out waiting for the expected UI state.');
 }

@@ -1788,93 +1788,89 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
 
                             final isFocused =
                                 _focusedModelFilename == model.filename;
-                            return Semantics(
+                            return AnimatedContainer(
                               key: ValueKey(
-                                'model-card-focus-${model.filename}',
+                                'model-card-highlight-${model.filename}',
                               ),
-                              container: true,
-                              focused: isFocused,
-                              child: AnimatedContainer(
-                                duration: const Duration(milliseconds: 220),
-                                curve: Curves.easeOut,
-                                padding: EdgeInsets.all(isFocused ? 3 : 0),
-                                margin: const EdgeInsets.only(bottom: 14),
-                                decoration: BoxDecoration(
-                                  borderRadius: BorderRadius.circular(23),
-                                  border: isFocused
-                                      ? Border.all(
-                                          color: Theme.of(
-                                            context,
-                                          ).colorScheme.primary,
-                                          width: 2,
-                                        )
-                                      : null,
+                              duration: const Duration(milliseconds: 220),
+                              curve: Curves.easeOut,
+                              padding: EdgeInsets.all(isFocused ? 3 : 0),
+                              margin: const EdgeInsets.only(bottom: 14),
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(23),
+                                border: isFocused
+                                    ? Border.all(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.primary,
+                                        width: 2,
+                                      )
+                                    : null,
+                              ),
+                              child: Stack(
+                                key: _modelCardKeys.putIfAbsent(
+                                  model.filename,
+                                  GlobalKey.new,
                                 ),
-                                child: Stack(
-                                  key: _modelCardKeys.putIfAbsent(
-                                    model.filename,
-                                    GlobalKey.new,
-                                  ),
-                                  children: [
-                                    card,
-                                    if (isActivating)
-                                      Positioned.fill(
-                                        child: DecoratedBox(
-                                          decoration: BoxDecoration(
-                                            color: Colors.black.withValues(
-                                              alpha: 0.35,
-                                            ),
-                                            borderRadius: BorderRadius.circular(
-                                              20,
-                                            ),
+                                children: [
+                                  card,
+                                  if (isActivating)
+                                    Positioned.fill(
+                                      child: DecoratedBox(
+                                        decoration: BoxDecoration(
+                                          color: Colors.black.withValues(
+                                            alpha: 0.35,
                                           ),
-                                          child: Center(
-                                            child: Container(
-                                              width: 210,
-                                              padding: const EdgeInsets.all(12),
-                                              decoration: BoxDecoration(
-                                                color: Colors.black.withValues(
-                                                  alpha: 0.45,
-                                                ),
-                                                borderRadius:
-                                                    BorderRadius.circular(14),
-                                                border: Border.all(
-                                                  color: Colors.white
-                                                      .withValues(alpha: 0.16),
+                                          borderRadius: BorderRadius.circular(
+                                            20,
+                                          ),
+                                        ),
+                                        child: Center(
+                                          child: Container(
+                                            width: 210,
+                                            padding: const EdgeInsets.all(12),
+                                            decoration: BoxDecoration(
+                                              color: Colors.black.withValues(
+                                                alpha: 0.45,
+                                              ),
+                                              borderRadius:
+                                                  BorderRadius.circular(14),
+                                              border: Border.all(
+                                                color: Colors.white.withValues(
+                                                  alpha: 0.16,
                                                 ),
                                               ),
-                                              child: Column(
-                                                mainAxisSize: MainAxisSize.min,
-                                                children: [
-                                                  Text(
-                                                    hasLoadProgress
-                                                        ? 'Loading ${loadProgressLabel!}'
-                                                        : 'Loading model...',
-                                                    style: Theme.of(context)
-                                                        .textTheme
-                                                        .bodySmall
-                                                        ?.copyWith(
-                                                          color: Colors.white,
-                                                          fontWeight:
-                                                              FontWeight.w600,
-                                                        ),
-                                                  ),
-                                                  const SizedBox(height: 8),
-                                                  LinearProgressIndicator(
-                                                    value: hasLoadProgress
-                                                        ? provider
-                                                              .loadingProgress
-                                                        : null,
-                                                    minHeight: 6,
-                                                  ),
-                                                ],
-                                              ),
+                                            ),
+                                            child: Column(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Text(
+                                                  hasLoadProgress
+                                                      ? 'Loading ${loadProgressLabel!}'
+                                                      : 'Loading model...',
+                                                  style: Theme.of(context)
+                                                      .textTheme
+                                                      .bodySmall
+                                                      ?.copyWith(
+                                                        color: Colors.white,
+                                                        fontWeight:
+                                                            FontWeight.w600,
+                                                      ),
+                                                ),
+                                                const SizedBox(height: 8),
+                                                LinearProgressIndicator(
+                                                  value: hasLoadProgress
+                                                      ? provider.loadingProgress
+                                                      : null,
+                                                  minHeight: 6,
+                                                ),
+                                              ],
                                             ),
                                           ),
                                         ),
                                       ),
-                                  ],
-                                ),
+                                    ),
+                                ],
                               ),
                             );
                           },
