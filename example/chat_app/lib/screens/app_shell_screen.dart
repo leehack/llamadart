@@ -11,7 +11,9 @@ import 'chat_screen.dart';
 import 'manage_models_screen.dart';
 
 class AppShellScreen extends StatefulWidget {
-  const AppShellScreen({super.key});
+  final ModelDownloadUiController? downloadUiController;
+
+  const AppShellScreen({super.key, this.downloadUiController});
 
   @override
   State<AppShellScreen> createState() => _AppShellScreenState();
@@ -19,12 +21,22 @@ class AppShellScreen extends StatefulWidget {
 
 class _AppShellScreenState extends State<AppShellScreen> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
-  final ModelDownloadUiController _downloadUi = ModelDownloadUiController();
+  late final ModelDownloadUiController _downloadUi;
+  late final bool _ownsDownloadUi;
   bool _pinnedSettingsOpen = false;
 
   @override
+  void initState() {
+    super.initState();
+    _downloadUi = widget.downloadUiController ?? ModelDownloadUiController();
+    _ownsDownloadUi = widget.downloadUiController == null;
+  }
+
+  @override
   void dispose() {
-    _downloadUi.dispose();
+    if (_ownsDownloadUi) {
+      _downloadUi.dispose();
+    }
     super.dispose();
   }
 
@@ -162,9 +174,12 @@ class _AppShellScreenState extends State<AppShellScreen> {
             child: Column(
               children: [
                 _ShellTopBar(
+                  downloadUi: _downloadUi,
                   showMenuButton: !isDesktop,
                   settingsPanelOpen: showPinnedSettingsPanel,
                   onMenuPressed: () => _scaffoldKey.currentState?.openDrawer(),
+                  onOpenDownloadDetails: () =>
+                      _openSettingsPanel(canPin: canPinSettingsPanel),
                   onOpenSettings: () =>
                       _toggleSettingsPanel(canPin: canPinSettingsPanel),
                 ),
@@ -265,15 +280,19 @@ class _AppShellScreenState extends State<AppShellScreen> {
 }
 
 class _ShellTopBar extends StatelessWidget {
+  final ModelDownloadUiController downloadUi;
   final bool showMenuButton;
   final bool settingsPanelOpen;
   final VoidCallback onMenuPressed;
+  final VoidCallback onOpenDownloadDetails;
   final VoidCallback onOpenSettings;
 
   const _ShellTopBar({
+    required this.downloadUi,
     required this.showMenuButton,
     required this.settingsPanelOpen,
     required this.onMenuPressed,
+    required this.onOpenDownloadDetails,
     required this.onOpenSettings,
   });
 
@@ -319,6 +338,11 @@ class _ShellTopBar extends StatelessWidget {
               ),
             ),
           ),
+          _DownloadActivityButton(
+            controller: downloadUi,
+            onPressed: onOpenDownloadDetails,
+          ),
+          const SizedBox(width: 6),
           IconButton(
             onPressed: onOpenSettings,
             tooltip: settingsActionLabel,
@@ -329,6 +353,158 @@ class _ShellTopBar extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _DownloadActivityButton extends StatelessWidget {
+  final ModelDownloadUiController controller;
+  final VoidCallback onPressed;
+
+  const _DownloadActivityButton({
+    required this.controller,
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: controller,
+      builder: (context, _) {
+        if (!controller.hasPendingDownloads) {
+          return const SizedBox.shrink();
+        }
+
+        final colorScheme = Theme.of(context).colorScheme;
+        final filename = controller.activeFilename;
+        final state = controller.activeState;
+        final progress = state?.progress.clamp(0.0, 1.0) ?? 0.0;
+        final displayName = controller.activeDisplayName ?? filename ?? 'Model';
+        final detail = state?.detail;
+        final stageLabel = detail != null
+            ? downloadStageLabel(detail, isWeb: kIsWeb)
+            : downloadTaskLabel(state?.task, isWeb: kIsWeb) ??
+                  (kIsWeb ? 'Preparing cache' : 'Preparing download');
+        final queuedCount = controller.queuedCount;
+        final width = MediaQuery.sizeOf(context).width;
+        final textScale = MediaQuery.textScalerOf(context).scale(1);
+        final compact = width < 720 || textScale > 1.4;
+        final percentLabel = '${(progress * 100).toStringAsFixed(0)}%';
+        final semanticsLabel = [
+          '$stageLabel for $displayName, $percentLabel',
+          if (queuedCount > 0) '$queuedCount queued',
+        ].join(', ');
+
+        return Semantics(
+          button: true,
+          label: semanticsLabel,
+          child: Tooltip(
+            message: '$semanticsLabel. Open download details.',
+            child: Material(
+              color: colorScheme.primaryContainer.withValues(alpha: 0.58),
+              borderRadius: BorderRadius.circular(10),
+              child: InkWell(
+                onTap: onPressed,
+                borderRadius: BorderRadius.circular(10),
+                child: Padding(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: compact ? 8 : 10,
+                    vertical: 7,
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      SizedBox(
+                        width: 24,
+                        height: 24,
+                        child: Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            CircularProgressIndicator(
+                              value: progress > 0 ? progress : null,
+                              strokeWidth: 2.5,
+                              color: colorScheme.primary,
+                              backgroundColor: colorScheme.primary.withValues(
+                                alpha: 0.16,
+                              ),
+                            ),
+                            Icon(
+                              Icons.arrow_downward_rounded,
+                              size: 13,
+                              color: colorScheme.onPrimaryContainer,
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      if (compact)
+                        Text(
+                          percentLabel,
+                          style: TextStyle(
+                            color: colorScheme.onPrimaryContainer,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        )
+                      else
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 190),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                displayName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: colorScheme.onPrimaryContainer,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              Text(
+                                '$stageLabel • $percentLabel',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: colorScheme.onPrimaryContainer
+                                      .withValues(alpha: 0.76),
+                                  fontSize: 10,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      if (queuedCount > 0) ...[
+                        const SizedBox(width: 7),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: colorScheme.primary,
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            compact ? '+$queuedCount' : '$queuedCount queued',
+                            style: TextStyle(
+                              color: colorScheme.onPrimary,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }

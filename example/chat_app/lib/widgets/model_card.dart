@@ -3,15 +3,20 @@ import 'package:flutter/material.dart';
 import '../models/downloadable_model.dart';
 import '../services/model_service_base.dart';
 
+enum _ModelCardMenuAction { removeFromLibrary, deleteCachedAssets }
+
 class ModelCard extends StatelessWidget {
   final DownloadableModel model;
   final bool isDownloaded;
   final ModelProfileCacheState? cacheState;
   final bool isDownloading;
+  final bool isQueued;
+  final int? queuePosition;
   final double progress;
   final String? downloadStatusLabel;
   final String? downloadTransferLabel;
   final bool isWeb;
+  final bool isAvailableOnCurrentPlatform;
   final bool isSelected;
   final int gpuLayers;
   final int contextSize;
@@ -20,6 +25,8 @@ class ModelCard extends StatelessWidget {
   final VoidCallback? onSelect;
   final VoidCallback onDownload;
   final VoidCallback onDelete;
+  final bool isCustom;
+  final VoidCallback? onRemoveFromLibrary;
   final VoidCallback? onCancel;
   final bool includeProjector;
   final ValueChanged<bool>? onIncludeProjectorChanged;
@@ -30,10 +37,13 @@ class ModelCard extends StatelessWidget {
     required this.isDownloaded,
     this.cacheState,
     required this.isDownloading,
+    this.isQueued = false,
+    this.queuePosition,
     required this.progress,
     this.downloadStatusLabel,
     this.downloadTransferLabel,
     required this.isWeb,
+    this.isAvailableOnCurrentPlatform = true,
     required this.isSelected,
     required this.gpuLayers,
     required this.contextSize,
@@ -42,6 +52,8 @@ class ModelCard extends StatelessWidget {
     required this.onSelect,
     required this.onDownload,
     required this.onDelete,
+    this.isCustom = false,
+    this.onRemoveFromLibrary,
     this.onCancel,
     this.includeProjector = true,
     this.onIncludeProjectorChanged,
@@ -73,6 +85,7 @@ class ModelCard extends StatelessWidget {
         (defaultTargetPlatform == TargetPlatform.android ||
             defaultTargetPlatform == TargetPlatform.iOS);
     final shouldShowProjectorOption =
+        isAvailableOnCurrentPlatform &&
         isProjectorMissing &&
         !isDownloading &&
         onIncludeProjectorChanged != null &&
@@ -91,13 +104,21 @@ class ModelCard extends StatelessWidget {
     final downloadToggleLabel = isDownloading
         ? 'Pause Download'
         : 'Resume Download';
+    final platformLabel = model.isNativeDesktopOnly
+        ? 'Desktop'
+        : 'All platforms';
+    final unavailableLabel = model.isNativeDesktopOnly
+        ? 'Available on desktop'
+        : 'Unavailable on this platform';
 
     return Container(
       decoration: BoxDecoration(
-        color: colorScheme.surfaceContainer,
-        borderRadius: BorderRadius.circular(8),
+        color: colorScheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: colorScheme.outlineVariant.withValues(alpha: 0.24),
+          color: isSelected
+              ? colorScheme.primary.withValues(alpha: 0.55)
+              : colorScheme.outlineVariant.withValues(alpha: 0.38),
         ),
       ),
       padding: const EdgeInsets.all(16),
@@ -115,35 +136,67 @@ class ModelCard extends StatelessWidget {
                       model.name,
                       style: TextStyle(
                         fontSize: 18,
-                        fontWeight: FontWeight.bold,
+                        fontWeight: FontWeight.w700,
                         color: colorScheme.onSurface,
                       ),
                     ),
-                    const SizedBox(height: 4),
+                    if (model.distribution case final distribution?) ...[
+                      const SizedBox(height: 3),
+                      Text(
+                        '$distribution distribution',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                    if (isSelected || isDownloaded) ...[
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: [
+                          if (isSelected)
+                            _buildStatusChip(
+                              context,
+                              icon: Icons.check_circle_rounded,
+                              label: 'Selected',
+                              emphasize: true,
+                            ),
+                          if (isDownloaded)
+                            _buildStatusChip(
+                              context,
+                              icon: Icons.download_done_rounded,
+                              label: isWeb ? 'Cached' : 'Downloaded',
+                            ),
+                        ],
+                      ),
+                    ],
+                    const SizedBox(height: 10),
                     Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
+                      spacing: 6,
+                      runSpacing: 6,
                       children: [
                         _buildMetaChip(
                           context,
                           icon: Icons.sd_storage_outlined,
-                          label: '${model.sizeMb} MB',
+                          label: model.sizeLabelFor(web: isWeb),
                         ),
                         _buildMetaChip(
                           context,
                           icon: Icons.memory_rounded,
                           label: '${model.minRamGb} GB RAM',
                         ),
-                        if (isSelected)
-                          _buildMetaChip(
-                            context,
-                            icon: Icons.check_circle_outline_rounded,
-                            label: 'Selected',
-                            emphasize: true,
-                          ),
+                        _buildMetaChip(
+                          context,
+                          icon: model.isNativeDesktopOnly
+                              ? Icons.desktop_mac_outlined
+                              : Icons.devices_rounded,
+                          label: platformLabel,
+                        ),
                       ],
                     ),
-                    if (cacheState != null) ...[
+                    if (cacheState != null && cacheState!.hasPartialAssets) ...[
                       const SizedBox(height: 10),
                       Wrap(
                         spacing: 8,
@@ -190,21 +243,21 @@ class ModelCard extends StatelessWidget {
                             label: 'Thinking',
                             supported: true,
                           ),
-                        if (model.supportsVision)
+                        if (model.supportsVisionFor(web: isWeb))
                           _buildCapabilityChip(
                             context,
                             icon: Icons.visibility_outlined,
                             label: 'Vision',
                             supported: true,
                           ),
-                        if (model.supportsAudio)
+                        if (model.supportsAudioFor(web: isWeb))
                           _buildCapabilityChip(
                             context,
                             icon: Icons.mic_none_rounded,
                             label: 'Audio',
                             supported: true,
                           ),
-                        if (model.supportsVideo)
+                        if (model.supportsVideoFor(web: isWeb))
                           _buildCapabilityChip(
                             context,
                             icon: Icons.videocam_outlined,
@@ -216,7 +269,47 @@ class ModelCard extends StatelessWidget {
                   ],
                 ),
               ),
-              if (hasAnyCachedAsset || (progress > 0 && !isDownloaded))
+              if (!isQueued && progress > 0 && !isDownloaded)
+                IconButton(
+                  icon: Icon(
+                    Icons.delete_outline_rounded,
+                    color: colorScheme.error,
+                    semanticLabel: kIsWeb ? null : deleteActionLabel,
+                  ),
+                  onPressed: onDelete,
+                  tooltip: deleteActionLabel,
+                )
+              else if (!isDownloading && !isQueued && isCustom)
+                PopupMenuButton<_ModelCardMenuAction>(
+                  tooltip: 'Model actions',
+                  icon: const Icon(Icons.more_horiz_rounded),
+                  onSelected: (action) {
+                    if (action == _ModelCardMenuAction.removeFromLibrary) {
+                      onRemoveFromLibrary?.call();
+                    } else {
+                      onDelete();
+                    }
+                  },
+                  itemBuilder: (context) => [
+                    const PopupMenuItem(
+                      value: _ModelCardMenuAction.removeFromLibrary,
+                      child: _ModelMenuItem(
+                        icon: Icons.remove_circle_outline_rounded,
+                        label: 'Remove from library',
+                      ),
+                    ),
+                    if (hasAnyCachedAsset)
+                      const PopupMenuItem(
+                        value: _ModelCardMenuAction.deleteCachedAssets,
+                        child: _ModelMenuItem(
+                          icon: Icons.delete_outline_rounded,
+                          label: 'Delete downloaded files',
+                          destructive: true,
+                        ),
+                      ),
+                  ],
+                )
+              else if (hasAnyCachedAsset)
                 IconButton(
                   icon: Icon(
                     Icons.delete_outline_rounded,
@@ -231,12 +324,46 @@ class ModelCard extends StatelessWidget {
           const SizedBox(height: 12),
           Text(
             model.description,
+            maxLines: 3,
+            overflow: TextOverflow.ellipsis,
             style: TextStyle(
               color: colorScheme.onSurfaceVariant,
               fontSize: 14,
               height: 1.4,
             ),
           ),
+          if (!isAvailableOnCurrentPlatform) ...[
+            const SizedBox(height: 10),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: colorScheme.surfaceContainerHighest.withValues(
+                  alpha: 0.55,
+                ),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.info_outline_rounded,
+                    size: 17,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '$unavailableLabel. Switch platforms to use this model.',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
           if (partialCacheMessage != null) ...[
             const SizedBox(height: 10),
             Container(
@@ -330,27 +457,73 @@ class ModelCard extends StatelessWidget {
             ),
             const SizedBox(height: 12),
           ],
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
+          Row(
             children: [
-              _buildParamChip(
-                context,
-                label: 'T ${model.preset.temperature.toStringAsFixed(2)}',
+              Icon(
+                Icons.tune_rounded,
+                size: 15,
+                color: colorScheme.onSurfaceVariant,
               ),
-              _buildParamChip(context, label: 'K ${model.preset.topK}'),
-              _buildParamChip(
-                context,
-                label: 'P ${model.preset.topP.toStringAsFixed(2)}',
+              const SizedBox(width: 7),
+              Expanded(
+                child: Text(
+                  'Recommended · ${_formatTokenCount(model.preset.contextSize)} context · ${_formatTokenCount(model.preset.maxTokens)} output',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
               ),
-              _buildParamChip(
-                context,
-                label: 'Ctx ${model.preset.contextSize}',
-              ),
-              _buildParamChip(context, label: 'Gen ${model.preset.maxTokens}'),
             ],
           ),
           const SizedBox(height: 16),
+          if (isQueued) ...[
+            Container(
+              padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+              decoration: BoxDecoration(
+                color: colorScheme.secondaryContainer.withValues(alpha: 0.45),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: colorScheme.outlineVariant.withValues(alpha: 0.45),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.format_list_numbered_rounded,
+                    size: 18,
+                    color: colorScheme.onSecondaryContainer,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      queuePosition == null
+                          ? 'Queued for download'
+                          : 'Queued for download • Position $queuePosition',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: colorScheme.onSecondaryContainer,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: onCancel,
+                    tooltip: 'Remove from download queue',
+                    icon: Icon(
+                      Icons.close_rounded,
+                      size: 18,
+                      color: colorScheme.onSecondaryContainer,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
           if (isDownloading || (progress > 0 && !isDownloaded)) ...[
             ClipRRect(
               borderRadius: BorderRadius.circular(4),
@@ -442,7 +615,7 @@ class ModelCard extends StatelessWidget {
               ),
             ],
           ],
-          if (!isDownloading) ...[
+          if (!isDownloading && !isQueued) ...[
             if (isDownloaded && !isWeb && isSelected) ...[
               const SizedBox(height: 16),
               Theme(
@@ -545,7 +718,19 @@ class ModelCard extends StatelessWidget {
             const SizedBox(height: 16),
             SizedBox(
               width: double.infinity,
-              child: canLoadModel
+              child: !isAvailableOnCurrentPlatform
+                  ? OutlinedButton.icon(
+                      onPressed: null,
+                      icon: const Icon(Icons.block_rounded, size: 18),
+                      label: Text(unavailableLabel),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                    )
+                  : canLoadModel
                   ? FilledButton.icon(
                       onPressed: onSelect,
                       icon: Icon(
@@ -676,6 +861,50 @@ class ModelCard extends StatelessWidget {
     return value[0].toUpperCase() + value.substring(1);
   }
 
+  String _formatTokenCount(int value) {
+    if (value >= 1024 && value % 1024 == 0) {
+      return '${value ~/ 1024}K';
+    }
+    return value.toString();
+  }
+
+  Widget _buildStatusChip(
+    BuildContext context, {
+    required IconData icon,
+    required String label,
+    bool emphasize = false,
+  }) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final background = emphasize
+        ? colorScheme.primaryContainer
+        : colorScheme.tertiaryContainer.withValues(alpha: 0.65);
+    final foreground = emphasize
+        ? colorScheme.onPrimaryContainer
+        : colorScheme.onTertiaryContainer;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 13, color: foreground),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              color: foreground,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildMetaChip(
     BuildContext context, {
     required IconData icon,
@@ -760,33 +989,39 @@ class ModelCard extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(width: 4),
-          Icon(
-            supported ? Icons.check_rounded : Icons.close_rounded,
-            size: 12,
-            color: foreground,
-          ),
         ],
       ),
     );
   }
+}
 
-  Widget _buildParamChip(BuildContext context, {required String label}) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: colorScheme.tertiaryContainer.withValues(alpha: 0.45),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          fontSize: 11,
-          color: colorScheme.onTertiaryContainer,
-          fontWeight: FontWeight.w500,
+class _ModelMenuItem extends StatelessWidget {
+  const _ModelMenuItem({
+    required this.icon,
+    required this.label,
+    this.destructive = false,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool destructive;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = destructive ? Theme.of(context).colorScheme.error : null;
+    return Row(
+      children: [
+        Icon(icon, size: 19, color: color),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(color: color),
+          ),
         ),
-      ),
+      ],
     );
   }
 }

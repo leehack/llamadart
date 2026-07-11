@@ -172,6 +172,7 @@ class ChatProvider extends ChangeNotifier {
   double get penalty => _settings.penalty;
   int get contextSize => _settings.contextSize;
   int get gpuLayers => _settings.gpuLayers;
+  bool get autoTuneModelParams => _settings.autoTuneModelParams;
   int get numberOfThreads => _settings.numberOfThreads;
   int get numberOfThreadsBatch => _settings.numberOfThreadsBatch;
   LlamaLogLevel get dartLogLevel => _settings.logLevel;
@@ -782,17 +783,6 @@ class ChatProvider extends ChangeNotifier {
 
     updateLoadingUi(0.04, forceNotify: true);
 
-    // Estimate dynamic settings only when backend preference remains Auto.
-    if (!_isLiteRtLmModelPath(_settings.modelPath) &&
-        _settings.preferredBackend == GpuBackend.auto &&
-        (_settings.gpuLayers == 32 || _settings.gpuLayers == 99)) {
-      try {
-        await estimateDynamicSettings();
-      } catch (e) {
-        _logDart(LlamaLogLevel.warn, "Dynamic estimation failed: $e");
-      }
-    }
-
     updateLoadingUi(0.1);
 
     try {
@@ -803,6 +793,20 @@ class ChatProvider extends ChangeNotifier {
       await _chatService.engine.setNativeLogLevel(_settings.nativeLogLevel);
       if (_chatService.engine.isReady) {
         await _chatService.unloadModel();
+      }
+
+      // Measure device headroom after unloading the previous model; otherwise
+      // a model switch can make Auto look artificially memory-constrained.
+      if (!_isLiteRtLmModelPath(_settings.modelPath) &&
+          _settings.preferredBackend == GpuBackend.auto &&
+          (_settings.autoTuneModelParams ||
+              _settings.gpuLayers == 32 ||
+              _settings.gpuLayers >= 99)) {
+        try {
+          await estimateDynamicSettings();
+        } catch (e) {
+          _logDart(LlamaLogLevel.warn, "Dynamic estimation failed: $e");
+        }
       }
       updateLoadingUi(0.14);
 
@@ -907,11 +911,17 @@ class ChatProvider extends ChangeNotifier {
       final inferredCapabilities = _inferMultimodalCapabilities(metadata);
       final runtimeSupportsVision = await _chatService.engine.supportsVision;
       final runtimeSupportsAudio = await _chatService.engine.supportsAudio;
+      final declaredDirectVision =
+          _settings.directMediaInput && _settings.modelSupportsVision;
+      final declaredDirectAudio =
+          _settings.directMediaInput && _settings.modelSupportsAudio;
       _supportsVision =
           runtimeSupportsVision ||
+          declaredDirectVision ||
           (!_mmprojLoaded && inferredCapabilities.supportsVision);
       _supportsAudio =
           runtimeSupportsAudio ||
+          declaredDirectAudio ||
           (!_mmprojLoaded && inferredCapabilities.supportsAudio);
       _updateThinkingControlSupport(metadata);
       _updateToolTemplateSupport(metadata);
@@ -948,7 +958,11 @@ class ChatProvider extends ChangeNotifier {
           normalizedModelPath.contains('gemma-4') ||
           normalizedModelPath.contains('gemma_4') ||
           normalizedModelPath.contains('gemma4');
-      if (isGemma4 && _mmprojLoaded && _supportsVision && !_supportsAudio) {
+      if (isGemma4 &&
+          _settings.modelSupportsAudio &&
+          _mmprojLoaded &&
+          _supportsVision &&
+          !_supportsAudio) {
         _addInfoMessage(
           'This Gemma 4 GGUF projector currently exposes vision only in the '
           'llama.cpp mtmd runtime. Image input is available, but audio input is disabled.',
@@ -1242,6 +1256,24 @@ class ChatProvider extends ChangeNotifier {
     );
     if (!needsMultimodal) {
       return true;
+    }
+
+    if (_settings.directMediaInput) {
+      final needsVision = parts.any((part) => part is LlamaImageContent);
+      final needsAudio = parts.any((part) => part is LlamaAudioContent);
+      final missing = <String>[
+        if (needsVision && !_supportsVision) 'image',
+        if (needsAudio && !_supportsAudio) 'audio',
+      ];
+      if (missing.isEmpty) {
+        return true;
+      }
+
+      _addInfoMessage(
+        'The active model backend does not support ${missing.join(' or ')} input on this platform.',
+      );
+      notifyListeners();
+      return false;
     }
 
     if (_mmprojLoaded) {
@@ -1986,14 +2018,28 @@ class ChatProvider extends ChangeNotifier {
       _updateSettings(_settings.copyWith(penalty: value.clamp(0.8, 2.0)));
   void updateContextSize(int value) {
     final effectiveContextSize = value == 0 ? 0 : value.clamp(512, 32768);
-    _updateSettings(_settings.copyWith(contextSize: effectiveContextSize));
+    _updateSettings(
+      _settings.copyWith(
+        contextSize: effectiveContextSize,
+        autoTuneRequestedContextSize: effectiveContextSize,
+      ),
+    );
   }
 
   void updateMaxTokens(int value) =>
       _updateSettings(_settings.copyWith(maxTokens: value.clamp(512, 32768)));
   void updateGpuLayers(int value) {
     final normalized = value >= 99 ? 99 : value.clamp(0, 98);
-    _updateSettings(_settings.copyWith(gpuLayers: normalized));
+    _updateSettings(
+      _settings.copyWith(
+        gpuLayers: normalized,
+        autoTuneModelParams:
+            _settings.preferredBackend == GpuBackend.auto && normalized >= 99,
+        autoTuneRequestedContextSize: normalized >= 99
+            ? _settings.autoTuneRequestedContextSize ?? _settings.contextSize
+            : _settings.autoTuneRequestedContextSize,
+      ),
+    );
   }
 
   void updateNumberOfThreads(int value) =>
@@ -2086,17 +2132,20 @@ class ChatProvider extends ChangeNotifier {
   }
 
   void updateModelPath(String path) {
-    _updateSettings(_settings.copyWith(modelPath: path));
+    _updateSettings(
+      _settings.copyWith(
+        modelPath: path,
+        modelSupportsVision: false,
+        modelSupportsAudio: false,
+        directMediaInput: false,
+      ),
+    );
   }
 
   /// Apply model-specific recommended generation and runtime parameters.
   void applyModelPreset(DownloadableModel model) {
     final shouldKeepToolsEnabled =
         model.supportsToolCalling && _settings.toolsEnabled;
-    const androidCpuPreferredQwenModels = <String>{
-      'Qwen3.5 0.8B Instruct',
-      'Qwen3.5 2B Instruct',
-    };
     final shouldUseReducedAndroidContext =
         !kIsWeb &&
         defaultTargetPlatform == TargetPlatform.android &&
@@ -2104,10 +2153,11 @@ class ChatProvider extends ChangeNotifier {
     final shouldPreferCpuOnAndroid =
         !kIsWeb &&
         defaultTargetPlatform == TargetPlatform.android &&
-        androidCpuPreferredQwenModels.contains(model.name) &&
+        model.name == 'Qwen3.5 0.8B Instruct' &&
         (_settings.preferredBackend == GpuBackend.auto ||
             _settings.preferredBackend == GpuBackend.vulkan ||
             _settings.preferredBackend == GpuBackend.cpu);
+    final mediaInputMode = model.mediaInputModeFor(web: kIsWeb);
 
     _updateSettings(
       _settings.copyWith(
@@ -2121,6 +2171,13 @@ class ChatProvider extends ChangeNotifier {
             : model.preset.contextSize,
         maxTokens: model.preset.maxTokens,
         gpuLayers: shouldPreferCpuOnAndroid ? 0 : model.preset.gpuLayers,
+        autoTuneModelParams:
+            !shouldPreferCpuOnAndroid &&
+            _settings.preferredBackend == GpuBackend.auto &&
+            model.preset.gpuLayers >= 99,
+        autoTuneRequestedContextSize: shouldUseReducedAndroidContext
+            ? 2048
+            : model.preset.contextSize,
         preferredBackend: shouldPreferCpuOnAndroid
             ? GpuBackend.cpu
             : _settings.preferredBackend,
@@ -2128,16 +2185,18 @@ class ChatProvider extends ChangeNotifier {
         thinkingEnabled: model.preset.thinkingEnabled,
         thinkingBudgetTokens: model.preset.thinkingBudgetTokens,
         singleTurnMode: false,
-        // Web only: forward the known model size so the WebGPU backend can
-        // select the mem64 core up front for large models (size-driven, not a
-        // hardcoded model-name list).
-        modelBytesHint: kIsWeb ? model.sizeBytesFor(web: true) : null,
+        modelSupportsVision: model.supportsVisionFor(web: kIsWeb),
+        modelSupportsAudio: model.supportsAudioFor(web: kIsWeb),
+        directMediaInput: mediaInputMode == ModelMediaInputMode.direct,
+        // Auto uses the size for native memory planning; WebGPU also uses it
+        // to select the mem64 core before loading large models.
+        modelBytesHint: model.sizeBytesFor(web: kIsWeb),
       ),
     );
 
     if (shouldPreferCpuOnAndroid) {
       _addInfoMessage(
-        'On Android, Qwen3.5 0.8B/2B currently run faster and more reliably in CPU mode than Vulkan. You can switch back manually in Inference settings if you want to compare.',
+        'On Android, Qwen3.5 0.8B currently runs faster and more reliably in CPU mode than Vulkan. You can switch back manually in Inference settings if you want to compare.',
       );
       notifyListeners();
     }
@@ -2324,6 +2383,12 @@ class ChatProvider extends ChangeNotifier {
       _settings.copyWith(
         preferredBackend: backend,
         gpuLayers: restoresGpuOffload ? 99 : _settings.gpuLayers,
+        autoTuneModelParams:
+            backend == GpuBackend.auto &&
+            (restoresGpuOffload || _settings.autoTuneModelParams),
+        autoTuneRequestedContextSize: backend == GpuBackend.auto
+            ? _settings.autoTuneRequestedContextSize ?? _settings.contextSize
+            : _settings.autoTuneRequestedContextSize,
       ),
     );
     _messages.add(
@@ -2391,12 +2456,19 @@ class ChatProvider extends ChangeNotifier {
     try {
       final vram = await _chatService.engine.getVramInfo();
       final backendInfo = await _getAvailableBackendInfoBestEffort();
+      final catalogModel = _downloadableModelForCurrentSettings();
+      final modelBytes =
+          _settings.modelBytesHint ??
+          catalogModel?.sizeBytesFor(web: kIsWeb) ??
+          0;
       final estimate = _runtimeProfileService.estimateDynamicSettings(
         totalVramBytes: vram.total,
         freeVramBytes: vram.free,
         isWeb: kIsWeb,
         preferredBackend: _settings.preferredBackend,
-        currentContextSize: _settings.contextSize,
+        currentContextSize:
+            _settings.autoTuneRequestedContextSize ?? _settings.contextSize,
+        modelBytes: modelBytes,
         backendInfo: backendInfo,
       );
 

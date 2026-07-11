@@ -62,16 +62,35 @@ flutter test --run-skipped -t local-only \
    - Native mobile/desktop builds store downloaded model files under the app's
      application-specific cache `models` directory via `path_provider`; web builds use
      browser Cache Storage/origin-scoped runtime caches.
-2. Select one of the pre-configured models (for example: FunctionGemma 270M, Qwen3.5 0.8B/2B/4B/9B, Llama 3.2 3B, Gemma 3/3n, DeepSeek R1 distills).
-   - Qwen3.5 presets now use Unsloth `Q4_K_M` GGUFs across platforms.
-   - Quick picks: `0.8B` for web/older phones, `2B` for mobile + low-RAM laptops, `4B` for most native desktop/laptop runs, `9B` for desktop-class devices with more headroom.
-   - Qwen3.5 small presets default to non-thinking mode for smoother latency and fewer reasoning loops; turn thinking on only when you need extra reasoning.
-3. Tap the **Download** icon. The app uses `Dio` to download the model directly to your device's app-specific cache directory.
+2. Select one of the focused pre-configured models:
+   - Cross-platform: FunctionGemma 270M, Qwen3.5 0.8B, Gemma 4 E2B
+     GGUF, Gemma 4 E2B LiteRT-LM, and Gemma 4 E4B GGUF.
+   - Native desktop: Gemma 4 12B, Gemma 4 26B A4B, Gemma 4 31B,
+     and Qwen3.6 35B A3B.
+   - All built-in GGUF presets use [Unsloth distributions](https://huggingface.co/unsloth)
+     and show that source in the model card. The LiteRT-LM preset uses the
+     `litert-community` distribution because Unsloth does not publish the
+     required `.litertlm` bundle.
+   - The library opens with the current platform selected. Use the Mobile, Web,
+     and Desktop filters to compare compatible presets; unavailable models are
+     clearly disabled when browsing another platform. Downloaded models appear
+     first, and search matches names, filenames, descriptions, distributions,
+     and capabilities such as vision or tools.
+   - Gemma 4 E4B remains available across platforms because it is an
+     edge/mobile-capable model, although its memory requirement still makes it
+     appropriate only for capable devices.
+   - Cards keep size, RAM, platform, capabilities, and the recommended context
+     visible while leaving detailed sampling controls in the inference settings.
+   - Custom and discovered models have a compact actions menu. **Remove from
+     library** removes only the saved entry; downloaded-file deletion remains
+     a separate action, with an explicit combined option in the confirmation.
+3. Tap the **Download** icon. The app uses `Dio` to download the model directly to your device's app-specific cache directory. Additional model downloads enter a FIFO queue and start one at a time. A persistent progress pill remains in the app header when settings is closed; tap it to reopen download details.
 4. Once downloaded, tap **Select** to load the model.
    - Gemma 4 E2B is included as a GGUF + `mmproj` bundle. In the current
-     `llama.cpp` mtmd path used here, that projector exposes vision support but
-     not audio support, so the chat UI keeps image input enabled and audio input
-     disabled for this model.
+     native `llama.cpp` mtmd path used here, that projector exposes image,
+     audio, and video input. Audio remains experimental upstream; start with
+     short mono clips for the most reliable results. Web keeps audio
+     runtime-gated until the loaded bridge reports support.
    - LiteRT-LM `.litertlm` presets, when present, use the same model library
      flow. The example `pubspec.yaml` enables the `litert_lm` native runtime
      family for supported native targets, while Web builds load web-compatible
@@ -98,8 +117,16 @@ flutter test --run-skipped -t local-only \
    - `Auto` selects the best supported runtime; on supported Macs it prefers
      Metal. The selector also lists concrete runtime-detected options such as
      CPU/Vulkan/CUDA for GGUF or CPU/GPU/NPU for LiteRT-LM.
+   - For native GGUF models, Auto combines the selected model size, current
+     device-memory availability, system headroom, and requested context. It
+     prefers full offload and preserves the preset context when they fit,
+     reducing context before falling back to partial offload under pressure.
+     Auto intent is persisted separately from the resolved values, so the app
+     recalculates available headroom on every model load and after a restart.
    - **GPU Layers** controls model offload separately: `0` runs on CPU, while
-     **Max** requests full GPU offload. Reload the model to apply changes.
+     **Max** enables Auto tuning when the backend is Auto and requests full GPU
+     offload when it fits. Choosing a lower layer count makes it a fixed manual
+     setting. Reload the model to apply changes.
 3. Optionally enable **Function Calling** and edit tool declarations depending on model/template support.
 4. Tap **Load Model** to apply changes.
 
@@ -252,21 +279,24 @@ await prefs.setInt('preferred_backend', backendIndex);
   OS, or model bundle; fall back to GPU or CPU when the runtime reports that
   engine creation is unsupported.
 
-**Multimodal instability or decode crashes (Qwen3.5 VLMs):**
-- Keep Qwen3.5 model defaults unless you are tuning carefully (`0.8B` uses `Context Size` 4096; `2B`/`4B`/`9B` use 8192; all ship with `Max Tokens` 1024).
+**Multimodal instability or decode crashes (Qwen VLMs):**
+- Keep the bundled model defaults unless you are tuning carefully. Qwen3.5
+  0.8B uses `Context Size` 4096 and `Max Tokens` 1024; the native-desktop
+  Qwen3.6 35B A3B preset uses 16384 and 4096 respectively.
 - The chat app now downscales picked multimodal images to a `384px` max edge before staging them, which reduces prompt/context pressure on Android, iOS, macOS, and Web.
 - Start a fresh conversation before large image prompts to avoid context-slot pressure.
 - If a follow-up turn after an image reports that the active context window was exceeded, retry with a smaller image, a larger `Context Size`, or fewer earlier image turns in the same chat.
-- If crashes persist on lower-memory devices, keep thinking off, switch to the 0.8B/2B variants, or disable multimodal for that run.
+- If crashes persist on lower-memory devices, keep thinking off, switch to
+  Qwen3.5 0.8B, or disable multimodal for that run.
 
 **Gemma 4 audio does not appear in the attachment menu:**
-- This is expected with the currently published Gemma 4 GGUF projector assets
-  used by the chat app.
-- The Gemma 4 E2B/E4B family supports audio in principle, but the current
-  `llama.cpp` mtmd projector path exposed to `llamadart` reports `vision=true`
-  and `audio=false` for the shipped `mmproj` files.
-- Image input should still work for Gemma 4 once the matching projector is
-  loaded.
+- For the GGUF preset, confirm the matching `mmproj` finished downloading and
+  loaded successfully. The current projector reports both `vision=true` and
+  `audio=true` on the pinned native runtime.
+- Native Gemma 4 LiteRT-LM consumes audio directly from its `.litertlm` bundle
+  and does not need an `mmproj`. LiteRT-LM Web remains text-only.
+- Audio input is experimental in `llama.cpp`. Prefer mono 16 kHz WAV input and
+  keep initial clips under 30 seconds.
 
 **`Invalid argument(s): string is not well-formed UTF-16` in Flutter painting:**
 - This indicates malformed streamed text (broken surrogate pair) reached text rendering.
@@ -276,6 +306,8 @@ await prefs.setInt('preferred_backend', backendIndex);
 **Slow model downloads on iOS/Android:**
 - Run on a release/profile build (`flutter run --release`) for realistic transfer performance.
 - Large multimodal bundles download both model and mmproj files; expect two-stage transfer.
+- Model downloads run sequentially. Queued cards show their position and can be
+  removed from the queue without interrupting the active transfer.
 - Optional Hugging Face auth can improve throughput/rate-limits:
   `flutter run --dart-define=HF_TOKEN=<your_token>`
 - Optional experimental parallel range downloader for large files:
@@ -402,11 +434,8 @@ await prefs.setInt('preferred_backend', backendIndex);
 
 ### Android Qwen Notes
 
-- On recent Pixel-class Android devices, Qwen3.5 `0.8B` and `2B` currently run
-  faster in `CPU` mode than `Vulkan` in this app, so the Android preset flow now
-  prefers `CPU` for those two models.
-- Qwen3.5 `4B` is closer: `CPU` still wins on short prompts, but `Vulkan` is now
-  much faster than before and may be worth comparing for longer generations.
+- On recent Pixel-class Android devices, Qwen3.5 `0.8B` currently runs faster
+  in `CPU` mode than `Vulkan` in this app, so its Android preset prefers `CPU`.
 - Runtime details include native llama.cpp timing breakdowns: `p_eval`, `eval`,
   `sample`, and `reuse`.
 - Android text-only chat is stable even when `mmproj` is loaded.

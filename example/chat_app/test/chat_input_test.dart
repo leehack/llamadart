@@ -85,6 +85,48 @@ void main() {
     expect(find.textContaining('option + enter'), findsNothing);
     expect(find.text('Ask anything…'), findsOneWidget);
   });
+
+  testWidgets('shows audio attachment for direct-media native models', (
+    tester,
+  ) async {
+    final provider = ChatProvider(
+      chatService: MockChatService(),
+      settingsService: MockSettingsService(),
+      initialSettings: const ChatSettings(
+        modelPath: 'gemma-4-E2B-it.litertlm',
+        modelSupportsAudio: true,
+        directMediaInput: true,
+      ),
+    );
+    addTearDown(provider.dispose);
+    await provider.loadModel();
+
+    final controller = TextEditingController();
+    final focusNode = FocusNode();
+    addTearDown(controller.dispose);
+    addTearDown(focusNode.dispose);
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider<ChatProvider>.value(
+        value: provider,
+        child: MaterialApp(
+          home: Scaffold(
+            body: ChatInput(
+              controller: controller,
+              focusNode: focusNode,
+              onSend: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byTooltip('Add attachment'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Attach Audio'), findsOneWidget);
+    expect(find.text('Attach Image'), findsNothing);
+  });
 }
 
 class _GeneratingReadyProvider extends ChatProvider {

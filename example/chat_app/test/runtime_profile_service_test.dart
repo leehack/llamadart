@@ -72,10 +72,39 @@ void main() {
         isWeb: false,
         preferredBackend: GpuBackend.auto,
         currentContextSize: 8192,
+        modelBytes: 3 * 1024 * 1024 * 1024,
       );
 
       expect(estimate.gpuLayers, greaterThan(0));
-      expect(estimate.contextSize, anyOf(2048, 4096));
+      expect(estimate.contextSize, 4096);
+    });
+
+    test('fully offloads a known model when memory has safe headroom', () {
+      final estimate = service.estimateDynamicSettings(
+        totalVramBytes: 64 * 1024 * 1024 * 1024,
+        freeVramBytes: 56 * 1024 * 1024 * 1024,
+        isWeb: false,
+        preferredBackend: GpuBackend.auto,
+        currentContextSize: 16384,
+        modelBytes: 20 * 1024 * 1024 * 1024,
+      );
+
+      expect(estimate.gpuLayers, ModelParams.maxGpuLayers);
+      expect(estimate.contextSize, 16384);
+    });
+
+    test('reduces context before choosing partial offload under pressure', () {
+      final estimate = service.estimateDynamicSettings(
+        totalVramBytes: 16 * 1024 * 1024 * 1024,
+        freeVramBytes: 12 * 1024 * 1024 * 1024,
+        isWeb: false,
+        preferredBackend: GpuBackend.auto,
+        currentContextSize: 16384,
+        modelBytes: 12 * 1024 * 1024 * 1024,
+      );
+
+      expect(estimate.gpuLayers, inInclusiveRange(1, 98));
+      expect(estimate.contextSize, 4096);
     });
   });
 }

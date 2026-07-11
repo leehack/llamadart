@@ -106,6 +106,42 @@ void main() {
       expect(engine.lastModelParams!.numberOfThreadsBatch, 0);
     });
 
+    test('maps the UI Max sentinel to full native GPU offload', () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+      final engine = MockLlamaEngine();
+      final service = ChatService(engine: engine);
+
+      await service.init(
+        const ChatSettings(
+          modelPath: 'gemma-4-31B-it-Q4_K_S.gguf',
+          preferredBackend: GpuBackend.metal,
+          contextSize: 16384,
+          gpuLayers: 99,
+        ),
+        eagerLoadMultimodalProjector: false,
+      );
+
+      expect(engine.lastModelParams, isNotNull);
+      expect(engine.lastModelParams!.gpuLayers, ModelParams.maxGpuLayers);
+      expect(engine.lastModelParams!.contextSize, 16384);
+    });
+
+    test('explicit CPU overrides a stale Max layer value', () async {
+      final engine = MockLlamaEngine();
+      final service = ChatService(engine: engine);
+
+      await service.init(
+        const ChatSettings(
+          modelPath: 'model.gguf',
+          preferredBackend: GpuBackend.cpu,
+          gpuLayers: 99,
+        ),
+        eagerLoadMultimodalProjector: false,
+      );
+
+      expect(engine.lastModelParams!.gpuLayers, 0);
+    });
+
     test(
       'does not apply llama.cpp Android tuning to LiteRT-LM models',
       () async {

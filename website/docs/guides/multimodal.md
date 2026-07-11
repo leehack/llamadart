@@ -90,14 +90,17 @@ final supportsAudio = await engine.supportsAudio;
 ```
 
 Always prefer these runtime checks over model-card assumptions. A loaded
-projector can expose only a subset of the family-level modalities. For example,
-the current Gemma 4 E2B/E4B GGUF projector path in `llama.cpp` mtmd exposes
-vision, but not audio, in `llamadart`.
+projector can expose only a subset of the family-level modalities. The current
+Gemma 4 E2B GGUF projector path in native `llama.cpp` mtmd reports both vision
+and audio support; audio remains experimental upstream. Web continues to rely
+on the loaded bridge's runtime capability report.
 
 For native LiteRT-LM `.litertlm` bundles, capability depends on the bundle's
 native template/model processors. `loadMultimodalProjector`,
 `loadMultimodalProjectorSource`, `supportsVision`, and `supportsAudio` are
-projector-oriented APIs and are not used by the LiteRT-LM bundle flow.
+projector-oriented APIs and are not used by the LiteRT-LM bundle flow. The chat
+app therefore uses the selected preset's platform-specific direct-media
+capabilities for native Gemma 4 LiteRT-LM audio.
 
 ## Web notes
 

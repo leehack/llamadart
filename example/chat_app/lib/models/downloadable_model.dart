@@ -21,6 +21,10 @@ String _assetCacheKey(String canonicalKey) {
 
 enum ModelAssetRole { model, multimodalProjector }
 
+enum ModelMediaInputMode { externalProjector, direct, none }
+
+enum ModelAvailability { all, nativeDesktop }
+
 abstract class ModelAssetSource {
   const ModelAssetSource();
 
@@ -186,8 +190,15 @@ class DownloadableModel {
   final bool supportsVision;
   final bool supportsAudio;
   final bool supportsVideo;
+  final bool? webSupportsVision;
+  final bool? webSupportsAudio;
+  final bool? webSupportsVideo;
+  final ModelMediaInputMode mediaInputMode;
+  final ModelMediaInputMode? webMediaInputMode;
   final bool supportsToolCalling;
   final bool supportsThinking;
+  final String? distribution;
+  final ModelAvailability availability;
   final ModelAssetSource? _modelSourceOverride;
   final ModelAssetSource? _multimodalProjectorSourceOverride;
   final ModelAssetSource? _webModelSourceOverride;
@@ -213,8 +224,15 @@ class DownloadableModel {
     this.supportsVision = false,
     this.supportsAudio = false,
     this.supportsVideo = false,
+    this.webSupportsVision,
+    this.webSupportsAudio,
+    this.webSupportsVideo,
+    this.mediaInputMode = ModelMediaInputMode.externalProjector,
+    this.webMediaInputMode,
     this.supportsToolCalling = false,
     this.supportsThinking = false,
+    this.distribution,
+    this.availability = ModelAvailability.all,
     this.minRamGb = 2,
     this.preset = const ModelPreset(),
   }) : id = filename,
@@ -236,8 +254,15 @@ class DownloadableModel {
     this.supportsVision = false,
     this.supportsAudio = false,
     this.supportsVideo = false,
+    this.webSupportsVision,
+    this.webSupportsAudio,
+    this.webSupportsVideo,
+    this.mediaInputMode = ModelMediaInputMode.externalProjector,
+    this.webMediaInputMode,
     this.supportsToolCalling = false,
     this.supportsThinking = false,
+    this.distribution,
+    this.availability = ModelAvailability.all,
     this.minRamGb = 2,
     this.preset = const ModelPreset(),
   }) : id = id ?? modelSource.displayName,
@@ -313,19 +338,50 @@ class DownloadableModel {
     supportsThinking: supportsThinking,
   );
 
+  bool supportsVisionFor({required bool web}) =>
+      web ? webSupportsVision ?? supportsVision : supportsVision;
+
+  bool supportsAudioFor({required bool web}) =>
+      web ? webSupportsAudio ?? supportsAudio : supportsAudio;
+
+  bool supportsVideoFor({required bool web}) =>
+      web ? webSupportsVideo ?? supportsVideo : supportsVideo;
+
+  ModelMediaInputMode mediaInputModeFor({required bool web}) =>
+      web ? webMediaInputMode ?? mediaInputMode : mediaInputMode;
+
+  bool isMultimodalFor({required bool web}) =>
+      supportsVisionFor(web: web) || supportsAudioFor(web: web);
+
   bool get isMultimodal => supportsVision || supportsAudio;
 
   String get sizeMb => (sizeBytes / (1024 * 1024)).toStringAsFixed(1);
 
+  String sizeLabelFor({required bool web}) {
+    final bytes = sizeBytesFor(web: web);
+    final gibibytes = bytes / (1024 * 1024 * 1024);
+    if (gibibytes >= 1) {
+      final digits = gibibytes >= 10 ? 1 : 2;
+      return '${gibibytes.toStringAsFixed(digits)} GB';
+    }
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(0)} MB';
+  }
+
+  bool get isNativeDesktopOnly =>
+      availability == ModelAvailability.nativeDesktop;
+
+  bool isAvailableFor({required bool web, required bool mobile}) =>
+      availability == ModelAvailability.all || (!web && !mobile);
+
   static const List<DownloadableModel> defaultModels = [
     DownloadableModel(
       name: 'FunctionGemma 270M',
-      description:
-          '🛠️ Tiny tools model (253MB) • Great function-calling demo.',
+      description: 'Tiny specialist for function calling and tool-use demos.',
       url:
           'https://huggingface.co/unsloth/functiongemma-270m-it-GGUF/resolve/main/functiongemma-270m-it-Q4_K_M.gguf?download=true',
       filename: 'functiongemma-270m-it-Q4_K_M.gguf',
       sizeBytes: 253127904,
+      distribution: 'Unsloth',
       minRamGb: 2,
       supportsToolCalling: true,
       preset: ModelPreset(
@@ -338,8 +394,7 @@ class DownloadableModel {
     ),
     DownloadableModel(
       name: 'Qwen3.5 0.8B Instruct',
-      description:
-          '🆕 Unsloth Q4_K_M bundle (720MB) • Consistent Qwen pick across web, mobile, and native with tuned non-thinking defaults.',
+      description: 'Small general assistant with tools, reasoning, and vision.',
       url:
           'https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-Q4_K_M.gguf?download=true',
       filename: 'Qwen3.5-0.8B-Q4_K_M.gguf',
@@ -347,6 +402,7 @@ class DownloadableModel {
           'https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/main/mmproj-F16.gguf?download=true',
       mmprojFilename: 'Qwen3.5-0.8B-mmproj-F16.gguf',
       sizeBytes: 754903104,
+      distribution: 'Unsloth',
       minRamGb: 3,
       supportsVision: true,
       supportsToolCalling: true,
@@ -362,109 +418,9 @@ class DownloadableModel {
       ),
     ),
     DownloadableModel(
-      name: 'Llama 3.2 1B Instruct',
-      description: '🧰 General + tools (808MB) • Reliable everyday assistant.',
-      url:
-          'https://huggingface.co/bartowski/Llama-3.2-1B-Instruct-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf?download=true',
-      filename: 'Llama-3.2-1B-Instruct-Q4_K_M.gguf',
-      sizeBytes: 807694464,
-      minRamGb: 3,
-      supportsToolCalling: true,
-      preset: ModelPreset(
-        temperature: 0.2,
-        topK: 40,
-        topP: 0.9,
-        contextSize: 8192,
-        maxTokens: 2048,
-      ),
-    ),
-    DownloadableModel(
-      name: 'Gemma 3 1B it',
-      description:
-          '🧩 Gemma template (806MB) • Lightweight multilingual baseline.',
-      url:
-          'https://huggingface.co/ggml-org/gemma-3-1b-it-GGUF/resolve/main/gemma-3-1b-it-Q4_K_M.gguf?download=true',
-      filename: 'gemma-3-1b-it-Q4_K_M.gguf',
-      sizeBytes: 806058240,
-      minRamGb: 3,
-      preset: ModelPreset(
-        temperature: 0.7,
-        topK: 40,
-        topP: 0.9,
-        contextSize: 8192,
-        maxTokens: 2048,
-      ),
-    ),
-    DownloadableModel(
-      name: 'LFM2.5 1.2B Instruct',
-      description: '🌊 LFM baseline (731MB) • Popular small Liquid text model.',
-      url:
-          'https://huggingface.co/LiquidAI/LFM2.5-1.2B-Instruct-GGUF/resolve/main/LFM2.5-1.2B-Instruct-Q4_K_M.gguf?download=true',
-      filename: 'LFM2.5-1.2B-Instruct-Q4_K_M.gguf',
-      sizeBytes: 730895168,
-      minRamGb: 3,
-      preset: ModelPreset(
-        temperature: 0.2,
-        topK: 40,
-        topP: 0.9,
-        contextSize: 8192,
-        maxTokens: 2048,
-      ),
-    ),
-    DownloadableModel(
-      name: 'Qwen3.5 2B Instruct',
-      description:
-          '🆕 Unsloth Q4_K_M bundle (1.85GB) • Better Qwen quality with one cross-platform quant for web, mobile, and laptops.',
-      url:
-          'https://huggingface.co/unsloth/Qwen3.5-2B-GGUF/resolve/main/Qwen3.5-2B-Q4_K_M.gguf?download=true',
-      filename: 'Qwen3.5-2B-Q4_K_M.gguf',
-      mmprojUrl:
-          'https://huggingface.co/unsloth/Qwen3.5-2B-GGUF/resolve/main/mmproj-F16.gguf?download=true',
-      mmprojFilename: 'Qwen3.5-2B-mmproj-F16.gguf',
-      sizeBytes: 1983861664,
-      minRamGb: 5,
-      supportsVision: true,
-      supportsToolCalling: true,
-      supportsThinking: true,
-      preset: ModelPreset(
-        temperature: 0.7,
-        topK: 20,
-        topP: 0.8,
-        penalty: 1.0,
-        contextSize: 8192,
-        maxTokens: 1024,
-        thinkingEnabled: false,
-      ),
-    ),
-    DownloadableModel(
-      name: 'Qwen3.5 4B Instruct',
-      description:
-          '🆕 Unsloth Q4_K_M bundle (3.29GB) • Best Qwen balance when you want one quant across web and native targets.',
-      url:
-          'https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/resolve/main/Qwen3.5-4B-Q4_K_M.gguf?download=true',
-      filename: 'Qwen3.5-4B-Q4_K_M.gguf',
-      mmprojUrl:
-          'https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/resolve/main/mmproj-F16.gguf?download=true',
-      mmprojFilename: 'Qwen3.5-4B-mmproj-F16.gguf',
-      sizeBytes: 3529359968,
-      minRamGb: 8,
-      supportsVision: true,
-      supportsToolCalling: true,
-      supportsThinking: true,
-      preset: ModelPreset(
-        temperature: 0.7,
-        topK: 20,
-        topP: 0.8,
-        penalty: 1.0,
-        contextSize: 8192,
-        maxTokens: 1024,
-        thinkingEnabled: false,
-      ),
-    ),
-    DownloadableModel(
       name: 'Gemma 4 E2B it',
       description:
-          '🧪 Multimodal Gemma 4 vision bundle (2.83GB + 940MB mmproj) • Supports image input; audio support is not advertised by the current projector/runtime path.',
+          'Compact multimodal assistant for image, audio, and video input.',
       url:
           'https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/main/gemma-4-E2B-it-Q4_K_S.gguf?download=true',
       filename: 'gemma-4-E2B-it-Q4_K_S.gguf',
@@ -472,9 +428,11 @@ class DownloadableModel {
           'https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/main/mmproj-F16.gguf?download=true',
       mmprojFilename: 'gemma-4-E2B-it-mmproj-F16.gguf',
       sizeBytes: 3043927168,
+      distribution: 'Unsloth',
       minRamGb: 8,
       supportsVision: true,
-      supportsAudio: false,
+      supportsAudio: true,
+      webSupportsAudio: false,
       supportsVideo: true,
       supportsToolCalling: true,
       supportsThinking: true,
@@ -491,7 +449,7 @@ class DownloadableModel {
     DownloadableModel(
       name: 'Gemma 4 E2B LiteRT-LM',
       description:
-          '⚡ LiteRT-LM Gemma 4 text bundle (2.41GB native, 1.87GB web) • Use this for llama.cpp vs LiteRT-LM comparisons.',
+          'Optimized LiteRT-LM variant with native audio and text-only Web support.',
       url:
           'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm?download=true',
       filename: 'gemma-4-E2B-it.litertlm',
@@ -503,7 +461,12 @@ class DownloadableModel {
         filename: 'gemma-4-E2B-it-web.litertlm',
         sizeBytes: 2008432640,
       ),
+      distribution: 'LiteRT Community',
       minRamGb: 8,
+      supportsAudio: true,
+      webSupportsAudio: false,
+      mediaInputMode: ModelMediaInputMode.direct,
+      webMediaInputMode: ModelMediaInputMode.none,
       supportsThinking: true,
       preset: ModelPreset(
         temperature: 0.7,
@@ -515,134 +478,133 @@ class DownloadableModel {
       ),
     ),
     DownloadableModel(
-      name: 'LFM2.5 1.2B Thinking',
+      name: 'Gemma 4 E4B it',
       description:
-          '🧠 Reasoning-focused LFM (731MB) • Good compact thinking model.',
+          'Higher-quality multimodal model for capable edge and desktop devices.',
       url:
-          'https://huggingface.co/LiquidAI/LFM2.5-1.2B-Thinking-GGUF/resolve/main/LFM2.5-1.2B-Thinking-Q4_K_M.gguf?download=true',
-      filename: 'LFM2.5-1.2B-Thinking-Q4_K_M.gguf',
-      sizeBytes: 730895360,
-      minRamGb: 3,
+          'https://huggingface.co/unsloth/gemma-4-E4B-it-GGUF/resolve/main/gemma-4-E4B-it-Q4_K_S.gguf?download=true',
+      filename: 'gemma-4-E4B-it-Q4_K_S.gguf',
+      mmprojUrl:
+          'https://huggingface.co/unsloth/gemma-4-E4B-it-GGUF/resolve/main/mmproj-F16.gguf?download=true',
+      mmprojFilename: 'gemma-4-E4B-it-mmproj-F16.gguf',
+      sizeBytes: 4844848288,
+      distribution: 'Unsloth',
+      minRamGb: 12,
+      supportsVision: true,
+      supportsAudio: true,
+      webSupportsAudio: false,
+      supportsVideo: true,
+      supportsToolCalling: true,
       supportsThinking: true,
       preset: ModelPreset(
-        temperature: 0.05,
-        topK: 50,
-        topP: 0.1,
+        temperature: 0.7,
+        topK: 64,
+        topP: 0.95,
+        penalty: 1.0,
+        contextSize: 8192,
+        maxTokens: 2048,
+        thinkingEnabled: false,
+      ),
+    ),
+    DownloadableModel(
+      name: 'Gemma 4 12B it',
+      description:
+          'Strong multimodal reasoning for higher-memory desktop systems.',
+      url:
+          'https://huggingface.co/unsloth/gemma-4-12b-it-GGUF/resolve/main/gemma-4-12b-it-Q4_K_S.gguf?download=true',
+      filename: 'gemma-4-12b-it-Q4_K_S.gguf',
+      mmprojUrl:
+          'https://huggingface.co/unsloth/gemma-4-12b-it-GGUF/resolve/main/mmproj-F16.gguf?download=true',
+      mmprojFilename: 'gemma-4-12b-it-mmproj-F16.gguf',
+      sizeBytes: 6764524960,
+      distribution: 'Unsloth',
+      availability: ModelAvailability.nativeDesktop,
+      minRamGb: 16,
+      supportsVision: true,
+      supportsAudio: true,
+      supportsVideo: true,
+      supportsToolCalling: true,
+      supportsThinking: true,
+      preset: ModelPreset(
+        temperature: 0.7,
+        topK: 64,
+        topP: 0.95,
+        penalty: 1.0,
+        contextSize: 8192,
+        maxTokens: 2048,
+        thinkingEnabled: false,
+      ),
+    ),
+    DownloadableModel(
+      name: 'Gemma 4 26B A4B it',
+      description:
+          'Efficient mixture-of-experts model for reasoning, coding, and vision.',
+      url:
+          'https://huggingface.co/unsloth/gemma-4-26B-A4B-it-GGUF/resolve/main/gemma-4-26B-A4B-it-UD-Q4_K_S.gguf?download=true',
+      filename: 'gemma-4-26B-A4B-it-UD-Q4_K_S.gguf',
+      mmprojUrl:
+          'https://huggingface.co/unsloth/gemma-4-26B-A4B-it-GGUF/resolve/main/mmproj-F16.gguf?download=true',
+      mmprojFilename: 'gemma-4-26B-A4B-it-mmproj-F16.gguf',
+      sizeBytes: 16487608096,
+      distribution: 'Unsloth',
+      availability: ModelAvailability.nativeDesktop,
+      minRamGb: 24,
+      supportsVision: true,
+      supportsVideo: true,
+      supportsToolCalling: true,
+      supportsThinking: true,
+      preset: ModelPreset(
+        temperature: 0.7,
+        topK: 64,
+        topP: 0.95,
+        penalty: 1.0,
         contextSize: 16384,
         maxTokens: 4096,
+        thinkingEnabled: false,
       ),
     ),
     DownloadableModel(
-      name: 'SmolVLM 500M Instruct',
+      name: 'Gemma 4 31B it',
       description:
-          '👁️ Vision bundle (636MB) • Proven lightweight image understanding.',
+          'Highest-quality dense Gemma tier for high-memory workstations.',
       url:
-          'https://huggingface.co/ggml-org/SmolVLM-500M-Instruct-GGUF/resolve/main/SmolVLM-500M-Instruct-Q8_0.gguf?download=true',
-      filename: 'SmolVLM-500M-Instruct-Q8_0.gguf',
+          'https://huggingface.co/unsloth/gemma-4-31B-it-GGUF/resolve/main/gemma-4-31B-it-Q4_K_S.gguf?download=true',
+      filename: 'gemma-4-31B-it-Q4_K_S.gguf',
       mmprojUrl:
-          'https://huggingface.co/ggml-org/SmolVLM-500M-Instruct-GGUF/resolve/main/mmproj-SmolVLM-500M-Instruct-f16.gguf?download=true',
-      mmprojFilename: 'mmproj-SmolVLM-500M-Instruct-f16.gguf',
-      sizeBytes: 636275712,
-      minRamGb: 3,
+          'https://huggingface.co/unsloth/gemma-4-31B-it-GGUF/resolve/main/mmproj-F16.gguf?download=true',
+      mmprojFilename: 'gemma-4-31B-it-mmproj-F16.gguf',
+      sizeBytes: 17399833600,
+      distribution: 'Unsloth',
+      availability: ModelAvailability.nativeDesktop,
+      minRamGb: 32,
       supportsVision: true,
-      preset: ModelPreset(
-        temperature: 0.2,
-        topK: 40,
-        topP: 0.9,
-        contextSize: 4096,
-        maxTokens: 1024,
-      ),
-    ),
-    DownloadableModel(
-      name: 'LFM2-VL 450M',
-      description:
-          '🖼️ Tiny VLM bundle (323MB) • Fast multimodal demo for mobile.',
-      url:
-          'https://huggingface.co/LiquidAI/LFM2-VL-450M-GGUF/resolve/main/LFM2-VL-450M-Q4_0.gguf?download=true',
-      filename: 'LFM2-VL-450M-Q4_0.gguf',
-      mmprojUrl:
-          'https://huggingface.co/LiquidAI/LFM2-VL-450M-GGUF/resolve/main/mmproj-LFM2-VL-450M-Q8_0.gguf?download=true',
-      mmprojFilename: 'mmproj-LFM2-VL-450M-Q8_0.gguf',
-      sizeBytes: 323197440,
-      minRamGb: 2,
-      supportsVision: true,
-      preset: ModelPreset(
-        temperature: 0.2,
-        topK: 40,
-        topP: 0.9,
-        contextSize: 8192,
-        maxTokens: 1024,
-      ),
-    ),
-    DownloadableModel(
-      name: 'Ultravox v0.5 1B',
-      description:
-          '🎤 Audio bundle (2.18GB) • Reliable speech understanding demo.',
-      url:
-          'https://huggingface.co/ggml-org/ultravox-v0_5-llama-3_2-1b-GGUF/resolve/main/Llama-3.2-1B-Instruct-Q4_K_M.gguf?download=true',
-      filename: 'ultravox-v0.5-1b-q4_k_m.gguf',
-      mmprojUrl:
-          'https://huggingface.co/ggml-org/ultravox-v0_5-llama-3_2-1b-GGUF/resolve/main/mmproj-ultravox-v0_5-llama-3_2-1b-f16.gguf?download=true',
-      mmprojFilename: 'mmproj-ultravox-v0_5-llama-3_2-1b-f16.gguf',
-      sizeBytes: 2178818080,
-      minRamGb: 4,
-      supportsAudio: true,
-      preset: ModelPreset(
-        temperature: 0.2,
-        topK: 40,
-        topP: 0.9,
-        contextSize: 4096,
-        maxTokens: 1024,
-      ),
-    ),
-    DownloadableModel(
-      name: 'Llama 3.2 3B Instruct',
-      description:
-          '🏠 Balanced large model (2.02GB) • Strong general assistant.',
-      url:
-          'https://huggingface.co/bartowski/Llama-3.2-3B-Instruct-GGUF/resolve/main/Llama-3.2-3B-Instruct-Q4_K_M.gguf?download=true',
-      filename: 'Llama-3.2-3B-Instruct-Q4_K_M.gguf',
-      sizeBytes: 2019377696,
-      minRamGb: 4,
+      supportsVideo: true,
       supportsToolCalling: true,
+      supportsThinking: true,
       preset: ModelPreset(
-        temperature: 0.2,
-        topK: 40,
-        topP: 0.9,
-        contextSize: 8192,
-        maxTokens: 2048,
+        temperature: 0.7,
+        topK: 64,
+        topP: 0.95,
+        penalty: 1.0,
+        contextSize: 16384,
+        maxTokens: 4096,
+        thinkingEnabled: false,
       ),
     ),
     DownloadableModel(
-      name: 'Meta-Llama 3.1 8B Instruct',
+      name: 'Qwen3.6 35B A3B',
       description:
-          '🚀 Flagship quality (4.92GB) • Popular large model benchmark.',
+          'Fast mixture-of-experts model for coding, agentic workflows, and vision.',
       url:
-          'https://huggingface.co/bartowski/Meta-Llama-3.1-8B-Instruct-GGUF/resolve/main/Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf?download=true',
-      filename: 'Meta-Llama-3.1-8B-Instruct-Q4_K_M.gguf',
-      sizeBytes: 4920739232,
-      minRamGb: 8,
-      supportsToolCalling: true,
-      preset: ModelPreset(
-        temperature: 0.2,
-        topK: 40,
-        topP: 0.9,
-        contextSize: 8192,
-        maxTokens: 2048,
-      ),
-    ),
-    DownloadableModel(
-      name: 'Qwen3.5 9B Instruct',
-      description:
-          '🆕 Unsloth Q4_K_M bundle (6.32GB) • Highest-quality Qwen preset with the same quant family across platforms.',
-      url:
-          'https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-Q4_K_M.gguf?download=true',
-      filename: 'Qwen3.5-9B-Q4_K_M.gguf',
+          'https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF/resolve/main/Qwen3.6-35B-A3B-UD-Q4_K_S.gguf?download=true',
+      filename: 'Qwen3.6-35B-A3B-UD-Q4_K_S.gguf',
       mmprojUrl:
-          'https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/mmproj-F16.gguf?download=true',
-      mmprojFilename: 'Qwen3.5-9B-mmproj-F16.gguf',
-      sizeBytes: 6784286240,
-      minRamGb: 12,
+          'https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF/resolve/main/mmproj-F16.gguf?download=true',
+      mmprojFilename: 'Qwen3.6-35B-A3B-mmproj-F16.gguf',
+      sizeBytes: 20893015008,
+      distribution: 'Unsloth',
+      availability: ModelAvailability.nativeDesktop,
+      minRamGb: 32,
       supportsVision: true,
       supportsToolCalling: true,
       supportsThinking: true,
@@ -651,8 +613,8 @@ class DownloadableModel {
         topK: 20,
         topP: 0.8,
         penalty: 1.0,
-        contextSize: 8192,
-        maxTokens: 1024,
+        contextSize: 16384,
+        maxTokens: 4096,
         thinkingEnabled: false,
       ),
     ),

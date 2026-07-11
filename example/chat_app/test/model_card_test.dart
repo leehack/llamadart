@@ -22,6 +22,7 @@ void main() {
 
     expect(find.text('Load & Cache Model'), findsOneWidget);
     expect(find.text('Cache Model'), findsNothing);
+    expect(find.text('All platforms'), findsOneWidget);
 
     await tester.tap(find.text('Load & Cache Model'));
     await tester.pump();
@@ -50,6 +51,133 @@ void main() {
     await tester.pump();
 
     expect(selectCalls, 1);
+  });
+
+  testWidgets('LiteRT-LM audio badge is native-only', (tester) async {
+    await _pumpCard(
+      tester,
+      model: _litertLmModel(),
+      isWeb: false,
+      isDownloaded: true,
+      onSelect: () {},
+      onDownload: () {},
+    );
+
+    expect(find.text('Audio'), findsOneWidget);
+
+    await _pumpCard(
+      tester,
+      model: _litertLmModel(),
+      isWeb: true,
+      isDownloaded: true,
+      onSelect: () {},
+      onDownload: () {},
+    );
+
+    expect(find.text('Audio'), findsNothing);
+  });
+
+  testWidgets('shows distribution, desktop scope, and readable large size', (
+    tester,
+  ) async {
+    await _pumpCard(
+      tester,
+      model: const DownloadableModel(
+        name: 'Desktop model',
+        description: 'Large desktop model',
+        url: 'https://huggingface.co/unsloth/model/resolve/main/model.gguf',
+        filename: 'model.gguf',
+        sizeBytes: 20 * 1024 * 1024 * 1024,
+        minRamGb: 32,
+        distribution: 'Unsloth',
+        availability: ModelAvailability.nativeDesktop,
+      ),
+      isWeb: false,
+      isDownloaded: false,
+      onSelect: () {},
+      onDownload: () {},
+    );
+
+    expect(find.text('20.0 GB'), findsOneWidget);
+    expect(find.text('Unsloth distribution'), findsOneWidget);
+    expect(find.text('Desktop'), findsOneWidget);
+  });
+
+  testWidgets('uncached custom models expose remove-from-library action', (
+    tester,
+  ) async {
+    var removeCalls = 0;
+
+    await _pumpCard(
+      tester,
+      model: _ggufModel(),
+      isWeb: false,
+      isDownloaded: false,
+      isCustom: true,
+      onSelect: () {},
+      onDownload: () {},
+      onRemoveFromLibrary: () => removeCalls += 1,
+    );
+
+    await tester.tap(find.byTooltip('Model actions'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Remove from library'), findsOneWidget);
+    expect(find.text('Delete downloaded files'), findsNothing);
+
+    await tester.tap(find.text('Remove from library'));
+    await tester.pumpAndSettle();
+    expect(removeCalls, 1);
+  });
+
+  testWidgets('cached custom models keep file deletion separate', (
+    tester,
+  ) async {
+    var deleteCalls = 0;
+
+    await _pumpCard(
+      tester,
+      model: _ggufModel(),
+      isWeb: false,
+      isDownloaded: true,
+      isCustom: true,
+      onSelect: () {},
+      onDownload: () {},
+      onDelete: () => deleteCalls += 1,
+      onRemoveFromLibrary: () {},
+    );
+
+    await tester.tap(find.byTooltip('Model actions'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Remove from library'), findsOneWidget);
+    expect(find.text('Delete downloaded files'), findsOneWidget);
+    await tester.tap(find.text('Delete downloaded files'));
+    await tester.pumpAndSettle();
+    expect(deleteCalls, 1);
+  });
+
+  testWidgets('queued model shows its position and can leave the queue', (
+    tester,
+  ) async {
+    var cancelCalls = 0;
+
+    await _pumpCard(
+      tester,
+      model: _ggufModel(),
+      isWeb: false,
+      isDownloaded: false,
+      isQueued: true,
+      queuePosition: 2,
+      onSelect: () {},
+      onDownload: () {},
+      onCancel: () => cancelCalls += 1,
+    );
+
+    expect(find.text('Queued for download • Position 2'), findsOneWidget);
+    expect(find.text('Download'), findsNothing);
+    await tester.tap(find.byTooltip('Remove from download queue'));
+    expect(cancelCalls, 1);
   });
 
   testWidgets('web GGUF presets still show the cache action before download', (
@@ -228,6 +356,37 @@ void main() {
     expect(find.text('Max requests full GPU offload'), findsOneWidget);
     expect(find.text('Set to 99 for Auto'), findsNothing);
   });
+
+  testWidgets('unavailable platform cards explain why actions are disabled', (
+    tester,
+  ) async {
+    await _pumpCard(
+      tester,
+      model: const DownloadableModel(
+        name: 'Desktop model',
+        description: 'Large desktop model',
+        url: 'https://example.com/desktop.gguf',
+        filename: 'desktop.gguf',
+        sizeBytes: 20,
+        availability: ModelAvailability.nativeDesktop,
+      ),
+      isWeb: false,
+      isDownloaded: false,
+      isAvailableOnCurrentPlatform: false,
+      onSelect: () {},
+      onDownload: () {},
+    );
+
+    expect(find.text('Available on desktop'), findsOneWidget);
+    expect(
+      find.textContaining('Switch platforms to use this model'),
+      findsOneWidget,
+    );
+    final button = tester.widget<OutlinedButton>(
+      find.widgetWithText(OutlinedButton, 'Available on desktop'),
+    );
+    expect(button.onPressed, isNull);
+  });
 }
 
 Future<void> _pumpCard(
@@ -237,16 +396,22 @@ Future<void> _pumpCard(
   required bool isDownloaded,
   ModelProfileCacheState? cacheState,
   bool isDownloading = false,
+  bool isQueued = false,
+  int? queuePosition,
   double progress = 0,
   String? downloadStatusLabel,
   String? downloadTransferLabel,
   required VoidCallback onSelect,
   required VoidCallback onDownload,
   VoidCallback? onDelete,
+  VoidCallback? onCancel,
+  bool isCustom = false,
+  VoidCallback? onRemoveFromLibrary,
   bool includeProjector = true,
   ValueChanged<bool>? onIncludeProjectorChanged,
   double textScale = 1.0,
   bool isSelected = false,
+  bool isAvailableOnCurrentPlatform = true,
   int gpuLayers = 0,
 }) async {
   await tester.pumpWidget(
@@ -264,10 +429,13 @@ Future<void> _pumpCard(
             isDownloaded: isDownloaded,
             cacheState: cacheState,
             isDownloading: isDownloading,
+            isQueued: isQueued,
+            queuePosition: queuePosition,
             progress: progress,
             downloadStatusLabel: downloadStatusLabel,
             downloadTransferLabel: downloadTransferLabel,
             isWeb: isWeb,
+            isAvailableOnCurrentPlatform: isAvailableOnCurrentPlatform,
             isSelected: isSelected,
             gpuLayers: gpuLayers,
             contextSize: 2048,
@@ -276,6 +444,9 @@ Future<void> _pumpCard(
             onSelect: onSelect,
             onDownload: onDownload,
             onDelete: onDelete ?? () {},
+            onCancel: onCancel,
+            isCustom: isCustom,
+            onRemoveFromLibrary: onRemoveFromLibrary,
             includeProjector: includeProjector,
             onIncludeProjectorChanged: onIncludeProjectorChanged,
           ),
@@ -309,6 +480,10 @@ DownloadableModel _litertLmModel() {
       filename: 'model-web.litertlm',
     ),
     sizeBytes: 10,
+    supportsAudio: true,
+    webSupportsAudio: false,
+    mediaInputMode: ModelMediaInputMode.direct,
+    webMediaInputMode: ModelMediaInputMode.none,
   );
 }
 

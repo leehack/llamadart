@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:llamadart/llamadart.dart' show GpuBackend;
 import 'package:provider/provider.dart';
 
 import 'package:llamadart_chat_example/models/chat_settings.dart';
 import 'package:llamadart_chat_example/providers/chat_provider.dart';
 import 'package:llamadart_chat_example/screens/app_shell_screen.dart';
+import 'package:llamadart_chat_example/services/model_download_ui_controller.dart';
 
 import 'mocks.dart';
 
@@ -14,6 +16,110 @@ void main() {
   group('AppShellScreen', () {
     setUp(() {
       TestWidgetsFlutterBinding.ensureInitialized();
+    });
+
+    testWidgets('keeps active download progress visible outside settings', (
+      tester,
+    ) async {
+      final oldSize = tester.view.physicalSize;
+      final oldRatio = tester.view.devicePixelRatio;
+      tester.view
+        ..physicalSize = const Size(854, 700)
+        ..devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view
+          ..physicalSize = oldSize
+          ..devicePixelRatio = oldRatio;
+      });
+
+      final provider = ChatProvider(
+        chatService: MockChatService(),
+        settingsService: MockSettingsService(),
+      );
+      addTearDown(provider.dispose);
+      final downloadUi = ModelDownloadUiController();
+      addTearDown(downloadUi.dispose);
+      await downloadUi.enqueueDownload(
+        filename: 'active.gguf',
+        displayName: 'Active model',
+      );
+      downloadUi.updateState('active.gguf', progress: 0.42);
+
+      await tester.pumpWidget(
+        ChangeNotifierProvider<ChatProvider>.value(
+          value: provider,
+          child: MaterialApp(
+            home: AppShellScreen(downloadUiController: downloadUi),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('Active model'), findsOneWidget);
+      expect(find.textContaining('42%'), findsOneWidget);
+
+      final queued = downloadUi.enqueueDownload(
+        filename: 'queued.gguf',
+        displayName: 'Queued model',
+      );
+      await tester.pump();
+      expect(find.text('1 queued'), findsOneWidget);
+
+      await tester.tap(find.textContaining('42%'));
+      await tester.pumpAndSettle();
+      expect(find.text('Model parameters'), findsOneWidget);
+
+      downloadUi.cancel('queued.gguf');
+      expect(await queued, isFalse);
+      downloadUi.completeActiveDownload('active.gguf');
+    });
+
+    testWidgets('download activity keeps an open pinned settings panel open', (
+      tester,
+    ) async {
+      final oldSize = tester.view.physicalSize;
+      final oldRatio = tester.view.devicePixelRatio;
+      tester.view
+        ..physicalSize = const Size(1800, 900)
+        ..devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view
+          ..physicalSize = oldSize
+          ..devicePixelRatio = oldRatio;
+      });
+
+      final provider = ChatProvider(
+        chatService: MockChatService(),
+        settingsService: MockSettingsService(),
+      );
+      addTearDown(provider.dispose);
+      final downloadUi = ModelDownloadUiController();
+      addTearDown(downloadUi.dispose);
+      await downloadUi.enqueueDownload(
+        filename: 'active.gguf',
+        displayName: 'Active model',
+      );
+      downloadUi.updateState('active.gguf', progress: 0.1);
+
+      await tester.pumpWidget(
+        ChangeNotifierProvider<ChatProvider>.value(
+          value: provider,
+          child: MaterialApp(
+            home: AppShellScreen(downloadUiController: downloadUi),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byTooltip('Open model and inference settings'));
+      await tester.pumpAndSettle();
+      expect(find.text('Model parameters'), findsOneWidget);
+
+      await tester.tap(find.text('Active model'));
+      await tester.pumpAndSettle();
+      expect(find.text('Model parameters'), findsOneWidget);
+
+      downloadUi.completeActiveDownload('active.gguf');
     });
 
     testWidgets('keeps desktop settings opt-in and opens manage models view', (
@@ -38,6 +144,7 @@ void main() {
         initialSettings: const ChatSettings(
           modelPath: 'test_model.gguf',
           gpuLayers: 99,
+          autoTuneModelParams: true,
         ),
       );
 
@@ -67,9 +174,11 @@ void main() {
 
       await tester.tap(find.text('Model parameters'));
       await tester.pumpAndSettle();
-      expect(find.text('Max'), findsOneWidget);
+      expect(find.text('Auto · Max'), findsOneWidget);
       expect(
-        find.textContaining('Auto selects Metal on supported Macs.'),
+        find.textContaining(
+          'Auto tuning recalculates GPU layers and context headroom',
+        ),
         findsOneWidget,
       );
       expect(
@@ -83,6 +192,25 @@ void main() {
         find.textContaining('GPU layers is 0, so inference will run on CPU.'),
         findsOneWidget,
       );
+
+      provider.updateGpuLayers(99);
+      await provider.updatePreferredBackend(GpuBackend.cpu);
+      await tester.pumpAndSettle();
+      expect(find.text('Auto · Max'), findsNothing);
+      expect(find.text('Max'), findsOneWidget);
+      expect(
+        find.textContaining(
+          'Auto tuning recalculates GPU layers and context headroom',
+        ),
+        findsNothing,
+      );
+      expect(
+        find.textContaining(
+          'GPU layers controls how much of the model is offloaded',
+        ),
+        findsOneWidget,
+      );
+      await tester.pump(const Duration(milliseconds: 300));
     });
 
     testWidgets('shows change model action when settings panel is hidden', (
@@ -265,7 +393,7 @@ void main() {
           isNull,
           reason: 'Model library overflowed at ${size.width}px',
         );
-        expect(find.text('Add GGUF (HF)'), findsOneWidget);
+        expect(find.text('Add model'), findsOneWidget);
       }
     });
 

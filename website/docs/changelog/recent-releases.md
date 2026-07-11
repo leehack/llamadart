@@ -7,6 +7,27 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
+## Unreleased
+
+- Added an app-owned FIFO model-download queue to the runnable chat app, with
+  per-card queue positions/cancellation and a responsive shell progress pill
+  that remains visible after settings closes.
+- Replaced the runnable chat app's broad built-in catalog with a focused
+  Unsloth-first set. Added cross-platform Gemma 4 E4B plus native-desktop Gemma
+  4 12B/26B-A4B/31B and Qwen3.6 35B-A3B presets. Added downloaded-first ordering,
+  name/capability search, Mobile & Web/Desktop filters, clearer incompatible-model
+  states, quieter model cards, and independent remove-from-library and
+  downloaded-file actions for custom entries.
+- Enabled Gemma 4 audio attachments in the runnable chat app for the current
+  native GGUF projector and LiteRT-LM bundle while keeping LiteRT-LM Web
+  text-only. Persisted capability settings now distinguish direct model media
+  input from external `mmproj` input.
+- Made native GGUF Auto tuning model- and memory-aware. **Max** now requests
+  full llama.cpp offload, while Auto preserves the requested context when the
+  model fits and reduces context before selecting partial offload under memory
+  pressure. Auto intent persists separately from resolved values so each model
+  load, including after an app restart, recalculates current device headroom.
+
 ## 0.8.14
 
 - Improved the runnable chat app's web model-cache and loading experience by
