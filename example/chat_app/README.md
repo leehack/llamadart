@@ -8,6 +8,9 @@ A Flutter chat application demonstrating real-world usage of llamadart with UI.
 - 🖼️ **Runtime-checked multimodal support**: The app enables image/audio inputs
   only when the loaded projector/runtime path actually reports those
   capabilities.
+- 📋 **Clipboard attachments**: Paste screenshots or copied image/audio files
+  with `Cmd/Ctrl+V`, or use **Paste attachment** from the attachment menu on
+  touch devices. Plain-text paste continues to work normally.
 - 📱 Material Design 3 UI
 - ⚙️ Model configuration (path, runtime-detected backend selection, GPU layers, context size)
 - 🧩 Capability badges per model (Tools / Thinking / Vision / Audio / Video)
@@ -387,6 +390,8 @@ await prefs.setInt('preferred_backend', backendIndex);
 - Multimodal projector loading on web is URL-based (model + matching mmproj URL).
 - Model selection auto-wires mmproj URLs for multimodal web models.
 - Image/audio attachments on web use browser file bytes (local path-based loading remains native-only).
+- Browser paste events support screenshots and copied image/audio files without
+  replacing normal text paste. Clipboard attachments are capped at 64 MB.
 - On web, model files are loaded by URL (local file download/cache flow differs from native).
 - On web, **Download** prefetches model/mmproj bytes into browser Cache Storage with progress.
 - Qwen3.5 `0.8B` WebGPU loads are capped to a low layer count for stable browser text output.

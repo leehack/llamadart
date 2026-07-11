@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:llamadart/llamadart.dart';
@@ -124,8 +126,30 @@ void main() {
     await tester.tap(find.byTooltip('Add attachment'));
     await tester.pumpAndSettle();
 
+    expect(find.text('Paste attachment'), findsOneWidget);
     expect(find.text('Attach Audio'), findsOneWidget);
     expect(find.text('Attach Image'), findsNothing);
+  });
+
+  test('stages clipboard media bytes for the next message', () async {
+    final provider = ChatProvider(
+      chatService: MockChatService(),
+      settingsService: MockSettingsService(),
+      initialSettings: const ChatSettings(modelPath: 'test_model.gguf'),
+    );
+    addTearDown(provider.dispose);
+
+    expect(await provider.stageImageAttachment(Uint8List(0)), isFalse);
+    expect(provider.stageAudioAttachment(Uint8List(0)), isFalse);
+
+    final imageBytes = Uint8List.fromList(const [1, 2, 3]);
+    final audioBytes = Uint8List.fromList(const [4, 5, 6]);
+    expect(await provider.stageImageAttachment(imageBytes), isTrue);
+    expect(provider.stageAudioAttachment(audioBytes), isTrue);
+
+    expect(provider.stagedParts, hasLength(2));
+    expect(provider.stagedParts.first, isA<LlamaImageContent>());
+    expect(provider.stagedParts.last, isA<LlamaAudioContent>());
   });
 }
 

@@ -61,6 +61,9 @@ flutter test
 - Runtime-verified multimodal capability gating after `mmproj` load, plus
   declared direct-media capabilities for native model bundles such as
   LiteRT-LM. The app hides unsupported attachment types for the active platform.
+- Clipboard image/audio attachments through `Cmd/Ctrl+V` on desktop and web or
+  **Paste attachment** on touch devices. Text-only clipboard content still
+  follows the normal composer paste path, and media is capped at 64 MB.
 - Native and web `.litertlm` routing through LiteRT-LM. Native LiteRT-LM is
   enabled for supported targets; iOS x86_64 simulator and Windows arm64 remain
   GGUF-only because no matching LiteRT-LM native bundle is published.

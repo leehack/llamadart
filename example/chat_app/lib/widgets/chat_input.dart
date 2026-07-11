@@ -1,11 +1,15 @@
+import 'dart:async';
 import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:llamadart/llamadart.dart';
 import 'package:provider/provider.dart';
+import 'package:super_clipboard/super_clipboard.dart';
 
 import '../providers/chat_provider.dart';
+import '../services/clipboard_attachment_service.dart';
 import 'tool_declarations_dialog.dart';
 
 class ChatInput extends StatefulWidget {
@@ -25,6 +29,8 @@ class ChatInput extends StatefulWidget {
 }
 
 class _ChatInputState extends State<ChatInput> {
+  final ClipboardAttachmentService _clipboardAttachments =
+      ClipboardAttachmentService();
   bool _hasDraftText = false;
 
   @override
@@ -32,6 +38,7 @@ class _ChatInputState extends State<ChatInput> {
     super.initState();
     _hasDraftText = widget.controller.text.trim().isNotEmpty;
     widget.controller.addListener(_onTextChanged);
+    ClipboardEvents.instance?.registerPasteEventListener(_onWebPasteEvent);
   }
 
   @override
@@ -47,6 +54,7 @@ class _ChatInputState extends State<ChatInput> {
 
   @override
   void dispose() {
+    ClipboardEvents.instance?.unregisterPasteEventListener(_onWebPasteEvent);
     widget.controller.removeListener(_onTextChanged);
     super.dispose();
   }
@@ -66,6 +74,126 @@ class _ChatInputState extends State<ChatInput> {
         platform == TargetPlatform.linux;
   }
 
+  bool _allowsImage(ChatProvider provider) {
+    return provider.supportsVision ||
+        (provider.canAttachMedia &&
+            !provider.supportsVision &&
+            !provider.supportsAudio);
+  }
+
+  Future<void> _onWebPasteEvent(ClipboardReadEvent event) async {
+    if (!mounted || !widget.focusNode.hasFocus) {
+      return;
+    }
+    final provider = context.read<ChatProvider>();
+    if (!provider.canAttachMedia) {
+      return;
+    }
+
+    try {
+      final reader = await event.getClipboardReader();
+      final content = await _clipboardAttachments.read(
+        reader,
+        allowImage: _allowsImage(provider),
+        allowAudio: provider.supportsAudio,
+      );
+      await _handlePasteContent(provider, content, allowTextFallback: true);
+    } catch (error) {
+      _showClipboardError(error);
+    }
+  }
+
+  Future<void> _pasteFromSystemClipboard(
+    ChatProvider provider, {
+    required bool allowTextFallback,
+    required bool showUnsupportedMessage,
+  }) async {
+    try {
+      final content = await _clipboardAttachments.readSystemClipboard(
+        allowImage: _allowsImage(provider),
+        allowAudio: provider.supportsAudio,
+      );
+      if (!mounted) {
+        return;
+      }
+      if (content == null) {
+        if (showUnsupportedMessage) {
+          _showMessage('Clipboard access is not available on this platform.');
+        }
+        return;
+      }
+      final handled = await _handlePasteContent(
+        provider,
+        content,
+        allowTextFallback: allowTextFallback,
+      );
+      if (!handled && showUnsupportedMessage) {
+        _showMessage('Clipboard has no supported image or audio attachment.');
+      }
+    } catch (error) {
+      _showClipboardError(error);
+    }
+  }
+
+  Future<bool> _handlePasteContent(
+    ChatProvider provider,
+    ClipboardPasteContent content, {
+    required bool allowTextFallback,
+  }) async {
+    final attachment = content.attachment;
+    if (attachment != null) {
+      switch (attachment.kind) {
+        case ClipboardAttachmentKind.image:
+          return provider.stageImageAttachment(attachment.bytes);
+        case ClipboardAttachmentKind.audio:
+          return provider.stageAudioAttachment(attachment.bytes);
+      }
+    }
+
+    final text = content.plainText;
+    if (allowTextFallback && text != null) {
+      _insertTextAtSelection(text);
+      return true;
+    }
+    return false;
+  }
+
+  void _insertTextAtSelection(String text) {
+    final value = widget.controller.value;
+    final selection = value.selection.isValid
+        ? value.selection
+        : TextSelection.collapsed(offset: value.text.length);
+    final nextText = value.text.replaceRange(
+      selection.start,
+      selection.end,
+      text,
+    );
+    widget.controller.value = value.copyWith(
+      text: nextText,
+      selection: TextSelection.collapsed(offset: selection.start + text.length),
+      composing: TextRange.empty,
+    );
+  }
+
+  void _showClipboardError(Object error) {
+    if (!mounted) {
+      return;
+    }
+    final message = error is ClipboardAttachmentException
+        ? error.message
+        : 'Couldn\'t read the clipboard attachment.';
+    _showMessage(message);
+  }
+
+  void _showMessage(String message) {
+    if (!mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
   @override
   Widget build(BuildContext context) {
     return Consumer<ChatProvider>(
@@ -80,11 +208,60 @@ class _ChatInputState extends State<ChatInput> {
             ? 'Stop generation'
             : 'Send message';
         final colorScheme = Theme.of(context).colorScheme;
+        final platform = Theme.of(context).platform;
         final width = MediaQuery.sizeOf(context).width;
         final isDesktop = width >= 900;
         final useDesktopShortcuts =
-            isDesktop && _supportsDesktopShortcuts(Theme.of(context).platform);
+            isDesktop && _supportsDesktopShortcuts(platform);
+        final usesMetaPaste =
+            platform == TargetPlatform.macOS || platform == TargetPlatform.iOS;
         final safeBottom = MediaQuery.paddingOf(context).bottom;
+        final shortcutBindings = <ShortcutActivator, VoidCallback>{
+          const SingleActivator(
+            LogicalKeyboardKey.enter,
+            control: true,
+            includeRepeats: false,
+          ): () {
+            if (canSubmit) {
+              widget.onSend();
+            }
+          },
+          const SingleActivator(
+            LogicalKeyboardKey.enter,
+            meta: true,
+            includeRepeats: false,
+          ): () {
+            if (canSubmit) {
+              widget.onSend();
+            }
+          },
+          if (!kIsWeb && provider.canAttachMedia) ...{
+            if (usesMetaPaste)
+              const SingleActivator(
+                LogicalKeyboardKey.keyV,
+                meta: true,
+                includeRepeats: false,
+              ): () => unawaited(
+                _pasteFromSystemClipboard(
+                  provider,
+                  allowTextFallback: true,
+                  showUnsupportedMessage: false,
+                ),
+              ),
+            if (!usesMetaPaste)
+              const SingleActivator(
+                LogicalKeyboardKey.keyV,
+                control: true,
+                includeRepeats: false,
+              ): () => unawaited(
+                _pasteFromSystemClipboard(
+                  provider,
+                  allowTextFallback: true,
+                  showUnsupportedMessage: false,
+                ),
+              ),
+          },
+        };
 
         return Container(
           padding: EdgeInsets.fromLTRB(
@@ -122,26 +299,7 @@ class _ChatInputState extends State<ChatInput> {
                           _buildAttachmentMenu(context, provider),
                         Expanded(
                           child: CallbackShortcuts(
-                            bindings: {
-                              const SingleActivator(
-                                LogicalKeyboardKey.enter,
-                                control: true,
-                                includeRepeats: false,
-                              ): () {
-                                if (canSubmit) {
-                                  widget.onSend();
-                                }
-                              },
-                              const SingleActivator(
-                                LogicalKeyboardKey.enter,
-                                meta: true,
-                                includeRepeats: false,
-                              ): () {
-                                if (canSubmit) {
-                                  widget.onSend();
-                                }
-                              },
-                            },
+                            bindings: shortcutBindings,
                             child: TextField(
                               controller: widget.controller,
                               focusNode: widget.focusNode,
@@ -363,13 +521,31 @@ class _ChatInputState extends State<ChatInput> {
       ),
       tooltip: 'Add attachment',
       onSelected: (value) {
-        if (value == 'image') {
+        if (value == 'paste') {
+          unawaited(
+            _pasteFromSystemClipboard(
+              provider,
+              allowTextFallback: false,
+              showUnsupportedMessage: true,
+            ),
+          );
+        } else if (value == 'image') {
           provider.pickImage();
         } else if (value == 'audio') {
           provider.pickAudio();
         }
       },
       itemBuilder: (context) => [
+        const PopupMenuItem(
+          value: 'paste',
+          child: Row(
+            children: [
+              Icon(Icons.content_paste_rounded),
+              SizedBox(width: 12),
+              Expanded(child: Text('Paste attachment')),
+            ],
+          ),
+        ),
         if (provider.supportsVision || showFallbackImage)
           const PopupMenuItem(
             value: 'image',
@@ -377,7 +553,7 @@ class _ChatInputState extends State<ChatInput> {
               children: [
                 Icon(Icons.image_outlined),
                 SizedBox(width: 12),
-                Text('Attach Image'),
+                Expanded(child: Text('Attach Image')),
               ],
             ),
           ),
@@ -388,7 +564,7 @@ class _ChatInputState extends State<ChatInput> {
               children: [
                 Icon(Icons.audiotrack_outlined),
                 SizedBox(width: 12),
-                Text('Attach Audio'),
+                Expanded(child: Text('Attach Audio')),
               ],
             ),
           ),

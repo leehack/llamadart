@@ -1807,6 +1807,25 @@ class ChatProvider extends ChangeNotifier {
     }
   }
 
+  /// Prepares image [bytes] and stages them for the next message.
+  Future<bool> stageImageAttachment(Uint8List bytes) async {
+    final prepared = await _prepareImagePartFromBytes(bytes);
+    if (prepared == null) {
+      return false;
+    }
+    _addStagedPart(prepared);
+    return true;
+  }
+
+  /// Stages audio [bytes] for the next message.
+  bool stageAudioAttachment(Uint8List bytes) {
+    if (bytes.isEmpty) {
+      return false;
+    }
+    _addStagedPart(LlamaAudioContent(bytes: bytes));
+    return true;
+  }
+
   Future<void> pickImage() async {
     if (!kIsWeb &&
         defaultTargetPlatform == TargetPlatform.android &&
