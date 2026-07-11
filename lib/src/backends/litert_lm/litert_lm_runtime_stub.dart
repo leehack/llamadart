@@ -68,6 +68,9 @@ class LiteRtLmRuntimeClient {
   }
 
   /// Initializes the native LiteRT-LM engine.
+  ///
+  /// [outputTokens] is the fallback per-request output limit, not a benchmark
+  /// decode-step count.
   Future<void> initialize({
     required String modelPath,
     String backend = 'gpu',

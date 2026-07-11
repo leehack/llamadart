@@ -1,3 +1,10 @@
+## Unreleased
+
+* Updated Apple SwiftPM native pin to `leehack/litert-lm-native@v0.14.0-native.2`.
+
+* Replaced the separate iOS Gemma provider target with the consolidated
+  upstream runtime and enabled the complete macOS SwiftPM artifact set.
+
 ## 0.0.4
 
 * Added the `GemmaModelConstraintProvider` SwiftPM binary target required by

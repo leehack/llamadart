@@ -18,7 +18,7 @@ List<String> liteRtLmAvailableNativeBackendsForCurrentPlatform() {
       liteRtLmNpuBackend,
     ];
   }
-  if (Platform.isMacOS) {
+  if (Platform.isIOS || Platform.isMacOS) {
     return const <String>[liteRtLmCpuBackend, liteRtLmGpuBackend];
   }
   return const <String>[liteRtLmCpuBackend];
@@ -26,7 +26,7 @@ List<String> liteRtLmAvailableNativeBackendsForCurrentPlatform() {
 
 /// Returns the native LiteRT-LM backend used for automatic selection.
 String liteRtLmDefaultNativeBackendForCurrentPlatform() {
-  if (Platform.isAndroid || Platform.isMacOS) {
+  if (Platform.isAndroid || Platform.isIOS || Platform.isMacOS) {
     return liteRtLmGpuBackend;
   }
   return liteRtLmCpuBackend;
@@ -34,7 +34,7 @@ String liteRtLmDefaultNativeBackendForCurrentPlatform() {
 
 /// Returns whether the current native LiteRT-LM target exposes a GPU backend.
 bool liteRtLmNativeGpuSupportedOnCurrentPlatform() {
-  return Platform.isMacOS || Platform.isAndroid;
+  return Platform.isAndroid || Platform.isIOS || Platform.isMacOS;
 }
 
 /// Normalizes an optional direct LiteRT-LM native backend override.

@@ -25,25 +25,9 @@ resolve_litert_arch() {
 LITERT_ARCH="$(resolve_litert_arch)"
 
 required_libraries() {
-  case "$LITERT_ARCH" in
-    arm64)
-      printf '%s\n' \
-        "libCLiteRTLM_mac.dylib" \
-        "libGemmaModelConstraintProvider.dylib" \
-        "libLiteRt.dylib" \
-        "libLiteRtLm.dylib" \
-        "libLiteRtMetalAccelerator.dylib" \
-        "libLiteRtTopKMetalSampler.dylib" \
-        "libLiteRtTopKWebGpuSampler.dylib" \
-        "libLiteRtWebGpuAccelerator.dylib" \
-        "libwebgpu_dawn.dylib"
-      ;;
-    x64)
-      printf '%s\n' \
-        "libCLiteRTLM_mac.dylib" \
-        "libLiteRtLm.dylib"
-      ;;
-  esac
+  printf '%s\n' \
+    "libCLiteRTLM_mac.dylib" \
+    "libLiteRtLm.dylib"
 }
 
 validate_litert_dir() {
@@ -73,26 +57,9 @@ validate_litert_dir() {
 }
 
 required_native_spm_files() {
-  case "$LITERT_ARCH" in
-    arm64)
-      printf '%s\n' \
-        "GemmaModelConstraintProvider.framework/Versions/A/GemmaModelConstraintProvider" \
-        "LiteRtLm.framework/Versions/A/LiteRtLm" \
-        "libCLiteRTLM_mac.dylib" \
-        "libGemmaModelConstraintProvider.dylib" \
-        "libLiteRt.dylib" \
-        "libLiteRtMetalAccelerator.dylib" \
-        "libLiteRtTopKMetalSampler.dylib" \
-        "libLiteRtTopKWebGpuSampler.dylib" \
-        "libLiteRtWebGpuAccelerator.dylib" \
-        "libwebgpu_dawn.dylib"
-      ;;
-    x64)
-      printf '%s\n' \
-        "LiteRtLm.framework/Versions/A/LiteRtLm" \
-        "libCLiteRTLM_mac.dylib"
-      ;;
-  esac
+  printf '%s\n' \
+    "LiteRtLm.framework/Versions/A/LiteRtLm" \
+    "libCLiteRTLM_mac.dylib"
 }
 
 has_complete_native_spm_runtime() {
@@ -117,8 +84,8 @@ resolve_litert_dir() {
   fi
 
   local candidates=(
-    "$ROOT_DIR/.dart_tool/llamadart/litert_lm/0.14.0-native.1/macos_$LITERT_ARCH"
-    "$ROOT_DIR/.dart_tool/llamadart/litert_lm/0.14.0-native.1/macos/$LITERT_ARCH"
+    "$ROOT_DIR/.dart_tool/llamadart/litert_lm/0.14.0-native.2/macos_$LITERT_ARCH"
+    "$ROOT_DIR/.dart_tool/llamadart/litert_lm/0.14.0-native.2/macos/$LITERT_ARCH"
   )
   local candidate
   for candidate in "${candidates[@]}"; do

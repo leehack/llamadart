@@ -67,7 +67,7 @@ JavaScript runtime.
 | Capability | llama.cpp / GGUF | LiteRT-LM / `.litertlm` |
 | --- | --- | --- |
 | Native Android | CPU, Vulkan, optional OpenCL modules | CPU, GPU, Android-only NPU selector |
-| Native iOS/macOS | Consolidated CPU + Metal runtime | iOS CPU; macOS CPU/GPU |
+| Native iOS/macOS | Consolidated CPU + Metal runtime | CPU/GPU |
 | Native Linux/Windows | CPU, Vulkan, and target-specific optional modules | CPU in the current pinned runtime |
 | Web | llama.cpp WebGPU/CPU bridge for GGUF URLs | `@litert-lm/core` for web-compatible `.litertlm` URLs |
 | Embeddings | Supported on native; supported on web bridge assets with embedding APIs | Not exposed by current LiteRT-LM APIs |

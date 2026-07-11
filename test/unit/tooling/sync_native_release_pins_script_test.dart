@@ -45,6 +45,16 @@ const _litertLmBundleSpecs = <_LiteRtLmBundleSpec>[
     await litertRuntimeDart.writeAsString('''
 const _litertLmVersion = '1.0.0';
 ''');
+    final macosPrepareScript = File(
+      path.join(root.path, 'tool', 'macos_litert_lm_prepare_app.sh'),
+    );
+    await macosPrepareScript.parent.create(recursive: true);
+    await macosPrepareScript.writeAsString('''
+paths=(
+  ".dart_tool/llamadart/litert_lm/1.0.0/macos_arm64"
+  ".dart_tool/llamadart/litert_lm/1.0.0/macos/arm64"
+)
+''');
     await _writePackageSwift(
       root,
       'packages/llamadart_llama_cpp_flutter/darwin/'
@@ -131,6 +141,10 @@ const _litertLmVersion = '1.0.0';
       litertRuntimeDartText,
       contains("const _litertLmVersion = '9.9.9';"),
     );
+    final macosPrepareText = await macosPrepareScript.readAsString();
+    expect(macosPrepareText, contains('litert_lm/9.9.9/macos_arm64'));
+    expect(macosPrepareText, contains('litert_lm/9.9.9/macos/arm64'));
+    expect(macosPrepareText, isNot(contains('litert_lm/1.0.0/')));
 
     final llamaSwift = await File(
       path.join(
@@ -549,8 +563,8 @@ String _hex(String character) => List.filled(64, character).join();
 const Map<String, (String, String)> _litertAppleTargets = {
   'LiteRtLm': ('litert-lm-native-apple-LiteRtLm-xcframework-{tag}.zip', '3'),
   'CLiteRTLM': ('litert-lm-native-apple-CLiteRTLM-xcframework-{tag}.zip', '4'),
-  'GemmaModelConstraintProvider': (
-    'litert-lm-native-apple-GemmaModelConstraintProvider-xcframework-{tag}.zip',
+  'CLiteRTLMMac': (
+    'litert-lm-native-apple-CLiteRTLMMac-xcframework-{tag}.zip',
     '8',
   ),
 };

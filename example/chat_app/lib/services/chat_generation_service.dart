@@ -61,6 +61,9 @@ class ChatGenerationService {
       minP: isLiteRtLm ? defaults.minP : settings.minP,
       penalty: isLiteRtLm ? defaults.penalty : settings.penalty,
       stopSequences: const <String>[],
+      streamBatchTokenThreshold: isLiteRtLm
+          ? 1
+          : defaults.streamBatchTokenThreshold,
     );
   }
 

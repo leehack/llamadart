@@ -8,6 +8,29 @@ import 'package:test/test.dart';
 
 void main() {
   group('macos_litert_lm_prepare_app.sh', () {
+    test('chat app embeds the macOS runtime after Flutter assembly', () {
+      final project = File(
+        path.join(
+          'example',
+          'chat_app',
+          'macos',
+          'Runner.xcodeproj',
+          'project.pbxproj',
+        ),
+      ).readAsStringSync();
+
+      final flutterEmbed = project.indexOf(
+        '3399D490228B24CF009A79C7 /* ShellScript */',
+      );
+      final prepareRuntime = project.indexOf(
+        'A17E2C1B5C7747D5A3C40A23 /* Prepare LiteRT-LM Runtime */',
+      );
+
+      expect(flutterEmbed, greaterThanOrEqualTo(0));
+      expect(prepareRuntime, greaterThan(flutterEmbed));
+      expect(project, contains('tool/macos_litert_lm_prepare_app.sh'));
+    });
+
     test(
       'rejects incomplete explicit arm64 runtime directories',
       () async {
@@ -24,12 +47,7 @@ void main() {
 
         expect(result.exitCode, 2);
         expect(result.stderr, contains('library directory is incomplete'));
-        expect(
-          result.stderr,
-          contains('libGemmaModelConstraintProvider.dylib'),
-        );
         expect(result.stderr, contains('libCLiteRTLM_mac.dylib'));
-        expect(result.stderr, contains('libwebgpu_dawn.dylib'));
         expect(
           Directory(
             path.join(appDir.path, 'Contents', 'Frameworks'),
@@ -171,9 +189,6 @@ void main() {
           path.join(frameworksDir.path, 'LiteRtLm.framework', 'Versions', 'A'),
         )..createSync(recursive: true);
         await File(path.join(liteRtLmDir.path, 'LiteRtLm')).create();
-        await File(
-          path.join(frameworksDir.path, 'libCLiteRTLM_mac.dylib'),
-        ).create();
 
         final result = await _runPrepareApp(appDir, libDir, arch: 'arm64');
 
@@ -184,7 +199,7 @@ void main() {
             path.join(
               frameworksDir.path,
               'LiteRtLmRuntime',
-              'libwebgpu_dawn.dylib',
+              'libCLiteRTLM_mac.dylib',
             ),
           ).existsSync(),
           isTrue,
@@ -259,14 +274,7 @@ Future<ProcessResult> _runPrepareApp(
 
 const List<String> _arm64Libraries = [
   'libCLiteRTLM_mac.dylib',
-  'libGemmaModelConstraintProvider.dylib',
-  'libLiteRt.dylib',
   'libLiteRtLm.dylib',
-  'libLiteRtMetalAccelerator.dylib',
-  'libLiteRtTopKMetalSampler.dylib',
-  'libLiteRtTopKWebGpuSampler.dylib',
-  'libLiteRtWebGpuAccelerator.dylib',
-  'libwebgpu_dawn.dylib',
 ];
 
 const List<String> _oldFrameworks = [

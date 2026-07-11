@@ -169,13 +169,6 @@ void main() {
     expect(liteRtLmMacOsRequiredLibrariesForAbi(Abi.macosArm64), const <String>[
       'libLiteRtLm.dylib',
       'libCLiteRTLM_mac.dylib',
-      'libGemmaModelConstraintProvider.dylib',
-      'libLiteRt.dylib',
-      'libLiteRtMetalAccelerator.dylib',
-      'libLiteRtTopKMetalSampler.dylib',
-      'libLiteRtTopKWebGpuSampler.dylib',
-      'libLiteRtWebGpuAccelerator.dylib',
-      'libwebgpu_dawn.dylib',
     ]);
     expect(liteRtLmMacOsRequiredLibrariesForAbi(Abi.macosX64), const <String>[
       'libLiteRtLm.dylib',
@@ -207,20 +200,7 @@ void main() {
   test('macOS LiteRT-LM app framework validation follows runtime ABI', () {
     expect(
       liteRtLmMacOsRequiredFrameworksForAbi(Abi.macosArm64),
-      const <String>[
-        'GemmaModelConstraintProvider.framework/Versions/A/'
-            'GemmaModelConstraintProvider',
-        'LiteRt.framework/Versions/A/LiteRt',
-        'LiteRtLm.framework/Versions/A/LiteRtLm',
-        'LiteRtMetalAccelerator.framework/Versions/A/'
-            'LiteRtMetalAccelerator',
-        'LiteRtTopKMetalSampler.framework/Versions/A/'
-            'LiteRtTopKMetalSampler',
-        'LiteRtTopKWebGpuSampler.framework/Versions/A/'
-            'LiteRtTopKWebGpuSampler',
-        'LiteRtWebGpuAccelerator.framework/Versions/A/'
-            'LiteRtWebGpuAccelerator',
-      ],
+      const <String>['LiteRtLm.framework/Versions/A/LiteRtLm'],
     );
     expect(liteRtLmMacOsRequiredFrameworksForAbi(Abi.macosX64), const <String>[
       'LiteRtLm.framework/Versions/A/LiteRtLm',
@@ -232,17 +212,8 @@ void main() {
     expect(
       liteRtLmMacOsRequiredNativeSpmFilesForAbi(Abi.macosArm64),
       const <String>[
-        'GemmaModelConstraintProvider.framework/Versions/A/'
-            'GemmaModelConstraintProvider',
         'LiteRtLm.framework/Versions/A/LiteRtLm',
         'libCLiteRTLM_mac.dylib',
-        'libGemmaModelConstraintProvider.dylib',
-        'libLiteRt.dylib',
-        'libLiteRtMetalAccelerator.dylib',
-        'libLiteRtTopKMetalSampler.dylib',
-        'libLiteRtTopKWebGpuSampler.dylib',
-        'libLiteRtWebGpuAccelerator.dylib',
-        'libwebgpu_dawn.dylib',
       ],
     );
     expect(
@@ -261,7 +232,6 @@ void main() {
 
     final arm64Dir = Directory('${root.path}/arm64')..createSync();
     File('${arm64Dir.path}/libLiteRtLm.dylib').createSync();
-    File('${arm64Dir.path}/libCLiteRTLM_mac.dylib').createSync();
 
     expect(
       liteRtLmIsMacOsCacheDirectoryForAbi(arm64Dir, Abi.macosArm64),

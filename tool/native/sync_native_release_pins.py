@@ -28,6 +28,7 @@ DEFAULT_LITERT_LM_PACKAGE_SWIFT = (
 DEFAULT_LITERT_LM_RUNTIME_DART = (
     "lib/src/backends/litert_lm/litert_lm_runtime.dart"
 )
+DEFAULT_LITERT_LM_MACOS_PREPARE_SCRIPT = "tool/macos_litert_lm_prepare_app.sh"
 DEFAULT_LLAMA_CPP_PROJECT_DOCS = (
     "README.md",
     "website/docs/getting-started/installation.md",
@@ -47,6 +48,7 @@ def main() -> int:
     llama_cpp_package_swift_path = repo_root / args.llama_cpp_package_swift
     litert_lm_package_swift_path = repo_root / args.litert_lm_package_swift
     litert_lm_runtime_dart_path = repo_root / args.litert_lm_runtime_dart
+    litert_lm_macos_prepare_path = repo_root / args.litert_lm_macos_prepare_script
     changelog_path = repo_root / DEFAULT_CHANGELOG
     llama_cpp_project_doc_paths = [
         repo_root / relative_path for relative_path in DEFAULT_LLAMA_CPP_PROJECT_DOCS
@@ -150,6 +152,18 @@ def main() -> int:
             f"const _litertLmVersion = '{litert_version}';",
             "LiteRT-LM Dart runtime version",
         )
+        if litert_lm_macos_prepare_path.exists():
+            prepare_text = litert_lm_macos_prepare_path.read_text(encoding="utf-8")
+            updated_prepare_text, replacement_count = re.subn(
+                r"(/litert_lm/)[^/]+(/macos(?:_|/))",
+                rf"\g<1>{litert_version}\g<2>",
+                prepare_text,
+            )
+            if replacement_count == 0:
+                raise ReleaseError(
+                    "Could not replace LiteRT-LM version in macOS prepare script"
+                )
+            pending_writes[litert_lm_macos_prepare_path] = updated_prepare_text
         for bundle in litert_lm_bundle_names(hook_text):
             checksum = release_asset_checksum(
                 release,
@@ -280,6 +294,14 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Path to the LiteRT-LM Dart runtime version pin relative "
             "to repo root."
+        ),
+    )
+    parser.add_argument(
+        "--litert-lm-macos-prepare-script",
+        default=DEFAULT_LITERT_LM_MACOS_PREPARE_SCRIPT,
+        help=(
+            "Path to the LiteRT-LM macOS app preparation script relative "
+            "to repo root. Skipped if the file does not exist."
         ),
     )
     parser.add_argument(

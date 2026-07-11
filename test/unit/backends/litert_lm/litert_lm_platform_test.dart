@@ -38,7 +38,7 @@ void main() {
       return;
     }
 
-    if (Platform.isMacOS) {
+    if (Platform.isIOS || Platform.isMacOS) {
       expect(available, const <String>[liteRtLmCpuBackend, liteRtLmGpuBackend]);
       expect(liteRtLmDefaultNativeBackendForCurrentPlatform(), 'gpu');
       expect(liteRtLmNativeGpuSupportedOnCurrentPlatform(), isTrue);

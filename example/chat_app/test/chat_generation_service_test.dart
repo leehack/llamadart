@@ -51,6 +51,7 @@ void main() {
       // reject the request with an UnsupportedError.
       expect(params.minP, defaults.minP);
       expect(params.penalty, defaults.penalty);
+      expect(params.streamBatchTokenThreshold, 1);
     });
 
     test('accumulates stream updates and metrics', () async {
