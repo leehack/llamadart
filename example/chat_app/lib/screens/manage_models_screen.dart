@@ -1347,7 +1347,9 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
             ? '(auto detected)'
             : provider.numberOfThreadsBatch.toString();
         final isMaximumGpuLayers = provider.gpuLayers >= 99;
-        final gpuLayersLabel = provider.autoTuneModelParams
+        final isAutoTuning =
+            selectedBackend == GpuBackend.auto && provider.autoTuneModelParams;
+        final gpuLayersLabel = isAutoTuning
             ? isMaximumGpuLayers
                   ? 'Auto · Max'
                   : 'Auto · ${provider.gpuLayers}'
@@ -2005,7 +2007,7 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
                             'mmproj is configured for this model. Use Text only to disable it, or Load mmproj to attach it without a full reload.',
                           if (gpuOffloadDisabled)
                             'GPU layers is 0, so inference will run on CPU. Increase it or choose Max to enable GPU offload.',
-                          provider.autoTuneModelParams
+                          isAutoTuning
                               ? 'Auto tuning recalculates GPU layers and context headroom on every model load. Auto selects Metal on supported Macs.'
                               : 'GPU layers controls how much of the model is offloaded; Max enables Auto tuning with the Auto backend. Changes apply on next model load.',
                         ].join(' '),

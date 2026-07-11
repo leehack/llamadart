@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:llamadart/llamadart.dart' show GpuBackend;
 import 'package:provider/provider.dart';
 
 import 'package:llamadart_chat_example/models/chat_settings.dart';
@@ -191,6 +192,25 @@ void main() {
         find.textContaining('GPU layers is 0, so inference will run on CPU.'),
         findsOneWidget,
       );
+
+      provider.updateGpuLayers(99);
+      await provider.updatePreferredBackend(GpuBackend.cpu);
+      await tester.pumpAndSettle();
+      expect(find.text('Auto · Max'), findsNothing);
+      expect(find.text('Max'), findsOneWidget);
+      expect(
+        find.textContaining(
+          'Auto tuning recalculates GPU layers and context headroom',
+        ),
+        findsNothing,
+      );
+      expect(
+        find.textContaining(
+          'GPU layers controls how much of the model is offloaded',
+        ),
+        findsOneWidget,
+      );
+      await tester.pump(const Duration(milliseconds: 300));
     });
 
     testWidgets('shows change model action when settings panel is hidden', (
