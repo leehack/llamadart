@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:llamadart_chat_example/services/model_download_ui_controller.dart';
+import 'package:llamadart_chat_example/services/model_service_base.dart';
 
 void main() {
   group('ModelDownloadUiController', () {
@@ -36,6 +37,42 @@ void main() {
       expect(controller.activeFilename, 'third.gguf');
       controller.completeActiveDownload('third.gguf');
       expect(controller.hasPendingDownloads, isFalse);
+    });
+
+    test('queue transitions clear stale transfer state', () async {
+      final controller = ModelDownloadUiController();
+      addTearDown(controller.dispose);
+      const staleDetail = ModelDownloadProgress(
+        overallProgress: 0.6,
+        downloadedBytes: 6,
+        totalBytes: 10,
+        stage: ModelDownloadStage.model,
+        stageIndex: 1,
+        stageCount: 1,
+        stageDownloadedBytes: 6,
+        stageTotalBytes: 10,
+      );
+
+      controller.updateState('active.gguf', progress: 0.6, detail: staleDetail);
+      await controller.enqueueDownload(
+        filename: 'active.gguf',
+        displayName: 'Active model',
+      );
+
+      final activeState = controller.listenableFor('active.gguf').value;
+      expect(activeState.progress, 0);
+      expect(activeState.detail, isNull);
+
+      controller.updateState('queued.gguf', progress: 0.6, detail: staleDetail);
+      controller.enqueueDownload(
+        filename: 'queued.gguf',
+        displayName: 'Queued model',
+      );
+
+      final queuedState = controller.listenableFor('queued.gguf').value;
+      expect(queuedState.isQueued, isTrue);
+      expect(queuedState.progress, 0);
+      expect(queuedState.detail, isNull);
     });
 
     test('queued download can be removed before it starts', () async {

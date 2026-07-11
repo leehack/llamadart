@@ -338,6 +338,9 @@ class ModelDownloadUiController extends ChangeNotifier {
     updateState(
       request.filename,
       isDownloading: true,
+      clearProgress: true,
+      clearDetail: true,
+      clearTask: true,
       clearQueue: true,
       notifyGlobalListeners: false,
     );
@@ -352,6 +355,9 @@ class ModelDownloadUiController extends ChangeNotifier {
       updateState(
         request.filename,
         isDownloading: false,
+        clearProgress: true,
+        clearDetail: true,
+        clearTask: true,
         isQueued: true,
         queuePosition: index + 1,
         notifyGlobalListeners: false,
