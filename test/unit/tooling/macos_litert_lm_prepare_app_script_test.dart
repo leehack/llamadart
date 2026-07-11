@@ -19,16 +19,36 @@ void main() {
         ),
       ).readAsStringSync();
 
-      final flutterEmbed = project.indexOf(
-        '3399D490228B24CF009A79C7 /* ShellScript */',
+      final nativeTargetsStart = project.indexOf(
+        '/* Begin PBXNativeTarget section */',
       );
-      final prepareRuntime = project.indexOf(
-        'A17E2C1B5C7747D5A3C40A23 /* Prepare LiteRT-LM Runtime */',
+      expect(nativeTargetsStart, greaterThanOrEqualTo(0));
+      final runnerTargetStart = project.indexOf(
+        '/* Runner */ = {',
+        nativeTargetsStart,
+      );
+      final runnerBuildPhasesEnd = project.indexOf(
+        'buildRules = (',
+        runnerTargetStart,
+      );
+      expect(runnerTargetStart, greaterThanOrEqualTo(0));
+      expect(runnerBuildPhasesEnd, greaterThan(runnerTargetStart));
+
+      final runnerBuildPhases = project.substring(
+        runnerTargetStart,
+        runnerBuildPhasesEnd,
+      );
+      final flutterEmbed = runnerBuildPhases.indexOf('/* ShellScript */');
+      final prepareRuntime = runnerBuildPhases.indexOf(
+        '/* Prepare LiteRT-LM Runtime */',
       );
 
       expect(flutterEmbed, greaterThanOrEqualTo(0));
       expect(prepareRuntime, greaterThan(flutterEmbed));
+      expect(project, contains('macos_assemble.sh embed'));
       expect(project, contains('tool/macos_litert_lm_prepare_app.sh'));
+      expect(project, contains(r'if [ -f \"$SCRIPT\" ]'));
+      expect(project, contains(r'bash \"$SCRIPT\"'));
     });
 
     test(

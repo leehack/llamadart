@@ -349,7 +349,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/bash;
-			shellScript = "set -euo pipefail\nSCRIPT=\"$PROJECT_DIR/../../../tool/macos_litert_lm_prepare_app.sh\"\nif [ -x \"$SCRIPT\" ]; then\n  \"$SCRIPT\" \"$TARGET_BUILD_DIR/$WRAPPER_NAME\"\nelse\n  echo \"warning: LiteRT-LM prepare script not found: $SCRIPT\" >&2\nfi\n";
+			shellScript = "set -euo pipefail\nSCRIPT=\"$PROJECT_DIR/../../../tool/macos_litert_lm_prepare_app.sh\"\nif [ -f \"$SCRIPT\" ]; then\n  bash \"$SCRIPT\" \"$TARGET_BUILD_DIR/$WRAPPER_NAME\"\nelse\n  echo \"warning: LiteRT-LM prepare script not found: $SCRIPT\" >&2\nfi\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
