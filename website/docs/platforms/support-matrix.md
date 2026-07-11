@@ -8,7 +8,7 @@ backend-module configuration for
 `llamadart`.
 
 The native-assets hook currently pins `llamadart-native` tag `b9935` and
-`litert-lm-native` release `v0.14.0-native.1` (`hook/build.dart`). Apps can
+`litert-lm-native` release `v0.14.0-native.2` (`hook/build.dart`). Apps can
 override the llama.cpp native GitHub source with
 `hooks.user_defines.llamadart.llamadart_native_tag` and
 `hooks.user_defines.llamadart.llamadart_native_repository`, or use a local
@@ -76,9 +76,9 @@ checksum verification, explicit cache policy changes, custom cache directories,
 disabled resume, and custom retry counts.
 
 Select LiteRT-LM CPU/GPU/NPU with `ModelParams.liteRtLmBackend`.
-`LiteRtLmBackendPreference.auto` currently maps to GPU on Android, macOS, and
-web, and CPU on other LiteRT-LM targets. NPU selection is Android native only;
-web rejects it explicitly.
+`LiteRtLmBackendPreference.auto` currently maps to GPU on Android, iOS, macOS,
+and web, and CPU on other LiteRT-LM targets. NPU selection is Android native
+only; web rejects it explicitly.
 
 ## Configuring native runtime families
 
@@ -120,14 +120,14 @@ Explicitly selecting `litert_lm` for a target without a pinned LiteRT-LM
 runtime fails during the build hook instead of producing an app that cannot
 load `.litertlm` models.
 
-## LiteRT-LM runtime coverage (`v0.14.0-native.1`)
+## LiteRT-LM runtime coverage (`v0.14.0-native.2`)
 
 | Platform target | LiteRT-LM bundle key | Selectable backends | Status |
 | --- | --- | --- | --- |
 | Android arm64 | `android-arm64` | `cpu`, `gpu`, `npu` | CPU/GPU supported. NPU is selectable only for compatible device/model/runtime deployments and may require a packaged LiteRT dispatch directory. |
 | Android x64 | `android-x64` | `cpu`, `gpu`, `npu` | CPU/GPU supported for emulator/test targets; NPU is deployment-specific and not validated for generic emulators. |
-| iOS arm64 (device) | `ios-arm64` | `cpu` | Supported |
-| iOS arm64 (simulator) | `ios-arm64-sim` | `cpu` | Supported |
+| iOS arm64 (device) | `ios-arm64` | `cpu`, `gpu` | Supported |
+| iOS arm64 (simulator) | `ios-arm64-sim` | `cpu`, `gpu` | Supported |
 | iOS x86_64 (simulator) | Not published | N/A | Unsupported; exclude `litert_lm` for this target |
 | macOS arm64 | `macos-arm64` | `cpu`, `gpu` | Supported |
 | macOS x86_64 | `macos-x64` | `cpu`, `gpu` | Supported |
@@ -156,7 +156,7 @@ as a multi-turn `ChatSession` or tool-calling backend yet.
 instead of silently ignoring llama.cpp-only settings.
 
 Native LiteRT-LM exposes these load-time runtime controls through
-`ModelParams`. Nullable fields keep the pinned `v0.14.0-native.1` runtime
+`ModelParams`. Nullable fields keep the pinned `v0.14.0-native.2` runtime
 default.
 
 | Native C API | Dart field | Support decision |

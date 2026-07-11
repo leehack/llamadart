@@ -4,7 +4,7 @@ import PackageDescription
 
 let packageRoot = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
 let artifactsRoot = packageRoot.appendingPathComponent("Artifacts")
-let liteRtLmTag = "v0.14.0-native.1"
+let liteRtLmTag = "v0.14.0-native.2"
 
 func localArtifactPath(_ name: String) -> String? {
     let path = artifactsRoot.appendingPathComponent(name).path
@@ -47,34 +47,31 @@ let package = Package(
             repository: "leehack/litert-lm-native",
             artifactName: "litert-lm-native-apple-LiteRtLm-xcframework-\(liteRtLmTag).zip",
             tag: liteRtLmTag,
-            checksum: "f1d319d07564647d567d4d4c8da6e10b303a7178a92c5d59f0d360f77a682edd"
+            checksum: "3412410db1cf0d343371db9a4af711710db3ddfed14ec7f95d673dd16a1b0cbe"
         ),
         nativeRepoBinaryTarget(
             name: "CLiteRTLM",
             repository: "leehack/litert-lm-native",
             artifactName: "litert-lm-native-apple-CLiteRTLM-xcframework-\(liteRtLmTag).zip",
             tag: liteRtLmTag,
-            checksum: "f9b8b0dc9cc7ea1cef919e075a512806342395538a1996f8be2e267737d62312"
+            checksum: "1d0663baa5df3d29ab845dfd034783289e7c4f9f5f27dbfcb9beb3c762dc6cdd"
         ),
         nativeRepoBinaryTarget(
-            name: "GemmaModelConstraintProvider",
+            name: "CLiteRTLMMac",
             repository: "leehack/litert-lm-native",
-            artifactName: "litert-lm-native-apple-GemmaModelConstraintProvider-xcframework-\(liteRtLmTag).zip",
+            artifactName: "litert-lm-native-apple-CLiteRTLMMac-xcframework-\(liteRtLmTag).zip",
             tag: liteRtLmTag,
-            checksum: "5abce5c59149bca419f1cdffdd2b6e2fbca355dae21cd0ae94253788ac35e597"
+            checksum: "a889c3fea5b2fce522c84b429a6552ed3cb9e21a51ba00d04dceeae8c33143e5"
         ),
         .target(
             name: "llamadart_litert_lm_flutter",
             dependencies: [
-                .target(name: "LiteRtLm", condition: .when(platforms: [.iOS])),
-                .target(
-                    name: "GemmaModelConstraintProvider",
-                    condition: .when(platforms: [.iOS])
-                ),
-                .target(name: "CLiteRTLM", condition: .when(platforms: [.iOS]))
+                .target(name: "LiteRtLm", condition: .when(platforms: [.iOS, .macOS])),
+                .target(name: "CLiteRTLM", condition: .when(platforms: [.iOS])),
+                .target(name: "CLiteRTLMMac", condition: .when(platforms: [.macOS]))
             ],
             linkerSettings: [
-                .unsafeFlags(["-Xlinker", "-reexport_framework", "-Xlinker", "LiteRtLm"], .when(platforms: [.iOS])),
+                .unsafeFlags(["-Xlinker", "-reexport_framework", "-Xlinker", "LiteRtLm"], .when(platforms: [.iOS, .macOS])),
                 .unsafeFlags(["-Xlinker", "-reexport_framework", "-Xlinker", "CLiteRTLM"], .when(platforms: [.iOS]))
             ]
         )

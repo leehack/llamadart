@@ -30,6 +30,12 @@ For canonical full release notes, use:
   model fits and reduces context before selecting partial offload under memory
   pressure. Auto intent persists separately from resolved values so each model
   load, including after an app restart, recalculates current device headroom.
+- Fixed native LiteRT-LM response limits being misapplied as forced benchmark
+  decode counts. Short answers now stream without waiting for the full token
+  allowance, and the chat app flushes the first LiteRT-LM token immediately.
+- Updated the default native LiteRT-LM runtime to `v0.14.0-native.2`, fixing
+  Android GPU plugin symbol resolution and using the checksum-pinned official
+  Apple XCFrameworks for Metal-capable iOS and macOS packaging.
 
 ## 0.8.14
 

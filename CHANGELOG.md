@@ -5,6 +5,18 @@
   mobile users can choose **Paste attachment**, and ordinary text paste remains
   unchanged.
 
+* Restored the runnable macOS chat app build phase that embeds and signs
+  LiteRT-LM runtime libraries inside the sandboxed app bundle, and enabled
+  LiteRT-LM Metal selection on iOS with the consolidated upstream runtime.
+  Updated the default LiteRT-LM runtime to
+  `leehack/litert-lm-native@v0.14.0-native.2`, which fixes Android GPU plugin
+  symbol resolution and uses the checksum-pinned official Apple XCFrameworks.
+
+* Fixed native LiteRT-LM generation incorrectly treating the requested maximum
+  response length as a forced benchmark decode count. Short responses no longer
+  wait for every allowed token before streaming, and LiteRT-LM chat flushes its
+  first token immediately.
+
 * Added an app-owned FIFO model-download queue to the runnable chat app. Only
   one model transfers at a time, queued cards show their position and can leave
   the queue independently, and a responsive shell progress pill keeps the

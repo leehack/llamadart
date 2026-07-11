@@ -36,7 +36,6 @@ class LiteRtLmService {
   ModelParams? _modelParams;
   String? _modelPath;
   String? _activeBackend;
-  int? _activeOutputTokens;
   bool? _activeSpeculativeDecoding;
   int? _activeMaxNumImages;
   bool? _activeVisionEnabled;
@@ -83,7 +82,6 @@ class LiteRtLmService {
     _modelPath = path;
     _modelParams = params;
     _activeBackend = resolvedBackend;
-    _activeOutputTokens = null;
     _activeSpeculativeDecoding = null;
     _modelHandle = _nextModelHandle++;
     _contextHandle = null;
@@ -102,7 +100,6 @@ class LiteRtLmService {
     _modelPath = null;
     _modelParams = null;
     _activeBackend = null;
-    _activeOutputTokens = null;
     _activeSpeculativeDecoding = null;
     _modelHandle = null;
     _contextHandle = null;
@@ -529,7 +526,6 @@ class LiteRtLmService {
   void _disposeContextRuntimeState() {
     _client?.dispose();
     _client = null;
-    _activeOutputTokens = null;
     _activeSpeculativeDecoding = null;
     _activeMaxNumImages = null;
     _activeVisionEnabled = null;
@@ -544,7 +540,6 @@ class LiteRtLmService {
     bool? enableAudio,
   }) {
     return _ensureClientForRuntime(
-      outputTokens: params.maxTokens,
       speculativeDecoding: params.isSpeculativeDecodingEnabled,
       maxNumImages: maxNumImages,
       enableVision: maxNumImages != null,
@@ -553,7 +548,6 @@ class LiteRtLmService {
   }
 
   Future<LiteRtLmRuntimeClient> _ensureClientForRuntime({
-    int? outputTokens,
     bool? speculativeDecoding,
     int? maxNumImages,
     bool? enableVision,
@@ -565,8 +559,6 @@ class LiteRtLmService {
       throw StateError('No LiteRT-LM model is loaded.');
     }
 
-    final resolvedOutputTokens =
-        outputTokens ?? _activeOutputTokens ?? GenerationParams().maxTokens;
     final resolvedSpeculativeDecoding =
         speculativeDecoding ?? _activeSpeculativeDecoding ?? false;
     final resolvedMaxNumImages = maxNumImages ?? _activeMaxNumImages;
@@ -575,7 +567,6 @@ class LiteRtLmService {
     final backend = _activeBackend ?? _backendNameFor(modelParams);
     final existing = _client;
     if (existing != null &&
-        (outputTokens == null || _activeOutputTokens == resolvedOutputTokens) &&
         (speculativeDecoding == null ||
             _activeSpeculativeDecoding == resolvedSpeculativeDecoding) &&
         (maxNumImages == null || _activeMaxNumImages == resolvedMaxNumImages) &&
@@ -588,7 +579,6 @@ class LiteRtLmService {
 
     existing?.dispose();
     _client = null;
-    _activeOutputTokens = null;
     _activeSpeculativeDecoding = null;
     _activeMaxNumImages = null;
     _activeVisionEnabled = null;
@@ -608,7 +598,6 @@ class LiteRtLmService {
             : null,
         audioBackend: resolvedAudioEnabled ? _mediaBackendName(backend) : null,
         maxTokens: modelParams.contextSize,
-        outputTokens: resolvedOutputTokens,
         maxNumImages: resolvedMaxNumImages,
         cacheDir: _defaultCacheDir(),
         speculativeDecoding: resolvedSpeculativeDecoding,
@@ -631,7 +620,6 @@ class LiteRtLmService {
       rethrow;
     }
     _client = client;
-    _activeOutputTokens = resolvedOutputTokens;
     _activeSpeculativeDecoding = resolvedSpeculativeDecoding;
     _activeMaxNumImages = resolvedMaxNumImages;
     _activeVisionEnabled = resolvedVisionEnabled;

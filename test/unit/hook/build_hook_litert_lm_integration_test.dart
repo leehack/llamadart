@@ -127,7 +127,10 @@ void main() {
       iosDeviceLitertBundleDir,
       iosArm64SimLitertBundleDir,
     ]) {
-      await _writeBundleLibraries(directory, _iosLiteRtLibraries);
+      await _writeBundleLibraries(directory, [
+        ..._iosLiteRtLibraries,
+        'libLegacySplitRuntime.dylib',
+      ]);
     }
   });
 
@@ -286,6 +289,13 @@ void main() {
           for (final assetName in _iosLiteRtAssetNames) {
             expect(codeAssetIds, contains('package:llamadart/$assetName'));
           }
+          expect(
+            codeAssetIds.where((id) => id.contains('/litert_lm_')).toSet(),
+            {
+              for (final assetName in _iosLiteRtAssetNames)
+                'package:llamadart/$assetName',
+            },
+          );
           expect(
             codeAssets.every(
               (asset) => asset.linkMode is DynamicLoadingBundled,
@@ -787,34 +797,16 @@ const List<String> _androidLiteRtLibraries = [
   'libwebgpu_dawn.so',
 ];
 
-const List<String> _iosLiteRtLibraries = [
-  'LiteRtLm',
-  'CLiteRTLM',
-  'libLiteRtLm.dylib',
-  'libGemmaModelConstraintProvider.dylib',
-  'libLiteRt.dylib',
-  'libLiteRtMetalAccelerator.dylib',
-];
+const List<String> _iosLiteRtLibraries = ['LiteRtLm', 'CLiteRTLM'];
 
 const List<String> _iosLiteRtAssetNames = [
   'litert_lm_LiteRtLm',
   'litert_lm_CLiteRTLM',
-  'litert_lm_libLiteRtLm',
-  'litert_lm_libGemmaModelConstraintProvider',
-  'litert_lm_libLiteRt',
-  'litert_lm_libLiteRtMetalAccelerator',
 ];
 
 const List<String> _macosArm64LiteRtLibraries = [
   'libLiteRtLm.dylib',
   'libCLiteRTLM_mac.dylib',
-  'libGemmaModelConstraintProvider.dylib',
-  'libLiteRt.dylib',
-  'libLiteRtMetalAccelerator.dylib',
-  'libLiteRtTopKMetalSampler.dylib',
-  'libLiteRtTopKWebGpuSampler.dylib',
-  'libLiteRtWebGpuAccelerator.dylib',
-  'libwebgpu_dawn.dylib',
 ];
 
 const List<String> _macosX64LiteRtLibraries = [

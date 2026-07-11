@@ -9,7 +9,7 @@ import 'package:path/path.dart' as path;
 
 import '../../core/models/inference/model_params.dart';
 
-const _litertLmVersion = '0.14.0-native.1';
+const _litertLmVersion = '0.14.0-native.2';
 const _litertLmLibDirEnv = 'LLAMADART_LITERT_LM_LIB_DIR';
 const _liteRtLmIosNativeAsset = 'package:llamadart/litert_lm_LiteRtLm';
 const _processLibraryCandidate = '<process>';
@@ -59,18 +59,7 @@ List<String> liteRtLmMacOsCacheDirectoryCandidatesForAbi(Abi abi) {
 /// native-assets cache directories.
 List<String> liteRtLmMacOsRequiredLibrariesForAbi(Abi abi) {
   return switch (abi) {
-    Abi.macosArm64 => const <String>[
-      'libLiteRtLm.dylib',
-      'libCLiteRTLM_mac.dylib',
-      'libGemmaModelConstraintProvider.dylib',
-      'libLiteRt.dylib',
-      'libLiteRtMetalAccelerator.dylib',
-      'libLiteRtTopKMetalSampler.dylib',
-      'libLiteRtTopKWebGpuSampler.dylib',
-      'libLiteRtWebGpuAccelerator.dylib',
-      'libwebgpu_dawn.dylib',
-    ],
-    Abi.macosX64 => const <String>[
+    Abi.macosArm64 || Abi.macosX64 => const <String>[
       'libLiteRtLm.dylib',
       'libCLiteRTLM_mac.dylib',
     ],
@@ -234,20 +223,7 @@ Directory? _directoryFromPackageConfigRootUri(
 /// framework directories.
 List<String> liteRtLmMacOsRequiredFrameworksForAbi(Abi abi) {
   return switch (abi) {
-    Abi.macosArm64 => const <String>[
-      'GemmaModelConstraintProvider.framework/Versions/A/'
-          'GemmaModelConstraintProvider',
-      'LiteRt.framework/Versions/A/LiteRt',
-      'LiteRtLm.framework/Versions/A/LiteRtLm',
-      'LiteRtMetalAccelerator.framework/Versions/A/'
-          'LiteRtMetalAccelerator',
-      'LiteRtTopKMetalSampler.framework/Versions/A/'
-          'LiteRtTopKMetalSampler',
-      'LiteRtTopKWebGpuSampler.framework/Versions/A/'
-          'LiteRtTopKWebGpuSampler',
-      'LiteRtWebGpuAccelerator.framework/Versions/A/'
-          'LiteRtWebGpuAccelerator',
-    ],
+    Abi.macosArm64 ||
     Abi.macosX64 => const <String>['LiteRtLm.framework/Versions/A/LiteRtLm'],
     _ => const <String>[],
   };
@@ -257,20 +233,7 @@ List<String> liteRtLmMacOsRequiredFrameworksForAbi(Abi abi) {
 /// Apple SPM layout in macOS app bundles.
 List<String> liteRtLmMacOsRequiredNativeSpmFilesForAbi(Abi abi) {
   return switch (abi) {
-    Abi.macosArm64 => const <String>[
-      'GemmaModelConstraintProvider.framework/Versions/A/'
-          'GemmaModelConstraintProvider',
-      'LiteRtLm.framework/Versions/A/LiteRtLm',
-      'libCLiteRTLM_mac.dylib',
-      'libGemmaModelConstraintProvider.dylib',
-      'libLiteRt.dylib',
-      'libLiteRtMetalAccelerator.dylib',
-      'libLiteRtTopKMetalSampler.dylib',
-      'libLiteRtTopKWebGpuSampler.dylib',
-      'libLiteRtWebGpuAccelerator.dylib',
-      'libwebgpu_dawn.dylib',
-    ],
-    Abi.macosX64 => const <String>[
+    Abi.macosArm64 || Abi.macosX64 => const <String>[
       'LiteRtLm.framework/Versions/A/LiteRtLm',
       'libCLiteRTLM_mac.dylib',
     ],
@@ -481,12 +444,15 @@ class LiteRtLmRuntimeClient {
   List<String> _liteRtLmCompanionLibraryPaths = const <String>[];
   Pointer<_LiteRtLmEngine>? _engine;
   Pointer<_LiteRtLmConversation>? _conversation;
+  int _defaultMaxOutputTokens = 256;
 
   /// Initializes the native LiteRT-LM engine for a `.litertlm` model bundle.
   ///
   /// [visionBackend] and [audioBackend] enable the native media executors for
   /// multimodal bundles. [maxNumImages] configures the image preprocessor
-  /// capacity for conversations that may include image inputs.
+  /// capacity for conversations that may include image inputs. [outputTokens]
+  /// is the per-request fallback when generation does not provide an explicit
+  /// maximum; it is not an upstream benchmark decode-step count.
   Future<void> initialize({
     required String modelPath,
     String backend = 'gpu',
@@ -560,6 +526,7 @@ class LiteRtLmRuntimeClient {
     final resolvedAudioBackend = audioBackend == null
         ? null
         : _normalizeLiteRtLmRuntimeBackend(audioBackend, name: 'audioBackend');
+    _defaultMaxOutputTokens = outputTokens;
 
     _ensureLibrariesLoaded();
     final bindings = _bindings!;
@@ -591,8 +558,10 @@ class LiteRtLmRuntimeClient {
         throw StateError('litert_lm_engine_settings_create returned null');
       }
       bindings.engineSettingsSetMaxNumTokens(settings, maxTokens);
+      // Benchmarking exposes real prefill/decode metrics. Do not set
+      // num_decode_tokens here: upstream defines it as a forced benchmark step
+      // count, not a response limit. Per-request maxOutputTokens handles that.
       bindings.engineSettingsEnableBenchmark(settings);
-      bindings.engineSettingsSetNumDecodeTokens(settings, outputTokens);
       bindings.engineSettingsSetEnableSpeculativeDecoding(
         settings,
         speculativeDecoding,
@@ -906,6 +875,7 @@ class LiteRtLmRuntimeClient {
     int? visualTokenBudget,
     int? maxOutputTokens,
   }) {
+    final resolvedMaxOutputTokens = maxOutputTokens ?? _defaultMaxOutputTokens;
     if (visualTokenBudget != null && visualTokenBudget <= 0) {
       throw ArgumentError.value(
         visualTokenBudget,
@@ -913,9 +883,9 @@ class LiteRtLmRuntimeClient {
         'must be positive when provided',
       );
     }
-    if (maxOutputTokens != null && maxOutputTokens <= 0) {
+    if (resolvedMaxOutputTokens <= 0) {
       throw ArgumentError.value(
-        maxOutputTokens,
+        resolvedMaxOutputTokens,
         'maxOutputTokens',
         'must be positive when provided',
       );
@@ -931,14 +901,14 @@ class LiteRtLmRuntimeClient {
         messageJson,
         extraContextJson: extraContextJson,
         visualTokenBudget: visualTokenBudget,
-        maxOutputTokens: maxOutputTokens,
+        maxOutputTokens: resolvedMaxOutputTokens,
       );
     }
     return _generateStreamingMessageJson(
       messageJson,
       extraContextJson: extraContextJson,
       visualTokenBudget: visualTokenBudget,
-      maxOutputTokens: maxOutputTokens,
+      maxOutputTokens: resolvedMaxOutputTokens,
     );
   }
 
@@ -1267,6 +1237,7 @@ class LiteRtLmRuntimeClient {
       bindings.engineDelete(engine);
     }
     _engine = null;
+    _defaultMaxOutputTokens = 256;
   }
 
   void _ensureLibrariesLoaded() {
@@ -2171,12 +2142,6 @@ class _LiteRtLmBindings {
         Void Function(Pointer<_LiteRtLmEngineSettings>, Int),
         void Function(Pointer<_LiteRtLmEngineSettings>, int)
       >('litert_lm_engine_settings_set_num_prefill_tokens');
-
-  late final engineSettingsSetNumDecodeTokens = _library
-      .lookupFunction<
-        Void Function(Pointer<_LiteRtLmEngineSettings>, Int),
-        void Function(Pointer<_LiteRtLmEngineSettings>, int)
-      >('litert_lm_engine_settings_set_num_decode_tokens');
 
   late final engineSettingsSetMaxNumImages = _library
       .lookupFunction<

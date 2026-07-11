@@ -1200,7 +1200,7 @@ void main() {
             .generate(
               contextHandle,
               'hello',
-              const GenerationParams(maxTokens: 7),
+              const GenerationParams(maxTokens: 7, speculativeDecoding: true),
             )
             .drain<void>(),
         throwsA(
@@ -1349,7 +1349,7 @@ void main() {
       expect(fakeClient.lastModelPath, modelFile.path);
       expect(fakeClient.lastBackend, 'cpu');
       expect(fakeClient.lastMaxTokens, 3072);
-      expect(fakeClient.lastOutputTokens, 7);
+      expect(fakeClient.lastOutputTokens, 256);
       expect(fakeClient.lastMaxOutputTokens, 7);
       expect(fakeClient.lastTemperature, 0.3);
       expect(fakeClient.lastTopK, 5);
@@ -1477,7 +1477,7 @@ void main() {
       await fakeClient.generated.close();
 
       expect(await chunksFuture, [utf8.encode('native response')]);
-      expect(fakeClient.lastOutputTokens, 7);
+      expect(fakeClient.lastOutputTokens, 256);
       expect(fakeClient.lastTemperature, 0.3);
       expect(fakeClient.lastTopK, 5);
       expect(fakeClient.lastTopP, 0.4);
@@ -1593,6 +1593,59 @@ void main() {
       }
     },
   );
+
+  test('changes response limits without recreating the client', () async {
+    final fakeClient = _FakeLiteRtLmRuntimeClient();
+    var clientCreations = 0;
+    final service = LiteRtLmService(
+      clientFactory: () {
+        clientCreations++;
+        return fakeClient;
+      },
+    );
+
+    try {
+      final modelHandle = await service.loadModel(
+        modelFile.path,
+        const ModelParams(contextSize: 3072, preferredBackend: GpuBackend.cpu),
+      );
+      final contextHandle = service.createContext(
+        modelHandle,
+        const ModelParams(contextSize: 3072, preferredBackend: GpuBackend.cpu),
+      );
+
+      final first = service
+          .generate(
+            contextHandle,
+            'short',
+            const GenerationParams(maxTokens: 2),
+          )
+          .toList();
+      await fakeClient.generateStarted.future;
+      fakeClient.generated.add('one');
+      await fakeClient.generated.close();
+      await first;
+
+      fakeClient.generated = StreamController<String>();
+      final second = service
+          .generate(
+            contextHandle,
+            'long allowance',
+            const GenerationParams(maxTokens: 1024),
+          )
+          .toList();
+      await Future<void>.delayed(Duration.zero);
+      fakeClient.generated.add('two');
+      await fakeClient.generated.close();
+      await second;
+
+      expect(clientCreations, 1);
+      expect(fakeClient.lastOutputTokens, 256);
+      expect(fakeClient.lastMaxOutputTokens, 1024);
+    } finally {
+      service.dispose();
+    }
+  });
 
   test(
     'recreates LiteRT-LM client when audio media needs an executor',
@@ -1872,7 +1925,7 @@ void main() {
       await firstSubscription.asFuture<void>();
 
       expect(service.getPerformanceContext(contextHandle), isNotNull);
-      expect(fakeClient.lastOutputTokens, 2);
+      expect(fakeClient.lastOutputTokens, 256);
       expect(fakeClient.createConversationCount, 1);
       expect(fakeClient.generateCount, 1);
 
@@ -1894,7 +1947,7 @@ void main() {
       expect(zeroChunks, isEmpty);
       expect(negativeChunks, isEmpty);
       expect(service.getPerformanceContext(contextHandle), isNull);
-      expect(fakeClient.lastOutputTokens, 2);
+      expect(fakeClient.lastOutputTokens, 256);
       expect(fakeClient.createConversationCount, 1);
       expect(fakeClient.generateCount, 1);
     } finally {
@@ -2359,7 +2412,7 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
 
   final Completer<void> initializeStarted = Completer<void>();
   final Completer<void> generateStarted = Completer<void>();
-  final StreamController<String> generated = StreamController<String>();
+  StreamController<String> generated = StreamController<String>();
   final Completer<void>? _initializeBlocker;
   final Object? initializeError;
   String? lastModelPath;
