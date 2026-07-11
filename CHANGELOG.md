@@ -1,4 +1,4 @@
-## Unreleased
+## 0.8.15
 
 * Added clipboard media attachments to the runnable chat app. Desktop and web
   users can paste screenshots or copied image/audio files with `Cmd/Ctrl+V`,

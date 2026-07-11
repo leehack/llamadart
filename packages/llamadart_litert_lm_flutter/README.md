@@ -4,16 +4,14 @@ Flutter Apple Swift Package Manager companion package for
 [`llamadart`](https://pub.dev/packages/llamadart) `.litertlm` / LiteRT-LM
 support.
 
-Add the published package to a Flutter iOS app when it should link the prebuilt
+Add the package to a Flutter iOS or macOS app when it should link the prebuilt
 LiteRT-LM Apple XCFrameworks through SwiftPM instead of relying on the core
-package's native-assets fallback. This unreleased source also restores the
-complete macOS SwiftPM target set; published `0.0.4` still uses the core
-native-assets fallback on macOS until the next companion release.
+package's native-assets fallback.
 
 ```yaml
 dependencies:
-  llamadart: ^0.8.14
-  llamadart_litert_lm_flutter: ^0.0.4
+  llamadart: ^0.8.15
+  llamadart_litert_lm_flutter: ^0.0.5
 ```
 
 This package has no runtime Dart API of its own. Import `package:llamadart`

@@ -27,7 +27,7 @@ In Xcode, set `IPHONEOS_DEPLOYMENT_TARGET = 16.4` or
 
 ```yaml
 dependencies:
-  llamadart: ^0.8.14
+  llamadart: ^0.8.15
 ```
 
 For Flutter iOS/macOS apps that should link Apple XCFrameworks through Swift
@@ -35,16 +35,16 @@ Package Manager, also add the runtime companion packages you need:
 
 ```yaml
 dependencies:
-  llamadart: ^0.8.14
+  llamadart: ^0.8.15
   llamadart_llama_cpp_flutter: ^0.0.9 # GGUF / llama.cpp
-  llamadart_litert_lm_flutter: ^0.0.4 # iOS .litertlm / LiteRT-LM
+  llamadart_litert_lm_flutter: ^0.0.5 # .litertlm / LiteRT-LM
 ```
 
 The companion packages are published independently from the `packages/`
 subdirectories in the main `llamadart` repository.
-At the current LiteRT-LM native pin, Flutter macOS `.litertlm` builds keep the
-core native-assets fallback when the SwiftPM artifact set is incomplete for the
-selected architecture.
+The LiteRT-LM companion links the consolidated Apple runtime through SwiftPM
+on supported iOS and macOS architectures. Without the companion, the core
+package uses its native-assets fallback.
 
 Then resolve packages:
 

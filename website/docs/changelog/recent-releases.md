@@ -7,7 +7,7 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
-## Unreleased
+## 0.8.15
 
 - Added clipboard media attachments to the runnable chat app, including
   `Cmd/Ctrl+V` screenshots and copied image/audio files on desktop and web plus
