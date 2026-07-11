@@ -6,7 +6,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:llamadart/llamadart.dart';
 import 'package:provider/provider.dart';
-import 'package:super_clipboard/super_clipboard.dart';
 
 import '../providers/chat_provider.dart';
 import '../services/clipboard_attachment_service.dart';
@@ -38,7 +37,7 @@ class _ChatInputState extends State<ChatInput> {
     super.initState();
     _hasDraftText = widget.controller.text.trim().isNotEmpty;
     widget.controller.addListener(_onTextChanged);
-    ClipboardEvents.instance?.registerPasteEventListener(_onWebPasteEvent);
+    _clipboardAttachments.registerPasteEventListener(_onWebPasteEvent);
   }
 
   @override
@@ -54,7 +53,7 @@ class _ChatInputState extends State<ChatInput> {
 
   @override
   void dispose() {
-    ClipboardEvents.instance?.unregisterPasteEventListener(_onWebPasteEvent);
+    _clipboardAttachments.unregisterPasteEventListener(_onWebPasteEvent);
     widget.controller.removeListener(_onTextChanged);
     super.dispose();
   }
@@ -81,7 +80,7 @@ class _ChatInputState extends State<ChatInput> {
             !provider.supportsAudio);
   }
 
-  Future<void> _onWebPasteEvent(ClipboardReadEvent event) async {
+  Future<void> _onWebPasteEvent(ClipboardPasteReader readClipboard) async {
     if (!mounted || !widget.focusNode.hasFocus) {
       return;
     }
@@ -91,11 +90,12 @@ class _ChatInputState extends State<ChatInput> {
     }
 
     try {
-      final reader = await event.getClipboardReader();
-      final content = await _clipboardAttachments.read(
-        reader,
-        allowImage: _allowsImage(provider),
-        allowAudio: provider.supportsAudio,
+      final allowImage = _allowsImage(provider);
+      final allowAudio = provider.supportsAudio;
+      final content = _clipboardAttachments.selectSupportedContent(
+        await readClipboard(allowImage: allowImage, allowAudio: allowAudio),
+        allowImage: allowImage,
+        allowAudio: allowAudio,
       );
       await _handlePasteContent(provider, content, allowTextFallback: true);
     } catch (error) {
@@ -112,6 +112,7 @@ class _ChatInputState extends State<ChatInput> {
       final content = await _clipboardAttachments.readSystemClipboard(
         allowImage: _allowsImage(provider),
         allowAudio: provider.supportsAudio,
+        allowText: allowTextFallback,
       );
       if (!mounted) {
         return;

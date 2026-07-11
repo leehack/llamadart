@@ -69,7 +69,6 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
   final HuggingFaceModelDiscoveryService _hfDiscoveryService =
       HuggingFaceModelDiscoveryService();
   final TextEditingController _modelSearchController = TextEditingController();
-  final ScrollController _scrollController = ScrollController();
   final List<DownloadableModel> _models = <DownloadableModel>[];
   final List<DownloadableModel> _customModels = <DownloadableModel>[];
   final Map<String, GlobalKey> _modelCardKeys = {};
@@ -1423,7 +1422,6 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
             .length;
 
         return ListView(
-          controller: _scrollController,
           padding: EdgeInsets.fromLTRB(
             horizontalPadding,
             isEmbedded ? 14 : 24,
@@ -2435,7 +2433,6 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _modelSearchController.dispose();
-    _scrollController.dispose();
     unawaited(_downloadFinishedSubscription?.cancel());
     if (_ownsDownloadUi) {
       _downloadUi.dispose();
