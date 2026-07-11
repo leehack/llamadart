@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:llamadart/llamadart.dart' show ModelDownloadController;
 import 'package:llamadart_chat_example/services/model_download_ui_controller.dart';
 import 'package:llamadart_chat_example/services/model_service_base.dart';
 
@@ -120,6 +121,18 @@ void main() {
         );
         expect(controller.activeFilename, 'active.gguf');
         expect(controller.canRegisterDownload('active.gguf'), isFalse);
+        final lowLevelController = ModelDownloadController();
+        final subscription = lowLevelController.snapshots.listen((_) {});
+        addTearDown(subscription.cancel);
+        addTearDown(lowLevelController.dispose);
+        expect(
+          controller.registerDownload(
+            filename: 'active.gguf',
+            controller: lowLevelController,
+            subscription: subscription,
+          ),
+          isFalse,
+        );
         controller.completeActiveDownload('active.gguf');
         expect(await queued, isTrue);
         expect(controller.activeFilename, 'queued.gguf');

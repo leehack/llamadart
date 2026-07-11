@@ -109,16 +109,18 @@ class ModelDownloadUiController extends ChangeNotifier {
     _notifyGlobalListeners();
   }
 
-  void registerDownload({
+  bool registerDownload({
     required String filename,
     required ModelDownloadController controller,
     required StreamSubscription<ModelDownloadTaskSnapshot> subscription,
   }) {
+    if (!canRegisterDownload(filename)) {
+      return false;
+    }
     _downloadControllers[filename] = controller;
     _downloadSubscriptions[filename] = subscription;
-    if (_activeFilename == filename) {
-      _registeredActiveDownloads.add(filename);
-    }
+    _registeredActiveDownloads.add(filename);
+    return true;
   }
 
   /// Whether the promoted request may register its low-level controller.

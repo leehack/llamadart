@@ -814,11 +814,15 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
       subscription = controller.snapshots.listen(
         (snapshot) => _handleDownloadSnapshot(model, snapshot),
       );
-      _downloadUi.registerDownload(
+      final registered = _downloadUi.registerDownload(
         filename: model.filename,
         controller: controller,
         subscription: subscription,
       );
+      if (!registered) {
+        _downloadUi.completeActiveDownload(model.filename);
+        return;
+      }
 
       await controller.start(manager.source);
       _updateDownloadUiState(
