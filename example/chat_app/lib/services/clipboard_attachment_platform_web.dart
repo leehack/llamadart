@@ -1,5 +1,4 @@
 import 'dart:js_interop';
-import 'dart:typed_data';
 
 import 'package:web/web.dart' as web;
 
@@ -13,7 +12,10 @@ Future<ClipboardPasteContent?> readSystemClipboard({
   required bool allowAudio,
   required bool allowText,
 }) async {
-  final items = (await web.window.navigator.clipboard.read().toDart).toDart;
+  final items = await _readClipboardItems();
+  if (items == null) {
+    return null;
+  }
   final attachments = <ClipboardAttachment>[];
   String? plainText;
 
@@ -38,6 +40,14 @@ Future<ClipboardPasteContent?> readSystemClipboard({
     }
   }
   return ClipboardPasteContent(attachments: attachments, plainText: plainText);
+}
+
+Future<List<web.ClipboardItem>?> _readClipboardItems() async {
+  try {
+    return (await web.window.navigator.clipboard.read().toDart).toDart;
+  } catch (_) {
+    return null;
+  }
 }
 
 /// Registers a listener that only suppresses browser paste after it is read.
@@ -129,5 +139,5 @@ Future<ClipboardAttachment> _readBlob(
   final buffer = await blob.arrayBuffer().toDart;
   final bytes = buffer.toDart.asUint8List();
   validateClipboardAttachmentSize(bytes.length);
-  return ClipboardAttachment(kind: kind, bytes: Uint8List.fromList(bytes));
+  return ClipboardAttachment(kind: kind, bytes: bytes);
 }
