@@ -37,7 +37,7 @@ class _ChatInputState extends State<ChatInput> {
     super.initState();
     _hasDraftText = widget.controller.text.trim().isNotEmpty;
     widget.controller.addListener(_onTextChanged);
-    _clipboardAttachments.registerPasteEventListener(_onWebPasteEvent);
+    _clipboardAttachments.registerPasteEventListener(_onPasteEvent);
   }
 
   @override
@@ -53,7 +53,7 @@ class _ChatInputState extends State<ChatInput> {
 
   @override
   void dispose() {
-    _clipboardAttachments.unregisterPasteEventListener(_onWebPasteEvent);
+    _clipboardAttachments.unregisterPasteEventListener(_onPasteEvent);
     widget.controller.removeListener(_onTextChanged);
     super.dispose();
   }
@@ -80,7 +80,7 @@ class _ChatInputState extends State<ChatInput> {
             !provider.supportsAudio);
   }
 
-  Future<void> _onWebPasteEvent(ClipboardPasteReader readClipboard) async {
+  Future<void> _onPasteEvent(ClipboardPasteReader readClipboard) async {
     if (!mounted || !widget.focusNode.hasFocus) {
       return;
     }
@@ -143,11 +143,16 @@ class _ChatInputState extends State<ChatInput> {
   }) async {
     final attachment = content.attachment;
     if (attachment != null) {
-      switch (attachment.kind) {
-        case ClipboardAttachmentKind.image:
-          return provider.stageImageAttachment(attachment.bytes);
-        case ClipboardAttachmentKind.audio:
-          return provider.stageAudioAttachment(attachment.bytes);
+      final staged = switch (attachment.kind) {
+        ClipboardAttachmentKind.image => await provider.stageImageAttachment(
+          attachment.bytes,
+        ),
+        ClipboardAttachmentKind.audio => provider.stageAudioAttachment(
+          attachment.bytes,
+        ),
+      };
+      if (staged) {
+        return true;
       }
     }
 

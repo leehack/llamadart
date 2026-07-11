@@ -5,7 +5,7 @@ import 'package:pasteboard/pasteboard.dart';
 
 import 'clipboard_attachment_types.dart';
 
-const MethodChannel _androidClipboardChannel = MethodChannel(
+const MethodChannel _nativeClipboardChannel = MethodChannel(
   'llamadart_chat/clipboard',
 );
 
@@ -80,11 +80,10 @@ Future<ClipboardAttachment?> _readNativeChannelAttachment({
   required bool allowAudio,
 }) async {
   try {
-    final data = await _androidClipboardChannel
-        .invokeMapMethod<String, Object?>('readMedia', {
-          'allowImage': allowImage,
-          'allowAudio': allowAudio,
-        });
+    final data = await _nativeClipboardChannel.invokeMapMethod<String, Object?>(
+      'readMedia',
+      {'allowImage': allowImage, 'allowAudio': allowAudio},
+    );
     final kindName = data?['kind'];
     final bytes = data?['bytes'];
     if (kindName is! String || bytes is! Uint8List || bytes.isEmpty) {
