@@ -38,6 +38,12 @@ class ManageModelsScreen extends StatefulWidget {
   /// App-owned download state that outlives transient drawer and panel views.
   final ModelDownloadUiController? downloadUiController;
 
+  /// Model card to reveal when the shell opens download details.
+  final String? focusModelFilename;
+
+  /// Monotonic request ID so repeated taps can refocus the same model.
+  final int focusRequestId;
+
   const ManageModelsScreen({
     super.key,
     this.onModelActivated,
@@ -46,6 +52,8 @@ class ManageModelsScreen extends StatefulWidget {
     this.initialModels,
     this.showModelLibraryInitially,
     this.downloadUiController,
+    this.focusModelFilename,
+    this.focusRequestId = 0,
   });
 
   @override
@@ -61,8 +69,10 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
   final HuggingFaceModelDiscoveryService _hfDiscoveryService =
       HuggingFaceModelDiscoveryService();
   final TextEditingController _modelSearchController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
   final List<DownloadableModel> _models = <DownloadableModel>[];
   final List<DownloadableModel> _customModels = <DownloadableModel>[];
+  final Map<String, GlobalKey> _modelCardKeys = {};
 
   final Map<String, ModelProfileCacheState> _cacheStateByFile = {};
   final Map<String, bool> _includeProjectorByFile = {};
@@ -78,6 +88,7 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
   bool _inferenceParametersExpanded = false;
   bool _advancedExpanded = false;
   String _modelSearchQuery = '';
+  String? _focusedModelFilename;
   late _ModelPlatformFilter _modelPlatformFilter;
 
   @override
@@ -94,6 +105,45 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
     _models.addAll(_initialModelCatalog());
     _showModelLibrary = widget.showModelLibraryInitially ?? false;
     _initModelService();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _focusRequestedModel());
+  }
+
+  @override
+  void didUpdateWidget(covariant ManageModelsScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.focusRequestId != oldWidget.focusRequestId ||
+        widget.focusModelFilename != oldWidget.focusModelFilename) {
+      _focusRequestedModel();
+    }
+  }
+
+  void _focusRequestedModel() {
+    final filename = widget.focusModelFilename;
+    if (!mounted || filename == null || filename.isEmpty) {
+      return;
+    }
+
+    _modelSearchController.clear();
+    setState(() {
+      _showModelLibrary = true;
+      _modelSearchQuery = '';
+      _modelPlatformFilter = _ModelPlatformFilter.all;
+      _focusedModelFilename = filename;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final cardContext = _modelCardKeys[filename]?.currentContext;
+      if (cardContext != null) {
+        unawaited(
+          Scrollable.ensureVisible(
+            cardContext,
+            alignment: 0.12,
+            duration: const Duration(milliseconds: 360),
+            curve: Curves.easeOutCubic,
+          ),
+        );
+      }
+    });
   }
 
   List<DownloadableModel> _initialModelCatalog() {
@@ -187,6 +237,7 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
     await _refreshDownloadedModelState();
     if (mounted) {
       setState(() {});
+      _focusRequestedModel();
     }
   }
 
@@ -1372,6 +1423,7 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
             .length;
 
         return ListView(
+          controller: _scrollController,
           padding: EdgeInsets.fromLTRB(
             horizontalPadding,
             isEmbedded ? 14 : 24,
@@ -1736,68 +1788,95 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
                                   _setIncludeProjector(model, value),
                             );
 
-                            return Padding(
-                              padding: const EdgeInsets.only(bottom: 14),
-                              child: Stack(
-                                children: [
-                                  card,
-                                  if (isActivating)
-                                    Positioned.fill(
-                                      child: DecoratedBox(
-                                        decoration: BoxDecoration(
-                                          color: Colors.black.withValues(
-                                            alpha: 0.35,
-                                          ),
-                                          borderRadius: BorderRadius.circular(
-                                            20,
-                                          ),
-                                        ),
-                                        child: Center(
-                                          child: Container(
-                                            width: 210,
-                                            padding: const EdgeInsets.all(12),
-                                            decoration: BoxDecoration(
-                                              color: Colors.black.withValues(
-                                                alpha: 0.45,
-                                              ),
-                                              borderRadius:
-                                                  BorderRadius.circular(14),
-                                              border: Border.all(
-                                                color: Colors.white.withValues(
-                                                  alpha: 0.16,
-                                                ),
-                                              ),
+                            final isFocused =
+                                _focusedModelFilename == model.filename;
+                            return Semantics(
+                              key: ValueKey(
+                                'model-card-focus-${model.filename}',
+                              ),
+                              container: true,
+                              focused: isFocused,
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 220),
+                                curve: Curves.easeOut,
+                                padding: EdgeInsets.all(isFocused ? 3 : 0),
+                                margin: const EdgeInsets.only(bottom: 14),
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(23),
+                                  border: isFocused
+                                      ? Border.all(
+                                          color: Theme.of(
+                                            context,
+                                          ).colorScheme.primary,
+                                          width: 2,
+                                        )
+                                      : null,
+                                ),
+                                child: Stack(
+                                  key: _modelCardKeys.putIfAbsent(
+                                    model.filename,
+                                    GlobalKey.new,
+                                  ),
+                                  children: [
+                                    card,
+                                    if (isActivating)
+                                      Positioned.fill(
+                                        child: DecoratedBox(
+                                          decoration: BoxDecoration(
+                                            color: Colors.black.withValues(
+                                              alpha: 0.35,
                                             ),
-                                            child: Column(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                Text(
-                                                  hasLoadProgress
-                                                      ? 'Loading ${loadProgressLabel!}'
-                                                      : 'Loading model...',
-                                                  style: Theme.of(context)
-                                                      .textTheme
-                                                      .bodySmall
-                                                      ?.copyWith(
-                                                        color: Colors.white,
-                                                        fontWeight:
-                                                            FontWeight.w600,
-                                                      ),
+                                            borderRadius: BorderRadius.circular(
+                                              20,
+                                            ),
+                                          ),
+                                          child: Center(
+                                            child: Container(
+                                              width: 210,
+                                              padding: const EdgeInsets.all(12),
+                                              decoration: BoxDecoration(
+                                                color: Colors.black.withValues(
+                                                  alpha: 0.45,
                                                 ),
-                                                const SizedBox(height: 8),
-                                                LinearProgressIndicator(
-                                                  value: hasLoadProgress
-                                                      ? provider.loadingProgress
-                                                      : null,
-                                                  minHeight: 6,
+                                                borderRadius:
+                                                    BorderRadius.circular(14),
+                                                border: Border.all(
+                                                  color: Colors.white
+                                                      .withValues(alpha: 0.16),
                                                 ),
-                                              ],
+                                              ),
+                                              child: Column(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  Text(
+                                                    hasLoadProgress
+                                                        ? 'Loading ${loadProgressLabel!}'
+                                                        : 'Loading model...',
+                                                    style: Theme.of(context)
+                                                        .textTheme
+                                                        .bodySmall
+                                                        ?.copyWith(
+                                                          color: Colors.white,
+                                                          fontWeight:
+                                                              FontWeight.w600,
+                                                        ),
+                                                  ),
+                                                  const SizedBox(height: 8),
+                                                  LinearProgressIndicator(
+                                                    value: hasLoadProgress
+                                                        ? provider
+                                                              .loadingProgress
+                                                        : null,
+                                                    minHeight: 6,
+                                                  ),
+                                                ],
+                                              ),
                                             ),
                                           ),
                                         ),
                                       ),
-                                    ),
-                                ],
+                                  ],
+                                ),
                               ),
                             );
                           },
@@ -2356,6 +2435,7 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _modelSearchController.dispose();
+    _scrollController.dispose();
     unawaited(_downloadFinishedSubscription?.cancel());
     if (_ownsDownloadUi) {
       _downloadUi.dispose();

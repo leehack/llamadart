@@ -4,8 +4,10 @@ import 'package:llamadart/llamadart.dart' show GpuBackend;
 import 'package:provider/provider.dart';
 
 import 'package:llamadart_chat_example/models/chat_settings.dart';
+import 'package:llamadart_chat_example/models/downloadable_model.dart';
 import 'package:llamadart_chat_example/providers/chat_provider.dart';
 import 'package:llamadart_chat_example/screens/app_shell_screen.dart';
+import 'package:llamadart_chat_example/screens/manage_models_screen.dart';
 import 'package:llamadart_chat_example/services/model_download_ui_controller.dart';
 
 import 'mocks.dart';
@@ -39,11 +41,12 @@ void main() {
       addTearDown(provider.dispose);
       final downloadUi = ModelDownloadUiController();
       addTearDown(downloadUi.dispose);
+      final activeModel = DownloadableModel.defaultModels.first;
       await downloadUi.enqueueDownload(
-        filename: 'active.gguf',
-        displayName: 'Active model',
+        filename: activeModel.filename,
+        displayName: activeModel.name,
       );
-      downloadUi.updateState('active.gguf', progress: 0.42);
+      downloadUi.updateState(activeModel.filename, progress: 0.42);
 
       await tester.pumpWidget(
         ChangeNotifierProvider<ChatProvider>.value(
@@ -55,7 +58,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('Active model'), findsOneWidget);
+      expect(find.text(activeModel.name), findsOneWidget);
       expect(find.textContaining('42%'), findsOneWidget);
 
       final queued = downloadUi.enqueueDownload(
@@ -66,12 +69,18 @@ void main() {
       expect(find.text('1 queued'), findsOneWidget);
 
       await tester.tap(find.textContaining('42%'));
-      await tester.pumpAndSettle();
-      expect(find.text('Model parameters'), findsOneWidget);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 600));
+      expect(find.text('Model library'), findsOneWidget);
+      final settings = tester.widget<ManageModelsScreen>(
+        find.byType(ManageModelsScreen),
+      );
+      expect(settings.focusModelFilename, activeModel.filename);
+      expect(settings.focusRequestId, 1);
 
       downloadUi.cancel('queued.gguf');
       expect(await queued, isFalse);
-      downloadUi.completeActiveDownload('active.gguf');
+      downloadUi.completeActiveDownload(activeModel.filename);
     });
 
     testWidgets('download activity keeps an open pinned settings panel open', (
@@ -95,11 +104,12 @@ void main() {
       addTearDown(provider.dispose);
       final downloadUi = ModelDownloadUiController();
       addTearDown(downloadUi.dispose);
+      final activeModel = DownloadableModel.defaultModels.first;
       await downloadUi.enqueueDownload(
-        filename: 'active.gguf',
-        displayName: 'Active model',
+        filename: activeModel.filename,
+        displayName: activeModel.name,
       );
-      downloadUi.updateState('active.gguf', progress: 0.1);
+      downloadUi.updateState(activeModel.filename, progress: 0.1);
 
       await tester.pumpWidget(
         ChangeNotifierProvider<ChatProvider>.value(
@@ -115,11 +125,17 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Model parameters'), findsOneWidget);
 
-      await tester.tap(find.text('Active model'));
-      await tester.pumpAndSettle();
+      await tester.tap(find.text(activeModel.name).first);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 600));
       expect(find.text('Model parameters'), findsOneWidget);
+      final settings = tester.widget<ManageModelsScreen>(
+        find.byType(ManageModelsScreen),
+      );
+      expect(settings.focusModelFilename, activeModel.filename);
+      expect(settings.focusRequestId, 1);
 
-      downloadUi.completeActiveDownload('active.gguf');
+      downloadUi.completeActiveDownload(activeModel.filename);
     });
 
     testWidgets('keeps desktop settings opt-in and opens manage models view', (

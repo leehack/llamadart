@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:ui' show Tristate;
 
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
@@ -20,6 +21,32 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   group('ManageModelsScreen model download controller wiring', () {
+    testWidgets('focus request reveals and highlights the active model', (
+      tester,
+    ) async {
+      final model = _remoteModel();
+      SharedPreferences.setMockInitialValues({});
+
+      await _pumpScreen(
+        tester,
+        modelService: _HoldingModelService(),
+        models: [model],
+        showModelLibraryInitially: false,
+        focusModelFilename: model.filename,
+        focusRequestId: 1,
+      );
+
+      expect(find.text('Model library'), findsOneWidget);
+      final focusedCard = find.byKey(
+        ValueKey('model-card-focus-${model.filename}'),
+      );
+      expect(focusedCard, findsOneWidget);
+      expect(
+        tester.getSemantics(focusedCard).flagsCollection.isFocused,
+        Tristate.isTrue,
+      );
+    });
+
     testWidgets('uncached custom model can be removed from library', (
       tester,
     ) async {
@@ -689,6 +716,9 @@ Future<void> _pumpScreen(
   required List<DownloadableModel> models,
   ChatProvider? provider,
   ModelDownloadUiController? downloadUiController,
+  bool showModelLibraryInitially = true,
+  String? focusModelFilename,
+  int focusRequestId = 0,
   bool settle = true,
 }) async {
   final effectiveProvider =
@@ -710,8 +740,10 @@ Future<void> _pumpScreen(
             embeddedPanel: true,
             modelService: modelService,
             initialModels: models,
-            showModelLibraryInitially: true,
+            showModelLibraryInitially: showModelLibraryInitially,
             downloadUiController: downloadUiController,
+            focusModelFilename: focusModelFilename,
+            focusRequestId: focusRequestId,
           ),
         ),
       ),
