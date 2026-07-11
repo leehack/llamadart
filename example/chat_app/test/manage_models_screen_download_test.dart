@@ -20,6 +20,31 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   group('ManageModelsScreen model download controller wiring', () {
+    testWidgets('focus request reveals and highlights the active model', (
+      tester,
+    ) async {
+      final model = _remoteModel();
+      SharedPreferences.setMockInitialValues({});
+
+      await _pumpScreen(
+        tester,
+        modelService: _HoldingModelService(),
+        models: [model],
+        showModelLibraryInitially: false,
+        focusModelFilename: model.filename,
+        focusRequestId: 1,
+      );
+
+      expect(find.text('Model library'), findsOneWidget);
+      final highlightedCard = find.byKey(
+        ValueKey('model-card-highlight-${model.filename}'),
+      );
+      expect(highlightedCard, findsOneWidget);
+      final container = tester.widget<AnimatedContainer>(highlightedCard);
+      final decoration = container.decoration! as BoxDecoration;
+      expect(decoration.border, isNotNull);
+    });
+
     testWidgets('uncached custom model can be removed from library', (
       tester,
     ) async {
@@ -689,6 +714,9 @@ Future<void> _pumpScreen(
   required List<DownloadableModel> models,
   ChatProvider? provider,
   ModelDownloadUiController? downloadUiController,
+  bool showModelLibraryInitially = true,
+  String? focusModelFilename,
+  int focusRequestId = 0,
   bool settle = true,
 }) async {
   final effectiveProvider =
@@ -710,8 +738,10 @@ Future<void> _pumpScreen(
             embeddedPanel: true,
             modelService: modelService,
             initialModels: models,
-            showModelLibraryInitially: true,
+            showModelLibraryInitially: showModelLibraryInitially,
             downloadUiController: downloadUiController,
+            focusModelFilename: focusModelFilename,
+            focusRequestId: focusRequestId,
           ),
         ),
       ),

@@ -9,6 +9,9 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Added clipboard media attachments to the runnable chat app, including
+  `Cmd/Ctrl+V` screenshots and copied image/audio files on desktop and web plus
+  a **Paste attachment** action on mobile, while preserving normal text paste.
 - Added an app-owned FIFO model-download queue to the runnable chat app, with
   per-card queue positions/cancellation and a responsive shell progress pill
   that remains visible after settings closes.

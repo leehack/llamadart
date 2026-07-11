@@ -38,6 +38,12 @@ class ManageModelsScreen extends StatefulWidget {
   /// App-owned download state that outlives transient drawer and panel views.
   final ModelDownloadUiController? downloadUiController;
 
+  /// Model card to reveal when the shell opens download details.
+  final String? focusModelFilename;
+
+  /// Monotonic request ID so repeated taps can refocus the same model.
+  final int focusRequestId;
+
   const ManageModelsScreen({
     super.key,
     this.onModelActivated,
@@ -46,6 +52,8 @@ class ManageModelsScreen extends StatefulWidget {
     this.initialModels,
     this.showModelLibraryInitially,
     this.downloadUiController,
+    this.focusModelFilename,
+    this.focusRequestId = 0,
   });
 
   @override
@@ -63,6 +71,7 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
   final TextEditingController _modelSearchController = TextEditingController();
   final List<DownloadableModel> _models = <DownloadableModel>[];
   final List<DownloadableModel> _customModels = <DownloadableModel>[];
+  final Map<String, GlobalKey> _modelCardKeys = {};
 
   final Map<String, ModelProfileCacheState> _cacheStateByFile = {};
   final Map<String, bool> _includeProjectorByFile = {};
@@ -78,6 +87,7 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
   bool _inferenceParametersExpanded = false;
   bool _advancedExpanded = false;
   String _modelSearchQuery = '';
+  String? _focusedModelFilename;
   late _ModelPlatformFilter _modelPlatformFilter;
 
   @override
@@ -94,6 +104,45 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
     _models.addAll(_initialModelCatalog());
     _showModelLibrary = widget.showModelLibraryInitially ?? false;
     _initModelService();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _focusRequestedModel());
+  }
+
+  @override
+  void didUpdateWidget(covariant ManageModelsScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.focusRequestId != oldWidget.focusRequestId ||
+        widget.focusModelFilename != oldWidget.focusModelFilename) {
+      _focusRequestedModel();
+    }
+  }
+
+  void _focusRequestedModel() {
+    final filename = widget.focusModelFilename;
+    if (!mounted || filename == null || filename.isEmpty) {
+      return;
+    }
+
+    _modelSearchController.clear();
+    setState(() {
+      _showModelLibrary = true;
+      _modelSearchQuery = '';
+      _modelPlatformFilter = _ModelPlatformFilter.all;
+      _focusedModelFilename = filename;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final cardContext = _modelCardKeys[filename]?.currentContext;
+      if (cardContext != null) {
+        unawaited(
+          Scrollable.ensureVisible(
+            cardContext,
+            alignment: 0.12,
+            duration: const Duration(milliseconds: 360),
+            curve: Curves.easeOutCubic,
+          ),
+        );
+      }
+    });
   }
 
   List<DownloadableModel> _initialModelCatalog() {
@@ -187,6 +236,7 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
     await _refreshDownloadedModelState();
     if (mounted) {
       setState(() {});
+      _focusRequestedModel();
     }
   }
 
@@ -1736,9 +1786,32 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
                                   _setIncludeProjector(model, value),
                             );
 
-                            return Padding(
-                              padding: const EdgeInsets.only(bottom: 14),
+                            final isFocused =
+                                _focusedModelFilename == model.filename;
+                            return AnimatedContainer(
+                              key: ValueKey(
+                                'model-card-highlight-${model.filename}',
+                              ),
+                              duration: const Duration(milliseconds: 220),
+                              curve: Curves.easeOut,
+                              padding: EdgeInsets.all(isFocused ? 3 : 0),
+                              margin: const EdgeInsets.only(bottom: 14),
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(23),
+                                border: isFocused
+                                    ? Border.all(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.primary,
+                                        width: 2,
+                                      )
+                                    : null,
+                              ),
                               child: Stack(
+                                key: _modelCardKeys.putIfAbsent(
+                                  model.filename,
+                                  GlobalKey.new,
+                                ),
                                 children: [
                                   card,
                                   if (isActivating)

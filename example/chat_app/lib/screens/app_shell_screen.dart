@@ -24,6 +24,8 @@ class _AppShellScreenState extends State<AppShellScreen> {
   late final ModelDownloadUiController _downloadUi;
   late final bool _ownsDownloadUi;
   bool _pinnedSettingsOpen = false;
+  String? _focusedModelFilename;
+  int _modelFocusRequest = 0;
 
   @override
   void initState() {
@@ -53,6 +55,20 @@ class _AppShellScreenState extends State<AppShellScreen> {
     }
 
     _scaffoldKey.currentState?.openEndDrawer();
+  }
+
+  void _openDownloadDetails({required bool canPin}) {
+    final activeFilename = _downloadUi.activeFilename;
+    setState(() {
+      _focusedModelFilename = activeFilename;
+      _modelFocusRequest += 1;
+      if (canPin) {
+        _pinnedSettingsOpen = true;
+      }
+    });
+    if (!canPin) {
+      _scaffoldKey.currentState?.openEndDrawer();
+    }
   }
 
   void _toggleSettingsPanel({required bool canPin}) {
@@ -163,6 +179,8 @@ class _AppShellScreenState extends State<AppShellScreen> {
                           child: ManageModelsScreen(
                             embeddedPanel: true,
                             downloadUiController: _downloadUi,
+                            focusModelFilename: _focusedModelFilename,
+                            focusRequestId: _modelFocusRequest,
                           ),
                         ),
                       ],
@@ -179,7 +197,7 @@ class _AppShellScreenState extends State<AppShellScreen> {
                   settingsPanelOpen: showPinnedSettingsPanel,
                   onMenuPressed: () => _scaffoldKey.currentState?.openDrawer(),
                   onOpenDownloadDetails: () =>
-                      _openSettingsPanel(canPin: canPinSettingsPanel),
+                      _openDownloadDetails(canPin: canPinSettingsPanel),
                   onOpenSettings: () =>
                       _toggleSettingsPanel(canPin: canPinSettingsPanel),
                 ),
@@ -262,6 +280,8 @@ class _AppShellScreenState extends State<AppShellScreen> {
                                 child: ManageModelsScreen(
                                   embeddedPanel: true,
                                   downloadUiController: _downloadUi,
+                                  focusModelFilename: _focusedModelFilename,
+                                  focusRequestId: _modelFocusRequest,
                                 ),
                               ),
                             ),
