@@ -92,7 +92,8 @@ showing:
 - A compact TurboVision-inspired frame with streamed reasoning and dense
   Markdown answers, including syntax-highlighted fenced code blocks
 - Workspace-confined file tools plus bounded, cancellable source downloads,
-  generation, and active shell work; native allocation unloads after returning
+  generation, and active shell work; a model load cancelled during native
+  allocation unloads after that allocation call returns
 - An Unsloth Qwen3.6 35B-A3B `UD-Q4_K_M` default with publisher-aligned
   non-thinking sampling and shared `llamadart` model caching
 - Optional `--thinking` mode with a larger context and coding-focused sampler
