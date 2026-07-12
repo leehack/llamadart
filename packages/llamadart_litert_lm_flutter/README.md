@@ -4,9 +4,11 @@ Flutter Apple Swift Package Manager companion package for
 [`llamadart`](https://pub.dev/packages/llamadart) `.litertlm` / LiteRT-LM
 support.
 
-Add the package to a Flutter iOS or macOS app when it should link the prebuilt
-LiteRT-LM Apple XCFrameworks through SwiftPM instead of relying on the core
-package's native-assets fallback.
+Add the package to a Flutter iOS app when it should link the prebuilt LiteRT-LM
+Apple XCFrameworks through SwiftPM instead of relying on the core package's
+native-assets fallback. The manifest includes the complete macOS target set,
+but llamadart's Flutter macOS hook path currently keeps the core native-assets
+runtime fallback.
 
 ```yaml
 dependencies:

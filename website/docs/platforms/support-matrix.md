@@ -325,10 +325,12 @@ no valid entries remain, selection falls back to `cpu_profile` (or default
   consolidated.
 - Flutter Apple apps use Swift Package Manager only through runtime companion
   packages: `llamadart_llama_cpp_flutter` for GGUF/llama.cpp and
-  `llamadart_litert_lm_flutter` for iOS and macOS `.litertlm`/LiteRT-LM.
-- For Flutter Apple apps, installed companion packages choose the Apple SPM
-  runtime families and win over `llamadart_native_runtimes`. If a matching
-  companion package is not installed, the core native-assets fallback is used.
+  `llamadart_litert_lm_flutter` for iOS `.litertlm`/LiteRT-LM.
+- For Flutter iOS apps, installed companion packages choose the Apple SPM
+  runtime families and win over `llamadart_native_runtimes`. Flutter macOS
+  LiteRT-LM builds currently use the core native-assets fallback while the hook
+  path remains responsible for the complete runtime. If neither companion
+  package is installed, the core native-assets fallback is used.
 - For non-Flutter projects and non-Apple targets, `llamadart_native_runtimes`
   remains the selector even if a Flutter companion package is accidentally
   present in dependencies.

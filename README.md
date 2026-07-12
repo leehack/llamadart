@@ -59,12 +59,12 @@ Package Manager should also add the runtime companion packages they need:
 dependencies:
   llamadart: ^0.8.15
   llamadart_llama_cpp_flutter: ^0.0.9 # GGUF / llama.cpp
-  llamadart_litert_lm_flutter: ^0.0.5 # .litertlm / LiteRT-LM
+  llamadart_litert_lm_flutter: ^0.0.5 # iOS .litertlm / LiteRT-LM
 ```
 
-The LiteRT-LM companion links the consolidated Apple runtime through SwiftPM
-on supported iOS and macOS architectures. Without the companion, the core
-package uses its native-assets fallback.
+The LiteRT-LM companion links the consolidated iOS runtime through SwiftPM.
+Flutter macOS LiteRT-LM builds currently keep the core package's native-assets
+fallback while the hook path remains responsible for the complete runtime.
 
 Then run:
 

@@ -115,10 +115,11 @@ runtime. It does not enable or disable LiteRT-LM.
 `linux-x64`, etc.); exact target keys override OS keys. Use `all` or `both` to
 include every available runtime family for a target.
 
-For Flutter Apple apps, installed companion packages choose the SwiftPM runtime
-families and win over this setting. Without a matching companion package, the
-core native-assets fallback remains available. For non-Flutter projects and
-non-Apple targets, `llamadart_native_runtimes` remains the selector.
+For Flutter iOS apps, installed companion packages choose the SwiftPM runtime
+families and win over this setting. Flutter macOS LiteRT-LM builds currently
+keep the core native-assets fallback while the hook path remains responsible
+for the complete runtime. For non-Flutter projects and non-Apple targets,
+`llamadart_native_runtimes` remains the selector.
 
 ## Parameter Differences
 
