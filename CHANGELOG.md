@@ -1,5 +1,12 @@
 ## Unreleased
 
+* Updated the default llama.cpp native runtime pin to
+  `leehack/llamadart-native@b9969-llamadart.1`, keeping the `b9969` llama.cpp
+  ABI/bindings while picking up wrapper fixes for native release
+  provenance and backend-selected speculative sampler acceptance. Refreshed
+  the `llamadart_llama_cpp_flutter` Apple SwiftPM checksum and aligned current
+  README/website native override docs.
+
 * Changed unset native decoder/generative context batching from full-context
   batches to llama.cpp-aligned caps of `n_batch = min(n_ctx, 2048)` and
   `n_ubatch = min(n_batch, 512)`. Explicit positive values remain supported,
