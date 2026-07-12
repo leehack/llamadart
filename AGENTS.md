@@ -195,6 +195,9 @@ procedure.
   above it for new PR entries.
 - Only move `Unreleased` entries into a numbered version section during an
   explicit release/version-bump task.
+- Keep changelog entries concise and user-facing: one short bullet per
+  independently useful change; put implementation details, validation, and
+  migration notes in PRs or maintainer docs instead.
 - Release prep PRs must not publish by themselves. After merge,
   `release_on_prep_merge.yml` is the publishing approval boundary.
 - Do not manually push companion or core release tags unless release automation
