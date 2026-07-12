@@ -204,7 +204,7 @@ Future<void> main(List<String> args) async {
     _verifyToolCall(toolCallWithThinking);
     _verifyThinkingSeparation(toolCallWithThinkingBudget);
     _verifyToolCall(toolCallWithThinkingBudget);
-    _verifyNoThinking(toolCallWithZeroThinkingBudget);
+    _verifyThinkingSuppressedByZeroBudget(toolCallWithZeroThinkingBudget);
     _verifyToolCall(toolCallWithZeroThinkingBudget);
     if (multimodal != null) {
       _verifyHasOutput(multimodal);
@@ -308,6 +308,16 @@ void _verifyNoThinking(_ScenarioResult result) {
   if (result.thinking.trim().isNotEmpty) {
     throw StateError(
       '${result.name} scenario leaked thinking while enableThinking=false.',
+    );
+  }
+  _verifyNoThinkingMarkers(result);
+}
+
+void _verifyThinkingSuppressedByZeroBudget(_ScenarioResult result) {
+  _verifyHasOutput(result);
+  if (result.thinking.trim().isNotEmpty) {
+    throw StateError(
+      '${result.name} scenario emitted thinking despite thinkingBudget.maxTokens=0.',
     );
   }
   _verifyNoThinkingMarkers(result);

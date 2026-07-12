@@ -4231,12 +4231,6 @@ class LlamaCppService {
         params,
         hasMediaParts: hasMediaParts,
       );
-      if (thinkingBudgetConfig != null && params.isSpeculativeDecodingEnabled) {
-        throw LlamaUnsupportedException(
-          'llama.cpp thinking-budget control cannot be combined with '
-          'speculative decoding in llamadart.',
-        );
-      }
       final speculativeConfig = _resolveLlamaCppSpeculativeConfig(
         params,
         hasMediaParts: hasMediaParts,
