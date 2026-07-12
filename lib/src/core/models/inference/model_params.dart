@@ -179,7 +179,11 @@ class ModelParams {
   /// Mirrors llama.cpp `llama_context_params.n_batch` (logical max batch).
   /// See also upstream CLI flag `--batch-size`.
   ///
-  /// Set to 0 (or negative) to default to [contextSize].
+  /// Set to 0 (or negative) to use an automatic value. Native generative
+  /// contexts default to the smaller of [contextSize] and
+  /// [ModelParams.defaultBatchSize]. Native encoder-only models retain
+  /// full-context batching for compatibility. Backends that cannot determine
+  /// model architecture before context creation may also retain that policy.
   final int batchSize;
 
   /// Micro-batch size used by backend schedulers (n_ubatch).
@@ -187,7 +191,11 @@ class ModelParams {
   /// Mirrors llama.cpp `llama_context_params.n_ubatch` (physical max batch).
   /// See also upstream CLI flag `--ubatch-size`.
   ///
-  /// Set to 0 (or negative) to default to [batchSize].
+  /// Set to 0 (or negative) to use an automatic value. Native generative
+  /// contexts default to the smaller of the resolved [batchSize] and
+  /// [ModelParams.defaultMicroBatchSize]. Native encoder-only models retain
+  /// the resolved logical batch size for compatibility. Other backends may
+  /// preserve the same architecture-agnostic fallback.
   final int microBatchSize;
 
   /// Maximum parallel sequence slots in context memory (n_seq_max).
@@ -252,6 +260,16 @@ class ModelParams {
 
   /// Maximum number of GPU layers to safely offload all layers.
   static const int maxGpuLayers = 999;
+
+  /// Automatic logical batch size for generative contexts.
+  ///
+  /// This matches llama.cpp's default `n_batch`.
+  static const int defaultBatchSize = 2048;
+
+  /// Automatic physical micro-batch size for generative contexts.
+  ///
+  /// This matches llama.cpp's default `n_ubatch`.
+  static const int defaultMicroBatchSize = 512;
 
   /// Creates configuration for the model. Use [validate] to check for
   /// llama.cpp-incompatible combinations before passing to a load call.
@@ -428,30 +446,41 @@ class ModelParams {
 
 /// Resolves llama.cpp-compatible context batch parameters.
 ///
-/// Preserves native defaults when [ModelParams.batchSize] and
-/// [ModelParams.microBatchSize] are unset:
+/// When [ModelParams.batchSize] and [ModelParams.microBatchSize] are unset,
+/// generative contexts use llama.cpp's standard defaults:
 ///
-/// - `n_batch = n_ctx`
-/// - `n_ubatch = n_batch`
+/// - `n_batch = min(n_ctx, 2048)`
+/// - `n_ubatch = min(n_batch, 512)`
+///
+/// Set [useFullContextDefaults] for a detected encoder-only model that needs
+/// the legacy `n_batch = n_ctx`, `n_ubatch = n_batch` cascade. Explicit
+/// positive values always take precedence over either default policy.
 ///
 /// Values are clamped to safe bounds so `n_ubatch <= n_batch <= n_ctx`.
 ({int batchSize, int microBatchSize}) resolveModelContextBatchSizes(
   ModelParams modelParams,
-  int contextSize,
-) {
+  int contextSize, {
+  bool useFullContextDefaults = false,
+}) {
   final effectiveContextSize = contextSize > 0 ? contextSize : 1;
+  final automaticBatchSize = useFullContextDefaults
+      ? effectiveContextSize
+      : ModelParams.defaultBatchSize;
 
   final configuredBatchSize = modelParams.batchSize > 0
       ? modelParams.batchSize
-      : effectiveContextSize;
+      : automaticBatchSize;
   final cappedBatchSize = configuredBatchSize > effectiveContextSize
       ? effectiveContextSize
       : configuredBatchSize;
   final batchSize = cappedBatchSize > 0 ? cappedBatchSize : 1;
+  final automaticMicroBatchSize = useFullContextDefaults
+      ? batchSize
+      : ModelParams.defaultMicroBatchSize;
 
   final configuredMicroBatchSize = modelParams.microBatchSize > 0
       ? modelParams.microBatchSize
-      : batchSize;
+      : automaticMicroBatchSize;
   final cappedMicroBatchSize = configuredMicroBatchSize > batchSize
       ? batchSize
       : configuredMicroBatchSize;

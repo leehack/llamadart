@@ -379,6 +379,39 @@ void main() {
     }
   });
 
+  test('rejects presence penalty on LiteRT-LM web', () async {
+    _installFakeEngine(chunks: <JSAny?>[]);
+
+    final backend = LiteRtLmBackend();
+    try {
+      final modelHandle = await backend.modelLoadFromUrl(
+        'https://example.com/model.litertlm',
+        const ModelParams(),
+      );
+      final contextHandle = await backend.contextCreate(
+        modelHandle,
+        const ModelParams(),
+      );
+
+      await expectLater(
+        backend.generate(
+          contextHandle,
+          'hello',
+          const GenerationParams(presencePenalty: 1.5),
+        ),
+        emitsError(
+          isA<UnsupportedError>().having(
+            (error) => error.message.toString(),
+            'message',
+            contains('presencePenalty'),
+          ),
+        ),
+      );
+    } finally {
+      await backend.dispose();
+    }
+  });
+
   test('rejects speculative decoding config on LiteRT-LM web', () async {
     _installFakeEngine(chunks: <JSAny?>[]);
 

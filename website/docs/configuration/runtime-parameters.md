@@ -40,13 +40,18 @@ Important fields:
 - `mainGpu`: primary GPU device index passed through to llama.cpp `main_gpu`.
   To select one GPU for the full model, use
   `splitMode: ModelSplitMode.none` with the desired `mainGpu` index.
-- `batchSize`: context logical batch size (`n_batch`). When left at `0`,
-  llamadart uses the effective context size (`n_ctx`) on native and WebGPU
-  backends, except for model-specific WebGPU safety tuning such as the bundled
-  Qwen3.5-0.8B small-model preset.
-- `microBatchSize`: context micro-batch size (`n_ubatch`). When left at `0`,
-  llamadart uses the resolved `batchSize`; explicit values are capped so
-  `n_ubatch <= n_batch <= n_ctx`.
+- `batchSize`: context logical batch size (`n_batch`). On native,
+  decoder/generative models use the llama.cpp-aligned `min(n_ctx, 2048)`
+  default when this is `0`. Native encoder-only models retain a full-context
+  logical batch so embedding inputs are not split incorrectly. WebGPU keeps
+  full-context automatic batching because model architecture is not available
+  before bridge context creation, though model-specific safety presets may be
+  smaller.
+- `microBatchSize`: context physical micro-batch size (`n_ubatch`). On native,
+  decoder/generative models use `min(n_batch, 512)` when this is `0`, while
+  encoder-only models retain the resolved logical batch. WebGPU follows its
+  resolved logical batch unless a safety preset applies. Explicit positive
+  values are preserved within `n_ubatch <= n_batch <= n_ctx`.
 - `maxParallelSequences`: max sequence slots (`n_seq_max`) for parallel
   sequence workloads (for example, batched embeddings).
 - `chatTemplate`: optional template override.
@@ -79,6 +84,9 @@ For high-throughput `embedBatch(...)`, tune context batch fields together:
 - Keep `batchSize` large enough for total tokens across your average batch.
 - Set `microBatchSize` close to `batchSize` unless you need tighter memory
   bounds.
+- Set both values explicitly when a fixed embedding workload needs larger
+  batches; the decoder defaults prioritize safe prompt processing and do not
+  replace workload-specific embedding tuning.
 - Increase `maxParallelSequences` above `1` (for example `2`, `4`, `8`) to
   enable true multi-sequence embedding batching.
 
@@ -94,6 +102,7 @@ const params = GenerationParams(
   topP: 0.9,
   minP: 0.0,
   penalty: 1.1,
+  presencePenalty: 0.0,
   stopSequences: ['</s>'],
   speculativeDecoding: false,
   speculativeDecodingConfig: null,
@@ -106,6 +115,9 @@ Important fields:
 - `temp`: randomness.
 - `topK`, `topP`, `minP`: token filtering controls.
 - `penalty`: repeat penalty.
+- `presencePenalty`: llama.cpp-native presence penalty; `0.0` preserves the
+  existing behavior. WebGPU and LiteRT-LM reject non-zero values rather than
+  silently ignoring them.
 - `speculativeDecoding` / `speculativeDecodingConfig`: opt-in backend-native
   speculative decoding. Native LiteRT-LM honors the legacy boolean flag.
   llama.cpp supports the upstream strategy surface:

@@ -918,13 +918,18 @@ class LlamaCppService {
 
   /// Resolves effective context batch parameters.
   ///
-  /// Uses the shared non-FFI helper so native and WebGPU batch semantics stay
-  /// in sync.
+  /// Uses the shared non-FFI helper for consistent default resolution and
+  /// clamping while allowing each backend to select its compatibility policy.
   static ({int batchSize, int microBatchSize}) resolveContextBatchSizes(
     ModelParams modelParams,
-    int contextSize,
-  ) {
-    return resolveModelContextBatchSizes(modelParams, contextSize);
+    int contextSize, {
+    bool useFullContextDefaults = false,
+  }) {
+    return resolveModelContextBatchSizes(
+      modelParams,
+      contextSize,
+      useFullContextDefaults: useFullContextDefaults,
+    );
   }
 
   /// Resolves whether multimodal projector init should use GPU.
@@ -3661,7 +3666,13 @@ class LlamaCppService {
     if (nCtx <= 0) {
       nCtx = llama_model_n_ctx_train(model.pointer);
     }
-    final resolvedBatchSizes = resolveContextBatchSizes(params, nCtx);
+    final hasEncoder = llama_model_has_encoder(model.pointer);
+    final hasDecoder = llama_model_has_decoder(model.pointer);
+    final resolvedBatchSizes = resolveContextBatchSizes(
+      params,
+      nCtx,
+      useFullContextDefaults: hasEncoder && !hasDecoder,
+    );
     final maxSeqLimit = llama_max_parallel_sequences();
     final resolvedMaxParallelSequences = math.max(
       1,
@@ -3965,6 +3976,29 @@ class LlamaCppService {
       'ngramSizeN': config?.ngramSizeN,
       'ngramSizeM': config?.ngramSizeM,
       'ngramTokenMax': config?.ngramTokenMax,
+    };
+  }
+
+  ({int lastN, double repeat, double frequency, double presence})
+  _resolvePenaltySamplerConfig(GenerationParams params) {
+    return (
+      lastN: 64,
+      repeat: params.penalty,
+      frequency: 0.0,
+      presence: params.presencePenalty,
+    );
+  }
+
+  /// Resolves llama.cpp penalty sampler parameters for unit tests.
+  Map<String, Object> debugResolvePenaltySamplerParamsForTesting(
+    GenerationParams params,
+  ) {
+    final config = _resolvePenaltySamplerConfig(params);
+    return <String, Object>{
+      'lastN': config.lastN,
+      'repeat': config.repeat,
+      'frequency': config.frequency,
+      'presence': config.presence,
     };
   }
 
@@ -5193,9 +5227,16 @@ class LlamaCppService {
       llama_sampler_chain_default_params(),
     );
 
+    final penaltyConfig = _resolvePenaltySamplerConfig(params);
+
     llama_sampler_chain_add(
       sampler,
-      llama_sampler_init_penalties(64, params.penalty, 0.0, 0.0),
+      llama_sampler_init_penalties(
+        penaltyConfig.lastN,
+        penaltyConfig.repeat,
+        penaltyConfig.frequency,
+        penaltyConfig.presence,
+      ),
     );
 
     if (grammarPtr != nullptr) {

@@ -217,6 +217,7 @@ class LlamaEngine {
       source,
       ModelResolveRequest(options: options, onProgress: onProgress),
     );
+    _throwIfSourceLoadCancelled(options);
 
     switch (target) {
       case LocalModelFile(:final path):
@@ -231,6 +232,7 @@ class LlamaEngine {
           options: options,
           onProgress: onProgress,
         );
+        _throwIfSourceLoadCancelled(options);
         return loadModel(entry.filePath, modelParams: modelParams);
       case RemoteModelUrl(:final url, :final useBrowserCache):
         if (!useBrowserCache) {
@@ -247,6 +249,7 @@ class LlamaEngine {
             options: options,
             onProgress: onProgress,
           );
+          _throwIfSourceLoadCancelled(options);
           return loadModel(entry.filePath, modelParams: modelParams);
         }
         _rejectUnsupportedUrlBackendOptions(options);
@@ -1386,6 +1389,12 @@ class LlamaEngine {
             ? 'Custom maxRetries is not supported by URL-loading backends.'
             : 'Custom maxRetries is not supported for $assetType loading by URL-loading backends.',
       );
+    }
+  }
+
+  void _throwIfSourceLoadCancelled(ModelLoadOptions options) {
+    if (options.cancelToken?.isCancelled ?? false) {
+      throw LlamaStateException('Model source loading was cancelled.');
     }
   }
 

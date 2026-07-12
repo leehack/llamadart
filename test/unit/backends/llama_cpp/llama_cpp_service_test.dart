@@ -392,6 +392,22 @@ void main() {
     });
   });
 
+  test('maps presence penalty to the native penalty sampler', () {
+    final service = LlamaCppService();
+
+    expect(
+      service.debugResolvePenaltySamplerParamsForTesting(
+        const GenerationParams(penalty: 1.0, presencePenalty: 1.5),
+      ),
+      <String, Object>{
+        'lastN': 64,
+        'repeat': 1.0,
+        'frequency': 0.0,
+        'presence': 1.5,
+      },
+    );
+  });
+
   group('invalid-handle guard rails', () {
     late LlamaCppService service;
 
@@ -558,13 +574,35 @@ void main() {
   });
 
   group('resolveContextBatchSizes', () {
-    test('preserves legacy defaults when batch sizes are unset', () {
-      const params = ModelParams(contextSize: 2048);
+    test('uses llama.cpp defaults when generative batch sizes are unset', () {
+      const params = ModelParams(contextSize: 16384);
 
-      final resolved = LlamaCppService.resolveContextBatchSizes(params, 2048);
+      final resolved = LlamaCppService.resolveContextBatchSizes(params, 16384);
 
       expect(resolved.batchSize, 2048);
-      expect(resolved.microBatchSize, 2048);
+      expect(resolved.microBatchSize, 512);
+    });
+
+    test('clamps automatic defaults to small contexts', () {
+      const params = ModelParams(contextSize: 256);
+
+      final resolved = LlamaCppService.resolveContextBatchSizes(params, 256);
+
+      expect(resolved.batchSize, 256);
+      expect(resolved.microBatchSize, 256);
+    });
+
+    test('preserves full-context defaults for encoder-only models', () {
+      const params = ModelParams(contextSize: 4096);
+
+      final resolved = LlamaCppService.resolveContextBatchSizes(
+        params,
+        4096,
+        useFullContextDefaults: true,
+      );
+
+      expect(resolved.batchSize, 4096);
+      expect(resolved.microBatchSize, 4096);
     });
 
     test('uses explicit batch and micro-batch values', () {
@@ -580,13 +618,22 @@ void main() {
       expect(resolved.microBatchSize, 128);
     });
 
-    test('defaults micro-batch to batch when micro-batch is unset', () {
+    test('clamps automatic micro-batch to a smaller explicit batch', () {
       const params = ModelParams(contextSize: 4096, batchSize: 384);
 
       final resolved = LlamaCppService.resolveContextBatchSizes(params, 4096);
 
       expect(resolved.batchSize, 384);
       expect(resolved.microBatchSize, 384);
+    });
+
+    test('caps an unset micro-batch at the llama.cpp default', () {
+      const params = ModelParams(contextSize: 4096, batchSize: 1024);
+
+      final resolved = LlamaCppService.resolveContextBatchSizes(params, 4096);
+
+      expect(resolved.batchSize, 1024);
+      expect(resolved.microBatchSize, 512);
     });
 
     test('clamps micro-batch to batch when only micro-batch is oversized', () {

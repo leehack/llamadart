@@ -8,10 +8,11 @@ environment:
 
 dependencies:
   args: ^2.7.0
-  http: ^1.6.0
+  highlighting: ^0.9.0+11.8.0
   llamadart:
     path: ../..
-  nocterm: ^0.5.1
+  markdown: ^7.3.1
+  nocterm: ^0.8.0
   path: ^1.9.0
 
 dev_dependencies:

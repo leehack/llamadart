@@ -7,6 +7,7 @@ import 'dart:io';
 
 import 'package:ffi/ffi.dart';
 import 'package:llamadart/src/backends/llama_cpp/bindings.dart';
+import 'package:llamadart/src/core/models/inference/model_params.dart';
 import 'package:test/test.dart';
 
 const _llamadartWrapperAssetId = 'package:llamadart/llamadart_wrapper';
@@ -382,6 +383,13 @@ void _expectBitmapHelperDecodesTransparentPng(
 
 void main() {
   group('Native Symbol Availability', () {
+    test('context batch constants match the pinned llama.cpp defaults', () {
+      final params = llama_context_default_params();
+
+      expect(params.n_batch, ModelParams.defaultBatchSize);
+      expect(params.n_ubatch, ModelParams.defaultMicroBatchSize);
+    });
+
     test('Verify speculative symbols are declared in generated bindings', () {
       final bindingsSource = File(
         'lib/src/backends/llama_cpp/bindings.dart',

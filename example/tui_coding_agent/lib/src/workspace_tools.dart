@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -6,539 +7,605 @@ import 'package:path/path.dart' as p;
 
 import 'workspace_guard.dart';
 
+/// Minimal Pi-style file and shell tools for one workspace.
 class WorkspaceTools {
-  static const int _defaultMaxEntries = 200;
-  static const int _maxEntriesLimit = 500;
-  static const int _defaultReadLines = 200;
-  static const int _maxReadLinesLimit = 800;
-  static const int _defaultSearchResults = 80;
-  static const int _maxSearchResultsLimit = 200;
-  static const int _maxReadableFileBytes = 1024 * 1024;
-  static const int _maxSearchFileBytes = 512 * 1024;
-  static const int _maxCommandOutputChars = 12000;
-
-  static final List<RegExp> _blockedCommandPatterns = <RegExp>[
-    RegExp(r'(^|\s)sudo(\s|$)', caseSensitive: false),
-    RegExp(r'(^|\s)doas(\s|$)', caseSensitive: false),
-    RegExp(r'(^|\s)shutdown(\s|$)', caseSensitive: false),
-    RegExp(r'(^|\s)reboot(\s|$)', caseSensitive: false),
-    RegExp(r'rm\s+-rf\s+/', caseSensitive: false),
-    RegExp(r'dd\s+if=', caseSensitive: false),
-  ];
+  static const int _defaultReadLimit = 200;
+  static const int _maxReadLimit = 800;
+  static const int _maxFileBytes = 1024 * 1024;
+  static const int _maxReadOutputBytes = 12000;
+  static const int _maxShellOutputChars = 12000;
 
   final WorkspaceGuard _guard;
+  Process? _activeProcess;
+  bool _toolInProgress = false;
+  bool _cancelRequested = false;
 
   WorkspaceTools({required String workspaceRoot})
     : _guard = WorkspaceGuard(workspaceRoot);
 
   String get workspaceRoot => _guard.workspaceRoot;
 
+  /// The four tools exposed to the coding agent.
   List<ToolDefinition> buildToolDefinitions() {
     return <ToolDefinition>[
       ToolDefinition(
-        name: 'list_files',
+        name: 'read',
         description:
-            'List files in a workspace directory. Use recursive=true when needed.',
+            'Read bounded UTF-8 text from a workspace file. offset is a '
+            '1-based line number and limit is a line count.',
         parameters: <ToolParam>[
-          ToolParam.string(
-            'path',
-            description: 'Directory path relative to the workspace root.',
-          ),
-          ToolParam.boolean(
-            'recursive',
-            description: 'Recursively list subdirectories.',
-          ),
-          ToolParam.integer(
-            'max_entries',
-            description: 'Maximum number of entries to return (1-500).',
-          ),
+          ToolParam.string('path', required: true),
+          ToolParam.integer('offset'),
+          ToolParam.integer('limit'),
         ],
-        handler: listFiles,
+        handler: read,
       ),
       ToolDefinition(
-        name: 'read_file',
+        name: 'write',
         description:
-            'Read a UTF-8 text file from the workspace by path and line range.',
+            'Overwrite or create a UTF-8 workspace file, creating parent '
+            'directories when necessary.',
         parameters: <ToolParam>[
-          ToolParam.string(
-            'path',
-            description: 'File path relative to the workspace root.',
-            required: true,
-          ),
-          ToolParam.integer(
-            'start_line',
-            description: '1-based line number to start reading from.',
-          ),
-          ToolParam.integer(
-            'max_lines',
-            description: 'Maximum number of lines to return (1-800).',
-          ),
+          ToolParam.string('path', required: true),
+          ToolParam.string('content', required: true),
         ],
-        handler: readFile,
+        handler: write,
       ),
       ToolDefinition(
-        name: 'search_files',
+        name: 'edit',
         description:
-            'Search text in workspace files and return matching lines with file paths.',
+            'Replace exactly one literal occurrence in a UTF-8 workspace file. '
+            'The call fails without writing when the match count is not one.',
         parameters: <ToolParam>[
-          ToolParam.string(
-            'query',
-            description: 'Text query to search for.',
-            required: true,
-          ),
-          ToolParam.string(
-            'path',
-            description: 'Directory path relative to workspace root.',
-          ),
-          ToolParam.boolean(
-            'case_sensitive',
-            description: 'Whether matching should be case sensitive.',
-          ),
-          ToolParam.integer(
-            'max_results',
-            description: 'Maximum number of matches to return (1-200).',
-          ),
+          ToolParam.string('path', required: true),
+          ToolParam.string('old_text', required: true),
+          ToolParam.string('new_text', required: true),
         ],
-        handler: searchFiles,
+        handler: edit,
       ),
       ToolDefinition(
-        name: 'write_file',
+        name: 'bash',
         description:
-            'Write text content to a workspace file. Supports overwrite or append.',
+            'Run a command from the workspace using Bash on Unix or cmd.exe on '
+            'Windows. NOT SANDBOXED: the command has the user\'s permissions '
+            'and can access or change files outside the workspace.',
         parameters: <ToolParam>[
-          ToolParam.string(
-            'path',
-            description: 'Target file path relative to workspace root.',
-            required: true,
-          ),
-          ToolParam.string(
-            'content',
-            description: 'Text content to write.',
-            required: true,
-          ),
-          ToolParam.enumType(
-            'mode',
-            values: <String>['overwrite', 'append'],
-            description: 'File write mode.',
-          ),
-          ToolParam.boolean(
-            'create_dirs',
-            description: 'Create missing parent directories automatically.',
-          ),
-        ],
-        handler: writeFile,
-      ),
-      ToolDefinition(
-        name: 'run_command',
-        description:
-            'Run a shell command inside the workspace and return stdout/stderr.',
-        parameters: <ToolParam>[
-          ToolParam.string(
-            'command',
-            description: 'Shell command to execute.',
-            required: true,
-          ),
-          ToolParam.string(
-            'working_directory',
-            description: 'Directory relative to workspace root.',
-          ),
+          ToolParam.string('command', required: true),
           ToolParam.integer(
-            'timeout_seconds',
-            description: 'Command timeout in seconds (1-120).',
+            'timeout',
+            description: 'Timeout in seconds (1-120, default 30).',
           ),
         ],
-        handler: runCommand,
+        handler: bash,
       ),
     ];
   }
 
-  Future<Object?> listFiles(ToolParams params) async {
-    final path = params.getString('path') ?? '.';
-    final recursive = params.getBool('recursive') ?? false;
-    final maxEntries = (params.getInt('max_entries') ?? _defaultMaxEntries)
-        .clamp(1, _maxEntriesLimit);
-
-    final resolvedPath = _guard.resolvePath(path);
-    final directory = Directory(resolvedPath);
-    if (!directory.existsSync()) {
-      throw FileSystemException('Directory not found', resolvedPath);
-    }
-
-    final entries = <String>[];
-    var truncated = false;
-
-    await for (final entity in directory.list(
-      recursive: recursive,
-      followLinks: false,
-    )) {
-      if (entries.length >= maxEntries) {
-        truncated = true;
-        break;
-      }
-
-      final relative = _guard.toWorkspaceRelative(entity.path);
-      if (entity is Directory) {
-        entries.add('$relative/');
-      } else {
-        entries.add(relative);
-      }
-    }
-
-    entries.sort();
-
-    return <String, dynamic>{
-      'path': _guard.toWorkspaceRelative(resolvedPath),
-      'recursive': recursive,
-      'count': entries.length,
-      'truncated': truncated,
-      'entries': entries,
-    };
-  }
-
-  Future<Object?> readFile(ToolParams params) async {
-    final path = params.getRequiredString('path');
-    final startLine = (params.getInt('start_line') ?? 1).clamp(1, 1000000);
-    final maxLines = (params.getInt('max_lines') ?? _defaultReadLines).clamp(
-      1,
-      _maxReadLinesLimit,
-    );
-
-    final resolvedPath = _guard.resolvePath(path);
-    final file = File(resolvedPath);
-    if (!file.existsSync()) {
-      throw FileSystemException('File not found', resolvedPath);
-    }
-
-    final fileSize = file.lengthSync();
-    if (fileSize > _maxReadableFileBytes) {
-      throw ArgumentError(
-        'File is too large to read ($fileSize bytes, max $_maxReadableFileBytes bytes).',
+  Future<Object?> read(ToolParams params) {
+    return _runTool(() async {
+      final path = params.getRequiredString('path');
+      final offset = _boundedInt(
+        params.getInt('offset') ?? 1,
+        name: 'offset',
+        minimum: 1,
+        maximum: 1000000,
       );
-    }
+      final limit = _boundedInt(
+        params.getInt('limit') ?? _defaultReadLimit,
+        name: 'limit',
+        minimum: 1,
+        maximum: _maxReadLimit,
+      );
+      final resolved = _guard.resolvePath(path);
+      final file = File(resolved);
+      _requireRegularFile(file, path);
+      final fileBytes = file.lengthSync();
+      if (fileBytes > _maxFileBytes) {
+        throw ArgumentError(
+          'File is too large to read ($fileBytes bytes, max $_maxFileBytes).',
+        );
+      }
 
-    final lines = const LineSplitter().convert(
-      await file.readAsString(encoding: utf8),
-    );
+      _throwIfCancelled();
+      final source = await file.readAsString(encoding: utf8);
+      _throwIfCancelled();
+      final lines = const LineSplitter().convert(source);
+      final startIndex = offset - 1;
+      if (startIndex >= lines.length) {
+        return <String, Object?>{
+          'ok': true,
+          'path': _guard.toWorkspaceRelative(resolved),
+          'offset': offset,
+          'line_count': 0,
+          'total_lines': lines.length,
+          'content': '',
+          'content_bytes': 0,
+          'truncated': false,
+        };
+      }
 
-    final startIndex = startLine - 1;
-    if (startIndex >= lines.length) {
-      return <String, dynamic>{
-        'path': _guard.toWorkspaceRelative(resolvedPath),
-        'start_line': startLine,
-        'end_line': startLine - 1,
-        'line_count': 0,
-        'content': '',
-        'truncated': false,
+      final endExclusive = (startIndex + limit).clamp(0, lines.length);
+      final bounded = _boundedLines(
+        lines,
+        startIndex: startIndex,
+        endExclusive: endExclusive,
+        maxBytes: _maxReadOutputBytes,
+      );
+      final endLine = startIndex + bounded.lineCount;
+      final hasMore = endLine < lines.length;
+      return <String, Object?>{
+        'ok': true,
+        'path': _guard.toWorkspaceRelative(resolved),
+        'offset': offset,
+        'line_count': bounded.lineCount,
+        'total_lines': lines.length,
+        if (hasMore) 'next_offset': endLine + 1,
+        'content': bounded.content,
+        'content_bytes': bounded.bytes,
+        'truncated': bounded.truncated || hasMore,
       };
-    }
-
-    final endExclusive = (startIndex + maxLines).clamp(0, lines.length);
-    final selected = lines.sublist(startIndex, endExclusive);
-    final endLine = startIndex + selected.length;
-
-    return <String, dynamic>{
-      'path': _guard.toWorkspaceRelative(resolvedPath),
-      'start_line': startLine,
-      'end_line': endLine,
-      'line_count': selected.length,
-      'truncated': endExclusive < lines.length,
-      'content': selected.join('\n'),
-    };
+    });
   }
 
-  Future<Object?> searchFiles(ToolParams params) async {
-    final query = params.getRequiredString('query');
-    final path = params.getString('path') ?? '.';
-    final caseSensitive = params.getBool('case_sensitive') ?? false;
-    final maxResults = (params.getInt('max_results') ?? _defaultSearchResults)
-        .clamp(1, _maxSearchResultsLimit);
+  Future<Object?> write(ToolParams params) {
+    return _runTool(() async {
+      final path = params.getRequiredString('path');
+      final content = params.getRequiredString('content');
+      final resolved = _guard.resolvePath(path);
+      _requireWritableTarget(resolved, path);
+      _throwIfCancelled();
+      await Directory(p.dirname(resolved)).create(recursive: true);
+      await File(resolved).writeAsString(
+        content,
+        encoding: utf8,
+        mode: FileMode.write,
+        flush: true,
+      );
+      return <String, Object?>{
+        'ok': true,
+        'path': _guard.toWorkspaceRelative(resolved),
+        'bytes_written': utf8.encode(content).length,
+      };
+    });
+  }
 
-    final resolvedPath = _guard.resolvePath(path);
-    final directory = Directory(resolvedPath);
-    if (!directory.existsSync()) {
-      throw FileSystemException('Directory not found', resolvedPath);
-    }
-
-    final results = <Map<String, dynamic>>[];
-    final queryNeedle = caseSensitive ? query : query.toLowerCase();
-    var truncated = false;
-
-    await for (final entity in directory.list(
-      recursive: true,
-      followLinks: false,
-    )) {
-      if (results.length >= maxResults) {
-        truncated = true;
-        break;
+  Future<Object?> edit(ToolParams params) {
+    return _runTool(() async {
+      final path = params.getRequiredString('path');
+      final oldText = params.getRequiredString('old_text');
+      final newText = params.getRequiredString('new_text');
+      if (oldText.isEmpty) {
+        throw ArgumentError('old_text cannot be empty.');
       }
-
-      if (entity is! File) {
-        continue;
-      }
-
-      final fileLength = entity.lengthSync();
-      if (fileLength > _maxSearchFileBytes) {
-        continue;
-      }
-
-      late final List<String> lines;
-      try {
-        lines = const LineSplitter().convert(
-          await entity.readAsString(encoding: utf8),
+      final resolved = _guard.resolvePath(path);
+      final file = File(resolved);
+      _requireRegularFile(file, path);
+      final fileBytes = file.lengthSync();
+      if (fileBytes > _maxFileBytes) {
+        throw ArgumentError(
+          'File is too large to edit ($fileBytes bytes, max $_maxFileBytes).',
         );
-      } catch (_) {
-        continue;
       }
 
-      for (var lineIndex = 0; lineIndex < lines.length; lineIndex++) {
-        if (results.length >= maxResults) {
-          truncated = true;
-          break;
+      _throwIfCancelled();
+      final original = await file.readAsString(encoding: utf8);
+      final first = original.indexOf(oldText);
+      if (first < 0) {
+        throw StateError('old_text was not found in $path.');
+      }
+      if (original.indexOf(oldText, first + oldText.length) >= 0) {
+        throw StateError('old_text occurs more than once in $path.');
+      }
+      _throwIfCancelled();
+      final updated = original.replaceFirst(oldText, newText, first);
+      await file.writeAsString(
+        updated,
+        encoding: utf8,
+        mode: FileMode.write,
+        flush: true,
+      );
+      return <String, Object?>{
+        'ok': true,
+        'path': _guard.toWorkspaceRelative(resolved),
+        'replacements': 1,
+        'bytes_written': utf8.encode(updated).length,
+      };
+    });
+  }
+
+  Future<Object?> bash(ToolParams params) async {
+    final command = params.getRequiredString('command');
+    if (command.trim().isEmpty) {
+      throw ArgumentError('command cannot be empty.');
+    }
+    final timeout = _boundedInt(
+      params.getInt('timeout') ?? 30,
+      name: 'timeout',
+      minimum: 1,
+      maximum: 120,
+    );
+
+    return _runTool(() async {
+      final shell = _platformShell(command);
+      Process? process;
+      try {
+        process = await Process.start(
+          shell.executable,
+          shell.arguments,
+          workingDirectory: workspaceRoot,
+          runInShell: false,
+        );
+        _activeProcess = process;
+        try {
+          await process.stdin.close();
+        } catch (_) {
+          // The process may close stdin itself before the parent does.
+        }
+        if (_cancelRequested) {
+          _terminateProcessTree(process);
+        }
+      } catch (error) {
+        return <String, Object?>{
+          'ok': false,
+          'executed': false,
+          'sandboxed': false,
+          'error': 'Failed to start platform shell: $error',
+        };
+      }
+
+      final stdoutCollector = _BoundedCollector(_maxShellOutputChars ~/ 2);
+      final stderrCollector = _BoundedCollector(_maxShellOutputChars ~/ 2);
+      final stdoutDrain = _drain(
+        process.stdout,
+        stdoutCollector,
+        streamName: 'stdout',
+      );
+      final stderrDrain = _drain(
+        process.stderr,
+        stderrCollector,
+        streamName: 'stderr',
+      );
+
+      var timedOut = false;
+      try {
+        final exitCode = await process.exitCode.timeout(
+          Duration(seconds: timeout),
+          onTimeout: () {
+            timedOut = true;
+            _terminateProcessTree(process!);
+            return -1;
+          },
+        );
+        try {
+          await Future.wait(<Future<void>>[
+            stdoutDrain.done,
+            stderrDrain.done,
+          ]).timeout(const Duration(seconds: 2));
+        } on TimeoutException {
+          await Future.wait(<Future<void>>[
+            stdoutDrain.cancel(),
+            stderrDrain.cancel(),
+          ]);
         }
 
-        final line = lines[lineIndex];
-        final haystack = caseSensitive ? line : line.toLowerCase();
-        if (!haystack.contains(queryNeedle)) {
+        final cancelled = _cancelRequested;
+        return <String, Object?>{
+          'ok': !cancelled && !timedOut && exitCode == 0,
+          'executed': true,
+          'sandboxed': false,
+          'exit_code': exitCode,
+          'cancelled': cancelled,
+          'timed_out': timedOut,
+          'stdout': stdoutCollector.value,
+          'stderr': stderrCollector.value,
+          'output_truncated':
+              stdoutCollector.truncated || stderrCollector.truncated,
+          if (cancelled) 'error': 'Command cancelled.',
+          if (timedOut) 'error': 'Command timed out.',
+        };
+      } finally {
+        if (identical(_activeProcess, process)) {
+          _activeProcess = null;
+        }
+      }
+    });
+  }
+
+  /// Cancels the active tool, terminating a shell process tree when present.
+  bool cancelActiveTool() {
+    if (!_toolInProgress) {
+      return false;
+    }
+    _cancelRequested = true;
+    final process = _activeProcess;
+    if (process != null) {
+      _terminateProcessTree(process);
+    }
+    return true;
+  }
+
+  Future<Object?> _runTool(Future<Object?> Function() operation) async {
+    if (_toolInProgress) {
+      throw StateError('Another workspace tool is already running.');
+    }
+    _toolInProgress = true;
+    _cancelRequested = false;
+    try {
+      _throwIfCancelled();
+      return await operation();
+    } finally {
+      _activeProcess = null;
+      _toolInProgress = false;
+      _cancelRequested = false;
+    }
+  }
+
+  void _throwIfCancelled() {
+    if (_cancelRequested) {
+      throw StateError('Workspace tool operation cancelled.');
+    }
+  }
+
+  void _requireRegularFile(File file, String displayPath) {
+    if (FileSystemEntity.typeSync(file.path, followLinks: true) !=
+        FileSystemEntityType.file) {
+      throw FileSystemException('File not found', displayPath);
+    }
+  }
+
+  void _requireWritableTarget(String path, String displayPath) {
+    final type = FileSystemEntity.typeSync(path, followLinks: true);
+    if (type != FileSystemEntityType.file &&
+        type != FileSystemEntityType.notFound) {
+      throw ArgumentError('write target must be a regular file: $displayPath');
+    }
+  }
+
+  int _boundedInt(
+    int value, {
+    required String name,
+    required int minimum,
+    required int maximum,
+  }) {
+    if (value < minimum || value > maximum) {
+      throw ArgumentError('$name must be between $minimum and $maximum.');
+    }
+    return value;
+  }
+
+  ({String executable, List<String> arguments}) _platformShell(String command) {
+    if (Platform.isWindows) {
+      final executable = Platform.environment['ComSpec'] ?? 'cmd.exe';
+      return (
+        executable: executable,
+        arguments: <String>['/d', '/s', '/c', command],
+      );
+    }
+    final executable = File('/bin/bash').existsSync()
+        ? '/bin/bash'
+        : File('/usr/bin/bash').existsSync()
+        ? '/usr/bin/bash'
+        : 'bash';
+    return (
+      executable: executable,
+      arguments: <String>['--noprofile', '--norc', '-c', command],
+    );
+  }
+
+  _OutputDrain _drain(
+    Stream<List<int>> stream,
+    _BoundedCollector collector, {
+    required String streamName,
+  }) {
+    final completer = Completer<void>();
+    final subscription = stream
+        .transform(const Utf8Decoder(allowMalformed: true))
+        .listen(
+          collector.add,
+          onError: (Object error, StackTrace stackTrace) {
+            collector.add('\n[$streamName stream error: $error]');
+          },
+          onDone: completer.complete,
+          cancelOnError: false,
+        );
+    return _OutputDrain(subscription, completer);
+  }
+
+  void _terminateProcessTree(Process process) {
+    if (Platform.isWindows) {
+      final taskkill = _windowsTaskkill();
+      if (taskkill != null) {
+        try {
+          Process.runSync(taskkill, <String>[
+            '/PID',
+            '${process.pid}',
+            '/T',
+            '/F',
+          ]);
+        } catch (_) {}
+      }
+      process.kill();
+      return;
+    }
+
+    final descendants = _descendantProcessIds(process.pid);
+    process.kill(ProcessSignal.sigkill);
+    for (final pid in descendants) {
+      try {
+        Process.killPid(pid, ProcessSignal.sigkill);
+      } catch (_) {}
+    }
+  }
+
+  String? _windowsTaskkill() {
+    final root =
+        Platform.environment['SystemRoot'] ?? Platform.environment['WINDIR'];
+    if (root == null || !p.isAbsolute(root)) {
+      return null;
+    }
+    final file = File(p.join(root, 'System32', 'taskkill.exe'));
+    return file.existsSync() ? file.absolute.path : null;
+  }
+
+  List<int> _descendantProcessIds(int rootPid) {
+    try {
+      final ps = File('/bin/ps').existsSync() ? '/bin/ps' : '/usr/bin/ps';
+      final result = Process.runSync(ps, const <String>['-axo', 'pid=,ppid=']);
+      if (result.exitCode != 0 || result.stdout is! String) {
+        return const <int>[];
+      }
+      final children = <int, List<int>>{};
+      for (final line in const LineSplitter().convert(
+        result.stdout as String,
+      )) {
+        final fields = line.trim().split(RegExp(r'\s+'));
+        if (fields.length != 2) {
           continue;
         }
-
-        results.add(<String, dynamic>{
-          'path': _guard.toWorkspaceRelative(entity.path),
-          'line': lineIndex + 1,
-          'text': line,
-        });
+        final pid = int.tryParse(fields[0]);
+        final parent = int.tryParse(fields[1]);
+        if (pid != null && parent != null && pid > 0) {
+          children.putIfAbsent(parent, () => <int>[]).add(pid);
+        }
       }
-    }
-
-    return <String, dynamic>{
-      'query': query,
-      'path': _guard.toWorkspaceRelative(resolvedPath),
-      'case_sensitive': caseSensitive,
-      'count': results.length,
-      'truncated': truncated,
-      'results': results,
-    };
-  }
-
-  Future<Object?> writeFile(ToolParams params) async {
-    final path = params.getRequiredString('path');
-    final mode = (params.getString('mode') ?? 'overwrite').trim().toLowerCase();
-    final createDirs = params.getBool('create_dirs') ?? true;
-
-    Object? rawContent = params['content'];
-    if (rawContent == null) {
-      throw ArgumentError('Required parameter "content" is missing');
-    }
-
-    final content = rawContent is String ? rawContent : jsonEncode(rawContent);
-    final resolvedPath = _guard.resolvePath(path);
-    final file = File(resolvedPath);
-
-    final parent = file.parent;
-    if (!parent.existsSync()) {
-      if (!createDirs) {
-        throw FileSystemException(
-          'Parent directory does not exist',
-          parent.path,
-        );
+      final resultPids = <int>[];
+      final visited = <int>{rootPid};
+      void collect(int parent) {
+        for (final child in children[parent] ?? const <int>[]) {
+          if (visited.add(child)) {
+            collect(child);
+            resultPids.add(child);
+          }
+        }
       }
-      await parent.create(recursive: true);
-    }
 
-    if (mode == 'append') {
-      await file.writeAsString(content, mode: FileMode.append, flush: true);
-    } else if (mode == 'overwrite') {
-      await file.writeAsString(content, mode: FileMode.write, flush: true);
-    } else {
-      throw ArgumentError('Invalid write mode: $mode');
-    }
-
-    return <String, dynamic>{
-      'path': _guard.toWorkspaceRelative(resolvedPath),
-      'mode': mode,
-      'bytes_written': utf8.encode(content).length,
-    };
-  }
-
-  Future<Object?> runCommand(ToolParams params) async {
-    final command =
-        (params.getString('command') ??
-                params.getString('cmd') ??
-                params.getString('input') ??
-                params.getString('shell_command'))
-            ?.trim() ??
-        '';
-    if (command.isEmpty) {
-      throw ArgumentError('Required parameter "command" is missing or empty');
-    }
-
-    if (_isBlockedCommand(command)) {
-      return <String, dynamic>{
-        'ok': false,
-        'error': 'Command blocked by safety policy.',
-      };
-    }
-
-    final timeoutSeconds = (params.getInt('timeout_seconds') ?? 20).clamp(
-      1,
-      120,
-    );
-    final workdirInput = params.getString('working_directory');
-    final workingDirectory = workdirInput == null
-        ? workspaceRoot
-        : _guard.resolvePath(workdirInput);
-
-    final shell = _shellForPlatform(command);
-    final stdoutCollector = _BoundedOutputCollector(_maxCommandOutputChars);
-    final stderrCollector = _BoundedOutputCollector(_maxCommandOutputChars);
-
-    late final Process process;
-    try {
-      process = await Process.start(
-        shell.executable,
-        shell.arguments,
-        workingDirectory: workingDirectory,
-        runInShell: false,
-      );
-    } catch (error) {
-      return <String, dynamic>{
-        'ok': false,
-        'error': 'Failed to start command: $error',
-      };
-    }
-
-    final stdoutDone = _collectProcessOutput(
-      process.stdout,
-      collector: stdoutCollector,
-      streamLabel: 'stdout',
-    );
-    final stderrDone = _collectProcessOutput(
-      process.stderr,
-      collector: stderrCollector,
-      streamLabel: 'stderr',
-    );
-
-    var timedOut = false;
-    final exitCode = await process.exitCode.timeout(
-      Duration(seconds: timeoutSeconds),
-      onTimeout: () {
-        timedOut = true;
-        process.kill();
-        return -1;
-      },
-    );
-
-    await stdoutDone;
-    await stderrDone;
-
-    final stdoutText = stdoutCollector.build();
-    final stderrText = stderrCollector.build();
-
-    return <String, dynamic>{
-      'ok': !timedOut && exitCode == 0,
-      'command': command,
-      'working_directory': _guard.toWorkspaceRelative(workingDirectory),
-      'timed_out': timedOut,
-      'exit_code': exitCode,
-      'stdout': stdoutText,
-      'stderr': stderrText,
-    };
-  }
-
-  bool _isBlockedCommand(String command) {
-    return _blockedCommandPatterns.any((pattern) => pattern.hasMatch(command));
-  }
-
-  ({String executable, List<String> arguments}) _shellForPlatform(
-    String command,
-  ) {
-    if (Platform.isWindows) {
-      return (executable: 'cmd', arguments: <String>['/C', command]);
-    }
-    return (executable: 'bash', arguments: <String>['-lc', command]);
-  }
-
-  Future<void> _collectProcessOutput(
-    Stream<List<int>> stream, {
-    required _BoundedOutputCollector collector,
-    required String streamLabel,
-  }) async {
-    try {
-      await for (final chunk in stream.transform(
-        const Utf8Decoder(allowMalformed: true),
-      )) {
-        collector.add(chunk);
-      }
-    } catch (error) {
-      collector.add('\n[$streamLabel stream error: $error]');
+      collect(rootPid);
+      return resultPids;
+    } catch (_) {
+      return const <int>[];
     }
   }
 }
 
-class _BoundedOutputCollector {
-  final int _limit;
-  final StringBuffer _buffer = StringBuffer();
-  bool _truncated = false;
+class _OutputDrain {
+  final StreamSubscription<String> _subscription;
+  final Completer<void> _completer;
 
-  _BoundedOutputCollector(this._limit);
+  _OutputDrain(this._subscription, this._completer);
+
+  Future<void> get done => _completer.future;
+
+  Future<void> cancel() async {
+    await _subscription.cancel();
+    if (!_completer.isCompleted) {
+      _completer.complete();
+    }
+  }
+}
+
+class _BoundedCollector {
+  final int limit;
+  final StringBuffer _buffer = StringBuffer();
+  bool truncated = false;
+
+  _BoundedCollector(this.limit);
 
   void add(String chunk) {
     if (chunk.isEmpty) {
       return;
     }
-
-    if (_buffer.length >= _limit) {
-      _truncated = true;
+    final remaining = limit - _buffer.length;
+    if (remaining <= 0) {
+      truncated = true;
       return;
     }
-
-    final remaining = _limit - _buffer.length;
     if (chunk.length <= remaining) {
       _buffer.write(chunk);
-      return;
+    } else {
+      _buffer.write(_safePrefix(chunk, remaining));
+      truncated = true;
     }
-
-    _buffer.write(chunk.substring(0, remaining));
-    _truncated = true;
   }
 
-  String build() {
-    if (!_truncated) {
-      return _buffer.toString();
-    }
-    return '${_buffer.toString()}\n...[truncated]';
-  }
+  String get value => _buffer.toString();
 }
 
-String formatToolArguments(Map<String, dynamic> arguments) {
-  if (arguments.isEmpty) {
+({String content, int bytes, int lineCount, bool truncated}) _boundedLines(
+  List<String> lines, {
+  required int startIndex,
+  required int endExclusive,
+  required int maxBytes,
+}) {
+  final buffer = StringBuffer();
+  var bytes = 0;
+  var lineCount = 0;
+  var truncated = false;
+  for (var index = startIndex; index < endExclusive; index++) {
+    if (lineCount > 0) {
+      if (bytes >= maxBytes) {
+        truncated = true;
+        break;
+      }
+      buffer.write('\n');
+      bytes += 1;
+    }
+    final line = lines[index];
+    final prefix = _utf8Prefix(line, maxBytes - bytes);
+    buffer.write(prefix.text);
+    bytes += prefix.bytes;
+    lineCount += 1;
+    if (prefix.truncated) {
+      truncated = true;
+      break;
+    }
+  }
+  if (startIndex + lineCount < endExclusive) {
+    truncated = true;
+  }
+  return (
+    content: buffer.toString(),
+    bytes: bytes,
+    lineCount: lineCount,
+    truncated: truncated,
+  );
+}
+
+({String text, int bytes, bool truncated}) _utf8Prefix(
+  String value,
+  int maxBytes,
+) {
+  final buffer = StringBuffer();
+  var bytes = 0;
+  var truncated = false;
+  for (final rune in value.runes) {
+    final runeBytes = rune <= 0x7f
+        ? 1
+        : rune <= 0x7ff
+        ? 2
+        : rune <= 0xffff
+        ? 3
+        : 4;
+    if (bytes + runeBytes > maxBytes) {
+      truncated = true;
+      break;
+    }
+    buffer.writeCharCode(rune);
+    bytes += runeBytes;
+  }
+  return (text: buffer.toString(), bytes: bytes, truncated: truncated);
+}
+
+String _safePrefix(String value, int maxChars) {
+  if (maxChars <= 0 || value.isEmpty) {
     return '';
   }
-
-  final orderedKeys = arguments.keys.toList(growable: false)..sort();
-  return orderedKeys
-      .map((key) => '$key=${_inlineValue(arguments[key])}')
-      .join(', ');
-}
-
-String _inlineValue(Object? value) {
-  if (value == null) {
-    return 'null';
-  }
-  if (value is String) {
+  if (value.length <= maxChars) {
     return value;
   }
-  if (value is num || value is bool) {
-    return '$value';
+  var end = maxChars;
+  final last = value.codeUnitAt(end - 1);
+  if (last >= 0xd800 && last <= 0xdbff) {
+    end -= 1;
   }
-  try {
-    return jsonEncode(value);
-  } catch (_) {
-    return '$value';
-  }
-}
-
-String workspaceDisplayPath(String workspaceRoot) {
-  final normalized = p.normalize(workspaceRoot);
-  return normalized.isEmpty ? '.' : normalized;
+  return value.substring(0, end);
 }

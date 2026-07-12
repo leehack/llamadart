@@ -2,92 +2,97 @@ import 'dart:io';
 
 import 'package:path/path.dart' as p;
 
+/// Resolves file-tool paths without allowing them to escape a workspace.
 class WorkspaceGuard {
-  final String _workspaceRoot;
-  final String _workspaceCanonicalRoot;
+  late final String _workspaceRoot;
 
-  WorkspaceGuard(String workspaceRoot)
-    : _workspaceRoot = p.normalize(p.absolute(workspaceRoot)),
-      _workspaceCanonicalRoot = _resolveExistingPath(
-        p.normalize(p.absolute(workspaceRoot)),
-      ) {
-    if (!Directory(_workspaceRoot).existsSync()) {
-      throw FileSystemException(
-        'Workspace directory not found',
-        _workspaceRoot,
-      );
+  WorkspaceGuard(String workspaceRoot) {
+    final absoluteRoot = p.normalize(p.absolute(workspaceRoot));
+    if (FileSystemEntity.typeSync(absoluteRoot, followLinks: true) !=
+        FileSystemEntityType.directory) {
+      throw FileSystemException('Workspace directory not found', absoluteRoot);
     }
+    _workspaceRoot = _resolveExistingPath(absoluteRoot);
   }
 
   String get workspaceRoot => _workspaceRoot;
 
-  String resolvePath(String input, {String? from}) {
-    final trimmed = input.trim();
-    if (trimmed.isEmpty) {
-      return from == null ? _workspaceRoot : resolvePath(from);
+  /// Returns the canonical, workspace-confined path represented by [input].
+  ///
+  /// Surrounding whitespace is ignored so model-generated path arguments do
+  /// not become literal whitespace-bearing filenames.
+  String resolvePath(String input) {
+    final path = input.trim();
+    if (path.contains('\u0000')) {
+      throw ArgumentError('Path contains a null byte.');
     }
-
-    final base = from == null ? _workspaceRoot : resolvePath(from);
     final absolute = p.normalize(
-      p.absolute(p.isAbsolute(trimmed) ? trimmed : p.join(base, trimmed)),
+      p.absolute(
+        path.isEmpty
+            ? _workspaceRoot
+            : p.isAbsolute(path)
+            ? path
+            : p.join(_workspaceRoot, path),
+      ),
     );
     final canonical = _resolveExistingPath(absolute);
-
-    if (!_isInsideWorkspace(canonical)) {
-      throw ArgumentError('Path escapes workspace root: $input');
-    }
-
-    return absolute;
+    _ensureInsideWorkspace(canonical, input);
+    return canonical;
   }
 
-  String toWorkspaceRelative(String absolutePath) {
-    final normalized = p.normalize(p.absolute(absolutePath));
-    final canonical = _resolveExistingPath(normalized);
-    if (!_isInsideWorkspace(canonical)) {
-      return normalized;
-    }
-
-    final relative = p.relative(normalized, from: _workspaceRoot);
+  /// Converts [path] to a canonical workspace-relative path.
+  String toWorkspaceRelative(String path) {
+    final canonical = _resolveExistingPath(path);
+    _ensureInsideWorkspace(canonical, path);
+    final relative = p.relative(canonical, from: _workspaceRoot);
     return relative.isEmpty ? '.' : relative;
   }
 
-  bool _isInsideWorkspace(String candidate) {
-    return candidate == _workspaceCanonicalRoot ||
-        p.isWithin(_workspaceCanonicalRoot, candidate);
+  void _ensureInsideWorkspace(String candidate, String original) {
+    if (candidate != _workspaceRoot && !p.isWithin(_workspaceRoot, candidate)) {
+      throw ArgumentError('Path escapes workspace root: $original');
+    }
   }
 
-  static String _resolveExistingPath(String path) {
-    final normalized = p.normalize(path);
-    final entityType = FileSystemEntity.typeSync(normalized, followLinks: true);
+  static String _resolveExistingPath(String path, [Set<String>? seenLinks]) {
+    final normalized = p.normalize(p.absolute(path));
+    final links = seenLinks ?? <String>{};
+    final directType = FileSystemEntity.typeSync(
+      normalized,
+      followLinks: false,
+    );
 
-    if (entityType == FileSystemEntityType.notFound) {
-      final parentPath = p.dirname(normalized);
-      if (parentPath == normalized) {
+    if (directType == FileSystemEntityType.link) {
+      if (!links.add(normalized)) {
+        throw FileSystemException('Symbolic link cycle detected', normalized);
+      }
+      final target = Link(normalized).targetSync();
+      return _resolveExistingPath(
+        p.isAbsolute(target) ? target : p.join(p.dirname(normalized), target),
+        links,
+      );
+    }
+
+    final type = FileSystemEntity.typeSync(normalized, followLinks: true);
+    if (type == FileSystemEntityType.notFound) {
+      final parent = p.dirname(normalized);
+      if (parent == normalized) {
         return normalized;
       }
-      final resolvedParent = _resolveExistingPath(parentPath);
-      return p.normalize(p.join(resolvedParent, p.basename(normalized)));
+      return p.normalize(
+        p.join(_resolveExistingPath(parent, links), p.basename(normalized)),
+      );
     }
 
-    try {
-      switch (entityType) {
-        case FileSystemEntityType.directory:
-          return p.normalize(Directory(normalized).resolveSymbolicLinksSync());
-        case FileSystemEntityType.file:
-          return p.normalize(File(normalized).resolveSymbolicLinksSync());
-        case FileSystemEntityType.link:
-          return p.normalize(Link(normalized).resolveSymbolicLinksSync());
-        case FileSystemEntityType.pipe:
-          return normalized;
-        case FileSystemEntityType.unixDomainSock:
-          return normalized;
-        case FileSystemEntityType.notFound:
-          return normalized;
-      }
-    } catch (_) {
-      return normalized;
+    if (type == FileSystemEntityType.directory) {
+      return p.normalize(Directory(normalized).resolveSymbolicLinksSync());
     }
-
-    return normalized;
+    if (type == FileSystemEntityType.file) {
+      return p.normalize(File(normalized).resolveSymbolicLinksSync());
+    }
+    throw FileSystemException(
+      'Unsupported filesystem entity while resolving path',
+      normalized,
+    );
   }
 }

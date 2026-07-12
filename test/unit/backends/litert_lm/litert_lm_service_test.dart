@@ -2165,6 +2165,7 @@ void main() {
           'hello',
           const GenerationParams(
             penalty: 1.0,
+            presencePenalty: 1.5,
             grammarLazy: true,
             grammarTriggers: [
               GenerationGrammarTrigger(type: 0, value: '<tool_call>'),
@@ -2179,6 +2180,7 @@ void main() {
             'message',
             allOf(
               contains('penalty'),
+              contains('presencePenalty'),
               contains('grammarLazy'),
               contains('grammarTriggers'),
               contains('preservedTokens'),

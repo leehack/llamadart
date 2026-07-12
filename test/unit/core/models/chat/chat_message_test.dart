@@ -11,7 +11,28 @@ void main() {
         text: 'Hello',
       );
       expect(msg.toJson(), {'role': 'user', 'content': 'Hello'});
+      expect(msg.continuesPreviousTurn, isFalse);
     });
+
+    test(
+      'continuation marker survives copies without entering prompt JSON',
+      () {
+        final message = LlamaChatMessage.fromText(
+          role: LlamaChatRole.user,
+          text: 'tool result',
+          continuesPreviousTurn: true,
+        );
+
+        final copied = message.copyWith(content: 'updated tool result');
+
+        expect(message.continuesPreviousTurn, isTrue);
+        expect(copied.continuesPreviousTurn, isTrue);
+        expect(copied.toJson(), {
+          'role': 'user',
+          'content': 'updated tool result',
+        });
+      },
+    );
 
     test('multimodal message with multiple text parts', () {
       final msg = LlamaChatMessage.withContent(
