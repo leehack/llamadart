@@ -9,10 +9,9 @@ environment:
 dependencies:
   llamadart:
     path: ../..
-  relic: ^1.0.0
+  relic: ^1.2.0
   args: ^2.7.0
   http: ^1.6.0
-  path: ^1.9.0
 
 dev_dependencies:
   lints: ^6.1.0

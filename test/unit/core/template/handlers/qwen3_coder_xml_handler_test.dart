@@ -75,6 +75,7 @@ void main() {
 
     final rendered = handler.render(
       templateSource:
+          '{% set truncate_history_thinking = true %}'
           '<tool_call><function><function=python><parameters><parameter=code>'
           '<think>',
       messages: const [
@@ -143,6 +144,7 @@ void main() {
 
       final rendered = handler.render(
         templateSource:
+            '{% set truncate_history_thinking = true %}'
             '<tool_call><function><function=python><parameters><parameter=code>'
             '<think>',
         messages: const [
@@ -206,6 +208,7 @@ void main() {
 
     final nemotron = handler.render(
       templateSource:
+          '{% set truncate_history_thinking = true %}'
           '<tool_call><function><function=x><parameters><parameter=x><think>',
       messages: const [
         LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hello'),
@@ -218,6 +221,54 @@ void main() {
     expect(nemotron.format, equals(ChatFormat.pegConstructed.index));
     expect(nemotron.parser, isNotNull);
     expect(nemotron.parser, isNotEmpty);
+  });
+
+  test('Qwen3.6 renders its thinking control without Nemotron parsing', () {
+    const template = '''
+{%- if add_generation_prompt %}
+{{- '<|im_start|>assistant\\n' }}
+{%- if enable_thinking is defined and enable_thinking is false %}
+{{- '<think>\\n\\n</think>\\n\\n' }}
+{%- else %}
+{{- '<think>\\n' }}
+{%- endif %}
+{%- endif %}
+''';
+    final handler = Qwen3CoderXmlHandler();
+    const messages = <LlamaChatMessage>[
+      LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hello'),
+    ];
+
+    final thinking = handler.render(
+      templateSource: template,
+      messages: messages,
+      metadata: const {},
+      enableThinking: true,
+    );
+
+    expect(thinking.format, equals(ChatFormat.qwen3CoderXml.index));
+    expect(thinking.parser, isNull);
+    expect(thinking.thinkingForcedOpen, isTrue);
+    expect(thinking.preservedTokens, contains('</think>'));
+
+    final parsed = ChatTemplateEngine.parse(
+      thinking.format,
+      'unfinished reasoning',
+      thinkingForcedOpen: thinking.thinkingForcedOpen,
+    );
+    expect(parsed.reasoningContent, equals('unfinished reasoning'));
+    expect(parsed.content, isEmpty);
+
+    final nonThinking = handler.render(
+      templateSource: template,
+      messages: messages,
+      metadata: const {},
+      enableThinking: false,
+    );
+    expect(nonThinking.format, equals(ChatFormat.qwen3CoderXml.index));
+    expect(nonThinking.parser, isNull);
+    expect(nonThinking.thinkingForcedOpen, isFalse);
+    expect(nonThinking.prompt, contains('<think>\n\n</think>'));
   });
 }
 

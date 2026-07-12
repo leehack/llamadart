@@ -16,7 +16,7 @@ void main() {
 
       expect(stdoutText, contains('OpenAI-compatible API Server Example'));
       expect(stdoutText, contains('--model'));
-      expect(stderrText.trim(), isEmpty);
+      expect(_withoutDartBuildHookBanner(stderrText).trim(), isEmpty);
     });
 
     test('unknown option exits with usage code', () async {
@@ -62,4 +62,8 @@ Future<ProcessResult> _runCli(List<String> args) {
     'bin/llamadart_server.dart',
     ...args,
   ], workingDirectory: Directory.current.path);
+}
+
+String _withoutDartBuildHookBanner(String text) {
+  return text.replaceAll('Running build hooks...', '');
 }

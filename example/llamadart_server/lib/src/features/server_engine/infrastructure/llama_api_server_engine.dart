@@ -19,12 +19,16 @@ class LlamaApiServerEngine implements ApiServerEngine {
     bool addAssistant = true,
     List<ToolDefinition>? tools,
     ToolChoice toolChoice = ToolChoice.auto,
+    bool parallelToolCalls = false,
+    bool enableThinking = false,
   }) {
     return engine.chatTemplate(
       messages,
       addAssistant: addAssistant,
       tools: tools,
       toolChoice: toolChoice,
+      parallelToolCalls: parallelToolCalls,
+      enableThinking: enableThinking,
     );
   }
 
@@ -34,12 +38,16 @@ class LlamaApiServerEngine implements ApiServerEngine {
     GenerationParams params = const GenerationParams(),
     List<ToolDefinition>? tools,
     ToolChoice? toolChoice,
+    bool parallelToolCalls = false,
+    bool enableThinking = false,
   }) {
     return engine.create(
       messages,
       params: params,
       tools: tools,
       toolChoice: toolChoice,
+      parallelToolCalls: parallelToolCalls,
+      enableThinking: enableThinking,
     );
   }
 

@@ -80,7 +80,7 @@ class OpenAiChatCompletionAccumulator {
 
     final message = <String, dynamic>{
       'role': 'assistant',
-      'content': hasToolCalls ? null : content,
+      'content': hasToolCalls && content.isEmpty ? null : content,
       if (reasoning.isNotEmpty) 'reasoning_content': reasoning,
       if (hasToolCalls) 'tool_calls': toolCallJson,
     };

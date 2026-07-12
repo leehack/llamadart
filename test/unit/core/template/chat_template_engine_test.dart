@@ -951,6 +951,7 @@ void main() {
 
     test('routes Nemotron v3 templates to PEG-constructed parser path', () {
       const template =
+          '{% set truncate_history_thinking = true %}'
           '<tool_call><function><function=get_weather><parameters>'
           '<parameter=city><think>';
 
@@ -994,6 +995,7 @@ void main() {
 
     test('Nemotron v3 tool_choice none uses content-only parser behavior', () {
       const template =
+          '{% set truncate_history_thinking = true %}'
           '<tool_call><function><function=get_weather><parameters>'
           '<parameter=city><think>';
 
@@ -1035,9 +1037,11 @@ void main() {
 
     test('Nemotron v3 parser respects required/parallel tool call bounds', () {
       const template =
+          '{% set truncate_history_thinking = true %}'
           '<tool_call><function><function=get_weather><parameters>'
           '<parameter=city><think>';
       const templateParallel =
+          '{% set truncate_history_thinking = true %}'
           '<tool_call><function><function=get_weather><parameters>'
           '<parameter=city><think>'
           '{% if tools %}{% for tool in tools %}'

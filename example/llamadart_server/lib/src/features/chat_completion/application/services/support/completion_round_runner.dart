@@ -16,6 +16,8 @@ class CompletionRoundRunner {
     required GenerationParams params,
     required List<ToolDefinition>? tools,
     required ToolChoice? toolChoice,
+    required bool parallelToolCalls,
+    required bool enableThinking,
   }) async {
     var promptTokens = 0;
     try {
@@ -23,6 +25,8 @@ class CompletionRoundRunner {
         messages,
         tools: tools,
         toolChoice: toolChoice ?? ToolChoice.auto,
+        parallelToolCalls: parallelToolCalls,
+        enableThinking: enableThinking,
       );
       promptTokens = templateResult.tokenCount ?? 0;
     } catch (_) {
@@ -38,6 +42,8 @@ class CompletionRoundRunner {
       params: params,
       tools: tools,
       toolChoice: toolChoice,
+      parallelToolCalls: parallelToolCalls,
+      enableThinking: enableThinking,
     )) {
       completionId = chunk.id;
       created = chunk.created;

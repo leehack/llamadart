@@ -6,11 +6,26 @@ import 'parser_support/chat_completion_field_readers.dart';
 import 'parser_support/chat_completion_message_parser.dart';
 import 'parser_support/chat_completion_tool_parser.dart';
 
+const GenerationParams _nonThinkingGenerationParams = GenerationParams(
+  temp: 0.7,
+  topK: 20,
+  topP: 0.8,
+  minP: 0.0,
+  penalty: 1.0,
+);
+
+const GenerationParams _thinkingGenerationParams = GenerationParams(
+  temp: 1.0,
+  topK: 20,
+  topP: 0.95,
+  minP: 0.0,
+  penalty: 1.0,
+);
+
 /// Parses and validates an OpenAI chat completion request body.
 OpenAiChatCompletionRequest parseChatCompletionRequest(
   Map<String, dynamic> json, {
   required String configuredModelId,
-  OpenAiToolInvoker? toolInvoker,
 }) {
   final model = json['model'];
   if (model is! String || model.trim().isEmpty) {
@@ -33,6 +48,11 @@ OpenAiChatCompletionRequest parseChatCompletionRequest(
   }
 
   final stream = readBoolField(json['stream'], 'stream') ?? false;
+  final enableThinking =
+      readBoolField(json['enable_thinking'], 'enable_thinking') ?? false;
+  final parallelToolCalls =
+      readBoolField(json['parallel_tool_calls'], 'parallel_tool_calls') ??
+      false;
 
   final messagesRaw = json['messages'];
   if (messagesRaw is! List || messagesRaw.isEmpty) {
@@ -42,12 +62,11 @@ OpenAiChatCompletionRequest parseChatCompletionRequest(
     );
   }
 
-  final messages = messagesRaw
-      .map((Object? raw) => parseChatMessage(raw))
-      .toList(growable: false);
+  final messages = parseChatMessages(messagesRaw);
 
-  final tools = parseToolDefinitions(json['tools'], toolInvoker: toolInvoker);
-  final toolChoice = parseToolChoice(json['tool_choice'], tools);
+  final parsedTools = parseToolDefinitions(json['tools']);
+  final tools = restrictToolsForToolChoice(json['tool_choice'], parsedTools);
+  final toolChoice = parseToolChoice(json['tool_choice'], parsedTools);
 
   if (toolChoice == ToolChoice.required && (tools == null || tools.isEmpty)) {
     throw OpenAiHttpException.invalidRequest(
@@ -62,7 +81,9 @@ OpenAiChatCompletionRequest parseChatCompletionRequest(
   final seed = readIntField(json['seed'], 'seed');
   final stops = parseStopSequences(json['stop']);
 
-  var params = const GenerationParams(penalty: 1.0, topP: 0.95, minP: 0.05);
+  var params = enableThinking
+      ? _thinkingGenerationParams
+      : _nonThinkingGenerationParams;
   if (maxTokens != null) {
     params = params.copyWith(maxTokens: maxTokens);
   }
@@ -84,6 +105,8 @@ OpenAiChatCompletionRequest parseChatCompletionRequest(
     messages: messages,
     params: params,
     stream: stream,
+    enableThinking: enableThinking,
+    parallelToolCalls: parallelToolCalls,
     tools: tools,
     toolChoice: toolChoice,
   );

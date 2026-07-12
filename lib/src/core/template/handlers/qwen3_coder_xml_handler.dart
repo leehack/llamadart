@@ -13,11 +13,13 @@ import '../thinking_utils.dart';
 import '../tool_call_parsing_utils.dart';
 import '../xml_tool_call_format.dart';
 
-/// Handler for Qwen 2.5/3 Coder XML format.
+/// Handler for Qwen Coder and Qwen3.6 XML tool-call formats.
 ///
-/// Uses standard tool call XML parser logic: `<tool_code>...`
+/// Uses `<tool_call><function=...><parameter=...>` envelopes.
 class Qwen3CoderXmlHandler extends ChatTemplateHandler {
   static const List<String> _qwenPreservedTokens = <String>[
+    '<think>',
+    '</think>',
     '<tool_call>',
     '</tool_call>',
     '<function=',
@@ -63,6 +65,7 @@ class Qwen3CoderXmlHandler extends ChatTemplateHandler {
         'messages': templateMessages(messages),
         'add_generation_prompt': addAssistant,
         'tools': tools?.map((t) => t.toJson()).toList(),
+        'enable_thinking': enableThinking,
         'bos_token': metadata['tokenizer.ggml.bos_token'] ?? '<|im_start|>',
         'eos_token': metadata['tokenizer.ggml.eos_token'] ?? '<|im_end|>',
       },
@@ -75,7 +78,7 @@ class Qwen3CoderXmlHandler extends ChatTemplateHandler {
     final toolChoiceNone = toolChoice == ToolChoice.none.name;
     final toolChoiceRequired = toolChoice == ToolChoice.required.name;
     var thinkingForcedOpen = false;
-    if (isNemotronV3 && isThinkingForcedOpen(prompt, startTag: '<think>')) {
+    if (isThinkingForcedOpen(prompt, startTag: '<think>')) {
       if (!enableThinking) {
         prompt = '${prompt.trimRight()}</think>\n';
       } else {
@@ -129,7 +132,11 @@ class Qwen3CoderXmlHandler extends ChatTemplateHandler {
   }
 
   bool _isNemotronV3Template(String templateSource) {
-    return templateSource.contains('<think>');
+    return templateSource.contains('truncate_history_thinking') &&
+        templateSource.contains('<tool_call>') &&
+        templateSource.contains('<function>') &&
+        templateSource.contains('<parameters>') &&
+        templateSource.contains('<think>');
   }
 
   String _buildNemotronV3Parser(
@@ -273,7 +280,9 @@ class Qwen3CoderXmlHandler extends ChatTemplateHandler {
     final result = parseXmlToolCalls(
       output,
       XmlToolCallFormat.qwen3Coder,
+      isPartial: isPartial,
       parseToolCalls: parseToolCalls,
+      thinkingForcedOpen: thinkingForcedOpen,
     );
     return ChatParseResult(
       content: result.content.trim(),
