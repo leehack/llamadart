@@ -72,6 +72,23 @@ void main() {
       },
     );
 
+    test(
+      'read trims surrounding whitespace from model path arguments',
+      () async {
+        await File(
+          p.join(workspace.path, 'notes.txt'),
+        ).writeAsString('one\ntwo\n');
+
+        final result = await tools.read(
+          const ToolParams(<String, dynamic>{'path': ' \nnotes.txt\t '}),
+        );
+
+        final map = result as Map<String, Object?>;
+        expect(map['path'], 'notes.txt');
+        expect(map['content'], 'one\ntwo');
+      },
+    );
+
     test('read handles empty and out-of-range windows', () async {
       await File(p.join(workspace.path, 'empty.txt')).writeAsString('');
       await File(p.join(workspace.path, 'short.txt')).writeAsString('one\n');

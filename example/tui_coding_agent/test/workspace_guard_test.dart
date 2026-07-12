@@ -44,8 +44,13 @@ void main() {
       final resolved = guard.resolvePath('lib/../lib/main.dart');
 
       expect(resolved, file.resolveSymbolicLinksSync());
+      expect(
+        guard.resolvePath(' \nlib/../lib/main.dart\t '),
+        file.resolveSymbolicLinksSync(),
+      );
       expect(guard.toWorkspaceRelative(resolved), p.join('lib', 'main.dart'));
       expect(guard.resolvePath(''), guard.workspaceRoot);
+      expect(guard.resolvePath(' \n\t '), guard.workspaceRoot);
     });
 
     test('rejects lexical traversal and absolute outside paths', () async {

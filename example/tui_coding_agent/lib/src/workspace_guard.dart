@@ -18,17 +18,21 @@ class WorkspaceGuard {
   String get workspaceRoot => _workspaceRoot;
 
   /// Returns the canonical, workspace-confined path represented by [input].
+  ///
+  /// Surrounding whitespace is ignored so model-generated path arguments do
+  /// not become literal whitespace-bearing filenames.
   String resolvePath(String input) {
-    if (input.contains('\u0000')) {
+    final path = input.trim();
+    if (path.contains('\u0000')) {
       throw ArgumentError('Path contains a null byte.');
     }
     final absolute = p.normalize(
       p.absolute(
-        input.isEmpty
+        path.isEmpty
             ? _workspaceRoot
-            : p.isAbsolute(input)
-            ? input
-            : p.join(_workspaceRoot, input),
+            : p.isAbsolute(path)
+            ? path
+            : p.join(_workspaceRoot, path),
       ),
     );
     final canonical = _resolveExistingPath(absolute);
