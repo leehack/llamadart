@@ -14,6 +14,12 @@ class OpenAiChatCompletionRequest {
   /// Whether SSE streaming mode is enabled.
   final bool stream;
 
+  /// Whether the model may emit a separate reasoning channel.
+  final bool enableThinking;
+
+  /// Whether the request permits parallel tool calls when the template supports them.
+  final bool parallelToolCalls;
+
   /// Optional tool definitions included in the request.
   final List<ToolDefinition>? tools;
 
@@ -26,6 +32,8 @@ class OpenAiChatCompletionRequest {
     required this.messages,
     required this.params,
     required this.stream,
+    required this.enableThinking,
+    required this.parallelToolCalls,
     this.tools,
     this.toolChoice,
   });

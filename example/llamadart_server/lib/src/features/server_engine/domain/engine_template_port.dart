@@ -8,5 +8,7 @@ abstract class EngineTemplatePort {
     bool addAssistant,
     List<ToolDefinition>? tools,
     ToolChoice toolChoice,
+    bool parallelToolCalls = false,
+    bool enableThinking = false,
   });
 }

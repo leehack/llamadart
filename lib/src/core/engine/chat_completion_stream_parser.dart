@@ -55,7 +55,12 @@ class ChatCompletionStreamParser {
     var didInitialPartialParse = false;
     var lastPartialParseAtMs = 0;
     final partialParseStopwatch = Stopwatch()..start();
-    var streamingMode = _ToolStreamingMode.undecided;
+    // A forced-open thought can transition straight into a tool envelope
+    // without producing `</think>`. Start in parsed mode so that envelope is
+    // never streamed as reasoning before the final structured parse.
+    var streamingMode = templateResult.thinkingForcedOpen
+        ? _ToolStreamingMode.parsed
+        : _ToolStreamingMode.undecided;
     var undecidedPrefix = '';
     final thinkingTags = ChatTemplateEngine.thinkingTagsFor(
       templateResult.format,
@@ -181,6 +186,7 @@ class ChatCompletionStreamParser {
                 buffer.toString(),
                 startTag: startTag,
                 endTag: endTag,
+                thinkingForcedOpen: templateResult.thinkingForcedOpen,
               ) &&
               !partialParsed.hasToolCalls;
           if (!suppressToolEnvelopeContent &&
@@ -305,6 +311,7 @@ class ChatCompletionStreamParser {
             fullOutput,
             startTag: startTag,
             endTag: endTag,
+            thinkingForcedOpen: templateResult.thinkingForcedOpen,
           );
       final contentDelta = suppressFinalToolEnvelopeContent
           ? null
@@ -531,7 +538,13 @@ class ChatCompletionStreamParser {
     String text, {
     required String startTag,
     required String endTag,
+    required bool thinkingForcedOpen,
   }) {
+    if (thinkingForcedOpen &&
+        _containsForcedOpenXmlToolEnvelope(text, endTag: endTag)) {
+      return true;
+    }
+
     final decisionText = _stripLeadingThinkingForToolDecision(
       text,
       startTag: startTag,
@@ -572,6 +585,35 @@ class ChatCompletionStreamParser {
     }
 
     return false;
+  }
+
+  static bool _containsXmlToolEnvelope(String text) {
+    final lower = text.toLowerCase();
+    return lower.contains('<tool_call') ||
+        lower.contains('<tool_calls') ||
+        lower.contains('<function=') ||
+        lower.contains('<function_call');
+  }
+
+  static bool _containsForcedOpenXmlToolEnvelope(
+    String text, {
+    required String endTag,
+  }) {
+    final thoughtEnd = text.indexOf(endTag);
+    if (thoughtEnd < 0) {
+      return _containsXmlToolEnvelope(text);
+    }
+
+    final afterThought = text.substring(thoughtEnd + endTag.length);
+    final first = _firstNonWhitespaceIndex(afterThought);
+    if (first == null) {
+      return false;
+    }
+    final lower = afterThought.substring(first).toLowerCase();
+    return lower.startsWith('<tool_call') ||
+        lower.startsWith('<tool_calls') ||
+        lower.startsWith('<function=') ||
+        lower.startsWith('<function_call');
   }
 
   static _ToolStreamingMode _decideBracketEnvelopeMode(String text) {

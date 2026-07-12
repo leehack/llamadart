@@ -19,12 +19,7 @@ void printServerStartup(ServerCliConfig config) {
         ? '  Auth:     enabled (Bearer token required)'
         : '  Auth:     disabled',
   );
-  stdout.writeln(
-    '  Tools:    ${config.enableToolExecution ? 'server execution enabled' : 'pass-through only'}',
-  );
-  if (config.enableToolExecution) {
-    stdout.writeln('  Tool rounds: ${config.maxToolRounds}');
-  }
+  stdout.writeln('  Tools:    client-executed (OpenAI-compatible)');
 }
 
 /// Prints server shutdown message.

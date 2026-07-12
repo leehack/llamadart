@@ -181,6 +181,14 @@ void main() {
       expect(format, equals(ChatFormat.qwen3CoderXml));
     });
 
+    test('detects Qwen3.6 XML tools before Hermes', () {
+      const source =
+          '<tool_call><function=example_function_name><parameter=example_parameter_1>'
+          'Function calls MUST follow the specified format<think>';
+      final format = detectChatFormat(source);
+      expect(format, equals(ChatFormat.qwen3CoderXml));
+    });
+
     test('detects Granite only with thinking marker', () {
       const source = 'elif thinking ... <|tool_call|>';
       final format = detectChatFormat(source);

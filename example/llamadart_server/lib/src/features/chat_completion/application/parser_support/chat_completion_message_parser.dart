@@ -7,7 +7,52 @@ import 'message_parsing/message_content_utils.dart';
 import 'message_parsing/message_role_parser.dart';
 import 'message_parsing/tool_message_parser.dart';
 
-LlamaChatMessage parseChatMessage(Object? raw) {
+/// Parses an ordered OpenAI chat transcript.
+///
+/// Tool-result messages use an earlier assistant tool-call ID to recover the
+/// function name required by native chat templates.
+List<LlamaChatMessage> parseChatMessages(List<Object?> rawMessages) {
+  final pendingToolNames = <String, String>{};
+  final seenToolCallIds = <String>{};
+  final messages = <LlamaChatMessage>[];
+
+  for (final raw in rawMessages) {
+    final message = parseChatMessage(raw, pendingToolNames: pendingToolNames);
+    messages.add(message);
+
+    if (message.role == LlamaChatRole.assistant) {
+      for (final toolCall in message.parts.whereType<LlamaToolCallContent>()) {
+        final id = toolCall.id!;
+        if (!seenToolCallIds.add(id)) {
+          throw OpenAiHttpException.invalidRequest(
+            'Assistant tool call IDs must be unique within the transcript.',
+            param: 'messages.tool_calls.id',
+          );
+        }
+        pendingToolNames[id] = toolCall.name;
+      }
+    } else if (message.role == LlamaChatRole.tool) {
+      final toolResult = message.parts.single as LlamaToolResultContent;
+      pendingToolNames.remove(toolResult.id);
+    }
+  }
+
+  if (pendingToolNames.isNotEmpty) {
+    final unresolvedIds = pendingToolNames.keys.join(', ');
+    throw OpenAiHttpException.invalidRequest(
+      'Every assistant tool call must have a matching tool result. '
+      'Missing results for: $unresolvedIds.',
+      param: 'messages.tool_call_id',
+    );
+  }
+
+  return List<LlamaChatMessage>.unmodifiable(messages);
+}
+
+LlamaChatMessage parseChatMessage(
+  Object? raw, {
+  Map<String, String>? pendingToolNames,
+}) {
   if (raw is! Map) {
     throw OpenAiHttpException.invalidRequest(
       'Each message must be a JSON object.',
@@ -26,7 +71,10 @@ LlamaChatMessage parseChatMessage(Object? raw) {
 
   final role = parseMessageRole(roleRaw);
   if (role == LlamaChatRole.tool) {
-    return parseToolRoleMessage(message);
+    return parseToolRoleMessage(
+      message,
+      pendingToolNames: pendingToolNames ?? const <String, String>{},
+    );
   }
 
   final parts = parseContentParts(message['content'], role);

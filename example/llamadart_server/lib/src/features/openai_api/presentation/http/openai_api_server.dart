@@ -22,12 +22,6 @@ class OpenAiApiServer {
   /// Optional API key required for `/v1/*` endpoints.
   final String? apiKey;
 
-  /// Optional server-side tool invoker.
-  final OpenAiToolInvoker? toolInvoker;
-
-  /// Maximum server-side tool-call rounds per request.
-  final int maxToolRounds;
-
   /// Whether request logs should be emitted.
   final bool enableRequestLogs;
 
@@ -53,7 +47,6 @@ class OpenAiApiServer {
   late final ChatCompletionsHandler _chatCompletionsHandler =
       ChatCompletionsHandler(
         modelId: modelId,
-        toolInvoker: toolInvoker,
         chatCompletionService: _chatCompletionService,
         generationGate: _generationGate,
       );
@@ -69,8 +62,6 @@ class OpenAiApiServer {
     required this.engine,
     required this.modelId,
     this.apiKey,
-    this.toolInvoker,
-    this.maxToolRounds = 5,
     this.enableRequestLogs = false,
     int? modelCreated,
   }) : modelCreated =
@@ -80,11 +71,7 @@ class OpenAiApiServer {
          specUrl: '/openapi.json',
          title: 'llamadart OpenAI-compatible API Docs',
        ),
-       _chatCompletionService = ChatCompletionService(
-         engine: engine,
-         toolInvoker: toolInvoker,
-         maxToolRounds: maxToolRounds,
-       ),
+       _chatCompletionService = ChatCompletionService(engine: engine),
        _embeddingsService = EmbeddingsService(engine: engine),
        _generationGate = GenerationGate(engine);
 

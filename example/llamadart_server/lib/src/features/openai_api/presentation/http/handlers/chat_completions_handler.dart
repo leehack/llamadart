@@ -13,9 +13,6 @@ class ChatCompletionsHandler {
   /// Public model ID exposed in API responses.
   final String modelId;
 
-  /// Optional server-side tool invoker.
-  final OpenAiToolInvoker? toolInvoker;
-
   /// Chat completion use case service.
   final ChatCompletionService chatCompletionService;
 
@@ -25,7 +22,6 @@ class ChatCompletionsHandler {
   /// Creates chat-completions endpoint handlers.
   ChatCompletionsHandler({
     required this.modelId,
-    required this.toolInvoker,
     required this.chatCompletionService,
     required GenerationGate generationGate,
   }) : _generationGate = generationGate,
@@ -41,7 +37,6 @@ class ChatCompletionsHandler {
       final request = parseChatCompletionRequest(
         await readJsonObjectBody(req),
         configuredModelId: modelId,
-        toolInvoker: toolInvoker,
       );
 
       if (!_generationGate.tryAcquire()) {

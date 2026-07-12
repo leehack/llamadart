@@ -8,5 +8,7 @@ abstract class EngineGenerationPort {
     GenerationParams params,
     List<ToolDefinition>? tools,
     ToolChoice? toolChoice,
+    bool parallelToolCalls = false,
+    bool enableThinking = false,
   });
 }

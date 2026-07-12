@@ -55,6 +55,69 @@ void main() {
       expect(paths.containsKey('/v1/models'), isTrue);
       expect(paths.containsKey('/v1/chat/completions'), isTrue);
       expect(paths.containsKey('/v1/embeddings'), isTrue);
+
+      final components = json['components'] as Map<String, dynamic>;
+      final schemas = components['schemas'] as Map<String, dynamic>;
+      final chatRequest =
+          schemas['ChatCompletionRequest'] as Map<String, dynamic>;
+      final properties = chatRequest['properties'] as Map<String, dynamic>;
+      final thinking = properties['enable_thinking'] as Map<String, dynamic>;
+      expect(thinking['default'], isFalse);
+      final parallel =
+          properties['parallel_tool_calls'] as Map<String, dynamic>;
+      expect(parallel['default'], isFalse);
+      final example = chatRequest['example'] as Map<String, dynamic>;
+      expect(example['enable_thinking'], isFalse);
+
+      final chatPath = paths['/v1/chat/completions'] as Map<String, dynamic>;
+      final chatPost = chatPath['post'] as Map<String, dynamic>;
+      final requestBody = chatPost['requestBody'] as Map<String, dynamic>;
+      final content = requestBody['content'] as Map<String, dynamic>;
+      final jsonContent = content['application/json'] as Map<String, dynamic>;
+      final examples = jsonContent['examples'] as Map<String, dynamic>;
+      expect(
+        examples.keys,
+        containsAll(<String>[
+          'basic',
+          'streaming',
+          'tool_call_initial',
+          'tool_call_streaming',
+          'tool_call_streaming_with_thinking',
+          'tool_result_follow_up',
+        ]),
+      );
+
+      final toolCallSummaries = <String>[
+        for (final key in <String>[
+          'tool_call_initial',
+          'tool_call_streaming',
+          'tool_call_streaming_with_thinking',
+          'tool_result_follow_up',
+        ])
+          (examples[key] as Map<String, dynamic>)['summary'] as String,
+      ];
+      expect(toolCallSummaries, everyElement(startsWith('Tool call:')));
+
+      final thinkingExample =
+          examples['tool_call_streaming_with_thinking'] as Map<String, dynamic>;
+      final thinkingValue = thinkingExample['value'] as Map<String, dynamic>;
+      final thinkingMessages = thinkingValue['messages'] as List<dynamic>;
+      final thinkingSystem = thinkingMessages.first as Map<String, dynamic>;
+      expect(thinkingValue['stream'], isTrue);
+      expect(thinkingValue['enable_thinking'], isTrue);
+      expect(thinkingValue['tool_choice'], 'auto');
+      expect(thinkingSystem['content'], contains('must call get_weather'));
+
+      final followUp =
+          examples['tool_result_follow_up'] as Map<String, dynamic>;
+      final followUpValue = followUp['value'] as Map<String, dynamic>;
+      final followUpMessages = followUpValue['messages'] as List<dynamic>;
+      final assistant = followUpMessages[1] as Map<String, dynamic>;
+      final toolCalls = assistant['tool_calls'] as List<dynamic>;
+      final call = toolCalls.single as Map<String, dynamic>;
+      final tool = followUpMessages[2] as Map<String, dynamic>;
+      expect(call['id'], tool['tool_call_id']);
+      expect(tool.containsKey('name'), isFalse);
     });
 
     test('GET /docs serves Swagger UI HTML', () async {
@@ -96,6 +159,79 @@ void main() {
       expect(usage['completion_tokens'], 2);
       expect(usage['total_tokens'], 9);
       expect(fakeEngine.cancelCount, greaterThan(0));
+      expect(fakeEngine.templateEnableThinkingCalls, <bool>[false]);
+      expect(fakeEngine.enableThinkingCalls, <bool>[false]);
+      expect(fakeEngine.templateParallelToolCalls, <bool>[false]);
+      expect(fakeEngine.parallelToolCalls, <bool>[false]);
+    });
+
+    test('forwards enable_thinking to the engine', () async {
+      final response = await client.post(
+        server.uri('/v1/chat/completions'),
+        headers: <String, String>{'Content-Type': 'application/json'},
+        body: jsonEncode(<String, dynamic>{
+          'model': 'test-model',
+          'messages': <Map<String, dynamic>>[
+            <String, dynamic>{'role': 'user', 'content': 'Think carefully.'},
+          ],
+          'enable_thinking': true,
+        }),
+      );
+
+      expect(response.statusCode, 200);
+      expect(fakeEngine.templateEnableThinkingCalls, <bool>[true]);
+      expect(fakeEngine.enableThinkingCalls, <bool>[true]);
+    });
+
+    test('forwards only the named forced tool to the engine', () async {
+      final response = await client.post(
+        server.uri('/v1/chat/completions'),
+        headers: <String, String>{'Content-Type': 'application/json'},
+        body: jsonEncode(<String, dynamic>{
+          'model': 'test-model',
+          'messages': <Map<String, dynamic>>[
+            <String, dynamic>{'role': 'user', 'content': 'Tell me the time.'},
+          ],
+          'tools': <Map<String, dynamic>>[
+            _weatherToolDefinition(),
+            _timeToolDefinition(),
+          ],
+          'tool_choice': <String, dynamic>{
+            'type': 'function',
+            'function': <String, dynamic>{'name': 'get_time'},
+          },
+        }),
+      );
+
+      expect(response.statusCode, 200);
+      expect(fakeEngine.toolDefinitionsCalls, hasLength(1));
+      expect(fakeEngine.toolDefinitionsCalls.single, hasLength(1));
+      expect(fakeEngine.toolDefinitionsCalls.single!.single.name, 'get_time');
+    });
+
+    test('forwards parallel_tool_calls to the engine', () async {
+      final response = await client.post(
+        server.uri('/v1/chat/completions'),
+        headers: <String, String>{'Content-Type': 'application/json'},
+        body: jsonEncode(<String, dynamic>{
+          'model': 'test-model',
+          'messages': <Map<String, dynamic>>[
+            <String, dynamic>{
+              'role': 'user',
+              'content': 'Get weather and time for Seoul.',
+            },
+          ],
+          'tools': <Map<String, dynamic>>[
+            _weatherToolDefinition(),
+            _timeToolDefinition(),
+          ],
+          'parallel_tool_calls': true,
+        }),
+      );
+
+      expect(response.statusCode, 200);
+      expect(fakeEngine.templateParallelToolCalls, <bool>[true]);
+      expect(fakeEngine.parallelToolCalls, <bool>[true]);
     });
 
     test('POST /v1/embeddings returns OpenAI-shaped response', () async {
@@ -136,6 +272,7 @@ void main() {
           ..body = jsonEncode(<String, dynamic>{
             'model': 'test-model',
             'stream': true,
+            'enable_thinking': true,
             'messages': <Map<String, dynamic>>[
               <String, dynamic>{'role': 'user', 'content': 'stream please'},
             ],
@@ -152,6 +289,7 @@ void main() {
         expect(body, contains('data: [DONE]\n\n'));
         expect(body, contains('"object":"chat.completion.chunk"'));
         expect(body, contains('"role":"assistant"'));
+        expect(fakeEngine.enableThinkingCalls, <bool>[true]);
       },
     );
   });
@@ -264,18 +402,14 @@ void main() {
     });
   });
 
-  group('OpenAiApiServer server tool loop', () {
-    late _ToolLoopApiServerEngine toolEngine;
+  group('OpenAiApiServer client-managed tool flow', () {
+    late _ClientManagedToolApiServerEngine toolEngine;
     late _RunningServer server;
     late http.Client client;
 
     setUp(() async {
-      toolEngine = _ToolLoopApiServerEngine();
-      server = await _startServer(
-        toolEngine,
-        toolInvoker: _exampleToolInvoker,
-        maxToolRounds: 3,
-      );
+      toolEngine = _ClientManagedToolApiServerEngine();
+      server = await _startServer(toolEngine);
       client = http.Client();
     });
 
@@ -284,54 +418,149 @@ void main() {
       await server.close();
     });
 
-    test('executes tool calls and returns final assistant answer', () async {
+    test(
+      'returns tool calls and accepts client-provided tool results',
+      () async {
+        final initialResponse = await client.post(
+          server.uri('/v1/chat/completions'),
+          headers: <String, String>{'Content-Type': 'application/json'},
+          body: jsonEncode(<String, dynamic>{
+            'model': 'test-model',
+            'messages': <Map<String, dynamic>>[
+              <String, dynamic>{
+                'role': 'user',
+                'content': 'Call get_weather for Seoul.',
+              },
+            ],
+            'tools': <Map<String, dynamic>>[_weatherToolDefinition()],
+            'tool_choice': 'required',
+          }),
+        );
+
+        expect(initialResponse.statusCode, 200);
+        final initialJson =
+            jsonDecode(initialResponse.body) as Map<String, dynamic>;
+        final initialChoice =
+            (initialJson['choices'] as List<dynamic>).single
+                as Map<String, dynamic>;
+        final assistantMessage =
+            initialChoice['message'] as Map<String, dynamic>;
+        final toolCall =
+            (assistantMessage['tool_calls'] as List<dynamic>).single
+                as Map<String, dynamic>;
+        final toolCallId = toolCall['id'] as String;
+
+        expect(initialChoice['finish_reason'], 'tool_calls');
+        expect(assistantMessage['content'], isNull);
+        expect(toolCallId, 'call_weather_1');
+        expect(toolEngine.createCalls, hasLength(1));
+
+        final followUpResponse = await client.post(
+          server.uri('/v1/chat/completions'),
+          headers: <String, String>{'Content-Type': 'application/json'},
+          body: jsonEncode(<String, dynamic>{
+            'model': 'test-model',
+            'messages': <dynamic>[
+              <String, dynamic>{
+                'role': 'user',
+                'content': 'Call get_weather for Seoul.',
+              },
+              assistantMessage,
+              <String, dynamic>{
+                'role': 'tool',
+                'tool_call_id': toolCallId,
+                'content': '{"location":"Seoul","condition":"sunny"}',
+              },
+            ],
+            'tools': <Map<String, dynamic>>[_weatherToolDefinition()],
+            'tool_choice': 'none',
+          }),
+        );
+
+        expect(followUpResponse.statusCode, 200);
+        final followUpJson =
+            jsonDecode(followUpResponse.body) as Map<String, dynamic>;
+        final followUpChoice =
+            (followUpJson['choices'] as List<dynamic>).single
+                as Map<String, dynamic>;
+        final followUpMessage =
+            followUpChoice['message'] as Map<String, dynamic>;
+
+        expect(followUpChoice['finish_reason'], 'stop');
+        expect(followUpMessage['content'], 'The weather in Seoul is sunny.');
+
+        expect(toolEngine.createCalls, hasLength(2));
+        final replayedMessages = toolEngine.createCalls[1];
+        expect(
+          replayedMessages.map((LlamaChatMessage message) => message.role),
+          <LlamaChatRole>[
+            LlamaChatRole.user,
+            LlamaChatRole.assistant,
+            LlamaChatRole.tool,
+          ],
+        );
+        final replayedCall = replayedMessages[1].parts
+            .whereType<LlamaToolCallContent>()
+            .single;
+        final replayedResult = replayedMessages[2].parts
+            .whereType<LlamaToolResultContent>()
+            .single;
+        expect(replayedCall.rawJson, '{"location":"Seoul"}');
+        expect(replayedResult.id, toolCallId);
+        expect(replayedResult.name, 'get_weather');
+        expect(
+          replayedResult.result,
+          '{"location":"Seoul","condition":"sunny"}',
+        );
+      },
+    );
+
+    test('rejects incomplete client-provided tool results', () async {
       final response = await client.post(
         server.uri('/v1/chat/completions'),
         headers: <String, String>{'Content-Type': 'application/json'},
         body: jsonEncode(<String, dynamic>{
           'model': 'test-model',
+          'tool_choice': 'none',
+          'tools': <Map<String, dynamic>>[_weatherToolDefinition()],
           'messages': <Map<String, dynamic>>[
+            <String, dynamic>{'role': 'user', 'content': 'Get the weather.'},
             <String, dynamic>{
-              'role': 'user',
-              'content': 'Call get_weather for Seoul.',
-            },
-          ],
-          'tools': <Map<String, dynamic>>[
-            <String, dynamic>{
-              'type': 'function',
-              'function': <String, dynamic>{
-                'name': 'get_weather',
-                'description': 'Get weather by city.',
-                'parameters': <String, dynamic>{
-                  'type': 'object',
-                  'properties': <String, dynamic>{
-                    'city': <String, dynamic>{'type': 'string'},
+              'role': 'assistant',
+              'content': null,
+              'tool_calls': <Map<String, dynamic>>[
+                <String, dynamic>{
+                  'id': 'call_weather_1',
+                  'type': 'function',
+                  'function': <String, dynamic>{
+                    'name': 'get_weather',
+                    'arguments': '{"location":"Seoul"}',
                   },
-                  'required': <String>['city'],
                 },
-              },
+                <String, dynamic>{
+                  'id': 'call_weather_2',
+                  'type': 'function',
+                  'function': <String, dynamic>{
+                    'name': 'get_weather',
+                    'arguments': '{"location":"Tokyo"}',
+                  },
+                },
+              ],
+            },
+            <String, dynamic>{
+              'role': 'tool',
+              'tool_call_id': 'call_weather_1',
+              'content': '{"location":"Seoul","temperature_c":23}',
             },
           ],
-          'tool_choice': 'required',
         }),
       );
 
-      expect(response.statusCode, 200);
+      expect(response.statusCode, 400);
       final json = jsonDecode(response.body) as Map<String, dynamic>;
-      final choices = json['choices'] as List<dynamic>;
-      final choice = choices.first as Map<String, dynamic>;
-      final message = choice['message'] as Map<String, dynamic>;
-
-      expect(choice['finish_reason'], 'stop');
-      expect(message['content'], 'The weather in Seoul is sunny.');
-
-      expect(toolEngine.createCalls, hasLength(2));
-      expect(
-        toolEngine.createCalls[1].any(
-          (message) => message.role == LlamaChatRole.tool,
-        ),
-        isTrue,
-      );
+      final error = json['error'] as Map<String, dynamic>;
+      expect(error['param'], 'messages.tool_call_id');
+      expect(toolEngine.createCalls, isEmpty);
     });
   });
 }
@@ -339,15 +568,11 @@ void main() {
 Future<_RunningServer> _startServer(
   ApiServerEngine engine, {
   String? apiKey,
-  OpenAiToolInvoker? toolInvoker,
-  int maxToolRounds = 5,
 }) async {
   final app = OpenAiApiServer(
     engine: engine,
     modelId: 'test-model',
     apiKey: apiKey,
-    toolInvoker: toolInvoker,
-    maxToolRounds: maxToolRounds,
   ).buildApp();
 
   final relicServer = await app.serve(
@@ -374,6 +599,12 @@ class _RunningServer {
 
 class _FakeApiServerEngine implements ApiServerEngine {
   int cancelCount = 0;
+  final List<bool> templateEnableThinkingCalls = <bool>[];
+  final List<bool> enableThinkingCalls = <bool>[];
+  final List<bool> templateParallelToolCalls = <bool>[];
+  final List<bool> parallelToolCalls = <bool>[];
+  final List<List<ToolDefinition>?> toolDefinitionsCalls =
+      <List<ToolDefinition>?>[];
 
   @override
   bool get isReady => true;
@@ -384,7 +615,11 @@ class _FakeApiServerEngine implements ApiServerEngine {
     bool addAssistant = true,
     List<ToolDefinition>? tools,
     ToolChoice toolChoice = ToolChoice.auto,
+    bool parallelToolCalls = false,
+    bool enableThinking = false,
   }) async {
+    templateEnableThinkingCalls.add(enableThinking);
+    templateParallelToolCalls.add(parallelToolCalls);
     return const LlamaChatTemplateResult(prompt: 'prompt', tokenCount: 7);
   }
 
@@ -394,7 +629,12 @@ class _FakeApiServerEngine implements ApiServerEngine {
     GenerationParams params = const GenerationParams(),
     List<ToolDefinition>? tools,
     ToolChoice? toolChoice,
+    bool parallelToolCalls = false,
+    bool enableThinking = false,
   }) async* {
+    enableThinkingCalls.add(enableThinking);
+    this.parallelToolCalls.add(parallelToolCalls);
+    toolDefinitionsCalls.add(tools);
     yield LlamaCompletionChunk(
       id: 'chatcmpl-test',
       object: 'chat.completion.chunk',
@@ -466,6 +706,8 @@ class _BlockingApiServerEngine extends _FakeApiServerEngine {
     GenerationParams params = const GenerationParams(),
     List<ToolDefinition>? tools,
     ToolChoice? toolChoice,
+    bool parallelToolCalls = false,
+    bool enableThinking = false,
   }) async* {
     await _releaseCompleter.future;
     yield LlamaCompletionChunk(
@@ -484,7 +726,7 @@ class _BlockingApiServerEngine extends _FakeApiServerEngine {
   }
 }
 
-class _ToolLoopApiServerEngine implements ApiServerEngine {
+class _ClientManagedToolApiServerEngine implements ApiServerEngine {
   final List<List<LlamaChatMessage>> createCalls = <List<LlamaChatMessage>>[];
 
   @override
@@ -496,6 +738,8 @@ class _ToolLoopApiServerEngine implements ApiServerEngine {
     bool addAssistant = true,
     List<ToolDefinition>? tools,
     ToolChoice toolChoice = ToolChoice.auto,
+    bool parallelToolCalls = false,
+    bool enableThinking = false,
   }) async {
     return LlamaChatTemplateResult(
       prompt: 'prompt',
@@ -509,6 +753,8 @@ class _ToolLoopApiServerEngine implements ApiServerEngine {
     GenerationParams params = const GenerationParams(),
     List<ToolDefinition>? tools,
     ToolChoice? toolChoice,
+    bool parallelToolCalls = false,
+    bool enableThinking = false,
   }) async* {
     createCalls.add(List<LlamaChatMessage>.from(messages));
     final hasToolResult = messages.any(
@@ -532,7 +778,7 @@ class _ToolLoopApiServerEngine implements ApiServerEngine {
                   type: 'function',
                   function: LlamaCompletionChunkFunction(
                     name: 'get_weather',
-                    arguments: '{"city":"Seoul"}',
+                    arguments: '{"location":"Seoul"}',
                   ),
                 ),
               ],
@@ -587,17 +833,36 @@ class _ToolLoopApiServerEngine implements ApiServerEngine {
   void cancelGeneration() {}
 }
 
-Future<Object?> _exampleToolInvoker(
-  String toolName,
-  Map<String, dynamic> arguments,
-) async {
-  if (toolName != 'get_weather') {
-    throw UnsupportedError('Unsupported tool: $toolName');
-  }
-
+Map<String, dynamic> _weatherToolDefinition() {
   return <String, dynamic>{
-    'ok': true,
-    'city': arguments['city'] ?? 'unknown',
-    'condition': 'sunny',
+    'type': 'function',
+    'function': <String, dynamic>{
+      'name': 'get_weather',
+      'description': 'Get weather by location.',
+      'parameters': <String, dynamic>{
+        'type': 'object',
+        'properties': <String, dynamic>{
+          'location': <String, dynamic>{'type': 'string'},
+        },
+        'required': <String>['location'],
+      },
+    },
+  };
+}
+
+Map<String, dynamic> _timeToolDefinition() {
+  return <String, dynamic>{
+    'type': 'function',
+    'function': <String, dynamic>{
+      'name': 'get_time',
+      'description': 'Get time by timezone.',
+      'parameters': <String, dynamic>{
+        'type': 'object',
+        'properties': <String, dynamic>{
+          'timezone': <String, dynamic>{'type': 'string'},
+        },
+        'required': <String>['timezone'],
+      },
+    },
   };
 }

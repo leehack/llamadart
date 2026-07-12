@@ -76,6 +76,7 @@ class XmlToolCallFormat {
     toolEnd: '</function>',
     scopeEnd: '</tool_call>',
     trimRawArgval: true,
+    allowToolcallInThink: true,
   );
 
   /// Kimi K2 format.
@@ -213,6 +214,24 @@ arr ::= "[" space (value ("," space value)*)? space "]"
 obj ::= "{" space (string ":" space value ("," space string ":" space value)*)? space "}"
 ''';
 
+  if (format == XmlToolCallFormat.qwen3Coder) {
+    // Qwen emits the XML envelope with line breaks between tags. Lazy grammar
+    // activation replays that exact trigger text, so whitespace must be valid
+    // in the grammar rather than relying on eager constrained decoding to
+    // remove it.
+    return '''
+root ::= ${_literal(format.scopeStart)} xml-space tool-call+ ${_literal(format.scopeEnd)} xml-space
+tool-call ::= ${_literal(format.toolStart)} tool-name ${_literal(format.toolSep)} xml-space param* ${_literal(format.toolEnd)} xml-space
+param ::= ${_literal(format.keyStart)} param-name ${_literal(format.keyValSep)} qwen3-coder-value ${_literal(format.valEnd)} xml-space
+tool-name ::= $toolNameRule
+param-name ::= $paramNameRule
+qwen3-coder-value ::= raw-text | value
+raw-text ::= ([^<])*
+xml-space ::= [ \\t\\n\\r]*
+$jsonValueRules
+''';
+  }
+
   if (format == XmlToolCallFormat.minicpm5) {
     return '''
 root ::= ${scopeStart}tool-call+$scopeEnd
@@ -253,21 +272,55 @@ ChatParseResult parseXmlToolCalls(
   XmlToolCallFormat format, {
   String startThink = '<think>',
   String endThink = '</think>',
+  bool isPartial = false,
   bool parseToolCalls = true,
   bool thinkingForcedOpen = false,
 }) {
   String? reasoning;
   var content = input;
 
-  // Extract thinking/reasoning first
-  final thinkResult = extractThinking(
-    content,
-    startTag: startThink,
-    endTag: endThink,
-    thinkingForcedOpen: thinkingForcedOpen,
-  );
-  reasoning = thinkResult.reasoning;
-  content = thinkResult.content;
+  // Qwen3.6 can emit a tool call directly after a thinking tag that was
+  // already opened in the prompt. Split that leading thinking text before
+  // parsing the tool scope instead of classifying the whole tool call as
+  // reasoning when no closing tag was generated.
+  final forcedOpenToolScopeIndex =
+      parseToolCalls &&
+          format.allowToolcallInThink &&
+          thinkingForcedOpen &&
+          !content.contains(startThink) &&
+          !content.contains(endThink)
+      ? (format.scopeStart.isEmpty
+            ? content.indexOf(format.toolStart)
+            : content.indexOf(format.scopeStart))
+      : -1;
+  if (forcedOpenToolScopeIndex >= 0) {
+    final leadingReasoning = content
+        .substring(0, forcedOpenToolScopeIndex)
+        .trim();
+    reasoning = leadingReasoning.isEmpty ? null : leadingReasoning;
+    content = content.substring(forcedOpenToolScopeIndex);
+  } else {
+    // Extract thinking/reasoning first.
+    // Keep an incomplete trailing XML tool-scope prefix out of streamed
+    // reasoning. A tokenizer may split `<tool_call>` over multiple pieces;
+    // treating the prefix as reasoning would leak tool markup before the
+    // complete scope can be parsed on the next chunk.
+    final deferredScopePrefixLength =
+        isPartial && format.allowToolcallInThink && thinkingForcedOpen
+        ? _trailingPrefixLength(content, format.scopeStart)
+        : 0;
+    final thinkingInput = deferredScopePrefixLength == 0
+        ? content
+        : content.substring(0, content.length - deferredScopePrefixLength);
+    final thinkResult = extractThinking(
+      thinkingInput,
+      startTag: startThink,
+      endTag: endThink,
+      thinkingForcedOpen: thinkingForcedOpen,
+    );
+    reasoning = thinkResult.reasoning;
+    content = thinkResult.content;
+  }
 
   if (!parseToolCalls) {
     return ChatParseResult(
@@ -373,6 +426,22 @@ ChatParseResult parseXmlToolCalls(
     reasoningContent: reasoning,
     toolCalls: toolCalls,
   );
+}
+
+int _trailingPrefixLength(String value, String prefix) {
+  if (prefix.isEmpty) {
+    return 0;
+  }
+
+  final maxLength = value.length < prefix.length
+      ? value.length
+      : prefix.length - 1;
+  for (var length = maxLength; length > 0; length--) {
+    if (value.endsWith(prefix.substring(0, length))) {
+      return length;
+    }
+  }
+  return 0;
 }
 
 _ParsedXmlToolCall? _parseXmlToolCall(

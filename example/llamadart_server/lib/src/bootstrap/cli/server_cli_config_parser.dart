@@ -12,14 +12,6 @@ ServerCliConfig parseServerCliConfig(ArgResults results) {
     throw ArgumentError('Invalid --host value: $host');
   }
 
-  final maxToolRounds = _parseIntOption(
-    results['max-tool-rounds'] as String,
-    'max-tool-rounds',
-  );
-  if (maxToolRounds < 1) {
-    throw ArgumentError('`max-tool-rounds` must be >= 1.');
-  }
-
   return ServerCliConfig(
     modelInput: results['model'] as String,
     modelId: results['model-id'] as String,
@@ -32,8 +24,6 @@ ServerCliConfig parseServerCliConfig(ArgResults results) {
     ),
     gpuLayers: _parseIntOption(results['gpu-layers'] as String, 'gpu-layers'),
     enableDartLogs: results['log'] as bool,
-    enableToolExecution: results['enable-tool-execution'] as bool,
-    maxToolRounds: maxToolRounds,
   );
 }
 

@@ -19,6 +19,7 @@ Map<String, dynamic> toOpenAiChatCompletionChunk(
 
   if (includeRole) {
     delta['role'] = 'assistant';
+    delta['content'] = '';
   }
 
   final content = choice.delta.content;

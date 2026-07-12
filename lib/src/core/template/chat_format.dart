@@ -176,12 +176,22 @@ ChatFormat detectChatFormat(String? templateSource) {
     return ChatFormat.glm45;
   }
 
-  // Qwen3 Coder XML
-  if (templateSource.contains('<tool_call>') &&
-      templateSource.contains('<function>') &&
+  // Qwen3 Coder XML. Qwen3.6 uses the same generated
+  // `<function=...><parameter=...>` envelope, but its template describes the
+  // shape through its XML tool-call instruction instead of `<function>` and
+  // `<parameters>` declaration tags.
+  final hasQwenXmlToolEnvelope =
+      templateSource.contains('<tool_call>') &&
       templateSource.contains('<function=') &&
-      templateSource.contains('<parameters>') &&
-      templateSource.contains('<parameter=')) {
+      templateSource.contains('<parameter=');
+  final hasQwen3CoderDeclarations =
+      templateSource.contains('<function>') &&
+      templateSource.contains('<parameters>');
+  final hasQwen36ToolInstructions = templateSource.contains(
+    'Function calls MUST follow the specified format',
+  );
+  if (hasQwenXmlToolEnvelope &&
+      (hasQwen3CoderDeclarations || hasQwen36ToolInstructions)) {
     return ChatFormat.qwen3CoderXml;
   }
 

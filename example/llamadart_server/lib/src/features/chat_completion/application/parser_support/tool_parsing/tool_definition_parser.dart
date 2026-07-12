@@ -1,13 +1,9 @@
 import 'package:llamadart/llamadart.dart';
 
 import '../../../../shared/openai_http_exception.dart';
-import '../../../domain/openai_chat_completion_request.dart';
 import 'tool_parameter_schema_parser.dart';
 
-List<ToolDefinition>? parseToolDefinitions(
-  Object? rawTools, {
-  OpenAiToolInvoker? toolInvoker,
-}) {
+List<ToolDefinition>? parseToolDefinitions(Object? rawTools) {
   if (rawTools == null) {
     return null;
   }
@@ -73,16 +69,19 @@ List<ToolDefinition>? parseToolDefinitions(
         name: name,
         description: description as String? ?? '',
         parameters: parseToolParameters(functionMap['parameters']),
-        handler: (ToolParams params) async {
-          if (toolInvoker == null) {
-            return 'Tool execution is disabled in this server example.';
-          }
-
-          return toolInvoker(name, params.raw);
-        },
+        handler: _clientManagedToolHandler,
       ),
     );
   }
 
   return tools;
+}
+
+Future<Object?> _clientManagedToolHandler(ToolParams _) {
+  return Future<Object?>.error(
+    LlamaUnsupportedException(
+      'Tool execution is handled by the API client. Submit the tool result in '
+      'a follow-up chat completion request.',
+    ),
+  );
 }

@@ -1,3 +1,19 @@
+## Unreleased
+
+* Switched the OpenAI-compatible server example default to Unsloth's Qwen3.6
+  27B `UD-Q4_K_XL` GGUF, added model-specific non-thinking and thinking sampler profiles,
+  and documented its text-only / desktop-memory requirements. The server keeps
+  thinking opt-in through the `enable_thinking` request field and now uses
+  Relic 1.2.0.
+
+* Removed the example server's nonstandard automatic tool-execution loop. Its
+  Chat Completions endpoint now consistently returns model-emitted `tool_calls`
+  for client-side execution, accepts standard assistant/tool follow-up
+  transcripts, honors named function `tool_choice`, and documents the full
+  request sequence with runnable Swagger examples. Server model inputs now load
+  through `LlamaEngine.loadModelSource(...)`, sharing the core runtime's source
+  resolution and cache behavior.
+
 ## 0.8.15
 
 * Added clipboard media attachments to the runnable chat app. Desktop and web

@@ -2,8 +2,8 @@ import 'package:args/args.dart';
 import 'package:llamadart/llamadart.dart';
 
 const String _defaultModelUrl =
-    'https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/main/'
-    'Qwen3.5-0.8B-Q4_K_M.gguf?download=true';
+    'https://huggingface.co/unsloth/Qwen3.6-27B-GGUF/resolve/main/'
+    'Qwen3.6-27B-UD-Q4_K_XL.gguf?download=true';
 
 /// Builds the CLI argument parser.
 ArgParser buildServerCliArgParser() {
@@ -12,7 +12,7 @@ ArgParser buildServerCliArgParser() {
       'model',
       abbr: 'm',
       defaultsTo: _defaultModelUrl,
-      help: 'Path or URL to a GGUF model.',
+      help: 'Path, URL, or hf:// model source.',
     )
     ..addOption(
       'model-id',
@@ -35,25 +35,13 @@ ArgParser buildServerCliArgParser() {
     )
     ..addOption(
       'context-size',
-      defaultsTo: '4096',
+      defaultsTo: '16384',
       help: 'Model context size in tokens.',
     )
     ..addOption(
       'gpu-layers',
       defaultsTo: '${ModelParams.maxGpuLayers}',
       help: 'Number of layers to offload to GPU.',
-    )
-    ..addFlag(
-      'enable-tool-execution',
-      defaultsTo: false,
-      help:
-          'Enable server-side execution loop for model-emitted tool calls. '
-          'This example includes built-in mock handlers for common demo tools.',
-    )
-    ..addOption(
-      'max-tool-rounds',
-      defaultsTo: '5',
-      help: 'Maximum tool-call rounds per request when execution is enabled.',
     )
     ..addFlag(
       'log',

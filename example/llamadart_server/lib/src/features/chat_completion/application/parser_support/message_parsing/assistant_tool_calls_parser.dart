@@ -29,6 +29,21 @@ List<LlamaToolCallContent> parseAssistantToolCalls(Object? rawToolCalls) {
 
     final call = Map<String, dynamic>.from(rawToolCall);
 
+    final id = call['id'];
+    if (id is! String || id.trim().isEmpty) {
+      throw OpenAiHttpException.invalidRequest(
+        'Tool call IDs must be non-empty strings.',
+        param: 'messages.tool_calls.id',
+      );
+    }
+
+    if (call['type'] != 'function') {
+      throw OpenAiHttpException.invalidRequest(
+        'Only `type = "function"` tool calls are supported.',
+        param: 'messages.tool_calls.type',
+      );
+    }
+
     final function = call['function'];
     if (function is! Map) {
       throw OpenAiHttpException.invalidRequest(
@@ -46,12 +61,25 @@ List<LlamaToolCallContent> parseAssistantToolCalls(Object? rawToolCalls) {
       );
     }
 
+    if (!functionMap.containsKey('arguments')) {
+      throw OpenAiHttpException.invalidRequest(
+        'Tool calls require `function.arguments`.',
+        param: 'messages.tool_calls.function.arguments',
+      );
+    }
+
+    final rawArguments = functionMap['arguments'];
+    final arguments = parseToolArguments(rawArguments);
+    final rawJson = rawArguments is String && rawArguments.trim().isNotEmpty
+        ? rawArguments
+        : jsonEncode(arguments);
+
     result.add(
       LlamaToolCallContent(
-        id: call['id'] as String?,
+        id: id,
         name: name,
-        arguments: parseToolArguments(functionMap['arguments']),
-        rawJson: jsonEncode(call),
+        arguments: arguments,
+        rawJson: rawJson,
       ),
     );
   }
