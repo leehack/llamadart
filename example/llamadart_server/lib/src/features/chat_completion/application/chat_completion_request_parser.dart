@@ -6,6 +6,8 @@ import 'parser_support/chat_completion_field_readers.dart';
 import 'parser_support/chat_completion_message_parser.dart';
 import 'parser_support/chat_completion_tool_parser.dart';
 
+const int _maxThinkingBudgetTokens = 0x7fffffff;
+
 const GenerationParams _nonThinkingGenerationParams = GenerationParams(
   temp: 0.7,
   topK: 20,
@@ -76,16 +78,46 @@ OpenAiChatCompletionRequest parseChatCompletionRequest(
   }
 
   final maxTokens = readIntField(json['max_tokens'], 'max_tokens');
+  final thinkingBudgetTokens = readIntField(
+    json['thinking_budget_tokens'],
+    'thinking_budget_tokens',
+  );
   final temperature = readDoubleField(json['temperature'], 'temperature');
   final topP = readDoubleField(json['top_p'], 'top_p');
   final seed = readIntField(json['seed'], 'seed');
   final stops = parseStopSequences(json['stop']);
+
+  if (thinkingBudgetTokens != null && !enableThinking) {
+    throw OpenAiHttpException.invalidRequest(
+      '`thinking_budget_tokens` requires `enable_thinking = true`.',
+      param: 'thinking_budget_tokens',
+    );
+  }
+  if (thinkingBudgetTokens != null && thinkingBudgetTokens < 0) {
+    throw OpenAiHttpException.invalidRequest(
+      '`thinking_budget_tokens` must be greater than or equal to zero.',
+      param: 'thinking_budget_tokens',
+    );
+  }
+  if (thinkingBudgetTokens != null &&
+      thinkingBudgetTokens > _maxThinkingBudgetTokens) {
+    throw OpenAiHttpException.invalidRequest(
+      '`thinking_budget_tokens` must be less than or equal to '
+      '$_maxThinkingBudgetTokens.',
+      param: 'thinking_budget_tokens',
+    );
+  }
 
   var params = enableThinking
       ? _thinkingGenerationParams
       : _nonThinkingGenerationParams;
   if (maxTokens != null) {
     params = params.copyWith(maxTokens: maxTokens);
+  }
+  if (thinkingBudgetTokens != null) {
+    params = params.copyWith(
+      thinkingBudget: ThinkingBudget(maxTokens: thinkingBudgetTokens),
+    );
   }
   if (temperature != null) {
     params = params.copyWith(temp: temperature);

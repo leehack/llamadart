@@ -92,6 +92,34 @@ await for (final chunk in engine.create(
 }
 ```
 
+## Thinking budget (native llama.cpp)
+
+For GGUF models with a thinking channel, `ThinkingBudget` maps to llama.cpp's
+reasoning-budget sampler. It counts generated tokens inside each reasoning
+block independently of `maxTokens`, which remains the cap for the entire
+completion.
+
+```dart
+await for (final chunk in engine.create(
+  messages,
+  enableThinking: true,
+  params: const GenerationParams(
+    maxTokens: 512,
+    thinkingBudget: ThinkingBudget(maxTokens: 128),
+  ),
+)) {
+  final thinking = chunk.choices.first.delta.thinking;
+  final text = chunk.choices.first.delta.content;
+  // Render each channel independently.
+}
+```
+
+`engine.create(...)` fills the start and end delimiters from recognized chat
+templates. Raw `engine.generate(...)` calls must provide both delimiters in
+`ThinkingBudget`. A budget of `0` immediately forces the end delimiter. This
+is supported by native llama.cpp text generation only; LiteRT-LM and WebGPU
+reject it explicitly, and it cannot be combined with speculative decoding.
+
 ## Structured JSON output
 
 Use `LlamaStructuredOutput` when you want strict JSON plus final validation and

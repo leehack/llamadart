@@ -74,6 +74,16 @@ ends during reasoning can correctly have `reasoning_content` but no final
 presence-penalty recommendation is not exposed by this example and is not the
 same control as repetition penalty.
 
+### Thinking budget (llama.cpp extension)
+
+`thinking_budget_tokens` follows llama.cpp server behavior and is not a
+standard OpenAI Chat Completions field. Use it only with
+`"enable_thinking": true`. It limits generated tokens inside a reasoning
+block; `max_tokens` remains the cap for the full completion. Set it to `0` to
+close the initial reasoning block immediately. Swagger's **Tool call: capped
+reasoning + function request (SSE)** example streams both `reasoning_content`
+and standard `tool_calls` with a 128-token budget.
+
 ### Tool calling
 
 Function tools use the standard client-managed Chat Completions flow. The
@@ -90,8 +100,8 @@ Open `http://127.0.0.1:8080/docs` for ready-to-run Swagger examples:
 
 - **Tool call: request a function** — initial non-streaming function request.
 - **Tool call: request a function (SSE)** — streamed `tool_calls` deltas.
-- **Tool call: reasoning + function request (SSE)** — Qwen reasoning plus tool
-  deltas.
+- **Tool call: capped reasoning + function request (SSE)** — Qwen reasoning
+  plus tool deltas with a llama.cpp thinking budget.
 - **Tool call: submit the function result** — the second request after
   client-side execution.
 

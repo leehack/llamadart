@@ -7,6 +7,7 @@ import 'dart:isolate';
 import 'package:llamadart/src/backends/backend.dart';
 import 'package:llamadart/src/backends/llama_cpp/llama_cpp_backend.dart';
 import 'package:llamadart/src/backends/llama_cpp/worker_messages.dart';
+import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/models/inference/generation_params.dart';
 import 'package:llamadart/src/core/models/inference/model_params.dart';
 import 'package:llamadart/src/core/models/config/log_level.dart';
@@ -155,9 +156,35 @@ void main() {
         <int>[66],
       ]);
 
-      expect(
+      await expectLater(
         backend.generate(1, 'boom', const GenerationParams()).drain<void>(),
         throwsException,
+      );
+
+      await expectLater(
+        backend
+            .generate(1, 'unsupported', const GenerationParams())
+            .drain<void>(),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            contains('reasoning-budget wrapper'),
+          ),
+        ),
+      );
+
+      await expectLater(
+        backend
+            .generate(1, 'inference', const GenerationParams())
+            .drain<void>(),
+        throwsA(
+          isA<LlamaInferenceException>().having(
+            (error) => error.message,
+            'message',
+            contains('grammar sampler failed'),
+          ),
+        ),
       );
     });
 
@@ -397,6 +424,20 @@ class _FakeWorkerHarness {
         case GenerateRequest():
           if (message.prompt == 'boom') {
             message.sendPort.send(ErrorResponse('generation failed'));
+          } else if (message.prompt == 'unsupported') {
+            message.sendPort.send(
+              ErrorResponse(
+                'missing reasoning-budget wrapper',
+                kind: WorkerErrorKind.unsupported,
+              ),
+            );
+          } else if (message.prompt == 'inference') {
+            message.sendPort.send(
+              ErrorResponse(
+                'grammar sampler failed',
+                kind: WorkerErrorKind.inference,
+              ),
+            );
           } else if (message.prompt == 'pending') {
             // Hold open until the client cancels the stream.
           } else {

@@ -30,6 +30,12 @@
   anchors while compacting completed exchanges, and reduce streaming
   accumulation overhead.
 
+* Added llama.cpp-style thinking-budget control through
+  `GenerationParams.thinkingBudget`. Native GGUF calls can cap generated
+  reasoning tokens while preserving lazy tool/structured-output grammar; other
+  backends reject the setting explicitly. The OpenAI-compatible server exposes
+  the same behavior as its documented `thinking_budget_tokens` extension.
+
 * Switched the OpenAI-compatible server example default to Unsloth's Qwen3.6
   27B `UD-Q4_K_XL` GGUF, added model-specific non-thinking and thinking sampler profiles,
   and documented its text-only / desktop-memory requirements. The server keeps

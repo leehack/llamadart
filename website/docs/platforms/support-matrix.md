@@ -178,6 +178,11 @@ device/model bundle, use `cpu` or `gpu` for that artifact.
 
 ## Runtime capability notes
 
+- **Thinking budgets** (`GenerationParams.thinkingBudget`) use llama.cpp's
+  reasoning-budget sampler on native text-only GGUF generation. `engine.create`
+  resolves known template delimiters automatically; raw generation requires
+  explicit delimiters. LiteRT-LM and WebGPU reject the setting, as does the
+  llama.cpp speculative-decoding path.
 - **State persistence** (`LlamaEngine.stateSaveFile(...)` /
   `stateLoadFile(...)`) is available on native backends and on WebGPU bridge
   assets `v0.1.15+` that expose `stateSaveFile` / `stateLoadFile` bridge APIs.

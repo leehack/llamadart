@@ -7,6 +7,7 @@ import 'dart:math' as math;
 import 'package:ffi/ffi.dart';
 import 'package:path/path.dart' as path;
 
+import '../../core/exceptions.dart';
 import '../../core/llama_logger.dart';
 import '../../core/models/chat/chat_message.dart';
 import '../../core/models/chat/chat_role.dart';
@@ -83,6 +84,30 @@ typedef _GgmlBackendDevMemoryDart =
     void Function(ggml_backend_dev_t, Pointer<Size>, Pointer<Size>);
 typedef _LlamaDartSetLogLevelNative = Void Function(Int32);
 typedef _LlamaDartSetLogLevelDart = void Function(int);
+typedef _LlamaDartReasoningBudgetInitNative =
+    Pointer<llama_sampler> Function(
+      Pointer<llama_vocab>,
+      Pointer<Char>,
+      Pointer<Char>,
+      Pointer<Char>,
+      Int32,
+      Bool,
+      Pointer<llama_sampler>,
+      Pointer<Int32>,
+      Int32,
+    );
+typedef _LlamaDartReasoningBudgetInitDart =
+    Pointer<llama_sampler> Function(
+      Pointer<llama_vocab>,
+      Pointer<Char>,
+      Pointer<Char>,
+      Pointer<Char>,
+      int,
+      bool,
+      Pointer<llama_sampler>,
+      Pointer<Int32>,
+      int,
+    );
 typedef _LlamaDartSpeculativeInitNative =
     Pointer<llama_dart_speculative> Function(
       Pointer<llama_model>,
@@ -640,6 +665,22 @@ final RegExp _linuxLlamadartProcMapsPattern = RegExp(
   r'/libllamadart\.so(?:\.\d+)?$',
 );
 
+const int _maxLlamaCppReasoningBudgetTokens = 0x7fffffff;
+
+class _LlamaCppThinkingBudgetConfig {
+  const _LlamaCppThinkingBudgetConfig({
+    required this.maxTokens,
+    required this.startTag,
+    required this.endTag,
+    required this.forcedMessage,
+  });
+
+  final int maxTokens;
+  final String startTag;
+  final String endTag;
+  final String forcedMessage;
+}
+
 class _LlamaCppSpeculativeConfig {
   const _LlamaCppSpeculativeConfig({
     required this.strategies,
@@ -816,6 +857,8 @@ class LlamaCppService {
   bool _mtmdFallbackLookupAttempted = false;
   bool _mtmdPrimarySymbolsUnavailable = false;
   _MtmdApi? _mtmdFallbackApi;
+  bool _reasoningBudgetApiLookupAttempted = false;
+  _ReasoningBudgetApi? _reasoningBudgetApi;
   bool _speculativeApiLookupAttempted = false;
   _SpeculativeApi? _speculativeApi;
   bool _mtpApiLookupAttempted = false;
@@ -2920,6 +2963,40 @@ class LlamaCppService {
     }
   }
 
+  _ReasoningBudgetApi _resolveReasoningBudgetApi() {
+    final cached = _reasoningBudgetApi;
+    if (cached != null) {
+      return cached;
+    }
+
+    if (_reasoningBudgetApiLookupAttempted) {
+      throw LlamaUnsupportedException(_reasoningBudgetUnavailableMessage());
+    }
+    _reasoningBudgetApiLookupAttempted = true;
+
+    for (final candidate in _llamadartWrapperLibraryCandidates()) {
+      try {
+        final library = DynamicLibrary.open(candidate);
+        final api = _ReasoningBudgetApi.tryLoad(library);
+        if (api != null) {
+          _reasoningBudgetApi = api;
+          return api;
+        }
+      } catch (_) {
+        continue;
+      }
+    }
+
+    throw LlamaUnsupportedException(_reasoningBudgetUnavailableMessage());
+  }
+
+  String _reasoningBudgetUnavailableMessage() {
+    return 'llama.cpp thinking-budget control is unavailable in this native '
+        'runtime bundle (missing llama_dart_sampler_init_reasoning_budget). '
+        'Update to a libllamadart build that includes the reasoning-budget '
+        'wrapper.';
+  }
+
   _SpeculativeApi _resolveSpeculativeApi() {
     final cached = _speculativeApi;
     if (cached != null) {
@@ -3761,6 +3838,59 @@ class LlamaCppService {
     _contexts.remove(handle)?.dispose();
   }
 
+  _LlamaCppThinkingBudgetConfig? _resolveLlamaCppThinkingBudgetConfig(
+    GenerationParams params, {
+    required bool hasMediaParts,
+  }) {
+    final budget = params.thinkingBudget;
+    if (budget == null) {
+      return null;
+    }
+    if (budget.maxTokens < 0) {
+      throw RangeError.value(
+        budget.maxTokens,
+        'thinkingBudget.maxTokens',
+        'must be non-negative for llama.cpp thinking-budget control',
+      );
+    }
+    if (budget.maxTokens > _maxLlamaCppReasoningBudgetTokens) {
+      throw RangeError.range(
+        budget.maxTokens,
+        0,
+        _maxLlamaCppReasoningBudgetTokens,
+        'thinkingBudget.maxTokens',
+        'must fit the signed 32-bit llama.cpp reasoning-budget limit',
+      );
+    }
+    if (hasMediaParts) {
+      throw LlamaUnsupportedException(
+        'llama.cpp thinking-budget control currently supports text-only '
+        'generation in llamadart because template prompt tokens must be '
+        'inspected by the native reasoning sampler.',
+      );
+    }
+
+    final startTag = budget.startTag;
+    final endTag = budget.endTag;
+    if (startTag == null ||
+        startTag.trim().isEmpty ||
+        endTag == null ||
+        endTag.trim().isEmpty) {
+      throw ArgumentError(
+        'GenerationParams.thinkingBudget requires non-empty startTag and '
+        'endTag for raw generation. LlamaEngine.create fills them from the '
+        'selected chat template automatically.',
+      );
+    }
+
+    return _LlamaCppThinkingBudgetConfig(
+      maxTokens: budget.maxTokens,
+      startTag: startTag,
+      endTag: endTag,
+      forcedMessage: budget.forcedMessage ?? '',
+    );
+  }
+
   _LlamaCppSpeculativeConfig? _resolveLlamaCppSpeculativeConfig(
     GenerationParams params, {
     required bool hasMediaParts,
@@ -3774,6 +3904,12 @@ class LlamaCppService {
       throw UnsupportedError(
         'llama.cpp speculative decoding currently supports text-only '
         'generation in llamadart.',
+      );
+    }
+    if (params.thinkingBudget != null) {
+      throw LlamaUnsupportedException(
+        'llama.cpp thinking-budget control cannot be combined with '
+        'speculative decoding in llamadart.',
       );
     }
     if (params.grammar != null) {
@@ -3949,6 +4085,14 @@ class LlamaCppService {
     )?.typeNames;
   }
 
+  /// Validates a llama.cpp thinking budget for unit tests.
+  void debugValidateThinkingBudgetForTesting(
+    GenerationParams params, {
+    bool hasMediaParts = false,
+  }) {
+    _resolveLlamaCppThinkingBudgetConfig(params, hasMediaParts: hasMediaParts);
+  }
+
   /// Resolves whether llama.cpp speculative prompt processing suppresses logits.
   bool debugSuppressesDraftProcessLogitsForTesting(
     GenerationParams params, {
@@ -4083,10 +4227,23 @@ class LlamaCppService {
       final hasMediaParts =
           parts?.any((p) => p is LlamaImageContent || p is LlamaAudioContent) ??
           false;
+      final thinkingBudgetConfig = _resolveLlamaCppThinkingBudgetConfig(
+        params,
+        hasMediaParts: hasMediaParts,
+      );
+      if (thinkingBudgetConfig != null && params.isSpeculativeDecodingEnabled) {
+        throw LlamaUnsupportedException(
+          'llama.cpp thinking-budget control cannot be combined with '
+          'speculative decoding in llamadart.',
+        );
+      }
       final speculativeConfig = _resolveLlamaCppSpeculativeConfig(
         params,
         hasMediaParts: hasMediaParts,
       );
+      final reasoningBudgetApi = thinkingBudgetConfig == null
+          ? null
+          : _resolveReasoningBudgetApi();
       // 1. Reset Context
       ctx = _resetContext(
         contextHandle,
@@ -4203,6 +4360,8 @@ class LlamaCppService {
         grammarPtr,
         rootPtr,
         lazyGrammarConfig,
+        thinkingBudgetConfig,
+        reasoningBudgetApi,
         initialTokens,
         tokensPtr,
       );
@@ -5220,6 +5379,8 @@ class LlamaCppService {
     Pointer<Utf8> grammarPtr,
     Pointer<Utf8> rootPtr,
     _LazyGrammarConfig? lazyGrammarConfig,
+    _LlamaCppThinkingBudgetConfig? thinkingBudgetConfig,
+    _ReasoningBudgetApi? reasoningBudgetApi,
     int initialTokens,
     Pointer<Int32> tokensPtr,
   ) {
@@ -5228,37 +5389,75 @@ class LlamaCppService {
     );
 
     final penaltyConfig = _resolvePenaltySamplerConfig(params);
-
-    llama_sampler_chain_add(
-      sampler,
-      llama_sampler_init_penalties(
-        penaltyConfig.lastN,
-        penaltyConfig.repeat,
-        penaltyConfig.frequency,
-        penaltyConfig.presence,
-      ),
+    final penaltiesSampler = llama_sampler_init_penalties(
+      penaltyConfig.lastN,
+      penaltyConfig.repeat,
+      penaltyConfig.frequency,
+      penaltyConfig.presence,
     );
+    llama_sampler_chain_add(sampler, penaltiesSampler);
 
+    Pointer<llama_sampler> grammarSampler = nullptr;
+    final useLazyGrammar = params.grammarLazy && lazyGrammarConfig != null;
     if (grammarPtr != nullptr) {
-      if (params.grammarLazy && lazyGrammarConfig != null) {
-        llama_sampler_chain_add(
-          sampler,
-          llama_sampler_init_grammar_lazy_patterns(
-            vocab,
-            grammarPtr.cast(),
-            rootPtr.cast(),
-            lazyGrammarConfig.triggerPatterns,
-            lazyGrammarConfig.numTriggerPatterns,
-            lazyGrammarConfig.triggerTokens,
-            lazyGrammarConfig.numTriggerTokens,
-          ),
+      if (useLazyGrammar) {
+        grammarSampler = llama_sampler_init_grammar_lazy_patterns(
+          vocab,
+          grammarPtr.cast(),
+          rootPtr.cast(),
+          lazyGrammarConfig.triggerPatterns,
+          lazyGrammarConfig.numTriggerPatterns,
+          lazyGrammarConfig.triggerTokens,
+          lazyGrammarConfig.numTriggerTokens,
         );
       } else {
-        llama_sampler_chain_add(
-          sampler,
-          llama_sampler_init_grammar(vocab, grammarPtr.cast(), rootPtr.cast()),
+        grammarSampler = llama_sampler_init_grammar(
+          vocab,
+          grammarPtr.cast(),
+          rootPtr.cast(),
         );
       }
+    }
+    if (grammarPtr != nullptr && grammarSampler == nullptr) {
+      llama_sampler_free(sampler);
+      throw LlamaInferenceException(
+        'llama.cpp failed to initialize the requested grammar sampler.',
+      );
+    }
+
+    if (thinkingBudgetConfig != null) {
+      final api = reasoningBudgetApi;
+      if (api == null) {
+        if (grammarSampler != nullptr) {
+          llama_sampler_free(grammarSampler);
+        }
+        llama_sampler_free(sampler);
+        throw StateError('Missing llama.cpp reasoning-budget sampler API.');
+      }
+      final budgetSampler = api.initSampler(
+        vocab: vocab,
+        config: thinkingBudgetConfig,
+        pauseGrammarDuringReasoning: grammarSampler != nullptr,
+        grammarSampler: grammarSampler,
+        promptTokens: tokensPtr,
+        promptTokenCount: initialTokens,
+      );
+      if (budgetSampler == nullptr) {
+        if (grammarSampler != nullptr) {
+          llama_sampler_free(grammarSampler);
+        }
+        llama_sampler_free(sampler);
+        throw LlamaUnsupportedException(
+          'llama.cpp could not initialize thinking-budget control. Verify '
+          'that the configured thinking tags are supported by the loaded '
+          'model vocabulary.',
+        );
+      }
+      // The native composite sampler owns grammarSampler after this point.
+      grammarSampler = nullptr;
+      llama_sampler_chain_add(sampler, budgetSampler);
+    } else if (grammarSampler != nullptr) {
+      llama_sampler_chain_add(sampler, grammarSampler);
     }
 
     llama_sampler_chain_add(sampler, llama_sampler_init_top_k(params.topK));
@@ -5279,8 +5478,17 @@ class LlamaCppService {
     }
 
     if (grammarPtr == nullptr && tokensPtr != nullptr && initialTokens > 0) {
-      for (int i = 0; i < initialTokens; i++) {
-        llama_sampler_accept(sampler, tokensPtr[i]);
+      if (thinkingBudgetConfig != null) {
+        // The composite sampler derives its reasoning state from the complete
+        // prompt rather than accepting it token by token, but prompt tokens
+        // still need to seed the repeat-penalty sampler as before.
+        for (int i = 0; i < initialTokens; i++) {
+          llama_sampler_accept(penaltiesSampler, tokensPtr[i]);
+        }
+      } else {
+        for (int i = 0; i < initialTokens; i++) {
+          llama_sampler_accept(sampler, tokensPtr[i]);
+        }
       }
     }
 
@@ -7941,6 +8149,56 @@ class _LazyGrammarConfig {
     }
     if (triggerTokens != nullptr) {
       malloc.free(triggerTokens);
+    }
+  }
+}
+
+class _ReasoningBudgetApi {
+  const _ReasoningBudgetApi({required this.init});
+
+  final _LlamaDartReasoningBudgetInitDart init;
+
+  Pointer<llama_sampler> initSampler({
+    required Pointer<llama_vocab> vocab,
+    required _LlamaCppThinkingBudgetConfig config,
+    required bool pauseGrammarDuringReasoning,
+    required Pointer<llama_sampler> grammarSampler,
+    required Pointer<Int32> promptTokens,
+    required int promptTokenCount,
+  }) {
+    final startTag = config.startTag.toNativeUtf8();
+    final endTag = config.endTag.toNativeUtf8();
+    final forcedMessage = config.forcedMessage.toNativeUtf8();
+    try {
+      return init(
+        vocab,
+        startTag.cast(),
+        endTag.cast(),
+        forcedMessage.cast(),
+        config.maxTokens,
+        pauseGrammarDuringReasoning,
+        grammarSampler,
+        promptTokens,
+        promptTokenCount,
+      );
+    } finally {
+      malloc.free(startTag);
+      malloc.free(endTag);
+      malloc.free(forcedMessage);
+    }
+  }
+
+  static _ReasoningBudgetApi? tryLoad(DynamicLibrary library) {
+    try {
+      return _ReasoningBudgetApi(
+        init: library
+            .lookupFunction<
+              _LlamaDartReasoningBudgetInitNative,
+              _LlamaDartReasoningBudgetInitDart
+            >('llama_dart_sampler_init_reasoning_budget'),
+      );
+    } catch (_) {
+      return null;
     }
   }
 }

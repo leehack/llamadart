@@ -128,15 +128,17 @@ Map<String, dynamic> _buildChatRequestExamples(String modelId) {
       },
     },
     'tool_call_streaming_with_thinking': <String, dynamic>{
-      'summary': 'Tool call: reasoning + function request (SSE)',
+      'summary': 'Tool call: capped reasoning + function request (SSE)',
       'description':
-          'Qwen extension: this request streams `reasoning_content` before '
-          'the function call. Accumulate reasoning and `delta.tool_calls` '
-          'fragments independently until the stream finishes.',
+          'llama.cpp/Qwen extension: this request limits reasoning to 128 '
+          'tokens, then streams `reasoning_content` followed by the function '
+          'call. Accumulate reasoning and `delta.tool_calls` fragments '
+          'independently until the stream finishes.',
       'value': <String, dynamic>{
         'model': modelId,
         'stream': true,
         'enable_thinking': true,
+        'thinking_budget_tokens': 128,
         'temperature': 0,
         'max_tokens': 512,
         'messages': <Map<String, dynamic>>[

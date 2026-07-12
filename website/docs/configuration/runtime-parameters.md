@@ -104,6 +104,7 @@ const params = GenerationParams(
   penalty: 1.1,
   presencePenalty: 0.0,
   stopSequences: ['</s>'],
+  thinkingBudget: null,
   speculativeDecoding: false,
   speculativeDecodingConfig: null,
 );
@@ -118,6 +119,11 @@ Important fields:
 - `presencePenalty`: llama.cpp-native presence penalty; `0.0` preserves the
   existing behavior. WebGPU and LiteRT-LM reject non-zero values rather than
   silently ignoring them.
+- `thinkingBudget`: native llama.cpp-only reasoning-token cap. Use
+  `ThinkingBudget(maxTokens: ...)` with `engine.create(...)` to use template
+  delimiters automatically, or specify `startTag` and `endTag` for raw
+  generation. `0` forces the end delimiter immediately; it is incompatible
+  with speculative decoding and unsupported backends reject it explicitly.
 - `speculativeDecoding` / `speculativeDecodingConfig`: opt-in backend-native
   speculative decoding. Native LiteRT-LM honors the legacy boolean flag.
   llama.cpp supports the upstream strategy surface:

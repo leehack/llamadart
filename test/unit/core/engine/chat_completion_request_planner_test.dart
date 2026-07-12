@@ -65,6 +65,25 @@ void main() {
       );
     });
 
+    test('resolves omitted thinking-budget tags from the chat template', () {
+      final plan = ChatCompletionRequestPlanner.build(
+        backend: _NativeChatBackend(),
+        templateResult: const LlamaChatTemplateResult(prompt: 'prompt'),
+        messages: const [
+          LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hello'),
+        ],
+        params: const GenerationParams(
+          thinkingBudget: ThinkingBudget(maxTokens: 64),
+        ),
+        toolChoice: ToolChoice.auto,
+        parallelToolCalls: false,
+      );
+
+      expect(plan.generationParams.thinkingBudget?.maxTokens, 64);
+      expect(plan.generationParams.thinkingBudget?.startTag, '<think>');
+      expect(plan.generationParams.thinkingBudget?.endTag, '</think>');
+    });
+
     test(
       'falls back to rendered prompt when native chat cannot satisfy policy',
       () {

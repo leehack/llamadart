@@ -134,6 +134,47 @@ Future<void> main(List<String> args) async {
       toolChoice: ToolChoice.required,
     );
 
+    final toolCallWithThinkingBudget = await _runScenario(
+      engine: engine,
+      name: 'toolCallWithThinkingBudget',
+      messages: const [
+        LlamaChatMessage.fromText(
+          role: LlamaChatRole.system,
+          text:
+              'Think briefly if the model supports a thinking channel, then call get_weather. Return only the tool call.',
+        ),
+        LlamaChatMessage.fromText(
+          role: LlamaChatRole.user,
+          text: 'Call get_weather with location Seoul.',
+        ),
+      ],
+      tools: [_weatherTool],
+      enableThinking: true,
+      maxTokens: 160,
+      thinkingBudget: const ThinkingBudget(maxTokens: 4),
+      toolChoice: ToolChoice.required,
+    );
+
+    final toolCallWithZeroThinkingBudget = await _runScenario(
+      engine: engine,
+      name: 'toolCallWithZeroThinkingBudget',
+      messages: const [
+        LlamaChatMessage.fromText(
+          role: LlamaChatRole.system,
+          text: 'You must call get_weather. Return only a tool call.',
+        ),
+        LlamaChatMessage.fromText(
+          role: LlamaChatRole.user,
+          text: 'Call get_weather with location Seoul.',
+        ),
+      ],
+      tools: [_weatherTool],
+      enableThinking: true,
+      maxTokens: 160,
+      thinkingBudget: const ThinkingBudget(maxTokens: 0),
+      toolChoice: ToolChoice.required,
+    );
+
     final multimodal = mmprojPath != null && imagePath != null
         ? await _runScenario(
             engine: engine,
@@ -161,6 +202,10 @@ Future<void> main(List<String> args) async {
     _verifyThinkingSeparation(toolCallWithThinking);
     _verifyToolCall(toolCallNoThinking);
     _verifyToolCall(toolCallWithThinking);
+    _verifyThinkingSeparation(toolCallWithThinkingBudget);
+    _verifyToolCall(toolCallWithThinkingBudget);
+    _verifyNoThinking(toolCallWithZeroThinkingBudget);
+    _verifyToolCall(toolCallWithZeroThinkingBudget);
     if (multimodal != null) {
       _verifyHasOutput(multimodal);
       _verifyNoThinking(multimodal);
@@ -174,6 +219,8 @@ Future<void> main(List<String> args) async {
       'thinking': thinking.toJson(),
       'toolCallNoThinking': toolCallNoThinking.toJson(),
       'toolCallWithThinking': toolCallWithThinking.toJson(),
+      'toolCallWithThinkingBudget': toolCallWithThinkingBudget.toJson(),
+      'toolCallWithZeroThinkingBudget': toolCallWithZeroThinkingBudget.toJson(),
       if (multimodal != null) 'multimodal': multimodal.toJson(),
     };
     print('RESULT gguf_chat_features ${jsonEncode(result)}');
@@ -194,6 +241,7 @@ Future<_ScenarioResult> _runScenario({
   required List<ToolDefinition> tools,
   required bool enableThinking,
   required int maxTokens,
+  ThinkingBudget? thinkingBudget,
   ToolChoice toolChoice = ToolChoice.auto,
 }) async {
   final content = StringBuffer();
@@ -207,7 +255,12 @@ Future<_ScenarioResult> _runScenario({
     tools: tools.isEmpty ? null : tools,
     toolChoice: toolChoice,
     enableThinking: enableThinking,
-    params: GenerationParams(maxTokens: maxTokens, temp: 0.0, seed: 1),
+    params: GenerationParams(
+      maxTokens: maxTokens,
+      temp: 0.0,
+      seed: 1,
+      thinkingBudget: thinkingBudget,
+    ),
   )) {
     chunks++;
     final choice = chunk.choices.first;

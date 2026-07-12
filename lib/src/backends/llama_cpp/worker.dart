@@ -1,12 +1,32 @@
 import 'dart:async';
 import 'dart:isolate';
 
+import '../../core/exceptions.dart';
 import 'llama_cpp_service.dart';
 import 'stream_batcher.dart';
 import 'worker_messages.dart';
 
 // Re-export messages so native_backend.dart can see them via worker.dart if needed
 export 'worker_messages.dart';
+
+ErrorResponse _toErrorResponse(Object error) {
+  if (error is LlamaModelException) {
+    return ErrorResponse(error.message, kind: WorkerErrorKind.model);
+  }
+  if (error is LlamaContextException) {
+    return ErrorResponse(error.message, kind: WorkerErrorKind.context);
+  }
+  if (error is LlamaInferenceException) {
+    return ErrorResponse(error.message, kind: WorkerErrorKind.inference);
+  }
+  if (error is LlamaUnsupportedException) {
+    return ErrorResponse(error.message, kind: WorkerErrorKind.unsupported);
+  }
+  if (error is LlamaStateException) {
+    return ErrorResponse(error.message, kind: WorkerErrorKind.state);
+  }
+  return ErrorResponse(error.toString());
+}
 
 /// Entry point for the llama worker isolate.
 void llamaWorkerEntry(SendPort initialSendPort) {
@@ -154,8 +174,8 @@ void runLlamaWorkerForTesting(
                 }
 
                 message.sendPort.send(DoneResponse());
-              } catch (e) {
-                message.sendPort.send(ErrorResponse(e.toString()));
+              } catch (error) {
+                message.sendPort.send(_toErrorResponse(error));
               }
             }();
             activeGenerate = generateFuture;
@@ -312,8 +332,8 @@ void runLlamaWorkerForTesting(
             );
             message.sendPort.send(StateLoadFileResponse(tokens));
         }
-      } catch (e) {
-        message.sendPort.send(ErrorResponse(e.toString()));
+      } catch (error) {
+        message.sendPort.send(_toErrorResponse(error));
       }
     }
   });

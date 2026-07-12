@@ -113,6 +113,17 @@ for thought-intensive requests while leaving room for the prompt in the
 16,384-token context. A request that ends during reasoning can correctly have
 `reasoning_content` but no final `content`.
 
+### Thinking budget (llama.cpp extension)
+
+`thinking_budget_tokens` is the same non-standard extension accepted by
+llama.cpp's server; it is not an OpenAI Chat Completions field. Send it only
+with `"enable_thinking": true`. It caps generated tokens within a reasoning
+block, while `max_tokens` still caps the whole completion. A value of `0`
+closes the initial reasoning block immediately, which is useful when a client
+wants a standard tool call without model reasoning. See Swagger's **Tool call:
+capped reasoning + function request (SSE)** example for a request that streams
+both `reasoning_content` and `tool_calls`.
+
 ## API Examples
 
 ### 0. OpenAPI and Swagger UI
@@ -189,8 +200,8 @@ minimal standard tool-result message does not need a `name` field.
 
 For a streaming tool call, accumulate `delta.tool_calls` fragments by index
 until the terminal `finish_reason` is `tool_calls`; then follow the same steps.
-The **Tool call: reasoning + function request (SSE)** Swagger example also
-demonstrates Qwen's optional `reasoning_content` stream.
+The **Tool call: capped reasoning + function request (SSE)** Swagger example
+also demonstrates Qwen's optional `reasoning_content` stream.
 
 ### 5. With API key
 

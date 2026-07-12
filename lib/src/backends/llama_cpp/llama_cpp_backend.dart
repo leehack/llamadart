@@ -8,6 +8,7 @@ import '../../core/models/config/gpu_backend.dart';
 import '../../core/models/config/gpu_device_info.dart';
 import '../../core/models/config/log_level.dart';
 import '../../core/models/diagnostics/model_file_type.dart';
+import '../../core/exceptions.dart';
 import '../../core/models/inference/model_params.dart';
 import '../../core/models/inference/generation_params.dart';
 import 'worker.dart';
@@ -68,9 +69,26 @@ class NativeLlamaBackend
       return;
     }
     if (response is ErrorResponse) {
-      throw Exception(response.message);
+      throw _workerError(response);
     }
     throw Exception('Unknown response during $operation');
+  }
+
+  Object _workerError(ErrorResponse response) {
+    switch (response.kind) {
+      case WorkerErrorKind.model:
+        return LlamaModelException(response.message);
+      case WorkerErrorKind.context:
+        return LlamaContextException(response.message);
+      case WorkerErrorKind.inference:
+        return LlamaInferenceException(response.message);
+      case WorkerErrorKind.unsupported:
+        return LlamaUnsupportedException(response.message);
+      case WorkerErrorKind.state:
+        return LlamaStateException(response.message);
+      case WorkerErrorKind.generic:
+        return Exception(response.message);
+    }
   }
 
   Future<void> _ensureIsolate() async {
@@ -146,7 +164,7 @@ class NativeLlamaBackend
     final res = await rp.first;
     rp.close();
     if (res is HandleResponse) return res.handle;
-    if (res is ErrorResponse) throw Exception(res.message);
+    if (res is ErrorResponse) throw _workerError(res);
     throw Exception("Unknown response during model load");
   }
 
@@ -177,7 +195,7 @@ class NativeLlamaBackend
     final res = await rp.first;
     rp.close();
     if (res is HandleResponse) return res.handle;
-    if (res is ErrorResponse) throw Exception(res.message);
+    if (res is ErrorResponse) throw _workerError(res);
     throw Exception("Unknown response during context creation");
   }
 
@@ -298,7 +316,7 @@ class NativeLlamaBackend
         freeToken();
       } else if (msg is ErrorResponse) {
         if (!controller.isClosed) {
-          controller.addError(Exception(msg.message));
+          controller.addError(_workerError(msg));
         }
         detachAndClose();
         freeToken();

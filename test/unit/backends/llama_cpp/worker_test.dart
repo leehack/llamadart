@@ -10,6 +10,7 @@ import 'package:llamadart/src/core/models/inference/generation_params.dart';
 import 'package:llamadart/src/core/models/inference/model_params.dart';
 import 'package:llamadart/src/backends/llama_cpp/llama_cpp_service.dart';
 import 'package:llamadart/src/backends/llama_cpp/worker.dart';
+import 'package:llamadart/src/core/exceptions.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -130,6 +131,64 @@ void main() {
         await _disposeWorker(worker);
       }
     });
+
+    test(
+      'preserves unsupported generation errors across worker messages',
+      () async {
+        final worker = await _startWorkerInCurrentIsolate(
+          _UnsupportedGenerationLlamaCppService(),
+        );
+
+        try {
+          final response = await _sendRequest(
+            worker.sendPort,
+            (sendPort) => GenerateRequest(
+              1,
+              'hello',
+              const GenerationParams(),
+              0,
+              sendPort,
+            ),
+          );
+
+          expect(response, isA<ErrorResponse>());
+          final error = response as ErrorResponse;
+          expect(error.kind, WorkerErrorKind.unsupported);
+          expect(error.message, contains('reasoning-budget wrapper'));
+        } finally {
+          await _disposeWorker(worker);
+        }
+      },
+    );
+
+    test(
+      'preserves inference generation errors across worker messages',
+      () async {
+        final worker = await _startWorkerInCurrentIsolate(
+          _InferenceGenerationLlamaCppService(),
+        );
+
+        try {
+          final response = await _sendRequest(
+            worker.sendPort,
+            (sendPort) => GenerateRequest(
+              1,
+              'hello',
+              const GenerationParams(),
+              0,
+              sendPort,
+            ),
+          );
+
+          expect(response, isA<ErrorResponse>());
+          final error = response as ErrorResponse;
+          expect(error.kind, WorkerErrorKind.inference);
+          expect(error.message, contains('grammar sampler failed'));
+        } finally {
+          await _disposeWorker(worker);
+        }
+      },
+    );
 
     test('waits for active generation before freeing native handles', () async {
       final service = _BlockingLlamaCppService();
@@ -389,4 +448,52 @@ class _BlockingLlamaCppService extends LlamaCppService {
   void dispose() {
     disposeCalls += 1;
   }
+}
+
+class _UnsupportedGenerationLlamaCppService extends LlamaCppService {
+  @override
+  void initializeBackend() {}
+
+  @override
+  void setLogLevel(LlamaLogLevel level) {}
+
+  @override
+  Stream<List<int>> generate(
+    int contextHandle,
+    String prompt,
+    GenerationParams params,
+    int cancelTokenAddress, {
+    List<LlamaContentPart>? parts,
+  }) async* {
+    throw LlamaUnsupportedException(
+      'missing reasoning-budget wrapper in this test runtime',
+    );
+  }
+
+  @override
+  void dispose() {}
+}
+
+class _InferenceGenerationLlamaCppService extends LlamaCppService {
+  @override
+  void initializeBackend() {}
+
+  @override
+  void setLogLevel(LlamaLogLevel level) {}
+
+  @override
+  Stream<List<int>> generate(
+    int contextHandle,
+    String prompt,
+    GenerationParams params,
+    int cancelTokenAddress, {
+    List<LlamaContentPart>? parts,
+  }) async* {
+    throw LlamaInferenceException(
+      'grammar sampler failed in this test runtime',
+    );
+  }
+
+  @override
+  void dispose() {}
 }

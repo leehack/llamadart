@@ -66,6 +66,74 @@ void main() {
       expect(request.params.penalty, 1.0);
     });
 
+    test('parses llama.cpp thinking budget tokens', () {
+      final request = parseChatCompletionRequest(<String, dynamic>{
+        'model': 'llamadart-local',
+        'messages': <Map<String, dynamic>>[
+          <String, dynamic>{'role': 'user', 'content': 'Think briefly.'},
+        ],
+        'enable_thinking': true,
+        'thinking_budget_tokens': 128,
+      }, configuredModelId: 'llamadart-local');
+
+      expect(request.params.thinkingBudget?.maxTokens, 128);
+      expect(request.params.thinkingBudget?.startTag, isNull);
+      expect(request.params.thinkingBudget?.endTag, isNull);
+    });
+
+    test('accepts a zero thinking budget', () {
+      final request = parseChatCompletionRequest(<String, dynamic>{
+        'model': 'llamadart-local',
+        'messages': <Map<String, dynamic>>[
+          <String, dynamic>{'role': 'user', 'content': 'Do not think.'},
+        ],
+        'enable_thinking': true,
+        'thinking_budget_tokens': 0,
+      }, configuredModelId: 'llamadart-local');
+
+      expect(request.params.thinkingBudget?.maxTokens, 0);
+    });
+
+    test('rejects invalid thinking budget requests', () {
+      final withoutThinking = <String, dynamic>{
+        'model': 'llamadart-local',
+        'messages': <Map<String, dynamic>>[
+          <String, dynamic>{'role': 'user', 'content': 'Say hello.'},
+        ],
+        'thinking_budget_tokens': 64,
+      };
+      final negative = <String, dynamic>{
+        ...withoutThinking,
+        'enable_thinking': true,
+        'thinking_budget_tokens': -1,
+      };
+      final overflow = <String, dynamic>{
+        ...withoutThinking,
+        'enable_thinking': true,
+        'thinking_budget_tokens': 2147483648,
+      };
+
+      for (final request in <Map<String, dynamic>>[
+        withoutThinking,
+        negative,
+        overflow,
+      ]) {
+        expect(
+          () => parseChatCompletionRequest(
+            request,
+            configuredModelId: 'llamadart-local',
+          ),
+          throwsA(
+            isA<OpenAiHttpException>().having(
+              (OpenAiHttpException error) => error.param,
+              'param',
+              'thinking_budget_tokens',
+            ),
+          ),
+        );
+      }
+    });
+
     test('rejects a non-boolean thinking control', () {
       expect(
         () => parseChatCompletionRequest(<String, dynamic>{
