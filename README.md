@@ -49,7 +49,7 @@ For Dart or Flutter apps:
 
 ```yaml
 dependencies:
-  llamadart: ^0.8.14
+  llamadart: ^0.8.15
 ```
 
 Flutter iOS/macOS apps that should link Apple XCFrameworks through Swift
@@ -57,14 +57,15 @@ Package Manager should also add the runtime companion packages they need:
 
 ```yaml
 dependencies:
-  llamadart: ^0.8.14
+  llamadart: ^0.8.15
   llamadart_llama_cpp_flutter: ^0.0.9 # GGUF / llama.cpp
-  llamadart_litert_lm_flutter: ^0.0.4 # iOS .litertlm / LiteRT-LM
+  llamadart_litert_lm_flutter: ^0.0.5 # Apple .litertlm / LiteRT-LM targets
 ```
 
-At the current LiteRT-LM native pin, Flutter macOS `.litertlm` builds keep
-using the core native-assets fallback when the SwiftPM artifact set is
-incomplete for the selected architecture.
+The LiteRT-LM companion manifest includes consolidated iOS and macOS SwiftPM
+runtime targets. Llamadart uses that SwiftPM path for iOS; Flutter macOS
+LiteRT-LM builds currently keep the core package's native-assets fallback while
+the hook path remains responsible for the complete runtime.
 
 Then run:
 

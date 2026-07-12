@@ -95,9 +95,9 @@ are present:
 
 For Flutter iOS apps, installed companion packages decide the Apple SPM runtime
 families and win over `llamadart_native_runtimes`. Flutter macOS LiteRT-LM
-builds use the core native-assets fallback when the current SwiftPM artifact set
-is incomplete for the selected architecture. If neither companion package is
-installed, the core native-assets fallback is used.
+builds currently use the core native-assets fallback while the hook path remains
+responsible for the complete runtime. If neither companion package is installed,
+the core native-assets fallback is used.
 
 For non-Flutter projects and non-Apple targets, `llamadart_native_runtimes`
 remains the selector even if a companion package is accidentally present in the

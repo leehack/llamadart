@@ -116,9 +116,9 @@ runtime. It does not enable or disable LiteRT-LM.
 include every available runtime family for a target.
 
 For Flutter iOS apps, installed companion packages choose the SwiftPM runtime
-families and win over this setting. Flutter macOS LiteRT-LM builds keep the
-native-assets fallback when the current SwiftPM artifact set is incomplete for
-the selected architecture. For non-Flutter projects and non-Apple targets,
+families and win over this setting. Flutter macOS LiteRT-LM builds currently
+keep the core native-assets fallback while the hook path remains responsible
+for the complete runtime. For non-Flutter projects and non-Apple targets,
 `llamadart_native_runtimes` remains the selector.
 
 ## Parameter Differences
