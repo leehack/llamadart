@@ -1,7 +1,6 @@
 import 'dart:io';
 
 import 'package:args/args.dart';
-import 'package:llamadart/llamadart.dart';
 import 'package:llamadart_tui_coding_agent/tui_coding_agent.dart';
 import 'package:nocterm/nocterm.dart';
 import 'package:path/path.dart' as p;
@@ -11,44 +10,28 @@ Future<void> main(List<String> arguments) async {
     ..addOption(
       'model',
       abbr: 'm',
-      help: 'Model path, URL, or Hugging Face spec owner/repo[:hint].',
+      help: 'Local path, URL, or exact hf://owner/repo/model-file reference.',
       defaultsTo: defaultModelSource,
     )
     ..addOption(
       'workspace',
       abbr: 'w',
-      help: 'Workspace root used for coding tools.',
+      help: 'Directory exposed to the coding tools.',
       defaultsTo: Directory.current.path,
     )
     ..addOption(
       'cache-dir',
-      help:
-          'Directory used to cache downloaded models. Defaults to the per-user shared llamadart model cache.',
-    )
-    ..addOption(
-      'ctx-size',
-      help: 'Model context window size.',
-      defaultsTo: '8192',
-    )
-    ..addOption(
-      'gpu-layers',
-      help: 'GPU layers to offload (99 ~= auto).',
-      defaultsTo: '99',
-    )
-    ..addOption('temp', help: 'Generation temperature.', defaultsTo: '0.2')
-    ..addOption('top-p', help: 'Top-p sampling value.', defaultsTo: '0.95')
-    ..addOption('min-p', help: 'Min-p sampling value.', defaultsTo: '0.05')
-    ..addOption(
-      'predict',
-      help: 'Maximum generated tokens per turn.',
-      defaultsTo: '1200',
+      help: 'Model cache directory (defaults to the shared llamadart cache).',
     )
     ..addFlag(
-      'native-tool-calling',
-      help:
-          'Enable template-native tool-calling grammar (experimental, may be unstable on some models).',
-      defaultsTo: false,
-      negatable: true,
+      'thinking',
+      help: 'Enable Qwen thinking (on/off; no reasoning-effort tiers).',
+      negatable: false,
+    )
+    ..addFlag(
+      'read-only',
+      help: 'Expose only the read tool; disable write, edit, and bash.',
+      negatable: false,
     )
     ..addFlag(
       'help',
@@ -61,57 +44,53 @@ Future<void> main(List<String> arguments) async {
   try {
     results = parser.parse(arguments);
   } on ArgParserException catch (error) {
-    stderr.writeln('Argument error: $error');
-    stderr.writeln('');
-    stderr.writeln(_usageHeader);
-    stderr.writeln(parser.usage);
+    _printUsage(parser, error: '$error');
     exitCode = 64;
     return;
   }
 
-  if (results['help'] as bool) {
-    stdout.writeln(_usageHeader);
-    stdout.writeln(parser.usage);
-    stdout.writeln('');
-    stdout.writeln(_usageExamples);
+  if (results.flag('help')) {
+    _printUsage(parser);
     return;
   }
 
-  final workspaceRoot = p.normalize(p.absolute(results['workspace'] as String));
-  if (!Directory(workspaceRoot).existsSync()) {
-    stderr.writeln('Workspace directory not found: $workspaceRoot');
+  final workspace = p.normalize(
+    p.absolute((results.option('workspace') ?? '').trim()),
+  );
+  if (!Directory(workspace).existsSync()) {
+    _printUsage(parser, error: 'Workspace directory not found: $workspace');
     exitCode = 64;
     return;
   }
 
-  final cacheDirRaw = (results['cache-dir'] as String?)?.trim();
-  final cacheDirectory = cacheDirRaw == null || cacheDirRaw.isEmpty
-      ? DefaultModelDownloadManager.auto().defaultCacheDirectory
-      : p.isAbsolute(cacheDirRaw)
-      ? p.normalize(cacheDirRaw)
-      : p.normalize(p.join(workspaceRoot, cacheDirRaw));
+  final model = (results.option('model') ?? '').trim();
+  if (model.isEmpty) {
+    _printUsage(parser, error: '--model must not be empty.');
+    exitCode = 64;
+    return;
+  }
 
-  final contextSize = _parseIntOption(results, 'ctx-size', fallback: 8192);
-  final gpuLayers = _parseIntOption(results, 'gpu-layers', fallback: 99);
-  final maxTokens = _parseIntOption(results, 'predict', fallback: 1200);
+  final cacheOption = results.option('cache-dir')?.trim();
+  final cacheDirectory = cacheOption == null || cacheOption.isEmpty
+      ? null
+      : p.normalize(
+          p.isAbsolute(cacheOption)
+              ? cacheOption
+              : p.join(workspace, cacheOption),
+        );
 
-  final temperature = _parseDoubleOption(results, 'temp', fallback: 0.2);
-  final topP = _parseDoubleOption(results, 'top-p', fallback: 0.95);
-  final minP = _parseDoubleOption(results, 'min-p', fallback: 0.05);
-
+  final preset = results.flag('thinking')
+      ? qwen36ThinkingCodingAgentPreset
+      : qwen36CodingAgentPreset;
   final config = CodingAgentConfig(
-    workspaceRoot: workspaceRoot,
-    modelSource: (results['model'] as String).trim(),
+    workspaceRoot: workspace,
+    modelSource: model,
     modelCacheDirectory: cacheDirectory,
-    modelParams: ModelParams(contextSize: contextSize, gpuLayers: gpuLayers),
-    generationParams: GenerationParams(
-      maxTokens: maxTokens,
-      temp: temperature,
-      topP: topP,
-      minP: minP,
-      penalty: 1.0,
-    ),
-    enableNativeToolCalling: results['native-tool-calling'] as bool,
+    modelParams: preset.modelParams,
+    generationParams: preset.generationParams,
+    maxToolRounds: preset.maxToolRounds,
+    readOnly: results.flag('read-only'),
+    enableThinking: preset.enableThinking,
   );
 
   await runApp(
@@ -122,28 +101,17 @@ Future<void> main(List<String> arguments) async {
   );
 }
 
-int _parseIntOption(ArgResults results, String key, {required int fallback}) {
-  final value = int.tryParse(results[key] as String);
-  return value ?? fallback;
+void _printUsage(ArgParser parser, {String? error}) {
+  if (error != null) {
+    stderr.writeln('Argument error: $error\n');
+  }
+  final sink = error == null ? stdout : stderr;
+  sink.writeln('llamadart agent');
+  sink.writeln('A small local coding agent powered by Qwen3.6.\n');
+  sink.writeln(parser.usage);
+  sink.writeln('\nExamples:');
+  sink.writeln('  dart run bin/tui_coding_agent.dart');
+  sink.writeln('  dart run bin/tui_coding_agent.dart --thinking');
+  sink.writeln('  dart run bin/tui_coding_agent.dart -w /path/to/project');
+  sink.writeln('  dart run bin/tui_coding_agent.dart -m /path/to/model.gguf');
 }
-
-double _parseDoubleOption(
-  ArgResults results,
-  String key, {
-  required double fallback,
-}) {
-  final value = double.tryParse(results[key] as String);
-  return value ?? fallback;
-}
-
-const String _usageHeader =
-    'llamadart agent\n\n'
-    'A terminal UI coding assistant built with llamadart + nocterm.';
-
-const String _usageExamples =
-    'Examples:\n'
-    '  dart run bin/tui_coding_agent.dart\n'
-    '  dart run bin/tui_coding_agent.dart -w /path/to/project\n'
-    '  dart run bin/tui_coding_agent.dart --model /path/to/model.gguf\n'
-    '  dart run bin/tui_coding_agent.dart --model owner/repo:Q4_K_M\n'
-    '  dart run bin/tui_coding_agent.dart --native-tool-calling';

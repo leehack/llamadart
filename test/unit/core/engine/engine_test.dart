@@ -833,6 +833,49 @@ void main() {
     );
 
     test(
+      'native loadModelSource skips model load when download is cancelled',
+      () async {
+        final source = ModelSource.url(
+          Uri.parse('https://example.com/model.gguf'),
+        );
+        final entry = ModelCacheEntry(
+          sourceCanonicalKey: source.metadataSourceKey,
+          cacheKey: source.cacheKey,
+          fileName: source.fileName,
+          filePath: '/cache/model.gguf',
+          createdAt: DateTime.utc(2026),
+          updatedAt: DateTime.utc(2026),
+        );
+        final downloadGate = Completer<void>();
+        final downloadStarted = Completer<void>();
+        final downloadManager = ControlledModelDownloadManager(
+          entries: [entry],
+          gatesByCacheKey: {source.cacheKey: downloadGate},
+          startedByCacheKey: {source.cacheKey: downloadStarted},
+        );
+        final nativeBackend = MockLlamaBackend();
+        final nativeEngine = LlamaEngine(
+          nativeBackend,
+          modelDownloadManager: downloadManager,
+        );
+        final cancelToken = ModelDownloadCancelToken();
+
+        final load = nativeEngine.loadModelSource(
+          source,
+          options: ModelLoadOptions(cancelToken: cancelToken),
+        );
+        await downloadStarted.future;
+
+        cancelToken.cancel();
+        downloadGate.complete();
+
+        await expectLater(load, throwsA(isA<LlamaStateException>()));
+        expect(nativeBackend.modelLoadCalls, 0);
+        expect(nativeEngine.isReady, isFalse);
+      },
+    );
+
+    test(
       'native loadModelSource downloads resolved remote URL target',
       () async {
         final source = ModelSource.huggingFace(

@@ -529,6 +529,15 @@ class GenerationParams {
   /// 1.0 means no penalty.
   final double penalty;
 
+  /// Additive penalty applied once to tokens that appear in the sampler's
+  /// recent history.
+  ///
+  /// `0.0` disables the penalty. This is distinct from [penalty], which scales
+  /// logits using llama.cpp's repeat-penalty sampler. Native llama.cpp supports
+  /// this option; backends without an equivalent sampler reject nonzero values
+  /// instead of silently ignoring them.
+  final double presencePenalty;
+
   /// Random seed for the sampler.
   ///
   /// If null, a seed based on the current time will be used.
@@ -598,6 +607,7 @@ class GenerationParams {
     this.topP = 0.9,
     this.minP = 0.0,
     this.penalty = 1.1,
+    this.presencePenalty = 0.0,
     this.seed,
     this.stopSequences = const [],
     this.grammar,
@@ -634,6 +644,7 @@ class GenerationParams {
     double? topP,
     double? minP,
     double? penalty,
+    double? presencePenalty,
     int? seed,
     List<String>? stopSequences,
     String? grammar,
@@ -655,6 +666,7 @@ class GenerationParams {
       topP: topP ?? this.topP,
       minP: minP ?? this.minP,
       penalty: penalty ?? this.penalty,
+      presencePenalty: presencePenalty ?? this.presencePenalty,
       seed: seed ?? this.seed,
       stopSequences: stopSequences ?? this.stopSequences,
       grammar: grammar ?? this.grammar,

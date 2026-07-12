@@ -5,7 +5,7 @@ import 'package:llamadart/src/core/models/inference/model_params.dart';
 import 'package:test/test.dart';
 
 void main() {
-  test('ModelParams defaults preserve legacy context batching behavior', () {
+  test('ModelParams defaults use automatic context batching', () {
     const params = ModelParams();
 
     expect(params.contextSize, 4096);
@@ -23,6 +23,8 @@ void main() {
     expect(params.numberOfThreadsBatch, 0);
     expect(params.batchSize, 0);
     expect(params.microBatchSize, 0);
+    expect(ModelParams.defaultBatchSize, 2048);
+    expect(ModelParams.defaultMicroBatchSize, 512);
     expect(params.maxParallelSequences, 1);
     expect(params.speculativeRollbackTokenMax, 0);
     expect(params.useMmap, isTrue);
@@ -34,6 +36,44 @@ void main() {
     expect(params.ropeFrequencyBase, isNull);
     expect(params.ropeFrequencyScale, isNull);
     expect(ModelParams.maxGpuLayers, 999);
+  });
+
+  group('resolveModelContextBatchSizes', () {
+    test('uses standard defaults for a generative context', () {
+      final resolved = resolveModelContextBatchSizes(
+        const ModelParams(contextSize: 8192),
+        8192,
+      );
+
+      expect(resolved.batchSize, ModelParams.defaultBatchSize);
+      expect(resolved.microBatchSize, ModelParams.defaultMicroBatchSize);
+    });
+
+    test('supports the encoder-only full-context compatibility policy', () {
+      final resolved = resolveModelContextBatchSizes(
+        const ModelParams(contextSize: 8192),
+        8192,
+        useFullContextDefaults: true,
+      );
+
+      expect(resolved.batchSize, 8192);
+      expect(resolved.microBatchSize, 8192);
+    });
+
+    test('explicit values override the encoder-only compatibility policy', () {
+      final resolved = resolveModelContextBatchSizes(
+        const ModelParams(
+          contextSize: 8192,
+          batchSize: 1024,
+          microBatchSize: 256,
+        ),
+        8192,
+        useFullContextDefaults: true,
+      );
+
+      expect(resolved.batchSize, 1024);
+      expect(resolved.microBatchSize, 256);
+    });
   });
 
   test('ModelParams copyWith updates selected fields', () {

@@ -17,14 +17,25 @@ class LlamaChatMessage {
   final List<LlamaContentPart>? _parts;
   final String? _legacyContent;
 
+  /// Whether this user message continues the preceding conversational turn.
+  ///
+  /// [ChatSession] uses this internal history marker when trimming context so
+  /// user-role protocol continuations, such as text-based tool results, remain
+  /// grouped with the original user request. It is not included in [toJson]
+  /// because it is session metadata rather than part of the model prompt.
+  final bool continuesPreviousTurn;
+
   /// BACKWARD-COMPATIBLE: Text-only constructor (existing API).
   ///
   /// This constructor is kept for full backward compatibility with older versions.
-  const LlamaChatMessage({required String role, required String content})
-    : roleString = role,
-      roleEnum = null,
-      _legacyContent = content,
-      _parts = null;
+  const LlamaChatMessage({
+    required String role,
+    required String content,
+    this.continuesPreviousTurn = false,
+  }) : roleString = role,
+       roleEnum = null,
+       _legacyContent = content,
+       _parts = null;
 
   /// Convenience constructor for text-only messages.
   ///
@@ -32,6 +43,7 @@ class LlamaChatMessage {
   const LlamaChatMessage.fromText({
     required LlamaChatRole role,
     required String text,
+    this.continuesPreviousTurn = false,
   }) : roleEnum = role,
        roleString = null,
        _legacyContent = text,
@@ -44,6 +56,7 @@ class LlamaChatMessage {
   const LlamaChatMessage.withContent({
     required LlamaChatRole role,
     required List<LlamaContentPart> content,
+    this.continuesPreviousTurn = false,
   }) : roleEnum = role,
        roleString = null,
        _parts = content,
@@ -99,16 +112,24 @@ class LlamaChatMessage {
     LlamaChatRole? role,
     String? content,
     List<LlamaContentPart>? parts,
+    bool? continuesPreviousTurn,
   }) {
     if (parts != null) {
       return LlamaChatMessage.withContent(
         role: role ?? this.role,
         content: parts,
+        continuesPreviousTurn:
+            continuesPreviousTurn ?? this.continuesPreviousTurn,
       );
     }
 
     if (content != null) {
-      return LlamaChatMessage.fromText(role: role ?? this.role, text: content);
+      return LlamaChatMessage.fromText(
+        role: role ?? this.role,
+        text: content,
+        continuesPreviousTurn:
+            continuesPreviousTurn ?? this.continuesPreviousTurn,
+      );
     }
 
     // Preserve existing state
@@ -116,11 +137,15 @@ class LlamaChatMessage {
       return LlamaChatMessage.withContent(
         role: role ?? this.role,
         content: _parts,
+        continuesPreviousTurn:
+            continuesPreviousTurn ?? this.continuesPreviousTurn,
       );
     } else {
       return LlamaChatMessage.fromText(
         role: role ?? this.role,
         text: _legacyContent ?? '',
+        continuesPreviousTurn:
+            continuesPreviousTurn ?? this.continuesPreviousTurn,
       );
     }
   }

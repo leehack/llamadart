@@ -7,6 +7,7 @@ void main() {
     final updated = params.copyWith(
       topK: 12,
       minP: 0.05,
+      presencePenalty: 1.5,
       grammarRoot: 'main',
       grammarLazy: true,
       speculativeDecoding: true,
@@ -27,6 +28,7 @@ void main() {
     expect(updated.maxTokens, 10);
     expect(updated.topK, 12);
     expect(updated.minP, 0.05);
+    expect(updated.presencePenalty, 1.5);
     expect(updated.grammarRoot, 'main');
     expect(updated.grammarLazy, isTrue);
     expect(updated.speculativeDecoding, isTrue);
@@ -51,6 +53,7 @@ void main() {
     const params = GenerationParams();
 
     expect(params.minP, 0.0);
+    expect(params.presencePenalty, 0.0);
     expect(params.speculativeDecoding, isFalse);
     expect(params.speculativeDecodingConfig, isNull);
     expect(params.isSpeculativeDecodingEnabled, isFalse);

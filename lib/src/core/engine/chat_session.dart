@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'engine.dart';
-import '../exceptions.dart';
 import '../llama_logger.dart';
 import '../models/chat/chat_message.dart';
 import '../models/chat/completion_chunk.dart';
@@ -35,6 +34,7 @@ import '../models/tools/tool_definition.dart';
 class ChatSession {
   final LlamaEngine _engine;
   final List<LlamaChatMessage> _history = [];
+  bool _lastRequestFitContext = true;
 
   /// The maximum number of tokens allowed in the context window.
   ///
@@ -52,6 +52,12 @@ class ChatSession {
   ///
   /// Returns an unmodifiable list of [LlamaChatMessage].
   List<LlamaChatMessage> get history => List.unmodifiable(_history);
+
+  /// Whether the most recently rendered request fit its prompt token budget.
+  ///
+  /// A `false` value means even the active turn could not be compacted enough;
+  /// callers that execute model-proposed side effects should fail closed.
+  bool get lastRequestFitContext => _lastRequestFitContext;
 
   /// The system prompt for this session.
   ///
@@ -95,6 +101,11 @@ class ChatSession {
   /// Set [parallelToolCalls] to allow multiple tool calls in one response for
   /// templates that support it.
   ///
+  /// Set [continuesPreviousTurn] when non-empty [parts] are a user-role
+  /// protocol continuation of the preceding request, rather than a new user
+  /// turn. This keeps text-based tool-result prompts attached to the original
+  /// turn when older context is trimmed.
+  ///
   /// Example with tools:
   /// ```dart
   /// final response = StringBuffer();
@@ -135,6 +146,7 @@ class ChatSession {
     bool enableThinking = true,
     Map<String, dynamic>? chatTemplateKwargs,
     void Function(LlamaChatMessage message)? onMessageAdded,
+    bool continuesPreviousTurn = false,
   }) async* {
     // Add user message if parts provided
     if (parts.isNotEmpty) {
@@ -142,24 +154,34 @@ class ChatSession {
           ? LlamaChatMessage.fromText(
               role: LlamaChatRole.user,
               text: (parts.first as LlamaTextContent).text,
+              continuesPreviousTurn: continuesPreviousTurn,
             )
           : LlamaChatMessage.withContent(
               role: LlamaChatRole.user,
               content: parts,
+              continuesPreviousTurn: continuesPreviousTurn,
             );
       _history.add(userMsg);
       onMessageAdded?.call(userMsg);
     }
 
-    // Ensure we are within context limits
-    await _enforceContextLimit();
+    // Ensure the rendered request, including tool schemas, leaves enough room
+    // for the configured response rather than using a fixed small reserve.
+    _lastRequestFitContext = await _enforceContextLimit(
+      params: params,
+      tools: tools,
+      toolChoice: toolChoice,
+      parallelToolCalls: parallelToolCalls,
+      enableThinking: enableThinking,
+      chatTemplateKwargs: chatTemplateKwargs,
+    );
 
     // Build messages for engine
     final messages = _buildMessages();
 
     // Generate response
-    String fullContent = "";
-    String fullThinking = "";
+    final fullContent = StringBuffer();
+    final fullThinking = StringBuffer();
     final Map<int, _ToolCallBuilder> toolCallBuilders = {};
 
     await for (final chunk in _engine.create(
@@ -178,8 +200,8 @@ class ChatSession {
         continue;
       }
       final delta = chunk.choices.first.delta;
-      if (delta.content != null) fullContent += delta.content!;
-      if (delta.thinking != null) fullThinking += delta.thinking!;
+      if (delta.content != null) fullContent.write(delta.content!);
+      if (delta.thinking != null) fullThinking.write(delta.thinking!);
 
       if (delta.toolCalls != null) {
         for (final tc in delta.toolCalls!) {
@@ -189,7 +211,7 @@ class ChatSession {
           if (tc.type != null) builder.type = tc.type;
           if (tc.function?.name != null) builder.name = tc.function!.name;
           if (tc.function?.arguments != null) {
-            builder.arguments += tc.function!.arguments!;
+            builder.arguments.write(tc.function!.arguments!);
           }
         }
       }
@@ -201,11 +223,11 @@ class ChatSession {
     final contentParts = <LlamaContentPart>[];
 
     if (fullThinking.isNotEmpty) {
-      contentParts.add(LlamaThinkingContent(fullThinking));
+      contentParts.add(LlamaThinkingContent(fullThinking.toString()));
     }
 
     if (fullContent.isNotEmpty) {
-      contentParts.add(LlamaTextContent(fullContent));
+      contentParts.add(LlamaTextContent(fullContent.toString()));
     }
 
     // Add tool calls
@@ -215,7 +237,7 @@ class ChatSession {
       Map<String, dynamic> args = {};
       try {
         if (b.arguments.isNotEmpty) {
-          args = jsonDecode(b.arguments);
+          args = jsonDecode(b.arguments.toString());
         }
       } catch (_) {
         // Keep empty if parse fails
@@ -226,7 +248,7 @@ class ChatSession {
           id: b.id,
           name: b.name ?? "",
           arguments: args,
-          rawJson: b.arguments,
+          rawJson: b.arguments.toString(),
         ),
       );
     }
@@ -259,48 +281,150 @@ class ChatSession {
   }
 
   /// Truncates history if it exceeds the context limit.
-  Future<void> _enforceContextLimit() async {
+  Future<bool> _enforceContextLimit({
+    GenerationParams? params,
+    List<ToolDefinition>? tools,
+    ToolChoice? toolChoice,
+    required bool parallelToolCalls,
+    required bool enableThinking,
+    Map<String, dynamic>? chatTemplateKwargs,
+  }) async {
     final limit = maxContextTokens ?? await _engine.getContextSize();
-    if (limit <= 0) return;
+    if (limit <= 0) return true;
 
-    // Reserve 10% for response
-    final reserve = (limit * 0.1).clamp(128, 512).toInt();
+    final requestedResponseTokens =
+        params?.maxTokens ?? const GenerationParams().maxTokens;
+    // Preserve at least half of the context for the rendered prompt when a
+    // caller asks for more output tokens than the context can realistically
+    // hold. Within that bound, reserve the actual requested output budget
+    // instead of the old fixed 512-token ceiling.
+    final maximumReserve = limit > 1 ? limit ~/ 2 : 0;
+    final reserve = maximumReserve == 0
+        ? 0
+        : requestedResponseTokens.clamp(
+            maximumReserve < 128 ? 1 : 128,
+            maximumReserve,
+          );
     final targetLimit = limit - reserve;
-    if (_history.isEmpty) return;
 
     final turnOffsets = _buildTurnOffsets();
 
     final fullTokenCount = await _getTemplateTokenCount(
       _buildMessagesFromOffset(0),
+      tools: tools,
+      toolChoice: toolChoice,
+      parallelToolCalls: parallelToolCalls,
+      enableThinking: enableThinking,
+      chatTemplateKwargs: chatTemplateKwargs,
     );
-    if (fullTokenCount < targetLimit) return;
+    if (fullTokenCount <= targetLimit) return true;
 
-    if (turnOffsets.length <= 1) {
-      // Nothing older to trim (e.g. a single oversized user turn). Warn rather
-      // than silently sending an over-limit prompt the backend may truncate or
-      // reject.
-      LlamaLogger.instance.warn(
-        'ChatSession: the latest turn ($fullTokenCount tokens) exceeds the '
-        'context budget ($targetLimit tokens) and there are no older turns to '
-        'trim. The prompt may be truncated or rejected by the backend; reduce '
-        'the message size or increase the context window.',
-      );
-      return;
+    if (turnOffsets.length > 1) {
+      int low = 1;
+      int high = turnOffsets.length - 1;
+      int bestDropCount = high;
+      var foundFit = false;
+
+      while (low <= high) {
+        final mid = (low + high) >> 1;
+        final tokenCount = await _getTemplateTokenCount(
+          _buildMessagesFromOffset(turnOffsets[mid]),
+          tools: tools,
+          toolChoice: toolChoice,
+          parallelToolCalls: parallelToolCalls,
+          enableThinking: enableThinking,
+          chatTemplateKwargs: chatTemplateKwargs,
+        );
+
+        if (tokenCount <= targetLimit) {
+          bestDropCount = mid;
+          foundFit = true;
+          high = mid - 1;
+        } else {
+          low = mid + 1;
+        }
+      }
+
+      final removeUntil = turnOffsets[bestDropCount];
+      if (removeUntil > 0) {
+        _history.removeRange(0, removeUntil);
+      }
+      if (foundFit) {
+        return true;
+      }
     }
 
-    int low = 1;
-    int high = turnOffsets.length - 1;
-    int bestDropCount = high;
-    var foundFit = false;
+    final compacted = await _trimCompletedProtocolExchanges(
+      targetLimit: targetLimit,
+      tools: tools,
+      toolChoice: toolChoice,
+      parallelToolCalls: parallelToolCalls,
+      enableThinking: enableThinking,
+      chatTemplateKwargs: chatTemplateKwargs,
+    );
+    if (!compacted) {
+      // Even retaining the root request and newest coherent protocol exchange
+      // exceeds the budget. Keep those messages intact and surface a warning
+      // rather than orphaning a tool result or silently dropping the task.
+      LlamaLogger.instance.warn(
+        'ChatSession: the active turn still exceeds the context budget '
+        '($targetLimit tokens) after compacting completed protocol exchanges. '
+        'The prompt may be truncated or rejected by the backend; reduce the '
+        'message or tool-result size, or increase the context window.',
+      );
+    }
+    return compacted;
+  }
 
+  Future<bool> _trimCompletedProtocolExchanges({
+    required int targetLimit,
+    List<ToolDefinition>? tools,
+    ToolChoice? toolChoice,
+    required bool parallelToolCalls,
+    required bool enableThinking,
+    Map<String, dynamic>? chatTemplateKwargs,
+  }) async {
+    final anchorIndex = _history.indexWhere(
+      (message) =>
+          message.role == LlamaChatRole.user && !message.continuesPreviousTurn,
+    );
+    if (anchorIndex < 0 || anchorIndex + 3 >= _history.length) {
+      return false;
+    }
+
+    final boundaries = <int>[];
+    for (var i = anchorIndex + 2; i < _history.length; i++) {
+      if (_history[i].role != LlamaChatRole.assistant) {
+        continue;
+      }
+      final previous = _history[i - 1];
+      if (previous.role == LlamaChatRole.tool ||
+          (previous.role == LlamaChatRole.user &&
+              previous.continuesPreviousTurn)) {
+        boundaries.add(i);
+      }
+    }
+    if (boundaries.isEmpty) {
+      return false;
+    }
+
+    var low = 0;
+    var high = boundaries.length - 1;
+    var bestBoundary = boundaries.last;
+    var foundFit = false;
     while (low <= high) {
       final mid = (low + high) >> 1;
+      final boundary = boundaries[mid];
       final tokenCount = await _getTemplateTokenCount(
-        _buildMessagesFromOffset(turnOffsets[mid]),
+        _buildMessagesPreservingAnchor(anchorIndex, boundary),
+        tools: tools,
+        toolChoice: toolChoice,
+        parallelToolCalls: parallelToolCalls,
+        enableThinking: enableThinking,
+        chatTemplateKwargs: chatTemplateKwargs,
       );
-
-      if (tokenCount < targetLimit) {
-        bestDropCount = mid;
+      if (tokenCount <= targetLimit) {
+        bestBoundary = boundary;
         foundFit = true;
         high = mid - 1;
       } else {
@@ -308,36 +432,28 @@ class ChatSession {
       }
     }
 
-    final removeUntil = turnOffsets[bestDropCount];
-    if (removeUntil > 0) {
-      _history.removeRange(0, removeUntil);
-    }
-
-    if (!foundFit) {
-      // Even retaining only the most recent turn exceeds the budget. Do not
-      // silently send an over-limit prompt: warn so the oversize prompt (which
-      // the backend may truncate or reject) is at least diagnosable.
-      LlamaLogger.instance.warn(
-        'ChatSession: conversation still exceeds the context budget '
-        '($targetLimit tokens) after trimming to the most recent turn. The '
-        'prompt may be truncated or rejected by the backend; reduce the '
-        'message size or increase the context window.',
-      );
-    }
+    _history.removeRange(anchorIndex + 1, bestBoundary);
+    return foundFit;
   }
 
-  Future<int> _getTemplateTokenCount(List<LlamaChatMessage> messages) async {
+  Future<int> _getTemplateTokenCount(
+    List<LlamaChatMessage> messages, {
+    List<ToolDefinition>? tools,
+    ToolChoice? toolChoice,
+    required bool parallelToolCalls,
+    required bool enableThinking,
+    Map<String, dynamic>? chatTemplateKwargs,
+  }) async {
     final template = await _engine.chatTemplate(
       messages,
-      includeTokenCount: false,
+      tools: tools,
+      toolChoice: toolChoice ?? ToolChoice.auto,
+      parallelToolCalls: parallelToolCalls,
+      enableThinking: enableThinking,
+      chatTemplateKwargs: chatTemplateKwargs,
+      includeTokenCount: true,
     );
-    try {
-      return await _engine.getTokenCount(template.prompt);
-    } on UnsupportedError {
-      return _estimateTokenCount(template.prompt);
-    } on LlamaUnsupportedException {
-      return _estimateTokenCount(template.prompt);
-    }
+    return template.tokenCount ?? _estimateTokenCount(template.prompt);
   }
 
   int _estimateTokenCount(String prompt) {
@@ -376,6 +492,32 @@ class ChatSession {
     return messages;
   }
 
+  List<LlamaChatMessage> _buildMessagesPreservingAnchor(
+    int anchorIndex,
+    int continuationOffset,
+  ) {
+    final messages = <LlamaChatMessage>[];
+    if (systemPrompt != null && systemPrompt!.isNotEmpty) {
+      messages.add(
+        LlamaChatMessage.fromText(
+          role: LlamaChatRole.system,
+          text: systemPrompt!,
+        ),
+      );
+    }
+    for (var i = 0; i <= anchorIndex; i++) {
+      if (_history[i].role != LlamaChatRole.system) {
+        messages.add(_history[i]);
+      }
+    }
+    for (var i = continuationOffset; i < _history.length; i++) {
+      if (_history[i].role != LlamaChatRole.system) {
+        messages.add(_history[i]);
+      }
+    }
+    return messages;
+  }
+
   // Returns the indices at which conversational turns begin, so history can be
   // trimmed only on clean turn boundaries. A turn starts at a user message and
   // includes the assistant/tool messages that follow it until the next user
@@ -386,7 +528,8 @@ class ChatSession {
     final offsets = <int>[0];
 
     for (int i = 1; i < _history.length; i++) {
-      if (_history[i].role == LlamaChatRole.user) {
+      if (_history[i].role == LlamaChatRole.user &&
+          !_history[i].continuesPreviousTurn) {
         offsets.add(i);
       }
     }
@@ -399,5 +542,5 @@ class _ToolCallBuilder {
   String? id;
   String? type;
   String? name;
-  String arguments = "";
+  final StringBuffer arguments = StringBuffer();
 }

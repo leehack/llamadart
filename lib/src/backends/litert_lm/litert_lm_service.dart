@@ -964,6 +964,9 @@ class LiteRtLmService {
     if (params.penalty != defaults.penalty) {
       unsupported.add('penalty');
     }
+    if (params.presencePenalty != defaults.presencePenalty) {
+      unsupported.add('presencePenalty');
+    }
     if (params.grammar != null) {
       unsupported.add('grammar');
     }

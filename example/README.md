@@ -83,12 +83,25 @@ dart run bin/llamadart_cli.dart --help
 ```
 
 ### 5. TUI coding agent (`tui_coding_agent/`)
-A terminal UI coding agent built with `nocterm` and `llamadart` showing:
-- Streaming coding-chat UX in a TUI layout
-- Built-in tool loop (`list_files`, `read_file`, `search_files`, `write_file`, `run_command`)
-- Workspace-scoped path safety guard
-- Runtime model switching with `/model <source>`
-- Default GLM-4.7-Flash model source with custom model override support
+A small, Pi-style terminal coding agent built with `nocterm` and `llamadart`
+showing:
+
+- One sequential JSON tool loop with exactly `read`, `write`, `edit`, and
+  `bash`
+- A single-screen, single-session chat UI
+- A compact TurboVision-inspired frame with streamed reasoning and dense
+  Markdown answers, including syntax-highlighted fenced code blocks
+- Workspace-confined file tools plus bounded, cancellable source downloads,
+  generation, and active shell work; native allocation unloads after returning
+- An Unsloth Qwen3.6 35B-A3B `UD-Q4_K_M` default with publisher-aligned
+  non-thinking sampling and shared `llamadart` model caching
+- Optional `--thinking` mode with a larger context and coding-focused sampler
+- Startup-only workspace and model selection
+- Optional `--read-only` mode that exposes only the `read` tool
+
+The `bash` tool uses Bash on Unix or `cmd.exe` on Windows and runs with the
+current user's permissions. It is not sandboxed, and file-tool workspace
+confinement does not apply to shell commands.
 
 **Best for:** Building local terminal coding-agent workflows in Dart
 

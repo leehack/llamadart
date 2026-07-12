@@ -1,5 +1,35 @@
 ## Unreleased
 
+* Changed unset native decoder/generative context batching from full-context
+  batches to llama.cpp-aligned caps of `n_batch = min(n_ctx, 2048)` and
+  `n_ubatch = min(n_batch, 512)`. Explicit positive values remain supported,
+  native encoder-only models retain full-context batching, and WebGPU preserves
+  its architecture-agnostic full-context fallback to avoid encoder regressions.
+* Reworked the TUI coding agent into a small Pi-style demo with one sequential
+  JSON loop, exactly `read`/`write`/`edit`/`bash`, a single-screen session, and
+  startup-only model selection, plus an optional read-only mode. It retains the
+  Qwen3.6 35B-A3B preset, shared model cache, cancellation and resource limits,
+  workspace-confined file tools, and an explicit unsandboxed-shell trust
+  boundary. The quality default now uses Unsloth `UD-Q4_K_M` with the
+  publisher-aligned non-thinking sampler, while `--thinking` opts into a larger
+  coding-focused reasoning profile. Model loading now delegates directly to
+  `LlamaEngine.loadModelSource`, replacing the example-specific downloader and
+  fuzzy repository resolver with the core local, HTTP, and exact `hf://` source
+  formats. Reasoning and normal answers now stream as separate transcript
+  channels, and final answers render with compact Markdown, syntax-highlighted
+  fenced code, solid code-block backgrounds, and no automatic block/message
+  spacer rows. Frame-coalesced presentation keeps long streams responsive, and
+  a lightweight single-window TurboVision theme restores the example's visual
+  identity without its former window manager. The example now targets Nocterm
+  `0.8.0`.
+* Added `GenerationParams.presencePenalty` for native llama.cpp sampling.
+  WebGPU and LiteRT-LM reject non-zero values until their runtimes expose an
+  equivalent control.
+* Made `ChatSession` context trimming reserve the requested output budget up to
+  half the active context, account for tool schemas, retain protocol turn
+  anchors while compacting completed exchanges, and reduce streaming
+  accumulation overhead.
+
 * Switched the OpenAI-compatible server example default to Unsloth's Qwen3.6
   27B `UD-Q4_K_XL` GGUF, added model-specific non-thinking and thinking sampler profiles,
   and documented its text-only / desktop-memory requirements. The server keeps

@@ -653,7 +653,15 @@ class WebGpuLlamaBackend
       return (nBatch: cappedBatch, nUbatch: cappedMicroBatch);
     }
 
-    final resolved = resolveModelContextBatchSizes(params, contextSize);
+    // The bridge creates the context before Dart can inspect model
+    // architecture. Preserve full-context automatic batching here so
+    // non-causal encoder models do not regress to first-embedding aborts.
+    // Decoder-focused web callers can still request 2048/512 explicitly.
+    final resolved = resolveModelContextBatchSizes(
+      params,
+      contextSize,
+      useFullContextDefaults: true,
+    );
     return (nBatch: resolved.batchSize, nUbatch: resolved.microBatchSize);
   }
 
@@ -1655,6 +1663,9 @@ class WebGpuLlamaBackend
     GenerationParams params, {
     List<LlamaContentPart>? parts,
   }) {
+    if (params.presencePenalty != 0.0) {
+      throw UnsupportedError('WebGPU presence penalty is not supported yet.');
+    }
     if (params.isSpeculativeDecodingEnabled) {
       throw UnsupportedError(
         'WebGPU speculative decoding is not supported yet.',

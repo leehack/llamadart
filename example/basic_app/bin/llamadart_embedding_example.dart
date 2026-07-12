@@ -48,12 +48,12 @@ Future<void> main(List<String> arguments) async {
     )
     ..addOption(
       'batch-size',
-      help: 'Logical batch size (0 uses context size).',
+      help: 'Logical batch size (0 uses the model-aware default).',
       defaultsTo: '0',
     )
     ..addOption(
       'ubatch-size',
-      help: 'Micro-batch size (0 follows batch size).',
+      help: 'Micro-batch size (0 uses the model-aware default).',
       defaultsTo: '0',
     )
     ..addOption(

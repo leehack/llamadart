@@ -719,7 +719,7 @@ void main() {
       expect(lastRequestedMicroBatchSize, 8);
     });
 
-    test('keeps requested gpu layers for non-qwen web loads', () async {
+    test('preserves architecture-agnostic web batch defaults', () async {
       await backend.modelLoadFromUrl(
         'https://example.com/llama-3.2-3b.gguf',
         const ModelParams(contextSize: 4096, gpuLayers: 99),
@@ -758,27 +758,50 @@ void main() {
       },
     );
 
-    test('cascades unset WebGPU encoder batches before embedBatch', () async {
-      await backend.modelLoadFromUrl(
-        'https://example.com/multilingual-e5-small-Q8_0.gguf',
-        const ModelParams(contextSize: 512, gpuLayers: 99),
-      );
+    test(
+      'keeps full-context batches for short WebGPU encoder contexts',
+      () async {
+        await backend.modelLoadFromUrl(
+          'https://example.com/multilingual-e5-small-Q8_0.gguf',
+          const ModelParams(contextSize: 512, gpuLayers: 99),
+        );
 
-      expect(lastRequestedGpuLayers, 99);
-      expect(lastRequestedBatchSize, 512);
-      expect(lastRequestedMicroBatchSize, 512);
+        expect(lastRequestedGpuLayers, 99);
+        expect(lastRequestedBatchSize, 512);
+        expect(lastRequestedMicroBatchSize, 512);
 
-      final vectors = await backend.embedBatch(1, const <String>[
-        'first sentence',
-        'second sentence',
-      ]);
-      expect(vectors, <List<double>>[
-        <double>[14.0, 1.0],
-        <double>[15.0, 1.0],
-      ]);
-    });
+        final vectors = await backend.embedBatch(1, const <String>[
+          'first sentence',
+          'second sentence',
+        ]);
+        expect(vectors, <List<double>>[
+          <double>[14.0, 1.0],
+          <double>[15.0, 1.0],
+        ]);
+      },
+    );
 
-    test('cascades unset batch sizes to context size in CPU mode', () async {
+    test(
+      'preserves automatic full-context batches for long encoders',
+      () async {
+        await backend.modelLoadFromUrl(
+          'https://example.com/multilingual-e5-large-Q8_0.gguf',
+          const ModelParams(contextSize: 4096, gpuLayers: 99),
+        );
+
+        expect(lastRequestedBatchSize, 4096);
+        expect(lastRequestedMicroBatchSize, 4096);
+
+        final vectors = await backend.embedBatch(1, const <String>[
+          'long-context encoder input',
+        ]);
+        expect(vectors, <List<double>>[
+          <double>[26.0, 1.0],
+        ]);
+      },
+    );
+
+    test('caps default batches to a short CPU context', () async {
       await backend.modelLoadFromUrl(
         'https://example.com/multilingual-e5-small-Q8_0.gguf',
         const ModelParams(
@@ -793,7 +816,7 @@ void main() {
     });
 
     test(
-      'recomputes cascaded batch sizes for reduced fallback context',
+      'recomputes full-context batches when fallback context shrinks',
       () async {
         var loadCallCount = 0;
         bridge.setProperty(
@@ -886,6 +909,23 @@ void main() {
             (error) => error.message.toString(),
             'message',
             contains('speculative decoding'),
+          ),
+        ),
+      );
+    });
+
+    test('rejects presence penalty', () {
+      expect(
+        () => backend.generate(
+          1,
+          'Hello',
+          const GenerationParams(presencePenalty: 1.5),
+        ),
+        throwsA(
+          isA<UnsupportedError>().having(
+            (error) => error.message.toString(),
+            'message',
+            contains('presence penalty'),
           ),
         ),
       );

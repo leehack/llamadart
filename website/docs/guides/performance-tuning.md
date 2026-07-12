@@ -48,6 +48,8 @@ const modelParams = ModelParams(
   preferredBackend: GpuBackend.vulkan,
   numberOfThreads: 0,
   numberOfThreadsBatch: 0,
+  batchSize: 0, // Native decoder default: min(contextSize, 2048).
+  microBatchSize: 0, // Native decoder default: min(resolved batch, 512).
 );
 ```
 
@@ -63,8 +65,17 @@ Guidelines:
 - Use explicit `numberOfThreads` / `numberOfThreadsBatch` only after measuring.
   Auto-threading is often a good baseline, but some mobile devices prefer fewer
   threads for lower contention.
-- Tune `batchSize` and `microBatchSize` conservatively on unstable GPU paths.
-  Bigger is not always faster if it increases driver/scheduler overhead.
+- For native decoder/generative models, start with the llama.cpp-aligned logical
+  batch cap of `2048` and physical micro-batch cap of `512`. Lower
+  `microBatchSize` first (for example to `256` or `128`) when memory or GPU
+  stability is tight. Bigger is not always faster if it increases allocation,
+  driver, or scheduler pressure.
+- WebGPU keeps full-context automatic batching because the bridge cannot expose
+  model architecture before context creation. Decoder-focused web apps can set
+  `2048` / `512` explicitly after validating their target model and browser.
+- Encoder-only embedding models retain full-context native defaults for
+  correctness. Set both batch values explicitly when tuning a known embedding
+  workload.
 - Use backend preference that matches your actual target runtime, not just the
   hardware you hope to use.
 
@@ -91,6 +102,7 @@ const generationParams = GenerationParams(
   topP: 0.9,
   minP: 0.0,
   penalty: 1.1,
+  presencePenalty: 0.0,
   reusePromptPrefix: true,
   streamBatchTokenThreshold: 8,
   streamBatchByteThreshold: 512,
@@ -104,8 +116,12 @@ Guidelines:
 - Adjust `topP` and `topK` gradually; avoid drastic simultaneous changes.
 - Treat `maxTokens` as a performance knob as much as a quality knob. If you only
   need short answers, cap it aggressively.
-- `penalty`, `topK`, `topP`, and `temp` usually do not fix a slow backend; they
-  mainly shape output behavior.
+- `penalty` is a repetition penalty. `presencePenalty` is a separate
+  llama.cpp-native control that penalizes any token already present in the
+  recent window; do not substitute one for the other. WebGPU and LiteRT-LM
+  reject a non-zero presence penalty until their runtimes expose an equivalent.
+- `penalty`, `presencePenalty`, `topK`, `topP`, and `temp` usually do not fix a
+  slow backend; they mainly shape output behavior.
 - Native backends can tune stream transport overhead with
   `streamBatchTokenThreshold` and `streamBatchByteThreshold`.
 - Lower stream thresholds improve token-by-token UI granularity, while higher
