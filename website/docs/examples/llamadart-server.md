@@ -88,10 +88,12 @@ template supports that capability; append one result for every returned call.
 
 Open `http://127.0.0.1:8080/docs` for ready-to-run Swagger examples:
 
-- **tool_call_initial** — initial non-streaming function request.
-- **tool_call_streaming** — streamed `tool_calls` deltas.
-- **tool_call_streaming_with_thinking** — Qwen reasoning plus tool deltas.
-- **tool_result_follow_up** — the second request after client-side execution.
+- **Tool call: request a function** — initial non-streaming function request.
+- **Tool call: request a function (SSE)** — streamed `tool_calls` deltas.
+- **Tool call: reasoning + function request (SSE)** — Qwen reasoning plus tool
+  deltas.
+- **Tool call: submit the function result** — the second request after
+  client-side execution.
 
 Swagger cannot copy a generated call ID between requests. Run the initial
 example, execute the returned function in your client, then replace the

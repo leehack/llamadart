@@ -13,6 +13,7 @@ import 'message_parsing/tool_message_parser.dart';
 /// function name required by native chat templates.
 List<LlamaChatMessage> parseChatMessages(List<Object?> rawMessages) {
   final pendingToolNames = <String, String>{};
+  final seenToolCallIds = <String>{};
   final messages = <LlamaChatMessage>[];
 
   for (final raw in rawMessages) {
@@ -22,7 +23,7 @@ List<LlamaChatMessage> parseChatMessages(List<Object?> rawMessages) {
     if (message.role == LlamaChatRole.assistant) {
       for (final toolCall in message.parts.whereType<LlamaToolCallContent>()) {
         final id = toolCall.id!;
-        if (pendingToolNames.containsKey(id)) {
+        if (!seenToolCallIds.add(id)) {
           throw OpenAiHttpException.invalidRequest(
             'Assistant tool call IDs must be unique within the transcript.',
             param: 'messages.tool_calls.id',
@@ -34,6 +35,15 @@ List<LlamaChatMessage> parseChatMessages(List<Object?> rawMessages) {
       final toolResult = message.parts.single as LlamaToolResultContent;
       pendingToolNames.remove(toolResult.id);
     }
+  }
+
+  if (pendingToolNames.isNotEmpty) {
+    final unresolvedIds = pendingToolNames.keys.join(', ');
+    throw OpenAiHttpException.invalidRequest(
+      'Every assistant tool call must have a matching tool result. '
+      'Missing results for: $unresolvedIds.',
+      param: 'messages.tool_call_id',
+    );
   }
 
   return List<LlamaChatMessage>.unmodifiable(messages);

@@ -181,16 +181,16 @@ This server uses the standard OpenAI Chat Completions sequence:
 Set `parallel_tool_calls: true` to permit multiple calls in one response when
 the active model template supports it; append a result for every returned call.
 
-Use Swagger's **tool_call_initial** example for step 1 and
-**tool_result_follow_up** for step 5. Swagger cannot transfer a runtime call ID
-between requests, so replace `call_weather_example` and its illustrative
-assistant message with the actual response from step 1. The minimal standard
-tool-result message does not need a `name` field.
+Use Swagger's **Tool call: request a function** example for step 1 and
+**Tool call: submit the function result** for step 5. Swagger cannot transfer
+a runtime call ID between requests, so replace `call_weather_example` and its
+illustrative assistant message with the actual response from step 1. The
+minimal standard tool-result message does not need a `name` field.
 
 For a streaming tool call, accumulate `delta.tool_calls` fragments by index
 until the terminal `finish_reason` is `tool_calls`; then follow the same steps.
-The **tool_call_streaming_with_thinking** Swagger example also demonstrates
-Qwen's optional `reasoning_content` stream.
+The **Tool call: reasoning + function request (SSE)** Swagger example also
+demonstrates Qwen's optional `reasoning_content` stream.
 
 ### 5. With API key
 

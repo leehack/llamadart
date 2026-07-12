@@ -251,6 +251,112 @@ void main() {
       );
     });
 
+    test('rejects transcripts with unresolved tool calls', () {
+      final request = <String, dynamic>{
+        'model': 'llamadart-local',
+        'messages': <Map<String, dynamic>>[
+          <String, dynamic>{'role': 'user', 'content': 'What is the weather?'},
+          <String, dynamic>{
+            'role': 'assistant',
+            'content': null,
+            'tool_calls': <Map<String, dynamic>>[
+              <String, dynamic>{
+                'id': 'call_weather_1',
+                'type': 'function',
+                'function': <String, dynamic>{
+                  'name': 'get_weather',
+                  'arguments': '{"location":"Seoul"}',
+                },
+              },
+              <String, dynamic>{
+                'id': 'call_weather_2',
+                'type': 'function',
+                'function': <String, dynamic>{
+                  'name': 'get_weather',
+                  'arguments': '{"location":"Tokyo"}',
+                },
+              },
+            ],
+          },
+          <String, dynamic>{
+            'role': 'tool',
+            'tool_call_id': 'call_weather_1',
+            'content': 'Sunny',
+          },
+        ],
+      };
+
+      expect(
+        () => parseChatCompletionRequest(
+          request,
+          configuredModelId: 'llamadart-local',
+        ),
+        throwsA(
+          isA<OpenAiHttpException>().having(
+            (OpenAiHttpException error) => error.param,
+            'param',
+            'messages.tool_call_id',
+          ),
+        ),
+      );
+    });
+
+    test('rejects tool call IDs reused after their results', () {
+      final request = <String, dynamic>{
+        'model': 'llamadart-local',
+        'messages': <Map<String, dynamic>>[
+          <String, dynamic>{'role': 'user', 'content': 'What is the weather?'},
+          <String, dynamic>{
+            'role': 'assistant',
+            'content': null,
+            'tool_calls': <Map<String, dynamic>>[
+              <String, dynamic>{
+                'id': 'call_weather_1',
+                'type': 'function',
+                'function': <String, dynamic>{
+                  'name': 'get_weather',
+                  'arguments': '{"location":"Seoul"}',
+                },
+              },
+            ],
+          },
+          <String, dynamic>{
+            'role': 'tool',
+            'tool_call_id': 'call_weather_1',
+            'content': 'Sunny',
+          },
+          <String, dynamic>{
+            'role': 'assistant',
+            'content': null,
+            'tool_calls': <Map<String, dynamic>>[
+              <String, dynamic>{
+                'id': 'call_weather_1',
+                'type': 'function',
+                'function': <String, dynamic>{
+                  'name': 'get_weather',
+                  'arguments': '{"location":"Tokyo"}',
+                },
+              },
+            ],
+          },
+        ],
+      };
+
+      expect(
+        () => parseChatCompletionRequest(
+          request,
+          configuredModelId: 'llamadart-local',
+        ),
+        throwsA(
+          isA<OpenAiHttpException>().having(
+            (OpenAiHttpException error) => error.param,
+            'param',
+            'messages.tool_calls.id',
+          ),
+        ),
+      );
+    });
+
     test('rejects assistant tool calls without an ID', () {
       expect(
         () => parseChatCompletionRequest(<String, dynamic>{

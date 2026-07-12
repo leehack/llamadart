@@ -514,6 +514,54 @@ void main() {
         );
       },
     );
+
+    test('rejects incomplete client-provided tool results', () async {
+      final response = await client.post(
+        server.uri('/v1/chat/completions'),
+        headers: <String, String>{'Content-Type': 'application/json'},
+        body: jsonEncode(<String, dynamic>{
+          'model': 'test-model',
+          'tool_choice': 'none',
+          'tools': <Map<String, dynamic>>[_weatherToolDefinition()],
+          'messages': <Map<String, dynamic>>[
+            <String, dynamic>{'role': 'user', 'content': 'Get the weather.'},
+            <String, dynamic>{
+              'role': 'assistant',
+              'content': null,
+              'tool_calls': <Map<String, dynamic>>[
+                <String, dynamic>{
+                  'id': 'call_weather_1',
+                  'type': 'function',
+                  'function': <String, dynamic>{
+                    'name': 'get_weather',
+                    'arguments': '{"location":"Seoul"}',
+                  },
+                },
+                <String, dynamic>{
+                  'id': 'call_weather_2',
+                  'type': 'function',
+                  'function': <String, dynamic>{
+                    'name': 'get_weather',
+                    'arguments': '{"location":"Tokyo"}',
+                  },
+                },
+              ],
+            },
+            <String, dynamic>{
+              'role': 'tool',
+              'tool_call_id': 'call_weather_1',
+              'content': '{"location":"Seoul","temperature_c":23}',
+            },
+          ],
+        }),
+      );
+
+      expect(response.statusCode, 400);
+      final json = jsonDecode(response.body) as Map<String, dynamic>;
+      final error = json['error'] as Map<String, dynamic>;
+      expect(error['param'], 'messages.tool_call_id');
+      expect(toolEngine.createCalls, isEmpty);
+    });
   });
 }
 
