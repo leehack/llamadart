@@ -10,20 +10,24 @@ import 'worker_messages.dart';
 export 'worker_messages.dart';
 
 ErrorResponse _toErrorResponse(Object error) {
+  String messageFor(LlamaException error) => error.details == null
+      ? error.message
+      : '${error.message} (${error.details})';
+
   if (error is LlamaModelException) {
-    return ErrorResponse(error.message, kind: WorkerErrorKind.model);
+    return ErrorResponse(messageFor(error), kind: WorkerErrorKind.model);
   }
   if (error is LlamaContextException) {
-    return ErrorResponse(error.message, kind: WorkerErrorKind.context);
+    return ErrorResponse(messageFor(error), kind: WorkerErrorKind.context);
   }
   if (error is LlamaInferenceException) {
-    return ErrorResponse(error.message, kind: WorkerErrorKind.inference);
+    return ErrorResponse(messageFor(error), kind: WorkerErrorKind.inference);
   }
   if (error is LlamaUnsupportedException) {
     return ErrorResponse(error.message, kind: WorkerErrorKind.unsupported);
   }
   if (error is LlamaStateException) {
-    return ErrorResponse(error.message, kind: WorkerErrorKind.state);
+    return ErrorResponse(messageFor(error), kind: WorkerErrorKind.state);
   }
   return ErrorResponse(error.toString());
 }

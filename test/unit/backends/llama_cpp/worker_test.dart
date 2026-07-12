@@ -184,6 +184,8 @@ void main() {
           final error = response as ErrorResponse;
           expect(error.kind, WorkerErrorKind.inference);
           expect(error.message, contains('grammar sampler failed'));
+          expect(error.message, contains('native grammar stack exhausted'));
+          expect(error.message, isNot(contains('LlamaException:')));
         } finally {
           await _disposeWorker(worker);
         }
@@ -491,6 +493,7 @@ class _InferenceGenerationLlamaCppService extends LlamaCppService {
   }) async* {
     throw LlamaInferenceException(
       'grammar sampler failed in this test runtime',
+      'native grammar stack exhausted',
     );
   }
 
