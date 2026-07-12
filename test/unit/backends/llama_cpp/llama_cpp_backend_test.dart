@@ -158,7 +158,13 @@ void main() {
 
       await expectLater(
         backend.generate(1, 'boom', const GenerationParams()).drain<void>(),
-        throwsException,
+        throwsA(
+          isA<Exception>().having(
+            (error) => error.toString(),
+            'message',
+            'Exception: generation failed',
+          ),
+        ),
       );
 
       await expectLater(
@@ -423,7 +429,9 @@ class _FakeWorkerHarness {
           }
         case GenerateRequest():
           if (message.prompt == 'boom') {
-            message.sendPort.send(ErrorResponse('generation failed'));
+            message.sendPort.send(
+              ErrorResponse('Exception: generation failed'),
+            );
           } else if (message.prompt == 'unsupported') {
             message.sendPort.send(
               ErrorResponse(

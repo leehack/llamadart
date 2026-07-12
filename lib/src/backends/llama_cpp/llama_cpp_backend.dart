@@ -87,7 +87,11 @@ class NativeLlamaBackend
       case WorkerErrorKind.state:
         return LlamaStateException(response.message);
       case WorkerErrorKind.generic:
-        return Exception(response.message);
+        const exceptionPrefix = 'Exception: ';
+        final message = response.message.startsWith(exceptionPrefix)
+            ? response.message.substring(exceptionPrefix.length)
+            : response.message;
+        return Exception(message);
     }
   }
 
