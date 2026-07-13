@@ -2,7 +2,8 @@
 
 * Updated the default llama.cpp native runtime pin to
   `leehack/llamadart-native@b9982`, regenerated matching Dart FFI bindings, refreshed
-  the `llamadart_llama_cpp_flutter` Apple SwiftPM checksum, and
+  the `llamadart_llama_cpp_flutter` Apple SwiftPM checksum, updated the
+  multimodal prompt bridge for the new explicit UTF-8 byte-length ABI, and
   aligned current README/website native override docs.
 
 * Updated the default llama.cpp runtime to
