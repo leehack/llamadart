@@ -1,3 +1,8 @@
+## Unreleased
+
+* Fixed Gemma 4 LiteRT-LM text generation in the Web chat app after model
+  loading completed successfully.
+
 ## 0.8.16
 
 * Updated the default llama.cpp native runtime to

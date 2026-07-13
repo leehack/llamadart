@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:llamadart/llamadart.dart';
 import 'package:llamadart_chat_example/models/chat_settings.dart';
@@ -28,7 +29,7 @@ void main() {
       expect(params.stopSequences, isEmpty);
     });
 
-    test('omits unsupported minP/penalty for litert models', () {
+    test('uses platform-supported generation params for litert models', () {
       const defaults = GenerationParams();
       const settings = ChatSettings(
         modelPath: '/models/gemma.litertlm',
@@ -51,7 +52,12 @@ void main() {
       // reject the request with an UnsupportedError.
       expect(params.minP, defaults.minP);
       expect(params.penalty, defaults.penalty);
-      expect(params.streamBatchTokenThreshold, 1);
+      // Native LiteRT-LM needs immediate worker flushing. The Web backend
+      // streams directly and rejects non-default native batching controls.
+      expect(
+        params.streamBatchTokenThreshold,
+        kIsWeb ? defaults.streamBatchTokenThreshold : 1,
+      );
     });
 
     test('accumulates stream updates and metrics', () async {

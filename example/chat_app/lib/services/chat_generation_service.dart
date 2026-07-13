@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:llamadart/llamadart.dart';
 
 import '../models/chat_settings.dart';
@@ -61,7 +62,7 @@ class ChatGenerationService {
       minP: isLiteRtLm ? defaults.minP : settings.minP,
       penalty: isLiteRtLm ? defaults.penalty : settings.penalty,
       stopSequences: const <String>[],
-      streamBatchTokenThreshold: isLiteRtLm
+      streamBatchTokenThreshold: isLiteRtLm && !kIsWeb
           ? 1
           : defaults.streamBatchTokenThreshold,
     );

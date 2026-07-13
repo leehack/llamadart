@@ -147,6 +147,11 @@ helpers.
 Unsupported platform or option combinations must fail loudly with typed,
 actionable errors or be explicitly disabled/documented.
 
+LiteRT-LM Web streams directly and rejects native worker batching controls.
+Keep `streamBatchTokenThreshold` and `streamBatchByteThreshold` at their
+defaults on Web, and run chat-app parameter tests on both VM and Chrome when
+changing LiteRT-LM generation settings.
+
 ## Multi-Repo Ownership
 
 Many maintainer checkouts keep sibling repos one level above this repo:
