@@ -83,6 +83,13 @@ void main() {
 
         expect(result.exitCode, 0);
         expect(result.stdout, contains('flutter build web'));
+        expect(
+          result.stdout,
+          contains(
+            'WEBGPU_BRIDGE_OUT_DIR=/repo/example/chat_app/build/web/webgpu_bridge '
+            'bash scripts/fetch_webgpu_bridge_assets.sh',
+          ),
+        );
         expect(result.stdout, contains('serve_static_with_headers.py'));
         expect(
           result.stdout,

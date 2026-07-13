@@ -139,6 +139,10 @@ WebGPU bridge features are versioned runtime capabilities. When changing bridge
 behavior, verify the pinned asset tag/manifest, direct bridge calls, worker
 path, Dart interop wrapper, public engine API, docs, and examples together.
 
+Flutter Web builds exclude the gitignored generated bridge assets. Deployment
+and real-model Web E2E flows must fetch the pinned assets directly into
+`example/chat_app/build/web/webgpu_bridge` after `flutter build web`.
+
 Document browser durability precisely. Web bridge filesystem paths may be
 virtual or in-memory unless the active bridge documents durable backing storage;
 durable browser storage can require app-level export/import outside Dart file

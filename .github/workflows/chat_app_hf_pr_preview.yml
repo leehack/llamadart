@@ -93,14 +93,16 @@ jobs:
         run: |
           (cd example/chat_app && flutter pub get)
 
-      - name: Fetch pinned web bridge assets
-        if: ${{ github.event.action != 'closed' }}
-        run: ./scripts/fetch_webgpu_bridge_assets.sh
-
       - name: Build chat app web
         if: ${{ github.event.action != 'closed' }}
         run: |
           (cd example/chat_app && flutter build web --release)
+
+      - name: Fetch pinned web bridge assets into build
+        if: ${{ github.event.action != 'closed' }}
+        env:
+          WEBGPU_BRIDGE_OUT_DIR: ${{ github.workspace }}/example/chat_app/build/web/webgpu_bridge
+        run: ./scripts/fetch_webgpu_bridge_assets.sh
 
       - name: Install Hugging Face Hub client
         run: python3 -m pip install --upgrade huggingface_hub

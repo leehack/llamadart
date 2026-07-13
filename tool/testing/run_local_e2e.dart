@@ -151,6 +151,18 @@ class LocalE2eScenario {
       stepsBuilder(context);
 }
 
+LocalE2eCommandStep _fetchWebGpuBridgeAssetsForBuild(
+  LocalE2eRunContext context,
+) => LocalE2eCommandStep(
+  workingDirectory: context.projectRoot,
+  executable: 'bash',
+  arguments: const ['scripts/fetch_webgpu_bridge_assets.sh'],
+  environment: {
+    'WEBGPU_BRIDGE_OUT_DIR': '${context.chatAppDir}/build/web/webgpu_bridge',
+  },
+  description: 'Fetch pinned WebGPU bridge assets into the web build',
+);
+
 List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
   return [
     LocalE2eScenario(
@@ -415,6 +427,7 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
             ),
           );
         }
+        steps.add(_fetchWebGpuBridgeAssetsForBuild(context));
         steps.addAll([
           LocalE2eCommandStep(
             workingDirectory: context.projectRoot,
@@ -595,6 +608,7 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
             ),
           );
         }
+        steps.add(_fetchWebGpuBridgeAssetsForBuild(context));
         steps.addAll([
           LocalE2eCommandStep(
             workingDirectory: context.projectRoot,

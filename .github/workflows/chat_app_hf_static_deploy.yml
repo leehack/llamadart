@@ -67,12 +67,14 @@ jobs:
         run: |
           (cd example/chat_app && flutter pub get)
 
-      - name: Fetch pinned web bridge assets
-        run: ./scripts/fetch_webgpu_bridge_assets.sh
-
       - name: Build chat app web
         run: |
           (cd example/chat_app && flutter build web --release)
+
+      - name: Fetch pinned web bridge assets into build
+        env:
+          WEBGPU_BRIDGE_OUT_DIR: ${{ github.workspace }}/example/chat_app/build/web/webgpu_bridge
+        run: ./scripts/fetch_webgpu_bridge_assets.sh
 
       - name: Install Hugging Face Hub client
         run: |
