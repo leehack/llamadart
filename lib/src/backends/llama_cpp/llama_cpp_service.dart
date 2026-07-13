@@ -4925,6 +4925,7 @@ class LlamaCppService {
       );
       promptPtr = normalizedPrompt.toNativeUtf8();
       inputText.ref.text = promptPtr.cast();
+      inputText.ref.text_len = utf8.encode(normalizedPrompt).length;
 
       final bos = llama_vocab_bos(vocab);
       final eos = llama_vocab_eos(vocab);
