@@ -931,6 +931,23 @@ void main() {
       );
     });
 
+    test('rejects thinking budget', () {
+      expect(
+        () => backend.generate(
+          1,
+          'Hello',
+          const GenerationParams(thinkingBudget: ThinkingBudget(maxTokens: 16)),
+        ),
+        throwsA(
+          isA<UnsupportedError>().having(
+            (error) => error.message.toString(),
+            'message',
+            contains('thinking-budget control'),
+          ),
+        ),
+      );
+    });
+
     test('rejects speculative decoding config', () {
       expect(
         () => backend.generate(

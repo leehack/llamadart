@@ -25,9 +25,9 @@ models through LiteRT-LM.
 - `.litertlm` model loading and generation through LiteRT-LM.
 - Native Dart and Flutter targets with downloaded runtime assets.
 - Flutter Web through the experimental WebGPU bridge and LiteRT-LM web runtime.
-- Streaming chat completions, tool-call parsing, multimodal GGUF projectors,
-  structured JSON output, embeddings, LoRA, state persistence, and runtime
-  diagnostics where the active backend supports them.
+- Streaming chat completions, llama.cpp thinking budgets, tool-call parsing,
+  multimodal GGUF projectors, structured JSON output, embeddings, LoRA, state
+  persistence, and runtime diagnostics where the active backend supports them.
 
 Unsupported runtime/option combinations are rejected explicitly instead of
 silently degrading. Check the support matrix before relying on a capability for
@@ -134,7 +134,7 @@ Current default runtime pins:
 
 | Runtime | Pin |
 | --- | --- |
-| Native llama.cpp / GGUF | `leehack/llamadart-native@b9935` |
+| Native llama.cpp / GGUF | `leehack/llamadart-native@b9969-llamadart.1` |
 | Native LiteRT-LM / `.litertlm` | `leehack/litert-lm-native@v0.14.0-native.2` |
 | Web llama.cpp / GGUF | `leehack/llama-web-bridge-assets@v0.1.18` |
 | Web LiteRT-LM / `.litertlm` | `@litert-lm/core@0.14.0` |

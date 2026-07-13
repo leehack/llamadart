@@ -1666,6 +1666,11 @@ class WebGpuLlamaBackend
     if (params.presencePenalty != 0.0) {
       throw UnsupportedError('WebGPU presence penalty is not supported yet.');
     }
+    if (params.thinkingBudget != null) {
+      throw UnsupportedError(
+        'WebGPU thinking-budget control is not supported yet.',
+      );
+    }
     if (params.isSpeculativeDecodingEnabled) {
       throw UnsupportedError(
         'WebGPU speculative decoding is not supported yet.',

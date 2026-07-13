@@ -1,5 +1,8 @@
 ## Unreleased
 
+* Updated the default llama.cpp runtime to
+  `leehack/llamadart-native@b9969-llamadart.1`.
+
 * Changed unset native decoder/generative context batching from full-context
   batches to llama.cpp-aligned caps of `n_batch = min(n_ctx, 2048)` and
   `n_ubatch = min(n_batch, 512)`. Explicit positive values remain supported,
@@ -29,6 +32,9 @@
   half the active context, account for tool schemas, retain protocol turn
   anchors while compacting completed exchanges, and reduce streaming
   accumulation overhead.
+
+* Added a llama.cpp thinking-token budget and the server's
+  `thinking_budget_tokens` extension.
 
 * Switched the OpenAI-compatible server example default to Unsloth's Qwen3.6
   27B `UD-Q4_K_XL` GGUF, added model-specific non-thinking and thinking sampler profiles,

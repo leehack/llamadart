@@ -973,6 +973,9 @@ class LiteRtLmService {
     if (params.grammarLazy) {
       unsupported.add('grammarLazy');
     }
+    if (params.thinkingBudget != null) {
+      unsupported.add('thinkingBudget');
+    }
     if (params.grammarTriggers.isNotEmpty) {
       unsupported.add('grammarTriggers');
     }

@@ -494,6 +494,38 @@ class SpeculativeDecodingConfig {
       strategies.isEmpty ? <SpeculativeDecodingStrategy>[strategy] : strategies;
 }
 
+/// Limits the generated tokens within a model's reasoning block.
+///
+/// This maps to llama.cpp's reasoning-budget sampler. A budget of zero closes
+/// the next reasoning block immediately; a positive value permits that many
+/// generated reasoning tokens before the sampler forces [endTag].
+/// llama.cpp accepts values from zero through 2,147,483,647.
+///
+/// [LlamaEngine.create] resolves omitted [startTag] and [endTag] from the
+/// rendered chat template. Callers using raw generation should supply both
+/// tags explicitly because models do not share a universal reasoning syntax.
+class ThinkingBudget {
+  /// Creates a thinking-token budget.
+  const ThinkingBudget({
+    required this.maxTokens,
+    this.startTag,
+    this.endTag,
+    this.forcedMessage,
+  }) : assert(maxTokens >= 0, 'maxTokens must be non-negative');
+
+  /// Maximum generated tokens allowed inside each reasoning block.
+  final int maxTokens;
+
+  /// Reasoning-block opening delimiter.
+  final String? startTag;
+
+  /// Reasoning-block closing delimiter forced when [maxTokens] is exhausted.
+  final String? endTag;
+
+  /// Optional text forced immediately before [endTag] after exhaustion.
+  final String? forcedMessage;
+}
+
 /// Parameters controlling the token sampling and generation process.
 class GenerationParams {
   /// Default prompt prefix reuse behavior for native generation.
@@ -551,6 +583,15 @@ class GenerationParams {
 
   /// Whether grammar should be lazily activated by triggers.
   final bool grammarLazy;
+
+  /// Optional llama.cpp-style limit for tokens generated inside a reasoning
+  /// block.
+  ///
+  /// The native llama.cpp backend pauses grammar constraints while budgeted
+  /// reasoning is active, then resumes tool-call or structured-output grammar
+  /// after reasoning has ended. Other backends reject this setting rather than
+  /// silently ignoring it.
+  final ThinkingBudget? thinkingBudget;
 
   /// Lazy grammar activation triggers.
   final List<GenerationGrammarTrigger> grammarTriggers;
@@ -612,6 +653,7 @@ class GenerationParams {
     this.stopSequences = const [],
     this.grammar,
     this.grammarLazy = false,
+    this.thinkingBudget,
     this.grammarTriggers = const [],
     this.preservedTokens = const [],
     this.grammarRoot = 'root',
@@ -649,6 +691,8 @@ class GenerationParams {
     List<String>? stopSequences,
     String? grammar,
     bool? grammarLazy,
+    ThinkingBudget? thinkingBudget,
+    bool clearThinkingBudget = false,
     List<GenerationGrammarTrigger>? grammarTriggers,
     List<String>? preservedTokens,
     String? grammarRoot,
@@ -671,6 +715,9 @@ class GenerationParams {
       stopSequences: stopSequences ?? this.stopSequences,
       grammar: grammar ?? this.grammar,
       grammarLazy: grammarLazy ?? this.grammarLazy,
+      thinkingBudget: clearThinkingBudget
+          ? null
+          : (thinkingBudget ?? this.thinkingBudget),
       grammarTriggers: grammarTriggers ?? this.grammarTriggers,
       preservedTokens: preservedTokens ?? this.preservedTokens,
       grammarRoot: grammarRoot ?? this.grammarRoot,

@@ -148,6 +148,15 @@ void main() {
       expect(MetadataResponse({'a': 'b'}).metadata, {'a': 'b'});
       expect(GetContextSizeResponse(10).size, 10);
       expect(ErrorResponse('e').message, 'e');
+      expect(ErrorResponse('e').kind, WorkerErrorKind.generic);
+      expect(
+        ErrorResponse('unsupported', kind: WorkerErrorKind.unsupported).kind,
+        WorkerErrorKind.unsupported,
+      );
+      expect(
+        ErrorResponse('inference', kind: WorkerErrorKind.inference).kind,
+        WorkerErrorKind.inference,
+      );
       expect(BackendInfoResponse('n').name, 'n');
       expect(GpuSupportResponse(true).support, true);
       expect(

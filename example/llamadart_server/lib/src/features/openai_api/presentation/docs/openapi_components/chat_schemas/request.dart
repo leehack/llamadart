@@ -38,6 +38,17 @@ Map<String, dynamic> buildChatRequestSchemas({required String modelId}) {
               'Enable model reasoning output in `reasoning_content`. '
               'Disabled by default for the default Qwen3.6 27B model.',
         },
+        'thinking_budget_tokens': <String, dynamic>{
+          'type': 'integer',
+          'minimum': 0,
+          'maximum': 2147483647,
+          'description':
+              'llama.cpp extension (not a standard OpenAI Chat Completions '
+              'field): maximum generated tokens inside each thinking block. '
+              'Requires `enable_thinking: true`; `0` closes the block '
+              'immediately. This is separate from `max_tokens`, which caps '
+              'the whole completion.',
+        },
         'parallel_tool_calls': <String, dynamic>{
           'type': 'boolean',
           'default': false,

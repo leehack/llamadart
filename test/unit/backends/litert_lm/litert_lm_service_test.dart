@@ -2163,6 +2163,21 @@ void main() {
         service.generate(
           contextHandle,
           'hello',
+          const GenerationParams(thinkingBudget: ThinkingBudget(maxTokens: 16)),
+        ),
+        emitsError(
+          isA<UnsupportedError>().having(
+            (error) => error.message.toString(),
+            'message',
+            contains('thinkingBudget'),
+          ),
+        ),
+      );
+
+      await expectLater(
+        service.generate(
+          contextHandle,
+          'hello',
           const GenerationParams(
             penalty: 1.0,
             presencePenalty: 1.5,

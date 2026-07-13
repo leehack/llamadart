@@ -482,13 +482,37 @@ class StateLoadFileResponse {
   StateLoadFileResponse(this.tokens);
 }
 
-/// Response containing an error message.
+/// Category used to preserve llama.cpp worker failures across isolates.
+enum WorkerErrorKind {
+  /// An unclassified worker error.
+  generic,
+
+  /// Model loading or ownership failed.
+  model,
+
+  /// Context creation or ownership failed.
+  context,
+
+  /// Inference or token generation failed.
+  inference,
+
+  /// A requested operation is unavailable in the active native runtime.
+  unsupported,
+
+  /// The engine was not in a state that permits the operation.
+  state,
+}
+
+/// Response containing an error message and category.
 class ErrorResponse {
   /// The error message.
   final String message;
 
+  /// The category of error reported by the worker.
+  final WorkerErrorKind kind;
+
   /// Creates a new [ErrorResponse].
-  ErrorResponse(this.message);
+  ErrorResponse(this.message, {this.kind = WorkerErrorKind.generic});
 }
 
 /// Response containing backend name.

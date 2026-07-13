@@ -6,6 +6,7 @@ import 'dart:io';
 
 import 'package:ffi/ffi.dart';
 import 'package:llamadart/src/backends/llama_cpp/llama_cpp_service.dart';
+import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/models/config/gpu_backend.dart';
 import 'package:llamadart/src/core/models/config/gpu_device_info.dart';
 import 'package:llamadart/src/core/models/inference/generation_params.dart';
@@ -167,6 +168,18 @@ void main() {
       );
 
       expect(typeNames, 'ngram-mod,draft-mtp');
+    });
+
+    test('rejects speculative decoding with a thinking budget', () {
+      expect(
+        () => service.debugResolveSpeculativeTypeNamesForTesting(
+          const GenerationParams(
+            thinkingBudget: ThinkingBudget(maxTokens: 64),
+            speculativeDecodingConfig: SpeculativeDecodingConfig.ngramMod(),
+          ),
+        ),
+        throwsA(isA<LlamaUnsupportedException>()),
+      );
     });
 
     test('uses ngram size M as native draft cap for map strategies', () {
@@ -404,6 +417,30 @@ void main() {
         'repeat': 1.0,
         'frequency': 0.0,
         'presence': 1.5,
+      },
+    );
+  });
+
+  group('thinking-budget validation', () {
+    test(
+      'rejects a token budget that exceeds the native signed 32-bit limit',
+      () {
+        final service = LlamaCppService();
+
+        expect(
+          () => service.debugValidateThinkingBudgetForTesting(
+            const GenerationParams(
+              thinkingBudget: ThinkingBudget(maxTokens: 2147483648),
+            ),
+          ),
+          throwsA(
+            isA<RangeError>().having(
+              (error) => error.toString(),
+              'message',
+              contains('signed 32-bit'),
+            ),
+          ),
+        );
       },
     );
   });

@@ -63,6 +63,11 @@ void main() {
       final properties = chatRequest['properties'] as Map<String, dynamic>;
       final thinking = properties['enable_thinking'] as Map<String, dynamic>;
       expect(thinking['default'], isFalse);
+      final thinkingBudget =
+          properties['thinking_budget_tokens'] as Map<String, dynamic>;
+      expect(thinkingBudget['minimum'], 0);
+      expect(thinkingBudget['maximum'], 2147483647);
+      expect(thinkingBudget['description'], contains('not a standard OpenAI'));
       final parallel =
           properties['parallel_tool_calls'] as Map<String, dynamic>;
       expect(parallel['default'], isFalse);
@@ -105,6 +110,7 @@ void main() {
       final thinkingSystem = thinkingMessages.first as Map<String, dynamic>;
       expect(thinkingValue['stream'], isTrue);
       expect(thinkingValue['enable_thinking'], isTrue);
+      expect(thinkingValue['thinking_budget_tokens'], 128);
       expect(thinkingValue['tool_choice'], 'auto');
       expect(thinkingSystem['content'], contains('must call get_weather'));
 

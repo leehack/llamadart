@@ -10,6 +10,11 @@ void main() {
       presencePenalty: 1.5,
       grammarRoot: 'main',
       grammarLazy: true,
+      thinkingBudget: const ThinkingBudget(
+        maxTokens: 64,
+        startTag: '<think>',
+        endTag: '</think>',
+      ),
       speculativeDecoding: true,
       speculativeDecodingConfig: const SpeculativeDecodingConfig.mtp(
         draftTokenMax: 3,
@@ -31,6 +36,9 @@ void main() {
     expect(updated.presencePenalty, 1.5);
     expect(updated.grammarRoot, 'main');
     expect(updated.grammarLazy, isTrue);
+    expect(updated.thinkingBudget?.maxTokens, 64);
+    expect(updated.thinkingBudget?.startTag, '<think>');
+    expect(updated.thinkingBudget?.endTag, '</think>');
     expect(updated.speculativeDecoding, isTrue);
     expect(updated.isSpeculativeDecodingEnabled, isTrue);
     expect(
@@ -47,6 +55,20 @@ void main() {
     expect(updated.streamBatchByteThreshold, 256);
     expect(updated.grammarTriggers, hasLength(1));
     expect(updated.preservedTokens, const ['<tool_call>']);
+  });
+
+  test('GenerationParams copyWith can clear thinking budget', () {
+    const params = GenerationParams(
+      thinkingBudget: ThinkingBudget(
+        maxTokens: 64,
+        startTag: '<think>',
+        endTag: '</think>',
+      ),
+    );
+
+    final updated = params.copyWith(clearThinkingBudget: true);
+
+    expect(updated.thinkingBudget, isNull);
   });
 
   test('GenerationParams defaults minP to zero', () {

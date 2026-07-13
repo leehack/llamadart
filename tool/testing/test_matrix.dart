@@ -164,8 +164,8 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     tier: 'targeted',
     mode: 'local-only',
     covers:
-        'real GGUF llama.cpp chat, thinking suppression, streaming tool '
-        'calls, optional multimodal input',
+        'real GGUF llama.cpp chat, thinking-budget/suppression, streaming '
+        'tool calls, optional multimodal input',
     command:
         'dart run tool/testing/run_local_e2e.dart --scenario '
         'gguf-chat-features-smoke --model-path <model.gguf> --backend auto '

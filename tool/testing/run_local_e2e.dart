@@ -198,7 +198,7 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       name: 'gguf-chat-features-smoke',
       group: LocalE2eScenarioGroup.dartLocalOnly,
       description:
-          'Run real GGUF chat, thinking-suppression, and tool-call smoke.',
+          'Run real GGUF chat, thinking-budget/suppression, and tool-call smoke.',
       requiresDevice: false,
       stepsBuilder: (context) {
         final arguments = <String>['run', 'tool/gguf_chat_features_smoke.dart'];

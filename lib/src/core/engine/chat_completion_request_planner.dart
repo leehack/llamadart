@@ -8,6 +8,7 @@ import '../models/chat/content_part.dart';
 import '../models/inference/generation_params.dart';
 import '../models/inference/tool_choice.dart';
 import '../models/tools/tool_definition.dart';
+import '../template/chat_template_engine.dart';
 
 /// Prepared generation inputs for a chat-completion request.
 ///
@@ -114,11 +115,16 @@ class ChatCompletionRequestPlanner {
       if (backendSupportsGrammarConstraints) ...templateResult.preservedTokens,
       ...?params?.preservedTokens,
     }.toList(growable: false);
+    final requestedThinkingBudget = params?.thinkingBudget;
+    final effectiveThinkingBudget = requestedThinkingBudget == null
+        ? null
+        : _resolveThinkingBudgetTags(requestedThinkingBudget, templateResult);
 
     final generationParams = (params ?? const GenerationParams()).copyWith(
       stopSequences: stops,
       grammar: effectiveGrammar,
       grammarLazy: effectiveGrammarLazy,
+      thinkingBudget: effectiveThinkingBudget,
       grammarTriggers: effectiveGrammarTriggers,
       preservedTokens: effectivePreservedTokens,
     );
@@ -158,6 +164,19 @@ class ChatCompletionRequestPlanner {
     );
     LlamaLogger.instance.debug(
       '  Thinking forced open: ${templateResult.thinkingForcedOpen}',
+    );
+  }
+
+  static ThinkingBudget _resolveThinkingBudgetTags(
+    ThinkingBudget budget,
+    LlamaChatTemplateResult templateResult,
+  ) {
+    final tags = ChatTemplateEngine.thinkingTagsFor(templateResult.format);
+    return ThinkingBudget(
+      maxTokens: budget.maxTokens,
+      startTag: budget.startTag ?? tags.startTag,
+      endTag: budget.endTag ?? tags.endTag,
+      forcedMessage: budget.forcedMessage,
     );
   }
 
