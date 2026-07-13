@@ -7,36 +7,19 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
-## Unreleased
+## 0.8.16
 
-- Changed unset native decoder/generative context batching from full-context
-  batches to llama.cpp-aligned `2048` logical and `512` physical batch caps.
-  Explicit values remain supported, native encoder-only models retain
-  full-context batching, and WebGPU preserves its architecture-agnostic
-  full-context fallback to avoid encoder regressions.
-- Reworked the TUI coding agent into a small Pi-style demo with one sequential
-  JSON loop, exactly `read`/`write`/`edit`/`bash`, a single-screen session, and
-  startup-only model selection, plus an optional read-only mode. The Qwen3.6
-  preset, shared model cache, cancellation and resource limits,
-  workspace-confined file tools, and explicit unsandboxed-shell trust boundary
-  remain documented. Its default is now the Unsloth `UD-Q4_K_M` quant with the
-  publisher-aligned non-thinking sampler; `--thinking` enables a larger
-  coding-focused reasoning profile. Model loading now delegates directly to
-  `LlamaEngine.loadModelSource` instead of an example-specific downloader and
-  fuzzy repository resolver, using the core local, HTTP, and exact `hf://`
-  source formats. Reasoning and final-answer deltas now stream into separate
-  transcript channels, while answers use compact Markdown with syntax-highlighted
-  fenced code, solid code backgrounds, and no automatic block/message spacer
-  rows. Frame-coalesced presentation keeps long streams responsive, and a
-  lightweight single-window TurboVision theme restores the visual identity
-  without the former window manager. The example now uses Nocterm `0.8.0`.
-- Added native llama.cpp presence-penalty sampling through
-  `GenerationParams.presencePenalty`; unsupported WebGPU and LiteRT-LM paths
-  reject non-zero values explicitly.
-- Improved `ChatSession` context budgeting for configured output tokens (up to
-  half the active context) and tool schemas, compacted completed protocol
-  exchanges without dropping their task anchor, and reduced streamed-response
-  accumulation overhead.
+- Updated the default llama.cpp native runtime to `b9982`, including safer
+  multimodal UTF-8 prompt handling and refreshed Dart/SwiftPM bindings.
+- Improved llama.cpp batching defaults and `ChatSession` context management for
+  more predictable generation under constrained contexts.
+- Added llama.cpp presence-penalty sampling and thinking-budget controls;
+  unsupported WebGPU and LiteRT-LM paths now fail explicitly.
+- Reworked the runnable TUI coding agent with a focused Pi-style workflow,
+  Unsloth Qwen3.6 defaults, shared model-source loading, and clearer output.
+- Improved the OpenAI-compatible server with standard client-managed tool-call
+  transcripts, named `tool_choice`, configurable thinking behavior, and shared
+  model-source loading.
 
 ## 0.8.15
 
