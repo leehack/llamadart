@@ -6,9 +6,6 @@
   multimodal prompt bridge for the new explicit UTF-8 byte-length ABI, and
   aligned current README/website native override docs.
 
-* Updated the default llama.cpp runtime to
-  `leehack/llamadart-native@b9969-llamadart.1`.
-
 * Changed unset native decoder/generative context batching from full-context
   batches to llama.cpp-aligned caps of `n_batch = min(n_ctx, 2048)` and
   `n_ubatch = min(n_batch, 512)`. Explicit positive values remain supported,
