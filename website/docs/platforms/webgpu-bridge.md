@@ -283,9 +283,10 @@ dart run tool/testing/run_local_e2e.dart --scenario chat-app-web-real-model-smok
   --expect 4
 ```
 
-The runner builds Flutter web with the matching `--base-href`, serves the repo
-root through `tool/testing/serve_static_with_headers.py`, and invokes the
-appropriate Playwright helper. `serve_static_with_headers.py` provides the
+The runner uses `scripts/build_chat_app_web.sh` to build Flutter web with the
+matching `--base-href` and package and validate the pinned bridge assets. It
+then serves the repo root through `tool/testing/serve_static_with_headers.py`
+and invokes the appropriate Playwright helper. The static server provides the
 COOP/COEP headers needed for large web model loads. When debugging the helper
 scripts directly, keep the `--base-href` value aligned with the URL path,
 otherwise Flutter and bridge assets are resolved from the wrong location.

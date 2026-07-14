@@ -9,7 +9,10 @@ on:
       - "lib/**"
       - "pubspec.yaml"
       - "pubspec.lock"
+      - "scripts/build_chat_app_web.sh"
       - "scripts/fetch_webgpu_bridge_assets.sh"
+      - "scripts/validate_chat_app_web_build.sh"
+      - "scripts/verify_chat_app_web_deployment.sh"
       - ".github/workflows/chat_app_hf_pr_preview.yml"
 
 permissions:
@@ -93,16 +96,11 @@ jobs:
         run: |
           (cd example/chat_app && flutter pub get)
 
-      - name: Build chat app web
-        if: ${{ github.event.action != 'closed' }}
-        run: |
-          (cd example/chat_app && flutter build web --release)
-
-      - name: Fetch pinned web bridge assets into build
+      - name: Build and validate chat app web
         if: ${{ github.event.action != 'closed' }}
         env:
-          WEBGPU_BRIDGE_OUT_DIR: ${{ github.workspace }}/example/chat_app/build/web/webgpu_bridge
-        run: ./scripts/fetch_webgpu_bridge_assets.sh
+          CHAT_APP_BUILD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: ./scripts/build_chat_app_web.sh
 
       - name: Install Hugging Face Hub client
         run: python3 -m pip install --upgrade huggingface_hub
@@ -159,6 +157,12 @@ jobs:
               commit_message=f"deploy PR #{pr_number} {head_sha[:7]}",
           )
           PY
+
+      - name: Verify deployed preview artifact
+        if: ${{ github.event.action != 'closed' }}
+        run: |
+          ./scripts/verify_chat_app_web_deployment.sh \
+            "$APP_URL" "$PR_HEAD_SHA"
 
       - name: Delete preview Space
         if: ${{ github.event.action == 'closed' }}

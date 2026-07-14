@@ -5,7 +5,13 @@ on:
     branches: [master, main]
     paths:
       - "example/chat_app/**"
+      - "lib/**"
+      - "pubspec.yaml"
+      - "pubspec.lock"
+      - "scripts/build_chat_app_web.sh"
       - "scripts/fetch_webgpu_bridge_assets.sh"
+      - "scripts/validate_chat_app_web_build.sh"
+      - "scripts/verify_chat_app_web_deployment.sh"
       - ".github/workflows/chat_app_hf_static_deploy.yml"
   workflow_dispatch:
     inputs:
@@ -37,6 +43,9 @@ jobs:
         with:
           ref: ${{ github.event.inputs.deploy_ref || github.ref }}
 
+      - name: Record deployment source commit
+        run: echo "DEPLOY_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -61,20 +70,16 @@ jobs:
             exit 1
           fi
 
+          APP_HOST="$(printf '%s' "$SPACE_REPO" | tr '[:upper:]/' '[:lower:]-')"
           echo "space_repo=$SPACE_REPO" >> "$GITHUB_OUTPUT"
+          echo "app_url=https://${APP_HOST}.static.hf.space" >> "$GITHUB_OUTPUT"
 
       - name: Install dependencies
         run: |
           (cd example/chat_app && flutter pub get)
 
-      - name: Build chat app web
-        run: |
-          (cd example/chat_app && flutter build web --release)
-
-      - name: Fetch pinned web bridge assets into build
-        env:
-          WEBGPU_BRIDGE_OUT_DIR: ${{ github.workspace }}/example/chat_app/build/web/webgpu_bridge
-        run: ./scripts/fetch_webgpu_bridge_assets.sh
+      - name: Build and validate chat app web
+        run: CHAT_APP_BUILD_SHA="$DEPLOY_SHA" ./scripts/build_chat_app_web.sh
 
       - name: Install Hugging Face Hub client
         run: |
@@ -104,7 +109,7 @@ jobs:
             printf '%s\n' 'llamadart chat app static deployment.'
           } > "hf-space-sync/README.md"
 
-          SHORT_SHA="$(printf '%s' "$GITHUB_SHA" | cut -c1-7)"
+          SHORT_SHA="$(printf '%s' "$DEPLOY_SHA" | cut -c1-7)"
           export SHORT_SHA
 
           python3 - <<'PY'
@@ -131,3 +136,10 @@ jobs:
               delete_patterns=["*", "**/*"],
           )
           PY
+
+      - name: Verify deployed production artifact
+        env:
+          APP_URL: ${{ steps.target.outputs.app_url }}
+        run: |
+          ./scripts/verify_chat_app_web_deployment.sh \
+            "$APP_URL" "$DEPLOY_SHA"

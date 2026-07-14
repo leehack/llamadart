@@ -3,6 +3,9 @@
 .github/dependabot.yml @leehack
 .github/pull_request_template.md @leehack
 .github/workflows/ @leehack
+scripts/build_chat_app_web.sh @leehack
+scripts/validate_chat_app_web_build.sh @leehack
+scripts/verify_chat_app_web_deployment.sh @leehack
 
 # Version, release, and native-runtime publication surfaces.
 pubspec.yaml @leehack

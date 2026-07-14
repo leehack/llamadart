@@ -140,8 +140,15 @@ behavior, verify the pinned asset tag/manifest, direct bridge calls, worker
 path, Dart interop wrapper, public engine API, docs, and examples together.
 
 Flutter Web builds exclude the gitignored generated bridge assets. Deployment
-and real-model Web E2E flows must fetch the pinned assets directly into
-`example/chat_app/build/web/webgpu_bridge` after `flutter build web`.
+and real-model Web E2E flows must use `scripts/build_chat_app_web.sh`, which
+builds the app, stages the pinned assets into the final output, and validates
+the runtime files and checksums. Use
+`scripts/validate_chat_app_web_build.sh` when intentionally reusing a build.
+
+The required `Web Chat Contract` CI job covers chat-app VM/Chrome tests, the
+deployable artifact, deterministic UI behavior, and a real worker/WASM/GGUF
+smoke. Keep it independent of large or availability-sensitive remote models;
+full Gemma 4 GGUF and LiteRT-LM Web smokes remain targeted validation.
 
 Document browser durability precisely. Web bridge filesystem paths may be
 virtual or in-memory unless the active bridge documents durable backing storage;
