@@ -90,6 +90,7 @@ class LocalE2eRunContext {
     required this.ngramCacheBuildStaticPath,
     required this.ngramCacheBuildText,
     required this.expect,
+    required this.allowAnyResponse,
     required this.skipBuild,
   });
 
@@ -117,6 +118,7 @@ class LocalE2eRunContext {
   final String? ngramCacheBuildStaticPath;
   final String? ngramCacheBuildText;
   final String expect;
+  final bool allowAnyResponse;
   final bool skipBuild;
 
   String get chatAppDir => '$projectRoot/example/chat_app';
@@ -150,6 +152,23 @@ class LocalE2eScenario {
   List<LocalE2eCommandStep> steps(LocalE2eRunContext context) =>
       stepsBuilder(context);
 }
+
+LocalE2eCommandStep _prepareChatAppWebBuild(LocalE2eRunContext context) =>
+    LocalE2eCommandStep(
+      workingDirectory: context.projectRoot,
+      executable: 'bash',
+      arguments: [
+        context.skipBuild
+            ? 'scripts/validate_chat_app_web_build.sh'
+            : 'scripts/build_chat_app_web.sh',
+      ],
+      environment: context.skipBuild
+          ? const {}
+          : const {'CHAT_APP_BASE_HREF': '/example/chat_app/build/web/'},
+      description: context.skipBuild
+          ? 'Validate existing Flutter web chat app build'
+          : 'Build and validate Flutter web chat app',
+    );
 
 List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
   return [
@@ -400,21 +419,16 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
           'Build chat_app web and run the real-model Playwright smoke.',
       requiresDevice: false,
       stepsBuilder: (context) {
-        final steps = <LocalE2eCommandStep>[];
-        if (!context.skipBuild) {
-          steps.add(
-            LocalE2eCommandStep(
-              workingDirectory: context.chatAppDir,
-              executable: 'flutter',
-              arguments: const [
-                'build',
-                'web',
-                '--base-href=/example/chat_app/build/web/',
-              ],
-              description: 'Build Flutter web chat app',
-            ),
-          );
-        }
+        final steps = <LocalE2eCommandStep>[_prepareChatAppWebBuild(context)];
+        final smokeArguments = <String>[
+          'tool/testing/playwright_chat_app_real_model_smoke.py',
+          context.webBuildUrl,
+          '--model-url',
+          context.modelUrl ?? context.defaultModelUrl,
+          '--expect',
+          context.expect,
+          if (context.allowAnyResponse) '--allow-any-response',
+        ];
         steps.addAll([
           LocalE2eCommandStep(
             workingDirectory: context.projectRoot,
@@ -433,14 +447,7 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
           LocalE2eCommandStep(
             workingDirectory: context.projectRoot,
             executable: context.python,
-            arguments: [
-              'tool/testing/playwright_chat_app_real_model_smoke.py',
-              context.webBuildUrl,
-              '--model-url',
-              context.modelUrl ?? context.defaultModelUrl,
-              '--expect',
-              context.expect,
-            ],
+            arguments: smokeArguments,
             description: 'Run Playwright real-model chat app smoke',
           ),
         ]);
@@ -454,21 +461,7 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
           'Build chat_app web and run the deterministic mock-bridge smoke.',
       requiresDevice: false,
       stepsBuilder: (context) {
-        final steps = <LocalE2eCommandStep>[];
-        if (!context.skipBuild) {
-          steps.add(
-            LocalE2eCommandStep(
-              workingDirectory: context.chatAppDir,
-              executable: 'flutter',
-              arguments: const [
-                'build',
-                'web',
-                '--base-href=/example/chat_app/build/web/',
-              ],
-              description: 'Build Flutter web chat app',
-            ),
-          );
-        }
+        final steps = <LocalE2eCommandStep>[_prepareChatAppWebBuild(context)];
         final smokeArguments = <String>[
           'tool/testing/playwright_chat_app_mock_smoke.py',
           '${context.webBuildUrl}?llamadart_mock_bridge=echo',
@@ -507,21 +500,7 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       description: 'Build chat_app web and run Gemma 4 through LiteRT-LM JS.',
       requiresDevice: false,
       stepsBuilder: (context) {
-        final steps = <LocalE2eCommandStep>[];
-        if (!context.skipBuild) {
-          steps.add(
-            LocalE2eCommandStep(
-              workingDirectory: context.chatAppDir,
-              executable: 'flutter',
-              arguments: const [
-                'build',
-                'web',
-                '--base-href=/example/chat_app/build/web/',
-              ],
-              description: 'Build Flutter web chat app',
-            ),
-          );
-        }
+        final steps = <LocalE2eCommandStep>[_prepareChatAppWebBuild(context)];
         steps.addAll([
           LocalE2eCommandStep(
             workingDirectory: context.projectRoot,
@@ -580,21 +559,7 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
           'WebGPU/llama.cpp with the mem64 core.',
       requiresDevice: false,
       stepsBuilder: (context) {
-        final steps = <LocalE2eCommandStep>[];
-        if (!context.skipBuild) {
-          steps.add(
-            LocalE2eCommandStep(
-              workingDirectory: context.chatAppDir,
-              executable: 'flutter',
-              arguments: const [
-                'build',
-                'web',
-                '--base-href=/example/chat_app/build/web/',
-              ],
-              description: 'Build Flutter web chat app',
-            ),
-          );
-        }
+        final steps = <LocalE2eCommandStep>[_prepareChatAppWebBuild(context)];
         steps.addAll([
           LocalE2eCommandStep(
             workingDirectory: context.projectRoot,
@@ -754,6 +719,7 @@ Future<LocalE2eResult> runLocalE2e(
     ngramCacheBuildStaticPath: parsed.ngramCacheBuildStaticPath,
     ngramCacheBuildText: parsed.ngramCacheBuildText,
     expect: parsed.expect,
+    allowAnyResponse: parsed.allowAnyResponse,
     skipBuild: parsed.skipBuild,
   );
   final steps = scenario.steps(context);
@@ -965,6 +931,7 @@ Options:
   --ngram-cache-build-text <txt> Optional source text for generated ngram-cache static file
                                  (defaults to the resolved benchmark prompt).
   --expect <text>                Expected response text for real-model web smoke.
+  --allow-any-response           Accept any non-empty real-model Web response.
   --skip-build                   Reuse an existing Flutter web build where supported.
   -h, --help                     Show this help.
 ''';
@@ -998,6 +965,7 @@ class _ParsedArgs {
     required this.benchmarkWarmups,
     required this.draftTokenMaxList,
     required this.expect,
+    required this.allowAnyResponse,
     required this.skipBuild,
     this.scenario,
     this.modelPath,
@@ -1042,6 +1010,7 @@ class _ParsedArgs {
   final String? ngramCacheBuildStaticPath;
   final String? ngramCacheBuildText;
   final String expect;
+  final bool allowAnyResponse;
   final bool skipBuild;
 
   factory _ParsedArgs.parse(List<String> args) {
@@ -1061,6 +1030,7 @@ class _ParsedArgs {
     var benchmarkWarmups = '1';
     var draftTokenMaxList = '1,2';
     var expect = '4';
+    var allowAnyResponse = false;
     var skipBuild = false;
     String? scenario;
     String? modelPath;
@@ -1087,6 +1057,8 @@ class _ParsedArgs {
           dryRun = true;
         case '--skip-build':
           skipBuild = true;
+        case '--allow-any-response':
+          allowAnyResponse = true;
         case '--scenario':
           scenario = _readValue(args, ++index, arg);
         case '--device':
@@ -1170,6 +1142,7 @@ class _ParsedArgs {
       ngramCacheBuildStaticPath: ngramCacheBuildStaticPath,
       ngramCacheBuildText: ngramCacheBuildText,
       expect: expect,
+      allowAnyResponse: allowAnyResponse,
       skipBuild: skipBuild,
     );
   }

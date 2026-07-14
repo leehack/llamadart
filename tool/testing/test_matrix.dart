@@ -243,7 +243,7 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
   TestMatrixRow(
     id: 'web-mock-chat-smoke',
     tier: 'targeted',
-    mode: 'local-only',
+    mode: 'CI + local',
     covers: 'built Flutter web chat app with deterministic mock bridge',
     command:
         'dart run tool/testing/run_local_e2e.dart --scenario '
@@ -254,8 +254,9 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
   TestMatrixRow(
     id: 'web-real-model-smoke',
     tier: 'targeted',
-    mode: 'local-only',
-    covers: 'built Flutter web chat app with real GGUF model URL',
+    mode: 'CI + local',
+    covers:
+        'built Flutter web chat app with real worker/WASM and GGUF model URL',
     command:
         'dart run tool/testing/run_local_e2e.dart --scenario '
         'chat-app-web-real-model-smoke --model-url <model-url> --expect 4',

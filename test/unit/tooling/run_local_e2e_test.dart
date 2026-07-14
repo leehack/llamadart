@@ -15,6 +15,7 @@ void main() {
       expect(result.exitCode, 0);
       expect(result.stdout, contains('--ngram-cache-build-text <txt>'));
       expect(result.stdout, contains('--ngram-token-max <n>'));
+      expect(result.stdout, contains('--allow-any-response'));
       expect(
         result.stdout,
         contains('defaults to the resolved benchmark prompt'),
@@ -76,13 +77,21 @@ void main() {
           'http://127.0.0.1:7358/models/tiny.gguf',
           '--expect',
           'ok',
+          '--allow-any-response',
           '--python',
           '/custom/python',
           '--dry-run',
         ], projectRoot: '/repo');
 
         expect(result.exitCode, 0);
-        expect(result.stdout, contains('flutter build web'));
+        expect(result.stdout, contains('scripts/build_chat_app_web.sh'));
+        expect(
+          result.stdout,
+          contains(
+            'CHAT_APP_BASE_HREF=/example/chat_app/build/web/ '
+            'bash scripts/build_chat_app_web.sh',
+          ),
+        );
         expect(result.stdout, contains('serve_static_with_headers.py'));
         expect(
           result.stdout,
@@ -99,6 +108,7 @@ void main() {
           contains('--model-url http://127.0.0.1:7358/models/tiny.gguf'),
         );
         expect(result.stdout, contains('--expect ok'));
+        expect(result.stdout, contains('--allow-any-response'));
       },
     );
 
@@ -116,7 +126,7 @@ void main() {
         ], projectRoot: '/repo');
 
         expect(result.exitCode, 0);
-        expect(result.stdout, contains('flutter build web'));
+        expect(result.stdout, contains('scripts/build_chat_app_web.sh'));
         expect(result.stdout, contains('serve_static_with_headers.py'));
         expect(result.stdout, contains('playwright_chat_app_mock_smoke.py'));
         expect(
@@ -158,6 +168,10 @@ void main() {
 
       expect(result.exitCode, 0);
       expect(result.stdout, contains(pythonPath));
+      expect(
+        result.stdout,
+        contains('bash scripts/validate_chat_app_web_build.sh'),
+      );
       expect(
         result.stdout,
         contains('tool/testing/playwright_chat_app_real_model_smoke.py'),

@@ -74,6 +74,12 @@ Pick targeted rows based on the touched surface:
 | Chat app model cache/download/projector | `chat-app-device-cache` |
 | Example app, CLI, or server package | `examples-tests` |
 
+The required `Web Chat Contract` check runs the chat app tests on VM and
+Chrome, validates the final Flutter Web artifact, exercises deterministic UI
+behavior, and loads a tiny real GGUF through the packaged worker and WASM core.
+Large Gemma 4 GGUF and LiteRT-LM downloads remain targeted rows so transient
+model-host availability does not make every pull request flaky.
+
 ## Coverage Map
 
 The matrix is designed to cover these essential axes:
@@ -109,7 +115,7 @@ dart run tool/testing/test_matrix.dart --tier platform
 | iOS arm64/x86_64 simulator | `ios-simulator-smoke` | Manual/simulator runtime row. |
 | Android arm64 | `android-arm64-device-smoke` | Manual/device runtime row and release smoke plan. |
 | Android x64 | `android-x64-emulator-smoke` | Manual/emulator runtime row. |
-| Web browser | `web-chrome-runtime-smoke` | Chrome CI plus local WebGPU/LiteRT-LM web smokes. |
+| Web browser | `web-chrome-runtime-smoke` | Chrome CI plus the required real-GGUF `Web Chat Contract`; large WebGPU/LiteRT-LM smokes remain targeted. |
 
 Rows that say `hook-only` must not be used as full runtime proof. They only show
 that package/bundle selection is covered; PR evidence still needs a hardware or
