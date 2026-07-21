@@ -210,6 +210,7 @@ void main() {
         ChatFormat.commandR7B: TemplateToolCallSerialization.normalizeOnly,
         ChatFormat.cohere2Moe: TemplateToolCallSerialization.normalizeOnly,
         ChatFormat.glm45: TemplateToolCallSerialization.normalizeOnly,
+        ChatFormat.hunyuanV3: TemplateToolCallSerialization.normalizeOnly,
         ChatFormat.minimaxM2: TemplateToolCallSerialization.normalizeOnly,
         ChatFormat.minicpm5: TemplateToolCallSerialization.normalizeOnly,
         ChatFormat.qwen3CoderXml: TemplateToolCallSerialization.normalizeOnly,

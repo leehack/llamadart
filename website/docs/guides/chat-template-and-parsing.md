@@ -88,6 +88,9 @@ Gemma 4 thought-channel output is parsed incrementally during streaming, so
 `chunk.choices.first.delta.thinking` carries reasoning text while
 `chunk.choices.first.delta.content` remains reserved for final answer content.
 
+Tencent Hunyuan V3 templates are also detected directly, including their
+namespaced reasoning tags and parallel `<tool_call:opensource>` envelopes.
+
 ### LiteRT-LM template registry
 
 GGUF models expose `tokenizer.chat_template` metadata directly through the

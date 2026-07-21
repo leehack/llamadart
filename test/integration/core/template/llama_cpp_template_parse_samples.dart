@@ -30,6 +30,14 @@ const Map<ChatFormat, String> _sampleOutputsByFormat = <ChatFormat, String>{
       '<|tool_call:name|>get_weather'
       '<|tool_call:args|>{"location":"Seoul"}'
       '<|tool_call:end|>',
+  ChatFormat.hunyuanV3:
+      '<think:opensource>check weather</think:opensource>'
+      '<tool_calls:opensource>\n'
+      '<tool_call:opensource>get_weather<tool_sep:opensource>\n'
+      '<arg_key:opensource>location</arg_key:opensource>\n'
+      '<arg_value:opensource>Seoul</arg_value:opensource>\n'
+      '</tool_call:opensource>\n'
+      '</tool_calls:opensource>',
 };
 
 String sampleOutputForFormat(ChatFormat format) {
