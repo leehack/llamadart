@@ -1,4 +1,4 @@
-## Unreleased
+## 0.8.17
 
 * Updated the default llama.cpp native runtime to
   `leehack/llamadart-native@b10075` with matching bindings and Apple artifacts.

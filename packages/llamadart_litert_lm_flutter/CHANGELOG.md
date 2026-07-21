@@ -1,3 +1,7 @@
+## 0.0.7
+
+* Updated the install example for `llamadart` 0.8.17.
+
 ## 0.0.6
 
 * Updated the install example for `llamadart` 0.8.16.
