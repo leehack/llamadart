@@ -7,6 +7,16 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
+## 0.8.17
+
+- Updated the default llama.cpp native runtime to `b10075` with matching
+  bindings and Apple artifacts.
+- Added Tencent Hunyuan V3 chat-template, reasoning, and tool-call support.
+- Fixed Gemma 4 LiteRT-LM text generation in the Web chat app after model
+  loading completed successfully.
+- Restored GGUF loading in deployed Web chat apps by packaging the pinned
+  WebGPU runtime assets with Flutter Web builds.
+
 ## 0.8.16
 
 - Updated the default llama.cpp native runtime to `b9982`, including safer
