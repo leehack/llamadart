@@ -120,6 +120,9 @@ enum ChatFormat {
 
   /// MiniCPM5 — ChatML turns with `<function name="...">` XML tool calls.
   minicpm5,
+
+  /// Hunyuan V3 — namespaced thinking and XML-like argument tool calls.
+  hunyuanV3,
 }
 
 /// Detects the [ChatFormat] by scanning a Jinja template source string
@@ -174,6 +177,13 @@ ChatFormat detectChatFormat(String? templateSource) {
       templateSource.contains('<arg_key>') &&
       templateSource.contains('<arg_value>')) {
     return ChatFormat.glm45;
+  }
+
+  // Tencent Hunyuan V3
+  if (templateSource.contains('<｜hy_User{}｜>') &&
+      templateSource.contains('<tool_sep{}>') &&
+      templateSource.contains('<arg_key{}>')) {
+    return ChatFormat.hunyuanV3;
   }
 
   // Qwen3 Coder XML. Qwen3.6 uses the same generated

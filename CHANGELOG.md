@@ -1,5 +1,10 @@
 ## Unreleased
 
+* Updated the default llama.cpp native runtime to
+  `leehack/llamadart-native@b10075` with matching bindings and Apple artifacts.
+
+* Added Tencent Hunyuan V3 chat-template, reasoning, and tool-call support.
+
 * Fixed Gemma 4 LiteRT-LM text generation in the Web chat app after model
   loading completed successfully.
 

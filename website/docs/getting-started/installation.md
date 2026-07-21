@@ -79,7 +79,7 @@ hooks:
     llamadart:
       # Optional. Defaults to llamadart's tested native runtime pin.
       # Use a leehack/llamadart-native release tag when testing another build.
-      llamadart_native_tag: b9982
+      llamadart_native_tag: b10075
 
       # Optional. GitHub repository slug or github.com URL.
       llamadart_native_repository: leehack/llamadart-native
@@ -105,7 +105,7 @@ per-target module list.
 
 Native source overrides are for compatibility testing. They do not regenerate
 Dart FFI bindings or symbol lookups, so the selected binary still must be ABI-
-and symbol-compatible with the default `leehack/llamadart-native@b9982` runtime.
+and symbol-compatible with the default `leehack/llamadart-native@b10075` runtime.
 
 Available native tags are published on the
 [`leehack/llamadart-native` releases page](https://github.com/leehack/llamadart-native/releases).
@@ -117,7 +117,7 @@ gh release list --repo leehack/llamadart-native --limit 20
 
 Before overriding, confirm the release includes the asset for your target. The
 hook downloads files named `llamadart-native-<bundle>-<tag>.tar.gz`, for example
-`llamadart-native-windows-x64-b9982.tar.gz`.
+`llamadart-native-windows-x64-b10075.tar.gz`.
 For local testing, `llamadart_native_path` may point directly at a bundle
 archive, at an extracted bundle directory, or at a directory containing
 `<tag>/<bundle>/`, `<bundle>/`, or the expected archive file.

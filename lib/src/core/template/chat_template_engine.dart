@@ -30,6 +30,7 @@ import 'handlers/glm45_handler.dart';
 import 'handlers/gpt_oss_handler.dart';
 import 'handlers/granite_handler.dart';
 import 'handlers/hermes_handler.dart';
+import 'handlers/hunyuan_v3_handler.dart';
 import 'handlers/kimi_k2_handler.dart';
 import 'handlers/lfm2_handler.dart';
 import 'handlers/llama3_handler.dart';
@@ -545,6 +546,8 @@ class ChatTemplateEngine {
         return MinimaxM2Handler();
       case ChatFormat.minicpm5:
         return MiniCpm5Handler();
+      case ChatFormat.hunyuanV3:
+        return HunyuanV3Handler();
       case ChatFormat.gptOss:
         return GptOssHandler();
       case ChatFormat.seedOss:

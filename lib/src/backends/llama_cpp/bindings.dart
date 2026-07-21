@@ -1968,6 +1968,15 @@ external bool ggml_is_contiguous_1(ffi.Pointer<ggml_tensor> tensor);
 external bool ggml_is_contiguous_2(ffi.Pointer<ggml_tensor> tensor);
 
 @ffi.Native<ffi.Bool Function(ffi.Pointer<ggml_tensor>)>()
+external bool ggml_is_contiguous_to_1(ffi.Pointer<ggml_tensor> tensor);
+
+@ffi.Native<ffi.Bool Function(ffi.Pointer<ggml_tensor>)>()
+external bool ggml_is_contiguous_to_2(ffi.Pointer<ggml_tensor> tensor);
+
+@ffi.Native<ffi.Bool Function(ffi.Pointer<ggml_tensor>)>()
+external bool ggml_is_contiguous_to_3(ffi.Pointer<ggml_tensor> tensor);
+
+@ffi.Native<ffi.Bool Function(ffi.Pointer<ggml_tensor>)>()
 external bool ggml_is_contiguously_allocated(ffi.Pointer<ggml_tensor> tensor);
 
 @ffi.Native<ffi.Bool Function(ffi.Pointer<ggml_tensor>)>()
@@ -5902,6 +5911,55 @@ external ffi.Pointer<ggml_tensor> ggml_lightning_indexer(
   ffi.Pointer<ggml_tensor> Function(
     ffi.Pointer<ggml_context>,
     ffi.Pointer<ggml_tensor>,
+    ffi.Pointer<ggml_tensor>,
+    ffi.Pointer<ggml_tensor>,
+    ffi.Float,
+    ffi.Int32,
+  )
+>()
+external ffi.Pointer<ggml_tensor> ggml_dsv4_hc_comb(
+  ffi.Pointer<ggml_context> ctx,
+  ffi.Pointer<ggml_tensor> mixes,
+  ffi.Pointer<ggml_tensor> scale,
+  ffi.Pointer<ggml_tensor> base,
+  double eps,
+  int n_iter,
+);
+
+@ffi.Native<
+  ffi.Pointer<ggml_tensor> Function(
+    ffi.Pointer<ggml_context>,
+    ffi.Pointer<ggml_tensor>,
+    ffi.Pointer<ggml_tensor>,
+  )
+>()
+external ffi.Pointer<ggml_tensor> ggml_dsv4_hc_pre(
+  ffi.Pointer<ggml_context> ctx,
+  ffi.Pointer<ggml_tensor> x,
+  ffi.Pointer<ggml_tensor> weights,
+);
+
+@ffi.Native<
+  ffi.Pointer<ggml_tensor> Function(
+    ffi.Pointer<ggml_context>,
+    ffi.Pointer<ggml_tensor>,
+    ffi.Pointer<ggml_tensor>,
+    ffi.Pointer<ggml_tensor>,
+    ffi.Pointer<ggml_tensor>,
+  )
+>()
+external ffi.Pointer<ggml_tensor> ggml_dsv4_hc_post(
+  ffi.Pointer<ggml_context> ctx,
+  ffi.Pointer<ggml_tensor> x,
+  ffi.Pointer<ggml_tensor> residual,
+  ffi.Pointer<ggml_tensor> post,
+  ffi.Pointer<ggml_tensor> comb,
+);
+
+@ffi.Native<
+  ffi.Pointer<ggml_tensor> Function(
+    ffi.Pointer<ggml_context>,
+    ffi.Pointer<ggml_tensor>,
     ggml_custom1_op_t,
     ffi.Int,
     ffi.Pointer<ffi.Void>,
@@ -8284,17 +8342,20 @@ enum ggml_op {
   GGML_OP_SOLVE_TRI(85),
   GGML_OP_GATED_DELTA_NET(86),
   GGML_OP_LIGHTNING_INDEXER(87),
-  GGML_OP_UNARY(88),
-  GGML_OP_MAP_CUSTOM1(89),
-  GGML_OP_MAP_CUSTOM2(90),
-  GGML_OP_MAP_CUSTOM3(91),
-  GGML_OP_CUSTOM(92),
-  GGML_OP_CROSS_ENTROPY_LOSS(93),
-  GGML_OP_CROSS_ENTROPY_LOSS_BACK(94),
-  GGML_OP_OPT_STEP_ADAMW(95),
-  GGML_OP_OPT_STEP_SGD(96),
-  GGML_OP_GLU(97),
-  GGML_OP_COUNT(98);
+  GGML_OP_DSV4_HC_COMB(88),
+  GGML_OP_DSV4_HC_PRE(89),
+  GGML_OP_DSV4_HC_POST(90),
+  GGML_OP_UNARY(91),
+  GGML_OP_MAP_CUSTOM1(92),
+  GGML_OP_MAP_CUSTOM2(93),
+  GGML_OP_MAP_CUSTOM3(94),
+  GGML_OP_CUSTOM(95),
+  GGML_OP_CROSS_ENTROPY_LOSS(96),
+  GGML_OP_CROSS_ENTROPY_LOSS_BACK(97),
+  GGML_OP_OPT_STEP_ADAMW(98),
+  GGML_OP_OPT_STEP_SGD(99),
+  GGML_OP_GLU(100),
+  GGML_OP_COUNT(101);
 
   final int value;
   const ggml_op(this.value);
@@ -8388,17 +8449,20 @@ enum ggml_op {
     85 => GGML_OP_SOLVE_TRI,
     86 => GGML_OP_GATED_DELTA_NET,
     87 => GGML_OP_LIGHTNING_INDEXER,
-    88 => GGML_OP_UNARY,
-    89 => GGML_OP_MAP_CUSTOM1,
-    90 => GGML_OP_MAP_CUSTOM2,
-    91 => GGML_OP_MAP_CUSTOM3,
-    92 => GGML_OP_CUSTOM,
-    93 => GGML_OP_CROSS_ENTROPY_LOSS,
-    94 => GGML_OP_CROSS_ENTROPY_LOSS_BACK,
-    95 => GGML_OP_OPT_STEP_ADAMW,
-    96 => GGML_OP_OPT_STEP_SGD,
-    97 => GGML_OP_GLU,
-    98 => GGML_OP_COUNT,
+    88 => GGML_OP_DSV4_HC_COMB,
+    89 => GGML_OP_DSV4_HC_PRE,
+    90 => GGML_OP_DSV4_HC_POST,
+    91 => GGML_OP_UNARY,
+    92 => GGML_OP_MAP_CUSTOM1,
+    93 => GGML_OP_MAP_CUSTOM2,
+    94 => GGML_OP_MAP_CUSTOM3,
+    95 => GGML_OP_CUSTOM,
+    96 => GGML_OP_CROSS_ENTROPY_LOSS,
+    97 => GGML_OP_CROSS_ENTROPY_LOSS_BACK,
+    98 => GGML_OP_OPT_STEP_ADAMW,
+    99 => GGML_OP_OPT_STEP_SGD,
+    100 => GGML_OP_GLU,
+    101 => GGML_OP_COUNT,
     _ => throw ArgumentError('Unknown value for ggml_op: $value'),
   };
 }

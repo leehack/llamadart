@@ -94,6 +94,14 @@ void main() {
       expect(format, equals(ChatFormat.nemotronV2));
     });
 
+    test('detects Hunyuan V3 format', () {
+      const source =
+          '<｜hy_User{}｜><tool_calls{}><tool_call{}>'
+          '<tool_sep{}><arg_key{}><arg_value{}>';
+      final format = detectChatFormat(source);
+      expect(format, equals(ChatFormat.hunyuanV3));
+    });
+
     test('detects Apertus format', () {
       const source =
           '<|system_start|>sys<|system_end|><|tools_prefix|>[]<|tools_suffix|>';
