@@ -79,4 +79,29 @@ void main() {
     expect(grammar, contains('<tool_sep:opensource>'));
     expect(grammar, contains('<arg_key:opensource>city'));
   });
+
+  test('emits enum values as raw GBNF literals', () {
+    final tool = ToolDefinition(
+      name: 'get_weather',
+      description: 'Get weather',
+      parameters: [
+        ToolParam.enumType(
+          'units',
+          values: ['metric', 'imperial'],
+          required: true,
+        ),
+      ],
+      handler: (_) async => null,
+    );
+
+    final grammar = HunyuanV3Handler().buildGrammar([tool]);
+
+    expect(
+      grammar,
+      contains(
+        'get-weather-units-arg-value ::= "metric" | "imperial" | string',
+      ),
+    );
+    expect(grammar, isNot(contains(r'\"metric\"')));
+  });
 }
