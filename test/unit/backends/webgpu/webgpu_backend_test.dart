@@ -79,6 +79,8 @@ void main() {
       globalContext.delete('__llamadartAllowSafariWebGpu'.toJS);
       globalContext.delete('__llamadartBridgeAdaptiveSafariGpu'.toJS);
       globalContext.delete('__llamadartBridgeRemoteFetchChunkBytes'.toJS);
+      globalContext.delete('__llamadartBridgeAllowAutoRemoteFetchBackend'.toJS);
+      globalContext.delete('__llamadartBridgeForceRemoteFetchBackend'.toJS);
       globalContext.delete('__llamadartBridgeThreadPoolSize'.toJS);
     }
 
@@ -1238,6 +1240,62 @@ void main() {
         expect((remoteFetchChunkBytes as JSNumber).toDartInt, 4 * 1024 * 1024);
       },
     );
+
+    test('keeps automatic remote fetch disabled by default', () async {
+      await backend.modelLoadFromUrl(
+        'https://example.com/model.gguf',
+        const ModelParams(),
+      );
+
+      final config = lastBridgeConfig as JSObject?;
+      expect(config, isNotNull);
+      final allowAutoRemoteFetchBackend = config!.getProperty(
+        'allowAutoRemoteFetchBackend'.toJS,
+      );
+      expect(allowAutoRemoteFetchBackend.isA<JSBoolean>(), isTrue);
+      expect((allowAutoRemoteFetchBackend as JSBoolean).toDart, isFalse);
+    });
+
+    test('allows explicit automatic remote fetch opt-in', () async {
+      globalContext.setProperty(
+        '__llamadartBridgeAllowAutoRemoteFetchBackend'.toJS,
+        true.toJS,
+      );
+
+      await backend.modelLoadFromUrl(
+        'https://example.com/model.gguf',
+        const ModelParams(),
+      );
+
+      final config = lastBridgeConfig as JSObject?;
+      expect(config, isNotNull);
+      final allowAutoRemoteFetchBackend = config!.getProperty(
+        'allowAutoRemoteFetchBackend'.toJS,
+      );
+      expect(allowAutoRemoteFetchBackend.isA<JSBoolean>(), isTrue);
+      expect((allowAutoRemoteFetchBackend as JSBoolean).toDart, isTrue);
+    });
+
+    test('allows explicit forced remote fetch opt-in', () async {
+      globalContext.setProperty(
+        '__llamadartBridgeForceRemoteFetchBackend'.toJS,
+        true.toJS,
+      );
+
+      await backend.modelLoadFromUrl(
+        'https://example.com/model.gguf',
+        const ModelParams(),
+      );
+
+      final config = lastBridgeConfig as JSObject?;
+      expect(config, isNotNull);
+      final allowAutoRemoteFetchBackend = config!.getProperty(
+        'allowAutoRemoteFetchBackend'.toJS,
+      );
+      expect(allowAutoRemoteFetchBackend.isA<JSBoolean>(), isTrue);
+      expect((allowAutoRemoteFetchBackend as JSBoolean).toDart, isTrue);
+      expect(lastRequestedForceRemoteFetchBackend, isTrue);
+    });
 
     test('uses global remote fetch chunk override in bridge config', () async {
       globalContext.setProperty(

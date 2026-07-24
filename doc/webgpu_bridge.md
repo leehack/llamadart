@@ -19,7 +19,7 @@ pipelines.
    `https://cdn.jsdelivr.net/gh/leehack/llama-web-bridge-assets@<tag>/llama_webgpu_bridge.js`
 2. Local fallback: `./webgpu_bridge/llama_webgpu_bridge.js`
 
-Default pinned tag in the example is `v0.1.18`.
+Default pinned tag in the example is `v0.1.21`.
 
 For broader browser coverage in this repository, fetched/local assets are patched
 to a universal Safari-compatible gate by default (`MIN_SAFARI_VERSION=170400`).
@@ -32,7 +32,7 @@ model bytes.
 To vendor pinned assets into local app web files:
 
 ```bash
-WEBGPU_BRIDGE_ASSETS_TAG=v0.1.18 ./scripts/fetch_webgpu_bridge_assets.sh
+WEBGPU_BRIDGE_ASSETS_TAG=v0.1.21 ./scripts/fetch_webgpu_bridge_assets.sh
 ```
 
 Optional compatibility env vars:
@@ -113,7 +113,7 @@ You can override CDN source/version before the bridge loader runs:
 ```html
 <script>
   window.__llamadartBridgeAssetsRepo = 'leehack/llama-web-bridge-assets';
-  window.__llamadartBridgeAssetsTag = 'v0.1.18';
+  window.__llamadartBridgeAssetsTag = 'v0.1.21';
 </script>
 ```
 
@@ -187,9 +187,16 @@ window.LlamaWebGpuBridge = class LlamaWebGpuBridge {
 - `window.__llamadartBridgeEnableMem64` (default effectively off in chat app)
   - Set to `true` to prefer wasm64 core when available.
 - `window.__llamadartBridgeAllowAutoRemoteFetchBackend`
-  - Default `true`.
-  - Set to `false` to skip the auto fetch-backed pre-attempt and go straight to
-    streamed network staging.
+  - Default `false`; streamed network staging remains the safe default.
+  - Set to `true` only for a controlled origin that serves valid GGUF byte
+    ranges. This also permits Dart recovery paths to retry with fetch-backed
+    loading after a streamed staging failure.
+- `window.__llamadartBridgeForceRemoteFetchBackend`
+  - Default `false`.
+  - Set to `true` only for controlled diagnostics that must use fetch-backed
+    loading from the first attempt. Prefer
+    `__llamadartBridgeAllowAutoRemoteFetchBackend` for ordinary opt-in because
+    it preserves streamed loading when the fetch-backed path is unnecessary.
 - `window.__llamadartBridgeRemoteFetchChunkBytes`
   - Optional positive integer bytes.
   - Defaults to `4 * 1024 * 1024` in `llamadart` web backend; clamped to

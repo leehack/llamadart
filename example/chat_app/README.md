@@ -396,14 +396,22 @@ await prefs.setInt('preferred_backend', backendIndex);
 - On web, **Download** prefetches model/mmproj bytes into browser Cache Storage with progress.
 - Qwen3.5 `0.8B` WebGPU loads are capped to a low layer count for stable browser text output.
 - Qwen3.5 multimodal web runs currently use CPU-safe fallback for stability even when the text model was loaded with WebGPU acceleration.
-- For very large web models, runtime may switch to worker-thread fetch-backed loading to reduce contiguous allocation pressure; this path may bypass prefetch cache reuse.
+- Web models use streamed network staging by default. Controlled origins that
+  serve valid GGUF byte ranges can explicitly enable worker-thread
+  fetch-backed loading to reduce contiguous allocation pressure; this path may
+  bypass prefetch cache reuse.
 - If optional `llama_webgpu_core_mem64` bridge assets are present and supported by the browser, chat app bridge bootstrapping can prefer wasm64 core and transparently fall back to wasm32.
 - Large single-file web model loading requires cross-origin isolation
   (`window.crossOriginIsolated === true`).
 - Chat app defaults to wasm32-first for stability. You can opt into wasm64 preference with
   `window.__llamadartBridgeEnableMem64 = true` before bridge bootstrap.
-- You can skip auto fetch-backed pre-attempts by setting
-  `window.__llamadartBridgeAllowAutoRemoteFetchBackend = false` before bridge bootstrap.
+- Fetch-backed loading is disabled by default. Set
+  `window.__llamadartBridgeAllowAutoRemoteFetchBackend = true` before bridge
+  bootstrap only for a controlled range-capable model origin. This explicit
+  opt-in also permits fetch-backed recovery retries after streamed staging
+  failures. For diagnostics that must use fetch-backed loading from the first
+  attempt, set `window.__llamadartBridgeForceRemoteFetchBackend = true`;
+  prefer the automatic opt-in for ordinary deployments.
 - You can tune fetch-backed model read chunk size by setting
   `window.__llamadartBridgeRemoteFetchChunkBytes = <bytes>` before bridge bootstrap
   (default `4 * 1024 * 1024`, clamped to `4KiB..16MiB`).
