@@ -775,7 +775,7 @@ class WebGpuLlamaBackend
   UnsupportedError? _normalizeBridgeRuntimeError(
     Object error, {
     Map<String, String>? runtimeHints,
-    bool remoteFetchBackendOptedIn = false,
+    required bool remoteFetchBackendOptedIn,
   }) {
     final text = _errorText(error);
     final loweredText = text.toLowerCase();
