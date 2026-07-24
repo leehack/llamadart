@@ -149,7 +149,22 @@ def main() -> int:
         default="bridge",
     )
     parser.add_argument("--mem64", action="store_true")
-    parser.add_argument("--disable-auto-remote-fetch", action="store_true")
+    remote_fetch_group = parser.add_mutually_exclusive_group()
+    remote_fetch_group.add_argument(
+        "--disable-auto-remote-fetch",
+        action="store_true",
+        help="Explicitly disable automatic fetch-backed model loading.",
+    )
+    remote_fetch_group.add_argument(
+        "--allow-auto-remote-fetch",
+        action="store_true",
+        help="Allow fetch-backed loading and recovery for a controlled origin.",
+    )
+    remote_fetch_group.add_argument(
+        "--force-remote-fetch",
+        action="store_true",
+        help="Force fetch-backed loading from the first attempt for diagnostics.",
+    )
     parser.add_argument(
         "--browser-angle",
         choices=["auto", "default", "metal", "vulkan"],
@@ -159,6 +174,30 @@ def main() -> int:
     args = parser.parse_args()
     if args.expect_mmproj_cache_hit and not args.prefetch_mmproj_cache:
         parser.error("--expect-mmproj-cache-hit requires --prefetch-mmproj-cache")
+
+    remote_fetch_mode = "default"
+    remote_fetch_init = """
+        delete window.__llamadartBridgeAllowAutoRemoteFetchBackend;
+        delete window.__llamadartBridgeForceRemoteFetchBackend;
+    """
+    if args.disable_auto_remote_fetch:
+        remote_fetch_mode = "disabled"
+        remote_fetch_init = """
+            window.__llamadartBridgeAllowAutoRemoteFetchBackend = false;
+            delete window.__llamadartBridgeForceRemoteFetchBackend;
+        """
+    elif args.allow_auto_remote_fetch:
+        remote_fetch_mode = "automatic"
+        remote_fetch_init = """
+            window.__llamadartBridgeAllowAutoRemoteFetchBackend = true;
+            delete window.__llamadartBridgeForceRemoteFetchBackend;
+        """
+    elif args.force_remote_fetch:
+        remote_fetch_mode = "forced"
+        remote_fetch_init = """
+            delete window.__llamadartBridgeAllowAutoRemoteFetchBackend;
+            window.__llamadartBridgeForceRemoteFetchBackend = true;
+        """
 
     console_logs: list[dict[str, str]] = []
     page_errors: list[str] = []
@@ -196,11 +235,7 @@ def main() -> int:
         window.__llamadartBridgeThreadPoolSize = {args.thread_pool_size};
         window.__llamadartBridgeEnableMem64 = {str(args.mem64).lower()};
         window.__llamadartBridgePreferMemory64 = {str(args.mem64).lower()};
-        {
-            "window.__llamadartBridgeAllowAutoRemoteFetchBackend = false;"
-            if args.disable_auto_remote_fetch
-            else "delete window.__llamadartBridgeAllowAutoRemoteFetchBackend;"
-        }
+        {remote_fetch_init}
         window.__llamadartRealBridgeLastResponse = null;
         window.__llamadartRealBridgeLastError = null;
         window.__llamadartRealLiteRtLmLastResponse = null;
@@ -549,6 +584,10 @@ def main() -> int:
               workerFallbackReason: window.__llamadartBridgeWorkerFallbackReason ?? null,
               loadError: window.__llamadartBridgeLoadError ?? null,
               threadPoolSize: window.__llamadartBridgeThreadPoolSize ?? null,
+              allowAutoRemoteFetchBackend:
+                window.__llamadartBridgeAllowAutoRemoteFetchBackend ?? null,
+              forceRemoteFetchBackend:
+                window.__llamadartBridgeForceRemoteFetchBackend ?? null,
               liteRtLmModuleUrl: window.__llamadartLiteRtLmModuleUrl ?? null,
               liteRtLmPatched: window.LiteRtLmEngine?.__llamadartRealE2ePatched ?? null,
             })"""
@@ -566,6 +605,7 @@ def main() -> int:
             mmprojUrl=args.mmproj_url,
             expectedText=args.expect,
             bridgeResponse=bridge_response,
+            remoteFetchMode=remote_fetch_mode,
             mmprojRequestCount=len(mmproj_requests),
             bridgeGlobals=bridge_globals,
             bodyTail=body_after_response[-1200:],
