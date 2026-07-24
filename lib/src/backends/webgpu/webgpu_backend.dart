@@ -206,13 +206,10 @@ class WebGpuLlamaBackend
     final threadPoolSizeHint = _getGlobalPositiveInt(
       '__llamadartBridgeThreadPoolSize',
     );
-    // Keep native remote-fetch loading opt-in until malformed responses can be
-    // rejected without risking an unrecoverable core abort.
-    final allowAutoRemoteFetchBackend =
-        _getGlobalOptionalBool(
-          '__llamadartBridgeAllowAutoRemoteFetchBackend',
-        ) ??
-        false;
+    // Keep bridge remote-fetch loading opt-in until malformed responses can be
+    // rejected without risking an unrecoverable core abort. Forced mode is an
+    // explicit opt-in and must enable the bridge capability end to end.
+    final allowAutoRemoteFetchBackend = _isRemoteFetchBackendOptedIn();
 
     return WebGpuBridgeConfig(
       wasmUrl: wasmUrl?.toJS,

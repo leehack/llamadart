@@ -1287,6 +1287,13 @@ void main() {
         const ModelParams(),
       );
 
+      final config = lastBridgeConfig as JSObject?;
+      expect(config, isNotNull);
+      final allowAutoRemoteFetchBackend = config!.getProperty(
+        'allowAutoRemoteFetchBackend'.toJS,
+      );
+      expect(allowAutoRemoteFetchBackend.isA<JSBoolean>(), isTrue);
+      expect((allowAutoRemoteFetchBackend as JSBoolean).toDart, isTrue);
       expect(lastRequestedForceRemoteFetchBackend, isTrue);
     });
 

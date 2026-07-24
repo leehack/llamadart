@@ -12,6 +12,10 @@ For canonical full release notes, use:
 - Updated WebGPU bridge assets to `v0.1.21` (llama.cpp `b10099`), restoring
   multimodal generation after recent upstream prompt-ingestion changes.
 
+- Disabled automatic WebGPU fetch-backed model loading by default. Streamed
+  loading remains the safe default, with explicit opt-in available for
+  controlled range-capable deployments.
+
 ## 0.8.17
 
 - Updated the default llama.cpp native runtime to `b10075` with matching
