@@ -26,9 +26,13 @@ void main() {
     bool? lastLoadUseCache;
     var modelLoadCallCount = 0;
     var failFirstWasm32StagingAbort = false;
+    var failWasm64StagingUntilRemoteFetch = false;
     late List<bool?> bridgePreferMemory64Values;
+    late List<bool?> loadForceRemoteFetchValues;
 
     setUp(() {
+      globalContext.delete('__llamadartBridgeAllowAutoRemoteFetchBackend'.toJS);
+      globalContext.delete('__llamadartBridgeForceRemoteFetchBackend'.toJS);
       bridge = JSObject();
       mmLoaded = false;
       sawAudioPart = false;
@@ -41,12 +45,15 @@ void main() {
       lastLoadUseCache = null;
       modelLoadCallCount = 0;
       failFirstWasm32StagingAbort = false;
+      failWasm64StagingUntilRemoteFetch = false;
       bridgePreferMemory64Values = <bool?>[];
+      loadForceRemoteFetchValues = <bool?>[];
 
       bridge.setProperty(
         'loadModelFromUrl'.toJS,
         ((String url, JSObject? config) {
           modelLoadCallCount += 1;
+          bool? forceRemoteFetchBackend;
           if (config != null) {
             final nBatch = config.getProperty('nBatch'.toJS);
             final nUbatch = config.getProperty('nUbatch'.toJS);
@@ -60,8 +67,21 @@ void main() {
             lastLoadUseCache = useCache.isA<JSBoolean>()
                 ? (useCache as JSBoolean).toDart
                 : null;
+            final forceRemoteFetch = config.getProperty(
+              'forceRemoteFetchBackend'.toJS,
+            );
+            forceRemoteFetchBackend = forceRemoteFetch.isA<JSBoolean>()
+                ? (forceRemoteFetch as JSBoolean).toDart
+                : null;
           }
+          loadForceRemoteFetchValues.add(forceRemoteFetchBackend);
           if (failFirstWasm32StagingAbort && modelLoadCallCount == 1) {
+            return Future<void>.error(
+              Exception('Aborted(). Build with -sASSERTIONS for more info.'),
+            ).toJS;
+          }
+          if (failWasm64StagingUntilRemoteFetch &&
+              forceRemoteFetchBackend != true) {
             return Future<void>.error(
               Exception('Aborted(). Build with -sASSERTIONS for more info.'),
             ).toJS;
@@ -227,6 +247,16 @@ void main() {
               'core_wasm32_active;core_abort;model_fs_write_loaded:1073741824;model_fs_write_abort'
                   .toJS,
             );
+          } else if (failWasm64StagingUntilRemoteFetch &&
+              loadForceRemoteFetchValues.last != true) {
+            meta.setProperty(
+              'llamadart.webgpu.core_variant'.toJS,
+              'wasm64'.toJS,
+            );
+            meta.setProperty(
+              'llamadart.webgpu.runtime_notes'.toJS,
+              'core_wasm64_active;core_abort;model_fs_write_abort'.toJS,
+            );
           }
           return meta;
         }).toJS,
@@ -269,6 +299,8 @@ void main() {
 
     tearDown(() async {
       await engine.dispose();
+      globalContext.delete('__llamadartBridgeAllowAutoRemoteFetchBackend'.toJS);
+      globalContext.delete('__llamadartBridgeForceRemoteFetchBackend'.toJS);
     });
 
     test('WebGPU load bounds Gemma 4 batches for browser memory', () async {
@@ -296,7 +328,62 @@ void main() {
 
       expect(modelLoadCallCount, 2);
       expect(bridgePreferMemory64Values, <bool?>[null, true]);
+      expect(loadForceRemoteFetchValues, <bool?>[null, false]);
     });
+
+    test(
+      'WebGPU load does not force remote fetch after wasm64 staging failure',
+      () async {
+        failWasm64StagingUntilRemoteFetch = true;
+
+        await expectLater(
+          () => engine.loadModelFromUrl(
+            'https://example.com/large-model.gguf',
+            modelParams: const ModelParams(
+              contextSize: 4096,
+              gpuLayers: 99,
+              preferMemory64: true,
+            ),
+          ),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (error) => error.toString(),
+              'message',
+              allOf(
+                contains('__llamadartBridgeAllowAutoRemoteFetchBackend = true'),
+                contains('valid GGUF byte ranges'),
+              ),
+            ),
+          ),
+        );
+
+        expect(modelLoadCallCount, 1);
+        expect(loadForceRemoteFetchValues, <bool?>[null]);
+      },
+    );
+
+    test(
+      'WebGPU load retries wasm64 staging failure after explicit opt-in',
+      () async {
+        globalContext.setProperty(
+          '__llamadartBridgeAllowAutoRemoteFetchBackend'.toJS,
+          true.toJS,
+        );
+        failWasm64StagingUntilRemoteFetch = true;
+
+        await engine.loadModelFromUrl(
+          'https://example.com/large-model.gguf',
+          modelParams: const ModelParams(
+            contextSize: 4096,
+            gpuLayers: 99,
+            preferMemory64: true,
+          ),
+        );
+
+        expect(modelLoadCallCount, 2);
+        expect(loadForceRemoteFetchValues, <bool?>[null, true]);
+      },
+    );
 
     test('WebGPU load keeps Qwen3.5 0.8B browser-safe batch tuning', () async {
       await engine.loadModelFromUrl(

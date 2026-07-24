@@ -206,11 +206,13 @@ class WebGpuLlamaBackend
     final threadPoolSizeHint = _getGlobalPositiveInt(
       '__llamadartBridgeThreadPoolSize',
     );
+    // Keep native remote-fetch loading opt-in until malformed responses can be
+    // rejected without risking an unrecoverable core abort.
     final allowAutoRemoteFetchBackend =
         _getGlobalOptionalBool(
           '__llamadartBridgeAllowAutoRemoteFetchBackend',
         ) ??
-        true;
+        false;
 
     return WebGpuBridgeConfig(
       wasmUrl: wasmUrl?.toJS,
@@ -464,6 +466,22 @@ class WebGpuLlamaBackend
     }
 
     return null;
+  }
+
+  bool _isRemoteFetchBackendOptedIn() {
+    return _getGlobalOptionalBool(
+              '__llamadartBridgeAllowAutoRemoteFetchBackend',
+            ) ==
+            true ||
+        _getGlobalBool('__llamadartBridgeForceRemoteFetchBackend');
+  }
+
+  bool _runtimeNotesIndicateModelFsWriteFailure(String runtimeNotes) {
+    return runtimeNotes.contains('model_response_nostream') ||
+        runtimeNotes.contains('model_fs_write_bigint_error') ||
+        runtimeNotes.contains('model_fs_write_abort') ||
+        runtimeNotes.contains('model_fs_write_arraybuffer_oom') ||
+        runtimeNotes.contains('model_fs_write_failed');
   }
 
   String? _getBridgeUserAgent() {
@@ -757,6 +775,7 @@ class WebGpuLlamaBackend
   UnsupportedError? _normalizeBridgeRuntimeError(
     Object error, {
     Map<String, String>? runtimeHints,
+    bool remoteFetchBackendOptedIn = false,
   }) {
     final text = _errorText(error);
     final loweredText = text.toLowerCase();
@@ -782,6 +801,20 @@ class WebGpuLlamaBackend
     }
 
     final runtimeNotes = runtimeHints?['llamadart.webgpu.runtime_notes'] ?? '';
+    if (_runtimeNotesIndicateModelFsWriteFailure(runtimeNotes) &&
+        !remoteFetchBackendOptedIn) {
+      return UnsupportedError(
+        'Web model staging failed before the GGUF could be loaded safely. '
+        'Automatic fetch-backed loading is disabled by default because an '
+        'invalid remote response can abort the WebAssembly core. Try a '
+        'smaller or sharded GGUF, reduce browser memory pressure, or use the '
+        'native runtime. For a controlled origin that serves valid GGUF byte '
+        'ranges, explicitly set '
+        'window.__llamadartBridgeAllowAutoRemoteFetchBackend = true or '
+        'window.__llamadartBridgeForceRemoteFetchBackend = true before '
+        'loading.',
+      );
+    }
     final threadConstructorFailure =
         runtimeNotes.contains('threads_capped_no_coi') ||
         runtimeNotes.contains('thread_constructor_failed') ||
@@ -910,6 +943,7 @@ class WebGpuLlamaBackend
     // escalation paths below can still flip this to true as a last resort.
     _preferMemory64Override = _resolvePreferMemory64(params);
     _forceRemoteFetchBackendOverride = null;
+    final remoteFetchBackendOptedIn = _isRemoteFetchBackendOptedIn();
 
     final requestedThreads = params.numberOfThreads > 0
         ? params.numberOfThreads
@@ -1087,12 +1121,9 @@ class WebGpuLlamaBackend
         final coreVariant = runtimeHints['llamadart.webgpu.core_variant'];
         final runtimeNotes =
             runtimeHints['llamadart.webgpu.runtime_notes'] ?? '';
-        final fsWriteFailed =
-            runtimeNotes.contains('model_response_nostream') ||
-            runtimeNotes.contains('model_fs_write_bigint_error') ||
-            runtimeNotes.contains('model_fs_write_abort') ||
-            runtimeNotes.contains('model_fs_write_arraybuffer_oom') ||
-            runtimeNotes.contains('model_fs_write_failed');
+        final fsWriteFailed = _runtimeNotesIndicateModelFsWriteFailure(
+          runtimeNotes,
+        );
         final bigIntInteropError = _isBigIntInteropError(e);
         final remoteFetchAttempted = runtimeNotes.contains(
           'model_fetch_backend_attempt',
@@ -1128,6 +1159,7 @@ class WebGpuLlamaBackend
             remoteFetchAborted;
         final shouldRetryWithSmallerRemoteFetchChunks =
             remoteFetchChunkRetryCount < 10 &&
+            remoteFetchBackendOptedIn &&
             remoteFetchAttempted &&
             remoteFetchAborted &&
             forceRemoteFetchRequested &&
@@ -1211,25 +1243,31 @@ class WebGpuLlamaBackend
         if (shouldRetryWithWasm64) {
           retriedWithWasm64 = true;
           _preferMemory64Override = true;
-          _forceRemoteFetchBackendOverride =
-              (remoteFetchAttempted || remoteFetchBackendKnownUnstable)
-              ? false
-              : true;
+          final retryWithRemoteFetchBackend =
+              remoteFetchBackendOptedIn &&
+              !remoteFetchAttempted &&
+              !remoteFetchBackendKnownUnstable;
+          _forceRemoteFetchBackendOverride = retryWithRemoteFetchBackend;
           index = -1;
           _emitConsoleText(
             LlamaLogLevel.warn,
-            remoteFetchAttempted
+            retryWithRemoteFetchBackend
+                ? 'WebGpuLlamaBackend: wasm32 memory pressure detected; '
+                      'retrying with wasm64 core and explicitly enabled '
+                      'fetch-backed loading.'
+                : remoteFetchAttempted
                 ? 'WebGpuLlamaBackend: wasm32 memory pressure detected after '
                       'fetch-backed loading; retrying with wasm64 core and '
                       'streamed network loading.'
                 : 'WebGpuLlamaBackend: wasm32 memory pressure detected; '
-                      'retrying with wasm64 core and fetch-backed loading.',
+                      'retrying with wasm64 core and streamed network loading.',
           );
           continue;
         }
 
         if (fsWriteFailed && coreVariant == 'wasm64') {
-          if (!retriedAfterFsWriteFailureWithRemote) {
+          if (remoteFetchBackendOptedIn &&
+              !retriedAfterFsWriteFailureWithRemote) {
             retriedAfterFsWriteFailureWithRemote = true;
             _forceRemoteFetchBackendOverride = true;
             remoteFetchChunkBytesOverride = math.min(
@@ -1248,9 +1286,13 @@ class WebGpuLlamaBackend
 
           _emitConsoleText(
             LlamaLogLevel.warn,
-            'WebGpuLlamaBackend: wasm64 model staging failed; skipping '
-            'fallback ladder because additional nCtx/GPU/thread '
-            'reductions are unlikely to recover FS write failures.',
+            remoteFetchBackendOptedIn
+                ? 'WebGpuLlamaBackend: wasm64 model staging failed; skipping '
+                      'fallback ladder because additional nCtx/GPU/thread '
+                      'reductions are unlikely to recover FS write failures.'
+                : 'WebGpuLlamaBackend: wasm64 model staging failed; '
+                      'fetch-backed recovery requires explicit opt-in, so no '
+                      'unsafe remote-fetch retry will be attempted.',
           );
         }
 
@@ -1274,6 +1316,7 @@ class WebGpuLlamaBackend
         final normalized = _normalizeBridgeRuntimeError(
           e,
           runtimeHints: runtimeHints,
+          remoteFetchBackendOptedIn: remoteFetchBackendOptedIn,
         );
         if (normalized != null) {
           throw normalized;
@@ -1286,6 +1329,7 @@ class WebGpuLlamaBackend
       final normalized = _normalizeBridgeRuntimeError(
         lastError,
         runtimeHints: lastRuntimeHints,
+        remoteFetchBackendOptedIn: remoteFetchBackendOptedIn,
       );
       if (normalized != null) {
         throw normalized;

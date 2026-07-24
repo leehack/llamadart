@@ -196,8 +196,11 @@ def main() -> int:
         window.__llamadartBridgeThreadPoolSize = {args.thread_pool_size};
         window.__llamadartBridgeEnableMem64 = {str(args.mem64).lower()};
         window.__llamadartBridgePreferMemory64 = {str(args.mem64).lower()};
-        window.__llamadartBridgeAllowAutoRemoteFetchBackend =
-            {str(not args.disable_auto_remote_fetch).lower()};
+        {
+            "window.__llamadartBridgeAllowAutoRemoteFetchBackend = false;"
+            if args.disable_auto_remote_fetch
+            else "delete window.__llamadartBridgeAllowAutoRemoteFetchBackend;"
+        }
         window.__llamadartRealBridgeLastResponse = null;
         window.__llamadartRealBridgeLastError = null;
         window.__llamadartRealLiteRtLmLastResponse = null;

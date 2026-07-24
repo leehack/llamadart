@@ -187,9 +187,16 @@ window.LlamaWebGpuBridge = class LlamaWebGpuBridge {
 - `window.__llamadartBridgeEnableMem64` (default effectively off in chat app)
   - Set to `true` to prefer wasm64 core when available.
 - `window.__llamadartBridgeAllowAutoRemoteFetchBackend`
-  - Default `true`.
-  - Set to `false` to skip the auto fetch-backed pre-attempt and go straight to
-    streamed network staging.
+  - Default `false`; streamed network staging remains the safe default.
+  - Set to `true` only for a controlled origin that serves valid GGUF byte
+    ranges. This also permits Dart recovery paths to retry with fetch-backed
+    loading after a streamed staging failure.
+- `window.__llamadartBridgeForceRemoteFetchBackend`
+  - Default `false`.
+  - Set to `true` only for controlled diagnostics that must use fetch-backed
+    loading from the first attempt. Prefer
+    `__llamadartBridgeAllowAutoRemoteFetchBackend` for ordinary opt-in because
+    it preserves streamed loading when the fetch-backed path is unnecessary.
 - `window.__llamadartBridgeRemoteFetchChunkBytes`
   - Optional positive integer bytes.
   - Defaults to `4 * 1024 * 1024` in `llamadart` web backend; clamped to

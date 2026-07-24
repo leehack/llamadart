@@ -1,3 +1,9 @@
+## Unreleased
+
+* Disabled automatic WebGPU fetch-backed model loading by default. Streamed
+  loading remains the safe default; controlled range-capable deployments can
+  opt in explicitly.
+
 ## 0.8.17
 
 * Updated the default llama.cpp native runtime to

@@ -210,11 +210,17 @@ failure:
   browser output unless CPU is explicitly requested.
 - Legacy Safari bridge assets force CPU fallback unless adaptive Safari GPU probe
   support is present or `window.__llamadartAllowSafariWebGpu = true` is set.
-- wasm64/wasm32 and remote-fetch loader retries can happen automatically when
-  bridge metadata indicates an interop or memory-pressure problem. Large
-  wasm32 model-staging aborts, including virtual-filesystem write aborts during
-  remote model/projector setup, are treated as memory pressure and retried with
-  the wasm64 core when available.
+- wasm64/wasm32 retries can happen automatically when bridge metadata indicates
+  an interop or memory-pressure problem. Large wasm32 model-staging aborts,
+  including virtual-filesystem write aborts during remote model/projector
+  setup, are treated as memory pressure and retried with the wasm64 core when
+  available, using safe streamed loading by default.
+- Fetch-backed loading and recovery retries default to disabled. A controlled
+  origin that serves valid GGUF byte ranges can opt in explicitly with
+  `window.__llamadartBridgeAllowAutoRemoteFetchBackend = true`.
+- `window.__llamadartBridgeForceRemoteFetchBackend = true` forces fetch-backed
+  loading from the first attempt and is intended for controlled diagnostics.
+  Prefer the automatic opt-in for ordinary deployments.
 
 Fallback is not silent success for every unsupported condition. If the bridge
 cannot load, the browser blocks worker threads, or the model exceeds browser
@@ -310,7 +316,10 @@ You can override bridge asset source/version before loader startup:
   // window.__llamadartBridgeBootstrapVerbose = true;
   // Optional runtime knobs:
   // window.__llamadartBridgeEnableMem64 = false;
-  // window.__llamadartBridgeAllowAutoRemoteFetchBackend = false;
+  // Explicit opt-in for controlled range-capable GGUF origins:
+  // window.__llamadartBridgeAllowAutoRemoteFetchBackend = true;
+  // Force fetch-backed loading from the first attempt (diagnostics only):
+  // window.__llamadartBridgeForceRemoteFetchBackend = true;
   // window.__llamadartBridgeRemoteFetchChunkBytes = 4 * 1024 * 1024;
   // window.__llamadartBridgeThreadPoolSize = 2;
 </script>
