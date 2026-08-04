@@ -1941,8 +1941,9 @@ class LlamaCppService {
       );
     }
 
+    final model = _createModelWrapper(modelPtr, sourcePath: modelPath);
     final handle = _getHandle();
-    _models[handle] = _LlamaModelWrapper(modelPtr, sourcePath: modelPath);
+    _models[handle] = model;
     _loraAdapters[handle] = {};
     _modelToMtmdUseGpu[handle] = mtmdUseGpu;
     final resolvedBackend = _resolveBackendNameForLoad(
@@ -2054,7 +2055,7 @@ class LlamaCppService {
       );
     }
 
-    final wrapper = _LlamaModelWrapper(modelPtr, sourcePath: draftModelPath);
+    final wrapper = _createModelWrapper(modelPtr, sourcePath: draftModelPath);
     _speculativeDraftModels[cacheKey] = wrapper;
     _modelToSpeculativeDraftModelKeys
         .putIfAbsent(targetModelHandle, () => <String>{})
@@ -2091,6 +2092,24 @@ class LlamaCppService {
         return _resolveExplicitBackendName(GpuBackend.opencl, backendInfo);
       case GpuBackend.hip:
         return _resolveExplicitBackendName(GpuBackend.hip, backendInfo);
+    }
+  }
+
+  _LlamaModelWrapper _createModelWrapper(
+    Pointer<llama_model> modelPointer, {
+    required String sourcePath,
+  }) {
+    try {
+      final vocab = llama_model_get_vocab(modelPointer);
+      return _LlamaModelWrapper(
+        modelPointer,
+        sourcePath: sourcePath,
+        vocabSize: llama_vocab_n_tokens(vocab),
+        suppressedTokens: readModelSuppressTokens(vocab),
+      );
+    } catch (_) {
+      llama_model_free(modelPointer);
+      rethrow;
     }
   }
 
@@ -4388,6 +4407,8 @@ class LlamaCppService {
       sampler = _initializeSampler(
         params,
         vocab,
+        model.vocabSize,
+        model.suppressedTokens,
         grammarPtr,
         rootPtr,
         lazyGrammarConfig,
@@ -5408,6 +5429,8 @@ class LlamaCppService {
   Pointer<llama_sampler> _initializeSampler(
     GenerationParams params,
     Pointer<llama_vocab> vocab,
+    int vocabSize,
+    List<int> suppressedTokens,
     Pointer<Utf8> grammarPtr,
     Pointer<Utf8> rootPtr,
     _LazyGrammarConfig? lazyGrammarConfig,
@@ -5429,29 +5452,18 @@ class LlamaCppService {
     );
     llama_sampler_chain_add(sampler, penaltiesSampler);
 
-    final suppressCountPtr = calloc<Int32>();
-    try {
-      final suppressTokens = llama_vocab_get_suppress_tokens(
-        vocab,
-        suppressCountPtr,
+    if (suppressedTokens.isNotEmpty) {
+      final suppressSampler = createSuppressTokensSampler(
+        vocabSize,
+        suppressedTokens,
       );
-      final suppressCount = suppressCountPtr.value;
-      if (suppressTokens != nullptr && suppressCount > 0) {
-        final suppressSampler = createSuppressTokensSampler(
-          llama_vocab_n_tokens(vocab),
-          <int>[for (int i = 0; i < suppressCount; i++) suppressTokens[i]],
+      if (suppressSampler == nullptr) {
+        llama_sampler_free(sampler);
+        throw LlamaInferenceException(
+          'llama.cpp failed to initialize model-specific suppressed tokens.',
         );
-        if (suppressSampler == nullptr) {
-          llama_sampler_free(sampler);
-          throw LlamaInferenceException(
-            'llama.cpp failed to initialize model-specific suppressed '
-            'tokens.',
-          );
-        }
-        llama_sampler_chain_add(sampler, suppressSampler);
       }
-    } finally {
-      calloc.free(suppressCountPtr);
+      llama_sampler_chain_add(sampler, suppressSampler);
     }
 
     Pointer<llama_sampler> grammarSampler = nullptr;
@@ -8916,7 +8928,14 @@ class _LlamaLoraWrapper {
 class _LlamaModelWrapper {
   final Pointer<llama_model> pointer;
   final String? sourcePath;
-  _LlamaModelWrapper(this.pointer, {this.sourcePath});
+  final int vocabSize;
+  final List<int> suppressedTokens;
+  _LlamaModelWrapper(
+    this.pointer, {
+    this.sourcePath,
+    required this.vocabSize,
+    required this.suppressedTokens,
+  });
   void dispose() {
     llama_model_free(pointer);
   }

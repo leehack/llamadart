@@ -204,6 +204,43 @@ void main() {
     });
   });
 
+  group('readModelSuppressTokens', () {
+    test('copies metadata once into an immutable Dart list', () {
+      final nativeTokens = calloc<llama_token>(2);
+      addTearDown(() => calloc.free(nativeTokens));
+      nativeTokens[0] = 1;
+      nativeTokens[1] = 3;
+      var calls = 0;
+
+      final tokens = readModelSuppressTokens(
+        nullptr,
+        getSuppressTokens: (_, countPointer) {
+          calls++;
+          countPointer.value = 2;
+          return nativeTokens;
+        },
+      );
+
+      nativeTokens[0] = 2;
+      expect(calls, 1);
+      expect(tokens, const <int>[1, 3]);
+      expect(() => tokens.add(4), throwsUnsupportedError);
+    });
+
+    test('returns the shared empty list when metadata is absent', () {
+      final tokens = readModelSuppressTokens(
+        nullptr,
+        getSuppressTokens: (_, countPointer) {
+          countPointer.value = 0;
+          return nullptr;
+        },
+      );
+
+      expect(tokens, isEmpty);
+      expect(() => tokens.add(1), throwsUnsupportedError);
+    });
+  });
+
   group('applyContextParams', () {
     test('writes type_k/type_v from cacheTypeK/V', () {
       final c = calloc<llama_context_params>();

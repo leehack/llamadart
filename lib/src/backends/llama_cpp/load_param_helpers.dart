@@ -1,6 +1,6 @@
-// Pure helpers for the load path. Kept here (vs inlined in the service) so
-// they can be unit-tested without going through `LlamaEngine.loadModel`,
-// which is integration-level and needs a real model file.
+// Focused helpers for native model loading and sampler setup. Kept here (vs
+// inlined in the service) so they can be unit-tested without going through
+// `LlamaEngine.loadModel`, which is integration-level and needs a real model.
 
 import 'dart:ffi';
 
@@ -44,6 +44,36 @@ Pointer<llama_sampler> createSuppressTokensSampler(
     return llama_sampler_init_logit_bias(vocabSize, tokens.length, biases);
   } finally {
     calloc.free(biases);
+  }
+}
+
+/// Signature used to read model-defined suppress-token metadata from llama.cpp.
+typedef SuppressTokensGetter =
+    Pointer<llama_token> Function(Pointer<llama_vocab>, Pointer<Int32>);
+
+/// Copies model-defined suppress-token metadata into an immutable Dart list.
+///
+/// Call this once while initializing a loaded model, then reuse the returned
+/// list when constructing sampler chains. The native token pointer remains
+/// owned by llama.cpp.
+List<int> readModelSuppressTokens(
+  Pointer<llama_vocab> vocab, {
+  SuppressTokensGetter? getSuppressTokens,
+}) {
+  final countPointer = calloc<Int32>();
+  try {
+    final tokensPointer =
+        (getSuppressTokens ?? llama_vocab_get_suppress_tokens)(
+          vocab,
+          countPointer,
+        );
+    final count = countPointer.value;
+    if (tokensPointer == nullptr || count <= 0) {
+      return const <int>[];
+    }
+    return List<int>.unmodifiable(tokensPointer.asTypedList(count));
+  } finally {
+    calloc.free(countPointer);
   }
 }
 
