@@ -146,13 +146,13 @@ development validation, and CDN-first loading for normal hosted deployments:
 1. On localhost: local asset first, then CDN fallback.
 2. On hosted deployments: CDN asset first, then local fallback.
 
-The example currently pins bridge assets to `v0.1.21`, with local vendored assets
-identified as `v0.1.21-local-b10099`.
+The example currently pins bridge assets to `v0.1.25`, with local vendored assets
+identified as `v0.1.25-local-b10255`.
 
 Fetch pinned local assets with:
 
 ```bash
-WEBGPU_BRIDGE_ASSETS_TAG=v0.1.21 ./scripts/fetch_webgpu_bridge_assets.sh
+WEBGPU_BRIDGE_ASSETS_TAG=v0.1.25 ./scripts/fetch_webgpu_bridge_assets.sh
 ```
 
 To verify the loaded runtime in a browser console, inspect:
@@ -309,7 +309,7 @@ You can override bridge asset source/version before loader startup:
 ```html
 <script>
   window.__llamadartBridgeAssetsRepo = 'leehack/llama-web-bridge-assets';
-  window.__llamadartBridgeAssetsTag = 'v0.1.21';
+  window.__llamadartBridgeAssetsTag = 'v0.1.25';
   // Prefer local runtime even off localhost:
   // window.__llamadartPreferLocalBridgeRuntime = true;
   // Enable verbose bridge bootstrap console logs:
