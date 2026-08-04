@@ -7,6 +7,12 @@
   the `llamadart_llama_cpp_flutter` Apple SwiftPM checksum. Speech generation
   is not yet exposed through the public Dart API.
 
+* Updated the default native LiteRT-LM runtime to
+  `leehack/litert-lm-native@v0.15.0-native.1`, with a corrected v0.15 streaming
+  callback bridge. Incompatible callback runtimes now fail safely before
+  generation, and explicit macOS library overrides take precedence over
+  process-linked assets.
+
 * Updated the default llama.cpp native runtime to
   `leehack/llamadart-native@b10255`, adding explicit bundled-MTP loading and
   automatic model-specific token suppression alongside recent model,

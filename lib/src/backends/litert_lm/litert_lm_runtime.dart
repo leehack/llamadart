@@ -7,12 +7,49 @@ import 'dart:isolate';
 import 'package:ffi/ffi.dart';
 import 'package:path/path.dart' as path;
 
+import '../../core/exceptions.dart';
 import '../../core/models/inference/model_params.dart';
 
-const _litertLmVersion = '0.14.0-native.2';
+const _litertLmVersion = '0.15.0-native.1';
 const _litertLmLibDirEnv = 'LLAMADART_LITERT_LM_LIB_DIR';
 const _liteRtLmIosNativeAsset = 'package:llamadart/litert_lm_LiteRtLm';
 const _processLibraryCandidate = '<process>';
+const _streamChunkCallbackAbiVersion = 2;
+
+/// Returns macOS LiteRT-LM candidates for a concrete runtime library path.
+///
+/// Concrete app/cache paths must win over process-linked native assets so
+/// validation and deployments do not silently use a different runtime version.
+/// Explicit overrides exclude process fallback entirely.
+List<String> liteRtLmMacOsLibraryCandidates(
+  String libraryPath, {
+  required bool explicitOverride,
+}) {
+  return explicitOverride
+      ? <String>[libraryPath]
+      : <String>[libraryPath, _processLibraryCandidate];
+}
+
+/// Describes an unsafe StreamProxy/upstream callback ABI combination.
+///
+/// This is public only for unit tests. A non-null result means registering the
+/// asynchronous callback would be unsafe and must fail before generation.
+String? liteRtLmStreamProxyCompatibilityError({
+  required bool hasStreamProxy,
+  required bool hasStreamChunkApi,
+  required int? callbackAbiVersion,
+}) {
+  if (!hasStreamChunkApi) {
+    return null;
+  }
+  if (hasStreamProxy && callbackAbiVersion == _streamChunkCallbackAbiVersion) {
+    return null;
+  }
+  return 'LiteRT-LM exposes the 0.15+ stream-chunk callback API, but its '
+      'embedded StreamProxy is missing or not stream-chunk compatible. Install a '
+      'corrected litert-lm-native runtime before using asynchronous '
+      'generation.';
+}
 
 /// Builds a diagnostic for LiteRT-LM engine creation failures.
 ///
@@ -287,6 +324,9 @@ typedef _ProxyFreeStringDart = void Function(Pointer<Char> value);
 
 typedef _ProxyDeleteNative = Void Function(Pointer<Void> callbackData);
 typedef _ProxyDeleteDart = void Function(Pointer<Void> callbackData);
+
+typedef _ProxyCallbackAbiVersionNative = Int32 Function();
+typedef _ProxyCallbackAbiVersionDart = int Function();
 
 typedef _LoadGlobalNative = Pointer<Void> Function(Pointer<Utf8> path);
 typedef _LoadGlobalDart = Pointer<Void> Function(Pointer<Utf8> path);
@@ -1321,10 +1361,10 @@ class LiteRtLmRuntimeClient {
       final appLibraryDir = _findMacOsAppLibraryDir();
       if (appLibraryDir != null) {
         return (
-          liteRtLmCandidates: [
-            _processLibraryCandidate,
+          liteRtLmCandidates: liteRtLmMacOsLibraryCandidates(
             '${appLibraryDir.path}/libLiteRtLm.dylib',
-          ],
+            explicitOverride: false,
+          ),
           companions: [
             for (final library in companions) '${appLibraryDir.path}/$library',
           ],
@@ -1333,11 +1373,14 @@ class LiteRtLmRuntimeClient {
       }
       final cacheDir = _findMacOsLiteRtLmCacheDir();
       if (cacheDir != null) {
+        final explicitOverride =
+            Platform.environment[_litertLmLibDirEnv]?.trim().isNotEmpty ??
+            false;
         return (
-          liteRtLmCandidates: [
-            _processLibraryCandidate,
+          liteRtLmCandidates: liteRtLmMacOsLibraryCandidates(
             '${cacheDir.path}/libLiteRtLm.dylib',
-          ],
+            explicitOverride: explicitOverride,
+          ),
           companions: [
             for (final library in companions) '${cacheDir.path}/$library',
           ],
@@ -1410,6 +1453,7 @@ class LiteRtLmRuntimeClient {
     String liteRtLmPath,
     bool directCallbackSupported,
   ) {
+    _validateEmbeddedStreamProxyCompatibility(liteRtLmLibrary);
     try {
       _loadRuntimeGloballyIfAvailable(liteRtLmLibrary, liteRtLmPath);
       final proxyCreate = liteRtLmLibrary
@@ -1440,6 +1484,40 @@ class LiteRtLmRuntimeClient {
           '$error',
         );
       }
+    }
+  }
+
+  void _validateEmbeddedStreamProxyCompatibility(
+    DynamicLibrary liteRtLmLibrary,
+  ) {
+    final hasStreamProxy = const [
+      'stream_proxy_create',
+      'stream_proxy_free_string',
+      'stream_proxy_delete',
+    ].every((symbol) => _hasNativeSymbol(liteRtLmLibrary, symbol));
+    final hasStreamChunkApi = _hasNativeSymbol(
+      liteRtLmLibrary,
+      'litert_lm_stream_chunk_get_text',
+    );
+    int? callbackAbiVersion;
+    if (hasStreamProxy) {
+      try {
+        callbackAbiVersion = liteRtLmLibrary
+            .lookupFunction<
+              _ProxyCallbackAbiVersionNative,
+              _ProxyCallbackAbiVersionDart
+            >('stream_proxy_callback_abi_version')();
+      } on ArgumentError {
+        callbackAbiVersion = null;
+      }
+    }
+    final compatibilityError = liteRtLmStreamProxyCompatibilityError(
+      hasStreamProxy: hasStreamProxy,
+      hasStreamChunkApi: hasStreamChunkApi,
+      callbackAbiVersion: callbackAbiVersion,
+    );
+    if (compatibilityError != null) {
+      throw LlamaUnsupportedException(compatibilityError);
     }
   }
 
@@ -1946,6 +2024,15 @@ DynamicLibrary _openLiteRtLmLibraryCandidate(String candidate) {
   return candidate == _processLibraryCandidate
       ? DynamicLibrary.process()
       : DynamicLibrary.open(candidate);
+}
+
+bool _hasNativeSymbol(DynamicLibrary library, String symbol) {
+  try {
+    library.lookup<NativeFunction<Void Function()>>(symbol);
+    return true;
+  } on ArgumentError {
+    return false;
+  }
 }
 
 List<DynamicLibrary> _openCompanionLibraries(Iterable<String> companions) {

@@ -13,6 +13,11 @@ For canonical full release notes, use:
   primitives, the matching penalty-sampler ABI migration, and refreshed Apple
   artifacts. Speech generation is not yet exposed through the public Dart API.
 
+- Updated the default native LiteRT-LM runtime to `v0.15.0-native.1`, with a
+  corrected v0.15 streaming callback bridge. Incompatible callback runtimes
+  now fail safely before generation, and explicit macOS library overrides are
+  honored.
+
 - Updated native llama.cpp to `b10255`, adding explicit bundled-MTP loading,
   automatic model-specific token suppression, and recent model, multimodal,
   speculative-decoding, and backend improvements, with matching load-mode

@@ -60,6 +60,69 @@ void main() {
     expect(liteRtLmMacOsCacheDirectoryCandidatesForAbi(Abi.linuxX64), isEmpty);
   });
 
+  test('macOS LiteRT-LM paths precede process-linked runtime fallback', () {
+    expect(
+      liteRtLmMacOsLibraryCandidates(
+        '/runtime/libLiteRtLm.dylib',
+        explicitOverride: true,
+      ),
+      const <String>['/runtime/libLiteRtLm.dylib'],
+    );
+    expect(
+      liteRtLmMacOsLibraryCandidates(
+        '/runtime/libLiteRtLm.dylib',
+        explicitOverride: false,
+      ),
+      const <String>['/runtime/libLiteRtLm.dylib', '<process>'],
+    );
+  });
+
+  test('rejects legacy StreamProxy with the v0.15 stream-chunk API', () {
+    expect(
+      liteRtLmStreamProxyCompatibilityError(
+        hasStreamProxy: true,
+        hasStreamChunkApi: true,
+        callbackAbiVersion: null,
+      ),
+      contains('not stream-chunk compatible'),
+    );
+    expect(
+      liteRtLmStreamProxyCompatibilityError(
+        hasStreamProxy: true,
+        hasStreamChunkApi: true,
+        callbackAbiVersion: 1,
+      ),
+      contains('not stream-chunk compatible'),
+    );
+  });
+
+  test('accepts legacy runtimes and stream-chunk-compatible proxies', () {
+    expect(
+      liteRtLmStreamProxyCompatibilityError(
+        hasStreamProxy: true,
+        hasStreamChunkApi: false,
+        callbackAbiVersion: 1,
+      ),
+      isNull,
+    );
+    expect(
+      liteRtLmStreamProxyCompatibilityError(
+        hasStreamProxy: true,
+        hasStreamChunkApi: true,
+        callbackAbiVersion: 2,
+      ),
+      isNull,
+    );
+    expect(
+      liteRtLmStreamProxyCompatibilityError(
+        hasStreamProxy: false,
+        hasStreamChunkApi: true,
+        callbackAbiVersion: null,
+      ),
+      contains('missing or not stream-chunk compatible'),
+    );
+  });
+
   test('LiteRT-LM cache lookup follows desktop runtime ABIs', () {
     expect(
       liteRtLmCacheDirectoryCandidatesForAbi(Abi.macosArm64),
