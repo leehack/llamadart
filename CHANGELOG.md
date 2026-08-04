@@ -11,8 +11,8 @@
   loading remains the safe default; controlled range-capable deployments can
   opt in explicitly.
 
-* Updated WebGPU bridge assets to `v0.1.21` (llama.cpp `b10099`), restoring
-  multimodal generation after recent upstream prompt-ingestion changes.
+* Updated WebGPU bridge assets to `v0.1.25` (llama.cpp `b10255`), refreshing
+  both WebAssembly runtimes while preserving the existing bridge API.
 
 ## 0.8.17
 
