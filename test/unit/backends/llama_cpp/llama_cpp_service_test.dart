@@ -323,6 +323,47 @@ void main() {
       );
     });
 
+    test('requires loadMtp for bundled MTP tensors', () {
+      const generationParams = GenerationParams(
+        speculativeDecodingConfig: SpeculativeDecodingConfig.mtp(),
+      );
+
+      expect(
+        () => service.debugValidateMtpModelLoadForTesting(
+          generationParams,
+          const ModelParams(),
+        ),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            contains('ModelParams(loadMtp: true)'),
+          ),
+        ),
+      );
+      expect(
+        () => service.debugValidateMtpModelLoadForTesting(
+          generationParams,
+          const ModelParams(loadMtp: true),
+        ),
+        returnsNormally,
+      );
+    });
+
+    test('external MTP draft does not require target bundled tensors', () {
+      expect(
+        () => service.debugValidateMtpModelLoadForTesting(
+          const GenerationParams(
+            speculativeDecodingConfig: SpeculativeDecodingConfig.mtp(
+              draftModelPath: 'draft.gguf',
+            ),
+          ),
+          const ModelParams(),
+        ),
+        returnsNormally,
+      );
+    });
+
     test('temporarily zeros and restores suppressed batch logits', () {
       final logits = malloc<Int8>(3);
       addTearDown(() => malloc.free(logits));

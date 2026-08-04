@@ -106,26 +106,138 @@ void main() {
   });
 
   group('applyModelParams', () {
-    test('writes use_mmap and use_mlock from params', () {
+    test('maps mmap and mlock combinations to llama.cpp load modes', () {
+      final cases = <({bool useMmap, bool useMlock, llama_load_mode expected})>[
+        (
+          useMmap: false,
+          useMlock: false,
+          expected: llama_load_mode.LLAMA_LOAD_MODE_NONE,
+        ),
+        (
+          useMmap: true,
+          useMlock: false,
+          expected: llama_load_mode.LLAMA_LOAD_MODE_MMAP,
+        ),
+        (
+          useMmap: false,
+          useMlock: true,
+          expected: llama_load_mode.LLAMA_LOAD_MODE_MLOCK,
+        ),
+        (
+          useMmap: true,
+          useMlock: true,
+          expected: llama_load_mode.LLAMA_LOAD_MODE_MMAP_MLOCK,
+        ),
+      ];
+
+      for (final testCase in cases) {
+        final m = calloc<llama_model_params>();
+        try {
+          applyModelParams(
+            m.ref,
+            ModelParams(useMmap: testCase.useMmap, useMlock: testCase.useMlock),
+          );
+          expect(m.ref.load_mode, testCase.expected);
+        } finally {
+          calloc.free(m);
+        }
+      }
+    });
+
+    test('default ModelParams selects mmap load mode', () {
       final m = calloc<llama_model_params>();
       try {
-        applyModelParams(m.ref, ModelParams(useMmap: false, useMlock: true));
-        expect(m.ref.use_mmap, isFalse);
-        expect(m.ref.use_mlock, isTrue);
+        applyModelParams(m.ref, ModelParams());
+        expect(m.ref.load_mode, llama_load_mode.LLAMA_LOAD_MODE_MMAP);
+        expect(m.ref.load_mtp, isFalse);
       } finally {
         calloc.free(m);
       }
     });
 
-    test('default ModelParams writes mmap=true, mlock=false', () {
+    test('maps the bundled MTP loading opt-in', () {
       final m = calloc<llama_model_params>();
       try {
-        applyModelParams(m.ref, ModelParams());
-        expect(m.ref.use_mmap, isTrue);
-        expect(m.ref.use_mlock, isFalse);
+        applyModelParams(m.ref, const ModelParams(loadMtp: true));
+        expect(m.ref.load_mtp, isTrue);
       } finally {
         calloc.free(m);
       }
+    });
+  });
+
+  group('createSuppressTokensSampler', () {
+    test('returns nullptr for an empty token list', () {
+      expect(createSuppressTokensSampler(4, const []), nullptr);
+    });
+
+    test('sets model-suppressed token logits to negative infinity', () {
+      final sampler = createSuppressTokensSampler(4, const [1, 3]);
+      expect(sampler, isNot(nullptr));
+
+      final candidates = calloc<llama_token_data>(4);
+      final candidateArray = calloc<llama_token_data_array>();
+      try {
+        for (int i = 0; i < 4; i++) {
+          candidates[i]
+            ..id = i
+            ..logit = i.toDouble()
+            ..p = 0;
+        }
+        candidateArray.ref
+          ..data = candidates
+          ..size = 4
+          ..selected = -1
+          ..sorted = false;
+
+        llama_sampler_apply(sampler, candidateArray);
+
+        expect(candidates[0].logit, 0);
+        expect(candidates[1].logit, double.negativeInfinity);
+        expect(candidates[2].logit, 2);
+        expect(candidates[3].logit, double.negativeInfinity);
+      } finally {
+        calloc.free(candidateArray);
+        calloc.free(candidates);
+        llama_sampler_free(sampler);
+      }
+    });
+  });
+
+  group('readModelSuppressTokens', () {
+    test('copies metadata once into an immutable Dart list', () {
+      final nativeTokens = calloc<llama_token>(2);
+      addTearDown(() => calloc.free(nativeTokens));
+      nativeTokens[0] = 1;
+      nativeTokens[1] = 3;
+      var calls = 0;
+
+      final tokens = readModelSuppressTokens(
+        nullptr,
+        getSuppressTokens: (_, countPointer) {
+          calls++;
+          countPointer.value = 2;
+          return nativeTokens;
+        },
+      );
+
+      nativeTokens[0] = 2;
+      expect(calls, 1);
+      expect(tokens, const <int>[1, 3]);
+      expect(() => tokens.add(4), throwsUnsupportedError);
+    });
+
+    test('returns the shared empty list when metadata is absent', () {
+      final tokens = readModelSuppressTokens(
+        nullptr,
+        getSuppressTokens: (_, countPointer) {
+          countPointer.value = 0;
+          return nullptr;
+        },
+      );
+
+      expect(tokens, isEmpty);
+      expect(() => tokens.add(1), throwsUnsupportedError);
     });
   });
 

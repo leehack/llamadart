@@ -215,11 +215,24 @@ class ModelParams {
   /// architectures.
   final int speculativeRollbackTokenMax;
 
-  /// `llama_model_params.use_mmap`. Default `true`.
+  /// Whether llama.cpp should memory-map model weights. Default `true`.
+  ///
+  /// Combined with [useMlock] and mapped to `llama_model_params.load_mode`.
   final bool useMmap;
 
-  /// `llama_model_params.use_mlock`. Default `false`.
+  /// Whether llama.cpp should lock model weights in memory. Default `false`.
+  ///
+  /// Combined with [useMmap] and mapped to `llama_model_params.load_mode`.
   final bool useMlock;
+
+  /// Whether llama.cpp should load bundled multi-token prediction tensors.
+  ///
+  /// Defaults to `false` to avoid the additional memory cost for callers that
+  /// do not use MTP speculative decoding. Set this before loading a model when
+  /// `SpeculativeDecodingStrategy.mtp` will use MTP tensors embedded in the
+  /// target GGUF. Explicit external MTP draft models are loaded as MTP
+  /// automatically.
+  final bool loadMtp;
 
   /// `llama_context_params.flash_attn_type`. User-explicit values override
   /// the platform/backend heuristic.
@@ -294,6 +307,7 @@ class ModelParams {
     this.speculativeRollbackTokenMax = 0,
     this.useMmap = true,
     this.useMlock = false,
+    this.loadMtp = false,
     this.flashAttention = FlashAttention.auto,
     this.cacheTypeK = KvCacheType.f16,
     this.cacheTypeV = KvCacheType.f16,
@@ -376,6 +390,7 @@ class ModelParams {
     int? speculativeRollbackTokenMax,
     bool? useMmap,
     bool? useMlock,
+    bool? loadMtp,
     FlashAttention? flashAttention,
     KvCacheType? cacheTypeK,
     KvCacheType? cacheTypeV,
@@ -424,6 +439,7 @@ class ModelParams {
           speculativeRollbackTokenMax ?? this.speculativeRollbackTokenMax,
       useMmap: useMmap ?? this.useMmap,
       useMlock: useMlock ?? this.useMlock,
+      loadMtp: loadMtp ?? this.loadMtp,
       flashAttention: flashAttention ?? this.flashAttention,
       cacheTypeK: cacheTypeK ?? this.cacheTypeK,
       cacheTypeV: cacheTypeV ?? this.cacheTypeV,

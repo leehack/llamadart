@@ -1,6 +1,10 @@
-// Pure helpers for the load path. Kept here (vs inlined in the service) so
-// they can be unit-tested without going through `LlamaEngine.loadModel`,
-// which is integration-level and needs a real model file.
+// Focused helpers for native model loading and sampler setup. Kept here (vs
+// inlined in the service) so they can be unit-tested without going through
+// `LlamaEngine.loadModel`, which is integration-level and needs a real model.
+
+import 'dart:ffi';
+
+import 'package:ffi/ffi.dart';
 
 import '../../core/models/config/flash_attention.dart';
 import '../../core/models/config/kv_cache_type.dart';
@@ -18,12 +22,73 @@ ggml_type ggmlTypeFor(KvCacheType type) {
   return ggml_type.fromValue(llama_cpp_values.ggmlTypeValueFor(type));
 }
 
+/// Creates a llama.cpp logit-bias sampler that suppresses [tokens].
+///
+/// The native sampler copies the bias entries before this function releases
+/// its temporary allocation. Returns `nullptr` when [tokens] is empty.
+Pointer<llama_sampler> createSuppressTokensSampler(
+  int vocabSize,
+  List<int> tokens,
+) {
+  if (tokens.isEmpty) {
+    return nullptr;
+  }
+
+  final biases = calloc<llama_logit_bias>(tokens.length);
+  try {
+    for (int i = 0; i < tokens.length; i++) {
+      biases[i]
+        ..token = tokens[i]
+        ..bias = double.negativeInfinity;
+    }
+    return llama_sampler_init_logit_bias(vocabSize, tokens.length, biases);
+  } finally {
+    calloc.free(biases);
+  }
+}
+
+/// Signature used to read model-defined suppress-token metadata from llama.cpp.
+typedef SuppressTokensGetter =
+    Pointer<llama_token> Function(Pointer<llama_vocab>, Pointer<Int32>);
+
+/// Copies model-defined suppress-token metadata into an immutable Dart list.
+///
+/// Call this once while initializing a loaded model, then reuse the returned
+/// list when constructing sampler chains. The native token pointer remains
+/// owned by llama.cpp.
+List<int> readModelSuppressTokens(
+  Pointer<llama_vocab> vocab, {
+  SuppressTokensGetter? getSuppressTokens,
+}) {
+  final countPointer = calloc<Int32>();
+  try {
+    final tokensPointer =
+        (getSuppressTokens ?? llama_vocab_get_suppress_tokens)(
+          vocab,
+          countPointer,
+        );
+    final count = countPointer.value;
+    if (tokensPointer == nullptr || count <= 0) {
+      return const <int>[];
+    }
+    return List<int>.unmodifiable(tokensPointer.asTypedList(count));
+  } finally {
+    calloc.free(countPointer);
+  }
+}
+
 /// Applies the user-controlled fields of [params] to a freshly-defaulted
 /// `llama_model_params` struct. Pure function: caller is responsible for
 /// initialising and freeing the struct.
 void applyModelParams(llama_model_params mparams, ModelParams params) {
-  mparams.use_mmap = params.useMmap;
-  mparams.use_mlock = params.useMlock;
+  final loadMode = switch ((params.useMmap, params.useMlock)) {
+    (false, false) => llama_load_mode.LLAMA_LOAD_MODE_NONE,
+    (true, false) => llama_load_mode.LLAMA_LOAD_MODE_MMAP,
+    (false, true) => llama_load_mode.LLAMA_LOAD_MODE_MLOCK,
+    (true, true) => llama_load_mode.LLAMA_LOAD_MODE_MMAP_MLOCK,
+  };
+  mparams.load_modeAsInt = loadMode.value;
+  mparams.load_mtp = params.loadMtp;
 }
 
 /// Applies the user-controlled fields of [params] to a `llama_context_params`

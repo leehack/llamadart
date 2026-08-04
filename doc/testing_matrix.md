@@ -180,9 +180,11 @@ dart run tool/testing/run_local_e2e.dart \
   --ngram-cache-build-static-path /tmp/llamadart-ngram-cache.bin
 ```
 
-In the local E2E scenario, draft-model strategies require
-`--draft-model-path`; the n-gram cache strategy can use existing cache paths or
-build a static cache with `--ngram-cache-build-static-path`.
+In the local E2E scenario, external draft-model strategies require
+`--draft-model-path`. Bundled MTP uses `draft-mtp` without that option; the
+runner then loads the target with `ModelParams.loadMtp` automatically. The
+n-gram cache strategy can use existing cache paths or build a static cache with
+`--ngram-cache-build-static-path`.
 For `ngram-simple`, `ngram-map-k`, and `ngram-map-k4v`, `--ngram-size-m`
 sweeps the effective n-gram draft length; `--draft-token-max` is still useful
 for draft-model, ngram-cache, and mixed draft-model cases. Use
