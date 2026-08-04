@@ -143,6 +143,29 @@ void main() {
       expect(capacity, 64);
     });
 
+    test('loads bundled MTP only when no external draft is supplied', () {
+      expect(
+        speculative_benchmark.debugShouldLoadBundledMtpForTesting(const [
+          '--model',
+          'target.gguf',
+          '--cases',
+          'baseline,draft-mtp',
+        ]),
+        isTrue,
+      );
+      expect(
+        speculative_benchmark.debugShouldLoadBundledMtpForTesting(const [
+          '--model',
+          'target.gguf',
+          '--draft-model',
+          'mtp.gguf',
+          '--cases',
+          'baseline,draft-mtp',
+        ]),
+        isFalse,
+      );
+    });
+
     test('rejects non-positive ngram token max', () async {
       final result = await Process.run(Platform.resolvedExecutable, [
         '--disable-dart-dev',

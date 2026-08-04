@@ -2,6 +2,10 @@
 // they can be unit-tested without going through `LlamaEngine.loadModel`,
 // which is integration-level and needs a real model file.
 
+import 'dart:ffi';
+
+import 'package:ffi/ffi.dart';
+
 import '../../core/models/config/flash_attention.dart';
 import '../../core/models/config/kv_cache_type.dart';
 import '../../core/models/config/llama_cpp_param_values.dart'
@@ -18,12 +22,43 @@ ggml_type ggmlTypeFor(KvCacheType type) {
   return ggml_type.fromValue(llama_cpp_values.ggmlTypeValueFor(type));
 }
 
+/// Creates a llama.cpp logit-bias sampler that suppresses [tokens].
+///
+/// The native sampler copies the bias entries before this function releases
+/// its temporary allocation. Returns `nullptr` when [tokens] is empty.
+Pointer<llama_sampler> createSuppressTokensSampler(
+  int vocabSize,
+  List<int> tokens,
+) {
+  if (tokens.isEmpty) {
+    return nullptr;
+  }
+
+  final biases = calloc<llama_logit_bias>(tokens.length);
+  try {
+    for (int i = 0; i < tokens.length; i++) {
+      biases[i]
+        ..token = tokens[i]
+        ..bias = double.negativeInfinity;
+    }
+    return llama_sampler_init_logit_bias(vocabSize, tokens.length, biases);
+  } finally {
+    calloc.free(biases);
+  }
+}
+
 /// Applies the user-controlled fields of [params] to a freshly-defaulted
 /// `llama_model_params` struct. Pure function: caller is responsible for
 /// initialising and freeing the struct.
 void applyModelParams(llama_model_params mparams, ModelParams params) {
-  mparams.use_mmap = params.useMmap;
-  mparams.use_mlock = params.useMlock;
+  final loadMode = switch ((params.useMmap, params.useMlock)) {
+    (false, false) => llama_load_mode.LLAMA_LOAD_MODE_NONE,
+    (true, false) => llama_load_mode.LLAMA_LOAD_MODE_MMAP,
+    (false, true) => llama_load_mode.LLAMA_LOAD_MODE_MLOCK,
+    (true, true) => llama_load_mode.LLAMA_LOAD_MODE_MMAP_MLOCK,
+  };
+  mparams.load_modeAsInt = loadMode.value;
+  mparams.load_mtp = params.loadMtp;
 }
 
 /// Applies the user-controlled fields of [params] to a `llama_context_params`

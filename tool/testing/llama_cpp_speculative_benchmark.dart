@@ -13,6 +13,7 @@ Future<void> main(List<String> arguments) async {
   }
 
   final benchmarkCases = _buildBenchmarkCases(options);
+  final loadBundledMtp = _shouldLoadBundledMtp(options, benchmarkCases);
   final baselineModelParams = ModelParams(
     contextSize: options.contextSize,
     preferredBackend: options.preferredBackend,
@@ -22,6 +23,7 @@ Future<void> main(List<String> arguments) async {
     batchSize: options.batchSize,
     microBatchSize: options.microBatchSize,
     flashAttention: options.flashAttention,
+    loadMtp: loadBundledMtp,
   );
   final speculativeModelParams = baselineModelParams.copyWith(
     speculativeRollbackTokenMax: options.maxSpeculativeDraftCapacity,
@@ -381,6 +383,24 @@ List<String> debugBuildBenchmarkCaseNamesForTesting(List<String> arguments) {
 /// Intended for unit tests of option semantics.
 int debugResolveSpeculativeRollbackCapacityForTesting(List<String> arguments) {
   return _BenchmarkOptions.parse(arguments).maxSpeculativeDraftCapacity;
+}
+
+/// Resolves whether the target model must load bundled MTP tensors.
+///
+/// Intended for unit tests of load-time benchmark semantics.
+bool debugShouldLoadBundledMtpForTesting(List<String> arguments) {
+  final options = _BenchmarkOptions.parse(arguments);
+  return _shouldLoadBundledMtp(options, _buildBenchmarkCases(options));
+}
+
+bool _shouldLoadBundledMtp(
+  _BenchmarkOptions options,
+  List<_BenchmarkCase> benchmarkCases,
+) {
+  return options.draftModelPath == null &&
+      benchmarkCases.any(
+        (benchmarkCase) => benchmarkCase.strategies.contains('draft-mtp'),
+      );
 }
 
 void _addCase(
@@ -1521,7 +1541,8 @@ Case selection:
   --cases all                          Every supported case; draft-model cases
                                        require --draft-model.
   --draft-model <draft.gguf>           Draft model for draft-simple, eagle3,
-                                       dflash, and mixed draft-simple cases.
+                                       dflash, external MTP, and mixed
+                                       draft-model cases. Omit for bundled MTP.
   --draft-token-max <list>             Comma-separated draft-token depths for
                                        draft-model, ngram-mod, and ngram-cache
                                        cases. Default: 1,2.

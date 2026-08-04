@@ -1,5 +1,12 @@
 ## Unreleased
 
+* Updated the default llama.cpp native runtime to
+  `leehack/llamadart-native@b10255`, adding explicit bundled-MTP loading and
+  automatic model-specific token suppression alongside recent model,
+  multimodal, speculative-decoding, and backend improvements. Regenerated the
+  matching Dart FFI bindings, migrated model loading to llama.cpp's load-mode
+  ABI, and refreshed the Apple SwiftPM checksum and current runtime-pin docs.
+
 * Disabled automatic WebGPU fetch-backed model loading by default. Streamed
   loading remains the safe default; controlled range-capable deployments can
   opt in explicitly.

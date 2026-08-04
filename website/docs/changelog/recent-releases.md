@@ -9,6 +9,11 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Updated native llama.cpp to `b10255`, adding explicit bundled-MTP loading,
+  automatic model-specific token suppression, and recent model, multimodal,
+  speculative-decoding, and backend improvements, with matching load-mode
+  bindings and Apple artifacts.
+
 - Updated WebGPU bridge assets to `v0.1.21` (llama.cpp `b10099`), restoring
   multimodal generation after recent upstream prompt-ingestion changes.
 

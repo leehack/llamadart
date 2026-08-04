@@ -29,6 +29,7 @@ void main() {
     expect(params.speculativeRollbackTokenMax, 0);
     expect(params.useMmap, isTrue);
     expect(params.useMlock, isFalse);
+    expect(params.loadMtp, isFalse);
     expect(params.flashAttention, FlashAttention.auto);
     expect(params.cacheTypeK, KvCacheType.f16);
     expect(params.cacheTypeV, KvCacheType.f16);
@@ -114,6 +115,7 @@ void main() {
     const params = ModelParams(
       useMmap: false,
       useMlock: true,
+      loadMtp: true,
       flashAttention: FlashAttention.enabled,
       cacheTypeK: KvCacheType.q8_0,
       cacheTypeV: KvCacheType.q8_0,
@@ -124,6 +126,7 @@ void main() {
 
     expect(params.useMmap, isFalse);
     expect(params.useMlock, isTrue);
+    expect(params.loadMtp, isTrue);
     expect(params.flashAttention, FlashAttention.enabled);
     expect(params.cacheTypeK, KvCacheType.q8_0);
     expect(params.cacheTypeV, KvCacheType.q8_0);
@@ -137,6 +140,7 @@ void main() {
     final updated = params.copyWith(
       useMmap: false,
       useMlock: true,
+      loadMtp: true,
       flashAttention: FlashAttention.enabled,
       cacheTypeK: KvCacheType.q4_0,
       cacheTypeV: KvCacheType.q8_0,
@@ -147,6 +151,7 @@ void main() {
 
     expect(updated.useMmap, isFalse);
     expect(updated.useMlock, isTrue);
+    expect(updated.loadMtp, isTrue);
     expect(updated.flashAttention, FlashAttention.enabled);
     expect(updated.cacheTypeK, KvCacheType.q4_0);
     expect(updated.cacheTypeV, KvCacheType.q8_0);
@@ -176,6 +181,7 @@ void main() {
       speculativeRollbackTokenMax: 3,
       useMmap: false,
       useMlock: true,
+      loadMtp: true,
       flashAttention: FlashAttention.enabled,
       cacheTypeK: KvCacheType.q8_0,
       cacheTypeV: KvCacheType.q8_0,
@@ -208,6 +214,7 @@ void main() {
     expect(updated.speculativeRollbackTokenMax, 3);
     expect(updated.useMmap, isFalse);
     expect(updated.useMlock, isTrue);
+    expect(updated.loadMtp, isTrue);
     expect(updated.flashAttention, FlashAttention.enabled);
     expect(updated.cacheTypeK, KvCacheType.q8_0);
     expect(updated.cacheTypeV, KvCacheType.q8_0);

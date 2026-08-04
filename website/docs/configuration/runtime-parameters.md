@@ -54,6 +54,11 @@ Important fields:
   values are preserved within `n_ubatch <= n_batch <= n_ctx`.
 - `maxParallelSequences`: max sequence slots (`n_seq_max`) for parallel
   sequence workloads (for example, batched embeddings).
+- `loadMtp` (native llama.cpp only): load MTP tensors embedded in the target
+  GGUF. It defaults to `false` because these tensors consume extra memory. Set
+  it to `true` before model loading when `SpeculativeDecodingConfig.mtp(...)`
+  will run without an external `draftModelPath`; explicitly supplied MTP draft
+  models are loaded as MTP automatically.
 - `chatTemplate`: optional template override.
 - `preferMemory64` (web/WebGPU only): prefer the 64-bit (wasm64/mem64) bridge
   core. The default 32-bit core has a 4 GiB address-space limit, but large

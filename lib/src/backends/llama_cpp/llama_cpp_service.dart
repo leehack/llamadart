@@ -731,6 +731,8 @@ class _LlamaCppSpeculativeConfig {
         strategy == SpeculativeDecodingStrategy.draftDflash,
   );
 
+  bool get usesMtp => strategies.contains(SpeculativeDecodingStrategy.mtp);
+
   bool get suppressDraftProcessLogits => strategies.any(
     (strategy) =>
         strategy == SpeculativeDecodingStrategy.draftSimple ||
@@ -1979,16 +1981,18 @@ class LlamaCppService {
     int targetModelHandle,
     String draftModelPath,
     int resolvedGpuLayers,
+    bool loadMtp,
   ) {
     final normalizedPath = File(draftModelPath).absolute.path;
-    return '$targetModelHandle\x00$normalizedPath\x00$resolvedGpuLayers';
+    return '$targetModelHandle\x00$normalizedPath\x00$resolvedGpuLayers\x00$loadMtp';
   }
 
   _LlamaModelWrapper _loadSpeculativeDraftModel(
     int targetModelHandle,
     String draftModelPath,
-    String label,
-  ) {
+    String label, {
+    required bool loadMtp,
+  }) {
     final modelFileSize = _validateGgufModelFile(draftModelPath, label);
     final targetModelParams =
         _modelLoadParams[targetModelHandle] ?? const ModelParams();
@@ -2011,6 +2015,7 @@ class LlamaCppService {
       targetModelHandle,
       draftModelPath,
       draftGpuLayers,
+      loadMtp,
     );
 
     final cached = _speculativeDraftModels[cacheKey];
@@ -2026,7 +2031,7 @@ class LlamaCppService {
     mparams.n_gpu_layers = draftGpuLayers;
     mparams.split_modeAsInt = targetModelParams.splitMode.llamaCppValue;
     mparams.main_gpu = targetModelParams.mainGpu;
-    applyModelParams(mparams, targetModelParams);
+    applyModelParams(mparams, targetModelParams.copyWith(loadMtp: loadMtp));
     if (preferredDevices != null) {
       mparams.devices = preferredDevices;
     }
@@ -4085,6 +4090,33 @@ class LlamaCppService {
     )?.typeNames;
   }
 
+  void _validateMtpModelLoad(
+    _LlamaCppSpeculativeConfig? config,
+    ModelParams modelParams,
+  ) {
+    if (config?.usesMtp == true &&
+        config?.draftModelPath == null &&
+        !modelParams.loadMtp) {
+      throw LlamaUnsupportedException(
+        'Bundled MTP speculative decoding requires the model to be loaded '
+        'with ModelParams(loadMtp: true). Reload the target model with MTP '
+        'tensors enabled, or provide a compatible external draftModelPath.',
+      );
+    }
+  }
+
+  /// Validates bundled MTP model-loading requirements for unit tests.
+  void debugValidateMtpModelLoadForTesting(
+    GenerationParams params,
+    ModelParams modelParams, {
+    bool hasMediaParts = false,
+  }) {
+    _validateMtpModelLoad(
+      _resolveLlamaCppSpeculativeConfig(params, hasMediaParts: hasMediaParts),
+      modelParams,
+    );
+  }
+
   /// Validates a llama.cpp thinking budget for unit tests.
   void debugValidateThinkingBudgetForTesting(
     GenerationParams params, {
@@ -4235,6 +4267,10 @@ class LlamaCppService {
         params,
         hasMediaParts: hasMediaParts,
       );
+      _validateMtpModelLoad(
+        speculativeConfig,
+        _modelLoadParams[modelHandle] ?? const ModelParams(),
+      );
       final reasoningBudgetApi = thinkingBudgetConfig == null
           ? null
           : _resolveReasoningBudgetApi();
@@ -4269,6 +4305,7 @@ class LlamaCppService {
                 modelHandle,
                 draftModelPath,
                 'speculative draft model',
+                loadMtp: speculativeConfig.usesMtp,
               );
         speculativeSession = speculativeApi.initSession(
           targetModel: model.pointer,
@@ -5391,6 +5428,31 @@ class LlamaCppService {
       penaltyConfig.presence,
     );
     llama_sampler_chain_add(sampler, penaltiesSampler);
+
+    final suppressCountPtr = calloc<Int32>();
+    try {
+      final suppressTokens = llama_vocab_get_suppress_tokens(
+        vocab,
+        suppressCountPtr,
+      );
+      final suppressCount = suppressCountPtr.value;
+      if (suppressTokens != nullptr && suppressCount > 0) {
+        final suppressSampler = createSuppressTokensSampler(
+          llama_vocab_n_tokens(vocab),
+          <int>[for (int i = 0; i < suppressCount; i++) suppressTokens[i]],
+        );
+        if (suppressSampler == nullptr) {
+          llama_sampler_free(sampler);
+          throw LlamaInferenceException(
+            'llama.cpp failed to initialize model-specific suppressed '
+            'tokens.',
+          );
+        }
+        llama_sampler_chain_add(sampler, suppressSampler);
+      }
+    } finally {
+      calloc.free(suppressCountPtr);
+    }
 
     Pointer<llama_sampler> grammarSampler = nullptr;
     final useLazyGrammar = params.grammarLazy && lazyGrammarConfig != null;

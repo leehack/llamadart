@@ -141,8 +141,8 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     tier: 'targeted',
     mode: 'local-only',
     covers:
-        'real GGUF llama.cpp speculative decoding baseline, n-gram, '
-        'draft-model, and cache throughput/acceptance metrics',
+        'real GGUF llama.cpp speculative decoding baseline, bundled MTP, '
+        'n-gram, draft-model, and cache throughput/acceptance metrics',
     command:
         'dart run tool/testing/run_local_e2e.dart --scenario '
         'llama-cpp-speculative-benchmark --model-path <model.gguf> '
@@ -155,8 +155,9 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         '/tmp/llamadart-ngram-cache.bin',
     useWhen:
         'llama.cpp speculative decoding strategy, wrapper, rollback, or '
-        'performance changes. Draft-model strategies require '
-        '--draft-model-path in the local E2E scenario; ngram-cache can use '
+        'performance changes. External draft-model strategies require '
+        '--draft-model-path in the local E2E scenario; bundled MTP omits it '
+        'and enables ModelParams.loadMtp; ngram-cache can use '
         'an existing cache path or --ngram-cache-build-static-path.',
   ),
   TestMatrixRow(

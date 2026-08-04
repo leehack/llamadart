@@ -89,6 +89,10 @@ Guidelines:
   paths.
 - `batchSize`, `microBatchSize`: scheduler/batching controls for native and web
   runtimes.
+- `loadMtp`: native llama.cpp opt-in for MTP tensors embedded in the target
+  GGUF. Keep it `false` unless bundled MTP will be used, because loading the
+  extra tensors increases model memory. External MTP draft models are enabled
+  automatically when supplied through `draftModelPath`.
 - `maxParallelSequences`: relevant for embedding or true multi-sequence
   workloads, not regular single-turn chat.
 
@@ -283,8 +287,9 @@ dart run tool/testing/native_embedding_sweep.dart \
   --csv-out embedding_speedup.csv
 ```
 
-For the speculative benchmark runner, draft-model strategies require
-`--draft-model`; the n-gram cache strategy requires cache paths. Current
+For the speculative benchmark runner, external draft-model strategies require
+`--draft-model`; bundled MTP omits it and automatically loads the target's MTP
+tensors. The n-gram cache strategy requires cache paths. Current
 measured llama.cpp n-gram parity results, including exact upstream comparison
 commands, are recorded in [Backend Benchmarks](./backend-benchmarks).
 

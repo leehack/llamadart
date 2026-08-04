@@ -101,8 +101,9 @@ void main() {
       );
       expect(
         table,
-        contains('Draft-model strategies require --draft-model-path'),
+        contains('External draft-model strategies require --draft-model-path'),
       );
+      expect(table, contains('bundled MTP omits it'));
       expect(table, contains('ngram-cache can use'));
       expect(table, isNot(contains('LLAMADART_MTP_BENCHMARK')));
       expect(table, isNot(contains('llama_cpp_mtp_benchmark.dart')));
