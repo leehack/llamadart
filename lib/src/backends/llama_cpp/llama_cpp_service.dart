@@ -5445,6 +5445,7 @@ class LlamaCppService {
 
     final penaltyConfig = _resolvePenaltySamplerConfig(params);
     final penaltiesSampler = llama_sampler_init_penalties(
+      vocabSize,
       penaltyConfig.lastN,
       penaltyConfig.repeat,
       penaltyConfig.frequency,

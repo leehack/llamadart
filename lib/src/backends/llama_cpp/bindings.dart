@@ -1522,12 +1522,14 @@ external ffi.Pointer<llama_sampler> llama_sampler_init_grammar_lazy_patterns(
 @ffi.Native<
   ffi.Pointer<llama_sampler> Function(
     ffi.Int32,
+    ffi.Int32,
     ffi.Float,
     ffi.Float,
     ffi.Float,
   )
 >()
 external ffi.Pointer<llama_sampler> llama_sampler_init_penalties(
+  int n_vocab,
   int penalty_last_n,
   double penalty_repeat,
   double penalty_freq,
@@ -1538,7 +1540,6 @@ external ffi.Pointer<llama_sampler> llama_sampler_init_penalties(
 @ffi.Native<
   ffi.Pointer<llama_sampler> Function(
     ffi.Pointer<llama_vocab>,
-    ffi.Int32,
     ffi.Float,
     ffi.Float,
     ffi.Int32,
@@ -1549,7 +1550,6 @@ external ffi.Pointer<llama_sampler> llama_sampler_init_penalties(
 >()
 external ffi.Pointer<llama_sampler> llama_sampler_init_dry(
   ffi.Pointer<llama_vocab> vocab,
-  int n_ctx_train,
   double dry_multiplier,
   double dry_base,
   int dry_allowed_length,
@@ -7650,6 +7650,24 @@ external void mtmd_log_set(
 @ffi.Native<mtmd_caps Function(ffi.Pointer<ffi.Char>)>()
 external mtmd_caps mtmd_get_cap_from_file(ffi.Pointer<ffi.Char> mmproj_fname);
 
+@ffi.Native<mtmd_gen_audio_info Function(ffi.Pointer<mtmd_context>)>()
+external mtmd_gen_audio_info mtmd_gen_audio_get_info(
+  ffi.Pointer<mtmd_context> ctx,
+);
+
+@ffi.Native<
+  ffi.Int32 Function(
+    ffi.Pointer<mtmd_context>,
+    ffi.Pointer<mtmd_gen_inp>,
+    ffi.Pointer<mtmd_gen_out>,
+  )
+>()
+external int mtmd_gen_audio_process(
+  ffi.Pointer<mtmd_context> ctx,
+  ffi.Pointer<mtmd_gen_inp> inp,
+  ffi.Pointer<mtmd_gen_out> out,
+);
+
 /// //////////////////////////////////////
 @ffi.Native<ffi.Pointer<mtmd_input_chunks> Function()>()
 external ffi.Pointer<mtmd_input_chunks> mtmd_test_create_input_chunks();
@@ -7833,6 +7851,84 @@ external int mtmd_helper_video_read_next(
   ffi.Pointer<mtmd_helper_video> ctx,
   ffi.Pointer<ffi.Pointer<mtmd_bitmap>> out_bitmap,
   ffi.Pointer<ffi.Pointer<ffi.Char>> out_text,
+);
+
+@ffi.Native<
+  ffi.Bool Function(ffi.Pointer<llama_context>, ffi.Pointer<mtmd_context>)
+>()
+external bool mtmd_helper_model_can_chat(
+  ffi.Pointer<llama_context> lctx,
+  ffi.Pointer<mtmd_context> mctx,
+);
+
+@ffi.Native<
+  ffi.Pointer<mtmd_helper_gen_audio> Function(
+    ffi.Pointer<llama_context>,
+    ffi.Pointer<mtmd_context>,
+  )
+>()
+external ffi.Pointer<mtmd_helper_gen_audio> mtmd_helper_gen_audio_init(
+  ffi.Pointer<llama_context> lctx,
+  ffi.Pointer<mtmd_context> mctx,
+);
+
+@ffi.Native<ffi.Void Function(ffi.Pointer<mtmd_helper_gen_audio>)>()
+external void mtmd_helper_gen_audio_free(
+  ffi.Pointer<mtmd_helper_gen_audio> ctx,
+);
+
+@ffi.Native<ffi.Void Function(ffi.Pointer<mtmd_helper_gen_audio>)>()
+external void mtmd_helper_gen_audio_reset(
+  ffi.Pointer<mtmd_helper_gen_audio> ctx,
+);
+
+@ffi.Native<
+  ffi.Int32 Function(
+    ffi.Pointer<mtmd_helper_gen_audio>,
+    ffi.Pointer<mtmd_helper_gen_audio_inp>,
+  )
+>()
+external int mtmd_helper_gen_audio_set_input(
+  ffi.Pointer<mtmd_helper_gen_audio> ctx,
+  ffi.Pointer<mtmd_helper_gen_audio_inp> inp,
+);
+
+@ffi.Native<ffi.Int32 Function(ffi.Pointer<mtmd_helper_gen_audio>, ffi.Int32)>()
+external int mtmd_helper_gen_audio_step_prompt(
+  ffi.Pointer<mtmd_helper_gen_audio> ctx,
+  int n_batch,
+);
+
+@ffi.Native<
+  ffi.Int32 Function(
+    ffi.Pointer<mtmd_helper_gen_audio>,
+    llama_token,
+    ffi.Pointer<ffi.Float>,
+    ffi.Pointer<ffi.Pointer<ffi.Float>>,
+  )
+>()
+external int mtmd_helper_gen_audio_step_gen(
+  ffi.Pointer<mtmd_helper_gen_audio> ctx,
+  int sampled,
+  ffi.Pointer<ffi.Float> h_state_in,
+  ffi.Pointer<ffi.Pointer<ffi.Float>> h_state_out,
+);
+
+@ffi.Native<
+  ffi.Int32 Function(
+    ffi.Pointer<mtmd_helper_gen_audio>,
+    ffi.Pointer<ffi.Int32>,
+    ffi.Pointer<ffi.Pointer<ffi.Char>>,
+    ffi.Pointer<ffi.Size>,
+    ffi.Pointer<ffi.Int64>,
+  )
+>()
+external int mtmd_helper_gen_audio_get_output(
+  ffi.Pointer<mtmd_helper_gen_audio> ctx,
+  ffi.Pointer<ffi.Int32> out_sample_rate,
+  ffi.Pointer<ffi.Pointer<ffi.Char>> out_data,
+  ffi.Pointer<ffi.Size> out_data_len,
+  ffi.Pointer<ffi.Int64> out_n_samples,
 );
 
 @ffi.Native<ffi.Void Function(ffi.Int)>()
@@ -8546,9 +8642,6 @@ final class llama_sampler_data extends ffi.Struct {
   external ffi.Pointer<ggml_tensor> sampled;
 
   external ffi.Pointer<ggml_tensor> candidates;
-
-  @ffi.Int64()
-  external int n_vocab;
 }
 
 final class llama_sampler_i extends ffi.Struct {
@@ -10566,6 +10659,92 @@ final class mtmd_caps extends ffi.Struct {
   external bool inp_audio;
 }
 
+/// //////////////////////////////////////
+enum mtmd_gen_audio_type {
+  MTMD_GEN_AUDIO_TYPE_NONE(0),
+  MTMD_GEN_AUDIO_TYPE_QWEN3TTS(1);
+
+  final int value;
+  const mtmd_gen_audio_type(this.value);
+
+  static mtmd_gen_audio_type fromValue(int value) => switch (value) {
+    0 => MTMD_GEN_AUDIO_TYPE_NONE,
+    1 => MTMD_GEN_AUDIO_TYPE_QWEN3TTS,
+    _ => throw ArgumentError('Unknown value for mtmd_gen_audio_type: $value'),
+  };
+}
+
+final class mtmd_gen_audio_info extends ffi.Struct {
+  @ffi.UnsignedInt()
+  external int typeAsInt;
+
+  mtmd_gen_audio_type get type => mtmd_gen_audio_type.fromValue(typeAsInt);
+
+  @ffi.Int32()
+  external int sample_rate;
+}
+
+enum mtmd_gen_process_type {
+  MTMD_GEN_PROCESS_TYPE_GEN_CODE(0),
+  MTMD_GEN_PROCESS_TYPE_GEN_WAV(1);
+
+  final int value;
+  const mtmd_gen_process_type(this.value);
+
+  static mtmd_gen_process_type fromValue(int value) => switch (value) {
+    0 => MTMD_GEN_PROCESS_TYPE_GEN_CODE,
+    1 => MTMD_GEN_PROCESS_TYPE_GEN_WAV,
+    _ => throw ArgumentError('Unknown value for mtmd_gen_process_type: $value'),
+  };
+}
+
+final class mtmd_gen_inp extends ffi.Struct {
+  @ffi.UnsignedInt()
+  external int typeAsInt;
+
+  mtmd_gen_process_type get type => mtmd_gen_process_type.fromValue(typeAsInt);
+
+  @ffi.Int32()
+  external int code0;
+
+  external ffi.Pointer<ffi.Float> embd;
+
+  @ffi.Int32()
+  external int top_k;
+
+  @ffi.Float()
+  external double top_p;
+
+  external ffi.Pointer<ffi.Int32> codes;
+
+  @ffi.Size()
+  external int n_codes;
+
+  external ffi.Pointer<ffi.Char> state_data;
+
+  @ffi.Size()
+  external int state_size;
+}
+
+final class mtmd_gen_out extends ffi.Struct {
+  external ffi.Pointer<ffi.Int32> codes;
+
+  @ffi.Size()
+  external int n_codes;
+
+  external ffi.Pointer<ffi.Float> embd;
+
+  external ffi.Pointer<ffi.Float> audio;
+
+  @ffi.Size()
+  external int n_samples;
+
+  external ffi.Pointer<ffi.Char> state_data;
+
+  @ffi.Size()
+  external int state_size;
+}
+
 final class mtmd_helper_video extends ffi.Opaque {}
 
 final class mtmd_helper_bitmap_wrapper extends ffi.Struct {
@@ -10603,6 +10782,50 @@ final class mtmd_helper_video_init_params extends ffi.Struct {
 
   @ffi.Int64()
   external int timestamp_interval_ms;
+}
+
+final class mtmd_helper_gen_audio extends ffi.Opaque {}
+
+enum mtmd_helper_gen_audio_outtype {
+  MTMD_HELPER_GEN_AUDIO_OUTTYPE_PCM(0),
+  MTMD_HELPER_GEN_AUDIO_OUTTYPE_WAV(1);
+
+  final int value;
+  const mtmd_helper_gen_audio_outtype(this.value);
+
+  static mtmd_helper_gen_audio_outtype fromValue(int value) => switch (value) {
+    0 => MTMD_HELPER_GEN_AUDIO_OUTTYPE_PCM,
+    1 => MTMD_HELPER_GEN_AUDIO_OUTTYPE_WAV,
+    _ => throw ArgumentError(
+      'Unknown value for mtmd_helper_gen_audio_outtype: $value',
+    ),
+  };
+}
+
+final class mtmd_helper_gen_audio_inp extends ffi.Struct {
+  @llama_seq_id()
+  external int seq_id;
+
+  external ffi.Pointer<ffi.Char> prompt;
+
+  @ffi.Size()
+  external int prompt_len;
+
+  external ffi.Pointer<mtmd_bitmap> speaker_ref;
+
+  external ffi.Pointer<ffi.Char> lang;
+
+  @ffi.Int32()
+  external int top_k;
+
+  @ffi.Float()
+  external double top_p;
+
+  @ffi.UnsignedInt()
+  external int out_typeAsInt;
+
+  mtmd_helper_gen_audio_outtype get out_type =>
+      mtmd_helper_gen_audio_outtype.fromValue(out_typeAsInt);
 }
 
 final class llama_dart_mtp extends ffi.Opaque {}
