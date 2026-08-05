@@ -24,7 +24,7 @@ For canonical full release notes, use:
   speculative-decoding, and backend improvements, with matching load-mode
   bindings and Apple artifacts.
 
-- Updated WebGPU bridge assets to `v0.1.25` (llama.cpp `b10255`), refreshing
+- Updated WebGPU bridge assets to `v0.1.26` (llama.cpp `b10276`), refreshing
   both WebAssembly runtimes while preserving the existing bridge API.
 
 - Disabled automatic WebGPU fetch-backed model loading by default. Streamed
