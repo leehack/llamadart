@@ -1,5 +1,12 @@
 ## Unreleased
 
+* Updated the default llama.cpp native runtime pin to
+  `leehack/llamadart-native@b10276`, picking up Qwen3-TTS model-loading
+  primitives and recent runtime fixes. Regenerated matching Dart FFI bindings,
+  migrated the penalty sampler to the new vocabulary-sized ABI, and refreshed
+  the `llamadart_llama_cpp_flutter` Apple SwiftPM checksum. Speech generation
+  is not yet exposed through the public Dart API.
+
 * Updated the default llama.cpp native runtime to
   `leehack/llamadart-native@b10255`, adding explicit bundled-MTP loading and
   automatic model-specific token suppression alongside recent model,

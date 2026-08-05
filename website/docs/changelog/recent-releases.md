@@ -9,6 +9,10 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Updated native llama.cpp to `b10276`, including Qwen3-TTS model-loading
+  primitives, the matching penalty-sampler ABI migration, and refreshed Apple
+  artifacts. Speech generation is not yet exposed through the public Dart API.
+
 - Updated native llama.cpp to `b10255`, adding explicit bundled-MTP loading,
   automatic model-specific token suppression, and recent model, multimodal,
   speculative-decoding, and backend improvements, with matching load-mode
