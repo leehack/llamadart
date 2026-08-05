@@ -24,7 +24,7 @@ import '../backend.dart';
 /// This backend wraps the official `@litert-lm/core` browser API. Apps can
 /// preload the package and expose `window.LiteRtLmEngine = module.Engine`, or
 /// set `window.__llamadartLiteRtLmModuleUrl` to a module URL such as
-/// `https://cdn.jsdelivr.net/npm/@litert-lm/core@0.14.0/+esm`.
+/// `https://cdn.jsdelivr.net/npm/@litert-lm/core@0.15.0/+esm`.
 class LiteRtLmBackend
     implements
         LlamaBackend,
