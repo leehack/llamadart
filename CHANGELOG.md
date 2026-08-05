@@ -8,7 +8,7 @@
   is not yet exposed through the public Dart API.
 
 * Updated the default LiteRT-LM runtimes to
-  `leehack/litert-lm-native@v0.15.0-native.1` and
+  `leehack/litert-lm-native@v0.15.0-native.2` and
   `@litert-lm/core@0.15.0`. The native artifact includes a corrected v0.15
   streaming callback bridge; incompatible callback runtimes now fail safely
   before generation, and concrete macOS app, framework, and cache libraries

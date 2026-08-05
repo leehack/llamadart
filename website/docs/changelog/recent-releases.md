@@ -13,7 +13,7 @@ For canonical full release notes, use:
   primitives, the matching penalty-sampler ABI migration, and refreshed Apple
   artifacts. Speech generation is not yet exposed through the public Dart API.
 
-- Updated the default LiteRT-LM runtimes to native `v0.15.0-native.1` and Web
+- Updated the default LiteRT-LM runtimes to native `v0.15.0-native.2` and Web
   `@litert-lm/core@0.15.0`. The native artifact includes a corrected v0.15
   streaming callback bridge; incompatible callback runtimes now fail safely
   before generation, and concrete macOS app, framework, and cache libraries
