@@ -11,8 +11,8 @@
   `leehack/litert-lm-native@v0.15.0-native.1` and
   `@litert-lm/core@0.15.0`. The native artifact includes a corrected v0.15
   streaming callback bridge; incompatible callback runtimes now fail safely
-  before generation, and explicit macOS library overrides take precedence over
-  process-linked assets.
+  before generation, and concrete macOS app, framework, and cache libraries
+  take precedence over process-linked assets.
 
 * Updated the default llama.cpp native runtime to
   `leehack/llamadart-native@b10255`, adding explicit bundled-MTP loading and

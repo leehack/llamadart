@@ -16,7 +16,8 @@ For canonical full release notes, use:
 - Updated the default LiteRT-LM runtimes to native `v0.15.0-native.1` and Web
   `@litert-lm/core@0.15.0`. The native artifact includes a corrected v0.15
   streaming callback bridge; incompatible callback runtimes now fail safely
-  before generation, and explicit macOS library overrides are honored.
+  before generation, and concrete macOS app, framework, and cache libraries
+  take precedence over process-linked assets.
 
 - Updated native llama.cpp to `b10255`, adding explicit bundled-MTP loading,
   automatic model-specific token suppression, and recent model, multimodal,

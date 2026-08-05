@@ -1345,10 +1345,10 @@ class LiteRtLmRuntimeClient {
           '${frameworksDir.path}/LiteRtLm.framework/Versions/A/LiteRtLm',
         ).existsSync();
         return (
-          liteRtLmCandidates: [
-            _processLibraryCandidate,
+          liteRtLmCandidates: liteRtLmMacOsLibraryCandidates(
             '${frameworksDir.path}/LiteRtLm.framework/Versions/A/LiteRtLm',
-          ],
+            explicitOverride: false,
+          ),
           companions: usesNativeSpmFramework
               ? const []
               : [
