@@ -8,11 +8,12 @@
   is not yet exposed through the public Dart API.
 
 * Updated the default LiteRT-LM runtimes to
-  `leehack/litert-lm-native@v0.15.0-native.2` and
+  `leehack/litert-lm-native@v0.15.0-native.3` and
   `@litert-lm/core@0.15.0`. The native artifact includes a corrected v0.15
-  streaming callback bridge; incompatible callback runtimes now fail safely
-  before generation, and concrete macOS app, framework, and cache libraries
-  take precedence over process-linked assets.
+  streaming callback bridge and an Android Dawn rollback for Mali-G715 GPU
+  device loss; incompatible callback runtimes now fail safely before
+  generation, and concrete macOS app, framework, and cache libraries take
+  precedence over process-linked assets.
 
 * Updated the default llama.cpp native runtime to
   `leehack/llamadart-native@b10255`, adding explicit bundled-MTP loading and
