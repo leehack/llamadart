@@ -2,6 +2,8 @@
 
 * Updated Apple SwiftPM native pin to `leehack/litert-lm-native@v0.15.0-native.3`.
 
+* Updated the install example for `llamadart` 0.8.18.
+
 ## 0.0.7
 
 * Updated the install example for `llamadart` 0.8.17.
