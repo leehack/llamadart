@@ -142,12 +142,11 @@ String liteRtLmIosFrameworkBinaryPath(String frameworksDirPath, String name) {
 ///
 /// `DynamicLibrary.open` does not resolve Dart native-asset ids (only `@Native`
 /// externals do), so the `package:llamadart/...` id is passed verbatim to
-/// dlopen and never loads. The process image is tried first so Flutter SPM apps
-/// can resolve the SPM-linked `CLiteRTLM` symbols exported by the companion
-/// plugin.
-/// When [frameworksDirPath] is known, absolute framework binary paths are tried
-/// next; the native-asset id and bare dylib names remain last-resort fallbacks
-/// for the error message.
+/// dlopen and never loads. When [frameworksDirPath] is known, the wrapper
+/// framework is tried first because it exports StreamProxy and reexports the
+/// upstream `CLiteRTLM` API. The process image and absolute upstream framework
+/// path remain fallbacks for older Flutter SPM packaging; native-asset ids and
+/// bare dylib names remain last-resort fallbacks for the error message.
 List<String> liteRtLmIosLibraryCandidates(
   Abi abi, {
   String? frameworksDirPath,
@@ -157,11 +156,11 @@ List<String> liteRtLmIosLibraryCandidates(
     return const <String>[];
   }
   return <String>[
+    if (frameworksDirPath != null)
+      liteRtLmIosFrameworkBinaryPath(frameworksDirPath, 'LiteRtLm'),
     _processLibraryCandidate,
     if (frameworksDirPath != null)
       liteRtLmIosFrameworkBinaryPath(frameworksDirPath, 'CLiteRTLM'),
-    if (frameworksDirPath != null)
-      liteRtLmIosFrameworkBinaryPath(frameworksDirPath, 'LiteRtLm'),
     ...fallbacks.where((candidate) => candidate != _processLibraryCandidate),
   ];
 }

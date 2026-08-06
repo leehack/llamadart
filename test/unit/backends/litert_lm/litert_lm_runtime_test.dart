@@ -190,18 +190,19 @@ void main() {
     expect(liteRtLmIosLibraryCandidatesForAbi(Abi.macosArm64), isEmpty);
   });
 
-  test('LiteRT-LM iOS lookup prefers process then framework paths', () {
-    // With the app Frameworks dir known, process lookup is still tried first
-    // for SPM, then absolute upstream/wrapper framework paths.
+  test('LiteRT-LM iOS lookup prefers the wrapper framework path', () {
+    // The wrapper exports StreamProxy and reexports the upstream API, so it
+    // must precede process and CLiteRTLM handles that can expose only part of
+    // the required v0.15 callback ABI.
     expect(
       liteRtLmIosLibraryCandidates(
         Abi.iosArm64,
         frameworksDirPath: '/App.app/Frameworks',
       ),
       const <String>[
+        '/App.app/Frameworks/LiteRtLm.framework/LiteRtLm',
         '<process>',
         '/App.app/Frameworks/CLiteRTLM.framework/CLiteRTLM',
-        '/App.app/Frameworks/LiteRtLm.framework/LiteRtLm',
         'package:llamadart/litert_lm_LiteRtLm',
         'LiteRtLm',
         'CLiteRTLM',
