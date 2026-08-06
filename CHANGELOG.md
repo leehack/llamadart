@@ -1,4 +1,4 @@
-## Unreleased
+## 0.8.18
 
 * Updated the default llama.cpp native runtime pin to
   `leehack/llamadart-native@b10276`, picking up Qwen3-TTS model-loading
