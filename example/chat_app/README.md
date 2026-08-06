@@ -97,7 +97,7 @@ flutter test --run-skipped -t local-only \
    - LiteRT-LM `.litertlm` presets, when present, use the same model library
      flow. The example `pubspec.yaml` enables the `litert_lm` native runtime
      family for supported native targets, while Web builds load web-compatible
-     `.litertlm` URLs through `@litert-lm/core`; `web/index.html` sets a
+     `.litertlm` URLs through `@litert-lm/core@0.15.0`; `web/index.html` sets a
      default module URL that apps can override with
      `window.__llamadartLiteRtLmModuleUrl`.
    - LiteRT-LM Web is currently a single-turn text runtime. Because

@@ -60,6 +60,70 @@ void main() {
     expect(liteRtLmMacOsCacheDirectoryCandidatesForAbi(Abi.linuxX64), isEmpty);
   });
 
+  test('macOS LiteRT-LM paths precede process-linked runtime fallback', () {
+    expect(
+      liteRtLmMacOsLibraryCandidates(
+        '/runtime/libLiteRtLm.dylib',
+        explicitOverride: true,
+      ),
+      const <String>['/runtime/libLiteRtLm.dylib'],
+    );
+    expect(
+      liteRtLmMacOsLibraryCandidates(
+        '/runtime/libLiteRtLm.dylib',
+        explicitOverride: false,
+      ),
+      const <String>['/runtime/libLiteRtLm.dylib', '<process>'],
+    );
+  });
+
+  test('rejects legacy StreamProxy with the v0.15 stream-chunk API', () {
+    expect(
+      liteRtLmStreamProxyCompatibilityError(
+        hasStreamProxy: true,
+        hasStreamChunkApi: true,
+        callbackAbiVersion: null,
+      ),
+      contains('not stream-chunk compatible'),
+    );
+    final legacyAbiError = liteRtLmStreamProxyCompatibilityError(
+      hasStreamProxy: true,
+      hasStreamChunkApi: true,
+      callbackAbiVersion: 1,
+    );
+    expect(legacyAbiError, contains('not stream-chunk compatible'));
+    expect(legacyAbiError, contains('Expected callback ABI 2'));
+    expect(legacyAbiError, contains('v0.15.0-native.3'));
+    expect(legacyAbiError, contains('detected 1'));
+  });
+
+  test('accepts legacy runtimes and stream-chunk-compatible proxies', () {
+    expect(
+      liteRtLmStreamProxyCompatibilityError(
+        hasStreamProxy: true,
+        hasStreamChunkApi: false,
+        callbackAbiVersion: 1,
+      ),
+      isNull,
+    );
+    expect(
+      liteRtLmStreamProxyCompatibilityError(
+        hasStreamProxy: true,
+        hasStreamChunkApi: true,
+        callbackAbiVersion: 2,
+      ),
+      isNull,
+    );
+    expect(
+      liteRtLmStreamProxyCompatibilityError(
+        hasStreamProxy: false,
+        hasStreamChunkApi: true,
+        callbackAbiVersion: null,
+      ),
+      contains('missing or not stream-chunk compatible'),
+    );
+  });
+
   test('LiteRT-LM cache lookup follows desktop runtime ABIs', () {
     expect(
       liteRtLmCacheDirectoryCandidatesForAbi(Abi.macosArm64),
@@ -127,18 +191,19 @@ void main() {
     expect(liteRtLmIosLibraryCandidatesForAbi(Abi.macosArm64), isEmpty);
   });
 
-  test('LiteRT-LM iOS lookup prefers process then framework paths', () {
-    // With the app Frameworks dir known, process lookup is still tried first
-    // for SPM, then absolute upstream/wrapper framework paths.
+  test('LiteRT-LM iOS lookup prefers the wrapper framework path', () {
+    // The wrapper exports StreamProxy and reexports the upstream API, so it
+    // must precede process and CLiteRTLM handles that can expose only part of
+    // the required v0.15 callback ABI.
     expect(
       liteRtLmIosLibraryCandidates(
         Abi.iosArm64,
         frameworksDirPath: '/App.app/Frameworks',
       ),
       const <String>[
+        '/App.app/Frameworks/LiteRtLm.framework/LiteRtLm',
         '<process>',
         '/App.app/Frameworks/CLiteRTLM.framework/CLiteRTLM',
-        '/App.app/Frameworks/LiteRtLm.framework/LiteRtLm',
         'package:llamadart/litert_lm_LiteRtLm',
         'LiteRtLm',
         'CLiteRTLM',

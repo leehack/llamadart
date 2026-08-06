@@ -135,9 +135,9 @@ Current default runtime pins:
 | Runtime | Pin |
 | --- | --- |
 | Native llama.cpp / GGUF | `leehack/llamadart-native@b10276` |
-| Native LiteRT-LM / `.litertlm` | `leehack/litert-lm-native@v0.14.0-native.2` |
-| Web llama.cpp / GGUF | `leehack/llama-web-bridge-assets@v0.1.25` |
-| Web LiteRT-LM / `.litertlm` | `@litert-lm/core@0.14.0` |
+| Native LiteRT-LM / `.litertlm` | `leehack/litert-lm-native@v0.15.0-native.3` |
+| Web llama.cpp / GGUF | `leehack/llama-web-bridge-assets@v0.1.26` |
+| Web LiteRT-LM / `.litertlm` | `@litert-lm/core@0.15.0` |
 
 ## Common Tasks
 
