@@ -10,8 +10,10 @@ For canonical full release notes, use:
 ## Unreleased
 
 - Updated native llama.cpp to `b10276`, including Qwen3-TTS model-loading
-  primitives, the matching penalty-sampler ABI migration, and refreshed Apple
-  artifacts. Speech generation is not yet exposed through the public Dart API.
+  primitives, explicit bundled-MTP loading, automatic model-specific token
+  suppression, recent model/runtime improvements, the matching load-mode and
+  penalty-sampler ABI migrations, and refreshed Apple artifacts. Speech
+  generation is not yet exposed through the public Dart API.
 
 - Updated the default LiteRT-LM runtimes to native `v0.15.0-native.3` and Web
   `@litert-lm/core@0.15.0`. The native artifact includes a corrected v0.15
@@ -19,11 +21,6 @@ For canonical full release notes, use:
   device loss; incompatible callback runtimes now fail safely before
   generation, and concrete macOS app, framework, and cache libraries take
   precedence over process-linked assets.
-
-- Updated native llama.cpp to `b10255`, adding explicit bundled-MTP loading,
-  automatic model-specific token suppression, and recent model, multimodal,
-  speculative-decoding, and backend improvements, with matching load-mode
-  bindings and Apple artifacts.
 
 - Updated WebGPU bridge assets to `v0.1.26` (llama.cpp `b10276`), refreshing
   both WebAssembly runtimes while preserving the existing bridge API.

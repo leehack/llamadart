@@ -45,10 +45,14 @@ String? liteRtLmStreamProxyCompatibilityError({
   if (hasStreamProxy && callbackAbiVersion == _streamChunkCallbackAbiVersion) {
     return null;
   }
+  final detectedAbi = hasStreamProxy
+      ? callbackAbiVersion?.toString() ?? 'no ABI marker'
+      : 'missing StreamProxy';
   return 'LiteRT-LM exposes the 0.15+ stream-chunk callback API, but its '
-      'embedded StreamProxy is missing or not stream-chunk compatible. Install a '
-      'corrected litert-lm-native runtime before using asynchronous '
-      'generation.';
+      'embedded StreamProxy is missing or not stream-chunk compatible. '
+      'Expected callback ABI $_streamChunkCallbackAbiVersion from pinned '
+      'litert-lm-native v$_litertLmVersion; detected $detectedAbi. Install the '
+      'pinned runtime before using asynchronous generation.';
 }
 
 /// Builds a diagnostic for LiteRT-LM engine creation failures.

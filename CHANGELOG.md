@@ -2,10 +2,13 @@
 
 * Updated the default llama.cpp native runtime pin to
   `leehack/llamadart-native@b10276`, picking up Qwen3-TTS model-loading
-  primitives and recent runtime fixes. Regenerated matching Dart FFI bindings,
-  migrated the penalty sampler to the new vocabulary-sized ABI, and refreshed
-  the `llamadart_llama_cpp_flutter` Apple SwiftPM checksum. Speech generation
-  is not yet exposed through the public Dart API.
+  primitives, explicit bundled-MTP loading, automatic model-specific token
+  suppression, and recent model, multimodal, speculative-decoding, backend,
+  and runtime fixes. Regenerated matching Dart FFI bindings, migrated model
+  loading to llama.cpp's load-mode ABI and the penalty sampler to the new
+  vocabulary-sized ABI, and refreshed the `llamadart_llama_cpp_flutter` Apple
+  SwiftPM checksum. Speech generation is not yet exposed through the public
+  Dart API.
 
 * Updated the default LiteRT-LM runtimes to
   `leehack/litert-lm-native@v0.15.0-native.3` and
@@ -14,13 +17,6 @@
   device loss; incompatible callback runtimes now fail safely before
   generation, and concrete macOS app, framework, and cache libraries take
   precedence over process-linked assets.
-
-* Updated the default llama.cpp native runtime to
-  `leehack/llamadart-native@b10255`, adding explicit bundled-MTP loading and
-  automatic model-specific token suppression alongside recent model,
-  multimodal, speculative-decoding, and backend improvements. Regenerated the
-  matching Dart FFI bindings, migrated model loading to llama.cpp's load-mode
-  ABI, and refreshed the Apple SwiftPM checksum and current runtime-pin docs.
 
 * Disabled automatic WebGPU fetch-backed model loading by default. Streamed
   loading remains the safe default; controlled range-capable deployments can
