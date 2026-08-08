@@ -12,8 +12,8 @@ runtime fallback.
 
 ```yaml
 dependencies:
-  llamadart: ^0.8.17
-  llamadart_litert_lm_flutter: ^0.0.7
+  llamadart: ^0.8.18
+  llamadart_litert_lm_flutter: ^0.0.8
 ```
 
 This package has no runtime Dart API of its own. Import `package:llamadart`

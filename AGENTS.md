@@ -249,6 +249,12 @@ make sure the PR template can honestly state:
   tokens, signed URLs, and raw secret-bearing paths.
 - Useful non-blocking follow-ups are tracked in GitHub Issues before merge.
 
+Before merging, reply to and resolve every review thread. For comments that are
+outdated, superseded, or intentionally non-actionable, record the concrete
+rationale in the thread before resolving it; classification alone is not a
+substitute for closing the thread. Do not merge while any review thread remains
+unresolved.
+
 For docs-only PRs, state that runtime behavior is unchanged and list docs
 validation. If implementation scope changed, reduce and state the scope rather
 than merging incomplete behavior.

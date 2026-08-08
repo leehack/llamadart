@@ -7,7 +7,7 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
-## Unreleased
+## 0.8.18
 
 - Updated native llama.cpp to `b10276`, including Qwen3-TTS model-loading
   primitives, explicit bundled-MTP loading, automatic model-specific token
