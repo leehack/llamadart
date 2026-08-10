@@ -1,3 +1,9 @@
+## Unreleased
+
+* Fixed corrupt Qwen3.5 output on Android Vulkan by preserving the KQV
+  offload required for correct hybrid model inference while retaining the
+  remaining conservative Android context settings.
+
 ## 0.8.18
 
 * Updated the default llama.cpp native runtime pin to

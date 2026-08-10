@@ -953,6 +953,30 @@ void main() {
     });
   });
 
+  group('shouldKeepAndroidVulkanKqvOffloadEnabled', () {
+    test('keeps KQV offload enabled for Qwen3.5 architecture metadata', () {
+      expect(
+        LlamaCppService.shouldKeepAndroidVulkanKqvOffloadEnabled('qwen35'),
+        isTrue,
+      );
+      expect(
+        LlamaCppService.shouldKeepAndroidVulkanKqvOffloadEnabled('Qwen3.5'),
+        isTrue,
+      );
+    });
+
+    test('keeps conservative KQV policy for other architectures', () {
+      expect(
+        LlamaCppService.shouldKeepAndroidVulkanKqvOffloadEnabled('llama'),
+        isFalse,
+      );
+      expect(
+        LlamaCppService.shouldKeepAndroidVulkanKqvOffloadEnabled(null),
+        isFalse,
+      );
+    });
+  });
+
   group('resolveMtmdUseGpuForLoad', () {
     test('forces CPU mode to disable projector GPU offload', () {
       const params = ModelParams(
