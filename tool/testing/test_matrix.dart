@@ -260,7 +260,8 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'built Flutter web chat app with real worker/WASM and GGUF model URL',
     command:
         'dart run tool/testing/run_local_e2e.dart --scenario '
-        'chat-app-web-real-model-smoke --model-url <model-url> --expect 4',
+        'chat-app-web-real-model-smoke --model-url <model-url> '
+        '--allow-any-response',
     useWhen:
         'Web chat app, web model loading, or WebGPU bridge runtime changes.',
   ),

@@ -1,5 +1,13 @@
 ## Unreleased
 
+* Updated the default llama.cpp native runtime pin to
+  `leehack/llamadart-native@b10333`, regenerated matching Dart FFI bindings,
+  refreshed the `llamadart_llama_cpp_flutter` Apple SwiftPM checksum, and aligned
+  current README/website native override docs.
+
+* Updated WebGPU bridge assets to `v0.1.27` (llama.cpp `b10333`), keeping the
+  native and Web GGUF runtimes on the same upstream revision.
+
 * Fixed corrupt Qwen3.5 output on Android Vulkan by preserving the KQV
   offload required for correct hybrid model inference while retaining the
   remaining conservative Android context settings.

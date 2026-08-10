@@ -6259,6 +6259,14 @@ external void ggml_build_forward_expand(
 );
 
 @ffi.Native<
+  ffi.Void Function(ffi.Pointer<ggml_cgraph>, ffi.Pointer<ggml_tensor>)
+>()
+external void ggml_build_forward_order(
+  ffi.Pointer<ggml_cgraph> cgraph,
+  ffi.Pointer<ggml_tensor> tensor,
+);
+
+@ffi.Native<
   ffi.Void Function(
     ffi.Pointer<ggml_context>,
     ffi.Pointer<ggml_cgraph>,
@@ -7540,6 +7548,29 @@ external ffi.Pointer<mtmd_input_chunk> mtmd_input_chunk_copy(
 
 @ffi.Native<ffi.Void Function(ffi.Pointer<mtmd_input_chunk>)>()
 external void mtmd_input_chunk_free(ffi.Pointer<mtmd_input_chunk> chunk);
+
+@ffi.Native<
+  ffi.Int32 Function(
+    ffi.Pointer<mtmd_input_chunk>,
+    ffi.Pointer<ffi.Char>,
+    ffi.Size,
+    ffi.Pointer<ffi.Size>,
+  )
+>()
+external int mtmd_input_chunk_save(
+  ffi.Pointer<mtmd_input_chunk> chunk,
+  ffi.Pointer<ffi.Char> out_buf,
+  int out_len,
+  ffi.Pointer<ffi.Size> expected_out_len,
+);
+
+@ffi.Native<
+  ffi.Pointer<mtmd_input_chunk> Function(ffi.Pointer<ffi.Char>, ffi.Size)
+>()
+external ffi.Pointer<mtmd_input_chunk> mtmd_input_chunk_load(
+  ffi.Pointer<ffi.Char> buf,
+  int len,
+);
 
 @ffi.Native<ffi.Size Function(ffi.Pointer<mtmd_image_tokens>)>()
 external int mtmd_image_tokens_get_n_tokens(
@@ -10534,7 +10565,8 @@ typedef ggml_backend_eval_callback =
 enum mtmd_input_chunk_type {
   MTMD_INPUT_CHUNK_TYPE_TEXT(0),
   MTMD_INPUT_CHUNK_TYPE_IMAGE(1),
-  MTMD_INPUT_CHUNK_TYPE_AUDIO(2);
+  MTMD_INPUT_CHUNK_TYPE_AUDIO(2),
+  MTMD_INPUT_CHUNK_TYPE_COUNT(3);
 
   final int value;
   const mtmd_input_chunk_type(this.value);
@@ -10543,6 +10575,7 @@ enum mtmd_input_chunk_type {
     0 => MTMD_INPUT_CHUNK_TYPE_TEXT,
     1 => MTMD_INPUT_CHUNK_TYPE_IMAGE,
     2 => MTMD_INPUT_CHUNK_TYPE_AUDIO,
+    3 => MTMD_INPUT_CHUNK_TYPE_COUNT,
     _ => throw ArgumentError('Unknown value for mtmd_input_chunk_type: $value'),
   };
 }
