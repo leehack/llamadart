@@ -7,6 +7,16 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
+## 0.8.19
+
+- Updated the native llama.cpp runtime to `b10333` and WebGPU bridge assets to
+  `v0.1.27` (llama.cpp `b10333`), including matching Dart FFI bindings and
+  refreshed Apple SwiftPM artifacts.
+
+- Fixed corrupt Qwen3.5 output on Android Vulkan by preserving the KQV
+  offload required for correct hybrid model inference while retaining the
+  remaining conservative Android context settings.
+
 ## 0.8.18
 
 - Updated native llama.cpp to `b10276`, including Qwen3-TTS model-loading
