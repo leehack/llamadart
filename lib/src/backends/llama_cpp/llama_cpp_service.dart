@@ -3828,15 +3828,14 @@ class LlamaCppService {
       resolvedGpuLayers: resolvedModelGpuLayers,
       isAndroid: Platform.isAndroid,
     )) {
-      final modelArchitecture = _getModelMetadataValue(
-        modelHandle,
-        'general.architecture',
-      );
-      final keepKqvOffload = shouldKeepAndroidVulkanKqvOffloadEnabled(
-        modelArchitecture,
-      );
-      if (!_androidVulkanAllowKqvOffload && !keepKqvOffload) {
-        ctxParams.offload_kqv = false;
+      if (!_androidVulkanAllowKqvOffload) {
+        final modelArchitecture = _getModelMetadataValue(
+          modelHandle,
+          'general.architecture',
+        );
+        if (!shouldKeepAndroidVulkanKqvOffloadEnabled(modelArchitecture)) {
+          ctxParams.offload_kqv = false;
+        }
       }
       if (!_androidVulkanAllowOpOffload) {
         ctxParams.op_offload = false;
