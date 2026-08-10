@@ -3828,9 +3828,10 @@ class LlamaCppService {
       resolvedGpuLayers: resolvedModelGpuLayers,
       isAndroid: Platform.isAndroid,
     )) {
-      final modelArchitecture = getMetadata(
+      final modelArchitecture = _getModelMetadataValue(
         modelHandle,
-      )['general.architecture'];
+        'general.architecture',
+      );
       final keepKqvOffload = shouldKeepAndroidVulkanKqvOffloadEnabled(
         modelArchitecture,
       );
@@ -7102,6 +7103,39 @@ class LlamaCppService {
       malloc.free(pathPtr);
       malloc.free(tokensPtr);
       malloc.free(countPtr);
+    }
+  }
+
+  /// Returns one metadata value without enumerating the full model metadata.
+  String? _getModelMetadataValue(int modelHandle, String key) {
+    final model = _models[modelHandle];
+    if (model == null || key.isEmpty) return null;
+
+    final keyPtr = key.toNativeUtf8();
+    try {
+      final length = llama_model_meta_val_str(
+        model.pointer,
+        keyPtr.cast(),
+        nullptr,
+        0,
+      );
+      if (length < 0) return null;
+
+      final valueBuf = malloc<Int8>(length + 1);
+      try {
+        final written = llama_model_meta_val_str(
+          model.pointer,
+          keyPtr.cast(),
+          valueBuf.cast(),
+          length + 1,
+        );
+        if (written != length) return null;
+        return valueBuf.cast<Utf8>().toDartString(length: written);
+      } finally {
+        malloc.free(valueBuf);
+      }
+    } finally {
+      malloc.free(keyPtr);
     }
   }
 
