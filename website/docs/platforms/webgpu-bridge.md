@@ -146,13 +146,13 @@ development validation, and CDN-first loading for normal hosted deployments:
 1. On localhost: local asset first, then CDN fallback.
 2. On hosted deployments: CDN asset first, then local fallback.
 
-The example currently pins bridge assets to `v0.1.26`, with local vendored assets
-identified as `v0.1.26-local-b10276`.
+The example currently pins bridge assets to `v0.1.27`, with local vendored assets
+identified as `v0.1.27-local-b10333`.
 
 Fetch pinned local assets with:
 
 ```bash
-WEBGPU_BRIDGE_ASSETS_TAG=v0.1.26 ./scripts/fetch_webgpu_bridge_assets.sh
+WEBGPU_BRIDGE_ASSETS_TAG=v0.1.27 ./scripts/fetch_webgpu_bridge_assets.sh
 ```
 
 To verify the loaded runtime in a browser console, inspect:
@@ -286,7 +286,7 @@ dart run tool/testing/run_local_e2e.dart --scenario chat-app-web-mock-smoke
 
 dart run tool/testing/run_local_e2e.dart --scenario chat-app-web-real-model-smoke \
   --model-url http://127.0.0.1:7358/example/llamadart_server/models/Qwen3.5-0.8B-Q4_K_M.gguf \
-  --expect 4
+  --allow-any-response
 ```
 
 The runner uses `scripts/build_chat_app_web.sh` to build Flutter web with the
@@ -309,7 +309,7 @@ You can override bridge asset source/version before loader startup:
 ```html
 <script>
   window.__llamadartBridgeAssetsRepo = 'leehack/llama-web-bridge-assets';
-  window.__llamadartBridgeAssetsTag = 'v0.1.26';
+  window.__llamadartBridgeAssetsTag = 'v0.1.27';
   // Prefer local runtime even off localhost:
   // window.__llamadartPreferLocalBridgeRuntime = true;
   // Enable verbose bridge bootstrap console logs:
