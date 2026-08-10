@@ -961,6 +961,27 @@ class LlamaCppService {
         effectiveGpuLayers > 0;
   }
 
+  /// Returns whether Android Vulkan must keep KQV offload enabled for the
+  /// model architecture to preserve inference correctness.
+  ///
+  /// Qwen3.5 produces incorrect logits when its model layers are offloaded to
+  /// Vulkan while KQV remains on the CPU. Keep the other conservative Android
+  /// Vulkan settings independent so this correctness exception does not also
+  /// enable op offload or Flash Attention.
+  static bool shouldKeepAndroidVulkanKqvOffloadEnabled(
+    String? modelArchitecture,
+  ) {
+    if (modelArchitecture == null || modelArchitecture.isEmpty) {
+      return false;
+    }
+
+    final normalized = modelArchitecture.toLowerCase().replaceAll(
+      RegExp('[^a-z0-9]'),
+      '',
+    );
+    return normalized == 'qwen35';
+  }
+
   /// Resolves effective context batch parameters.
   ///
   /// Uses the shared non-FFI helper for consistent default resolution and
@@ -3807,7 +3828,13 @@ class LlamaCppService {
       resolvedGpuLayers: resolvedModelGpuLayers,
       isAndroid: Platform.isAndroid,
     )) {
-      if (!_androidVulkanAllowKqvOffload) {
+      final modelArchitecture = getMetadata(
+        modelHandle,
+      )['general.architecture'];
+      final keepKqvOffload = shouldKeepAndroidVulkanKqvOffloadEnabled(
+        modelArchitecture,
+      );
+      if (!_androidVulkanAllowKqvOffload && !keepKqvOffload) {
         ctxParams.offload_kqv = false;
       }
       if (!_androidVulkanAllowOpOffload) {
