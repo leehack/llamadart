@@ -70,10 +70,11 @@ enum SpeculativeDecodingStrategy {
   /// Self-speculative three-level n-gram cache.
   ngramCache,
 
-  /// DSpark draft-model speculative decoding.
+  /// Experimental, opt-in DSpark draft-model speculative decoding.
   ///
   /// llama.cpp maps this to its `draft-dspark` path. It uses a separate draft
-  /// model and is distinct from MTP.
+  /// model and is distinct from MTP. Callers must select this strategy
+  /// explicitly; it is never enabled by default.
   draftDspark,
 }
 
@@ -333,11 +334,14 @@ class SpeculativeDecodingConfig {
              (draftSplitProbability >= 0.0 && draftSplitProbability <= 1.0),
        );
 
-  /// Enables upstream llama.cpp `draft-dspark` speculative decoding.
+  /// Enables experimental upstream llama.cpp `draft-dspark` decoding.
   ///
-  /// Native llama.cpp requires [draftModelPath] to identify a compatible
-  /// external DSpark draft GGUF. WebGPU and LiteRT-LM reject this strategy,
-  /// and native runtimes without DSpark draft-context support fail explicitly.
+  /// This is an opt-in strategy and is never selected automatically. Native
+  /// llama.cpp requires [draftModelPath] to identify a compatible external
+  /// DSpark draft GGUF. Validate deterministic output, acceptance, and warmed
+  /// throughput for the exact target, draft, and backend before production
+  /// use. WebGPU and LiteRT-LM reject this strategy, and native runtimes without
+  /// DSpark draft-context support fail explicitly.
   const SpeculativeDecodingConfig.draftDspark({
     this.draftTokenMax,
     this.draftTokenMin,

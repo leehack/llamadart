@@ -136,11 +136,12 @@ Important fields:
   `draftEagle3(...)`, `draftDflash(...)`, `draftDspark(...)`,
   `ngramSimple(...)`, `ngramMapK(...)`, `ngramMapK4v(...)`, `ngramMod(...)`,
   `ngramCache(...)`, and `mixed(...)` for draftless n-gram strategies plus one
-  draft-model strategy. `draftDspark(...)` maps exactly to llama.cpp
-  `draft-dspark`, requires a compatible external GGUF in `draftModelPath`, and
-  does not load target-model MTP tensors. Draftless n-gram strategies use token
-  history or n-gram caches without a draft model. WebGPU and LiteRT-LM web
-  reject speculative decoding until their speculative paths are implemented.
+  draft-model strategy. Experimental `draftDspark(...)` is opt-in, maps exactly
+  to llama.cpp `draft-dspark`, requires a compatible external GGUF in
+  `draftModelPath`, and does not load target-model MTP tensors. It is never
+  selected automatically. Draftless n-gram strategies use token history or
+  n-gram caches without a draft model. WebGPU and LiteRT-LM web reject
+  speculative decoding until their speculative paths are implemented.
 - `seed`: deterministic replay when set.
 - `grammar`: constrained decoding with GBNF.
 

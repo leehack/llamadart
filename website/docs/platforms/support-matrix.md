@@ -183,12 +183,15 @@ device/model bundle, use `cpu` or `gpu` for that artifact.
   resolves known template delimiters automatically; raw generation requires
   explicit delimiters. LiteRT-LM and WebGPU reject the setting, as does the
   llama.cpp speculative-decoding path.
-- **DSpark speculative decoding** is supported on native llama.cpp/GGUF through
-  `SpeculativeDecodingConfig.draftDspark(...)`, which maps to upstream
-  `draft-dspark` and requires a compatible external draft GGUF. It is an
-  external non-MTP draft-context strategy and requires the default `b10356`
-  runtime or a newer ABI-compatible native build with the DSpark wrapper fix.
-  WebGPU and LiteRT-LM reject this llama.cpp-specific strategy explicitly.
+- **Experimental DSpark speculative decoding** is available as an explicit
+  opt-in on native llama.cpp/GGUF through
+  `SpeculativeDecodingConfig.draftDspark(...)`; it is never enabled by default.
+  It maps to upstream `draft-dspark`, requires a compatible external draft
+  GGUF, and remains subject to target/draft/backend parity, acceptance, and
+  throughput validation. It is an external non-MTP draft-context strategy and
+  requires the default `b10356` runtime or a newer ABI-compatible native build
+  with the DSpark wrapper fix. WebGPU and LiteRT-LM reject this llama.cpp-
+  specific strategy explicitly.
 - **State persistence** (`LlamaEngine.stateSaveFile(...)` /
   `stateLoadFile(...)`) is available on native backends and on WebGPU bridge
   assets `v0.1.15+` that expose `stateSaveFile` / `stateLoadFile` bridge APIs.

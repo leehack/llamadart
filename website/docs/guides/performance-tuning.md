@@ -145,13 +145,13 @@ Guidelines:
   m-gram window; `draftTokenMax` does not cap those pure n-gram map strategies.
   For ngram-mod, `ngramTokenMax` is the effective draft cap when set; otherwise
   it falls back to `draftTokenMax` or the llama.cpp default.
-- DSpark is a native llama.cpp external draft-model strategy. Use
-  `SpeculativeDecodingConfig.draftDspark(draftModelPath: ...)`; it maps to
-  upstream `draft-dspark`, requires the package-pinned `b10356` runtime or a
-  newer ABI-compatible build with DSpark draft-context support, and remains
-  subject to target/draft compatibility. Compare deterministic output,
-  acceptance, and warmed throughput against the same baseline before enabling
-  it in production.
+- DSpark is an experimental, opt-in native llama.cpp external draft-model
+  strategy. Use `SpeculativeDecodingConfig.draftDspark(draftModelPath: ...)`;
+  it is never selected automatically, maps to upstream `draft-dspark`, requires
+  the package-pinned `b10356` runtime or a newer ABI-compatible build with
+  DSpark draft-context support, and remains subject to target/draft/backend
+  compatibility. Compare deterministic output, acceptance, and warmed
+  throughput against the same baseline before enabling it in production.
 - DFlash draft models must use upstream-compatible GGUF metadata:
   `general.architecture=dflash` plus the `dflash.*` metadata block, including
   `dflash.target_layers`. A known-good public pair is target
@@ -278,7 +278,7 @@ dart run tool/testing/llama_cpp_speculative_benchmark.dart \
   --ngram-size-m 8,16 \
   --warmups 1
 
-# Benchmark an external DSpark draft model against the same target baseline
+# Benchmark the experimental DSpark path against the same target baseline
 dart run tool/testing/llama_cpp_speculative_benchmark.dart \
   --model path/to/target.gguf \
   --draft-model path/to/dspark-draft.gguf \

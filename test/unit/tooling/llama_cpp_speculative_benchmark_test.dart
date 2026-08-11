@@ -28,6 +28,7 @@ void main() {
       expect(result.stdout, contains('intentional raw-prompt comparisons'));
       expect(result.stdout, contains('--include-output'));
       expect(result.stdout, contains('draft-dspark'));
+      expect(result.stdout, contains('DSpark is experimental and opt-in'));
     });
 
     test('builds llama.cpp static ngram cache bytes', () {

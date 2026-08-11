@@ -1,7 +1,7 @@
 ## Unreleased
 
-* Added native llama.cpp DSpark speculative decoding through
-  `SpeculativeDecodingConfig.draftDspark(...)`, including exact
+* Added experimental, opt-in native llama.cpp DSpark speculative decoding
+  through `SpeculativeDecodingConfig.draftDspark(...)`, including exact
   `draft-dspark` mapping, external draft-model validation, typed unsupported
   failures, and benchmark coverage.
 

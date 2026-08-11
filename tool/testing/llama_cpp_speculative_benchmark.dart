@@ -1562,6 +1562,7 @@ Case selection:
   --draft-model <draft.gguf>           Draft model for draft-simple, eagle3,
                                        dflash, dspark, external MTP, and mixed
                                        draft-model cases. Omit for bundled MTP.
+                                       DSpark is experimental and opt-in.
   --draft-token-max <list>             Comma-separated draft-token depths for
                                        draft-model, ngram-mod, and ngram-cache
                                        cases. Default: 1,2.
