@@ -226,6 +226,14 @@ class _ChatInputState extends State<ChatInput> {
         final usesMetaPaste =
             platform == TargetPlatform.macOS || platform == TargetPlatform.iOS;
         final safeBottom = MediaQuery.paddingOf(context).bottom;
+        final microphoneActionLabel =
+            provider.settings.modelSupportsSpeechToText
+            ? 'Record for transcription.'
+            : 'Ask with voice. Records up to 30 seconds.';
+        final VoidCallback? startAudioRecordingAction =
+            provider.canStartAudioRecording
+            ? () => unawaited(provider.startAudioRecording())
+            : null;
         final shortcutBindings = <ShortcutActivator, VoidCallback>{
           const SingleActivator(
             LogicalKeyboardKey.enter,
@@ -311,16 +319,28 @@ class _ChatInputState extends State<ChatInput> {
                       children: [
                         if (provider.canAttachMedia && !hasActiveAudioRecording)
                           _buildAttachmentMenu(context, provider),
-                        if (provider.canStartAudioRecording)
-                          IconButton(
-                            key: const ValueKey<String>('record_audio_button'),
-                            tooltip: 'Record audio',
-                            onPressed: () =>
-                                unawaited(provider.startAudioRecording()),
-                            icon: Icon(
-                              Icons.mic_none_rounded,
-                              color: colorScheme.primary,
-                              semanticLabel: kIsWeb ? null : 'Record audio',
+                        if (provider.supportsMicrophoneRecording)
+                          Semantics(
+                            label: microphoneActionLabel,
+                            button: true,
+                            enabled: provider.canStartAudioRecording,
+                            onTap: startAudioRecordingAction,
+                            excludeSemantics: true,
+                            child: IconButton(
+                              key: const ValueKey<String>(
+                                'record_audio_button',
+                              ),
+                              tooltip:
+                                  provider.settings.modelSupportsSpeechToText
+                                  ? 'Record for transcription'
+                                  : 'Ask with voice',
+                              onPressed: startAudioRecordingAction,
+                              icon: Icon(
+                                Icons.mic_none_rounded,
+                                color: provider.canStartAudioRecording
+                                    ? colorScheme.primary
+                                    : null,
+                              ),
                             ),
                           ),
                         Expanded(
@@ -616,18 +636,40 @@ class _ChatInputState extends State<ChatInput> {
     final state = provider.audioRecordingState;
     final isRecording = state == ChatAudioRecordingState.recording;
     final isStarting = state == ChatAudioRecordingState.starting;
+    final isVoiceQuestion =
+        provider.audioRecordingPurpose ==
+        ChatAudioRecordingPurpose.voiceQuestion;
+    final maximumDuration = isVoiceQuestion
+        ? ChatProvider.maxVoiceQuestionRecordingDuration
+        : ChatProvider.maxAudioRecordingDuration;
     final status = switch (state) {
       ChatAudioRecordingState.starting => 'Requesting microphone access…',
       ChatAudioRecordingState.recording =>
-        'Recording ${_formatRecordingDuration(provider.audioRecordingElapsed)}',
-      ChatAudioRecordingState.stopping => 'Finishing recording…',
+        isVoiceQuestion
+            ? 'Recording voice question '
+                  '${_formatRecordingDuration(provider.audioRecordingElapsed)} / '
+                  '${_formatRecordingDuration(maximumDuration)}'
+            : 'Recording for transcription '
+                  '${_formatRecordingDuration(provider.audioRecordingElapsed)} / '
+                  '${_formatRecordingDuration(maximumDuration)}',
+      ChatAudioRecordingState.stopping =>
+        isVoiceQuestion ? 'Preparing voice question…' : 'Finishing recording…',
       ChatAudioRecordingState.cancelling => 'Discarding recording…',
       ChatAudioRecordingState.idle => '',
     };
     final semanticStatus = switch (state) {
-      ChatAudioRecordingState.starting => 'Requesting microphone access',
-      ChatAudioRecordingState.recording => 'Microphone recording in progress',
-      ChatAudioRecordingState.stopping => 'Finishing microphone recording',
+      ChatAudioRecordingState.starting =>
+        isVoiceQuestion
+            ? 'Requesting microphone access for a voice question'
+            : 'Requesting microphone access for transcription',
+      ChatAudioRecordingState.recording =>
+        isVoiceQuestion
+            ? 'Recording voice question. Maximum 30 seconds.'
+            : 'Microphone recording for transcription in progress',
+      ChatAudioRecordingState.stopping =>
+        isVoiceQuestion
+            ? 'Preparing recorded voice question'
+            : 'Finishing microphone recording',
       ChatAudioRecordingState.cancelling => 'Discarding microphone recording',
       ChatAudioRecordingState.idle => '',
     };
@@ -675,13 +717,20 @@ class _ChatInputState extends State<ChatInput> {
                 ),
               if (isRecording)
                 FilledButton.tonalIcon(
-                  key: const ValueKey<String>(
-                    'stop_and_transcribe_audio_button',
+                  key: ValueKey<String>(
+                    isVoiceQuestion
+                        ? 'stop_and_ask_audio_button'
+                        : 'stop_and_transcribe_audio_button',
                   ),
-                  onPressed: () =>
-                      unawaited(provider.stopAudioRecordingAndTranscribe()),
+                  onPressed: () => unawaited(
+                    isVoiceQuestion
+                        ? provider.stopAudioRecordingAndAsk()
+                        : provider.stopAudioRecordingAndTranscribe(),
+                  ),
                   icon: const Icon(Icons.stop_rounded, size: 18),
-                  label: const Text('Stop & transcribe'),
+                  label: Text(
+                    isVoiceQuestion ? 'Stop & ask' : 'Stop & transcribe',
+                  ),
                 ),
             ];
 

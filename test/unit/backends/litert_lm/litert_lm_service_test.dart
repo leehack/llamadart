@@ -831,6 +831,104 @@ void main() {
     },
   );
 
+  test('keeps GPU text and vision while using a CPU audio executor', () async {
+    final fakeClient = _FakeLiteRtLmRuntimeClient();
+    final service = LiteRtLmService(clientFactory: () => fakeClient);
+    final gemmaModelFile = File('${tempDir.path}/gemma-4-E2B-it.litertlm');
+    await gemmaModelFile.writeAsString('fake model');
+    final imageFile = File('${tempDir.path}/gpu-media-image.png');
+    await imageFile.writeAsBytes(const <int>[
+      0x89,
+      0x50,
+      0x4e,
+      0x47,
+      0x0d,
+      0x0a,
+      0x1a,
+      0x0a,
+    ]);
+
+    if (!service.getAvailableBackendInfo().contains('gpu')) {
+      service.dispose();
+      return;
+    }
+
+    try {
+      final modelHandle = await service.loadModel(
+        gemmaModelFile.path,
+        const ModelParams(liteRtLmBackend: LiteRtLmBackendPreference.gpu),
+      );
+      final contextHandle = service.createContext(
+        modelHandle,
+        const ModelParams(liteRtLmBackend: LiteRtLmBackendPreference.gpu),
+      );
+
+      final chunksFuture = service.generateChat(contextHandle, [
+        LlamaChatMessage.withContent(
+          role: LlamaChatRole.user,
+          content: [
+            const LlamaTextContent('Answer the spoken request.'),
+            LlamaImageContent(path: imageFile.path),
+            LlamaAudioContent(bytes: Uint8List.fromList(const <int>[1, 2, 3])),
+          ],
+        ),
+      ], const GenerationParams(maxTokens: 8)).toList();
+
+      await fakeClient.generateStarted.future;
+      fakeClient.generated.add('ok');
+      await fakeClient.generated.close();
+
+      expect(await chunksFuture, [utf8.encode('ok')]);
+      expect(fakeClient.lastBackend, 'gpu');
+      expect(fakeClient.lastVisionBackend, 'gpu');
+      expect(fakeClient.lastAudioBackend, 'cpu');
+    } finally {
+      service.dispose();
+    }
+  });
+
+  test('preserves GPU audio for custom LiteRT-LM bundles', () async {
+    final fakeClient = _FakeLiteRtLmRuntimeClient();
+    final service = LiteRtLmService(clientFactory: () => fakeClient);
+
+    if (!service.getAvailableBackendInfo().contains('gpu')) {
+      service.dispose();
+      return;
+    }
+
+    try {
+      final modelHandle = await service.loadModel(
+        modelFile.path,
+        const ModelParams(liteRtLmBackend: LiteRtLmBackendPreference.gpu),
+      );
+      final contextHandle = service.createContext(
+        modelHandle,
+        const ModelParams(liteRtLmBackend: LiteRtLmBackendPreference.gpu),
+      );
+
+      final chunksFuture = service.generateChat(contextHandle, [
+        LlamaChatMessage.withContent(
+          role: LlamaChatRole.user,
+          content: [
+            const LlamaTextContent('Answer the spoken request.'),
+            LlamaAudioContent(bytes: Uint8List.fromList(const <int>[1, 2, 3])),
+          ],
+        ),
+      ], const GenerationParams(maxTokens: 8)).toList();
+
+      await fakeClient.generateStarted.future;
+      fakeClient.generated.add('ok');
+      await fakeClient.generated.close();
+
+      expect(await chunksFuture, [utf8.encode('ok')]);
+      expect(fakeClient.lastBackend, 'gpu');
+      expect(fakeClient.lastVisionBackend, isNull);
+      expect(fakeClient.lastAudioBackend, 'gpu');
+    } finally {
+      service.dispose();
+    }
+  });
+
   test(
     'rejects unsupported native chat media shapes before runtime init',
     () async {

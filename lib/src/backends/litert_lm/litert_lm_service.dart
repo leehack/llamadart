@@ -20,6 +20,7 @@ import 'litert_lm_platform.dart';
 import 'litert_lm_runtime.dart';
 
 const int _gemma4DefaultVisualTokenBudget = 280;
+const String _verifiedGemma4E2bAudioBundle = 'gemma-4-e2b-it.litertlm';
 
 /// Worker-owned service for the LiteRT-LM backend.
 ///
@@ -594,9 +595,15 @@ class LiteRtLmService {
         modelPath: modelPath,
         backend: backend,
         visionBackend: resolvedVisionEnabled
-            ? _mediaBackendName(backend)
+            ? _visionBackendName(backend)
             : null,
-        audioBackend: resolvedAudioEnabled ? _mediaBackendName(backend) : null,
+        // LiteRT-LM bundles constrain the audio executor independently from
+        // text. Only the verified Gemma 4 E2B catalog bundle is known to
+        // require CPU audio; preserve the selected media backend for custom
+        // bundles.
+        audioBackend: resolvedAudioEnabled
+            ? _audioBackendName(modelPath, backend)
+            : null,
         maxTokens: modelParams.contextSize,
         maxNumImages: resolvedMaxNumImages,
         cacheDir: _defaultCacheDir(),
@@ -717,11 +724,20 @@ class LiteRtLmService {
         .isNotEmpty;
   }
 
-  String _mediaBackendName(String backend) {
+  String _visionBackendName(String backend) {
     if (backend == liteRtLmNpuBackend) {
       return liteRtLmCpuBackend;
     }
     return backend;
+  }
+
+  String _audioBackendName(String modelPath, String backend) {
+    final modelName = File(modelPath).uri.pathSegments.last;
+    final normalized = modelName.toLowerCase().replaceAll('_', '-');
+    if (normalized == _verifiedGemma4E2bAudioBundle) {
+      return liteRtLmCpuBackend;
+    }
+    return _visionBackendName(backend);
   }
 
   Map<String, dynamic> _nativeImageContent(LlamaImageContent part) {

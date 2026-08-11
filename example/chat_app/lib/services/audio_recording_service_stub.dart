@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'audio_recording_service.dart';
 
 class _UnsupportedAudioRecordingService implements AudioRecordingService {
@@ -14,6 +16,14 @@ class _UnsupportedAudioRecordingService implements AudioRecordingService {
 
   @override
   Future<String> stop() async {
+    throw const AudioRecordingException(
+      AudioRecordingFailure.unsupported,
+      'Microphone recording is unavailable on this platform.',
+    );
+  }
+
+  @override
+  Future<Uint8List> readRecording(String path) async {
     throw const AudioRecordingException(
       AudioRecordingFailure.unsupported,
       'Microphone recording is unavailable on this platform.',

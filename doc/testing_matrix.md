@@ -154,6 +154,8 @@ dart run tool/testing/run_local_e2e.dart --scenario gguf-chat-features-smoke \
   --mmproj-path models/Qwen3.5-0.8B-mmproj-F16.gguf \
   --image-path test/fixtures/image.png
 
+LITERT_LM_AUDIO_PATH=/path/to/known-question.wav \
+LITERT_LM_AUDIO_EXPECTED_TEXT=4 \
 dart run tool/testing/run_local_e2e.dart --scenario litert-lm-chat-features-smoke \
   --model-path /path/to/gemma-4-E2B-it.litertlm \
   --backend auto

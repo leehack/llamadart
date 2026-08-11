@@ -35,12 +35,38 @@ enum ChatAudioRecordingState {
   /// Audio is being captured.
   recording,
 
-  /// The WAV file is being finalized before transcription.
+  /// The WAV file is being finalized before transcription or chat input.
   stopping,
 
   /// An active or pending capture is being discarded.
   cancelling,
 }
+
+/// The action performed after a microphone recording is finalized.
+enum ChatAudioRecordingPurpose {
+  /// Run the dedicated whole-file speech-to-text workflow.
+  transcription,
+
+  /// Send the recording to a general audio-capable chat model for an answer.
+  voiceQuestion,
+}
+
+typedef _VoiceQuestionContext = ({
+  int operationId,
+  int conversationRevision,
+  String? modelPath,
+  String? mmprojPath,
+  String conversationId,
+});
+
+typedef _GenerationContext = ({
+  int operationId,
+  int conversationRevision,
+  String? modelPath,
+  String? mmprojPath,
+  String conversationId,
+  ChatSession session,
+});
 
 class ChatProvider extends ChangeNotifier {
   static const String _defaultToolDeclarationsJson = '''
@@ -67,6 +93,17 @@ class ChatProvider extends ChangeNotifier {
 
   /// The maximum microphone recording length before automatic transcription.
   static const Duration maxAudioRecordingDuration = Duration(minutes: 5);
+
+  /// The maximum voice-question recording accepted by Gemma 4 audio input.
+  static const Duration maxVoiceQuestionRecordingDuration = Duration(
+    seconds: 30,
+  );
+
+  static const String _voiceQuestionPrompt =
+      'Listen to the attached recording and answer the spoken request '
+      'directly. Do not provide a transcript or describe the audio unless the '
+      'speaker asks for that. If there is no clear spoken request, briefly ask '
+      'the user to record it again.';
   static const String _androidDebugImagePath = String.fromEnvironment(
     'LLAMADART_CHAT_APP_DEBUG_IMAGE_PATH',
     defaultValue: '',
@@ -122,6 +159,11 @@ class ChatProvider extends ChangeNotifier {
   Completer<void>? _activeRecordingCancellationDone;
   Timer? _audioRecordingTimer;
   Duration _audioRecordingElapsed = Duration.zero;
+  ChatAudioRecordingPurpose? _audioRecordingPurpose;
+  int _voiceQuestionOperationSequence = 0;
+  int? _activeVoiceQuestionOperationId;
+  int _generationOperationSequence = 0;
+  int? _activeGenerationOperationId;
   String? _audioRecordingModelPath;
   String? _audioRecordingMmprojPath;
   String? _audioRecordingConversationId;
@@ -189,6 +231,10 @@ class ChatProvider extends ChangeNotifier {
   /// The elapsed duration of the active microphone recording.
   Duration get audioRecordingElapsed => _audioRecordingElapsed;
 
+  /// The action frozen when the current microphone recording began.
+  ChatAudioRecordingPurpose? get audioRecordingPurpose =>
+      _audioRecordingPurpose;
+
   /// Whether the latest plain assistant response can be generated again.
   bool get canRegenerateLastResponse {
     if (_isGenerating ||
@@ -226,9 +272,38 @@ class ChatProvider extends ChangeNotifier {
       _supportsAudio &&
       _settings.modelSupportsSpeechToText;
 
-  /// Whether the active model can start a microphone transcription capture.
+  /// Whether the active direct-media model can answer a recorded question.
+  ///
+  /// This intentionally excludes dedicated ASR profiles. The initial product
+  /// path is native Gemma 4 through LiteRT-LM, whose Web bundle is text-only.
+  bool get canAskWithVoice =>
+      !kIsWeb &&
+      _isLoaded &&
+      !_isInitializing &&
+      !_isGenerating &&
+      !_isTranscribing &&
+      !hasActiveAudioRecording &&
+      _supportsAudio &&
+      _settings.modelSupportsAudio &&
+      _settings.directMediaInput &&
+      !_settings.modelSupportsSpeechToText;
+
+  /// Whether the selected model/platform exposes a microphone action.
+  ///
+  /// This remains true while the model is busy so the composer can keep the
+  /// control visible but disabled instead of shifting its layout.
+  bool get supportsMicrophoneRecording =>
+      !kIsWeb &&
+      _audioRecordingService.isSupported &&
+      (_settings.modelSupportsSpeechToText ||
+          (_settings.modelSupportsAudio &&
+              _settings.directMediaInput &&
+              !_settings.modelSupportsSpeechToText));
+
+  /// Whether the active model can start a supported microphone workflow.
   bool get canStartAudioRecording =>
-      _audioRecordingService.isSupported && canTranscribeAudio;
+      _audioRecordingService.isSupported &&
+      (canTranscribeAudio || canAskWithVoice);
   bool get templateSupportsTools => _templateSupportsTools;
   bool get thinkingControlsSupported => _thinkingControlsSupported;
   String? get error => _error;
@@ -381,6 +456,12 @@ class ChatProvider extends ChangeNotifier {
 
   void createConversation() {
     unawaited(_cancelAndAwaitAudioRecording());
+    final hadActiveGeneration = _activeGenerationOperationId != null;
+    _invalidateActiveVoiceQuestion(releaseGeneration: true);
+    _invalidateActiveGeneration(cancelNative: true);
+    if (hadActiveGeneration) {
+      _removeEmptyAssistantPlaceholder();
+    }
     _invalidateActiveTranscription();
     _syncActiveConversationSnapshot();
 
@@ -429,6 +510,13 @@ class ChatProvider extends ChangeNotifier {
       return;
     }
 
+    final hadActiveGeneration = _activeGenerationOperationId != null;
+    _invalidateActiveVoiceQuestion(releaseGeneration: true);
+    _invalidateActiveGeneration(cancelNative: true);
+    if (hadActiveGeneration) {
+      _removeEmptyAssistantPlaceholder();
+      _restoreSessionFromMessages();
+    }
     await _cancelAndAwaitAudioRecording();
     await _cancelAndAwaitActiveTranscription();
 
@@ -1124,10 +1212,19 @@ class ChatProvider extends ChangeNotifier {
 
   void clearConversation() {
     unawaited(_cancelAndAwaitAudioRecording());
+    _invalidateActiveVoiceQuestion(releaseGeneration: true);
+    _invalidateActiveGeneration(cancelNative: true);
     final wasTranscribing = _isTranscribing;
     _invalidateActiveTranscription();
     _messages.clear();
     _session?.reset();
+    _session = _chatService.engine.isReady && _isLoaded
+        ? _chatSessionService.createSession(
+            engine: _chatService.engine,
+            contextSize: _settings.contextSize,
+            systemPrompt: _sessionSystemPrompt(),
+          )
+        : null;
     _currentTokens = 0;
     _isPruning = false;
     _isGenerating = wasTranscribing;
@@ -1152,10 +1249,6 @@ class ChatProvider extends ChangeNotifier {
       return;
     }
 
-    if (_settings.singleTurnMode) {
-      _session!.reset();
-    }
-
     if (!_chatService.engine.isReady) {
       _messages.add(
         ChatMessage(
@@ -1173,25 +1266,52 @@ class ChatProvider extends ChangeNotifier {
 
     if (parts.isEmpty && text.isEmpty) return;
 
-    if (!await _ensureMultimodalProjectorForMedia(parts)) {
+    final generationContext = _beginGeneration();
+    if (generationContext == null) {
       return;
     }
+    var generationStarted = false;
+    try {
+      if (_settings.singleTurnMode) {
+        generationContext.session.reset();
+      }
 
-    // For UI display, include text in parts
-    final displayParts = [
-      ...parts,
-      if (text.isNotEmpty) LlamaTextContent(text),
-    ];
-    final userMsg = ChatMessage(text: text, isUser: true, parts: displayParts);
-    _messages.add(userMsg);
-    _stagedParts.clear();
-    _isGenerating = true;
-    _syncActiveConversationSnapshot();
-    notifyListeners();
+      if (!await _ensureMultimodalProjectorForMedia(parts) ||
+          !_generationContextMatches(generationContext)) {
+        return;
+      }
 
-    await _yieldUiFrame();
+      // For UI display, include text in parts
+      final displayParts = [
+        ...parts,
+        if (text.isNotEmpty) LlamaTextContent(text),
+      ];
+      final userMsg = ChatMessage(
+        text: text,
+        isUser: true,
+        parts: displayParts,
+      );
+      _messages.add(userMsg);
+      _stagedParts.clear();
+      _syncActiveConversationSnapshot();
+      notifyListeners();
 
-    await _generateResponse(text, parts: parts.isEmpty ? null : parts);
+      await _yieldUiFrame();
+      if (!_generationContextMatches(generationContext)) {
+        return;
+      }
+
+      generationStarted = true;
+      await _generateResponse(
+        text,
+        context: generationContext,
+        parts: parts.isEmpty ? null : parts,
+      );
+    } finally {
+      if (!generationStarted) {
+        _releaseGeneration(generationContext);
+      }
+    }
   }
 
   /// Removes the latest plain assistant response and generates a replacement.
@@ -1210,12 +1330,29 @@ class ChatProvider extends ChangeNotifier {
     if (userIndex < 0) return;
 
     final userMessage = _messages[userIndex];
+    final requestText = userMessage.parts
+        ?.whereType<LlamaTextContent>()
+        .map((part) => part.text)
+        .where((text) => text.trim().isNotEmpty)
+        .join('\n');
     final mediaParts = userMessage.parts
         ?.where((part) => part is! LlamaTextContent)
         .toList(growable: false);
+    final expectedConversationRevision = _conversationRevision;
+    final expectedModelPath = _settings.modelPath;
+    final expectedMmprojPath = _settings.mmprojPath;
+    final expectedConversationId = _activeConversationId;
+    final expectedSession = _session;
     if (mediaParts != null &&
         mediaParts.isNotEmpty &&
         !await _ensureMultimodalProjectorForMedia(mediaParts)) {
+      return;
+    }
+    if (expectedConversationRevision != _conversationRevision ||
+        expectedModelPath != _settings.modelPath ||
+        expectedMmprojPath != _settings.mmprojPath ||
+        expectedConversationId != _activeConversationId ||
+        !identical(expectedSession, _session)) {
       return;
     }
 
@@ -1234,15 +1371,32 @@ class ChatProvider extends ChangeNotifier {
       systemPrompt: _sessionSystemPrompt(),
       messages: history,
     );
-    _isGenerating = true;
+    final generationContext = _beginGeneration();
+    if (generationContext == null) {
+      return;
+    }
     _syncActiveConversationSnapshot();
     notifyListeners();
 
-    await _yieldUiFrame();
-    await _generateResponse(
-      userMessage.text,
-      parts: mediaParts == null || mediaParts.isEmpty ? null : mediaParts,
-    );
+    var generationStarted = false;
+    try {
+      await _yieldUiFrame();
+      if (!_generationContextMatches(generationContext)) {
+        return;
+      }
+      generationStarted = true;
+      await _generateResponse(
+        requestText == null || requestText.isEmpty
+            ? userMessage.text
+            : requestText,
+        context: generationContext,
+        parts: mediaParts == null || mediaParts.isEmpty ? null : mediaParts,
+      );
+    } finally {
+      if (!generationStarted) {
+        _releaseGeneration(generationContext);
+      }
+    }
   }
 
   Map<String, dynamic>? _thinkingTemplateKwargs() {
@@ -1403,10 +1557,79 @@ class ChatProvider extends ChangeNotifier {
     }
   }
 
+  _GenerationContext? _beginGeneration() {
+    final session = _session;
+    if (session == null || !_chatService.engine.isReady) {
+      return null;
+    }
+
+    final operationId = ++_generationOperationSequence;
+    final context = (
+      operationId: operationId,
+      conversationRevision: _conversationRevision,
+      modelPath: _settings.modelPath,
+      mmprojPath: _settings.mmprojPath,
+      conversationId: _activeConversationId,
+      session: session,
+    );
+    _activeGenerationOperationId = operationId;
+    _isGenerating = true;
+    return context;
+  }
+
+  bool _generationContextMatches(_GenerationContext context) =>
+      _activeGenerationOperationId == context.operationId &&
+      _isGenerating &&
+      context.conversationRevision == _conversationRevision &&
+      context.modelPath == _settings.modelPath &&
+      context.mmprojPath == _settings.mmprojPath &&
+      context.conversationId == _activeConversationId &&
+      identical(context.session, _session);
+
+  void _releaseGeneration(_GenerationContext context) {
+    if (_activeGenerationOperationId != context.operationId) {
+      return;
+    }
+    _activeGenerationOperationId = null;
+    if (!_isTranscribing) {
+      _isGenerating = false;
+    }
+    if (_generationIdentityMatches(context)) {
+      _syncActiveConversationSnapshot();
+    }
+    if (!_isDisposed) {
+      notifyListeners();
+    }
+  }
+
+  bool _generationIdentityMatches(_GenerationContext context) =>
+      context.conversationRevision == _conversationRevision &&
+      context.modelPath == _settings.modelPath &&
+      context.mmprojPath == _settings.mmprojPath &&
+      context.conversationId == _activeConversationId &&
+      identical(context.session, _session);
+
+  void _invalidateActiveGeneration({bool cancelNative = false}) {
+    final hadActiveGeneration = _activeGenerationOperationId != null;
+    _activeGenerationOperationId = null;
+    if (cancelNative && hadActiveGeneration) {
+      _chatService.cancelGeneration();
+    }
+    if (!_isTranscribing) {
+      _isGenerating = false;
+    }
+  }
+
   Future<void> _generateResponse(
     String text, {
+    required _GenerationContext context,
     List<LlamaContentPart>? parts,
   }) async {
+    if (!_generationContextMatches(context)) {
+      _releaseGeneration(context);
+      return;
+    }
+
     var generationResult = const GenerationStreamResult(
       fullResponse: '',
       fullThinking: '',
@@ -1423,10 +1646,16 @@ class ChatProvider extends ChangeNotifier {
     var isCpuMultimodalTurn = false;
 
     try {
+      if (!_generationContextMatches(context)) {
+        return;
+      }
       _messages.add(ChatMessage(text: "...", isUser: false));
       notifyListeners();
 
       await _yieldUiFrame();
+      if (!_generationContextMatches(context)) {
+        return;
+      }
 
       final params = _chatGenerationService.buildParams(_settings);
       final chatParts = _chatGenerationService.buildChatParts(
@@ -1465,11 +1694,11 @@ class ChatProvider extends ChangeNotifier {
           : const Duration(seconds: 240);
 
       final templateKwargs = _thinkingTemplateKwargs();
-      _session!.systemPrompt = _sessionSystemPrompt();
+      context.session.systemPrompt = _sessionSystemPrompt();
 
       generationResult = await _chatGenerationService
           .consumeStream(
-            stream: _session!.create(
+            stream: context.session.create(
               chatParts,
               params: effectiveParams,
               tools: toolsForTurn,
@@ -1480,9 +1709,12 @@ class ChatProvider extends ChangeNotifier {
             thinkingEnabled: _settings.thinkingEnabled,
             uiNotifyIntervalMs: 16,
             cleanResponse: (response) => response,
-            shouldContinue: () => _isGenerating,
+            shouldContinue: () => _generationContextMatches(context),
             stallTimeout: streamStallTimeout,
             onUpdate: (update) {
+              if (!_generationContextMatches(context)) {
+                return;
+              }
               _currentTokens += update.generatedTokenDelta;
               appliedGeneratedTokenDeltas += update.generatedTokenDelta;
 
@@ -1507,7 +1739,9 @@ class ChatProvider extends ChangeNotifier {
           .timeout(
             streamWallTimeout,
             onTimeout: () {
-              _chatService.cancelGeneration();
+              if (_generationContextMatches(context)) {
+                _chatService.cancelGeneration();
+              }
               throw TimeoutException(
                 'Generation exceeded wall timeout.',
                 streamWallTimeout,
@@ -1515,14 +1749,18 @@ class ChatProvider extends ChangeNotifier {
             },
           );
 
+      if (!_generationContextMatches(context)) {
+        return;
+      }
+
       final fullResponse = generationResult.fullResponse;
       final fullThinking = generationResult.fullThinking;
       _lastFirstTokenLatencyMs = generationResult.firstTokenLatencyMs;
 
       // Final update
       if (_messages.isNotEmpty && !_messages.last.isUser) {
-        final lastSessionMessage = _session!.history.isNotEmpty
-            ? _session!.history.last
+        final lastSessionMessage = context.session.history.isNotEmpty
+            ? context.session.history.last
             : null;
         var toolCalls = lastSessionMessage == null
             ? const <LlamaToolCallContent>[]
@@ -1585,23 +1823,33 @@ class ChatProvider extends ChangeNotifier {
           // Some backends (e.g. LiteRT-LM on web) don't expose tokenizer
           // operations, so retain the generated-token count as the cache hint
           // instead of failing the turn.
+          var tokenCount = generationResult.generatedTokens;
           try {
-            _messages.last.tokenCount = await _chatService.engine.getTokenCount(
-              finalText,
-            );
+            tokenCount = await _chatService.engine.getTokenCount(finalText);
           } on LlamaUnsupportedException {
-            _messages.last.tokenCount = generationResult.generatedTokens;
+            // Keep the generated-token fallback.
           } on UnsupportedError {
-            _messages.last.tokenCount = generationResult.generatedTokens;
+            // Keep the generated-token fallback.
+          }
+          if (!_generationContextMatches(context)) {
+            return;
+          }
+          if (_messages.isNotEmpty && !_messages.last.isUser) {
+            _messages.last.tokenCount = tokenCount;
           }
         }
       }
       _removeEmptyAssistantPlaceholder();
     } catch (e) {
+      if (!_generationContextMatches(context)) {
+        return;
+      }
       _removeEmptyAssistantPlaceholder();
       final errorText = e.toString();
       if (e is TimeoutException) {
-        _chatService.cancelGeneration();
+        if (_generationContextMatches(context)) {
+          _chatService.cancelGeneration();
+        }
         _messages.add(
           ChatMessage(
             text: hasMediaPartsInTurn && isCpuMultimodalTurn
@@ -1678,78 +1926,68 @@ class ChatProvider extends ChangeNotifier {
         );
       }
     } finally {
-      final generatedTokens = generationResult.generatedTokens;
-      final elapsedMs = generationResult.elapsedMs;
-      final decodeElapsedMs = generationResult.decodeElapsedMs;
+      if (_generationContextMatches(context)) {
+        final generatedTokens = generationResult.generatedTokens;
+        final elapsedMs = generationResult.elapsedMs;
+        final decodeElapsedMs = generationResult.decodeElapsedMs;
 
-      int? nativeEvalTokens;
-      double? nativeEvalMs;
-      try {
-        final perf = await _chatService.engine.getPerformanceContext();
-        if (perf != null) {
-          _lastNativePromptEvalMs = perf.promptEvalMs.round();
-          _lastNativeEvalMs = perf.evalMs.round();
-          _lastNativeSampleMs = perf.sampleMs.round();
-          _lastNativePromptEvalTokens = perf.promptEvalTokens;
-          _lastNativeEvalTokens = perf.evalTokens;
-          _lastNativeReusedGraphs = perf.reusedGraphs;
-          nativeEvalTokens = perf.evalTokens;
-          nativeEvalMs = perf.evalMs;
-        } else {
-          _lastNativePromptEvalMs = null;
-          _lastNativeEvalMs = null;
-          _lastNativeSampleMs = null;
-          _lastNativePromptEvalTokens = null;
-          _lastNativeEvalTokens = null;
-          _lastNativeReusedGraphs = null;
+        BackendPerfContextData? performance;
+        try {
+          performance = await _chatService.engine.getPerformanceContext();
+        } catch (_) {
+          performance = null;
         }
-      } catch (_) {
-        _lastNativePromptEvalMs = null;
-        _lastNativeEvalMs = null;
-        _lastNativeSampleMs = null;
-        _lastNativePromptEvalTokens = null;
-        _lastNativeEvalTokens = null;
-        _lastNativeReusedGraphs = null;
-      }
 
-      final effectiveGeneratedTokens = nativeEvalTokens ?? generatedTokens;
-      if (_messages.isNotEmpty &&
-          !_messages.last.isUser &&
-          !_messages.last.isInfo) {
-        _messages.last.generatedTokenCount = effectiveGeneratedTokens;
-      }
-      if (nativeEvalTokens != null &&
-          nativeEvalTokens != appliedGeneratedTokenDeltas) {
-        _currentTokens = math.max(
-          0,
-          _currentTokens + nativeEvalTokens - appliedGeneratedTokenDeltas,
-        );
-      }
+        if (_generationContextMatches(context)) {
+          final nativeEvalTokens = performance?.evalTokens;
+          final nativeEvalMs = performance?.evalMs;
+          _lastNativePromptEvalMs = performance?.promptEvalMs.round();
+          _lastNativeEvalMs = performance?.evalMs.round();
+          _lastNativeSampleMs = performance?.sampleMs.round();
+          _lastNativePromptEvalTokens = performance?.promptEvalTokens;
+          _lastNativeEvalTokens = nativeEvalTokens;
+          _lastNativeReusedGraphs = performance?.reusedGraphs;
 
-      if (effectiveGeneratedTokens > 0 && elapsedMs > 0) {
-        _lastTokensPerSecond = effectiveGeneratedTokens / (elapsedMs / 1000);
-      } else {
-        _lastTokensPerSecond = null;
-      }
+          final effectiveGeneratedTokens = nativeEvalTokens ?? generatedTokens;
+          if (_messages.isNotEmpty &&
+              !_messages.last.isUser &&
+              !_messages.last.isInfo) {
+            _messages.last.generatedTokenCount = effectiveGeneratedTokens;
+          }
+          if (nativeEvalTokens != null &&
+              nativeEvalTokens != appliedGeneratedTokenDeltas) {
+            _currentTokens = math.max(
+              0,
+              _currentTokens + nativeEvalTokens - appliedGeneratedTokenDeltas,
+            );
+          }
 
-      final effectiveDecodeElapsedMs = nativeEvalMs != null && nativeEvalMs > 0
-          ? nativeEvalMs
-          : decodeElapsedMs.toDouble();
-      if (effectiveGeneratedTokens > 0 && effectiveDecodeElapsedMs > 0) {
-        _lastDecodeTokensPerSecond =
-            effectiveGeneratedTokens / (effectiveDecodeElapsedMs / 1000);
-      } else {
-        _lastDecodeTokensPerSecond = null;
-      }
+          if (effectiveGeneratedTokens > 0 && elapsedMs > 0) {
+            _lastTokensPerSecond =
+                effectiveGeneratedTokens / (elapsedMs / 1000);
+          } else {
+            _lastTokensPerSecond = null;
+          }
 
-      if (generationResult.firstTokenLatencyMs != null ||
-          generationResult.fullResponse.isNotEmpty ||
-          generationResult.fullThinking.isNotEmpty) {
-        _lastGenerationLatencyMs = elapsedMs;
+          final effectiveDecodeElapsedMs =
+              nativeEvalMs != null && nativeEvalMs > 0
+              ? nativeEvalMs
+              : decodeElapsedMs.toDouble();
+          if (effectiveGeneratedTokens > 0 && effectiveDecodeElapsedMs > 0) {
+            _lastDecodeTokensPerSecond =
+                effectiveGeneratedTokens / (effectiveDecodeElapsedMs / 1000);
+          } else {
+            _lastDecodeTokensPerSecond = null;
+          }
+
+          if (generationResult.firstTokenLatencyMs != null ||
+              generationResult.fullResponse.isNotEmpty ||
+              generationResult.fullThinking.isNotEmpty) {
+            _lastGenerationLatencyMs = elapsedMs;
+          }
+        }
       }
-      _isGenerating = false;
-      _syncActiveConversationSnapshot();
-      notifyListeners();
+      _releaseGeneration(context);
     }
   }
 
@@ -1957,14 +2195,24 @@ class ChatProvider extends ChangeNotifier {
     );
   }
 
-  /// Starts foreground microphone capture for a later whole-file transcript.
-  Future<void> startAudioRecording() async {
+  /// Starts foreground microphone capture for the active model's voice flow.
+  Future<void> startAudioRecording({ChatAudioRecordingPurpose? purpose}) async {
     if (!_audioRecordingService.isSupported) {
       _addInfoMessage('Microphone recording is unavailable on this platform.');
       notifyListeners();
       return;
     }
-    if (!canTranscribeAudio || hasActiveAudioRecording) {
+
+    final selectedPurpose =
+        purpose ??
+        (canTranscribeAudio
+            ? ChatAudioRecordingPurpose.transcription
+            : ChatAudioRecordingPurpose.voiceQuestion);
+    final canStartSelectedPurpose = switch (selectedPurpose) {
+      ChatAudioRecordingPurpose.transcription => canTranscribeAudio,
+      ChatAudioRecordingPurpose.voiceQuestion => canAskWithVoice,
+    };
+    if (!canStartSelectedPurpose || hasActiveAudioRecording) {
       return;
     }
 
@@ -1973,6 +2221,7 @@ class ChatProvider extends ChangeNotifier {
     _activeRecordingTransitionDone = transitionDone;
     _audioRecordingState = ChatAudioRecordingState.starting;
     _audioRecordingElapsed = Duration.zero;
+    _audioRecordingPurpose = selectedPurpose;
     _audioRecordingModelPath = _settings.modelPath;
     _audioRecordingMmprojPath = _settings.mmprojPath;
     _audioRecordingConversationId = _activeConversationId;
@@ -2013,10 +2262,12 @@ class ChatProvider extends ChangeNotifier {
     }
   }
 
-  /// Stops microphone capture, transcribes the finalized WAV, then deletes it.
-  Future<void> stopAudioRecordingAndTranscribe() async {
-    if (_audioRecordingState != ChatAudioRecordingState.recording) {
-      return;
+  Future<String?> _finishAudioRecording(
+    ChatAudioRecordingPurpose purpose,
+  ) async {
+    if (_audioRecordingState != ChatAudioRecordingState.recording ||
+        _audioRecordingPurpose != purpose) {
+      return null;
     }
 
     final revision = _audioRecordingRevision;
@@ -2032,7 +2283,7 @@ class ChatProvider extends ChangeNotifier {
       path = await _audioRecordingService.stop();
       if (revision != _audioRecordingRevision || _isDisposed) {
         await _audioRecordingService.deleteRecording(path);
-        return;
+        return null;
       }
     } catch (error) {
       await _audioRecordingService.cancel();
@@ -2059,7 +2310,7 @@ class ChatProvider extends ChangeNotifier {
           notifyListeners();
         }
       }
-      return;
+      return null;
     }
 
     final contextMatches =
@@ -2075,6 +2326,18 @@ class ChatProvider extends ChangeNotifier {
         'Recording discarded because the active model or conversation changed.',
       );
       notifyListeners();
+      return null;
+    }
+
+    return path;
+  }
+
+  /// Stops microphone capture and runs dedicated whole-file transcription.
+  Future<void> stopAudioRecordingAndTranscribe() async {
+    final path = await _finishAudioRecording(
+      ChatAudioRecordingPurpose.transcription,
+    );
+    if (path == null) {
       return;
     }
 
@@ -2088,7 +2351,188 @@ class ChatProvider extends ChangeNotifier {
     }
   }
 
-  /// Discards an active microphone recording without transcribing it.
+  /// Stops microphone capture and asks the active audio-chat model to answer.
+  Future<void> stopAudioRecordingAndAsk() async {
+    final path = await _finishAudioRecording(
+      ChatAudioRecordingPurpose.voiceQuestion,
+    );
+    if (path == null) {
+      return;
+    }
+
+    final context = _reserveVoiceQuestion();
+    if (context == null) {
+      await _audioRecordingService.deleteRecording(path);
+      if (!_isDisposed) {
+        _addInfoMessage(
+          'The active model can no longer accept a recorded voice question.',
+        );
+        notifyListeners();
+      }
+      return;
+    }
+
+    Uint8List? audioBytes;
+    try {
+      audioBytes = await _audioRecordingService.readRecording(path);
+    } catch (error) {
+      if (_voiceQuestionContextMatches(context) && !_isDisposed) {
+        _addInfoMessage(
+          error is AudioRecordingException
+              ? error.message
+              : 'The microphone recording could not be read.',
+        );
+      }
+    } finally {
+      await _audioRecordingService.deleteRecording(path);
+    }
+
+    if (audioBytes == null) {
+      _releaseVoiceQuestionReservation(context);
+      return;
+    }
+    await _submitVoiceQuestion(audioBytes, context);
+  }
+
+  /// Sends encoded [audioBytes] as a spoken question to the active chat model.
+  ///
+  /// Existing staged composer attachments are intentionally left untouched.
+  Future<void> askWithVoice(Uint8List audioBytes) async {
+    final context = _reserveVoiceQuestion();
+    if (context == null) {
+      return;
+    }
+    await _submitVoiceQuestion(audioBytes, context);
+  }
+
+  _VoiceQuestionContext? _reserveVoiceQuestion() {
+    if (!canAskWithVoice || _session == null || !_chatService.engine.isReady) {
+      return null;
+    }
+    final operationId = ++_voiceQuestionOperationSequence;
+    final context = (
+      operationId: operationId,
+      conversationRevision: _conversationRevision,
+      modelPath: _settings.modelPath,
+      mmprojPath: _settings.mmprojPath,
+      conversationId: _activeConversationId,
+    );
+    _activeVoiceQuestionOperationId = operationId;
+    _isGenerating = true;
+    notifyListeners();
+    return context;
+  }
+
+  bool _voiceQuestionContextMatches(_VoiceQuestionContext context) =>
+      _activeVoiceQuestionOperationId == context.operationId &&
+      _isGenerating &&
+      context.conversationRevision == _conversationRevision &&
+      context.modelPath == _settings.modelPath &&
+      context.mmprojPath == _settings.mmprojPath &&
+      context.conversationId == _activeConversationId;
+
+  Future<void> _submitVoiceQuestion(
+    Uint8List audioBytes,
+    _VoiceQuestionContext context,
+  ) async {
+    _GenerationContext? generationContext;
+    var generationStarted = false;
+    try {
+      if (!_voiceQuestionContextMatches(context)) {
+        return;
+      }
+      if (audioBytes.isEmpty) {
+        _addInfoMessage('The microphone recording did not contain any audio.');
+        return;
+      }
+
+      final audio = LlamaAudioContent(bytes: audioBytes);
+      if (!await _ensureMultimodalProjectorForMedia(<LlamaContentPart>[
+            audio,
+          ]) ||
+          !_voiceQuestionContextMatches(context)) {
+        return;
+      }
+
+      generationContext = _beginGeneration();
+      if (generationContext == null) {
+        return;
+      }
+
+      if (_settings.singleTurnMode) {
+        generationContext.session.reset();
+      }
+
+      _messages.add(
+        ChatMessage(
+          text: 'Voice question',
+          isUser: true,
+          parts: <LlamaContentPart>[
+            audio,
+            const LlamaTextContent(_voiceQuestionPrompt),
+          ],
+        ),
+      );
+      _syncActiveConversationSnapshot();
+      notifyListeners();
+      await _yieldUiFrame();
+
+      if (!_voiceQuestionContextMatches(context)) {
+        return;
+      }
+      generationStarted = true;
+      await _generateResponse(
+        _voiceQuestionPrompt,
+        context: generationContext,
+        parts: <LlamaContentPart>[audio],
+      );
+    } catch (error) {
+      if (_voiceQuestionContextMatches(context) && !_isDisposed) {
+        _addInfoMessage('Voice question failed: ${_formatDisplayError(error)}');
+      }
+    } finally {
+      final reservedGeneration = generationContext;
+      if (!generationStarted && reservedGeneration != null) {
+        _releaseGeneration(reservedGeneration);
+      }
+      _releaseVoiceQuestionReservation(
+        context,
+        releaseGeneration: generationContext == null,
+      );
+    }
+  }
+
+  void _releaseVoiceQuestionReservation(
+    _VoiceQuestionContext context, {
+    bool releaseGeneration = true,
+  }) {
+    if (_activeVoiceQuestionOperationId != context.operationId) {
+      return;
+    }
+    _activeVoiceQuestionOperationId = null;
+    if (releaseGeneration &&
+        _activeGenerationOperationId == null &&
+        !_isTranscribing) {
+      _isGenerating = false;
+      _syncActiveConversationSnapshot();
+      if (!_isDisposed) {
+        notifyListeners();
+      }
+    }
+  }
+
+  void _invalidateActiveVoiceQuestion({bool releaseGeneration = false}) {
+    final hadActiveVoiceQuestion = _activeVoiceQuestionOperationId != null;
+    _activeVoiceQuestionOperationId = null;
+    if (releaseGeneration &&
+        hadActiveVoiceQuestion &&
+        _activeGenerationOperationId == null &&
+        !_isTranscribing) {
+      _isGenerating = false;
+    }
+  }
+
+  /// Discards an active microphone recording without processing it.
   Future<void> cancelAudioRecording({bool showMessage = true}) async {
     await _cancelAndAwaitAudioRecording(showMessage: showMessage);
   }
@@ -2104,12 +2548,21 @@ class ChatProvider extends ChangeNotifier {
       }
 
       _audioRecordingElapsed = Duration(seconds: timer.tick);
-      if (_audioRecordingElapsed >= maxAudioRecordingDuration) {
-        _audioRecordingElapsed = maxAudioRecordingDuration;
-        _addInfoMessage(
-          'Maximum recording length reached. Transcribing the recording now.',
-        );
-        unawaited(stopAudioRecordingAndTranscribe());
+      final purpose = _audioRecordingPurpose;
+      final maximumDuration = purpose == ChatAudioRecordingPurpose.voiceQuestion
+          ? maxVoiceQuestionRecordingDuration
+          : maxAudioRecordingDuration;
+      if (_audioRecordingElapsed >= maximumDuration) {
+        _audioRecordingElapsed = maximumDuration;
+        if (purpose == ChatAudioRecordingPurpose.voiceQuestion) {
+          _addInfoMessage('30-second limit reached. Asking the model now.');
+          unawaited(stopAudioRecordingAndAsk());
+        } else {
+          _addInfoMessage(
+            'Maximum recording length reached. Transcribing the recording now.',
+          );
+          unawaited(stopAudioRecordingAndTranscribe());
+        }
         return;
       }
       if (!_isDisposed) {
@@ -2123,6 +2576,7 @@ class ChatProvider extends ChangeNotifier {
     _audioRecordingTimer = null;
     _audioRecordingState = ChatAudioRecordingState.idle;
     _audioRecordingElapsed = Duration.zero;
+    _audioRecordingPurpose = null;
     _audioRecordingModelPath = null;
     _audioRecordingMmprojPath = null;
     _audioRecordingConversationId = null;
@@ -2477,8 +2931,13 @@ class ChatProvider extends ChangeNotifier {
       return;
     }
     if (_isGenerating) {
-      _chatService.cancelGeneration();
-      _isGenerating = false;
+      final hadActiveGeneration = _activeGenerationOperationId != null;
+      _invalidateActiveVoiceQuestion(releaseGeneration: true);
+      _invalidateActiveGeneration(cancelNative: true);
+      if (hadActiveGeneration) {
+        _removeEmptyAssistantPlaceholder();
+        _restoreSessionFromMessages();
+      }
       notifyListeners();
     }
   }
@@ -2486,7 +2945,23 @@ class ChatProvider extends ChangeNotifier {
   void _updateSettings(ChatSettings newSettings) {
     final declarationsChanged =
         _settings.toolDeclarations != newSettings.toolDeclarations;
+    final modelContextChanged =
+        _settings.modelPath != newSettings.modelPath ||
+        _settings.mmprojPath != newSettings.mmprojPath ||
+        _settings.directMediaInput != newSettings.directMediaInput ||
+        _settings.modelSupportsAudio != newSettings.modelSupportsAudio ||
+        _settings.modelSupportsSpeechToText !=
+            newSettings.modelSupportsSpeechToText;
+    final hadActiveGeneration = _activeGenerationOperationId != null;
+    if (modelContextChanged) {
+      _invalidateActiveVoiceQuestion(releaseGeneration: true);
+      _invalidateActiveGeneration(cancelNative: true);
+    }
     _settings = newSettings;
+    if (modelContextChanged && hadActiveGeneration) {
+      _removeEmptyAssistantPlaceholder();
+      _restoreSessionFromMessages();
+    }
     if (declarationsChanged) {
       _rebuildDeclaredToolsFromSettings();
     }

@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -130,6 +131,27 @@ class _IoAudioRecordingService implements AudioRecordingService {
       throw const AudioRecordingException(
         AudioRecordingFailure.stopFailed,
         'Could not finish the microphone recording.',
+      );
+    }
+  }
+
+  @override
+  Future<Uint8List> readRecording(String path) async {
+    try {
+      final bytes = await File(path).readAsBytes();
+      if (bytes.isEmpty) {
+        throw const AudioRecordingException(
+          AudioRecordingFailure.readFailed,
+          'The microphone recording could not be read.',
+        );
+      }
+      return bytes;
+    } on AudioRecordingException {
+      rethrow;
+    } catch (_) {
+      throw const AudioRecordingException(
+        AudioRecordingFailure.readFailed,
+        'The microphone recording could not be read.',
       );
     }
   }

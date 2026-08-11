@@ -69,6 +69,26 @@ flutter test
   LiteRT-LM. Microphone capture is enabled on Android, iOS, macOS, and Windows
   when a compatible ASR model is active; Linux capture remains disabled pending
   a safe external-recorder preflight.
+- **Ask with voice** for the native Gemma 4 E2B LiteRT-LM direct-media preset.
+  It records up to 30 seconds, then **Stop & ask** sends the WAV bytes through
+  ordinary multimodal chat so the model can answer the spoken request. It does
+  not use `SpeechToTextEngine` and provides no transcript, timestamp,
+  confidence, or live-partial contract. Qwen3-ASR keeps the separate
+  five-minute **Stop & transcribe** workflow and takes precedence for ASR
+  profiles.
+- The voice-question UI is code-supported on Android, iOS, macOS, and Windows
+  when the selected native profile declares direct audio input; Linux recording and Web are
+  excluded. That platform gating is not an end-to-end validation claim.
+  Real-model/device results should cite the `chat-app-voice-question-smoke`
+  test-matrix row.
+- Voice-question capture makes a best-effort attempt to delete the temporary
+  WAV after reading it. The encoded bytes remain in the in-memory conversation
+  history for subsequent turns and regeneration, which can reprocess the
+  recording and consume additional memory.
+- For the built-in Gemma 4 E2B LiteRT-LM bundle, the selected backend continues
+  to run text (and vision, when used), while the bundle-constrained audio
+  executor runs on CPU. LiteRT-LM itself is not universally limited to CPU
+  audio.
 - Clipboard image/audio attachments through `Cmd/Ctrl+V` on desktop and web or
   **Paste attachment** on touch devices. Text-only clipboard content still
   follows the normal composer paste path, and media is capped at 64 MB.
@@ -121,8 +141,10 @@ The download library includes Gemma 4 E2B, E4B, 12B, 26B A4B, and 31B GGUF
 tiers. E2B, E4B, and 12B expose image, audio, and video input on the current
 native `llama.cpp` mtmd path; 26B A4B and 31B expose image/video input but do
 not support audio. The native Gemma 4 E2B LiteRT-LM bundle accepts audio
-directly without an external projector. Web GGUF audio remains runtime-gated,
-and LiteRT-LM Web remains text-only.
+directly without an external projector. On supported native recorder targets,
+the chat app can send a recording to that bundle with **Ask with voice**. This
+is generic audio-input chat, not typed speech-to-text. Web GGUF audio remains
+runtime-gated, and LiteRT-LM Web remains text-only.
 
 ## Web notes
 

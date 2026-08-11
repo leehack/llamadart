@@ -113,6 +113,7 @@ class MockLlamaEngine extends LlamaEngine {
   int createCalls = 0;
   ModelParams? lastModelParams;
   GenerationParams? lastCreateParams;
+  List<LlamaChatMessage>? lastCreateMessages;
   BackendPerfContextData? performanceContext;
   List<String> createChunkContents = const ['Hi there'];
   String? lastLoadedModelPath;
@@ -202,6 +203,7 @@ class MockLlamaEngine extends LlamaEngine {
   }) async* {
     createCalls += 1;
     lastCreateParams = params;
+    lastCreateMessages = List<LlamaChatMessage>.from(messages);
     for (final content in createChunkContents) {
       yield LlamaCompletionChunk(
         id: "mock-id",
