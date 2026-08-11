@@ -1263,6 +1263,41 @@ void main() {
       );
     });
 
+    test('Gemma 4 E2B LiteRT-LM pins its verified native bundle', () {
+      final model = DownloadableModel.defaultModels.singleWhere(
+        (model) => model.name == 'Gemma 4 E2B LiteRT-LM',
+      );
+      final nativeSource = model.modelSource as RemoteModelAssetSource;
+      final webSource = model.webModelSource as RemoteModelAssetSource;
+
+      expect(
+        nativeSource.url,
+        'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/6b78abd019e61a1ca4cbe3b212d2c9ce8ff38a94/gemma-4-E2B-it.litertlm?download=true',
+      );
+      expect(nativeSource.filename, 'gemma-4-E2B-it.litertlm');
+      expect(nativeSource.sizeBytes, 2588147712);
+      expect(
+        nativeSource.sha256,
+        '181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c',
+      );
+      expect(model.sizeBytesFor(web: false), 2588147712);
+      expect(model.supportsAudioFor(web: false), isTrue);
+      expect(model.supportsSpeechToTextFor(web: false), isFalse);
+      expect(model.mediaInputModeFor(web: false), ModelMediaInputMode.direct);
+
+      expect(
+        webSource.url,
+        'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it-web.litertlm?download=true',
+      );
+      expect(webSource.filename, 'gemma-4-E2B-it-web.litertlm');
+      expect(webSource.sizeBytes, 2008432640);
+      expect(webSource.sha256, isNull);
+      expect(model.sizeBytesFor(web: true), 2008432640);
+      expect(model.supportsAudioFor(web: true), isFalse);
+      expect(model.supportsSpeechToTextFor(web: true), isFalse);
+      expect(model.mediaInputModeFor(web: true), ModelMediaInputMode.none);
+    });
+
     test(
       'native LiteRT-LM preset enables direct audio after model load',
       () async {

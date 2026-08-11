@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'audio_recording_service_stub.dart'
     if (dart.library.io) 'audio_recording_service_io.dart';
 
@@ -14,6 +16,9 @@ enum AudioRecordingFailure {
 
   /// The recorder could not finalize captured audio.
   stopFailed,
+
+  /// A finalized recording could not be read for model input.
+  readFailed,
 }
 
 /// A user-actionable microphone recording failure.
@@ -44,6 +49,9 @@ abstract class AudioRecordingService {
 
   /// Stops the active recording and returns its temporary WAV path.
   Future<String> stop();
+
+  /// Reads a finalized temporary recording as encoded WAV bytes.
+  Future<Uint8List> readRecording(String path);
 
   /// Cancels the active recording and removes any partial file.
   Future<void> cancel();

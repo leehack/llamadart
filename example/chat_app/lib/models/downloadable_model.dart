@@ -507,16 +507,21 @@ class DownloadableModel {
         thinkingEnabled: false,
       ),
     ),
-    DownloadableModel(
+    DownloadableModel.fromSources(
       name: 'Gemma 4 E2B LiteRT-LM',
       description:
           'Optimized LiteRT-LM variant with native audio and text-only Web support.',
-      url:
-          'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm?download=true',
-      filename: 'gemma-4-E2B-it.litertlm',
+      modelSource: const RemoteModelAssetSource(
+        url:
+            'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/6b78abd019e61a1ca4cbe3b212d2c9ce8ff38a94/gemma-4-E2B-it.litertlm?download=true',
+        filename: 'gemma-4-E2B-it.litertlm',
+        sizeBytes: 2588147712,
+        sha256:
+            '181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c',
+      ),
       sizeBytes: 2588147712,
       webSizeBytes: 2008432640,
-      webModelSource: RemoteModelAssetSource(
+      webModelSource: const RemoteModelAssetSource(
         url:
             'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it-web.litertlm?download=true',
         filename: 'gemma-4-E2B-it-web.litertlm',

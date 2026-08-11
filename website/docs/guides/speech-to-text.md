@@ -122,25 +122,48 @@ Do not call `LlamaEngine.create` on that engine until the speech task completes.
 
 ## Chat app
 
-The Flutter chat example exposes three different audio actions on compatible
-native GGUF models:
+The Flutter chat example keeps transcription and generic audio chat as
+different user actions:
 
 - **Attach Audio** sends audio through normal multimodal chat.
-- **Transcribe Audio** selects one file and uses `SpeechToTextEngine`.
-- The microphone button records a temporary foreground WAV. **Stop &
-  transcribe** finalizes that file and passes it to `SpeechToTextEngine`, while
-  **Discard** cancels capture and removes the partial file.
+- **Transcribe Audio** selects one file and uses `SpeechToTextEngine` with a
+  compatible native GGUF ASR model.
+- With Qwen3-ASR, the microphone records a temporary foreground WAV for up to
+  five minutes. **Stop & transcribe** finalizes that file and passes it to
+  `SpeechToTextEngine`, while **Discard** cancels capture and removes the
+  partial file.
+- With the native Gemma 4 E2B LiteRT-LM direct-media preset, **Ask with voice**
+  records up to 30 seconds and **Stop & ask** sends the WAV bytes through
+  normal multimodal chat. The model is prompted to answer the spoken request;
+  this path does not promise a transcript, timestamps, confidence, detected
+  language, or live partial text. An ASR profile takes precedence when both
+  capability declarations are present.
 
 The transcription action is hidden on Web and for current LiteRT-LM bundles.
-Microphone recordings are capped at five minutes, cancelled when the app is
+ASR microphone recordings are capped at five minutes, cancelled when the app is
 backgrounded, and deleted after transcription. This remains a whole-file
 workflow: it does not produce live partial transcripts while the user speaks.
 The recorder requests 16 kHz mono WAV, but hardware may choose another valid
 sample rate; the downstream native decoder reads the WAV metadata.
-Capture is enabled on Android, iOS, macOS, and Windows. It remains disabled on
-Linux with the current recorder plugin because its external-tool startup is not
-safe to expose without a stronger preflight; selected-file transcription is
-unchanged there.
+Capture for both microphone workflows is code-supported on Android, iOS, macOS,
+and Windows. It remains disabled on Linux with the current recorder plugin
+because its external-tool startup is not safe to expose without a stronger
+preflight; selected-file transcription is unchanged there. **Ask with voice**
+also requires a native direct-media audio model and is unavailable on Web.
+These capability gates do not establish real-model behavior on every platform;
+record device evidence with the `chat-app-voice-question-smoke` test-matrix row
+before making a platform validation claim.
+
+The voice-question path makes a best-effort attempt to delete its temporary WAV
+after reading it, but keeps the encoded audio bytes in the in-memory
+conversation history so later turns and regeneration preserve context. Those
+operations can reprocess the audio and consume additional memory. It remains
+generic audio-input chat and does not change the typed STT support matrix above.
+
+For the built-in Gemma 4 E2B LiteRT-LM bundle, the selected backend continues
+to run text (and vision, when used), while the bundle-constrained audio executor
+runs on CPU. This is a property of the current supported bundle, not a universal
+LiteRT-LM audio limitation.
 
 The chat app's native mobile-and-desktop catalog includes the Qwen3-ASR 0.6B
 Q8_0 model/projector pair. It remains excluded from the Web catalog. Its

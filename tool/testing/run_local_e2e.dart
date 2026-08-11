@@ -380,7 +380,8 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
     LocalE2eScenario(
       name: 'litert-lm-chat-features-smoke',
       group: LocalE2eScenarioGroup.dartLocalOnly,
-      description: 'Run real LiteRT-LM chat, thinking, and tool-call smoke.',
+      description:
+          'Run real LiteRT-LM chat, thinking, tool-call, and optional media smoke.',
       requiresDevice: false,
       stepsBuilder: (context) {
         final arguments = <String>[
@@ -985,6 +986,11 @@ Options:
   --allow-any-response           Accept any non-empty real-model Web response.
   --skip-build                   Reuse an existing Flutter web build where supported.
   -h, --help                     Show this help.
+
+Inherited environment for litert-lm-chat-features-smoke:
+  LITERT_LM_IMAGE_PATH           Optional local image fixture.
+  LITERT_LM_AUDIO_PATH           Optional local encoded audio fixture.
+  LITERT_LM_AUDIO_EXPECTED_TEXT  Required exact expected answer when audio is set.
 ''';
 }
 

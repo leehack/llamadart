@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:llamadart/llamadart.dart';
 
@@ -11,7 +12,10 @@ Future<void> main(List<String> args) async {
     stderr.writeln(
       'Usage: dart run tool/litert_lm_chat_features_smoke.dart '
       '<model.litertlm> [cpu|gpu|npu|auto] [image-path]\n'
-      'Optional env: LITERT_LM_IMAGE_PATH=<local image file>',
+      'Optional env:\n'
+      '  LITERT_LM_IMAGE_PATH=<local image file>\n'
+      '  LITERT_LM_AUDIO_PATH=<local encoded audio file>\n'
+      '  LITERT_LM_AUDIO_EXPECTED_TEXT=<expected answer; required with audio>',
     );
     exitCode = 64;
     return;
@@ -19,6 +23,9 @@ Future<void> main(List<String> args) async {
 
   final backend = args.length > 1 ? _parseBackend(args[1]) : _defaultBackend();
   final imagePath = _optionalImagePath(args.length > 2 ? args[2] : null);
+  final audioPath = _optionalAudioPath();
+  final audioExpectedText = _audioExpectedText(audioPath);
+  final audioBytes = audioPath == null ? null : await _readAudio(audioPath);
   final engine = LlamaEngine(LlamaBackend());
   try {
     await engine.loadModel(
@@ -127,6 +134,27 @@ Future<void> main(List<String> args) async {
             enableThinking: false,
             maxTokens: 96,
           );
+    final audioChat = audioBytes == null
+        ? null
+        : await _runScenario(
+            engine: engine,
+            messages: [
+              LlamaChatMessage.withContent(
+                role: LlamaChatRole.user,
+                content: [
+                  LlamaAudioContent(bytes: audioBytes),
+                  const LlamaTextContent(
+                    'Answer the spoken question directly. Return only the '
+                    'final answer, with no transcript, explanation, or '
+                    'description of the recording.',
+                  ),
+                ],
+              ),
+            ],
+            tools: const [],
+            enableThinking: false,
+            maxTokens: 64,
+          );
 
     final result = {
       'backendName': await engine.getBackendName(),
@@ -137,12 +165,18 @@ Future<void> main(List<String> args) async {
       if (nativeMediaRender != null)
         'nativeMediaRender': nativeMediaRender.toJson(),
       if (multimodal != null) 'multimodal': multimodal.toJson(),
+      if (audioChat != null) ...{
+        'audioInput': {'encodedByteLength': audioBytes!.length},
+        'audioChat': audioChat.toJson(),
+      },
     };
     _verifyResult(
       thinking: thinking,
       toolCall: toolCall,
       nativeToolHistory: nativeToolHistory,
       multimodal: multimodal,
+      audioChat: audioChat,
+      audioExpectedText: audioExpectedText,
     );
     print('RESULT litert_lm_chat_features ${jsonEncode(result)}');
   } finally {
@@ -155,6 +189,8 @@ void _verifyResult({
   required _ScenarioResult toolCall,
   required _ScenarioResult nativeToolHistory,
   _ScenarioResult? multimodal,
+  _ScenarioResult? audioChat,
+  String? audioExpectedText,
 }) {
   if (thinking.thinking.trim().isEmpty) {
     throw StateError('Gemma 4 thinking scenario produced no thinking delta.');
@@ -175,6 +211,16 @@ void _verifyResult({
   );
   if (multimodal != null && multimodal.content.trim().isEmpty) {
     throw StateError('Gemma 4 multimodal scenario produced no content.');
+  }
+  if (audioChat != null) {
+    final expected = _normalizeAnswer(audioExpectedText!);
+    final actual = _normalizeAnswer(audioChat.content);
+    if (actual != expected) {
+      throw StateError(
+        'Gemma 4 audio chat answer mismatch: expected "$expected", '
+        'received "$actual".',
+      );
+    }
   }
 }
 
@@ -324,6 +370,50 @@ String? _optionalImagePath(String? argValue) {
     throw ArgumentError('LiteRT-LM smoke image does not exist: $value');
   }
   return image.path;
+}
+
+String? _optionalAudioPath() {
+  final value = Platform.environment['LITERT_LM_AUDIO_PATH'];
+  if (value == null || value.trim().isEmpty) {
+    return null;
+  }
+  final audio = File(value);
+  if (!audio.existsSync()) {
+    throw ArgumentError('LiteRT-LM smoke audio does not exist: $value');
+  }
+  return audio.path;
+}
+
+String? _audioExpectedText(String? audioPath) {
+  if (audioPath == null) {
+    return null;
+  }
+  final value = Platform.environment['LITERT_LM_AUDIO_EXPECTED_TEXT'];
+  if (value == null || value.trim().isEmpty) {
+    throw ArgumentError(
+      'LITERT_LM_AUDIO_EXPECTED_TEXT is required when '
+      'LITERT_LM_AUDIO_PATH is set.',
+    );
+  }
+  if (_normalizeAnswer(value).isEmpty) {
+    throw ArgumentError(
+      'LITERT_LM_AUDIO_EXPECTED_TEXT must contain a verifiable answer.',
+    );
+  }
+  return value;
+}
+
+Future<Uint8List> _readAudio(String path) async {
+  final bytes = await File(path).readAsBytes();
+  if (bytes.isEmpty) {
+    throw ArgumentError('LiteRT-LM smoke audio must not be empty.');
+  }
+  return bytes;
+}
+
+String _normalizeAnswer(String value) {
+  final collapsed = value.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+  return collapsed.replaceAll(RegExp(r'^[`*_]+|[`*_.!,;:?]+$'), '').trim();
 }
 
 LiteRtLmBackendPreference _parseBackend(String value) {

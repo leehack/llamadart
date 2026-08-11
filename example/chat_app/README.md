@@ -14,6 +14,9 @@ A Flutter chat application demonstrating real-world usage of llamadart with UI.
 - 🎙️ **Whole-file transcription**: Compatible native GGUF ASR models can
   transcribe a selected file or capture a foreground microphone recording,
   then transcribe it after **Stop & transcribe**.
+- 🗣️ **Ask with voice**: Compatible native direct-media models can receive a
+  short microphone recording as ordinary multimodal chat and answer the spoken
+  request after **Stop & ask**.
 - 📱 Material Design 3 UI
 - ⚙️ Model configuration (path, runtime-detected backend selection, GPU layers, context size)
 - 🧩 Capability badges per model (Tools / Thinking / Vision / Audio / Video)
@@ -111,6 +114,31 @@ flutter test --run-skipped -t local-only \
    - The complete Qwen3-ASR model/projector, microphone, and final-transcript
      flow has passed on a physical Pixel using CPU inference and in the iOS
      Simulator. This is not yet physical-iPhone or Windows validation.
+   - The native Gemma 4 E2B LiteRT-LM preset exposes **Ask with voice** when its
+     selected platform profile declares direct audio input. It records for at
+     most 30 seconds;
+     **Stop & ask** sends the encoded WAV bytes through normal multimodal chat
+     and asks the model to answer the spoken request. This is not
+     `SpeechToTextEngine`: it has no transcript, timestamp, confidence, or live
+     partial-text contract. Qwen3-ASR continues to use the separate five-minute
+     **Stop & transcribe** flow, and takes precedence for models declared as
+     ASR profiles.
+   - The voice-question UI is code-supported on Android, iOS, macOS, and
+     Windows when the native direct-media bundle and microphone recorder are
+     available. Linux recording and Web are excluded. Automated tests cover
+     capability gating and lifecycle behavior, but each native platform still
+     requires real-model/device evidence before being described as validated.
+     See the `chat-app-voice-question-smoke` row in
+     `tool/testing/test_matrix.dart`.
+   - After **Stop & ask**, the app makes a best-effort attempt to delete the
+     temporary WAV file. Its encoded bytes remain in the in-memory conversation
+     history so later turns and response regeneration can retain the audio
+     context; those turns can therefore reprocess the recording and use
+     additional memory.
+   - For the built-in Gemma 4 E2B LiteRT-LM bundle, the selected backend still
+     runs text (and vision, when used), while its bundle-constrained audio
+     executor runs on CPU. This is not a claim that LiteRT-LM audio is
+     universally CPU-only.
    - Gemma 4 E2B is included as a GGUF + `mmproj` bundle. In the current
      native `llama.cpp` mtmd path used here, that projector exposes image,
      audio, and video input. Audio remains experimental upstream; start with
