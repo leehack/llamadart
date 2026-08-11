@@ -2163,6 +2163,28 @@ void main() {
         service.generate(
           contextHandle,
           'hello',
+          const GenerationParams(
+            speculativeDecodingConfig: SpeculativeDecodingConfig.draftDspark(
+              draftModelPath: 'draft.gguf',
+            ),
+          ),
+        ),
+        emitsError(
+          isA<UnsupportedError>().having(
+            (error) => error.message.toString(),
+            'message',
+            allOf(
+              contains('speculativeDecodingConfig.strategy'),
+              contains('speculativeDecodingConfig.draftModelPath'),
+            ),
+          ),
+        ),
+      );
+
+      await expectLater(
+        service.generate(
+          contextHandle,
+          'hello',
           const GenerationParams(thinkingBudget: ThinkingBudget(maxTokens: 16)),
         ),
         emitsError(

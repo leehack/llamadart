@@ -7,7 +7,7 @@ This page combines platform support, runtime-family selection, and
 backend-module configuration for
 `llamadart`.
 
-The native-assets hook currently pins `llamadart-native` tag `b10333` and
+The native-assets hook currently pins `llamadart-native` tag `b10356` and
 `litert-lm-native` release `v0.15.0-native.3` (`hook/build.dart`). Apps can
 override the llama.cpp native GitHub source with
 `hooks.user_defines.llamadart.llamadart_native_tag` and
@@ -183,6 +183,15 @@ device/model bundle, use `cpu` or `gpu` for that artifact.
   resolves known template delimiters automatically; raw generation requires
   explicit delimiters. LiteRT-LM and WebGPU reject the setting, as does the
   llama.cpp speculative-decoding path.
+- **Experimental DSpark speculative decoding** is available as an explicit
+  opt-in on native llama.cpp/GGUF through
+  `SpeculativeDecodingConfig.draftDspark(...)`; it is never enabled by default.
+  It maps to upstream `draft-dspark`, requires a compatible external draft
+  GGUF, and remains subject to target/draft/backend parity, acceptance, and
+  throughput validation. It is an external non-MTP draft-context strategy and
+  requires the default `b10356` runtime or a newer ABI-compatible native build
+  with the DSpark wrapper fix. WebGPU and LiteRT-LM reject this llama.cpp-
+  specific strategy explicitly.
 - **State persistence** (`LlamaEngine.stateSaveFile(...)` /
   `stateLoadFile(...)`) is available on native backends and on WebGPU bridge
   assets `v0.1.15+` that expose `stateSaveFile` / `stateLoadFile` bridge APIs.
@@ -196,7 +205,7 @@ device/model bundle, use `cpu` or `gpu` for that artifact.
   a web load failure as a package bug. The [WebGPU Bridge](./webgpu-bridge)
   page has the browser-console probe and Flutter Web smoke-test path.
 
-## Current llama.cpp module availability by bundle (`b10333`)
+## Current llama.cpp module availability by bundle (`b10356`)
 
 | Bundle key | Available backend modules in bundle |
 | --- | --- |
@@ -244,7 +253,7 @@ hooks:
   user_defines:
     llamadart:
       # Optional. Defaults to llamadart's tested native runtime pin.
-      llamadart_native_tag: b10333
+      llamadart_native_tag: b10356
 
       # Optional. GitHub repository slug or github.com URL.
       llamadart_native_repository: leehack/llamadart-native

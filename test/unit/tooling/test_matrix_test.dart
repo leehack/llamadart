@@ -83,8 +83,9 @@ void main() {
       expect(
         table,
         contains(
-          '--speculative-cases baseline,ngram-simple,ngram-map-k,ngram-map-k4v,'
-          'ngram-mod,ngram-cache,mixed-ngram',
+          '--draft-model-path <draft.gguf> --backend cpu '
+          '--speculative-cases baseline,draft-dspark,ngram-simple,ngram-map-k,'
+          'ngram-map-k4v,ngram-mod,ngram-cache,mixed-ngram',
         ),
       );
       expect(

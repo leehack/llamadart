@@ -141,12 +141,13 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     tier: 'targeted',
     mode: 'local-only',
     covers:
-        'real GGUF llama.cpp speculative decoding baseline, bundled MTP, '
-        'n-gram, draft-model, and cache throughput/acceptance metrics',
+        'real GGUF llama.cpp speculative decoding baseline, n-gram, external '
+        'draft-model including DSpark, and cache throughput/acceptance metrics',
     command:
         'dart run tool/testing/run_local_e2e.dart --scenario '
         'llama-cpp-speculative-benchmark --model-path <model.gguf> '
-        '--backend cpu --speculative-cases baseline,ngram-simple,'
+        '--draft-model-path <draft.gguf> --backend cpu '
+        '--speculative-cases baseline,draft-dspark,ngram-simple,'
         'ngram-map-k,ngram-map-k4v,ngram-mod,ngram-cache,mixed-ngram '
         '--benchmark-gpu-layers 0 --benchmark-max-tokens 128 '
         '--benchmark-runs 3 --draft-token-max 1,2 '

@@ -459,22 +459,25 @@ void main() {
         const ModelParams(),
       );
 
-      await expectLater(
-        backend.generate(
-          contextHandle,
-          'hello',
-          const GenerationParams(
-            speculativeDecodingConfig: SpeculativeDecodingConfig.mtp(),
+      for (final config in const [
+        SpeculativeDecodingConfig.mtp(),
+        SpeculativeDecodingConfig.draftDspark(draftModelPath: 'draft.gguf'),
+      ]) {
+        await expectLater(
+          backend.generate(
+            contextHandle,
+            'hello',
+            GenerationParams(speculativeDecodingConfig: config),
           ),
-        ),
-        emitsError(
-          isA<UnsupportedError>().having(
-            (error) => error.message.toString(),
-            'message',
-            contains('speculativeDecodingConfig'),
+          emitsError(
+            isA<UnsupportedError>().having(
+              (error) => error.message.toString(),
+              'message',
+              contains('speculativeDecodingConfig'),
+            ),
           ),
-        ),
-      );
+        );
+      }
     } finally {
       await backend.dispose();
     }

@@ -1317,6 +1317,14 @@ external ffi.Pointer<llama_sampler> llama_sampler_clone(
   ffi.Pointer<llama_sampler> smpl,
 );
 
+@ffi.Native<
+  ffi.Void Function(ffi.Pointer<llama_sampler>, ffi.Pointer<llama_sampler>)
+>()
+external void llama_sampler_copy(
+  ffi.Pointer<llama_sampler> src,
+  ffi.Pointer<llama_sampler> dst,
+);
+
 @ffi.Native<ffi.Void Function(ffi.Pointer<llama_sampler>)>()
 external void llama_sampler_free(ffi.Pointer<llama_sampler> smpl);
 
@@ -8722,6 +8730,7 @@ final class llama_sampler_i extends ffi.Struct {
       ffi.Bool Function(
         ffi.Pointer<llama_sampler> smpl,
         ggml_backend_buffer_type_t buft,
+        ffi.Uint32 n_outputs_max_per_seq,
       )
     >
   >
@@ -8755,6 +8764,21 @@ final class llama_sampler_i extends ffi.Struct {
     ffi.NativeFunction<ffi.Void Function(ffi.Pointer<llama_sampler> smpl)>
   >
   backend_set_input;
+
+  external ffi.Pointer<
+    ffi.NativeFunction<ffi.Void Function(ffi.Pointer<llama_sampler> smpl)>
+  >
+  backend_reset;
+
+  external ffi.Pointer<
+    ffi.NativeFunction<
+      ffi.Void Function(
+        ffi.Pointer<llama_sampler> src,
+        ffi.Pointer<llama_sampler> dst,
+      )
+    >
+  >
+  copy_state;
 }
 
 typedef llama_sampler_context_t = ffi.Pointer<ffi.Void>;
@@ -9307,6 +9331,9 @@ final class llama_context_params extends ffi.Struct {
 
   @ffi.Uint32()
   external int n_outputs_max;
+
+  @ffi.Uint32()
+  external int n_outputs_max_per_seq;
 
   @ffi.Int32()
   external int n_threads;
