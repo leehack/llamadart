@@ -11,8 +11,9 @@ A Flutter chat application demonstrating real-world usage of llamadart with UI.
 - 📋 **Clipboard attachments**: Paste screenshots or copied image/audio files
   with `Cmd/Ctrl+V`, or use **Paste attachment** from the attachment menu on
   touch devices. Plain-text paste continues to work normally.
-- 🎙️ **Whole-file transcription**: Compatible native GGUF ASR models expose a
-  separate **Transcribe Audio** action backed by `SpeechToTextEngine`.
+- 🎙️ **Whole-file transcription**: Compatible native GGUF ASR models can
+  transcribe a selected file or capture a foreground microphone recording,
+  then transcribe it after **Stop & transcribe**.
 - 📱 Material Design 3 UI
 - ⚙️ Model configuration (path, runtime-detected backend selection, GPU layers, context size)
 - 🧩 Capability badges per model (Tools / Thinking / Vision / Audio / Video)
@@ -90,10 +91,20 @@ flutter test --run-skipped -t local-only \
      a separate action, with an explicit combined option in the confirmation.
 3. Tap the **Download** icon. The app uses `Dio` to download the model directly to your device's app-specific cache directory. Additional model downloads enter a FIFO queue and start one at a time. A persistent progress pill remains in the app header when settings is closed; tap it to reopen download details.
 4. Once downloaded, tap **Select** to load the model.
-   - The native-desktop Qwen3-ASR preset exposes both **Attach Audio** and
-     **Transcribe Audio**. The latter accepts WAV, MP3, or FLAC files and
-     requires the matching projector; live microphone input, Web, LiteRT-LM
-     STT, and TTS are not enabled yet. Its pinned downloads are SHA-256 verified.
+   - The native-desktop Qwen3-ASR preset exposes **Attach Audio** and
+     **Transcribe Audio**. On macOS and Windows it also shows a microphone
+     button; compatible custom mobile ASR configurations can use the same
+     control. File transcription accepts WAV, MP3, or FLAC. The microphone
+     records a temporary mono WAV for up to five minutes; **Stop & transcribe**
+     finalizes it, runs whole-file STT, and deletes it.
+     Capture is foreground-only and cancelling discards the temporary file.
+     Live partial transcription, Web, LiteRT-LM STT, and TTS are not enabled
+     yet. All STT actions require the matching projector, and the preset's
+     pinned downloads are SHA-256 verified.
+   - Microphone capture is enabled on Android, iOS, macOS, and Windows when a
+     compatible ASR model is active. It remains hidden on Linux because the
+     recorder plugin can report startup before its required external tools are
+     ready; selected-file transcription still works there.
    - Gemma 4 E2B is included as a GGUF + `mmproj` bundle. In the current
      native `llama.cpp` mtmd path used here, that projector exposes image,
      audio, and video input. Audio remains experimental upstream; start with

@@ -61,9 +61,14 @@ flutter test
 - Runtime-verified multimodal capability gating after `mmproj` load, plus
   declared direct-media capabilities for native model bundles such as
   LiteRT-LM. The app hides unsupported attachment types for the active platform.
-- A separate **Transcribe Audio** action for compatible native GGUF models,
-  backed by the typed whole-file `SpeechToTextEngine`. This is distinct from
-  generic audio attachment and is not shown for Web or current LiteRT-LM.
+- Separate file and microphone transcription actions for compatible native
+  GGUF models, backed by the typed whole-file `SpeechToTextEngine`. The
+  microphone captures a temporary foreground WAV and transcribes it only after
+  **Stop & transcribe**; it does not emit live partial text. These actions are
+  distinct from generic audio attachment and are not shown for Web or current
+  LiteRT-LM. Microphone capture is enabled on Android, iOS, macOS, and Windows
+  when a compatible ASR model is active; Linux capture remains disabled pending
+  a safe external-recorder preflight.
 - Clipboard image/audio attachments through `Cmd/Ctrl+V` on desktop and web or
   **Paste attachment** on touch devices. Text-only clipboard content still
   follows the normal composer paste path, and media is capped at 64 MB.

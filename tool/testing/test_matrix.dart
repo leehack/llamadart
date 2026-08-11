@@ -191,6 +191,23 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'Speech API, native audio routing, transcript normalization, or chat-app transcription changes.',
   ),
   TestMatrixRow(
+    id: 'chat-app-microphone-transcription-smoke',
+    tier: 'targeted',
+    mode: 'manual/device',
+    covers:
+        'microphone permission, nonempty finalized WAV capture, whole-file '
+        'transcription, discard/background cancellation, and temporary-file '
+        'cleanup',
+    command:
+        'Run example/chat_app on a microphone-equipped native device with the '
+        'Qwen3-ASR model/projector, record known speech, use Stop & transcribe, '
+        'then repeat with Discard and an app-background transition. Record '
+        'platform/device, permission result, transcript, and cleanup evidence.',
+    useWhen:
+        'Chat-app microphone capture, recording permissions, lifecycle, or '
+        'temporary-audio handling changes.',
+  ),
+  TestMatrixRow(
     id: 'llama-cpp-chat-template-smoke',
     tier: 'targeted',
     mode: 'local-only',

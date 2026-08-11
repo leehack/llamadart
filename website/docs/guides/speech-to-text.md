@@ -122,14 +122,25 @@ Do not call `LlamaEngine.create` on that engine until the speech task completes.
 
 ## Chat app
 
-The Flutter chat example exposes two different audio actions on compatible
+The Flutter chat example exposes three different audio actions on compatible
 native GGUF models:
 
 - **Attach Audio** sends audio through normal multimodal chat.
 - **Transcribe Audio** selects one file and uses `SpeechToTextEngine`.
+- The microphone button records a temporary foreground WAV. **Stop &
+  transcribe** finalizes that file and passes it to `SpeechToTextEngine`, while
+  **Discard** cancels capture and removes the partial file.
 
 The transcription action is hidden on Web and for current LiteRT-LM bundles.
-It is a file workflow, not live microphone capture.
+Microphone recordings are capped at five minutes, cancelled when the app is
+backgrounded, and deleted after transcription. This remains a whole-file
+workflow: it does not produce live partial transcripts while the user speaks.
+The recorder requests 16 kHz mono WAV, but hardware may choose another valid
+sample rate; the downstream native decoder reads the WAV metadata.
+Capture is enabled on Android, iOS, macOS, and Windows. It remains disabled on
+Linux with the current recorder plugin because its external-tool startup is not
+safe to expose without a stronger preflight; selected-file transcription is
+unchanged there.
 
 The chat app's desktop catalog includes the validated Qwen3-ASR 0.6B Q8_0
 model/projector pair. Its immutable artifact revision, byte sizes, and SHA-256
