@@ -77,6 +77,37 @@ void main() {
     expect(find.text('Audio'), findsNothing);
   });
 
+  testWidgets('ASR card distinguishes STT and requires its projector', (
+    tester,
+  ) async {
+    await _pumpCard(
+      tester,
+      model: _asrModel(),
+      isWeb: false,
+      isDownloaded: false,
+      cacheState: const ModelProfileCacheState(
+        model: ModelAssetCacheState(
+          role: ModelAssetRole.model,
+          label: 'asr.gguf',
+          isAvailable: true,
+        ),
+        multimodalProjector: ModelAssetCacheState(
+          role: ModelAssetRole.multimodalProjector,
+          label: 'asr-mmproj.gguf',
+          isAvailable: false,
+        ),
+      ),
+      onSelect: () {},
+      onDownload: () {},
+      onIncludeProjectorChanged: (_) {},
+    );
+
+    expect(find.text('Audio'), findsOneWidget);
+    expect(find.text('Speech-to-text'), findsOneWidget);
+    expect(find.text('Use Text Only'), findsNothing);
+    expect(find.text('Download Missing Assets'), findsOneWidget);
+  });
+
   testWidgets('shows distribution, desktop scope, and readable large size', (
     tester,
   ) async {
@@ -466,6 +497,20 @@ DownloadableModel _vlmModel() {
     mmprojFilename: 'mmproj.gguf',
     sizeBytes: 10,
     supportsVision: true,
+  );
+}
+
+DownloadableModel _asrModel() {
+  return const DownloadableModel(
+    name: 'ASR Test Model',
+    description: 'Fake ASR model for widget tests.',
+    url: 'https://example.com/asr.gguf',
+    filename: 'asr.gguf',
+    mmprojUrl: 'https://example.com/asr-mmproj.gguf',
+    mmprojFilename: 'asr-mmproj.gguf',
+    sizeBytes: 20,
+    supportsAudio: true,
+    supportsSpeechToText: true,
   );
 }
 

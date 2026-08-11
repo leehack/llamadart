@@ -18,7 +18,7 @@ audio-capable multimodal models.
 
 | Runtime | Generic audio-input chat | Typed `SpeechToTextEngine` | Text to speech |
 | --- | --- | --- | --- |
-| Native llama.cpp / GGUF | Model + projector dependent | Experimental; complete file/bytes/PCM input, final transcript only | No public Dart API |
+| Native llama.cpp / GGUF | Model + projector dependent | Experimental Qwen3-ASR adapter; complete WAV/MP3/FLAC file or bytes, final transcript only | No public Dart API |
 | WebGPU / GGUF | Bridge + model dependent | Unsupported | Unsupported |
 | Native LiteRT-LM / `.litertlm` | Bundle dependent through normal generation | Unsupported by the pinned native artifact | Unsupported by the pinned native artifact |
 | LiteRT-LM Web | Unsupported | Unsupported | Unsupported |
@@ -26,7 +26,9 @@ audio-capable multimodal models.
 “Generic audio-input chat” means an audio content part is processed by normal
 generation. It does not imply a transcript schema, stable ASR behavior, or TTS.
 The typed STT API adds a stable Dart result/cancellation boundary, but the first
-backend still performs whole-audio llama.cpp generation internally.
+backend still performs whole-audio llama.cpp generation internally. Its
+`SpeechToTextImplementation.multimodalPromptAdapter` capability makes that
+distinction inspectable; it is not a dedicated native ASR engine.
 
 ## Load a Qwen3-ASR model
 
@@ -43,7 +45,10 @@ await engine.loadMultimodalProjector(
   '/models/mmproj-Qwen3-ASR-0.6B-Q8_0.gguf',
 );
 
-final recognizer = SpeechToTextEngine(engine);
+final recognizer = SpeechToTextEngine(
+  engine,
+  modelProfile: SpeechToTextModelProfile.qwen3Asr,
+);
 final capabilities = await recognizer.capabilities;
 if (!capabilities.isSupported) {
   throw StateError(capabilities.unsupportedReason!);
@@ -51,7 +56,9 @@ if (!capabilities.isSupported) {
 ```
 
 Always check `capabilities` after both artifacts are loaded. Projector load
-success alone does not prove audio support.
+success alone does not prove audio support. The required `modelProfile` is an
+explicit declaration that prevents an ordinary audio-understanding model from
+being advertised as ASR merely because it accepts audio.
 
 ## Transcribe a complete file
 
@@ -59,35 +66,33 @@ success alone does not prove audio support.
 final task = await recognizer.transcribe(
   const SpeechToTextRequest(
     audio: SpeechAudioFileInput('/recordings/meeting.wav'),
-    languageHint: 'en',
     contextPrompt: 'llamadart, Qwen3-ASR',
   ),
 );
 
-await for (final event in task.events) {
-  if (event is SpeechToTextFinalEvent) {
-    print(event.result.text);
-    print(event.result.language);
+try {
+  await for (final event in task.events) {
+    if (event is SpeechToTextFinalEvent) {
+      print(event.result.text);
+    }
   }
+} on LlamaException catch (error) {
+  print('Recognition failed: $error');
 }
 
 final completion = await task.done;
 print(completion.state);
 ```
 
-Native llama.cpp currently decodes WAV, MP3, and FLAC file or byte inputs. Raw
-PCM uses `SpeechPcmInput` and currently requires mono 16 kHz `Float32` samples:
+`transcribe` itself throws typed input, state, or unsupported errors when
+preflight fails before a task can start. After startup, `events` is a
+single-subscription stream: runtime failure is emitted as a stream error and
+the same terminal condition is available through `task.done`.
 
-```dart
-final input = SpeechPcmInput(
-  samples,
-  format: const SpeechAudioFormat(
-    sampleRateHz: 16000,
-    channelCount: 1,
-    sampleFormat: SpeechAudioSampleFormat.float32,
-  ),
-);
-```
+Native llama.cpp currently decodes WAV, MP3, and FLAC file or byte inputs. Raw
+PCM is intentionally not exposed by the typed API yet: projector sample rates
+are model-specific, and the current public engine capability does not report
+the loaded projector's required rate.
 
 `SpeechAudioFormat` also carries optional encoding and MIME metadata. Final
 results reserve segment and word timing, confidence, and speaker fields so a
@@ -111,9 +116,9 @@ final completion = await task.done;
 assert(completion.state == SpeechToTextCompletionState.cancelled);
 ```
 
-Cancelling a stream subscription does not cancel the native task. One
-`SpeechToTextEngine` wrapper allows one active task because its `LlamaEngine`
-owns a single generation context.
+Cancelling a stream subscription does not cancel the native task. All
+`SpeechToTextEngine` wrappers over one `LlamaEngine` share a one-task lease.
+Do not call `LlamaEngine.create` on that engine until the speech task completes.
 
 ## Chat app
 
@@ -126,14 +131,24 @@ native GGUF models:
 The transcription action is hidden on Web and for current LiteRT-LM bundles.
 It is a file workflow, not live microphone capture.
 
+The chat app's desktop catalog includes the validated Qwen3-ASR 0.6B Q8_0
+model/projector pair. Its immutable artifact revision, byte sizes, and SHA-256
+digests are pinned, and the native downloader verifies both files before the
+model can be selected.
+
 ## Known limits
 
 - Qwen3-ASR may emit a leading `language English<asr_text>` marker. llamadart
-  normalizes that leading marker and exposes the language separately.
+  strips that marker, but does not expose it as reliable detected-language
+  metadata until language behavior has a dedicated validation contract.
 - There are no word/segment timestamps, confidence scores, speaker
   diarization, or incremental audio frames in the current backend.
 - Native inference backend correctness and performance remain device dependent;
   establish a CPU baseline before claiming GPU support for a deployment.
+- The local real-model smoke has passed on macOS arm64 CPU. A separate
+  chat-app/manual smoke has passed on Metal. The redistributable fixture and
+  Linux, Windows, Android, and iOS validation remain tracked in
+  [issue #325](https://github.com/leehack/llamadart/issues/325).
 - TTS is not exposed. llama.cpp's current Qwen3-TTS helper is experimental and
   requires a stable downstream native wrapper before it can support a public
   Dart `TextToSpeechEngine`.

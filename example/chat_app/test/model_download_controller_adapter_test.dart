@@ -30,6 +30,34 @@ void main() {
       },
     );
 
+    test('reports verified catalog metadata for the bound asset', () async {
+      const sha256 =
+          'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+      final model = DownloadableModel.fromSources(
+        id: 'verified-model',
+        name: 'Verified Model',
+        description: 'Remote model with catalog integrity metadata.',
+        modelSource: const RemoteModelAssetSource(
+          url: 'https://example.com/verified.gguf?download=true',
+          filename: 'verified.gguf',
+          sizeBytes: 8,
+          sha256: sha256,
+        ),
+        sizeBytes: 12,
+      );
+      final service = _FakeModelService(downloadedFiles: {model.filename});
+      final manager = ChatAppModelDownloadManager(
+        modelService: service,
+        model: model,
+        modelsDir: '/models',
+      );
+
+      final entry = await manager.ensureModel(manager.source);
+
+      expect(entry.bytes, 8);
+      expect(entry.sha256, sha256);
+    });
+
     test(
       'rejects checksum options instead of reporting unverified ready',
       () async {

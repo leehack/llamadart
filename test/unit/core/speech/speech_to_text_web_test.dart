@@ -6,13 +6,24 @@ import 'package:test/test.dart';
 
 void main() {
   test('dedicated speech-to-text is explicitly unsupported on Web', () async {
-    final engine = SpeechToTextEngine(LlamaEngine(_WebBackend()));
+    final engine = SpeechToTextEngine(
+      LlamaEngine(_WebBackend()),
+      modelProfile: SpeechToTextModelProfile.qwen3Asr,
+    );
 
     final capabilities = await engine.capabilities;
 
     expect(capabilities.isSupported, isFalse);
     expect(capabilities.unsupportedReason, contains('not available on Web'));
     expect(capabilities.unsupportedReason, contains('generic audio input'));
+    await expectLater(
+      engine.transcribe(
+        const SpeechToTextRequest(
+          audio: SpeechAudioFileInput('/tmp/fixture.wav'),
+        ),
+      ),
+      throwsA(isA<LlamaUnsupportedException>()),
+    );
   });
 }
 

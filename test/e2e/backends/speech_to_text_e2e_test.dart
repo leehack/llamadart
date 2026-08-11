@@ -20,7 +20,11 @@ void main() {
       final modelPath = _requiredFile(_modelPathKey);
       final mmprojPath = _requiredFile(_mmprojPathKey);
       final audioPath = _requiredFile(_audioPathKey);
-      if (modelPath == null || mmprojPath == null || audioPath == null) {
+      final expectedText = _requiredText(_expectedTextKey);
+      if (modelPath == null ||
+          mmprojPath == null ||
+          audioPath == null ||
+          expectedText == null) {
         return;
       }
 
@@ -36,7 +40,10 @@ void main() {
         );
         await engine.loadMultimodalProjector(mmprojPath);
 
-        final recognizer = SpeechToTextEngine(engine);
+        final recognizer = SpeechToTextEngine(
+          engine,
+          modelProfile: SpeechToTextModelProfile.qwen3Asr,
+        );
         final capabilities = await recognizer.capabilities;
         expect(
           capabilities.isSupported,
@@ -60,15 +67,21 @@ void main() {
         expect(result.text, isNot(contains('<asr_text>')));
         expect(result.text, isNot(startsWith('language ')));
 
-        final expected = Platform.environment[_expectedTextKey]?.trim();
-        if (expected != null && expected.isNotEmpty) {
-          expect(result.text, expected);
-        }
+        expect(result.text, expectedText);
       } finally {
         await engine.dispose();
       }
     },
   );
+}
+
+String? _requiredText(String environmentKey) {
+  final value = Platform.environment[environmentKey]?.trim();
+  if (value == null || value.isEmpty) {
+    markTestSkipped('Set $environmentKey to run the speech-to-text E2E.');
+    return null;
+  }
+  return value;
 }
 
 String? _requiredFile(String environmentKey) {

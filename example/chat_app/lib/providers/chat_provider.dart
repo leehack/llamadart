@@ -93,6 +93,8 @@ class ChatProvider extends ChangeNotifier {
   Timer? _settingsSaveDebounce;
   CancelToken? _activeModelPrefetchCancelToken;
   SpeechToTextTask? _activeSpeechToTextTask;
+  Completer<void>? _activeTranscriptionDone;
+  int _conversationRevision = 0;
   bool _isDisposed = false;
 
   // Telemetry
@@ -144,6 +146,7 @@ class ChatProvider extends ChangeNotifier {
   /// Whether the latest plain assistant response can be generated again.
   bool get canRegenerateLastResponse {
     if (_isGenerating ||
+        _isTranscribing ||
         _session == null ||
         !_chatService.engine.isReady ||
         _messages.length < 2) {
@@ -154,6 +157,7 @@ class ChatProvider extends ChangeNotifier {
     if (assistant.isUser ||
         assistant.isInfo ||
         assistant.isToolCall ||
+        assistant.isTranscription ||
         assistant.role == LlamaChatRole.tool) {
       return false;
     }
@@ -170,14 +174,9 @@ class ChatProvider extends ChangeNotifier {
       _isLoaded &&
       !_isInitializing &&
       !_isGenerating &&
+      !_isTranscribing &&
       _supportsAudio &&
-      !((_settings.modelPath ?? '')
-          .split('?')
-          .first
-          .split('#')
-          .first
-          .toLowerCase()
-          .endsWith('.litertlm'));
+      _settings.modelSupportsSpeechToText;
   bool get templateSupportsTools => _templateSupportsTools;
   bool get thinkingControlsSupported => _thinkingControlsSupported;
   String? get error => _error;
@@ -326,6 +325,7 @@ class ChatProvider extends ChangeNotifier {
   }
 
   void createConversation() {
+    _invalidateActiveTranscription();
     _syncActiveConversationSnapshot();
 
     final id = _conversationStateService.newConversationId();
@@ -372,6 +372,8 @@ class ChatProvider extends ChangeNotifier {
     if (index < 0) {
       return;
     }
+
+    await _cancelAndAwaitActiveTranscription();
 
     _syncActiveConversationSnapshot();
     final target = _conversations[index];
@@ -1062,14 +1064,13 @@ class ChatProvider extends ChangeNotifier {
   }
 
   void clearConversation() {
-    _activeSpeechToTextTask?.cancel();
-    _activeSpeechToTextTask = null;
+    final wasTranscribing = _isTranscribing;
+    _invalidateActiveTranscription();
     _messages.clear();
     _session?.reset();
     _currentTokens = 0;
     _isPruning = false;
-    _isGenerating = false;
-    _isTranscribing = false;
+    _isGenerating = wasTranscribing;
     _stagedParts.clear();
     _clearGenerationMetrics();
     _messages.add(
@@ -1084,7 +1085,7 @@ class ChatProvider extends ChangeNotifier {
   }
 
   Future<void> sendMessage(String text) async {
-    if (_isGenerating || _session == null) return;
+    if (_isGenerating || _isTranscribing || _session == null) return;
 
     if (_settings.singleTurnMode) {
       _session!.reset();
@@ -1903,7 +1904,8 @@ class ChatProvider extends ChangeNotifier {
 
     try {
       final result = await FilePicker.platform.pickFiles(
-        type: FileType.audio,
+        type: FileType.custom,
+        allowedExtensions: const <String>['wav', 'mp3', 'flac'],
         allowMultiple: false,
       );
       if (result == null || result.files.isEmpty) {
@@ -1949,7 +1951,10 @@ class ChatProvider extends ChangeNotifier {
     SpeechAudioInput audio, {
     String? displayName,
   }) async {
-    if (_isGenerating || _session == null || !_chatService.engine.isReady) {
+    if (_isGenerating ||
+        _isTranscribing ||
+        _session == null ||
+        !_chatService.engine.isReady) {
       return;
     }
     if (kIsWeb) {
@@ -1959,37 +1964,55 @@ class ChatProvider extends ChangeNotifier {
       notifyListeners();
       return;
     }
-
-    final llamaAudio = switch (audio) {
-      SpeechAudioFileInput(:final path) => LlamaAudioContent(path: path),
-      SpeechAudioBytesInput(:final bytes) => LlamaAudioContent(bytes: bytes),
-      SpeechPcmInput(:final samples) => LlamaAudioContent(samples: samples),
-    };
-    if (!await _ensureMultimodalProjectorForMedia(<LlamaContentPart>[
-      llamaAudio,
-    ])) {
+    if (!_settings.modelSupportsSpeechToText) {
+      _addInfoMessage(
+        'The selected model is audio-capable but is not declared as a '
+        'speech-to-text model.',
+      );
+      notifyListeners();
       return;
     }
 
-    if (_settings.singleTurnMode) {
-      _session!.reset();
-    }
-
-    final sourceLabel = (displayName ?? '').trim().isEmpty
-        ? 'selected audio'
-        : displayName!.trim();
-    _messages.add(
-      ChatMessage(text: 'Transcribe audio: $sourceLabel', isUser: true),
-    );
-    _messages.add(ChatMessage(text: 'Transcribing…', isUser: false));
+    final conversationRevision = _conversationRevision;
+    final operationDone = Completer<void>();
+    _activeTranscriptionDone = operationDone;
     _isGenerating = true;
     _isTranscribing = true;
-    _syncActiveConversationSnapshot();
     notifyListeners();
-    await _yieldUiFrame();
 
     try {
-      final recognizer = SpeechToTextEngine(_chatService.engine);
+      final llamaAudio = switch (audio) {
+        SpeechAudioFileInput(:final path) => LlamaAudioContent(path: path),
+        SpeechAudioBytesInput(:final bytes) => LlamaAudioContent(bytes: bytes),
+      };
+      if (!await _ensureMultimodalProjectorForMedia(<LlamaContentPart>[
+        llamaAudio,
+      ])) {
+        return;
+      }
+      if (conversationRevision != _conversationRevision) {
+        return;
+      }
+
+      if (_settings.singleTurnMode) {
+        _session!.reset();
+      }
+
+      final sourceLabel = (displayName ?? '').trim().isEmpty
+          ? 'selected audio'
+          : displayName!.trim();
+      _messages.add(
+        ChatMessage(text: 'Transcribe audio: $sourceLabel', isUser: true),
+      );
+      _messages.add(ChatMessage(text: 'Transcribing…', isUser: false));
+      _syncActiveConversationSnapshot();
+      notifyListeners();
+      await _yieldUiFrame();
+
+      final recognizer = SpeechToTextEngine(
+        _chatService.engine,
+        modelProfile: SpeechToTextModelProfile.qwen3Asr,
+      );
       final task = await recognizer.transcribe(
         SpeechToTextRequest(
           audio: audio,
@@ -1997,7 +2020,7 @@ class ChatProvider extends ChangeNotifier {
         ),
       );
       _activeSpeechToTextTask = task;
-      if (!_isGenerating) {
+      if (!_isGenerating || conversationRevision != _conversationRevision) {
         task.cancel();
       }
 
@@ -2008,6 +2031,10 @@ class ChatProvider extends ChangeNotifier {
         }
       }
       final completion = await task.done;
+
+      if (conversationRevision != _conversationRevision) {
+        return;
+      }
 
       if (completion.state == SpeechToTextCompletionState.cancelled) {
         _removeEmptyAssistantPlaceholder();
@@ -2023,6 +2050,18 @@ class ChatProvider extends ChangeNotifier {
         throw LlamaSpeechException(
           'The model completed without returning transcript text.',
         );
+      }
+
+      int? transcriptTokens;
+      try {
+        transcriptTokens = await _chatService.engine.getTokenCount(transcript);
+      } on LlamaUnsupportedException {
+        // Token counting is optional for transcription display.
+      } on UnsupportedError {
+        // Token counting is optional for transcription display.
+      }
+      if (conversationRevision != _conversationRevision) {
+        return;
       }
 
       if (_messages.isNotEmpty && !_messages.last.isUser) {
@@ -2044,16 +2083,15 @@ class ChatProvider extends ChangeNotifier {
           text: transcript,
         ),
       );
-      try {
-        _messages.last.tokenCount = await _chatService.engine.getTokenCount(
-          transcript,
-        );
-      } on LlamaUnsupportedException {
-        // Token counting is optional for transcription display.
-      } on UnsupportedError {
-        // Token counting is optional for transcription display.
+      if (transcriptTokens != null) {
+        _messages.last.tokenCount = transcriptTokens;
+        _messages.last.generatedTokenCount = transcriptTokens;
+        _currentTokens += transcriptTokens;
       }
     } catch (error) {
+      if (conversationRevision != _conversationRevision) {
+        return;
+      }
       _removeEmptyAssistantPlaceholder();
       _addInfoMessage(
         error is LlamaUnsupportedException
@@ -2062,10 +2100,18 @@ class ChatProvider extends ChangeNotifier {
       );
     } finally {
       _activeSpeechToTextTask = null;
+      if (identical(_activeTranscriptionDone, operationDone)) {
+        _activeTranscriptionDone = null;
+      }
+      if (!operationDone.isCompleted) {
+        operationDone.complete();
+      }
       _isTranscribing = false;
       _isGenerating = false;
       _syncActiveConversationSnapshot();
-      notifyListeners();
+      if (!_isDisposed) {
+        notifyListeners();
+      }
     }
   }
 
@@ -2189,13 +2235,13 @@ class ChatProvider extends ChangeNotifier {
   }
 
   void stopGeneration() {
+    if (_isTranscribing) {
+      _invalidateActiveTranscription();
+      notifyListeners();
+      return;
+    }
     if (_isGenerating) {
-      final speechTask = _activeSpeechToTextTask;
-      if (speechTask != null) {
-        speechTask.cancel();
-      } else {
-        _chatService.cancelGeneration();
-      }
+      _chatService.cancelGeneration();
       _isGenerating = false;
       notifyListeners();
     }
@@ -2338,6 +2384,7 @@ class ChatProvider extends ChangeNotifier {
   }
 
   Future<void> unloadModel() async {
+    await _cancelAndAwaitActiveTranscription();
     stopGeneration();
     _cancelActiveModelPrefetch();
     _session?.reset();
@@ -2358,6 +2405,7 @@ class ChatProvider extends ChangeNotifier {
         modelPath: path,
         modelSupportsVision: false,
         modelSupportsAudio: false,
+        modelSupportsSpeechToText: false,
         directMediaInput: false,
       ),
     );
@@ -2408,6 +2456,7 @@ class ChatProvider extends ChangeNotifier {
         singleTurnMode: false,
         modelSupportsVision: model.supportsVisionFor(web: kIsWeb),
         modelSupportsAudio: model.supportsAudioFor(web: kIsWeb),
+        modelSupportsSpeechToText: model.supportsSpeechToTextFor(web: kIsWeb),
         directMediaInput: mediaInputMode == ModelMediaInputMode.direct,
         // Auto uses the size for native memory planning; WebGPU also uses it
         // to select the mem64 core before loading large models.
@@ -2632,11 +2681,12 @@ class ChatProvider extends ChangeNotifier {
     _settingsSaveDebounce?.cancel();
     _settingsSaveDebounce = null;
     unawaited(_settingsService.saveSettings(_settings));
+    final transcriptionDone = _cancelAndAwaitActiveTranscription();
     stopGeneration();
     _cancelActiveModelPrefetch();
     _session?.reset();
     _session = null;
-    unawaited(_chatService.dispose());
+    unawaited(transcriptionDone.whenComplete(_chatService.dispose));
     super.dispose();
   }
 
@@ -2648,6 +2698,7 @@ class ChatProvider extends ChangeNotifier {
     _isShuttingDown = true;
     try {
       await _saveSettingsNow();
+      await _cancelAndAwaitActiveTranscription();
       stopGeneration();
       _cancelActiveModelPrefetch();
       _session?.reset();
@@ -2670,6 +2721,27 @@ class ChatProvider extends ChangeNotifier {
       await _chatService.dispose();
     } finally {
       _isShuttingDown = false;
+    }
+  }
+
+  void _invalidateActiveTranscription() {
+    _conversationRevision += 1;
+    _activeSpeechToTextTask?.cancel();
+  }
+
+  Future<void> _cancelAndAwaitActiveTranscription() async {
+    final task = _activeSpeechToTextTask;
+    final done = _activeTranscriptionDone;
+    if (!_isTranscribing && task == null && done == null) {
+      return;
+    }
+    _conversationRevision += 1;
+    task?.cancel();
+    if (task != null) {
+      await task.done;
+    }
+    if (done != null) {
+      await done.future;
     }
   }
 

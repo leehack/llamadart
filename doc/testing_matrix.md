@@ -72,6 +72,7 @@ Pick targeted rows based on the touched surface:
 | Large WebGPU GGUF / wasm64 selection | `gemma4-webgpu-mem64` |
 | LiteRT-LM web / Gemma 4 web bundle | `gemma4-litert-web` |
 | Chat app model cache/download/projector | `chat-app-device-cache` |
+| Speech-to-text API, adapter, or chat flow | `speech-to-text-smoke` |
 | Example app, CLI, or server package | `examples-tests` |
 
 The required `Web Chat Contract` check runs the chat app tests on VM and
@@ -156,6 +157,12 @@ dart run tool/testing/run_local_e2e.dart --scenario gguf-chat-features-smoke \
 dart run tool/testing/run_local_e2e.dart --scenario litert-lm-chat-features-smoke \
   --model-path /path/to/gemma-4-E2B-it.litertlm \
   --backend auto
+
+dart run tool/testing/run_local_e2e.dart --scenario speech-to-text-smoke \
+  --model-path /path/to/Qwen3-ASR-0.6B-Q8_0.gguf \
+  --mmproj-path /path/to/mmproj-Qwen3-ASR-0.6B-Q8_0.gguf \
+  --audio-path /path/to/known-speech.wav \
+  --expect "Exact expected transcript."
 
 dart run tool/testing/run_local_e2e.dart --scenario chat-app-web-mock-smoke
 

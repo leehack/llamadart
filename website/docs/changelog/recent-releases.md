@@ -7,6 +7,12 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
+## Unreleased
+
+- Added an experimental typed Qwen3-ASR whole-file transcription workflow and
+  a SHA-256-verified Qwen3-ASR 0.6B native-desktop chat-app preset. Web and the
+  current LiteRT-LM artifacts remain explicitly unsupported for typed STT.
+
 ## 0.8.19
 
 - Updated the native llama.cpp runtime to `b10333` and WebGPU bridge assets to

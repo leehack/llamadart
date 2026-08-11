@@ -11,13 +11,16 @@ import 'package:test/test.dart';
 void main() {
   group('SpeechToTextEngine', () {
     late _SpeechBackend backend;
-    late LlamaEngine llamaEngine;
+    late _SpeechLlamaEngine llamaEngine;
     late SpeechToTextEngine speechEngine;
 
     setUp(() async {
       backend = _SpeechBackend();
-      llamaEngine = LlamaEngine(backend);
-      speechEngine = SpeechToTextEngine(llamaEngine);
+      llamaEngine = _SpeechLlamaEngine(backend);
+      speechEngine = SpeechToTextEngine(
+        llamaEngine,
+        modelProfile: SpeechToTextModelProfile.qwen3Asr,
+      );
     });
 
     tearDown(() => llamaEngine.dispose());
@@ -36,9 +39,12 @@ void main() {
 
       expect(capabilities.isSupported, isTrue);
       expect(capabilities.backendName, 'CPU');
+      expect(
+        capabilities.implementation,
+        SpeechToTextImplementation.multimodalPromptAdapter,
+      );
       expect(capabilities.inputKinds, containsAll(SpeechAudioInputKind.values));
       expect(capabilities.encodedAudioFormats, {'wav', 'mp3', 'flac'});
-      expect(capabilities.pcmSampleRatesHz, {16000});
       expect(capabilities.supportsPartialResults, isFalse);
       expect(capabilities.supportsStreamingInput, isFalse);
       expect(capabilities.supportsTimestamps, isFalse);
@@ -46,10 +52,32 @@ void main() {
       expect(capabilities.supportsWordTimestamps, isFalse);
       expect(capabilities.supportsConfidence, isFalse);
       expect(capabilities.supportsSpeakerDiarization, isFalse);
-      expect(capabilities.supportsLanguageDetection, isTrue);
+      expect(capabilities.supportsLanguageDetection, isFalse);
+      expect(capabilities.supportsLanguageHints, isFalse);
       expect(capabilities.supportsCancellation, isTrue);
       expect(capabilities.supportsOutputBackpressure, isFalse);
       expect(capabilities.maxConcurrentTasks, 1);
+    });
+
+    test('reports a projector without audio support as unsupported', () async {
+      backend.audioSupported = false;
+      await _loadSpeechModel(llamaEngine);
+
+      final capabilities = await speechEngine.capabilities;
+
+      expect(capabilities.isSupported, isFalse);
+      expect(capabilities.unsupportedReason, contains('does not report audio'));
+    });
+
+    test('turns an audio probe failure into capability diagnostics', () async {
+      backend.audioProbeError = StateError('old native symbols');
+      await _loadSpeechModel(llamaEngine);
+
+      final capabilities = await speechEngine.capabilities;
+
+      expect(capabilities.isSupported, isFalse);
+      expect(capabilities.unsupportedReason, contains('probe failed'));
+      expect(capabilities.unsupportedReason, contains('old native symbols'));
     });
 
     test(
@@ -64,7 +92,6 @@ void main() {
         final task = await speechEngine.transcribe(
           const SpeechToTextRequest(
             audio: SpeechAudioFileInput('/tmp/test.wav'),
-            languageHint: 'en',
             contextPrompt: 'llamadart',
             maxOutputTokens: 64,
           ),
@@ -75,7 +102,7 @@ void main() {
         expect(events, hasLength(1));
         final finalEvent = events.single as SpeechToTextFinalEvent;
         expect(finalEvent.result.text, 'Local speech recognition works.');
-        expect(finalEvent.result.language, 'English');
+        expect(finalEvent.result.language, isNull);
         expect(finalEvent.result.segments.single.text, finalEvent.result.text);
         expect(completion.state, SpeechToTextCompletionState.completed);
         expect(completion.result, same(finalEvent.result));
@@ -84,10 +111,6 @@ void main() {
         expect(
           (backend.lastParts![1] as LlamaAudioContent).path,
           '/tmp/test.wav',
-        );
-        expect(
-          backend.lastGenerationPrompt,
-          contains('requested language is en'),
         );
         expect(backend.lastGenerationPrompt, contains('Context: llamadart'));
         expect(backend.lastGenerationParams?.temp, 0);
@@ -113,51 +136,75 @@ void main() {
       expect(audio.bytes, <int>[1, 2, 3]);
     });
 
-    test('passes valid 16 kHz mono Float32 PCM', () async {
-      await _loadSpeechModel(llamaEngine);
-      final samples = Float32List.fromList(<double>[0, 0.25, -0.25]);
-
-      final task = await speechEngine.transcribe(
-        SpeechToTextRequest(
-          audio: SpeechPcmInput(
-            samples,
-            format: const SpeechAudioFormat(
-              sampleRateHz: 16000,
-              channelCount: 1,
-              sampleFormat: SpeechAudioSampleFormat.float32,
-            ),
-          ),
-        ),
-      );
-      await task.done;
-
-      final audio = backend.lastParts![1] as LlamaAudioContent;
-      expect(audio.samples, same(samples));
-    });
-
-    test('rejects PCM outside the first backend contract', () async {
+    test('rejects unsupported encoded file formats before inference', () async {
       await _loadSpeechModel(llamaEngine);
 
       expect(
         () => speechEngine.transcribe(
-          SpeechToTextRequest(
-            audio: SpeechPcmInput(
-              Float32List(4),
-              format: const SpeechAudioFormat(
-                sampleRateHz: 48000,
-                channelCount: 2,
-                sampleFormat: SpeechAudioSampleFormat.float32,
-              ),
-            ),
+          const SpeechToTextRequest(
+            audio: SpeechAudioFileInput('/tmp/recording.m4a'),
           ),
         ),
         throwsA(
           isA<LlamaAudioFormatException>().having(
             (error) => error.message,
             'message',
-            contains('16 kHz mono Float32'),
+            contains('WAV, MP3, or FLAC'),
           ),
         ),
+      );
+    });
+
+    test('accepts an extensionless file with an explicit encoding', () async {
+      await _loadSpeechModel(llamaEngine);
+      backend.generationText = 'Transcript.';
+
+      final task = await speechEngine.transcribe(
+        const SpeechToTextRequest(
+          audio: SpeechAudioFileInput(
+            '/tmp/content-addressed-audio',
+            format: SpeechAudioFormat(encoding: 'wav'),
+          ),
+        ),
+      );
+
+      expect((await task.done).result?.text, 'Transcript.');
+      final audio = backend.lastParts![1] as LlamaAudioContent;
+      expect(audio.path, '/tmp/content-addressed-audio');
+    });
+
+    test('validates empty inputs and token limits synchronously', () async {
+      await _loadSpeechModel(llamaEngine);
+
+      await expectLater(
+        speechEngine.transcribe(
+          const SpeechToTextRequest(audio: SpeechAudioFileInput('')),
+        ),
+        throwsA(isA<LlamaAudioFormatException>()),
+      );
+      await expectLater(
+        speechEngine.transcribe(
+          SpeechToTextRequest(audio: SpeechAudioBytesInput(Uint8List(0))),
+        ),
+        throwsA(isA<LlamaAudioFormatException>()),
+      );
+      await expectLater(
+        speechEngine.transcribe(
+          const SpeechToTextRequest(
+            audio: SpeechAudioFileInput('/tmp/test.wav'),
+            maxOutputTokens: 0,
+          ),
+        ),
+        throwsA(isA<LlamaSpeechException>()),
+      );
+      await expectLater(
+        speechEngine.transcribe(
+          const SpeechToTextRequest(
+            audio: SpeechAudioFileInput('/tmp/test.wav'),
+            languageHint: 'en',
+          ),
+        ),
+        throwsA(isA<LlamaUnsupportedException>()),
       );
     });
 
@@ -220,6 +267,125 @@ void main() {
       await first.done;
     });
 
+    test(
+      'reserves the engine before asynchronous capability discovery',
+      () async {
+        backend.blockAudioProbe = true;
+        await _loadSpeechModel(llamaEngine);
+
+        final firstFuture = speechEngine.transcribe(
+          const SpeechToTextRequest(
+            audio: SpeechAudioFileInput('/tmp/first.wav'),
+          ),
+        );
+        await backend.audioProbeStarted.future;
+
+        await expectLater(
+          speechEngine.transcribe(
+            const SpeechToTextRequest(
+              audio: SpeechAudioFileInput('/tmp/second.wav'),
+            ),
+          ),
+          throwsA(isA<LlamaStateException>()),
+        );
+
+        backend.releaseAudioProbe();
+        final first = await firstFuture;
+        await first.done;
+      },
+    );
+
+    test('shares the task reservation across wrappers', () async {
+      backend.blockGeneration = true;
+      await _loadSpeechModel(llamaEngine);
+      final otherWrapper = SpeechToTextEngine(
+        llamaEngine,
+        modelProfile: SpeechToTextModelProfile.qwen3Asr,
+      );
+      final first = await speechEngine.transcribe(
+        const SpeechToTextRequest(
+          audio: SpeechAudioFileInput('/tmp/first.wav'),
+        ),
+      );
+      await backend.generationStarted.future;
+
+      await expectLater(
+        otherWrapper.transcribe(
+          const SpeechToTextRequest(
+            audio: SpeechAudioFileInput('/tmp/second.wav'),
+          ),
+        ),
+        throwsA(isA<LlamaStateException>()),
+      );
+
+      first.cancel();
+      backend.releaseGeneration();
+      await first.done;
+    });
+
+    test('releases the task reservation after preflight failure', () async {
+      backend.audioSupported = false;
+      await _loadSpeechModel(llamaEngine);
+
+      await expectLater(
+        speechEngine.transcribe(
+          const SpeechToTextRequest(
+            audio: SpeechAudioFileInput('/tmp/first.wav'),
+          ),
+        ),
+        throwsA(isA<LlamaUnsupportedException>()),
+      );
+
+      backend.audioSupported = true;
+      final task = await speechEngine.transcribe(
+        const SpeechToTextRequest(
+          audio: SpeechAudioFileInput('/tmp/second.wav'),
+        ),
+      );
+      expect((await task.done).state, SpeechToTextCompletionState.completed);
+    });
+
+    test('ignores generation chunks without choices', () async {
+      llamaEngine.emitEmptyChoice = true;
+      await _loadSpeechModel(llamaEngine);
+
+      final task = await speechEngine.transcribe(
+        const SpeechToTextRequest(audio: SpeechAudioFileInput('/tmp/test.wav')),
+      );
+
+      expect((await task.done).result?.text, 'transcript');
+    });
+
+    test('preserves typed backend failures', () async {
+      backend.generationError = LlamaUnsupportedException('missing symbol');
+      await _loadSpeechModel(llamaEngine);
+      final task = await speechEngine.transcribe(
+        const SpeechToTextRequest(audio: SpeechAudioFileInput('/tmp/test.wav')),
+      );
+
+      task.events.listen((_) {}, onError: (_) {});
+      final completion = await task.done;
+
+      expect(completion.error, isA<LlamaUnsupportedException>());
+    });
+
+    test('cancellation wins over a simultaneous backend failure', () async {
+      backend
+        ..blockGeneration = true
+        ..generationError = StateError('late decoder error');
+      await _loadSpeechModel(llamaEngine);
+      final task = await speechEngine.transcribe(
+        const SpeechToTextRequest(audio: SpeechAudioFileInput('/tmp/test.wav')),
+      );
+      await backend.generationStarted.future;
+
+      task.cancel();
+      backend.releaseGeneration();
+
+      expect(await task.events.toList(), isEmpty);
+      expect((await task.done).state, SpeechToTextCompletionState.cancelled);
+    });
+
     test('returns typed failure completion and stream error', () async {
       backend.generationError = StateError('decoder failed');
       await _loadSpeechModel(llamaEngine);
@@ -234,9 +400,9 @@ void main() {
       );
       final completion = await task.done;
 
-      expect(await streamError.future, isA<LlamaSpeechException>());
+      expect(await streamError.future, isA<LlamaInferenceException>());
       expect(completion.state, SpeechToTextCompletionState.failed);
-      expect(completion.error, isA<LlamaSpeechException>());
+      expect(completion.error, isA<LlamaInferenceException>());
     });
   });
 }
@@ -249,11 +415,15 @@ Future<void> _loadSpeechModel(LlamaEngine engine) async {
 class _SpeechBackend implements LlamaBackend {
   bool _ready = false;
   bool audioSupported = true;
+  Object? audioProbeError;
   String backendName = 'CPU';
   String generationText = 'transcript';
   List<String>? generationChunks;
   Object? generationError;
   bool blockGeneration = false;
+  bool blockAudioProbe = false;
+  Completer<void> audioProbeStarted = Completer<void>();
+  final Completer<void> _audioProbeRelease = Completer<void>();
   Completer<void> generationStarted = Completer<void>();
   final Completer<void> _generationRelease = Completer<void>();
   int cancelGenerationCalls = 0;
@@ -283,7 +453,19 @@ class _SpeechBackend implements LlamaBackend {
   ) async => 3;
 
   @override
-  Future<bool> supportsAudio(int mmContextHandle) async => audioSupported;
+  Future<bool> supportsAudio(int mmContextHandle) async {
+    if (!audioProbeStarted.isCompleted) {
+      audioProbeStarted.complete();
+    }
+    if (blockAudioProbe) {
+      await _audioProbeRelease.future;
+    }
+    final error = audioProbeError;
+    if (error != null) {
+      throw error;
+    }
+    return audioSupported;
+  }
 
   @override
   Future<String> getBackendName() async => backendName;
@@ -342,6 +524,12 @@ class _SpeechBackend implements LlamaBackend {
     }
   }
 
+  void releaseAudioProbe() {
+    if (!_audioProbeRelease.isCompleted) {
+      _audioProbeRelease.complete();
+    }
+  }
+
   void releaseGeneration() {
     if (!_generationRelease.isCompleted) {
       _generationRelease.complete();
@@ -369,4 +557,48 @@ class _SpeechBackend implements LlamaBackend {
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _SpeechLlamaEngine extends LlamaEngine {
+  bool emitEmptyChoice = false;
+
+  _SpeechLlamaEngine(super.backend);
+
+  @override
+  Stream<LlamaCompletionChunk> create(
+    List<LlamaChatMessage> messages, {
+    GenerationParams? params,
+    List<ToolDefinition>? tools,
+    ToolChoice? toolChoice,
+    bool parallelToolCalls = false,
+    bool enableThinking = true,
+    Map<String, dynamic>? responseFormat,
+    String? sourceLangCode,
+    String? targetLangCode,
+    Map<String, dynamic>? chatTemplateKwargs,
+    DateTime? templateNow,
+  }) async* {
+    if (emitEmptyChoice) {
+      yield LlamaCompletionChunk(
+        id: 'empty',
+        object: 'chat.completion.chunk',
+        created: 0,
+        model: 'test',
+        choices: const <LlamaCompletionChunkChoice>[],
+      );
+    }
+    yield* super.create(
+      messages,
+      params: params,
+      tools: tools,
+      toolChoice: toolChoice,
+      parallelToolCalls: parallelToolCalls,
+      enableThinking: enableThinking,
+      responseFormat: responseFormat,
+      sourceLangCode: sourceLangCode,
+      targetLangCode: targetLangCode,
+      chatTemplateKwargs: chatTemplateKwargs,
+      templateNow: templateNow,
+    );
+  }
 }

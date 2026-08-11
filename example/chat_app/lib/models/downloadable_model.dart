@@ -104,6 +104,7 @@ class ResolvedModelAsset {
 class ModelCapabilities {
   final bool supportsVision;
   final bool supportsAudio;
+  final bool supportsSpeechToText;
   final bool supportsVideo;
   final bool supportsToolCalling;
   final bool supportsThinking;
@@ -111,6 +112,7 @@ class ModelCapabilities {
   const ModelCapabilities({
     this.supportsVision = false,
     this.supportsAudio = false,
+    this.supportsSpeechToText = false,
     this.supportsVideo = false,
     this.supportsToolCalling = false,
     this.supportsThinking = false,
@@ -189,9 +191,11 @@ class DownloadableModel {
   final int? webSizeBytes;
   final bool supportsVision;
   final bool supportsAudio;
+  final bool supportsSpeechToText;
   final bool supportsVideo;
   final bool? webSupportsVision;
   final bool? webSupportsAudio;
+  final bool? webSupportsSpeechToText;
   final bool? webSupportsVideo;
   final ModelMediaInputMode mediaInputMode;
   final ModelMediaInputMode? webMediaInputMode;
@@ -223,9 +227,11 @@ class DownloadableModel {
     this.mmprojFilename,
     this.supportsVision = false,
     this.supportsAudio = false,
+    this.supportsSpeechToText = false,
     this.supportsVideo = false,
     this.webSupportsVision,
     this.webSupportsAudio,
+    this.webSupportsSpeechToText,
     this.webSupportsVideo,
     this.mediaInputMode = ModelMediaInputMode.externalProjector,
     this.webMediaInputMode,
@@ -253,9 +259,11 @@ class DownloadableModel {
     this.webSizeBytes,
     this.supportsVision = false,
     this.supportsAudio = false,
+    this.supportsSpeechToText = false,
     this.supportsVideo = false,
     this.webSupportsVision,
     this.webSupportsAudio,
+    this.webSupportsSpeechToText,
     this.webSupportsVideo,
     this.mediaInputMode = ModelMediaInputMode.externalProjector,
     this.webMediaInputMode,
@@ -319,6 +327,9 @@ class DownloadableModel {
     if (web && webSizeBytes != null) {
       return webSizeBytes!;
     }
+    if (sizeBytes > 0) {
+      return sizeBytes;
+    }
     final source = modelSourceFor(web: web);
     if (source is RemoteModelAssetSource && source.sizeBytes != null) {
       return source.sizeBytes!;
@@ -333,6 +344,7 @@ class DownloadableModel {
   ModelCapabilities get capabilities => ModelCapabilities(
     supportsVision: supportsVision,
     supportsAudio: supportsAudio,
+    supportsSpeechToText: supportsSpeechToText,
     supportsVideo: supportsVideo,
     supportsToolCalling: supportsToolCalling,
     supportsThinking: supportsThinking,
@@ -343,6 +355,10 @@ class DownloadableModel {
 
   bool supportsAudioFor({required bool web}) =>
       web ? webSupportsAudio ?? supportsAudio : supportsAudio;
+
+  bool supportsSpeechToTextFor({required bool web}) => web
+      ? webSupportsSpeechToText ?? supportsSpeechToText
+      : supportsSpeechToText;
 
   bool supportsVideoFor({required bool web}) =>
       web ? webSupportsVideo ?? supportsVideo : supportsVideo;
@@ -373,7 +389,7 @@ class DownloadableModel {
   bool isAvailableFor({required bool web, required bool mobile}) =>
       availability == ModelAvailability.all || (!web && !mobile);
 
-  static const List<DownloadableModel> defaultModels = [
+  static final List<DownloadableModel> defaultModels = List.unmodifiable([
     DownloadableModel(
       name: 'FunctionGemma 270M',
       description: 'Tiny specialist for function calling and tool-use demos.',
@@ -412,6 +428,45 @@ class DownloadableModel {
         topK: 20,
         topP: 0.8,
         penalty: 1.0,
+        contextSize: 4096,
+        maxTokens: 1024,
+        thinkingEnabled: false,
+      ),
+    ),
+    DownloadableModel.fromSources(
+      id: 'qwen3-asr-0.6b-q8-0',
+      name: 'Qwen3-ASR 0.6B',
+      description:
+          'Experimental local whole-file speech transcription with Qwen3-ASR.',
+      modelSource: const RemoteModelAssetSource(
+        url:
+            'https://huggingface.co/ggml-org/Qwen3-ASR-0.6B-GGUF/resolve/928ab958557df9aa2ef1c93e0e83c7ad0933fae2/Qwen3-ASR-0.6B-Q8_0.gguf?download=true',
+        filename: 'Qwen3-ASR-0.6B-Q8_0.gguf',
+        sizeBytes: 804749248,
+        sha256:
+            'bca259818b50ca7c4c05e9bdb35a5dc04fa039653a6d6f3f0f331f96f6aa1971',
+      ),
+      multimodalProjectorSource: const RemoteModelAssetSource(
+        url:
+            'https://huggingface.co/ggml-org/Qwen3-ASR-0.6B-GGUF/resolve/928ab958557df9aa2ef1c93e0e83c7ad0933fae2/mmproj-Qwen3-ASR-0.6B-Q8_0.gguf?download=true',
+        filename: 'mmproj-Qwen3-ASR-0.6B-Q8_0.gguf',
+        sizeBytes: 214392480,
+        sha256:
+            '41a342b5e4c514e968cb756de6cd1b7be39eff43c44c57a2ef5fc6522e36603d',
+      ),
+      sizeBytes: 1019141728,
+      supportsAudio: true,
+      supportsSpeechToText: true,
+      webSupportsAudio: false,
+      webSupportsSpeechToText: false,
+      distribution: 'ggml-org',
+      availability: ModelAvailability.nativeDesktop,
+      minRamGb: 4,
+      preset: const ModelPreset(
+        temperature: 0,
+        topK: 1,
+        topP: 1,
+        penalty: 1,
         contextSize: 4096,
         maxTokens: 1024,
         thinkingEnabled: false,
@@ -618,5 +673,5 @@ class DownloadableModel {
         thinkingEnabled: false,
       ),
     ),
-  ];
+  ]);
 }

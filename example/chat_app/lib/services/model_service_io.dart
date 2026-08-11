@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:dio/dio.dart';
 import 'package:llamadart/llamadart.dart' as llama;
 import 'package:path/path.dart' as p;
@@ -18,6 +19,7 @@ class ModelServiceIO implements ModelService {
   static const int _parallelMaxParts = 4;
 
   final Dio _dio = Dio();
+  final Map<String, _VerifiedRemoteAsset> _verifiedRemoteAssets = {};
 
   Map<String, Object> _requestHeaders({int? rangeStart}) {
     final headers = <String, Object>{};
@@ -161,6 +163,7 @@ class ModelServiceIO implements ModelService {
             );
           },
         );
+        await _verifyDownloadedRemoteAsset(modelsDir, source);
       }
 
       if (mmprojNeedsDownload) {
@@ -184,6 +187,7 @@ class ModelServiceIO implements ModelService {
             );
           },
         );
+        await _verifyDownloadedRemoteAsset(modelsDir, source);
       }
 
       if (stageCount > 0) {
@@ -268,7 +272,71 @@ class ModelServiceIO implements ModelService {
       }
     }
 
+    if (source is RemoteModelAssetSource &&
+        !await _hasExpectedIntegrity(file, source)) {
+      return false;
+    }
+
     return true;
+  }
+
+  Future<bool> _hasExpectedIntegrity(
+    File file,
+    RemoteModelAssetSource source,
+  ) async {
+    final expectedSha256 = source.sha256?.trim().toLowerCase();
+    if (expectedSha256 == null || expectedSha256.isEmpty) {
+      return true;
+    }
+
+    final stat = await file.stat();
+    final expectedBytes = source.sizeBytes;
+    if (expectedBytes != null && stat.size != expectedBytes) {
+      _verifiedRemoteAssets.remove(file.path);
+      return false;
+    }
+
+    final cached = _verifiedRemoteAssets[file.path];
+    if (cached != null &&
+        cached.size == stat.size &&
+        cached.modified == stat.modified &&
+        cached.sha256 == expectedSha256) {
+      return true;
+    }
+
+    final actualSha256 = (await sha256.bind(file.openRead()).first).toString();
+    if (actualSha256 != expectedSha256) {
+      _verifiedRemoteAssets.remove(file.path);
+      return false;
+    }
+    _verifiedRemoteAssets[file.path] = _VerifiedRemoteAsset(
+      size: stat.size,
+      modified: stat.modified,
+      sha256: actualSha256,
+    );
+    return true;
+  }
+
+  Future<void> _verifyDownloadedRemoteAsset(
+    String modelsDir,
+    RemoteModelAssetSource source,
+  ) async {
+    final expectedSha256 = source.sha256?.trim();
+    if (expectedSha256 == null || expectedSha256.isEmpty) {
+      return;
+    }
+    final file = File(_assetPath(modelsDir, source));
+    if (await file.exists() && await _hasExpectedIntegrity(file, source)) {
+      return;
+    }
+    if (await file.exists()) {
+      await file.delete();
+    }
+    _verifiedRemoteAssets.remove(file.path);
+    throw StateError(
+      'SHA-256 verification failed for ${source.displayName}. '
+      'The incomplete download was discarded; retry the download.',
+    );
   }
 
   String _assetPath(String modelsDir, ModelAssetSource source) {
@@ -785,6 +853,7 @@ class ModelServiceIO implements ModelService {
     }
 
     final path = _assetPath(modelsDir, source);
+    _verifiedRemoteAssets.remove(path);
     final file = File(path);
     if (await file.exists()) {
       await file.delete();
@@ -835,6 +904,18 @@ class _ByteRange {
 
 class _ParallelRangeUnsupportedException implements Exception {
   const _ParallelRangeUnsupportedException();
+}
+
+class _VerifiedRemoteAsset {
+  final int size;
+  final DateTime modified;
+  final String sha256;
+
+  const _VerifiedRemoteAsset({
+    required this.size,
+    required this.modified,
+    required this.sha256,
+  });
 }
 
 class _ProgressDispatcher {

@@ -77,7 +77,10 @@ class LlamaImageContent extends LlamaContentPart {
   }
 }
 
-/// A part of a message containing audio data for speech-to-text models.
+/// A part of a message containing generic multimodal audio input.
+///
+/// This routes audio through normal generation. It does not by itself provide
+/// the typed transcript contract of `SpeechToTextEngine`.
 class LlamaAudioContent extends LlamaContentPart {
   /// Raw PCM Float32 audio samples.
   final Float32List? samples;

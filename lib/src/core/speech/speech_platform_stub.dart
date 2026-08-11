@@ -1,4 +1,4 @@
-/// Whether the dedicated speech-to-text API is available on this platform.
+/// Whether the typed speech-to-text adapter is available on this platform.
 bool get isSpeechToTextPlatformSupported => true;
 
 /// Actionable explanation when speech-to-text is unavailable.

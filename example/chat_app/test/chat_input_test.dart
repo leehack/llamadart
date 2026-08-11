@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -142,6 +143,7 @@ void main() {
       initialSettings: const ChatSettings(
         modelPath: 'Qwen3-ASR-0.6B-Q8_0.gguf',
         mmprojPath: 'mmproj-Qwen3-ASR-0.6B-Q8_0.gguf',
+        modelSupportsSpeechToText: true,
       ),
     );
     addTearDown(provider.dispose);
@@ -186,6 +188,7 @@ void main() {
       initialSettings: const ChatSettings(
         modelPath: 'Qwen3-ASR-0.6B-Q8_0.gguf',
         mmprojPath: 'mmproj-Qwen3-ASR-0.6B-Q8_0.gguf',
+        modelSupportsSpeechToText: true,
       ),
     );
     addTearDown(provider.dispose);
@@ -204,6 +207,112 @@ void main() {
       <String>['Transcribe audio: fixture.wav', 'Recognized speech.'],
     );
     expect(provider.messages.last.debugBadges, contains('Transcription'));
+    expect(provider.messages.last.generatedTokenCount, 5);
+    expect(provider.currentTokens, 5);
+    expect(provider.canRegenerateLastResponse, isFalse);
+  });
+
+  test('does not overlap a stopped transcription while it settles', () async {
+    final engine = _BlockingSpeechMockLlamaEngine();
+    final provider = ChatProvider(
+      chatService: MockChatService(engine: engine),
+      settingsService: MockSettingsService(),
+      initialSettings: const ChatSettings(
+        modelPath: 'Qwen3-ASR-0.6B-Q8_0.gguf',
+        mmprojPath: 'mmproj-Qwen3-ASR-0.6B-Q8_0.gguf',
+        modelSupportsSpeechToText: true,
+      ),
+    );
+    addTearDown(provider.dispose);
+    await provider.loadModel();
+
+    final first = provider.transcribeAudio(
+      SpeechAudioBytesInput(Uint8List.fromList(const <int>[1, 2, 3])),
+      displayName: 'first.wav',
+    );
+    await engine.createStarted.future;
+
+    provider.stopGeneration();
+    expect(provider.isTranscribing, isTrue);
+    expect(provider.canTranscribeAudio, isFalse);
+    await provider.transcribeAudio(
+      SpeechAudioBytesInput(Uint8List.fromList(const <int>[4, 5, 6])),
+      displayName: 'second.wav',
+    );
+    expect(engine.createCalls, 1);
+
+    engine.releaseGeneration();
+    await first;
+    expect(provider.isTranscribing, isFalse);
+  });
+
+  test('reserves transcription before the projector probe completes', () async {
+    final engine = _BlockingAudioProbeSpeechMockLlamaEngine();
+    final provider = ChatProvider(
+      chatService: MockChatService(engine: engine),
+      settingsService: MockSettingsService(),
+      initialSettings: const ChatSettings(
+        modelPath: 'Qwen3-ASR-0.6B-Q8_0.gguf',
+        mmprojPath: 'mmproj-Qwen3-ASR-0.6B-Q8_0.gguf',
+        modelSupportsSpeechToText: true,
+      ),
+    );
+    addTearDown(provider.dispose);
+    await provider.loadModel();
+    engine.blockAudioProbe = true;
+
+    final first = provider.transcribeAudio(
+      SpeechAudioBytesInput(Uint8List.fromList(const <int>[1, 2, 3])),
+      displayName: 'first.wav',
+    );
+    await engine.audioProbeStarted.future;
+
+    expect(provider.isTranscribing, isTrue);
+    await provider.transcribeAudio(
+      SpeechAudioBytesInput(Uint8List.fromList(const <int>[4, 5, 6])),
+      displayName: 'second.wav',
+    );
+    expect(engine.createCalls, 0);
+
+    provider.stopGeneration();
+    engine.releaseAudioProbe();
+    await first;
+    expect(provider.isTranscribing, isFalse);
+    expect(engine.createCalls, 0);
+  });
+
+  test('clear suppresses stale transcription completion', () async {
+    final engine = _BlockingSpeechMockLlamaEngine();
+    final provider = ChatProvider(
+      chatService: MockChatService(engine: engine),
+      settingsService: MockSettingsService(),
+      initialSettings: const ChatSettings(
+        modelPath: 'Qwen3-ASR-0.6B-Q8_0.gguf',
+        mmprojPath: 'mmproj-Qwen3-ASR-0.6B-Q8_0.gguf',
+        modelSupportsSpeechToText: true,
+      ),
+    );
+    addTearDown(provider.dispose);
+    await provider.loadModel();
+
+    final transcription = provider.transcribeAudio(
+      SpeechAudioBytesInput(Uint8List.fromList(const <int>[1, 2, 3])),
+      displayName: 'fixture.wav',
+    );
+    await engine.createStarted.future;
+
+    provider.clearConversation();
+    final clearedMessages = provider.messages.map((message) => message.text);
+    expect(clearedMessages, <String>[
+      'Conversation cleared. Ready for a new topic!',
+    ]);
+
+    engine.releaseGeneration();
+    await transcription;
+    expect(provider.messages.map((message) => message.text), <String>[
+      'Conversation cleared. Ready for a new topic!',
+    ]);
+    expect(provider.currentTokens, 0);
   });
 
   test('stages clipboard media bytes for the next message', () async {
@@ -255,4 +364,74 @@ class _GeneratingReadyProvider extends ChatProvider {
 class _SpeechMockLlamaEngine extends MockLlamaEngine {
   @override
   Future<bool> get supportsAudio async => mmprojLoaded;
+}
+
+class _BlockingSpeechMockLlamaEngine extends _SpeechMockLlamaEngine {
+  final Completer<void> createStarted = Completer<void>();
+  final Completer<void> _release = Completer<void>();
+
+  void releaseGeneration() {
+    if (!_release.isCompleted) {
+      _release.complete();
+    }
+  }
+
+  @override
+  Stream<LlamaCompletionChunk> create(
+    List<LlamaChatMessage> messages, {
+    GenerationParams? params,
+    List<ToolDefinition>? tools,
+    ToolChoice? toolChoice,
+    bool parallelToolCalls = false,
+    bool enableThinking = true,
+    Map<String, dynamic>? responseFormat,
+    String? sourceLangCode,
+    String? targetLangCode,
+    Map<String, dynamic>? chatTemplateKwargs,
+    DateTime? templateNow,
+  }) async* {
+    createCalls += 1;
+    lastCreateParams = params;
+    if (!createStarted.isCompleted) {
+      createStarted.complete();
+    }
+    await _release.future;
+    for (final content in createChunkContents) {
+      yield LlamaCompletionChunk(
+        id: 'mock-id',
+        object: 'chat.completion.chunk',
+        created: 1234567890,
+        model: 'mock-model',
+        choices: <LlamaCompletionChunkChoice>[
+          LlamaCompletionChunkChoice(
+            index: 0,
+            delta: LlamaCompletionChunkDelta(content: content),
+          ),
+        ],
+      );
+    }
+  }
+}
+
+class _BlockingAudioProbeSpeechMockLlamaEngine extends _SpeechMockLlamaEngine {
+  final Completer<void> audioProbeStarted = Completer<void>();
+  final Completer<void> _releaseAudioProbe = Completer<void>();
+  bool blockAudioProbe = false;
+
+  void releaseAudioProbe() {
+    if (!_releaseAudioProbe.isCompleted) {
+      _releaseAudioProbe.complete();
+    }
+  }
+
+  @override
+  Future<bool> get supportsAudio async {
+    if (blockAudioProbe) {
+      if (!audioProbeStarted.isCompleted) {
+        audioProbeStarted.complete();
+      }
+      await _releaseAudioProbe.future;
+    }
+    return super.supportsAudio;
+  }
 }

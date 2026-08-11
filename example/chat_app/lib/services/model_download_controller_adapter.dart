@@ -203,6 +203,10 @@ class ChatAppModelDownloadManager implements llama.ModelDownloadManager {
 
   llama.ModelCacheEntry _cacheEntry(llama.ModelSource source) {
     final now = DateTime.now().toUtc();
+    final boundAsset = model.modelSourceFor(web: useWebSources);
+    final remoteAsset = boundAsset is RemoteModelAssetSource
+        ? boundAsset
+        : null;
     return llama.ModelCacheEntry(
       sourceCanonicalKey: source.canonicalKey,
       cacheKey: source.cacheKey,
@@ -210,7 +214,10 @@ class ChatAppModelDownloadManager implements llama.ModelDownloadManager {
       filePath: source.isLocal
           ? source.path!
           : p.join(modelsDir, source.fileName),
-      bytes: model.sizeBytes > 0 ? model.sizeBytes : null,
+      bytes:
+          remoteAsset?.sizeBytes ??
+          (model.sizeBytes > 0 ? model.sizeBytes : null),
+      sha256: remoteAsset?.sha256,
       createdAt: now,
       updatedAt: now,
     );
@@ -228,6 +235,7 @@ DownloadableModel _modelWithoutProjector(DownloadableModel model) {
     webSizeBytes: model.webSizeBytes,
     supportsVision: false,
     supportsAudio: false,
+    supportsSpeechToText: false,
     supportsVideo: false,
     supportsToolCalling: model.supportsToolCalling,
     supportsThinking: model.supportsThinking,

@@ -83,6 +83,42 @@ void main() {
       expect(prefs.getStringList('custom_hf_models_v1'), isEmpty);
     });
 
+    testWidgets('built-in ASR replaces a stale custom entry by filename', (
+      tester,
+    ) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+      try {
+        final asr = DownloadableModel.defaultModels.singleWhere(
+          (model) => model.name == 'Qwen3-ASR 0.6B',
+        );
+        SharedPreferences.setMockInitialValues({
+          'custom_hf_models_v1': <String>[
+            jsonEncode(<String, Object>{
+              'name': 'Old custom ASR',
+              'description': 'Temporary entry used before the built-in preset.',
+              'url': 'https://example.com/old-asr.gguf',
+              'filename': asr.filename,
+              'sizeBytes': asr.sizeBytes,
+            }),
+          ],
+        });
+
+        await _pumpScreen(
+          tester,
+          modelService: _HoldingModelService(
+            downloadedFiles: <String>{asr.filename},
+          ),
+          models: <DownloadableModel>[asr],
+        );
+
+        expect(find.text(asr.name), findsOneWidget);
+        expect(find.text('Old custom ASR'), findsNothing);
+        expect(find.text('Downloaded'), findsOneWidget);
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
+    });
+
     testWidgets('selected multimodal model waits for models directory', (
       tester,
     ) async {
@@ -238,11 +274,21 @@ void main() {
         supportsAudio: true,
         webSupportsAudio: false,
       );
+      const desktopAsr = DownloadableModel(
+        name: 'Desktop ASR Model',
+        description: 'Desktop model with speech recognition.',
+        url: 'https://example.com/desktop-asr.gguf',
+        filename: 'desktop-asr.gguf',
+        sizeBytes: 20,
+        availability: ModelAvailability.nativeDesktop,
+        supportsAudio: true,
+        supportsSpeechToText: true,
+      );
 
       await _pumpScreen(
         tester,
         modelService: _HoldingModelService(),
-        models: const [desktopAudio],
+        models: const [desktopAudio, desktopAsr],
       );
 
       await tester.tap(find.widgetWithText(ChoiceChip, 'Desktop'));
@@ -250,6 +296,20 @@ void main() {
       await tester.pump();
 
       expect(find.text(desktopAudio.name), findsOneWidget);
+
+      await tester.enterText(find.byType(TextField).first, 'stt');
+      await tester.pump();
+
+      expect(find.text(desktopAsr.name), findsOneWidget);
+      expect(find.text(desktopAudio.name), findsNothing);
+
+      await tester.enterText(find.byType(TextField).first, 'speech-to-text');
+      await tester.pump();
+      expect(find.text(desktopAsr.name), findsOneWidget);
+
+      await tester.enterText(find.byType(TextField).first, 'speech to text');
+      await tester.pump();
+      expect(find.text(desktopAsr.name), findsOneWidget);
     });
 
     testWidgets('pause button cancels the active controller download', (

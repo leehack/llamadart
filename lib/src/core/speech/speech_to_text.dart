@@ -10,15 +10,6 @@ import '../models/inference/generation_params.dart';
 import 'speech_platform_stub.dart'
     if (dart.library.js_interop) 'speech_platform_web.dart';
 
-/// The representation used by raw PCM speech input.
-enum SpeechAudioSampleFormat {
-  /// 32-bit IEEE floating-point samples in the range -1.0 to 1.0.
-  float32,
-
-  /// Signed 16-bit integer samples.
-  signedInt16,
-}
-
 /// The kind of audio input accepted by a speech recognizer.
 enum SpeechAudioInputKind {
   /// A local encoded audio file.
@@ -26,9 +17,27 @@ enum SpeechAudioInputKind {
 
   /// Encoded audio held in memory.
   encodedBytes,
+}
 
-  /// Raw PCM samples held in memory.
-  pcm,
+/// Model-specific adapter used by [SpeechToTextEngine].
+///
+/// A profile is an explicit caller declaration. Generic multimodal audio
+/// support alone does not prove that a loaded model is an ASR model.
+enum SpeechToTextModelProfile {
+  /// Qwen3-ASR with its matching llama.cpp multimodal projector.
+  qwen3Asr,
+}
+
+/// How the active backend implements speech recognition.
+enum SpeechToTextImplementation {
+  /// No usable speech recognition path is available.
+  unavailable,
+
+  /// Audio is routed through multimodal chat with a model-specific adapter.
+  multimodalPromptAdapter,
+
+  /// A backend-native, dedicated speech recognition API.
+  dedicatedBackend,
 }
 
 /// Audio metadata supplied with speech input.
@@ -38,9 +47,6 @@ class SpeechAudioFormat {
 
   /// Number of interleaved audio channels, when known.
   final int? channelCount;
-
-  /// Raw sample representation, when the input is PCM.
-  final SpeechAudioSampleFormat? sampleFormat;
 
   /// Container or codec hint such as `wav`, `mp3`, or `flac`.
   final String? encoding;
@@ -52,7 +58,6 @@ class SpeechAudioFormat {
   const SpeechAudioFormat({
     this.sampleRateHz,
     this.channelCount,
-    this.sampleFormat,
     this.encoding,
     this.mimeType,
   });
@@ -94,19 +99,6 @@ class SpeechAudioBytesInput extends SpeechAudioInput {
   SpeechAudioInputKind get kind => SpeechAudioInputKind.encodedBytes;
 }
 
-/// Raw mono PCM input.
-class SpeechPcmInput extends SpeechAudioInput {
-  /// Interleaved floating-point PCM samples.
-  final Float32List samples;
-
-  /// Creates raw PCM input.
-  const SpeechPcmInput(this.samples, {required SpeechAudioFormat format})
-    : super(format: format);
-
-  @override
-  SpeechAudioInputKind get kind => SpeechAudioInputKind.pcm;
-}
-
 /// A request to recognize speech from one complete audio input.
 class SpeechToTextRequest {
   /// Audio to transcribe.
@@ -114,8 +106,8 @@ class SpeechToTextRequest {
 
   /// Optional BCP-47 language hint, such as `en` or `fr-CA`.
   ///
-  /// The first llama.cpp backend forwards this as prompt guidance. It is not a
-  /// guarantee that the model supports or obeys the requested language.
+  /// The field is reserved for recognizers with a validated language-hint
+  /// contract. The first Qwen3-ASR adapter rejects nonempty hints.
   final String? languageHint;
 
   /// Optional vocabulary or surrounding-text guidance for the recognizer.
@@ -144,14 +136,14 @@ class SpeechToTextCapabilities {
   /// Active runtime backend label.
   final String? backendName;
 
+  /// Whether recognition uses a prompt adapter or a dedicated backend API.
+  final SpeechToTextImplementation implementation;
+
   /// Accepted audio input representations.
   final Set<SpeechAudioInputKind> inputKinds;
 
   /// File/byte encodings decoded by the first native backend.
   final Set<String> encodedAudioFormats;
-
-  /// Raw PCM sample rates accepted by the first native backend.
-  final Set<int> pcmSampleRatesHz;
 
   /// Whether text deltas can be emitted before the final transcript.
   final bool supportsPartialResults;
@@ -187,7 +179,7 @@ class SpeechToTextCapabilities {
   /// Whether pausing the output subscription throttles native inference.
   final bool supportsOutputBackpressure;
 
-  /// Maximum number of concurrent tasks owned by one engine wrapper.
+  /// Maximum number of concurrent tasks owned by one underlying engine.
   final int maxConcurrentTasks;
 
   /// Creates a capability snapshot.
@@ -195,9 +187,9 @@ class SpeechToTextCapabilities {
     required this.isSupported,
     this.unsupportedReason,
     this.backendName,
+    this.implementation = SpeechToTextImplementation.unavailable,
     this.inputKinds = const <SpeechAudioInputKind>{},
     this.encodedAudioFormats = const <String>{},
-    this.pcmSampleRatesHz = const <int>{},
     this.supportsPartialResults = false,
     this.supportsStreamingInput = false,
     this.supportsSegmentTimestamps = false,
@@ -340,10 +332,36 @@ class SpeechToTextCompletion {
   final SpeechToTextResult? result;
 
   /// Failure when [state] is [SpeechToTextCompletionState.failed].
-  final Object? error;
+  final LlamaException? error;
 
-  /// Creates terminal task details.
-  const SpeechToTextCompletion({required this.state, this.result, this.error});
+  const SpeechToTextCompletion._({
+    required this.state,
+    this.result,
+    this.error,
+  });
+
+  /// Creates a successful completion.
+  factory SpeechToTextCompletion.completed(SpeechToTextResult result) =>
+      SpeechToTextCompletion._(
+        state: SpeechToTextCompletionState.completed,
+        result: result,
+      );
+
+  /// Creates a cancelled completion.
+  const factory SpeechToTextCompletion.cancelled() =
+      _CancelledSpeechToTextCompletion;
+
+  /// Creates a failed completion.
+  factory SpeechToTextCompletion.failed(LlamaException error) =>
+      SpeechToTextCompletion._(
+        state: SpeechToTextCompletionState.failed,
+        error: error,
+      );
+}
+
+class _CancelledSpeechToTextCompletion extends SpeechToTextCompletion {
+  const _CancelledSpeechToTextCompletion()
+    : super._(state: SpeechToTextCompletionState.cancelled);
 }
 
 /// A cancellable speech recognition operation.
@@ -360,6 +378,8 @@ class SpeechToTextTask {
 
   /// Recognition events.
   ///
+  /// This is a single-subscription stream. Runtime failures are emitted as a
+  /// stream error and are also reported by [done] as a failed completion.
   /// The first backend emits one [SpeechToTextFinalEvent]. The event model is
   /// intentionally future-compatible with backends that support partial text.
   Stream<SpeechToTextEvent> get events => _eventsController.stream;
@@ -382,16 +402,29 @@ class SpeechToTextTask {
 
 /// Typed speech-to-text API backed by a loaded [LlamaEngine].
 ///
-/// The first implementation supports complete audio inputs on native
-/// llama.cpp with an audio-capable multimodal projector, including Qwen3-ASR.
+/// The first implementation supports complete Qwen3-ASR audio inputs on native
+/// llama.cpp with a matching audio-capable multimodal projector.
 /// It does not yet provide live microphone ingestion, partial transcripts,
 /// timestamps, confidence values, or diarization.
 class SpeechToTextEngine {
+  static final Expando<_SpeechTaskState> _taskStates =
+      Expando<_SpeechTaskState>('llamadart.speechTaskState');
+
   final LlamaEngine _engine;
-  bool _hasActiveTask = false;
+  final _SpeechTaskState _taskState;
+
+  /// Model-specific adapter selected by the caller.
+  final SpeechToTextModelProfile modelProfile;
 
   /// Creates a speech recognizer over an existing loaded engine.
-  SpeechToTextEngine(this._engine);
+  ///
+  /// The engine must be used exclusively for this task until [SpeechToTextTask.done]
+  /// completes. The recognizer prevents two speech wrappers over the same
+  /// engine from running together, but direct [LlamaEngine.create] calls are
+  /// owned by the caller.
+  SpeechToTextEngine(LlamaEngine engine, {required this.modelProfile})
+    : _engine = engine,
+      _taskState = _taskStates[engine] ??= _SpeechTaskState();
 
   /// Discovers speech recognition support for the current runtime and model.
   Future<SpeechToTextCapabilities> get capabilities async {
@@ -447,15 +480,14 @@ class SpeechToTextEngine {
     return SpeechToTextCapabilities(
       isSupported: true,
       backendName: backendName,
+      implementation: SpeechToTextImplementation.multimodalPromptAdapter,
       inputKinds: const <SpeechAudioInputKind>{
         SpeechAudioInputKind.file,
         SpeechAudioInputKind.encodedBytes,
-        SpeechAudioInputKind.pcm,
       },
       encodedAudioFormats: const <String>{'wav', 'mp3', 'flac'},
-      pcmSampleRatesHz: const <int>{16000},
-      supportsLanguageHints: true,
-      supportsLanguageDetection: true,
+      supportsLanguageHints: false,
+      supportsLanguageDetection: false,
       supportsCancellation: true,
       maxConcurrentTasks: 1,
     );
@@ -464,34 +496,46 @@ class SpeechToTextEngine {
   /// Starts recognition for one complete audio input.
   ///
   /// The returned task exposes a future-compatible event stream and explicit
-  /// cancellation/completion state. Only one task may run per wrapper because
-  /// [LlamaEngine] owns one active generation context.
+  /// cancellation/completion state. Only one speech task may run per
+  /// [LlamaEngine], including through separate [SpeechToTextEngine] wrappers.
+  /// Invalid input and unsupported runtime/model preflight checks throw before
+  /// a task is returned; failures after startup are reported by the task.
   Future<SpeechToTextTask> transcribe(SpeechToTextRequest request) async {
-    if (_hasActiveTask) {
+    if (_taskState.isActive) {
       throw LlamaStateException(
-        'This SpeechToTextEngine already has an active task.',
+        'This LlamaEngine already has an active speech-to-text task.',
       );
     }
     _validateRequest(request);
+    _taskState.isActive = true;
 
-    final currentCapabilities = await capabilities;
-    if (!currentCapabilities.isSupported) {
-      throw LlamaUnsupportedException(
-        currentCapabilities.unsupportedReason ??
-            'Speech-to-text is not supported by the active runtime.',
-      );
+    try {
+      final currentCapabilities = await capabilities;
+      if (!currentCapabilities.isSupported) {
+        throw LlamaUnsupportedException(
+          currentCapabilities.unsupportedReason ??
+              'Speech-to-text is not supported by the active runtime.',
+        );
+      }
+
+      final task = SpeechToTextTask._(onCancel: _engine.cancelGeneration);
+      unawaited(_runTask(task, request));
+      return task;
+    } catch (_) {
+      _taskState.isActive = false;
+      rethrow;
     }
-
-    _hasActiveTask = true;
-    late final SpeechToTextTask task;
-    task = SpeechToTextTask._(onCancel: _engine.cancelGeneration);
-    unawaited(_runTask(task, request));
-    return task;
   }
 
   void _validateRequest(SpeechToTextRequest request) {
     if (request.maxOutputTokens <= 0) {
       throw LlamaSpeechException('maxOutputTokens must be greater than 0.');
+    }
+    final languageHint = request.languageHint?.trim();
+    if (languageHint != null && languageHint.isNotEmpty) {
+      throw LlamaUnsupportedException(
+        'The Qwen3-ASR prompt adapter does not expose validated language hints.',
+      );
     }
 
     switch (request.audio) {
@@ -499,24 +543,35 @@ class SpeechToTextEngine {
         if (path.trim().isEmpty) {
           throw LlamaAudioFormatException('Audio file path must not be empty.');
         }
+        final encoding = request.audio.format?.encoding?.trim().toLowerCase();
+        final extension = _fileExtension(path);
+        if (encoding != null && encoding.isNotEmpty) {
+          if (!const <String>{'wav', 'mp3', 'flac'}.contains(encoding)) {
+            throw LlamaAudioFormatException(
+              'Encoded audio files must use WAV, MP3, or FLAC.',
+              request.audio.format,
+            );
+          }
+        } else if (extension.isNotEmpty &&
+            !const <String>{'wav', 'mp3', 'flac'}.contains(extension)) {
+          throw LlamaAudioFormatException(
+            'Encoded audio files must use WAV, MP3, or FLAC.',
+            request.audio.format,
+          );
+        }
       case SpeechAudioBytesInput(:final bytes):
         if (bytes.isEmpty) {
           throw LlamaAudioFormatException(
             'Encoded audio bytes must not be empty.',
           );
         }
-      case SpeechPcmInput(:final samples, :final format):
-        if (samples.isEmpty) {
+        final encoding = request.audio.format?.encoding?.trim().toLowerCase();
+        if (encoding != null &&
+            encoding.isNotEmpty &&
+            !const <String>{'wav', 'mp3', 'flac'}.contains(encoding)) {
           throw LlamaAudioFormatException(
-            'PCM audio samples must not be empty.',
-          );
-        }
-        if (format?.sampleFormat != SpeechAudioSampleFormat.float32 ||
-            format?.sampleRateHz != 16000 ||
-            format?.channelCount != 1) {
-          throw LlamaAudioFormatException(
-            'Raw PCM currently requires 16 kHz mono Float32 samples.',
-            format,
+            'Encoded audio bytes must use WAV, MP3, or FLAC.',
+            request.audio.format,
           );
         }
     }
@@ -557,6 +612,9 @@ class SpeechToTextEngine {
         if (task.isCancellationRequested) {
           break;
         }
+        if (chunk.choices.isEmpty) {
+          continue;
+        }
         final text = chunk.choices.first.delta.content;
         if (text != null) {
           output.write(text);
@@ -579,44 +637,32 @@ class SpeechToTextEngine {
       );
       task._eventsController.add(SpeechToTextFinalEvent(result));
       unawaited(task._eventsController.close());
-      task._doneCompleter.complete(
-        SpeechToTextCompletion(
-          state: SpeechToTextCompletionState.completed,
-          result: result,
-        ),
-      );
+      task._doneCompleter.complete(SpeechToTextCompletion.completed(result));
     } catch (error, stackTrace) {
-      final speechError = error is LlamaSpeechException
+      if (task.isCancellationRequested) {
+        await _completeCancelled(task);
+        return;
+      }
+      final speechError = error is LlamaException
           ? error
           : LlamaSpeechException('Speech recognition failed.', error);
       task._eventsController.addError(speechError, stackTrace);
       unawaited(task._eventsController.close());
-      task._doneCompleter.complete(
-        SpeechToTextCompletion(
-          state: SpeechToTextCompletionState.failed,
-          error: speechError,
-        ),
-      );
+      task._doneCompleter.complete(SpeechToTextCompletion.failed(speechError));
     } finally {
-      _hasActiveTask = false;
+      _taskState.isActive = false;
     }
   }
 
   Future<void> _completeCancelled(SpeechToTextTask task) async {
     unawaited(task._eventsController.close());
-    task._doneCompleter.complete(
-      const SpeechToTextCompletion(
-        state: SpeechToTextCompletionState.cancelled,
-      ),
-    );
+    if (!task._doneCompleter.isCompleted) {
+      task._doneCompleter.complete(const SpeechToTextCompletion.cancelled());
+    }
   }
 
   String _promptFor(SpeechToTextRequest request) {
     final prompt = StringBuffer('Transcribe this audio accurately.');
-    final languageHint = request.languageHint?.trim();
-    if (languageHint != null && languageHint.isNotEmpty) {
-      prompt.write(' The requested language is $languageHint.');
-    }
     final contextPrompt = request.contextPrompt?.trim();
     if (contextPrompt != null && contextPrompt.isNotEmpty) {
       prompt.write(' Context: $contextPrompt');
@@ -628,8 +674,17 @@ class SpeechToTextEngine {
     return switch (audio) {
       SpeechAudioFileInput(:final path) => LlamaAudioContent(path: path),
       SpeechAudioBytesInput(:final bytes) => LlamaAudioContent(bytes: bytes),
-      SpeechPcmInput(:final samples) => LlamaAudioContent(samples: samples),
     };
+  }
+
+  String _fileExtension(String path) {
+    final cleanPath = path.split('?').first.split('#').first;
+    final filename = cleanPath.replaceAll('\\', '/').split('/').last;
+    final separator = filename.lastIndexOf('.');
+    if (separator < 0 || separator == filename.length - 1) {
+      return '';
+    }
+    return filename.substring(separator + 1).toLowerCase();
   }
 
   ({String text, String? language}) _normalizeTranscript(String raw) {
@@ -638,10 +693,7 @@ class SpeechToTextEngine {
       caseSensitive: false,
     ).firstMatch(raw);
     if (languagePrefix != null) {
-      return (
-        text: raw.substring(languagePrefix.end).trim(),
-        language: languagePrefix.group(1)?.trim(),
-      );
+      return (text: raw.substring(languagePrefix.end).trim(), language: null);
     }
 
     final marker = RegExp(
@@ -653,4 +705,8 @@ class SpeechToTextEngine {
       language: null,
     );
   }
+}
+
+class _SpeechTaskState {
+  bool isActive = false;
 }

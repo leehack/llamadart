@@ -271,6 +271,23 @@ void main() {
       );
     });
 
+    test('requires an exact expected speech transcript', () async {
+      final result = await runLocalE2e(const [
+        '--scenario',
+        'speech-to-text-smoke',
+        '--model-path',
+        'models/Qwen3-ASR-0.6B-Q8_0.gguf',
+        '--mmproj-path',
+        'models/mmproj-Qwen3-ASR-0.6B-Q8_0.gguf',
+        '--audio-path',
+        'test/fixtures/speech.wav',
+        '--dry-run',
+      ], projectRoot: '/repo');
+
+      expect(result.exitCode, 64);
+      expect(result.stderr, contains('a nonempty --expect'));
+    });
+
     test('requires mmproj path before GGUF image path', () async {
       final result = await runLocalE2e(const [
         '--scenario',

@@ -722,11 +722,14 @@ Future<LocalE2eResult> runLocalE2e(
   if (scenario.name == 'speech-to-text-smoke' &&
       (parsed.modelPath == null ||
           parsed.mmprojPath == null ||
-          parsed.audioPath == null)) {
+          parsed.audioPath == null ||
+          !parsed.expectProvided ||
+          parsed.expect.trim().isEmpty)) {
     return const LocalE2eResult(
       64,
       stderr:
-          '--model-path, --mmproj-path, and --audio-path are required for speech-to-text-smoke.\n',
+          '--model-path, --mmproj-path, --audio-path, and a nonempty --expect '
+          'are required for speech-to-text-smoke.\n',
     );
   }
   if ((scenario.name == 'llama-cpp-speculative-benchmark' ||
