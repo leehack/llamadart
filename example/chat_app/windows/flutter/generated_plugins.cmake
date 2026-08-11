@@ -4,6 +4,7 @@
 
 list(APPEND FLUTTER_PLUGIN_LIST
   pasteboard
+  record_windows
   url_launcher_windows
 )
 

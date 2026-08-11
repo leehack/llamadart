@@ -35,6 +35,12 @@ class _MyAppState extends State<MyApp> {
   void initState() {
     super.initState();
     _listener = AppLifecycleListener(
+      onHide: () {
+        unawaited(_chatProvider.cancelAudioRecording());
+      },
+      onPause: () {
+        unawaited(_chatProvider.cancelAudioRecording());
+      },
       onDetach: () {
         unawaited(_chatProvider.shutdown());
       },

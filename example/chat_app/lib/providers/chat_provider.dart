@@ -13,6 +13,7 @@ import '../models/chat_message.dart';
 import '../models/chat_settings.dart';
 import '../models/downloadable_model.dart';
 import '../services/assistant_output_service.dart';
+import '../services/audio_recording_service.dart';
 import '../services/chat_service.dart';
 import '../services/chat_generation_service.dart';
 import '../services/chat_session_service.dart';
@@ -22,6 +23,24 @@ import '../services/settings_service.dart';
 import '../services/model_service_base.dart' as model_service;
 import '../services/tool_declaration_service.dart';
 import '../utils/backend_utils.dart';
+
+/// The chat app's microphone capture lifecycle.
+enum ChatAudioRecordingState {
+  /// No microphone operation is active.
+  idle,
+
+  /// Permission and recorder startup are pending.
+  starting,
+
+  /// Audio is being captured.
+  recording,
+
+  /// The WAV file is being finalized before transcription.
+  stopping,
+
+  /// An active or pending capture is being discarded.
+  cancelling,
+}
 
 class ChatProvider extends ChangeNotifier {
   static const String _defaultToolDeclarationsJson = '''
@@ -45,12 +64,16 @@ class ChatProvider extends ChangeNotifier {
     milliseconds: 220,
   );
   static const int _multimodalMaxImageEdge = 384;
+
+  /// The maximum microphone recording length before automatic transcription.
+  static const Duration maxAudioRecordingDuration = Duration(minutes: 5);
   static const String _androidDebugImagePath = String.fromEnvironment(
     'LLAMADART_CHAT_APP_DEBUG_IMAGE_PATH',
     defaultValue: '',
   );
 
   final ChatService _chatService;
+  final AudioRecordingService _audioRecordingService;
   final ChatGenerationService _chatGenerationService;
   final ChatSessionService _chatSessionService;
   final ConversationStateService _conversationStateService;
@@ -83,6 +106,7 @@ class ChatProvider extends ChangeNotifier {
   bool _isLoaded = false;
   bool _isGenerating = false;
   bool _isTranscribing = false;
+  ChatAudioRecordingState _audioRecordingState = ChatAudioRecordingState.idle;
   bool _isShuttingDown = false;
   bool _supportsVision = false;
   bool _supportsAudio = false;
@@ -94,6 +118,14 @@ class ChatProvider extends ChangeNotifier {
   CancelToken? _activeModelPrefetchCancelToken;
   SpeechToTextTask? _activeSpeechToTextTask;
   Completer<void>? _activeTranscriptionDone;
+  Completer<void>? _activeRecordingTransitionDone;
+  Completer<void>? _activeRecordingCancellationDone;
+  Timer? _audioRecordingTimer;
+  Duration _audioRecordingElapsed = Duration.zero;
+  String? _audioRecordingModelPath;
+  String? _audioRecordingMmprojPath;
+  String? _audioRecordingConversationId;
+  int _audioRecordingRevision = 0;
   int _conversationRevision = 0;
   bool _isDisposed = false;
 
@@ -143,10 +175,25 @@ class ChatProvider extends ChangeNotifier {
   bool get isGenerating => _isGenerating;
   bool get isTranscribing => _isTranscribing;
 
+  /// The current microphone capture phase.
+  ChatAudioRecordingState get audioRecordingState => _audioRecordingState;
+
+  /// Whether the microphone is actively capturing audio frames.
+  bool get isRecordingAudio =>
+      _audioRecordingState == ChatAudioRecordingState.recording;
+
+  /// Whether microphone startup, capture, stop, or cancellation is active.
+  bool get hasActiveAudioRecording =>
+      _audioRecordingState != ChatAudioRecordingState.idle;
+
+  /// The elapsed duration of the active microphone recording.
+  Duration get audioRecordingElapsed => _audioRecordingElapsed;
+
   /// Whether the latest plain assistant response can be generated again.
   bool get canRegenerateLastResponse {
     if (_isGenerating ||
         _isTranscribing ||
+        hasActiveAudioRecording ||
         _session == null ||
         !_chatService.engine.isReady ||
         _messages.length < 2) {
@@ -175,8 +222,13 @@ class ChatProvider extends ChangeNotifier {
       !_isInitializing &&
       !_isGenerating &&
       !_isTranscribing &&
+      !hasActiveAudioRecording &&
       _supportsAudio &&
       _settings.modelSupportsSpeechToText;
+
+  /// Whether the active model can start a microphone transcription capture.
+  bool get canStartAudioRecording =>
+      _audioRecordingService.isSupported && canTranscribeAudio;
   bool get templateSupportsTools => _templateSupportsTools;
   bool get thinkingControlsSupported => _thinkingControlsSupported;
   String? get error => _error;
@@ -245,6 +297,7 @@ class ChatProvider extends ChangeNotifier {
 
   ChatProvider({
     ChatService? chatService,
+    AudioRecordingService? audioRecordingService,
     ChatGenerationService? chatGenerationService,
     ChatSessionService? chatSessionService,
     ConversationStateService? conversationStateService,
@@ -256,6 +309,8 @@ class ChatProvider extends ChangeNotifier {
     ChatSettings? initialSettings,
     bool? enableWebModelPrefetch,
   }) : _chatService = chatService ?? ChatService(),
+       _audioRecordingService =
+           audioRecordingService ?? AudioRecordingService(),
        _chatGenerationService =
            chatGenerationService ?? const ChatGenerationService(),
        _chatSessionService = chatSessionService ?? const ChatSessionService(),
@@ -325,6 +380,7 @@ class ChatProvider extends ChangeNotifier {
   }
 
   void createConversation() {
+    unawaited(_cancelAndAwaitAudioRecording());
     _invalidateActiveTranscription();
     _syncActiveConversationSnapshot();
 
@@ -373,6 +429,7 @@ class ChatProvider extends ChangeNotifier {
       return;
     }
 
+    await _cancelAndAwaitAudioRecording();
     await _cancelAndAwaitActiveTranscription();
 
     _syncActiveConversationSnapshot();
@@ -745,6 +802,8 @@ class ChatProvider extends ChangeNotifier {
       return;
     }
 
+    await _cancelAndAwaitAudioRecording();
+
     _isInitializing = true;
     _isLoaded = false;
     _error = null;
@@ -1064,6 +1123,7 @@ class ChatProvider extends ChangeNotifier {
   }
 
   void clearConversation() {
+    unawaited(_cancelAndAwaitAudioRecording());
     final wasTranscribing = _isTranscribing;
     _invalidateActiveTranscription();
     _messages.clear();
@@ -1085,7 +1145,12 @@ class ChatProvider extends ChangeNotifier {
   }
 
   Future<void> sendMessage(String text) async {
-    if (_isGenerating || _isTranscribing || _session == null) return;
+    if (_isGenerating ||
+        _isTranscribing ||
+        hasActiveAudioRecording ||
+        _session == null) {
+      return;
+    }
 
     if (_settings.singleTurnMode) {
       _session!.reset();
@@ -1892,6 +1957,177 @@ class ChatProvider extends ChangeNotifier {
     );
   }
 
+  /// Starts foreground microphone capture for a later whole-file transcript.
+  Future<void> startAudioRecording() async {
+    if (!_audioRecordingService.isSupported) {
+      _addInfoMessage('Microphone recording is unavailable on this platform.');
+      notifyListeners();
+      return;
+    }
+    if (!canTranscribeAudio || hasActiveAudioRecording) {
+      return;
+    }
+
+    final revision = ++_audioRecordingRevision;
+    final transitionDone = Completer<void>();
+    _activeRecordingTransitionDone = transitionDone;
+    _audioRecordingState = ChatAudioRecordingState.starting;
+    _audioRecordingElapsed = Duration.zero;
+    _audioRecordingModelPath = _settings.modelPath;
+    _audioRecordingMmprojPath = _settings.mmprojPath;
+    _audioRecordingConversationId = _activeConversationId;
+    notifyListeners();
+
+    try {
+      await _audioRecordingService.start();
+      if (revision != _audioRecordingRevision || _isDisposed) {
+        return;
+      }
+
+      _audioRecordingState = ChatAudioRecordingState.recording;
+      _startAudioRecordingTimer(revision);
+    } catch (error) {
+      if (revision != _audioRecordingRevision || _isDisposed) {
+        return;
+      }
+      _addInfoMessage(
+        error is AudioRecordingException
+            ? error.message
+            : 'Could not start microphone recording.',
+      );
+      _resetAudioRecordingState();
+    } finally {
+      if (identical(_activeRecordingTransitionDone, transitionDone)) {
+        _activeRecordingTransitionDone = null;
+      }
+      if (!transitionDone.isCompleted) {
+        transitionDone.complete();
+      }
+      if (revision == _audioRecordingRevision &&
+          _audioRecordingState == ChatAudioRecordingState.starting) {
+        _resetAudioRecordingState();
+      }
+      if (!_isDisposed) {
+        notifyListeners();
+      }
+    }
+  }
+
+  /// Stops microphone capture, transcribes the finalized WAV, then deletes it.
+  Future<void> stopAudioRecordingAndTranscribe() async {
+    if (_audioRecordingState != ChatAudioRecordingState.recording) {
+      return;
+    }
+
+    final revision = _audioRecordingRevision;
+    final transitionDone = Completer<void>();
+    _activeRecordingTransitionDone = transitionDone;
+    _audioRecordingTimer?.cancel();
+    _audioRecordingTimer = null;
+    _audioRecordingState = ChatAudioRecordingState.stopping;
+    notifyListeners();
+
+    String? path;
+    try {
+      path = await _audioRecordingService.stop();
+      if (revision != _audioRecordingRevision || _isDisposed) {
+        await _audioRecordingService.deleteRecording(path);
+        return;
+      }
+    } catch (error) {
+      await _audioRecordingService.cancel();
+      if (revision == _audioRecordingRevision && !_isDisposed) {
+        _addInfoMessage(
+          error is AudioRecordingException
+              ? error.message
+              : 'Could not finish the microphone recording.',
+        );
+      }
+    } finally {
+      if (identical(_activeRecordingTransitionDone, transitionDone)) {
+        _activeRecordingTransitionDone = null;
+      }
+      if (!transitionDone.isCompleted) {
+        transitionDone.complete();
+      }
+    }
+
+    if (revision != _audioRecordingRevision || _isDisposed || path == null) {
+      if (revision == _audioRecordingRevision) {
+        _resetAudioRecordingState();
+        if (!_isDisposed) {
+          notifyListeners();
+        }
+      }
+      return;
+    }
+
+    final contextMatches =
+        _audioRecordingModelPath == _settings.modelPath &&
+        _audioRecordingMmprojPath == _settings.mmprojPath &&
+        _audioRecordingConversationId == _activeConversationId;
+    _resetAudioRecordingState();
+    notifyListeners();
+
+    if (!contextMatches) {
+      await _audioRecordingService.deleteRecording(path);
+      _addInfoMessage(
+        'Recording discarded because the active model or conversation changed.',
+      );
+      notifyListeners();
+      return;
+    }
+
+    try {
+      await transcribeAudio(
+        SpeechAudioFileInput(path),
+        displayName: 'Microphone recording',
+      );
+    } finally {
+      await _audioRecordingService.deleteRecording(path);
+    }
+  }
+
+  /// Discards an active microphone recording without transcribing it.
+  Future<void> cancelAudioRecording({bool showMessage = true}) async {
+    await _cancelAndAwaitAudioRecording(showMessage: showMessage);
+  }
+
+  void _startAudioRecordingTimer(int revision) {
+    _audioRecordingTimer?.cancel();
+    _audioRecordingTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (revision != _audioRecordingRevision ||
+          _audioRecordingState != ChatAudioRecordingState.recording) {
+        _audioRecordingTimer?.cancel();
+        _audioRecordingTimer = null;
+        return;
+      }
+
+      _audioRecordingElapsed = Duration(seconds: timer.tick);
+      if (_audioRecordingElapsed >= maxAudioRecordingDuration) {
+        _audioRecordingElapsed = maxAudioRecordingDuration;
+        _addInfoMessage(
+          'Maximum recording length reached. Transcribing the recording now.',
+        );
+        unawaited(stopAudioRecordingAndTranscribe());
+        return;
+      }
+      if (!_isDisposed) {
+        notifyListeners();
+      }
+    });
+  }
+
+  void _resetAudioRecordingState() {
+    _audioRecordingTimer?.cancel();
+    _audioRecordingTimer = null;
+    _audioRecordingState = ChatAudioRecordingState.idle;
+    _audioRecordingElapsed = Duration.zero;
+    _audioRecordingModelPath = null;
+    _audioRecordingMmprojPath = null;
+    _audioRecordingConversationId = null;
+  }
+
   /// Picks one complete audio file and transcribes it with the loaded model.
   Future<void> pickAudioForTranscription() async {
     if (kIsWeb) {
@@ -2384,6 +2620,7 @@ class ChatProvider extends ChangeNotifier {
   }
 
   Future<void> unloadModel() async {
+    await _cancelAndAwaitAudioRecording();
     await _cancelAndAwaitActiveTranscription();
     stopGeneration();
     _cancelActiveModelPrefetch();
@@ -2400,6 +2637,7 @@ class ChatProvider extends ChangeNotifier {
   }
 
   void updateModelPath(String path) {
+    unawaited(_cancelAndAwaitAudioRecording());
     _updateSettings(
       _settings.copyWith(
         modelPath: path,
@@ -2413,6 +2651,7 @@ class ChatProvider extends ChangeNotifier {
 
   /// Apply model-specific recommended generation and runtime parameters.
   void applyModelPreset(DownloadableModel model) {
+    unawaited(_cancelAndAwaitAudioRecording());
     final shouldKeepToolsEnabled =
         model.supportsToolCalling && _settings.toolsEnabled;
     final shouldUseReducedAndroidContext =
@@ -2572,12 +2811,14 @@ class ChatProvider extends ChangeNotifier {
   }
 
   void updateMmprojPath(String path) {
+    unawaited(_cancelAndAwaitAudioRecording());
     _updateSettings(_settings.copyWith(mmprojPath: path));
   }
 
   Future<bool> loadConfiguredMmproj({
     String successMessage = 'Multimodal projector loaded.',
   }) async {
+    await _cancelAndAwaitAudioRecording();
     final mmprojPath = (_settings.mmprojPath ?? '').trim();
     if (mmprojPath.isEmpty) {
       _addInfoMessage(
@@ -2620,6 +2861,7 @@ class ChatProvider extends ChangeNotifier {
   }
 
   Future<void> clearMmprojPath() async {
+    await _cancelAndAwaitAudioRecording();
     if ((_settings.mmprojPath ?? '').isEmpty && !_mmprojLoaded) {
       return;
     }
@@ -2681,12 +2923,18 @@ class ChatProvider extends ChangeNotifier {
     _settingsSaveDebounce?.cancel();
     _settingsSaveDebounce = null;
     unawaited(_settingsService.saveSettings(_settings));
+    final recordingDone = _cancelAndAwaitAudioRecording();
     final transcriptionDone = _cancelAndAwaitActiveTranscription();
     stopGeneration();
     _cancelActiveModelPrefetch();
     _session?.reset();
     _session = null;
-    unawaited(transcriptionDone.whenComplete(_chatService.dispose));
+    unawaited(() async {
+      await recordingDone;
+      await transcriptionDone;
+      await _audioRecordingService.dispose();
+      await _chatService.dispose();
+    }());
     super.dispose();
   }
 
@@ -2698,6 +2946,7 @@ class ChatProvider extends ChangeNotifier {
     _isShuttingDown = true;
     try {
       await _saveSettingsNow();
+      await _cancelAndAwaitAudioRecording();
       await _cancelAndAwaitActiveTranscription();
       stopGeneration();
       _cancelActiveModelPrefetch();
@@ -2718,6 +2967,7 @@ class ChatProvider extends ChangeNotifier {
       _runtimeNotes = null;
       _runtimeModelSource = null;
       _runtimeModelCacheState = null;
+      await _audioRecordingService.dispose();
       await _chatService.dispose();
     } finally {
       _isShuttingDown = false;
@@ -2742,6 +2992,56 @@ class ChatProvider extends ChangeNotifier {
     }
     if (done != null) {
       await done.future;
+    }
+  }
+
+  Future<void> _cancelAndAwaitAudioRecording({bool showMessage = false}) async {
+    final activeCancellation = _activeRecordingCancellationDone;
+    if (activeCancellation != null) {
+      await activeCancellation.future;
+      return;
+    }
+
+    final transition = _activeRecordingTransitionDone;
+    if (_audioRecordingState == ChatAudioRecordingState.idle &&
+        transition == null) {
+      return;
+    }
+
+    final cancellationDone = Completer<void>();
+    _activeRecordingCancellationDone = cancellationDone;
+    final conversationRevision = _conversationRevision;
+    final revision = ++_audioRecordingRevision;
+    _audioRecordingTimer?.cancel();
+    _audioRecordingTimer = null;
+    _audioRecordingState = ChatAudioRecordingState.cancelling;
+    if (!_isDisposed) {
+      notifyListeners();
+    }
+
+    try {
+      if (transition != null) {
+        await transition.future;
+      }
+      await _audioRecordingService.cancel();
+    } finally {
+      if (revision == _audioRecordingRevision) {
+        _resetAudioRecordingState();
+        if (showMessage &&
+            !_isDisposed &&
+            conversationRevision == _conversationRevision) {
+          _addInfoMessage('Microphone recording cancelled.');
+        }
+      }
+      if (identical(_activeRecordingCancellationDone, cancellationDone)) {
+        _activeRecordingCancellationDone = null;
+      }
+      if (!cancellationDone.isCompleted) {
+        cancellationDone.complete();
+      }
+      if (!_isDisposed) {
+        notifyListeners();
+      }
     }
   }
 
