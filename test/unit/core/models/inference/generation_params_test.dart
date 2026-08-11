@@ -160,6 +160,13 @@ void main() {
     const dflash = SpeculativeDecodingConfig.draftDflash(
       draftModelPath: 'dflash.gguf',
     );
+    const dspark = SpeculativeDecodingConfig.draftDspark(
+      draftTokenMax: 7,
+      draftTokenMin: 2,
+      minProbability: 0.25,
+      draftSplitProbability: 0.1,
+      draftModelPath: 'dspark.gguf',
+    );
 
     expect(eagle.strategy, SpeculativeDecodingStrategy.draftEagle3);
     expect(eagle.strategies, [SpeculativeDecodingStrategy.draftEagle3]);
@@ -170,6 +177,13 @@ void main() {
     expect(eagle.draftModelPath, 'eagle.gguf');
     expect(dflash.strategy, SpeculativeDecodingStrategy.draftDflash);
     expect(dflash.draftModelPath, 'dflash.gguf');
+    expect(dspark.strategy, SpeculativeDecodingStrategy.draftDspark);
+    expect(dspark.strategies, [SpeculativeDecodingStrategy.draftDspark]);
+    expect(dspark.draftTokenMax, 7);
+    expect(dspark.draftTokenMin, 2);
+    expect(dspark.minProbability, 0.25);
+    expect(dspark.draftSplitProbability, 0.1);
+    expect(dspark.draftModelPath, 'dspark.gguf');
   });
 
   test('SpeculativeDecodingConfig stores ngram-mod and cache controls', () {

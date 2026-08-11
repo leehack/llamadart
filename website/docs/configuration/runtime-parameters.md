@@ -133,13 +133,14 @@ Important fields:
   speculative decoding. Native LiteRT-LM honors the legacy boolean flag.
   llama.cpp supports the upstream strategy surface:
   `SpeculativeDecodingConfig.mtp(...)`, `draftSimple(...)`,
-  `draftEagle3(...)`, `draftDflash(...)`, `ngramSimple(...)`,
-  `ngramMapK(...)`, `ngramMapK4v(...)`, `ngramMod(...)`,
+  `draftEagle3(...)`, `draftDflash(...)`, `draftDspark(...)`,
+  `ngramSimple(...)`, `ngramMapK(...)`, `ngramMapK4v(...)`, `ngramMod(...)`,
   `ngramCache(...)`, and `mixed(...)` for draftless n-gram strategies plus one
-  draft-model strategy. Draft-model strategies can load a separate GGUF through
-  `draftModelPath`; draftless n-gram strategies use token history or n-gram
-  caches without a draft model. WebGPU and LiteRT-LM web reject speculative
-  decoding until their speculative paths are implemented.
+  draft-model strategy. `draftDspark(...)` maps exactly to llama.cpp
+  `draft-dspark`, requires a compatible external GGUF in `draftModelPath`, and
+  does not load target-model MTP tensors. Draftless n-gram strategies use token
+  history or n-gram caches without a draft model. WebGPU and LiteRT-LM web
+  reject speculative decoding until their speculative paths are implemented.
 - `seed`: deterministic replay when set.
 - `grammar`: constrained decoding with GBNF.
 

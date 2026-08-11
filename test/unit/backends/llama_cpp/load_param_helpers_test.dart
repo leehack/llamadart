@@ -242,6 +242,13 @@ void main() {
   });
 
   group('applyContextParams', () {
+    test('matches the native per-sequence output context ABI', () {
+      final defaults = llama_context_default_params();
+
+      expect(defaults.n_outputs_max, 0);
+      expect(defaults.n_outputs_max_per_seq, 1);
+    });
+
     test('writes type_k/type_v from cacheTypeK/V', () {
       final c = calloc<llama_context_params>();
       try {

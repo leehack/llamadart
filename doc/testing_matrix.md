@@ -169,7 +169,8 @@ dart run tool/testing/native_inference_benchmark.dart \
 dart run tool/testing/run_local_e2e.dart \
   --scenario llama-cpp-speculative-benchmark \
   --model-path models/Qwen3.5-0.8B-Q4_K_M.gguf \
-  --speculative-cases baseline,ngram-simple,ngram-map-k,ngram-map-k4v,ngram-mod,ngram-cache,mixed-ngram \
+  --draft-model-path path/to/dspark-draft.gguf \
+  --speculative-cases baseline,draft-dspark,ngram-simple,ngram-map-k,ngram-map-k4v,ngram-mod,ngram-cache,mixed-ngram \
   --backend cpu \
   --benchmark-gpu-layers 0 \
   --benchmark-max-tokens 128 \
@@ -181,9 +182,10 @@ dart run tool/testing/run_local_e2e.dart \
 ```
 
 In the local E2E scenario, external draft-model strategies require
-`--draft-model-path`. Bundled MTP uses `draft-mtp` without that option; the
-runner then loads the target with `ModelParams.loadMtp` automatically. The
-n-gram cache strategy can use existing cache paths or build a static cache with
+`--draft-model-path`; select `draft-dspark` to validate DSpark against the same
+target baseline. Bundled MTP uses `draft-mtp` without that option; the runner
+then loads the target with `ModelParams.loadMtp` automatically. The n-gram
+cache strategy can use existing cache paths or build a static cache with
 `--ngram-cache-build-static-path`.
 For `ngram-simple`, `ngram-map-k`, and `ngram-map-k4v`, `--ngram-size-m`
 sweeps the effective n-gram draft length; `--draft-token-max` is still useful

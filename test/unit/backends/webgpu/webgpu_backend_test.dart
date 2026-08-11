@@ -951,22 +951,25 @@ void main() {
     });
 
     test('rejects speculative decoding config', () {
-      expect(
-        () => backend.generate(
-          1,
-          'Hello',
-          const GenerationParams(
-            speculativeDecodingConfig: SpeculativeDecodingConfig.mtp(),
+      for (final config in const [
+        SpeculativeDecodingConfig.mtp(),
+        SpeculativeDecodingConfig.draftDspark(draftModelPath: 'draft.gguf'),
+      ]) {
+        expect(
+          () => backend.generate(
+            1,
+            'Hello',
+            GenerationParams(speculativeDecodingConfig: config),
           ),
-        ),
-        throwsA(
-          isA<UnsupportedError>().having(
-            (error) => error.message.toString(),
-            'message',
-            contains('speculative decoding'),
+          throwsA(
+            isA<UnsupportedError>().having(
+              (error) => error.message.toString(),
+              'message',
+              contains('speculative decoding'),
+            ),
           ),
-        ),
-      );
+        );
+      }
     });
 
     test(

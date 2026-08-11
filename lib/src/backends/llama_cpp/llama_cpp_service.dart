@@ -666,6 +666,7 @@ final RegExp _linuxLlamadartProcMapsPattern = RegExp(
 );
 
 const int _maxLlamaCppReasoningBudgetTokens = 0x7fffffff;
+const String _minimumDsparkNativeTag = 'b10356';
 
 class _LlamaCppThinkingBudgetConfig {
   const _LlamaCppThinkingBudgetConfig({
@@ -721,23 +722,29 @@ class _LlamaCppSpeculativeConfig {
         strategy == SpeculativeDecodingStrategy.draftSimple ||
         strategy == SpeculativeDecodingStrategy.draftEagle3 ||
         strategy == SpeculativeDecodingStrategy.mtp ||
-        strategy == SpeculativeDecodingStrategy.draftDflash,
+        strategy == SpeculativeDecodingStrategy.draftDflash ||
+        strategy == SpeculativeDecodingStrategy.draftDspark,
   );
 
   bool get requiresExternalDraftModel => strategies.any(
     (strategy) =>
         strategy == SpeculativeDecodingStrategy.draftSimple ||
         strategy == SpeculativeDecodingStrategy.draftEagle3 ||
-        strategy == SpeculativeDecodingStrategy.draftDflash,
+        strategy == SpeculativeDecodingStrategy.draftDflash ||
+        strategy == SpeculativeDecodingStrategy.draftDspark,
   );
 
   bool get usesMtp => strategies.contains(SpeculativeDecodingStrategy.mtp);
+
+  bool get usesDspark =>
+      strategies.contains(SpeculativeDecodingStrategy.draftDspark);
 
   bool get suppressDraftProcessLogits => strategies.any(
     (strategy) =>
         strategy == SpeculativeDecodingStrategy.draftSimple ||
         strategy == SpeculativeDecodingStrategy.draftEagle3 ||
-        strategy == SpeculativeDecodingStrategy.draftDflash,
+        strategy == SpeculativeDecodingStrategy.draftDflash ||
+        strategy == SpeculativeDecodingStrategy.draftDspark,
   );
 }
 
@@ -800,6 +807,7 @@ class LlamaCppService {
     SpeculativeDecodingStrategy.draftEagle3: 'draft-eagle3',
     SpeculativeDecodingStrategy.mtp: 'draft-mtp',
     SpeculativeDecodingStrategy.draftDflash: 'draft-dflash',
+    SpeculativeDecodingStrategy.draftDspark: 'draft-dspark',
     SpeculativeDecodingStrategy.ngramSimple: 'ngram-simple',
     SpeculativeDecodingStrategy.ngramMapK: 'ngram-map-k',
     SpeculativeDecodingStrategy.ngramMapK4v: 'ngram-map-k4v',
@@ -812,6 +820,7 @@ class LlamaCppService {
         SpeculativeDecodingStrategy.draftEagle3,
         SpeculativeDecodingStrategy.mtp,
         SpeculativeDecodingStrategy.draftDflash,
+        SpeculativeDecodingStrategy.draftDspark,
       };
 
   int _nextHandle = 1;
@@ -3049,7 +3058,7 @@ class LlamaCppService {
     }
 
     if (_speculativeApiLookupAttempted) {
-      throw UnsupportedError(_speculativeUnavailableMessage());
+      throw LlamaUnsupportedException(_speculativeUnavailableMessage());
     }
     _speculativeApiLookupAttempted = true;
 
@@ -3082,12 +3091,13 @@ class LlamaCppService {
       }
     }
 
-    throw UnsupportedError(_speculativeUnavailableMessage());
+    throw LlamaUnsupportedException(_speculativeUnavailableMessage());
   }
 
   String _speculativeUnavailableMessage() {
     return 'llama.cpp speculative decoding is unavailable in this native '
-        'runtime bundle (missing llama_dart_speculative_* wrapper symbols).';
+        'runtime bundle (missing llama_dart_speculative_* wrapper symbols). '
+        'Use the package-pinned native runtime or an ABI-compatible build.';
   }
 
   // Legacy wrapper resolver retained for native bundles that still expose only
@@ -3952,7 +3962,7 @@ class LlamaCppService {
     }
 
     if (hasMediaParts) {
-      throw UnsupportedError(
+      throw LlamaUnsupportedException(
         'llama.cpp speculative decoding currently supports text-only '
         'generation in llamadart.',
       );
@@ -3964,7 +3974,7 @@ class LlamaCppService {
       );
     }
     if (params.grammar != null) {
-      throw UnsupportedError(
+      throw LlamaUnsupportedException(
         'llama.cpp speculative decoding does not yet support grammar '
         'sampling in llamadart.',
       );
@@ -3981,7 +3991,7 @@ class LlamaCppService {
     final uniqueStrategies = <SpeculativeDecodingStrategy>[];
     for (final strategy in strategies) {
       if (!_llamaCppSpeculativeTypeNames.containsKey(strategy)) {
-        throw UnsupportedError(
+        throw LlamaUnsupportedException(
           'llama.cpp does not support speculative strategy $strategy.',
         );
       }
@@ -3994,7 +4004,7 @@ class LlamaCppService {
         .where(_llamaCppDraftStrategies.contains)
         .length;
     if (draftStrategyCount > 1) {
-      throw UnsupportedError(
+      throw LlamaUnsupportedException(
         'llama.cpp speculative decoding can mix n-gram strategies with at '
         'most one draft-model strategy in llamadart.',
       );
@@ -4013,7 +4023,8 @@ class LlamaCppService {
       (strategy) =>
           strategy == SpeculativeDecodingStrategy.draftSimple ||
           strategy == SpeculativeDecodingStrategy.draftEagle3 ||
-          strategy == SpeculativeDecodingStrategy.draftDflash,
+          strategy == SpeculativeDecodingStrategy.draftDflash ||
+          strategy == SpeculativeDecodingStrategy.draftDspark,
     );
     if (requiresExternalDraft && draftModelPath == null) {
       throw ArgumentError(
@@ -4034,7 +4045,7 @@ class LlamaCppService {
             speculativeConfig.minProbability != null ||
             speculativeConfig.draftSplitProbability != null ||
             speculativeConfig.draftModelPath != null)) {
-      throw UnsupportedError(
+      throw LlamaUnsupportedException(
         'llama.cpp n-gram speculative decoding uses token history and does '
         'not support draftTokenMin, minProbability, draftSplitProbability, or '
         'draftModelPath unless a draft-model strategy is also enabled.',
@@ -4198,7 +4209,51 @@ class LlamaCppService {
       'ngramSizeN': config?.ngramSizeN,
       'ngramSizeM': config?.ngramSizeM,
       'ngramTokenMax': config?.ngramTokenMax,
+      'hasDraftContextStrategy': config?.hasDraftContextStrategy,
+      'requiresExternalDraftModel': config?.requiresExternalDraftModel,
+      'usesMtp': config?.usesMtp,
+      'suppressDraftProcessLogits': config?.suppressDraftProcessLogits,
     };
+  }
+
+  /// Throws the native speculative-session initialization error for tests.
+  Never debugThrowSpeculativeInitFailureForTesting(
+    GenerationParams params, {
+    bool hasMediaParts = false,
+  }) {
+    final config = _resolveLlamaCppSpeculativeConfig(
+      params,
+      hasMediaParts: hasMediaParts,
+    );
+    if (config == null) {
+      throw StateError('Speculative decoding must be enabled for this check.');
+    }
+    throw _speculativeInitFailure(config);
+  }
+
+  LlamaUnsupportedException _speculativeInitFailure(
+    _LlamaCppSpeculativeConfig config,
+  ) {
+    final strategyHint = config.usesDspark
+        ? 'DSpark requires leehack/llamadart-native@$_minimumDsparkNativeTag '
+              'or a newer ABI-compatible native build with DSpark '
+              'draft-context support. '
+        : '';
+    final draftHint = config.requiresExternalDraftModel
+        ? 'Verify that the external draft model is compatible with the target '
+              'model. '
+        : 'Verify that the selected strategy is compatible with this model. ';
+    return LlamaUnsupportedException(
+      'llama.cpp speculative decoding (${config.typeNames}) is not available '
+      'for this model/context. $strategyHint$draftHint'
+      'Use a native libllamadart build that includes the llama-common generic '
+      'speculative wrapper, and set ModelParams.speculativeRollbackTokenMax '
+      '>= the effective speculative draft length (draftTokenMax for '
+      'draft-model or ngram-cache strategies; ngramTokenMax when set for '
+      'ngram-mod, otherwise draftTokenMax/default; ngramSizeM for '
+      'ngram-simple, ngram-map-k, or ngram-map-k4v) when the target '
+      'architecture needs bounded rollback snapshots.',
+    );
   }
 
   ({int lastN, double repeat, double frequency, double presence})
@@ -4245,6 +4300,7 @@ class LlamaCppService {
         case SpeculativeDecodingStrategy.draftEagle3:
         case SpeculativeDecodingStrategy.mtp:
         case SpeculativeDecodingStrategy.draftDflash:
+        case SpeculativeDecodingStrategy.draftDspark:
           max = math.max(max, config.draftTokenMax ?? 3);
           break;
         case SpeculativeDecodingStrategy.ngramSimple:
@@ -4361,21 +4417,7 @@ class LlamaCppService {
           config: speculativeConfig,
         );
         if (speculativeSession == nullptr) {
-          final draftHint = speculativeConfig.requiresExternalDraftModel
-              ? 'Verify the draft model is compatible with the target model'
-              : 'Verify the selected strategy is compatible with this model';
-          throw UnsupportedError(
-            'llama.cpp speculative decoding (${speculativeConfig.typeNames}) '
-            'is not available for this model/context. $draftHint, use a '
-            'native libllamadart build that includes llama-common generic '
-            'speculative wrapper symbols, and set '
-            'ModelParams.speculativeRollbackTokenMax >= the effective '
-            'speculative draft length (draftTokenMax for draft-model or '
-            'ngram-cache strategies; ngramTokenMax when set for ngram-mod, '
-            'otherwise draftTokenMax/default; ngramSizeM for ngram-simple, '
-            'ngram-map-k, or ngram-map-k4v) when the target architecture '
-            'needs bounded rollback snapshots.',
-          );
+          throw _speculativeInitFailure(speculativeConfig);
         }
         if (speculativeApi.needEmbd(speculativeSession)) {
           llama_set_embeddings(ctx.pointer, true);

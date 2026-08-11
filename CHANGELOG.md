@@ -1,3 +1,15 @@
+## Unreleased
+
+* Added native llama.cpp DSpark speculative decoding through
+  `SpeculativeDecodingConfig.draftDspark(...)`, including exact
+  `draft-dspark` mapping, external draft-model validation, typed unsupported
+  failures, and benchmark coverage.
+
+* Updated the default llama.cpp native runtime pin to
+  `leehack/llamadart-native@b10356`, regenerated matching Dart FFI bindings,
+  refreshed the `llamadart_llama_cpp_flutter` Apple SwiftPM checksum, and
+  aligned current README/website native override docs.
+
 ## 0.8.19
 
 * Updated the default llama.cpp native runtime pin to

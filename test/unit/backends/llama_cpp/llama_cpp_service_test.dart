@@ -170,6 +170,40 @@ void main() {
       expect(typeNames, 'ngram-mod,draft-mtp');
     });
 
+    test('maps DSpark exactly as an external non-MTP draft context', () {
+      final resolved = service.debugResolveSpeculativeNativeParamsForTesting(
+        const GenerationParams(
+          speculativeDecodingConfig: SpeculativeDecodingConfig.draftDspark(
+            draftModelPath: 'dspark.gguf',
+            draftTokenMax: 7,
+          ),
+        ),
+      );
+
+      expect(resolved['typeNames'], 'draft-dspark');
+      expect(resolved['draftTokenMax'], 7);
+      expect(resolved['hasDraftContextStrategy'], isTrue);
+      expect(resolved['requiresExternalDraftModel'], isTrue);
+      expect(resolved['usesMtp'], isFalse);
+      expect(resolved['suppressDraftProcessLogits'], isTrue);
+    });
+
+    test('mixes DSpark with draftless n-gram strategies in order', () {
+      final typeNames = service.debugResolveSpeculativeTypeNamesForTesting(
+        const GenerationParams(
+          speculativeDecodingConfig: SpeculativeDecodingConfig.mixed(
+            strategies: [
+              SpeculativeDecodingStrategy.ngramMod,
+              SpeculativeDecodingStrategy.draftDspark,
+            ],
+            draftModelPath: 'dspark.gguf',
+          ),
+        ),
+      );
+
+      expect(typeNames, 'ngram-mod,draft-dspark');
+    });
+
     test('rejects speculative decoding with a thinking budget', () {
       expect(
         () => service.debugResolveSpeculativeTypeNamesForTesting(
@@ -256,7 +290,30 @@ void main() {
           ),
         ),
         throwsA(
-          isA<UnsupportedError>().having(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            contains('at most one draft-model strategy'),
+          ),
+        ),
+      );
+    });
+
+    test('rejects DSpark mixed with another draft-context strategy', () {
+      expect(
+        () => service.debugResolveSpeculativeTypeNamesForTesting(
+          const GenerationParams(
+            speculativeDecodingConfig: SpeculativeDecodingConfig.mixed(
+              strategies: [
+                SpeculativeDecodingStrategy.draftDspark,
+                SpeculativeDecodingStrategy.mtp,
+              ],
+              draftModelPath: 'dspark.gguf',
+            ),
+          ),
+        ),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
             (error) => error.message,
             'message',
             contains('at most one draft-model strategy'),
@@ -284,11 +341,56 @@ void main() {
       );
     });
 
+    test('requires a non-empty draftModelPath for DSpark', () {
+      expect(
+        () => service.debugResolveSpeculativeTypeNamesForTesting(
+          const GenerationParams(
+            speculativeDecodingConfig: SpeculativeDecodingConfig.mixed(
+              strategies: [SpeculativeDecodingStrategy.draftDspark],
+            ),
+          ),
+        ),
+        throwsA(
+          isA<ArgumentError>().having(
+            (error) => error.message,
+            'message',
+            contains('requires draftModelPath'),
+          ),
+        ),
+      );
+      expect(
+        () => service.debugResolveSpeculativeTypeNamesForTesting(
+          const GenerationParams(
+            speculativeDecodingConfig: SpeculativeDecodingConfig.draftDspark(
+              draftModelPath: ' ',
+            ),
+          ),
+        ),
+        throwsA(
+          isA<ArgumentError>().having(
+            (error) => error.message,
+            'message',
+            contains('must be null or a non-empty path'),
+          ),
+        ),
+      );
+    });
+
     test('suppresses process logits only for external draft strategies', () {
       expect(
         service.debugSuppressesDraftProcessLogitsForTesting(
           const GenerationParams(
             speculativeDecodingConfig: SpeculativeDecodingConfig.draftSimple(
+              draftModelPath: 'draft.gguf',
+            ),
+          ),
+        ),
+        isTrue,
+      );
+      expect(
+        service.debugSuppressesDraftProcessLogitsForTesting(
+          const GenerationParams(
+            speculativeDecodingConfig: SpeculativeDecodingConfig.draftDspark(
               draftModelPath: 'draft.gguf',
             ),
           ),
@@ -361,6 +463,55 @@ void main() {
           const ModelParams(),
         ),
         returnsNormally,
+      );
+    });
+
+    test('DSpark never requires target bundled MTP tensors', () {
+      expect(
+        () => service.debugValidateMtpModelLoadForTesting(
+          const GenerationParams(
+            speculativeDecodingConfig: SpeculativeDecodingConfig.draftDspark(
+              draftModelPath: 'draft.gguf',
+            ),
+          ),
+          const ModelParams(),
+        ),
+        returnsNormally,
+      );
+    });
+
+    test('reports DSpark native version skew as a typed failure', () {
+      expect(
+        () => service.debugThrowSpeculativeInitFailureForTesting(
+          const GenerationParams(
+            speculativeDecodingConfig: SpeculativeDecodingConfig.draftDspark(
+              draftModelPath: 'draft.gguf',
+            ),
+          ),
+        ),
+        throwsA(
+          isA<LlamaUnsupportedException>()
+              .having(
+                (error) => error.message,
+                'message',
+                contains('draft-dspark'),
+              )
+              .having(
+                (error) => error.message,
+                'message',
+                contains('llamadart-native@b10356'),
+              )
+              .having(
+                (error) => error.message,
+                'message',
+                contains('draft-context support'),
+              )
+              .having(
+                (error) => error.message,
+                'message',
+                contains('draftTokenMax'),
+              ),
+        ),
       );
     });
 

@@ -69,6 +69,12 @@ enum SpeculativeDecodingStrategy {
 
   /// Self-speculative three-level n-gram cache.
   ngramCache,
+
+  /// DSpark draft-model speculative decoding.
+  ///
+  /// llama.cpp maps this to its `draft-dspark` path. It uses a separate draft
+  /// model and is distinct from MTP.
+  draftDspark,
 }
 
 /// Backend-neutral speculative decoding configuration.
@@ -117,7 +123,8 @@ class SpeculativeDecodingConfig {
 
   /// Optional draft model path for speculative decoding modes that use a
   /// separate drafter model, such as llama.cpp `--model-draft` with
-  /// `draft-simple`, `draft-eagle3`, `draft-mtp`, or `draft-dflash`.
+  /// `draft-simple`, `draft-eagle3`, `draft-mtp`, `draft-dflash`, or
+  /// `draft-dspark`.
   ///
   /// Leave null for models that carry their own MTP layers.
   final String? draftModelPath;
@@ -306,6 +313,39 @@ class SpeculativeDecodingConfig {
     required this.draftModelPath,
   }) : strategy = SpeculativeDecodingStrategy.draftDflash,
        strategies = const [SpeculativeDecodingStrategy.draftDflash],
+       ngramSize = null,
+       ngramSizeN = null,
+       ngramSizeM = null,
+       ngramMinHits = null,
+       ngramMatch = null,
+       ngramTokenMin = null,
+       ngramTokenMax = null,
+       ngramCacheStaticPath = null,
+       ngramCacheDynamicPath = null,
+       assert(draftTokenMax == null || draftTokenMax >= 0),
+       assert(draftTokenMin == null || draftTokenMin >= 0),
+       assert(
+         minProbability == null ||
+             (minProbability >= 0.0 && minProbability <= 1.0),
+       ),
+       assert(
+         draftSplitProbability == null ||
+             (draftSplitProbability >= 0.0 && draftSplitProbability <= 1.0),
+       );
+
+  /// Enables upstream llama.cpp `draft-dspark` speculative decoding.
+  ///
+  /// Native llama.cpp requires [draftModelPath] to identify a compatible
+  /// external DSpark draft GGUF. WebGPU and LiteRT-LM reject this strategy,
+  /// and native runtimes without DSpark draft-context support fail explicitly.
+  const SpeculativeDecodingConfig.draftDspark({
+    this.draftTokenMax,
+    this.draftTokenMin,
+    this.minProbability,
+    this.draftSplitProbability,
+    required this.draftModelPath,
+  }) : strategy = SpeculativeDecodingStrategy.draftDspark,
+       strategies = const [SpeculativeDecodingStrategy.draftDspark],
        ngramSize = null,
        ngramSizeN = null,
        ngramSizeM = null,

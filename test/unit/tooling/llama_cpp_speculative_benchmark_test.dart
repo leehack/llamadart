@@ -27,6 +27,7 @@ void main() {
       expect(result.stdout, contains('--raw-prompt'));
       expect(result.stdout, contains('intentional raw-prompt comparisons'));
       expect(result.stdout, contains('--include-output'));
+      expect(result.stdout, contains('draft-dspark'));
     });
 
     test('builds llama.cpp static ngram cache bytes', () {
@@ -163,6 +164,41 @@ void main() {
           'baseline,draft-mtp',
         ]),
         isFalse,
+      );
+    });
+
+    test('maps DSpark aliases to the upstream benchmark case', () {
+      for (final alias in ['draft-dspark', 'dspark', 'draft_dspark']) {
+        final names = speculative_benchmark
+            .debugBuildBenchmarkCaseNamesForTesting([
+              '--model',
+              'target.gguf',
+              '--draft-model',
+              'draft.gguf',
+              '--cases',
+              alias,
+              '--draft-token-max',
+              '7',
+            ]);
+
+        expect(names, ['draft-dspark_draft_7'], reason: 'alias=$alias');
+      }
+    });
+
+    test('requires an external draft model for DSpark', () async {
+      final result = await Process.run(Platform.resolvedExecutable, [
+        '--disable-dart-dev',
+        'tool/testing/llama_cpp_speculative_benchmark.dart',
+        '--model',
+        'target.gguf',
+        '--cases',
+        'draft-dspark',
+      ]);
+
+      expect(result.exitCode, isNot(0));
+      expect(
+        result.stderr,
+        contains('draft-dspark requires --draft-model <draft.gguf>.'),
       );
     });
 

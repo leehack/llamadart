@@ -649,6 +649,19 @@ class _BenchmarkCase {
             draftSplitProbability: options.draftSplitProbability,
           ),
         );
+      case 'draft-dspark':
+        return _BenchmarkCase._(
+          name: 'draft-dspark_draft_$draftTokenMax',
+          caseType: requestedCase,
+          strategies: const <String>['draft-dspark'],
+          speculativeDecodingConfig: SpeculativeDecodingConfig.draftDspark(
+            draftModelPath: options.requiredDraftModelPath(requestedCase),
+            draftTokenMax: draftTokenMax,
+            draftTokenMin: options.draftTokenMin,
+            minProbability: options.minProbability,
+            draftSplitProbability: options.draftSplitProbability,
+          ),
+        );
       case 'ngram-simple':
         return _BenchmarkCase._(
           name: 'ngram-simple_m_$effectiveNgramSizeM',
@@ -1196,6 +1209,7 @@ const _allRequestedCases = <String>[
   'draft-eagle3',
   'draft-mtp',
   'draft-dflash',
+  'draft-dspark',
   'ngram-simple',
   'ngram-map-k',
   'ngram-map-k4v',
@@ -1221,6 +1235,7 @@ const _draftModelRequiredCases = <String>{
   'draft-simple',
   'draft-eagle3',
   'draft-dflash',
+  'draft-dspark',
   'mixed-ngram-draft-simple',
 };
 
@@ -1333,6 +1348,10 @@ String _canonicalCase(String value) {
     case 'dflash':
     case 'draft_dflash':
       return 'draft-dflash';
+    case 'draft-dspark':
+    case 'dspark':
+    case 'draft_dspark':
+      return 'draft-dspark';
     case 'mixed-ngram':
     case 'mixed_ngram':
       return 'mixed-ngram';
@@ -1541,7 +1560,7 @@ Case selection:
   --cases all                          Every supported case; draft-model cases
                                        require --draft-model.
   --draft-model <draft.gguf>           Draft model for draft-simple, eagle3,
-                                       dflash, external MTP, and mixed
+                                       dflash, dspark, external MTP, and mixed
                                        draft-model cases. Omit for bundled MTP.
   --draft-token-max <list>             Comma-separated draft-token depths for
                                        draft-model, ngram-mod, and ngram-cache
