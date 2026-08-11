@@ -36,6 +36,9 @@ library;
 export 'src/core/engine/engine.dart' show LlamaEngine;
 export 'src/core/engine/chat_session.dart' show ChatSession;
 
+// Speech
+export 'src/core/speech/speech_to_text.dart';
+
 // Template APIs
 export 'src/core/template/chat_format.dart' show ChatFormat;
 export 'src/core/template/chat_parse_result.dart' show ChatParseResult;

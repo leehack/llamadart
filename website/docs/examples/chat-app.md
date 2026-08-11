@@ -61,6 +61,9 @@ flutter test
 - Runtime-verified multimodal capability gating after `mmproj` load, plus
   declared direct-media capabilities for native model bundles such as
   LiteRT-LM. The app hides unsupported attachment types for the active platform.
+- A separate **Transcribe Audio** action for compatible native GGUF models,
+  backed by the typed whole-file `SpeechToTextEngine`. This is distinct from
+  generic audio attachment and is not shown for Web or current LiteRT-LM.
 - Clipboard image/audio attachments through `Cmd/Ctrl+V` on desktop and web or
   **Paste attachment** on touch devices. Text-only clipboard content still
   follows the normal composer paste path, and media is capped at 64 MB.

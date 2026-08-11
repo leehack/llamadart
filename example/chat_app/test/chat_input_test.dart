@@ -128,7 +128,82 @@ void main() {
 
     expect(find.text('Paste attachment'), findsOneWidget);
     expect(find.text('Attach Audio'), findsOneWidget);
+    expect(find.text('Transcribe Audio'), findsNothing);
     expect(find.text('Attach Image'), findsNothing);
+  });
+
+  testWidgets('shows dedicated transcription for native ASR models', (
+    tester,
+  ) async {
+    final engine = _SpeechMockLlamaEngine();
+    final provider = ChatProvider(
+      chatService: MockChatService(engine: engine),
+      settingsService: MockSettingsService(),
+      initialSettings: const ChatSettings(
+        modelPath: 'Qwen3-ASR-0.6B-Q8_0.gguf',
+        mmprojPath: 'mmproj-Qwen3-ASR-0.6B-Q8_0.gguf',
+      ),
+    );
+    addTearDown(provider.dispose);
+    await provider.loadModel();
+
+    final controller = TextEditingController();
+    final focusNode = FocusNode();
+    addTearDown(controller.dispose);
+    addTearDown(focusNode.dispose);
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider<ChatProvider>.value(
+        value: provider,
+        child: MaterialApp(
+          home: Scaffold(
+            body: ChatInput(
+              controller: controller,
+              focusNode: focusNode,
+              onSend: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byTooltip('Add attachment'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Attach Audio'), findsOneWidget);
+    expect(find.text('Transcribe Audio'), findsOneWidget);
+  });
+
+  test('transcribes an in-memory audio file into chat', () async {
+    final engine = _SpeechMockLlamaEngine()
+      ..createChunkContents = const <String>[
+        'language English<asr_text>Recognized ',
+        'speech.',
+      ];
+    final provider = ChatProvider(
+      chatService: MockChatService(engine: engine),
+      settingsService: MockSettingsService(),
+      initialSettings: const ChatSettings(
+        modelPath: 'Qwen3-ASR-0.6B-Q8_0.gguf',
+        mmprojPath: 'mmproj-Qwen3-ASR-0.6B-Q8_0.gguf',
+      ),
+    );
+    addTearDown(provider.dispose);
+    await provider.loadModel();
+
+    await provider.transcribeAudio(
+      SpeechAudioBytesInput(Uint8List.fromList(const <int>[1, 2, 3])),
+      displayName: 'fixture.wav',
+    );
+
+    expect(provider.isTranscribing, isFalse);
+    expect(provider.isGenerating, isFalse);
+    expect(engine.createCalls, 1);
+    expect(
+      provider.messages.where((message) => !message.isInfo).map((m) => m.text),
+      <String>['Transcribe audio: fixture.wav', 'Recognized speech.'],
+    );
+    expect(provider.messages.last.debugBadges, contains('Transcription'));
   });
 
   test('stages clipboard media bytes for the next message', () async {
@@ -175,4 +250,9 @@ class _GeneratingReadyProvider extends ChatProvider {
 
   @override
   List<LlamaContentPart> get stagedParts => const <LlamaContentPart>[];
+}
+
+class _SpeechMockLlamaEngine extends MockLlamaEngine {
+  @override
+  Future<bool> get supportsAudio async => mmprojLoaded;
 }

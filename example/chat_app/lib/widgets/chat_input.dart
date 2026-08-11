@@ -539,6 +539,8 @@ class _ChatInputState extends State<ChatInput> {
           provider.pickImage();
         } else if (value == 'audio') {
           provider.pickAudio();
+        } else if (value == 'transcribe_audio') {
+          unawaited(provider.pickAudioForTranscription());
         }
       },
       itemBuilder: (context) => [
@@ -571,6 +573,17 @@ class _ChatInputState extends State<ChatInput> {
                 Icon(Icons.audiotrack_outlined),
                 SizedBox(width: 12),
                 Expanded(child: Text('Attach Audio')),
+              ],
+            ),
+          ),
+        if (provider.canTranscribeAudio)
+          const PopupMenuItem(
+            value: 'transcribe_audio',
+            child: Row(
+              children: [
+                Icon(Icons.transcribe_outlined),
+                SizedBox(width: 12),
+                Expanded(child: Text('Transcribe Audio')),
               ],
             ),
           ),

@@ -95,6 +95,10 @@ Gemma 4 E2B GGUF projector path in native `llama.cpp` mtmd reports both vision
 and audio support; audio remains experimental upstream. Web continues to rely
 on the loaded bridge's runtime capability report.
 
+`LlamaAudioContent` is generic audio input routed through normal generation; it
+does not by itself provide a transcript contract. For typed whole-file native
+transcription, see [Speech to Text](./speech-to-text).
+
 For native LiteRT-LM `.litertlm` bundles, capability depends on the bundle's
 native template/model processors. `loadMultimodalProjector`,
 `loadMultimodalProjectorSource`, `supportsVision`, and `supportsAudio` are

@@ -1,5 +1,11 @@
 ## Unreleased
 
+* Added an experimental typed `SpeechToTextEngine` for whole-file native
+  llama.cpp transcription, including capability discovery, language-prefix
+  normalization, cancellation, audio metadata, typed failures, and a separate
+  **Transcribe Audio** flow in the Flutter chat example. Web and the current
+  LiteRT-LM artifacts fail explicitly as unsupported.
+
 * Added experimental, opt-in native llama.cpp DSpark speculative decoding
   through `SpeculativeDecodingConfig.draftDspark(...)`, including exact
   `draft-dspark` mapping, external draft-model validation, typed unsupported

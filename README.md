@@ -28,6 +28,8 @@ models through LiteRT-LM.
 - Streaming chat completions, llama.cpp thinking budgets, tool-call parsing,
   multimodal GGUF projectors, structured JSON output, embeddings, LoRA, state
   persistence, and runtime diagnostics where the active backend supports them.
+- Experimental typed whole-file speech recognition on native llama.cpp through
+  `SpeechToTextEngine`, with explicit capability and cancellation contracts.
 
 Unsupported runtime/option combinations are rejected explicitly instead of
 silently degrading. Check the support matrix before relying on a capability for
@@ -149,6 +151,7 @@ Current default runtime pins:
 | Generate typed JSON | [Structured output](https://llamadart.leehack.com/docs/guides/generation-and-streaming#structured-json-output) |
 | Use tool calling | [Tool calling](https://llamadart.leehack.com/docs/guides/tool-calling) |
 | Use images, audio, or projectors | [Multimodal](https://llamadart.leehack.com/docs/guides/multimodal) |
+| Transcribe speech on device | [Speech to text](https://llamadart.leehack.com/docs/guides/speech-to-text) |
 | Generate embeddings | [Embeddings](https://llamadart.leehack.com/docs/guides/embeddings) |
 | Load LoRA adapters | [LoRA adapters](https://llamadart.leehack.com/docs/guides/lora-adapters) |
 | Save and restore KV state | [API levels](https://llamadart.leehack.com/docs/guides/api-levels) |

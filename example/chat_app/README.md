@@ -11,6 +11,8 @@ A Flutter chat application demonstrating real-world usage of llamadart with UI.
 - 📋 **Clipboard attachments**: Paste screenshots or copied image/audio files
   with `Cmd/Ctrl+V`, or use **Paste attachment** from the attachment menu on
   touch devices. Plain-text paste continues to work normally.
+- 🎙️ **Whole-file transcription**: Compatible native GGUF ASR models expose a
+  separate **Transcribe Audio** action backed by `SpeechToTextEngine`.
 - 📱 Material Design 3 UI
 - ⚙️ Model configuration (path, runtime-detected backend selection, GPU layers, context size)
 - 🧩 Capability badges per model (Tools / Thinking / Vision / Audio / Video)
@@ -89,6 +91,9 @@ flutter test --run-skipped -t local-only \
      a separate action, with an explicit combined option in the confirmation.
 3. Tap the **Download** icon. The app uses `Dio` to download the model directly to your device's app-specific cache directory. Additional model downloads enter a FIFO queue and start one at a time. A persistent progress pill remains in the app header when settings is closed; tap it to reopen download details.
 4. Once downloaded, tap **Select** to load the model.
+   - A custom native Qwen3-ASR GGUF + matching `mmproj` exposes both **Attach
+     Audio** and **Transcribe Audio**. The latter transcribes one selected file;
+     live microphone input, Web, LiteRT-LM STT, and TTS are not enabled yet.
    - Gemma 4 E2B is included as a GGUF + `mmproj` bundle. In the current
      native `llama.cpp` mtmd path used here, that projector exposes image,
      audio, and video input. Audio remains experimental upstream; start with

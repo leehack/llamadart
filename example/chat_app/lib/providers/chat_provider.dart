@@ -82,6 +82,7 @@ class ChatProvider extends ChangeNotifier {
   double _loadingProgress = 0.0;
   bool _isLoaded = false;
   bool _isGenerating = false;
+  bool _isTranscribing = false;
   bool _isShuttingDown = false;
   bool _supportsVision = false;
   bool _supportsAudio = false;
@@ -91,6 +92,7 @@ class ChatProvider extends ChangeNotifier {
   String? _error;
   Timer? _settingsSaveDebounce;
   CancelToken? _activeModelPrefetchCancelToken;
+  SpeechToTextTask? _activeSpeechToTextTask;
   bool _isDisposed = false;
 
   // Telemetry
@@ -137,6 +139,7 @@ class ChatProvider extends ChangeNotifier {
   double get loadingProgress => _loadingProgress;
   bool get isLoaded => _isLoaded;
   bool get isGenerating => _isGenerating;
+  bool get isTranscribing => _isTranscribing;
 
   /// Whether the latest plain assistant response can be generated again.
   bool get canRegenerateLastResponse {
@@ -162,6 +165,19 @@ class ChatProvider extends ChangeNotifier {
 
   bool get supportsVision => _supportsVision;
   bool get supportsAudio => _supportsAudio;
+  bool get canTranscribeAudio =>
+      !kIsWeb &&
+      _isLoaded &&
+      !_isInitializing &&
+      !_isGenerating &&
+      _supportsAudio &&
+      !((_settings.modelPath ?? '')
+          .split('?')
+          .first
+          .split('#')
+          .first
+          .toLowerCase()
+          .endsWith('.litertlm'));
   bool get templateSupportsTools => _templateSupportsTools;
   bool get thinkingControlsSupported => _thinkingControlsSupported;
   String? get error => _error;
@@ -1046,11 +1062,14 @@ class ChatProvider extends ChangeNotifier {
   }
 
   void clearConversation() {
+    _activeSpeechToTextTask?.cancel();
+    _activeSpeechToTextTask = null;
     _messages.clear();
     _session?.reset();
     _currentTokens = 0;
     _isPruning = false;
     _isGenerating = false;
+    _isTranscribing = false;
     _stagedParts.clear();
     _clearGenerationMetrics();
     _messages.add(
@@ -1679,7 +1698,7 @@ class ChatProvider extends ChangeNotifier {
     if (!last.isUser &&
         !last.isInfo &&
         !hasContentParts &&
-        (text.isEmpty || text == '...')) {
+        (text.isEmpty || text == '...' || text == 'Transcribing…')) {
       _messages.removeLast();
     }
   }
@@ -1872,6 +1891,184 @@ class ChatProvider extends ChangeNotifier {
     );
   }
 
+  /// Picks one complete audio file and transcribes it with the loaded model.
+  Future<void> pickAudioForTranscription() async {
+    if (kIsWeb) {
+      _addInfoMessage(
+        'Dedicated speech-to-text is not available in the Web chat app yet.',
+      );
+      notifyListeners();
+      return;
+    }
+
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.audio,
+        allowMultiple: false,
+      );
+      if (result == null || result.files.isEmpty) {
+        return;
+      }
+
+      final file = result.files.single;
+      final path = file.path;
+      if (path != null && path.isNotEmpty) {
+        await transcribeAudio(
+          SpeechAudioFileInput(path),
+          displayName: file.name,
+        );
+        return;
+      }
+
+      final bytes = file.bytes;
+      if (bytes != null && bytes.isNotEmpty) {
+        await transcribeAudio(
+          SpeechAudioBytesInput(bytes),
+          displayName: file.name,
+        );
+        return;
+      }
+
+      _addInfoMessage('Could not read the selected audio file.');
+      notifyListeners();
+    } catch (error) {
+      _logDart(
+        LlamaLogLevel.warn,
+        'Error picking audio for transcription: $error',
+      );
+      _addInfoMessage('Could not open the selected audio file.');
+      notifyListeners();
+    }
+  }
+
+  /// Transcribes one complete [audio] input and displays the result in chat.
+  ///
+  /// This is intentionally separate from attaching audio to a generic chat
+  /// turn. The current native backend emits only a final transcript.
+  Future<void> transcribeAudio(
+    SpeechAudioInput audio, {
+    String? displayName,
+  }) async {
+    if (_isGenerating || _session == null || !_chatService.engine.isReady) {
+      return;
+    }
+    if (kIsWeb) {
+      _addInfoMessage(
+        'Dedicated speech-to-text is not available in the Web chat app yet.',
+      );
+      notifyListeners();
+      return;
+    }
+
+    final llamaAudio = switch (audio) {
+      SpeechAudioFileInput(:final path) => LlamaAudioContent(path: path),
+      SpeechAudioBytesInput(:final bytes) => LlamaAudioContent(bytes: bytes),
+      SpeechPcmInput(:final samples) => LlamaAudioContent(samples: samples),
+    };
+    if (!await _ensureMultimodalProjectorForMedia(<LlamaContentPart>[
+      llamaAudio,
+    ])) {
+      return;
+    }
+
+    if (_settings.singleTurnMode) {
+      _session!.reset();
+    }
+
+    final sourceLabel = (displayName ?? '').trim().isEmpty
+        ? 'selected audio'
+        : displayName!.trim();
+    _messages.add(
+      ChatMessage(text: 'Transcribe audio: $sourceLabel', isUser: true),
+    );
+    _messages.add(ChatMessage(text: 'Transcribing…', isUser: false));
+    _isGenerating = true;
+    _isTranscribing = true;
+    _syncActiveConversationSnapshot();
+    notifyListeners();
+    await _yieldUiFrame();
+
+    try {
+      final recognizer = SpeechToTextEngine(_chatService.engine);
+      final task = await recognizer.transcribe(
+        SpeechToTextRequest(
+          audio: audio,
+          maxOutputTokens: math.min(1024, math.max(64, _settings.maxTokens)),
+        ),
+      );
+      _activeSpeechToTextTask = task;
+      if (!_isGenerating) {
+        task.cancel();
+      }
+
+      SpeechToTextResult? result;
+      await for (final event in task.events) {
+        if (event is SpeechToTextFinalEvent) {
+          result = event.result;
+        }
+      }
+      final completion = await task.done;
+
+      if (completion.state == SpeechToTextCompletionState.cancelled) {
+        _removeEmptyAssistantPlaceholder();
+        _addInfoMessage('Transcription cancelled.');
+        return;
+      }
+      if (completion.state == SpeechToTextCompletionState.failed) {
+        throw completion.error ?? LlamaSpeechException('Transcription failed.');
+      }
+
+      final transcript = (result ?? completion.result)?.text.trim() ?? '';
+      if (transcript.isEmpty) {
+        throw LlamaSpeechException(
+          'The model completed without returning transcript text.',
+        );
+      }
+
+      if (_messages.isNotEmpty && !_messages.last.isUser) {
+        _messages[_messages.length - 1] = _messages.last.copyWith(
+          text: transcript,
+          parts: <LlamaContentPart>[LlamaTextContent(transcript)],
+          debugBadges: const <String>['Transcription'],
+        );
+      }
+      _session!.addMessage(
+        LlamaChatMessage.fromText(
+          role: LlamaChatRole.user,
+          text: 'Transcribe audio: $sourceLabel',
+        ),
+      );
+      _session!.addMessage(
+        LlamaChatMessage.fromText(
+          role: LlamaChatRole.assistant,
+          text: transcript,
+        ),
+      );
+      try {
+        _messages.last.tokenCount = await _chatService.engine.getTokenCount(
+          transcript,
+        );
+      } on LlamaUnsupportedException {
+        // Token counting is optional for transcription display.
+      } on UnsupportedError {
+        // Token counting is optional for transcription display.
+      }
+    } catch (error) {
+      _removeEmptyAssistantPlaceholder();
+      _addInfoMessage(
+        error is LlamaUnsupportedException
+            ? error.message
+            : 'Transcription failed: ${_formatDisplayError(error)}',
+      );
+    } finally {
+      _activeSpeechToTextTask = null;
+      _isTranscribing = false;
+      _isGenerating = false;
+      _syncActiveConversationSnapshot();
+      notifyListeners();
+    }
+  }
+
   Future<void> _pickMediaPart({
     required FileType type,
     required Future<LlamaContentPart> Function(String path) fromPath,
@@ -1993,7 +2190,12 @@ class ChatProvider extends ChangeNotifier {
 
   void stopGeneration() {
     if (_isGenerating) {
-      _chatService.cancelGeneration();
+      final speechTask = _activeSpeechToTextTask;
+      if (speechTask != null) {
+        speechTask.cancel();
+      } else {
+        _chatService.cancelGeneration();
+      }
       _isGenerating = false;
       notifyListeners();
     }

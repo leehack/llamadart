@@ -32,6 +32,18 @@ class LlamaInferenceException extends LlamaException {
   LlamaInferenceException(super.message, [super.details]);
 }
 
+/// Exception thrown when speech recognition fails.
+class LlamaSpeechException extends LlamaException {
+  /// Creates a new [LlamaSpeechException].
+  LlamaSpeechException(super.message, [super.details]);
+}
+
+/// Exception thrown when speech audio does not satisfy an input contract.
+class LlamaAudioFormatException extends LlamaSpeechException {
+  /// Creates a new [LlamaAudioFormatException].
+  LlamaAudioFormatException(super.message, [super.details]);
+}
+
 /// Exception thrown when an operation is not supported on the current platform.
 class LlamaUnsupportedException extends LlamaException {
   /// Creates a new [LlamaUnsupportedException].

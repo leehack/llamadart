@@ -33,6 +33,7 @@ const sidebars: SidebarsConfig = {
         'guides/embeddings',
         'guides/tool-calling',
         'guides/multimodal',
+        'guides/speech-to-text',
         'guides/lora-adapters'
       ]
     },
