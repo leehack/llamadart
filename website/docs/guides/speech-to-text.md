@@ -142,10 +142,10 @@ Linux with the current recorder plugin because its external-tool startup is not
 safe to expose without a stronger preflight; selected-file transcription is
 unchanged there.
 
-The chat app's desktop catalog includes the validated Qwen3-ASR 0.6B Q8_0
-model/projector pair. Its immutable artifact revision, byte sizes, and SHA-256
-digests are pinned, and the native downloader verifies both files before the
-model can be selected.
+The chat app's native mobile-and-desktop catalog includes the Qwen3-ASR 0.6B
+Q8_0 model/projector pair. It remains excluded from the Web catalog. Its
+immutable artifact revision, byte sizes, and SHA-256 digests are pinned, and
+the native downloader verifies both files before the model can be selected.
 
 ## Known limits
 
@@ -156,10 +156,13 @@ model can be selected.
   diarization, or incremental audio frames in the current backend.
 - Native inference backend correctness and performance remain device dependent;
   establish a CPU baseline before claiming GPU support for a deployment.
-- The local real-model smoke has passed on macOS arm64 CPU. A separate
-  chat-app/manual smoke has passed on Metal. The redistributable fixture and
-  Linux, Windows, Android, and iOS validation remain tracked in
-  [issue #325](https://github.com/leehack/llamadart/issues/325).
+- The local real-model smoke has passed on macOS arm64 CPU, and a separate
+  chat-app/manual smoke has passed on Metal. The full chat-app
+  model/projector, microphone, and final-transcript flow has also passed on a
+  physical Pixel using CPU inference and in the iOS Simulator. A physical
+  iPhone and Windows remain unverified; Linux keeps selected-file STT but not
+  microphone capture. Web enablement is tracked separately in
+  [issue #329](https://github.com/leehack/llamadart/issues/329).
 - TTS is not exposed. llama.cpp's current Qwen3-TTS helper is experimental and
   requires a stable downstream native wrapper before it can support a public
   Dart `TextToSpeechEngine`.

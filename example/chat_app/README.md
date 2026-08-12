@@ -71,8 +71,9 @@ flutter test --run-skipped -t local-only \
 2. Select one of the focused pre-configured models:
    - Cross-platform: FunctionGemma 270M, Qwen3.5 0.8B, Gemma 4 E2B
      GGUF, Gemma 4 E2B LiteRT-LM, and Gemma 4 E4B GGUF.
-   - Native desktop: Qwen3-ASR 0.6B, Gemma 4 12B, Gemma 4 26B A4B,
-     Gemma 4 31B, and Qwen3.6 35B A3B.
+   - Native mobile and desktop: Qwen3-ASR 0.6B.
+   - Native desktop: Gemma 4 12B, Gemma 4 26B A4B, Gemma 4 31B, and
+     Qwen3.6 35B A3B.
    - Built-in GGUF chat presets use [Unsloth distributions](https://huggingface.co/unsloth).
      The ASR preset uses llama.cpp's `ggml-org` Qwen3-ASR pair, and the
      LiteRT-LM preset uses `litert-community`; every card identifies its source.
@@ -91,20 +92,25 @@ flutter test --run-skipped -t local-only \
      a separate action, with an explicit combined option in the confirmation.
 3. Tap the **Download** icon. The app uses `Dio` to download the model directly to your device's app-specific cache directory. Additional model downloads enter a FIFO queue and start one at a time. A persistent progress pill remains in the app header when settings is closed; tap it to reopen download details.
 4. Once downloaded, tap **Select** to load the model.
-   - The native-desktop Qwen3-ASR preset exposes **Attach Audio** and
-     **Transcribe Audio**. On macOS and Windows it also shows a microphone
-     button; compatible custom mobile ASR configurations can use the same
-     control. File transcription accepts WAV, MP3, or FLAC. The microphone
-     records a temporary mono WAV for up to five minutes; **Stop & transcribe**
-     finalizes it, runs whole-file STT, and deletes it.
+   - The native Qwen3-ASR preset exposes **Attach Audio** and **Transcribe
+     Audio** on mobile and desktop builds. On Android, iOS, macOS, and Windows
+     it also shows a microphone button. File transcription accepts WAV, MP3,
+     or FLAC. The microphone records a temporary mono WAV for up to five
+     minutes; **Stop & transcribe** finalizes it, runs whole-file STT, and
+     deletes it.
      Capture is foreground-only and cancelling discards the temporary file.
      Live partial transcription, Web, LiteRT-LM STT, and TTS are not enabled
-     yet. All STT actions require the matching projector, and the preset's
-     pinned downloads are SHA-256 verified.
+     yet. Web support is tracked in
+     [issue #329](https://github.com/leehack/llamadart/issues/329). All STT
+     actions require the matching projector, and the preset's pinned downloads
+     are SHA-256 verified.
    - Microphone capture is enabled on Android, iOS, macOS, and Windows when a
      compatible ASR model is active. It remains hidden on Linux because the
      recorder plugin can report startup before its required external tools are
      ready; selected-file transcription still works there.
+   - The complete Qwen3-ASR model/projector, microphone, and final-transcript
+     flow has passed on a physical Pixel using CPU inference and in the iOS
+     Simulator. This is not yet physical-iPhone or Windows validation.
    - Gemma 4 E2B is included as a GGUF + `mmproj` bundle. In the current
      native `llama.cpp` mtmd path used here, that projector exposes image,
      audio, and video input. Audio remains experimental upstream; start with

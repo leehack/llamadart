@@ -1133,7 +1133,11 @@ void main() {
       expect(model.supportsAudio, isTrue);
       expect(model.supportsSpeechToTextFor(web: false), isTrue);
       expect(model.supportsSpeechToTextFor(web: true), isFalse);
-      expect(model.isNativeDesktopOnly, isTrue);
+      expect(model.isNativeOnly, isTrue);
+      expect(model.isNativeDesktopOnly, isFalse);
+      expect(model.isAvailableFor(web: false, mobile: true), isTrue);
+      expect(model.isAvailableFor(web: false, mobile: false), isTrue);
+      expect(model.isAvailableFor(web: true, mobile: false), isFalse);
       expect(model.sizeBytesFor(web: false), 1019141728);
       expect(model.preset.temperature, 0);
       expect(model.preset.topK, 1);
@@ -1186,7 +1190,7 @@ void main() {
       expect(small.preset.contextSize, 4096);
     });
 
-    test('large models are native-desktop-only while Gemma E4B is not', () {
+    test('large models remain desktop-only while Qwen3-ASR is native', () {
       final desktopModels = DownloadableModel.defaultModels
           .where((model) => model.isNativeDesktopOnly)
           .toList(growable: false);
@@ -1194,7 +1198,6 @@ void main() {
       expect(
         desktopModels.map((model) => model.name),
         orderedEquals(const [
-          'Qwen3-ASR 0.6B',
           'Gemma 4 12B it',
           'Gemma 4 26B A4B it',
           'Gemma 4 31B it',
@@ -1206,6 +1209,14 @@ void main() {
         expect(model.isAvailableFor(web: false, mobile: true), isFalse);
         expect(model.isAvailableFor(web: true, mobile: false), isFalse);
       }
+
+      final qwenAsr = DownloadableModel.defaultModels.singleWhere(
+        (model) => model.name == 'Qwen3-ASR 0.6B',
+      );
+      expect(qwenAsr.isNativeOnly, isTrue);
+      expect(qwenAsr.isAvailableFor(web: false, mobile: true), isTrue);
+      expect(qwenAsr.isAvailableFor(web: false, mobile: false), isTrue);
+      expect(qwenAsr.isAvailableFor(web: true, mobile: false), isFalse);
 
       final gemmaE4b = DownloadableModel.defaultModels.singleWhere(
         (model) => model.name == 'Gemma 4 E4B it',

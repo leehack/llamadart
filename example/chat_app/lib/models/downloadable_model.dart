@@ -23,7 +23,7 @@ enum ModelAssetRole { model, multimodalProjector }
 
 enum ModelMediaInputMode { externalProjector, direct, none }
 
-enum ModelAvailability { all, nativeDesktop }
+enum ModelAvailability { all, native, nativeDesktop }
 
 abstract class ModelAssetSource {
   const ModelAssetSource();
@@ -386,8 +386,14 @@ class DownloadableModel {
   bool get isNativeDesktopOnly =>
       availability == ModelAvailability.nativeDesktop;
 
+  bool get isNativeOnly => availability == ModelAvailability.native;
+
   bool isAvailableFor({required bool web, required bool mobile}) =>
-      availability == ModelAvailability.all || (!web && !mobile);
+      switch (availability) {
+        ModelAvailability.all => true,
+        ModelAvailability.native => !web,
+        ModelAvailability.nativeDesktop => !web && !mobile,
+      };
 
   static final List<DownloadableModel> defaultModels = List.unmodifiable([
     DownloadableModel(
@@ -460,7 +466,7 @@ class DownloadableModel {
       webSupportsAudio: false,
       webSupportsSpeechToText: false,
       distribution: 'ggml-org',
-      availability: ModelAvailability.nativeDesktop,
+      availability: ModelAvailability.native,
       minRamGb: 4,
       preset: const ModelPreset(
         temperature: 0,

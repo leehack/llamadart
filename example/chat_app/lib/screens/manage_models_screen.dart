@@ -21,7 +21,7 @@ import '../widgets/tool_declarations_dialog.dart';
 
 enum _CustomModelRemoval { entryOnly, entryAndFiles }
 
-enum _ModelPlatformFilter { all, mobileAndWeb, desktop }
+enum _ModelPlatformFilter { all, mobile, web, desktop }
 
 enum _ModelLibraryMenuAction { removeAll }
 
@@ -157,8 +157,11 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
           defaultTargetPlatform == TargetPlatform.iOS);
 
   _ModelPlatformFilter get _currentPlatformFilter {
-    if (kIsWeb || _isMobilePlatform) {
-      return _ModelPlatformFilter.mobileAndWeb;
+    if (kIsWeb) {
+      return _ModelPlatformFilter.web;
+    }
+    if (_isMobilePlatform) {
+      return _ModelPlatformFilter.mobile;
     }
     return _ModelPlatformFilter.desktop;
   }
@@ -170,7 +173,11 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
   bool _matchesPlatformFilter(DownloadableModel model) {
     return switch (_modelPlatformFilter) {
       _ModelPlatformFilter.all => true,
-      _ModelPlatformFilter.mobileAndWeb => model.isAvailableFor(
+      _ModelPlatformFilter.mobile => model.isAvailableFor(
+        web: false,
+        mobile: true,
+      ),
+      _ModelPlatformFilter.web => model.isAvailableFor(
         web: true,
         mobile: false,
       ),
@@ -186,11 +193,11 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
     if (query.isEmpty) {
       return true;
     }
-    // A Web user can browse the Desktop catalog. In that scope, search the
-    // native capability profile rather than hiding features unavailable only
-    // in the browser runtime.
+    // A Web user can browse the All, Mobile, and Desktop catalogs. Outside the
+    // Web filter, search the native capability profile rather than hiding
+    // features unavailable only in the browser runtime.
     final useWebCapabilities =
-        kIsWeb && _modelPlatformFilter != _ModelPlatformFilter.desktop;
+        kIsWeb && _modelPlatformFilter == _ModelPlatformFilter.web;
     final searchable = <String>[
       model.name,
       model.description,
@@ -1647,9 +1654,13 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
                                   'All',
                                   Icons.apps_rounded,
                                 ),
-                                _ModelPlatformFilter.mobileAndWeb => (
-                                  'Mobile & Web',
+                                _ModelPlatformFilter.mobile => (
+                                  'Mobile',
                                   Icons.smartphone_rounded,
+                                ),
+                                _ModelPlatformFilter.web => (
+                                  'Web',
+                                  Icons.language_rounded,
                                 ),
                                 _ModelPlatformFilter.desktop => (
                                   'Desktop',
