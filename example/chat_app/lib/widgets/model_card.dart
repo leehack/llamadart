@@ -200,7 +200,7 @@ class ModelCard extends StatelessWidget {
                           icon: switch (model.availability) {
                             ModelAvailability.all => Icons.devices_rounded,
                             ModelAvailability.native =>
-                              Icons.phone_android_rounded,
+                              Icons.devices_other_rounded,
                             ModelAvailability.nativeDesktop =>
                               Icons.desktop_mac_outlined,
                           },

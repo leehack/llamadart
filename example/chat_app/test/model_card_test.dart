@@ -105,6 +105,7 @@ void main() {
     expect(find.text('Audio'), findsOneWidget);
     expect(find.text('Speech-to-text'), findsOneWidget);
     expect(find.text('Native platforms'), findsOneWidget);
+    expect(find.byIcon(Icons.devices_other_rounded), findsOneWidget);
     expect(find.text('Use Text Only'), findsNothing);
     expect(find.text('Download Missing Assets'), findsOneWidget);
   });

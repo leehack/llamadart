@@ -135,9 +135,7 @@ void main() {
     expect(find.byTooltip('Record audio'), findsNothing);
   });
 
-  testWidgets('shows transcription and recording for supported native ASR models', (
-    tester,
-  ) async {
+  testWidgets('shows supported ASR recording controls', (tester) async {
     final engine = _SpeechMockLlamaEngine();
     final provider = ChatProvider(
       chatService: MockChatService(engine: engine),
