@@ -71,18 +71,22 @@ flutter test
   a safe external-recorder preflight, while selected-file transcription remains
   available there. Web support is tracked in
   [issue #329](https://github.com/leehack/llamadart/issues/329).
-- **Ask with voice** for the native Gemma 4 E2B LiteRT-LM direct-media preset.
-  It records up to 30 seconds, then **Stop & ask** sends the WAV bytes through
-  ordinary multimodal chat so the model can answer the spoken request. It does
-  not use `SpeechToTextEngine` and provides no transcript, timestamp,
-  confidence, or live-partial contract. Qwen3-ASR keeps the separate
+- **Ask with voice** for native Gemma 4 E2B, using either the LiteRT-LM
+  direct-media bundle or the GGUF model with its matching audio-capable
+  projector. It records up to 30 seconds, then **Stop & ask** sends the WAV
+  bytes through ordinary multimodal chat so the model can answer the spoken
+  request. It does not use `SpeechToTextEngine` and provides no transcript,
+  timestamp, confidence, or live-partial contract. Qwen3-ASR keeps the separate
   five-minute **Stop & transcribe** workflow and takes precedence for ASR
   profiles.
 - The voice-question UI is code-supported on Android, iOS, macOS, and Windows
-  when the selected native profile declares direct audio input; Linux recording and Web are
-  excluded. That platform gating is not an end-to-end validation claim.
-  Real-model/device results should cite the `chat-app-voice-question-smoke`
-  test-matrix row.
+  when the selected native profile declares direct audio input or the loaded
+  projector reports audio support; Linux recording and Web are excluded. That
+  platform gating is not an end-to-end validation claim. The experimental
+  llama.cpp GGUF audio-answer path currently has engine-level real-model
+  evidence on macOS, not microphone UI/device evidence on mobile.
+  Real-model/device results should cite the
+  `chat-app-voice-question-smoke` test-matrix row.
 - Voice-question capture makes a best-effort attempt to delete the temporary
   WAV after reading it. The encoded bytes remain in the in-memory conversation
   history for subsequent turns and regeneration, which can reprocess the

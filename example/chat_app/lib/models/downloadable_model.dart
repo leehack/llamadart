@@ -478,17 +478,39 @@ class DownloadableModel {
         thinkingEnabled: false,
       ),
     ),
-    DownloadableModel(
+    DownloadableModel.fromSources(
       name: 'Gemma 4 E2B it',
       description:
           'Compact multimodal assistant for image, audio, and video input.',
-      url:
-          'https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/main/gemma-4-E2B-it-Q4_K_S.gguf?download=true',
-      filename: 'gemma-4-E2B-it-Q4_K_S.gguf',
-      mmprojUrl:
-          'https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/main/mmproj-F16.gguf?download=true',
-      mmprojFilename: 'gemma-4-E2B-it-mmproj-F16.gguf',
-      sizeBytes: 3043927168,
+      modelSource: const RemoteModelAssetSource(
+        url:
+            'https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/90f9618340396838ee7ff5b0ba2da27da62953d3/gemma-4-E2B-it-Q4_K_S.gguf?download=true',
+        filename: 'gemma-4-E2B-it-Q4_K_S.gguf',
+        sizeBytes: 3043932288,
+        sha256:
+            '0a2fac16f388b4839f075dedb681357aec3e73a96bd66b413e462b6853550c99',
+      ),
+      multimodalProjectorSource: const RemoteModelAssetSource(
+        url:
+            'https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/90f9618340396838ee7ff5b0ba2da27da62953d3/mmproj-F16.gguf?download=true',
+        filename: 'gemma-4-E2B-it-mmproj-F16.gguf',
+        sizeBytes: 985654080,
+        sha256:
+            '140be8d7849741f88c50757d529b84373ee8e27052cc2236855b537f4a8215fa',
+      ),
+      sizeBytes: 4029586368,
+      webSizeBytes: 3043927168,
+      webModelSource: const RemoteModelAssetSource(
+        url:
+            'https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/main/gemma-4-E2B-it-Q4_K_S.gguf?download=true',
+        filename: 'gemma-4-E2B-it-Q4_K_S.gguf',
+        sizeBytes: 3043927168,
+      ),
+      webMultimodalProjectorSource: const RemoteModelAssetSource(
+        url:
+            'https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/main/mmproj-F16.gguf?download=true',
+        filename: 'gemma-4-E2B-it-mmproj-F16.gguf',
+      ),
       distribution: 'Unsloth',
       minRamGb: 8,
       supportsVision: true,

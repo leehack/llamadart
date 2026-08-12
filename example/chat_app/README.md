@@ -114,20 +114,21 @@ flutter test --run-skipped -t local-only \
    - The complete Qwen3-ASR model/projector, microphone, and final-transcript
      flow has passed on a physical Pixel using CPU inference and in the iOS
      Simulator. This is not yet physical-iPhone or Windows validation.
-   - The native Gemma 4 E2B LiteRT-LM preset exposes **Ask with voice** when its
-     selected platform profile declares direct audio input. It records for at
-     most 30 seconds;
-     **Stop & ask** sends the encoded WAV bytes through normal multimodal chat
-     and asks the model to answer the spoken request. This is not
+   - The native Gemma 4 E2B presets expose **Ask with voice** when either the
+     LiteRT-LM platform profile declares direct audio input or the matching
+     GGUF projector is loaded and reports audio support. It records for at most
+     30 seconds; **Stop & ask** sends the encoded WAV bytes through normal
+     multimodal chat and asks the model to answer the spoken request. This is not
      `SpeechToTextEngine`: it has no transcript, timestamp, confidence, or live
      partial-text contract. Qwen3-ASR continues to use the separate five-minute
      **Stop & transcribe** flow, and takes precedence for models declared as
      ASR profiles.
    - The voice-question UI is code-supported on Android, iOS, macOS, and
-     Windows when the native direct-media bundle and microphone recorder are
-     available. Linux recording and Web are excluded. Automated tests cover
-     capability gating and lifecycle behavior, but each native platform still
-     requires real-model/device evidence before being described as validated.
+     Windows when a native direct-media bundle or audio-capable projector and
+     microphone recorder are available. Linux recording and Web are excluded.
+     Automated tests cover capability gating and lifecycle behavior, but each
+     native platform still requires real-model/device evidence before being
+     described as validated.
      See the `chat-app-voice-question-smoke` row in
      `tool/testing/test_matrix.dart`.
    - After **Stop & ask**, the app makes a best-effort attempt to delete the
@@ -139,11 +140,14 @@ flutter test --run-skipped -t local-only \
      runs text (and vision, when used), while its bundle-constrained audio
      executor runs on CPU. This is not a claim that LiteRT-LM audio is
      universally CPU-only.
-   - Gemma 4 E2B is included as a GGUF + `mmproj` bundle. In the current
-     native `llama.cpp` mtmd path used here, that projector exposes image,
-     audio, and video input. Audio remains experimental upstream; start with
-     short mono clips for the most reliable results. Web keeps audio
-     runtime-gated until the loaded bridge reports support.
+   - Gemma 4 E2B is included as a GGUF + `mmproj` bundle. In the current native
+     `llama.cpp` mtmd path used here, that projector exposes image, audio, and
+     video input, so it uses the same **Ask with voice** interaction. Audio
+     remains experimental upstream; start with short mono clips for the most
+     reliable results. The GGUF audio-answer path has current engine-level
+     real-model evidence on macOS; microphone UI/device validation on Android
+     and iOS remains outstanding. Web keeps audio runtime-gated until the
+     loaded bridge reports support.
    - LiteRT-LM `.litertlm` presets, when present, use the same model library
      flow. The example `pubspec.yaml` enables the `litert_lm` native runtime
      family for supported native targets, while Web builds load web-compatible

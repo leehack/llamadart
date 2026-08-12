@@ -167,13 +167,19 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     mode: 'local-only',
     covers:
         'real GGUF llama.cpp chat, thinking-budget/suppression, streaming '
-        'tool calls, optional multimodal input',
+        'tool calls, and optional image input, or a separate byte-backed audio '
+        'question-answering variant with an exact expected answer',
     command:
-        'dart run tool/testing/run_local_e2e.dart --scenario '
+        'Base/image: dart run tool/testing/run_local_e2e.dart --scenario '
         'gguf-chat-features-smoke --model-path <model.gguf> --backend auto '
-        '[--mmproj-path <mmproj.gguf> --image-path <image>]',
+        '[--mmproj-path <mmproj.gguf> --image-path <image>]; audio-only: dart '
+        'run tool/testing/run_local_e2e.dart --scenario '
+        'gguf-chat-features-smoke --model-path <model.gguf> --backend auto '
+        '--mmproj-path <mmproj.gguf> --audio-path <question.wav> '
+        '--expect <expected-answer>',
     useWhen:
-        'Chat rendering, parser, tool calling, thinking, or GGUF feature work.',
+        'Chat rendering, parser, tool calling, thinking, multimodal input, or '
+        'llama.cpp Ask-with-voice work.',
   ),
   TestMatrixRow(
     id: 'speech-to-text-smoke',
@@ -212,21 +218,25 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     tier: 'targeted',
     mode: 'manual/device',
     covers:
-        'native Gemma 4 E2B LiteRT-LM direct-media microphone input, the '
-        '30-second cap, answer-not-transcript behavior, conversation reuse, '
-        'and temporary-WAV cleanup',
+        'native Gemma 4 E2B LiteRT-LM direct-media and experimental llama.cpp '
+        'GGUF + projector microphone input, the 30-second cap, '
+        'answer-not-transcript behavior, conversation reuse, and '
+        'temporary-WAV cleanup',
     command:
         'Run example/chat_app on a microphone-equipped native device with the '
-        'Gemma 4 E2B LiteRT-LM preset. Record a known spoken instruction, use '
-        'Stop & ask, verify the assistant answers it rather than automatically '
+        'Gemma 4 E2B LiteRT-LM preset, then repeat with the pinned E2B GGUF + '
+        'audio-capable projector. Record a known spoken instruction, use Stop '
+        '& ask, verify the assistant answers it rather than automatically '
         'transcribing it, then send a text follow-up and regenerate the answer '
         'to verify audio context reuse. Repeat with the automatic 30-second '
         'limit and Discard, and confirm temporary-WAV cleanup. Record the '
-        'platform/device, exact model artifact hash, backend, permission '
-        'result, answer, cold/warm latency, memory, and cleanup evidence.',
+        'platform/device, exact model and projector artifact hashes, backend, '
+        'permission result, answer, cold/warm latency, memory, and cleanup '
+        'evidence. llama.cpp audio input is experimental; do not generalize '
+        'the current macOS result to mobile without device evidence.',
     useWhen:
-        'Chat-app Ask with voice, native LiteRT-LM audio input, microphone '
-        'lifecycle, or byte-backed audio-history behavior changes.',
+        'Chat-app Ask with voice, native LiteRT-LM or llama.cpp audio input, '
+        'microphone lifecycle, or byte-backed audio-history behavior changes.',
   ),
   TestMatrixRow(
     id: 'llama-cpp-chat-template-smoke',

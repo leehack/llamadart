@@ -100,10 +100,9 @@ class ChatProvider extends ChangeNotifier {
   );
 
   static const String _voiceQuestionPrompt =
-      'Listen to the attached recording and answer the spoken request '
-      'directly. Do not provide a transcript or describe the audio unless the '
-      'speaker asks for that. If there is no clear spoken request, briefly ask '
-      'the user to record it again.';
+      'Listen carefully to every spoken word. Determine what the speaker is '
+      'asking, solve that request, and return only the final answer. Do not '
+      'merely repeat a word from the recording.';
   static const String _androidDebugImagePath = String.fromEnvironment(
     'LLAMADART_CHAT_APP_DEBUG_IMAGE_PATH',
     defaultValue: '',
@@ -272,10 +271,27 @@ class ChatProvider extends ChangeNotifier {
       _supportsAudio &&
       _settings.modelSupportsSpeechToText;
 
-  /// Whether the active direct-media model can answer a recorded question.
+  bool get _supportsVoiceQuestionInput {
+    if (!_settings.modelSupportsAudio || _settings.modelSupportsSpeechToText) {
+      return false;
+    }
+    if (_settings.directMediaInput) {
+      return true;
+    }
+
+    final configuredMmproj = (_settings.mmprojPath ?? '').trim();
+    final loadedMmproj = (_loadedMmprojPath ?? '').trim();
+    return configuredMmproj.isNotEmpty &&
+        _mmprojLoaded &&
+        loadedMmproj == configuredMmproj &&
+        _supportsAudio;
+  }
+
+  /// Whether the active audio-chat model can answer a recorded question.
   ///
-  /// This intentionally excludes dedicated ASR profiles. The initial product
-  /// path is native Gemma 4 through LiteRT-LM, whose Web bundle is text-only.
+  /// Direct-media models use their declared audio capability. External-media
+  /// models additionally require a configured, loaded projector and a positive
+  /// runtime audio capability probe. Dedicated ASR profiles remain separate.
   bool get canAskWithVoice =>
       !kIsWeb &&
       _isLoaded &&
@@ -284,9 +300,7 @@ class ChatProvider extends ChangeNotifier {
       !_isTranscribing &&
       !hasActiveAudioRecording &&
       _supportsAudio &&
-      _settings.modelSupportsAudio &&
-      _settings.directMediaInput &&
-      !_settings.modelSupportsSpeechToText;
+      _supportsVoiceQuestionInput;
 
   /// Whether the selected model/platform exposes a microphone action.
   ///
@@ -295,10 +309,7 @@ class ChatProvider extends ChangeNotifier {
   bool get supportsMicrophoneRecording =>
       !kIsWeb &&
       _audioRecordingService.isSupported &&
-      (_settings.modelSupportsSpeechToText ||
-          (_settings.modelSupportsAudio &&
-              _settings.directMediaInput &&
-              !_settings.modelSupportsSpeechToText));
+      (_settings.modelSupportsSpeechToText || _supportsVoiceQuestionInput);
 
   /// Whether the active model can start a supported microphone workflow.
   bool get canStartAudioRecording =>

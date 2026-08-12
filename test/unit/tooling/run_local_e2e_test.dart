@@ -16,6 +16,7 @@ void main() {
       expect(result.stdout, contains('--ngram-cache-build-text <txt>'));
       expect(result.stdout, contains('--ngram-token-max <n>'));
       expect(result.stdout, contains('--allow-any-response'));
+      expect(result.stdout, contains('GGUF_AUDIO_EXPECTED_TEXT'));
       expect(
         result.stdout,
         contains('defaults to the resolved benchmark prompt'),
@@ -228,6 +229,78 @@ void main() {
           'models/Qwen3.5-0.8B-mmproj-F16.gguf test/fixtures/image.png',
         ),
       );
+    });
+
+    test('dry-runs GGUF audio chat with an exact expected answer', () async {
+      final result = await runLocalE2e(const [
+        '--scenario',
+        'gguf-chat-features-smoke',
+        '--model-path',
+        'models/gemma-4-E2B-it-Q4_K_S.gguf',
+        '--backend',
+        'metal',
+        '--mmproj-path',
+        'models/gemma-4-E2B-it-mmproj-F16.gguf',
+        '--audio-path',
+        'test/fixtures/question.wav',
+        '--expect',
+        '4',
+        '--dry-run',
+      ], projectRoot: '/repo');
+
+      expect(result.exitCode, 0);
+      expect(
+        result.stdout,
+        contains('GGUF_AUDIO_PATH=test/fixtures/question.wav'),
+      );
+      expect(result.stdout, contains('GGUF_AUDIO_EXPECTED_TEXT=4'));
+      expect(
+        result.stdout,
+        contains(
+          'dart run tool/gguf_chat_features_smoke.dart '
+          'models/gemma-4-E2B-it-Q4_K_S.gguf metal '
+          'models/gemma-4-E2B-it-mmproj-F16.gguf',
+        ),
+      );
+    });
+
+    test('requires an exact expected GGUF audio answer', () async {
+      final result = await runLocalE2e(const [
+        '--scenario',
+        'gguf-chat-features-smoke',
+        '--model-path',
+        'models/gemma-4-E2B-it-Q4_K_S.gguf',
+        '--mmproj-path',
+        'models/gemma-4-E2B-it-mmproj-F16.gguf',
+        '--audio-path',
+        'test/fixtures/question.wav',
+        '--dry-run',
+      ], projectRoot: '/repo');
+
+      expect(result.exitCode, 64);
+      expect(result.stderr, contains('A nonempty --expect is required'));
+      expect(result.stderr, contains('gguf-chat-features-smoke'));
+    });
+
+    test('keeps GGUF image and audio variants separate', () async {
+      final result = await runLocalE2e(const [
+        '--scenario',
+        'gguf-chat-features-smoke',
+        '--model-path',
+        'models/gemma-4-E2B-it-Q4_K_S.gguf',
+        '--mmproj-path',
+        'models/gemma-4-E2B-it-mmproj-F16.gguf',
+        '--image-path',
+        'test/fixtures/image.png',
+        '--audio-path',
+        'test/fixtures/question.wav',
+        '--expect',
+        '4',
+        '--dry-run',
+      ], projectRoot: '/repo');
+
+      expect(result.exitCode, 64);
+      expect(result.stderr, contains('select separate'));
     });
 
     test('dry-runs typed speech-to-text with exact fixture inputs', () async {

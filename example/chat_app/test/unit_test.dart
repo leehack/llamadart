@@ -1263,6 +1263,59 @@ void main() {
       );
     });
 
+    test('Gemma 4 E2B GGUF pins its verified native bundle', () {
+      final model = DownloadableModel.defaultModels.singleWhere(
+        (model) => model.name == 'Gemma 4 E2B it',
+      );
+      final nativeModelSource = model.modelSource as RemoteModelAssetSource;
+      final nativeProjectorSource =
+          model.multimodalProjectorSource as RemoteModelAssetSource;
+      final webModelSource = model.webModelSource as RemoteModelAssetSource;
+      final webProjectorSource =
+          model.webMultimodalProjectorSource as RemoteModelAssetSource;
+
+      expect(
+        nativeModelSource.url,
+        'https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/90f9618340396838ee7ff5b0ba2da27da62953d3/gemma-4-E2B-it-Q4_K_S.gguf?download=true',
+      );
+      expect(nativeModelSource.filename, 'gemma-4-E2B-it-Q4_K_S.gguf');
+      expect(nativeModelSource.sizeBytes, 3043932288);
+      expect(
+        nativeModelSource.sha256,
+        '0a2fac16f388b4839f075dedb681357aec3e73a96bd66b413e462b6853550c99',
+      );
+      expect(
+        nativeProjectorSource.url,
+        'https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/90f9618340396838ee7ff5b0ba2da27da62953d3/mmproj-F16.gguf?download=true',
+      );
+      expect(nativeProjectorSource.filename, 'gemma-4-E2B-it-mmproj-F16.gguf');
+      expect(nativeProjectorSource.sizeBytes, 985654080);
+      expect(
+        nativeProjectorSource.sha256,
+        '140be8d7849741f88c50757d529b84373ee8e27052cc2236855b537f4a8215fa',
+      );
+      expect(
+        model.sizeBytesFor(web: false),
+        nativeModelSource.sizeBytes! + nativeProjectorSource.sizeBytes!,
+      );
+
+      expect(
+        webModelSource.url,
+        'https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/main/gemma-4-E2B-it-Q4_K_S.gguf?download=true',
+      );
+      expect(webModelSource.filename, nativeModelSource.filename);
+      expect(webModelSource.sizeBytes, 3043927168);
+      expect(webModelSource.sha256, isNull);
+      expect(
+        webProjectorSource.url,
+        'https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/main/mmproj-F16.gguf?download=true',
+      );
+      expect(webProjectorSource.filename, nativeProjectorSource.filename);
+      expect(webProjectorSource.sizeBytes, isNull);
+      expect(webProjectorSource.sha256, isNull);
+      expect(model.sizeBytesFor(web: true), 3043927168);
+    });
+
     test('Gemma 4 E2B LiteRT-LM pins its verified native bundle', () {
       final model = DownloadableModel.defaultModels.singleWhere(
         (model) => model.name == 'Gemma 4 E2B LiteRT-LM',

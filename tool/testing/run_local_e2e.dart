@@ -221,7 +221,7 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       name: 'gguf-chat-features-smoke',
       group: LocalE2eScenarioGroup.dartLocalOnly,
       description:
-          'Run real GGUF chat, thinking-budget/suppression, and tool-call smoke.',
+          'Run real GGUF chat/tool/thinking smoke or a separate optional exact audio-answer variant.',
       requiresDevice: false,
       stepsBuilder: (context) {
         final arguments = <String>['run', 'tool/gguf_chat_features_smoke.dart'];
@@ -240,6 +240,12 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
             workingDirectory: context.projectRoot,
             executable: 'dart',
             arguments: arguments,
+            environment: {
+              if (context.audioPath != null)
+                'GGUF_AUDIO_PATH': context.audioPath!,
+              if (context.audioPath != null && context.expectProvided)
+                'GGUF_AUDIO_EXPECTED_TEXT': context.expect,
+            },
             description: 'GGUF chat feature smoke',
           ),
         ];
@@ -720,6 +726,16 @@ Future<LocalE2eResult> runLocalE2e(
   if (parsed.audioPath != null && parsed.mmprojPath == null) {
     return LocalE2eResult(64, stderr: '--audio-path requires --mmproj-path.\n');
   }
+  if (scenario.name == 'gguf-chat-features-smoke' &&
+      parsed.audioPath != null &&
+      parsed.imagePath != null) {
+    return const LocalE2eResult(
+      64,
+      stderr:
+          '--audio-path and --image-path select separate '
+          'gguf-chat-features-smoke variants.\n',
+    );
+  }
   if (scenario.name == 'speech-to-text-smoke' &&
       (parsed.modelPath == null ||
           parsed.mmprojPath == null ||
@@ -731,6 +747,16 @@ Future<LocalE2eResult> runLocalE2e(
       stderr:
           '--model-path, --mmproj-path, --audio-path, and a nonempty --expect '
           'are required for speech-to-text-smoke.\n',
+    );
+  }
+  if (scenario.name == 'gguf-chat-features-smoke' &&
+      parsed.audioPath != null &&
+      (!parsed.expectProvided || parsed.expect.trim().isEmpty)) {
+    return const LocalE2eResult(
+      64,
+      stderr:
+          'A nonempty --expect is required when --audio-path is set for '
+          'gguf-chat-features-smoke.\n',
     );
   }
   if ((scenario.name == 'llama-cpp-speculative-benchmark' ||
@@ -964,7 +990,7 @@ Options:
   --draft-model-path <path>      Optional draft GGUF model path for llama.cpp speculative benchmark.
   --mmproj-path <path>           Optional multimodal projector path for GGUF chat smoke.
   --image-path <path>            Optional image path for GGUF chat smoke multimodal variant.
-  --audio-path <path>            Complete audio fixture for speech-to-text smoke.
+  --audio-path <path>            Complete audio fixture for speech-to-text or GGUF audio-chat smoke.
   --model-url <url>              Model URL for real-model web smoke.
   --backend <name>               Backend for local model scenarios (default: auto).
   --speculative-cases <list>     Benchmark cases for llama.cpp speculative benchmark.
@@ -982,7 +1008,7 @@ Options:
                                  Build a static ngram-cache file before speculative benchmark.
   --ngram-cache-build-text <txt> Optional source text for generated ngram-cache static file
                                  (defaults to the resolved benchmark prompt).
-  --expect <text>                Expected response text for real-model web smoke.
+  --expect <text>                Exact expected transcript/answer, or expected real-model Web response.
   --allow-any-response           Accept any non-empty real-model Web response.
   --skip-build                   Reuse an existing Flutter web build where supported.
   -h, --help                     Show this help.
@@ -991,6 +1017,10 @@ Inherited environment for litert-lm-chat-features-smoke:
   LITERT_LM_IMAGE_PATH           Optional local image fixture.
   LITERT_LM_AUDIO_PATH           Optional local encoded audio fixture.
   LITERT_LM_AUDIO_EXPECTED_TEXT  Required exact expected answer when audio is set.
+
+Direct environment for tool/gguf_chat_features_smoke.dart:
+  GGUF_AUDIO_PATH                Optional local encoded WAV fixture.
+  GGUF_AUDIO_EXPECTED_TEXT       Required exact expected answer when audio is set.
 ''';
 }
 

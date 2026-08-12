@@ -132,12 +132,13 @@ different user actions:
   five minutes. **Stop & transcribe** finalizes that file and passes it to
   `SpeechToTextEngine`, while **Discard** cancels capture and removes the
   partial file.
-- With the native Gemma 4 E2B LiteRT-LM direct-media preset, **Ask with voice**
-  records up to 30 seconds and **Stop & ask** sends the WAV bytes through
-  normal multimodal chat. The model is prompted to answer the spoken request;
-  this path does not promise a transcript, timestamps, confidence, detected
-  language, or live partial text. An ASR profile takes precedence when both
-  capability declarations are present.
+- With native Gemma 4 E2B, **Ask with voice** uses either the LiteRT-LM
+  direct-media bundle or the GGUF model with its matching audio-capable
+  projector. It records up to 30 seconds and **Stop & ask** sends the WAV bytes
+  through normal multimodal chat. The model is prompted to answer the spoken
+  request; this path does not promise a transcript, timestamps, confidence,
+  detected language, or live partial text. An ASR profile takes precedence
+  when both capability declarations are present.
 
 The transcription action is hidden on Web and for current LiteRT-LM bundles.
 ASR microphone recordings are capped at five minutes, cancelled when the app is
@@ -149,10 +150,12 @@ Capture for both microphone workflows is code-supported on Android, iOS, macOS,
 and Windows. It remains disabled on Linux with the current recorder plugin
 because its external-tool startup is not safe to expose without a stronger
 preflight; selected-file transcription is unchanged there. **Ask with voice**
-also requires a native direct-media audio model and is unavailable on Web.
-These capability gates do not establish real-model behavior on every platform;
-record device evidence with the `chat-app-voice-question-smoke` test-matrix row
-before making a platform validation claim.
+also requires a native direct-media audio model or an audio-capable projector
+and is unavailable on Web. These capability gates do not establish real-model
+behavior on every platform. The experimental llama.cpp GGUF voice path has
+current real-model evidence on macOS, not Android or iOS; record device evidence
+with the `chat-app-voice-question-smoke` test-matrix row before making a
+platform validation claim.
 
 The voice-question path makes a best-effort attempt to delete its temporary WAV
 after reading it, but keeps the encoded audio bytes in the in-memory
