@@ -42,6 +42,9 @@ class ChatMessage {
     return false;
   }
 
+  /// Whether this assistant message came from the speech-to-text workflow.
+  bool get isTranscription => debugBadges.contains('Transcription');
+
   /// Derived property to get thinking content if present.
   String? get thinkingText {
     final thinkingPart = parts?.whereType<LlamaThinkingContent>().firstOrNull;

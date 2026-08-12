@@ -176,6 +176,21 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'Chat rendering, parser, tool calling, thinking, or GGUF feature work.',
   ),
   TestMatrixRow(
+    id: 'speech-to-text-smoke',
+    tier: 'targeted',
+    mode: 'local-only',
+    covers:
+        'real native Qwen3-ASR projector capability, whole-file transcription, '
+        'language-marker normalization, and exact known-fixture text',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario '
+        'speech-to-text-smoke --model-path <model.gguf> '
+        '--mmproj-path <mmproj.gguf> --audio-path <fixture.wav> '
+        '--expect "<expected transcript>"',
+    useWhen:
+        'Speech API, native audio routing, transcript normalization, or chat-app transcription changes.',
+  ),
+  TestMatrixRow(
     id: 'llama-cpp-chat-template-smoke',
     tier: 'targeted',
     mode: 'local-only',

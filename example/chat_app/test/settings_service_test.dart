@@ -117,6 +117,7 @@ void main() {
       const settings = ChatSettings(
         modelSupportsVision: false,
         modelSupportsAudio: true,
+        modelSupportsSpeechToText: true,
         directMediaInput: true,
       );
 
@@ -125,6 +126,7 @@ void main() {
 
       expect(restored.modelSupportsVision, isFalse);
       expect(restored.modelSupportsAudio, isTrue);
+      expect(restored.modelSupportsSpeechToText, isTrue);
       expect(restored.directMediaInput, isTrue);
     });
 
@@ -142,6 +144,29 @@ void main() {
         expect(settings.directMediaInput, isTrue);
       },
     );
+
+    test('migrates the catalog Qwen3-ASR filename to typed STT', () async {
+      SharedPreferences.setMockInitialValues({
+        'model_path': '/models/Qwen3-ASR-0.6B-Q8_0.gguf',
+      });
+
+      final service = SettingsService();
+      final settings = await service.loadSettings();
+
+      expect(settings.modelSupportsSpeechToText, isTrue);
+    });
+
+    test('preserves an explicit disabled Qwen3-ASR STT setting', () async {
+      SharedPreferences.setMockInitialValues({
+        'model_path': '/models/Qwen3-ASR-0.6B-Q8_0.gguf',
+        'model_supports_speech_to_text': false,
+      });
+
+      final service = SettingsService();
+      final settings = await service.loadSettings();
+
+      expect(settings.modelSupportsSpeechToText, isFalse);
+    });
 
     test('migrates saved Unsloth UD Qwen model paths to Q4_K_M', () async {
       SharedPreferences.setMockInitialValues({

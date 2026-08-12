@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'dart:io';
+
+import 'package:crypto/crypto.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:llamadart_chat_example/models/downloadable_model.dart';
-import 'package:dio/dio.dart';
 import 'package:llamadart_chat_example/services/model_service_base.dart';
 import 'package:llamadart_chat_example/services/model_service_io.dart';
 import 'package:path/path.dart' as p;
@@ -124,6 +126,63 @@ void main() {
     expect(file.existsSync(), isTrue);
     expect(file.lengthSync(), testDataSize);
     expect(file.readAsBytesSync(), testData);
+  });
+
+  test('verified remote download enforces the catalog SHA-256', () async {
+    final model = DownloadableModel.fromSources(
+      name: 'Verified model',
+      description: 'Test',
+      modelSource: RemoteModelAssetSource(
+        url: '$baseUrl/model.gguf',
+        filename: 'verified-model.gguf',
+        sizeBytes: testDataSize,
+        sha256: sha256.convert(testData).toString(),
+      ),
+      sizeBytes: testDataSize,
+    );
+
+    Object? failure;
+    await service.downloadModel(
+      model: model,
+      modelsDir: tempDir.path,
+      cancelToken: CancelToken(),
+      onProgress: (_) {},
+      onSuccess: (_) {},
+      onError: (error) => failure = error,
+    );
+
+    expect(failure, isNull);
+    expect((await service.getModelCacheState(model)).isReady, isTrue);
+  });
+
+  test('failed catalog checksum discards the downloaded asset', () async {
+    final model = DownloadableModel.fromSources(
+      name: 'Invalid verified model',
+      description: 'Test',
+      modelSource: RemoteModelAssetSource(
+        url: '$baseUrl/model.gguf',
+        filename: 'invalid-verified-model.gguf',
+        sizeBytes: testDataSize,
+        sha256: List<String>.filled(64, '0').join(),
+      ),
+      sizeBytes: testDataSize,
+    );
+
+    Object? failure;
+    await service.downloadModel(
+      model: model,
+      modelsDir: tempDir.path,
+      cancelToken: CancelToken(),
+      onProgress: (_) {},
+      onSuccess: (_) {},
+      onError: (error) => failure = error,
+    );
+
+    expect(failure, isA<StateError>());
+    expect(
+      File(p.join(tempDir.path, 'invalid-verified-model.gguf')).existsSync(),
+      isFalse,
+    );
   });
 
   test('Multimodal download reports staged combined progress', () async {

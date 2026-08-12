@@ -200,6 +200,8 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
       if (model.supportsThinking) 'thinking reasoning',
       if (model.supportsVisionFor(web: useWebCapabilities)) 'vision image',
       if (model.supportsAudioFor(web: useWebCapabilities)) 'audio voice',
+      if (model.supportsSpeechToTextFor(web: useWebCapabilities))
+        'speech-to-text speech to text transcription asr stt',
       if (model.supportsVideoFor(web: useWebCapabilities)) 'video',
     ].join(' ').toLowerCase();
     return query.split(RegExp(r'\s+')).every(searchable.contains);
@@ -302,6 +304,8 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
           sizeBytes: (decoded['sizeBytes'] as int?) ?? 0,
           supportsVision: (decoded['supportsVision'] as bool?) ?? false,
           supportsAudio: (decoded['supportsAudio'] as bool?) ?? false,
+          supportsSpeechToText:
+              (decoded['supportsSpeechToText'] as bool?) ?? false,
           supportsVideo: (decoded['supportsVideo'] as bool?) ?? false,
           supportsToolCalling:
               (decoded['supportsToolCalling'] as bool?) ?? false,
@@ -342,6 +346,7 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
             'sizeBytes': model.sizeBytes,
             'supportsVision': model.supportsVision,
             'supportsAudio': model.supportsAudio,
+            'supportsSpeechToText': model.supportsSpeechToText,
             'supportsVideo': model.supportsVideo,
             'supportsToolCalling': model.supportsToolCalling,
             'supportsThinking': model.supportsThinking,
@@ -671,6 +676,7 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
       sizeBytes: source.sizeBytes,
       supportsVision: source.supportsVision,
       supportsAudio: source.supportsAudio,
+      supportsSpeechToText: source.supportsSpeechToText,
       supportsVideo: source.supportsVideo,
       supportsToolCalling: source.supportsToolCalling,
       supportsThinking: source.supportsThinking,
@@ -737,7 +743,8 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
   }
 
   bool _includeProjectorFor(DownloadableModel model) {
-    return _includeProjectorByFile[model.filename] ?? true;
+    return model.supportsSpeechToTextFor(web: kIsWeb) ||
+        (_includeProjectorByFile[model.filename] ?? true);
   }
 
   void _setIncludeProjector(DownloadableModel model, bool value) {
@@ -2596,6 +2603,7 @@ class _PopularModelsDiscoverySheetState
         'sizeBytes': m.sizeBytes,
         'supportsVision': m.supportsVision,
         'supportsAudio': m.supportsAudio,
+        'supportsSpeechToText': m.supportsSpeechToText,
         'supportsVideo': m.supportsVideo,
         'supportsToolCalling': m.supportsToolCalling,
         'supportsThinking': m.supportsThinking,
@@ -2657,6 +2665,8 @@ class _PopularModelsDiscoverySheetState
       sizeBytes: (modelRaw['sizeBytes'] as num?)?.toInt() ?? 0,
       supportsVision: (modelRaw['supportsVision'] as bool?) ?? false,
       supportsAudio: (modelRaw['supportsAudio'] as bool?) ?? false,
+      supportsSpeechToText:
+          (modelRaw['supportsSpeechToText'] as bool?) ?? false,
       supportsVideo: (modelRaw['supportsVideo'] as bool?) ?? false,
       supportsToolCalling: (modelRaw['supportsToolCalling'] as bool?) ?? false,
       supportsThinking: (modelRaw['supportsThinking'] as bool?) ?? false,

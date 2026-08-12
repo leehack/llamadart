@@ -1097,6 +1097,7 @@ void main() {
         orderedEquals(const [
           'FunctionGemma 270M',
           'Qwen3.5 0.8B Instruct',
+          'Qwen3-ASR 0.6B',
           'Gemma 4 E2B it',
           'Gemma 4 E2B LiteRT-LM',
           'Gemma 4 E4B it',
@@ -1111,9 +1112,54 @@ void main() {
         (model) => model.filename.endsWith('.gguf'),
       );
       for (final model in ggufModels) {
-        expect(model.distribution, 'Unsloth');
-        expect(model.url, contains('huggingface.co/unsloth/'));
+        if (model.supportsSpeechToText) {
+          expect(model.distribution, 'ggml-org');
+          expect(model.url, contains('huggingface.co/ggml-org/'));
+        } else {
+          expect(model.distribution, 'Unsloth');
+          expect(model.url, contains('huggingface.co/unsloth/'));
+        }
       }
+    });
+
+    test('Qwen3-ASR catalog entry pins its complete verified bundle', () {
+      final model = DownloadableModel.defaultModels.singleWhere(
+        (model) => model.name == 'Qwen3-ASR 0.6B',
+      );
+      final modelSource = model.modelSource as RemoteModelAssetSource;
+      final projectorSource =
+          model.multimodalProjectorSource as RemoteModelAssetSource;
+
+      expect(model.supportsAudio, isTrue);
+      expect(model.supportsSpeechToTextFor(web: false), isTrue);
+      expect(model.supportsSpeechToTextFor(web: true), isFalse);
+      expect(model.isNativeDesktopOnly, isTrue);
+      expect(model.sizeBytesFor(web: false), 1019141728);
+      expect(model.preset.temperature, 0);
+      expect(model.preset.topK, 1);
+      expect(model.preset.topP, 1);
+      expect(model.preset.penalty, 1);
+      expect(model.preset.contextSize, 4096);
+      expect(model.preset.maxTokens, 1024);
+      expect(model.preset.thinkingEnabled, isFalse);
+      expect(modelSource.sizeBytes, 804749248);
+      expect(
+        modelSource.sha256,
+        'bca259818b50ca7c4c05e9bdb35a5dc04fa039653a6d6f3f0f331f96f6aa1971',
+      );
+      expect(projectorSource.sizeBytes, 214392480);
+      expect(
+        projectorSource.sha256,
+        '41a342b5e4c514e968cb756de6cd1b7be39eff43c44c57a2ef5fc6522e36603d',
+      );
+      expect(
+        modelSource.url,
+        contains('928ab958557df9aa2ef1c93e0e83c7ad0933fae2'),
+      );
+      expect(
+        projectorSource.url,
+        contains('928ab958557df9aa2ef1c93e0e83c7ad0933fae2'),
+      );
     });
 
     test('Qwen3.5 0.8B uses Unsloth Q4_K_M non-thinking defaults', () {
@@ -1148,6 +1194,7 @@ void main() {
       expect(
         desktopModels.map((model) => model.name),
         orderedEquals(const [
+          'Qwen3-ASR 0.6B',
           'Gemma 4 12B it',
           'Gemma 4 26B A4B it',
           'Gemma 4 31B it',
@@ -1166,6 +1213,17 @@ void main() {
       expect(gemmaE4b.isNativeDesktopOnly, isFalse);
       expect(gemmaE4b.isAvailableFor(web: false, mobile: true), isTrue);
       expect(gemmaE4b.supportsAudioFor(web: false), isTrue);
+    });
+
+    test('Qwen3-ASR preset persists the dedicated STT declaration', () {
+      final model = DownloadableModel.defaultModels.singleWhere(
+        (model) => model.name == 'Qwen3-ASR 0.6B',
+      );
+
+      provider.applyModelPreset(model);
+
+      expect(provider.settings.modelSupportsAudio, isTrue);
+      expect(provider.settings.modelSupportsSpeechToText, isTrue);
     });
 
     test('Gemma 4 presets expose platform-specific audio capabilities', () {

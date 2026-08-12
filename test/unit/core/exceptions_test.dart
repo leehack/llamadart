@@ -26,6 +26,20 @@ void main() {
       expect(ex.toString(), contains('Gen failed'));
     });
 
+    test('LlamaSpeechException properties', () {
+      final ex = LlamaSpeechException('Recognition failed', 'decoder error');
+      expect(ex.message, 'Recognition failed');
+      expect(ex.details, 'decoder error');
+      expect(ex.toString(), contains('Recognition failed'));
+    });
+
+    test('LlamaAudioFormatException is a speech exception', () {
+      final ex = LlamaAudioFormatException('Unsupported audio', 'stereo');
+      expect(ex, isA<LlamaSpeechException>());
+      expect(ex.message, 'Unsupported audio');
+      expect(ex.details, 'stereo');
+    });
+
     test('LlamaUnsupportedException properties', () {
       final ex = LlamaUnsupportedException('No CUDA');
       expect(ex.message, 'No CUDA');

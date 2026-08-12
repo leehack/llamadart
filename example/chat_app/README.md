@@ -11,6 +11,8 @@ A Flutter chat application demonstrating real-world usage of llamadart with UI.
 - 📋 **Clipboard attachments**: Paste screenshots or copied image/audio files
   with `Cmd/Ctrl+V`, or use **Paste attachment** from the attachment menu on
   touch devices. Plain-text paste continues to work normally.
+- 🎙️ **Whole-file transcription**: Compatible native GGUF ASR models expose a
+  separate **Transcribe Audio** action backed by `SpeechToTextEngine`.
 - 📱 Material Design 3 UI
 - ⚙️ Model configuration (path, runtime-detected backend selection, GPU layers, context size)
 - 🧩 Capability badges per model (Tools / Thinking / Vision / Audio / Video)
@@ -68,12 +70,11 @@ flutter test --run-skipped -t local-only \
 2. Select one of the focused pre-configured models:
    - Cross-platform: FunctionGemma 270M, Qwen3.5 0.8B, Gemma 4 E2B
      GGUF, Gemma 4 E2B LiteRT-LM, and Gemma 4 E4B GGUF.
-   - Native desktop: Gemma 4 12B, Gemma 4 26B A4B, Gemma 4 31B,
-     and Qwen3.6 35B A3B.
-   - All built-in GGUF presets use [Unsloth distributions](https://huggingface.co/unsloth)
-     and show that source in the model card. The LiteRT-LM preset uses the
-     `litert-community` distribution because Unsloth does not publish the
-     required `.litertlm` bundle.
+   - Native desktop: Qwen3-ASR 0.6B, Gemma 4 12B, Gemma 4 26B A4B,
+     Gemma 4 31B, and Qwen3.6 35B A3B.
+   - Built-in GGUF chat presets use [Unsloth distributions](https://huggingface.co/unsloth).
+     The ASR preset uses llama.cpp's `ggml-org` Qwen3-ASR pair, and the
+     LiteRT-LM preset uses `litert-community`; every card identifies its source.
    - The library opens with the current platform selected. Use the Mobile, Web,
      and Desktop filters to compare compatible presets; unavailable models are
      clearly disabled when browsing another platform. Downloaded models appear
@@ -89,6 +90,10 @@ flutter test --run-skipped -t local-only \
      a separate action, with an explicit combined option in the confirmation.
 3. Tap the **Download** icon. The app uses `Dio` to download the model directly to your device's app-specific cache directory. Additional model downloads enter a FIFO queue and start one at a time. A persistent progress pill remains in the app header when settings is closed; tap it to reopen download details.
 4. Once downloaded, tap **Select** to load the model.
+   - The native-desktop Qwen3-ASR preset exposes both **Attach Audio** and
+     **Transcribe Audio**. The latter accepts WAV, MP3, or FLAC files and
+     requires the matching projector; live microphone input, Web, LiteRT-LM
+     STT, and TTS are not enabled yet. Its pinned downloads are SHA-256 verified.
    - Gemma 4 E2B is included as a GGUF + `mmproj` bundle. In the current
      native `llama.cpp` mtmd path used here, that projector exposes image,
      audio, and video input. Audio remains experimental upstream; start with

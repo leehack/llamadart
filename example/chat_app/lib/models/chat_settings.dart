@@ -42,6 +42,7 @@ class ChatSettings {
   /// platform. Runtime projector probes can add to these capabilities.
   final bool modelSupportsVision;
   final bool modelSupportsAudio;
+  final bool modelSupportsSpeechToText;
 
   /// Whether media is consumed directly by the model backend instead of an
   /// external multimodal projector.
@@ -77,6 +78,7 @@ class ChatSettings {
     this.singleTurnMode = false,
     this.modelSupportsVision = false,
     this.modelSupportsAudio = false,
+    this.modelSupportsSpeechToText = false,
     this.directMediaInput = false,
     this.modelBytesHint,
   });
@@ -106,6 +108,7 @@ class ChatSettings {
     bool? singleTurnMode,
     bool? modelSupportsVision,
     bool? modelSupportsAudio,
+    bool? modelSupportsSpeechToText,
     bool? directMediaInput,
     int? modelBytesHint,
   }) {
@@ -135,6 +138,8 @@ class ChatSettings {
       singleTurnMode: singleTurnMode ?? this.singleTurnMode,
       modelSupportsVision: modelSupportsVision ?? this.modelSupportsVision,
       modelSupportsAudio: modelSupportsAudio ?? this.modelSupportsAudio,
+      modelSupportsSpeechToText:
+          modelSupportsSpeechToText ?? this.modelSupportsSpeechToText,
       directMediaInput: directMediaInput ?? this.directMediaInput,
       modelBytesHint: modelBytesHint ?? this.modelBytesHint,
     );

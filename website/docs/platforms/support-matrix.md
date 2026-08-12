@@ -15,6 +15,15 @@ override the llama.cpp native GitHub source with
 bundle source with `hooks.user_defines.llamadart.llamadart_native_path`. Module
 availability below is for the pinned/default artifacts.
 
+Speech support is narrower than general runtime availability. Native
+llama.cpp/GGUF has an experimental whole-file `SpeechToTextEngine` adapter when
+the caller explicitly selects the Qwen3-ASR profile and the loaded projector
+reports audio capability. This path is real-model validated on macOS arm64;
+other native targets still need representative validation. WebGPU, native
+LiteRT-LM, and LiteRT-LM Web do not currently expose the typed STT API, and no
+runtime exposes public Dart TTS. See the
+[speech support matrix](../guides/speech-to-text#current-support-matrix).
+
 Available override tags are published on the
 [`leehack/llamadart-native` releases page](https://github.com/leehack/llamadart-native/releases)
 or via `gh release list --repo leehack/llamadart-native --limit 20`.

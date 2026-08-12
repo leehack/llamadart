@@ -61,6 +61,9 @@ flutter test
 - Runtime-verified multimodal capability gating after `mmproj` load, plus
   declared direct-media capabilities for native model bundles such as
   LiteRT-LM. The app hides unsupported attachment types for the active platform.
+- A separate **Transcribe Audio** action for compatible native GGUF models,
+  backed by the typed whole-file `SpeechToTextEngine`. This is distinct from
+  generic audio attachment and is not shown for Web or current LiteRT-LM.
 - Clipboard image/audio attachments through `Cmd/Ctrl+V` on desktop and web or
   **Paste attachment** on touch devices. Text-only clipboard content still
   follows the normal composer paste path, and media is capped at 64 MB.
@@ -74,13 +77,14 @@ The built-in library is intentionally small and Unsloth-first:
 
 - Cross-platform: FunctionGemma 270M, Qwen3.5 0.8B, Gemma 4 E2B GGUF,
   Gemma 4 E2B LiteRT-LM, and Gemma 4 E4B GGUF.
-- Native desktop: Gemma 4 12B, Gemma 4 26B A4B, Gemma 4 31B, and
-  Qwen3.6 35B A3B.
+- Native desktop: Qwen3-ASR 0.6B, Gemma 4 12B, Gemma 4 26B A4B, Gemma 4 31B,
+  and Qwen3.6 35B A3B.
 
-Every GGUF preset uses an [Unsloth distribution](https://huggingface.co/unsloth)
-and identifies Unsloth in the model card. The LiteRT-LM preset is the only
-exception because the required `.litertlm` artifacts are published by
-`litert-community`. The library defaults to the current platform, promotes
+GGUF chat presets use [Unsloth distributions](https://huggingface.co/unsloth).
+The dedicated ASR preset uses llama.cpp's `ggml-org` Qwen3-ASR pair, while the
+`.litertlm` artifacts come from `litert-community`; cards identify each source.
+The Qwen3-ASR model and projector use immutable URLs and verified SHA-256
+digests. The library defaults to the current platform, promotes
 downloaded models, and supports name/capability search plus Mobile, Web, and
 Desktop filters. Browsing another platform keeps incompatible model actions
 disabled and explains why. Gemma 4 E4B remains cross-platform because it is

@@ -29,6 +29,7 @@ void main() {
       expect(result.stdout, contains('root-template-e2e'));
       expect(result.stdout, contains('qwen35-multimodal-macos-repro'));
       expect(result.stdout, contains('gguf-chat-features-smoke'));
+      expect(result.stdout, contains('speech-to-text-smoke'));
       expect(result.stdout, contains('llama-cpp-speculative-benchmark'));
       expect(result.stdout, contains('llama-cpp-chat-template-smoke'));
       expect(result.stdout, contains('litert-lm-chat-features-smoke'));
@@ -227,6 +228,64 @@ void main() {
           'models/Qwen3.5-0.8B-mmproj-F16.gguf test/fixtures/image.png',
         ),
       );
+    });
+
+    test('dry-runs typed speech-to-text with exact fixture inputs', () async {
+      final result = await runLocalE2e(const [
+        '--scenario',
+        'speech-to-text-smoke',
+        '--model-path',
+        'models/Qwen3-ASR-0.6B-Q8_0.gguf',
+        '--mmproj-path',
+        'models/mmproj-Qwen3-ASR-0.6B-Q8_0.gguf',
+        '--audio-path',
+        'test/fixtures/speech.wav',
+        '--expect',
+        'Known transcript.',
+        '--dry-run',
+      ], projectRoot: '/repo');
+
+      expect(result.exitCode, 0);
+      expect(result.stdout, contains('speech-to-text-smoke'));
+      expect(
+        result.stdout,
+        contains('LLAMADART_STT_MODEL_PATH=models/Qwen3-ASR-0.6B-Q8_0.gguf'),
+      );
+      expect(
+        result.stdout,
+        contains(
+          'LLAMADART_STT_MMPROJ_PATH=models/mmproj-Qwen3-ASR-0.6B-Q8_0.gguf',
+        ),
+      );
+      expect(
+        result.stdout,
+        contains('LLAMADART_STT_AUDIO_PATH=test/fixtures/speech.wav'),
+      );
+      expect(
+        result.stdout,
+        contains("LLAMADART_STT_EXPECTED_TEXT='Known transcript.'"),
+      );
+      expect(
+        result.stdout,
+        contains('test/e2e/backends/speech_to_text_e2e_test.dart'),
+      );
+    });
+
+    test('requires an exact expected speech transcript', () async {
+      final result = await runLocalE2e(const [
+        '--scenario',
+        'speech-to-text-smoke',
+        '--model-path',
+        'models/Qwen3-ASR-0.6B-Q8_0.gguf',
+        '--mmproj-path',
+        'models/mmproj-Qwen3-ASR-0.6B-Q8_0.gguf',
+        '--audio-path',
+        'test/fixtures/speech.wav',
+        '--dry-run',
+      ], projectRoot: '/repo');
+
+      expect(result.exitCode, 64);
+      expect(result.stderr, contains('a nonempty --expect'));
     });
 
     test('requires mmproj path before GGUF image path', () async {

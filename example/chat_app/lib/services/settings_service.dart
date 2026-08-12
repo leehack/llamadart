@@ -31,6 +31,7 @@ class SettingsService {
   static const _keySingleTurnMode = 'single_turn_mode';
   static const _keyModelSupportsVision = 'model_supports_vision';
   static const _keyModelSupportsAudio = 'model_supports_audio';
+  static const _keyModelSupportsSpeechToText = 'model_supports_speech_to_text';
   static const _keyDirectMediaInput = 'direct_media_input';
   static const _keyModelBytesHint = 'model_bytes_hint';
 
@@ -64,6 +65,22 @@ class SettingsService {
         .toLowerCase();
     return normalized.endsWith('.litertlm') &&
         (normalized.contains('gemma-4') || normalized.contains('gemma4'));
+  }
+
+  bool _isQwen3AsrCatalogModel(String? modelPath) {
+    if (modelPath == null) {
+      return false;
+    }
+    final filename = modelPath
+        .split('?')
+        .first
+        .split('#')
+        .first
+        .replaceAll('\\', '/')
+        .split('/')
+        .last
+        .toLowerCase();
+    return filename == 'qwen3-asr-0.6b-q8_0.gguf';
   }
 
   Future<ChatSettings> loadSettings() async {
@@ -127,6 +144,9 @@ class SettingsService {
       modelSupportsVision: prefs.getBool(_keyModelSupportsVision) ?? false,
       modelSupportsAudio:
           prefs.getBool(_keyModelSupportsAudio) ?? migrateNativeGemma4Audio,
+      modelSupportsSpeechToText:
+          prefs.getBool(_keyModelSupportsSpeechToText) ??
+          _isQwen3AsrCatalogModel(migratedModelPath),
       directMediaInput:
           prefs.getBool(_keyDirectMediaInput) ?? migrateNativeGemma4Audio,
       modelBytesHint: prefs.getInt(_keyModelBytesHint),
@@ -173,6 +193,10 @@ class SettingsService {
     await prefs.setBool(_keySingleTurnMode, settings.singleTurnMode);
     await prefs.setBool(_keyModelSupportsVision, settings.modelSupportsVision);
     await prefs.setBool(_keyModelSupportsAudio, settings.modelSupportsAudio);
+    await prefs.setBool(
+      _keyModelSupportsSpeechToText,
+      settings.modelSupportsSpeechToText,
+    );
     await prefs.setBool(_keyDirectMediaInput, settings.directMediaInput);
     final modelBytesHint = settings.modelBytesHint;
     if (modelBytesHint != null && modelBytesHint > 0) {

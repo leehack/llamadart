@@ -74,6 +74,7 @@ class LocalE2eRunContext {
     required this.draftModelPath,
     required this.mmprojPath,
     required this.imagePath,
+    required this.audioPath,
     required this.modelUrl,
     required this.backend,
     required this.speculativeCases,
@@ -90,6 +91,7 @@ class LocalE2eRunContext {
     required this.ngramCacheBuildStaticPath,
     required this.ngramCacheBuildText,
     required this.expect,
+    required this.expectProvided,
     required this.allowAnyResponse,
     required this.skipBuild,
   });
@@ -102,6 +104,7 @@ class LocalE2eRunContext {
   final String? draftModelPath;
   final String? mmprojPath;
   final String? imagePath;
+  final String? audioPath;
   final String? modelUrl;
   final String backend;
   final String speculativeCases;
@@ -118,6 +121,7 @@ class LocalE2eRunContext {
   final String? ngramCacheBuildStaticPath;
   final String? ngramCacheBuildText;
   final String expect;
+  final bool expectProvided;
   final bool allowAnyResponse;
   final bool skipBuild;
 
@@ -240,6 +244,34 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
           ),
         ];
       },
+    ),
+    LocalE2eScenario(
+      name: 'speech-to-text-smoke',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description:
+          'Run typed native Qwen3-ASR whole-file transcription against a known fixture.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'dart',
+          arguments: const [
+            'test',
+            '--run-skipped',
+            '-t',
+            'local-only',
+            'test/e2e/backends/speech_to_text_e2e_test.dart',
+          ],
+          environment: {
+            'LLAMADART_STT_MODEL_PATH': context.modelPath!,
+            'LLAMADART_STT_MMPROJ_PATH': context.mmprojPath!,
+            'LLAMADART_STT_AUDIO_PATH': context.audioPath!,
+            if (context.expectProvided)
+              'LLAMADART_STT_EXPECTED_TEXT': context.expect,
+          },
+          description: 'Typed speech-to-text real-model smoke',
+        ),
+      ],
     ),
     LocalE2eScenario(
       name: 'llama-cpp-speculative-benchmark',
@@ -684,6 +716,22 @@ Future<LocalE2eResult> runLocalE2e(
   if (parsed.imagePath != null && parsed.mmprojPath == null) {
     return LocalE2eResult(64, stderr: '--image-path requires --mmproj-path.\n');
   }
+  if (parsed.audioPath != null && parsed.mmprojPath == null) {
+    return LocalE2eResult(64, stderr: '--audio-path requires --mmproj-path.\n');
+  }
+  if (scenario.name == 'speech-to-text-smoke' &&
+      (parsed.modelPath == null ||
+          parsed.mmprojPath == null ||
+          parsed.audioPath == null ||
+          !parsed.expectProvided ||
+          parsed.expect.trim().isEmpty)) {
+    return const LocalE2eResult(
+      64,
+      stderr:
+          '--model-path, --mmproj-path, --audio-path, and a nonempty --expect '
+          'are required for speech-to-text-smoke.\n',
+    );
+  }
   if ((scenario.name == 'llama-cpp-speculative-benchmark' ||
           scenario.name == 'llama-cpp-chat-template-smoke' ||
           scenario.name == 'litert-lm-chat-features-smoke') &&
@@ -703,6 +751,7 @@ Future<LocalE2eResult> runLocalE2e(
     draftModelPath: parsed.draftModelPath,
     mmprojPath: parsed.mmprojPath,
     imagePath: parsed.imagePath,
+    audioPath: parsed.audioPath,
     modelUrl: parsed.modelUrl,
     backend: parsed.backend,
     speculativeCases: parsed.speculativeCases,
@@ -719,6 +768,7 @@ Future<LocalE2eResult> runLocalE2e(
     ngramCacheBuildStaticPath: parsed.ngramCacheBuildStaticPath,
     ngramCacheBuildText: parsed.ngramCacheBuildText,
     expect: parsed.expect,
+    expectProvided: parsed.expectProvided,
     allowAnyResponse: parsed.allowAnyResponse,
     skipBuild: parsed.skipBuild,
   );
@@ -913,6 +963,7 @@ Options:
   --draft-model-path <path>      Optional draft GGUF model path for llama.cpp speculative benchmark.
   --mmproj-path <path>           Optional multimodal projector path for GGUF chat smoke.
   --image-path <path>            Optional image path for GGUF chat smoke multimodal variant.
+  --audio-path <path>            Complete audio fixture for speech-to-text smoke.
   --model-url <url>              Model URL for real-model web smoke.
   --backend <name>               Backend for local model scenarios (default: auto).
   --speculative-cases <list>     Benchmark cases for llama.cpp speculative benchmark.
@@ -965,6 +1016,7 @@ class _ParsedArgs {
     required this.benchmarkWarmups,
     required this.draftTokenMaxList,
     required this.expect,
+    required this.expectProvided,
     required this.allowAnyResponse,
     required this.skipBuild,
     this.scenario,
@@ -972,6 +1024,7 @@ class _ParsedArgs {
     this.draftModelPath,
     this.mmprojPath,
     this.imagePath,
+    this.audioPath,
     this.modelUrl,
     this.ngramSize,
     this.ngramSizeM,
@@ -994,6 +1047,7 @@ class _ParsedArgs {
   final String? draftModelPath;
   final String? mmprojPath;
   final String? imagePath;
+  final String? audioPath;
   final String? modelUrl;
   final String backend;
   final String speculativeCases;
@@ -1010,6 +1064,7 @@ class _ParsedArgs {
   final String? ngramCacheBuildStaticPath;
   final String? ngramCacheBuildText;
   final String expect;
+  final bool expectProvided;
   final bool allowAnyResponse;
   final bool skipBuild;
 
@@ -1030,6 +1085,7 @@ class _ParsedArgs {
     var benchmarkWarmups = '1';
     var draftTokenMaxList = '1,2';
     var expect = '4';
+    var expectProvided = false;
     var allowAnyResponse = false;
     var skipBuild = false;
     String? scenario;
@@ -1037,6 +1093,7 @@ class _ParsedArgs {
     String? draftModelPath;
     String? mmprojPath;
     String? imagePath;
+    String? audioPath;
     String? modelUrl;
     String? ngramSize;
     String? ngramSizeM;
@@ -1076,6 +1133,8 @@ class _ParsedArgs {
           mmprojPath = _readValue(args, ++index, arg);
         case '--image-path':
           imagePath = _readValue(args, ++index, arg);
+        case '--audio-path':
+          audioPath = _readValue(args, ++index, arg);
         case '--model-url':
           modelUrl = _readValue(args, ++index, arg);
         case '--backend':
@@ -1108,6 +1167,7 @@ class _ParsedArgs {
           ngramCacheBuildText = _readValue(args, ++index, arg);
         case '--expect':
           expect = _readValue(args, ++index, arg);
+          expectProvided = true;
         default:
           throw ArgumentError('Unknown option: $arg');
       }
@@ -1126,6 +1186,7 @@ class _ParsedArgs {
       draftModelPath: draftModelPath,
       mmprojPath: mmprojPath,
       imagePath: imagePath,
+      audioPath: audioPath,
       modelUrl: modelUrl,
       backend: backend,
       speculativeCases: speculativeCases,
@@ -1142,6 +1203,7 @@ class _ParsedArgs {
       ngramCacheBuildStaticPath: ngramCacheBuildStaticPath,
       ngramCacheBuildText: ngramCacheBuildText,
       expect: expect,
+      expectProvided: expectProvided,
       allowAnyResponse: allowAnyResponse,
       skipBuild: skipBuild,
     );
