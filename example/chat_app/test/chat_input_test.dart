@@ -129,6 +129,7 @@ void main() {
     final provider = ChatProvider(
       chatService: MockChatService(),
       settingsService: MockSettingsService(),
+      audioRecordingService: _FakeAudioRecordingService(),
       initialSettings: const ChatSettings(
         modelPath: 'gemma-4-E2B-it.litertlm',
         modelSupportsAudio: true,

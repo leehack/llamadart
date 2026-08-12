@@ -289,6 +289,7 @@ void main() {
             }),
           ),
           settingsService: settingsService,
+          enableWebModelPrefetch: false,
           initialSettings: initialSettings,
         );
         addTearDown(liteRtWebProvider.dispose);

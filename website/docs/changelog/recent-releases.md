@@ -14,6 +14,11 @@ For canonical full release notes, use:
   and foreground microphone recording. Web and the current LiteRT-LM artifacts
   remain explicitly unsupported for typed STT.
 
+- Added **Ask with voice** to the native Flutter chat example for Gemma 4 E2B
+  LiteRT-LM and audio-capable GGUF models. It sends a short microphone recording
+  through normal multimodal chat so the model answers the spoken request, while
+  remaining separate from typed speech-to-text.
+
 ## 0.8.19
 
 - Updated the native llama.cpp runtime to `b10333` and WebGPU bridge assets to
