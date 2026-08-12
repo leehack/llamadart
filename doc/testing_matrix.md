@@ -72,7 +72,8 @@ Pick targeted rows based on the touched surface:
 | Large WebGPU GGUF / wasm64 selection | `gemma4-webgpu-mem64` |
 | LiteRT-LM web / Gemma 4 web bundle | `gemma4-litert-web` |
 | Chat app model cache/download/projector | `chat-app-device-cache` |
-| Speech-to-text API, adapter, or chat flow | `speech-to-text-smoke` |
+| Speech-to-text API or adapter | `speech-to-text-smoke` |
+| Chat-app microphone transcription flow | `chat-app-microphone-transcription-smoke` |
 | Example app, CLI, or server package | `examples-tests` |
 
 The required `Web Chat Contract` check runs the chat app tests on VM and

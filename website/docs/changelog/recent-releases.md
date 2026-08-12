@@ -9,9 +9,10 @@ For canonical full release notes, use:
 
 ## Unreleased
 
-- Added an experimental typed Qwen3-ASR whole-file transcription workflow and
-  a SHA-256-verified Qwen3-ASR 0.6B native-desktop chat-app preset. Web and the
-  current LiteRT-LM artifacts remain explicitly unsupported for typed STT.
+- Added an experimental typed Qwen3-ASR whole-file transcription workflow, a
+  SHA-256-verified Qwen3-ASR 0.6B native mobile-and-desktop chat-app preset,
+  and foreground microphone recording. Web and the current LiteRT-LM artifacts
+  remain explicitly unsupported for typed STT.
 
 ## 0.8.19
 
