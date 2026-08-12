@@ -1,9 +1,10 @@
 import 'dart:async';
 import 'dart:io';
+
 import 'package:crypto/crypto.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:llamadart_chat_example/models/downloadable_model.dart';
-import 'package:dio/dio.dart';
 import 'package:llamadart_chat_example/services/model_service_base.dart';
 import 'package:llamadart_chat_example/services/model_service_io.dart';
 import 'package:path/path.dart' as p;

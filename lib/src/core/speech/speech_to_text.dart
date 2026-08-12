@@ -549,14 +549,14 @@ class SpeechToTextEngine {
           if (!const <String>{'wav', 'mp3', 'flac'}.contains(encoding)) {
             throw LlamaAudioFormatException(
               'Encoded audio files must use WAV, MP3, or FLAC.',
-              request.audio.format,
+              encoding,
             );
           }
         } else if (extension.isNotEmpty &&
             !const <String>{'wav', 'mp3', 'flac'}.contains(extension)) {
           throw LlamaAudioFormatException(
             'Encoded audio files must use WAV, MP3, or FLAC.',
-            request.audio.format,
+            extension,
           );
         }
       case SpeechAudioBytesInput(:final bytes):
@@ -571,7 +571,7 @@ class SpeechToTextEngine {
             !const <String>{'wav', 'mp3', 'flac'}.contains(encoding)) {
           throw LlamaAudioFormatException(
             'Encoded audio bytes must use WAV, MP3, or FLAC.',
-            request.audio.format,
+            encoding,
           );
         }
     }

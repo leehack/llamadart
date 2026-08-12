@@ -146,11 +146,57 @@ void main() {
           ),
         ),
         throwsA(
-          isA<LlamaAudioFormatException>().having(
-            (error) => error.message,
-            'message',
-            contains('WAV, MP3, or FLAC'),
+          isA<LlamaAudioFormatException>()
+              .having(
+                (error) => error.message,
+                'message',
+                contains('WAV, MP3, or FLAC'),
+              )
+              .having((error) => error.details, 'details', 'm4a'),
+        ),
+      );
+    });
+
+    test('reports an unsupported explicit encoding', () async {
+      await _loadSpeechModel(llamaEngine);
+
+      await expectLater(
+        speechEngine.transcribe(
+          const SpeechToTextRequest(
+            audio: SpeechAudioFileInput(
+              '/tmp/content-addressed-audio',
+              format: SpeechAudioFormat(encoding: 'AAC'),
+            ),
           ),
+        ),
+        throwsA(
+          isA<LlamaAudioFormatException>()
+              .having(
+                (error) => error.message,
+                'message',
+                contains('WAV, MP3, or FLAC'),
+              )
+              .having((error) => error.details, 'details', 'aac'),
+        ),
+      );
+
+      await expectLater(
+        speechEngine.transcribe(
+          SpeechToTextRequest(
+            audio: SpeechAudioBytesInput(
+              Uint8List.fromList(<int>[1, 2, 3]),
+              format: const SpeechAudioFormat(encoding: 'AAC'),
+            ),
+          ),
+        ),
+        throwsA(
+          isA<LlamaAudioFormatException>()
+              .having(
+                (error) => error.message,
+                'message',
+                contains('WAV, MP3, or FLAC'),
+              )
+              .having((error) => error.details, 'details', 'aac'),
         ),
       );
     });
