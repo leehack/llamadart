@@ -135,12 +135,13 @@ void main() {
     expect(find.byTooltip('Record audio'), findsNothing);
   });
 
-  testWidgets('shows dedicated transcription for native ASR models', (
+  testWidgets('shows transcription and recording for supported native ASR models', (
     tester,
   ) async {
     final engine = _SpeechMockLlamaEngine();
     final provider = ChatProvider(
       chatService: MockChatService(engine: engine),
+      audioRecordingService: _FakeAudioRecordingService(),
       settingsService: MockSettingsService(),
       initialSettings: const ChatSettings(
         modelPath: 'Qwen3-ASR-0.6B-Q8_0.gguf',
