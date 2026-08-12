@@ -7,11 +7,13 @@
   example. Web and the current LiteRT-LM artifacts fail explicitly as
   unsupported.
 
-* Added **Ask with voice** to the native Flutter chat example for direct-media
-  models such as Gemma 4 E2B LiteRT-LM. The app sends a microphone recording
-  through normal multimodal chat so the model can answer the spoken request;
-  it remains separate from typed speech-to-text and is available on Android,
-  iOS, macOS, and Windows, with Linux recording and Web excluded.
+* Added **Ask with voice** to the native Flutter chat example for Gemma 4 E2B
+  through both the LiteRT-LM direct-media bundle and the audio-capable GGUF +
+  projector path. The app sends a microphone recording through normal
+  multimodal chat so the model can answer the spoken request; it remains
+  separate from typed speech-to-text and is available on Android, iOS, macOS,
+  and Windows, with Linux recording and Web excluded. llama.cpp audio input is
+  experimental, and the GGUF path does not yet have mobile device validation.
 
 * Added experimental, opt-in native llama.cpp DSpark speculative decoding
   through `SpeculativeDecodingConfig.draftDspark(...)`, including exact

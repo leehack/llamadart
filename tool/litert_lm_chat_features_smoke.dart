@@ -144,9 +144,10 @@ Future<void> main(List<String> args) async {
                 content: [
                   LlamaAudioContent(bytes: audioBytes),
                   const LlamaTextContent(
-                    'Answer the spoken question directly. Return only the '
-                    'final answer, with no transcript, explanation, or '
-                    'description of the recording.',
+                    'Listen carefully to every spoken word. Determine what '
+                    'the speaker is asking, solve that request, and return '
+                    'only the final answer. Do not merely repeat a word from '
+                    'the recording.',
                   ),
                 ],
               ),

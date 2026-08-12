@@ -462,7 +462,7 @@ void main() {
       expect(storedAudio.bytes, recorder.recordedBytes);
       expect(
         userMessage.parts!.whereType<LlamaTextContent>().single.text,
-        contains('answer the spoken request'),
+        contains('solve that request'),
       );
 
       final generatedUserTurn = engine.lastCreateMessages!.last;
@@ -473,7 +473,7 @@ void main() {
       );
       expect(
         generatedUserTurn.parts.whereType<LlamaTextContent>().single.text,
-        contains('answer the spoken request'),
+        contains('solve that request'),
       );
     },
   );
@@ -505,7 +505,7 @@ void main() {
       final regeneratedUserTurn = engine.lastCreateMessages!.last;
       expect(
         regeneratedUserTurn.parts.whereType<LlamaTextContent>().single.text,
-        contains('answer the spoken request'),
+        contains('solve that request'),
       );
       expect(
         regeneratedUserTurn.parts.whereType<LlamaAudioContent>().single.bytes,
@@ -514,27 +514,90 @@ void main() {
     },
   );
 
-  test(
-    'external-projector audio is excluded from the first voice path',
-    () async {
-      final provider = ChatProvider(
-        chatService: MockChatService(),
-        audioRecordingService: _FakeAudioRecordingService(),
-        settingsService: MockSettingsService(),
-        initialSettings: const ChatSettings(
-          modelPath: 'audio-chat.gguf',
-          mmprojPath: 'audio-mmproj.gguf',
-          modelSupportsAudio: true,
-        ),
-      );
-      addTearDown(provider.dispose);
-      await provider.loadModel();
+  test('external-projector audio can answer a recorded question', () async {
+    final engine = _SpeechMockLlamaEngine()
+      ..createChunkContents = const <String>['4'];
+    final recorder = _FakeAudioRecordingService();
+    final provider = ChatProvider(
+      chatService: MockChatService(engine: engine),
+      audioRecordingService: recorder,
+      settingsService: MockSettingsService(),
+      initialSettings: const ChatSettings(
+        modelPath: 'gemma-4-E2B-it-Q4_K_S.gguf',
+        mmprojPath: 'gemma-4-E2B-it-mmproj-F16.gguf',
+        modelSupportsAudio: true,
+      ),
+    );
+    addTearDown(provider.dispose);
+    await provider.loadModel();
 
-      expect(provider.settings.modelSupportsAudio, isTrue);
-      expect(provider.canAskWithVoice, isFalse);
-      expect(provider.supportsMicrophoneRecording, isFalse);
-    },
-  );
+    expect(provider.supportsAudio, isTrue);
+    expect(provider.canAskWithVoice, isTrue);
+    expect(provider.supportsMicrophoneRecording, isTrue);
+
+    await provider.startAudioRecording();
+    expect(
+      provider.audioRecordingPurpose,
+      ChatAudioRecordingPurpose.voiceQuestion,
+    );
+    await provider.stopAudioRecordingAndAsk();
+
+    expect(engine.createCalls, 1);
+    expect(recorder.deletedPaths, <String>[recorder.recordedPath]);
+    final generatedUserTurn = engine.lastCreateMessages!.last;
+    expect(
+      generatedUserTurn.parts.whereType<LlamaAudioContent>().single.bytes,
+      recorder.recordedBytes,
+    );
+    expect(
+      generatedUserTurn.parts.whereType<LlamaTextContent>().single.text,
+      'Listen carefully to every spoken word. Determine what the speaker is '
+      'asking, solve that request, and return only the final answer. Do not '
+      'merely repeat a word from the recording.',
+    );
+
+    provider.updateMmprojPath('replacement-mmproj.gguf');
+    expect(provider.canAskWithVoice, isFalse);
+    expect(provider.supportsMicrophoneRecording, isFalse);
+  });
+
+  test('external-projector voice requires a configured projector', () async {
+    final provider = ChatProvider(
+      chatService: MockChatService(engine: _AlwaysAudioMockLlamaEngine()),
+      audioRecordingService: _FakeAudioRecordingService(),
+      settingsService: MockSettingsService(),
+      initialSettings: const ChatSettings(
+        modelPath: 'audio-chat.gguf',
+        modelSupportsAudio: true,
+      ),
+    );
+    addTearDown(provider.dispose);
+    await provider.loadModel();
+
+    expect(provider.supportsAudio, isTrue);
+    expect(provider.canAskWithVoice, isFalse);
+    expect(provider.supportsMicrophoneRecording, isFalse);
+  });
+
+  test('external-projector voice requires runtime audio support', () async {
+    final provider = ChatProvider(
+      chatService: MockChatService(),
+      audioRecordingService: _FakeAudioRecordingService(),
+      settingsService: MockSettingsService(),
+      initialSettings: const ChatSettings(
+        modelPath: 'audio-chat.gguf',
+        mmprojPath: 'audio-mmproj.gguf',
+        modelSupportsAudio: true,
+      ),
+    );
+    addTearDown(provider.dispose);
+    await provider.loadModel();
+
+    expect(provider.settings.modelSupportsAudio, isTrue);
+    expect(provider.supportsAudio, isFalse);
+    expect(provider.canAskWithVoice, isFalse);
+    expect(provider.supportsMicrophoneRecording, isFalse);
+  });
 
   test('dedicated STT takes precedence over direct audio chat', () async {
     final recorder = _FakeAudioRecordingService();
@@ -547,7 +610,6 @@ void main() {
         mmprojPath: 'mmproj-Qwen3-ASR-0.6B-Q8_0.gguf',
         modelSupportsAudio: true,
         modelSupportsSpeechToText: true,
-        directMediaInput: true,
       ),
     );
     addTearDown(provider.dispose);
@@ -1381,6 +1443,11 @@ class _BusyVoiceProvider extends _GeneratingReadyProvider {
 class _SpeechMockLlamaEngine extends MockLlamaEngine {
   @override
   Future<bool> get supportsAudio async => mmprojLoaded;
+}
+
+class _AlwaysAudioMockLlamaEngine extends MockLlamaEngine {
+  @override
+  Future<bool> get supportsAudio async => true;
 }
 
 class _BlockingSpeechMockLlamaEngine extends _SpeechMockLlamaEngine {
