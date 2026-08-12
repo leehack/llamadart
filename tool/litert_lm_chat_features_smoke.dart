@@ -1,8 +1,9 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:llamadart/llamadart.dart';
+
+import 'audio_chat_smoke_support.dart';
 
 Future<void> main(List<String> args) async {
   final modelPath = args.isNotEmpty
@@ -23,9 +24,18 @@ Future<void> main(List<String> args) async {
 
   final backend = args.length > 1 ? _parseBackend(args[1]) : _defaultBackend();
   final imagePath = _optionalImagePath(args.length > 2 ? args[2] : null);
-  final audioPath = _optionalAudioPath();
-  final audioExpectedText = _audioExpectedText(audioPath);
-  final audioBytes = audioPath == null ? null : await _readAudio(audioPath);
+  final audioPath = optionalAudioChatSmokePath(
+    environmentName: 'LITERT_LM_AUDIO_PATH',
+    smokeName: 'LiteRT-LM smoke',
+  );
+  final audioExpectedText = optionalAudioChatExpectedText(
+    audioPath: audioPath,
+    environmentName: 'LITERT_LM_AUDIO_EXPECTED_TEXT',
+    audioEnvironmentName: 'LITERT_LM_AUDIO_PATH',
+  );
+  final audioFixture = audioPath == null
+      ? null
+      : await readAudioChatSmokeFixture(audioPath);
   final engine = LlamaEngine(LlamaBackend());
   try {
     await engine.loadModel(
@@ -134,7 +144,7 @@ Future<void> main(List<String> args) async {
             enableThinking: false,
             maxTokens: 96,
           );
-    final audioChat = audioBytes == null
+    final audioChat = audioFixture == null
         ? null
         : await _runScenario(
             engine: engine,
@@ -142,13 +152,8 @@ Future<void> main(List<String> args) async {
               LlamaChatMessage.withContent(
                 role: LlamaChatRole.user,
                 content: [
-                  LlamaAudioContent(bytes: audioBytes),
-                  const LlamaTextContent(
-                    'Listen carefully to every spoken word. Determine what '
-                    'the speaker is asking, solve that request, and return '
-                    'only the final answer. Do not merely repeat a word from '
-                    'the recording.',
-                  ),
+                  LlamaAudioContent(bytes: audioFixture.bytes),
+                  const LlamaTextContent(audioChatQuestionPrompt),
                 ],
               ),
             ],
@@ -167,7 +172,7 @@ Future<void> main(List<String> args) async {
         'nativeMediaRender': nativeMediaRender.toJson(),
       if (multimodal != null) 'multimodal': multimodal.toJson(),
       if (audioChat != null) ...{
-        'audioInput': {'encodedByteLength': audioBytes!.length},
+        'audioInput': audioFixture!.toJson(),
         'audioChat': audioChat.toJson(),
       },
     };
@@ -214,14 +219,11 @@ void _verifyResult({
     throw StateError('Gemma 4 multimodal scenario produced no content.');
   }
   if (audioChat != null) {
-    final expected = _normalizeAnswer(audioExpectedText!);
-    final actual = _normalizeAnswer(audioChat.content);
-    if (actual != expected) {
-      throw StateError(
-        'Gemma 4 audio chat answer mismatch: expected "$expected", '
-        'received "$actual".',
-      );
-    }
+    verifyExactAudioChatAnswer(
+      scenarioName: 'Gemma 4 audio chat',
+      actualText: audioChat.content,
+      expectedText: audioExpectedText!,
+    );
   }
 }
 
@@ -371,50 +373,6 @@ String? _optionalImagePath(String? argValue) {
     throw ArgumentError('LiteRT-LM smoke image does not exist: $value');
   }
   return image.path;
-}
-
-String? _optionalAudioPath() {
-  final value = Platform.environment['LITERT_LM_AUDIO_PATH'];
-  if (value == null || value.trim().isEmpty) {
-    return null;
-  }
-  final audio = File(value);
-  if (!audio.existsSync()) {
-    throw ArgumentError('LiteRT-LM smoke audio does not exist: $value');
-  }
-  return audio.path;
-}
-
-String? _audioExpectedText(String? audioPath) {
-  if (audioPath == null) {
-    return null;
-  }
-  final value = Platform.environment['LITERT_LM_AUDIO_EXPECTED_TEXT'];
-  if (value == null || value.trim().isEmpty) {
-    throw ArgumentError(
-      'LITERT_LM_AUDIO_EXPECTED_TEXT is required when '
-      'LITERT_LM_AUDIO_PATH is set.',
-    );
-  }
-  if (_normalizeAnswer(value).isEmpty) {
-    throw ArgumentError(
-      'LITERT_LM_AUDIO_EXPECTED_TEXT must contain a verifiable answer.',
-    );
-  }
-  return value;
-}
-
-Future<Uint8List> _readAudio(String path) async {
-  final bytes = await File(path).readAsBytes();
-  if (bytes.isEmpty) {
-    throw ArgumentError('LiteRT-LM smoke audio must not be empty.');
-  }
-  return bytes;
-}
-
-String _normalizeAnswer(String value) {
-  final collapsed = value.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
-  return collapsed.replaceAll(RegExp(r'^[`*_]+|[`*_.!,;:?]+$'), '').trim();
 }
 
 LiteRtLmBackendPreference _parseBackend(String value) {

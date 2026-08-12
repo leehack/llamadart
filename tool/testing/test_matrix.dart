@@ -167,19 +167,30 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     mode: 'local-only',
     covers:
         'real GGUF llama.cpp chat, thinking-budget/suppression, streaming '
-        'tool calls, and optional image input, or a separate byte-backed audio '
-        'question-answering variant with an exact expected answer',
+        'tool calls, and optional image input',
     command:
-        'Base/image: dart run tool/testing/run_local_e2e.dart --scenario '
+        'dart run tool/testing/run_local_e2e.dart --scenario '
         'gguf-chat-features-smoke --model-path <model.gguf> --backend auto '
-        '[--mmproj-path <mmproj.gguf> --image-path <image>]; audio-only: dart '
-        'run tool/testing/run_local_e2e.dart --scenario '
-        'gguf-chat-features-smoke --model-path <model.gguf> --backend auto '
+        '--mmproj-path <mmproj.gguf> --image-path <image>',
+    useWhen:
+        'Chat rendering, parser, tool calling, thinking, or llama.cpp image '
+        'input work.',
+  ),
+  TestMatrixRow(
+    id: 'gguf-audio-chat-smoke',
+    tier: 'targeted',
+    mode: 'local-only',
+    covers:
+        'experimental native llama.cpp byte-backed audio question answering '
+        'with an exact expected answer and path-free fixture identity',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario '
+        'gguf-audio-chat-smoke --model-path <model.gguf> --backend auto '
         '--mmproj-path <mmproj.gguf> --audio-path <question.wav> '
         '--expect <expected-answer>',
     useWhen:
-        'Chat rendering, parser, tool calling, thinking, multimodal input, or '
-        'llama.cpp Ask-with-voice work.',
+        'llama.cpp audio input or Ask-with-voice work. This engine-level row '
+        'does not establish microphone UI or mobile-platform validation.',
   ),
   TestMatrixRow(
     id: 'speech-to-text-smoke',
@@ -232,8 +243,10 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'limit and Discard, and confirm temporary-WAV cleanup. Record the '
         'platform/device, exact model and projector artifact hashes, backend, '
         'permission result, answer, cold/warm latency, memory, and cleanup '
-        'evidence. llama.cpp audio input is experimental; do not generalize '
-        'the current macOS result to mobile without device evidence.',
+        'evidence. The current packaged microphone evidence is LiteRT-LM on '
+        'macOS; llama.cpp only has an engine-level Metal smoke. Do not '
+        'generalize either result to Android, iOS, or Windows without '
+        'device-level evidence.',
     useWhen:
         'Chat-app Ask with voice, native LiteRT-LM or llama.cpp audio input, '
         'microphone lifecycle, or byte-backed audio-history behavior changes.',
@@ -282,14 +295,13 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'calls, and optional byte-backed audio question answering with an '
         'exact expected answer',
     command:
-        'LITERT_LM_AUDIO_PATH=<audio.wav> '
-        'LITERT_LM_AUDIO_EXPECTED_TEXT=<expected-answer> dart run '
-        'tool/testing/run_local_e2e.dart --scenario '
+        'dart run tool/testing/run_local_e2e.dart --scenario '
         'litert-lm-chat-features-smoke --model-path <model.litertlm> '
-        '--backend auto',
+        '--backend auto --audio-path <audio.wav> '
+        '--expect <expected-answer>',
     useWhen:
         'LiteRT-LM chat templates, thinking, tool calling, audio input, or '
-        'ChatSession work. Omit the audio environment variables for the base '
+        'ChatSession work. Omit --audio-path and --expect for the base '
         'chat-only smoke.',
   ),
   TestMatrixRow(

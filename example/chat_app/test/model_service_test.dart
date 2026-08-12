@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
@@ -17,6 +18,10 @@ void main() {
   late List<int> testData;
   late List<int> mmprojData;
   late Map<String, int> getRequestCountByPath;
+  late List<String?> modelRangeHeaders;
+  late List<String?> modelIfRangeHeaders;
+
+  const stableEtag = '"model-v1"';
 
   const int testDataSize = 1024 * 1024 * 5; // 5 MB
   const int mmprojDataSize = 1024 * 1024 * 2; // 2 MB
@@ -26,6 +31,8 @@ void main() {
     testData = List.generate(testDataSize, (i) => i % 256);
     mmprojData = List.generate(mmprojDataSize, (i) => (i * 7) % 256);
     getRequestCountByPath = <String, int>{};
+    modelRangeHeaders = <String?>[];
+    modelIfRangeHeaders = <String?>[];
     tempDir = await Directory.systemTemp.createTemp('model_service_test');
     service = TestModelService(tempDir);
 
@@ -38,6 +45,7 @@ void main() {
       if (path == '/model.gguf' || path == '/mmproj.gguf') {
         final payload = path == '/model.gguf' ? testData : mmprojData;
         final payloadSize = payload.length;
+        request.response.headers.set(HttpHeaders.etagHeader, stableEtag);
 
         if (request.method == 'HEAD') {
           request.response.headers.contentLength = payloadSize;
@@ -46,6 +54,10 @@ void main() {
         } else if (request.method == 'GET') {
           getRequestCountByPath[path] = (getRequestCountByPath[path] ?? 0) + 1;
           final rangeHeader = request.headers.value('range');
+          if (path == '/model.gguf') {
+            modelRangeHeaders.add(rangeHeader);
+            modelIfRangeHeaders.add(request.headers.value('if-range'));
+          }
           int start = 0;
           int end = payloadSize - 1;
           var isPartial = false;
@@ -154,6 +166,71 @@ void main() {
     expect(failure, isNull);
     expect((await service.getModelCacheState(model)).isReady, isTrue);
   });
+
+  test(
+    'persisted integrity stamp avoids rehashing unchanged catalog assets',
+    () async {
+      final source = RemoteModelAssetSource(
+        url: '$baseUrl/model.gguf?revision=one',
+        filename: 'persisted-verification.gguf',
+        sizeBytes: testDataSize,
+        sha256: sha256.convert(testData).toString(),
+      );
+      final model = DownloadableModel.fromSources(
+        name: 'Persisted verification',
+        description: 'Test',
+        modelSource: source,
+        sizeBytes: testDataSize,
+      );
+      final file = File(p.join(tempDir.path, source.filename));
+      await file.writeAsBytes(testData);
+
+      var digestCalls = 0;
+      Future<String> countDigest(File input) async {
+        digestCalls += 1;
+        return (await sha256.bind(input.openRead()).first).toString();
+      }
+
+      final first = TestModelService(tempDir, fileSha256: countDigest);
+      expect((await first.getModelCacheState(model)).isReady, isTrue);
+      expect(digestCalls, 1);
+
+      final restarted = TestModelService(tempDir, fileSha256: countDigest);
+      expect((await restarted.getModelCacheState(model)).isReady, isTrue);
+      expect(digestCalls, 1);
+
+      final revisedSource = RemoteModelAssetSource(
+        url: '$baseUrl/model.gguf?revision=two',
+        filename: source.filename,
+        sizeBytes: source.sizeBytes,
+        sha256: source.sha256,
+      );
+      final revisedModel = DownloadableModel.fromSources(
+        name: model.name,
+        description: model.description,
+        modelSource: revisedSource,
+        sizeBytes: model.sizeBytes,
+      );
+      final revisedService = TestModelService(tempDir, fileSha256: countDigest);
+      expect(
+        (await revisedService.getModelCacheState(revisedModel)).isReady,
+        isTrue,
+      );
+      expect(digestCalls, 2);
+
+      final corrupted = List<int>.from(testData)..[0] ^= 0xff;
+      await file.writeAsBytes(corrupted);
+      await file.setLastModified(
+        DateTime.now().add(const Duration(seconds: 2)),
+      );
+      final changedService = TestModelService(tempDir, fileSha256: countDigest);
+      expect(
+        (await changedService.getModelCacheState(revisedModel)).isReady,
+        isFalse,
+      );
+      expect(digestCalls, 3);
+    },
+  );
 
   test('failed catalog checksum discards the downloaded asset', () async {
     final model = DownloadableModel.fromSources(
@@ -365,9 +442,13 @@ void main() {
     // Verify partial state uses the temp file.
     final file = File(p.join(tempDir.path, 'model.gguf'));
     final tempFile = File(p.join(tempDir.path, 'model.gguf.download'));
+    final provenanceFile = File(
+      p.join(tempDir.path, 'model.gguf.download.source.json'),
+    );
 
     expect(tempFile.existsSync(), isTrue);
     expect(tempFile.lengthSync(), greaterThan(0));
+    expect(provenanceFile.existsSync(), isTrue);
     expect(simulatedCrash, isTrue);
 
     // 2. Resume download
@@ -385,6 +466,285 @@ void main() {
     expect(file.lengthSync(), testDataSize);
     expect(file.readAsBytesSync(), testData);
     expect(tempFile.existsSync(), isFalse); // Should be cleaned up
+    expect(provenanceFile.existsSync(), isFalse);
+    expect(modelRangeHeaders.whereType<String>(), isNotEmpty);
+    expect(modelIfRangeHeaders.whereType<String>(), contains(stableEtag));
+  });
+
+  test('resume rejects a partial created for a different source', () async {
+    final oldModel = DownloadableModel(
+      name: 'Old source',
+      description: 'Test',
+      url: '$baseUrl/model.gguf?revision=old',
+      filename: 'revision-bound.gguf',
+      sizeBytes: testDataSize,
+    );
+
+    var simulatedCrash = false;
+    await service.downloadModel(
+      model: oldModel,
+      modelsDir: tempDir.path,
+      cancelToken: CancelToken(),
+      onProgress: (progress) {
+        if (progress > 0.3 && !simulatedCrash) {
+          simulatedCrash = true;
+          throw Exception('Simulated crash');
+        }
+      },
+      onSuccess: (_) {},
+      onError: (_) {},
+    );
+
+    final tempFile = File(p.join(tempDir.path, 'revision-bound.gguf.download'));
+    final provenanceFile = File(
+      p.join(tempDir.path, 'revision-bound.gguf.download.source.json'),
+    );
+    expect(simulatedCrash, isTrue);
+    expect(tempFile.existsSync(), isTrue);
+    expect(provenanceFile.existsSync(), isTrue);
+
+    final newModel = DownloadableModel(
+      name: 'New source',
+      description: 'Test',
+      url: '$baseUrl/model.gguf?revision=new',
+      filename: oldModel.filename,
+      sizeBytes: testDataSize,
+    );
+    await service.downloadModel(
+      model: newModel,
+      modelsDir: tempDir.path,
+      cancelToken: CancelToken(),
+      onProgress: (_) {},
+      onSuccess: (_) {},
+      onError: (error) => fail('Fresh download failed: $error'),
+    );
+
+    expect(modelRangeHeaders.last, isNull);
+    expect(
+      File(p.join(tempDir.path, newModel.filename)).readAsBytesSync(),
+      testData,
+    );
+    expect(tempFile.existsSync(), isFalse);
+    expect(provenanceFile.existsSync(), isFalse);
+  });
+
+  test(
+    'same URL changed ETag restarts instead of mixing representations',
+    () async {
+      final mutableData = List<int>.generate(64 * 1024, (i) => i % 251);
+      final replacementData = List<int>.generate(
+        mutableData.length,
+        (i) => (i * 17) % 251,
+      );
+      var currentData = mutableData;
+      var currentEtag = '"mutable-v1"';
+      final rangeHeaders = <String?>[];
+      final ifRangeHeaders = <String?>[];
+      final mutableServer = await HttpServer.bind(
+        InternetAddress.loopbackIPv4,
+        0,
+      );
+      addTearDown(() => mutableServer.close(force: true));
+      mutableServer.listen((request) async {
+        final range = request.headers.value(HttpHeaders.rangeHeader);
+        final ifRange = request.headers.value('if-range');
+        rangeHeaders.add(range);
+        ifRangeHeaders.add(ifRange);
+        request.response.headers.set(HttpHeaders.etagHeader, currentEtag);
+
+        var start = 0;
+        final validatorMatches = ifRange == null || ifRange == currentEtag;
+        if (range != null && validatorMatches) {
+          start = int.parse(
+            RegExp(r'bytes=(\d+)-').firstMatch(range)!.group(1)!,
+          );
+          request.response.statusCode = HttpStatus.partialContent;
+          request.response.headers.set(
+            HttpHeaders.contentRangeHeader,
+            'bytes $start-${currentData.length - 1}/${currentData.length}',
+          );
+        } else {
+          request.response.statusCode = HttpStatus.ok;
+        }
+        request.response.headers.contentLength = currentData.length - start;
+        await request.response.addStream(
+          Stream<List<int>>.fromIterable([currentData.sublist(start)]),
+        );
+        await request.response.close();
+      });
+      final mutableUrl =
+          'http://${mutableServer.address.address}:${mutableServer.port}/model.gguf';
+      final model = DownloadableModel(
+        name: 'Mutable model',
+        description: 'Test',
+        url: mutableUrl,
+        filename: 'same-url-changed-etag.gguf',
+        sizeBytes: mutableData.length,
+      );
+
+      var crashed = false;
+      await service.downloadModel(
+        model: model,
+        modelsDir: tempDir.path,
+        cancelToken: CancelToken(),
+        onProgress: (progress) {
+          if (progress > 0.25 && !crashed) {
+            crashed = true;
+            throw Exception('Simulated crash');
+          }
+        },
+        onSuccess: (_) {},
+        onError: (_) {},
+      );
+      expect(crashed, isTrue);
+
+      currentData = replacementData;
+      currentEtag = '"mutable-v2"';
+      await service.downloadModel(
+        model: model,
+        modelsDir: tempDir.path,
+        cancelToken: CancelToken(),
+        onProgress: (_) {},
+        onSuccess: (_) {},
+        onError: (error) => fail('Replacement download failed: $error'),
+      );
+
+      expect(rangeHeaders.whereType<String>(), isNotEmpty);
+      expect(ifRangeHeaders.whereType<String>(), contains('"mutable-v1"'));
+      expect(
+        File(p.join(tempDir.path, model.filename)).readAsBytesSync(),
+        replacementData,
+      );
+    },
+  );
+
+  test(
+    'mutable source without validator restarts without a Range request',
+    () async {
+      final unsafeData = List<int>.generate(32 * 1024, (i) => i % 239);
+      final rangeHeaders = <String?>[];
+      final unsafeServer = await HttpServer.bind(
+        InternetAddress.loopbackIPv4,
+        0,
+      );
+      addTearDown(() => unsafeServer.close(force: true));
+      unsafeServer.listen((request) async {
+        rangeHeaders.add(request.headers.value(HttpHeaders.rangeHeader));
+        request.response.statusCode = HttpStatus.ok;
+        request.response.headers.contentLength = unsafeData.length;
+        await request.response.addStream(
+          Stream<List<int>>.fromIterable([unsafeData]),
+        );
+        await request.response.close();
+      });
+      final unsafeUrl =
+          'http://${unsafeServer.address.address}:${unsafeServer.port}/model.gguf';
+      final model = DownloadableModel(
+        name: 'Unsafe mutable model',
+        description: 'Test',
+        url: unsafeUrl,
+        filename: 'unsafe-mutable.gguf',
+        sizeBytes: unsafeData.length,
+      );
+
+      var crashed = false;
+      await service.downloadModel(
+        model: model,
+        modelsDir: tempDir.path,
+        cancelToken: CancelToken(),
+        onProgress: (progress) {
+          if (progress > 0.25 && !crashed) {
+            crashed = true;
+            throw Exception('Simulated crash');
+          }
+        },
+        onSuccess: (_) {},
+        onError: (_) {},
+      );
+      await service.downloadModel(
+        model: model,
+        modelsDir: tempDir.path,
+        cancelToken: CancelToken(),
+        onProgress: (_) {},
+        onSuccess: (_) {},
+        onError: (error) => fail('Restart failed: $error'),
+      );
+
+      expect(rangeHeaders.whereType<String>(), isEmpty);
+      expect(
+        File(p.join(tempDir.path, model.filename)).readAsBytesSync(),
+        unsafeData,
+      );
+    },
+  );
+
+  test('unsafe 416 never promotes an arbitrary partial', () async {
+    final fullData = List<int>.generate(16 * 1024, (i) => i % 227);
+    var requestCount = 0;
+    final rangeHeaders = <String?>[];
+    final rangeServer = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() => rangeServer.close(force: true));
+    rangeServer.listen((request) async {
+      requestCount += 1;
+      final range = request.headers.value(HttpHeaders.rangeHeader);
+      rangeHeaders.add(range);
+      if (range != null && requestCount == 1) {
+        request.response.statusCode = HttpStatus.requestedRangeNotSatisfiable;
+        request.response.headers.set(
+          HttpHeaders.contentRangeHeader,
+          'bytes */${fullData.length}',
+        );
+        await request.response.close();
+        return;
+      }
+      request.response.statusCode = HttpStatus.ok;
+      request.response.headers.contentLength = fullData.length;
+      await request.response.addStream(
+        Stream<List<int>>.fromIterable([fullData]),
+      );
+      await request.response.close();
+    });
+    final revision = List<String>.filled(40, 'a').join();
+    final rangeUrl =
+        'http://${rangeServer.address.address}:${rangeServer.port}/resolve/$revision/model.gguf';
+    final model = DownloadableModel(
+      name: 'Unsafe 416 model',
+      description: 'Test',
+      url: rangeUrl,
+      filename: 'unsafe-416.gguf',
+      sizeBytes: fullData.length,
+    );
+    final partial = File(p.join(tempDir.path, '${model.filename}.download'));
+    await partial.writeAsBytes(List<int>.filled(fullData.length, 0x7f));
+    final source = model.modelSource as RemoteModelAssetSource;
+    await File(
+      p.join(tempDir.path, '${model.filename}.download.source.json'),
+    ).writeAsString(
+      jsonEncode({
+        'version': 2,
+        'sourceCacheKey': source.cacheKey,
+        'expectedSha256': null,
+        'expectedSizeBytes': fullData.length,
+        'validator': null,
+        'totalBytes': fullData.length,
+      }),
+    );
+
+    await service.downloadModel(
+      model: model,
+      modelsDir: tempDir.path,
+      cancelToken: CancelToken(),
+      onProgress: (_) {},
+      onSuccess: (_) {},
+      onError: (error) => fail('416 recovery failed: $error'),
+    );
+
+    expect(rangeHeaders.first, isNotNull);
+    expect(rangeHeaders.last, isNull);
+    expect(
+      File(p.join(tempDir.path, model.filename)).readAsBytesSync(),
+      fullData,
+    );
   });
 
   test('Remote model can depend on local mmproj availability', () async {
@@ -442,13 +802,9 @@ void main() {
     var downloaded = await service.getDownloadedModels([model]);
     expect(downloaded, isNot(contains(model.filename)));
 
-    // Still incomplete while .download exists.
+    // An unbound legacy partial is discarded rather than resumed.
+    expect(tempFile.existsSync(), isFalse);
     await meta.delete();
-    downloaded = await service.getDownloadedModels([model]);
-    expect(downloaded, isNot(contains(model.filename)));
-
-    // Valid once partial marker is removed.
-    await tempFile.delete();
     downloaded = await service.getDownloadedModels([model]);
     expect(downloaded, contains(model.filename));
   });
@@ -456,7 +812,7 @@ void main() {
 
 class TestModelService extends ModelServiceIO {
   final Directory testDir;
-  TestModelService(this.testDir);
+  TestModelService(this.testDir, {super.fileSha256});
 
   @override
   Future<String> getModelsDirectory() async {

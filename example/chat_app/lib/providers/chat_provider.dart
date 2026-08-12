@@ -7,6 +7,7 @@ import 'package:dio/dio.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:llamadart/llamadart.dart';
+import 'package:path/path.dart' as p;
 
 import '../models/chat_conversation.dart';
 import '../models/chat_message.dart';
@@ -723,6 +724,89 @@ class ChatProvider extends ChangeNotifier {
     );
   }
 
+  bool _sameLocalPath(String first, String second) {
+    return p.equals(
+      p.normalize(p.absolute(first)),
+      p.normalize(p.absolute(second)),
+    );
+  }
+
+  Future<void> _preflightManagedCatalogModel() async {
+    final configuredModelPath = _settings.modelPath?.trim();
+    if (kIsWeb ||
+        configuredModelPath == null ||
+        configuredModelPath.isEmpty ||
+        !p.isAbsolute(configuredModelPath) ||
+        _isRemoteUrl(configuredModelPath)) {
+      return;
+    }
+
+    final configuredFilename = p.basename(configuredModelPath);
+    final matchingCatalogModels = <DownloadableModel>[];
+    for (final candidate in DownloadableModel.defaultModels) {
+      final source = candidate.modelSource;
+      if (source is RemoteModelAssetSource &&
+          p.equals(source.filename, configuredFilename)) {
+        matchingCatalogModels.add(candidate);
+      }
+    }
+    if (matchingCatalogModels.isEmpty) {
+      return;
+    }
+
+    final modelsDir = await _modelService.getModelsDirectory();
+    DownloadableModel? catalogModel;
+    for (final candidate in matchingCatalogModels) {
+      final source = candidate.modelSource as RemoteModelAssetSource;
+      final managedPath = p.join(modelsDir, source.filename);
+      if (_sameLocalPath(configuredModelPath, managedPath)) {
+        catalogModel = candidate;
+        break;
+      }
+    }
+    if (catalogModel == null) {
+      return;
+    }
+
+    final cacheState = await _modelService.getModelCacheState(catalogModel);
+    if (!cacheState.model.isAvailable) {
+      throw LlamaModelException(
+        'The cached ${catalogModel.name} model is incomplete or does not '
+        'match the pinned catalog artifact. Open Manage models, remove its '
+        'cached assets, and download it again.',
+      );
+    }
+
+    final projectorSource = catalogModel.multimodalProjectorSource;
+    final configuredProjectorPath = _settings.mmprojPath?.trim();
+    final usesManagedCatalogProjector =
+        projectorSource is RemoteModelAssetSource &&
+        configuredProjectorPath != null &&
+        configuredProjectorPath.isNotEmpty &&
+        _sameLocalPath(
+          configuredProjectorPath,
+          p.join(modelsDir, projectorSource.filename),
+        );
+    if (usesManagedCatalogProjector &&
+        !(cacheState.multimodalProjector?.isAvailable ?? false)) {
+      throw LlamaModelException(
+        'The cached ${catalogModel.name} multimodal projector is incomplete '
+        'or does not match the pinned catalog artifact. Open Manage models, '
+        'remove its cached assets, and download it again.',
+      );
+    }
+
+    final catalogSizeBytes = catalogModel.sizeBytesFor(web: false);
+    final usesCompleteManagedCatalogProfile =
+        projectorSource == null || usesManagedCatalogProjector;
+    if (usesCompleteManagedCatalogProfile &&
+        catalogSizeBytes > 0 &&
+        _settings.modelBytesHint != catalogSizeBytes) {
+      _settings = _settings.copyWith(modelBytesHint: catalogSizeBytes);
+      await _saveSettingsNow();
+    }
+  }
+
   void _cancelActiveModelPrefetch() {
     final cancelToken = _activeModelPrefetchCancelToken;
     if (cancelToken != null && !cancelToken.isCancelled) {
@@ -962,6 +1046,7 @@ class ChatProvider extends ChangeNotifier {
     updateLoadingUi(0.1);
 
     try {
+      await _preflightManagedCatalogModel();
       final eagerLoadMmproj =
           (_settings.mmprojPath?.trim().isNotEmpty ?? false);
 

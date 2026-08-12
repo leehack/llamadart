@@ -83,18 +83,20 @@ flutter test
   when the selected native profile declares direct audio input or the loaded
   projector reports audio support; Linux recording and Web are excluded. That
   platform gating is not an end-to-end validation claim. The experimental
-  llama.cpp GGUF audio-answer path currently has engine-level real-model
-  evidence on macOS, not microphone UI/device evidence on mobile.
+  llama.cpp GGUF audio-answer path currently has engine-level Metal evidence
+  on macOS. Current packaged microphone UI evidence is LiteRT-LM on macOS;
+  Android, iOS, and Windows still need real-model/device validation.
   Real-model/device results should cite the
   `chat-app-voice-question-smoke` test-matrix row.
 - Voice-question capture makes a best-effort attempt to delete the temporary
   WAV after reading it. The encoded bytes remain in the in-memory conversation
   history for subsequent turns and regeneration, which can reprocess the
   recording and consume additional memory.
-- For the built-in Gemma 4 E2B LiteRT-LM bundle, the selected backend continues
-  to run text (and vision, when used), while the bundle-constrained audio
-  executor runs on CPU. LiteRT-LM itself is not universally limited to CPU
-  audio.
+- LiteRT-LM first initializes audio preprocessing on the selected backend, then
+  transparently retries CPU if that executor is incompatible and remembers the
+  working choice for the loaded model. For the validated Gemma 4 E2B bundle,
+  GPU text/vision with CPU audio is the resolved path; LiteRT-LM itself is not
+  universally limited to CPU audio.
 - Clipboard image/audio attachments through `Cmd/Ctrl+V` on desktop and web or
   **Paste attachment** on touch devices. Text-only clipboard content still
   follows the normal composer paste path, and media is capped at 64 MB.
@@ -154,10 +156,13 @@ The download library includes Gemma 4 E2B, E4B, 12B, 26B A4B, and 31B GGUF
 tiers. E2B, E4B, and 12B expose image, audio, and video input on the current
 native `llama.cpp` mtmd path; 26B A4B and 31B expose image/video input but do
 not support audio. The native Gemma 4 E2B LiteRT-LM bundle accepts audio
-directly without an external projector. On supported native recorder targets,
-the chat app can send a recording to that bundle with **Ask with voice**. This
-is generic audio-input chat, not typed speech-to-text. Web GGUF audio remains
-runtime-gated, and LiteRT-LM Web remains text-only.
+directly without an external projector. On code-supported native recorder
+targets, **Ask with voice** can send a recording to that bundle or to an
+audio-capable E2B, E4B, or 12B GGUF projector. This is generic audio-input chat,
+not typed speech-to-text. Current packaged microphone UI validation covers the
+LiteRT-LM E2B path on macOS; the E2B GGUF path has engine-level Metal evidence,
+not device UI validation. Web GGUF audio remains runtime-gated, and LiteRT-LM
+Web remains text-only.
 
 ## Web notes
 

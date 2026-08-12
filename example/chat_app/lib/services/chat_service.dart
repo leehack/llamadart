@@ -86,7 +86,14 @@ class ChatService {
         await _engine.loadModel(settings.modelPath!, modelParams: modelParams);
       }
 
-      if (eagerWarmUpLiteRtLmRuntime && _isLiteRtLmModel(settings.modelPath)) {
+      final isLiteRtLmModel = _isLiteRtLmModel(settings.modelPath);
+      final directAudioLiteRtLm =
+          isLiteRtLmModel &&
+          settings.directMediaInput &&
+          settings.modelSupportsAudio;
+      if (eagerWarmUpLiteRtLmRuntime &&
+          isLiteRtLmModel &&
+          !directAudioLiteRtLm) {
         emitProgress(0.92);
         await _warmUpLiteRtLmRuntime(settings);
       }

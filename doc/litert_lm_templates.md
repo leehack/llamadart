@@ -107,23 +107,24 @@ dart run tool/litert_lm_chat_features_smoke.dart \
 dart run tool/litert_lm_chat_features_smoke.dart \
   /path/to/gemma-4-E2B-it.litertlm gpu
 
-LITERT_LM_AUDIO_PATH=/path/to/known-question.wav \
-LITERT_LM_AUDIO_EXPECTED_TEXT=4 \
 dart run tool/testing/run_local_e2e.dart --scenario \
   litert-lm-chat-features-smoke \
   --model-path /path/to/gemma-4-E2B-it.litertlm \
-  --backend gpu
+  --backend gpu \
+  --audio-path /path/to/known-question.wav \
+  --expect 4
 ```
 
 The optional audio variant reads the encoded file into bytes, asks the model
 to answer the spoken question rather than transcribe it, and requires the
-normalized final answer to match `LITERT_LM_AUDIO_EXPECTED_TEXT`. The local E2E
-runner inherits both environment variables; it does not include the audio path
-or raw audio bytes in result metadata. For the verified Gemma 4 E2B bundle,
-`--backend gpu` or `--backend npu` selects the text executor (and GPU vision
-where applicable); its bundle-constrained audio executor still runs on CPU.
-LiteRT-LM supports independent executor selection, so this is the current
-bundle compatibility policy rather than a universal CPU-audio limitation.
+normalized final answer to match `--expect`. The local E2E runner forwards the
+shared audio flags without including the audio path or raw bytes in result
+metadata; results include the encoded byte length and a stable SHA-256 fixture
+ID. Native audio preprocessing first uses the selected executor, then retries
+on CPU if that executor is incompatible and remembers the working choice for
+the loaded model. With the verified Gemma 4 E2B bundle, `--backend gpu` resolves
+to GPU text/vision and CPU audio. That transparent fallback is bundle/runtime
+compatibility behavior, not a universal LiteRT-LM CPU-audio limitation.
 
 The smoke scripts are not a universal model certification suite. Passing them
 means the representative Qwen/Gemma chat-template family can load on the chosen

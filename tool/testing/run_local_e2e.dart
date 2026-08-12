@@ -221,7 +221,7 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       name: 'gguf-chat-features-smoke',
       group: LocalE2eScenarioGroup.dartLocalOnly,
       description:
-          'Run real GGUF chat/tool/thinking smoke or a separate optional exact audio-answer variant.',
+          'Run real GGUF chat, thinking-budget/suppression, tool-call, and optional image smoke.',
       requiresDevice: false,
       stepsBuilder: (context) {
         final arguments = <String>['run', 'tool/gguf_chat_features_smoke.dart'];
@@ -240,16 +240,39 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
             workingDirectory: context.projectRoot,
             executable: 'dart',
             arguments: arguments,
-            environment: {
-              if (context.audioPath != null)
-                'GGUF_AUDIO_PATH': context.audioPath!,
-              if (context.audioPath != null && context.expectProvided)
-                'GGUF_AUDIO_EXPECTED_TEXT': context.expect,
+            environment: const {
+              'GGUF_AUDIO_PATH': '',
+              'GGUF_AUDIO_EXPECTED_TEXT': '',
             },
             description: 'GGUF chat feature smoke',
           ),
         ];
       },
+    ),
+    LocalE2eScenario(
+      name: 'gguf-audio-chat-smoke',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description:
+          'Run exact-answer byte-backed audio chat through native llama.cpp.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'dart',
+          arguments: [
+            'run',
+            'tool/gguf_chat_features_smoke.dart',
+            context.modelPath!,
+            context.backend,
+            context.mmprojPath!,
+          ],
+          environment: {
+            'GGUF_AUDIO_PATH': context.audioPath!,
+            'GGUF_AUDIO_EXPECTED_TEXT': context.expect,
+          },
+          description: 'GGUF exact-answer audio chat smoke',
+        ),
+      ],
     ),
     LocalE2eScenario(
       name: 'speech-to-text-smoke',
@@ -403,6 +426,13 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
             workingDirectory: context.projectRoot,
             executable: 'dart',
             arguments: arguments,
+            environment: {
+              'LITERT_LM_AUDIO_PATH': context.audioPath ?? '',
+              'LITERT_LM_AUDIO_EXPECTED_TEXT':
+                  context.audioPath != null && context.expectProvided
+                  ? context.expect
+                  : '',
+            },
             description: 'LiteRT-LM chat feature smoke',
           ),
         ];
@@ -723,17 +753,22 @@ Future<LocalE2eResult> runLocalE2e(
   if (parsed.imagePath != null && parsed.mmprojPath == null) {
     return LocalE2eResult(64, stderr: '--image-path requires --mmproj-path.\n');
   }
-  if (parsed.audioPath != null && parsed.mmprojPath == null) {
-    return LocalE2eResult(64, stderr: '--audio-path requires --mmproj-path.\n');
-  }
-  if (scenario.name == 'gguf-chat-features-smoke' &&
-      parsed.audioPath != null &&
-      parsed.imagePath != null) {
+  if (scenario.name == 'gguf-chat-features-smoke' && parsed.audioPath != null) {
     return const LocalE2eResult(
       64,
       stderr:
-          '--audio-path and --image-path select separate '
-          'gguf-chat-features-smoke variants.\n',
+          '--audio-path uses the dedicated gguf-audio-chat-smoke scenario.\n',
+    );
+  }
+  const audioPathScenarios = <String>{
+    'gguf-audio-chat-smoke',
+    'speech-to-text-smoke',
+    'litert-lm-chat-features-smoke',
+  };
+  if (parsed.audioPath != null && !audioPathScenarios.contains(scenario.name)) {
+    return LocalE2eResult(
+      64,
+      stderr: '--audio-path is not supported by ${scenario.name}.\n',
     );
   }
   if (scenario.name == 'speech-to-text-smoke' &&
@@ -749,14 +784,33 @@ Future<LocalE2eResult> runLocalE2e(
           'are required for speech-to-text-smoke.\n',
     );
   }
-  if (scenario.name == 'gguf-chat-features-smoke' &&
+  if (scenario.name == 'gguf-audio-chat-smoke' &&
+      (parsed.modelPath == null ||
+          parsed.mmprojPath == null ||
+          parsed.audioPath == null ||
+          !parsed.expectProvided ||
+          parsed.expect.trim().isEmpty)) {
+    return const LocalE2eResult(
+      64,
+      stderr:
+          '--model-path, --mmproj-path, --audio-path, and a nonempty --expect '
+          'are required for gguf-audio-chat-smoke.\n',
+    );
+  }
+  if (scenario.name == 'gguf-audio-chat-smoke' && parsed.imagePath != null) {
+    return const LocalE2eResult(
+      64,
+      stderr: '--image-path is not supported by gguf-audio-chat-smoke.\n',
+    );
+  }
+  if (scenario.name == 'litert-lm-chat-features-smoke' &&
       parsed.audioPath != null &&
       (!parsed.expectProvided || parsed.expect.trim().isEmpty)) {
     return const LocalE2eResult(
       64,
       stderr:
           'A nonempty --expect is required when --audio-path is set for '
-          'gguf-chat-features-smoke.\n',
+          'litert-lm-chat-features-smoke.\n',
     );
   }
   if ((scenario.name == 'llama-cpp-speculative-benchmark' ||
@@ -990,7 +1044,7 @@ Options:
   --draft-model-path <path>      Optional draft GGUF model path for llama.cpp speculative benchmark.
   --mmproj-path <path>           Optional multimodal projector path for GGUF chat smoke.
   --image-path <path>            Optional image path for GGUF chat smoke multimodal variant.
-  --audio-path <path>            Complete audio fixture for speech-to-text or GGUF audio-chat smoke.
+  --audio-path <path>            Complete audio fixture for speech-to-text or native audio-chat smoke.
   --model-url <url>              Model URL for real-model web smoke.
   --backend <name>               Backend for local model scenarios (default: auto).
   --speculative-cases <list>     Benchmark cases for llama.cpp speculative benchmark.
@@ -1013,7 +1067,7 @@ Options:
   --skip-build                   Reuse an existing Flutter web build where supported.
   -h, --help                     Show this help.
 
-Inherited environment for litert-lm-chat-features-smoke:
+Direct environment for tool/litert_lm_chat_features_smoke.dart:
   LITERT_LM_IMAGE_PATH           Optional local image fixture.
   LITERT_LM_AUDIO_PATH           Optional local encoded audio fixture.
   LITERT_LM_AUDIO_EXPECTED_TEXT  Required exact expected answer when audio is set.
