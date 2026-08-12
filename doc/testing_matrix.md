@@ -73,7 +73,7 @@ Pick targeted rows based on the touched surface:
 | LiteRT-LM web / Gemma 4 web bundle | `gemma4-litert-web` |
 | Chat app model cache/download/projector | `chat-app-device-cache` |
 | Speech-to-text API, adapter, or chat flow | `speech-to-text-smoke` |
-| Chat-app Ask with voice | `gguf-chat-features-smoke`, `litert-lm-chat-features-smoke`, `chat-app-voice-question-smoke` |
+| Chat-app Ask with voice | `gguf-audio-chat-smoke`, `litert-lm-chat-features-smoke`, `chat-app-voice-question-smoke` |
 | Example app, CLI, or server package | `examples-tests` |
 
 The required `Web Chat Contract` check runs the chat app tests on VM and
@@ -88,7 +88,7 @@ The matrix is designed to cover these essential axes:
 
 | Axis | Covered by |
 | --- | --- |
-| llama.cpp native GGUF | `root-vm`, `native-prompt-reuse-parity`, `native-inference-benchmark`, `gguf-chat-features-smoke` |
+| llama.cpp native GGUF | `root-vm`, `native-prompt-reuse-parity`, `native-inference-benchmark`, `gguf-chat-features-smoke`, `gguf-audio-chat-smoke` |
 | llama.cpp WebGPU GGUF | `web-bridge-smoke`, `web-mock-chat-smoke`, `web-real-model-smoke`, `webgpu-multimodal-regression`, `gemma4-webgpu-mem64` |
 | LiteRT-LM native `.litertlm` | `litert-lm-engine-smoke`, `litert-lm-chat-features-smoke`, `native-hook-bundles` |
 | LiteRT-LM web `.litertlm` | `gemma4-litert-web` |
@@ -155,18 +155,18 @@ dart run tool/testing/run_local_e2e.dart --scenario gguf-chat-features-smoke \
   --mmproj-path models/Qwen3.5-0.8B-mmproj-F16.gguf \
   --image-path test/fixtures/image.png
 
-dart run tool/testing/run_local_e2e.dart --scenario gguf-chat-features-smoke \
+dart run tool/testing/run_local_e2e.dart --scenario gguf-audio-chat-smoke \
   --model-path /path/to/gemma-4-E2B-it-Q4_K_S.gguf \
   --backend metal \
   --mmproj-path /path/to/gemma-4-E2B-it-mmproj-F16.gguf \
   --audio-path /path/to/known-question.wav \
   --expect 4
 
-LITERT_LM_AUDIO_PATH=/path/to/known-question.wav \
-LITERT_LM_AUDIO_EXPECTED_TEXT=4 \
 dart run tool/testing/run_local_e2e.dart --scenario litert-lm-chat-features-smoke \
   --model-path /path/to/gemma-4-E2B-it.litertlm \
-  --backend auto
+  --backend auto \
+  --audio-path /path/to/known-question.wav \
+  --expect 4
 
 dart run tool/testing/run_local_e2e.dart --scenario speech-to-text-smoke \
   --model-path /path/to/Qwen3-ASR-0.6B-Q8_0.gguf \
@@ -198,11 +198,12 @@ dart run tool/testing/run_local_e2e.dart \
   --ngram-cache-build-static-path /tmp/llamadart-ngram-cache.bin
 ```
 
-Supplying `--audio-path` selects the GGUF smoke's audio-only variant after
-model and projector initialization. It validates byte-backed audio question
-answering against `--expect`; run the no-audio invocation separately for the
-chat, tool-call, thinking, and optional image checks. The JSON result reports
-the encoded byte length but not the fixture path.
+The dedicated `gguf-audio-chat-smoke` scenario validates byte-backed audio
+question answering against `--expect` after model and projector initialization.
+Run `gguf-chat-features-smoke` separately for chat, tool-call, thinking, and
+optional image checks. Both GGUF and LiteRT-LM audio results report the encoded
+byte length and a stable SHA-256 fixture ID, but not the fixture path or raw
+audio bytes.
 
 In the local E2E scenario, external draft-model strategies require
 `--draft-model-path`; select `draft-dspark` to validate DSpark against the same
@@ -251,7 +252,7 @@ Example filled row:
 | Matrix row | Scope covered | Platform / model / backend | Result | Evidence / notes |
 | --- | --- | --- | --- | --- |
 | `gguf-chat-features-smoke` | base GGUF chat/tool/thinking | macOS arm64, Qwen3.5-0.8B-Q4_K_M.gguf, llama.cpp auto/cpu | PASS | Base `RESULT gguf_chat_features ...`, no thinking marker leak, and one `get_weather` tool call. |
-| `gguf-chat-features-smoke` | separate byte-backed audio-answer variant | macOS arm64, Gemma 4 E2B GGUF + projector, llama.cpp Metal | PASS | Audio-only result with `variant: audioAnswer` and exact expected text. Experimental audio result is not mobile validation. |
+| `gguf-audio-chat-smoke` | byte-backed exact audio answer | macOS arm64, Gemma 4 E2B GGUF + projector, llama.cpp Metal | PASS | Audio-only result with `variant: audioAnswer`, exact expected text, and fixture SHA-256. Experimental engine evidence is not microphone UI or mobile validation. |
 
 ## Agentic Workflow
 

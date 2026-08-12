@@ -1,8 +1,9 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:llamadart/llamadart.dart';
+
+import 'audio_chat_smoke_support.dart';
 
 Future<void> main(List<String> args) async {
   final modelPath = args.isNotEmpty
@@ -33,7 +34,10 @@ Future<void> main(List<String> args) async {
     exitCode = 64;
     return;
   }
-  final audioPath = _optionalAudioPath();
+  final audioPath = optionalAudioChatSmokePath(
+    environmentName: 'GGUF_AUDIO_PATH',
+    smokeName: 'GGUF smoke',
+  );
   if (audioPath != null && mmprojPath == null) {
     stderr.writeln('GGUF_AUDIO_PATH requires GGUF_MMPROJ/mmproj path.');
     exitCode = 64;
@@ -46,8 +50,14 @@ Future<void> main(List<String> args) async {
     exitCode = 64;
     return;
   }
-  final audioExpectedText = _audioExpectedText(audioPath);
-  final audioBytes = audioPath == null ? null : await _readAudio(audioPath);
+  final audioExpectedText = optionalAudioChatExpectedText(
+    audioPath: audioPath,
+    environmentName: 'GGUF_AUDIO_EXPECTED_TEXT',
+    audioEnvironmentName: 'GGUF_AUDIO_PATH',
+  );
+  final audioFixture = audioPath == null
+      ? null
+      : await readAudioChatSmokeFixture(audioPath);
 
   final engine = LlamaEngine(LlamaBackend());
   try {
@@ -66,7 +76,7 @@ Future<void> main(List<String> args) async {
       await engine.loadMultimodalProjector(mmprojPath);
     }
 
-    if (audioBytes != null) {
+    if (audioFixture != null) {
       final audioChat = await _runScenario(
         engine: engine,
         name: 'audioChat',
@@ -74,8 +84,8 @@ Future<void> main(List<String> args) async {
           LlamaChatMessage.withContent(
             role: LlamaChatRole.user,
             content: [
-              LlamaAudioContent(bytes: audioBytes),
-              const LlamaTextContent(_audioQuestionPrompt),
+              LlamaAudioContent(bytes: audioFixture.bytes),
+              const LlamaTextContent(audioChatQuestionPrompt),
             ],
           ),
         ],
@@ -83,14 +93,18 @@ Future<void> main(List<String> args) async {
         enableThinking: false,
         maxTokens: 64,
       );
-      _verifyExactAnswer(audioChat, audioExpectedText!);
+      verifyExactAudioChatAnswer(
+        scenarioName: audioChat.name,
+        actualText: audioChat.content,
+        expectedText: audioExpectedText!,
+      );
       _verifyNoThinking(audioChat);
 
       final result = {
         'backendName': await engine.getBackendName(),
         'requestedBackend': backend.name,
         'variant': 'audioAnswer',
-        'audioInput': {'encodedByteLength': audioBytes.length},
+        'audioInput': audioFixture.toJson(),
         'audioChat': audioChat.toJson(),
       };
       print('RESULT gguf_chat_features ${jsonEncode(result)}');
@@ -277,54 +291,9 @@ Future<void> main(List<String> args) async {
   }
 }
 
-const String _audioQuestionPrompt =
-    'Listen carefully to every spoken word. Determine what the speaker is '
-    'asking, solve that request, and return only the final answer. Do not '
-    'merely repeat a word from the recording.';
-
 String? _nonEmptyTrimmed(String? value) {
   final trimmed = value?.trim();
   return trimmed == null || trimmed.isEmpty ? null : trimmed;
-}
-
-String? _optionalAudioPath() {
-  final value = _nonEmptyTrimmed(Platform.environment['GGUF_AUDIO_PATH']);
-  if (value == null) {
-    return null;
-  }
-  final audio = File(value);
-  if (!audio.existsSync()) {
-    throw ArgumentError('GGUF smoke audio does not exist.');
-  }
-  return audio.path;
-}
-
-String? _audioExpectedText(String? audioPath) {
-  if (audioPath == null) {
-    return null;
-  }
-  final value = _nonEmptyTrimmed(
-    Platform.environment['GGUF_AUDIO_EXPECTED_TEXT'],
-  );
-  if (value == null) {
-    throw ArgumentError(
-      'GGUF_AUDIO_EXPECTED_TEXT is required when GGUF_AUDIO_PATH is set.',
-    );
-  }
-  if (_normalizeAnswer(value).isEmpty) {
-    throw ArgumentError(
-      'GGUF_AUDIO_EXPECTED_TEXT must contain a verifiable answer.',
-    );
-  }
-  return value;
-}
-
-Future<Uint8List> _readAudio(String path) async {
-  final bytes = await File(path).readAsBytes();
-  if (bytes.isEmpty) {
-    throw ArgumentError('GGUF smoke audio must not be empty.');
-  }
-  return bytes;
 }
 
 Future<_ScenarioResult> _runScenario({
@@ -419,22 +388,6 @@ void _verifyThinkingSuppressedByZeroBudget(_ScenarioResult result) {
 void _verifyThinkingSeparation(_ScenarioResult result) {
   _verifyHasOutput(result);
   _verifyNoThinkingMarkers(result);
-}
-
-void _verifyExactAnswer(_ScenarioResult result, String expectedText) {
-  final expected = _normalizeAnswer(expectedText);
-  final actual = _normalizeAnswer(result.content);
-  if (actual != expected) {
-    throw StateError(
-      '${result.name} answer mismatch: expected "$expected", received '
-      '"$actual".',
-    );
-  }
-}
-
-String _normalizeAnswer(String value) {
-  final collapsed = value.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
-  return collapsed.replaceAll(RegExp(r'^[`*_]+|[`*_.!,;:?]+$'), '').trim();
 }
 
 void _verifyNoThinkingMarkers(_ScenarioResult result) {

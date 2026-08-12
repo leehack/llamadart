@@ -4,12 +4,13 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:llamadart/llamadart.dart';
-import 'package:llamadart_chat_example/providers/chat_provider.dart';
 import 'package:llamadart_chat_example/models/chat_settings.dart';
 import 'package:llamadart_chat_example/models/downloadable_model.dart';
+import 'package:llamadart_chat_example/providers/chat_provider.dart';
 import 'package:llamadart_chat_example/services/chat_service.dart';
 import 'package:llamadart_chat_example/services/model_service_base.dart'
     as app_model_service;
+import 'package:path/path.dart' as p;
 
 import 'mocks.dart';
 
@@ -75,6 +76,197 @@ void main() {
       expect(mockEngine.initialized, isTrue);
       expect(provider.maxGenerationTokens, greaterThan(0));
     });
+
+    test(
+      'managed catalog direct load rejects invalid cached artifacts',
+      () async {
+        if (kIsWeb) {
+          return;
+        }
+        final model = DownloadableModel.defaultModels.singleWhere(
+          (candidate) => candidate.name == 'Gemma 4 E2B it',
+        );
+        final modelSource = model.modelSource as RemoteModelAssetSource;
+        final projectorSource =
+            model.multimodalProjectorSource as RemoteModelAssetSource;
+        final modelsDir = p.absolute('managed-catalog-cache');
+        final settings = ChatSettings(
+          modelPath: p.join(modelsDir, modelSource.filename),
+          mmprojPath: p.join(modelsDir, projectorSource.filename),
+          preferredBackend: GpuBackend.cpu,
+        );
+
+        for (final entry in <({bool model, bool projector, String error})>[
+          (
+            model: false,
+            projector: true,
+            error: 'model is incomplete or does not match',
+          ),
+          (
+            model: true,
+            projector: false,
+            error: 'multimodal projector is incomplete or does not match',
+          ),
+        ]) {
+          final engine = MockLlamaEngine();
+          final modelService = _RecordingModelService(
+            modelsDir: modelsDir,
+            cacheState: app_model_service.ModelProfileCacheState(
+              model: app_model_service.ModelAssetCacheState(
+                role: ModelAssetRole.model,
+                label: modelSource.filename,
+                isAvailable: entry.model,
+              ),
+              multimodalProjector: app_model_service.ModelAssetCacheState(
+                role: ModelAssetRole.multimodalProjector,
+                label: projectorSource.filename,
+                isAvailable: entry.projector,
+              ),
+            ),
+          );
+          final invalidProvider = ChatProvider(
+            chatService: MockChatService(engine: engine),
+            settingsService: MockSettingsService()..settings = settings,
+            modelService: modelService,
+            initialSettings: settings,
+          );
+          addTearDown(invalidProvider.dispose);
+
+          await invalidProvider.loadModel();
+
+          expect(invalidProvider.isLoaded, isFalse);
+          expect(invalidProvider.error, contains(entry.error));
+          expect(engine.lastLoadedModelPath, isNull);
+          expect(modelService.cacheStateCalls, 1);
+        }
+      },
+    );
+
+    test(
+      'managed Gemma cache migrates the persisted aggregate size hint',
+      () async {
+        if (kIsWeb) {
+          return;
+        }
+        final model = DownloadableModel.defaultModels.singleWhere(
+          (candidate) => candidate.name == 'Gemma 4 E2B it',
+        );
+        final modelSource = model.modelSource as RemoteModelAssetSource;
+        final projectorSource =
+            model.multimodalProjectorSource as RemoteModelAssetSource;
+        final modelsDir = p.absolute('managed-catalog-cache');
+        final settings = ChatSettings(
+          modelPath: p.join(modelsDir, modelSource.filename),
+          mmprojPath: p.join(modelsDir, projectorSource.filename),
+          preferredBackend: GpuBackend.cpu,
+          modelBytesHint: 3043927168,
+        );
+        final settingsService = MockSettingsService()..settings = settings;
+        final modelService = _RecordingModelService(
+          modelsDir: modelsDir,
+          cacheState: app_model_service.ModelProfileCacheState(
+            model: app_model_service.ModelAssetCacheState(
+              role: ModelAssetRole.model,
+              label: modelSource.filename,
+              isAvailable: true,
+            ),
+            multimodalProjector: app_model_service.ModelAssetCacheState(
+              role: ModelAssetRole.multimodalProjector,
+              label: projectorSource.filename,
+              isAvailable: true,
+            ),
+          ),
+        );
+        final managedProvider = ChatProvider(
+          chatService: MockChatService(engine: MockLlamaEngine()),
+          settingsService: settingsService,
+          modelService: modelService,
+          initialSettings: settings,
+        );
+        addTearDown(managedProvider.dispose);
+
+        await managedProvider.loadModel();
+
+        expect(managedProvider.isLoaded, isTrue);
+        expect(
+          managedProvider.settings.modelBytesHint,
+          model.sizeBytesFor(web: false),
+        );
+        expect(
+          settingsService.settings.modelBytesHint,
+          model.sizeBytesFor(web: false),
+        );
+      },
+    );
+
+    test(
+      'manual model and projector paths bypass catalog-only assumptions',
+      () async {
+        if (kIsWeb) {
+          return;
+        }
+        final model = DownloadableModel.defaultModels.singleWhere(
+          (candidate) => candidate.name == 'Gemma 4 E2B it',
+        );
+        final source = model.modelSource as RemoteModelAssetSource;
+        final modelsDir = p.absolute('managed-catalog-cache');
+        final manualPath = p.join('custom-models', source.filename);
+        final modelService = _RecordingModelService(modelsDir: modelsDir);
+        final engine = MockLlamaEngine();
+        final manualProvider = ChatProvider(
+          chatService: MockChatService(engine: engine),
+          settingsService: MockSettingsService(),
+          modelService: modelService,
+          initialSettings: ChatSettings(
+            modelPath: manualPath,
+            preferredBackend: GpuBackend.cpu,
+          ),
+        );
+        addTearDown(manualProvider.dispose);
+
+        await manualProvider.loadModel();
+
+        expect(manualProvider.isLoaded, isTrue);
+        expect(engine.lastLoadedModelPath, manualPath);
+        expect(modelService.cacheStateCalls, 0);
+
+        const customHint = 123456789;
+        final customProjectorSettings = ChatSettings(
+          modelPath: p.join(modelsDir, source.filename),
+          mmprojPath: p.join('custom-models', 'custom-mmproj.gguf'),
+          preferredBackend: GpuBackend.cpu,
+          modelBytesHint: customHint,
+        );
+        final customProjectorService = _RecordingModelService(
+          modelsDir: modelsDir,
+          cacheState: app_model_service.ModelProfileCacheState(
+            model: app_model_service.ModelAssetCacheState(
+              role: ModelAssetRole.model,
+              label: source.filename,
+              isAvailable: true,
+            ),
+            multimodalProjector: app_model_service.ModelAssetCacheState(
+              role: ModelAssetRole.multimodalProjector,
+              label: 'catalog-mmproj.gguf',
+              isAvailable: false,
+            ),
+          ),
+        );
+        final customProjectorProvider = ChatProvider(
+          chatService: MockChatService(engine: MockLlamaEngine()),
+          settingsService: MockSettingsService(),
+          modelService: customProjectorService,
+          initialSettings: customProjectorSettings,
+        );
+        addTearDown(customProjectorProvider.dispose);
+
+        await customProjectorProvider.loadModel();
+
+        expect(customProjectorProvider.isLoaded, isTrue);
+        expect(customProjectorProvider.settings.modelBytesHint, customHint);
+        expect(customProjectorService.cacheStateCalls, 1);
+      },
+    );
 
     test(
       'loadModel disables structured controls for LiteRT-LM web metadata',
@@ -1293,16 +1485,35 @@ void main() {
         'https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/main/gemma-4-E2B-it-Q4_K_S.gguf?download=true',
       );
       expect(webModelSource.filename, nativeModelSource.filename);
-      expect(webModelSource.sizeBytes, 3043927168);
+      expect(webModelSource.sizeBytes, 3043934304);
       expect(webModelSource.sha256, isNull);
+      expect(
+        webModelSource.cacheKey,
+        // Asset identity deliberately excludes size metadata, so existing
+        // browser cache entries keep the same key after the corrected size.
+        const RemoteModelAssetSource(
+          url:
+              'https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/main/gemma-4-E2B-it-Q4_K_S.gguf?download=true',
+          filename: 'gemma-4-E2B-it-Q4_K_S.gguf',
+          sizeBytes: 3043927168,
+        ).cacheKey,
+      );
       expect(
         webProjectorSource.url,
         'https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/main/mmproj-F16.gguf?download=true',
       );
       expect(webProjectorSource.filename, nativeProjectorSource.filename);
-      expect(webProjectorSource.sizeBytes, isNull);
+      expect(webProjectorSource.sizeBytes, 985654080);
       expect(webProjectorSource.sha256, isNull);
-      expect(model.sizeBytesFor(web: true), 3043927168);
+      expect(
+        webProjectorSource.cacheKey,
+        const RemoteModelAssetSource(
+          url:
+              'https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/main/mmproj-F16.gguf?download=true',
+          filename: 'gemma-4-E2B-it-mmproj-F16.gguf',
+        ).cacheKey,
+      );
+      expect(model.sizeBytesFor(web: true), 4029588384);
     });
 
     test('Gemma 4 E2B LiteRT-LM pins its verified native bundle', () {
@@ -1699,18 +1910,26 @@ class _RecordingModelService
     implements
         app_model_service.ModelService,
         app_model_service.WebCachePrefetchModelService {
-  _RecordingModelService({this.supportsPrefetch = true, this.downloadError});
+  _RecordingModelService({
+    this.supportsPrefetch = true,
+    this.downloadError,
+    this.modelsDir = 'browser-cache',
+    this.cacheState,
+  });
 
   final bool supportsPrefetch;
   final Object? downloadError;
+  final String modelsDir;
+  final app_model_service.ModelProfileCacheState? cacheState;
   int downloadCalls = 0;
+  int cacheStateCalls = 0;
   DownloadableModel? lastModel;
 
   @override
   Future<bool> supportsWebCachePrefetch() async => supportsPrefetch;
 
   @override
-  Future<String> getModelsDirectory() async => 'browser-cache';
+  Future<String> getModelsDirectory() async => modelsDir;
 
   @override
   Future<Set<String>> getDownloadedModels(
@@ -1723,6 +1942,11 @@ class _RecordingModelService
   Future<app_model_service.ModelProfileCacheState> getModelCacheState(
     DownloadableModel model,
   ) async {
+    cacheStateCalls += 1;
+    final configured = cacheState;
+    if (configured != null) {
+      return configured;
+    }
     final mmprojSource = model.multimodalProjectorSource;
     return app_model_service.ModelProfileCacheState(
       model: app_model_service.ModelAssetCacheState(

@@ -493,17 +493,18 @@ class DownloadableModel {
             '140be8d7849741f88c50757d529b84373ee8e27052cc2236855b537f4a8215fa',
       ),
       sizeBytes: 4029586368,
-      webSizeBytes: 3043927168,
+      webSizeBytes: 4029588384,
       webModelSource: const RemoteModelAssetSource(
         url:
             'https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/main/gemma-4-E2B-it-Q4_K_S.gguf?download=true',
         filename: 'gemma-4-E2B-it-Q4_K_S.gguf',
-        sizeBytes: 3043927168,
+        sizeBytes: 3043934304,
       ),
       webMultimodalProjectorSource: const RemoteModelAssetSource(
         url:
             'https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/main/mmproj-F16.gguf?download=true',
         filename: 'gemma-4-E2B-it-mmproj-F16.gguf',
+        sizeBytes: 985654080,
       ),
       distribution: 'Unsloth',
       minRamGb: 8,

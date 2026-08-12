@@ -14,9 +14,9 @@ A Flutter chat application demonstrating real-world usage of llamadart with UI.
 - 🎙️ **Whole-file transcription**: Compatible native GGUF ASR models can
   transcribe a selected file or capture a foreground microphone recording,
   then transcribe it after **Stop & transcribe**.
-- 🗣️ **Ask with voice**: Compatible native direct-media models can receive a
-  short microphone recording as ordinary multimodal chat and answer the spoken
-  request after **Stop & ask**.
+- 🗣️ **Ask with voice**: Compatible native direct-media models or GGUF models
+  with an audio-capable projector can receive a short microphone recording as
+  ordinary multimodal chat and answer the request after **Stop & ask**.
 - 📱 Material Design 3 UI
 - ⚙️ Model configuration (path, runtime-detected backend selection, GPU layers, context size)
 - 🧩 Capability badges per model (Tools / Thinking / Vision / Audio / Video)
@@ -120,9 +120,10 @@ flutter test --run-skipped -t local-only \
    - The voice-question UI is code-supported on Android, iOS, macOS, and
      Windows when a native direct-media bundle or audio-capable projector and
      microphone recorder are available. Linux recording and Web are excluded.
-     Automated tests cover capability gating and lifecycle behavior, but each
-     native platform still requires real-model/device evidence before being
-     described as validated.
+     Automated tests cover capability gating and lifecycle behavior. Current
+     packaged microphone UI evidence is LiteRT-LM on macOS; the GGUF path has
+     engine-level Metal evidence only. Android, iOS, and Windows still require
+     real-model/device evidence before being described as validated.
      See the `chat-app-voice-question-smoke` row in
      `tool/testing/test_matrix.dart`.
    - After **Stop & ask**, the app makes a best-effort attempt to delete the
@@ -130,18 +131,19 @@ flutter test --run-skipped -t local-only \
      history so later turns and response regeneration can retain the audio
      context; those turns can therefore reprocess the recording and use
      additional memory.
-   - For the built-in Gemma 4 E2B LiteRT-LM bundle, the selected backend still
-     runs text (and vision, when used), while its bundle-constrained audio
-     executor runs on CPU. This is not a claim that LiteRT-LM audio is
-     universally CPU-only.
+   - LiteRT-LM first initializes audio preprocessing on the selected backend,
+     then transparently retries CPU if that executor is incompatible and
+     remembers the working choice for the loaded model. For the validated
+     Gemma 4 E2B bundle, GPU text/vision with CPU audio is the resolved path;
+     this is not a universal LiteRT-LM CPU-audio limitation.
    - Gemma 4 E2B is included as a GGUF + `mmproj` bundle. In the current native
      `llama.cpp` mtmd path used here, that projector exposes image, audio, and
      video input, so it uses the same **Ask with voice** interaction. Audio
      remains experimental upstream; start with short mono clips for the most
      reliable results. The GGUF audio-answer path has current engine-level
-     real-model evidence on macOS; microphone UI/device validation on Android
-     and iOS remains outstanding. Web keeps audio runtime-gated until the
-     loaded bridge reports support.
+     real-model evidence on macOS; microphone UI/device validation on Android,
+     iOS, and Windows remains outstanding. Web keeps audio runtime-gated until
+     the loaded bridge reports support.
    - LiteRT-LM `.litertlm` presets, when present, use the same model library
      flow. The example `pubspec.yaml` enables the `litert_lm` native runtime
      family for supported native targets, while Web builds load web-compatible

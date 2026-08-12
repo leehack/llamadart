@@ -11,9 +11,11 @@
   through both the LiteRT-LM direct-media bundle and the audio-capable GGUF +
   projector path. The app sends a microphone recording through normal
   multimodal chat so the model can answer the spoken request; it remains
-  separate from typed speech-to-text and is available on Android, iOS, macOS,
-  and Windows, with Linux recording and Web excluded. llama.cpp audio input is
-  experimental, and the GGUF path does not yet have mobile device validation.
+  separate from typed speech-to-text and is code-supported on Android, iOS,
+  macOS, and Windows, with Linux recording and Web excluded. Current packaged
+  microphone validation covers LiteRT-LM on macOS; llama.cpp audio input is
+  experimental and has engine-level Metal evidence only. Android, iOS, and
+  Windows device validation remains outstanding.
 
 * Added experimental, opt-in native llama.cpp DSpark speculative decoding
   through `SpeculativeDecodingConfig.draftDspark(...)`, including exact

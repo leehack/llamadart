@@ -5,11 +5,12 @@ import 'dart:io';
 
 import 'package:test/test.dart';
 
+import '../../../tool/audio_chat_smoke_support.dart';
 import '../../../tool/testing/run_local_e2e.dart';
 
 void main() {
   group('run_local_e2e', () {
-    test('documents generated ngram cache text default', () async {
+    test('documents shared runner options and defaults', () async {
       final result = await runLocalE2e(const ['--help'], projectRoot: '/repo');
 
       expect(result.exitCode, 0);
@@ -30,6 +31,7 @@ void main() {
       expect(result.stdout, contains('root-template-e2e'));
       expect(result.stdout, contains('qwen35-multimodal-macos-repro'));
       expect(result.stdout, contains('gguf-chat-features-smoke'));
+      expect(result.stdout, contains('gguf-audio-chat-smoke'));
       expect(result.stdout, contains('speech-to-text-smoke'));
       expect(result.stdout, contains('llama-cpp-speculative-benchmark'));
       expect(result.stdout, contains('llama-cpp-chat-template-smoke'));
@@ -198,7 +200,9 @@ void main() {
         expect(
           result.stdout,
           contains(
-            'cd /repo && dart run tool/gguf_chat_features_smoke.dart '
+            "cd /repo && GGUF_AUDIO_PATH='' "
+            "GGUF_AUDIO_EXPECTED_TEXT='' dart run "
+            'tool/gguf_chat_features_smoke.dart '
             'models/Qwen3.5-0.8B-Q4_K_M.gguf cpu',
           ),
         );
@@ -224,7 +228,9 @@ void main() {
       expect(
         result.stdout,
         contains(
-          'cd /repo && dart run tool/gguf_chat_features_smoke.dart '
+          "cd /repo && GGUF_AUDIO_PATH='' "
+          "GGUF_AUDIO_EXPECTED_TEXT='' dart run "
+          'tool/gguf_chat_features_smoke.dart '
           'models/Qwen3.5-0.8B-Q4_K_M.gguf cpu '
           'models/Qwen3.5-0.8B-mmproj-F16.gguf test/fixtures/image.png',
         ),
@@ -234,7 +240,7 @@ void main() {
     test('dry-runs GGUF audio chat with an exact expected answer', () async {
       final result = await runLocalE2e(const [
         '--scenario',
-        'gguf-chat-features-smoke',
+        'gguf-audio-chat-smoke',
         '--model-path',
         'models/gemma-4-E2B-it-Q4_K_S.gguf',
         '--backend',
@@ -267,7 +273,7 @@ void main() {
     test('requires an exact expected GGUF audio answer', () async {
       final result = await runLocalE2e(const [
         '--scenario',
-        'gguf-chat-features-smoke',
+        'gguf-audio-chat-smoke',
         '--model-path',
         'models/gemma-4-E2B-it-Q4_K_S.gguf',
         '--mmproj-path',
@@ -278,14 +284,14 @@ void main() {
       ], projectRoot: '/repo');
 
       expect(result.exitCode, 64);
-      expect(result.stderr, contains('A nonempty --expect is required'));
-      expect(result.stderr, contains('gguf-chat-features-smoke'));
+      expect(result.stderr, contains('a nonempty --expect'));
+      expect(result.stderr, contains('gguf-audio-chat-smoke'));
     });
 
-    test('keeps GGUF image and audio variants separate', () async {
+    test('rejects image input for the dedicated GGUF audio smoke', () async {
       final result = await runLocalE2e(const [
         '--scenario',
-        'gguf-chat-features-smoke',
+        'gguf-audio-chat-smoke',
         '--model-path',
         'models/gemma-4-E2B-it-Q4_K_S.gguf',
         '--mmproj-path',
@@ -300,7 +306,7 @@ void main() {
       ], projectRoot: '/repo');
 
       expect(result.exitCode, 64);
-      expect(result.stderr, contains('select separate'));
+      expect(result.stderr, contains('--image-path is not supported'));
     });
 
     test('dry-runs typed speech-to-text with exact fixture inputs', () async {
@@ -570,10 +576,58 @@ void main() {
       expect(
         result.stdout,
         contains(
-          'cd /repo && dart run tool/litert_lm_chat_features_smoke.dart '
+          "cd /repo && LITERT_LM_AUDIO_PATH='' "
+          "LITERT_LM_AUDIO_EXPECTED_TEXT='' dart run "
+          'tool/litert_lm_chat_features_smoke.dart '
           'models/gemma-4-E2B-it.litertlm auto',
         ),
       );
+    });
+
+    test('dry-runs LiteRT-LM audio chat with shared CLI flags', () async {
+      final result = await runLocalE2e(const [
+        '--scenario',
+        'litert-lm-chat-features-smoke',
+        '--model-path',
+        'models/gemma-4-E2B-it.litertlm',
+        '--backend',
+        'gpu',
+        '--audio-path',
+        'test/fixtures/question.wav',
+        '--expect',
+        '4',
+        '--dry-run',
+      ], projectRoot: '/repo');
+
+      expect(result.exitCode, 0);
+      expect(
+        result.stdout,
+        contains('LITERT_LM_AUDIO_PATH=test/fixtures/question.wav'),
+      );
+      expect(result.stdout, contains('LITERT_LM_AUDIO_EXPECTED_TEXT=4'));
+      expect(
+        result.stdout,
+        contains(
+          'dart run tool/litert_lm_chat_features_smoke.dart '
+          'models/gemma-4-E2B-it.litertlm gpu',
+        ),
+      );
+    });
+
+    test('requires an exact expected LiteRT-LM audio answer', () async {
+      final result = await runLocalE2e(const [
+        '--scenario',
+        'litert-lm-chat-features-smoke',
+        '--model-path',
+        'models/gemma-4-E2B-it.litertlm',
+        '--audio-path',
+        'test/fixtures/question.wav',
+        '--dry-run',
+      ], projectRoot: '/repo');
+
+      expect(result.exitCode, 64);
+      expect(result.stderr, contains('A nonempty --expect is required'));
+      expect(result.stderr, contains('litert-lm-chat-features-smoke'));
     });
 
     test(
@@ -682,6 +736,41 @@ void main() {
 
       expect(result.exitCode, isNot(0));
       expect(result.stderr, contains('Background server exited'));
+    });
+  });
+
+  group('audio chat smoke support', () {
+    test('normalizes presentation-only answer differences', () {
+      expect(normalizeAudioChatAnswer('  **4.**\n'), '4');
+      expect(
+        () => verifyExactAudioChatAnswer(
+          scenarioName: 'fixture',
+          actualText: 'five',
+          expectedText: '4',
+        ),
+        throwsA(isA<StateError>()),
+      );
+    });
+
+    test('reports a stable path-free fixture identity', () async {
+      final tempDir = await Directory.systemTemp.createTemp(
+        'audio_chat_smoke_support_test_',
+      );
+      addTearDown(() => tempDir.delete(recursive: true));
+      final audioPath = '${tempDir.path}/private-recording.wav';
+      await File(audioPath).writeAsBytes(const <int>[1, 2, 3]);
+
+      final first = await readAudioChatSmokeFixture(audioPath);
+      final second = await readAudioChatSmokeFixture(audioPath);
+      final metadata = first.toJson();
+
+      expect(first.fixtureId, second.fixtureId);
+      expect(first.fixtureId, startsWith('sha256:'));
+      expect(first.fixtureId.length, 71);
+      expect(metadata, hasLength(2));
+      expect(metadata['encodedByteLength'], 3);
+      expect(metadata['fixtureId'], first.fixtureId);
+      expect(metadata.toString(), isNot(contains(audioPath)));
     });
   });
 }

@@ -153,9 +153,10 @@ preflight; selected-file transcription is unchanged there. **Ask with voice**
 also requires a native direct-media audio model or an audio-capable projector
 and is unavailable on Web. These capability gates do not establish real-model
 behavior on every platform. The experimental llama.cpp GGUF voice path has
-current real-model evidence on macOS, not Android or iOS; record device evidence
-with the `chat-app-voice-question-smoke` test-matrix row before making a
-platform validation claim.
+engine-level Metal evidence on macOS, while current packaged microphone UI
+evidence is LiteRT-LM on macOS. Android, iOS, and Windows still require
+real-model/device evidence through the `chat-app-voice-question-smoke`
+test-matrix row before making a platform validation claim.
 
 The voice-question path makes a best-effort attempt to delete its temporary WAV
 after reading it, but keeps the encoded audio bytes in the in-memory
@@ -163,10 +164,11 @@ conversation history so later turns and regeneration preserve context. Those
 operations can reprocess the audio and consume additional memory. It remains
 generic audio-input chat and does not change the typed STT support matrix above.
 
-For the built-in Gemma 4 E2B LiteRT-LM bundle, the selected backend continues
-to run text (and vision, when used), while the bundle-constrained audio executor
-runs on CPU. This is a property of the current supported bundle, not a universal
-LiteRT-LM audio limitation.
+LiteRT-LM first initializes audio preprocessing on the selected backend, then
+transparently retries CPU if that executor is incompatible and remembers the
+working choice for the loaded model. For the validated Gemma 4 E2B bundle, GPU
+text/vision with CPU audio is the resolved path. This is bundle/runtime
+compatibility behavior, not a universal LiteRT-LM CPU-audio limitation.
 
 The chat app's desktop catalog includes the validated Qwen3-ASR 0.6B Q8_0
 model/projector pair. Its immutable artifact revision, byte sizes, and SHA-256
