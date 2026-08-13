@@ -229,6 +229,19 @@ void main() {
         ),
         throwsA(isA<LlamaTextToSpeechException>()),
       );
+      for (final request in const <TextToSpeechRequest>[
+        TextToSpeechRequest(text: 'Bad top p.', topP: double.nan),
+        TextToSpeechRequest(text: 'Bad min p.', minP: double.infinity),
+        TextToSpeechRequest(
+          text: 'Bad temperature.',
+          temperature: double.negativeInfinity,
+        ),
+      ]) {
+        await expectLater(
+          speechEngine.synthesize(request),
+          throwsA(isA<LlamaTextToSpeechException>()),
+        );
+      }
       await expectLater(
         speechEngine.synthesize(
           const TextToSpeechRequest(

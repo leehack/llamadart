@@ -532,10 +532,13 @@ class TextToSpeechEngine {
       );
     }
     if (request.topK <= 0 ||
+        !request.topP.isFinite ||
         request.topP <= 0 ||
         request.topP > 1 ||
+        !request.minP.isFinite ||
         request.minP < 0 ||
         request.minP > 1 ||
+        !request.temperature.isFinite ||
         request.temperature < 0 ||
         request.seed < 0 ||
         request.seed > 0xffffffff) {
