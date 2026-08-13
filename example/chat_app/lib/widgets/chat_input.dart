@@ -279,7 +279,9 @@ class _ChatInputState extends State<ChatInput> {
         await _stopSynthesizedSpeechPlayback();
         return;
       }
-      await _speechPlayer.play(BytesSource(result.toWavBytes()));
+      await _speechPlayer.play(
+        BytesSource(result.toWavBytes(), mimeType: 'audio/wav'),
+      );
       if (mounted) {
         setState(() {
           _isPlayingSpeech = true;
