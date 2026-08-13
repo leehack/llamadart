@@ -80,10 +80,11 @@ flutter test
   five-minute **Stop & transcribe** workflow and takes precedence for ASR
   profiles.
 - A dedicated native-desktop Qwen3-TTS mode backed by `TextToSpeechEngine`.
-  Type an utterance, optionally choose a language and speaker-reference audio,
-  then cancel synthesis, play the completed 24 kHz mono output, or save it as a
-  WAV file. This is separate from chat generation and does not automatically
-  read assistant responses aloud.
+  Type an utterance, optionally choose a language and select or record
+  speaker-reference audio, then cancel synthesis, automatically play the
+  completed 24 kHz mono output, replay it, or save it as a WAV file. This is
+  separate from chat generation and does not automatically read assistant
+  responses aloud.
 - The voice-question UI is code-supported on Android, iOS, macOS, and Windows
   when the selected native profile declares direct audio input or the loaded
   projector reports audio support; Linux recording and Web are excluded. That

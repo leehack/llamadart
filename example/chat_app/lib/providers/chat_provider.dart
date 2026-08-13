@@ -50,6 +50,9 @@ enum ChatAudioRecordingPurpose {
 
   /// Send the recording to a general audio-capable chat model for an answer.
   voiceQuestion,
+
+  /// Use the recording as speaker-reference audio for text-to-speech.
+  speakerReference,
 }
 
 typedef _VoiceQuestionContext = ({
@@ -105,6 +108,11 @@ class ChatProvider extends ChangeNotifier {
 
   /// The maximum voice-question recording accepted by Gemma 4 audio input.
   static const Duration maxVoiceQuestionRecordingDuration = Duration(
+    seconds: 30,
+  );
+
+  /// The maximum microphone sample accepted as a TTS speaker reference.
+  static const Duration maxSpeakerReferenceRecordingDuration = Duration(
     seconds: 30,
   );
 
@@ -168,6 +176,7 @@ class ChatProvider extends ChangeNotifier {
   TextToSpeechResult? _textToSpeechResult;
   TextToSpeechProgressEvent? _textToSpeechProgress;
   String? _textToSpeechError;
+  SpeechAudioBytesInput? _recordedSpeakerReference;
   bool _isSynthesizingSpeech = false;
   int _textToSpeechOperationSequence = 0;
   int? _activeTextToSpeechOperationId;
@@ -245,6 +254,10 @@ class ChatProvider extends ChangeNotifier {
   /// Latest actionable text-to-speech failure.
   String? get textToSpeechError => _textToSpeechError;
 
+  /// Latest microphone recording prepared as a TTS speaker reference.
+  SpeechAudioBytesInput? get recordedSpeakerReference =>
+      _recordedSpeakerReference;
+
   /// The current microphone capture phase.
   ChatAudioRecordingState get audioRecordingState => _audioRecordingState;
 
@@ -307,6 +320,22 @@ class ChatProvider extends ChangeNotifier {
   /// Whether a new utterance can be synthesized now.
   bool get canSynthesizeSpeech =>
       supportsTextToSpeech &&
+      _isLoaded &&
+      !_isInitializing &&
+      !_isGenerating &&
+      !_isTranscribing &&
+      !_isSynthesizingSpeech &&
+      !hasActiveAudioRecording &&
+      _mmprojLoaded &&
+      _chatService.engine.isReady;
+
+  /// Whether this runtime can record speaker-reference audio for TTS.
+  bool get supportsSpeakerReferenceRecording =>
+      !kIsWeb && _audioRecordingService.isSupported && supportsTextToSpeech;
+
+  /// Whether a new TTS speaker-reference recording can start now.
+  bool get canRecordSpeakerReference =>
+      supportsSpeakerReferenceRecording &&
       _isLoaded &&
       !_isInitializing &&
       !_isGenerating &&
@@ -2428,6 +2457,7 @@ class ChatProvider extends ChangeNotifier {
     final canStartSelectedPurpose = switch (selectedPurpose) {
       ChatAudioRecordingPurpose.transcription => canTranscribeAudio,
       ChatAudioRecordingPurpose.voiceQuestion => canAskWithVoice,
+      ChatAudioRecordingPurpose.speakerReference => canRecordSpeakerReference,
     };
     if (!canStartSelectedPurpose || hasActiveAudioRecording) {
       return;
@@ -2611,6 +2641,57 @@ class ChatProvider extends ChangeNotifier {
     await _submitVoiceQuestion(audioBytes, context);
   }
 
+  /// Stops microphone capture and keeps the WAV bytes as a speaker reference.
+  Future<void> stopAudioRecordingForSpeakerReference() async {
+    final path = await _finishAudioRecording(
+      ChatAudioRecordingPurpose.speakerReference,
+    );
+    if (path == null) {
+      return;
+    }
+
+    Uint8List? audioBytes;
+    try {
+      audioBytes = await _audioRecordingService.readRecording(path);
+    } catch (error) {
+      if (!_isDisposed) {
+        _addInfoMessage(
+          error is AudioRecordingException
+              ? error.message
+              : 'The speaker-reference recording could not be read.',
+        );
+      }
+    } finally {
+      await _audioRecordingService.deleteRecording(path);
+    }
+
+    if (audioBytes == null || _isDisposed) {
+      if (!_isDisposed) {
+        notifyListeners();
+      }
+      return;
+    }
+    _recordedSpeakerReference = SpeechAudioBytesInput(
+      audioBytes,
+      format: const SpeechAudioFormat(
+        sampleRateHz: 16000,
+        channelCount: 1,
+        encoding: 'wav',
+        mimeType: 'audio/wav',
+      ),
+    );
+    notifyListeners();
+  }
+
+  /// Clears microphone audio retained as the current TTS speaker reference.
+  void clearRecordedSpeakerReference() {
+    if (_recordedSpeakerReference == null) {
+      return;
+    }
+    _recordedSpeakerReference = null;
+    notifyListeners();
+  }
+
   /// Sends encoded [audioBytes] as a spoken question to the active chat model.
   ///
   /// Existing staged composer attachments are intentionally left untouched.
@@ -2766,14 +2847,24 @@ class ChatProvider extends ChangeNotifier {
 
       _audioRecordingElapsed = Duration(seconds: timer.tick);
       final purpose = _audioRecordingPurpose;
-      final maximumDuration = purpose == ChatAudioRecordingPurpose.voiceQuestion
-          ? maxVoiceQuestionRecordingDuration
-          : maxAudioRecordingDuration;
+      final maximumDuration = switch (purpose) {
+        ChatAudioRecordingPurpose.voiceQuestion =>
+          maxVoiceQuestionRecordingDuration,
+        ChatAudioRecordingPurpose.speakerReference =>
+          maxSpeakerReferenceRecordingDuration,
+        ChatAudioRecordingPurpose.transcription => maxAudioRecordingDuration,
+        null => maxAudioRecordingDuration,
+      };
       if (_audioRecordingElapsed >= maximumDuration) {
         _audioRecordingElapsed = maximumDuration;
         if (purpose == ChatAudioRecordingPurpose.voiceQuestion) {
           _addInfoMessage('30-second limit reached. Asking the model now.');
           unawaited(stopAudioRecordingAndAsk());
+        } else if (purpose == ChatAudioRecordingPurpose.speakerReference) {
+          _addInfoMessage(
+            '30-second limit reached. Using the recording as the speaker reference.',
+          );
+          unawaited(stopAudioRecordingForSpeakerReference());
         } else {
           _addInfoMessage(
             'Maximum recording length reached. Transcribing the recording now.',

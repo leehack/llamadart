@@ -128,9 +128,14 @@ model/projector pair. Selecting it switches the composer into a dedicated TTS
 mode:
 
 - type the utterance instead of sending a chat message;
-- optionally choose a language and speaker-reference recording;
+- optionally choose a language and select or record a speaker reference;
 - cancel while frames are being generated;
-- play the completed output or save it as a WAV file.
+- automatically play the completed output, replay it, or save it as a WAV file.
+
+Native microphone references are capped at 30 seconds. The example reads the
+completed WAV into memory for synthesis and best-effort deletes the temporary
+recording. Selecting an existing audio file remains available as a separate
+option.
 
 The TTS model is not presented as a general chat assistant, and the example
 does not automatically read arbitrary assistant responses. Automatic

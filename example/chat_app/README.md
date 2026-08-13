@@ -112,10 +112,12 @@ flutter test --run-skipped -t local-only \
      actions require the matching projector, and the preset's pinned downloads
      are SHA-256 verified.
    - The native-desktop Qwen3-TTS preset uses a separate typed synthesis flow,
-     not chat generation. Enter text, optionally select a language and speaker
-     reference, then synthesize. The app reports generation progress and lets
-     you cancel, play the completed 24 kHz mono output, or save it as WAV. The
-     matching model/projector downloads are immutable and SHA-256 verified.
+     not chat generation. Enter text, optionally select a language and choose
+     or record a speaker reference, then synthesize. The app reports generation
+     progress, automatically plays the completed 24 kHz mono output, and lets
+     you stop, replay, or save it as WAV. Recorded references are read into
+     memory and their temporary WAV files are best-effort deleted. The matching
+     model/projector downloads are immutable and SHA-256 verified.
      Current output is complete-buffer only, not streaming playback. Web,
      LiteRT-LM, and automatic read-aloud of chat responses remain unsupported.
    - Microphone capture is enabled on Android, iOS, macOS, and Windows when a

@@ -25,7 +25,7 @@
 	<key>NSHumanReadableCopyright</key>
 	<string>$(PRODUCT_COPYRIGHT)</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Record speech locally so the selected on-device model can transcribe it or answer the spoken request.</string>
+	<string>Record speech locally so the selected on-device model can transcribe it, answer the spoken request, or use it as a speaker reference for speech synthesis.</string>
 	<key>NSMainNibFile</key>
 	<string>MainMenu</string>
 	<key>NSPrincipalClass</key>

@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:audioplayers/audioplayers.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -11,6 +10,7 @@ import 'package:provider/provider.dart';
 
 import '../providers/chat_provider.dart';
 import '../services/clipboard_attachment_service.dart';
+import '../services/speech_playback_service.dart';
 import 'tool_declarations_dialog.dart';
 
 class ChatInput extends StatefulWidget {
@@ -18,11 +18,15 @@ class ChatInput extends StatefulWidget {
   final TextEditingController controller;
   final FocusNode focusNode;
 
+  /// Optional playback adapter used by deterministic widget tests.
+  final SpeechPlaybackService? speechPlaybackService;
+
   const ChatInput({
     super.key,
     required this.onSend,
     required this.controller,
     required this.focusNode,
+    this.speechPlaybackService,
   });
 
   @override
@@ -33,7 +37,7 @@ class _ChatInputState extends State<ChatInput> {
   final ClipboardAttachmentService _clipboardAttachments =
       ClipboardAttachmentService();
   bool _hasDraftText = false;
-  late final AudioPlayer _speechPlayer;
+  late final SpeechPlaybackService _speechPlayer;
   StreamSubscription<void>? _speechCompleteSubscription;
   bool _isPlayingSpeech = false;
   bool _speechPlaybackStopScheduled = false;
@@ -46,8 +50,8 @@ class _ChatInputState extends State<ChatInput> {
   void initState() {
     super.initState();
     _hasDraftText = widget.controller.text.trim().isNotEmpty;
-    _speechPlayer = AudioPlayer();
-    _speechCompleteSubscription = _speechPlayer.onPlayerComplete.listen((_) {
+    _speechPlayer = widget.speechPlaybackService ?? SpeechPlaybackService();
+    _speechCompleteSubscription = _speechPlayer.onComplete.listen((_) {
       if (mounted) {
         setState(() {
           _isPlayingSpeech = false;
@@ -233,13 +237,17 @@ class _ChatInputState extends State<ChatInput> {
     final accepted = await provider.synthesizeSpeech(
       text,
       language: _textToSpeechLanguage,
-      speakerReference: _speakerReference,
+      speakerReference: provider.recordedSpeakerReference ?? _speakerReference,
     );
     if (!mounted || !accepted) {
       return;
     }
     widget.controller.clear();
     widget.focusNode.requestFocus();
+    final result = provider.textToSpeechResult;
+    if (result != null) {
+      await _playSynthesizedSpeech(result, replaceCurrent: true);
+    }
   }
 
   Future<void> _pickSpeakerReference() async {
@@ -268,20 +276,41 @@ class _ChatInputState extends State<ChatInput> {
         _speakerReference = input;
         _speakerReferenceName = file.name;
       });
+      context.read<ChatProvider>().clearRecordedSpeakerReference();
     } catch (_) {
       _showMessage('Could not open the speaker reference audio.');
     }
   }
 
-  Future<void> _playSynthesizedSpeech(TextToSpeechResult result) async {
+  Future<void> _startSpeakerReferenceRecording(ChatProvider provider) async {
+    await provider.startAudioRecording(
+      purpose: ChatAudioRecordingPurpose.speakerReference,
+    );
+    if (!mounted ||
+        provider.audioRecordingState != ChatAudioRecordingState.recording ||
+        provider.audioRecordingPurpose !=
+            ChatAudioRecordingPurpose.speakerReference) {
+      return;
+    }
+    setState(() {
+      _speakerReference = null;
+      _speakerReferenceName = null;
+    });
+    provider.clearRecordedSpeakerReference();
+  }
+
+  Future<void> _playSynthesizedSpeech(
+    TextToSpeechResult result, {
+    bool replaceCurrent = false,
+  }) async {
     try {
       if (_isPlayingSpeech) {
         await _stopSynthesizedSpeechPlayback();
-        return;
+        if (!replaceCurrent) {
+          return;
+        }
       }
-      await _speechPlayer.play(
-        BytesSource(result.toWavBytes(), mimeType: 'audio/wav'),
-      );
+      await _speechPlayer.playWav(result.toWavBytes());
       if (mounted) {
         setState(() {
           _isPlayingSpeech = true;
@@ -599,6 +628,11 @@ class _ChatInputState extends State<ChatInput> {
         : progress.phase == TextToSpeechProgressPhase.processingPrompt
         ? 'Processing text…'
         : 'Generating audio · ${progress.framesGenerated} frames';
+    final controlsEnabled =
+        !provider.isSynthesizingSpeech && !provider.hasActiveAudioRecording;
+    final recordedReference = provider.recordedSpeakerReference;
+    final hasSpeakerReference =
+        recordedReference != null || _speakerReference != null;
     const languages = <String>[
       'Auto',
       'English',
@@ -671,20 +705,36 @@ class _ChatInputState extends State<ChatInput> {
               InputChip(
                 key: const ValueKey<String>('speaker_reference_chip'),
                 avatar: const Icon(Icons.record_voice_over_outlined, size: 17),
-                label: Text(_speakerReferenceName ?? 'Add speaker reference'),
-                onPressed: provider.isSynthesizingSpeech
+                label: Text(
+                  recordedReference != null
+                      ? 'Recorded reference'
+                      : _speakerReferenceName ?? 'Add speaker reference',
+                ),
+                onPressed: !controlsEnabled
                     ? null
                     : () => unawaited(_pickSpeakerReference()),
-                onDeleted:
-                    _speakerReference == null || provider.isSynthesizingSpeech
+                onDeleted: !hasSpeakerReference || !controlsEnabled
                     ? null
                     : () {
                         setState(() {
                           _speakerReference = null;
                           _speakerReferenceName = null;
                         });
+                        provider.clearRecordedSpeakerReference();
                       },
               ),
+              if (provider.supportsSpeakerReferenceRecording)
+                ActionChip(
+                  key: const ValueKey<String>(
+                    'record_speaker_reference_button',
+                  ),
+                  avatar: const Icon(Icons.mic_none_rounded, size: 17),
+                  label: const Text('Record reference'),
+                  onPressed: provider.canRecordSpeakerReference
+                      ? () =>
+                            unawaited(_startSpeakerReferenceRecording(provider))
+                      : null,
+                ),
             ],
           ),
         ],
@@ -980,8 +1030,13 @@ class _ChatInputState extends State<ChatInput> {
     final isVoiceQuestion =
         provider.audioRecordingPurpose ==
         ChatAudioRecordingPurpose.voiceQuestion;
+    final isSpeakerReference =
+        provider.audioRecordingPurpose ==
+        ChatAudioRecordingPurpose.speakerReference;
     final maximumDuration = isVoiceQuestion
         ? ChatProvider.maxVoiceQuestionRecordingDuration
+        : isSpeakerReference
+        ? ChatProvider.maxSpeakerReferenceRecordingDuration
         : ChatProvider.maxAudioRecordingDuration;
     final status = switch (state) {
       ChatAudioRecordingState.starting => 'Requesting microphone access…',
@@ -990,11 +1045,19 @@ class _ChatInputState extends State<ChatInput> {
             ? 'Recording voice question '
                   '${_formatRecordingDuration(provider.audioRecordingElapsed)} / '
                   '${_formatRecordingDuration(maximumDuration)}'
+            : isSpeakerReference
+            ? 'Recording speaker reference '
+                  '${_formatRecordingDuration(provider.audioRecordingElapsed)} / '
+                  '${_formatRecordingDuration(maximumDuration)}'
             : 'Recording for transcription '
                   '${_formatRecordingDuration(provider.audioRecordingElapsed)} / '
                   '${_formatRecordingDuration(maximumDuration)}',
       ChatAudioRecordingState.stopping =>
-        isVoiceQuestion ? 'Preparing voice question…' : 'Finishing recording…',
+        isVoiceQuestion
+            ? 'Preparing voice question…'
+            : isSpeakerReference
+            ? 'Preparing speaker reference…'
+            : 'Finishing recording…',
       ChatAudioRecordingState.cancelling => 'Discarding recording…',
       ChatAudioRecordingState.idle => '',
     };
@@ -1002,14 +1065,20 @@ class _ChatInputState extends State<ChatInput> {
       ChatAudioRecordingState.starting =>
         isVoiceQuestion
             ? 'Requesting microphone access for a voice question'
+            : isSpeakerReference
+            ? 'Requesting microphone access for a speaker reference'
             : 'Requesting microphone access for transcription',
       ChatAudioRecordingState.recording =>
         isVoiceQuestion
             ? 'Recording voice question. Maximum 30 seconds.'
+            : isSpeakerReference
+            ? 'Recording speaker reference. Maximum 30 seconds.'
             : 'Microphone recording for transcription in progress',
       ChatAudioRecordingState.stopping =>
         isVoiceQuestion
             ? 'Preparing recorded voice question'
+            : isSpeakerReference
+            ? 'Preparing recorded speaker reference'
             : 'Finishing microphone recording',
       ChatAudioRecordingState.cancelling => 'Discarding microphone recording',
       ChatAudioRecordingState.idle => '',
@@ -1061,16 +1130,24 @@ class _ChatInputState extends State<ChatInput> {
                   key: ValueKey<String>(
                     isVoiceQuestion
                         ? 'stop_and_ask_audio_button'
+                        : isSpeakerReference
+                        ? 'stop_and_use_speaker_reference_button'
                         : 'stop_and_transcribe_audio_button',
                   ),
                   onPressed: () => unawaited(
                     isVoiceQuestion
                         ? provider.stopAudioRecordingAndAsk()
+                        : isSpeakerReference
+                        ? provider.stopAudioRecordingForSpeakerReference()
                         : provider.stopAudioRecordingAndTranscribe(),
                   ),
                   icon: const Icon(Icons.stop_rounded, size: 18),
                   label: Text(
-                    isVoiceQuestion ? 'Stop & ask' : 'Stop & transcribe',
+                    isVoiceQuestion
+                        ? 'Stop & ask'
+                        : isSpeakerReference
+                        ? 'Stop & use'
+                        : 'Stop & transcribe',
                   ),
                 ),
             ];
