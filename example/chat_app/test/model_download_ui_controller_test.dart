@@ -5,6 +5,55 @@ import 'package:llamadart_chat_example/services/model_service_base.dart';
 
 void main() {
   group('ModelDownloadUiController', () {
+    test('labels completed transfer as verification', () {
+      const detail = ModelDownloadProgress(
+        overallProgress: 1,
+        downloadedBytes: 30,
+        totalBytes: 30,
+        stage: ModelDownloadStage.multimodalProjector,
+        stageIndex: 2,
+        stageCount: 2,
+        stageDownloadedBytes: 20,
+        stageTotalBytes: 20,
+      );
+
+      expect(
+        downloadStageLabel(detail, isWeb: false),
+        'Verifying mmproj (2/2)',
+      );
+      expect(isDownloadStageTransferComplete(detail), isTrue);
+    });
+
+    test('hides stale transfer rate while verifying', () {
+      final controller = ModelDownloadUiController();
+      addTearDown(controller.dispose);
+      const downloading = ModelDownloadProgress(
+        overallProgress: 0.5,
+        downloadedBytes: 10,
+        totalBytes: 20,
+        stage: ModelDownloadStage.model,
+        stageIndex: 1,
+        stageCount: 1,
+        stageDownloadedBytes: 10,
+        stageTotalBytes: 20,
+      );
+      const verifying = ModelDownloadProgress(
+        overallProgress: 1,
+        downloadedBytes: 20,
+        totalBytes: 20,
+        stage: ModelDownloadStage.model,
+        stageIndex: 1,
+        stageCount: 1,
+        stageDownloadedBytes: 20,
+        stageTotalBytes: 20,
+      );
+
+      controller.updateDownloadRate('model.gguf', downloading);
+      controller.updateDownloadRate('model.gguf', verifying);
+
+      expect(controller.transferLabel('model.gguf', verifying), isNull);
+    });
+
     test('runs queued downloads in FIFO order', () async {
       final controller = ModelDownloadUiController();
       addTearDown(controller.dispose);

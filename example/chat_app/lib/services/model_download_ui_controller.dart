@@ -190,6 +190,9 @@ class ModelDownloadUiController extends ChangeNotifier {
   }
 
   String? transferLabel(String filename, ModelDownloadProgress detail) {
+    if (isDownloadStageTransferComplete(detail)) {
+      return null;
+    }
     final bytesPerSecond = _smoothedDownloadRateBytesPerSec[filename];
     if (bytesPerSecond == null || bytesPerSecond <= 0) {
       return null;
@@ -471,6 +474,17 @@ class ModelDownloadUiState {
 }
 
 String downloadStageLabel(ModelDownloadProgress detail, {required bool isWeb}) {
+  if (isDownloadStageTransferComplete(detail)) {
+    final stageText = switch (detail.stage) {
+      ModelDownloadStage.model => 'Verifying model',
+      ModelDownloadStage.multimodalProjector => 'Verifying mmproj',
+    };
+    if (detail.stageCount > 1) {
+      return '$stageText (${detail.stageIndex}/${detail.stageCount})';
+    }
+    return stageText;
+  }
+
   final actionText = detail.resumed
       ? (isWeb ? 'Resuming cache' : 'Resuming')
       : (isWeb ? 'Caching' : 'Downloading');
@@ -483,6 +497,13 @@ String downloadStageLabel(ModelDownloadProgress detail, {required bool isWeb}) {
     return '$stageText (${detail.stageIndex}/${detail.stageCount})';
   }
   return stageText;
+}
+
+bool isDownloadStageTransferComplete(ModelDownloadProgress detail) {
+  final totalBytes = detail.stageTotalBytes;
+  return totalBytes != null &&
+      totalBytes > 0 &&
+      detail.stageDownloadedBytes >= totalBytes;
 }
 
 String? downloadTaskLabel(

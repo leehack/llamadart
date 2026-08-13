@@ -9,6 +9,10 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Improved Flutter chat example model downloads with bounded retries for
+  transient network failures, safe resume after truncated responses, and a
+  distinct integrity-verification state after transfer reaches 100%.
+
 - Added experimental typed Qwen3-TTS synthesis on native llama.cpp, including
   capability discovery, cancellation, complete PCM/WAV output, and a dedicated
   synthesize workflow with file or microphone speaker references, automatic

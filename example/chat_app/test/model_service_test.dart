@@ -20,6 +20,8 @@ void main() {
   late Map<String, int> getRequestCountByPath;
   late List<String?> modelRangeHeaders;
   late List<String?> modelIfRangeHeaders;
+  late int transientModelFailuresRemaining;
+  late int truncatedModelResponsesRemaining;
 
   const stableEtag = '"model-v1"';
 
@@ -33,6 +35,8 @@ void main() {
     getRequestCountByPath = <String, int>{};
     modelRangeHeaders = <String?>[];
     modelIfRangeHeaders = <String?>[];
+    transientModelFailuresRemaining = 0;
+    truncatedModelResponsesRemaining = 0;
     tempDir = await Directory.systemTemp.createTemp('model_service_test');
     service = TestModelService(tempDir);
 
@@ -58,6 +62,12 @@ void main() {
             modelRangeHeaders.add(rangeHeader);
             modelIfRangeHeaders.add(request.headers.value('if-range'));
           }
+          if (path == '/model.gguf' && transientModelFailuresRemaining > 0) {
+            transientModelFailuresRemaining--;
+            request.response.statusCode = HttpStatus.serviceUnavailable;
+            await request.response.close();
+            return;
+          }
           int start = 0;
           int end = payloadSize - 1;
           var isPartial = false;
@@ -81,8 +91,17 @@ void main() {
             return;
           }
 
-          // Check if client disconnected, though difficult to detect reliably in dart:io instantly
-          // We will just stream
+          if (path == '/model.gguf' &&
+              !isPartial &&
+              truncatedModelResponsesRemaining > 0) {
+            truncatedModelResponsesRemaining--;
+            request.response.statusCode = HttpStatus.ok;
+            request.response.headers.chunkedTransferEncoding = true;
+            request.response.add(payload.sublist(0, payloadSize ~/ 3));
+            await request.response.close();
+            return;
+          }
+
           request.response.headers.contentLength = end - start + 1;
           if (isPartial) {
             request.response.headers.set(
@@ -139,6 +158,111 @@ void main() {
     expect(file.lengthSync(), testDataSize);
     expect(file.readAsBytesSync(), testData);
   });
+
+  test('transient server failure retries automatically', () async {
+    transientModelFailuresRemaining = 1;
+    service = TestModelService(
+      tempDir,
+      retryDelays: const <Duration>[Duration.zero],
+    );
+    final model = DownloadableModel(
+      name: 'Retry Model',
+      description: 'Test',
+      url: '$baseUrl/model.gguf',
+      filename: 'retry-model.gguf',
+      sizeBytes: testDataSize,
+    );
+
+    await service.downloadModel(
+      model: model,
+      modelsDir: tempDir.path,
+      cancelToken: CancelToken(),
+      onProgress: (_) {},
+      onSuccess: (_) {},
+      onError: (error) => fail('Automatic retry failed: $error'),
+    );
+
+    expect(getRequestCountByPath['/model.gguf'], 2);
+    expect(
+      File(p.join(tempDir.path, model.filename)).readAsBytesSync(),
+      testData,
+    );
+  });
+
+  test('cancellation interrupts transient retry backoff', () async {
+    transientModelFailuresRemaining = 10;
+    service = TestModelService(
+      tempDir,
+      retryDelays: const <Duration>[Duration(seconds: 30)],
+    );
+    final model = DownloadableModel(
+      name: 'Cancelled Retry Model',
+      description: 'Test',
+      url: '$baseUrl/model.gguf',
+      filename: 'cancelled-retry-model.gguf',
+      sizeBytes: testDataSize,
+    );
+    final cancelToken = CancelToken();
+    Object? failure;
+
+    final download = service.downloadModel(
+      model: model,
+      modelsDir: tempDir.path,
+      cancelToken: cancelToken,
+      onProgress: (_) {},
+      onSuccess: (_) => fail('Cancelled retry unexpectedly completed.'),
+      onError: (error) => failure = error,
+    );
+    while ((getRequestCountByPath['/model.gguf'] ?? 0) == 0) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+    cancelToken.cancel('test cancellation');
+    await download.timeout(const Duration(seconds: 1));
+
+    expect(failure, isA<DioException>());
+    expect((failure! as DioException).type, DioExceptionType.cancel);
+    expect(getRequestCountByPath['/model.gguf'], 1);
+  });
+
+  test(
+    'truncated stream keeps its partial and resumes automatically',
+    () async {
+      truncatedModelResponsesRemaining = 1;
+      service = TestModelService(
+        tempDir,
+        retryDelays: const <Duration>[Duration.zero],
+      );
+      final model = DownloadableModel(
+        name: 'Truncated Model',
+        description: 'Test',
+        url: '$baseUrl/model.gguf',
+        filename: 'truncated-model.gguf',
+        sizeBytes: testDataSize,
+      );
+
+      await service.downloadModel(
+        model: model,
+        modelsDir: tempDir.path,
+        cancelToken: CancelToken(),
+        onProgress: (_) {},
+        onSuccess: (_) {},
+        onError: (error) => fail('Truncated-stream retry failed: $error'),
+      );
+
+      expect(getRequestCountByPath['/model.gguf'], 2);
+      expect(modelRangeHeaders.first, isNull);
+      expect(modelRangeHeaders.last, startsWith('bytes='));
+      expect(modelIfRangeHeaders.last, stableEtag);
+      expect(
+        File(p.join(tempDir.path, model.filename)).readAsBytesSync(),
+        testData,
+      );
+      expect(
+        File(p.join(tempDir.path, '${model.filename}.download')).existsSync(),
+        isFalse,
+      );
+    },
+  );
 
   test('verified remote download enforces the catalog SHA-256', () async {
     final model = DownloadableModel.fromSources(
@@ -812,7 +936,7 @@ void main() {
 
 class TestModelService extends ModelServiceIO {
   final Directory testDir;
-  TestModelService(this.testDir, {super.fileSha256});
+  TestModelService(this.testDir, {super.fileSha256, super.retryDelays});
 
   @override
   Future<String> getModelsDirectory() async {
