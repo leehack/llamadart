@@ -1,5 +1,9 @@
 ## Unreleased
 
+* Improved Flutter chat example model downloads with bounded retries for
+  transient network failures, safe resume after truncated responses, and a
+  distinct integrity-verification state after transfer reaches 100%.
+
 * Added an experimental typed `TextToSpeechEngine` for native llama.cpp
   Qwen3-TTS models, with capability discovery, language and optional speaker
   reference input, cancellable progress, complete 24 kHz PCM output, and WAV

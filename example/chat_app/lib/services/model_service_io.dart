@@ -13,6 +13,11 @@ import 'model_service_base.dart';
 class ModelServiceIO implements ModelService {
   static const int _integrityStampVersion = 1;
   static const int _downloadProvenanceVersion = 2;
+  static const List<Duration> _defaultRetryDelays = <Duration>[
+    Duration(milliseconds: 500),
+    Duration(seconds: 1),
+    Duration(seconds: 2),
+  ];
   static const String _hfToken = String.fromEnvironment('HF_TOKEN');
   static const bool _enableParallelRangeDownloads = bool.fromEnvironment(
     'LLAMADART_CHAT_PARALLEL_DOWNLOAD',
@@ -21,15 +26,42 @@ class ModelServiceIO implements ModelService {
   static const int _parallelThresholdBytes = 500 * 1024 * 1024;
   static const int _parallelMaxParts = 4;
 
-  final Dio _dio = Dio();
-  final Future<String> Function(File file) _fileSha256;
+  final Dio _dio;
+  final List<Duration> _retryDelays;
+  final Future<String> Function(File file, CancelToken? cancelToken)
+  _fileSha256;
   final Map<String, _VerifiedRemoteAsset> _verifiedRemoteAssets = {};
 
-  ModelServiceIO({Future<String> Function(File file)? fileSha256})
-    : _fileSha256 = fileSha256 ?? _computeFileSha256;
+  ModelServiceIO({
+    Future<String> Function(File file, CancelToken? cancelToken)? fileSha256,
+    Dio? dio,
+    List<Duration>? retryDelays,
+  }) : _dio =
+           dio ??
+           Dio(
+             BaseOptions(
+               connectTimeout: const Duration(seconds: 30),
+               receiveTimeout: const Duration(seconds: 60),
+             ),
+           ),
+       _retryDelays = List<Duration>.unmodifiable(
+         retryDelays ?? _defaultRetryDelays,
+       ),
+       _fileSha256 = fileSha256 ?? _computeFileSha256;
 
-  static Future<String> _computeFileSha256(File file) async {
-    return (await sha256.bind(file.openRead()).first).toString();
+  static Future<String> _computeFileSha256(
+    File file,
+    CancelToken? cancelToken,
+  ) async {
+    final digestSink = _DigestSink();
+    final inputSink = sha256.startChunkedConversion(digestSink);
+    await for (final chunk in file.openRead()) {
+      _throwIfCancelled(cancelToken, file.path);
+      inputSink.add(chunk);
+    }
+    _throwIfCancelled(cancelToken, file.path);
+    inputSink.close();
+    return digestSink.digest.toString();
   }
 
   Map<String, Object> _requestHeaders({int? rangeStart, String? ifRange}) {
@@ -177,7 +209,7 @@ class ModelServiceIO implements ModelService {
             );
           },
         );
-        await _verifyDownloadedRemoteAsset(modelsDir, source);
+        await _verifyDownloadedRemoteAsset(modelsDir, source, cancelToken);
       }
 
       if (mmprojNeedsDownload) {
@@ -201,7 +233,7 @@ class ModelServiceIO implements ModelService {
             );
           },
         );
-        await _verifyDownloadedRemoteAsset(modelsDir, source);
+        await _verifyDownloadedRemoteAsset(modelsDir, source, cancelToken);
       }
 
       if (stageCount > 0) {
@@ -305,8 +337,9 @@ class ModelServiceIO implements ModelService {
 
   Future<bool> _hasExpectedIntegrity(
     File file,
-    RemoteModelAssetSource source,
-  ) async {
+    RemoteModelAssetSource source, {
+    CancelToken? cancelToken,
+  }) async {
     final expectedSha256 = source.sha256?.trim().toLowerCase();
     if (expectedSha256 == null || expectedSha256.isEmpty) {
       return true;
@@ -333,7 +366,8 @@ class ModelServiceIO implements ModelService {
     final String actualSha256;
     final FileStat verifiedStat;
     try {
-      actualSha256 = (await _fileSha256(file)).toLowerCase();
+      actualSha256 = (await _fileSha256(file, cancelToken)).toLowerCase();
+      _throwIfCancelled(cancelToken, file.path);
       verifiedStat = await file.stat();
     } on FileSystemException {
       await _clearVerifiedRemoteAsset(file.path);
@@ -404,13 +438,15 @@ class ModelServiceIO implements ModelService {
   Future<void> _verifyDownloadedRemoteAsset(
     String modelsDir,
     RemoteModelAssetSource source,
+    CancelToken cancelToken,
   ) async {
     final expectedSha256 = source.sha256?.trim();
     if (expectedSha256 == null || expectedSha256.isEmpty) {
       return;
     }
     final file = File(_assetPath(modelsDir, source));
-    if (await file.exists() && await _hasExpectedIntegrity(file, source)) {
+    if (await file.exists() &&
+        await _hasExpectedIntegrity(file, source, cancelToken: cancelToken)) {
       return;
     }
     if (await file.exists()) {
@@ -552,14 +588,32 @@ class ModelServiceIO implements ModelService {
       );
     }
     var completed = false;
+    var retryIndex = 0;
     try {
-      await _downloadFile(
-        source: source,
-        savePath: savePath,
-        cancelToken: cancelToken,
-        onProgress: onProgress,
-      );
-      completed = true;
+      while (true) {
+        try {
+          await _downloadFile(
+            source: source,
+            savePath: savePath,
+            cancelToken: cancelToken,
+            onProgress: onProgress,
+          );
+          completed = true;
+          break;
+        } catch (error) {
+          if (cancelToken.isCancelled ||
+              retryIndex >= _retryDelays.length ||
+              !_isRetryableDownloadError(error)) {
+            rethrow;
+          }
+          await _waitForRetry(
+            _retryDelays[retryIndex],
+            cancelToken,
+            source.filename,
+          );
+          retryIndex++;
+        }
+      }
     } finally {
       if (completed) {
         await _deleteIfExists(_downloadProvenanceFile(savePath));
@@ -674,7 +728,8 @@ class ModelServiceIO implements ModelService {
             expectedSha256 != null &&
             expectedSha256.isNotEmpty) {
           canTrustCompletePartial =
-              (await _fileSha256(tempFile)).toLowerCase() == expectedSha256;
+              (await _fileSha256(tempFile, cancelToken)).toLowerCase() ==
+              expectedSha256;
         }
         if (canTrustCompletePartial) {
           final finalFile = File(savePath);
@@ -751,6 +806,7 @@ class ModelServiceIO implements ModelService {
             finalPath: savePath,
             response: response,
             startByte: 0,
+            expectedTotalBytes: provenance?.knownTotal ?? source.sizeBytes,
             append: false,
             resumed: false,
             onProgress: onProgress,
@@ -771,6 +827,7 @@ class ModelServiceIO implements ModelService {
         finalPath: savePath,
         response: response,
         startByte: canAppend ? startByte : 0,
+        expectedTotalBytes: provenance?.knownTotal ?? source.sizeBytes,
         append: canAppend,
         resumed: canAppend,
         onProgress: onProgress,
@@ -784,6 +841,7 @@ class ModelServiceIO implements ModelService {
     required String finalPath,
     required Response<ResponseBody> response,
     required int startByte,
+    required int? expectedTotalBytes,
     required bool append,
     required bool resumed,
     required void Function(int downloadedBytes, int? totalBytes, bool resumed)
@@ -797,11 +855,16 @@ class ModelServiceIO implements ModelService {
       );
     }
 
-    final totalBytes = _resolveTotalBytes(
+    final responseTotalBytes = _resolveTotalBytes(
       headers: response.headers,
       statusCode: response.statusCode ?? HttpStatus.ok,
       startByte: startByte,
     );
+    final normalizedExpectedTotal =
+        expectedTotalBytes != null && expectedTotalBytes > 0
+        ? expectedTotalBytes
+        : null;
+    final totalBytes = responseTotalBytes ?? normalizedExpectedTotal;
 
     var downloadedBytes = startByte;
     final sink = tempFile.openWrite(
@@ -820,12 +883,76 @@ class ModelServiceIO implements ModelService {
       await sink.close();
     }
 
+    if (totalBytes != null && downloadedBytes != totalBytes) {
+      throw DioException(
+        requestOptions: response.requestOptions,
+        type: DioExceptionType.connectionError,
+        message:
+            'Download stream ended at $downloadedBytes of $totalBytes bytes.',
+      );
+    }
+
     final finalFile = File(finalPath);
     if (await finalFile.exists()) {
       await finalFile.delete();
     }
     await tempFile.rename(finalPath);
   }
+
+  bool _isRetryableDownloadError(Object error) {
+    if (error is SocketException || error is HttpException) {
+      return true;
+    }
+    if (error is! DioException) {
+      return false;
+    }
+    switch (error.type) {
+      case DioExceptionType.connectionTimeout:
+      case DioExceptionType.sendTimeout:
+      case DioExceptionType.receiveTimeout:
+      case DioExceptionType.connectionError:
+        return true;
+      case DioExceptionType.badResponse:
+        final statusCode = error.response?.statusCode;
+        return statusCode == HttpStatus.requestTimeout ||
+            statusCode == HttpStatus.tooManyRequests ||
+            (statusCode != null && statusCode >= 500 && statusCode < 600);
+      case DioExceptionType.unknown:
+        return error.error is SocketException || error.error is HttpException;
+      case DioExceptionType.badCertificate:
+      case DioExceptionType.cancel:
+        return false;
+    }
+  }
+
+  Future<void> _waitForRetry(
+    Duration delay,
+    CancelToken cancelToken,
+    String filename,
+  ) async {
+    if (cancelToken.isCancelled) {
+      throw _cancelledDownload(filename);
+    }
+    await Future.any<void>([
+      Future<void>.delayed(delay),
+      cancelToken.whenCancel.then<void>((_) {}),
+    ]);
+    if (cancelToken.isCancelled) {
+      throw _cancelledDownload(filename);
+    }
+  }
+
+  static void _throwIfCancelled(CancelToken? cancelToken, String filename) {
+    if (cancelToken?.isCancelled ?? false) {
+      throw _cancelledDownload(filename);
+    }
+  }
+
+  static DioException _cancelledDownload(String filename) => DioException(
+    requestOptions: RequestOptions(path: filename),
+    type: DioExceptionType.cancel,
+    message: 'Model download was cancelled.',
+  );
 
   Future<_RemoteFileProbe?> _probeRemoteFile({
     required String url,
@@ -1254,6 +1381,21 @@ class ModelServiceIO implements ModelService {
       await legacyMeta.delete();
     }
   }
+}
+
+class _DigestSink implements Sink<Digest> {
+  Digest? _digest;
+
+  Digest get digest =>
+      _digest ?? (throw StateError('SHA-256 conversion did not complete.'));
+
+  @override
+  void add(Digest data) {
+    _digest = data;
+  }
+
+  @override
+  void close() {}
 }
 
 class _ContentRange {
