@@ -3025,7 +3025,7 @@ class ChatProvider extends ChangeNotifier {
   Future<LlamaImageContent?> _prepareImagePartFromPath(String path) async {
     try {
       final bytes = await File(path).readAsBytes();
-      return _prepareImagePartFromBytes(bytes);
+      return await _prepareImagePartFromBytes(bytes);
     } catch (error) {
       _logDart(
         LlamaLogLevel.warn,

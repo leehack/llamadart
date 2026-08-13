@@ -51,7 +51,7 @@ class ChatCompletionsHandler {
         return _streamWriter.create(request);
       }
 
-      return _nonStreamingResponse(request);
+      return await _nonStreamingResponse(request);
     } on OpenAiHttpException catch (error) {
       return errorJsonResponse(error);
     } catch (error) {
