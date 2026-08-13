@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:audioplayers/audioplayers.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -31,11 +33,28 @@ class _ChatInputState extends State<ChatInput> {
   final ClipboardAttachmentService _clipboardAttachments =
       ClipboardAttachmentService();
   bool _hasDraftText = false;
+  late final AudioPlayer _speechPlayer;
+  StreamSubscription<void>? _speechCompleteSubscription;
+  bool _isPlayingSpeech = false;
+  bool _speechPlaybackStopScheduled = false;
+  TextToSpeechResult? _playingSpeechResult;
+  String? _textToSpeechLanguage;
+  SpeechAudioInput? _speakerReference;
+  String? _speakerReferenceName;
 
   @override
   void initState() {
     super.initState();
     _hasDraftText = widget.controller.text.trim().isNotEmpty;
+    _speechPlayer = AudioPlayer();
+    _speechCompleteSubscription = _speechPlayer.onPlayerComplete.listen((_) {
+      if (mounted) {
+        setState(() {
+          _isPlayingSpeech = false;
+          _playingSpeechResult = null;
+        });
+      }
+    });
     widget.controller.addListener(_onTextChanged);
     _clipboardAttachments.registerPasteEventListener(_onPasteEvent);
   }
@@ -55,6 +74,8 @@ class _ChatInputState extends State<ChatInput> {
   void dispose() {
     _clipboardAttachments.unregisterPasteEventListener(_onPasteEvent);
     widget.controller.removeListener(_onTextChanged);
+    unawaited(_speechCompleteSubscription?.cancel());
+    unawaited(_speechPlayer.dispose());
     super.dispose();
   }
 
@@ -200,10 +221,131 @@ class _ChatInputState extends State<ChatInput> {
       ..showSnackBar(SnackBar(content: Text(message)));
   }
 
+  Future<void> _submit(ChatProvider provider) async {
+    if (!provider.supportsTextToSpeech) {
+      widget.onSend();
+      return;
+    }
+    final text = widget.controller.text.trim();
+    if (text.isEmpty) {
+      return;
+    }
+    final accepted = await provider.synthesizeSpeech(
+      text,
+      language: _textToSpeechLanguage,
+      speakerReference: _speakerReference,
+    );
+    if (!mounted || !accepted) {
+      return;
+    }
+    widget.controller.clear();
+    widget.focusNode.requestFocus();
+  }
+
+  Future<void> _pickSpeakerReference() async {
+    try {
+      final selection = await FilePicker.platform.pickFiles(
+        type: FileType.audio,
+        allowMultiple: false,
+        withData: kIsWeb,
+      );
+      if (!mounted || selection == null || selection.files.isEmpty) {
+        return;
+      }
+      final file = selection.files.single;
+      final path = file.path;
+      final bytes = file.bytes;
+      final SpeechAudioInput? input = path != null && path.isNotEmpty
+          ? SpeechAudioFileInput(path)
+          : bytes != null && bytes.isNotEmpty
+          ? SpeechAudioBytesInput(bytes)
+          : null;
+      if (input == null) {
+        _showMessage('Could not read the selected speaker reference.');
+        return;
+      }
+      setState(() {
+        _speakerReference = input;
+        _speakerReferenceName = file.name;
+      });
+    } catch (_) {
+      _showMessage('Could not open the speaker reference audio.');
+    }
+  }
+
+  Future<void> _playSynthesizedSpeech(TextToSpeechResult result) async {
+    try {
+      if (_isPlayingSpeech) {
+        await _stopSynthesizedSpeechPlayback();
+        return;
+      }
+      await _speechPlayer.play(BytesSource(result.toWavBytes()));
+      if (mounted) {
+        setState(() {
+          _isPlayingSpeech = true;
+          _playingSpeechResult = result;
+        });
+      }
+    } catch (_) {
+      _showMessage('Could not play the synthesized audio.');
+    }
+  }
+
+  Future<void> _stopSynthesizedSpeechPlayback() async {
+    await _speechPlayer.stop();
+    if (mounted) {
+      setState(() {
+        _isPlayingSpeech = false;
+        _playingSpeechResult = null;
+      });
+    }
+  }
+
+  void _synchronizeSynthesizedSpeechPlayback(TextToSpeechResult? result) {
+    if (!_isPlayingSpeech ||
+        identical(result, _playingSpeechResult) ||
+        _speechPlaybackStopScheduled) {
+      return;
+    }
+    _speechPlaybackStopScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      try {
+        await _stopSynthesizedSpeechPlayback();
+      } finally {
+        _speechPlaybackStopScheduled = false;
+      }
+    });
+  }
+
+  Future<void> _clearSynthesizedSpeech(ChatProvider provider) async {
+    if (_isPlayingSpeech) {
+      await _stopSynthesizedSpeechPlayback();
+    }
+    provider.clearSynthesizedSpeech();
+  }
+
+  Future<void> _saveSynthesizedSpeech(TextToSpeechResult result) async {
+    try {
+      final savedPath = await FilePicker.platform.saveFile(
+        dialogTitle: 'Save synthesized speech',
+        fileName: 'llamadart-speech.wav',
+        type: FileType.custom,
+        allowedExtensions: const <String>['wav'],
+        bytes: result.toWavBytes(),
+      );
+      if (mounted && savedPath != null) {
+        _showMessage('Saved synthesized speech.');
+      }
+    } catch (_) {
+      _showMessage('Could not save the synthesized WAV file.');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Consumer<ChatProvider>(
       builder: (context, provider, _) {
+        _synchronizeSynthesizedSpeechPlayback(provider.textToSpeechResult);
         final isGenerating = provider.isGenerating;
         final hasActiveAudioRecording = provider.hasActiveAudioRecording;
         final isReady = provider.isReady;
@@ -213,9 +355,15 @@ class _ChatInputState extends State<ChatInput> {
             !isGenerating &&
             !hasActiveAudioRecording &&
             isReady &&
-            (_hasDraftText || hasAttachments);
+            (provider.supportsTextToSpeech
+                ? _hasDraftText && provider.canSynthesizeSpeech
+                : (_hasDraftText || hasAttachments));
         final sendActionLabel = isGenerating
-            ? 'Stop generation'
+            ? provider.isSynthesizingSpeech
+                  ? 'Cancel speech synthesis'
+                  : 'Stop generation'
+            : provider.supportsTextToSpeech
+            ? 'Synthesize speech'
             : 'Send message';
         final colorScheme = Theme.of(context).colorScheme;
         final platform = Theme.of(context).platform;
@@ -241,7 +389,7 @@ class _ChatInputState extends State<ChatInput> {
             includeRepeats: false,
           ): () {
             if (canSubmit) {
-              widget.onSend();
+              unawaited(_submit(provider));
             }
           },
           const SingleActivator(
@@ -250,7 +398,7 @@ class _ChatInputState extends State<ChatInput> {
             includeRepeats: false,
           ): () {
             if (canSubmit) {
-              widget.onSend();
+              unawaited(_submit(provider));
             }
           },
           if (!kIsWeb && provider.canAttachMedia) ...{
@@ -308,6 +456,15 @@ class _ChatInputState extends State<ChatInput> {
                       _buildFunctionCallingRow(context, provider),
                       const SizedBox(height: 10),
                     ],
+                    if (provider.supportsTextToSpeech) ...[
+                      _buildTextToSpeechOptions(context, provider),
+                      const SizedBox(height: 8),
+                    ],
+                    if (provider.textToSpeechResult != null ||
+                        provider.textToSpeechError != null) ...[
+                      _buildTextToSpeechOutput(context, provider),
+                      const SizedBox(height: 8),
+                    ],
                     if (hasActiveAudioRecording) ...[
                       _buildAudioRecordingRow(context, provider),
                       const SizedBox(height: 8),
@@ -358,13 +515,15 @@ class _ChatInputState extends State<ChatInput> {
                                   : TextInputAction.send,
                               onSubmitted: (_) {
                                 if (!useDesktopShortcuts && canSubmit) {
-                                  widget.onSend();
+                                  unawaited(_submit(provider));
                                 }
                               },
-                              decoration: const InputDecoration(
-                                hintText: 'Ask anything…',
+                              decoration: InputDecoration(
+                                hintText: provider.supportsTextToSpeech
+                                    ? 'Enter text to speak…'
+                                    : 'Ask anything…',
                                 border: InputBorder.none,
-                                contentPadding: EdgeInsets.symmetric(
+                                contentPadding: const EdgeInsets.symmetric(
                                   horizontal: 12,
                                   vertical: 12,
                                 ),
@@ -389,7 +548,9 @@ class _ChatInputState extends State<ChatInput> {
                             tooltip: sendActionLabel,
                             onPressed: isGenerating
                                 ? () => provider.stopGeneration()
-                                : (canSubmit ? widget.onSend : null),
+                                : (canSubmit
+                                      ? () => unawaited(_submit(provider))
+                                      : null),
                             icon: isGenerating
                                 ? Icon(
                                     Icons.stop_rounded,
@@ -399,7 +560,9 @@ class _ChatInputState extends State<ChatInput> {
                                         : sendActionLabel,
                                   )
                                 : Icon(
-                                    Icons.arrow_upward_rounded,
+                                    provider.supportsTextToSpeech
+                                        ? Icons.graphic_eq_rounded
+                                        : Icons.arrow_upward_rounded,
                                     color: canSubmit
                                         ? colorScheme.onPrimary
                                         : colorScheme.onSurfaceVariant,
@@ -418,6 +581,182 @@ class _ChatInputState extends State<ChatInput> {
           ),
         );
       },
+    );
+  }
+
+  Widget _buildTextToSpeechOptions(
+    BuildContext context,
+    ChatProvider provider,
+  ) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final progress = provider.textToSpeechProgress;
+    final progressLabel = progress == null
+        ? provider.isSynthesizingSpeech
+              ? 'Preparing speech synthesis…'
+              : 'Dedicated Qwen3-TTS mode'
+        : progress.phase == TextToSpeechProgressPhase.processingPrompt
+        ? 'Processing text…'
+        : 'Generating audio · ${progress.framesGenerated} frames';
+    const languages = <String>[
+      'Auto',
+      'English',
+      'Chinese',
+      'Japanese',
+      'Korean',
+      'German',
+      'French',
+      'Russian',
+      'Portuguese',
+      'Spanish',
+      'Italian',
+    ];
+
+    return Container(
+      key: const ValueKey<String>('text_to_speech_options'),
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+      decoration: BoxDecoration(
+        color: colorScheme.primaryContainer.withValues(alpha: 0.35),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: colorScheme.outlineVariant),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.graphic_eq_rounded,
+                size: 18,
+                color: colorScheme.primary,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  progressLabel,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              PopupMenuButton<String>(
+                tooltip: 'Choose synthesis language',
+                enabled: !provider.isSynthesizingSpeech,
+                onSelected: (value) {
+                  setState(() {
+                    _textToSpeechLanguage = value == 'Auto' ? null : value;
+                  });
+                },
+                itemBuilder: (context) => languages
+                    .map(
+                      (language) => PopupMenuItem<String>(
+                        value: language,
+                        child: Text(language),
+                      ),
+                    )
+                    .toList(growable: false),
+                child: Chip(
+                  avatar: const Icon(Icons.language_rounded, size: 17),
+                  label: Text(_textToSpeechLanguage ?? 'Auto language'),
+                ),
+              ),
+              InputChip(
+                key: const ValueKey<String>('speaker_reference_chip'),
+                avatar: const Icon(Icons.record_voice_over_outlined, size: 17),
+                label: Text(_speakerReferenceName ?? 'Add speaker reference'),
+                onPressed: provider.isSynthesizingSpeech
+                    ? null
+                    : () => unawaited(_pickSpeakerReference()),
+                onDeleted:
+                    _speakerReference == null || provider.isSynthesizingSpeech
+                    ? null
+                    : () {
+                        setState(() {
+                          _speakerReference = null;
+                          _speakerReferenceName = null;
+                        });
+                      },
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTextToSpeechOutput(BuildContext context, ChatProvider provider) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final result = provider.textToSpeechResult;
+    final error = provider.textToSpeechError;
+    final duration = result?.duration ?? Duration.zero;
+    final durationLabel = duration.inSeconds >= 60
+        ? '${duration.inMinutes}:${(duration.inSeconds % 60).toString().padLeft(2, '0')}'
+        : '${duration.inSeconds}.${(duration.inMilliseconds % 1000 ~/ 100)} s';
+
+    return Container(
+      key: const ValueKey<String>('text_to_speech_output'),
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: error == null
+            ? colorScheme.secondaryContainer.withValues(alpha: 0.4)
+            : colorScheme.errorContainer.withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: error != null
+          ? Row(
+              children: [
+                Icon(Icons.error_outline_rounded, color: colorScheme.error),
+                const SizedBox(width: 8),
+                Expanded(child: Text(error)),
+                IconButton(
+                  tooltip: 'Dismiss',
+                  onPressed: () => unawaited(_clearSynthesizedSpeech(provider)),
+                  icon: const Icon(Icons.close_rounded),
+                ),
+              ],
+            )
+          : Row(
+              children: [
+                Icon(Icons.audio_file_rounded, color: colorScheme.secondary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Speech ready · $durationLabel · '
+                    '${result!.sampleRateHz ~/ 1000} kHz '
+                    '${result.channelCount == 1 ? 'mono' : '${result.channelCount} channel'} WAV',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                ),
+                IconButton(
+                  key: const ValueKey<String>('play_synthesized_speech_button'),
+                  tooltip: _isPlayingSpeech ? 'Stop playback' : 'Play speech',
+                  onPressed: () => unawaited(_playSynthesizedSpeech(result)),
+                  icon: Icon(
+                    _isPlayingSpeech
+                        ? Icons.stop_rounded
+                        : Icons.play_arrow_rounded,
+                  ),
+                ),
+                IconButton(
+                  key: const ValueKey<String>('save_synthesized_speech_button'),
+                  tooltip: 'Save WAV',
+                  onPressed: () => unawaited(_saveSynthesizedSpeech(result)),
+                  icon: const Icon(Icons.download_rounded),
+                ),
+                IconButton(
+                  tooltip: 'Clear speech output',
+                  onPressed: () => unawaited(_clearSynthesizedSpeech(provider)),
+                  icon: const Icon(Icons.close_rounded),
+                ),
+              ],
+            ),
     );
   }
 

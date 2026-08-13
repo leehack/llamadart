@@ -71,7 +71,9 @@ class ModelCard extends StatelessWidget {
     final isProjectorCached =
         cacheState?.multimodalProjector?.isAvailable ?? false;
     final isProjectorMissing = hasProjector && !isProjectorCached;
-    final requiresProjector = model.supportsSpeechToTextFor(web: isWeb);
+    final requiresProjector =
+        model.supportsSpeechToTextFor(web: isWeb) ||
+        model.supportsTextToSpeechFor(web: isWeb);
     final canLoadModel =
         (isModelCached && (!requiresProjector || !isProjectorMissing)) ||
         isWebLiteRtLmModel;
@@ -274,6 +276,13 @@ class ModelCard extends StatelessWidget {
                             context,
                             icon: Icons.transcribe_outlined,
                             label: 'Speech-to-text',
+                            supported: true,
+                          ),
+                        if (model.supportsTextToSpeechFor(web: isWeb))
+                          _buildCapabilityChip(
+                            context,
+                            icon: Icons.graphic_eq_rounded,
+                            label: 'Text-to-speech',
                             supported: true,
                           ),
                         if (model.supportsVideoFor(web: isWeb))

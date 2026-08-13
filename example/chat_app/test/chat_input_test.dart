@@ -48,6 +48,60 @@ void main() {
     expect(controller.text, 'draft next prompt');
   });
 
+  testWidgets('dedicated TTS mode synthesizes typed text', (tester) async {
+    final provider = _ReadyTextToSpeechProvider();
+    addTearDown(provider.dispose);
+    final controller = TextEditingController();
+    final focusNode = FocusNode();
+    addTearDown(controller.dispose);
+    addTearDown(focusNode.dispose);
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider<ChatProvider>.value(
+        value: provider,
+        child: MaterialApp(
+          home: Scaffold(
+            body: ChatInput(
+              controller: controller,
+              focusNode: focusNode,
+              onSend: () => fail('TTS mode must not send a chat message.'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(
+      find.byKey(const ValueKey<String>('text_to_speech_options')),
+      findsOneWidget,
+    );
+    expect(find.text('Enter text to speak…'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), 'Hello from TTS.');
+    await tester.pump();
+    final synthesizeButton = tester.widget<IconButton>(
+      find.widgetWithIcon(IconButton, Icons.graphic_eq_rounded),
+    );
+    expect(synthesizeButton.onPressed, isNotNull);
+    synthesizeButton.onPressed!();
+    await tester.pumpAndSettle();
+
+    expect(provider.synthesizedText, 'Hello from TTS.');
+    expect(controller.text, isEmpty);
+    expect(
+      find.byKey(const ValueKey<String>('text_to_speech_output')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('play_synthesized_speech_button')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('save_synthesized_speech_button')),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('keeps a supported microphone action visible while busy', (
     tester,
   ) async {
@@ -1493,6 +1547,55 @@ class _BusyVoiceProvider extends _GeneratingReadyProvider {
 
   @override
   bool get canStartAudioRecording => false;
+}
+
+class _ReadyTextToSpeechProvider extends ChatProvider {
+  _ReadyTextToSpeechProvider()
+    : super(
+        chatService: MockChatService(),
+        settingsService: MockSettingsService(),
+        initialSettings: const ChatSettings(
+          modelPath: 'qwen3-tts.gguf',
+          mmprojPath: 'qwen3-tts-mmproj.gguf',
+          modelSupportsTextToSpeech: true,
+        ),
+      );
+
+  String? synthesizedText;
+  TextToSpeechResult? _result;
+
+  @override
+  bool get isGenerating => false;
+
+  @override
+  bool get isReady => true;
+
+  @override
+  bool get supportsTextToSpeech => true;
+
+  @override
+  bool get canSynthesizeSpeech => true;
+
+  @override
+  TextToSpeechResult? get textToSpeechResult => _result;
+
+  @override
+  Future<bool> synthesizeSpeech(
+    String text, {
+    String? language,
+    SpeechAudioInput? speakerReference,
+  }) async {
+    synthesizedText = text;
+    _result = TextToSpeechResult(
+      samples: Float32List.fromList(const <double>[0, 0.25, -0.25, 0]),
+      sampleRateHz: 24000,
+      channelCount: 1,
+      framesGenerated: 2,
+      truncated: false,
+    );
+    notifyListeners();
+    return true;
+  }
 }
 
 class _SpeechMockLlamaEngine extends MockLlamaEngine {

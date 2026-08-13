@@ -1,5 +1,12 @@
 ## Unreleased
 
+* Added an experimental typed `TextToSpeechEngine` for native llama.cpp
+  Qwen3-TTS models, with capability discovery, language and optional speaker
+  reference input, cancellable progress, complete 24 kHz PCM output, and WAV
+  encoding. The Flutter chat example adds a checksum-pinned Qwen3-TTS preset
+  with dedicated synthesize, play, and save controls; Web and the current
+  LiteRT-LM artifacts fail explicitly as unsupported.
+
 * Added an experimental typed `SpeechToTextEngine` with an explicit Qwen3-ASR
   adapter profile for whole-file native llama.cpp transcription, plus a
   SHA-256-verified Qwen3-ASR 0.6B native mobile-and-desktop preset and separate
@@ -24,9 +31,10 @@
   failures, and benchmark coverage.
 
 * Updated the default llama.cpp native runtime pin to
-  `leehack/llamadart-native@b10356`, regenerated matching Dart FFI bindings,
-  refreshed the `llamadart_llama_cpp_flutter` Apple SwiftPM checksum, and
-  aligned current README/website native override docs.
+  `leehack/llamadart-native@b10356-llamadart.1`, retaining llama.cpp `b10356`
+  while adding the stable Qwen3-TTS wrapper ABI, regenerated matching Dart FFI
+  bindings, refreshed the `llamadart_llama_cpp_flutter` Apple SwiftPM checksum,
+  and aligned current README/website native override docs.
 
 ## 0.8.19
 

@@ -7973,6 +7973,140 @@ external int mtmd_helper_gen_audio_get_output(
 @ffi.Native<ffi.Void Function(ffi.Int)>()
 external void llama_dart_set_log_level(int level);
 
+@ffi.Native<ffi.Uint32 Function()>()
+external int llama_dart_tts_api_version();
+
+@ffi.Native<llama_dart_tts_request Function()>()
+external llama_dart_tts_request llama_dart_tts_request_default();
+
+@ffi.Native<
+  ffi.Int Function(ffi.Pointer<mtmd_context>, ffi.Pointer<llama_dart_tts_info>)
+>(symbol: 'llama_dart_tts_get_info')
+external int _llama_dart_tts_get_info(
+  ffi.Pointer<mtmd_context> mtmd,
+  ffi.Pointer<llama_dart_tts_info> out_info,
+);
+
+llama_dart_tts_status llama_dart_tts_get_info(
+  ffi.Pointer<mtmd_context> mtmd,
+  ffi.Pointer<llama_dart_tts_info> out_info,
+) => llama_dart_tts_status.fromValue(_llama_dart_tts_get_info(mtmd, out_info));
+
+@ffi.Native<
+  ffi.Pointer<llama_dart_tts> Function(
+    ffi.Pointer<llama_context>,
+    ffi.Pointer<mtmd_context>,
+    ffi.Pointer<ffi.Int>,
+  )
+>()
+external ffi.Pointer<llama_dart_tts> llama_dart_tts_init(
+  ffi.Pointer<llama_context> llama,
+  ffi.Pointer<mtmd_context> mtmd,
+  ffi.Pointer<ffi.Int> out_status,
+);
+
+@ffi.Native<ffi.Void Function(ffi.Pointer<llama_dart_tts>)>()
+external void llama_dart_tts_free(ffi.Pointer<llama_dart_tts> tts);
+
+@ffi.Native<
+  ffi.Int Function(
+    ffi.Pointer<llama_dart_tts>,
+    ffi.Pointer<llama_dart_tts_request>,
+  )
+>(symbol: 'llama_dart_tts_start')
+external int _llama_dart_tts_start(
+  ffi.Pointer<llama_dart_tts> tts,
+  ffi.Pointer<llama_dart_tts_request> request,
+);
+
+llama_dart_tts_status llama_dart_tts_start(
+  ffi.Pointer<llama_dart_tts> tts,
+  ffi.Pointer<llama_dart_tts_request> request,
+) => llama_dart_tts_status.fromValue(_llama_dart_tts_start(tts, request));
+
+@ffi.Native<
+  ffi.Int Function(
+    ffi.Pointer<llama_dart_tts>,
+    ffi.Pointer<llama_dart_tts_progress>,
+  )
+>(symbol: 'llama_dart_tts_step')
+external int _llama_dart_tts_step(
+  ffi.Pointer<llama_dart_tts> tts,
+  ffi.Pointer<llama_dart_tts_progress> out_progress,
+);
+
+llama_dart_tts_status llama_dart_tts_step(
+  ffi.Pointer<llama_dart_tts> tts,
+  ffi.Pointer<llama_dart_tts_progress> out_progress,
+) => llama_dart_tts_status.fromValue(_llama_dart_tts_step(tts, out_progress));
+
+@ffi.Native<ffi.Void Function(ffi.Pointer<llama_dart_tts>)>()
+external void llama_dart_tts_cancel(ffi.Pointer<llama_dart_tts> tts);
+
+@ffi.Native<ffi.Int Function(ffi.Pointer<llama_dart_tts>)>(
+  symbol: 'llama_dart_tts_reset',
+)
+external int _llama_dart_tts_reset(ffi.Pointer<llama_dart_tts> tts);
+
+llama_dart_tts_status llama_dart_tts_reset(ffi.Pointer<llama_dart_tts> tts) =>
+    llama_dart_tts_status.fromValue(_llama_dart_tts_reset(tts));
+
+@ffi.Native<
+  ffi.Int Function(
+    ffi.Pointer<llama_dart_tts>,
+    ffi.Pointer<llama_dart_tts_output_info>,
+  )
+>(symbol: 'llama_dart_tts_get_output_info')
+external int _llama_dart_tts_get_output_info(
+  ffi.Pointer<llama_dart_tts> tts,
+  ffi.Pointer<llama_dart_tts_output_info> out_info,
+);
+
+llama_dart_tts_status llama_dart_tts_get_output_info(
+  ffi.Pointer<llama_dart_tts> tts,
+  ffi.Pointer<llama_dart_tts_output_info> out_info,
+) => llama_dart_tts_status.fromValue(
+  _llama_dart_tts_get_output_info(tts, out_info),
+);
+
+@ffi.Native<
+  ffi.Int Function(
+    ffi.Pointer<llama_dart_tts>,
+    ffi.Int64,
+    ffi.Pointer<ffi.Float>,
+    ffi.Size,
+    ffi.Pointer<ffi.Size>,
+  )
+>(symbol: 'llama_dart_tts_read_pcm')
+external int _llama_dart_tts_read_pcm(
+  ffi.Pointer<llama_dart_tts> tts,
+  int sample_offset,
+  ffi.Pointer<ffi.Float> out_samples,
+  int out_capacity,
+  ffi.Pointer<ffi.Size> out_count,
+);
+
+llama_dart_tts_status llama_dart_tts_read_pcm(
+  ffi.Pointer<llama_dart_tts> tts,
+  int sample_offset,
+  ffi.Pointer<ffi.Float> out_samples,
+  int out_capacity,
+  ffi.Pointer<ffi.Size> out_count,
+) => llama_dart_tts_status.fromValue(
+  _llama_dart_tts_read_pcm(
+    tts,
+    sample_offset,
+    out_samples,
+    out_capacity,
+    out_count,
+  ),
+);
+
+@ffi.Native<ffi.Pointer<ffi.Char> Function(ffi.Pointer<llama_dart_tts>)>()
+external ffi.Pointer<ffi.Char> llama_dart_tts_last_error(
+  ffi.Pointer<llama_dart_tts> tts,
+);
+
 @ffi.Native<
   ffi.Pointer<llama_sampler> Function(
     ffi.Pointer<llama_vocab>,
@@ -10894,6 +11028,180 @@ final class llama_dart_ngram extends ffi.Opaque {}
 
 final class llama_dart_speculative extends ffi.Opaque {}
 
+final class llama_dart_tts extends ffi.Opaque {}
+
+enum llama_dart_tts_status {
+  LLAMA_DART_TTS_STATUS_OK(0),
+  LLAMA_DART_TTS_STATUS_INVALID_ARGUMENT(-1),
+  LLAMA_DART_TTS_STATUS_UNSUPPORTED(-2),
+  LLAMA_DART_TTS_STATUS_INVALID_STATE(-3),
+  LLAMA_DART_TTS_STATUS_SPEAKER_DECODE_FAILED(-4),
+  LLAMA_DART_TTS_STATUS_UPSTREAM_ERROR(-5),
+  LLAMA_DART_TTS_STATUS_CANCELLED(-6);
+
+  final int value;
+  const llama_dart_tts_status(this.value);
+
+  static llama_dart_tts_status fromValue(int value) => switch (value) {
+    0 => LLAMA_DART_TTS_STATUS_OK,
+    -1 => LLAMA_DART_TTS_STATUS_INVALID_ARGUMENT,
+    -2 => LLAMA_DART_TTS_STATUS_UNSUPPORTED,
+    -3 => LLAMA_DART_TTS_STATUS_INVALID_STATE,
+    -4 => LLAMA_DART_TTS_STATUS_SPEAKER_DECODE_FAILED,
+    -5 => LLAMA_DART_TTS_STATUS_UPSTREAM_ERROR,
+    -6 => LLAMA_DART_TTS_STATUS_CANCELLED,
+    _ => throw ArgumentError('Unknown value for llama_dart_tts_status: $value'),
+  };
+}
+
+enum llama_dart_tts_model_type {
+  LLAMA_DART_TTS_MODEL_TYPE_NONE(0),
+  LLAMA_DART_TTS_MODEL_TYPE_QWEN3(1),
+  LLAMA_DART_TTS_MODEL_TYPE_UNKNOWN(255);
+
+  final int value;
+  const llama_dart_tts_model_type(this.value);
+
+  static llama_dart_tts_model_type fromValue(int value) => switch (value) {
+    0 => LLAMA_DART_TTS_MODEL_TYPE_NONE,
+    1 => LLAMA_DART_TTS_MODEL_TYPE_QWEN3,
+    255 => LLAMA_DART_TTS_MODEL_TYPE_UNKNOWN,
+    _ => throw ArgumentError(
+      'Unknown value for llama_dart_tts_model_type: $value',
+    ),
+  };
+}
+
+enum llama_dart_tts_capability {
+  LLAMA_DART_TTS_CAPABILITY_LANGUAGE(1),
+  LLAMA_DART_TTS_CAPABILITY_SPEAKER_REFERENCE(2);
+
+  final int value;
+  const llama_dart_tts_capability(this.value);
+
+  static llama_dart_tts_capability fromValue(int value) => switch (value) {
+    1 => LLAMA_DART_TTS_CAPABILITY_LANGUAGE,
+    2 => LLAMA_DART_TTS_CAPABILITY_SPEAKER_REFERENCE,
+    _ => throw ArgumentError(
+      'Unknown value for llama_dart_tts_capability: $value',
+    ),
+  };
+}
+
+enum llama_dart_tts_state {
+  LLAMA_DART_TTS_STATE_IDLE(0),
+  LLAMA_DART_TTS_STATE_PROCESSING_PROMPT(1),
+  LLAMA_DART_TTS_STATE_GENERATING(2),
+  LLAMA_DART_TTS_STATE_COMPLETED(3),
+  LLAMA_DART_TTS_STATE_CANCELLED(4),
+  LLAMA_DART_TTS_STATE_FAILED(5);
+
+  final int value;
+  const llama_dart_tts_state(this.value);
+
+  static llama_dart_tts_state fromValue(int value) => switch (value) {
+    0 => LLAMA_DART_TTS_STATE_IDLE,
+    1 => LLAMA_DART_TTS_STATE_PROCESSING_PROMPT,
+    2 => LLAMA_DART_TTS_STATE_GENERATING,
+    3 => LLAMA_DART_TTS_STATE_COMPLETED,
+    4 => LLAMA_DART_TTS_STATE_CANCELLED,
+    5 => LLAMA_DART_TTS_STATE_FAILED,
+    _ => throw ArgumentError('Unknown value for llama_dart_tts_state: $value'),
+  };
+}
+
+final class llama_dart_tts_info extends ffi.Struct {
+  @ffi.Uint32()
+  external int struct_size;
+
+  @ffi.Uint32()
+  external int api_version;
+
+  @ffi.Int32()
+  external int model_type;
+
+  @ffi.Uint32()
+  external int capabilities;
+
+  @ffi.Int32()
+  external int sample_rate;
+
+  @ffi.Int32()
+  external int channels;
+}
+
+final class llama_dart_tts_request extends ffi.Struct {
+  @ffi.Uint32()
+  external int struct_size;
+
+  external ffi.Pointer<ffi.Char> text;
+
+  @ffi.Size()
+  external int text_length;
+
+  external ffi.Pointer<ffi.UnsignedChar> speaker_audio;
+
+  @ffi.Size()
+  external int speaker_audio_length;
+
+  external ffi.Pointer<ffi.Char> language;
+
+  @llama_seq_id()
+  external int sequence_id;
+
+  @ffi.Int32()
+  external int prompt_batch_size;
+
+  @ffi.Int32()
+  external int max_frames;
+
+  @ffi.Int32()
+  external int top_k;
+
+  @ffi.Float()
+  external double top_p;
+
+  @ffi.Float()
+  external double min_p;
+
+  @ffi.Float()
+  external double temperature;
+
+  @ffi.Uint32()
+  external int seed;
+}
+
+final class llama_dart_tts_progress extends ffi.Struct {
+  @ffi.Uint32()
+  external int struct_size;
+
+  @ffi.Int32()
+  external int state;
+
+  @ffi.Int32()
+  external int prompt_tokens_remaining;
+
+  @ffi.Int32()
+  external int frames_generated;
+
+  @ffi.Bool()
+  external bool truncated;
+}
+
+final class llama_dart_tts_output_info extends ffi.Struct {
+  @ffi.Uint32()
+  external int struct_size;
+
+  @ffi.Int32()
+  external int sample_rate;
+
+  @ffi.Int32()
+  external int channels;
+
+  @ffi.Int64()
+  external int sample_count;
+}
+
 final class llama_dart_speculative_params extends ffi.Struct {
   external ffi.Pointer<ffi.Char> type_names;
 
@@ -11009,3 +11317,5 @@ const int GGML_MROPE_SECTIONS = 4;
 const int GGML_N_TASKS_MAX = -1;
 
 const int GGML_BACKEND_META_MAX_DEVICES = 16;
+
+const int LLAMA_DART_TTS_API_VERSION = 1;

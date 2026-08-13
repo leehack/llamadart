@@ -105,6 +105,7 @@ class ModelCapabilities {
   final bool supportsVision;
   final bool supportsAudio;
   final bool supportsSpeechToText;
+  final bool supportsTextToSpeech;
   final bool supportsVideo;
   final bool supportsToolCalling;
   final bool supportsThinking;
@@ -113,6 +114,7 @@ class ModelCapabilities {
     this.supportsVision = false,
     this.supportsAudio = false,
     this.supportsSpeechToText = false,
+    this.supportsTextToSpeech = false,
     this.supportsVideo = false,
     this.supportsToolCalling = false,
     this.supportsThinking = false,
@@ -192,10 +194,12 @@ class DownloadableModel {
   final bool supportsVision;
   final bool supportsAudio;
   final bool supportsSpeechToText;
+  final bool supportsTextToSpeech;
   final bool supportsVideo;
   final bool? webSupportsVision;
   final bool? webSupportsAudio;
   final bool? webSupportsSpeechToText;
+  final bool? webSupportsTextToSpeech;
   final bool? webSupportsVideo;
   final ModelMediaInputMode mediaInputMode;
   final ModelMediaInputMode? webMediaInputMode;
@@ -228,10 +232,12 @@ class DownloadableModel {
     this.supportsVision = false,
     this.supportsAudio = false,
     this.supportsSpeechToText = false,
+    this.supportsTextToSpeech = false,
     this.supportsVideo = false,
     this.webSupportsVision,
     this.webSupportsAudio,
     this.webSupportsSpeechToText,
+    this.webSupportsTextToSpeech,
     this.webSupportsVideo,
     this.mediaInputMode = ModelMediaInputMode.externalProjector,
     this.webMediaInputMode,
@@ -260,10 +266,12 @@ class DownloadableModel {
     this.supportsVision = false,
     this.supportsAudio = false,
     this.supportsSpeechToText = false,
+    this.supportsTextToSpeech = false,
     this.supportsVideo = false,
     this.webSupportsVision,
     this.webSupportsAudio,
     this.webSupportsSpeechToText,
+    this.webSupportsTextToSpeech,
     this.webSupportsVideo,
     this.mediaInputMode = ModelMediaInputMode.externalProjector,
     this.webMediaInputMode,
@@ -345,6 +353,7 @@ class DownloadableModel {
     supportsVision: supportsVision,
     supportsAudio: supportsAudio,
     supportsSpeechToText: supportsSpeechToText,
+    supportsTextToSpeech: supportsTextToSpeech,
     supportsVideo: supportsVideo,
     supportsToolCalling: supportsToolCalling,
     supportsThinking: supportsThinking,
@@ -359,6 +368,10 @@ class DownloadableModel {
   bool supportsSpeechToTextFor({required bool web}) => web
       ? webSupportsSpeechToText ?? supportsSpeechToText
       : supportsSpeechToText;
+
+  bool supportsTextToSpeechFor({required bool web}) => web
+      ? webSupportsTextToSpeech ?? supportsTextToSpeech
+      : supportsTextToSpeech;
 
   bool supportsVideoFor({required bool web}) =>
       web ? webSupportsVideo ?? supportsVideo : supportsVideo;
@@ -475,6 +488,44 @@ class DownloadableModel {
         penalty: 1,
         contextSize: 4096,
         maxTokens: 1024,
+        thinkingEnabled: false,
+      ),
+    ),
+    DownloadableModel.fromSources(
+      id: 'qwen3-tts-1.7b-base-q4-k-m',
+      name: 'Qwen3-TTS 1.7B Base',
+      description:
+          'Experimental local text-to-speech with language selection and '
+          'optional speaker-reference audio.',
+      modelSource: const RemoteModelAssetSource(
+        url:
+            'https://huggingface.co/ggml-org/Qwen3-TTS-12Hz-1.7B-Base-GGUF/resolve/ca27d74bc954b73dadab5b71ca265d87fc861a7c/Qwen3-TTS-12Hz-1.7B-Base-Q4_K_M.gguf?download=true',
+        filename: 'Qwen3-TTS-12Hz-1.7B-Base-Q4_K_M.gguf',
+        sizeBytes: 1035965280,
+        sha256:
+            '8d18c94acb2addd042f97da63c98be144eafa76d0d9495177eab65130cf85129',
+      ),
+      multimodalProjectorSource: const RemoteModelAssetSource(
+        url:
+            'https://huggingface.co/ggml-org/Qwen3-TTS-12Hz-1.7B-Base-GGUF/resolve/ca27d74bc954b73dadab5b71ca265d87fc861a7c/mmproj-Qwen3-TTS-12Hz-1.7B-Base-Q8_0.gguf?download=true',
+        filename: 'mmproj-Qwen3-TTS-12Hz-1.7B-Base-Q8_0.gguf',
+        sizeBytes: 446422912,
+        sha256:
+            '6fd65188839bcd6ecc91b277ad471e22a0edfada4699a0fe82f1165c18cfcce2',
+      ),
+      sizeBytes: 1482388192,
+      supportsTextToSpeech: true,
+      webSupportsTextToSpeech: false,
+      distribution: 'ggml-org',
+      availability: ModelAvailability.nativeDesktop,
+      minRamGb: 6,
+      preset: const ModelPreset(
+        temperature: 0.8,
+        topK: 40,
+        topP: 0.95,
+        penalty: 1,
+        contextSize: 4096,
+        maxTokens: 512,
         thinkingEnabled: false,
       ),
     ),

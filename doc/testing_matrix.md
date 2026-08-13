@@ -73,6 +73,7 @@ Pick targeted rows based on the touched surface:
 | LiteRT-LM web / Gemma 4 web bundle | `gemma4-litert-web` |
 | Chat app model cache/download/projector | `chat-app-device-cache` |
 | Speech-to-text API or adapter | `speech-to-text-smoke` |
+| Text-to-speech API or adapter | `text-to-speech-smoke` |
 | Chat-app microphone transcription flow | `chat-app-microphone-transcription-smoke` |
 | Chat-app Ask with voice | `gguf-audio-chat-smoke`, `litert-lm-chat-features-smoke`, `chat-app-voice-question-smoke` |
 | Example app, CLI, or server package | `examples-tests` |
@@ -174,6 +175,10 @@ dart run tool/testing/run_local_e2e.dart --scenario speech-to-text-smoke \
   --mmproj-path /path/to/mmproj-Qwen3-ASR-0.6B-Q8_0.gguf \
   --audio-path /path/to/known-speech.wav \
   --expect "Exact expected transcript."
+
+dart run tool/testing/run_local_e2e.dart --scenario text-to-speech-smoke \
+  --model-path /path/to/Qwen3-TTS-12Hz-1.7B-Base-Q4_K_M.gguf \
+  --mmproj-path /path/to/mmproj-Qwen3-TTS-12Hz-1.7B-Base-Q8_0.gguf
 
 dart run tool/testing/run_local_e2e.dart --scenario chat-app-web-mock-smoke
 

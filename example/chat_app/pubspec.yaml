@@ -22,6 +22,7 @@ dependencies:
   crypto: ^3.0.6
   path_provider: ^2.1.5
   record: ^6.2.1
+  audioplayers: 6.6.0
   google_fonts: ^8.0.0
   flutter_markdown: ^0.7.7+1
   url_launcher: ^6.3.2

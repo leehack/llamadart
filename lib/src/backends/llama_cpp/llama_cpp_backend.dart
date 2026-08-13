@@ -1,7 +1,10 @@
 import 'dart:async';
 import 'dart:isolate';
 import 'dart:ffi';
+import 'dart:typed_data';
+
 import 'package:ffi/ffi.dart';
+
 import '../backend.dart';
 import '../../core/models/chat/content_part.dart';
 import '../../core/models/config/gpu_backend.dart';
@@ -27,7 +30,8 @@ class NativeLlamaBackend
         BackendPerformanceDiagnostics,
         BackendEmbeddings,
         BackendBatchEmbeddings,
-        BackendStatePersistence {
+        BackendStatePersistence,
+        BackendTextToSpeech {
   Isolate? _isolate;
   SendPort? _sendPort;
   Future<void>? _isolateStart;
@@ -35,6 +39,7 @@ class NativeLlamaBackend
   Pointer<Int8>? _activeCancelToken;
   void Function()? _activeGenerationCleanup;
   void Function()? _activeFreeToken;
+  bool _textToSpeechActive = false;
 
   bool _isReady = false;
   LlamaLogLevel _currentLogLevel = LlamaLogLevel.warn;
@@ -86,6 +91,8 @@ class NativeLlamaBackend
         return LlamaUnsupportedException(response.message);
       case WorkerErrorKind.state:
         return LlamaStateException(response.message);
+      case WorkerErrorKind.speech:
+        return LlamaTextToSpeechException(response.message);
       case WorkerErrorKind.generic:
         const exceptionPrefix = 'Exception: ';
         final message = response.message.startsWith(exceptionPrefix)
@@ -598,6 +605,7 @@ class NativeLlamaBackend
     // and idempotent (guarded by the freeToken tokenFreed flag).
     _activeCancelToken?.value = 1;
     _activeGenerationCleanup?.call();
+    cancelTextToSpeech();
 
     if (_sendPort != null) {
       final rp = ReceivePort();
@@ -647,6 +655,106 @@ class NativeLlamaBackend
     final res = await rp.first;
     rp.close();
     return res as bool;
+  }
+
+  @override
+  Future<BackendTextToSpeechCapabilities> textToSpeechCapabilities(
+    int contextHandle,
+    int mmContextHandle,
+  ) async {
+    await _ensureIsolate();
+    final rp = ReceivePort();
+    _sendPort!.send(
+      TextToSpeechCapabilitiesRequest(
+        contextHandle,
+        mmContextHandle,
+        rp.sendPort,
+      ),
+    );
+    final response = await rp.first;
+    rp.close();
+    if (response is TextToSpeechCapabilitiesResponse) {
+      return response.capabilities;
+    }
+    if (response is ErrorResponse) {
+      throw _workerError(response);
+    }
+    throw LlamaTextToSpeechException(
+      'Unexpected native text-to-speech capability response.',
+    );
+  }
+
+  @override
+  Future<BackendTextToSpeechResult> synthesizeTextToSpeech(
+    int contextHandle,
+    int mmContextHandle,
+    BackendTextToSpeechRequest request, {
+    void Function(BackendTextToSpeechProgress progress)? onProgress,
+  }) async {
+    await _ensureIsolate();
+    if (_textToSpeechActive) {
+      throw LlamaStateException(
+        'llama.cpp text-to-speech synthesis is already in progress.',
+      );
+    }
+    _textToSpeechActive = true;
+    final rp = ReceivePort();
+    final completer = Completer<BackendTextToSpeechResult>();
+    _sendPort!.send(
+      TextToSpeechSynthesizeRequest(
+        contextHandle,
+        mmContextHandle,
+        request,
+        rp.sendPort,
+      ),
+    );
+
+    late final StreamSubscription<dynamic> subscription;
+    subscription = rp.listen((response) {
+      if (response is TextToSpeechProgressResponse) {
+        onProgress?.call(response.progress);
+        return;
+      }
+      if (response is TextToSpeechResultResponse) {
+        final bytes = response.pcm.materialize().asUint8List();
+        final samples = Float32List.view(
+          bytes.buffer,
+          bytes.offsetInBytes,
+          bytes.lengthInBytes ~/ Float32List.bytesPerElement,
+        );
+        if (!completer.isCompleted) {
+          completer.complete(
+            BackendTextToSpeechResult(
+              samples: samples,
+              sampleRateHz: response.sampleRateHz,
+              channelCount: response.channelCount,
+              framesGenerated: response.framesGenerated,
+              truncated: response.truncated,
+            ),
+          );
+        }
+        return;
+      }
+      if (response is ErrorResponse && !completer.isCompleted) {
+        completer.completeError(_workerError(response));
+      }
+    });
+
+    try {
+      return await completer.future;
+    } finally {
+      _textToSpeechActive = false;
+      await subscription.cancel();
+      rp.close();
+    }
+  }
+
+  @override
+  void cancelTextToSpeech() {
+    if (!_textToSpeechActive) {
+      return;
+    }
+    _sendPort?.send(TextToSpeechCancelRequest());
   }
 
   @override

@@ -208,6 +208,21 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'Speech API, native audio routing, transcript normalization, or chat-app transcription changes.',
   ),
   TestMatrixRow(
+    id: 'text-to-speech-smoke',
+    tier: 'targeted',
+    mode: 'local-only',
+    covers:
+        'real native Qwen3-TTS capability discovery, progress, complete 24 kHz '
+        'PCM output, cancellation boundary, and playable WAV encoding',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario '
+        'text-to-speech-smoke --model-path <model.gguf> '
+        '--mmproj-path <mmproj.gguf>',
+    useWhen:
+        'Text-to-speech API, native audio generation, Qwen3-TTS projector, or '
+        'chat-app synthesis changes.',
+  ),
+  TestMatrixRow(
     id: 'chat-app-microphone-transcription-smoke',
     tier: 'targeted',
     mode: 'manual/device',

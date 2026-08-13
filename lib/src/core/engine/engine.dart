@@ -1166,6 +1166,73 @@ class LlamaEngine {
       _mmContextHandle != null &&
       await backend.supportsAudio(_mmContextHandle!);
 
+  /// Returns backend-native text-to-speech capabilities for the loaded model.
+  ///
+  /// This is the low-level integration hook used by `TextToSpeechEngine`.
+  /// Applications should prefer that typed API instead of calling this method
+  /// directly.
+  Future<BackendTextToSpeechCapabilities>
+  get backendTextToSpeechCapabilities async {
+    if (!_isReady || _contextHandle == null || _mmContextHandle == null) {
+      return const BackendTextToSpeechCapabilities(
+        isSupported: false,
+        unsupportedReason:
+            'Load a model and its text-to-speech projector first.',
+      );
+    }
+    final candidate = backend;
+    if (candidate is! BackendTextToSpeech) {
+      return const BackendTextToSpeechCapabilities(
+        isSupported: false,
+        unsupportedReason:
+            'The active backend does not expose dedicated text-to-speech.',
+      );
+    }
+    final textToSpeechBackend = candidate as BackendTextToSpeech;
+    return textToSpeechBackend.textToSpeechCapabilities(
+      _contextHandle!,
+      _mmContextHandle!,
+    );
+  }
+
+  /// Runs backend-native text-to-speech for `TextToSpeechEngine`.
+  ///
+  /// Applications should prefer `TextToSpeechEngine.synthesize`, which adds
+  /// validation, task ownership, cancellation, and typed completion handling.
+  Future<BackendTextToSpeechResult> synthesizeTextToSpeechBackend(
+    BackendTextToSpeechRequest request, {
+    void Function(BackendTextToSpeechProgress progress)? onProgress,
+  }) {
+    _ensureReady();
+    final mmContextHandle = _mmContextHandle;
+    if (mmContextHandle == null) {
+      throw LlamaStateException(
+        'Load a text-to-speech multimodal projector first.',
+      );
+    }
+    final candidate = backend;
+    if (candidate is! BackendTextToSpeech) {
+      throw LlamaUnsupportedException(
+        'The active backend does not expose dedicated text-to-speech.',
+      );
+    }
+    final textToSpeechBackend = candidate as BackendTextToSpeech;
+    return textToSpeechBackend.synthesizeTextToSpeech(
+      _contextHandle!,
+      mmContextHandle,
+      request,
+      onProgress: onProgress,
+    );
+  }
+
+  /// Cancels backend-native synthesis started by `TextToSpeechEngine`.
+  void cancelTextToSpeechBackend() {
+    final candidate = backend;
+    if (candidate is BackendTextToSpeech) {
+      (candidate as BackendTextToSpeech).cancelTextToSpeech();
+    }
+  }
+
   // ============================================================
   // LORA MANAGEMENT
   // ============================================================

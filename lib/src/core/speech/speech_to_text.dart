@@ -7,6 +7,7 @@ import '../models/chat/chat_message.dart';
 import '../models/chat/chat_role.dart';
 import '../models/chat/content_part.dart';
 import '../models/inference/generation_params.dart';
+import 'speech_engine_lease.dart';
 import 'speech_platform_stub.dart'
     if (dart.library.js_interop) 'speech_platform_web.dart';
 
@@ -407,11 +408,9 @@ class SpeechToTextTask {
 /// It does not yet provide live microphone ingestion, partial transcripts,
 /// timestamps, confidence values, or diarization.
 class SpeechToTextEngine {
-  static final Expando<_SpeechTaskState> _taskStates =
-      Expando<_SpeechTaskState>('llamadart.speechTaskState');
-
   final LlamaEngine _engine;
-  final _SpeechTaskState _taskState;
+  final SpeechEngineLease _engineLease;
+  static const String _leaseOwner = 'speech-to-text';
 
   /// Model-specific adapter selected by the caller.
   final SpeechToTextModelProfile modelProfile;
@@ -424,7 +423,7 @@ class SpeechToTextEngine {
   /// owned by the caller.
   SpeechToTextEngine(LlamaEngine engine, {required this.modelProfile})
     : _engine = engine,
-      _taskState = _taskStates[engine] ??= _SpeechTaskState();
+      _engineLease = SpeechEngineLease.forEngine(engine);
 
   /// Discovers speech recognition support for the current runtime and model.
   Future<SpeechToTextCapabilities> get capabilities async {
@@ -501,13 +500,13 @@ class SpeechToTextEngine {
   /// Invalid input and unsupported runtime/model preflight checks throw before
   /// a task is returned; failures after startup are reported by the task.
   Future<SpeechToTextTask> transcribe(SpeechToTextRequest request) async {
-    if (_taskState.isActive) {
+    _validateRequest(request);
+    if (!_engineLease.acquire(_leaseOwner)) {
       throw LlamaStateException(
-        'This LlamaEngine already has an active speech-to-text task.',
+        'This LlamaEngine already has an active typed speech task '
+        '(${_engineLease.activeOwner}).',
       );
     }
-    _validateRequest(request);
-    _taskState.isActive = true;
 
     try {
       final currentCapabilities = await capabilities;
@@ -522,7 +521,7 @@ class SpeechToTextEngine {
       unawaited(_runTask(task, request));
       return task;
     } catch (_) {
-      _taskState.isActive = false;
+      _engineLease.release(_leaseOwner);
       rethrow;
     }
   }
@@ -650,7 +649,7 @@ class SpeechToTextEngine {
       unawaited(task._eventsController.close());
       task._doneCompleter.complete(SpeechToTextCompletion.failed(speechError));
     } finally {
-      _taskState.isActive = false;
+      _engineLease.release(_leaseOwner);
     }
   }
 
@@ -705,8 +704,4 @@ class SpeechToTextEngine {
       language: null,
     );
   }
-}
-
-class _SpeechTaskState {
-  bool isActive = false;
 }

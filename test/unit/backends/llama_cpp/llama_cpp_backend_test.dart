@@ -3,6 +3,7 @@ library;
 
 import 'dart:async';
 import 'dart:isolate';
+import 'dart:typed_data';
 
 import 'package:llamadart/src/backends/backend.dart';
 import 'package:llamadart/src/backends/llama_cpp/llama_cpp_backend.dart';
@@ -304,6 +305,44 @@ void main() {
       );
     });
 
+    test(
+      'routes text-to-speech capability, progress, result, and cancel',
+      () async {
+        final capabilities = await backend.textToSpeechCapabilities(22, 33);
+        expect(capabilities.isSupported, isTrue);
+        expect(capabilities.model, BackendTextToSpeechModel.qwen3Tts);
+        expect(capabilities.sampleRateHz, 24000);
+
+        final progress = <BackendTextToSpeechProgress>[];
+        final result = await backend.synthesizeTextToSpeech(
+          22,
+          33,
+          const BackendTextToSpeechRequest(text: 'Hello.'),
+          onProgress: progress.add,
+        );
+        expect(progress, hasLength(1));
+        expect(result.samples, <double>[0.25, -0.25]);
+        expect(result.sampleRateHz, 24000);
+        expect(result.channelCount, 1);
+
+        harness.holdTextToSpeech = true;
+        final pending = backend.synthesizeTextToSpeech(
+          22,
+          33,
+          const BackendTextToSpeechRequest(text: 'Cancel.'),
+        );
+        await harness.textToSpeechStarted.future;
+        backend.cancelTextToSpeech();
+        await Future<void>.delayed(Duration.zero);
+        expect(
+          harness.received.whereType<TextToSpeechCancelRequest>(),
+          isNotEmpty,
+        );
+        harness.finishHeldTextToSpeech();
+        await pending;
+      },
+    );
+
     test('chat template and lora methods map responses and errors', () async {
       expect(
         await backend.applyChatTemplate(1, const <Map<String, dynamic>>[]),
@@ -368,6 +407,9 @@ class _TrackingNativeLlamaBackend extends NativeLlamaBackend {
 class _FakeWorkerHarness {
   final ReceivePort _port = ReceivePort();
   final List<Object> received = <Object>[];
+  bool holdTextToSpeech = false;
+  Completer<void> textToSpeechStarted = Completer<void>();
+  TextToSpeechSynthesizeRequest? _heldTextToSpeech;
 
   _FakeWorkerHarness() {
     _port.listen((message) {
@@ -500,6 +542,29 @@ class _FakeWorkerHarness {
           message.sendPort.send(true);
         case SupportsVisionRequest():
           message.sendPort.send(false);
+        case TextToSpeechCapabilitiesRequest():
+          message.sendPort.send(
+            TextToSpeechCapabilitiesResponse(
+              const BackendTextToSpeechCapabilities(
+                isSupported: true,
+                model: BackendTextToSpeechModel.qwen3Tts,
+                sampleRateHz: 24000,
+                channelCount: 1,
+                supportsCancellation: true,
+              ),
+            ),
+          );
+        case TextToSpeechSynthesizeRequest():
+          if (!textToSpeechStarted.isCompleted) {
+            textToSpeechStarted.complete();
+          }
+          if (holdTextToSpeech) {
+            _heldTextToSpeech = message;
+          } else {
+            _sendTextToSpeechResult(message);
+          }
+        case TextToSpeechCancelRequest():
+          break;
         case GetContextSizeRequest():
           message.sendPort.send(GetContextSizeResponse(2048));
         case ChatTemplateRequest():
@@ -519,6 +584,37 @@ class _FakeWorkerHarness {
   }
 
   SendPort get sendPort => _port.sendPort;
+
+  void finishHeldTextToSpeech() {
+    final request = _heldTextToSpeech;
+    if (request == null) {
+      return;
+    }
+    _heldTextToSpeech = null;
+    _sendTextToSpeechResult(request);
+  }
+
+  void _sendTextToSpeechResult(TextToSpeechSynthesizeRequest request) {
+    request.sendPort.send(
+      TextToSpeechProgressResponse(
+        const BackendTextToSpeechProgress(
+          phase: BackendTextToSpeechPhase.generating,
+          promptTokensRemaining: 0,
+          framesGenerated: 2,
+          truncated: false,
+        ),
+      ),
+    );
+    request.sendPort.send(
+      TextToSpeechResultResponse(
+        samples: Float32List.fromList(<double>[0.25, -0.25]),
+        sampleRateHz: 24000,
+        channelCount: 1,
+        framesGenerated: 2,
+        truncated: false,
+      ),
+    );
+  }
 
   void dispose() {
     _port.close();

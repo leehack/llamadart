@@ -341,11 +341,20 @@ void main() {
         supportsAudio: true,
         supportsSpeechToText: true,
       );
+      const desktopTts = DownloadableModel(
+        name: 'Desktop TTS Model',
+        description: 'Desktop model with speech synthesis.',
+        url: 'https://example.com/desktop-tts.gguf',
+        filename: 'desktop-tts.gguf',
+        sizeBytes: 20,
+        availability: ModelAvailability.nativeDesktop,
+        supportsTextToSpeech: true,
+      );
 
       await _pumpScreen(
         tester,
         modelService: _HoldingModelService(),
-        models: const [desktopAudio, desktopAsr],
+        models: const [desktopAudio, desktopAsr, desktopTts],
       );
 
       await tester.tap(find.widgetWithText(ChoiceChip, 'Desktop'));
@@ -367,6 +376,15 @@ void main() {
       await tester.enterText(find.byType(TextField).first, 'speech to text');
       await tester.pump();
       expect(find.text(desktopAsr.name), findsOneWidget);
+
+      await tester.enterText(find.byType(TextField).first, 'text-to-speech');
+      await tester.pump();
+      expect(find.text(desktopTts.name), findsOneWidget);
+      expect(find.text(desktopAsr.name), findsNothing);
+
+      await tester.enterText(find.byType(TextField).first, 'tts');
+      await tester.pump();
+      expect(find.text(desktopTts.name), findsOneWidget);
     });
 
     testWidgets('pause button cancels the active controller download', (

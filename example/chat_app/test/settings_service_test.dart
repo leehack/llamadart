@@ -118,6 +118,7 @@ void main() {
         modelSupportsVision: false,
         modelSupportsAudio: true,
         modelSupportsSpeechToText: true,
+        modelSupportsTextToSpeech: true,
         directMediaInput: true,
       );
 
@@ -127,6 +128,7 @@ void main() {
       expect(restored.modelSupportsVision, isFalse);
       expect(restored.modelSupportsAudio, isTrue);
       expect(restored.modelSupportsSpeechToText, isTrue);
+      expect(restored.modelSupportsTextToSpeech, isTrue);
       expect(restored.directMediaInput, isTrue);
     });
 
@@ -166,6 +168,29 @@ void main() {
       final settings = await service.loadSettings();
 
       expect(settings.modelSupportsSpeechToText, isFalse);
+    });
+
+    test('migrates the catalog Qwen3-TTS filename to typed TTS', () async {
+      SharedPreferences.setMockInitialValues({
+        'model_path': '/models/Qwen3-TTS-12Hz-1.7B-Base-Q4_K_M.gguf',
+      });
+
+      final service = SettingsService();
+      final settings = await service.loadSettings();
+
+      expect(settings.modelSupportsTextToSpeech, isTrue);
+    });
+
+    test('preserves an explicit disabled Qwen3-TTS setting', () async {
+      SharedPreferences.setMockInitialValues({
+        'model_path': '/models/Qwen3-TTS-12Hz-1.7B-Base-Q4_K_M.gguf',
+        'model_supports_text_to_speech': false,
+      });
+
+      final service = SettingsService();
+      final settings = await service.loadSettings();
+
+      expect(settings.modelSupportsTextToSpeech, isFalse);
     });
 
     test('migrates saved Unsloth UD Qwen model paths to Q4_K_M', () async {

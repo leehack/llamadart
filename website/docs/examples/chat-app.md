@@ -79,6 +79,11 @@ flutter test
   timestamp, confidence, or live-partial contract. Qwen3-ASR keeps the separate
   five-minute **Stop & transcribe** workflow and takes precedence for ASR
   profiles.
+- A dedicated native-desktop Qwen3-TTS mode backed by `TextToSpeechEngine`.
+  Type an utterance, optionally choose a language and speaker-reference audio,
+  then cancel synthesis, play the completed 24 kHz mono output, or save it as a
+  WAV file. This is separate from chat generation and does not automatically
+  read assistant responses aloud.
 - The voice-question UI is code-supported on Android, iOS, macOS, and Windows
   when the selected native profile declares direct audio input or the loaded
   projector reports audio support; Linux recording and Web are excluded. That
@@ -111,14 +116,14 @@ The built-in library is intentionally small and Unsloth-first:
 - Cross-platform: FunctionGemma 270M, Qwen3.5 0.8B, Gemma 4 E2B GGUF,
   Gemma 4 E2B LiteRT-LM, and Gemma 4 E4B GGUF.
 - Native mobile and desktop: Qwen3-ASR 0.6B.
-- Native desktop: Gemma 4 12B, Gemma 4 26B A4B, Gemma 4 31B, and Qwen3.6
-  35B A3B.
+- Native desktop: Qwen3-TTS 1.7B Base, Gemma 4 12B, Gemma 4 26B A4B,
+  Gemma 4 31B, and Qwen3.6 35B A3B.
 
 GGUF chat presets use [Unsloth distributions](https://huggingface.co/unsloth).
-The dedicated ASR preset uses llama.cpp's `ggml-org` Qwen3-ASR pair, while the
-`.litertlm` artifacts come from `litert-community`; cards identify each source.
-The Qwen3-ASR model and projector use immutable URLs and verified SHA-256
-digests. The library defaults to the current platform, promotes
+The dedicated speech presets use llama.cpp's `ggml-org` Qwen3-ASR and Qwen3-TTS
+pairs, while the `.litertlm` artifacts come from `litert-community`; cards
+identify each source. Both speech model/projector pairs use immutable URLs and
+verified SHA-256 digests. The library defaults to the current platform, promotes
 downloaded models, and supports name/capability search plus Mobile, Web, and
 Desktop filters. Browsing another platform keeps incompatible model actions
 disabled and explains why. Gemma 4 E4B remains cross-platform because it is
@@ -131,7 +136,9 @@ visible without repeating every sampling parameter on every card.
 Availability filters match each preset's platform restrictions. The Qwen3-ASR
 preset appears for native mobile and desktop targets but remains unavailable on
 Web; other portable presets can appear under both **Mobile** and **Web**, while
-the largest native models remain **Desktop** only.
+Qwen3-TTS and the largest native models remain **Desktop** only. The first TTS
+catalog scope reflects macOS CPU/Metal real-model evidence; other native targets
+still require packaged-runtime validation.
 
 The complete Qwen3-ASR model/projector, microphone, and final-transcript flow
 has passed on a physical Pixel using CPU inference and in the iOS Simulator.

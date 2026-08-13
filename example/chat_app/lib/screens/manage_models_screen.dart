@@ -209,6 +209,8 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
       if (model.supportsAudioFor(web: useWebCapabilities)) 'audio voice',
       if (model.supportsSpeechToTextFor(web: useWebCapabilities))
         'speech-to-text speech to text transcription asr stt',
+      if (model.supportsTextToSpeechFor(web: useWebCapabilities))
+        'text-to-speech text to speech synthesis tts voice output',
       if (model.supportsVideoFor(web: useWebCapabilities)) 'video',
     ].join(' ').toLowerCase();
     return query.split(RegExp(r'\s+')).every(searchable.contains);
@@ -751,6 +753,7 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
 
   bool _includeProjectorFor(DownloadableModel model) {
     return model.supportsSpeechToTextFor(web: kIsWeb) ||
+        model.supportsTextToSpeechFor(web: kIsWeb) ||
         (_includeProjectorByFile[model.filename] ?? true);
   }
 
@@ -972,7 +975,8 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
     provider.updateModelPath(pathOrUrl);
     provider.applyModelPreset(model);
 
-    if (model.isMultimodalFor(web: kIsWeb) &&
+    if ((model.isMultimodalFor(web: kIsWeb) ||
+            model.supportsTextToSpeechFor(web: kIsWeb)) &&
         model.mediaInputModeFor(web: kIsWeb) ==
             ModelMediaInputMode.externalProjector) {
       final mmprojPath = _resolveMmprojPathForModel(model);
@@ -1284,7 +1288,8 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
   }
 
   String? _resolveMmprojPathForModel(DownloadableModel model) {
-    if (!model.isMultimodalFor(web: kIsWeb) ||
+    if ((!model.isMultimodalFor(web: kIsWeb) &&
+            !model.supportsTextToSpeechFor(web: kIsWeb)) ||
         model.mediaInputModeFor(web: kIsWeb) !=
             ModelMediaInputMode.externalProjector) {
       return null;

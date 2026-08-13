@@ -43,6 +43,7 @@ class ChatSettings {
   final bool modelSupportsVision;
   final bool modelSupportsAudio;
   final bool modelSupportsSpeechToText;
+  final bool modelSupportsTextToSpeech;
 
   /// Whether media is consumed directly by the model backend instead of an
   /// external multimodal projector.
@@ -79,6 +80,7 @@ class ChatSettings {
     this.modelSupportsVision = false,
     this.modelSupportsAudio = false,
     this.modelSupportsSpeechToText = false,
+    this.modelSupportsTextToSpeech = false,
     this.directMediaInput = false,
     this.modelBytesHint,
   });
@@ -109,6 +111,7 @@ class ChatSettings {
     bool? modelSupportsVision,
     bool? modelSupportsAudio,
     bool? modelSupportsSpeechToText,
+    bool? modelSupportsTextToSpeech,
     bool? directMediaInput,
     int? modelBytesHint,
   }) {
@@ -140,6 +143,8 @@ class ChatSettings {
       modelSupportsAudio: modelSupportsAudio ?? this.modelSupportsAudio,
       modelSupportsSpeechToText:
           modelSupportsSpeechToText ?? this.modelSupportsSpeechToText,
+      modelSupportsTextToSpeech:
+          modelSupportsTextToSpeech ?? this.modelSupportsTextToSpeech,
       directMediaInput: directMediaInput ?? this.directMediaInput,
       modelBytesHint: modelBytesHint ?? this.modelBytesHint,
     );

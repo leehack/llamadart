@@ -3,10 +3,12 @@ import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
 import 'package:path/path.dart' as path;
 
+import '../backend.dart';
 import '../../core/exceptions.dart';
 import '../../core/llama_logger.dart';
 import '../../core/models/chat/chat_message.dart';
@@ -27,6 +29,66 @@ const _llamadartWrapperAssetId = 'package:llamadart/llamadart_wrapper';
 
 typedef _GgmlBackendLoadNative = ggml_backend_reg_t Function(Pointer<Char>);
 typedef _GgmlBackendLoadDart = ggml_backend_reg_t Function(Pointer<Char>);
+
+typedef _TtsApiVersionNative = Uint32 Function();
+typedef _TtsApiVersionDart = int Function();
+typedef _TtsRequestDefaultNative = llama_dart_tts_request Function();
+typedef _TtsRequestDefaultDart = llama_dart_tts_request Function();
+typedef _TtsGetInfoNative =
+    Int32 Function(Pointer<mtmd_context>, Pointer<llama_dart_tts_info>);
+typedef _TtsGetInfoDart =
+    int Function(Pointer<mtmd_context>, Pointer<llama_dart_tts_info>);
+typedef _TtsInitNative =
+    Pointer<llama_dart_tts> Function(
+      Pointer<llama_context>,
+      Pointer<mtmd_context>,
+      Pointer<Int32>,
+    );
+typedef _TtsInitDart =
+    Pointer<llama_dart_tts> Function(
+      Pointer<llama_context>,
+      Pointer<mtmd_context>,
+      Pointer<Int32>,
+    );
+typedef _TtsFreeNative = Void Function(Pointer<llama_dart_tts>);
+typedef _TtsFreeDart = void Function(Pointer<llama_dart_tts>);
+typedef _TtsStartNative =
+    Int32 Function(Pointer<llama_dart_tts>, Pointer<llama_dart_tts_request>);
+typedef _TtsStartDart =
+    int Function(Pointer<llama_dart_tts>, Pointer<llama_dart_tts_request>);
+typedef _TtsStepNative =
+    Int32 Function(Pointer<llama_dart_tts>, Pointer<llama_dart_tts_progress>);
+typedef _TtsStepDart =
+    int Function(Pointer<llama_dart_tts>, Pointer<llama_dart_tts_progress>);
+typedef _TtsCancelNative = Void Function(Pointer<llama_dart_tts>);
+typedef _TtsCancelDart = void Function(Pointer<llama_dart_tts>);
+typedef _TtsResetNative = Int32 Function(Pointer<llama_dart_tts>);
+typedef _TtsResetDart = int Function(Pointer<llama_dart_tts>);
+typedef _TtsGetOutputInfoNative =
+    Int32 Function(
+      Pointer<llama_dart_tts>,
+      Pointer<llama_dart_tts_output_info>,
+    );
+typedef _TtsGetOutputInfoDart =
+    int Function(Pointer<llama_dart_tts>, Pointer<llama_dart_tts_output_info>);
+typedef _TtsReadPcmNative =
+    Int32 Function(
+      Pointer<llama_dart_tts>,
+      Int64,
+      Pointer<Float>,
+      Size,
+      Pointer<Size>,
+    );
+typedef _TtsReadPcmDart =
+    int Function(
+      Pointer<llama_dart_tts>,
+      int,
+      Pointer<Float>,
+      int,
+      Pointer<Size>,
+    );
+typedef _TtsLastErrorNative = Pointer<Char> Function(Pointer<llama_dart_tts>);
+typedef _TtsLastErrorDart = Pointer<Char> Function(Pointer<llama_dart_tts>);
 typedef _GgmlBackendInitNative = ggml_backend_reg_t Function();
 typedef _GgmlBackendInitDart = ggml_backend_reg_t Function();
 typedef _GgmlBackendLoadAllNative = Void Function();
@@ -876,6 +938,10 @@ class LlamaCppService {
   _MtpApi? _mtpApi;
   bool _ngramApiLookupAttempted = false;
   _NgramApi? _ngramApi;
+  bool _ttsApiLookupAttempted = false;
+  _TtsApi? _ttsApi;
+  Pointer<llama_dart_tts> _activeTts = nullptr;
+  int? _activeTtsContextHandle;
   final List<String> _startupDiagnostics = <String>[];
 
   // --- Internal State ---
@@ -3202,6 +3268,37 @@ class LlamaCppService {
         'native runtime bundle (missing llama_dart_ngram_* wrapper symbols).';
   }
 
+  _TtsApi _resolveTtsApi() {
+    final cached = _ttsApi;
+    if (cached != null) {
+      return cached;
+    }
+    if (_ttsApiLookupAttempted) {
+      throw LlamaUnsupportedException(_ttsUnavailableMessage());
+    }
+    _ttsApiLookupAttempted = true;
+
+    for (final candidate in _llamadartWrapperLibraryCandidates()) {
+      try {
+        final library = DynamicLibrary.open(candidate);
+        final api = _TtsApi.tryLoad(library);
+        if (api != null) {
+          _ttsApi = api;
+          return api;
+        }
+      } catch (_) {
+        continue;
+      }
+    }
+    throw LlamaUnsupportedException(_ttsUnavailableMessage());
+  }
+
+  String _ttsUnavailableMessage() {
+    return 'Native text-to-speech is unavailable in this runtime bundle '
+        '(missing llama_dart_tts_* ABI v$LLAMA_DART_TTS_API_VERSION symbols). '
+        'Update to a compatible llamadart-native artifact.';
+  }
+
   List<String> _llamadartWrapperLibraryCandidates() {
     final candidates = <String>[..._llamadartAssetUriCandidates()];
     final fileNameCandidates = _llamadartLibraryCandidateFileNames();
@@ -4338,6 +4435,11 @@ class LlamaCppService {
   }) async* {
     var ctx = _contexts[contextHandle];
     if (ctx == null) throw Exception("Invalid context handle");
+    if (_activeTtsContextHandle == contextHandle) {
+      throw LlamaStateException(
+        'Cannot generate text while text-to-speech is active on this context.',
+      );
+    }
     _generatingContexts.update(
       contextHandle,
       (count) => count + 1,
@@ -8294,6 +8396,371 @@ class LlamaCppService {
     final fallback = _resolveMtmdFallbackApi();
     return fallback?.supportsAudio(mmCtx) ?? false;
   }
+
+  /// Discovers dedicated native text-to-speech support.
+  BackendTextToSpeechCapabilities textToSpeechCapabilities(
+    int contextHandle,
+    int mmContextHandle,
+  ) {
+    if (!_isMatchingContextAndProjector(contextHandle, mmContextHandle)) {
+      return const BackendTextToSpeechCapabilities(
+        isSupported: false,
+        unsupportedReason:
+            'The loaded context and text-to-speech projector do not match.',
+      );
+    }
+
+    _TtsApi api;
+    try {
+      api = _resolveTtsApi();
+    } on LlamaUnsupportedException catch (error) {
+      return BackendTextToSpeechCapabilities(
+        isSupported: false,
+        unsupportedReason: error.message,
+      );
+    }
+
+    if (api.apiVersion() != LLAMA_DART_TTS_API_VERSION) {
+      return BackendTextToSpeechCapabilities(
+        isSupported: false,
+        unsupportedReason:
+            'The native text-to-speech ABI version is incompatible '
+            '(expected $LLAMA_DART_TTS_API_VERSION).',
+      );
+    }
+
+    final info = malloc<llama_dart_tts_info>();
+    try {
+      info.ref.struct_size = sizeOf<llama_dart_tts_info>();
+      final status = llama_dart_tts_status.fromValue(
+        api.getInfo(_mtmdContexts[mmContextHandle]!, info),
+      );
+      if (status == llama_dart_tts_status.LLAMA_DART_TTS_STATUS_UNSUPPORTED) {
+        return const BackendTextToSpeechCapabilities(
+          isSupported: false,
+          unsupportedReason:
+              'The loaded projector does not expose supported audio generation.',
+        );
+      }
+      _throwForTtsStatus(status, operation: 'Text-to-speech capability probe');
+      if (info.ref.model_type !=
+          llama_dart_tts_model_type.LLAMA_DART_TTS_MODEL_TYPE_QWEN3.value) {
+        return const BackendTextToSpeechCapabilities(
+          isSupported: false,
+          unsupportedReason:
+              'Only Qwen3-TTS projectors are supported by this runtime.',
+        );
+      }
+      final flags = info.ref.capabilities;
+      return BackendTextToSpeechCapabilities(
+        isSupported: true,
+        model: BackendTextToSpeechModel.qwen3Tts,
+        sampleRateHz: info.ref.sample_rate,
+        channelCount: info.ref.channels,
+        supportsLanguage:
+            flags &
+                llama_dart_tts_capability
+                    .LLAMA_DART_TTS_CAPABILITY_LANGUAGE
+                    .value !=
+            0,
+        supportsSpeakerReference:
+            flags &
+                llama_dart_tts_capability
+                    .LLAMA_DART_TTS_CAPABILITY_SPEAKER_REFERENCE
+                    .value !=
+            0,
+        supportsCancellation: true,
+      );
+    } finally {
+      malloc.free(info);
+    }
+  }
+
+  /// Synthesizes complete float32 PCM with the stable native TTS wrapper.
+  Future<BackendTextToSpeechResult> synthesizeTextToSpeech(
+    int contextHandle,
+    int mmContextHandle,
+    BackendTextToSpeechRequest request, {
+    void Function(BackendTextToSpeechProgress progress)? onProgress,
+  }) async {
+    final context = _contexts[contextHandle];
+    final mtmd = _mtmdContexts[mmContextHandle];
+    if (context == null ||
+        mtmd == null ||
+        !_isMatchingContextAndProjector(contextHandle, mmContextHandle)) {
+      throw LlamaStateException(
+        'The loaded context and text-to-speech projector do not match.',
+      );
+    }
+    if (_activeTts != nullptr) {
+      throw LlamaStateException('Text-to-speech synthesis is already active.');
+    }
+    if (_generatingContexts.containsKey(contextHandle)) {
+      throw LlamaStateException(
+        'Cannot start text-to-speech while generation is active.',
+      );
+    }
+
+    final api = _resolveTtsApi();
+    final textBytes = utf8.encode(request.text);
+    final text = malloc<Uint8>(textBytes.length + 1);
+    for (var index = 0; index < textBytes.length; index++) {
+      text[index] = textBytes[index];
+    }
+    text[textBytes.length] = 0;
+
+    Pointer<Utf8> language = nullptr;
+    final trimmedLanguage = request.language?.trim();
+    if (trimmedLanguage != null && trimmedLanguage.isNotEmpty) {
+      language = trimmedLanguage.toNativeUtf8();
+    }
+
+    Pointer<UnsignedChar> speakerAudio = nullptr;
+    Uint8List? speakerBytes = request.speakerAudioBytes;
+    final speakerPath = request.speakerAudioPath;
+    if (speakerBytes == null && speakerPath != null) {
+      try {
+        speakerBytes = File(speakerPath).readAsBytesSync();
+      } catch (error) {
+        malloc.free(text);
+        if (language != nullptr) malloc.free(language);
+        throw LlamaAudioFormatException(
+          'Unable to read speaker reference audio.',
+          error,
+        );
+      }
+    }
+    if (speakerBytes != null && speakerBytes.isNotEmpty) {
+      speakerAudio = malloc<UnsignedChar>(speakerBytes.length);
+      speakerAudio
+          .cast<Uint8>()
+          .asTypedList(speakerBytes.length)
+          .setAll(0, speakerBytes);
+    }
+
+    final requestPointer = malloc<llama_dart_tts_request>();
+    final initStatus = malloc<Int32>();
+    final progress = malloc<llama_dart_tts_progress>();
+    Pointer<llama_dart_tts> task = nullptr;
+    var framesGenerated = 0;
+    var truncated = false;
+
+    _generatingContexts[contextHandle] = 1;
+    _activeTtsContextHandle = contextHandle;
+    llama_set_embeddings(context.pointer, true);
+    try {
+      task = api.init(context.pointer, mtmd, initStatus);
+      if (task == nullptr) {
+        _throwForTtsStatus(
+          llama_dart_tts_status.fromValue(initStatus.value),
+          operation: 'Text-to-speech initialization',
+        );
+        throw LlamaTextToSpeechException(
+          'Text-to-speech initialization returned no task.',
+        );
+      }
+      _activeTts = task;
+
+      requestPointer.ref = api.requestDefault();
+      requestPointer.ref.text = text.cast();
+      requestPointer.ref.text_length = textBytes.length;
+      requestPointer.ref.speaker_audio = speakerAudio;
+      requestPointer.ref.speaker_audio_length = speakerBytes?.length ?? 0;
+      requestPointer.ref.language = language.cast();
+      requestPointer.ref.sequence_id = 0;
+      requestPointer.ref.prompt_batch_size = request.promptBatchSize;
+      requestPointer.ref.max_frames = request.maxFrames;
+      requestPointer.ref.top_k = request.topK;
+      requestPointer.ref.top_p = request.topP;
+      requestPointer.ref.min_p = request.minP;
+      requestPointer.ref.temperature = request.temperature;
+      requestPointer.ref.seed = request.seed;
+
+      _throwForTtsStatus(
+        llama_dart_tts_status.fromValue(api.start(task, requestPointer)),
+        operation: 'Text-to-speech startup',
+        api: api,
+        task: task,
+      );
+
+      while (true) {
+        progress.ref.struct_size = sizeOf<llama_dart_tts_progress>();
+        final status = llama_dart_tts_status.fromValue(
+          api.step(task, progress),
+        );
+        if (status == llama_dart_tts_status.LLAMA_DART_TTS_STATUS_CANCELLED) {
+          throw LlamaTextToSpeechException(
+            'Text-to-speech synthesis was cancelled.',
+          );
+        }
+        _throwForTtsStatus(
+          status,
+          operation: 'Text-to-speech generation',
+          api: api,
+          task: task,
+        );
+        framesGenerated = progress.ref.frames_generated;
+        truncated = progress.ref.truncated;
+        final state = llama_dart_tts_state.fromValue(progress.ref.state);
+        if (state == llama_dart_tts_state.LLAMA_DART_TTS_STATE_COMPLETED) {
+          break;
+        }
+        if (state == llama_dart_tts_state.LLAMA_DART_TTS_STATE_CANCELLED) {
+          throw LlamaTextToSpeechException(
+            'Text-to-speech synthesis was cancelled.',
+          );
+        }
+        if (state == llama_dart_tts_state.LLAMA_DART_TTS_STATE_FAILED) {
+          throw LlamaTextToSpeechException(
+            'Text-to-speech synthesis failed.',
+            _ttsLastError(api, task),
+          );
+        }
+        onProgress?.call(
+          BackendTextToSpeechProgress(
+            phase:
+                state ==
+                    llama_dart_tts_state.LLAMA_DART_TTS_STATE_PROCESSING_PROMPT
+                ? BackendTextToSpeechPhase.processingPrompt
+                : BackendTextToSpeechPhase.generating,
+            promptTokensRemaining: progress.ref.prompt_tokens_remaining,
+            framesGenerated: framesGenerated,
+            truncated: truncated,
+          ),
+        );
+        await Future<void>.delayed(Duration.zero);
+      }
+
+      final outputInfo = malloc<llama_dart_tts_output_info>();
+      try {
+        outputInfo.ref.struct_size = sizeOf<llama_dart_tts_output_info>();
+        _throwForTtsStatus(
+          llama_dart_tts_status.fromValue(api.getOutputInfo(task, outputInfo)),
+          operation: 'Text-to-speech output metadata',
+          api: api,
+          task: task,
+        );
+        final sampleCount = outputInfo.ref.sample_count;
+        if (sampleCount <= 0) {
+          throw LlamaTextToSpeechException(
+            'Text-to-speech completed without PCM output.',
+          );
+        }
+        final pcm = malloc<Float>(sampleCount);
+        final outputCount = malloc<Size>();
+        try {
+          _throwForTtsStatus(
+            llama_dart_tts_status.fromValue(
+              api.readPcm(task, 0, pcm, sampleCount, outputCount),
+            ),
+            operation: 'Text-to-speech PCM read',
+            api: api,
+            task: task,
+          );
+          if (outputCount.value != sampleCount) {
+            throw LlamaTextToSpeechException(
+              'Native text-to-speech returned incomplete PCM output.',
+              '${outputCount.value}/$sampleCount samples',
+            );
+          }
+          return BackendTextToSpeechResult(
+            samples: Float32List.fromList(pcm.asTypedList(sampleCount)),
+            sampleRateHz: outputInfo.ref.sample_rate,
+            channelCount: outputInfo.ref.channels,
+            framesGenerated: framesGenerated,
+            truncated: truncated,
+          );
+        } finally {
+          malloc.free(pcm);
+          malloc.free(outputCount);
+        }
+      } finally {
+        malloc.free(outputInfo);
+      }
+    } finally {
+      if (task != nullptr) {
+        try {
+          api.reset(task);
+        } catch (_) {}
+        api.free(task);
+      }
+      _activeTts = nullptr;
+      _activeTtsContextHandle = null;
+      _generatingContexts.remove(contextHandle);
+      llama_set_embeddings(context.pointer, false);
+      malloc.free(requestPointer);
+      malloc.free(initStatus);
+      malloc.free(progress);
+      malloc.free(text);
+      if (language != nullptr) malloc.free(language);
+      if (speakerAudio != nullptr) malloc.free(speakerAudio);
+    }
+  }
+
+  /// Requests cancellation of the active native synthesis.
+  void cancelTextToSpeech() {
+    final task = _activeTts;
+    if (task == nullptr) {
+      return;
+    }
+    _resolveTtsApi().cancel(task);
+  }
+
+  bool _isMatchingContextAndProjector(int contextHandle, int mmContextHandle) {
+    final modelHandle = _contextToModel[contextHandle];
+    return modelHandle != null &&
+        _contexts.containsKey(contextHandle) &&
+        _mtmdContexts.containsKey(mmContextHandle) &&
+        _modelToMtmd[modelHandle] == mmContextHandle;
+  }
+
+  void _throwForTtsStatus(
+    llama_dart_tts_status status, {
+    required String operation,
+    _TtsApi? api,
+    Pointer<llama_dart_tts>? task,
+  }) {
+    if (status == llama_dart_tts_status.LLAMA_DART_TTS_STATUS_OK) {
+      return;
+    }
+    final details = api != null && task != null && task != nullptr
+        ? _ttsLastError(api, task)
+        : null;
+    switch (status) {
+      case llama_dart_tts_status.LLAMA_DART_TTS_STATUS_UNSUPPORTED:
+        throw LlamaUnsupportedException(
+          '$operation is unsupported by the loaded native runtime or model.',
+        );
+      case llama_dart_tts_status.LLAMA_DART_TTS_STATUS_INVALID_STATE:
+        throw LlamaStateException(
+          '$operation is not valid in this state.',
+          details,
+        );
+      case llama_dart_tts_status.LLAMA_DART_TTS_STATUS_SPEAKER_DECODE_FAILED:
+        throw LlamaAudioFormatException(
+          'Speaker reference audio could not be decoded.',
+          details,
+        );
+      case llama_dart_tts_status.LLAMA_DART_TTS_STATUS_CANCELLED:
+        throw LlamaTextToSpeechException(
+          'Text-to-speech synthesis was cancelled.',
+        );
+      case llama_dart_tts_status.LLAMA_DART_TTS_STATUS_INVALID_ARGUMENT:
+      case llama_dart_tts_status.LLAMA_DART_TTS_STATUS_UPSTREAM_ERROR:
+        throw LlamaTextToSpeechException('$operation failed.', details);
+      case llama_dart_tts_status.LLAMA_DART_TTS_STATUS_OK:
+        return;
+    }
+  }
+
+  String? _ttsLastError(_TtsApi api, Pointer<llama_dart_tts> task) {
+    final error = api.lastError(task);
+    if (error == nullptr) {
+      return null;
+    }
+    final message = error.cast<Utf8>().toDartString().trim();
+    return message.isEmpty ? null : message;
+  }
 }
 
 class _LazyGrammarConfig {
@@ -8321,6 +8788,85 @@ class _LazyGrammarConfig {
     }
     if (triggerTokens != nullptr) {
       malloc.free(triggerTokens);
+    }
+  }
+}
+
+class _TtsApi {
+  final _TtsApiVersionDart apiVersion;
+  final _TtsRequestDefaultDart requestDefault;
+  final _TtsGetInfoDart getInfo;
+  final _TtsInitDart init;
+  final _TtsFreeDart free;
+  final _TtsStartDart start;
+  final _TtsStepDart step;
+  final _TtsCancelDart cancel;
+  final _TtsResetDart reset;
+  final _TtsGetOutputInfoDart getOutputInfo;
+  final _TtsReadPcmDart readPcm;
+  final _TtsLastErrorDart lastError;
+
+  const _TtsApi({
+    required this.apiVersion,
+    required this.requestDefault,
+    required this.getInfo,
+    required this.init,
+    required this.free,
+    required this.start,
+    required this.step,
+    required this.cancel,
+    required this.reset,
+    required this.getOutputInfo,
+    required this.readPcm,
+    required this.lastError,
+  });
+
+  static _TtsApi? tryLoad(DynamicLibrary library) {
+    try {
+      return _TtsApi(
+        apiVersion: library
+            .lookupFunction<_TtsApiVersionNative, _TtsApiVersionDart>(
+              'llama_dart_tts_api_version',
+            ),
+        requestDefault: library
+            .lookupFunction<_TtsRequestDefaultNative, _TtsRequestDefaultDart>(
+              'llama_dart_tts_request_default',
+            ),
+        getInfo: library.lookupFunction<_TtsGetInfoNative, _TtsGetInfoDart>(
+          'llama_dart_tts_get_info',
+        ),
+        init: library.lookupFunction<_TtsInitNative, _TtsInitDart>(
+          'llama_dart_tts_init',
+        ),
+        free: library.lookupFunction<_TtsFreeNative, _TtsFreeDart>(
+          'llama_dart_tts_free',
+        ),
+        start: library.lookupFunction<_TtsStartNative, _TtsStartDart>(
+          'llama_dart_tts_start',
+        ),
+        step: library.lookupFunction<_TtsStepNative, _TtsStepDart>(
+          'llama_dart_tts_step',
+        ),
+        cancel: library.lookupFunction<_TtsCancelNative, _TtsCancelDart>(
+          'llama_dart_tts_cancel',
+        ),
+        reset: library.lookupFunction<_TtsResetNative, _TtsResetDart>(
+          'llama_dart_tts_reset',
+        ),
+        getOutputInfo: library
+            .lookupFunction<_TtsGetOutputInfoNative, _TtsGetOutputInfoDart>(
+              'llama_dart_tts_get_output_info',
+            ),
+        readPcm: library.lookupFunction<_TtsReadPcmNative, _TtsReadPcmDart>(
+          'llama_dart_tts_read_pcm',
+        ),
+        lastError: library
+            .lookupFunction<_TtsLastErrorNative, _TtsLastErrorDart>(
+              'llama_dart_tts_last_error',
+            ),
+      );
+    } catch (_) {
+      return null;
     }
   }
 }

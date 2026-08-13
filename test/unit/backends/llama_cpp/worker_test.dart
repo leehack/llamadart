@@ -3,7 +3,9 @@ library;
 
 import 'dart:async';
 import 'dart:isolate';
+import 'dart:typed_data';
 
+import 'package:llamadart/src/backends/backend.dart';
 import 'package:llamadart/src/core/models/config/log_level.dart';
 import 'package:llamadart/src/core/models/chat/content_part.dart';
 import 'package:llamadart/src/core/models/inference/generation_params.dart';
@@ -191,6 +193,53 @@ void main() {
         }
       },
     );
+
+    test('routes text-to-speech progress, result, and cancellation', () async {
+      final service = _BlockingTextToSpeechService();
+      final worker = await _startWorkerInCurrentIsolate(service);
+      final responsePort = ReceivePort();
+      final responses = <Object>[];
+      final resultCompleter = Completer<TextToSpeechResultResponse>();
+      final subscription = responsePort.listen((response) {
+        if (response is Object) {
+          responses.add(response);
+        }
+        if (response is TextToSpeechResultResponse &&
+            !resultCompleter.isCompleted) {
+          resultCompleter.complete(response);
+        }
+      });
+
+      try {
+        worker.sendPort.send(
+          TextToSpeechSynthesizeRequest(
+            2,
+            3,
+            const BackendTextToSpeechRequest(text: 'Hello.'),
+            responsePort.sendPort,
+          ),
+        );
+        await service.synthesisStarted.future;
+        worker.sendPort.send(TextToSpeechCancelRequest());
+        await service.cancelObserved.future;
+        service.releaseSynthesis();
+
+        final result = await resultCompleter.future;
+        expect(
+          responses.whereType<TextToSpeechProgressResponse>(),
+          hasLength(1),
+        );
+        expect(Float32List.view(result.pcm.materialize()).toList(), <double>[
+          0.5,
+          -0.5,
+        ]);
+        expect(service.cancelCalls, 1);
+      } finally {
+        await subscription.cancel();
+        responsePort.close();
+        await _disposeWorker(worker);
+      }
+    });
 
     test('waits for active generation before freeing native handles', () async {
       final service = _BlockingLlamaCppService();
@@ -470,6 +519,64 @@ class _UnsupportedGenerationLlamaCppService extends LlamaCppService {
     throw LlamaUnsupportedException(
       'missing reasoning-budget wrapper in this test runtime',
     );
+  }
+
+  @override
+  void dispose() {}
+}
+
+class _BlockingTextToSpeechService extends LlamaCppService {
+  final Completer<void> synthesisStarted = Completer<void>();
+  final Completer<void> cancelObserved = Completer<void>();
+  final Completer<void> _releaseSynthesis = Completer<void>();
+  int cancelCalls = 0;
+
+  void releaseSynthesis() {
+    if (!_releaseSynthesis.isCompleted) {
+      _releaseSynthesis.complete();
+    }
+  }
+
+  @override
+  void initializeBackend() {}
+
+  @override
+  void setLogLevel(LlamaLogLevel level) {}
+
+  @override
+  Future<BackendTextToSpeechResult> synthesizeTextToSpeech(
+    int contextHandle,
+    int mmContextHandle,
+    BackendTextToSpeechRequest request, {
+    void Function(BackendTextToSpeechProgress progress)? onProgress,
+  }) async {
+    if (!synthesisStarted.isCompleted) {
+      synthesisStarted.complete();
+    }
+    await _releaseSynthesis.future;
+    onProgress?.call(
+      const BackendTextToSpeechProgress(
+        phase: BackendTextToSpeechPhase.generating,
+        promptTokensRemaining: 0,
+        framesGenerated: 2,
+        truncated: false,
+      ),
+    );
+    return BackendTextToSpeechResult(
+      samples: Float32List.fromList(<double>[0.5, -0.5]),
+      sampleRateHz: 24000,
+      channelCount: 1,
+      framesGenerated: 2,
+      truncated: false,
+    );
+  }
+
+  @override
+  void cancelTextToSpeech() {
+    cancelCalls += 1;
+    if (!cancelObserved.isCompleted) {
+      cancelObserved.complete();
+    }
   }
 
   @override
