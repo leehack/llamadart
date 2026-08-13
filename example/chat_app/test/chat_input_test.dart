@@ -428,6 +428,10 @@ void main() {
           modelPath: 'gemma-4-E2B-it.litertlm',
           modelSupportsAudio: true,
           directMediaInput: true,
+          temperature: 1.0,
+          topK: 64,
+          topP: 0.95,
+          thinkingEnabled: false,
         ),
       );
       addTearDown(provider.dispose);
@@ -446,6 +450,16 @@ void main() {
       expect(recorder.readCalls, 1);
       expect(recorder.deletedPaths, <String>[recorder.recordedPath]);
       expect(engine.createCalls, 1);
+      expect(engine.lastCreateParams?.temp, 1.0);
+      expect(engine.lastCreateParams?.topK, 64);
+      expect(engine.lastCreateParams?.topP, 0.95);
+      expect(engine.lastCreateParams?.seed, isNull);
+      expect(engine.lastCreateEnableThinking, isFalse);
+      expect(engine.lastCreateChatTemplateKwargs, <String, dynamic>{
+        'enable_thinking': false,
+        'thinking': false,
+        'reasoning': false,
+      });
       expect(provider.stagedParts, hasLength(1));
       expect(
         (provider.stagedParts.single as LlamaAudioContent).bytes,
@@ -490,6 +504,11 @@ void main() {
           modelPath: 'gemma-4-E2B-it.litertlm',
           modelSupportsAudio: true,
           directMediaInput: true,
+          temperature: 0.42,
+          topK: 17,
+          topP: 0.83,
+          thinkingEnabled: true,
+          thinkingBudgetTokens: 64,
         ),
       );
       addTearDown(provider.dispose);
@@ -497,11 +516,29 @@ void main() {
 
       await provider.askWithVoice(Uint8List.fromList(const <int>[1, 2, 3]));
       expect(provider.canRegenerateLastResponse, isTrue);
+      expect(engine.lastCreateParams?.temp, 0.42);
+      expect(engine.lastCreateParams?.topK, 17);
+      expect(engine.lastCreateParams?.topP, 0.83);
+      expect(engine.lastCreateParams?.seed, isNull);
+      expect(engine.lastCreateEnableThinking, isTrue);
 
       engine.createChunkContents = const <String>['Second answer.'];
       await provider.regenerateLastResponse();
 
       expect(engine.createCalls, 2);
+      expect(engine.lastCreateParams?.temp, 0.42);
+      expect(engine.lastCreateParams?.topK, 17);
+      expect(engine.lastCreateParams?.topP, 0.83);
+      expect(engine.lastCreateParams?.seed, isNull);
+      expect(engine.lastCreateEnableThinking, isTrue);
+      expect(engine.lastCreateChatTemplateKwargs, <String, dynamic>{
+        'enable_thinking': true,
+        'thinking': true,
+        'reasoning': true,
+        'thinking_budget': 64,
+        'reasoning_budget': 64,
+        'max_thinking_tokens': 64,
+      });
       final regeneratedUserTurn = engine.lastCreateMessages!.last;
       expect(
         regeneratedUserTurn.parts.whereType<LlamaTextContent>().single.text,
@@ -511,6 +548,24 @@ void main() {
         regeneratedUserTurn.parts.whereType<LlamaAudioContent>().single.bytes,
         <int>[1, 2, 3],
       );
+
+      engine.createChunkContents = const <String>['Follow-up answer.'];
+      await provider.sendMessage('Follow-up question');
+
+      expect(engine.createCalls, 3);
+      expect(engine.lastCreateParams?.temp, 0.42);
+      expect(engine.lastCreateParams?.topK, 17);
+      expect(engine.lastCreateParams?.topP, 0.83);
+      expect(engine.lastCreateParams?.seed, isNull);
+      expect(engine.lastCreateEnableThinking, isTrue);
+      expect(engine.lastCreateChatTemplateKwargs, <String, dynamic>{
+        'enable_thinking': true,
+        'thinking': true,
+        'reasoning': true,
+        'thinking_budget': 64,
+        'reasoning_budget': 64,
+        'max_thinking_tokens': 64,
+      });
     },
   );
 

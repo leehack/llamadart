@@ -1383,6 +1383,22 @@ void main() {
       expect(small.preset.contextSize, 4096);
     });
 
+    test('Gemma 4 presets use the recommended sampling configuration', () {
+      final gemmaModels = DownloadableModel.defaultModels
+          .where((model) => model.name.startsWith('Gemma 4 '))
+          .toList(growable: false);
+
+      expect(gemmaModels, isNotEmpty);
+      for (final model in gemmaModels) {
+        expect(model.preset.temperature, 1.0, reason: model.name);
+        expect(model.preset.topK, 64, reason: model.name);
+        expect(model.preset.topP, 0.95, reason: model.name);
+        expect(model.preset.minP, 0.0, reason: model.name);
+        expect(model.preset.penalty, 1.0, reason: model.name);
+        expect(model.preset.thinkingEnabled, isFalse, reason: model.name);
+      }
+    });
+
     test('large models remain desktop-only while Qwen3-ASR is native', () {
       final desktopModels = DownloadableModel.defaultModels
           .where((model) => model.isNativeDesktopOnly)

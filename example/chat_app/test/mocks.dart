@@ -113,6 +113,8 @@ class MockLlamaEngine extends LlamaEngine {
   int createCalls = 0;
   ModelParams? lastModelParams;
   GenerationParams? lastCreateParams;
+  bool? lastCreateEnableThinking;
+  Map<String, dynamic>? lastCreateChatTemplateKwargs;
   List<LlamaChatMessage>? lastCreateMessages;
   BackendPerfContextData? performanceContext;
   List<String> createChunkContents = const ['Hi there'];
@@ -203,6 +205,10 @@ class MockLlamaEngine extends LlamaEngine {
   }) async* {
     createCalls += 1;
     lastCreateParams = params;
+    lastCreateEnableThinking = enableThinking;
+    lastCreateChatTemplateKwargs = chatTemplateKwargs == null
+        ? null
+        : Map<String, dynamic>.from(chatTemplateKwargs);
     lastCreateMessages = List<LlamaChatMessage>.from(messages);
     for (final content in createChunkContents) {
       yield LlamaCompletionChunk(

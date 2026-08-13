@@ -521,7 +521,7 @@ class DownloadableModel {
       supportsToolCalling: true,
       supportsThinking: true,
       preset: ModelPreset(
-        temperature: 0.7,
+        temperature: 1.0,
         topK: 64,
         topP: 0.95,
         penalty: 1.0,
@@ -558,9 +558,10 @@ class DownloadableModel {
       webMediaInputMode: ModelMediaInputMode.none,
       supportsThinking: true,
       preset: ModelPreset(
-        temperature: 0.7,
+        temperature: 1.0,
         topK: 64,
         topP: 0.95,
+        penalty: 1.0,
         contextSize: 8192,
         maxTokens: 1024,
         thinkingEnabled: false,
@@ -586,7 +587,7 @@ class DownloadableModel {
       supportsToolCalling: true,
       supportsThinking: true,
       preset: ModelPreset(
-        temperature: 0.7,
+        temperature: 1.0,
         topK: 64,
         topP: 0.95,
         penalty: 1.0,
@@ -615,7 +616,7 @@ class DownloadableModel {
       supportsToolCalling: true,
       supportsThinking: true,
       preset: ModelPreset(
-        temperature: 0.7,
+        temperature: 1.0,
         topK: 64,
         topP: 0.95,
         penalty: 1.0,
@@ -643,7 +644,7 @@ class DownloadableModel {
       supportsToolCalling: true,
       supportsThinking: true,
       preset: ModelPreset(
-        temperature: 0.7,
+        temperature: 1.0,
         topK: 64,
         topP: 0.95,
         penalty: 1.0,
@@ -671,7 +672,7 @@ class DownloadableModel {
       supportsToolCalling: true,
       supportsThinking: true,
       preset: ModelPreset(
-        temperature: 0.7,
+        temperature: 1.0,
         topK: 64,
         topP: 0.95,
         penalty: 1.0,
