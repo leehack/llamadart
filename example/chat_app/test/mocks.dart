@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:typed_data';
+
 import 'package:llamadart/llamadart.dart';
 import 'package:llamadart_chat_example/models/chat_settings.dart';
 import 'package:llamadart_chat_example/services/chat_service.dart';
@@ -121,6 +123,9 @@ class MockLlamaEngine extends LlamaEngine {
   String? lastLoadedModelPath;
   String? lastLoadedMmprojPath;
   String? lastLoadedModelUrl;
+  BackendTextToSpeechRequest? lastTextToSpeechRequest;
+  bool textToSpeechCancelled = false;
+  Completer<BackendTextToSpeechResult>? textToSpeechResultCompleter;
 
   MockLlamaEngine() : super(MockLlamaBackend());
 
@@ -237,6 +242,49 @@ class MockLlamaEngine extends LlamaEngine {
   @override
   Future<BackendPerfContextData?> getPerformanceContext() async =>
       performanceContext;
+
+  @override
+  Future<BackendTextToSpeechCapabilities>
+  get backendTextToSpeechCapabilities async =>
+      const BackendTextToSpeechCapabilities(
+        isSupported: true,
+        model: BackendTextToSpeechModel.qwen3Tts,
+        sampleRateHz: 24000,
+        channelCount: 1,
+        supportsLanguage: true,
+        supportsSpeakerReference: true,
+        supportsCancellation: true,
+      );
+
+  @override
+  Future<BackendTextToSpeechResult> synthesizeTextToSpeechBackend(
+    BackendTextToSpeechRequest request, {
+    void Function(BackendTextToSpeechProgress progress)? onProgress,
+  }) async {
+    lastTextToSpeechRequest = request;
+    onProgress?.call(
+      const BackendTextToSpeechProgress(
+        phase: BackendTextToSpeechPhase.generating,
+        promptTokensRemaining: 0,
+        framesGenerated: 2,
+        truncated: false,
+      ),
+    );
+    final result = BackendTextToSpeechResult(
+      samples: Float32List.fromList(const <double>[0, 0.25, -0.25, 0]),
+      sampleRateHz: 24000,
+      channelCount: 1,
+      framesGenerated: 2,
+      truncated: false,
+    );
+    final completer = textToSpeechResultCompleter;
+    return completer == null ? result : completer.future;
+  }
+
+  @override
+  void cancelTextToSpeechBackend() {
+    textToSpeechCancelled = true;
+  }
 }
 
 class MockSettingsService implements SettingsService {

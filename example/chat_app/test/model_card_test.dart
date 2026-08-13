@@ -110,6 +110,38 @@ void main() {
     expect(find.text('Download Missing Assets'), findsOneWidget);
   });
 
+  testWidgets('TTS card is distinct and requires its projector', (
+    tester,
+  ) async {
+    await _pumpCard(
+      tester,
+      model: _ttsModel(),
+      isWeb: false,
+      isDownloaded: false,
+      cacheState: const ModelProfileCacheState(
+        model: ModelAssetCacheState(
+          role: ModelAssetRole.model,
+          label: 'tts.gguf',
+          isAvailable: true,
+        ),
+        multimodalProjector: ModelAssetCacheState(
+          role: ModelAssetRole.multimodalProjector,
+          label: 'tts-mmproj.gguf',
+          isAvailable: false,
+        ),
+      ),
+      onSelect: () {},
+      onDownload: () {},
+      onIncludeProjectorChanged: (_) {},
+    );
+
+    expect(find.text('Text-to-speech'), findsOneWidget);
+    expect(find.text('Audio'), findsNothing);
+    expect(find.text('Speech-to-text'), findsNothing);
+    expect(find.text('Use Text Only'), findsNothing);
+    expect(find.text('Download Missing Assets'), findsOneWidget);
+  });
+
   testWidgets('shows distribution, desktop scope, and readable large size', (
     tester,
   ) async {
@@ -533,6 +565,20 @@ DownloadableModel _asrModel() {
     availability: ModelAvailability.native,
     supportsAudio: true,
     supportsSpeechToText: true,
+  );
+}
+
+DownloadableModel _ttsModel() {
+  return const DownloadableModel(
+    name: 'TTS Test Model',
+    description: 'Fake TTS model for widget tests.',
+    url: 'https://example.com/tts.gguf',
+    filename: 'tts.gguf',
+    mmprojUrl: 'https://example.com/tts-mmproj.gguf',
+    mmprojFilename: 'tts-mmproj.gguf',
+    sizeBytes: 20,
+    availability: ModelAvailability.nativeDesktop,
+    supportsTextToSpeech: true,
   );
 }
 

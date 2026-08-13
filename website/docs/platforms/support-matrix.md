@@ -7,7 +7,8 @@ This page combines platform support, runtime-family selection, and
 backend-module configuration for
 `llamadart`.
 
-The native-assets hook currently pins `llamadart-native` tag `b10356` and
+The native-assets hook currently pins `llamadart-native` tag
+`b10356-llamadart.1` and
 `litert-lm-native` release `v0.15.0-native.3` (`hook/build.dart`). Apps can
 override the llama.cpp native GitHub source with
 `hooks.user_defines.llamadart.llamadart_native_tag` and
@@ -19,10 +20,11 @@ Speech support is narrower than general runtime availability. Native
 llama.cpp/GGUF has an experimental whole-file `SpeechToTextEngine` adapter when
 the caller explicitly selects the Qwen3-ASR profile and the loaded projector
 reports audio capability. This path is real-model validated on macOS arm64;
-other native targets still need representative validation. WebGPU, native
-LiteRT-LM, and LiteRT-LM Web do not currently expose the typed STT API, and no
-runtime exposes public Dart TTS. See the
-[speech support matrix](../guides/speech-to-text#current-support-matrix).
+other native targets still need representative validation. Native llama.cpp
+also exposes experimental Qwen3-TTS synthesis through the separate typed
+[`TextToSpeechEngine`](../guides/text-to-speech). WebGPU, native LiteRT-LM, and
+LiteRT-LM Web do not currently expose either typed speech path. See the
+[speech recognition support matrix](../guides/speech-to-text#current-support-matrix).
 
 Available override tags are published on the
 [`leehack/llamadart-native` releases page](https://github.com/leehack/llamadart-native/releases)
@@ -198,9 +200,9 @@ device/model bundle, use `cpu` or `gpu` for that artifact.
   It maps to upstream `draft-dspark`, requires a compatible external draft
   GGUF, and remains subject to target/draft/backend parity, acceptance, and
   throughput validation. It is an external non-MTP draft-context strategy and
-  requires the default `b10356` runtime or a newer ABI-compatible native build
-  with the DSpark wrapper fix. WebGPU and LiteRT-LM reject this llama.cpp-
-  specific strategy explicitly.
+  requires the default `b10356-llamadart.1` runtime or a newer ABI-compatible
+  native build with the DSpark wrapper fix. WebGPU and LiteRT-LM reject this
+  llama.cpp-specific strategy explicitly.
 - **State persistence** (`LlamaEngine.stateSaveFile(...)` /
   `stateLoadFile(...)`) is available on native backends and on WebGPU bridge
   assets `v0.1.15+` that expose `stateSaveFile` / `stateLoadFile` bridge APIs.
@@ -262,7 +264,7 @@ hooks:
   user_defines:
     llamadart:
       # Optional. Defaults to llamadart's tested native runtime pin.
-      llamadart_native_tag: b10356
+      llamadart_native_tag: b10356-llamadart.1
 
       # Optional. GitHub repository slug or github.com URL.
       llamadart_native_repository: leehack/llamadart-native

@@ -38,6 +38,7 @@ export 'src/core/engine/chat_session.dart' show ChatSession;
 
 // Speech
 export 'src/core/speech/speech_to_text.dart';
+export 'src/core/speech/text_to_speech.dart';
 
 // Template APIs
 export 'src/core/template/chat_format.dart' show ChatFormat;
@@ -54,6 +55,13 @@ export 'src/backends/backend.dart'
         BackendGpuEnumeration,
         BackendNativeChatGeneration,
         BackendRuntimeDiagnostics,
+        BackendTextToSpeech,
+        BackendTextToSpeechCapabilities,
+        BackendTextToSpeechModel,
+        BackendTextToSpeechPhase,
+        BackendTextToSpeechProgress,
+        BackendTextToSpeechRequest,
+        BackendTextToSpeechResult,
         BackendModelFileTypeDiagnostics,
         BackendPerfContextData,
         BackendPerformanceDiagnostics,

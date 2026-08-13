@@ -32,6 +32,7 @@ class SettingsService {
   static const _keyModelSupportsVision = 'model_supports_vision';
   static const _keyModelSupportsAudio = 'model_supports_audio';
   static const _keyModelSupportsSpeechToText = 'model_supports_speech_to_text';
+  static const _keyModelSupportsTextToSpeech = 'model_supports_text_to_speech';
   static const _keyDirectMediaInput = 'direct_media_input';
   static const _keyModelBytesHint = 'model_bytes_hint';
 
@@ -81,6 +82,22 @@ class SettingsService {
         .last
         .toLowerCase();
     return filename == 'qwen3-asr-0.6b-q8_0.gguf';
+  }
+
+  bool _isQwen3TtsCatalogModel(String? modelPath) {
+    if (modelPath == null) {
+      return false;
+    }
+    final filename = modelPath
+        .split('?')
+        .first
+        .split('#')
+        .first
+        .replaceAll('\\', '/')
+        .split('/')
+        .last
+        .toLowerCase();
+    return filename == 'qwen3-tts-12hz-1.7b-base-q4_k_m.gguf';
   }
 
   Future<ChatSettings> loadSettings() async {
@@ -147,6 +164,9 @@ class SettingsService {
       modelSupportsSpeechToText:
           prefs.getBool(_keyModelSupportsSpeechToText) ??
           _isQwen3AsrCatalogModel(migratedModelPath),
+      modelSupportsTextToSpeech:
+          prefs.getBool(_keyModelSupportsTextToSpeech) ??
+          _isQwen3TtsCatalogModel(migratedModelPath),
       directMediaInput:
           prefs.getBool(_keyDirectMediaInput) ?? migrateNativeGemma4Audio,
       modelBytesHint: prefs.getInt(_keyModelBytesHint),
@@ -196,6 +216,10 @@ class SettingsService {
     await prefs.setBool(
       _keyModelSupportsSpeechToText,
       settings.modelSupportsSpeechToText,
+    );
+    await prefs.setBool(
+      _keyModelSupportsTextToSpeech,
+      settings.modelSupportsTextToSpeech,
     );
     await prefs.setBool(_keyDirectMediaInput, settings.directMediaInput);
     final modelBytesHint = settings.modelBytesHint;

@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import '../core/models/inference/model_params.dart';
 import '../core/models/inference/generation_params.dart';
 import '../core/models/inference/tool_choice.dart';
@@ -173,6 +175,184 @@ abstract class BackendRuntimeDiagnostics {
   /// This value reflects the final layer count passed to native model load
   /// after backend policy/fallback decisions.
   Future<int?> getResolvedGpuLayers();
+}
+
+/// Model family reported by a backend-native text-to-speech implementation.
+enum BackendTextToSpeechModel {
+  /// Qwen3-TTS audio generation through llama.cpp mtmd.
+  qwen3Tts,
+}
+
+/// Phase reported while a backend synthesizes speech.
+enum BackendTextToSpeechPhase {
+  /// The backend is processing the text and optional speaker prompt.
+  processingPrompt,
+
+  /// The backend is generating audio-codec frames.
+  generating,
+}
+
+/// Runtime capabilities for an optional backend text-to-speech path.
+class BackendTextToSpeechCapabilities {
+  /// Whether synthesis is available for the loaded model and projector.
+  final bool isSupported;
+
+  /// Actionable reason when [isSupported] is false.
+  final String? unsupportedReason;
+
+  /// Model family recognized by the backend.
+  final BackendTextToSpeechModel? model;
+
+  /// Output sample rate in Hertz.
+  final int? sampleRateHz;
+
+  /// Number of interleaved output channels.
+  final int? channelCount;
+
+  /// Whether a language hint can be supplied.
+  final bool supportsLanguage;
+
+  /// Whether encoded reference-speaker audio can be supplied.
+  final bool supportsSpeakerReference;
+
+  /// Whether an active synthesis can be cancelled cooperatively.
+  final bool supportsCancellation;
+
+  /// Creates a backend capability snapshot.
+  const BackendTextToSpeechCapabilities({
+    required this.isSupported,
+    this.unsupportedReason,
+    this.model,
+    this.sampleRateHz,
+    this.channelCount,
+    this.supportsLanguage = false,
+    this.supportsSpeakerReference = false,
+    this.supportsCancellation = false,
+  });
+}
+
+/// Sampling and input values passed to a backend TTS implementation.
+class BackendTextToSpeechRequest {
+  /// Text to synthesize.
+  final String text;
+
+  /// Optional language name or code accepted by the loaded model.
+  final String? language;
+
+  /// Optional local encoded reference-audio path.
+  final String? speakerAudioPath;
+
+  /// Optional encoded reference-audio bytes.
+  final Uint8List? speakerAudioBytes;
+
+  /// Maximum number of audio-codec frames to generate.
+  final int maxFrames;
+
+  /// Prompt evaluation batch size.
+  final int promptBatchSize;
+
+  /// Top-k sampling cutoff.
+  final int topK;
+
+  /// Top-p sampling cutoff.
+  final double topP;
+
+  /// Minimum probability sampling cutoff.
+  final double minP;
+
+  /// Sampling temperature.
+  final double temperature;
+
+  /// Random seed.
+  final int seed;
+
+  /// Creates a backend synthesis request.
+  const BackendTextToSpeechRequest({
+    required this.text,
+    this.language,
+    this.speakerAudioPath,
+    this.speakerAudioBytes,
+    this.maxFrames = 512,
+    this.promptBatchSize = 512,
+    this.topK = 40,
+    this.topP = 0.95,
+    this.minP = 0.0,
+    this.temperature = 0.8,
+    this.seed = 0xffffffff,
+  });
+}
+
+/// Progress reported by a backend TTS implementation.
+class BackendTextToSpeechProgress {
+  /// Current synthesis phase.
+  final BackendTextToSpeechPhase phase;
+
+  /// Prompt tokens that have not yet been evaluated.
+  final int promptTokensRemaining;
+
+  /// Audio-codec frames generated so far.
+  final int framesGenerated;
+
+  /// Whether generation reached the requested frame limit.
+  final bool truncated;
+
+  /// Creates a progress snapshot.
+  const BackendTextToSpeechProgress({
+    required this.phase,
+    required this.promptTokensRemaining,
+    required this.framesGenerated,
+    required this.truncated,
+  });
+}
+
+/// Complete PCM output returned by a backend TTS implementation.
+class BackendTextToSpeechResult {
+  /// Interleaved normalized float32 PCM samples.
+  final Float32List samples;
+
+  /// Output sample rate in Hertz.
+  final int sampleRateHz;
+
+  /// Number of interleaved output channels.
+  final int channelCount;
+
+  /// Number of audio-codec frames generated.
+  final int framesGenerated;
+
+  /// Whether generation reached the requested frame limit.
+  final bool truncated;
+
+  /// Creates a backend synthesis result.
+  const BackendTextToSpeechResult({
+    required this.samples,
+    required this.sampleRateHz,
+    required this.channelCount,
+    required this.framesGenerated,
+    required this.truncated,
+  });
+}
+
+/// Optional backend capability for dedicated text-to-speech synthesis.
+abstract class BackendTextToSpeech {
+  /// Discovers support for the loaded context and multimodal projector.
+  Future<BackendTextToSpeechCapabilities> textToSpeechCapabilities(
+    int contextHandle,
+    int mmContextHandle,
+  );
+
+  /// Synthesizes one complete utterance.
+  ///
+  /// Current native implementations return PCM only after generation has
+  /// completed. [onProgress] does not imply incremental audio output.
+  Future<BackendTextToSpeechResult> synthesizeTextToSpeech(
+    int contextHandle,
+    int mmContextHandle,
+    BackendTextToSpeechRequest request, {
+    void Function(BackendTextToSpeechProgress progress)? onProgress,
+  });
+
+  /// Cooperatively cancels the active synthesis, if any.
+  void cancelTextToSpeech();
 }
 
 /// Optional backend capability for exposing loaded model file type metadata.

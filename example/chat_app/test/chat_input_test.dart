@@ -8,6 +8,7 @@ import 'package:llamadart_chat_example/models/chat_settings.dart';
 import 'package:llamadart_chat_example/providers/chat_provider.dart';
 import 'package:llamadart_chat_example/services/audio_recording_service.dart';
 import 'package:llamadart_chat_example/services/chat_generation_service.dart';
+import 'package:llamadart_chat_example/services/speech_playback_service.dart';
 import 'package:llamadart_chat_example/widgets/chat_input.dart';
 import 'package:provider/provider.dart';
 
@@ -47,6 +48,180 @@ void main() {
     await tester.enterText(find.byType(TextField), 'draft next prompt');
     expect(controller.text, 'draft next prompt');
   });
+
+  testWidgets('dedicated TTS mode synthesizes typed text', (tester) async {
+    final provider = _ReadyTextToSpeechProvider();
+    addTearDown(provider.dispose);
+    final controller = TextEditingController();
+    final focusNode = FocusNode();
+    final playback = _FakeSpeechPlaybackService();
+    addTearDown(controller.dispose);
+    addTearDown(focusNode.dispose);
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider<ChatProvider>.value(
+        value: provider,
+        child: MaterialApp(
+          home: Scaffold(
+            body: ChatInput(
+              controller: controller,
+              focusNode: focusNode,
+              speechPlaybackService: playback,
+              onSend: () => fail('TTS mode must not send a chat message.'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(
+      find.byKey(const ValueKey<String>('text_to_speech_options')),
+      findsOneWidget,
+    );
+    expect(find.text('Enter text to speak…'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), 'Hello from TTS.');
+    await tester.pump();
+    final synthesizeButton = tester.widget<IconButton>(
+      find.widgetWithIcon(IconButton, Icons.graphic_eq_rounded),
+    );
+    expect(synthesizeButton.onPressed, isNotNull);
+    synthesizeButton.onPressed!();
+    await tester.pumpAndSettle();
+
+    expect(provider.synthesizedText, 'Hello from TTS.');
+    expect(playback.playCalls, 1);
+    expect(playback.lastWavBytes, isNotEmpty);
+    expect(controller.text, isEmpty);
+    expect(
+      find.byKey(const ValueKey<String>('text_to_speech_output')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('play_synthesized_speech_button')),
+      findsOneWidget,
+    );
+    expect(find.byTooltip('Stop playback'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('save_synthesized_speech_button')),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('records and uses a TTS speaker reference', (tester) async {
+    final recorder = _FakeAudioRecordingService();
+    final chatService = MockChatService();
+    final provider = ChatProvider(
+      chatService: chatService,
+      settingsService: MockSettingsService(),
+      audioRecordingService: recorder,
+      initialSettings: const ChatSettings(
+        modelPath: 'qwen3-tts.gguf',
+        mmprojPath: 'qwen3-tts-mmproj.gguf',
+        modelSupportsTextToSpeech: true,
+      ),
+    );
+    addTearDown(provider.dispose);
+    await provider.loadModel();
+
+    final controller = TextEditingController();
+    final focusNode = FocusNode();
+    final playback = _FakeSpeechPlaybackService();
+    addTearDown(controller.dispose);
+    addTearDown(focusNode.dispose);
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider<ChatProvider>.value(
+        value: provider,
+        child: MaterialApp(
+          home: Scaffold(
+            body: ChatInput(
+              controller: controller,
+              focusNode: focusNode,
+              speechPlaybackService: playback,
+              onSend: () => fail('TTS mode must not send a chat message.'),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('record_speaker_reference_button')),
+    );
+    await tester.pumpAndSettle();
+    expect(recorder.startCalls, 1);
+    expect(find.textContaining('Recording speaker reference'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>('stop_and_use_speaker_reference_button'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(recorder.stopCalls, 1);
+    expect(recorder.readCalls, 1);
+    expect(recorder.deletedPaths, <String>[recorder.recordedPath]);
+    expect(provider.recordedSpeakerReference?.bytes, recorder.recordedBytes);
+    expect(find.text('Recorded reference'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), 'Use my recorded voice.');
+    await tester.pump();
+    expect(provider.canSynthesizeSpeech, isTrue);
+    final synthesizeButton = tester.widget<IconButton>(
+      find.widgetWithIcon(IconButton, Icons.graphic_eq_rounded),
+    );
+    expect(synthesizeButton.onPressed, isNotNull);
+    synthesizeButton.onPressed!();
+    await tester.pumpAndSettle();
+    await tester.runAsync(() async {
+      while (controller.text.isNotEmpty) {
+        await Future<void>.delayed(const Duration(milliseconds: 1));
+      }
+    });
+    await tester.pump();
+
+    expect(
+      chatService.mockEngine.lastTextToSpeechRequest?.speakerAudioBytes,
+      recorder.recordedBytes,
+    );
+    expect(provider.textToSpeechError, isNull);
+    expect(provider.textToSpeechResult, isNotNull);
+    expect(controller.text, isEmpty);
+    expect(playback.playCalls, 1);
+  });
+
+  test(
+    'speaker-reference read failure still deletes the temporary WAV',
+    () async {
+      final recorder = _FakeAudioRecordingService(
+        readError: const AudioRecordingException(
+          AudioRecordingFailure.readFailed,
+          'Could not read reference.',
+        ),
+      );
+      final provider = ChatProvider(
+        chatService: MockChatService(),
+        settingsService: MockSettingsService(),
+        audioRecordingService: recorder,
+        initialSettings: const ChatSettings(
+          modelPath: 'qwen3-tts.gguf',
+          mmprojPath: 'qwen3-tts-mmproj.gguf',
+          modelSupportsTextToSpeech: true,
+        ),
+      );
+      addTearDown(provider.dispose);
+      await provider.loadModel();
+
+      await provider.startAudioRecording(
+        purpose: ChatAudioRecordingPurpose.speakerReference,
+      );
+      await provider.stopAudioRecordingForSpeakerReference();
+
+      expect(provider.recordedSpeakerReference, isNull);
+      expect(recorder.deletedPaths, <String>[recorder.recordedPath]);
+    },
+  );
 
   testWidgets('keeps a supported microphone action visible while busy', (
     tester,
@@ -1495,6 +1670,55 @@ class _BusyVoiceProvider extends _GeneratingReadyProvider {
   bool get canStartAudioRecording => false;
 }
 
+class _ReadyTextToSpeechProvider extends ChatProvider {
+  _ReadyTextToSpeechProvider()
+    : super(
+        chatService: MockChatService(),
+        settingsService: MockSettingsService(),
+        initialSettings: const ChatSettings(
+          modelPath: 'qwen3-tts.gguf',
+          mmprojPath: 'qwen3-tts-mmproj.gguf',
+          modelSupportsTextToSpeech: true,
+        ),
+      );
+
+  String? synthesizedText;
+  TextToSpeechResult? _result;
+
+  @override
+  bool get isGenerating => false;
+
+  @override
+  bool get isReady => true;
+
+  @override
+  bool get supportsTextToSpeech => true;
+
+  @override
+  bool get canSynthesizeSpeech => true;
+
+  @override
+  TextToSpeechResult? get textToSpeechResult => _result;
+
+  @override
+  Future<bool> synthesizeSpeech(
+    String text, {
+    String? language,
+    SpeechAudioInput? speakerReference,
+  }) async {
+    synthesizedText = text;
+    _result = TextToSpeechResult(
+      samples: Float32List.fromList(const <double>[0, 0.25, -0.25, 0]),
+      sampleRateHz: 24000,
+      channelCount: 1,
+      framesGenerated: 2,
+      truncated: false,
+    );
+    notifyListeners();
+    return true;
+  }
+}
+
 class _SpeechMockLlamaEngine extends MockLlamaEngine {
   @override
   Future<bool> get supportsAudio async => mmprojLoaded;
@@ -1732,4 +1956,28 @@ class _FakeAudioRecordingService implements AudioRecordingService {
   Future<void> dispose() async {
     disposeCalls += 1;
   }
+}
+
+class _FakeSpeechPlaybackService implements SpeechPlaybackService {
+  final StreamController<void> _complete = StreamController<void>.broadcast();
+  int playCalls = 0;
+  int stopCalls = 0;
+  Uint8List? lastWavBytes;
+
+  @override
+  Stream<void> get onComplete => _complete.stream;
+
+  @override
+  Future<void> playWav(Uint8List wavBytes) async {
+    playCalls += 1;
+    lastWavBytes = wavBytes;
+  }
+
+  @override
+  Future<void> stop() async {
+    stopCalls += 1;
+  }
+
+  @override
+  Future<void> dispose() => _complete.close();
 }

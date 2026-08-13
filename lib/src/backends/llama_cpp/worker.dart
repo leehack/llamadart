@@ -29,6 +29,15 @@ ErrorResponse _toErrorResponse(Object error) {
   if (error is LlamaStateException) {
     return ErrorResponse(messageFor(error), kind: WorkerErrorKind.state);
   }
+  if (error is LlamaAudioFormatException) {
+    return ErrorResponse(messageFor(error), kind: WorkerErrorKind.audioFormat);
+  }
+  if (error is LlamaTextToSpeechException) {
+    return ErrorResponse(messageFor(error), kind: WorkerErrorKind.textToSpeech);
+  }
+  if (error is LlamaSpeechException) {
+    return ErrorResponse(messageFor(error), kind: WorkerErrorKind.speech);
+  }
   return ErrorResponse(error.toString());
 }
 
@@ -58,6 +67,7 @@ void runLlamaWorkerForTesting(
   // before tearing the isolate down. Without this, Isolate.exit() abandons an
   // in-flight generate with no DoneResponse, hanging the consumer's stream.
   Future<void> activeGenerate = Future<void>.value();
+  Future<void> activeTextToSpeech = Future<void>.value();
 
   Future<bool> waitForActiveGenerate({Duration? timeout}) async {
     try {
@@ -76,18 +86,38 @@ void runLlamaWorkerForTesting(
     }
   }
 
+  Future<bool> waitForActiveTextToSpeech({Duration? timeout}) async {
+    try {
+      final synthesis = activeTextToSpeech;
+      if (timeout == null) {
+        await synthesis;
+      } else {
+        await synthesis.timeout(timeout);
+      }
+      return true;
+    } on TimeoutException {
+      return false;
+    } catch (_) {
+      return true;
+    }
+  }
+
   receivePort.listen((message) async {
     if (message is DisposeRequest) {
       shuttingDown = true;
+      service.cancelTextToSpeech();
       // Let any in-flight generation observe the cancel flag and finish
       // emitting its terminal response before we dispose native resources.
       final generationStopped = await waitForActiveGenerate(
         timeout: disposeActiveGenerateTimeout,
       );
+      final synthesisStopped = await waitForActiveTextToSpeech(
+        timeout: disposeActiveGenerateTimeout,
+      );
       // If native generation wedges, acknowledge dispose and exit the worker
       // instead of hanging the caller forever. Skipping service.dispose() leaks
       // native handles only in this edge case, but avoids use-after-free.
-      if (generationStopped) {
+      if (generationStopped && synthesisStopped) {
         try {
           service.dispose();
         } catch (e) {
@@ -99,6 +129,11 @@ void runLlamaWorkerForTesting(
       if (exitOnDispose) {
         Isolate.exit();
       }
+      return;
+    }
+
+    if (message is TextToSpeechCancelRequest) {
+      service.cancelTextToSpeech();
       return;
     }
 
@@ -132,6 +167,7 @@ void runLlamaWorkerForTesting(
 
           case ModelFreeRequest():
             await waitForActiveGenerate();
+            await waitForActiveTextToSpeech();
             service.freeModel(message.modelHandle);
             message.sendPort.send(DoneResponse());
 
@@ -144,6 +180,7 @@ void runLlamaWorkerForTesting(
 
           case ContextFreeRequest():
             await waitForActiveGenerate();
+            await waitForActiveTextToSpeech();
             service.freeContext(message.contextHandle);
             message.sendPort.send(DoneResponse());
 
@@ -184,6 +221,44 @@ void runLlamaWorkerForTesting(
             }();
             activeGenerate = generateFuture;
             await generateFuture;
+
+          case TextToSpeechCapabilitiesRequest():
+            final capabilities = service.textToSpeechCapabilities(
+              message.contextHandle,
+              message.mmContextHandle,
+            );
+            message.sendPort.send(
+              TextToSpeechCapabilitiesResponse(capabilities),
+            );
+
+          case TextToSpeechSynthesizeRequest():
+            final synthesisFuture = () async {
+              try {
+                final result = await service.synthesizeTextToSpeech(
+                  message.contextHandle,
+                  message.mmContextHandle,
+                  message.request,
+                  onProgress: (progress) {
+                    message.sendPort.send(
+                      TextToSpeechProgressResponse(progress),
+                    );
+                  },
+                );
+                message.sendPort.send(
+                  TextToSpeechResultResponse(
+                    samples: result.samples,
+                    sampleRateHz: result.sampleRateHz,
+                    channelCount: result.channelCount,
+                    framesGenerated: result.framesGenerated,
+                    truncated: result.truncated,
+                  ),
+                );
+              } catch (error) {
+                message.sendPort.send(_toErrorResponse(error));
+              }
+            }();
+            activeTextToSpeech = synthesisFuture;
+            await synthesisFuture;
 
           case EmbedRequest():
             final embedding = service.embed(

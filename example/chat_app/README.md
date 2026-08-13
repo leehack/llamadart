@@ -17,6 +17,9 @@ A Flutter chat application demonstrating real-world usage of llamadart with UI.
 - 🗣️ **Ask with voice**: Compatible native direct-media models or GGUF models
   with an audio-capable projector can receive a short microphone recording as
   ordinary multimodal chat and answer the request after **Stop & ask**.
+- 🔊 **Text to speech**: The native-desktop Qwen3-TTS preset switches the
+  composer into a dedicated synthesis mode with language, optional speaker
+  reference, cancellation, playback, and WAV export.
 - 📱 Material Design 3 UI
 - ⚙️ Model configuration (path, runtime-detected backend selection, GPU layers, context size)
 - 🧩 Capability badges per model (Tools / Thinking / Vision / Audio / Video)
@@ -75,11 +78,12 @@ flutter test --run-skipped -t local-only \
    - Cross-platform: FunctionGemma 270M, Qwen3.5 0.8B, Gemma 4 E2B
      GGUF, Gemma 4 E2B LiteRT-LM, and Gemma 4 E4B GGUF.
    - Native mobile and desktop: Qwen3-ASR 0.6B.
-   - Native desktop: Gemma 4 12B, Gemma 4 26B A4B, Gemma 4 31B, and
-     Qwen3.6 35B A3B.
+   - Native desktop: Qwen3-TTS 1.7B Base, Gemma 4 12B, Gemma 4 26B A4B,
+     Gemma 4 31B, and Qwen3.6 35B A3B.
    - Built-in GGUF chat presets use [Unsloth distributions](https://huggingface.co/unsloth).
-     The ASR preset uses llama.cpp's `ggml-org` Qwen3-ASR pair, and the
-     LiteRT-LM preset uses `litert-community`; every card identifies its source.
+     The speech presets use llama.cpp's `ggml-org` Qwen3-ASR and Qwen3-TTS
+     pairs, and the LiteRT-LM preset uses `litert-community`; every card
+     identifies its source.
    - The library opens with the current platform selected. Use the Mobile, Web,
      and Desktop filters to compare compatible presets; unavailable models are
      clearly disabled when browsing another platform. Downloaded models appear
@@ -102,11 +106,20 @@ flutter test --run-skipped -t local-only \
      minutes; **Stop & transcribe** finalizes it, runs whole-file STT, and
      deletes it.
      Capture is foreground-only and cancelling discards the temporary file.
-     Live partial transcription, Web, LiteRT-LM STT, and TTS are not enabled
-     yet. Web support is tracked in
+     Live partial transcription, Web, and LiteRT-LM STT are not enabled yet.
+     Web support is tracked in
      [issue #329](https://github.com/leehack/llamadart/issues/329). All STT
      actions require the matching projector, and the preset's pinned downloads
      are SHA-256 verified.
+   - The native-desktop Qwen3-TTS preset uses a separate typed synthesis flow,
+     not chat generation. Enter text, optionally select a language and choose
+     or record a speaker reference, then synthesize. The app reports generation
+     progress, automatically plays the completed 24 kHz mono output, and lets
+     you stop, replay, or save it as WAV. Recorded references are read into
+     memory and their temporary WAV files are best-effort deleted. The matching
+     model/projector downloads are immutable and SHA-256 verified.
+     Current output is complete-buffer only, not streaming playback. Web,
+     LiteRT-LM, and automatic read-aloud of chat responses remain unsupported.
    - Microphone capture is enabled on Android, iOS, macOS, and Windows when a
      compatible ASR model is active. It remains hidden on Linux because the
      recorder plugin can report startup before its required external tools are

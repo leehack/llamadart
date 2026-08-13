@@ -157,6 +157,14 @@ void main() {
         ErrorResponse('inference', kind: WorkerErrorKind.inference).kind,
         WorkerErrorKind.inference,
       );
+      expect(
+        ErrorResponse('audio', kind: WorkerErrorKind.audioFormat).kind,
+        WorkerErrorKind.audioFormat,
+      );
+      expect(
+        ErrorResponse('tts', kind: WorkerErrorKind.textToSpeech).kind,
+        WorkerErrorKind.textToSpeech,
+      );
       expect(BackendInfoResponse('n').name, 'n');
       expect(GpuSupportResponse(true).support, true);
       expect(

@@ -1,3 +1,4 @@
+import '../../core/exceptions.dart';
 import '../../core/models/chat/chat_message.dart';
 import '../../core/models/chat/content_part.dart';
 import '../../core/models/config/gpu_backend.dart';
@@ -33,7 +34,8 @@ class NativeAutoBackend
         BackendStatePersistence,
         BackendStatePersistenceSupport,
         BackendGrammarConstraintsSupport,
-        BackendNativeChatGeneration {
+        BackendNativeChatGeneration,
+        BackendTextToSpeech {
   final LlamaBackend Function() _llamaCppFactory;
   final LlamaBackend Function() _liteRtLmFactory;
 
@@ -322,6 +324,56 @@ class NativeAutoBackend
   @override
   Future<bool> supportsAudio(int mmContextHandle) {
     return _requireDelegate().supportsAudio(mmContextHandle);
+  }
+
+  @override
+  Future<BackendTextToSpeechCapabilities> textToSpeechCapabilities(
+    int contextHandle,
+    int mmContextHandle,
+  ) {
+    final delegate = _requireDelegate();
+    if (delegate is! BackendTextToSpeech) {
+      return Future<BackendTextToSpeechCapabilities>.value(
+        const BackendTextToSpeechCapabilities(
+          isSupported: false,
+          unsupportedReason:
+              'The selected native backend does not expose text-to-speech.',
+        ),
+      );
+    }
+    return (delegate as BackendTextToSpeech).textToSpeechCapabilities(
+      contextHandle,
+      mmContextHandle,
+    );
+  }
+
+  @override
+  Future<BackendTextToSpeechResult> synthesizeTextToSpeech(
+    int contextHandle,
+    int mmContextHandle,
+    BackendTextToSpeechRequest request, {
+    void Function(BackendTextToSpeechProgress progress)? onProgress,
+  }) {
+    final delegate = _requireDelegate();
+    if (delegate is! BackendTextToSpeech) {
+      throw LlamaUnsupportedException(
+        'The selected native backend does not expose text-to-speech.',
+      );
+    }
+    return (delegate as BackendTextToSpeech).synthesizeTextToSpeech(
+      contextHandle,
+      mmContextHandle,
+      request,
+      onProgress: onProgress,
+    );
+  }
+
+  @override
+  void cancelTextToSpeech() {
+    final delegate = _delegate;
+    if (delegate is BackendTextToSpeech) {
+      (delegate as BackendTextToSpeech).cancelTextToSpeech();
+    }
   }
 
   @override

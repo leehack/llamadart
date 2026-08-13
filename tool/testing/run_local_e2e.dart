@@ -303,6 +303,33 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       ],
     ),
     LocalE2eScenario(
+      name: 'text-to-speech-smoke',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description:
+          'Run typed native Qwen3-TTS synthesis and write a playable WAV.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'dart',
+          arguments: const [
+            'test',
+            '--run-skipped',
+            '-t',
+            'local-only',
+            'test/e2e/backends/text_to_speech_e2e_test.dart',
+          ],
+          environment: {
+            'LLAMADART_TTS_MODEL_PATH': context.modelPath!,
+            'LLAMADART_TTS_MMPROJ_PATH': context.mmprojPath!,
+            'LLAMADART_TTS_OUTPUT_PATH':
+                '${context.projectRoot}/build/text-to-speech-smoke.wav',
+          },
+          description: 'Typed text-to-speech real-model smoke',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
       name: 'llama-cpp-speculative-benchmark',
       group: LocalE2eScenarioGroup.dartLocalOnly,
       description:
@@ -782,6 +809,14 @@ Future<LocalE2eResult> runLocalE2e(
       stderr:
           '--model-path, --mmproj-path, --audio-path, and a nonempty --expect '
           'are required for speech-to-text-smoke.\n',
+    );
+  }
+  if (scenario.name == 'text-to-speech-smoke' &&
+      (parsed.modelPath == null || parsed.mmprojPath == null)) {
+    return const LocalE2eResult(
+      64,
+      stderr:
+          '--model-path and --mmproj-path are required for text-to-speech-smoke.\n',
     );
   }
   if (scenario.name == 'gguf-audio-chat-smoke' &&

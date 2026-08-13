@@ -148,7 +148,7 @@ Guidelines:
 - DSpark is an experimental, opt-in native llama.cpp external draft-model
   strategy. Use `SpeculativeDecodingConfig.draftDspark(draftModelPath: ...)`;
   it is never selected automatically, maps to upstream `draft-dspark`, requires
-  the package-pinned `b10356` runtime or a newer ABI-compatible build with
+  the package-pinned `b10356-llamadart.1` runtime or a newer ABI-compatible build with
   DSpark draft-context support, and remains subject to target/draft/backend
   compatibility. Compare deterministic output, acceptance, and warmed
   throughput against the same baseline before enabling it in production.

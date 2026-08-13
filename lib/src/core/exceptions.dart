@@ -38,6 +38,12 @@ class LlamaSpeechException extends LlamaException {
   LlamaSpeechException(super.message, [super.details]);
 }
 
+/// Exception thrown when text-to-speech synthesis fails.
+class LlamaTextToSpeechException extends LlamaSpeechException {
+  /// Creates a new [LlamaTextToSpeechException].
+  LlamaTextToSpeechException(super.message, [super.details]);
+}
+
 /// Exception thrown when speech audio does not satisfy an input contract.
 class LlamaAudioFormatException extends LlamaSpeechException {
   /// Creates a new [LlamaAudioFormatException].

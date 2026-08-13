@@ -30,6 +30,8 @@ models through LiteRT-LM.
   persistence, and runtime diagnostics where the active backend supports them.
 - Experimental typed whole-file speech recognition on native llama.cpp through
   `SpeechToTextEngine`, with explicit capability and cancellation contracts.
+- Experimental typed Qwen3-TTS synthesis on native llama.cpp through
+  `TextToSpeechEngine`, returning complete PCM with WAV encoding.
 
 Unsupported runtime/option combinations are rejected explicitly instead of
 silently degrading. Check the support matrix before relying on a capability for
@@ -136,7 +138,7 @@ Current default runtime pins:
 
 | Runtime | Pin |
 | --- | --- |
-| Native llama.cpp / GGUF | `leehack/llamadart-native@b10356` |
+| Native llama.cpp / GGUF | `leehack/llamadart-native@b10356-llamadart.1` |
 | Native LiteRT-LM / `.litertlm` | `leehack/litert-lm-native@v0.15.0-native.3` |
 | Web llama.cpp / GGUF | `leehack/llama-web-bridge-assets@v0.1.27` |
 | Web LiteRT-LM / `.litertlm` | `@litert-lm/core@0.15.0` |
@@ -152,6 +154,7 @@ Current default runtime pins:
 | Use tool calling | [Tool calling](https://llamadart.leehack.com/docs/guides/tool-calling) |
 | Use images, audio, or projectors | [Multimodal](https://llamadart.leehack.com/docs/guides/multimodal) |
 | Transcribe speech on device | [Speech to text](https://llamadart.leehack.com/docs/guides/speech-to-text) |
+| Synthesize speech on device | [Text to speech](https://llamadart.leehack.com/docs/guides/text-to-speech) |
 | Generate embeddings | [Embeddings](https://llamadart.leehack.com/docs/guides/embeddings) |
 | Load LoRA adapters | [LoRA adapters](https://llamadart.leehack.com/docs/guides/lora-adapters) |
 | Save and restore KV state | [API levels](https://llamadart.leehack.com/docs/guides/api-levels) |

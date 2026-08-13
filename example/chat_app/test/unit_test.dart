@@ -723,6 +723,88 @@ void main() {
       expect(mockEngine.loadMultimodalProjectorCalls, 1);
     });
 
+    test('dedicated TTS profile synthesizes complete PCM output', () async {
+      final ttsProvider = ChatProvider(
+        chatService: mockChatService,
+        settingsService: mockSettingsService,
+        initialSettings: const ChatSettings(
+          modelPath: 'qwen3-tts.gguf',
+          mmprojPath: 'qwen3-tts-mmproj.gguf',
+          modelSupportsTextToSpeech: true,
+          temperature: 0.8,
+          topK: 40,
+          topP: 0.95,
+          maxTokens: 512,
+        ),
+      );
+      addTearDown(ttsProvider.dispose);
+
+      await ttsProvider.loadModel();
+      expect(ttsProvider.supportsTextToSpeech, isTrue);
+      expect(ttsProvider.canSynthesizeSpeech, isTrue);
+
+      final completed = await ttsProvider.synthesizeSpeech(
+        'Hello from llamadart.',
+        language: 'English',
+        speakerReference: SpeechAudioBytesInput(Uint8List.fromList([1, 2, 3])),
+      );
+
+      expect(completed, isTrue);
+      expect(ttsProvider.isSynthesizingSpeech, isFalse);
+      expect(ttsProvider.textToSpeechProgress, isNull);
+      expect(ttsProvider.textToSpeechError, isNull);
+      expect(ttsProvider.textToSpeechResult?.samples, isNotEmpty);
+      expect(ttsProvider.textToSpeechResult?.sampleRateHz, 24000);
+      expect(mockEngine.lastTextToSpeechRequest?.text, 'Hello from llamadart.');
+      expect(mockEngine.lastTextToSpeechRequest?.language, 'en');
+      expect(mockEngine.lastTextToSpeechRequest?.speakerAudioBytes, [1, 2, 3]);
+      expect(mockEngine.lastTextToSpeechRequest?.topK, 40);
+      expect(mockEngine.lastTextToSpeechRequest?.topP, 0.95);
+    });
+
+    test(
+      'new conversation cancels stale TTS without publishing its output',
+      () async {
+        final ttsProvider = ChatProvider(
+          chatService: mockChatService,
+          settingsService: mockSettingsService,
+          initialSettings: const ChatSettings(
+            modelPath: 'qwen3-tts.gguf',
+            mmprojPath: 'qwen3-tts-mmproj.gguf',
+            modelSupportsTextToSpeech: true,
+          ),
+        );
+        addTearDown(ttsProvider.dispose);
+        await ttsProvider.loadModel();
+        final backendResult = BackendTextToSpeechResult(
+          samples: Float32List.fromList(const <double>[0, 0.25, -0.25, 0]),
+          sampleRateHz: 24000,
+          channelCount: 1,
+          framesGenerated: 2,
+          truncated: false,
+        );
+        final resultCompleter = Completer<BackendTextToSpeechResult>();
+        mockEngine.textToSpeechResultCompleter = resultCompleter;
+
+        final pending = ttsProvider.synthesizeSpeech('Stale utterance.');
+        await Future<void>.delayed(Duration.zero);
+        expect(ttsProvider.isSynthesizingSpeech, isTrue);
+
+        ttsProvider.createConversation();
+        expect(mockEngine.textToSpeechCancelled, isTrue);
+        expect(ttsProvider.isSynthesizingSpeech, isTrue);
+        expect(ttsProvider.canSynthesizeSpeech, isFalse);
+        expect(ttsProvider.textToSpeechResult, isNull);
+
+        resultCompleter.complete(backendResult);
+        expect(await pending, isFalse);
+        expect(ttsProvider.isSynthesizingSpeech, isFalse);
+        expect(ttsProvider.textToSpeechResult, isNull);
+        expect(ttsProvider.textToSpeechError, isNull);
+        expect(ttsProvider.isGenerating, isFalse);
+      },
+    );
+
     test('clearMmprojPath unloads active projector immediately', () async {
       final mmprojProvider = ChatProvider(
         chatService: mockChatService,
@@ -1487,6 +1569,7 @@ void main() {
           'FunctionGemma 270M',
           'Qwen3.5 0.8B Instruct',
           'Qwen3-ASR 0.6B',
+          'Qwen3-TTS 1.7B Base',
           'Gemma 4 E2B it',
           'Gemma 4 E2B LiteRT-LM',
           'Gemma 4 E4B it',
@@ -1501,7 +1584,7 @@ void main() {
         (model) => model.filename.endsWith('.gguf'),
       );
       for (final model in ggufModels) {
-        if (model.supportsSpeechToText) {
+        if (model.supportsSpeechToText || model.supportsTextToSpeech) {
           expect(model.distribution, 'ggml-org');
           expect(model.url, contains('huggingface.co/ggml-org/'));
         } else {
@@ -1555,6 +1638,49 @@ void main() {
       );
     });
 
+    test('Qwen3-TTS catalog entry pins its complete verified bundle', () {
+      final model = DownloadableModel.defaultModels.singleWhere(
+        (model) => model.name == 'Qwen3-TTS 1.7B Base',
+      );
+      final modelSource = model.modelSource as RemoteModelAssetSource;
+      final projectorSource =
+          model.multimodalProjectorSource as RemoteModelAssetSource;
+
+      expect(model.supportsTextToSpeechFor(web: false), isTrue);
+      expect(model.supportsTextToSpeechFor(web: true), isFalse);
+      expect(model.supportsAudio, isFalse);
+      expect(model.supportsSpeechToText, isFalse);
+      expect(model.isNativeDesktopOnly, isTrue);
+      expect(model.sizeBytesFor(web: false), 1482388192);
+      expect(model.preset.temperature, 0.8);
+      expect(model.preset.topK, 40);
+      expect(model.preset.topP, 0.95);
+      expect(model.preset.maxTokens, 512);
+      expect(modelSource.sizeBytes, 1035965280);
+      expect(
+        modelSource.sha256,
+        '8d18c94acb2addd042f97da63c98be144eafa76d0d9495177eab65130cf85129',
+      );
+      expect(projectorSource.sizeBytes, 446422912);
+      expect(
+        projectorSource.sha256,
+        '6fd65188839bcd6ecc91b277ad471e22a0edfada4699a0fe82f1165c18cfcce2',
+      );
+      expect(
+        modelSource.url,
+        contains('ca27d74bc954b73dadab5b71ca265d87fc861a7c'),
+      );
+      expect(
+        projectorSource.url,
+        contains('ca27d74bc954b73dadab5b71ca265d87fc861a7c'),
+      );
+
+      provider.applyModelPreset(model);
+      expect(provider.settings.modelSupportsTextToSpeech, isTrue);
+      expect(provider.settings.modelSupportsSpeechToText, isFalse);
+      expect(provider.settings.modelSupportsAudio, isFalse);
+    });
+
     test('Qwen3.5 0.8B uses Unsloth Q4_K_M non-thinking defaults', () {
       final qwenModels = DownloadableModel.defaultModels
           .where((model) => model.name.startsWith('Qwen3.5 '))
@@ -1603,6 +1729,7 @@ void main() {
       expect(
         desktopModels.map((model) => model.name),
         orderedEquals(const [
+          'Qwen3-TTS 1.7B Base',
           'Gemma 4 12B it',
           'Gemma 4 26B A4B it',
           'Gemma 4 31B it',

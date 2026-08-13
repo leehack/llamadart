@@ -50,6 +50,9 @@ enum ChatAudioRecordingPurpose {
 
   /// Send the recording to a general audio-capable chat model for an answer.
   voiceQuestion,
+
+  /// Use the recording as speaker-reference audio for text-to-speech.
+  speakerReference,
 }
 
 typedef _VoiceQuestionContext = ({
@@ -67,6 +70,14 @@ typedef _GenerationContext = ({
   String? mmprojPath,
   String conversationId,
   ChatSession session,
+});
+
+typedef _TextToSpeechContext = ({
+  int operationId,
+  int conversationRevision,
+  String? modelPath,
+  String? mmprojPath,
+  String conversationId,
 });
 
 class ChatProvider extends ChangeNotifier {
@@ -97,6 +108,11 @@ class ChatProvider extends ChangeNotifier {
 
   /// The maximum voice-question recording accepted by Gemma 4 audio input.
   static const Duration maxVoiceQuestionRecordingDuration = Duration(
+    seconds: 30,
+  );
+
+  /// The maximum microphone sample accepted as a TTS speaker reference.
+  static const Duration maxSpeakerReferenceRecordingDuration = Duration(
     seconds: 30,
   );
 
@@ -155,6 +171,15 @@ class ChatProvider extends ChangeNotifier {
   CancelToken? _activeModelPrefetchCancelToken;
   SpeechToTextTask? _activeSpeechToTextTask;
   Completer<void>? _activeTranscriptionDone;
+  TextToSpeechTask? _activeTextToSpeechTask;
+  Completer<void>? _activeTextToSpeechDone;
+  TextToSpeechResult? _textToSpeechResult;
+  TextToSpeechProgressEvent? _textToSpeechProgress;
+  String? _textToSpeechError;
+  SpeechAudioBytesInput? _recordedSpeakerReference;
+  bool _isSynthesizingSpeech = false;
+  int _textToSpeechOperationSequence = 0;
+  int? _activeTextToSpeechOperationId;
   Completer<void>? _activeRecordingTransitionDone;
   Completer<void>? _activeRecordingCancellationDone;
   Timer? _audioRecordingTimer;
@@ -217,6 +242,22 @@ class ChatProvider extends ChangeNotifier {
   bool get isGenerating => _isGenerating;
   bool get isTranscribing => _isTranscribing;
 
+  /// Whether a text-to-speech task is currently generating audio.
+  bool get isSynthesizingSpeech => _isSynthesizingSpeech;
+
+  /// Latest complete synthesized audio for the active conversation and model.
+  TextToSpeechResult? get textToSpeechResult => _textToSpeechResult;
+
+  /// Latest synthesis progress reported by the native runtime.
+  TextToSpeechProgressEvent? get textToSpeechProgress => _textToSpeechProgress;
+
+  /// Latest actionable text-to-speech failure.
+  String? get textToSpeechError => _textToSpeechError;
+
+  /// Latest microphone recording prepared as a TTS speaker reference.
+  SpeechAudioBytesInput? get recordedSpeakerReference =>
+      _recordedSpeakerReference;
+
   /// The current microphone capture phase.
   ChatAudioRecordingState get audioRecordingState => _audioRecordingState;
 
@@ -271,6 +312,38 @@ class ChatProvider extends ChangeNotifier {
       !hasActiveAudioRecording &&
       _supportsAudio &&
       _settings.modelSupportsSpeechToText;
+
+  /// Whether the selected profile exposes the dedicated synthesis experience.
+  bool get supportsTextToSpeech =>
+      !kIsWeb && _settings.modelSupportsTextToSpeech;
+
+  /// Whether a new utterance can be synthesized now.
+  bool get canSynthesizeSpeech =>
+      supportsTextToSpeech &&
+      _isLoaded &&
+      !_isInitializing &&
+      !_isGenerating &&
+      !_isTranscribing &&
+      !_isSynthesizingSpeech &&
+      !hasActiveAudioRecording &&
+      _mmprojLoaded &&
+      _chatService.engine.isReady;
+
+  /// Whether this runtime can record speaker-reference audio for TTS.
+  bool get supportsSpeakerReferenceRecording =>
+      !kIsWeb && _audioRecordingService.isSupported && supportsTextToSpeech;
+
+  /// Whether a new TTS speaker-reference recording can start now.
+  bool get canRecordSpeakerReference =>
+      supportsSpeakerReferenceRecording &&
+      _isLoaded &&
+      !_isInitializing &&
+      !_isGenerating &&
+      !_isTranscribing &&
+      !_isSynthesizingSpeech &&
+      !hasActiveAudioRecording &&
+      _mmprojLoaded &&
+      _chatService.engine.isReady;
 
   bool get _supportsVoiceQuestionInput {
     if (!_settings.modelSupportsAudio || _settings.modelSupportsSpeechToText) {
@@ -468,6 +541,7 @@ class ChatProvider extends ChangeNotifier {
 
   void createConversation() {
     unawaited(_cancelAndAwaitAudioRecording());
+    _invalidateActiveTextToSpeech(clearOutput: true);
     final hadActiveGeneration = _activeGenerationOperationId != null;
     _invalidateActiveVoiceQuestion(releaseGeneration: true);
     _invalidateActiveGeneration(cancelNative: true);
@@ -485,7 +559,7 @@ class ChatProvider extends ChangeNotifier {
     _currentTokens = 0;
     _isPruning = false;
     _error = null;
-    _isGenerating = false;
+    _isGenerating = _isTranscribing || _isSynthesizingSpeech;
     _settings = copiedSettings;
     _rebuildDeclaredToolsFromSettings();
 
@@ -531,6 +605,8 @@ class ChatProvider extends ChangeNotifier {
     }
     await _cancelAndAwaitAudioRecording();
     await _cancelAndAwaitActiveTranscription();
+    await _cancelAndAwaitActiveTextToSpeech();
+    _clearTextToSpeechOutput();
 
     _syncActiveConversationSnapshot();
     final target = _conversations[index];
@@ -1057,6 +1133,7 @@ class ChatProvider extends ChangeNotifier {
     }
 
     await _cancelAndAwaitAudioRecording();
+    await _cancelAndAwaitActiveTextToSpeech();
 
     _isInitializing = true;
     _isLoaded = false;
@@ -1379,6 +1456,8 @@ class ChatProvider extends ChangeNotifier {
 
   void clearConversation() {
     unawaited(_cancelAndAwaitAudioRecording());
+    final wasSynthesizingSpeech = _isSynthesizingSpeech;
+    _invalidateActiveTextToSpeech(clearOutput: true);
     _invalidateActiveVoiceQuestion(releaseGeneration: true);
     _invalidateActiveGeneration(cancelNative: true);
     final wasTranscribing = _isTranscribing;
@@ -1394,7 +1473,7 @@ class ChatProvider extends ChangeNotifier {
         : null;
     _currentTokens = 0;
     _isPruning = false;
-    _isGenerating = wasTranscribing;
+    _isGenerating = wasTranscribing || wasSynthesizingSpeech;
     _stagedParts.clear();
     _clearGenerationMetrics();
     _messages.add(
@@ -2378,6 +2457,7 @@ class ChatProvider extends ChangeNotifier {
     final canStartSelectedPurpose = switch (selectedPurpose) {
       ChatAudioRecordingPurpose.transcription => canTranscribeAudio,
       ChatAudioRecordingPurpose.voiceQuestion => canAskWithVoice,
+      ChatAudioRecordingPurpose.speakerReference => canRecordSpeakerReference,
     };
     if (!canStartSelectedPurpose || hasActiveAudioRecording) {
       return;
@@ -2561,6 +2641,57 @@ class ChatProvider extends ChangeNotifier {
     await _submitVoiceQuestion(audioBytes, context);
   }
 
+  /// Stops microphone capture and keeps the WAV bytes as a speaker reference.
+  Future<void> stopAudioRecordingForSpeakerReference() async {
+    final path = await _finishAudioRecording(
+      ChatAudioRecordingPurpose.speakerReference,
+    );
+    if (path == null) {
+      return;
+    }
+
+    Uint8List? audioBytes;
+    try {
+      audioBytes = await _audioRecordingService.readRecording(path);
+    } catch (error) {
+      if (!_isDisposed) {
+        _addInfoMessage(
+          error is AudioRecordingException
+              ? error.message
+              : 'The speaker-reference recording could not be read.',
+        );
+      }
+    } finally {
+      await _audioRecordingService.deleteRecording(path);
+    }
+
+    if (audioBytes == null || _isDisposed) {
+      if (!_isDisposed) {
+        notifyListeners();
+      }
+      return;
+    }
+    _recordedSpeakerReference = SpeechAudioBytesInput(
+      audioBytes,
+      format: const SpeechAudioFormat(
+        sampleRateHz: 16000,
+        channelCount: 1,
+        encoding: 'wav',
+        mimeType: 'audio/wav',
+      ),
+    );
+    notifyListeners();
+  }
+
+  /// Clears microphone audio retained as the current TTS speaker reference.
+  void clearRecordedSpeakerReference() {
+    if (_recordedSpeakerReference == null) {
+      return;
+    }
+    _recordedSpeakerReference = null;
+    notifyListeners();
+  }
+
   /// Sends encoded [audioBytes] as a spoken question to the active chat model.
   ///
   /// Existing staged composer attachments are intentionally left untouched.
@@ -2716,14 +2847,24 @@ class ChatProvider extends ChangeNotifier {
 
       _audioRecordingElapsed = Duration(seconds: timer.tick);
       final purpose = _audioRecordingPurpose;
-      final maximumDuration = purpose == ChatAudioRecordingPurpose.voiceQuestion
-          ? maxVoiceQuestionRecordingDuration
-          : maxAudioRecordingDuration;
+      final maximumDuration = switch (purpose) {
+        ChatAudioRecordingPurpose.voiceQuestion =>
+          maxVoiceQuestionRecordingDuration,
+        ChatAudioRecordingPurpose.speakerReference =>
+          maxSpeakerReferenceRecordingDuration,
+        ChatAudioRecordingPurpose.transcription => maxAudioRecordingDuration,
+        null => maxAudioRecordingDuration,
+      };
       if (_audioRecordingElapsed >= maximumDuration) {
         _audioRecordingElapsed = maximumDuration;
         if (purpose == ChatAudioRecordingPurpose.voiceQuestion) {
           _addInfoMessage('30-second limit reached. Asking the model now.');
           unawaited(stopAudioRecordingAndAsk());
+        } else if (purpose == ChatAudioRecordingPurpose.speakerReference) {
+          _addInfoMessage(
+            '30-second limit reached. Using the recording as the speaker reference.',
+          );
+          unawaited(stopAudioRecordingForSpeakerReference());
         } else {
           _addInfoMessage(
             'Maximum recording length reached. Transcribing the recording now.',
@@ -2972,6 +3113,154 @@ class ChatProvider extends ChangeNotifier {
     }
   }
 
+  /// Synthesizes [text] with the selected dedicated text-to-speech model.
+  ///
+  /// The current native runtime reports progress while generating, then makes
+  /// one complete PCM buffer available for playback or WAV export.
+  Future<bool> synthesizeSpeech(
+    String text, {
+    String? language,
+    SpeechAudioInput? speakerReference,
+  }) async {
+    final normalizedText = text.trim();
+    if (normalizedText.isEmpty || !canSynthesizeSpeech) {
+      return false;
+    }
+
+    final context = (
+      operationId: ++_textToSpeechOperationSequence,
+      conversationRevision: _conversationRevision,
+      modelPath: _settings.modelPath,
+      mmprojPath: _settings.mmprojPath,
+      conversationId: _activeConversationId,
+    );
+    final operationDone = Completer<void>();
+    _activeTextToSpeechOperationId = context.operationId;
+    _activeTextToSpeechDone = operationDone;
+    _isGenerating = true;
+    _isSynthesizingSpeech = true;
+    _textToSpeechResult = null;
+    _textToSpeechProgress = null;
+    _textToSpeechError = null;
+    notifyListeners();
+
+    TextToSpeechTask? task;
+    StreamSubscription<TextToSpeechEvent>? eventSubscription;
+    try {
+      final synthesizer = TextToSpeechEngine(
+        _chatService.engine,
+        modelProfile: TextToSpeechModelProfile.qwen3Tts,
+      );
+      task = await synthesizer.synthesize(
+        TextToSpeechRequest(
+          text: normalizedText,
+          language: (language?.trim().isEmpty ?? true)
+              ? null
+              : language!.trim(),
+          speakerReference: speakerReference,
+          maxFrames: _settings.maxTokens.clamp(1, 4096).toInt(),
+          topK: _settings.topK.clamp(1, 1000).toInt(),
+          topP: _settings.topP.clamp(0.000001, 1).toDouble(),
+          minP: _settings.minP.clamp(0, 1).toDouble(),
+          temperature: math.max(0, _settings.temperature),
+        ),
+      );
+      if (!_textToSpeechContextMatches(context)) {
+        task.cancel();
+        await task.done;
+        return false;
+      }
+      _activeTextToSpeechTask = task;
+      eventSubscription = task.events.listen(
+        (event) {
+          if (event is TextToSpeechProgressEvent &&
+              identical(_activeTextToSpeechTask, task) &&
+              _textToSpeechContextMatches(context)) {
+            _textToSpeechProgress = event;
+            if (!_isDisposed) {
+              notifyListeners();
+            }
+          }
+        },
+        onError: (Object _, StackTrace _) {
+          // The typed completion below carries the same failure.
+        },
+      );
+
+      final completion = await task.done;
+      if (!_textToSpeechContextMatches(context)) {
+        return false;
+      }
+      switch (completion.state) {
+        case TextToSpeechCompletionState.completed:
+          final result = completion.result;
+          if (result == null || result.samples.isEmpty) {
+            throw LlamaTextToSpeechException(
+              'The model completed without returning audio samples.',
+            );
+          }
+          _textToSpeechResult = result;
+          return true;
+        case TextToSpeechCompletionState.cancelled:
+          _textToSpeechError = 'Speech synthesis cancelled.';
+          return false;
+        case TextToSpeechCompletionState.failed:
+          throw completion.error ??
+              LlamaTextToSpeechException('Speech synthesis failed.');
+      }
+    } catch (error) {
+      if (_textToSpeechContextMatches(context)) {
+        _textToSpeechError = error is LlamaUnsupportedException
+            ? error.message
+            : 'Speech synthesis failed: ${_formatDisplayError(error)}';
+      }
+      return false;
+    } finally {
+      await eventSubscription?.cancel();
+      if (identical(_activeTextToSpeechTask, task)) {
+        _activeTextToSpeechTask = null;
+      }
+      final ownsActiveDone = identical(_activeTextToSpeechDone, operationDone);
+      if (ownsActiveDone) {
+        _activeTextToSpeechDone = null;
+      }
+      if (!operationDone.isCompleted) {
+        operationDone.complete();
+      }
+      if (_activeTextToSpeechOperationId == context.operationId ||
+          (_activeTextToSpeechOperationId == null && ownsActiveDone)) {
+        _activeTextToSpeechOperationId = null;
+        _isSynthesizingSpeech = false;
+        _textToSpeechProgress = null;
+        if (_activeGenerationOperationId == null &&
+            _activeVoiceQuestionOperationId == null &&
+            !_isTranscribing) {
+          _isGenerating = false;
+        }
+        if (!_isDisposed) {
+          notifyListeners();
+        }
+      }
+    }
+  }
+
+  /// Cancels an active text-to-speech task.
+  void cancelSpeechSynthesis() {
+    _activeTextToSpeechTask?.cancel();
+  }
+
+  /// Removes the retained synthesized output from the example UI.
+  void clearSynthesizedSpeech() {
+    _clearTextToSpeechOutput();
+    notifyListeners();
+  }
+
+  void _clearTextToSpeechOutput() {
+    _textToSpeechResult = null;
+    _textToSpeechProgress = null;
+    _textToSpeechError = null;
+  }
+
   Future<void> _pickMediaPart({
     required FileType type,
     required Future<LlamaContentPart> Function(String path) fromPath,
@@ -3092,6 +3381,11 @@ class ChatProvider extends ChangeNotifier {
   }
 
   void stopGeneration() {
+    if (_isSynthesizingSpeech) {
+      cancelSpeechSynthesis();
+      notifyListeners();
+      return;
+    }
     if (_isTranscribing) {
       _invalidateActiveTranscription();
       notifyListeners();
@@ -3118,9 +3412,12 @@ class ChatProvider extends ChangeNotifier {
         _settings.directMediaInput != newSettings.directMediaInput ||
         _settings.modelSupportsAudio != newSettings.modelSupportsAudio ||
         _settings.modelSupportsSpeechToText !=
-            newSettings.modelSupportsSpeechToText;
+            newSettings.modelSupportsSpeechToText ||
+        _settings.modelSupportsTextToSpeech !=
+            newSettings.modelSupportsTextToSpeech;
     final hadActiveGeneration = _activeGenerationOperationId != null;
     if (modelContextChanged) {
+      _invalidateActiveTextToSpeech(clearOutput: true);
       _invalidateActiveVoiceQuestion(releaseGeneration: true);
       _invalidateActiveGeneration(cancelNative: true);
     }
@@ -3264,6 +3561,8 @@ class ChatProvider extends ChangeNotifier {
   Future<void> unloadModel() async {
     await _cancelAndAwaitAudioRecording();
     await _cancelAndAwaitActiveTranscription();
+    await _cancelAndAwaitActiveTextToSpeech();
+    _clearTextToSpeechOutput();
     stopGeneration();
     _cancelActiveModelPrefetch();
     _session?.reset();
@@ -3286,6 +3585,7 @@ class ChatProvider extends ChangeNotifier {
         modelSupportsVision: false,
         modelSupportsAudio: false,
         modelSupportsSpeechToText: false,
+        modelSupportsTextToSpeech: false,
         directMediaInput: false,
       ),
     );
@@ -3338,6 +3638,7 @@ class ChatProvider extends ChangeNotifier {
         modelSupportsVision: model.supportsVisionFor(web: kIsWeb),
         modelSupportsAudio: model.supportsAudioFor(web: kIsWeb),
         modelSupportsSpeechToText: model.supportsSpeechToTextFor(web: kIsWeb),
+        modelSupportsTextToSpeech: model.supportsTextToSpeechFor(web: kIsWeb),
         directMediaInput: mediaInputMode == ModelMediaInputMode.direct,
         // Auto uses the size for native memory planning; WebGPU also uses it
         // to select the mem64 core before loading large models.
@@ -3567,6 +3868,7 @@ class ChatProvider extends ChangeNotifier {
     unawaited(_settingsService.saveSettings(_settings));
     final recordingDone = _cancelAndAwaitAudioRecording();
     final transcriptionDone = _cancelAndAwaitActiveTranscription();
+    final textToSpeechDone = _cancelAndAwaitActiveTextToSpeech();
     stopGeneration();
     _cancelActiveModelPrefetch();
     _session?.reset();
@@ -3574,6 +3876,7 @@ class ChatProvider extends ChangeNotifier {
     unawaited(() async {
       await recordingDone;
       await transcriptionDone;
+      await textToSpeechDone;
       await _audioRecordingService.dispose();
       await _chatService.dispose();
     }());
@@ -3590,6 +3893,7 @@ class ChatProvider extends ChangeNotifier {
       await _saveSettingsNow();
       await _cancelAndAwaitAudioRecording();
       await _cancelAndAwaitActiveTranscription();
+      await _cancelAndAwaitActiveTextToSpeech();
       stopGeneration();
       _cancelActiveModelPrefetch();
       _session?.reset();
@@ -3634,6 +3938,37 @@ class ChatProvider extends ChangeNotifier {
     }
     if (done != null) {
       await done.future;
+    }
+  }
+
+  Future<void> _cancelAndAwaitActiveTextToSpeech() async {
+    final task = _activeTextToSpeechTask;
+    final done = _activeTextToSpeechDone;
+    if (!_isSynthesizingSpeech && task == null && done == null) {
+      return;
+    }
+    task?.cancel();
+    if (task != null) {
+      await task.done;
+    }
+    if (done != null) {
+      await done.future;
+    }
+  }
+
+  bool _textToSpeechContextMatches(_TextToSpeechContext context) =>
+      _activeTextToSpeechOperationId == context.operationId &&
+      _isSynthesizingSpeech &&
+      context.conversationRevision == _conversationRevision &&
+      context.modelPath == _settings.modelPath &&
+      context.mmprojPath == _settings.mmprojPath &&
+      context.conversationId == _activeConversationId;
+
+  void _invalidateActiveTextToSpeech({bool clearOutput = false}) {
+    _activeTextToSpeechOperationId = null;
+    _activeTextToSpeechTask?.cancel();
+    if (clearOutput) {
+      _clearTextToSpeechOutput();
     }
   }
 

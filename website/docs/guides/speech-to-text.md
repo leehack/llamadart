@@ -18,7 +18,7 @@ audio-capable multimodal models.
 
 | Runtime | Generic audio-input chat | Typed `SpeechToTextEngine` | Text to speech |
 | --- | --- | --- | --- |
-| Native llama.cpp / GGUF | Model + projector dependent | Experimental Qwen3-ASR adapter; complete WAV/MP3/FLAC file or bytes, final transcript only | No public Dart API |
+| Native llama.cpp / GGUF | Model + projector dependent | Experimental Qwen3-ASR adapter; complete WAV/MP3/FLAC file or bytes, final transcript only | Experimental Qwen3-TTS adapter; see [Text to Speech](./text-to-speech) |
 | WebGPU / GGUF | Bridge + model dependent | Unsupported | Unsupported |
 | Native LiteRT-LM / `.litertlm` | Bundle dependent through normal generation | Unsupported by the pinned native artifact | Unsupported by the pinned native artifact |
 | LiteRT-LM Web | Unsupported | Unsupported | Unsupported |
@@ -191,6 +191,5 @@ the native downloader verifies both files before the model can be selected.
   iPhone and Windows remain unverified; Linux keeps selected-file STT but not
   microphone capture. Web enablement is tracked separately in
   [issue #329](https://github.com/leehack/llamadart/issues/329).
-- TTS is not exposed. llama.cpp's current Qwen3-TTS helper is experimental and
-  requires a stable downstream native wrapper before it can support a public
-  Dart `TextToSpeechEngine`.
+- TTS is a separate typed API with different models, projector capabilities,
+  inputs, and output events. See [Text to Speech](./text-to-speech).

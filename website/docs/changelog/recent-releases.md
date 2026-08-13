@@ -9,6 +9,16 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Added experimental typed Qwen3-TTS synthesis on native llama.cpp, including
+  capability discovery, cancellation, complete PCM/WAV output, and a dedicated
+  synthesize workflow with file or microphone speaker references, automatic
+  playback, replay, and WAV export in the Flutter chat example. Web and the
+  current LiteRT-LM artifacts remain unsupported.
+
+- Updated the native llama.cpp runtime to `b10356-llamadart.1`, retaining
+  upstream llama.cpp `b10356` while adding the stable Qwen3-TTS wrapper ABI and
+  refreshed Apple SwiftPM artifact.
+
 - Added an experimental typed Qwen3-ASR whole-file transcription workflow, a
   SHA-256-verified Qwen3-ASR 0.6B native mobile-and-desktop chat-app preset,
   and foreground microphone recording. Web and the current LiteRT-LM artifacts

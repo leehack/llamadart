@@ -367,6 +367,56 @@ void main() {
       expect(result.stderr, contains('a nonempty --expect'));
     });
 
+    test('dry-runs typed text-to-speech with model and projector', () async {
+      final result = await runLocalE2e(const [
+        '--scenario',
+        'text-to-speech-smoke',
+        '--model-path',
+        'models/Qwen3-TTS-12Hz-1.7B-Base-Q4_K_M.gguf',
+        '--mmproj-path',
+        'models/mmproj-Qwen3-TTS-12Hz-1.7B-Base-Q8_0.gguf',
+        '--dry-run',
+      ], projectRoot: '/repo');
+
+      expect(result.exitCode, 0);
+      expect(result.stdout, contains('text-to-speech-smoke'));
+      expect(
+        result.stdout,
+        contains(
+          'LLAMADART_TTS_MODEL_PATH=models/Qwen3-TTS-12Hz-1.7B-Base-Q4_K_M.gguf',
+        ),
+      );
+      expect(
+        result.stdout,
+        contains(
+          'LLAMADART_TTS_MMPROJ_PATH=models/mmproj-Qwen3-TTS-12Hz-1.7B-Base-Q8_0.gguf',
+        ),
+      );
+      expect(
+        result.stdout,
+        contains(
+          'LLAMADART_TTS_OUTPUT_PATH=/repo/build/text-to-speech-smoke.wav',
+        ),
+      );
+      expect(
+        result.stdout,
+        contains('test/e2e/backends/text_to_speech_e2e_test.dart'),
+      );
+    });
+
+    test('requires a model and projector for text-to-speech', () async {
+      final result = await runLocalE2e(const [
+        '--scenario',
+        'text-to-speech-smoke',
+        '--model-path',
+        'models/Qwen3-TTS-12Hz-1.7B-Base-Q4_K_M.gguf',
+        '--dry-run',
+      ], projectRoot: '/repo');
+
+      expect(result.exitCode, 64);
+      expect(result.stderr, contains('--model-path and --mmproj-path'));
+    });
+
     test('requires mmproj path before GGUF image path', () async {
       final result = await runLocalE2e(const [
         '--scenario',

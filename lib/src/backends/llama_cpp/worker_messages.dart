@@ -1,4 +1,7 @@
 import 'dart:isolate';
+import 'dart:typed_data';
+
+import '../backend.dart';
 import '../../core/models/inference/model_params.dart';
 import '../../core/models/inference/generation_params.dart';
 import '../../core/models/chat/content_part.dart';
@@ -298,6 +301,45 @@ class SupportsAudioRequest extends WorkerRequest {
   SupportsAudioRequest(this.mmContextHandle, super.sendPort);
 }
 
+/// Request to discover dedicated native text-to-speech support.
+class TextToSpeechCapabilitiesRequest extends WorkerRequest {
+  /// Handle of the loaded llama context.
+  final int contextHandle;
+
+  /// Handle of the loaded multimodal projector.
+  final int mmContextHandle;
+
+  /// Creates a TTS capability request.
+  TextToSpeechCapabilitiesRequest(
+    this.contextHandle,
+    this.mmContextHandle,
+    super.sendPort,
+  );
+}
+
+/// Request to synthesize one complete utterance.
+class TextToSpeechSynthesizeRequest extends WorkerRequest {
+  /// Handle of the loaded llama context.
+  final int contextHandle;
+
+  /// Handle of the loaded multimodal projector.
+  final int mmContextHandle;
+
+  /// Synthesis inputs and sampling parameters.
+  final BackendTextToSpeechRequest request;
+
+  /// Creates a TTS synthesis request.
+  TextToSpeechSynthesizeRequest(
+    this.contextHandle,
+    this.mmContextHandle,
+    this.request,
+    super.sendPort,
+  );
+}
+
+/// Fire-and-forget request to cancel active native speech synthesis.
+class TextToSpeechCancelRequest {}
+
 /// Request for system information (VRAM/RAM).
 class SystemInfoRequest extends WorkerRequest {
   /// Creates a new [SystemInfoRequest].
@@ -398,6 +440,51 @@ class TokenResponse {
 
   /// Creates a new [TokenResponse].
   TokenResponse(this.bytes);
+}
+
+/// Worker response containing TTS capabilities.
+class TextToSpeechCapabilitiesResponse {
+  /// Capability snapshot from the native runtime.
+  final BackendTextToSpeechCapabilities capabilities;
+
+  /// Creates a TTS capability response.
+  TextToSpeechCapabilitiesResponse(this.capabilities);
+}
+
+/// Worker response containing synthesis progress.
+class TextToSpeechProgressResponse {
+  /// Current native synthesis progress.
+  final BackendTextToSpeechProgress progress;
+
+  /// Creates a progress response.
+  TextToSpeechProgressResponse(this.progress);
+}
+
+/// Worker response containing complete float32 PCM.
+class TextToSpeechResultResponse {
+  /// Transferable bytes containing float32 PCM in host byte order.
+  final TransferableTypedData pcm;
+
+  /// Output sample rate in Hertz.
+  final int sampleRateHz;
+
+  /// Number of interleaved channels.
+  final int channelCount;
+
+  /// Number of generated audio-codec frames.
+  final int framesGenerated;
+
+  /// Whether the requested frame limit was reached.
+  final bool truncated;
+
+  /// Creates a final TTS worker response.
+  TextToSpeechResultResponse({
+    required Float32List samples,
+    required this.sampleRateHz,
+    required this.channelCount,
+    required this.framesGenerated,
+    required this.truncated,
+  }) : pcm = TransferableTypedData.fromList(<TypedData>[samples]);
 }
 
 /// Response containing a list of token IDs.
@@ -501,6 +588,15 @@ enum WorkerErrorKind {
 
   /// The engine was not in a state that permits the operation.
   state,
+
+  /// Generic speech recognition or processing failed.
+  speech,
+
+  /// Speech audio did not satisfy the input format contract.
+  audioFormat,
+
+  /// Text-to-speech synthesis failed.
+  textToSpeech,
 }
 
 /// Response containing an error message and category.
