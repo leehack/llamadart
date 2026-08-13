@@ -189,6 +189,36 @@ void main() {
     );
   });
 
+  test('transient server failures stop after configured retries', () async {
+    transientModelFailuresRemaining = 10;
+    service = TestModelService(
+      tempDir,
+      retryDelays: const <Duration>[Duration.zero, Duration.zero],
+    );
+    final model = DownloadableModel(
+      name: 'Retry Exhaustion Model',
+      description: 'Test',
+      url: '$baseUrl/model.gguf',
+      filename: 'retry-exhaustion-model.gguf',
+      sizeBytes: testDataSize,
+    );
+    Object? failure;
+
+    await service.downloadModel(
+      model: model,
+      modelsDir: tempDir.path,
+      cancelToken: CancelToken(),
+      onProgress: (_) {},
+      onSuccess: (_) => fail('Exhausted retry unexpectedly completed.'),
+      onError: (error) => failure = error,
+    );
+
+    expect(failure, isA<DioException>());
+    expect((failure! as DioException).response?.statusCode, 503);
+    expect(getRequestCountByPath['/model.gguf'], 3);
+    expect(File(p.join(tempDir.path, model.filename)).existsSync(), isFalse);
+  });
+
   test('cancellation interrupts transient retry backoff', () async {
     transientModelFailuresRemaining = 10;
     service = TestModelService(
