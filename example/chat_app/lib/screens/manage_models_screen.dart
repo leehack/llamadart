@@ -1803,11 +1803,7 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
                               isCustom: _customModels.contains(model),
                               onRemoveFromLibrary: () =>
                                   unawaited(_removeCustomModelEntry(model)),
-                              onCancel:
-                                  detail != null &&
-                                      isDownloadStageTransferComplete(detail)
-                                  ? null
-                                  : () => _cancelDownload(model),
+                              onCancel: () => _cancelDownload(model),
                               includeProjector: _includeProjectorFor(model),
                               onIncludeProjectorChanged: (value) =>
                                   _setIncludeProjector(model, value),

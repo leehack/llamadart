@@ -22,6 +22,7 @@ void main() {
   late List<String?> modelIfRangeHeaders;
   late int transientModelFailuresRemaining;
   late int truncatedModelResponsesRemaining;
+  late int chunkedModelResponsesRemaining;
 
   const stableEtag = '"model-v1"';
 
@@ -37,6 +38,7 @@ void main() {
     modelIfRangeHeaders = <String?>[];
     transientModelFailuresRemaining = 0;
     truncatedModelResponsesRemaining = 0;
+    chunkedModelResponsesRemaining = 0;
     tempDir = await Directory.systemTemp.createTemp('model_service_test');
     service = TestModelService(tempDir);
 
@@ -98,6 +100,17 @@ void main() {
             request.response.statusCode = HttpStatus.ok;
             request.response.headers.chunkedTransferEncoding = true;
             request.response.add(payload.sublist(0, payloadSize ~/ 3));
+            await request.response.close();
+            return;
+          }
+
+          if (path == '/model.gguf' &&
+              !isPartial &&
+              chunkedModelResponsesRemaining > 0) {
+            chunkedModelResponsesRemaining--;
+            request.response.statusCode = HttpStatus.ok;
+            request.response.headers.chunkedTransferEncoding = true;
+            request.response.add(payload);
             await request.response.close();
             return;
           }
@@ -219,6 +232,35 @@ void main() {
     expect(File(p.join(tempDir.path, model.filename)).existsSync(), isFalse);
   });
 
+  test(
+    'unknown-size chunked response completes without false truncation',
+    () async {
+      chunkedModelResponsesRemaining = 1;
+      final model = DownloadableModel(
+        name: 'Unknown Size Model',
+        description: 'Test',
+        url: '$baseUrl/model.gguf',
+        filename: 'unknown-size-model.gguf',
+        sizeBytes: 0,
+      );
+
+      await service.downloadModel(
+        model: model,
+        modelsDir: tempDir.path,
+        cancelToken: CancelToken(),
+        onProgress: (_) {},
+        onSuccess: (_) {},
+        onError: (error) => fail('Chunked download failed: $error'),
+      );
+
+      expect(getRequestCountByPath['/model.gguf'], 1);
+      expect(
+        File(p.join(tempDir.path, model.filename)).readAsBytesSync(),
+        testData,
+      );
+    },
+  );
+
   test('cancellation interrupts transient retry backoff', () async {
     transientModelFailuresRemaining = 10;
     service = TestModelService(
@@ -321,6 +363,63 @@ void main() {
     expect((await service.getModelCacheState(model)).isReady, isTrue);
   });
 
+  test('cancellation interrupts integrity verification', () async {
+    final verificationStarted = Completer<void>();
+    service = TestModelService(
+      tempDir,
+      fileSha256: (file, cancelToken) async {
+        if (!verificationStarted.isCompleted) {
+          verificationStarted.complete();
+        }
+        await cancelToken!.whenCancel;
+        return sha256.convert(await file.readAsBytes()).toString();
+      },
+    );
+    final model = DownloadableModel.fromSources(
+      name: 'Cancelled Verification Model',
+      description: 'Test',
+      modelSource: RemoteModelAssetSource(
+        url: '$baseUrl/model.gguf',
+        filename: 'cancelled-verification-model.gguf',
+        sizeBytes: testDataSize,
+        sha256: sha256.convert(testData).toString(),
+      ),
+      sizeBytes: testDataSize,
+    );
+    final cancelToken = CancelToken();
+    Object? failure;
+
+    final download = service.downloadModel(
+      model: model,
+      modelsDir: tempDir.path,
+      cancelToken: cancelToken,
+      onProgress: (_) {},
+      onSuccess: (_) => fail('Cancelled verification unexpectedly completed.'),
+      onError: (error) => failure = error,
+    );
+    await verificationStarted.future.timeout(const Duration(seconds: 2));
+    cancelToken.cancel('test verification cancellation');
+    await download.timeout(const Duration(seconds: 1));
+
+    expect(failure, isA<DioException>());
+    expect((failure! as DioException).type, DioExceptionType.cancel);
+    expect(
+      File(p.join(tempDir.path, model.filename)).readAsBytesSync(),
+      testData,
+    );
+
+    final resumedService = TestModelService(tempDir);
+    await resumedService.downloadModel(
+      model: model,
+      modelsDir: tempDir.path,
+      cancelToken: CancelToken(),
+      onProgress: (_) {},
+      onSuccess: (_) {},
+      onError: (error) => fail('Verification resume failed: $error'),
+    );
+    expect(getRequestCountByPath['/model.gguf'], 1);
+  });
+
   test(
     'persisted integrity stamp avoids rehashing unchanged catalog assets',
     () async {
@@ -340,7 +439,7 @@ void main() {
       await file.writeAsBytes(testData);
 
       var digestCalls = 0;
-      Future<String> countDigest(File input) async {
+      Future<String> countDigest(File input, CancelToken? cancelToken) async {
         digestCalls += 1;
         return (await sha256.bind(input.openRead()).first).toString();
       }
