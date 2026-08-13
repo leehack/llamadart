@@ -119,6 +119,7 @@ class MockLlamaEngine extends LlamaEngine {
   BackendPerfContextData? performanceContext;
   List<String> createChunkContents = const ['Hi there'];
   String? lastLoadedModelPath;
+  String? lastLoadedMmprojPath;
   String? lastLoadedModelUrl;
 
   MockLlamaEngine() : super(MockLlamaBackend());
@@ -150,6 +151,7 @@ class MockLlamaEngine extends LlamaEngine {
   @override
   Future<void> loadMultimodalProjector(String mmProjPath) async {
     loadMultimodalProjectorCalls += 1;
+    lastLoadedMmprojPath = mmProjPath;
     mmprojLoaded = true;
   }
 

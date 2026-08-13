@@ -200,17 +200,213 @@ void main() {
     );
 
     test(
+      'stale iOS managed paths relocate to the validated current cache',
+      () async {
+        if (kIsWeb) {
+          return;
+        }
+        debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+        final model = DownloadableModel.defaultModels.singleWhere(
+          (candidate) => candidate.name == 'Gemma 4 E2B it',
+        );
+        final modelSource = model.modelSource as RemoteModelAssetSource;
+        final projectorSource =
+            model.multimodalProjectorSource as RemoteModelAssetSource;
+        final staleModelsDir = p.join(
+          p.separator,
+          'var',
+          'mobile',
+          'Containers',
+          'Data',
+          'Application',
+          'OLD',
+          'Library',
+          'Caches',
+          'models',
+        );
+        final currentModelsDir = p.join(
+          p.separator,
+          'var',
+          'mobile',
+          'Containers',
+          'Data',
+          'Application',
+          'NEW',
+          'Library',
+          'Caches',
+          'models',
+        );
+        final staleSettings = ChatSettings(
+          modelPath: p.join(staleModelsDir, modelSource.filename),
+          mmprojPath: p.join(staleModelsDir, projectorSource.filename),
+          preferredBackend: GpuBackend.cpu,
+          modelBytesHint: 3043927168,
+        );
+        final settingsService = MockSettingsService()..settings = staleSettings;
+        final engine = MockLlamaEngine();
+        final modelService = _RecordingModelService(
+          modelsDir: currentModelsDir,
+          cacheState: app_model_service.ModelProfileCacheState(
+            model: app_model_service.ModelAssetCacheState(
+              role: ModelAssetRole.model,
+              label: modelSource.filename,
+              isAvailable: true,
+            ),
+            multimodalProjector: app_model_service.ModelAssetCacheState(
+              role: ModelAssetRole.multimodalProjector,
+              label: projectorSource.filename,
+              isAvailable: true,
+            ),
+          ),
+        );
+        final relocatedProvider = ChatProvider(
+          chatService: MockChatService(engine: engine),
+          settingsService: settingsService,
+          modelService: modelService,
+          initialSettings: staleSettings,
+        );
+        addTearDown(relocatedProvider.dispose);
+
+        await relocatedProvider.loadModel();
+
+        final expectedModelPath = p.join(
+          currentModelsDir,
+          modelSource.filename,
+        );
+        final expectedProjectorPath = p.join(
+          currentModelsDir,
+          projectorSource.filename,
+        );
+        expect(relocatedProvider.isLoaded, isTrue);
+        expect(engine.lastLoadedModelPath, expectedModelPath);
+        expect(engine.lastLoadedMmprojPath, expectedProjectorPath);
+        expect(relocatedProvider.settings.modelPath, expectedModelPath);
+        expect(relocatedProvider.settings.mmprojPath, expectedProjectorPath);
+        expect(settingsService.settings.modelPath, expectedModelPath);
+        expect(settingsService.settings.mmprojPath, expectedProjectorPath);
+        expect(
+          settingsService.settings.modelBytesHint,
+          model.sizeBytesFor(web: false),
+        );
+        expect(modelService.cacheStateCalls, 1);
+      },
+    );
+
+    test(
+      'stale iOS managed paths do not relocate from an invalid current cache',
+      () async {
+        if (kIsWeb) {
+          return;
+        }
+        debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+        final model = DownloadableModel.defaultModels.singleWhere(
+          (candidate) => candidate.name == 'Gemma 4 E2B it',
+        );
+        final modelSource = model.modelSource as RemoteModelAssetSource;
+        final projectorSource =
+            model.multimodalProjectorSource as RemoteModelAssetSource;
+        final staleSettings = ChatSettings(
+          modelPath: p.join(
+            p.separator,
+            'var',
+            'mobile',
+            'Containers',
+            'Data',
+            'Application',
+            'OLD',
+            'Library',
+            'Caches',
+            'models',
+            modelSource.filename,
+          ),
+          mmprojPath: p.join(
+            p.separator,
+            'var',
+            'mobile',
+            'Containers',
+            'Data',
+            'Application',
+            'OLD',
+            'Library',
+            'Caches',
+            'models',
+            projectorSource.filename,
+          ),
+          preferredBackend: GpuBackend.cpu,
+        );
+        for (final entry in <({bool model, bool projector, String error})>[
+          (model: false, projector: true, error: 'model is incomplete'),
+          (
+            model: true,
+            projector: false,
+            error: 'multimodal projector is incomplete',
+          ),
+        ]) {
+          final settingsService = MockSettingsService()
+            ..settings = staleSettings;
+          final engine = MockLlamaEngine();
+          final modelService = _RecordingModelService(
+            modelsDir: p.join(
+              p.separator,
+              'var',
+              'mobile',
+              'Containers',
+              'Data',
+              'Application',
+              'NEW',
+              'Library',
+              'Caches',
+              'models',
+            ),
+            cacheState: app_model_service.ModelProfileCacheState(
+              model: app_model_service.ModelAssetCacheState(
+                role: ModelAssetRole.model,
+                label: modelSource.filename,
+                isAvailable: entry.model,
+              ),
+              multimodalProjector: app_model_service.ModelAssetCacheState(
+                role: ModelAssetRole.multimodalProjector,
+                label: projectorSource.filename,
+                isAvailable: entry.projector,
+              ),
+            ),
+          );
+          final invalidProvider = ChatProvider(
+            chatService: MockChatService(engine: engine),
+            settingsService: settingsService,
+            modelService: modelService,
+            initialSettings: staleSettings,
+          );
+          addTearDown(invalidProvider.dispose);
+
+          await invalidProvider.loadModel();
+
+          expect(invalidProvider.isLoaded, isFalse);
+          expect(invalidProvider.error, contains(entry.error));
+          expect(engine.lastLoadedModelPath, isNull);
+          expect(settingsService.settings.modelPath, staleSettings.modelPath);
+          expect(settingsService.settings.mmprojPath, staleSettings.mmprojPath);
+        }
+      },
+    );
+
+    test(
       'manual model and projector paths bypass catalog-only assumptions',
       () async {
         if (kIsWeb) {
           return;
         }
+        debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
         final model = DownloadableModel.defaultModels.singleWhere(
           (candidate) => candidate.name == 'Gemma 4 E2B it',
         );
         final source = model.modelSource as RemoteModelAssetSource;
         final modelsDir = p.absolute('managed-catalog-cache');
-        final manualPath = p.join('custom-models', source.filename);
+        final manualPath = p.join(
+          p.separator,
+          'custom-models',
+          source.filename,
+        );
         final modelService = _RecordingModelService(modelsDir: modelsDir);
         final engine = MockLlamaEngine();
         final manualProvider = ChatProvider(

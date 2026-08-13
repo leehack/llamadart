@@ -731,6 +731,39 @@ class ChatProvider extends ChangeNotifier {
     );
   }
 
+  Future<bool> _isRelocatableIosCatalogPath(
+    String configuredPath, {
+    required String expectedFilename,
+  }) async {
+    if (kIsWeb ||
+        defaultTargetPlatform != TargetPlatform.iOS ||
+        !p.isAbsolute(configuredPath) ||
+        !p.equals(p.basename(configuredPath), expectedFilename) ||
+        await File(configuredPath).exists()) {
+      return false;
+    }
+
+    final components = p
+        .normalize(configuredPath)
+        .split(p.separator)
+        .where((component) => component.isNotEmpty)
+        .toList(growable: false);
+    if (components.length < 10) {
+      return false;
+    }
+    final tail = components.sublist(components.length - 10);
+    return p.equals(tail[0], 'var') &&
+        p.equals(tail[1], 'mobile') &&
+        p.equals(tail[2], 'Containers') &&
+        p.equals(tail[3], 'Data') &&
+        p.equals(tail[4], 'Application') &&
+        tail[5].isNotEmpty &&
+        p.equals(tail[6], 'Library') &&
+        p.equals(tail[7], 'Caches') &&
+        p.equals(tail[8], 'models') &&
+        p.equals(tail[9], expectedFilename);
+  }
+
   Future<void> _preflightManagedCatalogModel() async {
     final configuredModelPath = _settings.modelPath?.trim();
     if (kIsWeb ||
@@ -756,11 +789,20 @@ class ChatProvider extends ChangeNotifier {
 
     final modelsDir = await _modelService.getModelsDirectory();
     DownloadableModel? catalogModel;
+    var shouldRelocateModelPath = false;
     for (final candidate in matchingCatalogModels) {
       final source = candidate.modelSource as RemoteModelAssetSource;
       final managedPath = p.join(modelsDir, source.filename);
       if (_sameLocalPath(configuredModelPath, managedPath)) {
         catalogModel = candidate;
+        break;
+      }
+      if (await _isRelocatableIosCatalogPath(
+        configuredModelPath,
+        expectedFilename: source.filename,
+      )) {
+        catalogModel = candidate;
+        shouldRelocateModelPath = true;
         break;
       }
     }
@@ -779,14 +821,25 @@ class ChatProvider extends ChangeNotifier {
 
     final projectorSource = catalogModel.multimodalProjectorSource;
     final configuredProjectorPath = _settings.mmprojPath?.trim();
-    final usesManagedCatalogProjector =
-        projectorSource is RemoteModelAssetSource &&
+    var shouldRelocateProjectorPath = false;
+    var usesManagedCatalogProjector = false;
+    String? managedProjectorPath;
+    if (projectorSource is RemoteModelAssetSource &&
         configuredProjectorPath != null &&
-        configuredProjectorPath.isNotEmpty &&
-        _sameLocalPath(
+        configuredProjectorPath.isNotEmpty) {
+      managedProjectorPath = p.join(modelsDir, projectorSource.filename);
+      usesManagedCatalogProjector = _sameLocalPath(
+        configuredProjectorPath,
+        managedProjectorPath,
+      );
+      if (!usesManagedCatalogProjector) {
+        shouldRelocateProjectorPath = await _isRelocatableIosCatalogPath(
           configuredProjectorPath,
-          p.join(modelsDir, projectorSource.filename),
+          expectedFilename: projectorSource.filename,
         );
+        usesManagedCatalogProjector = shouldRelocateProjectorPath;
+      }
+    }
     if (usesManagedCatalogProjector &&
         !(cacheState.multimodalProjector?.isAvailable ?? false)) {
       throw LlamaModelException(
@@ -799,10 +852,28 @@ class ChatProvider extends ChangeNotifier {
     final catalogSizeBytes = catalogModel.sizeBytesFor(web: false);
     final usesCompleteManagedCatalogProfile =
         projectorSource == null || usesManagedCatalogProjector;
-    if (usesCompleteManagedCatalogProfile &&
+    final shouldUpdateSizeHint =
+        usesCompleteManagedCatalogProfile &&
         catalogSizeBytes > 0 &&
-        _settings.modelBytesHint != catalogSizeBytes) {
-      _settings = _settings.copyWith(modelBytesHint: catalogSizeBytes);
+        _settings.modelBytesHint != catalogSizeBytes;
+    if (shouldRelocateModelPath ||
+        shouldRelocateProjectorPath ||
+        shouldUpdateSizeHint) {
+      _settings = _settings.copyWith(
+        modelPath: shouldRelocateModelPath
+            ? p.join(
+                modelsDir,
+                (catalogModel.modelSource as RemoteModelAssetSource).filename,
+              )
+            : _settings.modelPath,
+        mmprojPath: shouldRelocateProjectorPath
+            ? managedProjectorPath
+            : _settings.mmprojPath,
+        modelBytesHint: shouldUpdateSizeHint
+            ? catalogSizeBytes
+            : _settings.modelBytesHint,
+      );
+      _syncActiveConversationSnapshot(touchUpdatedAt: false);
       await _saveSettingsNow();
     }
   }
