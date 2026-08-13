@@ -113,9 +113,13 @@ class MockLlamaEngine extends LlamaEngine {
   int createCalls = 0;
   ModelParams? lastModelParams;
   GenerationParams? lastCreateParams;
+  bool? lastCreateEnableThinking;
+  Map<String, dynamic>? lastCreateChatTemplateKwargs;
+  List<LlamaChatMessage>? lastCreateMessages;
   BackendPerfContextData? performanceContext;
   List<String> createChunkContents = const ['Hi there'];
   String? lastLoadedModelPath;
+  String? lastLoadedMmprojPath;
   String? lastLoadedModelUrl;
 
   MockLlamaEngine() : super(MockLlamaBackend());
@@ -147,6 +151,7 @@ class MockLlamaEngine extends LlamaEngine {
   @override
   Future<void> loadMultimodalProjector(String mmProjPath) async {
     loadMultimodalProjectorCalls += 1;
+    lastLoadedMmprojPath = mmProjPath;
     mmprojLoaded = true;
   }
 
@@ -202,6 +207,11 @@ class MockLlamaEngine extends LlamaEngine {
   }) async* {
     createCalls += 1;
     lastCreateParams = params;
+    lastCreateEnableThinking = enableThinking;
+    lastCreateChatTemplateKwargs = chatTemplateKwargs == null
+        ? null
+        : Map<String, dynamic>.from(chatTemplateKwargs);
+    lastCreateMessages = List<LlamaChatMessage>.from(messages);
     for (final content in createChunkContents) {
       yield LlamaCompletionChunk(
         id: "mock-id",

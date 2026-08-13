@@ -23,7 +23,7 @@ enum ModelAssetRole { model, multimodalProjector }
 
 enum ModelMediaInputMode { externalProjector, direct, none }
 
-enum ModelAvailability { all, nativeDesktop }
+enum ModelAvailability { all, native, nativeDesktop }
 
 abstract class ModelAssetSource {
   const ModelAssetSource();
@@ -386,8 +386,14 @@ class DownloadableModel {
   bool get isNativeDesktopOnly =>
       availability == ModelAvailability.nativeDesktop;
 
+  bool get isNativeOnly => availability == ModelAvailability.native;
+
   bool isAvailableFor({required bool web, required bool mobile}) =>
-      availability == ModelAvailability.all || (!web && !mobile);
+      switch (availability) {
+        ModelAvailability.all => true,
+        ModelAvailability.native => !web,
+        ModelAvailability.nativeDesktop => !web && !mobile,
+      };
 
   static final List<DownloadableModel> defaultModels = List.unmodifiable([
     DownloadableModel(
@@ -460,7 +466,7 @@ class DownloadableModel {
       webSupportsAudio: false,
       webSupportsSpeechToText: false,
       distribution: 'ggml-org',
-      availability: ModelAvailability.nativeDesktop,
+      availability: ModelAvailability.native,
       minRamGb: 4,
       preset: const ModelPreset(
         temperature: 0,
@@ -472,17 +478,40 @@ class DownloadableModel {
         thinkingEnabled: false,
       ),
     ),
-    DownloadableModel(
+    DownloadableModel.fromSources(
       name: 'Gemma 4 E2B it',
       description:
           'Compact multimodal assistant for image, audio, and video input.',
-      url:
-          'https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/main/gemma-4-E2B-it-Q4_K_S.gguf?download=true',
-      filename: 'gemma-4-E2B-it-Q4_K_S.gguf',
-      mmprojUrl:
-          'https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/main/mmproj-F16.gguf?download=true',
-      mmprojFilename: 'gemma-4-E2B-it-mmproj-F16.gguf',
-      sizeBytes: 3043927168,
+      modelSource: const RemoteModelAssetSource(
+        url:
+            'https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/90f9618340396838ee7ff5b0ba2da27da62953d3/gemma-4-E2B-it-Q4_K_S.gguf?download=true',
+        filename: 'gemma-4-E2B-it-Q4_K_S.gguf',
+        sizeBytes: 3043932288,
+        sha256:
+            '0a2fac16f388b4839f075dedb681357aec3e73a96bd66b413e462b6853550c99',
+      ),
+      multimodalProjectorSource: const RemoteModelAssetSource(
+        url:
+            'https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/90f9618340396838ee7ff5b0ba2da27da62953d3/mmproj-F16.gguf?download=true',
+        filename: 'gemma-4-E2B-it-mmproj-F16.gguf',
+        sizeBytes: 985654080,
+        sha256:
+            '140be8d7849741f88c50757d529b84373ee8e27052cc2236855b537f4a8215fa',
+      ),
+      sizeBytes: 4029586368,
+      webSizeBytes: 4029588384,
+      webModelSource: const RemoteModelAssetSource(
+        url:
+            'https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/main/gemma-4-E2B-it-Q4_K_S.gguf?download=true',
+        filename: 'gemma-4-E2B-it-Q4_K_S.gguf',
+        sizeBytes: 3043934304,
+      ),
+      webMultimodalProjectorSource: const RemoteModelAssetSource(
+        url:
+            'https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/main/mmproj-F16.gguf?download=true',
+        filename: 'gemma-4-E2B-it-mmproj-F16.gguf',
+        sizeBytes: 985654080,
+      ),
       distribution: 'Unsloth',
       minRamGb: 8,
       supportsVision: true,
@@ -492,7 +521,7 @@ class DownloadableModel {
       supportsToolCalling: true,
       supportsThinking: true,
       preset: ModelPreset(
-        temperature: 0.7,
+        temperature: 1.0,
         topK: 64,
         topP: 0.95,
         penalty: 1.0,
@@ -501,16 +530,21 @@ class DownloadableModel {
         thinkingEnabled: false,
       ),
     ),
-    DownloadableModel(
+    DownloadableModel.fromSources(
       name: 'Gemma 4 E2B LiteRT-LM',
       description:
           'Optimized LiteRT-LM variant with native audio and text-only Web support.',
-      url:
-          'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm?download=true',
-      filename: 'gemma-4-E2B-it.litertlm',
+      modelSource: const RemoteModelAssetSource(
+        url:
+            'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/6b78abd019e61a1ca4cbe3b212d2c9ce8ff38a94/gemma-4-E2B-it.litertlm?download=true',
+        filename: 'gemma-4-E2B-it.litertlm',
+        sizeBytes: 2588147712,
+        sha256:
+            '181938105e0eefd105961417e8da75903eacda102c4fce9ce90f50b97139a63c',
+      ),
       sizeBytes: 2588147712,
       webSizeBytes: 2008432640,
-      webModelSource: RemoteModelAssetSource(
+      webModelSource: const RemoteModelAssetSource(
         url:
             'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it-web.litertlm?download=true',
         filename: 'gemma-4-E2B-it-web.litertlm',
@@ -524,9 +558,10 @@ class DownloadableModel {
       webMediaInputMode: ModelMediaInputMode.none,
       supportsThinking: true,
       preset: ModelPreset(
-        temperature: 0.7,
+        temperature: 1.0,
         topK: 64,
         topP: 0.95,
+        penalty: 1.0,
         contextSize: 8192,
         maxTokens: 1024,
         thinkingEnabled: false,
@@ -552,7 +587,7 @@ class DownloadableModel {
       supportsToolCalling: true,
       supportsThinking: true,
       preset: ModelPreset(
-        temperature: 0.7,
+        temperature: 1.0,
         topK: 64,
         topP: 0.95,
         penalty: 1.0,
@@ -581,7 +616,7 @@ class DownloadableModel {
       supportsToolCalling: true,
       supportsThinking: true,
       preset: ModelPreset(
-        temperature: 0.7,
+        temperature: 1.0,
         topK: 64,
         topP: 0.95,
         penalty: 1.0,
@@ -609,7 +644,7 @@ class DownloadableModel {
       supportsToolCalling: true,
       supportsThinking: true,
       preset: ModelPreset(
-        temperature: 0.7,
+        temperature: 1.0,
         topK: 64,
         topP: 0.95,
         penalty: 1.0,
@@ -637,7 +672,7 @@ class DownloadableModel {
       supportsToolCalling: true,
       supportsThinking: true,
       preset: ModelPreset(
-        temperature: 0.7,
+        temperature: 1.0,
         topK: 64,
         topP: 0.95,
         penalty: 1.0,

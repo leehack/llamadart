@@ -354,7 +354,7 @@ void main() {
         final content = renderedMessages.single['content'];
         expect(content, isA<List>());
         expect(content, hasLength(3));
-        expect(content.first['type'], equals('input_audio'));
+        expect(content.first, equals({'type': 'audio'}));
         expect(content[1], equals({'type': 'text', 'text': 'prefix:'}));
         expect(content.last['type'], equals('text'));
         expect(content.last['text'], contains('"tool_calls"'));

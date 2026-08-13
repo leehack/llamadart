@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:llamadart/llamadart.dart';
 
+import 'audio_chat_smoke_support.dart';
+
 Future<void> main(List<String> args) async {
   final modelPath = args.isNotEmpty
       ? args[0]
@@ -11,7 +13,10 @@ Future<void> main(List<String> args) async {
     stderr.writeln(
       'Usage: dart run tool/gguf_chat_features_smoke.dart '
       '<model.gguf> [auto|cpu|metal|vulkan|cuda|opencl|hip|blas] '
-      '[mmproj.gguf] [image-path]',
+      '[mmproj.gguf] [image-path]\n'
+      'Optional env:\n'
+      '  GGUF_AUDIO_PATH=<local encoded WAV file>\n'
+      '  GGUF_AUDIO_EXPECTED_TEXT=<expected answer; required with audio>',
     );
     exitCode = 64;
     return;
@@ -29,6 +34,30 @@ Future<void> main(List<String> args) async {
     exitCode = 64;
     return;
   }
+  final audioPath = optionalAudioChatSmokePath(
+    environmentName: 'GGUF_AUDIO_PATH',
+    smokeName: 'GGUF smoke',
+  );
+  if (audioPath != null && mmprojPath == null) {
+    stderr.writeln('GGUF_AUDIO_PATH requires GGUF_MMPROJ/mmproj path.');
+    exitCode = 64;
+    return;
+  }
+  if (audioPath != null && imagePath != null) {
+    stderr.writeln(
+      'GGUF audio-answer and image variants must be run separately.',
+    );
+    exitCode = 64;
+    return;
+  }
+  final audioExpectedText = optionalAudioChatExpectedText(
+    audioPath: audioPath,
+    environmentName: 'GGUF_AUDIO_EXPECTED_TEXT',
+    audioEnvironmentName: 'GGUF_AUDIO_PATH',
+  );
+  final audioFixture = audioPath == null
+      ? null
+      : await readAudioChatSmokeFixture(audioPath);
 
   final engine = LlamaEngine(LlamaBackend());
   try {
@@ -45,6 +74,41 @@ Future<void> main(List<String> args) async {
     );
     if (mmprojPath != null) {
       await engine.loadMultimodalProjector(mmprojPath);
+    }
+
+    if (audioFixture != null) {
+      final audioChat = await _runScenario(
+        engine: engine,
+        name: 'audioChat',
+        messages: [
+          LlamaChatMessage.withContent(
+            role: LlamaChatRole.user,
+            content: [
+              LlamaAudioContent(bytes: audioFixture.bytes),
+              const LlamaTextContent(audioChatQuestionPrompt),
+            ],
+          ),
+        ],
+        tools: const [],
+        enableThinking: false,
+        maxTokens: 64,
+      );
+      verifyExactAudioChatAnswer(
+        scenarioName: audioChat.name,
+        actualText: audioChat.content,
+        expectedText: audioExpectedText!,
+      );
+      _verifyNoThinking(audioChat);
+
+      final result = {
+        'backendName': await engine.getBackendName(),
+        'requestedBackend': backend.name,
+        'variant': 'audioAnswer',
+        'audioInput': audioFixture.toJson(),
+        'audioChat': audioChat.toJson(),
+      };
+      print('RESULT gguf_chat_features ${jsonEncode(result)}');
+      return;
     }
 
     final template = await engine.chatTemplate(
@@ -195,7 +259,6 @@ Future<void> main(List<String> args) async {
             maxTokens: 120,
           )
         : null;
-
     _verifyNoThinking(noThinking);
     _verifyThinkingSeparation(thinking);
     _verifyNoThinking(toolCallNoThinking);
@@ -210,7 +273,6 @@ Future<void> main(List<String> args) async {
       _verifyHasOutput(multimodal);
       _verifyNoThinking(multimodal);
     }
-
     final result = {
       'backendName': await engine.getBackendName(),
       'requestedBackend': backend.name,

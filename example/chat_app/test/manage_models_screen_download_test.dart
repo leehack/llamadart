@@ -119,6 +119,36 @@ void main() {
       }
     });
 
+    for (final platform in <TargetPlatform>[
+      TargetPlatform.android,
+      TargetPlatform.iOS,
+      TargetPlatform.linux,
+    ]) {
+      testWidgets('Qwen3-ASR is available on native ${platform.name}', (
+        tester,
+      ) async {
+        debugDefaultTargetPlatformOverride = platform;
+        try {
+          final asr = DownloadableModel.defaultModels.singleWhere(
+            (model) => model.name == 'Qwen3-ASR 0.6B',
+          );
+          SharedPreferences.setMockInitialValues({});
+
+          await _pumpScreen(
+            tester,
+            modelService: _HoldingModelService(),
+            models: <DownloadableModel>[asr],
+          );
+
+          expect(find.text(asr.name), findsOneWidget);
+          expect(find.text('Native platforms'), findsOneWidget);
+          expect(find.text('Download Model + Projector'), findsOneWidget);
+        } finally {
+          debugDefaultTargetPlatformOverride = null;
+        }
+      });
+    }
+
     testWidgets('selected multimodal model waits for models directory', (
       tester,
     ) async {
@@ -221,43 +251,70 @@ void main() {
     testWidgets('platform and capability search narrow the model library', (
       tester,
     ) async {
-      SharedPreferences.setMockInitialValues({});
-      final general = _remoteModel();
-      final vision = _remoteVisionModel();
-      const desktop = DownloadableModel(
-        name: 'Desktop Specialist',
-        description: 'Large desktop-only model.',
-        url: 'https://example.com/desktop.gguf',
-        filename: 'desktop.gguf',
-        sizeBytes: 20,
-        availability: ModelAvailability.nativeDesktop,
-      );
+      debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+      try {
+        SharedPreferences.setMockInitialValues({});
+        final general = _remoteModel();
+        final vision = _remoteVisionModel();
+        const native = DownloadableModel(
+          name: 'Native Specialist',
+          description: 'Native-only model.',
+          url: 'https://example.com/native.gguf',
+          filename: 'native.gguf',
+          sizeBytes: 20,
+          availability: ModelAvailability.native,
+        );
+        const desktop = DownloadableModel(
+          name: 'Desktop Specialist',
+          description: 'Large desktop-only model.',
+          url: 'https://example.com/desktop.gguf',
+          filename: 'desktop.gguf',
+          sizeBytes: 20,
+          availability: ModelAvailability.nativeDesktop,
+        );
 
-      await _pumpScreen(
-        tester,
-        modelService: _HoldingModelService(),
-        models: [general, vision, desktop],
-      );
+        await _pumpScreen(
+          tester,
+          modelService: _HoldingModelService(),
+          models: [general, vision, native, desktop],
+        );
 
-      expect(find.widgetWithText(ChoiceChip, 'Mobile & Web'), findsOneWidget);
-      expect(find.widgetWithText(ChoiceChip, 'Mobile'), findsNothing);
-      expect(find.widgetWithText(ChoiceChip, 'Web'), findsNothing);
+        expect(find.widgetWithText(ChoiceChip, 'All'), findsOneWidget);
+        expect(find.widgetWithText(ChoiceChip, 'Mobile'), findsOneWidget);
+        expect(find.widgetWithText(ChoiceChip, 'Web'), findsOneWidget);
+        expect(find.widgetWithText(ChoiceChip, 'Desktop'), findsOneWidget);
+        expect(find.text(native.name), findsOneWidget);
+        expect(find.text(desktop.name), findsOneWidget);
 
-      await tester.tap(find.widgetWithText(ChoiceChip, 'Desktop'));
-      await tester.pumpAndSettle();
-      expect(find.text(desktop.name), findsOneWidget);
-      await tester.tap(find.widgetWithText(ChoiceChip, 'Mobile & Web'));
-      await tester.pumpAndSettle();
-      expect(find.text(desktop.name), findsNothing);
+        await tester.tap(find.widgetWithText(ChoiceChip, 'Web'));
+        await tester.pumpAndSettle();
+        expect(find.text(general.name), findsOneWidget);
+        expect(find.text(native.name), findsNothing);
+        expect(find.text(desktop.name), findsNothing);
 
-      await tester.enterText(find.byType(TextField).first, 'vision');
-      await tester.pump();
-      expect(find.text(vision.name), findsOneWidget);
-      expect(find.text(general.name), findsNothing);
+        await tester.tap(find.widgetWithText(ChoiceChip, 'Mobile'));
+        await tester.pumpAndSettle();
+        expect(find.text(native.name), findsOneWidget);
+        expect(find.text(desktop.name), findsNothing);
 
-      await tester.tap(find.byTooltip('Clear model search'));
-      await tester.pump();
-      expect(find.text(general.name), findsOneWidget);
+        await tester.tap(find.widgetWithText(ChoiceChip, 'Desktop'));
+        await tester.pumpAndSettle();
+        expect(find.text(native.name), findsOneWidget);
+        expect(find.text(desktop.name), findsOneWidget);
+
+        await tester.tap(find.widgetWithText(ChoiceChip, 'Mobile'));
+        await tester.pumpAndSettle();
+        await tester.enterText(find.byType(TextField).first, 'vision');
+        await tester.pump();
+        expect(find.text(vision.name), findsOneWidget);
+        expect(find.text(general.name), findsNothing);
+
+        await tester.tap(find.byTooltip('Clear model search'));
+        await tester.pump();
+        expect(find.text(general.name), findsOneWidget);
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
     });
 
     testWidgets('desktop search uses native capability profile', (

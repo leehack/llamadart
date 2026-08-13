@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:llamadart/llamadart.dart';
 
+import 'audio_chat_smoke_support.dart';
+
 Future<void> main(List<String> args) async {
   final modelPath = args.isNotEmpty
       ? args[0]
@@ -11,7 +13,10 @@ Future<void> main(List<String> args) async {
     stderr.writeln(
       'Usage: dart run tool/litert_lm_chat_features_smoke.dart '
       '<model.litertlm> [cpu|gpu|npu|auto] [image-path]\n'
-      'Optional env: LITERT_LM_IMAGE_PATH=<local image file>',
+      'Optional env:\n'
+      '  LITERT_LM_IMAGE_PATH=<local image file>\n'
+      '  LITERT_LM_AUDIO_PATH=<local encoded audio file>\n'
+      '  LITERT_LM_AUDIO_EXPECTED_TEXT=<expected answer; required with audio>',
     );
     exitCode = 64;
     return;
@@ -19,6 +24,18 @@ Future<void> main(List<String> args) async {
 
   final backend = args.length > 1 ? _parseBackend(args[1]) : _defaultBackend();
   final imagePath = _optionalImagePath(args.length > 2 ? args[2] : null);
+  final audioPath = optionalAudioChatSmokePath(
+    environmentName: 'LITERT_LM_AUDIO_PATH',
+    smokeName: 'LiteRT-LM smoke',
+  );
+  final audioExpectedText = optionalAudioChatExpectedText(
+    audioPath: audioPath,
+    environmentName: 'LITERT_LM_AUDIO_EXPECTED_TEXT',
+    audioEnvironmentName: 'LITERT_LM_AUDIO_PATH',
+  );
+  final audioFixture = audioPath == null
+      ? null
+      : await readAudioChatSmokeFixture(audioPath);
   final engine = LlamaEngine(LlamaBackend());
   try {
     await engine.loadModel(
@@ -127,6 +144,23 @@ Future<void> main(List<String> args) async {
             enableThinking: false,
             maxTokens: 96,
           );
+    final audioChat = audioFixture == null
+        ? null
+        : await _runScenario(
+            engine: engine,
+            messages: [
+              LlamaChatMessage.withContent(
+                role: LlamaChatRole.user,
+                content: [
+                  LlamaAudioContent(bytes: audioFixture.bytes),
+                  const LlamaTextContent(audioChatQuestionPrompt),
+                ],
+              ),
+            ],
+            tools: const [],
+            enableThinking: false,
+            maxTokens: 64,
+          );
 
     final result = {
       'backendName': await engine.getBackendName(),
@@ -137,12 +171,18 @@ Future<void> main(List<String> args) async {
       if (nativeMediaRender != null)
         'nativeMediaRender': nativeMediaRender.toJson(),
       if (multimodal != null) 'multimodal': multimodal.toJson(),
+      if (audioChat != null) ...{
+        'audioInput': audioFixture!.toJson(),
+        'audioChat': audioChat.toJson(),
+      },
     };
     _verifyResult(
       thinking: thinking,
       toolCall: toolCall,
       nativeToolHistory: nativeToolHistory,
       multimodal: multimodal,
+      audioChat: audioChat,
+      audioExpectedText: audioExpectedText,
     );
     print('RESULT litert_lm_chat_features ${jsonEncode(result)}');
   } finally {
@@ -155,6 +195,8 @@ void _verifyResult({
   required _ScenarioResult toolCall,
   required _ScenarioResult nativeToolHistory,
   _ScenarioResult? multimodal,
+  _ScenarioResult? audioChat,
+  String? audioExpectedText,
 }) {
   if (thinking.thinking.trim().isEmpty) {
     throw StateError('Gemma 4 thinking scenario produced no thinking delta.');
@@ -175,6 +217,13 @@ void _verifyResult({
   );
   if (multimodal != null && multimodal.content.trim().isEmpty) {
     throw StateError('Gemma 4 multimodal scenario produced no content.');
+  }
+  if (audioChat != null) {
+    verifyExactAudioChatAnswer(
+      scenarioName: 'Gemma 4 audio chat',
+      actualText: audioChat.content,
+      expectedText: audioExpectedText!,
+    );
   }
 }
 

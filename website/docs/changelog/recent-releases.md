@@ -9,9 +9,15 @@ For canonical full release notes, use:
 
 ## Unreleased
 
-- Added an experimental typed Qwen3-ASR whole-file transcription workflow and
-  a SHA-256-verified Qwen3-ASR 0.6B native-desktop chat-app preset. Web and the
-  current LiteRT-LM artifacts remain explicitly unsupported for typed STT.
+- Added an experimental typed Qwen3-ASR whole-file transcription workflow, a
+  SHA-256-verified Qwen3-ASR 0.6B native mobile-and-desktop chat-app preset,
+  and foreground microphone recording. Web and the current LiteRT-LM artifacts
+  remain explicitly unsupported for typed STT.
+
+- Added **Ask with voice** to the native Flutter chat example for Gemma 4 E2B
+  LiteRT-LM and audio-capable GGUF models. It sends a short microphone recording
+  through normal multimodal chat so the model answers the spoken request, while
+  remaining separate from typed speech-to-text.
 
 ## 0.8.19
 

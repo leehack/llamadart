@@ -108,12 +108,16 @@ class ModelCard extends StatelessWidget {
     final downloadToggleLabel = isDownloading
         ? 'Pause Download'
         : 'Resume Download';
-    final platformLabel = model.isNativeDesktopOnly
-        ? 'Desktop'
-        : 'All platforms';
-    final unavailableLabel = model.isNativeDesktopOnly
-        ? 'Available on desktop'
-        : 'Unavailable on this platform';
+    final platformLabel = switch (model.availability) {
+      ModelAvailability.all => 'All platforms',
+      ModelAvailability.native => 'Native platforms',
+      ModelAvailability.nativeDesktop => 'Desktop',
+    };
+    final unavailableLabel = switch (model.availability) {
+      ModelAvailability.all => 'Unavailable on this platform',
+      ModelAvailability.native => 'Available on native platforms',
+      ModelAvailability.nativeDesktop => 'Available on desktop',
+    };
 
     return Container(
       decoration: BoxDecoration(
@@ -193,9 +197,13 @@ class ModelCard extends StatelessWidget {
                         ),
                         _buildMetaChip(
                           context,
-                          icon: model.isNativeDesktopOnly
-                              ? Icons.desktop_mac_outlined
-                              : Icons.devices_rounded,
+                          icon: switch (model.availability) {
+                            ModelAvailability.all => Icons.devices_rounded,
+                            ModelAvailability.native =>
+                              Icons.devices_other_rounded,
+                            ModelAvailability.nativeDesktop =>
+                              Icons.desktop_mac_outlined,
+                          },
                           label: platformLabel,
                         ),
                       ],

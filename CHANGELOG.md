@@ -2,9 +2,21 @@
 
 * Added an experimental typed `SpeechToTextEngine` with an explicit Qwen3-ASR
   adapter profile for whole-file native llama.cpp transcription, plus a
-  SHA-256-verified Qwen3-ASR 0.6B desktop preset and separate **Transcribe
-  Audio** flow in the Flutter chat example. Web and the current LiteRT-LM
-  artifacts fail explicitly as unsupported.
+  SHA-256-verified Qwen3-ASR 0.6B native mobile-and-desktop preset and separate
+  **Transcribe Audio** and foreground microphone recording flows in the Flutter
+  chat example. The flow has been exercised on a physical Pixel with CPU
+  inference and in the iOS Simulator; Web and the current LiteRT-LM artifacts
+  fail explicitly as unsupported.
+
+* Added **Ask with voice** to the native Flutter chat example for Gemma 4 E2B
+  through both the LiteRT-LM direct-media bundle and the audio-capable GGUF +
+  projector path. The app sends a microphone recording through normal
+  multimodal chat so the model can answer the spoken request; it remains
+  separate from typed speech-to-text and is code-supported on Android, iOS,
+  macOS, and Windows, with Linux recording and Web excluded. Current packaged
+  microphone validation covers LiteRT-LM on macOS; llama.cpp audio input is
+  experimental and has engine-level Metal evidence only. Android, iOS, and
+  Windows device validation remains outstanding.
 
 * Added experimental, opt-in native llama.cpp DSpark speculative decoding
   through `SpeculativeDecodingConfig.draftDspark(...)`, including exact

@@ -122,19 +122,58 @@ Do not call `LlamaEngine.create` on that engine until the speech task completes.
 
 ## Chat app
 
-The Flutter chat example exposes two different audio actions on compatible
-native GGUF models:
+The Flutter chat example keeps transcription and generic audio chat as
+different user actions:
 
 - **Attach Audio** sends audio through normal multimodal chat.
-- **Transcribe Audio** selects one file and uses `SpeechToTextEngine`.
+- **Transcribe Audio** selects one file and uses `SpeechToTextEngine` with a
+  compatible native GGUF ASR model.
+- With Qwen3-ASR, the microphone records a temporary foreground WAV for up to
+  five minutes. **Stop & transcribe** finalizes that file and passes it to
+  `SpeechToTextEngine`, while **Discard** cancels capture and removes the
+  partial file.
+- With native Gemma 4 E2B, **Ask with voice** uses either the LiteRT-LM
+  direct-media bundle or the GGUF model with its matching audio-capable
+  projector. It records up to 30 seconds and **Stop & ask** sends the WAV bytes
+  through normal multimodal chat. The model is prompted to answer the spoken
+  request; this path does not promise a transcript, timestamps, confidence,
+  detected language, or live partial text. An ASR profile takes precedence
+  when both capability declarations are present.
 
 The transcription action is hidden on Web and for current LiteRT-LM bundles.
-It is a file workflow, not live microphone capture.
+ASR microphone recordings are capped at five minutes, cancelled when the app is
+backgrounded, and deleted after transcription. This remains a whole-file
+workflow: it does not produce live partial transcripts while the user speaks.
+The recorder requests 16 kHz mono WAV, but hardware may choose another valid
+sample rate; the downstream native decoder reads the WAV metadata.
+Capture for both microphone workflows is code-supported on Android, iOS, macOS,
+and Windows. It remains disabled on Linux with the current recorder plugin
+because its external-tool startup is not safe to expose without a stronger
+preflight; selected-file transcription is unchanged there. **Ask with voice**
+also requires a native direct-media audio model or an audio-capable projector
+and is unavailable on Web. These capability gates do not establish real-model
+behavior on every platform. The experimental llama.cpp GGUF voice path has
+engine-level Metal evidence on macOS, while current packaged microphone UI
+evidence is LiteRT-LM on macOS. Android, iOS, and Windows still require
+real-model/device evidence through the `chat-app-voice-question-smoke`
+test-matrix row before making a platform validation claim.
 
-The chat app's desktop catalog includes the validated Qwen3-ASR 0.6B Q8_0
-model/projector pair. Its immutable artifact revision, byte sizes, and SHA-256
-digests are pinned, and the native downloader verifies both files before the
-model can be selected.
+The voice-question path makes a best-effort attempt to delete its temporary WAV
+after reading it, but keeps the encoded audio bytes in the in-memory
+conversation history so later turns and regeneration preserve context. Those
+operations can reprocess the audio and consume additional memory. It remains
+generic audio-input chat and does not change the typed STT support matrix above.
+
+LiteRT-LM first initializes audio preprocessing on the selected backend, then
+transparently retries CPU if that executor is incompatible and remembers the
+working choice for the loaded model. For the validated Gemma 4 E2B bundle, GPU
+text/vision with CPU audio is the resolved path. This is bundle/runtime
+compatibility behavior, not a universal LiteRT-LM CPU-audio limitation.
+
+The chat app's native mobile-and-desktop catalog includes the Qwen3-ASR 0.6B
+Q8_0 model/projector pair. It remains excluded from the Web catalog. Its
+immutable artifact revision, byte sizes, and SHA-256 digests are pinned, and
+the native downloader verifies both files before the model can be selected.
 
 ## Known limits
 
@@ -145,10 +184,13 @@ model can be selected.
   diarization, or incremental audio frames in the current backend.
 - Native inference backend correctness and performance remain device dependent;
   establish a CPU baseline before claiming GPU support for a deployment.
-- The local real-model smoke has passed on macOS arm64 CPU. A separate
-  chat-app/manual smoke has passed on Metal. The redistributable fixture and
-  Linux, Windows, Android, and iOS validation remain tracked in
-  [issue #325](https://github.com/leehack/llamadart/issues/325).
+- The local real-model smoke has passed on macOS arm64 CPU, and a separate
+  chat-app/manual smoke has passed on Metal. The full chat-app
+  model/projector, microphone, and final-transcript flow has also passed on a
+  physical Pixel using CPU inference and in the iOS Simulator. A physical
+  iPhone and Windows remain unverified; Linux keeps selected-file STT but not
+  microphone capture. Web enablement is tracked separately in
+  [issue #329](https://github.com/leehack/llamadart/issues/329).
 - TTS is not exposed. llama.cpp's current Qwen3-TTS helper is experimental and
   requires a stable downstream native wrapper before it can support a public
   Dart `TextToSpeechEngine`.

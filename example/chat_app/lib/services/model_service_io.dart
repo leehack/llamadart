@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
@@ -10,6 +11,8 @@ import '../models/downloadable_model.dart';
 import 'model_service_base.dart';
 
 class ModelServiceIO implements ModelService {
+  static const int _integrityStampVersion = 1;
+  static const int _downloadProvenanceVersion = 2;
   static const String _hfToken = String.fromEnvironment('HF_TOKEN');
   static const bool _enableParallelRangeDownloads = bool.fromEnvironment(
     'LLAMADART_CHAT_PARALLEL_DOWNLOAD',
@@ -19,9 +22,17 @@ class ModelServiceIO implements ModelService {
   static const int _parallelMaxParts = 4;
 
   final Dio _dio = Dio();
+  final Future<String> Function(File file) _fileSha256;
   final Map<String, _VerifiedRemoteAsset> _verifiedRemoteAssets = {};
 
-  Map<String, Object> _requestHeaders({int? rangeStart}) {
+  ModelServiceIO({Future<String> Function(File file)? fileSha256})
+    : _fileSha256 = fileSha256 ?? _computeFileSha256;
+
+  static Future<String> _computeFileSha256(File file) async {
+    return (await sha256.bind(file.openRead()).first).toString();
+  }
+
+  Map<String, Object> _requestHeaders({int? rangeStart, String? ifRange}) {
     final headers = <String, Object>{};
     final token = _hfToken.trim();
     if (token.isNotEmpty) {
@@ -29,6 +40,9 @@ class ModelServiceIO implements ModelService {
     }
     if (rangeStart != null && rangeStart > 0) {
       headers['range'] = 'bytes=$rangeStart-';
+      if (ifRange != null && ifRange.isNotEmpty) {
+        headers['if-range'] = ifRange;
+      }
     }
     return headers;
   }
@@ -146,7 +160,7 @@ class ModelServiceIO implements ModelService {
         final source = modelRemoteSource;
         final modelSavePath = _assetPath(modelsDir, source);
         await _downloadFileWithResume(
-          url: source.url,
+          source: source,
           savePath: modelSavePath,
           cancelToken: cancelToken,
           onProgress: (downloadedBytes, totalBytes, resumed) {
@@ -170,7 +184,7 @@ class ModelServiceIO implements ModelService {
         final source = mmprojRemoteSource;
         final mmprojSavePath = _assetPath(modelsDir, source);
         await _downloadFileWithResume(
-          url: source.url,
+          source: source,
           savePath: mmprojSavePath,
           cancelToken: cancelToken,
           onProgress: (downloadedBytes, totalBytes, resumed) {
@@ -259,9 +273,18 @@ class ModelServiceIO implements ModelService {
     required ModelAssetRole role,
   }) async {
     final path = _assetPath(modelsDir, source);
+    if (source is RemoteModelAssetSource) {
+      await _discardStalePartial(path, source);
+    }
     final file = File(path);
     final partialFile = File('$path.download');
-    if (!await file.exists() || await partialFile.exists()) {
+    if (!await file.exists()) {
+      if (source is RemoteModelAssetSource) {
+        await _clearVerifiedRemoteAsset(path);
+      }
+      return false;
+    }
+    if (await partialFile.exists()) {
       return false;
     }
 
@@ -292,29 +315,90 @@ class ModelServiceIO implements ModelService {
     final stat = await file.stat();
     final expectedBytes = source.sizeBytes;
     if (expectedBytes != null && stat.size != expectedBytes) {
-      _verifiedRemoteAssets.remove(file.path);
+      await _clearVerifiedRemoteAsset(file.path);
       return false;
     }
 
     final cached = _verifiedRemoteAssets[file.path];
-    if (cached != null &&
-        cached.size == stat.size &&
-        cached.modified == stat.modified &&
-        cached.sha256 == expectedSha256) {
+    if (cached != null && cached.matches(stat, source, expectedSha256)) {
       return true;
     }
 
-    final actualSha256 = (await sha256.bind(file.openRead()).first).toString();
-    if (actualSha256 != expectedSha256) {
-      _verifiedRemoteAssets.remove(file.path);
+    final persisted = await _readVerifiedRemoteAsset(file.path);
+    if (persisted != null && persisted.matches(stat, source, expectedSha256)) {
+      _verifiedRemoteAssets[file.path] = persisted;
+      return true;
+    }
+
+    final String actualSha256;
+    final FileStat verifiedStat;
+    try {
+      actualSha256 = (await _fileSha256(file)).toLowerCase();
+      verifiedStat = await file.stat();
+    } on FileSystemException {
+      await _clearVerifiedRemoteAsset(file.path);
       return false;
     }
-    _verifiedRemoteAssets[file.path] = _VerifiedRemoteAsset(
-      size: stat.size,
-      modified: stat.modified,
+    if (!_sameFileState(stat, verifiedStat)) {
+      await _clearVerifiedRemoteAsset(file.path);
+      return false;
+    }
+    if (actualSha256 != expectedSha256) {
+      await _clearVerifiedRemoteAsset(file.path);
+      return false;
+    }
+    final verified = _VerifiedRemoteAsset(
+      sourceCacheKey: source.cacheKey,
+      size: verifiedStat.size,
+      modifiedMicros: verifiedStat.modified.microsecondsSinceEpoch,
+      changedMicros: verifiedStat.changed.microsecondsSinceEpoch,
       sha256: actualSha256,
     );
+    _verifiedRemoteAssets[file.path] = verified;
+    await _persistVerifiedRemoteAsset(file.path, verified);
     return true;
+  }
+
+  bool _sameFileState(FileStat first, FileStat second) {
+    return first.size == second.size &&
+        first.modified == second.modified &&
+        first.changed == second.changed;
+  }
+
+  File _integrityStampFile(String path) {
+    return File('$path.llamadart-integrity.json');
+  }
+
+  Future<_VerifiedRemoteAsset?> _readVerifiedRemoteAsset(String path) async {
+    final stamp = await _readJsonMap(_integrityStampFile(path));
+    if (stamp == null || stamp['version'] != _integrityStampVersion) {
+      return null;
+    }
+    try {
+      return _VerifiedRemoteAsset.fromJson(stamp);
+    } on Object {
+      return null;
+    }
+  }
+
+  Future<void> _persistVerifiedRemoteAsset(
+    String path,
+    _VerifiedRemoteAsset verified,
+  ) async {
+    try {
+      await _writeJsonAtomically(_integrityStampFile(path), {
+        'version': _integrityStampVersion,
+        ...verified.toJson(),
+      });
+    } catch (_) {
+      // The stamp is an optimization only. A future process can safely hash
+      // the artifact again if metadata cannot be persisted.
+    }
+  }
+
+  Future<void> _clearVerifiedRemoteAsset(String path) async {
+    _verifiedRemoteAssets.remove(path);
+    await _deleteIfExists(_integrityStampFile(path));
   }
 
   Future<void> _verifyDownloadedRemoteAsset(
@@ -332,7 +416,7 @@ class ModelServiceIO implements ModelService {
     if (await file.exists()) {
       await file.delete();
     }
-    _verifiedRemoteAssets.remove(file.path);
+    await _clearVerifiedRemoteAsset(file.path);
     throw StateError(
       'SHA-256 verification failed for ${source.displayName}. '
       'The incomplete download was discarded; retry the download.',
@@ -358,8 +442,133 @@ class ModelServiceIO implements ModelService {
     }
   }
 
+  File _downloadProvenanceFile(String path) {
+    return File('$path.download.source.json');
+  }
+
+  Future<_DownloadProvenance?> _discardStalePartial(
+    String savePath,
+    RemoteModelAssetSource source,
+  ) async {
+    final tempFile = File('$savePath.download');
+    final provenanceFile = _downloadProvenanceFile(savePath);
+    if (!await tempFile.exists()) {
+      await _deleteIfExists(provenanceFile);
+      return null;
+    }
+
+    final provenance = await _readDownloadProvenance(provenanceFile);
+    final partialLength = await tempFile.length();
+    if (provenance == null ||
+        !provenance.matchesSource(source) ||
+        provenance.partialIsInvalid(partialLength)) {
+      await tempFile.delete();
+      await _deleteIfExists(provenanceFile);
+      return null;
+    }
+    return provenance;
+  }
+
+  Future<_DownloadProvenance?> _readDownloadProvenance(File file) async {
+    final data = await _readJsonMap(file);
+    if (data == null || data['version'] != _downloadProvenanceVersion) {
+      return null;
+    }
+    try {
+      return _DownloadProvenance.fromJson(data);
+    } on Object {
+      return null;
+    }
+  }
+
+  Future<void> _writeDownloadProvenance(
+    String savePath,
+    _DownloadProvenance provenance,
+  ) async {
+    await _writeJsonAtomically(_downloadProvenanceFile(savePath), {
+      'version': _downloadProvenanceVersion,
+      ...provenance.toJson(),
+    });
+  }
+
+  Future<Map<String, Object?>?> _readJsonMap(File file) async {
+    try {
+      if (!await file.exists()) {
+        return null;
+      }
+      final decoded = jsonDecode(await file.readAsString());
+      if (decoded is! Map) {
+        return null;
+      }
+      return decoded.map(
+        (key, value) => MapEntry(key.toString(), value as Object?),
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<void> _writeJsonAtomically(
+    File destination,
+    Map<String, Object?> data,
+  ) async {
+    await destination.parent.create(recursive: true);
+    final temporary = File(
+      '${destination.path}.tmp.$pid.${DateTime.now().microsecondsSinceEpoch}',
+    );
+    try {
+      await temporary.writeAsString(jsonEncode(data), flush: true);
+      if (await destination.exists()) {
+        await destination.delete();
+      }
+      await temporary.rename(destination.path);
+    } finally {
+      await _deleteIfExists(temporary);
+    }
+  }
+
+  Future<void> _deleteIfExists(File file) async {
+    try {
+      if (await file.exists()) {
+        await file.delete();
+      }
+    } on FileSystemException {
+      // Cleanup is best effort. Callers still validate metadata before reuse.
+    }
+  }
+
   Future<void> _downloadFileWithResume({
-    required String url,
+    required RemoteModelAssetSource source,
+    required String savePath,
+    required CancelToken cancelToken,
+    required void Function(int downloadedBytes, int? totalBytes, bool resumed)
+    onProgress,
+  }) async {
+    final existingProvenance = await _discardStalePartial(savePath, source);
+    if (existingProvenance == null) {
+      await _writeDownloadProvenance(
+        savePath,
+        _DownloadProvenance.fromSource(source),
+      );
+    }
+    var completed = false;
+    try {
+      await _downloadFile(
+        source: source,
+        savePath: savePath,
+        cancelToken: cancelToken,
+        onProgress: onProgress,
+      );
+      completed = true;
+    } finally {
+      if (completed) {
+        await _deleteIfExists(_downloadProvenanceFile(savePath));
+      }
+    }
+  }
+
+  Future<void> _downloadFile({
+    required RemoteModelAssetSource source,
     required String savePath,
     required CancelToken cancelToken,
     required void Function(int downloadedBytes, int? totalBytes, bool resumed)
@@ -371,14 +580,30 @@ class ModelServiceIO implements ModelService {
     final canTryParallel =
         _enableParallelRangeDownloads && !await tempFile.exists();
     if (canTryParallel) {
-      final probe = await _probeRemoteFile(url: url, cancelToken: cancelToken);
+      final probe = await _probeRemoteFile(
+        url: source.url,
+        cancelToken: cancelToken,
+      );
       if (probe != null && probe.supportsRanges) {
         final totalBytes = probe.contentLength;
-        if (totalBytes != null && totalBytes >= _parallelThresholdBytes) {
+        final canBindRepresentation =
+            probe.validator != null ||
+            _hasCryptographicOrImmutableSafety(source);
+        if (totalBytes != null &&
+            totalBytes >= _parallelThresholdBytes &&
+            canBindRepresentation) {
+          await _writeDownloadProvenance(
+            savePath,
+            _DownloadProvenance.fromSource(source).withRepresentation(
+              validator: probe.validator,
+              totalBytes: totalBytes,
+            ),
+          );
           final completed = await _downloadFileInParallel(
-            url: url,
+            url: source.url,
             savePath: savePath,
             totalBytes: totalBytes,
+            validator: probe.validator,
             cancelToken: cancelToken,
             onProgress: onProgress,
           );
@@ -390,15 +615,30 @@ class ModelServiceIO implements ModelService {
     }
 
     while (true) {
-      final startByte = allowResume && await tempFile.exists()
+      final provenance = await _readDownloadProvenance(
+        _downloadProvenanceFile(savePath),
+      );
+      final candidateStartByte = allowResume && await tempFile.exists()
           ? await tempFile.length()
           : 0;
+      final canResume =
+          candidateStartByte > 0 &&
+          provenance != null &&
+          provenance.canAttemptResume(
+            source,
+            partialLength: candidateStartByte,
+          );
+      final startByte = canResume ? candidateStartByte : 0;
+      if (candidateStartByte > 0 && !canResume) {
+        await tempFile.delete();
+      }
       final headers = _requestHeaders(
         rangeStart: startByte > 0 ? startByte : null,
+        ifRange: startByte > 0 ? provenance?.validator?.value : null,
       );
 
       final response = await _dio.get<ResponseBody>(
-        url,
+        source.url,
         cancelToken: cancelToken,
         options: Options(
           responseType: ResponseType.stream,
@@ -412,13 +652,46 @@ class ModelServiceIO implements ModelService {
       if (statusCode == HttpStatus.requestedRangeNotSatisfiable &&
           startByte > 0 &&
           await tempFile.exists()) {
-        final finalFile = File(savePath);
-        if (await finalFile.exists()) {
-          await finalFile.delete();
+        final unsatisfiedTotal = _parseUnsatisfiedContentRangeTotal(
+          response.headers.value('content-range'),
+        );
+        final validatorMatches = _responseValidatorMatches(
+          response.headers,
+          provenance?.validator,
+        );
+        final hasIndependentCompletionProof =
+            provenance?.validator != null ||
+            (provenance?.expectedSha256?.isNotEmpty ?? false);
+        var canTrustCompletePartial =
+            unsatisfiedTotal == startByte &&
+            provenance != null &&
+            provenance.totalBytes == startByte &&
+            hasIndependentCompletionProof &&
+            provenance.canAttemptResume(source, partialLength: startByte) &&
+            validatorMatches;
+        final expectedSha256 = provenance?.expectedSha256;
+        if (canTrustCompletePartial &&
+            expectedSha256 != null &&
+            expectedSha256.isNotEmpty) {
+          canTrustCompletePartial =
+              (await _fileSha256(tempFile)).toLowerCase() == expectedSha256;
         }
-        await tempFile.rename(savePath);
-        onProgress(startByte, startByte, true);
-        return;
+        if (canTrustCompletePartial) {
+          final finalFile = File(savePath);
+          if (await finalFile.exists()) {
+            await finalFile.delete();
+          }
+          await tempFile.rename(savePath);
+          onProgress(startByte, startByte, true);
+          return;
+        }
+        await tempFile.delete();
+        await _writeDownloadProvenance(
+          savePath,
+          _DownloadProvenance.fromSource(source),
+        );
+        allowResume = false;
+        continue;
       }
 
       if (statusCode >= HttpStatus.badRequest) {
@@ -436,7 +709,25 @@ class ModelServiceIO implements ModelService {
           startByte > 0 &&
           statusCode == HttpStatus.partialContent &&
           contentRange != null &&
-          contentRange.start == startByte;
+          contentRange.start == startByte &&
+          _responseValidatorMatches(response.headers, provenance?.validator) &&
+          _responseTotalMatches(contentRange.total, provenance?.knownTotal);
+
+      if (startByte == 0) {
+        final responseTotal = _resolveTotalBytes(
+          headers: response.headers,
+          statusCode: statusCode,
+          startByte: 0,
+        );
+        final responseValidator = _preferredResponseValidator(response.headers);
+        await _writeDownloadProvenance(
+          savePath,
+          _DownloadProvenance.fromSource(source).withRepresentation(
+            validator: responseValidator,
+            totalBytes: responseTotal,
+          ),
+        );
+      }
 
       if (startByte > 0 && !canAppend) {
         if (await tempFile.exists()) {
@@ -444,6 +735,17 @@ class ModelServiceIO implements ModelService {
         }
 
         if (statusCode == HttpStatus.ok) {
+          await _writeDownloadProvenance(
+            savePath,
+            _DownloadProvenance.fromSource(source).withRepresentation(
+              validator: _preferredResponseValidator(response.headers),
+              totalBytes: _resolveTotalBytes(
+                headers: response.headers,
+                statusCode: statusCode,
+                startByte: 0,
+              ),
+            ),
+          );
           await _consumeResponseBody(
             tempFile: tempFile,
             finalPath: savePath,
@@ -457,6 +759,10 @@ class ModelServiceIO implements ModelService {
         }
 
         allowResume = false;
+        await _writeDownloadProvenance(
+          savePath,
+          _DownloadProvenance.fromSource(source),
+        );
         continue;
       }
 
@@ -550,6 +856,7 @@ class ModelServiceIO implements ModelService {
       return _RemoteFileProbe(
         contentLength: contentLength,
         supportsRanges: acceptRanges.contains('bytes'),
+        validator: _preferredResponseValidator(response.headers),
       );
     } catch (_) {
       return null;
@@ -560,6 +867,7 @@ class ModelServiceIO implements ModelService {
     required String url,
     required String savePath,
     required int totalBytes,
+    required _HttpRepresentationValidator? validator,
     required CancelToken cancelToken,
     required void Function(int downloadedBytes, int? totalBytes, bool resumed)
     onProgress,
@@ -585,6 +893,8 @@ class ModelServiceIO implements ModelService {
           _downloadRangePart(
             url: url,
             range: ranges[i],
+            totalBytes: totalBytes,
+            validator: validator,
             output: partFiles[i],
             cancelToken: cancelToken,
             onProgress: (received) {
@@ -637,12 +947,17 @@ class ModelServiceIO implements ModelService {
   Future<void> _downloadRangePart({
     required String url,
     required _ByteRange range,
+    required int totalBytes,
+    required _HttpRepresentationValidator? validator,
     required File output,
     required CancelToken cancelToken,
     required void Function(int receivedBytes) onProgress,
   }) async {
     final headers = _requestHeaders();
     headers['range'] = 'bytes=${range.start}-${range.end}';
+    if (validator != null) {
+      headers['if-range'] = validator.value;
+    }
 
     final response = await _dio.get<ResponseBody>(
       url,
@@ -673,7 +988,9 @@ class ModelServiceIO implements ModelService {
     );
     if (contentRange == null ||
         contentRange.start != range.start ||
-        contentRange.end > range.end) {
+        contentRange.end > range.end ||
+        contentRange.total != totalBytes ||
+        !_responseValidatorMatches(response.headers, validator)) {
       throw const _ParallelRangeUnsupportedException();
     }
 
@@ -812,6 +1129,72 @@ class ModelServiceIO implements ModelService {
     return contentLength;
   }
 
+  bool _hasCryptographicOrImmutableSafety(RemoteModelAssetSource source) {
+    final expectedSha256 = source.sha256?.trim();
+    if (expectedSha256 != null && expectedSha256.isNotEmpty) {
+      return true;
+    }
+    final uri = Uri.tryParse(source.url);
+    if (uri == null) {
+      return false;
+    }
+    final segments = uri.pathSegments;
+    final resolveIndex = segments.indexOf('resolve');
+    if (resolveIndex < 0 || resolveIndex + 1 >= segments.length) {
+      return false;
+    }
+    final revision = segments[resolveIndex + 1];
+    return RegExp(r'^[0-9a-fA-F]{40,64}$').hasMatch(revision);
+  }
+
+  _HttpRepresentationValidator? _preferredResponseValidator(Headers headers) {
+    final etag = headers.value(HttpHeaders.etagHeader)?.trim();
+    if (etag != null &&
+        etag.isNotEmpty &&
+        !etag.toUpperCase().startsWith('W/')) {
+      return _HttpRepresentationValidator(
+        kind: _HttpValidatorKind.strongEtag,
+        value: etag,
+      );
+    }
+    final lastModified = headers.value(HttpHeaders.lastModifiedHeader)?.trim();
+    if (lastModified != null && lastModified.isNotEmpty) {
+      return _HttpRepresentationValidator(
+        kind: _HttpValidatorKind.lastModified,
+        value: lastModified,
+      );
+    }
+    return null;
+  }
+
+  bool _responseValidatorMatches(
+    Headers headers,
+    _HttpRepresentationValidator? expected,
+  ) {
+    if (expected == null) {
+      return true;
+    }
+    final actual = switch (expected.kind) {
+      _HttpValidatorKind.strongEtag =>
+        headers.value(HttpHeaders.etagHeader)?.trim(),
+      _HttpValidatorKind.lastModified =>
+        headers.value(HttpHeaders.lastModifiedHeader)?.trim(),
+    };
+    return actual == expected.value;
+  }
+
+  bool _responseTotalMatches(int? actual, int? expected) {
+    return expected == null || actual == expected;
+  }
+
+  int? _parseUnsatisfiedContentRangeTotal(String? raw) {
+    if (raw == null || raw.isEmpty) {
+      return null;
+    }
+    final match = RegExp(r'^bytes\s+\*/(\d+)$').firstMatch(raw);
+    return match == null ? null : int.tryParse(match.group(1)!);
+  }
+
   _ContentRange? _parseContentRange(String? raw) {
     if (raw == null || raw.isEmpty) {
       return null;
@@ -853,7 +1236,7 @@ class ModelServiceIO implements ModelService {
     }
 
     final path = _assetPath(modelsDir, source);
-    _verifiedRemoteAssets.remove(path);
+    await _clearVerifiedRemoteAsset(path);
     final file = File(path);
     if (await file.exists()) {
       await file.delete();
@@ -863,6 +1246,8 @@ class ModelServiceIO implements ModelService {
     if (await tempFile.exists()) {
       await tempFile.delete();
     }
+
+    await _deleteIfExists(_downloadProvenanceFile(path));
 
     final legacyMeta = File('$path.meta');
     if (await legacyMeta.exists()) {
@@ -886,11 +1271,31 @@ class _ContentRange {
 class _RemoteFileProbe {
   final int? contentLength;
   final bool supportsRanges;
+  final _HttpRepresentationValidator? validator;
 
   const _RemoteFileProbe({
     required this.contentLength,
     required this.supportsRanges,
+    required this.validator,
   });
+}
+
+enum _HttpValidatorKind { strongEtag, lastModified }
+
+class _HttpRepresentationValidator {
+  final _HttpValidatorKind kind;
+  final String value;
+
+  const _HttpRepresentationValidator({required this.kind, required this.value});
+
+  factory _HttpRepresentationValidator.fromJson(Map<String, Object?> data) {
+    return _HttpRepresentationValidator(
+      kind: _HttpValidatorKind.values.byName(data['kind'] as String),
+      value: data['value'] as String,
+    );
+  }
+
+  Map<String, Object?> toJson() => {'kind': kind.name, 'value': value};
 }
 
 class _ByteRange {
@@ -907,15 +1312,154 @@ class _ParallelRangeUnsupportedException implements Exception {
 }
 
 class _VerifiedRemoteAsset {
+  final String sourceCacheKey;
   final int size;
-  final DateTime modified;
+  final int modifiedMicros;
+  final int changedMicros;
   final String sha256;
 
   const _VerifiedRemoteAsset({
+    required this.sourceCacheKey,
     required this.size,
-    required this.modified,
+    required this.modifiedMicros,
+    required this.changedMicros,
     required this.sha256,
   });
+
+  factory _VerifiedRemoteAsset.fromJson(Map<String, Object?> data) {
+    return _VerifiedRemoteAsset(
+      sourceCacheKey: data['sourceCacheKey'] as String,
+      size: data['size'] as int,
+      modifiedMicros: data['modifiedMicros'] as int,
+      changedMicros: data['changedMicros'] as int,
+      sha256: data['sha256'] as String,
+    );
+  }
+
+  bool matches(
+    FileStat stat,
+    RemoteModelAssetSource source,
+    String expectedSha256,
+  ) {
+    return sourceCacheKey == source.cacheKey &&
+        size == stat.size &&
+        modifiedMicros == stat.modified.microsecondsSinceEpoch &&
+        changedMicros == stat.changed.microsecondsSinceEpoch &&
+        sha256 == expectedSha256;
+  }
+
+  Map<String, Object?> toJson() => {
+    'sourceCacheKey': sourceCacheKey,
+    'size': size,
+    'modifiedMicros': modifiedMicros,
+    'changedMicros': changedMicros,
+    'sha256': sha256,
+  };
+}
+
+class _DownloadProvenance {
+  final String sourceCacheKey;
+  final String? expectedSha256;
+  final int? expectedSizeBytes;
+  final _HttpRepresentationValidator? validator;
+  final int? totalBytes;
+
+  const _DownloadProvenance({
+    required this.sourceCacheKey,
+    required this.expectedSha256,
+    required this.expectedSizeBytes,
+    required this.validator,
+    required this.totalBytes,
+  });
+
+  factory _DownloadProvenance.fromSource(RemoteModelAssetSource source) {
+    return _DownloadProvenance(
+      sourceCacheKey: source.cacheKey,
+      expectedSha256: source.sha256?.trim().toLowerCase(),
+      expectedSizeBytes: source.sizeBytes,
+      validator: null,
+      totalBytes: null,
+    );
+  }
+
+  factory _DownloadProvenance.fromJson(Map<String, Object?> data) {
+    return _DownloadProvenance(
+      sourceCacheKey: data['sourceCacheKey'] as String,
+      expectedSha256: data['expectedSha256'] as String?,
+      expectedSizeBytes: data['expectedSizeBytes'] as int?,
+      validator: data['validator'] is Map
+          ? _HttpRepresentationValidator.fromJson(
+              (data['validator'] as Map).map(
+                (key, value) => MapEntry(key.toString(), value as Object?),
+              ),
+            )
+          : null,
+      totalBytes: data['totalBytes'] as int?,
+    );
+  }
+
+  bool matchesSource(RemoteModelAssetSource source) {
+    final expected = _DownloadProvenance.fromSource(source);
+    return sourceCacheKey == expected.sourceCacheKey &&
+        expectedSha256 == expected.expectedSha256 &&
+        expectedSizeBytes == expected.expectedSizeBytes;
+  }
+
+  bool partialIsInvalid(int partialLength) {
+    final total = knownTotal;
+    return partialLength <= 0 || (total != null && partialLength > total);
+  }
+
+  bool canAttemptResume(
+    RemoteModelAssetSource source, {
+    required int partialLength,
+  }) {
+    if (!matchesSource(source) || partialIsInvalid(partialLength)) {
+      return false;
+    }
+    if (knownTotal == null) {
+      return false;
+    }
+    return validator != null ||
+        (expectedSha256?.isNotEmpty ?? false) ||
+        _isImmutableRevision(source.url);
+  }
+
+  int? get knownTotal => totalBytes ?? expectedSizeBytes;
+
+  _DownloadProvenance withRepresentation({
+    required _HttpRepresentationValidator? validator,
+    required int? totalBytes,
+  }) {
+    return _DownloadProvenance(
+      sourceCacheKey: sourceCacheKey,
+      expectedSha256: expectedSha256,
+      expectedSizeBytes: expectedSizeBytes,
+      validator: validator,
+      totalBytes: totalBytes,
+    );
+  }
+
+  static bool _isImmutableRevision(String url) {
+    final uri = Uri.tryParse(url);
+    if (uri == null) {
+      return false;
+    }
+    final segments = uri.pathSegments;
+    final resolveIndex = segments.indexOf('resolve');
+    if (resolveIndex < 0 || resolveIndex + 1 >= segments.length) {
+      return false;
+    }
+    return RegExp(r'^[0-9a-fA-F]{40,64}$').hasMatch(segments[resolveIndex + 1]);
+  }
+
+  Map<String, Object?> toJson() => {
+    'sourceCacheKey': sourceCacheKey,
+    'expectedSha256': expectedSha256,
+    'expectedSizeBytes': expectedSizeBytes,
+    'validator': validator?.toJson(),
+    'totalBytes': totalBytes,
+  };
 }
 
 class _ProgressDispatcher {

@@ -2,6 +2,7 @@
 library;
 
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
@@ -12,6 +13,46 @@ import 'package:test/test.dart';
 
 void main() {
   group('Gemma4Handler', () {
+    test('renders audio inside the user turn for audio-only templates', () {
+      const template = '''
+<|begin_of_text|>
+{% for message in messages %}
+<|turn>{{ message['role'] }}
+{% for item in message['content'] %}
+{% if item['type'] == 'audio' %}<|audio|>{% elif item['type'] == 'text' %}{{ item['text'] }}{% endif %}
+{% endfor %}<turn|>
+{% endfor %}
+{% if add_generation_prompt %}<|turn>model
+{% endif %}
+''';
+      final audioBytes = Uint8List.fromList(<int>[82, 73, 70, 70]);
+
+      final result = ChatTemplateEngine.render(
+        templateSource: template,
+        messages: <LlamaChatMessage>[
+          LlamaChatMessage.withContent(
+            role: LlamaChatRole.user,
+            content: <LlamaContentPart>[
+              LlamaAudioContent(bytes: audioBytes),
+              const LlamaTextContent('answer the recording'),
+            ],
+          ),
+        ],
+        metadata: const <String, String>{},
+      );
+
+      final userTurn = result.prompt.indexOf('<|turn>user');
+      final audioMarker = result.prompt.indexOf('<|audio|>');
+      final instruction = result.prompt.indexOf('answer the recording');
+      final assistantTurn = result.prompt.indexOf('<|turn>model');
+      expect(userTurn, greaterThanOrEqualTo(0));
+      expect(audioMarker, greaterThan(userTurn));
+      expect(instruction, greaterThan(audioMarker));
+      expect(assistantTurn, greaterThan(instruction));
+      expect(result.prompt.indexOf('<|audio|>'), audioMarker);
+      expect(result.prompt.lastIndexOf('<|audio|>'), audioMarker);
+    });
+
     test('renders thinking flag into Gemma 4 template context', () {
       const template =
           '{% if enable_thinking %}<|turn>system\n<|think|><turn|>\n{% endif %}'

@@ -564,7 +564,12 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
         return null;
       }
       if (!await metadataFile.exists()) {
-        return _recoverMetadataEntry(source, metadataFile, finalFile, options);
+        return await _recoverMetadataEntry(
+          source,
+          metadataFile,
+          finalFile,
+          options,
+        );
       }
     } on FileSystemException {
       return _recoverMetadataEntry(source, metadataFile, finalFile, options);
@@ -889,7 +894,7 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
           if (partMetadataFile != null) {
             await _deleteIfExists(partMetadataFile);
           }
-          return _downloadOnce(
+          return await _downloadOnce(
             source,
             options,
             uri,
@@ -912,7 +917,7 @@ class DefaultModelDownloadManager implements ModelDownloadManager {
         if (partMetadataFile != null) {
           await _deleteIfExists(partMetadataFile);
         }
-        return _downloadOnce(
+        return await _downloadOnce(
           source,
           options,
           uri,

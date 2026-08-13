@@ -40,6 +40,7 @@ class LiteRtLmService {
   int? _activeMaxNumImages;
   bool? _activeVisionEnabled;
   bool? _activeAudioEnabled;
+  String? _workingAudioBackend;
   int _nextModelHandle = 1;
   int _nextContextHandle = 1;
   int? _modelHandle;
@@ -83,6 +84,7 @@ class LiteRtLmService {
     _modelParams = params;
     _activeBackend = resolvedBackend;
     _activeSpeculativeDecoding = null;
+    _workingAudioBackend = null;
     _modelHandle = _nextModelHandle++;
     _contextHandle = null;
     _lastMetrics = null;
@@ -101,6 +103,7 @@ class LiteRtLmService {
     _modelParams = null;
     _activeBackend = null;
     _activeSpeculativeDecoding = null;
+    _workingAudioBackend = null;
     _modelHandle = null;
     _contextHandle = null;
     _lastMetrics = null;
@@ -517,6 +520,7 @@ class LiteRtLmService {
     _modelPath = null;
     _modelParams = null;
     _activeBackend = null;
+    _workingAudioBackend = null;
     _modelHandle = null;
     _contextHandle = null;
     _modelLoaded = false;
@@ -583,43 +587,75 @@ class LiteRtLmService {
     _activeMaxNumImages = null;
     _activeVisionEnabled = null;
     _activeAudioEnabled = null;
-    final client = _clientFactory();
     final responseThinkingTags = _responseThinkingTagsForModel(modelPath);
-    client.configureResponseThinkingTags(
-      startTag: responseThinkingTags.startTag,
-      endTag: responseThinkingTags.endTag,
-    );
-    try {
-      await client.initialize(
-        modelPath: modelPath,
-        backend: backend,
-        visionBackend: resolvedVisionEnabled
-            ? _mediaBackendName(backend)
-            : null,
-        audioBackend: resolvedAudioEnabled ? _mediaBackendName(backend) : null,
-        maxTokens: modelParams.contextSize,
-        maxNumImages: resolvedMaxNumImages,
-        cacheDir: _defaultCacheDir(),
-        speculativeDecoding: resolvedSpeculativeDecoding,
-        minLogLevel: _liteRtLmMinLogLevel(_logLevel),
-        activationDataType: modelParams.liteRtLmActivationDataType,
-        prefillChunkSize: modelParams.liteRtLmPrefillChunkSize,
-        parallelFileSectionLoading:
-            modelParams.liteRtLmParallelFileSectionLoading,
-        dispatchLibDir: modelParams.liteRtLmDispatchLibDir,
-        numberOfThreads: modelParams.numberOfThreads == 0
-            ? null
-            : modelParams.numberOfThreads,
+    final visionBackend = resolvedVisionEnabled
+        ? _visionBackendName(backend)
+        : null;
+    final requestedAudioBackend = resolvedAudioEnabled
+        ? (_workingAudioBackend ?? _visionBackendName(backend))
+        : null;
+
+    Future<LiteRtLmRuntimeClient> initializeClient(String? audioBackend) async {
+      final client = _clientFactory();
+      client.configureResponseThinkingTags(
+        startTag: responseThinkingTags.startTag,
+        endTag: responseThinkingTags.endTag,
       );
-    } catch (_) {
       try {
-        client.dispose();
+        await client.initialize(
+          modelPath: modelPath,
+          backend: backend,
+          visionBackend: visionBackend,
+          audioBackend: audioBackend,
+          maxTokens: modelParams.contextSize,
+          maxNumImages: resolvedMaxNumImages,
+          cacheDir: _defaultCacheDir(),
+          speculativeDecoding: resolvedSpeculativeDecoding,
+          minLogLevel: _liteRtLmMinLogLevel(_logLevel),
+          activationDataType: modelParams.liteRtLmActivationDataType,
+          prefillChunkSize: modelParams.liteRtLmPrefillChunkSize,
+          parallelFileSectionLoading:
+              modelParams.liteRtLmParallelFileSectionLoading,
+          dispatchLibDir: modelParams.liteRtLmDispatchLibDir,
+          numberOfThreads: modelParams.numberOfThreads == 0
+              ? null
+              : modelParams.numberOfThreads,
+        );
+        return client;
       } catch (_) {
-        // Preserve the initialization error reported by the runtime.
+        try {
+          client.dispose();
+        } catch (_) {
+          // Preserve the initialization error reported by the runtime.
+        }
+        rethrow;
       }
-      rethrow;
+    }
+
+    late LiteRtLmRuntimeClient client;
+    var resolvedAudioBackend = requestedAudioBackend;
+    try {
+      client = await initializeClient(requestedAudioBackend);
+    } catch (initialError, initialStackTrace) {
+      final canRetryWithCpuAudio =
+          resolvedAudioEnabled &&
+          requestedAudioBackend != null &&
+          requestedAudioBackend != liteRtLmCpuBackend;
+      if (!canRetryWithCpuAudio) {
+        rethrow;
+      }
+
+      try {
+        resolvedAudioBackend = liteRtLmCpuBackend;
+        client = await initializeClient(resolvedAudioBackend);
+      } catch (_) {
+        Error.throwWithStackTrace(initialError, initialStackTrace);
+      }
     }
     _client = client;
+    if (resolvedAudioEnabled) {
+      _workingAudioBackend = resolvedAudioBackend;
+    }
     _activeSpeculativeDecoding = resolvedSpeculativeDecoding;
     _activeMaxNumImages = resolvedMaxNumImages;
     _activeVisionEnabled = resolvedVisionEnabled;
@@ -717,7 +753,7 @@ class LiteRtLmService {
         .isNotEmpty;
   }
 
-  String _mediaBackendName(String backend) {
+  String _visionBackendName(String backend) {
     if (backend == liteRtLmNpuBackend) {
       return liteRtLmCpuBackend;
     }

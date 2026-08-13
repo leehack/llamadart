@@ -104,6 +104,8 @@ void main() {
 
     expect(find.text('Audio'), findsOneWidget);
     expect(find.text('Speech-to-text'), findsOneWidget);
+    expect(find.text('Native platforms'), findsOneWidget);
+    expect(find.byIcon(Icons.devices_other_rounded), findsOneWidget);
     expect(find.text('Use Text Only'), findsNothing);
     expect(find.text('Download Missing Assets'), findsOneWidget);
   });
@@ -418,6 +420,25 @@ void main() {
     );
     expect(button.onPressed, isNull);
   });
+
+  testWidgets('native-only cards explain Web unavailability', (tester) async {
+    await _pumpCard(
+      tester,
+      model: _asrModel(),
+      isWeb: true,
+      isDownloaded: false,
+      isAvailableOnCurrentPlatform: false,
+      onSelect: () {},
+      onDownload: () {},
+    );
+
+    expect(find.text('Native platforms'), findsOneWidget);
+    expect(find.text('Available on native platforms'), findsOneWidget);
+    final button = tester.widget<OutlinedButton>(
+      find.widgetWithText(OutlinedButton, 'Available on native platforms'),
+    );
+    expect(button.onPressed, isNull);
+  });
 }
 
 Future<void> _pumpCard(
@@ -509,6 +530,7 @@ DownloadableModel _asrModel() {
     mmprojUrl: 'https://example.com/asr-mmproj.gguf',
     mmprojFilename: 'asr-mmproj.gguf',
     sizeBytes: 20,
+    availability: ModelAvailability.native,
     supportsAudio: true,
     supportsSpeechToText: true,
   );

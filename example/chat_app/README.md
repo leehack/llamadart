@@ -11,8 +11,12 @@ A Flutter chat application demonstrating real-world usage of llamadart with UI.
 - 📋 **Clipboard attachments**: Paste screenshots or copied image/audio files
   with `Cmd/Ctrl+V`, or use **Paste attachment** from the attachment menu on
   touch devices. Plain-text paste continues to work normally.
-- 🎙️ **Whole-file transcription**: Compatible native GGUF ASR models expose a
-  separate **Transcribe Audio** action backed by `SpeechToTextEngine`.
+- 🎙️ **Whole-file transcription**: Compatible native GGUF ASR models can
+  transcribe a selected file or capture a foreground microphone recording,
+  then transcribe it after **Stop & transcribe**.
+- 🗣️ **Ask with voice**: Compatible native direct-media models or GGUF models
+  with an audio-capable projector can receive a short microphone recording as
+  ordinary multimodal chat and answer the request after **Stop & ask**.
 - 📱 Material Design 3 UI
 - ⚙️ Model configuration (path, runtime-detected backend selection, GPU layers, context size)
 - 🧩 Capability badges per model (Tools / Thinking / Vision / Audio / Video)
@@ -70,8 +74,9 @@ flutter test --run-skipped -t local-only \
 2. Select one of the focused pre-configured models:
    - Cross-platform: FunctionGemma 270M, Qwen3.5 0.8B, Gemma 4 E2B
      GGUF, Gemma 4 E2B LiteRT-LM, and Gemma 4 E4B GGUF.
-   - Native desktop: Qwen3-ASR 0.6B, Gemma 4 12B, Gemma 4 26B A4B,
-     Gemma 4 31B, and Qwen3.6 35B A3B.
+   - Native mobile and desktop: Qwen3-ASR 0.6B.
+   - Native desktop: Gemma 4 12B, Gemma 4 26B A4B, Gemma 4 31B, and
+     Qwen3.6 35B A3B.
    - Built-in GGUF chat presets use [Unsloth distributions](https://huggingface.co/unsloth).
      The ASR preset uses llama.cpp's `ggml-org` Qwen3-ASR pair, and the
      LiteRT-LM preset uses `litert-community`; every card identifies its source.
@@ -90,15 +95,61 @@ flutter test --run-skipped -t local-only \
      a separate action, with an explicit combined option in the confirmation.
 3. Tap the **Download** icon. The app uses `Dio` to download the model directly to your device's app-specific cache directory. Additional model downloads enter a FIFO queue and start one at a time. A persistent progress pill remains in the app header when settings is closed; tap it to reopen download details.
 4. Once downloaded, tap **Select** to load the model.
-   - The native-desktop Qwen3-ASR preset exposes both **Attach Audio** and
-     **Transcribe Audio**. The latter accepts WAV, MP3, or FLAC files and
-     requires the matching projector; live microphone input, Web, LiteRT-LM
-     STT, and TTS are not enabled yet. Its pinned downloads are SHA-256 verified.
-   - Gemma 4 E2B is included as a GGUF + `mmproj` bundle. In the current
-     native `llama.cpp` mtmd path used here, that projector exposes image,
-     audio, and video input. Audio remains experimental upstream; start with
-     short mono clips for the most reliable results. Web keeps audio
-     runtime-gated until the loaded bridge reports support.
+   - The native Qwen3-ASR preset exposes **Attach Audio** and **Transcribe
+     Audio** on mobile and desktop builds. On Android, iOS, macOS, and Windows
+     it also shows a microphone button. File transcription accepts WAV, MP3,
+     or FLAC. The microphone records a temporary mono WAV for up to five
+     minutes; **Stop & transcribe** finalizes it, runs whole-file STT, and
+     deletes it.
+     Capture is foreground-only and cancelling discards the temporary file.
+     Live partial transcription, Web, LiteRT-LM STT, and TTS are not enabled
+     yet. Web support is tracked in
+     [issue #329](https://github.com/leehack/llamadart/issues/329). All STT
+     actions require the matching projector, and the preset's pinned downloads
+     are SHA-256 verified.
+   - Microphone capture is enabled on Android, iOS, macOS, and Windows when a
+     compatible ASR model is active. It remains hidden on Linux because the
+     recorder plugin can report startup before its required external tools are
+     ready; selected-file transcription still works there.
+   - The complete Qwen3-ASR model/projector, microphone, and final-transcript
+     flow has passed on a physical Pixel using CPU inference and in the iOS
+     Simulator. This is not yet physical-iPhone or Windows validation.
+   - The native Gemma 4 E2B presets expose **Ask with voice** when either the
+     LiteRT-LM platform profile declares direct audio input or the matching
+     GGUF projector is loaded and reports audio support. It records for at most
+     30 seconds; **Stop & ask** sends the encoded WAV bytes through normal
+     multimodal chat and asks the model to answer the spoken request. This is not
+     `SpeechToTextEngine`: it has no transcript, timestamp, confidence, or live
+     partial-text contract. Qwen3-ASR continues to use the separate five-minute
+     **Stop & transcribe** flow, and takes precedence for models declared as
+     ASR profiles.
+   - The voice-question UI is code-supported on Android, iOS, macOS, and
+     Windows when a native direct-media bundle or audio-capable projector and
+     microphone recorder are available. Linux recording and Web are excluded.
+     Automated tests cover capability gating and lifecycle behavior. Current
+     packaged microphone UI evidence is LiteRT-LM on macOS; the GGUF path has
+     engine-level Metal evidence only. Android, iOS, and Windows still require
+     real-model/device evidence before being described as validated.
+     See the `chat-app-voice-question-smoke` row in
+     `tool/testing/test_matrix.dart`.
+   - After **Stop & ask**, the app makes a best-effort attempt to delete the
+     temporary WAV file. Its encoded bytes remain in the in-memory conversation
+     history so later turns and response regeneration can retain the audio
+     context; those turns can therefore reprocess the recording and use
+     additional memory.
+   - LiteRT-LM first initializes audio preprocessing on the selected backend,
+     then transparently retries CPU if that executor is incompatible and
+     remembers the working choice for the loaded model. For the validated
+     Gemma 4 E2B bundle, GPU text/vision with CPU audio is the resolved path;
+     this is not a universal LiteRT-LM CPU-audio limitation.
+   - Gemma 4 E2B is included as a GGUF + `mmproj` bundle. In the current native
+     `llama.cpp` mtmd path used here, that projector exposes image, audio, and
+     video input, so it uses the same **Ask with voice** interaction. Audio
+     remains experimental upstream; start with short mono clips for the most
+     reliable results. The GGUF audio-answer path has current engine-level
+     real-model evidence on macOS; microphone UI/device validation on Android,
+     iOS, and Windows remains outstanding. Web keeps audio runtime-gated until
+     the loaded bridge reports support.
    - LiteRT-LM `.litertlm` presets, when present, use the same model library
      flow. The example `pubspec.yaml` enables the `litert_lm` native runtime
      family for supported native targets, while Web builds load web-compatible

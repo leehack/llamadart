@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:test/test.dart';
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
@@ -51,6 +53,37 @@ void main() {
         'role': 'user',
         'content': [
           {'type': 'text', 'text': 'Part 1Part 2'},
+        ],
+      });
+    });
+
+    test('normalizes template-facing audio without changing wire JSON', () {
+      final message = LlamaChatMessage.withContent(
+        role: LlamaChatRole.user,
+        content: <LlamaContentPart>[
+          LlamaAudioContent(bytes: Uint8List.fromList(<int>[82, 73, 70, 70])),
+          const LlamaTextContent('answer the recording'),
+        ],
+      );
+
+      expect(message.toJson(), <String, dynamic>{
+        'role': 'user',
+        'content': <Map<String, dynamic>>[
+          <String, dynamic>{
+            'type': 'input_audio',
+            'input_audio': <String, dynamic>{
+              'data': 'UklGRg==',
+              'format': 'audio',
+            },
+          },
+          <String, dynamic>{'type': 'text', 'text': 'answer the recording'},
+        ],
+      });
+      expect(message.toJsonMultimodal(), <String, dynamic>{
+        'role': 'user',
+        'content': <Map<String, dynamic>>[
+          <String, dynamic>{'type': 'audio'},
+          <String, dynamic>{'type': 'text', 'text': 'answer the recording'},
         ],
       });
     });

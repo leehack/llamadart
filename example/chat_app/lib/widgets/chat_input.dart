@@ -205,11 +205,15 @@ class _ChatInputState extends State<ChatInput> {
     return Consumer<ChatProvider>(
       builder: (context, provider, _) {
         final isGenerating = provider.isGenerating;
+        final hasActiveAudioRecording = provider.hasActiveAudioRecording;
         final isReady = provider.isReady;
         final stagedParts = provider.stagedParts;
         final hasAttachments = stagedParts.isNotEmpty;
         final canSubmit =
-            !isGenerating && isReady && (_hasDraftText || hasAttachments);
+            !isGenerating &&
+            !hasActiveAudioRecording &&
+            isReady &&
+            (_hasDraftText || hasAttachments);
         final sendActionLabel = isGenerating
             ? 'Stop generation'
             : 'Send message';
@@ -222,6 +226,14 @@ class _ChatInputState extends State<ChatInput> {
         final usesMetaPaste =
             platform == TargetPlatform.macOS || platform == TargetPlatform.iOS;
         final safeBottom = MediaQuery.paddingOf(context).bottom;
+        final microphoneActionLabel =
+            provider.settings.modelSupportsSpeechToText
+            ? 'Record for transcription.'
+            : 'Ask with voice. Records up to 30 seconds.';
+        final VoidCallback? startAudioRecordingAction =
+            provider.canStartAudioRecording
+            ? () => unawaited(provider.startAudioRecording())
+            : null;
         final shortcutBindings = <ShortcutActivator, VoidCallback>{
           const SingleActivator(
             LogicalKeyboardKey.enter,
@@ -296,20 +308,48 @@ class _ChatInputState extends State<ChatInput> {
                       _buildFunctionCallingRow(context, provider),
                       const SizedBox(height: 10),
                     ],
+                    if (hasActiveAudioRecording) ...[
+                      _buildAudioRecordingRow(context, provider),
+                      const SizedBox(height: 8),
+                    ],
                     if (hasAttachments)
                       _buildStagedPartsStrip(context, provider, stagedParts),
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
-                        if (provider.canAttachMedia)
+                        if (provider.canAttachMedia && !hasActiveAudioRecording)
                           _buildAttachmentMenu(context, provider),
+                        if (provider.supportsMicrophoneRecording)
+                          Semantics(
+                            label: microphoneActionLabel,
+                            button: true,
+                            enabled: provider.canStartAudioRecording,
+                            onTap: startAudioRecordingAction,
+                            excludeSemantics: true,
+                            child: IconButton(
+                              key: const ValueKey<String>(
+                                'record_audio_button',
+                              ),
+                              tooltip:
+                                  provider.settings.modelSupportsSpeechToText
+                                  ? 'Record for transcription'
+                                  : 'Ask with voice',
+                              onPressed: startAudioRecordingAction,
+                              icon: Icon(
+                                Icons.mic_none_rounded,
+                                color: provider.canStartAudioRecording
+                                    ? colorScheme.primary
+                                    : null,
+                              ),
+                            ),
+                          ),
                         Expanded(
                           child: CallbackShortcuts(
                             bindings: shortcutBindings,
                             child: TextField(
                               controller: widget.controller,
                               focusNode: widget.focusNode,
-                              enabled: isReady,
+                              enabled: isReady && !hasActiveAudioRecording,
                               maxLines: 6,
                               minLines: 1,
                               textCapitalization: TextCapitalization.sentences,
@@ -589,6 +629,152 @@ class _ChatInputState extends State<ChatInput> {
           ),
       ],
     );
+  }
+
+  Widget _buildAudioRecordingRow(BuildContext context, ChatProvider provider) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final state = provider.audioRecordingState;
+    final isRecording = state == ChatAudioRecordingState.recording;
+    final isStarting = state == ChatAudioRecordingState.starting;
+    final isVoiceQuestion =
+        provider.audioRecordingPurpose ==
+        ChatAudioRecordingPurpose.voiceQuestion;
+    final maximumDuration = isVoiceQuestion
+        ? ChatProvider.maxVoiceQuestionRecordingDuration
+        : ChatProvider.maxAudioRecordingDuration;
+    final status = switch (state) {
+      ChatAudioRecordingState.starting => 'Requesting microphone access…',
+      ChatAudioRecordingState.recording =>
+        isVoiceQuestion
+            ? 'Recording voice question '
+                  '${_formatRecordingDuration(provider.audioRecordingElapsed)} / '
+                  '${_formatRecordingDuration(maximumDuration)}'
+            : 'Recording for transcription '
+                  '${_formatRecordingDuration(provider.audioRecordingElapsed)} / '
+                  '${_formatRecordingDuration(maximumDuration)}',
+      ChatAudioRecordingState.stopping =>
+        isVoiceQuestion ? 'Preparing voice question…' : 'Finishing recording…',
+      ChatAudioRecordingState.cancelling => 'Discarding recording…',
+      ChatAudioRecordingState.idle => '',
+    };
+    final semanticStatus = switch (state) {
+      ChatAudioRecordingState.starting =>
+        isVoiceQuestion
+            ? 'Requesting microphone access for a voice question'
+            : 'Requesting microphone access for transcription',
+      ChatAudioRecordingState.recording =>
+        isVoiceQuestion
+            ? 'Recording voice question. Maximum 30 seconds.'
+            : 'Microphone recording for transcription in progress',
+      ChatAudioRecordingState.stopping =>
+        isVoiceQuestion
+            ? 'Preparing recorded voice question'
+            : 'Finishing microphone recording',
+      ChatAudioRecordingState.cancelling => 'Discarding microphone recording',
+      ChatAudioRecordingState.idle => '',
+    };
+
+    return Semantics(
+      liveRegion: true,
+      label: semanticStatus,
+      child: Container(
+        key: const ValueKey<String>('audio_recording_status'),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: colorScheme.errorContainer.withValues(alpha: 0.55),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            Widget statusIndicator() => isRecording
+                ? Icon(
+                    Icons.fiber_manual_record_rounded,
+                    size: 16,
+                    color: colorScheme.error,
+                  )
+                : SizedBox.square(
+                    dimension: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: colorScheme.error,
+                    ),
+                  );
+
+            Widget statusText() => Text(
+              status,
+              style: TextStyle(
+                color: colorScheme.onErrorContainer,
+                fontWeight: FontWeight.w600,
+              ),
+            );
+
+            final actions = <Widget>[
+              if (isStarting || isRecording)
+                TextButton(
+                  key: const ValueKey<String>('discard_audio_recording_button'),
+                  onPressed: () => unawaited(provider.cancelAudioRecording()),
+                  child: const Text('Discard'),
+                ),
+              if (isRecording)
+                FilledButton.tonalIcon(
+                  key: ValueKey<String>(
+                    isVoiceQuestion
+                        ? 'stop_and_ask_audio_button'
+                        : 'stop_and_transcribe_audio_button',
+                  ),
+                  onPressed: () => unawaited(
+                    isVoiceQuestion
+                        ? provider.stopAudioRecordingAndAsk()
+                        : provider.stopAudioRecordingAndTranscribe(),
+                  ),
+                  icon: const Icon(Icons.stop_rounded, size: 18),
+                  label: Text(
+                    isVoiceQuestion ? 'Stop & ask' : 'Stop & transcribe',
+                  ),
+                ),
+            ];
+
+            if (constraints.maxWidth < 520) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      statusIndicator(),
+                      const SizedBox(width: 8),
+                      Expanded(child: statusText()),
+                    ],
+                  ),
+                  if (actions.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: Wrap(spacing: 4, children: actions),
+                    ),
+                  ],
+                ],
+              );
+            }
+
+            return Row(
+              children: [
+                statusIndicator(),
+                const SizedBox(width: 8),
+                Expanded(child: statusText()),
+                if (actions.isNotEmpty) Wrap(spacing: 4, children: actions),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  String _formatRecordingDuration(Duration duration) {
+    final totalSeconds = duration.inSeconds;
+    final minutes = totalSeconds ~/ 60;
+    final seconds = totalSeconds % 60;
+    return '$minutes:${seconds.toString().padLeft(2, '0')}';
   }
 
   Widget _buildPartPreview(LlamaContentPart part) {

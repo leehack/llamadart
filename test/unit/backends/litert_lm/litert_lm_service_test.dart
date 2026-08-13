@@ -832,6 +832,285 @@ void main() {
   );
 
   test(
+    'retries renamed audio bundles with only the audio executor on CPU',
+    () async {
+      final gpuAudioClient = _FakeLiteRtLmRuntimeClient(
+        initializeError: StateError('GPU audio executor is incompatible'),
+      );
+      final cpuAudioClient = _FakeLiteRtLmRuntimeClient();
+      final recreatedCpuAudioClient = _FakeLiteRtLmRuntimeClient();
+      final clients = <_FakeLiteRtLmRuntimeClient>[
+        gpuAudioClient,
+        cpuAudioClient,
+        recreatedCpuAudioClient,
+      ];
+      var nextClient = 0;
+      final service = LiteRtLmService(
+        clientFactory: () => clients[nextClient++],
+      );
+      final renamedModelFile = File('${tempDir.path}/renamed-bundle.litertlm');
+      await renamedModelFile.writeAsString('fake model');
+      final imageFile = File('${tempDir.path}/gpu-media-image.png');
+      await imageFile.writeAsBytes(const <int>[
+        0x89,
+        0x50,
+        0x4e,
+        0x47,
+        0x0d,
+        0x0a,
+        0x1a,
+        0x0a,
+      ]);
+
+      if (!service.getAvailableBackendInfo().contains('gpu')) {
+        service.dispose();
+        return;
+      }
+
+      try {
+        final modelHandle = await service.loadModel(
+          renamedModelFile.path,
+          const ModelParams(liteRtLmBackend: LiteRtLmBackendPreference.gpu),
+        );
+        final contextHandle = service.createContext(
+          modelHandle,
+          const ModelParams(liteRtLmBackend: LiteRtLmBackendPreference.gpu),
+        );
+
+        final chunksFuture = service.generateChat(contextHandle, [
+          LlamaChatMessage.withContent(
+            role: LlamaChatRole.user,
+            content: [
+              const LlamaTextContent('Answer the spoken request.'),
+              LlamaImageContent(path: imageFile.path),
+              LlamaAudioContent(
+                bytes: Uint8List.fromList(const <int>[1, 2, 3]),
+              ),
+            ],
+          ),
+        ], const GenerationParams(maxTokens: 8)).toList();
+
+        await cpuAudioClient.generateStarted.future;
+        cpuAudioClient.generated.add('ok');
+        await cpuAudioClient.generated.close();
+
+        expect(await chunksFuture, [utf8.encode('ok')]);
+        expect(gpuAudioClient.lastBackend, 'gpu');
+        expect(gpuAudioClient.lastVisionBackend, 'gpu');
+        expect(gpuAudioClient.lastAudioBackend, 'gpu');
+        expect(gpuAudioClient.disposeCount, 1);
+        expect(cpuAudioClient.lastBackend, 'gpu');
+        expect(cpuAudioClient.lastVisionBackend, 'gpu');
+        expect(cpuAudioClient.lastAudioBackend, 'cpu');
+
+        final recreatedChunksFuture = service.generateChat(contextHandle, [
+          LlamaChatMessage.withContent(
+            role: LlamaChatRole.user,
+            content: [
+              const LlamaTextContent('Compare the images and audio.'),
+              LlamaImageContent(path: imageFile.path),
+              LlamaImageContent(path: imageFile.path),
+              LlamaAudioContent(
+                bytes: Uint8List.fromList(const <int>[1, 2, 3]),
+              ),
+            ],
+          ),
+        ], const GenerationParams(maxTokens: 8)).toList();
+
+        await recreatedCpuAudioClient.generateStarted.future;
+        recreatedCpuAudioClient.generated.add('again');
+        await recreatedCpuAudioClient.generated.close();
+
+        expect(await recreatedChunksFuture, [utf8.encode('again')]);
+        expect(cpuAudioClient.disposeCount, 1);
+        expect(recreatedCpuAudioClient.lastBackend, 'gpu');
+        expect(recreatedCpuAudioClient.lastVisionBackend, 'gpu');
+        expect(recreatedCpuAudioClient.lastAudioBackend, 'cpu');
+        expect(recreatedCpuAudioClient.lastMaxNumImages, 2);
+        expect(nextClient, 3);
+      } finally {
+        service.dispose();
+      }
+    },
+  );
+
+  test('forgets learned CPU audio fallback when another model loads', () async {
+    final gpuAudioClient = _FakeLiteRtLmRuntimeClient(
+      initializeError: StateError('GPU audio executor is incompatible'),
+    );
+    final cpuAudioClient = _FakeLiteRtLmRuntimeClient();
+    final nextModelGpuAudioClient = _FakeLiteRtLmRuntimeClient();
+    final clients = <_FakeLiteRtLmRuntimeClient>[
+      gpuAudioClient,
+      cpuAudioClient,
+      nextModelGpuAudioClient,
+    ];
+    var nextClient = 0;
+    final service = LiteRtLmService(clientFactory: () => clients[nextClient++]);
+    final nextModelFile = File('${tempDir.path}/next-model.litertlm');
+    await nextModelFile.writeAsString('different fake model');
+
+    if (!service.getAvailableBackendInfo().contains('gpu')) {
+      service.dispose();
+      return;
+    }
+
+    try {
+      final firstModelHandle = await service.loadModel(
+        modelFile.path,
+        const ModelParams(liteRtLmBackend: LiteRtLmBackendPreference.gpu),
+      );
+      final firstContextHandle = service.createContext(
+        firstModelHandle,
+        const ModelParams(liteRtLmBackend: LiteRtLmBackendPreference.gpu),
+      );
+
+      final firstChunksFuture = service.generateChat(firstContextHandle, [
+        LlamaChatMessage.withContent(
+          role: LlamaChatRole.user,
+          content: [
+            const LlamaTextContent('Transcribe this.'),
+            LlamaAudioContent(bytes: Uint8List.fromList(const <int>[1, 2, 3])),
+          ],
+        ),
+      ], const GenerationParams(maxTokens: 8)).toList();
+
+      await cpuAudioClient.generateStarted.future;
+      cpuAudioClient.generated.add('first');
+      await cpuAudioClient.generated.close();
+      expect(await firstChunksFuture, [utf8.encode('first')]);
+      expect(cpuAudioClient.lastAudioBackend, 'cpu');
+
+      final nextModelHandle = await service.loadModel(
+        nextModelFile.path,
+        const ModelParams(liteRtLmBackend: LiteRtLmBackendPreference.gpu),
+      );
+      final nextContextHandle = service.createContext(
+        nextModelHandle,
+        const ModelParams(liteRtLmBackend: LiteRtLmBackendPreference.gpu),
+      );
+      final nextChunksFuture = service.generateChat(nextContextHandle, [
+        LlamaChatMessage.withContent(
+          role: LlamaChatRole.user,
+          content: [
+            const LlamaTextContent('Transcribe this too.'),
+            LlamaAudioContent(bytes: Uint8List.fromList(const <int>[4, 5, 6])),
+          ],
+        ),
+      ], const GenerationParams(maxTokens: 8)).toList();
+
+      await nextModelGpuAudioClient.generateStarted.future;
+      nextModelGpuAudioClient.generated.add('second');
+      await nextModelGpuAudioClient.generated.close();
+
+      expect(await nextChunksFuture, [utf8.encode('second')]);
+      expect(nextModelGpuAudioClient.lastAudioBackend, 'gpu');
+      expect(nextClient, 3);
+    } finally {
+      service.dispose();
+    }
+  });
+
+  test('does not force unrelated same-name bundles to CPU audio', () async {
+    final fakeClient = _FakeLiteRtLmRuntimeClient();
+    final service = LiteRtLmService(clientFactory: () => fakeClient);
+    final sameNameModelFile = File('${tempDir.path}/gemma-4-E2B-it.litertlm');
+    await sameNameModelFile.writeAsString('unrelated fake model');
+
+    if (!service.getAvailableBackendInfo().contains('gpu')) {
+      service.dispose();
+      return;
+    }
+
+    try {
+      final modelHandle = await service.loadModel(
+        sameNameModelFile.path,
+        const ModelParams(liteRtLmBackend: LiteRtLmBackendPreference.gpu),
+      );
+      final contextHandle = service.createContext(
+        modelHandle,
+        const ModelParams(liteRtLmBackend: LiteRtLmBackendPreference.gpu),
+      );
+
+      final chunksFuture = service.generateChat(contextHandle, [
+        LlamaChatMessage.withContent(
+          role: LlamaChatRole.user,
+          content: [
+            const LlamaTextContent('Answer the spoken request.'),
+            LlamaAudioContent(bytes: Uint8List.fromList(const <int>[1, 2, 3])),
+          ],
+        ),
+      ], const GenerationParams(maxTokens: 8)).toList();
+
+      await fakeClient.generateStarted.future;
+      fakeClient.generated.add('ok');
+      await fakeClient.generated.close();
+
+      expect(await chunksFuture, [utf8.encode('ok')]);
+      expect(fakeClient.lastBackend, 'gpu');
+      expect(fakeClient.lastVisionBackend, isNull);
+      expect(fakeClient.lastAudioBackend, 'gpu');
+    } finally {
+      service.dispose();
+    }
+  });
+
+  test('preserves the primary error when CPU audio fallback fails', () async {
+    final primaryError = StateError('primary GPU audio failure');
+    final gpuAudioClient = _FakeLiteRtLmRuntimeClient(
+      initializeError: primaryError,
+    );
+    final cpuAudioClient = _FakeLiteRtLmRuntimeClient(
+      initializeError: StateError('CPU audio fallback failure'),
+    );
+    final clients = <_FakeLiteRtLmRuntimeClient>[
+      gpuAudioClient,
+      cpuAudioClient,
+    ];
+    var nextClient = 0;
+    final service = LiteRtLmService(clientFactory: () => clients[nextClient++]);
+
+    if (!service.getAvailableBackendInfo().contains('gpu')) {
+      service.dispose();
+      return;
+    }
+
+    try {
+      final modelHandle = await service.loadModel(
+        modelFile.path,
+        const ModelParams(liteRtLmBackend: LiteRtLmBackendPreference.gpu),
+      );
+      final contextHandle = service.createContext(
+        modelHandle,
+        const ModelParams(liteRtLmBackend: LiteRtLmBackendPreference.gpu),
+      );
+
+      await expectLater(
+        service.generateChat(contextHandle, [
+          LlamaChatMessage.withContent(
+            role: LlamaChatRole.user,
+            content: [
+              const LlamaTextContent('Answer the spoken request.'),
+              LlamaAudioContent(
+                bytes: Uint8List.fromList(const <int>[1, 2, 3]),
+              ),
+            ],
+          ),
+        ], const GenerationParams(maxTokens: 8)).drain<void>(),
+        throwsA(same(primaryError)),
+      );
+
+      expect(gpuAudioClient.lastAudioBackend, 'gpu');
+      expect(gpuAudioClient.disposeCount, 1);
+      expect(cpuAudioClient.lastAudioBackend, 'cpu');
+      expect(cpuAudioClient.disposeCount, 1);
+      expect(nextClient, 2);
+    } finally {
+      service.dispose();
+    }
+  });
+
+  test(
     'rejects unsupported native chat media shapes before runtime init',
     () async {
       final fakeClient = _FakeLiteRtLmRuntimeClient();

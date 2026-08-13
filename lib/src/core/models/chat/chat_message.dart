@@ -224,8 +224,8 @@ class LlamaChatMessage {
   ///
   /// Some templates (e.g. SmolVLM) require `content` to be a list of
   /// `{type: 'text', text: '...'}` or `{type: 'image'}` objects.
-  /// This method also normalizes OpenAI's `image_url` type to `image`
-  /// for HuggingFace Jinja template compatibility.
+  /// This method also normalizes OpenAI's `image_url` and `input_audio` types
+  /// to the `image` and `audio` shapes used by HuggingFace Jinja templates.
   Map<String, dynamic> toJsonMultimodal() {
     final json = toJson();
     final content = json['content'];
@@ -236,10 +236,15 @@ class LlamaChatMessage {
         {'type': 'text', 'text': content},
       ];
     } else if (content is List) {
-      // Normalize image_url → image for template compatibility
+      // Normalize OpenAI media types for HuggingFace template compatibility.
       json['content'] = content.map((part) {
-        if (part is Map<String, dynamic> && part['type'] == 'image_url') {
-          return {'type': 'image'};
+        if (part is Map<String, dynamic>) {
+          switch (part['type']) {
+            case 'image_url':
+              return {'type': 'image'};
+            case 'input_audio':
+              return {'type': 'audio'};
+          }
         }
         return part;
       }).toList();
