@@ -1656,6 +1656,19 @@ void main() {
 
     expect(LlamaCppService.resolveBackendModuleDirectory(), isNull);
   });
+
+  test('Apple wrapper lookup includes the embedded framework binary', () {
+    if (!Platform.isMacOS) {
+      return;
+    }
+
+    final candidates = LlamaCppService()
+        .debugLlamadartWrapperLibraryCandidatesForTesting();
+    expect(
+      candidates,
+      contains(endsWith(path.join('llamadart.framework', 'llamadart'))),
+    );
+  });
 }
 
 void _createWindowsBundleMarkerFiles(

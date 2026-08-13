@@ -241,6 +241,45 @@ void main() {
       }
     });
 
+    test('preserves text-to-speech error categories', () async {
+      final cases = <(Object, WorkerErrorKind)>[
+        (
+          LlamaAudioFormatException('Invalid speaker audio', 'wav'),
+          WorkerErrorKind.audioFormat,
+        ),
+        (
+          LlamaTextToSpeechException('Synthesis failed', 'native'),
+          WorkerErrorKind.textToSpeech,
+        ),
+        (
+          LlamaSpeechException('Speech failed', 'generic'),
+          WorkerErrorKind.speech,
+        ),
+      ];
+
+      for (final (exception, expectedKind) in cases) {
+        final worker = await _startWorkerInCurrentIsolate(
+          _ThrowingTextToSpeechService(exception),
+        );
+        try {
+          final response = await _sendRequest(
+            worker.sendPort,
+            (sendPort) => TextToSpeechSynthesizeRequest(
+              2,
+              3,
+              const BackendTextToSpeechRequest(text: 'Hello.'),
+              sendPort,
+            ),
+          );
+          expect(response, isA<ErrorResponse>());
+          expect((response as ErrorResponse).kind, expectedKind);
+          expect(response.message, isNot(contains('LlamaException:')));
+        } finally {
+          await _disposeWorker(worker);
+        }
+      }
+    });
+
     test('waits for active generation before freeing native handles', () async {
       final service = _BlockingLlamaCppService();
       final worker = await _startWorkerInCurrentIsolate(service);
@@ -577,6 +616,31 @@ class _BlockingTextToSpeechService extends LlamaCppService {
     if (!cancelObserved.isCompleted) {
       cancelObserved.complete();
     }
+  }
+
+  @override
+  void dispose() {}
+}
+
+class _ThrowingTextToSpeechService extends LlamaCppService {
+  _ThrowingTextToSpeechService(this.exception);
+
+  final Object exception;
+
+  @override
+  void initializeBackend() {}
+
+  @override
+  void setLogLevel(LlamaLogLevel level) {}
+
+  @override
+  Future<BackendTextToSpeechResult> synthesizeTextToSpeech(
+    int contextHandle,
+    int mmContextHandle,
+    BackendTextToSpeechRequest request, {
+    void Function(BackendTextToSpeechProgress progress)? onProgress,
+  }) async {
+    throw exception;
   }
 
   @override

@@ -343,6 +343,25 @@ void main() {
       },
     );
 
+    test('preserves speech error subtypes from the worker', () async {
+      await expectLater(
+        backend.synthesizeTextToSpeech(
+          22,
+          33,
+          const BackendTextToSpeechRequest(text: 'audio-format-error'),
+        ),
+        throwsA(isA<LlamaAudioFormatException>()),
+      );
+      await expectLater(
+        backend.synthesizeTextToSpeech(
+          22,
+          33,
+          const BackendTextToSpeechRequest(text: 'tts-error'),
+        ),
+        throwsA(isA<LlamaTextToSpeechException>()),
+      );
+    });
+
     test('chat template and lora methods map responses and errors', () async {
       expect(
         await backend.applyChatTemplate(1, const <Map<String, dynamic>>[]),
@@ -558,7 +577,21 @@ class _FakeWorkerHarness {
           if (!textToSpeechStarted.isCompleted) {
             textToSpeechStarted.complete();
           }
-          if (holdTextToSpeech) {
+          if (message.request.text == 'audio-format-error') {
+            message.sendPort.send(
+              ErrorResponse(
+                'speaker audio is invalid',
+                kind: WorkerErrorKind.audioFormat,
+              ),
+            );
+          } else if (message.request.text == 'tts-error') {
+            message.sendPort.send(
+              ErrorResponse(
+                'synthesis failed',
+                kind: WorkerErrorKind.textToSpeech,
+              ),
+            );
+          } else if (holdTextToSpeech) {
             _heldTextToSpeech = message;
           } else {
             _sendTextToSpeechResult(message);

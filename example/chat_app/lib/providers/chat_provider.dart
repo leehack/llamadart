@@ -3140,6 +3140,7 @@ class ChatProvider extends ChangeNotifier {
           (_activeTextToSpeechOperationId == null && ownsActiveDone)) {
         _activeTextToSpeechOperationId = null;
         _isSynthesizingSpeech = false;
+        _textToSpeechProgress = null;
         if (_activeGenerationOperationId == null &&
             _activeVoiceQuestionOperationId == null &&
             !_isTranscribing) {

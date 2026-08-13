@@ -589,8 +589,14 @@ enum WorkerErrorKind {
   /// The engine was not in a state that permits the operation.
   state,
 
-  /// Dedicated speech processing failed.
+  /// Generic speech recognition or processing failed.
   speech,
+
+  /// Speech audio did not satisfy the input format contract.
+  audioFormat,
+
+  /// Text-to-speech synthesis failed.
+  textToSpeech,
 }
 
 /// Response containing an error message and category.

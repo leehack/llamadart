@@ -92,6 +92,10 @@ class NativeLlamaBackend
       case WorkerErrorKind.state:
         return LlamaStateException(response.message);
       case WorkerErrorKind.speech:
+        return LlamaSpeechException(response.message);
+      case WorkerErrorKind.audioFormat:
+        return LlamaAudioFormatException(response.message);
+      case WorkerErrorKind.textToSpeech:
         return LlamaTextToSpeechException(response.message);
       case WorkerErrorKind.generic:
         const exceptionPrefix = 'Exception: ';

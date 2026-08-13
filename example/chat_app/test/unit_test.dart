@@ -751,6 +751,7 @@ void main() {
 
       expect(completed, isTrue);
       expect(ttsProvider.isSynthesizingSpeech, isFalse);
+      expect(ttsProvider.textToSpeechProgress, isNull);
       expect(ttsProvider.textToSpeechError, isNull);
       expect(ttsProvider.textToSpeechResult?.samples, isNotEmpty);
       expect(ttsProvider.textToSpeechResult?.sampleRateHz, 24000);

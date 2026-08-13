@@ -29,6 +29,12 @@ ErrorResponse _toErrorResponse(Object error) {
   if (error is LlamaStateException) {
     return ErrorResponse(messageFor(error), kind: WorkerErrorKind.state);
   }
+  if (error is LlamaAudioFormatException) {
+    return ErrorResponse(messageFor(error), kind: WorkerErrorKind.audioFormat);
+  }
+  if (error is LlamaTextToSpeechException) {
+    return ErrorResponse(messageFor(error), kind: WorkerErrorKind.textToSpeech);
+  }
   if (error is LlamaSpeechException) {
     return ErrorResponse(messageFor(error), kind: WorkerErrorKind.speech);
   }

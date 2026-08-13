@@ -3474,7 +3474,18 @@ class LlamaCppService {
       // Hook asset naming can expose wrapper helper as `llamadart_wrapper.dll`.
       candidates.add('llamadart_wrapper.dll');
     }
+    if (Platform.isMacOS || Platform.isIOS) {
+      // Flutter Apple apps embed the native asset as a framework rather than
+      // as a bare libllamadart.dylib. Opening the framework binary directly
+      // makes dynamically discovered wrapper ABIs visible to FFI.
+      candidates.add(path.join('llamadart.framework', 'llamadart'));
+    }
     return candidates;
+  }
+
+  /// Returns wrapper-library lookup candidates for VM regression tests.
+  List<String> debugLlamadartWrapperLibraryCandidatesForTesting() {
+    return _llamadartWrapperLibraryCandidates();
   }
 
   RegExp _backendLibraryPattern(String backend) {
@@ -8520,7 +8531,7 @@ class LlamaCppService {
     final speakerPath = request.speakerAudioPath;
     if (speakerBytes == null && speakerPath != null) {
       try {
-        speakerBytes = File(speakerPath).readAsBytesSync();
+        speakerBytes = await File(speakerPath).readAsBytes();
       } catch (error) {
         malloc.free(text);
         if (language != nullptr) malloc.free(language);
