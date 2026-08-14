@@ -272,6 +272,13 @@ void main() {
   test(
     'build hook bundles Apple native assets without companion packages',
     () async {
+      final liteRtLmBinary = File(
+        path.join(iosDeviceLitertBundleDir.path, 'LiteRtLm'),
+      );
+      if (!Platform.isWindows) {
+        final result = await Process.run('chmod', ['a-w', liteRtLmBinary.path]);
+        expect(result.exitCode, 0, reason: '${result.stderr}');
+      }
       await testCodeBuildHook(
         mainMethod: build_hook.main,
         targetOS: OS.iOS,
@@ -304,6 +311,15 @@ void main() {
           );
 
           final outputDir = input.outputDirectory.toFilePath();
+          if (!Platform.isWindows) {
+            final emittedLiteRtLm = codeAssets.singleWhere(
+              (asset) => path.basename(asset.file!.toFilePath()) == 'LiteRtLm',
+            );
+            final mode = FileStat.statSync(
+              emittedLiteRtLm.file!.toFilePath(),
+            ).mode;
+            expect(mode & 0x80, isNonZero);
+          }
           expect(
             Directory(path.join(outputDir, 'llamadart_bin')).existsSync(),
             isTrue,
@@ -797,11 +813,16 @@ const List<String> _androidLiteRtLibraries = [
   'libwebgpu_dawn.so',
 ];
 
-const List<String> _iosLiteRtLibraries = ['LiteRtLm', 'CLiteRTLM'];
+const List<String> _iosLiteRtLibraries = [
+  'LiteRtLm',
+  'CLiteRTLM',
+  'GemmaModelConstraintProvider',
+];
 
 const List<String> _iosLiteRtAssetNames = [
   'litert_lm_LiteRtLm',
   'litert_lm_CLiteRTLM',
+  'litert_lm_GemmaModelConstraintProvider',
 ];
 
 const List<String> _macosArm64LiteRtLibraries = [

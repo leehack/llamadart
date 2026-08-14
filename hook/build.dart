@@ -80,12 +80,20 @@ const _litertLmBundleSpecs = <_LiteRtLmBundleSpec>[
   _LiteRtLmBundleSpec(
     'ios-arm64',
     sha256: '1247ae3ed7f4b704be67412ebca234d11797d8f2317030f4d080bacde9311f0a',
-    requiredLibraries: {'LiteRtLm', 'CLiteRTLM'},
+    requiredLibraries: {
+      'LiteRtLm',
+      'CLiteRTLM',
+      'GemmaModelConstraintProvider',
+    },
   ),
   _LiteRtLmBundleSpec(
     'ios-arm64-sim',
     sha256: 'b9ec4b4de9712bebf02998363ab58d727a9dcb48503f74432a50f1f8018ac20e',
-    requiredLibraries: {'LiteRtLm', 'CLiteRTLM'},
+    requiredLibraries: {
+      'LiteRtLm',
+      'CLiteRTLM',
+      'GemmaModelConstraintProvider',
+    },
   ),
   _LiteRtLmBundleSpec(
     'macos-arm64',
@@ -732,6 +740,9 @@ Future<void> _emitLiteRtLmAssets({
     }
     final destinationPath = path.join(reportDirPath, fileName);
     await File(sourcePath).copy(destinationPath);
+    if (code.targetOS == OS.iOS) {
+      await _makeOwnerWritableForAppleStrip(File(destinationPath), log: log);
+    }
     final assetName = _dedupeAssetName(
       _liteRtLmAssetName(fileName),
       usedAssetNames,
@@ -749,6 +760,20 @@ Future<void> _emitLiteRtLmAssets({
       '`package:$_packageName/$assetName`.',
     );
   }
+}
+
+Future<void> _makeOwnerWritableForAppleStrip(
+  File file, {
+  required Logger log,
+}) async {
+  final result = await Process.run('chmod', ['u+w', file.path]);
+  if (result.exitCode != 0) {
+    throw Exception(
+      'Could not make iOS native asset writable for Xcode strip: '
+      '${file.path}. ${result.stderr}',
+    );
+  }
+  log.fine('Made iOS native asset owner-writable: ${file.path}.');
 }
 
 _LiteRtLmBundleSpec? _liteRtLmBundleSpecForCode(CodeConfig code) {
