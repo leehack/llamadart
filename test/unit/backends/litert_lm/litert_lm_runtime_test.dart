@@ -18,6 +18,63 @@ void main() {
     expect(client.supportsAsrBridge, isFalse);
   });
 
+  test('ASR config is validated before loading the native runtime', () {
+    final client = LiteRtLmRuntimeClient(
+      libraryPath: '/missing/libLiteRtLm.so',
+    );
+    addTearDown(client.dispose);
+
+    LiteRtLmAsrRuntimeConfig config({
+      String modelPath = 'model.tflite',
+      String tokenizerPath = 'tokenizer.json',
+      int numberOfThreads = 4,
+      Duration maxBufferedAudio = const Duration(seconds: 30),
+      double overlapRatio = 0.4,
+      LiteRtLmAsrModelPreset modelPreset = LiteRtLmAsrModelPreset.moonshineTiny,
+    }) => LiteRtLmAsrRuntimeConfig(
+      modelPath: modelPath,
+      tokenizerPath: tokenizerPath,
+      modelPreset: modelPreset,
+      numberOfThreads: numberOfThreads,
+      maxBufferedAudio: maxBufferedAudio,
+      overlapRatio: overlapRatio,
+    );
+
+    for (final invalid in <(LiteRtLmAsrRuntimeConfig, String)>[
+      (config(modelPath: ' '), 'modelPath'),
+      (config(tokenizerPath: ' '), 'tokenizerPath'),
+      (config(numberOfThreads: 0), 'numberOfThreads'),
+      (config(numberOfThreads: 0x80000000), 'numberOfThreads'),
+      (config(maxBufferedAudio: Duration.zero), 'maxBufferedAudio'),
+      (
+        config(maxBufferedAudio: const Duration(milliseconds: 0x80000000)),
+        'maxBufferedAudio',
+      ),
+      (
+        config(
+          modelPreset: LiteRtLmAsrModelPreset.whisperTiny,
+          maxBufferedAudio: const Duration(seconds: 29),
+        ),
+        'maxBufferedAudio',
+      ),
+      (config(overlapRatio: double.nan), 'overlapRatio'),
+      (config(overlapRatio: double.infinity), 'overlapRatio'),
+      (config(overlapRatio: -0.1), 'overlapRatio'),
+      (config(overlapRatio: 1), 'overlapRatio'),
+    ]) {
+      expect(
+        () => client.createAsrSession(invalid.$1),
+        throwsA(
+          isA<ArgumentError>().having(
+            (error) => error.name,
+            'name',
+            invalid.$2,
+          ),
+        ),
+      );
+    }
+  });
+
   test('LiteRtLmRuntimeMetrics serializes runtime counters', () {
     const metrics = LiteRtLmRuntimeMetrics(
       inputTokens: 12,

@@ -504,6 +504,7 @@ class LiteRtLmRuntimeClient {
   /// The current bridge accepts mono 16 kHz float PCM. Inference calls block;
   /// high-level clients should own this session from a worker isolate.
   LiteRtLmAsrRuntimeSession createAsrSession(LiteRtLmAsrRuntimeConfig config) {
+    _validateLiteRtLmAsrRuntimeConfig(config);
     _ensureLibrariesLoaded();
     return _NativeLiteRtLmAsrRuntimeSession.create(_bindings!._library, config);
   }
@@ -2320,6 +2321,60 @@ final class _LiteRtLmAsrResult extends Struct {
   external int isFinal;
 }
 
+void _validateLiteRtLmAsrRuntimeConfig(LiteRtLmAsrRuntimeConfig runtimeConfig) {
+  const maxInt32 = 0x7fffffff;
+  if (runtimeConfig.modelPath.trim().isEmpty) {
+    throw ArgumentError.value(
+      runtimeConfig.modelPath,
+      'modelPath',
+      'must not be empty',
+    );
+  }
+  if (runtimeConfig.tokenizerPath.trim().isEmpty) {
+    throw ArgumentError.value(
+      runtimeConfig.tokenizerPath,
+      'tokenizerPath',
+      'must not be empty',
+    );
+  }
+  if (runtimeConfig.numberOfThreads <= 0 ||
+      runtimeConfig.numberOfThreads > maxInt32) {
+    throw ArgumentError.value(
+      runtimeConfig.numberOfThreads,
+      'numberOfThreads',
+      'must be in the range [1, $maxInt32]',
+    );
+  }
+  final maxBufferedMilliseconds = runtimeConfig.maxBufferedAudio.inMilliseconds;
+  final minimumBufferedAudio = _asrInputWindow(runtimeConfig.modelPreset);
+  if (runtimeConfig.maxBufferedAudio < minimumBufferedAudio ||
+      maxBufferedMilliseconds > maxInt32) {
+    throw ArgumentError.value(
+      runtimeConfig.maxBufferedAudio,
+      'maxBufferedAudio',
+      'must be between $minimumBufferedAudio and '
+          'Duration(milliseconds: $maxInt32)',
+    );
+  }
+  if (!runtimeConfig.overlapRatio.isFinite ||
+      runtimeConfig.overlapRatio < 0 ||
+      runtimeConfig.overlapRatio >= 1) {
+    throw ArgumentError.value(
+      runtimeConfig.overlapRatio,
+      'overlapRatio',
+      'must be finite and in the range [0, 1)',
+    );
+  }
+}
+
+Duration _asrInputWindow(LiteRtLmAsrModelPreset preset) => switch (preset) {
+  LiteRtLmAsrModelPreset.whisperTiny => const Duration(seconds: 30),
+  LiteRtLmAsrModelPreset.parakeetTdt0_6bV3 ||
+  LiteRtLmAsrModelPreset.parakeetCtc0_6b ||
+  LiteRtLmAsrModelPreset.moonshineTiny ||
+  LiteRtLmAsrModelPreset.qwen3Asr0_6b => const Duration(seconds: 5),
+};
+
 class _NativeLiteRtLmAsrRuntimeSession implements LiteRtLmAsrRuntimeSession {
   _NativeLiteRtLmAsrRuntimeSession._(this._bindings, this._session);
 
@@ -2330,42 +2385,6 @@ class _NativeLiteRtLmAsrRuntimeSession implements LiteRtLmAsrRuntimeSession {
     DynamicLibrary library,
     LiteRtLmAsrRuntimeConfig runtimeConfig,
   ) {
-    if (runtimeConfig.modelPath.trim().isEmpty) {
-      throw ArgumentError.value(
-        runtimeConfig.modelPath,
-        'modelPath',
-        'must not be empty',
-      );
-    }
-    if (runtimeConfig.tokenizerPath.trim().isEmpty) {
-      throw ArgumentError.value(
-        runtimeConfig.tokenizerPath,
-        'tokenizerPath',
-        'must not be empty',
-      );
-    }
-    if (runtimeConfig.numberOfThreads <= 0) {
-      throw ArgumentError.value(
-        runtimeConfig.numberOfThreads,
-        'numberOfThreads',
-        'must be positive',
-      );
-    }
-    if (runtimeConfig.maxBufferedAudio <= Duration.zero) {
-      throw ArgumentError.value(
-        runtimeConfig.maxBufferedAudio,
-        'maxBufferedAudio',
-        'must be positive',
-      );
-    }
-    if (runtimeConfig.overlapRatio < 0 || runtimeConfig.overlapRatio >= 1) {
-      throw ArgumentError.value(
-        runtimeConfig.overlapRatio,
-        'overlapRatio',
-        'must be in the range [0, 1)',
-      );
-    }
-
     final bindings = _LiteRtLmAsrBindings(library);
     try {
       bindings.validateCompatibility();

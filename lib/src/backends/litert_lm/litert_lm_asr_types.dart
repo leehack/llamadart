@@ -43,10 +43,13 @@ class LiteRtLmAsrRuntimeConfig {
   /// Requested accelerator.
   final LiteRtLmAsrBackend backend;
 
-  /// Native CPU worker count.
+  /// Native CPU worker count. Must fit a positive signed 32-bit integer.
   final int numberOfThreads;
 
   /// Maximum queued audio before native push backpressure is reported.
+  ///
+  /// This must fit a signed 32-bit millisecond value and be at least one
+  /// inference window for [modelPreset].
   final Duration maxBufferedAudio;
 
   /// Fraction of each inference window retained for transcript reconciliation.
