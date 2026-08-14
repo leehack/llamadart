@@ -208,6 +208,22 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'Speech API, native audio routing, transcript normalization, or chat-app transcription changes.',
   ),
   TestMatrixRow(
+    id: 'litert-lm-asr-smoke',
+    tier: 'targeted',
+    mode: 'local-only',
+    covers:
+        'dedicated native LiteRT-LM ASR bridge discovery, bounded PCM push, '
+        'window processing, finalization, and expected real-model transcript',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario '
+        'litert-lm-asr-smoke --model-path <model.tflite> '
+        '--tokenizer-path <tokenizer.json> --audio-path <fixture.wav> '
+        '--model-preset moonshine-tiny --expect "<expected transcript>"',
+    useWhen:
+        'LiteRT-LM ASR bridge, runtime sessions, native pins, or streaming '
+        'speech work. This CPU-only engine row does not establish microphone UI.',
+  ),
+  TestMatrixRow(
     id: 'text-to-speech-smoke',
     tier: 'targeted',
     mode: 'local-only',

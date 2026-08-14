@@ -18,6 +18,7 @@ void main() {
       expect(result.stdout, contains('--ngram-token-max <n>'));
       expect(result.stdout, contains('--allow-any-response'));
       expect(result.stdout, contains('GGUF_AUDIO_EXPECTED_TEXT'));
+      expect(result.stdout, contains('LLAMADART_LITERT_LM_LIBRARY_PATH'));
       expect(
         result.stdout,
         contains('defaults to the resolved benchmark prompt'),
@@ -33,6 +34,7 @@ void main() {
       expect(result.stdout, contains('gguf-chat-features-smoke'));
       expect(result.stdout, contains('gguf-audio-chat-smoke'));
       expect(result.stdout, contains('speech-to-text-smoke'));
+      expect(result.stdout, contains('litert-lm-asr-smoke'));
       expect(result.stdout, contains('llama-cpp-speculative-benchmark'));
       expect(result.stdout, contains('llama-cpp-chat-template-smoke'));
       expect(result.stdout, contains('litert-lm-chat-features-smoke'));
@@ -365,6 +367,50 @@ void main() {
 
       expect(result.exitCode, 64);
       expect(result.stderr, contains('a nonempty --expect'));
+    });
+
+    test('dry-runs dedicated LiteRT-LM ASR with exact inputs', () async {
+      final result = await runLocalE2e(const [
+        '--scenario',
+        'litert-lm-asr-smoke',
+        '--model-path',
+        'models/moonshine.tflite',
+        '--tokenizer-path',
+        'models/tokenizer.json',
+        '--audio-path',
+        'test/fixtures/speech.wav',
+        '--model-preset',
+        'moonshine-tiny',
+        '--expect',
+        'Known transcript.',
+        '--dry-run',
+      ], projectRoot: '/repo');
+
+      expect(result.exitCode, 0);
+      expect(result.stdout, contains('litert-lm-asr-smoke'));
+      expect(result.stdout, contains('tool/litert_lm_asr_smoke.dart'));
+      expect(result.stdout, contains('models/moonshine.tflite'));
+      expect(result.stdout, contains('models/tokenizer.json'));
+      expect(result.stdout, contains('test/fixtures/speech.wav'));
+      expect(result.stdout, contains('moonshine-tiny'));
+      expect(result.stdout, contains("'Known transcript.'"));
+    });
+
+    test('requires all dedicated LiteRT-LM ASR inputs', () async {
+      final result = await runLocalE2e(const [
+        '--scenario',
+        'litert-lm-asr-smoke',
+        '--model-path',
+        'models/moonshine.tflite',
+        '--audio-path',
+        'test/fixtures/speech.wav',
+        '--expect',
+        'Known transcript.',
+        '--dry-run',
+      ], projectRoot: '/repo');
+
+      expect(result.exitCode, 64);
+      expect(result.stderr, contains('--tokenizer-path'));
     });
 
     test('dry-runs typed text-to-speech with model and projector', () async {

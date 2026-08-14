@@ -9,6 +9,10 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Added experimental CPU-only dedicated LiteRT-LM v0.16 ASR runtime sessions
+  with bounded PCM input and confirmed/unconfirmed transcript updates. This is
+  a low-level native API and is not yet a `SpeechToTextEngine` backend.
+
 - Improved Flutter chat example model downloads with bounded retries for
   transient network failures, safe resume after truncated responses, and a
   distinct integrity-verification state after transfer reaches 100%.

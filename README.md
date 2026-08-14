@@ -30,6 +30,8 @@ models through LiteRT-LM.
   persistence, and runtime diagnostics where the active backend supports them.
 - Experimental typed whole-file speech recognition on native llama.cpp through
   `SpeechToTextEngine`, with explicit capability and cancellation contracts.
+- Experimental CPU-only dedicated LiteRT-LM ASR runtime sessions for bounded
+  16 kHz PCM input and confirmed/unconfirmed transcript updates.
 - Experimental typed Qwen3-TTS synthesis on native llama.cpp through
   `TextToSpeechEngine`, returning complete PCM with WAV encoding.
 

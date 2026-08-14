@@ -71,6 +71,8 @@ class LocalE2eRunContext {
     required this.port,
     required this.python,
     required this.modelPath,
+    required this.tokenizerPath,
+    required this.modelPreset,
     required this.draftModelPath,
     required this.mmprojPath,
     required this.imagePath,
@@ -101,6 +103,8 @@ class LocalE2eRunContext {
   final int port;
   final String python;
   final String? modelPath;
+  final String? tokenizerPath;
+  final String modelPreset;
   final String? draftModelPath;
   final String? mmprojPath;
   final String? imagePath;
@@ -299,6 +303,29 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
               'LLAMADART_STT_EXPECTED_TEXT': context.expect,
           },
           description: 'Typed speech-to-text real-model smoke',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
+      name: 'litert-lm-asr-smoke',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description:
+          'Run the dedicated LiteRT-LM ASR session API against a known PCM16 fixture.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'dart',
+          arguments: [
+            'run',
+            'tool/litert_lm_asr_smoke.dart',
+            context.modelPath!,
+            context.tokenizerPath!,
+            context.audioPath!,
+            context.modelPreset,
+            context.expect,
+          ],
+          description: 'Dedicated LiteRT-LM ASR real-model smoke',
         ),
       ],
     ),
@@ -790,6 +817,7 @@ Future<LocalE2eResult> runLocalE2e(
   const audioPathScenarios = <String>{
     'gguf-audio-chat-smoke',
     'speech-to-text-smoke',
+    'litert-lm-asr-smoke',
     'litert-lm-chat-features-smoke',
   };
   if (parsed.audioPath != null && !audioPathScenarios.contains(scenario.name)) {
@@ -809,6 +837,19 @@ Future<LocalE2eResult> runLocalE2e(
       stderr:
           '--model-path, --mmproj-path, --audio-path, and a nonempty --expect '
           'are required for speech-to-text-smoke.\n',
+    );
+  }
+  if (scenario.name == 'litert-lm-asr-smoke' &&
+      (parsed.modelPath == null ||
+          parsed.tokenizerPath == null ||
+          parsed.audioPath == null ||
+          !parsed.expectProvided ||
+          parsed.expect.trim().isEmpty)) {
+    return const LocalE2eResult(
+      64,
+      stderr:
+          '--model-path, --tokenizer-path, --audio-path, and a nonempty '
+          '--expect are required for litert-lm-asr-smoke.\n',
     );
   }
   if (scenario.name == 'text-to-speech-smoke' &&
@@ -864,6 +905,8 @@ Future<LocalE2eResult> runLocalE2e(
     port: parsed.port,
     python: parsed.pythonProvided ? parsed.python : _defaultPython(root),
     modelPath: parsed.modelPath,
+    tokenizerPath: parsed.tokenizerPath,
+    modelPreset: parsed.modelPreset,
     draftModelPath: parsed.draftModelPath,
     mmprojPath: parsed.mmprojPath,
     imagePath: parsed.imagePath,
@@ -1076,6 +1119,8 @@ Options:
   --port <port>                  Local web server port (default: 7358).
   --python <path>                Python executable for helper scripts (default: repo Playwright venv, then python3).
   --model-path <path>            Local model path for Dart local-only model scenarios.
+  --tokenizer-path <path>        Local tokenizer JSON path for dedicated ASR scenarios.
+  --model-preset <name>          Dedicated ASR preset (default: moonshine-tiny).
   --draft-model-path <path>      Optional draft GGUF model path for llama.cpp speculative benchmark.
   --mmproj-path <path>           Optional multimodal projector path for GGUF chat smoke.
   --image-path <path>            Optional image path for GGUF chat smoke multimodal variant.
@@ -1107,6 +1152,10 @@ Direct environment for tool/litert_lm_chat_features_smoke.dart:
   LITERT_LM_AUDIO_PATH           Optional local encoded audio fixture.
   LITERT_LM_AUDIO_EXPECTED_TEXT  Required exact expected answer when audio is set.
 
+Direct environment for tool/litert_lm_asr_smoke.dart:
+  LLAMADART_LITERT_LM_LIBRARY_PATH
+                                 Optional explicit bridge-enabled runtime library.
+
 Direct environment for tool/gguf_chat_features_smoke.dart:
   GGUF_AUDIO_PATH                Optional local encoded WAV fixture.
   GGUF_AUDIO_EXPECTED_TEXT       Required exact expected answer when audio is set.
@@ -1133,6 +1182,7 @@ class _ParsedArgs {
     required this.port,
     required this.python,
     required this.pythonProvided,
+    required this.modelPreset,
     required this.backend,
     required this.speculativeCases,
     required this.benchmarkGpuLayers,
@@ -1146,6 +1196,7 @@ class _ParsedArgs {
     required this.skipBuild,
     this.scenario,
     this.modelPath,
+    this.tokenizerPath,
     this.draftModelPath,
     this.mmprojPath,
     this.imagePath,
@@ -1169,6 +1220,8 @@ class _ParsedArgs {
   final String python;
   final bool pythonProvided;
   final String? modelPath;
+  final String? tokenizerPath;
+  final String modelPreset;
   final String? draftModelPath;
   final String? mmprojPath;
   final String? imagePath;
@@ -1213,8 +1266,10 @@ class _ParsedArgs {
     var expectProvided = false;
     var allowAnyResponse = false;
     var skipBuild = false;
+    var modelPreset = 'moonshine-tiny';
     String? scenario;
     String? modelPath;
+    String? tokenizerPath;
     String? draftModelPath;
     String? mmprojPath;
     String? imagePath;
@@ -1252,6 +1307,10 @@ class _ParsedArgs {
           pythonProvided = true;
         case '--model-path':
           modelPath = _readValue(args, ++index, arg);
+        case '--tokenizer-path':
+          tokenizerPath = _readValue(args, ++index, arg);
+        case '--model-preset':
+          modelPreset = _readValue(args, ++index, arg);
         case '--draft-model-path':
           draftModelPath = _readValue(args, ++index, arg);
         case '--mmproj-path':
@@ -1308,6 +1367,8 @@ class _ParsedArgs {
       python: python,
       pythonProvided: pythonProvided,
       modelPath: modelPath,
+      tokenizerPath: tokenizerPath,
+      modelPreset: modelPreset,
       draftModelPath: draftModelPath,
       mmprojPath: mmprojPath,
       imagePath: imagePath,
