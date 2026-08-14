@@ -9,6 +9,15 @@ import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
 
 void main() {
+  test('missing explicit runtime does not advertise the ASR bridge', () {
+    final client = LiteRtLmRuntimeClient(
+      libraryPath: '/missing/libLiteRtLm.so',
+    );
+    addTearDown(client.dispose);
+
+    expect(client.supportsAsrBridge, isFalse);
+  });
+
   test('LiteRtLmRuntimeMetrics serializes runtime counters', () {
     const metrics = LiteRtLmRuntimeMetrics(
       inputTokens: 12,

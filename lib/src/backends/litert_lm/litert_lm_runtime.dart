@@ -3,12 +3,16 @@ import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
 import 'dart:isolate';
+import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
 import 'package:path/path.dart' as path;
 
 import '../../core/exceptions.dart';
 import '../../core/models/inference/model_params.dart';
+import 'litert_lm_asr_types.dart';
+
+export 'litert_lm_asr_types.dart';
 
 const _litertLmVersion = '0.15.0-native.3';
 const _litertLmLibDirEnv = 'LLAMADART_LITERT_LM_LIB_DIR';
@@ -461,6 +465,13 @@ final class _BlockingSendMessageRequest {
 /// `LlamaEngine` API. This client is exported for benchmark tools and advanced
 /// native integrations that need direct access to LiteRT-LM bundles.
 class LiteRtLmRuntimeClient {
+  /// Creates a low-level LiteRT-LM runtime client.
+  ///
+  /// [libraryPath] is an advanced local-validation override. Packaged apps
+  /// should omit it and use the platform runtime selected by native assets.
+  LiteRtLmRuntimeClient({String? libraryPath})
+    : _libraryPathOverride = libraryPath;
+
   String _thinkingStartTag = LiteRtLmChannelAssembler.gemma4ThinkingStartTag;
   String _thinkingEndTag = LiteRtLmChannelAssembler.gemma4ThinkingEndTag;
 
@@ -473,7 +484,32 @@ class LiteRtLmRuntimeClient {
     _thinkingEndTag = endTag;
   }
 
+  /// Whether the active native runtime exports the dedicated ASR bridge.
+  ///
+  /// Runtime load failures are reported as unsupported rather than thrown so
+  /// callers can use this as a capability probe.
+  bool get supportsAsrBridge {
+    try {
+      _ensureLibrariesLoaded();
+      final library = _bindings!._library;
+      _LiteRtLmAsrBindings(library).validateCompatibility();
+      return true;
+    } on Object {
+      return false;
+    }
+  }
+
+  /// Creates a synchronous dedicated-ASR runtime session.
+  ///
+  /// The current bridge accepts mono 16 kHz float PCM. Inference calls block;
+  /// high-level clients should own this session from a worker isolate.
+  LiteRtLmAsrRuntimeSession createAsrSession(LiteRtLmAsrRuntimeConfig config) {
+    _ensureLibrariesLoaded();
+    return _NativeLiteRtLmAsrRuntimeSession.create(_bindings!._library, config);
+  }
+
   _LiteRtLmBindings? _bindings;
+  final String? _libraryPathOverride;
   // Keep a strong runtime-library reference while proxy function pointers are active.
   // ignore: unused_field
   DynamicLibrary? _proxyLibrary;
@@ -1315,6 +1351,14 @@ class LiteRtLmRuntimeClient {
     bool directCallbackSupported,
   })?
   _librariesForCurrentPlatform() {
+    final libraryPathOverride = _libraryPathOverride?.trim();
+    if (libraryPathOverride != null && libraryPathOverride.isNotEmpty) {
+      return (
+        liteRtLmCandidates: <String>[libraryPathOverride],
+        companions: const <String>[],
+        directCallbackSupported: true,
+      );
+    }
     final abi = Abi.current();
     if (Platform.isAndroid &&
         (abi == Abi.androidArm64 || abi == Abi.androidX64)) {
@@ -2171,6 +2215,617 @@ class LiteRtLmChannelAssembler {
     );
   } on FormatException {
     return (thought: null, content: raw);
+  }
+}
+
+const int _liteRtLmAsrAbiVersion = 1;
+const int _liteRtLmAsrStatusOk = 0;
+const int _liteRtLmAsrStatusNeedsMoreAudio = 10;
+const int _liteRtLmAsrStatusEndOfStream = 11;
+const int _liteRtLmAsrStatusWouldBlock = 12;
+
+final class _LiteRtLmAsrEngine extends Opaque {}
+
+final class _LiteRtLmAsrSession extends Opaque {}
+
+final class _LiteRtLmAsrConfig extends Struct {
+  @Uint32()
+  external int structSize;
+
+  @Uint32()
+  external int abiVersion;
+
+  external Pointer<Char> modelName;
+  external Pointer<Char> modelPath;
+  external Pointer<Char> tokenizerPath;
+
+  @Int32()
+  external int sampleRateHz;
+
+  @Int32()
+  external int numChannels;
+
+  @Int32()
+  external int inputMilliseconds;
+
+  @Int32()
+  external int maxBufferedAudioMilliseconds;
+
+  @Int32()
+  external int decoderType;
+
+  @Int32()
+  external int backend;
+
+  @Int32()
+  external int textMergerType;
+
+  @Int32()
+  external int numThreads;
+
+  @Float()
+  external double overlapRatio;
+
+  @Int32()
+  external int hasLogMelConfig;
+
+  @Int32()
+  external int logMelNFft;
+
+  @Int32()
+  external int logMelNMels;
+
+  @Int32()
+  external int logMelHopLength;
+
+  @Int32()
+  external int logMelNFrames;
+
+  @Int32()
+  external int logMelTranspose;
+
+  @Float()
+  external double logMelPreemphasis;
+
+  @Int32()
+  external int logMelNormType;
+
+  @Int32()
+  external int decodeStartTokenId;
+
+  @Int32()
+  external int decodeStopTokenId;
+
+  @Int32()
+  external int decodeSkipUntilTokenId;
+
+  @Int32()
+  external int decodeStatefullyAfter;
+
+  @Int32()
+  external int vocabSize;
+
+  @Int32()
+  external int blankTokenId;
+}
+
+final class _LiteRtLmAsrResult extends Struct {
+  @Uint32()
+  external int structSize;
+
+  external Pointer<Char> confirmedText;
+  external Pointer<Char> unconfirmedText;
+
+  @Int32()
+  external int isFinal;
+}
+
+class _NativeLiteRtLmAsrRuntimeSession implements LiteRtLmAsrRuntimeSession {
+  _NativeLiteRtLmAsrRuntimeSession._(this._bindings, this._session);
+
+  final _LiteRtLmAsrBindings _bindings;
+  Pointer<_LiteRtLmAsrSession>? _session;
+
+  static _NativeLiteRtLmAsrRuntimeSession create(
+    DynamicLibrary library,
+    LiteRtLmAsrRuntimeConfig runtimeConfig,
+  ) {
+    if (runtimeConfig.modelPath.trim().isEmpty) {
+      throw ArgumentError.value(
+        runtimeConfig.modelPath,
+        'modelPath',
+        'must not be empty',
+      );
+    }
+    if (runtimeConfig.tokenizerPath.trim().isEmpty) {
+      throw ArgumentError.value(
+        runtimeConfig.tokenizerPath,
+        'tokenizerPath',
+        'must not be empty',
+      );
+    }
+    if (runtimeConfig.numberOfThreads <= 0) {
+      throw ArgumentError.value(
+        runtimeConfig.numberOfThreads,
+        'numberOfThreads',
+        'must be positive',
+      );
+    }
+    if (runtimeConfig.maxBufferedAudio <= Duration.zero) {
+      throw ArgumentError.value(
+        runtimeConfig.maxBufferedAudio,
+        'maxBufferedAudio',
+        'must be positive',
+      );
+    }
+    if (runtimeConfig.overlapRatio < 0 || runtimeConfig.overlapRatio >= 1) {
+      throw ArgumentError.value(
+        runtimeConfig.overlapRatio,
+        'overlapRatio',
+        'must be in the range [0, 1)',
+      );
+    }
+
+    final bindings = _LiteRtLmAsrBindings(library);
+    try {
+      bindings.validateCompatibility();
+    } on ArgumentError catch (error) {
+      throw LlamaUnsupportedException(
+        'The loaded LiteRT-LM runtime does not expose compatible dedicated '
+        'ASR bridge ABI $_liteRtLmAsrAbiVersion. Install a speech-capable '
+        'litert-lm-native v0.16+ artifact. Details: $error',
+      );
+    }
+    final config = calloc<_LiteRtLmAsrConfig>();
+    final engineOut = calloc<Pointer<_LiteRtLmAsrEngine>>();
+    final sessionOut = calloc<Pointer<_LiteRtLmAsrSession>>();
+    final errorOut = calloc<Pointer<Char>>();
+    final modelPath = runtimeConfig.modelPath.toNativeUtf8(allocator: calloc);
+    final tokenizerPath = runtimeConfig.tokenizerPath.toNativeUtf8(
+      allocator: calloc,
+    );
+    Pointer<_LiteRtLmAsrEngine> engine = nullptr;
+    Pointer<_LiteRtLmAsrSession> session = nullptr;
+    try {
+      final presetStatus = bindings.configInitForModelPreset(
+        config,
+        _nativeAsrPreset(runtimeConfig.modelPreset),
+      );
+      _throwOnAsrStatus(
+        bindings,
+        presetStatus,
+        errorOut,
+        operation: 'ASR model preset initialization',
+      );
+      config.ref.modelPath = modelPath.cast();
+      config.ref.tokenizerPath = tokenizerPath.cast();
+      config.ref.backend = runtimeConfig.backend.index;
+      config.ref.numThreads = runtimeConfig.numberOfThreads;
+      config.ref.maxBufferedAudioMilliseconds =
+          runtimeConfig.maxBufferedAudio.inMilliseconds;
+      config.ref.overlapRatio = runtimeConfig.overlapRatio;
+
+      final engineStatus = bindings.engineCreate(config, engineOut, errorOut);
+      _throwOnAsrStatus(
+        bindings,
+        engineStatus,
+        errorOut,
+        operation: 'LiteRT-LM ASR engine creation',
+      );
+      engine = engineOut.value;
+      final sessionStatus = bindings.sessionCreate(
+        engine,
+        sessionOut,
+        errorOut,
+      );
+      _throwOnAsrStatus(
+        bindings,
+        sessionStatus,
+        errorOut,
+        operation: 'LiteRT-LM ASR session creation',
+      );
+      session = sessionOut.value;
+      return _NativeLiteRtLmAsrRuntimeSession._(bindings, session);
+    } on ArgumentError catch (error) {
+      throw LlamaUnsupportedException(
+        'The loaded LiteRT-LM runtime does not expose compatible dedicated '
+        'ASR bridge ABI $_liteRtLmAsrAbiVersion. Install a speech-capable '
+        'litert-lm-native v0.16+ artifact. Details: $error',
+      );
+    } finally {
+      if (engine != nullptr) {
+        bindings.engineDelete(engine);
+      }
+      if (session == nullptr && sessionOut.value != nullptr) {
+        bindings.sessionDelete(sessionOut.value);
+      }
+      if (errorOut.value != nullptr) {
+        bindings.freeString(errorOut.value);
+      }
+      calloc.free(modelPath);
+      calloc.free(tokenizerPath);
+      calloc.free(errorOut);
+      calloc.free(sessionOut);
+      calloc.free(engineOut);
+      calloc.free(config);
+    }
+  }
+
+  Pointer<_LiteRtLmAsrSession> get _activeSession {
+    final session = _session;
+    if (session == null || session == nullptr) {
+      throw StateError('LiteRT-LM ASR session has been disposed.');
+    }
+    return session;
+  }
+
+  @override
+  LiteRtLmAsrPushResult pushAudio(Float32List samples) {
+    if (samples.isEmpty) {
+      return const LiteRtLmAsrPushResult(acceptedSamples: 0, wouldBlock: false);
+    }
+    final nativeSamples = calloc<Float>(samples.length);
+    final acceptedOut = calloc<Size>();
+    final errorOut = calloc<Pointer<Char>>();
+    try {
+      nativeSamples.asTypedList(samples.length).setAll(0, samples);
+      final status = _bindings.sessionPushAudio(
+        _activeSession,
+        nativeSamples,
+        samples.length,
+        acceptedOut,
+        errorOut,
+      );
+      if (status != _liteRtLmAsrStatusOk &&
+          status != _liteRtLmAsrStatusWouldBlock) {
+        _throwOnAsrStatus(
+          _bindings,
+          status,
+          errorOut,
+          operation: 'LiteRT-LM ASR audio push',
+        );
+      }
+      final accepted = acceptedOut.value;
+      if (accepted < 0 || accepted > samples.length) {
+        throw LlamaSpeechException(
+          'LiteRT-LM ASR returned an invalid accepted-sample count.',
+          accepted,
+        );
+      }
+      return LiteRtLmAsrPushResult(
+        acceptedSamples: accepted,
+        wouldBlock: status == _liteRtLmAsrStatusWouldBlock,
+      );
+    } finally {
+      _releaseAsrError(_bindings, errorOut);
+      calloc.free(errorOut);
+      calloc.free(acceptedOut);
+      calloc.free(nativeSamples);
+    }
+  }
+
+  @override
+  void finishAudio() {
+    final errorOut = calloc<Pointer<Char>>();
+    try {
+      final status = _bindings.sessionFinishAudio(_activeSession, errorOut);
+      _throwOnAsrStatus(
+        _bindings,
+        status,
+        errorOut,
+        operation: 'LiteRT-LM ASR input finalization',
+      );
+    } finally {
+      _releaseAsrError(_bindings, errorOut);
+      calloc.free(errorOut);
+    }
+  }
+
+  @override
+  LiteRtLmAsrProcessResult processNext() {
+    final result = calloc<_LiteRtLmAsrResult>();
+    final errorOut = calloc<Pointer<Char>>();
+    _bindings.resultInit(result);
+    try {
+      final status = _bindings.sessionProcessNext(
+        _activeSession,
+        result,
+        errorOut,
+      );
+      if (status == _liteRtLmAsrStatusNeedsMoreAudio) {
+        return const LiteRtLmAsrProcessResult(
+          state: LiteRtLmAsrProcessState.needsMoreAudio,
+        );
+      }
+      if (status == _liteRtLmAsrStatusEndOfStream) {
+        return const LiteRtLmAsrProcessResult(
+          state: LiteRtLmAsrProcessState.endOfStream,
+        );
+      }
+      _throwOnAsrStatus(
+        _bindings,
+        status,
+        errorOut,
+        operation: 'LiteRT-LM ASR inference',
+      );
+      return LiteRtLmAsrProcessResult(
+        state: LiteRtLmAsrProcessState.update,
+        confirmedText: _readAsrString(result.ref.confirmedText),
+        unconfirmedText: _readAsrString(result.ref.unconfirmedText),
+        isFinal: result.ref.isFinal != 0,
+      );
+    } finally {
+      _bindings.resultRelease(result);
+      _releaseAsrError(_bindings, errorOut);
+      calloc.free(errorOut);
+      calloc.free(result);
+    }
+  }
+
+  @override
+  void cancel() {
+    final status = _bindings.sessionCancel(_activeSession);
+    if (status != _liteRtLmAsrStatusOk) {
+      throw LlamaSpeechException('LiteRT-LM ASR cancellation failed.', status);
+    }
+  }
+
+  @override
+  void reset() {
+    final errorOut = calloc<Pointer<Char>>();
+    try {
+      final status = _bindings.sessionReset(_activeSession, errorOut);
+      _throwOnAsrStatus(
+        _bindings,
+        status,
+        errorOut,
+        operation: 'LiteRT-LM ASR session reset',
+      );
+    } finally {
+      _releaseAsrError(_bindings, errorOut);
+      calloc.free(errorOut);
+    }
+  }
+
+  @override
+  void dispose() {
+    final session = _session;
+    if (session == null || session == nullptr) {
+      return;
+    }
+    _bindings.sessionDelete(session);
+    _session = null;
+  }
+}
+
+int _nativeAsrPreset(LiteRtLmAsrModelPreset preset) => switch (preset) {
+  LiteRtLmAsrModelPreset.parakeetTdt0_6bV3 => 1,
+  LiteRtLmAsrModelPreset.parakeetCtc0_6b => 2,
+  LiteRtLmAsrModelPreset.moonshineTiny => 3,
+  LiteRtLmAsrModelPreset.whisperTiny => 4,
+  LiteRtLmAsrModelPreset.qwen3Asr0_6b => 5,
+};
+
+String _readAsrString(Pointer<Char> value) =>
+    value == nullptr ? '' : value.cast<Utf8>().toDartString();
+
+String? _releaseAsrError(
+  _LiteRtLmAsrBindings bindings,
+  Pointer<Pointer<Char>> errorOut,
+) {
+  final value = errorOut.value;
+  if (value == nullptr) {
+    return null;
+  }
+  final message = _readAsrString(value);
+  bindings.freeString(value);
+  errorOut.value = nullptr;
+  return message;
+}
+
+Never _throwAsrStatus({
+  required int status,
+  required String operation,
+  String? details,
+}) {
+  throw LlamaSpeechException(
+    '$operation failed with native status $status.',
+    details,
+  );
+}
+
+void _throwOnAsrStatus(
+  _LiteRtLmAsrBindings bindings,
+  int status,
+  Pointer<Pointer<Char>> errorOut, {
+  required String operation,
+}) {
+  if (status == _liteRtLmAsrStatusOk) {
+    return;
+  }
+  _throwAsrStatus(
+    status: status,
+    operation: operation,
+    details: _releaseAsrError(bindings, errorOut),
+  );
+}
+
+class _LiteRtLmAsrBindings {
+  _LiteRtLmAsrBindings(this._library);
+
+  final DynamicLibrary _library;
+
+  late final abiVersion = _library
+      .lookupFunction<Uint32 Function(), int Function()>(
+        'litert_lm_asr_abi_version',
+      );
+
+  late final configSize = _library
+      .lookupFunction<Size Function(), int Function()>(
+        'litert_lm_asr_config_size',
+      );
+
+  late final resultSize = _library
+      .lookupFunction<Size Function(), int Function()>(
+        'litert_lm_asr_result_size',
+      );
+
+  late final configInitForModelPreset = _library
+      .lookupFunction<
+        Int32 Function(Pointer<_LiteRtLmAsrConfig>, Int32),
+        int Function(Pointer<_LiteRtLmAsrConfig>, int)
+      >('litert_lm_asr_config_init_for_model_preset');
+
+  late final resultInit = _library
+      .lookupFunction<
+        Void Function(Pointer<_LiteRtLmAsrResult>),
+        void Function(Pointer<_LiteRtLmAsrResult>)
+      >('litert_lm_asr_result_init');
+
+  late final resultRelease = _library
+      .lookupFunction<
+        Void Function(Pointer<_LiteRtLmAsrResult>),
+        void Function(Pointer<_LiteRtLmAsrResult>)
+      >('litert_lm_asr_result_release');
+
+  late final freeString = _library
+      .lookupFunction<
+        Void Function(Pointer<Char>),
+        void Function(Pointer<Char>)
+      >('litert_lm_asr_free_string');
+
+  late final engineCreate = _library
+      .lookupFunction<
+        Int32 Function(
+          Pointer<_LiteRtLmAsrConfig>,
+          Pointer<Pointer<_LiteRtLmAsrEngine>>,
+          Pointer<Pointer<Char>>,
+        ),
+        int Function(
+          Pointer<_LiteRtLmAsrConfig>,
+          Pointer<Pointer<_LiteRtLmAsrEngine>>,
+          Pointer<Pointer<Char>>,
+        )
+      >('litert_lm_asr_engine_create');
+
+  late final engineDelete = _library
+      .lookupFunction<
+        Void Function(Pointer<_LiteRtLmAsrEngine>),
+        void Function(Pointer<_LiteRtLmAsrEngine>)
+      >('litert_lm_asr_engine_delete');
+
+  late final sessionCreate = _library
+      .lookupFunction<
+        Int32 Function(
+          Pointer<_LiteRtLmAsrEngine>,
+          Pointer<Pointer<_LiteRtLmAsrSession>>,
+          Pointer<Pointer<Char>>,
+        ),
+        int Function(
+          Pointer<_LiteRtLmAsrEngine>,
+          Pointer<Pointer<_LiteRtLmAsrSession>>,
+          Pointer<Pointer<Char>>,
+        )
+      >('litert_lm_asr_session_create');
+
+  late final sessionDelete = _library
+      .lookupFunction<
+        Void Function(Pointer<_LiteRtLmAsrSession>),
+        void Function(Pointer<_LiteRtLmAsrSession>)
+      >('litert_lm_asr_session_delete');
+
+  late final sessionPushAudio = _library
+      .lookupFunction<
+        Int32 Function(
+          Pointer<_LiteRtLmAsrSession>,
+          Pointer<Float>,
+          Size,
+          Pointer<Size>,
+          Pointer<Pointer<Char>>,
+        ),
+        int Function(
+          Pointer<_LiteRtLmAsrSession>,
+          Pointer<Float>,
+          int,
+          Pointer<Size>,
+          Pointer<Pointer<Char>>,
+        )
+      >('litert_lm_asr_session_push_audio_f32');
+
+  late final sessionFinishAudio = _library
+      .lookupFunction<
+        Int32 Function(Pointer<_LiteRtLmAsrSession>, Pointer<Pointer<Char>>),
+        int Function(Pointer<_LiteRtLmAsrSession>, Pointer<Pointer<Char>>)
+      >('litert_lm_asr_session_finish_audio');
+
+  late final sessionProcessNext = _library
+      .lookupFunction<
+        Int32 Function(
+          Pointer<_LiteRtLmAsrSession>,
+          Pointer<_LiteRtLmAsrResult>,
+          Pointer<Pointer<Char>>,
+        ),
+        int Function(
+          Pointer<_LiteRtLmAsrSession>,
+          Pointer<_LiteRtLmAsrResult>,
+          Pointer<Pointer<Char>>,
+        )
+      >('litert_lm_asr_session_process_next');
+
+  late final sessionReset = _library
+      .lookupFunction<
+        Int32 Function(Pointer<_LiteRtLmAsrSession>, Pointer<Pointer<Char>>),
+        int Function(Pointer<_LiteRtLmAsrSession>, Pointer<Pointer<Char>>)
+      >('litert_lm_asr_session_reset');
+
+  late final sessionCancel = _library
+      .lookupFunction<
+        Int32 Function(Pointer<_LiteRtLmAsrSession>),
+        int Function(Pointer<_LiteRtLmAsrSession>)
+      >('litert_lm_asr_session_cancel');
+
+  void validateCompatibility() {
+    final actualAbiVersion = abiVersion();
+    if (actualAbiVersion != _liteRtLmAsrAbiVersion) {
+      throw ArgumentError(
+        'ASR bridge ABI is $actualAbiVersion; expected '
+        '$_liteRtLmAsrAbiVersion.',
+      );
+    }
+    final actualConfigSize = configSize();
+    final dartConfigSize = sizeOf<_LiteRtLmAsrConfig>();
+    if (actualConfigSize != dartConfigSize) {
+      throw ArgumentError(
+        'ASR config layout is $actualConfigSize bytes; Dart expects '
+        '$dartConfigSize.',
+      );
+    }
+    final actualResultSize = resultSize();
+    final dartResultSize = sizeOf<_LiteRtLmAsrResult>();
+    if (actualResultSize != dartResultSize) {
+      throw ArgumentError(
+        'ASR result layout is $actualResultSize bytes; Dart expects '
+        '$dartResultSize.',
+      );
+    }
+    // Force every required lazy lookup while this is still a capability probe
+    // so a partially packaged bridge cannot advertise ASR support and fail only
+    // after model initialization.
+    _keepAlive(<Object>[
+      configInitForModelPreset,
+      resultInit,
+      resultRelease,
+      freeString,
+      engineCreate,
+      engineDelete,
+      sessionCreate,
+      sessionDelete,
+      sessionPushAudio,
+      sessionFinishAudio,
+      sessionProcessNext,
+      sessionReset,
+      sessionCancel,
+    ]);
   }
 }
 

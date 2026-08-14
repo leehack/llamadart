@@ -118,7 +118,17 @@ export 'src/backends/litert_lm/litert_lm_backend_stub.dart'
     show LiteRtLmBackend;
 export 'src/backends/litert_lm/litert_lm_runtime_stub.dart'
     if (dart.library.io) 'src/backends/litert_lm/litert_lm_runtime.dart'
-    show LiteRtLmRuntimeClient, LiteRtLmRuntimeMetrics, LiteRtLmRuntimeResult;
+    show
+        LiteRtLmRuntimeClient,
+        LiteRtLmRuntimeMetrics,
+        LiteRtLmRuntimeResult,
+        LiteRtLmAsrBackend,
+        LiteRtLmAsrModelPreset,
+        LiteRtLmAsrProcessResult,
+        LiteRtLmAsrProcessState,
+        LiteRtLmAsrPushResult,
+        LiteRtLmAsrRuntimeConfig,
+        LiteRtLmAsrRuntimeSession;
 
 // Deprecated compatibility aliases for the old benchmark API.
 export 'src/experimental/litert_lm/litert_lm_benchmark_stub.dart'
