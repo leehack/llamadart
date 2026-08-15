@@ -63,9 +63,16 @@ Future<void> main(List<String> args) async {
         '"$normalizedExpected", received "$normalizedTranscript".',
       );
     }
-    print(
-      'RESULT litert_lm_asr ${jsonEncode(<String, Object>{'modelPreset': preset.name, 'backend': LiteRtLmAsrBackend.cpu.name, 'sampleRateHz': _sampleRateHz, 'sampleCount': fixture.samples.length, 'fixtureId': fixture.fixtureId, 'elapsedMilliseconds': stopwatch.elapsedMilliseconds, 'transcript': transcript})}',
-    );
+    final result = <String, Object>{
+      'modelPreset': preset.name,
+      'backend': LiteRtLmAsrBackend.cpu.name,
+      'sampleRateHz': _sampleRateHz,
+      'sampleCount': fixture.samples.length,
+      'fixtureId': fixture.fixtureId,
+      'elapsedMilliseconds': stopwatch.elapsedMilliseconds,
+      'transcript': transcript,
+    };
+    print('RESULT litert_lm_asr ${jsonEncode(result)}');
   } finally {
     session?.dispose();
     client.dispose();
