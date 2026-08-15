@@ -9,10 +9,12 @@ For canonical full release notes, use:
 
 ## Unreleased
 
-- Updated the native LiteRT-LM runtime to `v0.16.0-native.1` and added
+- Updated the native LiteRT-LM runtime to `v0.16.0-native.2` and added
   experimental CPU-only dedicated ASR runtime sessions with bounded PCM input
-  and confirmed/unconfirmed transcript updates. This is a low-level native API
-  and is not yet a `SpeechToTextEngine` backend.
+  and confirmed/unconfirmed transcript updates. The Apple companion also
+  packages the iOS Gemma constraint provider and Metal plugins required by the
+  published runtime. This is a low-level native API and is not yet a
+  `SpeechToTextEngine` backend.
 
 - Improved Flutter chat example model downloads with bounded retries for
   transient network failures, safe resume after truncated responses, and a

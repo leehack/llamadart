@@ -9,7 +9,7 @@ backend-module configuration for
 
 The native-assets hook currently pins `llamadart-native` tag
 `b10356-llamadart.1` and
-`litert-lm-native` release `v0.16.0-native.1` (`hook/build.dart`). Apps can
+`litert-lm-native` release `v0.16.0-native.2` (`hook/build.dart`). Apps can
 override the llama.cpp native GitHub source with
 `hooks.user_defines.llamadart.llamadart_native_tag` and
 `hooks.user_defines.llamadart.llamadart_native_repository`, or use a local
@@ -57,7 +57,9 @@ runtime revision.
 All iOS targets above require the consuming Flutter/Xcode project to use a
 minimum deployment target of `16.4` or newer. Flutter macOS targets require
 macOS `14.0` or newer. If an iOS app still uses CocoaPods, set the Podfile
-platform to `16.4` or newer too.
+platform to `16.4` or newer too. LiteRT-LM iOS Simulator artifacts are
+arm64-only, so apps that include LiteRT-LM must exclude the x86_64 Simulator
+architecture; llama.cpp remains available for x86_64 Simulator builds.
 
 ## Model format routing
 
@@ -133,7 +135,7 @@ Explicitly selecting `litert_lm` for a target without a pinned LiteRT-LM
 runtime fails during the build hook instead of producing an app that cannot
 load `.litertlm` models.
 
-## LiteRT-LM runtime coverage (`v0.16.0-native.1`)
+## LiteRT-LM runtime coverage (`v0.16.0-native.2`)
 
 | Platform target | LiteRT-LM bundle key | Selectable backends | Status |
 | --- | --- | --- | --- |
@@ -143,7 +145,7 @@ load `.litertlm` models.
 | iOS arm64 (simulator) | `ios-arm64-sim` | `cpu`, `gpu` | Supported |
 | iOS x86_64 (simulator) | Not published | N/A | Unsupported; exclude `litert_lm` for this target |
 | macOS arm64 | `macos-arm64` | `cpu`, `gpu` | Supported |
-| macOS x86_64 | `macos-x64` | `cpu`, `gpu` | Supported |
+| macOS x86_64 | `macos-x64` | `cpu` | Supported; the published x64 bundle does not include the WebGPU companion libraries |
 | Linux arm64 | `linux-arm64` | `cpu` | Supported |
 | Linux x64 | `linux-x64` | `cpu` | Supported |
 | Windows x64 | `windows-x64` | `cpu` | Supported |
@@ -169,7 +171,7 @@ as a multi-turn `ChatSession` or tool-calling backend yet.
 instead of silently ignoring llama.cpp-only settings.
 
 Native LiteRT-LM exposes these load-time runtime controls through
-`ModelParams`. Nullable fields keep the pinned `v0.16.0-native.1` runtime
+`ModelParams`. Nullable fields keep the pinned `v0.16.0-native.2` runtime
 default.
 
 | Native C API | Dart field | Support decision |

@@ -116,7 +116,7 @@ dart run tool/testing/test_matrix.dart --tier platform
 | macOS arm64 | `macos-arm64-runtime-smoke` | Local/device runtime row. |
 | macOS x64 | `macos-x64-runtime-smoke` | Local/device runtime row. |
 | iOS arm64 device | `ios-arm64-device-smoke` | Manual/device runtime row. |
-| iOS arm64/x86_64 simulator | `ios-simulator-smoke` | Manual/simulator runtime row. |
+| iOS arm64/x86_64 simulator | `ios-simulator-smoke` | Manual/simulator runtime row; LiteRT-LM is arm64-only. |
 | Android arm64 | `android-arm64-device-smoke` | Manual/device runtime row and release smoke plan. |
 | Android x64 | `android-x64-emulator-smoke` | Manual/emulator runtime row. |
 | Web browser | `web-chrome-runtime-smoke` | Chrome CI plus the required real-GGUF `Web Chat Contract`; large WebGPU/LiteRT-LM smokes remain targeted. |

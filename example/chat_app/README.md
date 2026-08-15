@@ -178,9 +178,9 @@ flutter test --run-skipped -t local-only \
      structured controls are required.
    - The Gemma 4 E2B LiteRT-LM preset uses the native `.litertlm` bundle on
      Android, iOS arm64/arm64 simulator, macOS, Linux, and Windows x64; it uses
-     the `-web.litertlm` bundle on Flutter Web. iOS x86_64 simulator and
-     Windows arm64 are kept GGUF-only because no matching LiteRT-LM native
-     bundle is published.
+     the `-web.litertlm` bundle on Flutter Web. The example excludes the iOS
+     x86_64 Simulator architecture while the arm64-only LiteRT-LM companion is
+     enabled; Windows arm64 remains GGUF-only.
 
 ### 3. Advanced Configuration (Optional)
 1. Tap the settings control in the top bar.
@@ -334,7 +334,8 @@ await prefs.setInt('preferred_backend', backendIndex);
 - If behind a proxy, ensure Dart/Flutter can access GitHub.
 - If a native `.litertlm` load fails, confirm `pubspec.yaml` includes
   `litert_lm` for your target. This example does that for supported native
-  targets and keeps iOS x86_64 simulator / Windows arm64 GGUF-only.
+  targets, excludes the unsupported iOS x86_64 Simulator architecture, and
+  keeps Windows arm64 GGUF-only.
 - If you recently changed native backend or runtime config and are upgrading
   from an older build cache, run a one-time `flutter clean`.
 

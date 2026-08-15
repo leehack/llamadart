@@ -53,8 +53,17 @@ final session = runtime.createAsrSession(
 );
 
 try {
-  final push = session.pushAudio(mono16KhzFloatPcm);
-  if (push.wouldBlock) {
+  var offset = 0;
+  while (offset < mono16KhzFloatPcm.length) {
+    final push = session.pushAudio(
+      Float32List.sublistView(mono16KhzFloatPcm, offset),
+    );
+    offset += push.acceptedSamples;
+    if (push.acceptedSamples == 0 && !push.wouldBlock) {
+      throw StateError('ASR input made no progress.');
+    }
+    if (!push.wouldBlock) continue;
+
     final update = session.processNext();
     print('${update.confirmedText}${update.unconfirmedText}');
   }

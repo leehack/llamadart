@@ -159,7 +159,7 @@ void main() {
     );
     expect(legacyAbiError, contains('not stream-chunk compatible'));
     expect(legacyAbiError, contains('Expected callback ABI 2'));
-    expect(legacyAbiError, contains('v0.16.0-native.1'));
+    expect(legacyAbiError, contains('v0.16.0-native.2'));
     expect(legacyAbiError, contains('detected 1'));
   });
 
@@ -298,12 +298,19 @@ void main() {
 
   test('macOS LiteRT-LM cache validation follows runtime ABI files', () {
     expect(liteRtLmMacOsRequiredLibrariesForAbi(Abi.macosArm64), const <String>[
-      'libLiteRtLm.dylib',
       'libCLiteRTLM_mac.dylib',
+      'libGemmaModelConstraintProvider.dylib',
+      'libLiteRt.dylib',
+      'libLiteRtLm.dylib',
+      'libLiteRtMetalAccelerator.dylib',
+      'libLiteRtTopKMetalSampler.dylib',
+      'libLiteRtTopKWebGpuSampler.dylib',
+      'libLiteRtWebGpuAccelerator.dylib',
+      'libwebgpu_dawn.dylib',
     ]);
     expect(liteRtLmMacOsRequiredLibrariesForAbi(Abi.macosX64), const <String>[
-      'libLiteRtLm.dylib',
       'libCLiteRTLM_mac.dylib',
+      'libLiteRtLm.dylib',
     ]);
     expect(liteRtLmMacOsRequiredLibrariesForAbi(Abi.linuxX64), isEmpty);
   });
@@ -331,9 +338,10 @@ void main() {
   test('macOS LiteRT-LM app framework validation follows runtime ABI', () {
     expect(
       liteRtLmMacOsRequiredFrameworksForAbi(Abi.macosArm64),
-      const <String>['LiteRtLm.framework/Versions/A/LiteRtLm'],
+      _macOsFrameworkFiles,
     );
     expect(liteRtLmMacOsRequiredFrameworksForAbi(Abi.macosX64), const <String>[
+      'CLiteRTLM_mac.framework/Versions/A/CLiteRTLM_mac',
       'LiteRtLm.framework/Versions/A/LiteRtLm',
     ]);
     expect(liteRtLmMacOsRequiredFrameworksForAbi(Abi.linuxX64), isEmpty);
@@ -345,6 +353,7 @@ void main() {
       const <String>[
         'LiteRtLm.framework/Versions/A/LiteRtLm',
         'libCLiteRTLM_mac.dylib',
+        ..._macOsFrameworkFilesWithoutLiteRtLm,
       ],
     );
     expect(
@@ -388,7 +397,9 @@ void main() {
 
     expect(liteRtLmIsMacOsCacheDirectoryForAbi(x64Dir, Abi.macosX64), isFalse);
 
-    File('${x64Dir.path}/libCLiteRTLM_mac.dylib').createSync();
+    for (final library in liteRtLmMacOsRequiredLibrariesForAbi(Abi.macosX64)) {
+      File('${x64Dir.path}/$library').createSync();
+    }
 
     expect(liteRtLmIsMacOsCacheDirectoryForAbi(x64Dir, Abi.macosX64), isTrue);
     expect(liteRtLmIsMacOsCacheDirectoryForAbi(x64Dir, Abi.linuxX64), isFalse);
@@ -613,3 +624,27 @@ void main() {
     );
   });
 }
+
+const List<String> _macOsFrameworkFiles = <String>[
+  'CLiteRTLM_mac.framework/Versions/A/CLiteRTLM_mac',
+  'GemmaModelConstraintProvider.framework/Versions/A/'
+      'GemmaModelConstraintProvider',
+  'LiteRt.framework/Versions/A/LiteRt',
+  'LiteRtLm.framework/Versions/A/LiteRtLm',
+  'LiteRtMetalAccelerator.framework/Versions/A/LiteRtMetalAccelerator',
+  'LiteRtTopKMetalSampler.framework/Versions/A/LiteRtTopKMetalSampler',
+  'LiteRtTopKWebGpuSampler.framework/Versions/A/LiteRtTopKWebGpuSampler',
+  'LiteRtWebGpuAccelerator.framework/Versions/A/LiteRtWebGpuAccelerator',
+  'webgpu_dawn.framework/Versions/A/webgpu_dawn',
+];
+
+const List<String> _macOsFrameworkFilesWithoutLiteRtLm = <String>[
+  'GemmaModelConstraintProvider.framework/Versions/A/'
+      'GemmaModelConstraintProvider',
+  'LiteRt.framework/Versions/A/LiteRt',
+  'LiteRtMetalAccelerator.framework/Versions/A/LiteRtMetalAccelerator',
+  'LiteRtTopKMetalSampler.framework/Versions/A/LiteRtTopKMetalSampler',
+  'LiteRtTopKWebGpuSampler.framework/Versions/A/LiteRtTopKWebGpuSampler',
+  'LiteRtWebGpuAccelerator.framework/Versions/A/LiteRtWebGpuAccelerator',
+  'webgpu_dawn.framework/Versions/A/webgpu_dawn',
+];

@@ -107,8 +107,9 @@ flutter test
   **Paste attachment** on touch devices. Text-only clipboard content still
   follows the normal composer paste path, and media is capped at 64 MB.
 - Native and web `.litertlm` routing through LiteRT-LM. Native LiteRT-LM is
-  enabled for supported targets; iOS x86_64 simulator and Windows arm64 remain
-  GGUF-only because no matching LiteRT-LM native bundle is published.
+  enabled for supported targets; the example excludes the iOS x86_64 Simulator
+  architecture while the arm64-only companion is enabled, and Windows arm64
+  remains GGUF-only.
 
 ## Built-in model catalog
 
