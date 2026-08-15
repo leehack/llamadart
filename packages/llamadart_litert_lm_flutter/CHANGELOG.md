@@ -1,3 +1,11 @@
+## Unreleased
+
+* Updated Apple SwiftPM native pin to `leehack/litert-lm-native@v0.16.0-native.2`
+  and packaged the iOS Gemma constraint provider and Metal accelerator/sampler
+  plugins required by that runtime.
+* Kept macOS on the complete hook-managed runtime bundle instead of linking an
+  incomplete SwiftPM subset.
+
 ## 0.0.9
 
 * Updated the install example for `llamadart` 0.8.19.

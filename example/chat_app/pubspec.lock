@@ -414,6 +414,13 @@ packages:
       relative: true
     source: path
     version: "0.8.19"
+  llamadart_litert_lm_flutter:
+    dependency: "direct main"
+    description:
+      path: "../../packages/llamadart_litert_lm_flutter"
+      relative: true
+    source: path
+    version: "0.0.9"
   logging:
     dependency: transitive
     description:

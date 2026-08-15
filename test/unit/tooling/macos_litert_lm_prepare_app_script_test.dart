@@ -197,6 +197,9 @@ void main() {
           path.join(frameworksDir.path, 'LiteRtLm.framework', 'Versions', 'A'),
         )..createSync(recursive: true);
         await File(path.join(liteRtLmDir.path, 'LiteRtLm')).create();
+        await File(
+          path.join(frameworksDir.path, 'libCLiteRTLM_mac.dylib'),
+        ).create();
 
         final result = await _runPrepareApp(appDir, libDir, arch: 'arm64');
 
@@ -276,7 +279,14 @@ Future<ProcessResult> _runPrepareApp(
 
 const List<String> _arm64Libraries = [
   'libCLiteRTLM_mac.dylib',
+  'libGemmaModelConstraintProvider.dylib',
+  'libLiteRt.dylib',
   'libLiteRtLm.dylib',
+  'libLiteRtMetalAccelerator.dylib',
+  'libLiteRtTopKMetalSampler.dylib',
+  'libLiteRtTopKWebGpuSampler.dylib',
+  'libLiteRtWebGpuAccelerator.dylib',
+  'libwebgpu_dawn.dylib',
 ];
 
 const List<String> _oldFrameworks = [

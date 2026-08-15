@@ -14,22 +14,49 @@ void main() {
     ).readAsStringSync();
 
     expect(manifest, contains('name: "llamadart-litert-lm-flutter"'));
-    expect(manifest, isNot(contains('name: "GemmaModelConstraintProvider"')));
-    expect(manifest, contains('name: "CLiteRTLMMac"'));
+    expect(manifest, contains('name: "GemmaModelConstraintProvider"'));
+    expect(manifest, contains('name: "LiteRtMetalAccelerator"'));
+    expect(manifest, contains('name: "LiteRtTopKMetalSampler"'));
     expect(
       manifest,
-      contains(
-        'name: "LiteRtLm", condition: '
-        '.when(platforms: [.iOS, .macOS])',
+      isNot(
+        contains(
+          'checksum: "0000000000000000000000000000000000000000000000000000000000000000"',
+        ),
       ),
     );
     expect(
       manifest,
-      contains('name: "CLiteRTLMMac", condition: .when(platforms: [.macOS])'),
+      contains(
+        'name: "LiteRtLm", condition: '
+        '.when(platforms: [.iOS])',
+      ),
+    );
+    expect(manifest, isNot(contains('name: "CLiteRTLMMac"')));
+    expect(
+      manifest,
+      contains(
+        'name: "GemmaModelConstraintProvider", condition: '
+        '.when(platforms: [.iOS])',
+      ),
+    );
+    expect(
+      manifest,
+      contains(
+        'name: "LiteRtMetalAccelerator", condition: '
+        '.when(platforms: [.iOS])',
+      ),
+    );
+    expect(
+      manifest,
+      contains(
+        'name: "LiteRtTopKMetalSampler", condition: '
+        '.when(platforms: [.iOS])',
+      ),
     );
   });
 
-  test('imports the primary LiteRT-LM runtime on macOS', () {
+  test('keeps macOS on the hook-managed runtime fallback', () {
     final pluginSource = File(
       'darwin/llamadart_litert_lm_flutter/Sources/'
       'llamadart_litert_lm_flutter/LlamadartLiteRtLmPlugin.swift',
@@ -39,6 +66,6 @@ void main() {
       r'#elseif os\(macOS\)([\s\S]*?)#endif',
     ).firstMatch(pluginSource);
     expect(macosBlock, isNotNull);
-    expect(macosBlock!.group(1), contains('import LiteRtLm'));
+    expect(macosBlock!.group(1), isNot(contains('import LiteRtLm')));
   });
 }

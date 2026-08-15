@@ -1,1 +1,3 @@
 #include "Generated.xcconfig"
+// LiteRT-LM v0.16 publishes an arm64 iOS Simulator runtime only.
+EXCLUDED_ARCHS[sdk=iphonesimulator*]=i386 x86_64

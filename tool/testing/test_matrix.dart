@@ -208,6 +208,22 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'Speech API, native audio routing, transcript normalization, or chat-app transcription changes.',
   ),
   TestMatrixRow(
+    id: 'litert-lm-asr-smoke',
+    tier: 'targeted',
+    mode: 'local-only',
+    covers:
+        'dedicated native LiteRT-LM ASR bridge discovery, bounded PCM push, '
+        'window processing, finalization, and expected real-model transcript',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario '
+        'litert-lm-asr-smoke --model-path <model.tflite> '
+        '--tokenizer-path <tokenizer.json> --audio-path <fixture.wav> '
+        '--model-preset moonshine-tiny --expect "<expected transcript>"',
+    useWhen:
+        'LiteRT-LM ASR bridge, runtime sessions, native pins, or streaming '
+        'speech work. This CPU-only engine row does not establish microphone UI.',
+  ),
+  TestMatrixRow(
     id: 'text-to-speech-smoke',
     tier: 'targeted',
     mode: 'local-only',
@@ -479,10 +495,12 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     tier: 'platform',
     mode: 'manual/simulator',
     covers:
-        'iOS arm64 simulator and x86_64 simulator bundle/framework staging paths',
+        'iOS arm64 and x86_64 simulator bundle/framework staging; LiteRT-LM '
+        'is arm64-only',
     command:
-        'Run example/chat_app on available iOS simulators; record simulator '
-        'architecture, model, backend, and whether model load/generation passed.',
+        'Run example/chat_app on available iOS simulators; record the '
+        'architecture, model, backend, and whether model load/generation '
+        'passed. LiteRT-LM runs only on arm64 Simulator.',
     useWhen: 'iOS simulator hook, framework staging, or release changes.',
   ),
   TestMatrixRow(

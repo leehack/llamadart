@@ -20,7 +20,7 @@ audio-capable multimodal models.
 | --- | --- | --- | --- |
 | Native llama.cpp / GGUF | Model + projector dependent | Experimental Qwen3-ASR adapter; complete WAV/MP3/FLAC file or bytes, final transcript only | Experimental Qwen3-TTS adapter; see [Text to Speech](./text-to-speech) |
 | WebGPU / GGUF | Bridge + model dependent | Unsupported | Unsupported |
-| Native LiteRT-LM / `.litertlm` | Bundle dependent through normal generation | Unsupported by the pinned native artifact | Unsupported by the pinned native artifact |
+| Native LiteRT-LM | Separate `.litertlm` audio chat remains bundle dependent | Experimental CPU-only dedicated ASR runtime sessions; not yet wired to `SpeechToTextEngine` | Unsupported |
 | LiteRT-LM Web | Unsupported | Unsupported | Unsupported |
 
 “Generic audio-input chat” means an audio content part is processed by normal
@@ -29,6 +29,79 @@ The typed STT API adds a stable Dart result/cancellation boundary, but the first
 backend still performs whole-audio llama.cpp generation internally. Its
 `SpeechToTextImplementation.multimodalPromptAdapter` capability makes that
 distinction inspectable; it is not a dedicated native ASR engine.
+
+## Dedicated LiteRT-LM ASR sessions
+
+LiteRT-LM v0.16 adds a different speech path: dedicated ASR engines that
+consume streaming PCM windows instead of an audio part in normal chat. The
+experimental `LiteRtLmRuntimeClient` bridge exposes that low-level native
+session boundary while the higher-level `SpeechToTextEngine` adapter is still
+being designed.
+
+```dart
+final runtime = LiteRtLmRuntimeClient();
+if (!runtime.supportsAsrBridge) {
+  throw StateError('Install the pinned speech-capable LiteRT-LM runtime.');
+}
+
+final session = runtime.createAsrSession(
+  const LiteRtLmAsrRuntimeConfig(
+    modelPath: '/models/moonshine_tiny.tflite',
+    tokenizerPath: '/models/tokenizer.json',
+    modelPreset: LiteRtLmAsrModelPreset.moonshineTiny,
+  ),
+);
+
+try {
+  var offset = 0;
+  while (offset < mono16KhzFloatPcm.length) {
+    final push = session.pushAudio(
+      Float32List.sublistView(mono16KhzFloatPcm, offset),
+    );
+    offset += push.acceptedSamples;
+    if (push.acceptedSamples == 0 && !push.wouldBlock) {
+      throw StateError('ASR input made no progress.');
+    }
+    if (!push.wouldBlock) continue;
+
+    final update = session.processNext();
+    print('${update.confirmedText}${update.unconfirmedText}');
+  }
+
+  session.finishAudio();
+  while (true) {
+    final update = session.processNext();
+    if (update.state == LiteRtLmAsrProcessState.endOfStream) break;
+    if (update.state == LiteRtLmAsrProcessState.needsMoreAudio) {
+      throw StateError('Finalized ASR input requested more audio.');
+    }
+    print('${update.confirmedText}${update.unconfirmedText}');
+    if (update.isFinal) break;
+  }
+} finally {
+  session.dispose();
+  runtime.dispose();
+}
+```
+
+The input contract is mono 16 kHz `Float32List` PCM. `pushAudio` can accept a
+prefix and report backpressure; callers must process a window before retrying
+the unaccepted suffix. `confirmedText` is stable, while `unconfirmedText` may
+change after the next window. `finishAudio` flushes a partial final window,
+`reset` reuses the session for another stream, and `cancel` is cooperative
+between native inference windows.
+
+Inference is synchronous and potentially expensive. Own the session from a
+worker isolate rather than calling `processNext` on a Flutter UI isolate. The
+validated v0.16 contract is CPU-only; accelerator enum values are deliberately
+not exposed until their transcripts pass the same real-model correctness
+gates. Supported metadata presets currently cover Parakeet TDT, Parakeet CTC,
+Moonshine Tiny, Whisper Tiny, and Qwen3-ASR 0.6B, but callers must provide the
+matching model and tokenizer artifacts.
+
+This API does not yet provide microphone capture, a Dart event stream,
+timestamps, confidence, diarization, or automatic resampling. Those belong in
+the future high-level adapter rather than the synchronous FFI boundary.
 
 ## Load a Qwen3-ASR model
 

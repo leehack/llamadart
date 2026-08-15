@@ -30,6 +30,8 @@ models through LiteRT-LM.
   persistence, and runtime diagnostics where the active backend supports them.
 - Experimental typed whole-file speech recognition on native llama.cpp through
   `SpeechToTextEngine`, with explicit capability and cancellation contracts.
+- Experimental CPU-only dedicated LiteRT-LM ASR runtime sessions for bounded
+  16 kHz PCM input and confirmed/unconfirmed transcript updates.
 - Experimental typed Qwen3-TTS synthesis on native llama.cpp through
   `TextToSpeechEngine`, returning complete PCM with WAV encoding.
 
@@ -66,10 +68,13 @@ dependencies:
   llamadart_litert_lm_flutter: ^0.0.9 # Apple .litertlm / LiteRT-LM targets
 ```
 
-The LiteRT-LM companion manifest includes consolidated iOS and macOS SwiftPM
-runtime targets. Llamadart uses that SwiftPM path for iOS; Flutter macOS
-LiteRT-LM builds currently keep the core package's native-assets fallback while
-the hook path remains responsible for the complete runtime.
+The LiteRT-LM companion manifest includes the complete iOS SwiftPM runtime
+targets. Llamadart uses that SwiftPM path for iOS; Flutter macOS LiteRT-LM
+builds keep the core package's native-assets fallback because the hook path is
+responsible for the complete runtime library set.
+
+The pinned LiteRT-LM runtime supports arm64 iOS devices and arm64 iOS
+Simulator builds. Intel/x86_64 iOS Simulator builds are not published.
 
 Then run:
 
@@ -139,7 +144,7 @@ Current default runtime pins:
 | Runtime | Pin |
 | --- | --- |
 | Native llama.cpp / GGUF | `leehack/llamadart-native@b10356-llamadart.1` |
-| Native LiteRT-LM / `.litertlm` | `leehack/litert-lm-native@v0.15.0-native.3` |
+| Native LiteRT-LM / `.litertlm` | `leehack/litert-lm-native@v0.16.0-native.2` |
 | Web llama.cpp / GGUF | `leehack/llama-web-bridge-assets@v0.1.27` |
 | Web LiteRT-LM / `.litertlm` | `@litert-lm/core@0.15.0` |
 

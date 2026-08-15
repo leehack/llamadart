@@ -66,13 +66,13 @@ Pick targeted rows based on the touched surface:
 | Native-assets hook, runtime pin, bundle layout | `native-hook-bundles`, `litert-lm-engine-smoke`, and relevant `platform` rows such as `android-arm64-device-smoke` |
 | llama.cpp / GGUF generation, prompt reuse, context reuse | `native-prompt-reuse-parity`, `native-inference-benchmark`, `gguf-chat-features-smoke` |
 | Chat template, parser, tools, thinking extraction | `template-parity`, `llama-cpp-chat-template-smoke`, `gguf-chat-features-smoke`, `litert-lm-chat-features-smoke` |
-| LiteRT-LM native backend | `litert-lm-engine-smoke`, `litert-lm-chat-features-smoke` |
+| LiteRT-LM native backend | `litert-lm-engine-smoke`, `litert-lm-chat-features-smoke`, `litert-lm-asr-smoke` |
 | Web bridge bootstrap or interop | `web-bridge-smoke`, `web-mock-chat-smoke`, `web-real-model-smoke` |
 | WebGPU multimodal | `webgpu-multimodal-regression` |
 | Large WebGPU GGUF / wasm64 selection | `gemma4-webgpu-mem64` |
 | LiteRT-LM web / Gemma 4 web bundle | `gemma4-litert-web` |
 | Chat app model cache/download/projector | `chat-app-device-cache` |
-| Speech-to-text API or adapter | `speech-to-text-smoke` |
+| Speech-to-text API or adapter | `speech-to-text-smoke`, plus `litert-lm-asr-smoke` for the dedicated LiteRT-LM session API |
 | Text-to-speech API or adapter | `text-to-speech-smoke` |
 | Chat-app microphone transcription flow | `chat-app-microphone-transcription-smoke` |
 | Chat-app Ask with voice | `gguf-audio-chat-smoke`, `litert-lm-chat-features-smoke`, `chat-app-voice-question-smoke` |
@@ -116,7 +116,7 @@ dart run tool/testing/test_matrix.dart --tier platform
 | macOS arm64 | `macos-arm64-runtime-smoke` | Local/device runtime row. |
 | macOS x64 | `macos-x64-runtime-smoke` | Local/device runtime row. |
 | iOS arm64 device | `ios-arm64-device-smoke` | Manual/device runtime row. |
-| iOS arm64/x86_64 simulator | `ios-simulator-smoke` | Manual/simulator runtime row. |
+| iOS arm64/x86_64 simulator | `ios-simulator-smoke` | Manual/simulator runtime row; LiteRT-LM is arm64-only. |
 | Android arm64 | `android-arm64-device-smoke` | Manual/device runtime row and release smoke plan. |
 | Android x64 | `android-x64-emulator-smoke` | Manual/emulator runtime row. |
 | Web browser | `web-chrome-runtime-smoke` | Chrome CI plus the required real-GGUF `Web Chat Contract`; large WebGPU/LiteRT-LM smokes remain targeted. |

@@ -1,6 +1,9 @@
 // coverage:ignore-file
 
 import '../../core/models/inference/model_params.dart';
+import 'litert_lm_asr_types.dart';
+
+export 'litert_lm_asr_types.dart';
 
 /// Runtime metrics shape shared with the native LiteRT-LM implementation.
 class LiteRtLmRuntimeMetrics {
@@ -63,8 +66,16 @@ class LiteRtLmRuntimeResult {
 /// Web-safe placeholder for the native-only runtime client.
 class LiteRtLmRuntimeClient {
   /// Creates a placeholder client on platforms without `dart:ffi`.
-  LiteRtLmRuntimeClient() {
+  LiteRtLmRuntimeClient({String? libraryPath}) {
     throw UnsupportedError('LiteRT-LM runtime requires a native platform.');
+  }
+
+  /// Dedicated native ASR is unavailable without `dart:ffi`.
+  bool get supportsAsrBridge => false;
+
+  /// Dedicated native ASR is unavailable without `dart:ffi`.
+  LiteRtLmAsrRuntimeSession createAsrSession(LiteRtLmAsrRuntimeConfig config) {
+    throw UnsupportedError('LiteRT-LM ASR requires a native platform.');
   }
 
   /// Initializes the native LiteRT-LM engine.
