@@ -605,7 +605,7 @@ void _liveAsrWorkerMain(SendPort mainPort) {
               break;
             }
           }
-          result = samples.length;
+          result = offset;
         case 'finish':
           final activeSession = session;
           if (activeSession == null) {

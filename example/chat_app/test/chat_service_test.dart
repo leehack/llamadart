@@ -83,6 +83,29 @@ void main() {
     });
 
     test(
+      'caps an explicit micro-batch to the resolved Android batch',
+      () async {
+        debugDefaultTargetPlatformOverride = TargetPlatform.android;
+        final engine = MockLlamaEngine();
+        final service = ChatService(engine: engine);
+
+        await service.init(
+          const ChatSettings(
+            modelPath: 'gemma-4-E2B-it-Q4_K_S.gguf',
+            preferredBackend: GpuBackend.vulkan,
+            contextSize: 4096,
+            gpuLayers: 32,
+            microBatchSize: 128,
+          ),
+          eagerLoadMultimodalProjector: false,
+        );
+
+        expect(engine.lastModelParams!.batchSize, 32);
+        expect(engine.lastModelParams!.microBatchSize, 32);
+      },
+    );
+
+    test(
       'keeps roomier Android GPU defaults for non-Vulkan backends',
       () async {
         debugDefaultTargetPlatformOverride = TargetPlatform.android;

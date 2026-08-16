@@ -18,7 +18,7 @@ class _UnsupportedLiveSpeechModelService implements LiveSpeechModelService {
     required void Function(double progress) onProgress,
     required void Function() onVerifying,
   }) {
-    throw UnsupportedError('Live speech transcription is native-only.');
+    throw UnsupportedError('Live speech model installation is native-only.');
   }
 
   @override

@@ -245,6 +245,9 @@ class ChatService {
         }
       }
     }
+    if (batchSize > 0 && microBatchSize > batchSize) {
+      microBatchSize = batchSize;
+    }
 
     // On web, forward the known model size so the WebGPU backend can select the
     // 64-bit (mem64) core up front for models that exceed the wasm32 address
