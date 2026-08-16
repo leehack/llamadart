@@ -26,6 +26,8 @@ class ChatSettings {
 
   final int numberOfThreads;
   final int numberOfThreadsBatch;
+  final int batchSize;
+  final int microBatchSize;
 
   /// Dart-side logger verbosity (llamadart logger).
   final LlamaLogLevel logLevel;
@@ -70,6 +72,8 @@ class ChatSettings {
     this.autoTuneRequestedContextSize,
     this.numberOfThreads = 0,
     this.numberOfThreadsBatch = 0,
+    this.batchSize = 0,
+    this.microBatchSize = 0,
     this.logLevel = LlamaLogLevel.none,
     this.nativeLogLevel = LlamaLogLevel.warn,
     this.toolsEnabled = false,
@@ -101,6 +105,8 @@ class ChatSettings {
     int? autoTuneRequestedContextSize,
     int? numberOfThreads,
     int? numberOfThreadsBatch,
+    int? batchSize,
+    int? microBatchSize,
     LlamaLogLevel? logLevel,
     LlamaLogLevel? nativeLogLevel,
     bool? toolsEnabled,
@@ -132,6 +138,8 @@ class ChatSettings {
           autoTuneRequestedContextSize ?? this.autoTuneRequestedContextSize,
       numberOfThreads: numberOfThreads ?? this.numberOfThreads,
       numberOfThreadsBatch: numberOfThreadsBatch ?? this.numberOfThreadsBatch,
+      batchSize: batchSize ?? this.batchSize,
+      microBatchSize: microBatchSize ?? this.microBatchSize,
       logLevel: logLevel ?? this.logLevel,
       nativeLogLevel: nativeLogLevel ?? this.nativeLogLevel,
       toolsEnabled: toolsEnabled ?? this.toolsEnabled,

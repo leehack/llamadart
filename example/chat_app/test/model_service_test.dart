@@ -363,6 +363,48 @@ void main() {
     expect((await service.getModelCacheState(model)).isReady, isTrue);
   });
 
+  test(
+    'managed tokenizer asset reuses verified download infrastructure',
+    () async {
+      final ioService = TestModelService(tempDir);
+      final source = RemoteModelAssetSource(
+        url: '$baseUrl/mmproj.gguf',
+        filename: 'tokenizer.json',
+        sizeBytes: mmprojDataSize,
+        sha256: sha256.convert(mmprojData).toString(),
+      );
+      final progress = <int>[];
+      var verificationStarted = false;
+
+      await ioService.downloadManagedAsset(
+        modelsDir: tempDir.path,
+        source: source,
+        role: ModelAssetRole.tokenizer,
+        cancelToken: CancelToken(),
+        onProgress: (downloadedBytes, _, _) => progress.add(downloadedBytes),
+        onVerifying: () => verificationStarted = true,
+      );
+
+      expect(progress, isNotEmpty);
+      expect(progress.last, mmprojDataSize);
+      expect(verificationStarted, isTrue);
+      expect(
+        await ioService.isManagedAssetAvailable(
+          tempDir.path,
+          source,
+          role: ModelAssetRole.tokenizer,
+        ),
+        isTrue,
+      );
+      expect(
+        File(
+          ioService.resolveManagedAssetPath(tempDir.path, source),
+        ).readAsBytesSync(),
+        mmprojData,
+      );
+    },
+  );
+
   test('cancellation interrupts integrity verification', () async {
     final verificationStarted = Completer<void>();
     service = TestModelService(

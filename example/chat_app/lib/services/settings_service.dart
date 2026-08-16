@@ -22,6 +22,8 @@ class SettingsService {
       'auto_tune_requested_context_size';
   static const _keyThreads = 'threads';
   static const _keyThreadsBatch = 'threads_batch';
+  static const _keyBatchSize = 'batch_size';
+  static const _keyMicroBatchSize = 'micro_batch_size';
   static const _keyLogLevel = 'log_level';
   static const _keyNativeLogLevel = 'native_log_level';
   static const _keyToolsEnabled = 'tools_enabled';
@@ -35,6 +37,8 @@ class SettingsService {
   static const _keyModelSupportsTextToSpeech = 'model_supports_text_to_speech';
   static const _keyDirectMediaInput = 'direct_media_input';
   static const _keyModelBytesHint = 'model_bytes_hint';
+  static const _keyLiveSpeechEnabled = 'live_speech_enabled';
+  static const _keyLiveSpeechModelId = 'live_speech_model_id';
 
   static const Map<String, String> _modelPathMigrations = {
     'https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF/resolve/main/Qwen3.5-0.8B-UD-Q4_K_XL.gguf?download=true':
@@ -148,6 +152,8 @@ class SettingsService {
           prefs.getInt(_keyAutoTuneRequestedContext) ?? effectiveContextSize,
       numberOfThreads: prefs.getInt(_keyThreads) ?? 0,
       numberOfThreadsBatch: prefs.getInt(_keyThreadsBatch) ?? 0,
+      batchSize: prefs.getInt(_keyBatchSize) ?? 0,
+      microBatchSize: prefs.getInt(_keyMicroBatchSize) ?? 0,
       logLevel: _parseLogLevel(prefs.getInt(_keyLogLevel), LlamaLogLevel.none),
       nativeLogLevel: _parseLogLevel(
         prefs.getInt(_keyNativeLogLevel),
@@ -171,6 +177,30 @@ class SettingsService {
           prefs.getBool(_keyDirectMediaInput) ?? migrateNativeGemma4Audio,
       modelBytesHint: prefs.getInt(_keyModelBytesHint),
     );
+  }
+
+  /// Loads the globally selected live-dictation sidecar identifier.
+  Future<String?> loadLiveSpeechModelId() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_keyLiveSpeechModelId);
+  }
+
+  /// Loads whether the app-owned live-dictation feature is enabled.
+  Future<bool> loadLiveSpeechEnabled() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_keyLiveSpeechEnabled) ?? true;
+  }
+
+  /// Persists whether the app-owned live-dictation feature is enabled.
+  Future<void> saveLiveSpeechEnabled(bool enabled) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_keyLiveSpeechEnabled, enabled);
+  }
+
+  /// Persists the globally selected live-dictation sidecar identifier.
+  Future<void> saveLiveSpeechModelId(String modelId) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyLiveSpeechModelId, modelId);
   }
 
   Future<void> saveSettings(ChatSettings settings) async {
@@ -204,6 +234,8 @@ class SettingsService {
     }
     await prefs.setInt(_keyThreads, settings.numberOfThreads);
     await prefs.setInt(_keyThreadsBatch, settings.numberOfThreadsBatch);
+    await prefs.setInt(_keyBatchSize, settings.batchSize);
+    await prefs.setInt(_keyMicroBatchSize, settings.microBatchSize);
     await prefs.setInt(_keyLogLevel, settings.logLevel.index);
     await prefs.setInt(_keyNativeLogLevel, settings.nativeLogLevel.index);
     await prefs.setBool(_keyToolsEnabled, settings.toolsEnabled);

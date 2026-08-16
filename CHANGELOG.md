@@ -1,5 +1,11 @@
 ## Unreleased
 
+* Added logical batch-size (`n_batch`) and micro-batch-size (`n_ubatch`)
+  controls for llama.cpp/WebGPU models in the Flutter chat example. Android
+  Auto now probes the packaged Vulkan device before memory planning so capable
+  models do not fall back to CPU merely because the dynamic GPU module was not
+  registered yet.
+
 * Updated the native LiteRT-LM runtime to `v0.16.0-native.2` and added
   experimental CPU-only dedicated ASR runtime sessions with bridge capability
   discovery, bounded mono 16 kHz PCM input,
@@ -8,6 +14,17 @@
   constraint provider and Metal accelerator/sampler plugins required by the
   published runtime. This low-level synchronous API is separate from
   `SpeechToTextEngine` and should run from a worker isolate.
+
+* Added experimental live dictation to the native Flutter chat example for
+  chat models, including generic audio-chat models. The app offers the
+  recommended 54 MB Moonshine Tiny sidecar and an optional higher-capacity,
+  heavier 615 MB Parakeet TDT 0.6B sidecar with checksum-pinned assets,
+  persistent selection, explicit download progress, cancellation, and retry.
+  It captures mono 16 kHz PCM, runs the synchronous ASR session in a worker
+  isolate, renders confirmed and pending text, and returns the finalized
+  transcript to the editable composer. A persisted settings switch explains
+  and enables or disables the optional workflow. The first path is CPU-only,
+  English-only, capped at five minutes, and unavailable on Linux and Web.
 
 * Improved Flutter chat example model downloads with bounded retries for
   transient network failures, safe resume after truncated responses, and a

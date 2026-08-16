@@ -289,13 +289,31 @@ class MockLlamaEngine extends LlamaEngine {
 
 class MockSettingsService implements SettingsService {
   ChatSettings settings = const ChatSettings(modelPath: "mock.gguf");
+  bool liveSpeechEnabled = true;
+  String? liveSpeechModelId;
 
   @override
   Future<ChatSettings> loadSettings() async => settings;
 
   @override
+  Future<bool> loadLiveSpeechEnabled() async => liveSpeechEnabled;
+
+  @override
+  Future<String?> loadLiveSpeechModelId() async => liveSpeechModelId;
+
+  @override
   Future<void> saveSettings(ChatSettings newSettings) async {
     settings = newSettings;
+  }
+
+  @override
+  Future<void> saveLiveSpeechEnabled(bool enabled) async {
+    liveSpeechEnabled = enabled;
+  }
+
+  @override
+  Future<void> saveLiveSpeechModelId(String modelId) async {
+    liveSpeechModelId = modelId;
   }
 }
 

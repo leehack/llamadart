@@ -55,7 +55,11 @@ flutter test
   Range resume. A true sleep-proof UX should be built as an opt-in native
   background downloader/model-store manager and injected through
   `ModelDownloadManager`.
-- Runtime backend preference and GPU layer controls.
+- Runtime backend preference, GPU layer, logical batch-size (`n_batch`), and
+  micro-batch-size (`n_ubatch`) controls. `Auto` preserves backend-specific
+  safe defaults; explicit values apply on the next model load. The app disables
+  these llama.cpp/WebGPU controls for LiteRT-LM bundles, whose runtime does not
+  expose them.
 - Persistent settings and split Dart/native logging controls.
 - Tool-calling toggles and model capability badges.
 - Runtime-verified multimodal capability gating after `mmproj` load, plus
@@ -71,6 +75,21 @@ flutter test
   a safe external-recorder preflight, while selected-file transcription remains
   available there. Web support is tracked in
   [issue #329](https://github.com/leehack/llamadart/issues/329).
+- Experimental live English dictation for native chat models, including
+  generic audio-chat models, through independently installed, checksum-pinned
+  LiteRT sidecars. Moonshine Tiny is the recommended 54 MB default; Parakeet
+  TDT 0.6B is an optional higher-capacity, heavier 615 MB choice. Selection is
+  persistent and the composer shows size, installed state, determinate
+  download progress, cancel, and retry. The app streams mono 16 kHz PCM to a
+  worker-isolated, CPU-only session, shows confirmed and pending
+  five-second-window text, and returns the final transcript to the editable
+  composer without auto-sending. A persisted **Live dictation** switch in the
+  settings explains and enables or disables this optional workflow. This
+  app-owned path is enabled on Android, iOS, macOS, and Windows, capped at five
+  minutes, and remains separate from
+  whole-file `SpeechToTextEngine`, Linux recording, and Web. Audio-chat models
+  retain **Ask with voice** as a separate action. Parakeet TDT follows its
+  upstream [CC-BY-4.0 license](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3).
 - **Ask with voice** for native Gemma 4 E2B, using either the LiteRT-LM
   direct-media bundle or the GGUF model with its matching audio-capable
   projector. It records up to 30 seconds, then **Stop & ask** sends the WAV

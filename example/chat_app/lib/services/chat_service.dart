@@ -223,18 +223,26 @@ class ChatService {
       }
     }
 
-    var batchSize = 0;
-    var microBatchSize = 0;
+    var batchSize = settings.batchSize;
+    var microBatchSize = settings.microBatchSize;
     if (isAndroidNative && usesGpuBackend) {
       if (usesVulkanBackend) {
         final preferredBatchCap = _isQwen35SmallModel(settings.modelPath)
             ? 64
             : 32;
-        batchSize = math.min(safeContextSize, preferredBatchCap);
-        microBatchSize = 1;
+        if (batchSize <= 0) {
+          batchSize = math.min(safeContextSize, preferredBatchCap);
+        }
+        if (microBatchSize <= 0) {
+          microBatchSize = 1;
+        }
       } else {
-        batchSize = math.min(safeContextSize, 256);
-        microBatchSize = math.min(batchSize, 64);
+        if (batchSize <= 0) {
+          batchSize = math.min(safeContextSize, 256);
+        }
+        if (microBatchSize <= 0) {
+          microBatchSize = math.min(batchSize, 64);
+        }
       }
     }
 

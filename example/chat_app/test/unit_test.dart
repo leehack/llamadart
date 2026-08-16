@@ -1368,6 +1368,15 @@ void main() {
       provider.updateTopK(20);
       expect(provider.settings.topK, 20);
 
+      provider.updateBatchSize(256);
+      provider.updateMicroBatchSize(64);
+      expect(provider.settings.batchSize, 256);
+      expect(provider.settings.microBatchSize, 64);
+
+      provider.updateBatchSize(32);
+      expect(provider.settings.batchSize, 32);
+      expect(provider.settings.microBatchSize, 32);
+
       provider.updateLogLevel(LlamaLogLevel.info);
       expect(provider.settings.logLevel, LlamaLogLevel.info);
 
@@ -1480,6 +1489,34 @@ void main() {
       expect(customProvider.settings.gpuLayers, ModelParams.maxGpuLayers);
       expect(customProvider.settings.contextSize, 16384);
       expect(customProvider.settings.autoTuneModelParams, isTrue);
+    });
+
+    test('Android Auto probes Vulkan before estimating GPU offload', () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      final engine = _AndroidVulkanProbeEstimateEngine();
+      final customProvider = ChatProvider(
+        chatService: MockChatService(engine: engine),
+        settingsService: mockSettingsService,
+        initialSettings: const ChatSettings(
+          modelPath: 'gemma-4-E2B-it-Q4_K_S.gguf',
+          preferredBackend: GpuBackend.auto,
+          gpuLayers: 99,
+          autoTuneModelParams: true,
+          contextSize: 8192,
+          modelBytesHint: 4029586368,
+        ),
+      );
+
+      await customProvider.loadModel();
+
+      expect(engine.probeBackends, const [GpuBackend.vulkan]);
+      expect(customProvider.settings.gpuLayers, greaterThan(0));
+      expect(
+        customProvider.availableDevices.any(
+          (device) => device.toUpperCase().contains('VULKAN'),
+        ),
+        isTrue,
+      );
     });
 
     test('applyModelPreset disables tools when unsupported', () {
@@ -2213,6 +2250,40 @@ class _LargeMemoryEstimateEngine extends MockLlamaEngine {
 
   @override
   Future<String> getAvailableBackends() async => 'CPU, METAL';
+}
+
+class _AndroidVulkanProbeEstimateEngine extends MockLlamaEngine {
+  List<GpuBackend> probeBackends = const [];
+  bool _probed = false;
+
+  @override
+  Future<List<GpuDeviceInfo>> listGpuDevices({
+    List<GpuBackend> probeBackends = const [],
+  }) async {
+    this.probeBackends = List<GpuBackend>.from(probeBackends);
+    _probed = true;
+    return const [
+      GpuDeviceInfo(
+        backend: GpuBackend.vulkan,
+        mainGpu: 0,
+        name: 'Vulkan0',
+        description: 'Pixel GPU',
+        deviceId: 'pixel-gpu',
+        type: GpuDeviceType.integratedGpu,
+        memoryFreeBytes: 6 * 1024 * 1024 * 1024,
+        memoryTotalBytes: 8 * 1024 * 1024 * 1024,
+      ),
+    ];
+  }
+
+  @override
+  Future<({int total, int free})> getVramInfo() async => _probed
+      ? (total: 8 * 1024 * 1024 * 1024, free: 6 * 1024 * 1024 * 1024)
+      : (total: 0, free: 0);
+
+  @override
+  Future<String> getAvailableBackends() async =>
+      _probed ? 'CPU, VULKAN' : 'llama.cpp, LiteRT-LM';
 }
 
 class _UnloadRecordingEngine extends MockLlamaEngine {
