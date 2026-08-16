@@ -64,6 +64,9 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
     with WidgetsBindingObserver {
   static const String _customModelsPrefsKey = 'custom_hf_models_v1';
   static const int _webLargeModelWarningBytes = 1900 * 1024 * 1024;
+  static const Duration _completedDownloadHighlightDuration = Duration(
+    seconds: 2,
+  );
 
   late final ModelService _modelService;
   final HuggingFaceModelDiscoveryService _hfDiscoveryService =
@@ -79,6 +82,7 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
   late final ModelDownloadUiController _downloadUi;
   late final bool _ownsDownloadUi;
   StreamSubscription<String>? _downloadFinishedSubscription;
+  Timer? _completedDownloadHighlightTimer;
 
   Set<String> _downloadedFiles = {};
   String? _modelsDir;
@@ -123,6 +127,7 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
       return;
     }
 
+    _completedDownloadHighlightTimer?.cancel();
     _modelSearchController.clear();
     setState(() {
       _showModelLibrary = true;
@@ -291,6 +296,7 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
       setState(() {
         _focusedModelFilename = filename;
       });
+      _scheduleCompletedDownloadHighlightClear(filename);
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         final cardContext = cardKey?.currentContext;
@@ -316,6 +322,21 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
         }
       });
     }
+  }
+
+  void _scheduleCompletedDownloadHighlightClear(String filename) {
+    _completedDownloadHighlightTimer?.cancel();
+    _completedDownloadHighlightTimer = Timer(
+      _completedDownloadHighlightDuration,
+      () {
+        if (!mounted || _focusedModelFilename != filename) {
+          return;
+        }
+        setState(() {
+          _focusedModelFilename = null;
+        });
+      },
+    );
   }
 
   double? _globalTop(BuildContext? context) {
@@ -2591,6 +2612,7 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
     WidgetsBinding.instance.removeObserver(this);
     _modelSearchController.dispose();
     _scrollController.dispose();
+    _completedDownloadHighlightTimer?.cancel();
     unawaited(_downloadFinishedSubscription?.cancel());
     if (_ownsDownloadUi) {
       _downloadUi.dispose();

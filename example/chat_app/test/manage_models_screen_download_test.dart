@@ -683,6 +683,14 @@ void main() {
         final decoration = container.decoration! as BoxDecoration;
         expect(decoration.border, isNotNull);
         expect(find.text(secondModel.name), findsOneWidget);
+
+        await tester.pump(const Duration(seconds: 2));
+        await tester.pumpAndSettle();
+        final clearedContainer = tester.widget<AnimatedContainer>(
+          highlightedCard,
+        );
+        final clearedDecoration = clearedContainer.decoration! as BoxDecoration;
+        expect(clearedDecoration.border, isNull);
       },
     );
 
