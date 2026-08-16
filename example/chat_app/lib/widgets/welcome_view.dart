@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 class WelcomeView extends StatelessWidget {
+  static const String recommendedQuickStartModel = 'Qwen3.5-0.8B-Q4_K_M.gguf';
+
   final bool isInitializing;
   final String? error;
   final String? modelPath;
@@ -8,6 +10,7 @@ class WelcomeView extends StatelessWidget {
   final double loadingProgress;
   final VoidCallback onRetry;
   final VoidCallback? onSelectModel;
+  final ValueChanged<String>? onQuickStartModel;
 
   const WelcomeView({
     super.key,
@@ -18,6 +21,7 @@ class WelcomeView extends StatelessWidget {
     this.loadingProgress = 0.0,
     required this.onRetry,
     required this.onSelectModel,
+    this.onQuickStartModel,
   });
 
   @override
@@ -114,6 +118,139 @@ class WelcomeView extends StatelessWidget {
 
     final canSelectModel = onSelectModel != null;
 
+    if (modelPath == null) {
+      return _ScrollableWelcomeContent(
+        maxWidth: 540,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                color: colorScheme.primaryContainer.withValues(alpha: 0.25),
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(
+                  color: colorScheme.outlineVariant.withValues(alpha: 0.35),
+                ),
+              ),
+              child: Icon(
+                Icons.auto_awesome_rounded,
+                size: 38,
+                color: colorScheme.primary,
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              'Start with a model',
+              textAlign: TextAlign.center,
+              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Download once, then run private AI directly on your device.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 14,
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 24),
+            if (canSelectModel) ...[
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                  color: colorScheme.surfaceContainerHighest.withValues(
+                    alpha: 0.45,
+                  ),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: colorScheme.outlineVariant.withValues(alpha: 0.4),
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: colorScheme.primary.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            'RECOMMENDED',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 0.5,
+                              color: colorScheme.primary,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          'GENERAL ASSISTANT',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: colorScheme.secondary,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    const Text(
+                      'Qwen3.5 0.8B Instruct',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '720 MB base model • Tools and reasoning, with an optional vision asset.',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 10,
+                      children: [
+                        FilledButton.icon(
+                          onPressed: () {
+                            if (onQuickStartModel != null) {
+                              onQuickStartModel!(recommendedQuickStartModel);
+                            } else if (onSelectModel != null) {
+                              onSelectModel!();
+                            }
+                          },
+                          icon: const Icon(Icons.download_rounded),
+                          label: const Text('Choose Qwen3.5 0.8B'),
+                        ),
+                        OutlinedButton.icon(
+                          onPressed: onSelectModel,
+                          icon: const Icon(Icons.tune_rounded),
+                          label: const Text('Browse all models'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+      );
+    }
+
     return _ScrollableWelcomeContent(
       maxWidth: 520,
       child: Column(
@@ -156,16 +293,14 @@ class WelcomeView extends StatelessWidget {
             child: Row(
               children: [
                 Icon(
-                  selectedModelName == null
-                      ? Icons.folder_open_rounded
-                      : Icons.sd_storage_outlined,
+                  Icons.sd_storage_outlined,
                   size: 18,
                   color: colorScheme.secondary,
                 ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    selectedModelName ?? 'No model selected',
+                    selectedModelName ?? 'Selected model',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(color: colorScheme.onSurfaceVariant),
@@ -175,24 +310,18 @@ class WelcomeView extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 20),
-          if (!isLoaded && (canSelectModel || modelPath != null))
+          if (!isLoaded)
             Wrap(
               spacing: 10,
               runSpacing: 10,
               alignment: WrapAlignment.center,
               children: [
                 FilledButton.icon(
-                  onPressed: modelPath == null ? onSelectModel : onRetry,
-                  icon: Icon(
-                    modelPath == null
-                        ? Icons.file_open_rounded
-                        : Icons.power_settings_new_rounded,
-                  ),
-                  label: Text(
-                    modelPath == null ? 'Select model' : 'Load model',
-                  ),
+                  onPressed: onRetry,
+                  icon: const Icon(Icons.power_settings_new_rounded),
+                  label: const Text('Load model'),
                 ),
-                if (modelPath != null && canSelectModel)
+                if (canSelectModel)
                   OutlinedButton.icon(
                     onPressed: onSelectModel,
                     icon: const Icon(Icons.tune_rounded),

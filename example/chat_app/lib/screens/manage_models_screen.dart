@@ -64,11 +64,15 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
     with WidgetsBindingObserver {
   static const String _customModelsPrefsKey = 'custom_hf_models_v1';
   static const int _webLargeModelWarningBytes = 1900 * 1024 * 1024;
+  static const Duration _completedDownloadHighlightDuration = Duration(
+    seconds: 2,
+  );
 
   late final ModelService _modelService;
   final HuggingFaceModelDiscoveryService _hfDiscoveryService =
       HuggingFaceModelDiscoveryService();
   final TextEditingController _modelSearchController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
   final List<DownloadableModel> _models = <DownloadableModel>[];
   final List<DownloadableModel> _customModels = <DownloadableModel>[];
   final Map<String, GlobalKey> _modelCardKeys = {};
@@ -78,6 +82,7 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
   late final ModelDownloadUiController _downloadUi;
   late final bool _ownsDownloadUi;
   StreamSubscription<String>? _downloadFinishedSubscription;
+  Timer? _completedDownloadHighlightTimer;
 
   Set<String> _downloadedFiles = {};
   String? _modelsDir;
@@ -122,6 +127,7 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
       return;
     }
 
+    _completedDownloadHighlightTimer?.cancel();
     _modelSearchController.clear();
     setState(() {
       _showModelLibrary = true;
@@ -283,10 +289,62 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
       return;
     }
 
+    final cardKey = _modelCardKeys[filename];
+    final beforeTop = _globalTop(cardKey?.currentContext);
     await _refreshDownloadedModelState(cacheModels: <DownloadableModel>[model]);
     if (mounted) {
-      setState(() {});
+      setState(() {
+        _focusedModelFilename = filename;
+      });
+      _scheduleCompletedDownloadHighlightClear(filename);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        final cardContext = cardKey?.currentContext;
+        final afterTop = _globalTop(cardContext);
+        if (beforeTop != null &&
+            afterTop != null &&
+            _scrollController.hasClients) {
+          final position = _scrollController.position;
+          final anchoredOffset = (position.pixels + afterTop - beforeTop).clamp(
+            position.minScrollExtent,
+            position.maxScrollExtent,
+          );
+          _scrollController.jumpTo(anchoredOffset);
+        } else if (cardContext != null) {
+          unawaited(
+            Scrollable.ensureVisible(
+              cardContext,
+              alignment: 0.12,
+              duration: const Duration(milliseconds: 360),
+              curve: Curves.easeOutCubic,
+            ),
+          );
+        }
+      });
     }
+  }
+
+  void _scheduleCompletedDownloadHighlightClear(String filename) {
+    _completedDownloadHighlightTimer?.cancel();
+    _completedDownloadHighlightTimer = Timer(
+      _completedDownloadHighlightDuration,
+      () {
+        if (!mounted || _focusedModelFilename != filename) {
+          return;
+        }
+        setState(() {
+          _focusedModelFilename = null;
+        });
+      },
+    );
+  }
+
+  double? _globalTop(BuildContext? context) {
+    final renderObject = context?.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize) {
+      return null;
+    }
+    return renderObject.localToGlobal(Offset.zero).dy;
   }
 
   Future<void> _loadCustomModels() async {
@@ -1454,6 +1512,7 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
             .length;
 
         return ListView(
+          controller: _scrollController,
           padding: EdgeInsets.fromLTRB(
             horizontalPadding,
             isEmbedded ? 14 : 24,
@@ -2552,6 +2611,8 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _modelSearchController.dispose();
+    _scrollController.dispose();
+    _completedDownloadHighlightTimer?.cancel();
     unawaited(_downloadFinishedSubscription?.cancel());
     if (_ownsDownloadUi) {
       _downloadUi.dispose();

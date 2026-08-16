@@ -625,6 +625,75 @@ void main() {
       },
     );
 
+    testWidgets(
+      'anchors and highlights completed model card across download reorder',
+      (tester) async {
+        SharedPreferences.setMockInitialValues({});
+        final firstModel = _remoteModel();
+        final secondModel = _secondRemoteModel();
+        final modelService = _HoldingModelService();
+        final downloadUi = ModelDownloadUiController();
+        addTearDown(downloadUi.dispose);
+
+        await _pumpScreen(
+          tester,
+          modelService: modelService,
+          models: [firstModel, secondModel],
+          downloadUiController: downloadUi,
+        );
+
+        final downloadButtons = find.widgetWithText(OutlinedButton, 'Download');
+        expect(downloadButtons, findsNWidgets(2));
+
+        // Start downloading the second model
+        await _tapVisible(tester, downloadButtons.last);
+        await modelService.downloadStarted.future.timeout(_testTimeout);
+        await tester.pump();
+
+        final highlightedCard = find.byKey(
+          ValueKey('model-card-highlight-${secondModel.filename}'),
+        );
+        final scrollable = tester.state<ScrollableState>(
+          find
+              .ancestor(of: highlightedCard, matching: find.byType(Scrollable))
+              .first,
+        );
+        final scrollController = scrollable.widget.controller!;
+        final currentTop = tester.getTopLeft(highlightedCard).dy;
+        scrollController.jumpTo(
+          (scrollController.position.pixels + currentTop - 140).clamp(
+            scrollController.position.minScrollExtent,
+            scrollController.position.maxScrollExtent,
+          ),
+        );
+        await tester.pump();
+        final beforeTop = tester.getTopLeft(highlightedCard).dy;
+
+        // Complete the download
+        modelService.completeDownload();
+        await tester.pump(const Duration(milliseconds: 20));
+        await modelService.downloadCompleted.future.timeout(_testTimeout);
+        await tester.pumpAndSettle();
+
+        // The second model was reordered to downloaded, and should be highlighted & visible
+        expect(highlightedCard, findsOneWidget);
+        expect(tester.getTopLeft(highlightedCard).dy, closeTo(beforeTop, 6));
+        expect(highlightedCard.hitTestable(), findsOneWidget);
+        final container = tester.widget<AnimatedContainer>(highlightedCard);
+        final decoration = container.decoration! as BoxDecoration;
+        expect(decoration.border, isNotNull);
+        expect(find.text(secondModel.name), findsOneWidget);
+
+        await tester.pump(const Duration(seconds: 2));
+        await tester.pumpAndSettle();
+        final clearedContainer = tester.widget<AnimatedContainer>(
+          highlightedCard,
+        );
+        final clearedDecoration = clearedContainer.decoration! as BoxDecoration;
+        expect(clearedDecoration.border, isNull);
+      },
+    );
+
     testWidgets('second model waits while first download is active', (
       tester,
     ) async {

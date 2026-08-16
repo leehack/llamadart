@@ -90,6 +90,47 @@ void main() {
       downloadUi.completeActiveDownload(activeModel.filename);
     });
 
+    testWidgets('quick start opens Lab focused on the recommended model', (
+      tester,
+    ) async {
+      final oldSize = tester.view.physicalSize;
+      final oldRatio = tester.view.devicePixelRatio;
+      tester.view
+        ..physicalSize = const Size(1440, 920)
+        ..devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view
+          ..physicalSize = oldSize
+          ..devicePixelRatio = oldRatio;
+      });
+
+      final provider = ChatProvider(
+        chatService: MockChatService(),
+        settingsService: MockSettingsService(),
+      );
+      addTearDown(provider.dispose);
+
+      await tester.pumpWidget(
+        ChangeNotifierProvider<ChatProvider>.value(
+          value: provider,
+          child: const MaterialApp(home: AppShellScreen()),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Choose Qwen3.5 0.8B'));
+      await _pumpUntil(
+        tester,
+        () => find.byType(ManageModelsScreen).evaluate().isNotEmpty,
+      );
+
+      final lab = tester.widget<ManageModelsScreen>(
+        find.byType(ManageModelsScreen),
+      );
+      expect(lab.focusModelFilename, 'Qwen3.5-0.8B-Q4_K_M.gguf');
+      expect(lab.focusRequestId, 1);
+    });
+
     testWidgets('download activity keeps an open pinned settings panel open', (
       tester,
     ) async {
@@ -128,7 +169,7 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await tester.tap(find.byTooltip('Open model and inference settings'));
+      await tester.tap(find.byTooltip('Open Lab'));
       await tester.pumpAndSettle();
       expect(find.text('Model parameters'), findsOneWidget);
 
@@ -191,14 +232,9 @@ void main() {
       expect(find.text('New conversation'), findsWidgets);
       expect(find.text('Inference parameters'), findsNothing);
       expect(find.text('Change model'), findsOneWidget);
-      expect(
-        find.byTooltip('Open model and inference settings'),
-        findsOneWidget,
-      );
+      expect(find.byTooltip('Open Lab'), findsOneWidget);
 
-      await tester.tap(
-        find.byTooltip('Open model and inference settings').first,
-      );
+      await tester.tap(find.byTooltip('Open Lab').first);
       await tester.pumpAndSettle();
       expect(find.text('Inference parameters'), findsOneWidget);
 
@@ -280,9 +316,7 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      await tester.tap(
-        find.byTooltip('Open model and inference settings').first,
-      );
+      await tester.tap(find.byTooltip('Open Lab').first);
       await tester.pumpAndSettle();
       await tester.tap(find.text('Model parameters'));
       await tester.pumpAndSettle();
@@ -365,13 +399,11 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      await tester.tap(
-        find.byTooltip('Open model and inference settings').first,
-      );
+      await tester.tap(find.byTooltip('Open Lab').first);
       await tester.pumpAndSettle();
 
-      expect(find.text('Settings'), findsOneWidget);
-      expect(find.byTooltip('Close settings'), findsOneWidget);
+      expect(find.text('Lab'), findsOneWidget);
+      expect(find.byTooltip('Close Lab'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
 
@@ -406,10 +438,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.bySemanticsLabel('Open navigation menu'), findsOneWidget);
-      expect(
-        find.bySemanticsLabel('Open model and inference settings'),
-        findsOneWidget,
-      );
+      expect(find.bySemanticsLabel('Open Lab'), findsOneWidget);
       expect(find.bySemanticsLabel('Send message'), findsOneWidget);
       semantics.dispose();
     });
@@ -464,9 +493,7 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        await tester.tap(
-          find.byTooltip('Open model and inference settings').first,
-        );
+        await tester.tap(find.byTooltip('Open Lab').first);
         await tester.pumpAndSettle();
 
         expect(

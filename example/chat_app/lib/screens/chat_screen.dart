@@ -14,11 +14,13 @@ import 'manage_models_screen.dart';
 
 class ChatScreen extends StatefulWidget {
   final VoidCallback? onOpenModelSelection;
+  final ValueChanged<String>? onOpenModelFilename;
   final bool showModelSelectionAction;
 
   const ChatScreen({
     super.key,
     this.onOpenModelSelection,
+    this.onOpenModelFilename,
     this.showModelSelectionAction = true,
   });
 
@@ -27,14 +29,19 @@ class ChatScreen extends StatefulWidget {
 }
 
 class _ChatScreenState extends State<ChatScreen> {
+  static const double _pinToBottomThreshold = 48.0;
+  static const double _showScrollButtonThreshold = 140.0;
+
   final TextEditingController _controller = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final FocusNode _focusNode = FocusNode();
 
+  bool _isPinnedToBottom = true;
   bool _wasGenerating = false;
   bool _showScrollToBottom = false;
   bool _autoFollowScrollScheduled = false;
   ChatProvider? _providerForListener;
+  String? _lastConversationId;
 
   @override
   void initState() {
@@ -44,7 +51,11 @@ class _ChatScreenState extends State<ChatScreen> {
       if (!mounted) return;
       final provider = context.read<ChatProvider>();
       _providerForListener = provider;
+      _lastConversationId = provider.activeConversationId;
       provider.addListener(_onProviderUpdate);
+      if (provider.messages.isNotEmpty) {
+        _scrollToBottom();
+      }
     });
   }
 
@@ -63,8 +74,12 @@ class _ChatScreenState extends State<ChatScreen> {
     if (!_scrollController.hasClients) return;
 
     final diff = _distanceFromBottom();
-    final shouldShow = diff > 220;
+    final isNearBottom = diff <= _pinToBottomThreshold;
+    if (isNearBottom != _isPinnedToBottom) {
+      _isPinnedToBottom = isNearBottom;
+    }
 
+    final shouldShow = diff > _showScrollButtonThreshold;
     if (shouldShow != _showScrollToBottom && mounted) {
       setState(() {
         _showScrollToBottom = shouldShow;
@@ -79,23 +94,43 @@ class _ChatScreenState extends State<ChatScreen> {
       return;
     }
 
-    final shouldAutoFollowAfterGeneration = _distanceFromBottom() < 1200;
-
-    if (provider.isGenerating) {
-      _scheduleAutoFollowScroll();
+    // Reset scroll state on conversation switch so the new thread starts at the bottom.
+    final currentConversationId = provider.activeConversationId;
+    if (currentConversationId != _lastConversationId) {
+      _lastConversationId = currentConversationId;
+      _isPinnedToBottom = true;
+      if (_showScrollToBottom) {
+        setState(() {
+          _showScrollToBottom = false;
+        });
+      }
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _scrollToBottom();
+      });
+      _wasGenerating = provider.isGenerating;
+      return;
     }
 
+    // Follow streaming ONLY if the user is pinned to the bottom.
+    if (provider.isGenerating) {
+      if (_isPinnedToBottom) {
+        _scheduleAutoFollowScroll();
+      }
+    }
+
+    // When generation completes, only jump if pinned to bottom.
     if (_wasGenerating && !provider.isGenerating) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) {
           return;
         }
 
-        if (shouldAutoFollowAfterGeneration) {
-          _scrollToBottom(force: true);
-        }
-        if (provider.isReady) {
-          _focusNode.requestFocus();
+        if (_isPinnedToBottom) {
+          _scrollToBottom();
+          if (provider.isReady) {
+            _focusNode.requestFocus();
+          }
         }
       });
     }
@@ -110,30 +145,26 @@ class _ChatScreenState extends State<ChatScreen> {
     _autoFollowScrollScheduled = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _autoFollowScrollScheduled = false;
-      if (!mounted) {
+      if (!mounted || !_isPinnedToBottom) {
         return;
       }
       _scrollToBottom();
     });
   }
 
-  void _scrollToBottom({bool force = false}) {
+  void _scrollToBottom() {
     if (!_scrollController.hasClients) return;
 
-    final pos = _scrollController.position;
-    final diff = _distanceFromBottom();
+    _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_isPinnedToBottom || !_scrollController.hasClients) {
+        return;
+      }
+      _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+    });
 
-    if (force || diff < 50) {
-      _scrollController.jumpTo(pos.maxScrollExtent);
-    } else if (diff < 500) {
-      _scrollController.animateTo(
-        pos.maxScrollExtent,
-        duration: const Duration(milliseconds: 220),
-        curve: Curves.easeOutCubic,
-      );
-    }
-
-    if (_showScrollToBottom) {
+    _isPinnedToBottom = true;
+    if (_showScrollToBottom && mounted) {
       setState(() {
         _showScrollToBottom = false;
       });
@@ -155,9 +186,15 @@ class _ChatScreenState extends State<ChatScreen> {
     final provider = context.read<ChatProvider>();
     if (text.isEmpty && provider.stagedParts.isEmpty) return;
 
+    _isPinnedToBottom = true;
     provider.sendMessage(text);
     _controller.value = TextEditingValue.empty;
     _focusNode.requestFocus();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _scrollToBottom();
+      }
+    });
   }
 
   void _openModelSelection() {
@@ -170,6 +207,15 @@ class _ChatScreenState extends State<ChatScreen> {
     Navigator.of(
       context,
     ).push(MaterialPageRoute(builder: (context) => const ManageModelsScreen()));
+  }
+
+  void _openQuickStartModel(String filename) {
+    final callback = widget.onOpenModelFilename;
+    if (callback != null) {
+      callback(filename);
+      return;
+    }
+    _openModelSelection();
   }
 
   @override
@@ -196,6 +242,9 @@ class _ChatScreenState extends State<ChatScreen> {
                         onRetry: () => provider.loadModel(),
                         onSelectModel: widget.showModelSelectionAction
                             ? _openModelSelection
+                            : null,
+                        onQuickStartModel: widget.showModelSelectionAction
+                            ? _openQuickStartModel
                             : null,
                       );
                     }
