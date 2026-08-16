@@ -3470,6 +3470,9 @@ class ChatProvider extends ChangeNotifier {
       final llamaAudio = switch (audio) {
         SpeechAudioFileInput(:final path) => LlamaAudioContent(path: path),
         SpeechAudioBytesInput(:final bytes) => LlamaAudioContent(bytes: bytes),
+        SpeechAudioPcmInput() => throw LlamaUnsupportedException(
+          'The chat model transcription flow accepts encoded audio only.',
+        ),
       };
       if (!await _ensureMultimodalProjectorForMedia(<LlamaContentPart>[
         llamaAudio,

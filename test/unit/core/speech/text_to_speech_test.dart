@@ -61,10 +61,10 @@ void main() {
         ]),
       );
       expect(capabilities.supportsSpeakerReference, isTrue);
-      expect(
-        capabilities.speakerReferenceInputKinds,
-        containsAll(SpeechAudioInputKind.values),
-      );
+      expect(capabilities.speakerReferenceInputKinds, {
+        SpeechAudioInputKind.file,
+        SpeechAudioInputKind.encodedBytes,
+      });
       expect(capabilities.supportsIncrementalAudio, isFalse);
       expect(capabilities.supportsCancellation, isTrue);
       expect(capabilities.supportsOutputBackpressure, isFalse);

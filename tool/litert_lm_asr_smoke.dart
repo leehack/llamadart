@@ -33,27 +33,44 @@ Future<void> main(List<String> args) async {
   final fixture = await _readPcm16MonoWav(audioPath);
   final libraryPath = Platform.environment['LLAMADART_LITERT_LM_LIBRARY_PATH']
       ?.trim();
-  final client = LiteRtLmRuntimeClient(
+  final recognizer = SpeechToTextEngine.liteRtLm(
+    LiteRtLmAsrRuntimeConfig(
+      modelPath: modelPath,
+      tokenizerPath: tokenizerPath,
+      modelPreset: preset,
+    ),
     libraryPath: libraryPath == null || libraryPath.isEmpty
         ? null
         : libraryPath,
   );
   final stopwatch = Stopwatch()..start();
-  LiteRtLmAsrRuntimeSession? session;
+  SpeechToTextStreamingSession? session;
   try {
-    if (!client.supportsAsrBridge) {
+    final capabilities = await recognizer.capabilities;
+    if (!capabilities.isSupported) {
       throw StateError(
-        'The loaded LiteRT-LM runtime does not expose the dedicated ASR bridge.',
+        capabilities.unsupportedReason ??
+            'The loaded LiteRT-LM runtime does not expose dedicated ASR.',
       );
     }
-    session = client.createAsrSession(
-      LiteRtLmAsrRuntimeConfig(
-        modelPath: modelPath,
-        tokenizerPath: tokenizerPath,
-        modelPreset: preset,
-      ),
-    );
-    final transcript = _transcribe(session, fixture.samples);
+    session = await recognizer.startStream();
+    final eventsFuture = session.events.toList();
+    for (var offset = 0; offset < fixture.samples.length;) {
+      final end = math.min(offset + _pushSamples, fixture.samples.length);
+      await session.addPcm(
+        Float32List.sublistView(fixture.samples, offset, end),
+      );
+      offset = end;
+    }
+    await session.finish();
+    final completion = await session.done;
+    final events = await eventsFuture;
+    if (completion.state != SpeechToTextCompletionState.completed ||
+        completion.result == null) {
+      throw completion.error ??
+          StateError('LiteRT-LM ASR did not complete successfully.');
+    }
+    final transcript = completion.result!.text;
     stopwatch.stop();
     final normalizedTranscript = _normalize(transcript);
     final normalizedExpected = _normalize(expected);
@@ -66,98 +83,17 @@ Future<void> main(List<String> args) async {
     final result = <String, Object>{
       'modelPreset': preset.name,
       'backend': LiteRtLmAsrBackend.cpu.name,
+      'implementation': capabilities.implementation.name,
       'sampleRateHz': _sampleRateHz,
       'sampleCount': fixture.samples.length,
+      'partialEventCount': events.whereType<SpeechToTextPartialEvent>().length,
       'fixtureId': fixture.fixtureId,
       'elapsedMilliseconds': stopwatch.elapsedMilliseconds,
       'transcript': transcript,
     };
     print('RESULT litert_lm_asr ${jsonEncode(result)}');
   } finally {
-    session?.dispose();
-    client.dispose();
-  }
-}
-
-String _transcribe(LiteRtLmAsrRuntimeSession session, Float32List samples) {
-  final confirmed = <String>[];
-  var offset = 0;
-  var finalSeen = false;
-
-  while (offset < samples.length) {
-    final end = math.min(offset + _pushSamples, samples.length);
-    final chunk = Float32List.sublistView(samples, offset, end);
-    final push = session.pushAudio(chunk);
-    if (push.acceptedSamples == 0) {
-      if (!push.wouldBlock) {
-        throw StateError(
-          'LiteRT-LM ASR accepted no audio without backpressure.',
-        );
-      }
-      final state = _processAvailable(session, confirmed);
-      if (state == LiteRtLmAsrProcessState.needsMoreAudio) {
-        throw StateError(
-          'LiteRT-LM ASR reported backpressure but could not process a window.',
-        );
-      }
-      finalSeen = state == LiteRtLmAsrProcessState.endOfStream;
-      continue;
-    }
-    offset += push.acceptedSamples;
-    final state = _processAvailable(session, confirmed);
-    if (state == LiteRtLmAsrProcessState.endOfStream) {
-      finalSeen = true;
-      break;
-    }
-  }
-
-  if (!finalSeen) {
-    session.finishAudio();
-    for (var attempt = 0; attempt < 10000; attempt++) {
-      final result = session.processNext();
-      if (result.state == LiteRtLmAsrProcessState.endOfStream) {
-        finalSeen = true;
-        break;
-      }
-      if (result.state == LiteRtLmAsrProcessState.needsMoreAudio) {
-        throw StateError(
-          'LiteRT-LM ASR requested more audio after input finalization.',
-        );
-      }
-      _appendConfirmed(confirmed, result.confirmedText);
-      if (result.isFinal) {
-        finalSeen = true;
-        break;
-      }
-    }
-  }
-  if (!finalSeen) {
-    throw StateError('LiteRT-LM ASR did not produce a final result.');
-  }
-  return confirmed.join(' ').trim();
-}
-
-LiteRtLmAsrProcessState _processAvailable(
-  LiteRtLmAsrRuntimeSession session,
-  List<String> confirmed,
-) {
-  for (var attempt = 0; attempt < 10000; attempt++) {
-    final result = session.processNext();
-    if (result.state != LiteRtLmAsrProcessState.update) {
-      return result.state;
-    }
-    _appendConfirmed(confirmed, result.confirmedText);
-    if (result.isFinal) {
-      return LiteRtLmAsrProcessState.endOfStream;
-    }
-  }
-  throw StateError('LiteRT-LM ASR processing did not quiesce.');
-}
-
-void _appendConfirmed(List<String> confirmed, String value) {
-  final normalized = value.trim();
-  if (normalized.isNotEmpty) {
-    confirmed.add(normalized);
+    await session?.cancel();
   }
 }
 

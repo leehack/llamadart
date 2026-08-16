@@ -22,10 +22,11 @@ the caller explicitly selects the Qwen3-ASR profile and the loaded projector
 reports audio capability. This path is real-model validated on macOS arm64;
 other native targets still need representative validation. Native llama.cpp
 also exposes experimental Qwen3-TTS synthesis through the separate typed
-[`TextToSpeechEngine`](../guides/text-to-speech). Native LiteRT-LM v0.16 adds
-an experimental CPU-only, low-level dedicated ASR session API, but it is not
-yet a `SpeechToTextEngine` backend. WebGPU and LiteRT-LM Web do not currently
-expose either typed speech path. See the
+[`TextToSpeechEngine`](../guides/text-to-speech). Native LiteRT-LM v0.16 also
+supports experimental CPU-only streaming ASR through
+`SpeechToTextEngine.liteRtLm`, with the native session owned by a worker
+isolate. WebGPU and LiteRT-LM Web do not currently expose either typed speech
+path. See the
 [speech recognition support matrix](../guides/speech-to-text#current-support-matrix).
 
 Available override tags are published on the

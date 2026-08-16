@@ -1,6 +1,6 @@
 ---
 title: Speech to Text
-description: Transcribe complete audio files with the experimental typed native llama.cpp speech API.
+description: Transcribe encoded audio or stream PCM with the experimental typed native speech API.
 ---
 
 `SpeechToTextEngine` is the typed API for speech recognition. It is separate
@@ -8,9 +8,10 @@ from `LlamaEngine` because transcript events, timestamps, confidence, language,
 speaker labels, cancellation, and audio metadata have a different contract from
 chat-completion tokens.
 
-The first implementation is experimental and deliberately narrow: it adapts
-native llama.cpp audio input to whole-file transcription. It has been validated
-with Qwen3-ASR 0.6B, but recognition quality and language behavior remain model
+The API currently has two experimental native implementations. llama.cpp adapts
+Qwen3-ASR audio input to whole-file transcription. LiteRT-LM uses a dedicated
+CPU ASR engine for incremental mono 16 kHz PCM, partial text, and finalization
+from a worker isolate. Recognition quality and language behavior remain model
 dependent. Generic `LlamaAudioContent` chat input still exists separately for
 audio-capable multimodal models.
 
@@ -20,31 +21,26 @@ audio-capable multimodal models.
 | --- | --- | --- | --- |
 | Native llama.cpp / GGUF | Model + projector dependent | Experimental Qwen3-ASR adapter; complete WAV/MP3/FLAC file or bytes, final transcript only | Experimental Qwen3-TTS adapter; see [Text to Speech](./text-to-speech) |
 | WebGPU / GGUF | Bridge + model dependent | Unsupported | Unsupported |
-| Native LiteRT-LM | Separate `.litertlm` audio chat remains bundle dependent | Experimental CPU-only dedicated ASR runtime sessions; not yet wired to `SpeechToTextEngine` | Unsupported |
+| Native LiteRT-LM | Separate `.litertlm` audio chat remains bundle dependent | Experimental dedicated CPU ASR through `SpeechToTextEngine.liteRtLm`; mono 16 kHz float PCM, partial/final text, streaming input | Unsupported |
 | LiteRT-LM Web | Unsupported | Unsupported | Unsupported |
 
 “Generic audio-input chat” means an audio content part is processed by normal
 generation. It does not imply a transcript schema, stable ASR behavior, or TTS.
-The typed STT API adds a stable Dart result/cancellation boundary, but the first
-backend still performs whole-audio llama.cpp generation internally. Its
-`SpeechToTextImplementation.multimodalPromptAdapter` capability makes that
-distinction inspectable; it is not a dedicated native ASR engine.
+The typed STT API adds a stable Dart result/cancellation boundary. The llama.cpp
+backend still performs whole-audio generation internally and reports
+`SpeechToTextImplementation.multimodalPromptAdapter`. LiteRT-LM reports
+`SpeechToTextImplementation.dedicatedBackend` and does not use the selected
+chat model.
 
-## Dedicated LiteRT-LM ASR sessions
+## Stream with dedicated LiteRT-LM ASR
 
-LiteRT-LM v0.16 adds a different speech path: dedicated ASR engines that
-consume streaming PCM windows instead of an audio part in normal chat. The
-experimental `LiteRtLmRuntimeClient` bridge exposes that low-level native
-session boundary while the higher-level `SpeechToTextEngine` adapter is still
-being designed.
+LiteRT-LM v0.16 adds dedicated ASR engines that consume PCM windows instead of
+an audio part in normal chat. Configure the local model/tokenizer pair, start a
+stream, and await every input push so bounded native backpressure can throttle
+the producer.
 
 ```dart
-final runtime = LiteRtLmRuntimeClient();
-if (!runtime.supportsAsrBridge) {
-  throw StateError('Install the pinned speech-capable LiteRT-LM runtime.');
-}
-
-final session = runtime.createAsrSession(
+final recognizer = SpeechToTextEngine.liteRtLm(
   const LiteRtLmAsrRuntimeConfig(
     modelPath: '/models/moonshine_tiny.tflite',
     tokenizerPath: '/models/tokenizer.json',
@@ -52,58 +48,42 @@ final session = runtime.createAsrSession(
   ),
 );
 
-try {
-  var offset = 0;
-  while (offset < mono16KhzFloatPcm.length) {
-    final push = session.pushAudio(
-      Float32List.sublistView(mono16KhzFloatPcm, offset),
-    );
-    offset += push.acceptedSamples;
-    if (push.acceptedSamples == 0 && !push.wouldBlock) {
-      throw StateError('ASR input made no progress.');
-    }
-    if (!push.wouldBlock) continue;
-
-    final update = session.processNext();
-    print('${update.confirmedText}${update.unconfirmedText}');
-  }
-
-  session.finishAudio();
-  while (true) {
-    final update = session.processNext();
-    if (update.state == LiteRtLmAsrProcessState.endOfStream) break;
-    if (update.state == LiteRtLmAsrProcessState.needsMoreAudio) {
-      throw StateError('Finalized ASR input requested more audio.');
-    }
-    print('${update.confirmedText}${update.unconfirmedText}');
-    if (update.isFinal) break;
-  }
-} finally {
-  session.dispose();
-  runtime.dispose();
+final capabilities = await recognizer.capabilities;
+if (!capabilities.isSupported) {
+  throw StateError(capabilities.unsupportedReason);
 }
+
+final session = await recognizer.startStream();
+final events = session.events.listen((event) {
+  if (event is SpeechToTextPartialEvent) {
+    print('stable=${event.confirmedText} pending=${event.pendingText}');
+  } else if (event is SpeechToTextFinalEvent) {
+    print('final=${event.result.text}');
+  }
+});
+
+for (final chunk in mono16KhzFloatPcmChunks) {
+  await session.addPcm(chunk);
+}
+await session.finish();
+final completion = await session.done;
+await events.cancel();
 ```
 
-The input contract is mono 16 kHz `Float32List` PCM. `pushAudio` can accept a
-prefix and report backpressure; callers must process a window before retrying
-the unaccepted suffix. `confirmedText` is stable, while `unconfirmedText` may
-change after the next window. `finishAudio` flushes a partial final window,
-`reset` reuses the session for another stream, and `cancel` is cooperative
-between native inference windows.
+The input contract is mono 16 kHz normalized `Float32List` PCM. The public
+session owns synchronous inference in a worker isolate. `confirmedText` is
+stable, while `pendingText` may change after the next inference window.
+`finish` flushes a partial final window, and `cancel` is cooperative between
+native windows. Pausing the event subscription does not throttle inference;
+awaiting `addPcm` is the input-backpressure boundary.
 
-Inference is synchronous and potentially expensive. Own the session from a
-worker isolate rather than calling `processNext` on a Flutter UI isolate. The
-validated v0.16 contract is CPU-only; accelerator enum values are deliberately
-not exposed until their transcripts pass the same real-model correctness
-gates. Supported metadata presets currently cover Parakeet TDT, Parakeet CTC,
-Moonshine Tiny, Whisper Tiny, and Qwen3-ASR 0.6B, but callers must provide the
-matching model and tokenizer artifacts.
-
-This low-level API does not itself provide microphone capture, a Dart event
-stream, timestamps, confidence, diarization, or automatic resampling. The chat
-example now demonstrates an app-owned microphone/worker wrapper with selectable
-Moonshine Tiny and Parakeet TDT sidecars. That example integration is not yet a
-public streaming `SpeechToTextEngine` adapter.
+The validated v0.16 contract is CPU-only. Supported metadata presets cover
+Parakeet TDT, Parakeet CTC, Moonshine Tiny, Whisper Tiny, and Qwen3-ASR 0.6B,
+but callers must supply a matching model and tokenizer. The API does not
+capture a microphone, resample audio, or provide timestamps, confidence, or
+diarization. Advanced callers can still use `LiteRtLmRuntimeClient` and
+`LiteRtLmAsrRuntimeSession` directly, but those synchronous calls must not run
+on a Flutter UI isolate.
 
 ## Load a Qwen3-ASR model
 
@@ -165,9 +145,9 @@ single-subscription stream: runtime failure is emitted as a stream error and
 the same terminal condition is available through `task.done`.
 
 Native llama.cpp currently decodes WAV, MP3, and FLAC file or byte inputs. Raw
-PCM is intentionally not exposed by the typed API yet: projector sample rates
-are model-specific, and the current public engine capability does not report
-the loaded projector's required rate.
+PCM remains unsupported for that prompt adapter because projector sample rates
+are model-specific. Dedicated LiteRT-LM accepts `SpeechAudioPcmInput` for a
+complete mono 16 kHz float buffer, or the incremental session shown above.
 
 `SpeechAudioFormat` also carries optional encoding and MIME metadata. Final
 results reserve segment and word timing, confidence, and speaker fields so a
@@ -176,10 +156,10 @@ llama.cpp adapter returns one untimed segment and no confidence or diarization.
 
 ## Streaming, cancellation, and concurrency
 
-The event stream is future-compatible with partial transcripts, but the first
-backend consumes the complete input before inference and emits only one final
-event. It does not accept live microphone frames, and pausing the Dart event
-subscription does not throttle native inference.
+The llama.cpp prompt adapter consumes complete encoded input and emits one final
+event. Dedicated LiteRT-LM emits replaceable partial events while accepting
+incremental PCM. Pausing either event stream does not throttle native
+inference; LiteRT-LM producers must await `addPcm` for input backpressure.
 
 Call `task.cancel()` to request cooperative cancellation:
 
@@ -191,9 +171,11 @@ final completion = await task.done;
 assert(completion.state == SpeechToTextCompletionState.cancelled);
 ```
 
-Cancelling a stream subscription does not cancel the native task. All
-`SpeechToTextEngine` wrappers over one `LlamaEngine` share a one-task lease.
-Do not call `LlamaEngine.create` on that engine until the speech task completes.
+Cancelling an event subscription does not cancel the native task. Call
+`task.cancel()` for whole-input recognition or `await session.cancel()` for an
+incremental session. All prompt-adapter wrappers over one `LlamaEngine` share a
+one-task lease. A dedicated LiteRT-LM recognizer allows one active task per
+`SpeechToTextEngine` instance.
 
 ## Chat app
 
@@ -212,9 +194,9 @@ different user actions:
   54 MB default; Parakeet TDT 0.6B is an optional higher-capacity, heavier
   615 MB choice. The selector remembers the choice and reports model size,
   installed state, determinate download progress, cancellation, and retry. The
-  app captures mono 16 kHz PCM, owns the synchronous LiteRT-LM session in a
-  worker isolate, and renders monotonic confirmed text plus a replaceable
-  pending suffix after each five-second window. **Use text** finalizes the
+  app captures mono 16 kHz PCM, feeds the public worker-isolated
+  `SpeechToTextEngine.liteRtLm` session, and renders monotonic confirmed text
+  plus a replaceable pending suffix after each five-second window. **Use text** finalizes the
   session and inserts the result into the editable composer; it never submits
   the message automatically. Generic audio-chat models retain **Ask with
   voice** as a separate action.
@@ -227,9 +209,9 @@ different user actions:
   when both capability declarations are present.
 
 The dedicated **Transcribe Audio** action remains hidden on Web and for normal
-LiteRT-LM chat bundles. Live dictation is a separate app-owned sidecar flow,
-not a capability of the selected chat bundle or the current public
-`SpeechToTextEngine`.
+LiteRT-LM chat bundles. Live dictation uses the public LiteRT-LM streaming STT
+API with an app-managed sidecar; it is not a capability of the selected chat
+bundle.
 ASR microphone recordings are capped at five minutes, cancelled when the app is
 backgrounded, and deleted after transcription. This remains a whole-file
 workflow: it does not produce live partial transcripts while the user speaks.
@@ -275,8 +257,8 @@ the native downloader verifies both files before the model can be selected.
 - Qwen3-ASR may emit a leading `language English<asr_text>` marker. llamadart
   strips that marker, but does not expose it as reliable detected-language
   metadata until language behavior has a dedicated validation contract.
-- There are no word/segment timestamps, confidence scores, speaker
-  diarization, or incremental audio frames in the current backend.
+- There are no word/segment timestamps, confidence scores, or speaker
+  diarization. Incremental audio and partial text are LiteRT-LM-only.
 - Native inference backend correctness and performance remain device dependent;
   establish a CPU baseline before claiming GPU support for a deployment.
 - The local real-model smoke has passed on macOS arm64 CPU, and a separate

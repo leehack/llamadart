@@ -310,7 +310,7 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       name: 'litert-lm-asr-smoke',
       group: LocalE2eScenarioGroup.dartLocalOnly,
       description:
-          'Run the dedicated LiteRT-LM ASR session API against a known PCM16 fixture.',
+          'Run the public dedicated LiteRT-LM speech engine against a known PCM16 fixture.',
       requiresDevice: false,
       stepsBuilder: (context) => [
         LocalE2eCommandStep(
@@ -325,7 +325,7 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
             context.modelPreset,
             context.expect,
           ],
-          description: 'Dedicated LiteRT-LM ASR real-model smoke',
+          description: 'Public LiteRT-LM speech engine real-model smoke',
         ),
       ],
     ),
