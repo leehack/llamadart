@@ -151,8 +151,11 @@ class _LiteRtLmSpeechWorkerClient implements LiteRtLmSpeechToTextWorker {
 
   @override
   Future<int> pushAudio(Float32List samples) async {
-    final copy = Float32List.fromList(samples);
-    final bytes = Uint8List.view(copy.buffer);
+    final bytes = Uint8List.view(
+      samples.buffer,
+      samples.offsetInBytes,
+      samples.lengthInBytes,
+    );
     final result = await _request(
       'push',
       TransferableTypedData.fromList(<Uint8List>[bytes]),
