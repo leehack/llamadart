@@ -69,6 +69,7 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
   final HuggingFaceModelDiscoveryService _hfDiscoveryService =
       HuggingFaceModelDiscoveryService();
   final TextEditingController _modelSearchController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
   final List<DownloadableModel> _models = <DownloadableModel>[];
   final List<DownloadableModel> _customModels = <DownloadableModel>[];
   final Map<String, GlobalKey> _modelCardKeys = {};
@@ -283,10 +284,46 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
       return;
     }
 
+    final cardKey = _modelCardKeys[filename];
+    final beforeTop = _globalTop(cardKey?.currentContext);
     await _refreshDownloadedModelState(cacheModels: <DownloadableModel>[model]);
     if (mounted) {
-      setState(() {});
+      setState(() {
+        _focusedModelFilename = filename;
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        final cardContext = cardKey?.currentContext;
+        final afterTop = _globalTop(cardContext);
+        if (beforeTop != null &&
+            afterTop != null &&
+            _scrollController.hasClients) {
+          final position = _scrollController.position;
+          final anchoredOffset = (position.pixels + afterTop - beforeTop).clamp(
+            position.minScrollExtent,
+            position.maxScrollExtent,
+          );
+          _scrollController.jumpTo(anchoredOffset);
+        } else if (cardContext != null) {
+          unawaited(
+            Scrollable.ensureVisible(
+              cardContext,
+              alignment: 0.12,
+              duration: const Duration(milliseconds: 360),
+              curve: Curves.easeOutCubic,
+            ),
+          );
+        }
+      });
     }
+  }
+
+  double? _globalTop(BuildContext? context) {
+    final renderObject = context?.findRenderObject();
+    if (renderObject is! RenderBox || !renderObject.hasSize) {
+      return null;
+    }
+    return renderObject.localToGlobal(Offset.zero).dy;
   }
 
   Future<void> _loadCustomModels() async {
@@ -1454,6 +1491,7 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
             .length;
 
         return ListView(
+          controller: _scrollController,
           padding: EdgeInsets.fromLTRB(
             horizontalPadding,
             isEmbedded ? 14 : 24,
@@ -2552,6 +2590,7 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _modelSearchController.dispose();
+    _scrollController.dispose();
     unawaited(_downloadFinishedSubscription?.cancel());
     if (_ownsDownloadUi) {
       _downloadUi.dispose();

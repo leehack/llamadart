@@ -73,4 +73,53 @@ void main() {
     expect(find.textContaining('token=secret'), findsNothing);
     expect(find.textContaining('signed-fragment'), findsNothing);
   });
+
+  testWidgets(
+    'shows quick-start recommendation and triggers callback when no model is loaded',
+    (tester) async {
+      String? quickStartModel;
+      var browsedModels = false;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: WelcomeView(
+              isInitializing: false,
+              error: null,
+              modelPath: null,
+              isLoaded: false,
+              onRetry: () {},
+              onSelectModel: () {
+                browsedModels = true;
+              },
+              onQuickStartModel: (model) {
+                quickStartModel = model;
+              },
+            ),
+          ),
+        ),
+      );
+
+      expect(find.text('Start with a model'), findsOneWidget);
+      expect(find.text('Qwen3.5 0.8B Instruct'), findsOneWidget);
+      expect(
+        find.widgetWithText(FilledButton, 'Choose Qwen3.5 0.8B'),
+        findsOneWidget,
+      );
+      expect(
+        find.widgetWithText(OutlinedButton, 'Browse all models'),
+        findsOneWidget,
+      );
+
+      await tester.tap(
+        find.widgetWithText(FilledButton, 'Choose Qwen3.5 0.8B'),
+      );
+      expect(quickStartModel, 'Qwen3.5-0.8B-Q4_K_M.gguf');
+
+      await tester.tap(
+        find.widgetWithText(OutlinedButton, 'Browse all models'),
+      );
+      expect(browsedModels, isTrue);
+    },
+  );
 }

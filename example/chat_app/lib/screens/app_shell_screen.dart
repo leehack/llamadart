@@ -57,10 +57,9 @@ class _AppShellScreenState extends State<AppShellScreen> {
     _scaffoldKey.currentState?.openEndDrawer();
   }
 
-  void _openDownloadDetails({required bool canPin}) {
-    final activeFilename = _downloadUi.activeFilename;
+  void _openModelDetails({String? filename, required bool canPin}) {
     setState(() {
-      _focusedModelFilename = activeFilename;
+      _focusedModelFilename = filename;
       _modelFocusRequest += 1;
       if (canPin) {
         _pinnedSettingsOpen = true;
@@ -69,6 +68,10 @@ class _AppShellScreenState extends State<AppShellScreen> {
     if (!canPin) {
       _scaffoldKey.currentState?.openEndDrawer();
     }
+  }
+
+  void _openDownloadDetails({required bool canPin}) {
+    _openModelDetails(filename: _downloadUi.activeFilename, canPin: canPin);
   }
 
   void _toggleSettingsPanel({required bool canPin}) {
@@ -152,18 +155,16 @@ class _AppShellScreenState extends State<AppShellScreen> {
                               children: [
                                 IconButton(
                                   onPressed: () => Navigator.of(context).pop(),
-                                  tooltip: 'Close settings',
+                                  tooltip: 'Close Lab',
                                   icon: const Icon(
                                     Icons.close_rounded,
-                                    semanticLabel: kIsWeb
-                                        ? null
-                                        : 'Close settings',
+                                    semanticLabel: kIsWeb ? null : 'Close Lab',
                                   ),
                                 ),
                                 const SizedBox(width: 4),
                                 Expanded(
                                   child: Text(
-                                    'Settings',
+                                    'Lab',
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
                                     style: Theme.of(context)
@@ -245,6 +246,11 @@ class _AppShellScreenState extends State<AppShellScreen> {
                                 onOpenModelSelection: () => _openSettingsPanel(
                                   canPin: canPinSettingsPanel,
                                 ),
+                                onOpenModelFilename: (filename) =>
+                                    _openModelDetails(
+                                      filename: filename,
+                                      canPin: canPinSettingsPanel,
+                                    ),
                                 showModelSelectionAction: true,
                               ),
                             ),
@@ -316,12 +322,20 @@ class _ShellTopBar extends StatelessWidget {
     required this.onOpenSettings,
   });
 
+  String _cleanModelName(String? pathOrUrl) {
+    if (pathOrUrl == null || pathOrUrl.isEmpty) {
+      return 'Model';
+    }
+    final withoutSensitiveSuffix = pathOrUrl.split('?').first.split('#').first;
+    final normalized = withoutSensitiveSuffix.replaceAll('\\', '/');
+    final parts = normalized.split('/').where((part) => part.isNotEmpty);
+    return parts.isEmpty ? 'Model' : parts.last;
+  }
+
   @override
   Widget build(BuildContext context) {
     final topInset = MediaQuery.paddingOf(context).top;
-    final settingsActionLabel = settingsPanelOpen
-        ? 'Close model and inference settings'
-        : 'Open model and inference settings';
+    final settingsActionLabel = settingsPanelOpen ? 'Close Lab' : 'Open Lab';
 
     return Container(
       padding: EdgeInsets.fromLTRB(12, topInset + 10, 12, 10),
@@ -357,6 +371,69 @@ class _ShellTopBar extends StatelessWidget {
                 letterSpacing: 0,
               ),
             ),
+          ),
+          Consumer<ChatProvider>(
+            builder: (context, provider, _) {
+              if (!provider.isLoaded || provider.modelPath == null) {
+                return const SizedBox.shrink();
+              }
+              final isDesktop = MediaQuery.sizeOf(context).width >= 720;
+              final backend = provider.activeBackend;
+              final modelName = _cleanModelName(provider.modelPath);
+              return Padding(
+                padding: const EdgeInsets.only(right: 6),
+                child: Tooltip(
+                  message: 'Active: $backend · $modelName. Tap to open Lab.',
+                  child: Material(
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.surfaceContainerHigh.withValues(alpha: 0.7),
+                    borderRadius: BorderRadius.circular(20),
+                    child: InkWell(
+                      onTap: onOpenSettings,
+                      borderRadius: BorderRadius.circular(20),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 6,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 7,
+                              height: 7,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: Theme.of(context).colorScheme.primary,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            ConstrainedBox(
+                              constraints: BoxConstraints(
+                                maxWidth: isDesktop ? 220 : 120,
+                              ),
+                              child: Text(
+                                isDesktop ? '$backend · $modelName' : modelName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: Theme.of(
+                                    context,
+                                  ).colorScheme.onSurface,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
           ),
           _DownloadActivityButton(
             controller: downloadUi,
