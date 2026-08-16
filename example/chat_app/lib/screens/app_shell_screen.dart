@@ -322,16 +322,6 @@ class _ShellTopBar extends StatelessWidget {
     required this.onOpenSettings,
   });
 
-  String _cleanModelName(String? pathOrUrl) {
-    if (pathOrUrl == null || pathOrUrl.isEmpty) {
-      return 'Model';
-    }
-    final withoutSensitiveSuffix = pathOrUrl.split('?').first.split('#').first;
-    final normalized = withoutSensitiveSuffix.replaceAll('\\', '/');
-    final parts = normalized.split('/').where((part) => part.isNotEmpty);
-    return parts.isEmpty ? 'Model' : parts.last;
-  }
-
   @override
   Widget build(BuildContext context) {
     final topInset = MediaQuery.paddingOf(context).top;
@@ -379,7 +369,7 @@ class _ShellTopBar extends StatelessWidget {
               }
               final isDesktop = MediaQuery.sizeOf(context).width >= 720;
               final backend = provider.activeBackend;
-              final modelName = _cleanModelName(provider.modelPath);
+              final modelName = provider.activeModelName;
               return Padding(
                 padding: const EdgeInsets.only(right: 6),
                 child: Tooltip(

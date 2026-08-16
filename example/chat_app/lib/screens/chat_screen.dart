@@ -54,7 +54,7 @@ class _ChatScreenState extends State<ChatScreen> {
       _lastConversationId = provider.activeConversationId;
       provider.addListener(_onProviderUpdate);
       if (provider.messages.isNotEmpty) {
-        _scrollToBottom(force: true);
+        _scrollToBottom();
       }
     });
   }
@@ -106,7 +106,7 @@ class _ChatScreenState extends State<ChatScreen> {
       }
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
-        _scrollToBottom(force: true);
+        _scrollToBottom();
       });
       _wasGenerating = provider.isGenerating;
       return;
@@ -127,7 +127,7 @@ class _ChatScreenState extends State<ChatScreen> {
         }
 
         if (_isPinnedToBottom) {
-          _scrollToBottom(force: true);
+          _scrollToBottom();
           if (provider.isReady) {
             _focusNode.requestFocus();
           }
@@ -148,33 +148,20 @@ class _ChatScreenState extends State<ChatScreen> {
       if (!mounted || !_isPinnedToBottom) {
         return;
       }
-      _scrollToBottom(force: true);
+      _scrollToBottom();
     });
   }
 
-  void _scrollToBottom({bool force = false}) {
+  void _scrollToBottom() {
     if (!_scrollController.hasClients) return;
 
-    final pos = _scrollController.position;
-    final diff = _distanceFromBottom();
-
-    if (force || diff < 50) {
-      _scrollController.jumpTo(pos.maxScrollExtent);
-      if (force) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted || !_isPinnedToBottom || !_scrollController.hasClients) {
-            return;
-          }
-          _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
-        });
+    _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_isPinnedToBottom || !_scrollController.hasClients) {
+        return;
       }
-    } else if (diff < 500) {
-      _scrollController.animateTo(
-        pos.maxScrollExtent,
-        duration: const Duration(milliseconds: 220),
-        curve: Curves.easeOutCubic,
-      );
-    }
+      _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+    });
 
     _isPinnedToBottom = true;
     if (_showScrollToBottom && mounted) {
@@ -205,7 +192,7 @@ class _ChatScreenState extends State<ChatScreen> {
     _focusNode.requestFocus();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        _scrollToBottom(force: true);
+        _scrollToBottom();
       }
     });
   }
@@ -307,7 +294,7 @@ class _ChatScreenState extends State<ChatScreen> {
               bottom: 100,
               child: FloatingActionButton.small(
                 heroTag: 'scroll-to-bottom',
-                onPressed: () => _scrollToBottom(force: true),
+                onPressed: _scrollToBottom,
                 tooltip: 'Jump to latest',
                 child: const Icon(
                   Icons.keyboard_arrow_down_rounded,
