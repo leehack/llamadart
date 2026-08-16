@@ -1,13 +1,17 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:llamadart/llamadart.dart';
 import 'package:llamadart_chat_example/models/chat_settings.dart';
+import 'package:llamadart_chat_example/models/live_speech_model.dart';
 import 'package:llamadart_chat_example/providers/chat_provider.dart';
 import 'package:llamadart_chat_example/services/audio_recording_service.dart';
 import 'package:llamadart_chat_example/services/chat_generation_service.dart';
+import 'package:llamadart_chat_example/services/live_speech_model_service.dart';
+import 'package:llamadart_chat_example/services/live_speech_transcription_service.dart';
 import 'package:llamadart_chat_example/services/speech_playback_service.dart';
 import 'package:llamadart_chat_example/widgets/chat_input.dart';
 import 'package:provider/provider.dart';
@@ -47,6 +51,615 @@ void main() {
 
     await tester.enterText(find.byType(TextField), 'draft next prompt');
     expect(controller.text, 'draft next prompt');
+  });
+
+  testWidgets('live LiteRT transcription becomes an editable composer draft', (
+    tester,
+  ) async {
+    final liveTask = _FakeLiveSpeechTranscriptionTask(
+      finalText: 'hello from live speech',
+    );
+    final liveService = _FakeLiveSpeechTranscriptionService(task: liveTask);
+    final provider = ChatProvider(
+      chatService: MockChatService(),
+      settingsService: MockSettingsService(),
+      audioRecordingService: _FakeAudioRecordingService(),
+      liveSpeechModelService: _FakeLiveSpeechModelService(installed: true),
+      liveSpeechTranscriptionService: liveService,
+      initialSettings: const ChatSettings(modelPath: 'chat-model.gguf'),
+    );
+    addTearDown(provider.dispose);
+    await provider.loadModel();
+    await provider.refreshLiveSpeechModel();
+
+    final controller = TextEditingController(text: 'existing draft')
+      ..selection = const TextSelection.collapsed(offset: 14);
+    final focusNode = FocusNode();
+    addTearDown(controller.dispose);
+    addTearDown(focusNode.dispose);
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider<ChatProvider>.value(
+        value: provider,
+        child: MaterialApp(
+          home: Scaffold(
+            body: ChatInput(
+              controller: controller,
+              focusNode: focusNode,
+              onSend: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byTooltip('Live transcription'), findsOneWidget);
+    await tester.tap(find.byTooltip('Live transcription'));
+    await tester.pump();
+    expect(liveService.startCalls, 1);
+
+    liveTask.emit(
+      const LiveSpeechTranscriptUpdate(
+        confirmedText: 'hello from',
+        pendingText: 'live',
+        acceptedAudioDuration: Duration(seconds: 5),
+        isFinal: false,
+      ),
+    );
+    await tester.pump();
+    expect(find.text('hello from live'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('stop_live_speech_button')),
+    );
+    for (var index = 0; index < 20 && provider.isLiveTranscribing; index++) {
+      await tester.pump(const Duration(milliseconds: 10));
+    }
+    await tester.pumpAndSettle();
+    expect(controller.text, 'existing draft hello from live speech');
+    expect(provider.isLiveTranscribing, isFalse);
+  });
+
+  testWidgets('live dictation preference hides composer controls', (
+    tester,
+  ) async {
+    final settingsService = MockSettingsService();
+    final provider = ChatProvider(
+      chatService: MockChatService(),
+      settingsService: settingsService,
+      audioRecordingService: _FakeAudioRecordingService(),
+      liveSpeechModelService: _FakeLiveSpeechModelService(installed: true),
+      liveSpeechTranscriptionService: _FakeLiveSpeechTranscriptionService(
+        task: _FakeLiveSpeechTranscriptionTask(finalText: 'unused'),
+      ),
+      initialSettings: const ChatSettings(modelPath: 'chat-model.gguf'),
+    );
+    addTearDown(provider.dispose);
+    await provider.loadModel();
+    await provider.refreshLiveSpeechModel();
+
+    final controller = TextEditingController();
+    final focusNode = FocusNode();
+    addTearDown(controller.dispose);
+    addTearDown(focusNode.dispose);
+    await tester.pumpWidget(
+      ChangeNotifierProvider<ChatProvider>.value(
+        value: provider,
+        child: MaterialApp(
+          home: Scaffold(
+            body: ChatInput(
+              controller: controller,
+              focusNode: focusNode,
+              onSend: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+    expect(find.byTooltip('Live transcription'), findsOneWidget);
+    await provider.updateLiveSpeechEnabled(false);
+    await tester.pump();
+
+    expect(settingsService.liveSpeechEnabled, isFalse);
+    expect(provider.supportsLiveSpeechTranscription, isFalse);
+    expect(find.byTooltip('Live transcription'), findsNothing);
+
+    await provider
+        .updateLiveSpeechEnabled(true)
+        .timeout(const Duration(seconds: 2));
+    await tester.pump();
+    expect(settingsService.liveSpeechEnabled, isTrue);
+    expect(find.byTooltip('Live transcription'), findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 300));
+  });
+
+  test('disabling live dictation cancels an active capture', () async {
+    final liveTask = _FakeLiveSpeechTranscriptionTask(finalText: 'unused');
+    final settingsService = MockSettingsService();
+    final provider = ChatProvider(
+      chatService: MockChatService(),
+      settingsService: settingsService,
+      audioRecordingService: _FakeAudioRecordingService(),
+      liveSpeechModelService: _FakeLiveSpeechModelService(installed: true),
+      liveSpeechTranscriptionService: _FakeLiveSpeechTranscriptionService(
+        task: liveTask,
+      ),
+      initialSettings: const ChatSettings(modelPath: 'chat-model.gguf'),
+    );
+    addTearDown(provider.dispose);
+    await provider.loadModel();
+    await provider.refreshLiveSpeechModel();
+    await provider.startLiveSpeechTranscription();
+
+    await provider.updateLiveSpeechEnabled(false);
+
+    expect(liveTask.cancelCalls, 1);
+    expect(provider.isLiveTranscribing, isFalse);
+    expect(provider.supportsLiveSpeechTranscription, isFalse);
+    expect(settingsService.liveSpeechEnabled, isFalse);
+  });
+
+  testWidgets('live transcription controls fit a narrow mobile composer', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 800);
+    tester.view.devicePixelRatio = 1;
+    tester.view.viewInsets = const FakeViewPadding(bottom: 400);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetViewInsets);
+
+    final liveTask = _FakeLiveSpeechTranscriptionTask(finalText: 'mobile');
+    final provider = ChatProvider(
+      chatService: MockChatService(),
+      settingsService: MockSettingsService(),
+      audioRecordingService: _FakeAudioRecordingService(),
+      liveSpeechModelService: _FakeLiveSpeechModelService(installed: true),
+      liveSpeechTranscriptionService: _FakeLiveSpeechTranscriptionService(
+        task: liveTask,
+      ),
+      initialSettings: const ChatSettings(modelPath: 'chat-model.gguf'),
+    );
+    addTearDown(provider.dispose);
+    await provider.loadModel();
+    await provider.refreshLiveSpeechModel();
+    await provider.startLiveSpeechTranscription();
+    liveTask.emit(
+      const LiveSpeechTranscriptUpdate(
+        confirmedText: 'narrow screen transcript',
+        pendingText: '',
+        acceptedAudioDuration: Duration(seconds: 5),
+        isFinal: false,
+      ),
+    );
+
+    final controller = TextEditingController(
+      text: List<String>.filled(30, 'editable').join(' '),
+    );
+    final focusNode = FocusNode();
+    addTearDown(controller.dispose);
+    addTearDown(focusNode.dispose);
+    await tester.pumpWidget(
+      ChangeNotifierProvider<ChatProvider>.value(
+        value: provider,
+        child: MaterialApp(
+          home: Scaffold(
+            body: ChatInput(
+              controller: controller,
+              focusNode: focusNode,
+              onSend: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('narrow screen transcript'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('cancel_live_speech_button')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('stop_live_speech_button')),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  test('first live transcription use installs both sidecar assets', () async {
+    final modelService = _FakeLiveSpeechModelService(installed: false);
+    final liveTask = _FakeLiveSpeechTranscriptionTask(finalText: 'installed');
+    final liveService = _FakeLiveSpeechTranscriptionService(task: liveTask);
+    final provider = ChatProvider(
+      chatService: MockChatService(),
+      settingsService: MockSettingsService(),
+      audioRecordingService: _FakeAudioRecordingService(),
+      liveSpeechModelService: modelService,
+      liveSpeechTranscriptionService: liveService,
+      initialSettings: const ChatSettings(modelPath: 'chat-model.gguf'),
+    );
+    addTearDown(provider.dispose);
+    await provider.loadModel();
+    await provider.refreshLiveSpeechModel();
+
+    expect(provider.isLiveSpeechModelReady, isFalse);
+    await provider.startLiveSpeechTranscription();
+
+    expect(modelService.installCalls, 1);
+    expect(provider.isLiveSpeechModelReady, isTrue);
+    expect(liveService.startCalls, 1);
+    await provider.cancelLiveSpeechTranscription();
+  });
+
+  testWidgets(
+    'live dictation selector shows model size and explicit download progress',
+    (tester) async {
+      final installGate = Completer<void>();
+      final verificationGate = Completer<void>();
+      final modelService = _FakeLiveSpeechModelService(
+        installed: false,
+        installGate: installGate,
+        verificationGate: verificationGate,
+      );
+      final settingsService = MockSettingsService();
+      final provider = ChatProvider(
+        chatService: MockChatService(),
+        settingsService: settingsService,
+        audioRecordingService: _FakeAudioRecordingService(),
+        liveSpeechModelService: modelService,
+        liveSpeechTranscriptionService: _FakeLiveSpeechTranscriptionService(
+          task: _FakeLiveSpeechTranscriptionTask(finalText: 'unused'),
+        ),
+        initialSettings: const ChatSettings(modelPath: 'chat-model.gguf'),
+      );
+      addTearDown(provider.dispose);
+      await provider.loadModel();
+      await provider.refreshLiveSpeechModel();
+
+      final controller = TextEditingController();
+      final focusNode = FocusNode();
+      addTearDown(controller.dispose);
+      addTearDown(focusNode.dispose);
+      await tester.pumpWidget(
+        ChangeNotifierProvider<ChatProvider>.value(
+          value: provider,
+          child: MaterialApp(
+            home: Scaffold(
+              body: ChatInput(
+                controller: controller,
+                focusNode: focusNode,
+                onSend: () {},
+              ),
+            ),
+          ),
+        ),
+      );
+
+      expect(find.text('Moonshine Tiny Live STT'), findsOneWidget);
+      expect(find.text('54 MB · English'), findsOneWidget);
+      await tester.tap(
+        find.byKey(const ValueKey<String>('live_speech_model_selector')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Parakeet TDT 0.6B Live STT').last);
+      await tester.pumpAndSettle();
+
+      expect(provider.selectedLiveSpeechModel, LiveSpeechModel.parakeetTdt);
+      expect(settingsService.liveSpeechModelId, LiveSpeechModel.parakeetTdt.id);
+      expect(find.text('615 MB · English'), findsOneWidget);
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('install_live_speech_button')),
+      );
+      await tester.pump();
+      expect(
+        find.text('Installing Parakeet TDT 0.6B Live STT · 50%'),
+        findsOneWidget,
+      );
+      expect(find.byType(LinearProgressIndicator), findsOneWidget);
+      expect(
+        find.byKey(
+          const ValueKey<String>('cancel_live_speech_model_install_button'),
+        ),
+        findsOneWidget,
+      );
+
+      installGate.complete();
+      await tester.pump();
+      expect(
+        find.text('Verifying Parakeet TDT 0.6B Live STT…'),
+        findsOneWidget,
+      );
+
+      verificationGate.complete();
+      await tester.pumpAndSettle();
+      expect(provider.isLiveSpeechModelReady, isTrue);
+      expect(find.text('615 MB · English · Installed'), findsOneWidget);
+    },
+  );
+
+  testWidgets('live model setup and download controls fit a narrow composer', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(320, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final modelService = _FakeLiveSpeechModelService(installed: false);
+    final provider = ChatProvider(
+      chatService: MockChatService(),
+      settingsService: MockSettingsService(),
+      audioRecordingService: _FakeAudioRecordingService(),
+      liveSpeechModelService: modelService,
+      liveSpeechTranscriptionService: _FakeLiveSpeechTranscriptionService(
+        task: _FakeLiveSpeechTranscriptionTask(finalText: 'unused'),
+      ),
+      initialSettings: const ChatSettings(modelPath: 'chat-model.gguf'),
+    );
+    addTearDown(provider.dispose);
+    await provider.loadModel();
+    await provider.refreshLiveSpeechModel();
+
+    final controller = TextEditingController();
+    final focusNode = FocusNode();
+    addTearDown(controller.dispose);
+    addTearDown(focusNode.dispose);
+    await tester.pumpWidget(
+      ChangeNotifierProvider<ChatProvider>.value(
+        value: provider,
+        child: MaterialApp(
+          home: Scaffold(
+            body: ChatInput(
+              controller: controller,
+              focusNode: focusNode,
+              onSend: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Moonshine Tiny Live STT'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('install_live_speech_button')),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+    await tester.pump(const Duration(milliseconds: 250));
+  });
+
+  testWidgets('live model download can be cancelled from its progress row', (
+    tester,
+  ) async {
+    final installGate = Completer<void>();
+    final modelService = _FakeLiveSpeechModelService(
+      installed: false,
+      installGate: installGate,
+    );
+    final provider = ChatProvider(
+      chatService: MockChatService(),
+      settingsService: MockSettingsService(),
+      audioRecordingService: _FakeAudioRecordingService(),
+      liveSpeechModelService: modelService,
+      liveSpeechTranscriptionService: _FakeLiveSpeechTranscriptionService(
+        task: _FakeLiveSpeechTranscriptionTask(finalText: 'unused'),
+      ),
+      initialSettings: const ChatSettings(modelPath: 'chat-model.gguf'),
+    );
+    addTearDown(provider.dispose);
+    await provider.loadModel();
+    await provider.refreshLiveSpeechModel();
+
+    final controller = TextEditingController();
+    final focusNode = FocusNode();
+    addTearDown(controller.dispose);
+    addTearDown(focusNode.dispose);
+    await tester.pumpWidget(
+      ChangeNotifierProvider<ChatProvider>.value(
+        value: provider,
+        child: MaterialApp(
+          home: Scaffold(
+            body: ChatInput(
+              controller: controller,
+              focusNode: focusNode,
+              onSend: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('install_live_speech_button')),
+    );
+    await tester.pump();
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>('cancel_live_speech_model_install_button'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(modelService.lastCancelToken?.isCancelled, isTrue);
+    expect(provider.isInstallingLiveSpeechModel, isFalse);
+    expect(provider.isLiveSpeechModelReady, isFalse);
+    expect(provider.liveSpeechError, isNull);
+    expect(
+      find.byKey(const ValueKey<String>('install_live_speech_button')),
+      findsOneWidget,
+    );
+    await tester.pump(const Duration(milliseconds: 250));
+  });
+
+  testWidgets('failed live model download can retry or switch models', (
+    tester,
+  ) async {
+    final modelService = _FakeLiveSpeechModelService(
+      installed: false,
+      installError: StateError('network unavailable'),
+    );
+    final provider = ChatProvider(
+      chatService: MockChatService(),
+      settingsService: MockSettingsService(),
+      audioRecordingService: _FakeAudioRecordingService(),
+      liveSpeechModelService: modelService,
+      liveSpeechTranscriptionService: _FakeLiveSpeechTranscriptionService(
+        task: _FakeLiveSpeechTranscriptionTask(finalText: 'unused'),
+      ),
+      initialSettings: const ChatSettings(modelPath: 'chat-model.gguf'),
+    );
+    addTearDown(provider.dispose);
+    await provider.loadModel();
+    await provider.refreshLiveSpeechModel();
+
+    final controller = TextEditingController();
+    final focusNode = FocusNode();
+    addTearDown(controller.dispose);
+    addTearDown(focusNode.dispose);
+    await tester.pumpWidget(
+      ChangeNotifierProvider<ChatProvider>.value(
+        value: provider,
+        child: MaterialApp(
+          home: Scaffold(
+            body: ChatInput(
+              controller: controller,
+              focusNode: focusNode,
+              onSend: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('install_live_speech_button')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey<String>('live_speech_error')), findsOne);
+    expect(
+      find.byKey(
+        const ValueKey<String>('retry_live_speech_model_install_button'),
+      ),
+      findsOne,
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('live_speech_error_model_selector')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Parakeet TDT 0.6B Live STT · 615 MB').last);
+    await tester.pumpAndSettle();
+
+    expect(provider.selectedLiveSpeechModel, LiveSpeechModel.parakeetTdt);
+    expect(provider.liveSpeechError, isNull);
+    expect(find.text('615 MB · English'), findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 250));
+  });
+
+  test(
+    'live startup cancellation settles before another task can start',
+    () async {
+      final startGate = Completer<void>();
+      final liveTask = _FakeLiveSpeechTranscriptionTask(finalText: 'stale');
+      final liveService = _FakeLiveSpeechTranscriptionService(
+        task: liveTask,
+        startGate: startGate,
+      );
+      final provider = ChatProvider(
+        chatService: MockChatService(),
+        settingsService: MockSettingsService(),
+        audioRecordingService: _FakeAudioRecordingService(),
+        liveSpeechModelService: _FakeLiveSpeechModelService(installed: true),
+        liveSpeechTranscriptionService: liveService,
+        initialSettings: const ChatSettings(modelPath: 'chat-model.gguf'),
+      );
+      addTearDown(provider.dispose);
+      await provider.loadModel();
+      await provider.refreshLiveSpeechModel();
+
+      final start = provider.startLiveSpeechTranscription();
+      await Future<void>.delayed(Duration.zero);
+      expect(liveService.startCalls, 1);
+
+      final cancel = provider.cancelLiveSpeechTranscription();
+      expect(provider.canStartLiveSpeechTranscription, isFalse);
+      startGate.complete();
+      await Future.wait<void>(<Future<void>>[start, cancel]);
+
+      expect(provider.isLiveTranscribing, isFalse);
+      expect(provider.canStartLiveSpeechTranscription, isTrue);
+    },
+  );
+
+  test(
+    'live cancellation stays reserved until the native task settles',
+    () async {
+      final cancelGate = Completer<void>();
+      final liveTask = _FakeLiveSpeechTranscriptionTask(
+        finalText: 'cancelled',
+        cancelGate: cancelGate,
+      );
+      final liveService = _FakeLiveSpeechTranscriptionService(task: liveTask);
+      final provider = ChatProvider(
+        chatService: MockChatService(),
+        settingsService: MockSettingsService(),
+        audioRecordingService: _FakeAudioRecordingService(),
+        liveSpeechModelService: _FakeLiveSpeechModelService(installed: true),
+        liveSpeechTranscriptionService: liveService,
+        initialSettings: const ChatSettings(modelPath: 'chat-model.gguf'),
+      );
+      addTearDown(provider.dispose);
+      await provider.loadModel();
+      await provider.refreshLiveSpeechModel();
+      await provider.startLiveSpeechTranscription();
+
+      final cancel = provider.cancelLiveSpeechTranscription();
+      await Future<void>.delayed(Duration.zero);
+      expect(provider.canStartLiveSpeechTranscription, isFalse);
+      await provider.startLiveSpeechTranscription();
+      expect(liveService.startCalls, 1);
+
+      cancelGate.complete();
+      await cancel;
+      expect(provider.canStartLiveSpeechTranscription, isTrue);
+    },
+  );
+
+  test('live transcription automatically finalizes at five minutes', () async {
+    final liveTask = _FakeLiveSpeechTranscriptionTask(finalText: 'final words');
+    final provider = ChatProvider(
+      chatService: MockChatService(),
+      settingsService: MockSettingsService(),
+      audioRecordingService: _FakeAudioRecordingService(),
+      liveSpeechModelService: _FakeLiveSpeechModelService(installed: true),
+      liveSpeechTranscriptionService: _FakeLiveSpeechTranscriptionService(
+        task: liveTask,
+      ),
+      initialSettings: const ChatSettings(modelPath: 'chat-model.gguf'),
+    );
+    addTearDown(provider.dispose);
+    await provider.loadModel();
+    await provider.refreshLiveSpeechModel();
+    await provider.startLiveSpeechTranscription();
+
+    liveTask.emit(
+      const LiveSpeechTranscriptUpdate(
+        confirmedText: 'almost done',
+        pendingText: '',
+        acceptedAudioDuration: ChatProvider.maxLiveSpeechTranscriptionDuration,
+        isFinal: false,
+      ),
+    );
+    for (var index = 0; index < 20 && provider.isLiveTranscribing; index++) {
+      await Future<void>.delayed(Duration.zero);
+    }
+
+    expect(liveTask.stopCalls, 1);
+    expect(provider.isLiveTranscribing, isFalse);
+    expect(provider.liveSpeechDisplayText, 'final words');
+    expect(provider.hasPendingLiveSpeechDraft, isTrue);
   });
 
   testWidgets('dedicated TTS mode synthesizes typed text', (tester) async {
@@ -305,6 +918,10 @@ void main() {
       chatService: MockChatService(),
       settingsService: MockSettingsService(),
       audioRecordingService: _FakeAudioRecordingService(),
+      liveSpeechModelService: _FakeLiveSpeechModelService(installed: true),
+      liveSpeechTranscriptionService: _FakeLiveSpeechTranscriptionService(
+        task: _FakeLiveSpeechTranscriptionTask(finalText: 'dictated text'),
+      ),
       initialSettings: const ChatSettings(
         modelPath: 'gemma-4-E2B-it.litertlm',
         modelSupportsAudio: true,
@@ -313,6 +930,7 @@ void main() {
     );
     addTearDown(provider.dispose);
     await provider.loadModel();
+    await provider.refreshLiveSpeechModel();
 
     final controller = TextEditingController();
     final focusNode = FocusNode();
@@ -342,10 +960,12 @@ void main() {
     expect(find.text('Transcribe Audio'), findsNothing);
     expect(find.text('Attach Image'), findsNothing);
     expect(find.byTooltip('Ask with voice'), findsOneWidget);
+    expect(find.byTooltip('Live transcription'), findsOneWidget);
     expect(
       find.bySemanticsLabel('Ask with voice. Records up to 30 seconds.'),
       findsOneWidget,
     );
+    expect(find.bySemanticsLabel('Start live transcription.'), findsOneWidget);
   });
 
   testWidgets('microphone controls stop and ask from the composer', (
@@ -443,6 +1063,10 @@ void main() {
       chatService: MockChatService(engine: engine),
       audioRecordingService: _FakeAudioRecordingService(),
       settingsService: MockSettingsService(),
+      liveSpeechModelService: _FakeLiveSpeechModelService(installed: true),
+      liveSpeechTranscriptionService: _FakeLiveSpeechTranscriptionService(
+        task: _FakeLiveSpeechTranscriptionTask(finalText: 'not used'),
+      ),
       initialSettings: const ChatSettings(
         modelPath: 'Qwen3-ASR-0.6B-Q8_0.gguf',
         mmprojPath: 'mmproj-Qwen3-ASR-0.6B-Q8_0.gguf',
@@ -451,6 +1075,7 @@ void main() {
     );
     addTearDown(provider.dispose);
     await provider.loadModel();
+    await provider.refreshLiveSpeechModel();
 
     final controller = TextEditingController();
     final focusNode = FocusNode();
@@ -478,6 +1103,7 @@ void main() {
     expect(find.text('Attach Audio'), findsOneWidget);
     expect(find.text('Transcribe Audio'), findsOneWidget);
     expect(find.byTooltip('Record for transcription'), findsOneWidget);
+    expect(find.byTooltip('Live transcription'), findsNothing);
     expect(find.bySemanticsLabel('Record for transcription.'), findsOneWidget);
   });
 
@@ -1856,6 +2482,138 @@ class _BlockingAudioProbeSpeechMockLlamaEngine extends _SpeechMockLlamaEngine {
       await _releaseAudioProbe.future;
     }
     return super.supportsAudio;
+  }
+}
+
+class _FakeLiveSpeechModelService implements LiveSpeechModelService {
+  bool installed;
+  int installCalls = 0;
+  final Completer<void>? installGate;
+  final Completer<void>? verificationGate;
+  final Object? installError;
+  CancelToken? lastCancelToken;
+
+  _FakeLiveSpeechModelService({
+    required this.installed,
+    this.installGate,
+    this.verificationGate,
+    this.installError,
+  });
+
+  @override
+  bool get isSupported => true;
+
+  InstalledLiveSpeechModel _resolved(LiveSpeechModel model) =>
+      InstalledLiveSpeechModel(
+        model: model,
+        modelPath: '/models/${model.modelSource.filename}',
+        tokenizerPath: '/models/${model.tokenizerSource.filename}',
+      );
+
+  @override
+  Future<InstalledLiveSpeechModel?> resolve(LiveSpeechModel model) async =>
+      installed ? _resolved(model) : null;
+
+  @override
+  Future<InstalledLiveSpeechModel> install(
+    LiveSpeechModel model, {
+    required CancelToken cancelToken,
+    required void Function(double progress) onProgress,
+    required void Function() onVerifying,
+  }) async {
+    installCalls += 1;
+    lastCancelToken = cancelToken;
+    onProgress(0.5);
+    if (installGate != null) {
+      await Future.any<void>([
+        installGate!.future,
+        cancelToken.whenCancel.then<void>((error) => throw error),
+      ]);
+    }
+    if (installError != null) {
+      throw installError!;
+    }
+    onVerifying();
+    await verificationGate?.future;
+    installed = true;
+    onProgress(1);
+    return _resolved(model);
+  }
+
+  @override
+  Future<void> delete(LiveSpeechModel model) async {
+    installed = false;
+  }
+}
+
+class _FakeLiveSpeechTranscriptionService
+    implements LiveSpeechTranscriptionService {
+  final _FakeLiveSpeechTranscriptionTask task;
+  final Completer<void>? startGate;
+  int startCalls = 0;
+
+  _FakeLiveSpeechTranscriptionService({required this.task, this.startGate});
+
+  @override
+  bool get isSupported => true;
+
+  @override
+  Future<LiveSpeechTranscriptionTask> start({
+    required String modelPath,
+    required String tokenizerPath,
+    required LiteRtLmAsrModelPreset preset,
+  }) async {
+    startCalls += 1;
+    await startGate?.future;
+    return task;
+  }
+
+  @override
+  Future<void> dispose() async {}
+}
+
+class _FakeLiveSpeechTranscriptionTask implements LiveSpeechTranscriptionTask {
+  final String finalText;
+  final Completer<void>? cancelGate;
+  final StreamController<LiveSpeechTranscriptUpdate> _updates =
+      StreamController<LiveSpeechTranscriptUpdate>();
+  final Completer<LiveSpeechTranscriptionResult> _done =
+      Completer<LiveSpeechTranscriptionResult>();
+  int stopCalls = 0;
+  int cancelCalls = 0;
+
+  _FakeLiveSpeechTranscriptionTask({required this.finalText, this.cancelGate});
+
+  @override
+  Stream<LiveSpeechTranscriptUpdate> get updates => _updates.stream;
+
+  @override
+  Future<LiveSpeechTranscriptionResult> get done => _done.future;
+
+  void emit(LiveSpeechTranscriptUpdate update) => _updates.add(update);
+
+  @override
+  Future<void> stop() async {
+    stopCalls += 1;
+    if (!_done.isCompleted) {
+      unawaited(_updates.close());
+      _done.complete(
+        LiveSpeechTranscriptionResult(
+          text: finalText,
+          acceptedAudioDuration: const Duration(seconds: 5),
+        ),
+      );
+    }
+  }
+
+  @override
+  Future<void> cancel() async {
+    cancelCalls += 1;
+    await cancelGate?.future;
+    if (!_done.isCompleted) {
+      unawaited(_updates.close());
+      _done.completeError(StateError('cancelled'));
+    }
   }
 }
 

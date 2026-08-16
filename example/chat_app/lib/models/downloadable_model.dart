@@ -19,7 +19,7 @@ String _assetCacheKey(String canonicalKey) {
   return sha256.convert(utf8.encode(canonicalKey)).toString();
 }
 
-enum ModelAssetRole { model, multimodalProjector }
+enum ModelAssetRole { model, multimodalProjector, tokenizer }
 
 enum ModelMediaInputMode { externalProjector, direct, none }
 

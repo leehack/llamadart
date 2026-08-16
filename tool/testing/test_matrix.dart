@@ -256,6 +256,28 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'temporary-audio handling changes.',
   ),
   TestMatrixRow(
+    id: 'chat-app-live-speech-smoke',
+    tier: 'targeted',
+    mode: 'manual/device',
+    covers:
+        'selectable live-ASR sidecar download integrity/progress/cancellation, '
+        'PCM16 microphone streaming, confirmed/pending updates, editable '
+        'draft finalization, bounded session lifecycle, and cancellation',
+    command:
+        'Run example/chat_app on a microphone-equipped Android, iOS, macOS, '
+        'or Windows device with a native chat model loaded. Install Moonshine, '
+        'verify determinate progress, dictate for at least two five-second '
+        'windows, verify confirmed/pending text, choose Use text, edit the '
+        'draft, and send it. Repeat with Parakeet TDT where device storage/RAM '
+        'permit, then test download cancellation and an app-background '
+        'transition. Record device, runtime version, selected model, exact '
+        'asset hashes, transcript, update/finalization latency, peak memory, '
+        'and cleanup.',
+    useWhen:
+        'LiteRT-LM live ASR, worker isolation, PCM streaming, sidecar model '
+        'downloads, chat composer dictation, or microphone lifecycle changes.',
+  ),
+  TestMatrixRow(
     id: 'chat-app-voice-question-smoke',
     tier: 'targeted',
     mode: 'manual/device',

@@ -13,6 +13,7 @@ import '../models/chat_conversation.dart';
 import '../models/chat_message.dart';
 import '../models/chat_settings.dart';
 import '../models/downloadable_model.dart';
+import '../models/live_speech_model.dart';
 import '../services/assistant_output_service.dart';
 import '../services/audio_recording_service.dart';
 import '../services/chat_service.dart';
@@ -22,6 +23,8 @@ import '../services/conversation_state_service.dart';
 import '../services/runtime_profile_service.dart';
 import '../services/settings_service.dart';
 import '../services/model_service_base.dart' as model_service;
+import '../services/live_speech_model_service.dart';
+import '../services/live_speech_transcription_service.dart';
 import '../services/tool_declaration_service.dart';
 import '../utils/backend_utils.dart';
 
@@ -106,6 +109,11 @@ class ChatProvider extends ChangeNotifier {
   /// The maximum microphone recording length before automatic transcription.
   static const Duration maxAudioRecordingDuration = Duration(minutes: 5);
 
+  /// The maximum live-dictation session before automatic finalization.
+  static const Duration maxLiveSpeechTranscriptionDuration = Duration(
+    minutes: 5,
+  );
+
   /// The maximum voice-question recording accepted by Gemma 4 audio input.
   static const Duration maxVoiceQuestionRecordingDuration = Duration(
     seconds: 30,
@@ -133,6 +141,8 @@ class ChatProvider extends ChangeNotifier {
   final RuntimeProfileService _runtimeProfileService;
   final SettingsService _settingsService;
   final model_service.ModelService _modelService;
+  final LiveSpeechModelService _liveSpeechModelService;
+  final LiveSpeechTranscriptionService _liveSpeechTranscriptionService;
   final AssistantOutputService _assistantOutputService;
   final ToolDeclarationService _toolDeclarationService;
   final bool _enableWebModelPrefetch;
@@ -171,6 +181,25 @@ class ChatProvider extends ChangeNotifier {
   CancelToken? _activeModelPrefetchCancelToken;
   SpeechToTextTask? _activeSpeechToTextTask;
   Completer<void>? _activeTranscriptionDone;
+  LiveSpeechTranscriptionTask? _activeLiveSpeechTask;
+  StreamSubscription<LiveSpeechTranscriptUpdate>? _liveSpeechUpdates;
+  Completer<void>? _activeLiveSpeechDone;
+  Completer<void>? _activeLiveSpeechTransitionDone;
+  LiveSpeechModel _selectedLiveSpeechModel = LiveSpeechModel.moonshineTiny;
+  InstalledLiveSpeechModel? _installedLiveSpeechModel;
+  CancelToken? _liveSpeechModelDownloadCancelToken;
+  bool _isInspectingLiveSpeechModel = false;
+  bool _isInstallingLiveSpeechModel = false;
+  bool _isVerifyingLiveSpeechModel = false;
+  bool _isLiveTranscribing = false;
+  bool _liveSpeechEnabled = true;
+  double _liveSpeechModelDownloadProgress = 0;
+  String _liveSpeechConfirmedText = '';
+  String _liveSpeechPendingText = '';
+  Duration _liveSpeechAcceptedAudioDuration = Duration.zero;
+  String? _liveSpeechError;
+  String? _pendingLiveSpeechDraft;
+  int _liveSpeechOperationSequence = 0;
   TextToSpeechTask? _activeTextToSpeechTask;
   Completer<void>? _activeTextToSpeechDone;
   TextToSpeechResult? _textToSpeechResult;
@@ -242,6 +271,57 @@ class ChatProvider extends ChangeNotifier {
   bool get isGenerating => _isGenerating;
   bool get isTranscribing => _isTranscribing;
 
+  /// Whether the LiteRT-LM live dictation model is being installed.
+  bool get isInstallingLiveSpeechModel => _isInstallingLiveSpeechModel;
+
+  /// Whether the user has enabled the optional live-dictation workflow.
+  bool get liveSpeechEnabled => _liveSpeechEnabled;
+
+  /// Whether downloaded live-dictation assets are being checksum-verified.
+  bool get isVerifyingLiveSpeechModel => _isVerifyingLiveSpeechModel;
+
+  /// Live-dictation sidecars available in the example app.
+  List<LiveSpeechModel> get availableLiveSpeechModels =>
+      LiveSpeechModel.defaultModels;
+
+  /// Sidecar selected for the next live-dictation session.
+  LiveSpeechModel get selectedLiveSpeechModel => _selectedLiveSpeechModel;
+
+  /// Whether the selected sidecar's managed cache is being inspected.
+  bool get isInspectingLiveSpeechModel => _isInspectingLiveSpeechModel;
+
+  /// Aggregate progress for the live dictation model and tokenizer.
+  double get liveSpeechModelDownloadProgress =>
+      _liveSpeechModelDownloadProgress;
+
+  /// Whether microphone PCM is currently feeding the live ASR worker.
+  bool get isLiveTranscribing => _isLiveTranscribing;
+
+  /// Stable transcript prefix from the active live ASR session.
+  String get liveSpeechConfirmedText => _liveSpeechConfirmedText;
+
+  /// Replaceable transcript suffix from the active live ASR session.
+  String get liveSpeechPendingText => _liveSpeechPendingText;
+
+  /// Audio duration accepted by the active live recognizer.
+  Duration get liveSpeechAcceptedAudioDuration =>
+      _liveSpeechAcceptedAudioDuration;
+
+  /// Current live transcript for display.
+  String get liveSpeechDisplayText => <String>[
+    _liveSpeechConfirmedText.trim(),
+    _liveSpeechPendingText.trim(),
+  ].where((part) => part.isNotEmpty).join(' ');
+
+  /// Latest actionable live transcription error.
+  String? get liveSpeechError => _liveSpeechError;
+
+  /// Whether a finalized transcript is waiting to be inserted in the composer.
+  bool get hasPendingLiveSpeechDraft => _pendingLiveSpeechDraft != null;
+
+  /// Whether the managed Moonshine model and tokenizer are installed.
+  bool get isLiveSpeechModelReady => _installedLiveSpeechModel != null;
+
   /// Whether a text-to-speech task is currently generating audio.
   bool get isSynthesizingSpeech => _isSynthesizingSpeech;
 
@@ -280,6 +360,7 @@ class ChatProvider extends ChangeNotifier {
   bool get canRegenerateLastResponse {
     if (_isGenerating ||
         _isTranscribing ||
+        _isLiveTranscribing ||
         hasActiveAudioRecording ||
         _session == null ||
         !_chatService.engine.isReady ||
@@ -309,6 +390,7 @@ class ChatProvider extends ChangeNotifier {
       !_isInitializing &&
       !_isGenerating &&
       !_isTranscribing &&
+      !_isLiveTranscribing &&
       !hasActiveAudioRecording &&
       _supportsAudio &&
       _settings.modelSupportsSpeechToText;
@@ -324,6 +406,7 @@ class ChatProvider extends ChangeNotifier {
       !_isInitializing &&
       !_isGenerating &&
       !_isTranscribing &&
+      !_isLiveTranscribing &&
       !_isSynthesizingSpeech &&
       !hasActiveAudioRecording &&
       _mmprojLoaded &&
@@ -340,6 +423,7 @@ class ChatProvider extends ChangeNotifier {
       !_isInitializing &&
       !_isGenerating &&
       !_isTranscribing &&
+      !_isLiveTranscribing &&
       !_isSynthesizingSpeech &&
       !hasActiveAudioRecording &&
       _mmprojLoaded &&
@@ -372,6 +456,7 @@ class ChatProvider extends ChangeNotifier {
       !_isInitializing &&
       !_isGenerating &&
       !_isTranscribing &&
+      !_isLiveTranscribing &&
       !hasActiveAudioRecording &&
       _supportsAudio &&
       _supportsVoiceQuestionInput;
@@ -389,6 +474,53 @@ class ChatProvider extends ChangeNotifier {
   bool get canStartAudioRecording =>
       _audioRecordingService.isSupported &&
       (canTranscribeAudio || canAskWithVoice);
+
+  /// Whether this platform packages the services required for live dictation.
+  bool get supportsLiveSpeechFeature =>
+      !kIsWeb &&
+      _liveSpeechModelService.isSupported &&
+      _liveSpeechTranscriptionService.isSupported;
+
+  /// Whether this app configuration can offer LiteRT-LM live dictation
+  /// alongside the selected chat model.
+  ///
+  /// Dedicated ASR and TTS profiles keep their specialized composer modes.
+  /// Generic audio-chat models can expose both Ask with voice and live
+  /// dictation because the two actions have different user-visible results.
+  bool get supportsLiveSpeechTranscription =>
+      _liveSpeechEnabled &&
+      supportsLiveSpeechFeature &&
+      !_settings.modelSupportsSpeechToText &&
+      !supportsTextToSpeech;
+
+  /// Whether live dictation can start immediately with the installed sidecar
+  /// model.
+  bool get canStartLiveSpeechTranscription =>
+      supportsLiveSpeechTranscription &&
+      _installedLiveSpeechModel != null &&
+      _isLoaded &&
+      !_isInitializing &&
+      !_isGenerating &&
+      !_isTranscribing &&
+      !_isLiveTranscribing &&
+      _activeLiveSpeechTransitionDone == null &&
+      !_isInspectingLiveSpeechModel &&
+      !_isInstallingLiveSpeechModel &&
+      !hasActiveAudioRecording;
+
+  /// Whether the selected live-dictation sidecar can be installed.
+  bool get canInstallLiveSpeechModel =>
+      supportsLiveSpeechTranscription &&
+      _installedLiveSpeechModel == null &&
+      _isLoaded &&
+      !_isInitializing &&
+      !_isGenerating &&
+      !_isTranscribing &&
+      !_isInspectingLiveSpeechModel &&
+      !_isInstallingLiveSpeechModel &&
+      !_isLiveTranscribing &&
+      _activeLiveSpeechTransitionDone == null &&
+      !hasActiveAudioRecording;
   bool get templateSupportsTools => _templateSupportsTools;
   bool get thinkingControlsSupported => _thinkingControlsSupported;
   String? get error => _error;
@@ -402,6 +534,8 @@ class ChatProvider extends ChangeNotifier {
   bool get autoTuneModelParams => _settings.autoTuneModelParams;
   int get numberOfThreads => _settings.numberOfThreads;
   int get numberOfThreadsBatch => _settings.numberOfThreadsBatch;
+  int get batchSize => _settings.batchSize;
+  int get microBatchSize => _settings.microBatchSize;
   LlamaLogLevel get dartLogLevel => _settings.logLevel;
   LlamaLogLevel get nativeLogLevel => _settings.nativeLogLevel;
   int get contextLimit => _contextLimit; // Renamed from maxTokens
@@ -464,6 +598,8 @@ class ChatProvider extends ChangeNotifier {
     RuntimeProfileService? runtimeProfileService,
     SettingsService? settingsService,
     model_service.ModelService? modelService,
+    LiveSpeechModelService? liveSpeechModelService,
+    LiveSpeechTranscriptionService? liveSpeechTranscriptionService,
     AssistantOutputService? assistantOutputService,
     ToolDeclarationService? toolDeclarationService,
     ChatSettings? initialSettings,
@@ -480,6 +616,10 @@ class ChatProvider extends ChangeNotifier {
            runtimeProfileService ?? const RuntimeProfileService(),
        _settingsService = settingsService ?? SettingsService(),
        _modelService = modelService ?? model_service.ModelService(),
+       _liveSpeechModelService =
+           liveSpeechModelService ?? LiveSpeechModelService(),
+       _liveSpeechTranscriptionService =
+           liveSpeechTranscriptionService ?? LiveSpeechTranscriptionService(),
        _assistantOutputService =
            assistantOutputService ?? const AssistantOutputService(),
        _toolDeclarationService =
@@ -541,6 +681,7 @@ class ChatProvider extends ChangeNotifier {
 
   void createConversation() {
     unawaited(_cancelAndAwaitAudioRecording());
+    unawaited(cancelLiveSpeechTranscription());
     _invalidateActiveTextToSpeech(clearOutput: true);
     final hadActiveGeneration = _activeGenerationOperationId != null;
     _invalidateActiveVoiceQuestion(releaseGeneration: true);
@@ -604,6 +745,7 @@ class ChatProvider extends ChangeNotifier {
       _restoreSessionFromMessages();
     }
     await _cancelAndAwaitAudioRecording();
+    await cancelLiveSpeechTranscription();
     await _cancelAndAwaitActiveTranscription();
     await _cancelAndAwaitActiveTextToSpeech();
     _clearTextToSpeechOutput();
@@ -698,6 +840,13 @@ class ChatProvider extends ChangeNotifier {
 
   Future<void> _init() async {
     _settings = await _settingsService.loadSettings();
+    _liveSpeechEnabled = await _settingsService.loadLiveSpeechEnabled();
+    _selectedLiveSpeechModel = LiveSpeechModel.byId(
+      await _settingsService.loadLiveSpeechModelId(),
+    );
+    if (_liveSpeechEnabled) {
+      await refreshLiveSpeechModel();
+    }
     _rebuildDeclaredToolsFromSettings();
     final index = _conversationStateService.activeConversationIndex(
       conversations: _conversations,
@@ -2441,6 +2590,342 @@ class ChatProvider extends ChangeNotifier {
     );
   }
 
+  /// Selects the managed sidecar used by subsequent live-dictation sessions.
+  Future<void> selectLiveSpeechModel(String modelId) async {
+    final model = LiveSpeechModel.byId(modelId);
+    if (model.id == _selectedLiveSpeechModel.id ||
+        _isInstallingLiveSpeechModel ||
+        _isLiveTranscribing ||
+        _activeLiveSpeechTransitionDone != null) {
+      return;
+    }
+    _selectedLiveSpeechModel = model;
+    _installedLiveSpeechModel = null;
+    _liveSpeechModelDownloadProgress = 0;
+    _liveSpeechError = null;
+    notifyListeners();
+    try {
+      await _settingsService.saveLiveSpeechModelId(model.id);
+    } catch (error) {
+      _logDart(
+        LlamaLogLevel.warn,
+        'Could not persist live speech model selection: $error',
+      );
+    }
+    await refreshLiveSpeechModel();
+  }
+
+  /// Enables or disables the optional app-owned live-dictation workflow.
+  Future<void> updateLiveSpeechEnabled(bool enabled) async {
+    if (_liveSpeechEnabled == enabled || _isDisposed) {
+      return;
+    }
+    _liveSpeechEnabled = enabled;
+    if (!enabled) {
+      cancelLiveSpeechModelInstall();
+      await cancelLiveSpeechTranscription();
+      _pendingLiveSpeechDraft = null;
+      _liveSpeechError = null;
+      _liveSpeechModelDownloadProgress = 0;
+    }
+    if (!_isDisposed) {
+      notifyListeners();
+    }
+    try {
+      await _settingsService.saveLiveSpeechEnabled(enabled);
+    } catch (error) {
+      _logDart(
+        LlamaLogLevel.warn,
+        'Could not persist live dictation preference: $error',
+      );
+    }
+    if (enabled && !_isDisposed) {
+      await refreshLiveSpeechModel();
+    }
+  }
+
+  /// Refreshes integrity-checked availability for the selected live STT model.
+  Future<void> refreshLiveSpeechModel() async {
+    if (!_liveSpeechModelService.isSupported || _isDisposed) {
+      _installedLiveSpeechModel = null;
+      return;
+    }
+    final model = _selectedLiveSpeechModel;
+    _isInspectingLiveSpeechModel = true;
+    if (!_isDisposed) {
+      notifyListeners();
+    }
+    try {
+      final installed = await _liveSpeechModelService.resolve(model);
+      if (_selectedLiveSpeechModel.id == model.id) {
+        _installedLiveSpeechModel = installed;
+        _liveSpeechError = null;
+      }
+    } catch (error) {
+      if (_selectedLiveSpeechModel.id == model.id) {
+        _installedLiveSpeechModel = null;
+        _liveSpeechError =
+            'Could not inspect the live transcription model: '
+            '${_formatDisplayError(error)}';
+      }
+    } finally {
+      if (_selectedLiveSpeechModel.id == model.id) {
+        _isInspectingLiveSpeechModel = false;
+      }
+    }
+    if (!_isDisposed) {
+      notifyListeners();
+    }
+  }
+
+  /// Installs the checksum-pinned selected model and tokenizer.
+  Future<bool> installLiveSpeechModel() async {
+    if (!canInstallLiveSpeechModel) {
+      return _installedLiveSpeechModel != null;
+    }
+    final cancelToken = CancelToken();
+    _liveSpeechModelDownloadCancelToken = cancelToken;
+    _isInstallingLiveSpeechModel = true;
+    _liveSpeechModelDownloadProgress = 0;
+    _liveSpeechError = null;
+    notifyListeners();
+    final model = _selectedLiveSpeechModel;
+    try {
+      _installedLiveSpeechModel = await _liveSpeechModelService.install(
+        model,
+        cancelToken: cancelToken,
+        onProgress: (progress) {
+          if (!identical(_liveSpeechModelDownloadCancelToken, cancelToken) ||
+              _selectedLiveSpeechModel.id != model.id ||
+              _isDisposed) {
+            return;
+          }
+          _isVerifyingLiveSpeechModel = false;
+          _liveSpeechModelDownloadProgress = progress;
+          notifyListeners();
+        },
+        onVerifying: () {
+          if (!identical(_liveSpeechModelDownloadCancelToken, cancelToken) ||
+              _selectedLiveSpeechModel.id != model.id ||
+              _isDisposed) {
+            return;
+          }
+          _isVerifyingLiveSpeechModel = true;
+          notifyListeners();
+        },
+      );
+      _liveSpeechModelDownloadProgress = 1;
+      return true;
+    } catch (error) {
+      if (!cancelToken.isCancelled && !_isDisposed) {
+        _liveSpeechError =
+            'Could not install live transcription: '
+            '${_formatDisplayError(error)}';
+      } else {
+        _liveSpeechModelDownloadProgress = 0;
+      }
+      return false;
+    } finally {
+      if (identical(_liveSpeechModelDownloadCancelToken, cancelToken)) {
+        _liveSpeechModelDownloadCancelToken = null;
+        _isInstallingLiveSpeechModel = false;
+        _isVerifyingLiveSpeechModel = false;
+      }
+      if (!_isDisposed) {
+        notifyListeners();
+      }
+    }
+  }
+
+  /// Cancels the selected sidecar download without deleting completed assets.
+  void cancelLiveSpeechModelInstall() {
+    _liveSpeechModelDownloadCancelToken?.cancel(
+      'Live transcription model download cancelled by the user.',
+    );
+  }
+
+  /// Starts worker-isolated LiteRT-LM live microphone transcription.
+  Future<void> startLiveSpeechTranscription() async {
+    if (_installedLiveSpeechModel == null) {
+      if (!await installLiveSpeechModel()) {
+        return;
+      }
+    }
+    if (!canStartLiveSpeechTranscription) {
+      return;
+    }
+    final installed = _installedLiveSpeechModel!;
+    final operationId = ++_liveSpeechOperationSequence;
+    final transitionDone = Completer<void>();
+    _activeLiveSpeechTransitionDone = transitionDone;
+    _isLiveTranscribing = true;
+    _liveSpeechConfirmedText = '';
+    _liveSpeechPendingText = '';
+    _liveSpeechAcceptedAudioDuration = Duration.zero;
+    _liveSpeechError = null;
+    notifyListeners();
+
+    try {
+      final task = await _liveSpeechTranscriptionService.start(
+        modelPath: installed.modelPath,
+        tokenizerPath: installed.tokenizerPath,
+        preset: installed.model.preset,
+      );
+      if (_isDisposed || operationId != _liveSpeechOperationSequence) {
+        final settled = task.done.then<void>(
+          (_) {},
+          onError: (Object _, StackTrace _) {},
+        );
+        await task.cancel();
+        await settled;
+        return;
+      }
+      _activeLiveSpeechTask = task;
+      final done = Completer<void>();
+      _activeLiveSpeechDone = done;
+      _liveSpeechUpdates = task.updates.listen((update) {
+        if (_isDisposed || operationId != _liveSpeechOperationSequence) {
+          return;
+        }
+        _liveSpeechConfirmedText = update.confirmedText;
+        _liveSpeechPendingText = update.pendingText;
+        _liveSpeechAcceptedAudioDuration = update.acceptedAudioDuration;
+        notifyListeners();
+        if (!update.isFinal &&
+            update.acceptedAudioDuration >=
+                maxLiveSpeechTranscriptionDuration) {
+          unawaited(stopLiveSpeechTranscription());
+        }
+      });
+      unawaited(_monitorLiveSpeechTask(task, operationId, done));
+    } catch (error) {
+      if (!_isDisposed && operationId == _liveSpeechOperationSequence) {
+        _isLiveTranscribing = false;
+        _liveSpeechError =
+            'Could not start live transcription: '
+            '${_formatDisplayError(error)}';
+        notifyListeners();
+      }
+    } finally {
+      if (identical(_activeLiveSpeechTransitionDone, transitionDone)) {
+        _activeLiveSpeechTransitionDone = null;
+      }
+      if (!transitionDone.isCompleted) {
+        transitionDone.complete();
+      }
+    }
+  }
+
+  Future<void> _monitorLiveSpeechTask(
+    LiveSpeechTranscriptionTask task,
+    int operationId,
+    Completer<void> done,
+  ) async {
+    try {
+      final result = await task.done;
+      if (_isDisposed || operationId != _liveSpeechOperationSequence) {
+        return;
+      }
+      final transcript = result.text.trim();
+      _liveSpeechAcceptedAudioDuration = result.acceptedAudioDuration;
+      if (transcript.isEmpty) {
+        _liveSpeechError =
+            'Live transcription completed without returning text.';
+      } else {
+        _liveSpeechConfirmedText = transcript;
+        _liveSpeechPendingText = '';
+        _pendingLiveSpeechDraft = transcript;
+      }
+    } catch (error) {
+      if (!_isDisposed && operationId == _liveSpeechOperationSequence) {
+        _liveSpeechError = _formatDisplayError(error);
+      }
+    } finally {
+      if (operationId == _liveSpeechOperationSequence) {
+        final updates = _liveSpeechUpdates;
+        _liveSpeechUpdates = null;
+        if (updates != null) {
+          unawaited(updates.cancel());
+        }
+        _activeLiveSpeechTask = null;
+        _activeLiveSpeechDone = null;
+        _isLiveTranscribing = false;
+        if (!_isDisposed) {
+          notifyListeners();
+        }
+      }
+      if (!done.isCompleted) {
+        done.complete();
+      }
+    }
+  }
+
+  /// Stops live capture and flushes the final partial inference window.
+  Future<void> stopLiveSpeechTranscription() async {
+    final task = _activeLiveSpeechTask;
+    final done = _activeLiveSpeechDone;
+    if (task == null || !_isLiveTranscribing) {
+      return;
+    }
+    await task.stop();
+    await done?.future;
+  }
+
+  /// Cancels live capture without producing a composer draft.
+  Future<void> cancelLiveSpeechTranscription() async {
+    final task = _activeLiveSpeechTask;
+    final done = _activeLiveSpeechDone;
+    final priorTransition = _activeLiveSpeechTransitionDone;
+    if (task == null && !_isLiveTranscribing && priorTransition == null) {
+      return;
+    }
+    if (task == null && !_isLiveTranscribing && priorTransition != null) {
+      await priorTransition.future;
+      return;
+    }
+    final cancellationDone = Completer<void>();
+    _activeLiveSpeechTransitionDone = cancellationDone;
+    _liveSpeechOperationSequence += 1;
+    _activeLiveSpeechTask = null;
+    _activeLiveSpeechDone = null;
+    _isLiveTranscribing = false;
+    _liveSpeechConfirmedText = '';
+    _liveSpeechPendingText = '';
+    _liveSpeechAcceptedAudioDuration = Duration.zero;
+    _liveSpeechError = null;
+    await _liveSpeechUpdates?.cancel();
+    _liveSpeechUpdates = null;
+    if (!_isDisposed) {
+      notifyListeners();
+    }
+    try {
+      await priorTransition?.future;
+      if (task != null) {
+        await task.cancel();
+        try {
+          await task.done;
+        } catch (_) {
+          // Cancellation is the expected terminal state.
+        }
+      }
+      await done?.future;
+    } finally {
+      if (identical(_activeLiveSpeechTransitionDone, cancellationDone)) {
+        _activeLiveSpeechTransitionDone = null;
+      }
+      if (!cancellationDone.isCompleted) {
+        cancellationDone.complete();
+      }
+    }
+  }
+
+  /// Returns the next finalized live transcript exactly once.
+  String? takeLiveSpeechDraft() {
+    final draft = _pendingLiveSpeechDraft;
+    _pendingLiveSpeechDraft = null;
+    return draft;
+  }
+
   /// Starts foreground microphone capture for the active model's voice flow.
   Future<void> startAudioRecording({ChatAudioRecordingPurpose? purpose}) async {
     if (!_audioRecordingService.isSupported) {
@@ -2832,7 +3317,10 @@ class ChatProvider extends ChangeNotifier {
 
   /// Discards an active microphone recording without processing it.
   Future<void> cancelAudioRecording({bool showMessage = true}) async {
-    await _cancelAndAwaitAudioRecording(showMessage: showMessage);
+    await Future.wait<void>(<Future<void>>[
+      _cancelAndAwaitAudioRecording(showMessage: showMessage),
+      cancelLiveSpeechTranscription(),
+    ]);
   }
 
   void _startAudioRecordingTimer(int revision) {
@@ -3489,6 +3977,25 @@ class ChatProvider extends ChangeNotifier {
   void updateNumberOfThreadsBatch(int value) => _updateSettings(
     _settings.copyWith(numberOfThreadsBatch: value.clamp(0, 128)),
   );
+  void updateBatchSize(int value) {
+    final normalized = value.clamp(0, 32768);
+    final microBatchSize =
+        normalized > 0 && _settings.microBatchSize > normalized
+        ? normalized
+        : _settings.microBatchSize;
+    _updateSettings(
+      _settings.copyWith(batchSize: normalized, microBatchSize: microBatchSize),
+    );
+  }
+
+  void updateMicroBatchSize(int value) {
+    final normalized = value.clamp(0, 32768);
+    final capped = _settings.batchSize > 0
+        ? math.min(normalized, _settings.batchSize)
+        : normalized;
+    _updateSettings(_settings.copyWith(microBatchSize: capped));
+  }
+
   void updateLogLevel(LlamaLogLevel value) {
     _updateSettings(_settings.copyWith(logLevel: value));
     _chatService.engine.setDartLogLevel(value);
@@ -3565,6 +4072,10 @@ class ChatProvider extends ChangeNotifier {
     _clearTextToSpeechOutput();
     stopGeneration();
     _cancelActiveModelPrefetch();
+    _liveSpeechModelDownloadCancelToken?.cancel(
+      'Live transcription model download cancelled during disposal.',
+    );
+    _liveSpeechModelDownloadCancelToken = null;
     _session?.reset();
     _session = null;
     await _chatService.unloadModel();
@@ -3868,6 +4379,7 @@ class ChatProvider extends ChangeNotifier {
     unawaited(_settingsService.saveSettings(_settings));
     final recordingDone = _cancelAndAwaitAudioRecording();
     final transcriptionDone = _cancelAndAwaitActiveTranscription();
+    final liveSpeechDone = cancelLiveSpeechTranscription();
     final textToSpeechDone = _cancelAndAwaitActiveTextToSpeech();
     stopGeneration();
     _cancelActiveModelPrefetch();
@@ -3876,8 +4388,10 @@ class ChatProvider extends ChangeNotifier {
     unawaited(() async {
       await recordingDone;
       await transcriptionDone;
+      await liveSpeechDone;
       await textToSpeechDone;
       await _audioRecordingService.dispose();
+      await _liveSpeechTranscriptionService.dispose();
       await _chatService.dispose();
     }());
     super.dispose();
@@ -3892,10 +4406,15 @@ class ChatProvider extends ChangeNotifier {
     try {
       await _saveSettingsNow();
       await _cancelAndAwaitAudioRecording();
+      await cancelLiveSpeechTranscription();
       await _cancelAndAwaitActiveTranscription();
       await _cancelAndAwaitActiveTextToSpeech();
       stopGeneration();
       _cancelActiveModelPrefetch();
+      _liveSpeechModelDownloadCancelToken?.cancel(
+        'Live transcription model download cancelled during shutdown.',
+      );
+      _liveSpeechModelDownloadCancelToken = null;
       _session?.reset();
       _session = null;
       _isLoaded = false;
@@ -3914,6 +4433,7 @@ class ChatProvider extends ChangeNotifier {
       _runtimeModelSource = null;
       _runtimeModelCacheState = null;
       await _audioRecordingService.dispose();
+      await _liveSpeechTranscriptionService.dispose();
       await _chatService.dispose();
     } finally {
       _isShuttingDown = false;
@@ -4024,8 +4544,38 @@ class ChatProvider extends ChangeNotifier {
 
   Future<void> estimateDynamicSettings() async {
     try {
+      String? probedBackendInfo;
+      if (!kIsWeb &&
+          defaultTargetPlatform == TargetPlatform.android &&
+          (_settings.preferredBackend == GpuBackend.auto ||
+              _settings.preferredBackend == GpuBackend.vulkan)) {
+        try {
+          final devices = await _chatService.engine.listGpuDevices(
+            probeBackends: const [GpuBackend.vulkan],
+          );
+          if (devices.isNotEmpty) {
+            probedBackendInfo = devices
+                .map((device) => device.backend.name.toUpperCase())
+                .toSet()
+                .join(', ');
+            _availableDevices = {
+              ..._availableDevices,
+              ...devices.map(
+                (device) =>
+                    '${device.backend.name.toUpperCase()}: ${device.description}',
+              ),
+            }.toList(growable: false);
+          }
+        } catch (e) {
+          _logDart(
+            LlamaLogLevel.warn,
+            'Vulkan capability probe failed during Auto tuning: $e',
+          );
+        }
+      }
       final vram = await _chatService.engine.getVramInfo();
-      final backendInfo = await _getAvailableBackendInfoBestEffort();
+      final backendInfo =
+          probedBackendInfo ?? await _getAvailableBackendInfoBestEffort();
       final catalogModel = _downloadableModelForCurrentSettings();
       final modelBytes =
           _settings.modelBytesHint ??

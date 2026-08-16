@@ -1,13 +1,18 @@
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:llamadart/llamadart.dart' show GpuBackend;
+import 'package:llamadart/llamadart.dart'
+    show GpuBackend, LiteRtLmAsrModelPreset;
 import 'package:provider/provider.dart';
 
 import 'package:llamadart_chat_example/models/chat_settings.dart';
 import 'package:llamadart_chat_example/models/downloadable_model.dart';
+import 'package:llamadart_chat_example/models/live_speech_model.dart';
 import 'package:llamadart_chat_example/providers/chat_provider.dart';
 import 'package:llamadart_chat_example/screens/app_shell_screen.dart';
 import 'package:llamadart_chat_example/screens/manage_models_screen.dart';
+import 'package:llamadart_chat_example/services/live_speech_model_service.dart';
+import 'package:llamadart_chat_example/services/live_speech_transcription_service.dart';
 import 'package:llamadart_chat_example/services/model_download_ui_controller.dart';
 
 import 'mocks.dart';
@@ -163,6 +168,9 @@ void main() {
       final provider = ChatProvider(
         chatService: MockChatService(),
         settingsService: MockSettingsService(),
+        liveSpeechModelService: _SupportedLiveSpeechModelService(),
+        liveSpeechTranscriptionService:
+            _SupportedLiveSpeechTranscriptionService(),
         initialSettings: const ChatSettings(
           modelPath: 'test_model.gguf',
           gpuLayers: 99,
@@ -196,7 +204,21 @@ void main() {
 
       await tester.tap(find.text('Model parameters'));
       await tester.pumpAndSettle();
+      expect(find.text('Live dictation'), findsOneWidget);
+      expect(
+        find.textContaining('Nothing is sent until you tap Send'),
+        findsOneWidget,
+      );
+      expect(provider.liveSpeechEnabled, isTrue);
+      await tester.tap(
+        find.byKey(const ValueKey<String>('live_speech_enabled_switch')),
+      );
+      await tester.pumpAndSettle();
+      expect(provider.liveSpeechEnabled, isFalse);
+
       expect(find.text('Auto · Max'), findsOneWidget);
+      expect(find.text('Batch size (n_batch)'), findsOneWidget);
+      expect(find.text('Micro-batch size (n_ubatch)'), findsOneWidget);
       expect(
         find.textContaining(
           'Auto tuning recalculates GPU layers and context headroom',
@@ -233,6 +255,52 @@ void main() {
         findsOneWidget,
       );
       await tester.pump(const Duration(milliseconds: 300));
+    });
+
+    testWidgets('disables llama.cpp batch controls for LiteRT-LM models', (
+      tester,
+    ) async {
+      tester.view
+        ..physicalSize = const Size(1440, 920)
+        ..devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final provider = ChatProvider(
+        chatService: MockChatService(),
+        settingsService: MockSettingsService(),
+        initialSettings: const ChatSettings(modelPath: 'test_model.litertlm'),
+      );
+      addTearDown(provider.dispose);
+
+      await tester.pumpWidget(
+        ChangeNotifierProvider<ChatProvider>.value(
+          value: provider,
+          child: const MaterialApp(home: AppShellScreen()),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byTooltip('Open model and inference settings').first,
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Model parameters'));
+      await tester.pumpAndSettle();
+
+      final batchControls = tester.widgetList<DropdownButtonFormField<int>>(
+        find.byWidgetPredicate(
+          (widget) =>
+              widget is DropdownButtonFormField<int> &&
+              (widget.decoration.labelText == 'Batch size (n_batch)' ||
+                  widget.decoration.labelText == 'Micro-batch size (n_ubatch)'),
+        ),
+      );
+      expect(batchControls, hasLength(2));
+      expect(
+        batchControls.every((control) => control.onChanged == null),
+        isTrue,
+      );
+      expect(find.text('Not used by LiteRT-LM'), findsNWidgets(2));
     });
 
     testWidgets('shows change model action when settings panel is hidden', (
@@ -475,6 +543,42 @@ void main() {
       expect(provider.conversations, hasLength(1));
     });
   });
+}
+
+class _SupportedLiveSpeechModelService implements LiveSpeechModelService {
+  @override
+  bool get isSupported => true;
+
+  @override
+  Future<InstalledLiveSpeechModel?> resolve(LiveSpeechModel model) async =>
+      null;
+
+  @override
+  Future<InstalledLiveSpeechModel> install(
+    LiveSpeechModel model, {
+    required CancelToken cancelToken,
+    required void Function(double progress) onProgress,
+    required void Function() onVerifying,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<void> delete(LiveSpeechModel model) async {}
+}
+
+class _SupportedLiveSpeechTranscriptionService
+    implements LiveSpeechTranscriptionService {
+  @override
+  bool get isSupported => true;
+
+  @override
+  Future<LiveSpeechTranscriptionTask> start({
+    required String modelPath,
+    required String tokenizerPath,
+    required LiteRtLmAsrModelPreset preset,
+  }) => throw UnimplementedError();
+
+  @override
+  Future<void> dispose() async {}
 }
 
 Future<void> _pumpUntil(WidgetTester tester, bool Function() condition) async {

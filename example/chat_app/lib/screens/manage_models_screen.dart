@@ -1209,6 +1209,8 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
 
     provider.updateNumberOfThreads(0);
     provider.updateNumberOfThreadsBatch(0);
+    provider.updateBatchSize(0);
+    provider.updateMicroBatchSize(0);
   }
 
   void _resetInferenceParams(ChatProvider provider) {
@@ -1402,6 +1404,13 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
         final contextOptions = _buildContextSizeOptions(provider.contextSize);
         final hasModelPath =
             provider.modelPath != null && provider.modelPath!.isNotEmpty;
+        final usesLiteRtLmModel =
+            provider.modelPath
+                ?.split('?')
+                .first
+                .toLowerCase()
+                .endsWith('.litertlm') ??
+            false;
         final hasMmprojPath = (provider.settings.mmprojPath ?? '')
             .trim()
             .isNotEmpty;
@@ -1415,6 +1424,10 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
         final threadBatchLabel = provider.numberOfThreadsBatch == 0
             ? '(auto detected)'
             : provider.numberOfThreadsBatch.toString();
+        final batchSizeOptions = _buildBatchSizeOptions(provider.batchSize);
+        final microBatchSizeOptions = _buildBatchSizeOptions(
+          provider.microBatchSize,
+        );
         final isMaximumGpuLayers = provider.gpuLayers >= 99;
         final isAutoTuning =
             selectedBackend == GpuBackend.auto && provider.autoTuneModelParams;
@@ -1937,10 +1950,30 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
                     ),
                   ),
                   subtitle: Text(
-                    'GPU layers, backend, context, and runtime threads',
+                    'GPU layers, backend, context, batching, and runtime threads',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                   children: [
+                    if (provider.supportsLiveSpeechFeature) ...[
+                      SwitchListTile.adaptive(
+                        key: const ValueKey<String>(
+                          'live_speech_enabled_switch',
+                        ),
+                        value: provider.liveSpeechEnabled,
+                        secondary: const Icon(Icons.subtitles_rounded),
+                        title: const Text('Live dictation'),
+                        subtitle: const Text(
+                          'Use a separate on-device English speech model to '
+                          'put microphone text in the composer. Nothing is '
+                          'sent until you tap Send.',
+                        ),
+                        contentPadding: EdgeInsets.zero,
+                        onChanged: (enabled) => unawaited(
+                          provider.updateLiveSpeechEnabled(enabled),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                    ],
                     _LabeledSlider(
                       label: 'GPU layers',
                       valueLabel: gpuLayersLabel,
@@ -1994,6 +2027,56 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
                           provider.updateContextSize(value);
                         }
                       },
+                    ),
+                    const SizedBox(height: 10),
+                    DropdownButtonFormField<int>(
+                      initialValue: provider.batchSize,
+                      decoration: InputDecoration(
+                        labelText: 'Batch size (n_batch)',
+                        helperText: usesLiteRtLmModel
+                            ? 'Not used by LiteRT-LM'
+                            : null,
+                      ),
+                      items: batchSizeOptions
+                          .map(
+                            (option) => DropdownMenuItem<int>(
+                              value: option,
+                              child: Text(option == 0 ? 'Auto' : '$option'),
+                            ),
+                          )
+                          .toList(growable: false),
+                      onChanged: usesLiteRtLmModel
+                          ? null
+                          : (value) {
+                              if (value != null) {
+                                provider.updateBatchSize(value);
+                              }
+                            },
+                    ),
+                    const SizedBox(height: 10),
+                    DropdownButtonFormField<int>(
+                      initialValue: provider.microBatchSize,
+                      decoration: InputDecoration(
+                        labelText: 'Micro-batch size (n_ubatch)',
+                        helperText: usesLiteRtLmModel
+                            ? 'Not used by LiteRT-LM'
+                            : null,
+                      ),
+                      items: microBatchSizeOptions
+                          .map(
+                            (option) => DropdownMenuItem<int>(
+                              value: option,
+                              child: Text(option == 0 ? 'Auto' : '$option'),
+                            ),
+                          )
+                          .toList(growable: false),
+                      onChanged: usesLiteRtLmModel
+                          ? null
+                          : (value) {
+                              if (value != null) {
+                                provider.updateMicroBatchSize(value);
+                              }
+                            },
                     ),
                     const SizedBox(height: 10),
                     DropdownButtonFormField<GpuBackend>(
@@ -2409,6 +2492,23 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
   List<int> _buildContextSizeOptions(int current) {
     final values = <int>{0, 2048, 4096, 8192, 16384, 32768, current}.toList()
       ..sort();
+    return values;
+  }
+
+  List<int> _buildBatchSizeOptions(int current) {
+    final values = <int>{
+      0,
+      1,
+      16,
+      32,
+      64,
+      128,
+      256,
+      512,
+      1024,
+      2048,
+      current,
+    }.toList()..sort();
     return values;
   }
 

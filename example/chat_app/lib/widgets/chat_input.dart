@@ -41,6 +41,7 @@ class _ChatInputState extends State<ChatInput> {
   StreamSubscription<void>? _speechCompleteSubscription;
   bool _isPlayingSpeech = false;
   bool _speechPlaybackStopScheduled = false;
+  bool _liveSpeechDraftApplyScheduled = false;
   TextToSpeechResult? _playingSpeechResult;
   String? _textToSpeechLanguage;
   SpeechAudioInput? _speakerReference;
@@ -189,19 +190,33 @@ class _ChatInputState extends State<ChatInput> {
     return false;
   }
 
-  void _insertTextAtSelection(String text) {
+  void _insertTextAtSelection(String text, {bool addBoundarySpacing = false}) {
     final value = widget.controller.value;
     final selection = value.selection.isValid
         ? value.selection
         : TextSelection.collapsed(offset: value.text.length);
+    var insertedText = text;
+    if (addBoundarySpacing && insertedText.isNotEmpty) {
+      final textBefore = value.text.substring(0, selection.start);
+      final textAfter = value.text.substring(selection.end);
+      if (textBefore.isNotEmpty && !RegExp(r'[\s(\[{]$').hasMatch(textBefore)) {
+        insertedText = ' $insertedText';
+      }
+      if (textAfter.isNotEmpty &&
+          !RegExp(r'^[\s.,!?;:)\]}]').hasMatch(textAfter)) {
+        insertedText = '$insertedText ';
+      }
+    }
     final nextText = value.text.replaceRange(
       selection.start,
       selection.end,
-      text,
+      insertedText,
     );
     widget.controller.value = value.copyWith(
       text: nextText,
-      selection: TextSelection.collapsed(offset: selection.start + text.length),
+      selection: TextSelection.collapsed(
+        offset: selection.start + insertedText.length,
+      ),
       composing: TextRange.empty,
     );
   }
@@ -348,6 +363,40 @@ class _ChatInputState extends State<ChatInput> {
     });
   }
 
+  void _synchronizeLiveSpeechDraft(ChatProvider provider) {
+    if (_liveSpeechDraftApplyScheduled ||
+        provider.isLiveTranscribing ||
+        !provider.hasPendingLiveSpeechDraft) {
+      return;
+    }
+    _liveSpeechDraftApplyScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _liveSpeechDraftApplyScheduled = false;
+      if (!mounted) {
+        return;
+      }
+      final draft = context.read<ChatProvider>().takeLiveSpeechDraft();
+      if (draft == null || draft.trim().isEmpty) {
+        return;
+      }
+      _insertTextAtSelection(draft.trim(), addBoundarySpacing: true);
+      widget.focusNode.requestFocus();
+    });
+  }
+
+  Future<void> _stopLiveSpeechTranscription(ChatProvider provider) async {
+    await provider.stopLiveSpeechTranscription();
+    if (!mounted) {
+      return;
+    }
+    final draft = provider.takeLiveSpeechDraft();
+    if (draft == null || draft.trim().isEmpty) {
+      return;
+    }
+    _insertTextAtSelection(draft.trim(), addBoundarySpacing: true);
+    widget.focusNode.requestFocus();
+  }
+
   Future<void> _clearSynthesizedSpeech(ChatProvider provider) async {
     if (_isPlayingSpeech) {
       await _stopSynthesizedSpeechPlayback();
@@ -377,14 +426,17 @@ class _ChatInputState extends State<ChatInput> {
     return Consumer<ChatProvider>(
       builder: (context, provider, _) {
         _synchronizeSynthesizedSpeechPlayback(provider.textToSpeechResult);
+        _synchronizeLiveSpeechDraft(provider);
         final isGenerating = provider.isGenerating;
         final hasActiveAudioRecording = provider.hasActiveAudioRecording;
+        final hasActiveMicrophone =
+            hasActiveAudioRecording || provider.isLiveTranscribing;
         final isReady = provider.isReady;
         final stagedParts = provider.stagedParts;
         final hasAttachments = stagedParts.isNotEmpty;
         final canSubmit =
             !isGenerating &&
-            !hasActiveAudioRecording &&
+            !hasActiveMicrophone &&
             isReady &&
             (provider.supportsTextToSpeech
                 ? _hasDraftText && provider.canSynthesizeSpeech
@@ -412,6 +464,13 @@ class _ChatInputState extends State<ChatInput> {
         final VoidCallback? startAudioRecordingAction =
             provider.canStartAudioRecording
             ? () => unawaited(provider.startAudioRecording())
+            : null;
+        final showsLiveSpeechAction =
+            provider.supportsLiveSpeechTranscription &&
+            provider.isLiveSpeechModelReady;
+        final VoidCallback? startLiveSpeechAction =
+            provider.canStartLiveSpeechTranscription
+            ? () => unawaited(provider.startLiveSpeechTranscription())
             : null;
         final shortcutBindings = <ShortcutActivator, VoidCallback>{
           const SingleActivator(
@@ -460,7 +519,7 @@ class _ChatInputState extends State<ChatInput> {
           },
         };
 
-        return Container(
+        final input = Container(
           padding: EdgeInsets.fromLTRB(
             isDesktop ? 22 : 12,
             10,
@@ -496,6 +555,20 @@ class _ChatInputState extends State<ChatInput> {
                       _buildTextToSpeechOutput(context, provider),
                       const SizedBox(height: 8),
                     ],
+                    if (provider.supportsLiveSpeechTranscription &&
+                        provider.isLoaded &&
+                        !provider.isLiveTranscribing &&
+                        !provider.isInstallingLiveSpeechModel &&
+                        provider.liveSpeechError == null) ...[
+                      _buildLiveSpeechSetupRow(context, provider),
+                      const SizedBox(height: 8),
+                    ],
+                    if (provider.isLiveTranscribing ||
+                        provider.isInstallingLiveSpeechModel ||
+                        provider.liveSpeechError != null) ...[
+                      _buildLiveSpeechRow(context, provider),
+                      const SizedBox(height: 8),
+                    ],
                     if (hasActiveAudioRecording) ...[
                       _buildAudioRecordingRow(context, provider),
                       const SizedBox(height: 8),
@@ -505,13 +578,13 @@ class _ChatInputState extends State<ChatInput> {
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
-                        if (provider.canAttachMedia && !hasActiveAudioRecording)
+                        if (provider.canAttachMedia && !hasActiveMicrophone)
                           _buildAttachmentMenu(context, provider),
                         if (provider.supportsMicrophoneRecording)
                           Semantics(
                             label: microphoneActionLabel,
                             button: true,
-                            enabled: provider.canStartAudioRecording,
+                            enabled: startAudioRecordingAction != null,
                             onTap: startAudioRecordingAction,
                             excludeSemantics: true,
                             child: IconButton(
@@ -525,7 +598,26 @@ class _ChatInputState extends State<ChatInput> {
                               onPressed: startAudioRecordingAction,
                               icon: Icon(
                                 Icons.mic_none_rounded,
-                                color: provider.canStartAudioRecording
+                                color: startAudioRecordingAction != null
+                                    ? colorScheme.primary
+                                    : null,
+                              ),
+                            ),
+                          ),
+                        if (showsLiveSpeechAction)
+                          Semantics(
+                            label: 'Start live transcription.',
+                            button: true,
+                            enabled: startLiveSpeechAction != null,
+                            onTap: startLiveSpeechAction,
+                            excludeSemantics: true,
+                            child: IconButton(
+                              key: const ValueKey<String>('live_speech_button'),
+                              tooltip: 'Live transcription',
+                              onPressed: startLiveSpeechAction,
+                              icon: Icon(
+                                Icons.graphic_eq_rounded,
+                                color: startLiveSpeechAction != null
                                     ? colorScheme.primary
                                     : null,
                               ),
@@ -537,7 +629,7 @@ class _ChatInputState extends State<ChatInput> {
                             child: TextField(
                               controller: widget.controller,
                               focusNode: widget.focusNode,
-                              enabled: isReady && !hasActiveAudioRecording,
+                              enabled: isReady && !hasActiveMicrophone,
                               maxLines: 6,
                               minLines: 1,
                               textCapitalization: TextCapitalization.sentences,
@@ -610,6 +702,20 @@ class _ChatInputState extends State<ChatInput> {
               ),
             ),
           ),
+        );
+        final viewInsets = MediaQuery.viewInsetsOf(context);
+        if (viewInsets.bottom <= 0) {
+          return input;
+        }
+        final availableHeight =
+            MediaQuery.sizeOf(context).height - viewInsets.bottom;
+        final proportionalHeight = availableHeight * 0.72;
+        final maxInputHeight = proportionalHeight > 560
+            ? 560.0
+            : proportionalHeight;
+        return ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: maxInputHeight),
+          child: SingleChildScrollView(reverse: true, child: input),
         );
       },
     );
@@ -1019,6 +1125,286 @@ class _ChatInputState extends State<ChatInput> {
             ),
           ),
       ],
+    );
+  }
+
+  Widget _buildLiveSpeechSetupRow(BuildContext context, ChatProvider provider) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final selected = provider.selectedLiveSpeechModel;
+    return Container(
+      key: const ValueKey<String>('live_speech_setup'),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.subtitles_rounded, color: colorScheme.primary),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      selected.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    Text(
+                      '${selected.sizeLabel} · English'
+                      '${provider.isLiveSpeechModelReady ? ' · Installed' : ''}',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              PopupMenuButton<String>(
+                key: const ValueKey<String>('live_speech_model_selector'),
+                tooltip: 'Choose live transcription model',
+                enabled:
+                    !provider.isInspectingLiveSpeechModel &&
+                    !provider.isInstallingLiveSpeechModel,
+                initialValue: selected.id,
+                onSelected: (modelId) =>
+                    unawaited(provider.selectLiveSpeechModel(modelId)),
+                itemBuilder: (context) => provider.availableLiveSpeechModels
+                    .map(
+                      (model) => PopupMenuItem<String>(
+                        value: model.id,
+                        child: ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: Text(model.name),
+                          subtitle: Text(
+                            '${model.sizeLabel}'
+                            '${model.isRecommended ? ' · Recommended' : ' · Heavier'}',
+                          ),
+                        ),
+                      ),
+                    )
+                    .toList(growable: false),
+                icon: const Icon(Icons.expand_more_rounded),
+              ),
+              if (provider.isInspectingLiveSpeechModel)
+                const Padding(
+                  padding: EdgeInsets.all(10),
+                  child: SizedBox.square(
+                    dimension: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                )
+              else if (!provider.isLiveSpeechModelReady)
+                TextButton(
+                  key: const ValueKey<String>('install_live_speech_button'),
+                  onPressed: provider.canInstallLiveSpeechModel
+                      ? () => unawaited(provider.installLiveSpeechModel())
+                      : null,
+                  child: const Text('Install'),
+                ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLiveSpeechRow(BuildContext context, ChatProvider provider) {
+    final colorScheme = Theme.of(context).colorScheme;
+    if (provider.isInstallingLiveSpeechModel) {
+      final percent = (provider.liveSpeechModelDownloadProgress * 100).round();
+      final isVerifying = provider.isVerifyingLiveSpeechModel;
+      return Semantics(
+        liveRegion: true,
+        label: isVerifying
+            ? 'Verifying live transcription model integrity'
+            : 'Installing live transcription model, $percent percent',
+        child: Container(
+          key: const ValueKey<String>('live_speech_model_installing'),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: colorScheme.surfaceContainerHighest,
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  const SizedBox.square(
+                    dimension: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      isVerifying
+                          ? 'Verifying ${provider.selectedLiveSpeechModel.name}…'
+                          : 'Installing '
+                                '${provider.selectedLiveSpeechModel.name} · '
+                                '$percent%',
+                    ),
+                  ),
+                  IconButton(
+                    key: const ValueKey<String>(
+                      'cancel_live_speech_model_install_button',
+                    ),
+                    tooltip: 'Cancel live transcription model download',
+                    onPressed: provider.cancelLiveSpeechModelInstall,
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              LinearProgressIndicator(
+                value: provider.liveSpeechModelDownloadProgress,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (provider.isLiveTranscribing) {
+      final transcript = provider.liveSpeechDisplayText;
+      return Container(
+        key: const ValueKey<String>('live_speech_transcription_status'),
+        padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
+        decoration: BoxDecoration(
+          color: colorScheme.primaryContainer.withValues(alpha: 0.38),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: colorScheme.primary.withValues(alpha: 0.42),
+          ),
+        ),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            Widget buildTranscript() => Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Icon(Icons.graphic_eq_rounded, color: colorScheme.primary),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Live transcription · '
+                        '${_formatRecordingDuration(provider.liveSpeechAcceptedAudioDuration)} '
+                        '/ ${_formatRecordingDuration(ChatProvider.maxLiveSpeechTranscriptionDuration)}',
+                        style: Theme.of(context).textTheme.labelLarge,
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        transcript.isEmpty ? 'Listening…' : transcript,
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: transcript.isEmpty
+                              ? colorScheme.onSurfaceVariant
+                              : colorScheme.onSurface,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            );
+
+            Widget buildActions() => Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  key: const ValueKey<String>('cancel_live_speech_button'),
+                  tooltip: 'Cancel live transcription',
+                  onPressed: () =>
+                      unawaited(provider.cancelLiveSpeechTranscription()),
+                  icon: const Icon(Icons.close_rounded),
+                ),
+                FilledButton.tonalIcon(
+                  key: const ValueKey<String>('stop_live_speech_button'),
+                  onPressed: () =>
+                      unawaited(_stopLiveSpeechTranscription(provider)),
+                  icon: const Icon(Icons.stop_rounded, size: 18),
+                  label: const Text('Use text'),
+                ),
+              ],
+            );
+
+            if (constraints.maxWidth < 520) {
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  buildTranscript(),
+                  const SizedBox(height: 6),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: buildActions(),
+                  ),
+                ],
+              );
+            }
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Expanded(child: buildTranscript()),
+                buildActions(),
+              ],
+            );
+          },
+        ),
+      );
+    }
+
+    return Container(
+      key: const ValueKey<String>('live_speech_error'),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: colorScheme.errorContainer,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            Icons.error_outline_rounded,
+            color: colorScheme.onErrorContainer,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              provider.liveSpeechError ?? 'Live transcription failed.',
+              style: TextStyle(color: colorScheme.onErrorContainer),
+            ),
+          ),
+          PopupMenuButton<String>(
+            key: const ValueKey<String>('live_speech_error_model_selector'),
+            tooltip: 'Choose a different live transcription model',
+            onSelected: (modelId) =>
+                unawaited(provider.selectLiveSpeechModel(modelId)),
+            itemBuilder: (context) => provider.availableLiveSpeechModels
+                .map(
+                  (model) => PopupMenuItem<String>(
+                    value: model.id,
+                    child: Text('${model.name} · ${model.sizeLabel}'),
+                  ),
+                )
+                .toList(growable: false),
+            icon: const Icon(Icons.swap_horiz_rounded),
+          ),
+          if (provider.canInstallLiveSpeechModel)
+            TextButton(
+              key: const ValueKey<String>(
+                'retry_live_speech_model_install_button',
+              ),
+              onPressed: () => unawaited(provider.installLiveSpeechModel()),
+              child: const Text('Retry'),
+            ),
+        ],
+      ),
     );
   }
 

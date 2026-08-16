@@ -61,6 +61,50 @@ void main() {
       expect(engine.lastModelParams!.numberOfThreadsBatch, 0);
     });
 
+    test('honors explicit Android Vulkan batch sizes', () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      final engine = MockLlamaEngine();
+      final service = ChatService(engine: engine);
+
+      await service.init(
+        const ChatSettings(
+          modelPath: 'gemma-4-E2B-it-Q4_K_S.gguf',
+          preferredBackend: GpuBackend.vulkan,
+          contextSize: 4096,
+          gpuLayers: 32,
+          batchSize: 128,
+          microBatchSize: 16,
+        ),
+        eagerLoadMultimodalProjector: false,
+      );
+
+      expect(engine.lastModelParams!.batchSize, 128);
+      expect(engine.lastModelParams!.microBatchSize, 16);
+    });
+
+    test(
+      'caps an explicit micro-batch to the resolved Android batch',
+      () async {
+        debugDefaultTargetPlatformOverride = TargetPlatform.android;
+        final engine = MockLlamaEngine();
+        final service = ChatService(engine: engine);
+
+        await service.init(
+          const ChatSettings(
+            modelPath: 'gemma-4-E2B-it-Q4_K_S.gguf',
+            preferredBackend: GpuBackend.vulkan,
+            contextSize: 4096,
+            gpuLayers: 32,
+            microBatchSize: 128,
+          ),
+          eagerLoadMultimodalProjector: false,
+        );
+
+        expect(engine.lastModelParams!.batchSize, 32);
+        expect(engine.lastModelParams!.microBatchSize, 32);
+      },
+    );
+
     test(
       'keeps roomier Android GPU defaults for non-Vulkan backends',
       () async {
@@ -157,6 +201,8 @@ void main() {
             gpuLayers: 99,
             numberOfThreads: 8,
             numberOfThreadsBatch: 8,
+            batchSize: 256,
+            microBatchSize: 64,
           ),
           eagerLoadMultimodalProjector: false,
         );

@@ -35,6 +35,40 @@ void main() {
 
       expect(settings.preferredBackend, GpuBackend.auto);
       expect(settings.autoTuneModelParams, isTrue);
+      expect(settings.batchSize, 0);
+      expect(settings.microBatchSize, 0);
+    });
+
+    test('persists logical and micro batch sizes', () async {
+      final service = SettingsService();
+      const settings = ChatSettings(batchSize: 256, microBatchSize: 64);
+
+      await service.saveSettings(settings);
+      final restored = await service.loadSettings();
+
+      expect(restored.batchSize, 256);
+      expect(restored.microBatchSize, 64);
+    });
+
+    test('persists the selected live speech sidecar independently', () async {
+      final service = SettingsService();
+
+      expect(await service.loadLiveSpeechModelId(), isNull);
+      await service.saveLiveSpeechModelId('litert-parakeet-tdt-0.6b-v3-i8');
+
+      expect(
+        await service.loadLiveSpeechModelId(),
+        'litert-parakeet-tdt-0.6b-v3-i8',
+      );
+    });
+
+    test('enables live dictation by default and persists opt-out', () async {
+      final service = SettingsService();
+
+      expect(await service.loadLiveSpeechEnabled(), isTrue);
+      await service.saveLiveSpeechEnabled(false);
+
+      expect(await service.loadLiveSpeechEnabled(), isFalse);
     });
 
     test('persists Auto intent after resolving partial GPU offload', () async {

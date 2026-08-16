@@ -14,6 +14,15 @@ A Flutter chat application demonstrating real-world usage of llamadart with UI.
 - 🎙️ **Whole-file transcription**: Compatible native GGUF ASR models can
   transcribe a selected file or capture a foreground microphone recording,
   then transcribe it after **Stop & transcribe**.
+- 📝 **Live dictation**: Native chat models, including generic audio-chat
+  models, can use a separately installed LiteRT sidecar to show confirmed and
+  pending English text while the user speaks, then place the final text in the
+  editable composer. Choose the recommended 54 MB Moonshine Tiny model or the
+  optional higher-capacity, heavier 615 MB Parakeet TDT 0.6B model. The app
+  shows model size, installed state, determinate download progress, cancel,
+  and retry. A persisted settings switch explains and enables or disables this
+  optional workflow. Audio-chat models keep their separate **Ask with voice**
+  action.
 - 🗣️ **Ask with voice**: Compatible native direct-media models or GGUF models
   with an audio-capable projector can receive a short microphone recording as
   ordinary multimodal chat and answer the request after **Stop & ask**.
@@ -21,7 +30,9 @@ A Flutter chat application demonstrating real-world usage of llamadart with UI.
   composer into a dedicated synthesis mode with language, optional speaker
   reference, cancellation, playback, and WAV export.
 - 📱 Material Design 3 UI
-- ⚙️ Model configuration (path, runtime-detected backend selection, GPU layers, context size)
+- ⚙️ Model configuration (path, runtime-detected backend selection, GPU layers,
+  context size, logical batch size, and micro-batch size; LiteRT-LM does not
+  expose the llama.cpp/WebGPU batch controls)
 - 🧩 Capability badges per model (Tools / Thinking / Vision / Audio / Video)
 - 🧪 GGUF and LiteRT-LM model routing through the same high-level engine APIs
 - 🎯 Per-model presets for temperature, Top-K, Top-P, context, and max tokens
@@ -106,7 +117,25 @@ flutter test --run-skipped -t local-only \
      minutes; **Stop & transcribe** finalizes it, runs whole-file STT, and
      deletes it.
      Capture is foreground-only and cancelling discards the temporary file.
-     Live partial transcription, Web, and LiteRT-LM STT are not enabled yet.
+     This Qwen path remains whole-file rather than live. For native chat
+     models, including generic audio-chat models, the composer can separately
+     install a live-dictation model/tokenizer and expose **Live transcription**
+     on Android, iOS, macOS, and Windows. Moonshine Tiny is the recommended
+     54 MB default; Parakeet TDT 0.6B is an optional 615 MB higher-capacity,
+     heavier choice. Both process mono 16 kHz PCM in five-second windows on a
+     worker isolate, show confirmed and replaceable pending English text, and
+     put the finalized transcript into the composer for review instead of
+     sending it automatically. The selected sidecar is remembered, and the UI
+     shows its size, installed state, determinate download progress, cancel,
+     and retry. Sessions are capped at five minutes and cancelled when the app
+     leaves the foreground. Audio-chat models keep **Ask with voice** as a
+     separate action. Linux and Web remain
+     disabled, and this app-owned flow does not change the public
+     `SpeechToTextEngine` whole-input contract.
+     Parakeet TDT is converted by
+     [LiteRT Community](https://huggingface.co/litert-community/parakeet-tdt-0.6b-v3)
+     from NVIDIA's
+     [CC-BY-4.0 model](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3).
      Web support is tracked in
      [issue #329](https://github.com/leehack/llamadart/issues/329). All STT
      actions require the matching projector, and the preset's pinned downloads

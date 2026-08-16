@@ -75,6 +75,7 @@ Pick targeted rows based on the touched surface:
 | Speech-to-text API or adapter | `speech-to-text-smoke`, plus `litert-lm-asr-smoke` for the dedicated LiteRT-LM session API |
 | Text-to-speech API or adapter | `text-to-speech-smoke` |
 | Chat-app microphone transcription flow | `chat-app-microphone-transcription-smoke` |
+| Chat-app live LiteRT-LM dictation | `litert-lm-asr-smoke`, `chat-app-live-speech-smoke` |
 | Chat-app Ask with voice | `gguf-audio-chat-smoke`, `litert-lm-chat-features-smoke`, `chat-app-voice-question-smoke` |
 | Example app, CLI, or server package | `examples-tests` |
 

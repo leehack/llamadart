@@ -99,9 +99,11 @@ gates. Supported metadata presets currently cover Parakeet TDT, Parakeet CTC,
 Moonshine Tiny, Whisper Tiny, and Qwen3-ASR 0.6B, but callers must provide the
 matching model and tokenizer artifacts.
 
-This API does not yet provide microphone capture, a Dart event stream,
-timestamps, confidence, diarization, or automatic resampling. Those belong in
-the future high-level adapter rather than the synchronous FFI boundary.
+This low-level API does not itself provide microphone capture, a Dart event
+stream, timestamps, confidence, diarization, or automatic resampling. The chat
+example now demonstrates an app-owned microphone/worker wrapper with selectable
+Moonshine Tiny and Parakeet TDT sidecars. That example integration is not yet a
+public streaming `SpeechToTextEngine` adapter.
 
 ## Load a Qwen3-ASR model
 
@@ -205,6 +207,17 @@ different user actions:
   five minutes. **Stop & transcribe** finalizes that file and passes it to
   `SpeechToTextEngine`, while **Discard** cancels capture and removes the
   partial file.
+- With a native chat model, **Live transcription** uses a separately installed,
+  checksum-pinned LiteRT model and tokenizer. Moonshine Tiny is the recommended
+  54 MB default; Parakeet TDT 0.6B is an optional higher-capacity, heavier
+  615 MB choice. The selector remembers the choice and reports model size,
+  installed state, determinate download progress, cancellation, and retry. The
+  app captures mono 16 kHz PCM, owns the synchronous LiteRT-LM session in a
+  worker isolate, and renders monotonic confirmed text plus a replaceable
+  pending suffix after each five-second window. **Use text** finalizes the
+  session and inserts the result into the editable composer; it never submits
+  the message automatically. Generic audio-chat models retain **Ask with
+  voice** as a separate action.
 - With native Gemma 4 E2B, **Ask with voice** uses either the LiteRT-LM
   direct-media bundle or the GGUF model with its matching audio-capable
   projector. It records up to 30 seconds and **Stop & ask** sends the WAV bytes
@@ -213,12 +226,21 @@ different user actions:
   detected language, or live partial text. An ASR profile takes precedence
   when both capability declarations are present.
 
-The transcription action is hidden on Web and for current LiteRT-LM bundles.
+The dedicated **Transcribe Audio** action remains hidden on Web and for normal
+LiteRT-LM chat bundles. Live dictation is a separate app-owned sidecar flow,
+not a capability of the selected chat bundle or the current public
+`SpeechToTextEngine`.
 ASR microphone recordings are capped at five minutes, cancelled when the app is
 backgrounded, and deleted after transcription. This remains a whole-file
 workflow: it does not produce live partial transcripts while the user speaks.
 The recorder requests 16 kHz mono WAV, but hardware may choose another valid
 sample rate; the downstream native decoder reads the WAV metadata.
+The live sidecar path instead requests PCM16 mono 16 kHz streaming, preserves
+samples split across arbitrary byte-chunk boundaries, applies one in-flight
+worker push at a time, and caps each session at five minutes. It is currently
+English-only and CPU-only. The composer integration is enabled on Android,
+iOS, macOS, and Windows, cancelled on foreground lifecycle changes, and
+disabled on Linux and Web.
 Capture for both microphone workflows is code-supported on Android, iOS, macOS,
 and Windows. It remains disabled on Linux with the current recorder plugin
 because its external-tool startup is not safe to expose without a stronger

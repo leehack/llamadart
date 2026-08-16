@@ -88,6 +88,48 @@ class ModelServiceIO implements ModelService {
     return modelsDir.path;
   }
 
+  /// Resolves the managed-cache path for one native model asset.
+  String resolveManagedAssetPath(String modelsDir, ModelAssetSource source) =>
+      _assetPath(modelsDir, source);
+
+  /// Checks one native model asset using the same integrity and partial-file
+  /// rules as the main model library.
+  Future<bool> isManagedAssetAvailable(
+    String modelsDir,
+    ModelAssetSource source, {
+    required ModelAssetRole role,
+  }) => _isAssetAvailable(modelsDir, source, role: role);
+
+  /// Downloads and verifies one native model asset with resumable transfer
+  /// provenance.
+  Future<void> downloadManagedAsset({
+    required String modelsDir,
+    required RemoteModelAssetSource source,
+    required ModelAssetRole role,
+    required CancelToken cancelToken,
+    required void Function(int downloadedBytes, int? totalBytes, bool resumed)
+    onProgress,
+    void Function()? onVerifying,
+  }) async {
+    if (await _isAssetAvailable(modelsDir, source, role: role)) {
+      final size = await File(_assetPath(modelsDir, source)).length();
+      onProgress(size, source.sizeBytes ?? size, false);
+      return;
+    }
+    await _downloadFileWithResume(
+      source: source,
+      savePath: _assetPath(modelsDir, source),
+      cancelToken: cancelToken,
+      onProgress: onProgress,
+    );
+    onVerifying?.call();
+    await _verifyDownloadedRemoteAsset(modelsDir, source, cancelToken);
+  }
+
+  /// Deletes one managed native model asset and its integrity metadata.
+  Future<void> deleteManagedAsset(String modelsDir, ModelAssetSource source) =>
+      _deleteCachedAsset(modelsDir, source);
+
   Future<String> _defaultModelsDirectory() async {
     if (Platform.isAndroid || Platform.isIOS) {
       final dir = await getApplicationCacheDirectory();

@@ -9,12 +9,25 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Added logical and micro-batch controls for llama.cpp/WebGPU models to the
+  Flutter chat example, and made Android Auto probe the packaged Vulkan device
+  before choosing GPU offload.
+
 - Updated the native LiteRT-LM runtime to `v0.16.0-native.2` and added
   experimental CPU-only dedicated ASR runtime sessions with bounded PCM input
   and confirmed/unconfirmed transcript updates. The Apple companion also
   packages the iOS Gemma constraint provider and Metal plugins required by the
   published runtime. This is a low-level native API and is not yet a
   `SpeechToTextEngine` backend.
+
+- Added experimental live English dictation to native Flutter chat models,
+  including generic audio-chat models, using selectable checksum-pinned
+  Moonshine Tiny (recommended, 54 MB) and Parakeet TDT 0.6B (optional, 615 MB)
+  LiteRT sidecars. The UI reports determinate download progress and supports
+  cancellation/retry; worker-isolated PCM streaming produces confirmed/pending
+  text and editable composer finalization. A persisted settings switch explains
+  and enables or disables the optional workflow. Audio-chat models retain
+  **Ask with voice** as a separate action.
 
 - Improved Flutter chat example model downloads with bounded retries for
   transient network failures, safe resume after truncated responses, and a
