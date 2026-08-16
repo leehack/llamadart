@@ -1,10 +1,8 @@
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:llamadart/llamadart.dart';
 import 'package:llamadart_chat_example/models/live_speech_model.dart';
 import 'package:llamadart_chat_example/services/live_speech_transcription_service.dart';
-import 'package:llamadart_chat_example/services/live_speech_transcription_service_io.dart';
 
 void main() {
   test('converts little-endian PCM16 to normalized float samples', () {
@@ -78,63 +76,4 @@ void main() {
     expect(model.sizeBytes, 53922426);
     expect(model.languages, <String>['English']);
   });
-
-  test('skips only LiteRT-LM incomplete BPE ASR windows', () {
-    final session = _FakeAsrSession(<Object>[
-      LlamaSpeechException(
-        'LiteRT-LM ASR inference failed with native status 9.',
-        'The set of token IDs passed to the tokenizer is part of a BPE '
-            'sequence and needs more tokens to be decoded.',
-      ),
-      const LiteRtLmAsrProcessResult(
-        state: LiteRtLmAsrProcessState.update,
-        confirmedText: 'recovered',
-      ),
-    ]);
-
-    expect(processLiveAsrWindow(session), isNull);
-    expect(processLiveAsrWindow(session)?.confirmedText, 'recovered');
-  });
-
-  test('does not hide unrelated LiteRT-LM ASR failures', () {
-    final error = LlamaSpeechException(
-      'LiteRT-LM ASR inference failed with native status 9.',
-      'Model invocation failed.',
-    );
-    final session = _FakeAsrSession(<Object>[error]);
-
-    expect(() => processLiveAsrWindow(session), throwsA(same(error)));
-  });
-}
-
-class _FakeAsrSession implements LiteRtLmAsrRuntimeSession {
-  _FakeAsrSession(this._results);
-
-  final List<Object> _results;
-  int _index = 0;
-
-  @override
-  LiteRtLmAsrProcessResult processNext() {
-    final value = _results[_index++];
-    if (value is Exception) {
-      throw value;
-    }
-    return value as LiteRtLmAsrProcessResult;
-  }
-
-  @override
-  void cancel() {}
-
-  @override
-  void dispose() {}
-
-  @override
-  void finishAudio() {}
-
-  @override
-  LiteRtLmAsrPushResult pushAudio(Float32List samples) =>
-      LiteRtLmAsrPushResult(acceptedSamples: samples.length, wouldBlock: false);
-
-  @override
-  void reset() {}
 }

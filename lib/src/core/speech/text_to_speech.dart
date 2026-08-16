@@ -559,6 +559,10 @@ class TextToSpeechEngine {
             'Speaker reference bytes must not be empty.',
           );
         }
+      case SpeechAudioPcmInput():
+        throw LlamaUnsupportedException(
+          'Text-to-speech speaker references require encoded audio.',
+        );
       case null:
         break;
     }

@@ -1,12 +1,16 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import '../../backends/litert_lm/litert_lm_asr_types.dart';
 import '../engine/engine.dart';
 import '../exceptions.dart';
 import '../models/chat/chat_message.dart';
 import '../models/chat/chat_role.dart';
 import '../models/chat/content_part.dart';
 import '../models/inference/generation_params.dart';
+import 'litert_lm_speech_to_text_driver.dart';
+import 'litert_lm_speech_to_text_driver_stub.dart'
+    if (dart.library.io) 'litert_lm_speech_to_text_driver_io.dart';
 import 'speech_engine_lease.dart';
 import 'speech_platform_stub.dart'
     if (dart.library.js_interop) 'speech_platform_web.dart';
@@ -18,6 +22,9 @@ enum SpeechAudioInputKind {
 
   /// Encoded audio held in memory.
   encodedBytes,
+
+  /// Mono float PCM held in memory.
+  pcmFloat32,
 }
 
 /// Model-specific adapter used by [SpeechToTextEngine].
@@ -27,6 +34,9 @@ enum SpeechAudioInputKind {
 enum SpeechToTextModelProfile {
   /// Qwen3-ASR with its matching llama.cpp multimodal projector.
   qwen3Asr,
+
+  /// Dedicated LiteRT-LM ASR selected by [LiteRtLmAsrRuntimeConfig].
+  liteRtLmDedicated,
 }
 
 /// How the active backend implements speech recognition.
@@ -49,7 +59,8 @@ class SpeechAudioFormat {
   /// Number of interleaved audio channels, when known.
   final int? channelCount;
 
-  /// Container or codec hint such as `wav`, `mp3`, or `flac`.
+  /// Container, codec, or sample encoding such as `wav`, `flac`, or
+  /// `pcm-f32le`.
   final String? encoding;
 
   /// MIME type supplied by the caller, when available.
@@ -100,6 +111,27 @@ class SpeechAudioBytesInput extends SpeechAudioInput {
   SpeechAudioInputKind get kind => SpeechAudioInputKind.encodedBytes;
 }
 
+/// Mono float PCM held in memory.
+class SpeechAudioPcmInput extends SpeechAudioInput {
+  /// Normalized PCM samples in the range -1.0 to 1.0.
+  final Float32List samples;
+
+  /// Creates a float PCM input.
+  ///
+  /// Dedicated LiteRT-LM ASR currently requires mono 16 kHz input.
+  SpeechAudioPcmInput(
+    this.samples, {
+    super.format = const SpeechAudioFormat(
+      sampleRateHz: 16000,
+      channelCount: 1,
+      encoding: 'pcm-f32le',
+    ),
+  });
+
+  @override
+  SpeechAudioInputKind get kind => SpeechAudioInputKind.pcmFloat32;
+}
+
 /// A request to recognize speech from one complete audio input.
 class SpeechToTextRequest {
   /// Audio to transcribe.
@@ -115,6 +147,9 @@ class SpeechToTextRequest {
   final String? contextPrompt;
 
   /// Maximum number of generated transcript tokens.
+  ///
+  /// This applies to prompt-adapted recognition. Dedicated ASR backends ignore
+  /// it after validating that it is positive.
   final int maxOutputTokens;
 
   /// Creates a speech recognition request.
@@ -128,7 +163,7 @@ class SpeechToTextRequest {
 
 /// Runtime speech-to-text capabilities for the loaded engine.
 class SpeechToTextCapabilities {
-  /// Whether [SpeechToTextEngine.transcribe] can be used now.
+  /// Whether recognition can be started with the configured engine.
   final bool isSupported;
 
   /// Actionable reason when [isSupported] is false.
@@ -180,7 +215,10 @@ class SpeechToTextCapabilities {
   /// Whether pausing the output subscription throttles native inference.
   final bool supportsOutputBackpressure;
 
-  /// Maximum number of concurrent tasks owned by one underlying engine.
+  /// Whether awaiting an input push applies bounded native backpressure.
+  final bool supportsInputBackpressure;
+
+  /// Maximum number of concurrent tasks owned by one recognizer or engine.
   final int maxConcurrentTasks;
 
   /// Creates a capability snapshot.
@@ -201,6 +239,7 @@ class SpeechToTextCapabilities {
     this.supportsLanguageHints = false,
     this.supportsCancellation = false,
     this.supportsOutputBackpressure = false,
+    this.supportsInputBackpressure = false,
     this.maxConcurrentTasks = 0,
   });
 }
@@ -279,12 +318,16 @@ class SpeechToTextResult {
   /// Metadata describing the supplied source audio, when available.
   final SpeechAudioFormat? sourceFormat;
 
+  /// Audio duration accepted by the recognizer, when known.
+  final Duration? audioDuration;
+
   /// Creates a final recognition result.
   const SpeechToTextResult({
     required this.text,
     this.language,
     this.segments = const <TranscriptSegment>[],
     this.sourceFormat,
+    this.audioDuration,
   });
 }
 
@@ -299,8 +342,22 @@ class SpeechToTextPartialEvent extends SpeechToTextEvent {
   /// Current best transcript text.
   final String text;
 
+  /// Stable transcript prefix that will not be revised.
+  final String? confirmedText;
+
+  /// Replaceable hypothesis for the current inference window.
+  final String? pendingText;
+
+  /// Audio duration accepted when this update was produced.
+  final Duration? acceptedAudioDuration;
+
   /// Creates a partial transcript event.
-  const SpeechToTextPartialEvent(this.text);
+  const SpeechToTextPartialEvent(
+    this.text, {
+    this.confirmedText,
+    this.pendingText,
+    this.acceptedAudioDuration,
+  });
 }
 
 /// The final transcript event for a task.
@@ -381,8 +438,8 @@ class SpeechToTextTask {
   ///
   /// This is a single-subscription stream. Runtime failures are emitted as a
   /// stream error and are also reported by [done] as a failed completion.
-  /// The first backend emits one [SpeechToTextFinalEvent]. The event model is
-  /// intentionally future-compatible with backends that support partial text.
+  /// Prompt-adapted recognition emits one [SpeechToTextFinalEvent]. Dedicated
+  /// backends can emit [SpeechToTextPartialEvent] updates first.
   Stream<SpeechToTextEvent> get events => _eventsController.stream;
 
   /// Completes once the task succeeds, is cancelled, or fails.
@@ -401,39 +458,130 @@ class SpeechToTextTask {
   }
 }
 
-/// Typed speech-to-text API backed by a loaded [LlamaEngine].
+/// An active incremental speech-recognition session.
 ///
-/// The first implementation supports complete Qwen3-ASR audio inputs on native
-/// llama.cpp with a matching audio-capable multimodal projector.
-/// It does not yet provide live microphone ingestion, partial transcripts,
-/// timestamps, confidence values, or diarization.
+/// Callers must await each [addPcm] operation. This applies bounded input
+/// backpressure while native inference runs in a worker isolate.
+abstract interface class SpeechToTextStreamingSession {
+  /// Partial and final transcript events.
+  ///
+  /// This is a single-subscription stream. Runtime failures are emitted as a
+  /// stream error and are also reported by [done] as a failed completion.
+  Stream<SpeechToTextEvent> get events;
+
+  /// Terminal completion state.
+  Future<SpeechToTextCompletion> get done;
+
+  /// Adds mono 16 kHz normalized float PCM.
+  ///
+  /// The caller must not mutate [samples] until the returned future completes.
+  Future<void> addPcm(Float32List samples);
+
+  /// Marks input complete and flushes the final partial inference window.
+  Future<void> finish();
+
+  /// Requests cooperative cancellation and releases native resources.
+  Future<void> cancel();
+}
+
+/// Typed speech-to-text API for prompt-adapted and dedicated ASR runtimes.
+///
+/// The default constructor adapts a loaded llama.cpp Qwen3-ASR model and its
+/// audio projector. [SpeechToTextEngine.liteRtLm] creates a dedicated native
+/// LiteRT-LM recognizer with incremental PCM input and partial transcripts.
 class SpeechToTextEngine {
-  final LlamaEngine _engine;
-  final SpeechEngineLease _engineLease;
   static const String _leaseOwner = 'speech-to-text';
+  static const SpeechAudioFormat _liteRtLmPcmFormat = SpeechAudioFormat(
+    sampleRateHz: 16000,
+    channelCount: 1,
+    encoding: 'pcm-f32le',
+  );
+
+  final LlamaEngine? _engine;
+  final SpeechEngineLease? _engineLease;
+  final LiteRtLmAsrRuntimeConfig? _liteRtLmConfig;
+  final LiteRtLmSpeechToTextDriver? _liteRtLmDriver;
+  final String? _liteRtLmLibraryPath;
+  Future<LiteRtLmSpeechToTextSupport>? _liteRtLmSupportFuture;
+  bool _liteRtLmTaskActive = false;
 
   /// Model-specific adapter selected by the caller.
   final SpeechToTextModelProfile modelProfile;
 
-  /// Creates a speech recognizer over an existing loaded engine.
+  /// Creates a Qwen3-ASR prompt adapter over an existing loaded engine.
   ///
-  /// The engine must be used exclusively for this task until [SpeechToTextTask.done]
-  /// completes. The recognizer prevents two speech wrappers over the same
-  /// engine from running together, but direct [LlamaEngine.create] calls are
-  /// owned by the caller.
+  /// The engine must be used exclusively until [SpeechToTextTask.done]
+  /// completes. Separate speech wrappers over the same engine share a lease,
+  /// but direct [LlamaEngine.create] calls remain caller-owned.
   SpeechToTextEngine(LlamaEngine engine, {required this.modelProfile})
     : _engine = engine,
-      _engineLease = SpeechEngineLease.forEngine(engine);
+      _engineLease = SpeechEngineLease.forEngine(engine),
+      _liteRtLmConfig = null,
+      _liteRtLmDriver = null,
+      _liteRtLmLibraryPath = null {
+    if (modelProfile == SpeechToTextModelProfile.liteRtLmDedicated) {
+      throw ArgumentError.value(
+        modelProfile,
+        'modelProfile',
+        'Use SpeechToTextEngine.liteRtLm for dedicated LiteRT-LM ASR.',
+      );
+    }
+  }
 
-  /// Discovers speech recognition support for the current runtime and model.
+  /// Creates a dedicated native LiteRT-LM recognizer.
+  ///
+  /// The configured model and tokenizer are independent of any chat model
+  /// loaded through [LlamaEngine]. The current runtime accepts mono 16 kHz
+  /// float PCM and supports one active task per recognizer instance.
+  /// [libraryPath] is an advanced local-validation override; packaged apps
+  /// should omit it and use the runtime resolved by native assets.
+  SpeechToTextEngine.liteRtLm(
+    LiteRtLmAsrRuntimeConfig config, {
+    String? libraryPath,
+  }) : _engine = null,
+       _engineLease = null,
+       _liteRtLmConfig = config,
+       _liteRtLmDriver =
+           debugLiteRtLmSpeechToTextDriverOverride ??
+           createLiteRtLmSpeechToTextDriver(),
+       _liteRtLmLibraryPath = libraryPath,
+       modelProfile = SpeechToTextModelProfile.liteRtLmDedicated;
+
+  bool get _usesLiteRtLm => _liteRtLmConfig != null;
+
+  /// Discovers speech recognition support for the configured runtime and model.
   Future<SpeechToTextCapabilities> get capabilities async {
+    if (_usesLiteRtLm) {
+      final support = await (_liteRtLmSupportFuture ??= _liteRtLmDriver!
+          .probeSupport(libraryPath: _liteRtLmLibraryPath));
+      if (!support.isSupported) {
+        return SpeechToTextCapabilities(
+          isSupported: false,
+          unsupportedReason: support.unsupportedReason,
+          backendName: 'LiteRT-LM ASR',
+        );
+      }
+      return const SpeechToTextCapabilities(
+        isSupported: true,
+        backendName: 'LiteRT-LM ASR CPU',
+        implementation: SpeechToTextImplementation.dedicatedBackend,
+        inputKinds: <SpeechAudioInputKind>{SpeechAudioInputKind.pcmFloat32},
+        supportsPartialResults: true,
+        supportsStreamingInput: true,
+        supportsCancellation: true,
+        supportsInputBackpressure: true,
+        maxConcurrentTasks: 1,
+      );
+    }
+
     if (!isSpeechToTextPlatformSupported) {
       return SpeechToTextCapabilities(
         isSupported: false,
         unsupportedReason: speechToTextPlatformUnsupportedReason,
       );
     }
-    if (!_engine.isReady) {
+    final engine = _engine!;
+    if (!engine.isReady) {
       return const SpeechToTextCapabilities(
         isSupported: false,
         unsupportedReason:
@@ -443,7 +591,7 @@ class SpeechToTextEngine {
 
     String? backendName;
     try {
-      backendName = await _engine.getBackendName();
+      backendName = await engine.getBackendName();
     } catch (_) {
       // Capability discovery can still use the explicit audio probe.
     }
@@ -451,15 +599,15 @@ class SpeechToTextEngine {
       return SpeechToTextCapabilities(
         isSupported: false,
         unsupportedReason:
-            'Dedicated LiteRT-LM speech APIs are not exported by the current '
-            'native artifact.',
+            'A chat-model LiteRT-LM engine is not a dedicated ASR session. '
+            'Use SpeechToTextEngine.liteRtLm with an ASR model and tokenizer.',
         backendName: backendName,
       );
     }
 
     bool supportsAudio;
     try {
-      supportsAudio = await _engine.supportsAudio;
+      supportsAudio = await engine.supportsAudio;
     } catch (error) {
       return SpeechToTextCapabilities(
         isSupported: false,
@@ -485,8 +633,6 @@ class SpeechToTextEngine {
         SpeechAudioInputKind.encodedBytes,
       },
       encodedAudioFormats: const <String>{'wav', 'mp3', 'flac'},
-      supportsLanguageHints: false,
-      supportsLanguageDetection: false,
       supportsCancellation: true,
       maxConcurrentTasks: 1,
     );
@@ -494,17 +640,21 @@ class SpeechToTextEngine {
 
   /// Starts recognition for one complete audio input.
   ///
-  /// The returned task exposes a future-compatible event stream and explicit
-  /// cancellation/completion state. Only one speech task may run per
-  /// [LlamaEngine], including through separate [SpeechToTextEngine] wrappers.
-  /// Invalid input and unsupported runtime/model preflight checks throw before
+  /// Qwen3-ASR accepts encoded files or bytes. Dedicated LiteRT-LM ASR accepts
+  /// [SpeechAudioPcmInput] and emits any intermediate partial events before its
+  /// final result. Invalid input and unsupported preflight checks throw before
   /// a task is returned; failures after startup are reported by the task.
   Future<SpeechToTextTask> transcribe(SpeechToTextRequest request) async {
     _validateRequest(request);
-    if (!_engineLease.acquire(_leaseOwner)) {
+    if (_usesLiteRtLm) {
+      return _transcribeLiteRtLm(request);
+    }
+
+    final lease = _engineLease!;
+    if (!lease.acquire(_leaseOwner)) {
       throw LlamaStateException(
         'This LlamaEngine already has an active typed speech task '
-        '(${_engineLease.activeOwner}).',
+        '(${lease.activeOwner}).',
       );
     }
 
@@ -517,12 +667,111 @@ class SpeechToTextEngine {
         );
       }
 
-      final task = SpeechToTextTask._(onCancel: _engine.cancelGeneration);
-      unawaited(_runTask(task, request));
+      final engine = _engine!;
+      final task = SpeechToTextTask._(onCancel: engine.cancelGeneration);
+      unawaited(_runPromptAdapterTask(task, request));
       return task;
     } catch (_) {
-      _engineLease.release(_leaseOwner);
+      lease.release(_leaseOwner);
       rethrow;
+    }
+  }
+
+  /// Starts an incremental dedicated-ASR session.
+  ///
+  /// This is currently available only for [SpeechToTextEngine.liteRtLm]. The
+  /// accepted [format] is mono 16 kHz `pcm-f32le`. Await every
+  /// [SpeechToTextStreamingSession.addPcm] call so bounded native backpressure
+  /// can throttle the producer.
+  Future<SpeechToTextStreamingSession> startStream({
+    SpeechAudioFormat format = _liteRtLmPcmFormat,
+  }) async {
+    if (!_usesLiteRtLm) {
+      throw LlamaUnsupportedException(
+        'The Qwen3-ASR prompt adapter accepts complete encoded audio only.',
+      );
+    }
+    _validateLiteRtLmPcmFormat(format);
+    if (_liteRtLmTaskActive) {
+      throw LlamaStateException(
+        'This SpeechToTextEngine already has an active LiteRT-LM ASR task.',
+      );
+    }
+    _liteRtLmTaskActive = true;
+    try {
+      final currentCapabilities = await capabilities;
+      if (!currentCapabilities.isSupported) {
+        throw LlamaUnsupportedException(
+          currentCapabilities.unsupportedReason ??
+              'Dedicated LiteRT-LM speech recognition is unavailable.',
+        );
+      }
+      final worker = await _liteRtLmDriver!.start(
+        _liteRtLmConfig!,
+        libraryPath: _liteRtLmLibraryPath,
+      );
+      return _LiteRtLmStreamingSession(
+        worker: worker,
+        sourceFormat: format,
+        onClosed: () => _liteRtLmTaskActive = false,
+      );
+    } catch (_) {
+      _liteRtLmTaskActive = false;
+      rethrow;
+    }
+  }
+
+  Future<SpeechToTextTask> _transcribeLiteRtLm(
+    SpeechToTextRequest request,
+  ) async {
+    final audio = request.audio as SpeechAudioPcmInput;
+    final session = await startStream(format: audio.format!);
+    late final SpeechToTextTask task;
+    task = SpeechToTextTask._(onCancel: () => unawaited(session.cancel()));
+    unawaited(_pipeLiteRtLmTask(task, session, audio.samples));
+    return task;
+  }
+
+  Future<void> _pipeLiteRtLmTask(
+    SpeechToTextTask task,
+    SpeechToTextStreamingSession session,
+    Float32List samples,
+  ) async {
+    final subscription = session.events.listen(
+      task._eventsController.add,
+      onError: task._eventsController.addError,
+    );
+    try {
+      await session.addPcm(samples);
+      if (!task.isCancellationRequested) {
+        await session.finish();
+      }
+      final completion = await session.done;
+      if (!task._doneCompleter.isCompleted) {
+        task._doneCompleter.complete(completion);
+      }
+    } catch (error, stackTrace) {
+      try {
+        await session.cancel();
+      } catch (_) {
+        // Preserve the first recognition failure.
+      }
+      if (task.isCancellationRequested) {
+        await _completeCancelled(task);
+      } else {
+        final speechError = _speechError(error);
+        task._eventsController.addError(speechError, stackTrace);
+        if (!task._doneCompleter.isCompleted) {
+          task._doneCompleter.complete(
+            SpeechToTextCompletion.failed(speechError),
+          );
+        }
+      }
+    } finally {
+      await subscription.cancel();
+      if (!task._eventsController.isClosed) {
+        await task._eventsController.close();
+      }
     }
   }
 
@@ -533,8 +782,33 @@ class SpeechToTextEngine {
     final languageHint = request.languageHint?.trim();
     if (languageHint != null && languageHint.isNotEmpty) {
       throw LlamaUnsupportedException(
-        'The Qwen3-ASR prompt adapter does not expose validated language hints.',
+        'The selected speech recognizer does not expose validated language hints.',
       );
+    }
+    if (_usesLiteRtLm) {
+      final contextPrompt = request.contextPrompt?.trim();
+      if (contextPrompt != null && contextPrompt.isNotEmpty) {
+        throw LlamaUnsupportedException(
+          'Dedicated LiteRT-LM ASR does not expose context prompting.',
+        );
+      }
+      final audio = request.audio;
+      if (audio is! SpeechAudioPcmInput) {
+        throw LlamaUnsupportedException(
+          'Dedicated LiteRT-LM ASR accepts SpeechAudioPcmInput only.',
+        );
+      }
+      if (audio.samples.isEmpty) {
+        throw LlamaAudioFormatException('Float PCM samples must not be empty.');
+      }
+      final format = audio.format;
+      if (format == null) {
+        throw LlamaAudioFormatException(
+          'Dedicated LiteRT-LM ASR requires explicit PCM metadata.',
+        );
+      }
+      _validateLiteRtLmPcmFormat(format);
+      return;
     }
 
     switch (request.audio) {
@@ -573,10 +847,27 @@ class SpeechToTextEngine {
             encoding,
           );
         }
+      case SpeechAudioPcmInput():
+        throw LlamaUnsupportedException(
+          'The Qwen3-ASR prompt adapter accepts encoded audio only.',
+        );
     }
   }
 
-  Future<void> _runTask(
+  void _validateLiteRtLmPcmFormat(SpeechAudioFormat format) {
+    final encoding = format.encoding?.trim().toLowerCase();
+    if (format.sampleRateHz != 16000 ||
+        format.channelCount != 1 ||
+        (encoding != null && encoding.isNotEmpty && encoding != 'pcm-f32le')) {
+      throw LlamaAudioFormatException(
+        'Dedicated LiteRT-LM ASR requires mono 16 kHz pcm-f32le audio.',
+        'sampleRateHz=${format.sampleRateHz}, '
+            'channelCount=${format.channelCount}, encoding=${format.encoding}',
+      );
+    }
+  }
+
+  Future<void> _runPromptAdapterTask(
     SpeechToTextTask task,
     SpeechToTextRequest request,
   ) async {
@@ -587,7 +878,7 @@ class SpeechToTextEngine {
       }
 
       final output = StringBuffer();
-      await for (final chunk in _engine.create(
+      await for (final chunk in _engine!.create(
         <LlamaChatMessage>[
           LlamaChatMessage.withContent(
             role: LlamaChatRole.user,
@@ -642,19 +933,19 @@ class SpeechToTextEngine {
         await _completeCancelled(task);
         return;
       }
-      final speechError = error is LlamaException
-          ? error
-          : LlamaSpeechException('Speech recognition failed.', error);
+      final speechError = _speechError(error);
       task._eventsController.addError(speechError, stackTrace);
       unawaited(task._eventsController.close());
       task._doneCompleter.complete(SpeechToTextCompletion.failed(speechError));
     } finally {
-      _engineLease.release(_leaseOwner);
+      _engineLease!.release(_leaseOwner);
     }
   }
 
   Future<void> _completeCancelled(SpeechToTextTask task) async {
-    unawaited(task._eventsController.close());
+    if (!task._eventsController.isClosed) {
+      unawaited(task._eventsController.close());
+    }
     if (!task._doneCompleter.isCompleted) {
       task._doneCompleter.complete(const SpeechToTextCompletion.cancelled());
     }
@@ -673,6 +964,9 @@ class SpeechToTextEngine {
     return switch (audio) {
       SpeechAudioFileInput(:final path) => LlamaAudioContent(path: path),
       SpeechAudioBytesInput(:final bytes) => LlamaAudioContent(bytes: bytes),
+      SpeechAudioPcmInput() => throw LlamaUnsupportedException(
+        'The Qwen3-ASR prompt adapter accepts encoded audio only.',
+      ),
     };
   }
 
@@ -705,3 +999,196 @@ class SpeechToTextEngine {
     );
   }
 }
+
+class _LiteRtLmStreamingSession implements SpeechToTextStreamingSession {
+  static const int _sampleRateHz = 16000;
+
+  final LiteRtLmSpeechToTextWorker _worker;
+  final SpeechAudioFormat _sourceFormat;
+  final void Function() _onClosed;
+  final StreamController<SpeechToTextEvent> _events =
+      StreamController<SpeechToTextEvent>();
+  final Completer<SpeechToTextCompletion> _done =
+      Completer<SpeechToTextCompletion>();
+  late final StreamSubscription<LiteRtLmSpeechToTextUpdate> _workerSubscription;
+
+  Future<void> _operationTail = Future<void>.value();
+  bool _finishing = false;
+  bool _closed = false;
+  int _acceptedSamples = 0;
+  String _latestConfirmedText = '';
+
+  _LiteRtLmStreamingSession({
+    required LiteRtLmSpeechToTextWorker worker,
+    required SpeechAudioFormat sourceFormat,
+    required void Function() onClosed,
+  }) : _worker = worker,
+       _sourceFormat = sourceFormat,
+       _onClosed = onClosed {
+    _workerSubscription = _worker.updates.listen(
+      _handleUpdate,
+      onError: (Object error, StackTrace stackTrace) {
+        unawaited(_fail(error, stackTrace));
+      },
+    );
+  }
+
+  @override
+  Stream<SpeechToTextEvent> get events => _events.stream;
+
+  @override
+  Future<SpeechToTextCompletion> get done => _done.future;
+
+  @override
+  Future<void> addPcm(Float32List samples) {
+    if (_finishing || _closed) {
+      throw LlamaStateException(
+        'Cannot add audio after the speech stream has finished.',
+      );
+    }
+    if (samples.isEmpty) {
+      return Future<void>.value();
+    }
+    final operation = _operationTail.then((_) async {
+      if (_finishing || _closed) {
+        throw LlamaStateException(
+          'Cannot add audio after the speech stream has finished.',
+        );
+      }
+      final accepted = await _worker.pushAudio(samples);
+      if (accepted != samples.length) {
+        throw LlamaSpeechException(
+          'LiteRT-LM ASR did not accept the complete PCM input.',
+          'acceptedSamples=$accepted, suppliedSamples=${samples.length}',
+        );
+      }
+      _acceptedSamples += accepted;
+    });
+    final guarded = operation.catchError((
+      Object error,
+      StackTrace stackTrace,
+    ) async {
+      await _fail(error, stackTrace);
+      Error.throwWithStackTrace(error, stackTrace);
+    });
+    _operationTail = guarded;
+    return guarded;
+  }
+
+  @override
+  Future<void> finish() async {
+    if (_finishing || _closed) {
+      return;
+    }
+    _finishing = true;
+    try {
+      await _operationTail;
+      final transcript = await _worker.finish();
+      final normalized = transcript.trim().isEmpty
+          ? _latestConfirmedText.trim()
+          : transcript.trim();
+      final result = SpeechToTextResult(
+        text: normalized,
+        segments: normalized.isEmpty
+            ? const <TranscriptSegment>[]
+            : <TranscriptSegment>[TranscriptSegment(text: normalized)],
+        sourceFormat: _sourceFormat,
+        audioDuration: _durationForSamples(_acceptedSamples),
+      );
+      if (!_events.isClosed) {
+        _events.add(SpeechToTextFinalEvent(result));
+      }
+      await _close();
+      if (!_done.isCompleted) {
+        _done.complete(SpeechToTextCompletion.completed(result));
+      }
+    } catch (error, stackTrace) {
+      await _fail(error, stackTrace);
+    }
+  }
+
+  @override
+  Future<void> cancel() async {
+    if (_closed) {
+      return;
+    }
+    _finishing = true;
+    try {
+      await _worker.cancel();
+    } finally {
+      await _close();
+      if (!_done.isCompleted) {
+        _done.complete(const SpeechToTextCompletion.cancelled());
+      }
+    }
+  }
+
+  void _handleUpdate(LiteRtLmSpeechToTextUpdate update) {
+    if (_closed) {
+      return;
+    }
+    _latestConfirmedText = update.confirmedText;
+    _acceptedSamples = update.acceptedSamples;
+    if (update.isFinal) {
+      return;
+    }
+    final confirmed = update.confirmedText.trim();
+    final pending = update.pendingText.trim();
+    final text = <String>[
+      confirmed,
+      pending,
+    ].where((part) => part.isNotEmpty).join(' ');
+    _events.add(
+      SpeechToTextPartialEvent(
+        text,
+        confirmedText: confirmed,
+        pendingText: pending,
+        acceptedAudioDuration: _durationForSamples(update.acceptedSamples),
+      ),
+    );
+  }
+
+  Duration _durationForSamples(int samples) => Duration(
+    microseconds: (samples * Duration.microsecondsPerSecond) ~/ _sampleRateHz,
+  );
+
+  Future<void> _fail(Object error, StackTrace stackTrace) async {
+    if (_closed) {
+      return;
+    }
+    final speechError = _speechError(error);
+    if (!_events.isClosed) {
+      _events.addError(speechError, stackTrace);
+    }
+    await _close();
+    if (!_done.isCompleted) {
+      _done.complete(SpeechToTextCompletion.failed(speechError));
+    }
+  }
+
+  Future<void> _close() async {
+    if (_closed) {
+      return;
+    }
+    _closed = true;
+    try {
+      await _workerSubscription.cancel();
+    } catch (_) {
+      // Continue releasing the worker and public task lease.
+    }
+    try {
+      await _worker.dispose();
+    } catch (_) {
+      // Native teardown is best effort after the task has reached a terminal
+      // state. The original recognition error remains authoritative.
+    }
+    if (!_events.isClosed) {
+      unawaited(_events.close());
+    }
+    _onClosed();
+  }
+}
+
+LlamaException _speechError(Object error) => error is LlamaException
+    ? error
+    : LlamaSpeechException('Speech recognition failed.', error);

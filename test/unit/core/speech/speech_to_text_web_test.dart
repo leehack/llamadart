@@ -25,6 +25,25 @@ void main() {
       throwsA(isA<LlamaUnsupportedException>()),
     );
   });
+
+  test('dedicated LiteRT-LM speech is explicitly unsupported on Web', () async {
+    final engine = SpeechToTextEngine.liteRtLm(
+      const LiteRtLmAsrRuntimeConfig(
+        modelPath: '/models/moonshine.tflite',
+        tokenizerPath: '/models/tokenizer.json',
+        modelPreset: LiteRtLmAsrModelPreset.moonshineTiny,
+      ),
+    );
+
+    final capabilities = await engine.capabilities;
+
+    expect(capabilities.isSupported, isFalse);
+    expect(capabilities.unsupportedReason, contains('native runtime'));
+    await expectLater(
+      engine.startStream(),
+      throwsA(isA<LlamaUnsupportedException>()),
+    );
+  });
 }
 
 class _WebBackend implements LlamaBackend {

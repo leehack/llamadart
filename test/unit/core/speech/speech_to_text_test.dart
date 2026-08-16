@@ -43,7 +43,10 @@ void main() {
         capabilities.implementation,
         SpeechToTextImplementation.multimodalPromptAdapter,
       );
-      expect(capabilities.inputKinds, containsAll(SpeechAudioInputKind.values));
+      expect(capabilities.inputKinds, {
+        SpeechAudioInputKind.file,
+        SpeechAudioInputKind.encodedBytes,
+      });
       expect(capabilities.encodedAudioFormats, {'wav', 'mp3', 'flac'});
       expect(capabilities.supportsPartialResults, isFalse);
       expect(capabilities.supportsStreamingInput, isFalse);
@@ -261,7 +264,7 @@ void main() {
       final capabilities = await speechEngine.capabilities;
 
       expect(capabilities.isSupported, isFalse);
-      expect(capabilities.unsupportedReason, contains('not exported'));
+      expect(capabilities.unsupportedReason, contains('not a dedicated ASR'));
       expect(
         () => speechEngine.transcribe(
           const SpeechToTextRequest(

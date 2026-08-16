@@ -123,15 +123,14 @@ flutter test --run-skipped -t local-only \
      on Android, iOS, macOS, and Windows. Moonshine Tiny is the recommended
      54 MB default; Parakeet TDT 0.6B is an optional 615 MB higher-capacity,
      heavier choice. Both process mono 16 kHz PCM in five-second windows on a
-     worker isolate, show confirmed and replaceable pending English text, and
-     put the finalized transcript into the composer for review instead of
+     worker isolate through `SpeechToTextEngine.liteRtLm`, show confirmed and
+     replaceable pending English text, and put the finalized transcript into the composer for review instead of
      sending it automatically. The selected sidecar is remembered, and the UI
      shows its size, installed state, determinate download progress, cancel,
      and retry. Sessions are capped at five minutes and cancelled when the app
      leaves the foreground. Audio-chat models keep **Ask with voice** as a
-     separate action. Linux and Web remain
-     disabled, and this app-owned flow does not change the public
-     `SpeechToTextEngine` whole-input contract.
+     separate action. Linux and Web remain disabled; dedicated streaming ASR
+     is native-only.
      Parakeet TDT is converted by
      [LiteRT Community](https://huggingface.co/litert-community/parakeet-tdt-0.6b-v3)
      from NVIDIA's
