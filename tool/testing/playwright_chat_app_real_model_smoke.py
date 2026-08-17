@@ -2,6 +2,7 @@
 import argparse
 import json
 import re
+import tempfile
 import time
 import wave
 from pathlib import Path
@@ -106,6 +107,18 @@ def wait_for_bridge_response(
         bridge_error = state.get("bridgeError")
         litert_error = state.get("liteRtLmError")
         body = safe_body_text(page)
+
+        for failure_marker in (
+            "Transcription failed:",
+            "The microphone recording was too short.",
+            "The microphone recording was silent or too quiet.",
+            "The browser microphone returned an unsupported WAV encoding.",
+        ):
+            if failure_marker in body:
+                raise RuntimeError(
+                    "Speech workflow reported a terminal failure: "
+                    f"{body[-800:]!r}"
+                )
 
         if response_source in ("bridge", "auto") and bridge_error:
             raise RuntimeError(f"Bridge generation failed: {bridge_error}")
@@ -565,14 +578,28 @@ def main() -> int:
         )}
     """
 
-    with sync_playwright() as playwright:
+    with tempfile.TemporaryDirectory(
+        prefix="llamadart-fake-microphone-"
+    ) as microphone_tmp_dir, sync_playwright() as playwright:
         launch_args = browser_args(args.browser_angle)
         if args.speech_microphone:
+            fake_microphone_path = Path(microphone_tmp_dir) / "capture.wav"
+            with wave.open(args.speech_audio_path, "rb") as source_wav:
+                params = source_wav.getparams()
+                frames = source_wav.readframes(params.nframes)
+            if params.sampwidth != 2:
+                raise ValueError("Fake microphone input must use PCM16 WAV")
+            with wave.open(str(fake_microphone_path), "wb") as padded_wav:
+                padded_wav.setparams(params)
+                padded_wav.writeframes(
+                    bytes(params.framerate * params.nchannels * params.sampwidth)
+                )
+                padded_wav.writeframes(frames)
             launch_args.extend(
                 [
                     "--use-fake-ui-for-media-stream",
                     "--use-fake-device-for-media-stream",
-                    f"--use-file-for-fake-audio-capture={args.speech_audio_path}",
+                    f"--use-file-for-fake-audio-capture={fake_microphone_path}",
                 ]
             )
         browser = playwright.chromium.launch(

@@ -1,6 +1,6 @@
 import 'dart:js_interop';
-import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:record/record.dart';
 import 'package:web/web.dart' as web;
 
@@ -8,6 +8,11 @@ import 'audio_recording_service.dart';
 import 'wav_audio_validator.dart';
 
 class _WebAudioRecordingService implements AudioRecordingService {
+  static const Duration _captureWarmup = Duration(milliseconds: 500);
+  static const double _minimumDurationSeconds = 0.4;
+  static const int _minimumPeakAmplitude = 96;
+  static const double _minimumRmsAmplitude = 20;
+
   AudioRecorder? _recorder;
   String? _completedRecordingUrl;
   Uint8List? _completedRecordingBytes;
@@ -57,6 +62,11 @@ class _WebAudioRecordingService implements AudioRecordingService {
         path: '',
       );
       _isRecording = true;
+      // Keep the UI in its preparing state while Chromium connects the input
+      // stream to the AudioWorklet. Speaking during that startup window can
+      // clip the beginning of an utterance, which Qwen3-ASR may reject as an
+      // empty transcript.
+      await Future<void>.delayed(_captureWarmup);
     } on AudioRecordingException {
       rethrow;
     } catch (_) {
@@ -102,9 +112,56 @@ class _WebAudioRecordingService implements AudioRecordingService {
           'The microphone recording did not contain valid WAV audio.',
         );
       }
+      final capturedSignal = inspectPcm16WavSignal(bytes);
+      if (capturedSignal == null) {
+        web.URL.revokeObjectURL(url);
+        throw const AudioRecordingException(
+          AudioRecordingFailure.stopFailed,
+          'The browser microphone returned an unsupported WAV encoding. '
+          'Select a different input device or browser and try again.',
+        );
+      }
+      final speechBytes = trimPcm16WavSilence(bytes, signal: capturedSignal);
+      final signal = speechBytes == null
+          ? null
+          : inspectPcm16WavSignal(speechBytes);
+      if (signal == null) {
+        web.URL.revokeObjectURL(url);
+        throw const AudioRecordingException(
+          AudioRecordingFailure.stopFailed,
+          'The microphone recording was silent or too quiet. Check the '
+          'selected input device, speak closer to the microphone, and try '
+          'again.',
+        );
+      }
+      if (signal.durationSeconds < _minimumDurationSeconds) {
+        web.URL.revokeObjectURL(url);
+        throw const AudioRecordingException(
+          AudioRecordingFailure.stopFailed,
+          'The microphone recording was too short. Speak a complete phrase '
+          'before choosing Stop & transcribe.',
+        );
+      }
+      if (signal.peakAmplitude < _minimumPeakAmplitude ||
+          signal.rmsAmplitude < _minimumRmsAmplitude) {
+        web.URL.revokeObjectURL(url);
+        throw const AudioRecordingException(
+          AudioRecordingFailure.stopFailed,
+          'The microphone recording was silent or too quiet. Check the '
+          'selected input device, speak closer to the microphone, and try '
+          'again.',
+        );
+      }
+      debugPrint(
+        'Browser microphone WAV: '
+        '${signal.durationSeconds.toStringAsFixed(2)} s, '
+        '${signal.sampleRate} Hz, ${signal.channels} channel(s), '
+        'peak ${signal.peakAmplitude}, '
+        'RMS ${signal.rmsAmplitude.toStringAsFixed(1)}.',
+      );
       _revokeCompletedRecording();
       _completedRecordingUrl = url;
-      _completedRecordingBytes = bytes;
+      _completedRecordingBytes = speechBytes;
       return url;
     } on AudioRecordingException {
       rethrow;

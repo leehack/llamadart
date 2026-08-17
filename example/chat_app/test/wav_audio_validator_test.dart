@@ -22,6 +22,51 @@ void main() {
       isFalse,
     );
   });
+
+  test('inspects PCM16 duration and signal levels', () {
+    final signal = inspectPcm16WavSignal(
+      _pcm16Wav(const <int>[100, -100, 200, -200]),
+    );
+
+    expect(signal, isNotNull);
+    expect(signal!.sampleRate, 16000);
+    expect(signal.channels, 1);
+    expect(signal.sampleFrames, 4);
+    expect(signal.durationSeconds, closeTo(4 / 16000, 0.000001));
+    expect(signal.peakAmplitude, 200);
+    expect(signal.rmsAmplitude, closeTo(158.11, 0.01));
+  });
+
+  test('trims leading and trailing quiet PCM16 frames', () {
+    final trimmed = trimPcm16WavSilence(
+      _pcm16Wav(const <int>[0, 0, 50, 200, -300, 40, 0]),
+    );
+
+    expect(trimmed, isNotNull);
+    final signal = inspectPcm16WavSignal(trimmed!);
+    expect(signal, isNotNull);
+    expect(signal!.sampleFrames, 2);
+    expect(signal.peakAmplitude, 300);
+    expect(ByteData.sublistView(trimmed).getInt16(44, Endian.little), 200);
+    expect(ByteData.sublistView(trimmed).getInt16(46, Endian.little), -300);
+  });
+
+  test('returns the original WAV when edge frames contain speech', () {
+    final original = _pcm16Wav(const <int>[200, 0, -300]);
+
+    expect(trimPcm16WavSilence(original), same(original));
+  });
+
+  test('rejects a PCM16 WAV containing only quiet frames', () {
+    expect(trimPcm16WavSilence(_pcm16Wav(const <int>[0, 20, -20, 0])), isNull);
+  });
+
+  test('rejects a non-PCM16 WAV from signal inspection', () {
+    final bytes = _wavBytes(const <int>[1, 2, 3, 4]);
+    ByteData.sublistView(bytes).setUint16(34, 8, Endian.little);
+
+    expect(inspectPcm16WavSignal(bytes), isNull);
+  });
 }
 
 Uint8List _wavBytes(List<int> audioBytes) {
@@ -48,5 +93,14 @@ Uint8List _wavBytes(List<int> audioBytes) {
   writeAscii(36, 'data');
   data.setUint32(40, audioBytes.length, Endian.little);
   bytes.setRange(44, bytes.length, audioBytes);
+  return bytes;
+}
+
+Uint8List _pcm16Wav(List<int> samples) {
+  final bytes = _wavBytes(List<int>.filled(samples.length * 2, 0));
+  final data = ByteData.sublistView(bytes);
+  for (var index = 0; index < samples.length; index += 1) {
+    data.setInt16(44 + index * 2, samples[index], Endian.little);
+  }
   return bytes;
 }

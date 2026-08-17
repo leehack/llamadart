@@ -9,6 +9,9 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Improved Web microphone transcription with browser-capture warmup trimming
+  and early short, silent, and unsupported PCM WAV diagnostics.
+
 - Added logical and micro-batch controls for llama.cpp/WebGPU models to the
   Flutter chat example, and made Android Auto probe the packaged Vulkan device
   before choosing GPU offload.

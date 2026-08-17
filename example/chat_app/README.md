@@ -488,6 +488,9 @@ await prefs.setInt('preferred_backend', backendIndex);
 - Multimodal projector loading on web is URL-based (model + matching mmproj URL).
 - Model selection auto-wires mmproj URLs for multimodal web models.
 - Image/audio attachments on web use browser file bytes (local path-based loading remains native-only).
+- Browser microphone recording warms up before the app shows its ready state.
+  Before ASR, the app trims that warmup silence and rejects too-short, silent,
+  or unsupported PCM WAV captures with an actionable message.
 - Browser paste events support screenshots and copied image/audio files without
   replacing normal text paste. Clipboard attachments are capped at 64 MB.
 - On web, model files are loaded by URL (local file download/cache flow differs from native).

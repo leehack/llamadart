@@ -164,6 +164,13 @@ paths, MP3, FLAC, raw PCM, and byte inputs without explicit
 contract reflects the published browser smoke rather than every decoder that
 may be compiled into a particular bridge build.
 
+For microphone capture, the chat app keeps the UI in its preparing state while
+the browser capture graph warms up. It trims that warmup silence, inspects the
+completed PCM16 WAV before inference, and rejects too-short, effectively
+silent, or unsupported input with an actionable message. These checks avoid
+clipping the beginning of speech or turning a missing browser input into a
+slow empty-transcript failure.
+
 `SpeechAudioFormat` also carries optional encoding and MIME metadata. Final
 results reserve segment and word timing, confidence, and speaker fields so a
 future backend can add them without changing the top-level API. The current

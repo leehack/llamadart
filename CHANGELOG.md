@@ -1,5 +1,10 @@
 ## Unreleased
 
+* Improved Web microphone transcription by warming up browser capture before
+  showing the recording-ready state, trimming the warmup silence, and
+  rejecting too-short, silent, or unsupported PCM WAV captures before
+  inference.
+
 * Updated the default llama.cpp native runtime pin to
   `leehack/llamadart-native@b10453`, picking up llama.cpp fixes for a Granite
   Speech heap overflow, a DOTS OCR out-of-bounds write, and a Step3VL
