@@ -181,6 +181,7 @@ paths=(
         '`leehack/llamadart-native@$llamaTag`.',
       ),
     );
+    expect(llamaChangelog, isNot(contains('llamadart-native@old')));
     expect(llamaChangelog, contains('## 0.0.1'));
 
     final rootReadme = await File(
@@ -223,7 +224,14 @@ paths=(
     final supportMatrix = await File(
       path.join(root.path, 'website/docs/platforms/support-matrix.md'),
     ).readAsString();
-    expect(supportMatrix, contains('pins `llamadart-native` tag `$llamaTag`'));
+    expect(
+      supportMatrix,
+      matches(
+        RegExp(
+          r'pins `llamadart-native` tag\s+`' + RegExp.escape(llamaTag) + r'`',
+        ),
+      ),
+    );
     expect(
       supportMatrix,
       contains('module availability by bundle (`$llamaTag`)'),
@@ -231,9 +239,8 @@ paths=(
     expect(supportMatrix, contains('llamadart_native_tag: $llamaTag'));
     expect(supportMatrix, isNot(contains('b0001')));
 
-    final coreChangelog = await File(
-      path.join(root.path, 'CHANGELOG.md'),
-    ).readAsString();
+    final coreChangelogFile = File(path.join(root.path, 'CHANGELOG.md'));
+    final coreChangelog = await coreChangelogFile.readAsString();
     expect(coreChangelog, startsWith('## Unreleased'));
     expect(coreChangelog, contains('`leehack/llamadart-native@$llamaTag`'));
     expect(coreChangelog, contains('* Existing unreleased note.'));
@@ -277,6 +284,41 @@ paths=(
       ),
     );
     expect(litertChangelog, contains('## 0.0.1'));
+
+    final curatedCoreChangelog = coreChangelog.replaceFirst(
+      '  aligned current README/website native override docs.',
+      '  aligned current README/website native override docs.\n'
+          '  Curated compatibility evidence remains attached to this pin.',
+    );
+    expect(curatedCoreChangelog, isNot(coreChangelog));
+    await coreChangelogFile.writeAsString(curatedCoreChangelog);
+
+    final sameTagRerunResult = await _runPython([
+      'tool/native/sync_native_release_pins.py',
+      '--repo-root',
+      root.path,
+      '--release-json-dir',
+      releaseDir.path,
+      '--llama-cpp-tag',
+      llamaTag,
+      '--litert-lm-tag',
+      litertTag,
+    ]);
+    expect(
+      sameTagRerunResult.exitCode,
+      0,
+      reason: '${sameTagRerunResult.stdout}\n${sameTagRerunResult.stderr}',
+    );
+    expect(await coreChangelogFile.readAsString(), curatedCoreChangelog);
+    expect(
+      await File(
+        path.join(
+          root.path,
+          'packages/llamadart_llama_cpp_flutter/CHANGELOG.md',
+        ),
+      ).readAsString(),
+      llamaChangelog,
+    );
 
     const nextLlamaTag = 'b10000';
     const nextLitertTag = 'v9.9.10';
@@ -382,6 +424,75 @@ paths=(
       ),
       1,
     );
+
+    const releasePrepLlamaTag = 'b10001';
+    await _writeReleaseFixture(
+      releaseDir,
+      'leehack/llamadart-native',
+      releasePrepLlamaTag,
+      {
+        'llamadart-native-apple-xcframework-$releasePrepLlamaTag.zip': _hex(
+          '9',
+        ),
+      },
+    );
+    final releasePrepResult = await _runPython([
+      'tool/native/sync_native_release_pins.py',
+      '--repo-root',
+      root.path,
+      '--release-json-dir',
+      releaseDir.path,
+      '--llama-cpp-tag',
+      releasePrepLlamaTag,
+      '--litert-lm-tag',
+      'keep',
+      '--bump-companion-versions',
+    ]);
+    expect(
+      releasePrepResult.exitCode,
+      0,
+      reason: '${releasePrepResult.stdout}\n${releasePrepResult.stderr}',
+    );
+
+    final releasePrepPubspec = await File(
+      path.join(root.path, 'packages/llamadart_llama_cpp_flutter/pubspec.yaml'),
+    ).readAsString();
+    expect(releasePrepPubspec, contains('version: 0.0.2'));
+    final releasePrepReadme = await File(
+      path.join(root.path, 'packages/llamadart_llama_cpp_flutter/README.md'),
+    ).readAsString();
+    expect(releasePrepReadme, contains('llamadart_llama_cpp_flutter: ^0.0.2'));
+    final releasePrepChangelog = await File(
+      path.join(root.path, 'packages/llamadart_llama_cpp_flutter/CHANGELOG.md'),
+    ).readAsString();
+    expect(releasePrepChangelog, startsWith('## 0.0.2'));
+    expect(releasePrepChangelog, isNot(contains('## Unreleased')));
+    expect(
+      releasePrepChangelog,
+      contains('`leehack/llamadart-native@$releasePrepLlamaTag`.'),
+    );
+    expect(
+      releasePrepChangelog,
+      isNot(contains('`leehack/llamadart-native@$nextLlamaTag`.')),
+    );
+    expect(
+      releasePrepChangelog,
+      contains('* Existing unreleased companion note.'),
+    );
+    expect(
+      _occurrences(
+        releasePrepChangelog,
+        '* Updated Apple SwiftPM native pin to',
+      ),
+      1,
+    );
+    final releasePrepRootReadme = await File(
+      path.join(root.path, 'README.md'),
+    ).readAsString();
+    expect(
+      releasePrepRootReadme,
+      contains('llamadart_llama_cpp_flutter: ^0.0.2'),
+    );
   });
 }
 
@@ -465,9 +576,17 @@ version: 0.0.1
 dependencies:
   $packageName: ^0.0.1
 
-The Apple SwiftPM manifest pins `$repo@old`.
+The Apple SwiftPM manifest pins
+`$repo@old`.
 ''');
   await File(path.join(packageDir.path, 'CHANGELOG.md')).writeAsString('''
+## Unreleased
+
+* Updated Apple SwiftPM native pin to
+  `$repo@old`.
+
+* Existing unreleased companion note.
+
 ## 0.0.1
 
 * Initial package.
@@ -515,7 +634,8 @@ dependencies:
   );
   await supportMatrix.parent.create(recursive: true);
   await supportMatrix.writeAsString('''
-The native-assets hook currently pins `llamadart-native` tag `b0001-llamadart.1` and
+The native-assets hook currently pins `llamadart-native` tag
+`b0001-llamadart.1` and
 `litert-lm-native` release `v0.13.1-native.1`.
 
 ## Current llama.cpp module availability by bundle (`b0001-llamadart.1`)

@@ -573,7 +573,7 @@ def update_companion_package_metadata(
     readme_text = readme_path.read_text(encoding="utf-8")
     readme_text = replace_one(
         readme_text,
-        r"The Apple SwiftPM manifest pins `[^`]+`\.",
+        r"The Apple SwiftPM manifest pins\s+`[^`]+`\.",
         f"The Apple SwiftPM manifest pins `{repo}@{tag}`.",
         f"{package_root.name} README native pin",
     )
@@ -659,7 +659,7 @@ def replace_llama_cpp_native_doc_references(
             rf"\g<1>{tag}\2",
         ),
         (
-            rf"(llamadart-native` tag `){native_tag_pattern}(`)",
+            rf"(llamadart-native` tag\s+`){native_tag_pattern}(`)",
             rf"\g<1>{tag}\2",
         ),
         (
@@ -743,6 +743,9 @@ def update_core_changelog_native_pin(
         r"^\* Updated the default llama\.cpp native runtime pin to(?:\n  .*)*\n?",
         re.MULTILINE,
     )
+    existing_entry = old_entry_pattern.search(body)
+    if existing_entry and f"`{repo}@{tag}`" in existing_entry.group(0):
+        return changelog_text
     body = old_entry_pattern.sub("", body).lstrip()
     return (
         changelog_text[:body_start]
@@ -818,9 +821,28 @@ def prepend_companion_changelog_release(
     repo: str,
 ) -> str:
     old_entry_pattern = re.compile(
-        rf"^\* Updated Apple SwiftPM native pin to `{re.escape(repo)}@[^`]+`\.\n?",
+        rf"^\* Updated Apple SwiftPM native pin to\s+`{re.escape(repo)}@[^`]+`\.\n?",
         re.MULTILINE,
     )
+    unreleased_match = re.search(r"(?m)^## Unreleased\s*\n+", changelog_text)
+    if unreleased_match:
+        body_start = unreleased_match.end()
+        next_heading = re.search(r"(?m)^##\s+", changelog_text[body_start:])
+        body_end = (
+            body_start + next_heading.start()
+            if next_heading
+            else len(changelog_text)
+        )
+        body = old_entry_pattern.sub(
+            "", changelog_text[body_start:body_end]
+        ).strip()
+        release_body = entry if not body else f"{entry}\n\n{body}"
+        remaining = (
+            changelog_text[: unreleased_match.start()]
+            + changelog_text[body_end:]
+        ).lstrip()
+        return f"## {version}\n\n{release_body}\n\n{remaining}"
+
     heading_match = re.search(
         rf"(?m)^## {re.escape(version)}\s*\n+",
         changelog_text,
@@ -846,7 +868,7 @@ def update_companion_changelog_unreleased(
     repo: str,
 ) -> str:
     old_entry_pattern = re.compile(
-        rf"^\* Updated Apple SwiftPM native pin to `{re.escape(repo)}@[^`]+`\.\n?",
+        rf"^\* Updated Apple SwiftPM native pin to\s+`{re.escape(repo)}@[^`]+`\.\n?",
         re.MULTILINE,
     )
     heading_match = re.search(r"(?m)^## Unreleased\s*\n+", changelog_text)

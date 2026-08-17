@@ -40,9 +40,10 @@ For canonical full release notes, use:
   playback, replay, and WAV export in the Flutter chat example. Web and the
   current LiteRT-LM artifacts remain unsupported.
 
-- Updated the native llama.cpp runtime to `b10356-llamadart.1`, retaining
-  upstream llama.cpp `b10356` while adding the stable Qwen3-TTS wrapper ABI and
-  refreshed Apple SwiftPM artifact.
+- Updated the native llama.cpp runtime to `b10453`, consuming the Granite
+  Speech heap-overflow, DOTS OCR out-of-bounds, and Step3VL divide-by-zero
+  fixes while preserving the speculative wrapper ABI. Matching Dart FFI
+  bindings and the Apple SwiftPM artifact checksum were refreshed.
 
 - Added an experimental typed Qwen3-ASR whole-file transcription workflow, a
   SHA-256-verified Qwen3-ASR 0.6B native-and-Web chat-app preset, and foreground

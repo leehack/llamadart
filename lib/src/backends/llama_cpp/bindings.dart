@@ -30,7 +30,7 @@ ffi.Pointer<ffi.Char> llama_flash_attn_type_name(
   llama_flash_attn_type flash_attn_type,
 ) => _llama_flash_attn_type_name(flash_attn_type.value);
 
-@ffi.Native<ffi.Pointer<ffi.Char> Function(ffi.UnsignedInt)>(
+@ffi.Native<ffi.Pointer<ffi.Char> Function(ffi.Int)>(
   symbol: 'llama_load_mode_name',
 )
 external ffi.Pointer<ffi.Char> _llama_load_mode_name(int load_mode);
@@ -38,13 +38,16 @@ external ffi.Pointer<ffi.Char> _llama_load_mode_name(int load_mode);
 ffi.Pointer<ffi.Char> llama_load_mode_name(llama_load_mode load_mode) =>
     _llama_load_mode_name(load_mode.value);
 
-@ffi.Native<ffi.UnsignedInt Function(ffi.Pointer<ffi.Char>)>(
+@ffi.Native<ffi.Int Function(ffi.Pointer<ffi.Char>)>(
   symbol: 'llama_load_mode_from_str',
 )
 external int _llama_load_mode_from_str(ffi.Pointer<ffi.Char> str);
 
 llama_load_mode llama_load_mode_from_str(ffi.Pointer<ffi.Char> str) =>
     llama_load_mode.fromValue(_llama_load_mode_from_str(str));
+
+@ffi.Native<ffi.Pointer<ffi.Char> Function()>()
+external ffi.Pointer<ffi.Char> llama_version();
 
 @ffi.Native<llama_model_params Function()>()
 external llama_model_params llama_model_default_params();
@@ -5692,6 +5695,7 @@ external ffi.Pointer<ggml_tensor> ggml_ssm_conv(
     ffi.Pointer<ggml_tensor>,
     ffi.Pointer<ggml_tensor>,
     ffi.Pointer<ggml_tensor>,
+    ffi.Int64,
   )
 >()
 external ffi.Pointer<ggml_tensor> ggml_ssm_scan(
@@ -5703,6 +5707,7 @@ external ffi.Pointer<ggml_tensor> ggml_ssm_scan(
   ffi.Pointer<ggml_tensor> B,
   ffi.Pointer<ggml_tensor> C,
   ffi.Pointer<ggml_tensor> ids,
+  int K,
 );
 
 @ffi.Native<
@@ -7694,6 +7699,9 @@ external mtmd_gen_audio_info mtmd_gen_audio_get_info(
   ffi.Pointer<mtmd_context> ctx,
 );
 
+@ffi.Native<mtmd_gen_inp Function(ffi.Pointer<mtmd_context>)>()
+external mtmd_gen_inp mtmd_gen_inp_default(ffi.Pointer<mtmd_context> ctx);
+
 @ffi.Native<
   ffi.Int32 Function(
     ffi.Pointer<mtmd_context>,
@@ -7944,6 +7952,7 @@ external int mtmd_helper_gen_audio_step_prompt(
     llama_token,
     ffi.Pointer<ffi.Float>,
     ffi.Pointer<ffi.Pointer<ffi.Float>>,
+    ffi.Pointer<ffi.Bool>,
   )
 >()
 external int mtmd_helper_gen_audio_step_gen(
@@ -7951,6 +7960,7 @@ external int mtmd_helper_gen_audio_step_gen(
   int sampled,
   ffi.Pointer<ffi.Float> h_state_in,
   ffi.Pointer<ffi.Pointer<ffi.Float>> h_state_out,
+  ffi.Pointer<ffi.Bool> out_stop,
 );
 
 @ffi.Native<
@@ -9222,6 +9232,7 @@ enum llama_split_mode {
 }
 
 enum llama_load_mode {
+  LLAMA_LOAD_MODE_AUTO(-1),
   LLAMA_LOAD_MODE_NONE(0),
   LLAMA_LOAD_MODE_MMAP(1),
   LLAMA_LOAD_MODE_MLOCK(2),
@@ -9232,6 +9243,7 @@ enum llama_load_mode {
   const llama_load_mode(this.value);
 
   static llama_load_mode fromValue(int value) => switch (value) {
+    -1 => LLAMA_LOAD_MODE_AUTO,
     0 => LLAMA_LOAD_MODE_NONE,
     1 => LLAMA_LOAD_MODE_MMAP,
     2 => LLAMA_LOAD_MODE_MLOCK,
@@ -9384,7 +9396,7 @@ final class llama_model_params extends ffi.Struct {
   llama_split_mode get split_mode =>
       llama_split_mode.fromValue(split_modeAsInt);
 
-  @ffi.UnsignedInt()
+  @ffi.Int()
   external int load_modeAsInt;
 
   llama_load_mode get load_mode => llama_load_mode.fromValue(load_modeAsInt);
@@ -10534,6 +10546,9 @@ final class ggml_backend_dev_caps extends ffi.Struct {
 
   @ffi.Bool()
   external bool events;
+
+  @ffi.Bool()
+  external bool mmap_support;
 }
 
 final class ggml_backend_dev_props extends ffi.Struct {
@@ -10856,7 +10871,8 @@ final class mtmd_caps extends ffi.Struct {
 /// //////////////////////////////////////
 enum mtmd_gen_audio_type {
   MTMD_GEN_AUDIO_TYPE_NONE(0),
-  MTMD_GEN_AUDIO_TYPE_QWEN3TTS(1);
+  MTMD_GEN_AUDIO_TYPE_QWEN3TTS(1),
+  MTMD_GEN_AUDIO_TYPE_POCKETTTS(2);
 
   final int value;
   const mtmd_gen_audio_type(this.value);
@@ -10864,6 +10880,7 @@ enum mtmd_gen_audio_type {
   static mtmd_gen_audio_type fromValue(int value) => switch (value) {
     0 => MTMD_GEN_AUDIO_TYPE_NONE,
     1 => MTMD_GEN_AUDIO_TYPE_QWEN3TTS,
+    2 => MTMD_GEN_AUDIO_TYPE_POCKETTTS,
     _ => throw ArgumentError('Unknown value for mtmd_gen_audio_type: $value'),
   };
 }
@@ -10876,6 +10893,8 @@ final class mtmd_gen_audio_info extends ffi.Struct {
 
   @ffi.Int32()
   external int sample_rate;
+
+  external ffi.Pointer<ffi.Char> model_variant;
 }
 
 enum mtmd_gen_process_type {
@@ -10909,10 +10928,21 @@ final class mtmd_gen_inp extends ffi.Struct {
   @ffi.Float()
   external double top_p;
 
+  @ffi.Uint32()
+  external int seed;
+
+  @ffi.Float()
+  external double temp;
+
   external ffi.Pointer<ffi.Int32> codes;
 
   @ffi.Size()
   external int n_codes;
+
+  external ffi.Pointer<ffi.Float> feats;
+
+  @ffi.Size()
+  external int n_feats;
 
   external ffi.Pointer<ffi.Char> state_data;
 
@@ -10926,7 +10956,15 @@ final class mtmd_gen_out extends ffi.Struct {
   @ffi.Size()
   external int n_codes;
 
+  external ffi.Pointer<ffi.Float> feats;
+
+  @ffi.Size()
+  external int n_feats;
+
   external ffi.Pointer<ffi.Float> embd;
+
+  @ffi.Bool()
+  external bool is_eos;
 
   external ffi.Pointer<ffi.Float> audio;
 
@@ -11014,6 +11052,9 @@ final class mtmd_helper_gen_audio_inp extends ffi.Struct {
 
   @ffi.Float()
   external double top_p;
+
+  @ffi.Uint32()
+  external int seed;
 
   @ffi.UnsignedInt()
   external int out_typeAsInt;
