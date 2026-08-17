@@ -1673,7 +1673,9 @@ class WebGpuLlamaBackend
     LlamaWebGpuBridge bridge, {
     required bool isCpuMultimodalRuntime,
   }) async {
-    if (isCpuMultimodalRuntime || !_mmContextActive) {
+    if (isCpuMultimodalRuntime ||
+        !_mmContextActive ||
+        !(bridge.supportsVision() ?? false)) {
       return;
     }
     if (_webGpuMultimodalWarmupDone || _webGpuMultimodalWarmupAttempted) {

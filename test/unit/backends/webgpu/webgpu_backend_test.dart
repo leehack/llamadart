@@ -2100,6 +2100,7 @@ void main() {
 
       expect(chunks, isNotEmpty);
       expect(sawAudioParts, isTrue);
+      expect(warmupCallCount, 0);
     });
 
     test('forwards encoded audio bytes parts', () async {
