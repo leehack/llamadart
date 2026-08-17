@@ -9,6 +9,8 @@ void main() {
   test('recognizes only versioned CUDA sidecar backend names', () {
     expect(windowsCudaMajorFromFileName('ggml-cuda-12.dll'), 12);
     expect(windowsCudaMajorFromFileName('ggml-cuda-13-windows-x64.dll'), 13);
+    expect(windowsCudaMajorFromFileName(r'C:\runtime\ggml-cuda-12.dll'), 12);
+    expect(windowsCudaMajorFromFileName('/runtime/ggml-cuda-13.dll'), 13);
     expect(windowsCudaMajorFromFileName('ggml-cuda.dll'), isNull);
     expect(windowsCudaMajorFromFileName('ggml-vulkan-13.dll'), isNull);
   });

@@ -26,10 +26,11 @@ class WindowsCudaDriverProbe {
 }
 
 int? windowsCudaMajorFromFileName(String fileName) {
+  final baseName = fileName.split(RegExp(r'[/\\]')).last;
   final match = RegExp(
     r'^ggml-cuda-(12|13)(?:-[^\\/]+)*\.dll$',
     caseSensitive: false,
-  ).firstMatch(fileName);
+  ).firstMatch(baseName);
   return int.tryParse(match?.group(1) ?? '');
 }
 
