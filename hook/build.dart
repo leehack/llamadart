@@ -12,6 +12,7 @@ import 'package:logging/logging.dart';
 import 'package:path/path.dart' as path;
 
 import 'package:llamadart/src/hook/native_bundle_config.dart';
+import 'package:llamadart/src/hook/windows_cuda_pack.dart';
 
 const _llamaCppTag = 'b10453';
 const _nativeRepoSlug = 'leehack/llamadart-native';
@@ -156,6 +157,7 @@ const _litertLmBundleSpecs = <_LiteRtLmBundleSpec>[
 const _dynamicLibraryExtensions = {'.so', '.dylib', '.dll'};
 final _windowsCudartPattern = RegExp(r'^cudart64(?:[_-]?\d+)?\.dll$');
 final _windowsCublasPattern = RegExp(r'^cublas64(?:[_-]?\d+)?\.dll$');
+final _windowsCublasLtPattern = RegExp(r'^cublaslt64(?:[_-]?\d+)?\.dll$');
 final _linuxVersionedSoPattern = RegExp(r'\.so\.\d+$');
 final _nativeTagPattern = RegExp(r'^[A-Za-z0-9][A-Za-z0-9._-]*$');
 final _githubRepoSegmentPattern = RegExp(r'^[A-Za-z0-9_.-]+$');
@@ -350,9 +352,47 @@ void main(List<String> args) async {
         log: log,
       );
 
-      final libraryPaths = _collectDynamicLibraryPaths(bundleDir);
+      var libraryPaths = _collectDynamicLibraryPaths(bundleDir);
       if (libraryPaths.isEmpty) {
         throw Exception('No dynamic libraries found in ${bundleDir.path}.');
+      }
+
+      final requestedBackends = parseRequestedBackends(
+        bundle: spec.bundle,
+        rawUserConfig: input.userDefines[nativeBackendUserDefineKey],
+      );
+      final wantsWindowsCudaSidecar =
+          spec.bundle == 'windows-x64' &&
+          requestedBackends?.contains('cuda') == true;
+      if (wantsWindowsCudaSidecar) {
+        final rawCudaSelection =
+            input.userDefines[nativeWindowsCudaUserDefineKey];
+        final legacyCudaAvailable = libraryPaths.any(_isWindowsCudaLibraryPath);
+        if (rawCudaSelection == null && legacyCudaAvailable) {
+          log.info(
+            'Using the legacy CUDA module from ${nativeConfig.sourceLabel}. '
+            'A sidecar-capable native release will default CUDA selection to 13.',
+          );
+        } else {
+          final selection = resolveWindowsCudaBundleSelection(rawCudaSelection);
+          final coreLibrary = _findWindowsGgmlBaseLibrary(libraryPaths);
+          final sidecarDirectories = await _acquireWindowsCudaSidecars(
+            packageRoot: pkgRoot,
+            nativeConfig: nativeConfig,
+            selection: selection,
+            coreLibrary: coreLibrary,
+            log: log,
+          );
+          libraryPaths = [
+            ...libraryPaths.where((entry) => !_isWindowsCudaLibraryPath(entry)),
+            for (final directory in sidecarDirectories)
+              ..._collectDynamicLibraryPaths(directory),
+          ];
+          log.info(
+            'Using Windows CUDA sidecar selection: '
+            '${selection.majors.join(', ')}.',
+          );
+        }
       }
 
       final libraries = describeNativeLibraries(libraryPaths);
@@ -1234,6 +1274,185 @@ Uri? _resolveNativePath(HookInputUserDefines userDefines) {
   }
 
   return resolvedPath;
+}
+
+bool _isWindowsCudaLibraryPath(String filePath) {
+  final fileName = path.basename(filePath).toLowerCase();
+  return (fileName.startsWith('ggml-cuda') && fileName.endsWith('.dll')) ||
+      _windowsCudartPattern.hasMatch(fileName) ||
+      _windowsCublasPattern.hasMatch(fileName) ||
+      _windowsCublasLtPattern.hasMatch(fileName);
+}
+
+File _findWindowsGgmlBaseLibrary(List<String> libraryPaths) {
+  final matches = libraryPaths
+      .where(
+        (entry) => describeNativeLibrary(entry).canonicalName == 'ggml-base',
+      )
+      .map(File.new)
+      .toList(growable: false);
+  if (matches.length != 1) {
+    throw Exception(
+      'Expected exactly one Windows ggml-base library, found ${matches.length}.',
+    );
+  }
+  return matches.single;
+}
+
+Future<List<Directory>> _acquireWindowsCudaSidecars({
+  required String packageRoot,
+  required _NativeBundleConfig nativeConfig,
+  required WindowsCudaBundleSelection selection,
+  required File coreLibrary,
+  required Logger log,
+}) async {
+  final bundleCache = _bundleCacheDirectory(
+    packageRoot: packageRoot,
+    nativeConfig: nativeConfig,
+    bundle: 'windows-x64',
+  );
+  final sidecarCache = path.join(bundleCache, 'cuda-sidecars');
+  await Directory(sidecarCache).create(recursive: true);
+  final release = await _acquireWindowsCudaReleaseManifest(
+    nativeConfig: nativeConfig,
+    cacheDirectory: sidecarCache,
+    log: log,
+  );
+  if (release.nativeTag != nativeConfig.tag) {
+    throw FormatException(
+      'CUDA sidecar release tag ${release.nativeTag} does not match '
+      '${nativeConfig.tag}.',
+    );
+  }
+
+  final directories = <Directory>[];
+  for (final major in selection.majors) {
+    final archiveName =
+        'llamadart-native-windows-x64-cuda$major-${nativeConfig.tag}.tar.gz';
+    final expectedArchiveSha256 = release.assetDigests[archiveName];
+    if (expectedArchiveSha256 == null) {
+      throw Exception(
+        'Native release ${nativeConfig.tag} does not publish $archiveName.',
+      );
+    }
+    final variantCache = path.join(sidecarCache, 'cuda$major');
+    final extractedDirectory = Directory(path.join(variantCache, 'extracted'));
+    if (extractedDirectory.existsSync()) {
+      try {
+        await verifyWindowsCudaPackDirectory(
+          directory: extractedDirectory,
+          expectedCudaMajor: major,
+          release: release,
+          coreLibrary: coreLibrary,
+        );
+        directories.add(extractedDirectory);
+        continue;
+      } on FormatException catch (error) {
+        log.warning('Cached CUDA $major sidecar is stale; refreshing: $error');
+        await extractedDirectory.delete(recursive: true);
+      }
+    }
+
+    final cachedArchive = File(path.join(variantCache, archiveName));
+    await cachedArchive.parent.create(recursive: true);
+    final localArchive = _resolveLocalWindowsCudaAsset(
+      nativeConfig: nativeConfig,
+      assetName: archiveName,
+    );
+    final archive = localArchive ?? cachedArchive;
+    if (localArchive == null && cachedArchive.existsSync()) {
+      if (await sha256File(cachedArchive) != expectedArchiveSha256) {
+        log.warning(
+          'Cached CUDA $major archive digest differs; redownloading.',
+        );
+        await cachedArchive.delete();
+      }
+    }
+    if (!archive.existsSync()) {
+      await _downloadReleaseAsset(
+        repository: nativeConfig.repository,
+        nativeTag: nativeConfig.tag,
+        assetName: archiveName,
+        destinationPath: archive.path,
+        log: log,
+      );
+    }
+    if (await sha256File(archive) != expectedArchiveSha256) {
+      if (localArchive == null && archive.existsSync()) {
+        await archive.delete();
+      }
+      throw Exception('CUDA $major sidecar archive checksum mismatch.');
+    }
+
+    await _extractCachedArchive(
+      archivePath: archive.path,
+      extractedDir: extractedDirectory,
+      cacheDir: variantCache,
+      log: log,
+    );
+    await verifyWindowsCudaPackDirectory(
+      directory: extractedDirectory,
+      expectedCudaMajor: major,
+      release: release,
+      coreLibrary: coreLibrary,
+    );
+    directories.add(extractedDirectory);
+  }
+  return directories;
+}
+
+Future<WindowsCudaReleaseManifest> _acquireWindowsCudaReleaseManifest({
+  required _NativeBundleConfig nativeConfig,
+  required String cacheDirectory,
+  required Logger log,
+}) async {
+  const assetName = 'assets.json';
+  final localManifest = _resolveLocalWindowsCudaAsset(
+    nativeConfig: nativeConfig,
+    assetName: assetName,
+  );
+  final manifestFile =
+      localManifest ?? File(path.join(cacheDirectory, assetName));
+  if (!manifestFile.existsSync()) {
+    await _downloadReleaseAsset(
+      repository: nativeConfig.repository,
+      nativeTag: nativeConfig.tag,
+      assetName: assetName,
+      destinationPath: manifestFile.path,
+      log: log,
+    );
+  }
+  return WindowsCudaReleaseManifest.parse(await manifestFile.readAsString());
+}
+
+File? _resolveLocalWindowsCudaAsset({
+  required _NativeBundleConfig nativeConfig,
+  required String assetName,
+}) {
+  final localPath = nativeConfig.localPath;
+  if (localPath == null) {
+    return null;
+  }
+  final localFilePath = localPath.toFilePath();
+  final root = File(localFilePath).existsSync()
+      ? File(localFilePath).parent.path
+      : localFilePath;
+  final candidates = <String>[
+    path.join(root, assetName),
+    path.join(root, nativeConfig.tag, assetName),
+    path.join(root, nativeConfig.tag, 'windows-x64', assetName),
+    path.join(root, 'windows-x64', assetName),
+  ];
+  for (final candidate in candidates) {
+    final file = File(candidate);
+    if (file.existsSync()) {
+      return file;
+    }
+  }
+  throw Exception(
+    'Local native source $root is missing required CUDA sidecar asset '
+    '$assetName.',
+  );
 }
 
 Future<Directory> _acquireBundleDirectory({

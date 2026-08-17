@@ -136,6 +136,13 @@ runtime layout for the selected architecture.
   to defaults.
 - On `windows-x64`, the hook additionally validates CUDA/BLAS runtime
   dependencies before accepting a bundle.
+- Windows x64 CUDA sidecars default to CUDA 13 when `cuda` is selected.
+  `llamadart_windows_cuda` can select CUDA 12 or `both`; the latter packages
+  both versions but probes the target NVIDIA driver/GPU and loads only one
+  matching backend and dependency family per process.
+- CUDA sidecars are accepted only when their release provenance, archive and
+  payload digests, contract version, architecture, compatibility metadata, and
+  `ggml-base` digest match the selected native core.
 - LiteRT-LM archives are validated after extraction by checking the required
   runtime libraries; corrupt or incomplete cached archives are refreshed before
   the build continues.

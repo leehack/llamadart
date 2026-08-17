@@ -24,6 +24,7 @@ import '../../core/template/chat_template_engine.dart';
 import 'load_param_helpers.dart';
 import 'bindings.dart';
 import 'llama_cpp_raw_bindings.dart' as raw_bindings;
+import 'windows_cuda_selector.dart';
 
 const _llamadartWrapperAssetId = 'package:llamadart/llamadart_wrapper';
 
@@ -2387,12 +2388,15 @@ class LlamaCppService {
       candidates.addAll(fileNameCandidates);
     }
 
-    _preloadWindowsBackendDependencies(backend);
-
     for (final candidate in candidates) {
       if (path.isAbsolute(candidate) && !File(candidate).existsSync()) {
         continue;
       }
+
+      _preloadWindowsBackendDependencies(
+        backend,
+        cudaMajor: windowsCudaMajorFromFileName(path.basename(candidate)),
+      );
 
       final alteredSearchPathHandle = _preloadWindowsBackendModule(
         candidate,
@@ -2537,7 +2541,7 @@ class LlamaCppService {
     }
   }
 
-  void _preloadWindowsBackendDependencies(String backend) {
+  void _preloadWindowsBackendDependencies(String backend, {int? cudaMajor}) {
     if (!Platform.isWindows) {
       return;
     }
@@ -2548,7 +2552,8 @@ class LlamaCppService {
     }
 
     final cacheKey =
-        '$backend|${path.normalize(backendModuleDirectory).toLowerCase()}';
+        '$backend|${cudaMajor ?? 'legacy'}|'
+        '${path.normalize(backendModuleDirectory).toLowerCase()}';
     if (_preloadedBackendDependencyLibraries.containsKey(cacheKey)) {
       return;
     }
@@ -2559,6 +2564,7 @@ class LlamaCppService {
     for (final dependencyPath in windowsBackendDependencyPaths(
       backendModuleDirectory,
       backend,
+      cudaMajor: cudaMajor,
     )) {
       try {
         handles.add(DynamicLibrary.open(dependencyPath));
@@ -2594,6 +2600,7 @@ class LlamaCppService {
   static List<String> windowsBackendDependencyPaths(
     String directoryPath,
     String backend, {
+    int? cudaMajor,
     Iterable<String>? fileNames,
   }) {
     if (backend != 'cuda') {
@@ -2612,6 +2619,9 @@ class LlamaCppService {
       if (lower.startsWith('cudart64_') ||
           lower.startsWith('cublas64_') ||
           lower.startsWith('cublaslt64_')) {
+        if (cudaMajor != null && !lower.endsWith('_$cudaMajor.dll')) {
+          continue;
+        }
         selected.add(name);
       }
     }
@@ -3404,7 +3414,44 @@ class LlamaCppService {
       dynamicNames.sort(_compareAndroidCpuLibraryCandidates);
     }
     candidates.addAll(dynamicNames);
-    final resolved = candidates.toList(growable: false);
+    final resolved = candidates.toList();
+    if (backend == 'cuda' && Platform.isWindows) {
+      final versioned = resolved
+          .where((name) => windowsCudaMajorFromFileName(name) != null)
+          .toList(growable: false);
+      final availableMajors = versioned
+          .map(windowsCudaMajorFromFileName)
+          .whereType<int>()
+          .toSet();
+      if (availableMajors.length > 1) {
+        final probe = probeWindowsCudaDriver();
+        final selectedMajor = probe == null
+            ? null
+            : selectWindowsCudaMajor(
+                availableMajors: availableMajors,
+                probe: probe,
+              );
+        if (selectedMajor == null) {
+          _recordStartupDiagnostic(
+            'No bundled Windows CUDA sidecar matches the installed NVIDIA '
+            'driver and visible GPU compute capabilities.',
+          );
+          resolved.removeWhere(
+            (name) => windowsCudaMajorFromFileName(name) != null,
+          );
+        } else {
+          _recordStartupDiagnostic(
+            'Selected bundled Windows CUDA $selectedMajor sidecar from '
+            'driver API ${probe!.driverApiVersion} and compute capabilities '
+            '${probe.computeCapabilities.join(', ')}.',
+          );
+          resolved.removeWhere((name) {
+            final major = windowsCudaMajorFromFileName(name);
+            return major != null && major != selectedMajor;
+          });
+        }
+      }
+    }
     if (backend == 'cpu' && Platform.isAndroid) {
       resolved.sort(_compareAndroidCpuLibraryCandidates);
     }

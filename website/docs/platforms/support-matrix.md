@@ -376,6 +376,10 @@ no valid entries remain, selection falls back to `cpu_profile` (or default
   the default cache search is not suitable.
 - `windows-x64` performs extra runtime dependency validation:
   - `cuda` requires `cudart` and `cublas` DLLs.
+  - Sidecar-capable releases use CUDA 13 by default when CUDA is selected;
+    `llamadart_windows_cuda: "12"` supports older compatible NVIDIA systems,
+    while `"both"` ships both and selects one from the target driver API and
+    GPU compute capability before backend loading.
   - `blas` requires OpenBLAS DLL.
 - If `llamadart_native_tag` points at a release without a matching bundle asset,
   the native-assets hook fails while downloading that asset.
@@ -389,9 +393,9 @@ no valid entries remain, selection falls back to `cpu_profile` (or default
 - Native source overrides do not regenerate Dart FFI bindings or symbol
   lookups, so they are only safe with compatible native binaries.
 - If you change `llamadart_native_tag`, `llamadart_native_repository`,
-  `llamadart_native_path`, `llamadart_native_runtimes`, or
-  `llamadart_native_backends`, run `flutter clean` once to clear stale
-  native-asset outputs.
+  `llamadart_native_path`, `llamadart_native_runtimes`,
+  `llamadart_native_backends`, or `llamadart_windows_cuda`, run `flutter clean`
+  once to clear stale native-asset outputs.
 - If a native release tag is republished with refreshed assets, also run
   `flutter clean` before rebuilding so an older same-tag extracted bundle does
   not stay in use.

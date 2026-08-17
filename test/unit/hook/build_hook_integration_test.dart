@@ -30,6 +30,7 @@ void main() {
   final archivePath =
       '$cacheRelativeDir/llamadart-native-windows-x64-$nativeTag.tar.gz';
   final archiveFile = File(archivePath);
+  final cudaSidecarDir = Directory('$cacheRelativeDir/cuda-sidecars');
 
   setUpAll(() async {
     if (backupDir.existsSync()) {
@@ -68,11 +69,17 @@ void main() {
     if (archiveFile.existsSync()) {
       await archiveFile.delete();
     }
+    if (cudaSidecarDir.existsSync()) {
+      await cudaSidecarDir.delete(recursive: true);
+    }
   });
 
   tearDownAll(() async {
     if (archiveFile.existsSync()) {
       await archiveFile.delete();
+    }
+    if (cudaSidecarDir.existsSync()) {
+      await cudaSidecarDir.delete(recursive: true);
     }
     if (bundleDir.existsSync()) {
       await bundleDir.delete(recursive: true);
@@ -185,6 +192,93 @@ void main() {
       },
     );
   });
+
+  test(
+    'build hook replaces legacy CUDA with the explicit CUDA 13 sidecar',
+    () async {
+      await _writeCudaSidecarFixtures(
+        cacheDirectory: cudaSidecarDir,
+        coreLibrary: File(
+          path.join(bundleDir.path, 'ggml-base-windows-x64.dll'),
+        ),
+        nativeTag: nativeTag,
+        majors: const [13],
+      );
+      final userDefines = PackageUserDefines(
+        workspacePubspec: PackageUserDefinesSource(
+          defines: {
+            'llamadart_windows_cuda': '13',
+            'llamadart_native_runtimes': ['llama_cpp'],
+            'llamadart_native_backends': {
+              'platforms': {
+                'windows-x64': ['cuda'],
+              },
+            },
+          },
+          basePath: Directory.current.uri,
+        ),
+      );
+
+      await testCodeBuildHook(
+        mainMethod: build_hook.main,
+        targetOS: OS.windows,
+        targetArchitecture: Architecture.x64,
+        userDefines: userDefines,
+        check: (input, output) {
+          final emittedNames = _emittedFileNames(output);
+          expect(emittedNames, contains('ggml-cuda-13.dll'));
+          expect(emittedNames, contains('cudart64_13.dll'));
+          expect(emittedNames, isNot(contains('ggml-cuda-windows-x64.dll')));
+          expect(emittedNames, isNot(contains('cudart64_12.dll')));
+        },
+      );
+    },
+  );
+
+  test(
+    'build hook can bundle both isolated CUDA dependency families',
+    () async {
+      await _writeCudaSidecarFixtures(
+        cacheDirectory: cudaSidecarDir,
+        coreLibrary: File(
+          path.join(bundleDir.path, 'ggml-base-windows-x64.dll'),
+        ),
+        nativeTag: nativeTag,
+        majors: const [12, 13],
+      );
+      final userDefines = PackageUserDefines(
+        workspacePubspec: PackageUserDefinesSource(
+          defines: {
+            'llamadart_windows_cuda': 'both',
+            'llamadart_native_runtimes': ['llama_cpp'],
+            'llamadart_native_backends': {
+              'platforms': {
+                'windows-x64': ['cuda'],
+              },
+            },
+          },
+          basePath: Directory.current.uri,
+        ),
+      );
+
+      await testCodeBuildHook(
+        mainMethod: build_hook.main,
+        targetOS: OS.windows,
+        targetArchitecture: Architecture.x64,
+        userDefines: userDefines,
+        check: (input, output) {
+          final emittedNames = _emittedFileNames(output);
+          for (final major in const [12, 13]) {
+            expect(emittedNames, contains('ggml-cuda-$major.dll'));
+            expect(emittedNames, contains('cudart64_$major.dll'));
+            expect(emittedNames, contains('cublas64_$major.dll'));
+            expect(emittedNames, contains('cublasLt64_$major.dll'));
+          }
+          expect(emittedNames, isNot(contains('ggml-cuda-windows-x64.dll')));
+        },
+      );
+    },
+  );
 
   test('build hook can emit llama.cpp runtime without LiteRT-LM', () async {
     final userDefines = PackageUserDefines(
@@ -735,6 +829,80 @@ Future<void> _writeBundleArchive({
 
   await archiveFile.parent.create(recursive: true);
   await archiveFile.writeAsBytes(gzBytes);
+}
+
+Future<void> _writeCudaSidecarFixtures({
+  required Directory cacheDirectory,
+  required File coreLibrary,
+  required String nativeTag,
+  required List<int> majors,
+}) async {
+  await cacheDirectory.create(recursive: true);
+  final artifacts = <Map<String, Object?>>[];
+  final coreDigest = sha256.convert(await coreLibrary.readAsBytes()).toString();
+  for (final major in majors) {
+    final archiveName =
+        'llamadart-native-windows-x64-cuda$major-$nativeTag.tar.gz';
+    artifacts.add({'file': archiveName, 'sha256': 'a' * 64});
+    final extracted = Directory(
+      path.join(cacheDirectory.path, 'cuda$major', 'extracted'),
+    );
+    await extracted.create(recursive: true);
+    final payload = <String, String>{
+      'ggml-cuda-$major.dll': 'backend-$major',
+      'cudart64_$major.dll': 'cudart-$major',
+      'cublas64_$major.dll': 'cublas-$major',
+      'cublasLt64_$major.dll': 'cublas-lt-$major',
+    };
+    final files = <Map<String, Object?>>[];
+    for (final MapEntry(key: name, value: contents) in payload.entries) {
+      final file = File(path.join(extracted.path, name));
+      await file.writeAsString(contents);
+      files.add({
+        'name': name,
+        'sha256': sha256.convert(await file.readAsBytes()).toString(),
+        'size': await file.length(),
+      });
+    }
+    await File(path.join(extracted.path, 'cuda-pack.json')).writeAsString(
+      jsonEncode({
+        'contract_version': 3,
+        'native_release_tag': nativeTag,
+        'llama_cpp_tag': 'b-test',
+        'llama_cpp_commit': '1' * 40,
+        'platform': 'windows',
+        'arch': 'x64',
+        'backend': 'cuda',
+        'cuda_version': major == 12 ? '12.4' : '13.3',
+        'cuda_major': major,
+        'backend_library': 'ggml-cuda-$major.dll',
+        'compatibility': major == 12
+            ? const {
+                'minimum_compute_capability': 50,
+                'minimum_driver_family': 525,
+                'minimum_driver_api': 12000,
+              }
+            : const {
+                'minimum_compute_capability': 75,
+                'minimum_driver_family': 580,
+                'minimum_driver_api': 13000,
+              },
+        'core_compatibility': {
+          'library': 'ggml-base.dll',
+          'sha256': coreDigest,
+        },
+        'files': files,
+      }),
+    );
+  }
+  await File(path.join(cacheDirectory.path, 'assets.json')).writeAsString(
+    jsonEncode({
+      'tag': nativeTag,
+      'llama_cpp_tag': 'b-test',
+      'llama_cpp_commit': '1' * 40,
+      'artifacts': artifacts,
+    }),
+  );
 }
 
 String _localPathCacheRoot({

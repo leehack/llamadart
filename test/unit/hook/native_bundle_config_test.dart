@@ -7,6 +7,38 @@ import 'package:test/test.dart';
 import 'package:llamadart/src/hook/native_bundle_config.dart';
 
 void main() {
+  group('resolveWindowsCudaBundleSelection', () {
+    test('defaults to CUDA 13', () {
+      expect(
+        resolveWindowsCudaBundleSelection(null),
+        WindowsCudaBundleSelection.cuda13,
+      );
+    });
+
+    test('accepts CUDA 12, CUDA 13, and both', () {
+      expect(
+        resolveWindowsCudaBundleSelection('12'),
+        WindowsCudaBundleSelection.cuda12,
+      );
+      expect(
+        resolveWindowsCudaBundleSelection(13),
+        WindowsCudaBundleSelection.cuda13,
+      );
+      expect(
+        resolveWindowsCudaBundleSelection('both'),
+        WindowsCudaBundleSelection.both,
+      );
+      expect(WindowsCudaBundleSelection.both.majors, const [12, 13]);
+    });
+
+    test('rejects unknown values', () {
+      expect(
+        () => resolveWindowsCudaBundleSelection('auto'),
+        throwsA(isA<FormatException>()),
+      );
+    });
+  });
+
   group('resolveNativeBundleSpec', () {
     test('resolves android arm64 with cpu+vulkan defaults', () {
       final spec = resolveNativeBundleSpec(

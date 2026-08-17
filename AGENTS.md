@@ -203,6 +203,11 @@ WEBGPU_BRIDGE_ASSETS_TAG=<tag> ./scripts/fetch_webgpu_bridge_assets.sh
 See `website/docs/maintainers/native-and-web-sync.md` for the full maintainer
 procedure.
 
+Windows x64 CUDA sidecars are selected only when the `cuda` backend is
+requested. Keep `llamadart_windows_cuda` values limited to `12`, `13`, or
+`both`; `13` is the sidecar default. A `both` build may package both dependency
+families but must select and load exactly one CUDA backend per process.
+
 ## Changelog And Releases
 
 - Never add unreleased work to an already-published version section in

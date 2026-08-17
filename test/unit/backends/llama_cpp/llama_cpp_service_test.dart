@@ -1325,6 +1325,28 @@ void main() {
       );
     });
 
+    test('isolates the selected Windows CUDA dependency family', () {
+      final dependencyPaths = LlamaCppService.windowsBackendDependencyPaths(
+        tempRoot.path,
+        'cuda',
+        cudaMajor: 13,
+        fileNames: const <String>[
+          'cudart64_12.dll',
+          'cublas64_12.dll',
+          'cublasLt64_12.dll',
+          'cudart64_13.dll',
+          'cublas64_13.dll',
+          'cublasLt64_13.dll',
+        ],
+      );
+
+      expect(dependencyPaths, <String>[
+        path.join(tempRoot.path, 'cudart64_13.dll'),
+        path.join(tempRoot.path, 'cublas64_13.dll'),
+        path.join(tempRoot.path, 'cublasLt64_13.dll'),
+      ]);
+    });
+
     test('falls back to hook cache extracted bundle directory', () {
       final extractedDir = Directory(
         path.join(
