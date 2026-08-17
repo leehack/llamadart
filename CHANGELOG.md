@@ -43,12 +43,13 @@
   as unsupported.
 
 * Added an experimental typed `SpeechToTextEngine` with an explicit Qwen3-ASR
-  adapter profile for whole-file native llama.cpp transcription, plus a
-  SHA-256-verified Qwen3-ASR 0.6B native mobile-and-desktop preset and separate
-  **Transcribe Audio** and foreground microphone recording flows in the Flutter
-  chat example. The flow has been exercised on a physical Pixel with CPU
-  inference and in the iOS Simulator; Web and the current LiteRT-LM artifacts
-  fail explicitly as unsupported.
+  adapter profile for whole-file llama.cpp transcription. The Flutter chat
+  example includes a SHA-256-verified Qwen3-ASR 0.6B preset plus separate
+  **Transcribe Audio** and foreground microphone recording flows on native and
+  WebGPU. Web requires validated bridge assets `v0.1.30+`, accepts WAV bytes
+  only, and remains separate from native LiteRT-LM live dictation. The native
+  flow has been exercised on a physical Pixel with CPU inference and in the
+  iOS Simulator.
 
 * Added **Ask with voice** to the native Flutter chat example for Gemma 4 E2B
   through both the LiteRT-LM direct-media bundle and the audio-capable GGUF +

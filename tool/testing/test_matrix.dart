@@ -402,6 +402,22 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'Web chat app, web model loading, or WebGPU bridge runtime changes.',
   ),
   TestMatrixRow(
+    id: 'web-speech-to-text-smoke',
+    tier: 'targeted',
+    mode: 'local-only',
+    covers:
+        'published WebGPU bridge, public typed STT API, Qwen3-ASR catalog, '
+        'browser-selected WAV bytes, fake-device microphone capture, and '
+        'rendered transcripts',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario '
+        'chat-app-web-speech-to-text-smoke --audio-path <speech.wav> '
+        '--expect <exact-transcript>',
+    useWhen:
+        'Web bridge pins, prompt speech capability gating, Qwen3-ASR Web, '
+        'or browser transcription UI changes.',
+  ),
+  TestMatrixRow(
     id: 'webgpu-multimodal-regression',
     tier: 'targeted',
     mode: 'local-only',

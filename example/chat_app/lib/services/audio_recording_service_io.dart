@@ -106,7 +106,8 @@ class _IoAudioRecordingService implements AudioRecordingService {
       _isRecording = false;
       _activePath = null;
       final path = stoppedPath ?? fallbackPath;
-      if (!await wavHasAudioData(path)) {
+      final bytes = await File(path).readAsBytes();
+      if (!wavBytesHaveAudioData(bytes)) {
         await _deleteFile(path);
         if (path != fallbackPath) {
           await _deleteFile(fallbackPath);

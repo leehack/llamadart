@@ -16,6 +16,7 @@ class WebAutoBackend
         BackendAvailability,
         BackendEmbeddingsSupport,
         BackendBatchEmbeddings,
+        BackendPromptSpeechToTextSupport,
         BackendStatePersistence,
         BackendStatePersistenceSupport {
   final LlamaBackend Function() _webGpuFactory;
@@ -62,6 +63,28 @@ class WebAutoBackend
       return (delegate as BackendEmbeddingsSupport).supportsEmbeddings;
     }
     return delegate is BackendEmbeddings;
+  }
+
+  @override
+  bool get supportsPromptSpeechToText {
+    final delegate = _delegate;
+    final speechDelegate = delegate is BackendPromptSpeechToTextSupport
+        ? delegate as BackendPromptSpeechToTextSupport
+        : null;
+    return speechDelegate?.supportsPromptSpeechToText ?? false;
+  }
+
+  @override
+  String? get promptSpeechToTextUnsupportedReason {
+    final delegate = _delegate;
+    final speechDelegate = delegate is BackendPromptSpeechToTextSupport
+        ? delegate as BackendPromptSpeechToTextSupport
+        : null;
+    if (speechDelegate != null) {
+      return speechDelegate.promptSpeechToTextUnsupportedReason;
+    }
+    return 'The active Web runtime does not expose validated typed '
+        'speech-to-text support.';
   }
 
   @override

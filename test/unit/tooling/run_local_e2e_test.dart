@@ -17,6 +17,7 @@ void main() {
       expect(result.stdout, contains('--ngram-cache-build-text <txt>'));
       expect(result.stdout, contains('--ngram-token-max <n>'));
       expect(result.stdout, contains('--allow-any-response'));
+      expect(result.stdout, contains('--mmproj-url <url>'));
       expect(result.stdout, contains('GGUF_AUDIO_EXPECTED_TEXT'));
       expect(result.stdout, contains('LLAMADART_LITERT_LM_LIBRARY_PATH'));
       expect(
@@ -41,6 +42,7 @@ void main() {
       expect(result.stdout, contains('webgpu-multimodal-regression'));
       expect(result.stdout, contains('chat-app-model-cache'));
       expect(result.stdout, contains('chat-app-web-real-model-smoke'));
+      expect(result.stdout, contains('chat-app-web-speech-to-text-smoke'));
       expect(result.stdout, contains('chat-app-web-mock-smoke'));
       expect(result.stdout, contains('chat-app-web-litert-gemma4-smoke'));
       expect(result.stdout, contains('bridge-smoke'));
@@ -72,6 +74,54 @@ void main() {
         );
       },
     );
+
+    test('dry-runs Web Qwen3-ASR file and microphone transcription', () async {
+      final result = await runLocalE2e(const [
+        '--scenario',
+        'chat-app-web-speech-to-text-smoke',
+        '--audio-path',
+        'test/fixtures/speech.wav',
+        '--model-url',
+        'https://example.com/qwen-asr.gguf',
+        '--mmproj-url',
+        'https://example.com/qwen-asr-mmproj.gguf',
+        '--expect',
+        'Known transcript.',
+        '--skip-build',
+        '--python',
+        '/custom/python',
+        '--dry-run',
+      ], projectRoot: '/repo');
+
+      expect(result.exitCode, 0);
+      expect(result.stdout, contains('validate_chat_app_web_build.sh'));
+      expect(
+        result.stdout,
+        contains('--model-url https://example.com/qwen-asr.gguf'),
+      );
+      expect(
+        result.stdout,
+        contains('--mmproj-url https://example.com/qwen-asr-mmproj.gguf'),
+      );
+      expect(
+        result.stdout,
+        contains('--speech-audio-path test/fixtures/speech.wav'),
+      );
+      expect(result.stdout, contains('--speech-microphone'));
+      expect(result.stdout, contains("--expect 'Known transcript.'"));
+    });
+
+    test('requires a fixture and expected text for Web speech smoke', () async {
+      final result = await runLocalE2e(const [
+        '--scenario',
+        'chat-app-web-speech-to-text-smoke',
+        '--dry-run',
+      ], projectRoot: '/repo');
+
+      expect(result.exitCode, 64);
+      expect(result.stderr, contains('--audio-path'));
+      expect(result.stderr, contains('--expect'));
+    });
 
     test(
       'dry-runs Web real-model smoke with build, serve, and Playwright steps',

@@ -1,7 +1,7 @@
 import 'dart:async';
-import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:llamadart/llamadart.dart';
@@ -2085,6 +2085,44 @@ void main() {
     expect(provider.canRegenerateLastResponse, isFalse);
   });
 
+  test(
+    'Web microphone transcribes finalized WAV bytes and revokes the blob',
+    () async {
+      if (!kIsWeb) {
+        return;
+      }
+      final engine = _SpeechMockLlamaEngine()
+        ..createChunkContents = const <String>[
+          'language English<asr_text>Browser microphone.',
+        ];
+      final recorder = _FakeAudioRecordingService();
+      final provider = ChatProvider(
+        chatService: MockChatService(engine: engine),
+        audioRecordingService: recorder,
+        settingsService: MockSettingsService(),
+        initialSettings: const ChatSettings(
+          modelPath: 'Qwen3-ASR-0.6B-Q8_0.gguf',
+          mmprojPath: 'mmproj-Qwen3-ASR-0.6B-Q8_0.gguf',
+          modelSupportsSpeechToText: true,
+        ),
+      );
+      addTearDown(provider.dispose);
+      await provider.loadModel();
+
+      await provider.startAudioRecording();
+      await provider.stopAudioRecordingAndTranscribe();
+
+      expect(recorder.readCalls, 1);
+      expect(recorder.deletedPaths, <String>[recorder.recordedPath]);
+      expect(engine.createCalls, 1);
+      final audio = engine.lastGenerateParts!
+          .whereType<LlamaAudioContent>()
+          .single;
+      expect(audio.bytes, recorder.recordedBytes);
+      expect(provider.messages.last.text, 'Browser microphone.');
+    },
+  );
+
   test('does not overlap a stopped transcription while it settles', () async {
     final engine = _BlockingSpeechMockLlamaEngine();
     final provider = ChatProvider(
@@ -2346,8 +2384,26 @@ class _ReadyTextToSpeechProvider extends ChatProvider {
 }
 
 class _SpeechMockLlamaEngine extends MockLlamaEngine {
+  List<LlamaContentPart>? lastGenerateParts;
+
   @override
   Future<bool> get supportsAudio async => mmprojLoaded;
+
+  @override
+  Stream<String> generate(
+    String prompt, {
+    GenerationParams params = const GenerationParams(),
+    List<LlamaContentPart>? parts,
+  }) async* {
+    createCalls += 1;
+    lastCreateParams = params;
+    lastGenerateParts = parts == null
+        ? null
+        : List<LlamaContentPart>.from(parts);
+    for (final content in createChunkContents) {
+      yield content;
+    }
+  }
 }
 
 class _AlwaysAudioMockLlamaEngine extends MockLlamaEngine {
@@ -2381,6 +2437,7 @@ class _BlockingSpeechMockLlamaEngine extends _SpeechMockLlamaEngine {
   }) async* {
     createCalls += 1;
     lastCreateParams = params;
+    lastCreateMessages = List<LlamaChatMessage>.from(messages);
     if (!createStarted.isCompleted) {
       createStarted.complete();
     }
@@ -2398,6 +2455,26 @@ class _BlockingSpeechMockLlamaEngine extends _SpeechMockLlamaEngine {
           ),
         ],
       );
+    }
+  }
+
+  @override
+  Stream<String> generate(
+    String prompt, {
+    GenerationParams params = const GenerationParams(),
+    List<LlamaContentPart>? parts,
+  }) async* {
+    createCalls += 1;
+    lastCreateParams = params;
+    lastGenerateParts = parts == null
+        ? null
+        : List<LlamaContentPart>.from(parts);
+    if (!createStarted.isCompleted) {
+      createStarted.complete();
+    }
+    await _release.future;
+    for (final content in createChunkContents) {
+      yield content;
     }
   }
 }

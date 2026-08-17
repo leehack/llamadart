@@ -1638,16 +1638,21 @@ void main() {
       final modelSource = model.modelSource as RemoteModelAssetSource;
       final projectorSource =
           model.multimodalProjectorSource as RemoteModelAssetSource;
+      final webModelSource = model.webModelSource as RemoteModelAssetSource;
+      final webProjectorSource =
+          model.webMultimodalProjectorSource as RemoteModelAssetSource;
 
       expect(model.supportsAudio, isTrue);
       expect(model.supportsSpeechToTextFor(web: false), isTrue);
-      expect(model.supportsSpeechToTextFor(web: true), isFalse);
-      expect(model.isNativeOnly, isTrue);
+      expect(model.supportsSpeechToTextFor(web: true), isTrue);
+      expect(model.supportsAudioFor(web: true), isTrue);
+      expect(model.isNativeOnly, isFalse);
       expect(model.isNativeDesktopOnly, isFalse);
       expect(model.isAvailableFor(web: false, mobile: true), isTrue);
       expect(model.isAvailableFor(web: false, mobile: false), isTrue);
-      expect(model.isAvailableFor(web: true, mobile: false), isFalse);
+      expect(model.isAvailableFor(web: true, mobile: false), isTrue);
       expect(model.sizeBytesFor(web: false), 1019141728);
+      expect(model.sizeBytesFor(web: true), 1019141728);
       expect(model.preset.temperature, 0);
       expect(model.preset.topK, 1);
       expect(model.preset.topP, 1);
@@ -1673,6 +1678,20 @@ void main() {
         projectorSource.url,
         contains('928ab958557df9aa2ef1c93e0e83c7ad0933fae2'),
       );
+      expect(
+        webModelSource.url,
+        contains('928ab958557df9aa2ef1c93e0e83c7ad0933fae2'),
+      );
+      expect(webModelSource.filename, modelSource.filename);
+      expect(webModelSource.sizeBytes, modelSource.sizeBytes);
+      expect(webModelSource.sha256, modelSource.sha256);
+      expect(
+        webProjectorSource.url,
+        contains('928ab958557df9aa2ef1c93e0e83c7ad0933fae2'),
+      );
+      expect(webProjectorSource.filename, projectorSource.filename);
+      expect(webProjectorSource.sizeBytes, projectorSource.sizeBytes);
+      expect(webProjectorSource.sha256, projectorSource.sha256);
     });
 
     test('Qwen3-TTS catalog entry pins its complete verified bundle', () {
@@ -1758,7 +1777,7 @@ void main() {
       }
     });
 
-    test('large models remain desktop-only while Qwen3-ASR is native', () {
+    test('large models remain desktop-only while Qwen3-ASR is universal', () {
       final desktopModels = DownloadableModel.defaultModels
           .where((model) => model.isNativeDesktopOnly)
           .toList(growable: false);
@@ -1782,10 +1801,10 @@ void main() {
       final qwenAsr = DownloadableModel.defaultModels.singleWhere(
         (model) => model.name == 'Qwen3-ASR 0.6B',
       );
-      expect(qwenAsr.isNativeOnly, isTrue);
+      expect(qwenAsr.isNativeOnly, isFalse);
       expect(qwenAsr.isAvailableFor(web: false, mobile: true), isTrue);
       expect(qwenAsr.isAvailableFor(web: false, mobile: false), isTrue);
-      expect(qwenAsr.isAvailableFor(web: true, mobile: false), isFalse);
+      expect(qwenAsr.isAvailableFor(web: true, mobile: false), isTrue);
 
       final gemmaE4b = DownloadableModel.defaultModels.singleWhere(
         (model) => model.name == 'Gemma 4 E4B it',

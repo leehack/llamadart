@@ -6,7 +6,11 @@ import 'package:llamadart_chat_example/models/chat_settings.dart';
 import 'package:llamadart_chat_example/services/chat_service.dart';
 import 'package:llamadart_chat_example/services/settings_service.dart';
 
-class MockLlamaBackend implements LlamaBackend, BackendAvailability {
+class MockLlamaBackend
+    implements
+        LlamaBackend,
+        BackendAvailability,
+        BackendPromptSpeechToTextSupport {
   @override
   bool get isReady => true;
   @override
@@ -68,6 +72,10 @@ class MockLlamaBackend implements LlamaBackend, BackendAvailability {
   Future<String> getBackendName() async => "Mock";
   @override
   Future<String> getAvailableBackends() async => "Mock";
+  @override
+  bool get supportsPromptSpeechToText => true;
+  @override
+  String? get promptSpeechToTextUnsupportedReason => null;
   @override
   bool get supportsUrlLoading => false;
   @override

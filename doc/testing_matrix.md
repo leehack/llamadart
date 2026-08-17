@@ -68,11 +68,11 @@ Pick targeted rows based on the touched surface:
 | Chat template, parser, tools, thinking extraction | `template-parity`, `llama-cpp-chat-template-smoke`, `gguf-chat-features-smoke`, `litert-lm-chat-features-smoke` |
 | LiteRT-LM native backend | `litert-lm-engine-smoke`, `litert-lm-chat-features-smoke`, `litert-lm-asr-smoke` |
 | Web bridge bootstrap or interop | `web-bridge-smoke`, `web-mock-chat-smoke`, `web-real-model-smoke` |
-| WebGPU multimodal | `webgpu-multimodal-regression` |
+| WebGPU multimodal | `webgpu-multimodal-regression`, plus `web-speech-to-text-smoke` for typed Qwen3-ASR |
 | Large WebGPU GGUF / wasm64 selection | `gemma4-webgpu-mem64` |
 | LiteRT-LM web / Gemma 4 web bundle | `gemma4-litert-web` |
 | Chat app model cache/download/projector | `chat-app-device-cache` |
-| Speech-to-text API or adapter | `speech-to-text-smoke`, plus `litert-lm-asr-smoke` for the dedicated LiteRT-LM streaming engine |
+| Speech-to-text API or adapter | `speech-to-text-smoke`, `web-speech-to-text-smoke`, plus `litert-lm-asr-smoke` for the dedicated LiteRT-LM streaming engine |
 | Text-to-speech API or adapter | `text-to-speech-smoke` |
 | Chat-app microphone transcription flow | `chat-app-microphone-transcription-smoke` |
 | Chat-app live LiteRT-LM dictation | `litert-lm-asr-smoke`, `chat-app-live-speech-smoke` |
@@ -92,7 +92,7 @@ The matrix is designed to cover these essential axes:
 | Axis | Covered by |
 | --- | --- |
 | llama.cpp native GGUF | `root-vm`, `native-prompt-reuse-parity`, `native-inference-benchmark`, `gguf-chat-features-smoke`, `gguf-audio-chat-smoke` |
-| llama.cpp WebGPU GGUF | `web-bridge-smoke`, `web-mock-chat-smoke`, `web-real-model-smoke`, `webgpu-multimodal-regression`, `gemma4-webgpu-mem64` |
+| llama.cpp WebGPU GGUF | `web-bridge-smoke`, `web-mock-chat-smoke`, `web-real-model-smoke`, `webgpu-multimodal-regression`, `web-speech-to-text-smoke`, `gemma4-webgpu-mem64` |
 | LiteRT-LM native `.litertlm` | `litert-lm-engine-smoke`, `litert-lm-chat-features-smoke`, `native-hook-bundles` |
 | LiteRT-LM web `.litertlm` | `gemma4-litert-web` |
 | Model families | Qwen 2.5 prompt reuse, Qwen 3/3.5 chat/multimodal, Gemma 4 tool/thinking/mem64/LiteRT-LM/audio |
@@ -176,6 +176,16 @@ dart run tool/testing/run_local_e2e.dart --scenario speech-to-text-smoke \
   --mmproj-path /path/to/mmproj-Qwen3-ASR-0.6B-Q8_0.gguf \
   --audio-path /path/to/known-speech.wav \
   --expect "Exact expected transcript."
+
+dart run tool/testing/run_local_e2e.dart \
+  --scenario chat-app-web-speech-to-text-smoke \
+  --audio-path /path/to/known-speech.wav \
+  --expect "Exact expected transcript."
+
+# The Web scenario validates both file selection and Chromium's fake
+# microphone path with the same WAV fixture. The selected-file result is exact;
+# the fake microphone must contain the full expected transcript because its
+# artificial input can loop at the capture boundary.
 
 dart run tool/testing/run_local_e2e.dart --scenario text-to-speech-smoke \
   --model-path /path/to/Qwen3-TTS-12Hz-1.7B-Base-Q4_K_M.gguf \

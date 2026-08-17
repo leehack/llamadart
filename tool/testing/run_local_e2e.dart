@@ -78,6 +78,7 @@ class LocalE2eRunContext {
     required this.imagePath,
     required this.audioPath,
     required this.modelUrl,
+    required this.mmprojUrl,
     required this.backend,
     required this.speculativeCases,
     required this.benchmarkGpuLayers,
@@ -110,6 +111,7 @@ class LocalE2eRunContext {
   final String? imagePath;
   final String? audioPath;
   final String? modelUrl;
+  final String? mmprojUrl;
   final String backend;
   final String speculativeCases;
   final String benchmarkGpuLayers;
@@ -139,6 +141,10 @@ class LocalE2eRunContext {
       'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it-web.litertlm?download=true';
   String get defaultGemma4WebGpuModelUrl =>
       'http://127.0.0.1:$port/example/llamadart_server/models/gemma-4-E2B-it-Q4_K_S.gguf';
+  String get defaultQwen3AsrWebModelUrl =>
+      'https://huggingface.co/ggml-org/Qwen3-ASR-0.6B-GGUF/resolve/928ab958557df9aa2ef1c93e0e83c7ad0933fae2/Qwen3-ASR-0.6B-Q8_0.gguf';
+  String get defaultQwen3AsrWebMmprojUrl =>
+      'https://huggingface.co/ggml-org/Qwen3-ASR-0.6B-GGUF/resolve/928ab958557df9aa2ef1c93e0e83c7ad0933fae2/mmproj-Qwen3-ASR-0.6B-Q8_0.gguf';
 }
 
 class LocalE2eScenario {
@@ -578,6 +584,61 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       },
     ),
     LocalE2eScenario(
+      name: 'chat-app-web-speech-to-text-smoke',
+      group: LocalE2eScenarioGroup.webSmoke,
+      description:
+          'Build chat_app web and transcribe a selected WAV with Qwen3-ASR.',
+      requiresDevice: false,
+      stepsBuilder: (context) {
+        final steps = <LocalE2eCommandStep>[_prepareChatAppWebBuild(context)];
+        steps.addAll([
+          LocalE2eCommandStep(
+            workingDirectory: context.projectRoot,
+            executable: context.python,
+            arguments: [
+              'tool/testing/serve_static_with_headers.py',
+              '--directory',
+              '.',
+              '--port',
+              '${context.port}',
+            ],
+            description: 'Serve repo root with COOP/COEP headers',
+            background: true,
+            waitForPort: context.port,
+          ),
+          LocalE2eCommandStep(
+            workingDirectory: context.projectRoot,
+            executable: context.python,
+            arguments: [
+              'tool/testing/playwright_chat_app_real_model_smoke.py',
+              context.webBuildUrl,
+              '--model-url',
+              context.modelUrl ?? context.defaultQwen3AsrWebModelUrl,
+              '--mmproj-url',
+              context.mmprojUrl ?? context.defaultQwen3AsrWebMmprojUrl,
+              '--speech-audio-path',
+              context.audioPath!,
+              '--speech-microphone',
+              '--expect',
+              context.expect,
+              '--gpu-layers',
+              '0',
+              '--context-size',
+              '4096',
+              '--max-tokens',
+              '512',
+              '--load-timeout-ms',
+              '${40 * 60 * 1000}',
+              '--response-timeout-ms',
+              '${10 * 60 * 1000}',
+            ],
+            description: 'Run Playwright Qwen3-ASR Web speech smoke',
+          ),
+        ]);
+        return steps;
+      },
+    ),
+    LocalE2eScenario(
       name: 'chat-app-web-mock-smoke',
       group: LocalE2eScenarioGroup.webSmoke,
       description:
@@ -819,6 +880,7 @@ Future<LocalE2eResult> runLocalE2e(
     'speech-to-text-smoke',
     'litert-lm-asr-smoke',
     'litert-lm-chat-features-smoke',
+    'chat-app-web-speech-to-text-smoke',
   };
   if (parsed.audioPath != null && !audioPathScenarios.contains(scenario.name)) {
     return LocalE2eResult(
@@ -837,6 +899,17 @@ Future<LocalE2eResult> runLocalE2e(
       stderr:
           '--model-path, --mmproj-path, --audio-path, and a nonempty --expect '
           'are required for speech-to-text-smoke.\n',
+    );
+  }
+  if (scenario.name == 'chat-app-web-speech-to-text-smoke' &&
+      (parsed.audioPath == null ||
+          !parsed.expectProvided ||
+          parsed.expect.trim().isEmpty)) {
+    return const LocalE2eResult(
+      64,
+      stderr:
+          '--audio-path and a nonempty --expect are required for '
+          'chat-app-web-speech-to-text-smoke.\n',
     );
   }
   if (scenario.name == 'litert-lm-asr-smoke' &&
@@ -912,6 +985,7 @@ Future<LocalE2eResult> runLocalE2e(
     imagePath: parsed.imagePath,
     audioPath: parsed.audioPath,
     modelUrl: parsed.modelUrl,
+    mmprojUrl: parsed.mmprojUrl,
     backend: parsed.backend,
     speculativeCases: parsed.speculativeCases,
     benchmarkGpuLayers: parsed.benchmarkGpuLayers,
@@ -1126,6 +1200,7 @@ Options:
   --image-path <path>            Optional image path for GGUF chat smoke multimodal variant.
   --audio-path <path>            Complete audio fixture for speech-to-text or native audio-chat smoke.
   --model-url <url>              Model URL for real-model web smoke.
+  --mmproj-url <url>             Projector URL for real-model web smoke.
   --backend <name>               Backend for local model scenarios (default: auto).
   --speculative-cases <list>     Benchmark cases for llama.cpp speculative benchmark.
   --benchmark-gpu-layers <n>     GPU layers for benchmark scenarios (default: 0).
@@ -1202,6 +1277,7 @@ class _ParsedArgs {
     this.imagePath,
     this.audioPath,
     this.modelUrl,
+    this.mmprojUrl,
     this.ngramSize,
     this.ngramSizeM,
     this.ngramTokenMax,
@@ -1227,6 +1303,7 @@ class _ParsedArgs {
   final String? imagePath;
   final String? audioPath;
   final String? modelUrl;
+  final String? mmprojUrl;
   final String backend;
   final String speculativeCases;
   final String benchmarkGpuLayers;
@@ -1275,6 +1352,7 @@ class _ParsedArgs {
     String? imagePath;
     String? audioPath;
     String? modelUrl;
+    String? mmprojUrl;
     String? ngramSize;
     String? ngramSizeM;
     String? ngramTokenMax;
@@ -1321,6 +1399,8 @@ class _ParsedArgs {
           audioPath = _readValue(args, ++index, arg);
         case '--model-url':
           modelUrl = _readValue(args, ++index, arg);
+        case '--mmproj-url':
+          mmprojUrl = _readValue(args, ++index, arg);
         case '--backend':
           backend = _readValue(args, ++index, arg);
         case '--speculative-cases':
@@ -1374,6 +1454,7 @@ class _ParsedArgs {
       imagePath: imagePath,
       audioPath: audioPath,
       modelUrl: modelUrl,
+      mmprojUrl: mmprojUrl,
       backend: backend,
       speculativeCases: speculativeCases,
       benchmarkGpuLayers: benchmarkGpuLayers,

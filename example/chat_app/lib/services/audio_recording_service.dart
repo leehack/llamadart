@@ -1,7 +1,8 @@
 import 'dart:typed_data';
 
 import 'audio_recording_service_stub.dart'
-    if (dart.library.io) 'audio_recording_service_io.dart';
+    if (dart.library.io) 'audio_recording_service_io.dart'
+    if (dart.library.js_interop) 'audio_recording_service_web.dart';
 
 /// The reason a microphone recording operation could not be completed.
 enum AudioRecordingFailure {
@@ -36,7 +37,7 @@ class AudioRecordingException implements Exception {
   String toString() => message;
 }
 
-/// Captures temporary audio files for the chat app's transcription flow.
+/// Captures temporary audio for the chat app's speech flows.
 abstract class AudioRecordingService {
   /// Creates the platform recording service.
   factory AudioRecordingService() => createAudioRecordingService();
@@ -47,7 +48,10 @@ abstract class AudioRecordingService {
   /// Starts a new temporary recording.
   Future<void> start();
 
-  /// Stops the active recording and returns its temporary WAV path.
+  /// Stops the active recording and returns its temporary WAV reference.
+  ///
+  /// Native implementations return a filesystem path. Browser implementations
+  /// return an object URL that remains valid until [deleteRecording].
   Future<String> stop();
 
   /// Reads a finalized temporary recording as encoded WAV bytes.

@@ -214,13 +214,25 @@
     const bridgeAssetsTag =
       typeof configuredTag === 'string' && configuredTag.length > 0
         ? configuredTag
-        : 'v0.1.27';
+        : 'v0.1.30';
+    function bridgeTagSupportsSpeechToText(tag) {
+      const match = /^v(\d+)\.(\d+)\.(\d+)(?:$|-)/.exec(String(tag || ''));
+      if (!match) return false;
+      const major = Number(match[1]);
+      const minor = Number(match[2]);
+      const patch = Number(match[3]);
+      return major > 0 || minor > 1 || (minor === 1 && patch >= 30);
+    }
+    window.__llamadartBridgeSpeechToTextSupported =
+      typeof window.__llamadartBridgeSpeechToTextSupported === 'boolean'
+        ? window.__llamadartBridgeSpeechToTextSupported
+        : bridgeTagSupportsSpeechToText(bridgeAssetsTag);
     window.__llamadartLiteRtLmModuleUrl =
       typeof window.__llamadartLiteRtLmModuleUrl === 'string' &&
       window.__llamadartLiteRtLmModuleUrl.length > 0
         ? window.__llamadartLiteRtLmModuleUrl
         : 'https://cdn.jsdelivr.net/npm/@litert-lm/core@0.15.0/+esm';
-    const localBridgeVersion = 'v0.1.27-local-b10333';
+    const localBridgeVersion = 'v0.1.30-local-b10448';
     window.__llamadartBridgeLocalVersion = localBridgeVersion;
 
     const localBridgeUrl = `./webgpu_bridge/llama_webgpu_bridge.js?v=${localBridgeVersion}`;
