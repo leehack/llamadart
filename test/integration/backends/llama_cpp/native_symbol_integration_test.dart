@@ -390,6 +390,13 @@ void main() {
       expect(params.n_ubatch, ModelParams.defaultMicroBatchSize);
     });
 
+    test('pinned runtime exposes the signed automatic load mode', () {
+      expect(
+        llama_model_default_params().load_mode,
+        llama_load_mode.LLAMA_LOAD_MODE_AUTO,
+      );
+    });
+
     test('Verify speculative symbols are declared in generated bindings', () {
       final bindingsSource = File(
         'lib/src/backends/llama_cpp/bindings.dart',
@@ -760,6 +767,7 @@ void main() {
 
     test('Verify core llama symbols are resolvable', () {
       expect(() => llama_backend_init(), returnsNormally);
+      expect(llama_version().cast<Utf8>().toDartString(), isNotEmpty);
       expect(() => llama_time_us(), returnsNormally);
       expect(() => llama_max_devices(), returnsNormally);
       expect(() => llama_supports_mmap(), returnsNormally);

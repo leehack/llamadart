@@ -13,7 +13,7 @@ import 'package:path/path.dart' as path;
 
 import 'package:llamadart/src/hook/native_bundle_config.dart';
 
-const _llamaCppTag = 'b10356-llamadart.1';
+const _llamaCppTag = 'b10453';
 const _nativeRepoSlug = 'leehack/llamadart-native';
 
 const _packageName = 'llamadart';
@@ -1652,6 +1652,12 @@ List<String> _emittedFileNamesForLibrary({
     final lowered = library.fileName.toLowerCase();
     if (lowered.endsWith('.so') && !lowered.endsWith('.so.0')) {
       fileNames.add('${library.fileName}.0');
+    }
+    // llama.cpp b10453 accidentally publishes mtmd with the literal ELF
+    // SONAME `libmtmd.so.SOVERSION`. Keep the immutable release consumable
+    // until the owning native artifact corrects that SONAME.
+    if (lowered == 'libmtmd.so') {
+      fileNames.add('${library.fileName}.SOVERSION');
     }
   }
 

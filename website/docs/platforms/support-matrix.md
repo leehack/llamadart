@@ -8,7 +8,7 @@ backend-module configuration for
 `llamadart`.
 
 The native-assets hook currently pins `llamadart-native` tag
-`b10356-llamadart.1` and
+`b10453` and
 `litert-lm-native` release `v0.16.0-native.2` (`hook/build.dart`). Apps can
 override the llama.cpp native GitHub source with
 `hooks.user_defines.llamadart.llamadart_native_tag` and
@@ -206,9 +206,9 @@ device/model bundle, use `cpu` or `gpu` for that artifact.
   It maps to upstream `draft-dspark`, requires a compatible external draft
   GGUF, and remains subject to target/draft/backend parity, acceptance, and
   throughput validation. It is an external non-MTP draft-context strategy and
-  requires the default `b10356-llamadart.1` runtime or a newer ABI-compatible
-  native build with the DSpark wrapper fix. WebGPU and LiteRT-LM reject this
-  llama.cpp-specific strategy explicitly.
+  requires at least the `b10356-llamadart.1` wrapper fix; the default `b10453`
+  runtime satisfies that ABI. WebGPU and LiteRT-LM reject this llama.cpp-
+  specific strategy explicitly.
 - **State persistence** (`LlamaEngine.stateSaveFile(...)` /
   `stateLoadFile(...)`) is available on native backends and on WebGPU bridge
   assets `v0.1.15+` that expose `stateSaveFile` / `stateLoadFile` bridge APIs.
@@ -222,7 +222,7 @@ device/model bundle, use `cpu` or `gpu` for that artifact.
   a web load failure as a package bug. The [WebGPU Bridge](./webgpu-bridge)
   page has the browser-console probe and Flutter Web smoke-test path.
 
-## Current llama.cpp module availability by bundle (`b10356`)
+## Current llama.cpp module availability by bundle (`b10453`)
 
 | Bundle key | Available backend modules in bundle |
 | --- | --- |
@@ -270,7 +270,7 @@ hooks:
   user_defines:
     llamadart:
       # Optional. Defaults to llamadart's tested native runtime pin.
-      llamadart_native_tag: b10356-llamadart.1
+      llamadart_native_tag: b10453
 
       # Optional. GitHub repository slug or github.com URL.
       llamadart_native_repository: leehack/llamadart-native

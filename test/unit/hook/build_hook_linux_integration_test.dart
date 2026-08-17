@@ -46,6 +46,7 @@ void main() {
     }
     await _writeBundleLibraries(bundleDir, const [
       'libllamadart.so',
+      'libmtmd.so',
       'libllama.so',
       'libllama-common.so',
       'libggml.so',
@@ -92,6 +93,8 @@ void main() {
               .toSet();
 
           expect(emittedNames, contains('libllamadart.so'));
+          expect(emittedNames, contains('libmtmd.so'));
+          expect(emittedNames, contains('libmtmd.so.SOVERSION'));
           expect(emittedNames, contains('libllama.so'));
           expect(emittedNames, contains('libllama.so.0'));
           expect(emittedNames, contains('libllama-common.so'));

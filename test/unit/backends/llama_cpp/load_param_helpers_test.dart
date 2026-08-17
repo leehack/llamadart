@@ -105,6 +105,16 @@ void main() {
     );
   });
 
+  group('llama_load_mode binding', () {
+    test('keeps upstream automatic load mode signed and available', () {
+      expect(
+        llama_load_mode.fromValue(-1),
+        llama_load_mode.LLAMA_LOAD_MODE_AUTO,
+      );
+      expect(llama_load_mode.LLAMA_LOAD_MODE_AUTO.value, -1);
+    });
+  });
+
   group('applyModelParams', () {
     test('maps mmap and mlock combinations to llama.cpp load modes', () {
       final cases = <({bool useMmap, bool useMlock, llama_load_mode expected})>[

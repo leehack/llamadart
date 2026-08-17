@@ -1,5 +1,13 @@
 ## Unreleased
 
+* Updated the default llama.cpp native runtime pin to
+  `leehack/llamadart-native@b10453`, picking up llama.cpp fixes for a Granite
+  Speech heap overflow, a DOTS OCR out-of-bounds write, and a Step3VL
+  divide-by-zero. The update preserves the existing speculative wrapper ABI,
+  regenerates bindings for the signed automatic load mode and current MTMD
+  layouts, and refreshes the `llamadart_llama_cpp_flutter` Apple SwiftPM
+  checksum.
+
 * Added logical batch-size (`n_batch`) and micro-batch-size (`n_ubatch`)
   controls for llama.cpp/WebGPU models in the Flutter chat example. Android
   Auto now probes the packaged Vulkan device before memory planning so capable
@@ -65,12 +73,6 @@
   through `SpeculativeDecodingConfig.draftDspark(...)`, including exact
   `draft-dspark` mapping, external draft-model validation, typed unsupported
   failures, and benchmark coverage.
-
-* Updated the default llama.cpp native runtime pin to
-  `leehack/llamadart-native@b10356-llamadart.1`, retaining llama.cpp `b10356`
-  while adding the stable Qwen3-TTS wrapper ABI, regenerated matching Dart FFI
-  bindings, refreshed the `llamadart_llama_cpp_flutter` Apple SwiftPM checksum,
-  and aligned current README/website native override docs.
 
 ## 0.8.19
 
