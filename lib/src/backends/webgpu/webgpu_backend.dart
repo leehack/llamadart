@@ -64,6 +64,7 @@ class WebGpuLlamaBackend
   AbortController? _abortController;
   int? _lastNCtx;
   bool _mmContextActive = false;
+  String? _cachedMmProjectorBlobUrl;
   bool _webGpuMultimodalWarmupDone = false;
   bool _webGpuMultimodalWarmupAttempted = false;
   bool? _preferMemory64Override;
@@ -296,17 +297,22 @@ class WebGpuLlamaBackend
     abortController?.abort();
     bridge?.cancel();
     if (bridge == null) {
+      _releaseCachedMmProjectorBlobUrl();
       return;
     }
 
-    final disposePromise = bridge.dispose();
-    if (disposePromise != null) {
-      await disposePromise.toDart;
+    try {
+      final disposePromise = bridge.dispose();
+      if (disposePromise != null) {
+        await disposePromise.toDart;
+      }
+    } finally {
+      _releaseCachedMmProjectorBlobUrl();
+      _usingBridge = false;
+      _isReady = false;
+      _mmContextActive = false;
+      _resetWebGpuMultimodalWarmupState();
     }
-    _usingBridge = false;
-    _isReady = false;
-    _mmContextActive = false;
-    _resetWebGpuMultimodalWarmupState();
   }
 
   void _resetWebGpuMultimodalWarmupState() {
@@ -2340,11 +2346,17 @@ class WebGpuLlamaBackend
     final bridge = _requireBridge();
     final cachedBlobUrl = await _cachedModelBlobUrlFor(mmProjPath);
     final projectorPath = cachedBlobUrl ?? mmProjPath;
+    var retainedCachedBlobUrl = false;
 
     try {
       final result = await _toFuture(
         bridge.loadMultimodalProjector(projectorPath),
       );
+      _releaseCachedMmProjectorBlobUrl();
+      if (cachedBlobUrl != null) {
+        _cachedMmProjectorBlobUrl = cachedBlobUrl;
+        retainedCachedBlobUrl = true;
+      }
       _mmContextActive = true;
       _resetWebGpuMultimodalWarmupState();
       if (bridge.supportsVision() ?? false) {
@@ -2364,9 +2376,17 @@ class WebGpuLlamaBackend
 
       return 1;
     } finally {
-      if (cachedBlobUrl != null) {
+      if (cachedBlobUrl != null && !retainedCachedBlobUrl) {
         URL.revokeObjectURL(cachedBlobUrl);
       }
+    }
+  }
+
+  void _releaseCachedMmProjectorBlobUrl() {
+    final blobUrl = _cachedMmProjectorBlobUrl;
+    _cachedMmProjectorBlobUrl = null;
+    if (blobUrl != null) {
+      URL.revokeObjectURL(blobUrl);
     }
   }
 
@@ -2425,12 +2445,17 @@ class WebGpuLlamaBackend
   Future<void> multimodalContextFree(int mmContextHandle) async {
     final bridge = _bridge;
     if (bridge == null || !_mmContextActive) {
+      _releaseCachedMmProjectorBlobUrl();
       return;
     }
 
-    await _toFuture(bridge.unloadMultimodalProjector());
-    _mmContextActive = false;
-    _resetWebGpuMultimodalWarmupState();
+    try {
+      await _toFuture(bridge.unloadMultimodalProjector());
+    } finally {
+      _releaseCachedMmProjectorBlobUrl();
+      _mmContextActive = false;
+      _resetWebGpuMultimodalWarmupState();
+    }
   }
 
   @override

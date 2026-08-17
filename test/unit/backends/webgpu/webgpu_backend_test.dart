@@ -1948,6 +1948,48 @@ void main() {
       expect(mmHandle, 1);
       expect(lastMmprojPath, startsWith('blob:'));
       expect(lastMmprojPath, isNot(mmprojUrl));
+
+      final retainedResponse = await window.fetch(lastMmprojPath!.toJS).toDart;
+      expect(retainedResponse.ok, isTrue);
+      expect(await retainedResponse.text().toDart, 'cached projector');
+
+      await backend.multimodalContextFree(mmHandle!);
+      await expectLater(
+        window.fetch(lastMmprojPath!.toJS).toDart,
+        throwsA(anything),
+      );
+    });
+
+    test('revokes cached projector blob when projector load fails', () async {
+      const cacheName = 'llamadart-webgpu-model-cache-v1';
+      const mmprojUrl = 'https://example.com/mmproj-failing.gguf';
+      final cache = await window.caches.open(cacheName).toDart;
+      await cache.put(mmprojUrl.toJS, Response('cached projector'.toJS)).toDart;
+      addTearDown(() async {
+        await window.caches.delete(cacheName).toDart;
+      });
+      bridge.setProperty(
+        'loadMultimodalProjector'.toJS,
+        ((String path) {
+          lastMmprojPath = path;
+          return Future<void>.error(Exception('projector load failed')).toJS;
+        }).toJS,
+      );
+
+      await backend.modelLoadFromUrl(
+        'https://example.com/model.gguf',
+        const ModelParams(),
+      );
+
+      await expectLater(
+        backend.multimodalContextCreate(1, mmprojUrl),
+        throwsA(anything),
+      );
+      expect(lastMmprojPath, startsWith('blob:'));
+      await expectLater(
+        window.fetch(lastMmprojPath!.toJS).toDart,
+        throwsA(anything),
+      );
     });
 
     test('runs WebGPU multimodal warmup once per projector load', () async {
