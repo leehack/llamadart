@@ -95,6 +95,11 @@ hooks:
             cpu_profile: full # default: full; use compact for baseline-only CPU
           linux-x64: [vulkan, cuda]
           windows-x64: [vulkan, cuda]
+
+      # Windows x64 only, and only when the cuda backend is selected.
+      # Defaults to "13". Use "12" for older NVIDIA drivers/GPUs, or
+      # "both" for one portable package with runtime compatibility selection.
+      llamadart_windows_cuda: "13"
 ```
 
 Module availability is platform/arch specific and tied to the selected native
@@ -119,6 +124,21 @@ gh release list --repo leehack/llamadart-native --limit 20
 Before overriding, confirm the release includes the asset for your target. The
 hook downloads files named `llamadart-native-<bundle>-<tag>.tar.gz`, for example
 `llamadart-native-windows-x64-b10453.tar.gz`.
+
+Sidecar-capable Windows x64 releases publish CUDA separately from the core
+bundle. `llamadart_windows_cuda` accepts `"13"` (the default), `"12"`, or
+`"both"`. The `both` option bundles both dependency families but loads exactly
+one: CUDA 13 when the driver API and every visible GPU satisfy compute
+capability 7.5+, otherwise CUDA 12 when every visible GPU satisfies compute
+capability 5.0+
+GPU. This is runtime selection, so the build machine's GPU is not used as a
+proxy for the target computer. Expect `both` to add roughly 1.1 GB of compressed
+native assets for the currently audited packs.
+
+The hook verifies the sidecar archive digest, native/llama.cpp release
+provenance, contract version, target architecture, matching `ggml-base` digest,
+dependency family, and every extracted file before reporting native assets.
+CUDA 12 and CUDA 13 are never loaded together in one process.
 For local testing, `llamadart_native_path` may point directly at a bundle
 archive, at an extracted bundle directory, or at a directory containing
 `<tag>/<bundle>/`, `<bundle>/`, or the expected archive file.

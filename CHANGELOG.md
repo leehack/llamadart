@@ -1,5 +1,11 @@
 ## Unreleased
 
+* Added verified Windows x64 CUDA sidecar selection for native llama.cpp
+  builds. CUDA 13 is the default when CUDA is requested, with CUDA 12 and a
+  portable `both` option available through `llamadart_windows_cuda`; dual-pack
+  builds probe the target NVIDIA driver/GPU and load only one matching CUDA
+  dependency family per process.
+
 * Updated the default llama.cpp native runtime pin to
   `leehack/llamadart-native@b10453`, picking up llama.cpp fixes for a Granite
   Speech heap overflow, a DOTS OCR out-of-bounds write, and a Step3VL

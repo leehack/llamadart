@@ -10,6 +10,17 @@ const String nativePathUserDefineKey = 'llamadart_native_path';
 const String nativeRuntimesUserDefineKey = 'llamadart_native_runtimes';
 const String nativeRuntimeLlamaCpp = 'llama_cpp';
 const String nativeRuntimeLiteRtLm = 'litert_lm';
+const String nativeWindowsCudaUserDefineKey = 'llamadart_windows_cuda';
+
+enum WindowsCudaBundleSelection { cuda12, cuda13, both }
+
+extension WindowsCudaBundleSelectionValues on WindowsCudaBundleSelection {
+  List<int> get majors => switch (this) {
+    WindowsCudaBundleSelection.cuda12 => const [12],
+    WindowsCudaBundleSelection.cuda13 => const [13],
+    WindowsCudaBundleSelection.both => const [12, 13],
+  };
+}
 
 const List<String> allNativeRuntimes = [
   nativeRuntimeLlamaCpp,
@@ -412,6 +423,29 @@ bool nativeRuntimeExplicitlySelectedForBundle({
 
 List<String> defaultNativeRuntimesForBundle(String bundle) {
   return defaultNativeRuntimes;
+}
+
+WindowsCudaBundleSelection resolveWindowsCudaBundleSelection(
+  Object? rawUserConfig,
+) {
+  if (rawUserConfig == null) {
+    return WindowsCudaBundleSelection.cuda13;
+  }
+
+  final normalized = switch (rawUserConfig) {
+    int value => value.toString(),
+    String value => value.trim().toLowerCase(),
+    _ => '',
+  };
+  return switch (normalized) {
+    '12' || 'cuda12' || 'cuda-12' => WindowsCudaBundleSelection.cuda12,
+    '13' || 'cuda13' || 'cuda-13' => WindowsCudaBundleSelection.cuda13,
+    'both' => WindowsCudaBundleSelection.both,
+    _ => throw FormatException(
+      'hooks.user_defines.llamadart.$nativeWindowsCudaUserDefineKey must be '
+      '12, 13, or both.',
+    ),
+  };
 }
 
 List<String> selectBackendsForBundle({
