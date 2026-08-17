@@ -74,6 +74,22 @@ void main() {
       );
     });
   });
+
+  test('rejects an unexpected payload directory', () async {
+    await _withPack((directory, core, release) async {
+      Directory(path.join(directory.path, 'nested')).createSync();
+
+      await expectLater(
+        verifyWindowsCudaPackDirectory(
+          directory: directory,
+          expectedCudaMajor: 13,
+          release: release,
+          coreLibrary: core,
+        ),
+        throwsA(isA<FormatException>()),
+      );
+    });
+  });
 }
 
 Future<void> _withPack(

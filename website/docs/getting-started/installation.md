@@ -130,8 +130,8 @@ bundle. `llamadart_windows_cuda` accepts `"13"` (the default), `"12"`, or
 `"both"`. The `both` option bundles both dependency families but loads exactly
 one: CUDA 13 when the driver API and every visible GPU satisfy compute
 capability 7.5+, otherwise CUDA 12 when every visible GPU satisfies compute
-capability 5.0+
-GPU. This is runtime selection, so the build machine's GPU is not used as a
+capability 5.0+. This is runtime selection, so the build machine's GPU is not
+used as a
 proxy for the target computer. Expect `both` to add roughly 1.1 GB of compressed
 native assets for the currently audited packs.
 

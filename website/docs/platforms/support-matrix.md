@@ -376,7 +376,7 @@ no valid entries remain, selection falls back to `cpu_profile` (or default
   the default cache search is not suitable.
 - `windows-x64` performs extra runtime dependency validation:
   - `cuda` requires `cudart` and `cublas` DLLs.
-  - Sidecar-capable releases default selected CUDA builds to CUDA 13;
+  - Sidecar-capable releases use CUDA 13 by default when CUDA is selected;
     `llamadart_windows_cuda: "12"` supports older compatible NVIDIA systems,
     while `"both"` ships both and selects one from the target driver API and
     GPU compute capability before backend loading.

@@ -196,10 +196,18 @@ Future<WindowsCudaPackManifest> verifyWindowsCudaPackDirectory({
     );
   }
 
-  final actualEntries = directory
-      .listSync()
-      .whereType<File>()
-      .map((file) => path.basename(file.path))
+  final extractedEntities = directory.listSync(followLinks: false);
+  if (extractedEntities.any(
+    (entity) =>
+        FileSystemEntity.typeSync(entity.path, followLinks: false) !=
+        FileSystemEntityType.file,
+  )) {
+    throw const FormatException(
+      'CUDA sidecar contains an unexpected directory or link.',
+    );
+  }
+  final actualEntries = extractedEntities
+      .map((entity) => path.basename(entity.path))
       .toSet();
   if (actualEntries.difference({
         ...expectedNames,
