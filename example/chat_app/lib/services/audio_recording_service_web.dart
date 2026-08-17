@@ -58,6 +58,15 @@ class _WebAudioRecordingService implements AudioRecordingService {
           encoder: AudioEncoder.wav,
           sampleRate: 16000,
           numChannels: 1,
+          // Browser input levels vary substantially across built-in,
+          // Bluetooth, and continuity microphones. Apply the browser's
+          // speech-oriented gain and noise processing before the worklet
+          // converts the capture to PCM16. Echo cancellation stays disabled
+          // because the app does not play audio while recording and some
+          // browsers otherwise suppress nearby speech as playback leakage.
+          autoGain: true,
+          echoCancel: false,
+          noiseSuppress: true,
         ),
         path: '',
       );
