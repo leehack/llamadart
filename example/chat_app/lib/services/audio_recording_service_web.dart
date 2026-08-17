@@ -9,6 +9,8 @@ import 'wav_audio_validator.dart';
 
 class _WebAudioRecordingService implements AudioRecordingService {
   AudioRecorder? _recorder;
+  String? _completedRecordingUrl;
+  Uint8List? _completedRecordingBytes;
   bool _isRecording = false;
   bool _isDisposed = false;
 
@@ -100,6 +102,9 @@ class _WebAudioRecordingService implements AudioRecordingService {
           'The microphone recording did not contain valid WAV audio.',
         );
       }
+      _revokeCompletedRecording();
+      _completedRecordingUrl = url;
+      _completedRecordingBytes = bytes;
       return url;
     } on AudioRecordingException {
       rethrow;
@@ -123,7 +128,15 @@ class _WebAudioRecordingService implements AudioRecordingService {
   @override
   Future<Uint8List> readRecording(String path) async {
     try {
-      final bytes = await _readBlobUrl(path);
+      final bytes = path == _completedRecordingUrl
+          ? _completedRecordingBytes
+          : await _readBlobUrl(path);
+      if (bytes == null) {
+        throw const AudioRecordingException(
+          AudioRecordingFailure.readFailed,
+          'The microphone recording could not be read.',
+        );
+      }
       if (bytes.isEmpty) {
         throw const AudioRecordingException(
           AudioRecordingFailure.readFailed,
@@ -157,6 +170,10 @@ class _WebAudioRecordingService implements AudioRecordingService {
 
   @override
   Future<void> deleteRecording(String path) async {
+    if (path == _completedRecordingUrl) {
+      _completedRecordingUrl = null;
+      _completedRecordingBytes = null;
+    }
     if (path.startsWith('blob:')) {
       web.URL.revokeObjectURL(path);
     }
@@ -169,6 +186,7 @@ class _WebAudioRecordingService implements AudioRecordingService {
     }
     _isDisposed = true;
     await cancel();
+    _revokeCompletedRecording();
     final recorder = _recorder;
     _recorder = null;
     await recorder?.dispose();
@@ -183,6 +201,15 @@ class _WebAudioRecordingService implements AudioRecordingService {
     }
     final buffer = await response.arrayBuffer().toDart;
     return buffer.toDart.asUint8List();
+  }
+
+  void _revokeCompletedRecording() {
+    final url = _completedRecordingUrl;
+    _completedRecordingUrl = null;
+    _completedRecordingBytes = null;
+    if (url != null && url.startsWith('blob:')) {
+      web.URL.revokeObjectURL(url);
+    }
   }
 }
 

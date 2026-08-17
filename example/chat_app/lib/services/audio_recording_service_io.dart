@@ -6,7 +6,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:record/record.dart';
 
 import 'audio_recording_service.dart';
-import 'wav_audio_validator.dart';
+import 'wav_audio_file_validator_io.dart';
 
 class _IoAudioRecordingService implements AudioRecordingService {
   AudioRecorder? _recorder;
@@ -106,8 +106,7 @@ class _IoAudioRecordingService implements AudioRecordingService {
       _isRecording = false;
       _activePath = null;
       final path = stoppedPath ?? fallbackPath;
-      final bytes = await File(path).readAsBytes();
-      if (!wavBytesHaveAudioData(bytes)) {
+      if (!await wavFileHasAudioData(path)) {
         await _deleteFile(path);
         if (path != fallbackPath) {
           await _deleteFile(fallbackPath);
