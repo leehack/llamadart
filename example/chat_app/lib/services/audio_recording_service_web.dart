@@ -15,7 +15,10 @@ class _WebAudioRecordingService implements AudioRecordingService {
   // of waiting for two empty inference attempts.
   static const double _minimumDurationSeconds = 2;
   static const int _minimumPeakAmplitude = 96;
-  static const double _minimumRmsAmplitude = 20;
+  // Chromium's input processing can produce isolated peaks in an otherwise
+  // silent room. Require sustained signal energy as well as a nonzero peak so
+  // ambient capture does not reach the ASR model and return an empty result.
+  static const double _minimumRmsAmplitude = 256;
 
   AudioRecorder? _recorder;
   String? _completedRecordingUrl;
