@@ -287,8 +287,8 @@ paths=(
 
     final curatedCoreChangelog = coreChangelog.replaceFirst(
       '  aligned current README/website native override docs.',
-      '  aligned current README/website native override docs.\n'
-          '  Curated compatibility evidence remains attached to this pin.',
+      '  aligned current README/website native override docs. '
+          'Curated compatibility evidence remains attached to this pin.',
     );
     expect(curatedCoreChangelog, isNot(coreChangelog));
     await coreChangelogFile.writeAsString(curatedCoreChangelog);
