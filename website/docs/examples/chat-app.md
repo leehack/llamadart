@@ -65,16 +65,16 @@ flutter test
 - Runtime-verified multimodal capability gating after `mmproj` load, plus
   declared direct-media capabilities for native model bundles such as
   LiteRT-LM. The app hides unsupported attachment types for the active platform.
-- Separate file and microphone transcription actions for compatible native
-  GGUF models, backed by the typed whole-file `SpeechToTextEngine`. The
-  microphone captures a temporary foreground WAV and transcribes it only after
-  **Stop & transcribe**; it does not emit live partial text. These actions are
-  distinct from generic audio attachment and are not shown for Web or current
-  LiteRT-LM. Microphone capture is enabled on Android, iOS, macOS, and Windows
-  when a compatible ASR model is active; Linux capture remains disabled pending
-  a safe external-recorder preflight, while selected-file transcription remains
-  available there. Web support is tracked in
-  [issue #329](https://github.com/leehack/llamadart/issues/329).
+- Separate file and microphone transcription actions for compatible Qwen3-ASR
+  GGUF models, backed by the typed whole-file `SpeechToTextEngine`. Native file
+  selection accepts WAV, MP3, and FLAC; WebGPU bridge assets `v0.1.30+` accept
+  WAV bytes. The microphone captures a temporary foreground WAV and transcribes
+  it only after **Stop & transcribe**; it does not emit live partial text. These
+  actions are distinct from generic audio attachment and are not shown for
+  current LiteRT-LM chat bundles. Microphone capture is enabled on Android,
+  iOS, macOS, Windows, and supported secure browser origins; Linux capture
+  remains disabled pending a safe external-recorder preflight, while
+  selected-file transcription remains available there.
 - Experimental live English dictation for native chat models, including
   generic audio-chat models, through independently installed, checksum-pinned
   LiteRT sidecars. Moonshine Tiny is the recommended 54 MB default; Parakeet
@@ -133,9 +133,8 @@ flutter test
 
 The built-in library is intentionally small and Unsloth-first:
 
-- Cross-platform: FunctionGemma 270M, Qwen3.5 0.8B, Gemma 4 E2B GGUF,
-  Gemma 4 E2B LiteRT-LM, and Gemma 4 E4B GGUF.
-- Native mobile and desktop: Qwen3-ASR 0.6B.
+- Cross-platform: FunctionGemma 270M, Qwen3.5 0.8B, Qwen3-ASR 0.6B,
+  Gemma 4 E2B GGUF, Gemma 4 E2B LiteRT-LM, and Gemma 4 E4B GGUF.
 - Native desktop: Qwen3-TTS 1.7B Base, Gemma 4 12B, Gemma 4 26B A4B,
   Gemma 4 31B, and Qwen3.6 35B A3B.
 
@@ -154,9 +153,9 @@ the primary download/load action. Recommended context and output limits remain
 visible without repeating every sampling parameter on every card.
 
 Availability filters match each preset's platform restrictions. The Qwen3-ASR
-preset appears for native mobile and desktop targets but remains unavailable on
-Web; other portable presets can appear under both **Mobile** and **Web**, while
-Qwen3-TTS and the largest native models remain **Desktop** only. The first TTS
+preset appears under native and **Web** with its validated platform-specific
+input contract, while Qwen3-TTS and the largest native models remain
+**Desktop** only. The first TTS
 catalog scope reflects macOS CPU/Metal real-model evidence; other native targets
 still require packaged-runtime validation.
 

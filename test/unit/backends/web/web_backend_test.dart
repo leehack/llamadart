@@ -20,8 +20,22 @@ void main() {
     expect(backend, isA<BackendBatchEmbeddings>());
     expect(backend, isA<BackendStatePersistence>());
     expect(backend, isA<BackendStatePersistenceSupport>());
+    expect(backend, isA<BackendPromptSpeechToTextSupport>());
     expect((backend as WebAutoBackend).supportsStatePersistence, isFalse);
     expect(backend.supportsEmbeddings, isFalse);
+  });
+
+  test('WebAutoBackend forwards prompt speech runtime support', () async {
+    final unsupported = WebAutoBackend(webBackend: _NoStateBackend());
+    expect(unsupported.supportsPromptSpeechToText, isFalse);
+    expect(
+      unsupported.promptSpeechToTextUnsupportedReason,
+      contains('does not expose'),
+    );
+
+    final supported = WebAutoBackend(webBackend: _SpeechSupportBackend());
+    expect(supported.supportsPromptSpeechToText, isTrue);
+    expect(supported.promptSpeechToTextUnsupportedReason, isNull);
   });
 
   test(
@@ -174,6 +188,15 @@ class _RecordingBackend implements LlamaBackend {
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _SpeechSupportBackend extends _NoStateBackend
+    implements BackendPromptSpeechToTextSupport {
+  @override
+  bool get supportsPromptSpeechToText => true;
+
+  @override
+  String? get promptSpeechToTextUnsupportedReason => null;
 }
 
 class _EmbeddingSupportBackend

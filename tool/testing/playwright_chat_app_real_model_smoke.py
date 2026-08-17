@@ -3,7 +3,10 @@ import argparse
 import json
 import re
 import time
+import wave
+from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import sync_playwright
@@ -54,6 +57,13 @@ def wait_for_text(page, needle: str, timeout_ms: int, label: str) -> str:
     raise TimeoutError(f"Timed out waiting for {label}: {needle}")
 
 
+def copy_last_assistant_response(page, timeout_ms: int) -> str:
+    copy_button = page.get_by_role("button", name="Copy response").last
+    copy_button.wait_for(timeout=timeout_ms)
+    copy_button.click()
+    return str(page.evaluate("() => navigator.clipboard.readText()") or "")
+
+
 def wait_for_bridge_response(
     page,
     expected: str,
@@ -69,6 +79,13 @@ def wait_for_bridge_response(
             """() => ({
               bridgeResponse: window.__llamadartRealBridgeLastResponse,
               bridgeError: window.__llamadartRealBridgeLastError,
+              bridgePrompt: window.__llamadartRealBridgeLastPrompt,
+              bridgeOptions: window.__llamadartRealBridgeLastOptions,
+              bridgeTokenEvents: window.__llamadartRealBridgeTokenEvents,
+              bridgeTokenBytes: window.__llamadartRealBridgeTokenBytes,
+              bridgeLastPieceType: window.__llamadartRealBridgeLastPieceType,
+              bridgeLastCurrentTextLength:
+                window.__llamadartRealBridgeLastCurrentTextLength,
               liteRtLmResponse: window.__llamadartRealLiteRtLmLastResponse,
               liteRtLmError: window.__llamadartRealLiteRtLmLastError,
               liteRtLmPrompt: window.__llamadartRealLiteRtLmLastPrompt,
@@ -96,7 +113,16 @@ def wait_for_bridge_response(
             raise RuntimeError(f"LiteRT-LM generation failed: {litert_error}")
         for source, candidate in responses:
             if lower_expected in candidate.lower():
-                emit("response_observed", source=source)
+                emit(
+                    "response_observed",
+                    source=source,
+                    bridge_token_events=state.get("bridgeTokenEvents"),
+                    bridge_token_bytes=state.get("bridgeTokenBytes"),
+                    bridge_last_piece_type=state.get("bridgeLastPieceType"),
+                    bridge_last_current_text_length=state.get(
+                        "bridgeLastCurrentTextLength"
+                    ),
+                )
                 return candidate, body
         if allow_any_response and response.strip():
             return response, body
@@ -110,6 +136,14 @@ def wait_for_bridge_response(
                 elapsed_seconds=round(now - (deadline - timeout_ms / 1000), 1),
                 response_source=response_source,
                 bridge_response=bridge_response[-500:],
+                bridge_prompt=str(state.get("bridgePrompt") or "")[-500:],
+                bridge_options=state.get("bridgeOptions"),
+                bridge_token_events=state.get("bridgeTokenEvents"),
+                bridge_token_bytes=state.get("bridgeTokenBytes"),
+                bridge_last_piece_type=state.get("bridgeLastPieceType"),
+                bridge_last_current_text_length=state.get(
+                    "bridgeLastCurrentTextLength"
+                ),
                 litert_response=litert_response[-500:],
                 litert_prompt=str(state.get("liteRtLmPrompt") or "")[-500:],
                 litert_settings=state.get("liteRtLmSettings"),
@@ -129,6 +163,15 @@ def main() -> int:
     parser.add_argument("app_url")
     parser.add_argument("--model-url", required=True)
     parser.add_argument("--mmproj-url")
+    parser.add_argument(
+        "--speech-audio-path",
+        help="Select a local WAV through the chat app's typed transcription action.",
+    )
+    parser.add_argument(
+        "--speech-microphone",
+        action="store_true",
+        help="Also feed the WAV through Chromium's fake microphone and record UI.",
+    )
     parser.add_argument("--prefetch-mmproj-cache", action="store_true")
     parser.add_argument("--expect-mmproj-cache-hit", action="store_true")
     parser.add_argument("--prompt", default="What is 2+2? Answer in one short sentence.")
@@ -174,6 +217,17 @@ def main() -> int:
     args = parser.parse_args()
     if args.expect_mmproj_cache_hit and not args.prefetch_mmproj_cache:
         parser.error("--expect-mmproj-cache-hit requires --prefetch-mmproj-cache")
+    if args.speech_audio_path:
+        audio_path = Path(args.speech_audio_path).resolve()
+        if not audio_path.is_file():
+            parser.error(f"--speech-audio-path does not exist: {audio_path}")
+        if audio_path.suffix.lower() != ".wav":
+            parser.error("--speech-audio-path must be a WAV file")
+        if not args.mmproj_url:
+            parser.error("--speech-audio-path requires --mmproj-url")
+        args.speech_audio_path = str(audio_path)
+    if args.speech_microphone and not args.speech_audio_path:
+        parser.error("--speech-microphone requires --speech-audio-path")
 
     remote_fetch_mode = "default"
     remote_fetch_init = """
@@ -228,6 +282,9 @@ def main() -> int:
     }
     if args.mmproj_url:
         seeded_settings["flutter.mmproj_path"] = json.dumps(args.mmproj_url)
+    if args.speech_audio_path:
+        seeded_settings["flutter.model_supports_audio"] = json.dumps(True)
+        seeded_settings["flutter.model_supports_speech_to_text"] = json.dumps(True)
 
     init_script = f"""
         window.__llamadartPreferLocalBridgeRuntime = true;
@@ -238,6 +295,12 @@ def main() -> int:
         {remote_fetch_init}
         window.__llamadartRealBridgeLastResponse = null;
         window.__llamadartRealBridgeLastError = null;
+        window.__llamadartRealBridgeLastPrompt = null;
+        window.__llamadartRealBridgeLastOptions = null;
+        window.__llamadartRealBridgeTokenEvents = 0;
+        window.__llamadartRealBridgeTokenBytes = 0;
+        window.__llamadartRealBridgeLastPieceType = null;
+        window.__llamadartRealBridgeLastCurrentTextLength = 0;
         window.__llamadartRealLiteRtLmLastResponse = null;
         window.__llamadartRealLiteRtLmLastError = null;
         window.__llamadartRealLiteRtLmLastSettings = null;
@@ -260,6 +323,33 @@ def main() -> int:
           BridgeClass.prototype.createCompletion = async function(prompt, options) {{
             window.__llamadartRealBridgeLastResponse = null;
             window.__llamadartRealBridgeLastError = null;
+            window.__llamadartRealBridgeLastPrompt = String(prompt ?? '');
+            window.__llamadartRealBridgeLastOptions = {{
+              nPredict: options?.nPredict ?? null,
+              temp: options?.temp ?? null,
+              topK: options?.topK ?? null,
+              topP: options?.topP ?? null,
+              penalty: options?.penalty ?? null,
+              seed: options?.seed ?? null,
+              partTypes: Array.from(options?.parts ?? []).map(
+                part => String(part?.type ?? ''),
+              ),
+            }};
+            const downstreamOnToken = options?.onToken;
+            if (typeof downstreamOnToken === 'function') {{
+              options.onToken = function(piece, currentText) {{
+                window.__llamadartRealBridgeTokenEvents += 1;
+                window.__llamadartRealBridgeLastPieceType =
+                  piece?.constructor?.name ?? typeof piece;
+                window.__llamadartRealBridgeTokenBytes +=
+                  typeof piece === 'string'
+                    ? new TextEncoder().encode(piece).byteLength
+                    : Number(piece?.byteLength ?? piece?.length ?? 0);
+                window.__llamadartRealBridgeLastCurrentTextLength =
+                  String(currentText ?? '').length;
+                return downstreamOnToken(piece, currentText);
+              }};
+            }}
             try {{
               const result = await original.call(this, prompt, options);
               window.__llamadartRealBridgeLastResponse = String(result ?? '');
@@ -476,11 +566,27 @@ def main() -> int:
     """
 
     with sync_playwright() as playwright:
+        launch_args = browser_args(args.browser_angle)
+        if args.speech_microphone:
+            launch_args.extend(
+                [
+                    "--use-fake-ui-for-media-stream",
+                    "--use-fake-device-for-media-stream",
+                    f"--use-file-for-fake-audio-capture={args.speech_audio_path}",
+                ]
+            )
         browser = playwright.chromium.launch(
             headless=not args.headed,
-            args=browser_args(args.browser_angle),
+            args=launch_args,
         )
-        page = browser.new_page(viewport={"width": 1440, "height": 1100})
+        app_url_parts = urlsplit(args.app_url)
+        app_origin = f"{app_url_parts.scheme}://{app_url_parts.netloc}"
+        context = browser.new_context(viewport={"width": 1440, "height": 1100})
+        context.grant_permissions(
+            ["clipboard-read", "clipboard-write", "microphone"],
+            origin=app_origin,
+        )
+        page = context.new_page()
         page.set_default_timeout(120000)
         page.add_init_script(init_script)
 
@@ -555,8 +661,35 @@ def main() -> int:
             body_tail=body_after_load[-500:],
         )
 
-        enter_chat_prompt(page, args.prompt)
-        page.get_by_role("button", name="Send message").click()
+        if args.speech_audio_path:
+            attachment_button = page.get_by_role("button", name="Add attachment")
+            attachment_box = attachment_button.bounding_box()
+            if attachment_box is None:
+                raise RuntimeError("Add attachment button has no bounding box")
+            attachment_button.click()
+            page.wait_for_timeout(500)
+            emit(
+                "attachment_menu_opened",
+                body_tail=safe_body_text(page)[-800:],
+            )
+            with page.expect_file_chooser() as file_chooser_info:
+                # Flutter's canvas-backed popup exposes only its dismiss
+                # barrier to Chromium accessibility. The final transcription
+                # item opens over the attachment button, so a second click at
+                # the anchor activates it without depending on painted text.
+                page.mouse.click(
+                    attachment_box["x"] + attachment_box["width"] / 2,
+                    attachment_box["y"] + attachment_box["height"] / 2,
+                )
+            file_chooser_info.value.set_files(args.speech_audio_path)
+            emit(
+                "speech_file_selected",
+                filename=Path(args.speech_audio_path).name,
+                encodedByteLength=Path(args.speech_audio_path).stat().st_size,
+            )
+        else:
+            enter_chat_prompt(page, args.prompt)
+            page.get_by_role("button", name="Send message").click()
 
         try:
             page.get_by_role("button", name="Stop generation").wait_for(timeout=10000)
@@ -571,6 +704,86 @@ def main() -> int:
             args.allow_any_response,
             args.response_source,
         )
+        if args.speech_audio_path:
+            copied_response = copy_last_assistant_response(
+                page,
+                min(args.response_timeout_ms, 30000),
+            )
+            if args.expect.lower() not in copied_response.lower():
+                raise RuntimeError(
+                    "Copied speech transcript did not contain expected text: "
+                    f"{copied_response!r}"
+                )
+            if "<asr_text>" in copied_response:
+                raise RuntimeError("Raw Qwen3-ASR control markers leaked into the chat UI")
+            emit(
+                "rendered_speech_transcript_verified",
+                source="selected-file",
+                method="copy-response",
+                character_count=len(copied_response),
+            )
+            body_after_response = safe_body_text(page)
+        microphone_bridge_response = None
+        if args.speech_microphone:
+            page.evaluate("() => { window.__llamadartRealBridgeLastResponse = null; }")
+            record_button = page.get_by_role(
+                "button", name="Record for transcription"
+            )
+            record_button.click()
+            stop_recording_button = page.get_by_role(
+                "button", name="Stop & transcribe"
+            )
+            try:
+                stop_recording_button.wait_for(timeout=30000)
+            except PlaywrightTimeoutError as error:
+                emit(
+                    "microphone_recording_start_failed",
+                    body_tail=safe_body_text(page)[-1200:],
+                    console_tail=console_logs[-20:],
+                    page_errors=page_errors[-10:],
+                )
+                raise RuntimeError(
+                    "Browser microphone recording did not enter the active state."
+                ) from error
+            with wave.open(args.speech_audio_path, "rb") as wav_input:
+                capture_seconds = wav_input.getnframes() / wav_input.getframerate()
+            page.wait_for_timeout(int((capture_seconds + 0.75) * 1000))
+            stop_recording_button.click()
+            try:
+                page.get_by_role("button", name="Stop generation").wait_for(
+                    timeout=30000
+                )
+                emit("microphone_generation_started")
+            except PlaywrightTimeoutError:
+                emit("microphone_generation_start_not_observed")
+            microphone_bridge_response, _ = wait_for_bridge_response(
+                page,
+                args.expect,
+                args.response_timeout_ms,
+                False,
+                args.response_source,
+            )
+            copied_microphone_response = copy_last_assistant_response(
+                page,
+                min(args.response_timeout_ms, 30000),
+            )
+            if args.expect.lower() not in copied_microphone_response.lower():
+                raise RuntimeError(
+                    "Copied microphone transcript did not contain expected text: "
+                    f"{copied_microphone_response!r}"
+                )
+            if "<asr_text>" in copied_microphone_response:
+                raise RuntimeError(
+                    "Raw Qwen3-ASR control markers leaked from microphone transcription"
+                )
+            emit(
+                "rendered_speech_transcript_verified",
+                source="microphone",
+                method="copy-response",
+                character_count=len(copied_microphone_response),
+                capture_seconds=round(capture_seconds, 3),
+            )
+            body_after_response = safe_body_text(page)
         bridge_globals = page.evaluate(
             """() => ({
               crossOriginIsolated: window.crossOriginIsolated,
@@ -590,6 +803,8 @@ def main() -> int:
                 window.__llamadartBridgeForceRemoteFetchBackend ?? null,
               liteRtLmModuleUrl: window.__llamadartLiteRtLmModuleUrl ?? null,
               liteRtLmPatched: window.LiteRtLmEngine?.__llamadartRealE2ePatched ?? null,
+              promptSpeechToTextSupported:
+                window.__llamadartBridgeSpeechToTextSupported ?? null,
             })"""
         )
         if args.expect_mmproj_cache_hit and len(mmproj_requests) != 1:
@@ -604,7 +819,21 @@ def main() -> int:
             modelUrl=args.model_url,
             mmprojUrl=args.mmproj_url,
             expectedText=args.expect,
+            variant=(
+                "speechToTextWithMicrophone"
+                if args.speech_microphone
+                else ("speechToText" if args.speech_audio_path else "chat")
+            ),
+            speechAudio=(
+                {
+                    "filename": Path(args.speech_audio_path).name,
+                    "encodedByteLength": Path(args.speech_audio_path).stat().st_size,
+                }
+                if args.speech_audio_path
+                else None
+            ),
             bridgeResponse=bridge_response,
+            microphoneBridgeResponse=microphone_bridge_response,
             remoteFetchMode=remote_fetch_mode,
             mmprojRequestCount=len(mmproj_requests),
             bridgeGlobals=bridge_globals,

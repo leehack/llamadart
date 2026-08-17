@@ -14,6 +14,27 @@ void main() {
       debugDefaultTargetPlatformOverride = null;
     });
 
+    test('bounds automatic Web speech batching', () async {
+      if (!kIsWeb) {
+        return;
+      }
+      final engine = MockLlamaEngine();
+      final service = ChatService(engine: engine);
+
+      await service.init(
+        const ChatSettings(
+          modelPath: 'Qwen3-ASR-0.6B-Q8_0.gguf',
+          preferredBackend: GpuBackend.cpu,
+          contextSize: 4096,
+          modelSupportsSpeechToText: true,
+        ),
+        eagerLoadMultimodalProjector: false,
+      );
+
+      expect(engine.lastModelParams!.batchSize, 512);
+      expect(engine.lastModelParams!.microBatchSize, 128);
+    });
+
     test(
       'uses less restrictive Android Vulkan batch defaults for Qwen3.5 0.8B',
       () async {

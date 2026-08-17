@@ -16,17 +16,18 @@ override the llama.cpp native GitHub source with
 bundle source with `hooks.user_defines.llamadart.llamadart_native_path`. Module
 availability below is for the pinned/default artifacts.
 
-Speech support is narrower than general runtime availability. Native
-llama.cpp/GGUF has an experimental whole-file `SpeechToTextEngine` adapter when
-the caller explicitly selects the Qwen3-ASR profile and the loaded projector
-reports audio capability. This path is real-model validated on macOS arm64;
-other native targets still need representative validation. Native llama.cpp
+Speech support is narrower than general runtime availability. llama.cpp/GGUF
+has an experimental whole-file `SpeechToTextEngine` adapter when the caller
+explicitly selects the Qwen3-ASR profile and the loaded projector reports audio
+capability. Native accepts WAV, MP3, and FLAC file or byte inputs. WebGPU bridge
+assets `v0.1.30+` opt into the validated Qwen3-ASR path with WAV bytes only;
+older or custom runtimes stay unsupported unless the host explicitly declares
+the capability. Native llama.cpp
 also exposes experimental Qwen3-TTS synthesis through the separate typed
 [`TextToSpeechEngine`](../guides/text-to-speech). Native LiteRT-LM v0.16 also
 supports experimental CPU-only streaming ASR through
 `SpeechToTextEngine.liteRtLm`, with the native session owned by a worker
-isolate. WebGPU and LiteRT-LM Web do not currently expose either typed speech
-path. See the
+isolate. LiteRT-LM Web does not expose typed speech. See the
 [speech recognition support matrix](../guides/speech-to-text#current-support-matrix).
 
 Available override tags are published on the

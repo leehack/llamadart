@@ -473,13 +473,29 @@ class DownloadableModel {
         sha256:
             '41a342b5e4c514e968cb756de6cd1b7be39eff43c44c57a2ef5fc6522e36603d',
       ),
+      webModelSource: const RemoteModelAssetSource(
+        url:
+            'https://huggingface.co/ggml-org/Qwen3-ASR-0.6B-GGUF/resolve/928ab958557df9aa2ef1c93e0e83c7ad0933fae2/Qwen3-ASR-0.6B-Q8_0.gguf',
+        filename: 'Qwen3-ASR-0.6B-Q8_0.gguf',
+        sizeBytes: 804749248,
+        sha256:
+            'bca259818b50ca7c4c05e9bdb35a5dc04fa039653a6d6f3f0f331f96f6aa1971',
+      ),
+      webMultimodalProjectorSource: const RemoteModelAssetSource(
+        url:
+            'https://huggingface.co/ggml-org/Qwen3-ASR-0.6B-GGUF/resolve/928ab958557df9aa2ef1c93e0e83c7ad0933fae2/mmproj-Qwen3-ASR-0.6B-Q8_0.gguf',
+        filename: 'mmproj-Qwen3-ASR-0.6B-Q8_0.gguf',
+        sizeBytes: 214392480,
+        sha256:
+            '41a342b5e4c514e968cb756de6cd1b7be39eff43c44c57a2ef5fc6522e36603d',
+      ),
       sizeBytes: 1019141728,
       supportsAudio: true,
       supportsSpeechToText: true,
-      webSupportsAudio: false,
-      webSupportsSpeechToText: false,
+      webSupportsAudio: true,
+      webSupportsSpeechToText: true,
       distribution: 'ggml-org',
-      availability: ModelAvailability.native,
+      availability: ModelAvailability.all,
       minRamGb: 4,
       preset: const ModelPreset(
         temperature: 0,

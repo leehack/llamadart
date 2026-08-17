@@ -177,6 +177,19 @@ abstract class BackendRuntimeDiagnostics {
   Future<int?> getResolvedGpuLayers();
 }
 
+/// Optional backend capability for prompt-adapted speech recognition.
+///
+/// Web runtimes use this explicit opt-in to distinguish a bridge release that
+/// has passed the speech-to-text cancellation and audio-ingestion contract
+/// from an older bridge that merely reports generic audio support.
+abstract class BackendPromptSpeechToTextSupport {
+  /// Whether the active runtime is validated for prompt-adapted speech-to-text.
+  bool get supportsPromptSpeechToText;
+
+  /// Actionable reason when [supportsPromptSpeechToText] is false.
+  String? get promptSpeechToTextUnsupportedReason;
+}
+
 /// Model family reported by a backend-native text-to-speech implementation.
 enum BackendTextToSpeechModel {
   /// Qwen3-TTS audio generation through llama.cpp mtmd.

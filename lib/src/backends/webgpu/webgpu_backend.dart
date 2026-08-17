@@ -26,6 +26,7 @@ class WebGpuLlamaBackend
         LlamaBackend,
         BackendAvailability,
         BackendBatchEmbeddings,
+        BackendPromptSpeechToTextSupport,
         BackendStatePersistence,
         BackendStatePersistenceSupport {
   static const Duration _bridgeReadyTimeout = Duration(seconds: 12);
@@ -54,6 +55,7 @@ class WebGpuLlamaBackend
   final String? _bridgeWorkerUrl;
   final LlamaWebGpuBridge Function([WebGpuBridgeConfig? config])?
   _bridgeFactory;
+  final bool? _promptSpeechToTextSupportOverride;
 
   LlamaWebGpuBridge? _bridge;
   bool _usingBridge = false;
@@ -73,10 +75,12 @@ class WebGpuLlamaBackend
     String? wasmUrl,
     String? workerUrl,
     LlamaWebGpuBridge Function([WebGpuBridgeConfig? config])? bridgeFactory,
+    bool? promptSpeechToTextSupported,
   }) : _bridgeScriptUrl = bridgeScriptUrl,
        _bridgeWasmUrl = wasmUrl,
        _bridgeWorkerUrl = workerUrl,
-       _bridgeFactory = bridgeFactory;
+       _bridgeFactory = bridgeFactory,
+       _promptSpeechToTextSupportOverride = promptSpeechToTextSupported;
 
   @override
   bool get isReady => _isReady;
@@ -89,6 +93,18 @@ class WebGpuLlamaBackend
         _hasBridgeFunction(bridge, 'stateSaveFile') &&
         _hasBridgeFunction(bridge, 'stateLoadFile');
   }
+
+  @override
+  bool get supportsPromptSpeechToText =>
+      _promptSpeechToTextSupportOverride ??
+      _getGlobalOptionalBool('__llamadartBridgeSpeechToTextSupported') == true;
+
+  @override
+  String? get promptSpeechToTextUnsupportedReason => supportsPromptSpeechToText
+      ? null
+      : 'Web typed speech-to-text requires validated '
+            'llama-web-bridge-assets v0.1.30 or newer and an explicit runtime '
+            'capability opt-in.';
 
   bool _hasBridgeFunction(LlamaWebGpuBridge bridge, String name) {
     final value = bridge.getProperty(name.toJS);
@@ -1657,7 +1673,9 @@ class WebGpuLlamaBackend
     LlamaWebGpuBridge bridge, {
     required bool isCpuMultimodalRuntime,
   }) async {
-    if (isCpuMultimodalRuntime || !_mmContextActive) {
+    if (isCpuMultimodalRuntime ||
+        !_mmContextActive ||
+        !(bridge.supportsVision() ?? false)) {
       return;
     }
     if (_webGpuMultimodalWarmupDone || _webGpuMultimodalWarmupAttempted) {
@@ -1778,12 +1796,31 @@ class WebGpuLlamaBackend
     final tokenEventFlushChars = hasStopSequences
         ? null
         : (mediaParts == null ? 48 : 24);
+    final emittedOutputBytes = hasStopSequences ? null : <int>[];
 
-    void emitText(String text) {
-      if (text.isEmpty || controller.isClosed) {
+    void emitBytes(List<int> bytes) {
+      if (bytes.isEmpty || controller.isClosed) {
         return;
       }
-      controller.add(utf8.encode(text));
+      emittedOutputBytes?.addAll(bytes);
+      controller.add(bytes);
+    }
+
+    void emitText(String text) {
+      emitBytes(utf8.encode(text));
+    }
+
+    bool emittedBytesArePrefixOf(List<int> bytes) {
+      final emittedBytes = emittedOutputBytes;
+      if (emittedBytes == null || emittedBytes.length > bytes.length) {
+        return false;
+      }
+      for (int index = 0; index < emittedBytes.length; index++) {
+        if (emittedBytes[index] != bytes[index]) {
+          return false;
+        }
+      }
+      return true;
     }
 
     final onToken = (JSAny? piece, JSAny? currentText) {
@@ -1829,9 +1866,7 @@ class WebGpuLlamaBackend
         return;
       }
 
-      if (!controller.isClosed) {
-        controller.add(bytes);
-      }
+      emitBytes(bytes);
     }.toJS;
 
     final options = WebGpuCompletionOptions(
@@ -1866,13 +1901,21 @@ class WebGpuLlamaBackend
           }
           final normalizedPrompt = _normalizePromptForBridge(prompt, bridge);
           final completion = bridge.createCompletion(normalizedPrompt, options);
-          await _toFuture(completion);
+          final completionResult = await _toFuture(completion);
 
           if (hasStopSequences &&
               !stoppedBySequence &&
               latestText.length > emittedLength) {
             emitText(latestText.substring(emittedLength));
             emittedLength = latestText.length;
+          } else if (!hasStopSequences) {
+            final emittedBytes = emittedOutputBytes!;
+            final completionText = _jsValueAsString(completionResult);
+            final finalBytes = utf8.encode(completionText ?? '');
+            if (emittedBytesArePrefixOf(finalBytes) &&
+                emittedBytes.length < finalBytes.length) {
+              emitBytes(finalBytes.sublist(emittedBytes.length));
+            }
           }
         } catch (e, st) {
           if (!stoppedBySequence && !canceledByCaller && !controller.isClosed) {
@@ -2304,10 +2347,12 @@ class WebGpuLlamaBackend
       );
       _mmContextActive = true;
       _resetWebGpuMultimodalWarmupState();
-      await _ensureWebGpuMultimodalWarmup(
-        bridge,
-        isCpuMultimodalRuntime: _isCpuRuntimeForMultimodal(bridge),
-      );
+      if (bridge.supportsVision() ?? false) {
+        await _ensureWebGpuMultimodalWarmup(
+          bridge,
+          isCpuMultimodalRuntime: _isCpuRuntimeForMultimodal(bridge),
+        );
+      }
 
       if (result == null) {
         return 1;

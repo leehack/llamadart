@@ -141,7 +141,7 @@ void main() {
           );
 
           expect(find.text(asr.name), findsOneWidget);
-          expect(find.text('Native platforms'), findsOneWidget);
+          expect(find.text('All platforms'), findsOneWidget);
           expect(find.text('Download Model + Projector'), findsOneWidget);
         } finally {
           debugDefaultTargetPlatformOverride = null;

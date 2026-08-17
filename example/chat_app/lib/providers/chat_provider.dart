@@ -385,7 +385,6 @@ class ChatProvider extends ChangeNotifier {
   bool get supportsVision => _supportsVision;
   bool get supportsAudio => _supportsAudio;
   bool get canTranscribeAudio =>
-      !kIsWeb &&
       _isLoaded &&
       !_isInitializing &&
       !_isGenerating &&
@@ -466,7 +465,6 @@ class ChatProvider extends ChangeNotifier {
   /// This remains true while the model is busy so the composer can keep the
   /// control visible but disabled instead of shifting its layout.
   bool get supportsMicrophoneRecording =>
-      !kIsWeb &&
       _audioRecordingService.isSupported &&
       (_settings.modelSupportsSpeechToText || _supportsVoiceQuestionInput);
 
@@ -3074,10 +3072,24 @@ class ChatProvider extends ChangeNotifier {
     }
 
     try {
-      await transcribeAudio(
-        SpeechAudioFileInput(path),
-        displayName: 'Microphone recording',
-      );
+      if (kIsWeb) {
+        final bytes = await _audioRecordingService.readRecording(path);
+        await transcribeAudio(
+          SpeechAudioBytesInput(
+            bytes,
+            format: const SpeechAudioFormat(
+              encoding: 'wav',
+              mimeType: 'audio/wav',
+            ),
+          ),
+          displayName: 'Microphone recording',
+        );
+      } else {
+        await transcribeAudio(
+          SpeechAudioFileInput(path),
+          displayName: 'Microphone recording',
+        );
+      }
     } finally {
       await _audioRecordingService.deleteRecording(path);
     }
@@ -3380,25 +3392,35 @@ class ChatProvider extends ChangeNotifier {
 
   /// Picks one complete audio file and transcribes it with the loaded model.
   Future<void> pickAudioForTranscription() async {
-    if (kIsWeb) {
-      _addInfoMessage(
-        'Dedicated speech-to-text is not available in the Web chat app yet.',
-      );
-      notifyListeners();
-      return;
-    }
-
     try {
       final result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
-        allowedExtensions: const <String>['wav', 'mp3', 'flac'],
+        allowedExtensions: kIsWeb
+            ? const <String>['wav']
+            : const <String>['wav', 'mp3', 'flac'],
         allowMultiple: false,
+        withData: kIsWeb,
       );
       if (result == null || result.files.isEmpty) {
         return;
       }
 
       final file = result.files.single;
+      final bytes = file.bytes;
+      final extension = p.extension(file.name).replaceFirst('.', '');
+      if (kIsWeb && bytes != null && bytes.isNotEmpty) {
+        await transcribeAudio(
+          SpeechAudioBytesInput(
+            bytes,
+            format: SpeechAudioFormat(
+              encoding: extension.isEmpty ? 'wav' : extension,
+            ),
+          ),
+          displayName: file.name,
+        );
+        return;
+      }
+
       final path = file.path;
       if (path != null && path.isNotEmpty) {
         await transcribeAudio(
@@ -3408,10 +3430,14 @@ class ChatProvider extends ChangeNotifier {
         return;
       }
 
-      final bytes = file.bytes;
       if (bytes != null && bytes.isNotEmpty) {
         await transcribeAudio(
-          SpeechAudioBytesInput(bytes),
+          SpeechAudioBytesInput(
+            bytes,
+            format: SpeechAudioFormat(
+              encoding: extension.isEmpty ? null : extension,
+            ),
+          ),
           displayName: file.name,
         );
         return;
@@ -3441,13 +3467,6 @@ class ChatProvider extends ChangeNotifier {
         _isTranscribing ||
         _session == null ||
         !_chatService.engine.isReady) {
-      return;
-    }
-    if (kIsWeb) {
-      _addInfoMessage(
-        'Dedicated speech-to-text is not available in the Web chat app yet.',
-      );
-      notifyListeners();
       return;
     }
     if (!_settings.modelSupportsSpeechToText) {

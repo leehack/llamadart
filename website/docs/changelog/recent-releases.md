@@ -45,9 +45,10 @@ For canonical full release notes, use:
   refreshed Apple SwiftPM artifact.
 
 - Added an experimental typed Qwen3-ASR whole-file transcription workflow, a
-  SHA-256-verified Qwen3-ASR 0.6B native mobile-and-desktop chat-app preset,
-  and foreground microphone recording. Web and the current LiteRT-LM artifacts
-  remain explicitly unsupported for typed STT.
+  SHA-256-verified Qwen3-ASR 0.6B native-and-Web chat-app preset, and foreground
+  microphone recording. WebGPU requires validated bridge assets `v0.1.30+`
+  and accepts WAV bytes only; native LiteRT-LM live dictation remains a
+  separate implementation.
 
 - Added **Ask with voice** to the native Flutter chat example for Gemma 4 E2B
   LiteRT-LM and audio-capable GGUF models. It sends a short microphone recording

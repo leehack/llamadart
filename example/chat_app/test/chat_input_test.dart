@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:llamadart/llamadart.dart';
@@ -2085,6 +2087,81 @@ void main() {
     expect(provider.canRegenerateLastResponse, isFalse);
   });
 
+  test('Web treats an extensionless selected speech file as WAV', () async {
+    if (!kIsWeb) {
+      return;
+    }
+    final filePicker = _FakeFilePicker(
+      FilePickerResult(<PlatformFile>[
+        PlatformFile(
+          name: 'speech-recording',
+          size: 4,
+          bytes: Uint8List.fromList(const <int>[0x52, 0x49, 0x46, 0x46]),
+        ),
+      ]),
+    );
+    FilePicker.platform = filePicker;
+    addTearDown(() => FilePicker.platform = _FakeFilePicker(null));
+
+    final engine = _SpeechMockLlamaEngine()
+      ..createChunkContents = const <String>['Extensionless WAV.'];
+    final provider = ChatProvider(
+      chatService: MockChatService(engine: engine),
+      settingsService: MockSettingsService(),
+      initialSettings: const ChatSettings(
+        modelPath: 'Qwen3-ASR-0.6B-Q8_0.gguf',
+        mmprojPath: 'mmproj-Qwen3-ASR-0.6B-Q8_0.gguf',
+        modelSupportsSpeechToText: true,
+      ),
+    );
+    addTearDown(provider.dispose);
+    await provider.loadModel();
+
+    await provider.pickAudioForTranscription();
+
+    expect(filePicker.allowedExtensions, <String>['wav']);
+    expect(filePicker.withData, isTrue);
+    expect(provider.messages.last.text, 'Extensionless WAV.');
+  });
+
+  test(
+    'Web microphone transcribes finalized WAV bytes and revokes the blob',
+    () async {
+      if (!kIsWeb) {
+        return;
+      }
+      final engine = _SpeechMockLlamaEngine()
+        ..createChunkContents = const <String>[
+          'language English<asr_text>Browser microphone.',
+        ];
+      final recorder = _FakeAudioRecordingService();
+      final provider = ChatProvider(
+        chatService: MockChatService(engine: engine),
+        audioRecordingService: recorder,
+        settingsService: MockSettingsService(),
+        initialSettings: const ChatSettings(
+          modelPath: 'Qwen3-ASR-0.6B-Q8_0.gguf',
+          mmprojPath: 'mmproj-Qwen3-ASR-0.6B-Q8_0.gguf',
+          modelSupportsSpeechToText: true,
+        ),
+      );
+      addTearDown(provider.dispose);
+      await provider.loadModel();
+
+      await provider.startAudioRecording();
+      await provider.stopAudioRecordingAndTranscribe();
+
+      expect(recorder.readCalls, 1);
+      expect(recorder.deletedPaths, <String>[recorder.recordedPath]);
+      expect(engine.createCalls, 1);
+      final audio = engine.lastGenerateParts!
+          .whereType<LlamaAudioContent>()
+          .single;
+      expect(audio.bytes, recorder.recordedBytes);
+      expect(provider.messages.last.text, 'Browser microphone.');
+    },
+  );
+
   test('does not overlap a stopped transcription while it settles', () async {
     final engine = _BlockingSpeechMockLlamaEngine();
     final provider = ChatProvider(
@@ -2346,8 +2423,26 @@ class _ReadyTextToSpeechProvider extends ChatProvider {
 }
 
 class _SpeechMockLlamaEngine extends MockLlamaEngine {
+  List<LlamaContentPart>? lastGenerateParts;
+
   @override
   Future<bool> get supportsAudio async => mmprojLoaded;
+
+  @override
+  Stream<String> generate(
+    String prompt, {
+    GenerationParams params = const GenerationParams(),
+    List<LlamaContentPart>? parts,
+  }) async* {
+    createCalls += 1;
+    lastCreateParams = params;
+    lastGenerateParts = parts == null
+        ? null
+        : List<LlamaContentPart>.from(parts);
+    for (final content in createChunkContents) {
+      yield content;
+    }
+  }
 }
 
 class _AlwaysAudioMockLlamaEngine extends MockLlamaEngine {
@@ -2381,6 +2476,7 @@ class _BlockingSpeechMockLlamaEngine extends _SpeechMockLlamaEngine {
   }) async* {
     createCalls += 1;
     lastCreateParams = params;
+    lastCreateMessages = List<LlamaChatMessage>.from(messages);
     if (!createStarted.isCompleted) {
       createStarted.complete();
     }
@@ -2398,6 +2494,26 @@ class _BlockingSpeechMockLlamaEngine extends _SpeechMockLlamaEngine {
           ),
         ],
       );
+    }
+  }
+
+  @override
+  Stream<String> generate(
+    String prompt, {
+    GenerationParams params = const GenerationParams(),
+    List<LlamaContentPart>? parts,
+  }) async* {
+    createCalls += 1;
+    lastCreateParams = params;
+    lastGenerateParts = parts == null
+        ? null
+        : List<LlamaContentPart>.from(parts);
+    if (!createStarted.isCompleted) {
+      createStarted.complete();
+    }
+    await _release.future;
+    for (final content in createChunkContents) {
+      yield content;
     }
   }
 }
@@ -2713,6 +2829,34 @@ class _FakeAudioRecordingService implements AudioRecordingService {
   @override
   Future<void> dispose() async {
     disposeCalls += 1;
+  }
+}
+
+class _FakeFilePicker extends FilePicker {
+  final FilePickerResult? result;
+  List<String>? allowedExtensions;
+  bool? withData;
+
+  _FakeFilePicker(this.result);
+
+  @override
+  Future<FilePickerResult?> pickFiles({
+    String? dialogTitle,
+    String? initialDirectory,
+    FileType type = FileType.any,
+    List<String>? allowedExtensions,
+    Function(FilePickerStatus)? onFileLoading,
+    bool allowCompression = false,
+    int compressionQuality = 0,
+    bool allowMultiple = false,
+    bool withData = false,
+    bool withReadStream = false,
+    bool lockParentWindow = false,
+    bool readSequential = false,
+  }) async {
+    this.allowedExtensions = allowedExtensions;
+    this.withData = withData;
+    return result;
   }
 }
 

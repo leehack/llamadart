@@ -55,6 +55,7 @@ export 'src/backends/backend.dart'
         BackendGpuEnumeration,
         BackendNativeChatGeneration,
         BackendRuntimeDiagnostics,
+        BackendPromptSpeechToTextSupport,
         BackendTextToSpeech,
         BackendTextToSpeechCapabilities,
         BackendTextToSpeechModel,

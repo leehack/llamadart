@@ -1,6 +1,6 @@
 ---
 title: Speech to Text
-description: Transcribe encoded audio or stream PCM with the experimental typed native speech API.
+description: Transcribe encoded audio or stream PCM with the experimental typed speech API.
 ---
 
 `SpeechToTextEngine` is the typed API for speech recognition. It is separate
@@ -8,19 +8,20 @@ from `LlamaEngine` because transcript events, timestamps, confidence, language,
 speaker labels, cancellation, and audio metadata have a different contract from
 chat-completion tokens.
 
-The API currently has two experimental native implementations. llama.cpp adapts
-Qwen3-ASR audio input to whole-file transcription. LiteRT-LM uses a dedicated
-CPU ASR engine for incremental mono 16 kHz PCM, partial text, and finalization
-from a worker isolate. Recognition quality and language behavior remain model
-dependent. Generic `LlamaAudioContent` chat input still exists separately for
-audio-capable multimodal models.
+The API currently has two experimental implementations. llama.cpp adapts
+Qwen3-ASR audio input to whole-file transcription on native targets and on
+validated WebGPU bridge assets. Native LiteRT-LM uses a dedicated CPU ASR engine
+for incremental mono 16 kHz PCM, partial text, and finalization from a worker
+isolate. Recognition quality and language behavior remain model dependent.
+Generic `LlamaAudioContent` chat input still exists separately for audio-capable
+multimodal models.
 
 ## Current support matrix
 
 | Runtime | Generic audio-input chat | Typed `SpeechToTextEngine` | Text to speech |
 | --- | --- | --- | --- |
 | Native llama.cpp / GGUF | Model + projector dependent | Experimental Qwen3-ASR adapter; complete WAV/MP3/FLAC file or bytes, final transcript only | Experimental Qwen3-TTS adapter; see [Text to Speech](./text-to-speech) |
-| WebGPU / GGUF | Bridge + model dependent | Unsupported | Unsupported |
+| WebGPU / GGUF | Bridge + model dependent | Experimental Qwen3-ASR adapter with bridge assets `v0.1.30+`; complete WAV bytes, final transcript only | Unsupported |
 | Native LiteRT-LM | Separate `.litertlm` audio chat remains bundle dependent | Experimental dedicated CPU ASR through `SpeechToTextEngine.liteRtLm`; mono 16 kHz float PCM, partial/final text, streaming input | Unsupported |
 | LiteRT-LM Web | Unsupported | Unsupported | Unsupported |
 
@@ -115,6 +116,13 @@ success alone does not prove audio support. The required `modelProfile` is an
 explicit declaration that prevents an ordinary audio-understanding model from
 being advertised as ASR merely because it accepts audio.
 
+On Web, the active backend must also expose the validated prompt-speech
+capability. The hosted chat app derives that opt-in from immutable
+`llama-web-bridge-assets` tags `v0.1.30+`; custom hosts can explicitly set
+`window.__llamadartBridgeSpeechToTextSupported` before the backend is created.
+An older bridge, a missing or mismatched projector, or a failed runtime audio
+probe leaves `capabilities.isSupported` false with an actionable reason.
+
 ## Transcribe a complete file
 
 ```dart
@@ -148,6 +156,13 @@ Native llama.cpp currently decodes WAV, MP3, and FLAC file or byte inputs. Raw
 PCM remains unsupported for that prompt adapter because projector sample rates
 are model-specific. Dedicated LiteRT-LM accepts `SpeechAudioPcmInput` for a
 complete mono 16 kHz float buffer, or the incremental session shown above.
+
+WebGPU accepts encoded WAV bytes only. Browser file pickers must read the
+selected file into memory and use `SpeechAudioBytesInput`; local filesystem
+paths, MP3, FLAC, raw PCM, and byte inputs without explicit
+`SpeechAudioFormat(encoding: 'wav')` metadata are rejected. This narrower
+contract reflects the published browser smoke rather than every decoder that
+may be compiled into a particular bridge build.
 
 `SpeechAudioFormat` also carries optional encoding and MIME metadata. Final
 results reserve segment and word timing, confidence, and speaker fields so a
@@ -184,11 +199,11 @@ different user actions:
 
 - **Attach Audio** sends audio through normal multimodal chat.
 - **Transcribe Audio** selects one file and uses `SpeechToTextEngine` with a
-  compatible native GGUF ASR model.
+  compatible GGUF ASR model. Native accepts WAV, MP3, and FLAC; Web accepts WAV.
 - With Qwen3-ASR, the microphone records a temporary foreground WAV for up to
-  five minutes. **Stop & transcribe** finalizes that file and passes it to
-  `SpeechToTextEngine`, while **Discard** cancels capture and removes the
-  partial file.
+  five minutes. **Stop & transcribe** finalizes that recording and passes its
+  file on native or its encoded bytes on Web to `SpeechToTextEngine`, while
+  **Discard** cancels capture and removes or revokes the partial recording.
 - With a native chat model, **Live transcription** uses a separately installed,
   checksum-pinned LiteRT model and tokenizer. Moonshine Tiny is the recommended
   54 MB default; Parakeet TDT 0.6B is an optional higher-capacity, heavier
@@ -208,28 +223,32 @@ different user actions:
   detected language, or live partial text. An ASR profile takes precedence
   when both capability declarations are present.
 
-The dedicated **Transcribe Audio** action remains hidden on Web and for normal
-LiteRT-LM chat bundles. Live dictation uses the public LiteRT-LM streaming STT
+The dedicated **Transcribe Audio** action is available on Web only for the
+validated Qwen3-ASR preset and runtime capability. It remains hidden for normal
+LiteRT-LM chat bundles. Live dictation uses the native LiteRT-LM streaming STT
 API with an app-managed sidecar; it is not a capability of the selected chat
-bundle.
+bundle and remains unavailable on Web.
 ASR microphone recordings are capped at five minutes, cancelled when the app is
-backgrounded, and deleted after transcription. This remains a whole-file
-workflow: it does not produce live partial transcripts while the user speaks.
-The recorder requests 16 kHz mono WAV, but hardware may choose another valid
-sample rate; the downstream native decoder reads the WAV metadata.
+backgrounded, and deleted on native or revoked on Web after transcription. This
+remains a whole-file workflow: it does not produce live partial transcripts
+while the user speaks. The recorder requests 16 kHz mono WAV, but hardware or
+the browser may choose another valid sample rate; the downstream decoder reads
+the WAV metadata.
 The live sidecar path instead requests PCM16 mono 16 kHz streaming, preserves
 samples split across arbitrary byte-chunk boundaries, applies one in-flight
 worker push at a time, and caps each session at five minutes. It is currently
 English-only and CPU-only. The composer integration is enabled on Android,
 iOS, macOS, and Windows, cancelled on foreground lifecycle changes, and
 disabled on Linux and Web.
-Capture for both microphone workflows is code-supported on Android, iOS, macOS,
-and Windows. It remains disabled on Linux with the current recorder plugin
-because its external-tool startup is not safe to expose without a stronger
-preflight; selected-file transcription is unchanged there. **Ask with voice**
-also requires a native direct-media audio model or an audio-capable projector
-and is unavailable on Web. These capability gates do not establish real-model
-behavior on every platform. The experimental llama.cpp GGUF voice path has
+Typed Qwen3-ASR microphone capture is code-supported on Android, iOS, macOS,
+Windows, and secure browser origins. Browser startup still checks microphone
+permission and WAV encoder support before recording. Capture remains disabled
+on Linux with the current recorder plugin because its external-tool startup is
+not safe to expose without a stronger preflight; selected-file transcription
+is unchanged there. **Ask with voice** also requires a native direct-media
+audio model or an audio-capable projector and is unavailable on Web. These
+capability gates do not establish real-model behavior on every platform. The
+experimental llama.cpp GGUF voice path has
 engine-level Metal evidence on macOS, while current packaged microphone UI
 evidence is LiteRT-LM on macOS. Android, iOS, and Windows still require
 real-model/device evidence through the `chat-app-voice-question-smoke`
@@ -247,10 +266,10 @@ working choice for the loaded model. For the validated Gemma 4 E2B bundle, GPU
 text/vision with CPU audio is the resolved path. This is bundle/runtime
 compatibility behavior, not a universal LiteRT-LM CPU-audio limitation.
 
-The chat app's native mobile-and-desktop catalog includes the Qwen3-ASR 0.6B
-Q8_0 model/projector pair. It remains excluded from the Web catalog. Its
-immutable artifact revision, byte sizes, and SHA-256 digests are pinned, and
-the native downloader verifies both files before the model can be selected.
+The chat app catalog includes the Qwen3-ASR 0.6B Q8_0 model/projector pair on
+native and Web. Its immutable artifact revision, byte sizes, and SHA-256
+digests are pinned. Native downloads verify both files before selection; Web
+uses origin-scoped Cache Storage and the pinned source metadata.
 
 ## Known limits
 
@@ -259,14 +278,20 @@ the native downloader verifies both files before the model can be selected.
   metadata until language behavior has a dedicated validation contract.
 - There are no word/segment timestamps, confidence scores, or speaker
   diarization. Incremental audio and partial text are LiteRT-LM-only.
-- Native inference backend correctness and performance remain device dependent;
+- Inference backend correctness and performance remain device dependent;
   establish a CPU baseline before claiming GPU support for a deployment.
 - The local real-model smoke has passed on macOS arm64 CPU, and a separate
   chat-app/manual smoke has passed on Metal. The full chat-app
   model/projector, microphone, and final-transcript flow has also passed on a
   physical Pixel using CPU inference and in the iOS Simulator. A physical
   iPhone and Windows remain unverified; Linux keeps selected-file STT but not
-  microphone capture. Web enablement is tracked separately in
-  [issue #329](https://github.com/leehack/llamadart/issues/329).
+  microphone capture. Web requires `v0.1.30+`, a browser with enough memory for
+  the roughly 1.02 GB model/projector pair, and the targeted
+  `web-speech-to-text-smoke` validation row. That row verifies both browser
+  file selection and Chromium fake-device microphone capture with the same WAV
+  fixture. File selection returns the exact expected transcript; the microphone
+  assertion requires the full expected transcript because Chromium loops its
+  artificial input at the capture boundary. Real microphone hardware and
+  browser/device combinations remain deployment-specific checks.
 - TTS is a separate typed API with different models, projector capabilities,
   inputs, and output events. See [Text to Speech](./text-to-speech).

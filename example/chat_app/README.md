@@ -88,7 +88,7 @@ flutter test --run-skipped -t local-only \
 2. Select one of the focused pre-configured models:
    - Cross-platform: FunctionGemma 270M, Qwen3.5 0.8B, Gemma 4 E2B
      GGUF, Gemma 4 E2B LiteRT-LM, and Gemma 4 E4B GGUF.
-   - Native mobile and desktop: Qwen3-ASR 0.6B.
+   - Native and Web: Qwen3-ASR 0.6B.
    - Native desktop: Qwen3-TTS 1.7B Base, Gemma 4 12B, Gemma 4 26B A4B,
      Gemma 4 31B, and Qwen3.6 35B A3B.
    - Built-in GGUF chat presets use [Unsloth distributions](https://huggingface.co/unsloth).
@@ -110,14 +110,15 @@ flutter test --run-skipped -t local-only \
      a separate action, with an explicit combined option in the confirmation.
 3. Tap the **Download** icon. The app uses `Dio` to download the model directly to your device's app-specific cache directory. Additional model downloads enter a FIFO queue and start one at a time. A persistent progress pill remains in the app header when settings is closed; tap it to reopen download details.
 4. Once downloaded, tap **Select** to load the model.
-   - The native Qwen3-ASR preset exposes **Attach Audio** and **Transcribe
-     Audio** on mobile and desktop builds. On Android, iOS, macOS, and Windows
-     it also shows a microphone button. File transcription accepts WAV, MP3,
-     or FLAC. The microphone records a temporary mono WAV for up to five
-     minutes; **Stop & transcribe** finalizes it, runs whole-file STT, and
-     deletes it.
-     Capture is foreground-only and cancelling discards the temporary file.
-     This Qwen path remains whole-file rather than live. For native chat
+   - The Qwen3-ASR preset exposes **Attach Audio** and **Transcribe Audio** on
+     native and Web builds. Native selected-file transcription accepts WAV,
+     MP3, or FLAC; Web accepts WAV bytes with bridge assets `v0.1.30+`. On
+     Android, iOS, macOS, Windows, and supported secure browser origins it also
+     shows a microphone button. The microphone records a temporary mono WAV
+     for up to five minutes; **Stop & transcribe** finalizes it, runs whole-file
+     STT, and deletes the native file or revokes the browser blob.
+     Capture is foreground-only and cancelling discards the temporary
+     recording. This Qwen path remains whole-file rather than live. For native chat
      models, including generic audio-chat models, the composer can separately
      install a live-dictation model/tokenizer and expose **Live transcription**
      on Android, iOS, macOS, and Windows. Moonshine Tiny is the recommended
@@ -135,10 +136,9 @@ flutter test --run-skipped -t local-only \
      [LiteRT Community](https://huggingface.co/litert-community/parakeet-tdt-0.6b-v3)
      from NVIDIA's
      [CC-BY-4.0 model](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3).
-     Web support is tracked in
-     [issue #329](https://github.com/leehack/llamadart/issues/329). All STT
-     actions require the matching projector, and the preset's pinned downloads
-     are SHA-256 verified.
+     All STT actions require the matching projector and a positive runtime
+     audio probe. The preset's native and Web sources use immutable revisions,
+     exact sizes, and SHA-256 metadata.
    - The native-desktop Qwen3-TTS preset uses a separate typed synthesis flow,
      not chat generation. Enter text, optionally select a language and choose
      or record a speaker reference, then synthesize. The app reports generation
@@ -148,11 +148,11 @@ flutter test --run-skipped -t local-only \
      model/projector downloads are immutable and SHA-256 verified.
      Current output is complete-buffer only, not streaming playback. Web,
      LiteRT-LM, and automatic read-aloud of chat responses remain unsupported.
-   - Microphone capture is enabled on Android, iOS, macOS, and Windows when a
-     compatible ASR model is active. It remains hidden on Linux because the
-     recorder plugin can report startup before its required external tools are
-     ready; selected-file transcription still works there.
-   - The complete Qwen3-ASR model/projector, microphone, and final-transcript
+   - Microphone capture is enabled on Android, iOS, macOS, Windows, and secure
+     browser origins when a compatible ASR model is active and WAV recording is
+     supported. It remains hidden on Linux because the recorder plugin can
+     report startup before its required external tools are ready; selected-file
+     transcription still works there.
      flow has passed on a physical Pixel using CPU inference and in the iOS
      Simulator. This is not yet physical-iPhone or Windows validation.
    - The native Gemma 4 E2B presets expose **Ask with voice** when either the

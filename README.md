@@ -28,9 +28,10 @@ models through LiteRT-LM.
 - Streaming chat completions, llama.cpp thinking budgets, tool-call parsing,
   multimodal GGUF projectors, structured JSON output, embeddings, LoRA, state
   persistence, and runtime diagnostics where the active backend supports them.
-- Experimental typed speech recognition through `SpeechToTextEngine`: native
-  llama.cpp whole-file Qwen3-ASR and worker-isolated, CPU-only LiteRT-LM
-  streaming ASR with bounded 16 kHz PCM input and partial transcripts.
+- Experimental typed speech recognition through `SpeechToTextEngine`:
+  llama.cpp whole-file Qwen3-ASR on native and validated WebGPU bridge assets,
+  plus worker-isolated, CPU-only native LiteRT-LM streaming ASR with bounded
+  16 kHz PCM input and partial transcripts.
 - Experimental typed Qwen3-TTS synthesis on native llama.cpp through
   `TextToSpeechEngine`, returning complete PCM with WAV encoding.
 
@@ -144,7 +145,7 @@ Current default runtime pins:
 | --- | --- |
 | Native llama.cpp / GGUF | `leehack/llamadart-native@b10356-llamadart.1` |
 | Native LiteRT-LM / `.litertlm` | `leehack/litert-lm-native@v0.16.0-native.2` |
-| Web llama.cpp / GGUF | `leehack/llama-web-bridge-assets@v0.1.27` |
+| Web llama.cpp / GGUF | `leehack/llama-web-bridge-assets@v0.1.30` |
 | Web LiteRT-LM / `.litertlm` | `@litert-lm/core@0.15.0` |
 
 ## Common Tasks

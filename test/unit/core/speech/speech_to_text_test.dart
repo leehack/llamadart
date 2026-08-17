@@ -109,10 +109,10 @@ void main() {
         expect(finalEvent.result.segments.single.text, finalEvent.result.text);
         expect(completion.state, SpeechToTextCompletionState.completed);
         expect(completion.result, same(finalEvent.result));
-        expect(backend.lastParts, hasLength(2));
-        expect(backend.lastParts![1], isA<LlamaAudioContent>());
+        expect(backend.lastParts, hasLength(1));
+        expect(backend.lastParts!.single, isA<LlamaAudioContent>());
         expect(
-          (backend.lastParts![1] as LlamaAudioContent).path,
+          (backend.lastParts!.single as LlamaAudioContent).path,
           '/tmp/test.wav',
         );
         expect(backend.lastGenerationPrompt, contains('Context: llamadart'));
@@ -135,7 +135,7 @@ void main() {
 
       expect(result.text, 'Byte-backed transcript.');
       expect(result.language, isNull);
-      final audio = backend.lastParts![1] as LlamaAudioContent;
+      final audio = backend.lastParts!.single as LlamaAudioContent;
       expect(audio.bytes, <int>[1, 2, 3]);
     });
 
@@ -218,7 +218,7 @@ void main() {
       );
 
       expect((await task.done).result?.text, 'Transcript.');
-      final audio = backend.lastParts![1] as LlamaAudioContent;
+      final audio = backend.lastParts!.single as LlamaAudioContent;
       expect(audio.path, '/tmp/content-addressed-audio');
     });
 
@@ -392,17 +392,6 @@ void main() {
         ),
       );
       expect((await task.done).state, SpeechToTextCompletionState.completed);
-    });
-
-    test('ignores generation chunks without choices', () async {
-      llamaEngine.emitEmptyChoice = true;
-      await _loadSpeechModel(llamaEngine);
-
-      final task = await speechEngine.transcribe(
-        const SpeechToTextRequest(audio: SpeechAudioFileInput('/tmp/test.wav')),
-      );
-
-      expect((await task.done).result?.text, 'transcript');
     });
 
     test('preserves typed backend failures', () async {
@@ -609,45 +598,5 @@ class _SpeechBackend implements LlamaBackend {
 }
 
 class _SpeechLlamaEngine extends LlamaEngine {
-  bool emitEmptyChoice = false;
-
   _SpeechLlamaEngine(super.backend);
-
-  @override
-  Stream<LlamaCompletionChunk> create(
-    List<LlamaChatMessage> messages, {
-    GenerationParams? params,
-    List<ToolDefinition>? tools,
-    ToolChoice? toolChoice,
-    bool parallelToolCalls = false,
-    bool enableThinking = true,
-    Map<String, dynamic>? responseFormat,
-    String? sourceLangCode,
-    String? targetLangCode,
-    Map<String, dynamic>? chatTemplateKwargs,
-    DateTime? templateNow,
-  }) async* {
-    if (emitEmptyChoice) {
-      yield LlamaCompletionChunk(
-        id: 'empty',
-        object: 'chat.completion.chunk',
-        created: 0,
-        model: 'test',
-        choices: const <LlamaCompletionChunkChoice>[],
-      );
-    }
-    yield* super.create(
-      messages,
-      params: params,
-      tools: tools,
-      toolChoice: toolChoice,
-      parallelToolCalls: parallelToolCalls,
-      enableThinking: enableThinking,
-      responseFormat: responseFormat,
-      sourceLangCode: sourceLangCode,
-      targetLangCode: targetLangCode,
-      chatTemplateKwargs: chatTemplateKwargs,
-      templateNow: templateNow,
-    );
-  }
 }

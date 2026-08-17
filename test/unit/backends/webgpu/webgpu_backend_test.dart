@@ -541,6 +541,18 @@ void main() {
       expect(await backend.getContextSize(1), 4096);
     });
 
+    test('requires explicit prompt speech runtime capability', () async {
+      expect(backend.supportsPromptSpeechToText, isFalse);
+      expect(backend.promptSpeechToTextUnsupportedReason, contains('v0.1.30'));
+
+      final supportedBackend = WebGpuLlamaBackend(
+        promptSpeechToTextSupported: true,
+      );
+      expect(supportedBackend.supportsPromptSpeechToText, isTrue);
+      expect(supportedBackend.promptSpeechToTextUnsupportedReason, isNull);
+      await supportedBackend.dispose();
+    });
+
     bool? capturedPreferMemory64() {
       final config = lastBridgeConfig;
       if (config == null) {
@@ -898,6 +910,60 @@ void main() {
       expect(lastTokenEventFlushMs, 28);
       expect(lastTokenEventFlushChars, 48);
     });
+
+    test(
+      'emits a returned completion when token callbacks are absent',
+      () async {
+        bridge.setProperty(
+          'createCompletion'.toJS,
+          ((String prompt, JSObject opts) {
+            return Future<JSString>.value('Final transcript'.toJS).toJS;
+          }).toJS,
+        );
+
+        await backend.modelLoadFromUrl(
+          'https://example.com/model.gguf',
+          const ModelParams(),
+        );
+
+        final chunks = await backend
+            .generate(1, 'Transcribe', const GenerationParams())
+            .toList();
+
+        expect(
+          utf8.decode(chunks.expand((chunk) => chunk).toList()),
+          'Final transcript',
+        );
+      },
+    );
+
+    test(
+      'reconciles a returned completion after partial token callbacks',
+      () async {
+        bridge.setProperty(
+          'createCompletion'.toJS,
+          ((String prompt, JSObject opts) {
+            final onToken = opts.getProperty('onToken'.toJS) as JSFunction?;
+            onToken?.callAsFunction(null, 'Final '.toJS, null);
+            return Future<JSString>.value('Final transcript'.toJS).toJS;
+          }).toJS,
+        );
+
+        await backend.modelLoadFromUrl(
+          'https://example.com/model.gguf',
+          const ModelParams(),
+        );
+
+        final chunks = await backend
+            .generate(1, 'Transcribe', const GenerationParams())
+            .toList();
+
+        expect(
+          utf8.decode(chunks.expand((chunk) => chunk).toList()),
+          'Final transcript',
+        );
+      },
+    );
 
     test('rejects speculative decoding', () {
       expect(
@@ -2002,6 +2068,7 @@ void main() {
     );
 
     test('reports audio support and forwards audio parts', () async {
+      bridge.setProperty('supportsVision'.toJS, (() => false).toJS);
       bridge.setProperty('supportsAudio'.toJS, (() => mmLoaded).toJS);
 
       await backend.modelLoadFromUrl(
@@ -2016,6 +2083,7 @@ void main() {
 
       expect(mmHandle, isNotNull);
       expect(await backend.supportsAudio(mmHandle!), isTrue);
+      expect(warmupCallCount, 0);
 
       final chunks = await backend
           .generate(
@@ -2032,6 +2100,7 @@ void main() {
 
       expect(chunks, isNotEmpty);
       expect(sawAudioParts, isTrue);
+      expect(warmupCallCount, 0);
     });
 
     test('forwards encoded audio bytes parts', () async {

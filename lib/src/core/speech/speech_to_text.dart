@@ -1,11 +1,10 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import '../../backends/backend.dart';
 import '../../backends/litert_lm/litert_lm_asr_types.dart';
 import '../engine/engine.dart';
 import '../exceptions.dart';
-import '../models/chat/chat_message.dart';
-import '../models/chat/chat_role.dart';
 import '../models/chat/content_part.dart';
 import '../models/inference/generation_params.dart';
 import 'litert_lm_speech_to_text_driver.dart';
@@ -581,6 +580,21 @@ class SpeechToTextEngine {
       );
     }
     final engine = _engine!;
+    if (speechToTextRequiresBackendCapability) {
+      final backend = engine.backend;
+      final speechBackend = backend is BackendPromptSpeechToTextSupport
+          ? backend as BackendPromptSpeechToTextSupport
+          : null;
+      if (speechBackend == null || !speechBackend.supportsPromptSpeechToText) {
+        return SpeechToTextCapabilities(
+          isSupported: false,
+          unsupportedReason: speechBackend != null
+              ? speechBackend.promptSpeechToTextUnsupportedReason
+              : 'The active Web runtime does not expose validated typed '
+                    'speech-to-text support.',
+        );
+      }
+    }
     if (!engine.isReady) {
       return const SpeechToTextCapabilities(
         isSupported: false,
@@ -628,11 +642,11 @@ class SpeechToTextEngine {
       isSupported: true,
       backendName: backendName,
       implementation: SpeechToTextImplementation.multimodalPromptAdapter,
-      inputKinds: const <SpeechAudioInputKind>{
-        SpeechAudioInputKind.file,
+      inputKinds: <SpeechAudioInputKind>{
+        if (speechToTextSupportsFileInput) SpeechAudioInputKind.file,
         SpeechAudioInputKind.encodedBytes,
       },
-      encodedAudioFormats: const <String>{'wav', 'mp3', 'flac'},
+      encodedAudioFormats: speechToTextEncodedAudioFormats,
       supportsCancellation: true,
       maxConcurrentTasks: 1,
     );
@@ -813,22 +827,28 @@ class SpeechToTextEngine {
 
     switch (request.audio) {
       case SpeechAudioFileInput(:final path):
+        if (!speechToTextSupportsFileInput) {
+          throw LlamaUnsupportedException(
+            'Web speech-to-text accepts encoded audio bytes only; browser '
+            'local filesystem paths are not available to the runtime.',
+          );
+        }
         if (path.trim().isEmpty) {
           throw LlamaAudioFormatException('Audio file path must not be empty.');
         }
         final encoding = request.audio.format?.encoding?.trim().toLowerCase();
         final extension = _fileExtension(path);
         if (encoding != null && encoding.isNotEmpty) {
-          if (!const <String>{'wav', 'mp3', 'flac'}.contains(encoding)) {
+          if (!speechToTextEncodedAudioFormats.contains(encoding)) {
             throw LlamaAudioFormatException(
-              'Encoded audio files must use WAV, MP3, or FLAC.',
+              'Encoded audio files must use ${_encodedFormatList()}.',
               encoding,
             );
           }
         } else if (extension.isNotEmpty &&
-            !const <String>{'wav', 'mp3', 'flac'}.contains(extension)) {
+            !speechToTextEncodedAudioFormats.contains(extension)) {
           throw LlamaAudioFormatException(
-            'Encoded audio files must use WAV, MP3, or FLAC.',
+            'Encoded audio files must use ${_encodedFormatList()}.',
             extension,
           );
         }
@@ -839,11 +859,18 @@ class SpeechToTextEngine {
           );
         }
         final encoding = request.audio.format?.encoding?.trim().toLowerCase();
+        if (speechToTextRequiresEncodedAudioFormat &&
+            (encoding == null || encoding.isEmpty)) {
+          throw LlamaAudioFormatException(
+            'Web encoded audio bytes require SpeechAudioFormat.encoding; '
+            'the validated format is WAV.',
+          );
+        }
         if (encoding != null &&
             encoding.isNotEmpty &&
-            !const <String>{'wav', 'mp3', 'flac'}.contains(encoding)) {
+            !speechToTextEncodedAudioFormats.contains(encoding)) {
           throw LlamaAudioFormatException(
-            'Encoded audio bytes must use WAV, MP3, or FLAC.',
+            'Encoded audio bytes must use ${_encodedFormatList()}.',
             encoding,
           );
         }
@@ -852,6 +879,16 @@ class SpeechToTextEngine {
           'The Qwen3-ASR prompt adapter accepts encoded audio only.',
         );
     }
+  }
+
+  String _encodedFormatList() {
+    final formats = speechToTextEncodedAudioFormats
+        .map((format) => format.toUpperCase())
+        .toList(growable: false);
+    if (formats.length == 1) {
+      return formats.single;
+    }
+    return '${formats.take(formats.length - 1).join(', ')}, or ${formats.last}';
   }
 
   void _validateLiteRtLmPcmFormat(SpeechAudioFormat format) {
@@ -877,17 +914,11 @@ class SpeechToTextEngine {
         return;
       }
 
+      final prompt = _promptFor(request);
       final output = StringBuffer();
-      await for (final chunk in _engine!.create(
-        <LlamaChatMessage>[
-          LlamaChatMessage.withContent(
-            role: LlamaChatRole.user,
-            content: <LlamaContentPart>[
-              LlamaTextContent(_promptFor(request)),
-              _contentFor(request.audio),
-            ],
-          ),
-        ],
+      await for (final text in _engine!.generate(
+        prompt,
+        parts: <LlamaContentPart>[_contentFor(request.audio)],
         params: GenerationParams(
           maxTokens: request.maxOutputTokens,
           temp: 0,
@@ -897,18 +928,11 @@ class SpeechToTextEngine {
           seed: 1,
           streamBatchTokenThreshold: 1,
         ),
-        enableThinking: false,
       )) {
         if (task.isCancellationRequested) {
           break;
         }
-        if (chunk.choices.isEmpty) {
-          continue;
-        }
-        final text = chunk.choices.first.delta.content;
-        if (text != null) {
-          output.write(text);
-        }
+        output.write(text);
       }
 
       if (task.isCancellationRequested) {

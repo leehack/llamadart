@@ -225,6 +225,14 @@ class ChatService {
 
     var batchSize = settings.batchSize;
     var microBatchSize = settings.microBatchSize;
+    if (kIsWeb && settings.modelSupportsSpeechToText) {
+      if (batchSize <= 0) {
+        batchSize = math.min(safeContextSize, 512);
+      }
+      if (microBatchSize <= 0) {
+        microBatchSize = math.min(batchSize, 128);
+      }
+    }
     if (isAndroidNative && usesGpuBackend) {
       if (usesVulkanBackend) {
         final preferredBatchCap = _isQwen35SmallModel(settings.modelPath)
