@@ -57,6 +57,34 @@ void main() {
     expect(trimPcm16WavSilence(original), same(original));
   });
 
+  test('windowed trimming ignores isolated ambient boundary spikes', () {
+    const quietFrames = 3200;
+    const speechFrames = 6400;
+    final samples = <int>[
+      ...List<int>.generate(
+        quietFrames,
+        (index) => index == 12 ? 900 : (index.isEven ? 40 : -40),
+      ),
+      ...List<int>.generate(
+        speechFrames,
+        (index) => index.isEven ? 1200 : -1200,
+      ),
+      ...List<int>.generate(
+        quietFrames,
+        (index) => index == quietFrames - 9 ? -1000 : (index.isEven ? 50 : -50),
+      ),
+    ];
+
+    final original = _pcm16Wav(samples);
+    final trimmed = trimPcm16WavSilence(original);
+    final signal = inspectPcm16WavSignal(trimmed!);
+
+    expect(signal, isNotNull);
+    expect(signal!.durationSeconds, greaterThan(0.5));
+    expect(signal.durationSeconds, lessThan(0.65));
+    expect(signal.durationSeconds, lessThan(0.8));
+  });
+
   test('rejects a PCM16 WAV containing only quiet frames', () {
     expect(trimPcm16WavSilence(_pcm16Wav(const <int>[0, 20, -20, 0])), isNull);
   });

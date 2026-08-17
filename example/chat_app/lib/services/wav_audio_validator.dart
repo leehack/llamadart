@@ -96,7 +96,7 @@ Uint8List? trimPcm16WavSilence(
   Uint8List bytes, {
   WavPcm16Signal? signal,
   int minimumAmplitude = 96,
-  double relativePeakFraction = 0.01,
+  double relativePeakFraction = 0.05,
 }) {
   final layout = _parsePcm16Wav(bytes);
   final measuredSignal = signal ?? inspectPcm16WavSignal(bytes);
@@ -108,29 +108,77 @@ Uint8List? trimPcm16WavSilence(
       (measuredSignal.peakAmplitude * relativePeakFraction).round();
   final threshold = math.max(minimumAmplitude, relativeThreshold);
   final data = ByteData.sublistView(bytes);
+  final activityWindowFrames = math.max(1, measuredSignal.sampleRate ~/ 50);
+  final boundaryPaddingFrames = measuredSignal.sampleRate ~/ 12;
+  final usesWindowedActivity =
+      measuredSignal.sampleFrames >= activityWindowFrames * 2;
   int? firstActiveFrame;
   int? lastActiveFrame;
-  for (var frame = 0; frame < measuredSignal.sampleFrames; frame += 1) {
-    var isActive = false;
-    for (var channel = 0; channel < layout.channels; channel += 1) {
-      final sampleIndex = frame * layout.channels + channel;
-      final sample = data.getInt16(
-        layout.dataOffset + sampleIndex * 2,
-        Endian.little,
-      );
-      if (sample.abs() >= threshold) {
-        isActive = true;
-        break;
+
+  if (!usesWindowedActivity) {
+    // Keep sample-level behavior for very short synthetic/test clips. Real
+    // microphone recordings use windowed RMS below so isolated ambient spikes
+    // cannot pin the speech boundary to the beginning or end of the capture.
+    for (var frame = 0; frame < measuredSignal.sampleFrames; frame += 1) {
+      var isActive = false;
+      for (var channel = 0; channel < layout.channels; channel += 1) {
+        final sampleIndex = frame * layout.channels + channel;
+        final sample = data.getInt16(
+          layout.dataOffset + sampleIndex * 2,
+          Endian.little,
+        );
+        if (sample.abs() >= threshold) {
+          isActive = true;
+          break;
+        }
+      }
+      if (isActive) {
+        firstActiveFrame ??= frame;
+        lastActiveFrame = frame;
       }
     }
-    if (isActive) {
-      firstActiveFrame ??= frame;
-      lastActiveFrame = frame;
+  } else {
+    for (
+      var windowStart = 0;
+      windowStart < measuredSignal.sampleFrames;
+      windowStart += activityWindowFrames
+    ) {
+      final windowEnd = math.min(
+        measuredSignal.sampleFrames,
+        windowStart + activityWindowFrames,
+      );
+      var sumSquares = 0.0;
+      var sampleCount = 0;
+      for (var frame = windowStart; frame < windowEnd; frame += 1) {
+        for (var channel = 0; channel < layout.channels; channel += 1) {
+          final sampleIndex = frame * layout.channels + channel;
+          final sample = data.getInt16(
+            layout.dataOffset + sampleIndex * 2,
+            Endian.little,
+          );
+          sumSquares += sample * sample;
+          sampleCount += 1;
+        }
+      }
+      final windowRms = sampleCount == 0
+          ? 0
+          : math.sqrt(sumSquares / sampleCount);
+      if (windowRms >= threshold) {
+        firstActiveFrame ??= windowStart;
+        lastActiveFrame = windowEnd - 1;
+      }
     }
   }
 
   if (firstActiveFrame == null || lastActiveFrame == null) {
     return null;
+  }
+  if (usesWindowedActivity) {
+    firstActiveFrame = math.max(0, firstActiveFrame - boundaryPaddingFrames);
+    lastActiveFrame = math.min(
+      measuredSignal.sampleFrames - 1,
+      lastActiveFrame + boundaryPaddingFrames,
+    );
   }
   if (firstActiveFrame == 0 &&
       lastActiveFrame == measuredSignal.sampleFrames - 1) {
