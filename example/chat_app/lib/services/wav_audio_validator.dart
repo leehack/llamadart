@@ -109,7 +109,10 @@ Uint8List? trimPcm16WavSilence(
   final threshold = math.max(minimumAmplitude, relativeThreshold);
   final data = ByteData.sublistView(bytes);
   final activityWindowFrames = math.max(1, measuredSignal.sampleRate ~/ 50);
-  final boundaryPaddingFrames = measuredSignal.sampleRate ~/ 12;
+  // Preserve enough context for soft initial and final phonemes around the
+  // first/last active windows. A very small boundary made short browser
+  // utterances more likely to lose consonant transitions before ASR.
+  final boundaryPaddingFrames = measuredSignal.sampleRate ~/ 4;
   final usesWindowedActivity =
       measuredSignal.sampleFrames >= activityWindowFrames * 2;
   int? firstActiveFrame;

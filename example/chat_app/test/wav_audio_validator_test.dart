@@ -58,7 +58,7 @@ void main() {
   });
 
   test('windowed trimming ignores isolated ambient boundary spikes', () {
-    const quietFrames = 3200;
+    const quietFrames = 8000;
     const speechFrames = 6400;
     final samples = <int>[
       ...List<int>.generate(
@@ -80,9 +80,9 @@ void main() {
     final signal = inspectPcm16WavSignal(trimmed!);
 
     expect(signal, isNotNull);
-    expect(signal!.durationSeconds, greaterThan(0.5));
-    expect(signal.durationSeconds, lessThan(0.65));
-    expect(signal.durationSeconds, lessThan(0.8));
+    expect(signal!.durationSeconds, greaterThan(0.85));
+    expect(signal.durationSeconds, lessThan(0.95));
+    expect(signal.durationSeconds, lessThan(1.4));
   });
 
   test('rejects a PCM16 WAV containing only quiet frames', () {
