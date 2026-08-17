@@ -9,7 +9,11 @@ import 'wav_audio_validator.dart';
 
 class _WebAudioRecordingService implements AudioRecordingService {
   static const Duration _captureWarmup = Duration(milliseconds: 500);
-  static const double _minimumDurationSeconds = 0.4;
+  // The published Qwen3-ASR Web runtime consistently returns an empty
+  // completion for clean utterances shorter than two seconds. Reject those
+  // captures before model generation so users get an actionable retry instead
+  // of waiting for two empty inference attempts.
+  static const double _minimumDurationSeconds = 2;
   static const int _minimumPeakAmplitude = 96;
   static const double _minimumRmsAmplitude = 20;
 
@@ -147,8 +151,9 @@ class _WebAudioRecordingService implements AudioRecordingService {
         web.URL.revokeObjectURL(url);
         throw const AudioRecordingException(
           AudioRecordingFailure.stopFailed,
-          'The microphone recording was too short. Speak a complete phrase '
-          'before choosing Stop & transcribe.',
+          'The microphone recording was too short. Record at least two '
+          'seconds and speak a complete phrase before choosing Stop & '
+          'transcribe.',
         );
       }
       if (signal.peakAmplitude < _minimumPeakAmplitude ||
