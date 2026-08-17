@@ -918,9 +918,7 @@ class SpeechToTextEngine {
       final output = StringBuffer();
       await for (final text in _engine!.generate(
         prompt,
-        parts: <LlamaContentPart>[
-          _contentFor(request.audio),
-        ],
+        parts: <LlamaContentPart>[_contentFor(request.audio)],
         params: GenerationParams(
           maxTokens: request.maxOutputTokens,
           temp: 0,
