@@ -23,6 +23,7 @@ class _WebAudioRecordingService implements AudioRecordingService {
   AudioRecorder? _recorder;
   String? _completedRecordingUrl;
   Uint8List? _completedRecordingBytes;
+  Uint8List? _completedUntrimmedRecordingBytes;
   bool _isRecording = false;
   bool _isDisposed = false;
 
@@ -179,6 +180,9 @@ class _WebAudioRecordingService implements AudioRecordingService {
       _revokeCompletedRecording();
       _completedRecordingUrl = url;
       _completedRecordingBytes = speechBytes;
+      _completedUntrimmedRecordingBytes = identical(speechBytes, bytes)
+          ? null
+          : bytes;
       return url;
     } on AudioRecordingException {
       rethrow;
@@ -197,6 +201,14 @@ class _WebAudioRecordingService implements AudioRecordingService {
         'Could not finish browser microphone recording.',
       );
     }
+  }
+
+  @override
+  Future<Uint8List?> readUntrimmedRecording(String path) async {
+    if (path != _completedRecordingUrl) {
+      return null;
+    }
+    return _completedUntrimmedRecordingBytes;
   }
 
   @override
@@ -247,6 +259,7 @@ class _WebAudioRecordingService implements AudioRecordingService {
     if (path == _completedRecordingUrl) {
       _completedRecordingUrl = null;
       _completedRecordingBytes = null;
+      _completedUntrimmedRecordingBytes = null;
     }
     if (path.startsWith('blob:')) {
       web.URL.revokeObjectURL(path);
@@ -281,6 +294,7 @@ class _WebAudioRecordingService implements AudioRecordingService {
     final url = _completedRecordingUrl;
     _completedRecordingUrl = null;
     _completedRecordingBytes = null;
+    _completedUntrimmedRecordingBytes = null;
     if (url != null && url.startsWith('blob:')) {
       web.URL.revokeObjectURL(url);
     }

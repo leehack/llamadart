@@ -2160,6 +2160,53 @@ void main() {
     },
   );
 
+  test(
+    'Web microphone retries an empty trimmed capture with original bytes',
+    () async {
+      if (!kIsWeb) {
+        return;
+      }
+      final engine = _SequencedSpeechMockLlamaEngine(const <List<String>>[
+        <String>[],
+        <String>['language English<asr_text>Recovered microphone.'],
+      ]);
+      final recorder = _FakeAudioRecordingService(
+        untrimmedRecordedBytes: Uint8List.fromList(const <int>[
+          0x52,
+          0x49,
+          0x46,
+          0x46,
+          0x01,
+        ]),
+      );
+      final provider = ChatProvider(
+        chatService: MockChatService(engine: engine),
+        audioRecordingService: recorder,
+        settingsService: MockSettingsService(),
+        initialSettings: const ChatSettings(
+          modelPath: 'Qwen3-ASR-0.6B-Q8_0.gguf',
+          mmprojPath: 'mmproj-Qwen3-ASR-0.6B-Q8_0.gguf',
+          modelSupportsSpeechToText: true,
+        ),
+      );
+      addTearDown(provider.dispose);
+      await provider.loadModel();
+
+      await provider.startAudioRecording();
+      await provider.stopAudioRecordingAndTranscribe();
+
+      expect(recorder.readCalls, 1);
+      expect(recorder.untrimmedReadCalls, 1);
+      expect(recorder.deletedPaths, <String>[recorder.recordedPath]);
+      expect(engine.createCalls, 2);
+      expect(engine.generatedAudioBytes, <Uint8List>[
+        recorder.recordedBytes,
+        recorder.untrimmedRecordedBytes!,
+      ]);
+      expect(provider.messages.last.text, 'Recovered microphone.');
+    },
+  );
+
   test('does not overlap a stopped transcription while it settles', () async {
     final engine = _BlockingSpeechMockLlamaEngine();
     final provider = ChatProvider(
@@ -2438,6 +2485,33 @@ class _SpeechMockLlamaEngine extends MockLlamaEngine {
         ? null
         : List<LlamaContentPart>.from(parts);
     for (final content in createChunkContents) {
+      yield content;
+    }
+  }
+}
+
+class _SequencedSpeechMockLlamaEngine extends _SpeechMockLlamaEngine {
+  _SequencedSpeechMockLlamaEngine(this.responses);
+
+  final List<List<String>> responses;
+  final List<Uint8List> generatedAudioBytes = <Uint8List>[];
+
+  @override
+  Stream<String> generate(
+    String prompt, {
+    GenerationParams params = const GenerationParams(),
+    List<LlamaContentPart>? parts,
+  }) async* {
+    final responseIndex = createCalls;
+    createCalls += 1;
+    lastCreateParams = params;
+    lastGenerateParts = parts == null
+        ? null
+        : List<LlamaContentPart>.from(parts);
+    generatedAudioBytes.add(
+      lastGenerateParts!.whereType<LlamaAudioContent>().single.bytes!,
+    );
+    for (final content in responses[responseIndex]) {
       yield content;
     }
   }
@@ -2747,10 +2821,12 @@ class _FakeAudioRecordingService implements AudioRecordingService {
     0x46,
     0x46,
   ]);
+  final Uint8List? untrimmedRecordedBytes;
 
   int startCalls = 0;
   int stopCalls = 0;
   int readCalls = 0;
+  int untrimmedReadCalls = 0;
   int cancelCalls = 0;
   int disposeCalls = 0;
   final List<String> deletedPaths = <String>[];
@@ -2764,6 +2840,7 @@ class _FakeAudioRecordingService implements AudioRecordingService {
     this.stopGate,
     this.readGate,
     this.cancelGate,
+    this.untrimmedRecordedBytes,
   });
 
   @override
@@ -2808,6 +2885,12 @@ class _FakeAudioRecordingService implements AudioRecordingService {
       throw error;
     }
     return recordedBytes;
+  }
+
+  @override
+  Future<Uint8List?> readUntrimmedRecording(String path) async {
+    untrimmedReadCalls += 1;
+    return untrimmedRecordedBytes;
   }
 
   @override
