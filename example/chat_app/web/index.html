@@ -223,10 +223,13 @@
       const patch = Number(match[3]);
       return major > 0 || minor > 1 || (minor === 1 && patch >= 30);
     }
+    const isOfficialBridgeAssetsRepo =
+      bridgeAssetsRepo === 'leehack/llama-web-bridge-assets';
     window.__llamadartBridgeSpeechToTextSupported =
       typeof window.__llamadartBridgeSpeechToTextSupported === 'boolean'
         ? window.__llamadartBridgeSpeechToTextSupported
-        : bridgeTagSupportsSpeechToText(bridgeAssetsTag);
+        : isOfficialBridgeAssetsRepo &&
+          bridgeTagSupportsSpeechToText(bridgeAssetsTag);
     window.__llamadartLiteRtLmModuleUrl =
       typeof window.__llamadartLiteRtLmModuleUrl === 'string' &&
       window.__llamadartLiteRtLmModuleUrl.length > 0

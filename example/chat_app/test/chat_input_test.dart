@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:dio/dio.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -2085,6 +2086,43 @@ void main() {
     expect(provider.canRegenerateLastResponse, isFalse);
   });
 
+  test('Web treats an extensionless selected speech file as WAV', () async {
+    if (!kIsWeb) {
+      return;
+    }
+    final filePicker = _FakeFilePicker(
+      FilePickerResult(<PlatformFile>[
+        PlatformFile(
+          name: 'speech-recording',
+          size: 4,
+          bytes: Uint8List.fromList(const <int>[0x52, 0x49, 0x46, 0x46]),
+        ),
+      ]),
+    );
+    FilePicker.platform = filePicker;
+    addTearDown(() => FilePicker.platform = _FakeFilePicker(null));
+
+    final engine = _SpeechMockLlamaEngine()
+      ..createChunkContents = const <String>['Extensionless WAV.'];
+    final provider = ChatProvider(
+      chatService: MockChatService(engine: engine),
+      settingsService: MockSettingsService(),
+      initialSettings: const ChatSettings(
+        modelPath: 'Qwen3-ASR-0.6B-Q8_0.gguf',
+        mmprojPath: 'mmproj-Qwen3-ASR-0.6B-Q8_0.gguf',
+        modelSupportsSpeechToText: true,
+      ),
+    );
+    addTearDown(provider.dispose);
+    await provider.loadModel();
+
+    await provider.pickAudioForTranscription();
+
+    expect(filePicker.allowedExtensions, <String>['wav']);
+    expect(filePicker.withData, isTrue);
+    expect(provider.messages.last.text, 'Extensionless WAV.');
+  });
+
   test(
     'Web microphone transcribes finalized WAV bytes and revokes the blob',
     () async {
@@ -2790,6 +2828,34 @@ class _FakeAudioRecordingService implements AudioRecordingService {
   @override
   Future<void> dispose() async {
     disposeCalls += 1;
+  }
+}
+
+class _FakeFilePicker extends FilePicker {
+  final FilePickerResult? result;
+  List<String>? allowedExtensions;
+  bool? withData;
+
+  _FakeFilePicker(this.result);
+
+  @override
+  Future<FilePickerResult?> pickFiles({
+    String? dialogTitle,
+    String? initialDirectory,
+    FileType type = FileType.any,
+    List<String>? allowedExtensions,
+    Function(FilePickerStatus)? onFileLoading,
+    bool allowCompression = false,
+    int compressionQuality = 0,
+    bool allowMultiple = false,
+    bool withData = false,
+    bool withReadStream = false,
+    bool lockParentWindow = false,
+    bool readSequential = false,
+  }) async {
+    this.allowedExtensions = allowedExtensions;
+    this.withData = withData;
+    return result;
   }
 }
 

@@ -1794,13 +1794,13 @@ class WebGpuLlamaBackend
     final tokenEventFlushChars = hasStopSequences
         ? null
         : (mediaParts == null ? 48 : 24);
-    final emittedOutputBytes = <int>[];
+    final emittedOutputBytes = hasStopSequences ? null : <int>[];
 
     void emitBytes(List<int> bytes) {
       if (bytes.isEmpty || controller.isClosed) {
         return;
       }
-      emittedOutputBytes.addAll(bytes);
+      emittedOutputBytes?.addAll(bytes);
       controller.add(bytes);
     }
 
@@ -1809,11 +1809,12 @@ class WebGpuLlamaBackend
     }
 
     bool emittedBytesArePrefixOf(List<int> bytes) {
-      if (emittedOutputBytes.length > bytes.length) {
+      final emittedBytes = emittedOutputBytes;
+      if (emittedBytes == null || emittedBytes.length > bytes.length) {
         return false;
       }
-      for (int index = 0; index < emittedOutputBytes.length; index++) {
-        if (emittedOutputBytes[index] != bytes[index]) {
+      for (int index = 0; index < emittedBytes.length; index++) {
+        if (emittedBytes[index] != bytes[index]) {
           return false;
         }
       }
@@ -1906,11 +1907,12 @@ class WebGpuLlamaBackend
             emitText(latestText.substring(emittedLength));
             emittedLength = latestText.length;
           } else if (!hasStopSequences) {
+            final emittedBytes = emittedOutputBytes!;
             final completionText = _jsValueAsString(completionResult);
             final finalBytes = utf8.encode(completionText ?? '');
             if (emittedBytesArePrefixOf(finalBytes) &&
-                emittedOutputBytes.length < finalBytes.length) {
-              emitBytes(finalBytes.sublist(emittedOutputBytes.length));
+                emittedBytes.length < finalBytes.length) {
+              emitBytes(finalBytes.sublist(emittedBytes.length));
             }
           }
         } catch (e, st) {

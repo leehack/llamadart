@@ -3413,7 +3413,7 @@ class ChatProvider extends ChangeNotifier {
           SpeechAudioBytesInput(
             bytes,
             format: SpeechAudioFormat(
-              encoding: extension.isEmpty ? null : extension,
+              encoding: extension.isEmpty ? 'wav' : extension,
             ),
           ),
           displayName: file.name,
