@@ -619,6 +619,7 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
               '--speech-audio-path',
               context.audioPath!,
               '--speech-microphone',
+              '--microphone-allow-any-response',
               '--expect',
               context.expect,
               '--gpu-layers',

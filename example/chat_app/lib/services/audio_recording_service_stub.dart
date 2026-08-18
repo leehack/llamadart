@@ -31,6 +31,9 @@ class _UnsupportedAudioRecordingService implements AudioRecordingService {
   }
 
   @override
+  Future<Uint8List?> readUntrimmedRecording(String path) async => null;
+
+  @override
   Future<void> cancel() async {}
 
   @override

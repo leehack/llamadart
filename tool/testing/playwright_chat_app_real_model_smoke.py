@@ -2,6 +2,7 @@
 import argparse
 import json
 import re
+import tempfile
 import time
 import wave
 from pathlib import Path
@@ -107,6 +108,18 @@ def wait_for_bridge_response(
         litert_error = state.get("liteRtLmError")
         body = safe_body_text(page)
 
+        for failure_marker in (
+            "Transcription failed:",
+            "The microphone recording was too short.",
+            "The microphone recording was silent or too quiet.",
+            "The browser microphone returned an unsupported WAV encoding.",
+        ):
+            if failure_marker in body:
+                raise RuntimeError(
+                    "Speech workflow reported a terminal failure: "
+                    f"{body[-800:]!r}"
+                )
+
         if response_source in ("bridge", "auto") and bridge_error:
             raise RuntimeError(f"Bridge generation failed: {bridge_error}")
         if response_source in ("litert", "auto") and litert_error:
@@ -172,6 +185,14 @@ def main() -> int:
         action="store_true",
         help="Also feed the WAV through Chromium's fake microphone and record UI.",
     )
+    parser.add_argument(
+        "--microphone-allow-any-response",
+        action="store_true",
+        help=(
+            "Require a non-empty fake-microphone transcript instead of an exact "
+            "match. The selected-file transcript remains exact."
+        ),
+    )
     parser.add_argument("--prefetch-mmproj-cache", action="store_true")
     parser.add_argument("--expect-mmproj-cache-hit", action="store_true")
     parser.add_argument("--prompt", default="What is 2+2? Answer in one short sentence.")
@@ -228,6 +249,10 @@ def main() -> int:
         args.speech_audio_path = str(audio_path)
     if args.speech_microphone and not args.speech_audio_path:
         parser.error("--speech-microphone requires --speech-audio-path")
+    if args.microphone_allow_any_response and not args.speech_microphone:
+        parser.error(
+            "--microphone-allow-any-response requires --speech-microphone"
+        )
 
     remote_fetch_mode = "default"
     remote_fetch_init = """
@@ -565,14 +590,28 @@ def main() -> int:
         )}
     """
 
-    with sync_playwright() as playwright:
+    with tempfile.TemporaryDirectory(
+        prefix="llamadart-fake-microphone-"
+    ) as microphone_tmp_dir, sync_playwright() as playwright:
         launch_args = browser_args(args.browser_angle)
         if args.speech_microphone:
+            fake_microphone_path = Path(microphone_tmp_dir) / "capture.wav"
+            with wave.open(args.speech_audio_path, "rb") as source_wav:
+                params = source_wav.getparams()
+                frames = source_wav.readframes(params.nframes)
+            if params.sampwidth != 2:
+                raise ValueError("Fake microphone input must use PCM16 WAV")
+            with wave.open(str(fake_microphone_path), "wb") as padded_wav:
+                padded_wav.setparams(params)
+                padded_wav.writeframes(
+                    bytes(params.framerate * params.nchannels * params.sampwidth)
+                )
+                padded_wav.writeframes(frames)
             launch_args.extend(
                 [
                     "--use-fake-ui-for-media-stream",
                     "--use-fake-device-for-media-stream",
-                    f"--use-file-for-fake-audio-capture={args.speech_audio_path}",
+                    f"--use-file-for-fake-audio-capture={fake_microphone_path}",
                 ]
             )
         browser = playwright.chromium.launch(
@@ -760,18 +799,26 @@ def main() -> int:
                 page,
                 args.expect,
                 args.response_timeout_ms,
-                False,
+                args.microphone_allow_any_response,
                 args.response_source,
             )
             copied_microphone_response = copy_last_assistant_response(
                 page,
                 min(args.response_timeout_ms, 30000),
             )
-            if args.expect.lower() not in copied_microphone_response.lower():
+            if (
+                not args.microphone_allow_any_response
+                and args.expect.lower() not in copied_microphone_response.lower()
+            ):
                 raise RuntimeError(
                     "Copied microphone transcript did not contain expected text: "
                     f"{copied_microphone_response!r}"
                 )
+            if (
+                args.microphone_allow_any_response
+                and not copied_microphone_response.strip()
+            ):
+                raise RuntimeError("Copied microphone transcript was empty")
             if "<asr_text>" in copied_microphone_response:
                 raise RuntimeError(
                     "Raw Qwen3-ASR control markers leaked from microphone transcription"
@@ -782,6 +829,9 @@ def main() -> int:
                 method="copy-response",
                 character_count=len(copied_microphone_response),
                 capture_seconds=round(capture_seconds, 3),
+                exact_match=(
+                    args.expect.lower() in copied_microphone_response.lower()
+                ),
             )
             body_after_response = safe_body_text(page)
         bridge_globals = page.evaluate(

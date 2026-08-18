@@ -57,6 +57,13 @@ abstract class AudioRecordingService {
   /// Reads a finalized temporary recording as encoded WAV bytes.
   Future<Uint8List> readRecording(String path);
 
+  /// Reads an alternate untrimmed WAV for recognition fallback, when present.
+  ///
+  /// Browser capture may trim device warmup and trailing silence before the
+  /// first recognition attempt. Implementations return `null` when no distinct
+  /// fallback representation is available.
+  Future<Uint8List?> readUntrimmedRecording(String path);
+
   /// Cancels the active recording and removes any partial file.
   Future<void> cancel();
 

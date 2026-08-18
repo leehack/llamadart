@@ -370,5 +370,68 @@ void main() {
       expect(engine.lastModelParams!.numberOfThreads, 4);
       expect(engine.lastModelParams!.numberOfThreadsBatch, 4);
     });
+
+    test('releases a partially loaded model after projector failure', () async {
+      final engine = _FailingProjectorEngine(Exception('unwind'));
+      final service = ChatService(engine: engine);
+
+      await expectLater(
+        service.init(
+          const ChatSettings(
+            modelPath: 'Qwen3-ASR-0.6B-Q8_0.gguf',
+            mmprojPath: 'mmproj-Qwen3-ASR-0.6B-Q8_0.gguf',
+          ),
+        ),
+        throwsA(isA<LlamaContextException>()),
+      );
+
+      expect(engine.unloadModelCalls, 1);
+      expect(engine.initialized, isFalse);
+    });
+
+    test('explains Web projector runtime failures', () async {
+      if (!kIsWeb) {
+        return;
+      }
+      final engine = _FailingProjectorEngine(Exception('unwind'));
+      final service = ChatService(engine: engine);
+
+      await expectLater(
+        service.loadMultimodalProjector(
+          'https://example.com/mmproj-Qwen3-ASR.gguf',
+        ),
+        throwsA(
+          isA<LlamaContextException>().having(
+            (error) => error.message,
+            'message',
+            allOf(
+              contains('WebAssembly memory'),
+              contains('Close other tabs'),
+              contains('tap Load model again'),
+            ),
+          ),
+        ),
+      );
+    });
   });
+}
+
+class _FailingProjectorEngine extends MockLlamaEngine {
+  _FailingProjectorEngine(this.projectorError);
+
+  final Object projectorError;
+  int unloadModelCalls = 0;
+
+  @override
+  Future<void> loadMultimodalProjector(String mmProjPath) async {
+    loadMultimodalProjectorCalls += 1;
+    lastLoadedMmprojPath = mmProjPath;
+    throw projectorError;
+  }
+
+  @override
+  Future<void> unloadModel() async {
+    unloadModelCalls += 1;
+    initialized = false;
+  }
 }

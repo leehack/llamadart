@@ -407,8 +407,8 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     mode: 'local-only',
     covers:
         'published WebGPU bridge, public typed STT API, Qwen3-ASR catalog, '
-        'browser-selected WAV bytes, fake-device microphone capture, and '
-        'rendered transcripts',
+        'exact browser-selected WAV transcription, non-empty fake-device '
+        'microphone transcription, and rendered transcripts',
     command:
         'dart run tool/testing/run_local_e2e.dart --scenario '
         'chat-app-web-speech-to-text-smoke --audio-path <speech.wav> '

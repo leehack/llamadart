@@ -3074,6 +3074,8 @@ class ChatProvider extends ChangeNotifier {
     try {
       if (kIsWeb) {
         final bytes = await _audioRecordingService.readRecording(path);
+        final untrimmedBytes = await _audioRecordingService
+            .readUntrimmedRecording(path);
         await transcribeAudio(
           SpeechAudioBytesInput(
             bytes,
@@ -3083,6 +3085,15 @@ class ChatProvider extends ChangeNotifier {
             ),
           ),
           displayName: 'Microphone recording',
+          fallbackAudio: untrimmedBytes == null
+              ? null
+              : SpeechAudioBytesInput(
+                  untrimmedBytes,
+                  format: const SpeechAudioFormat(
+                    encoding: 'wav',
+                    mimeType: 'audio/wav',
+                  ),
+                ),
         );
       } else {
         await transcribeAudio(
@@ -3462,6 +3473,7 @@ class ChatProvider extends ChangeNotifier {
   Future<void> transcribeAudio(
     SpeechAudioInput audio, {
     String? displayName,
+    SpeechAudioInput? fallbackAudio,
   }) async {
     if (_isGenerating ||
         _isTranscribing ||
@@ -3521,24 +3533,47 @@ class ChatProvider extends ChangeNotifier {
         _chatService.engine,
         modelProfile: SpeechToTextModelProfile.qwen3Asr,
       );
-      final task = await recognizer.transcribe(
-        SpeechToTextRequest(
-          audio: audio,
-          maxOutputTokens: math.min(1024, math.max(64, _settings.maxTokens)),
-        ),
-      );
-      _activeSpeechToTextTask = task;
-      if (!_isGenerating || conversationRevision != _conversationRevision) {
-        task.cancel();
+      Future<({SpeechToTextCompletion completion, SpeechToTextResult? result})>
+      runAttempt(SpeechAudioInput attemptAudio) async {
+        final task = await recognizer.transcribe(
+          SpeechToTextRequest(
+            audio: attemptAudio,
+            maxOutputTokens: math.min(1024, math.max(64, _settings.maxTokens)),
+          ),
+        );
+        _activeSpeechToTextTask = task;
+        if (!_isGenerating || conversationRevision != _conversationRevision) {
+          task.cancel();
+        }
+
+        SpeechToTextResult? result;
+        await for (final event in task.events) {
+          if (event is SpeechToTextFinalEvent) {
+            result = event.result;
+          }
+        }
+        return (completion: await task.done, result: result);
       }
 
-      SpeechToTextResult? result;
-      await for (final event in task.events) {
-        if (event is SpeechToTextFinalEvent) {
-          result = event.result;
-        }
+      var attempt = await runAttempt(audio);
+      var completion = attempt.completion;
+      var result = attempt.result;
+      var transcript = (result ?? completion.result)?.text.trim() ?? '';
+      if (completion.state == SpeechToTextCompletionState.completed &&
+          transcript.isEmpty &&
+          fallbackAudio != null &&
+          _isGenerating &&
+          conversationRevision == _conversationRevision) {
+        _logDart(
+          LlamaLogLevel.info,
+          'Retrying empty browser microphone transcription with the '
+          'untrimmed WAV.',
+        );
+        attempt = await runAttempt(fallbackAudio);
+        completion = attempt.completion;
+        result = attempt.result;
+        transcript = (result ?? completion.result)?.text.trim() ?? '';
       }
-      final completion = await task.done;
 
       if (conversationRevision != _conversationRevision) {
         return;
@@ -3553,7 +3588,6 @@ class ChatProvider extends ChangeNotifier {
         throw completion.error ?? LlamaSpeechException('Transcription failed.');
       }
 
-      final transcript = (result ?? completion.result)?.text.trim() ?? '';
       if (transcript.isEmpty) {
         throw LlamaSpeechException(
           'The model completed without returning transcript text.',

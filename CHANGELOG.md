@@ -1,5 +1,10 @@
 ## Unreleased
 
+* Improved Web microphone transcription by warming up browser capture before
+  showing the recording-ready state, trimming the warmup silence, and
+  rejecting too-short, silent, or unsupported PCM WAV captures before
+  inference.
+
 * Updated the default llama.cpp native runtime pin to
   `leehack/llamadart-native@b10453`, picking up llama.cpp fixes for a Granite
   Speech heap overflow, a DOTS OCR out-of-bounds write, and a Step3VL
@@ -54,7 +59,8 @@
   adapter profile for whole-file llama.cpp transcription. The Flutter chat
   example includes a SHA-256-verified Qwen3-ASR 0.6B preset plus separate
   **Transcribe Audio** and foreground microphone recording flows on native and
-  WebGPU. Web requires validated bridge assets `v0.1.30+`, accepts WAV bytes
+  WebGPU. Web requires validated bridge assets `v0.1.30+`, pins `v0.1.32` to
+  recover short speech that would otherwise terminate empty, accepts WAV bytes
   only, and remains separate from native LiteRT-LM live dictation. The native
   flow has been exercised on a physical Pixel with CPU inference and in the
   iOS Simulator.

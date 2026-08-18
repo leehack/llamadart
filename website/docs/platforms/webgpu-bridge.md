@@ -146,13 +146,13 @@ development validation, and CDN-first loading for normal hosted deployments:
 1. On localhost: local asset first, then CDN fallback.
 2. On hosted deployments: CDN asset first, then local fallback.
 
-The example currently pins bridge assets to `v0.1.30`, with local vendored assets
-identified as `v0.1.30-local-b10448`.
+The example currently pins bridge assets to `v0.1.32`, with local vendored assets
+identified as `v0.1.32-local-b10453`.
 
 Fetch pinned local assets with:
 
 ```bash
-WEBGPU_BRIDGE_ASSETS_TAG=v0.1.30 ./scripts/fetch_webgpu_bridge_assets.sh
+WEBGPU_BRIDGE_ASSETS_TAG=v0.1.32 ./scripts/fetch_webgpu_bridge_assets.sh
 ```
 
 To verify the loaded runtime in a browser console, inspect:
@@ -184,6 +184,9 @@ cannot report success before the bridge exposes `prefetchModelToCache(...)`.
   The public Web contract accepts WAV bytes only and still requires a loaded
   projector with a positive audio-capability probe. Direct and worker runtime
   smokes validate complete transcripts and cooperative cancellation.
+- `v0.1.32+` bridge assets recover valid short Qwen3-ASR speech when the model
+  initially emits only its end token, while preserving an empty transcript for
+  silence.
 - `v0.1.12+` bridge assets forward native-compatible `ModelParams` load
   tuning fields, including multi-sequence slots, KV cache type, flash attention,
   RoPE overrides, split mode, and main GPU.
@@ -314,7 +317,7 @@ You can override bridge asset source/version before loader startup:
 ```html
 <script>
   window.__llamadartBridgeAssetsRepo = 'leehack/llama-web-bridge-assets';
-  window.__llamadartBridgeAssetsTag = 'v0.1.30';
+  window.__llamadartBridgeAssetsTag = 'v0.1.32';
   // Custom assets stay speech-disabled unless the host has validated them:
   // window.__llamadartBridgeSpeechToTextSupported = true;
   // Prefer local runtime even off localhost:

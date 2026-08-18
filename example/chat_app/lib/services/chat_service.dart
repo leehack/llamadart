@@ -106,7 +106,25 @@ class ChatService {
     if (eagerLoadMultimodalProjector &&
         settings.mmprojPath != null &&
         settings.mmprojPath!.isNotEmpty) {
-      await loadMultimodalProjector(settings.mmprojPath!);
+      try {
+        await loadMultimodalProjector(settings.mmprojPath!);
+      } catch (error, stackTrace) {
+        // A projector failure happens after the text model is already loaded.
+        // Release that partial runtime so a retry starts with a fresh bridge
+        // instead of retaining a broken worker and another model-sized
+        // allocation.
+        if (_engine.isReady) {
+          try {
+            await _engine.unloadModel();
+          } catch (cleanupError) {
+            debugPrint(
+              'Failed to release model after multimodal projector error: '
+              '$cleanupError',
+            );
+          }
+        }
+        Error.throwWithStackTrace(error, stackTrace);
+      }
     }
   }
 
@@ -285,9 +303,26 @@ class ChatService {
       await _engine.loadMultimodalProjector(mmprojPath);
     } catch (e) {
       debugPrint("Failed to load multimodal projector: $e");
-      throw Exception(
+      final normalizedError = e.toString().toLowerCase();
+      final webRuntimeUnavailable =
+          kIsWeb &&
+          (normalizedError.contains('memory access out of bounds') ||
+              normalizedError.contains('out of memory') ||
+              normalizedError.contains('array buffer allocation failed') ||
+              normalizedError.contains('unwind'));
+      if (webRuntimeUnavailable) {
+        throw LlamaContextException(
+          'The browser multimodal runtime ran out of usable WebAssembly '
+          'memory or became invalid while loading the projector. Close other '
+          'tabs running local models, then tap Load model again or reload '
+          'this page.',
+          e,
+        );
+      }
+      throw LlamaContextException(
         'Failed to load multimodal projector ($mmprojPath). '
         'Please verify this mmproj matches the selected model.',
+        e,
       );
     }
   }

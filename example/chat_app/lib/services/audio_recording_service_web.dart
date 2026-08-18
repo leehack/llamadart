@@ -1,6 +1,6 @@
 import 'dart:js_interop';
-import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:record/record.dart';
 import 'package:web/web.dart' as web;
 
@@ -8,9 +8,22 @@ import 'audio_recording_service.dart';
 import 'wav_audio_validator.dart';
 
 class _WebAudioRecordingService implements AudioRecordingService {
+  static const Duration _captureWarmup = Duration(milliseconds: 500);
+  // The published Qwen3-ASR Web runtime consistently returns an empty
+  // completion for clean utterances shorter than two seconds. Reject those
+  // captures before model generation so users get an actionable retry instead
+  // of waiting for two empty inference attempts.
+  static const double _minimumDurationSeconds = 2;
+  static const int _minimumPeakAmplitude = 96;
+  // Chromium's input processing can produce isolated peaks in an otherwise
+  // silent room. Require sustained signal energy as well as a nonzero peak so
+  // ambient capture does not reach the ASR model and return an empty result.
+  static const double _minimumRmsAmplitude = 256;
+
   AudioRecorder? _recorder;
   String? _completedRecordingUrl;
   Uint8List? _completedRecordingBytes;
+  Uint8List? _completedUntrimmedRecordingBytes;
   bool _isRecording = false;
   bool _isDisposed = false;
 
@@ -53,10 +66,24 @@ class _WebAudioRecordingService implements AudioRecordingService {
           encoder: AudioEncoder.wav,
           sampleRate: 16000,
           numChannels: 1,
+          // Browser input levels vary substantially across built-in,
+          // Bluetooth, and continuity microphones. Apply the browser's
+          // speech-oriented gain and noise processing before the worklet
+          // converts the capture to PCM16. Echo cancellation stays disabled
+          // because the app does not play audio while recording and some
+          // browsers otherwise suppress nearby speech as playback leakage.
+          autoGain: true,
+          echoCancel: false,
+          noiseSuppress: true,
         ),
         path: '',
       );
       _isRecording = true;
+      // Keep the UI in its preparing state while Chromium connects the input
+      // stream to the AudioWorklet. Speaking during that startup window can
+      // clip the beginning of an utterance, which Qwen3-ASR may reject as an
+      // empty transcript.
+      await Future<void>.delayed(_captureWarmup);
     } on AudioRecordingException {
       rethrow;
     } catch (_) {
@@ -102,9 +129,60 @@ class _WebAudioRecordingService implements AudioRecordingService {
           'The microphone recording did not contain valid WAV audio.',
         );
       }
+      final capturedSignal = inspectPcm16WavSignal(bytes);
+      if (capturedSignal == null) {
+        web.URL.revokeObjectURL(url);
+        throw const AudioRecordingException(
+          AudioRecordingFailure.stopFailed,
+          'The browser microphone returned an unsupported WAV encoding. '
+          'Select a different input device or browser and try again.',
+        );
+      }
+      final speechBytes = trimPcm16WavSilence(bytes, signal: capturedSignal);
+      final signal = speechBytes == null
+          ? null
+          : inspectPcm16WavSignal(speechBytes);
+      if (signal == null) {
+        web.URL.revokeObjectURL(url);
+        throw const AudioRecordingException(
+          AudioRecordingFailure.stopFailed,
+          'The microphone recording was silent or too quiet. Check the '
+          'selected input device, speak closer to the microphone, and try '
+          'again.',
+        );
+      }
+      if (signal.durationSeconds < _minimumDurationSeconds) {
+        web.URL.revokeObjectURL(url);
+        throw const AudioRecordingException(
+          AudioRecordingFailure.stopFailed,
+          'The microphone recording was too short. Record at least two '
+          'seconds and speak a complete phrase before choosing Stop & '
+          'transcribe.',
+        );
+      }
+      if (signal.peakAmplitude < _minimumPeakAmplitude ||
+          signal.rmsAmplitude < _minimumRmsAmplitude) {
+        web.URL.revokeObjectURL(url);
+        throw const AudioRecordingException(
+          AudioRecordingFailure.stopFailed,
+          'The microphone recording was silent or too quiet. Check the '
+          'selected input device, speak closer to the microphone, and try '
+          'again.',
+        );
+      }
+      debugPrint(
+        'Browser microphone WAV: '
+        '${signal.durationSeconds.toStringAsFixed(2)} s, '
+        '${signal.sampleRate} Hz, ${signal.channels} channel(s), '
+        'peak ${signal.peakAmplitude}, '
+        'RMS ${signal.rmsAmplitude.toStringAsFixed(1)}.',
+      );
       _revokeCompletedRecording();
       _completedRecordingUrl = url;
-      _completedRecordingBytes = bytes;
+      _completedRecordingBytes = speechBytes;
+      _completedUntrimmedRecordingBytes = identical(speechBytes, bytes)
+          ? null
+          : bytes;
       return url;
     } on AudioRecordingException {
       rethrow;
@@ -123,6 +201,14 @@ class _WebAudioRecordingService implements AudioRecordingService {
         'Could not finish browser microphone recording.',
       );
     }
+  }
+
+  @override
+  Future<Uint8List?> readUntrimmedRecording(String path) async {
+    if (path != _completedRecordingUrl) {
+      return null;
+    }
+    return _completedUntrimmedRecordingBytes;
   }
 
   @override
@@ -173,6 +259,7 @@ class _WebAudioRecordingService implements AudioRecordingService {
     if (path == _completedRecordingUrl) {
       _completedRecordingUrl = null;
       _completedRecordingBytes = null;
+      _completedUntrimmedRecordingBytes = null;
     }
     if (path.startsWith('blob:')) {
       web.URL.revokeObjectURL(path);
@@ -207,6 +294,7 @@ class _WebAudioRecordingService implements AudioRecordingService {
     final url = _completedRecordingUrl;
     _completedRecordingUrl = null;
     _completedRecordingBytes = null;
+    _completedUntrimmedRecordingBytes = null;
     if (url != null && url.startsWith('blob:')) {
       web.URL.revokeObjectURL(url);
     }
