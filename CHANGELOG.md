@@ -59,7 +59,8 @@
   adapter profile for whole-file llama.cpp transcription. The Flutter chat
   example includes a SHA-256-verified Qwen3-ASR 0.6B preset plus separate
   **Transcribe Audio** and foreground microphone recording flows on native and
-  WebGPU. Web requires validated bridge assets `v0.1.30+`, accepts WAV bytes
+  WebGPU. Web requires validated bridge assets `v0.1.30+`, pins `v0.1.32` to
+  recover short speech that would otherwise terminate empty, accepts WAV bytes
   only, and remains separate from native LiteRT-LM live dictation. The native
   flow has been exercised on a physical Pixel with CPU inference and in the
   iOS Simulator.

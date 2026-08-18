@@ -108,6 +108,7 @@ void main() {
         contains('--speech-audio-path test/fixtures/speech.wav'),
       );
       expect(result.stdout, contains('--speech-microphone'));
+      expect(result.stdout, contains('--microphone-allow-any-response'));
       expect(result.stdout, contains("--expect 'Known transcript.'"));
     });
 

@@ -50,7 +50,8 @@ For canonical full release notes, use:
 
 - Added an experimental typed Qwen3-ASR whole-file transcription workflow, a
   SHA-256-verified Qwen3-ASR 0.6B native-and-Web chat-app preset, and foreground
-  microphone recording. WebGPU requires validated bridge assets `v0.1.30+`
+  microphone recording. WebGPU requires validated bridge assets `v0.1.30+`,
+  pins `v0.1.32` to recover short speech that would otherwise terminate empty,
   and accepts WAV bytes only; native LiteRT-LM live dictation remains a
   separate implementation.
 

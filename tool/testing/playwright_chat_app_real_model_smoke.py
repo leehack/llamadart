@@ -185,6 +185,14 @@ def main() -> int:
         action="store_true",
         help="Also feed the WAV through Chromium's fake microphone and record UI.",
     )
+    parser.add_argument(
+        "--microphone-allow-any-response",
+        action="store_true",
+        help=(
+            "Require a non-empty fake-microphone transcript instead of an exact "
+            "match. The selected-file transcript remains exact."
+        ),
+    )
     parser.add_argument("--prefetch-mmproj-cache", action="store_true")
     parser.add_argument("--expect-mmproj-cache-hit", action="store_true")
     parser.add_argument("--prompt", default="What is 2+2? Answer in one short sentence.")
@@ -241,6 +249,10 @@ def main() -> int:
         args.speech_audio_path = str(audio_path)
     if args.speech_microphone and not args.speech_audio_path:
         parser.error("--speech-microphone requires --speech-audio-path")
+    if args.microphone_allow_any_response and not args.speech_microphone:
+        parser.error(
+            "--microphone-allow-any-response requires --speech-microphone"
+        )
 
     remote_fetch_mode = "default"
     remote_fetch_init = """
@@ -787,18 +799,26 @@ def main() -> int:
                 page,
                 args.expect,
                 args.response_timeout_ms,
-                False,
+                args.microphone_allow_any_response,
                 args.response_source,
             )
             copied_microphone_response = copy_last_assistant_response(
                 page,
                 min(args.response_timeout_ms, 30000),
             )
-            if args.expect.lower() not in copied_microphone_response.lower():
+            if (
+                not args.microphone_allow_any_response
+                and args.expect.lower() not in copied_microphone_response.lower()
+            ):
                 raise RuntimeError(
                     "Copied microphone transcript did not contain expected text: "
                     f"{copied_microphone_response!r}"
                 )
+            if (
+                args.microphone_allow_any_response
+                and not copied_microphone_response.strip()
+            ):
+                raise RuntimeError("Copied microphone transcript was empty")
             if "<asr_text>" in copied_microphone_response:
                 raise RuntimeError(
                     "Raw Qwen3-ASR control markers leaked from microphone transcription"
@@ -809,6 +829,9 @@ def main() -> int:
                 method="copy-response",
                 character_count=len(copied_microphone_response),
                 capture_seconds=round(capture_seconds, 3),
+                exact_match=(
+                    args.expect.lower() in copied_microphone_response.lower()
+                ),
             )
             body_after_response = safe_body_text(page)
         bridge_globals = page.evaluate(
