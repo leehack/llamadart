@@ -43,8 +43,9 @@ For canonical full release notes, use:
   synthesize workflow with file or microphone speaker references, automatic
   playback, replay, and WAV export in the Flutter chat example. Web accepts
   byte-backed speaker references and complete PCM/WAV output, with a bounded
-  example-app utterance length for browser stability; current LiteRT-LM
-  artifacts remain unsupported.
+  example-app utterance length for browser stability. The example pins bridge
+  assets `v0.1.34`, which retry a failed worker WebGPU synthesis once on CPU;
+  current LiteRT-LM artifacts remain unsupported.
 
 - Updated the native llama.cpp runtime to `b10453`, consuming the Granite
   Speech heap-overflow, DOTS OCR out-of-bounds, and Step3VL divide-by-zero
@@ -54,7 +55,7 @@ For canonical full release notes, use:
 - Added an experimental typed Qwen3-ASR whole-file transcription workflow, a
   SHA-256-verified Qwen3-ASR 0.6B native-and-Web chat-app preset, and foreground
   microphone recording. WebGPU requires validated bridge assets `v0.1.30+`,
-  pins `v0.1.33` with the `v0.1.32` short-speech recovery,
+  pins `v0.1.34` with the `v0.1.32` short-speech recovery,
   and accepts WAV bytes only; native LiteRT-LM live dictation remains a
   separate implementation.
 

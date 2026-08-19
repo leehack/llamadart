@@ -55,13 +55,15 @@
   with file or microphone speaker references, automatic playback, replay, and
   WAV save controls. Web accepts byte-backed speaker references and complete
   PCM/WAV output, with a bounded example-app utterance length for browser
-  stability; current LiteRT-LM artifacts fail explicitly as unsupported.
+  stability. The example pins bridge assets `v0.1.34`, which retry a failed
+  worker WebGPU synthesis once on CPU; current LiteRT-LM artifacts fail
+  explicitly as unsupported.
 
 * Added an experimental typed `SpeechToTextEngine` with an explicit Qwen3-ASR
   adapter profile for whole-file llama.cpp transcription. The Flutter chat
   example includes a SHA-256-verified Qwen3-ASR 0.6B preset plus separate
   **Transcribe Audio** and foreground microphone recording flows on native and
-  WebGPU. Web requires validated bridge assets `v0.1.30+`, pins `v0.1.33` (with
+  WebGPU. Web requires validated bridge assets `v0.1.30+`, pins `v0.1.34` (with
   the short-speech recovery introduced in `v0.1.32`) to
   recover short speech that would otherwise terminate empty, accepts WAV bytes
   only, and remains separate from native LiteRT-LM live dictation. The native
