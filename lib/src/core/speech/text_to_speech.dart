@@ -22,6 +22,9 @@ enum TextToSpeechImplementation {
 
   /// Dedicated native audio generation through llama.cpp mtmd.
   nativeAudioGeneration,
+
+  /// Complete audio generation through the WebGPU bridge.
+  webAudioGeneration,
 }
 
 /// A request to synthesize one complete utterance.
@@ -38,7 +41,7 @@ class TextToSpeechRequest {
 
   /// Optional encoded speaker-reference audio.
   ///
-  /// File and in-memory inputs are supported on the first native backend.
+  /// Native backends accept files and bytes. Web accepts encoded bytes only.
   final SpeechAudioInput? speakerReference;
 
   /// Maximum number of audio-codec frames to generate.
@@ -59,10 +62,10 @@ class TextToSpeechRequest {
   /// Sampling temperature.
   final double temperature;
 
-  /// Random seed. `0xffffffff` requests the native random default.
+  /// Random seed. `0xffffffff` requests the runtime's random default.
   final int seed;
 
-  /// Creates a text-to-speech request using native Qwen3-TTS defaults.
+  /// Creates a text-to-speech request using Qwen3-TTS defaults.
   const TextToSpeechRequest({
     required this.text,
     this.language,
@@ -109,13 +112,13 @@ class TextToSpeechCapabilities {
   /// Whether speaker-reference audio can be supplied.
   final bool supportsSpeakerReference;
 
-  /// Whether PCM can be emitted while native synthesis is still running.
+  /// Whether PCM can be emitted while synthesis is still running.
   final bool supportsIncrementalAudio;
 
   /// Whether an active task can be cancelled cooperatively.
   final bool supportsCancellation;
 
-  /// Whether pausing the event subscription throttles native synthesis.
+  /// Whether pausing the event subscription throttles synthesis.
   final bool supportsOutputBackpressure;
 
   /// Maximum number of typed speech tasks per underlying engine.
@@ -263,7 +266,7 @@ class TextToSpeechProgressEvent extends TextToSpeechEvent {
   });
 }
 
-/// Final PCM event emitted after native generation completes.
+/// Final PCM event emitted after generation completes.
 class TextToSpeechFinalEvent extends TextToSpeechEvent {
   /// Complete synthesis result.
   final TextToSpeechResult result;
@@ -340,8 +343,8 @@ class TextToSpeechTask {
   /// Progress followed by one final PCM event.
   ///
   /// This is a single-subscription stream. Runtime failures are emitted as a
-  /// stream error and are also reported by [done]. Current native synthesis
-  /// exposes PCM only after generation completes; progress is not live audio.
+  /// stream error and are also reported by [done]. Current synthesis exposes
+  /// PCM only after generation completes; progress is not live audio.
   Stream<TextToSpeechEvent> get events => _eventsController.stream;
 
   /// Completes once the task succeeds, is cancelled, or fails.
@@ -362,9 +365,10 @@ class TextToSpeechTask {
 
 /// Typed text-to-speech API backed by a loaded [LlamaEngine].
 ///
-/// The first implementation supports Qwen3-TTS on native llama.cpp with its
-/// matching audio-generation projector. It reports progress and cancellation,
-/// but PCM becomes available only after native generation has completed.
+/// Supports Qwen3-TTS on native llama.cpp and compatible WebGPU bridge
+/// runtimes with the matching audio-generation projector. It reports progress
+/// and cancellation, but PCM becomes available only after generation has
+/// completed.
 class TextToSpeechEngine {
   static const String _leaseOwner = 'text-to-speech';
   static const Map<String, String> _qwen3LanguageAliases = <String, String>{
@@ -417,7 +421,7 @@ class TextToSpeechEngine {
     try {
       backendName = await _engine.getBackendName();
     } catch (_) {
-      // The native capability result remains actionable without this label.
+      // The capability result remains actionable without this label.
     }
 
     BackendTextToSpeechCapabilities backendCapabilities;
@@ -450,12 +454,14 @@ class TextToSpeechEngine {
     return TextToSpeechCapabilities(
       isSupported: true,
       backendName: backendName,
-      implementation: TextToSpeechImplementation.nativeAudioGeneration,
+      implementation: textToSpeechSupportsFileInput
+          ? TextToSpeechImplementation.nativeAudioGeneration
+          : TextToSpeechImplementation.webAudioGeneration,
       sampleRateHz: backendCapabilities.sampleRateHz,
       channelCount: backendCapabilities.channelCount,
       speakerReferenceInputKinds: backendCapabilities.supportsSpeakerReference
           ? const <SpeechAudioInputKind>{
-              SpeechAudioInputKind.file,
+              if (textToSpeechSupportsFileInput) SpeechAudioInputKind.file,
               SpeechAudioInputKind.encodedBytes,
             }
           : const <SpeechAudioInputKind>{},
@@ -474,7 +480,7 @@ class TextToSpeechEngine {
   /// Starts one complete synthesis task.
   ///
   /// Invalid input and unsupported preflight checks throw before the task is
-  /// returned. Failures after native startup are reported through the task.
+  /// returned. Failures after backend startup are reported through the task.
   Future<TextToSpeechTask> synthesize(TextToSpeechRequest request) async {
     _validateRequest(request);
     if (!_engineLease.acquire(_leaseOwner)) {
@@ -551,6 +557,12 @@ class TextToSpeechEngine {
         if (path.trim().isEmpty) {
           throw LlamaAudioFormatException(
             'Speaker reference file path must not be empty.',
+          );
+        }
+        if (!textToSpeechSupportsFileInput) {
+          throw LlamaUnsupportedException(
+            'Web text-to-speech speaker references require encoded bytes; '
+            'browser runtimes cannot read local file paths.',
           );
         }
       case SpeechAudioBytesInput(:final bytes):

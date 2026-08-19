@@ -529,11 +529,28 @@ class DownloadableModel {
         sha256:
             '6fd65188839bcd6ecc91b277ad471e22a0edfada4699a0fe82f1165c18cfcce2',
       ),
+      webModelSource: const RemoteModelAssetSource(
+        url:
+            'https://huggingface.co/ggml-org/Qwen3-TTS-12Hz-1.7B-Base-GGUF/resolve/ca27d74bc954b73dadab5b71ca265d87fc861a7c/Qwen3-TTS-12Hz-1.7B-Base-Q4_K_M.gguf',
+        filename: 'Qwen3-TTS-12Hz-1.7B-Base-Q4_K_M.gguf',
+        sizeBytes: 1035965280,
+        sha256:
+            '8d18c94acb2addd042f97da63c98be144eafa76d0d9495177eab65130cf85129',
+      ),
+      webMultimodalProjectorSource: const RemoteModelAssetSource(
+        url:
+            'https://huggingface.co/ggml-org/Qwen3-TTS-12Hz-1.7B-Base-GGUF/resolve/ca27d74bc954b73dadab5b71ca265d87fc861a7c/mmproj-Qwen3-TTS-12Hz-1.7B-Base-Q8_0.gguf',
+        filename: 'mmproj-Qwen3-TTS-12Hz-1.7B-Base-Q8_0.gguf',
+        sizeBytes: 446422912,
+        sha256:
+            '6fd65188839bcd6ecc91b277ad471e22a0edfada4699a0fe82f1165c18cfcce2',
+      ),
       sizeBytes: 1482388192,
+      webSizeBytes: 1482388192,
       supportsTextToSpeech: true,
-      webSupportsTextToSpeech: false,
+      webSupportsTextToSpeech: true,
       distribution: 'ggml-org',
-      availability: ModelAvailability.nativeDesktop,
+      availability: ModelAvailability.all,
       minRamGb: 6,
       preset: const ModelPreset(
         temperature: 0.8,

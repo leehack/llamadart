@@ -45,6 +45,14 @@ extension type LlamaWebGpuBridge._(JSObject _) implements JSObject {
   /// Returns whether loaded projector supports audio.
   external bool? supportsAudio();
 
+  /// Returns dedicated text-to-speech capabilities for the loaded projector.
+  external JSPromise<JSAny?>? getTextToSpeechCapabilities();
+
+  /// Synthesizes one complete speech buffer.
+  external JSPromise<JSAny?>? synthesizeSpeech(
+    WebGpuTextToSpeechOptions options,
+  );
+
   /// Tokenizes text.
   external JSPromise<JSAny>? tokenize(String text, [bool? addSpecial]);
 
@@ -195,4 +203,25 @@ extension type WebGpuCompletionOptions._(JSObject _) implements JSObject {
 extension type WebGpuEmbeddingOptions._(JSObject _) implements JSObject {
   /// Creates embedding options.
   external factory WebGpuEmbeddingOptions({bool? normalize});
+}
+
+/// Dedicated text-to-speech options accepted by the WebGPU bridge.
+@JS()
+@anonymous
+extension type WebGpuTextToSpeechOptions._(JSObject _) implements JSObject {
+  /// Creates a complete synthesis request.
+  external factory WebGpuTextToSpeechOptions({
+    required String text,
+    String? language,
+    JSUint8Array? speakerAudio,
+    int? promptBatchSize,
+    int? maxFrames,
+    int? topK,
+    double? topP,
+    double? minP,
+    double? temperature,
+    int? seed,
+    JSAny? signal,
+    JSFunction? onProgress,
+  });
 }

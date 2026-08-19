@@ -190,7 +190,7 @@ abstract class BackendPromptSpeechToTextSupport {
   String? get promptSpeechToTextUnsupportedReason;
 }
 
-/// Model family reported by a backend-native text-to-speech implementation.
+/// Model family reported by a backend text-to-speech implementation.
 enum BackendTextToSpeechModel {
   /// Qwen3-TTS audio generation through llama.cpp mtmd.
   qwen3Tts,
@@ -355,8 +355,8 @@ abstract class BackendTextToSpeech {
 
   /// Synthesizes one complete utterance.
   ///
-  /// Current native implementations return PCM only after generation has
-  /// completed. [onProgress] does not imply incremental audio output.
+  /// Current implementations return PCM only after generation has completed.
+  /// [onProgress] does not imply incremental audio output.
   Future<BackendTextToSpeechResult> synthesizeTextToSpeech(
     int contextHandle,
     int mmContextHandle,

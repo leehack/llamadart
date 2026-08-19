@@ -22,8 +22,8 @@ explicitly selects the Qwen3-ASR profile and the loaded projector reports audio
 capability. Native accepts WAV, MP3, and FLAC file or byte inputs. WebGPU bridge
 assets `v0.1.30+` opt into the validated Qwen3-ASR path with WAV bytes only;
 older or custom runtimes stay unsupported unless the host explicitly declares
-the capability. Native llama.cpp
-also exposes experimental Qwen3-TTS synthesis through the separate typed
+the capability. Native llama.cpp and WebGPU bridge assets `v0.1.33+` also expose
+experimental Qwen3-TTS synthesis through the separate typed
 [`TextToSpeechEngine`](../guides/text-to-speech). Native LiteRT-LM v0.16 also
 supports experimental CPU-only streaming ASR through
 `SpeechToTextEngine.liteRtLm`, with the native session owned by a worker

@@ -105,6 +105,7 @@ class ChatProvider extends ChangeNotifier {
     milliseconds: 220,
   );
   static const int _multimodalMaxImageEdge = 384;
+  static const int _webTextToSpeechMaxFrames = 96;
 
   /// The maximum microphone recording length before automatic transcription.
   static const Duration maxAudioRecordingDuration = Duration(minutes: 5);
@@ -328,7 +329,7 @@ class ChatProvider extends ChangeNotifier {
   /// Latest complete synthesized audio for the active conversation and model.
   TextToSpeechResult? get textToSpeechResult => _textToSpeechResult;
 
-  /// Latest synthesis progress reported by the native runtime.
+  /// Latest synthesis progress reported by the active runtime.
   TextToSpeechProgressEvent? get textToSpeechProgress => _textToSpeechProgress;
 
   /// Latest actionable text-to-speech failure.
@@ -395,8 +396,7 @@ class ChatProvider extends ChangeNotifier {
       _settings.modelSupportsSpeechToText;
 
   /// Whether the selected profile exposes the dedicated synthesis experience.
-  bool get supportsTextToSpeech =>
-      !kIsWeb && _settings.modelSupportsTextToSpeech;
+  bool get supportsTextToSpeech => _settings.modelSupportsTextToSpeech;
 
   /// Whether a new utterance can be synthesized now.
   bool get canSynthesizeSpeech =>
@@ -3659,8 +3659,8 @@ class ChatProvider extends ChangeNotifier {
 
   /// Synthesizes [text] with the selected dedicated text-to-speech model.
   ///
-  /// The current native runtime reports progress while generating, then makes
-  /// one complete PCM buffer available for playback or WAV export.
+  /// The active runtime reports progress while generating, then makes one
+  /// complete PCM buffer available for playback or WAV export.
   Future<bool> synthesizeSpeech(
     String text, {
     String? language,
@@ -3702,7 +3702,12 @@ class ChatProvider extends ChangeNotifier {
               ? null
               : language!.trim(),
           speakerReference: speakerReference,
-          maxFrames: _settings.maxTokens.clamp(1, 4096).toInt(),
+          maxFrames: kIsWeb
+              ? math.min(
+                  _settings.maxTokens.clamp(1, 4096).toInt(),
+                  _webTextToSpeechMaxFrames,
+                )
+              : _settings.maxTokens.clamp(1, 4096).toInt(),
           topK: _settings.topK.clamp(1, 1000).toInt(),
           topP: _settings.topP.clamp(0.000001, 1).toDouble(),
           minP: _settings.minP.clamp(0, 1).toDouble(),
@@ -3756,7 +3761,7 @@ class ChatProvider extends ChangeNotifier {
       if (_textToSpeechContextMatches(context)) {
         _textToSpeechError = error is LlamaUnsupportedException
             ? error.message
-            : 'Speech synthesis failed: ${_formatDisplayError(error)}';
+            : _formatTextToSpeechError(error);
       }
       return false;
     } finally {
@@ -3786,6 +3791,16 @@ class ChatProvider extends ChangeNotifier {
         }
       }
     }
+  }
+
+  String _formatTextToSpeechError(Object error) {
+    final displayError = _formatDisplayError(error);
+    if (kIsWeb && displayError.contains('Aborted()')) {
+      return 'WebGPU speech synthesis stopped, usually because the browser '
+          'lost its GPU device or ran out of memory. Close other GPU-heavy '
+          'tabs, reload the model, and retry a shorter sentence.';
+    }
+    return 'Speech synthesis failed: $displayError';
   }
 
   /// Cancels an active text-to-speech task.

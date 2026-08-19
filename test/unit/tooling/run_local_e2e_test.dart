@@ -43,6 +43,7 @@ void main() {
       expect(result.stdout, contains('chat-app-model-cache'));
       expect(result.stdout, contains('chat-app-web-real-model-smoke'));
       expect(result.stdout, contains('chat-app-web-speech-to-text-smoke'));
+      expect(result.stdout, contains('chat-app-web-text-to-speech-smoke'));
       expect(result.stdout, contains('chat-app-web-mock-smoke'));
       expect(result.stdout, contains('chat-app-web-litert-gemma4-smoke'));
       expect(result.stdout, contains('bridge-smoke'));
@@ -122,6 +123,42 @@ void main() {
       expect(result.exitCode, 64);
       expect(result.stderr, contains('--audio-path'));
       expect(result.stderr, contains('--expect'));
+    });
+
+    test('dry-runs Web Qwen3-TTS synthesis and WAV export', () async {
+      final result = await runLocalE2e(const [
+        '--scenario',
+        'chat-app-web-text-to-speech-smoke',
+        '--model-url',
+        'https://example.com/qwen-tts.gguf',
+        '--mmproj-url',
+        'https://example.com/qwen-tts-mmproj.gguf',
+        '--audio-path',
+        'test/fixtures/speaker.wav',
+        '--skip-build',
+        '--python',
+        '/custom/python',
+        '--dry-run',
+      ], projectRoot: '/repo');
+
+      expect(result.exitCode, 0);
+      expect(result.stdout, contains('validate_chat_app_web_build.sh'));
+      expect(
+        result.stdout,
+        contains('playwright_chat_app_text_to_speech_smoke.py'),
+      );
+      expect(
+        result.stdout,
+        contains('--model-url https://example.com/qwen-tts.gguf'),
+      );
+      expect(
+        result.stdout,
+        contains('--mmproj-url https://example.com/qwen-tts-mmproj.gguf'),
+      );
+      expect(
+        result.stdout,
+        contains('--speaker-audio-path test/fixtures/speaker.wav'),
+      );
     });
 
     test(

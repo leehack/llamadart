@@ -97,12 +97,15 @@ flutter test
   timestamp, confidence, or live-partial contract. Qwen3-ASR keeps the separate
   five-minute **Stop & transcribe** workflow and takes precedence for ASR
   profiles.
-- A dedicated native-desktop Qwen3-TTS mode backed by `TextToSpeechEngine`.
+- A dedicated cross-platform Qwen3-TTS mode backed by `TextToSpeechEngine`.
   Type an utterance, optionally choose a language and select or record
   speaker-reference audio, then cancel synthesis, automatically play the
   completed 24 kHz mono output, replay it, or save it as a WAV file. This is
   separate from chat generation and does not automatically read assistant
-  responses aloud.
+  responses aloud. Web uses bridge assets `v0.1.33+`, accepts selected speaker
+  references as bytes, and does not record speaker references. The Web example
+  limits one utterance to 96 codec frames (about 7.7 seconds) to bound browser
+  memory and generation time, and labels output that reaches that limit.
 - The voice-question UI is code-supported on Android, iOS, macOS, and Windows
   when the selected native profile declares direct audio input or the loaded
   projector reports audio support; Linux recording and Web are excluded. That
@@ -134,8 +137,9 @@ flutter test
 The built-in library is intentionally small and Unsloth-first:
 
 - Cross-platform: FunctionGemma 270M, Qwen3.5 0.8B, Qwen3-ASR 0.6B,
+  Qwen3-TTS 1.7B Base,
   Gemma 4 E2B GGUF, Gemma 4 E2B LiteRT-LM, and Gemma 4 E4B GGUF.
-- Native desktop: Qwen3-TTS 1.7B Base, Gemma 4 12B, Gemma 4 26B A4B,
+- Native desktop: Gemma 4 12B, Gemma 4 26B A4B,
   Gemma 4 31B, and Qwen3.6 35B A3B.
 
 GGUF chat presets use [Unsloth distributions](https://huggingface.co/unsloth).
@@ -152,12 +156,11 @@ Model cards prioritize size, RAM, compatibility, capabilities, cache state, and
 the primary download/load action. Recommended context and output limits remain
 visible without repeating every sampling parameter on every card.
 
-Availability filters match each preset's platform restrictions. The Qwen3-ASR
-preset appears under native and **Web** with its validated platform-specific
-input contract, while Qwen3-TTS and the largest native models remain
-**Desktop** only. The first TTS
-catalog scope reflects macOS CPU/Metal real-model evidence; other native targets
-still require packaged-runtime validation.
+Availability filters match each preset's platform restrictions. Qwen3-ASR and
+Qwen3-TTS appear under native and **Web** with their validated platform-specific
+input contracts, while the largest native models remain **Desktop** only.
+Web Qwen3-TTS requires bridge assets `v0.1.33+`, memory64, and enough browser
+memory for the roughly 1.48 GB model/projector pair.
 
 The complete Qwen3-ASR model/projector, microphone, and final-transcript flow
 has passed on a physical Pixel using CPU inference and in the iOS Simulator.

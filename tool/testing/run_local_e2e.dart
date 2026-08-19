@@ -145,6 +145,10 @@ class LocalE2eRunContext {
       'https://huggingface.co/ggml-org/Qwen3-ASR-0.6B-GGUF/resolve/928ab958557df9aa2ef1c93e0e83c7ad0933fae2/Qwen3-ASR-0.6B-Q8_0.gguf';
   String get defaultQwen3AsrWebMmprojUrl =>
       'https://huggingface.co/ggml-org/Qwen3-ASR-0.6B-GGUF/resolve/928ab958557df9aa2ef1c93e0e83c7ad0933fae2/mmproj-Qwen3-ASR-0.6B-Q8_0.gguf';
+  String get defaultQwen3TtsWebModelUrl =>
+      'https://huggingface.co/ggml-org/Qwen3-TTS-12Hz-1.7B-Base-GGUF/resolve/ca27d74bc954b73dadab5b71ca265d87fc861a7c/Qwen3-TTS-12Hz-1.7B-Base-Q4_K_M.gguf';
+  String get defaultQwen3TtsWebMmprojUrl =>
+      'https://huggingface.co/ggml-org/Qwen3-TTS-12Hz-1.7B-Base-GGUF/resolve/ca27d74bc954b73dadab5b71ca265d87fc861a7c/mmproj-Qwen3-TTS-12Hz-1.7B-Base-Q8_0.gguf';
 }
 
 class LocalE2eScenario {
@@ -640,6 +644,51 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       },
     ),
     LocalE2eScenario(
+      name: 'chat-app-web-text-to-speech-smoke',
+      group: LocalE2eScenarioGroup.webSmoke,
+      description:
+          'Build chat_app web, synthesize Qwen3-TTS audio, autoplay it, and '
+          'export a validated WAV.',
+      requiresDevice: false,
+      stepsBuilder: (context) {
+        final steps = <LocalE2eCommandStep>[_prepareChatAppWebBuild(context)];
+        steps.addAll([
+          LocalE2eCommandStep(
+            workingDirectory: context.projectRoot,
+            executable: context.python,
+            arguments: [
+              'tool/testing/serve_static_with_headers.py',
+              '--directory',
+              '.',
+              '--port',
+              '${context.port}',
+            ],
+            description: 'Serve repo root with COOP/COEP headers',
+            background: true,
+            waitForPort: context.port,
+          ),
+          LocalE2eCommandStep(
+            workingDirectory: context.projectRoot,
+            executable: context.python,
+            arguments: [
+              'tool/testing/playwright_chat_app_text_to_speech_smoke.py',
+              context.webBuildUrl,
+              '--model-url',
+              context.modelUrl ?? context.defaultQwen3TtsWebModelUrl,
+              '--mmproj-url',
+              context.mmprojUrl ?? context.defaultQwen3TtsWebMmprojUrl,
+              if (context.audioPath != null) ...[
+                '--speaker-audio-path',
+                context.audioPath!,
+              ],
+            ],
+            description: 'Run Playwright Qwen3-TTS Web speech smoke',
+          ),
+        ]);
+        return steps;
+      },
+    ),
+    LocalE2eScenario(
       name: 'chat-app-web-mock-smoke',
       group: LocalE2eScenarioGroup.webSmoke,
       description:
@@ -882,6 +931,7 @@ Future<LocalE2eResult> runLocalE2e(
     'litert-lm-asr-smoke',
     'litert-lm-chat-features-smoke',
     'chat-app-web-speech-to-text-smoke',
+    'chat-app-web-text-to-speech-smoke',
   };
   if (parsed.audioPath != null && !audioPathScenarios.contains(scenario.name)) {
     return LocalE2eResult(

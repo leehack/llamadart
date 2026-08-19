@@ -8,5 +8,6 @@ void main() {
   test('native platform enables typed text-to-speech', () {
     expect(isTextToSpeechPlatformSupported, isTrue);
     expect(textToSpeechPlatformUnsupportedReason, isEmpty);
+    expect(textToSpeechSupportsFileInput, isTrue);
   });
 }
