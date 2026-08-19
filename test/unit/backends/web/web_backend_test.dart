@@ -64,6 +64,25 @@ void main() {
     },
   );
 
+  test('WebAutoBackend throws typed unsupported TTS errors', () {
+    final backend = WebAutoBackend(webBackend: _NoStateBackend());
+
+    expect(
+      () => backend.synthesizeTextToSpeech(
+        3,
+        4,
+        const BackendTextToSpeechRequest(text: 'Hello'),
+      ),
+      throwsA(
+        isA<LlamaUnsupportedException>().having(
+          (error) => error.message,
+          'message',
+          contains('active Web runtime'),
+        ),
+      ),
+    );
+  });
+
   test(
     'WebAutoBackend reports embedding support from active delegate',
     () async {

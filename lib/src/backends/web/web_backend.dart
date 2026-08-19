@@ -1,8 +1,9 @@
-import '../backend.dart';
+import '../../core/exceptions.dart';
 import '../../core/models/chat/content_part.dart';
 import '../../core/models/config/log_level.dart';
 import '../../core/models/inference/generation_params.dart';
 import '../../core/models/inference/model_params.dart';
+import '../backend.dart';
 import '../litert_lm/litert_lm_backend_web.dart';
 import '../webgpu/webgpu_backend.dart';
 
@@ -181,7 +182,7 @@ class WebAutoBackend
         onProgress: onProgress,
       );
     }
-    throw UnsupportedError(
+    throw LlamaUnsupportedException(
       'Text-to-speech is not supported by the active Web runtime.',
     );
   }
