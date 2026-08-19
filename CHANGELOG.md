@@ -54,7 +54,8 @@
   encoding. The Flutter chat example adds a checksum-pinned Qwen3-TTS preset
   with file or microphone speaker references, automatic playback, replay, and
   WAV save controls. Web accepts byte-backed speaker references and complete
-  PCM/WAV output; current LiteRT-LM artifacts fail explicitly as unsupported.
+  PCM/WAV output, with a bounded example-app utterance length for browser
+  stability; current LiteRT-LM artifacts fail explicitly as unsupported.
 
 * Added an experimental typed `SpeechToTextEngine` with an explicit Qwen3-ASR
   adapter profile for whole-file llama.cpp transcription. The Flutter chat

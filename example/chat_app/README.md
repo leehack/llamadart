@@ -149,8 +149,10 @@ flutter test --run-skipped -t local-only \
      references. The matching model/projector downloads are immutable and
      SHA-256 verified. Current output is complete-buffer only, not streaming
      playback. Web requires bridge assets `v0.1.33+` and memory64 for the roughly
-     1.48 GB pair. LiteRT-LM and automatic read-aloud of chat responses remain
-     unsupported.
+     1.48 GB pair. To bound browser memory and generation time, the Web example
+     limits one utterance to 96 codec frames (about 7.7 seconds) and labels
+     output that reaches the limit; short sentences are recommended. LiteRT-LM
+     and automatic read-aloud of chat responses remain unsupported.
    - Microphone capture is enabled on Android, iOS, macOS, Windows, and secure
      browser origins when a compatible ASR model is active and WAV recording is
      supported. It remains hidden on Linux because the recorder plugin can

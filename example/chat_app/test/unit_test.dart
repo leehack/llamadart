@@ -760,6 +760,33 @@ void main() {
       expect(mockEngine.lastTextToSpeechRequest?.speakerAudioBytes, [1, 2, 3]);
       expect(mockEngine.lastTextToSpeechRequest?.topK, 40);
       expect(mockEngine.lastTextToSpeechRequest?.topP, 0.95);
+      expect(mockEngine.lastTextToSpeechRequest?.maxFrames, kIsWeb ? 96 : 512);
+    });
+
+    test('Web TTS abort reports an actionable recovery message', () async {
+      final ttsProvider = ChatProvider(
+        chatService: mockChatService,
+        settingsService: mockSettingsService,
+        initialSettings: const ChatSettings(
+          modelPath: 'qwen3-tts.gguf',
+          mmprojPath: 'qwen3-tts-mmproj.gguf',
+          modelSupportsTextToSpeech: true,
+        ),
+      );
+      addTearDown(ttsProvider.dispose);
+      await ttsProvider.loadModel();
+      final resultCompleter = Completer<BackendTextToSpeechResult>();
+      mockEngine.textToSpeechResultCompleter = resultCompleter;
+
+      final pending = ttsProvider.synthesizeSpeech('Hello.');
+      await Future<void>.delayed(Duration.zero);
+      resultCompleter.completeError(Exception('Aborted().'));
+
+      expect(await pending, isFalse);
+      expect(
+        ttsProvider.textToSpeechError,
+        kIsWeb ? contains('Close other GPU-heavy tabs') : contains('Aborted()'),
+      );
     });
 
     test(

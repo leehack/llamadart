@@ -916,7 +916,8 @@ class _ChatInputState extends State<ChatInput> {
                   child: Text(
                     'Speech ready · $durationLabel · '
                     '${result!.sampleRateHz ~/ 1000} kHz '
-                    '${result.channelCount == 1 ? 'mono' : '${result.channelCount} channel'} WAV',
+                    '${result.channelCount == 1 ? 'mono' : '${result.channelCount} channel'} WAV'
+                    '${result.truncated ? ' · length limit reached' : ''}',
                     style: const TextStyle(fontWeight: FontWeight.w600),
                   ),
                 ),

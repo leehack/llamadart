@@ -103,7 +103,9 @@ flutter test
   completed 24 kHz mono output, replay it, or save it as a WAV file. This is
   separate from chat generation and does not automatically read assistant
   responses aloud. Web uses bridge assets `v0.1.33+`, accepts selected speaker
-  references as bytes, and does not record speaker references.
+  references as bytes, and does not record speaker references. The Web example
+  limits one utterance to 96 codec frames (about 7.7 seconds) to bound browser
+  memory and generation time, and labels output that reaches that limit.
 - The voice-question UI is code-supported on Android, iOS, macOS, and Windows
   when the selected native profile declares direct audio input or the loaded
   projector reports audio support; Linux recording and Web are excluded. That

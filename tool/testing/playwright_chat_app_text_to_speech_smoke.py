@@ -99,6 +99,10 @@ def main() -> int:
     parser.add_argument("--mmproj-url", required=True)
     parser.add_argument("--prompt", default="Hello from llamadart Web.")
     parser.add_argument("--speaker-audio-path")
+    parser.add_argument("--max-frames", type=int, default=96)
+    parser.add_argument("--top-k", type=int, default=50)
+    parser.add_argument("--top-p", type=float, default=1.0)
+    parser.add_argument("--temperature", type=float, default=0.8)
     parser.add_argument("--load-timeout-ms", type=int, default=40 * 60 * 1000)
     parser.add_argument("--response-timeout-ms", type=int, default=15 * 60 * 1000)
     parser.add_argument(
@@ -108,7 +112,6 @@ def main() -> int:
     )
     parser.add_argument("--headed", action="store_true")
     args = parser.parse_args()
-
     speaker_audio_path = None
     if args.speaker_audio_path:
         speaker_audio_path = Path(args.speaker_audio_path).resolve()
@@ -120,14 +123,14 @@ def main() -> int:
         "flutter.mmproj_path": json.dumps(args.mmproj_url),
         "flutter.preferred_backend": json.dumps(0),
         "flutter.context_size": json.dumps(4096),
-        "flutter.max_tokens": json.dumps(96),
+        "flutter.max_tokens": json.dumps(args.max_frames),
         "flutter.gpu_layers": json.dumps(999),
         "flutter.auto_tune_model_params": json.dumps(False),
         "flutter.threads": json.dumps(2),
         "flutter.threads_batch": json.dumps(2),
-        "flutter.temperature": json.dumps(0.8),
-        "flutter.top_k": json.dumps(50),
-        "flutter.top_p": json.dumps(1.0),
+        "flutter.temperature": json.dumps(args.temperature),
+        "flutter.top_k": json.dumps(args.top_k),
+        "flutter.top_p": json.dumps(args.top_p),
         "flutter.min_p": json.dumps(0.0),
         "flutter.penalty": json.dumps(1.0),
         "flutter.tools_enabled": json.dumps(False),

@@ -42,7 +42,8 @@ For canonical full release notes, use:
   capability discovery, cancellation, complete PCM/WAV output, and a dedicated
   synthesize workflow with file or microphone speaker references, automatic
   playback, replay, and WAV export in the Flutter chat example. Web accepts
-  byte-backed speaker references and complete PCM/WAV output; current LiteRT-LM
+  byte-backed speaker references and complete PCM/WAV output, with a bounded
+  example-app utterance length for browser stability; current LiteRT-LM
   artifacts remain unsupported.
 
 - Updated the native llama.cpp runtime to `b10453`, consuming the Granite

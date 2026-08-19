@@ -722,6 +722,38 @@ void main() {
     );
   });
 
+  testWidgets('dedicated TTS mode labels length-limited output', (
+    tester,
+  ) async {
+    final provider = _ReadyTextToSpeechProvider(truncated: true);
+    addTearDown(provider.dispose);
+    final controller = TextEditingController(text: 'A longer utterance.');
+    final focusNode = FocusNode();
+    final playback = _FakeSpeechPlaybackService();
+    addTearDown(controller.dispose);
+    addTearDown(focusNode.dispose);
+
+    await tester.pumpWidget(
+      ChangeNotifierProvider<ChatProvider>.value(
+        value: provider,
+        child: MaterialApp(
+          home: Scaffold(
+            body: ChatInput(
+              controller: controller,
+              focusNode: focusNode,
+              speechPlaybackService: playback,
+              onSend: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.byTooltip('Synthesize speech'));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('length limit reached'), findsOneWidget);
+  });
+
   test('Web speaker reference picker prefers bytes over its blob URL', () {
     final speakerBytes = Uint8List.fromList(const <int>[1, 2, 3, 4]);
     final input = speechAudioInputFromPickedFile(
@@ -2436,7 +2468,7 @@ class _BusyVoiceProvider extends _GeneratingReadyProvider {
 }
 
 class _ReadyTextToSpeechProvider extends ChatProvider {
-  _ReadyTextToSpeechProvider()
+  _ReadyTextToSpeechProvider({this.truncated = false})
     : super(
         chatService: MockChatService(),
         settingsService: MockSettingsService(),
@@ -2449,6 +2481,7 @@ class _ReadyTextToSpeechProvider extends ChatProvider {
 
   String? synthesizedText;
   TextToSpeechResult? _result;
+  final bool truncated;
 
   @override
   bool get isGenerating => false;
@@ -2477,7 +2510,7 @@ class _ReadyTextToSpeechProvider extends ChatProvider {
       sampleRateHz: 24000,
       channelCount: 1,
       framesGenerated: 2,
-      truncated: false,
+      truncated: truncated,
     );
     notifyListeners();
     return true;
