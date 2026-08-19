@@ -62,10 +62,10 @@ class TextToSpeechRequest {
   /// Sampling temperature.
   final double temperature;
 
-  /// Random seed. `0xffffffff` requests the native random default.
+  /// Random seed. `0xffffffff` requests the runtime's random default.
   final int seed;
 
-  /// Creates a text-to-speech request using native Qwen3-TTS defaults.
+  /// Creates a text-to-speech request using Qwen3-TTS defaults.
   const TextToSpeechRequest({
     required this.text,
     this.language,

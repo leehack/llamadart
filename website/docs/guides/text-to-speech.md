@@ -28,13 +28,26 @@ Use a matching model and projector pair. The chat example pins the Q4_K_M base
 model and Q8_0 projector from
 [`ggml-org/Qwen3-TTS-12Hz-1.7B-Base-GGUF`](https://huggingface.co/ggml-org/Qwen3-TTS-12Hz-1.7B-Base-GGUF).
 
+The structured model-source APIs keep the loading flow portable. Native
+runtimes download and cache remote sources before loading their local files;
+Web passes the same sources to the browser runtime and its cache.
+
 ```dart
 final engine = LlamaEngine(LlamaBackend());
-await engine.loadModel(
-  '/models/Qwen3-TTS-12Hz-1.7B-Base-Q4_K_M.gguf',
+const revision = 'ca27d74bc954b73dadab5b71ca265d87fc861a7c';
+await engine.loadModelSource(
+  ModelSource.huggingFace(
+    repoId: 'ggml-org/Qwen3-TTS-12Hz-1.7B-Base-GGUF',
+    revision: revision,
+    filePath: 'Qwen3-TTS-12Hz-1.7B-Base-Q4_K_M.gguf',
+  ),
 );
-await engine.loadMultimodalProjector(
-  '/models/mmproj-Qwen3-TTS-12Hz-1.7B-Base-Q8_0.gguf',
+await engine.loadMultimodalProjectorSource(
+  ModelSource.huggingFace(
+    repoId: 'ggml-org/Qwen3-TTS-12Hz-1.7B-Base-GGUF',
+    revision: revision,
+    filePath: 'mmproj-Qwen3-TTS-12Hz-1.7B-Base-Q8_0.gguf',
+  ),
 );
 
 final synthesizer = TextToSpeechEngine(
@@ -85,33 +98,38 @@ preflight fails before a task starts. After startup, failures are emitted as a
 stream error and also reported through `task.done`. The event stream is
 single-subscription.
 
-For models that advertise speaker-reference support, pass a complete encoded
-audio file or bytes. Browsers accept encoded bytes only:
+For models that advertise speaker-reference support, encoded bytes are the
+portable representation. In this example, `referenceWavBytes` is a
+`Uint8List` obtained through the host application's file picker or recorder:
 
 ```dart
 final task = await synthesizer.synthesize(
-  const TextToSpeechRequest(
+  TextToSpeechRequest(
     text: 'This utterance uses the supplied reference voice.',
     language: 'English',
-    speakerReference: SpeechAudioFileInput('/recordings/reference.wav'),
+    speakerReference: SpeechAudioBytesInput(referenceWavBytes),
   ),
 );
 ```
 
+Native applications may alternatively use
+`SpeechAudioFileInput('/recordings/reference.wav')`. Browser runtimes cannot
+read arbitrary local filesystem paths.
+
 For Qwen3-TTS, the canonical language codes are `zh`, `en`, `ja`, `ko`, `de`,
 `fr`, `ru`, `pt`, `es`, and `it`. Common English names are normalized to those
 codes, so `language: 'English'` is equivalent to `language: 'en'`. Other values
-fail during typed preflight instead of reaching the native model as an invalid
+fail during typed preflight instead of reaching the backend model as an invalid
 prompt.
 
 Treat reference recordings as sensitive input. The typed API does not retain
-them after the native request completes, but application code remains
+them after the backend request completes, but application code remains
 responsible for its own files, byte buffers, permissions, and disclosures.
 
 ## Cancellation, concurrency, and buffering
 
 Call `task.cancel()` to request cooperative cancellation. Cancelling only the
-event-stream subscription does not cancel native synthesis.
+event-stream subscription does not cancel synthesis.
 
 All typed STT and TTS wrappers over one `LlamaEngine` share a one-task speech
 lease. Do not run chat generation, transcription, or another synthesis on the
