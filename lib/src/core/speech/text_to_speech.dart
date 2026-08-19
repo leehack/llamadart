@@ -112,13 +112,13 @@ class TextToSpeechCapabilities {
   /// Whether speaker-reference audio can be supplied.
   final bool supportsSpeakerReference;
 
-  /// Whether PCM can be emitted while native synthesis is still running.
+  /// Whether PCM can be emitted while synthesis is still running.
   final bool supportsIncrementalAudio;
 
   /// Whether an active task can be cancelled cooperatively.
   final bool supportsCancellation;
 
-  /// Whether pausing the event subscription throttles native synthesis.
+  /// Whether pausing the event subscription throttles synthesis.
   final bool supportsOutputBackpressure;
 
   /// Maximum number of typed speech tasks per underlying engine.
@@ -266,7 +266,7 @@ class TextToSpeechProgressEvent extends TextToSpeechEvent {
   });
 }
 
-/// Final PCM event emitted after native generation completes.
+/// Final PCM event emitted after generation completes.
 class TextToSpeechFinalEvent extends TextToSpeechEvent {
   /// Complete synthesis result.
   final TextToSpeechResult result;
@@ -343,8 +343,8 @@ class TextToSpeechTask {
   /// Progress followed by one final PCM event.
   ///
   /// This is a single-subscription stream. Runtime failures are emitted as a
-  /// stream error and are also reported by [done]. Current native synthesis
-  /// exposes PCM only after generation completes; progress is not live audio.
+  /// stream error and are also reported by [done]. Current synthesis exposes
+  /// PCM only after generation completes; progress is not live audio.
   Stream<TextToSpeechEvent> get events => _eventsController.stream;
 
   /// Completes once the task succeeds, is cancelled, or fails.
@@ -365,9 +365,10 @@ class TextToSpeechTask {
 
 /// Typed text-to-speech API backed by a loaded [LlamaEngine].
 ///
-/// The first implementation supports Qwen3-TTS on native llama.cpp with its
-/// matching audio-generation projector. It reports progress and cancellation,
-/// but PCM becomes available only after native generation has completed.
+/// Supports Qwen3-TTS on native llama.cpp and compatible WebGPU bridge
+/// runtimes with the matching audio-generation projector. It reports progress
+/// and cancellation, but PCM becomes available only after generation has
+/// completed.
 class TextToSpeechEngine {
   static const String _leaseOwner = 'text-to-speech';
   static const Map<String, String> _qwen3LanguageAliases = <String, String>{
@@ -420,7 +421,7 @@ class TextToSpeechEngine {
     try {
       backendName = await _engine.getBackendName();
     } catch (_) {
-      // The native capability result remains actionable without this label.
+      // The capability result remains actionable without this label.
     }
 
     BackendTextToSpeechCapabilities backendCapabilities;
@@ -479,7 +480,7 @@ class TextToSpeechEngine {
   /// Starts one complete synthesis task.
   ///
   /// Invalid input and unsupported preflight checks throw before the task is
-  /// returned. Failures after native startup are reported through the task.
+  /// returned. Failures after backend startup are reported through the task.
   Future<TextToSpeechTask> synthesize(TextToSpeechRequest request) async {
     _validateRequest(request);
     if (!_engineLease.acquire(_leaseOwner)) {

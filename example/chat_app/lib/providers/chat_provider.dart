@@ -329,7 +329,7 @@ class ChatProvider extends ChangeNotifier {
   /// Latest complete synthesized audio for the active conversation and model.
   TextToSpeechResult? get textToSpeechResult => _textToSpeechResult;
 
-  /// Latest synthesis progress reported by the native runtime.
+  /// Latest synthesis progress reported by the active runtime.
   TextToSpeechProgressEvent? get textToSpeechProgress => _textToSpeechProgress;
 
   /// Latest actionable text-to-speech failure.
