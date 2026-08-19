@@ -1,6 +1,8 @@
 @TestOn('browser')
 library;
 
+import 'dart:typed_data';
+
 import 'package:llamadart/src/backends/backend.dart';
 import 'package:llamadart/src/backends/web/web_backend.dart';
 import 'package:llamadart/src/core/engine/engine.dart';
@@ -21,6 +23,7 @@ void main() {
     expect(backend, isA<BackendStatePersistence>());
     expect(backend, isA<BackendStatePersistenceSupport>());
     expect(backend, isA<BackendPromptSpeechToTextSupport>());
+    expect(backend, isA<BackendTextToSpeech>());
     expect((backend as WebAutoBackend).supportsStatePersistence, isFalse);
     expect(backend.supportsEmbeddings, isFalse);
   });
@@ -37,6 +40,29 @@ void main() {
     expect(supported.supportsPromptSpeechToText, isTrue);
     expect(supported.promptSpeechToTextUnsupportedReason, isNull);
   });
+
+  test(
+    'WebAutoBackend forwards typed text-to-speech to its delegate',
+    () async {
+      final delegate = _TextToSpeechBackend();
+      final backend = WebAutoBackend(webBackend: delegate);
+
+      final capabilities = await backend.textToSpeechCapabilities(3, 4);
+      expect(capabilities.isSupported, isTrue);
+      expect(capabilities.sampleRateHz, 24000);
+
+      final result = await backend.synthesizeTextToSpeech(
+        3,
+        4,
+        const BackendTextToSpeechRequest(text: 'Hello'),
+      );
+      expect(result.samples, <double>[0.25, -0.25]);
+      expect(delegate.lastText, 'Hello');
+
+      backend.cancelTextToSpeech();
+      expect(delegate.cancelCalls, 1);
+    },
+  );
 
   test(
     'WebAutoBackend reports embedding support from active delegate',
@@ -229,4 +255,43 @@ class _EmbeddingSupportBackend
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _TextToSpeechBackend extends _NoStateBackend
+    implements BackendTextToSpeech {
+  String? lastText;
+  var cancelCalls = 0;
+
+  @override
+  Future<BackendTextToSpeechCapabilities> textToSpeechCapabilities(
+    int contextHandle,
+    int mmContextHandle,
+  ) async => const BackendTextToSpeechCapabilities(
+    isSupported: true,
+    model: BackendTextToSpeechModel.qwen3Tts,
+    sampleRateHz: 24000,
+    channelCount: 1,
+  );
+
+  @override
+  Future<BackendTextToSpeechResult> synthesizeTextToSpeech(
+    int contextHandle,
+    int mmContextHandle,
+    BackendTextToSpeechRequest request, {
+    void Function(BackendTextToSpeechProgress progress)? onProgress,
+  }) async {
+    lastText = request.text;
+    return BackendTextToSpeechResult(
+      samples: Float32List.fromList(<double>[0.25, -0.25]),
+      sampleRateHz: 24000,
+      channelCount: 1,
+      framesGenerated: 1,
+      truncated: false,
+    );
+  }
+
+  @override
+  void cancelTextToSpeech() {
+    cancelCalls += 1;
+  }
 }

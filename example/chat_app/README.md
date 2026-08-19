@@ -26,7 +26,7 @@ A Flutter chat application demonstrating real-world usage of llamadart with UI.
 - 🗣️ **Ask with voice**: Compatible native direct-media models or GGUF models
   with an audio-capable projector can receive a short microphone recording as
   ordinary multimodal chat and answer the request after **Stop & ask**.
-- 🔊 **Text to speech**: The native-desktop Qwen3-TTS preset switches the
+- 🔊 **Text to speech**: The cross-platform Qwen3-TTS preset switches the
   composer into a dedicated synthesis mode with language, optional speaker
   reference, cancellation, playback, and WAV export.
 - 📱 Material Design 3 UI
@@ -88,8 +88,8 @@ flutter test --run-skipped -t local-only \
 2. Select one of the focused pre-configured models:
    - Cross-platform: FunctionGemma 270M, Qwen3.5 0.8B, Gemma 4 E2B
      GGUF, Gemma 4 E2B LiteRT-LM, and Gemma 4 E4B GGUF.
-   - Native and Web: Qwen3-ASR 0.6B.
-   - Native desktop: Qwen3-TTS 1.7B Base, Gemma 4 12B, Gemma 4 26B A4B,
+   - Native and Web: Qwen3-ASR 0.6B and Qwen3-TTS 1.7B Base.
+   - Native desktop: Gemma 4 12B, Gemma 4 26B A4B,
      Gemma 4 31B, and Qwen3.6 35B A3B.
    - Built-in GGUF chat presets use [Unsloth distributions](https://huggingface.co/unsloth).
      The speech presets use llama.cpp's `ggml-org` Qwen3-ASR and Qwen3-TTS
@@ -139,15 +139,18 @@ flutter test --run-skipped -t local-only \
      All STT actions require the matching projector and a positive runtime
      audio probe. The preset's native and Web sources use immutable revisions,
      exact sizes, and SHA-256 metadata.
-   - The native-desktop Qwen3-TTS preset uses a separate typed synthesis flow,
+   - The cross-platform Qwen3-TTS preset uses a separate typed synthesis flow,
      not chat generation. Enter text, optionally select a language and choose
      or record a speaker reference, then synthesize. The app reports generation
      progress, automatically plays the completed 24 kHz mono output, and lets
      you stop, replay, or save it as WAV. Recorded references are read into
-     memory and their temporary WAV files are best-effort deleted. The matching
-     model/projector downloads are immutable and SHA-256 verified.
-     Current output is complete-buffer only, not streaming playback. Web,
-     LiteRT-LM, and automatic read-aloud of chat responses remain unsupported.
+     memory and their temporary WAV files are best-effort deleted. Web accepts
+     selected speaker-reference files as bytes but does not record speaker
+     references. The matching model/projector downloads are immutable and
+     SHA-256 verified. Current output is complete-buffer only, not streaming
+     playback. Web requires bridge assets `v0.1.33+` and memory64 for the roughly
+     1.48 GB pair. LiteRT-LM and automatic read-aloud of chat responses remain
+     unsupported.
    - Microphone capture is enabled on Android, iOS, macOS, Windows, and secure
      browser origins when a compatible ASR model is active and WAV recording is
      supported. It remains hidden on Linux because the recorder plugin can

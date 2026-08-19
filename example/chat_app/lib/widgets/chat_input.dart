@@ -13,6 +13,27 @@ import '../services/clipboard_attachment_service.dart';
 import '../services/speech_playback_service.dart';
 import 'tool_declarations_dialog.dart';
 
+/// Converts a picker result into the audio input supported by the platform.
+@visibleForTesting
+SpeechAudioInput? speechAudioInputFromPickedFile(
+  PlatformFile file, {
+  required bool isWeb,
+}) {
+  final path = file.path;
+  final bytes = file.bytes;
+  if (isWeb) {
+    return bytes != null && bytes.isNotEmpty
+        ? SpeechAudioBytesInput(bytes)
+        : null;
+  }
+  if (path != null && path.isNotEmpty) {
+    return SpeechAudioFileInput(path);
+  }
+  return bytes != null && bytes.isNotEmpty
+      ? SpeechAudioBytesInput(bytes)
+      : null;
+}
+
 class ChatInput extends StatefulWidget {
   final VoidCallback onSend;
   final TextEditingController controller;
@@ -276,13 +297,7 @@ class _ChatInputState extends State<ChatInput> {
         return;
       }
       final file = selection.files.single;
-      final path = file.path;
-      final bytes = file.bytes;
-      final SpeechAudioInput? input = path != null && path.isNotEmpty
-          ? SpeechAudioFileInput(path)
-          : bytes != null && bytes.isNotEmpty
-          ? SpeechAudioBytesInput(bytes)
-          : null;
+      final input = speechAudioInputFromPickedFile(file, isWeb: kIsWeb);
       if (input == null) {
         _showMessage('Could not read the selected speaker reference.');
         return;
@@ -739,6 +754,22 @@ class _ChatInputState extends State<ChatInput> {
     final recordedReference = provider.recordedSpeakerReference;
     final hasSpeakerReference =
         recordedReference != null || _speakerReference != null;
+    final speakerReferenceLabel = recordedReference != null
+        ? 'Recorded reference'
+        : _speakerReferenceName ?? 'Add speaker reference';
+    final VoidCallback? pickSpeakerReference = controlsEnabled
+        ? () => unawaited(_pickSpeakerReference())
+        : null;
+    final VoidCallback? clearSpeakerReference =
+        hasSpeakerReference && controlsEnabled
+        ? () {
+            setState(() {
+              _speakerReference = null;
+              _speakerReferenceName = null;
+            });
+            provider.clearRecordedSpeakerReference();
+          }
+        : null;
     const languages = <String>[
       'Auto',
       'English',
@@ -808,26 +839,23 @@ class _ChatInputState extends State<ChatInput> {
                   label: Text(_textToSpeechLanguage ?? 'Auto language'),
                 ),
               ),
-              InputChip(
-                key: const ValueKey<String>('speaker_reference_chip'),
-                avatar: const Icon(Icons.record_voice_over_outlined, size: 17),
-                label: Text(
-                  recordedReference != null
-                      ? 'Recorded reference'
-                      : _speakerReferenceName ?? 'Add speaker reference',
+              Semantics(
+                button: true,
+                label: speakerReferenceLabel,
+                enabled: controlsEnabled,
+                onTap: pickSpeakerReference,
+                onDismiss: clearSpeakerReference,
+                excludeSemantics: true,
+                child: InputChip(
+                  key: const ValueKey<String>('speaker_reference_chip'),
+                  avatar: const Icon(
+                    Icons.record_voice_over_outlined,
+                    size: 17,
+                  ),
+                  label: Text(speakerReferenceLabel),
+                  onPressed: pickSpeakerReference,
+                  onDeleted: clearSpeakerReference,
                 ),
-                onPressed: !controlsEnabled
-                    ? null
-                    : () => unawaited(_pickSpeakerReference()),
-                onDeleted: !hasSpeakerReference || !controlsEnabled
-                    ? null
-                    : () {
-                        setState(() {
-                          _speakerReference = null;
-                          _speakerReferenceName = null;
-                        });
-                        provider.clearRecordedSpeakerReference();
-                      },
               ),
               if (provider.supportsSpeakerReferenceRecording)
                 ActionChip(

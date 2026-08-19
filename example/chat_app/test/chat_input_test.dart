@@ -691,6 +691,7 @@ void main() {
       find.byKey(const ValueKey<String>('text_to_speech_options')),
       findsOneWidget,
     );
+    expect(find.bySemanticsLabel('Add speaker reference'), findsOneWidget);
     expect(find.text('Enter text to speak…'), findsOneWidget);
 
     await tester.enterText(find.byType(TextField), 'Hello from TTS.');
@@ -719,6 +720,22 @@ void main() {
       find.byKey(const ValueKey<String>('save_synthesized_speech_button')),
       findsOneWidget,
     );
+  });
+
+  test('Web speaker reference picker prefers bytes over its blob URL', () {
+    final speakerBytes = Uint8List.fromList(const <int>[1, 2, 3, 4]);
+    final input = speechAudioInputFromPickedFile(
+      PlatformFile(
+        name: 'speaker.wav',
+        path: 'blob:https://example.test/speaker',
+        size: speakerBytes.length,
+        bytes: speakerBytes,
+      ),
+      isWeb: true,
+    );
+
+    expect(input, isA<SpeechAudioBytesInput>());
+    expect((input as SpeechAudioBytesInput).bytes, speakerBytes);
   });
 
   testWidgets('records and uses a TTS speaker reference', (tester) async {

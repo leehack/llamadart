@@ -395,8 +395,7 @@ class ChatProvider extends ChangeNotifier {
       _settings.modelSupportsSpeechToText;
 
   /// Whether the selected profile exposes the dedicated synthesis experience.
-  bool get supportsTextToSpeech =>
-      !kIsWeb && _settings.modelSupportsTextToSpeech;
+  bool get supportsTextToSpeech => _settings.modelSupportsTextToSpeech;
 
   /// Whether a new utterance can be synthesized now.
   bool get canSynthesizeSpeech =>
@@ -3659,8 +3658,8 @@ class ChatProvider extends ChangeNotifier {
 
   /// Synthesizes [text] with the selected dedicated text-to-speech model.
   ///
-  /// The current native runtime reports progress while generating, then makes
-  /// one complete PCM buffer available for playback or WAV export.
+  /// The active runtime reports progress while generating, then makes one
+  /// complete PCM buffer available for playback or WAV export.
   Future<bool> synthesizeSpeech(
     String text, {
     String? language,

@@ -240,6 +240,22 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'chat-app synthesis changes.',
   ),
   TestMatrixRow(
+    id: 'web-text-to-speech-smoke',
+    tier: 'targeted',
+    mode: 'local-only',
+    covers:
+        'published WebGPU bridge, public typed TTS API, Qwen3-TTS catalog, '
+        'optional byte-backed speaker reference, progress, complete 24 kHz '
+        'PCM, chat-app autoplay, and downloaded WAV validation',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario '
+        'chat-app-web-text-to-speech-smoke '
+        '[--audio-path <speaker-reference.wav>]',
+    useWhen:
+        'Web bridge pins, Qwen3-TTS Web, typed speech synthesis, browser '
+        'playback, or WAV export changes.',
+  ),
+  TestMatrixRow(
     id: 'chat-app-microphone-transcription-smoke',
     tier: 'targeted',
     mode: 'manual/device',

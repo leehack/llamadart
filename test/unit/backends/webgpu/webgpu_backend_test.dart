@@ -2176,5 +2176,179 @@ void main() {
       expect(sawAudioParts, isTrue);
       expect(sawAudioBytes, isTrue);
     });
+
+    test('requires versioned bridge methods for text-to-speech', () async {
+      await backend.modelLoadFromUrl(
+        'https://example.com/model.gguf',
+        const ModelParams(),
+      );
+      final mmHandle = await backend.multimodalContextCreate(
+        1,
+        'https://example.com/mmproj.gguf',
+      );
+
+      final capabilities = await backend.textToSpeechCapabilities(1, mmHandle!);
+
+      expect(capabilities.isSupported, isFalse);
+      expect(capabilities.unsupportedReason, contains('v0.1.33'));
+    });
+
+    test(
+      'routes text-to-speech capability, progress, PCM, and bytes',
+      () async {
+        JSObject? capturedOptions;
+        bridge.setProperty(
+          'getTextToSpeechCapabilities'.toJS,
+          (() {
+            final result = JSObject()
+              ..setProperty('apiVersion'.toJS, 1.toJS)
+              ..setProperty('supported'.toJS, true.toJS)
+              ..setProperty('modelType'.toJS, 1.toJS)
+              ..setProperty('capabilities'.toJS, 3.toJS)
+              ..setProperty('supportsLanguage'.toJS, true.toJS)
+              ..setProperty('supportsSpeakerReference'.toJS, true.toJS)
+              ..setProperty('sampleRate'.toJS, 24000.toJS)
+              ..setProperty('channels'.toJS, 1.toJS)
+              ..setProperty('reason'.toJS, ''.toJS);
+            return Future<JSObject>.value(result).toJS;
+          }).toJS,
+        );
+        bridge.setProperty(
+          'synthesizeSpeech'.toJS,
+          ((JSObject options) {
+            capturedOptions = options;
+            final progress = JSObject()
+              ..setProperty('state'.toJS, 1.toJS)
+              ..setProperty('promptTokensRemaining'.toJS, 4.toJS)
+              ..setProperty('framesGenerated'.toJS, 2.toJS)
+              ..setProperty('truncated'.toJS, false.toJS);
+            final callback = options.getProperty('onProgress'.toJS);
+            if (callback.isA<JSFunction>()) {
+              (callback as JSFunction).callAsFunction(null, progress);
+            }
+            final pcm = JSFloat32Array.withLength(3);
+            pcm.toDart.setAll(0, <double>[0.25, -0.5, 0.75]);
+            final result = JSObject()
+              ..setProperty('pcm'.toJS, pcm)
+              ..setProperty('sampleRate'.toJS, 24000.toJS)
+              ..setProperty('channels'.toJS, 1.toJS)
+              ..setProperty('sampleCount'.toJS, 3.toJS)
+              ..setProperty('framesGenerated'.toJS, 8.toJS)
+              ..setProperty('truncated'.toJS, false.toJS);
+            return Future<JSObject>.value(result).toJS;
+          }).toJS,
+        );
+
+        await backend.modelLoadFromUrl(
+          'https://example.com/model.gguf',
+          const ModelParams(),
+        );
+        final mmHandle = await backend.multimodalContextCreate(
+          1,
+          'https://example.com/mmproj.gguf',
+        );
+        final capabilities = await backend.textToSpeechCapabilities(
+          1,
+          mmHandle!,
+        );
+        final progress = <BackendTextToSpeechProgress>[];
+        final result = await backend.synthesizeTextToSpeech(
+          1,
+          mmHandle,
+          BackendTextToSpeechRequest(
+            text: 'Hello from Web.',
+            language: 'en',
+            speakerAudioBytes: Uint8List.fromList(<int>[1, 2, 3]),
+            promptBatchSize: 128,
+            maxFrames: 64,
+            topK: 20,
+            topP: 0.9,
+            minP: 0.1,
+            temperature: 0.7,
+            seed: 7,
+          ),
+          onProgress: progress.add,
+        );
+
+        expect(capabilities.isSupported, isTrue);
+        expect(capabilities.model, BackendTextToSpeechModel.qwen3Tts);
+        expect(capabilities.sampleRateHz, 24000);
+        expect(capabilities.supportsSpeakerReference, isTrue);
+        expect(progress, hasLength(1));
+        expect(
+          progress.single.phase,
+          BackendTextToSpeechPhase.processingPrompt,
+        );
+        expect(progress.single.promptTokensRemaining, 4);
+        expect(result.samples, <double>[0.25, -0.5, 0.75]);
+        expect(result.sampleRateHz, 24000);
+        expect(result.framesGenerated, 8);
+        expect(
+          (capturedOptions!.getProperty('speakerAudio'.toJS) as JSUint8Array)
+              .toDart,
+          <int>[1, 2, 3],
+        );
+        expect(
+          (capturedOptions!.getProperty('language'.toJS) as JSString).toDart,
+          'en',
+        );
+      },
+    );
+
+    test(
+      'rejects local speaker paths and routes active cancellation',
+      () async {
+        final synthesis = Completer<JSAny?>();
+        bridge.setProperty(
+          'getTextToSpeechCapabilities'.toJS,
+          (() {
+            final result = JSObject()
+              ..setProperty('apiVersion'.toJS, 1.toJS)
+              ..setProperty('supported'.toJS, true.toJS)
+              ..setProperty('modelType'.toJS, 1.toJS)
+              ..setProperty('supportsLanguage'.toJS, true.toJS)
+              ..setProperty('supportsSpeakerReference'.toJS, true.toJS)
+              ..setProperty('sampleRate'.toJS, 24000.toJS)
+              ..setProperty('channels'.toJS, 1.toJS);
+            return Future<JSObject>.value(result).toJS;
+          }).toJS,
+        );
+        bridge.setProperty(
+          'synthesizeSpeech'.toJS,
+          ((JSObject options) => synthesis.future.toJS).toJS,
+        );
+        await backend.modelLoadFromUrl(
+          'https://example.com/model.gguf',
+          const ModelParams(),
+        );
+        final mmHandle = await backend.multimodalContextCreate(
+          1,
+          'https://example.com/mmproj.gguf',
+        );
+
+        await expectLater(
+          backend.synthesizeTextToSpeech(
+            1,
+            mmHandle!,
+            const BackendTextToSpeechRequest(
+              text: 'Hello.',
+              speakerAudioPath: '/tmp/speaker.wav',
+            ),
+          ),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
+
+        final active = backend.synthesizeTextToSpeech(
+          1,
+          mmHandle,
+          const BackendTextToSpeechRequest(text: 'Cancel me.'),
+        );
+        await Future<void>.delayed(Duration.zero);
+        backend.cancelTextToSpeech();
+        expect(cancelCallCount, 1);
+        synthesis.completeError(StateError('cancelled'));
+        await expectLater(active, throwsA(isA<LlamaTextToSpeechException>()));
+      },
+    );
   });
 }

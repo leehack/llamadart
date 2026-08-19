@@ -1,6 +1,6 @@
 ---
 title: Text to Speech
-description: Generate complete PCM and WAV audio with the experimental typed native llama.cpp Qwen3-TTS API.
+description: Generate complete PCM and WAV audio with the experimental typed llama.cpp Qwen3-TTS API on native and WebGPU runtimes.
 ---
 
 `TextToSpeechEngine` is the typed API for speech synthesis. It is separate from
@@ -8,16 +8,17 @@ description: Generate complete PCM and WAV audio with the experimental typed nat
 progress, cancellation, and output buffering are not chat-token semantics.
 
 The first implementation is experimental and deliberately narrow. It supports
-Qwen3-TTS through the native llama.cpp runtime and its matching audio-generation
-projector. It reports prompt/frame progress, then returns one complete 24 kHz
-mono float32 PCM buffer. It does not stream playable audio chunks yet.
+Qwen3-TTS through native llama.cpp or WebGPU bridge assets `v0.1.33+` with the
+matching audio-generation projector. It reports prompt/frame progress, then
+returns one complete 24 kHz mono float32 PCM buffer. It does not stream playable
+audio chunks yet.
 
 ## Current support matrix
 
 | Runtime | Typed `TextToSpeechEngine` | Output |
 | --- | --- | --- |
 | Native llama.cpp / GGUF | Experimental Qwen3-TTS adapter | Complete float32 PCM; WAV helper |
-| WebGPU / GGUF | Unsupported by the published bridge ABI | None |
+| WebGPU / GGUF | Experimental Qwen3-TTS adapter with bridge assets `v0.1.33+` | Complete float32 PCM; WAV helper |
 | Native LiteRT-LM / `.litertlm` | Unsupported by the pinned native artifact | None |
 | LiteRT-LM Web | Unsupported | None |
 
@@ -47,8 +48,8 @@ if (!capabilities.isSupported) {
 ```
 
 Always probe capabilities after both artifacts are loaded. Loading a projector
-does not prove that the installed native runtime exports the required stable
-TTS ABI or that the projector matches the model.
+does not prove that the active native or Web runtime exports the required TTS
+ABI or that the projector matches the model.
 
 ## Synthesize and save WAV
 
@@ -85,7 +86,7 @@ stream error and also reported through `task.done`. The event stream is
 single-subscription.
 
 For models that advertise speaker-reference support, pass a complete encoded
-audio file or bytes:
+audio file or bytes. Browsers accept encoded bytes only:
 
 ```dart
 final task = await synthesizer.synthesize(
@@ -116,14 +117,14 @@ All typed STT and TTS wrappers over one `LlamaEngine` share a one-task speech
 lease. Do not run chat generation, transcription, or another synthesis on the
 same engine until the active speech task completes.
 
-The current native wrapper produces PCM only after all requested audio-codec
+The current native and Web wrappers produce PCM only after all requested audio-codec
 frames have been generated. `supportsIncrementalAudio` and
 `supportsOutputBackpressure` are therefore false. Progress events are useful
 for status and cancellation, but are not playable audio chunks.
 
 ## Chat example
 
-The native-desktop catalog contains a checksum-pinned **Qwen3-TTS 1.7B Base**
+The cross-platform catalog contains a checksum-pinned **Qwen3-TTS 1.7B Base**
 model/projector pair. Selecting it switches the composer into a dedicated TTS
 mode:
 
@@ -132,7 +133,8 @@ mode:
 - cancel while frames are being generated;
 - automatically play the completed output, replay it, or save it as a WAV file.
 
-Native microphone references are capped at 30 seconds. The example reads the
+Native microphone references are capped at 30 seconds. Web users can select an
+existing audio file, which is read as encoded bytes. The example reads the
 completed WAV into memory for synthesis and best-effort deletes the temporary
 recording. Selecting an existing audio file remains available as a separate
 option.
@@ -149,8 +151,8 @@ memory-constrained mobile devices.
 - Qwen3-TTS and llama.cpp audio generation are experimental. Voice quality,
   latency, supported reference formats, and accelerator behavior remain
   model/device dependent.
-- The initial catalog is native-desktop only because current real-model
-  validation covers macOS CPU and Metal. Other native targets require packaged
-  artifact and real-model validation before the catalog is broadened.
-- Web enablement requires a published bridge ABI and real-model browser gates;
-  merely loading a GGUF model on WebGPU does not establish TTS support.
+- Web requires published bridge assets `v0.1.33+`, WebAssembly memory64 for the
+  pinned roughly 1.48 GB model/projector pair, and a browser/device with enough
+  memory. Older bridge assets fail capability discovery clearly.
+- Web speaker references are selected-file bytes only; microphone speaker
+  recording remains a native chat-example feature.

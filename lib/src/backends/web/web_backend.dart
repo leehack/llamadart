@@ -17,6 +17,7 @@ class WebAutoBackend
         BackendEmbeddingsSupport,
         BackendBatchEmbeddings,
         BackendPromptSpeechToTextSupport,
+        BackendTextToSpeech,
         BackendStatePersistence,
         BackendStatePersistenceSupport {
   final LlamaBackend Function() _webGpuFactory;
@@ -141,6 +142,56 @@ class WebAutoBackend
   @override
   void cancelGeneration() {
     _delegate?.cancelGeneration();
+  }
+
+  @override
+  Future<BackendTextToSpeechCapabilities> textToSpeechCapabilities(
+    int contextHandle,
+    int mmContextHandle,
+  ) {
+    final delegate = _delegate;
+    if (delegate is BackendTextToSpeech) {
+      return (delegate as BackendTextToSpeech).textToSpeechCapabilities(
+        contextHandle,
+        mmContextHandle,
+      );
+    }
+    return Future<BackendTextToSpeechCapabilities>.value(
+      const BackendTextToSpeechCapabilities(
+        isSupported: false,
+        unsupportedReason:
+            'The active Web runtime does not expose dedicated text-to-speech.',
+      ),
+    );
+  }
+
+  @override
+  Future<BackendTextToSpeechResult> synthesizeTextToSpeech(
+    int contextHandle,
+    int mmContextHandle,
+    BackendTextToSpeechRequest request, {
+    void Function(BackendTextToSpeechProgress progress)? onProgress,
+  }) {
+    final delegate = _delegate;
+    if (delegate is BackendTextToSpeech) {
+      return (delegate as BackendTextToSpeech).synthesizeTextToSpeech(
+        contextHandle,
+        mmContextHandle,
+        request,
+        onProgress: onProgress,
+      );
+    }
+    throw UnsupportedError(
+      'Text-to-speech is not supported by the active Web runtime.',
+    );
+  }
+
+  @override
+  void cancelTextToSpeech() {
+    final delegate = _delegate;
+    if (delegate is BackendTextToSpeech) {
+      (delegate as BackendTextToSpeech).cancelTextToSpeech();
+    }
   }
 
   @override

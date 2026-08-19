@@ -22,6 +22,9 @@ enum TextToSpeechImplementation {
 
   /// Dedicated native audio generation through llama.cpp mtmd.
   nativeAudioGeneration,
+
+  /// Complete audio generation through the WebGPU bridge.
+  webAudioGeneration,
 }
 
 /// A request to synthesize one complete utterance.
@@ -38,7 +41,7 @@ class TextToSpeechRequest {
 
   /// Optional encoded speaker-reference audio.
   ///
-  /// File and in-memory inputs are supported on the first native backend.
+  /// Native backends accept files and bytes. Web accepts encoded bytes only.
   final SpeechAudioInput? speakerReference;
 
   /// Maximum number of audio-codec frames to generate.
@@ -450,12 +453,14 @@ class TextToSpeechEngine {
     return TextToSpeechCapabilities(
       isSupported: true,
       backendName: backendName,
-      implementation: TextToSpeechImplementation.nativeAudioGeneration,
+      implementation: textToSpeechSupportsFileInput
+          ? TextToSpeechImplementation.nativeAudioGeneration
+          : TextToSpeechImplementation.webAudioGeneration,
       sampleRateHz: backendCapabilities.sampleRateHz,
       channelCount: backendCapabilities.channelCount,
       speakerReferenceInputKinds: backendCapabilities.supportsSpeakerReference
-          ? const <SpeechAudioInputKind>{
-              SpeechAudioInputKind.file,
+          ? <SpeechAudioInputKind>{
+              if (textToSpeechSupportsFileInput) SpeechAudioInputKind.file,
               SpeechAudioInputKind.encodedBytes,
             }
           : const <SpeechAudioInputKind>{},
@@ -551,6 +556,12 @@ class TextToSpeechEngine {
         if (path.trim().isEmpty) {
           throw LlamaAudioFormatException(
             'Speaker reference file path must not be empty.',
+          );
+        }
+        if (!textToSpeechSupportsFileInput) {
+          throw LlamaUnsupportedException(
+            'Web text-to-speech speaker references require encoded bytes; '
+            'browser runtimes cannot read local file paths.',
           );
         }
       case SpeechAudioBytesInput(:final bytes):

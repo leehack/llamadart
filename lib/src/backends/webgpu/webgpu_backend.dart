@@ -9,6 +9,7 @@ import 'package:web/web.dart';
 
 import '../../core/models/chat/content_part.dart';
 import '../../core/cache_policy.dart';
+import '../../core/exceptions.dart';
 import '../../core/models/config/gpu_backend.dart';
 import '../../core/models/config/llama_cpp_param_values.dart';
 import '../../core/models/config/log_level.dart';
@@ -27,6 +28,7 @@ class WebGpuLlamaBackend
         BackendAvailability,
         BackendBatchEmbeddings,
         BackendPromptSpeechToTextSupport,
+        BackendTextToSpeech,
         BackendStatePersistence,
         BackendStatePersistenceSupport {
   static const Duration _bridgeReadyTimeout = Duration(seconds: 12);
@@ -62,6 +64,7 @@ class WebGpuLlamaBackend
   bool _isReady = false;
   LlamaLogLevel _logLevel = LlamaLogLevel.info;
   AbortController? _abortController;
+  AbortController? _textToSpeechAbortController;
   int? _lastNCtx;
   bool _mmContextActive = false;
   String? _cachedMmProjectorBlobUrl;
@@ -110,6 +113,21 @@ class WebGpuLlamaBackend
   bool _hasBridgeFunction(LlamaWebGpuBridge bridge, String name) {
     final value = bridge.getProperty(name.toJS);
     return value.isA<JSFunction>();
+  }
+
+  int? _jsIntProperty(JSObject object, String name) {
+    final value = object.getProperty(name.toJS);
+    return value.isA<JSNumber>() ? (value as JSNumber).toDartInt : null;
+  }
+
+  bool? _jsBoolProperty(JSObject object, String name) {
+    final value = object.getProperty(name.toJS);
+    return value.isA<JSBoolean>() ? (value as JSBoolean).toDart : null;
+  }
+
+  String? _jsStringProperty(JSObject object, String name) {
+    final value = object.getProperty(name.toJS);
+    return value.isA<JSString>() ? (value as JSString).toDart : null;
   }
 
   Future<void> _loadBridgeScript() async {
@@ -1948,6 +1966,223 @@ class WebGpuLlamaBackend
   }
 
   @override
+  Future<BackendTextToSpeechCapabilities> textToSpeechCapabilities(
+    int contextHandle,
+    int mmContextHandle,
+  ) async {
+    final bridge = _requireBridge();
+    if (!_mmContextActive) {
+      return const BackendTextToSpeechCapabilities(
+        isSupported: false,
+        unsupportedReason: 'Load a text-to-speech multimodal projector first.',
+      );
+    }
+    if (!_hasBridgeFunction(bridge, 'getTextToSpeechCapabilities') ||
+        !_hasBridgeFunction(bridge, 'synthesizeSpeech')) {
+      return const BackendTextToSpeechCapabilities(
+        isSupported: false,
+        unsupportedReason:
+            'Web text-to-speech requires llama-web-bridge-assets v0.1.33 '
+            'or newer.',
+      );
+    }
+
+    try {
+      final raw = await _toFuture(bridge.getTextToSpeechCapabilities());
+      if (raw == null || !raw.isA<JSObject>()) {
+        return const BackendTextToSpeechCapabilities(
+          isSupported: false,
+          unsupportedReason:
+              'The Web text-to-speech capability response is invalid.',
+        );
+      }
+      final value = raw as JSObject;
+      final apiVersion = _jsIntProperty(value, 'apiVersion') ?? 0;
+      if (apiVersion != 1) {
+        return BackendTextToSpeechCapabilities(
+          isSupported: false,
+          unsupportedReason:
+              'The Web text-to-speech API version is unsupported '
+              '(received $apiVersion, expected 1).',
+        );
+      }
+      if (_jsBoolProperty(value, 'supported') != true) {
+        return BackendTextToSpeechCapabilities(
+          isSupported: false,
+          unsupportedReason:
+              _jsStringProperty(value, 'reason') ??
+              'The loaded Web model/projector does not support text-to-speech.',
+        );
+      }
+      if (_jsIntProperty(value, 'modelType') != 1) {
+        return const BackendTextToSpeechCapabilities(
+          isSupported: false,
+          unsupportedReason:
+              'The loaded Web projector is not a supported Qwen3-TTS '
+              'projector.',
+        );
+      }
+      final sampleRate = _jsIntProperty(value, 'sampleRate');
+      final channels = _jsIntProperty(value, 'channels');
+      if (sampleRate == null ||
+          sampleRate <= 0 ||
+          channels == null ||
+          channels <= 0) {
+        return const BackendTextToSpeechCapabilities(
+          isSupported: false,
+          unsupportedReason:
+              'The Web text-to-speech runtime reported an invalid audio '
+              'format.',
+        );
+      }
+      return BackendTextToSpeechCapabilities(
+        isSupported: true,
+        model: BackendTextToSpeechModel.qwen3Tts,
+        sampleRateHz: sampleRate,
+        channelCount: channels,
+        supportsLanguage: _jsBoolProperty(value, 'supportsLanguage') == true,
+        supportsSpeakerReference:
+            _jsBoolProperty(value, 'supportsSpeakerReference') == true,
+        supportsCancellation: true,
+      );
+    } catch (error) {
+      return BackendTextToSpeechCapabilities(
+        isSupported: false,
+        unsupportedReason:
+            'The Web text-to-speech capability probe failed: $error',
+      );
+    }
+  }
+
+  @override
+  Future<BackendTextToSpeechResult> synthesizeTextToSpeech(
+    int contextHandle,
+    int mmContextHandle,
+    BackendTextToSpeechRequest request, {
+    void Function(BackendTextToSpeechProgress progress)? onProgress,
+  }) async {
+    if (request.speakerAudioPath != null) {
+      throw LlamaUnsupportedException(
+        'Web text-to-speech speaker references require encoded bytes; '
+        'browser runtimes cannot read local file paths.',
+      );
+    }
+    if (_textToSpeechAbortController != null) {
+      throw LlamaStateException(
+        'Text-to-speech synthesis is already active in this Web runtime.',
+      );
+    }
+
+    final bridge = _requireBridge();
+    final capabilities = await textToSpeechCapabilities(
+      contextHandle,
+      mmContextHandle,
+    );
+    if (!capabilities.isSupported) {
+      throw LlamaUnsupportedException(
+        capabilities.unsupportedReason ??
+            'Web text-to-speech is not supported by the active runtime.',
+      );
+    }
+
+    final abortController = AbortController();
+    _textToSpeechAbortController = abortController;
+    final onProgressCallback = (JSAny? raw) {
+      if (raw == null || !raw.isA<JSObject>()) {
+        return;
+      }
+      final value = raw as JSObject;
+      onProgress?.call(
+        BackendTextToSpeechProgress(
+          phase: _jsIntProperty(value, 'state') == 1
+              ? BackendTextToSpeechPhase.processingPrompt
+              : BackendTextToSpeechPhase.generating,
+          promptTokensRemaining:
+              _jsIntProperty(value, 'promptTokensRemaining') ?? 0,
+          framesGenerated: _jsIntProperty(value, 'framesGenerated') ?? 0,
+          truncated: _jsBoolProperty(value, 'truncated') == true,
+        ),
+      );
+    }.toJS;
+
+    try {
+      final raw = await _toFuture(
+        bridge.synthesizeSpeech(
+          WebGpuTextToSpeechOptions(
+            text: request.text,
+            language: request.language,
+            speakerAudio: request.speakerAudioBytes?.toJS,
+            promptBatchSize: request.promptBatchSize,
+            maxFrames: request.maxFrames,
+            topK: request.topK,
+            topP: request.topP,
+            minP: request.minP,
+            temperature: request.temperature,
+            seed: request.seed,
+            signal: abortController.signal,
+            onProgress: onProgressCallback as JSFunction,
+          ),
+        ),
+      );
+      if (raw == null || !raw.isA<JSObject>()) {
+        throw LlamaTextToSpeechException(
+          'The Web text-to-speech runtime returned an invalid result.',
+        );
+      }
+      final value = raw as JSObject;
+      final rawPcm = value.getProperty('pcm'.toJS);
+      if (!rawPcm.isA<JSFloat32Array>()) {
+        throw LlamaTextToSpeechException(
+          'The Web text-to-speech runtime returned invalid PCM audio.',
+        );
+      }
+      final samples = (rawPcm as JSFloat32Array).toDart;
+      final sampleRate = _jsIntProperty(value, 'sampleRate') ?? 0;
+      final channels = _jsIntProperty(value, 'channels') ?? 0;
+      if (samples.isEmpty || sampleRate <= 0 || channels <= 0) {
+        throw LlamaTextToSpeechException(
+          'The Web text-to-speech runtime returned empty or malformed audio.',
+        );
+      }
+      return BackendTextToSpeechResult(
+        samples: samples,
+        sampleRateHz: sampleRate,
+        channelCount: channels,
+        framesGenerated: _jsIntProperty(value, 'framesGenerated') ?? 0,
+        truncated: _jsBoolProperty(value, 'truncated') == true,
+      );
+    } catch (error) {
+      if (abortController.signal.aborted) {
+        throw LlamaTextToSpeechException(
+          'Text-to-speech synthesis was cancelled.',
+          error,
+        );
+      }
+      if (error is LlamaException) {
+        rethrow;
+      }
+      throw LlamaTextToSpeechException(
+        'Web text-to-speech synthesis failed.',
+        error,
+      );
+    } finally {
+      if (identical(_textToSpeechAbortController, abortController)) {
+        _textToSpeechAbortController = null;
+      }
+    }
+  }
+
+  @override
+  void cancelTextToSpeech() {
+    final controller = _textToSpeechAbortController;
+    if (controller == null) {
+      return;
+    }
+    controller.abort();
+    _bridge?.cancel();
+  }
+
+  @override
   Future<List<double>> embed(
     int contextHandle,
     String text, {
@@ -2335,6 +2570,7 @@ class WebGpuLlamaBackend
 
   @override
   Future<void> dispose() async {
+    cancelTextToSpeech();
     await _safeDisposeBridge();
   }
 

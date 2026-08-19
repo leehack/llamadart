@@ -1701,13 +1701,17 @@ void main() {
       final modelSource = model.modelSource as RemoteModelAssetSource;
       final projectorSource =
           model.multimodalProjectorSource as RemoteModelAssetSource;
+      final webModelSource = model.webModelSource as RemoteModelAssetSource;
+      final webProjectorSource =
+          model.webMultimodalProjectorSource as RemoteModelAssetSource;
 
       expect(model.supportsTextToSpeechFor(web: false), isTrue);
-      expect(model.supportsTextToSpeechFor(web: true), isFalse);
+      expect(model.supportsTextToSpeechFor(web: true), isTrue);
       expect(model.supportsAudio, isFalse);
       expect(model.supportsSpeechToText, isFalse);
-      expect(model.isNativeDesktopOnly, isTrue);
+      expect(model.availability, ModelAvailability.all);
       expect(model.sizeBytesFor(web: false), 1482388192);
+      expect(model.sizeBytesFor(web: true), 1482388192);
       expect(model.preset.temperature, 0.8);
       expect(model.preset.topK, 40);
       expect(model.preset.topP, 0.95);
@@ -1730,6 +1734,14 @@ void main() {
         projectorSource.url,
         contains('ca27d74bc954b73dadab5b71ca265d87fc861a7c'),
       );
+      expect(webModelSource.url, isNot(contains('?download=true')));
+      expect(webModelSource.filename, modelSource.filename);
+      expect(webModelSource.sizeBytes, modelSource.sizeBytes);
+      expect(webModelSource.sha256, modelSource.sha256);
+      expect(webProjectorSource.url, isNot(contains('?download=true')));
+      expect(webProjectorSource.filename, projectorSource.filename);
+      expect(webProjectorSource.sizeBytes, projectorSource.sizeBytes);
+      expect(webProjectorSource.sha256, projectorSource.sha256);
 
       provider.applyModelPreset(model);
       expect(provider.settings.modelSupportsTextToSpeech, isTrue);
@@ -1777,42 +1789,52 @@ void main() {
       }
     });
 
-    test('large models remain desktop-only while Qwen3-ASR is universal', () {
-      final desktopModels = DownloadableModel.defaultModels
-          .where((model) => model.isNativeDesktopOnly)
-          .toList(growable: false);
+    test(
+      'large models remain desktop-only while speech models are universal',
+      () {
+        final desktopModels = DownloadableModel.defaultModels
+            .where((model) => model.isNativeDesktopOnly)
+            .toList(growable: false);
 
-      expect(
-        desktopModels.map((model) => model.name),
-        orderedEquals(const [
-          'Qwen3-TTS 1.7B Base',
-          'Gemma 4 12B it',
-          'Gemma 4 26B A4B it',
-          'Gemma 4 31B it',
-          'Qwen3.6 35B A3B',
-        ]),
-      );
-      for (final model in desktopModels) {
-        expect(model.isAvailableFor(web: false, mobile: false), isTrue);
-        expect(model.isAvailableFor(web: false, mobile: true), isFalse);
-        expect(model.isAvailableFor(web: true, mobile: false), isFalse);
-      }
+        expect(
+          desktopModels.map((model) => model.name),
+          orderedEquals(const [
+            'Gemma 4 12B it',
+            'Gemma 4 26B A4B it',
+            'Gemma 4 31B it',
+            'Qwen3.6 35B A3B',
+          ]),
+        );
+        for (final model in desktopModels) {
+          expect(model.isAvailableFor(web: false, mobile: false), isTrue);
+          expect(model.isAvailableFor(web: false, mobile: true), isFalse);
+          expect(model.isAvailableFor(web: true, mobile: false), isFalse);
+        }
 
-      final qwenAsr = DownloadableModel.defaultModels.singleWhere(
-        (model) => model.name == 'Qwen3-ASR 0.6B',
-      );
-      expect(qwenAsr.isNativeOnly, isFalse);
-      expect(qwenAsr.isAvailableFor(web: false, mobile: true), isTrue);
-      expect(qwenAsr.isAvailableFor(web: false, mobile: false), isTrue);
-      expect(qwenAsr.isAvailableFor(web: true, mobile: false), isTrue);
+        final qwenAsr = DownloadableModel.defaultModels.singleWhere(
+          (model) => model.name == 'Qwen3-ASR 0.6B',
+        );
+        expect(qwenAsr.isNativeOnly, isFalse);
+        expect(qwenAsr.isAvailableFor(web: false, mobile: true), isTrue);
+        expect(qwenAsr.isAvailableFor(web: false, mobile: false), isTrue);
+        expect(qwenAsr.isAvailableFor(web: true, mobile: false), isTrue);
 
-      final gemmaE4b = DownloadableModel.defaultModels.singleWhere(
-        (model) => model.name == 'Gemma 4 E4B it',
-      );
-      expect(gemmaE4b.isNativeDesktopOnly, isFalse);
-      expect(gemmaE4b.isAvailableFor(web: false, mobile: true), isTrue);
-      expect(gemmaE4b.supportsAudioFor(web: false), isTrue);
-    });
+        final qwenTts = DownloadableModel.defaultModels.singleWhere(
+          (model) => model.name == 'Qwen3-TTS 1.7B Base',
+        );
+        expect(qwenTts.isNativeDesktopOnly, isFalse);
+        expect(qwenTts.isAvailableFor(web: false, mobile: true), isTrue);
+        expect(qwenTts.isAvailableFor(web: false, mobile: false), isTrue);
+        expect(qwenTts.isAvailableFor(web: true, mobile: false), isTrue);
+
+        final gemmaE4b = DownloadableModel.defaultModels.singleWhere(
+          (model) => model.name == 'Gemma 4 E4B it',
+        );
+        expect(gemmaE4b.isNativeDesktopOnly, isFalse);
+        expect(gemmaE4b.isAvailableFor(web: false, mobile: true), isTrue);
+        expect(gemmaE4b.supportsAudioFor(web: false), isTrue);
+      },
+    );
 
     test('Qwen3-ASR preset persists the dedicated STT declaration', () {
       final model = DownloadableModel.defaultModels.singleWhere(
