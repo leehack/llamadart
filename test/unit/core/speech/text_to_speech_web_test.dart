@@ -39,6 +39,10 @@ void main() {
     expect(capabilities.speakerReferenceInputKinds, {
       SpeechAudioInputKind.encodedBytes,
     });
+    expect(
+      () => capabilities.speakerReferenceInputKinds.clear(),
+      throwsUnsupportedError,
+    );
     expect(completion.state, TextToSpeechCompletionState.completed);
     expect(completion.result?.samples, <double>[0.25, -0.25]);
     expect(backend.lastRequest?.speakerAudioBytes, isNotEmpty);

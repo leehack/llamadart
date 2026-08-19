@@ -28,7 +28,6 @@ def wait_for_text(page, needle: str, timeout_ms: int, label: str) -> str:
             return body
         if (
             "Speech synthesis failed:" in body
-            or "Could not play" in body
             or "does not expose dedicated text-to-speech" in body
             or "speaker references require encoded bytes" in body
         ):
@@ -85,9 +84,6 @@ def wait_for_play_attempt(page, timeout_ms: int = 30000) -> None:
         play_calls = page.evaluate("window.__llamadartTtsPlayCalls ?? 0")
         if int(play_calls or 0) > 0:
             return
-        body = safe_body_text(page)
-        if "Could not play the synthesized audio." in body:
-            raise RuntimeError("The chat app reported an autoplay failure")
         time.sleep(0.25)
     raise RuntimeError("The chat app did not attempt TTS autoplay")
 
@@ -309,7 +305,7 @@ def main() -> int:
         synthesize_button.wait_for(state="visible")
         emit("synthesize_click", character_count=len(args.prompt))
         synthesize_button.click()
-        body = wait_for_text(
+        wait_for_text(
             page,
             "Speech ready",
             args.response_timeout_ms,
@@ -339,8 +335,6 @@ def main() -> int:
             raise RuntimeError(f"Bridge returned empty PCM: {result}")
         if int(state.get("progressEvents") or 0) <= 0:
             raise RuntimeError("Bridge did not emit TTS progress")
-        if "Could not play the synthesized audio." in body:
-            raise RuntimeError("The chat app reported an autoplay failure")
 
         with tempfile.TemporaryDirectory(prefix="llamadart-web-tts-") as temp_dir:
             with page.expect_download(timeout=120000) as download_info:

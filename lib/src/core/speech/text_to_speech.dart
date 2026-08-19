@@ -460,7 +460,7 @@ class TextToSpeechEngine {
       sampleRateHz: backendCapabilities.sampleRateHz,
       channelCount: backendCapabilities.channelCount,
       speakerReferenceInputKinds: backendCapabilities.supportsSpeakerReference
-          ? <SpeechAudioInputKind>{
+          ? const <SpeechAudioInputKind>{
               if (textToSpeechSupportsFileInput) SpeechAudioInputKind.file,
               SpeechAudioInputKind.encodedBytes,
             }

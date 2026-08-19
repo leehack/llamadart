@@ -65,6 +65,10 @@ void main() {
         SpeechAudioInputKind.file,
         SpeechAudioInputKind.encodedBytes,
       });
+      expect(
+        () => capabilities.speakerReferenceInputKinds.clear(),
+        throwsUnsupportedError,
+      );
       expect(capabilities.supportsIncrementalAudio, isFalse);
       expect(capabilities.supportsCancellation, isTrue);
       expect(capabilities.supportsOutputBackpressure, isFalse);
