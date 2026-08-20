@@ -883,6 +883,7 @@ Future<LocalE2eResult> runLocalE2e(
   String? projectRoot,
   Future<void> Function(int port)? portAvailabilityCheck,
   Future<void> Function(int port, Process owner)? portReadinessWait,
+  Future<ProcessResult> Function(LocalE2eCommandStep step)? foregroundStepRun,
 }) async {
   final parsed = _ParsedArgs.parse(args);
   if (parsed.help) {
@@ -1101,13 +1102,15 @@ Future<LocalE2eResult> runLocalE2e(
         continue;
       }
 
-      final result = await Process.run(
-        step.executable,
-        step.arguments,
-        workingDirectory: step.workingDirectory,
-        environment: step.environment.isEmpty ? null : step.environment,
-        runInShell: false,
-      );
+      final result = await (foregroundStepRun == null
+          ? Process.run(
+              step.executable,
+              step.arguments,
+              workingDirectory: step.workingDirectory,
+              environment: step.environment.isEmpty ? null : step.environment,
+              runInShell: false,
+            )
+          : foregroundStepRun(step));
       buffer
         ..write(result.stdout)
         ..write(result.stderr);

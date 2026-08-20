@@ -932,6 +932,7 @@ void main() {
       final result = await runLocalE2e(
         ['--scenario', 'bridge-smoke', '--skip-build', '--port', '$port'],
         projectRoot: tempDir.path,
+        foregroundStepRun: _successfulForegroundStep,
         portAvailabilityCheck: (actualPort) async {
           throw StateError(
             'Port $actualPort is already in use; stop the existing server or '
@@ -953,7 +954,6 @@ void main() {
         'run_local_e2e_test_',
       );
       addTearDown(() => tempDir.delete(recursive: true));
-      await _writeBridgeSmokeValidator(tempDir);
       const port = 9124;
 
       final result = await runLocalE2e(
@@ -967,6 +967,8 @@ void main() {
           '$port',
         ],
         projectRoot: tempDir.path,
+        foregroundStepRun: _successfulForegroundStep,
+        portAvailabilityCheck: (_) async {},
         portReadinessWait: (actualPort, _) async {
           throw StateError(
             'Background server exited before port $actualPort became ready '
@@ -1017,17 +1019,8 @@ void main() {
 }
 
 Future<Directory> _createBridgeSmokeFixture() async {
-  final directory = await Directory.systemTemp.createTemp(
-    'run_local_e2e_bridge_test_',
-  );
-  await _writeBridgeSmokeValidator(directory);
-  return directory;
+  return Directory.systemTemp.createTemp('run_local_e2e_bridge_test_');
 }
 
-Future<void> _writeBridgeSmokeValidator(Directory directory) async {
-  final validator = File(
-    '${directory.path}/scripts/validate_chat_app_web_build.sh',
-  );
-  await validator.create(recursive: true);
-  await validator.writeAsString('#!/bin/sh\nexit 0\n');
-}
+Future<ProcessResult> _successfulForegroundStep(LocalE2eCommandStep _) async =>
+    ProcessResult(0, 0, '', '');
