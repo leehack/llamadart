@@ -61,7 +61,8 @@
   PCM/WAV output, with a bounded example-app utterance length for browser
   stability. The example pins bridge assets `v0.1.37`, retaining the `v0.1.34`
   recovery that retries a failed worker WebGPU synthesis once on CPU; current
-  LiteRT-LM artifacts fail explicitly as unsupported.
+  LiteRT-LM artifacts fail explicitly as unsupported. Apple companion builds
+  now discover the native TTS wrapper ABI from the embedded llama framework.
 
 * Added an experimental typed `SpeechToTextEngine` with an explicit Qwen3-ASR
   adapter profile for whole-file llama.cpp transcription. The Flutter chat

@@ -50,8 +50,9 @@ For canonical full release notes, use:
   byte-backed speaker references and complete PCM/WAV output, with a bounded
   example-app utterance length for browser stability. The example pins bridge
   assets `v0.1.37`, retaining the `v0.1.34` recovery that retries a failed
-  worker WebGPU synthesis once on CPU; current LiteRT-LM artifacts remain
-  unsupported.
+  worker WebGPU synthesis once on CPU; Apple companion builds discover the
+  native TTS wrapper ABI from the embedded llama framework, while current
+  LiteRT-LM artifacts remain unsupported.
 
 - Updated the native llama.cpp runtime to `b10514`, adding BailingMoE3,
   GraniteSWA/GraniteMoeSWA, speculators-format DSpark checkpoints, and current

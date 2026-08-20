@@ -3479,6 +3479,7 @@ class LlamaCppService {
       // as a bare libllamadart.dylib. Opening the framework binary directly
       // makes dynamically discovered wrapper ABIs visible to FFI.
       candidates.add(path.join('llamadart.framework', 'llamadart'));
+      candidates.add(path.join('llama.framework', 'llama'));
     }
     return candidates;
   }
