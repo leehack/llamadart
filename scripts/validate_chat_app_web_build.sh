@@ -36,12 +36,13 @@ for wasm_file in \
   fi
 done
 
+manifest_json="$(tr -d '\r\n' < "$BRIDGE_DIR/manifest.json")"
 manifest_tag="$(sed -nE \
-  's/^[[:space:]]*"bridge_assets_tag":[[:space:]]*"([^"]+)".*$/\1/p' \
-  "$BRIDGE_DIR/manifest.json")"
+  's/.*"bridge_assets_tag":[[:space:]]*"([^"]+)".*/\1/p' \
+  <<<"$manifest_json")"
 manifest_llama_cpp_tag="$(sed -nE \
-  's/^[[:space:]]*"llama_cpp_tag":[[:space:]]*"([^"]+)".*$/\1/p' \
-  "$BRIDGE_DIR/manifest.json")"
+  's/.*"llama_cpp_tag":[[:space:]]*"([^"]+)".*/\1/p' \
+  <<<"$manifest_json")"
 bootstrap_tag="$(sed -nE \
   "s/^[[:space:]]*const defaultBridgeAssetsTag = '([^']+)';.*$/\1/p" \
   "$BUILD_DIR/index.html")"
