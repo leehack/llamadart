@@ -925,47 +925,55 @@ void main() {
     });
 
     test('reports port conflicts before starting Web smoke servers', () async {
-      final socket = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
-      addTearDown(socket.close);
       final tempDir = await _createBridgeSmokeFixture();
       addTearDown(() => tempDir.delete(recursive: true));
+      const port = 9123;
 
-      final result = await runLocalE2e([
-        '--scenario',
-        'bridge-smoke',
-        '--skip-build',
-        '--port',
-        '${socket.port}',
-      ], projectRoot: tempDir.path);
+      final result = await runLocalE2e(
+        ['--scenario', 'bridge-smoke', '--skip-build', '--port', '$port'],
+        projectRoot: tempDir.path,
+        portAvailabilityCheck: (actualPort) async {
+          throw StateError(
+            'Port $actualPort is already in use; stop the existing server or '
+            'choose a different --port.',
+          );
+        },
+      );
 
       expect(result.exitCode, isNot(0));
       expect(
         result.stdout,
         contains('Running local E2E scenario: bridge-smoke'),
       );
-      expect(result.stderr, contains('Port ${socket.port} is already in use'));
+      expect(result.stderr, contains('Port $port is already in use'));
     });
 
     test('reports background server startup failures', () async {
-      final socket = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
-      final port = socket.port;
-      await socket.close();
-
       final tempDir = await Directory.systemTemp.createTemp(
         'run_local_e2e_test_',
       );
       addTearDown(() => tempDir.delete(recursive: true));
       await _writeBridgeSmokeValidator(tempDir);
+      const port = 9124;
 
-      final result = await runLocalE2e([
-        '--scenario',
-        'bridge-smoke',
-        '--skip-build',
-        '--python',
-        'dart',
-        '--port',
-        '$port',
-      ], projectRoot: tempDir.path);
+      final result = await runLocalE2e(
+        [
+          '--scenario',
+          'bridge-smoke',
+          '--skip-build',
+          '--python',
+          Platform.resolvedExecutable,
+          '--port',
+          '$port',
+        ],
+        projectRoot: tempDir.path,
+        portReadinessWait: (actualPort, _) async {
+          throw StateError(
+            'Background server exited before port $actualPort became ready '
+            '(exit code 1).',
+          );
+        },
+      );
 
       expect(result.exitCode, isNot(0));
       expect(result.stderr, contains('Background server exited'));

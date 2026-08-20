@@ -881,6 +881,8 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
 Future<LocalE2eResult> runLocalE2e(
   List<String> args, {
   String? projectRoot,
+  Future<void> Function(int port)? portAvailabilityCheck,
+  Future<void> Function(int port, Process owner)? portReadinessWait,
 }) async {
   final parsed = _ParsedArgs.parse(args);
   if (parsed.help) {
@@ -1071,7 +1073,7 @@ Future<LocalE2eResult> runLocalE2e(
       if (step.background) {
         final port = step.waitForPort;
         if (port != null) {
-          await _ensurePortAvailable(port);
+          await (portAvailabilityCheck ?? _ensurePortAvailable)(port);
         }
         final process = await Process.start(
           step.executable,
@@ -1094,7 +1096,7 @@ Future<LocalE2eResult> runLocalE2e(
           ),
         );
         if (port != null) {
-          await _waitForPort(port, process);
+          await (portReadinessWait ?? _waitForPort)(port, process);
         }
         continue;
       }
