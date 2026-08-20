@@ -54,6 +54,11 @@ if [[ -z "$manifest_tag" || -z "$manifest_llama_cpp_tag" ]]; then
   exit 1
 fi
 
+if [[ -z "$bootstrap_tag" || -z "$bootstrap_llama_cpp_tag" ]]; then
+  echo "[chat-app-web] error: chat app bootstrap is missing bridge version provenance" >&2
+  exit 1
+fi
+
 if [[ "$bootstrap_tag" != "$manifest_tag" ]]; then
   echo "[chat-app-web] error: bootstrap bridge tag '$bootstrap_tag' does not match manifest '$manifest_tag'" >&2
   exit 1
