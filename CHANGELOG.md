@@ -1,17 +1,21 @@
 ## Unreleased
 
+* Updated the default llama.cpp native runtime pin to
+  `leehack/llamadart-native@b10514`, adding BailingMoE3,
+  GraniteSWA/GraniteMoeSWA, speculators-format DSpark checkpoints, and current
+  upstream multimodal/backend fixes and performance improvements. Regenerated
+  matching Dart FFI bindings, refreshed the `llamadart_llama_cpp_flutter`
+  Apple SwiftPM checksum, and aligned current native-runtime documentation.
+
+* Updated the default WebGPU bridge assets to `v0.1.37`, embedding llama.cpp
+  `b10514` to restore native/Web parity. The bridge provisions an explicit 1 MiB
+  Wasm stack for both wasm32 and memory64, preventing the `b10514` graph
+  parameter growth from aborting Qwen3-ASR memory64 context construction.
+
 * Improved Web microphone transcription by warming up browser capture before
   showing the recording-ready state, trimming the warmup silence, and
   rejecting too-short, silent, or unsupported PCM WAV captures before
   inference.
-
-* Updated the default llama.cpp native runtime pin to
-  `leehack/llamadart-native@b10453`, picking up llama.cpp fixes for a Granite
-  Speech heap overflow, a DOTS OCR out-of-bounds write, and a Step3VL
-  divide-by-zero. The update preserves the existing speculative wrapper ABI,
-  regenerates bindings for the signed automatic load mode and current MTMD
-  layouts, and refreshes the `llamadart_llama_cpp_flutter` Apple SwiftPM
-  checksum.
 
 * Added logical batch-size (`n_batch`) and micro-batch-size (`n_ubatch`)
   controls for llama.cpp/WebGPU models in the Flutter chat example. Android
@@ -55,16 +59,17 @@
   with file or microphone speaker references, automatic playback, replay, and
   WAV save controls. Web accepts byte-backed speaker references and complete
   PCM/WAV output, with a bounded example-app utterance length for browser
-  stability. The example pins bridge assets `v0.1.34`, which retry a failed
-  worker WebGPU synthesis once on CPU; current LiteRT-LM artifacts fail
-  explicitly as unsupported.
+  stability. The example pins bridge assets `v0.1.37`, retaining the `v0.1.34`
+  recovery that retries a failed worker WebGPU synthesis once on CPU; current
+  LiteRT-LM artifacts fail explicitly as unsupported.
 
 * Added an experimental typed `SpeechToTextEngine` with an explicit Qwen3-ASR
   adapter profile for whole-file llama.cpp transcription. The Flutter chat
   example includes a SHA-256-verified Qwen3-ASR 0.6B preset plus separate
   **Transcribe Audio** and foreground microphone recording flows on native and
-  WebGPU. Web requires validated bridge assets `v0.1.30+`, pins `v0.1.34` (with
-  the short-speech recovery introduced in `v0.1.32`) to
+  WebGPU. Web requires validated bridge assets `v0.1.30+`, pins `v0.1.37` (with
+  the short-speech recovery introduced in `v0.1.32` and the `b10514` memory64
+  stack fix) to
   recover short speech that would otherwise terminate empty, accepts WAV bytes
   only, and remains separate from native LiteRT-LM live dictation. The native
   flow has been exercised on a physical Pixel with CPU inference and in the

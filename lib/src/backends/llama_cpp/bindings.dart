@@ -4706,6 +4706,14 @@ external ffi.Pointer<ggml_tensor> ggml_rope_multi_back(
 );
 
 @ffi.Native<
+  ffi.Pointer<ggml_tensor> Function(ffi.Pointer<ggml_tensor>, ffi.Int)
+>()
+external ffi.Pointer<ggml_tensor> ggml_rope_set_offset(
+  ffi.Pointer<ggml_tensor> a,
+  int n_offs,
+);
+
+@ffi.Native<
   ffi.Pointer<ggml_tensor> Function(
     ffi.Pointer<ggml_context>,
     ffi.Pointer<ggml_tensor>,
@@ -7479,6 +7487,12 @@ external void mtmd_bitmap_set_id(
   ffi.Pointer<ffi.Char> id,
 );
 
+@ffi.Native<ffi.Void Function(ffi.Pointer<mtmd_bitmap>, ffi.Bool)>()
+external void mtmd_bitmap_set_mergeable(
+  ffi.Pointer<mtmd_bitmap> bitmap,
+  bool mergeable,
+);
+
 @ffi.Native<
   ffi.Pointer<mtmd_bitmap> Function(
     ffi.Pointer<mtmd_context>,
@@ -7561,6 +7575,13 @@ external ffi.Pointer<mtmd_input_chunk> mtmd_input_chunk_copy(
 
 @ffi.Native<ffi.Void Function(ffi.Pointer<mtmd_input_chunk>)>()
 external void mtmd_input_chunk_free(ffi.Pointer<mtmd_input_chunk> chunk);
+
+@ffi.Native<
+  ffi.Pointer<mtmd_input_chunk> Function(ffi.Pointer<mtmd_input_chunk>)
+>()
+external ffi.Pointer<mtmd_input_chunk> mtmd_input_chunk_get_placeholder(
+  ffi.Pointer<mtmd_input_chunk> chunk,
+);
 
 @ffi.Native<
   ffi.Int32 Function(

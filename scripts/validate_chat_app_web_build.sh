@@ -36,6 +36,34 @@ for wasm_file in \
   fi
 done
 
+manifest_tag="$(sed -nE \
+  's/^[[:space:]]*"bridge_assets_tag":[[:space:]]*"([^"]+)".*$/\1/p' \
+  "$BRIDGE_DIR/manifest.json")"
+manifest_llama_cpp_tag="$(sed -nE \
+  's/^[[:space:]]*"llama_cpp_tag":[[:space:]]*"([^"]+)".*$/\1/p' \
+  "$BRIDGE_DIR/manifest.json")"
+bootstrap_tag="$(sed -nE \
+  "s/^[[:space:]]*const defaultBridgeAssetsTag = '([^']+)';.*$/\1/p" \
+  "$BUILD_DIR/index.html")"
+bootstrap_llama_cpp_tag="$(sed -nE \
+  "s/^[[:space:]]*const defaultBridgeLlamaCppTag = '([^']+)';.*$/\1/p" \
+  "$BUILD_DIR/index.html")"
+
+if [[ -z "$manifest_tag" || -z "$manifest_llama_cpp_tag" ]]; then
+  echo "[chat-app-web] error: bridge manifest is missing version provenance" >&2
+  exit 1
+fi
+
+if [[ "$bootstrap_tag" != "$manifest_tag" ]]; then
+  echo "[chat-app-web] error: bootstrap bridge tag '$bootstrap_tag' does not match manifest '$manifest_tag'" >&2
+  exit 1
+fi
+
+if [[ "$bootstrap_llama_cpp_tag" != "$manifest_llama_cpp_tag" ]]; then
+  echo "[chat-app-web] error: bootstrap llama.cpp tag '$bootstrap_llama_cpp_tag' does not match manifest '$manifest_llama_cpp_tag'" >&2
+  exit 1
+fi
+
 (
   cd "$BRIDGE_DIR"
   if command -v sha256sum >/dev/null 2>&1; then

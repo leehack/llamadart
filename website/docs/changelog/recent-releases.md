@@ -9,6 +9,11 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Updated WebGPU bridge assets to `v0.1.37` (llama.cpp `b10514`), restoring
+  native/Web parity and provisioning an explicit 1 MiB Wasm stack for wasm32
+  and memory64 so `b10514` graph-parameter growth does not abort Qwen3-ASR
+  memory64 context construction.
+
 - Improved Web microphone transcription with browser-capture warmup trimming
   and early short, silent, and unsupported PCM WAV diagnostics.
 
@@ -44,18 +49,20 @@ For canonical full release notes, use:
   playback, replay, and WAV export in the Flutter chat example. Web accepts
   byte-backed speaker references and complete PCM/WAV output, with a bounded
   example-app utterance length for browser stability. The example pins bridge
-  assets `v0.1.34`, which retry a failed worker WebGPU synthesis once on CPU;
-  current LiteRT-LM artifacts remain unsupported.
+  assets `v0.1.37`, retaining the `v0.1.34` recovery that retries a failed
+  worker WebGPU synthesis once on CPU; current LiteRT-LM artifacts remain
+  unsupported.
 
-- Updated the native llama.cpp runtime to `b10453`, consuming the Granite
-  Speech heap-overflow, DOTS OCR out-of-bounds, and Step3VL divide-by-zero
-  fixes while preserving the speculative wrapper ABI. Matching Dart FFI
-  bindings and the Apple SwiftPM artifact checksum were refreshed.
+- Updated the native llama.cpp runtime to `b10514`, adding BailingMoE3,
+  GraniteSWA/GraniteMoeSWA, speculators-format DSpark checkpoints, and current
+  upstream multimodal/backend fixes and performance improvements. Matching Dart
+  FFI bindings and the Apple SwiftPM artifact checksum were refreshed.
 
 - Added an experimental typed Qwen3-ASR whole-file transcription workflow, a
   SHA-256-verified Qwen3-ASR 0.6B native-and-Web chat-app preset, and foreground
   microphone recording. WebGPU requires validated bridge assets `v0.1.30+`,
-  pins `v0.1.34` with the `v0.1.32` short-speech recovery,
+  pins `v0.1.37` with the `v0.1.32` short-speech recovery and the `b10514`
+  memory64 stack fix,
   and accepts WAV bytes only; native LiteRT-LM live dictation remains a
   separate implementation.
 
