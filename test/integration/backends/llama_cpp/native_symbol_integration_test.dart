@@ -419,8 +419,8 @@ void main() {
         ..._genericSpeculativeSymbols,
       ]) {
         expect(
-          bindingsSource,
-          matches(RegExp(r'external\s+[\s\S]*?\b' + RegExp.escape(symbol))),
+          _declaresExternalFunction(bindingsSource, symbol),
+          isTrue,
           reason: symbol,
         );
       }
@@ -433,8 +433,8 @@ void main() {
 
       for (final symbol in _b10514BindingSymbols) {
         expect(
-          bindingsSource,
-          matches(RegExp(r'external\s+[\s\S]*?\b' + RegExp.escape(symbol))),
+          _declaresExternalFunction(bindingsSource, symbol),
+          isTrue,
           reason: symbol,
         );
       }
@@ -821,3 +821,7 @@ void main() {
     });
   });
 }
+
+bool _declaresExternalFunction(String source, String symbol) => RegExp(
+  r'external\s+[^;]*\b' + RegExp.escape(symbol) + r'\s*\(',
+).hasMatch(source);
