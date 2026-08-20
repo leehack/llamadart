@@ -52,6 +52,8 @@ const _b10514BindingSymbols = [
   'mtmd_input_chunk_get_placeholder',
 ];
 
+const _b10514CoreSymbols = ['ggml_rope_set_offset'];
+
 const _b10514MtmdSymbols = [
   'mtmd_bitmap_set_mergeable',
   'mtmd_input_chunk_get_placeholder',
@@ -799,6 +801,16 @@ void main() {
         reason: 'Expected a native library exporting mtmd symbols.',
       );
       _expectDynamicLibraryExports(libraryFile!, _b10514MtmdSymbols);
+    });
+
+    test('Verify b10514 core symbols are resolvable', () {
+      final libraryFile = _llamadartWrapperLibraryFileOrNull();
+      expect(
+        libraryFile,
+        isNotNull,
+        reason: 'Expected a native library exporting llama.cpp symbols.',
+      );
+      _expectDynamicLibraryExports(libraryFile!, _b10514CoreSymbols);
     });
 
     test('Verify core llama symbols are resolvable', () {
