@@ -242,6 +242,53 @@ void main() {
       },
     );
 
+    test('dry-runs packaged bridge smoke with build and serve steps', () async {
+      final result = await runLocalE2e(const [
+        '--scenario',
+        'bridge-smoke',
+        '--python',
+        '/custom/python',
+        '--dry-run',
+      ], projectRoot: '/repo');
+
+      expect(result.exitCode, 0);
+      expect(
+        result.stdout,
+        contains(
+          'CHAT_APP_BASE_HREF=/example/chat_app/build/web/ '
+          'bash scripts/build_chat_app_web.sh',
+        ),
+      );
+      expect(result.stdout, contains('serve_static_with_headers.py'));
+      expect(
+        result.stdout,
+        contains(
+          '/custom/python tool/testing/playwright_bridge_smoke.py '
+          'http://127.0.0.1:7358/example/chat_app/build/web/',
+        ),
+      );
+    });
+
+    test('validates an existing packaged bridge build when skipped', () async {
+      final result = await runLocalE2e(const [
+        '--scenario',
+        'bridge-smoke',
+        '--skip-build',
+        '--dry-run',
+      ], projectRoot: '/repo');
+
+      expect(result.exitCode, 0);
+      expect(
+        result.stdout,
+        contains('bash scripts/validate_chat_app_web_build.sh'),
+      );
+      expect(result.stdout, isNot(contains('scripts/build_chat_app_web.sh')));
+      expect(
+        result.stdout,
+        contains('http://127.0.0.1:7358/example/chat_app/build/web/'),
+      );
+    });
+
     test('prefers repo-local Playwright Python by default', () async {
       final tempDir = await Directory.systemTemp.createTemp(
         'run_local_e2e_python_test_',
@@ -880,13 +927,16 @@ void main() {
     test('reports port conflicts before starting Web smoke servers', () async {
       final socket = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
       addTearDown(socket.close);
+      final tempDir = await _createBridgeSmokeFixture();
+      addTearDown(() => tempDir.delete(recursive: true));
 
       final result = await runLocalE2e([
         '--scenario',
         'bridge-smoke',
+        '--skip-build',
         '--port',
         '${socket.port}',
-      ], projectRoot: '/repo');
+      ], projectRoot: tempDir.path);
 
       expect(result.exitCode, isNot(0));
       expect(
@@ -905,13 +955,12 @@ void main() {
         'run_local_e2e_test_',
       );
       addTearDown(() => tempDir.delete(recursive: true));
-      await Directory(
-        '${tempDir.path}/example/chat_app/web',
-      ).create(recursive: true);
+      await _writeBridgeSmokeValidator(tempDir);
 
       final result = await runLocalE2e([
         '--scenario',
         'bridge-smoke',
+        '--skip-build',
         '--python',
         'dart',
         '--port',
@@ -957,4 +1006,20 @@ void main() {
       expect(metadata.toString(), isNot(contains(audioPath)));
     });
   });
+}
+
+Future<Directory> _createBridgeSmokeFixture() async {
+  final directory = await Directory.systemTemp.createTemp(
+    'run_local_e2e_bridge_test_',
+  );
+  await _writeBridgeSmokeValidator(directory);
+  return directory;
+}
+
+Future<void> _writeBridgeSmokeValidator(Directory directory) async {
+  final validator = File(
+    '${directory.path}/scripts/validate_chat_app_web_build.sh',
+  );
+  await validator.create(recursive: true);
+  await validator.writeAsString('#!/bin/sh\nexit 0\n');
 }
