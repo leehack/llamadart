@@ -11,10 +11,11 @@ import 'dart:io';
 /// The file whose default decides what a fresh vendoring run downloads.
 const String bridgeTagSourcePath = 'scripts/fetch_webgpu_bridge_assets.sh';
 
-// Bash allows leading whitespace and an `export`/`readonly` prefix, so counting
-// only bare `ASSETS_TAG=` would let a later override slip past the guard below.
+// Bash allows leading whitespace, an `export`/`readonly` prefix, and `+=`
+// appends, so a narrower pattern would let a later override slip past the
+// guard below.
 final RegExp _anyAssignment = RegExp(
-  r'^[ \t]*(?:export[ \t]+|readonly[ \t]+)?ASSETS_TAG=',
+  r'^[ \t]*(?:export[ \t]+|readonly[ \t]+)?ASSETS_TAG\+?=',
   multiLine: true,
 );
 

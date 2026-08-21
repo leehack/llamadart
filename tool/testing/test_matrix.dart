@@ -92,6 +92,16 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'Release prep, companion package version bumps, or current install docs.',
   ),
   TestMatrixRow(
+    id: 'webgpu-bridge-tag-consistency',
+    tier: 'targeted',
+    mode: 'CI + local',
+    covers:
+        'every site pinning the WebGPU bridge asset tag matches the fetch '
+        'script default',
+    command: 'dart run tool/testing/check_webgpu_bridge_tag.dart',
+    useWhen: 'Bridge asset tag bumps, or edits to the docs that pin it.',
+  ),
+  TestMatrixRow(
     id: 'examples-tests',
     tier: 'targeted',
     mode: 'local',

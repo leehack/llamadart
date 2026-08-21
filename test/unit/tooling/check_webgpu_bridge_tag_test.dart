@@ -95,6 +95,19 @@ void main() {
     expect(() => readPinnedBridgeTag(root), throwsFormatException);
   });
 
+  test('an append assignment is caught too', () {
+    final root = Directory.systemTemp.createTempSync('bridge_tag_gate');
+    addTearDown(() => root.deleteSync(recursive: true));
+    File('${root.path}/$bridgeTagSourcePath')
+      ..parent.createSync(recursive: true)
+      ..writeAsStringSync(
+        'ASSETS_TAG="\${WEBGPU_BRIDGE_ASSETS_TAG:-v1.0.0}"\n'
+        'ASSETS_TAG+=-patched\n',
+      );
+
+    expect(() => readPinnedBridgeTag(root), throwsFormatException);
+  });
+
   test('a second assignment fails rather than validating the wrong one', () {
     final root = Directory.systemTemp.createTempSync('bridge_tag_gate');
     addTearDown(() => root.deleteSync(recursive: true));
