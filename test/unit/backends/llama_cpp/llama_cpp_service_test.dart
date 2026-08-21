@@ -637,6 +637,38 @@ void main() {
     );
   });
 
+  group('startup diagnostics', () {
+    test('an empty buffer leaves the message unchanged', () {
+      expect(formatStartupDiagnostics(const <String>[]), isEmpty);
+    });
+
+    test('entries are joined into a labelled suffix', () {
+      expect(
+        formatStartupDiagnostics(const <String>['first failed', 'then this']),
+        ', startupDiagnostics=[first failed; then this]',
+      );
+    });
+
+    test('truncation keeps the newest text', () {
+      final entries = <String>['a' * 100, 'the failure that actually matters'];
+
+      final formatted = formatStartupDiagnostics(entries, maxLength: 40);
+
+      expect(formatted, startsWith(', startupDiagnostics=[...'));
+      expect(formatted, endsWith('that actually matters]'));
+      // The oldest entry is dropped, not the newest.
+      expect(formatted, isNot(contains('a' * 50)));
+      expect(
+        formatted.length,
+        lessThan(', startupDiagnostics=[...]'.length + 41),
+      );
+    });
+
+    test('a fresh service has nothing recorded', () {
+      expect(LlamaCppService().getStartupDiagnostics(), isEmpty);
+    });
+  });
+
   group('invalid-handle guard rails', () {
     late LlamaCppService service;
 

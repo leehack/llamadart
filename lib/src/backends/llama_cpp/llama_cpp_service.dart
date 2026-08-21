@@ -1748,7 +1748,8 @@ class LlamaCppService {
       final diagnostics = _backendDiagnostics();
       throw Exception(
         "Failed to load model (size=$modelFileSize bytes, "
-        "diagnostics=$diagnostics)",
+        "diagnostics=$diagnostics)"
+        "${formatStartupDiagnostics(getStartupDiagnostics())}",
       );
     }
 
@@ -1862,7 +1863,8 @@ class LlamaCppService {
       final diagnostics = _backendDiagnostics();
       throw Exception(
         "Failed to load $label (size=$modelFileSize bytes, "
-        "path=$draftModelPath, diagnostics=$diagnostics)",
+        "path=$draftModelPath, diagnostics=$diagnostics)"
+        "${formatStartupDiagnostics(getStartupDiagnostics())}",
       );
     }
 
@@ -8176,4 +8178,21 @@ class _LlamaContextWrapper {
     kvFromStateLoad = false;
     llama_free(pointer);
   }
+}
+
+/// Renders startup diagnostics as a suffix for a load-failure message.
+///
+/// Returns an empty string when nothing was recorded, so platforms that never
+/// populate the buffer keep their existing message byte for byte. The tail is
+/// kept when truncating: the buffer caps entries, not bytes, and the newest
+/// entries are the ones describing the failure at hand.
+String formatStartupDiagnostics(List<String> entries, {int maxLength = 4096}) {
+  if (entries.isEmpty) {
+    return '';
+  }
+  var joined = entries.join('; ');
+  if (joined.length > maxLength) {
+    joined = '...${joined.substring(joined.length - maxLength)}';
+  }
+  return ', startupDiagnostics=[$joined]';
 }
