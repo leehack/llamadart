@@ -45,6 +45,9 @@ jobs:
       - name: Verify release docs versions
         run: dart run tool/testing/verify_release_docs_versions.dart
 
+      - name: Check WebGPU bridge asset tag
+        run: dart run tool/testing/check_webgpu_bridge_tag.dart
+
       - name: Pub Publish Dry Run
         run: flutter pub publish --dry-run
 
