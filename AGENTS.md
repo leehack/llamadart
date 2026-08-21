@@ -138,6 +138,10 @@ the exact generated text matters.
 WebGPU bridge features are versioned runtime capabilities. When changing bridge
 behavior, verify the pinned asset tag/manifest, direct bridge calls, worker
 path, Dart interop wrapper, public engine API, docs, and examples together.
+`tool/testing/check_webgpu_bridge_tag.dart` enforces the tag half of that: every
+site pinning the tag must match the default in
+`scripts/fetch_webgpu_bridge_assets.sh`. Capability floors (`v0.1.30+`) and
+changelog entries keep their own values and are not checked.
 
 Flutter Web builds exclude the gitignored generated bridge assets. Deployment
 and real-model Web E2E flows must use `scripts/build_chat_app_web.sh`, which
