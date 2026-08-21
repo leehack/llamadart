@@ -1,5 +1,8 @@
 ## 0.8.20
 
+* Added `code_assets` 2.x compatibility while retaining support for 1.x native
+  asset toolchains.
+
 * Updated the default llama.cpp native runtime pin to
   `leehack/llamadart-native@b10514`, adding BailingMoE3,
   GraniteSWA/GraniteMoeSWA, speculators-format DSpark checkpoints, and current
