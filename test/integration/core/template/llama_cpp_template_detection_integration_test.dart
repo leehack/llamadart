@@ -145,72 +145,68 @@ void main() {
       );
     }, skip: fixtureSkipReason);
 
-    test(
-      'renders and parses every vendored llama.cpp template',
-      () {
-        expect(templatesDir.existsSync(), isTrue);
+    test('renders and parses every vendored llama.cpp template', () {
+      expect(templatesDir.existsSync(), isTrue);
 
-        final files =
-            templatesDir
-                .listSync()
-                .whereType<File>()
-                .where((f) => f.path.endsWith('.jinja'))
-                .toList()
-              ..sort((a, b) => a.path.compareTo(b.path));
+      final files =
+          templatesDir
+              .listSync()
+              .whereType<File>()
+              .where((f) => f.path.endsWith('.jinja'))
+              .toList()
+            ..sort((a, b) => a.path.compareTo(b.path));
 
-        for (final file in files) {
-          final source = file.readAsStringSync();
-          final detected = detectChatFormat(source);
+      for (final file in files) {
+        final source = file.readAsStringSync();
+        final detected = detectChatFormat(source);
 
-          final rendered = ChatTemplateEngine.render(
-            templateSource: source,
-            messages: messages,
-            metadata: metadata,
-            tools: [tool],
-            parallelToolCalls: true,
-          );
+        final rendered = ChatTemplateEngine.render(
+          templateSource: source,
+          messages: messages,
+          metadata: metadata,
+          tools: [tool],
+          parallelToolCalls: true,
+        );
 
+        expect(
+          rendered.prompt.trim(),
+          isNotEmpty,
+          reason: 'Empty prompt for ${file.uri.pathSegments.last}',
+        );
+
+        final parseInput = sampleOutputForFormat(detected);
+        final parsed = ChatTemplateEngine.parse(
+          rendered.format,
+          parseInput,
+          parser: rendered.parser,
+          thinkingForcedOpen: rendered.thinkingForcedOpen,
+        );
+
+        final hasAnyPayload =
+            parsed.content.isNotEmpty ||
+            parsed.toolCalls.isNotEmpty ||
+            (parsed.reasoningContent?.isNotEmpty ?? false);
+        expect(
+          hasAnyPayload,
+          isTrue,
+          reason:
+              'Parse produced empty payload for ${file.uri.pathSegments.last}',
+        );
+
+        if (parseInput.contains('get_weather')) {
+          final parsedToolName = parsed.toolCalls.isNotEmpty
+              ? parsed.toolCalls.first.function?.name
+              : null;
+          final preservedInContent = parsed.content.contains('get_weather');
           expect(
-            rendered.prompt.trim(),
-            isNotEmpty,
-            reason: 'Empty prompt for ${file.uri.pathSegments.last}',
-          );
-
-          final parseInput = sampleOutputForFormat(detected);
-          final parsed = ChatTemplateEngine.parse(
-            rendered.format,
-            parseInput,
-            parser: rendered.parser,
-            thinkingForcedOpen: rendered.thinkingForcedOpen,
-          );
-
-          final hasAnyPayload =
-              parsed.content.isNotEmpty ||
-              parsed.toolCalls.isNotEmpty ||
-              (parsed.reasoningContent?.isNotEmpty ?? false);
-          expect(
-            hasAnyPayload,
+            parsedToolName == 'get_weather' || preservedInContent,
             isTrue,
             reason:
-                'Parse produced empty payload for ${file.uri.pathSegments.last}',
+                'Tool payload was neither parsed nor preserved for ${file.uri.pathSegments.last}',
           );
-
-          if (parseInput.contains('get_weather')) {
-            final parsedToolName = parsed.toolCalls.isNotEmpty
-                ? parsed.toolCalls.first.function?.name
-                : null;
-            final preservedInContent = parsed.content.contains('get_weather');
-            expect(
-              parsedToolName == 'get_weather' || preservedInContent,
-              isTrue,
-              reason:
-                  'Tool payload was neither parsed nor preserved for ${file.uri.pathSegments.last}',
-            );
-          }
         }
-      },
-      skip: fixtureSkipReason,
-    );
+      }
+    }, skip: fixtureSkipReason);
   });
 }
 
