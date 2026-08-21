@@ -2500,241 +2500,168 @@ class LlamaCppService {
         continue;
       }
 
-      if (_ggmlBackendLoadFallback == null) {
-        try {
-          _ggmlBackendLoadFallback = library
-              .lookupFunction<_GgmlBackendLoadNative, _GgmlBackendLoadDart>(
-                'ggml_backend_load',
-              );
-        } catch (_) {
-          // Keep searching other candidates.
-        }
-      }
+      _ggmlBackendLoadFallback ??= _tryBind(
+        () => library
+            .lookupFunction<_GgmlBackendLoadNative, _GgmlBackendLoadDart>(
+              'ggml_backend_load',
+            ),
+      );
+      _ggmlBackendLoadAllFallback ??= _tryBind(
+        () => library
+            .lookupFunction<_GgmlBackendLoadAllNative, _GgmlBackendLoadAllDart>(
+              'ggml_backend_load_all',
+            ),
+      );
+      _ggmlBackendLoadAllFromPathFallback ??= _tryBind(
+        () =>
+            library.lookupFunction<
+              _GgmlBackendLoadAllFromPathNative,
+              _GgmlBackendLoadAllFromPathDart
+            >('ggml_backend_load_all_from_path'),
+      );
+      _ggmlBackendRegisterFallback ??= _tryBind(
+        () =>
+            library.lookupFunction<
+              _GgmlBackendRegisterNative,
+              _GgmlBackendRegisterDart
+            >('ggml_backend_register'),
+      );
+      _ggmlBackendRegCountFallback ??= _tryBind(
+        () =>
+            library.lookupFunction<
+              _GgmlBackendRegCountNative,
+              _GgmlBackendRegCountDart
+            >('ggml_backend_reg_count'),
+      );
+      _ggmlBackendRegGetFallback ??= _tryBind(
+        () => library
+            .lookupFunction<_GgmlBackendRegGetNative, _GgmlBackendRegGetDart>(
+              'ggml_backend_reg_get',
+            ),
+      );
+      _ggmlBackendRegNameFallback ??= _tryBind(
+        () => library
+            .lookupFunction<_GgmlBackendRegNameNative, _GgmlBackendRegNameDart>(
+              'ggml_backend_reg_name',
+            ),
+      );
+      _ggmlBackendRegByNameFallback ??= _tryBind(
+        () =>
+            library.lookupFunction<
+              _GgmlBackendRegByNameNative,
+              _GgmlBackendRegByNameDart
+            >('ggml_backend_reg_by_name'),
+      );
+      _ggmlBackendRegDevCountFallback ??= _tryBind(
+        () =>
+            library.lookupFunction<
+              _GgmlBackendRegDevCountNative,
+              _GgmlBackendRegDevCountDart
+            >('ggml_backend_reg_dev_count'),
+      );
+      _ggmlBackendRegDevGetFallback ??= _tryBind(
+        () =>
+            library.lookupFunction<
+              _GgmlBackendRegDevGetNative,
+              _GgmlBackendRegDevGetDart
+            >('ggml_backend_reg_dev_get'),
+      );
+      _ggmlBackendDevCountFallback ??= _tryBind(
+        () =>
+            library.lookupFunction<
+              _GgmlBackendDevCountNative,
+              _GgmlBackendDevCountDart
+            >('ggml_backend_dev_count'),
+      );
+      _ggmlBackendDevGetFallback ??= _tryBind(
+        () => library
+            .lookupFunction<_GgmlBackendDevGetNative, _GgmlBackendDevGetDart>(
+              'ggml_backend_dev_get',
+            ),
+      );
+      _ggmlBackendDevNameFallback ??= _tryBind(
+        () => library
+            .lookupFunction<_GgmlBackendDevNameNative, _GgmlBackendDevNameDart>(
+              'ggml_backend_dev_name',
+            ),
+      );
+      _ggmlBackendDevBackendRegFallback ??= _tryBind(
+        () =>
+            library.lookupFunction<
+              _GgmlBackendDevBackendRegNative,
+              _GgmlBackendDevBackendRegDart
+            >('ggml_backend_dev_backend_reg'),
+      );
+      _ggmlBackendDevByTypeFallback ??= _tryBind(
+        () =>
+            library.lookupFunction<
+              _GgmlBackendDevByTypeNative,
+              _GgmlBackendDevByTypeDart
+            >('ggml_backend_dev_by_type'),
+      );
+      _ggmlBackendDevTypeFallback ??= _tryBind(
+        () => library
+            .lookupFunction<_GgmlBackendDevTypeNative, _GgmlBackendDevTypeDart>(
+              'ggml_backend_dev_type',
+            ),
+      );
+      _ggmlBackendDevGetPropsFallback ??= _tryBind(
+        () =>
+            library.lookupFunction<
+              _GgmlBackendDevGetPropsNative,
+              _GgmlBackendDevGetPropsDart
+            >('ggml_backend_dev_get_props'),
+      );
+      _ggmlBackendDevMemoryFallback ??= _tryBind(
+        () =>
+            library.lookupFunction<
+              _GgmlBackendDevMemoryNative,
+              _GgmlBackendDevMemoryDart
+            >('ggml_backend_dev_memory'),
+      );
 
-      if (_ggmlBackendLoadAllFallback == null) {
-        try {
-          _ggmlBackendLoadAllFallback = library
-              .lookupFunction<
-                _GgmlBackendLoadAllNative,
-                _GgmlBackendLoadAllDart
-              >('ggml_backend_load_all');
-        } catch (_) {
-          // Keep searching other candidates.
-        }
-      }
-
-      if (_ggmlBackendLoadAllFromPathFallback == null) {
-        try {
-          _ggmlBackendLoadAllFromPathFallback = library
-              .lookupFunction<
-                _GgmlBackendLoadAllFromPathNative,
-                _GgmlBackendLoadAllFromPathDart
-              >('ggml_backend_load_all_from_path');
-        } catch (_) {
-          // Keep searching other candidates.
-        }
-      }
-
-      if (_ggmlBackendRegisterFallback == null) {
-        try {
-          _ggmlBackendRegisterFallback = library
-              .lookupFunction<
-                _GgmlBackendRegisterNative,
-                _GgmlBackendRegisterDart
-              >('ggml_backend_register');
-        } catch (_) {
-          // Keep searching other candidates.
-        }
-      }
-
-      if (_ggmlBackendRegCountFallback == null) {
-        try {
-          _ggmlBackendRegCountFallback = library
-              .lookupFunction<
-                _GgmlBackendRegCountNative,
-                _GgmlBackendRegCountDart
-              >('ggml_backend_reg_count');
-        } catch (_) {
-          // Keep searching other candidates.
-        }
-      }
-
-      if (_ggmlBackendRegGetFallback == null) {
-        try {
-          _ggmlBackendRegGetFallback = library
-              .lookupFunction<_GgmlBackendRegGetNative, _GgmlBackendRegGetDart>(
-                'ggml_backend_reg_get',
-              );
-        } catch (_) {
-          // Keep searching other candidates.
-        }
-      }
-
-      if (_ggmlBackendRegNameFallback == null) {
-        try {
-          _ggmlBackendRegNameFallback = library
-              .lookupFunction<
-                _GgmlBackendRegNameNative,
-                _GgmlBackendRegNameDart
-              >('ggml_backend_reg_name');
-        } catch (_) {
-          // Keep searching other candidates.
-        }
-      }
-
-      if (_ggmlBackendRegByNameFallback == null) {
-        try {
-          _ggmlBackendRegByNameFallback = library
-              .lookupFunction<
-                _GgmlBackendRegByNameNative,
-                _GgmlBackendRegByNameDart
-              >('ggml_backend_reg_by_name');
-        } catch (_) {
-          // Keep searching other candidates.
-        }
-      }
-
-      if (_ggmlBackendRegDevCountFallback == null) {
-        try {
-          _ggmlBackendRegDevCountFallback = library
-              .lookupFunction<
-                _GgmlBackendRegDevCountNative,
-                _GgmlBackendRegDevCountDart
-              >('ggml_backend_reg_dev_count');
-        } catch (_) {
-          // Keep searching other candidates.
-        }
-      }
-
-      if (_ggmlBackendRegDevGetFallback == null) {
-        try {
-          _ggmlBackendRegDevGetFallback = library
-              .lookupFunction<
-                _GgmlBackendRegDevGetNative,
-                _GgmlBackendRegDevGetDart
-              >('ggml_backend_reg_dev_get');
-        } catch (_) {
-          // Keep searching other candidates.
-        }
-      }
-
-      if (_ggmlBackendDevCountFallback == null) {
-        try {
-          _ggmlBackendDevCountFallback = library
-              .lookupFunction<
-                _GgmlBackendDevCountNative,
-                _GgmlBackendDevCountDart
-              >('ggml_backend_dev_count');
-        } catch (_) {
-          // Keep searching other candidates.
-        }
-      }
-
-      if (_ggmlBackendDevGetFallback == null) {
-        try {
-          _ggmlBackendDevGetFallback = library
-              .lookupFunction<_GgmlBackendDevGetNative, _GgmlBackendDevGetDart>(
-                'ggml_backend_dev_get',
-              );
-        } catch (_) {
-          // Keep searching other candidates.
-        }
-      }
-
-      if (_ggmlBackendDevNameFallback == null) {
-        try {
-          _ggmlBackendDevNameFallback = library
-              .lookupFunction<
-                _GgmlBackendDevNameNative,
-                _GgmlBackendDevNameDart
-              >('ggml_backend_dev_name');
-        } catch (_) {
-          // Keep searching other candidates.
-        }
-      }
-
-      if (_ggmlBackendDevBackendRegFallback == null) {
-        try {
-          _ggmlBackendDevBackendRegFallback = library
-              .lookupFunction<
-                _GgmlBackendDevBackendRegNative,
-                _GgmlBackendDevBackendRegDart
-              >('ggml_backend_dev_backend_reg');
-        } catch (_) {
-          // Keep searching other candidates.
-        }
-      }
-
-      if (_ggmlBackendDevByTypeFallback == null) {
-        try {
-          _ggmlBackendDevByTypeFallback = library
-              .lookupFunction<
-                _GgmlBackendDevByTypeNative,
-                _GgmlBackendDevByTypeDart
-              >('ggml_backend_dev_by_type');
-        } catch (_) {
-          // Keep searching other candidates.
-        }
-      }
-
-      if (_ggmlBackendDevTypeFallback == null) {
-        try {
-          _ggmlBackendDevTypeFallback = library
-              .lookupFunction<
-                _GgmlBackendDevTypeNative,
-                _GgmlBackendDevTypeDart
-              >('ggml_backend_dev_type');
-        } catch (_) {
-          // Keep searching other candidates.
-        }
-      }
-
-      if (_ggmlBackendDevGetPropsFallback == null) {
-        try {
-          _ggmlBackendDevGetPropsFallback = library
-              .lookupFunction<
-                _GgmlBackendDevGetPropsNative,
-                _GgmlBackendDevGetPropsDart
-              >('ggml_backend_dev_get_props');
-        } catch (_) {
-          // Keep searching other candidates.
-        }
-      }
-
-      if (_ggmlBackendDevMemoryFallback == null) {
-        try {
-          _ggmlBackendDevMemoryFallback = library
-              .lookupFunction<
-                _GgmlBackendDevMemoryNative,
-                _GgmlBackendDevMemoryDart
-              >('ggml_backend_dev_memory');
-        } catch (_) {
-          // Keep searching other candidates.
-        }
-      }
-
-      if (_ggmlBackendLoadFallback != null &&
-          _ggmlBackendLoadAllFallback != null &&
-          _ggmlBackendLoadAllFromPathFallback != null &&
-          _ggmlBackendRegisterFallback != null &&
-          _ggmlBackendRegCountFallback != null &&
-          _ggmlBackendRegGetFallback != null &&
-          _ggmlBackendRegNameFallback != null &&
-          _ggmlBackendRegByNameFallback != null &&
-          _ggmlBackendRegDevCountFallback != null &&
-          _ggmlBackendRegDevGetFallback != null &&
-          _ggmlBackendDevCountFallback != null &&
-          _ggmlBackendDevGetFallback != null &&
-          _ggmlBackendDevNameFallback != null &&
-          _ggmlBackendDevBackendRegFallback != null &&
-          _ggmlBackendDevByTypeFallback != null &&
-          _ggmlBackendDevTypeFallback != null &&
-          _ggmlBackendDevGetPropsFallback != null &&
-          _ggmlBackendDevMemoryFallback != null) {
+      if (_ggmlFallbacksFullyResolved) {
         return;
       }
     }
   }
+
+  /// Runs one symbol binding, returning `null` if it fails for any reason so
+  /// the caller can keep searching the remaining candidates.
+  ///
+  /// Every exception is swallowed, not just a missing symbol: a candidate that
+  /// exports the name with an incompatible signature is treated the same as one
+  /// that does not export it at all. That is deliberate, and matches the
+  /// per-symbol `try`/`catch` blocks this replaced.
+  static D? _tryBind<D extends Function>(D Function() bind) {
+    try {
+      return bind();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// True once every ggml fallback symbol has been bound, so the candidate
+  /// search can stop early.
+  bool get _ggmlFallbacksFullyResolved =>
+      _ggmlBackendLoadFallback != null &&
+      _ggmlBackendLoadAllFallback != null &&
+      _ggmlBackendLoadAllFromPathFallback != null &&
+      _ggmlBackendRegisterFallback != null &&
+      _ggmlBackendRegCountFallback != null &&
+      _ggmlBackendRegGetFallback != null &&
+      _ggmlBackendRegNameFallback != null &&
+      _ggmlBackendRegByNameFallback != null &&
+      _ggmlBackendRegDevCountFallback != null &&
+      _ggmlBackendRegDevGetFallback != null &&
+      _ggmlBackendDevCountFallback != null &&
+      _ggmlBackendDevGetFallback != null &&
+      _ggmlBackendDevNameFallback != null &&
+      _ggmlBackendDevBackendRegFallback != null &&
+      _ggmlBackendDevByTypeFallback != null &&
+      _ggmlBackendDevTypeFallback != null &&
+      _ggmlBackendDevGetPropsFallback != null &&
+      _ggmlBackendDevMemoryFallback != null;
 
   List<String> _ggmlAssetUriCandidates() {
     if (Platform.isWindows) {
