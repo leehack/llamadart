@@ -280,6 +280,42 @@ void main() {
       }
     });
 
+    test('preserves LoRA error categories', () async {
+      final cases = <(Object, WorkerErrorKind)>[
+        (
+          LlamaModelException('Failed to load LoRA at bad.gguf'),
+          WorkerErrorKind.model,
+        ),
+        (
+          LlamaUnsupportedException('The adapter is an aLoRA adapter'),
+          WorkerErrorKind.unsupported,
+        ),
+        (Exception('boom'), WorkerErrorKind.generic),
+      ];
+
+      for (final (exception, expectedKind) in cases) {
+        final worker = await _startWorkerInCurrentIsolate(
+          _ThrowingLoraService(exception),
+        );
+        try {
+          final response = await _sendRequest(
+            worker.sendPort,
+            (sendPort) => LoraRequest(
+              1,
+              'set',
+              path: 'bad.gguf',
+              scale: 1.0,
+              sendPort: sendPort,
+            ),
+          );
+          expect(response, isA<ErrorResponse>());
+          expect((response as ErrorResponse).kind, expectedKind);
+        } finally {
+          await _disposeWorker(worker);
+        }
+      }
+    });
+
     test('waits for active generation before freeing native handles', () async {
       final service = _BlockingLlamaCppService();
       final worker = await _startWorkerInCurrentIsolate(service);
@@ -666,6 +702,26 @@ class _InferenceGenerationLlamaCppService extends LlamaCppService {
       'grammar sampler failed in this test runtime',
       'native grammar stack exhausted',
     );
+  }
+
+  @override
+  void dispose() {}
+}
+
+class _ThrowingLoraService extends LlamaCppService {
+  _ThrowingLoraService(this.error);
+
+  final Object error;
+
+  @override
+  void initializeBackend() {}
+
+  @override
+  void setLogLevel(LlamaLogLevel level) {}
+
+  @override
+  void handleLora(int contextHandle, String? path, double? scale, String op) {
+    throw error;
   }
 
   @override

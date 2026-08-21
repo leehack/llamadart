@@ -6300,7 +6300,7 @@ class LlamaCppService {
           );
           malloc.free(pathPtr);
           if (adapterPtr == nullptr) {
-            throw Exception("Failed to load LoRA at $path");
+            throw LlamaModelException('Failed to load LoRA at $path');
           }
           // aLoRA must activate only after its invocation tokens appear, but
           // adapters here apply from the start of generation.

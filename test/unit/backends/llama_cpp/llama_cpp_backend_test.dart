@@ -395,6 +395,19 @@ void main() {
       );
     });
 
+    test('a failed adapter load surfaces as a model error', () async {
+      await expectLater(
+        backend.setLoraAdapter(1, 'missing.gguf', 1.0),
+        throwsA(
+          isA<LlamaModelException>().having(
+            (error) => error.message,
+            'message',
+            'Failed to load LoRA at missing.gguf',
+          ),
+        ),
+      );
+    });
+
     test('ordinary LoRA operations still succeed', () async {
       await backend.setLoraAdapter(1, 'ordinary.gguf', 0.8);
       await backend.removeLoraAdapter(1, 'ordinary.gguf');
@@ -637,6 +650,13 @@ class _FakeWorkerHarness {
               ErrorResponse(
                 'The adapter at alora.gguf is an aLoRA adapter',
                 kind: WorkerErrorKind.unsupported,
+              ),
+            );
+          } else if (message.path == 'missing.gguf') {
+            message.sendPort.send(
+              ErrorResponse(
+                'Failed to load LoRA at missing.gguf',
+                kind: WorkerErrorKind.model,
               ),
             );
           } else {
