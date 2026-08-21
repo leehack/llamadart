@@ -17,7 +17,9 @@ const String bridgeTagSourcePath = 'scripts/fetch_webgpu_bridge_assets.sh';
 // Enumerating prefixes kept missing forms, so this matches the identifier
 // itself and relies on the lookbehind to exclude longer names such as
 // `WEBGPU_BRIDGE_ASSETS_TAG=`.
-final RegExp _anyAssignment = RegExp(r'(?<![A-Za-z0-9_])ASSETS_TAG(?::=|\+?=)');
+final RegExp _anyAssignment = RegExp(
+  r'(?<![A-Za-z0-9_])ASSETS_TAG(?:\[\d+\])?(?::=|\+?=)',
+);
 
 final RegExp _sourceOfTruth = RegExp(
   r'^ASSETS_TAG="\$\{WEBGPU_BRIDGE_ASSETS_TAG:-(v\d+\.\d+\.\d+)\}"$',
@@ -182,9 +184,9 @@ List<String> findBridgeTagDrift(Directory repoRoot, String expectedTag) {
 /// would never look at it.
 final List<RegExp> bridgeTagPinShapes = <RegExp>[
   RegExp(r'llama-web-bridge-assets@v\d+\.\d+\.\d+'),
-  RegExp(r"BridgeAssetsTag\s*=\s*'v\d+\.\d+\.\d+'"),
-  RegExp(r'WEBGPU_BRIDGE_ASSETS_TAG=v\d+\.\d+\.\d+'),
-  RegExp(r'ASSETS_TAG:-v\d+\.\d+\.\d+'),
+  RegExp('BridgeAssetsTag\\s*=\\s*[\'"]?v\\d+\\.\\d+\\.\\d+[\'"]?'),
+  RegExp('WEBGPU_BRIDGE_ASSETS_TAG=[\'"]?v\\d+\\.\\d+\\.\\d+[\'"]?'),
+  RegExp('ASSETS_TAG:-[\'"]?v\\d+\\.\\d+\\.\\d+[\'"]?'),
 ];
 
 /// This gate's own sources, whose fixtures are deliberately not real pins.
@@ -246,26 +248,59 @@ List<String> findUnregisteredTagSites(Directory repoRoot, String expectedTag) {
     var lineNumber = 0;
     for (final line in const LineSplitter().convert(contents)) {
       lineNumber++;
-      final shaped = bridgeTagPinShapes.any((shape) => shape.hasMatch(line));
-      final holdsTag = _holdsCurrentTag(line, expectedTag);
-      if (!shaped && !holdsTag) continue;
-      if (patterns.any((pattern) => pattern.hasMatch(line))) continue;
-      unregistered.add(
-        '$path:$lineNumber: ${shaped ? 'a bridge asset pin' : expectedTag} is '
-        'not covered by any registered pin — add it to bridgeTagPins, or to '
-        'tagHistoryFiles if it records a past release',
-      );
+      // Cover each occurrence, not the line: a registered pin whose pattern is
+      // not end-anchored would otherwise mask a second pin appended to it.
+      final covered = <List<int>>[
+        for (final pattern in patterns)
+          for (final match in pattern.allMatches(line))
+            [match.start, match.end],
+      ];
+      bool isCovered(int at) =>
+          covered.any((span) => at >= span[0] && at < span[1]);
+
+      for (final occurrence in _pinOccurrences(line, expectedTag)) {
+        if (isCovered(occurrence.at)) continue;
+        unregistered.add(
+          '$path:$lineNumber: ${occurrence.what} is not covered by any '
+          'registered pin — add it to bridgeTagPins, or to tagHistoryFiles if '
+          'it records a past release',
+        );
+      }
     }
   }
   return unregistered;
 }
 
-/// True when [line] states the tag in use rather than a `v0.1.37+` minimum.
-bool _holdsCurrentTag(String line, String expectedTag) {
-  final at = line.indexOf(expectedTag);
-  if (at < 0) return false;
-  final after = at + expectedTag.length;
-  return after >= line.length || line[after] != '+';
+/// One pin-like thing found on a line.
+class _PinOccurrence {
+  /// Offset into the line.
+  final int at;
+
+  /// How to describe it in a failure message.
+  final String what;
+
+  const _PinOccurrence(this.at, this.what);
+}
+
+/// Every pin shape, plus every mention of [expectedTag] that is not a
+/// `v0.1.37+` minimum.
+List<_PinOccurrence> _pinOccurrences(String line, String expectedTag) {
+  final found = <_PinOccurrence>[];
+  for (final shape in bridgeTagPinShapes) {
+    for (final match in shape.allMatches(line)) {
+      found.add(_PinOccurrence(match.start, 'a bridge asset pin'));
+    }
+  }
+  var at = line.indexOf(expectedTag);
+  while (at >= 0) {
+    final after = at + expectedTag.length;
+    final isFloor = after < line.length && line[after] == '+';
+    if (!isFloor && !found.any((other) => other.at == at)) {
+      found.add(_PinOccurrence(at, expectedTag));
+    }
+    at = line.indexOf(expectedTag, at + 1);
+  }
+  return found;
 }
 
 void main() {

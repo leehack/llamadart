@@ -92,6 +92,7 @@ void main() {
       'true; ASSETS_TAG=v2.0.0',
       'ASSETS_TAG+=-patched',
       ': "\${ASSETS_TAG:=v2.0.0}"',
+      'ASSETS_TAG[0]=v2.0.0',
     ];
 
     for (final override in overrides) {
@@ -143,6 +144,32 @@ void main() {
       findUnregisteredTagSites(root, 'v9.9.9'),
       contains(contains('notes.md:1: a bridge asset pin is not covered')),
     );
+  });
+
+  test('quoted machine-readable pins are recognised', () {
+    for (final form in const <String>[
+      'const defaultBridgeAssetsTag = "v0.1.36";',
+      "const defaultBridgeAssetsTag = 'v0.1.36';",
+      'WEBGPU_BRIDGE_ASSETS_TAG="v0.1.36" ./x.sh',
+      'Uses `leehack/llama-web-bridge-assets@v0.1.36`.',
+    ]) {
+      final root = _fakeRepo('v9.9.9');
+      Process.runSync('git', <String>[
+        'init',
+        '--quiet',
+      ], workingDirectory: root.path);
+      File('${root.path}/notes.md').writeAsStringSync('$form\n');
+      Process.runSync('git', <String>[
+        'add',
+        '-A',
+      ], workingDirectory: root.path);
+
+      expect(
+        findUnregisteredTagSites(root, 'v9.9.9'),
+        contains(contains('notes.md:1: a bridge asset pin is not covered')),
+        reason: 'unregistered pin "$form" evaded the scan',
+      );
+    }
   });
 
   test('a binary file does not crash the scan', () {
