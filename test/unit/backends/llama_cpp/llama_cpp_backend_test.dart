@@ -389,7 +389,7 @@ void main() {
         ),
         throwsA(
           isA<LlamaUnsupportedException>().having(
-            (error) => error.toString(),
+            (error) => error.message,
             'message',
             contains('supportsUrlLoading is false'),
           ),
