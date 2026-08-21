@@ -2,7 +2,7 @@ name: Chat App HF Static Deploy
 
 on:
   push:
-    branches: [master, main]
+    branches: [main]
     paths:
       - "example/chat_app/**"
       - "lib/**"

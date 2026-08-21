@@ -2,7 +2,7 @@ name: Chat App HF PR Preview
 
 on:
   pull_request:
-    branches: [master, main]
+    branches: [main]
     types: [opened, reopened, synchronize, closed]
     paths:
       - "example/chat_app/**"
