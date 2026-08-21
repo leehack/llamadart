@@ -61,6 +61,19 @@ void main() {
     );
   });
 
+  test('a second assignment fails rather than validating the wrong one', () {
+    final root = Directory.systemTemp.createTempSync('bridge_tag_gate');
+    addTearDown(() => root.deleteSync(recursive: true));
+    File('${root.path}/$bridgeTagSourcePath')
+      ..parent.createSync(recursive: true)
+      ..writeAsStringSync(
+        'ASSETS_TAG="\${WEBGPU_BRIDGE_ASSETS_TAG:-v1.0.0}"\n'
+        'ASSETS_TAG="\${WEBGPU_BRIDGE_ASSETS_TAG:-v2.0.0}"\n',
+      );
+
+    expect(() => readPinnedBridgeTag(root), throwsFormatException);
+  });
+
   test('a missing source of truth fails instead of passing vacuously', () {
     final root = Directory.systemTemp.createTempSync('bridge_tag_gate');
     addTearDown(() => root.deleteSync(recursive: true));

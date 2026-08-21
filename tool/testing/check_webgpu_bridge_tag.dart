@@ -11,6 +11,8 @@ import 'dart:io';
 /// The file whose default decides what a fresh vendoring run downloads.
 const String bridgeTagSourcePath = 'scripts/fetch_webgpu_bridge_assets.sh';
 
+final RegExp _anyAssignment = RegExp(r'^ASSETS_TAG=.*$', multiLine: true);
+
 final RegExp _sourceOfTruth = RegExp(
   r'^ASSETS_TAG="\$\{WEBGPU_BRIDGE_ASSETS_TAG:-(v\d+\.\d+\.\d+)\}"$',
   multiLine: true,
@@ -119,7 +121,17 @@ String readPinnedBridgeTag(Directory repoRoot) {
   if (!file.existsSync()) {
     throw FormatException('Missing $bridgeTagSourcePath');
   }
-  final match = _sourceOfTruth.firstMatch(file.readAsStringSync());
+  final source = file.readAsStringSync();
+  // Bash takes the last assignment, so a second one would leave this gate
+  // validating a tag the script never downloads.
+  final assignments = _anyAssignment.allMatches(source).length;
+  if (assignments != 1) {
+    throw FormatException(
+      'Expected exactly one ASSETS_TAG assignment in $bridgeTagSourcePath, '
+      'found $assignments; the gate cannot run.',
+    );
+  }
+  final match = _sourceOfTruth.firstMatch(source);
   if (match == null) {
     throw FormatException(
       'No ASSETS_TAG default in $bridgeTagSourcePath; the gate cannot run.',
