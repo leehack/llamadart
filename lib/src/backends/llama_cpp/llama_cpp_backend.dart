@@ -499,7 +499,7 @@ class NativeLlamaBackend
     );
     final res = await rp.first;
     rp.close();
-    if (res is ErrorResponse) throw Exception(res.message);
+    if (res is ErrorResponse) throw _workerError(res);
   }
 
   @override
@@ -510,7 +510,7 @@ class NativeLlamaBackend
     );
     final res = await rp.first;
     rp.close();
-    if (res is ErrorResponse) throw Exception(res.message);
+    if (res is ErrorResponse) throw _workerError(res);
   }
 
   @override
@@ -519,7 +519,7 @@ class NativeLlamaBackend
     _sendPort!.send(LoraRequest(contextHandle, 'clear', sendPort: rp.sendPort));
     final res = await rp.first;
     rp.close();
-    if (res is ErrorResponse) throw Exception(res.message);
+    if (res is ErrorResponse) throw _workerError(res);
   }
 
   @override

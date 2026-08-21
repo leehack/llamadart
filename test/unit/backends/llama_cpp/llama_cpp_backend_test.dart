@@ -381,6 +381,32 @@ void main() {
       );
     });
 
+    test('LoRA errors keep the worker error kind', () async {
+      // setLoraAdapter previously threw a bare Exception, discarding the
+      // kind the worker had already classified. An aLoRA rejection has to
+      // reach callers as LlamaUnsupportedException to be actionable.
+      await expectLater(
+        backend.setLoraAdapter(1, 'alora.gguf', 1.0),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            contains('aLoRA adapter'),
+          ),
+        ),
+      );
+    });
+
+    test('ordinary LoRA operations still succeed', () async {
+      await backend.setLoraAdapter(1, 'ordinary.gguf', 0.8);
+      await backend.removeLoraAdapter(1, 'ordinary.gguf');
+      await backend.clearLoraAdapters(1);
+      expect(
+        harness.received.whereType<LoraRequest>().map((r) => r.op),
+        containsAll(<String>['set', 'remove', 'clear']),
+      );
+    });
+
     test('modelLoadFromUrl remains unsupported on native backend', () {
       expect(
         () => backend.modelLoadFromUrl(
@@ -608,7 +634,16 @@ class _FakeWorkerHarness {
             message.sendPort.send(ChatTemplateResponse('templated'));
           }
         case LoraRequest():
-          message.sendPort.send(DoneResponse());
+          if (message.path == 'alora.gguf') {
+            message.sendPort.send(
+              ErrorResponse(
+                'The adapter at alora.gguf is an aLoRA adapter',
+                kind: WorkerErrorKind.unsupported,
+              ),
+            );
+          } else {
+            message.sendPort.send(DoneResponse());
+          }
         case DisposeRequest():
           message.sendPort.send(DoneResponse());
         case WorkerHandshake():

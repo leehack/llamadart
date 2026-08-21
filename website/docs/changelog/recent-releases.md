@@ -15,6 +15,12 @@ For canonical full release notes, use:
   layer rendered the prompt. MiniMax-M2 and MiniCPM-5 also now detect a
   forced-open thinking block using the same rule as every other handler.
 
+- aLoRA adapters are now rejected with `LlamaUnsupportedException` instead of
+  being applied like ordinary LoRA adapters. An aLoRA adapter must activate only
+  after its invocation tokens appear in the prompt, so applying it from the
+  start of generation silently changed output. LoRA errors from the worker also
+  keep their typed exception instead of arriving as a bare `Exception`.
+
 - Deprecated `LiteRtLmRuntimeClient.conversationTokenCount()` and
   `replaceConversationWithClone()`. Both are unused and are scheduled for
   removal in the next major release; open an issue if you depend on either.

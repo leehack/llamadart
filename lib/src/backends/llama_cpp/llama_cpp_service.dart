@@ -6302,6 +6302,25 @@ class LlamaCppService {
           if (adapterPtr == nullptr) {
             throw Exception("Failed to load LoRA at $path");
           }
+          // aLoRA adapters carry invocation tokens and must activate only once
+          // that sequence appears in the prompt. This backend applies every
+          // adapter from the start of generation, which for an aLoRA adapter
+          // silently produces wrong output, so refuse it rather than guess.
+          final invocationTokens = llama_adapter_get_alora_n_invocation_tokens(
+            adapterPtr,
+          );
+          if (invocationTokens > 0) {
+            llama_adapter_lora_free(adapterPtr);
+            throw LlamaUnsupportedException(
+              'The adapter at $path is an aLoRA adapter ($invocationTokens '
+              'invocation token(s)). llamadart applies LoRA adapters from the '
+              'start of generation, but an aLoRA adapter must activate only '
+              'after its invocation sequence appears in the prompt, so '
+              'applying it eagerly would silently change output. Use a '
+              'standard LoRA adapter until invocation-aware activation is '
+              'implemented.',
+            );
+          }
           adapter = _LlamaLoraWrapper(adapterPtr);
           modelAdapters[path] = adapter;
         }
