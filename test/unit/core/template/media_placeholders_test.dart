@@ -39,12 +39,7 @@ void main() {
       );
     });
 
-    // No table entry is a substring of another today, so exact matching keeps
-    // these distinct: `<image>` does not occur inside `<image_soft_token>`,
-    // because the character after `image` is `_` rather than `>`. That safety
-    // depends on matching the full literal — a looser match on `<image` would
-    // rewrite the soft-token placeholder into `<__media__>_soft_token>`, so pin
-    // the exact behaviour here.
+    // A looser match on `<image` would corrupt `<image_soft_token>`.
     test('matches full literals rather than shared prefixes', () {
       expect(normalizeMediaPlaceholders('<image_soft_token>'), mtmdMediaMarker);
       expect(normalizeMediaPlaceholders('<|image_1|>'), mtmdMediaMarker);
@@ -58,9 +53,7 @@ void main() {
     });
 
     test('covers the markers that previously differed between layers', () {
-      // `<img>` and `<|img|>` existed only in the llama.cpp service table, and
-      // `<start_of_image>` only in the Gemma handler, so the same prompt
-      // normalized differently depending on which path rendered it.
+      // Each of these lived in only one of the tables before.
       for (final placeholder in <String>[
         '<img>',
         '<|img|>',
@@ -73,8 +66,8 @@ void main() {
   });
 
   group('shared table adoption', () {
-    // Guards the reason this module exists: a placeholder added to one consumer
-    // and not the other is exactly the drift this replaced.
+    // A placeholder added to one consumer and not the other is the drift
+    // this module replaced.
     const consumers = <String>[
       'lib/src/core/template/chat_template_handler.dart',
       'lib/src/core/template/handlers/function_gemma_handler.dart',
