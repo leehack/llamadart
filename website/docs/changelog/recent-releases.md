@@ -7,52 +7,49 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
-## Unreleased
+## 0.8.20
 
 - Updated WebGPU bridge assets to `v0.1.37` (llama.cpp `b10514`), restoring
   native/Web parity and provisioning an explicit 1 MiB Wasm stack for wasm32
-  and memory64 so `b10514` graph-parameter growth does not abort Qwen3-ASR
-  memory64 context construction.
+  and memory64 so Qwen3-ASR memory64 context construction does not overflow the
+  default stack.
 
 - Improved Web microphone transcription with browser-capture warmup trimming
   and early short, silent, and unsupported PCM WAV diagnostics.
 
 - Added logical and micro-batch controls for llama.cpp/WebGPU models to the
-  Flutter chat example, and made Android Auto probe the packaged Vulkan device
-  before choosing GPU offload.
+  Flutter chat example.
 
-- Updated the native LiteRT-LM runtime to `v0.16.0-native.2` and added an
-  experimental dedicated `SpeechToTextEngine.liteRtLm` path with bounded mono
-  16 kHz float PCM input, partial/final transcript events, worker-isolated CPU
-  inference, backpressure, and cancellation. The Apple companion also packages
-  the iOS Gemma constraint provider and Metal plugins required by the published
-  runtime.
+- Made Android Auto probe the packaged Vulkan device before choosing GPU
+  offload, avoiding unnecessary CPU fallback on capable models.
+
+- Updated the native LiteRT-LM runtime to `v0.16.0-native.2`; the Apple companion
+  packages the iOS Gemma constraint provider and Metal plugins required by the
+  published runtime.
+
+- Added an experimental `SpeechToTextEngine.liteRtLm` path with bounded mono
+  16 kHz float PCM, partial/final transcript events, worker-isolated CPU
+  inference, backpressure, and cancellation.
 
 - Added experimental live English dictation to native Flutter chat models,
   including generic audio-chat models, using selectable checksum-pinned
   Moonshine Tiny (recommended, 54 MB) and Parakeet TDT 0.6B (optional, 615 MB)
-  LiteRT sidecars. The UI reports determinate download progress and supports
-  cancellation/retry; the public worker-isolated streaming STT API produces
-  confirmed/pending text and editable composer finalization. A persisted
-  settings switch explains and enables or disables the optional workflow.
-  Audio-chat models retain
-  **Ask with voice** as a separate action.
+  LiteRT sidecars. Live dictation is CPU-only, English-only, capped at five
+  minutes, and unavailable on Linux and Web. Audio-chat models retain **Ask
+  with voice** as a separate action.
 
 - Improved Flutter chat example model downloads with bounded retries for
   transient network failures, safe resume after truncated responses, and a
-  distinct integrity-verification state after transfer reaches 100%.
+  distinct integrity-verification state after transfer reaches 100%. The
+  redesigned onboarding and Lab surfaces preserve model-card position while
+  downloads reorder and keep streaming responses from pulling users away from
+  chat history.
 
 - Added experimental typed Qwen3-TTS synthesis on native llama.cpp and WebGPU
-  bridge assets `v0.1.33+`, including
-  capability discovery, cancellation, complete PCM/WAV output, and a dedicated
-  synthesize workflow with file or microphone speaker references, automatic
-  playback, replay, and WAV export in the Flutter chat example. Web accepts
-  byte-backed speaker references and complete PCM/WAV output, with a bounded
-  example-app utterance length for browser stability. The example pins bridge
-  assets `v0.1.37`, retaining the `v0.1.34` recovery that retries a failed
-  worker WebGPU synthesis once on CPU; Apple companion builds discover the
-  native TTS wrapper ABI from the embedded llama framework, while current
-  LiteRT-LM artifacts remain unsupported.
+  with capability discovery, cancellation, speaker references, complete
+  PCM/WAV output, and synthesis/playback/export controls in the Flutter chat
+  example. Apple apps discover the TTS ABI in the embedded llama framework;
+  current LiteRT-LM artifacts remain unsupported.
 
 - Updated the native llama.cpp runtime to `b10514`, adding BailingMoE3,
   GraniteSWA/GraniteMoeSWA, speculators-format DSpark checkpoints, and current
@@ -60,12 +57,9 @@ For canonical full release notes, use:
   FFI bindings and the Apple SwiftPM artifact checksum were refreshed.
 
 - Added an experimental typed Qwen3-ASR whole-file transcription workflow, a
-  SHA-256-verified Qwen3-ASR 0.6B native-and-Web chat-app preset, and foreground
-  microphone recording. WebGPU requires validated bridge assets `v0.1.30+`,
-  pins `v0.1.37` with the `v0.1.32` short-speech recovery and the `b10514`
-  memory64 stack fix,
-  and accepts WAV bytes only; native LiteRT-LM live dictation remains a
-  separate implementation.
+  checksum-pinned Qwen3-ASR 0.6B native-and-Web chat-app preset, and file and
+  microphone transcription. Web accepts WAV bytes only; native LiteRT-LM live
+  dictation remains a separate implementation.
 
 - Added **Ask with voice** to the native Flutter chat example for Gemma 4 E2B
   LiteRT-LM and audio-capable GGUF models. It sends a short microphone recording

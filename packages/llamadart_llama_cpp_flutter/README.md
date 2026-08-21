@@ -9,8 +9,8 @@ core package's native-assets fallback.
 
 ```yaml
 dependencies:
-  llamadart: ^0.8.19
-  llamadart_llama_cpp_flutter: ^0.0.13
+  llamadart: ^0.8.20
+  llamadart_llama_cpp_flutter: ^0.0.14
 ```
 
 This package has no runtime Dart API of its own. Import `package:llamadart`

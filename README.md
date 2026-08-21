@@ -55,7 +55,7 @@ For Dart or Flutter apps:
 
 ```yaml
 dependencies:
-  llamadart: ^0.8.19
+  llamadart: ^0.8.20
 ```
 
 Flutter iOS/macOS apps that should link Apple XCFrameworks through Swift
@@ -63,9 +63,9 @@ Package Manager should also add the runtime companion packages they need:
 
 ```yaml
 dependencies:
-  llamadart: ^0.8.19
-  llamadart_llama_cpp_flutter: ^0.0.13 # GGUF / llama.cpp
-  llamadart_litert_lm_flutter: ^0.0.9 # Apple .litertlm / LiteRT-LM targets
+  llamadart: ^0.8.20
+  llamadart_llama_cpp_flutter: ^0.0.14 # GGUF / llama.cpp
+  llamadart_litert_lm_flutter: ^0.0.10 # Apple .litertlm / LiteRT-LM targets
 ```
 
 The LiteRT-LM companion manifest includes the complete iOS SwiftPM runtime
