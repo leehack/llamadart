@@ -39,10 +39,13 @@ void main() {
       );
     });
 
-    // `<image>` is a prefix of `<image_soft_token>` up to the closing angle
-    // bracket. If the table were matched loosely, the soft-token placeholder
-    // would be corrupted into `<__media__>_soft_token>`.
-    test('does not corrupt placeholders that share a prefix', () {
+    // No table entry is a substring of another today, so exact matching keeps
+    // these distinct: `<image>` does not occur inside `<image_soft_token>`,
+    // because the character after `image` is `_` rather than `>`. That safety
+    // depends on matching the full literal — a looser match on `<image` would
+    // rewrite the soft-token placeholder into `<__media__>_soft_token>`, so pin
+    // the exact behaviour here.
+    test('matches full literals rather than shared prefixes', () {
       expect(normalizeMediaPlaceholders('<image_soft_token>'), mtmdMediaMarker);
       expect(normalizeMediaPlaceholders('<|image_1|>'), mtmdMediaMarker);
     });
