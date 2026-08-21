@@ -40,7 +40,7 @@ tool/testing/run_template_parity_suites.sh
 
 - `test/unit/` is strictly mirrored to `lib/src/` (except the structure guard test itself).
 - The mirrored mapping is enforced by `test/unit/test_structure/mirrored_unit_structure_test.dart`.
-- Files marked as generated (`// coverage:ignore-file` or `AUTO GENERATED FILE, DO NOT EDIT.`) are excluded from strict mirroring.
+- Only generator output is excluded from strict mirroring, matched on the banner ffigen writes (`AUTO GENERATED FILE, DO NOT EDIT.`) or the one `tool/gen_litert_lm_templates.dart` writes (`GENERATED FILE — DO NOT EDIT BY HAND.`). `// coverage:ignore-file` is a coverage pragma and does not exempt a file.
 - Cross-file regressions and diagnostics belong in `test/integration/`.
 - Mark platform-specific files with `@TestOn('vm')` or `@TestOn('browser')`.
 - Use `@Tags(['local-only'])` for tests that should not run in default/CI flows.

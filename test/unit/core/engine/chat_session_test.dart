@@ -10,6 +10,7 @@ class MockLlamaBackend implements LlamaBackend, BackendAvailability {
   final List<String> _responses = [];
   int contextSize = 2048;
   String? lastPrompt;
+  GenerationParams? lastParams;
   int tokenizeCalls = 0;
   bool supportsTokenization = true;
 
@@ -48,6 +49,7 @@ class MockLlamaBackend implements LlamaBackend, BackendAvailability {
     List<LlamaContentPart>? parts,
   }) async* {
     lastPrompt = prompt;
+    lastParams = params;
     if (_generateCallCount < _responses.length) {
       yield utf8.encode(_responses[_generateCallCount++]);
     } else {
@@ -598,28 +600,25 @@ void main() {
       expect(backend.lastPrompt, contains('<__media__>'));
     });
 
-    test(
-      'tools are passed to engine',
-      skip: 'Native template does not support tools yet',
-      () async {
-        final tools = [
-          ToolDefinition(
-            name: 'test_tool',
-            description: 'A test tool',
-            handler: (p) async => 'result',
-            parameters: [],
-          ),
-        ];
+    test('tools are passed to engine', () async {
+      final tools = [
+        ToolDefinition(
+          name: 'test_tool',
+          description: 'A test tool',
+          handler: (p) async => 'result',
+          parameters: [],
+        ),
+      ];
 
-        backend.queueResponse('I will call the tool');
-        await session.create([
-          const LlamaTextContent('use the tool'),
-        ], tools: tools).drain();
+      backend.queueResponse('I will call the tool');
+      await session.create([
+        const LlamaTextContent('use the tool'),
+      ], tools: tools).drain();
 
-        // Verify tool definitions were injected into prompt
-        expect(backend.lastPrompt, contains('test_tool'));
-        expect(backend.lastPrompt, contains('A test tool'));
-      },
-    );
+      // The fixture template declares no `tools` block, so the generic path
+      // carries the schema in the grammar rather than the prompt text.
+      expect(backend.lastPrompt, contains('Respond in JSON format'));
+      expect(backend.lastParams?.grammar, contains('test_tool'));
+    });
   });
 }
