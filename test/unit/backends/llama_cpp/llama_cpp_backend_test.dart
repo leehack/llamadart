@@ -382,9 +382,7 @@ void main() {
     });
 
     test('LoRA errors keep the worker error kind', () async {
-      // setLoraAdapter previously threw a bare Exception, discarding the
-      // kind the worker had already classified. An aLoRA rejection has to
-      // reach callers as LlamaUnsupportedException to be actionable.
+      // The worker's error kind must survive the isolate boundary.
       await expectLater(
         backend.setLoraAdapter(1, 'alora.gguf', 1.0),
         throwsA(

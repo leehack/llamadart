@@ -6302,10 +6302,8 @@ class LlamaCppService {
           if (adapterPtr == nullptr) {
             throw Exception("Failed to load LoRA at $path");
           }
-          // aLoRA adapters carry invocation tokens and must activate only once
-          // that sequence appears in the prompt. This backend applies every
-          // adapter from the start of generation, which for an aLoRA adapter
-          // silently produces wrong output, so refuse it rather than guess.
+          // aLoRA must activate only after its invocation tokens appear, but
+          // adapters here apply from the start of generation.
           final invocationTokens = llama_adapter_get_alora_n_invocation_tokens(
             adapterPtr,
           );

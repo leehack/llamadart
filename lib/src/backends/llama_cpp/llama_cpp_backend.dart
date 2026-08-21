@@ -487,6 +487,7 @@ class NativeLlamaBackend
     String path,
     double scale,
   ) async {
+    await _ensureIsolate();
     final rp = ReceivePort();
     _sendPort!.send(
       LoraRequest(
@@ -499,27 +500,29 @@ class NativeLlamaBackend
     );
     final res = await rp.first;
     rp.close();
-    if (res is ErrorResponse) throw _workerError(res);
+    _expectDoneResponse(res, 'set LoRA adapter');
   }
 
   @override
   Future<void> removeLoraAdapter(int contextHandle, String path) async {
+    await _ensureIsolate();
     final rp = ReceivePort();
     _sendPort!.send(
       LoraRequest(contextHandle, 'remove', path: path, sendPort: rp.sendPort),
     );
     final res = await rp.first;
     rp.close();
-    if (res is ErrorResponse) throw _workerError(res);
+    _expectDoneResponse(res, 'remove LoRA adapter');
   }
 
   @override
   Future<void> clearLoraAdapters(int contextHandle) async {
+    await _ensureIsolate();
     final rp = ReceivePort();
     _sendPort!.send(LoraRequest(contextHandle, 'clear', sendPort: rp.sendPort));
     final res = await rp.first;
     rp.close();
-    if (res is ErrorResponse) throw _workerError(res);
+    _expectDoneResponse(res, 'clear LoRA adapters');
   }
 
   @override
