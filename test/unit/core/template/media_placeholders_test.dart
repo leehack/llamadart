@@ -82,10 +82,19 @@ void main() {
           contains('normalizeMediaPlaceholders('),
           reason: '$path should delegate to the shared helper',
         );
+        for (final placeholder in mtmdMediaPlaceholders) {
+          for (final literal in ["'$placeholder'", '"$placeholder"']) {
+            expect(
+              source,
+              isNot(contains(literal)),
+              reason: '$path should not re-declare $placeholder',
+            );
+          }
+        }
         expect(
           source,
-          isNot(contains("'<image_soft_token>'")),
-          reason: '$path should not re-declare its own placeholder table',
+          isNot(contains(mtmdIndexedImagePlaceholder.pattern)),
+          reason: '$path should not re-declare the indexed image pattern',
         );
       });
     }
