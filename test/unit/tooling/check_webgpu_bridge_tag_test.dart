@@ -82,43 +82,38 @@ void main() {
     );
   });
 
-  test('an indented second assignment is caught too', () {
-    final root = Directory.systemTemp.createTempSync('bridge_tag_gate');
-    addTearDown(() => root.deleteSync(recursive: true));
-    File('${root.path}/$bridgeTagSourcePath')
-      ..parent.createSync(recursive: true)
-      ..writeAsStringSync(
-        'ASSETS_TAG="\${WEBGPU_BRIDGE_ASSETS_TAG:-v1.0.0}"\n'
-        '  export ASSETS_TAG=v2.0.0\n',
-      );
+  test('every bash assignment form is counted', () {
+    const overrides = <String>[
+      'ASSETS_TAG=v2.0.0',
+      '  ASSETS_TAG=v2.0.0',
+      '  export ASSETS_TAG=v2.0.0',
+      'readonly ASSETS_TAG=v2.0.0',
+      'declare ASSETS_TAG=v2.0.0',
+      'true; ASSETS_TAG=v2.0.0',
+      'ASSETS_TAG+=-patched',
+    ];
 
-    expect(() => readPinnedBridgeTag(root), throwsFormatException);
+    for (final override in overrides) {
+      final root = Directory.systemTemp.createTempSync('bridge_tag_gate');
+      addTearDown(() => root.deleteSync(recursive: true));
+      File('${root.path}/$bridgeTagSourcePath')
+        ..parent.createSync(recursive: true)
+        ..writeAsStringSync(
+          'ASSETS_TAG="\${WEBGPU_BRIDGE_ASSETS_TAG:-v1.0.0}"\n$override\n',
+        );
+
+      expect(
+        () => readPinnedBridgeTag(root),
+        throwsFormatException,
+        reason: 'bash honours "$override" but the gate did not count it',
+      );
+    }
   });
 
-  test('an append assignment is caught too', () {
-    final root = Directory.systemTemp.createTempSync('bridge_tag_gate');
-    addTearDown(() => root.deleteSync(recursive: true));
-    File('${root.path}/$bridgeTagSourcePath')
-      ..parent.createSync(recursive: true)
-      ..writeAsStringSync(
-        'ASSETS_TAG="\${WEBGPU_BRIDGE_ASSETS_TAG:-v1.0.0}"\n'
-        'ASSETS_TAG+=-patched\n',
-      );
+  test('the source-of-truth line itself counts only once', () {
+    final root = _fakeRepo('v9.9.9');
 
-    expect(() => readPinnedBridgeTag(root), throwsFormatException);
-  });
-
-  test('a second assignment fails rather than validating the wrong one', () {
-    final root = Directory.systemTemp.createTempSync('bridge_tag_gate');
-    addTearDown(() => root.deleteSync(recursive: true));
-    File('${root.path}/$bridgeTagSourcePath')
-      ..parent.createSync(recursive: true)
-      ..writeAsStringSync(
-        'ASSETS_TAG="\${WEBGPU_BRIDGE_ASSETS_TAG:-v1.0.0}"\n'
-        'ASSETS_TAG="\${WEBGPU_BRIDGE_ASSETS_TAG:-v2.0.0}"\n',
-      );
-
-    expect(() => readPinnedBridgeTag(root), throwsFormatException);
+    expect(readPinnedBridgeTag(root), 'v9.9.9');
   });
 
   test('a missing source of truth fails instead of passing vacuously', () {
