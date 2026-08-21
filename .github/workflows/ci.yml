@@ -152,7 +152,7 @@ jobs:
 
       - name: Cache tiny GGUF test model
         id: tiny-gguf-cache
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: .dart_tool/test_models/stories15M.gguf
           key: tiny-gguf-stories15M-${{ runner.os }}-v1
@@ -174,7 +174,7 @@ jobs:
 
       - name: Cache llama.cpp chat templates
         id: llama-cpp-templates-cache
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: .dart_tool/llama_cpp_templates
           key: llama-cpp-templates-${{ hashFiles('tool/testing/llama_cpp_templates.ref') }}
@@ -277,7 +277,7 @@ jobs:
 
       - name: Cache tiny GGUF browser model
         id: web-tiny-gguf-cache
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: .dart_tool/test_models/stories15M.gguf
           key: tiny-gguf-stories15M-${{ runner.os }}-v1
@@ -363,7 +363,7 @@ jobs:
 
       - name: Cache tiny GGUF test model
         id: tiny-gguf-cache
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: .dart_tool/test_models/stories15M.gguf
           key: tiny-gguf-stories15M-${{ runner.os }}-v1

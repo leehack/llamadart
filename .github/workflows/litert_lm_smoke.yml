@@ -109,7 +109,7 @@ jobs:
           dart run tool/litert_lm_library_smoke.dart
 
       - name: Cache tiny LiteRT-LM model
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: .dart_tool/litert_lm_models/Qwen3-0.6B.litertlm
           key: litert-lm-smoke-qwen3-0.6b-${{ runner.os }}-v1
