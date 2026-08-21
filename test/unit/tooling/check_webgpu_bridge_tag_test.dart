@@ -153,6 +153,7 @@ void main() {
       'const defaultBridgeAssetsTag = "v0.1.36";',
       "const defaultBridgeAssetsTag = 'v0.1.36';",
       'WEBGPU_BRIDGE_ASSETS_TAG="v0.1.36" ./x.sh',
+      'const defaultBridgeAssetsTag = `v0.1.36`;',
       'Uses `leehack/llama-web-bridge-assets@v0.1.36`.',
     ]) {
       final root = _fakeRepo('v9.9.9');

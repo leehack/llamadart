@@ -184,7 +184,8 @@ List<String> findBridgeTagDrift(Directory repoRoot, String expectedTag) {
 /// would never look at it.
 final List<RegExp> bridgeTagPinShapes = <RegExp>[
   RegExp(r'llama-web-bridge-assets@v\d+\.\d+\.\d+'),
-  RegExp('BridgeAssetsTag\\s*=\\s*[\'"]?v\\d+\\.\\d+\\.\\d+[\'"]?'),
+  // Backticks only in the JS form; in shell they would be command substitution.
+  RegExp('BridgeAssetsTag\\s*=\\s*[\'"`]?v\\d+\\.\\d+\\.\\d+[\'"`]?'),
   RegExp('WEBGPU_BRIDGE_ASSETS_TAG=[\'"]?v\\d+\\.\\d+\\.\\d+[\'"]?'),
   RegExp('ASSETS_TAG:-[\'"]?v\\d+\\.\\d+\\.\\d+[\'"]?'),
 ];
