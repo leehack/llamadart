@@ -387,7 +387,13 @@ void main() {
           'https://example.com/model.gguf',
           const ModelParams(),
         ),
-        throwsA(isA<UnimplementedError>()),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.toString(),
+            'message',
+            contains('supportsUrlLoading is false'),
+          ),
+        ),
       );
       expect(backend.supportsUrlLoading, isFalse);
       expect(backend.isReady, isTrue);

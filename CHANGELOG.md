@@ -4,6 +4,10 @@
   `replaceConversationWithClone()`. Both are unused and are scheduled for
   removal in the next major release; open an issue if you depend on either.
 
+* `NativeLlamaBackend.modelLoadFromUrl` now throws `LlamaUnsupportedException`
+  instead of `UnimplementedError`, matching the error contract the rest of the
+  library uses and the message `LlamaEngine.loadModelFromUrl` already produced.
+
 * Updated the default llama.cpp native runtime to `b10545`, adding LFM2 DSpark
   support plus current upstream correctness and backend performance fixes.
   Matching Dart FFI bindings, including the new multimodal projector-device

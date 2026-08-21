@@ -186,7 +186,11 @@ class NativeLlamaBackend
     ModelParams params, {
     Function(double progress)? onProgress,
   }) async {
-    throw UnimplementedError("Use modelLoad with a local path for now");
+    throw LlamaUnsupportedException(
+      'The native llama.cpp backend cannot load a model from a URL: '
+      'supportsUrlLoading is false. Download the model first, then call '
+      'modelLoad with a local path.',
+    );
   }
 
   @override
