@@ -14,8 +14,9 @@ For canonical full release notes, use:
   removal in the next major release; open an issue if you depend on either.
 
 - `NativeLlamaBackend.modelLoadFromUrl` now throws `LlamaUnsupportedException`
-  instead of `UnimplementedError`, matching the error contract the rest of the
-  library uses and the message `LlamaEngine.loadModelFromUrl` already produced.
+  instead of `UnimplementedError`, bringing it into the `LlamaException`
+  hierarchy. It is the same exception type `LlamaEngine.loadModelFromUrl`
+  already throws for this condition; each keeps its own message.
 
 - Updated the default native llama.cpp runtime to `b10545`, adding LFM2 DSpark
   support plus current upstream correctness and backend performance fixes.
