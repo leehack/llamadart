@@ -51,8 +51,11 @@ jobs:
       - name: Install Pana
         run: flutter pub global activate pana
 
+      # pana fails when (max - granted) > threshold. Its max is 160, so the
+      # old value of 160 could never trip. Package scores 160/160; 0 keeps it
+      # there, and a tolerance of 5+ would hide a whole scoring bucket.
       - name: Check Pana Score
-        run: flutter pub global run pana . --exit-code-threshold 160
+        run: flutter pub global run pana . --exit-code-threshold 0
 
   companion-packages:
     name: Companion Package (${{ matrix.package }})
