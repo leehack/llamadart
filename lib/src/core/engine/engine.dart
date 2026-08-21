@@ -15,7 +15,6 @@ import '../models/chat/completion_chunk.dart';
 import '../models/chat/content_part.dart';
 import '../models/chat/chat_template_result.dart';
 import '../llama_logger.dart';
-
 import '../models/inference/model_params.dart';
 import '../models/inference/generation_params.dart';
 import '../models/inference/structured_output.dart';
