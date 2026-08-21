@@ -2,8 +2,8 @@
 
 Copied verbatim from `models/templates` in [ggml-org/llama.cpp](https://github.com/ggml-org/llama.cpp)
 at the ref pinned in `tool/testing/llama_cpp_templates.ref`. Only the templates
-`test/unit/core/template/handlers/firefunction_v2_handler_test.dart` needs live
-here, so that unit test runs on a clean checkout with no network.
+that `test/unit/core/template/handlers/firefunction_v2_handler_test.dart` reads
+live here, so that unit test runs on a clean checkout with no network.
 
 `test/integration/core/template/llama_cpp_template_detection_integration_test.dart`
 needs the full set and only reads it from `LLAMA_CPP_TEMPLATES_DIR`, defaulting to
