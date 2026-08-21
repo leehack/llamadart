@@ -280,7 +280,7 @@ void main() {
       }
     });
 
-    test('preserves LoRA error categories', () async {
+    test('preserves LoRA and capability error categories', () async {
       final cases = <(Object, WorkerErrorKind)>[
         (
           LlamaModelException('Failed to load LoRA at bad.gguf'),
@@ -290,6 +290,13 @@ void main() {
           LlamaUnsupportedException('The adapter is an aLoRA adapter'),
           WorkerErrorKind.unsupported,
         ),
+        (
+          UnsupportedError('native capability missing'),
+          WorkerErrorKind.unsupported,
+        ),
+        // UnimplementedError implements UnsupportedError, so it must not be
+        // reclassified as a runtime capability limit.
+        (UnimplementedError('not done yet'), WorkerErrorKind.generic),
         (Exception('boom'), WorkerErrorKind.generic),
       ];
 
@@ -310,6 +317,7 @@ void main() {
           );
           expect(response, isA<ErrorResponse>());
           expect((response as ErrorResponse).kind, expectedKind);
+          expect(response.message, isNot(contains('LlamaException:')));
         } finally {
           await _disposeWorker(worker);
         }

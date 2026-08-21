@@ -5993,10 +5993,10 @@ class LlamaCppService {
   bool stateSaveFile(int contextHandle, String path, List<int> tokens) {
     final ctx = _contexts[contextHandle];
     if (ctx == null) {
-      throw StateError('Unknown context handle: $contextHandle');
+      throw LlamaStateException('Unknown context handle: $contextHandle');
     }
     if (_generatingContexts.containsKey(contextHandle)) {
-      throw StateError(
+      throw LlamaStateException(
         'Cannot save state while generation is active on context $contextHandle',
       );
     }
@@ -6027,10 +6027,10 @@ class LlamaCppService {
   List<int> stateLoadFile(int contextHandle, String path, int tokenCapacity) {
     final ctx = _contexts[contextHandle];
     if (ctx == null) {
-      throw StateError('Unknown context handle: $contextHandle');
+      throw LlamaStateException('Unknown context handle: $contextHandle');
     }
     if (_generatingContexts.containsKey(contextHandle)) {
-      throw StateError(
+      throw LlamaStateException(
         'Cannot load state while generation is active on context $contextHandle',
       );
     }
@@ -6063,14 +6063,14 @@ class LlamaCppService {
         countPtr,
       );
       if (!ok) {
-        throw StateError(
+        throw LlamaStateException(
           'llama_state_load_file failed for "$path" '
           '(corrupt file, version mismatch, or capacity too small)',
         );
       }
       final actual = countPtr.value;
       if (actual > tokenCapacity) {
-        throw StateError(
+        throw LlamaStateException(
           'llama_state_load_file returned actual=$actual '
           'exceeding capacity=$tokenCapacity',
         );

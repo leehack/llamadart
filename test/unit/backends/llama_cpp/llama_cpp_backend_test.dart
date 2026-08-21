@@ -395,6 +395,25 @@ void main() {
       );
     });
 
+    test('worker errors keep their kind through every request', () async {
+      await expectLater(
+        backend.tokenize(1, 'boom'),
+        throwsA(isA<LlamaUnsupportedException>()),
+      );
+      await expectLater(
+        backend.detokenize(1, const <int>[]),
+        throwsA(isA<LlamaUnsupportedException>()),
+      );
+      await expectLater(
+        backend.applyChatTemplate(
+          1,
+          const <Map<String, dynamic>>[],
+          customTemplate: 'unsupported',
+        ),
+        throwsA(isA<LlamaUnsupportedException>()),
+      );
+    });
+
     test('a failed adapter load surfaces as a model error', () async {
       await expectLater(
         backend.setLoraAdapter(1, 'missing.gguf', 1.0),
@@ -503,9 +522,27 @@ class _FakeWorkerHarness {
             message.sendPort.send(DoneResponse());
           }
         case TokenizeRequest():
-          message.sendPort.send(TokenizeResponse(<int>[1, 2, 3]));
+          if (message.text == 'boom') {
+            message.sendPort.send(
+              ErrorResponse(
+                'tokenizer unavailable',
+                kind: WorkerErrorKind.unsupported,
+              ),
+            );
+          } else {
+            message.sendPort.send(TokenizeResponse(<int>[1, 2, 3]));
+          }
         case DetokenizeRequest():
-          message.sendPort.send(DetokenizeResponse('decoded'));
+          if (message.tokens.isEmpty) {
+            message.sendPort.send(
+              ErrorResponse(
+                'detokenizer unavailable',
+                kind: WorkerErrorKind.unsupported,
+              ),
+            );
+          } else {
+            message.sendPort.send(DetokenizeResponse('decoded'));
+          }
         case MetadataRequest():
           message.sendPort.send(MetadataResponse(<String, String>{'a': 'b'}));
         case EmbedRequest():
@@ -641,6 +678,13 @@ class _FakeWorkerHarness {
         case ChatTemplateRequest():
           if (message.customTemplate == 'error') {
             message.sendPort.send(ErrorResponse('chat template failed'));
+          } else if (message.customTemplate == 'unsupported') {
+            message.sendPort.send(
+              ErrorResponse(
+                'multimodal chat-template content is unavailable',
+                kind: WorkerErrorKind.unsupported,
+              ),
+            );
           } else {
             message.sendPort.send(ChatTemplateResponse('templated'));
           }

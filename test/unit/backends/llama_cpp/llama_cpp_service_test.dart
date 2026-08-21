@@ -704,10 +704,14 @@ void main() {
       );
     });
 
-    test('stateSaveFile throws for unknown context handle', () {
+    test('state file methods throw for unknown context handle', () {
       expect(
         () => service.stateSaveFile(-1, '/tmp/state.bin', const <int>[]),
-        throwsA(isA<StateError>()),
+        throwsA(isA<LlamaStateException>()),
+      );
+      expect(
+        () => service.stateLoadFile(-1, '/tmp/state.bin', 16),
+        throwsA(isA<LlamaStateException>()),
       );
     });
 

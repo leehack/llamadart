@@ -38,6 +38,18 @@ ErrorResponse _toErrorResponse(Object error) {
   if (error is LlamaSpeechException) {
     return ErrorResponse(messageFor(error), kind: WorkerErrorKind.speech);
   }
+  // UnimplementedError is an unfinished code path, not a runtime capability
+  // limit, so it stays generic. It implements UnsupportedError, so it must be
+  // checked first.
+  if (error is UnimplementedError) {
+    return ErrorResponse(error.toString());
+  }
+  if (error is UnsupportedError) {
+    return ErrorResponse(
+      error.message ?? error.toString(),
+      kind: WorkerErrorKind.unsupported,
+    );
+  }
   return ErrorResponse(error.toString());
 }
 

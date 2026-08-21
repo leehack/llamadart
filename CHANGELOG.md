@@ -1,5 +1,12 @@
 ## Unreleased
 
+* llama.cpp worker errors now keep their type. Every backend method routes an
+  `ErrorResponse` through the file's own error mapper instead of rebuilding a
+  bare `Exception`, `tokenize` and `detokenize` no longer discard the worker's
+  error entirely, and a core `UnsupportedError` raised for an unavailable native
+  capability is classified rather than flattened. State-file failures now throw
+  `LlamaStateException`.
+
 * Fixed multimodal media placeholders being normalized inconsistently. `<img>`,
   `<|img|>`, `<start_of_image>` and indexed markers such as `<|image_1|>` are now
   rewritten to the mtmd marker on every path, rather than depending on which
