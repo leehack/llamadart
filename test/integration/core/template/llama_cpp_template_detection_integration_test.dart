@@ -120,12 +120,11 @@ void main() {
           .map((f) => f.uri.pathSegments.last)
           .toSet();
 
-      final missing =
-          files
-              .where((name) => !expected.containsKey(name))
-              .where((name) => !unclassifiedTemplates.contains(name))
-              .toList()
-            ..sort();
+      final missing = files
+          .where((name) => !expected.containsKey(name))
+          .where((name) => !unclassifiedTemplates.contains(name))
+          .toList();
+      missing.sort();
       expect(
         missing,
         isEmpty,
@@ -133,12 +132,11 @@ void main() {
             'Unmapped llama.cpp templates detected. Add expectations for: ${missing.join(', ')}',
       );
 
-      final classified =
-          unclassifiedTemplates
-              .where(files.contains)
-              .where(expected.containsKey)
-              .toList()
-            ..sort();
+      final classified = unclassifiedTemplates
+          .where(files.contains)
+          .where(expected.containsKey)
+          .toList();
+      classified.sort();
       expect(
         classified,
         isEmpty,
