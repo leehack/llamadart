@@ -7,6 +7,13 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
+## Unreleased
+
+- Updated the default native llama.cpp runtime to `b10545`, adding LFM2 DSpark
+  support plus current upstream correctness and backend performance fixes.
+  Matching Dart FFI bindings, including the new multimodal projector-device
+  field, and the Apple SwiftPM artifact checksum were refreshed.
+
 ## 0.8.20
 
 - Updated WebGPU bridge assets to `v0.1.37` (llama.cpp `b10514`), restoring

@@ -392,6 +392,13 @@ void _expectBitmapHelperDecodesTransparentPng(
   }
 }
 
+void _expectB10545MtmdContextDefaults(mtmd_context_params params) {
+  expect(params.use_gpu, isTrue);
+  expect(params.device.address, 0);
+  expect(params.print_timings, isTrue);
+  expect(params.n_threads, 4);
+}
+
 void main() {
   group('Native Symbol Availability', () {
     test('context batch constants match the pinned llama.cpp defaults', () {
@@ -438,6 +445,27 @@ void main() {
           reason: symbol,
         );
       }
+    });
+
+    test('Verify b10545 mtmd context parameter layout in bindings', () {
+      final bindingsSource = File(
+        'lib/src/backends/llama_cpp/bindings.dart',
+      ).readAsStringSync();
+      final section = _sourceSection(
+        bindingsSource,
+        'final class mtmd_context_params extends ffi.Struct {',
+        'typedef mtmd_bitmap_lazy_callbackFunction =',
+      );
+
+      final useGpuIndex = section.indexOf('external bool use_gpu;');
+      final deviceIndex = section.indexOf(
+        'external ggml_backend_dev_t device;',
+      );
+      final printTimingsIndex = section.indexOf('external bool print_timings;');
+
+      expect(useGpuIndex, isNot(-1));
+      expect(deviceIndex, greaterThan(useGpuIndex));
+      expect(printTimingsIndex, greaterThan(deviceIndex));
     });
 
     test('Verify MTP wrapper symbols are resolvable', () {
@@ -689,14 +717,15 @@ void main() {
       // it as a dedicated mtmd shared library loaded via runtime fallback.
       // So direct primary-asset lookup may legitimately fail.
       if (Platform.isWindows || Platform.isLinux || Platform.isAndroid) {
-        expect(
-          () => mtmd_context_params_default(),
-          anyOf(returnsNormally, throwsA(isA<ArgumentError>())),
-        );
+        try {
+          _expectB10545MtmdContextDefaults(mtmd_context_params_default());
+        } on ArgumentError {
+          // The service resolves the dedicated mtmd shared library instead.
+        }
         return;
       }
 
-      expect(() => mtmd_context_params_default(), returnsNormally);
+      _expectB10545MtmdContextDefaults(mtmd_context_params_default());
     });
 
     test('Verify mtmd fallback bitmap helper ABI mirrors bindings', () {

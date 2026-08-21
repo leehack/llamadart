@@ -8,7 +8,7 @@ backend-module configuration for
 `llamadart`.
 
 The native-assets hook currently pins `llamadart-native` tag
-`b10514` and
+`b10545` and
 `litert-lm-native` release `v0.16.0-native.2` (`hook/build.dart`). Apps can
 override the llama.cpp native GitHub source with
 `hooks.user_defines.llamadart.llamadart_native_tag` and
@@ -105,10 +105,12 @@ bundled:
 - `llama_cpp`: GGUF model support through llama.cpp.
 - `litert_lm`: `.litertlm` model support through LiteRT-LM.
 
-The `b10514` native llama.cpp pin adds BailingMoE3 and
-GraniteSWA/GraniteMoeSWA model loading. These architectures use the existing
-GGUF APIs without a model-specific Dart configuration or preset; chat-template
-and tool-call behavior still depends on the metadata bundled with each model.
+The `b10545` native llama.cpp pin includes BailingMoE3 and
+GraniteSWA/GraniteMoeSWA model loading and adds LFM2 target/draft support for
+DSpark speculative decoding. These architectures use the existing GGUF APIs;
+LFM2 DSpark uses `SpeculativeDecodingConfig.draftDspark(...)`. No
+model-specific Dart preset is required, but representative target/draft and
+backend validation remains necessary before enabling DSpark in production.
 
 Unset or empty config means all runtime families available for the target. Apps
 that only ship one model format can trim package size:
@@ -227,7 +229,7 @@ device/model bundle, use `cpu` or `gpu` for that artifact.
   a web load failure as a package bug. The [WebGPU Bridge](./webgpu-bridge)
   page has the browser-console probe and Flutter Web smoke-test path.
 
-## Current llama.cpp module availability by bundle (`b10514`)
+## Current llama.cpp module availability by bundle (`b10545`)
 
 | Bundle key | Available backend modules in bundle |
 | --- | --- |
@@ -275,7 +277,7 @@ hooks:
   user_defines:
     llamadart:
       # Optional. Defaults to llamadart's tested native runtime pin.
-      llamadart_native_tag: b10514
+      llamadart_native_tag: b10545
 
       # Optional. GitHub repository slug or github.com URL.
       llamadart_native_repository: leehack/llamadart-native

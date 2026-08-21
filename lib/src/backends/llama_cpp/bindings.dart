@@ -10813,6 +10813,8 @@ final class mtmd_context_params extends ffi.Struct {
   @ffi.Bool()
   external bool use_gpu;
 
+  external ggml_backend_dev_t device;
+
   @ffi.Bool()
   external bool print_timings;
 
