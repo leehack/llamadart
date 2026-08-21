@@ -3,7 +3,7 @@ name: LiteRT-LM Smoke
 on:
   workflow_dispatch:
   push:
-    branches: [master, main]
+    branches: [main]
     paths:
       - ".github/workflows/litert_lm_smoke.yml"
       - "hook/**"
@@ -14,7 +14,7 @@ on:
       - "tool/litert_lm_engine_smoke.dart"
       - "tool/litert_lm_library_smoke.dart"
   pull_request:
-    branches: [master, main]
+    branches: [main]
     paths:
       - ".github/workflows/litert_lm_smoke.yml"
       - "hook/**"
