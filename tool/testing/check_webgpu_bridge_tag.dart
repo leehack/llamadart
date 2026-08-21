@@ -18,7 +18,7 @@ const String bridgeTagSourcePath = 'scripts/fetch_webgpu_bridge_assets.sh';
 // itself and relies on the lookbehind to exclude longer names such as
 // `WEBGPU_BRIDGE_ASSETS_TAG=`.
 final RegExp _anyAssignment = RegExp(
-  r'(?<![A-Za-z0-9_])ASSETS_TAG(?:\[\d+\])?(?::=|\+?=)',
+  r'(?<![A-Za-z0-9_])ASSETS_TAG(?:\[[^\]]*\])?(?::=|\+?=)',
 );
 
 final RegExp _sourceOfTruth = RegExp(
@@ -291,14 +291,15 @@ List<_PinOccurrence> _pinOccurrences(String line, String expectedTag) {
       found.add(_PinOccurrence(match.start, 'a bridge asset pin'));
     }
   }
-  var at = line.indexOf(expectedTag);
-  while (at >= 0) {
-    final after = at + expectedTag.length;
+  // A whole version token: without the lookahead, a `v0.1.3` tag would match
+  // inside every `v0.1.30+` floor and report it as an unregistered pin.
+  final token = RegExp('${RegExp.escape(expectedTag)}(?![0-9.])');
+  for (final match in token.allMatches(line)) {
+    final after = match.end;
     final isFloor = after < line.length && line[after] == '+';
-    if (!isFloor && !found.any((other) => other.at == at)) {
-      found.add(_PinOccurrence(at, expectedTag));
-    }
-    at = line.indexOf(expectedTag, at + 1);
+    if (isFloor) continue;
+    if (found.any((other) => other.at == match.start)) continue;
+    found.add(_PinOccurrence(match.start, expectedTag));
   }
   return found;
 }

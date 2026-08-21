@@ -93,6 +93,8 @@ void main() {
       'ASSETS_TAG+=-patched',
       ': "\${ASSETS_TAG:=v2.0.0}"',
       'ASSETS_TAG[0]=v2.0.0',
+      r'ASSETS_TAG[$i]=v2.0.0',
+      r'ASSETS_TAG[$((0))]=v2.0.0',
     ];
 
     for (final override in overrides) {
@@ -170,6 +172,22 @@ void main() {
         reason: 'unregistered pin "$form" evaded the scan',
       );
     }
+  });
+
+  test('a shorter tag does not match inside a longer floor', () {
+    final root = _fakeRepo('v0.1.3');
+    Process.runSync('git', <String>[
+      'init',
+      '--quiet',
+    ], workingDirectory: root.path);
+    // `v0.1.30+` is a floor for a different version; it merely starts with the
+    // pinned tag.
+    File(
+      '${root.path}/notes.md',
+    ).writeAsStringSync('Typed ASR needs bridge assets `v0.1.30+`.\n');
+    Process.runSync('git', <String>['add', '-A'], workingDirectory: root.path);
+
+    expect(findUnregisteredTagSites(root, 'v0.1.3'), isEmpty);
   });
 
   test('a binary file does not crash the scan', () {
