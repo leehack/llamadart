@@ -23,6 +23,11 @@ void main() {
     expect(result.metrics, same(metrics));
     expect(client, isA<LiteRtLmRuntimeClient>());
 
+    client.configureResponseThinkingTags(
+      startTag: '<thought>',
+      endTag: '</thought>',
+    );
+
     client.dispose();
   });
 

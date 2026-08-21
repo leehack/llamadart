@@ -70,6 +70,14 @@ class LiteRtLmRuntimeClient {
     throw UnsupportedError('LiteRT-LM runtime requires a native platform.');
   }
 
+  /// Configures how LiteRT-LM thought-channel chunks are exposed to parsers.
+  void configureResponseThinkingTags({
+    required String startTag,
+    required String endTag,
+  }) {
+    throw UnsupportedError('LiteRT-LM runtime requires a native platform.');
+  }
+
   /// Dedicated native ASR is unavailable without `dart:ffi`.
   bool get supportsAsrBridge => false;
 

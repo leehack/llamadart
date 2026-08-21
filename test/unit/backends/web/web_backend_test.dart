@@ -5,10 +5,15 @@ import 'dart:typed_data';
 
 import 'package:llamadart/src/backends/backend.dart';
 import 'package:llamadart/src/backends/web/web_backend.dart';
+import 'package:llamadart/src/core/engine/chat_completion_request_planner.dart';
 import 'package:llamadart/src/core/engine/engine.dart';
 import 'package:llamadart/src/core/exceptions.dart';
+import 'package:llamadart/src/core/models/chat/chat_message.dart';
+import 'package:llamadart/src/core/models/chat/chat_role.dart';
+import 'package:llamadart/src/core/models/chat/chat_template_result.dart';
 import 'package:llamadart/src/core/models/config/log_level.dart';
 import 'package:llamadart/src/core/models/inference/model_params.dart';
+import 'package:llamadart/src/core/models/inference/tool_choice.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -26,6 +31,47 @@ void main() {
     expect(backend, isA<BackendTextToSpeech>());
     expect((backend as WebAutoBackend).supportsStatePersistence, isFalse);
     expect(backend.supportsEmbeddings, isFalse);
+  });
+
+  test('WebAutoBackend forwards grammar support from its delegate', () {
+    final unsupported = WebAutoBackend(
+      webBackend: _GrammarSupportBackend(supportsGrammarConstraints: false),
+    );
+    final supported = WebAutoBackend(
+      webBackend: _GrammarSupportBackend(supportsGrammarConstraints: true),
+    );
+    final legacy = WebAutoBackend(webBackend: _NoStateBackend());
+
+    expect(unsupported, isA<BackendGrammarConstraintsSupport>());
+    expect(unsupported.supportsGrammarConstraints, isFalse);
+    expect(supported.supportsGrammarConstraints, isTrue);
+    expect(legacy.supportsGrammarConstraints, isTrue);
+  });
+
+  test('WebAutoBackend rejects strict output for unsupported delegates', () {
+    final backend = WebAutoBackend(
+      webBackend: _GrammarSupportBackend(supportsGrammarConstraints: false),
+    );
+
+    expect(
+      () => ChatCompletionRequestPlanner.build(
+        backend: backend,
+        templateResult: const LlamaChatTemplateResult(prompt: 'prompt'),
+        messages: const [
+          LlamaChatMessage.fromText(role: LlamaChatRole.user, text: 'hello'),
+        ],
+        toolChoice: ToolChoice.auto,
+        parallelToolCalls: false,
+        responseFormat: const {'type': 'json_object'},
+      ),
+      throwsA(
+        isA<LlamaUnsupportedException>().having(
+          (error) => error.message,
+          'message',
+          contains('active backend does not support grammar constraints'),
+        ),
+      ),
+    );
   });
 
   test('WebAutoBackend forwards prompt speech runtime support', () async {
@@ -274,6 +320,14 @@ class _EmbeddingSupportBackend
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _GrammarSupportBackend extends _NoStateBackend
+    implements BackendGrammarConstraintsSupport {
+  _GrammarSupportBackend({required this.supportsGrammarConstraints});
+
+  @override
+  final bool supportsGrammarConstraints;
 }
 
 class _TextToSpeechBackend extends _NoStateBackend
