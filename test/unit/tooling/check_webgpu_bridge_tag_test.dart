@@ -57,8 +57,42 @@ void main() {
 
     expect(
       findBridgeTagDrift(root, readPinnedBridgeTag(root)),
-      contains(startsWith('README.md: no line matches')),
+      contains(
+        allOf(
+          startsWith('README.md:'),
+          contains('matches 0 lines, expected 1'),
+        ),
+      ),
     );
+  });
+
+  test('a duplicated pin is reported rather than half-covered', () {
+    final root = _fakeRepo(
+      'v9.9.9',
+      files: <String, String>{
+        'README.md':
+            '| Web llama.cpp / GGUF | `leehack/llama-web-bridge-assets@v9.9.9` |\n'
+            '| Web llama.cpp / GGUF | `leehack/llama-web-bridge-assets@v9.9.9` |\n',
+      },
+    );
+
+    expect(
+      findBridgeTagDrift(root, readPinnedBridgeTag(root)),
+      contains(contains('matches 2 lines, expected 1')),
+    );
+  });
+
+  test('an indented second assignment is caught too', () {
+    final root = Directory.systemTemp.createTempSync('bridge_tag_gate');
+    addTearDown(() => root.deleteSync(recursive: true));
+    File('${root.path}/$bridgeTagSourcePath')
+      ..parent.createSync(recursive: true)
+      ..writeAsStringSync(
+        'ASSETS_TAG="\${WEBGPU_BRIDGE_ASSETS_TAG:-v1.0.0}"\n'
+        '  export ASSETS_TAG=v2.0.0\n',
+      );
+
+    expect(() => readPinnedBridgeTag(root), throwsFormatException);
   });
 
   test('a second assignment fails rather than validating the wrong one', () {

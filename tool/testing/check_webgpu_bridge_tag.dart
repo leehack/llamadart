@@ -11,7 +11,12 @@ import 'dart:io';
 /// The file whose default decides what a fresh vendoring run downloads.
 const String bridgeTagSourcePath = 'scripts/fetch_webgpu_bridge_assets.sh';
 
-final RegExp _anyAssignment = RegExp(r'^ASSETS_TAG=.*$', multiLine: true);
+// Bash allows leading whitespace and an `export`/`readonly` prefix, so counting
+// only bare `ASSETS_TAG=` would let a later override slip past the guard below.
+final RegExp _anyAssignment = RegExp(
+  r'^[ \t]*(?:export[ \t]+|readonly[ \t]+)?ASSETS_TAG=',
+  multiLine: true,
+);
 
 final RegExp _sourceOfTruth = RegExp(
   r'^ASSETS_TAG="\$\{WEBGPU_BRIDGE_ASSETS_TAG:-(v\d+\.\d+\.\d+)\}"$',
@@ -153,18 +158,17 @@ List<String> findBridgeTagDrift(Directory repoRoot, String expectedTag) {
       continue;
     }
     final matches = pin.pattern.allMatches(file.readAsStringSync()).toList();
-    if (matches.isEmpty) {
+    if (matches.length != 1) {
       problems.add(
-        '${pin.path}: no line matches ${pin.pattern.pattern} — the pin moved or '
-        'was reworded, so this check no longer covers it',
+        '${pin.path}: ${pin.pattern.pattern} matches ${matches.length} lines, '
+        'expected 1 — the pin moved, was reworded, or was duplicated, so this '
+        'check no longer covers exactly one site',
       );
       continue;
     }
-    for (final match in matches) {
-      final found = match.group(1)!;
-      if (found != expectedTag) {
-        problems.add('${pin.path}: pins $found, expected $expectedTag');
-      }
+    final found = matches.single.group(1)!;
+    if (found != expectedTag) {
+      problems.add('${pin.path}: pins $found, expected $expectedTag');
     }
   }
   return problems;
