@@ -49,9 +49,13 @@ void main() {
   });
 }
 
+/// Only real generator output is exempt. `coverage:ignore-file` is a coverage
+/// pragma, and hand-written stubs carry it, so matching on it let them skip
+/// mirroring too.
 bool _isGeneratedSource(File sourceFile) {
   final header = sourceFile.readAsLinesSync().take(20).join('\n');
 
-  return header.contains('coverage:ignore-file') ||
-      header.contains('AUTO GENERATED FILE, DO NOT EDIT.');
+  // ffigen and tool/gen_litert_lm_templates.dart word their banners differently.
+  return header.contains('AUTO GENERATED FILE, DO NOT EDIT.') ||
+      header.contains('GENERATED FILE — DO NOT EDIT BY HAND.');
 }

@@ -172,9 +172,29 @@ jobs:
             "https://huggingface.co/ggml-org/tiny-llamas/resolve/main/stories15M.gguf" \
             --output .dart_tool/test_models/stories15M.gguf
 
+      - name: Cache llama.cpp chat templates
+        id: llama-cpp-templates-cache
+        uses: actions/cache@v5
+        with:
+          path: .dart_tool/llama_cpp_templates
+          key: llama-cpp-templates-${{ hashFiles('tool/testing/llama_cpp_templates.ref') }}
+
+      - name: Download llama.cpp chat templates
+        if: steps.llama-cpp-templates-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          ref="$(tr -d '[:space:]' < tool/testing/llama_cpp_templates.ref)"
+          mkdir -p .dart_tool/llama_cpp_templates
+          curl --fail --location --retry 8 --retry-all-errors --retry-delay 10 \
+            "https://github.com/ggml-org/llama.cpp/archive/refs/tags/$ref.tar.gz" \
+            | tar -xz -C .dart_tool/llama_cpp_templates --strip-components=3 \
+              "llama.cpp-$ref/models/templates"
+
       - name: Run VM tests (with coverage)
         env:
           LLAMADART_TEST_MODELS_DIR: ${{ github.workspace }}/.dart_tool/test_models
+          LLAMA_CPP_TEMPLATES_DIR: ${{ github.workspace }}/.dart_tool/llama_cpp_templates
+          REQUIRE_LLAMA_CPP_TEMPLATES: '1'
         run: dart test -p vm -j 1 --exclude-tags local-only --coverage=coverage
 
       - name: Format coverage

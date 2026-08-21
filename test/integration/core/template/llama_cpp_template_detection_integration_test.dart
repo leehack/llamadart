@@ -15,7 +15,7 @@ import 'llama_cpp_template_parse_samples.dart';
 
 void main() {
   final templatesDir = _resolveTemplatesDir();
-  final hasLlamaCppTemplates = templatesDir.existsSync();
+  final fixtureSkipReason = _fixtureSkipReason(templatesDir);
   const metadata = <String, String>{
     'tokenizer.ggml.bos_token': '<s>',
     'tokenizer.ggml.eos_token': '</s>',
@@ -96,51 +96,56 @@ void main() {
     };
 
     for (final entry in expected.entries) {
-      test(
-        'detects ${entry.key}',
-        () {
-          final file = File('${templatesDir.path}/${entry.key}');
-          expect(
-            file.existsSync(),
-            isTrue,
-            reason: 'Missing llama.cpp template fixture',
-          );
+      test('detects ${entry.key}', () {
+        final file = File('${templatesDir.path}/${entry.key}');
+        expect(
+          file.existsSync(),
+          isTrue,
+          reason: 'Missing llama.cpp template fixture',
+        );
 
-          final source = file.readAsStringSync();
-          final detected = detectChatFormat(source);
-          expect(detected, equals(entry.value));
-        },
-        skip: hasLlamaCppTemplates
-            ? false
-            : 'Requires llama.cpp template fixtures (run tool/testing/prepare_llama_cpp_source.sh).',
-      );
+        final source = file.readAsStringSync();
+        final detected = detectChatFormat(source);
+        expect(detected, equals(entry.value));
+      }, skip: fixtureSkipReason);
     }
 
-    test(
-      'maps every vendored llama.cpp template',
-      () {
-        expect(templatesDir.existsSync(), isTrue);
+    test('maps every vendored llama.cpp template', () {
+      expect(templatesDir.existsSync(), isTrue);
 
-        final files = templatesDir
-            .listSync()
-            .whereType<File>()
-            .where((f) => f.path.endsWith('.jinja'))
-            .map((f) => f.uri.pathSegments.last)
-            .toSet();
+      final files = templatesDir
+          .listSync()
+          .whereType<File>()
+          .where((f) => f.path.endsWith('.jinja'))
+          .map((f) => f.uri.pathSegments.last)
+          .toSet();
 
-        final missing =
-            files.where((name) => !expected.containsKey(name)).toList()..sort();
-        expect(
-          missing,
-          isEmpty,
-          reason:
-              'Unmapped llama.cpp templates detected. Add expectations for: ${missing.join(', ')}',
-        );
-      },
-      skip: hasLlamaCppTemplates
-          ? false
-          : 'Requires llama.cpp template fixtures (run tool/testing/prepare_llama_cpp_source.sh).',
-    );
+      final missing =
+          files
+              .where((name) => !expected.containsKey(name))
+              .where((name) => !unclassifiedTemplates.contains(name))
+              .toList()
+            ..sort();
+      expect(
+        missing,
+        isEmpty,
+        reason:
+            'Unmapped llama.cpp templates detected. Add expectations for: ${missing.join(', ')}',
+      );
+
+      final classified =
+          unclassifiedTemplates
+              .where(files.contains)
+              .where(expected.containsKey)
+              .toList()
+            ..sort();
+      expect(
+        classified,
+        isEmpty,
+        reason:
+            'These now have expectations; drop them from unclassifiedTemplates: ${classified.join(', ')}',
+      );
+    }, skip: fixtureSkipReason);
 
     test(
       'renders and parses every vendored llama.cpp template',
@@ -206,11 +211,36 @@ void main() {
           }
         }
       },
-      skip: hasLlamaCppTemplates
-          ? false
-          : 'Requires llama.cpp template fixtures (run tool/testing/prepare_llama_cpp_source.sh).',
+      skip: fixtureSkipReason,
     );
   });
+}
+
+/// Templates at the pinned ref whose detected format is still an open
+/// question, so no expectation is asserted for them. See llamadart#380.
+const unclassifiedTemplates = <String>{
+  'Kimi-K3.jinja',
+  'MiniMax-M1.jinja',
+  'MiniMax-M3.jinja',
+  'deepseek-ai-DeepSeek-V4-Flash-0731.jinja',
+  'muse-glimmer.jinja',
+  'poolside-Laguna-S-2.1.jinja',
+  'poolside-Laguna-XS-2.1.jinja',
+  'poolside-Laguna-XS.2.jinja',
+};
+
+/// Returns null when the suite must run: either the fixtures are present, or
+/// `REQUIRE_LLAMA_CPP_TEMPLATES=1` demands they be, so a missing directory
+/// fails loudly instead of skipping 62 tests in silence.
+String? _fixtureSkipReason(Directory templatesDir) {
+  if (templatesDir.existsSync()) {
+    return null;
+  }
+  if (Platform.environment['REQUIRE_LLAMA_CPP_TEMPLATES']?.trim() == '1') {
+    return null;
+  }
+  return 'Requires llama.cpp template fixtures (run '
+      'tool/testing/prepare_llama_cpp_source.sh).';
 }
 
 Directory _resolveTemplatesDir() {
