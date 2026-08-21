@@ -355,6 +355,7 @@ class NativeLlamaBackend
     final res = await rp.first;
     rp.close();
     if (res is TokenizeResponse) return res.tokens;
+    if (res is ErrorResponse) throw _workerError(res);
     throw Exception("Tokenization failed");
   }
 
@@ -370,7 +371,7 @@ class NativeLlamaBackend
     final res = await rp.first;
     rp.close();
     if (res is EmbedResponse) return res.embedding;
-    if (res is ErrorResponse) throw Exception(res.message);
+    if (res is ErrorResponse) throw _workerError(res);
     throw Exception('Embedding failed');
   }
 
@@ -397,7 +398,7 @@ class NativeLlamaBackend
     final res = await rp.first;
     rp.close();
     if (res is EmbedBatchResponse) return res.embeddings;
-    if (res is ErrorResponse) throw Exception(res.message);
+    if (res is ErrorResponse) throw _workerError(res);
     throw Exception('Batch embedding failed');
   }
 
@@ -414,6 +415,7 @@ class NativeLlamaBackend
     final res = await rp.first;
     rp.close();
     if (res is DetokenizeResponse) return res.text;
+    if (res is ErrorResponse) throw _workerError(res);
     throw Exception("Detokenization failed");
   }
 
@@ -434,7 +436,7 @@ class NativeLlamaBackend
     final res = await rp.first;
     rp.close();
     if (res is ModelFileTypeResponse) return res.modelFileType;
-    if (res is ErrorResponse) throw Exception(res.message);
+    if (res is ErrorResponse) throw _workerError(res);
     return null;
   }
 
@@ -457,7 +459,7 @@ class NativeLlamaBackend
     final res = await rp.first;
     rp.close();
     if (res is StateSaveFileResponse) return res.success;
-    if (res is ErrorResponse) throw Exception(res.message);
+    if (res is ErrorResponse) throw _workerError(res);
     throw Exception('State save failed');
   }
 
@@ -477,7 +479,7 @@ class NativeLlamaBackend
     if (res is StateLoadFileResponse) {
       return StateLoadResult(tokens: res.tokens);
     }
-    if (res is ErrorResponse) throw Exception(res.message);
+    if (res is ErrorResponse) throw _workerError(res);
     throw Exception('State load failed');
   }
 
@@ -585,7 +587,7 @@ class NativeLlamaBackend
       );
     }
     if (res is ErrorResponse) {
-      throw Exception(res.message);
+      throw _workerError(res);
     }
     return null;
   }
@@ -643,7 +645,7 @@ class NativeLlamaBackend
     final res = await rp.first;
     rp.close();
     if (res is HandleResponse) return res.handle;
-    if (res is ErrorResponse) throw Exception(res.message);
+    if (res is ErrorResponse) throw _workerError(res);
     return null;
   }
 
@@ -823,7 +825,7 @@ class NativeLlamaBackend
     final res = await rp.first;
     rp.close();
     if (res is ChatTemplateResponse) return res.result;
-    if (res is ErrorResponse) throw Exception(res.message);
+    if (res is ErrorResponse) throw _workerError(res);
     throw Exception("Unknown response during chat template application");
   }
 }

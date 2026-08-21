@@ -131,8 +131,8 @@ void main() {
               },
             ]),
             throwsA(
-              isA<Exception>().having(
-                (error) => error.toString(),
+              isA<LlamaUnsupportedException>().having(
+                (error) => error.message,
                 'message',
                 contains('multimodal chat-template content'),
               ),
