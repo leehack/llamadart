@@ -362,6 +362,29 @@ String _sourceSection(String source, String startMarker, String endMarker) {
   return source.substring(start, end);
 }
 
+String _sourceBracedDeclaration(String source, String marker) {
+  final start = source.indexOf(marker);
+  expect(start, isNot(-1), reason: marker);
+
+  final openingBrace = source.indexOf('{', start);
+  expect(openingBrace, isNot(-1), reason: marker);
+
+  var depth = 0;
+  for (var index = openingBrace; index < source.length; index++) {
+    switch (source[index]) {
+      case '{':
+        depth++;
+      case '}':
+        depth--;
+        if (depth == 0) {
+          return source.substring(start, index + 1);
+        }
+    }
+  }
+
+  fail('Unterminated declaration: $marker');
+}
+
 void _expectBitmapHelperDecodesTransparentPng(
   _MtmdHelperBitmapInitFromBufDart helper,
   _MtmdBitmapFreeDart bitmapFree,
@@ -451,10 +474,9 @@ void main() {
       final bindingsSource = File(
         'lib/src/backends/llama_cpp/bindings.dart',
       ).readAsStringSync();
-      final section = _sourceSection(
+      final section = _sourceBracedDeclaration(
         bindingsSource,
         'final class mtmd_context_params extends ffi.Struct {',
-        'typedef mtmd_bitmap_lazy_callbackFunction =',
       );
 
       final useGpuIndex = section.indexOf('external bool use_gpu;');
