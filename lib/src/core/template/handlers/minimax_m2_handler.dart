@@ -4,6 +4,7 @@ import '../../models/chat/chat_message.dart';
 import '../../models/chat/chat_template_result.dart';
 import '../../models/tools/tool_definition.dart';
 import '../chat_format.dart';
+import '../thinking_utils.dart';
 import '../chat_parse_result.dart';
 import '../chat_template_handler.dart';
 import '../xml_tool_call_format.dart';
@@ -54,7 +55,7 @@ class MinimaxM2Handler extends ChatTemplateHandler {
     );
 
     var thinkingForcedOpen = false;
-    if (prompt.endsWith('<think>\n')) {
+    if (isThinkingForcedOpen(prompt)) {
       if (!enableThinking) {
         prompt = '$prompt</think>\n\n';
       } else {
