@@ -2,8 +2,8 @@ import 'dart:async';
 import 'dart:isolate';
 
 import '../../core/exceptions.dart';
+import '../native_token_stream_batcher.dart';
 import 'llama_cpp_service.dart';
-import 'stream_batcher.dart';
 import 'worker_messages.dart';
 
 // Re-export messages so native_backend.dart can see them via worker.dart if needed

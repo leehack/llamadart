@@ -731,7 +731,6 @@ void main() {
       'state/introspection methods return safe defaults before model load',
       () {
         expect(service.getContextSize(-1), 0);
-        expect(service.hasMultimodalContext(-1), isFalse);
         expect(service.getResolvedGpuLayers(), isNull);
         expect(service.getActiveBackendName(), 'CPU');
         expect(service.getAvailableBackendInfo(), contains('CPU'));

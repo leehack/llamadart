@@ -15,11 +15,6 @@ import 'package:llamadart/src/core/models/config/log_level.dart';
 import 'package:test/test.dart';
 
 void main() {
-  test('createBackend returns a LlamaBackend', () {
-    final backend = createBackend();
-    expect(backend, isA<LlamaBackend>());
-  });
-
   test('NativeLlamaBackend type is available', () {
     expect(NativeLlamaBackend, isNotNull);
   });

@@ -5,6 +5,11 @@
   Matching Dart FFI bindings, including the new multimodal projector-device
   field, and the Apple SwiftPM artifact checksum were refreshed.
 
+* Removed the abandoned Dart-side MTP/n-gram speculative-decoding scaffolding
+  from the llama.cpp backend. Speculative decoding is unchanged: it continues to
+  run through the native wrapper, and `SpeculativeDecodingStrategy` keeps every
+  existing option.
+
 ## 0.8.20
 
 * Added `code_assets` 2.x compatibility while retaining support for 1.x native

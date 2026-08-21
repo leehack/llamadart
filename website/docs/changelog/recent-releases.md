@@ -14,6 +14,9 @@ For canonical full release notes, use:
   Matching Dart FFI bindings, including the new multimodal projector-device
   field, and the Apple SwiftPM artifact checksum were refreshed.
 
+- Removed the abandoned Dart-side MTP/n-gram speculative-decoding scaffolding
+  from the llama.cpp backend; speculative decoding behavior is unchanged.
+
 ## 0.8.20
 
 - Updated WebGPU bridge assets to `v0.1.37` (llama.cpp `b10514`), restoring
