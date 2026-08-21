@@ -87,6 +87,29 @@ Practical compatibility checks:
 - Lower scales (`0.1` to `0.3`) help preserve base-model behavior.
 - Higher scales can over-steer outputs; validate with representative prompts.
 
+## aLoRA adapters are not supported
+
+Activated LoRA (aLoRA) adapters carry a sequence of invocation tokens and must
+take effect only once that sequence appears in the prompt. llamadart applies
+every adapter from the start of generation, so an aLoRA adapter used this way
+would change output without any error — the failure is silent and looks like a
+badly behaved LoRA.
+
+Rather than guess, `setLoraAdapter` inspects the adapter after loading it and
+rejects an aLoRA adapter with `LlamaUnsupportedException`:
+
+```
+The adapter at <path> is an aLoRA adapter (N invocation token(s)). llamadart
+applies LoRA adapters from the start of generation, but an aLoRA adapter must
+activate only after its invocation sequence appears in the prompt, so applying
+it eagerly would silently change output. Use a standard LoRA adapter until
+invocation-aware activation is implemented.
+```
+
+Native LoRA support should not be read as aLoRA support. Invocation-aware
+activation is tracked in
+[issue #321](https://github.com/leehack/llamadart/issues/321).
+
 ## Lifecycle notes
 
 - LoRA activation is tied to the active context.
