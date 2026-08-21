@@ -128,6 +128,37 @@ void main() {
     );
   });
 
+  test('an unregistered pin holding a stale tag is still caught', () {
+    final root = _fakeRepo('v9.9.9');
+    Process.runSync('git', <String>[
+      'init',
+      '--quiet',
+    ], workingDirectory: root.path);
+    File(
+      '${root.path}/notes.md',
+    ).writeAsStringSync('Uses `leehack/llama-web-bridge-assets@v0.1.36`.\n');
+    Process.runSync('git', <String>['add', '-A'], workingDirectory: root.path);
+
+    expect(
+      findUnregisteredTagSites(root, 'v9.9.9'),
+      contains(contains('notes.md:1: a bridge asset pin is not covered')),
+    );
+  });
+
+  test('a binary file does not crash the scan', () {
+    final root = _fakeRepo('v9.9.9');
+    Process.runSync('git', <String>[
+      'init',
+      '--quiet',
+    ], workingDirectory: root.path);
+    File(
+      '${root.path}/blob.bin',
+    ).writeAsBytesSync(<int>[0xff, 0xfe, 0x00, 0x80]);
+    Process.runSync('git', <String>['add', '-A'], workingDirectory: root.path);
+
+    expect(() => findUnregisteredTagSites(root, 'v9.9.9'), returnsNormally);
+  });
+
   test('a missing source of truth fails instead of passing vacuously', () {
     final root = Directory.systemTemp.createTempSync('bridge_tag_gate');
     addTearDown(() => root.deleteSync(recursive: true));

@@ -175,6 +175,24 @@ List<String> findBridgeTagDrift(Directory repoRoot, String expectedTag) {
   return problems;
 }
 
+/// Machine-readable ways of writing a pin, whatever value it holds.
+///
+/// Scanning for these as well as for the current tag is what catches a newly
+/// added pin that is already stale; searching only for the expected value
+/// would never look at it.
+final List<RegExp> bridgeTagPinShapes = <RegExp>[
+  RegExp(r'llama-web-bridge-assets@v\d+\.\d+\.\d+'),
+  RegExp(r"BridgeAssetsTag\s*=\s*'v\d+\.\d+\.\d+'"),
+  RegExp(r'WEBGPU_BRIDGE_ASSETS_TAG=v\d+\.\d+\.\d+'),
+  RegExp(r'ASSETS_TAG:-v\d+\.\d+\.\d+'),
+];
+
+/// This gate's own sources, whose fixtures are deliberately not real pins.
+const List<String> _selfPaths = <String>[
+  'tool/testing/check_webgpu_bridge_tag.dart',
+  'test/unit/tooling/check_webgpu_bridge_tag_test.dart',
+];
+
 /// Files that record past releases, where an old tag is correct.
 const List<String> tagHistoryFiles = <String>[
   'CHANGELOG.md',
@@ -211,7 +229,7 @@ List<String> findUnregisteredTagSites(Directory repoRoot, String expectedTag) {
     if (path.isEmpty ||
         path.startsWith(versionedDocsPrefix) ||
         tagHistoryFiles.contains(path) ||
-        path == 'tool/testing/check_webgpu_bridge_tag.dart') {
+        _selfPaths.contains(path)) {
       continue;
     }
     final file = File('${repoRoot.path}/$path');
@@ -220,28 +238,34 @@ List<String> findUnregisteredTagSites(Directory repoRoot, String expectedTag) {
     try {
       contents = file.readAsStringSync();
     } on FileSystemException {
-      continue; // Binary asset.
+      continue; // Binary asset: this SDK reports a failed decode this way.
+    } on FormatException {
+      continue; // Binary asset, if a future SDK reports it as a decode error.
     }
-    if (!contents.contains(expectedTag)) continue;
-
     final patterns = registered[path] ?? const <RegExp>[];
     var lineNumber = 0;
     for (final line in const LineSplitter().convert(contents)) {
       lineNumber++;
-      final at = line.indexOf(expectedTag);
-      if (at < 0) continue;
-      // `v0.1.37+` states a minimum, not the tag in use.
-      final after = at + expectedTag.length;
-      if (after < line.length && line[after] == '+') continue;
+      final shaped = bridgeTagPinShapes.any((shape) => shape.hasMatch(line));
+      final holdsTag = _holdsCurrentTag(line, expectedTag);
+      if (!shaped && !holdsTag) continue;
       if (patterns.any((pattern) => pattern.hasMatch(line))) continue;
       unregistered.add(
-        '$path:$lineNumber: $expectedTag is not covered by any registered pin '
-        '— add it to bridgeTagPins, or to tagHistoryFiles if it records a past '
-        'release',
+        '$path:$lineNumber: ${shaped ? 'a bridge asset pin' : expectedTag} is '
+        'not covered by any registered pin — add it to bridgeTagPins, or to '
+        'tagHistoryFiles if it records a past release',
       );
     }
   }
   return unregistered;
+}
+
+/// True when [line] states the tag in use rather than a `v0.1.37+` minimum.
+bool _holdsCurrentTag(String line, String expectedTag) {
+  final at = line.indexOf(expectedTag);
+  if (at < 0) return false;
+  final after = at + expectedTag.length;
+  return after >= line.length || line[after] != '+';
 }
 
 void main() {
