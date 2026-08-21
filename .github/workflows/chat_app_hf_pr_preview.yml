@@ -186,7 +186,7 @@ jobs:
 
       - name: Comment preview URL
         if: ${{ github.event.action != 'closed' }}
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         env:
           APP_URL: ${{ steps.target.outputs.app_url }}
           SPACE_URL: ${{ steps.target.outputs.space_url }}
@@ -233,7 +233,7 @@ jobs:
 
       - name: Comment preview removal
         if: ${{ github.event.action == 'closed' }}
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         env:
           SPACE_REPO: ${{ steps.target.outputs.space_repo }}
         with:
