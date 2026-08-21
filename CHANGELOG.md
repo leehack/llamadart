@@ -1,5 +1,9 @@
 ## Unreleased
 
+* Deprecated `LiteRtLmRuntimeClient.conversationTokenCount()` and
+  `replaceConversationWithClone()`. Both are unused and are scheduled for
+  removal in the next major release; open an issue if you depend on either.
+
 * Updated the default llama.cpp native runtime to `b10545`, adding LFM2 DSpark
   support plus current upstream correctness and backend performance fixes.
   Matching Dart FFI bindings, including the new multimodal projector-device

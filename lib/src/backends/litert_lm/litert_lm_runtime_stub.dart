@@ -155,11 +155,19 @@ class LiteRtLmRuntimeClient {
   }
 
   /// Returns the active native conversation token count.
+  @Deprecated(
+    'Has no callers in llamadart and will be removed in the next major '
+    'release. Open an issue if you depend on it.',
+  )
   int conversationTokenCount() {
     throw UnsupportedError('LiteRT-LM runtime requires a native platform.');
   }
 
   /// Replaces the active native conversation with a clone.
+  @Deprecated(
+    'Has no callers in llamadart and will be removed in the next major '
+    'release. Open an issue if you depend on it.',
+  )
   void replaceConversationWithClone() {
     throw UnsupportedError('LiteRT-LM runtime requires a native platform.');
   }

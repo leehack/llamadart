@@ -952,6 +952,10 @@ class LiteRtLmRuntimeClient {
   }
 
   /// Returns the token count currently held by the active conversation KV cache.
+  @Deprecated(
+    'Has no callers in llamadart and will be removed in the next major '
+    'release. Open an issue if you depend on it.',
+  )
   int conversationTokenCount() {
     final bindings = _requireBindings();
     final conversation = _requireConversation();
@@ -965,6 +969,10 @@ class LiteRtLmRuntimeClient {
   }
 
   /// Replaces the active conversation with a native clone of itself.
+  @Deprecated(
+    'Has no callers in llamadart and will be removed in the next major '
+    'release. Open an issue if you depend on it.',
+  )
   void replaceConversationWithClone() {
     final bindings = _requireBindings();
     final conversation = _requireConversation();
