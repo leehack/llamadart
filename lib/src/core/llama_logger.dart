@@ -121,7 +121,6 @@ class LlamaLogger {
       _handler!(record);
     } else {
       // Default print behavior
-      // ignore: avoid_print
       print(record.toString());
     }
   }

@@ -441,6 +441,98 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
       },
     ),
     LocalE2eScenario(
+      name: 'gemma4-mtp-smoke',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description:
+          'Smoke-test Gemma 4 bundled MTP speculative decoding against a real '
+          'GGUF model.',
+      requiresDevice: false,
+      stepsBuilder: (context) {
+        return [
+          LocalE2eCommandStep(
+            workingDirectory: context.projectRoot,
+            executable: 'dart',
+            arguments: <String>[
+              'run',
+              'tool/testing/gemma4_mtp_smoke.dart',
+              context.modelPath!,
+              context.draftModelPath ?? '-',
+              context.benchmarkMaxTokens,
+              context.draftTokenMaxList.split(',').first,
+            ],
+            description: 'Gemma 4 MTP smoke',
+          ),
+        ];
+      },
+    ),
+    LocalE2eScenario(
+      name: 'native-embedding-benchmark',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description:
+          'Compare sequential embedding calls against embedBatch throughput on '
+          'a real GGUF model.',
+      requiresDevice: false,
+      stepsBuilder: (context) {
+        return [
+          LocalE2eCommandStep(
+            workingDirectory: context.projectRoot,
+            executable: 'dart',
+            arguments: <String>[
+              'run',
+              'tool/testing/native_embedding_benchmark.dart',
+              '--model',
+              context.modelPath!,
+              '--mode',
+              'both',
+              '--input-count',
+              '8',
+              '--max-seq',
+              '8',
+              '--runs',
+              context.benchmarkRuns,
+              '--warmup',
+              context.benchmarkWarmups,
+              '--gpu-layers',
+              context.benchmarkGpuLayers,
+            ],
+            description: 'Native embedding sequential vs batch benchmark',
+          ),
+        ];
+      },
+    ),
+    LocalE2eScenario(
+      name: 'native-embedding-sweep',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description:
+          'Sweep max-seq values and emit a CSV embedding speedup report.',
+      requiresDevice: false,
+      stepsBuilder: (context) {
+        return [
+          LocalE2eCommandStep(
+            workingDirectory: context.projectRoot,
+            executable: 'dart',
+            arguments: <String>[
+              'run',
+              'tool/testing/native_embedding_sweep.dart',
+              '--model',
+              context.modelPath!,
+              '--max-seq-values',
+              '1,2,4,8',
+              '--runs',
+              context.benchmarkRuns,
+              '--warmup',
+              context.benchmarkWarmups,
+              '--gpu-layers',
+              context.benchmarkGpuLayers,
+              '--csv-out',
+              '${context.projectRoot}/build/embedding_speedup_sweep.csv',
+            ],
+            description: 'Native embedding max-seq sweep',
+          ),
+        ];
+      },
+    ),
+    LocalE2eScenario(
       name: 'llama-cpp-chat-template-smoke',
       group: LocalE2eScenarioGroup.dartLocalOnly,
       description:

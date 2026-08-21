@@ -1,4 +1,4 @@
 dartdoc:
   exclude:
-    - 'src/generated/llama_bindings.dart'
-    - 'src/generated/llama_bindings_stub.dart'
+    - 'src/backends/llama_cpp/bindings.dart'
+    - 'src/backends/llama_cpp/bindings_stub.dart'

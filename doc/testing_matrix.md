@@ -65,6 +65,8 @@ Pick targeted rows based on the touched surface:
 | --- | --- |
 | Native-assets hook, runtime pin, bundle layout | `native-hook-bundles`, `litert-lm-engine-smoke`, and relevant `platform` rows such as `android-arm64-device-smoke` |
 | llama.cpp / GGUF generation, prompt reuse, context reuse | `native-prompt-reuse-parity`, `native-inference-benchmark`, `gguf-chat-features-smoke` |
+| Speculative decoding, bundled MTP, or n-gram drafting | `llama-cpp-speculative-benchmark`, `gemma4-mtp-smoke` |
+| Embedding API, `embedBatch`, or embedding throughput | `native-embedding-benchmark`, `native-embedding-sweep` |
 | Chat template, parser, tools, thinking extraction | `template-parity`, `llama-cpp-chat-template-smoke`, `gguf-chat-features-smoke`, `litert-lm-chat-features-smoke` |
 | LiteRT-LM native backend | `litert-lm-engine-smoke`, `litert-lm-chat-features-smoke`, `litert-lm-asr-smoke` |
 | Web bridge bootstrap or interop | `web-bridge-smoke`, `web-mock-chat-smoke`, `web-real-model-smoke` |
@@ -217,7 +219,36 @@ dart run tool/testing/run_local_e2e.dart \
   --ngram-size-m 8,16 \
   --benchmark-warmups 1 \
   --ngram-cache-build-static-path /tmp/llamadart-ngram-cache.bin
+
+dart run tool/testing/run_local_e2e.dart \
+  --scenario gemma4-mtp-smoke \
+  --model-path models/gemma-4-e2b-mtp-Q4_K_M.gguf \
+  --benchmark-max-tokens 32 \
+  --draft-token-max 1
+
+dart run tool/testing/run_local_e2e.dart \
+  --scenario native-embedding-benchmark \
+  --model-path models/embedding-model.gguf \
+  --benchmark-runs 3 \
+  --benchmark-warmups 1 \
+  --benchmark-gpu-layers 0
+
+dart run tool/testing/run_local_e2e.dart \
+  --scenario native-embedding-sweep \
+  --model-path models/embedding-model.gguf \
+  --benchmark-runs 3 \
+  --benchmark-warmups 1 \
+  --benchmark-gpu-layers 0
 ```
+
+`native-embedding-benchmark` compares sequential embedding calls against
+`embedBatch(...)` at a fixed `--max-seq`, while `native-embedding-sweep` runs the
+same benchmark across `1,2,4,8` and writes
+`build/embedding_speedup_sweep.csv` for plotting. Use the sweep when choosing or
+defending a default `maxParallelSequences`, and the single benchmark when one
+data point is enough. Both are `local-only` and need a real embedding-capable
+GGUF model; `website/docs/guides/embeddings.md` documents the underlying scripts
+directly for ad hoc runs.
 
 The dedicated `gguf-audio-chat-smoke` scenario validates byte-backed audio
 question answering against `--expect` after model and projector initialization.
@@ -225,6 +256,13 @@ Run `gguf-chat-features-smoke` separately for chat, tool-call, thinking, and
 optional image checks. Both GGUF and LiteRT-LM audio results report the encoded
 byte length and a stable SHA-256 fixture ID, but not the fixture path or raw
 audio bytes.
+
+`gemma4-mtp-smoke` is a fast correctness companion to
+`llama-cpp-speculative-benchmark`: it checks that bundled MTP still produces
+coherent Gemma 4 output before the fuller throughput and acceptance run. For MTP
+and n-gram *performance* numbers, use `llama-cpp-speculative-benchmark` with
+`--speculative-cases draft-mtp,ngram-simple`, which supersedes the older
+env-var-driven benchmark script. Like every `local-only` row, neither runs in CI.
 
 In the local E2E scenario, external draft-model strategies require
 `--draft-model-path`; select `draft-dspark` to validate DSpark against the same

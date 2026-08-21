@@ -117,16 +117,6 @@ ThinkingExtraction _extractThinking(
   );
 }
 
-/// Strips all thinking tags and content from text, returning only the
-/// non-thinking content.
-String stripThinking(
-  String text, {
-  String startTag = '<think>',
-  String endTag = '</think>',
-}) {
-  return extractThinking(text, startTag: startTag, endTag: endTag).content;
-}
-
 /// Checks if the prompt ends with a thinking start tag, allowing for trailing
 /// whitespace.
 ///

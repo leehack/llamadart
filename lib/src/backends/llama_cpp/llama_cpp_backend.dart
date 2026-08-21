@@ -16,9 +16,6 @@ import '../../core/models/inference/model_params.dart';
 import '../../core/models/inference/generation_params.dart';
 import 'worker.dart';
 
-/// Creates a [NativeLlamaBackend].
-LlamaBackend createBackend() => NativeLlamaBackend();
-
 /// Native implementation of [LlamaBackend] using isolates and FFI.
 class NativeLlamaBackend
     implements

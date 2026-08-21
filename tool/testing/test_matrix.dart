@@ -137,6 +137,37 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'Generation latency, streaming, batching, prompt reuse, or performance changes.',
   ),
   TestMatrixRow(
+    id: 'native-embedding-benchmark',
+    tier: 'targeted',
+    mode: 'local-only',
+    covers:
+        'real GGUF sequential embedding calls versus embedBatch throughput, '
+        'including n_seq_max parallelism',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario '
+        'native-embedding-benchmark --model-path <model.gguf> '
+        '--benchmark-runs 3 --benchmark-warmups 1 --benchmark-gpu-layers 0',
+    useWhen:
+        'Embedding API, embedBatch, pooling, or embedding throughput changes. '
+        'Not run in CI.',
+  ),
+  TestMatrixRow(
+    id: 'native-embedding-sweep',
+    tier: 'targeted',
+    mode: 'local-only',
+    covers:
+        'real GGUF embedding speedup across a max-seq sweep, emitted as a CSV '
+        'report for plotting',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario '
+        'native-embedding-sweep --model-path <model.gguf> --benchmark-runs 3 '
+        '--benchmark-warmups 1 --benchmark-gpu-layers 0',
+    useWhen:
+        'Choosing or defending a default maxParallelSequences, or when an '
+        'embedding batching change needs a speedup curve rather than a single '
+        'data point. Writes build/embedding_speedup_sweep.csv. Not run in CI.',
+  ),
+  TestMatrixRow(
     id: 'llama-cpp-speculative-benchmark',
     tier: 'targeted',
     mode: 'local-only',
@@ -160,6 +191,22 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         '--draft-model-path in the local E2E scenario; bundled MTP omits it '
         'and enables ModelParams.loadMtp; ngram-cache can use '
         'an existing cache path or --ngram-cache-build-static-path.',
+  ),
+  TestMatrixRow(
+    id: 'gemma4-mtp-smoke',
+    tier: 'targeted',
+    mode: 'local-only',
+    covers:
+        'Gemma 4 bundled MTP speculative decoding correctness against a real '
+        'GGUF model on a Metal-preferred native backend',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario gemma4-mtp-smoke '
+        '--model-path <gemma4.gguf> [--draft-model-path <draft.gguf>] '
+        '--benchmark-max-tokens 32 --draft-token-max 1',
+    useWhen:
+        'Gemma 4 MTP work, or a quick correctness check that bundled MTP still '
+        'generates coherent output before running the fuller '
+        'llama-cpp-mtp-benchmark row. Not run in CI.',
   ),
   TestMatrixRow(
     id: 'gguf-chat-features-smoke',
