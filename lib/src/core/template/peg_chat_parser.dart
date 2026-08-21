@@ -3,6 +3,7 @@ import 'dart:convert';
 import '../models/chat/completion_chunk.dart';
 import 'chat_format.dart';
 import 'chat_parse_result.dart';
+import 'peg_parser_builder.dart';
 
 /// Runtime PEG parser for llama.cpp `parser.save()` payloads.
 ///
@@ -92,11 +93,11 @@ class _PegBaseMapper {
   }
 
   void map(_PegAstNode node) {
-    if (node.tag == 'reasoning') {
+    if (node.tag == ChatPegBuilder.reasoningTag) {
       message.reasoningContent = _trimTrailingWhitespace(node.text);
       return;
     }
-    if (node.tag == 'content') {
+    if (node.tag == ChatPegBuilder.contentTag) {
       message.content = _trimTrailingWhitespace(node.text);
     }
   }
@@ -111,24 +112,24 @@ class _PegNativeMapper extends _PegBaseMapper {
   void map(_PegAstNode node) {
     super.map(node);
 
-    if (node.tag == 'tool-open') {
+    if (node.tag == ChatPegNativeBuilder.toolOpenTag) {
       final tool = _PegToolCall();
       message.toolCalls.add(tool);
       _currentTool = tool;
       return;
     }
 
-    if (node.tag == 'tool-id' && _currentTool != null) {
+    if (node.tag == ChatPegNativeBuilder.toolIdTag && _currentTool != null) {
       _currentTool!.id = _trimTrailingWhitespace(node.text);
       return;
     }
 
-    if (node.tag == 'tool-name' && _currentTool != null) {
+    if (node.tag == ChatPegNativeBuilder.toolNameTag && _currentTool != null) {
       _currentTool!.name = _trimTrailingWhitespace(node.text);
       return;
     }
 
-    if (node.tag == 'tool-args' && _currentTool != null) {
+    if (node.tag == ChatPegNativeBuilder.toolArgsTag && _currentTool != null) {
       _currentTool!.arguments = _trimTrailingWhitespace(node.text);
     }
   }
@@ -145,7 +146,7 @@ class _PegConstructedMapper extends _PegBaseMapper {
   void map(_PegAstNode node) {
     super.map(node);
 
-    if (node.tag == 'tool-open') {
+    if (node.tag == ChatPegNativeBuilder.toolOpenTag) {
       final tool = _PegToolCall();
       message.toolCalls.add(tool);
       _currentTool = tool;
@@ -153,18 +154,19 @@ class _PegConstructedMapper extends _PegBaseMapper {
       return;
     }
 
-    if (node.tag == 'tool-name' && _currentTool != null) {
+    if (node.tag == ChatPegNativeBuilder.toolNameTag && _currentTool != null) {
       _currentTool!.name = node.text;
       _currentTool!.arguments = '{';
       return;
     }
 
-    if (node.tag == 'tool-arg-open') {
+    if (node.tag == ChatPegConstructedBuilder.toolArgOpenTag) {
       _needsClosingQuote = false;
       return;
     }
 
-    if (node.tag == 'tool-arg-name' && _currentTool != null) {
+    if (node.tag == ChatPegConstructedBuilder.toolArgNameTag &&
+        _currentTool != null) {
       if (_argCount > 0) {
         _currentTool!.arguments += ',';
       }
@@ -174,7 +176,8 @@ class _PegConstructedMapper extends _PegBaseMapper {
       return;
     }
 
-    if (node.tag == 'tool-arg-string-value' && _currentTool != null) {
+    if (node.tag == ChatPegConstructedBuilder.toolArgStringValueTag &&
+        _currentTool != null) {
       final dumped = jsonEncode(_trimTrailingWhitespace(node.text));
       if (dumped.isNotEmpty) {
         _currentTool!.arguments += dumped.substring(0, dumped.length - 1);
@@ -183,7 +186,8 @@ class _PegConstructedMapper extends _PegBaseMapper {
       return;
     }
 
-    if (node.tag == 'tool-arg-close' && _currentTool != null) {
+    if (node.tag == ChatPegConstructedBuilder.toolArgCloseTag &&
+        _currentTool != null) {
       if (_needsClosingQuote) {
         _currentTool!.arguments += '"';
         _needsClosingQuote = false;
@@ -191,12 +195,13 @@ class _PegConstructedMapper extends _PegBaseMapper {
       return;
     }
 
-    if (node.tag == 'tool-arg-json-value' && _currentTool != null) {
+    if (node.tag == ChatPegConstructedBuilder.toolArgJsonValueTag &&
+        _currentTool != null) {
       _currentTool!.arguments += _trimTrailingWhitespace(node.text);
       return;
     }
 
-    if (node.tag == 'tool-close' && _currentTool != null) {
+    if (node.tag == ChatPegNativeBuilder.toolCloseTag && _currentTool != null) {
       if (_needsClosingQuote) {
         _currentTool!.arguments += '"';
         _needsClosingQuote = false;

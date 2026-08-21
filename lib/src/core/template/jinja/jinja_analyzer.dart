@@ -27,7 +27,7 @@ class JinjaAnalyzer {
       final parser = Parser(result.tokens, source);
       final program = parser.parse();
 
-      final astCaps = _analyzeAST(program, source);
+      final astCaps = _analyzeAST(program);
       return _probeWithExecution(source, astCaps);
     } catch (e) {
       // Fallback to regex if parsing fails (e.g. invalid syntax)
@@ -193,7 +193,7 @@ class JinjaAnalyzer {
     }
   }
 
-  static TemplateCaps _analyzeAST(Program template, String source) {
+  static TemplateCaps _analyzeAST(Program template) {
     bool supportsSystemRole = false;
     bool supportsToolCalls = false;
     bool supportsTools = false;
