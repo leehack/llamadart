@@ -54,9 +54,11 @@ jobs:
       # pana exits non-zero when (max - granted) > threshold, and pana's maximum
       # is 160 -- so the previous threshold of 160 could only trip on a negative
       # score. The package scores 160/160 today, so 0 costs no headroom and any
-      # point loss fails. Any non-zero tolerance would be enough to hide a whole
-      # check: pana's smallest buckets are 5-10 points, so even 10 would let
-      # "supports latest stable Dart and Flutter SDKs" (10/10) regress silently.
+      # point loss fails. pana's smallest buckets are 5-10 points, so any
+      # tolerance of 5 or more could hide a whole check regressing -- 10 would
+      # let "supports latest stable Dart and Flutter SDKs" (10/10) vanish
+      # silently. A tolerance of 1-4 would still catch every current bucket, but
+      # buys nothing that 0 does not.
       # A pana release that changes scoring fails here loudly, which is the
       # intended signal; raise this deliberately if slack is ever wanted.
       - name: Check Pana Score
