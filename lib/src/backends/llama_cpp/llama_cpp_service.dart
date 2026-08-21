@@ -19,6 +19,7 @@ import '../../core/models/config/gpu_device_info.dart';
 import '../../core/models/config/log_level.dart';
 import '../../core/models/diagnostics/model_file_type.dart';
 import '../../core/models/inference/generation_params.dart';
+import '../../core/template/media_placeholders.dart';
 import '../../core/models/inference/model_params.dart';
 import '../../core/template/chat_template_engine.dart';
 import 'load_param_helpers.dart';
@@ -4781,26 +4782,7 @@ class LlamaCppService {
         ? '<__media__>'
         : markerPtr.cast<Utf8>().toDartString();
 
-    var normalized = prompt;
-    const directPlaceholders = [
-      '<image>',
-      '[IMG]',
-      '<|image|>',
-      '<|audio|>',
-      '<|video|>',
-      '<img>',
-      '<|img|>',
-      '<image_soft_token>',
-      '<audio_soft_token>',
-      '<video_soft_token>',
-    ];
-
-    for (final placeholder in directPlaceholders) {
-      normalized = normalized.replaceAll(placeholder, marker);
-    }
-
-    // Some VLM templates index image placeholders (e.g. <|image_1|>).
-    normalized = normalized.replaceAll(RegExp(r'<\|image_\d+\|>'), marker);
+    var normalized = normalizeMediaPlaceholders(prompt, marker: marker);
 
     if (mediaPartCount <= 0) {
       return normalized;

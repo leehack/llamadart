@@ -1,5 +1,11 @@
 ## Unreleased
 
+* Fixed multimodal media placeholders being normalized inconsistently. `<img>`,
+  `<|img|>`, `<start_of_image>` and indexed markers such as `<|image_1|>` are now
+  rewritten to the mtmd marker on every path, rather than depending on which
+  layer rendered the prompt. MiniMax-M2 and MiniCPM-5 also now detect a
+  forced-open thinking block using the same rule as every other handler.
+
 * Deprecated `LiteRtLmRuntimeClient.conversationTokenCount()` and
   `replaceConversationWithClone()`. Both are unused and are scheduled for
   removal in the next major release; open an issue if you depend on either.

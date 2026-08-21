@@ -7,6 +7,7 @@ import '../../models/chat/completion_chunk.dart';
 import '../../models/chat/content_part.dart';
 import '../../models/tools/tool_definition.dart';
 import '../chat_format.dart';
+import '../media_placeholders.dart';
 import '../chat_parse_result.dart';
 import '../chat_template_handler.dart';
 import '../tool_call_fallback_parser.dart';
@@ -91,7 +92,7 @@ class FunctionGemmaHandler extends ChatTemplateHandler {
     );
 
     if (multimodalContent) {
-      prompt = prompt.replaceAll('<start_of_image>', '<__media__>');
+      prompt = normalizeMediaPlaceholders(prompt);
     }
 
     final hasTools = tools != null && tools.isNotEmpty;

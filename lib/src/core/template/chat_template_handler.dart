@@ -5,6 +5,7 @@ import '../models/chat/chat_message.dart';
 import '../models/chat/chat_template_result.dart';
 import '../models/tools/tool_definition.dart';
 import 'chat_format.dart';
+import 'media_placeholders.dart';
 import 'chat_parse_result.dart';
 import 'template_internal_metadata.dart';
 import 'template_render_context.dart';
@@ -184,20 +185,7 @@ abstract class ChatTemplateHandler {
 
     // Post-process: replace model-specific image placeholders with
     // the mtmd marker so the native tokenizer can match bitmaps to markers.
-    const mtmdMarker = '<__media__>';
-    const imagePlaceholders = [
-      '<image>', // SmolVLM, InternVL, etc.
-      '[IMG]', // Some CLIP-based models
-      '<|image|>', // Phi-3 vision
-      '<|audio|>',
-      '<|video|>',
-      '<image_soft_token>',
-      '<audio_soft_token>',
-      '<video_soft_token>',
-    ];
-    for (final placeholder in imagePlaceholders) {
-      prompt = prompt.replaceAll(placeholder, mtmdMarker);
-    }
+    prompt = normalizeMediaPlaceholders(prompt);
 
     final hasTools = tools != null && tools.isNotEmpty;
 
