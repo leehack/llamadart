@@ -4251,7 +4251,6 @@ class LlamaCppService {
           nCtx,
           cancelTokenAddress,
           pieceBuf,
-          grammarPtr,
           preservedTokenIds,
           effectiveStopSequences,
         );
@@ -5371,7 +5370,6 @@ class LlamaCppService {
     int nCtx,
     int cancelTokenAddress,
     Pointer<Uint8> pieceBuf,
-    Pointer<Utf8> grammarPtr,
     Set<int> preservedTokenIds,
     List<String> stopSequences,
   ) async* {

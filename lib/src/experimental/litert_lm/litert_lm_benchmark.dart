@@ -1,9 +1,9 @@
-// ignore_for_file: public_member_api_docs
-
 import '../../backends/litert_lm/litert_lm_runtime.dart';
 
+/// Deprecated compatibility name for [LiteRtLmRuntimeMetrics].
 @Deprecated('Use LiteRtLmRuntimeMetrics from the LiteRT-LM runtime API.')
 class LiteRtLmBenchmarkMetrics extends LiteRtLmRuntimeMetrics {
+  /// Creates benchmark metrics.
   const LiteRtLmBenchmarkMetrics({
     required super.inputTokens,
     required super.outputTokens,
@@ -14,6 +14,7 @@ class LiteRtLmBenchmarkMetrics extends LiteRtLmRuntimeMetrics {
     required super.wallMilliseconds,
   });
 
+  /// Converts stable runtime metrics to the deprecated compatibility type.
   factory LiteRtLmBenchmarkMetrics.fromRuntime(LiteRtLmRuntimeMetrics metrics) {
     return LiteRtLmBenchmarkMetrics(
       inputTokens: metrics.inputTokens,
@@ -27,13 +28,16 @@ class LiteRtLmBenchmarkMetrics extends LiteRtLmRuntimeMetrics {
   }
 }
 
+/// Deprecated compatibility name for [LiteRtLmRuntimeResult].
 @Deprecated('Use LiteRtLmRuntimeResult from the LiteRT-LM runtime API.')
 class LiteRtLmBenchmarkResult extends LiteRtLmRuntimeResult {
+  /// Creates a benchmark result.
   const LiteRtLmBenchmarkResult({
     required super.text,
     required LiteRtLmBenchmarkMetrics metrics,
   }) : super(metrics: metrics);
 
+  /// Converts a stable runtime result to the deprecated compatibility type.
   factory LiteRtLmBenchmarkResult.fromRuntime(LiteRtLmRuntimeResult result) {
     return LiteRtLmBenchmarkResult(
       text: result.text,
@@ -46,8 +50,10 @@ class LiteRtLmBenchmarkResult extends LiteRtLmRuntimeResult {
       super.metrics as LiteRtLmBenchmarkMetrics;
 }
 
+/// Deprecated compatibility name for [LiteRtLmRuntimeClient].
 @Deprecated('Use LiteRtLmRuntimeClient from the LiteRT-LM runtime API.')
 class LiteRtLmBenchmarkClient extends LiteRtLmRuntimeClient {
+  /// Runs the benchmark.
   @override
   Future<LiteRtLmBenchmarkResult> run({
     required String prompt,
@@ -63,6 +69,7 @@ class LiteRtLmBenchmarkClient extends LiteRtLmRuntimeClient {
     );
   }
 
+  /// Reads benchmark metrics for the active conversation.
   @override
   LiteRtLmBenchmarkMetrics readMetrics({required int wallMilliseconds}) {
     return LiteRtLmBenchmarkMetrics.fromRuntime(

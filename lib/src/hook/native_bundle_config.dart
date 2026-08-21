@@ -378,7 +378,7 @@ List<String> selectNativeRuntimesForBundle({
     rawUserConfig: rawUserConfig,
   );
   if (parsed == null) {
-    return defaultNativeRuntimesForBundle(bundle);
+    return defaultNativeRuntimes;
   }
 
   final invalid = parsed.invalid;
@@ -408,10 +408,6 @@ bool nativeRuntimeExplicitlySelectedForBundle({
     rawUserConfig: rawUserConfig,
   );
   return parsed?.explicit.contains(normalizedRuntime) ?? false;
-}
-
-List<String> defaultNativeRuntimesForBundle(String bundle) {
-  return defaultNativeRuntimes;
 }
 
 List<String> selectBackendsForBundle({
@@ -487,7 +483,7 @@ _parseNativeRuntimeConfigForBundle({
   final root = _toStringMap(rawUserConfig);
   if (root == null) {
     return (
-      runtimes: defaultNativeRuntimesForBundle(bundle),
+      runtimes: defaultNativeRuntimes,
       invalid: [rawUserConfig.toString()],
       explicit: const <String>{},
     );
@@ -526,7 +522,7 @@ _parseNativeRuntimeConfigForBundle({
   }
 
   return (
-    runtimes: defaultNativeRuntimesForBundle(bundle),
+    runtimes: defaultNativeRuntimes,
     invalid: [rawUserConfig.toString()],
     explicit: const <String>{},
   );

@@ -51,8 +51,10 @@ llamadart can honestly report grammar support:
 3. A higher-level LiteRT-LM conversation option that directly models
    OpenAI-style `response_format`.
 
-Until that exists, `LiteRtLmBackend.supportsGrammarConstraints` and
-`LiteRtLmBackendWeb.supportsGrammarConstraints` remain `false`.
+Until that exists, `LiteRtLmBackend.supportsGrammarConstraints` stays `false`
+on both the native and web implementations (`litert_lm_backend.dart` and
+`litert_lm_backend_web.dart` each declare `LiteRtLmBackend` as conditional
+import twins).
 
 Relevant upstream files:
 
