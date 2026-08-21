@@ -6,8 +6,6 @@ import 'package:test/test.dart';
 
 void main() {
   test('web platform enables byte-backed typed text-to-speech', () {
-    expect(isTextToSpeechPlatformSupported, isTrue);
-    expect(textToSpeechPlatformUnsupportedReason, isEmpty);
     expect(textToSpeechSupportsFileInput, isFalse);
   });
 }

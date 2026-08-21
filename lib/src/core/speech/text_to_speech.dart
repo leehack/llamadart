@@ -411,12 +411,6 @@ class TextToSpeechEngine {
 
   /// Discovers synthesis support for the active runtime, model, and projector.
   Future<TextToSpeechCapabilities> get capabilities async {
-    if (!isTextToSpeechPlatformSupported) {
-      return const TextToSpeechCapabilities(
-        isSupported: false,
-        unsupportedReason: textToSpeechPlatformUnsupportedReason,
-      );
-    }
     String? backendName;
     try {
       backendName = await _engine.getBackendName();

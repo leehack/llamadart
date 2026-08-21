@@ -573,12 +573,6 @@ class SpeechToTextEngine {
       );
     }
 
-    if (!isSpeechToTextPlatformSupported) {
-      return SpeechToTextCapabilities(
-        isSupported: false,
-        unsupportedReason: speechToTextPlatformUnsupportedReason,
-      );
-    }
     final engine = _engine!;
     if (speechToTextRequiresBackendCapability) {
       final backend = engine.backend;
