@@ -1,3 +1,10 @@
+## Unreleased
+
+* Updated the default llama.cpp native runtime to `b10545`, adding LFM2 DSpark
+  support plus current upstream correctness and backend performance fixes.
+  Matching Dart FFI bindings, including the new multimodal projector-device
+  field, and the Apple SwiftPM artifact checksum were refreshed.
+
 ## 0.8.20
 
 * Added `code_assets` 2.x compatibility while retaining support for 1.x native

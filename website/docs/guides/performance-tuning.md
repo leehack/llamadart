@@ -148,9 +148,10 @@ Guidelines:
 - DSpark is an experimental, opt-in native llama.cpp external draft-model
   strategy. Use `SpeculativeDecodingConfig.draftDspark(draftModelPath: ...)`;
   it is never selected automatically, maps to upstream `draft-dspark`, requires
-  at least the `b10356-llamadart.1` wrapper fix; the package-pinned `b10514`
-  runtime satisfies that ABI and adds upstream speculators-format checkpoint
-  support. DSpark remains subject to target/draft/backend compatibility.
+  at least the `b10356-llamadart.1` wrapper fix; the package-pinned `b10545`
+  runtime satisfies that ABI, supports speculators-format checkpoints, and
+  adds LFM2 target/draft support. DSpark remains subject to
+  target/draft/backend compatibility.
   Compare deterministic output, acceptance, and warmed throughput against the
   same baseline before enabling it in production.
 - DFlash draft models must use upstream-compatible GGUF metadata:
