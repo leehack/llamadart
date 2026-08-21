@@ -51,8 +51,12 @@ jobs:
       - name: Install Pana
         run: flutter pub global activate pana
 
+      # pana exits non-zero when (max - granted) > threshold. pana's maximum is
+      # 160, so a threshold of 160 could only trip on a negative score. The
+      # package currently scores 160/160; 10 tolerates a single minor scoring
+      # change in a new pana release while still failing on any real regression.
       - name: Check Pana Score
-        run: flutter pub global run pana . --exit-code-threshold 160
+        run: flutter pub global run pana . --exit-code-threshold 10
 
   companion-packages:
     name: Companion Package (${{ matrix.package }})

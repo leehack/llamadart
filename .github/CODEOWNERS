@@ -17,5 +17,5 @@ website/docs/changelog/recent-releases.md @leehack
 website/docs/maintainers/native-and-web-sync.md @leehack
 website/docs/maintainers/release-workflow.md @leehack
 packages/*/CHANGELOG.md @leehack
-packages/*/Package.swift @leehack
+packages/*/darwin/*/Package.swift @leehack
 packages/*/pubspec.yaml @leehack
