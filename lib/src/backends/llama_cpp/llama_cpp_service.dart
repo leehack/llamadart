@@ -2626,8 +2626,13 @@ class LlamaCppService {
     }
   }
 
-  /// Runs one symbol binding, returning `null` when this candidate library does
-  /// not export it so the caller can keep searching the remaining candidates.
+  /// Runs one symbol binding, returning `null` if it fails for any reason so
+  /// the caller can keep searching the remaining candidates.
+  ///
+  /// Every exception is swallowed, not just a missing symbol: a candidate that
+  /// exports the name with an incompatible signature is treated the same as one
+  /// that does not export it at all. That is deliberate, and matches the
+  /// per-symbol `try`/`catch` blocks this replaced.
   static D? _tryBind<D extends Function>(D Function() bind) {
     try {
       return bind();
