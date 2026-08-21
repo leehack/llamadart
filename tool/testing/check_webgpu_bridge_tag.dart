@@ -6,16 +6,18 @@
 // releases legitimately hold older values and are deliberately absent, as is
 // website/versioned_docs/**, which is a frozen archive.
 
+import 'dart:convert';
 import 'dart:io';
 
 /// The file whose default decides what a fresh vendoring run downloads.
 const String bridgeTagSourcePath = 'scripts/fetch_webgpu_bridge_assets.sh';
 
 // Any assignment to the name, wherever it sits: indented, after `export` or
-// `declare`, after a `;`, or appending with `+=`. Enumerating prefixes kept
-// missing forms, so this matches the identifier itself and relies on the
-// lookbehind to exclude longer names such as `WEBGPU_BRIDGE_ASSETS_TAG=`.
-final RegExp _anyAssignment = RegExp(r'(?<![A-Za-z0-9_])ASSETS_TAG\+?=');
+// `declare`, after a `;`, appending with `+=`, or defaulting with `${x:=y}`.
+// Enumerating prefixes kept missing forms, so this matches the identifier
+// itself and relies on the lookbehind to exclude longer names such as
+// `WEBGPU_BRIDGE_ASSETS_TAG=`.
+final RegExp _anyAssignment = RegExp(r'(?<![A-Za-z0-9_])ASSETS_TAG(?::=|\+?=)');
 
 final RegExp _sourceOfTruth = RegExp(
   r'^ASSETS_TAG="\$\{WEBGPU_BRIDGE_ASSETS_TAG:-(v\d+\.\d+\.\d+)\}"$',
@@ -173,6 +175,75 @@ List<String> findBridgeTagDrift(Directory repoRoot, String expectedTag) {
   return problems;
 }
 
+/// Files that record past releases, where an old tag is correct.
+const List<String> tagHistoryFiles = <String>[
+  'CHANGELOG.md',
+  'website/docs/changelog/recent-releases.md',
+];
+
+/// Frozen documentation snapshots.
+const String versionedDocsPrefix = 'website/versioned_docs/';
+
+/// Returns one message per live occurrence of [expectedTag] that no pin covers.
+///
+/// Without this the gate would only protect sites someone remembered to
+/// register, so a newly added pin could go stale while CI stayed green.
+/// Capability floors (`v0.1.37+`) and the release histories are excluded
+/// because they legitimately keep their own values.
+List<String> findUnregisteredTagSites(Directory repoRoot, String expectedTag) {
+  final listed = Process.runSync('git', <String>[
+    'ls-files',
+  ], workingDirectory: repoRoot.path);
+  if (listed.exitCode != 0) {
+    return <String>['git ls-files failed: ${listed.stderr}'];
+  }
+
+  final registered = <String, List<RegExp>>{
+    // The source of truth is checked by readPinnedBridgeTag, not by a pin.
+    bridgeTagSourcePath: <RegExp>[_sourceOfTruth],
+  };
+  for (final pin in bridgeTagPins) {
+    registered.putIfAbsent(pin.path, () => <RegExp>[]).add(pin.pattern);
+  }
+
+  final unregistered = <String>[];
+  for (final path in const LineSplitter().convert(listed.stdout as String)) {
+    if (path.isEmpty ||
+        path.startsWith(versionedDocsPrefix) ||
+        tagHistoryFiles.contains(path) ||
+        path == 'tool/testing/check_webgpu_bridge_tag.dart') {
+      continue;
+    }
+    final file = File('${repoRoot.path}/$path');
+    if (!file.existsSync()) continue;
+    final String contents;
+    try {
+      contents = file.readAsStringSync();
+    } on FileSystemException {
+      continue; // Binary asset.
+    }
+    if (!contents.contains(expectedTag)) continue;
+
+    final patterns = registered[path] ?? const <RegExp>[];
+    var lineNumber = 0;
+    for (final line in const LineSplitter().convert(contents)) {
+      lineNumber++;
+      final at = line.indexOf(expectedTag);
+      if (at < 0) continue;
+      // `v0.1.37+` states a minimum, not the tag in use.
+      final after = at + expectedTag.length;
+      if (after < line.length && line[after] == '+') continue;
+      if (patterns.any((pattern) => pattern.hasMatch(line))) continue;
+      unregistered.add(
+        '$path:$lineNumber: $expectedTag is not covered by any registered pin '
+        '— add it to bridgeTagPins, or to tagHistoryFiles if it records a past '
+        'release',
+      );
+    }
+  }
+  return unregistered;
+}
+
 void main() {
   final repoRoot = Directory.current;
   final String expectedTag;
@@ -183,7 +254,10 @@ void main() {
     exit(1);
   }
 
-  final problems = findBridgeTagDrift(repoRoot, expectedTag);
+  final problems = <String>[
+    ...findBridgeTagDrift(repoRoot, expectedTag),
+    ...findUnregisteredTagSites(repoRoot, expectedTag),
+  ];
   if (problems.isNotEmpty) {
     stderr.writeln(
       '[webgpu-bridge-tag] $bridgeTagSourcePath pins $expectedTag, but:',

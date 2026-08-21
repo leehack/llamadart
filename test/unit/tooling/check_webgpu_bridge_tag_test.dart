@@ -91,6 +91,7 @@ void main() {
       'declare ASSETS_TAG=v2.0.0',
       'true; ASSETS_TAG=v2.0.0',
       'ASSETS_TAG+=-patched',
+      ': "\${ASSETS_TAG:=v2.0.0}"',
     ];
 
     for (final override in overrides) {
@@ -114,6 +115,17 @@ void main() {
     final root = _fakeRepo('v9.9.9');
 
     expect(readPinnedBridgeTag(root), 'v9.9.9');
+  });
+
+  test('no live occurrence of the tag escapes the pin table', () {
+    // Read the tag rather than spelling it out, so this file never becomes an
+    // occurrence the scan has to exclude.
+    final repoRoot = Directory.current;
+    expect(
+      findUnregisteredTagSites(repoRoot, readPinnedBridgeTag(repoRoot)),
+      isEmpty,
+      reason: 'run against the real tree; see the message for what to register',
+    );
   });
 
   test('a missing source of truth fails instead of passing vacuously', () {
