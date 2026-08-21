@@ -132,8 +132,18 @@ void main() {
             'Unmapped llama.cpp templates detected. Add expectations for: ${missing.join(', ')}',
       );
 
+      final absent = unclassifiedTemplates
+          .where((name) => !files.contains(name))
+          .toList();
+      absent.sort();
+      expect(
+        absent,
+        isEmpty,
+        reason:
+            'These are no longer in the fixture set; drop them from unclassifiedTemplates: ${absent.join(', ')}',
+      );
+
       final classified = unclassifiedTemplates
-          .where(files.contains)
           .where(expected.containsKey)
           .toList();
       classified.sort();
