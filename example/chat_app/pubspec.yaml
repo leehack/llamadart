@@ -12,6 +12,8 @@ dependencies:
     sdk: flutter
   llamadart:
     path: ../..  # Use local version
+  llamadart_llama_cpp_flutter:
+    path: ../../packages/llamadart_llama_cpp_flutter
   llamadart_litert_lm_flutter:
     path: ../../packages/llamadart_litert_lm_flutter
   provider: ^6.0.5

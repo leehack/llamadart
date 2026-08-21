@@ -242,6 +242,53 @@ void main() {
       },
     );
 
+    test('dry-runs packaged bridge smoke with build and serve steps', () async {
+      final result = await runLocalE2e(const [
+        '--scenario',
+        'bridge-smoke',
+        '--python',
+        '/custom/python',
+        '--dry-run',
+      ], projectRoot: '/repo');
+
+      expect(result.exitCode, 0);
+      expect(
+        result.stdout,
+        contains(
+          'CHAT_APP_BASE_HREF=/example/chat_app/build/web/ '
+          'bash scripts/build_chat_app_web.sh',
+        ),
+      );
+      expect(result.stdout, contains('serve_static_with_headers.py'));
+      expect(
+        result.stdout,
+        contains(
+          '/custom/python tool/testing/playwright_bridge_smoke.py '
+          'http://127.0.0.1:7358/example/chat_app/build/web/',
+        ),
+      );
+    });
+
+    test('validates an existing packaged bridge build when skipped', () async {
+      final result = await runLocalE2e(const [
+        '--scenario',
+        'bridge-smoke',
+        '--skip-build',
+        '--dry-run',
+      ], projectRoot: '/repo');
+
+      expect(result.exitCode, 0);
+      expect(
+        result.stdout,
+        contains('bash scripts/validate_chat_app_web_build.sh'),
+      );
+      expect(result.stdout, isNot(contains('scripts/build_chat_app_web.sh')));
+      expect(
+        result.stdout,
+        contains('http://127.0.0.1:7358/example/chat_app/build/web/'),
+      );
+    });
+
     test('prefers repo-local Playwright Python by default', () async {
       final tempDir = await Directory.systemTemp.createTemp(
         'run_local_e2e_python_test_',
@@ -878,45 +925,57 @@ void main() {
     });
 
     test('reports port conflicts before starting Web smoke servers', () async {
-      final socket = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
-      addTearDown(socket.close);
+      final tempDir = await _createBridgeSmokeFixture();
+      addTearDown(() => tempDir.delete(recursive: true));
+      const port = 9123;
 
-      final result = await runLocalE2e([
-        '--scenario',
-        'bridge-smoke',
-        '--port',
-        '${socket.port}',
-      ], projectRoot: '/repo');
+      final result = await runLocalE2e(
+        ['--scenario', 'bridge-smoke', '--skip-build', '--port', '$port'],
+        projectRoot: tempDir.path,
+        foregroundStepRun: _successfulForegroundStep,
+        portAvailabilityCheck: (actualPort) async {
+          throw StateError(
+            'Port $actualPort is already in use; stop the existing server or '
+            'choose a different --port.',
+          );
+        },
+      );
 
       expect(result.exitCode, isNot(0));
       expect(
         result.stdout,
         contains('Running local E2E scenario: bridge-smoke'),
       );
-      expect(result.stderr, contains('Port ${socket.port} is already in use'));
+      expect(result.stderr, contains('Port $port is already in use'));
     });
 
     test('reports background server startup failures', () async {
-      final socket = await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
-      final port = socket.port;
-      await socket.close();
-
       final tempDir = await Directory.systemTemp.createTemp(
         'run_local_e2e_test_',
       );
       addTearDown(() => tempDir.delete(recursive: true));
-      await Directory(
-        '${tempDir.path}/example/chat_app/web',
-      ).create(recursive: true);
+      const port = 9124;
 
-      final result = await runLocalE2e([
-        '--scenario',
-        'bridge-smoke',
-        '--python',
-        'dart',
-        '--port',
-        '$port',
-      ], projectRoot: tempDir.path);
+      final result = await runLocalE2e(
+        [
+          '--scenario',
+          'bridge-smoke',
+          '--skip-build',
+          '--python',
+          Platform.resolvedExecutable,
+          '--port',
+          '$port',
+        ],
+        projectRoot: tempDir.path,
+        foregroundStepRun: _successfulForegroundStep,
+        portAvailabilityCheck: (_) async {},
+        portReadinessWait: (actualPort, _) async {
+          throw StateError(
+            'Background server exited before port $actualPort became ready '
+            '(exit code 1).',
+          );
+        },
+      );
 
       expect(result.exitCode, isNot(0));
       expect(result.stderr, contains('Background server exited'));
@@ -958,3 +1017,10 @@ void main() {
     });
   });
 }
+
+Future<Directory> _createBridgeSmokeFixture() async {
+  return Directory.systemTemp.createTemp('run_local_e2e_bridge_test_');
+}
+
+Future<ProcessResult> _successfulForegroundStep(LocalE2eCommandStep _) async =>
+    ProcessResult(0, 0, '', '');

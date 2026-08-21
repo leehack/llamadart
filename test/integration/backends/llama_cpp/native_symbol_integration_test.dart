@@ -46,6 +46,17 @@ const _genericSpeculativeSymbols = [
   'llama_dart_speculative_accept',
 ];
 
+const _b10514BindingSymbols = [
+  'ggml_rope_set_offset',
+  'mtmd_bitmap_set_mergeable',
+  'mtmd_input_chunk_get_placeholder',
+];
+
+const _b10514MtmdSymbols = [
+  'mtmd_bitmap_set_mergeable',
+  'mtmd_input_chunk_get_placeholder',
+];
+
 const _transparentPngBytes = <int>[
   0x89,
   0x50,
@@ -408,8 +419,22 @@ void main() {
         ..._genericSpeculativeSymbols,
       ]) {
         expect(
-          bindingsSource,
-          matches(RegExp(r'external\s+[\s\S]*?\b' + RegExp.escape(symbol))),
+          _declaresExternalFunction(bindingsSource, symbol),
+          isTrue,
+          reason: symbol,
+        );
+      }
+    });
+
+    test('Verify b10514 symbols are declared in generated bindings', () {
+      final bindingsSource = File(
+        'lib/src/backends/llama_cpp/bindings.dart',
+      ).readAsStringSync();
+
+      for (final symbol in _b10514BindingSymbols) {
+        expect(
+          _declaresExternalFunction(bindingsSource, symbol),
+          isTrue,
           reason: symbol,
         );
       }
@@ -765,6 +790,17 @@ void main() {
       _expectBitmapHelperDecodesTransparentPng(helper, bitmapFree);
     });
 
+    test('Verify b10514 mtmd symbols are resolvable', () {
+      final libraryFile =
+          _mtmdFallbackLibraryFile() ?? _llamadartWrapperLibraryFileOrNull();
+      expect(
+        libraryFile,
+        isNotNull,
+        reason: 'Expected a native library exporting mtmd symbols.',
+      );
+      _expectDynamicLibraryExports(libraryFile!, _b10514MtmdSymbols);
+    });
+
     test('Verify core llama symbols are resolvable', () {
       expect(() => llama_backend_init(), returnsNormally);
       expect(llama_version().cast<Utf8>().toDartString(), isNotEmpty);
@@ -785,3 +821,7 @@ void main() {
     });
   });
 }
+
+bool _declaresExternalFunction(String source, String symbol) => RegExp(
+  r'external\s+[^;]*\b' + RegExp.escape(symbol) + r'\s*\(',
+).hasMatch(source);

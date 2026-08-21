@@ -19,12 +19,14 @@ pipelines.
    `https://cdn.jsdelivr.net/gh/leehack/llama-web-bridge-assets@<tag>/llama_webgpu_bridge.js`
 2. Local fallback: `./webgpu_bridge/llama_webgpu_bridge.js`
 
-Default pinned tag in the example is `v0.1.30`.
+Default pinned tag in the example is `v0.1.37`.
 
-That release embeds llama.cpp `b10448` and is the first published asset set
-validated for Qwen3-ASR typed speech-to-text in direct and worker modes. The
-chat bootstrap opts `SpeechToTextEngine` into that contract from the immutable
-tag; older or custom assets remain disabled unless the host explicitly sets
+That release embeds llama.cpp `b10514`, matching the default native runtime. It
+retains the Qwen3-ASR typed speech-to-text contract introduced in `v0.1.30` and
+provisions the explicit 1 MiB Wasm stack needed for `b10514` memory64 context
+construction in direct and worker modes. The chat bootstrap opts
+`SpeechToTextEngine` into that contract from the immutable tag; older or custom
+assets remain disabled unless the host explicitly sets
 `window.__llamadartBridgeSpeechToTextSupported = true` after equivalent
 validation.
 
@@ -39,7 +41,7 @@ model bytes.
 To vendor pinned assets into local app web files:
 
 ```bash
-WEBGPU_BRIDGE_ASSETS_TAG=v0.1.30 ./scripts/fetch_webgpu_bridge_assets.sh
+WEBGPU_BRIDGE_ASSETS_TAG=v0.1.37 ./scripts/fetch_webgpu_bridge_assets.sh
 ```
 
 Optional compatibility env vars:
@@ -120,7 +122,7 @@ You can override CDN source/version before the bridge loader runs:
 ```html
 <script>
   window.__llamadartBridgeAssetsRepo = 'leehack/llama-web-bridge-assets';
-  window.__llamadartBridgeAssetsTag = 'v0.1.30';
+  window.__llamadartBridgeAssetsTag = 'v0.1.37';
 </script>
 ```
 

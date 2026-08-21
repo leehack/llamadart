@@ -1657,7 +1657,7 @@ void main() {
     expect(LlamaCppService.resolveBackendModuleDirectory(), isNull);
   });
 
-  test('Apple wrapper lookup includes the embedded framework binary', () {
+  test('Apple wrapper lookup includes embedded framework binary names', () {
     if (!Platform.isMacOS) {
       return;
     }
@@ -1667,6 +1667,10 @@ void main() {
     expect(
       candidates,
       contains(endsWith(path.join('llamadart.framework', 'llamadart'))),
+    );
+    expect(
+      candidates,
+      contains(endsWith(path.join('llama.framework', 'llama'))),
     );
   });
 }

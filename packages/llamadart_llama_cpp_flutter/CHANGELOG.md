@@ -1,6 +1,6 @@
 ## Unreleased
 
-* Updated Apple SwiftPM native pin to `leehack/llamadart-native@b10453`.
+* Updated Apple SwiftPM native pin to `leehack/llamadart-native@b10514`.
 
 ## 0.0.13
 

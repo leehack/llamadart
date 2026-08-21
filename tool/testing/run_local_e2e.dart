@@ -132,7 +132,6 @@ class LocalE2eRunContext {
   final bool skipBuild;
 
   String get chatAppDir => '$projectRoot/example/chat_app';
-  String get chatAppWebDir => '$chatAppDir/web';
   String get webBuildUrl =>
       'http://127.0.0.1:$port/example/chat_app/build/web/';
   String get defaultModelUrl =>
@@ -847,20 +846,21 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
     LocalE2eScenario(
       name: 'bridge-smoke',
       group: LocalE2eScenarioGroup.webSmoke,
-      description: 'Run the cheap WebGPU bridge bootstrap smoke.',
+      description: 'Run the packaged WebGPU bridge bootstrap smoke.',
       requiresDevice: false,
       stepsBuilder: (context) => [
+        _prepareChatAppWebBuild(context),
         LocalE2eCommandStep(
-          workingDirectory: context.chatAppWebDir,
+          workingDirectory: context.projectRoot,
           executable: context.python,
           arguments: [
-            '-m',
-            'http.server',
+            'tool/testing/serve_static_with_headers.py',
+            '--directory',
+            '.',
+            '--port',
             '${context.port}',
-            '--bind',
-            '127.0.0.1',
           ],
-          description: 'Serve repo root for bridge smoke',
+          description: 'Serve repo root with COOP/COEP headers',
           background: true,
           waitForPort: context.port,
         ),
@@ -869,9 +869,9 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
           executable: context.python,
           arguments: [
             'tool/testing/playwright_bridge_smoke.py',
-            'http://127.0.0.1:${context.port}',
+            context.webBuildUrl,
           ],
-          description: 'Run bridge smoke',
+          description: 'Run packaged bridge smoke',
         ),
       ],
     ),
@@ -881,6 +881,9 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
 Future<LocalE2eResult> runLocalE2e(
   List<String> args, {
   String? projectRoot,
+  Future<void> Function(int port)? portAvailabilityCheck,
+  Future<void> Function(int port, Process owner)? portReadinessWait,
+  Future<ProcessResult> Function(LocalE2eCommandStep step)? foregroundStepRun,
 }) async {
   final parsed = _ParsedArgs.parse(args);
   if (parsed.help) {
@@ -1071,7 +1074,7 @@ Future<LocalE2eResult> runLocalE2e(
       if (step.background) {
         final port = step.waitForPort;
         if (port != null) {
-          await _ensurePortAvailable(port);
+          await (portAvailabilityCheck ?? _ensurePortAvailable)(port);
         }
         final process = await Process.start(
           step.executable,
@@ -1094,18 +1097,20 @@ Future<LocalE2eResult> runLocalE2e(
           ),
         );
         if (port != null) {
-          await _waitForPort(port, process);
+          await (portReadinessWait ?? _waitForPort)(port, process);
         }
         continue;
       }
 
-      final result = await Process.run(
-        step.executable,
-        step.arguments,
-        workingDirectory: step.workingDirectory,
-        environment: step.environment.isEmpty ? null : step.environment,
-        runInShell: false,
-      );
+      final result = await (foregroundStepRun == null
+          ? Process.run(
+              step.executable,
+              step.arguments,
+              workingDirectory: step.workingDirectory,
+              environment: step.environment.isEmpty ? null : step.environment,
+              runInShell: false,
+            )
+          : foregroundStepRun(step));
       buffer
         ..write(result.stdout)
         ..write(result.stderr);

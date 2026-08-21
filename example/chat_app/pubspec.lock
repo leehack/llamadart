@@ -421,6 +421,13 @@ packages:
       relative: true
     source: path
     version: "0.0.9"
+  llamadart_llama_cpp_flutter:
+    dependency: "direct main"
+    description:
+      path: "../../packages/llamadart_llama_cpp_flutter"
+      relative: true
+    source: path
+    version: "0.0.13"
   logging:
     dependency: transitive
     description:

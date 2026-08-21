@@ -172,8 +172,11 @@ memory-constrained mobile devices.
 - Web requires published bridge assets `v0.1.33+`, WebAssembly memory64 for the
   pinned roughly 1.48 GB model/projector pair, and a browser/device with enough
   memory. Older bridge assets fail capability discovery clearly.
-- The chat example pins `v0.1.34`, which retries a worker WebGPU abort or device
-  failure once on CPU using the cached model and projector. Recovery is slower
-  and is not a substitute for sufficient browser memory.
+- The chat example pins `v0.1.37`, which retains the `v0.1.34` recovery that
+  retries a worker WebGPU abort or device failure once on CPU using the cached
+  model and projector. Recovery is slower and is not a substitute for
+  sufficient browser memory. Qwen3-TTS accelerator behavior remains
+  device-dependent; validate the target browser and device for queue-watchdog
+  timeouts before relying on it in production.
 - Web speaker references are selected-file bytes only; microphone speaker
   recording remains a native chat-example feature.
