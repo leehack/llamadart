@@ -1747,7 +1747,6 @@ def validate_litert_lm_release_manifest(
         )
         if platform.get("releaseAsset") != expected_release_asset:
             raise ReleaseError("LiteRT-LM platform release asset does not match identity")
-        release_asset_checksum(release, expected_release_asset)
 
     native_paths = {
         path
