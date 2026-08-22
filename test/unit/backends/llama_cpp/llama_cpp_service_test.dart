@@ -667,11 +667,17 @@ void main() {
     test('diagnostics are single-line and redact credentialed URLs', () {
       expect(
         formatStartupDiagnostics(const <String>[
-          'failed at https://user:pass@example.com/lib.so?token=secret#part'
-              '\r\nnext\u0000line',
+          'failed at HTTPS://user:pass@example.com/lib.so?token=secret#part'
+              '\r\nnext\u0000line\u0085more\u2028last\u2029line',
         ]),
         ', startupDiagnostics=['
-        'failed at https://example.com/lib.so next line]',
+        'failed at https://example.com/lib.so next line more last line]',
+      );
+      expect(
+        formatStartupDiagnostics(const <String>[
+          'failed at https://user:pass@[2001:db8::1]/lib.so?token=secret',
+        ]),
+        ', startupDiagnostics=[failed at https://[2001:db8::1]/lib.so]',
       );
     });
 
@@ -757,8 +763,8 @@ void main() {
         _recordStartupDiagnosticForTesting(
           service,
           'failed at '
-          'https://user:pass@example.com/libggml.so?token=secret#fragment'
-          '\r\nnext\u0000line',
+          'HTTPS://user:pass@example.com/libggml.so?token=secret#fragment'
+          '\r\nnext\u0000line\u0085more\u2028last\u2029line',
         );
 
         expect(
@@ -771,7 +777,8 @@ void main() {
                 contains('Failed to load model (size=4 bytes,'),
                 contains(
                   'startupDiagnostics=[failed at '
-                  'https://example.com/libggml.so next line]',
+                  'https://example.com/libggml.so '
+                  'next line more last line]',
                 ),
                 isNot(contains('user:pass')),
                 isNot(contains('token=secret')),

@@ -8216,14 +8216,15 @@ String formatStartupDiagnostics(List<String> entries, {int maxLength = 4096}) {
 
 String _sanitizeStartupDiagnostic(String entry) {
   final redactedUrls = entry.replaceAllMapped(
-    RegExp(r'https?://[^\s\]\[(){}<>]+'),
+    RegExp(r'https?://\S+', caseSensitive: false),
     (match) {
       final uri = Uri.tryParse(match.group(0)!);
-      if (uri == null || (uri.scheme != 'http' && uri.scheme != 'https')) {
+      final scheme = uri?.scheme.toLowerCase();
+      if (uri == null || (scheme != 'http' && scheme != 'https')) {
         return '<redacted-url>';
       }
       return Uri(
-        scheme: uri.scheme,
+        scheme: scheme,
         host: uri.host,
         port: uri.hasPort ? uri.port : null,
         path: uri.path,
@@ -8231,7 +8232,7 @@ String _sanitizeStartupDiagnostic(String entry) {
     },
   );
   return redactedUrls
-      .replaceAll(RegExp(r'[\u0000-\u001f\u007f]+'), ' ')
+      .replaceAll(RegExp(r'[\u0000-\u001f\u007f-\u009f\u2028\u2029]+'), ' ')
       .replaceAll(RegExp(r' {2,}'), ' ')
       .trim();
 }
