@@ -16,7 +16,7 @@ class TestMatrixRow {
   /// Stable row identifier used in PR evidence.
   final String id;
 
-  /// One of `essential`, `targeted`, `platform`, or `release`.
+  /// One of `essential`, `targeted`, `high-risk`, `platform`, or `release`.
   final String tier;
 
   /// Free-form descriptor for where the row normally runs.
@@ -72,6 +72,41 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         '--check-ignore; '
         'dart run tool/testing/check_lcov_threshold.dart coverage/lcov.info 70',
     useWhen: 'Before merge when lib/ behavior changes or coverage is in doubt.',
+  ),
+  TestMatrixRow(
+    id: 'high-risk-exact-head-independent-qa',
+    tier: 'high-risk',
+    mode: 'pre-mark-ready + CI contract',
+    covers:
+        'independent blocking-only review of exact head/current base, live '
+        'threads, production call sites, adversarial negatives, and tests '
+        'sensitive to production-branch deletion, bypass, or miswiring',
+    command:
+        'Complete the High-risk regression gate block in the PR body from an '
+        'independent QA task, then pass workflow "High-Risk Regression Gate".',
+    useWhen:
+        'Parser/grammar/streaming, backend/runtime routing, public capability '
+        'probe, artifact consumer, release automation, or regression-policy '
+        'changes. Required before mark-ready, not after merge.',
+  ),
+  TestMatrixRow(
+    id: 'structured-output-adversarial',
+    tier: 'high-risk',
+    mode: 'CI + local + primary upstream fixtures',
+    covers:
+        'compiled grammar acceptance/rejection, schema-directed scalar and '
+        'container types including empty values, partial/final streaming and '
+        'rollback, auto/required/none tool choice with thinking prefixes, and '
+        'pinned/current upstream template/parser parity',
+    command:
+        'tool/testing/run_template_parity_suites.sh; run issue-specific VM '
+        'and Chrome production-path tests that compile generated grammars '
+        'against actual upstream-emitted valid and adversarial invalid shapes.',
+    useWhen:
+        'Chat-template parser, grammar, streaming, thinking, or tool-call '
+        'changes. Exact affected-family runtime evidence is preferred; when '
+        'weights are unavailable, name every family and use primary upstream '
+        'emissions plus durable fixtures. An unrelated model is pipeline-only.',
   ),
   TestMatrixRow(
     id: 'docs-site',
@@ -751,7 +786,7 @@ String _usage() {
 Options:
   --list                 Print the canonical test matrix (default).
   --pr-template          Print a PR evidence table.
-  --tier <tier>          Filter by all, essential, targeted, platform, or release.
+  --tier <tier>          Filter by all, essential, targeted, high-risk, platform, or release.
   -h, --help             Show this help.
 ''';
 }

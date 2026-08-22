@@ -280,6 +280,20 @@ rationale in the thread before resolving it; classification alone is not a
 substitute for closing the thread. Do not merge while any review thread remains
 unresolved.
 
+Treat parser/grammar/streaming, backend/runtime routing, capability probes,
+artifact consumers, release automation, and changes to this gate as high risk.
+Before mark-ready, the exact head against the current base must pass the
+`High-Risk Regression Gate` with a blocking-only QA task independent from the
+implementation task. Inspect production call sites, require positive and
+negative tests that fail if the production branch is deleted/bypassed/miswired,
+and report zero known PR-caused P1 regressions. Structured-output changes must
+also satisfy the compiled grammar, schema-type, partial/final streaming,
+tool-choice/thinking-prefix, and pinned/current upstream parity rows documented
+in `doc/testing_matrix.md`. An unrelated representative model is pipeline-only
+evidence; if exact affected weights are unavailable, name each family and use
+primary upstream emissions plus durable fixtures. Post-merge QA remains
+mandatory, but is never the first planned adversarial pass.
+
 For docs-only PRs, state that runtime behavior is unchanged and list docs
 validation. If implementation scope changed, reduce and state the scope rather
 than merging incomplete behavior.

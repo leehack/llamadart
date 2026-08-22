@@ -22,6 +22,7 @@ the change, and mark skipped rows as `N/A` with a concrete reason.
 | --- | --- | --- |
 | `essential` | Cheap baseline package health checks. | Run for most code PRs and expect CI to cover them. |
 | `targeted` | Runtime/model/feature checks selected by touched code. | Run locally or cite the matching CI workflow when the PR touches that path. |
+| `high-risk` | Exact-head independent QA and adversarial contracts for regression-sensitive production paths. | Required before mark-ready for parser/grammar/streaming, backend/runtime, capability, artifact-consumer, release-automation, or regression-policy changes. |
 | `platform` | Supported platform or architecture validation rows. | Use when a PR affects runtime packaging, native pins, backend selection, app launch, or release confidence for a platform. |
 | `release` | Device or representative smoke checks that are too heavy for every PR. | Run for release candidates, native bundle changes, or high-risk runtime changes. |
 
@@ -56,6 +57,54 @@ For a typical code PR, include:
 
 Docs-only PRs can mark runtime rows `N/A`, but should run `docs-site` when docs
 or website files changed.
+
+## High-Risk Pre-Merge Gate
+
+The repository classifies production parser/grammar/streaming changes,
+backend/runtime routing, public capability probes, artifact consumers, release
+automation, and changes to the gate itself as high risk. Discover the required
+rows with:
+
+```bash
+dart run tool/testing/test_matrix.dart --tier high-risk
+```
+
+Before mark-ready, create a blocking-only QA task that is independent from the
+implementation task. It must review the exact PR head against the current base,
+inspect actual production call sites, and verify issue-specific positive and
+negative tests. The tests must fail when the relevant production branch is
+deleted, bypassed, or miswired; testing an extracted helper alone is not enough.
+Update the machine-readable PR evidence block after the final push or base
+movement. The `High-Risk Regression Gate` workflow checks the exact SHA and
+base distance, queries live unresolved review threads, and fails closed on
+missing or weak evidence. A known PR-caused P1 is always a merge blocker.
+
+For structured output, the independent pass must cover all of these axes in
+the production path:
+
+- compile generated grammars and accept actual upstream-emitted valid shapes;
+- reject unknown, missing, mismatched, wrong-type, and malformed structures;
+- reconstruct schema-directed string, number, boolean, null, object, and array
+  values, including empty containers and zero-argument calls;
+- suppress incomplete protocol markup while streaming, then preserve ordinary
+  content through final malformed rollback;
+- exercise `auto`, `required`, and `none` tool choice with thinking/reasoning
+  prefixes; and
+- run pinned and current upstream template/parser parity.
+
+Use the closest affected-family real model or artifact. If exact weights are
+unavailable, name every unavailable family and substitute primary upstream
+emissions plus durable fixtures. A Qwen or other unrelated representative
+smoke may prove the shared generation pipeline, but must be labeled
+`pipeline-only` and cannot claim affected-format validation. This distinction
+keeps large model downloads targeted instead of making default CI fragile.
+
+The gate encodes the failure classes discovered after PR #391: envelope/name
+grammar mismatches (#394/#399), escaped/schema-exact/delimiter rejection gaps
+(#395/#396/#407), partial protocol leakage and final content loss
+(#397/#398), thinking/tool-choice prefix failures (#402/#406), and empty or
+schema-directed type loss (#408/#410). Post-merge QA still runs, but must not be
+the first planned adversarial review.
 
 ## Targeted Runtime and Model Rows
 
