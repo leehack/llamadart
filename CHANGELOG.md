@@ -29,9 +29,10 @@
   after its invocation tokens appear in the prompt, so applying it from the
   start of generation silently changed output. Missing metadata-inspection
   symbols in custom native runtimes also fail closed with the same typed error,
-  and rejected adapters are released. LoRA errors from the worker keep their
-  typed exception instead of arriving as a bare `Exception`, and a failed
-  adapter load now throws `LlamaModelException`.
+  and rejected adapters are released when the cleanup ABI is available. LoRA
+  errors from the worker keep their typed exception instead of arriving as a
+  bare `Exception`, and a failed adapter load now throws
+  `LlamaModelException`.
 
 * Deprecated `LiteRtLmRuntimeClient.conversationTokenCount()` and
   `replaceConversationWithClone()`. Both are unused and are scheduled for

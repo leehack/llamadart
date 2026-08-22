@@ -126,6 +126,28 @@ void main() {
       expect(freed, 1);
     });
 
+    test('fails closed and frees on inconsistent aLoRA metadata', () {
+      var freed = 0;
+
+      expect(
+        () => LlamaCppService.debugValidateLoraForEagerActivationForTesting(
+          adapter,
+          'inconsistent-metadata.gguf',
+          invocationTokenCount: (_) => 1,
+          invocationTokenData: (_) => nullptr,
+          freeAdapter: (_) => freed++,
+        ),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            contains('Cannot safely load the LoRA adapter'),
+          ),
+        ),
+      );
+      expect(freed, 1);
+    });
+
     test('keeps version-skew failure typed if cleanup also fails', () {
       expect(
         () => LlamaCppService.debugValidateLoraForEagerActivationForTesting(
