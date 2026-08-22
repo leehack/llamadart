@@ -1011,7 +1011,7 @@ class _KimiK3GrammarBuilder {
       final jsonRule = _converter.visit(schema, 'kimi-tool-$toolIndex-json');
       final rawArguments = <String>[
         ...requiredRules,
-        if (optionalRules.isNotEmpty) '(${optionalRules.join(' | ')})*',
+        ...optionalRules.map((rule) => '($rule)?'),
       ].join(' ');
       final arguments = properties.isEmpty
           ? '(kimi-empty-arguments | kimi-json-$toolIndex)'
@@ -1142,8 +1142,7 @@ class _MinimaxM3GrammarBuilder {
     }
     return <String>[
       ...requiredMembers.map((rule) => '$rule m3-space'),
-      if (optionalMembers.isNotEmpty)
-        '((${optionalMembers.join(' | ')}) m3-space)*',
+      ...optionalMembers.map((rule) => '($rule m3-space)?'),
     ].join(' ');
   }
 
@@ -1229,8 +1228,7 @@ class _DsmlGrammarBuilder {
 
       final arguments = <String>[
         ...requiredRules.map((rule) => '$rule dsml-space'),
-        if (optionalRules.isNotEmpty)
-          '((${optionalRules.join(' | ')}) dsml-space)*',
+        ...optionalRules.map((rule) => '($rule dsml-space)?'),
       ].join(' ');
 
       final toolRule = 'dsml-tool-$toolIndex';
@@ -1310,8 +1308,7 @@ class _MuseGrammarBuilder {
 
       final arguments = <String>[
         ...requiredRules.map((rule) => '$rule muse-space'),
-        if (optionalRules.isNotEmpty)
-          '((${optionalRules.join(' | ')}) muse-space)*',
+        ...optionalRules.map((rule) => '($rule muse-space)?'),
       ].join(' ');
 
       final toolRule = 'muse-tool-$toolIndex';

@@ -236,6 +236,122 @@ void main() {
     },
   );
 
+  test('specialized grammars reject duplicate optional properties', () {
+    const open = '<|open|>';
+    const close = '<|close|>';
+    const separator = '<|sep|>';
+    _expectGrammar(
+      validator,
+      KimiK3Handler().buildGrammar([_optionalTool])!,
+      valid: [
+        '$open'
+            'tools$separator'
+            '$open'
+            'call tool="lookup"$separator'
+            '$open'
+            'argument key="query" type="string"$separator'
+            'weather$close'
+            'argument$separator'
+            '$open'
+            'argument key="note" type="string"$separator'
+            'metric$close'
+            'argument$separator'
+            '$close'
+            'call$separator'
+            '$close'
+            'tools$separator'
+            '$close'
+            'message$separator',
+      ],
+      invalid: [
+        '$open'
+            'tools$separator'
+            '$open'
+            'call tool="lookup"$separator'
+            '$open'
+            'argument key="query" type="string"$separator'
+            'weather$close'
+            'argument$separator'
+            '$open'
+            'argument key="note" type="string"$separator'
+            'metric$close'
+            'argument$separator'
+            '$open'
+            'argument key="note" type="string"$separator'
+            'duplicate$close'
+            'argument$separator'
+            '$close'
+            'call$separator'
+            '$close'
+            'tools$separator'
+            '$close'
+            'message$separator',
+      ],
+    );
+
+    const namespace = MinimaxM3Handler.namespace;
+    const m3Valid =
+        '$namespace<tool_call>'
+        '$namespace<invoke name="lookup">'
+        '$namespace<query>weather$namespace</query>'
+        '$namespace<note>metric$namespace</note>'
+        '$namespace</invoke>'
+        '$namespace</tool_call>';
+    _expectGrammar(
+      validator,
+      MinimaxM3Handler().buildGrammar([_optionalTool])!,
+      valid: [m3Valid],
+      invalid: [
+        m3Valid.replaceFirst(
+          '$namespace</invoke>',
+          '$namespace<note>duplicate$namespace</note>$namespace</invoke>',
+        ),
+      ],
+    );
+
+    const dsmlValid =
+        '<｜DSML｜function_calls>'
+        '<｜DSML｜invoke name="lookup">'
+        '<｜DSML｜parameter name="query" string="true">weather'
+        '</｜DSML｜parameter>'
+        '<｜DSML｜parameter name="note" string="true">metric'
+        '</｜DSML｜parameter>'
+        '</｜DSML｜invoke>'
+        '</｜DSML｜function_calls>';
+    _expectGrammar(
+      validator,
+      DeepseekV32Handler().buildGrammar([_optionalTool])!,
+      valid: [dsmlValid],
+      invalid: [
+        dsmlValid.replaceFirst(
+          '</｜DSML｜invoke>',
+          '<｜DSML｜parameter name="note" string="true">duplicate'
+              '</｜DSML｜parameter></｜DSML｜invoke>',
+        ),
+      ],
+    );
+
+    const museValid =
+        '<atem:function_calls>'
+        '<atem:invoke name="lookup">'
+        '<atem:parameter name="query">weather</atem:parameter>'
+        '<atem:parameter name="note">metric</atem:parameter>'
+        '</atem:invoke>'
+        '</atem:function_calls>';
+    _expectGrammar(
+      validator,
+      MuseGlimmerHandler().buildGrammar([_optionalTool])!,
+      valid: [museValid],
+      invalid: [
+        museValid.replaceFirst(
+          '</atem:invoke>',
+          '<atem:parameter name="note">duplicate</atem:parameter>'
+              '</atem:invoke>',
+        ),
+      ],
+    );
+  });
+
   test('required grammars accept prefixes but still require a tool call', () {
     const kimiCall =
         '<|open|>tools<|sep|>'
@@ -371,6 +487,16 @@ final _weatherWithCityTool = ToolDefinition(
   name: 'weather',
   description: 'Weather',
   parameters: [ToolParam.string('city', required: true)],
+  handler: (_) async => null,
+);
+
+final _optionalTool = ToolDefinition(
+  name: 'lookup',
+  description: 'Lookup',
+  parameters: [
+    ToolParam.string('query', required: true),
+    ToolParam.string('note'),
+  ],
   handler: (_) async => null,
 );
 

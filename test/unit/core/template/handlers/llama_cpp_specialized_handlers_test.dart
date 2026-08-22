@@ -90,10 +90,18 @@ void main() {
 
       expect(_arguments(parsed), {'city&"zone': '123'});
 
+      final duplicate = valid.replaceFirst(
+        '<|close|>argument<|sep|><|close|>call<|sep|>',
+        '<|close|>argument<|sep|>'
+            '<|open|>argument key="city&amp;&quot;zone" type="string"<|sep|>'
+            'again<|close|>argument<|sep|><|close|>call<|sep|>',
+      );
+
       for (final invalid in [
         valid.replaceFirst('tool="weather"', 'tool="unknown"'),
         valid.replaceFirst('city&amp;&quot;zone', 'unknown'),
         valid.replaceFirst('type="string"', 'type="number"'),
+        duplicate,
       ]) {
         final rejected = ChatTemplateEngine.parse(
           ChatFormat.kimiK3.index,
