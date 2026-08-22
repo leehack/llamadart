@@ -125,12 +125,20 @@ class LlamaVideoContent extends LlamaContentPart {
 
   /// Creates a video content part.
   ///
-  /// Either [path] or [bytes] should be provided. Current runtimes reject both
-  /// forms until native video packaging and Dart frame ingestion are complete.
-  const LlamaVideoContent({this.bytes, this.path});
+  /// At least one of [path] or [bytes] must be provided. Current runtimes reject
+  /// both forms until native video packaging and Dart frame ingestion are
+  /// complete.
+  const LlamaVideoContent({this.bytes, this.path})
+    : assert(
+        bytes != null || path != null,
+        'LlamaVideoContent requires bytes or a path.',
+      );
 
   @override
   Map<String, dynamic> toJson() {
+    if (bytes == null && path == null) {
+      throw ArgumentError('LlamaVideoContent requires bytes or a path.');
+    }
     return {
       'type': 'input_video',
       'input_video': {

@@ -1184,7 +1184,7 @@ class LlamaEngine {
       return;
     }
 
-    var nativeRuntimeSupportsVideo = false;
+    bool? nativeRuntimeSupportsVideo;
     final mmContextHandle = _mmContextHandle;
     final candidate = backend;
     if (mmContextHandle != null && candidate is BackendVideoRuntimeSupport) {
@@ -1196,6 +1196,14 @@ class LlamaEngine {
         // A failed optional capability probe is an unsupported result. The
         // generation request below still receives the typed public error.
       }
+    }
+
+    if (nativeRuntimeSupportsVideo == null) {
+      throw LlamaUnsupportedException(
+        'Video input is not supported by the active backend. It does not '
+        'expose a consumable video transport or runtime capability probe. '
+        'Extract and send image frames instead.',
+      );
     }
 
     if (!nativeRuntimeSupportsVideo) {

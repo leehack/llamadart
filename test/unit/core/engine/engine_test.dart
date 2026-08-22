@@ -62,7 +62,7 @@ class MockLlamaBackend
   Future<void>? modelLoadDelay;
   Future<void>? modelLoadFromUrlDelay;
   Future<void>? contextFreeDelay;
-  final bool nativeVideoRuntimeSupported;
+  final bool? nativeVideoRuntimeSupported;
   final Object? videoProbeError;
   int? lastVideoProbeHandle;
 
@@ -245,7 +245,7 @@ class MockLlamaBackend
   Future<bool> supportsAudio(int mmContextHandle) async => false;
 
   @override
-  Future<bool> supportsVideoRuntime(int mmContextHandle) async {
+  Future<bool?> supportsVideoRuntime(int mmContextHandle) async {
     lastVideoProbeHandle = mmContextHandle;
     if (videoProbeError case final error?) {
       throw error;
@@ -1521,38 +1521,68 @@ void main() {
       }
     });
 
-    test(
-      'video probe failure still produces typed unsupported error',
-      () async {
-        final videoBackend = MockLlamaBackend(
-          videoProbeError: StateError('missing optional probe'),
-        );
-        final videoEngine = LlamaEngine(videoBackend);
-        try {
-          await videoEngine.loadModel('qwen-test.gguf');
-          await videoEngine.loadMultimodalProjector('proj.gguf');
+    test('backend without native probe receives generic guidance', () async {
+      final videoBackend = MockLlamaBackend(nativeVideoRuntimeSupported: null);
+      final videoEngine = LlamaEngine(videoBackend);
+      try {
+        await videoEngine.loadModel('qwen-test.gguf');
+        await videoEngine.loadMultimodalProjector('proj.gguf');
 
-          await expectLater(
-            videoEngine
-                .generate(
-                  'describe',
-                  parts: const [LlamaVideoContent(path: '/tmp/clip.mp4')],
+        await expectLater(
+          videoEngine
+              .generate(
+                'describe',
+                parts: const [LlamaVideoContent(path: '/tmp/clip.mp4')],
+              )
+              .drain<void>(),
+          throwsA(
+            isA<LlamaUnsupportedException>()
+                .having(
+                  (error) => error.message,
+                  'message',
+                  contains('active backend'),
                 )
-                .drain<void>(),
-            throwsA(
-              isA<LlamaUnsupportedException>().having(
-                (error) => error.message,
-                'message',
-                contains('FFmpeg'),
-              ),
+                .having(
+                  (error) => error.message,
+                  'message',
+                  isNot(contains('FFmpeg')),
+                ),
+          ),
+        );
+      } finally {
+        await videoEngine.dispose();
+      }
+    });
+
+    test('video probe failure still produces generic typed error', () async {
+      final videoBackend = MockLlamaBackend(
+        videoProbeError: StateError('missing optional probe'),
+      );
+      final videoEngine = LlamaEngine(videoBackend);
+      try {
+        await videoEngine.loadModel('qwen-test.gguf');
+        await videoEngine.loadMultimodalProjector('proj.gguf');
+
+        await expectLater(
+          videoEngine
+              .generate(
+                'describe',
+                parts: const [LlamaVideoContent(path: '/tmp/clip.mp4')],
+              )
+              .drain<void>(),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (error) => error.message,
+              'message',
+              contains('active backend'),
             ),
-          );
-          expect(videoBackend.lastGenerationPrompt, isNull);
-        } finally {
-          await videoEngine.dispose();
-        }
-      },
-    );
+          ),
+        );
+        expect(videoBackend.lastGenerationPrompt, isNull);
+      } finally {
+        await videoEngine.dispose();
+      }
+    });
 
     test(
       'multimodal projector can be unloaded without unloading model',

@@ -328,14 +328,14 @@ class NativeAutoBackend
   }
 
   @override
-  Future<bool> supportsVideoRuntime(int mmContextHandle) {
+  Future<bool?> supportsVideoRuntime(int mmContextHandle) {
     final delegate = _requireDelegate();
     if (delegate is BackendVideoRuntimeSupport) {
       return (delegate as BackendVideoRuntimeSupport).supportsVideoRuntime(
         mmContextHandle,
       );
     }
-    return Future<bool>.value(false);
+    return Future<bool?>.value();
   }
 
   @override

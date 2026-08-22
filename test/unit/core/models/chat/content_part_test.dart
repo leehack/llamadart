@@ -27,4 +27,8 @@ void main() {
       },
     );
   });
+
+  test('LlamaVideoContent requires a path or bytes', () {
+    expect(() => LlamaVideoContent(), throwsA(isA<AssertionError>()));
+  });
 }

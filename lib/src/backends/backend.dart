@@ -197,7 +197,10 @@ abstract class BackendPromptSpeechToTextSupport {
 /// Dart frame-ingestion and lifetime contract is implemented.
 abstract class BackendVideoRuntimeSupport {
   /// Whether the loaded native mtmd context reports compiled video support.
-  Future<bool> supportsVideoRuntime(int mmContextHandle);
+  ///
+  /// Returns null when the selected delegate does not expose a native mtmd
+  /// video probe.
+  Future<bool?> supportsVideoRuntime(int mmContextHandle);
 }
 
 /// Model family reported by a backend text-to-speech implementation.

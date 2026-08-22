@@ -669,7 +669,7 @@ class NativeLlamaBackend
   }
 
   @override
-  Future<bool> supportsVideoRuntime(int mmContextHandle) async {
+  Future<bool?> supportsVideoRuntime(int mmContextHandle) async {
     final rp = ReceivePort();
     _sendPort!.send(SupportsVideoRequest(mmContextHandle, rp.sendPort));
     final res = await rp.first;
