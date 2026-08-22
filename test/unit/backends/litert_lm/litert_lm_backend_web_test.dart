@@ -9,6 +9,7 @@ import 'package:llamadart/src/backends/litert_lm/litert_lm_backend_web.dart';
 import 'package:llamadart/src/core/engine/engine.dart';
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
+import 'package:llamadart/src/core/models/chat/content_part.dart';
 import 'package:llamadart/src/core/models/config/gpu_backend.dart';
 import 'package:llamadart/src/core/models/config/log_level.dart';
 import 'package:llamadart/src/core/models/inference/generation_params.dart';
@@ -437,6 +438,40 @@ void main() {
             (error) => error.message.toString(),
             'message',
             contains('thinkingBudget'),
+          ),
+        ),
+      );
+    } finally {
+      await backend.dispose();
+    }
+  });
+
+  test('rejects video media with actionable fallback guidance', () async {
+    _installFakeEngine(chunks: <JSAny?>[]);
+
+    final backend = LiteRtLmBackend();
+    try {
+      final modelHandle = await backend.modelLoadFromUrl(
+        'https://example.com/model.litertlm',
+        const ModelParams(),
+      );
+      final contextHandle = await backend.contextCreate(
+        modelHandle,
+        const ModelParams(),
+      );
+
+      await expectLater(
+        backend.generate(
+          contextHandle,
+          'describe',
+          const GenerationParams(),
+          parts: [LlamaVideoContent(path: '/tmp/clip.mp4')],
+        ),
+        emitsError(
+          isA<UnsupportedError>().having(
+            (error) => error.message.toString(),
+            'message',
+            contains('image frames'),
           ),
         ),
       );

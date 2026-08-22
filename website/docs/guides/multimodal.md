@@ -87,6 +87,7 @@ await for (final chunk in engine.create([message])) {
 ```dart
 final supportsVision = await engine.supportsVision;
 final supportsAudio = await engine.supportsAudio;
+final supportsVideo = await engine.supportsVideo; // false in current releases
 ```
 
 Always prefer these runtime checks over model-card assumptions. A loaded
@@ -94,6 +95,17 @@ projector can expose only a subset of the family-level modalities. The current
 Gemma 4 E2B GGUF projector path in native `llama.cpp` mtmd reports both vision
 and audio support; audio remains experimental upstream. Web continues to rely
 on the loaded bridge's runtime capability report.
+
+Video is not currently consumable through the public Dart generation API.
+`LlamaVideoContent` makes an attempted path/byte request explicit, but
+generation rejects it with `LlamaUnsupportedException`. The tested native
+b10545 macOS arm64 artifact exports upstream video helper symbols while the
+behavioral `mtmd_helper_support_video` probe reports video compiled out; symbol
+presence is not a capability check. A complete implementation still needs
+companion native builds with `LLAMA_SUBPROCESS`/`MTMD_VIDEO`, a cross-platform
+FFmpeg/ffprobe packaging policy, Dart frame and timestamp ingestion,
+cancellation, and lazy video-context cleanup. Extract representative image
+frames and send `LlamaImageContent` parts in the meantime.
 
 `LlamaAudioContent` is generic audio input routed through normal generation; it
 does not by itself provide a transcript contract. For typed whole-file native

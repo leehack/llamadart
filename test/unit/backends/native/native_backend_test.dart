@@ -402,7 +402,8 @@ void main() {
     () async {
       final litert = _FakeBackend(handle: 22)
         ..vramInfo = (total: 2048, free: 1024)
-        ..chatTemplateResponse = 'templated';
+        ..chatTemplateResponse = 'templated'
+        ..videoRuntimeSupport = null;
       final backend = NativeAutoBackend(
         llamaCppFactory: () => _FakeBackend(handle: 11),
         liteRtLmFactory: () => litert,
@@ -419,6 +420,7 @@ void main() {
         await backend.multimodalContextFree(222);
         expect(await backend.supportsVision(222), isTrue);
         expect(await backend.supportsAudio(222), isFalse);
+        expect(await backend.supportsVideoRuntime(222), isNull);
         expect(
           await backend.applyChatTemplate(
             22,
@@ -894,7 +896,8 @@ class _FakeBackend
     implements
         LlamaBackend,
         BackendGrammarConstraintsSupport,
-        BackendGpuEnumeration {
+        BackendGpuEnumeration,
+        BackendVideoRuntimeSupport {
   final int handle;
   bool grammarConstraintsSupported = true;
   final List<String> loadedPaths = <String>[];
@@ -918,6 +921,8 @@ class _FakeBackend
   int? lastMultimodalFreeHandle;
   int? lastSupportsVisionHandle;
   int? lastSupportsAudioHandle;
+  int? lastSupportsVideoHandle;
+  bool? videoRuntimeSupport = false;
   String chatTemplateResponse = '';
   List<Map<String, dynamic>>? lastChatTemplateMessages;
   String? lastChatTemplateCustomTemplate;
@@ -1022,6 +1027,12 @@ class _FakeBackend
   Future<bool> supportsAudio(int mmContextHandle) async {
     lastSupportsAudioHandle = mmContextHandle;
     return false;
+  }
+
+  @override
+  Future<bool?> supportsVideoRuntime(int mmContextHandle) async {
+    lastSupportsVideoHandle = mmContextHandle;
+    return videoRuntimeSupport;
   }
 
   @override

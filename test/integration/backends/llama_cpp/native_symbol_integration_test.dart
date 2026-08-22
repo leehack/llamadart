@@ -57,6 +57,11 @@ const _b10514MtmdSymbols = [
   'mtmd_input_chunk_get_placeholder',
 ];
 
+const _aloraMetadataSymbols = [
+  'llama_adapter_get_alora_n_invocation_tokens',
+  'llama_adapter_get_alora_invocation_tokens',
+];
+
 const _transparentPngBytes = <int>[
   0x89,
   0x50,
@@ -143,6 +148,8 @@ typedef _MtmdHelperBitmapInitFromBufDart =
     );
 typedef _MtmdBitmapFreeNative = ffi.Void Function(ffi.Pointer<mtmd_bitmap>);
 typedef _MtmdBitmapFreeDart = void Function(ffi.Pointer<mtmd_bitmap>);
+typedef _MtmdSupportVideoNative = ffi.Bool Function(ffi.Pointer<mtmd_context>);
+typedef _MtmdSupportVideoDart = bool Function(ffi.Pointer<mtmd_context>);
 
 @ffi.Native<ffi.Void Function(ffi.Pointer<llama_dart_mtp>)>(
   assetId: _llamadartWrapperAssetId,
@@ -162,6 +169,15 @@ File? _llamadartWrapperLibraryFileOrNull() {
   final nativeAssetPath =
       _nativeAssetFilePath(_llamadartWrapperAssetId) ??
       _nativeAssetFilePath(_llamadartPrimaryAssetId);
+  if (nativeAssetPath == null) {
+    return null;
+  }
+  final file = File(nativeAssetPath);
+  return file.existsSync() ? file : null;
+}
+
+File? _llamadartPrimaryLibraryFileOrNull() {
+  final nativeAssetPath = _nativeAssetFilePath(_llamadartPrimaryAssetId);
   if (nativeAssetPath == null) {
     return null;
   }
@@ -462,6 +478,20 @@ void main() {
       ).readAsStringSync();
 
       for (final symbol in _b10514BindingSymbols) {
+        expect(
+          _declaresExternalFunction(bindingsSource, symbol),
+          isTrue,
+          reason: symbol,
+        );
+      }
+    });
+
+    test('Verify aLoRA metadata symbols are declared in bindings', () {
+      final bindingsSource = File(
+        'lib/src/backends/llama_cpp/bindings.dart',
+      ).readAsStringSync();
+
+      for (final symbol in _aloraMetadataSymbols) {
         expect(
           _declaresExternalFunction(bindingsSource, symbol),
           isTrue,
@@ -852,6 +882,25 @@ void main() {
       _expectDynamicLibraryExports(libraryFile!, _b10514MtmdSymbols);
     });
 
+    test('pinned b10545 artifact behavior reports video compiled out', () {
+      final libraryFile =
+          _mtmdFallbackLibraryFile() ?? _llamadartWrapperLibraryFileOrNull();
+      expect(
+        libraryFile,
+        isNotNull,
+        reason: 'Expected a native library exporting mtmd symbols.',
+      );
+      final library = ffi.DynamicLibrary.open(libraryFile!.path);
+      final supportsVideo = library
+          .lookupFunction<_MtmdSupportVideoNative, _MtmdSupportVideoDart>(
+            'mtmd_helper_support_video',
+          );
+
+      // The helper symbol is exported even when MTMD_VIDEO is off. Calling it
+      // is the behavioral compile-capability probe; symbol presence is not.
+      expect(supportsVideo(ffi.nullptr.cast<mtmd_context>()), isFalse);
+    });
+
     test('Verify core llama symbols are resolvable', () {
       expect(() => llama_backend_init(), returnsNormally);
       expect(llama_version().cast<Utf8>().toDartString(), isNotEmpty);
@@ -869,6 +918,16 @@ void main() {
         () => llama_numa_init(ggml_numa_strategy.GGML_NUMA_STRATEGY_DISABLED),
         returnsNormally,
       );
+    });
+
+    test('Verify pinned primary runtime exports aLoRA metadata ABI', () {
+      final libraryFile = _llamadartPrimaryLibraryFileOrNull();
+      expect(
+        libraryFile,
+        isNotNull,
+        reason: 'Expected a native library exporting llama.cpp symbols.',
+      );
+      _expectDynamicLibraryExports(libraryFile!, _aloraMetadataSymbols);
     });
   });
 }

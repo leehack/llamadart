@@ -564,8 +564,7 @@ class DownloadableModel {
     ),
     DownloadableModel.fromSources(
       name: 'Gemma 4 E2B it',
-      description:
-          'Compact multimodal assistant for image, audio, and video input.',
+      description: 'Compact multimodal assistant for image and audio input.',
       modelSource: const RemoteModelAssetSource(
         url:
             'https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/90f9618340396838ee7ff5b0ba2da27da62953d3/gemma-4-E2B-it-Q4_K_S.gguf?download=true',
@@ -601,7 +600,6 @@ class DownloadableModel {
       supportsVision: true,
       supportsAudio: true,
       webSupportsAudio: false,
-      supportsVideo: true,
       supportsToolCalling: true,
       supportsThinking: true,
       preset: ModelPreset(
@@ -667,7 +665,6 @@ class DownloadableModel {
       supportsVision: true,
       supportsAudio: true,
       webSupportsAudio: false,
-      supportsVideo: true,
       supportsToolCalling: true,
       supportsThinking: true,
       preset: ModelPreset(
@@ -696,7 +693,6 @@ class DownloadableModel {
       minRamGb: 16,
       supportsVision: true,
       supportsAudio: true,
-      supportsVideo: true,
       supportsToolCalling: true,
       supportsThinking: true,
       preset: ModelPreset(
@@ -724,7 +720,6 @@ class DownloadableModel {
       availability: ModelAvailability.nativeDesktop,
       minRamGb: 24,
       supportsVision: true,
-      supportsVideo: true,
       supportsToolCalling: true,
       supportsThinking: true,
       preset: ModelPreset(
@@ -752,7 +747,6 @@ class DownloadableModel {
       availability: ModelAvailability.nativeDesktop,
       minRamGb: 32,
       supportsVision: true,
-      supportsVideo: true,
       supportsToolCalling: true,
       supportsThinking: true,
       preset: ModelPreset(

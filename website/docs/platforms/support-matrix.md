@@ -112,6 +112,21 @@ LFM2 DSpark uses `SpeculativeDecodingConfig.draftDspark(...)`. No
 model-specific Dart preset is required, but representative target/draft and
 backend validation remains necessary before enabling DSpark in production.
 
+### Video input boundary
+
+| Runtime path | Public video input | Current evidence |
+| --- | --- | --- |
+| Native llama.cpp / GGUF | Not consumable | The tested b10545 macOS arm64 artifact exports upstream video helper symbols, but the behavioral `mtmd_helper_support_video` probe reports false because video is compiled out. The companion build does not opt into `LLAMA_SUBPROCESS`/`MTMD_VIDEO` or package FFmpeg/ffprobe; Linux and Windows still require artifact-level validation before support can be claimed. |
+| Native LiteRT-LM | Not consumable | The public direct-media path accepts image/audio content only. |
+| WebGPU / Web LiteRT-LM | Not consumable | No validated public Dart video transport or frame-lifetime contract exists. |
+| Android / iOS | Not consumable | Explicitly unsupported pending native packaging and device validation. |
+
+`LlamaEngine.supportsVideo` therefore returns false. Passing
+`LlamaVideoContent` throws `LlamaUnsupportedException` with either the native
+compile/dependency blocker or, for a custom video-enabled native build, the
+remaining Dart frame-ingestion/lifetime blocker. Do not infer support from
+exported `mtmd_helper_video_*` symbols.
+
 Unset or empty config means all runtime families available for the target. Apps
 that only ship one model format can trim package size:
 
@@ -202,6 +217,14 @@ device/model bundle, use `cpu` or `gpu` for that artifact.
 
 ## Runtime capability notes
 
+- **LoRA adapters** are supported on native llama.cpp/GGUF runtimes with the
+  complete metadata inspection ABI below. Activated LoRA (aLoRA) is not yet
+  supported: llamadart detects invocation-token metadata and rejects the
+  adapter before activation. Native overrides must export both
+  `llama_adapter_get_alora_n_invocation_tokens` and
+  `llama_adapter_get_alora_invocation_tokens`; runtimes without the complete,
+  compatible metadata inspection ABI fail closed with
+  `LlamaUnsupportedException` rather than risk applying aLoRA eagerly.
 - **Thinking budgets** (`GenerationParams.thinkingBudget`) use llama.cpp's
   reasoning-budget sampler on native text-only GGUF generation. `engine.create`
   resolves known template delimiters automatically; raw generation requires
