@@ -8189,16 +8189,91 @@ class _LlamaContextWrapper {
 /// Returns an empty string when nothing was recorded, so platforms that never
 /// populate the buffer keep their existing message byte for byte. The tail is
 /// kept when truncating: the buffer caps entries, not bytes, and the newest
-/// entries are the ones describing the failure at hand.
+/// entries are the ones describing the failure at hand. Control characters are
+/// flattened and credential-bearing HTTP URL components are redacted before the
+/// diagnostics are included in an exception. An entry with a control-split
+/// credentialed URL is replaced entirely rather than guessing whether the
+/// control was part of the URL or a diagnostic boundary.
 String formatStartupDiagnostics(List<String> entries, {int maxLength = 4096}) {
-  if (entries.isEmpty) {
+  if (maxLength < 0) {
+    throw RangeError.range(maxLength, 0, null, 'maxLength');
+  }
+  if (maxLength == 0) {
     return '';
   }
-  var joined = entries.join('; ');
+  final sanitizedEntries = entries
+      .map(_sanitizeStartupDiagnostic)
+      .where((entry) => entry.isNotEmpty)
+      .toList(growable: false);
+  if (sanitizedEntries.isEmpty) {
+    return '';
+  }
+  var joined = sanitizedEntries.join('; ');
   if (joined.length > maxLength) {
-    joined = '...${joined.substring(joined.length - maxLength)}';
+    final ellipsisLength = math.min(3, maxLength);
+    final tailLength = maxLength - ellipsisLength;
+    joined =
+        '${'.' * ellipsisLength}'
+        '${joined.substring(joined.length - tailLength)}';
   }
   return ', startupDiagnostics=[$joined]';
+}
+
+String _sanitizeStartupDiagnostic(String entry) {
+  final controlCharacters = RegExp(
+    r'[\u0000-\u001f\u007f-\u009f\u2028\u2029]+',
+  );
+  if (_hasControlSplitSensitiveHttpUrl(entry, controlCharacters)) {
+    return '<redacted-startup-diagnostic>';
+  }
+  final flattenedEntry = entry
+      .replaceAll(controlCharacters, ' ')
+      .replaceAll(RegExp(r' {2,}'), ' ')
+      .trim();
+  final redactedUrls = flattenedEntry.replaceAllMapped(
+    RegExp(r'https?://(?:(?!https?://)\S)+', caseSensitive: false),
+    (match) {
+      final uri = Uri.tryParse(match.group(0)!);
+      final scheme = uri?.scheme.toLowerCase();
+      if (uri == null || (scheme != 'http' && scheme != 'https')) {
+        return '<redacted-url>';
+      }
+      return Uri(
+        scheme: scheme,
+        host: uri.host,
+        port: uri.hasPort ? uri.port : null,
+        path: uri.path,
+      ).toString();
+    },
+  );
+  return redactedUrls.replaceAll(RegExp(r' {2,}'), ' ').trim();
+}
+
+bool _hasControlSplitSensitiveHttpUrl(String entry, RegExp controlCharacters) {
+  if (!controlCharacters.hasMatch(entry)) {
+    return false;
+  }
+  final compacted = entry.replaceAll(controlCharacters, '');
+  final candidates = RegExp(
+    r'https?://(?:(?!https?://)\S)+',
+    caseSensitive: false,
+  ).allMatches(compacted);
+  for (final candidate in candidates) {
+    final text = candidate.group(0)!;
+    final uri = Uri.tryParse(text);
+    if (uri == null) {
+      if (text.contains('@') || text.contains('?') || text.contains('#')) {
+        return true;
+      }
+      continue;
+    }
+    final scheme = uri.scheme.toLowerCase();
+    if ((scheme == 'http' || scheme == 'https') &&
+        (uri.userInfo.isNotEmpty || uri.hasQuery || uri.hasFragment)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /// The message thrown when `llama_model_load_from_file` returns null.
