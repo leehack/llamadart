@@ -110,6 +110,14 @@ and symbol-compatible with the default
 
 Available native tags are published on the
 [`leehack/llamadart-native` releases page](https://github.com/leehack/llamadart-native/releases).
+Stable distributions use `vMAJOR.MINOR.PATCH`. Historical/nightly `bNNNN`
+releases remain valid explicit overrides. New nightly wrapper rebuilds use
+`bNNNN-N`; existing `bNNNN-llamadart.N` artifacts remain valid
+consumption-only overrides. A stable wrapper-only rebuild of upstream `vM.m.p`
+uses `vM.m.p-N`, such as native `v0.2.0-1` for upstream `v0.2.0`. The suffix
+advances the GitHub stable native release sequence while the manifest's upstream
+ref remains `v0.2.0`. Other suffixes are rejected so a typo cannot select an
+unreviewed or version-skewed archive.
 You can also list them with the GitHub CLI:
 
 ```bash

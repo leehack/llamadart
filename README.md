@@ -148,6 +148,15 @@ Current default runtime pins:
 | Web llama.cpp / GGUF | `leehack/llama-web-bridge-assets@v0.1.37` |
 | Web LiteRT-LM / `.litertlm` | `@litert-lm/core@0.15.0` |
 
+Native overrides accept stable `vMAJOR.MINOR.PATCH` releases and preserve
+explicit access to historical/nightly `bNNNN` artifacts. New nightly wrapper
+rebuilds use `bNNNN-N`; existing `bNNNN-llamadart.N` artifacts remain valid
+consumption-only overrides. Stable wrapper-only rebuilds of upstream `vM.m.p`
+use `vM.m.p-N`, preserving the exact upstream prefix. Native release policy
+treats each `-N` suffix as a forward wrapper rebuild even where generic SemVer
+ordering differs. The default pin above changes only after the matching
+artifacts, bindings, runtime behavior, and docs have been validated together.
+
 ## Common Tasks
 
 | Task | Docs |

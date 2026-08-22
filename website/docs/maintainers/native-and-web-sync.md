@@ -33,18 +33,52 @@ README/website native pin docs, and opens a PR. It does not bump companion
 package versions by default. Use the sync script's explicit
 `--bump-companion-versions` option only when the same change intentionally
 prepares companion package releases. The `native_tag` input controls the
-`llamadart-native` release. The `litert_lm_tag` input defaults to `keep`; set it
-to a `litert-lm-native` tag or `latest` only when the LiteRT-LM native release
-should move in the same PR.
+`llamadart-native` release. Stable distribution tags use strict
+`vMAJOR.MINOR.PATCH`; historical/nightly artifacts remain consumable through an
+explicit `bNNNN` tag. New nightly wrapper releases use `bNNNN-N`; existing
+`bNNNN-llamadart.N` artifacts remain explicit consumption-only inputs. `latest`
+may resolve to an upstream-aligned tag or wrapper rebuild when GitHub exposes it
+through the stable release channel; all nightly forms remain explicit inputs.
+The `litert_lm_tag` input defaults to `keep`; set it to a
+`litert-lm-native` tag or `latest` only when the LiteRT-LM native release should
+move in the same PR.
+
+For a wrapper-only rebuild of upstream stable `vM.m.p`, the native release uses
+`vM.m.p-N`: for example upstream `v0.2.0` maps to native `v0.2.0-1`, then
+`v0.2.0-2`. The native release policy orders that sequence after `v0.2.0` and
+before upstream `v0.2.1`, despite generic SemVer prerelease ordering. The suffix
+belongs only to `native_release_tag`; `llama_cpp_tag`/`llama_cpp_ref` in
+`assets.json` must remain the exact unsuffixed upstream prefix.
 
 Local fallback:
 
 ```bash
+python3 tool/native/sync_native_release_pins.py \
+  --llama-cpp-tag latest \
+  --litert-lm-tag keep \
+  --dry-run
 tool/native/sync_native_headers_and_bindings.sh --tag latest
 python3 tool/native/sync_native_release_pins.py \
   --llama-cpp-tag latest \
   --litert-lm-tag keep
 ```
+
+The pin sync rejects same-channel rollback and release/manifest version skew.
+After the default pin moves to the stable channel, an intentional compatibility
+test against a `bNNNN`, `bNNNN-N`, or legacy `bNNNN-llamadart.N` artifact must
+name that tag and pass `--allow-legacy-tag`; the compatibility-named flag does
+not allow rollback within either channel. The manual sync workflow exposes the
+same gate as its `allow_nightly_channel` checkbox and leaves it disabled by
+default.
+Stable releases must provide `assets.json`, `SHA256SUMS`, every supported bundle,
+and hook contract version 1. New stable or nightly wrapper forms require
+`assets.json`, `native_release_tag`, and the retained `tag` compatibility alias;
+older base or legacy-wrapper manifests with only `tag` remain valid.
+Manifest checksums must agree with both `SHA256SUMS` and GitHub release asset
+digests before any pin files are written.
+Re-syncing the exact current tag remains idempotent for recovery and validation;
+the owning native release workflow is responsible for rejecting publication
+collisions.
 
 After sync, run analyze/tests/docs checks before merge. For Apple SPM pin
 changes, verify the companion package changes under `packages/`, then run at
@@ -58,6 +92,10 @@ Use this checklist in native sync PRs:
 
 - Confirm `llamadart-native` or `litert-lm-native` has published the target
   release and the required per-platform native-assets archives.
+- For a stable-channel llama.cpp native sync, confirm the release tag is an
+  upstream-aligned `vMAJOR.MINOR.PATCH` or an explicit wrapper rebuild,
+  `assets.json` records the correct distinct native/upstream tags and hook
+  contract version 1, and its artifact checksums match the release assets.
 - Confirm the same release provides Apple SPM-compatible XCFramework zip
   artifacts when companion package pins should move.
 - Update `hook/build.dart` native pins with

@@ -192,6 +192,19 @@ flow in ownership order:
 Prefer the repository workflow for native version and binding updates:
 `.github/workflows/sync_native_bindings.yml`.
 
+Stable `llamadart-native` distribution tags use strict
+`vMAJOR.MINOR.PATCH`. A wrapper-only rebuild of upstream `vM.m.p` uses
+`vM.m.p-N`, preserving the exact upstream prefix; native release ordering treats
+`-N` as a forward wrapper sequence despite generic SemVer prerelease ordering.
+New nightly wrapper rebuilds use `bNNNN-N`; existing
+`bNNNN-llamadart.N` artifacts remain explicit consumption-only compatibility
+inputs. New stable or nightly wrapper forms require manifests containing both
+`native_release_tag` and the legacy `tag` alias. Stable syncs must validate
+manifest provenance, hook contract, bundle coverage, checksums, upstream/native
+tag separation, and forward version movement before changing the default pin.
+The manual workflow requires its explicit `allow_nightly_channel` input before
+moving a stable pin back to the nightly channel.
+
 For local native regeneration:
 
 ```bash

@@ -40,15 +40,40 @@ const Map<String, List<String>> _currentDocDependencies =
       ],
     };
 
+final Map<String, RegExp> _currentNativePins = <String, RegExp>{
+  'hook/build.dart': RegExp(r"const _llamaCppTag = '([^']+)';"),
+  'packages/llamadart_llama_cpp_flutter/darwin/'
+      'llamadart_llama_cpp_flutter/Package.swift': RegExp(
+    r'let llamaCppTag = "([^"]+)"',
+  ),
+  'packages/llamadart_llama_cpp_flutter/README.md': RegExp(
+    r'The Apple SwiftPM manifest pins\s+`leehack/llamadart-native@([^`]+)`\.',
+  ),
+  'README.md': RegExp(
+    r'\| Native llama\.cpp / GGUF \| `leehack/llamadart-native@([^`]+)` \|',
+  ),
+  'website/docs/getting-started/installation.md': RegExp(
+    r'llamadart_native_tag:\s*([^\s#]+)',
+  ),
+  'website/docs/platforms/support-matrix.md': RegExp(
+    r'The native-assets hook currently pins `llamadart-native` tag\s+`([^`]+)`',
+  ),
+};
+
 final RegExp _dependencyLine = RegExp(
   r'^\s+(llamadart(?:_[a-z0-9_]+)?):\s+\^([0-9]+\.[0-9]+\.[0-9]+(?:[-+][^\s#]+)?)',
 );
 final RegExp _fenceLine = RegExp(r'^\s*```\s*([^\s`]*)?\s*$');
 final RegExp _versionLine = RegExp(r'^version:\s*(\S+)\s*$');
+final RegExp _nativeReleaseTag = RegExp(
+  r'^(?:v(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-[1-9][0-9]*)?|'
+  r'b[0-9]+(?:-[1-9][0-9]*|-llamadart\.[1-9][0-9]*)?)$',
+);
 
 void main() {
   final errors = <String>[];
   final versions = <String, String>{};
+  String? nativePin;
   for (final entry in _packagePubspecs.entries) {
     final version = _readPubspecVersion(entry.value, errors);
     if (version != null) {
@@ -65,6 +90,7 @@ void main() {
         errors: errors,
       );
     }
+    nativePin = _checkCurrentNativePins(errors);
   }
 
   if (errors.isNotEmpty) {
@@ -78,8 +104,59 @@ void main() {
 
   stdout.writeln(
     'Release docs versions verified: '
-    '${versions.entries.map((entry) => '${entry.key} ${entry.value}').join(', ')}.',
+    '${versions.entries.map((entry) => '${entry.key} ${entry.value}').join(', ')}; '
+    'llamadart-native $nativePin.',
   );
+}
+
+String? _checkCurrentNativePins(List<String> errors) {
+  final pins = <String, String>{};
+  for (final entry in _currentNativePins.entries) {
+    final file = File(entry.key);
+    if (!file.existsSync()) {
+      errors.add('${entry.key} does not exist.');
+      continue;
+    }
+
+    String text;
+    try {
+      text = file.readAsStringSync();
+    } on FileSystemException catch (error) {
+      errors.add('Could not read ${entry.key}: ${error.message}.');
+      continue;
+    }
+
+    final match = entry.value.firstMatch(text);
+    if (match == null) {
+      errors.add('${entry.key} does not contain its current native pin.');
+      continue;
+    }
+    final pin = match.group(1)!;
+    if (!_nativeReleaseTag.hasMatch(pin)) {
+      errors.add(
+        '${entry.key} uses unsupported native tag $pin; expected stable '
+        'vMAJOR.MINOR.PATCH, stable wrapper rebuild '
+        'vMAJOR.MINOR.PATCH-N, historical/nightly bNNNN, nightly wrapper '
+        'rebuild bNNNN-N, or legacy wrapper artifact bNNNN-llamadart.N.',
+      );
+      continue;
+    }
+    pins[entry.key] = pin;
+  }
+
+  if (pins.isEmpty) {
+    return null;
+  }
+  final expectedPin = pins['hook/build.dart'] ?? pins.values.first;
+  for (final entry in pins.entries) {
+    if (entry.value != expectedPin) {
+      errors.add(
+        '${entry.key} pins native tag ${entry.value}, but hook/build.dart '
+        'pins $expectedPin.',
+      );
+    }
+  }
+  return expectedPin;
 }
 
 String? _readPubspecVersion(String path, List<String> errors) {
