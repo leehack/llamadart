@@ -256,7 +256,7 @@ class KimiK3Handler extends _DirectJinjaHandler {
 
     final body = input.substring(bodyStart, scopeEnd);
     final callPattern = RegExp(
-      r'<\|open\|>call\s+tool="([^"]+)"(?:\s+index="[^"]+")?<\|sep\|>([\s\S]*?)<\|close\|>call<\|sep\|>',
+      r'<\|open\|>call\s+tool="([^"]+)"(?:\s+index="[0-9]+")?<\|sep\|>([\s\S]*?)<\|close\|>call<\|sep\|>',
     );
     final matches = callPattern.allMatches(body).toList(growable: false);
     if (matches.isEmpty || body.replaceAll(callPattern, '').trim().isNotEmpty) {
@@ -791,9 +791,20 @@ class MuseGlimmerHandler extends _DirectJinjaHandler {
         lastContentCodeUnit,
         output.substring(cursor, match.start),
       );
-      final recipient = (match.group(1) ?? '').trim();
+      final rawRecipient = match.group(1) ?? '';
+      final recipient = rawRecipient.trim();
       final body = match.group(2) ?? '';
-      if (recipient == 'self') {
+      if (recipient.isEmpty || rawRecipient != recipient) {
+        final terminator = match.group(3) ?? '';
+        if (!isPartial || terminator.isNotEmpty) {
+          lastContentCodeUnit = _appendMuseContent(
+            content,
+            lastContentCodeUnit,
+            match.group(0) ?? body,
+            channelBody: true,
+          );
+        }
+      } else if (recipient == 'self') {
         if (reasoning.isNotEmpty) reasoning.writeln();
         reasoning.write(body);
       } else if (recipient == 'user') {

@@ -139,6 +139,7 @@ void main() {
 
       for (final invalid in [
         valid.replaceFirst('tool="weather"', 'tool="unknown"'),
+        valid.replaceFirst('tool="weather"', 'tool="weather" index="invalid"'),
         valid.replaceFirst('city&amp;&quot;zone', 'unknown'),
         valid.replaceFirst('city&amp;&quot;zone', 'city&&quot;zone'),
         valid.replaceFirst('city&amp;&quot;zone', 'city&bogus;&quot;zone'),
@@ -942,6 +943,7 @@ void main() {
 
       for (final malformed in [
         valid.replaceFirst('to=weather', 'to=other'),
+        valid.replaceFirst('to=weather', 'to= weather '),
         valid
             .replaceFirst('to=weather', 'to=other')
             .replaceFirst('name="weather"', 'name="other"'),
