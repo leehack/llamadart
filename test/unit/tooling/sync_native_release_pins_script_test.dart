@@ -1525,19 +1525,109 @@ Future<void> _writeReleaseFixture(
   String tag,
   Map<String, String> assets, {
   String? resolvedTag,
-}) {
+}) async {
   final file = File(
     path.join(dir.path, '${repo.replaceAll('/', '__')}__$tag.json'),
   );
+  final releaseAssets = [
+    for (final entry in assets.entries)
+      {'name': entry.key, 'digest': 'sha256:${entry.value}'},
+  ];
+  if (repo == 'leehack/litert-lm-native') {
+    releaseAssets.add({
+      'name': 'manifest.json',
+      'digest': 'sha256:${_hex('a')}',
+    });
+    const upstreamCommit = '924e79c91542761242244e4f1651851f822e4cbb';
+    const nativeCommit = '451ba0ce7c366972b4dc0e58f08ffe590958f943';
+    const artifactPath = 'bin/linux/x64/libLiteRtLm.so';
+    final manifest = {
+      'schemaVersion': 2,
+      'release': {
+        'tag': tag,
+        'channel': 'stable',
+        'kind': 'upstream',
+        'rebuild': 0,
+        'githubPrerelease': false,
+      },
+      'upstream': {
+        'repository': 'google-ai-edge/LiteRT-LM',
+        'tag': tag,
+        'commit': upstreamCommit,
+        'compatibilityTag': tag,
+        'developmentIdentity': 'g${upstreamCommit.substring(0, 12)}',
+      },
+      'native': {
+        'repository': 'leehack/litert-lm-native',
+        'commit': nativeCommit,
+      },
+      'abi': {'streamProxyCallback': 1, 'asrBridge': 1},
+      'capabilities': {
+        'textGeneration': true,
+        'streaming': true,
+        'asr': true,
+        'officialUpstreamAssets': true,
+      },
+      'platforms': [
+        {
+          'platform': 'linux',
+          'arch': 'x64',
+          'releaseAsset': 'litert-lm-native-runtime-linux-x64-$tag.tar.gz',
+          'artifactPaths': [artifactPath],
+        },
+      ],
+      'artifacts': [
+        {
+          'path': artifactPath,
+          'platform': 'linux',
+          'arch': 'x64',
+          'sha256': _hex('b'),
+          'releaseTag': tag,
+          'upstreamCommit': upstreamCommit,
+        },
+      ],
+      'realModelSmokes': [
+        _litertSmoke('linux', 'x64', upstreamCommit, nativeCommit),
+        _litertSmoke('windows', 'x64', upstreamCommit, nativeCommit),
+      ],
+    };
+    await File(
+      path.join(
+        dir.path,
+        '${repo.replaceAll('/', '__')}__${tag}__manifest.json',
+      ),
+    ).writeAsString(jsonEncode(manifest));
+  }
   final payload = {
     'tag_name': resolvedTag ?? tag,
-    'assets': [
-      for (final entry in assets.entries)
-        {'name': entry.key, 'digest': 'sha256:${entry.value}'},
-    ],
+    if (repo == 'leehack/litert-lm-native')
+      'target_commitish': '451ba0ce7c366972b4dc0e58f08ffe590958f943',
+    'assets': releaseAssets,
   };
-  return file.writeAsString(jsonEncode(payload));
+  await file.writeAsString(jsonEncode(payload));
 }
+
+Map<String, Object> _litertSmoke(
+  String platform,
+  String arch,
+  String upstreamCommit,
+  String nativeCommit,
+) => {
+  'id': 'litert_lm_asr_moonshine',
+  'platform': platform,
+  'arch': arch,
+  'result': 'pass',
+  'upstreamCommit': upstreamCommit,
+  'nativeCommit': nativeCommit,
+  'backend': 'cpu',
+  'abiVersion': 1,
+  'transcript': 'how are you doing',
+  'expect': 'how are you',
+  'library': {'sha256': _hex('b')},
+  'model': {'sha256': _hex('c')},
+  'tokenizer': {'sha256': _hex('d')},
+  'fixture': {'sha256': _hex('e')},
+};
 
 String _hex(String character) => List.filled(64, character).join();
 

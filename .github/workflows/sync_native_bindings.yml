@@ -13,7 +13,7 @@ on:
         type: boolean
         default: false
       litert_lm_tag:
-        description: 'litert-lm-native release tag to sync (e.g., v0.13.1, latest, or keep)'
+        description: 'LiteRT tag: vX.Y.Z, vX.Y.Z-N, g<12hex>[-N], legacy -native.N, latest, or keep'
         required: true
         default: 'keep'
 
@@ -113,6 +113,7 @@ jobs:
             - [ ] If `allow_nightly_channel` was enabled, confirm the stable-to-nightly switch was intentional and record the compatibility reason.
             - [ ] Confirm `leehack/llamadart-native` release `${{ steps.sync_headers.outputs.resolved_tag }}` includes the required native-assets archives.
             - [ ] If LiteRT-LM sync was requested (`litert_lm_tag` is not `keep`), confirm `leehack/litert-lm-native` release `${{ steps.sync_pins.outputs.resolved_litert_lm_tag }}` includes the required runtime archives.
+            - [ ] Confirm a schema 2 LiteRT-LM manifest has exact upstream/native commits, ABI/capabilities, all platform bundles, SHA-256 artifact digests, and Linux/Windows real-model evidence. Schema 1 is legacy-only compatibility.
             - [ ] Confirm matching Apple SPM pins changed under `packages/` when Apple XCFramework releases changed.
             - [ ] Confirm current README/website native pin docs and `CHANGELOG.md` describe the new default pin.
             - [ ] Do not tag or publish companion/core packages from this PR. Companion/core publication is owned by a later release-prep PR and `release_on_prep_merge.yml`.

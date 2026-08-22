@@ -14,6 +14,8 @@ doc/testing_matrix.md @leehack
 hook/build.dart @leehack
 tool/testing/verify_release_docs_versions.dart @leehack
 tool/testing/check_webgpu_bridge_tag.dart @leehack
+tool/native/sync_native_release_pins.py @leehack
+tool/native/test_sync_native_release_pins.py @leehack
 scripts/fetch_webgpu_bridge_assets.sh @leehack
 website/docs/changelog/recent-releases.md @leehack
 website/docs/maintainers/native-and-web-sync.md @leehack
