@@ -468,6 +468,30 @@ void main() {
     expect(backend.isReady, isFalse);
   });
 
+  test('a disposed backend starts a fresh worker instead of hanging', () async {
+    final backend = NativeLlamaBackend(workerEntrypoint: _reusableWorkerEntry);
+
+    try {
+      expect(
+        await backend
+            .modelLoad('first.gguf', const ModelParams())
+            .timeout(const Duration(seconds: 2)),
+        42,
+      );
+      await backend.dispose().timeout(const Duration(seconds: 2));
+      expect(backend.isReady, isFalse);
+      expect(
+        await backend
+            .modelLoad('second.gguf', const ModelParams())
+            .timeout(const Duration(seconds: 2)),
+        42,
+      );
+      expect(backend.isReady, isTrue);
+    } finally {
+      await backend.dispose().timeout(const Duration(seconds: 2));
+    }
+  });
+
   group('worker startup handshake', () {
     test(
       'init failure is typed, diagnostic, retryable, and cleaned up',
@@ -663,6 +687,23 @@ void _failingInitializationWorkerEntry(SendPort initialSendPort) {
     initialSendPort,
     _FailingInitializationLlamaCppService(),
   );
+}
+
+void _reusableWorkerEntry(SendPort initialSendPort) {
+  final receivePort = ReceivePort();
+  initialSendPort.send(receivePort.sendPort);
+  receivePort.listen((message) {
+    switch (message) {
+      case WorkerHandshake():
+        message.sendPort.send(DoneResponse());
+      case ModelLoadRequest():
+        message.sendPort.send(HandleResponse(42));
+      case DisposeRequest():
+        message.sendPort.send(null);
+        receivePort.close();
+        Isolate.exit();
+    }
+  });
 }
 
 void _delayedFailingInitializationWorkerEntry(SendPort initialSendPort) {

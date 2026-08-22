@@ -675,6 +675,9 @@ class NativeLlamaBackend
       rp.close();
     }
     _isolate?.kill();
+    _isolate = null;
+    _sendPort = null;
+    _isolateStart = null;
     // Worker is gone; free the token if a terminal response did not already.
     _activeFreeToken?.call();
     _activeCancelToken = null;
