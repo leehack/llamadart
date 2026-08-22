@@ -1491,6 +1491,37 @@ void main() {
       expect(backend.lastGenerationPrompt, isNull);
     });
 
+    test(
+      'video input without projector explains inspection boundary',
+      () async {
+        await engine.loadModel('qwen-test.gguf');
+
+        await expectLater(
+          engine
+              .generate(
+                'describe',
+                parts: const [LlamaVideoContent(path: '/tmp/clip.mp4')],
+              )
+              .drain<void>(),
+          throwsA(
+            isA<LlamaUnsupportedException>()
+                .having(
+                  (error) => error.message,
+                  'message',
+                  contains('no multimodal projector'),
+                )
+                .having(
+                  (error) => error.message,
+                  'message',
+                  contains('does not enable public video ingestion'),
+                ),
+          ),
+        );
+        expect(backend.lastVideoProbeHandle, isNull);
+        expect(backend.lastGenerationPrompt, isNull);
+      },
+    );
+
     test('video input remains unavailable when native probe is true', () async {
       final videoBackend = MockLlamaBackend(nativeVideoRuntimeSupported: true);
       final videoEngine = LlamaEngine(videoBackend);

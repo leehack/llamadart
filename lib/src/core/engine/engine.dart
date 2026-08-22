@@ -1186,8 +1186,17 @@ class LlamaEngine {
 
     bool? nativeRuntimeSupportsVideo;
     final mmContextHandle = _mmContextHandle;
+    if (mmContextHandle == null) {
+      throw LlamaUnsupportedException(
+        'Video input is not consumable through llamadart, and no multimodal '
+        'projector is loaded to inspect native runtime capability. Loading a '
+        'compatible projector is required for that inspection but does not '
+        'enable public video ingestion. Extract and send image frames instead.',
+      );
+    }
+
     final candidate = backend;
-    if (mmContextHandle != null && candidate is BackendVideoRuntimeSupport) {
+    if (candidate is BackendVideoRuntimeSupport) {
       try {
         nativeRuntimeSupportsVideo =
             await (candidate as BackendVideoRuntimeSupport)
