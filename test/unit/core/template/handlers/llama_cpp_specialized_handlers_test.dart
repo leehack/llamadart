@@ -285,6 +285,39 @@ void main() {
         expect(rejected.content, invalid);
       }
     });
+
+    test('production parse rejects ambiguous MiniMax M1 tool schemas', () {
+      const output =
+          '<tool_calls>\n'
+          '{"name":"weather","arguments":{}}\n'
+          '</tool_calls>';
+      final duplicate = ToolDefinition(
+        name: 'weather',
+        description: 'Duplicate weather tool',
+        parameters: const [],
+        handler: (_) async => null,
+      );
+      final empty = ToolDefinition(
+        name: '',
+        description: 'Empty tool identity',
+        parameters: const [],
+        handler: (_) async => null,
+      );
+
+      for (final tools in [
+        [_weatherTool, duplicate],
+        [empty],
+      ]) {
+        expect(
+          () => ChatTemplateEngine.parse(
+            ChatFormat.minimaxM1.index,
+            output,
+            tools: tools,
+          ),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
+      }
+    });
   });
 
   group('MiniMax M3', () {
@@ -890,6 +923,41 @@ void main() {
           () => MuseGlimmerHandler().buildGrammar([tool]),
           throwsA(isA<LlamaUnsupportedException>()),
         );
+      }
+    });
+
+    test('requires one invoke matching the Muse recipient route', () {
+      const valid =
+          ' to=weather<|message|>'
+          '<atem:function_calls>'
+          '<atem:invoke name="weather"></atem:invoke>'
+          '</atem:function_calls><|eot|>';
+      final parsed = ChatTemplateEngine.parse(
+        ChatFormat.museGlimmer.index,
+        valid,
+        tools: [_weatherTool],
+      );
+      expect(parsed.toolCalls.single.function?.name, 'weather');
+      expect(parsed.content, isEmpty);
+
+      for (final malformed in [
+        valid.replaceFirst('to=weather', 'to=other'),
+        valid
+            .replaceFirst('to=weather', 'to=other')
+            .replaceFirst('name="weather"', 'name="other"'),
+        valid.replaceFirst(
+          '</atem:function_calls>',
+          '<atem:invoke name="weather"></atem:invoke>'
+              '</atem:function_calls>',
+        ),
+      ]) {
+        final rejected = ChatTemplateEngine.parse(
+          ChatFormat.museGlimmer.index,
+          malformed,
+          tools: [_weatherTool],
+        );
+        expect(rejected.toolCalls, isEmpty);
+        expect(rejected.content, malformed.trim());
       }
     });
 

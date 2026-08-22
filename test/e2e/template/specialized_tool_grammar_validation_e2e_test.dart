@@ -213,7 +213,12 @@ void main() {
       validator,
       MuseGlimmerHandler().buildRequiredGrammar([_escapedAttributeSchemaTool])!,
       valid: [' to=weather&"alerts<|message|>$museValid'],
-      invalid: [' to=weather<|message|>$museValid'],
+      invalid: [
+        ' to=weather<|message|>$museValid',
+        ' to=other<|message|>$museValid',
+        ' to=weather&"alerts<|message|>'
+            '${museValid.replaceFirst('</atem:function_calls>', '<atem:invoke name="weather&amp;&quot;alerts"></atem:invoke></atem:function_calls>')}',
+      ],
     );
   });
 

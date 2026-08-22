@@ -1,3 +1,4 @@
+import '../exceptions.dart';
 import '../models/tools/tool_definition.dart';
 import 'tool_call_parsing_utils.dart';
 
@@ -9,9 +10,22 @@ Map<String, Map<String, dynamic>> toolSchemas(List<ToolDefinition>? tools) {
   if (tools == null || tools.isEmpty) {
     return const {};
   }
-  return <String, Map<String, dynamic>>{
-    for (final tool in tools) tool.name: tool.toJsonSchema(),
-  };
+  final schemas = <String, Map<String, dynamic>>{};
+  for (final tool in tools) {
+    if (tool.name.isEmpty) {
+      throw LlamaUnsupportedException(
+        'Structured tool schemas require non-empty tool names.',
+      );
+    }
+    if (schemas.containsKey(tool.name)) {
+      throw LlamaUnsupportedException(
+        'Structured tool schemas require unique tool names; '
+        '"${tool.name}" is declared more than once.',
+      );
+    }
+    schemas[tool.name] = tool.toJsonSchema();
+  }
+  return schemas;
 }
 
 /// Returns object-property schemas keyed by their exact protocol names.

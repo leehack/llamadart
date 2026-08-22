@@ -1,3 +1,4 @@
+import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:llamadart/src/core/models/tools/tool_param.dart';
 import 'package:llamadart/src/core/template/tool_schema_utils.dart';
@@ -18,6 +19,45 @@ void main() {
         'empty',
       });
     });
+
+    test(
+      'rejects empty and duplicate tool identities before schema lookup',
+      () {
+        final duplicate = ToolDefinition(
+          name: _tool.name,
+          description: 'Duplicate schema',
+          parameters: const [],
+          handler: (_) async => null,
+        );
+        final empty = ToolDefinition(
+          name: '',
+          description: 'Empty schema identity',
+          parameters: const [],
+          handler: (_) async => null,
+        );
+
+        expect(
+          () => toolSchemas([_tool, duplicate]),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (error) => error.message,
+              'message',
+              contains('declared more than once'),
+            ),
+          ),
+        );
+        expect(
+          () => toolSchemas([empty]),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (error) => error.message,
+              'message',
+              contains('non-empty tool names'),
+            ),
+          ),
+        );
+      },
+    );
 
     test('preserves lexical strings and validates primitive types', () {
       expect(decodeToolSchemaText('123', const {'type': 'string'}), (

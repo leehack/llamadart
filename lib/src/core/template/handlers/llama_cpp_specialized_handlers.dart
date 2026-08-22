@@ -805,7 +805,11 @@ class MuseGlimmerHandler extends _DirectJinjaHandler {
         );
       } else if (parseToolCalls) {
         final parsed = _parseAtemCalls(body, calls.length, schemas: schemas);
-        if (parsed == null) {
+        final routeMatchesCall =
+            parsed != null &&
+            parsed.length == 1 &&
+            parsed.single.function?.name == recipient;
+        if (!routeMatchesCall) {
           final terminator = match.group(3) ?? '';
           if (!isPartial || terminator.isNotEmpty) {
             lastContentCodeUnit = _appendMuseContent(
@@ -1558,7 +1562,7 @@ List<LlamaCompletionChunkToolCall>? _parseJsonObjectSequence(
       }
       final name = call['name'];
       final arguments = call['arguments'];
-      final schema = name is String ? schemas[name] : null;
+      final schema = name is String && name.isNotEmpty ? schemas[name] : null;
       if (schema == null || arguments is! Map) {
         return null;
       }
