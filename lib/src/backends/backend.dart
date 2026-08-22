@@ -190,6 +190,16 @@ abstract class BackendPromptSpeechToTextSupport {
   String? get promptSpeechToTextUnsupportedReason;
 }
 
+/// Internal backend probe for the loaded projector's native video runtime.
+///
+/// A true result only establishes that the native mtmd build and projector
+/// report video support. It does not make video publicly consumable until the
+/// Dart frame-ingestion and lifetime contract is implemented.
+abstract class BackendVideoRuntimeSupport {
+  /// Whether the loaded native mtmd context reports compiled video support.
+  Future<bool> supportsVideoRuntime(int mmContextHandle);
+}
+
 /// Model family reported by a backend text-to-speech implementation.
 enum BackendTextToSpeechModel {
   /// Qwen3-TTS audio generation through llama.cpp mtmd.

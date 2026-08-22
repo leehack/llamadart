@@ -112,6 +112,21 @@ LFM2 DSpark uses `SpeculativeDecodingConfig.draftDspark(...)`. No
 model-specific Dart preset is required, but representative target/draft and
 backend validation remains necessary before enabling DSpark in production.
 
+### Video input boundary
+
+| Runtime path | Public video input | Current evidence |
+| --- | --- | --- |
+| Native llama.cpp / GGUF | Not consumable | The tested b10545 macOS arm64 artifact exports upstream video helper symbols, but the behavioral `mtmd_helper_support_video` probe reports false because video is compiled out. The companion build does not opt into `LLAMA_SUBPROCESS`/`MTMD_VIDEO` or package FFmpeg/ffprobe; Linux and Windows still require artifact-level validation before support can be claimed. |
+| Native LiteRT-LM | Not consumable | The public direct-media path accepts image/audio content only. |
+| WebGPU / Web LiteRT-LM | Not consumable | No validated public Dart video transport or frame-lifetime contract exists. |
+| Android / iOS | Not consumable | Explicitly unsupported pending native packaging and device validation. |
+
+`LlamaEngine.supportsVideo` therefore returns false. Passing
+`LlamaVideoContent` throws `LlamaUnsupportedException` with either the native
+compile/dependency blocker or, for a custom video-enabled native build, the
+remaining Dart frame-ingestion/lifetime blocker. Do not infer support from
+exported `mtmd_helper_video_*` symbols.
+
 Unset or empty config means all runtime families available for the target. Apps
 that only ship one model format can trim package size:
 

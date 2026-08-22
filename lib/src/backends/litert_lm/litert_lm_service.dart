@@ -734,7 +734,10 @@ class LiteRtLmService {
       return false;
     }
     return parts.any(
-      (part) => part is LlamaImageContent || part is LlamaAudioContent,
+      (part) =>
+          part is LlamaImageContent ||
+          part is LlamaAudioContent ||
+          part is LlamaVideoContent,
     );
   }
 
@@ -1184,6 +1187,11 @@ class LiteRtLmService {
           content.add(_nativeImageContent(part));
         case LlamaAudioContent():
           content.add(_nativeAudioContent(part));
+        case LlamaVideoContent():
+          throw UnsupportedError(
+            'LiteRT-LM video input is not supported through llamadart. '
+            'Extract and send image frames instead.',
+          );
         case LlamaThinkingContent():
           throw UnsupportedError(
             'LiteRtLmBackend native chat generation does not support thinking '

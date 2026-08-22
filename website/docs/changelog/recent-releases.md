@@ -9,6 +9,13 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Made native video-input capability truthful without claiming end-to-end
+  support. Explicit video content now receives a typed actionable rejection,
+  public capability remains false, and the native probe calls
+  `mtmd_helper_support_video` because helper symbols are exported even when
+  video is compiled out. Full support still requires companion FFmpeg/ffprobe
+  packaging and Dart frame-lifecycle wiring.
+
 - Fixed Web/native backend API parity. `WebAutoBackend` now forwards grammar
   constraint support from its active runtime, so strict structured output fails
   early with an actionable error on unsupported Web backends, and the Web-safe

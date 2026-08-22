@@ -1269,6 +1269,15 @@ void main() {
           ),
         );
 
+        await expectMediaError(
+          const [LlamaVideoContent(path: '/tmp/clip.mp4')],
+          isA<UnsupportedError>().having(
+            (error) => error.message.toString(),
+            'message',
+            contains('Extract and send image frames'),
+          ),
+        );
+
         expect(fakeClient.initializeStarted.isCompleted, isFalse);
         expect(fakeClient.createConversationCount, 0);
         expect(fakeClient.generateCount, 0);

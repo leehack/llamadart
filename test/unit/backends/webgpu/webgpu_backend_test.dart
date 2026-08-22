@@ -1891,6 +1891,31 @@ void main() {
       );
     });
 
+    test('rejects video parts instead of silently dropping them', () async {
+      await backend.modelLoadFromUrl(
+        'https://example.com/model.gguf',
+        const ModelParams(),
+      );
+
+      expect(
+        () => backend.generate(
+          1,
+          'Describe this video',
+          const GenerationParams(),
+          parts: const <LlamaContentPart>[
+            LlamaVideoContent(path: '/tmp/clip.mp4'),
+          ],
+        ),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            contains('image frames'),
+          ),
+        ),
+      );
+    });
+
     test('creates and uses multimodal context with media parts', () async {
       await backend.modelLoadFromUrl(
         'https://example.com/model.gguf',

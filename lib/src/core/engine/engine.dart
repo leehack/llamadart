@@ -621,6 +621,9 @@ class LlamaEngine {
     DateTime? templateNow,
   }) async* {
     _ensureReady();
+    await _rejectUnsupportedVideoInput(
+      messages.expand((message) => message.parts),
+    );
 
     // Keep tools available to template routing even with toolChoice.none,
     // matching llama.cpp behavior.
@@ -809,6 +812,7 @@ class LlamaEngine {
     List<LlamaContentPart>? parts,
   }) async* {
     _ensureReady();
+    await _rejectUnsupportedVideoInput(parts ?? const <LlamaContentPart>[]);
 
     try {
       final stream = backend.generate(
@@ -1164,6 +1168,53 @@ class LlamaEngine {
   Future<bool> get supportsAudio async =>
       _mmContextHandle != null &&
       await backend.supportsAudio(_mmContextHandle!);
+
+  /// Whether video input is consumable through the public Dart generation API.
+  ///
+  /// This remains false even if a custom native library was compiled with mtmd
+  /// video helpers: Dart does not yet own frame iteration, timestamp insertion,
+  /// cancellation, or lazy video-context cleanup. Use image frames explicitly
+  /// until that full contract is implemented.
+  Future<bool> get supportsVideo async => false;
+
+  Future<void> _rejectUnsupportedVideoInput(
+    Iterable<LlamaContentPart> parts,
+  ) async {
+    if (!parts.any((part) => part is LlamaVideoContent)) {
+      return;
+    }
+
+    var nativeRuntimeSupportsVideo = false;
+    final mmContextHandle = _mmContextHandle;
+    final candidate = backend;
+    if (mmContextHandle != null && candidate is BackendVideoRuntimeSupport) {
+      try {
+        nativeRuntimeSupportsVideo =
+            await (candidate as BackendVideoRuntimeSupport)
+                .supportsVideoRuntime(mmContextHandle);
+      } catch (_) {
+        // A failed optional capability probe is an unsupported result. The
+        // generation request below still receives the typed public error.
+      }
+    }
+
+    if (!nativeRuntimeSupportsVideo) {
+      throw LlamaUnsupportedException(
+        'Video input is not supported by the active backend/runtime. Current '
+        'llamadart native artifacts compile mtmd video support out; enabling '
+        'it requires LLAMA_SUBPROCESS plus FFmpeg/ffprobe packaging. Extract '
+        'and send image frames instead until companion-native packaging and '
+        'the Dart video-ingestion contract are implemented.',
+      );
+    }
+
+    throw LlamaUnsupportedException(
+      'The loaded native runtime reports mtmd video support, but video is not '
+      'yet consumable through llamadart. Dart frame iteration, timestamps, '
+      'cancellation, and video-context cleanup must be wired before path or '
+      'byte input can be accepted. Extract and send image frames instead.',
+    );
+  }
 
   /// Returns backend-native text-to-speech capabilities for the loaded model.
   ///

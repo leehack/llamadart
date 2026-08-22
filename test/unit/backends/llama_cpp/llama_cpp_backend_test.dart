@@ -293,6 +293,7 @@ void main() {
       expect(mmHandle, 33);
       expect(await backend.supportsAudio(mmHandle!), isTrue);
       expect(await backend.supportsVision(mmHandle), isFalse);
+      expect(await backend.supportsVideoRuntime(mmHandle), isFalse);
       await backend.multimodalContextFree(mmHandle);
       expect(
         () => backend.multimodalContextCreate(-1, 'mmproj.gguf'),
@@ -635,6 +636,8 @@ class _FakeWorkerHarness {
         case SupportsAudioRequest():
           message.sendPort.send(true);
         case SupportsVisionRequest():
+          message.sendPort.send(false);
+        case SupportsVideoRequest():
           message.sendPort.send(false);
         case TextToSpeechCapabilitiesRequest():
           message.sendPort.send(

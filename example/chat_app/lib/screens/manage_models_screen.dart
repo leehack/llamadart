@@ -217,7 +217,6 @@ class _ManageModelsScreenState extends State<ManageModelsScreen>
         'speech-to-text speech to text transcription asr stt',
       if (model.supportsTextToSpeechFor(web: useWebCapabilities))
         'text-to-speech text to speech synthesis tts voice output',
-      if (model.supportsVideoFor(web: useWebCapabilities)) 'video',
     ].join(' ').toLowerCase();
     return query.split(RegExp(r'\s+')).every(searchable.contains);
   }

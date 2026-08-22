@@ -28,7 +28,8 @@ class NativeLlamaBackend
         BackendEmbeddings,
         BackendBatchEmbeddings,
         BackendStatePersistence,
-        BackendTextToSpeech {
+        BackendTextToSpeech,
+        BackendVideoRuntimeSupport {
   Isolate? _isolate;
   SendPort? _sendPort;
   Future<void>? _isolateStart;
@@ -664,6 +665,16 @@ class NativeLlamaBackend
     _sendPort!.send(SupportsAudioRequest(mmContextHandle, rp.sendPort));
     final res = await rp.first;
     rp.close();
+    return res as bool;
+  }
+
+  @override
+  Future<bool> supportsVideoRuntime(int mmContextHandle) async {
+    final rp = ReceivePort();
+    _sendPort!.send(SupportsVideoRequest(mmContextHandle, rp.sendPort));
+    final res = await rp.first;
+    rp.close();
+    if (res is ErrorResponse) throw _workerError(res);
     return res as bool;
   }
 

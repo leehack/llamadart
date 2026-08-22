@@ -3,9 +3,15 @@ import 'dart:convert';
 import 'dart:math' as math;
 import 'package:test/test.dart';
 import 'package:llamadart/llamadart.dart';
+import 'package:llamadart/src/backends/backend.dart'
+    show BackendVideoRuntimeSupport;
 
 class MockLlamaBackend
-    implements LlamaBackend, BackendAvailability, BackendRuntimeDiagnostics {
+    implements
+        LlamaBackend,
+        BackendAvailability,
+        BackendRuntimeDiagnostics,
+        BackendVideoRuntimeSupport {
   MockLlamaBackend({
     this.backendName = 'Mock',
     this.urlLoadingSupported = false,
@@ -19,6 +25,8 @@ class MockLlamaBackend
     this.modelLoadDelay,
     this.modelLoadFromUrlDelay,
     this.contextFreeDelay,
+    this.nativeVideoRuntimeSupported = false,
+    this.videoProbeError,
   });
 
   bool _isReady = false;
@@ -54,6 +62,9 @@ class MockLlamaBackend
   Future<void>? modelLoadDelay;
   Future<void>? modelLoadFromUrlDelay;
   Future<void>? contextFreeDelay;
+  final bool nativeVideoRuntimeSupported;
+  final Object? videoProbeError;
+  int? lastVideoProbeHandle;
 
   @override
   bool get isReady => _isReady;
@@ -232,6 +243,15 @@ class MockLlamaBackend
 
   @override
   Future<bool> supportsAudio(int mmContextHandle) async => false;
+
+  @override
+  Future<bool> supportsVideoRuntime(int mmContextHandle) async {
+    lastVideoProbeHandle = mmContextHandle;
+    if (videoProbeError case final error?) {
+      throw error;
+    }
+    return nativeVideoRuntimeSupported;
+  }
 
   @override
   Future<({int total, int free})> getVramInfo() async =>
@@ -1004,10 +1024,11 @@ void main() {
             reason: testCase.label,
           );
           expect(downloadManager.ensureModelCalls, 2, reason: testCase.label);
-          expect(downloadManager.sources.map((source) => source.cacheKey), [
-            testCase.modelSource.cacheKey,
-            testCase.projectorSource.cacheKey,
-          ], reason: testCase.label);
+          expect(
+            downloadManager.sources.map((source) => source.cacheKey),
+            [testCase.modelSource.cacheKey, testCase.projectorSource.cacheKey],
+            reason: testCase.label,
+          );
         }
       },
     );
@@ -1443,7 +1464,96 @@ void main() {
       await engine.loadMultimodalProjector('proj.gguf');
       expect(await engine.supportsVision, true);
       expect(await engine.supportsAudio, false);
+      expect(await engine.supportsVideo, false);
     });
+
+    test('video input fails with compiled-runtime guidance', () async {
+      await engine.loadModel('qwen-test.gguf');
+      await engine.loadMultimodalProjector('proj.gguf');
+
+      await expectLater(
+        engine.create(const [
+          LlamaChatMessage.withContent(
+            role: LlamaChatRole.user,
+            content: [LlamaVideoContent(path: '/tmp/clip.mp4')],
+          ),
+        ]).drain<void>(),
+        throwsA(
+          isA<LlamaUnsupportedException>()
+              .having((error) => error.message, 'message', contains('FFmpeg'))
+              .having(
+                (error) => error.message,
+                'message',
+                contains('image frames'),
+              ),
+        ),
+      );
+      expect(backend.lastVideoProbeHandle, 2);
+      expect(backend.lastGenerationPrompt, isNull);
+    });
+
+    test('video input remains unavailable when native probe is true', () async {
+      final videoBackend = MockLlamaBackend(nativeVideoRuntimeSupported: true);
+      final videoEngine = LlamaEngine(videoBackend);
+      try {
+        await videoEngine.loadModel('qwen-test.gguf');
+        await videoEngine.loadMultimodalProjector('proj.gguf');
+
+        expect(await videoEngine.supportsVideo, isFalse);
+        await expectLater(
+          videoEngine
+              .generate(
+                'describe',
+                parts: const [LlamaVideoContent(path: '/tmp/clip.mp4')],
+              )
+              .drain<void>(),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (error) => error.message,
+              'message',
+              contains('frame iteration'),
+            ),
+          ),
+        );
+        expect(videoBackend.lastVideoProbeHandle, 2);
+        expect(videoBackend.lastGenerationPrompt, isNull);
+      } finally {
+        await videoEngine.dispose();
+      }
+    });
+
+    test(
+      'video probe failure still produces typed unsupported error',
+      () async {
+        final videoBackend = MockLlamaBackend(
+          videoProbeError: StateError('missing optional probe'),
+        );
+        final videoEngine = LlamaEngine(videoBackend);
+        try {
+          await videoEngine.loadModel('qwen-test.gguf');
+          await videoEngine.loadMultimodalProjector('proj.gguf');
+
+          await expectLater(
+            videoEngine
+                .generate(
+                  'describe',
+                  parts: const [LlamaVideoContent(path: '/tmp/clip.mp4')],
+                )
+                .drain<void>(),
+            throwsA(
+              isA<LlamaUnsupportedException>().having(
+                (error) => error.message,
+                'message',
+                contains('FFmpeg'),
+              ),
+            ),
+          );
+          expect(videoBackend.lastGenerationPrompt, isNull);
+        } finally {
+          await videoEngine.dispose();
+        }
+      },
+    );
 
     test(
       'multimodal projector can be unloaded without unloading model',

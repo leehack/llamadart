@@ -285,13 +285,6 @@ class ModelCard extends StatelessWidget {
                             label: 'Text-to-speech',
                             supported: true,
                           ),
-                        if (model.supportsVideoFor(web: isWeb))
-                          _buildCapabilityChip(
-                            context,
-                            icon: Icons.videocam_outlined,
-                            label: 'Video',
-                            supported: true,
-                          ),
                       ],
                     ),
                   ],
