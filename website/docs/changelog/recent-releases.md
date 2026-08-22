@@ -15,6 +15,11 @@ For canonical full release notes, use:
   `LiteRtLmRuntimeClient` stub now exposes the native client's thinking-tag
   configuration method.
 
+- A failed llama.cpp model load now reports the startup diagnostics collected
+  during native library discovery, so a missing or unloadable runtime library
+  explains itself instead of surfacing as a bare load failure. Platforms that
+  record no diagnostics keep their previous message unchanged.
+
 - llama.cpp worker errors now keep their type. Every backend method routes an
   `ErrorResponse` through the file's own error mapper instead of rebuilding a
   bare `Exception`, `tokenize` and `detokenize` no longer discard the worker's
