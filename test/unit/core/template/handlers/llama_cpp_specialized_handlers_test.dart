@@ -58,6 +58,13 @@ void main() {
       expect(grammar, contains('char ::= '));
     });
 
+    test('grammar HTML-escapes tool names like the upstream XTML macro', () {
+      final grammar = KimiK3Handler().buildGrammar([_attributeTool])!;
+
+      expect(grammar, contains(r'tool-name ::= "weather&amp;&quot;alerts"'));
+      expect(grammar, isNot(contains(r'tool-name ::= "weather&\"alerts"')));
+    });
+
     test(
       'parses a tool call without the optional upstream index attribute',
       () {
@@ -354,6 +361,13 @@ final _weatherWithCityTool = ToolDefinition(
   name: 'weather',
   description: 'Weather',
   parameters: [ToolParam.string('city', required: true)],
+  handler: (_) async => null,
+);
+
+final _attributeTool = ToolDefinition(
+  name: 'weather&"alerts',
+  description: 'Weather alerts',
+  parameters: const [],
   handler: (_) async => null,
 );
 

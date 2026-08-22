@@ -297,7 +297,9 @@ class KimiK3Handler extends _DirectJinjaHandler {
       return null;
     }
     final names = tools
-        .map((tool) => ToolCallGrammarUtils.literal(tool.name))
+        .map(
+          (tool) => ToolCallGrammarUtils.literal(_escapeAttribute(tool.name)),
+        )
         .join(' | ');
     final converter = JsonSchemaConverter();
     const objectSchema = <String, dynamic>{'type': 'object'};
@@ -1040,6 +1042,9 @@ List<LlamaCompletionChunkToolCall>? _parseAtemCalls(String body, int start) {
 
 String _unescapeAttribute(String value) =>
     value.replaceAll('&quot;', '"').replaceAll('&amp;', '&');
+
+String _escapeAttribute(String value) =>
+    value.replaceAll('&', '&amp;').replaceAll('"', '&quot;');
 
 String? _nullIfEmpty(String? value) {
   final trimmed = value?.trim();
