@@ -14,6 +14,10 @@ on:
       - review_requested
       - review_request_removed
       - auto_merge_enabled
+  pull_request_review:
+    types: [submitted, edited, dismissed]
+  pull_request_review_comment:
+    types: [created, edited, deleted]
 
 permissions:
   contents: read
@@ -27,6 +31,7 @@ concurrency:
 jobs:
   contract:
     name: Trusted base policy execution
+    if: github.event.pull_request.base.ref == 'main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

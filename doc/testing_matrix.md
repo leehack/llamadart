@@ -107,8 +107,9 @@ head status context, require conversation
 resolution, and require branches to be up to date with `main` before merging.
 Configure all three rules after the bootstrap lands, then verify them with a
 high-risk test PR, including a deliberate base advance, before closing the
-policy issue. Ready, review-request, and auto-merge transitions rerun the
-trusted check; code fixes also rerun it through `synchronize`. GitHub does not
+policy issue. Ready, review-request, review submission/dismissal,
+review-comment, and auto-merge transitions rerun the trusted check; code fixes
+also rerun it through `synchronize`. GitHub does not
 expose review-thread resolution as an Actions trigger, so the repository
 conversation-resolution rule is the merge-time authority for threads added
 after the last gate run. The strict up-to-date rule is the merge-time authority

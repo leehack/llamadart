@@ -499,6 +499,10 @@ Verdict: PASS''',
       ).readAsStringSync();
 
       expect(workflow, contains('pull_request_target:'));
+      expect(workflow, contains('pull_request_review:'));
+      expect(workflow, contains('types: [submitted, edited, dismissed]'));
+      expect(workflow, contains('pull_request_review_comment:'));
+      expect(workflow, contains('types: [created, edited, deleted]'));
       expect(workflow, contains('Check out trusted default-branch policy'));
       expect(
         workflow,
@@ -549,6 +553,8 @@ Verdict: PASS''',
       expect(matrix, contains('conversation-resolution'));
       expect(matrix, contains('up to date with `main`'));
       expect(matrix, contains('deliberate base advance'));
+      expect(matrix, contains('review submission/dismissal'));
+      expect(matrix, contains('review-comment'));
       expect(template, contains('Evidence manifest'));
     });
   });
