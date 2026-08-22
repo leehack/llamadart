@@ -105,7 +105,7 @@ jobs:
           AHEAD: ${{ steps.state.outputs.ahead }}
           UNRESOLVED_THREADS: ${{ steps.threads.outputs.count }}
         run: |
-          dart run tool/testing/check_high_risk_pr_contract.dart \
+          dart tool/testing/check_high_risk_pr_contract.dart \
             --event "$EVENT_PATH" \
             --changed-files "$CHANGED_FILES" \
             --base-sha "$BASE_SHA" \
