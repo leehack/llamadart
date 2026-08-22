@@ -192,6 +192,7 @@ LITERT_V0_16_SPM_ASSET_PATTERNS = (
     "litert-lm-native-apple-LiteRtMetalAccelerator-xcframework-{tag}.zip",
     "litert-lm-native-apple-LiteRtTopKMetalSampler-xcframework-{tag}.zip",
 )
+LITERT_ALLOWED_ACCELERATORS = {"metal", "opencl", "webgpu"}
 
 
 class ReleaseError(RuntimeError):
@@ -243,6 +244,72 @@ def required_litert_manifest_paths(
         for override in LITERT_PREBUILT_OVERRIDES.get(compatibility_tag, [])
     )
     return required
+
+
+def required_litert_release_asset_names(
+    manifest: dict[str, Any], release_tag: str
+) -> set[str]:
+    platforms = manifest.get("platforms")
+    artifacts = manifest.get("artifacts")
+    capabilities = manifest.get("capabilities")
+    if not isinstance(platforms, list) or not isinstance(artifacts, list):
+        raise ReleaseError("LiteRT-LM owner inventory requires schema-2 platform artifacts")
+    if not isinstance(capabilities, dict):
+        raise ReleaseError("LiteRT-LM owner inventory requires schema-2 capabilities")
+    assets = {
+        "manifest.json",
+        "SHA256SUMS",
+        "release-result.json",
+        f"litert-lm-native-prebuilts-{release_tag}.tar.gz",
+    }
+    for platform in platforms:
+        if not isinstance(platform, dict) or not isinstance(
+            platform.get("releaseAsset"), str
+        ):
+            raise ReleaseError("LiteRT-LM owner inventory has an invalid platform asset")
+        assets.add(platform["releaseAsset"])
+    for artifact in artifacts:
+        path = artifact.get("path") if isinstance(artifact, dict) else None
+        if (
+            isinstance(path, str)
+            and path.startswith(f"dist/spm/{release_tag}/")
+            and path.endswith(".zip")
+        ):
+            assets.add(Path(path).name)
+    if capabilities.get("officialUpstreamAssets") is True:
+        assets.add(f"litert-lm-native-official-assets-{release_tag}.tar.gz")
+    return assets
+
+
+def validate_litert_release_asset_inventory(
+    release: dict[str, Any], manifest: dict[str, Any], release_tag: str
+) -> None:
+    assets = release.get("assets")
+    if not isinstance(assets, list) or any(
+        not isinstance(asset, dict) or not isinstance(asset.get("name"), str)
+        for asset in assets
+    ):
+        raise ReleaseError("LiteRT-LM GitHub release asset inventory is invalid")
+    names = [asset["name"] for asset in assets]
+    if len(names) != len(set(names)):
+        raise ReleaseError("LiteRT-LM GitHub release asset inventory has duplicates")
+    expected = required_litert_release_asset_names(manifest, release_tag)
+    actual = set(names)
+    if actual != expected:
+        raise ReleaseError(
+            "LiteRT-LM GitHub release asset inventory does not match owner policy; "
+            f"missing={sorted(expected - actual)}, unexpected={sorted(actual - expected)}"
+        )
+    for asset in assets:
+        digest = asset.get("digest")
+        if (
+            not isinstance(digest, str)
+            or not digest.startswith("sha256:")
+            or not SHA256_RE.fullmatch(digest.removeprefix("sha256:"))
+        ):
+            raise ReleaseError(
+                f"Asset {asset['name']} has an invalid GitHub SHA-256 digest"
+            )
 
 
 def main() -> int:
@@ -1465,13 +1532,6 @@ def validate_litert_lm_release_manifest(
     for override in upstream["prebuiltOverrides"]:
         if not isinstance(override, dict):
             raise ReleaseError("LiteRT-LM prebuilt override provenance is invalid")
-    expected_overrides = LITERT_PREBUILT_OVERRIDES.get(
-        str(upstream.get("compatibilityTag")), []
-    )
-    if upstream["prebuiltOverrides"] != expected_overrides:
-        raise ReleaseError(
-            "LiteRT-LM prebuilt override provenance does not match owner policy"
-        )
         require_exact_keys(
             override,
             {
@@ -1489,6 +1549,13 @@ def validate_litert_lm_release_manifest(
             or not SHA256_RE.fullmatch(str(override.get("sha256", "")))
         ):
             raise ReleaseError("LiteRT-LM prebuilt override provenance is invalid")
+    expected_overrides = LITERT_PREBUILT_OVERRIDES.get(
+        str(upstream.get("compatibilityTag")), []
+    )
+    if upstream["prebuiltOverrides"] != expected_overrides:
+        raise ReleaseError(
+            "LiteRT-LM prebuilt override provenance does not match owner policy"
+        )
     for name, expected in expected_release_fields.items():
         if release_identity.get(name) != expected:
             raise ReleaseError(
@@ -1615,6 +1682,7 @@ def validate_litert_lm_release_manifest(
             not isinstance(accelerators, list)
             or any(not isinstance(value, str) or not value for value in accelerators)
             or len(accelerators) != len(set(accelerators))
+            or not set(accelerators).issubset(LITERT_ALLOWED_ACCELERATORS)
         ):
             raise ReleaseError("LiteRT-LM artifact accelerators are invalid")
         if artifact_path in artifacts_by_path:
@@ -1664,6 +1732,19 @@ def validate_litert_lm_release_manifest(
             set(accelerators)
         ):
             raise ReleaseError("LiteRT-LM platform accelerators are invalid")
+        linked_accelerators = sorted(
+            {
+                accelerator
+                for path in paths
+                for accelerator in artifacts_by_path[path]["accelerators"]
+            }
+        )
+        if accelerators != linked_accelerators or not set(accelerators).issubset(
+            LITERT_ALLOWED_ACCELERATORS
+        ):
+            raise ReleaseError(
+                "LiteRT-LM platform accelerators do not match linked artifacts"
+            )
         expected_release_asset = (
             "litert-lm-native-runtime-"
             f"{platform.get('platform')}-{platform.get('arch')}-{tag}.tar.gz"
@@ -1690,6 +1771,34 @@ def validate_litert_lm_release_manifest(
             "LiteRT-LM manifest is missing owner-required artifact paths: "
             + ", ".join(missing_paths)
         )
+    platform_paths = {
+        (platform["platform"], platform["arch"]): set(platform["artifactPaths"])
+        for platform in platforms
+    }
+    for path in sorted(required_paths):
+        artifact = artifacts_by_path[path]
+        parts = Path(path).parts
+        if parts[0] == "bin":
+            expected_platform, expected_arch = parts[1:3]
+            if (
+                artifact.get("runtime") != "native"
+                or artifact.get("platform") != expected_platform
+                or artifact.get("arch") != expected_arch
+                or path not in platform_paths[(expected_platform, expected_arch)]
+            ):
+                raise ReleaseError(
+                    "LiteRT-LM required runtime path has invalid platform binding"
+                )
+        elif (
+            artifact.get("runtime") != "archive"
+            or artifact.get("platform") is not None
+            or artifact.get("arch") is not None
+        ):
+            raise ReleaseError(
+                "LiteRT-LM required archive path has invalid platform binding"
+            )
+
+    validate_litert_release_asset_inventory(release, manifest, tag)
 
     passed_smokes: set[str] = set()
     smokes = manifest.get("realModelSmokes")

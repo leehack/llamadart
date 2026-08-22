@@ -1600,6 +1600,21 @@ Future<void> _writeReleaseFixture(
         ..['fileName'] = path.basename(retaggedPath)
         ..['upstreamTag'] = tag
         ..['releaseTag'] = tag;
+      if (retaggedPath.startsWith('dist/spm/$tag/') &&
+          retaggedPath.endsWith('.zip')) {
+        releaseAssetChecksums.putIfAbsent(
+          path.basename(retaggedPath),
+          () => _hex('f'),
+        );
+      }
+    }
+    for (final assetName in <String>[
+      'SHA256SUMS',
+      'release-result.json',
+      'litert-lm-native-prebuilts-$tag.tar.gz',
+      'litert-lm-native-official-assets-$tag.tar.gz',
+    ]) {
+      releaseAssetChecksums.putIfAbsent(assetName, () => _hex('f'));
     }
     for (final smoke
         in (manifest['realModelSmokes'] as List<dynamic>)

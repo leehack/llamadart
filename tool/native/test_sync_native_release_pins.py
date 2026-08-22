@@ -16,8 +16,10 @@ from sync_native_release_pins import (  # noqa: E402
     atomic_write_many,
     litert_lm_runtime_version,
     normalize_litert_lm_release_tag,
+    required_litert_release_asset_names,
     validate_litert_lm_transition,
     validate_litert_lm_release_manifest,
+    validate_litert_release_asset_inventory,
 )
 
 
@@ -150,26 +152,24 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
         required_bundles = [
             f"{item['platform']}-{item['arch']}" for item in manifest["platforms"]
         ]
-        release_assets = [
-            {
-                "name": "manifest.json",
-                "digest": "sha256:" + hashlib.sha256(owner_fixture.read_bytes()).hexdigest(),
-            },
-            *(
-                {
-                    "name": item["releaseAsset"],
-                    "digest": "sha256:" + "f" * 64,
-                }
-                for item in manifest["platforms"]
-            ),
-        ]
-        release = {
-            "tag_name": tag,
-            "target_commitish": manifest["native"]["commit"],
-            "draft": False,
-            "prerelease": manifest["release"]["githubPrerelease"],
-            "assets": release_assets,
-        }
+        expected_assets = required_litert_release_asset_names(manifest, tag)
+        owner_release_fixture = (
+            Path(__file__).resolve().parent
+            / "fixtures"
+            / "litert_lm_schema2_owner_release.json"
+        )
+        self.assertEqual(
+            hashlib.sha256(owner_release_fixture.read_bytes()).hexdigest(),
+            "e2d199613270b62ad51c6b89fdb5375979822d8b5affd96e00c51afe59296002",
+        )
+        release = json.loads(owner_release_fixture.read_text(encoding="utf-8"))
+        release_assets = release["assets"]
+        manifest_asset = next(
+            asset for asset in release_assets if asset["name"] == "manifest.json"
+        )
+        self.assertEqual(
+            {asset["name"] for asset in release_assets}, expected_assets
+        )
         with tempfile.TemporaryDirectory() as temp:
             fixture_dir = Path(temp)
             fixture = fixture_dir / f"leehack__litert-lm-native__{tag}__manifest.json"
@@ -182,7 +182,12 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
                 required_bundles=required_bundles,
             )
 
-            release_assets[1]["digest"] = "sha256:not-a-sha256"
+            runtime_asset = next(
+                asset
+                for asset in release_assets
+                if asset["name"].startswith("litert-lm-native-runtime-")
+            )
+            runtime_asset["digest"] = "sha256:not-a-sha256"
             with self.assertRaisesRegex(ReleaseError, "invalid GitHub SHA-256"):
                 validate_litert_lm_release_manifest(
                     release,
@@ -191,7 +196,35 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
                     release_json_dir=str(fixture_dir),
                     required_bundles=required_bundles,
                 )
-            release_assets[1]["digest"] = "sha256:" + "f" * 64
+            runtime_asset["digest"] = "sha256:" + "f" * 64
+
+            for asset_name in sorted(expected_assets):
+                with self.subTest(owner_rejected_missing_asset=asset_name):
+                    removed_index = next(
+                        index
+                        for index, asset in enumerate(release_assets)
+                        if asset["name"] == asset_name
+                    )
+                    removed = release_assets.pop(removed_index)
+                    with self.assertRaisesRegex(ReleaseError, "owner policy"):
+                        validate_litert_release_asset_inventory(release, manifest, tag)
+                    release_assets.insert(removed_index, removed)
+            release_assets.append(
+                {"name": "unexpected-owner-rejected.bin", "digest": "sha256:" + "f" * 64}
+            )
+            with self.assertRaisesRegex(ReleaseError, "owner policy"):
+                validate_litert_release_asset_inventory(release, manifest, tag)
+            release_assets.pop()
+            release_assets.append(dict(release_assets[0]))
+            with self.assertRaisesRegex(ReleaseError, "duplicates"):
+                validate_litert_release_asset_inventory(release, manifest, tag)
+            release_assets.pop()
+
+            original_digest = release_assets[0]["digest"]
+            release_assets[0]["digest"] = "sha256:not-a-digest"
+            with self.assertRaisesRegex(ReleaseError, "invalid GitHub SHA-256"):
+                validate_litert_release_asset_inventory(release, manifest, tag)
+            release_assets[0]["digest"] = original_digest
 
             release["draft"] = True
             with self.assertRaisesRegex(ReleaseError, "published, not a draft"):
@@ -216,7 +249,7 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
 
             removed_override = manifest["upstream"]["prebuiltOverrides"].pop()
             fixture.write_text(json.dumps(manifest), encoding="utf-8")
-            release_assets[0]["digest"] = "sha256:" + hashlib.sha256(
+            manifest_asset["digest"] = "sha256:" + hashlib.sha256(
                 fixture.read_bytes()
             ).hexdigest()
             with self.assertRaisesRegex(ReleaseError, "owner policy"):
@@ -243,7 +276,7 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
             )
             override_platform["artifactPaths"].remove(override_target)
             fixture.write_text(json.dumps(manifest), encoding="utf-8")
-            release_assets[0]["digest"] = "sha256:" + hashlib.sha256(
+            manifest_asset["digest"] = "sha256:" + hashlib.sha256(
                 fixture.read_bytes()
             ).hexdigest()
             with self.assertRaisesRegex(ReleaseError, "override target provenance"):
@@ -264,7 +297,7 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
             )
             manifest["artifacts"].remove(removed_artifact)
             fixture.write_text(json.dumps(manifest), encoding="utf-8")
-            release_assets[0]["digest"] = "sha256:" + hashlib.sha256(
+            manifest_asset["digest"] = "sha256:" + hashlib.sha256(
                 fixture.read_bytes()
             ).hexdigest()
             with self.assertRaisesRegex(ReleaseError, "owner-required artifact paths"):
@@ -280,7 +313,7 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
             smoke = manifest["realModelSmokes"][0]
             smoke["model"]["sha256"] = "a" * 64
             fixture.write_text(json.dumps(manifest), encoding="utf-8")
-            release_assets[0]["digest"] = "sha256:" + hashlib.sha256(
+            manifest_asset["digest"] = "sha256:" + hashlib.sha256(
                 fixture.read_bytes()
             ).hexdigest()
             with self.assertRaisesRegex(ReleaseError, "owner-pinned asset"):
@@ -297,7 +330,7 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
 
             smoke["source"]["model"] = "https://example.invalid/model.tflite"
             fixture.write_text(json.dumps(manifest), encoding="utf-8")
-            release_assets[0]["digest"] = "sha256:" + hashlib.sha256(
+            manifest_asset["digest"] = "sha256:" + hashlib.sha256(
                 fixture.read_bytes()
             ).hexdigest()
             with self.assertRaisesRegex(ReleaseError, "source provenance"):
@@ -317,7 +350,7 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
             original_library_digest = smoke["library"]["sha256"]
             smoke["library"]["sha256"] = "b" * 64
             fixture.write_text(json.dumps(manifest), encoding="utf-8")
-            release_assets[0]["digest"] = "sha256:" + hashlib.sha256(
+            manifest_asset["digest"] = "sha256:" + hashlib.sha256(
                 fixture.read_bytes()
             ).hexdigest()
             with self.assertRaisesRegex(ReleaseError, "runtime artifact"):
@@ -333,7 +366,7 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
             smoke["expectation"]["value"] = "fabricated"
             smoke["transcript"] = "fabricated"
             fixture.write_text(json.dumps(manifest), encoding="utf-8")
-            release_assets[0]["digest"] = "sha256:" + hashlib.sha256(
+            manifest_asset["digest"] = "sha256:" + hashlib.sha256(
                 fixture.read_bytes()
             ).hexdigest()
             with self.assertRaisesRegex(ReleaseError, "owner-pinned transcript"):
@@ -351,7 +384,7 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
                 manifest["platforms"][0]["artifactPaths"][0]
             )
             fixture.write_text(json.dumps(manifest), encoding="utf-8")
-            release_assets[0]["digest"] = "sha256:" + hashlib.sha256(
+            manifest_asset["digest"] = "sha256:" + hashlib.sha256(
                 fixture.read_bytes()
             ).hexdigest()
             with self.assertRaisesRegex(ReleaseError, "artifact paths are invalid"):
@@ -366,7 +399,7 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
 
             del manifest["capabilities"]["streamChunkAccessors"]
             fixture.write_text(json.dumps(manifest), encoding="utf-8")
-            release_assets[0]["digest"] = "sha256:" + hashlib.sha256(
+            manifest_asset["digest"] = "sha256:" + hashlib.sha256(
                 fixture.read_bytes()
             ).hexdigest()
             with self.assertRaisesRegex(ReleaseError, "owner schema 2"):
