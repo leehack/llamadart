@@ -163,7 +163,7 @@ void runLlamaWorkerForTesting(
         final diagnosticsSuffix = formatStartupDiagnostics(diagnostics);
         final diagnosticsSection = diagnosticsSuffix.isEmpty
             ? ''
-            : '\n${diagnosticsSuffix.substring(2)}';
+            : '\n${diagnosticsSuffix.replaceFirst(RegExp(r'^,\s*'), '')}';
         message.sendPort.send(
           ErrorResponse(
             'Failed to initialize the llama.cpp backend: '
