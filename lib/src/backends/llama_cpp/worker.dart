@@ -158,12 +158,12 @@ void runLlamaWorkerForTesting(
           isInitialized = true;
         }
         message.sendPort.send(DoneResponse());
-      } catch (error) {
+      } catch (error, stackTrace) {
         final diagnostics = service.getStartupDiagnostics();
         message.sendPort.send(
           ErrorResponse(
             'Failed to initialize the llama.cpp backend: '
-            '$error${formatStartupDiagnostics(diagnostics)}',
+            '$error\n$stackTrace${formatStartupDiagnostics(diagnostics)}',
             kind: WorkerErrorKind.backendInitialization,
           ),
         );

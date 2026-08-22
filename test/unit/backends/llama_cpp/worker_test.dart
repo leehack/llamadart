@@ -43,6 +43,10 @@ void main() {
       final error = response as ErrorResponse;
       expect(error.kind, WorkerErrorKind.backendInitialization);
       expect(error.message, contains('synthetic initialization failure'));
+      expect(
+        error.message,
+        contains('_FailingInitializationLlamaCppService.initializeBackend'),
+      );
       expect(error.message, contains('libllamadart.so could not be opened'));
       expect(service.disposeCalls, 1);
     });

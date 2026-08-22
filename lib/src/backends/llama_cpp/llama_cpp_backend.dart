@@ -36,6 +36,7 @@ class NativeLlamaBackend
   SendPort? _sendPort;
   Future<void>? _isolateStart;
   final LlamaWorkerEntrypoint _workerEntrypoint;
+  final Duration _workerStartupTimeout;
   Pointer<Int8>? _activeCancelToken;
   void Function()? _activeGenerationCleanup;
   void Function()? _activeFreeToken;
@@ -48,7 +49,9 @@ class NativeLlamaBackend
   NativeLlamaBackend({
     SendPort? initialSendPort,
     LlamaWorkerEntrypoint workerEntrypoint = llamaWorkerEntry,
-  }) : _workerEntrypoint = workerEntrypoint {
+    Duration workerStartupTimeout = const Duration(seconds: 5),
+  }) : _workerEntrypoint = workerEntrypoint,
+       _workerStartupTimeout = workerStartupTimeout {
     if (initialSendPort != null) {
       _sendPort = initialSendPort;
       _isReady = true;
@@ -173,7 +176,16 @@ class NativeLlamaBackend
         onExit: tempPort.sendPort,
         errorsAreFatal: true,
       );
-      await completer.future;
+      await completer.future.timeout(
+        _workerStartupTimeout,
+        onTimeout: () {
+          throw LlamaBackendInitializationException(
+            'Timed out after ${_workerStartupTimeout.inMilliseconds} ms '
+            'waiting for the llama.cpp worker to initialize its backend. '
+            'The native runtime may be unavailable or unresponsive.',
+          );
+        },
+      );
       _isReady = true;
     } catch (error) {
       _isReady = false;

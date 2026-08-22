@@ -595,6 +595,37 @@ void main() {
       }
     });
 
+    test('wedged worker initialization times out and is cleaned up', () async {
+      final backend = NativeLlamaBackend(
+        workerEntrypoint: _wedgedInitializationWorkerEntry,
+        workerStartupTimeout: const Duration(milliseconds: 50),
+      );
+
+      try {
+        await expectLater(
+          backend
+              .modelLoad('never.gguf', const ModelParams())
+              .timeout(const Duration(seconds: 2)),
+          throwsA(
+            isA<LlamaBackendInitializationException>()
+                .having(
+                  (error) => error.message,
+                  'timeout',
+                  contains('Timed out after 50 ms'),
+                )
+                .having(
+                  (error) => error.message,
+                  'diagnostic',
+                  contains('native runtime may be unavailable or unresponsive'),
+                ),
+          ),
+        );
+        expect(backend.isReady, isFalse);
+      } finally {
+        await backend.dispose().timeout(const Duration(seconds: 2));
+      }
+    });
+
     test('unexpected handshake response reports version skew', () async {
       final backend = NativeLlamaBackend(
         workerEntrypoint: _incompatibleHandshakeWorkerEntry,
@@ -669,6 +700,14 @@ void _crashingDuringHandshakeWorkerEntry(SendPort initialSendPort) {
     if (message is WorkerHandshake) {
       throw StateError('synthetic handshake crash');
     }
+  });
+}
+
+void _wedgedInitializationWorkerEntry(SendPort initialSendPort) {
+  final receivePort = ReceivePort();
+  initialSendPort.send(receivePort.sendPort);
+  receivePort.listen((_) {
+    // Keep the worker alive without acknowledging its startup handshake.
   });
 }
 
