@@ -396,6 +396,19 @@ void main() {
       );
     });
 
+    test('LoRA metadata version skew stays typed across the worker', () async {
+      await expectLater(
+        backend.setLoraAdapter(1, 'old-runtime.gguf', 1.0),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            contains('llama_adapter_get_alora_n_invocation_tokens'),
+          ),
+        ),
+      );
+    });
+
     test('worker errors keep their kind through every request', () async {
       await expectLater(
         backend.tokenize(1, 'boom'),
@@ -1043,6 +1056,15 @@ class _FakeWorkerHarness {
             message.sendPort.send(
               ErrorResponse(
                 'The adapter at alora.gguf is an aLoRA adapter',
+                kind: WorkerErrorKind.unsupported,
+              ),
+            );
+          } else if (message.path == 'old-runtime.gguf') {
+            message.sendPort.send(
+              ErrorResponse(
+                'Cannot safely load the LoRA adapter because the native '
+                'runtime is missing '
+                'llama_adapter_get_alora_n_invocation_tokens',
                 kind: WorkerErrorKind.unsupported,
               ),
             );

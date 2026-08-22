@@ -6,6 +6,7 @@ import 'dart:io';
 import 'dart:mirrors';
 
 import 'package:ffi/ffi.dart';
+import 'package:llamadart/src/backends/llama_cpp/bindings.dart';
 import 'package:llamadart/src/backends/llama_cpp/llama_cpp_service.dart';
 import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/models/config/gpu_backend.dart';
@@ -19,6 +20,147 @@ void main() {
   test('LlamaCppService can be instantiated', () {
     final service = LlamaCppService();
     expect(service, isA<LlamaCppService>());
+  });
+
+  group('aLoRA eager-activation guard', () {
+    final adapter = Pointer<llama_adapter_lora>.fromAddress(1);
+
+    test('preserves an ordinary LoRA adapter', () {
+      var freed = 0;
+
+      LlamaCppService.debugValidateLoraForEagerActivationForTesting(
+        adapter,
+        'ordinary.gguf',
+        invocationTokenCount: (_) => 0,
+        invocationTokenData: (_) => nullptr,
+        freeAdapter: (_) => freed++,
+      );
+
+      expect(freed, 0);
+    });
+
+    test('rejects and frees an aLoRA adapter', () {
+      var freed = 0;
+
+      expect(
+        () => LlamaCppService.debugValidateLoraForEagerActivationForTesting(
+          adapter,
+          'activated.gguf',
+          invocationTokenCount: (_) => 3,
+          invocationTokenData: (_) => Pointer<llama_token>.fromAddress(2),
+          freeAdapter: (_) => freed++,
+        ),
+        throwsA(
+          isA<LlamaUnsupportedException>()
+              .having(
+                (error) => error.message,
+                'message',
+                contains('activated.gguf is an aLoRA adapter'),
+              )
+              .having(
+                (error) => error.message,
+                'message',
+                contains('3 invocation token(s)'),
+              ),
+        ),
+      );
+      expect(freed, 1);
+    });
+
+    test('fails closed and frees on missing metadata symbol', () {
+      var freed = 0;
+
+      expect(
+        () => LlamaCppService.debugValidateLoraForEagerActivationForTesting(
+          adapter,
+          'unknown.gguf',
+          invocationTokenCount: (_) => throw ArgumentError(
+            'Could not resolve '
+            'llama_adapter_get_alora_n_invocation_tokens',
+          ),
+          invocationTokenData: (_) => nullptr,
+          freeAdapter: (_) => freed++,
+        ),
+        throwsA(
+          isA<LlamaUnsupportedException>()
+              .having(
+                (error) => error.message,
+                'message',
+                contains('Cannot safely load the LoRA adapter'),
+              )
+              .having(
+                (error) => error.message,
+                'message',
+                contains('llama_adapter_get_alora_n_invocation_tokens'),
+              )
+              .having(
+                (error) => error.message,
+                'message',
+                contains("matches this package's bindings"),
+              ),
+        ),
+      );
+      expect(freed, 1);
+    });
+
+    test('fails closed and frees on a partial metadata ABI', () {
+      var freed = 0;
+
+      expect(
+        () => LlamaCppService.debugValidateLoraForEagerActivationForTesting(
+          adapter,
+          'partial-abi.gguf',
+          invocationTokenCount: (_) => 0,
+          invocationTokenData: (_) => throw ArgumentError(
+            'Could not resolve llama_adapter_get_alora_invocation_tokens',
+          ),
+          freeAdapter: (_) => freed++,
+        ),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            contains('llama_adapter_get_alora_invocation_tokens'),
+          ),
+        ),
+      );
+      expect(freed, 1);
+    });
+
+    test('fails closed and frees on inconsistent aLoRA metadata', () {
+      var freed = 0;
+
+      expect(
+        () => LlamaCppService.debugValidateLoraForEagerActivationForTesting(
+          adapter,
+          'inconsistent-metadata.gguf',
+          invocationTokenCount: (_) => 1,
+          invocationTokenData: (_) => nullptr,
+          freeAdapter: (_) => freed++,
+        ),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            contains('Cannot safely load the LoRA adapter'),
+          ),
+        ),
+      );
+      expect(freed, 1);
+    });
+
+    test('keeps version-skew failure typed if cleanup also fails', () {
+      expect(
+        () => LlamaCppService.debugValidateLoraForEagerActivationForTesting(
+          adapter,
+          'severely-skewed.gguf',
+          invocationTokenCount: (_) => throw ArgumentError('missing getter'),
+          invocationTokenData: (_) => nullptr,
+          freeAdapter: (_) => throw ArgumentError('missing free'),
+        ),
+        throwsA(isA<LlamaUnsupportedException>()),
+      );
+    });
   });
 
   group('getVramInfo', () {
