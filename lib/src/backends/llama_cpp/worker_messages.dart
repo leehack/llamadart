@@ -574,6 +574,9 @@ enum WorkerErrorKind {
   /// An unclassified worker error.
   generic,
 
+  /// The native backend failed during worker startup.
+  backendInitialization,
+
   /// Model loading or ownership failed.
   model,
 
@@ -747,6 +750,9 @@ class WorkerHandshake {
   /// The initial log level to set before backend initialization.
   final LlamaLogLevel initialLogLevel;
 
+  /// Port that receives [DoneResponse] or an initialization [ErrorResponse].
+  final SendPort sendPort;
+
   /// Creates a new [WorkerHandshake].
-  WorkerHandshake(this.initialLogLevel);
+  WorkerHandshake(this.initialLogLevel, this.sendPort);
 }

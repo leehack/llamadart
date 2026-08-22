@@ -16,6 +16,9 @@ import '../../core/models/inference/model_params.dart';
 import '../../core/models/inference/generation_params.dart';
 import 'worker.dart';
 
+/// Worker entry point used by [NativeLlamaBackend].
+typedef LlamaWorkerEntrypoint = void Function(SendPort initialSendPort);
+
 /// Native implementation of [LlamaBackend] using isolates and FFI.
 class NativeLlamaBackend
     implements
@@ -32,6 +35,7 @@ class NativeLlamaBackend
   Isolate? _isolate;
   SendPort? _sendPort;
   Future<void>? _isolateStart;
+  final LlamaWorkerEntrypoint _workerEntrypoint;
   final ReceivePort _responsesPort = ReceivePort();
   Pointer<Int8>? _activeCancelToken;
   void Function()? _activeGenerationCleanup;
@@ -42,7 +46,10 @@ class NativeLlamaBackend
   LlamaLogLevel _currentLogLevel = LlamaLogLevel.warn;
 
   /// Creates a new [NativeLlamaBackend] and initializes its ports.
-  NativeLlamaBackend({SendPort? initialSendPort}) {
+  NativeLlamaBackend({
+    SendPort? initialSendPort,
+    LlamaWorkerEntrypoint workerEntrypoint = llamaWorkerEntry,
+  }) : _workerEntrypoint = workerEntrypoint {
     _responsesPort.listen(_handleResponse);
     if (initialSendPort != null) {
       _sendPort = initialSendPort;
@@ -57,7 +64,11 @@ class NativeLlamaBackend
     if (message is SendPort) {
       _sendPort = message;
       // Complete handshake
-      _sendPort!.send(WorkerHandshake(_currentLogLevel));
+      final handshakePort = ReceivePort();
+      _sendPort!.send(
+        WorkerHandshake(_currentLogLevel, handshakePort.sendPort),
+      );
+      handshakePort.first.then((_) => handshakePort.close());
       // Sync log level, closing the reply port once acked so it does not leak
       // (mirrors _ensureIsolate).
       final logRp = ReceivePort();
@@ -100,6 +111,8 @@ class NativeLlamaBackend
             ? response.message.substring(exceptionPrefix.length)
             : response.message;
         return Exception(message);
+      case WorkerErrorKind.backendInitialization:
+        return LlamaBackendInitializationException(response.message);
     }
   }
 
@@ -129,26 +142,70 @@ class NativeLlamaBackend
   Future<void> _startIsolate() async {
     final completer = Completer<void>();
     final tempPort = ReceivePort();
+    var workerPortReceived = false;
     tempPort.listen((msg) {
-      if (msg is SendPort) {
+      if (msg is SendPort && !workerPortReceived) {
+        workerPortReceived = true;
         _sendPort = msg;
-        _sendPort!.send(WorkerHandshake(_currentLogLevel));
-        final logRp = ReceivePort();
-        _sendPort!.send(LogLevelRequest(_currentLogLevel, logRp.sendPort));
-        logRp.first.then((_) {
-          logRp.close();
-        });
-        tempPort.close();
-        completer.complete();
+        _sendPort!.send(WorkerHandshake(_currentLogLevel, tempPort.sendPort));
+        return;
       }
+      if (completer.isCompleted) {
+        return;
+      }
+      if (msg is DoneResponse && workerPortReceived) {
+        completer.complete();
+        return;
+      }
+      if (msg is ErrorResponse && workerPortReceived) {
+        completer.completeError(_workerError(msg));
+        return;
+      }
+      if (msg is List<Object?> && msg.isNotEmpty) {
+        completer.completeError(
+          LlamaBackendInitializationException(
+            'The llama.cpp worker exited during backend initialization: '
+            '${msg.first}',
+          ),
+        );
+        return;
+      }
+      final reason = workerPortReceived
+          ? 'before acknowledging the backend initialization handshake'
+          : 'before providing its request port';
+      completer.completeError(
+        LlamaBackendInitializationException(
+          msg == null
+              ? 'The llama.cpp worker exited $reason.'
+              : 'The llama.cpp worker returned an unexpected startup '
+                    'response (${msg.runtimeType}) $reason. The worker and '
+                    'Dart package may be incompatible.',
+        ),
+      );
     });
     try {
-      _isolate = await Isolate.spawn(llamaWorkerEntry, tempPort.sendPort);
+      _isolate = await Isolate.spawn(
+        _workerEntrypoint,
+        tempPort.sendPort,
+        onError: tempPort.sendPort,
+        onExit: tempPort.sendPort,
+        errorsAreFatal: true,
+      );
       await completer.future;
       _isReady = true;
-    } catch (_) {
+    } catch (error) {
+      _isReady = false;
+      _sendPort = null;
+      _isolate?.kill(priority: Isolate.immediate);
+      _isolate = null;
+      if (error is LlamaBackendInitializationException) {
+        rethrow;
+      }
+      throw LlamaBackendInitializationException(
+        'Failed to start the llama.cpp worker isolate: $error',
+      );
+    } finally {
       tempPort.close();
-      rethrow;
     }
   }
 

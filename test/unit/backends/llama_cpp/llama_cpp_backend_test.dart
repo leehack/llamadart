@@ -7,7 +7,8 @@ import 'dart:typed_data';
 
 import 'package:llamadart/src/backends/backend.dart';
 import 'package:llamadart/src/backends/llama_cpp/llama_cpp_backend.dart';
-import 'package:llamadart/src/backends/llama_cpp/worker_messages.dart';
+import 'package:llamadart/src/backends/llama_cpp/llama_cpp_service.dart';
+import 'package:llamadart/src/backends/llama_cpp/worker.dart';
 import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/models/inference/generation_params.dart';
 import 'package:llamadart/src/core/models/inference/model_params.dart';
@@ -466,6 +467,148 @@ void main() {
     await backend.dispose();
     expect(backend.isReady, isFalse);
   });
+
+  group('worker startup handshake', () {
+    test(
+      'init failure is typed, diagnostic, retryable, and cleaned up',
+      () async {
+        final backend = NativeLlamaBackend(
+          workerEntrypoint: _failingInitializationWorkerEntry,
+        );
+
+        try {
+          for (var attempt = 0; attempt < 2; attempt += 1) {
+            await expectLater(
+              backend
+                  .modelLoad('never.gguf', const ModelParams())
+                  .timeout(const Duration(seconds: 2)),
+              throwsA(
+                isA<LlamaBackendInitializationException>()
+                    .having(
+                      (error) => error.message,
+                      'message',
+                      contains('synthetic native loader failure'),
+                    )
+                    .having(
+                      (error) => error.message,
+                      'startup diagnostics',
+                      contains('libllamadart.dylib was not loadable'),
+                    ),
+              ),
+              reason: 'attempt ${attempt + 1} must fail instead of hanging',
+            );
+            expect(backend.isReady, isFalse);
+          }
+        } finally {
+          await backend.dispose().timeout(const Duration(seconds: 2));
+        }
+      },
+    );
+
+    test(
+      'worker exit before handshake acknowledgement fails promptly',
+      () async {
+        final backend = NativeLlamaBackend(
+          workerEntrypoint: _exitingBeforeHandshakeReplyWorkerEntry,
+        );
+
+        try {
+          await expectLater(
+            backend
+                .modelLoad('never.gguf', const ModelParams())
+                .timeout(const Duration(seconds: 2)),
+            throwsA(
+              isA<LlamaBackendInitializationException>().having(
+                (error) => error.message,
+                'message',
+                contains('before acknowledging'),
+              ),
+            ),
+          );
+          expect(backend.isReady, isFalse);
+        } finally {
+          await backend.dispose().timeout(const Duration(seconds: 2));
+        }
+      },
+    );
+
+    test('unexpected handshake response reports version skew', () async {
+      final backend = NativeLlamaBackend(
+        workerEntrypoint: _incompatibleHandshakeWorkerEntry,
+      );
+
+      try {
+        await expectLater(
+          backend
+              .modelLoad('never.gguf', const ModelParams())
+              .timeout(const Duration(seconds: 2)),
+          throwsA(
+            isA<LlamaBackendInitializationException>()
+                .having(
+                  (error) => error.message,
+                  'response type',
+                  contains('String'),
+                )
+                .having(
+                  (error) => error.message,
+                  'compatibility hint',
+                  contains('may be incompatible'),
+                ),
+          ),
+        );
+        expect(backend.isReady, isFalse);
+      } finally {
+        await backend.dispose().timeout(const Duration(seconds: 2));
+      }
+    });
+  });
+}
+
+void _failingInitializationWorkerEntry(SendPort initialSendPort) {
+  runLlamaWorkerForTesting(
+    initialSendPort,
+    _FailingInitializationLlamaCppService(),
+  );
+}
+
+void _exitingBeforeHandshakeReplyWorkerEntry(SendPort initialSendPort) {
+  final receivePort = ReceivePort();
+  initialSendPort.send(receivePort.sendPort);
+  receivePort.listen((message) {
+    if (message is WorkerHandshake) {
+      receivePort.close();
+      Isolate.exit();
+    }
+  });
+}
+
+void _incompatibleHandshakeWorkerEntry(SendPort initialSendPort) {
+  final receivePort = ReceivePort();
+  initialSendPort.send(receivePort.sendPort);
+  receivePort.listen((message) {
+    if (message is WorkerHandshake) {
+      message.sendPort.send('legacy-ready');
+      receivePort.close();
+    }
+  });
+}
+
+class _FailingInitializationLlamaCppService extends LlamaCppService {
+  @override
+  void initializeBackend() {
+    throw ArgumentError('synthetic native loader failure');
+  }
+
+  @override
+  List<String> getStartupDiagnostics() {
+    return const <String>['libllamadart.dylib was not loadable'];
+  }
+
+  @override
+  void setLogLevel(LlamaLogLevel level) {}
+
+  @override
+  void dispose() {}
 }
 
 class _TrackingNativeLlamaBackend extends NativeLlamaBackend {

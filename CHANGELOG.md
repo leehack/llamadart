@@ -1,5 +1,10 @@
 ## Unreleased
 
+* llama.cpp backend initialization failures now complete the worker startup
+  handshake with a typed `LlamaBackendInitializationException` and collected
+  native-loader diagnostics. A failed or incompatible worker is torn down
+  instead of being reported ready and leaving later requests waiting forever.
+
 * Fixed Web/native backend API parity. `WebAutoBackend` now forwards grammar
   constraint support from its active runtime, so strict structured output fails
   early with an actionable error on unsupported Web backends, and the Web-safe

@@ -21,6 +21,32 @@ void main() {
   });
 
   group('llamaWorkerEntry isolate routing', () {
+    test('reports and cleans up backend initialization failure', () async {
+      final service = _FailingInitializationLlamaCppService();
+      final receivePort = ReceivePort();
+      runLlamaWorkerForTesting(
+        receivePort.sendPort,
+        service,
+        exitOnDispose: false,
+      );
+      final sendPort = await receivePort.first as SendPort;
+      receivePort.close();
+      final handshakePort = ReceivePort();
+
+      sendPort.send(
+        WorkerHandshake(LlamaLogLevel.warn, handshakePort.sendPort),
+      );
+      final response = await handshakePort.first;
+      handshakePort.close();
+
+      expect(response, isA<ErrorResponse>());
+      final error = response as ErrorResponse;
+      expect(error.kind, WorkerErrorKind.backendInitialization);
+      expect(error.message, contains('synthetic initialization failure'));
+      expect(error.message, contains('libllamadart.so could not be opened'));
+      expect(service.disposeCalls, 1);
+    });
+
     test('handles control and info requests', () async {
       final worker = await _spawnWorker();
 
@@ -451,7 +477,7 @@ Future<({Isolate isolate, SendPort sendPort})> _spawnWorker() async {
   final receivePort = ReceivePort();
   final isolate = await Isolate.spawn(llamaWorkerEntry, receivePort.sendPort);
   final sendPort = await receivePort.first as SendPort;
-  sendPort.send(WorkerHandshake(LlamaLogLevel.warn));
+  await _performHandshake(sendPort);
   return (isolate: isolate, sendPort: sendPort);
 }
 
@@ -468,8 +494,18 @@ Future<({Isolate? isolate, SendPort sendPort})> _startWorkerInCurrentIsolate(
   );
   final sendPort = await receivePort.first as SendPort;
   receivePort.close();
-  sendPort.send(WorkerHandshake(LlamaLogLevel.warn));
+  await _performHandshake(sendPort);
   return (isolate: null, sendPort: sendPort);
+}
+
+Future<void> _performHandshake(SendPort workerSendPort) async {
+  final responsePort = ReceivePort();
+  workerSendPort.send(
+    WorkerHandshake(LlamaLogLevel.warn, responsePort.sendPort),
+  );
+  final response = await responsePort.first;
+  responsePort.close();
+  expect(response, isA<DoneResponse>());
 }
 
 Future<dynamic> _sendRequest(
@@ -577,6 +613,28 @@ class _BlockingLlamaCppService extends LlamaCppService {
   void freeMultimodalContext(int mmContextHandle) {
     freeMultimodalContextCalls += 1;
   }
+
+  @override
+  void dispose() {
+    disposeCalls += 1;
+  }
+}
+
+class _FailingInitializationLlamaCppService extends LlamaCppService {
+  int disposeCalls = 0;
+
+  @override
+  void initializeBackend() {
+    throw ArgumentError('synthetic initialization failure');
+  }
+
+  @override
+  List<String> getStartupDiagnostics() {
+    return const <String>['libllamadart.so could not be opened'];
+  }
+
+  @override
+  void setLogLevel(LlamaLogLevel level) {}
 
   @override
   void dispose() {

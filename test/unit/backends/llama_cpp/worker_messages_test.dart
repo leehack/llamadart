@@ -168,9 +168,10 @@ void main() {
       expect(BackendInfoResponse('n').name, 'n');
       expect(GpuSupportResponse(true).support, true);
       expect(
-        WorkerHandshake(LlamaLogLevel.debug).initialLogLevel,
+        WorkerHandshake(LlamaLogLevel.debug, sp).initialLogLevel,
         LlamaLogLevel.debug,
       );
+      expect(WorkerHandshake(LlamaLogLevel.debug, sp).sendPort, sp);
       expect(DoneResponse(), isNotNull);
     });
 

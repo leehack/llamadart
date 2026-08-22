@@ -151,10 +151,32 @@ void runLlamaWorkerForTesting(
 
     // Handshake
     if (message is WorkerHandshake) {
-      service.setLogLevel(message.initialLogLevel);
-      if (!isInitialized) {
-        service.initializeBackend();
-        isInitialized = true;
+      try {
+        service.setLogLevel(message.initialLogLevel);
+        if (!isInitialized) {
+          service.initializeBackend();
+          isInitialized = true;
+        }
+        message.sendPort.send(DoneResponse());
+      } catch (error) {
+        final diagnostics = service.getStartupDiagnostics();
+        message.sendPort.send(
+          ErrorResponse(
+            'Failed to initialize the llama.cpp backend: '
+            '$error${formatStartupDiagnostics(diagnostics)}',
+            kind: WorkerErrorKind.backendInitialization,
+          ),
+        );
+        shuttingDown = true;
+        try {
+          service.dispose();
+        } catch (_) {
+          // Initialization already failed; preserve the original error.
+        }
+        receivePort.close();
+        if (exitOnDispose) {
+          Isolate.exit();
+        }
       }
       return;
     }
