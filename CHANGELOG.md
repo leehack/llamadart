@@ -1,5 +1,10 @@
 ## Unreleased
 
+* llama.cpp backend initialization failures now complete the worker startup
+  handshake with a typed `LlamaBackendInitializationException` and collected
+  native-loader diagnostics. A failed or incompatible worker is torn down
+  instead of being reported ready and leaving later requests waiting forever.
+
 * Added template-aware parsing for Kimi K3, MiniMax M1/M3, DeepSeek V3.2/V4,
   Muse Glimmer, and Poolside Laguna, preventing their native tool calls from
   silently falling back to plain content.
