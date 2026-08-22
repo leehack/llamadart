@@ -1745,11 +1745,12 @@ class LlamaCppService {
     }
 
     if (modelPtr == nullptr) {
-      final diagnostics = _backendDiagnostics();
       throw Exception(
-        "Failed to load model (size=$modelFileSize bytes, "
-        "diagnostics=$diagnostics)"
-        "${formatStartupDiagnostics(getStartupDiagnostics())}",
+        describeModelLoadFailure(
+          sizeBytes: modelFileSize,
+          backendDiagnostics: _backendDiagnostics(),
+          startupDiagnostics: getStartupDiagnostics(),
+        ),
       );
     }
 
@@ -1860,11 +1861,14 @@ class LlamaCppService {
     }
 
     if (modelPtr == nullptr) {
-      final diagnostics = _backendDiagnostics();
       throw Exception(
-        "Failed to load $label (size=$modelFileSize bytes, "
-        "path=$draftModelPath, diagnostics=$diagnostics)"
-        "${formatStartupDiagnostics(getStartupDiagnostics())}",
+        describeDraftModelLoadFailure(
+          label: label,
+          path: draftModelPath,
+          sizeBytes: modelFileSize,
+          backendDiagnostics: _backendDiagnostics(),
+          startupDiagnostics: getStartupDiagnostics(),
+        ),
       );
     }
 
@@ -8196,3 +8200,25 @@ String formatStartupDiagnostics(List<String> entries, {int maxLength = 4096}) {
   }
   return ', startupDiagnostics=[$joined]';
 }
+
+/// The message thrown when `llama_model_load_from_file` returns null.
+String describeModelLoadFailure({
+  required int sizeBytes,
+  required String backendDiagnostics,
+  required List<String> startupDiagnostics,
+}) =>
+    'Failed to load model (size=$sizeBytes bytes, '
+    'diagnostics=$backendDiagnostics)'
+    '${formatStartupDiagnostics(startupDiagnostics)}';
+
+/// The message thrown when a speculative draft model fails to load.
+String describeDraftModelLoadFailure({
+  required String label,
+  required String path,
+  required int sizeBytes,
+  required String backendDiagnostics,
+  required List<String> startupDiagnostics,
+}) =>
+    'Failed to load $label (size=$sizeBytes bytes, '
+    'path=$path, diagnostics=$backendDiagnostics)'
+    '${formatStartupDiagnostics(startupDiagnostics)}';

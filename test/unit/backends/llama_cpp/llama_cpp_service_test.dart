@@ -664,6 +664,59 @@ void main() {
       );
     });
 
+    test('the model-load message carries the diagnostics', () {
+      final message = describeModelLoadFailure(
+        sizeBytes: 4700000000,
+        backendDiagnostics: '{moduleDir=/x}',
+        startupDiagnostics: const <String>['libggml.so failed to load'],
+      );
+
+      expect(
+        message,
+        'Failed to load model (size=4700000000 bytes, '
+        'diagnostics={moduleDir=/x}), '
+        'startupDiagnostics=[libggml.so failed to load]',
+      );
+    });
+
+    test('the draft-model message carries the diagnostics', () {
+      final message = describeDraftModelLoadFailure(
+        label: 'speculative draft model',
+        path: '/draft.gguf',
+        sizeBytes: 120,
+        backendDiagnostics: '{moduleDir=/x}',
+        startupDiagnostics: const <String>['libggml.so failed to load'],
+      );
+
+      expect(
+        message,
+        'Failed to load speculative draft model (size=120 bytes, '
+        'path=/draft.gguf, diagnostics={moduleDir=/x}), '
+        'startupDiagnostics=[libggml.so failed to load]',
+      );
+    });
+
+    test('both messages are unchanged when nothing was recorded', () {
+      expect(
+        describeModelLoadFailure(
+          sizeBytes: 1,
+          backendDiagnostics: '{}',
+          startupDiagnostics: const <String>[],
+        ),
+        'Failed to load model (size=1 bytes, diagnostics={})',
+      );
+      expect(
+        describeDraftModelLoadFailure(
+          label: 'draft',
+          path: '/d.gguf',
+          sizeBytes: 1,
+          backendDiagnostics: '{}',
+          startupDiagnostics: const <String>[],
+        ),
+        'Failed to load draft (size=1 bytes, path=/d.gguf, diagnostics={})',
+      );
+    });
+
     test('a fresh service has nothing recorded', () {
       expect(LlamaCppService().getStartupDiagnostics(), isEmpty);
     });
