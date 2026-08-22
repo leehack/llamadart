@@ -1,5 +1,6 @@
 import '../exceptions.dart';
 import '../models/tools/tool_definition.dart';
+import '../models/tools/tool_param.dart';
 import 'tool_call_parsing_utils.dart';
 
 /// Result of reconstructing one tool argument against its declared schema.
@@ -23,9 +24,22 @@ Map<String, Map<String, dynamic>> toolSchemas(List<ToolDefinition>? tools) {
         '"${tool.name}" is declared more than once.',
       );
     }
+    validateToolParameterIdentities(tool);
     schemas[tool.name] = tool.toJsonSchema();
   }
   return schemas;
+}
+
+/// Rejects parameter definitions that would be lossy when converted to an
+/// object schema.
+void validateToolParameterIdentities(ToolDefinition tool) {
+  final error = toolParamIdentityError(
+    tool.parameters,
+    path: 'tool "${tool.name}" parameters',
+  );
+  if (error != null) {
+    throw LlamaUnsupportedException(error);
+  }
 }
 
 /// Returns object-property schemas keyed by their exact protocol names.

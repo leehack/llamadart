@@ -1080,9 +1080,15 @@ class _KimiK3GrammarBuilder {
 
       _converter.resolveRefs(schema, schema);
       final jsonRule = _converter.visit(schema, 'kimi-tool-$toolIndex-json');
+      final optionalArguments = _addOptionalStateRules(
+        _rules,
+        'kimi-tool-$toolIndex-optional',
+        optionalRules,
+        separator: '',
+      );
       final rawArguments = <String>[
         ...requiredRules,
-        ...optionalRules.map((rule) => '($rule)?'),
+        ?optionalArguments,
       ].join(' ');
       final rawArgumentsRule = rawArguments.isEmpty ? '""' : rawArguments;
       final arguments = properties.isEmpty
@@ -1218,9 +1224,15 @@ class _MinimaxM3GrammarBuilder {
         rule,
       );
     }
+    final optionalState = _addOptionalStateRules(
+      _rules,
+      '$prefix-optional',
+      optionalMembers,
+      separator: 'm3-space',
+    );
     return <String>[
       ...requiredMembers.map((rule) => '$rule m3-space'),
-      ...optionalMembers.map((rule) => '($rule m3-space)?'),
+      ?optionalState,
     ].join(' ');
   }
 
@@ -1316,9 +1328,15 @@ class _DsmlGrammarBuilder {
         );
       }
 
+      final optionalState = _addOptionalStateRules(
+        _rules,
+        'dsml-tool-$toolIndex-optional',
+        optionalRules,
+        separator: 'dsml-space',
+      );
       final arguments = <String>[
         ...requiredRules.map((rule) => '$rule dsml-space'),
-        ...optionalRules.map((rule) => '($rule dsml-space)?'),
+        ?optionalState,
       ].join(' ');
 
       final toolRule = 'dsml-tool-$toolIndex';
@@ -1404,9 +1422,15 @@ class _MuseGrammarBuilder {
         );
       }
 
+      final optionalState = _addOptionalStateRules(
+        _rules,
+        'muse-tool-$toolIndex-optional',
+        optionalRules,
+        separator: 'muse-space',
+      );
       final arguments = <String>[
         ...requiredRules.map((rule) => '$rule muse-space'),
-        ...optionalRules.map((rule) => '($rule muse-space)?'),
+        ?optionalState,
       ].join(' ');
 
       final toolRule = 'muse-tool-$toolIndex';
@@ -1461,6 +1485,52 @@ class _MuseGrammarBuilder {
     _appendJsonRules(buffer, _converter);
     return buffer.toString();
   }
+}
+
+String? _addOptionalStateRules(
+  List<String> rules,
+  String prefix,
+  List<String> optionalRules, {
+  required String separator,
+}) {
+  if (optionalRules.isEmpty) {
+    return null;
+  }
+
+  final visited = <String>{};
+  String stateName(List<int> remaining) {
+    if (remaining.length == optionalRules.length) {
+      return prefix;
+    }
+    return remaining.isEmpty
+        ? '$prefix-done'
+        : '$prefix-${remaining.join('-')}';
+  }
+
+  void addState(List<int> remaining) {
+    final name = stateName(remaining);
+    if (!visited.add(name)) {
+      return;
+    }
+    if (remaining.isEmpty) {
+      rules.add('$name ::= ""');
+      return;
+    }
+
+    final alternatives = <String>['""'];
+    for (final index in remaining) {
+      final next = <int>[...remaining]..remove(index);
+      addState(next);
+      final continuation = separator.isEmpty
+          ? stateName(next)
+          : '$separator ${stateName(next)}';
+      alternatives.add('${optionalRules[index]} $continuation');
+    }
+    rules.add('$name ::= ${alternatives.join(' | ')}');
+  }
+
+  addState(List<int>.generate(optionalRules.length, (index) => index));
+  return prefix;
 }
 
 String _withRequiredPrefix(
@@ -2066,6 +2136,7 @@ void _requireUniqueToolNames(
         'schema-exact parser route. Use unique tool names.',
       );
     }
+    validateToolParameterIdentities(tool);
   }
 }
 

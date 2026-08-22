@@ -59,6 +59,61 @@ void main() {
       },
     );
 
+    test('rejects lossy parameter identities before schema construction', () {
+      final invalidTools = <ToolDefinition>[
+        ToolDefinition(
+          name: 'empty_top_level',
+          description: 'Empty top-level parameter',
+          parameters: [ToolParam.string('')],
+          handler: (_) async => null,
+        ),
+        ToolDefinition(
+          name: 'duplicate_top_level',
+          description: 'Duplicate top-level parameter',
+          parameters: [ToolParam.string('value'), ToolParam.integer('value')],
+          handler: (_) async => null,
+        ),
+        ToolDefinition(
+          name: 'duplicate_nested',
+          description: 'Duplicate nested parameter',
+          parameters: [
+            ToolParam.object(
+              'options',
+              properties: [ToolParam.string('mode'), ToolParam.boolean('mode')],
+            ),
+          ],
+          handler: (_) async => null,
+        ),
+        ToolDefinition(
+          name: 'empty_array_object',
+          description: 'Empty parameter nested in an array object',
+          parameters: [
+            ToolParam.array(
+              'items',
+              itemType: ToolParam.object(
+                'ignored_item_name',
+                properties: [ToolParam.string('')],
+              ),
+            ),
+          ],
+          handler: (_) async => null,
+        ),
+      ];
+
+      for (final tool in invalidTools) {
+        expect(
+          () => toolSchemas([tool]),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (error) => error.message,
+              'message',
+              anyOf(contains('non-empty parameter names'), contains('unique')),
+            ),
+          ),
+        );
+      }
+    });
+
     test('preserves lexical strings and validates primitive types', () {
       expect(decodeToolSchemaText('123', const {'type': 'string'}), (
         valid: true,

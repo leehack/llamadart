@@ -1240,6 +1240,39 @@ void main() {
       });
     });
   });
+
+  test('specialized grammars reject nested duplicate parameter identities', () {
+    final ambiguous = ToolDefinition(
+      name: 'ambiguous',
+      description: 'Ambiguous nested parameters',
+      parameters: [
+        ToolParam.object(
+          'options',
+          properties: [ToolParam.string('mode'), ToolParam.boolean('mode')],
+        ),
+      ],
+      handler: (_) async => null,
+    );
+    final builders = <String? Function(List<ToolDefinition>?)>[
+      KimiK3Handler().buildGrammar,
+      MinimaxM3Handler().buildGrammar,
+      DeepseekV32Handler().buildGrammar,
+      MuseGlimmerHandler().buildGrammar,
+    ];
+
+    for (final buildGrammar in builders) {
+      expect(
+        () => buildGrammar([ambiguous]),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            allOf(contains('options'), contains('declared more than once')),
+          ),
+        ),
+      );
+    }
+  });
 }
 
 final _weatherTool = ToolDefinition(

@@ -425,7 +425,7 @@ void main() {
     },
   );
 
-  test('specialized grammars reject duplicate optional properties', () {
+  test('specialized grammars accept optional properties in any order once', () {
     const open = '<|open|>';
     const close = '<|close|>';
     const separator = '<|sep|>';
@@ -442,6 +442,10 @@ void main() {
             'weather$close'
             'argument$separator'
             '$open'
+            'argument key="detail" type="string"$separator'
+            'verbose$close'
+            'argument$separator'
+            '$open'
             'argument key="note" type="string"$separator'
             'metric$close'
             'argument$separator'
@@ -462,12 +466,16 @@ void main() {
             'weather$close'
             'argument$separator'
             '$open'
-            'argument key="note" type="string"$separator'
-            'metric$close'
+            'argument key="detail" type="string"$separator'
+            'verbose$close'
+            'argument$separator'
+            '$open'
+            'argument key="detail" type="string"$separator'
+            'duplicate$close'
             'argument$separator'
             '$open'
             'argument key="note" type="string"$separator'
-            'duplicate$close'
+            'metric$close'
             'argument$separator'
             '$close'
             'call$separator'
@@ -483,6 +491,7 @@ void main() {
         '$namespace<tool_call>'
         '$namespace<invoke name="lookup">'
         '$namespace<query>weather$namespace</query>'
+        '$namespace<detail>verbose$namespace</detail>'
         '$namespace<note>metric$namespace</note>'
         '$namespace</invoke>'
         '$namespace</tool_call>';
@@ -493,7 +502,7 @@ void main() {
       invalid: [
         m3Valid.replaceFirst(
           '$namespace</invoke>',
-          '$namespace<note>duplicate$namespace</note>$namespace</invoke>',
+          '$namespace<detail>duplicate$namespace</detail>$namespace</invoke>',
         ),
       ],
     );
@@ -502,6 +511,8 @@ void main() {
         '<｜DSML｜function_calls>'
         '<｜DSML｜invoke name="lookup">'
         '<｜DSML｜parameter name="query" string="true">weather'
+        '</｜DSML｜parameter>'
+        '<｜DSML｜parameter name="detail" string="true">verbose'
         '</｜DSML｜parameter>'
         '<｜DSML｜parameter name="note" string="true">metric'
         '</｜DSML｜parameter>'
@@ -514,7 +525,7 @@ void main() {
       invalid: [
         dsmlValid.replaceFirst(
           '</｜DSML｜invoke>',
-          '<｜DSML｜parameter name="note" string="true">duplicate'
+          '<｜DSML｜parameter name="detail" string="true">duplicate'
               '</｜DSML｜parameter></｜DSML｜invoke>',
         ),
       ],
@@ -524,6 +535,7 @@ void main() {
         '<atem:function_calls>'
         '<atem:invoke name="lookup">'
         '<atem:parameter name="query">weather</atem:parameter>'
+        '<atem:parameter name="detail">verbose</atem:parameter>'
         '<atem:parameter name="note">metric</atem:parameter>'
         '</atem:invoke>'
         '</atem:function_calls>';
@@ -534,7 +546,7 @@ void main() {
       invalid: [
         museValid.replaceFirst(
           '</atem:invoke>',
-          '<atem:parameter name="note">duplicate</atem:parameter>'
+          '<atem:parameter name="detail">duplicate</atem:parameter>'
               '</atem:invoke>',
         ),
       ],
@@ -699,6 +711,7 @@ final _optionalTool = ToolDefinition(
   parameters: [
     ToolParam.string('query', required: true),
     ToolParam.string('note'),
+    ToolParam.string('detail'),
   ],
   handler: (_) async => null,
 );

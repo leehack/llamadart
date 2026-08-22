@@ -103,6 +103,47 @@ sealed class ToolParam {
   Map<String, dynamic> toJsonSchema();
 }
 
+/// Returns an actionable identity error for [parameters], or `null` when every
+/// object property name is non-empty and unique within its containing object.
+///
+/// Array item names are not represented in JSON Schema and are therefore not
+/// validated, but object properties nested inside array items are.
+String? toolParamIdentityError(
+  List<ToolParam> parameters, {
+  required String path,
+}) {
+  final names = <String>{};
+  for (final parameter in parameters) {
+    if (parameter.name.isEmpty) {
+      return 'Structured tool schemas require non-empty parameter names at '
+          '$path.';
+    }
+    if (!names.add(parameter.name)) {
+      return 'Structured tool schemas require unique parameter names at '
+          '$path; "${parameter.name}" is declared more than once.';
+    }
+  }
+
+  for (final parameter in parameters) {
+    final nestedPath = '$path.${parameter.name}';
+    final error = _nestedToolParamIdentityError(parameter, nestedPath);
+    if (error != null) {
+      return error;
+    }
+  }
+  return null;
+}
+
+String? _nestedToolParamIdentityError(ToolParam parameter, String path) {
+  if (parameter is _ObjectParam) {
+    return toolParamIdentityError(parameter.properties, path: path);
+  }
+  if (parameter is _ArrayParam) {
+    return _nestedToolParamIdentityError(parameter.itemType, '$path[]');
+  }
+  return null;
+}
+
 final class _StringParam extends ToolParam {
   const _StringParam({required super.name, super.description, super.required})
     : super._();
