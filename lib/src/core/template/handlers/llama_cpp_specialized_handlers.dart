@@ -176,9 +176,7 @@ class KimiK3Handler extends _DirectJinjaHandler {
 
     if (!parseToolCalls) {
       return ChatParseResult(
-        content: content.isEmpty
-            ? _stripKimiTurnEnd(remaining)
-            : content.trim(),
+        content: '$content${_stripKimiTurnEnd(remaining)}'.trim(),
         reasoningContent: _nullIfEmpty(reasoning),
       );
     }

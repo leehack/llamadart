@@ -76,6 +76,18 @@ void main() {
       },
     );
 
+    test('preserves trailing output when tool parsing is disabled', () {
+      final parsed = KimiK3Handler().parse(call, parseToolCalls: false);
+
+      expect(parsed.toolCalls, isEmpty);
+      expect(parsed.content, startsWith('On it.'));
+      expect(parsed.content, contains('<|open|>tools<|sep|>'));
+      expect(
+        parsed.content,
+        contains('<|open|>call tool="weather&amp;alerts"'),
+      );
+    });
+
     test('preserves malformed tool markup instead of silently dropping it', () {
       const malformed =
           '<|open|>response<|sep|>On it.<|close|>response<|sep|>'
