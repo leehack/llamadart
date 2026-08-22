@@ -99,14 +99,20 @@ approval binds the QA verdict to the exact PR-body digest evaluated by the
 trusted workflow. Tests named by landed manifests and compiled-grammar tests
 listed in the CODEOWNERS-protected `.github/high-risk-policy.json` registry
 remain protected inputs; deleting or renaming one requires fresh high-risk
-evidence. The latest exact-head CI attempt controls readiness, so a rerun can
-revoke an older success.
+evidence. The same registry protects the complete parity command dependency
+chain, including scripts, upstream ref input, E2E entrypoint, integration
+fixtures, and template unit-test directory. Its compiled-grammar test generates
+a tool/schema grammar, compiles it through the native runtime, accepts the valid
+shape, and rejects an adversarial broken dependency. The latest exact-head CI
+attempt controls readiness, so a rerun can revoke an older success.
 `High-Risk Regression Gate` runs policy only from the trusted default branch,
 reads PR files through read-only APIs, includes both sides of renames, checks
 the exact SHA/base distance and live unresolved review threads, and performs a
 final live mutable-input digest and status-owner check immediately before
 publishing its result. It fails
-closed on missing or weak evidence. It never executes PR-supplied code.
+closed on missing or weak evidence; a setup failure before snapshot capture
+publishes failure instead of leaving an earlier success authoritative. It never
+executes PR-supplied code.
 A known PR-caused P1 is always a merge blocker.
 
 The trusted workflow publishes
@@ -144,8 +150,11 @@ Structured-output manifests must bind upstream parity to a durable test changed
 by the same PR. Exact-head CI runs the parity command as ordinary unprivileged
 PR validation and uploads a data-only artifact carrying the run ID/attempt,
 head, changed tests, and both canonical resolved upstream commits. The trusted
-default-branch gate downloads but never executes that artifact, resolves the
-declared refs independently, and rejects aliases that resolve to the same SHA.
+default-branch gate selects the artifact for that exact run attempt, downloads
+but never executes it, resolves the declared refs independently, and rejects
+aliases that resolve to the same SHA. It re-resolves both refs immediately
+before enforcement and final publication and includes the canonical SHAs in
+each mutable-input snapshot, so upstream retagging invalidates the evaluation.
 
 Use the closest affected-family real model or artifact. If exact weights are
 unavailable, name every unavailable family and substitute primary upstream

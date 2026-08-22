@@ -1,6 +1,18 @@
 {
   "schema": 1,
   "compiledGrammarTests": [
-    "test/integration/core/grammar/grammar_regression_test.dart"
+    "test/integration/core/grammar/generated_tool_schema_grammar_test.dart"
+  ],
+  "structuredOutputParityDependencies": [
+    "tool/testing/run_template_parity_suites.sh",
+    "tool/testing/run_llama_cpp_chat_tests.sh",
+    "tool/testing/prepare_llama_cpp_source.sh",
+    "tool/testing/llama_cpp_templates.ref",
+    "test/e2e/template/llama_cpp_chat_tests_e2e_test.dart",
+    "test/integration/core/template/llama_cpp_template_detection_integration_test.dart",
+    "test/integration/core/template/llama_cpp_template_parse_samples.dart",
+    "test/integration/core/template/template_diagnostic_integration_test.dart",
+    "test/fixtures/templates/",
+    "test/unit/core/template/"
   ]
 }

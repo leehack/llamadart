@@ -289,7 +289,10 @@ requires a checked-in `.github/high-risk-evidence/*.json` manifest whose test
 paths are changed by the same PR, plus a blocking-only QA task independent from
 the implementation task. It also binds acceptance to a successful exact-head
 `CI` workflow run and resolves declared llama.cpp refs in the owning upstream
-repository. A non-author repository owner, member, or collaborator must submit a current-head
+repository immediately before enforcement and final publication. Protected
+structured-output policy inputs include the complete upstream-parity dependency
+chain and a native compiled generated-grammar acceptance/rejection test. A
+non-author repository owner, member, or collaborator must submit a current-head
 GitHub approval whose structured attestation binds that task to the exact head,
 base, and trusted SHA-256 digest of the evaluated PR body; PR-authored `PASS`
 prose is not sufficient. Inspect production call

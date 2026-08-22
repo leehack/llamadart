@@ -98,6 +98,8 @@ jobs:
           output="$RUNNER_TEMP/protected-evidence-paths.txt"
           {
             jq -r '.compiledGrammarTests[]' .github/high-risk-policy.json
+            jq -r '.structuredOutputParityDependencies[]' \
+              .github/high-risk-policy.json
             if [[ -d .github/high-risk-evidence ]]; then
               while IFS= read -r -d '' manifest; do
                 jq -r '
@@ -283,7 +285,7 @@ jobs:
           : > "$parity_file"
           if [[ -n "$EVIDENCE_FILE" ]] &&
              jq -e '.structuredOutput != null' "$EVIDENCE_FILE" > /dev/null; then
-            artifact_name="high-risk-upstream-parity-$HEAD_SHA"
+            artifact_name="high-risk-upstream-parity-$HEAD_SHA-$run_attempt"
             gh api "repos/$REPOSITORY/actions/runs/$run_id/artifacts?per_page=100" \
               > "$RUNNER_TEMP/exact-head-ci-artifacts.json"
             mapfile -t artifact_ids < <(
@@ -415,6 +417,7 @@ jobs:
           EVIDENCE_FILE: ${{ steps.evidence.outputs.file }}
           CI_RUNS_FILE: ${{ steps.ci.outputs.runs_file }}
           PARITY_FILE: ${{ steps.ci.outputs.parity_file }}
+          UPSTREAM_FILE: ${{ steps.upstream.outputs.file }}
         run: |
           set -euo pipefail
           {
@@ -435,6 +438,7 @@ jobs:
                   .path == ".github/workflows/ci.yml"
                 )] | sort_by(.updated_at, .run_attempt, .id) | last
             ' "$CI_RUNS_FILE"
+            jq -cS . "$UPSTREAM_FILE"
             if [[ -s "$PARITY_FILE" ]]; then jq -cS . "$PARITY_FILE"; else printf 'null\n'; fi
             if [[ -n "$EVIDENCE_FILE" ]]; then
               jq -cS . "$EVIDENCE_FILE"
@@ -530,6 +534,35 @@ jobs:
               --jq '.content' | base64 --decode \
               > "$RUNNER_TEMP/live-high-risk-evidence.json"
           fi
+          live_upstream="$RUNNER_TEMP/live-verified-upstream-commits.json"
+          printf '{}\n' > "$live_upstream"
+          if [[ -n "$EVIDENCE_FILE" ]] &&
+             jq -e '.upstreamRefs | type == "object"' \
+               "$RUNNER_TEMP/live-high-risk-evidence.json" > /dev/null; then
+            live_pinned="$(
+              jq -r '.upstreamRefs.pinned' \
+                "$RUNNER_TEMP/live-high-risk-evidence.json"
+            )"
+            live_current="$(
+              jq -r '.upstreamRefs.current' \
+                "$RUNNER_TEMP/live-high-risk-evidence.json"
+            )"
+            live_pinned_sha="$(
+              gh api "repos/ggml-org/llama.cpp/commits/$live_pinned" --jq '.sha'
+            )"
+            live_current_sha="$(
+              gh api "repos/ggml-org/llama.cpp/commits/$live_current" --jq '.sha'
+            )"
+            jq -n \
+              --arg pinned "$live_pinned_sha" --arg current "$live_current_sha" \
+              '{pinned: $pinned, current: $current}' > "$live_upstream"
+          fi
+          if ! diff -u \
+            <(jq -cS . "$VERIFIED_UPSTREAM_COMMITS") \
+            <(jq -cS . "$live_upstream"); then
+            echo "Canonical upstream refs changed during trusted evaluation." >&2
+            exit 1
+          fi
           gh api --method GET \
             "repos/$REPOSITORY/actions/workflows/ci.yml/runs" \
             -f event=pull_request -f head_sha="$HEAD_SHA" -f per_page=100 \
@@ -552,6 +585,7 @@ jobs:
                   .path == ".github/workflows/ci.yml"
                 )] | sort_by(.updated_at, .run_attempt, .id) | last
             ' "$RUNNER_TEMP/live-exact-head-ci-runs.json"
+            jq -cS . "$live_upstream"
             if [[ -s "$PARITY_FILE" ]]; then jq -cS . "$PARITY_FILE"; else printf 'null\n'; fi
             if [[ -n "$EVIDENCE_FILE" ]]; then
               jq -cS . "$RUNNER_TEMP/live-high-risk-evidence.json"
@@ -591,6 +625,49 @@ jobs:
           fi
           dart tool/testing/enforce_high_risk_pr_contract.dart "${args[@]}"
 
+      - name: Fail closed when trusted setup cannot capture a snapshot
+        if: >-
+          always() && !cancelled() &&
+          steps.event.outputs.head_sha != '' &&
+          steps.snapshot.outputs.digest == ''
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ steps.event.outputs.pr_number }}
+          HEAD_SHA: ${{ steps.event.outputs.head_sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          live_head="$(
+            gh api "repos/$REPOSITORY/pulls/$PR_NUMBER" --jq '.head.sha'
+          )"
+          if [[ "$live_head" != "$HEAD_SHA" ]]; then
+            echo "A stale setup run cannot publish failure to the current PR head."
+            exit 0
+          fi
+          run_status="$(
+            gh api "repos/$REPOSITORY/actions/runs/$GITHUB_RUN_ID" --jq '.status'
+          )"
+          [[ "$run_status" == "in_progress" ]]
+          latest_target="$(
+            gh api "repos/$REPOSITORY/commits/$HEAD_SHA/status" \
+              --jq '.statuses |
+                map(select(.context == "High-Risk Regression Gate / Trusted exact-head adversarial evidence")) |
+                max_by(.id).target_url // ""'
+          )"
+          if [[ "$latest_target" =~ /actions/runs/([1-9][0-9]*)$ ]] &&
+             (( BASH_REMATCH[1] > GITHUB_RUN_ID )); then
+            echo "A newer trusted evaluation owns the exact-head status."
+            exit 0
+          fi
+          gh api --method POST "repos/$REPOSITORY/statuses/$HEAD_SHA" \
+            -f state=failure \
+            -f context='High-Risk Regression Gate / Trusted exact-head adversarial evidence' \
+            -f description='Trusted high-risk setup failed before evaluation' \
+            -f target_url="$RUN_URL" \
+            > /dev/null
+
       - name: Publish exact-head required status
         if: >-
           always() && !cancelled() &&
@@ -607,6 +684,7 @@ jobs:
           EVIDENCE_FILE: ${{ steps.evidence.outputs.file }}
           EVIDENCE_PATH: ${{ steps.evidence.outputs.path }}
           PARITY_FILE: ${{ steps.ci.outputs.parity_file }}
+          VERIFIED_UPSTREAM_COMMITS: ${{ steps.upstream.outputs.file }}
           SNAPSHOT_DIGEST: ${{ steps.snapshot.outputs.digest }}
           ENFORCEMENT_OUTCOME: ${{ steps.enforce.outcome }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -669,6 +747,36 @@ jobs:
               --jq '.content' | base64 --decode \
               > "$RUNNER_TEMP/final-live-high-risk-evidence.json"
           fi
+          final_upstream="$RUNNER_TEMP/final-verified-upstream-commits.json"
+          printf '{}\n' > "$final_upstream"
+          if [[ -n "$EVIDENCE_FILE" ]] &&
+             jq -e '.upstreamRefs | type == "object"' \
+               "$RUNNER_TEMP/final-live-high-risk-evidence.json" > /dev/null; then
+            final_pinned="$(
+              jq -r '.upstreamRefs.pinned' \
+                "$RUNNER_TEMP/final-live-high-risk-evidence.json"
+            )"
+            final_current="$(
+              jq -r '.upstreamRefs.current' \
+                "$RUNNER_TEMP/final-live-high-risk-evidence.json"
+            )"
+            final_pinned_sha="$(
+              gh api "repos/ggml-org/llama.cpp/commits/$final_pinned" --jq '.sha'
+            )"
+            final_current_sha="$(
+              gh api "repos/ggml-org/llama.cpp/commits/$final_current" --jq '.sha'
+            )"
+            jq -n \
+              --arg pinned "$final_pinned_sha" \
+              --arg current "$final_current_sha" \
+              '{pinned: $pinned, current: $current}' > "$final_upstream"
+          fi
+          if ! diff -u \
+            <(jq -cS . "$VERIFIED_UPSTREAM_COMMITS") \
+            <(jq -cS . "$final_upstream"); then
+            echo "Canonical upstream refs changed before status publication." >&2
+            exit 1
+          fi
           gh api --method GET \
             "repos/$REPOSITORY/actions/workflows/ci.yml/runs" \
             -f event=pull_request -f head_sha="$HEAD_SHA" -f per_page=100 \
@@ -691,6 +799,7 @@ jobs:
                   .path == ".github/workflows/ci.yml"
                 )] | sort_by(.updated_at, .run_attempt, .id) | last
             ' "$RUNNER_TEMP/final-live-exact-head-ci-runs.json"
+            jq -cS . "$final_upstream"
             if [[ -s "$PARITY_FILE" ]]; then jq -cS . "$PARITY_FILE"; else printf 'null\n'; fi
             if [[ -n "$EVIDENCE_FILE" ]]; then
               jq -cS . "$RUNNER_TEMP/final-live-high-risk-evidence.json"

@@ -370,7 +370,7 @@ jobs:
         if: steps.evidence.outputs.required == 'true'
         uses: actions/upload-artifact@v6
         with:
-          name: high-risk-upstream-parity-${{ github.event.pull_request.head.sha }}
+          name: high-risk-upstream-parity-${{ github.event.pull_request.head.sha }}-${{ github.run_attempt }}
           path: upstream-parity-ci-evidence.json
           if-no-files-found: error
           retention-days: 14

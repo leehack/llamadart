@@ -9,15 +9,19 @@
   "independentQaTask": "codex://tasks/root/premerge_regression_gate/qa-sol-final",
   "productionEvidence": {
     "positiveTests": [
+      "test/integration/core/grammar/generated_tool_schema_grammar_test.dart",
       "test/unit/tooling/trusted_high_risk_contract_test.dart"
     ],
     "negativeTests": [
+      "test/integration/core/grammar/generated_tool_schema_grammar_test.dart",
       "test/unit/tooling/trusted_high_risk_contract_test.dart"
     ],
     "adversarialTests": [
+      "test/integration/core/grammar/generated_tool_schema_grammar_test.dart",
       "test/unit/tooling/trusted_high_risk_contract_test.dart"
     ],
     "deletionSensitivityTests": [
+      "test/integration/core/grammar/generated_tool_schema_grammar_test.dart",
       "test/unit/tooling/trusted_high_risk_contract_test.dart"
     ]
   },

@@ -115,7 +115,8 @@ HighRiskAssessment assessHighRiskFiles(
   final surfaces = <HighRiskSurface>{};
 
   for (final path in normalized) {
-    if (path.startsWith('lib/src/core/template/') ||
+    if (path == 'lib/llamadart.dart' ||
+        path.startsWith('lib/src/core/template/') ||
         path.startsWith('lib/src/core/grammar/') ||
         path.startsWith('lib/src/core/engine/') ||
         path == 'lib/src/core/engine/chat_completion_stream_parser.dart' ||
@@ -174,6 +175,7 @@ HighRiskAssessment assessHighRiskFiles(
         path.startsWith('.github/actions/') ||
         path == '.github/pull_request_template.md' ||
         path == '.github/CODEOWNERS' ||
+        path == '.github/high-risk-policy.json' ||
         path == '.github/workflows/high_risk_regression_gate.yml' ||
         path.startsWith(_evidencePrefix) ||
         path == 'AGENTS.md' ||
@@ -189,12 +191,20 @@ HighRiskAssessment assessHighRiskFiles(
     if (_isGateScript(path)) {
       surfaces.add(HighRiskSurface.regressionPolicy);
     }
-    if (protectedEvidencePaths.contains(path)) {
+    if (_isProtectedEvidencePath(path, protectedEvidencePaths)) {
       surfaces.add(HighRiskSurface.regressionPolicy);
     }
   }
 
   return HighRiskAssessment(changedFiles: normalized, surfaces: surfaces);
+}
+
+bool _isProtectedEvidencePath(String path, Set<String> protectedPaths) {
+  return protectedPaths.any(
+    (protected) => protected.endsWith('/')
+        ? path.startsWith(protected)
+        : path == protected,
+  );
 }
 
 bool _isReleaseWorkflow(String path) {
@@ -265,9 +275,11 @@ HighRiskContractResult validateHighRiskContract({
       latestCi.conclusion != 'success') {
     errors.add('The latest exact-head CI run must succeed.');
   }
-  if (deletedFiles.any(protectedEvidencePaths.contains)) {
+  if (deletedFiles.any(
+    (path) => _isProtectedEvidencePath(path, protectedEvidencePaths),
+  )) {
     errors.add(
-      'Tests referenced by trusted-base evidence cannot be deleted or renamed.',
+      'Trusted policy or evidence paths cannot be deleted or renamed.',
     );
   }
   _expectExact(fields, errors, 'Independent QA verdict', 'PASS');
@@ -962,14 +974,34 @@ Set<String> _decodeCompiledGrammarPolicy(Object? value) {
       value.keys.toSet().difference(const {
         'schema',
         'compiledGrammarTests',
+        'structuredOutputParityDependencies',
       }).isNotEmpty ||
       value['compiledGrammarTests'] is! List ||
-      (value['compiledGrammarTests'] as List).any((item) => item is! String)) {
+      (value['compiledGrammarTests'] as List).any((item) => item is! String) ||
+      value['structuredOutputParityDependencies'] is! List ||
+      (value['structuredOutputParityDependencies'] as List).any(
+        (item) => item is! String,
+      )) {
     _usage('Compiled grammar policy is malformed.');
   }
   final paths = (value['compiledGrammarTests'] as List).cast<String>();
-  if (paths.isEmpty || paths.toSet().length != paths.length) {
+  if (paths.isEmpty ||
+      paths.toSet().length != paths.length ||
+      paths.any(
+        (path) =>
+            path.isEmpty ||
+            path.trim() != path ||
+            !path.startsWith('test/') ||
+            !path.endsWith('_test.dart'),
+      )) {
     _usage('Compiled grammar policy requires unique test paths.');
+  }
+  final parityDependencies =
+      (value['structuredOutputParityDependencies'] as List).cast<String>();
+  if (parityDependencies.isEmpty ||
+      parityDependencies.toSet().length != parityDependencies.length ||
+      parityDependencies.any((path) => path.isEmpty || path.trim() != path)) {
+    _usage('Structured-output parity dependencies must be unique exact paths.');
   }
   return paths.toSet();
 }

@@ -17,7 +17,7 @@ const _bodyDigest =
     'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const _evidencePath = '.github/high-risk-evidence/394.json';
 const _grammarTest =
-    'test/integration/core/grammar/grammar_regression_test.dart';
+    'test/integration/core/grammar/generated_tool_schema_grammar_test.dart';
 const _parserTest = 'test/unit/core/template/chat_template_engine_test.dart';
 const _pinnedCommit = '3333333333333333333333333333333333333333';
 const _currentCommit = '4444444444444444444444444444444444444444';
@@ -234,6 +234,7 @@ void main() {
   group('high-risk classifier', () {
     test('covers structured API and streaming surfaces', () {
       final assessment = assessHighRiskFiles(const [
+        'lib/llamadart.dart',
         'lib/src/core/models/inference/tool_choice.dart',
         'lib/src/core/models/inference/structured_output.dart',
         'lib/src/core/models/inference/generation_params.dart',
@@ -248,6 +249,17 @@ void main() {
       ]);
 
       expect(assessment.surfaces, contains(HighRiskSurface.structuredOutput));
+    });
+
+    test('classifies public exports and the trusted policy registry', () {
+      expect(
+        assessHighRiskFiles(const ['lib/llamadart.dart']).surfaces,
+        contains(HighRiskSurface.structuredOutput),
+      );
+      expect(
+        assessHighRiskFiles(const ['.github/high-risk-policy.json']).surfaces,
+        contains(HighRiskSurface.regressionPolicy),
+      );
     });
 
     test('covers backend capabilities and artifact consumers', () {
@@ -292,6 +304,7 @@ void main() {
 
     test('covers release and regression enforcement surfaces', () {
       final assessment = assessHighRiskFiles(const [
+        '.github/high-risk-policy.json',
         '.github/workflows/docs_version_cut.yml',
         '.github/workflows/ci.yml',
         '.github/actions/release/action.yml',
@@ -313,6 +326,15 @@ void main() {
           HighRiskSurface.regressionPolicy,
         }),
       );
+    });
+
+    test('protects trusted parity dependency directory prefixes', () {
+      final assessment = assessHighRiskFiles(
+        const ['test/unit/core/template/new_handler_test.dart'],
+        protectedEvidencePaths: const {'test/unit/core/template/'},
+      );
+
+      expect(assessment.surfaces, contains(HighRiskSurface.regressionPolicy));
     });
 
     test('does not classify unrelated tests or docs', () {
@@ -609,20 +631,30 @@ Verdict: PASS''',
     });
 
     test('blocks deletion or rename of prior trusted evidence tests', () {
-      const protected = 'test/unit/core/cache_policy_test.dart';
-      final result = _validate(
-        files: const [protected],
-        deletedFiles: const [protected],
-        protectedEvidencePaths: const {protected},
-      );
-
-      expect(result.assessment.isHighRisk, isTrue);
-      expect(
-        result.errors,
-        contains(
-          'Tests referenced by trusted-base evidence cannot be deleted or renamed.',
+      for (final scenario in const [
+        (
+          path: 'test/unit/core/cache_policy_test.dart',
+          protected: {'test/unit/core/cache_policy_test.dart'},
         ),
-      );
+        (
+          path: 'test/unit/core/template/new_handler_test.dart',
+          protected: {'test/unit/core/template/'},
+        ),
+      ]) {
+        final result = _validate(
+          files: [scenario.path],
+          deletedFiles: [scenario.path],
+          protectedEvidencePaths: scenario.protected,
+        );
+
+        expect(result.assessment.isHighRisk, isTrue);
+        expect(
+          result.errors,
+          contains(
+            'Trusted policy or evidence paths cannot be deleted or renamed.',
+          ),
+        );
+      }
     });
 
     test('requires one changed machine-readable manifest', () {
@@ -951,11 +983,32 @@ Verdict: PASS''',
       expect(workflow, contains('author_association'));
       expect(workflow, contains('sort_by(.id)'));
       expect(workflow, contains('Capture trusted mutable-input snapshot'));
+      expect(
+        workflow,
+        contains('Fail closed when trusted setup cannot capture a snapshot'),
+      );
+      expect(
+        workflow,
+        contains('Trusted high-risk setup failed before evaluation'),
+      );
+      expect(workflow, contains("steps.snapshot.outputs.digest == ''"));
+      expect(workflow, contains('-f state=failure'));
+      expect(workflow, contains('max_by(.id).target_url // ""'));
+      expect(workflow, contains('BASH_REMATCH[1] > GITHUB_RUN_ID'));
       expect(workflow, contains('Mutable PR evidence changed'));
       expect(
         workflow,
         contains('Resolve declared upstream refs in the owning repository'),
       );
+      expect(
+        workflow,
+        contains('Canonical upstream refs changed during trusted evaluation.'),
+      );
+      expect(
+        workflow,
+        contains('Canonical upstream refs changed before status publication.'),
+      );
+      expect(workflow, contains(r'jq -cS . "$UPSTREAM_FILE"'));
       expect(workflow, contains(r'repos/ggml-org/llama.cpp/commits/$pinned'));
       expect(
         workflow,
@@ -969,6 +1022,11 @@ Verdict: PASS''',
       expect(ciWorkflow, contains('High-Risk Upstream Parity Evidence'));
       expect(ciWorkflow, contains('.structuredOutput.upstreamParityTests[]'));
       expect(ciWorkflow, contains('high-risk-upstream-parity-'));
+      expect(ciWorkflow, contains(r'${{ github.run_attempt }}'));
+      expect(
+        workflow,
+        contains(r'high-risk-upstream-parity-$HEAD_SHA-$run_attempt'),
+      );
       expect(workflow, contains(r'.head_sha == $head'));
       expect(
         workflow,
@@ -1041,6 +1099,34 @@ Verdict: PASS''',
       for (final path in decodedPolicy['compiledGrammarTests'] as List) {
         expect(File(path as String).existsSync(), isTrue, reason: path);
       }
+      const parityDependencies = {
+        'tool/testing/run_template_parity_suites.sh',
+        'tool/testing/run_llama_cpp_chat_tests.sh',
+        'tool/testing/prepare_llama_cpp_source.sh',
+        'tool/testing/llama_cpp_templates.ref',
+        'test/e2e/template/llama_cpp_chat_tests_e2e_test.dart',
+        'test/integration/core/template/llama_cpp_template_detection_integration_test.dart',
+        'test/integration/core/template/llama_cpp_template_parse_samples.dart',
+        'test/integration/core/template/template_diagnostic_integration_test.dart',
+        'test/fixtures/templates/',
+        'test/unit/core/template/',
+      };
+      expect(
+        (decodedPolicy['structuredOutputParityDependencies'] as List).toSet(),
+        equals(parityDependencies),
+      );
+      for (final path in parityDependencies) {
+        final exists = path.endsWith('/')
+            ? Directory(path).existsSync()
+            : File(path).existsSync();
+        expect(exists, isTrue, reason: path);
+      }
+
+      final compiledTest = File(_grammarTest).readAsStringSync();
+      expect(compiledTest, contains('ToolGrammarGenerator.generate'));
+      expect(compiledTest, contains('jsonDecode(output)'));
+      expect(compiledTest, contains('undefined-generated-rule'));
+      expect(compiledTest, contains('LlamaInferenceException'));
     });
   });
 }
