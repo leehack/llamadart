@@ -1902,9 +1902,7 @@ void main() {
           1,
           'Describe this video',
           const GenerationParams(),
-          parts: <LlamaContentPart>[
-            LlamaVideoContent(path: '/tmp/clip.mp4'),
-          ],
+          parts: <LlamaContentPart>[LlamaVideoContent(path: '/tmp/clip.mp4')],
         ),
         throwsA(
           isA<LlamaUnsupportedException>().having(
