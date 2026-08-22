@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "issue": 419,
+  "surfaces": [
+    "regressionPolicy"
+  ],
+  "implementationTask": "codex://tasks/root/premerge_regression_gate",
+  "independentQaTask": "codex://tasks/root/premerge_regression_gate/qa-sol-final",
+  "productionEvidence": {
+    "positiveTests": [
+      "test/unit/tooling/trusted_high_risk_contract_test.dart"
+    ],
+    "negativeTests": [
+      "test/unit/tooling/trusted_high_risk_contract_test.dart"
+    ],
+    "adversarialTests": [
+      "test/unit/tooling/trusted_high_risk_contract_test.dart"
+    ],
+    "deletionSensitivityTests": [
+      "test/unit/tooling/trusted_high_risk_contract_test.dart"
+    ]
+  },
+  "affectedFamilies": [],
+  "affectedFamilyEvidence": {},
+  "upstreamRefs": [],
+  "notApplicableReason": "Policy-only bootstrap; it does not change a model, parser, runtime, or artifact family.",
+  "structuredOutput": null
+}

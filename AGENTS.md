@@ -283,8 +283,11 @@ unresolved.
 Treat parser/grammar/streaming, backend/runtime routing, capability probes,
 artifact consumers, release automation, and changes to this gate as high risk.
 Before mark-ready, the exact head against the current base must pass the
-`High-Risk Regression Gate` with a blocking-only QA task independent from the
-implementation task. Inspect production call sites, require positive and
+required `High-Risk Regression Gate`. The gate executes only the trusted
+default-branch policy and treats pull-request files as untrusted data. It
+requires a checked-in `.github/high-risk-evidence/*.json` manifest whose test
+paths are changed by the same PR, plus a blocking-only QA task independent from
+the implementation task. Inspect production call sites, require positive and
 negative tests that fail if the production branch is deleted/bypassed/miswired,
 and report zero known PR-caused P1 regressions. Structured-output changes must
 also satisfy the compiled grammar, schema-type, partial/final streaming,
@@ -295,6 +298,11 @@ primary upstream emissions plus durable fixtures. Post-merge QA remains
 mandatory, but is never the first planned adversarial pass. If it finds a
 PR-caused P1, stop lower-priority merge work, file causally accurate issues,
 and prepare one cohesive recovery PR before resuming feature work.
+
+Repository rules must require the trusted gate and conversation resolution on
+`main`. A policy bootstrap PR is only part of that setup: keep its issue open
+until the workflow is on `main`, the required check/ruleset is configured, and
+a follow-up high-risk PR proves the protected exact-head path.
 
 For docs-only PRs, state that runtime behavior is unchanged and list docs
 validation. If implementation scope changed, reduce and state the scope rather

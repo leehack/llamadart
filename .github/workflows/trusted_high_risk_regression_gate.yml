@@ -1,0 +1,202 @@
+name: High-Risk Regression Gate
+
+# This workflow becomes trusted only after it lands on main. It never checks
+# out or executes pull-request code. PR files and evidence are read-only data.
+on:
+  pull_request_target:
+    branches: [main]
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - edited
+      - ready_for_review
+      - review_requested
+      - review_request_removed
+      - auto_merge_enabled
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: high-risk-regression-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  contract:
+    name: Trusted exact-head adversarial evidence
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out trusted default-branch policy
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Dart
+        uses: dart-lang/setup-dart@v1
+
+      - name: Resolve live PR state and rename-safe changed files
+        id: state
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          [[ "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]]
+          gh api "repos/$REPOSITORY/pulls/$PR_NUMBER" \
+            > "$RUNNER_TEMP/pull-request.json"
+          base_ref="$(jq -r '.base.ref' "$RUNNER_TEMP/pull-request.json")"
+          head_sha="$(jq -r '.head.sha' "$RUNNER_TEMP/pull-request.json")"
+          head_repo="$(jq -r '.head.repo.full_name' "$RUNNER_TEMP/pull-request.json")"
+          [[ "$base_ref" == "main" ]]
+          [[ "$head_sha" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$head_repo" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]
+          base_sha="$(
+            gh api "repos/$REPOSITORY/git/ref/heads/$base_ref" --jq '.object.sha'
+          )"
+          [[ "$base_sha" =~ ^[0-9a-f]{40}$ ]]
+          trusted_sha="$(git rev-parse HEAD)"
+          if [[ "$trusted_sha" != "$base_sha" ]]; then
+            echo "Trusted checkout is stale; rerun against current main." >&2
+            exit 1
+          fi
+
+          gh api --paginate --slurp \
+            "repos/$REPOSITORY/pulls/$PR_NUMBER/files?per_page=100" \
+            > "$RUNNER_TEMP/pull-files-pages.json"
+          expected_files="$(jq -r '.changed_files' "$RUNNER_TEMP/pull-request.json")"
+          observed_files="$(jq '[.[][]] | length' "$RUNNER_TEMP/pull-files-pages.json")"
+          if [[ "$observed_files" != "$expected_files" ]]; then
+            echo "Changed-file pagination is incomplete." >&2
+            exit 1
+          fi
+          jq -r '
+            .[][] |
+            .filename,
+            (select(.status == "renamed") | .previous_filename)
+          ' "$RUNNER_TEMP/pull-files-pages.json" \
+            | LC_ALL=C sort -u \
+            > "$RUNNER_TEMP/high-risk-changed-files.txt"
+          jq -r '.[][] | select(.status == "removed") | .filename' \
+            "$RUNNER_TEMP/pull-files-pages.json" \
+            | LC_ALL=C sort -u \
+            > "$RUNNER_TEMP/high-risk-deleted-files.txt"
+
+          gh api "repos/$REPOSITORY/compare/$base_sha...$head_sha" \
+            > "$RUNNER_TEMP/compare.json"
+          behind="$(jq -r '.behind_by' "$RUNNER_TEMP/compare.json")"
+          ahead="$(jq -r '.ahead_by' "$RUNNER_TEMP/compare.json")"
+          jq -n --slurpfile pull "$RUNNER_TEMP/pull-request.json" \
+            '{pull_request: $pull[0]}' > "$RUNNER_TEMP/trusted-event.json"
+          {
+            echo "base_sha=$base_sha"
+            echo "head_sha=$head_sha"
+            echo "head_repo=$head_repo"
+            echo "behind=$behind"
+            echo "ahead=$ahead"
+            echo "changed_files=$RUNNER_TEMP/high-risk-changed-files.txt"
+            echo "deleted_files=$RUNNER_TEMP/high-risk-deleted-files.txt"
+            echo "event_path=$RUNNER_TEMP/trusted-event.json"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Fetch evidence manifest as untrusted data
+        id: evidence
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          HEAD_REPOSITORY: ${{ steps.state.outputs.head_repo }}
+          HEAD_SHA: ${{ steps.state.outputs.head_sha }}
+          CHANGED_FILES: ${{ steps.state.outputs.changed_files }}
+        run: |
+          set -euo pipefail
+          mapfile -t manifests < <(
+            grep -E '^\.github/high-risk-evidence/[0-9]+\.json$' \
+              "$CHANGED_FILES" || true
+          )
+          if (( ${#manifests[@]} == 1 )); then
+            evidence_path="${manifests[0]}"
+            gh api \
+              "repos/$HEAD_REPOSITORY/contents/$evidence_path?ref=$HEAD_SHA" \
+              --jq '.content' \
+              | base64 --decode > "$RUNNER_TEMP/high-risk-evidence.json"
+            jq -e 'type == "object"' "$RUNNER_TEMP/high-risk-evidence.json" \
+              > /dev/null
+            echo "path=$evidence_path" >> "$GITHUB_OUTPUT"
+            echo "file=$RUNNER_TEMP/high-risk-evidence.json" \
+              >> "$GITHUB_OUTPUT"
+          elif (( ${#manifests[@]} > 1 )); then
+            echo "More than one evidence manifest changed." >&2
+            exit 1
+          fi
+
+      - name: Query unresolved review threads
+        id: threads
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GRAPHQL_QUERY: >-
+            query($owner:String!, $name:String!, $number:Int!) {
+              repository(owner:$owner, name:$name) {
+                pullRequest(number:$number) {
+                  reviewThreads(first:100) {
+                    nodes { isResolved }
+                    pageInfo { hasNextPage }
+                  }
+                }
+              }
+            }
+          THREADS_JQ: >-
+            if .data.repository.pullRequest.reviewThreads.pageInfo.hasNextPage
+            then error("more than 100 review threads; audit pagination")
+            else [.data.repository.pullRequest.reviewThreads.nodes[] |
+            select(.isResolved == false)] | length end
+        run: |
+          set -euo pipefail
+          owner="${REPOSITORY%%/*}"
+          name="${REPOSITORY#*/}"
+          unresolved="$(
+            gh api graphql \
+              -f owner="$owner" \
+              -f name="$name" \
+              -F number="$PR_NUMBER" \
+              -f query="$GRAPHQL_QUERY" \
+              --jq "$THREADS_JQ"
+          )"
+          echo "count=$unresolved" >> "$GITHUB_OUTPUT"
+
+      - name: Enforce trusted exact-head high-risk evidence
+        shell: bash
+        env:
+          EVENT_PATH: ${{ steps.state.outputs.event_path }}
+          CHANGED_FILES: ${{ steps.state.outputs.changed_files }}
+          DELETED_FILES: ${{ steps.state.outputs.deleted_files }}
+          EVIDENCE_FILE: ${{ steps.evidence.outputs.file }}
+          EVIDENCE_PATH: ${{ steps.evidence.outputs.path }}
+          BASE_SHA: ${{ steps.state.outputs.base_sha }}
+          HEAD_SHA: ${{ steps.state.outputs.head_sha }}
+          BEHIND: ${{ steps.state.outputs.behind }}
+          AHEAD: ${{ steps.state.outputs.ahead }}
+          UNRESOLVED_THREADS: ${{ steps.threads.outputs.count }}
+        run: |
+          set -euo pipefail
+          args=(
+            --event "$EVENT_PATH"
+            --changed-files "$CHANGED_FILES"
+            --deleted-files "$DELETED_FILES"
+            --base-sha "$BASE_SHA"
+            --head-sha "$HEAD_SHA"
+            --behind "$BEHIND"
+            --ahead "$AHEAD"
+            --unresolved-threads "$UNRESOLVED_THREADS"
+          )
+          if [[ -n "$EVIDENCE_FILE" ]]; then
+            args+=(--evidence "$EVIDENCE_FILE" --evidence-path "$EVIDENCE_PATH")
+          fi
+          dart tool/testing/enforce_high_risk_pr_contract.dart "${args[@]}"

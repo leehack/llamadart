@@ -15,8 +15,10 @@ doc/testing_matrix.md @leehack
 hook/build.dart @leehack
 tool/testing/verify_release_docs_versions.dart @leehack
 tool/testing/check_webgpu_bridge_tag.dart @leehack
-tool/testing/check_high_risk_pr_contract.dart @leehack
-test/unit/tooling/high_risk_pr_contract_test.dart @leehack
+.github/workflows/trusted_high_risk_regression_gate.yml @leehack
+.github/high-risk-evidence/ @leehack
+tool/testing/enforce_high_risk_pr_contract.dart @leehack
+test/unit/tooling/trusted_high_risk_contract_test.dart @leehack
 scripts/fetch_webgpu_bridge_assets.sh @leehack
 website/docs/changelog/recent-releases.md @leehack
 website/docs/maintainers/native-and-web-sync.md @leehack

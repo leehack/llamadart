@@ -99,7 +99,7 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'rollback, auto/required/none tool choice with thinking prefixes, and '
         'pinned/current upstream template/parser parity',
     command:
-        'tool/testing/run_template_parity_suites.sh; run issue-specific VM '
+        './tool/testing/run_template_parity_suites.sh; run issue-specific VM '
         'and Chrome production-path tests that compile generated grammars '
         'against actual upstream-emitted valid and adversarial invalid shapes.',
     useWhen:
@@ -772,7 +772,7 @@ List<TestMatrixRow> _filterRows(String tier) {
     throw ArgumentError.value(
       tier,
       'tier',
-      'Expected all, essential, targeted, platform, or release.',
+      'Expected all, essential, targeted, high-risk, platform, or release.',
     );
   }
   return rows;

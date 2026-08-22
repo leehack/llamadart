@@ -74,10 +74,24 @@ implementation task. It must review the exact PR head against the current base,
 inspect actual production call sites, and verify issue-specific positive and
 negative tests. The tests must fail when the relevant production branch is
 deleted, bypassed, or miswired; testing an extracted helper alone is not enough.
-Update the machine-readable PR evidence block after the final push or base
-movement. The `High-Risk Regression Gate` workflow checks the exact SHA and
-base distance, queries live unresolved review threads, and fails closed on
-missing or weak evidence. A known PR-caused P1 is always a merge blocker.
+Update the PR state block and checked-in
+`.github/high-risk-evidence/*.json` manifest after the final push or base
+movement. The manifest binds positive, negative, adversarial, and
+deletion-sensitive proof to durable test files changed by that PR. The
+`High-Risk Regression Gate` runs policy only from the trusted default branch,
+reads PR files through read-only APIs, includes both sides of renames, checks
+the exact SHA/base distance and live unresolved review threads, and fails
+closed on missing or weak evidence. It never executes PR-supplied code.
+A known PR-caused P1 is always a merge blocker.
+
+The workflow is enforceable only when repository settings require its
+`Trusted exact-head adversarial evidence` status check and require conversation
+resolution on `main`. Configure those rules after the bootstrap lands, then
+verify them with a high-risk test PR before closing the policy issue. Ready,
+review-request, and auto-merge transitions rerun the trusted check; code fixes
+also rerun it through `synchronize`. GitHub does not expose review-thread
+resolution as an Actions trigger, so the repository conversation-resolution
+rule is the merge-time authority for threads added after the last gate run.
 
 For structured output, the independent pass must cover all of these axes in
 the production path:

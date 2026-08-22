@@ -48,31 +48,21 @@ automation, or this regression policy. Run
 `doc/testing_matrix.md`. Do not mark a high-risk PR ready until the
 "High-Risk Regression Gate" check passes against the exact head/current base.
 The QA task must be independent from the implementation task and blocking-only.
+High-risk PRs must add exactly one `.github/high-risk-evidence/*.json` manifest
+that references durable tests changed in the same PR. Structured-output
+manifests bind compiled grammar acceptance/rejection, schema-directed types,
+partial/final streaming, tool choice/thinking, upstream refs/parity, and the
+exact affected-family inventory. Prose alone is not evidence.
 For a standard PR, set only High-risk classification to `standard`; the
 remaining fields may stay as comments.
 -->
 - **High-risk classification:** <!-- `standard` or `high-risk` -->
+- **Evidence manifest:** <!-- Exact `.github/high-risk-evidence/<issue>.json` path. -->
 - **Implementation task:** <!-- Stable task/review identifier. -->
 - **Independent blocking QA task:** <!-- Must differ from implementation task. -->
 - **Exact head SHA:** <!-- Full 40-character SHA reviewed by independent QA. -->
 - **Current base SHA:** <!-- Full current base SHA used by independent QA. -->
 - **Current base distance:** <!-- Exact `N behind / N ahead`. -->
 - **Independent QA verdict:** <!-- Exact `PASS`. -->
-- **Production call sites inspected:** <!-- `PASS:` plus exact call sites; helpers alone are insufficient. -->
-- **Positive production-path evidence:** <!-- `PASS:` plus issue-specific production-path evidence. -->
-- **Negative/adversarial production-path evidence:** <!-- `PASS:` plus malformed/version-skew/boundary evidence. -->
-- **Deletion/bypass/miswire sensitivity:** <!-- `PASS:` explain how deleting, bypassing, and miswiring the production branch fails tests. -->
 - **Known PR-caused P1 regressions:** <!-- Exact `0`; a known P1 cannot be deferred. -->
 - **Unresolved review threads:** <!-- Exact live count; must be `0`. -->
-- **Affected-family real model/artifact evidence:** <!-- `PASS:` or `N/A:` naming the exact unavailable family and primary upstream/durable fixture proof. -->
-- **Unrelated representative smoke:** <!-- `pipeline-only:` or `N/A:`; never affected-family proof. -->
-
-### Structured-output adversarial evidence
-<!-- Required for parser, grammar, template, tool-call, thinking, or streaming changes. -->
-- **Compiled grammar valid upstream emissions:** <!-- `PASS:` must cite compiled acceptance of actual upstream-emitted shapes. -->
-- **Compiled grammar rejection matrix:** <!-- `PASS:` must cover unknown, missing, wrong-type, and malformed structures. -->
-- **Schema-directed types and empty values:** <!-- `PASS:` cover string, number, boolean, null, object, array, and empty values. -->
-- **Partial/final streaming and rollback:** <!-- `PASS:` cover partial suppression, final malformed rollback, and content preservation. -->
-- **Tool choice and thinking prefixes:** <!-- `PASS:` cover auto/required/none with thinking/reasoning prefixes. -->
-- **Pinned/current upstream template/parser parity:** <!-- `PASS:` cite pinned/current upstream and run_template_parity_suites.sh. -->
-- **Exact affected-format evidence:** <!-- `PASS:` or `N/A:` naming every unavailable family plus primary upstream emissions and durable fixtures. -->
