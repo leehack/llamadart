@@ -50,12 +50,31 @@ void main() {
       final grammar = KimiK3Handler().buildGrammar([_weatherTool])!;
 
       expect(grammar, contains('(argument* | json-block)'));
+      expect(grammar, contains(r'(" index=\"" [0-9]+ "\"")? "<|sep|>"'));
       expect(
         grammar,
         contains(r'"<|open|>json type=\"object\"<|sep|>" json-object'),
       );
       expect(grammar, contains('char ::= '));
     });
+
+    test(
+      'parses a tool call without the optional upstream index attribute',
+      () {
+        const output =
+            '<|open|>tools<|sep|>'
+            '<|open|>call tool="weather"<|sep|>'
+            '<|open|>argument key="city" type="string"<|sep|>Seoul'
+            '<|close|>argument<|sep|><|close|>call<|sep|>'
+            '<|close|>tools<|sep|><|close|>message<|sep|>';
+
+        final parsed = KimiK3Handler().parse(output);
+
+        expect(parsed.content, isEmpty);
+        expect(parsed.toolCalls.single.function?.name, 'weather');
+        expect(_arguments(parsed), {'city': 'Seoul'});
+      },
+    );
 
     test('preserves malformed tool markup instead of silently dropping it', () {
       const malformed =

@@ -312,7 +312,7 @@ class KimiK3Handler extends _DirectJinjaHandler {
       )
       ..writeln(
         'call ::= "<|open|>call tool=\\"" tool-name '
-        '"\\" index=\\"" [0-9]+ "\\"<|sep|>" '
+        '"\\"" (" index=\\"" [0-9]+ "\\"")? "<|sep|>" '
         '(argument* | json-block) "<|close|>call<|sep|>"',
       )
       ..writeln(
