@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:llamadart/src/core/template/chat_format.dart';
 import 'package:llamadart/src/core/template/chat_template_engine.dart';
 import 'package:llamadart/src/core/template/handlers/llama_cpp_specialized_handlers.dart';
@@ -85,6 +86,17 @@ void main() {
       const output = 'Example: {"name":"weather"}';
       expect(MinimaxM1Handler().parse(output).content, output);
     });
+
+    test('grammar references the object rule instead of quoting it', () {
+      final grammar = MinimaxM1Handler().buildGrammar([_weatherTool])!;
+      final callRule = grammar
+          .split('\n')
+          .singleWhere((line) => line.startsWith('call ::='));
+
+      expect(callRule, contains(' tool-name '));
+      expect(callRule, contains(' object '));
+      expect(callRule, isNot(contains(r'\"object\"')));
+    });
   });
 
   group('MiniMax M3', () {
@@ -124,6 +136,30 @@ void main() {
 
     test('keeps non-tool content after a disabled-thinking prefix', () {
       expect(MinimaxM3Handler().parse('</mm:think>Hello').content, 'Hello');
+    });
+
+    test('hides an incomplete invoke while streaming', () {
+      const output =
+          'Prelude$ns<tool_call>\n'
+          '$ns<invoke name="weather">$ns<city>Seo';
+      final parsed = MinimaxM3Handler().parse(output, isPartial: true);
+
+      expect(parsed.content, 'Prelude');
+      expect(parsed.toolCalls, isEmpty);
+    });
+
+    test('keeps completed calls before a partial invoke', () {
+      const output =
+          'Prelude$ns<tool_call>\n'
+          '$ns<invoke name="weather">$ns<city>Seoul$ns</city>'
+          '$ns</invoke>\n'
+          '$ns<invoke name="clock">$ns<tz>UT';
+      final parsed = MinimaxM3Handler().parse(output, isPartial: true);
+
+      expect(parsed.content, 'Prelude');
+      expect(parsed.toolCalls, hasLength(1));
+      expect(parsed.toolCalls.single.function?.name, 'weather');
+      expect(_arguments(parsed), {'city': 'Seoul'});
     });
   });
 
@@ -194,6 +230,18 @@ void main() {
       expect(parsed.toolCalls, isEmpty);
       expect(parsed.content, contains('broken'));
     });
+
+    test('lazy grammar activates only at the ATEM tool-call envelope', () {
+      final handler = MuseGlimmerHandler();
+      final grammar = handler.buildGrammar([_weatherTool])!;
+
+      expect(handler.grammarTriggerValues, ['<atem:function_calls>']);
+      expect(
+        grammar.split('\n').first,
+        r'root ::= "<atem:function_calls>\n" invoke "</atem:function_calls>"',
+      );
+      expect(grammar.split('\n').first, isNot(contains(' to=')));
+    });
   });
 
   group('Poolside Laguna', () {
@@ -221,6 +269,13 @@ void main() {
     });
   });
 }
+
+final _weatherTool = ToolDefinition(
+  name: 'weather',
+  description: 'Weather',
+  parameters: const [],
+  handler: (_) async => null,
+);
 
 Map<String, dynamic> _arguments(dynamic parsed) {
   return jsonDecode(parsed.toolCalls.first.function!.arguments!)

@@ -564,7 +564,7 @@ class MuseGlimmerHandler extends _DirectJinjaHandler {
   ];
 
   @override
-  List<String> get grammarTriggerValues => const [' to='];
+  List<String> get grammarTriggerValues => const ['<atem:function_calls>'];
 
   @override
   ChatParseResult parse(
@@ -623,7 +623,7 @@ class MuseGlimmerHandler extends _DirectJinjaHandler {
         .map((tool) => ToolCallGrammarUtils.literal(tool.name))
         .join(' | ');
     return '''
-root ::= " to=" tool-name "<|message|><atem:function_calls>\\n" invoke "</atem:function_calls>"
+root ::= "<atem:function_calls>\\n" invoke "</atem:function_calls>"
 invoke ::= "<atem:invoke name=\\"" tool-name "\\">\\n" parameter* "</atem:invoke>\\n"
 parameter ::= "<atem:parameter name=\\"" identifier "\\">" raw "</atem:parameter>\\n"
 tool-name ::= $names
@@ -748,38 +748,42 @@ _ParsedCalls _parseInvokeScope(
   }
   final bodyStart = scopeStartIndex + scopeStart.length;
   final scopeEndIndex = input.indexOf(scopeEnd, bodyStart);
-  if (scopeEndIndex < 0) {
-    return isPartial
-        ? _ParsedCalls(
-            calls: const [],
-            remaining: input.substring(0, scopeStartIndex),
-          )
-        : _ParsedCalls.failure();
+  if (scopeEndIndex < 0 && !isPartial) {
+    return _ParsedCalls.failure();
   }
-  final body = input.substring(bodyStart, scopeEndIndex);
+  final scopeComplete = scopeEndIndex >= 0;
+  final body = input.substring(
+    bodyStart,
+    scopeComplete ? scopeEndIndex : input.length,
+  );
   final calls = <LlamaCompletionChunkToolCall>[];
+  final allowPartial = isPartial && !scopeComplete;
+  _ParsedCalls partialResult() => _ParsedCalls(
+    calls: calls,
+    remaining: input.substring(0, scopeStartIndex),
+  );
   var cursor = 0;
   while (cursor < body.length) {
     final start = invokeStartPattern.firstMatch(body.substring(cursor));
     if (start == null) {
       if (body.substring(cursor).trim().isNotEmpty) {
-        return _ParsedCalls.failure();
+        return allowPartial ? partialResult() : _ParsedCalls.failure();
       }
       break;
     }
     final absoluteStart = cursor + start.start;
     if (body.substring(cursor, absoluteStart).trim().isNotEmpty) {
-      return _ParsedCalls.failure();
+      return allowPartial ? partialResult() : _ParsedCalls.failure();
     }
     final argumentsStart = cursor + start.end;
     final end = body.indexOf(invokeEnd, argumentsStart);
     if (end < 0) {
-      return _ParsedCalls.failure();
+      return allowPartial ? partialResult() : _ParsedCalls.failure();
     }
     final name = start.group(1) ?? '';
     final arguments = parseArguments(body.substring(argumentsStart, end));
     if (name.isEmpty || arguments == null) {
-      return _ParsedCalls.failure();
+      return allowPartial ? partialResult() : _ParsedCalls.failure();
     }
     calls.add(
       ToolCallParsingUtils.createFunctionToolCall(
@@ -791,7 +795,10 @@ _ParsedCalls _parseInvokeScope(
     cursor = end + invokeEnd.length;
   }
   if (calls.isEmpty) {
-    return _ParsedCalls.failure();
+    return allowPartial ? partialResult() : _ParsedCalls.failure();
+  }
+  if (!scopeComplete) {
+    return partialResult();
   }
   final remaining = input.replaceRange(
     scopeStartIndex,
