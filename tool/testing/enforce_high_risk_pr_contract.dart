@@ -32,6 +32,8 @@ class HighRiskPrState {
     required this.behind,
     required this.ahead,
     required this.unresolvedThreads,
+    required this.authorLogin,
+    required this.reviews,
   });
 
   final String headSha;
@@ -39,6 +41,22 @@ class HighRiskPrState {
   final int behind;
   final int ahead;
   final int unresolvedThreads;
+  final String authorLogin;
+  final List<HighRiskReview> reviews;
+}
+
+class HighRiskReview {
+  const HighRiskReview({
+    required this.authorLogin,
+    required this.commitSha,
+    required this.state,
+    required this.body,
+  });
+
+  final String authorLogin;
+  final String commitSha;
+  final String state;
+  final String body;
 }
 
 class HighRiskContractResult {
@@ -73,21 +91,33 @@ HighRiskAssessment assessHighRiskFiles(Iterable<String> files) {
         path == 'lib/src/core/models/inference/tool_choice.dart' ||
         path == 'lib/src/core/models/inference/structured_output.dart' ||
         path == 'lib/src/core/models/inference/generation_params.dart' ||
+        path == 'lib/src/core/models/chat/chat_message.dart' ||
+        path == 'lib/src/core/models/chat/chat_template_result.dart' ||
         path == 'lib/src/core/models/chat/completion_chunk.dart' ||
+        path == 'lib/src/core/models/chat/content_part.dart' ||
+        path.startsWith('lib/src/core/models/tools/') ||
         (path.startsWith('lib/src/') && path.contains('/chat_template'))) {
       surfaces.add(HighRiskSurface.structuredOutput);
     }
-    if (path.startsWith('lib/src/backends/') ||
+    if (path == 'lib/llamadart.dart' ||
+        path.startsWith('lib/src/backends/') ||
         path.startsWith('lib/src/core/engine/') ||
+        path.startsWith('lib/src/core/models/') ||
         path.startsWith('lib/src/core/speech/') ||
+        path.startsWith('lib/src/core/models/config/') ||
+        path.startsWith('lib/src/platform/') ||
         path == 'lib/src/core/models/chat/content_part.dart' ||
         path ==
             'lib/src/core/models/download/model_download_manager_base.dart') {
       surfaces.add(HighRiskSurface.backendRuntime);
     }
-    if (path == 'hook/build.dart' ||
-        path == 'lib/src/hook/native_bundle_config.dart' ||
+    if (path == 'pubspec.yaml' ||
+        path == 'pubspec.lock' ||
+        path.startsWith('hook/') ||
+        path.startsWith('lib/src/hook/') ||
         path.startsWith('tool/native/') ||
+        path == 'tool/testing/check_webgpu_bridge_tag.dart' ||
+        path == 'scripts/check_native_link_deps.sh' ||
         path == 'scripts/fetch_webgpu_bridge_assets.sh' ||
         path == 'scripts/build_chat_app_web.sh' ||
         path == 'scripts/validate_chat_app_web_build.sh' ||
@@ -104,6 +134,7 @@ HighRiskAssessment assessHighRiskFiles(Iterable<String> files) {
       surfaces.add(HighRiskSurface.releaseAutomation);
     }
     if (path.startsWith('.github/workflows/') ||
+        path.startsWith('.github/actions/') ||
         path == '.github/pull_request_template.md' ||
         path == '.github/CODEOWNERS' ||
         path == '.github/workflows/high_risk_regression_gate.yml' ||
@@ -115,6 +146,9 @@ HighRiskAssessment assessHighRiskFiles(Iterable<String> files) {
         path == 'tool/testing/check_high_risk_pr_contract.dart' ||
         path == 'test/unit/tooling/high_risk_pr_contract_test.dart' ||
         path == 'test/unit/tooling/trusted_high_risk_contract_test.dart') {
+      surfaces.add(HighRiskSurface.regressionPolicy);
+    }
+    if (_isGateScript(path)) {
       surfaces.add(HighRiskSurface.regressionPolicy);
     }
   }
@@ -130,6 +164,15 @@ bool _isReleaseWorkflow(String path) {
       name.contains('deploy') ||
       name.contains('sync') ||
       name == 'docs_version_cut.yml';
+}
+
+bool _isGateScript(String path) {
+  if (!path.startsWith('tool/testing/')) return false;
+  final name = path.split('/').last;
+  return name.startsWith('check_') ||
+      name.startsWith('verify_') ||
+      name == 'run_template_parity_suites.sh' ||
+      name == 'run_llama_cpp_chat_tests.sh';
 }
 
 HighRiskContractResult validateHighRiskContract({
@@ -188,6 +231,16 @@ HighRiskContractResult validateHighRiskContract({
   );
   if (implementationTask != null && implementationTask == qaTask) {
     errors.add('Independent QA task must differ from implementation task.');
+  }
+  if (qaTask != null && !_hasIndependentQaAttestation(state, qaTask)) {
+    errors.add(
+      'Independent QA PASS requires a current-head APPROVED review from a '
+      'reviewer other than the PR author, attesting the QA task, head, base, '
+      'and PASS verdict.',
+    );
+  }
+  if (state.authorLogin.isEmpty) {
+    errors.add('Trusted PR metadata must include the author login.');
   }
 
   final manifests = assessment.changedFiles
@@ -298,24 +351,37 @@ void _validateEvidenceManifest(
       final value = familyEvidence[family];
       if (value != 'real-model' && value != 'upstream+fixture') {
         errors.add(
-          '$family evidence must be real-model or upstream+fixture; '
-          'representative models are not affected-family proof.',
+          'Every affected-family evidence value must be real-model or '
+          'upstream+fixture; representative models are not family proof.',
         );
       }
     }
   }
 
   if (assessment.isStructuredOutput) {
-    final upstreamRefs = _stringSet(
-      evidence['upstreamRefs'],
-      'upstreamRefs',
-      errors,
-    );
+    final upstream = evidence['upstreamRefs'];
     final concreteRef = RegExp(
       r'^(?:b[0-9]+|v[0-9]+\.[0-9]+\.[0-9]+|[0-9a-f]{7,40})$',
     );
-    if (upstreamRefs.any((ref) => !concreteRef.hasMatch(ref))) {
-      errors.add('Every upstream ref must be a concrete tag or commit.');
+    if (upstream is! Map<String, dynamic> ||
+        upstream.keys.toSet().difference(const {
+          'pinned',
+          'current',
+        }).isNotEmpty ||
+        !upstream.keys.toSet().containsAll(const {'pinned', 'current'})) {
+      errors.add('upstreamRefs must contain exactly pinned and current roles.');
+    } else {
+      final pinned = upstream['pinned'];
+      final current = upstream['current'];
+      if (pinned is! String ||
+          current is! String ||
+          !concreteRef.hasMatch(pinned) ||
+          !concreteRef.hasMatch(current) ||
+          pinned == current) {
+        errors.add(
+          'Pinned and current upstream refs must be distinct concrete tags or commits.',
+        );
+      }
     }
     final structured = evidence['structuredOutput'];
     if (structured is! Map<String, dynamic>) {
@@ -425,19 +491,38 @@ List<String> _validateTestPaths(
       errors.add('$label must reference durable Dart test files.');
     }
     if (!changed.contains(path)) {
-      errors.add('$label path must be changed by the same PR: $path.');
+      errors.add('$label contains a path not changed by the same PR.');
     }
     if (deleted.contains(path)) {
-      errors.add('$label cannot reference a deleted test: $path.');
+      errors.add('$label cannot reference a deleted or renamed-away test.');
     }
   }
   return paths;
 }
 
 bool _isCompiledGrammarTest(String path) =>
-    path.startsWith('test/unit/core/grammar/') ||
-    path.startsWith('test/integration/core/grammar/') ||
-    path.contains('compiled_grammar');
+    path ==
+    'test/e2e/template/specialized_tool_grammar_validation_e2e_test.dart';
+
+bool _hasIndependentQaAttestation(HighRiskPrState state, String qaTask) {
+  final requiredLines = <String>{
+    'High-risk QA task: $qaTask',
+    'Head: ${state.headSha}',
+    'Base: ${state.baseSha}',
+    'Verdict: PASS',
+  };
+  return state.reviews.any((review) {
+    final lines = review.body
+        .split(RegExp(r'\r?\n'))
+        .map((line) => line.trim())
+        .toSet();
+    return review.state == 'APPROVED' &&
+        review.commitSha == state.headSha &&
+        review.authorLogin.isNotEmpty &&
+        review.authorLogin.toLowerCase() != state.authorLogin.toLowerCase() &&
+        lines.containsAll(requiredLines);
+  });
+}
 
 Map<String, String> _parseEvidenceFields(String body) {
   final fields = <String, String>{};
@@ -485,7 +570,7 @@ Never _usage(String message) {
     '--event <event.json> --changed-files <paths.txt> '
     '--deleted-files <paths.txt> [--evidence <manifest.json> '
     '--evidence-path <repo-path>] --base-sha <sha> --head-sha <sha> '
-    '--behind <n> --ahead <n> --unresolved-threads <n>',
+    '--behind <n> --ahead <n> --unresolved-threads <n> --reviews <json>',
   );
   exit(64);
 }
@@ -507,6 +592,7 @@ Future<void> main(List<String> args) async {
     'behind',
     'ahead',
     'unresolved-threads',
+    'reviews',
   };
   final missing = required.difference(options.keys.toSet());
   if (missing.isNotEmpty) _usage('Missing options: ${missing.join(', ')}');
@@ -530,6 +616,13 @@ Future<void> main(List<String> args) async {
     behind: int.parse(options['behind']!),
     ahead: int.parse(options['ahead']!),
     unresolvedThreads: int.parse(options['unresolved-threads']!),
+    authorLogin: pullRequest['user'] is Map<String, dynamic>
+        ? ((pullRequest['user'] as Map<String, dynamic>)['login'] as String? ??
+              '')
+        : '',
+    reviews: _decodeReviews(
+      jsonDecode(await File(options['reviews']!).readAsString()),
+    ),
   );
   final result = validateHighRiskContract(
     changedFiles: await File(options['changed-files']!).readAsLines(),
@@ -565,4 +658,32 @@ Future<void> main(List<String> args) async {
     await File(stepSummary).writeAsString(summary.toString());
   }
   if (!result.isValid) exitCode = 1;
+}
+
+List<HighRiskReview> _decodeReviews(Object? value) {
+  if (value is! List) _usage('Reviews must be an array.');
+  return value
+      .map((item) {
+        if (item is! Map<String, dynamic>) {
+          _usage('Every review must be an object.');
+        }
+        final user = item['user'];
+        final author = user is Map<String, dynamic> ? user['login'] : null;
+        final commitSha = item['commit_id'];
+        final state = item['state'];
+        final body = item['body'];
+        if (author is! String ||
+            commitSha is! String ||
+            state is! String ||
+            (body != null && body is! String)) {
+          _usage('Review fields are malformed.');
+        }
+        return HighRiskReview(
+          authorLogin: author,
+          commitSha: commitSha,
+          state: state,
+          body: body as String? ?? '',
+        );
+      })
+      .toList(growable: false);
 }

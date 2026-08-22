@@ -48,6 +48,10 @@ automation, or this regression policy. Run
 `doc/testing_matrix.md`. Do not mark a high-risk PR ready until the
 "High-Risk Regression Gate" check passes against the exact head/current base.
 The QA task must be independent from the implementation task and blocking-only.
+The PASS verdict also requires a current-head GitHub approval from a reviewer
+other than the PR author. Its review body must contain exact `High-risk QA
+task:`, `Head:`, `Base:`, and `Verdict: PASS` lines as documented in the test
+matrix; PR-body or manifest self-attestation is insufficient.
 High-risk PRs must add exactly one `.github/high-risk-evidence/*.json` manifest
 that references durable tests changed in the same PR. Structured-output
 manifests bind compiled grammar acceptance/rejection, schema-directed types,

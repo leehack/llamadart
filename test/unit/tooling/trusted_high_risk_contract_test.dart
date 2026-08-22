@@ -14,7 +14,7 @@ const _implementationTask =
 const _qaTask = 'codex://tasks/root/structured_output_independent_qa';
 const _evidencePath = '.github/high-risk-evidence/394.json';
 const _grammarTest =
-    'test/integration/core/grammar/compiled_chat_grammar_test.dart';
+    'test/e2e/template/specialized_tool_grammar_validation_e2e_test.dart';
 const _parserTest = 'test/unit/core/template/chat_template_engine_test.dart';
 const _state = HighRiskPrState(
   headSha: _head,
@@ -22,6 +22,19 @@ const _state = HighRiskPrState(
   behind: 0,
   ahead: 6,
   unresolvedThreads: 0,
+  authorLogin: 'implementation-author',
+  reviews: [
+    HighRiskReview(
+      authorLogin: 'independent-reviewer',
+      commitSha: _head,
+      state: 'APPROVED',
+      body:
+          '''High-risk QA task: $_qaTask
+Head: $_head
+Base: $_base
+Verdict: PASS''',
+    ),
+  ],
 );
 
 const _structuredFiles = <String>[
@@ -63,7 +76,10 @@ Map<String, dynamic> _validEvidence() => {
     'MiniMax M1': 'upstream+fixture',
     'MiniMax M3': 'real-model',
   },
-  'upstreamRefs': ['b10549', 'd775b8967a46d8beb110d444aa3b8938179e0dd8'],
+  'upstreamRefs': {
+    'pinned': 'b10549',
+    'current': 'd775b8967a46d8beb110d444aa3b8938179e0dd8',
+  },
   'structuredOutput': {
     'compiledAcceptanceTests': [_grammarTest],
     'compiledRejectionTests': [_grammarTest],
@@ -125,6 +141,10 @@ void main() {
         'lib/src/core/models/inference/structured_output.dart',
         'lib/src/core/models/inference/generation_params.dart',
         'lib/src/core/models/chat/completion_chunk.dart',
+        'lib/src/core/models/chat/chat_message.dart',
+        'lib/src/core/models/chat/chat_template_result.dart',
+        'lib/src/core/models/chat/content_part.dart',
+        'lib/src/core/models/tools/tool_definition.dart',
       ]);
 
       expect(assessment.surfaces, contains(HighRiskSurface.structuredOutput));
@@ -135,6 +155,12 @@ void main() {
         'lib/src/core/models/download/model_download_manager_base.dart',
         'lib/src/hook/native_bundle_config.dart',
         'example/chat_app/web/index.html',
+        'lib/src/platform/io/model_download_manager_io.dart',
+        'lib/src/core/models/config/gpu_backend.dart',
+        'lib/llamadart.dart',
+        'pubspec.yaml',
+        'hook/build.dart',
+        'tool/testing/check_webgpu_bridge_tag.dart',
       ]);
 
       expect(
@@ -150,7 +176,10 @@ void main() {
       final assessment = assessHighRiskFiles(const [
         '.github/workflows/docs_version_cut.yml',
         '.github/workflows/ci.yml',
+        '.github/actions/release/action.yml',
         'tool/testing/verify_release_docs_versions.dart',
+        'tool/testing/check_platform_boundaries.dart',
+        'tool/testing/run_template_parity_suites.sh',
         'test/unit/tooling/high_risk_pr_contract_test.dart',
         '.github/high-risk-evidence/419.json',
       ]);
@@ -190,6 +219,83 @@ void main() {
       );
     });
 
+    test('requires valid task references to be distinct', () {
+      var body = _replaceField(
+        _validBody(),
+        'Independent blocking QA task',
+        _implementationTask,
+      );
+      final evidence = _validEvidence()
+        ..['independentQaTask'] = _implementationTask;
+
+      expect(
+        _validate(body: body, evidence: evidence).errors,
+        contains('Independent QA task must differ from implementation task.'),
+      );
+    });
+
+    test('requires an independent exact-head approving QA attestation', () {
+      const noApproval = HighRiskPrState(
+        headSha: _head,
+        baseSha: _base,
+        behind: 0,
+        ahead: 6,
+        unresolvedThreads: 0,
+        authorLogin: 'implementation-author',
+        reviews: [],
+      );
+
+      expect(
+        _validate(state: noApproval).errors.join('\n'),
+        contains('current-head APPROVED review'),
+      );
+    });
+
+    test('rejects author, stale-head, and incomplete QA approvals', () {
+      for (final review in const [
+        HighRiskReview(
+          authorLogin: 'implementation-author',
+          commitSha: _head,
+          state: 'APPROVED',
+          body:
+              '''High-risk QA task: $_qaTask
+Head: $_head
+Base: $_base
+Verdict: PASS''',
+        ),
+        HighRiskReview(
+          authorLogin: 'independent-reviewer',
+          commitSha: _base,
+          state: 'APPROVED',
+          body:
+              '''High-risk QA task: $_qaTask
+Head: $_head
+Base: $_base
+Verdict: PASS''',
+        ),
+        HighRiskReview(
+          authorLogin: 'independent-reviewer',
+          commitSha: _head,
+          state: 'APPROVED',
+          body: 'Looks good',
+        ),
+      ]) {
+        final state = HighRiskPrState(
+          headSha: _head,
+          baseSha: _base,
+          behind: 0,
+          ahead: 6,
+          unresolvedThreads: 0,
+          authorLogin: 'implementation-author',
+          reviews: [review],
+        );
+        expect(
+          _validate(state: state).errors.join('\n'),
+          contains('current-head APPROVED review'),
+        );
+      }
+    });
+
     test('binds QA to exact current GitHub state', () {
       var body = _replaceField(_validBody(), 'Exact head SHA', 'deadbeef');
       body = _replaceField(body, 'Current base SHA', 'cafebabe');
@@ -203,6 +309,8 @@ void main() {
           behind: 1,
           ahead: 6,
           unresolvedThreads: 0,
+          authorLogin: 'implementation-author',
+          reviews: [],
         ),
       ).errors.join('\n');
 
@@ -225,6 +333,8 @@ void main() {
           behind: 0,
           ahead: 6,
           unresolvedThreads: 1,
+          authorLogin: 'implementation-author',
+          reviews: [],
         ),
       );
 
@@ -266,6 +376,20 @@ void main() {
       expect(errors, isNot(contains(secretLikeValue)));
     });
 
+    test('does not echo untrusted evidence values in diagnostics', () {
+      const secretLikeValue = 'https://signed.example/model?secret=do-not-log';
+      final evidence = _validEvidence();
+      final production =
+          evidence['productionEvidence']! as Map<String, dynamic>;
+      production['positiveTests'] = [secretLikeValue];
+      evidence['affectedFamilies'] = [secretLikeValue];
+      evidence['affectedFamilyEvidence'] = {secretLikeValue: 'invalid'};
+
+      final errors = _validate(evidence: evidence).errors.join('\n');
+
+      expect(errors, isNot(contains(secretLikeValue)));
+    });
+
     test('rejects tests that are absent, deleted, or not durable', () {
       final evidence = _validEvidence();
       final production =
@@ -279,8 +403,8 @@ void main() {
       ).errors.join('\n');
 
       expect(errors, contains('durable Dart test'));
-      expect(errors, contains('must be changed by the same PR'));
-      expect(errors, contains('cannot reference a deleted test'));
+      expect(errors, contains('not changed by the same PR'));
+      expect(errors, contains('deleted or renamed-away test'));
     });
 
     test('requires exact affected-family inventory and honest N/A proof', () {
@@ -356,6 +480,16 @@ void main() {
         contains('./tool/testing/run_template_parity_suites.sh'),
       );
     });
+
+    test('requires distinct pinned and current upstream roles', () {
+      final evidence = _validEvidence()
+        ..['upstreamRefs'] = {'pinned': 'b10549', 'current': 'b10549'};
+
+      expect(
+        _validate(evidence: evidence).errors.join('\n'),
+        contains('distinct concrete tags or commits'),
+      );
+    });
   });
 
   group('trusted workflow contract', () {
@@ -372,13 +506,22 @@ void main() {
       );
       expect(workflow, contains('pulls/\$PR_NUMBER/files?per_page=100'));
       expect(workflow, contains('.previous_filename'));
-      expect(workflow, contains('status == "removed"'));
+      expect(workflow, contains('status == "removed" or .status == "renamed"'));
       expect(workflow, contains('persist-credentials: false'));
+      expect(workflow, contains('statuses: write'));
       expect(workflow, contains('ready_for_review'));
       expect(workflow, contains('review_requested'));
       expect(workflow, contains('review_request_removed'));
       expect(workflow, contains('auto_merge_enabled'));
       expect(workflow, contains('reviewThreads(first:100)'));
+      expect(workflow, contains(r'pulls/$PR_NUMBER/reviews?per_page=100'));
+      expect(workflow, contains(r'statuses/$HEAD_SHA'));
+      expect(
+        workflow,
+        contains(
+          'High-Risk Regression Gate / Trusted exact-head adversarial evidence',
+        ),
+      );
       expect(workflow, contains('enforce_high_risk_pr_contract.dart'));
     });
 
@@ -390,7 +533,8 @@ void main() {
       ).readAsStringSync();
 
       expect(agents, contains('treats pull-request files as untrusted data'));
-      expect(matrix, contains('status check, require conversation'));
+      expect(matrix, contains('head status context'));
+      expect(matrix, contains('require conversation'));
       expect(matrix, contains('conversation-resolution'));
       expect(matrix, contains('up to date with `main`'));
       expect(matrix, contains('deliberate base advance'));

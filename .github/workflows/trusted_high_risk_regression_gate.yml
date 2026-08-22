@@ -18,6 +18,7 @@ on:
 permissions:
   contents: read
   pull-requests: read
+  statuses: write
 
 concurrency:
   group: high-risk-regression-${{ github.event.pull_request.number }}
@@ -25,7 +26,7 @@ concurrency:
 
 jobs:
   contract:
-    name: Trusted exact-head adversarial evidence
+    name: Trusted base policy execution
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -81,7 +82,11 @@ jobs:
           ' "$RUNNER_TEMP/pull-files-pages.json" \
             | LC_ALL=C sort -u \
             > "$RUNNER_TEMP/high-risk-changed-files.txt"
-          jq -r '.[][] | select(.status == "removed") | .filename' \
+          jq -r '
+            .[][] |
+            select(.status == "removed" or .status == "renamed") |
+            if .status == "renamed" then .previous_filename else .filename end
+          ' \
             "$RUNNER_TEMP/pull-files-pages.json" \
             | LC_ALL=C sort -u \
             > "$RUNNER_TEMP/high-risk-deleted-files.txt"
@@ -171,7 +176,29 @@ jobs:
           )"
           echo "count=$unresolved" >> "$GITHUB_OUTPUT"
 
+      - name: Fetch exact-head review attestations
+        id: reviews
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          gh api --paginate --slurp \
+            "repos/$REPOSITORY/pulls/$PR_NUMBER/reviews?per_page=100" \
+            | jq '[.[][] | {
+                user: {login: .user.login},
+                commit_id,
+                state,
+                body
+              }]' \
+            > "$RUNNER_TEMP/high-risk-reviews.json"
+          echo "file=$RUNNER_TEMP/high-risk-reviews.json" >> "$GITHUB_OUTPUT"
+
       - name: Enforce trusted exact-head high-risk evidence
+        id: enforce
+        continue-on-error: true
         shell: bash
         env:
           EVENT_PATH: ${{ steps.state.outputs.event_path }}
@@ -184,6 +211,7 @@ jobs:
           BEHIND: ${{ steps.state.outputs.behind }}
           AHEAD: ${{ steps.state.outputs.ahead }}
           UNRESOLVED_THREADS: ${{ steps.threads.outputs.count }}
+          REVIEWS_FILE: ${{ steps.reviews.outputs.file }}
         run: |
           set -euo pipefail
           args=(
@@ -195,8 +223,37 @@ jobs:
             --behind "$BEHIND"
             --ahead "$AHEAD"
             --unresolved-threads "$UNRESOLVED_THREADS"
+            --reviews "$REVIEWS_FILE"
           )
           if [[ -n "$EVIDENCE_FILE" ]]; then
             args+=(--evidence "$EVIDENCE_FILE" --evidence-path "$EVIDENCE_PATH")
           fi
           dart tool/testing/enforce_high_risk_pr_contract.dart "${args[@]}"
+
+      - name: Publish exact-head required status
+        if: always() && steps.state.outputs.head_sha != ''
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          HEAD_SHA: ${{ steps.state.outputs.head_sha }}
+          ENFORCEMENT_OUTCOME: ${{ steps.enforce.outcome }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          state=failure
+          description='Trusted high-risk evidence rejected'
+          if [[ "$ENFORCEMENT_OUTCOME" == 'success' ]]; then
+            state=success
+            description='Trusted high-risk evidence accepted'
+          fi
+          gh api --method POST "repos/$REPOSITORY/statuses/$HEAD_SHA" \
+            -f state="$state" \
+            -f context='High-Risk Regression Gate / Trusted exact-head adversarial evidence' \
+            -f description="$description" \
+            -f target_url="$RUN_URL" \
+            > /dev/null
+
+      - name: Fail rejected evidence
+        if: steps.enforce.outcome != 'success'
+        run: exit 1

@@ -287,8 +287,11 @@ required `High-Risk Regression Gate`. The gate executes only the trusted
 default-branch policy and treats pull-request files as untrusted data. It
 requires a checked-in `.github/high-risk-evidence/*.json` manifest whose test
 paths are changed by the same PR, plus a blocking-only QA task independent from
-the implementation task. Inspect production call sites, require positive and
-negative tests that fail if the production branch is deleted/bypassed/miswired,
+the implementation task. A non-author reviewer must submit a current-head
+GitHub approval whose structured attestation binds that task to the exact head
+and base; PR-authored `PASS` prose is not sufficient. Inspect production call
+sites, require positive and negative tests that fail if the production branch
+is deleted/bypassed/miswired,
 and report zero known PR-caused P1 regressions. Structured-output changes must
 also satisfy the compiled grammar, schema-type, partial/final streaming,
 tool-choice/thinking-prefix, and pinned/current upstream parity rows documented

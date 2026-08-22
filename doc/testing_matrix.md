@@ -74,6 +74,21 @@ implementation task. It must review the exact PR head against the current base,
 inspect actual production call sites, and verify issue-specific positive and
 negative tests. The tests must fail when the relevant production branch is
 deleted, bypassed, or miswired; testing an extracted helper alone is not enough.
+After the QA pass, a reviewer other than the PR author must submit an APPROVED
+GitHub review on that exact head with these exact lines:
+
+```text
+High-risk QA task: <same stable task reference as the PR and manifest>
+Head: <exact 40-character PR head>
+Base: <exact current 40-character base>
+Verdict: PASS
+```
+
+The trusted policy verifies this external attestation through the reviews API;
+PR-authored body or manifest claims cannot satisfy the independent approval.
+The manifest is a machine-checked review inventory, while the independent
+approval attests that the named tests actually execute the stated production
+branches and fail for the stated adversarial mutations.
 Update the PR state block and checked-in
 `.github/high-risk-evidence/*.json` manifest after the final push or base
 movement. The manifest binds positive, negative, adversarial, and
@@ -84,8 +99,11 @@ the exact SHA/base distance and live unresolved review threads, and fails
 closed on missing or weak evidence. It never executes PR-supplied code.
 A known PR-caused P1 is always a merge blocker.
 
-The workflow is enforceable only when repository settings require its
-`Trusted exact-head adversarial evidence` status check, require conversation
+The trusted workflow publishes
+`High-Risk Regression Gate / Trusted exact-head adversarial evidence` directly
+to the verified PR head; the workflow job itself runs on the trusted base SHA.
+The workflow is enforceable only when repository settings require that exact
+head status context, require conversation
 resolution, and require branches to be up to date with `main` before merging.
 Configure all three rules after the bootstrap lands, then verify them with a
 high-risk test PR, including a deliberate base advance, before closing the

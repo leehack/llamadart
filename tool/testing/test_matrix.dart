@@ -83,7 +83,10 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'sensitive to production-branch deletion, bypass, or miswiring',
     command:
         'Complete the High-risk regression gate block in the PR body from an '
-        'independent QA task, then pass workflow "High-Risk Regression Gate".',
+        'independent QA task; obtain a non-author exact-head APPROVED review '
+        'with the required QA/head/base/PASS attestation; then pass the '
+        'head status "High-Risk Regression Gate / Trusted exact-head '
+        'adversarial evidence".',
     useWhen:
         'Parser/grammar/streaming, backend/runtime routing, public capability '
         'probe, artifact consumer, release automation, or regression-policy '
