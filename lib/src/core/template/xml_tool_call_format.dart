@@ -253,9 +253,15 @@ $jsonValueRules
 ''';
   }
 
-  final argumentValueRule = format.rawArgval == true ? 'raw-text' : 'value';
+  final argumentValueRule = switch (format.rawArgval) {
+    true => 'raw-text',
+    false => 'value',
+    null => 'argument-value',
+  };
   final argumentsRule = format.lastValEnd == null
       ? '(param ${_literal(format.valEnd)})*'
+      : format.lastValEnd!.isEmpty
+      ? '(param (${_literal(format.valEnd)} param)*)?'
       : '(param (${_literal(format.valEnd)} param)*)? ${_literal(format.lastValEnd!)}';
   final toolCallRule =
       '${_literal(format.toolStart)} tool-name ${_literal(format.toolSep)} arguments ${_literal(format.toolEnd)}';
@@ -265,7 +271,10 @@ $jsonValueRules
   final lastToolCallRule = format.lastToolEnd == null
       ? ''
       : '\nlast-tool-call ::= ${_literal(format.toolStart)} tool-name ${_literal(format.toolSep)} arguments ${_literal(format.lastToolEnd!)}';
-  final rawTextRule = format.rawArgval == true ? '\nraw-text ::= ([^<])*' : '';
+  final rawTextRule = format.rawArgval == false ? '' : '\nraw-text ::= ([^<])*';
+  final eitherValueRule = format.rawArgval == null
+      ? '\nargument-value ::= raw-text | value'
+      : '';
 
   return '''
 root ::= $rootRule
@@ -273,7 +282,7 @@ tool-call ::= $toolCallRule$lastToolCallRule
 arguments ::= $argumentsRule
 param ::= ${_literal(format.keyStart)} param-name ${_literal(format.keyValSep)} $argumentValueRule
 tool-name ::= $toolNameRule
-param-name ::= $paramNameRule$rawTextRule
+param-name ::= $paramNameRule$rawTextRule$eitherValueRule
 $jsonValueRules
 ''';
 }
@@ -579,15 +588,18 @@ _ParsedCdataValue? _parseCdataValue(
     return null;
   }
 
-  final valEndStart = cdataEndIdx + cdataEnd.length;
-  if (format.valEnd.isNotEmpty &&
-      !content.startsWith(format.valEnd, valEndStart)) {
+  final valueEnd = _consumeValueEnd(
+    content,
+    cdataEndIdx + cdataEnd.length,
+    format,
+  );
+  if (valueEnd == null) {
     return null;
   }
 
   return _ParsedCdataValue(
     value: content.substring(start + cdataStart.length, cdataEndIdx),
-    nextPos: valEndStart + format.valEnd.length,
+    nextPos: valueEnd,
   );
 }
 
