@@ -131,7 +131,7 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
         )
         self.assertEqual(
             hashlib.sha256(owner_fixture.read_bytes()).hexdigest(),
-            "b5187d34e5e4b3021d262ff237025b73364411654161a4d8fddc9dabaf100536",
+            "03b7190c23f7df5b2e0c10ca1af23830259203ee5ecbc2b69dd2dc415ec468e6",
         )
         manifest = json.loads(owner_fixture.read_text(encoding="utf-8"))
         tag = manifest["release"]["tag"]
@@ -154,6 +154,8 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
         release = {
             "tag_name": tag,
             "target_commitish": manifest["native"]["commit"],
+            "draft": False,
+            "prerelease": manifest["release"]["githubPrerelease"],
             "assets": release_assets,
         }
         with tempfile.TemporaryDirectory() as temp:
@@ -178,6 +180,114 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
                     required_bundles=required_bundles,
                 )
             release_assets[1]["digest"] = "sha256:" + "f" * 64
+
+            release["draft"] = True
+            with self.assertRaisesRegex(ReleaseError, "published, not a draft"):
+                validate_litert_lm_release_manifest(
+                    release,
+                    repo="leehack/litert-lm-native",
+                    tag=tag,
+                    release_json_dir=str(fixture_dir),
+                    required_bundles=required_bundles,
+                )
+            release["draft"] = False
+            release["prerelease"] = not release["prerelease"]
+            with self.assertRaisesRegex(ReleaseError, "prerelease classification"):
+                validate_litert_lm_release_manifest(
+                    release,
+                    repo="leehack/litert-lm-native",
+                    tag=tag,
+                    release_json_dir=str(fixture_dir),
+                    required_bundles=required_bundles,
+                )
+            release["prerelease"] = manifest["release"]["githubPrerelease"]
+
+            smoke = manifest["realModelSmokes"][0]
+            smoke["model"]["sha256"] = "a" * 64
+            fixture.write_text(json.dumps(manifest), encoding="utf-8")
+            release_assets[0]["digest"] = "sha256:" + hashlib.sha256(
+                fixture.read_bytes()
+            ).hexdigest()
+            with self.assertRaisesRegex(ReleaseError, "owner-pinned asset"):
+                validate_litert_lm_release_manifest(
+                    release,
+                    repo="leehack/litert-lm-native",
+                    tag=tag,
+                    release_json_dir=str(fixture_dir),
+                    required_bundles=required_bundles,
+                )
+            smoke["model"]["sha256"] = (
+                "97abdeea122d579229091659c24c59d988c6419d453a200f6471241a53b9a9b9"
+            )
+
+            smoke["source"]["model"] = "https://example.invalid/model.tflite"
+            fixture.write_text(json.dumps(manifest), encoding="utf-8")
+            release_assets[0]["digest"] = "sha256:" + hashlib.sha256(
+                fixture.read_bytes()
+            ).hexdigest()
+            with self.assertRaisesRegex(ReleaseError, "source provenance"):
+                validate_litert_lm_release_manifest(
+                    release,
+                    repo="leehack/litert-lm-native",
+                    tag=tag,
+                    release_json_dir=str(fixture_dir),
+                    required_bundles=required_bundles,
+                )
+            smoke["source"]["model"] = (
+                "https://huggingface.co/litert-community/moonshine-tiny/resolve/"
+                "beb49ee5028b4fb21eb989bcbd2db30a433373db/"
+                "moonshine_tiny_5s_i8.tflite"
+            )
+
+            original_library_digest = smoke["library"]["sha256"]
+            smoke["library"]["sha256"] = "b" * 64
+            fixture.write_text(json.dumps(manifest), encoding="utf-8")
+            release_assets[0]["digest"] = "sha256:" + hashlib.sha256(
+                fixture.read_bytes()
+            ).hexdigest()
+            with self.assertRaisesRegex(ReleaseError, "runtime artifact"):
+                validate_litert_lm_release_manifest(
+                    release,
+                    repo="leehack/litert-lm-native",
+                    tag=tag,
+                    release_json_dir=str(fixture_dir),
+                    required_bundles=required_bundles,
+                )
+            smoke["library"]["sha256"] = original_library_digest
+
+            smoke["expectation"]["value"] = "fabricated"
+            smoke["transcript"] = "fabricated"
+            fixture.write_text(json.dumps(manifest), encoding="utf-8")
+            release_assets[0]["digest"] = "sha256:" + hashlib.sha256(
+                fixture.read_bytes()
+            ).hexdigest()
+            with self.assertRaisesRegex(ReleaseError, "owner-pinned transcript"):
+                validate_litert_lm_release_manifest(
+                    release,
+                    repo="leehack/litert-lm-native",
+                    tag=tag,
+                    release_json_dir=str(fixture_dir),
+                    required_bundles=required_bundles,
+                )
+            smoke["expectation"]["value"] = "country"
+            smoke["transcript"] = "ask not what your country can do for you"
+
+            manifest["platforms"][0]["artifactPaths"].append(
+                manifest["platforms"][0]["artifactPaths"][0]
+            )
+            fixture.write_text(json.dumps(manifest), encoding="utf-8")
+            release_assets[0]["digest"] = "sha256:" + hashlib.sha256(
+                fixture.read_bytes()
+            ).hexdigest()
+            with self.assertRaisesRegex(ReleaseError, "artifact paths are invalid"):
+                validate_litert_lm_release_manifest(
+                    release,
+                    repo="leehack/litert-lm-native",
+                    tag=tag,
+                    release_json_dir=str(fixture_dir),
+                    required_bundles=required_bundles,
+                )
+            manifest["platforms"][0]["artifactPaths"].pop()
 
             del manifest["capabilities"]["streamChunkAccessors"]
             fixture.write_text(json.dumps(manifest), encoding="utf-8")

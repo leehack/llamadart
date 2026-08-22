@@ -1615,7 +1615,9 @@ Future<void> _writeReleaseFixture(
             'arch': arch,
             'releaseAsset':
                 'litert-lm-native-runtime-$platform-$arch-$tag.tar.gz',
-            'artifactPaths': ['bin/$platform/$arch/runtime.bin'],
+            'artifactPaths': [
+              'bin/$platform/$arch/${_litertRuntimeFileName(platform)}',
+            ],
             'accelerators': <String>[],
           },
       ],
@@ -1625,8 +1627,8 @@ Future<void> _writeReleaseFixture(
             'runtime': 'native',
             'platform': platform,
             'arch': arch,
-            'path': 'bin/$platform/$arch/runtime.bin',
-            'fileName': 'runtime.bin',
+            'path': 'bin/$platform/$arch/${_litertRuntimeFileName(platform)}',
+            'fileName': _litertRuntimeFileName(platform),
             'sha256': _hex('b'),
             'upstreamTag': tag,
             'upstreamCommit': upstreamCommit,
@@ -1657,8 +1659,11 @@ Future<void> _writeReleaseFixture(
   ];
   final payload = {
     'tag_name': resolvedTag ?? tag,
-    if (repo == 'leehack/litert-lm-native')
+    if (repo == 'leehack/litert-lm-native') ...{
       'target_commitish': '451ba0ce7c366972b4dc0e58f08ffe590958f943',
+      'draft': false,
+      'prerelease': false,
+    },
     'assets': releaseAssets,
   };
   await file.writeAsString(jsonEncode(payload));
@@ -1679,24 +1684,49 @@ Map<String, Object> _litertSmoke(
   'nativeCommit': nativeCommit,
   'backend': 'cpu',
   'abiVersion': 1,
-  'transcript': 'how are you doing',
-  'library': {'fileName': 'runtime', 'sha256': _hex('b')},
-  'model': {'fileName': 'model.tflite', 'sha256': _hex('c')},
-  'tokenizer': {'fileName': 'tokenizer.json', 'sha256': _hex('d')},
+  'transcript': 'ask not what your country can do for you',
+  'library': {
+    'fileName': _litertRuntimeFileName(platform),
+    'sha256': _hex('b'),
+  },
+  'model': {
+    'fileName': 'moonshine_tiny_5s_i8.tflite',
+    'sha256':
+        '97abdeea122d579229091659c24c59d988c6419d453a200f6471241a53b9a9b9',
+  },
+  'tokenizer': {
+    'fileName': 'moonshine_tokenizer.json',
+    'sha256':
+        '6579793438bc4fbafffacf699169ff53e3769c5a0a0f5e71cdee8853e8130deb',
+  },
   'fixture': {
-    'fileName': 'audio.wav',
-    'sha256': _hex('e'),
+    'fileName': 'jfk.wav',
+    'sha256':
+        '59dfb9a4acb36fe2a2affc14bacbee2920ff435cb13cc314a08c13f66ba7860e',
     'sampleRateHz': 16000,
     'sampleCount': 16000,
   },
   'source': {
     'runtimeReleaseAsset':
         'litert-lm-native-runtime-$platform-$arch-$releaseTag.tar.gz',
-    'model': 'https://example.invalid/model',
-    'tokenizer': 'https://example.invalid/tokenizer',
-    'fixture': 'https://example.invalid/fixture',
+    'model':
+        'https://huggingface.co/litert-community/moonshine-tiny/resolve/'
+        'beb49ee5028b4fb21eb989bcbd2db30a433373db/'
+        'moonshine_tiny_5s_i8.tflite',
+    'tokenizer':
+        'https://huggingface.co/UsefulSensors/moonshine-tiny/resolve/'
+        '390624ed33d594443aa4aa221f5b9f283b545b5a/tokenizer.json',
+    'fixture':
+        'https://raw.githubusercontent.com/ggml-org/whisper.cpp/'
+        '592feef04a1802b18cbeffd0fd0eb5d02570c2ec/samples/jfk.wav',
   },
-  'expectation': {'type': 'case-insensitive-substring', 'value': 'how are you'},
+  'expectation': {'type': 'case-insensitive-substring', 'value': 'country'},
+};
+
+String _litertRuntimeFileName(String platform) => switch (platform) {
+  'linux' => 'libLiteRtLm.so',
+  'windows' => 'LiteRtLm.dll',
+  _ => 'runtime.bin',
 };
 
 String _hex(String character) => List.filled(64, character).join();

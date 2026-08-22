@@ -98,6 +98,33 @@ REQUIRED_LITERT_PLATFORM_BUNDLES = {
     "macos-x64",
     "windows-x64",
 }
+LITERT_SMOKE_ASSETS = {
+    "model": {
+        "fileName": "moonshine_tiny_5s_i8.tflite",
+        "sha256": "97abdeea122d579229091659c24c59d988c6419d453a200f6471241a53b9a9b9",
+        "url": (
+            "https://huggingface.co/litert-community/moonshine-tiny/resolve/"
+            "beb49ee5028b4fb21eb989bcbd2db30a433373db/"
+            "moonshine_tiny_5s_i8.tflite"
+        ),
+    },
+    "tokenizer": {
+        "fileName": "moonshine_tokenizer.json",
+        "sha256": "6579793438bc4fbafffacf699169ff53e3769c5a0a0f5e71cdee8853e8130deb",
+        "url": (
+            "https://huggingface.co/UsefulSensors/moonshine-tiny/resolve/"
+            "390624ed33d594443aa4aa221f5b9f283b545b5a/tokenizer.json"
+        ),
+    },
+    "fixture": {
+        "fileName": "jfk.wav",
+        "sha256": "59dfb9a4acb36fe2a2affc14bacbee2920ff435cb13cc314a08c13f66ba7860e",
+        "url": (
+            "https://raw.githubusercontent.com/ggml-org/whisper.cpp/"
+            "592feef04a1802b18cbeffd0fd0eb5d02570c2ec/samples/jfk.wav"
+        ),
+    },
+}
 
 
 class ReleaseError(RuntimeError):
@@ -1334,6 +1361,12 @@ def validate_litert_lm_release_manifest(
             raise ReleaseError(
                 f"LiteRT-LM manifest release {name} does not match {tag}"
             )
+    if release.get("draft") is not False:
+        raise ReleaseError("LiteRT-LM release must be published, not a draft")
+    if release.get("prerelease") is not expected_prerelease:
+        raise ReleaseError(
+            "LiteRT-LM GitHub prerelease classification does not match manifest"
+        )
 
     abi = manifest.get("abi")
     capabilities = manifest.get("capabilities")
@@ -1465,8 +1498,12 @@ def validate_litert_lm_release_manifest(
             "platform declaration",
         )
         paths = platform.get("artifactPaths")
-        if not isinstance(paths, list) or not paths:
-            raise ReleaseError("LiteRT-LM platform has no provenance artifact paths")
+        if (
+            not isinstance(paths, list)
+            or not paths
+            or len(paths) != len(set(paths))
+        ):
+            raise ReleaseError("LiteRT-LM platform artifact paths are invalid")
         if any(path not in artifacts_by_path for path in paths):
             raise ReleaseError("LiteRT-LM platform references an unknown artifact path")
         if any(
@@ -1561,6 +1598,29 @@ def validate_litert_lm_release_manifest(
             fixture.get("sampleCount"), int
         ) or fixture["sampleCount"] <= 0:
             raise ReleaseError("LiteRT-LM smoke has invalid fixture metadata")
+        for field, pinned in LITERT_SMOKE_ASSETS.items():
+            payload = item[field]
+            if (
+                payload.get("fileName") != pinned["fileName"]
+                or payload.get("sha256") != pinned["sha256"]
+            ):
+                raise ReleaseError(
+                    f"LiteRT-LM smoke {field} does not match the owner-pinned asset"
+                )
+        library = item["library"]
+        matching_libraries = [
+            artifact
+            for artifact in artifacts_by_path.values()
+            if artifact.get("runtime") == "native"
+            and artifact.get("platform") == item.get("platform")
+            and artifact.get("arch") == item.get("arch")
+            and artifact.get("fileName") == library.get("fileName")
+            and artifact.get("sha256") == library.get("sha256")
+        ]
+        if len(matching_libraries) != 1:
+            raise ReleaseError(
+                "LiteRT-LM smoke library does not match one packaged runtime artifact"
+            )
         source = item.get("source")
         if not isinstance(source, dict):
             raise ReleaseError("LiteRT-LM smoke has no immutable source provenance")
@@ -1574,8 +1634,7 @@ def validate_litert_lm_release_manifest(
             f"{item.get('platform')}-{item.get('arch')}-{tag}.tar.gz"
         )
         if source.get("runtimeReleaseAsset") != expected_runtime_asset or any(
-            not isinstance(source.get(field), str)
-            or not source[field].startswith("https://")
+            source.get(field) != LITERT_SMOKE_ASSETS[field]["url"]
             for field in ("model", "tokenizer", "fixture")
         ):
             raise ReleaseError("LiteRT-LM smoke has invalid source provenance")
@@ -1588,13 +1647,13 @@ def validate_litert_lm_release_manifest(
             "smoke transcript expectation",
         )
         expectation_value = expectation.get("value")
-        if (
-            expectation.get("type") != "case-insensitive-substring"
-            or not isinstance(expectation_value, str)
-            or not expectation_value.strip()
-            or expectation_value.casefold() not in item["transcript"].casefold()
-        ):
-            raise ReleaseError("LiteRT-LM smoke does not satisfy transcript expectation")
+        if expectation != {
+            "type": "case-insensitive-substring",
+            "value": "country",
+        } or expectation_value.casefold() not in item["transcript"].casefold():
+            raise ReleaseError(
+                "LiteRT-LM smoke does not satisfy the owner-pinned transcript expectation"
+            )
         identity = (
             str(item.get("id")),
             str(item.get("platform")),

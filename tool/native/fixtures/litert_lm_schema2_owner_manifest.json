@@ -426,16 +426,16 @@
         "fileName": "jfk.wav",
         "sampleCount": 176000,
         "sampleRateHz": 16000,
-        "sha256": "4444444444444444444444444444444444444444444444444444444444444444"
+        "sha256": "59dfb9a4acb36fe2a2affc14bacbee2920ff435cb13cc314a08c13f66ba7860e"
       },
       "id": "litert_lm_asr_moonshine",
       "library": {
-        "fileName": "libLiteRtLm",
-        "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+        "fileName": "libLiteRtLm.so",
+        "sha256": "0ab324df775ce3d94c7ac776dcae991c1a75927e7be253bfec22ed3c2ba87a72"
       },
       "model": {
         "fileName": "moonshine_tiny_5s_i8.tflite",
-        "sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+        "sha256": "97abdeea122d579229091659c24c59d988c6419d453a200f6471241a53b9a9b9"
       },
       "nativeCommit": "451ba0ce7c366972b4dc0e58f08ffe590958f943",
       "platform": "linux",
@@ -448,7 +448,7 @@
       },
       "tokenizer": {
         "fileName": "moonshine_tokenizer.json",
-        "sha256": "3333333333333333333333333333333333333333333333333333333333333333"
+        "sha256": "6579793438bc4fbafffacf699169ff53e3769c5a0a0f5e71cdee8853e8130deb"
       },
       "transcript": "ask not what your country can do for you",
       "upstreamCommit": "924e79c91542761242244e4f1651851f822e4cbb"
@@ -465,16 +465,16 @@
         "fileName": "jfk.wav",
         "sampleCount": 176000,
         "sampleRateHz": 16000,
-        "sha256": "4444444444444444444444444444444444444444444444444444444444444444"
+        "sha256": "59dfb9a4acb36fe2a2affc14bacbee2920ff435cb13cc314a08c13f66ba7860e"
       },
       "id": "litert_lm_asr_moonshine",
       "library": {
-        "fileName": "libLiteRtLm",
-        "sha256": "1111111111111111111111111111111111111111111111111111111111111111"
+        "fileName": "LiteRtLm.dll",
+        "sha256": "79596712069ace3989862e8e1c2716d84c82bbd0938251dc750abeb366a3dda5"
       },
       "model": {
         "fileName": "moonshine_tiny_5s_i8.tflite",
-        "sha256": "2222222222222222222222222222222222222222222222222222222222222222"
+        "sha256": "97abdeea122d579229091659c24c59d988c6419d453a200f6471241a53b9a9b9"
       },
       "nativeCommit": "451ba0ce7c366972b4dc0e58f08ffe590958f943",
       "platform": "windows",
@@ -487,7 +487,7 @@
       },
       "tokenizer": {
         "fileName": "moonshine_tokenizer.json",
-        "sha256": "3333333333333333333333333333333333333333333333333333333333333333"
+        "sha256": "6579793438bc4fbafffacf699169ff53e3769c5a0a0f5e71cdee8853e8130deb"
       },
       "transcript": "ask not what your country can do for you",
       "upstreamCommit": "924e79c91542761242244e4f1651851f822e4cbb"
