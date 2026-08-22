@@ -36,7 +36,6 @@ class NativeLlamaBackend
   SendPort? _sendPort;
   Future<void>? _isolateStart;
   final LlamaWorkerEntrypoint _workerEntrypoint;
-  final ReceivePort _responsesPort = ReceivePort();
   Pointer<Int8>? _activeCancelToken;
   void Function()? _activeGenerationCleanup;
   void Function()? _activeFreeToken;
@@ -50,7 +49,6 @@ class NativeLlamaBackend
     SendPort? initialSendPort,
     LlamaWorkerEntrypoint workerEntrypoint = llamaWorkerEntry,
   }) : _workerEntrypoint = workerEntrypoint {
-    _responsesPort.listen(_handleResponse);
     if (initialSendPort != null) {
       _sendPort = initialSendPort;
       _isReady = true;
@@ -59,23 +57,6 @@ class NativeLlamaBackend
 
   @override
   bool get isReady => _isReady;
-
-  void _handleResponse(dynamic message) {
-    if (message is SendPort) {
-      _sendPort = message;
-      // Complete handshake
-      final handshakePort = ReceivePort();
-      _sendPort!.send(
-        WorkerHandshake(_currentLogLevel, handshakePort.sendPort),
-      );
-      handshakePort.first.then((_) => handshakePort.close());
-      // Sync log level, closing the reply port once acked so it does not leak
-      // (mirrors _ensureIsolate).
-      final logRp = ReceivePort();
-      _sendPort!.send(LogLevelRequest(_currentLogLevel, logRp.sendPort));
-      logRp.first.then((_) => logRp.close());
-    }
-  }
 
   void _expectDoneResponse(Object? response, String operation) {
     if (response is DoneResponse) {
@@ -166,6 +147,7 @@ class NativeLlamaBackend
           LlamaBackendInitializationException(
             'The llama.cpp worker exited during backend initialization: '
             '${msg.first}',
+            msg.length > 1 ? msg[1] : null,
           ),
         );
         return;
@@ -681,7 +663,6 @@ class NativeLlamaBackend
       rp.close();
     }
     _isolate?.kill();
-    _responsesPort.close();
     // Worker is gone; free the token if a terminal response did not already.
     _activeFreeToken?.call();
     _activeCancelToken = null;

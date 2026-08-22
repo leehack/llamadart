@@ -532,6 +532,36 @@ void main() {
       },
     );
 
+    test('uncaught worker startup error preserves its stack trace', () async {
+      final backend = NativeLlamaBackend(
+        workerEntrypoint: _crashingDuringHandshakeWorkerEntry,
+      );
+
+      try {
+        await expectLater(
+          backend
+              .modelLoad('never.gguf', const ModelParams())
+              .timeout(const Duration(seconds: 2)),
+          throwsA(
+            isA<LlamaBackendInitializationException>()
+                .having(
+                  (error) => error.message,
+                  'message',
+                  contains('synthetic handshake crash'),
+                )
+                .having(
+                  (error) => error.details,
+                  'stack trace',
+                  contains('_crashingDuringHandshakeWorkerEntry'),
+                ),
+          ),
+        );
+        expect(backend.isReady, isFalse);
+      } finally {
+        await backend.dispose().timeout(const Duration(seconds: 2));
+      }
+    });
+
     test('unexpected handshake response reports version skew', () async {
       final backend = NativeLlamaBackend(
         workerEntrypoint: _incompatibleHandshakeWorkerEntry,
@@ -578,6 +608,16 @@ void _exitingBeforeHandshakeReplyWorkerEntry(SendPort initialSendPort) {
     if (message is WorkerHandshake) {
       receivePort.close();
       Isolate.exit();
+    }
+  });
+}
+
+void _crashingDuringHandshakeWorkerEntry(SendPort initialSendPort) {
+  final receivePort = ReceivePort();
+  initialSendPort.send(receivePort.sendPort);
+  receivePort.listen((message) {
+    if (message is WorkerHandshake) {
+      throw StateError('synthetic handshake crash');
     }
   });
 }
