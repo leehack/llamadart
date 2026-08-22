@@ -634,6 +634,20 @@ def find_release_asset(
     return None
 
 
+def require_github_sha256_digest(
+    asset: dict[str, Any], release_tag: str, asset_name: str
+) -> str:
+    digest = asset.get("digest")
+    if not isinstance(digest, str) or re.fullmatch(
+        r"sha256:[0-9a-f]{64}", digest
+    ) is None:
+        raise ReleaseError(
+            f"Stable release {release_tag} does not publish a GitHub "
+            f"SHA-256 digest for {asset_name}"
+        )
+    return digest.removeprefix("sha256:")
+
+
 def release_asset_json(
     release: dict[str, Any], asset_name: str
 ) -> dict[str, Any]:
@@ -730,6 +744,12 @@ def validate_native_release_manifest(
                 "provenance and hook-contract metadata."
             )
         return
+    if release_version.channel == "stable":
+        require_github_sha256_digest(
+            manifest_asset,
+            release_tag,
+            "assets.json",
+        )
 
     manifest = release_asset_json(release, "assets.json")
     native_release_tag = manifest.get("native_release_tag")
@@ -843,10 +863,14 @@ def validate_native_release_manifest(
                 f"{file_name}"
             )
         digest = release_asset.get("digest") or ""
-        if release_version.channel == "stable" and not digest.startswith("sha256:"):
-            raise ReleaseError(
-                f"Stable release {release_tag} does not publish a GitHub "
-                f"SHA-256 digest for {file_name}"
+        if release_version.channel == "stable":
+            digest = (
+                "sha256:"
+                + require_github_sha256_digest(
+                    release_asset,
+                    release_tag,
+                    file_name,
+                )
             )
         if (
             digest.startswith("sha256:")
@@ -872,10 +896,16 @@ def validate_native_release_manifest(
                 f"Stable release {release_tag} manifest is missing required "
                 f"bundle(s): {', '.join(missing)}"
             )
-        if find_release_asset(release, "SHA256SUMS") is None:
+        checksum_asset = find_release_asset(release, "SHA256SUMS")
+        if checksum_asset is None:
             raise ReleaseError(
                 f"Stable release {release_tag} is missing required SHA256SUMS"
             )
+        require_github_sha256_digest(
+            checksum_asset,
+            release_tag,
+            "SHA256SUMS",
+        )
         published_checksums = parse_sha256_sums(
             release_asset_text(release, "SHA256SUMS"),
             release_tag,

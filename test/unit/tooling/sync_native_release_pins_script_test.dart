@@ -1120,6 +1120,28 @@ printf '%s\\n' '{"tag_name":"v0.2.0-1","assets":[]}'
       expect(digest.exitCode, 1);
       expect(digest.stderr, contains('does not publish a GitHub SHA-256'));
 
+      for (final metadataFile in const ['assets.json', 'SHA256SUMS']) {
+        final metadataDigestSetup = await _writeLlamaOnlyRepo('b10514');
+        addTearDown(() => metadataDigestSetup.root.delete(recursive: true));
+        await _writeStableNativeReleaseFixture(
+          metadataDigestSetup.releaseDir,
+          'v0.2.0',
+          missingDigestFile: metadataFile,
+        );
+        final metadataDigest = await _runLlamaSync(
+          metadataDigestSetup,
+          'v0.2.0',
+        );
+        expect(metadataDigest.exitCode, 1, reason: metadataFile);
+        expect(
+          metadataDigest.stderr,
+          contains(
+            'does not publish a GitHub SHA-256 digest for $metadataFile',
+          ),
+          reason: metadataFile,
+        );
+      }
+
       final sumsSetup = await _writeLlamaOnlyRepo('b10514');
       addTearDown(() => sumsSetup.root.delete(recursive: true));
       await _writeStableNativeReleaseFixture(
@@ -1229,12 +1251,12 @@ Future<void> _writeStableNativeReleaseFixture(
         },
       {
         'name': 'assets.json',
-        'digest': 'sha256:${_hex('c')}',
+        if (missingDigestFile != 'assets.json') 'digest': 'sha256:${_hex('c')}',
         'fixture_json': manifest,
       },
       {
         'name': 'SHA256SUMS',
-        'digest': 'sha256:${_hex('d')}',
+        if (missingDigestFile != 'SHA256SUMS') 'digest': 'sha256:${_hex('d')}',
         'fixture_text': [
           for (final artifact in artifacts)
             '${artifact['file'] == checksumSumsMismatchFile ? _hex('f') : artifact['sha256']}  ${artifact['file']}',
