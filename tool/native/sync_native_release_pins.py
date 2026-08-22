@@ -453,7 +453,7 @@ def release_asset_checksum(release: dict[str, Any], asset_name: str) -> str:
         return sha256_url(download_url)
     tag = release.get("tag_name", "<unknown>")
     names = ", ".join(
-        sorted(str(asset.get("name", "")) for asset in release.get("assets", []))
+        sorted(str(asset.get("name", "")) for asset in release_assets(release))
     )
     raise ReleaseError(
         f"Release {tag} does not contain required asset {asset_name}. "
@@ -625,13 +625,23 @@ def native_release_order_key(version: NativeReleaseVersion) -> tuple[int, ...]:
 def find_release_asset(
     release: dict[str, Any], asset_name: str
 ) -> dict[str, Any] | None:
+    for asset in release_assets(release):
+        if asset.get("name") == asset_name:
+            return asset
+    return None
+
+
+def release_assets(release: dict[str, Any]) -> list[dict[str, Any]]:
     assets = release.get("assets", [])
     if not isinstance(assets, list):
         raise ReleaseError("Native release metadata assets must be a list")
-    for asset in assets:
-        if isinstance(asset, dict) and asset.get("name") == asset_name:
-            return asset
-    return None
+    for index, asset in enumerate(assets):
+        if not isinstance(asset, dict):
+            raise ReleaseError(
+                "Native release metadata asset list contains a non-object "
+                f"entry at index {index}"
+            )
+    return assets
 
 
 def require_github_sha256_digest(

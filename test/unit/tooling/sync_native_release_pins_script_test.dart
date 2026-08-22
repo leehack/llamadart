@@ -1154,6 +1154,28 @@ printf '%s\\n' '{"tag_name":"v0.2.0-1","assets":[]}'
       expect(sums.stderr, contains('SHA256SUMS checksum'));
     },
   );
+
+  test('rejects non-object release assets without a traceback', () async {
+    final setup = await _writeLlamaOnlyRepo('b10514');
+    addTearDown(() => setup.root.delete(recursive: true));
+    await _writeStableNativeReleaseFixture(setup.releaseDir, 'v0.2.0');
+    final fixture = File(
+      path.join(
+        setup.releaseDir.path,
+        'leehack__llamadart-native__v0.2.0.json',
+      ),
+    );
+    final payload =
+        jsonDecode(await fixture.readAsString()) as Map<String, Object?>;
+    (payload['assets'] as List<Object?>).add('not-an-object');
+    await fixture.writeAsString(jsonEncode(payload));
+
+    final result = await _runLlamaSync(setup, 'v0.2.0');
+    expect(result.exitCode, 1);
+    expect(result.stderr, contains('asset list contains a non-object entry'));
+    expect(result.stderr, isNot(contains('Traceback')));
+    expect(result.stderr, isNot(contains('AttributeError')));
+  });
 }
 
 Future<_LlamaSyncSetup> _writeLlamaOnlyRepo(String currentTag) async {
