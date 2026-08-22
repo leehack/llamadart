@@ -78,7 +78,7 @@ final _taskReference = RegExp(
 
 HighRiskAssessment assessHighRiskFiles(Iterable<String> files) {
   final normalized = files
-      .map((file) => file.trim().replaceAll('\\', '/'))
+      .map((file) => file)
       .where((file) => file.isNotEmpty)
       .toList(growable: false);
   final surfaces = <HighRiskSurface>{};

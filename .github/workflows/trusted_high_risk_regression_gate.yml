@@ -55,12 +55,12 @@ jobs:
           echo "head_sha=$EVENT_HEAD_SHA" >> "$GITHUB_OUTPUT"
 
       - name: Check out trusted default-branch policy
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
 
       - name: Set up Dart
-        uses: dart-lang/setup-dart@v1
+        uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260 # v1
 
       - name: Resolve live PR state and rename-safe changed files
         id: state
@@ -99,6 +99,14 @@ jobs:
           observed_files="$(jq '[.[][]] | length' "$RUNNER_TEMP/pull-files-pages.json")"
           if [[ "$observed_files" != "$expected_files" ]]; then
             echo "Changed-file pagination is incomplete." >&2
+            exit 1
+          fi
+          if ! jq -e '
+            [.[][] | .filename,
+              (select(.status == "renamed") | .previous_filename)] |
+            all(.[]; type == "string" and (test("[\\r\\n]") | not))
+          ' "$RUNNER_TEMP/pull-files-pages.json" > /dev/null; then
+            echo "Changed paths cannot contain CR or LF." >&2
             exit 1
           fi
           jq -r '

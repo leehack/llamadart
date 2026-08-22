@@ -202,6 +202,22 @@ void main() {
 
       expect(assessment.isHighRisk, isFalse);
     });
+
+    test('preserves exact path spelling instead of normalizing aliases', () {
+      final assessment = assessHighRiskFiles(const [
+        r'lib\src\core\template\chat_format.dart',
+        'lib/src/core/template/chat_format.dart ',
+      ]);
+
+      expect(assessment.isHighRisk, isTrue);
+      expect(
+        assessment.changedFiles,
+        equals(const [
+          r'lib\src\core\template\chat_format.dart',
+          'lib/src/core/template/chat_format.dart ',
+        ]),
+      );
+    });
   });
 
   group('trusted evidence binding', () {
@@ -407,6 +423,23 @@ Verdict: PASS''',
       expect(errors, contains('deleted or renamed-away test'));
     });
 
+    test('does not alias whitespace-bearing test paths', () {
+      final evidence = _validEvidence();
+      final production =
+          evidence['productionEvidence']! as Map<String, dynamic>;
+      production['positiveTests'] = ['$_parserTest '];
+
+      final errors = _validate(
+        files: [
+          ..._structuredFiles.where((path) => path != _parserTest),
+          '$_parserTest ',
+        ],
+        evidence: evidence,
+      ).errors.join('\n');
+
+      expect(errors, contains('not changed by the same PR'));
+    });
+
     test('requires exact affected-family inventory and honest N/A proof', () {
       final evidence = _validEvidence();
       evidence['affectedFamilyEvidence'] = {
@@ -499,6 +532,16 @@ Verdict: PASS''',
       ).readAsStringSync();
 
       expect(workflow, contains('pull_request_target:'));
+      expect(
+        workflow,
+        contains('actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803'),
+      );
+      expect(
+        workflow,
+        contains(
+          'dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260',
+        ),
+      );
       expect(workflow, contains('pull_request_review:'));
       expect(workflow, contains('types: [submitted, edited, dismissed]'));
       expect(workflow, contains('pull_request_review_comment:'));
@@ -511,6 +554,7 @@ Verdict: PASS''',
       expect(workflow, contains('pulls/\$PR_NUMBER/files?per_page=100'));
       expect(workflow, contains('.previous_filename'));
       expect(workflow, contains('status == "removed" or .status == "renamed"'));
+      expect(workflow, contains('Changed paths cannot contain CR or LF.'));
       expect(workflow, contains('persist-credentials: false'));
       expect(workflow, contains('statuses: write'));
       expect(workflow, contains('Publish pending status for the event head'));
