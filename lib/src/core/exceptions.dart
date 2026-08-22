@@ -32,6 +32,12 @@ class LlamaInferenceException extends LlamaException {
   LlamaInferenceException(super.message, [super.details]);
 }
 
+/// Exception thrown when a backend cannot initialize its runtime.
+class LlamaBackendInitializationException extends LlamaException {
+  /// Creates a new [LlamaBackendInitializationException].
+  LlamaBackendInitializationException(super.message, [super.details]);
+}
+
 /// Exception thrown when speech recognition fails.
 class LlamaSpeechException extends LlamaException {
   /// Creates a new [LlamaSpeechException].

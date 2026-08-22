@@ -7,7 +7,8 @@ import 'dart:typed_data';
 
 import 'package:llamadart/src/backends/backend.dart';
 import 'package:llamadart/src/backends/llama_cpp/llama_cpp_backend.dart';
-import 'package:llamadart/src/backends/llama_cpp/worker_messages.dart';
+import 'package:llamadart/src/backends/llama_cpp/llama_cpp_service.dart';
+import 'package:llamadart/src/backends/llama_cpp/worker.dart';
 import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/models/inference/generation_params.dart';
 import 'package:llamadart/src/core/models/inference/model_params.dart';
@@ -480,6 +481,453 @@ void main() {
     await backend.dispose();
     expect(backend.isReady, isFalse);
   });
+
+  test('a disposed backend starts a fresh worker instead of hanging', () async {
+    final backend = NativeLlamaBackend(workerEntrypoint: _reusableWorkerEntry);
+
+    try {
+      expect(
+        await backend
+            .modelLoad('first.gguf', const ModelParams())
+            .timeout(const Duration(seconds: 2)),
+        42,
+      );
+      await backend.dispose().timeout(const Duration(seconds: 2));
+      expect(backend.isReady, isFalse);
+      expect(
+        await backend
+            .modelLoad('second.gguf', const ModelParams())
+            .timeout(const Duration(seconds: 2)),
+        42,
+      );
+      expect(backend.isReady, isTrue);
+    } finally {
+      await backend.dispose().timeout(const Duration(seconds: 2));
+    }
+  });
+
+  group('worker startup handshake', () {
+    test(
+      'init failure is typed, diagnostic, retryable, and cleaned up',
+      () async {
+        final backend = NativeLlamaBackend(
+          workerEntrypoint: _failingInitializationWorkerEntry,
+        );
+
+        try {
+          for (var attempt = 0; attempt < 2; attempt += 1) {
+            await expectLater(
+              backend
+                  .modelLoad('never.gguf', const ModelParams())
+                  .timeout(const Duration(seconds: 2)),
+              throwsA(
+                isA<LlamaBackendInitializationException>()
+                    .having(
+                      (error) => error.message,
+                      'message',
+                      contains('synthetic native loader failure'),
+                    )
+                    .having(
+                      (error) => error.message,
+                      'startup diagnostics',
+                      contains('libllamadart.dylib was not loadable'),
+                    )
+                    .having(
+                      (error) => error.message,
+                      'sanitized diagnostics',
+                      allOf(
+                        isNot(contains('user:pass')),
+                        isNot(contains('token=secret')),
+                        isNot(contains('\u0000')),
+                      ),
+                    ),
+              ),
+              reason: 'attempt ${attempt + 1} must fail instead of hanging',
+            );
+            expect(backend.isReady, isFalse);
+          }
+        } finally {
+          await backend.dispose().timeout(const Duration(seconds: 2));
+        }
+      },
+    );
+
+    test('concurrent calls share the failing startup handshake', () async {
+      final backend = NativeLlamaBackend(
+        workerEntrypoint: _delayedFailingInitializationWorkerEntry,
+      );
+
+      try {
+        final startupFailure = throwsA(
+          isA<LlamaBackendInitializationException>().having(
+            (error) => error.message,
+            'message',
+            contains('delayed synthetic initialization failure'),
+          ),
+        );
+        await Future.wait(<Future<void>>[
+          expectLater(
+            backend
+                .modelLoad('first.gguf', const ModelParams())
+                .timeout(const Duration(seconds: 2)),
+            startupFailure,
+          ),
+          expectLater(
+            backend
+                .modelLoad('second.gguf', const ModelParams())
+                .timeout(const Duration(seconds: 2)),
+            startupFailure,
+          ),
+        ]);
+        expect(backend.isReady, isFalse);
+      } finally {
+        await backend.dispose().timeout(const Duration(seconds: 2));
+      }
+    });
+
+    test('log-level update joins a failing startup handshake', () async {
+      final backend = NativeLlamaBackend(
+        workerEntrypoint: _delayedFailingInitializationWorkerEntry,
+      );
+
+      try {
+        final modelLoad = backend.modelLoad('never.gguf', const ModelParams());
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        final logLevelUpdate = backend.setLogLevel(LlamaLogLevel.debug);
+
+        await Future.wait(<Future<void>>[
+          expectLater(
+            modelLoad.timeout(const Duration(seconds: 2)),
+            throwsA(isA<LlamaBackendInitializationException>()),
+          ),
+          expectLater(
+            logLevelUpdate.timeout(const Duration(seconds: 2)),
+            throwsA(isA<LlamaBackendInitializationException>()),
+          ),
+        ]);
+        expect(backend.isReady, isFalse);
+      } finally {
+        await backend.dispose().timeout(const Duration(seconds: 2));
+      }
+    });
+
+    test(
+      'concurrent dispose cancels the startup caller and permits restart',
+      () async {
+        final backend = NativeLlamaBackend(
+          workerEntrypoint: _delayedReusableWorkerEntry,
+        );
+
+        try {
+          final modelLoad = backend.modelLoad(
+            'before-dispose.gguf',
+            const ModelParams(),
+          );
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+
+          await Future.wait(<Future<void>>[
+            expectLater(
+              modelLoad.timeout(const Duration(seconds: 2)),
+              throwsA(
+                isA<LlamaBackendInitializationException>().having(
+                  (error) => error.message,
+                  'message',
+                  contains('disposed during backend initialization'),
+                ),
+              ),
+            ),
+            backend.dispose().timeout(const Duration(seconds: 2)),
+            backend.dispose().timeout(const Duration(seconds: 2)),
+          ]);
+          expect(backend.isReady, isFalse);
+          expect(
+            await backend
+                .modelLoad('after-dispose.gguf', const ModelParams())
+                .timeout(const Duration(seconds: 2)),
+            42,
+          );
+          expect(backend.isReady, isTrue);
+        } finally {
+          await backend.dispose().timeout(const Duration(seconds: 2));
+        }
+      },
+    );
+
+    test(
+      'worker exit before handshake acknowledgement fails promptly',
+      () async {
+        final backend = NativeLlamaBackend(
+          workerEntrypoint: _exitingBeforeHandshakeReplyWorkerEntry,
+        );
+
+        try {
+          await expectLater(
+            backend
+                .modelLoad('never.gguf', const ModelParams())
+                .timeout(const Duration(seconds: 2)),
+            throwsA(
+              isA<LlamaBackendInitializationException>().having(
+                (error) => error.message,
+                'message',
+                contains('before acknowledging'),
+              ),
+            ),
+          );
+          expect(backend.isReady, isFalse);
+        } finally {
+          await backend.dispose().timeout(const Duration(seconds: 2));
+        }
+      },
+    );
+
+    test(
+      'uncaught worker error before request port identifies stage',
+      () async {
+        final backend = NativeLlamaBackend(
+          workerEntrypoint: _crashingBeforeRequestPortWorkerEntry,
+        );
+
+        try {
+          await expectLater(
+            backend
+                .modelLoad('never.gguf', const ModelParams())
+                .timeout(const Duration(seconds: 2)),
+            throwsA(
+              isA<LlamaBackendInitializationException>()
+                  .having(
+                    (error) => error.message,
+                    'startup stage',
+                    contains('before providing its request port'),
+                  )
+                  .having(
+                    (error) => error.message,
+                    'message',
+                    contains('synthetic pre-port crash'),
+                  ),
+            ),
+          );
+          expect(backend.isReady, isFalse);
+        } finally {
+          await backend.dispose().timeout(const Duration(seconds: 2));
+        }
+      },
+    );
+
+    test('uncaught worker startup error preserves its stack trace', () async {
+      final backend = NativeLlamaBackend(
+        workerEntrypoint: _crashingDuringHandshakeWorkerEntry,
+      );
+
+      try {
+        await expectLater(
+          backend
+              .modelLoad('never.gguf', const ModelParams())
+              .timeout(const Duration(seconds: 2)),
+          throwsA(
+            isA<LlamaBackendInitializationException>()
+                .having(
+                  (error) => error.message,
+                  'message',
+                  contains('synthetic handshake crash'),
+                )
+                .having(
+                  (error) => error.details,
+                  'stack trace',
+                  contains('_crashingDuringHandshakeWorkerEntry'),
+                ),
+          ),
+        );
+        expect(backend.isReady, isFalse);
+      } finally {
+        await backend.dispose().timeout(const Duration(seconds: 2));
+      }
+    });
+
+    test('wedged worker initialization times out and is cleaned up', () async {
+      final backend = NativeLlamaBackend(
+        workerEntrypoint: _wedgedInitializationWorkerEntry,
+        workerStartupTimeout: const Duration(milliseconds: 50),
+      );
+
+      try {
+        await expectLater(
+          backend
+              .modelLoad('never.gguf', const ModelParams())
+              .timeout(const Duration(seconds: 2)),
+          throwsA(
+            isA<LlamaBackendInitializationException>()
+                .having(
+                  (error) => error.message,
+                  'timeout',
+                  contains('Timed out after 50 ms'),
+                )
+                .having(
+                  (error) => error.message,
+                  'diagnostic',
+                  contains('native runtime may be unavailable or unresponsive'),
+                ),
+          ),
+        );
+        expect(backend.isReady, isFalse);
+      } finally {
+        await backend.dispose().timeout(const Duration(seconds: 2));
+      }
+    });
+
+    test('unexpected handshake response reports version skew', () async {
+      final backend = NativeLlamaBackend(
+        workerEntrypoint: _incompatibleHandshakeWorkerEntry,
+      );
+
+      try {
+        await expectLater(
+          backend
+              .modelLoad('never.gguf', const ModelParams())
+              .timeout(const Duration(seconds: 2)),
+          throwsA(
+            isA<LlamaBackendInitializationException>()
+                .having(
+                  (error) => error.message,
+                  'response type',
+                  contains('String'),
+                )
+                .having(
+                  (error) => error.message,
+                  'compatibility hint',
+                  contains('may be incompatible'),
+                ),
+          ),
+        );
+        expect(backend.isReady, isFalse);
+      } finally {
+        await backend.dispose().timeout(const Duration(seconds: 2));
+      }
+    });
+  });
+}
+
+void _failingInitializationWorkerEntry(SendPort initialSendPort) {
+  runLlamaWorkerForTesting(
+    initialSendPort,
+    _FailingInitializationLlamaCppService(),
+  );
+}
+
+void _reusableWorkerEntry(SendPort initialSendPort) {
+  final receivePort = ReceivePort();
+  initialSendPort.send(receivePort.sendPort);
+  receivePort.listen((message) {
+    switch (message) {
+      case WorkerHandshake():
+        message.sendPort.send(DoneResponse());
+      case ModelLoadRequest():
+        message.sendPort.send(HandleResponse(42));
+      case DisposeRequest():
+        message.sendPort.send(null);
+        receivePort.close();
+        Isolate.exit();
+    }
+  });
+}
+
+void _delayedFailingInitializationWorkerEntry(SendPort initialSendPort) {
+  final receivePort = ReceivePort();
+  initialSendPort.send(receivePort.sendPort);
+  receivePort.listen((message) async {
+    if (message is WorkerHandshake) {
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      message.sendPort.send(
+        ErrorResponse(
+          'delayed synthetic initialization failure',
+          kind: WorkerErrorKind.backendInitialization,
+        ),
+      );
+      receivePort.close();
+    }
+  });
+}
+
+void _delayedReusableWorkerEntry(SendPort initialSendPort) {
+  final receivePort = ReceivePort();
+  initialSendPort.send(receivePort.sendPort);
+  receivePort.listen((message) async {
+    switch (message) {
+      case WorkerHandshake():
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        message.sendPort.send(DoneResponse());
+      case ModelLoadRequest():
+        message.sendPort.send(HandleResponse(42));
+      case DisposeRequest():
+        message.sendPort.send(null);
+        receivePort.close();
+        Isolate.exit();
+    }
+  });
+}
+
+void _exitingBeforeHandshakeReplyWorkerEntry(SendPort initialSendPort) {
+  final receivePort = ReceivePort();
+  initialSendPort.send(receivePort.sendPort);
+  receivePort.listen((message) {
+    if (message is WorkerHandshake) {
+      receivePort.close();
+      Isolate.exit();
+    }
+  });
+}
+
+void _crashingBeforeRequestPortWorkerEntry(SendPort initialSendPort) {
+  throw StateError('synthetic pre-port crash');
+}
+
+void _crashingDuringHandshakeWorkerEntry(SendPort initialSendPort) {
+  final receivePort = ReceivePort();
+  initialSendPort.send(receivePort.sendPort);
+  receivePort.listen((message) {
+    if (message is WorkerHandshake) {
+      throw StateError('synthetic handshake crash');
+    }
+  });
+}
+
+void _wedgedInitializationWorkerEntry(SendPort initialSendPort) {
+  final receivePort = ReceivePort();
+  initialSendPort.send(receivePort.sendPort);
+  receivePort.listen((_) {
+    // Keep the worker alive without acknowledging its startup handshake.
+  });
+}
+
+void _incompatibleHandshakeWorkerEntry(SendPort initialSendPort) {
+  final receivePort = ReceivePort();
+  initialSendPort.send(receivePort.sendPort);
+  receivePort.listen((message) {
+    if (message is WorkerHandshake) {
+      message.sendPort.send('legacy-ready');
+      receivePort.close();
+    }
+  });
+}
+
+class _FailingInitializationLlamaCppService extends LlamaCppService {
+  @override
+  void initializeBackend() {
+    throw ArgumentError('synthetic native loader failure');
+  }
+
+  @override
+  List<String> getStartupDiagnostics() {
+    return const <String>[
+      'libllamadart.dylib was not loadable',
+      'failed at https://user:pass@example.com/lib.dylib?token=secret\u0000next',
+    ];
+  }
+
+  @override
+  void setLogLevel(LlamaLogLevel level) {}
+
+  @override
+  void dispose() {}
 }
 
 class _TrackingNativeLlamaBackend extends NativeLlamaBackend {
