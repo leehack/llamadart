@@ -215,6 +215,12 @@ void main() {
         ChatFormat.minicpm5: TemplateToolCallSerialization.normalizeOnly,
         ChatFormat.qwen3CoderXml: TemplateToolCallSerialization.normalizeOnly,
         ChatFormat.seedOss: TemplateToolCallSerialization.normalizeOnly,
+        ChatFormat.kimiK3: TemplateToolCallSerialization.normalizeOnly,
+        ChatFormat.minimaxM1: TemplateToolCallSerialization.normalizeOnly,
+        ChatFormat.minimaxM3: TemplateToolCallSerialization.normalizeOnly,
+        ChatFormat.deepseekV4: TemplateToolCallSerialization.normalizeOnly,
+        ChatFormat.museGlimmer: TemplateToolCallSerialization.normalizeOnly,
+        ChatFormat.laguna: TemplateToolCallSerialization.normalizeOnly,
       };
 
       for (final MapEntry(key: format, value: expected)

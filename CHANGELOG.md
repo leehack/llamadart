@@ -1,5 +1,9 @@
 ## Unreleased
 
+* Added template-aware parsing for Kimi K3, MiniMax M1/M3, DeepSeek V3.2/V4,
+  Muse Glimmer, and Poolside Laguna, preventing their native tool calls from
+  silently falling back to plain content.
+
 * Fixed XML-style tool-call parsing to honor raw-versus-JSON argument values
   and final-value delimiters. Apriel 1.5 and Xiaomi MiMo now parse nested JSON
   values without splitting on inner commas, while malformed payloads remain
