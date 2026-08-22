@@ -6,8 +6,9 @@ import 'tool_call_parsing_utils.dart';
 
 /// Describes the XML-style tool call format used by several models.
 ///
-/// Matches llama.cpp's `xml_tool_call_format` struct. Shared by:
-/// MiniMax M2, Qwen3 Coder XML, Kimi K2, Apriel, Seed OSS.
+/// Retains the semantics of llama.cpp's former `xml_tool_call_format` struct.
+/// Shared by MiniMax M2, Qwen3 Coder XML, Apriel, Seed OSS, and legacy
+/// format definitions.
 class XmlToolCallFormat {
   /// Opening scope tag (e.g., `<minimax:tool_call>`).
   final String scopeStart;
@@ -33,13 +34,20 @@ class XmlToolCallFormat {
   /// Closing scope tag (e.g., `</minimax:tool_call>`).
   final String scopeEnd;
 
-  /// Whether argument values are raw strings (true) or JSON (false).
-  final bool rawArgval;
+  /// How argument values are decoded.
+  ///
+  /// `true` preserves raw strings, `false` requires JSON, and `null` accepts
+  /// either form. This matches the three-state upstream field that preceded
+  /// llama.cpp's format-specific PEG parsers.
+  final bool? rawArgval;
 
   /// Whether to trim whitespace from raw argument values.
   final bool trimRawArgval;
 
   /// Override for the last value's end marker.
+  ///
+  /// An empty string means the tool-end marker immediately follows the final
+  /// value.
   final String? lastValEnd;
 
   /// Override for the last tool's end marker.
@@ -58,7 +66,7 @@ class XmlToolCallFormat {
     required this.valEnd,
     required this.toolEnd,
     required this.scopeEnd,
-    this.rawArgval = true,
+    this.rawArgval,
     this.trimRawArgval = false,
     this.lastValEnd,
     this.lastToolEnd,
@@ -140,7 +148,7 @@ class XmlToolCallFormat {
     toolEnd: '}, ',
     scopeEnd: ']</tool_calls>',
     rawArgval: false,
-    lastValEnd: '',
+    lastValEnd: '}',
     lastToolEnd: '}',
   );
 
@@ -245,12 +253,27 @@ $jsonValueRules
 ''';
   }
 
+  final argumentValueRule = format.rawArgval == true ? 'raw-text' : 'value';
+  final argumentsRule = format.lastValEnd == null
+      ? '(param ${_literal(format.valEnd)})*'
+      : '(param (${_literal(format.valEnd)} param)*)? ${_literal(format.lastValEnd!)}';
+  final toolCallRule =
+      '${_literal(format.toolStart)} tool-name ${_literal(format.toolSep)} arguments ${_literal(format.toolEnd)}';
+  final rootRule = format.lastToolEnd == null
+      ? '${scopeStart}tool-call+$scopeEnd'
+      : '${scopeStart}tool-call* last-tool-call$scopeEnd';
+  final lastToolCallRule = format.lastToolEnd == null
+      ? ''
+      : '\nlast-tool-call ::= ${_literal(format.toolStart)} tool-name ${_literal(format.toolSep)} arguments ${_literal(format.lastToolEnd!)}';
+  final rawTextRule = format.rawArgval == true ? '\nraw-text ::= ([^<])*' : '';
+
   return '''
-root ::= ${scopeStart}tool-call+$scopeEnd
-tool-call ::= ${_literal(format.toolStart)} tool-name ${_literal(format.toolSep)} param* ${_literal(format.toolEnd)}
-param ::= ${_literal(format.keyStart)} param-name ${_literal(format.keyValSep)} value ${_literal(format.valEnd)}
+root ::= $rootRule
+tool-call ::= $toolCallRule$lastToolCallRule
+arguments ::= $argumentsRule
+param ::= ${_literal(format.keyStart)} param-name ${_literal(format.keyValSep)} $argumentValueRule
 tool-name ::= $toolNameRule
-param-name ::= $paramNameRule
+param-name ::= $paramNameRule$rawTextRule
 $jsonValueRules
 ''';
 }
@@ -519,29 +542,12 @@ _ParsedXmlArguments? _parseXmlArguments(
     }
     pos = keyNameEnd + format.keyValSep.length;
 
-    final valEndIdx = format.valEnd.isEmpty
-        ? pos
-        : content.indexOf(format.valEnd, pos);
-    final cdataValue = _parseCdataValue(content, pos, format);
-    if (cdataValue != null) {
-      _setArgValue(args, key, cdataValue.value, format);
-      pos = cdataValue.nextPos;
-      continue;
+    final argumentValue = _parseXmlArgumentValue(content, pos, format);
+    if (argumentValue == null) {
+      return null;
     }
-
-    final toolEndIdx = _findNextToolEndIndex(content, pos, format);
-    if (valEndIdx == -1 || (toolEndIdx != -1 && toolEndIdx < valEndIdx)) {
-      if (toolEndIdx != -1) {
-        _setArgValue(args, key, content.substring(pos, toolEndIdx), format);
-        pos = toolEndIdx;
-      } else if (strictScope) {
-        return null;
-      }
-      break;
-    }
-
-    _setArgValue(args, key, content.substring(pos, valEndIdx), format);
-    pos = valEndIdx + format.valEnd.length;
+    args[key] = argumentValue.value;
+    pos = argumentValue.nextPos;
   }
 
   pos = _consumeXmlWhitespace(content, pos);
@@ -645,18 +651,115 @@ int _consumeXmlWhitespace(String text, int from) {
   return pos;
 }
 
-void _setArgValue(
-  Map<String, dynamic> args,
-  String key,
-  String rawValue,
+_ParsedXmlArgumentValue? _parseXmlArgumentValue(
+  String content,
+  int start,
   XmlToolCallFormat format,
 ) {
-  var value = rawValue;
+  if (format.rawArgval == false) {
+    final valueStart = _consumeXmlWhitespace(content, start);
+    final parsed = ToolCallParsingUtils.extractLeadingJsonValue(
+      content,
+      valueStart,
+    );
+    if (parsed == null) {
+      return null;
+    }
+    final nextPos = _consumeValueEnd(content, parsed.end, format);
+    if (nextPos == null) {
+      return null;
+    }
+    return _ParsedXmlArgumentValue(value: parsed.value, nextPos: nextPos);
+  }
+
+  final cdataValue = _parseCdataValue(content, start, format);
+  if (cdataValue != null) {
+    return _ParsedXmlArgumentValue(
+      value: cdataValue.value,
+      nextPos: cdataValue.nextPos,
+    );
+  }
+
+  final valueEnd = _findValueEnd(content, start, format);
+  if (valueEnd == null) {
+    return null;
+  }
+
+  var value = content.substring(start, valueEnd.valueEnd);
   if (format.trimRawArgval) {
     value = value.trim();
   }
+  return _ParsedXmlArgumentValue(
+    value: format.rawArgval == true
+        ? value
+        : ToolCallParsingUtils.decodeJsonValueOrString(value),
+    nextPos: valueEnd.nextPos,
+  );
+}
 
-  args[key] = ToolCallParsingUtils.decodeJsonValueOrString(value);
+int? _consumeValueEnd(String content, int start, XmlToolCallFormat format) {
+  final markerStart = _consumeXmlWhitespace(content, start);
+  if (format.valEnd.isNotEmpty &&
+      content.startsWith(format.valEnd, markerStart)) {
+    return markerStart + format.valEnd.length;
+  }
+
+  final lastValEnd = format.lastValEnd;
+  if (lastValEnd == null ||
+      (lastValEnd.isNotEmpty && !content.startsWith(lastValEnd, markerStart))) {
+    return null;
+  }
+  final afterMarker = markerStart + lastValEnd.length;
+  final toolEndStart = _consumeXmlWhitespace(content, afterMarker);
+  return _matchToolEnd(content, toolEndStart, format) == null
+      ? null
+      : afterMarker;
+}
+
+_ValueEndMatch? _findValueEnd(
+  String content,
+  int start,
+  XmlToolCallFormat format,
+) {
+  _ValueEndMatch? best;
+  if (format.valEnd.isNotEmpty) {
+    final index = content.indexOf(format.valEnd, start);
+    if (index != -1) {
+      best = _ValueEndMatch(
+        valueEnd: index,
+        nextPos: index + format.valEnd.length,
+      );
+    }
+  }
+
+  final lastValEnd = format.lastValEnd;
+  if (lastValEnd != null) {
+    if (lastValEnd.isEmpty) {
+      final toolEndIndex = _findNextToolEndIndex(content, start, format);
+      if (toolEndIndex != -1 &&
+          (best == null || toolEndIndex < best.valueEnd)) {
+        best = _ValueEndMatch(valueEnd: toolEndIndex, nextPos: toolEndIndex);
+      }
+    } else {
+      var searchFrom = start;
+      while (searchFrom <= content.length - lastValEnd.length) {
+        final index = content.indexOf(lastValEnd, searchFrom);
+        if (index == -1) {
+          break;
+        }
+        final afterMarker = index + lastValEnd.length;
+        final toolEndStart = _consumeXmlWhitespace(content, afterMarker);
+        if (_matchToolEnd(content, toolEndStart, format) != null) {
+          if (best == null || index < best.valueEnd) {
+            best = _ValueEndMatch(valueEnd: index, nextPos: afterMarker);
+          }
+          break;
+        }
+        searchFrom = index + lastValEnd.length;
+      }
+    }
+  }
+  return best;
 }
 
 final class _ParsedCdataValue {
@@ -683,4 +786,18 @@ final class _ParsedXmlArguments {
   final int nextPos;
 
   const _ParsedXmlArguments({required this.arguments, required this.nextPos});
+}
+
+final class _ParsedXmlArgumentValue {
+  final Object? value;
+  final int nextPos;
+
+  const _ParsedXmlArgumentValue({required this.value, required this.nextPos});
+}
+
+final class _ValueEndMatch {
+  final int valueEnd;
+  final int nextPos;
+
+  const _ValueEndMatch({required this.valueEnd, required this.nextPos});
 }

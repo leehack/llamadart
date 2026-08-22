@@ -50,6 +50,47 @@ void main() {
       containsPair('city', 'Seoul'),
     );
   });
+
+  test('parses nested JSON argument values without splitting on commas', () {
+    final handler = XiaomiMimoHandler();
+    const output =
+        '<tool_call>\n'
+        '{"name": "weather", "arguments": {'
+        '"options": {"units": "c", "days": [1, 2]}, '
+        '"active": true}\n'
+        '</tool_call>';
+
+    final parsed = handler.parse(output);
+
+    expect(parsed.content, isEmpty);
+    expect(parsed.toolCalls, hasLength(1));
+    expect(jsonDecode(parsed.toolCalls.single.function!.arguments!), {
+      'options': {
+        'units': 'c',
+        'days': [1, 2],
+      },
+      'active': true,
+    });
+  });
+
+  test('keeps raw or truncated arguments as content', () {
+    final handler = XiaomiMimoHandler();
+    const rawValue =
+        '<tool_call>\n'
+        '{"name": "weather", "arguments": {"city": Seoul}\n'
+        '</tool_call>';
+    const truncated =
+        '<tool_call>\n'
+        '{"name": "weather", "arguments": {"city": "Seoul"';
+
+    final malformed = handler.parse(rawValue);
+    final partial = handler.parse(truncated);
+
+    expect(malformed.content, rawValue);
+    expect(malformed.toolCalls, isEmpty);
+    expect(partial.content, truncated);
+    expect(partial.toolCalls, isEmpty);
+  });
 }
 
 Future<Object?> _noop(_) async {

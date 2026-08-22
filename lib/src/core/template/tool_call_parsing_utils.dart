@@ -264,8 +264,10 @@ class ToolCallParsingUtils {
       return null;
     }
 
-    final decoded = decodeJsonValue(input.substring(offset, end));
-    if (decoded == null) {
+    Object? decoded;
+    try {
+      decoded = jsonDecode(input.substring(offset, end));
+    } catch (_) {
       return null;
     }
 

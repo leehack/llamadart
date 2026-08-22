@@ -38,6 +38,56 @@ void main() {
     });
   });
 
+  test('honors raw-only values and the final value delimiter', () {
+    const format = XmlToolCallFormat(
+      scopeStart: '<calls>',
+      toolStart: '<call=',
+      toolSep: '>',
+      keyStart: '<arg=',
+      keyValSep: '>',
+      valEnd: '</arg>',
+      lastValEnd: '</last>',
+      toolEnd: '</call>',
+      scopeEnd: '</calls>',
+      rawArgval: true,
+    );
+    const output =
+        '<calls><call=sample>'
+        '<arg=count>42</arg>'
+        '<arg=enabled>false</last>'
+        '</call></calls>';
+
+    final parsed = parseXmlToolCalls(output, format);
+
+    expect(parsed.content, isEmpty);
+    expect(parsed.toolCalls, hasLength(1));
+    expect(jsonDecode(parsed.toolCalls.single.function!.arguments!), {
+      'count': '42',
+      'enabled': 'false',
+    });
+  });
+
+  test('rejects raw values when a format requires JSON', () {
+    const format = XmlToolCallFormat(
+      scopeStart: '<calls>',
+      toolStart: '<call=',
+      toolSep: '>{',
+      keyStart: '"',
+      keyValSep: '":',
+      valEnd: ',',
+      lastValEnd: '}',
+      toolEnd: '</call>',
+      scopeEnd: '</calls>',
+      rawArgval: false,
+    );
+    const output = '<calls><call=sample>{"city":Seoul}</call></calls>';
+
+    final parsed = parseXmlToolCalls(output, format);
+
+    expect(parsed.toolCalls, isEmpty);
+    expect(parsed.content, output);
+  });
+
   test('Qwen3 Coder grammar accepts raw XML parameter values', () {
     final grammar = buildXmlToolCallGrammar(<ToolDefinition>[
       ToolDefinition(
@@ -142,5 +192,34 @@ void main() {
 
     expect(parsed.toolCalls, isEmpty);
     expect(parsed.content, output);
+  });
+
+  test('raw-only grammar uses the configured final delimiter', () {
+    const format = XmlToolCallFormat(
+      scopeStart: '<calls>',
+      toolStart: '<call=',
+      toolSep: '>',
+      keyStart: '<arg=',
+      keyValSep: '>',
+      valEnd: '</arg>',
+      lastValEnd: '</last>',
+      toolEnd: '</call>',
+      scopeEnd: '</calls>',
+      rawArgval: true,
+    );
+    final grammar = buildXmlToolCallGrammar(<ToolDefinition>[
+      ToolDefinition(
+        name: 'sample',
+        description: 'Samples values.',
+        parameters: <ToolParam>[ToolParam.string('value', required: true)],
+        handler: (_) async => null,
+      ),
+    ], format);
+
+    expect(grammar, contains('raw-text ::= ([^<])*'));
+    expect(
+      grammar,
+      contains('arguments ::= (param ("</arg>" param)*)? "</last>"'),
+    );
   });
 }

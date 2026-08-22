@@ -120,6 +120,14 @@ void main() {
       expect(ToolCallParsingUtils.extractLeadingJsonValue('oops', 0), isNull);
     });
 
+    test('extracts a leading JSON null value', () {
+      final parsed = ToolCallParsingUtils.extractLeadingJsonValue('null,', 0);
+
+      expect(parsed, isNotNull);
+      expect(parsed!.value, isNull);
+      expect(parsed.end, 4);
+    });
+
     test('extracts the first embedded JSON object', () {
       final object = ToolCallParsingUtils.extractFirstJsonObject(
         'before {"city":"Seoul"} after',
