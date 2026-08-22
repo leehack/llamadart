@@ -81,6 +81,12 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
             validate_litert_lm_transition(f"{DEVELOPMENT_TAG}-2", DEVELOPMENT_TAG)
         with self.assertRaisesRegex(ReleaseError, "ordinal alias"):
             validate_litert_lm_transition("v0.16.0-native.2", "v0.16.0-2")
+        with self.assertRaisesRegex(ReleaseError, "immediate next ordinal"):
+            validate_litert_lm_transition("v0.16.0-native.2", "v0.16.0-42")
+        with self.assertRaisesRegex(ReleaseError, "target line at its base"):
+            validate_litert_lm_transition("v0.16.0-native.2", "v0.17.0-1")
+        with self.assertRaisesRegex(ReleaseError, "immediate next ordinal"):
+            validate_litert_lm_transition(DEVELOPMENT_TAG, f"{DEVELOPMENT_TAG}-2")
 
     def test_channel_and_development_line_transitions_require_explicit_approval(self) -> None:
         with self.assertRaisesRegex(ReleaseError, "stable/development"):
@@ -97,6 +103,12 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
             "g111111111111",
             allow_development_line_transition=True,
         )
+        with self.assertRaisesRegex(ReleaseError, "enter at its base"):
+            validate_litert_lm_transition(
+                DEVELOPMENT_TAG,
+                "g111111111111-1",
+                allow_development_line_transition=True,
+            )
 
     def test_atomic_write_rolls_back_every_file_after_partial_failure(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
@@ -131,7 +143,7 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
         )
         self.assertEqual(
             hashlib.sha256(owner_fixture.read_bytes()).hexdigest(),
-            "03b7190c23f7df5b2e0c10ca1af23830259203ee5ecbc2b69dd2dc415ec468e6",
+            "fdd6cdf7304de550f789c41f3032792dc0a92a0d150f64585d8a721a90406c18",
         )
         manifest = json.loads(owner_fixture.read_text(encoding="utf-8"))
         tag = manifest["release"]["tag"]
@@ -216,6 +228,34 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
                     required_bundles=required_bundles,
                 )
             manifest["upstream"]["prebuiltOverrides"].append(removed_override)
+
+            override_target = removed_override["targetPath"]
+            override_artifact = next(
+                artifact
+                for artifact in manifest["artifacts"]
+                if artifact["path"] == override_target
+            )
+            manifest["artifacts"].remove(override_artifact)
+            override_platform = next(
+                platform
+                for platform in manifest["platforms"]
+                if override_target in platform["artifactPaths"]
+            )
+            override_platform["artifactPaths"].remove(override_target)
+            fixture.write_text(json.dumps(manifest), encoding="utf-8")
+            release_assets[0]["digest"] = "sha256:" + hashlib.sha256(
+                fixture.read_bytes()
+            ).hexdigest()
+            with self.assertRaisesRegex(ReleaseError, "override target provenance"):
+                validate_litert_lm_release_manifest(
+                    release,
+                    repo="leehack/litert-lm-native",
+                    tag=tag,
+                    release_json_dir=str(fixture_dir),
+                    required_bundles=required_bundles,
+                )
+            manifest["artifacts"].append(override_artifact)
+            override_platform["artifactPaths"].append(override_target)
 
             removed_artifact = next(
                 artifact

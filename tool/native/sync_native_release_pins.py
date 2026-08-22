@@ -238,6 +238,10 @@ def required_litert_manifest_paths(
         f"dist/spm/{release_tag}/{pattern.format(tag=release_tag)}"
         for pattern in spm_patterns
     )
+    required.update(
+        override["targetPath"]
+        for override in LITERT_PREBUILT_OVERRIDES.get(compatibility_tag, [])
+    )
     return required
 
 
@@ -1201,6 +1205,15 @@ def validate_litert_lm_transition(
                     "LiteRT-LM stable/development transition requires explicit "
                     "owner-ancestry approval"
                 )
+            target_rebuild = (
+                development_release_order(target)[1]
+                if target_development
+                else stable_release_order(target)[1]
+            )
+            if target_rebuild != 0:
+                raise ReleaseError(
+                    "LiteRT-LM channel transition must enter the target line at its base"
+                )
             return
         if current_development and target_development:
             current_base, current_rebuild = development_release_order(current)
@@ -1213,9 +1226,19 @@ def validate_litert_lm_transition(
                     "LiteRT-LM development line transition requires explicit "
                     "owner-ancestry approval"
                 )
-            if current_base == target_base and target_rebuild < current_rebuild:
+            if current_base != target_base:
+                if target_rebuild != 0:
+                    raise ReleaseError(
+                        "LiteRT-LM development line transition must enter at its base"
+                    )
+                return
+            if target_rebuild < current_rebuild:
                 raise ReleaseError(
                     f"LiteRT-LM development rebuild rollback: {current} -> {target}"
+                )
+            if target_rebuild != current_rebuild + 1:
+                raise ReleaseError(
+                    "LiteRT-LM development rebuild must use the immediate next ordinal"
                 )
         return
 
@@ -1234,6 +1257,16 @@ def validate_litert_lm_transition(
         target_version == current_version and target_rebuild < current_rebuild
     ):
         raise ReleaseError(f"LiteRT-LM release rollback: {current} -> {target}")
+    if target_version > current_version:
+        if target_rebuild != 0:
+            raise ReleaseError(
+                "LiteRT-LM stable transition must enter the target line at its base"
+            )
+        return
+    if target_rebuild != current_rebuild + 1:
+        raise ReleaseError(
+            "LiteRT-LM stable rebuild must use the immediate next ordinal"
+        )
 
 
 def stable_release_order(tag: str) -> tuple[tuple[int, int, int], int]:
@@ -1587,6 +1620,17 @@ def validate_litert_lm_release_manifest(
         if artifact_path in artifacts_by_path:
             raise ReleaseError("LiteRT-LM manifest contains duplicate artifact paths")
         artifacts_by_path[artifact_path] = artifact
+
+    for override in expected_overrides:
+        target = artifacts_by_path.get(override["targetPath"])
+        if (
+            target is None
+            or target.get("runtime") != "native"
+            or target.get("sha256") != override["sha256"]
+        ):
+            raise ReleaseError(
+                "LiteRT-LM prebuilt override target provenance does not match owner policy"
+            )
 
     covered_native_paths: set[str] = set()
     for platform in platforms:

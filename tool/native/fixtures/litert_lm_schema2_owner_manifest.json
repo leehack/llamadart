@@ -18,6 +18,20 @@
       "upstreamTag": "v0.16.0"
     },
     {
+      "accelerators": [
+        "webgpu"
+      ],
+      "arch": "arm64",
+      "fileName": "libwebgpu_dawn.so",
+      "path": "bin/android/arm64/libwebgpu_dawn.so",
+      "platform": "android",
+      "releaseTag": "v0.16.0-3",
+      "runtime": "native",
+      "sha256": "7282aacdb076ce89f0c9d93107a145b991b99eb1dfbd5b5746dd0d99466ab3c3",
+      "upstreamCommit": "924e79c91542761242244e4f1651851f822e4cbb",
+      "upstreamTag": "v0.16.0"
+    },
+    {
       "accelerators": [],
       "arch": "x64",
       "fileName": "libLiteRtLm.so",
@@ -30,54 +44,16 @@
       "upstreamTag": "v0.16.0"
     },
     {
-      "accelerators": [],
-      "arch": "arm64",
-      "fileName": "CLiteRTLM",
-      "path": "bin/ios/arm64/CLiteRTLM.framework/CLiteRTLM",
-      "platform": "ios",
-      "releaseTag": "v0.16.0-3",
-      "runtime": "native",
-      "sha256": "b2a488576b9affa57e4cf659770a1d2d3316683aed5755943a05a72020fcad81",
-      "upstreamCommit": "924e79c91542761242244e4f1651851f822e4cbb",
-      "upstreamTag": "v0.16.0"
-    },
-    {
-      "accelerators": [],
-      "arch": "arm64",
-      "fileName": "LiteRtLm",
-      "path": "bin/ios/arm64/LiteRtLm.framework/LiteRtLm",
-      "platform": "ios",
-      "releaseTag": "v0.16.0-3",
-      "runtime": "native",
-      "sha256": "7bb8406f901ce1627abb37723b46ef3c0cb814489e91e8ca524f7d2bab52dd5f",
-      "upstreamCommit": "924e79c91542761242244e4f1651851f822e4cbb",
-      "upstreamTag": "v0.16.0"
-    },
-    {
       "accelerators": [
-        "metal"
+        "webgpu"
       ],
-      "arch": "arm64",
-      "fileName": "LiteRtMetalAccelerator",
-      "path": "bin/ios/arm64/LiteRtMetalAccelerator.framework/LiteRtMetalAccelerator",
-      "platform": "ios",
+      "arch": "x64",
+      "fileName": "libwebgpu_dawn.so",
+      "path": "bin/android/x64/libwebgpu_dawn.so",
+      "platform": "android",
       "releaseTag": "v0.16.0-3",
       "runtime": "native",
-      "sha256": "298c8c0deabcdf1b59f95e2b99768726f3601184ffa66ebd1a7ecdfac817f99f",
-      "upstreamCommit": "924e79c91542761242244e4f1651851f822e4cbb",
-      "upstreamTag": "v0.16.0"
-    },
-    {
-      "accelerators": [
-        "metal"
-      ],
-      "arch": "arm64",
-      "fileName": "LiteRtTopKMetalSampler",
-      "path": "bin/ios/arm64/LiteRtTopKMetalSampler.framework/LiteRtTopKMetalSampler",
-      "platform": "ios",
-      "releaseTag": "v0.16.0-3",
-      "runtime": "native",
-      "sha256": "6d909d1de6dc76a8f882f9c999f939b996e317018a61692b5bf1db59f5d3b69e",
+      "sha256": "fcfb9a0b902f7dd3f81f01295f381c10b22a2d5774f95ee0db813f284a0ab087",
       "upstreamCommit": "924e79c91542761242244e4f1651851f822e4cbb",
       "upstreamTag": "v0.16.0"
     },
@@ -130,6 +106,58 @@
       "releaseTag": "v0.16.0-3",
       "runtime": "native",
       "sha256": "d04aebae7a7e12dffc243ebbabe8ee4fae04da9eaf5ded57fb08a61fa72cd414",
+      "upstreamCommit": "924e79c91542761242244e4f1651851f822e4cbb",
+      "upstreamTag": "v0.16.0"
+    },
+    {
+      "accelerators": [],
+      "arch": "arm64",
+      "fileName": "CLiteRTLM",
+      "path": "bin/ios/arm64/CLiteRTLM.framework/CLiteRTLM",
+      "platform": "ios",
+      "releaseTag": "v0.16.0-3",
+      "runtime": "native",
+      "sha256": "b2a488576b9affa57e4cf659770a1d2d3316683aed5755943a05a72020fcad81",
+      "upstreamCommit": "924e79c91542761242244e4f1651851f822e4cbb",
+      "upstreamTag": "v0.16.0"
+    },
+    {
+      "accelerators": [],
+      "arch": "arm64",
+      "fileName": "LiteRtLm",
+      "path": "bin/ios/arm64/LiteRtLm.framework/LiteRtLm",
+      "platform": "ios",
+      "releaseTag": "v0.16.0-3",
+      "runtime": "native",
+      "sha256": "7bb8406f901ce1627abb37723b46ef3c0cb814489e91e8ca524f7d2bab52dd5f",
+      "upstreamCommit": "924e79c91542761242244e4f1651851f822e4cbb",
+      "upstreamTag": "v0.16.0"
+    },
+    {
+      "accelerators": [
+        "metal"
+      ],
+      "arch": "arm64",
+      "fileName": "LiteRtMetalAccelerator",
+      "path": "bin/ios/arm64/LiteRtMetalAccelerator.framework/LiteRtMetalAccelerator",
+      "platform": "ios",
+      "releaseTag": "v0.16.0-3",
+      "runtime": "native",
+      "sha256": "298c8c0deabcdf1b59f95e2b99768726f3601184ffa66ebd1a7ecdfac817f99f",
+      "upstreamCommit": "924e79c91542761242244e4f1651851f822e4cbb",
+      "upstreamTag": "v0.16.0"
+    },
+    {
+      "accelerators": [
+        "metal"
+      ],
+      "arch": "arm64",
+      "fileName": "LiteRtTopKMetalSampler",
+      "path": "bin/ios/arm64/LiteRtTopKMetalSampler.framework/LiteRtTopKMetalSampler",
+      "platform": "ios",
+      "releaseTag": "v0.16.0-3",
+      "runtime": "native",
+      "sha256": "6d909d1de6dc76a8f882f9c999f939b996e317018a61692b5bf1db59f5d3b69e",
       "upstreamCommit": "924e79c91542761242244e4f1651851f822e4cbb",
       "upstreamTag": "v0.16.0"
     },
@@ -320,19 +348,25 @@
   "package": "litert-lm-native",
   "platforms": [
     {
-      "accelerators": [],
+      "accelerators": [
+        "webgpu"
+      ],
       "arch": "arm64",
       "artifactPaths": [
-        "bin/android/arm64/libLiteRtLm.so"
+        "bin/android/arm64/libLiteRtLm.so",
+        "bin/android/arm64/libwebgpu_dawn.so"
       ],
       "platform": "android",
       "releaseAsset": "litert-lm-native-runtime-android-arm64-v0.16.0-3.tar.gz"
     },
     {
-      "accelerators": [],
+      "accelerators": [
+        "webgpu"
+      ],
       "arch": "x64",
       "artifactPaths": [
-        "bin/android/x64/libLiteRtLm.so"
+        "bin/android/x64/libLiteRtLm.so",
+        "bin/android/x64/libwebgpu_dawn.so"
       ],
       "platform": "android",
       "releaseAsset": "litert-lm-native-runtime-android-x64-v0.16.0-3.tar.gz"
