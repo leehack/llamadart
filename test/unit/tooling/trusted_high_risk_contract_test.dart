@@ -27,6 +27,7 @@ const _state = HighRiskPrState(
     HighRiskReview(
       id: 1,
       authorLogin: 'independent-reviewer',
+      authorAssociation: 'COLLABORATOR',
       commitSha: _head,
       state: 'APPROVED',
       body:
@@ -285,6 +286,7 @@ void main() {
         HighRiskReview(
           id: 1,
           authorLogin: 'implementation-author',
+          authorAssociation: 'OWNER',
           commitSha: _head,
           state: 'APPROVED',
           body:
@@ -296,6 +298,7 @@ Verdict: PASS''',
         HighRiskReview(
           id: 1,
           authorLogin: 'independent-reviewer',
+          authorAssociation: 'COLLABORATOR',
           commitSha: _base,
           state: 'APPROVED',
           body:
@@ -307,9 +310,22 @@ Verdict: PASS''',
         HighRiskReview(
           id: 1,
           authorLogin: 'independent-reviewer',
+          authorAssociation: 'COLLABORATOR',
           commitSha: _head,
           state: 'APPROVED',
           body: 'Looks good',
+        ),
+        HighRiskReview(
+          id: 1,
+          authorLogin: 'external-reviewer',
+          authorAssociation: 'NONE',
+          commitSha: _head,
+          state: 'APPROVED',
+          body:
+              '''High-risk QA task: $_qaTask
+Head: $_head
+Base: $_base
+Verdict: PASS''',
         ),
       ]) {
         final state = HighRiskPrState(
@@ -340,6 +356,7 @@ Verdict: PASS''',
           HighRiskReview(
             id: 10,
             authorLogin: 'independent-reviewer',
+            authorAssociation: 'COLLABORATOR',
             commitSha: _head,
             state: 'APPROVED',
             body:
@@ -351,6 +368,7 @@ Verdict: PASS''',
           HighRiskReview(
             id: 11,
             authorLogin: 'independent-reviewer',
+            authorAssociation: 'COLLABORATOR',
             commitSha: _head,
             state: 'CHANGES_REQUESTED',
             body: 'A later review found a blocker.',
@@ -609,6 +627,7 @@ Verdict: PASS''',
       );
       expect(workflow, contains('workflow_run:'));
       expect(workflow, contains('workflows: [CI, High-Risk Review Signal]'));
+      expect(workflow, contains('types: [in_progress, completed]'));
       expect(workflow, contains('Check out trusted default-branch policy'));
       expect(workflow, contains(r'repository: ${{ github.repository }}'));
       expect(workflow, contains('ref: main'));
@@ -642,6 +661,7 @@ Verdict: PASS''',
       expect(workflow, contains('auto_merge_enabled'));
       expect(workflow, contains('reviewThreads(first:100)'));
       expect(workflow, contains(r'pulls/$PR_NUMBER/reviews?per_page=100'));
+      expect(workflow, contains('author_association'));
       expect(workflow, contains('sort_by(.id)'));
       expect(workflow, contains('Capture trusted mutable-input snapshot'));
       expect(workflow, contains('Mutable PR evidence changed'));
@@ -656,6 +676,9 @@ Verdict: PASS''',
         contains(r'repos/$REPOSITORY/actions/workflows/ci.yml/runs'),
       );
       expect(workflow, contains(r'.head_sha == $head'));
+      expect(workflow, contains('sort_by(.id) | last // empty'));
+      expect(workflow, contains('latest exact-head CI run must succeed'));
+      expect(workflow, contains(r'[[ "$run_status" != "completed" ]]'));
       expect(workflow, contains(r'statuses/$HEAD_SHA'));
       expect(workflow, contains(r'live_head="$('));
       expect(workflow, contains(r'live_base="$('));

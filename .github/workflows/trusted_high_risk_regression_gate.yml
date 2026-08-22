@@ -16,7 +16,7 @@ on:
       - auto_merge_enabled
   workflow_run:
     workflows: [CI, High-Risk Review Signal]
-    types: [completed]
+    types: [in_progress, completed]
 
 permissions:
   contents: read
@@ -38,8 +38,7 @@ jobs:
     if: >-
       (github.event_name == 'pull_request_target' &&
       github.event.pull_request.base.ref == 'main') ||
-      (github.event_name == 'workflow_run' &&
-      github.event.workflow_run.conclusion == 'success')
+      github.event_name == 'workflow_run'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -209,23 +208,26 @@ jobs:
             "repos/$REPOSITORY/actions/workflows/ci.yml/runs" \
             -f event=pull_request \
             -f head_sha="$HEAD_SHA" \
-            -f status=completed \
             -f per_page=100 \
             > "$RUNNER_TEMP/exact-head-ci-runs.json"
-          run_id="$(
-            jq -r --arg head "$HEAD_SHA" '
+          latest_run="$(
+            jq -c --arg head "$HEAD_SHA" '
               [.workflow_runs[] |
                 select(
                   .head_sha == $head and
                   .event == "pull_request" and
-                  .conclusion == "success" and
                   .path == ".github/workflows/ci.yml"
                 )] |
-              sort_by(.id) | last | .id // empty
+              sort_by(.id) | last // empty
             ' "$RUNNER_TEMP/exact-head-ci-runs.json"
           )"
-          if [[ ! "$run_id" =~ ^[1-9][0-9]*$ ]]; then
-            echo "A successful exact-head CI run is required." >&2
+          run_id="$(jq -r '.id // empty' <<< "$latest_run")"
+          run_status="$(jq -r '.status // empty' <<< "$latest_run")"
+          conclusion="$(jq -r '.conclusion // empty' <<< "$latest_run")"
+          if [[ ! "$run_id" =~ ^[1-9][0-9]*$ ]] ||
+             [[ "$run_status" != "completed" ]] ||
+             [[ "$conclusion" != "success" ]]; then
+            echo "The latest exact-head CI run must succeed." >&2
             exit 1
           fi
           echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
@@ -281,6 +283,7 @@ jobs:
             | jq '[.[][] | {
                 id,
                 user: {login: .user.login},
+                author_association,
                 commit_id,
                 state,
                 body
@@ -418,6 +421,7 @@ jobs:
             | jq '[.[][] | {
                 id,
                 user: {login: .user.login},
+                author_association,
                 commit_id,
                 state,
                 body

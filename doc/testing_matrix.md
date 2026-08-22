@@ -74,8 +74,9 @@ implementation task. It must review the exact PR head against the current base,
 inspect actual production call sites, and verify issue-specific positive and
 negative tests. The tests must fail when the relevant production branch is
 deleted, bypassed, or miswired; testing an extracted helper alone is not enough.
-After the QA pass, a reviewer other than the PR author must submit an APPROVED
-GitHub review on that exact head with these exact lines:
+After the QA pass, a repository owner, member, or collaborator other than the
+PR author must submit an APPROVED GitHub review on that exact head with these
+exact lines:
 
 ```text
 High-risk QA task: <same stable task reference as the PR and manifest>

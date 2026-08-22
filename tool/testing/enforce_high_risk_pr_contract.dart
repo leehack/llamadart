@@ -49,6 +49,7 @@ class HighRiskReview {
   const HighRiskReview({
     required this.id,
     required this.authorLogin,
+    required this.authorAssociation,
     required this.commitSha,
     required this.state,
     required this.body,
@@ -56,6 +57,7 @@ class HighRiskReview {
 
   final int id;
   final String authorLogin;
+  final String authorAssociation;
   final String commitSha;
   final String state;
   final String body;
@@ -247,8 +249,8 @@ HighRiskContractResult validateHighRiskContract({
   if (qaTask != null && !_hasIndependentQaAttestation(state, qaTask)) {
     errors.add(
       'Independent QA PASS requires a current-head APPROVED review from a '
-      'reviewer other than the PR author, attesting the QA task, head, base, '
-      'and PASS verdict.',
+      'trusted repository reviewer other than the PR author, attesting the '
+      'QA task, head, base, and PASS verdict.',
     );
   }
   if (state.authorLogin.isEmpty) {
@@ -563,6 +565,11 @@ bool _hasIndependentQaAttestation(HighRiskPrState state, String qaTask) {
         .map((line) => line.trim())
         .toSet();
     return review.state == 'APPROVED' &&
+        const {
+          'OWNER',
+          'MEMBER',
+          'COLLABORATOR',
+        }.contains(review.authorAssociation) &&
         review.commitSha == state.headSha &&
         review.authorLogin.isNotEmpty &&
         review.authorLogin.toLowerCase() != state.authorLogin.toLowerCase() &&
@@ -721,11 +728,13 @@ List<HighRiskReview> _decodeReviews(Object? value) {
         final user = item['user'];
         final author = user is Map<String, dynamic> ? user['login'] : null;
         final id = item['id'];
+        final authorAssociation = item['author_association'];
         final commitSha = item['commit_id'];
         final state = item['state'];
         final body = item['body'];
         if (id is! int ||
             author is! String ||
+            authorAssociation is! String ||
             commitSha is! String ||
             state is! String ||
             (body != null && body is! String)) {
@@ -734,6 +743,7 @@ List<HighRiskReview> _decodeReviews(Object? value) {
         return HighRiskReview(
           id: id,
           authorLogin: author,
+          authorAssociation: authorAssociation,
           commitSha: commitSha,
           state: state,
           body: body as String? ?? '',
