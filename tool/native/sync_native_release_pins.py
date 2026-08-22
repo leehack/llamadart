@@ -125,6 +125,73 @@ LITERT_SMOKE_ASSETS = {
         ),
     },
 }
+LITERT_ANDROID_DAWN_OVERRIDES = [
+    {
+        "sourceRepository": "google-ai-edge/LiteRT-LM",
+        "sourceCommit": "f73637c57f0940b53da184e0d5adfc52a4e55eef",
+        "sourcePath": "prebuilt/android_arm64/libwebgpu_dawn.so",
+        "targetPath": "bin/android/arm64/libwebgpu_dawn.so",
+        "sha256": "7282aacdb076ce89f0c9d93107a145b991b99eb1dfbd5b5746dd0d99466ab3c3",
+    },
+    {
+        "sourceRepository": "google-ai-edge/LiteRT-LM",
+        "sourceCommit": "f73637c57f0940b53da184e0d5adfc52a4e55eef",
+        "sourcePath": "prebuilt/android_x86_64/libwebgpu_dawn.so",
+        "targetPath": "bin/android/x64/libwebgpu_dawn.so",
+        "sha256": "fcfb9a0b902f7dd3f81f01295f381c10b22a2d5774f95ee0db813f284a0ab087",
+    },
+]
+LITERT_PREBUILT_OVERRIDES = {
+    "v0.15.0": [
+        {
+            "sourceRepository": "google-ai-edge/LiteRT-LM",
+            "sourceCommit": "8bee4dddc3794958b4bdd8a3a4ba75bcb71f6fbb",
+            "sourcePath": "prebuilt/android_arm64/libLiteRtTopKOpenClSampler.so",
+            "targetPath": "bin/android/arm64/libLiteRtTopKOpenClSampler.so",
+            "sha256": "4404dc68786460602685cab62ddfa29035e9cfc38bb4550dec15abaaa1302a82",
+        },
+        {
+            "sourceRepository": "google-ai-edge/LiteRT-LM",
+            "sourceCommit": "8bee4dddc3794958b4bdd8a3a4ba75bcb71f6fbb",
+            "sourcePath": "prebuilt/android_x86_64/libLiteRtTopKOpenClSampler.so",
+            "targetPath": "bin/android/x64/libLiteRtTopKOpenClSampler.so",
+            "sha256": "747ca5ed6a175fb4c2854ccee1d6ad97f11fe14d9e0d2b0c1710e1435376d51e",
+        },
+        *LITERT_ANDROID_DAWN_OVERRIDES,
+    ],
+    "v0.16.0": LITERT_ANDROID_DAWN_OVERRIDES,
+    "v0.16.1": LITERT_ANDROID_DAWN_OVERRIDES,
+}
+LITERT_REQUIRED_RUNTIME_PATHS = {
+    "bin/android/arm64/libLiteRtLm.so",
+    "bin/android/x64/libLiteRtLm.so",
+    "bin/ios/arm64/LiteRtLm.framework/LiteRtLm",
+    "bin/ios/arm64/CLiteRTLM.framework/CLiteRTLM",
+    "bin/ios/arm64-sim/LiteRtLm.framework/LiteRtLm",
+    "bin/ios/arm64-sim/CLiteRTLM.framework/CLiteRTLM",
+    "bin/linux/arm64/libLiteRtLm.so",
+    "bin/linux/x64/libLiteRtLm.so",
+    "bin/macos/arm64/libCLiteRTLM_mac.dylib",
+    "bin/macos/arm64/libLiteRtLm.dylib",
+    "bin/macos/x64/libCLiteRTLM_mac.dylib",
+    "bin/macos/x64/libLiteRtLm.dylib",
+    "bin/windows/x64/LiteRtLm.dll",
+}
+LITERT_V0_16_IOS_GPU_PATHS = {
+    "bin/ios/arm64/LiteRtMetalAccelerator.framework/LiteRtMetalAccelerator",
+    "bin/ios/arm64/LiteRtTopKMetalSampler.framework/LiteRtTopKMetalSampler",
+    "bin/ios/arm64-sim/LiteRtMetalAccelerator.framework/LiteRtMetalAccelerator",
+    "bin/ios/arm64-sim/LiteRtTopKMetalSampler.framework/LiteRtTopKMetalSampler",
+}
+LITERT_SPM_ASSET_PATTERNS = (
+    "litert-lm-native-apple-CLiteRTLM-xcframework-{tag}.zip",
+    "litert-lm-native-apple-CLiteRTLMMac-xcframework-{tag}.zip",
+    "litert-lm-native-apple-LiteRtLm-xcframework-{tag}.zip",
+)
+LITERT_V0_16_SPM_ASSET_PATTERNS = (
+    "litert-lm-native-apple-LiteRtMetalAccelerator-xcframework-{tag}.zip",
+    "litert-lm-native-apple-LiteRtTopKMetalSampler-xcframework-{tag}.zip",
+)
 
 
 class ReleaseError(RuntimeError):
@@ -146,6 +213,32 @@ def require_exact_keys(value: dict[str, Any], expected: set[str], label: str) ->
             f"missing={sorted(expected - actual)}, "
             f"unexpected={sorted(actual - expected)}"
         )
+
+
+def required_litert_manifest_paths(
+    compatibility_tag: str,
+    release_tag: str,
+    *,
+    official_assets: bool,
+) -> set[str]:
+    version = tuple(int(part) for part in compatibility_tag[1:].split("."))
+    required = set(LITERT_REQUIRED_RUNTIME_PATHS)
+    spm_patterns = list(LITERT_SPM_ASSET_PATTERNS)
+    if version >= (0, 16, 0):
+        required.update(LITERT_V0_16_IOS_GPU_PATHS)
+        spm_patterns.extend(LITERT_V0_16_SPM_ASSET_PATTERNS)
+    if official_assets and version >= (0, 14, 0):
+        required.update(
+            {
+                f"dist/official/{compatibility_tag}/CLiteRTLM.xcframework.zip",
+                f"dist/official/{compatibility_tag}/CLiteRTLM_mac.xcframework.zip",
+            }
+        )
+    required.update(
+        f"dist/spm/{release_tag}/{pattern.format(tag=release_tag)}"
+        for pattern in spm_patterns
+    )
+    return required
 
 
 def main() -> int:
@@ -1339,6 +1432,13 @@ def validate_litert_lm_release_manifest(
     for override in upstream["prebuiltOverrides"]:
         if not isinstance(override, dict):
             raise ReleaseError("LiteRT-LM prebuilt override provenance is invalid")
+    expected_overrides = LITERT_PREBUILT_OVERRIDES.get(
+        str(upstream.get("compatibilityTag")), []
+    )
+    if upstream["prebuiltOverrides"] != expected_overrides:
+        raise ReleaseError(
+            "LiteRT-LM prebuilt override provenance does not match owner policy"
+        )
         require_exact_keys(
             override,
             {
@@ -1535,6 +1635,17 @@ def validate_litert_lm_release_manifest(
     }
     if covered_native_paths != native_paths:
         raise ReleaseError("LiteRT-LM manifest has unbound native artifact provenance")
+    required_paths = required_litert_manifest_paths(
+        str(upstream["compatibilityTag"]),
+        tag,
+        official_assets=capabilities["officialUpstreamAssets"] is True,
+    )
+    missing_paths = sorted(required_paths - set(artifacts_by_path))
+    if missing_paths:
+        raise ReleaseError(
+            "LiteRT-LM manifest is missing owner-required artifact paths: "
+            + ", ".join(missing_paths)
+        )
 
     passed_smokes: set[str] = set()
     smokes = manifest.get("realModelSmokes")

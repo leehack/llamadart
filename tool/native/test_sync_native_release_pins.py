@@ -202,6 +202,41 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
                 )
             release["prerelease"] = manifest["release"]["githubPrerelease"]
 
+            removed_override = manifest["upstream"]["prebuiltOverrides"].pop()
+            fixture.write_text(json.dumps(manifest), encoding="utf-8")
+            release_assets[0]["digest"] = "sha256:" + hashlib.sha256(
+                fixture.read_bytes()
+            ).hexdigest()
+            with self.assertRaisesRegex(ReleaseError, "owner policy"):
+                validate_litert_lm_release_manifest(
+                    release,
+                    repo="leehack/litert-lm-native",
+                    tag=tag,
+                    release_json_dir=str(fixture_dir),
+                    required_bundles=required_bundles,
+                )
+            manifest["upstream"]["prebuiltOverrides"].append(removed_override)
+
+            removed_artifact = next(
+                artifact
+                for artifact in manifest["artifacts"]
+                if "CLiteRTLM-xcframework" in artifact["path"]
+            )
+            manifest["artifacts"].remove(removed_artifact)
+            fixture.write_text(json.dumps(manifest), encoding="utf-8")
+            release_assets[0]["digest"] = "sha256:" + hashlib.sha256(
+                fixture.read_bytes()
+            ).hexdigest()
+            with self.assertRaisesRegex(ReleaseError, "owner-required artifact paths"):
+                validate_litert_lm_release_manifest(
+                    release,
+                    repo="leehack/litert-lm-native",
+                    tag=tag,
+                    release_json_dir=str(fixture_dir),
+                    required_bundles=required_bundles,
+                )
+            manifest["artifacts"].append(removed_artifact)
+
             smoke = manifest["realModelSmokes"][0]
             smoke["model"]["sha256"] = "a" * 64
             fixture.write_text(json.dumps(manifest), encoding="utf-8")

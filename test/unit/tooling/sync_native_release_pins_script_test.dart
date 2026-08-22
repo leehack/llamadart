@@ -1555,92 +1555,59 @@ Future<void> _writeReleaseFixture(
   );
   final releaseAssetChecksums = Map<String, String>.of(assets);
   if (repo == 'leehack/litert-lm-native') {
-    const upstreamCommit = '924e79c91542761242244e4f1651851f822e4cbb';
-    const nativeCommit = '451ba0ce7c366972b4dc0e58f08ffe590958f943';
-    const bundles = [
-      ('android', 'arm64'),
-      ('android', 'x64'),
-      ('ios', 'arm64'),
-      ('ios', 'arm64-sim'),
-      ('linux', 'arm64'),
-      ('linux', 'x64'),
-      ('macos', 'arm64'),
-      ('macos', 'x64'),
-      ('windows', 'x64'),
-    ];
-    for (final (platform, arch) in bundles) {
+    final ownerFixture = File(
+      path.join(
+        Directory.current.path,
+        'tool/native/fixtures/litert_lm_schema2_owner_manifest.json',
+      ),
+    );
+    final manifest =
+        jsonDecode(await ownerFixture.readAsString()) as Map<String, dynamic>;
+    final releaseIdentity = manifest['release'] as Map<String, dynamic>;
+    final upstream = manifest['upstream'] as Map<String, dynamic>;
+    final originalReleaseTag = releaseIdentity['tag'] as String;
+    final originalCompatibilityTag = upstream['compatibilityTag'] as String;
+    releaseIdentity
+      ..['tag'] = tag
+      ..['kind'] = 'upstream'
+      ..['rebuild'] = 0
+      ..['githubPrerelease'] = false;
+    upstream
+      ..['tag'] = tag
+      ..['compatibilityTag'] = tag
+      ..['prebuiltOverrides'] = <Object>[];
+    for (final platform
+        in (manifest['platforms'] as List<dynamic>)
+            .cast<Map<String, dynamic>>()) {
+      platform['releaseAsset'] =
+          'litert-lm-native-runtime-${platform['platform']}-${platform['arch']}-$tag.tar.gz';
       releaseAssetChecksums.putIfAbsent(
-        'litert-lm-native-runtime-$platform-$arch-$tag.tar.gz',
+        platform['releaseAsset'] as String,
         () => _hex('f'),
       );
     }
-    final manifest = {
-      'schemaVersion': 2,
-      'package': 'litert-lm-native',
-      'release': {
-        'tag': tag,
-        'channel': 'stable',
-        'kind': 'upstream',
-        'rebuild': 0,
-        'githubPrerelease': false,
-      },
-      'upstream': {
-        'repository': 'google-ai-edge/LiteRT-LM',
-        'tag': tag,
-        'commit': upstreamCommit,
-        'compatibilityTag': tag,
-        'developmentIdentity': 'g${upstreamCommit.substring(0, 12)}',
-        'prebuiltOverrides': <Object>[],
-      },
-      'native': {
-        'repository': 'leehack/litert-lm-native',
-        'commit': nativeCommit,
-      },
-      'abi': {
-        'upstreamC': 'c/engine.h',
-        'streamProxyCallback': 1,
-        'asrBridge': 1,
-      },
-      'capabilities': {
-        'textGeneration': true,
-        'streaming': true,
-        'streamChunkAccessors': true,
-        'asr': true,
-        'officialUpstreamAssets': true,
-      },
-      'platforms': [
-        for (final (platform, arch) in bundles)
-          {
-            'platform': platform,
-            'arch': arch,
-            'releaseAsset':
-                'litert-lm-native-runtime-$platform-$arch-$tag.tar.gz',
-            'artifactPaths': [
-              'bin/$platform/$arch/${_litertRuntimeFileName(platform)}',
-            ],
-            'accelerators': <String>[],
-          },
-      ],
-      'artifacts': [
-        for (final (platform, arch) in bundles)
-          {
-            'runtime': 'native',
-            'platform': platform,
-            'arch': arch,
-            'path': 'bin/$platform/$arch/${_litertRuntimeFileName(platform)}',
-            'fileName': _litertRuntimeFileName(platform),
-            'sha256': _hex('b'),
-            'upstreamTag': tag,
-            'upstreamCommit': upstreamCommit,
-            'releaseTag': tag,
-            'accelerators': <String>[],
-          },
-      ],
-      'realModelSmokes': [
-        _litertSmoke('linux', 'x64', upstreamCommit, nativeCommit, tag),
-        _litertSmoke('windows', 'x64', upstreamCommit, nativeCommit, tag),
-      ],
-    };
+    for (final artifact
+        in (manifest['artifacts'] as List<dynamic>)
+            .cast<Map<String, dynamic>>()) {
+      final originalPath = artifact['path'] as String;
+      final releaseRetagged = originalPath.replaceAll(originalReleaseTag, tag);
+      final retaggedPath = releaseRetagged.replaceAll(
+        originalCompatibilityTag,
+        tag,
+      );
+      artifact
+        ..['path'] = retaggedPath
+        ..['fileName'] = path.basename(retaggedPath)
+        ..['upstreamTag'] = tag
+        ..['releaseTag'] = tag;
+    }
+    for (final smoke
+        in (manifest['realModelSmokes'] as List<dynamic>)
+            .cast<Map<String, dynamic>>()) {
+      final source = smoke['source'] as Map<String, dynamic>;
+      source['runtimeReleaseAsset'] =
+          'litert-lm-native-runtime-${smoke['platform']}-${smoke['arch']}-$tag.tar.gz';
+    }
     final manifestFile = File(
       path.join(
         dir.path,
@@ -1668,66 +1635,6 @@ Future<void> _writeReleaseFixture(
   };
   await file.writeAsString(jsonEncode(payload));
 }
-
-Map<String, Object> _litertSmoke(
-  String platform,
-  String arch,
-  String upstreamCommit,
-  String nativeCommit,
-  String releaseTag,
-) => {
-  'id': 'litert_lm_asr_moonshine',
-  'platform': platform,
-  'arch': arch,
-  'result': 'pass',
-  'upstreamCommit': upstreamCommit,
-  'nativeCommit': nativeCommit,
-  'backend': 'cpu',
-  'abiVersion': 1,
-  'transcript': 'ask not what your country can do for you',
-  'library': {
-    'fileName': _litertRuntimeFileName(platform),
-    'sha256': _hex('b'),
-  },
-  'model': {
-    'fileName': 'moonshine_tiny_5s_i8.tflite',
-    'sha256':
-        '97abdeea122d579229091659c24c59d988c6419d453a200f6471241a53b9a9b9',
-  },
-  'tokenizer': {
-    'fileName': 'moonshine_tokenizer.json',
-    'sha256':
-        '6579793438bc4fbafffacf699169ff53e3769c5a0a0f5e71cdee8853e8130deb',
-  },
-  'fixture': {
-    'fileName': 'jfk.wav',
-    'sha256':
-        '59dfb9a4acb36fe2a2affc14bacbee2920ff435cb13cc314a08c13f66ba7860e',
-    'sampleRateHz': 16000,
-    'sampleCount': 16000,
-  },
-  'source': {
-    'runtimeReleaseAsset':
-        'litert-lm-native-runtime-$platform-$arch-$releaseTag.tar.gz',
-    'model':
-        'https://huggingface.co/litert-community/moonshine-tiny/resolve/'
-        'beb49ee5028b4fb21eb989bcbd2db30a433373db/'
-        'moonshine_tiny_5s_i8.tflite',
-    'tokenizer':
-        'https://huggingface.co/UsefulSensors/moonshine-tiny/resolve/'
-        '390624ed33d594443aa4aa221f5b9f283b545b5a/tokenizer.json',
-    'fixture':
-        'https://raw.githubusercontent.com/ggml-org/whisper.cpp/'
-        '592feef04a1802b18cbeffd0fd0eb5d02570c2ec/samples/jfk.wav',
-  },
-  'expectation': {'type': 'case-insensitive-substring', 'value': 'country'},
-};
-
-String _litertRuntimeFileName(String platform) => switch (platform) {
-  'linux' => 'libLiteRtLm.so',
-  'windows' => 'LiteRtLm.dll',
-  _ => 'runtime.bin',
-};
 
 String _hex(String character) => List.filled(64, character).join();
 
