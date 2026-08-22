@@ -148,6 +148,28 @@ void main() {
       );
     });
 
+    test('requires independent QA after integrating current base', () {
+      final result = _validate(
+        _replaceField(
+          _validBody(),
+          'Current base distance',
+          '1 behind / 6 ahead',
+        ),
+        state: const HighRiskPrState(
+          headSha: _head,
+          baseSha: _base,
+          behind: 1,
+          ahead: 6,
+          unresolvedThreads: 0,
+        ),
+      );
+
+      expect(
+        result.errors.join('\n'),
+        contains('must integrate the current base before mark-ready'),
+      );
+    });
+
     test('requires durable tests on high-risk policy changes', () {
       final result = _validate(
         _validBody(),

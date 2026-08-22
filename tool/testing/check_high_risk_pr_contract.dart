@@ -148,6 +148,12 @@ HighRiskContractResult validateHighRiskContract({
     'Current base distance',
     '${state.behind} behind / ${state.ahead} ahead',
   );
+  if (state.behind != 0) {
+    errors.add(
+      'High-risk QA must integrate the current base before mark-ready; '
+      'the head is ${state.behind} commit(s) behind.',
+    );
+  }
   _expectExact(fields, errors, 'Independent QA verdict', 'PASS');
   _expectExact(fields, errors, 'Known PR-caused P1 regressions', '0');
   _expectExact(
