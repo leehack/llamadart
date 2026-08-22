@@ -1602,31 +1602,45 @@ def validate_litert_lm_release_manifest(
         raise ReleaseError("Development LiteRT-LM release must not claim official assets")
 
     platforms = manifest.get("platforms")
-    if not isinstance(platforms, list) or len(platforms) != len(
-        REQUIRED_LITERT_PLATFORM_BUNDLES
-    ):
+    if not isinstance(platforms, list):
         raise ReleaseError("LiteRT-LM manifest platforms must be a list")
-    available_bundles = {
+    required_platform_count = len(REQUIRED_LITERT_PLATFORM_BUNDLES)
+    if len(platforms) != required_platform_count:
+        raise ReleaseError(
+            "LiteRT-LM manifest must contain exactly "
+            f"{required_platform_count} finalized platform bundles; "
+            f"found {len(platforms)}"
+        )
+    if any(not isinstance(item, dict) for item in platforms):
+        raise ReleaseError("LiteRT-LM manifest contains an invalid platform")
+    manifest_bundle_list = [
         f"{item.get('platform')}-{item.get('arch')}"
         for item in platforms
-        if isinstance(item, dict)
-    }
+    ]
+    available_bundles = set(manifest_bundle_list)
     expected_bundles = set(required_bundles)
     if expected_bundles != REQUIRED_LITERT_PLATFORM_BUNDLES:
         raise ReleaseError(
             "llamadart hook bundle inventory does not cover the finalized nine-platform contract"
         )
-    if available_bundles != REQUIRED_LITERT_PLATFORM_BUNDLES or len(
-        available_bundles
-    ) != len(platforms):
-        raise ReleaseError(
-            "LiteRT-LM manifest must contain each finalized platform bundle exactly once"
-        )
     missing_bundles = sorted(expected_bundles - available_bundles)
-    if missing_bundles:
+    unexpected_bundles = sorted(available_bundles - expected_bundles)
+    duplicate_bundles = sorted(
+        bundle
+        for bundle in available_bundles
+        if manifest_bundle_list.count(bundle) > 1
+    )
+    if missing_bundles or unexpected_bundles or duplicate_bundles:
+        details = []
+        if missing_bundles:
+            details.append("missing " + ", ".join(missing_bundles))
+        if unexpected_bundles:
+            details.append("unexpected " + ", ".join(unexpected_bundles))
+        if duplicate_bundles:
+            details.append("duplicates " + ", ".join(duplicate_bundles))
         raise ReleaseError(
-            "LiteRT-LM manifest is missing required platform bundles: "
-            + ", ".join(missing_bundles)
+            "LiteRT-LM finalized platform bundle inventory mismatch: "
+            + "; ".join(details)
         )
 
     artifacts = manifest.get("artifacts")
@@ -1698,8 +1712,6 @@ def validate_litert_lm_release_manifest(
 
     covered_native_paths: set[str] = set()
     for platform in platforms:
-        if not isinstance(platform, dict):
-            raise ReleaseError("LiteRT-LM manifest contains an invalid platform")
         require_exact_keys(
             platform,
             {"platform", "arch", "releaseAsset", "artifactPaths", "accelerators"},

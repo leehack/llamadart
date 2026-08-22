@@ -13,7 +13,7 @@ on:
         type: boolean
         default: false
       litert_lm_tag:
-        description: 'LiteRT tag: vX.Y.Z, vX.Y.Z-N, g<12hex>[-N], legacy -native.N, latest, or keep'
+        description: 'LiteRT tag: vX.Y.Z, vX.Y.Z-N, g<12hex>[-N], legacy vX.Y.Z-native.N, latest, or keep'
         required: true
         default: 'keep'
       allow_litert_channel_transition:

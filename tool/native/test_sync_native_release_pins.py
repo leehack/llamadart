@@ -47,6 +47,7 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
         self.assertIn("allow_litert_development_line_transition:", workflow)
         self.assertIn("--allow-litert-channel-transition", workflow)
         self.assertIn("--allow-litert-development-line-transition", workflow)
+        self.assertIn("legacy vX.Y.Z-native.N, latest, or keep", workflow)
         allowlist = (
             Path(__file__).resolve().parent
             / "fixtures"
@@ -404,6 +405,54 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
                     required_bundles=required_bundles,
                 )
             manifest["platforms"][0]["artifactPaths"].pop()
+
+            original_platforms = manifest["platforms"]
+            manifest["platforms"] = {"not": "a list"}
+            fixture.write_text(json.dumps(manifest), encoding="utf-8")
+            manifest_asset["digest"] = "sha256:" + hashlib.sha256(
+                fixture.read_bytes()
+            ).hexdigest()
+            with self.assertRaisesRegex(ReleaseError, "platforms must be a list"):
+                validate_litert_lm_release_manifest(
+                    release,
+                    repo="leehack/litert-lm-native",
+                    tag=tag,
+                    release_json_dir=str(fixture_dir),
+                    required_bundles=required_bundles,
+                )
+            manifest["platforms"] = original_platforms[:-1]
+            fixture.write_text(json.dumps(manifest), encoding="utf-8")
+            manifest_asset["digest"] = "sha256:" + hashlib.sha256(
+                fixture.read_bytes()
+            ).hexdigest()
+            with self.assertRaisesRegex(
+                ReleaseError, "exactly 9 finalized platform bundles; found 8"
+            ):
+                validate_litert_lm_release_manifest(
+                    release,
+                    repo="leehack/litert-lm-native",
+                    tag=tag,
+                    release_json_dir=str(fixture_dir),
+                    required_bundles=required_bundles,
+                )
+            manifest["platforms"] = original_platforms
+            original_second_platform = manifest["platforms"][1]
+            manifest["platforms"][1] = dict(manifest["platforms"][0])
+            fixture.write_text(json.dumps(manifest), encoding="utf-8")
+            manifest_asset["digest"] = "sha256:" + hashlib.sha256(
+                fixture.read_bytes()
+            ).hexdigest()
+            with self.assertRaisesRegex(
+                ReleaseError, "missing .*; duplicates .*"
+            ):
+                validate_litert_lm_release_manifest(
+                    release,
+                    repo="leehack/litert-lm-native",
+                    tag=tag,
+                    release_json_dir=str(fixture_dir),
+                    required_bundles=required_bundles,
+                )
+            manifest["platforms"][1] = original_second_platform
 
             del manifest["capabilities"]["streamChunkAccessors"]
             fixture.write_text(json.dumps(manifest), encoding="utf-8")
