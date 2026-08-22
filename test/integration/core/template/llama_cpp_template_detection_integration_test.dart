@@ -6,9 +6,9 @@ import 'dart:io';
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
 import 'package:llamadart/src/core/models/chat/content_part.dart';
+import 'package:llamadart/src/core/models/inference/tool_choice.dart';
 import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:llamadart/src/core/models/tools/tool_param.dart';
-import 'package:llamadart/src/core/models/inference/tool_choice.dart';
 import 'package:llamadart/src/core/template/chat_format.dart';
 import 'package:llamadart/src/core/template/chat_template_engine.dart';
 import 'package:test/test.dart';
@@ -155,232 +155,209 @@ void main() {
       );
     }, skip: fixtureSkipReason);
 
-    test(
-      'renders and parses every vendored llama.cpp template',
-      () {
-        expect(templatesDir.existsSync(), isTrue);
+    test('renders and parses every vendored llama.cpp template', () {
+      expect(templatesDir.existsSync(), isTrue);
 
-        final files =
-            templatesDir
-                .listSync()
-                .whereType<File>()
-                .where((f) => f.path.endsWith('.jinja'))
-                .toList()
-              ..sort((a, b) => a.path.compareTo(b.path));
+      final files =
+          templatesDir
+              .listSync()
+              .whereType<File>()
+              .where((f) => f.path.endsWith('.jinja'))
+              .toList()
+            ..sort((a, b) => a.path.compareTo(b.path));
 
-        for (final file in files) {
-          final source = file.readAsStringSync();
-          final detected = detectChatFormat(source);
+      for (final file in files) {
+        final source = file.readAsStringSync();
+        final detected = detectChatFormat(source);
 
-          final rendered = ChatTemplateEngine.render(
-            templateSource: source,
-            messages: messages,
-            metadata: metadata,
-            tools: [tool],
-            parallelToolCalls: true,
-          );
+        final rendered = ChatTemplateEngine.render(
+          templateSource: source,
+          messages: messages,
+          metadata: metadata,
+          tools: [tool],
+          parallelToolCalls: true,
+        );
 
+        expect(
+          rendered.prompt.trim(),
+          isNotEmpty,
+          reason: 'Empty prompt for ${file.uri.pathSegments.last}',
+        );
+
+        final parseInput = sampleOutputForFormat(detected);
+        final parsed = ChatTemplateEngine.parse(
+          rendered.format,
+          parseInput,
+          tools: [tool],
+          parser: rendered.parser,
+          thinkingForcedOpen: rendered.thinkingForcedOpen,
+        );
+
+        final hasAnyPayload =
+            parsed.content.isNotEmpty ||
+            parsed.toolCalls.isNotEmpty ||
+            (parsed.reasoningContent?.isNotEmpty ?? false);
+        expect(
+          hasAnyPayload,
+          isTrue,
+          reason:
+              'Parse produced empty payload for ${file.uri.pathSegments.last}',
+        );
+
+        if (parseInput.contains('get_weather')) {
+          final parsedToolName = parsed.toolCalls.isNotEmpty
+              ? parsed.toolCalls.first.function?.name
+              : null;
+          final preservedInContent = parsed.content.contains('get_weather');
           expect(
-            rendered.prompt.trim(),
-            isNotEmpty,
-            reason: 'Empty prompt for ${file.uri.pathSegments.last}',
-          );
-
-          final parseInput = sampleOutputForFormat(detected);
-          final parsed = ChatTemplateEngine.parse(
-            rendered.format,
-            parseInput,
-            tools: [tool],
-            parser: rendered.parser,
-            thinkingForcedOpen: rendered.thinkingForcedOpen,
-          );
-
-          final hasAnyPayload =
-              parsed.content.isNotEmpty ||
-              parsed.toolCalls.isNotEmpty ||
-              (parsed.reasoningContent?.isNotEmpty ?? false);
-          expect(
-            hasAnyPayload,
+            parsedToolName == 'get_weather' || preservedInContent,
             isTrue,
             reason:
-                'Parse produced empty payload for ${file.uri.pathSegments.last}',
-          );
-
-          if (parseInput.contains('get_weather')) {
-            final parsedToolName = parsed.toolCalls.isNotEmpty
-                ? parsed.toolCalls.first.function?.name
-                : null;
-            final preservedInContent = parsed.content.contains('get_weather');
-            expect(
-              parsedToolName == 'get_weather' || preservedInContent,
-              isTrue,
-              reason:
-                  'Tool payload was neither parsed nor preserved for ${file.uri.pathSegments.last}',
-            );
-          }
-        }
-      },
-      skip: fixtureSkipReason,
-    );
-
-    test(
-      'preserves classified tool-call shapes through render and parse',
-      () {
-        const expectedMarkers = <String, String>{
-          'Kimi-K3.jinja': '<|open|>call tool="get_weather"',
-          'MiniMax-M1.jinja': '<tool_calls>\n{"name": "get_weather"',
-          'MiniMax-M3.jinja': ']<]minimax[>[<invoke name="get_weather">',
-          'deepseek-ai-DeepSeek-V3.2.jinja':
-              '<｜DSML｜invoke name="get_weather">',
-          'deepseek-ai-DeepSeek-V4.jinja': '<｜DSML｜invoke name="get_weather">',
-          'deepseek-ai-DeepSeek-V4-Flash-0731.jinja':
-              '<｜DSML｜invoke name="get_weather">',
-          'muse-glimmer.jinja': '<atem:invoke name="get_weather">',
-          'poolside-Laguna-S-2.1.jinja': '<tool_call>get_weather',
-          'poolside-Laguna-XS-2.1.jinja': '<tool_call>get_weather',
-          'poolside-Laguna-XS.2.jinja': '<tool_call>get_weather',
-        };
-
-        for (final entry in expectedMarkers.entries) {
-          final source = File(
-            '${templatesDir.path}/${entry.key}',
-          ).readAsStringSync();
-          final rendered = ChatTemplateEngine.render(
-            templateSource: source,
-            messages: toolCallHistory,
-            metadata: metadata,
-            addAssistant: false,
-            tools: [tool],
-            parallelToolCalls: true,
-          );
-
-          expect(
-            rendered.prompt,
-            contains(entry.value),
-            reason: 'Tool-call history shape drifted for ${entry.key}',
-          );
-
-          final parseInput = entry.key == 'deepseek-ai-DeepSeek-V3.2.jinja'
-              ? sampleOutputForFormat(
-                  ChatFormat.deepseekV4,
-                ).replaceAll('tool_calls', 'function_calls')
-              : sampleOutputForFormat(ChatFormat.values[rendered.format]);
-          final parsed = ChatTemplateEngine.parse(
-            rendered.format,
-            parseInput,
-            tools: [tool],
-            thinkingForcedOpen: rendered.thinkingForcedOpen,
-          );
-          expect(
-            parsed.toolCalls,
-            hasLength(1),
-            reason: 'Generated tool-call shape was not parsed for ${entry.key}',
-          );
-          expect(parsed.toolCalls.single.function?.name, 'get_weather');
-          expect(
-            parsed.toolCalls.single.function?.arguments,
-            contains('Seoul'),
+                'Tool payload was neither parsed nor preserved for ${file.uri.pathSegments.last}',
           );
         }
-      },
-      skip: fixtureSkipReason,
-    );
+      }
+    }, skip: fixtureSkipReason);
 
-    test(
-      'direct-Jinja grammars preserve tool-choice and prefix semantics',
-      () {
-        const templates = [
-          'Kimi-K3.jinja',
-          'MiniMax-M3.jinja',
-          'deepseek-ai-DeepSeek-V3.2.jinja',
-          'deepseek-ai-DeepSeek-V4.jinja',
-          'muse-glimmer.jinja',
-          'poolside-Laguna-XS-2.1.jinja',
-        ];
-        for (final templateName in templates) {
-          final source = File(
-            '${templatesDir.path}/$templateName',
-          ).readAsStringSync();
-          for (final enableThinking in const [true, false]) {
-            final auto = ChatTemplateEngine.render(
-              templateSource: source,
-              messages: messages,
-              metadata: metadata,
-              tools: [tool],
-              toolChoice: ToolChoice.auto,
-              enableThinking: enableThinking,
-            );
-            expect(auto.grammar, isNotNull, reason: templateName);
-            expect(auto.grammarLazy, isTrue, reason: templateName);
-            expect(auto.grammarTriggers, isNotEmpty, reason: templateName);
+    test('preserves classified tool-call shapes through render and parse', () {
+      const expectedMarkers = <String, String>{
+        'Kimi-K3.jinja': '<|open|>call tool="get_weather"',
+        'MiniMax-M1.jinja': '<tool_calls>\n{"name": "get_weather"',
+        'MiniMax-M3.jinja': ']<]minimax[>[<invoke name="get_weather">',
+        'deepseek-ai-DeepSeek-V3.2.jinja': '<｜DSML｜invoke name="get_weather">',
+        'deepseek-ai-DeepSeek-V4.jinja': '<｜DSML｜invoke name="get_weather">',
+        'deepseek-ai-DeepSeek-V4-Flash-0731.jinja':
+            '<｜DSML｜invoke name="get_weather">',
+        'muse-glimmer.jinja': '<atem:invoke name="get_weather">',
+        'poolside-Laguna-S-2.1.jinja': '<tool_call>get_weather',
+        'poolside-Laguna-XS-2.1.jinja': '<tool_call>get_weather',
+        'poolside-Laguna-XS.2.jinja': '<tool_call>get_weather',
+      };
 
-            final required = ChatTemplateEngine.render(
-              templateSource: source,
-              messages: messages,
-              metadata: metadata,
-              tools: [tool],
-              toolChoice: ToolChoice.required,
-              enableThinking: enableThinking,
-            );
-            expect(required.grammar, isNotNull, reason: templateName);
-            expect(required.grammarLazy, isFalse, reason: templateName);
-            expect(required.grammarTriggers, isEmpty, reason: templateName);
-            expect(
-              required.grammar,
-              startsWith('root ::= required-prefix-0 required-tool-root'),
-              reason: templateName,
-            );
-            expect(
-              required.grammar,
-              anyOf(contains('invoke'), contains('call')),
-              reason: templateName,
-            );
+      for (final entry in expectedMarkers.entries) {
+        final source = File(
+          '${templatesDir.path}/${entry.key}',
+        ).readAsStringSync();
+        final rendered = ChatTemplateEngine.render(
+          templateSource: source,
+          messages: toolCallHistory,
+          metadata: metadata,
+          addAssistant: false,
+          tools: [tool],
+          parallelToolCalls: true,
+        );
 
-            final none = ChatTemplateEngine.render(
-              templateSource: source,
-              messages: messages,
-              metadata: metadata,
-              tools: [tool],
-              toolChoice: ToolChoice.none,
-              enableThinking: enableThinking,
-            );
-            expect(none.grammar, isNull, reason: templateName);
-            expect(none.grammarLazy, isFalse, reason: templateName);
-            expect(none.grammarTriggers, isEmpty, reason: templateName);
-          }
-        }
-      },
-      skip: fixtureSkipReason,
-    );
+        expect(
+          rendered.prompt,
+          contains(entry.value),
+          reason: 'Tool-call history shape drifted for ${entry.key}',
+        );
 
-    test(
-      'DeepSeek grammars retain their template-specific DSML envelopes',
-      () {
-        for (final entry in const {
-          'deepseek-ai-DeepSeek-V3.2.jinja': 'function_calls',
-          'deepseek-ai-DeepSeek-V4.jinja': 'tool_calls',
-        }.entries) {
-          final source = File(
-            '${templatesDir.path}/${entry.key}',
-          ).readAsStringSync();
-          final rendered = ChatTemplateEngine.render(
+        final parseInput = entry.key == 'deepseek-ai-DeepSeek-V3.2.jinja'
+            ? sampleOutputForFormat(
+                ChatFormat.deepseekV4,
+              ).replaceAll('tool_calls', 'function_calls')
+            : sampleOutputForFormat(ChatFormat.values[rendered.format]);
+        final parsed = ChatTemplateEngine.parse(
+          rendered.format,
+          parseInput,
+          tools: [tool],
+          thinkingForcedOpen: rendered.thinkingForcedOpen,
+        );
+        expect(
+          parsed.toolCalls,
+          hasLength(1),
+          reason: 'Generated tool-call shape was not parsed for ${entry.key}',
+        );
+        expect(parsed.toolCalls.single.function?.name, 'get_weather');
+        expect(parsed.toolCalls.single.function?.arguments, contains('Seoul'));
+      }
+    }, skip: fixtureSkipReason);
+
+    test('direct-Jinja grammars preserve tool-choice and prefix semantics', () {
+      const templates = [
+        'Kimi-K3.jinja',
+        'MiniMax-M3.jinja',
+        'deepseek-ai-DeepSeek-V3.2.jinja',
+        'deepseek-ai-DeepSeek-V4.jinja',
+        'muse-glimmer.jinja',
+        'poolside-Laguna-XS-2.1.jinja',
+      ];
+      for (final templateName in templates) {
+        final source = File(
+          '${templatesDir.path}/$templateName',
+        ).readAsStringSync();
+        for (final enableThinking in const [true, false]) {
+          final auto = ChatTemplateEngine.render(
             templateSource: source,
             messages: messages,
             metadata: metadata,
             tools: [tool],
+            toolChoice: ToolChoice.auto,
+            enableThinking: enableThinking,
+          );
+          expect(auto.grammar, isNotNull, reason: templateName);
+          expect(auto.grammarLazy, isTrue, reason: templateName);
+          expect(auto.grammarTriggers, isNotEmpty, reason: templateName);
+
+          final required = ChatTemplateEngine.render(
+            templateSource: source,
+            messages: messages,
+            metadata: metadata,
+            tools: [tool],
+            toolChoice: ToolChoice.required,
+            enableThinking: enableThinking,
+          );
+          expect(required.grammar, isNotNull, reason: templateName);
+          expect(required.grammarLazy, isFalse, reason: templateName);
+          expect(required.grammarTriggers, isEmpty, reason: templateName);
+          expect(
+            required.grammar,
+            startsWith('root ::= required-prefix-0 required-tool-root'),
+            reason: templateName,
           );
           expect(
-            rendered.grammar,
-            startsWith('root ::= "<｜DSML｜${entry.value}>'),
+            required.grammar,
+            anyOf(contains('invoke'), contains('call')),
+            reason: templateName,
           );
-          expect(
-            rendered.grammarTriggers.single.value,
-            '<｜DSML｜${entry.value}>',
+
+          final none = ChatTemplateEngine.render(
+            templateSource: source,
+            messages: messages,
+            metadata: metadata,
+            tools: [tool],
+            toolChoice: ToolChoice.none,
+            enableThinking: enableThinking,
           );
+          expect(none.grammar, isNull, reason: templateName);
+          expect(none.grammarLazy, isFalse, reason: templateName);
+          expect(none.grammarTriggers, isEmpty, reason: templateName);
         }
-      },
-      skip: fixtureSkipReason,
-    );
+      }
+    }, skip: fixtureSkipReason);
+
+    test('DeepSeek grammars retain their template-specific DSML envelopes', () {
+      for (final entry in const {
+        'deepseek-ai-DeepSeek-V3.2.jinja': 'function_calls',
+        'deepseek-ai-DeepSeek-V4.jinja': 'tool_calls',
+      }.entries) {
+        final source = File(
+          '${templatesDir.path}/${entry.key}',
+        ).readAsStringSync();
+        final rendered = ChatTemplateEngine.render(
+          templateSource: source,
+          messages: messages,
+          metadata: metadata,
+          tools: [tool],
+        );
+        expect(
+          rendered.grammar,
+          startsWith('root ::= "<｜DSML｜${entry.value}>'),
+        );
+        expect(rendered.grammarTriggers.single.value, '<｜DSML｜${entry.value}>');
+      }
+    }, skip: fixtureSkipReason);
   });
 }
 
