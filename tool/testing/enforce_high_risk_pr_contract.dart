@@ -208,6 +208,15 @@ HighRiskContractResult validateHighRiskContract({
     if (!manifests.contains(evidencePath)) {
       errors.add('Evidence manifest must be one of the changed files.');
     }
+    final issueMatch = RegExp(
+      r'^\.github/high-risk-evidence/([1-9][0-9]*)\.json$',
+    ).firstMatch(evidencePath);
+    final expectedIssue = issueMatch == null
+        ? null
+        : int.parse(issueMatch.group(1)!);
+    if (expectedIssue == null || evidence['issue'] != expectedIssue) {
+      errors.add('Manifest issue must match its numeric evidence filename.');
+    }
     _validateEvidenceManifest(
       evidence,
       assessment: assessment,
@@ -450,7 +459,7 @@ void _expectExact(
 ) {
   final actual = fields[label];
   if (actual != expected) {
-    errors.add('$label must be exactly "$expected"; found "${actual ?? ''}".');
+    errors.add('$label does not match trusted live state.');
   }
 }
 

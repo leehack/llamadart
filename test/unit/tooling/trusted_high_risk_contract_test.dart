@@ -244,6 +244,28 @@ void main() {
       expect(result.errors.join('\n'), contains('Trusted workflow'));
     });
 
+    test('binds the manifest issue to its numeric filename', () {
+      final evidence = _validEvidence()..['issue'] = 410;
+
+      expect(
+        _validate(evidence: evidence).errors,
+        contains('Manifest issue must match its numeric evidence filename.'),
+      );
+    });
+
+    test('does not echo untrusted PR fields in mismatch diagnostics', () {
+      const secretLikeValue = 'https://signed.example/token?secret=do-not-log';
+      final body = _replaceField(
+        _validBody(),
+        'Exact head SHA',
+        secretLikeValue,
+      );
+      final errors = _validate(body: body).errors.join('\n');
+
+      expect(errors, contains('Exact head SHA does not match'));
+      expect(errors, isNot(contains(secretLikeValue)));
+    });
+
     test('rejects tests that are absent, deleted, or not durable', () {
       final evidence = _validEvidence();
       final production =
