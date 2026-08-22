@@ -1000,7 +1000,7 @@ printf '%s\\n' '{"tag_name":"v0.2.0-1","assets":[]}'
       expect(latestWrapper.stderr, contains('latest resolved to v0.2.0-1'));
       expect(
         latestWrapper.stderr,
-        contains('select GitHub-prerelease wrapper rebuilds'),
+        contains('select wrapper rebuilds and historical or nightly tags'),
       );
 
       final releaseSetup = await _writeLlamaOnlyRepo('b10514');

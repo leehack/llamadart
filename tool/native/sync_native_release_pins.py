@@ -562,8 +562,8 @@ def validate_resolved_native_release(
             raise ReleaseError(
                 f"llamadart-native latest resolved to {resolved_tag}. "
                 "Automatic discovery accepts only unsuffixed "
-                "vMAJOR.MINOR.PATCH releases; select GitHub-prerelease "
-                "wrapper rebuilds and nightly tags explicitly."
+                "vMAJOR.MINOR.PATCH releases; select wrapper rebuilds and "
+                "historical or nightly tags explicitly."
             )
     elif resolved_tag != requested_tag:
         raise ReleaseError(

@@ -37,10 +37,12 @@ prepares companion package releases. The `native_tag` input controls the
 `vMAJOR.MINOR.PATCH`; historical/nightly artifacts remain consumable through an
 explicit `bNNNN` tag. New nightly wrapper releases use `bNNNN-N`; existing
 `bNNNN-llamadart.N` artifacts remain explicit consumption-only inputs. `latest`
-accepts only an unsuffixed `vMAJOR.MINOR.PATCH`; every wrapper rebuild is a
-GitHub prerelease and must be named explicitly. Nightly cores use canonical
-decimal spelling (`b0` or a nonzero first digit), and rebuild counters start at
-1 without leading zeros.
+accepts only an unsuffixed `vMAJOR.MINOR.PATCH` regardless of GitHub metadata.
+New wrapper and nightly releases are GitHub prereleases and must be named
+explicitly. Immutable historical `bNNNN` and `bNNNN-llamadart.N` artifacts may
+retain older `prerelease=false` metadata, but remain explicit compatibility
+inputs. Nightly cores use canonical decimal spelling (`b0` or a nonzero first
+digit), and rebuild counters start at 1 without leading zeros.
 The `litert_lm_tag` input defaults to `keep`; set it to a
 `litert-lm-native` tag or `latest` only when the LiteRT-LM native release should
 move in the same PR.

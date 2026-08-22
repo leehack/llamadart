@@ -116,7 +116,7 @@ fi
 if [[ "${tag_input}" == "latest" ]] && ! is_latest_eligible_tag "${resolved_tag}"; then
   echo "llamadart-native latest resolved to ${resolved_tag};" \
     "automatic discovery accepts only unsuffixed vMAJOR.MINOR.PATCH releases;" \
-    "select GitHub-prerelease wrapper rebuilds and nightly tags explicitly." >&2
+    "select wrapper rebuilds and historical or nightly tags explicitly." >&2
   exit 1
 fi
 if [[ "${tag_input}" != "latest" && -n "${tag_input}" ]] &&
