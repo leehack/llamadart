@@ -76,7 +76,8 @@ void main() {
     for (final path in <String>[
       'example/chat_app/.dart_tool/generated/pubspec.yaml',
       'example/chat_app/build/generated/pubspec.yaml',
-      'example/chat_app/macos/flutter/ephemeral/plugin/pubspec.yaml',
+      'example/chat_app/macos/Flutter/ephemeral/plugin/pubspec.yaml',
+      'example/chat_app/ios/.symlinks/plugins/example/pubspec.yaml',
     ]) {
       final pubspec = File('${root.path}/$path');
       pubspec.parent.createSync(recursive: true);
@@ -118,5 +119,17 @@ void main() {
 
     expect(result, 17);
     expect(calls, 3);
+  });
+
+  test('reports a stable exit code when an SDK command cannot start', () async {
+    final root = _workspaceFixture();
+
+    final result = await runWorkspaceCommand(
+      'missing-workspace-sdk-command-for-test',
+      const <String>['pub', 'get'],
+      root.path,
+    );
+
+    expect(result, 127);
   });
 }

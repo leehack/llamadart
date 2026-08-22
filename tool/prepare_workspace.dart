@@ -64,10 +64,10 @@ typedef WorkspaceCommandRunner =
 
 /// Returns maintained `pubspec.yaml` paths found in the repository.
 ///
-/// Generated `.dart_tool`, `build`, and Flutter platform `ephemeral` trees are
-/// never package roots. The root, `example/`, and `packages/` directories are
-/// the repository-owned package boundary; vendored or local-only trees outside
-/// it are not workspace members.
+/// Generated `.dart_tool`, `build`, Flutter platform `ephemeral`, and plugin
+/// `.symlinks` trees are never package roots. The root, `example/`, and
+/// `packages/` directories are the repository-owned package boundary; vendored
+/// or local-only trees outside it are not workspace members.
 Set<String> discoverWorkspacePubspecs(Directory repositoryRoot) {
   final paths = <String>{};
   final rootPubspec = File('${repositoryRoot.path}/pubspec.yaml');
@@ -80,32 +80,44 @@ Set<String> discoverWorkspacePubspecs(Directory repositoryRoot) {
     if (!directory.existsSync()) {
       continue;
     }
-    for (final entity in directory.listSync(
-      recursive: true,
-      followLinks: false,
-    )) {
-      if (entity is! File ||
-          !entity.path.endsWith('${Platform.pathSeparator}pubspec.yaml')) {
-        continue;
-      }
-      final relative = entity.path
-          .substring(repositoryRoot.path.length + 1)
-          .replaceAll(Platform.pathSeparator, '/');
-      final segments = relative.split('/');
-      if (segments.contains('.dart_tool') ||
-          segments.contains('build') ||
-          _isFlutterEphemeral(segments)) {
-        continue;
-      }
-      paths.add(relative);
-    }
+    _discoverPubspecs(repositoryRoot, directory, paths);
   }
   return paths;
 }
 
+void _discoverPubspecs(
+  Directory repositoryRoot,
+  Directory directory,
+  Set<String> paths,
+) {
+  for (final entity in directory.listSync(followLinks: false)) {
+    final relative = entity.path
+        .substring(repositoryRoot.path.length + 1)
+        .replaceAll(Platform.pathSeparator, '/');
+    final segments = relative.split('/');
+    if (entity is Directory) {
+      if (_isGeneratedDirectory(segments)) {
+        continue;
+      }
+      _discoverPubspecs(repositoryRoot, entity, paths);
+    } else if (entity is File && segments.last == 'pubspec.yaml') {
+      paths.add(relative);
+    }
+  }
+}
+
+bool _isGeneratedDirectory(List<String> segments) {
+  final name = segments.last;
+  return name == '.dart_tool' ||
+      name == 'build' ||
+      name == '.symlinks' ||
+      _isFlutterEphemeral(segments);
+}
+
 bool _isFlutterEphemeral(List<String> segments) {
   for (var index = 0; index < segments.length - 1; index++) {
-    if (segments[index] == 'flutter' && segments[index + 1] == 'ephemeral') {
+    if (segments[index].toLowerCase() == 'flutter' &&
+        segments[index + 1] == 'ephemeral') {
       return true;
     }
   }
@@ -177,13 +189,20 @@ Future<int> runWorkspaceCommand(
   List<String> arguments,
   String workingDirectory,
 ) async {
-  final process = await Process.start(
-    executable,
-    arguments,
-    workingDirectory: workingDirectory,
-    mode: ProcessStartMode.inheritStdio,
-  );
-  return process.exitCode;
+  try {
+    final process = await Process.start(
+      executable,
+      arguments,
+      workingDirectory: workingDirectory,
+      mode: ProcessStartMode.inheritStdio,
+    );
+    return await process.exitCode;
+  } on ProcessException catch (error) {
+    stderr.writeln(
+      'Could not start $executable in $workingDirectory: ${error.message}',
+    );
+    return 127;
+  }
 }
 
 Future<void> main() async {
