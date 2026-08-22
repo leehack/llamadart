@@ -670,6 +670,7 @@ abstract class _DeepseekDsmlHandler extends _DirectJinjaHandler {
         reasoningContent: thinking.reasoning,
       );
     }
+    final schemas = toolSchemas(tools);
     final parsed = _parseInvokeScope(
       thinking.content,
       scopeStart: _callsStart,
@@ -677,7 +678,6 @@ abstract class _DeepseekDsmlHandler extends _DirectJinjaHandler {
       invokeStartPattern: RegExp(r'<｜DSML｜invoke name="([^"]+)">'),
       invokeEnd: '</｜DSML｜invoke>',
       parseArguments: (name, body) {
-        final schemas = toolSchemas(tools);
         final schema = schemas[name];
         if (schemas.isNotEmpty && schema == null) {
           return null;
@@ -1532,6 +1532,9 @@ bool _endsWithCharacters(List<String> value, List<String> suffix) {
 String _escapeGbnfCharClass(String character) {
   return switch (character) {
     r'\' => r'\\',
+    '\n' => r'\n',
+    '\r' => r'\r',
+    '\t' => r'\t',
     ']' => r'\]',
     '^' => r'\^',
     '-' => r'\-',

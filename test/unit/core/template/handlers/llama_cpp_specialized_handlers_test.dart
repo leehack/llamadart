@@ -1097,6 +1097,13 @@ void main() {
   });
 
   group('Poolside Laguna', () {
+    test('escapes the newline delimiter inside required GBNF classes', () {
+      final grammar = LagunaHandler().buildRequiredGrammar([_schemaTool])!;
+
+      expect(grammar, contains(r'[^\n<'));
+      expect(grammar, isNot(contains('[^\n')));
+    });
+
     test('parses reasoning and GLM-style tool calls with raw strings', () {
       const output =
           '<think>check</think>On it.\n'
