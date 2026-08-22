@@ -140,6 +140,9 @@ void main() {
       for (final invalid in [
         valid.replaceFirst('tool="weather"', 'tool="unknown"'),
         valid.replaceFirst('city&amp;&quot;zone', 'unknown'),
+        valid.replaceFirst('city&amp;&quot;zone', 'city&&quot;zone'),
+        valid.replaceFirst('city&amp;&quot;zone', 'city&bogus;&quot;zone'),
+        valid.replaceFirst('city&amp;&quot;zone', 'city&amp;amp;&quot;zone'),
         valid.replaceFirst('type="string"', 'type="number"'),
         duplicate,
       ]) {
@@ -502,6 +505,24 @@ void main() {
       );
       expect(parsed.toolCalls.single.function?.name, 'weather&"alerts');
 
+      for (final malformedName in [
+        'weather&&quot;alerts',
+        'weather&bogus;&quot;alerts',
+        'weather&amp;amp;&quot;alerts',
+      ]) {
+        final malformed = output.replaceFirst(
+          'weather&amp;&quot;alerts',
+          malformedName,
+        );
+        final rejected = ChatTemplateEngine.parse(
+          ChatFormat.minimaxM3.index,
+          malformed,
+          tools: [_attributeTool],
+        );
+        expect(rejected.toolCalls, isEmpty);
+        expect(rejected.content, malformed);
+      }
+
       expect(
         () => MinimaxM3Handler().buildGrammar([_escapedSchemaTool]),
         throwsA(
@@ -574,6 +595,29 @@ void main() {
 
       expect(parsed.toolCalls.single.function?.name, 'weather&"alerts');
       expect(_arguments(parsed), {'city&"zone': 'Seoul'});
+
+      for (final malformed in [
+        output.replaceFirst('weather&amp;&quot;alerts', 'weather&&quot;alerts'),
+        output.replaceFirst(
+          'weather&amp;&quot;alerts',
+          'weather&bogus;&quot;alerts',
+        ),
+        output.replaceFirst(
+          'weather&amp;&quot;alerts',
+          'weather&amp;amp;&quot;alerts',
+        ),
+        output.replaceFirst('city&amp;&quot;zone', 'city&&quot;zone'),
+        output.replaceFirst('city&amp;&quot;zone', 'city&bogus;&quot;zone'),
+        output.replaceFirst('city&amp;&quot;zone', 'city&amp;amp;&quot;zone'),
+      ]) {
+        final rejected = ChatTemplateEngine.parse(
+          ChatFormat.deepseekV32.index,
+          malformed,
+          tools: [_escapedAttributeSchemaTool],
+        );
+        expect(rejected.toolCalls, isEmpty);
+        expect(rejected.content, malformed);
+      }
     });
 
     test('forced-open reasoning terminates at the V3.2 envelope', () {
@@ -811,6 +855,29 @@ void main() {
       );
       expect(parsed.toolCalls.single.function?.name, 'weather&"alerts');
       expect(_arguments(parsed), {'city&"zone': 'Seoul'});
+
+      for (final malformed in [
+        output.replaceFirst('weather&amp;&quot;alerts', 'weather&&quot;alerts'),
+        output.replaceFirst(
+          'weather&amp;&quot;alerts',
+          'weather&bogus;&quot;alerts',
+        ),
+        output.replaceFirst(
+          'weather&amp;&quot;alerts',
+          'weather&amp;amp;&quot;alerts',
+        ),
+        output.replaceFirst('city&amp;&quot;zone', 'city&&quot;zone'),
+        output.replaceFirst('city&amp;&quot;zone', 'city&bogus;&quot;zone'),
+        output.replaceFirst('city&amp;&quot;zone', 'city&amp;amp;&quot;zone'),
+      ]) {
+        final rejected = ChatTemplateEngine.parse(
+          ChatFormat.museGlimmer.index,
+          malformed,
+          tools: [_escapedAttributeSchemaTool],
+        );
+        expect(rejected.toolCalls, isEmpty);
+        expect(rejected.content, malformed.trim());
+      }
 
       for (final reserved in ['self', 'user', ' leading', 'bad<route']) {
         final tool = ToolDefinition(

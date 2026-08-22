@@ -265,10 +265,12 @@ class KimiK3Handler extends _DirectJinjaHandler {
 
     final calls = <LlamaCompletionChunkToolCall>[];
     for (final match in matches) {
-      final name = _unescapeAttribute(match.group(1) ?? '');
+      final name = _decodeCanonicalAttribute(match.group(1) ?? '');
       final callBody = match.group(2) ?? '';
-      final schema = schemas[name];
-      if (name.isEmpty || (schemas.isNotEmpty && schema == null)) {
+      final schema = name == null ? null : schemas[name];
+      if (name == null ||
+          name.isEmpty ||
+          (schemas.isNotEmpty && schema == null)) {
         return _ParsedCalls.failure();
       }
       final arguments = _parseKimiArguments(callBody, schema: schema);
@@ -322,11 +324,12 @@ class KimiK3Handler extends _DirectJinjaHandler {
     final result = <String, dynamic>{};
     final properties = schema == null ? null : schemaProperties(schema);
     for (final match in argumentPattern.allMatches(body)) {
-      final key = _unescapeAttribute(match.group(1) ?? '');
+      final key = _decodeCanonicalAttribute(match.group(1) ?? '');
       final type = match.group(2) ?? '';
       final raw = match.group(3) ?? '';
-      final propertySchema = properties?[key];
-      if (key.isEmpty ||
+      final propertySchema = key == null ? null : properties?[key];
+      if (key == null ||
+          key.isEmpty ||
           result.containsKey(key) ||
           (properties != null && propertySchema == null) ||
           (propertySchema != null && type != _kimiTypeName(propertySchema))) {
@@ -1628,7 +1631,10 @@ _ParsedCalls _parseInvokeScope(
     if (end < 0) {
       return allowPartial ? partialResult() : _ParsedCalls.failure();
     }
-    final name = _unescapeAttribute(start.group(1) ?? '');
+    final name = _decodeCanonicalAttribute(start.group(1) ?? '');
+    if (name == null) {
+      return allowPartial ? partialResult() : _ParsedCalls.failure();
+    }
     final arguments = parseArguments(name, body.substring(argumentsStart, end));
     if (name.isEmpty || arguments == null) {
       return allowPartial ? partialResult() : _ParsedCalls.failure();
@@ -1860,11 +1866,12 @@ Map<String, dynamic>? _parseDsmlArguments(
   final result = <String, dynamic>{};
   final properties = schema == null ? null : schemaProperties(schema);
   for (final match in pattern.allMatches(body)) {
-    final key = _unescapeAttribute(match.group(1) ?? '');
+    final key = _decodeCanonicalAttribute(match.group(1) ?? '');
     final stringAttribute = match.group(2) == 'true';
     final raw = match.group(3) ?? '';
-    final propertySchema = properties?[key];
-    if (key.isEmpty ||
+    final propertySchema = key == null ? null : properties?[key];
+    if (key == null ||
+        key.isEmpty ||
         result.containsKey(key) ||
         (properties != null && propertySchema == null) ||
         (propertySchema != null &&
@@ -1922,7 +1929,10 @@ List<LlamaCompletionChunkToolCall>? _parseAtemCalls(
   }
   final calls = <LlamaCompletionChunkToolCall>[];
   for (final invoke in invokePattern.allMatches(scope)) {
-    final name = _unescapeAttribute(invoke.group(1) ?? '');
+    final name = _decodeCanonicalAttribute(invoke.group(1) ?? '');
+    if (name == null) {
+      return null;
+    }
     final schema = schemas[name];
     if (schemas.isNotEmpty && schema == null) {
       return null;
@@ -1939,9 +1949,9 @@ List<LlamaCompletionChunkToolCall>? _parseAtemCalls(
     }
     final arguments = <String, dynamic>{};
     for (final parameter in parameterPattern.allMatches(params)) {
-      final key = _unescapeAttribute(parameter.group(1) ?? '');
+      final key = _decodeCanonicalAttribute(parameter.group(1) ?? '');
       final raw = parameter.group(2) ?? '';
-      if (key.isEmpty || arguments.containsKey(key)) {
+      if (key == null || key.isEmpty || arguments.containsKey(key)) {
         return null;
       }
       final propertySchema = properties?[key];
@@ -1977,6 +1987,11 @@ String _unescapeAttribute(String value) => value
     .replaceAll('&lt;', '<')
     .replaceAll('&gt;', '>')
     .replaceAll('&amp;', '&');
+
+String? _decodeCanonicalAttribute(String value) {
+  final decoded = _unescapeAttribute(value);
+  return _escapeAttribute(decoded) == value ? decoded : null;
+}
 
 String _escapeAttribute(String value) => value
     .replaceAll('&', '&amp;')

@@ -162,6 +162,14 @@ void main() {
             '$namespace<invoke name="weather&"alerts">'
             '$namespace</invoke>'
             '$namespace</tool_call>',
+        '$namespace<tool_call>'
+            '$namespace<invoke name="weather&&quot;alerts">'
+            '$namespace</invoke>'
+            '$namespace</tool_call>',
+        '$namespace<tool_call>'
+            '$namespace<invoke name="weather&amp;amp;&quot;alerts">'
+            '$namespace</invoke>'
+            '$namespace</tool_call>',
       ],
     );
 
@@ -176,7 +184,12 @@ void main() {
       validator,
       DeepseekV32Handler().buildGrammar([_escapedAttributeSchemaTool])!,
       valid: [dsmlValid],
-      invalid: [dsmlValid.replaceFirst('&amp;&quot;', '&"')],
+      invalid: [
+        dsmlValid.replaceFirst('&amp;&quot;', '&"'),
+        dsmlValid.replaceFirst('&amp;&quot;', '&&quot;'),
+        dsmlValid.replaceFirst('&amp;&quot;', '&bogus;&quot;'),
+        dsmlValid.replaceFirst('&amp;&quot;', '&amp;amp;&quot;'),
+      ],
     );
 
     const museValid =
@@ -189,7 +202,12 @@ void main() {
       validator,
       MuseGlimmerHandler().buildGrammar([_escapedAttributeSchemaTool])!,
       valid: [museValid],
-      invalid: [museValid.replaceFirst('&amp;&quot;', '&"')],
+      invalid: [
+        museValid.replaceFirst('&amp;&quot;', '&"'),
+        museValid.replaceFirst('&amp;&quot;', '&&quot;'),
+        museValid.replaceFirst('&amp;&quot;', '&bogus;&quot;'),
+        museValid.replaceFirst('&amp;&quot;', '&amp;amp;&quot;'),
+      ],
     );
     _expectGrammar(
       validator,
