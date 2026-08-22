@@ -1220,11 +1220,11 @@ def normalize_litert_lm_release_tag(tag: str) -> str:
         or LEGACY_LITERT_TAG_RE.fullmatch(tag)
     ):
         return tag
-    if re.fullmatch(
-        r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)",
-        tag,
-    ):
-        return f"v{tag}"
+    prefixed_tag = f"v{tag}"
+    if STABLE_LITERT_TAG_RE.fullmatch(
+        prefixed_tag
+    ) or STABLE_LITERT_REBUILD_RE.fullmatch(prefixed_tag):
+        return prefixed_tag
     raise ReleaseError(
         "Invalid LiteRT-LM native tag. Expected vMAJOR.MINOR.PATCH, "
         "vMAJOR.MINOR.PATCH-N, g<12hex>, g<12hex>-N, or legacy "

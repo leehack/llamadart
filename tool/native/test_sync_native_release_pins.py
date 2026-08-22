@@ -61,6 +61,7 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
     def test_litert_tag_grammar_preserves_new_and_legacy_forms(self) -> None:
         expected = {
             "0.16.1": "v0.16.1",
+            "0.16.1-2": "v0.16.1-2",
             "v0.16.1": "v0.16.1",
             "v0.16.1-2": "v0.16.1-2",
             DEVELOPMENT_TAG: DEVELOPMENT_TAG,
