@@ -82,7 +82,7 @@ When a user adds `llamadart` as a dependency and runs their app:
 
 2.  **Initialize**:
     ```bash
-    dart pub get
+    dart run tool/prepare_workspace.dart
     ```
 
 3.  **Build/Fetch Native Library**:
