@@ -4,6 +4,18 @@ import 'package:llamadart/src/core/template/tool_call_grammar_utils.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test('ruleName preserves safe names and distinguishes escaped runes', () {
+    expect(ToolCallGrammarUtils.ruleName('code'), 'code');
+    expect(
+      ToolCallGrammarUtils.ruleName('a b'),
+      isNot(ToolCallGrammarUtils.ruleName('a-b')),
+    );
+    expect(
+      ToolCallGrammarUtils.ruleName('Weather'),
+      isNot(ToolCallGrammarUtils.ruleName('weather')),
+    );
+  });
+
   test('wrapRootGrammar wraps root rule with literals', () {
     const grammar = 'root ::= obj\nobj ::= "{}"\n';
 

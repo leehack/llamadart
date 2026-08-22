@@ -1438,7 +1438,7 @@ String _buildRequiredThenOptionalBody({
   required List<String> optionalRules,
   required String? separatorRule,
 }) {
-  final separator = separatorRule == null ? '' : ' $separatorRule ';
+  final separator = separatorRule == null ? ' ' : ' $separatorRule ';
   var body = requiredRules.isEmpty ? '""' : requiredRules.join(separator);
   if (optionalRules.isEmpty) {
     return body;
@@ -1480,11 +1480,7 @@ void _appendJsonRules(StringBuffer buffer, JsonSchemaConverter converter) {
 }
 
 String _grammarRuleName(String value) {
-  final sanitized = value
-      .replaceAll(RegExp(r'[^A-Za-z0-9-]+'), '-')
-      .replaceAll(RegExp(r'^-+|-+$'), '')
-      .toLowerCase();
-  return sanitized.isEmpty ? 'value' : sanitized;
+  return ToolCallGrammarUtils.ruleName(value);
 }
 
 String _appendUntilLiteralRules(

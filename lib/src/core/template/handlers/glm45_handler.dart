@@ -8,6 +8,7 @@ import '../chat_format.dart';
 import '../chat_parse_result.dart';
 import '../chat_template_handler.dart';
 import '../thinking_utils.dart';
+import '../tool_call_grammar_utils.dart';
 import '../tool_call_parsing_utils.dart';
 
 /// Handler for GLM 4.5 format.
@@ -207,16 +208,18 @@ class Glm45Handler extends ChatTemplateHandler
     final toolRules = <String>[];
 
     for (final tool in tools) {
-      final toolRuleName = '${_sanitizeRuleName(tool.name)}-call';
+      final toolRuleName = '${ToolCallGrammarUtils.ruleName(tool.name)}-call';
       toolChoiceRules.add(toolRuleName);
 
       final argParts = <String>[];
       for (final parameter in tool.parameters) {
         final paramSchema = parameter.toJsonSchema();
         final paramRuleName =
-            '${_sanitizeRuleName(tool.name)}-arg-${_sanitizeRuleName(parameter.name)}';
+            '${ToolCallGrammarUtils.ruleName(tool.name)}-arg-'
+            '${ToolCallGrammarUtils.ruleName(parameter.name)}';
         final valueRuleName =
-            '${_sanitizeRuleName(tool.name)}-arg-${_sanitizeRuleName(parameter.name)}-value';
+            '${ToolCallGrammarUtils.ruleName(tool.name)}-arg-'
+            '${ToolCallGrammarUtils.ruleName(parameter.name)}-value';
 
         final valueRules = _buildValueRules(
           valueRuleName: valueRuleName,
@@ -296,10 +299,6 @@ class Glm45Handler extends ChatTemplateHandler
     }
 
     return ['$valueRuleName ::= value'];
-  }
-
-  String _sanitizeRuleName(String input) {
-    return input.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '-').toLowerCase();
   }
 
   String _escapeLiteral(String input) {
@@ -426,10 +425,12 @@ ToolDefinition? _glmToolByName(List<ToolDefinition>? tools, String name) {
 
 Object? _decodeGlmSchemaValue(String raw, Map<String, dynamic> schema) {
   if (schema['type'] == 'string') {
+    final decoded = ToolCallParsingUtils.decodeJsonValue(raw);
+    final value = decoded is String ? decoded : raw;
     final enumValues = schema['enum'];
-    return enumValues is List && !enumValues.contains(raw)
+    return enumValues is List && !enumValues.contains(value)
         ? _glmSchemaFailure
-        : raw;
+        : value;
   }
   final decoded = ToolCallParsingUtils.decodeJsonValue(raw);
   if (decoded == null && raw.trim() != 'null') {

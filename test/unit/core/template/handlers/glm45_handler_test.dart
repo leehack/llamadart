@@ -4,6 +4,8 @@ import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
 import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:llamadart/src/core/models/tools/tool_param.dart';
+import 'package:llamadart/src/core/template/chat_format.dart';
+import 'package:llamadart/src/core/template/chat_template_engine.dart';
 import 'package:llamadart/src/core/template/handlers/glm45_handler.dart';
 import 'package:test/test.dart';
 
@@ -59,6 +61,39 @@ void main() {
     final noToolParse = handler.parse('plain response', parseToolCalls: false);
     expect(noToolParse.content, equals('plain response'));
     expect(noToolParse.toolCalls, isEmpty);
+  });
+
+  test('schema-aware parsing decodes quoted strings before enum checks', () {
+    final tool = ToolDefinition(
+      name: 'get_weather',
+      description: 'Get weather',
+      parameters: [
+        ToolParam.enumType(
+          'city',
+          values: const ['Seoul', 'Paris'],
+          required: true,
+        ),
+        ToolParam.string('code', required: true),
+      ],
+      handler: _noop,
+    );
+    const output =
+        '<tool_call>get_weather\n'
+        '<arg_key>city</arg_key><arg_value>"Seoul"</arg_value>\n'
+        '<arg_key>code</arg_key><arg_value>123</arg_value>\n'
+        '</tool_call>';
+
+    final parsed = ChatTemplateEngine.parse(
+      ChatFormat.glm45.index,
+      output,
+      tools: [tool],
+    );
+
+    expect(parsed.toolCalls, hasLength(1));
+    expect(jsonDecode(parsed.toolCalls.single.function!.arguments!), {
+      'city': 'Seoul',
+      'code': '123',
+    });
   });
 }
 

@@ -72,6 +72,20 @@ void main() {
         ],
       ),
       _GrammarCase(
+        name: 'Kimi K3 collision-free argument rule names',
+        grammar: KimiK3Handler().buildGrammar([_collidingKeyTool])!,
+        valid:
+            '<|open|>tools<|sep|>'
+            '<|open|>call tool="colliding"<|sep|>'
+            '<|open|>argument key="a b" type="string"<|sep|>first'
+            '<|close|>argument<|sep|>'
+            '<|open|>argument key="a-b" type="string"<|sep|>second'
+            '<|close|>argument<|sep|>'
+            '<|close|>call<|sep|><|close|>tools<|sep|>'
+            '<|close|>message<|sep|>',
+        invalid: const [],
+      ),
+      _GrammarCase(
         name: 'MiniMax M1 quoted name',
         grammar: MinimaxM1Handler().buildGrammar([_weatherTool])!,
         valid:
@@ -242,6 +256,18 @@ void main() {
               '<arg_value>x</arg_value>\n'
               '</tool_call>\n',
         ],
+      ),
+      _GrammarCase(
+        name: 'GLM collision-free argument rule names',
+        grammar: Glm45Handler().buildGrammar([_collidingKeyTool])!,
+        valid:
+            '<tool_call>colliding\n'
+            '<arg_key>a b</arg_key>\n'
+            '<arg_value>first</arg_value>\n'
+            '<arg_key>a-b</arg_key>\n'
+            '<arg_value>second</arg_value>\n'
+            '</tool_call>\n',
+        invalid: const [],
       ),
     ];
 
@@ -444,6 +470,16 @@ final _typedTool = ToolDefinition(
       itemType: ToolParam.string('item'),
       required: true,
     ),
+  ],
+  handler: (_) async => null,
+);
+
+final _collidingKeyTool = ToolDefinition(
+  name: 'colliding',
+  description: 'Collision coverage',
+  parameters: [
+    ToolParam.string('a b', required: true),
+    ToolParam.string('a-b', required: true),
   ],
   handler: (_) async => null,
 );
