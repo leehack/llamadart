@@ -366,7 +366,7 @@ class KimiK3Handler extends _DirectJinjaHandler {
       final key = _unescapeAttribute(match.group(1) ?? '');
       final type = match.group(2) ?? '';
       final raw = match.group(3) ?? '';
-      if (key.isEmpty) {
+      if (key.isEmpty || result.containsKey(key)) {
         return null;
       }
       final property = schema?['properties']?[key];
@@ -1980,7 +1980,7 @@ Map<String, dynamic>? _parseDsmlArguments(
   for (final match in pattern.allMatches(body)) {
     final key = match.group(1) ?? '';
     final raw = match.group(3) ?? '';
-    if (key.isEmpty) {
+    if (key.isEmpty || result.containsKey(key)) {
       return null;
     }
     final property = schema?['properties']?[key];
@@ -2062,7 +2062,7 @@ List<LlamaCompletionChunkToolCall>? _parseAtemCalls(
     for (final parameter in parameterPattern.allMatches(params)) {
       final key = parameter.group(1) ?? '';
       final raw = parameter.group(2) ?? '';
-      if (key.isEmpty) {
+      if (key.isEmpty || arguments.containsKey(key)) {
         return null;
       }
       final property = tool?.toJsonSchema()['properties']?[key];

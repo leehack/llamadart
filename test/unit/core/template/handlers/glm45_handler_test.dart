@@ -118,6 +118,10 @@ void main() {
       '<tool_call>get_weather\n'
           '<arg_key>city</arg_key><arg_value>"Rome"</arg_value>\n'
           '</tool_call>',
+      '<tool_call>get_weather\n'
+          '<arg_key>city</arg_key><arg_value>"Seoul"</arg_value>\n'
+          '<arg_key>city</arg_key><arg_value>"Paris"</arg_value>\n'
+          '</tool_call>',
     ]) {
       final output = '$valid$invalid';
       final parsed = ChatTemplateEngine.parse(

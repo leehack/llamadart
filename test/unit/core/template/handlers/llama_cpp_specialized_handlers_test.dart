@@ -102,6 +102,28 @@ void main() {
       expect(parsed.content, contains('key="unknown"'));
     });
 
+    test('preserves duplicate schema arguments as malformed content', () {
+      const output =
+          '<|open|>tools<|sep|>'
+          '<|open|>call tool="weather"<|sep|>'
+          '<|open|>argument key="city" type="string"<|sep|>Seoul'
+          '<|close|>argument<|sep|>'
+          '<|open|>argument key="city" type="string"<|sep|>Paris'
+          '<|close|>argument<|sep|>'
+          '<|close|>call<|sep|><|close|>tools<|sep|>'
+          '<|close|>message<|sep|>';
+      final parsed = ChatTemplateEngine.parse(
+        ChatFormat.kimiK3.index,
+        output,
+        tools: [_weatherWithCityTool],
+      );
+
+      expect(parsed.toolCalls, isEmpty);
+      expect(parsed.content, contains('<|open|>tools<|sep|>'));
+      expect(parsed.content, contains('Seoul'));
+      expect(parsed.content, contains('Paris'));
+    });
+
     test(
       'parses a tool call without the optional upstream index attribute',
       () {
@@ -392,6 +414,25 @@ void main() {
       expect(parsed.content, output);
     });
 
+    test('preserves duplicate DSML parameters as malformed content', () {
+      const output =
+          '<｜DSML｜tool_calls>\n'
+          '<｜DSML｜invoke name="weather">\n'
+          '<｜DSML｜parameter name="city" string="true">Seoul'
+          '</｜DSML｜parameter>\n'
+          '<｜DSML｜parameter name="city" string="true">Paris'
+          '</｜DSML｜parameter>\n'
+          '</｜DSML｜invoke>\n</｜DSML｜tool_calls>';
+      final parsed = ChatTemplateEngine.parse(
+        ChatFormat.deepseekV4.index,
+        output,
+        tools: [_weatherWithCityTool],
+      );
+
+      expect(parsed.toolCalls, isEmpty);
+      expect(parsed.content, output);
+    });
+
     test('parses the V3.2 function_calls envelope', () {
       const output =
           'check first'
@@ -549,6 +590,25 @@ void main() {
       final parsed = MuseGlimmerHandler().parse(output);
       expect(parsed.toolCalls, isEmpty);
       expect(parsed.content, contains('broken'));
+    });
+
+    test('preserves duplicate ATEM parameters as malformed content', () {
+      const duplicateAtem =
+          '<atem:function_calls>\n'
+          '<atem:invoke name="weather">\n'
+          '<atem:parameter name="city">Seoul</atem:parameter>\n'
+          '<atem:parameter name="city">Paris</atem:parameter>\n'
+          '</atem:invoke>\n'
+          '</atem:function_calls>';
+      const output = ' to=weather<|message|>$duplicateAtem<|eot|>';
+      final parsed = ChatTemplateEngine.parse(
+        ChatFormat.museGlimmer.index,
+        output,
+        tools: [_weatherWithCityTool],
+      );
+
+      expect(parsed.toolCalls, isEmpty);
+      expect(parsed.content, contains(duplicateAtem));
     });
 
     test('hides an incomplete tool channel while streaming', () {

@@ -354,6 +354,10 @@ class Glm45Handler extends ChatTemplateHandler
           }
           continue;
         }
+        if (tools != null && args.containsKey(key)) {
+          validArguments = false;
+          break;
+        }
         final schema = tool?.toJsonSchema();
         final property = schema?['properties']?[key];
         if (tool != null && property is! Map<String, dynamic>) {
