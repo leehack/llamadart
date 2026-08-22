@@ -53,6 +53,7 @@ void main() {
 
     test('falls back to strings when JSON decoding fails', () {
       expect(ToolCallParsingUtils.decodeJsonValueOrString('42'), 42);
+      expect(ToolCallParsingUtils.decodeJsonValueOrString('null'), isNull);
       expect(ToolCallParsingUtils.decodeJsonValueOrString('Seoul'), 'Seoul');
       expect(
         ToolCallParsingUtils.decodeJsonValueOrString(

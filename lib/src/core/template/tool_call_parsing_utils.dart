@@ -179,9 +179,20 @@ class ToolCallParsingUtils {
   }
 
   /// Decodes [text] as JSON and falls back to the original string on failure.
-  static Object decodeJsonValueOrString(String text, {bool trimInput = false}) {
+  static Object? decodeJsonValueOrString(
+    String text, {
+    bool trimInput = false,
+  }) {
     final normalizedInput = trimInput ? text.trim() : text;
-    return decodeJsonValue(normalizedInput) ?? normalizedInput;
+    if (normalizedInput.isEmpty) {
+      return normalizedInput;
+    }
+
+    try {
+      return jsonDecode(normalizedInput);
+    } catch (_) {
+      return normalizedInput;
+    }
   }
 
   /// Encodes parsed tool-call arguments to the chunk wire format.

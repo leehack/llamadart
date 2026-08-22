@@ -116,6 +116,31 @@ void main() {
     expect(grammar, contains('argument-value ::= raw-text | value'));
   });
 
+  test('accept-either parsing preserves a JSON null value', () {
+    const format = XmlToolCallFormat(
+      scopeStart: '<calls>',
+      toolStart: '<call=',
+      toolSep: '>',
+      keyStart: '<arg=',
+      keyValSep: '>',
+      valEnd: '</arg>',
+      toolEnd: '</call>',
+      scopeEnd: '</calls>',
+    );
+    const output =
+        '<calls><call=sample>'
+        '<arg=value>null</arg>'
+        '</call></calls>';
+
+    final parsed = parseXmlToolCalls(output, format);
+
+    expect(parsed.content, isEmpty);
+    expect(parsed.toolCalls, hasLength(1));
+    expect(jsonDecode(parsed.toolCalls.single.function!.arguments!), {
+      'value': null,
+    });
+  });
+
   test('CDATA values honor the configured final delimiter', () {
     const format = XmlToolCallFormat(
       scopeStart: '<calls>',
