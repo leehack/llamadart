@@ -37,8 +37,10 @@ prepares companion package releases. The `native_tag` input controls the
 `vMAJOR.MINOR.PATCH`; historical/nightly artifacts remain consumable through an
 explicit `bNNNN` tag. New nightly wrapper releases use `bNNNN-N`; existing
 `bNNNN-llamadart.N` artifacts remain explicit consumption-only inputs. `latest`
-may resolve to an upstream-aligned tag or wrapper rebuild when GitHub exposes it
-through the stable release channel; all nightly forms remain explicit inputs.
+accepts only an unsuffixed `vMAJOR.MINOR.PATCH`; every wrapper rebuild is a
+GitHub prerelease and must be named explicitly. Nightly cores use canonical
+decimal spelling (`b0` or a nonzero first digit), and rebuild counters start at
+1 without leading zeros.
 The `litert_lm_tag` input defaults to `keep`; set it to a
 `litert-lm-native` tag or `latest` only when the LiteRT-LM native release should
 move in the same PR.
@@ -48,7 +50,8 @@ For a wrapper-only rebuild of upstream stable `vM.m.p`, the native release uses
 `v0.2.0-2`. The native release policy orders that sequence after `v0.2.0` and
 before upstream `v0.2.1`, despite generic SemVer prerelease ordering. The suffix
 belongs only to `native_release_tag`; `llama_cpp_tag`/`llama_cpp_ref` in
-`assets.json` must remain the exact unsuffixed upstream prefix.
+`assets.json` must remain the exact unsuffixed upstream prefix. GitHub classifies
+the rebuild as a prerelease, so automatic `latest` discovery must not select it.
 
 Local fallback:
 
@@ -93,7 +96,7 @@ Use this checklist in native sync PRs:
 - Confirm `llamadart-native` or `litert-lm-native` has published the target
   release and the required per-platform native-assets archives.
 - For a stable-channel llama.cpp native sync, confirm the release tag is an
-  upstream-aligned `vMAJOR.MINOR.PATCH` or an explicit wrapper rebuild,
+  upstream-aligned `vMAJOR.MINOR.PATCH` or an explicitly selected wrapper rebuild,
   `assets.json` records the correct distinct native/upstream tags and hook
   contract version 1, and its artifact checksums match the release assets.
 - Confirm the same release provides Apple SPM-compatible XCFramework zip

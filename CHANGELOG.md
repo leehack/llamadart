@@ -22,7 +22,8 @@
   `vMAJOR.MINOR.PATCH` artifacts and ordered `vMAJOR.MINOR.PATCH-N` wrapper
   rebuilds plus nightly `bNNNN-N` rebuilds, while preserving historical
   `bNNNN` and `bNNNN-llamadart.N` artifacts. Sync rejects invalid tags,
-  rollback, unstable `latest` results, incompatible manifest contracts,
+  leading-zero nightly versions, rollback, wrapper/nightly `latest` results,
+  incompatible manifest contracts,
   missing bundles, and release/manifest checksum or version skew without
   changing the default pin.
 

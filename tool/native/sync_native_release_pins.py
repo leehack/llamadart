@@ -43,17 +43,17 @@ _STABLE_WRAPPER_TAG_PATTERN = re.compile(
     r"^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\."
     r"(0|[1-9][0-9]*)-([1-9][0-9]*)$"
 )
-_LEGACY_NATIVE_TAG_PATTERN = re.compile(r"^b([0-9]+)$")
+_LEGACY_NATIVE_TAG_PATTERN = re.compile(r"^b(0|[1-9][0-9]*)$")
 _NIGHTLY_WRAPPER_TAG_PATTERN = re.compile(
-    r"^b([0-9]+)-([1-9][0-9]*)$"
+    r"^b(0|[1-9][0-9]*)-([1-9][0-9]*)$"
 )
 _LEGACY_WRAPPER_TAG_PATTERN = re.compile(
-    r"^b([0-9]+)-llamadart\.([1-9][0-9]*)$"
+    r"^b(0|[1-9][0-9]*)-llamadart\.([1-9][0-9]*)$"
 )
 _NATIVE_DOC_TAG_PATTERN = (
     r"(?:v(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\."
     r"(?:0|[1-9][0-9]*)(?:-[1-9][0-9]*)?|"
-    r"b[0-9]+(?:-[1-9][0-9]*|-llamadart\.[1-9][0-9]*)?)"
+    r"b(?:0|[1-9][0-9]*)(?:-[1-9][0-9]*|-llamadart\.[1-9][0-9]*)?)"
 )
 _COMMIT_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 _STABLE_NATIVE_BUNDLES = (
@@ -355,8 +355,8 @@ def parse_args() -> argparse.Namespace:
         "--llama-cpp-tag",
         default="keep",
         help=(
-            "llamadart-native stable, wrapper-rebuild, or historical/nightly "
-            "tag; latest; or keep."
+            "Explicit llamadart-native stable, wrapper-rebuild, or "
+            "historical/nightly tag; latest unsuffixed stable; or keep."
         ),
     )
     parser.add_argument(
@@ -365,7 +365,7 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Allow an explicit stable-to-historical/nightly bNNNN channel "
             "switch. This does not permit version rollback or make latest "
-            "accept a nightly release."
+            "accept a wrapper rebuild or nightly release."
         ),
     )
     parser.add_argument(
@@ -530,7 +530,8 @@ def parse_native_release_tag(tag: str) -> NativeReleaseVersion:
     raise ReleaseError(
         f"Invalid llamadart-native release tag {tag!r}. Expected stable "
         "vMAJOR.MINOR.PATCH, stable wrapper rebuild "
-        "vMAJOR.MINOR.PATCH-N, historical/nightly bNNNN, nightly wrapper "
+        "vMAJOR.MINOR.PATCH-N, canonical historical/nightly bNNNN without "
+        "leading zeros, nightly wrapper "
         "rebuild bNNNN-N, or legacy wrapper artifact bNNNN-llamadart.N."
     )
 
@@ -554,15 +555,15 @@ def validate_resolved_native_release(
     resolved_tag = release.get("tag_name")
     if not isinstance(resolved_tag, str) or not resolved_tag:
         raise ReleaseError("Native release metadata has no non-empty tag_name")
-    resolved_version = parse_native_release_tag(resolved_tag)
+    parse_native_release_tag(resolved_tag)
 
     if requested_tag == "latest":
-        if resolved_version.channel != "stable":
+        if _STABLE_NATIVE_TAG_PATTERN.fullmatch(resolved_tag) is None:
             raise ReleaseError(
-                f"llamadart-native latest resolved to nightly tag "
-                f"{resolved_tag}. Automatic discovery accepts GitHub stable-channel "
-                "vMAJOR.MINOR.PATCH and vMAJOR.MINOR.PATCH-N releases only; "
-                "select a historical bNNNN tag explicitly when needed."
+                f"llamadart-native latest resolved to {resolved_tag}. "
+                "Automatic discovery accepts only unsuffixed "
+                "vMAJOR.MINOR.PATCH releases; select GitHub-prerelease "
+                "wrapper rebuilds and nightly tags explicitly."
             )
     elif resolved_tag != requested_tag:
         raise ReleaseError(

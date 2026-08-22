@@ -17,7 +17,7 @@ Downloads llamadart-native release header bundle for a tag and regenerates
 bindings using ffigen.
 
 Options:
-  --tag <tag|latest>      Stable/nightly tag or wrapper rebuild (default: latest)
+  --tag <tag|latest>      Explicit tag, or latest unsuffixed stable (default: latest)
   --repo <owner/name>     Native repository slug (default: leehack/llamadart-native)
   --header-root <path>    Header staging path (default: .dart_tool/llamadart/ffigen_headers)
   --skip-ffigen           Only sync headers, do not run ffigen
@@ -57,9 +57,9 @@ done
 
 stable_tag_pattern='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
 stable_wrapper_tag_pattern='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-[1-9][0-9]*$'
-nightly_tag_pattern='^b[0-9]+$'
-nightly_wrapper_tag_pattern='^b[0-9]+-[1-9][0-9]*$'
-legacy_wrapper_tag_pattern='^b[0-9]+-llamadart\.[1-9][0-9]*$'
+nightly_tag_pattern='^b(0|[1-9][0-9]*)$'
+nightly_wrapper_tag_pattern='^b(0|[1-9][0-9]*)-[1-9][0-9]*$'
+legacy_wrapper_tag_pattern='^b(0|[1-9][0-9]*)-llamadart\.[1-9][0-9]*$'
 
 is_supported_native_tag() {
   [[ "$1" =~ ${stable_tag_pattern} ]] ||
@@ -69,7 +69,11 @@ is_supported_native_tag() {
     [[ "$1" =~ ${legacy_wrapper_tag_pattern} ]]
 }
 
-is_stable_channel_tag() {
+is_latest_eligible_tag() {
+  [[ "$1" =~ ${stable_tag_pattern} ]]
+}
+
+is_stable_upstream_tag() {
   [[ "$1" =~ ${stable_tag_pattern} || "$1" =~ ${stable_wrapper_tag_pattern} ]]
 }
 
@@ -77,7 +81,8 @@ if [[ "${tag_input}" != "latest" && -n "${tag_input}" ]] &&
   ! is_supported_native_tag "${tag_input}"; then
   echo "Invalid llamadart-native tag: ${tag_input}" >&2
   echo "Expected stable vMAJOR.MINOR.PATCH, stable wrapper" \
-    "vMAJOR.MINOR.PATCH-N, historical/nightly bNNNN, nightly wrapper" \
+    "vMAJOR.MINOR.PATCH-N, canonical historical/nightly bNNNN without" \
+    "leading zeros, nightly wrapper" \
     "bNNNN-N, or legacy wrapper artifact bNNNN-llamadart.N." >&2
   exit 1
 fi
@@ -108,9 +113,10 @@ if ! is_supported_native_tag "${resolved_tag}"; then
   echo "Release metadata resolved unsupported tag: ${resolved_tag}" >&2
   exit 1
 fi
-if [[ "${tag_input}" == "latest" ]] && ! is_stable_channel_tag "${resolved_tag}"; then
-  echo "llamadart-native latest resolved nightly tag ${resolved_tag};" \
-    "select historical tags explicitly." >&2
+if [[ "${tag_input}" == "latest" ]] && ! is_latest_eligible_tag "${resolved_tag}"; then
+  echo "llamadart-native latest resolved to ${resolved_tag};" \
+    "automatic discovery accepts only unsuffixed vMAJOR.MINOR.PATCH releases;" \
+    "select GitHub-prerelease wrapper rebuilds and nightly tags explicitly." >&2
   exit 1
 fi
 if [[ "${tag_input}" != "latest" && -n "${tag_input}" ]] &&
@@ -159,7 +165,7 @@ if [[ "${asset_digest}" == sha256:* ]]; then
       "${expected_sha256}, got ${actual_sha256}." >&2
     exit 1
   fi
-elif is_stable_channel_tag "${resolved_tag}"; then
+elif is_stable_upstream_tag "${resolved_tag}"; then
   echo "Stable release ${resolved_tag} does not publish a SHA-256 digest for ${asset_name}." >&2
   exit 1
 else

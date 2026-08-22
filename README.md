@@ -154,8 +154,12 @@ rebuilds use `bNNNN-N`; existing `bNNNN-llamadart.N` artifacts remain valid
 consumption-only overrides. Stable wrapper-only rebuilds of upstream `vM.m.p`
 use `vM.m.p-N`, preserving the exact upstream prefix. Native release policy
 treats each `-N` suffix as a forward wrapper rebuild even where generic SemVer
-ordering differs. The default pin above changes only after the matching
-artifacts, bindings, runtime behavior, and docs have been validated together.
+ordering differs. Wrapper rebuilds are GitHub prereleases and must be selected
+explicitly; `latest` accepts only an unsuffixed stable tag. Nightly cores use
+canonical decimal spelling (`b0` or a nonzero first digit), and rebuild counters
+start at 1 without leading zeros. The default pin above changes only after the
+matching artifacts, bindings, runtime behavior, and docs have been validated
+together.
 
 ## Common Tasks
 

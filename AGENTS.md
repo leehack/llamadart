@@ -196,6 +196,10 @@ Stable `llamadart-native` distribution tags use strict
 `vMAJOR.MINOR.PATCH`. A wrapper-only rebuild of upstream `vM.m.p` uses
 `vM.m.p-N`, preserving the exact upstream prefix; native release ordering treats
 `-N` as a forward wrapper sequence despite generic SemVer prerelease ordering.
+Wrapper rebuilds are GitHub prereleases and must be selected explicitly;
+`latest` accepts only unsuffixed `vMAJOR.MINOR.PATCH`. Nightly cores use
+canonical decimal spelling (`b0` or a nonzero first digit), and rebuild counters
+start at 1 without leading zeros.
 New nightly wrapper rebuilds use `bNNNN-N`; existing
 `bNNNN-llamadart.N` artifacts remain explicit consumption-only compatibility
 inputs. New stable or nightly wrapper forms require manifests containing both

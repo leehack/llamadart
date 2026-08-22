@@ -115,8 +115,11 @@ releases remain valid explicit overrides. New nightly wrapper rebuilds use
 `bNNNN-N`; existing `bNNNN-llamadart.N` artifacts remain valid
 consumption-only overrides. A stable wrapper-only rebuild of upstream `vM.m.p`
 uses `vM.m.p-N`, such as native `v0.2.0-1` for upstream `v0.2.0`. The suffix
-advances the GitHub stable native release sequence while the manifest's upstream
-ref remains `v0.2.0`. Other suffixes are rejected so a typo cannot select an
+advances the native sequence while the manifest's upstream ref remains
+`v0.2.0`. Wrapper rebuilds are GitHub prereleases and must be named explicitly;
+`latest` accepts only an unsuffixed stable tag. Nightly cores use canonical
+decimal spelling (`b0` or a nonzero first digit), and rebuild counters start at
+1 without leading zeros. Other suffixes are rejected so a typo cannot select an
 unreviewed or version-skewed archive.
 You can also list them with the GitHub CLI:
 

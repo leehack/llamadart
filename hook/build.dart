@@ -159,7 +159,7 @@ final _windowsCublasPattern = RegExp(r'^cublas64(?:[_-]?\d+)?\.dll$');
 final _linuxVersionedSoPattern = RegExp(r'\.so\.\d+$');
 final _nativeTagPattern = RegExp(
   r'^(?:v(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-[1-9][0-9]*)?|'
-  r'b[0-9]+(?:-[1-9][0-9]*|-llamadart\.[1-9][0-9]*)?)$',
+  r'b(?:0|[1-9][0-9]*)(?:-[1-9][0-9]*|-llamadart\.[1-9][0-9]*)?)$',
 );
 final _githubRepoSegmentPattern = RegExp(r'^[A-Za-z0-9_.-]+$');
 
@@ -1146,7 +1146,8 @@ String _resolveNativeTag(Object? rawUserConfig) {
     throw FormatException(
       'hooks.user_defines.$_packageName.$nativeTagUserDefineKey must be a '
       'stable vMAJOR.MINOR.PATCH tag, stable wrapper rebuild '
-      'vMAJOR.MINOR.PATCH-N, historical/nightly bNNNN tag, nightly wrapper '
+      'vMAJOR.MINOR.PATCH-N, canonical historical/nightly bNNNN tag without '
+      'leading zeros, nightly wrapper '
       'rebuild bNNNN-N, or legacy wrapper artifact bNNNN-llamadart.N '
       '(for example $_llamaCppTag).',
     );

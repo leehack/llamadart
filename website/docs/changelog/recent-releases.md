@@ -19,9 +19,10 @@ For canonical full release notes, use:
 - Native release synchronization and build-hook overrides now accept stable
   `vMAJOR.MINOR.PATCH` artifacts and ordered `vMAJOR.MINOR.PATCH-N` wrapper
   rebuilds plus nightly `bNNNN-N` rebuilds, while preserving historical
-  `bNNNN` and `bNNNN-llamadart.N` artifacts. Invalid tags, rollback, unstable
-  `latest` results, missing bundles, and manifest/checksum/version skew fail
-  closed; the default native pin is unchanged.
+  `bNNNN` and `bNNNN-llamadart.N` artifacts. Leading-zero nightly tags,
+  rollback, wrapper/nightly `latest` results, missing bundles, and
+  manifest/checksum/version skew fail closed; the default native pin is
+  unchanged.
 
 - Fixed Web/native backend API parity. `WebAutoBackend` now forwards grammar
   constraint support from its active runtime, so strict structured output fails

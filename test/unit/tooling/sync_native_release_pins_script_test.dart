@@ -699,7 +699,7 @@ paths=(
   });
 
   test(
-    'workflow exposes and forwards explicit nightly channel opt-in',
+    'workflow passes dispatch inputs through quoted environment variables',
     () async {
       final workflow = await File(
         path.join(
@@ -716,8 +716,70 @@ paths=(
         2,
       );
       expect(_occurrences(workflow, r'"${transition_args[@]}"'), 2);
+      expect(workflow, contains(r'NATIVE_TAG: ${{ inputs.native_tag }}'));
+      expect(
+        _occurrences(workflow, r'LITERT_LM_TAG: ${{ inputs.litert_lm_tag }}'),
+        2,
+      );
+      expect(
+        workflow,
+        contains(
+          r'RESOLVED_NATIVE_TAG: ${{ steps.sync_headers.outputs.resolved_tag }}',
+        ),
+      );
+      expect(_occurrences(workflow, r'--llama-cpp-tag "${NATIVE_TAG}"'), 1);
+      expect(_occurrences(workflow, r'--tag "${NATIVE_TAG}"'), 1);
+      expect(
+        _occurrences(workflow, r'--llama-cpp-tag "${RESOLVED_NATIVE_TAG}"'),
+        1,
+      );
+      expect(_occurrences(workflow, r'--litert-lm-tag "${LITERT_LM_TAG}"'), 2);
+      expect(
+        workflow,
+        isNot(contains(r'${{ github.event.inputs.native_tag }}')),
+      );
+      expect(
+        workflow,
+        isNot(contains(r'${{ github.event.inputs.litert_lm_tag }}')),
+      );
+      expect(
+        workflow,
+        isNot(contains(r'--llama-cpp-tag "${{ inputs.native_tag }}"')),
+      );
+      expect(
+        workflow,
+        isNot(contains(r'--litert-lm-tag "${{ inputs.litert_lm_tag }}"')),
+      );
     },
   );
+
+  test('native tag consumers use canonical nightly core grammar', () async {
+    final sources = <String, String>{
+      'Python synchronizer': await File(
+        'tool/native/sync_native_release_pins.py',
+      ).readAsString(),
+      'Bash header sync': await File(
+        'tool/native/sync_native_headers_and_bindings.sh',
+      ).readAsString(),
+      'Dart build hook': await File('hook/build.dart').readAsString(),
+      'release-doc verifier': await File(
+        'tool/testing/verify_release_docs_versions.dart',
+      ).readAsString(),
+    };
+
+    expect(sources['Python synchronizer'], contains(r'r"^b(0|[1-9][0-9]*)$"'));
+    expect(
+      sources['Bash header sync'],
+      contains("nightly_tag_pattern='^b(0|[1-9][0-9]*)\$'"),
+    );
+    for (final entry in sources.entries.where(
+      (entry) =>
+          entry.key.startsWith('Dart') || entry.key.startsWith('release'),
+    )) {
+      expect(entry.value, contains(r'b(?:0|[1-9][0-9]*)'), reason: entry.key);
+      expect(entry.value, isNot(contains(r'b[0-9]+')), reason: entry.key);
+    }
+  });
 
   test('orders stable wrapper rebuilds between upstream stable tags', () async {
     final setup = await _writeLlamaOnlyRepo('v0.2.0');
@@ -740,12 +802,21 @@ paths=(
     for (final tag in const [
       'v1.2',
       'v01.2.3',
+      'b00',
+      'b0000',
+      'b0001',
+      'b0001-1',
+      'b0001-llamadart.1',
+      'b1-01',
+      'b1-llamadart.01',
       'b10514-custom',
       'b10514-0',
       'v0.2.0-0',
       'v0.2.0-llamadart.1',
       'v0.2.0-custom.1',
       '../v0.2.0',
+      r'b1; touch "$RUNNER_TEMP/llamadart-pwned"',
+      r'b1$(touch "$RUNNER_TEMP/llamadart-pwned")',
     ]) {
       final result = await _runLlamaSync(setup, tag);
       expect(result.exitCode, 1, reason: tag);
@@ -760,7 +831,17 @@ paths=(
   test(
     'header sync rejects invalid native tags before network lookup',
     () async {
-      for (final tag in const ['v1.2', 'b10514-0', 'v0.2.0-llamadart.1']) {
+      for (final tag in const [
+        'v1.2',
+        'b0000',
+        'b0001-1',
+        'b0001-llamadart.1',
+        'b1-01',
+        'b1-llamadart.01',
+        'b10514-0',
+        'v0.2.0-llamadart.1',
+        r'b1; touch "$RUNNER_TEMP/llamadart-pwned"',
+      ]) {
         final result = await Process.run('bash', [
           'tool/native/sync_native_headers_and_bindings.sh',
           '--tag',
@@ -779,6 +860,42 @@ paths=(
           reason: tag,
         );
       }
+    },
+    skip: Platform.isWindows ? 'requires a POSIX Bash runtime' : false,
+  );
+
+  test(
+    'header sync rejects wrapper prereleases resolved through latest',
+    () async {
+      final root = await Directory.systemTemp.createTemp(
+        'native_latest_wrapper_',
+      );
+      addTearDown(() => root.delete(recursive: true));
+      final fakeBin = Directory(path.join(root.path, 'bin'))
+        ..createSync(recursive: true);
+      final curl = File(path.join(fakeBin.path, 'curl'));
+      await curl.writeAsString('''#!/usr/bin/env bash
+printf '%s\\n' '{"tag_name":"v0.2.0-1","assets":[]}'
+''');
+      await Process.run('chmod', ['+x', curl.path]);
+
+      final result = await Process.run(
+        'bash',
+        [
+          'tool/native/sync_native_headers_and_bindings.sh',
+          '--tag',
+          'latest',
+          '--skip-ffigen',
+        ],
+        environment: {
+          ...Platform.environment,
+          'PATH': '${fakeBin.path}:${Platform.environment['PATH']}',
+        },
+      );
+
+      expect(result.exitCode, 1);
+      expect(result.stderr, contains('latest resolved to v0.2.0-1'));
+      expect(result.stderr, contains('only unsuffixed vMAJOR.MINOR.PATCH'));
     },
     skip: Platform.isWindows ? 'requires a POSIX Bash runtime' : false,
   );
@@ -855,7 +972,7 @@ paths=(
   });
 
   test(
-    'accepts latest stable wrappers and rejects nightly or manifest skew',
+    'latest accepts only unsuffixed stable tags and rejects release skew',
     () async {
       final latestSetup = await _writeLlamaOnlyRepo('b10514');
       addTearDown(() => latestSetup.root.delete(recursive: true));
@@ -868,7 +985,8 @@ paths=(
       );
       final latest = await _runLlamaSync(latestSetup, 'latest');
       expect(latest.exitCode, 1);
-      expect(latest.stderr, contains('latest resolved to nightly tag'));
+      expect(latest.stderr, contains('latest resolved to b10515-1'));
+      expect(latest.stderr, contains('only unsuffixed vMAJOR.MINOR.PATCH'));
 
       final latestWrapperSetup = await _writeLlamaOnlyRepo('v0.2.0');
       addTearDown(() => latestWrapperSetup.root.delete(recursive: true));
@@ -878,10 +996,11 @@ paths=(
         resolvedTag: 'v0.2.0-1',
       );
       final latestWrapper = await _runLlamaSync(latestWrapperSetup, 'latest');
+      expect(latestWrapper.exitCode, 1);
+      expect(latestWrapper.stderr, contains('latest resolved to v0.2.0-1'));
       expect(
-        latestWrapper.exitCode,
-        0,
-        reason: '${latestWrapper.stdout}\n${latestWrapper.stderr}',
+        latestWrapper.stderr,
+        contains('select GitHub-prerelease wrapper rebuilds'),
       );
 
       final releaseSetup = await _writeLlamaOnlyRepo('b10514');
@@ -1275,21 +1394,21 @@ The Apple SwiftPM manifest pins
 
 Future<void> _writeProjectDocs(Directory root) async {
   await File(path.join(root.path, 'README.md')).writeAsString('''
-llamadart_native_tag: b0001-llamadart.1
+llamadart_native_tag: b1-llamadart.1
 
-ABI-compatible with the default `leehack/llamadart-native@b0001-llamadart.1` runtime.
+ABI-compatible with the default `leehack/llamadart-native@b1-llamadart.1` runtime.
 
 dependencies:
   llamadart: ^0.1.0
   llamadart_llama_cpp_flutter: ^0.0.1
   llamadart_litert_lm_flutter: ^0.0.1
 
-`llamadart-native-windows-x64-b0001-llamadart.1.tar.gz`
+`llamadart-native-windows-x64-b1-llamadart.1.tar.gz`
 
-Available llama.cpp module matrix from the default native tag `b0001-llamadart.1`:
+Available llama.cpp module matrix from the default native tag `b1-llamadart.1`:
 
-| Native llama.cpp / GGUF | `leehack/llamadart-native@b0001-llamadart.1` |
-| Apple SPM llama.cpp / GGUF | `llamadart_llama_cpp_flutter` pins `leehack/llamadart-native@b0001-llamadart.1` Apple XCFramework |
+| Native llama.cpp / GGUF | `leehack/llamadart-native@b1-llamadart.1` |
+| Apple SPM llama.cpp / GGUF | `llamadart_llama_cpp_flutter` pins `leehack/llamadart-native@b1-llamadart.1` Apple XCFramework |
 ''');
 
   final installDoc = File(
@@ -1297,16 +1416,16 @@ Available llama.cpp module matrix from the default native tag `b0001-llamadart.1
   );
   await installDoc.parent.create(recursive: true);
   await installDoc.writeAsString('''
-llamadart_native_tag: b0001-llamadart.1
+llamadart_native_tag: b1-llamadart.1
 
-ABI-compatible with the default `leehack/llamadart-native@b0001-llamadart.1` runtime.
+ABI-compatible with the default `leehack/llamadart-native@b1-llamadart.1` runtime.
 
 dependencies:
   llamadart: ^0.1.0
   llamadart_llama_cpp_flutter: ^0.0.1
   llamadart_litert_lm_flutter: ^0.0.1
 
-`llamadart-native-windows-x64-b0001-llamadart.1.tar.gz`
+`llamadart-native-windows-x64-b1-llamadart.1.tar.gz`
 ''');
 
   final supportMatrix = File(
@@ -1315,19 +1434,19 @@ dependencies:
   await supportMatrix.parent.create(recursive: true);
   await supportMatrix.writeAsString('''
 The native-assets hook currently pins `llamadart-native` tag
-`b0001-llamadart.1` and
+`b1-llamadart.1` and
 `litert-lm-native` release `v0.13.1-native.1`.
 
-## Current llama.cpp module availability by bundle (`b0001-llamadart.1`)
+## Current llama.cpp module availability by bundle (`b1-llamadart.1`)
 
-llamadart_native_tag: b0001-llamadart.1
+llamadart_native_tag: b1-llamadart.1
 ''');
 
   await File(path.join(root.path, 'CHANGELOG.md')).writeAsString('''
 ## Unreleased
 
 * Updated the default llama.cpp native runtime pin to
-  `leehack/llamadart-native@b0001`, regenerated matching Dart FFI bindings,
+  `leehack/llamadart-native@b1`, regenerated matching Dart FFI bindings,
   refreshed the `llamadart_llama_cpp_flutter` Apple SwiftPM checksum, and
   aligned current README/website native override docs.
 

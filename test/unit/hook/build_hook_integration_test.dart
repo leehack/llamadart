@@ -341,6 +341,8 @@ void main() {
   test('build hook uses accepted wrapper native tag overrides', () async {
     for (final overrideTag in const [
       'v9.8.8-1',
+      'b0-1',
+      'b0-llamadart.1',
       'b10514-1',
       'b10514-llamadart.1',
     ]) {
@@ -419,7 +421,7 @@ void main() {
   });
 
   test('build hook uses custom GitHub repository cache namespace', () async {
-    const overrideTag = 'b0000';
+    const overrideTag = 'b0';
     const customRepository = 'example/native-fork';
     final repoCacheRoot = Directory(
       '.dart_tool/llamadart/native_bundles/github/example/native-fork',
@@ -539,7 +541,7 @@ void main() {
   });
 
   test('build hook uses local native path archive', () async {
-    const overrideTag = 'b0000-llamadart.1';
+    const overrideTag = 'b0-llamadart.1';
     const localRootPath = '.dart_tool/llamadart_hook_test_local_archive';
     final localRoot = Directory(localRootPath);
     final archiveFile = File(
@@ -618,11 +620,20 @@ void main() {
       '../bad',
       'v1.2',
       'v01.2.3',
+      'b00',
+      'b0000',
+      'b0001',
+      'b0001-1',
+      'b0001-llamadart.1',
+      'b1-01',
+      'b1-llamadart.01',
       'b10514-custom',
       'b10514-0',
       'v0.2.0-0',
       'v0.2.0-llamadart.1',
       'v0.2.0-custom.1',
+      r'b1; touch "$RUNNER_TEMP/llamadart-pwned"',
+      r'b1$(touch "$RUNNER_TEMP/llamadart-pwned")',
     ]) {
       final userDefines = PackageUserDefines(
         workspacePubspec: PackageUserDefinesSource(

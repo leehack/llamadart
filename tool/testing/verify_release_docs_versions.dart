@@ -67,7 +67,7 @@ final RegExp _fenceLine = RegExp(r'^\s*```\s*([^\s`]*)?\s*$');
 final RegExp _versionLine = RegExp(r'^version:\s*(\S+)\s*$');
 final RegExp _nativeReleaseTag = RegExp(
   r'^(?:v(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-[1-9][0-9]*)?|'
-  r'b[0-9]+(?:-[1-9][0-9]*|-llamadart\.[1-9][0-9]*)?)$',
+  r'b(?:0|[1-9][0-9]*)(?:-[1-9][0-9]*|-llamadart\.[1-9][0-9]*)?)$',
 );
 
 void main() {
@@ -136,7 +136,8 @@ String? _checkCurrentNativePins(List<String> errors) {
       errors.add(
         '${entry.key} uses unsupported native tag $pin; expected stable '
         'vMAJOR.MINOR.PATCH, stable wrapper rebuild '
-        'vMAJOR.MINOR.PATCH-N, historical/nightly bNNNN, nightly wrapper '
+        'vMAJOR.MINOR.PATCH-N, canonical historical/nightly bNNNN without '
+        'leading zeros, nightly wrapper '
         'rebuild bNNNN-N, or legacy wrapper artifact bNNNN-llamadart.N.',
       );
       continue;

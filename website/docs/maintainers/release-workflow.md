@@ -40,7 +40,10 @@ version alignment:
   checksum agreement before accepting a stable pin change. `SHA256SUMS`, the
   manifest, and GitHub asset digests must agree. Stable wrapper-only rebuilds
   use `vM.m.p-N` for upstream `vM.m.p`; the suffix advances the native sequence
-  but must never appear in the manifest's upstream llama.cpp ref.
+  but must never appear in the manifest's upstream llama.cpp ref. GitHub marks
+  every wrapper rebuild as a prerelease, so select it explicitly; `latest`
+  accepts only unsuffixed `vMAJOR.MINOR.PATCH`. Nightly cores and positive
+  rebuild counters must use canonical decimal spelling without leading zeros.
 
 ## 2. Version and docs updates
 

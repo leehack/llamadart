@@ -37,7 +37,9 @@ Accepted tags are stable `vMAJOR.MINOR.PATCH`, historical `bNNNN`, and existing
 nightly artifacts. New nightly wrapper rebuilds use `bNNNN-N`; existing
 `bNNNN-llamadart.N` artifacts remain consumption-only overrides. A stable
 wrapper-only rebuild of upstream `vM.m.p` uses `vM.m.p-N` and preserves that
-upstream prefix in the release manifest.
+upstream prefix in the release manifest. All wrapper rebuilds are GitHub
+prereleases and require an explicit tag; `latest` accepts only an unsuffixed
+stable tag. Nightly cores and positive rebuild counters reject leading zeros.
 The selected release must include a bundle asset named
 `llamadart-native-<bundle>-<tag>.tar.gz` for the target being built.
 Native source overrides do not regenerate Dart FFI bindings or symbol lookups,

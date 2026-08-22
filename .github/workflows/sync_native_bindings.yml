@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       native_tag:
-        description: 'vM.m.p, vM.m.p-N, bNNNN, bNNNN-N, legacy bNNNN-llamadart.N, or latest'
+        description: 'vM.m.p; explicit vM.m.p-N, bNNNN[-N], or legacy bNNNN-llamadart.N; latest is unsuffixed v only'
         required: true
         default: 'latest'
       allow_nightly_channel:
@@ -53,14 +53,16 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ALLOW_NIGHTLY_CHANNEL: ${{ inputs.allow_nightly_channel }}
+          NATIVE_TAG: ${{ inputs.native_tag }}
+          LITERT_LM_TAG: ${{ inputs.litert_lm_tag }}
         run: |
           transition_args=()
           if [[ "${ALLOW_NIGHTLY_CHANNEL}" == "true" ]]; then
             transition_args+=(--allow-legacy-tag)
           fi
           python3 tool/native/sync_native_release_pins.py \
-            --llama-cpp-tag "${{ github.event.inputs.native_tag }}" \
-            --litert-lm-tag "${{ github.event.inputs.litert_lm_tag }}" \
+            --llama-cpp-tag "${NATIVE_TAG}" \
+            --litert-lm-tag "${LITERT_LM_TAG}" \
             "${transition_args[@]}" \
             --dry-run
 
@@ -68,23 +70,26 @@ jobs:
         id: sync_headers
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NATIVE_TAG: ${{ inputs.native_tag }}
         run: |
-          tool/native/sync_native_headers_and_bindings.sh --tag "${{ github.event.inputs.native_tag }}"
+          tool/native/sync_native_headers_and_bindings.sh --tag "${NATIVE_TAG}"
 
       - name: Sync native hook pins
         id: sync_pins
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ALLOW_NIGHTLY_CHANNEL: ${{ inputs.allow_nightly_channel }}
+          RESOLVED_NATIVE_TAG: ${{ steps.sync_headers.outputs.resolved_tag }}
+          LITERT_LM_TAG: ${{ inputs.litert_lm_tag }}
         run: |
           transition_args=()
           if [[ "${ALLOW_NIGHTLY_CHANNEL}" == "true" ]]; then
             transition_args+=(--allow-legacy-tag)
           fi
           python3 tool/native/sync_native_release_pins.py \
-            --llama-cpp-tag "${{ steps.sync_headers.outputs.resolved_tag }}" \
+            --llama-cpp-tag "${RESOLVED_NATIVE_TAG}" \
             "${transition_args[@]}" \
-            --litert-lm-tag "${{ github.event.inputs.litert_lm_tag }}"
+            --litert-lm-tag "${LITERT_LM_TAG}"
 
       - name: Create pull request
         uses: peter-evans/create-pull-request@v8
