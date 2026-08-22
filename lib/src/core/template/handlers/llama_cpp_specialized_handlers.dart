@@ -539,7 +539,6 @@ class MinimaxM3Handler extends _DirectJinjaHandler {
     bool parseToolCalls = true,
     bool thinkingForcedOpen = false,
   }) {
-    final schemas = toolSchemas(tools);
     final thinking = extractThinking(
       output,
       startTag: thinkingStartTag,
@@ -552,6 +551,7 @@ class MinimaxM3Handler extends _DirectJinjaHandler {
         reasoningContent: thinking.reasoning,
       );
     }
+    final schemas = toolSchemas(tools);
     final rawContent = thinking.content;
     const namespacedScopeStart = '$namespace<tool_call>';
     const namespacedScopeEnd = '$namespace</tool_call>';
@@ -769,7 +769,9 @@ class MuseGlimmerHandler extends _DirectJinjaHandler {
     bool parseToolCalls = true,
     bool thinkingForcedOpen = false,
   }) {
-    final schemas = toolSchemas(tools);
+    final schemas = parseToolCalls
+        ? toolSchemas(tools)
+        : const <String, Map<String, dynamic>>{};
     final channelPattern = RegExp(
       r'(?:<\|start\|>assistant)?\s+to=([^<]+)<\|message\|>([\s\S]*?)(<\|eom\|>|<\|eot\|>|$)',
     );
@@ -1032,7 +1034,7 @@ class _KimiK3GrammarBuilder {
       _requireNonEmptyProtocolName(tool.name, format: 'Kimi K3', kind: 'tool');
       final schema = tool.toJsonSchema();
       final properties = schemaProperties(schema);
-      final required = schemaRequired(schema);
+      final requiredNames = schemaRequired(schema);
       final requiredRules = <String>[];
       final optionalRules = <String>[];
       var propertyIndex = 0;
@@ -1059,7 +1061,7 @@ class _KimiK3GrammarBuilder {
           '$argumentRule ::= ${ToolCallGrammarUtils.literal(opening)} '
           '$valueRule ${ToolCallGrammarUtils.literal(close)}',
         );
-        (required.contains(entry.key) ? requiredRules : optionalRules).add(
+        (requiredNames.contains(entry.key) ? requiredRules : optionalRules).add(
           argumentRule,
         );
       }

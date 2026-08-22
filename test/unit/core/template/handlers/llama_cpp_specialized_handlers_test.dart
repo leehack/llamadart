@@ -376,6 +376,25 @@ void main() {
       expect(MinimaxM3Handler().parse('</mm:think>Hello').content, 'Hello');
     });
 
+    test('does not validate schemas when MiniMax M3 parsing is disabled', () {
+      final duplicate = ToolDefinition(
+        name: 'weather',
+        description: 'Duplicate weather tool',
+        parameters: const [],
+        handler: (_) async => null,
+      );
+      const output = '$ns<tool_call>unparsed</tool_call>';
+
+      final parsed = MinimaxM3Handler().parseWithTools(
+        output,
+        tools: [_weatherTool, duplicate],
+        parseToolCalls: false,
+      );
+
+      expect(parsed.content, output);
+      expect(parsed.toolCalls, isEmpty);
+    });
+
     test('hides an incomplete invoke while streaming', () {
       const output =
           'Prelude$ns<tool_call>\n'
@@ -972,6 +991,25 @@ void main() {
       final parsed = MuseGlimmerHandler().parse(output);
       expect(parsed.toolCalls, isEmpty);
       expect(parsed.content, contains('<atem:function_calls>'));
+    });
+
+    test('does not validate schemas when Muse parsing is disabled', () {
+      final duplicate = ToolDefinition(
+        name: 'weather',
+        description: 'Duplicate weather tool',
+        parameters: const [],
+        handler: (_) async => null,
+      );
+      const output = ' to=weather<|message|>$atem<|eot|>';
+
+      final parsed = MuseGlimmerHandler().parseWithTools(
+        output,
+        tools: [_weatherTool, duplicate],
+        parseToolCalls: false,
+      );
+
+      expect(parsed.content, atem);
+      expect(parsed.toolCalls, isEmpty);
     });
 
     test('preserves malformed tool-channel markup as content', () {
