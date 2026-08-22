@@ -78,6 +78,7 @@ Map<String, dynamic> _validEvidence() => {
     'MiniMax M3': 'real-model',
   },
   'upstreamRefs': {
+    'repository': 'ggml-org/llama.cpp',
     'pinned': 'b10549',
     'current': 'd775b8967a46d8beb110d444aa3b8938179e0dd8',
   },
@@ -119,6 +120,7 @@ HighRiskContractResult _validate({
   Map<String, dynamic>? evidence,
   String? evidencePath = _evidencePath,
   HighRiskPrState state = _state,
+  Set<String>? verifiedUpstreamRefs,
 }) => validateHighRiskContract(
   changedFiles: files,
   deletedFiles: deletedFiles,
@@ -126,6 +128,9 @@ HighRiskContractResult _validate({
   state: state,
   evidence: evidence ?? _validEvidence(),
   evidencePath: evidencePath,
+  verifiedUpstreamRefs:
+      verifiedUpstreamRefs ??
+      const {'b10549', 'd775b8967a46d8beb110d444aa3b8938179e0dd8'},
 );
 
 String _replaceField(String body, String label, String replacement) =>
@@ -146,6 +151,9 @@ void main() {
         'lib/src/core/models/chat/chat_template_result.dart',
         'lib/src/core/models/chat/content_part.dart',
         'lib/src/core/models/tools/tool_definition.dart',
+        'lib/src/core/engine/engine.dart',
+        'lib/src/core/engine/chat_session.dart',
+        'lib/src/core/engine/chat_completion_request_planner.dart',
       ]);
 
       expect(assessment.surfaces, contains(HighRiskSurface.structuredOutput));
@@ -559,11 +567,30 @@ Verdict: PASS''',
 
     test('requires distinct pinned and current upstream roles', () {
       final evidence = _validEvidence()
-        ..['upstreamRefs'] = {'pinned': 'b10549', 'current': 'b10549'};
+        ..['upstreamRefs'] = {
+          'repository': 'ggml-org/llama.cpp',
+          'pinned': 'b10549',
+          'current': 'b10549',
+        };
 
       expect(
         _validate(evidence: evidence).errors.join('\n'),
         contains('distinct concrete tags or commits'),
+      );
+    });
+
+    test('requires exact repository-qualified refs resolved by trust code', () {
+      final wrongRepository = _validEvidence();
+      (wrongRepository['upstreamRefs']! as Map<String, dynamic>)['repository'] =
+          'example/fork';
+      expect(
+        _validate(evidence: wrongRepository).errors.join('\n'),
+        contains('distinct concrete tags or commits'),
+      );
+
+      expect(
+        _validate(verifiedUpstreamRefs: const {}).errors.join('\n'),
+        contains('resolve both upstream refs'),
       );
     });
   });
@@ -585,11 +612,11 @@ Verdict: PASS''',
           'dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260',
         ),
       );
-      expect(workflow, contains('pull_request_review:'));
-      expect(workflow, contains('types: [submitted, edited, dismissed]'));
-      expect(workflow, contains('pull_request_review_comment:'));
-      expect(workflow, contains('types: [created, edited, deleted]'));
+      expect(workflow, contains('workflow_run:'));
+      expect(workflow, contains('workflows: [CI, High-Risk Review Signal]'));
       expect(workflow, contains('Check out trusted default-branch policy'));
+      expect(workflow, contains(r'repository: ${{ github.repository }}'));
+      expect(workflow, contains('ref: main'));
       expect(
         workflow,
         isNot(contains(r'ref: ${{ github.event.pull_request.head.sha }}')),
@@ -600,7 +627,10 @@ Verdict: PASS''',
       expect(workflow, contains('Changed paths cannot contain CR or LF.'));
       expect(workflow, contains('persist-credentials: false'));
       expect(workflow, contains('statuses: write'));
-      expect(workflow, contains('Publish pending status for the event head'));
+      expect(
+        workflow,
+        contains('Publish pending status for the event PR head'),
+      );
       expect(workflow, contains('-f state=pending'));
       expect(
         workflow,
@@ -617,6 +647,20 @@ Verdict: PASS''',
       expect(workflow, contains('auto_merge_enabled'));
       expect(workflow, contains('reviewThreads(first:100)'));
       expect(workflow, contains(r'pulls/$PR_NUMBER/reviews?per_page=100'));
+      expect(workflow, contains('sort_by(.id)'));
+      expect(workflow, contains('Capture trusted mutable-input snapshot'));
+      expect(workflow, contains('Mutable PR evidence changed'));
+      expect(
+        workflow,
+        contains('Resolve declared upstream refs in the owning repository'),
+      );
+      expect(workflow, contains(r'repos/ggml-org/llama.cpp/commits/$pinned'));
+      expect(workflow, contains('Require a successful exact-head CI result'));
+      expect(
+        workflow,
+        contains(r'repos/$REPOSITORY/actions/workflows/ci.yml/runs'),
+      );
+      expect(workflow, contains(r'.head_sha == $head'));
       expect(workflow, contains(r'statuses/$HEAD_SHA'));
       expect(workflow, contains(r'live_head="$('));
       expect(workflow, contains(r'live_base="$('));
@@ -633,6 +677,16 @@ Verdict: PASS''',
         ),
       );
       expect(workflow, contains('enforce_high_risk_pr_contract.dart'));
+
+      final signal = File(
+        '.github/workflows/high_risk_review_signal.yml',
+      ).readAsStringSync();
+      expect(signal, contains('pull_request_review:'));
+      expect(signal, contains('types: [submitted, edited, dismissed]'));
+      expect(signal, contains('pull_request_review_comment:'));
+      expect(signal, contains('types: [created, edited, deleted]'));
+      expect(signal, contains('contents: read'));
+      expect(signal, isNot(contains('statuses: write')));
     });
 
     test('documents bootstrap and repository-settings closure gates', () {

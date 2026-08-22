@@ -1,0 +1,20 @@
+name: High-Risk Review Signal
+
+# Fork-safe, read-only signal. The trusted default-branch workflow_run consumer
+# performs all API reads and writes without executing pull-request code.
+on:
+  pull_request_review:
+    types: [submitted, edited, dismissed]
+  pull_request_review_comment:
+    types: [created, edited, deleted]
+
+permissions:
+  contents: read
+
+jobs:
+  signal:
+    if: github.event.pull_request.base.ref == 'main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Emit trusted-workflow signal
+        run: echo 'Review state changed; trusted revalidation will follow.'

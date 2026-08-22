@@ -88,6 +88,7 @@ HighRiskAssessment assessHighRiskFiles(Iterable<String> files) {
   for (final path in normalized) {
     if (path.startsWith('lib/src/core/template/') ||
         path.startsWith('lib/src/core/grammar/') ||
+        path.startsWith('lib/src/core/engine/') ||
         path == 'lib/src/core/engine/chat_completion_stream_parser.dart' ||
         path == 'lib/src/core/engine/chat_template_renderer.dart' ||
         path == 'lib/src/core/models/inference/tool_choice.dart' ||
@@ -190,6 +191,7 @@ HighRiskContractResult validateHighRiskContract({
   required HighRiskPrState state,
   Map<String, dynamic>? evidence,
   String? evidencePath,
+  Set<String> verifiedUpstreamRefs = const {},
 }) {
   final assessment = assessHighRiskFiles(changedFiles);
   final errors = <String>[];
@@ -284,6 +286,7 @@ HighRiskContractResult validateHighRiskContract({
       deletedFiles: deletedFiles.toSet(),
       implementationTask: implementationTask,
       qaTask: qaTask,
+      verifiedUpstreamRefs: verifiedUpstreamRefs,
       errors: errors,
     );
   }
@@ -297,6 +300,7 @@ void _validateEvidenceManifest(
   required Set<String> deletedFiles,
   required String? implementationTask,
   required String? qaTask,
+  required Set<String> verifiedUpstreamRefs,
   required List<String> errors,
 }) {
   if (evidence['schema'] != 1) errors.add('Evidence schema must be 1.');
@@ -373,21 +377,34 @@ void _validateEvidenceManifest(
     );
     if (upstream is! Map<String, dynamic> ||
         upstream.keys.toSet().difference(const {
+          'repository',
           'pinned',
           'current',
         }).isNotEmpty ||
-        !upstream.keys.toSet().containsAll(const {'pinned', 'current'})) {
-      errors.add('upstreamRefs must contain exactly pinned and current roles.');
+        !upstream.keys.toSet().containsAll(const {
+          'repository',
+          'pinned',
+          'current',
+        })) {
+      errors.add(
+        'upstreamRefs must contain exactly repository, pinned, and current roles.',
+      );
     } else {
+      final repository = upstream['repository'];
       final pinned = upstream['pinned'];
       final current = upstream['current'];
-      if (pinned is! String ||
+      if (repository != 'ggml-org/llama.cpp' ||
+          pinned is! String ||
           current is! String ||
           !concreteRef.hasMatch(pinned) ||
           !concreteRef.hasMatch(current) ||
           pinned == current) {
         errors.add(
           'Pinned and current upstream refs must be distinct concrete tags or commits.',
+        );
+      } else if (!verifiedUpstreamRefs.containsAll({pinned, current})) {
+        errors.add(
+          'Trusted workflow must resolve both upstream refs in ggml-org/llama.cpp.',
         );
       }
     }
@@ -586,7 +603,8 @@ Never _usage(String message) {
     '--event <event.json> --changed-files <paths.txt> '
     '--deleted-files <paths.txt> [--evidence <manifest.json> '
     '--evidence-path <repo-path>] --base-sha <sha> --head-sha <sha> '
-    '--behind <n> --ahead <n> --unresolved-threads <n> --reviews <json>',
+    '--behind <n> --ahead <n> --unresolved-threads <n> --reviews <json> '
+    '--verified-upstream-refs <json>',
   );
   exit(64);
 }
@@ -609,6 +627,7 @@ Future<void> main(List<String> args) async {
     'ahead',
     'unresolved-threads',
     'reviews',
+    'verified-upstream-refs',
   };
   final missing = required.difference(options.keys.toSet());
   if (missing.isNotEmpty) _usage('Missing options: ${missing.join(', ')}');
@@ -647,6 +666,9 @@ Future<void> main(List<String> args) async {
     state: state,
     evidence: evidence,
     evidencePath: options['evidence-path'],
+    verifiedUpstreamRefs: _decodeVerifiedUpstreamRefs(
+      jsonDecode(await File(options['verified-upstream-refs']!).readAsString()),
+    ),
   );
 
   final names =
@@ -705,4 +727,11 @@ List<HighRiskReview> _decodeReviews(Object? value) {
         );
       })
       .toList(growable: false);
+}
+
+Set<String> _decodeVerifiedUpstreamRefs(Object? value) {
+  if (value is! List || value.any((item) => item is! String)) {
+    _usage('Verified upstream refs must be a string array.');
+  }
+  return value.cast<String>().toSet();
 }
