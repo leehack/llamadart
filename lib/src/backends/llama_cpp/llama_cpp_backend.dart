@@ -146,10 +146,12 @@ class NativeLlamaBackend
         return;
       }
       if (msg is List<Object?> && msg.isNotEmpty) {
+        final phase = workerPortReceived
+            ? 'during backend initialization'
+            : 'before providing its request port';
         completer.completeError(
           LlamaBackendInitializationException(
-            'The llama.cpp worker exited during backend initialization: '
-            '${msg.first}',
+            'The llama.cpp worker exited $phase: ${msg.first}',
             msg.length > 1 ? msg[1] : null,
           ),
         );

@@ -48,6 +48,11 @@ void main() {
         contains('_FailingInitializationLlamaCppService.initializeBackend'),
       );
       expect(error.message, contains('libllamadart.so could not be opened'));
+      expect(
+        error.message,
+        contains('\nstartupDiagnostics=[libllamadart.so could not be opened]'),
+      );
+      expect(error.message, isNot(contains(', startupDiagnostics=')));
       expect(service.disposeCalls, 1);
     });
 

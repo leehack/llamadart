@@ -589,6 +589,39 @@ void main() {
       },
     );
 
+    test(
+      'uncaught worker error before request port identifies stage',
+      () async {
+        final backend = NativeLlamaBackend(
+          workerEntrypoint: _crashingBeforeRequestPortWorkerEntry,
+        );
+
+        try {
+          await expectLater(
+            backend
+                .modelLoad('never.gguf', const ModelParams())
+                .timeout(const Duration(seconds: 2)),
+            throwsA(
+              isA<LlamaBackendInitializationException>()
+                  .having(
+                    (error) => error.message,
+                    'startup stage',
+                    contains('before providing its request port'),
+                  )
+                  .having(
+                    (error) => error.message,
+                    'message',
+                    contains('synthetic pre-port crash'),
+                  ),
+            ),
+          );
+          expect(backend.isReady, isFalse);
+        } finally {
+          await backend.dispose().timeout(const Duration(seconds: 2));
+        }
+      },
+    );
+
     test('uncaught worker startup error preserves its stack trace', () async {
       final backend = NativeLlamaBackend(
         workerEntrypoint: _crashingDuringHandshakeWorkerEntry,
@@ -732,6 +765,10 @@ void _exitingBeforeHandshakeReplyWorkerEntry(SendPort initialSendPort) {
       Isolate.exit();
     }
   });
+}
+
+void _crashingBeforeRequestPortWorkerEntry(SendPort initialSendPort) {
+  throw StateError('synthetic pre-port crash');
 }
 
 void _crashingDuringHandshakeWorkerEntry(SendPort initialSendPort) {
