@@ -6316,6 +6316,7 @@ class LlamaCppService {
             adapterPtr,
             path,
             invocationTokenCount: llama_adapter_get_alora_n_invocation_tokens,
+            invocationTokenData: llama_adapter_get_alora_invocation_tokens,
             freeAdapter: llama_adapter_lora_free,
           );
           adapter = _LlamaLoraWrapper(adapterPtr);
@@ -6347,20 +6348,29 @@ class LlamaCppService {
     Pointer<llama_adapter_lora> adapter,
     String adapterPath, {
     required int Function(Pointer<llama_adapter_lora>) invocationTokenCount,
+    required Pointer<llama_token> Function(Pointer<llama_adapter_lora>)
+    invocationTokenData,
     required void Function(Pointer<llama_adapter_lora>) freeAdapter,
   }) {
     final int invocationTokens;
     try {
       invocationTokens = invocationTokenCount(adapter);
+      final tokenData = invocationTokenData(adapter);
+      if (invocationTokens > 0 && tokenData == nullptr) {
+        throw StateError(
+          'aLoRA metadata reports invocation tokens without token data',
+        );
+      }
     } catch (_) {
       _freeRejectedLoraAdapter(adapter, freeAdapter);
       throw LlamaUnsupportedException(
         'Cannot safely load the LoRA adapter at $adapterPath because the '
         'loaded native runtime cannot inspect aLoRA invocation-token metadata '
         '(missing or incompatible '
-        'llama_adapter_get_alora_n_invocation_tokens). Use a native runtime '
+        'llama_adapter_get_alora_n_invocation_tokens / '
+        'llama_adapter_get_alora_invocation_tokens ABI). Use a native runtime '
         'artifact that matches this package\'s bindings or another '
-        'ABI-compatible build that exports this symbol.',
+        'ABI-compatible build that exports both symbols.',
       );
     }
 
@@ -6400,12 +6410,15 @@ class LlamaCppService {
     Pointer<llama_adapter_lora> adapter,
     String adapterPath, {
     required int Function(Pointer<llama_adapter_lora>) invocationTokenCount,
+    required Pointer<llama_token> Function(Pointer<llama_adapter_lora>)
+    invocationTokenData,
     required void Function(Pointer<llama_adapter_lora>) freeAdapter,
   }) {
     _validateLoraForEagerActivation(
       adapter,
       adapterPath,
       invocationTokenCount: invocationTokenCount,
+      invocationTokenData: invocationTokenData,
       freeAdapter: freeAdapter,
     );
   }

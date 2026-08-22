@@ -31,6 +31,7 @@ void main() {
         adapter,
         'ordinary.gguf',
         invocationTokenCount: (_) => 0,
+        invocationTokenData: (_) => nullptr,
         freeAdapter: (_) => freed++,
       );
 
@@ -45,6 +46,7 @@ void main() {
           adapter,
           'activated.gguf',
           invocationTokenCount: (_) => 3,
+          invocationTokenData: (_) => Pointer<llama_token>.fromAddress(2),
           freeAdapter: (_) => freed++,
         ),
         throwsA(
@@ -75,6 +77,7 @@ void main() {
             'Could not resolve '
             'llama_adapter_get_alora_n_invocation_tokens',
           ),
+          invocationTokenData: (_) => nullptr,
           freeAdapter: (_) => freed++,
         ),
         throwsA(
@@ -99,12 +102,37 @@ void main() {
       expect(freed, 1);
     });
 
+    test('fails closed and frees on a partial metadata ABI', () {
+      var freed = 0;
+
+      expect(
+        () => LlamaCppService.debugValidateLoraForEagerActivationForTesting(
+          adapter,
+          'partial-abi.gguf',
+          invocationTokenCount: (_) => 0,
+          invocationTokenData: (_) => throw ArgumentError(
+            'Could not resolve llama_adapter_get_alora_invocation_tokens',
+          ),
+          freeAdapter: (_) => freed++,
+        ),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            contains('llama_adapter_get_alora_invocation_tokens'),
+          ),
+        ),
+      );
+      expect(freed, 1);
+    });
+
     test('keeps version-skew failure typed if cleanup also fails', () {
       expect(
         () => LlamaCppService.debugValidateLoraForEagerActivationForTesting(
           adapter,
           'severely-skewed.gguf',
           invocationTokenCount: (_) => throw ArgumentError('missing getter'),
+          invocationTokenData: (_) => nullptr,
           freeAdapter: (_) => throw ArgumentError('missing free'),
         ),
         throwsA(isA<LlamaUnsupportedException>()),

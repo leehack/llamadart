@@ -174,6 +174,15 @@ File? _llamadartWrapperLibraryFileOrNull() {
   return file.existsSync() ? file : null;
 }
 
+File? _llamadartPrimaryLibraryFileOrNull() {
+  final nativeAssetPath = _nativeAssetFilePath(_llamadartPrimaryAssetId);
+  if (nativeAssetPath == null) {
+    return null;
+  }
+  final file = File(nativeAssetPath);
+  return file.existsSync() ? file : null;
+}
+
 File _windowsMtpWrapperLibraryFile() {
   final dartToolLibPath = [
     Directory.current.path,
@@ -902,7 +911,7 @@ void main() {
     });
 
     test('Verify runtime aLoRA metadata inspection ABI is complete', () {
-      final libraryFile = _llamadartWrapperLibraryFileOrNull();
+      final libraryFile = _llamadartPrimaryLibraryFileOrNull();
       expect(
         libraryFile,
         isNotNull,

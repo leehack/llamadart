@@ -204,10 +204,11 @@ device/model bundle, use `cpu` or `gpu` for that artifact.
 
 - **LoRA adapters** are supported at runtime on native llama.cpp/GGUF. Activated
   LoRA (aLoRA) is not yet supported: llamadart detects invocation-token metadata
-  and rejects the adapter before activation. Native overrides must export
-  `llama_adapter_get_alora_n_invocation_tokens`; runtimes without compatible
-  metadata inspection fail closed with `LlamaUnsupportedException` rather than
-  risk applying aLoRA eagerly.
+  and rejects the adapter before activation. Native overrides must export both
+  `llama_adapter_get_alora_n_invocation_tokens` and
+  `llama_adapter_get_alora_invocation_tokens`; runtimes without the complete,
+  compatible metadata inspection ABI fail closed with
+  `LlamaUnsupportedException` rather than risk applying aLoRA eagerly.
 - **Thinking budgets** (`GenerationParams.thinkingBudget`) use llama.cpp's
   reasoning-budget sampler on native text-only GGUF generation. `engine.create`
   resolves known template delimiters automatically; raw generation requires
