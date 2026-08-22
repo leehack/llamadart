@@ -679,7 +679,7 @@ void main() {
           'next\u0000line\u0085more\u2028last\u2029line',
         ]),
         ', startupDiagnostics=['
-        'failed at https://example.com/lib.so; next line more last line]',
+        '<redacted-startup-diagnostic>; next line more last line]',
       );
       expect(
         formatStartupDiagnostics(const <String>[
@@ -689,7 +689,7 @@ void main() {
       );
       expect(
         formatStartupDiagnostics(const <String>[
-          'https://safe.example/a,HTTPS:\n//user\n:pass@evil.example/b'
+          'https://safe.example/a,HTTPS://user:pass@evil.example/b'
               '?token=secret',
         ]),
         ', startupDiagnostics=['
@@ -698,6 +698,15 @@ void main() {
       expect(
         formatStartupDiagnostics(const <String>['https://example.com\nfailed']),
         ', startupDiagnostics=[https://example.com failed]',
+      );
+      expect(
+        formatStartupDiagnostics(const <String>[
+          'https://example.com\nfailed@evil.example',
+          'https://example.com/path?\ntoken=secret',
+        ]),
+        ', startupDiagnostics=['
+        '<redacted-startup-diagnostic>; '
+        '<redacted-startup-diagnostic>]',
       );
     });
 
@@ -801,9 +810,7 @@ void main() {
               allOf(
                 contains('Failed to load model (size=4 bytes,'),
                 contains(
-                  'startupDiagnostics=[failed at '
-                  'https://safe.example/a,'
-                  'https://example.com/libggml.so; '
+                  'startupDiagnostics=[<redacted-startup-diagnostic>; '
                   'next line more last line]',
                 ),
                 isNot(contains('user:pass')),
