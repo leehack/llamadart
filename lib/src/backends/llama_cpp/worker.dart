@@ -411,6 +411,10 @@ void runLlamaWorkerForTesting(
             final supported = service.supportsAudio(message.mmContextHandle);
             message.sendPort.send(supported);
 
+          case SupportsVideoRequest():
+            final supported = service.supportsVideo(message.mmContextHandle);
+            message.sendPort.send(supported);
+
           case SystemInfoRequest():
             final info = service.getVramInfo();
             message.sendPort.send(SystemInfoResponse(info.total, info.free));

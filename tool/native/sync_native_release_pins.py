@@ -12,7 +12,7 @@ import sys
 import urllib.error
 import urllib.request
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 
 DEFAULT_LLAMADART_NATIVE_REPO = "leehack/llamadart-native"
@@ -35,10 +35,51 @@ DEFAULT_LLAMA_CPP_PROJECT_DOCS = (
     "website/docs/platforms/support-matrix.md",
 )
 DEFAULT_CHANGELOG = "CHANGELOG.md"
+SUPPORTED_NATIVE_HOOK_CONTRACT_VERSION = 1
+_STABLE_NATIVE_TAG_PATTERN = re.compile(
+    r"^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$"
+)
+_STABLE_WRAPPER_TAG_PATTERN = re.compile(
+    r"^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\."
+    r"(0|[1-9][0-9]*)-([1-9][0-9]*)$"
+)
+_LEGACY_NATIVE_TAG_PATTERN = re.compile(r"^b(0|[1-9][0-9]*)$")
+_NIGHTLY_WRAPPER_TAG_PATTERN = re.compile(
+    r"^b(0|[1-9][0-9]*)-([1-9][0-9]*)$"
+)
+_LEGACY_WRAPPER_TAG_PATTERN = re.compile(
+    r"^b(0|[1-9][0-9]*)-llamadart\.([1-9][0-9]*)$"
+)
+_NATIVE_DOC_TAG_PATTERN = (
+    r"(?:v(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\."
+    r"(?:0|[1-9][0-9]*)(?:-[1-9][0-9]*)?|"
+    r"b(?:0|[1-9][0-9]*)(?:-[1-9][0-9]*|-llamadart\.[1-9][0-9]*)?)"
+)
+_COMMIT_PATTERN = re.compile(r"^[0-9a-f]{40}$")
+_STABLE_NATIVE_BUNDLES = (
+    "android-arm64",
+    "android-x64",
+    "ios-arm64",
+    "ios-arm64-sim",
+    "ios-x86_64-sim",
+    "linux-arm64",
+    "linux-x64",
+    "macos-arm64",
+    "macos-x86_64",
+    "windows-arm64",
+    "windows-x64",
+)
 
 
 class ReleaseError(RuntimeError):
     pass
+
+
+class NativeReleaseVersion(NamedTuple):
+    channel: str
+    version: tuple[int, ...]
+    wrapper_revision: int
+    upstream_tag: str
 
 
 def main() -> int:
@@ -71,7 +112,13 @@ def main() -> int:
             llama_cpp_tag_input,
             args.release_json_dir,
         )
-        resolved_llama_cpp_tag = release["tag_name"]
+        resolved_llama_cpp_tag = validate_resolved_native_release(
+            release,
+            requested_tag=llama_cpp_tag_input,
+            current_tag=read_hook_native_tag(hook_text),
+            allow_legacy_tag=args.allow_legacy_tag,
+        )
+        validate_native_release_manifest(release, resolved_llama_cpp_tag)
         hook_text = replace_one(
             hook_text,
             r"const _llamaCppTag = '[^']+';",
@@ -307,7 +354,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--llama-cpp-tag",
         default="keep",
-        help="llamadart-native release tag, latest, or keep.",
+        help=(
+            "Explicit llamadart-native stable, wrapper-rebuild, or "
+            "historical/nightly tag; latest unsuffixed stable; or keep."
+        ),
+    )
+    parser.add_argument(
+        "--allow-legacy-tag",
+        action="store_true",
+        help=(
+            "Allow an explicit stable-to-historical/nightly bNNNN channel "
+            "switch. This does not permit version rollback or make latest "
+            "accept a wrapper rebuild or nightly release."
+        ),
     )
     parser.add_argument(
         "--litert-lm-tag",
@@ -383,9 +442,8 @@ def github_auth_header() -> dict[str, str]:
 
 
 def release_asset_checksum(release: dict[str, Any], asset_name: str) -> str:
-    for asset in release.get("assets", []):
-        if asset.get("name") != asset_name:
-            continue
+    asset = find_release_asset(release, asset_name)
+    if asset is not None:
         digest = asset.get("digest") or ""
         if digest.startswith("sha256:"):
             return digest.removeprefix("sha256:")
@@ -395,7 +453,7 @@ def release_asset_checksum(release: dict[str, Any], asset_name: str) -> str:
         return sha256_url(download_url)
     tag = release.get("tag_name", "<unknown>")
     names = ", ".join(
-        sorted(str(asset.get("name", "")) for asset in release.get("assets", []))
+        sorted(str(asset.get("name", "")) for asset in release_assets(release))
     )
     raise ReleaseError(
         f"Release {tag} does not contain required asset {asset_name}. "
@@ -419,11 +477,463 @@ def normalize_release_tag(tag: str) -> str:
     tag = tag.strip()
     if not tag:
         return "keep"
+    if tag not in {"keep", "latest"}:
+        parse_native_release_tag(tag)
     return tag
 
 
+def parse_native_release_tag(tag: str) -> NativeReleaseVersion:
+    stable_match = _STABLE_NATIVE_TAG_PATTERN.fullmatch(tag)
+    if stable_match:
+        version = tuple(int(value) for value in stable_match.groups())
+        return NativeReleaseVersion("stable", version, 0, tag)
+
+    stable_wrapper_match = _STABLE_WRAPPER_TAG_PATTERN.fullmatch(tag)
+    if stable_wrapper_match:
+        major, minor, patch, wrapper_revision = (
+            int(value) for value in stable_wrapper_match.groups()
+        )
+        return NativeReleaseVersion(
+            "stable",
+            (major, minor, patch),
+            wrapper_revision,
+            f"v{major}.{minor}.{patch}",
+        )
+
+    legacy_match = _LEGACY_NATIVE_TAG_PATTERN.fullmatch(tag)
+    if legacy_match:
+        build = int(legacy_match.group(1))
+        return NativeReleaseVersion("nightly", (build,), 0, tag)
+
+    nightly_wrapper_match = _NIGHTLY_WRAPPER_TAG_PATTERN.fullmatch(tag)
+    if nightly_wrapper_match:
+        build = int(nightly_wrapper_match.group(1))
+        wrapper_revision = int(nightly_wrapper_match.group(2))
+        return NativeReleaseVersion(
+            "nightly",
+            (build,),
+            wrapper_revision,
+            f"b{nightly_wrapper_match.group(1)}",
+        )
+
+    wrapper_match = _LEGACY_WRAPPER_TAG_PATTERN.fullmatch(tag)
+    if wrapper_match:
+        build = int(wrapper_match.group(1))
+        wrapper_revision = int(wrapper_match.group(2))
+        return NativeReleaseVersion(
+            "nightly",
+            (build,),
+            wrapper_revision,
+            f"b{wrapper_match.group(1)}",
+        )
+
+    raise ReleaseError(
+        f"Invalid llamadart-native release tag {tag!r}. Expected stable "
+        "vMAJOR.MINOR.PATCH, stable wrapper rebuild "
+        "vMAJOR.MINOR.PATCH-N, canonical historical/nightly bNNNN without "
+        "leading zeros, nightly wrapper "
+        "rebuild bNNNN-N, or legacy wrapper artifact bNNNN-llamadart.N."
+    )
+
+
+def read_hook_native_tag(hook_text: str) -> str:
+    match = re.search(r"const _llamaCppTag = '([^']+)';", hook_text)
+    if not match:
+        raise ReleaseError("Could not read hook llama.cpp tag")
+    tag = match.group(1)
+    parse_native_release_tag(tag)
+    return tag
+
+
+def validate_resolved_native_release(
+    release: dict[str, Any],
+    *,
+    requested_tag: str,
+    current_tag: str,
+    allow_legacy_tag: bool,
+) -> str:
+    resolved_tag = release.get("tag_name")
+    if not isinstance(resolved_tag, str) or not resolved_tag:
+        raise ReleaseError("Native release metadata has no non-empty tag_name")
+    parse_native_release_tag(resolved_tag)
+
+    if requested_tag == "latest":
+        if _STABLE_NATIVE_TAG_PATTERN.fullmatch(resolved_tag) is None:
+            raise ReleaseError(
+                f"llamadart-native latest resolved to {resolved_tag}. "
+                "Automatic discovery accepts only unsuffixed "
+                "vMAJOR.MINOR.PATCH releases; select wrapper rebuilds and "
+                "historical or nightly tags explicitly."
+            )
+    elif resolved_tag != requested_tag:
+        raise ReleaseError(
+            f"Requested llamadart-native tag {requested_tag}, but release "
+            f"metadata resolved {resolved_tag}. Refusing version-skewed pins."
+        )
+
+    validate_native_release_transition(
+        current_tag,
+        resolved_tag,
+        allow_legacy_tag=allow_legacy_tag,
+    )
+    return resolved_tag
+
+
+def validate_native_release_transition(
+    current_tag: str,
+    target_tag: str,
+    *,
+    allow_legacy_tag: bool,
+) -> None:
+    current = parse_native_release_tag(current_tag)
+    target = parse_native_release_tag(target_tag)
+    if current_tag == target_tag:
+        return
+
+    if current.channel == "nightly" and target.channel == "stable":
+        return
+
+    if current.channel == "stable" and target.channel == "nightly":
+        if allow_legacy_tag:
+            return
+        raise ReleaseError(
+            f"Refusing stable-to-historical/nightly native channel switch "
+            f"{current_tag} -> {target_tag}. Pass --allow-legacy-tag only for "
+            "an intentional compatibility override."
+        )
+
+    current_key = native_release_order_key(current)
+    target_key = native_release_order_key(target)
+    if target_key == current_key:
+        raise ReleaseError(
+            f"Refusing equivalent native release sequence aliases "
+            f"{current_tag} -> {target_tag}. Keep the current artifact or "
+            "move to a higher wrapper revision."
+        )
+    if target_key < current_key:
+        raise ReleaseError(
+            f"Refusing native release rollback {current_tag} -> {target_tag}. "
+            "Use a forward release and regenerate bindings for its exact "
+            "header manifest."
+        )
+
+
+def native_release_order_key(version: NativeReleaseVersion) -> tuple[int, ...]:
+    return (*version.version, version.wrapper_revision)
+
+
+def find_release_asset(
+    release: dict[str, Any], asset_name: str
+) -> dict[str, Any] | None:
+    for asset in release_assets(release):
+        if asset.get("name") == asset_name:
+            return asset
+    return None
+
+
+def release_assets(release: dict[str, Any]) -> list[dict[str, Any]]:
+    assets = release.get("assets", [])
+    if not isinstance(assets, list):
+        raise ReleaseError("Native release metadata assets must be a list")
+    for index, asset in enumerate(assets):
+        if not isinstance(asset, dict):
+            raise ReleaseError(
+                "Native release metadata asset list contains a non-object "
+                f"entry at index {index}"
+            )
+    return assets
+
+
+def require_github_sha256_digest(
+    asset: dict[str, Any], release_tag: str, asset_name: str
+) -> str:
+    digest = asset.get("digest")
+    if not isinstance(digest, str) or re.fullmatch(
+        r"sha256:[0-9a-f]{64}", digest
+    ) is None:
+        raise ReleaseError(
+            f"Stable release {release_tag} does not publish a GitHub "
+            f"SHA-256 digest for {asset_name}"
+        )
+    return digest.removeprefix("sha256:")
+
+
+def release_asset_json(
+    release: dict[str, Any], asset_name: str
+) -> dict[str, Any]:
+    asset = find_release_asset(release, asset_name)
+    if asset is None:
+        tag = release.get("tag_name", "<unknown>")
+        raise ReleaseError(
+            f"Release {tag} does not contain required asset {asset_name}"
+        )
+
+    fixture_json = asset.get("fixture_json")
+    if isinstance(fixture_json, dict):
+        return fixture_json
+
+    download_url = asset.get("browser_download_url")
+    if not isinstance(download_url, str) or not download_url:
+        raise ReleaseError(f"Asset {asset_name} has no download URL")
+    request = urllib.request.Request(download_url, headers=github_auth_header())
+    try:
+        with urllib.request.urlopen(request) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except (
+        urllib.error.HTTPError,
+        urllib.error.URLError,
+        json.JSONDecodeError,
+        UnicodeDecodeError,
+    ) as error:
+        raise ReleaseError(
+            f"Failed to read release manifest {asset_name}: {error}"
+        ) from error
+    if not isinstance(payload, dict):
+        raise ReleaseError(f"Release manifest {asset_name} must be a JSON object")
+    return payload
+
+
+def release_asset_text(release: dict[str, Any], asset_name: str) -> str:
+    asset = find_release_asset(release, asset_name)
+    if asset is None:
+        tag = release.get("tag_name", "<unknown>")
+        raise ReleaseError(
+            f"Release {tag} does not contain required asset {asset_name}"
+        )
+
+    fixture_text = asset.get("fixture_text")
+    if isinstance(fixture_text, str):
+        return fixture_text
+
+    download_url = asset.get("browser_download_url")
+    if not isinstance(download_url, str) or not download_url:
+        raise ReleaseError(f"Asset {asset_name} has no download URL")
+    request = urllib.request.Request(download_url, headers=github_auth_header())
+    try:
+        with urllib.request.urlopen(request) as response:
+            return response.read().decode("utf-8")
+    except (urllib.error.HTTPError, urllib.error.URLError, UnicodeDecodeError) as error:
+        raise ReleaseError(
+            f"Failed to read release checksum file {asset_name}: {error}"
+        ) from error
+
+
+def parse_sha256_sums(checksum_text: str, release_tag: str) -> dict[str, str]:
+    checksums: dict[str, str] = {}
+    for line_number, line in enumerate(checksum_text.splitlines(), start=1):
+        if not line.strip():
+            continue
+        match = re.fullmatch(r"([0-9a-f]{64})  (\S+)", line)
+        if match is None:
+            raise ReleaseError(
+                f"Release {release_tag} SHA256SUMS has invalid line "
+                f"{line_number}: {line!r}"
+            )
+        checksum, file_name = match.groups()
+        if file_name in checksums:
+            raise ReleaseError(
+                f"Release {release_tag} SHA256SUMS duplicates {file_name}"
+            )
+        checksums[file_name] = checksum
+    return checksums
+
+
+def validate_native_release_manifest(
+    release: dict[str, Any], release_tag: str
+) -> None:
+    release_version = parse_native_release_tag(release_tag)
+    is_new_wrapper_form = bool(
+        _STABLE_WRAPPER_TAG_PATTERN.fullmatch(release_tag)
+        or _NIGHTLY_WRAPPER_TAG_PATTERN.fullmatch(release_tag)
+    )
+    manifest_asset = find_release_asset(release, "assets.json")
+    if manifest_asset is None:
+        if release_version.channel == "stable" or is_new_wrapper_form:
+            raise ReleaseError(
+                f"Release {release_tag} is missing required assets.json "
+                "provenance and hook-contract metadata."
+            )
+        return
+    if release_version.channel == "stable":
+        require_github_sha256_digest(
+            manifest_asset,
+            release_tag,
+            "assets.json",
+        )
+
+    manifest = release_asset_json(release, "assets.json")
+    native_release_tag = manifest.get("native_release_tag")
+    legacy_release_tag = manifest.get("tag")
+    for field_name, value in (
+        ("native_release_tag", native_release_tag),
+        ("tag", legacy_release_tag),
+    ):
+        if value is not None and (not isinstance(value, str) or not value):
+            raise ReleaseError(
+                f"Release {release_tag} manifest has invalid {field_name}: "
+                f"{value!r}"
+            )
+    if is_new_wrapper_form:
+        missing_tag_fields = [
+            field_name
+            for field_name, value in (
+                ("native_release_tag", native_release_tag),
+                ("tag", legacy_release_tag),
+            )
+            if value is None
+        ]
+        if missing_tag_fields:
+            raise ReleaseError(
+                f"Release {release_tag} manifest is missing required "
+                f"tag field(s): {', '.join(missing_tag_fields)}"
+            )
+    if native_release_tag is not None and legacy_release_tag is not None:
+        if native_release_tag != legacy_release_tag:
+            raise ReleaseError(
+                f"Release {release_tag} manifest native_release_tag "
+                f"{native_release_tag!r} disagrees with legacy tag alias "
+                f"{legacy_release_tag!r}."
+            )
+    manifest_release_tag = (
+        native_release_tag
+        if native_release_tag is not None
+        else legacy_release_tag
+    )
+    if manifest_release_tag != release_tag:
+        raise ReleaseError(
+            f"Release manifest tag {manifest_release_tag!r} does not match "
+            f"release {release_tag}. Refusing version-skewed native assets."
+        )
+
+    hook_contract_version = manifest.get("hook_contract_version")
+    if hook_contract_version != SUPPORTED_NATIVE_HOOK_CONTRACT_VERSION:
+        raise ReleaseError(
+            f"Release {release_tag} requires native hook contract "
+            f"{hook_contract_version!r}; this checkout supports "
+            f"{SUPPORTED_NATIVE_HOOK_CONTRACT_VERSION}."
+        )
+
+    for field in ("llama_cpp_commit", "native_commit"):
+        value = manifest.get(field)
+        if not isinstance(value, str) or not _COMMIT_PATTERN.fullmatch(value):
+            raise ReleaseError(
+                f"Release {release_tag} manifest has invalid {field}: {value!r}"
+            )
+
+    llama_cpp_tag = manifest.get("llama_cpp_tag")
+    llama_cpp_ref = manifest.get("llama_cpp_ref")
+    if llama_cpp_tag is not None and llama_cpp_ref is not None:
+        if llama_cpp_tag != llama_cpp_ref:
+            raise ReleaseError(
+                f"Release {release_tag} manifest llama_cpp_tag "
+                f"{llama_cpp_tag!r} disagrees with llama_cpp_ref "
+                f"{llama_cpp_ref!r}."
+            )
+    upstream_ref = llama_cpp_tag if llama_cpp_tag is not None else llama_cpp_ref
+    if upstream_ref != release_version.upstream_tag:
+        raise ReleaseError(
+            f"Release {release_tag} manifest resolves llama.cpp tag "
+            f"{upstream_ref!r}, expected {release_version.upstream_tag!r}. "
+            "Refusing version-skewed native ABI metadata."
+        )
+
+    artifacts = manifest.get("artifacts")
+    if not isinstance(artifacts, list):
+        raise ReleaseError(
+            f"Release {release_tag} manifest artifacts must be a list"
+        )
+
+    manifest_checksums: dict[str, str] = {}
+    for artifact in artifacts:
+        if not isinstance(artifact, dict):
+            raise ReleaseError(
+                f"Release {release_tag} manifest contains a non-object artifact"
+            )
+        file_name = artifact.get("file")
+        checksum = artifact.get("sha256")
+        if not isinstance(file_name, str) or not file_name:
+            raise ReleaseError(
+                f"Release {release_tag} manifest artifact has no file name"
+            )
+        if not isinstance(checksum, str) or not re.fullmatch(r"[0-9a-f]{64}", checksum):
+            raise ReleaseError(
+                f"Release {release_tag} manifest has invalid checksum for "
+                f"{file_name}"
+            )
+        if file_name in manifest_checksums:
+            raise ReleaseError(
+                f"Release {release_tag} manifest duplicates artifact {file_name}"
+            )
+        manifest_checksums[file_name] = checksum
+
+        release_asset = find_release_asset(release, file_name)
+        if release_asset is None:
+            raise ReleaseError(
+                f"Release {release_tag} manifest lists unavailable bundle "
+                f"{file_name}"
+            )
+        digest = release_asset.get("digest") or ""
+        if release_version.channel == "stable":
+            digest = (
+                "sha256:"
+                + require_github_sha256_digest(
+                    release_asset,
+                    release_tag,
+                    file_name,
+                )
+            )
+        if (
+            digest.startswith("sha256:")
+            and digest.removeprefix("sha256:") != checksum
+        ):
+            raise ReleaseError(
+                f"Release {release_tag} checksum mismatch for {file_name}: "
+                "manifest and GitHub release metadata disagree."
+            )
+
+    if release_version.channel == "stable":
+        required_assets = {
+            *(
+                f"llamadart-native-{bundle}-{release_tag}.tar.gz"
+                for bundle in _STABLE_NATIVE_BUNDLES
+            ),
+            f"llamadart-native-apple-xcframework-{release_tag}.zip",
+            f"llamadart-native-headers-{release_tag}.tar.gz",
+        }
+        missing = sorted(required_assets.difference(manifest_checksums))
+        if missing:
+            raise ReleaseError(
+                f"Stable release {release_tag} manifest is missing required "
+                f"bundle(s): {', '.join(missing)}"
+            )
+        checksum_asset = find_release_asset(release, "SHA256SUMS")
+        if checksum_asset is None:
+            raise ReleaseError(
+                f"Stable release {release_tag} is missing required SHA256SUMS"
+            )
+        require_github_sha256_digest(
+            checksum_asset,
+            release_tag,
+            "SHA256SUMS",
+        )
+        published_checksums = parse_sha256_sums(
+            release_asset_text(release, "SHA256SUMS"),
+            release_tag,
+        )
+        for file_name, checksum in manifest_checksums.items():
+            published_checksum = published_checksums.get(file_name)
+            if published_checksum != checksum:
+                raise ReleaseError(
+                    f"Stable release {release_tag} SHA256SUMS checksum for "
+                    f"{file_name} is {published_checksum!r}, expected "
+                    f"{checksum!r} from assets.json"
+                )
+
+
 def normalize_litert_lm_release_tag(tag: str) -> str:
-    tag = normalize_release_tag(tag)
+    tag = tag.strip()
+    if not tag:
+        return "keep"
     if tag in {"keep", "latest"} or tag.startswith("v"):
         return tag
     return f"v{tag}"
@@ -642,28 +1152,30 @@ def replace_llama_cpp_native_doc_references(
     repo: str,
     tag: str,
 ) -> str:
-    native_tag_pattern = r"b[0-9]+(?:-[A-Za-z0-9._-]+)?"
     replacements = (
-        (rf"(llamadart_native_tag:\s*){native_tag_pattern}", rf"\g<1>{tag}"),
         (
-            rf"({re.escape(repo)}@){native_tag_pattern}",
+            rf"(llamadart_native_tag:\s*){_NATIVE_DOC_TAG_PATTERN}",
+            rf"\g<1>{tag}",
+        ),
+        (
+            rf"({re.escape(repo)}@){_NATIVE_DOC_TAG_PATTERN}",
             rf"\g<1>{tag}",
         ),
         (
             rf"(llamadart-native-[a-z0-9_-]+-)"
-            rf"{native_tag_pattern}(?=\.tar\.gz`)",
+            rf"{_NATIVE_DOC_TAG_PATTERN}(?=\.tar\.gz`)",
             rf"\g<1>{tag}",
         ),
         (
-            rf"(default native tag `){native_tag_pattern}(`)",
+            rf"(default native tag `){_NATIVE_DOC_TAG_PATTERN}(`)",
             rf"\g<1>{tag}\2",
         ),
         (
-            rf"(llamadart-native` tag\s+`){native_tag_pattern}(`)",
+            rf"(llamadart-native` tag\s+`){_NATIVE_DOC_TAG_PATTERN}(`)",
             rf"\g<1>{tag}\2",
         ),
         (
-            rf"(module availability by bundle \(`){native_tag_pattern}(`\))",
+            rf"(module availability by bundle \(`){_NATIVE_DOC_TAG_PATTERN}(`\))",
             rf"\g<1>{tag}\2",
         ),
     )
@@ -712,15 +1224,15 @@ def update_core_changelog_native_pin(
     repo: str,
     tag: str,
 ) -> str:
-    if re.fullmatch(r"b[0-9]+-llamadart\.[0-9]+", tag):
-        base_tag = tag.split("-", maxsplit=1)[0]
+    native_version = parse_native_release_tag(tag)
+    if native_version.wrapper_revision > 0:
+        base_tag = native_version.upstream_tag
         entry = (
             "* Updated the default llama.cpp native runtime pin to\n"
             f"  `{repo}@{tag}`, keeping the `{base_tag}` llama.cpp\n"
-            "  ABI/bindings while picking up wrapper fixes for native release\n"
-            "  provenance and backend-selected speculative sampler acceptance. Refreshed\n"
-            "  the `llamadart_llama_cpp_flutter` Apple SwiftPM checksum and aligned current\n"
-            "  README/website native override docs."
+            "  ABI/bindings while picking up wrapper-only native fixes. Refreshed\n"
+            "  the `llamadart_llama_cpp_flutter` Apple SwiftPM checksum and\n"
+            "  aligned current README/website native override docs."
         )
     else:
         entry = (

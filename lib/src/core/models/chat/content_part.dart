@@ -4,7 +4,7 @@ import 'dart:typed_data';
 /// Base class for all content types in a message.
 ///
 /// Multi-modality allows a single message to contain different types of data,
-/// such as text, images, or audio.
+/// such as text, images, audio, or video.
 sealed class LlamaContentPart {
   /// Base constructor for content parts.
   const LlamaContentPart();
@@ -105,6 +105,50 @@ class LlamaAudioContent extends LlamaContentPart {
             ? base64Encode(samples!.buffer.asUint8List())
             : (bytes != null ? base64Encode(bytes!) : ''),
         'format': samples != null ? 'pcm' : 'audio',
+      },
+    };
+  }
+}
+
+/// A part of a message containing encoded video input.
+///
+/// Video is represented explicitly so unsupported requests fail with a typed,
+/// actionable error instead of being flattened into text or treated as an
+/// image. The current packaged runtimes do not expose a consumable video-input
+/// pipeline; check [LlamaEngine.supportsVideo] before generation.
+class LlamaVideoContent extends LlamaContentPart {
+  /// Encoded video bytes, such as MP4 or WebM data.
+  final Uint8List? bytes;
+
+  /// Local filesystem path to an encoded video file.
+  final String? path;
+
+  /// Creates a video content part.
+  ///
+  /// At least one of [path] or [bytes] must be provided. Current runtimes reject
+  /// both forms until native video packaging and Dart frame ingestion are
+  /// complete.
+  ///
+  /// Throws [ArgumentError] when neither source is provided.
+  factory LlamaVideoContent({Uint8List? bytes, String? path}) {
+    if (bytes == null && path == null) {
+      throw ArgumentError('LlamaVideoContent requires bytes or a path.');
+    }
+    return LlamaVideoContent._(bytes: bytes, path: path);
+  }
+
+  const LlamaVideoContent._({this.bytes, this.path});
+
+  @override
+  Map<String, dynamic> toJson() {
+    if (bytes == null && path == null) {
+      throw ArgumentError('LlamaVideoContent requires bytes or a path.');
+    }
+    return {
+      'type': 'input_video',
+      'input_video': {
+        'data': bytes == null ? '' : base64Encode(bytes!),
+        if (path != null) 'path': path,
       },
     };
   }

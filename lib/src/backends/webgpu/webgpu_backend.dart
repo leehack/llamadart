@@ -1519,6 +1519,13 @@ class WebGpuLlamaBackend
     var index = 0;
 
     for (final part in parts) {
+      if (part is LlamaVideoContent) {
+        throw LlamaUnsupportedException(
+          'WebGPU video input is not supported through llamadart. Extract '
+          'and send image frames instead.',
+        );
+      }
+
       if (part is LlamaImageContent) {
         final jsPart = JSObject();
         jsPart.setProperty('type'.toJS, 'image'.toJS);

@@ -198,6 +198,12 @@ class LiteRtLmBackend
     List<LlamaContentPart>? parts,
   }) async* {
     final engine = _requireContextHandle(contextHandle);
+    if (parts?.any((part) => part is LlamaVideoContent) ?? false) {
+      throw UnsupportedError(
+        'LiteRT-LM Web video input is not supported through llamadart. '
+        'Extract and send image frames instead.',
+      );
+    }
     if (_hasMediaParts(parts)) {
       throw UnsupportedError(
         'LiteRtLmBackend web does not support media parts.',
@@ -746,7 +752,10 @@ class LiteRtLmBackend
       return false;
     }
     return parts.any(
-      (part) => part is LlamaImageContent || part is LlamaAudioContent,
+      (part) =>
+          part is LlamaImageContent ||
+          part is LlamaAudioContent ||
+          part is LlamaVideoContent,
     );
   }
 

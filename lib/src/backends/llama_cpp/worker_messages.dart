@@ -301,6 +301,15 @@ class SupportsAudioRequest extends WorkerRequest {
   SupportsAudioRequest(this.mmContextHandle, super.sendPort);
 }
 
+/// Request to probe compiled native video support for a projector.
+class SupportsVideoRequest extends WorkerRequest {
+  /// The handle of the multimodal context.
+  final int mmContextHandle;
+
+  /// Creates a native video capability request.
+  SupportsVideoRequest(this.mmContextHandle, super.sendPort);
+}
+
 /// Request to discover dedicated native text-to-speech support.
 class TextToSpeechCapabilitiesRequest extends WorkerRequest {
   /// Handle of the loaded llama context.

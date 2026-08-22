@@ -34,6 +34,19 @@ version alignment:
 - If native versions changed, prefer the `Sync Native Version & Bindings`
   workflow PR over hand-editing core pins. It also updates Apple SPM companion
   package pins under `packages/` when Apple XCFramework releases changed.
+- Stable llama.cpp native pins use strict `vMAJOR.MINOR.PATCH`; historical
+  `bNNNN` pins remain explicit compatibility inputs. Verify `assets.json`,
+  `SHA256SUMS`, hook contract version, bundle coverage, and manifest/release
+  checksum agreement before accepting a stable pin change. `SHA256SUMS`, the
+  manifest, and GitHub asset digests must agree. Stable wrapper-only rebuilds
+  use `vM.m.p-N` for upstream `vM.m.p`; the suffix advances the native sequence
+  but must never appear in the manifest's upstream llama.cpp ref. GitHub marks
+  newly published wrapper and nightly releases as prereleases, so select them
+  explicitly. Historical `bNNNN` and `bNNNN-llamadart.N` artifacts may retain
+  older `prerelease=false` metadata, but remain explicit compatibility inputs;
+  `latest` accepts only unsuffixed `vMAJOR.MINOR.PATCH` regardless of GitHub
+  metadata. Nightly cores and positive rebuild counters must use canonical
+  decimal spelling without leading zeros.
 
 ## 2. Version and docs updates
 

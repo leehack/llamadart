@@ -296,6 +296,8 @@ typedef _MtmdSupportVisionNative = Bool Function(Pointer<mtmd_context>);
 typedef _MtmdSupportVisionDart = bool Function(Pointer<mtmd_context>);
 typedef _MtmdSupportAudioNative = Bool Function(Pointer<mtmd_context>);
 typedef _MtmdSupportAudioDart = bool Function(Pointer<mtmd_context>);
+typedef _MtmdSupportVideoNative = Bool Function(Pointer<mtmd_context>);
+typedef _MtmdSupportVideoDart = bool Function(Pointer<mtmd_context>);
 typedef _MtmdBitmapFreeNative = Void Function(Pointer<mtmd_bitmap>);
 typedef _MtmdBitmapFreeDart = void Function(Pointer<mtmd_bitmap>);
 typedef _MtmdTokenizeNative =
@@ -648,6 +650,7 @@ class LlamaCppService {
   int _activeResolvedGpuLayers = 0;
   bool _mtmdFallbackLookupAttempted = false;
   bool _mtmdPrimarySymbolsUnavailable = false;
+  bool _mtmdVideoPrimarySymbolUnavailable = false;
   _MtmdApi? _mtmdFallbackApi;
   bool _reasoningBudgetApiLookupAttempted = false;
   _ReasoningBudgetApi? _reasoningBudgetApi;
@@ -4021,6 +4024,35 @@ class LlamaCppService {
       final hasMediaParts =
           parts?.any((p) => p is LlamaImageContent || p is LlamaAudioContent) ??
           false;
+      final hasVideoParts =
+          parts?.any((part) => part is LlamaVideoContent) ?? false;
+      if (hasVideoParts) {
+        final mmHandle = _modelToMtmd[modelHandle];
+        if (mmHandle == null) {
+          throw LlamaUnsupportedException(
+            'Video input is unavailable because no multimodal projector is '
+            'loaded to inspect native runtime capability. Loading a compatible '
+            'projector enables inspection only; it does not enable public video '
+            'ingestion. Extract and send image frames instead.',
+          );
+        }
+        final nativeRuntimeSupportsVideo = supportsVideo(mmHandle);
+        if (!nativeRuntimeSupportsVideo) {
+          throw LlamaUnsupportedException(
+            'Video input is unavailable because the loaded native mtmd '
+            'runtime/projector does not report compiled video support. Current '
+            'llamadart artifacts build mtmd video support out; a future native '
+            'package must enable LLAMA_SUBPROCESS/MTMD_VIDEO and provide '
+            'FFmpeg/ffprobe before video can be consumed. Extract and send '
+            'image frames instead.',
+          );
+        }
+        throw LlamaUnsupportedException(
+          'The loaded native runtime reports mtmd video support, but the Dart '
+          'frame-ingestion and video-context lifetime contract is not wired. '
+          'Extract and send image frames instead.',
+        );
+      }
       final thinkingBudgetConfig = _resolveLlamaCppThinkingBudgetConfig(
         params,
         hasMediaParts: hasMediaParts,
@@ -7325,6 +7357,32 @@ class LlamaCppService {
     return fallback?.supportsAudio(mmCtx) ?? false;
   }
 
+  /// Returns whether the active native mtmd build and projector report video.
+  ///
+  /// This is a behavioral probe. The helper symbol is present even when
+  /// `MTMD_VIDEO` was compiled out, so symbol lookup alone is not sufficient.
+  bool supportsVideo(int mmContextHandle) {
+    final mmCtx = _mtmdContexts[mmContextHandle];
+    if (mmCtx == null) {
+      return false;
+    }
+
+    if (!_mtmdPrimarySymbolsUnavailable &&
+        !_mtmdVideoPrimarySymbolUnavailable) {
+      try {
+        return mtmd_helper_support_video(mmCtx);
+      } on ArgumentError {
+        // Video helpers were added after the core mtmd surface. Do not mark
+        // working vision/audio symbols unavailable when only this optional
+        // probe is absent from an older library.
+        _mtmdVideoPrimarySymbolUnavailable = true;
+      }
+    }
+
+    final fallback = _resolveMtmdFallbackApi();
+    return fallback?.supportsVideo(mmCtx) ?? false;
+  }
+
   /// Discovers dedicated native text-to-speech support.
   BackendTextToSpeechCapabilities textToSpeechCapabilities(
     int contextHandle,
@@ -8065,6 +8123,7 @@ class _MtmdApi {
   final _MtmdBitmapInitFromAudioDart bitmapInitFromAudio;
   final _MtmdSupportVisionDart supportsVision;
   final _MtmdSupportAudioDart supportsAudio;
+  final _MtmdSupportVideoDart supportsVideo;
   final _MtmdBitmapFreeDart bitmapFree;
   final _MtmdTokenizeDart tokenize;
   final _MtmdHelperEvalChunksDart helperEvalChunks;
@@ -8083,6 +8142,7 @@ class _MtmdApi {
     required this.bitmapInitFromAudio,
     required this.supportsVision,
     required this.supportsAudio,
+    required this.supportsVideo,
     required this.bitmapFree,
     required this.tokenize,
     required this.helperEvalChunks,
@@ -8094,6 +8154,7 @@ class _MtmdApi {
     try {
       _MtmdLogSetDart? logSet;
       _MtmdLogSetDart? helperLogSet;
+      _MtmdSupportVideoDart supportsVideo = (_) => false;
       try {
         logSet = library.lookupFunction<_MtmdLogSetNative, _MtmdLogSetDart>(
           'mtmd_log_set',
@@ -8103,6 +8164,12 @@ class _MtmdApi {
         helperLogSet = library
             .lookupFunction<_MtmdLogSetNative, _MtmdLogSetDart>(
               'mtmd_helper_log_set',
+            );
+      } catch (_) {}
+      try {
+        supportsVideo = library
+            .lookupFunction<_MtmdSupportVideoNative, _MtmdSupportVideoDart>(
+              'mtmd_helper_support_video',
             );
       } catch (_) {}
 
@@ -8156,6 +8223,7 @@ class _MtmdApi {
             .lookupFunction<_MtmdSupportAudioNative, _MtmdSupportAudioDart>(
               'mtmd_support_audio',
             ),
+        supportsVideo: supportsVideo,
         bitmapFree: library
             .lookupFunction<_MtmdBitmapFreeNative, _MtmdBitmapFreeDart>(
               'mtmd_bitmap_free',

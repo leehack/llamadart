@@ -5,6 +5,32 @@
   native-loader diagnostics. A failed or incompatible worker is torn down
   instead of being reported ready and leaving later requests waiting forever.
 
+* Added template-aware parsing for Kimi K3, MiniMax M1/M3, DeepSeek V3.2/V4,
+  Muse Glimmer, and Poolside Laguna, preventing their native tool calls from
+  silently falling back to plain content.
+
+* Fixed XML-style tool-call parsing to honor raw-versus-JSON argument values
+  and final-value delimiters. Apriel 1.5 and Xiaomi MiMo now parse nested JSON
+  values without splitting on inner commas, while malformed payloads remain
+  ordinary assistant content.
+
+* Made native video-input capability truthful without claiming end-to-end
+  support. `LlamaVideoContent` requests now fail with an actionable
+  `LlamaUnsupportedException`, `LlamaEngine.supportsVideo` reports public
+  consumability as false, and the llama.cpp worker uses the behavioral
+  `mtmd_helper_support_video` result instead of exported helper symbols. The
+  tested b10545 macOS arm64 artifact reports video compiled out; full path/byte
+  input remains blocked on cross-platform FFmpeg/ffprobe packaging and Dart
+  frame lifecycle wiring.
+
+* Native release synchronization and build-hook overrides now accept stable
+  `vMAJOR.MINOR.PATCH` artifacts and ordered `vMAJOR.MINOR.PATCH-N` wrapper
+  rebuilds plus nightly `bNNNN-N` rebuilds, while preserving historical
+  `bNNNN` and `bNNNN-llamadart.N` artifacts. Sync rejects invalid tags,
+  leading-zero nightly versions, rollback, wrapper/nightly `latest` results,
+  incompatible manifest contracts, missing bundles, and release/manifest
+  checksum or version skew without changing the default pin.
+
 * Fixed Web/native backend API parity. `WebAutoBackend` now forwards grammar
   constraint support from its active runtime, so strict structured output fails
   early with an actionable error on unsupported Web backends, and the Web-safe

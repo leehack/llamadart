@@ -338,80 +338,90 @@ void main() {
     );
   });
 
-  test('build hook uses pubspec native tag override', () async {
-    const overrideTag = 'b0000-hook-test';
-    final overrideCacheDir = Directory(
-      '.dart_tool/llamadart/native_bundles/$overrideTag/windows-x64',
-    );
-    final overrideBundleDir = Directory(
-      path.join(overrideCacheDir.path, 'extracted'),
-    );
-    final overrideBackupDir = Directory(
-      '${overrideCacheDir.path}.__hook_test_backup',
-    );
+  test('build hook uses accepted wrapper native tag overrides', () async {
+    for (final overrideTag in const [
+      'v9.8.8-1',
+      'b0-1',
+      'b0-llamadart.1',
+      'b10514-1',
+      'b10514-llamadart.1',
+    ]) {
+      final overrideCacheDir = Directory(
+        '.dart_tool/llamadart/native_bundles/$overrideTag/windows-x64',
+      );
+      final overrideBundleDir = Directory(
+        path.join(overrideCacheDir.path, 'extracted'),
+      );
+      final overrideBackupDir = Directory(
+        '${overrideCacheDir.path}.__hook_test_backup',
+      );
 
-    if (overrideBackupDir.existsSync()) {
-      await overrideBackupDir.delete(recursive: true);
-    }
-    if (overrideCacheDir.existsSync()) {
-      await overrideCacheDir.rename(overrideBackupDir.path);
-    }
+      if (overrideBackupDir.existsSync()) {
+        await overrideBackupDir.delete(recursive: true);
+      }
+      if (overrideCacheDir.existsSync()) {
+        await overrideCacheDir.rename(overrideBackupDir.path);
+      }
 
-    try {
-      await _writeBundleLibraries(overrideBundleDir, const [
-        'llamadart-windows-x64.dll',
-        'llama-windows-x64.dll',
-        'ggml-windows-x64.dll',
-        'ggml-base-windows-x64.dll',
-        'ggml-cpu-windows-x64.dll',
-        'ggml-opencl-windows-x64.dll',
-      ]);
+      try {
+        await _writeBundleLibraries(overrideBundleDir, const [
+          'llamadart-windows-x64.dll',
+          'llama-windows-x64.dll',
+          'ggml-windows-x64.dll',
+          'ggml-base-windows-x64.dll',
+          'ggml-cpu-windows-x64.dll',
+          'ggml-opencl-windows-x64.dll',
+        ]);
 
-      final userDefines = PackageUserDefines(
-        workspacePubspec: PackageUserDefinesSource(
-          defines: {
-            'llamadart_native_tag': overrideTag,
-            'llamadart_native_backends': {
-              'platforms': {
-                'windows-x64': ['opencl'],
+        final userDefines = PackageUserDefines(
+          workspacePubspec: PackageUserDefinesSource(
+            defines: {
+              'llamadart_native_tag': overrideTag,
+              'llamadart_native_backends': {
+                'platforms': {
+                  'windows-x64': ['opencl'],
+                },
               },
             },
+            basePath: Directory.current.uri,
+          ),
+        );
+
+        await testCodeBuildHook(
+          mainMethod: build_hook.main,
+          targetOS: OS.windows,
+          targetArchitecture: Architecture.x64,
+          userDefines: userDefines,
+          check: (input, output) {
+            final codeAssets = output.assets.encodedAssets
+                .where((asset) => asset.isCodeAsset)
+                .map((asset) => asset.asCodeAsset)
+                .toList(growable: false);
+
+            final emittedNames = codeAssets
+                .map((asset) => path.basename(asset.file!.toFilePath()))
+                .toSet();
+
+            expect(emittedNames, contains('ggml-opencl-windows-x64.dll'));
+            expect(
+              emittedNames,
+              isNot(contains('ggml-vulkan-windows-x64.dll')),
+            );
           },
-          basePath: Directory.current.uri,
-        ),
-      );
-
-      await testCodeBuildHook(
-        mainMethod: build_hook.main,
-        targetOS: OS.windows,
-        targetArchitecture: Architecture.x64,
-        userDefines: userDefines,
-        check: (input, output) {
-          final codeAssets = output.assets.encodedAssets
-              .where((asset) => asset.isCodeAsset)
-              .map((asset) => asset.asCodeAsset)
-              .toList(growable: false);
-
-          final emittedNames = codeAssets
-              .map((asset) => path.basename(asset.file!.toFilePath()))
-              .toSet();
-
-          expect(emittedNames, contains('ggml-opencl-windows-x64.dll'));
-          expect(emittedNames, isNot(contains('ggml-vulkan-windows-x64.dll')));
-        },
-      );
-    } finally {
-      if (overrideCacheDir.existsSync()) {
-        await overrideCacheDir.delete(recursive: true);
-      }
-      if (overrideBackupDir.existsSync()) {
-        await overrideBackupDir.rename(overrideCacheDir.path);
+        );
+      } finally {
+        if (overrideCacheDir.existsSync()) {
+          await overrideCacheDir.delete(recursive: true);
+        }
+        if (overrideBackupDir.existsSync()) {
+          await overrideBackupDir.rename(overrideCacheDir.path);
+        }
       }
     }
   });
 
   test('build hook uses custom GitHub repository cache namespace', () async {
-    const overrideTag = 'b0000-repo-test';
+    const overrideTag = 'b0';
     const customRepository = 'example/native-fork';
     final repoCacheRoot = Directory(
       '.dart_tool/llamadart/native_bundles/github/example/native-fork',
@@ -531,7 +541,7 @@ void main() {
   });
 
   test('build hook uses local native path archive', () async {
-    const overrideTag = 'b0000-local-archive';
+    const overrideTag = 'b0-llamadart.1';
     const localRootPath = '.dart_tool/llamadart_hook_test_local_archive';
     final localRoot = Directory(localRootPath);
     final archiveFile = File(
@@ -605,30 +615,50 @@ void main() {
     }
   });
 
-  test('build hook rejects path-unsafe native tag override', () async {
-    final userDefines = PackageUserDefines(
-      workspacePubspec: PackageUserDefinesSource(
-        defines: const {'llamadart_native_tag': '../bad'},
-        basePath: Directory.current.uri,
-      ),
-    );
-
-    await expectLater(
-      testCodeBuildHook(
-        mainMethod: build_hook.main,
-        targetOS: OS.windows,
-        targetArchitecture: Architecture.x64,
-        userDefines: userDefines,
-        check: (input, output) {},
-      ),
-      throwsA(
-        isA<FormatException>().having(
-          (error) => error.message,
-          'message',
-          contains('path-safe release tag'),
+  test('build hook rejects unsupported native tag forms', () async {
+    for (final invalidTag in const [
+      '../bad',
+      'v1.2',
+      'v01.2.3',
+      'b00',
+      'b0000',
+      'b0001',
+      'b0001-1',
+      'b0001-llamadart.1',
+      'b1-01',
+      'b1-llamadart.01',
+      'b10514-custom',
+      'b10514-0',
+      'v0.2.0-0',
+      'v0.2.0-llamadart.1',
+      'v0.2.0-custom.1',
+      r'b1; touch "$RUNNER_TEMP/llamadart-pwned"',
+      r'b1$(touch "$RUNNER_TEMP/llamadart-pwned")',
+    ]) {
+      final userDefines = PackageUserDefines(
+        workspacePubspec: PackageUserDefinesSource(
+          defines: {'llamadart_native_tag': invalidTag},
+          basePath: Directory.current.uri,
         ),
-      ),
-    );
+      );
+
+      await expectLater(
+        testCodeBuildHook(
+          mainMethod: build_hook.main,
+          targetOS: OS.windows,
+          targetArchitecture: Architecture.x64,
+          userDefines: userDefines,
+          check: (input, output) {},
+        ),
+        throwsA(
+          isA<FormatException>().having(
+            (error) => error.message,
+            'message for $invalidTag',
+            contains('stable vMAJOR.MINOR.PATCH tag'),
+          ),
+        ),
+      );
+    }
   });
 
   test('build hook rejects invalid native repository override', () async {

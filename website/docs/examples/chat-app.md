@@ -182,9 +182,11 @@ confirmation dialog offers both choices when cached assets exist.
 ## Gemma 4 note
 
 The download library includes Gemma 4 E2B, E4B, 12B, 26B A4B, and 31B GGUF
-tiers. E2B, E4B, and 12B expose image, audio, and video input on the current
-native `llama.cpp` mtmd path; 26B A4B and 31B expose image/video input but do
-not support audio. The native Gemma 4 E2B LiteRT-LM bundle accepts audio
+tiers. E2B, E4B, and 12B expose image and audio input on the current native
+`llama.cpp` mtmd path; 26B A4B and 31B expose image input but do not support
+audio. Video is not advertised because the packaged native runtime reports it
+compiled out and the public Dart API has no frame-ingestion contract. The
+native Gemma 4 E2B LiteRT-LM bundle accepts audio
 directly without an external projector. On code-supported native recorder
 targets, **Ask with voice** can send a recording to that bundle or to an
 audio-capable E2B, E4B, or 12B GGUF projector. This is generic audio-input chat,

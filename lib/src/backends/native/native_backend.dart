@@ -35,7 +35,8 @@ class NativeAutoBackend
         BackendStatePersistenceSupport,
         BackendGrammarConstraintsSupport,
         BackendNativeChatGeneration,
-        BackendTextToSpeech {
+        BackendTextToSpeech,
+        BackendVideoRuntimeSupport {
   final LlamaBackend Function() _llamaCppFactory;
   final LlamaBackend Function() _liteRtLmFactory;
 
@@ -324,6 +325,17 @@ class NativeAutoBackend
   @override
   Future<bool> supportsAudio(int mmContextHandle) {
     return _requireDelegate().supportsAudio(mmContextHandle);
+  }
+
+  @override
+  Future<bool?> supportsVideoRuntime(int mmContextHandle) {
+    final delegate = _requireDelegate();
+    if (delegate is BackendVideoRuntimeSupport) {
+      return (delegate as BackendVideoRuntimeSupport).supportsVideoRuntime(
+        mmContextHandle,
+      );
+    }
+    return Future<bool?>.value();
   }
 
   @override
