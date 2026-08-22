@@ -292,7 +292,9 @@ tool-choice/thinking-prefix, and pinned/current upstream parity rows documented
 in `doc/testing_matrix.md`. An unrelated representative model is pipeline-only
 evidence; if exact affected weights are unavailable, name each family and use
 primary upstream emissions plus durable fixtures. Post-merge QA remains
-mandatory, but is never the first planned adversarial pass.
+mandatory, but is never the first planned adversarial pass. If it finds a
+PR-caused P1, stop lower-priority merge work, file causally accurate issues,
+and prepare one cohesive recovery PR before resuming feature work.
 
 For docs-only PRs, state that runtime behavior is unchanged and list docs
 validation. If implementation scope changed, reduce and state the scope rather

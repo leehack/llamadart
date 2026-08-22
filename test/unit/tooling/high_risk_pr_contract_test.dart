@@ -190,6 +190,8 @@ void main() {
         '.github/pull_request_template.md',
       ).readAsStringSync();
       final owners = File('.github/CODEOWNERS').readAsStringSync();
+      final agents = File('AGENTS.md').readAsStringSync();
+      final matrixDoc = File('doc/testing_matrix.md').readAsStringSync();
 
       expect(workflow, contains('edited'));
       expect(workflow, contains('ready_for_review'));
@@ -201,6 +203,8 @@ void main() {
       expect(template, contains('Known PR-caused P1 regressions'));
       expect(template, contains('Compiled grammar rejection matrix'));
       expect(owners, contains('check_high_risk_pr_contract.dart @leehack'));
+      expect(agents, contains('stop lower-priority merge work'));
+      expect(matrixDoc, contains('cohesive recovery PR'));
     });
   });
 

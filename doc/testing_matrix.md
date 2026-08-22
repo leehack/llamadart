@@ -104,7 +104,9 @@ grammar mismatches (#394/#399), escaped/schema-exact/delimiter rejection gaps
 (#395/#396/#407), partial protocol leakage and final content loss
 (#397/#398), thinking/tool-choice prefix failures (#402/#406), and empty or
 schema-directed type loss (#408/#410). Post-merge QA still runs, but must not be
-the first planned adversarial review.
+the first planned adversarial review. A PR-caused P1 found after merge stops
+lower-priority merge work; file causally accurate tickets and prepare one
+cohesive recovery PR before resuming feature work.
 
 ## Targeted Runtime and Model Rows
 
