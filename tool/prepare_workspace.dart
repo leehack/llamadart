@@ -133,7 +133,7 @@ List<String> validateWorkspaceManifest(Directory repositoryRoot) {
   return errors;
 }
 
-/// Resolves every maintained package, stopping at the first failed command.
+/// Resolves every root-quality-gate package, stopping at the first failure.
 Future<int> prepareWorkspace(
   Directory repositoryRoot, {
   WorkspaceCommandRunner commandRunner = runWorkspaceCommand,
