@@ -78,6 +78,8 @@ void main() {
       'example/chat_app/build/generated/pubspec.yaml',
       'example/chat_app/macos/Flutter/ephemeral/plugin/pubspec.yaml',
       'example/chat_app/ios/.symlinks/plugins/example/pubspec.yaml',
+      'example/chat_app/ios/Pods/generated/pubspec.yaml',
+      'example/chat_app/macos/Pods/generated/pubspec.yaml',
     ]) {
       final pubspec = File('${root.path}/$path');
       pubspec.parent.createSync(recursive: true);

@@ -108,9 +108,11 @@ void _discoverPubspecs(
 
 bool _isGeneratedDirectory(List<String> segments) {
   final name = segments.last;
-  return name == '.dart_tool' ||
-      name == 'build' ||
-      name == '.symlinks' ||
+  final lowerName = name.toLowerCase();
+  return lowerName == '.dart_tool' ||
+      lowerName == 'build' ||
+      lowerName == '.symlinks' ||
+      lowerName == 'pods' ||
       _isFlutterEphemeral(segments);
 }
 
