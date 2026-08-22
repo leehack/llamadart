@@ -7,8 +7,11 @@ Thank you for your interest in contributing to `llamadart`! We welcome contribut
 Before you begin, ensure you have the following installed:
 
 -   **Dart SDK**: >= 3.10.7
--   **Flutter SDK**: >= 3.38.0 (required for repository-wide quality gates and
-    Flutter examples; root-package-only Dart work can use the Dart SDK alone)
+-   **Flutter SDK**: current stable for repository-wide quality gates and
+    Flutter examples (runtime support starts at 3.38.0; root-package-only Dart
+    work can use the Dart SDK alone). CI defines the canonical formatter via
+    its current Flutter stable SDK; older Dart formatters can produce different
+    source layouts.
 -   **CMake**: >= 3.10
 -   **C++ Compiler**:
     -   **macOS**: Xcode Command Line Tools (`xcode-select --install`)

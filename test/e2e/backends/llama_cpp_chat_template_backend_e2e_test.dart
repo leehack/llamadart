@@ -55,13 +55,9 @@ void main() {
           expect(rendered, contains('Say hello.'));
           expect(rendered, isNot(equals('Say hello.')));
 
-          final custom = await backend.applyChatTemplate(
-            modelHandle,
-            const [
-              {'role': 'user', 'content': 'Say hello.'},
-            ],
-            customTemplate: '{{ "CUSTOM:" ~ messages[0]["content"] }}',
-          );
+          final custom = await backend.applyChatTemplate(modelHandle, const [
+            {'role': 'user', 'content': 'Say hello.'},
+          ], customTemplate: '{{ "CUSTOM:" ~ messages[0]["content"] }}');
           expect(custom, contains('CUSTOM:Say hello.'));
 
           await backend.modelFree(modelHandle);

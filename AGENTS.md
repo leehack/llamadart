@@ -19,6 +19,8 @@ The workspace preparation command resolves the root package, every maintained
 example, and both Flutter companion packages. Run it from a clean checkout
 before the root format/analyze gates; CI uses the same entry point. Companion
 packages retain their own analyze, test, SwiftPM, and publish-validation lanes.
+Run repository-wide quality gates with the current Flutter stable SDK used by
+CI; older Dart formatters can produce different source layouts.
 
 Use the testing matrix to choose validation for non-trivial changes:
 

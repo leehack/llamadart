@@ -53,6 +53,10 @@ tests, SwiftPM validation, and publish dry runs. Generated `.dart_tool`,
 Vendored, archived docs, or local-only trees outside `example/` and `packages/`
 are not discovered by the workspace bootstrap.
 
+Use the current Flutter stable SDK, matching CI, for repository-wide quality
+gates. Older Dart formatters can produce different source layouts even after
+the same dependency bootstrap.
+
 Use targeted test commands when iterating quickly, then run full checks before
 release-related merges.
 

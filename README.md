@@ -194,6 +194,9 @@ bindings, runtime behavior, and docs have been validated together.
 
 For package changes:
 
+Use the current Flutter stable SDK, matching CI, for repository-wide quality
+gates. Older Dart formatters can produce different source layouts.
+
 ```bash
 dart run tool/prepare_workspace.dart
 dart format --output=none --set-exit-if-changed .
