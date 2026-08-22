@@ -8218,14 +8218,22 @@ String formatStartupDiagnostics(List<String> entries, {int maxLength = 4096}) {
 }
 
 String _sanitizeStartupDiagnostic(String entry) {
-  final controlCharacters = RegExp(
-    r'[\u0000-\u001f\u007f-\u009f\u2028\u2029]+',
+  const controlCharacterClass = r'[\u0000-\u001f\u007f-\u009f\u2028\u2029]';
+  final controlCharacters = RegExp('$controlCharacterClass+');
+  final fragmentedHttpPrefix =
+      'h$controlCharacterClass*'
+      't$controlCharacterClass*'
+      't$controlCharacterClass*'
+      'p$controlCharacterClass*'
+      's?$controlCharacterClass*'
+      ':$controlCharacterClass*'
+      '/$controlCharacterClass*'
+      '/';
+  final normalizedUrlCandidates = entry.replaceAllMapped(
+    RegExp('$fragmentedHttpPrefix[^ ]*', caseSensitive: false),
+    (match) => match.group(0)!.replaceAll(controlCharacters, ''),
   );
-  final flattenedEntry = entry
-      .replaceAllMapped(
-        RegExp(r'https?://(?:(?!https?://)[^ /?#])*@', caseSensitive: false),
-        (match) => match.group(0)!.replaceAll(controlCharacters, ''),
-      )
+  final flattenedEntry = normalizedUrlCandidates
       .replaceAll(controlCharacters, ' ')
       .replaceAll(RegExp(r' {2,}'), ' ')
       .trim();
