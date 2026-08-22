@@ -16,6 +16,7 @@ from sync_native_release_pins import (  # noqa: E402
     atomic_write_many,
     litert_lm_runtime_version,
     normalize_litert_lm_release_tag,
+    prepare_litert_lm_package_swift,
     required_litert_release_asset_names,
     validate_litert_lm_transition,
     validate_litert_lm_release_manifest,
@@ -215,6 +216,7 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
             with self.assertRaisesRegex(ReleaseError, "owner policy"):
                 validate_litert_release_asset_inventory(release, manifest, tag)
             release_assets.pop()
+
             release_assets.append(dict(release_assets[0]))
             with self.assertRaisesRegex(ReleaseError, "duplicates"):
                 validate_litert_release_asset_inventory(release, manifest, tag)
@@ -410,6 +412,66 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
                     release_json_dir=str(fixture_dir),
                     required_bundles=required_bundles,
                 )
+
+    def test_schema_2_prepares_the_real_apple_target_transition(self) -> None:
+        fixture_root = Path(__file__).resolve().parent / "fixtures"
+        manifest = json.loads(
+            (fixture_root / "litert_lm_schema2_owner_manifest.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        release = json.loads(
+            (fixture_root / "litert_lm_schema2_owner_release.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        package_swift = (
+            Path(__file__).resolve().parents[2]
+            / "packages"
+            / "llamadart_litert_lm_flutter"
+            / "darwin"
+            / "llamadart_litert_lm_flutter"
+            / "Package.swift"
+        )
+        original = package_swift.read_text(encoding="utf-8")
+
+        prepared = prepare_litert_lm_package_swift(
+            original,
+            release=release,
+            manifest=manifest,
+            resolved_tag="v0.16.0-3",
+        )
+
+        self.assertEqual(
+            package_swift.read_text(encoding="utf-8"),
+            original,
+            "pin preparation must not modify the checked-in manifest",
+        )
+        self.assertIn('let liteRtLmTag = "v0.16.0-3"', prepared)
+        self.assertNotIn("GemmaModelConstraintProvider", prepared)
+        self.assertIn('name: "CLiteRTLMMac"', prepared)
+        self.assertIn(
+            'name: "CLiteRTLMMac", condition: .when(platforms: [.macOS])',
+            prepared,
+        )
+        expected_targets = {
+            "LiteRtLm",
+            "CLiteRTLM",
+            "CLiteRTLMMac",
+            "LiteRtMetalAccelerator",
+            "LiteRtTopKMetalSampler",
+        }
+        for target in expected_targets:
+            asset_name = (
+                f"litert-lm-native-apple-{target}-xcframework-v0.16.0-3.zip"
+            )
+            asset = next(
+                item for item in release["assets"] if item["name"] == asset_name
+            )
+            self.assertIn(
+                f'checksum: "{asset["digest"].removeprefix("sha256:")}"',
+                prepared,
+            )
 
     def test_known_legacy_schema_1_manifest_requires_exact_immutable_evidence(self) -> None:
         tag = "v0.16.0-native.2"

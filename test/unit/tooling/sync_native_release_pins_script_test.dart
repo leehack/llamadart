@@ -1660,6 +1660,14 @@ const Map<String, (String, String)> _litertAppleTargets = {
     'litert-lm-native-apple-CLiteRTLMMac-xcframework-{tag}.zip',
     '8',
   ),
+  'LiteRtMetalAccelerator': (
+    'litert-lm-native-apple-LiteRtMetalAccelerator-xcframework-{tag}.zip',
+    '1',
+  ),
+  'LiteRtTopKMetalSampler': (
+    'litert-lm-native-apple-LiteRtTopKMetalSampler-xcframework-{tag}.zip',
+    '2',
+  ),
 };
 
 const _stableNativeBundles = <String>[

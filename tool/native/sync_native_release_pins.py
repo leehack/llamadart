@@ -281,6 +281,21 @@ def required_litert_release_asset_names(
     return assets
 
 
+def litert_schema2_apple_targets(
+    manifest: dict[str, Any], release_tag: str
+) -> set[str]:
+    prefix = "litert-lm-native-apple-"
+    suffix = f"-xcframework-{release_tag}.zip"
+    targets = {
+        asset_name[len(prefix) : -len(suffix)]
+        for asset_name in required_litert_release_asset_names(manifest, release_tag)
+        if asset_name.startswith(prefix) and asset_name.endswith(suffix)
+    }
+    if not targets:
+        raise ReleaseError("LiteRT-LM schema-2 owner inventory has no Apple targets")
+    return targets
+
+
 def validate_litert_release_asset_inventory(
     release: dict[str, Any], manifest: dict[str, Any], release_tag: str
 ) -> None:
@@ -418,7 +433,7 @@ def main() -> int:
             ),
         )
         litert_version = litert_lm_runtime_version(resolved_litert_lm_tag)
-        validate_litert_lm_release_manifest(
+        litert_lm_manifest = validate_litert_lm_release_manifest(
             release,
             repo=args.litert_lm_native_repo,
             tag=resolved_litert_lm_tag,
@@ -484,33 +499,12 @@ def main() -> int:
             original_swift_text = litert_lm_package_swift_path.read_text(
                 encoding="utf-8"
             )
-            original_litert_lm_tag = swift_variable_value(
+            swift_text = prepare_litert_lm_package_swift(
                 original_swift_text,
-                "liteRtLmTag",
-                "LiteRT-LM Package.swift tag",
+                release=release,
+                manifest=litert_lm_manifest,
+                resolved_tag=resolved_litert_lm_tag,
             )
-            apple_targets = swift_native_repo_binary_targets(
-                original_swift_text,
-                tag_variable="liteRtLmTag",
-                current_tag=original_litert_lm_tag,
-            )
-            swift_text = original_swift_text
-            swift_text = replace_one(
-                swift_text,
-                r'let liteRtLmTag = "[^"]+"',
-                f'let liteRtLmTag = "{resolved_litert_lm_tag}"',
-                "LiteRT-LM Package.swift tag",
-            )
-            for target_name, asset_template in apple_targets:
-                checksum = release_asset_checksum(
-                    release,
-                    asset_template.format(tag=resolved_litert_lm_tag),
-                )
-                swift_text = replace_swift_binary_target_checksum(
-                    swift_text,
-                    target_name,
-                    checksum,
-                )
             pending_writes[litert_lm_package_swift_path] = swift_text
             package_root = companion_package_root(litert_lm_package_swift_path)
             project_doc_dependency_versions[package_root.name] = (
@@ -1365,7 +1359,7 @@ def validate_litert_lm_release_manifest(
     tag: str,
     release_json_dir: str,
     required_bundles: list[str],
-) -> None:
+) -> dict[str, Any]:
     manifest_result = fetch_litert_lm_release_manifest(
         release,
         repo=repo,
@@ -1426,7 +1420,7 @@ def validate_litert_lm_release_manifest(
             raise ReleaseError(
                 f"Legacy release {repo}@{tag} classification is not immutable allowlist evidence"
             )
-        return
+        return manifest
     if schema != 2:
         raise ReleaseError(f"Unsupported LiteRT-LM manifest schemaVersion {schema}")
 
@@ -1933,6 +1927,7 @@ def validate_litert_lm_release_manifest(
             "LiteRT-LM manifest is missing required real-model smoke evidence: "
             + ", ".join(sorted(required_smokes - passed_smokes))
         )
+    return manifest
 
 
 def fetch_litert_lm_release_manifest(
@@ -2116,6 +2111,86 @@ def replace_swift_binary_target_checksum(
     if count != 1:
         raise ReleaseError(f"Could not replace Package.swift checksum for {target_name}")
     return updated
+
+
+def prepare_litert_lm_package_swift(
+    original_swift_text: str,
+    *,
+    release: dict[str, Any],
+    manifest: dict[str, Any],
+    resolved_tag: str,
+) -> str:
+    original_tag = swift_variable_value(
+        original_swift_text,
+        "liteRtLmTag",
+        "LiteRT-LM Package.swift tag",
+    )
+    swift_text = original_swift_text
+    if manifest.get("schemaVersion") == 2:
+        expected_targets = litert_schema2_apple_targets(manifest, resolved_tag)
+        legacy_targets = (expected_targets - {"CLiteRTLMMac"}) | {
+            "GemmaModelConstraintProvider"
+        }
+        current_targets = {
+            target_name
+            for target_name, _ in swift_native_repo_binary_targets(
+                swift_text,
+                tag_variable="liteRtLmTag",
+                current_tag=original_tag,
+            )
+        }
+        if current_targets == legacy_targets:
+            if swift_text.count("GemmaModelConstraintProvider") != 3:
+                raise ReleaseError(
+                    "Legacy LiteRT-LM Package.swift Gemma target topology is ambiguous"
+                )
+            swift_text = swift_text.replace(
+                "GemmaModelConstraintProvider",
+                "CLiteRTLMMac",
+            )
+            swift_text = replace_one(
+                swift_text,
+                (
+                    r'(name: "CLiteRTLMMac", condition: '
+                    r'\.when\(platforms: \[)\.iOS(\]\)\))'
+                ),
+                r"\g<1>.macOS\2",
+                "LiteRT-LM Package.swift macOS compatibility target condition",
+            )
+        elif current_targets != expected_targets:
+            raise ReleaseError(
+                "LiteRT-LM Package.swift binary targets do not match the legacy "
+                "or schema-2 owner inventory"
+            )
+
+    apple_targets = swift_native_repo_binary_targets(
+        swift_text,
+        tag_variable="liteRtLmTag",
+        current_tag=original_tag,
+    )
+    if manifest.get("schemaVersion") == 2 and {
+        target_name for target_name, _ in apple_targets
+    } != litert_schema2_apple_targets(manifest, resolved_tag):
+        raise ReleaseError(
+            "LiteRT-LM Package.swift binary targets do not match schema-2 owner inventory"
+        )
+    swift_text = replace_one(
+        swift_text,
+        r'let liteRtLmTag = "[^"]+"',
+        f'let liteRtLmTag = "{resolved_tag}"',
+        "LiteRT-LM Package.swift tag",
+    )
+    for target_name, asset_template in apple_targets:
+        checksum = release_asset_checksum(
+            release,
+            asset_template.format(tag=resolved_tag),
+        )
+        swift_text = replace_swift_binary_target_checksum(
+            swift_text,
+            target_name,
+            checksum,
+        )
+    return swift_text
 
 
 def swift_variable_value(
