@@ -33,6 +33,7 @@ class HighRiskPrState {
     required this.ahead,
     required this.unresolvedThreads,
     required this.authorLogin,
+    required this.prBodyDigest,
     required this.reviews,
   });
 
@@ -42,6 +43,7 @@ class HighRiskPrState {
   final int ahead;
   final int unresolvedThreads;
   final String authorLogin;
+  final String prBodyDigest;
   final List<HighRiskReview> reviews;
 }
 
@@ -63,6 +65,28 @@ class HighRiskReview {
   final String body;
 }
 
+class HighRiskCiRun {
+  const HighRiskCiRun({
+    required this.id,
+    required this.runAttempt,
+    required this.updatedAt,
+    required this.headSha,
+    required this.event,
+    required this.path,
+    required this.status,
+    required this.conclusion,
+  });
+
+  final int id;
+  final int runAttempt;
+  final DateTime updatedAt;
+  final String headSha;
+  final String event;
+  final String path;
+  final String status;
+  final String? conclusion;
+}
+
 class HighRiskContractResult {
   const HighRiskContractResult({
     required this.assessment,
@@ -80,7 +104,10 @@ final _taskReference = RegExp(
   r'^(?:codex://(?:threads|tasks)/[A-Za-z0-9_./-]{20,}|https://github\.com/[^/]+/[^/]+/(?:issues|pull)/[0-9]+(?:#[A-Za-z0-9_.-]+)?)$',
 );
 
-HighRiskAssessment assessHighRiskFiles(Iterable<String> files) {
+HighRiskAssessment assessHighRiskFiles(
+  Iterable<String> files, {
+  Set<String> protectedEvidencePaths = const {},
+}) {
   final normalized = files
       .map((file) => file)
       .where((file) => file.isNotEmpty)
@@ -114,6 +141,8 @@ HighRiskAssessment assessHighRiskFiles(Iterable<String> files) {
         path.startsWith('lib/src/core/speech/') ||
         path.startsWith('lib/src/core/models/config/') ||
         path.startsWith('lib/src/platform/') ||
+        path == 'lib/src/core/cache_policy.dart' ||
+        path == 'test/unit/core/cache_policy_test.dart' ||
         path == 'lib/src/core/models/chat/content_part.dart' ||
         path ==
             'lib/src/core/models/download/model_download_manager_base.dart') {
@@ -154,11 +183,13 @@ HighRiskAssessment assessHighRiskFiles(Iterable<String> files) {
         path == 'tool/testing/check_high_risk_pr_contract.dart' ||
         path == 'test/unit/tooling/high_risk_pr_contract_test.dart' ||
         path == 'test/unit/tooling/trusted_high_risk_contract_test.dart' ||
-        path ==
-            'test/e2e/template/specialized_tool_grammar_validation_e2e_test.dart') {
+        path == 'test/unit/core/cache_policy_test.dart') {
       surfaces.add(HighRiskSurface.regressionPolicy);
     }
     if (_isGateScript(path)) {
+      surfaces.add(HighRiskSurface.regressionPolicy);
+    }
+    if (protectedEvidencePaths.contains(path)) {
       surfaces.add(HighRiskSurface.regressionPolicy);
     }
   }
@@ -195,9 +226,16 @@ HighRiskContractResult validateHighRiskContract({
   required HighRiskPrState state,
   Map<String, dynamic>? evidence,
   String? evidencePath,
-  Set<String> verifiedUpstreamRefs = const {},
+  Map<String, String> verifiedUpstreamCommits = const {},
+  Set<String> compiledGrammarTests = const {},
+  Set<String> protectedEvidencePaths = const {},
+  List<HighRiskCiRun> ciRuns = const [],
+  Map<String, dynamic>? upstreamParityCiEvidence,
 }) {
-  final assessment = assessHighRiskFiles(changedFiles);
+  final assessment = assessHighRiskFiles(
+    changedFiles,
+    protectedEvidencePaths: protectedEvidencePaths,
+  );
   final errors = <String>[];
   final fields = _parseEvidenceFields(body);
 
@@ -220,6 +258,17 @@ HighRiskContractResult validateHighRiskContract({
   );
   if (state.behind != 0) {
     errors.add('High-risk QA must integrate the current base before ready.');
+  }
+  final latestCi = selectLatestExactHeadCiRun(ciRuns, state.headSha);
+  if (latestCi == null ||
+      latestCi.status != 'completed' ||
+      latestCi.conclusion != 'success') {
+    errors.add('The latest exact-head CI run must succeed.');
+  }
+  if (deletedFiles.any(protectedEvidencePaths.contains)) {
+    errors.add(
+      'Tests referenced by trusted-base evidence cannot be deleted or renamed.',
+    );
   }
   _expectExact(fields, errors, 'Independent QA verdict', 'PASS');
   _expectExact(fields, errors, 'Known PR-caused P1 regressions', '0');
@@ -250,7 +299,7 @@ HighRiskContractResult validateHighRiskContract({
     errors.add(
       'Independent QA PASS requires a current-head APPROVED review from a '
       'trusted repository reviewer other than the PR author, attesting the '
-      'QA task, head, base, and PASS verdict.',
+      'QA task, head, base, PR-body digest, and PASS verdict.',
     );
   }
   if (state.authorLogin.isEmpty) {
@@ -288,9 +337,13 @@ HighRiskContractResult validateHighRiskContract({
       evidence,
       assessment: assessment,
       deletedFiles: deletedFiles.toSet(),
+      headSha: state.headSha,
       implementationTask: implementationTask,
       qaTask: qaTask,
-      verifiedUpstreamRefs: verifiedUpstreamRefs,
+      verifiedUpstreamCommits: verifiedUpstreamCommits,
+      compiledGrammarTests: compiledGrammarTests,
+      latestCi: latestCi,
+      upstreamParityCiEvidence: upstreamParityCiEvidence,
       errors: errors,
     );
   }
@@ -298,16 +351,46 @@ HighRiskContractResult validateHighRiskContract({
   return HighRiskContractResult(assessment: assessment, errors: errors);
 }
 
+HighRiskCiRun? selectLatestExactHeadCiRun(
+  Iterable<HighRiskCiRun> runs,
+  String headSha,
+) {
+  final matching = runs
+      .where(
+        (run) =>
+            run.headSha == headSha &&
+            run.event == 'pull_request' &&
+            run.path == '.github/workflows/ci.yml',
+      )
+      .toList();
+  if (matching.isEmpty) return null;
+  matching.sort((left, right) {
+    final updated = left.updatedAt.compareTo(right.updatedAt);
+    if (updated != 0) return updated;
+    final attempt = left.runAttempt.compareTo(right.runAttempt);
+    if (attempt != 0) return attempt;
+    return left.id.compareTo(right.id);
+  });
+  return matching.last;
+}
+
 void _validateEvidenceManifest(
   Map<String, dynamic> evidence, {
   required HighRiskAssessment assessment,
   required Set<String> deletedFiles,
+  required String headSha,
   required String? implementationTask,
   required String? qaTask,
-  required Set<String> verifiedUpstreamRefs,
+  required Map<String, String> verifiedUpstreamCommits,
+  required Set<String> compiledGrammarTests,
+  required HighRiskCiRun? latestCi,
+  required Map<String, dynamic>? upstreamParityCiEvidence,
   required List<String> errors,
 }) {
   if (evidence['schema'] != 1) errors.add('Evidence schema must be 1.');
+  if (evidence['knownPrCausedP1Regressions'] != 0) {
+    errors.add('Manifest must report zero known PR-caused P1 regressions.');
+  }
   if (evidence['implementationTask'] != implementationTask) {
     errors.add('Manifest implementationTask must match the PR body.');
   }
@@ -352,6 +435,11 @@ void _validateEvidenceManifest(
   );
   final familyEvidence = evidence['affectedFamilyEvidence'];
   if (affectedFamilies.isEmpty) {
+    if (familyEvidence is! Map<String, dynamic> || familyEvidence.isNotEmpty) {
+      errors.add(
+        'Empty affectedFamilies requires affectedFamilyEvidence to be an exactly empty object.',
+      );
+    }
     final reason = evidence['notApplicableReason'];
     if (reason is! String || reason.trim().length < 20) {
       errors.add('Empty affectedFamilies requires a concrete N/A reason.');
@@ -406,9 +494,21 @@ void _validateEvidenceManifest(
         errors.add(
           'Pinned and current upstream refs must be distinct concrete tags or commits.',
         );
-      } else if (!verifiedUpstreamRefs.containsAll({pinned, current})) {
+      } else if (verifiedUpstreamCommits.keys.toSet().difference(const {
+            'pinned',
+            'current',
+          }).isNotEmpty ||
+          !verifiedUpstreamCommits.keys.toSet().containsAll(const {
+            'pinned',
+            'current',
+          })) {
         errors.add(
-          'Trusted workflow must resolve both upstream refs in ggml-org/llama.cpp.',
+          'Trusted workflow must supply exactly the pinned and current canonical upstream commits.',
+        );
+      } else if (verifiedUpstreamCommits['pinned'] ==
+          verifiedUpstreamCommits['current']) {
+        errors.add(
+          'Pinned and current upstream refs must resolve to distinct canonical commits.',
         );
       }
     }
@@ -430,7 +530,7 @@ void _validateEvidenceManifest(
         deletedFiles,
         errors,
       );
-      if (paths.any((path) => !_isCompiledGrammarTest(path))) {
+      if (paths.any((path) => !compiledGrammarTests.contains(path))) {
         errors.add('$key must reference compiled grammar production tests.');
       }
     }
@@ -454,6 +554,21 @@ void _validateEvidenceManifest(
         './tool/testing/run_template_parity_suites.sh.',
       );
     }
+    final upstreamParityTests = _validateTestPaths(
+      structured['upstreamParityTests'],
+      'structuredOutput.upstreamParityTests',
+      changed,
+      deletedFiles,
+      errors,
+    );
+    _validateUpstreamParityCiEvidence(
+      upstreamParityCiEvidence,
+      latestCi: latestCi,
+      headSha: headSha,
+      canonicalRefs: verifiedUpstreamCommits,
+      parityTests: upstreamParityTests,
+      errors: errors,
+    );
     final coverage = _stringSet(
       structured['requiredCoverage'],
       'structuredOutput.requiredCoverage',
@@ -463,7 +578,12 @@ void _validateEvidenceManifest(
       'unknown-field',
       'missing-field',
       'mismatched-type',
+      'wrong-type',
       'malformed-output',
+      'escaped-name',
+      'quoted-name',
+      'schema-exact',
+      'delimiter',
       'string',
       'number',
       'boolean',
@@ -487,6 +607,47 @@ void _validateEvidenceManifest(
       );
     }
   }
+}
+
+void _validateUpstreamParityCiEvidence(
+  Map<String, dynamic>? evidence, {
+  required HighRiskCiRun? latestCi,
+  required String? headSha,
+  required Map<String, String> canonicalRefs,
+  required List<String> parityTests,
+  required List<String> errors,
+}) {
+  if (evidence == null || latestCi == null) {
+    errors.add(
+      'Structured-output changes require trusted exact-head upstream parity CI evidence.',
+    );
+    return;
+  }
+  final expected = <String, dynamic>{
+    'schema': 1,
+    'headSha': headSha,
+    'runId': latestCi.id,
+    'runAttempt': latestCi.runAttempt,
+    'result': 'PASS',
+    'command': './tool/testing/run_template_parity_suites.sh',
+    'canonicalUpstreamCommits': canonicalRefs,
+    'tests': parityTests,
+  };
+  if (jsonEncode(_canonicalJson(evidence)) !=
+      jsonEncode(_canonicalJson(expected))) {
+    errors.add(
+      'Upstream parity CI artifact must exactly bind the successful CI run, head, canonical refs, command, and changed durable tests.',
+    );
+  }
+}
+
+Object? _canonicalJson(Object? value) {
+  if (value is List) return value.map(_canonicalJson).toList(growable: false);
+  if (value is Map) {
+    final keys = value.keys.cast<String>().toList()..sort();
+    return {for (final key in keys) key: _canonicalJson(value[key])};
+  }
+  return value;
 }
 
 Set<String> _stringSet(
@@ -540,15 +701,12 @@ List<String> _validateTestPaths(
   return paths.toList(growable: false);
 }
 
-bool _isCompiledGrammarTest(String path) =>
-    path ==
-    'test/e2e/template/specialized_tool_grammar_validation_e2e_test.dart';
-
 bool _hasIndependentQaAttestation(HighRiskPrState state, String qaTask) {
   final requiredLines = <String>{
     'High-risk QA task: $qaTask',
     'Head: ${state.headSha}',
     'Base: ${state.baseSha}',
+    'PR body SHA-256: ${state.prBodyDigest}',
     'Verdict: PASS',
   };
   final latestByAuthor = <String, HighRiskReview>{};
@@ -624,7 +782,9 @@ Never _usage(String message) {
     '--deleted-files <paths.txt> [--evidence <manifest.json> '
     '--evidence-path <repo-path>] --base-sha <sha> --head-sha <sha> '
     '--behind <n> --ahead <n> --unresolved-threads <n> --reviews <json> '
-    '--verified-upstream-refs <json>',
+    '--pr-body-digest <sha256> --verified-upstream-commits <json> '
+    '--compiled-grammar-policy <json> --protected-evidence-paths <paths.txt> '
+    '--ci-runs <json> [--upstream-parity-ci-evidence <json>]',
   );
   exit(64);
 }
@@ -647,7 +807,11 @@ Future<void> main(List<String> args) async {
     'ahead',
     'unresolved-threads',
     'reviews',
-    'verified-upstream-refs',
+    'pr-body-digest',
+    'verified-upstream-commits',
+    'compiled-grammar-policy',
+    'protected-evidence-paths',
+    'ci-runs',
   };
   final missing = required.difference(options.keys.toSet());
   if (missing.isNotEmpty) _usage('Missing options: ${missing.join(', ')}');
@@ -675,6 +839,7 @@ Future<void> main(List<String> args) async {
         ? ((pullRequest['user'] as Map<String, dynamic>)['login'] as String? ??
               '')
         : '',
+    prBodyDigest: options['pr-body-digest']!,
     reviews: _decodeReviews(
       jsonDecode(await File(options['reviews']!).readAsString()),
     ),
@@ -686,9 +851,30 @@ Future<void> main(List<String> args) async {
     state: state,
     evidence: evidence,
     evidencePath: options['evidence-path'],
-    verifiedUpstreamRefs: _decodeVerifiedUpstreamRefs(
-      jsonDecode(await File(options['verified-upstream-refs']!).readAsString()),
+    verifiedUpstreamCommits: _decodeVerifiedUpstreamCommits(
+      jsonDecode(
+        await File(options['verified-upstream-commits']!).readAsString(),
+      ),
     ),
+    compiledGrammarTests: _decodeCompiledGrammarPolicy(
+      jsonDecode(
+        await File(options['compiled-grammar-policy']!).readAsString(),
+      ),
+    ),
+    protectedEvidencePaths: (await File(
+      options['protected-evidence-paths']!,
+    ).readAsLines()).toSet(),
+    ciRuns: _decodeCiRuns(
+      jsonDecode(await File(options['ci-runs']!).readAsString()),
+    ),
+    upstreamParityCiEvidence: options['upstream-parity-ci-evidence'] == null
+        ? null
+        : jsonDecode(
+                await File(
+                  options['upstream-parity-ci-evidence']!,
+                ).readAsString(),
+              )
+              as Map<String, dynamic>,
   );
 
   final names =
@@ -701,6 +887,7 @@ Future<void> main(List<String> args) async {
     ..writeln('- Surfaces: `${names.join(', ')}`')
     ..writeln('- Head: `${state.headSha}`')
     ..writeln('- Base: `${state.baseSha}`')
+    ..writeln('- PR body SHA-256: `${state.prBodyDigest}`')
     ..writeln('- Evidence: `${options['evidence-path'] ?? 'none'}`');
   if (result.errors.isNotEmpty) {
     summary
@@ -752,9 +939,73 @@ List<HighRiskReview> _decodeReviews(Object? value) {
       .toList(growable: false);
 }
 
-Set<String> _decodeVerifiedUpstreamRefs(Object? value) {
-  if (value is! List || value.any((item) => item is! String)) {
-    _usage('Verified upstream refs must be a string array.');
+Map<String, String> _decodeVerifiedUpstreamCommits(Object? value) {
+  if (value is! Map<String, dynamic>) {
+    _usage('Verified upstream commits must be an object.');
   }
-  return value.cast<String>().toSet();
+  if (value.isEmpty) return const {};
+  if (value.keys.toSet().difference(const {'pinned', 'current'}).isNotEmpty ||
+      !value.keys.toSet().containsAll(const {'pinned', 'current'}) ||
+      value.values.any(
+        (item) => item is! String || !RegExp(r'^[0-9a-f]{40}$').hasMatch(item),
+      )) {
+    _usage(
+      'Verified upstream commits must contain canonical pinned/current SHAs.',
+    );
+  }
+  return value.cast<String, String>();
+}
+
+Set<String> _decodeCompiledGrammarPolicy(Object? value) {
+  if (value is! Map<String, dynamic> ||
+      value['schema'] != 1 ||
+      value.keys.toSet().difference(const {
+        'schema',
+        'compiledGrammarTests',
+      }).isNotEmpty ||
+      value['compiledGrammarTests'] is! List ||
+      (value['compiledGrammarTests'] as List).any((item) => item is! String)) {
+    _usage('Compiled grammar policy is malformed.');
+  }
+  final paths = (value['compiledGrammarTests'] as List).cast<String>();
+  if (paths.isEmpty || paths.toSet().length != paths.length) {
+    _usage('Compiled grammar policy requires unique test paths.');
+  }
+  return paths.toSet();
+}
+
+List<HighRiskCiRun> _decodeCiRuns(Object? value) {
+  if (value is! Map<String, dynamic> || value['workflow_runs'] is! List) {
+    _usage('CI runs payload must contain workflow_runs.');
+  }
+  return (value['workflow_runs'] as List)
+      .map((item) {
+        if (item is! Map<String, dynamic>) {
+          _usage('Every CI run must be an object.');
+        }
+        final updatedAt = item['updated_at'] is String
+            ? DateTime.tryParse(item['updated_at'] as String)
+            : null;
+        if (item['id'] is! int ||
+            item['run_attempt'] is! int ||
+            updatedAt == null ||
+            item['head_sha'] is! String ||
+            item['event'] is! String ||
+            item['path'] is! String ||
+            item['status'] is! String ||
+            (item['conclusion'] != null && item['conclusion'] is! String)) {
+          _usage('CI run fields are malformed.');
+        }
+        return HighRiskCiRun(
+          id: item['id'] as int,
+          runAttempt: item['run_attempt'] as int,
+          updatedAt: updatedAt,
+          headSha: item['head_sha'] as String,
+          event: item['event'] as String,
+          path: item['path'] as String,
+          status: item['status'] as String,
+          conclusion: item['conclusion'] as String?,
+        );
+      })
+      .toList(growable: false);
 }

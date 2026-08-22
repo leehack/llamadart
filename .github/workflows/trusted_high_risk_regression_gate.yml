@@ -19,6 +19,7 @@ on:
     types: [in_progress, completed]
 
 permissions:
+  actions: read
   contents: read
   pull-requests: read
   statuses: write
@@ -38,7 +39,12 @@ jobs:
     if: >-
       (github.event_name == 'pull_request_target' &&
       github.event.pull_request.base.ref == 'main') ||
-      github.event_name == 'workflow_run'
+      (github.event_name == 'workflow_run' &&
+      (github.event.workflow_run.event == 'pull_request' ||
+      github.event.workflow_run.event == 'pull_request_review' ||
+      github.event.workflow_run.event == 'pull_request_review_comment') &&
+      github.event.workflow_run.pull_requests[0].number != null &&
+      github.event.workflow_run.pull_requests[0].base.ref == 'main')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -83,6 +89,37 @@ jobs:
 
       - name: Set up Dart
         uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260 # v1
+
+      - name: Collect trusted-base protected evidence paths
+        id: protected
+        shell: bash
+        run: |
+          set -euo pipefail
+          output="$RUNNER_TEMP/protected-evidence-paths.txt"
+          {
+            jq -r '.compiledGrammarTests[]' .github/high-risk-policy.json
+            if [[ -d .github/high-risk-evidence ]]; then
+              while IFS= read -r -d '' manifest; do
+                jq -r '
+                  [
+                    .productionEvidence.positiveTests[]?,
+                    .productionEvidence.negativeTests[]?,
+                    .productionEvidence.adversarialTests[]?,
+                    .productionEvidence.deletionSensitivityTests[]?,
+                    .structuredOutput.compiledAcceptanceTests[]?,
+                    .structuredOutput.compiledRejectionTests[]?,
+                    .structuredOutput.schemaDirectedTypeTests[]?,
+                    .structuredOutput.partialFinalStreamingTests[]?,
+                    .structuredOutput.toolChoiceThinkingTests[]?,
+                    .structuredOutput.upstreamParityTests[]?
+                  ] | .[] | select(type == "string")
+                ' "$manifest"
+              done < <(
+                find .github/high-risk-evidence -type f -name '*.json' -print0
+              )
+            fi
+          } | LC_ALL=C sort -u > "$output"
+          echo "file=$output" >> "$GITHUB_OUTPUT"
 
       - name: Resolve live PR state and rename-safe changed files
         id: state
@@ -140,7 +177,10 @@ jobs:
             > "$RUNNER_TEMP/high-risk-changed-files.txt"
           jq -r '
             .[][] |
-            select(.status == "removed" or .status == "renamed") |
+            select(
+              .status == "removed" or .status == "deleted" or
+              .status == "renamed"
+            ) |
             if .status == "renamed" then .previous_filename else .filename end
           ' \
             "$RUNNER_TEMP/pull-files-pages.json" \
@@ -153,6 +193,11 @@ jobs:
           ahead="$(jq -r '.ahead_by' "$RUNNER_TEMP/compare.json")"
           jq -n --slurpfile pull "$RUNNER_TEMP/pull-request.json" \
             '{pull_request: $pull[0]}' > "$RUNNER_TEMP/trusted-event.json"
+          jq -j '.body // ""' "$RUNNER_TEMP/pull-request.json" \
+            > "$RUNNER_TEMP/pr-body.txt"
+          pr_body_digest="$(
+            sha256sum "$RUNNER_TEMP/pr-body.txt" | awk '{print $1}'
+          )"
           {
             echo "base_sha=$base_sha"
             echo "head_sha=$head_sha"
@@ -162,6 +207,7 @@ jobs:
             echo "changed_files=$RUNNER_TEMP/high-risk-changed-files.txt"
             echo "deleted_files=$RUNNER_TEMP/high-risk-deleted-files.txt"
             echo "event_path=$RUNNER_TEMP/trusted-event.json"
+            echo "pr_body_digest=$pr_body_digest"
           } >> "$GITHUB_OUTPUT"
 
       - name: Fetch evidence manifest as untrusted data
@@ -195,13 +241,14 @@ jobs:
             exit 1
           fi
 
-      - name: Require a successful exact-head CI result
+      - name: Require latest successful exact-head CI and parity artifact
         id: ci
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
           HEAD_SHA: ${{ steps.state.outputs.head_sha }}
+          EVIDENCE_FILE: ${{ steps.evidence.outputs.file }}
         run: |
           set -euo pipefail
           gh api --method GET \
@@ -218,19 +265,50 @@ jobs:
                   .event == "pull_request" and
                   .path == ".github/workflows/ci.yml"
                 )] |
-              sort_by(.id) | last // empty
+              sort_by(.updated_at, .run_attempt, .id) | last // empty
             ' "$RUNNER_TEMP/exact-head-ci-runs.json"
           )"
           run_id="$(jq -r '.id // empty' <<< "$latest_run")"
+          run_attempt="$(jq -r '.run_attempt // empty' <<< "$latest_run")"
           run_status="$(jq -r '.status // empty' <<< "$latest_run")"
           conclusion="$(jq -r '.conclusion // empty' <<< "$latest_run")"
           if [[ ! "$run_id" =~ ^[1-9][0-9]*$ ]] ||
+             [[ ! "$run_attempt" =~ ^[1-9][0-9]*$ ]] ||
              [[ "$run_status" != "completed" ]] ||
              [[ "$conclusion" != "success" ]]; then
             echo "The latest exact-head CI run must succeed." >&2
             exit 1
           fi
-          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          parity_file="$RUNNER_TEMP/upstream-parity-ci-evidence.json"
+          : > "$parity_file"
+          if [[ -n "$EVIDENCE_FILE" ]] &&
+             jq -e '.structuredOutput != null' "$EVIDENCE_FILE" > /dev/null; then
+            artifact_name="high-risk-upstream-parity-$HEAD_SHA"
+            gh api "repos/$REPOSITORY/actions/runs/$run_id/artifacts?per_page=100" \
+              > "$RUNNER_TEMP/exact-head-ci-artifacts.json"
+            mapfile -t artifact_ids < <(
+              jq -r --arg name "$artifact_name" '
+                .artifacts[] |
+                select(.name == $name and .expired == false) | .id
+              ' "$RUNNER_TEMP/exact-head-ci-artifacts.json"
+            )
+            if (( ${#artifact_ids[@]} != 1 )); then
+              echo "Exact-head CI must publish one upstream parity artifact." >&2
+              exit 1
+            fi
+            gh api \
+              "repos/$REPOSITORY/actions/artifacts/${artifact_ids[0]}/zip" \
+              > "$RUNNER_TEMP/upstream-parity-ci-evidence.zip"
+            unzip -p "$RUNNER_TEMP/upstream-parity-ci-evidence.zip" \
+              upstream-parity-ci-evidence.json > "$parity_file"
+            jq -e 'type == "object"' "$parity_file" > /dev/null
+          fi
+          {
+            echo "run_id=$run_id"
+            echo "run_attempt=$run_attempt"
+            echo "runs_file=$RUNNER_TEMP/exact-head-ci-runs.json"
+            echo "parity_file=$parity_file"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Query unresolved review threads
         id: threads
@@ -299,8 +377,8 @@ jobs:
           EVIDENCE_FILE: ${{ steps.evidence.outputs.file }}
         run: |
           set -euo pipefail
-          verified="$RUNNER_TEMP/verified-upstream-refs.json"
-          printf '[]\n' > "$verified"
+          verified="$RUNNER_TEMP/verified-upstream-commits.json"
+          printf '{}\n' > "$verified"
           if [[ -n "$EVIDENCE_FILE" ]] &&
              jq -e '
                .upstreamRefs |
@@ -313,12 +391,16 @@ jobs:
              ' "$EVIDENCE_FILE" > /dev/null; then
             pinned="$(jq -r '.upstreamRefs.pinned' "$EVIDENCE_FILE")"
             current="$(jq -r '.upstreamRefs.current' "$EVIDENCE_FILE")"
-            gh api "repos/ggml-org/llama.cpp/commits/$pinned" --jq '.sha' \
-              > /dev/null
-            gh api "repos/ggml-org/llama.cpp/commits/$current" --jq '.sha' \
-              > /dev/null
-            jq -n --arg pinned "$pinned" --arg current "$current" \
-              '[$pinned, $current]' > "$verified"
+            pinned_sha="$(
+              gh api "repos/ggml-org/llama.cpp/commits/$pinned" --jq '.sha'
+            )"
+            current_sha="$(
+              gh api "repos/ggml-org/llama.cpp/commits/$current" --jq '.sha'
+            )"
+            [[ "$pinned_sha" =~ ^[0-9a-f]{40}$ ]]
+            [[ "$current_sha" =~ ^[0-9a-f]{40}$ ]]
+            jq -n --arg pinned "$pinned_sha" --arg current "$current_sha" \
+              '{pinned: $pinned, current: $current}' > "$verified"
           fi
           echo "file=$verified" >> "$GITHUB_OUTPUT"
 
@@ -331,6 +413,8 @@ jobs:
           THREAD_COUNT: ${{ steps.threads.outputs.count }}
           REVIEWS_FILE: ${{ steps.reviews.outputs.file }}
           EVIDENCE_FILE: ${{ steps.evidence.outputs.file }}
+          CI_RUNS_FILE: ${{ steps.ci.outputs.runs_file }}
+          PARITY_FILE: ${{ steps.ci.outputs.parity_file }}
         run: |
           set -euo pipefail
           {
@@ -344,6 +428,14 @@ jobs:
               "$FILES_FILE"
             printf '%s\n' "$THREAD_COUNT"
             jq -cS 'sort_by(.id)' "$REVIEWS_FILE"
+            jq -cS --arg head "${{ steps.state.outputs.head_sha }}" '
+              [.workflow_runs[] |
+                select(
+                  .head_sha == $head and .event == "pull_request" and
+                  .path == ".github/workflows/ci.yml"
+                )] | sort_by(.updated_at, .run_attempt, .id) | last
+            ' "$CI_RUNS_FILE"
+            if [[ -s "$PARITY_FILE" ]]; then jq -cS . "$PARITY_FILE"; else printf 'null\n'; fi
             if [[ -n "$EVIDENCE_FILE" ]]; then
               jq -cS . "$EVIDENCE_FILE"
             else
@@ -376,7 +468,12 @@ jobs:
           AHEAD: ${{ steps.state.outputs.ahead }}
           UNRESOLVED_THREADS: ${{ steps.threads.outputs.count }}
           REVIEWS_FILE: ${{ steps.reviews.outputs.file }}
-          VERIFIED_UPSTREAM_REFS: ${{ steps.upstream.outputs.file }}
+          VERIFIED_UPSTREAM_COMMITS: ${{ steps.upstream.outputs.file }}
+          COMPILED_GRAMMAR_POLICY: .github/high-risk-policy.json
+          PROTECTED_EVIDENCE_PATHS: ${{ steps.protected.outputs.file }}
+          CI_RUNS_FILE: ${{ steps.ci.outputs.runs_file }}
+          PARITY_FILE: ${{ steps.ci.outputs.parity_file }}
+          PR_BODY_DIGEST: ${{ steps.state.outputs.pr_body_digest }}
           SNAPSHOT_DIGEST: ${{ steps.snapshot.outputs.digest }}
           GRAPHQL_QUERY: >-
             query($owner:String!, $name:String!, $number:Int!) {
@@ -433,6 +530,10 @@ jobs:
               --jq '.content' | base64 --decode \
               > "$RUNNER_TEMP/live-high-risk-evidence.json"
           fi
+          gh api --method GET \
+            "repos/$REPOSITORY/actions/workflows/ci.yml/runs" \
+            -f event=pull_request -f head_sha="$HEAD_SHA" -f per_page=100 \
+            > "$RUNNER_TEMP/live-exact-head-ci-runs.json"
           {
             jq -cS '{
               body, changed_files, user: .user.login,
@@ -444,6 +545,14 @@ jobs:
               "$RUNNER_TEMP/live-pull-files-pages.json"
             printf '%s\n' "$live_threads"
             jq -cS . "$RUNNER_TEMP/live-high-risk-reviews.json"
+            jq -cS --arg head "$HEAD_SHA" '
+              [.workflow_runs[] |
+                select(
+                  .head_sha == $head and .event == "pull_request" and
+                  .path == ".github/workflows/ci.yml"
+                )] | sort_by(.updated_at, .run_attempt, .id) | last
+            ' "$RUNNER_TEMP/live-exact-head-ci-runs.json"
+            if [[ -s "$PARITY_FILE" ]]; then jq -cS . "$PARITY_FILE"; else printf 'null\n'; fi
             if [[ -n "$EVIDENCE_FILE" ]]; then
               jq -cS . "$RUNNER_TEMP/live-high-risk-evidence.json"
             else
@@ -468,22 +577,55 @@ jobs:
             --ahead "$AHEAD"
             --unresolved-threads "$UNRESOLVED_THREADS"
             --reviews "$REVIEWS_FILE"
-            --verified-upstream-refs "$VERIFIED_UPSTREAM_REFS"
+            --pr-body-digest "$PR_BODY_DIGEST"
+            --verified-upstream-commits "$VERIFIED_UPSTREAM_COMMITS"
+            --compiled-grammar-policy "$COMPILED_GRAMMAR_POLICY"
+            --protected-evidence-paths "$PROTECTED_EVIDENCE_PATHS"
+            --ci-runs "$CI_RUNS_FILE"
           )
           if [[ -n "$EVIDENCE_FILE" ]]; then
             args+=(--evidence "$EVIDENCE_FILE" --evidence-path "$EVIDENCE_PATH")
           fi
+          if [[ -s "$PARITY_FILE" ]]; then
+            args+=(--upstream-parity-ci-evidence "$PARITY_FILE")
+          fi
           dart tool/testing/enforce_high_risk_pr_contract.dart "${args[@]}"
 
       - name: Publish exact-head required status
-        if: always() && steps.event.outputs.head_sha != ''
+        if: >-
+          always() && !cancelled() &&
+          steps.event.outputs.head_sha != '' &&
+          steps.snapshot.outputs.digest != ''
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
           HEAD_SHA: ${{ steps.event.outputs.head_sha }}
+          BASE_SHA: ${{ steps.state.outputs.base_sha }}
+          PR_NUMBER: ${{ steps.event.outputs.pr_number }}
+          HEAD_REPOSITORY: ${{ steps.state.outputs.head_repo }}
+          EVIDENCE_FILE: ${{ steps.evidence.outputs.file }}
+          EVIDENCE_PATH: ${{ steps.evidence.outputs.path }}
+          PARITY_FILE: ${{ steps.ci.outputs.parity_file }}
+          SNAPSHOT_DIGEST: ${{ steps.snapshot.outputs.digest }}
           ENFORCEMENT_OUTCOME: ${{ steps.enforce.outcome }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          GRAPHQL_QUERY: >-
+            query($owner:String!, $name:String!, $number:Int!) {
+              repository(owner:$owner, name:$name) {
+                pullRequest(number:$number) {
+                  reviewThreads(first:100) {
+                    nodes { isResolved }
+                    pageInfo { hasNextPage }
+                  }
+                }
+              }
+            }
+          THREADS_JQ: >-
+            if .data.repository.pullRequest.reviewThreads.pageInfo.hasNextPage
+            then error("more than 100 review threads; audit pagination")
+            else [.data.repository.pullRequest.reviewThreads.nodes[] |
+            select(.isResolved == false)] | length end
         run: |
           set -euo pipefail
           state=failure
@@ -491,6 +633,95 @@ jobs:
           if [[ "$ENFORCEMENT_OUTCOME" == 'success' ]]; then
             state=success
             description='Trusted high-risk evidence accepted'
+          fi
+          gh api "repos/$REPOSITORY/pulls/$PR_NUMBER" \
+            > "$RUNNER_TEMP/final-live-pull-request.json"
+          final_head="$(jq -r '.head.sha' "$RUNNER_TEMP/final-live-pull-request.json")"
+          [[ "$final_head" == "$HEAD_SHA" ]]
+          final_base="$(
+            gh api "repos/$REPOSITORY/git/ref/heads/main" --jq '.object.sha'
+          )"
+          [[ "$final_base" == "$BASE_SHA" ]]
+          gh api --paginate --slurp \
+            "repos/$REPOSITORY/pulls/$PR_NUMBER/files?per_page=100" \
+            > "$RUNNER_TEMP/final-live-pull-files-pages.json"
+          owner="${REPOSITORY%%/*}"
+          name="${REPOSITORY#*/}"
+          final_threads="$(
+            gh api graphql \
+              -f owner="$owner" -f name="$name" -F number="$PR_NUMBER" \
+              -f query="$GRAPHQL_QUERY" --jq "$THREADS_JQ"
+          )"
+          gh api --paginate --slurp \
+            "repos/$REPOSITORY/pulls/$PR_NUMBER/reviews?per_page=100" \
+            | jq '[.[][] | {
+                id,
+                user: {login: .user.login},
+                author_association,
+                commit_id,
+                state,
+                body
+              }] | sort_by(.id)' \
+            > "$RUNNER_TEMP/final-live-high-risk-reviews.json"
+          if [[ -n "$EVIDENCE_FILE" ]]; then
+            gh api \
+              "repos/$HEAD_REPOSITORY/contents/$EVIDENCE_PATH?ref=$HEAD_SHA" \
+              --jq '.content' | base64 --decode \
+              > "$RUNNER_TEMP/final-live-high-risk-evidence.json"
+          fi
+          gh api --method GET \
+            "repos/$REPOSITORY/actions/workflows/ci.yml/runs" \
+            -f event=pull_request -f head_sha="$HEAD_SHA" -f per_page=100 \
+            > "$RUNNER_TEMP/final-live-exact-head-ci-runs.json"
+          {
+            jq -cS '{
+              body, changed_files, user: .user.login,
+              head: .head.sha, head_repo: .head.repo.full_name, base: .base.sha
+            }' "$RUNNER_TEMP/final-live-pull-request.json"
+            jq -cS '[.[][] | {
+              filename, previous_filename, status, sha
+            }] | sort_by(.filename, .previous_filename, .status, .sha)' \
+              "$RUNNER_TEMP/final-live-pull-files-pages.json"
+            printf '%s\n' "$final_threads"
+            jq -cS . "$RUNNER_TEMP/final-live-high-risk-reviews.json"
+            jq -cS --arg head "$HEAD_SHA" '
+              [.workflow_runs[] |
+                select(
+                  .head_sha == $head and .event == "pull_request" and
+                  .path == ".github/workflows/ci.yml"
+                )] | sort_by(.updated_at, .run_attempt, .id) | last
+            ' "$RUNNER_TEMP/final-live-exact-head-ci-runs.json"
+            if [[ -s "$PARITY_FILE" ]]; then jq -cS . "$PARITY_FILE"; else printf 'null\n'; fi
+            if [[ -n "$EVIDENCE_FILE" ]]; then
+              jq -cS . "$RUNNER_TEMP/final-live-high-risk-evidence.json"
+            else
+              printf 'null\n'
+            fi
+          } > "$RUNNER_TEMP/final-live-high-risk-mutable-snapshot.txt"
+          final_digest="$(
+            sha256sum "$RUNNER_TEMP/final-live-high-risk-mutable-snapshot.txt" |
+              awk '{print $1}'
+          )"
+          if [[ "$final_digest" != "$SNAPSHOT_DIGEST" ]]; then
+            echo "Mutable PR or CI evidence changed before status publication." >&2
+            exit 1
+          fi
+          run_status="$(
+            gh api "repos/$REPOSITORY/actions/runs/$GITHUB_RUN_ID" --jq '.status'
+          )"
+          if [[ "$run_status" != "in_progress" ]]; then
+            echo "Canceled or completed evaluations cannot publish status." >&2
+            exit 1
+          fi
+          latest_owner="$(
+            gh api "repos/$REPOSITORY/commits/$HEAD_SHA/status" \
+              --jq '.statuses |
+                map(select(.context == "High-Risk Regression Gate / Trusted exact-head adversarial evidence")) |
+                max_by(.id) | [.state, .target_url] | @tsv'
+          )"
+          if [[ "$latest_owner" != $'pending\t'"$RUN_URL" ]]; then
+            echo "A newer trusted evaluation owns the exact-head status."
+            exit 0
           fi
           gh api --method POST "repos/$REPOSITORY/statuses/$HEAD_SHA" \
             -f state="$state" \

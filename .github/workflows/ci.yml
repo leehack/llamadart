@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [ main ]
 
+permissions:
+  contents: read
+  pull-requests: read
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
@@ -242,6 +246,134 @@ jobs:
 
       - name: Run Browser tests
         run: dart test -p chrome --exclude-tags local-only
+
+  high-risk-upstream-parity:
+    name: High-Risk Upstream Parity Evidence
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Locate structured-output evidence manifest
+        id: evidence
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          gh api --paginate --slurp \
+            "repos/$REPOSITORY/pulls/$PR_NUMBER/files?per_page=100" \
+            | jq -r '
+                .[][] | .filename |
+                select(test("^\\.github/high-risk-evidence/[0-9]+\\.json$"))
+              ' > "$RUNNER_TEMP/high-risk-manifests.txt"
+          mapfile -t manifests < "$RUNNER_TEMP/high-risk-manifests.txt"
+          if (( ${#manifests[@]} == 1 )) &&
+             jq -e '.structuredOutput != null' "${manifests[0]}" > /dev/null; then
+            echo "required=true" >> "$GITHUB_OUTPUT"
+            echo "manifest=${manifests[0]}" >> "$GITHUB_OUTPUT"
+          else
+            echo "required=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup Flutter
+        if: steps.evidence.outputs.required == 'true'
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Install dependencies
+        if: steps.evidence.outputs.required == 'true'
+        run: flutter pub get
+
+      - name: Run pinned and current upstream parity
+        if: steps.evidence.outputs.required == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MANIFEST: ${{ steps.evidence.outputs.manifest }}
+        run: |
+          set -euo pipefail
+          for role in pinned current; do
+            ref="$(jq -r --arg role "$role" '.upstreamRefs[$role]' "$MANIFEST")"
+            source_dir="$RUNNER_TEMP/llama-cpp-$role"
+            build_dir="$RUNNER_TEMP/llama-cpp-chat-tests-$role"
+            LLAMA_CPP_REF="$ref" \
+            LLAMA_CPP_SOURCE_DIR="$source_dir" \
+              ./tool/testing/prepare_llama_cpp_source.sh
+            LLAMA_CPP_REF="$ref" \
+            LLAMA_CPP_SOURCE_DIR="$source_dir" \
+            LLAMA_CPP_CHAT_TEST_SOURCE_DIR="$source_dir" \
+            LLAMA_CPP_CHAT_TEST_BUILD_DIR="$build_dir" \
+            LLAMA_CPP_TEMPLATES_DIR="$source_dir/models/templates" \
+            REQUIRE_LLAMA_CPP_TEMPLATES=1 \
+              ./tool/testing/run_template_parity_suites.sh
+            while IFS= read -r test_path; do
+              [[ "$test_path" =~ ^test/.+_test\.dart$ ]]
+              LLAMA_CPP_REF="$ref" \
+              LLAMA_CPP_SOURCE_DIR="$source_dir" \
+              LLAMA_CPP_CHAT_TEST_SOURCE_DIR="$source_dir" \
+              LLAMA_CPP_CHAT_TEST_BUILD_DIR="$build_dir" \
+              LLAMA_CPP_TEMPLATES_DIR="$source_dir/models/templates" \
+              REQUIRE_LLAMA_CPP_TEMPLATES=1 \
+                dart test -p vm -j 1 "$test_path"
+            done < <(
+              jq -r '.structuredOutput.upstreamParityTests[]' "$MANIFEST"
+            )
+          done
+
+      - name: Build exact-head upstream parity evidence
+        if: steps.evidence.outputs.required == 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          MANIFEST: ${{ steps.evidence.outputs.manifest }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          pinned="$(jq -r '.upstreamRefs.pinned' "$MANIFEST")"
+          current="$(jq -r '.upstreamRefs.current' "$MANIFEST")"
+          pinned_sha="$(
+            gh api "repos/ggml-org/llama.cpp/commits/$pinned" --jq '.sha'
+          )"
+          current_sha="$(
+            gh api "repos/ggml-org/llama.cpp/commits/$current" --jq '.sha'
+          )"
+          jq -n \
+            --arg head "$HEAD_SHA" \
+            --argjson run_id "$RUN_ID" \
+            --argjson run_attempt "$RUN_ATTEMPT" \
+            --arg pinned "$pinned_sha" \
+            --arg current "$current_sha" \
+            --slurpfile manifest "$MANIFEST" \
+            '{
+              schema: 1,
+              headSha: $head,
+              runId: $run_id,
+              runAttempt: $run_attempt,
+              result: "PASS",
+              command: "./tool/testing/run_template_parity_suites.sh",
+              canonicalUpstreamCommits: {
+                pinned: $pinned,
+                current: $current
+              },
+              tests: $manifest[0].structuredOutput.upstreamParityTests
+            }' > upstream-parity-ci-evidence.json
+
+      - name: Upload exact-head upstream parity evidence
+        if: steps.evidence.outputs.required == 'true'
+        uses: actions/upload-artifact@v6
+        with:
+          name: high-risk-upstream-parity-${{ github.event.pull_request.head.sha }}
+          path: upstream-parity-ci-evidence.json
+          if-no-files-found: error
+          retention-days: 14
 
   web-chat-contract:
     name: Web Chat Contract

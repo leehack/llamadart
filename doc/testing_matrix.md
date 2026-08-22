@@ -82,6 +82,7 @@ exact lines:
 High-risk QA task: <same stable task reference as the PR and manifest>
 Head: <exact 40-character PR head>
 Base: <exact current 40-character base>
+PR body SHA-256: <digest reported by the trusted gate for that exact body>
 Verdict: PASS
 ```
 
@@ -94,9 +95,17 @@ Update the PR state block and checked-in
 `.github/high-risk-evidence/*.json` manifest after the final push or base
 movement. The manifest binds positive, negative, adversarial, and
 deletion-sensitive proof to durable test files changed by that PR. The
+approval binds the QA verdict to the exact PR-body digest evaluated by the
+trusted workflow. Tests named by landed manifests and compiled-grammar tests
+listed in the CODEOWNERS-protected `.github/high-risk-policy.json` registry
+remain protected inputs; deleting or renaming one requires fresh high-risk
+evidence. The latest exact-head CI attempt controls readiness, so a rerun can
+revoke an older success.
 `High-Risk Regression Gate` runs policy only from the trusted default branch,
 reads PR files through read-only APIs, includes both sides of renames, checks
-the exact SHA/base distance and live unresolved review threads, and fails
+the exact SHA/base distance and live unresolved review threads, and performs a
+final live mutable-input digest and status-owner check immediately before
+publishing its result. It fails
 closed on missing or weak evidence. It never executes PR-supplied code.
 A known PR-caused P1 is always a merge blocker.
 
@@ -131,6 +140,13 @@ the production path:
   prefixes; and
 - run pinned and current upstream template/parser parity.
 
+Structured-output manifests must bind upstream parity to a durable test changed
+by the same PR. Exact-head CI runs the parity command as ordinary unprivileged
+PR validation and uploads a data-only artifact carrying the run ID/attempt,
+head, changed tests, and both canonical resolved upstream commits. The trusted
+default-branch gate downloads but never executes that artifact, resolves the
+declared refs independently, and rejects aliases that resolve to the same SHA.
+
 Use the closest affected-family real model or artifact. If exact weights are
 unavailable, name every unavailable family and substitute primary upstream
 emissions plus durable fixtures. A Qwen or other unrelated representative
@@ -138,9 +154,9 @@ smoke may prove the shared generation pipeline, but must be labeled
 `pipeline-only` and cannot claim affected-format validation. This distinction
 keeps large model downloads targeted instead of making default CI fragile.
 
-The gate encodes the failure classes discovered after PR #391: envelope/name
-grammar mismatches (#394/#399), escaped/schema-exact/delimiter rejection gaps
-(#395/#396/#407), partial protocol leakage and final content loss
+The gate encodes the failure classes discovered after PR #391: escaped and
+quoted envelope/name grammar mismatches (#394/#399), schema-exact, delimiter,
+and wrong-type rejection gaps (#395/#396/#407), partial protocol leakage and final content loss
 (#397/#398), thinking/tool-choice prefix failures (#402/#406), and empty or
 schema-directed type loss (#408/#410). Post-merge QA still runs, but must not be
 the first planned adversarial review. A PR-caused P1 found after merge stops

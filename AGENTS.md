@@ -290,8 +290,9 @@ paths are changed by the same PR, plus a blocking-only QA task independent from
 the implementation task. It also binds acceptance to a successful exact-head
 `CI` workflow run and resolves declared llama.cpp refs in the owning upstream
 repository. A non-author repository owner, member, or collaborator must submit a current-head
-GitHub approval whose structured attestation binds that task to the exact head
-and base; PR-authored `PASS` prose is not sufficient. Inspect production call
+GitHub approval whose structured attestation binds that task to the exact head,
+base, and trusted SHA-256 digest of the evaluated PR body; PR-authored `PASS`
+prose is not sufficient. Inspect production call
 sites, require positive and negative tests that fail if the production branch
 is deleted/bypassed/miswired,
 and report zero known PR-caused P1 regressions. Structured-output changes must

@@ -52,15 +52,18 @@ The PASS verdict also requires a current-head GitHub approval from a reviewer
 other than the PR author. Its review body must contain exact `High-risk QA
 task:`, `Head:`, `Base:`, and `Verdict: PASS` lines as documented in the test
 matrix; PR-body or manifest self-attestation is insufficient.
+The approval must also include the exact `PR body SHA-256:` line reported by
+the trusted gate, so edits to evaluated evidence invalidate the verdict.
 High-risk PRs must add exactly one `.github/high-risk-evidence/*.json` manifest
 that references durable tests changed in the same PR. Structured-output
 manifests bind compiled grammar acceptance/rejection, schema-directed types,
 partial/final streaming, tool choice/thinking, upstream refs/parity, and the
 exact affected-family inventory. Prose alone is not evidence.
-For a standard PR, set only High-risk classification to `standard`; the
-remaining fields may stay as comments.
+For a standard PR, leave the default High-risk classification as `standard`;
+the remaining fields may stay as comments.
 -->
-- **High-risk classification:** <!-- `standard` or `high-risk` -->
+<!-- Change the value below to `high-risk` when required. -->
+- **High-risk classification:** standard
 - **Evidence manifest:** <!-- Exact `.github/high-risk-evidence/<issue>.json` path. -->
 - **Implementation task:** <!-- Stable task/review identifier. -->
 - **Independent blocking QA task:** <!-- Must differ from implementation task. -->

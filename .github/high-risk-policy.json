@@ -1,0 +1,6 @@
+{
+  "schema": 1,
+  "compiledGrammarTests": [
+    "test/integration/core/grammar/grammar_regression_test.dart"
+  ]
+}

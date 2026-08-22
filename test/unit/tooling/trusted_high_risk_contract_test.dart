@@ -1,6 +1,7 @@
 @TestOn('vm')
 library;
 
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:test/test.dart';
@@ -12,10 +13,14 @@ const _base = '2222222222222222222222222222222222222222';
 const _implementationTask =
     'codex://tasks/root/structured_output_implementation';
 const _qaTask = 'codex://tasks/root/structured_output_independent_qa';
+const _bodyDigest =
+    'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const _evidencePath = '.github/high-risk-evidence/394.json';
 const _grammarTest =
-    'test/e2e/template/specialized_tool_grammar_validation_e2e_test.dart';
+    'test/integration/core/grammar/grammar_regression_test.dart';
 const _parserTest = 'test/unit/core/template/chat_template_engine_test.dart';
+const _pinnedCommit = '3333333333333333333333333333333333333333';
+const _currentCommit = '4444444444444444444444444444444444444444';
 const _state = HighRiskPrState(
   headSha: _head,
   baseSha: _base,
@@ -23,6 +28,7 @@ const _state = HighRiskPrState(
   ahead: 6,
   unresolvedThreads: 0,
   authorLogin: 'implementation-author',
+  prBodyDigest: _bodyDigest,
   reviews: [
     HighRiskReview(
       id: 1,
@@ -34,6 +40,7 @@ const _state = HighRiskPrState(
           '''High-risk QA task: $_qaTask
 Head: $_head
 Base: $_base
+PR body SHA-256: $_bodyDigest
 Verdict: PASS''',
     ),
   ],
@@ -45,6 +52,33 @@ const _structuredFiles = <String>[
   _parserTest,
   _evidencePath,
 ];
+
+List<HighRiskCiRun> _successfulCiRuns() => [
+  HighRiskCiRun(
+    id: 100,
+    runAttempt: 1,
+    updatedAt: DateTime.utc(2026, 8, 22, 12),
+    headSha: _head,
+    event: 'pull_request',
+    path: '.github/workflows/ci.yml',
+    status: 'completed',
+    conclusion: 'success',
+  ),
+];
+
+Map<String, dynamic> _validParityCiEvidence() => {
+  'schema': 1,
+  'headSha': _head,
+  'runId': 100,
+  'runAttempt': 1,
+  'result': 'PASS',
+  'command': './tool/testing/run_template_parity_suites.sh',
+  'canonicalUpstreamCommits': {
+    'pinned': _pinnedCommit,
+    'current': _currentCommit,
+  },
+  'tests': [_parserTest],
+};
 
 String _validBody() =>
     '''
@@ -64,6 +98,7 @@ String _validBody() =>
 Map<String, dynamic> _validEvidence() => {
   'schema': 1,
   'issue': 394,
+  'knownPrCausedP1Regressions': 0,
   'surfaces': ['structuredOutput', 'regressionPolicy'],
   'implementationTask': _implementationTask,
   'independentQaTask': _qaTask,
@@ -90,11 +125,17 @@ Map<String, dynamic> _validEvidence() => {
     'partialFinalStreamingTests': [_parserTest],
     'toolChoiceThinkingTests': [_parserTest],
     'upstreamParityCommand': './tool/testing/run_template_parity_suites.sh',
+    'upstreamParityTests': [_parserTest],
     'requiredCoverage': [
       'unknown-field',
       'missing-field',
       'mismatched-type',
+      'wrong-type',
       'malformed-output',
+      'escaped-name',
+      'quoted-name',
+      'schema-exact',
+      'delimiter',
       'string',
       'number',
       'boolean',
@@ -114,6 +155,31 @@ Map<String, dynamic> _validEvidence() => {
   },
 };
 
+Map<String, dynamic> _validPolicyEvidence() => {
+  'schema': 1,
+  'issue': 419,
+  'knownPrCausedP1Regressions': 0,
+  'surfaces': ['regressionPolicy'],
+  'implementationTask': _implementationTask,
+  'independentQaTask': _qaTask,
+  'productionEvidence': {
+    'positiveTests': ['test/unit/tooling/trusted_high_risk_contract_test.dart'],
+    'negativeTests': ['test/unit/tooling/trusted_high_risk_contract_test.dart'],
+    'adversarialTests': [
+      'test/unit/tooling/trusted_high_risk_contract_test.dart',
+    ],
+    'deletionSensitivityTests': [
+      'test/unit/tooling/trusted_high_risk_contract_test.dart',
+    ],
+  },
+  'affectedFamilies': <String>[],
+  'affectedFamilyEvidence': <String, dynamic>{},
+  'upstreamRefs': <dynamic>[],
+  'notApplicableReason':
+      'Policy-only bootstrap; it does not change a runtime or model family.',
+  'structuredOutput': null,
+};
+
 HighRiskContractResult _validate({
   String? body,
   Iterable<String> files = _structuredFiles,
@@ -121,7 +187,11 @@ HighRiskContractResult _validate({
   Map<String, dynamic>? evidence,
   String? evidencePath = _evidencePath,
   HighRiskPrState state = _state,
-  Set<String>? verifiedUpstreamRefs,
+  Map<String, String>? verifiedUpstreamCommits,
+  Set<String> compiledGrammarTests = const {_grammarTest},
+  Set<String> protectedEvidencePaths = const {},
+  List<HighRiskCiRun>? ciRuns,
+  Map<String, dynamic>? upstreamParityCiEvidence,
 }) => validateHighRiskContract(
   changedFiles: files,
   deletedFiles: deletedFiles,
@@ -129,9 +199,14 @@ HighRiskContractResult _validate({
   state: state,
   evidence: evidence ?? _validEvidence(),
   evidencePath: evidencePath,
-  verifiedUpstreamRefs:
-      verifiedUpstreamRefs ??
-      const {'b10549', 'd775b8967a46d8beb110d444aa3b8938179e0dd8'},
+  verifiedUpstreamCommits:
+      verifiedUpstreamCommits ??
+      const {'pinned': _pinnedCommit, 'current': _currentCommit},
+  compiledGrammarTests: compiledGrammarTests,
+  protectedEvidencePaths: protectedEvidencePaths,
+  ciRuns: ciRuns ?? _successfulCiRuns(),
+  upstreamParityCiEvidence:
+      upstreamParityCiEvidence ?? _validParityCiEvidence(),
 );
 
 String _replaceField(String body, String label, String replacement) =>
@@ -139,6 +214,21 @@ String _replaceField(String body, String label, String replacement) =>
       RegExp('^- \\*\\*$label:\\*\\*.*\$', multiLine: true),
       '- **$label:** $replacement',
     );
+
+HighRiskContractResult _validatePolicyEvidence(Map<String, dynamic> evidence) {
+  const evidencePath = '.github/high-risk-evidence/419.json';
+  final body = _replaceField(_validBody(), 'Evidence manifest', evidencePath);
+  return _validate(
+    body: body,
+    files: const [
+      '.github/workflows/ci.yml',
+      'test/unit/tooling/trusted_high_risk_contract_test.dart',
+      evidencePath,
+    ],
+    evidence: evidence,
+    evidencePath: evidencePath,
+  );
+}
 
 void main() {
   group('high-risk classifier', () {
@@ -167,6 +257,8 @@ void main() {
         'example/chat_app/web/index.html',
         'lib/src/platform/io/model_download_manager_io.dart',
         'lib/src/core/models/config/gpu_backend.dart',
+        'lib/src/core/cache_policy.dart',
+        'test/unit/core/cache_policy_test.dart',
         'lib/llamadart.dart',
         'pubspec.yaml',
         'hook/build.dart',
@@ -182,6 +274,22 @@ void main() {
       );
     });
 
+    test('protects tests referenced by trusted-base evidence manifests', () {
+      const protected = 'test/unit/core/cache_policy_test.dart';
+      final assessment = assessHighRiskFiles(
+        const [protected],
+        protectedEvidencePaths: const {protected},
+      );
+
+      expect(
+        assessment.surfaces,
+        containsAll(const {
+          HighRiskSurface.backendRuntime,
+          HighRiskSurface.regressionPolicy,
+        }),
+      );
+    });
+
     test('covers release and regression enforcement surfaces', () {
       final assessment = assessHighRiskFiles(const [
         '.github/workflows/docs_version_cut.yml',
@@ -192,7 +300,7 @@ void main() {
         'tool/testing/native_prompt_reuse_parity.dart',
         'tool/testing/run_local_e2e.dart',
         'tool/testing/run_template_parity_suites.sh',
-        'test/e2e/template/specialized_tool_grammar_validation_e2e_test.dart',
+        'test/integration/core/grammar/grammar_regression_test.dart',
         'test/unit/tooling/high_risk_pr_contract_test.dart',
         '.github/high-risk-evidence/419.json',
       ]);
@@ -215,6 +323,17 @@ void main() {
       ]);
 
       expect(assessment.isHighRisk, isFalse);
+    });
+
+    test('untouched standard PR template passes standard classification', () {
+      final result = validateHighRiskContract(
+        changedFiles: const ['website/docs/guides/embeddings.md'],
+        body: File('.github/pull_request_template.md').readAsStringSync(),
+        state: _state,
+      );
+
+      expect(result.assessment.isHighRisk, isFalse);
+      expect(result.errors, isEmpty);
     });
 
     test('preserves exact path spelling instead of normalizing aliases', () {
@@ -272,12 +391,44 @@ void main() {
         ahead: 6,
         unresolvedThreads: 0,
         authorLogin: 'implementation-author',
+        prBodyDigest: _bodyDigest,
         reviews: [],
       );
 
       expect(
         _validate(state: noApproval).errors.join('\n'),
         contains('current-head APPROVED review'),
+      );
+    });
+
+    test('binds independent QA approval to the evaluated PR body digest', () {
+      final review = _state.reviews.single;
+      final state = HighRiskPrState(
+        headSha: _state.headSha,
+        baseSha: _state.baseSha,
+        behind: _state.behind,
+        ahead: _state.ahead,
+        unresolvedThreads: _state.unresolvedThreads,
+        authorLogin: _state.authorLogin,
+        prBodyDigest: _bodyDigest,
+        reviews: [
+          HighRiskReview(
+            id: review.id,
+            authorLogin: review.authorLogin,
+            authorAssociation: review.authorAssociation,
+            commitSha: review.commitSha,
+            state: review.state,
+            body: review.body.replaceFirst(
+              _bodyDigest,
+              'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+            ),
+          ),
+        ],
+      );
+
+      expect(
+        _validate(state: state).errors.join('\n'),
+        contains('PR-body digest'),
       );
     });
 
@@ -335,6 +486,7 @@ Verdict: PASS''',
           ahead: 6,
           unresolvedThreads: 0,
           authorLogin: 'implementation-author',
+          prBodyDigest: _bodyDigest,
           reviews: [review],
         );
         expect(
@@ -352,6 +504,7 @@ Verdict: PASS''',
         ahead: 6,
         unresolvedThreads: 0,
         authorLogin: 'implementation-author',
+        prBodyDigest: _bodyDigest,
         reviews: const [
           HighRiskReview(
             id: 10,
@@ -363,6 +516,7 @@ Verdict: PASS''',
                 '''High-risk QA task: $_qaTask
 Head: $_head
 Base: $_base
+PR body SHA-256: $_bodyDigest
 Verdict: PASS''',
           ),
           HighRiskReview(
@@ -396,6 +550,7 @@ Verdict: PASS''',
           ahead: 6,
           unresolvedThreads: 0,
           authorLogin: 'implementation-author',
+          prBodyDigest: _bodyDigest,
           reviews: [],
         ),
       ).errors.join('\n');
@@ -420,6 +575,7 @@ Verdict: PASS''',
           ahead: 6,
           unresolvedThreads: 1,
           authorLogin: 'implementation-author',
+          prBodyDigest: _bodyDigest,
           reviews: [],
         ),
       );
@@ -427,6 +583,45 @@ Verdict: PASS''',
       expect(
         result.errors,
         contains('High-risk PRs cannot pass with unresolved review threads.'),
+      );
+    });
+
+    test('a newer rerun revokes an older exact-head CI success', () {
+      final runs = [
+        ..._successfulCiRuns(),
+        HighRiskCiRun(
+          id: 100,
+          runAttempt: 2,
+          updatedAt: DateTime.utc(2026, 8, 22, 13),
+          headSha: _head,
+          event: 'pull_request',
+          path: '.github/workflows/ci.yml',
+          status: 'completed',
+          conclusion: 'failure',
+        ),
+      ];
+
+      expect(selectLatestExactHeadCiRun(runs, _head)?.runAttempt, 2);
+      expect(
+        _validate(ciRuns: runs).errors,
+        contains('The latest exact-head CI run must succeed.'),
+      );
+    });
+
+    test('blocks deletion or rename of prior trusted evidence tests', () {
+      const protected = 'test/unit/core/cache_policy_test.dart';
+      final result = _validate(
+        files: const [protected],
+        deletedFiles: const [protected],
+        protectedEvidencePaths: const {protected},
+      );
+
+      expect(result.assessment.isHighRisk, isTrue);
+      expect(
+        result.errors,
+        contains(
+          'Tests referenced by trusted-base evidence cannot be deleted or renamed.',
+        ),
       );
     });
 
@@ -446,6 +641,15 @@ Verdict: PASS''',
       expect(
         _validate(evidence: evidence).errors,
         contains('Manifest issue must match its numeric evidence filename.'),
+      );
+    });
+
+    test('binds the zero-regression claim to exact-head evidence', () {
+      final evidence = _validEvidence()..['knownPrCausedP1Regressions'] = 1;
+
+      expect(
+        _validate(evidence: evidence).errors,
+        contains('Manifest must report zero known PR-caused P1 regressions.'),
       );
     });
 
@@ -515,6 +719,26 @@ Verdict: PASS''',
 
       expect(errors, contains('exactly equal affectedFamilies'));
     });
+
+    test('accepts an exactly empty family-evidence object for N/A scope', () {
+      expect(_validatePolicyEvidence(_validPolicyEvidence()).errors, isEmpty);
+    });
+
+    test('rejects malformed or stale family evidence for N/A scope', () {
+      for (final invalid in <Object?>[
+        const <String>[],
+        const {'stale-family': 'real-model'},
+      ]) {
+        final evidence = _validPolicyEvidence()
+          ..['affectedFamilyEvidence'] = invalid;
+        expect(
+          _validatePolicyEvidence(evidence).errors,
+          contains(
+            'Empty affectedFamilies requires affectedFamilyEvidence to be an exactly empty object.',
+          ),
+        );
+      }
+    });
   });
 
   group('PR #391 / issues #394-#410 failure classes', () {
@@ -541,9 +765,29 @@ Verdict: PASS''',
       },
     );
 
+    test('compiled grammar eligibility comes from the trusted registry', () {
+      final evidence = _validEvidence();
+      final structured = evidence['structuredOutput']! as Map<String, dynamic>;
+      structured['compiledAcceptanceTests'] = [_parserTest];
+      structured['compiledRejectionTests'] = [_parserTest];
+
+      expect(
+        _validate(
+          evidence: evidence,
+          compiledGrammarTests: const {_parserTest},
+        ).errors,
+        isEmpty,
+      );
+    });
+
     final requiredCoverage = <String, String>{
       '#394/#399 envelope and quoted-name acceptance': 'unknown-field',
+      '#394 escaped-name acceptance': 'escaped-name',
+      '#399 quoted-name acceptance': 'quoted-name',
       '#395/#396/#407 schema rejection and delimiters': 'mismatched-type',
+      '#395 schema-exact rejection': 'schema-exact',
+      '#396 delimiter rejection': 'delimiter',
+      '#407 wrong-type rejection': 'wrong-type',
       '#397/#398 partial leakage and final preservation': 'rollback',
       '#402/#406 required-tool reasoning prefixes': 'thinking-prefix',
       '#408/#410 zero arguments and typed empty values': 'zero-argument',
@@ -592,6 +836,38 @@ Verdict: PASS''',
       );
     });
 
+    test('rejects different ref spellings resolving to the same commit', () {
+      expect(
+        _validate(
+          verifiedUpstreamCommits: const {
+            'pinned': _pinnedCommit,
+            'current': _pinnedCommit,
+          },
+        ).errors,
+        contains(
+          'Pinned and current upstream refs must resolve to distinct canonical commits.',
+        ),
+      );
+    });
+
+    test('binds upstream parity to changed tests and exact CI artifact', () {
+      final staleArtifact = _validParityCiEvidence()..['runAttempt'] = 2;
+      expect(
+        _validate(upstreamParityCiEvidence: staleArtifact).errors,
+        contains(
+          'Upstream parity CI artifact must exactly bind the successful CI run, head, canonical refs, command, and changed durable tests.',
+        ),
+      );
+
+      final evidence = _validEvidence();
+      final structured = evidence['structuredOutput']! as Map<String, dynamic>;
+      structured['upstreamParityTests'] = ['test/unit/not_changed_test.dart'];
+      expect(
+        _validate(evidence: evidence).errors.join('\n'),
+        contains('not changed by the same PR'),
+      );
+    });
+
     test('requires exact repository-qualified refs resolved by trust code', () {
       final wrongRepository = _validEvidence();
       (wrongRepository['upstreamRefs']! as Map<String, dynamic>)['repository'] =
@@ -602,8 +878,8 @@ Verdict: PASS''',
       );
 
       expect(
-        _validate(verifiedUpstreamRefs: const {}).errors.join('\n'),
-        contains('resolve both upstream refs'),
+        _validate(verifiedUpstreamCommits: const {}).errors.join('\n'),
+        contains('canonical upstream commits'),
       );
     });
   });
@@ -637,10 +913,21 @@ Verdict: PASS''',
       );
       expect(workflow, contains('pulls/\$PR_NUMBER/files?per_page=100'));
       expect(workflow, contains('.previous_filename'));
-      expect(workflow, contains('status == "removed" or .status == "renamed"'));
+      expect(workflow, contains('.status == "removed"'));
+      expect(workflow, contains('.status == "deleted"'));
+      expect(workflow, contains('.status == "renamed"'));
       expect(workflow, contains('Changed paths cannot contain CR or LF.'));
       expect(workflow, contains('persist-credentials: false'));
       expect(workflow, contains('statuses: write'));
+      expect(workflow, contains('actions: read'));
+      expect(
+        workflow,
+        contains("github.event.workflow_run.event == 'pull_request'"),
+      );
+      expect(
+        workflow,
+        isNot(contains("github.event.workflow_run.event != 'push'")),
+      );
       expect(
         workflow,
         contains('Publish pending status for the event PR head'),
@@ -670,16 +957,40 @@ Verdict: PASS''',
         contains('Resolve declared upstream refs in the owning repository'),
       );
       expect(workflow, contains(r'repos/ggml-org/llama.cpp/commits/$pinned'));
-      expect(workflow, contains('Require a successful exact-head CI result'));
+      expect(
+        workflow,
+        contains('Require latest successful exact-head CI and parity artifact'),
+      );
       expect(
         workflow,
         contains(r'repos/$REPOSITORY/actions/workflows/ci.yml/runs'),
       );
+      final ciWorkflow = File('.github/workflows/ci.yml').readAsStringSync();
+      expect(ciWorkflow, contains('High-Risk Upstream Parity Evidence'));
+      expect(ciWorkflow, contains('.structuredOutput.upstreamParityTests[]'));
+      expect(ciWorkflow, contains('high-risk-upstream-parity-'));
       expect(workflow, contains(r'.head_sha == $head'));
-      expect(workflow, contains('sort_by(.id) | last // empty'));
-      expect(workflow, contains('latest exact-head CI run must succeed'));
+      expect(
+        workflow,
+        contains('sort_by(.updated_at, .run_attempt, .id) | last // empty'),
+      );
+      expect(workflow, contains('The latest exact-head CI run must succeed'));
       expect(workflow, contains(r'[[ "$run_status" != "completed" ]]'));
       expect(workflow, contains(r'statuses/$HEAD_SHA'));
+      expect(
+        workflow,
+        contains(
+          'Mutable PR or CI evidence changed before status publication.',
+        ),
+      );
+      expect(
+        workflow,
+        contains('Canceled or completed evaluations cannot publish status.'),
+      );
+      expect(
+        workflow,
+        contains('A newer trusted evaluation owns the exact-head status.'),
+      );
       expect(workflow, contains(r'live_head="$('));
       expect(workflow, contains(r'live_base="$('));
       expect(
@@ -723,6 +1034,13 @@ Verdict: PASS''',
       expect(matrix, contains('review submission/dismissal'));
       expect(matrix, contains('review-comment'));
       expect(template, contains('Evidence manifest'));
+      expect(template, contains('**High-risk classification:** standard'));
+      final policy = File('.github/high-risk-policy.json').readAsStringSync();
+      expect(policy, contains('compiledGrammarTests'));
+      final decodedPolicy = jsonDecode(policy) as Map<String, dynamic>;
+      for (final path in decodedPolicy['compiledGrammarTests'] as List) {
+        expect(File(path as String).existsSync(), isTrue, reason: path);
+      }
     });
   });
 }
