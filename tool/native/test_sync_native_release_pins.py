@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import sys
 import tempfile
 from pathlib import Path
@@ -11,6 +12,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from sync_native_release_pins import (  # noqa: E402
     ReleaseError,
+    LEGACY_SCHEMA1_RELEASES,
+    atomic_write_many,
+    litert_lm_runtime_version,
     normalize_litert_lm_release_tag,
     validate_litert_lm_transition,
     validate_litert_lm_release_manifest,
@@ -23,6 +27,29 @@ DEVELOPMENT_TAG = "gba8249987394"
 
 
 class SyncNativeReleasePinsTest(unittest.TestCase):
+    def test_sync_workflow_captures_every_litert_pin_surface(self) -> None:
+        workflow = (
+            Path(__file__).resolve().parents[2]
+            / ".github"
+            / "workflows"
+            / "sync_native_bindings.yml"
+        ).read_text(encoding="utf-8")
+        self.assertIn("tool/macos_litert_lm_prepare_app.sh", workflow)
+        self.assertIn("allow_litert_channel_transition:", workflow)
+        self.assertIn("allow_litert_development_line_transition:", workflow)
+        self.assertIn("--allow-litert-channel-transition", workflow)
+        self.assertIn("--allow-litert-development-line-transition", workflow)
+        allowlist = (
+            Path(__file__).resolve().parent
+            / "fixtures"
+            / "legacy_release_allowlist.json"
+        )
+        self.assertEqual(
+            hashlib.sha256(allowlist.read_bytes()).hexdigest(),
+            "23ba56a9b11d60410b45398e5b3410f67ffca53d282deac74dd44102d15ec674",
+        )
+        self.assertEqual(len(LEGACY_SCHEMA1_RELEASES), 13)
+
     def test_litert_tag_grammar_preserves_new_and_legacy_forms(self) -> None:
         expected = {
             "0.16.1": "v0.16.1",
@@ -39,6 +66,8 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
                 self.assertEqual(normalize_litert_lm_release_tag(value), normalized)
         with self.assertRaises(ReleaseError):
             normalize_litert_lm_release_tag("main")
+        self.assertEqual(litert_lm_runtime_version("v0.16.1-2"), "0.16.1-2")
+        self.assertEqual(litert_lm_runtime_version(DEVELOPMENT_TAG), DEVELOPMENT_TAG)
 
     def test_transition_rejects_stable_and_rebuild_rollbacks(self) -> None:
         validate_litert_lm_transition("v0.16.0-native.2", "v0.16.0-3")
@@ -50,103 +79,91 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
             validate_litert_lm_transition("v0.16.1", "v0.16.0-3")
         with self.assertRaisesRegex(ReleaseError, "rollback"):
             validate_litert_lm_transition(f"{DEVELOPMENT_TAG}-2", DEVELOPMENT_TAG)
+        with self.assertRaisesRegex(ReleaseError, "ordinal alias"):
+            validate_litert_lm_transition("v0.16.0-native.2", "v0.16.0-2")
 
-    def test_schema_2_manifest_is_required_for_development_and_validated(self) -> None:
+    def test_channel_and_development_line_transitions_require_explicit_approval(self) -> None:
+        with self.assertRaisesRegex(ReleaseError, "stable/development"):
+            validate_litert_lm_transition("v0.16.0", DEVELOPMENT_TAG)
+        validate_litert_lm_transition(
+            "v0.16.0",
+            DEVELOPMENT_TAG,
+            allow_channel_transition=True,
+        )
+        with self.assertRaisesRegex(ReleaseError, "development line"):
+            validate_litert_lm_transition(DEVELOPMENT_TAG, "g111111111111")
+        validate_litert_lm_transition(
+            DEVELOPMENT_TAG,
+            "g111111111111",
+            allow_development_line_transition=True,
+        )
+
+    def test_atomic_write_rolls_back_every_file_after_partial_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            first = root / "a.txt"
+            second = root / "b.txt"
+            first.write_text("old-a", encoding="utf-8")
+            second.write_text("old-b", encoding="utf-8")
+            new_replace_count = 0
+
+            def flaky_replace(source: Path, destination: Path) -> None:
+                nonlocal new_replace_count
+                if ".new-" in source.name:
+                    new_replace_count += 1
+                    if new_replace_count == 2:
+                        raise OSError("injected replacement failure")
+                source.replace(destination)
+
+            with self.assertRaisesRegex(ReleaseError, "Atomic pin update failed"):
+                atomic_write_many(
+                    {first: "new-a", second: "new-b"},
+                    replace_func=flaky_replace,
+                )
+            self.assertEqual(first.read_text(encoding="utf-8"), "old-a")
+            self.assertEqual(second.read_text(encoding="utf-8"), "old-b")
+
+    def test_owner_generated_schema_2_manifest_is_consumed_exactly(self) -> None:
+        owner_fixture = (
+            Path(__file__).resolve().parent
+            / "fixtures"
+            / "litert_lm_schema2_owner_manifest.json"
+        )
+        self.assertEqual(
+            hashlib.sha256(owner_fixture.read_bytes()).hexdigest(),
+            "b5187d34e5e4b3021d262ff237025b73364411654161a4d8fddc9dabaf100536",
+        )
+        manifest = json.loads(owner_fixture.read_text(encoding="utf-8"))
+        tag = manifest["release"]["tag"]
         required_bundles = [
-            "android-arm64",
-            "android-x64",
-            "ios-arm64",
-            "ios-arm64-sim",
-            "linux-arm64",
-            "linux-x64",
-            "macos-arm64",
-            "macos-x64",
-            "windows-x64",
+            f"{item['platform']}-{item['arch']}" for item in manifest["platforms"]
         ]
-        platforms = []
-        artifacts = []
-        release_assets = [{"name": "manifest.json"}]
-        for bundle in required_bundles:
-            if bundle.endswith("arm64-sim"):
-                platform, arch = "ios", "arm64-sim"
-            else:
-                platform, arch = bundle.rsplit("-", 1)
-            artifact_path = f"bin/{platform}/{arch}/runtime.bin"
-            release_asset = (
-                "litert-lm-native-runtime-"
-                f"{platform}-{arch}-{DEVELOPMENT_TAG}.tar.gz"
-            )
-            platforms.append(
+        release_assets = [
+            {
+                "name": "manifest.json",
+                "digest": "sha256:" + hashlib.sha256(owner_fixture.read_bytes()).hexdigest(),
+            },
+            *(
                 {
-                    "platform": platform,
-                    "arch": arch,
-                    "releaseAsset": release_asset,
-                    "artifactPaths": [artifact_path],
+                    "name": item["releaseAsset"],
+                    "digest": "sha256:" + "f" * 64,
                 }
-            )
-            artifacts.append(
-                {
-                    "platform": platform,
-                    "arch": arch,
-                    "path": artifact_path,
-                    "sha256": "a" * 64,
-                    "releaseTag": DEVELOPMENT_TAG,
-                    "upstreamCommit": UPSTREAM_COMMIT,
-                }
-            )
-            release_assets.append(
-                {"name": release_asset, "digest": "sha256:" + "f" * 64}
-            )
-        manifest = {
-            "schemaVersion": 2,
-            "release": {
-                "tag": DEVELOPMENT_TAG,
-                "channel": "development",
-                "kind": "commit",
-                "rebuild": 0,
-                "githubPrerelease": True,
-            },
-            "upstream": {
-                "repository": "google-ai-edge/LiteRT-LM",
-                "tag": None,
-                "commit": UPSTREAM_COMMIT,
-                "compatibilityTag": "v0.16.1",
-                "developmentIdentity": DEVELOPMENT_TAG,
-            },
-            "native": {
-                "repository": "leehack/litert-lm-native",
-                "commit": NATIVE_COMMIT,
-            },
-            "abi": {"streamProxyCallback": 1, "asrBridge": 1},
-            "capabilities": {
-                "textGeneration": True,
-                "streaming": True,
-                "asr": True,
-                "officialUpstreamAssets": False,
-            },
-            "platforms": platforms,
-            "artifacts": artifacts,
-            "realModelSmokes": [
-                self._smoke("linux", "x64"),
-                self._smoke("windows", "x64"),
-            ],
-        }
+                for item in manifest["platforms"]
+            ),
+        ]
         release = {
-            "tag_name": DEVELOPMENT_TAG,
-            "target_commitish": NATIVE_COMMIT,
+            "tag_name": tag,
+            "target_commitish": manifest["native"]["commit"],
             "assets": release_assets,
         }
         with tempfile.TemporaryDirectory() as temp:
             fixture_dir = Path(temp)
-            fixture = fixture_dir / (
-                "leehack__litert-lm-native__"
-                f"{DEVELOPMENT_TAG}__manifest.json"
-            )
-            fixture.write_text(json.dumps(manifest), encoding="utf-8")
+            fixture = fixture_dir / f"leehack__litert-lm-native__{tag}__manifest.json"
+            fixture.write_bytes(owner_fixture.read_bytes())
             validate_litert_lm_release_manifest(
                 release,
                 repo="leehack/litert-lm-native",
-                tag=DEVELOPMENT_TAG,
+                tag=tag,
                 release_json_dir=str(fixture_dir),
                 required_bundles=required_bundles,
             )
@@ -156,37 +173,53 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
                 validate_litert_lm_release_manifest(
                     release,
                     repo="leehack/litert-lm-native",
-                    tag=DEVELOPMENT_TAG,
+                    tag=tag,
                     release_json_dir=str(fixture_dir),
                     required_bundles=required_bundles,
                 )
             release_assets[1]["digest"] = "sha256:" + "f" * 64
 
-            manifest["realModelSmokes"] = []
+            del manifest["capabilities"]["streamChunkAccessors"]
             fixture.write_text(json.dumps(manifest), encoding="utf-8")
-            with self.assertRaisesRegex(ReleaseError, "smoke evidence"):
+            release_assets[0]["digest"] = "sha256:" + hashlib.sha256(
+                fixture.read_bytes()
+            ).hexdigest()
+            with self.assertRaisesRegex(ReleaseError, "owner schema 2"):
                 validate_litert_lm_release_manifest(
                     release,
                     repo="leehack/litert-lm-native",
-                    tag=DEVELOPMENT_TAG,
+                    tag=tag,
                     release_json_dir=str(fixture_dir),
                     required_bundles=required_bundles,
                 )
 
-    def test_known_legacy_schema_1_manifest_remains_consumable(self) -> None:
+    def test_known_legacy_schema_1_manifest_requires_exact_immutable_evidence(self) -> None:
         tag = "v0.16.0-native.2"
-        release = {"tag_name": tag, "assets": [{"name": "manifest.json"}]}
-        manifest = {
-            "schemaVersion": 1,
-            "release": {"tag": tag},
-            "upstream": {"tag": "v0.16.0", "commit": None},
+        owner_fixture = (
+            Path(__file__).resolve().parent
+            / "fixtures"
+            / "v0.16.0-native.2-manifest.json"
+        )
+        legacy_identity = LEGACY_SCHEMA1_RELEASES[tag]
+        release = {
+            "tag_name": tag,
+            "tag_commit_sha": "baef0ee4459582778fdfbe5a7e3b214775f2f99c",
+            "draft": False,
+            "prerelease": False,
+            "assets": [
+                {
+                    "name": name,
+                    "digest": digest,
+                }
+                for name, digest in legacy_identity["assets"].items()
+            ],
         }
         with tempfile.TemporaryDirectory() as temp:
             fixture = (
                 Path(temp)
                 / f"leehack__litert-lm-native__{tag}__manifest.json"
             )
-            fixture.write_text(json.dumps(manifest), encoding="utf-8")
+            fixture.write_bytes(owner_fixture.read_bytes())
             validate_litert_lm_release_manifest(
                 release,
                 repo="leehack/litert-lm-native",
@@ -195,10 +228,29 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
                 required_bundles=["linux-x64"],
             )
 
+            fixture.write_text(
+                json.dumps({"schemaVersion": 1, "release": {"tag": tag}}),
+                encoding="utf-8",
+            )
+            manifest_asset = next(
+                asset for asset in release["assets"] if asset["name"] == "manifest.json"
+            )
+            manifest_asset["digest"] = "sha256:" + hashlib.sha256(
+                fixture.read_bytes()
+            ).hexdigest()
+            with self.assertRaisesRegex(ReleaseError, "immutable allowlist"):
+                validate_litert_lm_release_manifest(
+                    release,
+                    repo="leehack/litert-lm-native",
+                    tag=tag,
+                    release_json_dir=temp,
+                    required_bundles=["linux-x64"],
+                )
+
         future_tag = "v99.0.0-native.1"
         future_release = {
             "tag_name": future_tag,
-            "assets": [{"name": "manifest.json"}],
+            "assets": [{"name": "manifest.json", "digest": "sha256:" + "a" * 64}],
         }
         future_manifest = {
             "schemaVersion": 1,
@@ -210,6 +262,9 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
                 / f"leehack__litert-lm-native__{future_tag}__manifest.json"
             )
             fixture.write_text(json.dumps(future_manifest), encoding="utf-8")
+            future_release["assets"][0]["digest"] = "sha256:" + hashlib.sha256(
+                fixture.read_bytes()
+            ).hexdigest()
             with self.assertRaisesRegex(ReleaseError, "schema 2"):
                 validate_litert_lm_release_manifest(
                     future_release,
@@ -218,26 +273,6 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
                     release_json_dir=temp,
                     required_bundles=["linux-x64"],
                 )
-
-    @staticmethod
-    def _smoke(platform: str, arch: str) -> dict[str, object]:
-        return {
-            "id": "litert_lm_asr_moonshine",
-            "platform": platform,
-            "arch": arch,
-            "result": "pass",
-            "upstreamCommit": UPSTREAM_COMMIT,
-            "nativeCommit": NATIVE_COMMIT,
-            "backend": "cpu",
-            "abiVersion": 1,
-            "transcript": "how are you doing",
-            "expect": "how are you",
-            "library": {"sha256": "1" * 64},
-            "model": {"sha256": "2" * 64},
-            "tokenizer": {"sha256": "3" * 64},
-            "fixture": {"sha256": "4" * 64},
-        }
-
 
 if __name__ == "__main__":
     unittest.main()

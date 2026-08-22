@@ -16,6 +16,16 @@ on:
         description: 'LiteRT tag: vX.Y.Z, vX.Y.Z-N, g<12hex>[-N], legacy -native.N, latest, or keep'
         required: true
         default: 'keep'
+      allow_litert_channel_transition:
+        description: 'Approve owner-validated stable/development ancestry transition'
+        required: false
+        default: false
+        type: boolean
+      allow_litert_development_line_transition:
+        description: 'Approve owner-validated transition to another g<commit> line'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -53,12 +63,20 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ALLOW_NIGHTLY_CHANNEL: ${{ inputs.allow_nightly_channel }}
+          ALLOW_LITERT_CHANNEL_TRANSITION: ${{ inputs.allow_litert_channel_transition }}
+          ALLOW_LITERT_DEVELOPMENT_LINE_TRANSITION: ${{ inputs.allow_litert_development_line_transition }}
           NATIVE_TAG: ${{ inputs.native_tag }}
           LITERT_LM_TAG: ${{ inputs.litert_lm_tag }}
         run: |
           transition_args=()
           if [[ "${ALLOW_NIGHTLY_CHANNEL}" == "true" ]]; then
             transition_args+=(--allow-legacy-tag)
+          fi
+          if [[ "${ALLOW_LITERT_CHANNEL_TRANSITION}" == "true" ]]; then
+            transition_args+=(--allow-litert-channel-transition)
+          fi
+          if [[ "${ALLOW_LITERT_DEVELOPMENT_LINE_TRANSITION}" == "true" ]]; then
+            transition_args+=(--allow-litert-development-line-transition)
           fi
           python3 tool/native/sync_native_release_pins.py \
             --llama-cpp-tag "${NATIVE_TAG}" \
@@ -79,6 +97,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           ALLOW_NIGHTLY_CHANNEL: ${{ inputs.allow_nightly_channel }}
+          ALLOW_LITERT_CHANNEL_TRANSITION: ${{ inputs.allow_litert_channel_transition }}
+          ALLOW_LITERT_DEVELOPMENT_LINE_TRANSITION: ${{ inputs.allow_litert_development_line_transition }}
           RESOLVED_NATIVE_TAG: ${{ steps.sync_headers.outputs.resolved_tag }}
           LITERT_LM_TAG: ${{ inputs.litert_lm_tag }}
         run: |
@@ -86,10 +106,16 @@ jobs:
           if [[ "${ALLOW_NIGHTLY_CHANNEL}" == "true" ]]; then
             transition_args+=(--allow-legacy-tag)
           fi
+          if [[ "${ALLOW_LITERT_CHANNEL_TRANSITION}" == "true" ]]; then
+            transition_args+=(--allow-litert-channel-transition)
+          fi
+          if [[ "${ALLOW_LITERT_DEVELOPMENT_LINE_TRANSITION}" == "true" ]]; then
+            transition_args+=(--allow-litert-development-line-transition)
+          fi
           python3 tool/native/sync_native_release_pins.py \
             --llama-cpp-tag "${RESOLVED_NATIVE_TAG}" \
-            "${transition_args[@]}" \
-            --litert-lm-tag "${LITERT_LM_TAG}"
+            --litert-lm-tag "${LITERT_LM_TAG}" \
+            "${transition_args[@]}"
 
       - name: Create pull request
         uses: peter-evans/create-pull-request@v8
@@ -130,6 +156,7 @@ jobs:
             packages/llamadart_litert_lm_flutter/CHANGELOG.md
             packages/llamadart_litert_lm_flutter/README.md
             lib/src/backends/litert_lm/litert_lm_runtime.dart
+            tool/macos_litert_lm_prepare_app.sh
             lib/src/backends/llama_cpp/bindings.dart
             CHANGELOG.md
             README.md
