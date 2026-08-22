@@ -98,6 +98,7 @@ void main() {
       final assessment = assessHighRiskFiles(const [
         'website/docs/guides/embeddings.md',
         'test/unit/core/models/model_test.dart',
+        'test/unit/core/template/chat_template_engine_test.dart',
       ]);
 
       expect(assessment.isHighRisk, isFalse);

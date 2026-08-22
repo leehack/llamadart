@@ -71,7 +71,7 @@ HighRiskAssessment assessHighRiskFiles(Iterable<String> files) {
         path.startsWith('lib/src/core/grammar/') ||
         path == 'lib/src/core/engine/chat_completion_stream_parser.dart' ||
         path == 'lib/src/core/engine/chat_template_renderer.dart' ||
-        path.contains('/chat_template')) {
+        (path.startsWith('lib/src/') && path.contains('/chat_template'))) {
       surfaces.add(HighRiskSurface.structuredOutput);
     }
     if (path.startsWith('lib/src/backends/') ||
