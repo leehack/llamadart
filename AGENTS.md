@@ -299,10 +299,11 @@ mandatory, but is never the first planned adversarial pass. If it finds a
 PR-caused P1, stop lower-priority merge work, file causally accurate issues,
 and prepare one cohesive recovery PR before resuming feature work.
 
-Repository rules must require the trusted gate and conversation resolution on
-`main`. A policy bootstrap PR is only part of that setup: keep its issue open
-until the workflow is on `main`, the required check/ruleset is configured, and
-a follow-up high-risk PR proves the protected exact-head path.
+Repository rules must require the trusted gate, conversation resolution, and
+strict up-to-date-with-`main` status checks. A policy bootstrap PR is only part
+of that setup: keep its issue open until the workflow is on `main`, all three
+rules are configured, and a follow-up high-risk PR proves the protected
+exact-head path after a deliberate base advance.
 
 For docs-only PRs, state that runtime behavior is unchanged and list docs
 validation. If implementation scope changed, reduce and state the scope rather

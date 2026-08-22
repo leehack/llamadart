@@ -85,13 +85,16 @@ closed on missing or weak evidence. It never executes PR-supplied code.
 A known PR-caused P1 is always a merge blocker.
 
 The workflow is enforceable only when repository settings require its
-`Trusted exact-head adversarial evidence` status check and require conversation
-resolution on `main`. Configure those rules after the bootstrap lands, then
-verify them with a high-risk test PR before closing the policy issue. Ready,
-review-request, and auto-merge transitions rerun the trusted check; code fixes
-also rerun it through `synchronize`. GitHub does not expose review-thread
-resolution as an Actions trigger, so the repository conversation-resolution
-rule is the merge-time authority for threads added after the last gate run.
+`Trusted exact-head adversarial evidence` status check, require conversation
+resolution, and require branches to be up to date with `main` before merging.
+Configure all three rules after the bootstrap lands, then verify them with a
+high-risk test PR, including a deliberate base advance, before closing the
+policy issue. Ready, review-request, and auto-merge transitions rerun the
+trusted check; code fixes also rerun it through `synchronize`. GitHub does not
+expose review-thread resolution as an Actions trigger, so the repository
+conversation-resolution rule is the merge-time authority for threads added
+after the last gate run. The strict up-to-date rule is the merge-time authority
+when `main` advances after the last successful gate run.
 
 For structured output, the independent pass must cover all of these axes in
 the production path:

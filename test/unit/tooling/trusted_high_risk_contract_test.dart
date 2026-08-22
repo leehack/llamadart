@@ -368,8 +368,10 @@ void main() {
       ).readAsStringSync();
 
       expect(agents, contains('treats pull-request files as untrusted data'));
-      expect(matrix, contains('status check and require conversation'));
+      expect(matrix, contains('status check, require conversation'));
       expect(matrix, contains('conversation-resolution'));
+      expect(matrix, contains('up to date with `main`'));
+      expect(matrix, contains('deliberate base advance'));
       expect(template, contains('Evidence manifest'));
     });
   });
