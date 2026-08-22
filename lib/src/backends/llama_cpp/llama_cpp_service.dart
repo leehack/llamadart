@@ -8229,11 +8229,15 @@ String _sanitizeStartupDiagnostic(String entry) {
       ':$controlCharacterClass*'
       '/$controlCharacterClass*'
       '/';
-  final normalizedUrlCandidates = entry.replaceAllMapped(
-    RegExp('$fragmentedHttpPrefix[^ ]*', caseSensitive: false),
+  final normalizedUrlPrefixes = entry.replaceAllMapped(
+    RegExp(fragmentedHttpPrefix, caseSensitive: false),
     (match) => match.group(0)!.replaceAll(controlCharacters, ''),
   );
-  final flattenedEntry = normalizedUrlCandidates
+  final normalizedUrlUserInfo = normalizedUrlPrefixes.replaceAllMapped(
+    RegExp(r'https?://(?:(?!https?://)[^ /?#])*@', caseSensitive: false),
+    (match) => match.group(0)!.replaceAll(controlCharacters, ''),
+  );
+  final flattenedEntry = normalizedUrlUserInfo
       .replaceAll(controlCharacters, ' ')
       .replaceAll(RegExp(r' {2,}'), ' ')
       .trim();

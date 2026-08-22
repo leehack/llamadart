@@ -674,7 +674,7 @@ void main() {
     test('diagnostics are single-line and redact credentialed URLs', () {
       expect(
         formatStartupDiagnostics(const <String>[
-          'failed at HTTPS:\n//user\u0085:pass@\u2028example.com/lib.so'
+          'failed at HTTPS:\n//user\u0085:pass@example.com/lib.so'
               '?token=secret#part',
           'next\u0000line\u0085more\u2028last\u2029line',
         ]),
@@ -694,6 +694,10 @@ void main() {
         ]),
         ', startupDiagnostics=['
         'https://safe.example/a,https://evil.example/b]',
+      );
+      expect(
+        formatStartupDiagnostics(const <String>['https://example.com\nfailed']),
+        ', startupDiagnostics=[https://example.com failed]',
       );
     });
 
@@ -780,7 +784,7 @@ void main() {
           service,
           'failed at '
           'https://safe.example/a,'
-          'HTTPS:\n//user\n:pass@\u2028example.com/libggml.so'
+          'HTTPS:\n//user\n:pass@example.com/libggml.so'
           '?token=secret#fragment',
         );
         _recordStartupDiagnosticForTesting(
