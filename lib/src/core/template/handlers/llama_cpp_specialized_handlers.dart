@@ -301,15 +301,42 @@ class KimiK3Handler extends _DirectJinjaHandler {
     final names = tools
         .map((tool) => ToolCallGrammarUtils.literal(tool.name))
         .join(' | ');
-    return '''
-root ::= "<|open|>tools<|sep|>" call+ "<|close|>tools<|sep|><|close|>message<|sep|>"
-call ::= "<|open|>call tool=\\"" tool-name "\\" index=\\"" [0-9]+ "\\"<|sep|>" argument* "<|close|>call<|sep|>"
-argument ::= "<|open|>argument key=\\"" identifier "\\" type=\\"" value-type "\\"<|sep|>" raw "<|close|>argument<|sep|>"
-tool-name ::= $names
-value-type ::= "string" | "number" | "boolean" | "null" | "object" | "array"
-identifier ::= [A-Za-z_] [A-Za-z0-9_.-]*
-raw ::= [^<]*
-''';
+    final converter = JsonSchemaConverter();
+    const objectSchema = <String, dynamic>{'type': 'object'};
+    converter.resolveRefs(objectSchema, objectSchema);
+    final objectRule = converter.visit(objectSchema, 'json-object');
+    final buffer = StringBuffer()
+      ..writeln(
+        'root ::= "<|open|>tools<|sep|>" call+ '
+        '"<|close|>tools<|sep|><|close|>message<|sep|>"',
+      )
+      ..writeln(
+        'call ::= "<|open|>call tool=\\"" tool-name '
+        '"\\" index=\\"" [0-9]+ "\\"<|sep|>" '
+        '(argument* | json-block) "<|close|>call<|sep|>"',
+      )
+      ..writeln(
+        'argument ::= "<|open|>argument key=\\"" identifier '
+        '"\\" type=\\"" value-type "\\"<|sep|>" raw '
+        '"<|close|>argument<|sep|>"',
+      )
+      ..writeln(
+        'json-block ::= "<|open|>json type=\\"object\\"<|sep|>" '
+        '$objectRule "<|close|>json<|sep|>"',
+      )
+      ..writeln('tool-name ::= $names')
+      ..writeln(
+        'value-type ::= "string" | "number" | "boolean" | "null" | '
+        '"object" | "array"',
+      )
+      ..writeln('identifier ::= [A-Za-z_] [A-Za-z0-9_.-]*')
+      ..writeln('raw ::= [^<]*');
+    final jsonRules = converter.rules.entries.toList(growable: false)
+      ..sort((a, b) => a.key.compareTo(b.key));
+    for (final entry in jsonRules) {
+      buffer.writeln('${entry.key} ::= ${entry.value}');
+    }
+    return buffer.toString();
   }
 }
 
@@ -613,8 +640,11 @@ class MuseGlimmerHandler extends _DirectJinjaHandler {
       } else if (parseToolCalls) {
         final parsed = _parseAtemCalls(body, calls.length);
         if (parsed == null) {
-          if (content.isNotEmpty) content.writeln();
-          content.write(body);
+          final terminator = match.group(3) ?? '';
+          if (!isPartial || terminator.isNotEmpty) {
+            if (content.isNotEmpty) content.writeln();
+            content.write(body);
+          }
         } else {
           calls.addAll(parsed);
         }

@@ -46,6 +46,17 @@ void main() {
       expect(_arguments(parsed), {'city': 'Seoul'});
     });
 
+    test('grammar permits the upstream raw JSON argument block', () {
+      final grammar = KimiK3Handler().buildGrammar([_weatherTool])!;
+
+      expect(grammar, contains('(argument* | json-block)'));
+      expect(
+        grammar,
+        contains(r'"<|open|>json type=\"object\"<|sep|>" json-object'),
+      );
+      expect(grammar, contains('char ::= '));
+    });
+
     test('preserves malformed tool markup instead of silently dropping it', () {
       const malformed =
           '<|open|>response<|sep|>On it.<|close|>response<|sep|>'
@@ -236,6 +247,18 @@ void main() {
       final parsed = MuseGlimmerHandler().parse(output);
       expect(parsed.toolCalls, isEmpty);
       expect(parsed.content, contains('broken'));
+    });
+
+    test('hides an incomplete tool channel while streaming', () {
+      const output =
+          ' to=user<|message|>On it.<|eom|>'
+          '<|start|>assistant to=weather<|message|>'
+          '<atem:function_calls>\n<atem:invoke name="weather">\n'
+          '<atem:parameter name="city">Seo';
+      final parsed = MuseGlimmerHandler().parse(output, isPartial: true);
+
+      expect(parsed.content, 'On it.');
+      expect(parsed.toolCalls, isEmpty);
     });
 
     test('lazy grammar activates only at the ATEM tool-call envelope', () {
