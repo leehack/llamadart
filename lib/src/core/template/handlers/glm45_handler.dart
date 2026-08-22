@@ -189,6 +189,7 @@ class Glm45Handler extends ChatTemplateHandler
     if (tools == null || tools.isEmpty) {
       return null;
     }
+    toolSchemas(tools);
 
     final toolChoiceRules = <String>[];
     final toolRules = <String>[];
@@ -229,7 +230,7 @@ class Glm45Handler extends ChatTemplateHandler
 
     return [
       'root ::= tool-call+',
-      'tool-call ::= "\\n<tool_call>" tool-choice "</tool_call>\\n"',
+      'tool-call ::= "\\n"? "<tool_call>" tool-choice "</tool_call>\\n"',
       toolChoiceRule,
       ...toolRules,
       'space ::= " "?',
@@ -373,11 +374,39 @@ class Glm45Handler extends ChatTemplateHandler
       }
     }
 
+    if (toolCalls.isNotEmpty && _containsGlmProtocolMarker(remaining)) {
+      return null;
+    }
+
     return _ExtractedToolCalls(
       toolCalls: toolCalls,
       remainingContent: remaining,
     );
   }
+}
+
+bool _containsGlmProtocolMarker(String input) {
+  const markers = <String>[
+    '<tool_call>',
+    '</tool_call>',
+    '<arg_key>',
+    '</arg_key>',
+    '<arg_value>',
+    '</arg_value>',
+  ];
+  for (final marker in markers) {
+    if (input.contains(marker.substring(0, marker.length - 1))) {
+      return true;
+    }
+  }
+  for (final marker in markers) {
+    for (var length = marker.length - 1; length >= 5; length--) {
+      if (input.endsWith(marker.substring(0, length))) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 ToolSchemaValueResult _decodeGlmSchemaText(
@@ -450,15 +479,24 @@ String _escapeGlmLiteralCharacter(String character) {
 }
 
 String _hideIncompleteToolCallBlock(String input) {
-  const marker = '<tool_call>';
-  final open = input.lastIndexOf(marker);
+  const toolCallMarker = '<tool_call>';
+  final open = input.lastIndexOf(toolCallMarker);
   final close = input.lastIndexOf('</tool_call>');
   if (open > close) {
     return input.substring(0, open);
   }
-  for (var length = 1; length < marker.length; length++) {
-    if (input.endsWith(marker.substring(0, length))) {
-      return input.substring(0, input.length - length);
+  for (final marker in const [
+    toolCallMarker,
+    '</tool_call>',
+    '<arg_key>',
+    '</arg_key>',
+    '<arg_value>',
+    '</arg_value>',
+  ]) {
+    for (var length = 1; length < marker.length; length++) {
+      if (input.endsWith(marker.substring(0, length))) {
+        return input.substring(0, input.length - length);
+      }
     }
   }
   return input;

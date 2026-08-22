@@ -1,10 +1,12 @@
 import 'dart:convert';
 
+import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
 import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:llamadart/src/core/models/tools/tool_param.dart';
 import 'package:llamadart/src/core/template/handlers/glm45_handler.dart';
+import 'package:llamadart/src/core/template/handlers/llama_cpp_specialized_handlers.dart';
 import 'package:llamadart/src/core/template/chat_format.dart';
 import 'package:llamadart/src/core/template/chat_template_engine.dart';
 import 'package:test/test.dart';
@@ -127,6 +129,105 @@ void main() {
       );
       expect(parsed.toolCalls, isEmpty, reason: invalid);
       expect(parsed.content, output, reason: invalid);
+    }
+  });
+
+  test('final GLM and Laguna parsing rolls back a truncated later call', () {
+    final tool = ToolDefinition(
+      name: 'inspect',
+      description: 'Inspect',
+      parameters: [ToolParam.string('code', required: true)],
+      handler: _noop,
+    );
+    const valid =
+        '<tool_call>inspect\n'
+        '<arg_key>code</arg_key><arg_value>first</arg_value>\n'
+        '</tool_call>';
+    const truncated =
+        '<tool_call>inspect\n'
+        '<arg_key>code</arg_key><arg_value>second';
+    const output = '$valid$truncated';
+
+    for (final format in [ChatFormat.glm45, ChatFormat.laguna]) {
+      for (final finalOutput in const [
+        output,
+        '$valid<tool_cal',
+        '$valid</arg_val',
+      ]) {
+        final parsed = ChatTemplateEngine.parse(
+          format.index,
+          finalOutput,
+          tools: [tool],
+        );
+        expect(parsed.toolCalls, isEmpty, reason: format.name);
+        expect(parsed.content, finalOutput, reason: format.name);
+      }
+
+      for (final partialOutput in const [
+        output,
+        '$valid<tool_cal',
+        '$valid</arg_val',
+      ]) {
+        final partial = ChatTemplateEngine.parse(
+          format.index,
+          partialOutput,
+          tools: [tool],
+          isPartial: true,
+        );
+        expect(partial.toolCalls, hasLength(1), reason: format.name);
+        expect(partial.content, isEmpty, reason: format.name);
+        expect(jsonDecode(partial.toolCalls.single.function!.arguments!), {
+          'code': 'first',
+        }, reason: format.name);
+      }
+    }
+  });
+
+  test('GLM and Laguna reject empty or duplicate tool identities eagerly', () {
+    final empty = ToolDefinition(
+      name: '',
+      description: 'Empty',
+      parameters: const [],
+      handler: _noop,
+    );
+    final duplicateA = ToolDefinition(
+      name: 'inspect',
+      description: 'First',
+      parameters: const [],
+      handler: _noop,
+    );
+    final duplicateB = ToolDefinition(
+      name: 'inspect',
+      description: 'Second',
+      parameters: const [],
+      handler: _noop,
+    );
+
+    final builders = <String? Function(List<ToolDefinition>?)>[
+      Glm45Handler().buildGrammar,
+      LagunaHandler().buildGrammar,
+    ];
+    for (final buildGrammar in builders) {
+      expect(
+        () => buildGrammar([empty]),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            contains('non-empty tool names'),
+          ),
+        ),
+      );
+      expect(
+        () => buildGrammar([duplicateA, duplicateB]),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            contains('unique tool names'),
+          ),
+        ),
+      );
     }
   });
 

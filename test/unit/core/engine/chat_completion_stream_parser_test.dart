@@ -189,6 +189,48 @@ void main() {
       expect(chunks.last.choices.single.finishReason, 'tool_calls');
     });
 
+    test('preserves MiniMax M3 schema types across split tokens', () async {
+      const namespace = ']<]minimax[>[';
+      const output =
+          '$namespace<tool_call>'
+          '$namespace<invoke name="inspect">'
+          '$namespace<code>123$namespace</code>'
+          '$namespace<options>$namespace</options>'
+          '$namespace<items>$namespace</items>'
+          '$namespace</invoke>$namespace</tool_call>';
+      final chunks = await ChatCompletionStreamParser.parse(
+        tokenStream: Stream.fromIterable(<String>[
+          output.substring(0, 7),
+          output.substring(7, 31),
+          output.substring(31, 58),
+          output.substring(58, 87),
+          output.substring(87),
+        ]),
+        templateResult: LlamaChatTemplateResult(
+          prompt: 'prompt',
+          format: ChatFormat.minimaxM3.index,
+        ),
+        parseToolCallsEnabled: true,
+        enableThinking: true,
+        modelName: 'test-model',
+        completionId: 'm3-typed-split',
+        tools: [_typedStreamTool],
+      ).toList();
+
+      final content = chunks
+          .map((chunk) => chunk.choices.single.delta.content ?? '')
+          .join();
+      final toolCall = chunks
+          .expand((chunk) => chunk.choices.single.delta.toolCalls ?? const [])
+          .single;
+      expect(content, isEmpty);
+      expect(jsonDecode(toolCall.function!.arguments!), {
+        'code': '123',
+        'options': <String, dynamic>{},
+        'items': <Object?>[],
+      });
+    });
+
     test('does not stream partial Laguna tool markup as content', () async {
       final chunks = await ChatCompletionStreamParser.parse(
         tokenStream: Stream.fromIterable(<String>[
@@ -286,6 +328,43 @@ void main() {
       expect(content, isNot(contains('<|start|>')));
       expect(toolCall.function?.name, 'weather');
       expect(jsonDecode(toolCall.function!.arguments!), {'city': 'Seoul'});
+    });
+
+    test('character-split Muse routing never leaks protocol content', () async {
+      const atem =
+          '<atem:function_calls><atem:invoke name="weather">'
+          '<atem:parameter name="city">Seoul</atem:parameter>'
+          '</atem:invoke></atem:function_calls>';
+      const output =
+          'Visible answer.<|start|>assistant to=weather<|message|>'
+          '$atem<|eot|>';
+      final chunks = await ChatCompletionStreamParser.parse(
+        tokenStream: Stream.fromIterable(output.split('')),
+        templateResult: LlamaChatTemplateResult(
+          prompt: 'prompt',
+          format: ChatFormat.museGlimmer.index,
+        ),
+        parseToolCallsEnabled: true,
+        enableThinking: true,
+        modelName: 'test-model',
+        completionId: 'muse-character-split',
+        tools: [_weatherTool],
+      ).toList();
+
+      final content = chunks
+          .map((chunk) => chunk.choices.single.delta.content ?? '')
+          .join();
+      expect(content, 'Visible answer.');
+      expect(content, isNot(contains('<|')));
+      expect(content, isNot(contains('<atem:')));
+      expect(
+        chunks
+            .expand((chunk) => chunk.choices.single.delta.toolCalls ?? const [])
+            .single
+            .function
+            ?.name,
+        'weather',
+      );
     });
 
     test(
@@ -568,5 +647,20 @@ final _weatherTool = ToolDefinition(
   name: 'weather',
   description: 'Weather',
   parameters: [ToolParam.string('city', required: true)],
+  handler: (_) async => null,
+);
+
+final _typedStreamTool = ToolDefinition(
+  name: 'inspect',
+  description: 'Inspect typed values',
+  parameters: [
+    ToolParam.string('code', required: true),
+    ToolParam.object('options', properties: const [], required: true),
+    ToolParam.array(
+      'items',
+      itemType: ToolParam.string('item'),
+      required: true,
+    ),
+  ],
   handler: (_) async => null,
 );

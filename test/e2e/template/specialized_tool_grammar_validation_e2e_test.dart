@@ -191,6 +191,34 @@ void main() {
     );
   });
 
+  test(
+    'GLM accepts delimiter strings and rejects an invalid enum atomically',
+    () {
+      final grammar = Glm45Handler().buildGrammar([_glmEvidenceTool])!;
+      const validCall =
+          '<tool_call>inspect\n'
+          '<arg_key>code</arg_key>\n'
+          '<arg_value>x < 5</arg_value>\n'
+          '<arg_key>city</arg_key>\n'
+          '<arg_value>Seoul</arg_value>\n'
+          '</tool_call>\n';
+      const invalidEnumCall =
+          '<tool_call>inspect\n'
+          '<arg_key>code</arg_key>\n'
+          '<arg_value>second</arg_value>\n'
+          '<arg_key>city</arg_key>\n'
+          '<arg_value>Rome</arg_value>\n'
+          '</tool_call>\n';
+
+      _expectGrammar(
+        validator,
+        grammar,
+        valid: const [validCall, '\n$validCall'],
+        invalid: const ['$validCall$invalidEnumCall'],
+      );
+    },
+  );
+
   test('XML attribute grammars round-trip escaped schema identities', () {
     const namespace = MinimaxM3Handler.namespace;
     _expectGrammar(
@@ -688,6 +716,20 @@ final _collidingKeyTool = ToolDefinition(
   parameters: [
     ToolParam.string('a b', required: true),
     ToolParam.string('a-b', required: true),
+  ],
+  handler: (_) async => null,
+);
+
+final _glmEvidenceTool = ToolDefinition(
+  name: 'inspect',
+  description: 'GLM donor evidence',
+  parameters: [
+    ToolParam.string('code', required: true),
+    ToolParam.enumType(
+      'city',
+      values: const ['Seoul', 'Paris'],
+      required: true,
+    ),
   ],
   handler: (_) async => null,
 );
