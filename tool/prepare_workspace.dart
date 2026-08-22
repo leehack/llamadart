@@ -11,22 +11,30 @@ enum WorkspacePackageManager {
   flutter,
 }
 
-/// A maintained Dart or Flutter package prepared by the root quality gates.
+/// A maintained Dart or Flutter package in the workspace manifest.
 class WorkspacePackage {
   /// Creates a package entry relative to the repository root.
-  const WorkspacePackage(this.path, this.packageManager);
+  const WorkspacePackage(
+    this.path,
+    this.packageManager, {
+    this.prepareForRootQualityGates = true,
+  });
 
   /// The package directory relative to the repository root.
   final String path;
 
   /// The SDK command that resolves this package's dependencies.
   final WorkspacePackageManager packageManager;
+
+  /// Whether the root format/analyze lane resolves this package directly.
+  final bool prepareForRootQualityGates;
 }
 
-/// Every maintained package that must be resolved before root format/analyze.
+/// Every maintained package that must be classified by the root quality gates.
 ///
-/// Keep this list explicit so SDK selection is reviewable. The layout check
-/// below fails when a package is added or removed without updating the list.
+/// Keep this list explicit so lane ownership and SDK selection are reviewable.
+/// The layout check below fails when a package is added or removed without
+/// updating the list.
 const List<WorkspacePackage> workspacePackages = <WorkspacePackage>[
   WorkspacePackage('.', WorkspacePackageManager.flutter),
   WorkspacePackage('example/basic_app', WorkspacePackageManager.flutter),
@@ -37,10 +45,12 @@ const List<WorkspacePackage> workspacePackages = <WorkspacePackage>[
   WorkspacePackage(
     'packages/llamadart_litert_lm_flutter',
     WorkspacePackageManager.flutter,
+    prepareForRootQualityGates: false,
   ),
   WorkspacePackage(
     'packages/llamadart_llama_cpp_flutter',
     WorkspacePackageManager.flutter,
+    prepareForRootQualityGates: false,
   ),
 ];
 
@@ -136,7 +146,9 @@ Future<int> prepareWorkspace(
     return 64;
   }
 
-  for (final package in workspacePackages) {
+  for (final package in workspacePackages.where(
+    (package) => package.prepareForRootQualityGates,
+  )) {
     final executable = package.packageManager.name;
     final arguments = <String>['pub', 'get'];
     stdout.writeln(

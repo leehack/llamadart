@@ -45,13 +45,13 @@ dart test
 ./tool/docs/validate_links.sh
 ```
 
-Preparation resolves the root package, every maintained example, and both
-Flutter companion packages. The root analyzer covers the root package and
-examples; companion packages also keep independent CI lanes for analysis,
-tests, SwiftPM validation, and publish dry runs. Generated `.dart_tool`,
-`build`, and Flutter platform `ephemeral` trees are not workspace packages.
-Vendored, archived docs, or local-only trees outside `example/` and `packages/`
-are not discovered by the workspace bootstrap.
+Preparation resolves the root package and every maintained example. It also
+fails if any example or companion package is missing or unclassified. The root
+analyzer covers the root package and examples; companion packages own separate
+dependency, analysis, test, SwiftPM, and publish-validation lanes. Generated
+`.dart_tool`, `build`, and Flutter platform `ephemeral` trees are not workspace
+packages. Vendored, archived docs, or local-only trees outside `example/` and
+`packages/` are not discovered by the workspace bootstrap.
 
 Use the current Flutter stable SDK, matching CI, for repository-wide quality
 gates. Older Dart formatters can produce different source layouts even after

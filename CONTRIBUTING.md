@@ -246,8 +246,9 @@ If you need to build binaries for a new release:
 
 -   **Code Style**: We follow standard Dart linting rules. Before the root
     format and analyzer gates, run `dart run tool/prepare_workspace.dart` to
-    resolve the root package, examples, and companion packages. Then run
-    `dart format .` before committing.
+    resolve the root package and examples and verify that every maintained
+    package is classified. Companion packages resolve and validate in their
+    dedicated CI lanes. Then run `dart format .` before committing.
 -   **Native Assets**: The package uses the modern **Dart Native Assets** (hooks) mechanism.
 -   **Testing**: Add unit tests for new features where possible. Use `dart test` for full integration and unit verification.
 

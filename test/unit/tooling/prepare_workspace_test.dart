@@ -24,28 +24,38 @@ void main() {
     expect(validateWorkspaceManifest(Directory.current), isEmpty);
   });
 
-  test('prepares every package with its declared SDK in order', () async {
-    final root = _workspaceFixture();
-    final commands = <String>[];
+  test(
+    'prepares every root-gate package with its declared SDK in order',
+    () async {
+      final root = _workspaceFixture();
+      final commands = <String>[];
 
-    final result = await prepareWorkspace(
-      root,
-      commandRunner: (executable, arguments, workingDirectory) async {
-        final relative = workingDirectory == root.path
-            ? '.'
-            : workingDirectory.substring(root.path.length + 1);
-        commands.add('$executable ${arguments.join(' ')} @ $relative');
-        return 0;
-      },
-    );
+      final result = await prepareWorkspace(
+        root,
+        commandRunner: (executable, arguments, workingDirectory) async {
+          final relative = workingDirectory == root.path
+              ? '.'
+              : workingDirectory.substring(root.path.length + 1);
+          commands.add('$executable ${arguments.join(' ')} @ $relative');
+          return 0;
+        },
+      );
 
-    expect(result, 0);
-    expect(commands, <String>[
-      for (final package in workspacePackages)
-        '${package.packageManager.name} pub get @ ${package.path}',
-    ]);
-    expect(commands, contains('flutter pub get @ example/chat_app'));
-  });
+      expect(result, 0);
+      expect(commands, <String>[
+        for (final package in workspacePackages.where(
+          (package) => package.prepareForRootQualityGates,
+        ))
+          '${package.packageManager.name} pub get @ ${package.path}',
+      ]);
+      expect(commands, contains('flutter pub get @ example/chat_app'));
+      expect(
+        commands,
+        everyElement(isNot(contains('packages/llamadart_'))),
+        reason: 'Companion packages own separate CI quality lanes.',
+      );
+    },
+  );
 
   test('rejects a package that is not in the preparation manifest', () {
     final root = _workspaceFixture();
