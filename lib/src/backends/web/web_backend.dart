@@ -18,6 +18,7 @@ class WebAutoBackend
         BackendEmbeddingsSupport,
         BackendBatchEmbeddings,
         BackendPromptSpeechToTextSupport,
+        BackendGrammarConstraintsSupport,
         BackendTextToSpeech,
         BackendStatePersistence,
         BackendStatePersistenceSupport {
@@ -65,6 +66,16 @@ class WebAutoBackend
       return (delegate as BackendEmbeddingsSupport).supportsEmbeddings;
     }
     return delegate is BackendEmbeddings;
+  }
+
+  @override
+  bool get supportsGrammarConstraints {
+    final delegate = _delegate;
+    if (delegate is BackendGrammarConstraintsSupport) {
+      return (delegate as BackendGrammarConstraintsSupport)
+          .supportsGrammarConstraints;
+    }
+    return true;
   }
 
   @override

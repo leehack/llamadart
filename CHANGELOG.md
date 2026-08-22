@@ -1,5 +1,11 @@
 ## Unreleased
 
+* Fixed Web/native backend API parity. `WebAutoBackend` now forwards grammar
+  constraint support from its active runtime, so strict structured output fails
+  early with an actionable error on unsupported Web backends, and the Web-safe
+  `LiteRtLmRuntimeClient` stub now exposes the native client's thinking-tag
+  configuration method.
+
 * llama.cpp worker errors now keep their type. Every backend method routes an
   `ErrorResponse` through the file's own error mapper instead of rebuilding a
   bare `Exception`, `tokenize` and `detokenize` no longer discard the worker's

@@ -31,6 +31,14 @@ void main() {
   });
 
   test('reports native-only LiteRT-LM runtime APIs as unsupported on web', () {
+    void configureThinkingTags(LiteRtLmRuntimeClient client) {
+      client.configureResponseThinkingTags(
+        startTag: '<thought>',
+        endTag: '</thought>',
+      );
+    }
+
+    expect(configureThinkingTags, isA<void Function(LiteRtLmRuntimeClient)>());
     expect(LiteRtLmRuntimeClient.new, throwsUnsupportedError);
     expect(LiteRtLmBenchmarkClient.new, throwsUnsupportedError);
   });
@@ -42,6 +50,10 @@ void main() {
     );
 
     expect(backend.supportsUrlLoading, isTrue);
+    expect(
+      (backend as BackendGrammarConstraintsSupport).supportsGrammarConstraints,
+      isFalse,
+    );
     expect(await backend.getBackendName(), 'LiteRT-LM web cpu');
   });
 }
