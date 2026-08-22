@@ -663,6 +663,41 @@ paths=(
     expect(stableWrapper.stderr, contains('native_release_tag'));
   });
 
+  test('reports non-UTF-8 release manifests without a traceback', () async {
+    final setup = await _writeLlamaOnlyRepo('b10514');
+    addTearDown(() => setup.root.delete(recursive: true));
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() => server.close(force: true));
+    server.listen((request) async {
+      request.response.add(const [0xff]);
+      await request.response.close();
+    });
+
+    const tag = 'v0.2.0';
+    await _writeStableNativeReleaseFixture(setup.releaseDir, tag);
+    final fixture = File(
+      path.join(setup.releaseDir.path, 'leehack__llamadart-native__$tag.json'),
+    );
+    final release = jsonDecode(await fixture.readAsString()) as Map;
+    final assets = release['assets'] as List;
+    final manifestAsset = assets.cast<Map>().singleWhere(
+      (asset) => asset['name'] == 'assets.json',
+    );
+    manifestAsset.remove('fixture_json');
+    manifestAsset['browser_download_url'] =
+        'http://${server.address.address}:${server.port}/assets.json';
+    await fixture.writeAsString(jsonEncode(release));
+
+    final result = await _runLlamaSync(setup, tag);
+
+    expect(result.exitCode, 1);
+    expect(
+      result.stderr,
+      contains('Failed to read release manifest assets.json'),
+    );
+    expect(result.stderr, isNot(contains('Traceback')));
+  });
+
   test(
     'workflow exposes and forwards explicit nightly channel opt-in',
     () async {

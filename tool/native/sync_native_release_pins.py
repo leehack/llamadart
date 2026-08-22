@@ -658,6 +658,7 @@ def release_asset_json(
         urllib.error.HTTPError,
         urllib.error.URLError,
         json.JSONDecodeError,
+        UnicodeDecodeError,
     ) as error:
         raise ReleaseError(
             f"Failed to read release manifest {asset_name}: {error}"
