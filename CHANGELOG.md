@@ -18,6 +18,14 @@
   input remains blocked on cross-platform FFmpeg/ffprobe packaging and Dart
   frame lifecycle wiring.
 
+* Native release synchronization and build-hook overrides now accept stable
+  `vMAJOR.MINOR.PATCH` artifacts and ordered `vMAJOR.MINOR.PATCH-N` wrapper
+  rebuilds plus nightly `bNNNN-N` rebuilds, while preserving historical
+  `bNNNN` and `bNNNN-llamadart.N` artifacts. Sync rejects invalid tags,
+  leading-zero nightly versions, rollback, wrapper/nightly `latest` results,
+  incompatible manifest contracts, missing bundles, and release/manifest
+  checksum or version skew without changing the default pin.
+
 * Fixed Web/native backend API parity. `WebAutoBackend` now forwards grammar
   constraint support from its active runtime, so strict structured output fails
   early with an actionable error on unsupported Web backends, and the Web-safe

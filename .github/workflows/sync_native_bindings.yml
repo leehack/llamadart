@@ -4,9 +4,14 @@ on:
   workflow_dispatch:
     inputs:
       native_tag:
-        description: 'llamadart-native release tag to sync (e.g., b8011 or latest)'
+        description: 'vM.m.p; explicit vM.m.p-N, bNNNN[-N], or legacy bNNNN-llamadart.N; latest is unsuffixed v only'
         required: true
         default: 'latest'
+      allow_nightly_channel:
+        description: 'Allow an intentional stable-to-nightly native channel switch'
+        required: true
+        type: boolean
+        default: false
       litert_lm_tag:
         description: 'litert-lm-native release tag to sync (e.g., v0.13.1, latest, or keep)'
         required: true
@@ -44,21 +49,47 @@ jobs:
       - name: Install Dart/Flutter dependencies
         run: flutter pub get
 
+      - name: Validate native release contract
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ALLOW_NIGHTLY_CHANNEL: ${{ inputs.allow_nightly_channel }}
+          NATIVE_TAG: ${{ inputs.native_tag }}
+          LITERT_LM_TAG: ${{ inputs.litert_lm_tag }}
+        run: |
+          transition_args=()
+          if [[ "${ALLOW_NIGHTLY_CHANNEL}" == "true" ]]; then
+            transition_args+=(--allow-legacy-tag)
+          fi
+          python3 tool/native/sync_native_release_pins.py \
+            --llama-cpp-tag "${NATIVE_TAG}" \
+            --litert-lm-tag "${LITERT_LM_TAG}" \
+            "${transition_args[@]}" \
+            --dry-run
+
       - name: Sync headers and regenerate bindings
         id: sync_headers
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NATIVE_TAG: ${{ inputs.native_tag }}
         run: |
-          tool/native/sync_native_headers_and_bindings.sh --tag "${{ github.event.inputs.native_tag }}"
+          tool/native/sync_native_headers_and_bindings.sh --tag "${NATIVE_TAG}"
 
       - name: Sync native hook pins
         id: sync_pins
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ALLOW_NIGHTLY_CHANNEL: ${{ inputs.allow_nightly_channel }}
+          RESOLVED_NATIVE_TAG: ${{ steps.sync_headers.outputs.resolved_tag }}
+          LITERT_LM_TAG: ${{ inputs.litert_lm_tag }}
         run: |
+          transition_args=()
+          if [[ "${ALLOW_NIGHTLY_CHANNEL}" == "true" ]]; then
+            transition_args+=(--allow-legacy-tag)
+          fi
           python3 tool/native/sync_native_release_pins.py \
-            --llama-cpp-tag "${{ steps.sync_headers.outputs.resolved_tag }}" \
-            --litert-lm-tag "${{ github.event.inputs.litert_lm_tag }}"
+            --llama-cpp-tag "${RESOLVED_NATIVE_TAG}" \
+            "${transition_args[@]}" \
+            --litert-lm-tag "${LITERT_LM_TAG}"
 
       - name: Create pull request
         uses: peter-evans/create-pull-request@v8
@@ -79,6 +110,7 @@ jobs:
             - Updates current README/website native pin docs and the core changelog when the llama.cpp native pin changes.
 
             Native version checklist:
+            - [ ] If `allow_nightly_channel` was enabled, confirm the stable-to-nightly switch was intentional and record the compatibility reason.
             - [ ] Confirm `leehack/llamadart-native` release `${{ steps.sync_headers.outputs.resolved_tag }}` includes the required native-assets archives.
             - [ ] If LiteRT-LM sync was requested (`litert_lm_tag` is not `keep`), confirm `leehack/litert-lm-native` release `${{ steps.sync_pins.outputs.resolved_litert_lm_tag }}` includes the required runtime archives.
             - [ ] Confirm matching Apple SPM pins changed under `packages/` when Apple XCFramework releases changed.

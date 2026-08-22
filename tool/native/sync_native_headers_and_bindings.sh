@@ -17,7 +17,7 @@ Downloads llamadart-native release header bundle for a tag and regenerates
 bindings using ffigen.
 
 Options:
-  --tag <tag|latest>      Release tag to use (default: latest)
+  --tag <tag|latest>      Explicit tag, or latest unsuffixed stable (default: latest)
   --repo <owner/name>     Native repository slug (default: leehack/llamadart-native)
   --header-root <path>    Header staging path (default: .dart_tool/llamadart/ffigen_headers)
   --skip-ffigen           Only sync headers, do not run ffigen
@@ -55,6 +55,38 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+stable_tag_pattern='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+stable_wrapper_tag_pattern='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-[1-9][0-9]*$'
+nightly_tag_pattern='^b(0|[1-9][0-9]*)$'
+nightly_wrapper_tag_pattern='^b(0|[1-9][0-9]*)-[1-9][0-9]*$'
+legacy_wrapper_tag_pattern='^b(0|[1-9][0-9]*)-llamadart\.[1-9][0-9]*$'
+
+is_supported_native_tag() {
+  [[ "$1" =~ ${stable_tag_pattern} ]] ||
+    [[ "$1" =~ ${stable_wrapper_tag_pattern} ]] ||
+    [[ "$1" =~ ${nightly_tag_pattern} ]] ||
+    [[ "$1" =~ ${nightly_wrapper_tag_pattern} ]] ||
+    [[ "$1" =~ ${legacy_wrapper_tag_pattern} ]]
+}
+
+is_latest_eligible_tag() {
+  [[ "$1" =~ ${stable_tag_pattern} ]]
+}
+
+is_stable_upstream_tag() {
+  [[ "$1" =~ ${stable_tag_pattern} || "$1" =~ ${stable_wrapper_tag_pattern} ]]
+}
+
+if [[ "${tag_input}" != "latest" && -n "${tag_input}" ]] &&
+  ! is_supported_native_tag "${tag_input}"; then
+  echo "Invalid llamadart-native tag: ${tag_input}" >&2
+  echo "Expected stable vMAJOR.MINOR.PATCH, stable wrapper" \
+    "vMAJOR.MINOR.PATCH-N, canonical historical/nightly bNNNN without" \
+    "leading zeros, nightly wrapper" \
+    "bNNNN-N, or legacy wrapper artifact bNNNN-llamadart.N." >&2
+  exit 1
+fi
+
 curl_headers=(
   -H "Accept: application/vnd.github+json"
   -H "X-GitHub-Api-Version: 2022-11-28"
@@ -77,6 +109,23 @@ resolved_tag="$(
   python3 -c "import json,sys; print(json.load(sys.stdin)['tag_name'])" <<<"${release_json}"
 )"
 
+if ! is_supported_native_tag "${resolved_tag}"; then
+  echo "Release metadata resolved unsupported tag: ${resolved_tag}" >&2
+  exit 1
+fi
+if [[ "${tag_input}" == "latest" ]] && ! is_latest_eligible_tag "${resolved_tag}"; then
+  echo "llamadart-native latest resolved to ${resolved_tag};" \
+    "automatic discovery accepts only unsuffixed vMAJOR.MINOR.PATCH releases;" \
+    "select wrapper rebuilds and historical or nightly tags explicitly." >&2
+  exit 1
+fi
+if [[ "${tag_input}" != "latest" && -n "${tag_input}" ]] &&
+  [[ "${resolved_tag}" != "${tag_input}" ]]; then
+  echo "Requested ${tag_input}, but release metadata resolved" \
+    "${resolved_tag}; refusing version skew." >&2
+  exit 1
+fi
+
 asset_name="llamadart-native-headers-${resolved_tag}.tar.gz"
 asset_url="$(
   python3 -c "import json,sys; name=sys.argv[1]; data=json.load(sys.stdin); print(next((a.get('browser_download_url','') for a in data.get('assets',[]) if a.get('name')==name),''))" \
@@ -88,6 +137,11 @@ if [[ -z "${asset_url}" ]]; then
   exit 1
 fi
 
+asset_digest="$(
+  python3 -c "import json,sys; name=sys.argv[1]; data=json.load(sys.stdin); print(next((a.get('digest','') for a in data.get('assets',[]) if a.get('name')==name),''))" \
+    "${asset_name}" <<<"${release_json}"
+)"
+
 tmp_dir="${TMPDIR:-/tmp}/llamadart-native-headers-${resolved_tag}-$$"
 archive_path="${tmp_dir}/${asset_name}"
 extract_dir="${tmp_dir}/extract"
@@ -96,6 +150,28 @@ trap 'rm -rf "${tmp_dir}"' EXIT
 mkdir -p "${extract_dir}"
 echo "Downloading ${asset_name} from ${native_repo} (${resolved_tag})..."
 curl -fsSL "${curl_headers[@]}" "${asset_url}" -o "${archive_path}"
+if [[ "${asset_digest}" == sha256:* ]]; then
+  expected_sha256="${asset_digest#sha256:}"
+  if command -v shasum >/dev/null 2>&1; then
+    actual_sha256="$(shasum -a 256 "${archive_path}" | awk '{print $1}')"
+  elif command -v sha256sum >/dev/null 2>&1; then
+    actual_sha256="$(sha256sum "${archive_path}" | awk '{print $1}')"
+  else
+    echo "No SHA-256 tool available to verify ${asset_name}" >&2
+    exit 1
+  fi
+  if [[ "${actual_sha256}" != "${expected_sha256}" ]]; then
+    echo "Header archive checksum mismatch for ${asset_name}: expected" \
+      "${expected_sha256}, got ${actual_sha256}." >&2
+    exit 1
+  fi
+elif is_stable_upstream_tag "${resolved_tag}"; then
+  echo "Stable release ${resolved_tag} does not publish a SHA-256 digest for ${asset_name}." >&2
+  exit 1
+else
+  echo "Warning: historical release ${resolved_tag} has no GitHub SHA-256" \
+    "digest for ${asset_name}." >&2
+fi
 tar -xzf "${archive_path}" -C "${extract_dir}"
 
 llama_include_src=""

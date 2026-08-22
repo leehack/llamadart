@@ -157,7 +157,10 @@ const _dynamicLibraryExtensions = {'.so', '.dylib', '.dll'};
 final _windowsCudartPattern = RegExp(r'^cudart64(?:[_-]?\d+)?\.dll$');
 final _windowsCublasPattern = RegExp(r'^cublas64(?:[_-]?\d+)?\.dll$');
 final _linuxVersionedSoPattern = RegExp(r'\.so\.\d+$');
-final _nativeTagPattern = RegExp(r'^[A-Za-z0-9][A-Za-z0-9._-]*$');
+final _nativeTagPattern = RegExp(
+  r'^(?:v(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-[1-9][0-9]*)?|'
+  r'b(?:0|[1-9][0-9]*)(?:-[1-9][0-9]*|-llamadart\.[1-9][0-9]*)?)$',
+);
 final _githubRepoSegmentPattern = RegExp(r'^[A-Za-z0-9_.-]+$');
 
 class _NativeBundleConfig {
@@ -1142,7 +1145,11 @@ String _resolveNativeTag(Object? rawUserConfig) {
   if (!_nativeTagPattern.hasMatch(tag)) {
     throw FormatException(
       'hooks.user_defines.$_packageName.$nativeTagUserDefineKey must be a '
-      'path-safe release tag such as $_llamaCppTag.',
+      'stable vMAJOR.MINOR.PATCH tag, stable wrapper rebuild '
+      'vMAJOR.MINOR.PATCH-N, canonical historical/nightly bNNNN tag without '
+      'leading zeros, nightly wrapper '
+      'rebuild bNNNN-N, or legacy wrapper artifact bNNNN-llamadart.N '
+      '(for example $_llamaCppTag).',
     );
   }
 

@@ -33,6 +33,18 @@ isolate. LiteRT-LM Web does not expose typed speech. See the
 Available override tags are published on the
 [`leehack/llamadart-native` releases page](https://github.com/leehack/llamadart-native/releases)
 or via `gh release list --repo leehack/llamadart-native --limit 20`.
+Accepted tags are stable `vMAJOR.MINOR.PATCH`, historical `bNNNN`, and existing
+nightly artifacts. New nightly wrapper rebuilds use `bNNNN-N`; existing
+`bNNNN-llamadart.N` artifacts remain consumption-only overrides. A stable
+wrapper-only rebuild of upstream `vM.m.p` uses `vM.m.p-N` and preserves that
+upstream prefix in the release manifest. New wrapper and nightly releases are
+GitHub prereleases and require an explicit tag. Historical `bNNNN` and
+`bNNNN-llamadart.N` artifacts may retain older `prerelease=false` metadata, but
+remain explicit compatibility inputs. Build-hook overrides must always name an
+explicit tag; `latest` is limited to maintainer synchronization and
+header/binding regeneration, where it accepts only an unsuffixed stable tag
+regardless of GitHub metadata. Nightly cores and positive rebuild counters
+reject leading zeros.
 The selected release must include a bundle asset named
 `llamadart-native-<bundle>-<tag>.tar.gz` for the target being built.
 Native source overrides do not regenerate Dart FFI bindings or symbol lookups,
