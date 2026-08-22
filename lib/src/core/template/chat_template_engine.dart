@@ -444,6 +444,8 @@ class ChatTemplateEngine {
   /// Parses raw LLM output using the format's handler.
   ///
   /// The [formatIndex] should come from [LlamaChatTemplateResult.format].
+  /// [tools] supplies the schemas needed by formats whose wire representation
+  /// does not encode enough type information to reconstruct arguments safely.
   static ChatParseResult parse(
     int formatIndex,
     String output, {
@@ -451,6 +453,7 @@ class ChatTemplateEngine {
     bool parseToolCalls = true,
     bool thinkingForcedOpen = false,
     String? parser,
+    List<ToolDefinition>? tools,
   }) {
     final resolved = _resolveHandlerForParse(formatIndex: formatIndex);
     final handler = resolved.handler;
@@ -479,6 +482,79 @@ class ChatTemplateEngine {
         output: output,
         isPartial: isPartial,
         parseToolCalls: parseToolCalls,
+      );
+    }
+
+    if (format == ChatFormat.minimaxM3 && handler is MinimaxM3Handler) {
+      return handler.parseWithTools(
+        output,
+        tools: tools,
+        isPartial: isPartial,
+        parseToolCalls: parseToolCalls,
+        thinkingForcedOpen: thinkingForcedOpen,
+      );
+    }
+    if (format == ChatFormat.kimiK3 && handler is KimiK3Handler) {
+      return handler.parseWithTools(
+        output,
+        tools: tools,
+        isPartial: isPartial,
+        parseToolCalls: parseToolCalls,
+        thinkingForcedOpen: thinkingForcedOpen,
+      );
+    }
+    if (format == ChatFormat.minimaxM1 && handler is MinimaxM1Handler) {
+      return handler.parseWithTools(
+        output,
+        tools: tools,
+        isPartial: isPartial,
+        parseToolCalls: parseToolCalls,
+        thinkingForcedOpen: thinkingForcedOpen,
+      );
+    }
+    if (format == ChatFormat.deepseekV32 && handler is DeepseekV32Handler) {
+      return handler.parseWithTools(
+        output,
+        tools: tools,
+        isPartial: isPartial,
+        parseToolCalls: parseToolCalls,
+        thinkingForcedOpen: thinkingForcedOpen,
+      );
+    }
+    if (format == ChatFormat.deepseekV4 && handler is DeepseekV4Handler) {
+      return handler.parseWithTools(
+        output,
+        tools: tools,
+        isPartial: isPartial,
+        parseToolCalls: parseToolCalls,
+        thinkingForcedOpen: thinkingForcedOpen,
+      );
+    }
+    if (format == ChatFormat.museGlimmer && handler is MuseGlimmerHandler) {
+      return handler.parseWithTools(
+        output,
+        tools: tools,
+        isPartial: isPartial,
+        parseToolCalls: parseToolCalls,
+        thinkingForcedOpen: thinkingForcedOpen,
+      );
+    }
+    if (format == ChatFormat.laguna && handler is LagunaHandler) {
+      return handler.parseWithTools(
+        output,
+        tools: tools,
+        isPartial: isPartial,
+        parseToolCalls: parseToolCalls,
+        thinkingForcedOpen: thinkingForcedOpen,
+      );
+    }
+    if (format == ChatFormat.glm45 && handler is Glm45Handler) {
+      return handler.parseWithTools(
+        output,
+        tools: tools,
+        isPartial: isPartial,
+        parseToolCalls: parseToolCalls,
+        thinkingForcedOpen: thinkingForcedOpen,
       );
     }
 
@@ -557,6 +633,8 @@ class ChatTemplateEngine {
         return MinimaxM3Handler();
       case ChatFormat.deepseekV4:
         return DeepseekV4Handler();
+      case ChatFormat.deepseekV32:
+        return DeepseekV32Handler();
       case ChatFormat.museGlimmer:
         return MuseGlimmerHandler();
       case ChatFormat.laguna:

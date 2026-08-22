@@ -9,6 +9,7 @@ import '../chat_parse_result.dart';
 import '../chat_template_handler.dart';
 import '../thinking_utils.dart';
 import '../tool_call_parsing_utils.dart';
+import '../tool_schema_utils.dart';
 
 /// Handler for GLM 4.5 format.
 ///
@@ -128,6 +129,22 @@ class Glm45Handler extends ChatTemplateHandler {
     bool parseToolCalls = true,
     bool thinkingForcedOpen = false,
   }) {
+    return parseWithTools(
+      output,
+      isPartial: isPartial,
+      parseToolCalls: parseToolCalls,
+      thinkingForcedOpen: thinkingForcedOpen,
+    );
+  }
+
+  /// Parses GLM output using [tools] for schema-directed argument types.
+  ChatParseResult parseWithTools(
+    String output, {
+    List<ToolDefinition>? tools,
+    bool isPartial = false,
+    bool parseToolCalls = true,
+    bool thinkingForcedOpen = false,
+  }) {
     final thinking = extractThinking(
       output,
       thinkingForcedOpen: thinkingForcedOpen,
@@ -141,7 +158,17 @@ class Glm45Handler extends ChatTemplateHandler {
       );
     }
 
-    final extractedFromContent = _extractToolCalls(text);
+    final parseText = isPartial ? _hideIncompleteToolCallBlock(text) : text;
+    final extractedFromContent = _extractToolCalls(
+      parseText,
+      schemas: toolSchemas(tools),
+    );
+    if (extractedFromContent == null) {
+      return ChatParseResult(
+        content: parseText.trim(),
+        reasoningContent: thinking.reasoning,
+      );
+    }
     final toolCalls = <LlamaCompletionChunkToolCall>[
       ...extractedFromContent.toolCalls,
     ];
@@ -271,7 +298,10 @@ class Glm45Handler extends ChatTemplateHandler {
     return ToolCallParsingUtils.decodeJsonValueOrString(value);
   }
 
-  _ExtractedToolCalls _extractToolCalls(String input) {
+  _ExtractedToolCalls? _extractToolCalls(
+    String input, {
+    required Map<String, Map<String, dynamic>> schemas,
+  }) {
     final toolCalls = <LlamaCompletionChunkToolCall>[];
     var remaining = input;
 
@@ -282,18 +312,49 @@ class Glm45Handler extends ChatTemplateHandler {
       final toolName = firstArgIdx == -1
           ? block.trim()
           : block.substring(0, firstArgIdx).trim();
+      if (firstArgIdx >= 0 &&
+          block
+              .substring(firstArgIdx)
+              .replaceAll(_argPairPattern, '')
+              .trim()
+              .isNotEmpty) {
+        return null;
+      }
+      final schema = schemas[toolName];
+      if (schemas.isNotEmpty && schema == null) {
+        return null;
+      }
+      final properties = schema == null ? null : schemaProperties(schema);
+      final required = schema == null
+          ? const <String>{}
+          : schemaRequired(schema);
       final args = <String, dynamic>{};
       for (final argMatch in _argPairPattern.allMatches(block)) {
         final key = (argMatch.group(1) ?? '').trim();
         final rawValue = (argMatch.group(2) ?? '').trim();
         if (key.isEmpty) {
-          continue;
+          return null;
         }
-        args[key] = _decodeArgValue(rawValue);
+        if (args.containsKey(key)) {
+          return null;
+        }
+        final propertySchema = properties?[key];
+        if (properties != null && propertySchema == null) {
+          return null;
+        }
+        if (propertySchema == null) {
+          args[key] = _decodeArgValue(rawValue);
+        } else {
+          final decoded = decodeToolSchemaText(rawValue, propertySchema);
+          if (!decoded.valid) {
+            return null;
+          }
+          args[key] = decoded.value;
+        }
       }
 
-      if (toolName.isEmpty) {
-        continue;
+      if (toolName.isEmpty || !args.keys.toSet().containsAll(required)) {
+        return null;
       }
 
       final index = toolCalls.length;
@@ -316,6 +377,21 @@ class Glm45Handler extends ChatTemplateHandler {
       remainingContent: remaining,
     );
   }
+}
+
+String _hideIncompleteToolCallBlock(String input) {
+  const marker = '<tool_call>';
+  final open = input.lastIndexOf(marker);
+  final close = input.lastIndexOf('</tool_call>');
+  if (open > close) {
+    return input.substring(0, open);
+  }
+  for (var length = 1; length < marker.length; length++) {
+    if (input.endsWith(marker.substring(0, length))) {
+      return input.substring(0, input.length - length);
+    }
+  }
+  return input;
 }
 
 class _ExtractedToolCalls {

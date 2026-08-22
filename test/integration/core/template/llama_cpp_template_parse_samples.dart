@@ -65,6 +65,14 @@ const Map<ChatFormat, String> _sampleOutputsByFormat = <ChatFormat, String>{
       '</｜DSML｜parameter>\n'
       '</｜DSML｜invoke>\n'
       '</｜DSML｜tool_calls>',
+  ChatFormat.deepseekV32:
+      '</think>\n\n'
+      '<｜DSML｜function_calls>\n'
+      '<｜DSML｜invoke name="get_weather">\n'
+      '<｜DSML｜parameter name="location" string="true">Seoul'
+      '</｜DSML｜parameter>\n'
+      '</｜DSML｜invoke>\n'
+      '</｜DSML｜function_calls>',
   ChatFormat.museGlimmer:
       ' to=get_weather<|message|><atem:function_calls>\n'
       '<atem:invoke name="get_weather">\n'

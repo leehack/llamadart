@@ -27,6 +27,12 @@ void main() {
       expect(p.toJsonSchema(), {'type': 'boolean'});
     });
 
+    test('null param', () {
+      final p = ToolParam.nullType('test', required: true);
+      expect(p.required, isTrue);
+      expect(p.toJsonSchema(), {'type': 'null'});
+    });
+
     test('enum param', () {
       final p = ToolParam.enumType('test', values: ['a', 'b']);
       expect(p.toJsonSchema(), {

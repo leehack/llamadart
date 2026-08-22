@@ -5,6 +5,7 @@
 /// - [ToolParam.integer] for integer parameters
 /// - [ToolParam.number] for floating-point parameters
 /// - [ToolParam.boolean] for boolean parameters
+/// - [ToolParam.nullType] for parameters whose only valid value is `null`
 /// - [ToolParam.enumType] for enum parameters with allowed values
 /// - [ToolParam.array] for array parameters
 /// - [ToolParam.object] for nested object parameters
@@ -51,6 +52,13 @@ sealed class ToolParam {
     String? description,
     bool required = false,
   }) => _BooleanParam(name: name, description: description, required: required);
+
+  /// Creates a parameter whose only valid JSON value is `null`.
+  static ToolParam nullType(
+    String name, {
+    String? description,
+    bool required = false,
+  }) => _NullParam(name: name, description: description, required: required);
 
   /// Creates an enum parameter with a list of allowed values.
   static ToolParam enumType(
@@ -135,6 +143,17 @@ final class _BooleanParam extends ToolParam {
   @override
   Map<String, dynamic> toJsonSchema() => {
     'type': 'boolean',
+    if (description != null) 'description': description,
+  };
+}
+
+final class _NullParam extends ToolParam {
+  const _NullParam({required super.name, super.description, super.required})
+    : super._();
+
+  @override
+  Map<String, dynamic> toJsonSchema() => {
+    'type': 'null',
     if (description != null) 'description': description,
   };
 }

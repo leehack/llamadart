@@ -1,5 +1,24 @@
 ## Unreleased
 
+* Fixed DeepSeek V3.2 DSML tool calls using their upstream
+  `<｜DSML｜function_calls>` envelope while preserving DeepSeek V4's distinct
+  `<｜DSML｜tool_calls>` grammar and parser behavior.
+
+* Fixed partial GLM 4.5, Poolside Laguna, and Muse Glimmer tool envelopes
+  leaking into streamed assistant content, while preserving completed calls,
+  malformed final output, and ordinary text surrounding Muse recipient
+  channels.
+
+* Fixed schema-constrained tool calls for Kimi K3, MiniMax M1/M3, DeepSeek
+  V3.2/V4, and Muse Glimmer, including exact escaped names, required fields,
+  declared value types, matching MiniMax M3 element tags, zero-argument calls,
+  and strings containing delimiter characters. Required-tool mode now accepts
+  each format's reasoning/content prefix while still requiring a call.
+  MiniMax M3, DeepSeek DSML, Muse Glimmer, Poolside Laguna, and GLM 4.5 now
+  reconstruct argument values from the declared tool schema instead of
+  guessing from text. Added `ToolParam.nullType` for null-only JSON Schema
+  properties.
+
 * Added template-aware parsing for Kimi K3, MiniMax M1/M3, DeepSeek V3.2/V4,
   Muse Glimmer, and Poolside Laguna, preventing their native tool calls from
   silently falling back to plain content.

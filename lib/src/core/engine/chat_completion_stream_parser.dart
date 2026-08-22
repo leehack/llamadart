@@ -3,6 +3,8 @@ import 'dart:async';
 import '../llama_logger.dart';
 import '../models/chat/chat_template_result.dart';
 import '../models/chat/completion_chunk.dart';
+import '../models/tools/tool_definition.dart';
+import '../template/chat_format.dart';
 import '../template/chat_template_engine.dart';
 
 enum _ToolStreamingMode { undecided, raw, parsed }
@@ -42,6 +44,7 @@ class ChatCompletionStreamParser {
     required bool enableThinking,
     required String modelName,
     required String completionId,
+    List<ToolDefinition>? tools,
   }) async* {
     final buffer = StringBuffer();
     var streamedContent = '';
@@ -58,7 +61,9 @@ class ChatCompletionStreamParser {
     // A forced-open thought can transition straight into a tool envelope
     // without producing `</think>`. Start in parsed mode so that envelope is
     // never streamed as reasoning before the final structured parse.
-    var streamingMode = templateResult.thinkingForcedOpen
+    var streamingMode =
+        templateResult.thinkingForcedOpen ||
+            _mayEmbedToolEnvelopeAfterContent(templateResult.format)
         ? _ToolStreamingMode.parsed
         : _ToolStreamingMode.undecided;
     var undecidedPrefix = '';
@@ -167,6 +172,7 @@ class ChatCompletionStreamParser {
             parseToolCalls: true,
             thinkingForcedOpen: templateResult.thinkingForcedOpen,
             parser: templateResult.parser,
+            tools: tools,
           );
 
           final partialReasoning = partialParsed.reasoningContent ?? '';
@@ -286,6 +292,7 @@ class ChatCompletionStreamParser {
       parseToolCalls: parseToolCallsEnabled,
       thinkingForcedOpen: templateResult.thinkingForcedOpen,
       parser: templateResult.parser,
+      tools: tools,
     );
 
     if (parseToolCallsEnabled) {
@@ -411,6 +418,11 @@ class ChatCompletionStreamParser {
     }
     return false;
   }
+
+  static bool _mayEmbedToolEnvelopeAfterContent(int formatIndex) =>
+      formatIndex == ChatFormat.museGlimmer.index ||
+      formatIndex == ChatFormat.glm45.index ||
+      formatIndex == ChatFormat.laguna.index;
 
   static int? _firstNonWhitespaceIndex(String value) {
     for (var i = 0; i < value.length; i++) {
