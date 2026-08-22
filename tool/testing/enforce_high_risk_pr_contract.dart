@@ -151,7 +151,9 @@ HighRiskAssessment assessHighRiskFiles(Iterable<String> files) {
         path == 'tool/testing/enforce_high_risk_pr_contract.dart' ||
         path == 'tool/testing/check_high_risk_pr_contract.dart' ||
         path == 'test/unit/tooling/high_risk_pr_contract_test.dart' ||
-        path == 'test/unit/tooling/trusted_high_risk_contract_test.dart') {
+        path == 'test/unit/tooling/trusted_high_risk_contract_test.dart' ||
+        path ==
+            'test/e2e/template/specialized_tool_grammar_validation_e2e_test.dart') {
       surfaces.add(HighRiskSurface.regressionPolicy);
     }
     if (_isGateScript(path)) {
@@ -510,7 +512,18 @@ List<String> _validateTestPaths(
   Set<String> deleted,
   List<String> errors,
 ) {
-  final paths = _stringSet(value, label, errors).toList();
+  if (value is! List || value.any((item) => item is! String)) {
+    errors.add('$label must be a string array.');
+    return const [];
+  }
+  final paths = value.cast<String>();
+  if (paths.isEmpty ||
+      paths.toSet().length != paths.length ||
+      paths.any((path) => path.isEmpty || path.trim() != path)) {
+    errors.add(
+      '$label must contain unique non-empty paths with exact spelling.',
+    );
+  }
   for (final path in paths) {
     if (!path.startsWith('test/') || !path.endsWith('_test.dart')) {
       errors.add('$label must reference durable Dart test files.');
@@ -522,7 +535,7 @@ List<String> _validateTestPaths(
       errors.add('$label cannot reference a deleted or renamed-away test.');
     }
   }
-  return paths;
+  return paths.toList(growable: false);
 }
 
 bool _isCompiledGrammarTest(String path) =>

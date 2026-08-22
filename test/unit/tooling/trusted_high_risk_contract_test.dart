@@ -191,6 +191,7 @@ void main() {
         'tool/testing/native_prompt_reuse_parity.dart',
         'tool/testing/run_local_e2e.dart',
         'tool/testing/run_template_parity_suites.sh',
+        'test/e2e/template/specialized_tool_grammar_validation_e2e_test.dart',
         'test/unit/tooling/high_risk_pr_contract_test.dart',
         '.github/high-risk-evidence/419.json',
       ]);
@@ -480,15 +481,9 @@ Verdict: PASS''',
           evidence['productionEvidence']! as Map<String, dynamic>;
       production['positiveTests'] = ['$_parserTest '];
 
-      final errors = _validate(
-        files: [
-          ..._structuredFiles.where((path) => path != _parserTest),
-          '$_parserTest ',
-        ],
-        evidence: evidence,
-      ).errors.join('\n');
+      final errors = _validate(evidence: evidence).errors.join('\n');
 
-      expect(errors, contains('not changed by the same PR'));
+      expect(errors, contains('exact spelling'));
     });
 
     test('requires exact affected-family inventory and honest N/A proof', () {
