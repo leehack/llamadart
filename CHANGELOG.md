@@ -1,5 +1,10 @@
 ## Unreleased
 
+* Fixed XML-style tool-call parsing to honor raw-versus-JSON argument values
+  and final-value delimiters. Apriel 1.5 and Xiaomi MiMo now parse nested JSON
+  values without splitting on inner commas, while malformed payloads remain
+  ordinary assistant content.
+
 * Made native video-input capability truthful without claiming end-to-end
   support. `LlamaVideoContent` requests now fail with an actionable
   `LlamaUnsupportedException`, `LlamaEngine.supportsVideo` reports public

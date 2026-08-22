@@ -53,6 +53,7 @@ void main() {
 
     test('falls back to strings when JSON decoding fails', () {
       expect(ToolCallParsingUtils.decodeJsonValueOrString('42'), 42);
+      expect(ToolCallParsingUtils.decodeJsonValueOrString('null'), isNull);
       expect(ToolCallParsingUtils.decodeJsonValueOrString('Seoul'), 'Seoul');
       expect(
         ToolCallParsingUtils.decodeJsonValueOrString(
@@ -118,6 +119,14 @@ void main() {
       expect(scalarSlice, isNotNull);
       expect(scalarSlice!.value, isTrue);
       expect(ToolCallParsingUtils.extractLeadingJsonValue('oops', 0), isNull);
+    });
+
+    test('extracts a leading JSON null value', () {
+      final parsed = ToolCallParsingUtils.extractLeadingJsonValue('null,', 0);
+
+      expect(parsed, isNotNull);
+      expect(parsed!.value, isNull);
+      expect(parsed.end, 4);
     });
 
     test('extracts the first embedded JSON object', () {
