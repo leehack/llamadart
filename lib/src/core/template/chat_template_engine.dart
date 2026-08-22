@@ -423,7 +423,8 @@ class ChatTemplateEngine {
     final resultFormat = result.format < ChatFormat.values.length
         ? ChatFormat.values[result.format]
         : ChatFormat.generic;
-    if (_requiredKeepsLazyFormats.contains(resultFormat) && result.grammarLazy) {
+    if (_requiredKeepsLazyFormats.contains(resultFormat) &&
+        result.grammarLazy) {
       return result;
     }
 
