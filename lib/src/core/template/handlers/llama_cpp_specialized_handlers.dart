@@ -1084,6 +1084,8 @@ class _KimiK3GrammarBuilder {
         _rules,
         'kimi-tool-$toolIndex-optional',
         optionalRules,
+        format: 'Kimi K3',
+        schemaPath: 'tool "${tool.name}" arguments',
         separator: '',
       );
       final rawArguments = <String>[
@@ -1175,7 +1177,11 @@ class _MinimaxM3GrammarBuilder {
         kind: 'tool',
       );
       final schema = tool.toJsonSchema();
-      final arguments = _members(schema, 'm3-tool-$toolIndex-arg');
+      final arguments = _members(
+        schema,
+        'm3-tool-$toolIndex-arg',
+        schemaPath: 'tool "${tool.name}" arguments',
+      );
       final toolRule = 'm3-tool-$toolIndex';
       _rules.add(
         '$toolRule ::= '
@@ -1208,7 +1214,11 @@ class _MinimaxM3GrammarBuilder {
         : grammar;
   }
 
-  String _members(Map<String, dynamic> schema, String prefix) {
+  String _members(
+    Map<String, dynamic> schema,
+    String prefix, {
+    required String schemaPath,
+  }) {
     final properties = schemaProperties(schema);
     final required = schemaRequired(schema);
     final requiredMembers = <String>[];
@@ -1219,6 +1229,7 @@ class _MinimaxM3GrammarBuilder {
         entry.key,
         entry.value,
         '$prefix-${propertyIndex++}',
+        schemaPath: '$schemaPath.${entry.key}',
       );
       (required.contains(entry.key) ? requiredMembers : optionalMembers).add(
         rule,
@@ -1228,6 +1239,8 @@ class _MinimaxM3GrammarBuilder {
       _rules,
       '$prefix-optional',
       optionalMembers,
+      format: 'MiniMax M3',
+      schemaPath: schemaPath,
       separator: 'm3-space',
     );
     return <String>[
@@ -1236,10 +1249,20 @@ class _MinimaxM3GrammarBuilder {
     ].join(' ');
   }
 
-  String _element(String tag, Map<String, dynamic> schema, String rule) {
+  String _element(
+    String tag,
+    Map<String, dynamic> schema,
+    String rule, {
+    required String schemaPath,
+  }) {
     _requireDynamicTagName(tag, format: 'MiniMax M3');
     final closingText = '$_namespace</$tag>';
-    final valueRule = _value(schema, '$rule-value', closingText);
+    final valueRule = _value(
+      schema,
+      '$rule-value',
+      closingText,
+      schemaPath: schemaPath,
+    );
     _rules.add(
       '$rule ::= ${ToolCallGrammarUtils.literal('$_namespace<$tag>')} '
       '$valueRule ${ToolCallGrammarUtils.literal(closingText)}',
@@ -1250,19 +1273,21 @@ class _MinimaxM3GrammarBuilder {
   String _value(
     Map<String, dynamic> schema,
     String prefix,
-    String closingText,
-  ) {
+    String closingText, {
+    required String schemaPath,
+  }) {
     if (schemaResolvesToString(schema)) {
       return _addUntilRules(_rules, '$prefix-string', closingText);
     }
     if (schema['type'] == 'object') {
-      return _members(schema, '$prefix-member');
+      return _members(schema, '$prefix-member', schemaPath: schemaPath);
     }
     if (schema['type'] == 'array' && schema['items'] is Map) {
       final item = _element(
         'item',
         Map<String, dynamic>.from(schema['items'] as Map),
         '$prefix-item',
+        schemaPath: '$schemaPath[]',
       );
       return '($item m3-space)*';
     }
@@ -1332,6 +1357,8 @@ class _DsmlGrammarBuilder {
         _rules,
         'dsml-tool-$toolIndex-optional',
         optionalRules,
+        format: 'DeepSeek DSML',
+        schemaPath: 'tool "${tool.name}" arguments',
         separator: 'dsml-space',
       );
       final arguments = <String>[
@@ -1426,6 +1453,8 @@ class _MuseGrammarBuilder {
         _rules,
         'muse-tool-$toolIndex-optional',
         optionalRules,
+        format: 'Muse Glimmer',
+        schemaPath: 'tool "${tool.name}" arguments',
         separator: 'muse-space',
       );
       final arguments = <String>[
@@ -1491,10 +1520,23 @@ String? _addOptionalStateRules(
   List<String> rules,
   String prefix,
   List<String> optionalRules, {
+  required String format,
+  required String schemaPath,
   required String separator,
 }) {
   if (optionalRules.isEmpty) {
     return null;
+  }
+  // Each optional property doubles the subset-state count. Ten properties cap
+  // one object at 1,024 states and 5,120 non-empty transitions.
+  const maxOptionalProperties = 10;
+  if (optionalRules.length > maxOptionalProperties) {
+    throw LlamaUnsupportedException(
+      '$format grammar supports at most $maxOptionalProperties optional '
+      'properties per object because duplicate-safe any-order grammar states '
+      'grow exponentially; $schemaPath declares ${optionalRules.length}. '
+      'Make additional properties required or reduce the object schema.',
+    );
   }
 
   final visited = <String>{};
