@@ -152,6 +152,18 @@ void main() {
       expect(parsed.content, output);
     });
 
+    test('preserves literal namespace tokens outside a parsed tool scope', () {
+      const output =
+          'Before $ns literal\n'
+          '$ns<tool_call>$ns<invoke name="weather">'
+          '$ns<city>Seoul$ns</city>$ns</invoke>$ns</tool_call>'
+          '\nAfter $ns literal';
+      final parsed = MinimaxM3Handler().parse(output);
+
+      expect(parsed.content, 'Before $ns literal\n\nAfter $ns literal');
+      expect(_arguments(parsed), {'city': 'Seoul'});
+    });
+
     test('keeps non-tool content after a disabled-thinking prefix', () {
       expect(MinimaxM3Handler().parse('</mm:think>Hello').content, 'Hello');
     });

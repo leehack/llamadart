@@ -476,7 +476,37 @@ class MinimaxM3Handler extends _DirectJinjaHandler {
         reasoningContent: thinking.reasoning,
       );
     }
-    final normalized = thinking.content.replaceAll(namespace, '');
+    final rawContent = thinking.content;
+    const namespacedScopeStart = '$namespace<tool_call>';
+    const namespacedScopeEnd = '$namespace</tool_call>';
+    final scopeStartIndex = rawContent.indexOf(namespacedScopeStart);
+    if (scopeStartIndex < 0) {
+      return ChatParseResult(
+        content: rawContent,
+        reasoningContent: thinking.reasoning,
+      );
+    }
+    final scopeEndIndex = rawContent.indexOf(
+      namespacedScopeEnd,
+      scopeStartIndex + namespacedScopeStart.length,
+    );
+    if (scopeEndIndex < 0 && !isPartial) {
+      return ChatParseResult(
+        content: rawContent,
+        reasoningContent: thinking.reasoning,
+      );
+    }
+    final scopeEndExclusive = scopeEndIndex < 0
+        ? rawContent.length
+        : scopeEndIndex + namespacedScopeEnd.length;
+    final normalizedScope = rawContent
+        .substring(scopeStartIndex, scopeEndExclusive)
+        .replaceAll('$namespace<', '<');
+    final normalized = rawContent.replaceRange(
+      scopeStartIndex,
+      scopeEndExclusive,
+      normalizedScope,
+    );
     final parsed = _parseInvokeScope(
       normalized,
       scopeStart: '<tool_call>',
@@ -487,7 +517,7 @@ class MinimaxM3Handler extends _DirectJinjaHandler {
       isPartial: isPartial,
     );
     return ChatParseResult(
-      content: parsed.success ? parsed.remaining.trim() : thinking.content,
+      content: parsed.success ? parsed.remaining.trim() : rawContent,
       reasoningContent: thinking.reasoning,
       toolCalls: parsed.success ? parsed.calls : const [],
     );
