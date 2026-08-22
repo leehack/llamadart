@@ -304,17 +304,6 @@ void _expectDynamicLibraryExports(File libraryFile, Iterable<String> symbols) {
   }
 }
 
-List<String> _missingDynamicLibraryExports(
-  File libraryFile,
-  Iterable<String> symbols,
-) {
-  final library = ffi.DynamicLibrary.open(libraryFile.path);
-  return [
-    for (final symbol in symbols)
-      if (!library.providesSymbol(symbol)) symbol,
-  ];
-}
-
 String? _nativeAssetFilePath(String assetId) {
   final configFile = File('.dart_tool/native_assets.yaml');
   if (!configFile.existsSync()) {
@@ -910,25 +899,14 @@ void main() {
       );
     });
 
-    test('Verify runtime aLoRA metadata inspection ABI is complete', () {
+    test('Verify pinned primary runtime exports aLoRA metadata ABI', () {
       final libraryFile = _llamadartPrimaryLibraryFileOrNull();
       expect(
         libraryFile,
         isNotNull,
         reason: 'Expected a native library exporting llama.cpp symbols.',
       );
-      final missingSymbols = _missingDynamicLibraryExports(
-        libraryFile!,
-        _aloraMetadataSymbols,
-      );
-      expect(
-        missingSymbols,
-        anyOf(isEmpty, unorderedEquals(_aloraMetadataSymbols)),
-        reason:
-            'A partially exported aLoRA inspection ABI cannot be used '
-            'safely. A runtime without either symbol is handled by the typed '
-            'version-skew guard.',
-      );
+      _expectDynamicLibraryExports(libraryFile!, _aloraMetadataSymbols);
     });
   });
 }
