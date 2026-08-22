@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:dinja/dinja.dart';
 
+import '../../exceptions.dart';
 import '../../grammar/json_schema_converter.dart';
 import '../../models/chat/chat_message.dart';
 import '../../models/chat/chat_template_result.dart';
@@ -235,7 +236,12 @@ class KimiK3Handler extends _DirectJinjaHandler {
   }) {
     final scopeStart = input.indexOf(_toolsStart);
     if (scopeStart < 0) {
-      return _ParsedCalls(calls: const [], remaining: _stripKimiTurnEnd(input));
+      return _ParsedCalls(
+        calls: const [],
+        remaining: _stripKimiTurnEnd(
+          isPartial ? _hideIncompleteProtocolSuffix(input, _toolsStart) : input,
+        ),
+      );
     }
     final bodyStart = scopeStart + _toolsStart.length;
     final scopeEnd = input.indexOf(_toolsEnd, bodyStart);
@@ -417,7 +423,11 @@ class MinimaxM1Handler extends _DirectJinjaHandler {
     const end = '</tool_calls>';
     final startIndex = output.indexOf(start);
     if (startIndex < 0) {
-      return ChatParseResult(content: output.trim());
+      return ChatParseResult(
+        content:
+            (isPartial ? _hideIncompleteProtocolSuffix(output, start) : output)
+                .trim(),
+      );
     }
     final endIndex = output.indexOf(end, startIndex + start.length);
     if (endIndex < 0) {
@@ -446,6 +456,7 @@ class MinimaxM1Handler extends _DirectJinjaHandler {
     if (tools == null || tools.isEmpty) {
       return null;
     }
+    _requireUniqueToolNames(tools, format: 'MiniMax M1');
 
     final converter = JsonSchemaConverter();
     final callRules = <String>[];
@@ -544,7 +555,9 @@ class MinimaxM3Handler extends _DirectJinjaHandler {
     final scopeStartIndex = rawContent.indexOf(namespacedScopeStart);
     if (scopeStartIndex < 0) {
       return ChatParseResult(
-        content: rawContent,
+        content: isPartial
+            ? _hideIncompleteProtocolSuffix(rawContent, namespacedScopeStart)
+            : rawContent,
         reasoningContent: thinking.reasoning,
       );
     }
@@ -992,11 +1005,13 @@ class _KimiK3GrammarBuilder {
     if (resolvedTools == null || resolvedTools.isEmpty) {
       return null;
     }
+    _requireUniqueToolNames(resolvedTools, format: 'Kimi K3');
 
     final callRules = <String>[];
     String? stringValueRule;
     for (var toolIndex = 0; toolIndex < resolvedTools.length; toolIndex++) {
       final tool = resolvedTools[toolIndex];
+      _requireNonEmptyProtocolName(tool.name, format: 'Kimi K3', kind: 'tool');
       final schema = tool.toJsonSchema();
       final properties = schemaProperties(schema);
       final required = schemaRequired(schema);
@@ -1004,6 +1019,11 @@ class _KimiK3GrammarBuilder {
       final optionalRules = <String>[];
       var propertyIndex = 0;
       for (final entry in properties.entries) {
+        _requireNonEmptyProtocolName(
+          entry.key,
+          format: 'Kimi K3',
+          kind: 'parameter',
+        );
         final argumentRule = 'kimi-tool-$toolIndex-arg-${propertyIndex++}';
         final typeName = _kimiTypeName(entry.value);
         const close = '<|close|>argument<|sep|>';
@@ -1107,15 +1127,21 @@ class _MinimaxM3GrammarBuilder {
     if (resolvedTools == null || resolvedTools.isEmpty) {
       return null;
     }
+    _requireUniqueToolNames(resolvedTools, format: 'MiniMax M3');
     final toolRules = <String>[];
     for (var toolIndex = 0; toolIndex < resolvedTools.length; toolIndex++) {
       final tool = resolvedTools[toolIndex];
+      _requireNonEmptyProtocolName(
+        tool.name,
+        format: 'MiniMax M3',
+        kind: 'tool',
+      );
       final schema = tool.toJsonSchema();
       final arguments = _members(schema, 'm3-tool-$toolIndex-arg');
       final toolRule = 'm3-tool-$toolIndex';
       _rules.add(
         '$toolRule ::= '
-        '${ToolCallGrammarUtils.literal('$_namespace<invoke name="${tool.name}">')} '
+        '${ToolCallGrammarUtils.literal('$_namespace<invoke name="${_escapeAttribute(tool.name)}">')} '
         'm3-space $arguments m3-space '
         '${ToolCallGrammarUtils.literal('$_namespace</invoke>')} m3-space',
       );
@@ -1167,6 +1193,7 @@ class _MinimaxM3GrammarBuilder {
   }
 
   String _element(String tag, Map<String, dynamic> schema, String rule) {
+    _requireDynamicTagName(tag, format: 'MiniMax M3');
     final closingText = '$_namespace</$tag>';
     final valueRule = _value(schema, '$rule-value', closingText);
     _rules.add(
@@ -1214,12 +1241,18 @@ class _DsmlGrammarBuilder {
     if (resolvedTools == null || resolvedTools.isEmpty) {
       return null;
     }
+    _requireUniqueToolNames(resolvedTools, format: 'DeepSeek DSML');
 
     final callsStart = '<$_prefix$envelope>';
     final callsEnd = '</$_prefix$envelope>';
     final toolRules = <String>[];
     for (var toolIndex = 0; toolIndex < resolvedTools.length; toolIndex++) {
       final tool = resolvedTools[toolIndex];
+      _requireNonEmptyProtocolName(
+        tool.name,
+        format: 'DeepSeek DSML',
+        kind: 'tool',
+      );
       final schema = tool.toJsonSchema();
       _converter.resolveRefs(schema, schema);
       final properties = schemaProperties(schema);
@@ -1228,6 +1261,11 @@ class _DsmlGrammarBuilder {
       final optionalRules = <String>[];
       var propertyIndex = 0;
       for (final entry in properties.entries) {
+        _requireNonEmptyProtocolName(
+          entry.key,
+          format: 'DeepSeek DSML',
+          kind: 'parameter',
+        );
         final argumentRule = 'dsml-tool-$toolIndex-arg-${propertyIndex++}';
         final isString = schemaResolvesToString(entry.value);
         const close = '</｜DSML｜parameter>';
@@ -1235,7 +1273,7 @@ class _DsmlGrammarBuilder {
             ? _addUntilRules(_rules, '$argumentRule-string', close)
             : _converter.visit(entry.value, '$argumentRule-value');
         final opening =
-            '<｜DSML｜parameter name="${entry.key}" '
+            '<｜DSML｜parameter name="${_escapeAttribute(entry.key)}" '
             'string="${isString ? 'true' : 'false'}">';
         _rules.add(
           '$argumentRule ::= ${ToolCallGrammarUtils.literal(opening)} '
@@ -1254,7 +1292,7 @@ class _DsmlGrammarBuilder {
       final toolRule = 'dsml-tool-$toolIndex';
       _rules.add(
         '$toolRule ::= '
-        '${ToolCallGrammarUtils.literal('<｜DSML｜invoke name="${tool.name}">')} '
+        '${ToolCallGrammarUtils.literal('<｜DSML｜invoke name="${_escapeAttribute(tool.name)}">')} '
         'dsml-space $arguments '
         '${ToolCallGrammarUtils.literal('</｜DSML｜invoke>')} dsml-space',
       );
@@ -1298,11 +1336,13 @@ class _MuseGrammarBuilder {
     if (resolvedTools == null || resolvedTools.isEmpty) {
       return null;
     }
+    _requireUniqueToolNames(resolvedTools, format: 'Muse Glimmer');
 
     final toolRules = <String>[];
     final requiredToolRules = <String>[];
     for (var toolIndex = 0; toolIndex < resolvedTools.length; toolIndex++) {
       final tool = resolvedTools[toolIndex];
+      _requireMuseRecipientName(tool.name);
       final schema = tool.toJsonSchema();
       _converter.resolveRefs(schema, schema);
       final properties = schemaProperties(schema);
@@ -1311,12 +1351,18 @@ class _MuseGrammarBuilder {
       final optionalRules = <String>[];
       var propertyIndex = 0;
       for (final entry in properties.entries) {
+        _requireNonEmptyProtocolName(
+          entry.key,
+          format: 'Muse Glimmer',
+          kind: 'parameter',
+        );
         final argumentRule = 'muse-tool-$toolIndex-arg-${propertyIndex++}';
         const close = '</atem:parameter>';
         final valueRule = schemaResolvesToString(entry.value)
             ? _addUntilRules(_rules, '$argumentRule-string', close)
             : _converter.visit(entry.value, '$argumentRule-value');
-        final opening = '<atem:parameter name="${entry.key}">';
+        final opening =
+            '<atem:parameter name="${_escapeAttribute(entry.key)}">';
         _rules.add(
           '$argumentRule ::= ${ToolCallGrammarUtils.literal(opening)} '
           '$valueRule ${ToolCallGrammarUtils.literal(close)}',
@@ -1334,7 +1380,7 @@ class _MuseGrammarBuilder {
       final toolRule = 'muse-tool-$toolIndex';
       _rules.add(
         '$toolRule ::= '
-        '${ToolCallGrammarUtils.literal('<atem:invoke name="${tool.name}">')} '
+        '${ToolCallGrammarUtils.literal('<atem:invoke name="${_escapeAttribute(tool.name)}">')} '
         'muse-space $arguments '
         '${ToolCallGrammarUtils.literal('</atem:invoke>')} muse-space',
       );
@@ -1541,7 +1587,12 @@ _ParsedCalls _parseInvokeScope(
 }) {
   final scopeStartIndex = input.indexOf(scopeStart);
   if (scopeStartIndex < 0) {
-    return _ParsedCalls(calls: const [], remaining: input);
+    return _ParsedCalls(
+      calls: const [],
+      remaining: isPartial
+          ? _hideIncompleteProtocolSuffix(input, scopeStart)
+          : input,
+    );
   }
   final bodyStart = scopeStartIndex + scopeStart.length;
   final scopeEndIndex = input.indexOf(scopeEnd, bodyStart);
@@ -1577,7 +1628,7 @@ _ParsedCalls _parseInvokeScope(
     if (end < 0) {
       return allowPartial ? partialResult() : _ParsedCalls.failure();
     }
-    final name = start.group(1) ?? '';
+    final name = _unescapeAttribute(start.group(1) ?? '');
     final arguments = parseArguments(name, body.substring(argumentsStart, end));
     if (name.isEmpty || arguments == null) {
       return allowPartial ? partialResult() : _ParsedCalls.failure();
@@ -1809,7 +1860,7 @@ Map<String, dynamic>? _parseDsmlArguments(
   final result = <String, dynamic>{};
   final properties = schema == null ? null : schemaProperties(schema);
   for (final match in pattern.allMatches(body)) {
-    final key = match.group(1) ?? '';
+    final key = _unescapeAttribute(match.group(1) ?? '');
     final stringAttribute = match.group(2) == 'true';
     final raw = match.group(3) ?? '';
     final propertySchema = properties?[key];
@@ -1871,7 +1922,7 @@ List<LlamaCompletionChunkToolCall>? _parseAtemCalls(
   }
   final calls = <LlamaCompletionChunkToolCall>[];
   for (final invoke in invokePattern.allMatches(scope)) {
-    final name = invoke.group(1) ?? '';
+    final name = _unescapeAttribute(invoke.group(1) ?? '');
     final schema = schemas[name];
     if (schemas.isNotEmpty && schema == null) {
       return null;
@@ -1888,7 +1939,7 @@ List<LlamaCompletionChunkToolCall>? _parseAtemCalls(
     }
     final arguments = <String, dynamic>{};
     for (final parameter in parameterPattern.allMatches(params)) {
-      final key = parameter.group(1) ?? '';
+      final key = _unescapeAttribute(parameter.group(1) ?? '');
       final raw = parameter.group(2) ?? '';
       if (key.isEmpty || arguments.containsKey(key)) {
         return null;
@@ -1921,11 +1972,77 @@ List<LlamaCompletionChunkToolCall>? _parseAtemCalls(
   return calls.isEmpty ? null : calls;
 }
 
-String _unescapeAttribute(String value) =>
-    value.replaceAll('&quot;', '"').replaceAll('&amp;', '&');
+String _unescapeAttribute(String value) => value
+    .replaceAll('&quot;', '"')
+    .replaceAll('&lt;', '<')
+    .replaceAll('&gt;', '>')
+    .replaceAll('&amp;', '&');
 
-String _escapeAttribute(String value) =>
-    value.replaceAll('&', '&amp;').replaceAll('"', '&quot;');
+String _escapeAttribute(String value) => value
+    .replaceAll('&', '&amp;')
+    .replaceAll('"', '&quot;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;');
+
+void _requireDynamicTagName(String value, {required String format}) {
+  if (!RegExp(r'^[A-Za-z_][A-Za-z0-9_.-]*$').hasMatch(value)) {
+    throw LlamaUnsupportedException(
+      '$format cannot represent tool parameter "$value" as an XML tag. '
+      'Use a name matching [A-Za-z_][A-Za-z0-9_.-]*.',
+    );
+  }
+}
+
+void _requireNonEmptyProtocolName(
+  String value, {
+  required String format,
+  required String kind,
+}) {
+  if (value.isEmpty) {
+    throw LlamaUnsupportedException(
+      '$format cannot represent an empty $kind name in its tool-call '
+      'protocol.',
+    );
+  }
+}
+
+void _requireUniqueToolNames(
+  List<ToolDefinition> tools, {
+  required String format,
+}) {
+  final names = <String>{};
+  for (final tool in tools) {
+    if (!names.add(tool.name)) {
+      throw LlamaUnsupportedException(
+        '$format cannot bind duplicate tool name "${tool.name}" to one '
+        'schema-exact parser route. Use unique tool names.',
+      );
+    }
+  }
+}
+
+void _requireMuseRecipientName(String value) {
+  if (value.isEmpty ||
+      value.trim() != value ||
+      value == 'self' ||
+      value == 'user' ||
+      value.contains('<')) {
+    throw LlamaUnsupportedException(
+      'Muse Glimmer cannot represent tool name "$value" in its recipient '
+      'channel. Use a non-empty name without surrounding whitespace or "<", '
+      'and do not use the reserved names "self" or "user".',
+    );
+  }
+}
+
+String _hideIncompleteProtocolSuffix(String input, String marker) {
+  for (var length = marker.length - 1; length > 0; length--) {
+    if (input.endsWith(marker.substring(0, length))) {
+      return input.substring(0, input.length - length);
+    }
+  }
+  return input;
+}
 
 String? _nullIfEmpty(String? value) {
   final trimmed = value?.trim();

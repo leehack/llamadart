@@ -420,6 +420,11 @@ class ChatCompletionStreamParser {
   }
 
   static bool _mayEmbedToolEnvelopeAfterContent(int formatIndex) =>
+      formatIndex == ChatFormat.kimiK3.index ||
+      formatIndex == ChatFormat.minimaxM1.index ||
+      formatIndex == ChatFormat.minimaxM3.index ||
+      formatIndex == ChatFormat.deepseekV32.index ||
+      formatIndex == ChatFormat.deepseekV4.index ||
       formatIndex == ChatFormat.museGlimmer.index ||
       formatIndex == ChatFormat.glm45.index ||
       formatIndex == ChatFormat.laguna.index;

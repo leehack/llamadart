@@ -146,6 +146,59 @@ void main() {
     );
   });
 
+  test('XML attribute grammars round-trip escaped schema identities', () {
+    const namespace = MinimaxM3Handler.namespace;
+    _expectGrammar(
+      validator,
+      MinimaxM3Handler().buildGrammar([_attributeTool])!,
+      valid: [
+        '$namespace<tool_call>'
+            '$namespace<invoke name="weather&amp;&quot;alerts">'
+            '$namespace</invoke>'
+            '$namespace</tool_call>',
+      ],
+      invalid: [
+        '$namespace<tool_call>'
+            '$namespace<invoke name="weather&"alerts">'
+            '$namespace</invoke>'
+            '$namespace</tool_call>',
+      ],
+    );
+
+    const dsmlValid =
+        '<｜DSML｜function_calls>'
+        '<｜DSML｜invoke name="weather&amp;&quot;alerts">'
+        '<｜DSML｜parameter name="city&amp;&quot;zone" string="true">Seoul'
+        '</｜DSML｜parameter>'
+        '</｜DSML｜invoke>'
+        '</｜DSML｜function_calls>';
+    _expectGrammar(
+      validator,
+      DeepseekV32Handler().buildGrammar([_escapedAttributeSchemaTool])!,
+      valid: [dsmlValid],
+      invalid: [dsmlValid.replaceFirst('&amp;&quot;', '&"')],
+    );
+
+    const museValid =
+        '<atem:function_calls>'
+        '<atem:invoke name="weather&amp;&quot;alerts">'
+        '<atem:parameter name="city&amp;&quot;zone">Seoul</atem:parameter>'
+        '</atem:invoke>'
+        '</atem:function_calls>';
+    _expectGrammar(
+      validator,
+      MuseGlimmerHandler().buildGrammar([_escapedAttributeSchemaTool])!,
+      valid: [museValid],
+      invalid: [museValid.replaceFirst('&amp;&quot;', '&"')],
+    );
+    _expectGrammar(
+      validator,
+      MuseGlimmerHandler().buildRequiredGrammar([_escapedAttributeSchemaTool])!,
+      valid: [' to=weather&"alerts<|message|>$museValid'],
+      invalid: [' to=weather<|message|>$museValid'],
+    );
+  });
+
   test('MiniMax M3 binds closing tags and preserves string delimiters', () {
     final grammar = MinimaxM3Handler().buildGrammar([
       _schemaTool,
@@ -519,6 +572,20 @@ final _zeroArgTool = ToolDefinition(
   name: 'ping',
   description: 'Ping',
   parameters: const [],
+  handler: (_) async => null,
+);
+
+final _attributeTool = ToolDefinition(
+  name: 'weather&"alerts',
+  description: 'Weather alerts',
+  parameters: const [],
+  handler: (_) async => null,
+);
+
+final _escapedAttributeSchemaTool = ToolDefinition(
+  name: 'weather&"alerts',
+  description: 'Weather alerts',
+  parameters: [ToolParam.string('city&"zone', required: true)],
   handler: (_) async => null,
 );
 

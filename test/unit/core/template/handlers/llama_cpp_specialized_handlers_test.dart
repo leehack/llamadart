@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:llamadart/src/core/models/tools/tool_param.dart';
 import 'package:llamadart/src/core/template/chat_format.dart';
@@ -80,6 +81,38 @@ void main() {
 
       expect(grammar, contains('kimi-raw-0 ::= ""'));
       expect(grammar, isNot(contains(RegExp(r'kimi-raw-0 ::=\s*\n'))));
+    });
+
+    test('grammar rejects ambiguous or empty protocol identities', () {
+      final duplicate = ToolDefinition(
+        name: _weatherTool.name,
+        description: 'Duplicate weather',
+        parameters: [ToolParam.integer('days')],
+        handler: (_) async => null,
+      );
+      final emptyTool = ToolDefinition(
+        name: '',
+        description: 'Empty name',
+        parameters: const [],
+        handler: (_) async => null,
+      );
+      final emptyParameter = ToolDefinition(
+        name: 'empty_parameter',
+        description: 'Empty parameter',
+        parameters: [ToolParam.string('')],
+        handler: (_) async => null,
+      );
+
+      for (final tools in [
+        [_weatherTool, duplicate],
+        [emptyTool],
+        [emptyParameter],
+      ]) {
+        expect(
+          () => KimiK3Handler().buildGrammar(tools),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
+      }
     });
 
     test('production parse validates escaped Kimi names against schemas', () {
@@ -454,6 +487,32 @@ void main() {
       expect(grammar, isNot(contains('identifier ::=')));
       expect(grammar, isNot(contains(r'raw ::= [^]]*')));
     });
+
+    test('round-trips escaped tool attributes and rejects unsafe tag keys', () {
+      final grammar = MinimaxM3Handler().buildGrammar([_attributeTool])!;
+      expect(grammar, contains(r'invoke name=\"weather&amp;&quot;alerts\"'));
+
+      const output =
+          '$ns<tool_call>$ns<invoke name="weather&amp;&quot;alerts">'
+          '$ns</invoke>$ns</tool_call>';
+      final parsed = ChatTemplateEngine.parse(
+        ChatFormat.minimaxM3.index,
+        output,
+        tools: [_attributeTool],
+      );
+      expect(parsed.toolCalls.single.function?.name, 'weather&"alerts');
+
+      expect(
+        () => MinimaxM3Handler().buildGrammar([_escapedSchemaTool]),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            contains('cannot represent tool parameter "city&"zone"'),
+          ),
+        ),
+      );
+    });
   });
 
   group('DeepSeek V3.2 DSML', () {
@@ -488,9 +547,33 @@ void main() {
         grammar.split('\n').first,
         r'root ::= "<｜DSML｜function_calls>" dsml-space dsml-tool+ "</｜DSML｜function_calls>"',
       );
-      expect(grammar, contains(r'invoke name=\"weather&\"alerts\">'));
+      expect(grammar, contains(r'invoke name=\"weather&amp;&quot;alerts\">'));
       expect(grammar, isNot(contains('identifier ::=')));
       expect(grammar, isNot(contains('<｜DSML｜tool_calls>')));
+    });
+
+    test('round-trips escaped DSML tool and parameter attributes', () {
+      final grammar = DeepseekV32Handler().buildGrammar([
+        _escapedAttributeSchemaTool,
+      ])!;
+      expect(grammar, contains(r'invoke name=\"weather&amp;&quot;alerts\"'));
+      expect(grammar, contains(r'parameter name=\"city&amp;&quot;zone\"'));
+
+      const output =
+          '<｜DSML｜function_calls>'
+          '<｜DSML｜invoke name="weather&amp;&quot;alerts">'
+          '<｜DSML｜parameter name="city&amp;&quot;zone" string="true">Seoul'
+          '</｜DSML｜parameter>'
+          '</｜DSML｜invoke>'
+          '</｜DSML｜function_calls>';
+      final parsed = ChatTemplateEngine.parse(
+        ChatFormat.deepseekV32.index,
+        output,
+        tools: [_escapedAttributeSchemaTool],
+      );
+
+      expect(parsed.toolCalls.single.function?.name, 'weather&"alerts');
+      expect(_arguments(parsed), {'city&"zone': 'Seoul'});
     });
 
     test('forced-open reasoning terminates at the V3.2 envelope', () {
@@ -705,6 +788,42 @@ void main() {
       expect(parsed.content, 'On it.');
       expect(parsed.toolCalls.single.function?.name, 'weather');
       expect(_arguments(parsed), {'city': ' New York '});
+    });
+
+    test('round-trips escaped attributes and rejects reserved recipients', () {
+      final grammar = MuseGlimmerHandler().buildGrammar([
+        _escapedAttributeSchemaTool,
+      ])!;
+      expect(grammar, contains(r'invoke name=\"weather&amp;&quot;alerts\"'));
+      expect(grammar, contains(r'parameter name=\"city&amp;&quot;zone\"'));
+
+      const output =
+          ' to=weather&"alerts<|message|>'
+          '<atem:function_calls>'
+          '<atem:invoke name="weather&amp;&quot;alerts">'
+          '<atem:parameter name="city&amp;&quot;zone">Seoul</atem:parameter>'
+          '</atem:invoke>'
+          '</atem:function_calls><|eot|>';
+      final parsed = ChatTemplateEngine.parse(
+        ChatFormat.museGlimmer.index,
+        output,
+        tools: [_escapedAttributeSchemaTool],
+      );
+      expect(parsed.toolCalls.single.function?.name, 'weather&"alerts');
+      expect(_arguments(parsed), {'city&"zone': 'Seoul'});
+
+      for (final reserved in ['self', 'user', ' leading', 'bad<route']) {
+        final tool = ToolDefinition(
+          name: reserved,
+          description: 'Invalid Muse recipient',
+          parameters: const [],
+          handler: (_) async => null,
+        );
+        expect(
+          () => MuseGlimmerHandler().buildGrammar([tool]),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
+      }
     });
 
     test('does not parse quoted ATEM markup in the user channel', () {
@@ -975,6 +1094,13 @@ final _attributeTool = ToolDefinition(
 final _escapedSchemaTool = ToolDefinition(
   name: 'weather',
   description: 'Weather',
+  parameters: [ToolParam.string('city&"zone', required: true)],
+  handler: (_) async => null,
+);
+
+final _escapedAttributeSchemaTool = ToolDefinition(
+  name: 'weather&"alerts',
+  description: 'Weather alerts',
   parameters: [ToolParam.string('city&"zone', required: true)],
   handler: (_) async => null,
 );
