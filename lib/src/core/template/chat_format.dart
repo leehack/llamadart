@@ -123,6 +123,24 @@ enum ChatFormat {
 
   /// Hunyuan V3 — namespaced thinking and XML-like argument tool calls.
   hunyuanV3,
+
+  /// Kimi K3 — XTML response, reasoning, and typed tool-call sections.
+  kimiK3,
+
+  /// MiniMax M1 — newline-delimited JSON calls inside `<tool_calls>`.
+  minimaxM1,
+
+  /// MiniMax M3 — namespaced XML invokes with `<mm:think>` reasoning.
+  minimaxM3,
+
+  /// DeepSeek V3.2/V4 — DSML invokes with typed parameter values.
+  deepseekV4,
+
+  /// Muse Glimmer — recipient channels with ATEM function-call markup.
+  museGlimmer,
+
+  /// Poolside Laguna — tagged reasoning and arg-key/value tool calls.
+  laguna,
 }
 
 /// Detects the [ChatFormat] by scanning a Jinja template source string
@@ -133,6 +151,54 @@ enum ChatFormat {
 ChatFormat detectChatFormat(String? templateSource) {
   if (templateSource == null || templateSource.isEmpty) {
     return ChatFormat.contentOnly;
+  }
+
+  // Kimi K3. Keep this separate from Kimi K2: K3 uses XTML tags and typed
+  // arguments rather than K2's tool-call-section tokens.
+  if (templateSource.contains('<|open|>') &&
+      templateSource.contains('<|close|>') &&
+      templateSource.contains('<|end_of_msg|>')) {
+    return ChatFormat.kimiK3;
+  }
+
+  // Muse Glimmer recipient channels and ATEM calls.
+  if (templateSource.contains('<atem:function_calls>') &&
+      templateSource.contains('<|eom|>')) {
+    return ChatFormat.museGlimmer;
+  }
+
+  // MiniMax M3 must be checked before the generic Hermes signature because
+  // its namespaced envelope contains a literal <tool_call> marker.
+  if (templateSource.contains(']<]minimax[>[') &&
+      templateSource.contains('<tool_call>') &&
+      templateSource.contains('<invoke name=')) {
+    return ChatFormat.minimaxM3;
+  }
+
+  // DeepSeek V3.2/V4 DSML family. The marker is assembled from a Jinja
+  // variable, so detecting only literal rendered tags misses every variant.
+  if (templateSource.contains('dsml_token') &&
+      templateSource.contains('DSML') &&
+      (templateSource.contains('function_calls') ||
+          templateSource.contains('tool_calls'))) {
+    return ChatFormat.deepseekV4;
+  }
+
+  // MiniMax M1 newline-delimited JSON tool-call envelope.
+  if (templateSource.contains('<begin_of_document>') &&
+      templateSource.contains('<beginning_of_sentence>') &&
+      templateSource.contains('<tool_calls>')) {
+    return ChatFormat.minimaxM1;
+  }
+
+  // Poolside Laguna. These templates share GLM-style argument tags but use
+  // explicit assistant/tool-response turns and </assistant> as a stop.
+  if (templateSource.contains('<assistant>') &&
+      templateSource.contains('</assistant>') &&
+      templateSource.contains('<tool_response>') &&
+      templateSource.contains('<arg_key>') &&
+      templateSource.contains('<arg_value>')) {
+    return ChatFormat.laguna;
   }
 
   // DeepSeek V3.1

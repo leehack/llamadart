@@ -34,6 +34,7 @@ import 'handlers/hunyuan_v3_handler.dart';
 import 'handlers/kimi_k2_handler.dart';
 import 'handlers/lfm2_handler.dart';
 import 'handlers/llama3_handler.dart';
+import 'handlers/llama_cpp_specialized_handlers.dart';
 import 'handlers/magistral_handler.dart';
 import 'handlers/minimax_m2_handler.dart';
 import 'handlers/ministral_handler.dart';
@@ -548,6 +549,18 @@ class ChatTemplateEngine {
         return MiniCpm5Handler();
       case ChatFormat.hunyuanV3:
         return HunyuanV3Handler();
+      case ChatFormat.kimiK3:
+        return KimiK3Handler();
+      case ChatFormat.minimaxM1:
+        return MinimaxM1Handler();
+      case ChatFormat.minimaxM3:
+        return MinimaxM3Handler();
+      case ChatFormat.deepseekV4:
+        return DeepseekV4Handler();
+      case ChatFormat.museGlimmer:
+        return MuseGlimmerHandler();
+      case ChatFormat.laguna:
+        return LagunaHandler();
       case ChatFormat.gptOss:
         return GptOssHandler();
       case ChatFormat.seedOss:

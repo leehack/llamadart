@@ -48,18 +48,15 @@ void main() {
       expect(format, equals(ChatFormat.contentOnly));
     });
 
-    test(
-      'keeps DeepSeek V4 DSML tool_calls template content-only in b9860',
-      () {
-        const source =
-            "{%- set dsml_token = '｜DSML｜' -%}"
-            "<' + dsml_token + 'tool_calls>"
-            "<' + dsml_token + 'invoke name=\"\$TOOL_NAME\">"
-            "</' + dsml_token + 'tool_calls>";
-        final format = detectChatFormat(source);
-        expect(format, equals(ChatFormat.contentOnly));
-      },
-    );
+    test('detects DeepSeek V4 DSML tool_calls template', () {
+      const source =
+          "{%- set dsml_token = '｜DSML｜' -%}"
+          "<' + dsml_token + 'tool_calls>"
+          "<' + dsml_token + 'invoke name=\"\$TOOL_NAME\">"
+          "</' + dsml_token + 'tool_calls>";
+      final format = detectChatFormat(source);
+      expect(format, equals(ChatFormat.deepseekV4));
+    });
 
     test('detects Cohere2 MoE / North Code before older Command-R', () {
       const source =

@@ -1,5 +1,9 @@
 ## Unreleased
 
+* Added template-aware parsing for Kimi K3, MiniMax M1/M3, DeepSeek V3.2/V4,
+  Muse Glimmer, and Poolside Laguna, preventing their native tool calls from
+  silently falling back to plain content.
+
 * Fixed Web/native backend API parity. `WebAutoBackend` now forwards grammar
   constraint support from its active runtime, so strict structured output fails
   early with an actionable error on unsupported Web backends, and the Web-safe
