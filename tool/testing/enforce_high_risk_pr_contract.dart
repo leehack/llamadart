@@ -107,6 +107,7 @@ final _taskReference = RegExp(
 HighRiskAssessment assessHighRiskFiles(
   Iterable<String> files, {
   Set<String> protectedEvidencePaths = const {},
+  Set<String> structuredOutputParityDependencies = const {},
 }) {
   final normalized = files
       .map((file) => file)
@@ -194,6 +195,11 @@ HighRiskAssessment assessHighRiskFiles(
     if (_isProtectedEvidencePath(path, protectedEvidencePaths)) {
       surfaces.add(HighRiskSurface.regressionPolicy);
     }
+    if (_isProtectedEvidencePath(path, structuredOutputParityDependencies)) {
+      surfaces
+        ..add(HighRiskSurface.structuredOutput)
+        ..add(HighRiskSurface.regressionPolicy);
+    }
   }
 
   return HighRiskAssessment(changedFiles: normalized, surfaces: surfaces);
@@ -239,15 +245,41 @@ HighRiskContractResult validateHighRiskContract({
   Map<String, String> verifiedUpstreamCommits = const {},
   Set<String> compiledGrammarTests = const {},
   Set<String> protectedEvidencePaths = const {},
+  Set<String> structuredOutputParityDependencies = const {},
+  Set<String>? proposedCompiledGrammarTests,
+  Set<String>? proposedStructuredOutputParityDependencies,
   List<HighRiskCiRun> ciRuns = const [],
-  Map<String, dynamic>? upstreamParityCiEvidence,
+  Map<String, dynamic>? trustedUpstreamParityEvidence,
 }) {
   final assessment = assessHighRiskFiles(
     changedFiles,
     protectedEvidencePaths: protectedEvidencePaths,
+    structuredOutputParityDependencies: structuredOutputParityDependencies,
   );
   final errors = <String>[];
   final fields = _parseEvidenceFields(body);
+
+  if (assessment.changedFiles.contains('.github/high-risk-policy.json')) {
+    if (proposedCompiledGrammarTests == null ||
+        proposedStructuredOutputParityDependencies == null) {
+      errors.add(
+        'Policy edits require the exact proposed policy as untrusted data.',
+      );
+    } else {
+      final removedGrammarTests = compiledGrammarTests.difference(
+        proposedCompiledGrammarTests,
+      );
+      final removedParityDependencies = structuredOutputParityDependencies
+          .difference(proposedStructuredOutputParityDependencies);
+      if (removedGrammarTests.isNotEmpty ||
+          removedParityDependencies.isNotEmpty) {
+        errors.add(
+          'High-risk policy edits must preserve every trusted compiled-grammar '
+          'test and structured-output parity dependency.',
+        );
+      }
+    }
+  }
 
   if (!assessment.isHighRisk) {
     final classification = fields['High-risk classification'];
@@ -276,7 +308,9 @@ HighRiskContractResult validateHighRiskContract({
     errors.add('The latest exact-head CI run must succeed.');
   }
   if (deletedFiles.any(
-    (path) => _isProtectedEvidencePath(path, protectedEvidencePaths),
+    (path) =>
+        _isProtectedEvidencePath(path, protectedEvidencePaths) ||
+        _isProtectedEvidencePath(path, structuredOutputParityDependencies),
   )) {
     errors.add(
       'Trusted policy or evidence paths cannot be deleted or renamed.',
@@ -354,8 +388,7 @@ HighRiskContractResult validateHighRiskContract({
       qaTask: qaTask,
       verifiedUpstreamCommits: verifiedUpstreamCommits,
       compiledGrammarTests: compiledGrammarTests,
-      latestCi: latestCi,
-      upstreamParityCiEvidence: upstreamParityCiEvidence,
+      trustedUpstreamParityEvidence: trustedUpstreamParityEvidence,
       errors: errors,
     );
   }
@@ -395,8 +428,7 @@ void _validateEvidenceManifest(
   required String? qaTask,
   required Map<String, String> verifiedUpstreamCommits,
   required Set<String> compiledGrammarTests,
-  required HighRiskCiRun? latestCi,
-  required Map<String, dynamic>? upstreamParityCiEvidence,
+  required Map<String, dynamic>? trustedUpstreamParityEvidence,
   required List<String> errors,
 }) {
   if (evidence['schema'] != 1) errors.add('Evidence schema must be 1.');
@@ -566,19 +598,17 @@ void _validateEvidenceManifest(
         './tool/testing/run_template_parity_suites.sh.',
       );
     }
-    final upstreamParityTests = _validateTestPaths(
+    _validateTestPaths(
       structured['upstreamParityTests'],
       'structuredOutput.upstreamParityTests',
       changed,
       deletedFiles,
       errors,
     );
-    _validateUpstreamParityCiEvidence(
-      upstreamParityCiEvidence,
-      latestCi: latestCi,
+    _validateTrustedUpstreamParityEvidence(
+      trustedUpstreamParityEvidence,
       headSha: headSha,
       canonicalRefs: verifiedUpstreamCommits,
-      parityTests: upstreamParityTests,
       errors: errors,
     );
     final coverage = _stringSet(
@@ -621,34 +651,30 @@ void _validateEvidenceManifest(
   }
 }
 
-void _validateUpstreamParityCiEvidence(
+void _validateTrustedUpstreamParityEvidence(
   Map<String, dynamic>? evidence, {
-  required HighRiskCiRun? latestCi,
   required String? headSha,
   required Map<String, String> canonicalRefs,
-  required List<String> parityTests,
   required List<String> errors,
 }) {
-  if (evidence == null || latestCi == null) {
+  if (evidence == null) {
     errors.add(
-      'Structured-output changes require trusted exact-head upstream parity CI evidence.',
+      'Structured-output changes require independently reproduced trusted-base upstream parity evidence.',
     );
     return;
   }
   final expected = <String, dynamic>{
     'schema': 1,
     'headSha': headSha,
-    'runId': latestCi.id,
-    'runAttempt': latestCi.runAttempt,
     'result': 'PASS',
+    'source': 'trusted-default-branch',
     'command': './tool/testing/run_template_parity_suites.sh',
     'canonicalUpstreamCommits': canonicalRefs,
-    'tests': parityTests,
   };
   if (jsonEncode(_canonicalJson(evidence)) !=
       jsonEncode(_canonicalJson(expected))) {
     errors.add(
-      'Upstream parity CI artifact must exactly bind the successful CI run, head, canonical refs, command, and changed durable tests.',
+      'Trusted-base upstream parity evidence must exactly bind the head, canonical refs, command, and PASS result.',
     );
   }
 }
@@ -796,7 +822,7 @@ Never _usage(String message) {
     '--behind <n> --ahead <n> --unresolved-threads <n> --reviews <json> '
     '--pr-body-digest <sha256> --verified-upstream-commits <json> '
     '--compiled-grammar-policy <json> --protected-evidence-paths <paths.txt> '
-    '--ci-runs <json> [--upstream-parity-ci-evidence <json>]',
+    '--ci-runs <json> [--trusted-upstream-parity-evidence <json>]',
   );
   exit(64);
 }
@@ -856,6 +882,14 @@ Future<void> main(List<String> args) async {
       jsonDecode(await File(options['reviews']!).readAsString()),
     ),
   );
+  final policy = _decodeHighRiskPolicy(
+    jsonDecode(await File(options['compiled-grammar-policy']!).readAsString()),
+  );
+  final proposedPolicy = options['proposed-policy'] == null
+      ? null
+      : _decodeHighRiskPolicy(
+          jsonDecode(await File(options['proposed-policy']!).readAsString()),
+        );
   final result = validateHighRiskContract(
     changedFiles: await File(options['changed-files']!).readAsLines(),
     deletedFiles: await File(options['deleted-files']!).readAsLines(),
@@ -868,22 +902,24 @@ Future<void> main(List<String> args) async {
         await File(options['verified-upstream-commits']!).readAsString(),
       ),
     ),
-    compiledGrammarTests: _decodeCompiledGrammarPolicy(
-      jsonDecode(
-        await File(options['compiled-grammar-policy']!).readAsString(),
-      ),
-    ),
+    compiledGrammarTests: policy.compiledGrammarTests,
     protectedEvidencePaths: (await File(
       options['protected-evidence-paths']!,
     ).readAsLines()).toSet(),
+    structuredOutputParityDependencies:
+        policy.structuredOutputParityDependencies,
+    proposedCompiledGrammarTests: proposedPolicy?.compiledGrammarTests,
+    proposedStructuredOutputParityDependencies:
+        proposedPolicy?.structuredOutputParityDependencies,
     ciRuns: _decodeCiRuns(
       jsonDecode(await File(options['ci-runs']!).readAsString()),
     ),
-    upstreamParityCiEvidence: options['upstream-parity-ci-evidence'] == null
+    trustedUpstreamParityEvidence:
+        options['trusted-upstream-parity-evidence'] == null
         ? null
         : jsonDecode(
                 await File(
-                  options['upstream-parity-ci-evidence']!,
+                  options['trusted-upstream-parity-evidence']!,
                 ).readAsString(),
               )
               as Map<String, dynamic>,
@@ -968,7 +1004,17 @@ Map<String, String> _decodeVerifiedUpstreamCommits(Object? value) {
   return value.cast<String, String>();
 }
 
-Set<String> _decodeCompiledGrammarPolicy(Object? value) {
+final class _HighRiskPolicy {
+  const _HighRiskPolicy({
+    required this.compiledGrammarTests,
+    required this.structuredOutputParityDependencies,
+  });
+
+  final Set<String> compiledGrammarTests;
+  final Set<String> structuredOutputParityDependencies;
+}
+
+_HighRiskPolicy _decodeHighRiskPolicy(Object? value) {
   if (value is! Map<String, dynamic> ||
       value['schema'] != 1 ||
       value.keys.toSet().difference(const {
@@ -1003,7 +1049,10 @@ Set<String> _decodeCompiledGrammarPolicy(Object? value) {
       parityDependencies.any((path) => path.isEmpty || path.trim() != path)) {
     _usage('Structured-output parity dependencies must be unique exact paths.');
   }
-  return paths.toSet();
+  return _HighRiskPolicy(
+    compiledGrammarTests: paths.toSet(),
+    structuredOutputParityDependencies: parityDependencies.toSet(),
+  );
 }
 
 List<HighRiskCiRun> _decodeCiRuns(Object? value) {

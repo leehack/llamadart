@@ -73,34 +73,37 @@ void main() {
     },
   );
 
-  test('native compiler rejects a broken generated grammar dependency', () {
-    final invalidGrammar = generatedGrammar.replaceFirst(
-      'root ::= ',
-      'root ::= undefined-generated-rule ',
-    );
+  test(
+    'native compiler rejects a broken generated grammar dependency',
+    () async {
+      final invalidGrammar = generatedGrammar.replaceFirst(
+        'root ::= ',
+        'root ::= undefined-generated-rule ',
+      );
 
-    expect(
-      invalidGrammar,
-      isNot(equals(generatedGrammar)),
-      reason: 'The adversarial mutation must modify the generated root rule.',
-    );
-    expectLater(
-      engine.create(
-        const [
-          LlamaChatMessage.fromText(
-            role: LlamaChatRole.user,
-            text: 'Call the ping tool now.',
+      expect(
+        invalidGrammar,
+        isNot(equals(generatedGrammar)),
+        reason: 'The adversarial mutation must modify the generated root rule.',
+      );
+      await expectLater(
+        engine.create(
+          const [
+            LlamaChatMessage.fromText(
+              role: LlamaChatRole.user,
+              text: 'Call the ping tool now.',
+            ),
+          ],
+          params: GenerationParams(
+            grammar: invalidGrammar,
+            maxTokens: 16,
+            temp: 0,
           ),
-        ],
-        params: GenerationParams(
-          grammar: invalidGrammar,
-          maxTokens: 16,
-          temp: 0,
-        ),
-      ).drain<void>(),
-      throwsA(isA<LlamaInferenceException>()),
-    );
-  });
+        ).drain<void>(),
+        throwsA(isA<LlamaInferenceException>()),
+      );
+    },
+  );
 }
 
 Future<String> _generate(LlamaEngine engine, String grammar, String prompt) {

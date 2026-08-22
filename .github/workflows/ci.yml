@@ -254,6 +254,8 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
 
       - name: Locate structured-output evidence manifest
         id: evidence
@@ -290,21 +292,46 @@ jobs:
         if: steps.evidence.outputs.required == 'true'
         run: flutter pub get
 
-      - name: Run pinned and current upstream parity
+      - name: Resolve immutable upstream parity commits
         if: steps.evidence.outputs.required == 'true'
+        id: upstream
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           MANIFEST: ${{ steps.evidence.outputs.manifest }}
         run: |
           set -euo pipefail
+          output="$RUNNER_TEMP/parity-upstream-commits.json"
+          pinned_ref="$(jq -r '.upstreamRefs.pinned' "$MANIFEST")"
+          current_ref="$(jq -r '.upstreamRefs.current' "$MANIFEST")"
+          pinned_sha="$(
+            gh api "repos/ggml-org/llama.cpp/commits/$pinned_ref" --jq '.sha'
+          )"
+          current_sha="$(
+            gh api "repos/ggml-org/llama.cpp/commits/$current_ref" --jq '.sha'
+          )"
+          [[ "$pinned_sha" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$current_sha" =~ ^[0-9a-f]{40}$ ]]
+          jq -n --arg pinned "$pinned_sha" --arg current "$current_sha" \
+            '{pinned: $pinned, current: $current}' > "$output"
+          echo "file=$output" >> "$GITHUB_OUTPUT"
+
+      - name: Run pinned and current upstream parity
+        if: steps.evidence.outputs.required == 'true'
+        shell: bash
+        env:
+          MANIFEST: ${{ steps.evidence.outputs.manifest }}
+          UPSTREAM_FILE: ${{ steps.upstream.outputs.file }}
+        run: |
+          set -euo pipefail
           for role in pinned current; do
-            ref="$(jq -r --arg role "$role" '.upstreamRefs[$role]' "$MANIFEST")"
+            ref="$(jq -r --arg role "$role" '.[$role]' "$UPSTREAM_FILE")"
             source_dir="$RUNNER_TEMP/llama-cpp-$role"
             build_dir="$RUNNER_TEMP/llama-cpp-chat-tests-$role"
             LLAMA_CPP_REF="$ref" \
             LLAMA_CPP_SOURCE_DIR="$source_dir" \
               ./tool/testing/prepare_llama_cpp_source.sh
+            [[ "$(git -C "$source_dir" rev-parse HEAD)" == "$ref" ]]
             LLAMA_CPP_REF="$ref" \
             LLAMA_CPP_SOURCE_DIR="$source_dir" \
             LLAMA_CPP_CHAT_TEST_SOURCE_DIR="$source_dir" \
@@ -330,21 +357,15 @@ jobs:
         if: steps.evidence.outputs.required == 'true'
         shell: bash
         env:
-          GH_TOKEN: ${{ github.token }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           MANIFEST: ${{ steps.evidence.outputs.manifest }}
+          UPSTREAM_FILE: ${{ steps.upstream.outputs.file }}
           RUN_ID: ${{ github.run_id }}
           RUN_ATTEMPT: ${{ github.run_attempt }}
         run: |
           set -euo pipefail
-          pinned="$(jq -r '.upstreamRefs.pinned' "$MANIFEST")"
-          current="$(jq -r '.upstreamRefs.current' "$MANIFEST")"
-          pinned_sha="$(
-            gh api "repos/ggml-org/llama.cpp/commits/$pinned" --jq '.sha'
-          )"
-          current_sha="$(
-            gh api "repos/ggml-org/llama.cpp/commits/$current" --jq '.sha'
-          )"
+          pinned_sha="$(jq -r '.pinned' "$UPSTREAM_FILE")"
+          current_sha="$(jq -r '.current' "$UPSTREAM_FILE")"
           jq -n \
             --arg head "$HEAD_SHA" \
             --argjson run_id "$RUN_ID" \

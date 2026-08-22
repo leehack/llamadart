@@ -148,13 +148,19 @@ the production path:
 
 Structured-output manifests must bind upstream parity to a durable test changed
 by the same PR. Exact-head CI runs the parity command as ordinary unprivileged
-PR validation and uploads a data-only artifact carrying the run ID/attempt,
-head, changed tests, and both canonical resolved upstream commits. The trusted
-default-branch gate selects the artifact for that exact run attempt, downloads
-but never executes it, resolves the declared refs independently, and rejects
-aliases that resolve to the same SHA. It re-resolves both refs immediately
+PR validation and uploads an advisory data-only artifact carrying the run
+ID/attempt, head, changed tests, and both canonical resolved upstream commits.
+The trusted default-branch gate does not accept that PR-produced artifact as
+proof. It independently runs the trusted-base parity harness against both
+canonical commits, rejects aliases that resolve to the same SHA, and records a
+trusted-base result bound to the exact head. It re-resolves both refs immediately
 before enforcement and final publication and includes the canonical SHAs in
 each mutable-input snapshot, so upstream retagging invalidates the evaluation.
+
+Edits to `.github/high-risk-policy.json` may add protected compiled-grammar
+tests or parity dependencies but cannot remove trusted-baseline entries. The
+policy, validator, CI workflow, review-signal workflow, and trusted gate are
+also mandatory protected inputs: deletion or rename fails closed.
 
 Use the closest affected-family real model or artifact. If exact weights are
 unavailable, name every unavailable family and substitute primary upstream

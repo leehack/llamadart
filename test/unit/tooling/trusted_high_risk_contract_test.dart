@@ -66,18 +66,16 @@ List<HighRiskCiRun> _successfulCiRuns() => [
   ),
 ];
 
-Map<String, dynamic> _validParityCiEvidence() => {
+Map<String, dynamic> _validTrustedParityEvidence() => {
   'schema': 1,
   'headSha': _head,
-  'runId': 100,
-  'runAttempt': 1,
   'result': 'PASS',
+  'source': 'trusted-default-branch',
   'command': './tool/testing/run_template_parity_suites.sh',
   'canonicalUpstreamCommits': {
     'pinned': _pinnedCommit,
     'current': _currentCommit,
   },
-  'tests': [_parserTest],
 };
 
 String _validBody() =>
@@ -190,8 +188,11 @@ HighRiskContractResult _validate({
   Map<String, String>? verifiedUpstreamCommits,
   Set<String> compiledGrammarTests = const {_grammarTest},
   Set<String> protectedEvidencePaths = const {},
+  Set<String> structuredOutputParityDependencies = const {},
+  Set<String>? proposedCompiledGrammarTests,
+  Set<String>? proposedStructuredOutputParityDependencies,
   List<HighRiskCiRun>? ciRuns,
-  Map<String, dynamic>? upstreamParityCiEvidence,
+  Map<String, dynamic>? trustedUpstreamParityEvidence,
 }) => validateHighRiskContract(
   changedFiles: files,
   deletedFiles: deletedFiles,
@@ -204,9 +205,13 @@ HighRiskContractResult _validate({
       const {'pinned': _pinnedCommit, 'current': _currentCommit},
   compiledGrammarTests: compiledGrammarTests,
   protectedEvidencePaths: protectedEvidencePaths,
+  structuredOutputParityDependencies: structuredOutputParityDependencies,
+  proposedCompiledGrammarTests: proposedCompiledGrammarTests,
+  proposedStructuredOutputParityDependencies:
+      proposedStructuredOutputParityDependencies,
   ciRuns: ciRuns ?? _successfulCiRuns(),
-  upstreamParityCiEvidence:
-      upstreamParityCiEvidence ?? _validParityCiEvidence(),
+  trustedUpstreamParityEvidence:
+      trustedUpstreamParityEvidence ?? _validTrustedParityEvidence(),
 );
 
 String _replaceField(String body, String label, String replacement) =>
@@ -328,13 +333,77 @@ void main() {
       );
     });
 
-    test('protects trusted parity dependency directory prefixes', () {
-      final assessment = assessHighRiskFiles(
-        const ['test/unit/core/template/new_handler_test.dart'],
-        protectedEvidencePaths: const {'test/unit/core/template/'},
+    test('classifies every trusted parity dependency as structured policy', () {
+      final policy =
+          jsonDecode(File('.github/high-risk-policy.json').readAsStringSync())
+              as Map<String, dynamic>;
+      final dependencies =
+          (policy['structuredOutputParityDependencies'] as List)
+              .cast<String>()
+              .toSet();
+
+      for (final dependency in dependencies) {
+        final candidate = dependency.endsWith('/')
+            ? Directory(
+                dependency,
+              ).listSync(recursive: true).whereType<File>().first.path
+            : dependency;
+        final assessment = assessHighRiskFiles([
+          candidate,
+        ], structuredOutputParityDependencies: dependencies);
+
+        expect(
+          assessment.surfaces,
+          containsAll(const {
+            HighRiskSurface.structuredOutput,
+            HighRiskSurface.regressionPolicy,
+          }),
+          reason: candidate,
+        );
+      }
+    });
+
+    test('trusted parity dependencies cannot use policy-only evidence', () {
+      final policy =
+          jsonDecode(File('.github/high-risk-policy.json').readAsStringSync())
+              as Map<String, dynamic>;
+      final dependencies =
+          (policy['structuredOutputParityDependencies'] as List)
+              .cast<String>()
+              .toSet();
+      const policyEvidencePath = '.github/high-risk-evidence/419.json';
+      final body = _replaceField(
+        _validBody(),
+        'Evidence manifest',
+        policyEvidencePath,
       );
 
-      expect(assessment.surfaces, contains(HighRiskSurface.regressionPolicy));
+      for (final dependency in dependencies) {
+        final candidate = dependency.endsWith('/')
+            ? Directory(
+                dependency,
+              ).listSync(recursive: true).whereType<File>().first.path
+            : dependency;
+        final result = _validate(
+          body: body,
+          files: [
+            candidate,
+            'test/unit/tooling/trusted_high_risk_contract_test.dart',
+            policyEvidencePath,
+          ],
+          evidence: _validPolicyEvidence(),
+          evidencePath: policyEvidencePath,
+          structuredOutputParityDependencies: dependencies,
+        );
+
+        expect(
+          result.errors,
+          contains(
+            'Structured-output changes require structuredOutput evidence.',
+          ),
+          reason: candidate,
+        );
+      }
     });
 
     test('does not classify unrelated tests or docs', () {
@@ -657,6 +726,103 @@ Verdict: PASS''',
       }
     });
 
+    test('trusted policy edits may add but cannot remove registry entries', () {
+      const policyPath = '.github/high-risk-policy.json';
+      const policyEvidencePath = '.github/high-risk-evidence/419.json';
+      const trustedDependencies = {
+        'tool/testing/run_template_parity_suites.sh',
+        'test/unit/core/template/',
+      };
+      final body = _replaceField(
+        _validBody(),
+        'Evidence manifest',
+        policyEvidencePath,
+      );
+      HighRiskContractResult validatePolicy({
+        required Set<String> proposedGrammar,
+        required Set<String> proposedDependencies,
+      }) => _validate(
+        body: body,
+        files: const [
+          policyPath,
+          'test/unit/tooling/trusted_high_risk_contract_test.dart',
+          policyEvidencePath,
+        ],
+        evidence: _validPolicyEvidence(),
+        evidencePath: policyEvidencePath,
+        structuredOutputParityDependencies: trustedDependencies,
+        proposedCompiledGrammarTests: proposedGrammar,
+        proposedStructuredOutputParityDependencies: proposedDependencies,
+      );
+
+      final additive = validatePolicy(
+        proposedGrammar: const {_grammarTest, 'test/new_grammar_test.dart'},
+        proposedDependencies: const {
+          ...trustedDependencies,
+          'test/new_parity_test.dart',
+        },
+      );
+      expect(
+        additive.errors,
+        isNot(
+          contains(
+            'High-risk policy edits must preserve every trusted '
+            'compiled-grammar test and structured-output parity dependency.',
+          ),
+        ),
+      );
+
+      for (final weakened in [
+        (grammar: <String>{}, dependencies: trustedDependencies),
+        (
+          grammar: const {_grammarTest},
+          dependencies: const {'tool/testing/run_template_parity_suites.sh'},
+        ),
+      ]) {
+        expect(
+          validatePolicy(
+            proposedGrammar: weakened.grammar,
+            proposedDependencies: weakened.dependencies,
+          ).errors,
+          contains(
+            'High-risk policy edits must preserve every trusted '
+            'compiled-grammar test and structured-output parity dependency.',
+          ),
+        );
+      }
+    });
+
+    test('base control files cannot be deleted or renamed away', () {
+      const controls = {
+        '.github/high-risk-policy.json',
+        '.github/workflows/ci.yml',
+        '.github/workflows/high_risk_review_signal.yml',
+        '.github/workflows/trusted_high_risk_regression_gate.yml',
+        'tool/testing/enforce_high_risk_pr_contract.dart',
+      };
+      for (final control in controls) {
+        final result = _validate(
+          files: [control],
+          deletedFiles: [control],
+          protectedEvidencePaths: controls,
+          proposedCompiledGrammarTests:
+              control == '.github/high-risk-policy.json'
+              ? const {_grammarTest}
+              : null,
+          proposedStructuredOutputParityDependencies:
+              control == '.github/high-risk-policy.json' ? const {} : null,
+        );
+
+        expect(
+          result.errors,
+          contains(
+            'Trusted policy or evidence paths cannot be deleted or renamed.',
+          ),
+          reason: control,
+        );
+      }
+    });
+
     test('requires one changed machine-readable manifest', () {
       final result = _validate(
         files: _structuredFiles.where((path) => path != _evidencePath),
@@ -882,12 +1048,13 @@ Verdict: PASS''',
       );
     });
 
-    test('binds upstream parity to changed tests and exact CI artifact', () {
-      final staleArtifact = _validParityCiEvidence()..['runAttempt'] = 2;
+    test('binds upstream parity to changed tests and trusted-base proof', () {
+      final forgedArtifact = _validTrustedParityEvidence()
+        ..['source'] = 'pull-request-ci';
       expect(
-        _validate(upstreamParityCiEvidence: staleArtifact).errors,
+        _validate(trustedUpstreamParityEvidence: forgedArtifact).errors,
         contains(
-          'Upstream parity CI artifact must exactly bind the successful CI run, head, canonical refs, command, and changed durable tests.',
+          'Trusted-base upstream parity evidence must exactly bind the head, canonical refs, command, and PASS result.',
         ),
       );
 
@@ -1012,7 +1179,9 @@ Verdict: PASS''',
       expect(workflow, contains(r'repos/ggml-org/llama.cpp/commits/$pinned'));
       expect(
         workflow,
-        contains('Require latest successful exact-head CI and parity artifact'),
+        contains(
+          'Require latest exact-head CI and collect advisory parity artifact',
+        ),
       );
       expect(
         workflow,
@@ -1023,10 +1192,40 @@ Verdict: PASS''',
       expect(ciWorkflow, contains('.structuredOutput.upstreamParityTests[]'));
       expect(ciWorkflow, contains('high-risk-upstream-parity-'));
       expect(ciWorkflow, contains(r'${{ github.run_attempt }}'));
+      expect(ciWorkflow, contains('Resolve immutable upstream parity commits'));
+      expect(
+        ciWorkflow.indexOf('Resolve immutable upstream parity commits'),
+        lessThan(ciWorkflow.indexOf('Run pinned and current upstream parity')),
+      );
+      expect(
+        ciWorkflow,
+        contains(r'[[ "$(git -C "$source_dir" rev-parse HEAD)" == "$ref" ]]'),
+      );
       expect(
         workflow,
         contains(r'high-risk-upstream-parity-$HEAD_SHA-$run_attempt'),
       );
+      expect(
+        workflow,
+        contains('Advisory exact-head parity artifact is unavailable.'),
+      );
+      expect(
+        workflow,
+        contains('Independently reproduce parity with trusted-base code'),
+      );
+      expect(
+        workflow,
+        contains(r'--trusted-upstream-parity-evidence "$TRUSTED_PARITY_FILE"'),
+      );
+      for (final control in const [
+        '.github/high-risk-policy.json',
+        '.github/workflows/ci.yml',
+        '.github/workflows/high_risk_review_signal.yml',
+        '.github/workflows/trusted_high_risk_regression_gate.yml',
+        'tool/testing/enforce_high_risk_pr_contract.dart',
+      ]) {
+        expect(workflow, contains("'$control'"), reason: control);
+      }
       expect(workflow, contains(r'.head_sha == $head'));
       expect(
         workflow,

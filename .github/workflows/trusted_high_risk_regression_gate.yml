@@ -46,7 +46,7 @@ jobs:
       github.event.workflow_run.pull_requests[0].number != null &&
       github.event.workflow_run.pull_requests[0].base.ref == 'main')
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 45
     steps:
       - name: Publish pending status for the event PR head
         id: event
@@ -97,9 +97,13 @@ jobs:
           set -euo pipefail
           output="$RUNNER_TEMP/protected-evidence-paths.txt"
           {
+            printf '%s\n' \
+              '.github/high-risk-policy.json' \
+              '.github/workflows/ci.yml' \
+              '.github/workflows/high_risk_review_signal.yml' \
+              '.github/workflows/trusted_high_risk_regression_gate.yml' \
+              'tool/testing/enforce_high_risk_pr_contract.dart'
             jq -r '.compiledGrammarTests[]' .github/high-risk-policy.json
-            jq -r '.structuredOutputParityDependencies[]' \
-              .github/high-risk-policy.json
             if [[ -d .github/high-risk-evidence ]]; then
               while IFS= read -r -d '' manifest; do
                 jq -r '
@@ -212,6 +216,26 @@ jobs:
             echo "pr_body_digest=$pr_body_digest"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Fetch proposed policy as untrusted data
+        id: proposed_policy
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_REPOSITORY: ${{ steps.state.outputs.head_repo }}
+          HEAD_SHA: ${{ steps.state.outputs.head_sha }}
+          CHANGED_FILES: ${{ steps.state.outputs.changed_files }}
+        run: |
+          set -euo pipefail
+          proposed=""
+          if grep -Fxq '.github/high-risk-policy.json' "$CHANGED_FILES"; then
+            proposed="$RUNNER_TEMP/proposed-high-risk-policy.json"
+            gh api \
+              "repos/$HEAD_REPOSITORY/contents/.github/high-risk-policy.json?ref=$HEAD_SHA" \
+              --jq '.content' | base64 --decode > "$proposed"
+            jq -e 'type == "object"' "$proposed" > /dev/null
+          fi
+          echo "file=$proposed" >> "$GITHUB_OUTPUT"
+
       - name: Fetch evidence manifest as untrusted data
         id: evidence
         shell: bash
@@ -243,7 +267,7 @@ jobs:
             exit 1
           fi
 
-      - name: Require latest successful exact-head CI and parity artifact
+      - name: Require latest exact-head CI and collect advisory parity artifact
         id: ci
         shell: bash
         env:
@@ -295,15 +319,20 @@ jobs:
               ' "$RUNNER_TEMP/exact-head-ci-artifacts.json"
             )
             if (( ${#artifact_ids[@]} != 1 )); then
-              echo "Exact-head CI must publish one upstream parity artifact." >&2
-              exit 1
+              echo "Advisory exact-head parity artifact is unavailable."
+            else
+              gh api \
+                "repos/$REPOSITORY/actions/artifacts/${artifact_ids[0]}/zip" \
+                > "$RUNNER_TEMP/upstream-parity-ci-evidence.zip"
+              if unzip -p "$RUNNER_TEMP/upstream-parity-ci-evidence.zip" \
+                  upstream-parity-ci-evidence.json > "$parity_file" &&
+                 jq -e 'type == "object"' "$parity_file" > /dev/null; then
+                echo "Captured advisory exact-head parity artifact."
+              else
+                echo "Advisory exact-head parity artifact is malformed."
+                : > "$parity_file"
+              fi
             fi
-            gh api \
-              "repos/$REPOSITORY/actions/artifacts/${artifact_ids[0]}/zip" \
-              > "$RUNNER_TEMP/upstream-parity-ci-evidence.zip"
-            unzip -p "$RUNNER_TEMP/upstream-parity-ci-evidence.zip" \
-              upstream-parity-ci-evidence.json > "$parity_file"
-            jq -e 'type == "object"' "$parity_file" > /dev/null
           fi
           {
             echo "run_id=$run_id"
@@ -406,6 +435,54 @@ jobs:
           fi
           echo "file=$verified" >> "$GITHUB_OUTPUT"
 
+      - name: Independently reproduce parity with trusted-base code
+        id: trusted_parity
+        shell: bash
+        env:
+          EVIDENCE_FILE: ${{ steps.evidence.outputs.file }}
+          HEAD_SHA: ${{ steps.state.outputs.head_sha }}
+          UPSTREAM_FILE: ${{ steps.upstream.outputs.file }}
+        run: |
+          set -euo pipefail
+          proof="$RUNNER_TEMP/trusted-upstream-parity-evidence.json"
+          printf '{}\n' > "$proof"
+          if [[ -n "$EVIDENCE_FILE" ]] &&
+             jq -e '.structuredOutput != null' "$EVIDENCE_FILE" > /dev/null; then
+            dart pub get
+            for role in pinned current; do
+              sha="$(jq -r --arg role "$role" '.[$role]' "$UPSTREAM_FILE")"
+              source_dir="$RUNNER_TEMP/trusted-llama-cpp-$role"
+              build_dir="$RUNNER_TEMP/trusted-llama-cpp-chat-tests-$role"
+              LLAMA_CPP_REF="$sha" \
+              LLAMA_CPP_SOURCE_DIR="$source_dir" \
+                ./tool/testing/prepare_llama_cpp_source.sh
+              [[ "$(git -C "$source_dir" rev-parse HEAD)" == "$sha" ]]
+              LLAMA_CPP_REF="$sha" \
+              LLAMA_CPP_SOURCE_DIR="$source_dir" \
+              LLAMA_CPP_CHAT_TEST_SOURCE_DIR="$source_dir" \
+              LLAMA_CPP_CHAT_TEST_BUILD_DIR="$build_dir" \
+              LLAMA_CPP_TEMPLATES_DIR="$source_dir/models/templates" \
+              REQUIRE_LLAMA_CPP_TEMPLATES=1 \
+                ./tool/testing/run_template_parity_suites.sh
+            done
+            jq -n \
+              --arg head "$HEAD_SHA" \
+              --arg pinned "$(jq -r '.pinned' "$UPSTREAM_FILE")" \
+              --arg current "$(jq -r '.current' "$UPSTREAM_FILE")" \
+              '{
+                schema: 1,
+                headSha: $head,
+                result: "PASS",
+                source: "trusted-default-branch",
+                command: "./tool/testing/run_template_parity_suites.sh",
+                canonicalUpstreamCommits: {
+                  pinned: $pinned,
+                  current: $current
+                }
+              }' > "$proof"
+          fi
+          echo "file=$proof" >> "$GITHUB_OUTPUT"
+
       - name: Capture trusted mutable-input snapshot
         id: snapshot
         shell: bash
@@ -417,6 +494,7 @@ jobs:
           EVIDENCE_FILE: ${{ steps.evidence.outputs.file }}
           CI_RUNS_FILE: ${{ steps.ci.outputs.runs_file }}
           PARITY_FILE: ${{ steps.ci.outputs.parity_file }}
+          TRUSTED_PARITY_FILE: ${{ steps.trusted_parity.outputs.file }}
           UPSTREAM_FILE: ${{ steps.upstream.outputs.file }}
         run: |
           set -euo pipefail
@@ -440,6 +518,7 @@ jobs:
             ' "$CI_RUNS_FILE"
             jq -cS . "$UPSTREAM_FILE"
             if [[ -s "$PARITY_FILE" ]]; then jq -cS . "$PARITY_FILE"; else printf 'null\n'; fi
+            jq -cS . "$TRUSTED_PARITY_FILE"
             if [[ -n "$EVIDENCE_FILE" ]]; then
               jq -cS . "$EVIDENCE_FILE"
             else
@@ -474,9 +553,11 @@ jobs:
           REVIEWS_FILE: ${{ steps.reviews.outputs.file }}
           VERIFIED_UPSTREAM_COMMITS: ${{ steps.upstream.outputs.file }}
           COMPILED_GRAMMAR_POLICY: .github/high-risk-policy.json
+          PROPOSED_POLICY: ${{ steps.proposed_policy.outputs.file }}
           PROTECTED_EVIDENCE_PATHS: ${{ steps.protected.outputs.file }}
           CI_RUNS_FILE: ${{ steps.ci.outputs.runs_file }}
           PARITY_FILE: ${{ steps.ci.outputs.parity_file }}
+          TRUSTED_PARITY_FILE: ${{ steps.trusted_parity.outputs.file }}
           PR_BODY_DIGEST: ${{ steps.state.outputs.pr_body_digest }}
           SNAPSHOT_DIGEST: ${{ steps.snapshot.outputs.digest }}
           GRAPHQL_QUERY: >-
@@ -587,6 +668,7 @@ jobs:
             ' "$RUNNER_TEMP/live-exact-head-ci-runs.json"
             jq -cS . "$live_upstream"
             if [[ -s "$PARITY_FILE" ]]; then jq -cS . "$PARITY_FILE"; else printf 'null\n'; fi
+            jq -cS . "$TRUSTED_PARITY_FILE"
             if [[ -n "$EVIDENCE_FILE" ]]; then
               jq -cS . "$RUNNER_TEMP/live-high-risk-evidence.json"
             else
@@ -620,9 +702,10 @@ jobs:
           if [[ -n "$EVIDENCE_FILE" ]]; then
             args+=(--evidence "$EVIDENCE_FILE" --evidence-path "$EVIDENCE_PATH")
           fi
-          if [[ -s "$PARITY_FILE" ]]; then
-            args+=(--upstream-parity-ci-evidence "$PARITY_FILE")
+          if [[ -n "$PROPOSED_POLICY" ]]; then
+            args+=(--proposed-policy "$PROPOSED_POLICY")
           fi
+          args+=(--trusted-upstream-parity-evidence "$TRUSTED_PARITY_FILE")
           dart tool/testing/enforce_high_risk_pr_contract.dart "${args[@]}"
 
       - name: Fail closed when trusted setup cannot capture a snapshot
@@ -684,6 +767,7 @@ jobs:
           EVIDENCE_FILE: ${{ steps.evidence.outputs.file }}
           EVIDENCE_PATH: ${{ steps.evidence.outputs.path }}
           PARITY_FILE: ${{ steps.ci.outputs.parity_file }}
+          TRUSTED_PARITY_FILE: ${{ steps.trusted_parity.outputs.file }}
           VERIFIED_UPSTREAM_COMMITS: ${{ steps.upstream.outputs.file }}
           SNAPSHOT_DIGEST: ${{ steps.snapshot.outputs.digest }}
           ENFORCEMENT_OUTCOME: ${{ steps.enforce.outcome }}
@@ -801,6 +885,7 @@ jobs:
             ' "$RUNNER_TEMP/final-live-exact-head-ci-runs.json"
             jq -cS . "$final_upstream"
             if [[ -s "$PARITY_FILE" ]]; then jq -cS . "$PARITY_FILE"; else printf 'null\n'; fi
+            jq -cS . "$TRUSTED_PARITY_FILE"
             if [[ -n "$EVIDENCE_FILE" ]]; then
               jq -cS . "$RUNNER_TEMP/final-live-high-risk-evidence.json"
             else
