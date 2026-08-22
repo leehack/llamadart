@@ -20,6 +20,9 @@ import 'litert_lm_platform.dart';
 import 'litert_lm_runtime.dart';
 
 const int _gemma4DefaultVisualTokenBudget = 280;
+const String _liteRtLmVideoUnsupportedMessage =
+    'LiteRT-LM video input is not supported through llamadart. '
+    'Extract and send image frames instead.';
 
 /// Worker-owned service for the LiteRT-LM backend.
 ///
@@ -146,6 +149,9 @@ class LiteRtLmService {
     List<LlamaContentPart>? parts,
   }) async* {
     _checkContextHandle(contextHandle);
+    if (parts?.any((part) => part is LlamaVideoContent) ?? false) {
+      throw UnsupportedError(_liteRtLmVideoUnsupportedMessage);
+    }
     if (_hasMediaParts(parts)) {
       throw UnsupportedError('LiteRtLmBackend does not support media parts.');
     }
@@ -734,7 +740,10 @@ class LiteRtLmService {
       return false;
     }
     return parts.any(
-      (part) => part is LlamaImageContent || part is LlamaAudioContent,
+      (part) =>
+          part is LlamaImageContent ||
+          part is LlamaAudioContent ||
+          part is LlamaVideoContent,
     );
   }
 
@@ -1184,6 +1193,8 @@ class LiteRtLmService {
           content.add(_nativeImageContent(part));
         case LlamaAudioContent():
           content.add(_nativeAudioContent(part));
+        case LlamaVideoContent():
+          throw UnsupportedError(_liteRtLmVideoUnsupportedMessage);
         case LlamaThinkingContent():
           throw UnsupportedError(
             'LiteRtLmBackend native chat generation does not support thinking '

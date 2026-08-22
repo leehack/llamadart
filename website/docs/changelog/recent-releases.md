@@ -9,6 +9,13 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Made native video-input capability truthful without claiming end-to-end
+  support. Explicit video content now receives a typed actionable rejection,
+  public capability remains false, and the native probe calls
+  `mtmd_helper_support_video` because helper symbols are exported even when
+  video is compiled out. Full support still requires companion FFmpeg/ffprobe
+  packaging and Dart frame-lifecycle wiring.
+
 - Fixed Web/native backend API parity. `WebAutoBackend` now forwards grammar
   constraint support from its active runtime, so strict structured output fails
   early with an actionable error on unsupported Web backends, and the Web-safe
@@ -36,9 +43,12 @@ For canonical full release notes, use:
 - aLoRA adapters are now rejected with `LlamaUnsupportedException` instead of
   being applied like ordinary LoRA adapters. An aLoRA adapter must activate only
   after its invocation tokens appear in the prompt, so applying it from the
-  start of generation silently changed output. LoRA errors from the worker also
-  keep their typed exception instead of arriving as a bare `Exception`, and a
-  failed adapter load now throws `LlamaModelException`.
+  start of generation silently changed output. Missing metadata-inspection
+  symbols in custom native runtimes also fail closed with the same typed error,
+  and rejected adapters are released when the cleanup ABI is available. LoRA
+  errors from the worker keep their typed exception instead of arriving as a
+  bare `Exception`, and a failed adapter load now throws
+  `LlamaModelException`.
 
 - Deprecated `LiteRtLmRuntimeClient.conversationTokenCount()` and
   `replaceConversationWithClone()`. Both are unused and are scheduled for

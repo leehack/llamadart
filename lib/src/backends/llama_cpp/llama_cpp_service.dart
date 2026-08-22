@@ -296,6 +296,8 @@ typedef _MtmdSupportVisionNative = Bool Function(Pointer<mtmd_context>);
 typedef _MtmdSupportVisionDart = bool Function(Pointer<mtmd_context>);
 typedef _MtmdSupportAudioNative = Bool Function(Pointer<mtmd_context>);
 typedef _MtmdSupportAudioDart = bool Function(Pointer<mtmd_context>);
+typedef _MtmdSupportVideoNative = Bool Function(Pointer<mtmd_context>);
+typedef _MtmdSupportVideoDart = bool Function(Pointer<mtmd_context>);
 typedef _MtmdBitmapFreeNative = Void Function(Pointer<mtmd_bitmap>);
 typedef _MtmdBitmapFreeDart = void Function(Pointer<mtmd_bitmap>);
 typedef _MtmdTokenizeNative =
@@ -648,6 +650,7 @@ class LlamaCppService {
   int _activeResolvedGpuLayers = 0;
   bool _mtmdFallbackLookupAttempted = false;
   bool _mtmdPrimarySymbolsUnavailable = false;
+  bool _mtmdVideoPrimarySymbolUnavailable = false;
   _MtmdApi? _mtmdFallbackApi;
   bool _reasoningBudgetApiLookupAttempted = false;
   _ReasoningBudgetApi? _reasoningBudgetApi;
@@ -4021,6 +4024,35 @@ class LlamaCppService {
       final hasMediaParts =
           parts?.any((p) => p is LlamaImageContent || p is LlamaAudioContent) ??
           false;
+      final hasVideoParts =
+          parts?.any((part) => part is LlamaVideoContent) ?? false;
+      if (hasVideoParts) {
+        final mmHandle = _modelToMtmd[modelHandle];
+        if (mmHandle == null) {
+          throw LlamaUnsupportedException(
+            'Video input is unavailable because no multimodal projector is '
+            'loaded to inspect native runtime capability. Loading a compatible '
+            'projector enables inspection only; it does not enable public video '
+            'ingestion. Extract and send image frames instead.',
+          );
+        }
+        final nativeRuntimeSupportsVideo = supportsVideo(mmHandle);
+        if (!nativeRuntimeSupportsVideo) {
+          throw LlamaUnsupportedException(
+            'Video input is unavailable because the loaded native mtmd '
+            'runtime/projector does not report compiled video support. Current '
+            'llamadart artifacts build mtmd video support out; a future native '
+            'package must enable LLAMA_SUBPROCESS/MTMD_VIDEO and provide '
+            'FFmpeg/ffprobe before video can be consumed. Extract and send '
+            'image frames instead.',
+          );
+        }
+        throw LlamaUnsupportedException(
+          'The loaded native runtime reports mtmd video support, but the Dart '
+          'frame-ingestion and video-context lifetime contract is not wired. '
+          'Extract and send image frames instead.',
+        );
+      }
       final thinkingBudgetConfig = _resolveLlamaCppThinkingBudgetConfig(
         params,
         hasMediaParts: hasMediaParts,
@@ -6300,31 +6332,25 @@ class LlamaCppService {
         var adapter = modelAdapters[path];
         if (adapter == null) {
           final pathPtr = path.toNativeUtf8();
-          final adapterPtr = llama_adapter_lora_init(
-            _models[modelHandle]!.pointer,
-            pathPtr.cast(),
-          );
-          malloc.free(pathPtr);
+          final Pointer<llama_adapter_lora> adapterPtr;
+          try {
+            adapterPtr = llama_adapter_lora_init(
+              _models[modelHandle]!.pointer,
+              pathPtr.cast(),
+            );
+          } finally {
+            malloc.free(pathPtr);
+          }
           if (adapterPtr == nullptr) {
             throw LlamaModelException('Failed to load LoRA at $path');
           }
-          // aLoRA must activate only after its invocation tokens appear, but
-          // adapters here apply from the start of generation.
-          final invocationTokens = llama_adapter_get_alora_n_invocation_tokens(
+          _validateLoraForEagerActivation(
             adapterPtr,
+            path,
+            invocationTokenCount: llama_adapter_get_alora_n_invocation_tokens,
+            invocationTokenData: llama_adapter_get_alora_invocation_tokens,
+            freeAdapter: llama_adapter_lora_free,
           );
-          if (invocationTokens > 0) {
-            llama_adapter_lora_free(adapterPtr);
-            throw LlamaUnsupportedException(
-              'The adapter at $path is an aLoRA adapter ($invocationTokens '
-              'invocation token(s)). llamadart applies LoRA adapters from the '
-              'start of generation, but an aLoRA adapter must activate only '
-              'after its invocation sequence appears in the prompt, so '
-              'applying it eagerly would silently change output. Use a '
-              'standard LoRA adapter until invocation-aware activation is '
-              'implemented.',
-            );
-          }
           adapter = _LlamaLoraWrapper(adapterPtr);
           modelAdapters[path] = adapter;
         }
@@ -6348,6 +6374,85 @@ class LlamaCppService {
     } catch (e) {
       rethrow;
     }
+  }
+
+  static void _validateLoraForEagerActivation(
+    Pointer<llama_adapter_lora> adapter,
+    String adapterPath, {
+    required int Function(Pointer<llama_adapter_lora>) invocationTokenCount,
+    required Pointer<llama_token> Function(Pointer<llama_adapter_lora>)
+    invocationTokenData,
+    required void Function(Pointer<llama_adapter_lora>) freeAdapter,
+  }) {
+    final int invocationTokens;
+    try {
+      invocationTokens = invocationTokenCount(adapter);
+      final tokenData = invocationTokenData(adapter);
+      if (invocationTokens > 0 && tokenData == nullptr) {
+        throw StateError(
+          'aLoRA metadata reports invocation tokens without token data',
+        );
+      }
+    } catch (_) {
+      _freeRejectedLoraAdapter(adapter, freeAdapter);
+      throw LlamaUnsupportedException(
+        'Cannot safely load the LoRA adapter at $adapterPath because the '
+        'loaded native runtime cannot inspect aLoRA invocation-token metadata '
+        '(missing or incompatible '
+        'llama_adapter_get_alora_n_invocation_tokens / '
+        'llama_adapter_get_alora_invocation_tokens ABI). Use a native runtime '
+        'artifact that matches this package\'s bindings or another '
+        'ABI-compatible build that exports both symbols.',
+      );
+    }
+
+    // aLoRA must activate only after its invocation tokens appear, but
+    // adapters here apply from the start of generation.
+    if (invocationTokens > 0) {
+      _freeRejectedLoraAdapter(adapter, freeAdapter);
+      throw LlamaUnsupportedException(
+        'The adapter at $adapterPath is an aLoRA adapter ($invocationTokens '
+        'invocation token(s)). llamadart applies LoRA adapters from the start '
+        'of generation, but an aLoRA adapter must activate only after its '
+        'invocation sequence appears in the prompt, so applying it eagerly '
+        'would silently change output. Use a standard LoRA adapter until '
+        'invocation-aware activation is implemented.',
+      );
+    }
+  }
+
+  static void _freeRejectedLoraAdapter(
+    Pointer<llama_adapter_lora> adapter,
+    void Function(Pointer<llama_adapter_lora>) freeAdapter,
+  ) {
+    try {
+      freeAdapter(adapter);
+    } catch (_) {
+      // Keep the safety failure typed and actionable even for a severely
+      // version-skewed runtime whose cleanup symbol is also unavailable.
+    }
+  }
+
+  /// Exercises the production aLoRA safety guard with injected native calls.
+  ///
+  /// This is public only for VM unit tests, which use inert pointer values and
+  /// callbacks to cover ordinary LoRA, aLoRA, version-skew, and cleanup paths
+  /// without requiring a large model/adapter fixture.
+  static void debugValidateLoraForEagerActivationForTesting(
+    Pointer<llama_adapter_lora> adapter,
+    String adapterPath, {
+    required int Function(Pointer<llama_adapter_lora>) invocationTokenCount,
+    required Pointer<llama_token> Function(Pointer<llama_adapter_lora>)
+    invocationTokenData,
+    required void Function(Pointer<llama_adapter_lora>) freeAdapter,
+  }) {
+    _validateLoraForEagerActivation(
+      adapter,
+      adapterPath,
+      invocationTokenCount: invocationTokenCount,
+      invocationTokenData: invocationTokenData,
+      freeAdapter: freeAdapter,
+    );
   }
 
   void _applyActiveLoras(
@@ -7252,6 +7357,32 @@ class LlamaCppService {
     return fallback?.supportsAudio(mmCtx) ?? false;
   }
 
+  /// Returns whether the active native mtmd build and projector report video.
+  ///
+  /// This is a behavioral probe. The helper symbol is present even when
+  /// `MTMD_VIDEO` was compiled out, so symbol lookup alone is not sufficient.
+  bool supportsVideo(int mmContextHandle) {
+    final mmCtx = _mtmdContexts[mmContextHandle];
+    if (mmCtx == null) {
+      return false;
+    }
+
+    if (!_mtmdPrimarySymbolsUnavailable &&
+        !_mtmdVideoPrimarySymbolUnavailable) {
+      try {
+        return mtmd_helper_support_video(mmCtx);
+      } on ArgumentError {
+        // Video helpers were added after the core mtmd surface. Do not mark
+        // working vision/audio symbols unavailable when only this optional
+        // probe is absent from an older library.
+        _mtmdVideoPrimarySymbolUnavailable = true;
+      }
+    }
+
+    final fallback = _resolveMtmdFallbackApi();
+    return fallback?.supportsVideo(mmCtx) ?? false;
+  }
+
   /// Discovers dedicated native text-to-speech support.
   BackendTextToSpeechCapabilities textToSpeechCapabilities(
     int contextHandle,
@@ -7992,6 +8123,7 @@ class _MtmdApi {
   final _MtmdBitmapInitFromAudioDart bitmapInitFromAudio;
   final _MtmdSupportVisionDart supportsVision;
   final _MtmdSupportAudioDart supportsAudio;
+  final _MtmdSupportVideoDart supportsVideo;
   final _MtmdBitmapFreeDart bitmapFree;
   final _MtmdTokenizeDart tokenize;
   final _MtmdHelperEvalChunksDart helperEvalChunks;
@@ -8010,6 +8142,7 @@ class _MtmdApi {
     required this.bitmapInitFromAudio,
     required this.supportsVision,
     required this.supportsAudio,
+    required this.supportsVideo,
     required this.bitmapFree,
     required this.tokenize,
     required this.helperEvalChunks,
@@ -8021,6 +8154,7 @@ class _MtmdApi {
     try {
       _MtmdLogSetDart? logSet;
       _MtmdLogSetDart? helperLogSet;
+      _MtmdSupportVideoDart supportsVideo = (_) => false;
       try {
         logSet = library.lookupFunction<_MtmdLogSetNative, _MtmdLogSetDart>(
           'mtmd_log_set',
@@ -8030,6 +8164,12 @@ class _MtmdApi {
         helperLogSet = library
             .lookupFunction<_MtmdLogSetNative, _MtmdLogSetDart>(
               'mtmd_helper_log_set',
+            );
+      } catch (_) {}
+      try {
+        supportsVideo = library
+            .lookupFunction<_MtmdSupportVideoNative, _MtmdSupportVideoDart>(
+              'mtmd_helper_support_video',
             );
       } catch (_) {}
 
@@ -8083,6 +8223,7 @@ class _MtmdApi {
             .lookupFunction<_MtmdSupportAudioNative, _MtmdSupportAudioDart>(
               'mtmd_support_audio',
             ),
+        supportsVideo: supportsVideo,
         bitmapFree: library
             .lookupFunction<_MtmdBitmapFreeNative, _MtmdBitmapFreeDart>(
               'mtmd_bitmap_free',
@@ -8189,16 +8330,91 @@ class _LlamaContextWrapper {
 /// Returns an empty string when nothing was recorded, so platforms that never
 /// populate the buffer keep their existing message byte for byte. The tail is
 /// kept when truncating: the buffer caps entries, not bytes, and the newest
-/// entries are the ones describing the failure at hand.
+/// entries are the ones describing the failure at hand. Control characters are
+/// flattened and credential-bearing HTTP URL components are redacted before the
+/// diagnostics are included in an exception. An entry with a control-split
+/// credentialed URL is replaced entirely rather than guessing whether the
+/// control was part of the URL or a diagnostic boundary.
 String formatStartupDiagnostics(List<String> entries, {int maxLength = 4096}) {
-  if (entries.isEmpty) {
+  if (maxLength < 0) {
+    throw RangeError.range(maxLength, 0, null, 'maxLength');
+  }
+  if (maxLength == 0) {
     return '';
   }
-  var joined = entries.join('; ');
+  final sanitizedEntries = entries
+      .map(_sanitizeStartupDiagnostic)
+      .where((entry) => entry.isNotEmpty)
+      .toList(growable: false);
+  if (sanitizedEntries.isEmpty) {
+    return '';
+  }
+  var joined = sanitizedEntries.join('; ');
   if (joined.length > maxLength) {
-    joined = '...${joined.substring(joined.length - maxLength)}';
+    final ellipsisLength = math.min(3, maxLength);
+    final tailLength = maxLength - ellipsisLength;
+    joined =
+        '${'.' * ellipsisLength}'
+        '${joined.substring(joined.length - tailLength)}';
   }
   return ', startupDiagnostics=[$joined]';
+}
+
+String _sanitizeStartupDiagnostic(String entry) {
+  final controlCharacters = RegExp(
+    r'[\u0000-\u001f\u007f-\u009f\u2028\u2029]+',
+  );
+  if (_hasControlSplitSensitiveHttpUrl(entry, controlCharacters)) {
+    return '<redacted-startup-diagnostic>';
+  }
+  final flattenedEntry = entry
+      .replaceAll(controlCharacters, ' ')
+      .replaceAll(RegExp(r' {2,}'), ' ')
+      .trim();
+  final redactedUrls = flattenedEntry.replaceAllMapped(
+    RegExp(r'https?://(?:(?!https?://)\S)+', caseSensitive: false),
+    (match) {
+      final uri = Uri.tryParse(match.group(0)!);
+      final scheme = uri?.scheme.toLowerCase();
+      if (uri == null || (scheme != 'http' && scheme != 'https')) {
+        return '<redacted-url>';
+      }
+      return Uri(
+        scheme: scheme,
+        host: uri.host,
+        port: uri.hasPort ? uri.port : null,
+        path: uri.path,
+      ).toString();
+    },
+  );
+  return redactedUrls.replaceAll(RegExp(r' {2,}'), ' ').trim();
+}
+
+bool _hasControlSplitSensitiveHttpUrl(String entry, RegExp controlCharacters) {
+  if (!controlCharacters.hasMatch(entry)) {
+    return false;
+  }
+  final compacted = entry.replaceAll(controlCharacters, '');
+  final candidates = RegExp(
+    r'https?://(?:(?!https?://)\S)+',
+    caseSensitive: false,
+  ).allMatches(compacted);
+  for (final candidate in candidates) {
+    final text = candidate.group(0)!;
+    final uri = Uri.tryParse(text);
+    if (uri == null) {
+      if (text.contains('@') || text.contains('?') || text.contains('#')) {
+        return true;
+      }
+      continue;
+    }
+    final scheme = uri.scheme.toLowerCase();
+    if ((scheme == 'http' || scheme == 'https') &&
+        (uri.userInfo.isNotEmpty || uri.hasQuery || uri.hasFragment)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /// The message thrown when `llama_model_load_from_file` returns null.
