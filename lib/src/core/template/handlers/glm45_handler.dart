@@ -319,6 +319,8 @@ class Glm45Handler extends ChatTemplateHandler
   }) {
     final toolCalls = <LlamaCompletionChunkToolCall>[];
     var remaining = input;
+    _ExtractedToolCalls schemaFailure() =>
+        _ExtractedToolCalls(toolCalls: const [], remainingContent: input);
 
     final matches = _toolCallBlockPattern.allMatches(input);
     for (final match in matches) {
@@ -329,41 +331,51 @@ class Glm45Handler extends ChatTemplateHandler
           : block.substring(0, firstArgIdx).trim();
       final tool = _glmToolByName(tools, toolName);
       if (tools != null && tool == null) {
-        continue;
+        return schemaFailure();
       }
       final args = <String, dynamic>{};
       final argumentBody = firstArgIdx == -1
           ? ''
           : block.substring(firstArgIdx);
       if (argumentBody.replaceAll(_argPairPattern, '').trim().isNotEmpty) {
+        if (tools != null) {
+          return schemaFailure();
+        }
         continue;
       }
+      var validArguments = true;
       for (final argMatch in _argPairPattern.allMatches(block)) {
         final key = (argMatch.group(1) ?? '').trim();
         final rawValue = (argMatch.group(2) ?? '').trim();
         if (key.isEmpty) {
+          if (tools != null) {
+            validArguments = false;
+            break;
+          }
           continue;
         }
         final schema = tool?.toJsonSchema();
         final property = schema?['properties']?[key];
         if (tool != null && property is! Map<String, dynamic>) {
-          args.clear();
+          validArguments = false;
           break;
         }
         final decoded = property is Map<String, dynamic>
             ? _decodeGlmSchemaValue(rawValue, property)
             : _decodeArgValue(rawValue);
         if (identical(decoded, _glmSchemaFailure)) {
-          args.clear();
+          validArguments = false;
           break;
         }
         args[key] = decoded;
       }
 
-      if (toolName.isEmpty) {
-        continue;
-      }
-      if (tool != null && !_glmObjectMatchesSchema(args, tool.toJsonSchema())) {
+      final schemaMatches =
+          tool == null || _glmObjectMatchesSchema(args, tool.toJsonSchema());
+      if (toolName.isEmpty || !validArguments || !schemaMatches) {
+        if (tools != null) {
+          return schemaFailure();
+        }
         continue;
       }
 

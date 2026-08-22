@@ -95,6 +95,41 @@ void main() {
       'code': '123',
     });
   });
+
+  test('schema-aware parsing rolls back all mixed-validity calls', () {
+    final tool = ToolDefinition(
+      name: 'get_weather',
+      description: 'Get weather',
+      parameters: [
+        ToolParam.enumType(
+          'city',
+          values: const ['Seoul', 'Paris'],
+          required: true,
+        ),
+      ],
+      handler: _noop,
+    );
+    const valid =
+        '<tool_call>get_weather\n'
+        '<arg_key>city</arg_key><arg_value>"Seoul"</arg_value>\n'
+        '</tool_call>';
+    for (final invalid in const [
+      '<tool_call>unknown\n</tool_call>',
+      '<tool_call>get_weather\n'
+          '<arg_key>city</arg_key><arg_value>"Rome"</arg_value>\n'
+          '</tool_call>',
+    ]) {
+      final output = '$valid$invalid';
+      final parsed = ChatTemplateEngine.parse(
+        ChatFormat.glm45.index,
+        output,
+        tools: [tool],
+      );
+
+      expect(parsed.toolCalls, isEmpty, reason: invalid);
+      expect(parsed.content, output, reason: invalid);
+    }
+  });
 }
 
 Future<Object?> _noop(_) async {
