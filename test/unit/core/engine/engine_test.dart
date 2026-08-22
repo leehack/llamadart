@@ -1024,10 +1024,11 @@ void main() {
             reason: testCase.label,
           );
           expect(downloadManager.ensureModelCalls, 2, reason: testCase.label);
-          expect(downloadManager.sources.map((source) => source.cacheKey), [
-            testCase.modelSource.cacheKey,
-            testCase.projectorSource.cacheKey,
-          ], reason: testCase.label);
+          expect(
+            downloadManager.sources.map((source) => source.cacheKey),
+            [testCase.modelSource.cacheKey, testCase.projectorSource.cacheKey],
+            reason: testCase.label,
+          );
         }
       },
     );

@@ -7,13 +7,18 @@ long procedures in discoverable docs.
 ## Quick Commands
 
 ```bash
-dart pub get
+dart run tool/prepare_workspace.dart
 dart format .
 dart format --output=none --set-exit-if-changed .
 dart analyze
 dart test -p vm -j 1 --exclude-tags local-only
 dart test -p chrome --exclude-tags local-only
 ```
+
+The workspace preparation command resolves the root package, every maintained
+example, and both Flutter companion packages. Run it from a clean checkout
+before the root format/analyze gates; CI uses the same entry point. Companion
+packages retain their own analyze, test, SwiftPM, and publish-validation lanes.
 
 Use the testing matrix to choose validation for non-trivial changes:
 

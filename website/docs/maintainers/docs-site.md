@@ -37,12 +37,21 @@ Verify these paths before running cross-repo workflows.
 From repo root:
 
 ```bash
+dart run tool/prepare_workspace.dart
 dart format --output=none --set-exit-if-changed .
 dart analyze
 dart test
 ./tool/docs/build_site.sh
 ./tool/docs/validate_links.sh
 ```
+
+Preparation resolves the root package, every maintained example, and both
+Flutter companion packages. The root analyzer covers the root package and
+examples; companion packages also keep independent CI lanes for analysis,
+tests, SwiftPM validation, and publish dry runs. Generated `.dart_tool`,
+`build`, and Flutter platform `ephemeral` trees are not workspace packages.
+Vendored, archived docs, or local-only trees outside `example/` and `packages/`
+are not discovered by the workspace bootstrap.
 
 Use targeted test commands when iterating quickly, then run full checks before
 release-related merges.

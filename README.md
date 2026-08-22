@@ -195,6 +195,7 @@ bindings, runtime behavior, and docs have been validated together.
 For package changes:
 
 ```bash
+dart run tool/prepare_workspace.dart
 dart format --output=none --set-exit-if-changed .
 dart analyze
 dart test -p vm -j 1 --exclude-tags local-only
