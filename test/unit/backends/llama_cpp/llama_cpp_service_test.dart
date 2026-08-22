@@ -92,7 +92,7 @@ void main() {
               .having(
                 (error) => error.message,
                 'message',
-                contains('package-pinned native runtime'),
+                contains("matches this package's bindings"),
               ),
         ),
       );

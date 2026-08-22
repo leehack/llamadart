@@ -6358,8 +6358,9 @@ class LlamaCppService {
         'Cannot safely load the LoRA adapter at $adapterPath because the '
         'loaded native runtime cannot inspect aLoRA invocation-token metadata '
         '(missing or incompatible '
-        'llama_adapter_get_alora_n_invocation_tokens). Use the package-pinned '
-        'native runtime or an ABI-compatible build that exports this symbol.',
+        'llama_adapter_get_alora_n_invocation_tokens). Use a native runtime '
+        'artifact that matches this package\'s bindings or another '
+        'ABI-compatible build that exports this symbol.',
       );
     }
 
