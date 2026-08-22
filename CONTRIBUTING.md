@@ -81,8 +81,14 @@ When a user adds `llamadart` as a dependency and runs their app:
     ```
 
 2.  **Initialize**:
+    For repository-wide format/analyze gates and all maintained examples, use
+    the workspace bootstrap (it invokes Flutter for the Flutter examples):
     ```bash
     dart run tool/prepare_workspace.dart
+    ```
+    For root-package-only Dart changes, the Dart SDK is sufficient:
+    ```bash
+    dart pub get
     ```
 
 3.  **Build/Fetch Native Library**:
