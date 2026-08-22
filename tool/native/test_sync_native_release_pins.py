@@ -17,6 +17,7 @@ from sync_native_release_pins import (  # noqa: E402
     litert_lm_runtime_version,
     normalize_litert_lm_release_tag,
     prepare_litert_lm_package_swift,
+    require_exact_keys,
     required_litert_release_asset_names,
     validate_litert_lm_transition,
     validate_litert_lm_release_manifest,
@@ -30,6 +31,10 @@ DEVELOPMENT_TAG = "gba8249987394"
 
 
 class SyncNativeReleasePinsTest(unittest.TestCase):
+    def test_exact_keys_rejects_non_object_json(self) -> None:
+        with self.assertRaisesRegex(ReleaseError, "must be an object"):
+            require_exact_keys([], {"expected"}, "test payload")
+
     def test_sync_workflow_captures_every_litert_pin_surface(self) -> None:
         workflow = (
             Path(__file__).resolve().parents[2]

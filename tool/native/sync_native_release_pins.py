@@ -206,8 +206,10 @@ class NativeReleaseVersion(NamedTuple):
     upstream_tag: str
 
 
-def require_exact_keys(value: dict[str, Any], expected: set[str], label: str) -> None:
-    actual = set(value)
+def require_exact_keys(value: Any, expected: set[str], label: str) -> None:
+    if not isinstance(value, dict):
+        raise ReleaseError(f"LiteRT-LM {label} must be an object")
+    actual = set(value.keys())
     if actual != expected:
         raise ReleaseError(
             f"LiteRT-LM {label} keys do not match owner schema 2; "
