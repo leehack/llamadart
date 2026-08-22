@@ -6300,31 +6300,25 @@ class LlamaCppService {
         var adapter = modelAdapters[path];
         if (adapter == null) {
           final pathPtr = path.toNativeUtf8();
-          final adapterPtr = llama_adapter_lora_init(
-            _models[modelHandle]!.pointer,
-            pathPtr.cast(),
-          );
-          malloc.free(pathPtr);
+          final Pointer<llama_adapter_lora> adapterPtr;
+          try {
+            adapterPtr = llama_adapter_lora_init(
+              _models[modelHandle]!.pointer,
+              pathPtr.cast(),
+            );
+          } finally {
+            malloc.free(pathPtr);
+          }
           if (adapterPtr == nullptr) {
             throw LlamaModelException('Failed to load LoRA at $path');
           }
-          // aLoRA must activate only after its invocation tokens appear, but
-          // adapters here apply from the start of generation.
-          final invocationTokens = llama_adapter_get_alora_n_invocation_tokens(
+          _validateLoraForEagerActivation(
             adapterPtr,
+            path,
+            invocationTokenCount: llama_adapter_get_alora_n_invocation_tokens,
+            invocationTokenData: llama_adapter_get_alora_invocation_tokens,
+            freeAdapter: llama_adapter_lora_free,
           );
-          if (invocationTokens > 0) {
-            llama_adapter_lora_free(adapterPtr);
-            throw LlamaUnsupportedException(
-              'The adapter at $path is an aLoRA adapter ($invocationTokens '
-              'invocation token(s)). llamadart applies LoRA adapters from the '
-              'start of generation, but an aLoRA adapter must activate only '
-              'after its invocation sequence appears in the prompt, so '
-              'applying it eagerly would silently change output. Use a '
-              'standard LoRA adapter until invocation-aware activation is '
-              'implemented.',
-            );
-          }
           adapter = _LlamaLoraWrapper(adapterPtr);
           modelAdapters[path] = adapter;
         }
@@ -6348,6 +6342,85 @@ class LlamaCppService {
     } catch (e) {
       rethrow;
     }
+  }
+
+  static void _validateLoraForEagerActivation(
+    Pointer<llama_adapter_lora> adapter,
+    String adapterPath, {
+    required int Function(Pointer<llama_adapter_lora>) invocationTokenCount,
+    required Pointer<llama_token> Function(Pointer<llama_adapter_lora>)
+    invocationTokenData,
+    required void Function(Pointer<llama_adapter_lora>) freeAdapter,
+  }) {
+    final int invocationTokens;
+    try {
+      invocationTokens = invocationTokenCount(adapter);
+      final tokenData = invocationTokenData(adapter);
+      if (invocationTokens > 0 && tokenData == nullptr) {
+        throw StateError(
+          'aLoRA metadata reports invocation tokens without token data',
+        );
+      }
+    } catch (_) {
+      _freeRejectedLoraAdapter(adapter, freeAdapter);
+      throw LlamaUnsupportedException(
+        'Cannot safely load the LoRA adapter at $adapterPath because the '
+        'loaded native runtime cannot inspect aLoRA invocation-token metadata '
+        '(missing or incompatible '
+        'llama_adapter_get_alora_n_invocation_tokens / '
+        'llama_adapter_get_alora_invocation_tokens ABI). Use a native runtime '
+        'artifact that matches this package\'s bindings or another '
+        'ABI-compatible build that exports both symbols.',
+      );
+    }
+
+    // aLoRA must activate only after its invocation tokens appear, but
+    // adapters here apply from the start of generation.
+    if (invocationTokens > 0) {
+      _freeRejectedLoraAdapter(adapter, freeAdapter);
+      throw LlamaUnsupportedException(
+        'The adapter at $adapterPath is an aLoRA adapter ($invocationTokens '
+        'invocation token(s)). llamadart applies LoRA adapters from the start '
+        'of generation, but an aLoRA adapter must activate only after its '
+        'invocation sequence appears in the prompt, so applying it eagerly '
+        'would silently change output. Use a standard LoRA adapter until '
+        'invocation-aware activation is implemented.',
+      );
+    }
+  }
+
+  static void _freeRejectedLoraAdapter(
+    Pointer<llama_adapter_lora> adapter,
+    void Function(Pointer<llama_adapter_lora>) freeAdapter,
+  ) {
+    try {
+      freeAdapter(adapter);
+    } catch (_) {
+      // Keep the safety failure typed and actionable even for a severely
+      // version-skewed runtime whose cleanup symbol is also unavailable.
+    }
+  }
+
+  /// Exercises the production aLoRA safety guard with injected native calls.
+  ///
+  /// This is public only for VM unit tests, which use inert pointer values and
+  /// callbacks to cover ordinary LoRA, aLoRA, version-skew, and cleanup paths
+  /// without requiring a large model/adapter fixture.
+  static void debugValidateLoraForEagerActivationForTesting(
+    Pointer<llama_adapter_lora> adapter,
+    String adapterPath, {
+    required int Function(Pointer<llama_adapter_lora>) invocationTokenCount,
+    required Pointer<llama_token> Function(Pointer<llama_adapter_lora>)
+    invocationTokenData,
+    required void Function(Pointer<llama_adapter_lora>) freeAdapter,
+  }) {
+    _validateLoraForEagerActivation(
+      adapter,
+      adapterPath,
+      invocationTokenCount: invocationTokenCount,
+      invocationTokenData: invocationTokenData,
+      freeAdapter: freeAdapter,
+    );
   }
 
   void _applyActiveLoras(
