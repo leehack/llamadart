@@ -745,6 +745,7 @@ paths=(
         );
       }
     },
+    skip: Platform.isWindows ? 'requires a POSIX Bash runtime' : false,
   );
 
   test('rejects semantic, nightly, and legacy wrapper rollbacks', () async {
