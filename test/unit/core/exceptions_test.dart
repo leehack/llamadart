@@ -13,6 +13,17 @@ void main() {
       );
     });
 
+    test('LlamaBackendInitializationException properties', () {
+      final ex = LlamaBackendInitializationException(
+        'Backend initialization failed',
+        'libllamadart missing',
+      );
+
+      expect(ex.message, 'Backend initialization failed');
+      expect(ex.details, 'libllamadart missing');
+      expect(ex, isA<LlamaException>());
+    });
+
     test('LlamaContextException properties', () {
       final ex = LlamaContextException('Context full');
       expect(ex.message, 'Context full');
