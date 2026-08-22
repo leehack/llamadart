@@ -4036,7 +4036,8 @@ class LlamaCppService {
             'runtime/projector does not report compiled video support. Current '
             'llamadart artifacts build mtmd video support out; a future native '
             'package must enable LLAMA_SUBPROCESS/MTMD_VIDEO and provide '
-            'FFmpeg/ffprobe before video can be consumed.',
+            'FFmpeg/ffprobe before video can be consumed. Extract and send '
+            'image frames instead.',
           );
         }
         throw LlamaUnsupportedException(

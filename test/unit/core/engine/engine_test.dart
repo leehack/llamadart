@@ -1508,7 +1508,12 @@ void main() {
                 .having(
                   (error) => error.message,
                   'message',
-                  contains('no multimodal projector'),
+                  contains('Without an active multimodal context'),
+                )
+                .having(
+                  (error) => error.message,
+                  'message',
+                  contains('backend that does not expose one'),
                 )
                 .having(
                   (error) => error.message,
