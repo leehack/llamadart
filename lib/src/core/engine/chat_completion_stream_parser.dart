@@ -3,6 +3,8 @@ import 'dart:async';
 import '../llama_logger.dart';
 import '../models/chat/chat_template_result.dart';
 import '../models/chat/completion_chunk.dart';
+import '../models/tools/tool_definition.dart';
+import '../template/chat_format.dart';
 import '../template/chat_template_engine.dart';
 
 enum _ToolStreamingMode { undecided, raw, parsed }
@@ -34,12 +36,23 @@ class _ThinkingSplitResult {
 class ChatCompletionStreamParser {
   const ChatCompletionStreamParser._();
 
+  static const _delayedToolEnvelopeFormats = {
+    ChatFormat.kimiK3,
+    ChatFormat.minimaxM1,
+    ChatFormat.minimaxM3,
+    ChatFormat.deepseekV3,
+    ChatFormat.deepseekV4,
+    ChatFormat.museGlimmer,
+    ChatFormat.laguna,
+  };
+
   /// Parses [tokenStream] into incremental content, thinking, and tool chunks.
   static Stream<LlamaCompletionChunk> parse({
     required Stream<String> tokenStream,
     required LlamaChatTemplateResult templateResult,
     required bool parseToolCallsEnabled,
     required bool enableThinking,
+    List<ToolDefinition>? tools,
     required String modelName,
     required String completionId,
   }) async* {
@@ -56,9 +69,19 @@ class ChatCompletionStreamParser {
     var lastPartialParseAtMs = 0;
     final partialParseStopwatch = Stopwatch()..start();
     // A forced-open thought can transition straight into a tool envelope
-    // without producing `</think>`. Start in parsed mode so that envelope is
-    // never streamed as reasoning before the final structured parse.
-    var streamingMode = templateResult.thinkingForcedOpen
+    // without producing `</think>`. Tool-aware formats can also emit ordinary
+    // content before a later tool envelope. Start in parsed mode for both so
+    // that format markup is never leaked as a content delta.
+    final format =
+        templateResult.format >= 0 &&
+            templateResult.format < ChatFormat.values.length
+        ? ChatFormat.values[templateResult.format]
+        : ChatFormat.contentOnly;
+    final parseDelayedToolEnvelope =
+        (tools?.isNotEmpty ?? false) &&
+        _delayedToolEnvelopeFormats.contains(format);
+    var streamingMode =
+        templateResult.thinkingForcedOpen || parseDelayedToolEnvelope
         ? _ToolStreamingMode.parsed
         : _ToolStreamingMode.undecided;
     var undecidedPrefix = '';
@@ -163,6 +186,7 @@ class ChatCompletionStreamParser {
           final partialParsed = ChatTemplateEngine.parse(
             templateResult.format,
             buffer.toString(),
+            tools: tools,
             isPartial: true,
             parseToolCalls: true,
             thinkingForcedOpen: templateResult.thinkingForcedOpen,
@@ -283,6 +307,7 @@ class ChatCompletionStreamParser {
     final parsed = ChatTemplateEngine.parse(
       templateResult.format,
       fullOutput,
+      tools: tools,
       parseToolCalls: parseToolCallsEnabled,
       thinkingForcedOpen: templateResult.thinkingForcedOpen,
       parser: templateResult.parser,

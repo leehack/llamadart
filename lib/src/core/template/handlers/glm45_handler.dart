@@ -17,7 +17,8 @@ import '../tool_call_parsing_utils.dart';
 /// `<tool_call>func_name<arg_key>key</arg_key><arg_value>value</arg_value></tool_call>`
 ///
 /// Supports `<think>`/`</think>` for reasoning.
-class Glm45Handler extends ChatTemplateHandler {
+class Glm45Handler extends ChatTemplateHandler
+    implements ToolSchemaAwareChatTemplateHandler {
   static final RegExp _toolCallBlockPattern = RegExp(
     r'<tool_call>\s*([\s\S]*?)</tool_call>',
   );
@@ -127,6 +128,35 @@ class Glm45Handler extends ChatTemplateHandler {
     bool isPartial = false,
     bool parseToolCalls = true,
     bool thinkingForcedOpen = false,
+  }) => _parse(
+    output,
+    tools: null,
+    isPartial: isPartial,
+    parseToolCalls: parseToolCalls,
+    thinkingForcedOpen: thinkingForcedOpen,
+  );
+
+  @override
+  ChatParseResult parseWithTools(
+    String output, {
+    required List<ToolDefinition>? tools,
+    bool isPartial = false,
+    bool parseToolCalls = true,
+    bool thinkingForcedOpen = false,
+  }) => _parse(
+    output,
+    tools: tools,
+    isPartial: isPartial,
+    parseToolCalls: parseToolCalls,
+    thinkingForcedOpen: thinkingForcedOpen,
+  );
+
+  ChatParseResult _parse(
+    String output, {
+    required List<ToolDefinition>? tools,
+    required bool isPartial,
+    required bool parseToolCalls,
+    required bool thinkingForcedOpen,
   }) {
     final thinking = extractThinking(
       output,
@@ -141,7 +171,20 @@ class Glm45Handler extends ChatTemplateHandler {
       );
     }
 
-    final extractedFromContent = _extractToolCalls(text);
+    var parseableText = text;
+    if (isPartial) {
+      final incompleteStart = text.lastIndexOf('<tool_call>');
+      if (incompleteStart >= 0 &&
+          text.indexOf('</tool_call>', incompleteStart) < 0) {
+        parseableText = text.substring(0, incompleteStart);
+      } else {
+        final partialStart = _glmPartialMarkerStart(text, '<tool_call>');
+        if (partialStart != null) {
+          parseableText = text.substring(0, partialStart);
+        }
+      }
+    }
+    final extractedFromContent = _extractToolCalls(parseableText, tools: tools);
     final toolCalls = <LlamaCompletionChunkToolCall>[
       ...extractedFromContent.toolCalls,
     ];
@@ -175,12 +218,12 @@ class Glm45Handler extends ChatTemplateHandler {
         final valueRuleName =
             '${_sanitizeRuleName(tool.name)}-arg-${_sanitizeRuleName(parameter.name)}-value';
 
-        final valueRule = _buildValueRule(
+        final valueRules = _buildValueRules(
           valueRuleName: valueRuleName,
           schema: paramSchema,
         );
 
-        toolRules.add(valueRule);
+        toolRules.addAll(valueRules);
         toolRules.add(
           '$paramRuleName ::= "<arg_key>${_escapeLiteral(parameter.name)}</arg_key>\\n<arg_value>" $valueRuleName "</arg_value>\\n"',
         );
@@ -197,12 +240,9 @@ class Glm45Handler extends ChatTemplateHandler {
 
     return [
       'root ::= tool-call+',
-      'tool-call ::= "\\n<tool_call>" tool-choice "</tool_call>\\n"',
+      'tool-call ::= "\\n"? "<tool_call>" tool-choice "</tool_call>\\n"',
       toolChoiceRule,
       ...toolRules,
-      'raw-alpha ::= [A-Za-z]',
-      'raw-tail ::= [A-Za-z0-9_ ./:-]',
-      'raw-string ::= raw-alpha raw-tail*',
       'space ::= " "?',
       'string ::= "\\"" ([^"\\\\] | "\\\\" .)* "\\""',
       'number ::= "-"? ([0-9] | [1-9] [0-9]*) ("." [0-9]+)? ([eE] [+-]? [0-9]+)?',
@@ -214,7 +254,7 @@ class Glm45Handler extends ChatTemplateHandler {
     ].join('\n');
   }
 
-  String _buildValueRule({
+  List<String> _buildValueRules({
     required String valueRuleName,
     required Map<String, dynamic> schema,
   }) {
@@ -231,28 +271,31 @@ class Glm45Handler extends ChatTemplateHandler {
             .whereType<String>()
             .map((value) => '"\\"${_escapeLiteral(value)}\\""')
             .join(' | ');
-        return '$valueRuleName ::= $rawEnum | $jsonEnum';
+        return ['$valueRuleName ::= $rawEnum | $jsonEnum'];
       }
-      return '$valueRuleName ::= raw-string | string';
+      return [
+        '$valueRuleName ::= $valueRuleName-raw-0',
+        ..._glmUntilLiteralRules('$valueRuleName-raw', '</arg_value>'),
+      ];
     }
 
     if (type == 'integer' || type == 'number') {
-      return '$valueRuleName ::= number';
+      return ['$valueRuleName ::= number'];
     }
 
     if (type == 'boolean') {
-      return '$valueRuleName ::= boolean';
+      return ['$valueRuleName ::= boolean'];
     }
 
     if (type == 'array') {
-      return '$valueRuleName ::= arr';
+      return ['$valueRuleName ::= arr'];
     }
 
     if (type == 'object') {
-      return '$valueRuleName ::= obj';
+      return ['$valueRuleName ::= obj'];
     }
 
-    return '$valueRuleName ::= value';
+    return ['$valueRuleName ::= value'];
   }
 
   String _sanitizeRuleName(String input) {
@@ -271,7 +314,10 @@ class Glm45Handler extends ChatTemplateHandler {
     return ToolCallParsingUtils.decodeJsonValueOrString(value);
   }
 
-  _ExtractedToolCalls _extractToolCalls(String input) {
+  _ExtractedToolCalls _extractToolCalls(
+    String input, {
+    required List<ToolDefinition>? tools,
+  }) {
     final toolCalls = <LlamaCompletionChunkToolCall>[];
     var remaining = input;
 
@@ -282,17 +328,43 @@ class Glm45Handler extends ChatTemplateHandler {
       final toolName = firstArgIdx == -1
           ? block.trim()
           : block.substring(0, firstArgIdx).trim();
+      final tool = _glmToolByName(tools, toolName);
+      if (tools != null && tool == null) {
+        continue;
+      }
       final args = <String, dynamic>{};
+      final argumentBody = firstArgIdx == -1
+          ? ''
+          : block.substring(firstArgIdx);
+      if (argumentBody.replaceAll(_argPairPattern, '').trim().isNotEmpty) {
+        continue;
+      }
       for (final argMatch in _argPairPattern.allMatches(block)) {
         final key = (argMatch.group(1) ?? '').trim();
         final rawValue = (argMatch.group(2) ?? '').trim();
         if (key.isEmpty) {
           continue;
         }
-        args[key] = _decodeArgValue(rawValue);
+        final schema = tool?.toJsonSchema();
+        final property = schema?['properties']?[key];
+        if (tool != null && property is! Map<String, dynamic>) {
+          args.clear();
+          break;
+        }
+        final decoded = property is Map<String, dynamic>
+            ? _decodeGlmSchemaValue(rawValue, property)
+            : _decodeArgValue(rawValue);
+        if (identical(decoded, _glmSchemaFailure)) {
+          args.clear();
+          break;
+        }
+        args[key] = decoded;
       }
 
       if (toolName.isEmpty) {
+        continue;
+      }
+      if (tool != null && !_glmObjectMatchesSchema(args, tool.toJsonSchema())) {
         continue;
       }
 
@@ -318,6 +390,18 @@ class Glm45Handler extends ChatTemplateHandler {
   }
 }
 
+int? _glmPartialMarkerStart(String input, String marker) {
+  final lowerBound = input.length > marker.length
+      ? input.length - marker.length
+      : 0;
+  for (var index = lowerBound; index < input.length; index++) {
+    if (marker.startsWith(input.substring(index))) {
+      return index;
+    }
+  }
+  return null;
+}
+
 class _ExtractedToolCalls {
   final List<LlamaCompletionChunkToolCall> toolCalls;
   final String remainingContent;
@@ -326,4 +410,144 @@ class _ExtractedToolCalls {
     required this.toolCalls,
     required this.remainingContent,
   });
+}
+
+ToolDefinition? _glmToolByName(List<ToolDefinition>? tools, String name) {
+  if (tools == null) {
+    return null;
+  }
+  for (final tool in tools) {
+    if (tool.name == name) {
+      return tool;
+    }
+  }
+  return null;
+}
+
+Object? _decodeGlmSchemaValue(String raw, Map<String, dynamic> schema) {
+  if (schema['type'] == 'string') {
+    final enumValues = schema['enum'];
+    return enumValues is List && !enumValues.contains(raw)
+        ? _glmSchemaFailure
+        : raw;
+  }
+  final decoded = ToolCallParsingUtils.decodeJsonValue(raw);
+  if (decoded == null && raw.trim() != 'null') {
+    return _glmSchemaFailure;
+  }
+  return _glmValueMatchesSchema(decoded, schema) ? decoded : _glmSchemaFailure;
+}
+
+bool _glmObjectMatchesSchema(
+  Map<String, dynamic> value,
+  Map<String, dynamic> schema,
+) {
+  final properties =
+      (schema['properties'] as Map<String, dynamic>?) ??
+      const <String, dynamic>{};
+  final required = Set<String>.from(
+    (schema['required'] as List?)?.whereType<String>() ?? const <String>[],
+  );
+  if (!value.keys.toSet().containsAll(required)) {
+    return false;
+  }
+  for (final entry in value.entries) {
+    final property = properties[entry.key];
+    if (property is! Map<String, dynamic> ||
+        !_glmValueMatchesSchema(entry.value, property)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool _glmValueMatchesSchema(Object? value, Map<String, dynamic> schema) {
+  final enumValues = schema['enum'];
+  if (enumValues is List && !enumValues.contains(value)) {
+    return false;
+  }
+  return switch (schema['type']) {
+    'string' => value is String,
+    'integer' => value is int,
+    'number' => value is num,
+    'boolean' => value is bool,
+    'null' => value == null,
+    'array' =>
+      value is List &&
+          (schema['items'] is! Map<String, dynamic> ||
+              value.every(
+                (item) => _glmValueMatchesSchema(
+                  item,
+                  schema['items'] as Map<String, dynamic>,
+                ),
+              )),
+    'object' || null =>
+      value is Map &&
+          _glmObjectMatchesSchema(Map<String, dynamic>.from(value), schema),
+    _ => false,
+  };
+}
+
+const _glmSchemaFailure = _GlmSchemaFailure();
+
+class _GlmSchemaFailure {
+  const _GlmSchemaFailure();
+}
+
+List<String> _glmUntilLiteralRules(String ruleBase, String delimiter) {
+  final marker = delimiter.runes
+      .map(String.fromCharCode)
+      .toList(growable: false);
+  final alphabet = marker.toSet().toList(growable: false);
+  final lines = <String>[
+    '$ruleBase-other ::= [^${alphabet.map(_escapeGlmCharacterClass).join()}]',
+  ];
+  for (var state = 0; state < marker.length; state++) {
+    final alternatives = <String>['$ruleBase-other $ruleBase-0'];
+    for (final character in alphabet) {
+      final next = _glmDelimiterTransition(marker, state, character);
+      if (next == marker.length) {
+        continue;
+      }
+      alternatives.add(
+        '"${_escapeLiteralCharacter(character)}" $ruleBase-$next',
+      );
+    }
+    lines.add('$ruleBase-$state ::= (${alternatives.join(' | ')})?');
+  }
+  return lines;
+}
+
+int _glmDelimiterTransition(List<String> marker, int state, String character) {
+  final candidate = <String>[...marker.take(state), character];
+  final max = candidate.length < marker.length
+      ? candidate.length
+      : marker.length;
+  for (var length = max; length >= 0; length--) {
+    var matches = true;
+    for (var index = 0; index < length; index++) {
+      if (candidate[candidate.length - length + index] != marker[index]) {
+        matches = false;
+        break;
+      }
+    }
+    if (matches) {
+      return length;
+    }
+  }
+  return 0;
+}
+
+String _escapeGlmCharacterClass(String character) {
+  return switch (character) {
+    r'\' => r'\\',
+    ']' => r'\]',
+    '-' => r'\-',
+    '^' => r'\^',
+    _ => character,
+  };
+}
+
+String _escapeLiteralCharacter(String character) {
+  return character.replaceAll(r'\', r'\\').replaceAll('"', r'\"');
 }

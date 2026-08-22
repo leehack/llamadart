@@ -684,6 +684,7 @@ class LlamaEngine {
       templateResult: plan.templateResult,
       parseToolCallsEnabled: plan.parseToolCallsEnabled,
       enableThinking: enableThinking,
+      tools: effectiveTools,
       modelName: _modelPath ?? 'llama_model',
       completionId: completionId,
     );

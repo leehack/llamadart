@@ -1,5 +1,11 @@
 ## Unreleased
 
+* Hardened direct-Jinja structured output against upstream format skew. Kimi
+  K3, MiniMax M1/M3, DeepSeek V3.2/V4, Muse Glimmer, and Poolside Laguna now
+  constrain and parse exact tool names, parameter keys, schema-directed values,
+  required-tool prefixes, zero-argument calls, and partial streams without
+  leaking malformed tool markup into successful calls.
+
 * llama.cpp backend initialization failures now complete the worker startup
   handshake with a typed `LlamaBackendInitializationException` and collected
   native-loader diagnostics. A failed or incompatible worker is torn down

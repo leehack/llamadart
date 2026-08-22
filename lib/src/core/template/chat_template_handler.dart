@@ -236,3 +236,31 @@ abstract class ChatTemplateHandler {
     return DateTime.now();
   }
 }
+
+/// Optional handler contract for output formats whose argument decoding depends
+/// on the tool JSON schemas supplied for the completion request.
+///
+/// [ChatTemplateEngine] uses this contract when schemas are available while
+/// retaining [ChatTemplateHandler.parse] for callers that only have raw output.
+abstract interface class ToolSchemaAwareChatTemplateHandler {
+  /// Parses [output] using [tools] to validate names, required properties, and
+  /// schema-directed argument types.
+  ChatParseResult parseWithTools(
+    String output, {
+    required List<ToolDefinition>? tools,
+    bool isPartial = false,
+    bool parseToolCalls = true,
+    bool thinkingForcedOpen = false,
+  });
+}
+
+/// Optional handler contract for required-tool grammars that must admit a
+/// format-specific reasoning or content prefix before the tool envelope.
+abstract interface class RequiredToolGrammarHandler {
+  /// Returns an eager grammar that accepts a prefix before [trigger] while
+  /// still requiring the original tool grammar to match through end-of-input.
+  String buildRequiredToolGrammar({
+    required String grammar,
+    required String trigger,
+  });
+}

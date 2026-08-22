@@ -49,20 +49,57 @@ void main() {
     test('grammar permits the upstream raw JSON argument block', () {
       final grammar = KimiK3Handler().buildGrammar([_weatherTool])!;
 
-      expect(grammar, contains('(argument* | json-block)'));
+      expect(grammar, contains('kimi-0-json-block'));
       expect(grammar, contains(r'(" index=\"" [0-9]+ "\"")? "<|sep|>"'));
       expect(
         grammar,
-        contains(r'"<|open|>json type=\"object\"<|sep|>" json-object'),
+        contains(r'"<|open|>json type=\"object\"<|sep|>" kimi-0-json-object'),
       );
-      expect(grammar, contains('char ::= '));
     });
 
     test('grammar HTML-escapes tool names like the upstream XTML macro', () {
       final grammar = KimiK3Handler().buildGrammar([_attributeTool])!;
 
-      expect(grammar, contains(r'tool-name ::= "weather&amp;&quot;alerts"'));
-      expect(grammar, isNot(contains(r'tool-name ::= "weather&\"alerts"')));
+      expect(grammar, contains(r'tool=\"weather&amp;&quot;alerts\"'));
+      expect(grammar, isNot(contains(r'tool=\"weather&\"alerts\"')));
+    });
+
+    test('grammar and parser round-trip escaped schema property names', () {
+      final grammar = KimiK3Handler().buildGrammar([_escapedKeyTool])!;
+      const output =
+          '<|open|>tools<|sep|>'
+          '<|open|>call tool="weather&amp;&quot;alerts"<|sep|>'
+          '<|open|>argument key="city&amp;&quot;unit" type="string"<|sep|>'
+          'x < 5<|close|>argument<|sep|>'
+          '<|close|>call<|sep|><|close|>tools<|sep|>'
+          '<|close|>message<|sep|>';
+
+      expect(grammar, contains('key=\\"city&amp;&quot;unit\\"'));
+      expect(grammar, isNot(contains('identifier ::=')));
+      final parsed = ChatTemplateEngine.parse(
+        ChatFormat.kimiK3.index,
+        output,
+        tools: [_escapedKeyTool],
+      );
+      expect(parsed.content, isEmpty);
+      expect(parsed.toolCalls.single.function?.name, 'weather&"alerts');
+      expect(_arguments(parsed), {'city&"unit': 'x < 5'});
+    });
+
+    test('schema-aware parsing rejects missing or undeclared arguments', () {
+      const output =
+          '<|open|>tools<|sep|>'
+          '<|open|>call tool="weather"<|sep|>'
+          '<|open|>argument key="unknown" type="string"<|sep|>x'
+          '<|close|>argument<|sep|><|close|>call<|sep|>'
+          '<|close|>tools<|sep|><|close|>message<|sep|>';
+      final parsed = ChatTemplateEngine.parse(
+        ChatFormat.kimiK3.index,
+        output,
+        tools: [_weatherWithCityTool],
+      );
+      expect(parsed.toolCalls, isEmpty);
+      expect(parsed.content, contains('key="unknown"'));
     });
 
     test(
@@ -106,6 +143,15 @@ void main() {
       expect(parsed.toolCalls, isEmpty);
       expect(parsed.content, contains('<|open|>tools<|sep|>'));
       expect(parsed.content, contains('On it.'));
+    });
+
+    test('suppresses a split tools marker while streaming', () {
+      final parsed = KimiK3Handler().parse(
+        '<|open|>response<|sep|>On it.<|close|>response<|sep|><|op',
+        isPartial: true,
+      );
+      expect(parsed.content, 'On it.');
+      expect(parsed.toolCalls, isEmpty);
     });
   });
 
@@ -152,6 +198,27 @@ void main() {
       expect(grammar, contains(r'[^"\\\x7F\x00-\x1F]'));
       expect(grammar, contains(r'[\\] (["\\bfnrt] | "u"'));
       expect(grammar, isNot(contains('json-char ::=')));
+      expect(callRule, contains(r'"\"weather\""'));
+    });
+
+    test('schema-aware parsing rejects unknown tool names', () {
+      const output =
+          '<tool_calls>\n'
+          '{"name":"unknown","arguments":{"city":"Seoul"}}\n'
+          '</tool_calls>';
+      final parsed = ChatTemplateEngine.parse(
+        ChatFormat.minimaxM1.index,
+        output,
+        tools: [_weatherWithCityTool],
+      );
+      expect(parsed.toolCalls, isEmpty);
+      expect(parsed.content, output);
+    });
+
+    test('suppresses a split tool-call marker while streaming', () {
+      final parsed = MinimaxM1Handler().parse('Prelude<tool_', isPartial: true);
+      expect(parsed.content, 'Prelude');
+      expect(parsed.toolCalls, isEmpty);
     });
   });
 
@@ -216,6 +283,15 @@ void main() {
       expect(parsed.toolCalls, isEmpty);
     });
 
+    test('suppresses a split namespace marker while streaming', () {
+      final parsed = MinimaxM3Handler().parse(
+        'Prelude${ns.substring(0, ns.length - 2)}',
+        isPartial: true,
+      );
+      expect(parsed.content, 'Prelude');
+      expect(parsed.toolCalls, isEmpty);
+    });
+
     test('keeps completed calls before a partial invoke', () {
       const output =
           'Prelude$ns<tool_call>\n'
@@ -228,6 +304,58 @@ void main() {
       expect(parsed.toolCalls, hasLength(1));
       expect(parsed.toolCalls.single.function?.name, 'weather');
       expect(_arguments(parsed), {'city': 'Seoul'});
+    });
+
+    test('parses zero-argument calls with an empty object', () {
+      const output =
+          '$ns<tool_call>\n'
+          '$ns<invoke name="ping">$ns</invoke>\n'
+          '$ns</tool_call>';
+      final parsed = ChatTemplateEngine.parse(
+        ChatFormat.minimaxM3.index,
+        output,
+        tools: [_pingTool],
+      );
+      expect(parsed.content, isEmpty);
+      expect(parsed.toolCalls.single.function?.name, 'ping');
+      expect(_arguments(parsed), isEmpty);
+    });
+
+    test('reconstructs schema-directed scalars and empty containers', () {
+      const output =
+          '$ns<tool_call>\n'
+          '$ns<invoke name="typed">'
+          '$ns<code>123$ns</code>'
+          '$ns<options>$ns</options>'
+          '$ns<items>$ns</items>'
+          '$ns</invoke>\n$ns</tool_call>';
+      final parsed = ChatTemplateEngine.parse(
+        ChatFormat.minimaxM3.index,
+        output,
+        tools: [_typedTool],
+      );
+      expect(_arguments(parsed), {'code': '123', 'options': {}, 'items': []});
+    });
+
+    test('schema grammar uses identical literal parameter tag pairs', () {
+      final grammar = MinimaxM3Handler().buildGrammar([_typedTool])!;
+      expect(grammar, contains('$ns<code>'));
+      expect(grammar, contains('$ns</code>'));
+      expect(grammar, isNot(contains('identifier ::=')));
+      expect(grammar, contains('m3-0-arguments-code-text'));
+    });
+
+    test('preserves mismatched parameter closing tags', () {
+      const output =
+          '$ns<tool_call>$ns<invoke name="typed">'
+          '$ns<code>123$ns</items>$ns</invoke>$ns</tool_call>';
+      final parsed = ChatTemplateEngine.parse(
+        ChatFormat.minimaxM3.index,
+        output,
+        tools: [_typedTool],
+      );
+      expect(parsed.toolCalls, isEmpty);
+      expect(parsed.content, output);
     });
   });
 
@@ -262,6 +390,130 @@ void main() {
       final parsed = DeepseekV4Handler().parse(output);
       expect(parsed.toolCalls, isEmpty);
       expect(parsed.content, output);
+    });
+
+    test('parses the V3.2 function_calls envelope', () {
+      const output =
+          'check first'
+          '<｜DSML｜function_calls>\n'
+          '<｜DSML｜invoke name="weather">\n'
+          '<｜DSML｜parameter name="city" string="true">x < 5'
+          '</｜DSML｜parameter>\n'
+          '</｜DSML｜invoke>\n'
+          '</｜DSML｜function_calls>';
+      final parsed = ChatTemplateEngine.parse(
+        ChatFormat.deepseekV4.index,
+        output,
+        tools: [_weatherWithCityTool],
+        thinkingForcedOpen: true,
+      );
+      expect(parsed.reasoningContent, 'check first');
+      expect(parsed.content, isEmpty);
+      expect(_arguments(parsed), {'city': 'x < 5'});
+    });
+
+    test('preserves malformed and finalized truncated V3.2 envelopes', () {
+      const malformed =
+          '<｜DSML｜function_calls>\n'
+          '<｜DSML｜invoke name="weather">\n'
+          '<｜DSML｜parameter name="city" string="true">Seoul'
+          '</｜DSML｜parameter>\n'
+          '</｜DSML｜tool_calls>';
+      const truncated =
+          '<｜DSML｜function_calls>\n'
+          '<｜DSML｜invoke name="weather">\n'
+          '<｜DSML｜parameter name="city" string="true">Seo';
+
+      final malformedParsed = ChatTemplateEngine.parse(
+        ChatFormat.deepseekV4.index,
+        malformed,
+        tools: [_weatherWithCityTool],
+      );
+      final finalizedTruncated = ChatTemplateEngine.parse(
+        ChatFormat.deepseekV4.index,
+        truncated,
+        tools: [_weatherWithCityTool],
+      );
+      final partialTruncated = ChatTemplateEngine.parse(
+        ChatFormat.deepseekV4.index,
+        'reasoning$truncated',
+        tools: [_weatherWithCityTool],
+        thinkingForcedOpen: true,
+        isPartial: true,
+      );
+
+      expect(malformedParsed.toolCalls, isEmpty);
+      expect(malformedParsed.content, malformed);
+      expect(finalizedTruncated.toolCalls, isEmpty);
+      expect(finalizedTruncated.content, truncated);
+      expect(partialTruncated.reasoningContent, 'reasoning');
+      expect(partialTruncated.content, isEmpty);
+      expect(partialTruncated.toolCalls, isEmpty);
+    });
+
+    test('preserves V3.2 markup when tool parsing is disabled', () {
+      const output =
+          '<｜DSML｜function_calls>\n'
+          '<｜DSML｜invoke name="weather">\n'
+          '<｜DSML｜parameter name="city" string="true">Seoul'
+          '</｜DSML｜parameter>\n'
+          '</｜DSML｜invoke>\n'
+          '</｜DSML｜function_calls>';
+
+      final parsed = DeepseekV4Handler().parse(output, parseToolCalls: false);
+
+      expect(parsed.toolCalls, isEmpty);
+      expect(parsed.content, output);
+    });
+
+    test('parses a V3.2 tool name containing regex metacharacters', () {
+      const output =
+          '<｜DSML｜function_calls>\n'
+          '<｜DSML｜invoke name="weather.v2+alerts[0]">\n'
+          '</｜DSML｜invoke>\n'
+          '</｜DSML｜function_calls>';
+
+      final parsed = ChatTemplateEngine.parse(
+        ChatFormat.deepseekV4.index,
+        output,
+        tools: [_regexNameTool],
+      );
+
+      expect(parsed.content, isEmpty);
+      expect(parsed.toolCalls.single.function?.name, 'weather.v2+alerts[0]');
+      expect(_arguments(parsed), isEmpty);
+    });
+
+    test('DSML envelope ends forced-open thinking without a think close', () {
+      const output =
+          'reasoning'
+          '<｜DSML｜tool_calls>\n'
+          '<｜DSML｜invoke name="weather">\n'
+          '<｜DSML｜parameter name="city" string="true">Seoul'
+          '</｜DSML｜parameter>\n'
+          '</｜DSML｜invoke>\n'
+          '</｜DSML｜tool_calls>';
+      final parsed = ChatTemplateEngine.parse(
+        ChatFormat.deepseekV4.index,
+        output,
+        tools: [_weatherWithCityTool],
+        thinkingForcedOpen: true,
+      );
+      expect(parsed.reasoningContent, 'reasoning');
+      expect(_arguments(parsed), {'city': 'Seoul'});
+    });
+
+    test('suppresses a partial DSML envelope after forced reasoning', () {
+      final parsed = ChatTemplateEngine.parse(
+        ChatFormat.deepseekV4.index,
+        'reasoning<｜DSML｜function_',
+        tools: [_weatherWithCityTool],
+        thinkingForcedOpen: true,
+        isPartial: true,
+      );
+      expect(parsed.reasoningContent, 'reasoning');
+      expect(parsed.content, isEmpty);
+      expect(parsed.toolCalls, isEmpty);
     });
   });
 
@@ -318,9 +570,43 @@ void main() {
       expect(handler.grammarTriggerValues, ['<atem:function_calls>']);
       expect(
         grammar.split('\n').first,
-        r'root ::= "<atem:function_calls>\n" invoke "</atem:function_calls>"',
+        r'root ::= "<atem:function_calls>\n" invoke+ "</atem:function_calls>"',
       );
       expect(grammar.split('\n').first, isNot(contains(' to=')));
+    });
+
+    test('preserves unmatched surrounding content around channels', () {
+      const output =
+          'prefix<|start|>assistant to=user<|message|>Hello<|eot|>suffix';
+      final parsed = MuseGlimmerHandler().parse(output);
+      expect(parsed.content, 'prefixHellosuffix');
+    });
+
+    test('suppresses an incomplete routing prefix while streaming', () {
+      for (final output in [
+        'Prelude to=weather',
+        'Prelude<|start|>assis',
+        'Prelude<|start|>assistant to=wea',
+      ]) {
+        final parsed = MuseGlimmerHandler().parse(output, isPartial: true);
+        expect(parsed.content, 'Prelude', reason: output);
+      }
+    });
+
+    test('uses the schema to keep JSON-looking strings as strings', () {
+      const output =
+          ' to=typed<|message|><atem:function_calls>\n'
+          '<atem:invoke name="typed">\n'
+          '<atem:parameter name="code">123</atem:parameter>\n'
+          '<atem:parameter name="options">{}</atem:parameter>\n'
+          '<atem:parameter name="items">[]</atem:parameter>\n'
+          '</atem:invoke>\n</atem:function_calls><|eot|>';
+      final parsed = ChatTemplateEngine.parse(
+        ChatFormat.museGlimmer.index,
+        output,
+        tools: [_typedTool],
+      );
+      expect(_arguments(parsed), {'code': '123', 'options': {}, 'items': []});
     });
   });
 
@@ -347,6 +633,37 @@ void main() {
       expect(parsed.toolCalls, isEmpty);
       expect(parsed.content, output);
     });
+
+    test('suppresses partial markup and restores it at finalization', () {
+      const output =
+          'Prelude<tool_call>weather<arg_key>city</arg_key>'
+          '<arg_value>Seo';
+      final partial = LagunaHandler().parse(output, isPartial: true);
+      final complete = LagunaHandler().parse(output);
+      expect(partial.content, 'Prelude');
+      expect(complete.content, output);
+    });
+
+    test('suppresses a split tool marker while streaming', () {
+      final parsed = LagunaHandler().parse('Prelude<tool_', isPartial: true);
+      expect(parsed.content, 'Prelude');
+      expect(parsed.toolCalls, isEmpty);
+    });
+
+    test('uses schema-directed values through the production parse path', () {
+      const output =
+          '<tool_call>typed\n'
+          '<arg_key>code</arg_key>\n<arg_value>123</arg_value>\n'
+          '<arg_key>options</arg_key>\n<arg_value>{}</arg_value>\n'
+          '<arg_key>items</arg_key>\n<arg_value>[]</arg_value>\n'
+          '</tool_call>';
+      final parsed = ChatTemplateEngine.parse(
+        ChatFormat.laguna.index,
+        output,
+        tools: [_typedTool],
+      );
+      expect(_arguments(parsed), {'code': '123', 'options': {}, 'items': []});
+    });
   });
 }
 
@@ -368,6 +685,42 @@ final _attributeTool = ToolDefinition(
   name: 'weather&"alerts',
   description: 'Weather alerts',
   parameters: const [],
+  handler: (_) async => null,
+);
+
+final _escapedKeyTool = ToolDefinition(
+  name: 'weather&"alerts',
+  description: 'Weather alerts',
+  parameters: [ToolParam.string('city&"unit', required: true)],
+  handler: (_) async => null,
+);
+
+final _pingTool = ToolDefinition(
+  name: 'ping',
+  description: 'Ping',
+  parameters: const [],
+  handler: (_) async => null,
+);
+
+final _regexNameTool = ToolDefinition(
+  name: 'weather.v2+alerts[0]',
+  description: 'Weather alerts',
+  parameters: const [],
+  handler: (_) async => null,
+);
+
+final _typedTool = ToolDefinition(
+  name: 'typed',
+  description: 'Typed values',
+  parameters: [
+    ToolParam.string('code', required: true),
+    ToolParam.object('options', properties: const [], required: true),
+    ToolParam.array(
+      'items',
+      itemType: ToolParam.string('item'),
+      required: true,
+    ),
+  ],
   handler: (_) async => null,
 );
 

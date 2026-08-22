@@ -64,9 +64,10 @@ resolve_target() {
 chat_parser_target="$(resolve_target chat-parser test-chat-parser test-chat-auto-parser)"
 peg_parser_target="$(resolve_target peg-parser test-chat-peg-parser)"
 template_target="$(resolve_target chat-template test-chat-template)"
+grammar_validator_target="$(resolve_target gbnf-validator test-gbnf-validator)"
 
 ctest_targets=("${chat_parser_target}" "${peg_parser_target}" "${template_target}")
-targets=("${ctest_targets[@]}")
+targets=("${ctest_targets[@]}" "${grammar_validator_target}")
 if [[ "${include_full}" == "1" ]]; then
   full_target="$(resolve_target full-chat test-chat)"
   targets+=("${full_target}")

@@ -354,9 +354,7 @@ class ChatTemplateEngine {
         ? ChatFormat.values[result.format]
         : ChatFormat.generic;
 
-    if (toolChoice == ToolChoice.none &&
-        resultFormat == ChatFormat.ministral &&
-        result.grammar != null) {
+    if (toolChoice == ToolChoice.none && result.grammar != null) {
       return LlamaChatTemplateResult(
         prompt: result.prompt,
         format: result.format,
@@ -427,6 +425,30 @@ class ChatTemplateEngine {
       return result;
     }
 
+    final handler = handlerFor(resultFormat);
+    if (handler is RequiredToolGrammarHandler &&
+        result.grammarTriggers.isNotEmpty) {
+      final trigger = result.grammarTriggers.first.value;
+      if (trigger.isNotEmpty) {
+        return LlamaChatTemplateResult(
+          prompt: result.prompt,
+          format: result.format,
+          grammar: (handler as RequiredToolGrammarHandler)
+              .buildRequiredToolGrammar(
+                grammar: result.grammar!,
+                trigger: trigger,
+              ),
+          grammarLazy: false,
+          additionalStops: result.additionalStops,
+          preservedTokens: result.preservedTokens,
+          grammarTriggers: const [],
+          thinkingForcedOpen: result.thinkingForcedOpen,
+          parser: result.parser,
+          tokenCount: result.tokenCount,
+        );
+      }
+    }
+
     return LlamaChatTemplateResult(
       prompt: result.prompt,
       format: result.format,
@@ -447,6 +469,7 @@ class ChatTemplateEngine {
   static ChatParseResult parse(
     int formatIndex,
     String output, {
+    List<ToolDefinition>? tools,
     bool isPartial = false,
     bool parseToolCalls = true,
     bool thinkingForcedOpen = false,
@@ -479,6 +502,16 @@ class ChatTemplateEngine {
         output: output,
         isPartial: isPartial,
         parseToolCalls: parseToolCalls,
+      );
+    }
+
+    if (handler is ToolSchemaAwareChatTemplateHandler) {
+      return (handler as ToolSchemaAwareChatTemplateHandler).parseWithTools(
+        output,
+        tools: tools,
+        isPartial: isPartial,
+        parseToolCalls: parseToolCalls,
+        thinkingForcedOpen: thinkingForcedOpen,
       );
     }
 

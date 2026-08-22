@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:dinja/dinja.dart';
 
 import '../../grammar/json_schema_converter.dart';
@@ -13,7 +15,8 @@ import '../tool_call_grammar_utils.dart';
 import '../tool_call_parsing_utils.dart';
 import 'glm45_handler.dart';
 
-abstract class _DirectJinjaHandler extends ChatTemplateHandler {
+abstract class _DirectJinjaHandler extends ChatTemplateHandler
+    implements ToolSchemaAwareChatTemplateHandler, RequiredToolGrammarHandler {
   @override
   TemplateToolCallSerialization get toolCallSerialization =>
       TemplateToolCallSerialization.normalizeOnly;
@@ -23,6 +26,17 @@ abstract class _DirectJinjaHandler extends ChatTemplateHandler {
   String get defaultEosToken => '';
 
   List<String> get grammarTriggerValues => const [];
+
+  List<String> grammarTriggerValuesForTemplate(String templateSource) =>
+      grammarTriggerValues;
+
+  List<String> preservedTokensForTemplate(String templateSource) =>
+      preservedTokens;
+
+  String? buildGrammarForTemplate(
+    String templateSource,
+    List<ToolDefinition>? tools,
+  ) => buildGrammar(tools);
 
   @override
   LlamaChatTemplateResult render({
@@ -65,21 +79,45 @@ abstract class _DirectJinjaHandler extends ChatTemplateHandler {
     return LlamaChatTemplateResult(
       prompt: prompt,
       format: format.index,
-      grammar: buildGrammar(tools),
+      grammar: buildGrammarForTemplate(templateSource, tools),
       grammarLazy: hasTools,
       thinkingForcedOpen: thinkingForcedOpen,
       additionalStops: getStops(
         hasTools: hasTools,
         enableThinking: enableThinking,
       ),
-      preservedTokens: hasTools ? preservedTokens : const [],
+      preservedTokens: hasTools
+          ? preservedTokensForTemplate(templateSource)
+          : const [],
       grammarTriggers: hasTools
-          ? grammarTriggerValues
+          ? grammarTriggerValuesForTemplate(templateSource)
                 .map((value) => GrammarTrigger(type: 0, value: value))
                 .toList(growable: false)
           : const [],
     );
   }
+
+  @override
+  ChatParseResult parseWithTools(
+    String output, {
+    required List<ToolDefinition>? tools,
+    bool isPartial = false,
+    bool parseToolCalls = true,
+    bool thinkingForcedOpen = false,
+  }) {
+    return parse(
+      output,
+      isPartial: isPartial,
+      parseToolCalls: parseToolCalls,
+      thinkingForcedOpen: thinkingForcedOpen,
+    );
+  }
+
+  @override
+  String buildRequiredToolGrammar({
+    required String grammar,
+    required String trigger,
+  }) => _buildRequiredPrefixGrammar(grammar, trigger);
 }
 
 /// Handler for Kimi K3's XTML response and typed tool-call protocol.
@@ -134,6 +172,35 @@ class KimiK3Handler extends _DirectJinjaHandler {
     bool isPartial = false,
     bool parseToolCalls = true,
     bool thinkingForcedOpen = false,
+  }) => _parse(
+    output,
+    tools: null,
+    isPartial: isPartial,
+    parseToolCalls: parseToolCalls,
+    thinkingForcedOpen: thinkingForcedOpen,
+  );
+
+  @override
+  ChatParseResult parseWithTools(
+    String output, {
+    required List<ToolDefinition>? tools,
+    bool isPartial = false,
+    bool parseToolCalls = true,
+    bool thinkingForcedOpen = false,
+  }) => _parse(
+    output,
+    tools: tools,
+    isPartial: isPartial,
+    parseToolCalls: parseToolCalls,
+    thinkingForcedOpen: thinkingForcedOpen,
+  );
+
+  ChatParseResult _parse(
+    String output, {
+    required List<ToolDefinition>? tools,
+    required bool isPartial,
+    required bool parseToolCalls,
+    required bool thinkingForcedOpen,
   }) {
     var remaining = output;
     String? reasoning;
@@ -181,7 +248,11 @@ class KimiK3Handler extends _DirectJinjaHandler {
       );
     }
 
-    final parsed = _parseKimiTools(remaining, isPartial: isPartial);
+    final parsed = _parseKimiTools(
+      remaining,
+      tools: tools,
+      isPartial: isPartial,
+    );
     if (!parsed.success) {
       final preserved = '$content${_stripKimiTurnEnd(remaining)}'.trim();
       return ChatParseResult(
@@ -196,10 +267,22 @@ class KimiK3Handler extends _DirectJinjaHandler {
     );
   }
 
-  _ParsedCalls _parseKimiTools(String input, {required bool isPartial}) {
+  _ParsedCalls _parseKimiTools(
+    String input, {
+    required List<ToolDefinition>? tools,
+    required bool isPartial,
+  }) {
     final scopeStart = input.indexOf(_toolsStart);
     if (scopeStart < 0) {
-      return _ParsedCalls(calls: const [], remaining: _stripKimiTurnEnd(input));
+      final partialStart = isPartial
+          ? _partialMarkerStart(input, const [_toolsStart])
+          : null;
+      return _ParsedCalls(
+        calls: const [],
+        remaining: _stripKimiTurnEnd(
+          partialStart == null ? input : input.substring(0, partialStart),
+        ),
+      );
     }
     final bodyStart = scopeStart + _toolsStart.length;
     final scopeEnd = input.indexOf(_toolsEnd, bodyStart);
@@ -225,7 +308,14 @@ class KimiK3Handler extends _DirectJinjaHandler {
     for (final match in matches) {
       final name = _unescapeAttribute(match.group(1) ?? '');
       final callBody = match.group(2) ?? '';
-      final arguments = _parseKimiArguments(callBody);
+      final tool = _toolByName(tools, name);
+      if (tools != null && tool == null) {
+        return _ParsedCalls.failure();
+      }
+      final arguments = _parseKimiArguments(
+        callBody,
+        schema: tool?.toJsonSchema(),
+      );
       if (name.isEmpty || arguments == null) {
         return _ParsedCalls.failure();
       }
@@ -243,7 +333,10 @@ class KimiK3Handler extends _DirectJinjaHandler {
     return _ParsedCalls(calls: calls, remaining: _stripKimiTurnEnd(remaining));
   }
 
-  Map<String, dynamic>? _parseKimiArguments(String body) {
+  Map<String, dynamic>? _parseKimiArguments(
+    String body, {
+    required Map<String, dynamic>? schema,
+  }) {
     final jsonPattern = RegExp(
       r'<\|open\|>json\s+type="object"<\|sep\|>([\s\S]*?)<\|close\|>json<\|sep\|>',
     );
@@ -252,7 +345,14 @@ class KimiK3Handler extends _DirectJinjaHandler {
       if (body.replaceFirst(jsonPattern, '').trim().isNotEmpty) {
         return null;
       }
-      return ToolCallParsingUtils.decodeJsonObject(jsonMatch.group(1) ?? '');
+      final decoded = ToolCallParsingUtils.decodeJsonObject(
+        jsonMatch.group(1) ?? '',
+      );
+      if (decoded == null ||
+          (schema != null && !_objectMatchesSchema(decoded, schema))) {
+        return null;
+      }
+      return decoded;
     }
 
     final argumentPattern = RegExp(
@@ -269,7 +369,20 @@ class KimiK3Handler extends _DirectJinjaHandler {
       if (key.isEmpty) {
         return null;
       }
-      if (type == 'string') {
+      final property = schema?['properties']?[key];
+      if (schema != null && property is! Map<String, dynamic>) {
+        return null;
+      }
+      if (property is Map<String, dynamic>) {
+        if (type != _schemaProtocolType(property)) {
+          return null;
+        }
+        final decoded = _decodeRawBySchema(raw, property);
+        if (identical(decoded, _schemaDecodeFailure)) {
+          return null;
+        }
+        result[key] = decoded;
+      } else if (type == 'string') {
         result[key] = raw;
       } else {
         final decoded = ToolCallParsingUtils.decodeJsonValue(raw);
@@ -278,6 +391,9 @@ class KimiK3Handler extends _DirectJinjaHandler {
         }
         result[key] = decoded;
       }
+    }
+    if (schema != null && !_objectMatchesSchema(result, schema)) {
+      return null;
     }
     return result;
   }
@@ -293,50 +409,7 @@ class KimiK3Handler extends _DirectJinjaHandler {
 
   @override
   String? buildGrammar(List<ToolDefinition>? tools) {
-    if (tools == null || tools.isEmpty) {
-      return null;
-    }
-    final names = tools
-        .map(
-          (tool) => ToolCallGrammarUtils.literal(_escapeAttribute(tool.name)),
-        )
-        .join(' | ');
-    final converter = JsonSchemaConverter();
-    const objectSchema = <String, dynamic>{'type': 'object'};
-    converter.resolveRefs(objectSchema, objectSchema);
-    final objectRule = converter.visit(objectSchema, 'json-object');
-    final buffer = StringBuffer()
-      ..writeln(
-        'root ::= "<|open|>tools<|sep|>" call+ '
-        '"<|close|>tools<|sep|><|close|>message<|sep|>"',
-      )
-      ..writeln(
-        'call ::= "<|open|>call tool=\\"" tool-name '
-        '"\\"" (" index=\\"" [0-9]+ "\\"")? "<|sep|>" '
-        '(argument* | json-block) "<|close|>call<|sep|>"',
-      )
-      ..writeln(
-        'argument ::= "<|open|>argument key=\\"" identifier '
-        '"\\" type=\\"" value-type "\\"<|sep|>" raw '
-        '"<|close|>argument<|sep|>"',
-      )
-      ..writeln(
-        'json-block ::= "<|open|>json type=\\"object\\"<|sep|>" '
-        '$objectRule "<|close|>json<|sep|>"',
-      )
-      ..writeln('tool-name ::= $names')
-      ..writeln(
-        'value-type ::= "string" | "number" | "boolean" | "null" | '
-        '"object" | "array"',
-      )
-      ..writeln('identifier ::= [A-Za-z_] [A-Za-z0-9_.-]*')
-      ..writeln('raw ::= [^<]*');
-    final jsonRules = converter.rules.entries.toList(growable: false)
-      ..sort((a, b) => a.key.compareTo(b.key));
-    for (final entry in jsonRules) {
-      buffer.writeln('${entry.key} ::= ${entry.value}');
-    }
-    return buffer.toString();
+    return _buildKimiK3Grammar(tools);
   }
 }
 
@@ -364,6 +437,32 @@ class MinimaxM1Handler extends _DirectJinjaHandler {
     bool isPartial = false,
     bool parseToolCalls = true,
     bool thinkingForcedOpen = false,
+  }) => _parse(
+    output,
+    tools: null,
+    isPartial: isPartial,
+    parseToolCalls: parseToolCalls,
+  );
+
+  @override
+  ChatParseResult parseWithTools(
+    String output, {
+    required List<ToolDefinition>? tools,
+    bool isPartial = false,
+    bool parseToolCalls = true,
+    bool thinkingForcedOpen = false,
+  }) => _parse(
+    output,
+    tools: tools,
+    isPartial: isPartial,
+    parseToolCalls: parseToolCalls,
+  );
+
+  ChatParseResult _parse(
+    String output, {
+    required List<ToolDefinition>? tools,
+    required bool isPartial,
+    required bool parseToolCalls,
   }) {
     if (!parseToolCalls) {
       return ChatParseResult(content: output.trim());
@@ -372,7 +471,14 @@ class MinimaxM1Handler extends _DirectJinjaHandler {
     const end = '</tool_calls>';
     final startIndex = output.indexOf(start);
     if (startIndex < 0) {
-      return ChatParseResult(content: output.trim());
+      final partialStart = isPartial
+          ? _partialMarkerStart(output, const [start])
+          : null;
+      return ChatParseResult(
+        content:
+            (partialStart == null ? output : output.substring(0, partialStart))
+                .trim(),
+      );
     }
     final endIndex = output.indexOf(end, startIndex + start.length);
     if (endIndex < 0) {
@@ -384,7 +490,7 @@ class MinimaxM1Handler extends _DirectJinjaHandler {
     }
 
     final body = output.substring(startIndex + start.length, endIndex);
-    final calls = _parseJsonObjectSequence(body);
+    final calls = _parseJsonObjectSequence(body, tools: tools);
     if (calls == null) {
       return ChatParseResult(content: output.trim());
     }
@@ -412,7 +518,7 @@ class MinimaxM1Handler extends _DirectJinjaHandler {
       final callRule = 'tool-$i-call';
       converter.rules[callRule] =
           '"{" space "\\"name\\"" space ":" space '
-          '${ToolCallGrammarUtils.literal(tool.name)} space "," space '
+          '${ToolCallGrammarUtils.literal(jsonEncode(tool.name))} space "," space '
           '"\\"arguments\\"" space ":" space $argumentsRule "}" space';
       callRules.add(callRule);
     }
@@ -463,6 +569,35 @@ class MinimaxM3Handler extends _DirectJinjaHandler {
     bool isPartial = false,
     bool parseToolCalls = true,
     bool thinkingForcedOpen = false,
+  }) => _parse(
+    output,
+    tools: null,
+    isPartial: isPartial,
+    parseToolCalls: parseToolCalls,
+    thinkingForcedOpen: thinkingForcedOpen,
+  );
+
+  @override
+  ChatParseResult parseWithTools(
+    String output, {
+    required List<ToolDefinition>? tools,
+    bool isPartial = false,
+    bool parseToolCalls = true,
+    bool thinkingForcedOpen = false,
+  }) => _parse(
+    output,
+    tools: tools,
+    isPartial: isPartial,
+    parseToolCalls: parseToolCalls,
+    thinkingForcedOpen: thinkingForcedOpen,
+  );
+
+  ChatParseResult _parse(
+    String output, {
+    required List<ToolDefinition>? tools,
+    required bool isPartial,
+    required bool parseToolCalls,
+    required bool thinkingForcedOpen,
   }) {
     final thinking = extractThinking(
       output,
@@ -481,8 +616,13 @@ class MinimaxM3Handler extends _DirectJinjaHandler {
     const namespacedScopeEnd = '$namespace</tool_call>';
     final scopeStartIndex = rawContent.indexOf(namespacedScopeStart);
     if (scopeStartIndex < 0) {
+      final partialStart = isPartial
+          ? _partialMarkerStart(rawContent, const [namespacedScopeStart])
+          : null;
       return ChatParseResult(
-        content: rawContent,
+        content: partialStart == null
+            ? rawContent
+            : rawContent.substring(0, partialStart).trim(),
         reasoningContent: thinking.reasoning,
       );
     }
@@ -513,7 +653,13 @@ class MinimaxM3Handler extends _DirectJinjaHandler {
       scopeEnd: '</tool_call>',
       invokeStartPattern: RegExp(r'<invoke name="([^"]+)">'),
       invokeEnd: '</invoke>',
-      parseArguments: _parseDynamicTagArguments,
+      parseArguments: (name, body) {
+        final tool = _toolByName(tools, name);
+        if (tools != null && tool == null) {
+          return null;
+        }
+        return _parseDynamicTagArguments(body, schema: tool?.toJsonSchema());
+      },
       isPartial: isPartial,
     );
     return ChatParseResult(
@@ -525,27 +671,14 @@ class MinimaxM3Handler extends _DirectJinjaHandler {
 
   @override
   String? buildGrammar(List<ToolDefinition>? tools) {
-    if (tools == null || tools.isEmpty) {
-      return null;
-    }
-    final names = tools
-        .map((tool) => ToolCallGrammarUtils.literal(tool.name))
-        .join(' | ');
-    return '''
-root ::= "$namespace<tool_call>\\n" invoke+ "$namespace</tool_call>"
-invoke ::= "$namespace<invoke name=\\"" tool-name "\\">" parameter* "$namespace</invoke>\\n"
-parameter ::= "$namespace<" identifier ">" m3-value "$namespace</" identifier ">"
-tool-name ::= $names
-identifier ::= [A-Za-z_] [A-Za-z0-9_.-]*
-m3-value ::= raw | parameter+
-raw ::= [^]]*
-''';
+    return _buildMinimaxM3Grammar(tools);
   }
 }
 
 /// Handler for DeepSeek V3.2/V4 DSML tool calls.
 class DeepseekV4Handler extends _DirectJinjaHandler {
-  static const _prefix = '<｜DSML｜';
+  static const _v3Scope = 'function_calls';
+  static const _v4Scope = 'tool_calls';
 
   @override
   ChatFormat get format => ChatFormat.deepseekV4;
@@ -564,15 +697,68 @@ class DeepseekV4Handler extends _DirectJinjaHandler {
   @override
   List<String> get grammarTriggerValues => const ['<｜DSML｜tool_calls>'];
 
+  bool _usesV3Envelope(String templateSource) =>
+      templateSource.contains('function_calls>');
+
+  @override
+  List<String> grammarTriggerValuesForTemplate(String templateSource) => [
+    '<｜DSML｜${_usesV3Envelope(templateSource) ? _v3Scope : _v4Scope}>',
+  ];
+
+  @override
+  List<String> preservedTokensForTemplate(String templateSource) {
+    final scope = _usesV3Envelope(templateSource) ? _v3Scope : _v4Scope;
+    return ['<think>', '</think>', '<｜DSML｜$scope>', '</｜DSML｜$scope>'];
+  }
+
+  @override
+  String? buildGrammarForTemplate(
+    String templateSource,
+    List<ToolDefinition>? tools,
+  ) => _buildDsmlGrammar(
+    tools,
+    scope: _usesV3Envelope(templateSource) ? _v3Scope : _v4Scope,
+  );
+
   @override
   ChatParseResult parse(
     String output, {
     bool isPartial = false,
     bool parseToolCalls = true,
     bool thinkingForcedOpen = false,
+  }) => _parse(
+    output,
+    tools: null,
+    isPartial: isPartial,
+    parseToolCalls: parseToolCalls,
+    thinkingForcedOpen: thinkingForcedOpen,
+  );
+
+  @override
+  ChatParseResult parseWithTools(
+    String output, {
+    required List<ToolDefinition>? tools,
+    bool isPartial = false,
+    bool parseToolCalls = true,
+    bool thinkingForcedOpen = false,
+  }) => _parse(
+    output,
+    tools: tools,
+    isPartial: isPartial,
+    parseToolCalls: parseToolCalls,
+    thinkingForcedOpen: thinkingForcedOpen,
+  );
+
+  ChatParseResult _parse(
+    String output, {
+    required List<ToolDefinition>? tools,
+    required bool isPartial,
+    required bool parseToolCalls,
+    required bool thinkingForcedOpen,
   }) {
-    final thinking = extractThinking(
+    final thinking = _extractDsmlThinking(
       output,
+      isPartial: isPartial,
       thinkingForcedOpen: thinkingForcedOpen,
     );
     if (!parseToolCalls) {
@@ -581,15 +767,34 @@ class DeepseekV4Handler extends _DirectJinjaHandler {
         reasoningContent: thinking.reasoning,
       );
     }
+    final scope = _findDsmlScope(thinking.content);
+    if (scope == null) {
+      final partialStart = isPartial
+          ? _partialMarkerStart(thinking.content, const [
+              '<｜DSML｜function_calls>',
+              '<｜DSML｜tool_calls>',
+            ])
+          : null;
+      return ChatParseResult(
+        content: partialStart == null
+            ? thinking.content
+            : thinking.content.substring(0, partialStart).trim(),
+        reasoningContent: thinking.reasoning,
+      );
+    }
     final parsed = _parseInvokeScope(
       thinking.content,
-      scopeStart:
-          '$_prefix'
-          'tool_calls>',
-      scopeEnd: '</｜DSML｜tool_calls>',
+      scopeStart: '<｜DSML｜${scope.name}>',
+      scopeEnd: '</｜DSML｜${scope.name}>',
       invokeStartPattern: RegExp(r'<｜DSML｜invoke name="([^"]+)">'),
       invokeEnd: '</｜DSML｜invoke>',
-      parseArguments: _parseDsmlArguments,
+      parseArguments: (name, body) {
+        final tool = _toolByName(tools, name);
+        if (tools != null && tool == null) {
+          return null;
+        }
+        return _parseDsmlArguments(body, schema: tool?.toJsonSchema());
+      },
       isPartial: isPartial,
     );
     return ChatParseResult(
@@ -601,21 +806,7 @@ class DeepseekV4Handler extends _DirectJinjaHandler {
 
   @override
   String? buildGrammar(List<ToolDefinition>? tools) {
-    if (tools == null || tools.isEmpty) {
-      return null;
-    }
-    final names = tools
-        .map((tool) => ToolCallGrammarUtils.literal(tool.name))
-        .join(' | ');
-    return '''
-root ::= "<｜DSML｜tool_calls>\\n" invoke+ "</｜DSML｜tool_calls>"
-invoke ::= "<｜DSML｜invoke name=\\"" tool-name "\\">\\n" parameter* "</｜DSML｜invoke>\\n"
-parameter ::= "<｜DSML｜parameter name=\\"" identifier "\\" string=\\"" boolean "\\">" raw "</｜DSML｜parameter>\\n"
-tool-name ::= $names
-identifier ::= [A-Za-z_] [A-Za-z0-9_.-]*
-boolean ::= "true" | "false"
-raw ::= [^<]*
-''';
+    return _buildDsmlGrammar(tools, scope: _v4Scope);
   }
 }
 
@@ -646,42 +837,84 @@ class MuseGlimmerHandler extends _DirectJinjaHandler {
     bool isPartial = false,
     bool parseToolCalls = true,
     bool thinkingForcedOpen = false,
+  }) => _parse(
+    output,
+    tools: null,
+    isPartial: isPartial,
+    parseToolCalls: parseToolCalls,
+  );
+
+  @override
+  ChatParseResult parseWithTools(
+    String output, {
+    required List<ToolDefinition>? tools,
+    bool isPartial = false,
+    bool parseToolCalls = true,
+    bool thinkingForcedOpen = false,
+  }) => _parse(
+    output,
+    tools: tools,
+    isPartial: isPartial,
+    parseToolCalls: parseToolCalls,
+  );
+
+  ChatParseResult _parse(
+    String output, {
+    required List<ToolDefinition>? tools,
+    required bool isPartial,
+    required bool parseToolCalls,
   }) {
     final channelPattern = RegExp(
       r'(?:<\|start\|>assistant)?\s+to=([^<]+)<\|message\|>([\s\S]*?)(<\|eom\|>|<\|eot\|>|$)',
     );
     final matches = channelPattern.allMatches(output).toList(growable: false);
     if (matches.isEmpty) {
-      return ChatParseResult(content: output.trim());
+      final partialRoute = isPartial ? _partialMuseRouteStart(output) : null;
+      return ChatParseResult(
+        content: partialRoute == null
+            ? output.trim()
+            : output.substring(0, partialRoute).trim(),
+      );
     }
 
     final content = StringBuffer();
     final reasoning = StringBuffer();
     final calls = <LlamaCompletionChunkToolCall>[];
+    var cursor = 0;
     for (final match in matches) {
+      _appendParsedText(content, output.substring(cursor, match.start));
       final recipient = (match.group(1) ?? '').trim();
       final body = match.group(2) ?? '';
       if (recipient == 'self') {
-        if (reasoning.isNotEmpty) reasoning.writeln();
-        reasoning.write(body);
+        _appendParsedText(reasoning, body);
       } else if (recipient == 'user') {
-        if (content.isNotEmpty) content.writeln();
-        content.write(body);
+        _appendParsedText(content, body);
       } else if (parseToolCalls) {
-        final parsed = _parseAtemCalls(body, calls.length);
+        final parsed = _parseAtemCalls(
+          body,
+          calls.length,
+          tools: tools,
+          expectedRecipient: recipient,
+        );
         if (parsed == null) {
           final terminator = match.group(3) ?? '';
           if (!isPartial || terminator.isNotEmpty) {
-            if (content.isNotEmpty) content.writeln();
-            content.write(body);
+            _appendParsedText(content, body);
           }
         } else {
           calls.addAll(parsed);
         }
       } else {
-        if (content.isNotEmpty) content.writeln();
-        content.write(body);
+        _appendParsedText(content, body);
       }
+      cursor = match.end;
+    }
+    final tail = output.substring(cursor);
+    final partialRoute = isPartial ? _partialMuseRouteStart(tail) : null;
+    if (partialRoute == null) {
+      _appendParsedText(content, tail);
+    } else {
+      _appendParsedText(content, tail.substring(0, partialRoute));
     }
 
     return ChatParseResult(
@@ -693,20 +926,7 @@ class MuseGlimmerHandler extends _DirectJinjaHandler {
 
   @override
   String? buildGrammar(List<ToolDefinition>? tools) {
-    if (tools == null || tools.isEmpty) {
-      return null;
-    }
-    final names = tools
-        .map((tool) => ToolCallGrammarUtils.literal(tool.name))
-        .join(' | ');
-    return '''
-root ::= "<atem:function_calls>\\n" invoke "</atem:function_calls>"
-invoke ::= "<atem:invoke name=\\"" tool-name "\\">\\n" parameter* "</atem:invoke>\\n"
-parameter ::= "<atem:parameter name=\\"" identifier "\\">" raw "</atem:parameter>\\n"
-tool-name ::= $names
-identifier ::= [A-Za-z_] [A-Za-z0-9_.-]*
-raw ::= [^<]*
-''';
+    return _buildAtemGrammar(tools);
   }
 }
 
@@ -740,6 +960,35 @@ class LagunaHandler extends _DirectJinjaHandler {
     bool isPartial = false,
     bool parseToolCalls = true,
     bool thinkingForcedOpen = false,
+  }) => _parse(
+    output,
+    tools: null,
+    isPartial: isPartial,
+    parseToolCalls: parseToolCalls,
+    thinkingForcedOpen: thinkingForcedOpen,
+  );
+
+  @override
+  ChatParseResult parseWithTools(
+    String output, {
+    required List<ToolDefinition>? tools,
+    bool isPartial = false,
+    bool parseToolCalls = true,
+    bool thinkingForcedOpen = false,
+  }) => _parse(
+    output,
+    tools: tools,
+    isPartial: isPartial,
+    parseToolCalls: parseToolCalls,
+    thinkingForcedOpen: thinkingForcedOpen,
+  );
+
+  ChatParseResult _parse(
+    String output, {
+    required List<ToolDefinition>? tools,
+    required bool isPartial,
+    required bool parseToolCalls,
+    required bool thinkingForcedOpen,
   }) {
     if (parseToolCalls && _hasMalformedLagunaToolBlock(output)) {
       final thinking = extractThinking(
@@ -751,8 +1000,9 @@ class LagunaHandler extends _DirectJinjaHandler {
         reasoningContent: thinking.reasoning,
       );
     }
-    return Glm45Handler().parse(
+    return Glm45Handler().parseWithTools(
       output,
+      tools: tools,
       isPartial: isPartial,
       parseToolCalls: parseToolCalls,
       thinkingForcedOpen: thinkingForcedOpen,
@@ -784,7 +1034,548 @@ class LagunaHandler extends _DirectJinjaHandler {
   }
 }
 
-List<LlamaCompletionChunkToolCall>? _parseJsonObjectSequence(String body) {
+ThinkingExtraction _extractDsmlThinking(
+  String output, {
+  required bool isPartial,
+  required bool thinkingForcedOpen,
+}) {
+  if (!thinkingForcedOpen) {
+    return extractThinking(output);
+  }
+  final markerStart = _partialMarkerStart(output, const [
+    '<｜DSML｜function_calls>',
+    '<｜DSML｜tool_calls>',
+  ], includePartial: isPartial);
+  final explicitEnd = output.indexOf('</think>');
+  if (markerStart != null && (explicitEnd < 0 || markerStart < explicitEnd)) {
+    final reasoning = output.substring(0, markerStart).trim();
+    return (
+      content: output.substring(markerStart).trim(),
+      reasoning: reasoning.isEmpty ? null : reasoning,
+    );
+  }
+  return extractThinking(output, thinkingForcedOpen: true);
+}
+
+({String name, int start})? _findDsmlScope(String output) {
+  ({String name, int start})? result;
+  for (final name in const ['function_calls', 'tool_calls']) {
+    final start = output.indexOf('<｜DSML｜$name>');
+    if (start >= 0 && (result == null || start < result.start)) {
+      result = (name: name, start: start);
+    }
+  }
+  return result;
+}
+
+int? _partialMarkerStart(
+  String input,
+  List<String> markers, {
+  bool includePartial = true,
+}) {
+  int? earliest;
+  for (final marker in markers) {
+    final complete = input.indexOf(marker);
+    if (complete >= 0 && (earliest == null || complete < earliest)) {
+      earliest = complete;
+    }
+    if (!includePartial) {
+      continue;
+    }
+    final lowerBound = input.length > marker.length
+        ? input.length - marker.length
+        : 0;
+    for (var index = lowerBound; index < input.length; index++) {
+      if (marker.startsWith(input.substring(index)) &&
+          (earliest == null || index < earliest)) {
+        earliest = index;
+      }
+    }
+  }
+  return earliest;
+}
+
+int? _partialMuseRouteStart(String input) {
+  final match = RegExp(
+    r'(?:<\|start\|>assistant)?\s+to=[^<]*$',
+  ).firstMatch(input);
+  final partial = _partialMarkerStart(input, const [
+    '<|start|>assistant to=',
+    ' to=',
+  ]);
+  if (match == null) {
+    return partial;
+  }
+  if (partial == null) {
+    return match.start;
+  }
+  return match.start < partial ? match.start : partial;
+}
+
+void _appendParsedText(StringBuffer buffer, String value) {
+  buffer.write(value);
+}
+
+String? _buildKimiK3Grammar(List<ToolDefinition>? tools) {
+  if (tools == null || tools.isEmpty) {
+    return null;
+  }
+  const argumentClose = '<|close|>argument<|sep|>';
+  final buffer = StringBuffer()
+    ..writeln(
+      'root ::= "<|open|>tools<|sep|>" call+ '
+      '"<|close|>tools<|sep|><|close|>message<|sep|>"',
+    );
+  final converter = JsonSchemaConverter();
+  final callRules = <String>[];
+  for (var toolIndex = 0; toolIndex < tools.length; toolIndex++) {
+    final tool = tools[toolIndex];
+    final schema = tool.toJsonSchema();
+    converter.resolveRefs(schema, schema);
+    final requiredRules = <String>[];
+    final optionalRules = <String>[];
+    final properties =
+        (schema['properties'] as Map<String, dynamic>?) ??
+        const <String, dynamic>{};
+    final required = Set<String>.from(
+      (schema['required'] as List?)?.whereType<String>() ?? const <String>[],
+    );
+    for (final entry in properties.entries) {
+      final propertySchema = entry.value as Map<String, dynamic>;
+      final ruleBase = _grammarRuleName('kimi-$toolIndex-${entry.key}');
+      final valueRule = _buildDelimitedOrJsonValueRule(
+        buffer: buffer,
+        converter: converter,
+        ruleBase: '$ruleBase-value',
+        schema: propertySchema,
+        delimiter: argumentClose,
+      );
+      final propertyRule = '$ruleBase-argument';
+      buffer.writeln(
+        '$propertyRule ::= '
+        '${ToolCallGrammarUtils.literal('<|open|>argument key="${_escapeAttribute(entry.key)}" type="${_schemaProtocolType(propertySchema)}"<|sep|>')} '
+        '$valueRule ${ToolCallGrammarUtils.literal(argumentClose)}',
+      );
+      (required.contains(entry.key) ? requiredRules : optionalRules).add(
+        propertyRule,
+      );
+    }
+
+    final jsonRule = converter.visit(schema, 'kimi-$toolIndex-json-object');
+    final jsonBlockRule = 'kimi-$toolIndex-json-block';
+    buffer.writeln(
+      '$jsonBlockRule ::= '
+      '"<|open|>json type=\\"object\\"<|sep|>" $jsonRule '
+      '"<|close|>json<|sep|>"',
+    );
+    final arguments = _buildRequiredThenOptionalBody(
+      requiredRules: requiredRules,
+      optionalRules: optionalRules,
+      separatorRule: null,
+    );
+    final body = requiredRules.isEmpty && optionalRules.isEmpty
+        ? '($jsonBlockRule)?'
+        : '(($arguments) | $jsonBlockRule)';
+    final callRule = 'kimi-$toolIndex-call';
+    buffer.writeln(
+      '$callRule ::= '
+      '${ToolCallGrammarUtils.literal('<|open|>call tool="${_escapeAttribute(tool.name)}"')} '
+      '(" index=\\"" [0-9]+ "\\"")? "<|sep|>" $body '
+      '"<|close|>call<|sep|>"',
+    );
+    callRules.add(callRule);
+  }
+  buffer.writeln('call ::= ${callRules.join(' | ')}');
+  _appendJsonRules(buffer, converter);
+  return buffer.toString();
+}
+
+String? _buildMinimaxM3Grammar(List<ToolDefinition>? tools) {
+  if (tools == null || tools.isEmpty) {
+    return null;
+  }
+  const namespace = MinimaxM3Handler.namespace;
+  final buffer = StringBuffer()
+    ..writeln(
+      'root ::= "$namespace<tool_call>\\n" invoke+ '
+      '"$namespace</tool_call>"',
+    );
+  final converter = JsonSchemaConverter();
+  final invokeRules = <String>[];
+  for (var toolIndex = 0; toolIndex < tools.length; toolIndex++) {
+    final tool = tools[toolIndex];
+    final schema = tool.toJsonSchema();
+    converter.resolveRefs(schema, schema);
+    final argsRule = _buildMinimaxObjectBodyRule(
+      buffer: buffer,
+      converter: converter,
+      ruleBase: 'm3-$toolIndex-arguments',
+      schema: schema,
+    );
+    final invokeRule = 'm3-$toolIndex-invoke';
+    buffer.writeln(
+      '$invokeRule ::= '
+      '${ToolCallGrammarUtils.literal('$namespace<invoke name="${tool.name}">')} '
+      'space $argsRule space "$namespace</invoke>\\n"',
+    );
+    invokeRules.add(invokeRule);
+  }
+  buffer.writeln('invoke ::= ${invokeRules.join(' | ')}');
+  _appendJsonRules(buffer, converter);
+  return buffer.toString();
+}
+
+String _buildMinimaxObjectBodyRule({
+  required StringBuffer buffer,
+  required JsonSchemaConverter converter,
+  required String ruleBase,
+  required Map<String, dynamic> schema,
+}) {
+  final properties =
+      (schema['properties'] as Map<String, dynamic>?) ??
+      const <String, dynamic>{};
+  final required = Set<String>.from(
+    (schema['required'] as List?)?.whereType<String>() ?? const <String>[],
+  );
+  final requiredRules = <String>[];
+  final optionalRules = <String>[];
+  for (final entry in properties.entries) {
+    final propertyRule = _buildMinimaxElementRule(
+      buffer: buffer,
+      converter: converter,
+      ruleBase: '$ruleBase-${_grammarRuleName(entry.key)}',
+      tagName: entry.key,
+      schema: entry.value as Map<String, dynamic>,
+    );
+    (required.contains(entry.key) ? requiredRules : optionalRules).add(
+      propertyRule,
+    );
+  }
+  final body = _buildRequiredThenOptionalBody(
+    requiredRules: requiredRules,
+    optionalRules: optionalRules,
+    separatorRule: 'space',
+  );
+  buffer.writeln('$ruleBase ::= $body');
+  return ruleBase;
+}
+
+String _buildMinimaxElementRule({
+  required StringBuffer buffer,
+  required JsonSchemaConverter converter,
+  required String ruleBase,
+  required String tagName,
+  required Map<String, dynamic> schema,
+}) {
+  const namespace = MinimaxM3Handler.namespace;
+  final close = '$namespace</$tagName>';
+  final type = schema['type'];
+  late final String valueRule;
+  if (_schemaResolvesToString(schema)) {
+    final enumValues = schema['enum'];
+    if (enumValues is List && enumValues.isNotEmpty) {
+      valueRule = enumValues
+          .whereType<String>()
+          .map(ToolCallGrammarUtils.literal)
+          .join(' | ');
+    } else {
+      valueRule = _appendUntilLiteralRules(buffer, '$ruleBase-text', close);
+    }
+  } else if (type == 'object' ||
+      (type == null && schema.containsKey('properties'))) {
+    valueRule = _buildMinimaxObjectBodyRule(
+      buffer: buffer,
+      converter: converter,
+      ruleBase: '$ruleBase-object',
+      schema: schema,
+    );
+  } else if (type == 'array') {
+    final itemSchema =
+        schema['items'] as Map<String, dynamic>? ??
+        const <String, dynamic>{'type': 'string'};
+    final itemRule = _buildMinimaxElementRule(
+      buffer: buffer,
+      converter: converter,
+      ruleBase: '$ruleBase-item',
+      tagName: 'item',
+      schema: itemSchema,
+    );
+    valueRule = '($itemRule)*';
+  } else {
+    valueRule = converter.visit(schema, '$ruleBase-json');
+  }
+  buffer.writeln(
+    '$ruleBase ::= ${ToolCallGrammarUtils.literal('$namespace<$tagName>')} '
+    '($valueRule) ${ToolCallGrammarUtils.literal(close)}',
+  );
+  return ruleBase;
+}
+
+String? _buildDsmlGrammar(
+  List<ToolDefinition>? tools, {
+  required String scope,
+}) {
+  if (tools == null || tools.isEmpty) {
+    return null;
+  }
+  const parameterClose = '</｜DSML｜parameter>';
+  final buffer = StringBuffer()
+    ..writeln('root ::= "<｜DSML｜$scope>\\n" invoke+ "</｜DSML｜$scope>"');
+  final converter = JsonSchemaConverter();
+  final invokeRules = <String>[];
+  for (var toolIndex = 0; toolIndex < tools.length; toolIndex++) {
+    final tool = tools[toolIndex];
+    final schema = tool.toJsonSchema();
+    converter.resolveRefs(schema, schema);
+    final propertyRules = _buildNamedParameterRules(
+      buffer: buffer,
+      converter: converter,
+      ruleBase: 'dsml-$toolIndex',
+      schema: schema,
+      openFor: (name, propertySchema) =>
+          '<｜DSML｜parameter name="$name" string="${_schemaResolvesToString(propertySchema)}">',
+      close: parameterClose,
+      trailing: '\n',
+    );
+    final invokeRule = 'dsml-$toolIndex-invoke';
+    buffer.writeln(
+      '$invokeRule ::= '
+      '${ToolCallGrammarUtils.literal('<｜DSML｜invoke name="${tool.name}">\n')} '
+      '$propertyRules space "</｜DSML｜invoke>\\n"',
+    );
+    invokeRules.add(invokeRule);
+  }
+  buffer.writeln('invoke ::= ${invokeRules.join(' | ')}');
+  _appendJsonRules(buffer, converter);
+  return buffer.toString();
+}
+
+String? _buildAtemGrammar(List<ToolDefinition>? tools) {
+  if (tools == null || tools.isEmpty) {
+    return null;
+  }
+  const parameterClose = '</atem:parameter>';
+  final buffer = StringBuffer()
+    ..writeln(
+      'root ::= "<atem:function_calls>\\n" invoke+ '
+      '"</atem:function_calls>"',
+    );
+  final converter = JsonSchemaConverter();
+  final invokeRules = <String>[];
+  for (var toolIndex = 0; toolIndex < tools.length; toolIndex++) {
+    final tool = tools[toolIndex];
+    final schema = tool.toJsonSchema();
+    converter.resolveRefs(schema, schema);
+    final propertyRules = _buildNamedParameterRules(
+      buffer: buffer,
+      converter: converter,
+      ruleBase: 'atem-$toolIndex',
+      schema: schema,
+      openFor: (name, _) => '<atem:parameter name="$name">',
+      close: parameterClose,
+      trailing: '\n',
+    );
+    final invokeRule = 'atem-$toolIndex-invoke';
+    buffer.writeln(
+      '$invokeRule ::= '
+      '${ToolCallGrammarUtils.literal('<atem:invoke name="${tool.name}">\n')} '
+      '$propertyRules space "</atem:invoke>\\n"',
+    );
+    invokeRules.add(invokeRule);
+  }
+  buffer.writeln('invoke ::= ${invokeRules.join(' | ')}');
+  _appendJsonRules(buffer, converter);
+  return buffer.toString();
+}
+
+String _buildNamedParameterRules({
+  required StringBuffer buffer,
+  required JsonSchemaConverter converter,
+  required String ruleBase,
+  required Map<String, dynamic> schema,
+  required String Function(String, Map<String, dynamic>) openFor,
+  required String close,
+  required String trailing,
+}) {
+  final properties =
+      (schema['properties'] as Map<String, dynamic>?) ??
+      const <String, dynamic>{};
+  final required = Set<String>.from(
+    (schema['required'] as List?)?.whereType<String>() ?? const <String>[],
+  );
+  final requiredRules = <String>[];
+  final optionalRules = <String>[];
+  for (final entry in properties.entries) {
+    final propertySchema = entry.value as Map<String, dynamic>;
+    final propertyRule = '$ruleBase-${_grammarRuleName(entry.key)}-parameter';
+    final valueRule = _buildDelimitedOrJsonValueRule(
+      buffer: buffer,
+      converter: converter,
+      ruleBase: '$propertyRule-value',
+      schema: propertySchema,
+      delimiter: close,
+    );
+    buffer.writeln(
+      '$propertyRule ::= ${ToolCallGrammarUtils.literal(openFor(entry.key, propertySchema))} '
+      '$valueRule ${ToolCallGrammarUtils.literal('$close$trailing')}',
+    );
+    (required.contains(entry.key) ? requiredRules : optionalRules).add(
+      propertyRule,
+    );
+  }
+  final argsRule = '$ruleBase-arguments';
+  final body = _buildRequiredThenOptionalBody(
+    requiredRules: requiredRules,
+    optionalRules: optionalRules,
+    separatorRule: 'space',
+  );
+  buffer.writeln('$argsRule ::= $body');
+  return argsRule;
+}
+
+String _buildRequiredThenOptionalBody({
+  required List<String> requiredRules,
+  required List<String> optionalRules,
+  required String? separatorRule,
+}) {
+  final separator = separatorRule == null ? '' : ' $separatorRule ';
+  var body = requiredRules.isEmpty ? '""' : requiredRules.join(separator);
+  if (optionalRules.isEmpty) {
+    return body;
+  }
+  final optionalChoice = optionalRules.length == 1
+      ? optionalRules.single
+      : '(${optionalRules.join(' | ')})';
+  final repeatedSeparator = separatorRule == null ? '' : '$separatorRule ';
+  body = '$body ($repeatedSeparator$optionalChoice)*';
+  return body;
+}
+
+String _buildDelimitedOrJsonValueRule({
+  required StringBuffer buffer,
+  required JsonSchemaConverter converter,
+  required String ruleBase,
+  required Map<String, dynamic> schema,
+  required String delimiter,
+}) {
+  if (_schemaResolvesToString(schema)) {
+    final enumValues = schema['enum'];
+    if (enumValues is List && enumValues.isNotEmpty) {
+      return enumValues
+          .whereType<String>()
+          .map(ToolCallGrammarUtils.literal)
+          .join(' | ');
+    }
+    return _appendUntilLiteralRules(buffer, ruleBase, delimiter);
+  }
+  return converter.visit(schema, ruleBase);
+}
+
+void _appendJsonRules(StringBuffer buffer, JsonSchemaConverter converter) {
+  final rules = converter.rules.entries.toList(growable: false)
+    ..sort((a, b) => a.key.compareTo(b.key));
+  for (final entry in rules) {
+    buffer.writeln('${entry.key} ::= ${entry.value}');
+  }
+}
+
+String _grammarRuleName(String value) {
+  final sanitized = value
+      .replaceAll(RegExp(r'[^A-Za-z0-9-]+'), '-')
+      .replaceAll(RegExp(r'^-+|-+$'), '')
+      .toLowerCase();
+  return sanitized.isEmpty ? 'value' : sanitized;
+}
+
+String _appendUntilLiteralRules(
+  StringBuffer buffer,
+  String ruleBase,
+  String delimiter,
+) {
+  final rules = _buildUntilLiteralRuleLines(ruleBase, delimiter);
+  for (final line in rules) {
+    buffer.writeln(line);
+  }
+  return '$ruleBase-0';
+}
+
+String _buildRequiredPrefixGrammar(String grammar, String trigger) {
+  final lines = grammar.trimRight().split('\n');
+  final rootIndex = lines.indexWhere((line) => line.startsWith('root ::= '));
+  if (rootIndex < 0) {
+    return grammar;
+  }
+  final rootExpression = lines[rootIndex].substring('root ::= '.length);
+  lines[rootIndex] = 'root ::= required-prefix-0 required-tool-root';
+  lines.insert(rootIndex + 1, 'required-tool-root ::= $rootExpression');
+  lines.insertAll(
+    rootIndex + 2,
+    _buildUntilLiteralRuleLines('required-prefix', trigger),
+  );
+  return '${lines.join('\n')}\n';
+}
+
+List<String> _buildUntilLiteralRuleLines(String ruleBase, String delimiter) {
+  final marker = delimiter.runes
+      .map(String.fromCharCode)
+      .toList(growable: false);
+  if (marker.isEmpty) {
+    return ['$ruleBase-0 ::= ""'];
+  }
+  final alphabet = marker.toSet().toList(growable: false);
+  final lines = <String>[
+    '$ruleBase-other ::= [^${alphabet.map(_escapeGbnfCharacterClass).join()}]',
+  ];
+  for (var state = 0; state < marker.length; state++) {
+    final alternatives = <String>['$ruleBase-other $ruleBase-0'];
+    for (final character in alphabet) {
+      final next = _delimiterTransition(marker, state, character);
+      if (next == marker.length) {
+        continue;
+      }
+      alternatives.add(
+        '${ToolCallGrammarUtils.literal(character)} $ruleBase-$next',
+      );
+    }
+    lines.add('$ruleBase-$state ::= (${alternatives.join(' | ')})?');
+  }
+  return lines;
+}
+
+int _delimiterTransition(List<String> marker, int state, String character) {
+  final candidate = <String>[...marker.take(state), character];
+  final max = candidate.length < marker.length
+      ? candidate.length
+      : marker.length;
+  for (var length = max; length >= 0; length--) {
+    var matches = true;
+    for (var index = 0; index < length; index++) {
+      if (candidate[candidate.length - length + index] != marker[index]) {
+        matches = false;
+        break;
+      }
+    }
+    if (matches) {
+      return length;
+    }
+  }
+  return 0;
+}
+
+String _escapeGbnfCharacterClass(String character) {
+  return switch (character) {
+    r'\' => r'\\',
+    ']' => r'\]',
+    '-' => r'\-',
+    '^' => r'\^',
+    _ => character,
+  };
+}
+
+List<LlamaCompletionChunkToolCall>? _parseJsonObjectSequence(
+  String body, {
+  List<ToolDefinition>? tools,
+}) {
   final calls = <LlamaCompletionChunkToolCall>[];
   var cursor = 0;
   while (cursor < body.length) {
@@ -798,6 +1589,20 @@ List<LlamaCompletionChunkToolCall>? _parseJsonObjectSequence(String body) {
     if (slice == null || slice.value is! Map) {
       return null;
     }
+    if (tools != null) {
+      final value = Map<String, dynamic>.from(slice.value as Map);
+      final name = value['name'];
+      final arguments = value['arguments'];
+      final tool = name is String ? _toolByName(tools, name) : null;
+      if (tool == null ||
+          arguments is! Map ||
+          !_objectMatchesSchema(
+            Map<String, dynamic>.from(arguments),
+            tool.toJsonSchema(),
+          )) {
+        return null;
+      }
+    }
     final parsed = ToolCallParsingUtils.parseToolCallArray(<Object?>[
       slice.value,
     ], startIndex: calls.length);
@@ -810,13 +1615,140 @@ List<LlamaCompletionChunkToolCall>? _parseJsonObjectSequence(String body) {
   return calls.isEmpty ? null : calls;
 }
 
+ToolDefinition? _toolByName(List<ToolDefinition>? tools, String name) {
+  if (tools == null) {
+    return null;
+  }
+  for (final tool in tools) {
+    if (tool.name == name) {
+      return tool;
+    }
+  }
+  return null;
+}
+
+bool _schemaResolvesToString(Map<String, dynamic> schema) {
+  final type = schema['type'];
+  if (type == 'string') {
+    return true;
+  }
+  final enumValues = schema['enum'];
+  return enumValues is List && enumValues.every((value) => value is String);
+}
+
+String _schemaProtocolType(Map<String, dynamic> schema) {
+  if (_schemaResolvesToString(schema)) {
+    return 'string';
+  }
+  return switch (schema['type']) {
+    'integer' || 'number' => 'number',
+    'boolean' => 'boolean',
+    'null' => 'null',
+    'object' => 'object',
+    'array' => 'array',
+    _ => 'object',
+  };
+}
+
+Object? _decodeRawBySchema(String raw, Map<String, dynamic> schema) {
+  if (_schemaResolvesToString(schema)) {
+    return _valueMatchesSchema(raw, schema) ? raw : _schemaDecodeFailure;
+  }
+  final decoded = ToolCallParsingUtils.decodeJsonValue(raw);
+  if (decoded == null && raw.trim() != 'null') {
+    return _schemaDecodeFailure;
+  }
+  return _valueMatchesSchema(decoded, schema) ? decoded : _schemaDecodeFailure;
+}
+
+bool _valueMatchesSchema(Object? value, Map<String, dynamic> schema) {
+  final enumValues = schema['enum'];
+  if (enumValues is List && !enumValues.contains(value)) {
+    return false;
+  }
+
+  final type = schema['type'];
+  if (type is List) {
+    return type.any(
+      (candidate) => _valueMatchesSchema(value, <String, dynamic>{
+        ...schema,
+        'type': candidate,
+      }),
+    );
+  }
+
+  switch (type) {
+    case 'string':
+      return value is String;
+    case 'integer':
+      return value is int;
+    case 'number':
+      return value is num;
+    case 'boolean':
+      return value is bool;
+    case 'null':
+      return value == null;
+    case 'array':
+      if (value is! List) {
+        return false;
+      }
+      final itemSchema = schema['items'];
+      return itemSchema is! Map<String, dynamic> ||
+          value.every((item) => _valueMatchesSchema(item, itemSchema));
+    case 'object':
+    case null:
+      if (value is! Map) {
+        return false;
+      }
+      final stringMap = <String, dynamic>{};
+      for (final entry in value.entries) {
+        if (entry.key is! String) {
+          return false;
+        }
+        stringMap[entry.key as String] = entry.value;
+      }
+      return _objectMatchesSchema(stringMap, schema);
+    default:
+      return false;
+  }
+}
+
+bool _objectMatchesSchema(
+  Map<String, dynamic> value,
+  Map<String, dynamic> schema,
+) {
+  final properties =
+      (schema['properties'] as Map<String, dynamic>?) ??
+      const <String, dynamic>{};
+  final required = Set<String>.from(
+    (schema['required'] as List?)?.whereType<String>() ?? const <String>[],
+  );
+  if (!value.keys.toSet().containsAll(required)) {
+    return false;
+  }
+  for (final entry in value.entries) {
+    final property = properties[entry.key];
+    if (property is! Map<String, dynamic> ||
+        !_valueMatchesSchema(entry.value, property)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+const _schemaDecodeFailure = _SchemaDecodeFailure();
+
+class _SchemaDecodeFailure {
+  const _SchemaDecodeFailure();
+}
+
 _ParsedCalls _parseInvokeScope(
   String input, {
   required String scopeStart,
   required String scopeEnd,
   required RegExp invokeStartPattern,
   required String invokeEnd,
-  required Map<String, dynamic>? Function(String) parseArguments,
+  required Map<String, dynamic>? Function(String, String) parseArguments,
   required bool isPartial,
 }) {
   final scopeStartIndex = input.indexOf(scopeStart);
@@ -858,7 +1790,7 @@ _ParsedCalls _parseInvokeScope(
       return allowPartial ? partialResult() : _ParsedCalls.failure();
     }
     final name = start.group(1) ?? '';
-    final arguments = parseArguments(body.substring(argumentsStart, end));
+    final arguments = parseArguments(name, body.substring(argumentsStart, end));
     if (name.isEmpty || arguments == null) {
       return allowPartial ? partialResult() : _ParsedCalls.failure();
     }
@@ -885,16 +1817,106 @@ _ParsedCalls _parseInvokeScope(
   return _ParsedCalls(calls: calls, remaining: remaining);
 }
 
-Map<String, dynamic>? _parseDynamicTagArguments(String body) {
+Map<String, dynamic>? _parseDynamicTagArguments(
+  String body, {
+  Map<String, dynamic>? schema,
+}) {
   final parsed = _parseDynamicElements(body);
-  if (parsed == null || parsed.elements.isEmpty) {
+  if (parsed == null) {
     return null;
+  }
+  if (schema != null) {
+    return _coerceDynamicObject(parsed.elements, schema);
   }
   final result = <String, dynamic>{};
   for (final element in parsed.elements) {
-    result[element.name] = element.value;
+    if (result.containsKey(element.name)) {
+      return null;
+    }
+    result[element.name] = _inferDynamicValue(element);
   }
   return result;
+}
+
+Map<String, dynamic>? _coerceDynamicObject(
+  List<_DynamicElement> elements,
+  Map<String, dynamic> schema,
+) {
+  final properties =
+      (schema['properties'] as Map<String, dynamic>?) ??
+      const <String, dynamic>{};
+  final required = Set<String>.from(
+    (schema['required'] as List?)?.whereType<String>() ?? const <String>[],
+  );
+  final result = <String, dynamic>{};
+  for (final element in elements) {
+    final propertySchema = properties[element.name];
+    if (propertySchema is! Map<String, dynamic> ||
+        result.containsKey(element.name)) {
+      return null;
+    }
+    final value = _coerceDynamicElement(element, propertySchema);
+    if (identical(value, _schemaDecodeFailure)) {
+      return null;
+    }
+    result[element.name] = value;
+  }
+  if (!result.keys.toSet().containsAll(required)) {
+    return null;
+  }
+  return result;
+}
+
+Object? _coerceDynamicElement(
+  _DynamicElement element,
+  Map<String, dynamic> schema,
+) {
+  if (_schemaResolvesToString(schema)) {
+    return _valueMatchesSchema(element.raw, schema)
+        ? element.raw
+        : _schemaDecodeFailure;
+  }
+  final type = schema['type'];
+  if (type == 'object' || (type == null && schema.containsKey('properties'))) {
+    final children = element.children;
+    if (children == null) {
+      return _schemaDecodeFailure;
+    }
+    return _coerceDynamicObject(children, schema) ?? _schemaDecodeFailure;
+  }
+  if (type == 'array') {
+    final children = element.children;
+    final itemSchema = schema['items'];
+    if (children == null || itemSchema is! Map<String, dynamic>) {
+      return _schemaDecodeFailure;
+    }
+    final result = <Object?>[];
+    for (final child in children) {
+      if (child.name != 'item') {
+        return _schemaDecodeFailure;
+      }
+      final value = _coerceDynamicElement(child, itemSchema);
+      if (identical(value, _schemaDecodeFailure)) {
+        return _schemaDecodeFailure;
+      }
+      result.add(value);
+    }
+    return result;
+  }
+  return _decodeRawBySchema(element.raw, schema);
+}
+
+Object? _inferDynamicValue(_DynamicElement element) {
+  final children = element.children;
+  if (children != null && children.isNotEmpty) {
+    if (children.every((child) => child.name == 'item')) {
+      return children.map(_inferDynamicValue).toList(growable: false);
+    }
+    return <String, dynamic>{
+      for (final child in children) child.name: _inferDynamicValue(child),
+    };
+  }
+  return ToolCallParsingUtils.decodeJsonValueOrString(element.raw);
 }
 
 _DynamicElements? _parseDynamicElements(String input) {
@@ -920,21 +1942,9 @@ _DynamicElements? _parseDynamicElements(String input) {
     }
     final raw = input.substring(opening.end, close.start);
     final children = _parseDynamicElements(raw);
-    Object? value;
-    if (children != null && children.elements.isNotEmpty) {
-      if (children.elements.every((element) => element.name == 'item')) {
-        value = children.elements
-            .map((element) => element.value)
-            .toList(growable: false);
-      } else {
-        value = <String, dynamic>{
-          for (final element in children.elements) element.name: element.value,
-        };
-      }
-    } else {
-      value = ToolCallParsingUtils.decodeJsonValueOrString(raw);
-    }
-    elements.add(_DynamicElement(name: name, value: value));
+    elements.add(
+      _DynamicElement(name: name, raw: raw, children: children?.elements),
+    );
     cursor = close.end;
   }
   return _DynamicElements(elements);
@@ -960,7 +1970,10 @@ _DynamicElements? _parseDynamicElements(String input) {
   return null;
 }
 
-Map<String, dynamic>? _parseDsmlArguments(String body) {
+Map<String, dynamic>? _parseDsmlArguments(
+  String body, {
+  Map<String, dynamic>? schema,
+}) {
   final pattern = RegExp(
     r'<｜DSML｜parameter name="([^"]+)" string="(true|false)">([\s\S]*?)</｜DSML｜parameter>',
   );
@@ -974,7 +1987,21 @@ Map<String, dynamic>? _parseDsmlArguments(String body) {
     if (key.isEmpty) {
       return null;
     }
-    if (match.group(2) == 'true') {
+    final property = schema?['properties']?[key];
+    if (schema != null && property is! Map<String, dynamic>) {
+      return null;
+    }
+    if (property is Map<String, dynamic>) {
+      final expectsString = _schemaResolvesToString(property);
+      if ((match.group(2) == 'true') != expectsString) {
+        return null;
+      }
+      final decoded = _decodeRawBySchema(raw, property);
+      if (identical(decoded, _schemaDecodeFailure)) {
+        return null;
+      }
+      result[key] = decoded;
+    } else if (match.group(2) == 'true') {
       result[key] = raw;
     } else {
       final decoded = ToolCallParsingUtils.decodeJsonValue(raw);
@@ -984,10 +2011,18 @@ Map<String, dynamic>? _parseDsmlArguments(String body) {
       result[key] = decoded;
     }
   }
+  if (schema != null && !_objectMatchesSchema(result, schema)) {
+    return null;
+  }
   return result;
 }
 
-List<LlamaCompletionChunkToolCall>? _parseAtemCalls(String body, int start) {
+List<LlamaCompletionChunkToolCall>? _parseAtemCalls(
+  String body,
+  int start, {
+  List<ToolDefinition>? tools,
+  String? expectedRecipient,
+}) {
   const scopeStart = '<atem:function_calls>';
   const scopeEnd = '</atem:function_calls>';
   final scopeStartIndex = body.indexOf(scopeStart);
@@ -1013,6 +2048,13 @@ List<LlamaCompletionChunkToolCall>? _parseAtemCalls(String body, int start) {
   for (final invoke in invokePattern.allMatches(scope)) {
     final name = invoke.group(1) ?? '';
     final params = invoke.group(2) ?? '';
+    final tool = _toolByName(tools, name);
+    if ((tools != null && tool == null) ||
+        (expectedRecipient != null &&
+            expectedRecipient.isNotEmpty &&
+            name != expectedRecipient)) {
+      return null;
+    }
     final parameterPattern = RegExp(
       r'<atem:parameter name="([^"]+)">([\s\S]*?)</atem:parameter>',
     );
@@ -1027,7 +2069,22 @@ List<LlamaCompletionChunkToolCall>? _parseAtemCalls(String body, int start) {
       if (key.isEmpty) {
         return null;
       }
-      arguments[key] = ToolCallParsingUtils.decodeJsonValueOrString(raw);
+      final property = tool?.toJsonSchema()['properties']?[key];
+      if (tool != null && property is! Map<String, dynamic>) {
+        return null;
+      }
+      if (property is Map<String, dynamic>) {
+        final decoded = _decodeRawBySchema(raw, property);
+        if (identical(decoded, _schemaDecodeFailure)) {
+          return null;
+        }
+        arguments[key] = decoded;
+      } else {
+        arguments[key] = ToolCallParsingUtils.decodeJsonValueOrString(raw);
+      }
+    }
+    if (tool != null && !_objectMatchesSchema(arguments, tool.toJsonSchema())) {
+      return null;
     }
     calls.add(
       ToolCallParsingUtils.createFunctionToolCall(
@@ -1079,7 +2136,12 @@ class _DynamicElements {
 
 class _DynamicElement {
   final String name;
-  final Object? value;
+  final String raw;
+  final List<_DynamicElement>? children;
 
-  const _DynamicElement({required this.name, required this.value});
+  const _DynamicElement({
+    required this.name,
+    required this.raw,
+    required this.children,
+  });
 }

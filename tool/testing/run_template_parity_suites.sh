@@ -15,3 +15,6 @@ dart test -p vm -j 1 test/unit/core/template --exclude-tags local-only
 
 echo "[template-parity] upstream llama.cpp chat/template parser suites"
 dart test -p vm -j 1 test/e2e/template/llama_cpp_chat_tests_e2e_test.dart --run-skipped
+
+echo "[template-parity] compiled specialized grammar acceptance"
+dart test -p vm -j 1 test/e2e/template/specialized_grammar_acceptance_e2e_test.dart --run-skipped
