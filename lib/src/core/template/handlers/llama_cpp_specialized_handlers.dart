@@ -1,5 +1,6 @@
 import 'package:dinja/dinja.dart';
 
+import '../../grammar/json_schema_converter.dart';
 import '../../models/chat/chat_message.dart';
 import '../../models/chat/chat_template_result.dart';
 import '../../models/chat/completion_chunk.dart';
@@ -373,16 +374,32 @@ class MinimaxM1Handler extends _DirectJinjaHandler {
     if (tools == null || tools.isEmpty) {
       return null;
     }
-    final names = tools
-        .map((tool) => ToolCallGrammarUtils.literal(tool.name))
-        .join(' | ');
-    return '''
-root ::= "<tool_calls>\\n" call+ "</tool_calls>"
-call ::= "{\\"name\\": \\"" tool-name "\\", \\"arguments\\": " object "}\\n"
-tool-name ::= $names
-object ::= "{" json-char* "}"
-json-char ::= [^{}] | object
-''';
+
+    final converter = JsonSchemaConverter();
+    final callRules = <String>[];
+    for (var i = 0; i < tools.length; i++) {
+      final tool = tools[i];
+      final schema = tool.toJsonSchema();
+      converter.resolveRefs(schema, schema);
+      final argumentsRule = converter.visit(schema, 'tool-$i-arguments');
+      final callRule = 'tool-$i-call';
+      converter.rules[callRule] =
+          '"{" space "\\"name\\"" space ":" space '
+          '${ToolCallGrammarUtils.literal(tool.name)} space "," space '
+          '"\\"arguments\\"" space ":" space $argumentsRule "}" space';
+      callRules.add(callRule);
+    }
+
+    final buffer = StringBuffer()
+      ..writeln('root ::= "<tool_calls>\\n" tool-call+ "</tool_calls>"')
+      ..writeln('tool-call ::= tool-choice "\\n"')
+      ..writeln('tool-choice ::= ${callRules.join(' | ')}');
+    final otherRules = converter.rules.entries.toList(growable: false)
+      ..sort((a, b) => a.key.compareTo(b.key));
+    for (final entry in otherRules) {
+      buffer.writeln('${entry.key} ::= ${entry.value}');
+    }
+    return buffer.toString();
   }
 }
 

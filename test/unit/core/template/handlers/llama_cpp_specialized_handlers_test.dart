@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:llamadart/src/core/models/tools/tool_definition.dart';
+import 'package:llamadart/src/core/models/tools/tool_param.dart';
 import 'package:llamadart/src/core/template/chat_format.dart';
 import 'package:llamadart/src/core/template/chat_template_engine.dart';
 import 'package:llamadart/src/core/template/handlers/llama_cpp_specialized_handlers.dart';
@@ -87,15 +88,21 @@ void main() {
       expect(MinimaxM1Handler().parse(output).content, output);
     });
 
-    test('grammar references the object rule instead of quoting it', () {
-      final grammar = MinimaxM1Handler().buildGrammar([_weatherTool])!;
+    test('grammar uses schema-aware JSON string and escape rules', () {
+      final grammar = MinimaxM1Handler().buildGrammar([_weatherWithCityTool])!;
+      final rootRule = grammar
+          .split('\n')
+          .singleWhere((line) => line.startsWith('root ::='));
       final callRule = grammar
           .split('\n')
-          .singleWhere((line) => line.startsWith('call ::='));
+          .singleWhere((line) => line.startsWith('tool-0-call ::='));
 
-      expect(callRule, contains(' tool-name '));
-      expect(callRule, contains(' object '));
-      expect(callRule, isNot(contains(r'\"object\"')));
+      expect(rootRule, contains('tool-call+'));
+      expect(callRule, contains(' tool-0-arguments '));
+      expect(grammar, contains('char ::= '));
+      expect(grammar, contains(r'[^"\\\x7F\x00-\x1F]'));
+      expect(grammar, contains(r'[\\] (["\\bfnrt] | "u"'));
+      expect(grammar, isNot(contains('json-char ::=')));
     });
   });
 
@@ -274,6 +281,13 @@ final _weatherTool = ToolDefinition(
   name: 'weather',
   description: 'Weather',
   parameters: const [],
+  handler: (_) async => null,
+);
+
+final _weatherWithCityTool = ToolDefinition(
+  name: 'weather',
+  description: 'Weather',
+  parameters: [ToolParam.string('city', required: true)],
   handler: (_) async => null,
 );
 
