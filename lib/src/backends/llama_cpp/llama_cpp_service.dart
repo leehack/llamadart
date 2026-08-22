@@ -8196,6 +8196,9 @@ String formatStartupDiagnostics(List<String> entries, {int maxLength = 4096}) {
   if (maxLength < 0) {
     throw RangeError.range(maxLength, 0, null, 'maxLength');
   }
+  if (maxLength == 0) {
+    return '';
+  }
   final sanitizedEntries = entries
       .map(_sanitizeStartupDiagnostic)
       .where((entry) => entry.isNotEmpty)
@@ -8215,8 +8218,19 @@ String formatStartupDiagnostics(List<String> entries, {int maxLength = 4096}) {
 }
 
 String _sanitizeStartupDiagnostic(String entry) {
-  final redactedUrls = entry.replaceAllMapped(
-    RegExp(r'https?://\S+', caseSensitive: false),
+  final controlCharacters = RegExp(
+    r'[\u0000-\u001f\u007f-\u009f\u2028\u2029]+',
+  );
+  final flattenedEntry = entry
+      .replaceAllMapped(
+        RegExp(r'https?://(?:(?!https?://)[^ /?#])*@', caseSensitive: false),
+        (match) => match.group(0)!.replaceAll(controlCharacters, ''),
+      )
+      .replaceAll(controlCharacters, ' ')
+      .replaceAll(RegExp(r' {2,}'), ' ')
+      .trim();
+  final redactedUrls = flattenedEntry.replaceAllMapped(
+    RegExp(r'https?://(?:(?!https?://)\S)+', caseSensitive: false),
     (match) {
       final uri = Uri.tryParse(match.group(0)!);
       final scheme = uri?.scheme.toLowerCase();
@@ -8231,10 +8245,7 @@ String _sanitizeStartupDiagnostic(String entry) {
       ).toString();
     },
   );
-  return redactedUrls
-      .replaceAll(RegExp(r'[\u0000-\u001f\u007f-\u009f\u2028\u2029]+'), ' ')
-      .replaceAll(RegExp(r' {2,}'), ' ')
-      .trim();
+  return redactedUrls.replaceAll(RegExp(r' {2,}'), ' ').trim();
 }
 
 /// The message thrown when `llama_model_load_from_file` returns null.

@@ -664,6 +664,13 @@ void main() {
       expect(formatted, isNot(contains('a' * 50)));
     });
 
+    test('a zero content limit omits the diagnostic suffix', () {
+      expect(
+        formatStartupDiagnostics(const <String>['failure'], maxLength: 0),
+        isEmpty,
+      );
+    });
+
     test('diagnostics are single-line and redact credentialed URLs', () {
       expect(
         formatStartupDiagnostics(const <String>[
@@ -678,6 +685,14 @@ void main() {
           'failed at https://user:pass@[2001:db8::1]/lib.so?token=secret',
         ]),
         ', startupDiagnostics=[failed at https://[2001:db8::1]/lib.so]',
+      );
+      expect(
+        formatStartupDiagnostics(const <String>[
+          'https://safe.example/a,HTTPS://user\n:pass@evil.example/b'
+              '?token=secret',
+        ]),
+        ', startupDiagnostics=['
+        'https://safe.example/a,https://evil.example/b]',
       );
     });
 
@@ -763,7 +778,9 @@ void main() {
         _recordStartupDiagnosticForTesting(
           service,
           'failed at '
-          'HTTPS://user:pass@example.com/libggml.so?token=secret#fragment'
+          'https://safe.example/a,'
+          'HTTPS://user\n:pass@example.com/libggml.so'
+          '?token=secret#fragment'
           '\r\nnext\u0000line\u0085more\u2028last\u2029line',
         );
 
@@ -777,6 +794,7 @@ void main() {
                 contains('Failed to load model (size=4 bytes,'),
                 contains(
                   'startupDiagnostics=[failed at '
+                  'https://safe.example/a,'
                   'https://example.com/libggml.so '
                   'next line more last line]',
                 ),
