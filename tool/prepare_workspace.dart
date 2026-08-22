@@ -14,20 +14,13 @@ enum WorkspacePackageManager {
 /// A maintained Dart or Flutter package prepared by the root quality gates.
 class WorkspacePackage {
   /// Creates a package entry relative to the repository root.
-  const WorkspacePackage(
-    this.path,
-    this.packageManager, {
-    this.enforceLockfile = false,
-  });
+  const WorkspacePackage(this.path, this.packageManager);
 
   /// The package directory relative to the repository root.
   final String path;
 
   /// The SDK command that resolves this package's dependencies.
   final WorkspacePackageManager packageManager;
-
-  /// Whether dependency resolution must preserve a checked-in lockfile.
-  final bool enforceLockfile;
 }
 
 /// Every maintained package that must be resolved before root format/analyze.
@@ -37,11 +30,7 @@ class WorkspacePackage {
 const List<WorkspacePackage> workspacePackages = <WorkspacePackage>[
   WorkspacePackage('.', WorkspacePackageManager.flutter),
   WorkspacePackage('example/basic_app', WorkspacePackageManager.flutter),
-  WorkspacePackage(
-    'example/chat_app',
-    WorkspacePackageManager.flutter,
-    enforceLockfile: true,
-  ),
+  WorkspacePackage('example/chat_app', WorkspacePackageManager.flutter),
   WorkspacePackage('example/llamadart_cli', WorkspacePackageManager.dart),
   WorkspacePackage('example/llamadart_server', WorkspacePackageManager.dart),
   WorkspacePackage('example/tui_coding_agent', WorkspacePackageManager.dart),
@@ -149,11 +138,7 @@ Future<int> prepareWorkspace(
 
   for (final package in workspacePackages) {
     final executable = package.packageManager.name;
-    final arguments = <String>[
-      'pub',
-      'get',
-      if (package.enforceLockfile) '--enforce-lockfile',
-    ];
+    final arguments = <String>['pub', 'get'];
     stdout.writeln(
       'Preparing ${package.path} with $executable ${arguments.join(' ')}',
     );

@@ -42,14 +42,9 @@ void main() {
     expect(result, 0);
     expect(commands, <String>[
       for (final package in workspacePackages)
-        '${package.packageManager.name} pub get'
-            '${package.enforceLockfile ? ' --enforce-lockfile' : ''}'
-            ' @ ${package.path}',
+        '${package.packageManager.name} pub get @ ${package.path}',
     ]);
-    expect(
-      commands,
-      contains('flutter pub get --enforce-lockfile @ example/chat_app'),
-    );
+    expect(commands, contains('flutter pub get @ example/chat_app'));
   });
 
   test('rejects a package that is not in the preparation manifest', () {
