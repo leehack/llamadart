@@ -531,6 +531,14 @@ Verdict: PASS''',
       expect(workflow, contains('reviewThreads(first:100)'));
       expect(workflow, contains(r'pulls/$PR_NUMBER/reviews?per_page=100'));
       expect(workflow, contains(r'statuses/$HEAD_SHA'));
+      expect(workflow, contains(r'live_head="$('));
+      expect(workflow, contains(r'live_base="$('));
+      expect(
+        workflow,
+        contains(
+          r'[[ "$live_head" != "$HEAD_SHA" || "$live_base" != "$BASE_SHA" ]]',
+        ),
+      );
       expect(
         workflow,
         contains(

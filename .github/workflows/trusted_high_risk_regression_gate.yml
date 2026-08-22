@@ -227,6 +227,9 @@ jobs:
         continue-on-error: true
         shell: bash
         env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
           EVENT_PATH: ${{ steps.state.outputs.event_path }}
           CHANGED_FILES: ${{ steps.state.outputs.changed_files }}
           DELETED_FILES: ${{ steps.state.outputs.deleted_files }}
@@ -240,6 +243,16 @@ jobs:
           REVIEWS_FILE: ${{ steps.reviews.outputs.file }}
         run: |
           set -euo pipefail
+          live_head="$(
+            gh api "repos/$REPOSITORY/pulls/$PR_NUMBER" --jq '.head.sha'
+          )"
+          live_base="$(
+            gh api "repos/$REPOSITORY/git/ref/heads/main" --jq '.object.sha'
+          )"
+          if [[ "$live_head" != "$HEAD_SHA" || "$live_base" != "$BASE_SHA" ]]; then
+            echo "The PR head or base changed during trusted evaluation." >&2
+            exit 1
+          fi
           args=(
             --event "$EVENT_PATH"
             --changed-files "$CHANGED_FILES"
