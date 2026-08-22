@@ -6332,31 +6332,25 @@ class LlamaCppService {
         var adapter = modelAdapters[path];
         if (adapter == null) {
           final pathPtr = path.toNativeUtf8();
-          final adapterPtr = llama_adapter_lora_init(
-            _models[modelHandle]!.pointer,
-            pathPtr.cast(),
-          );
-          malloc.free(pathPtr);
+          final Pointer<llama_adapter_lora> adapterPtr;
+          try {
+            adapterPtr = llama_adapter_lora_init(
+              _models[modelHandle]!.pointer,
+              pathPtr.cast(),
+            );
+          } finally {
+            malloc.free(pathPtr);
+          }
           if (adapterPtr == nullptr) {
             throw LlamaModelException('Failed to load LoRA at $path');
           }
-          // aLoRA must activate only after its invocation tokens appear, but
-          // adapters here apply from the start of generation.
-          final invocationTokens = llama_adapter_get_alora_n_invocation_tokens(
+          _validateLoraForEagerActivation(
             adapterPtr,
+            path,
+            invocationTokenCount: llama_adapter_get_alora_n_invocation_tokens,
+            invocationTokenData: llama_adapter_get_alora_invocation_tokens,
+            freeAdapter: llama_adapter_lora_free,
           );
-          if (invocationTokens > 0) {
-            llama_adapter_lora_free(adapterPtr);
-            throw LlamaUnsupportedException(
-              'The adapter at $path is an aLoRA adapter ($invocationTokens '
-              'invocation token(s)). llamadart applies LoRA adapters from the '
-              'start of generation, but an aLoRA adapter must activate only '
-              'after its invocation sequence appears in the prompt, so '
-              'applying it eagerly would silently change output. Use a '
-              'standard LoRA adapter until invocation-aware activation is '
-              'implemented.',
-            );
-          }
           adapter = _LlamaLoraWrapper(adapterPtr);
           modelAdapters[path] = adapter;
         }
@@ -6380,6 +6374,85 @@ class LlamaCppService {
     } catch (e) {
       rethrow;
     }
+  }
+
+  static void _validateLoraForEagerActivation(
+    Pointer<llama_adapter_lora> adapter,
+    String adapterPath, {
+    required int Function(Pointer<llama_adapter_lora>) invocationTokenCount,
+    required Pointer<llama_token> Function(Pointer<llama_adapter_lora>)
+    invocationTokenData,
+    required void Function(Pointer<llama_adapter_lora>) freeAdapter,
+  }) {
+    final int invocationTokens;
+    try {
+      invocationTokens = invocationTokenCount(adapter);
+      final tokenData = invocationTokenData(adapter);
+      if (invocationTokens > 0 && tokenData == nullptr) {
+        throw StateError(
+          'aLoRA metadata reports invocation tokens without token data',
+        );
+      }
+    } catch (_) {
+      _freeRejectedLoraAdapter(adapter, freeAdapter);
+      throw LlamaUnsupportedException(
+        'Cannot safely load the LoRA adapter at $adapterPath because the '
+        'loaded native runtime cannot inspect aLoRA invocation-token metadata '
+        '(missing or incompatible '
+        'llama_adapter_get_alora_n_invocation_tokens / '
+        'llama_adapter_get_alora_invocation_tokens ABI). Use a native runtime '
+        'artifact that matches this package\'s bindings or another '
+        'ABI-compatible build that exports both symbols.',
+      );
+    }
+
+    // aLoRA must activate only after its invocation tokens appear, but
+    // adapters here apply from the start of generation.
+    if (invocationTokens > 0) {
+      _freeRejectedLoraAdapter(adapter, freeAdapter);
+      throw LlamaUnsupportedException(
+        'The adapter at $adapterPath is an aLoRA adapter ($invocationTokens '
+        'invocation token(s)). llamadart applies LoRA adapters from the start '
+        'of generation, but an aLoRA adapter must activate only after its '
+        'invocation sequence appears in the prompt, so applying it eagerly '
+        'would silently change output. Use a standard LoRA adapter until '
+        'invocation-aware activation is implemented.',
+      );
+    }
+  }
+
+  static void _freeRejectedLoraAdapter(
+    Pointer<llama_adapter_lora> adapter,
+    void Function(Pointer<llama_adapter_lora>) freeAdapter,
+  ) {
+    try {
+      freeAdapter(adapter);
+    } catch (_) {
+      // Keep the safety failure typed and actionable even for a severely
+      // version-skewed runtime whose cleanup symbol is also unavailable.
+    }
+  }
+
+  /// Exercises the production aLoRA safety guard with injected native calls.
+  ///
+  /// This is public only for VM unit tests, which use inert pointer values and
+  /// callbacks to cover ordinary LoRA, aLoRA, version-skew, and cleanup paths
+  /// without requiring a large model/adapter fixture.
+  static void debugValidateLoraForEagerActivationForTesting(
+    Pointer<llama_adapter_lora> adapter,
+    String adapterPath, {
+    required int Function(Pointer<llama_adapter_lora>) invocationTokenCount,
+    required Pointer<llama_token> Function(Pointer<llama_adapter_lora>)
+    invocationTokenData,
+    required void Function(Pointer<llama_adapter_lora>) freeAdapter,
+  }) {
+    _validateLoraForEagerActivation(
+      adapter,
+      adapterPath,
+      invocationTokenCount: invocationTokenCount,
+      invocationTokenData: invocationTokenData,
+      freeAdapter: freeAdapter,
+    );
   }
 
   void _applyActiveLoras(
@@ -8257,16 +8330,91 @@ class _LlamaContextWrapper {
 /// Returns an empty string when nothing was recorded, so platforms that never
 /// populate the buffer keep their existing message byte for byte. The tail is
 /// kept when truncating: the buffer caps entries, not bytes, and the newest
-/// entries are the ones describing the failure at hand.
+/// entries are the ones describing the failure at hand. Control characters are
+/// flattened and credential-bearing HTTP URL components are redacted before the
+/// diagnostics are included in an exception. An entry with a control-split
+/// credentialed URL is replaced entirely rather than guessing whether the
+/// control was part of the URL or a diagnostic boundary.
 String formatStartupDiagnostics(List<String> entries, {int maxLength = 4096}) {
-  if (entries.isEmpty) {
+  if (maxLength < 0) {
+    throw RangeError.range(maxLength, 0, null, 'maxLength');
+  }
+  if (maxLength == 0) {
     return '';
   }
-  var joined = entries.join('; ');
+  final sanitizedEntries = entries
+      .map(_sanitizeStartupDiagnostic)
+      .where((entry) => entry.isNotEmpty)
+      .toList(growable: false);
+  if (sanitizedEntries.isEmpty) {
+    return '';
+  }
+  var joined = sanitizedEntries.join('; ');
   if (joined.length > maxLength) {
-    joined = '...${joined.substring(joined.length - maxLength)}';
+    final ellipsisLength = math.min(3, maxLength);
+    final tailLength = maxLength - ellipsisLength;
+    joined =
+        '${'.' * ellipsisLength}'
+        '${joined.substring(joined.length - tailLength)}';
   }
   return ', startupDiagnostics=[$joined]';
+}
+
+String _sanitizeStartupDiagnostic(String entry) {
+  final controlCharacters = RegExp(
+    r'[\u0000-\u001f\u007f-\u009f\u2028\u2029]+',
+  );
+  if (_hasControlSplitSensitiveHttpUrl(entry, controlCharacters)) {
+    return '<redacted-startup-diagnostic>';
+  }
+  final flattenedEntry = entry
+      .replaceAll(controlCharacters, ' ')
+      .replaceAll(RegExp(r' {2,}'), ' ')
+      .trim();
+  final redactedUrls = flattenedEntry.replaceAllMapped(
+    RegExp(r'https?://(?:(?!https?://)\S)+', caseSensitive: false),
+    (match) {
+      final uri = Uri.tryParse(match.group(0)!);
+      final scheme = uri?.scheme.toLowerCase();
+      if (uri == null || (scheme != 'http' && scheme != 'https')) {
+        return '<redacted-url>';
+      }
+      return Uri(
+        scheme: scheme,
+        host: uri.host,
+        port: uri.hasPort ? uri.port : null,
+        path: uri.path,
+      ).toString();
+    },
+  );
+  return redactedUrls.replaceAll(RegExp(r' {2,}'), ' ').trim();
+}
+
+bool _hasControlSplitSensitiveHttpUrl(String entry, RegExp controlCharacters) {
+  if (!controlCharacters.hasMatch(entry)) {
+    return false;
+  }
+  final compacted = entry.replaceAll(controlCharacters, '');
+  final candidates = RegExp(
+    r'https?://(?:(?!https?://)\S)+',
+    caseSensitive: false,
+  ).allMatches(compacted);
+  for (final candidate in candidates) {
+    final text = candidate.group(0)!;
+    final uri = Uri.tryParse(text);
+    if (uri == null) {
+      if (text.contains('@') || text.contains('?') || text.contains('#')) {
+        return true;
+      }
+      continue;
+    }
+    final scheme = uri.scheme.toLowerCase();
+    if ((scheme == 'http' || scheme == 'https') &&
+        (uri.userInfo.isNotEmpty || uri.hasQuery || uri.hasFragment)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /// The message thrown when `llama_model_load_from_file` returns null.

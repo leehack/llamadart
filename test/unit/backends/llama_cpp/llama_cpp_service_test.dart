@@ -3,8 +3,10 @@ library;
 
 import 'dart:ffi';
 import 'dart:io';
+import 'dart:mirrors';
 
 import 'package:ffi/ffi.dart';
+import 'package:llamadart/src/backends/llama_cpp/bindings.dart';
 import 'package:llamadart/src/backends/llama_cpp/llama_cpp_service.dart';
 import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/models/config/gpu_backend.dart';
@@ -18,6 +20,147 @@ void main() {
   test('LlamaCppService can be instantiated', () {
     final service = LlamaCppService();
     expect(service, isA<LlamaCppService>());
+  });
+
+  group('aLoRA eager-activation guard', () {
+    final adapter = Pointer<llama_adapter_lora>.fromAddress(1);
+
+    test('preserves an ordinary LoRA adapter', () {
+      var freed = 0;
+
+      LlamaCppService.debugValidateLoraForEagerActivationForTesting(
+        adapter,
+        'ordinary.gguf',
+        invocationTokenCount: (_) => 0,
+        invocationTokenData: (_) => nullptr,
+        freeAdapter: (_) => freed++,
+      );
+
+      expect(freed, 0);
+    });
+
+    test('rejects and frees an aLoRA adapter', () {
+      var freed = 0;
+
+      expect(
+        () => LlamaCppService.debugValidateLoraForEagerActivationForTesting(
+          adapter,
+          'activated.gguf',
+          invocationTokenCount: (_) => 3,
+          invocationTokenData: (_) => Pointer<llama_token>.fromAddress(2),
+          freeAdapter: (_) => freed++,
+        ),
+        throwsA(
+          isA<LlamaUnsupportedException>()
+              .having(
+                (error) => error.message,
+                'message',
+                contains('activated.gguf is an aLoRA adapter'),
+              )
+              .having(
+                (error) => error.message,
+                'message',
+                contains('3 invocation token(s)'),
+              ),
+        ),
+      );
+      expect(freed, 1);
+    });
+
+    test('fails closed and frees on missing metadata symbol', () {
+      var freed = 0;
+
+      expect(
+        () => LlamaCppService.debugValidateLoraForEagerActivationForTesting(
+          adapter,
+          'unknown.gguf',
+          invocationTokenCount: (_) => throw ArgumentError(
+            'Could not resolve '
+            'llama_adapter_get_alora_n_invocation_tokens',
+          ),
+          invocationTokenData: (_) => nullptr,
+          freeAdapter: (_) => freed++,
+        ),
+        throwsA(
+          isA<LlamaUnsupportedException>()
+              .having(
+                (error) => error.message,
+                'message',
+                contains('Cannot safely load the LoRA adapter'),
+              )
+              .having(
+                (error) => error.message,
+                'message',
+                contains('llama_adapter_get_alora_n_invocation_tokens'),
+              )
+              .having(
+                (error) => error.message,
+                'message',
+                contains("matches this package's bindings"),
+              ),
+        ),
+      );
+      expect(freed, 1);
+    });
+
+    test('fails closed and frees on a partial metadata ABI', () {
+      var freed = 0;
+
+      expect(
+        () => LlamaCppService.debugValidateLoraForEagerActivationForTesting(
+          adapter,
+          'partial-abi.gguf',
+          invocationTokenCount: (_) => 0,
+          invocationTokenData: (_) => throw ArgumentError(
+            'Could not resolve llama_adapter_get_alora_invocation_tokens',
+          ),
+          freeAdapter: (_) => freed++,
+        ),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            contains('llama_adapter_get_alora_invocation_tokens'),
+          ),
+        ),
+      );
+      expect(freed, 1);
+    });
+
+    test('fails closed and frees on inconsistent aLoRA metadata', () {
+      var freed = 0;
+
+      expect(
+        () => LlamaCppService.debugValidateLoraForEagerActivationForTesting(
+          adapter,
+          'inconsistent-metadata.gguf',
+          invocationTokenCount: (_) => 1,
+          invocationTokenData: (_) => nullptr,
+          freeAdapter: (_) => freed++,
+        ),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            contains('Cannot safely load the LoRA adapter'),
+          ),
+        ),
+      );
+      expect(freed, 1);
+    });
+
+    test('keeps version-skew failure typed if cleanup also fails', () {
+      expect(
+        () => LlamaCppService.debugValidateLoraForEagerActivationForTesting(
+          adapter,
+          'severely-skewed.gguf',
+          invocationTokenCount: (_) => throw ArgumentError('missing getter'),
+          invocationTokenData: (_) => nullptr,
+          freeAdapter: (_) => throw ArgumentError('missing free'),
+        ),
+        throwsA(isA<LlamaUnsupportedException>()),
+      );
+    });
   });
 
   group('getVramInfo', () {
@@ -656,11 +799,56 @@ void main() {
 
       expect(formatted, startsWith(', startupDiagnostics=[...'));
       expect(formatted, endsWith('that actually matters]'));
+      final contentLength =
+          formatted.length - ', startupDiagnostics=['.length - ']'.length;
+      expect(contentLength, 40);
       // The oldest entry is dropped, not the newest.
       expect(formatted, isNot(contains('a' * 50)));
+    });
+
+    test('a zero content limit omits the diagnostic suffix', () {
       expect(
-        formatted.length,
-        lessThan(', startupDiagnostics=[...]'.length + 41),
+        formatStartupDiagnostics(const <String>['failure'], maxLength: 0),
+        isEmpty,
+      );
+    });
+
+    test('diagnostics are single-line and redact credentialed URLs', () {
+      expect(
+        formatStartupDiagnostics(const <String>[
+          'failed at HTTPS:\n//user\u0085:pass@example.com/lib.so'
+              '?token=secret#part',
+          'next\u0000line\u0085more\u2028last\u2029line',
+        ]),
+        ', startupDiagnostics=['
+        '<redacted-startup-diagnostic>; next line more last line]',
+      );
+      expect(
+        formatStartupDiagnostics(const <String>[
+          'failed at https://user:pass@[2001:db8::1]/lib.so?token=secret',
+        ]),
+        ', startupDiagnostics=[failed at https://[2001:db8::1]/lib.so]',
+      );
+      expect(
+        formatStartupDiagnostics(const <String>[
+          'https://safe.example/a,HTTPS://user:pass@evil.example/b'
+              '?token=secret',
+        ]),
+        ', startupDiagnostics=['
+        'https://safe.example/a,https://evil.example/b]',
+      );
+      expect(
+        formatStartupDiagnostics(const <String>['https://example.com\nfailed']),
+        ', startupDiagnostics=[https://example.com failed]',
+      );
+      expect(
+        formatStartupDiagnostics(const <String>[
+          'https://example.com\nfailed@evil.example',
+          'https://example.com/path?\ntoken=secret',
+        ]),
+        ', startupDiagnostics=['
+        '<redacted-startup-diagnostic>; '
+        '<redacted-startup-diagnostic>]',
       );
     });
 
@@ -719,6 +907,134 @@ void main() {
 
     test('a fresh service has nothing recorded', () {
       expect(LlamaCppService().getStartupDiagnostics(), isEmpty);
+    });
+
+    group('native null-return branches', () {
+      late Directory tempDir;
+      late String corruptGgufPath;
+
+      setUp(() {
+        tempDir = Directory.systemTemp.createTempSync(
+          'llamadart-load-failure-',
+        );
+        corruptGgufPath = path.join(tempDir.path, 'corrupt.gguf');
+        File(
+          corruptGgufPath,
+        ).writeAsBytesSync(const <int>[0x47, 0x47, 0x55, 0x46]);
+      });
+
+      tearDown(() {
+        if (tempDir.existsSync()) {
+          tempDir.deleteSync(recursive: true);
+        }
+      });
+
+      test('main-model failure uses the service diagnostics buffer', () {
+        final service = _warmedLoadFailureService(corruptGgufPath);
+        _recordStartupDiagnosticForTesting(
+          service,
+          'failed at '
+          'https://safe.example/a,'
+          'HTTPS:\n//user\n:pass@example.com/libggml.so'
+          '?token=secret#fragment',
+        );
+        _recordStartupDiagnosticForTesting(
+          service,
+          'next\u0000line\u0085more\u2028last\u2029line',
+        );
+
+        expect(
+          () => service.loadModel(corruptGgufPath, const ModelParams()),
+          throwsA(
+            isA<Exception>().having(
+              (error) => error.toString(),
+              'message',
+              allOf(
+                contains('Failed to load model (size=4 bytes,'),
+                contains(
+                  'startupDiagnostics=[<redacted-startup-diagnostic>; '
+                  'next line more last line]',
+                ),
+                isNot(contains('user:pass')),
+                isNot(contains('token=secret')),
+                isNot(contains('\n')),
+                isNot(contains('\u0000')),
+              ),
+            ),
+          ),
+        );
+      });
+
+      test('main-model failure omits the suffix for an empty buffer', () {
+        final service = _warmedLoadFailureService(corruptGgufPath);
+
+        expect(
+          () => service.loadModel(corruptGgufPath, const ModelParams()),
+          throwsA(
+            isA<Exception>().having(
+              (error) => error.toString(),
+              'message',
+              isNot(contains('startupDiagnostics=')),
+            ),
+          ),
+        );
+      });
+
+      test('draft-model failure uses its label and bounded newest tail', () {
+        final service = _warmedLoadFailureService(corruptGgufPath);
+        _recordStartupDiagnosticForTesting(service, 'oldest:${'a' * 5000}');
+        _recordStartupDiagnosticForTesting(service, 'newest failure');
+
+        expect(
+          () => _loadDraftModelForTesting(
+            service,
+            corruptGgufPath,
+            'speculative draft model',
+          ),
+          throwsA(
+            isA<Exception>().having(
+              (error) => error.toString(),
+              'message',
+              allOf(
+                contains(
+                  'Failed to load speculative draft model '
+                  '(size=4 bytes, path=$corruptGgufPath,',
+                ),
+                contains('startupDiagnostics=[...'),
+                endsWith('newest failure]'),
+                isNot(contains('oldest:')),
+                predicate<String>((message) {
+                  final marker = 'startupDiagnostics=[';
+                  final start = message.indexOf(marker);
+                  final content = message.substring(
+                    start + marker.length,
+                    message.length - 1,
+                  );
+                  return content.length == 4096;
+                }, 'caps rendered diagnostic content at 4096 characters'),
+              ),
+            ),
+          ),
+        );
+      });
+
+      test('draft-model failure omits the suffix for an empty buffer', () {
+        final service = _warmedLoadFailureService(corruptGgufPath);
+
+        expect(
+          () => _loadDraftModelForTesting(service, corruptGgufPath, 'draft'),
+          throwsA(
+            isA<Exception>().having(
+              (error) => error.toString(),
+              'message',
+              allOf(
+                contains('Failed to load draft (size=4 bytes,'),
+                isNot(contains('startupDiagnostics=')),
+              ),
+            ),
+          ),
+        );
+      });
     });
   });
 
@@ -1761,6 +2077,64 @@ void main() {
       contains(endsWith(path.join('llama.framework', 'llama'))),
     );
   });
+}
+
+LlamaCppService _warmedLoadFailureService(String corruptGgufPath) {
+  final service = LlamaCppService();
+  try {
+    service.loadModel(corruptGgufPath, const ModelParams());
+  } on Exception {
+    // The first controlled failure initializes platform backend discovery.
+  }
+  _startupDiagnosticsForTesting(service).clear();
+  return service;
+}
+
+void _recordStartupDiagnosticForTesting(
+  LlamaCppService service,
+  String diagnostic,
+) {
+  _invokePrivateForTesting<void>(service, '_recordStartupDiagnostic', <Object?>[
+    diagnostic,
+  ]);
+}
+
+void _loadDraftModelForTesting(
+  LlamaCppService service,
+  String path,
+  String label,
+) {
+  _invokePrivateForTesting<Object?>(
+    service,
+    '_loadSpeculativeDraftModel',
+    <Object?>[-1, path, label],
+    <Symbol, Object?>{#loadMtp: false},
+  );
+}
+
+List<String> _startupDiagnosticsForTesting(LlamaCppService service) {
+  final owner = reflectClass(LlamaCppService).owner as LibraryMirror;
+  return reflect(
+        service,
+      ).getField(MirrorSystem.getSymbol('_startupDiagnostics', owner)).reflectee
+      as List<String>;
+}
+
+T _invokePrivateForTesting<T>(
+  LlamaCppService service,
+  String member,
+  List<Object?> positionalArguments, [
+  Map<Symbol, Object?> namedArguments = const <Symbol, Object?>{},
+]) {
+  final owner = reflectClass(LlamaCppService).owner as LibraryMirror;
+  return reflect(service)
+          .invoke(
+            MirrorSystem.getSymbol(member, owner),
+            positionalArguments,
+            namedArguments,
+          )
+          .reflectee
+      as T;
 }
 
 void _createWindowsBundleMarkerFiles(

@@ -57,6 +57,11 @@ const _b10514MtmdSymbols = [
   'mtmd_input_chunk_get_placeholder',
 ];
 
+const _aloraMetadataSymbols = [
+  'llama_adapter_get_alora_n_invocation_tokens',
+  'llama_adapter_get_alora_invocation_tokens',
+];
+
 const _transparentPngBytes = <int>[
   0x89,
   0x50,
@@ -164,6 +169,15 @@ File? _llamadartWrapperLibraryFileOrNull() {
   final nativeAssetPath =
       _nativeAssetFilePath(_llamadartWrapperAssetId) ??
       _nativeAssetFilePath(_llamadartPrimaryAssetId);
+  if (nativeAssetPath == null) {
+    return null;
+  }
+  final file = File(nativeAssetPath);
+  return file.existsSync() ? file : null;
+}
+
+File? _llamadartPrimaryLibraryFileOrNull() {
+  final nativeAssetPath = _nativeAssetFilePath(_llamadartPrimaryAssetId);
   if (nativeAssetPath == null) {
     return null;
   }
@@ -464,6 +478,20 @@ void main() {
       ).readAsStringSync();
 
       for (final symbol in _b10514BindingSymbols) {
+        expect(
+          _declaresExternalFunction(bindingsSource, symbol),
+          isTrue,
+          reason: symbol,
+        );
+      }
+    });
+
+    test('Verify aLoRA metadata symbols are declared in bindings', () {
+      final bindingsSource = File(
+        'lib/src/backends/llama_cpp/bindings.dart',
+      ).readAsStringSync();
+
+      for (final symbol in _aloraMetadataSymbols) {
         expect(
           _declaresExternalFunction(bindingsSource, symbol),
           isTrue,
@@ -890,6 +918,16 @@ void main() {
         () => llama_numa_init(ggml_numa_strategy.GGML_NUMA_STRATEGY_DISABLED),
         returnsNormally,
       );
+    });
+
+    test('Verify pinned primary runtime exports aLoRA metadata ABI', () {
+      final libraryFile = _llamadartPrimaryLibraryFileOrNull();
+      expect(
+        libraryFile,
+        isNotNull,
+        reason: 'Expected a native library exporting llama.cpp symbols.',
+      );
+      _expectDynamicLibraryExports(libraryFile!, _aloraMetadataSymbols);
     });
   });
 }

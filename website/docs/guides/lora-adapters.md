@@ -107,8 +107,16 @@ invocation-aware activation is implemented.
 ```
 
 Native LoRA support should not be read as aLoRA support. Invocation-aware
-activation is tracked in
-[issue #321](https://github.com/leehack/llamadart/issues/321).
+activation, prompt-cache safety, and multiple-aLoRA behavior are not yet
+implemented.
+
+Custom native runtime overrides must also export both
+`llama_adapter_get_alora_n_invocation_tokens` and
+`llama_adapter_get_alora_invocation_tokens`. If that metadata inspection ABI is
+missing, partial, or incompatible, llamadart fails closed with
+`LlamaUnsupportedException` and asks you to use a runtime artifact matching the
+package bindings or another ABI-compatible build. It does not activate an
+adapter whose type cannot be checked safely.
 
 ## Lifecycle notes
 
