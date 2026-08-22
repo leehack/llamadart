@@ -33,7 +33,7 @@ A Flutter chat application demonstrating real-world usage of llamadart with UI.
 - ⚙️ Model configuration (path, runtime-detected backend selection, GPU layers,
   context size, logical batch size, and micro-batch size; LiteRT-LM does not
   expose the llama.cpp/WebGPU batch controls)
-- 🧩 Capability badges per model (Tools / Thinking / Vision / Audio / Video)
+- 🧩 Capability badges per model (Tools / Thinking / Vision / Audio)
 - 🧪 GGUF and LiteRT-LM model routing through the same high-level engine APIs
 - 🎯 Per-model presets for temperature, Top-K, Top-P, context, and max tokens
 - 🛠️ Tool-calling toggles with template support checks
@@ -190,8 +190,10 @@ flutter test --run-skipped -t local-only \
      Gemma 4 E2B bundle, GPU text/vision with CPU audio is the resolved path;
      this is not a universal LiteRT-LM CPU-audio limitation.
    - Gemma 4 E2B is included as a GGUF + `mmproj` bundle. In the current native
-     `llama.cpp` mtmd path used here, that projector exposes image, audio, and
-     video input, so it uses the same **Ask with voice** interaction. Audio
+     `llama.cpp` mtmd path used here, that projector exposes image and audio
+     input, so it uses the same **Ask with voice** interaction. Video is not
+     consumable: the packaged native runtime reports it compiled out and Dart
+     does not yet own frame/timestamp ingestion or video-context cleanup. Audio
      remains experimental upstream; start with short mono clips for the most
      reliable results. The GGUF audio-answer path has current engine-level
      real-model evidence on macOS; microphone UI/device validation on Android,

@@ -77,6 +77,30 @@ void main() {
     expect(find.text('Audio'), findsNothing);
   });
 
+  testWidgets('does not advertise stale video capability metadata', (
+    tester,
+  ) async {
+    await _pumpCard(
+      tester,
+      model: const DownloadableModel(
+        name: 'Legacy video metadata',
+        description:
+            'A model entry saved before video capability was corrected.',
+        url: 'https://example.com/model.gguf',
+        filename: 'model.gguf',
+        sizeBytes: 10,
+        supportsVideo: true,
+      ),
+      isWeb: false,
+      isDownloaded: true,
+      onSelect: () {},
+      onDownload: () {},
+    );
+
+    expect(find.text('Video'), findsNothing);
+    expect(find.byIcon(Icons.videocam_outlined), findsNothing);
+  });
+
   testWidgets('ASR card distinguishes STT and requires its projector', (
     tester,
   ) async {

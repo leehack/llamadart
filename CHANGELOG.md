@@ -1,5 +1,14 @@
 ## Unreleased
 
+* Made native video-input capability truthful without claiming end-to-end
+  support. `LlamaVideoContent` requests now fail with an actionable
+  `LlamaUnsupportedException`, `LlamaEngine.supportsVideo` reports public
+  consumability as false, and the llama.cpp worker uses the behavioral
+  `mtmd_helper_support_video` result instead of exported helper symbols. The
+  tested b10545 macOS arm64 artifact reports video compiled out; full path/byte
+  input remains blocked on cross-platform FFmpeg/ffprobe packaging and Dart
+  frame lifecycle wiring.
+
 * Fixed Web/native backend API parity. `WebAutoBackend` now forwards grammar
   constraint support from its active runtime, so strict structured output fails
   early with an actionable error on unsupported Web backends, and the Web-safe
