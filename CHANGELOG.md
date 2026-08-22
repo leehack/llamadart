@@ -23,9 +23,8 @@
   rebuilds plus nightly `bNNNN-N` rebuilds, while preserving historical
   `bNNNN` and `bNNNN-llamadart.N` artifacts. Sync rejects invalid tags,
   leading-zero nightly versions, rollback, wrapper/nightly `latest` results,
-  incompatible manifest contracts,
-  missing bundles, and release/manifest checksum or version skew without
-  changing the default pin.
+  incompatible manifest contracts, missing bundles, and release/manifest
+  checksum or version skew without changing the default pin.
 
 * Fixed Web/native backend API parity. `WebAutoBackend` now forwards grammar
   constraint support from its active runtime, so strict structured output fails

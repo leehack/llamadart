@@ -40,9 +40,11 @@ wrapper-only rebuild of upstream `vM.m.p` uses `vM.m.p-N` and preserves that
 upstream prefix in the release manifest. New wrapper and nightly releases are
 GitHub prereleases and require an explicit tag. Historical `bNNNN` and
 `bNNNN-llamadart.N` artifacts may retain older `prerelease=false` metadata, but
-remain explicit compatibility inputs; `latest` accepts only an unsuffixed
-stable tag regardless of GitHub metadata. Nightly cores and positive rebuild
-counters reject leading zeros.
+remain explicit compatibility inputs. Build-hook overrides must always name an
+explicit tag; `latest` is limited to maintainer synchronization and
+header/binding regeneration, where it accepts only an unsuffixed stable tag
+regardless of GitHub metadata. Nightly cores and positive rebuild counters
+reject leading zeros.
 The selected release must include a bundle asset named
 `llamadart-native-<bundle>-<tag>.tar.gz` for the target being built.
 Native source overrides do not regenerate Dart FFI bindings or symbol lookups,

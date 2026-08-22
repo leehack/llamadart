@@ -200,8 +200,10 @@ New wrapper and nightly releases are GitHub prereleases and must be selected
 explicitly. Historical `bNNNN` and `bNNNN-llamadart.N` artifacts may retain
 older `prerelease=false` metadata, but remain explicit compatibility inputs;
 `latest` accepts only unsuffixed `vMAJOR.MINOR.PATCH` regardless of GitHub
-metadata. Nightly cores use canonical decimal spelling (`b0` or a nonzero first
-digit), and rebuild counters start at 1 without leading zeros.
+metadata. Build-hook overrides must always name an explicit tag; only maintainer
+synchronization and header/binding regeneration accept `latest`. Nightly cores
+use canonical decimal spelling (`b0` or a nonzero first digit), and rebuild
+counters start at 1 without leading zeros.
 New nightly wrapper rebuilds use `bNNNN-N`; existing
 `bNNNN-llamadart.N` artifacts remain explicit consumption-only compatibility
 inputs. New stable or nightly wrapper forms require manifests containing both

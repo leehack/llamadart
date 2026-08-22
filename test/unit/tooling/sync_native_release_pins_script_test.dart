@@ -781,6 +781,23 @@ paths=(
     }
   });
 
+  test('override docs limit latest to maintainer tooling', () async {
+    const contract =
+        'Build-hook overrides must always name an explicit tag; `latest` is '
+        'limited to maintainer synchronization and header/binding '
+        'regeneration';
+    for (final path in <String>[
+      'README.md',
+      'website/docs/getting-started/installation.md',
+      'website/docs/platforms/support-matrix.md',
+    ]) {
+      final normalized = (await File(
+        path,
+      ).readAsString()).replaceAll(RegExp(r'\s+'), ' ');
+      expect(normalized, contains(contract), reason: path);
+    }
+  });
+
   test('orders stable wrapper rebuilds between upstream stable tags', () async {
     final setup = await _writeLlamaOnlyRepo('v0.2.0');
     addTearDown(() => setup.root.delete(recursive: true));

@@ -157,11 +157,13 @@ treats each `-N` suffix as a forward wrapper rebuild even where generic SemVer
 ordering differs. New wrapper and nightly releases are GitHub prereleases and
 must be selected explicitly. Immutable historical `bNNNN` and
 `bNNNN-llamadart.N` artifacts may retain older `prerelease=false` metadata, but
-remain explicit compatibility inputs; `latest` accepts only an unsuffixed
-stable tag regardless of GitHub metadata. Nightly cores use canonical decimal
-spelling (`b0` or a nonzero first digit), and rebuild counters start at 1
-without leading zeros. The default pin above changes only after the matching
-artifacts, bindings, runtime behavior, and docs have been validated together.
+remain explicit compatibility inputs. Build-hook overrides must always name an
+explicit tag; `latest` is limited to maintainer synchronization and
+header/binding regeneration, where it accepts only an unsuffixed stable tag
+regardless of GitHub metadata. Nightly cores use canonical decimal spelling
+(`b0` or a nonzero first digit), and rebuild counters start at 1 without leading
+zeros. The default pin above changes only after the matching artifacts,
+bindings, runtime behavior, and docs have been validated together.
 
 ## Common Tasks
 
