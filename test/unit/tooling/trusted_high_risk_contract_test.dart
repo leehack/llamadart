@@ -509,6 +509,17 @@ Verdict: PASS''',
       expect(workflow, contains('status == "removed" or .status == "renamed"'));
       expect(workflow, contains('persist-credentials: false'));
       expect(workflow, contains('statuses: write'));
+      expect(workflow, contains('Publish pending status for the event head'));
+      expect(workflow, contains('-f state=pending'));
+      expect(
+        workflow,
+        contains(r'EVENT_HEAD_SHA: ${{ steps.event.outputs.head_sha }}'),
+      );
+      expect(workflow, contains(r'[[ "$head_sha" == "$EVENT_HEAD_SHA" ]]'));
+      expect(
+        workflow,
+        contains(r'HEAD_SHA: ${{ steps.event.outputs.head_sha }}'),
+      );
       expect(workflow, contains('ready_for_review'));
       expect(workflow, contains('review_requested'));
       expect(workflow, contains('review_request_removed'));

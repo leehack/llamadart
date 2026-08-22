@@ -30,6 +30,25 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
+      - name: Publish pending status for the event head
+        id: event
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          EVENT_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          [[ "$EVENT_HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+          gh api --method POST "repos/$REPOSITORY/statuses/$EVENT_HEAD_SHA" \
+            -f state=pending \
+            -f context='High-Risk Regression Gate / Trusted exact-head adversarial evidence' \
+            -f description='Trusted high-risk evidence is being evaluated' \
+            -f target_url="$RUN_URL" \
+            > /dev/null
+          echo "head_sha=$EVENT_HEAD_SHA" >> "$GITHUB_OUTPUT"
+
       - name: Check out trusted default-branch policy
         uses: actions/checkout@v6
         with:
@@ -45,6 +64,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          EVENT_HEAD_SHA: ${{ steps.event.outputs.head_sha }}
         run: |
           set -euo pipefail
           [[ "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]]
@@ -55,6 +75,7 @@ jobs:
           head_repo="$(jq -r '.head.repo.full_name' "$RUNNER_TEMP/pull-request.json")"
           [[ "$base_ref" == "main" ]]
           [[ "$head_sha" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$head_sha" == "$EVENT_HEAD_SHA" ]]
           [[ "$head_repo" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]
           base_sha="$(
             gh api "repos/$REPOSITORY/git/ref/heads/$base_ref" --jq '.object.sha'
@@ -231,12 +252,12 @@ jobs:
           dart tool/testing/enforce_high_risk_pr_contract.dart "${args[@]}"
 
       - name: Publish exact-head required status
-        if: always() && steps.state.outputs.head_sha != ''
+        if: always() && steps.event.outputs.head_sha != ''
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
-          HEAD_SHA: ${{ steps.state.outputs.head_sha }}
+          HEAD_SHA: ${{ steps.event.outputs.head_sha }}
           ENFORCEMENT_OUTCOME: ${{ steps.enforce.outcome }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
