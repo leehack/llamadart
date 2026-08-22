@@ -57,6 +57,11 @@ const _b10514MtmdSymbols = [
   'mtmd_input_chunk_get_placeholder',
 ];
 
+const _aloraMetadataSymbols = [
+  'llama_adapter_get_alora_n_invocation_tokens',
+  'llama_adapter_get_alora_invocation_tokens',
+];
+
 const _transparentPngBytes = <int>[
   0x89,
   0x50,
@@ -470,6 +475,20 @@ void main() {
       }
     });
 
+    test('Verify aLoRA metadata symbols are declared in bindings', () {
+      final bindingsSource = File(
+        'lib/src/backends/llama_cpp/bindings.dart',
+      ).readAsStringSync();
+
+      for (final symbol in _aloraMetadataSymbols) {
+        expect(
+          _declaresExternalFunction(bindingsSource, symbol),
+          isTrue,
+          reason: symbol,
+        );
+      }
+    });
+
     test('Verify b10545 mtmd context parameter layout in bindings', () {
       final bindingsSource = File(
         'lib/src/backends/llama_cpp/bindings.dart',
@@ -869,6 +888,16 @@ void main() {
         () => llama_numa_init(ggml_numa_strategy.GGML_NUMA_STRATEGY_DISABLED),
         returnsNormally,
       );
+    });
+
+    test('Verify pinned runtime exports aLoRA metadata inspection', () {
+      final libraryFile = _llamadartWrapperLibraryFileOrNull();
+      expect(
+        libraryFile,
+        isNotNull,
+        reason: 'Expected a native library exporting llama.cpp symbols.',
+      );
+      _expectDynamicLibraryExports(libraryFile!, _aloraMetadataSymbols);
     });
   });
 }
