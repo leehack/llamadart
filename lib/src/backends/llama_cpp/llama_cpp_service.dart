@@ -4028,8 +4028,15 @@ class LlamaCppService {
           parts?.any((part) => part is LlamaVideoContent) ?? false;
       if (hasVideoParts) {
         final mmHandle = _modelToMtmd[modelHandle];
-        final nativeRuntimeSupportsVideo =
-            mmHandle != null && supportsVideo(mmHandle);
+        if (mmHandle == null) {
+          throw LlamaUnsupportedException(
+            'Video input is unavailable because no multimodal projector is '
+            'loaded to inspect native runtime capability. Loading a compatible '
+            'projector enables inspection only; it does not enable public video '
+            'ingestion. Extract and send image frames instead.',
+          );
+        }
+        final nativeRuntimeSupportsVideo = supportsVideo(mmHandle);
         if (!nativeRuntimeSupportsVideo) {
           throw LlamaUnsupportedException(
             'Video input is unavailable because the loaded native mtmd '
