@@ -98,14 +98,14 @@ class NativeLlamaBackend
   }
 
   Future<void> _ensureIsolate() async {
-    if (_sendPort != null) {
-      _isReady = true;
-      return;
-    }
     final existingStart = _isolateStart;
     if (existingStart != null) {
       await existingStart;
       _isReady = _sendPort != null;
+      return;
+    }
+    if (_sendPort != null) {
+      _isReady = true;
       return;
     }
 

@@ -505,6 +505,39 @@ void main() {
       },
     );
 
+    test('concurrent calls share the failing startup handshake', () async {
+      final backend = NativeLlamaBackend(
+        workerEntrypoint: _delayedFailingInitializationWorkerEntry,
+      );
+
+      try {
+        final startupFailure = throwsA(
+          isA<LlamaBackendInitializationException>().having(
+            (error) => error.message,
+            'message',
+            contains('delayed synthetic initialization failure'),
+          ),
+        );
+        await Future.wait(<Future<void>>[
+          expectLater(
+            backend
+                .modelLoad('first.gguf', const ModelParams())
+                .timeout(const Duration(seconds: 2)),
+            startupFailure,
+          ),
+          expectLater(
+            backend
+                .modelLoad('second.gguf', const ModelParams())
+                .timeout(const Duration(seconds: 2)),
+            startupFailure,
+          ),
+        ]);
+        expect(backend.isReady, isFalse);
+      } finally {
+        await backend.dispose().timeout(const Duration(seconds: 2));
+      }
+    });
+
     test(
       'worker exit before handshake acknowledgement fails promptly',
       () async {
@@ -599,6 +632,23 @@ void _failingInitializationWorkerEntry(SendPort initialSendPort) {
     initialSendPort,
     _FailingInitializationLlamaCppService(),
   );
+}
+
+void _delayedFailingInitializationWorkerEntry(SendPort initialSendPort) {
+  final receivePort = ReceivePort();
+  initialSendPort.send(receivePort.sendPort);
+  receivePort.listen((message) async {
+    if (message is WorkerHandshake) {
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      message.sendPort.send(
+        ErrorResponse(
+          'delayed synthetic initialization failure',
+          kind: WorkerErrorKind.backendInitialization,
+        ),
+      );
+      receivePort.close();
+    }
+  });
 }
 
 void _exitingBeforeHandshakeReplyWorkerEntry(SendPort initialSendPort) {
