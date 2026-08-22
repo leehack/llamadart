@@ -8,6 +8,7 @@ import '../chat_format.dart';
 import '../chat_parse_result.dart';
 import '../chat_template_handler.dart';
 import '../thinking_utils.dart';
+import '../tool_call_grammar_utils.dart';
 import '../tool_call_parsing_utils.dart';
 import '../tool_schema_utils.dart';
 
@@ -18,7 +19,8 @@ import '../tool_schema_utils.dart';
 /// `<tool_call>func_name<arg_key>key</arg_key><arg_value>value</arg_value></tool_call>`
 ///
 /// Supports `<think>`/`</think>` for reasoning.
-class Glm45Handler extends ChatTemplateHandler {
+class Glm45Handler extends ChatTemplateHandler
+    implements ToolSchemaAwareChatTemplateHandler {
   static final RegExp _toolCallBlockPattern = RegExp(
     r'<tool_call>\s*([\s\S]*?)</tool_call>',
   );
@@ -138,6 +140,7 @@ class Glm45Handler extends ChatTemplateHandler {
   }
 
   /// Parses GLM output using [tools] for schema-directed argument types.
+  @override
   ChatParseResult parseWithTools(
     String output, {
     List<ToolDefinition>? tools,
@@ -191,23 +194,25 @@ class Glm45Handler extends ChatTemplateHandler {
     final toolRules = <String>[];
 
     for (final tool in tools) {
-      final toolRuleName = '${_sanitizeRuleName(tool.name)}-call';
+      final toolRuleName = '${ToolCallGrammarUtils.ruleName(tool.name)}-call';
       toolChoiceRules.add(toolRuleName);
 
       final argParts = <String>[];
       for (final parameter in tool.parameters) {
         final paramSchema = parameter.toJsonSchema();
         final paramRuleName =
-            '${_sanitizeRuleName(tool.name)}-arg-${_sanitizeRuleName(parameter.name)}';
+            '${ToolCallGrammarUtils.ruleName(tool.name)}-arg-'
+            '${ToolCallGrammarUtils.ruleName(parameter.name)}';
         final valueRuleName =
-            '${_sanitizeRuleName(tool.name)}-arg-${_sanitizeRuleName(parameter.name)}-value';
+            '${ToolCallGrammarUtils.ruleName(tool.name)}-arg-'
+            '${ToolCallGrammarUtils.ruleName(parameter.name)}-value';
 
-        final valueRule = _buildValueRule(
+        final valueRules = _buildValueRules(
           valueRuleName: valueRuleName,
           schema: paramSchema,
         );
 
-        toolRules.add(valueRule);
+        toolRules.addAll(valueRules);
         toolRules.add(
           '$paramRuleName ::= "<arg_key>${_escapeLiteral(parameter.name)}</arg_key>\\n<arg_value>" $valueRuleName "</arg_value>\\n"',
         );
@@ -227,9 +232,6 @@ class Glm45Handler extends ChatTemplateHandler {
       'tool-call ::= "\\n<tool_call>" tool-choice "</tool_call>\\n"',
       toolChoiceRule,
       ...toolRules,
-      'raw-alpha ::= [A-Za-z]',
-      'raw-tail ::= [A-Za-z0-9_ ./:-]',
-      'raw-string ::= raw-alpha raw-tail*',
       'space ::= " "?',
       'string ::= "\\"" ([^"\\\\] | "\\\\" .)* "\\""',
       'number ::= "-"? ([0-9] | [1-9] [0-9]*) ("." [0-9]+)? ([eE] [+-]? [0-9]+)?',
@@ -241,7 +243,7 @@ class Glm45Handler extends ChatTemplateHandler {
     ].join('\n');
   }
 
-  String _buildValueRule({
+  List<String> _buildValueRules({
     required String valueRuleName,
     required Map<String, dynamic> schema,
   }) {
@@ -258,32 +260,31 @@ class Glm45Handler extends ChatTemplateHandler {
             .whereType<String>()
             .map((value) => '"\\"${_escapeLiteral(value)}\\""')
             .join(' | ');
-        return '$valueRuleName ::= $rawEnum | $jsonEnum';
+        return ['$valueRuleName ::= $rawEnum | $jsonEnum'];
       }
-      return '$valueRuleName ::= raw-string | string';
+      return [
+        '$valueRuleName ::= $valueRuleName-raw-0',
+        ..._glmUntilLiteralRules('$valueRuleName-raw', '</arg_value>'),
+      ];
     }
 
     if (type == 'integer' || type == 'number') {
-      return '$valueRuleName ::= number';
+      return ['$valueRuleName ::= number'];
     }
 
     if (type == 'boolean') {
-      return '$valueRuleName ::= boolean';
+      return ['$valueRuleName ::= boolean'];
     }
 
     if (type == 'array') {
-      return '$valueRuleName ::= arr';
+      return ['$valueRuleName ::= arr'];
     }
 
     if (type == 'object') {
-      return '$valueRuleName ::= obj';
+      return ['$valueRuleName ::= obj'];
     }
 
-    return '$valueRuleName ::= value';
-  }
-
-  String _sanitizeRuleName(String input) {
-    return input.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '-').toLowerCase();
+    return ['$valueRuleName ::= value'];
   }
 
   String _escapeLiteral(String input) {
@@ -345,7 +346,7 @@ class Glm45Handler extends ChatTemplateHandler {
         if (propertySchema == null) {
           args[key] = _decodeArgValue(rawValue);
         } else {
-          final decoded = decodeToolSchemaText(rawValue, propertySchema);
+          final decoded = _decodeGlmSchemaText(rawValue, propertySchema);
           if (!decoded.valid) {
             return null;
           }
@@ -377,6 +378,75 @@ class Glm45Handler extends ChatTemplateHandler {
       remainingContent: remaining,
     );
   }
+}
+
+ToolSchemaValueResult _decodeGlmSchemaText(
+  String raw,
+  Map<String, dynamic> schema,
+) {
+  if (schemaResolvesToString(schema)) {
+    final decoded = ToolCallParsingUtils.decodeJsonValue(raw);
+    return validateToolSchemaValue(decoded is String ? decoded : raw, schema);
+  }
+  return decodeToolSchemaText(raw, schema);
+}
+
+List<String> _glmUntilLiteralRules(String ruleBase, String delimiter) {
+  final marker = delimiter.runes
+      .map(String.fromCharCode)
+      .toList(growable: false);
+  final alphabet = marker.toSet().toList(growable: false);
+  final lines = <String>[
+    '$ruleBase-other ::= [^${alphabet.map(_escapeGlmCharacterClass).join()}]',
+  ];
+  for (var state = 0; state < marker.length; state++) {
+    final alternatives = <String>['$ruleBase-other $ruleBase-0'];
+    for (final character in alphabet) {
+      final next = _glmDelimiterTransition(marker, state, character);
+      if (next == marker.length) {
+        continue;
+      }
+      alternatives.add(
+        '"${_escapeGlmLiteralCharacter(character)}" $ruleBase-$next',
+      );
+    }
+    lines.add('$ruleBase-$state ::= (${alternatives.join(' | ')})?');
+  }
+  return lines;
+}
+
+int _glmDelimiterTransition(List<String> marker, int state, String character) {
+  final candidate = <String>[...marker.take(state), character];
+  final max = candidate.length < marker.length
+      ? candidate.length
+      : marker.length;
+  for (var length = max; length >= 0; length--) {
+    var matches = true;
+    for (var index = 0; index < length; index++) {
+      if (candidate[candidate.length - length + index] != marker[index]) {
+        matches = false;
+        break;
+      }
+    }
+    if (matches) {
+      return length;
+    }
+  }
+  return 0;
+}
+
+String _escapeGlmCharacterClass(String character) {
+  return switch (character) {
+    r'\' => r'\\',
+    ']' => r'\]',
+    '-' => r'\-',
+    '^' => r'\^',
+    _ => character,
+  };
+}
+
+String _escapeGlmLiteralCharacter(String character) {
+  return character.replaceAll(r'\', r'\\').replaceAll('"', r'\"');
 }
 
 String _hideIncompleteToolCallBlock(String input) {

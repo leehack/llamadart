@@ -611,6 +611,11 @@ void main() {
             reason: '${entry.key} required',
           );
           expect(
+            required.grammarTriggers,
+            isEmpty,
+            reason: '${entry.key} required',
+          );
+          expect(
             required.grammar!.split('\n').first,
             contains('required'),
             reason: '${entry.key} required',

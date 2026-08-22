@@ -6,6 +6,7 @@ import 'dart:io';
 
 import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:llamadart/src/core/models/tools/tool_param.dart';
+import 'package:llamadart/src/core/template/handlers/glm45_handler.dart';
 import 'package:llamadart/src/core/template/handlers/llama_cpp_specialized_handlers.dart';
 import 'package:test/test.dart';
 
@@ -143,6 +144,50 @@ void main() {
             '$close'
             'message$separator',
       ],
+    );
+  });
+
+  test('specialized and GLM rule names remain collision-free', () {
+    const open = '<|open|>';
+    const close = '<|close|>';
+    const separator = '<|sep|>';
+    _expectGrammar(
+      validator,
+      KimiK3Handler().buildGrammar([_collidingKeyTool])!,
+      valid: [
+        '$open'
+            'tools$separator'
+            '$open'
+            'call tool="colliding"$separator'
+            '$open'
+            'argument key="a b" type="string"$separator'
+            'first$close'
+            'argument$separator'
+            '$open'
+            'argument key="a-b" type="string"$separator'
+            'second$close'
+            'argument$separator'
+            '$close'
+            'call$separator'
+            '$close'
+            'tools$separator'
+            '$close'
+            'message$separator',
+      ],
+      invalid: const [],
+    );
+    _expectGrammar(
+      validator,
+      Glm45Handler().buildGrammar([_collidingKeyTool])!,
+      valid: const [
+        '\n<tool_call>colliding\n'
+            '<arg_key>a b</arg_key>\n'
+            '<arg_value>first</arg_value>\n'
+            '<arg_key>a-b</arg_key>\n'
+            '<arg_value>second</arg_value>\n'
+            '</tool_call>\n',
+      ],
+      invalid: const [],
     );
   });
 
@@ -634,5 +679,15 @@ final _kimiTool = ToolDefinition(
   name: 'weather&"alerts',
   description: 'Weather',
   parameters: [ToolParam.string('city&"zone', required: true)],
+  handler: (_) async => null,
+);
+
+final _collidingKeyTool = ToolDefinition(
+  name: 'colliding',
+  description: 'Collision coverage',
+  parameters: [
+    ToolParam.string('a b', required: true),
+    ToolParam.string('a-b', required: true),
+  ],
   handler: (_) async => null,
 );

@@ -68,6 +68,11 @@ void main() {
       name: 'inspect',
       description: 'Inspect',
       parameters: [
+        ToolParam.enumType(
+          'city',
+          values: const ['Seoul', 'Paris'],
+          required: true,
+        ),
         ToolParam.string('code', required: true),
         ToolParam.integer('count', required: true),
       ],
@@ -75,6 +80,7 @@ void main() {
     );
     const output =
         '<tool_call>inspect\n'
+        '<arg_key>city</arg_key><arg_value>"Seoul"</arg_value>\n'
         '<arg_key>code</arg_key><arg_value>123</arg_value>\n'
         '<arg_key>count</arg_key><arg_value>7</arg_value>\n'
         '</tool_call>';
@@ -86,9 +92,42 @@ void main() {
     );
 
     expect(jsonDecode(parsed.toolCalls.single.function!.arguments!), {
+      'city': 'Seoul',
       'code': '123',
       'count': 7,
     });
+  });
+
+  test('production parse rolls back all mixed-validity GLM calls', () {
+    final tool = ToolDefinition(
+      name: 'inspect',
+      description: 'Inspect',
+      parameters: [ToolParam.string('code', required: true)],
+      handler: _noop,
+    );
+    const valid =
+        '<tool_call>inspect\n'
+        '<arg_key>code</arg_key><arg_value>first</arg_value>\n'
+        '</tool_call>';
+    for (final invalid in const [
+      '<tool_call>unknown\n</tool_call>',
+      '<tool_call>inspect\n'
+          '<arg_key>unknown</arg_key><arg_value>ignored</arg_value>\n'
+          '</tool_call>',
+      '<tool_call>inspect\n'
+          '<arg_key>code</arg_key><arg_value>first</arg_value>\n'
+          '<arg_key>code</arg_key><arg_value>second</arg_value>\n'
+          '</tool_call>',
+    ]) {
+      final output = '$valid$invalid';
+      final parsed = ChatTemplateEngine.parse(
+        ChatFormat.glm45.index,
+        output,
+        tools: [tool],
+      );
+      expect(parsed.toolCalls, isEmpty, reason: invalid);
+      expect(parsed.content, output, reason: invalid);
+    }
   });
 
   test('production parse rejects duplicate GLM and Laguna arguments', () {

@@ -413,7 +413,7 @@ class ChatTemplateEngine {
     LlamaChatTemplateResult result,
     ToolChoice toolChoice,
   ) {
-    if (toolChoice != ToolChoice.required || !result.grammarLazy) {
+    if (toolChoice != ToolChoice.required) {
       return result;
     }
     if (result.grammar == null || result.grammar!.isEmpty) {
@@ -423,7 +423,7 @@ class ChatTemplateEngine {
     final resultFormat = result.format < ChatFormat.values.length
         ? ChatFormat.values[result.format]
         : ChatFormat.generic;
-    if (_requiredKeepsLazyFormats.contains(resultFormat)) {
+    if (_requiredKeepsLazyFormats.contains(resultFormat) && result.grammarLazy) {
       return result;
     }
 
@@ -434,7 +434,7 @@ class ChatTemplateEngine {
       grammarLazy: false,
       additionalStops: result.additionalStops,
       preservedTokens: result.preservedTokens,
-      grammarTriggers: result.grammarTriggers,
+      grammarTriggers: const [],
       thinkingForcedOpen: result.thinkingForcedOpen,
       parser: result.parser,
       tokenCount: result.tokenCount,
@@ -485,71 +485,8 @@ class ChatTemplateEngine {
       );
     }
 
-    if (format == ChatFormat.minimaxM3 && handler is MinimaxM3Handler) {
-      return handler.parseWithTools(
-        output,
-        tools: tools,
-        isPartial: isPartial,
-        parseToolCalls: parseToolCalls,
-        thinkingForcedOpen: thinkingForcedOpen,
-      );
-    }
-    if (format == ChatFormat.kimiK3 && handler is KimiK3Handler) {
-      return handler.parseWithTools(
-        output,
-        tools: tools,
-        isPartial: isPartial,
-        parseToolCalls: parseToolCalls,
-        thinkingForcedOpen: thinkingForcedOpen,
-      );
-    }
-    if (format == ChatFormat.minimaxM1 && handler is MinimaxM1Handler) {
-      return handler.parseWithTools(
-        output,
-        tools: tools,
-        isPartial: isPartial,
-        parseToolCalls: parseToolCalls,
-        thinkingForcedOpen: thinkingForcedOpen,
-      );
-    }
-    if (format == ChatFormat.deepseekV32 && handler is DeepseekV32Handler) {
-      return handler.parseWithTools(
-        output,
-        tools: tools,
-        isPartial: isPartial,
-        parseToolCalls: parseToolCalls,
-        thinkingForcedOpen: thinkingForcedOpen,
-      );
-    }
-    if (format == ChatFormat.deepseekV4 && handler is DeepseekV4Handler) {
-      return handler.parseWithTools(
-        output,
-        tools: tools,
-        isPartial: isPartial,
-        parseToolCalls: parseToolCalls,
-        thinkingForcedOpen: thinkingForcedOpen,
-      );
-    }
-    if (format == ChatFormat.museGlimmer && handler is MuseGlimmerHandler) {
-      return handler.parseWithTools(
-        output,
-        tools: tools,
-        isPartial: isPartial,
-        parseToolCalls: parseToolCalls,
-        thinkingForcedOpen: thinkingForcedOpen,
-      );
-    }
-    if (format == ChatFormat.laguna && handler is LagunaHandler) {
-      return handler.parseWithTools(
-        output,
-        tools: tools,
-        isPartial: isPartial,
-        parseToolCalls: parseToolCalls,
-        thinkingForcedOpen: thinkingForcedOpen,
-      );
-    }
-    if (format == ChatFormat.glm45 && handler is Glm45Handler) {
-      return handler.parseWithTools(
+    if (handler is ToolSchemaAwareChatTemplateHandler) {
+      return (handler as ToolSchemaAwareChatTemplateHandler).parseWithTools(
         output,
         tools: tools,
         isPartial: isPartial,

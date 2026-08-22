@@ -96,7 +96,8 @@ abstract class _DirectJinjaHandler extends ChatTemplateHandler {
 }
 
 /// Handler for Kimi K3's XTML response and typed tool-call protocol.
-class KimiK3Handler extends _DirectJinjaHandler {
+class KimiK3Handler extends _DirectJinjaHandler
+    implements ToolSchemaAwareChatTemplateHandler {
   static const _open = '<|open|>';
   static const _close = '<|close|>';
   static const _sep = '<|sep|>';
@@ -157,6 +158,7 @@ class KimiK3Handler extends _DirectJinjaHandler {
   }
 
   /// Parses Kimi K3 output using [tools] to validate emitted names and values.
+  @override
   ChatParseResult parseWithTools(
     String output, {
     List<ToolDefinition>? tools,
@@ -379,7 +381,8 @@ class KimiK3Handler extends _DirectJinjaHandler {
 }
 
 /// Handler for MiniMax M1 newline-delimited JSON tool calls.
-class MinimaxM1Handler extends _DirectJinjaHandler {
+class MinimaxM1Handler extends _DirectJinjaHandler
+    implements ToolSchemaAwareChatTemplateHandler {
   @override
   ChatFormat get format => ChatFormat.minimaxM1;
 
@@ -412,6 +415,7 @@ class MinimaxM1Handler extends _DirectJinjaHandler {
   }
 
   /// Parses MiniMax M1 output using [tools] to validate emitted call objects.
+  @override
   ChatParseResult parseWithTools(
     String output, {
     List<ToolDefinition>? tools,
@@ -490,7 +494,8 @@ class MinimaxM1Handler extends _DirectJinjaHandler {
 }
 
 /// Handler for MiniMax M3 namespaced XML tool calls.
-class MinimaxM3Handler extends _DirectJinjaHandler {
+class MinimaxM3Handler extends _DirectJinjaHandler
+    implements ToolSchemaAwareChatTemplateHandler {
   /// Namespace prefix emitted before every MiniMax M3 tool tag.
   static const namespace = ']<]minimax[>[';
 
@@ -532,6 +537,7 @@ class MinimaxM3Handler extends _DirectJinjaHandler {
   }
 
   /// Parses MiniMax M3 output using [tools] for schema-directed argument types.
+  @override
   ChatParseResult parseWithTools(
     String output, {
     List<ToolDefinition>? tools,
@@ -613,7 +619,8 @@ class MinimaxM3Handler extends _DirectJinjaHandler {
   }
 }
 
-abstract class _DeepseekDsmlHandler extends _DirectJinjaHandler {
+abstract class _DeepseekDsmlHandler extends _DirectJinjaHandler
+    implements ToolSchemaAwareChatTemplateHandler {
   static const _prefix = '<｜DSML｜';
 
   String get _callsEnvelope;
@@ -652,6 +659,7 @@ abstract class _DeepseekDsmlHandler extends _DirectJinjaHandler {
   }
 
   /// Parses DSML output using [tools] to enforce exact emitted schemas.
+  @override
   ChatParseResult parseWithTools(
     String output, {
     List<ToolDefinition>? tools,
@@ -726,7 +734,8 @@ class DeepseekV4Handler extends _DeepseekDsmlHandler {
 }
 
 /// Handler for Muse Glimmer recipient channels and ATEM tool calls.
-class MuseGlimmerHandler extends _DirectJinjaHandler {
+class MuseGlimmerHandler extends _DirectJinjaHandler
+    implements ToolSchemaAwareChatTemplateHandler {
   @override
   ChatFormat get format => ChatFormat.museGlimmer;
 
@@ -762,6 +771,7 @@ class MuseGlimmerHandler extends _DirectJinjaHandler {
   }
 
   /// Parses Muse output using [tools] for schema-directed argument types.
+  @override
   ChatParseResult parseWithTools(
     String output, {
     List<ToolDefinition>? tools,
@@ -871,7 +881,8 @@ class MuseGlimmerHandler extends _DirectJinjaHandler {
 }
 
 /// Poolside Laguna uses GLM-style argument tags with a distinct turn stop.
-class LagunaHandler extends _DirectJinjaHandler {
+class LagunaHandler extends _DirectJinjaHandler
+    implements ToolSchemaAwareChatTemplateHandler {
   @override
   ChatFormat get format => ChatFormat.laguna;
 
@@ -910,6 +921,7 @@ class LagunaHandler extends _DirectJinjaHandler {
   }
 
   /// Parses Laguna output using [tools] for schema-directed argument types.
+  @override
   ChatParseResult parseWithTools(
     String output, {
     List<ToolDefinition>? tools,

@@ -8,6 +8,26 @@ class ToolCallGrammarUtils {
   /// Escapes [value] as a grammar string literal.
   static String literal(String value) => _literal(value);
 
+  /// Encodes [value] as a collision-free GBNF rule-name component.
+  static String ruleName(String value) {
+    if (value.isEmpty) {
+      return 'rule-empty';
+    }
+    final buffer = StringBuffer();
+    for (final rune in value.runes) {
+      final isAsciiAlphaNumeric =
+          (rune >= 0x30 && rune <= 0x39) ||
+          (rune >= 0x41 && rune <= 0x5A) ||
+          (rune >= 0x61 && rune <= 0x7A);
+      if (isAsciiAlphaNumeric) {
+        buffer.writeCharCode(rune);
+      } else {
+        buffer.write('-u${rune.toRadixString(16)}-');
+      }
+    }
+    return buffer.toString();
+  }
+
   /// Builds a grammar for an array of tool calls and wraps it with literals.
   static String? buildWrappedArrayGrammar({
     required List<ToolDefinition>? tools,

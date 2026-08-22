@@ -236,3 +236,20 @@ abstract class ChatTemplateHandler {
     return DateTime.now();
   }
 }
+
+/// Optional handler contract for output formats whose argument decoding depends
+/// on the tool JSON schemas supplied for the completion request.
+///
+/// [ChatTemplateEngine] uses this contract when schemas are available while
+/// retaining [ChatTemplateHandler.parse] for callers that only have raw output.
+abstract interface class ToolSchemaAwareChatTemplateHandler {
+  /// Parses [output] using [tools] to validate names, required properties, and
+  /// schema-directed argument types.
+  ChatParseResult parseWithTools(
+    String output, {
+    List<ToolDefinition>? tools,
+    bool isPartial = false,
+    bool parseToolCalls = true,
+    bool thinkingForcedOpen = false,
+  });
+}
