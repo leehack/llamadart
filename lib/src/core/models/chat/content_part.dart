@@ -128,11 +128,16 @@ class LlamaVideoContent extends LlamaContentPart {
   /// At least one of [path] or [bytes] must be provided. Current runtimes reject
   /// both forms until native video packaging and Dart frame ingestion are
   /// complete.
-  const LlamaVideoContent({this.bytes, this.path})
-    : assert(
-        bytes != null || path != null,
-        'LlamaVideoContent requires bytes or a path.',
-      );
+  ///
+  /// Throws [ArgumentError] when neither source is provided.
+  factory LlamaVideoContent({Uint8List? bytes, String? path}) {
+    if (bytes == null && path == null) {
+      throw ArgumentError('LlamaVideoContent requires bytes or a path.');
+    }
+    return LlamaVideoContent._(bytes: bytes, path: path);
+  }
+
+  const LlamaVideoContent._({this.bytes, this.path});
 
   @override
   Map<String, dynamic> toJson() {

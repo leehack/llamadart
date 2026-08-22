@@ -691,7 +691,7 @@ void main() {
           contextHandle,
           'describe',
           const GenerationParams(),
-          parts: const [LlamaVideoContent(path: '/tmp/clip.mp4')],
+          parts: [LlamaVideoContent(path: '/tmp/clip.mp4')],
         ),
         emitsError(
           isA<UnsupportedError>().having(
@@ -1286,7 +1286,7 @@ void main() {
         );
 
         await expectMediaError(
-          const [LlamaVideoContent(path: '/tmp/clip.mp4')],
+          [LlamaVideoContent(path: '/tmp/clip.mp4')],
           isA<UnsupportedError>().having(
             (error) => error.message.toString(),
             'message',

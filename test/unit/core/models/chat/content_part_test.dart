@@ -15,7 +15,7 @@ void main() {
   });
 
   test('LlamaVideoContent keeps path and bytes explicit', () {
-    expect(const LlamaVideoContent(path: '/tmp/clip.mp4').toJson(), {
+    expect(LlamaVideoContent(path: '/tmp/clip.mp4').toJson(), {
       'type': 'input_video',
       'input_video': {'data': '', 'path': '/tmp/clip.mp4'},
     });
@@ -29,6 +29,6 @@ void main() {
   });
 
   test('LlamaVideoContent requires a path or bytes', () {
-    expect(() => LlamaVideoContent(), throwsA(isA<AssertionError>()));
+    expect(() => LlamaVideoContent(), throwsArgumentError);
   });
 }

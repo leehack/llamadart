@@ -1471,7 +1471,7 @@ void main() {
       await engine.loadMultimodalProjector('proj.gguf');
 
       await expectLater(
-        engine.create(const [
+        engine.create([
           LlamaChatMessage.withContent(
             role: LlamaChatRole.user,
             content: [LlamaVideoContent(path: '/tmp/clip.mp4')],
@@ -1500,7 +1500,7 @@ void main() {
           engine
               .generate(
                 'describe',
-                parts: const [LlamaVideoContent(path: '/tmp/clip.mp4')],
+                parts: [LlamaVideoContent(path: '/tmp/clip.mp4')],
               )
               .drain<void>(),
           throwsA(
@@ -1539,7 +1539,7 @@ void main() {
           videoEngine
               .generate(
                 'describe',
-                parts: const [LlamaVideoContent(path: '/tmp/clip.mp4')],
+                parts: [LlamaVideoContent(path: '/tmp/clip.mp4')],
               )
               .drain<void>(),
           throwsA(
@@ -1568,7 +1568,7 @@ void main() {
           videoEngine
               .generate(
                 'describe',
-                parts: const [LlamaVideoContent(path: '/tmp/clip.mp4')],
+                parts: [LlamaVideoContent(path: '/tmp/clip.mp4')],
               )
               .drain<void>(),
           throwsA(
@@ -1603,7 +1603,7 @@ void main() {
           videoEngine
               .generate(
                 'describe',
-                parts: const [LlamaVideoContent(path: '/tmp/clip.mp4')],
+                parts: [LlamaVideoContent(path: '/tmp/clip.mp4')],
               )
               .drain<void>(),
           throwsA(

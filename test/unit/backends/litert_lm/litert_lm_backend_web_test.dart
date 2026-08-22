@@ -465,7 +465,7 @@ void main() {
           contextHandle,
           'describe',
           const GenerationParams(),
-          parts: const [LlamaVideoContent(path: '/tmp/clip.mp4')],
+          parts: [LlamaVideoContent(path: '/tmp/clip.mp4')],
         ),
         emitsError(
           isA<UnsupportedError>().having(
