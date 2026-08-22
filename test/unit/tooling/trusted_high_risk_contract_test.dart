@@ -25,6 +25,7 @@ const _state = HighRiskPrState(
   authorLogin: 'implementation-author',
   reviews: [
     HighRiskReview(
+      id: 1,
       authorLogin: 'independent-reviewer',
       commitSha: _head,
       state: 'APPROVED',
@@ -179,6 +180,8 @@ void main() {
         '.github/actions/release/action.yml',
         'tool/testing/verify_release_docs_versions.dart',
         'tool/testing/check_platform_boundaries.dart',
+        'tool/testing/native_prompt_reuse_parity.dart',
+        'tool/testing/run_local_e2e.dart',
         'tool/testing/run_template_parity_suites.sh',
         'test/unit/tooling/high_risk_pr_contract_test.dart',
         '.github/high-risk-evidence/419.json',
@@ -188,6 +191,7 @@ void main() {
         assessment.surfaces,
         containsAll(const {
           HighRiskSurface.releaseAutomation,
+          HighRiskSurface.structuredOutput,
           HighRiskSurface.regressionPolicy,
         }),
       );
@@ -270,6 +274,7 @@ void main() {
     test('rejects author, stale-head, and incomplete QA approvals', () {
       for (final review in const [
         HighRiskReview(
+          id: 1,
           authorLogin: 'implementation-author',
           commitSha: _head,
           state: 'APPROVED',
@@ -280,6 +285,7 @@ Base: $_base
 Verdict: PASS''',
         ),
         HighRiskReview(
+          id: 1,
           authorLogin: 'independent-reviewer',
           commitSha: _base,
           state: 'APPROVED',
@@ -290,6 +296,7 @@ Base: $_base
 Verdict: PASS''',
         ),
         HighRiskReview(
+          id: 1,
           authorLogin: 'independent-reviewer',
           commitSha: _head,
           state: 'APPROVED',
@@ -310,6 +317,42 @@ Verdict: PASS''',
           contains('current-head APPROVED review'),
         );
       }
+    });
+
+    test('rejects a QA approval superseded by a later review', () {
+      final state = HighRiskPrState(
+        headSha: _head,
+        baseSha: _base,
+        behind: 0,
+        ahead: 6,
+        unresolvedThreads: 0,
+        authorLogin: 'implementation-author',
+        reviews: const [
+          HighRiskReview(
+            id: 10,
+            authorLogin: 'independent-reviewer',
+            commitSha: _head,
+            state: 'APPROVED',
+            body:
+                '''High-risk QA task: $_qaTask
+Head: $_head
+Base: $_base
+Verdict: PASS''',
+          ),
+          HighRiskReview(
+            id: 11,
+            authorLogin: 'independent-reviewer',
+            commitSha: _head,
+            state: 'CHANGES_REQUESTED',
+            body: 'A later review found a blocker.',
+          ),
+        ],
+      );
+
+      expect(
+        _validate(state: state).errors.join('\n'),
+        contains('current-head APPROVED review'),
+      );
     });
 
     test('binds QA to exact current GitHub state', () {

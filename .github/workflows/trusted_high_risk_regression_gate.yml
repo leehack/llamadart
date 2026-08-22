@@ -222,6 +222,7 @@ jobs:
           gh api --paginate --slurp \
             "repos/$REPOSITORY/pulls/$PR_NUMBER/reviews?per_page=100" \
             | jq '[.[][] | {
+                id,
                 user: {login: .user.login},
                 commit_id,
                 state,

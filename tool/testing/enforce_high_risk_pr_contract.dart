@@ -47,12 +47,14 @@ class HighRiskPrState {
 
 class HighRiskReview {
   const HighRiskReview({
+    required this.id,
     required this.authorLogin,
     required this.commitSha,
     required this.state,
     required this.body,
   });
 
+  final int id;
   final String authorLogin;
   final String commitSha;
   final String state;
@@ -97,6 +99,9 @@ HighRiskAssessment assessHighRiskFiles(Iterable<String> files) {
         path == 'lib/src/core/models/chat/content_part.dart' ||
         path.startsWith('lib/src/core/models/tools/') ||
         (path.startsWith('lib/src/') && path.contains('/chat_template'))) {
+      surfaces.add(HighRiskSurface.structuredOutput);
+    }
+    if (_isStructuredOutputGateScript(path)) {
       surfaces.add(HighRiskSurface.structuredOutput);
     }
     if (path == 'lib/llamadart.dart' ||
@@ -167,12 +172,15 @@ bool _isReleaseWorkflow(String path) {
 }
 
 bool _isGateScript(String path) {
+  return path.startsWith('tool/testing/');
+}
+
+bool _isStructuredOutputGateScript(String path) {
   if (!path.startsWith('tool/testing/')) return false;
   final name = path.split('/').last;
-  return name.startsWith('check_') ||
-      name.startsWith('verify_') ||
-      name == 'run_template_parity_suites.sh' ||
-      name == 'run_llama_cpp_chat_tests.sh';
+  return name.contains('template') ||
+      name.contains('grammar') ||
+      name.contains('structured');
 }
 
 HighRiskContractResult validateHighRiskContract({
@@ -511,7 +519,15 @@ bool _hasIndependentQaAttestation(HighRiskPrState state, String qaTask) {
     'Base: ${state.baseSha}',
     'Verdict: PASS',
   };
-  return state.reviews.any((review) {
+  final latestByAuthor = <String, HighRiskReview>{};
+  for (final review in state.reviews) {
+    final author = review.authorLogin.toLowerCase();
+    final previous = latestByAuthor[author];
+    if (previous == null || review.id > previous.id) {
+      latestByAuthor[author] = review;
+    }
+  }
+  return latestByAuthor.values.any((review) {
     final lines = review.body
         .split(RegExp(r'\r?\n'))
         .map((line) => line.trim())
@@ -669,16 +685,19 @@ List<HighRiskReview> _decodeReviews(Object? value) {
         }
         final user = item['user'];
         final author = user is Map<String, dynamic> ? user['login'] : null;
+        final id = item['id'];
         final commitSha = item['commit_id'];
         final state = item['state'];
         final body = item['body'];
-        if (author is! String ||
+        if (id is! int ||
+            author is! String ||
             commitSha is! String ||
             state is! String ||
             (body != null && body is! String)) {
           _usage('Review fields are malformed.');
         }
         return HighRiskReview(
+          id: id,
           authorLogin: author,
           commitSha: commitSha,
           state: state,
