@@ -767,23 +767,34 @@ class MuseGlimmerHandler extends _DirectJinjaHandler {
     final content = StringBuffer();
     final reasoning = StringBuffer();
     final calls = <LlamaCompletionChunkToolCall>[];
+    int? lastContentCodeUnit;
     var cursor = 0;
     for (final match in matches) {
-      _appendMuseContent(content, output.substring(cursor, match.start));
+      lastContentCodeUnit = _appendMuseContent(
+        content,
+        lastContentCodeUnit,
+        output.substring(cursor, match.start),
+      );
       final recipient = (match.group(1) ?? '').trim();
       final body = match.group(2) ?? '';
       if (recipient == 'self') {
         if (reasoning.isNotEmpty) reasoning.writeln();
         reasoning.write(body);
       } else if (recipient == 'user') {
-        _appendMuseContent(content, body, channelBody: true);
+        lastContentCodeUnit = _appendMuseContent(
+          content,
+          lastContentCodeUnit,
+          body,
+          channelBody: true,
+        );
       } else if (parseToolCalls) {
         final parsed = _parseAtemCalls(body, calls.length, schemas: schemas);
         if (parsed == null) {
           final terminator = match.group(3) ?? '';
           if (!isPartial || terminator.isNotEmpty) {
-            _appendMuseContent(
+            lastContentCodeUnit = _appendMuseContent(
               content,
+              lastContentCodeUnit,
               match.group(0) ?? body,
               channelBody: true,
             );
@@ -792,13 +803,19 @@ class MuseGlimmerHandler extends _DirectJinjaHandler {
           calls.addAll(parsed);
         }
       } else {
-        _appendMuseContent(content, body, channelBody: true);
+        lastContentCodeUnit = _appendMuseContent(
+          content,
+          lastContentCodeUnit,
+          body,
+          channelBody: true,
+        );
       }
       cursor = match.end;
     }
     final trailing = output.substring(cursor);
     _appendMuseContent(
       content,
+      lastContentCodeUnit,
       isPartial ? _hideIncompleteMuseRoute(trailing) : trailing,
     );
 
@@ -923,21 +940,23 @@ class LagunaHandler extends _DirectJinjaHandler {
   }
 }
 
-void _appendMuseContent(
+int? _appendMuseContent(
   StringBuffer content,
+  int? lastCodeUnit,
   String value, {
   bool channelBody = false,
 }) {
   if (value.isEmpty) {
-    return;
+    return lastCodeUnit;
   }
   if (channelBody &&
-      content.isNotEmpty &&
-      !_isWhitespace(content.toString().codeUnitAt(content.length - 1)) &&
+      lastCodeUnit != null &&
+      !_isWhitespace(lastCodeUnit) &&
       !_isWhitespace(value.codeUnitAt(0))) {
     content.writeln();
   }
   content.write(value);
+  return value.codeUnitAt(value.length - 1);
 }
 
 String _hideIncompleteMuseRoute(String input) {
@@ -1013,11 +1032,12 @@ class _KimiK3GrammarBuilder {
         ...requiredRules,
         ...optionalRules.map((rule) => '($rule)?'),
       ].join(' ');
+      final rawArgumentsRule = rawArguments.isEmpty ? '""' : rawArguments;
       final arguments = properties.isEmpty
           ? '(kimi-empty-arguments | kimi-json-$toolIndex)'
           : '(kimi-raw-$toolIndex | kimi-json-$toolIndex)';
       _rules
-        ..add('kimi-raw-$toolIndex ::= $rawArguments')
+        ..add('kimi-raw-$toolIndex ::= $rawArgumentsRule')
         ..add(
           'kimi-json-$toolIndex ::= '
           '${ToolCallGrammarUtils.literal('<|open|>json type="object"<|sep|>')} '

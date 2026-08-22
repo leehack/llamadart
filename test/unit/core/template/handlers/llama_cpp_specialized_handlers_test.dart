@@ -75,6 +75,13 @@ void main() {
       expect(grammar, isNot(contains('identifier ::=')));
     });
 
+    test('zero-parameter grammar uses an explicit empty production', () {
+      final grammar = KimiK3Handler().buildGrammar([_zeroArgTool])!;
+
+      expect(grammar, contains('kimi-raw-0 ::= ""'));
+      expect(grammar, isNot(contains(RegExp(r'kimi-raw-0 ::=\s*\n'))));
+    });
+
     test('production parse validates escaped Kimi names against schemas', () {
       const valid =
           '<|open|>tools<|sep|>'

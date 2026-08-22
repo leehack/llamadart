@@ -107,6 +107,45 @@ void main() {
     );
   });
 
+  test('Kimi K3 compiles and accepts zero-parameter tools', () {
+    final grammar = KimiK3Handler().buildGrammar([_zeroArgTool])!;
+    const open = '<|open|>';
+    const close = '<|close|>';
+    const separator = '<|sep|>';
+    _expectGrammar(
+      validator,
+      grammar,
+      valid: [
+        '$open'
+            'tools$separator'
+            '$open'
+            'call tool="ping"$separator'
+            '$close'
+            'call$separator'
+            '$close'
+            'tools$separator'
+            '$close'
+            'message$separator',
+      ],
+      invalid: [
+        '$open'
+            'tools$separator'
+            '$open'
+            'call tool="ping"$separator'
+            '$open'
+            'argument key="unexpected" type="string"$separator'
+            'value$close'
+            'argument$separator'
+            '$close'
+            'call$separator'
+            '$close'
+            'tools$separator'
+            '$close'
+            'message$separator',
+      ],
+    );
+  });
+
   test('MiniMax M3 binds closing tags and preserves string delimiters', () {
     final grammar = MinimaxM3Handler().buildGrammar([
       _schemaTool,
