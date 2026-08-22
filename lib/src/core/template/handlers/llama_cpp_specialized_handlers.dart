@@ -2045,6 +2045,7 @@ void _requireUniqueToolNames(
 }) {
   final names = <String>{};
   for (final tool in tools) {
+    _requireNonEmptyProtocolName(tool.name, format: format, kind: 'tool');
     if (!names.add(tool.name)) {
       throw LlamaUnsupportedException(
         '$format cannot bind duplicate tool name "${tool.name}" to one '

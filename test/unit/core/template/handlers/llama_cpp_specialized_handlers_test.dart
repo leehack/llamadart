@@ -287,7 +287,7 @@ void main() {
       }
     });
 
-    test('production parse rejects ambiguous MiniMax M1 tool schemas', () {
+    test('grammar and parse reject ambiguous MiniMax M1 tool schemas', () {
       const output =
           '<tool_calls>\n'
           '{"name":"weather","arguments":{}}\n'
@@ -309,6 +309,10 @@ void main() {
         [_weatherTool, duplicate],
         [empty],
       ]) {
+        expect(
+          () => MinimaxM1Handler().buildGrammar(tools),
+          throwsA(isA<LlamaUnsupportedException>()),
+        );
         expect(
           () => ChatTemplateEngine.parse(
             ChatFormat.minimaxM1.index,
