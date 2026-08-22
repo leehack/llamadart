@@ -36,6 +36,8 @@ class NativeLlamaBackend
   Isolate? _isolate;
   SendPort? _sendPort;
   Future<void>? _isolateStart;
+  Future<void>? _disposeStart;
+  int _lifecycleEpoch = 0;
   final LlamaWorkerEntrypoint _workerEntrypoint;
   final Duration _workerStartupTimeout;
   Pointer<Int8>? _activeCancelToken;
@@ -102,9 +104,15 @@ class NativeLlamaBackend
   }
 
   Future<void> _ensureIsolate() async {
+    final activeDispose = _disposeStart;
+    if (activeDispose != null) {
+      await activeDispose;
+    }
+    final lifecycleEpoch = _lifecycleEpoch;
     final existingStart = _isolateStart;
     if (existingStart != null) {
       await existingStart;
+      _throwIfDisposedDuringStartup(lifecycleEpoch);
       _isReady = _sendPort != null;
       return;
     }
@@ -117,6 +125,8 @@ class NativeLlamaBackend
     _isolateStart = start;
     try {
       await start;
+      _throwIfDisposedDuringStartup(lifecycleEpoch);
+      _isReady = _sendPort != null;
     } finally {
       if (_isolateStart == start) {
         _isolateStart = null;
@@ -127,27 +137,29 @@ class NativeLlamaBackend
   Future<void> _startIsolate() async {
     final completer = Completer<void>();
     final tempPort = ReceivePort();
-    var workerPortReceived = false;
+    SendPort? workerSendPort;
     tempPort.listen((msg) {
-      if (msg is SendPort && !workerPortReceived) {
-        workerPortReceived = true;
-        _sendPort = msg;
-        _sendPort!.send(WorkerHandshake(_currentLogLevel, tempPort.sendPort));
+      if (msg is SendPort && workerSendPort == null) {
+        workerSendPort = msg;
+        workerSendPort!.send(
+          WorkerHandshake(_currentLogLevel, tempPort.sendPort),
+        );
         return;
       }
       if (completer.isCompleted) {
         return;
       }
-      if (msg is DoneResponse && workerPortReceived) {
+      if (msg is DoneResponse && workerSendPort != null) {
+        _sendPort = workerSendPort;
         completer.complete();
         return;
       }
-      if (msg is ErrorResponse && workerPortReceived) {
+      if (msg is ErrorResponse && workerSendPort != null) {
         completer.completeError(_workerError(msg));
         return;
       }
       if (msg is List<Object?> && msg.isNotEmpty) {
-        final phase = workerPortReceived
+        final phase = workerSendPort != null
             ? 'during backend initialization'
             : 'before providing its request port';
         completer.completeError(
@@ -158,7 +170,7 @@ class NativeLlamaBackend
         );
         return;
       }
-      final reason = workerPortReceived
+      final reason = workerSendPort != null
           ? 'before acknowledging the backend initialization handshake'
           : 'before providing its request port';
       completer.completeError(
@@ -189,7 +201,6 @@ class NativeLlamaBackend
           );
         },
       );
-      _isReady = true;
     } catch (error) {
       _isReady = false;
       _sendPort = null;
@@ -206,6 +217,14 @@ class NativeLlamaBackend
     }
   }
 
+  void _throwIfDisposedDuringStartup(int lifecycleEpoch) {
+    if (lifecycleEpoch != _lifecycleEpoch) {
+      throw LlamaBackendInitializationException(
+        'The llama.cpp worker was disposed during backend initialization.',
+      );
+    }
+  }
+
   @override
   void cancelGeneration() {
     _activeCancelToken?.value = 1;
@@ -214,11 +233,25 @@ class NativeLlamaBackend
   @override
   Future<void> setLogLevel(LlamaLogLevel level) async {
     _currentLogLevel = level;
-    if (_sendPort != null) {
+    final activeDispose = _disposeStart;
+    if (activeDispose != null) {
+      await activeDispose;
+    }
+    final lifecycleEpoch = _lifecycleEpoch;
+    final startup = _isolateStart;
+    if (startup != null) {
+      await startup;
+      _throwIfDisposedDuringStartup(lifecycleEpoch);
+    }
+    final sendPort = _sendPort;
+    if (sendPort != null) {
       final rp = ReceivePort();
-      _sendPort!.send(LogLevelRequest(level, rp.sendPort));
-      await rp.first;
-      rp.close();
+      try {
+        sendPort.send(LogLevelRequest(level, rp.sendPort));
+        _expectDoneResponse(await rp.first, 'log-level update');
+      } finally {
+        rp.close();
+      }
     }
   }
 
@@ -661,6 +694,33 @@ class NativeLlamaBackend
 
   @override
   Future<void> dispose() async {
+    final existingDispose = _disposeStart;
+    if (existingDispose != null) {
+      await existingDispose;
+      return;
+    }
+    final dispose = _disposeWorker();
+    _disposeStart = dispose;
+    try {
+      await dispose;
+    } finally {
+      if (_disposeStart == dispose) {
+        _disposeStart = null;
+      }
+    }
+  }
+
+  Future<void> _disposeWorker() async {
+    _lifecycleEpoch += 1;
+    _isReady = false;
+    final startup = _isolateStart;
+    if (startup != null) {
+      try {
+        await startup;
+      } catch (_) {
+        // Startup already performed its own failure cleanup.
+      }
+    }
     // Signal any in-flight generation to stop and close the Dart side, but do
     // not free the shared cancel token yet: the worker may still poll it. The
     // worker awaits the in-flight generation before acking the dispose, so its

@@ -531,6 +531,15 @@ void main() {
                       (error) => error.message,
                       'startup diagnostics',
                       contains('libllamadart.dylib was not loadable'),
+                    )
+                    .having(
+                      (error) => error.message,
+                      'sanitized diagnostics',
+                      allOf(
+                        isNot(contains('user:pass')),
+                        isNot(contains('token=secret')),
+                        isNot(contains('\u0000')),
+                      ),
                     ),
               ),
               reason: 'attempt ${attempt + 1} must fail instead of hanging',
@@ -575,6 +584,74 @@ void main() {
         await backend.dispose().timeout(const Duration(seconds: 2));
       }
     });
+
+    test('log-level update joins a failing startup handshake', () async {
+      final backend = NativeLlamaBackend(
+        workerEntrypoint: _delayedFailingInitializationWorkerEntry,
+      );
+
+      try {
+        final modelLoad = backend.modelLoad('never.gguf', const ModelParams());
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        final logLevelUpdate = backend.setLogLevel(LlamaLogLevel.debug);
+
+        await Future.wait(<Future<void>>[
+          expectLater(
+            modelLoad.timeout(const Duration(seconds: 2)),
+            throwsA(isA<LlamaBackendInitializationException>()),
+          ),
+          expectLater(
+            logLevelUpdate.timeout(const Duration(seconds: 2)),
+            throwsA(isA<LlamaBackendInitializationException>()),
+          ),
+        ]);
+        expect(backend.isReady, isFalse);
+      } finally {
+        await backend.dispose().timeout(const Duration(seconds: 2));
+      }
+    });
+
+    test(
+      'concurrent dispose cancels the startup caller and permits restart',
+      () async {
+        final backend = NativeLlamaBackend(
+          workerEntrypoint: _delayedReusableWorkerEntry,
+        );
+
+        try {
+          final modelLoad = backend.modelLoad(
+            'before-dispose.gguf',
+            const ModelParams(),
+          );
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+
+          await Future.wait(<Future<void>>[
+            expectLater(
+              modelLoad.timeout(const Duration(seconds: 2)),
+              throwsA(
+                isA<LlamaBackendInitializationException>().having(
+                  (error) => error.message,
+                  'message',
+                  contains('disposed during backend initialization'),
+                ),
+              ),
+            ),
+            backend.dispose().timeout(const Duration(seconds: 2)),
+            backend.dispose().timeout(const Duration(seconds: 2)),
+          ]);
+          expect(backend.isReady, isFalse);
+          expect(
+            await backend
+                .modelLoad('after-dispose.gguf', const ModelParams())
+                .timeout(const Duration(seconds: 2)),
+            42,
+          );
+          expect(backend.isReady, isTrue);
+        } finally {
+          await backend.dispose().timeout(const Duration(seconds: 2));
+        }
+      },
+    );
 
     test(
       'worker exit before handshake acknowledgement fails promptly',
@@ -770,6 +847,24 @@ void _delayedFailingInitializationWorkerEntry(SendPort initialSendPort) {
   });
 }
 
+void _delayedReusableWorkerEntry(SendPort initialSendPort) {
+  final receivePort = ReceivePort();
+  initialSendPort.send(receivePort.sendPort);
+  receivePort.listen((message) async {
+    switch (message) {
+      case WorkerHandshake():
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        message.sendPort.send(DoneResponse());
+      case ModelLoadRequest():
+        message.sendPort.send(HandleResponse(42));
+      case DisposeRequest():
+        message.sendPort.send(null);
+        receivePort.close();
+        Isolate.exit();
+    }
+  });
+}
+
 void _exitingBeforeHandshakeReplyWorkerEntry(SendPort initialSendPort) {
   final receivePort = ReceivePort();
   initialSendPort.send(receivePort.sendPort);
@@ -822,7 +917,10 @@ class _FailingInitializationLlamaCppService extends LlamaCppService {
 
   @override
   List<String> getStartupDiagnostics() {
-    return const <String>['libllamadart.dylib was not loadable'];
+    return const <String>[
+      'libllamadart.dylib was not loadable',
+      'failed at https://user:pass@example.com/lib.dylib?token=secret\u0000next',
+    ];
   }
 
   @override
