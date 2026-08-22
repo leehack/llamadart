@@ -1902,7 +1902,7 @@ void main() {
           1,
           'Describe this video',
           const GenerationParams(),
-          parts: const <LlamaContentPart>[
+          parts: <LlamaContentPart>[
             LlamaVideoContent(path: '/tmp/clip.mp4'),
           ],
         ),
