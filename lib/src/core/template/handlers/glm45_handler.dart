@@ -233,6 +233,7 @@ class Glm45Handler extends ChatTemplateHandler
       'tool-call ::= "\\n"? "<tool_call>" tool-choice "</tool_call>\\n"',
       toolChoiceRule,
       ...toolRules,
+      ..._glmUntilAnyLiteralRules('glm-string-raw', _glmProtocolMarkers),
       'space ::= " "?',
       'string ::= "\\"" ([^"\\\\] | "\\\\" .)* "\\""',
       'number ::= "-"? ([0-9] | [1-9] [0-9]*) ("." [0-9]+)? ([eE] [+-]? [0-9]+)?',
@@ -263,10 +264,7 @@ class Glm45Handler extends ChatTemplateHandler
             .join(' | ');
         return ['$valueRuleName ::= $rawEnum | $jsonEnum'];
       }
-      return [
-        '$valueRuleName ::= $valueRuleName-raw-0',
-        ..._glmUntilLiteralRules('$valueRuleName-raw', '</arg_value>'),
-      ];
+      return ['$valueRuleName ::= glm-string-raw-0'];
     }
 
     if (type == 'integer' || type == 'number') {
@@ -334,7 +332,7 @@ class Glm45Handler extends ChatTemplateHandler
       for (final argMatch in _argPairPattern.allMatches(block)) {
         final key = (argMatch.group(1) ?? '').trim();
         final rawValue = (argMatch.group(2) ?? '').trim();
-        if (key.isEmpty) {
+        if (key.isEmpty || _containsGlmProtocolMarker(rawValue)) {
           return null;
         }
         if (args.containsKey(key)) {
@@ -385,21 +383,22 @@ class Glm45Handler extends ChatTemplateHandler
   }
 }
 
+const _glmProtocolMarkers = [
+  '<tool_call>',
+  '</tool_call>',
+  '<arg_key>',
+  '</arg_key>',
+  '<arg_value>',
+  '</arg_value>',
+];
+
 bool _containsGlmProtocolMarker(String input) {
-  const markers = <String>[
-    '<tool_call>',
-    '</tool_call>',
-    '<arg_key>',
-    '</arg_key>',
-    '<arg_value>',
-    '</arg_value>',
-  ];
-  for (final marker in markers) {
+  for (final marker in _glmProtocolMarkers) {
     if (input.contains(marker.substring(0, marker.length - 1))) {
       return true;
     }
   }
-  for (final marker in markers) {
+  for (final marker in _glmProtocolMarkers) {
     for (var length = marker.length - 1; length >= 5; length--) {
       if (input.endsWith(marker.substring(0, length))) {
         return true;
@@ -420,21 +419,52 @@ ToolSchemaValueResult _decodeGlmSchemaText(
   return decodeToolSchemaText(raw, schema);
 }
 
-List<String> _glmUntilLiteralRules(String ruleBase, String delimiter) {
-  final marker = delimiter.runes
-      .map(String.fromCharCode)
+List<String> _glmUntilAnyLiteralRules(
+  String ruleBase,
+  List<String> delimiters,
+) {
+  final markers = delimiters
+      .map(
+        (delimiter) =>
+            delimiter.runes.map(String.fromCharCode).toList(growable: false),
+      )
       .toList(growable: false);
-  final alphabet = marker.toSet().toList(growable: false);
+  final prefixes = <String>{''};
+  for (final delimiter in delimiters) {
+    for (var length = 1; length < delimiter.length; length++) {
+      prefixes.add(delimiter.substring(0, length));
+    }
+  }
+  final states = prefixes.toList(growable: false)
+    ..sort((left, right) {
+      final byLength = left.length.compareTo(right.length);
+      return byLength != 0 ? byLength : left.compareTo(right);
+    });
+  final stateIndexes = <String, int>{
+    for (var index = 0; index < states.length; index++) states[index]: index,
+  };
+  final alphabet = markers
+      .expand((marker) => marker)
+      .toSet()
+      .toList(growable: false);
   final lines = <String>[
     '$ruleBase-other ::= [^${alphabet.map(_escapeGlmCharacterClass).join()}]',
   ];
-  for (var state = 0; state < marker.length; state++) {
+  for (var state = 0; state < states.length; state++) {
     final alternatives = <String>['$ruleBase-other $ruleBase-0'];
     for (final character in alphabet) {
-      final next = _glmDelimiterTransition(marker, state, character);
-      if (next == marker.length) {
+      final candidate = '${states[state]}$character';
+      if (delimiters.any(candidate.endsWith)) {
         continue;
       }
+      final nextState = states
+          .where(candidate.endsWith)
+          .fold<String>(
+            '',
+            (longest, prefix) =>
+                prefix.length > longest.length ? prefix : longest,
+          );
+      final next = stateIndexes[nextState]!;
       alternatives.add(
         '"${_escapeGlmLiteralCharacter(character)}" $ruleBase-$next',
       );
@@ -442,26 +472,6 @@ List<String> _glmUntilLiteralRules(String ruleBase, String delimiter) {
     lines.add('$ruleBase-$state ::= (${alternatives.join(' | ')})?');
   }
   return lines;
-}
-
-int _glmDelimiterTransition(List<String> marker, int state, String character) {
-  final candidate = <String>[...marker.take(state), character];
-  final max = candidate.length < marker.length
-      ? candidate.length
-      : marker.length;
-  for (var length = max; length >= 0; length--) {
-    var matches = true;
-    for (var index = 0; index < length; index++) {
-      if (candidate[candidate.length - length + index] != marker[index]) {
-        matches = false;
-        break;
-      }
-    }
-    if (matches) {
-      return length;
-    }
-  }
-  return 0;
 }
 
 String _escapeGlmCharacterClass(String character) {

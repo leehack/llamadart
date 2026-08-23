@@ -640,6 +640,102 @@ void main() {
         }
       },
     );
+
+    test(
+      'forced-open DSML withholds character-split envelopes from reasoning',
+      () async {
+        for (final testCase in const [
+          (
+            name: 'DeepSeek V3.2',
+            format: ChatFormat.deepseekV32,
+            envelope: 'function_calls',
+          ),
+          (
+            name: 'DeepSeek V4',
+            format: ChatFormat.deepseekV4,
+            envelope: 'tool_calls',
+          ),
+        ]) {
+          final callsStart = '<｜DSML｜${testCase.envelope}>';
+          final callsEnd = '</｜DSML｜${testCase.envelope}>';
+          final valid =
+              'reasoning$callsStart'
+              '<｜DSML｜invoke name="weather">'
+              '<｜DSML｜parameter name="city" string="true">Seoul'
+              '</｜DSML｜parameter></｜DSML｜invoke>$callsEnd';
+          final chunks = await ChatCompletionStreamParser.parse(
+            tokenStream: Stream.fromIterable(valid.split('')),
+            templateResult: LlamaChatTemplateResult(
+              prompt: 'prompt',
+              format: testCase.format.index,
+              thinkingForcedOpen: true,
+            ),
+            parseToolCallsEnabled: true,
+            enableThinking: true,
+            modelName: 'test-model',
+            completionId: '${testCase.name}-split-forced-open',
+            tools: [_weatherTool],
+          ).toList();
+          final reasoning = chunks
+              .map((chunk) => chunk.choices.single.delta.thinking ?? '')
+              .join();
+          final content = chunks
+              .map((chunk) => chunk.choices.single.delta.content ?? '')
+              .join();
+
+          expect(reasoning, 'reasoning', reason: testCase.name);
+          expect(reasoning, isNot(contains('<｜DSML｜')));
+          expect(content, isEmpty, reason: testCase.name);
+          expect(
+            chunks
+                .expand(
+                  (chunk) => chunk.choices.single.delta.toolCalls ?? const [],
+                )
+                .single
+                .function
+                ?.name,
+            'weather',
+            reason: testCase.name,
+          );
+
+          final malformed = valid.replaceFirst('name="weather"', 'name="bad"');
+          final malformedChunks = await ChatCompletionStreamParser.parse(
+            tokenStream: Stream.fromIterable(malformed.split('')),
+            templateResult: LlamaChatTemplateResult(
+              prompt: 'prompt',
+              format: testCase.format.index,
+              thinkingForcedOpen: true,
+            ),
+            parseToolCallsEnabled: true,
+            enableThinking: true,
+            modelName: 'test-model',
+            completionId: '${testCase.name}-split-malformed',
+            tools: [_weatherTool],
+          ).toList();
+          expect(
+            malformedChunks
+                .map((chunk) => chunk.choices.single.delta.thinking ?? '')
+                .join(),
+            'reasoning',
+            reason: '${testCase.name} malformed reasoning',
+          );
+          expect(
+            malformedChunks
+                .map((chunk) => chunk.choices.single.delta.content ?? '')
+                .join(),
+            malformed.substring('reasoning'.length),
+            reason: '${testCase.name} malformed content rollback',
+          );
+          expect(
+            malformedChunks.expand(
+              (chunk) => chunk.choices.single.delta.toolCalls ?? const [],
+            ),
+            isEmpty,
+            reason: testCase.name,
+          );
+        }
+      },
+    );
   });
 }
 

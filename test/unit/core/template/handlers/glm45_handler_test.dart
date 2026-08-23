@@ -296,6 +296,40 @@ void main() {
     expect(completed.content, output);
     expect(completed.toolCalls, isEmpty);
   });
+
+  test('GLM and Laguna fail closed on protocol markers inside strings', () {
+    final tool = ToolDefinition(
+      name: 'inspect',
+      description: 'Inspect',
+      parameters: [ToolParam.string('code', required: true)],
+      handler: _noop,
+    );
+    const markers = [
+      '<tool_call>',
+      '</tool_call>',
+      '<arg_key>',
+      '</arg_key>',
+      '<arg_value>',
+      '</arg_value>',
+    ];
+
+    for (final format in [ChatFormat.glm45, ChatFormat.laguna]) {
+      for (final marker in markers) {
+        final output =
+            '<tool_call>inspect\n'
+            '<arg_key>code</arg_key><arg_value>before$marker after'
+            '</arg_value>\n'
+            '</tool_call>';
+        final parsed = ChatTemplateEngine.parse(
+          format.index,
+          output,
+          tools: [tool],
+        );
+        expect(parsed.toolCalls, isEmpty, reason: '$format $marker');
+        expect(parsed.content, output, reason: '$format $marker');
+      }
+    }
+  });
 }
 
 Future<Object?> _noop(_) async {

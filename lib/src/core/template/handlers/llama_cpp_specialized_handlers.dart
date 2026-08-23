@@ -670,6 +670,7 @@ abstract class _DeepseekDsmlHandler extends _DirectJinjaHandler
     final thinking = _extractDsmlThinking(
       output,
       callsStart: _callsStart,
+      isPartial: isPartial,
       thinkingForcedOpen: thinkingForcedOpen,
     );
     if (!parseToolCalls) {
@@ -1986,6 +1987,7 @@ bool _haveUniqueElementNames(List<_DynamicElement> elements) {
 ThinkingExtraction _extractDsmlThinking(
   String output, {
   required String callsStart,
+  required bool isPartial,
   required bool thinkingForcedOpen,
 }) {
   if (thinkingForcedOpen) {
@@ -1998,8 +2000,46 @@ ThinkingExtraction _extractDsmlThinking(
         reasoning: reasoning.isEmpty ? null : reasoning,
       );
     }
+    if (isPartial) {
+      if (thinkEndIndex >= 0 || output.contains('<think>')) {
+        final thinking = extractThinking(
+          output,
+          thinkingForcedOpen: thinkingForcedOpen,
+        );
+        final pendingMarkerLength = _matchingDelimiterPrefixSuffixLength(
+          thinking.content,
+          callsStart,
+        );
+        return (
+          content: thinking.content
+              .substring(0, thinking.content.length - pendingMarkerLength)
+              .trim(),
+          reasoning: thinking.reasoning,
+        );
+      }
+      final pendingMarkerLength = _matchingDelimiterPrefixSuffixLength(
+        output,
+        callsStart,
+      );
+      final reasoning = output
+          .substring(0, output.length - pendingMarkerLength)
+          .trim();
+      return (content: '', reasoning: reasoning.isEmpty ? null : reasoning);
+    }
   }
   return extractThinking(output, thinkingForcedOpen: thinkingForcedOpen);
+}
+
+int _matchingDelimiterPrefixSuffixLength(String input, String delimiter) {
+  final maxLength = input.length < delimiter.length - 1
+      ? input.length
+      : delimiter.length - 1;
+  for (var length = maxLength; length > 0; length--) {
+    if (input.endsWith(delimiter.substring(0, length))) {
+      return length;
+    }
+  }
+  return 0;
 }
 
 Map<String, dynamic>? _parseDsmlArguments(

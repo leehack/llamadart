@@ -209,12 +209,24 @@ void main() {
           '<arg_key>city</arg_key>\n'
           '<arg_value>Rome</arg_value>\n'
           '</tool_call>\n';
+      const protocolMarkers = [
+        '<tool_call>',
+        '</tool_call>',
+        '<arg_key>',
+        '</arg_key>',
+        '<arg_value>',
+        '</arg_value>',
+      ];
 
       _expectGrammar(
         validator,
         grammar,
         valid: const [validCall, '\n$validCall'],
-        invalid: const ['$validCall$invalidEnumCall'],
+        invalid: [
+          '$validCall$invalidEnumCall',
+          for (final marker in protocolMarkers)
+            validCall.replaceFirst('x < 5', 'before$marker after'),
+        ],
       );
     },
   );
