@@ -31,6 +31,36 @@ void main() {
     expect(validateWorkspaceManifest(Directory.current), isEmpty);
   });
 
+  test('workspace manifest has one canonical entry for every owned lane', () {
+    expect(workspacePackages.map((package) => package.path), <String>[
+      '.',
+      'example/basic_app',
+      'example/chat_app',
+      'example/llamadart_cli',
+      'example/llamadart_server',
+      'example/tui_coding_agent',
+      'packages/llamadart_litert_lm_flutter',
+      'packages/llamadart_llama_cpp_flutter',
+    ]);
+    expect(
+      workspacePackages.map((package) => package.path).toSet(),
+      hasLength(workspacePackages.length),
+    );
+    expect(
+      workspacePackages.where((package) => package.path == '.'),
+      hasLength(1),
+    );
+    expect(
+      workspacePackages.map((package) => package.path),
+      everyElement(
+        anyOf(
+          equals('.'),
+          allOf(isNot(startsWith('/')), isNot(contains('\\'))),
+        ),
+      ),
+    );
+  });
+
   test(
     'prepares every root-gate package with its declared SDK in order',
     () async {
@@ -48,15 +78,25 @@ void main() {
 
       expect(result, 0);
       expect(commands, <String>[
-        for (final package in workspacePackages.where(
-          (package) => package.prepareForRootQualityGates,
-        ))
-          '${package.packageManager.name} pub get @ ${package.path}',
+        'flutter pub get @ .',
+        'flutter pub get @ example/basic_app',
+        'flutter pub get @ example/chat_app',
+        'dart pub get @ example/llamadart_cli',
+        'dart pub get @ example/llamadart_server',
+        'dart pub get @ example/tui_coding_agent',
       ]);
-      expect(commands, contains('flutter pub get @ example/chat_app'));
       expect(
-        commands,
-        everyElement(isNot(contains('packages/llamadart_'))),
+        workspacePackages
+            .where((package) => package.path.startsWith('example/'))
+            .every((package) => package.prepareForRootQualityGates),
+        isTrue,
+        reason: 'Every maintained example belongs to the root quality lane.',
+      );
+      expect(
+        workspacePackages
+            .where((package) => package.path.startsWith('packages/'))
+            .every((package) => !package.prepareForRootQualityGates),
+        isTrue,
         reason: 'Companion packages own separate CI quality lanes.',
       );
     },
@@ -83,6 +123,19 @@ void main() {
     );
   });
 
+  test('rejects a missing package from the preparation manifest', () {
+    final root = _workspaceFixture();
+    File('${root.path}/example/llamadart_server/pubspec.yaml').deleteSync();
+
+    expect(
+      validateWorkspaceManifest(root),
+      contains(
+        'Missing workspace package: '
+        'example/llamadart_server/pubspec.yaml',
+      ),
+    );
+  });
+
   test('ignores explicitly generated package trees', () {
     final root = _workspaceFixture();
     for (final path in <String>[
@@ -99,6 +152,32 @@ void main() {
     }
 
     expect(validateWorkspaceManifest(root), isEmpty);
+  });
+
+  test('does not prune maintained packages with generated-looking names', () {
+    final root = _workspaceFixture();
+    for (final name in <String>[
+      '.dart_tooling',
+      'builder',
+      '.symlinks_backup',
+      'PodsApp',
+      'ephemeralized',
+    ]) {
+      final pubspec = File('${root.path}/example/$name/pubspec.yaml');
+      pubspec.parent.createSync(recursive: true);
+      pubspec.writeAsStringSync('name: generated_lookalike\n');
+    }
+
+    expect(validateWorkspaceManifest(root), <String>[
+      'Unclassified workspace package: '
+          'example/.dart_tooling/pubspec.yaml',
+      'Unclassified workspace package: '
+          'example/.symlinks_backup/pubspec.yaml',
+      'Unclassified workspace package: example/PodsApp/pubspec.yaml',
+      'Unclassified workspace package: example/builder/pubspec.yaml',
+      'Unclassified workspace package: '
+          'example/ephemeralized/pubspec.yaml',
+    ]);
   });
 
   test(
@@ -121,18 +200,25 @@ void main() {
 
   test('stops without hiding a failed dependency resolution', () async {
     final root = _workspaceFixture();
-    var calls = 0;
+    final calls = <String>[];
 
     final result = await prepareWorkspace(
       root,
       commandRunner: (executable, arguments, workingDirectory) async {
-        calls += 1;
-        return calls == 3 ? 17 : 0;
+        calls.add(
+          '$executable ${arguments.join(' ')} @ '
+          '${_workspaceRelativePath(root.path, workingDirectory)}',
+        );
+        return calls.length == 3 ? 17 : 0;
       },
     );
 
     expect(result, 17);
-    expect(calls, 3);
+    expect(calls, <String>[
+      'flutter pub get @ .',
+      'flutter pub get @ example/basic_app',
+      'flutter pub get @ example/chat_app',
+    ]);
   });
 
   test('reports a stable exit code when an SDK command cannot start', () async {
