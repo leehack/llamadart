@@ -66,8 +66,13 @@ void main() {
     });
 
     test('rejects an invalid build-jobs override before preparation', () async {
+      final bash = await _findPosixBash();
+      if (bash == null) {
+        markTestSkipped('No usable POSIX Bash installation was found.');
+        return;
+      }
       final result = await Process.run(
-        'bash',
+        bash,
         const ['tool/testing/run_llama_cpp_chat_tests.sh'],
         environment: const {'LLAMA_CPP_CHAT_TEST_BUILD_JOBS': '0'},
         includeParentEnvironment: true,
@@ -150,4 +155,49 @@ Future<void> main(List<String> args) async {
       },
     );
   });
+}
+
+Future<String?> _findPosixBash() async {
+  if (!Platform.isWindows) return 'bash';
+
+  final candidates = <String>{};
+  void addCandidate(String? path) {
+    if (path != null && path.trim().isNotEmpty) candidates.add(path.trim());
+  }
+
+  addCandidate(Platform.environment['GIT_BASH']);
+  for (final rootName in const ['ProgramFiles', 'ProgramFiles(x86)']) {
+    final root = Platform.environment[rootName];
+    if (root != null) addCandidate('$root\\Git\\bin\\bash.exe');
+  }
+  final localAppData = Platform.environment['LOCALAPPDATA'];
+  if (localAppData != null) {
+    addCandidate('$localAppData\\Programs\\Git\\bin\\bash.exe');
+  }
+
+  final whereGit = await Process.run('where.exe', const ['git']);
+  if (whereGit.exitCode == 0) {
+    for (final line in LineSplitter.split(whereGit.stdout as String)) {
+      final git = File(line.trim());
+      if (git.path.isEmpty) continue;
+      final gitRoot = git.parent.parent.path;
+      addCandidate('$gitRoot\\bin\\bash.exe');
+      addCandidate('$gitRoot\\usr\\bin\\bash.exe');
+    }
+  }
+
+  final whereBash = await Process.run('where.exe', const ['bash']);
+  if (whereBash.exitCode == 0) {
+    for (final line in LineSplitter.split(whereBash.stdout as String)) {
+      addCandidate(line);
+    }
+  }
+
+  for (final candidate in candidates) {
+    if (!File(candidate).existsSync()) continue;
+    final version = await Process.run(candidate, const ['--version']);
+    final output = '${version.stdout}\n${version.stderr}';
+    if (version.exitCode == 0 && output.contains('GNU bash')) return candidate;
+  }
+  return null;
 }
