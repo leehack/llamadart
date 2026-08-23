@@ -18,8 +18,11 @@ dart test -p chrome --exclude-tags local-only
 The workspace preparation command resolves the root package and every
 maintained example, and fails if any example or companion package is missing or
 unclassified. Run it from a clean checkout before the root format/analyze
-gates; CI uses the same entry point. Companion packages retain their own
-dependency, analyze, test, SwiftPM, and publish-validation lanes.
+gates; CI uses the same entry point and fails if it leaves tracked files
+modified. Never hand-edit a `pubspec.lock`: pin the offending dependency in
+`pubspec.yaml` and let pub regenerate the lock, so its `sdks:` block stays one
+pub can actually produce. Companion packages retain their own dependency,
+analyze, test, SwiftPM, and publish-validation lanes.
 Run repository-wide quality gates with the current Flutter stable SDK used by
 CI; older Dart formatters can produce different source layouts.
 
