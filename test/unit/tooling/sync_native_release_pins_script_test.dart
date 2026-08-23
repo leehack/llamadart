@@ -1340,19 +1340,24 @@ print("parent exited after spawning child", flush=True)
     skip: Platform.isWindows ? false : 'validates inherited Windows handles',
   );
 
-  test('bounded runner output buffer retains only a diagnostic tail', () {
-    final buffer = _CappedTextBuffer();
+  test('bounded runner output buffer redacts across chunk and cap edges', () {
+    const secret = 'sensitive-token-across-boundary';
+    final buffer = _CappedTextBuffer({secret: '<redacted>'});
     buffer.write('sensitive-prefix');
-    buffer.write('x' * (70 * 1024));
+    buffer.write('x' * (70 * 1024) + secret.substring(0, 12));
+    buffer.write('${secret.substring(12)}-safe-tail');
 
     final output = buffer.toString();
     expect(output, startsWith('<truncated>\n'));
     expect(output, isNot(contains('sensitive-prefix')));
+    expect(output, isNot(contains(secret)));
+    expect(output, isNot(contains(secret.substring(12))));
+    expect(output, contains('<redacted>-safe-tail'));
     expect(
       output.length,
       lessThanOrEqualTo(64 * 1024 + '<truncated>\n'.length),
     );
-    expect(output, endsWith('x' * 64));
+    expect(output, endsWith('<redacted>-safe-tail'));
   });
 }
 
@@ -1543,8 +1548,8 @@ Future<ProcessResult> _runPython(
   final stopwatch = Stopwatch()..start();
   final process = await Process.start(executable, arguments, runInShell: false);
   onStart?.call(process.pid);
-  final stdout = _CappedTextBuffer();
-  final stderr = _CappedTextBuffer();
+  final stdout = _CappedTextBuffer(effectiveRedactions);
+  final stderr = _CappedTextBuffer(effectiveRedactions);
   final stdoutSubscription = process.stdout
       .transform(utf8.decoder)
       .listen(stdout.write);
@@ -1730,11 +1735,27 @@ Future<void> _cancelOutputSubscriptions(
 final class _CappedTextBuffer {
   static const _maxCharacters = 64 * 1024;
 
+  _CappedTextBuffer([Map<String, String> redactions = const {}])
+    : _redactions = Map.unmodifiable(redactions),
+      _orderedRedactionKeys =
+          redactions.keys.where((key) => key.isNotEmpty).toList()
+            ..sort((left, right) => right.length.compareTo(left.length));
+
+  final Map<String, String> _redactions;
+  final List<String> _orderedRedactionKeys;
   String _value = '';
+  String _pendingRaw = '';
   bool _truncated = false;
 
   void write(Object? value) {
-    final chunk = '$value';
+    final combined = '$_pendingRaw$value';
+    final pendingLength = _incompleteRedactionSuffixLength(combined);
+    final safeLength = combined.length - pendingLength;
+    final chunk = _sanitizeDiagnosticText(
+      combined.substring(0, safeLength),
+      _redactions,
+    );
+    _pendingRaw = combined.substring(safeLength);
     if (chunk.length >= _maxCharacters) {
       _value = chunk.substring(chunk.length - _maxCharacters);
       _truncated = true;
@@ -1748,7 +1769,44 @@ final class _CappedTextBuffer {
   }
 
   @override
-  String toString() => _truncated ? '<truncated>\n$_value' : _value;
+  String toString() {
+    final pending = _redactIncompleteSuffix(_pendingRaw);
+    final result = '$_value$pending';
+    final bounded = result.length > _maxCharacters
+        ? result.substring(result.length - _maxCharacters)
+        : result;
+    return _truncated || result.length > _maxCharacters
+        ? '<truncated>\n$bounded'
+        : bounded;
+  }
+
+  int _incompleteRedactionSuffixLength(String value) {
+    var longest = 0;
+    for (final key in _orderedRedactionKeys) {
+      final candidateLength = key.length - 1 < value.length
+          ? key.length - 1
+          : value.length;
+      for (var length = candidateLength; length > longest; length--) {
+        if (key.startsWith(value.substring(value.length - length))) {
+          longest = length;
+          break;
+        }
+      }
+    }
+    return longest;
+  }
+
+  String _redactIncompleteSuffix(String value) {
+    if (value.isEmpty) {
+      return value;
+    }
+    for (final key in _orderedRedactionKeys) {
+      if (key.startsWith(value)) {
+        return _redactions[key]!;
+      }
+    }
+    return _sanitizeDiagnosticText(value, _redactions);
+  }
 }
 
 String _sanitizeDiagnosticText(String value, Map<String, String> redactions) {
@@ -1774,7 +1832,7 @@ Future<bool> _windowsProcessExists(int pid) async {
     '-NoProfile',
     '-NonInteractive',
     '-Command',
-    'if (Get-Process -Id $pid '
+    'if (Get-Process -Id ${pid.toString()} '
         '-ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }',
   ], runInShell: false);
   return result.exitCode == 0;
@@ -1791,17 +1849,30 @@ Future<void> _ensureWindowsProcessStopped(int pid) async {
   if (!await _windowsProcessExists(pid)) {
     return;
   }
-  try {
-    await _taskkillWindowsPid(pid);
-  } on ProcessException {
-    return;
+  for (var killAttempt = 0; killAttempt < 2; killAttempt++) {
+    try {
+      final result = await _taskkillWindowsPid(pid);
+      if (result.exitCode != 0 || result.timedOut) {
+        continue;
+      }
+    } on ProcessException {
+      continue;
+    }
+    for (var pollAttempt = 0; pollAttempt < 20; pollAttempt++) {
+      if (!await _windowsProcessExists(pid)) {
+        return;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+    }
   }
-  for (var attempt = 0; attempt < 20; attempt++) {
+  Process.killPid(pid);
+  for (var pollAttempt = 0; pollAttempt < 30; pollAttempt++) {
     if (!await _windowsProcessExists(pid)) {
       return;
     }
     await Future<void>.delayed(const Duration(milliseconds: 100));
   }
+  fail('Failed to terminate synthetic Windows process $pid.');
 }
 
 Future<void> _expectOfflineReleaseFixtures(Directory releaseDir) async {
