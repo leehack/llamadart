@@ -195,6 +195,7 @@ HighRiskAssessment assessHighRiskFiles(
         path.startsWith('.github/actions/') ||
         path == '.github/pull_request_template.md' ||
         path == '.github/CODEOWNERS' ||
+        path == '.github/high-risk-publisher-owner.jq' ||
         path == '.github/high-risk-policy.json' ||
         path == '.github/workflows/high_risk_regression_gate.yml' ||
         path.startsWith(_evidencePrefix) ||

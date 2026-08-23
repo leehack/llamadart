@@ -332,7 +332,11 @@ Repository rules must require the trusted gate, conversation resolution, and
 strict up-to-date-with-`main` status checks. A policy bootstrap PR is only part
 of that setup: keep its issue open until the workflow is on `main`, all three
 rules are configured, and a follow-up high-risk PR proves the protected
-exact-head path after a deliberate base advance.
+exact-head path after a deliberate base advance. The required gate check must
+be emitted only by a repository-scoped GitHub App with `checks:write`, whose
+client ID and private key live only in the `high-risk-status-publisher`
+environment restricted to `main`. Bind the required check to that App's ID;
+never accept a same-named check or commit status from ordinary Actions tokens.
 
 For docs-only PRs, state that runtime behavior is unchanged and list docs
 validation. If implementation scope changed, reduce and state the scope rather

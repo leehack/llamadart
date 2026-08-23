@@ -1,5 +1,20 @@
 name: High-Risk Regression Gate
 
+run-name: >-
+  high-risk-evaluation-${{
+    (github.event.pull_request.number &&
+    format('pr-{0}-head-{1}-base-main',
+    github.event.pull_request.number,
+    github.event.pull_request.head.sha)) ||
+    (github.event.workflow_run.pull_requests[0].number &&
+    format('pr-{0}-head-{1}-base-main',
+    github.event.workflow_run.pull_requests[0].number,
+    github.event.workflow_run.pull_requests[0].head.sha)) ||
+    (github.event.workflow_run.name == 'High-Risk Review Signal' &&
+    github.event.workflow_run.display_title) ||
+    format('unresolved-run-{0}', github.run_id)
+  }}
+
 # This workflow becomes trusted only after it lands on main. It never checks
 # out or executes pull-request code. PR files and evidence are read-only data.
 on:
@@ -22,19 +37,18 @@ permissions:
   actions: read
   contents: read
   pull-requests: read
-  statuses: write
 
 concurrency:
   group: >-
     high-risk-regression-${{
-      github.event.pull_request.number ||
-      github.event.workflow_run.pull_requests[0].number ||
-      (github.event.workflow_run.name == 'High-Risk Review Signal' &&
-      github.event.workflow_run.display_title) ||
+      github.event.pull_request.head.sha ||
+      github.event.workflow_run.pull_requests[0].head.sha ||
       github.event.workflow_run.head_sha ||
       github.run_id
     }}
-  cancel-in-progress: true
+  # A single protected GitHub App owns the required check. Serial execution
+  # prevents two trusted evaluations from mutating that check concurrently.
+  cancel-in-progress: false
 
 jobs:
   contract:
@@ -48,8 +62,10 @@ jobs:
       github.event.workflow_run.event == 'pull_request_review_comment'))
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    environment:
+      name: high-risk-status-publisher
     steps:
-      - name: Publish pending status for the event PR head
+      - name: Resolve the event PR head
         id: event
         shell: bash
         env:
@@ -66,10 +82,10 @@ jobs:
               github.event.workflow_run.pull_requests[0].head.sha
             }}
           EVENT_WORKFLOW_NAME: ${{ github.event.workflow_run.name }}
+          EVENT_WORKFLOW_PATH: ${{ github.event.workflow_run.path }}
           EVENT_SIGNAL_TITLE: ${{ github.event.workflow_run.display_title }}
           EVENT_WORKFLOW_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
           EVENT_WORKFLOW_HEAD_REPOSITORY: ${{ github.event.workflow_run.head_repository.full_name }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
           if [[ -z "$EVENT_PR_NUMBER" || -z "$EVENT_HEAD_SHA" ]]; then
@@ -97,6 +113,20 @@ jobs:
           fi
           [[ "$EVENT_PR_NUMBER" =~ ^[1-9][0-9]*$ ]]
           [[ "$EVENT_HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+          if [[ -n "$EVENT_WORKFLOW_NAME" ]]; then
+            case "$EVENT_WORKFLOW_NAME" in
+              CI)
+                [[ "$EVENT_WORKFLOW_PATH" == ".github/workflows/ci.yml" ]]
+                ;;
+              'High-Risk Review Signal')
+                [[ "$EVENT_WORKFLOW_PATH" == ".github/workflows/high_risk_review_signal.yml" ]]
+                ;;
+              *)
+                echo "Unexpected workflow-run source." >&2
+                exit 1
+                ;;
+            esac
+          fi
           {
             echo "pr_number=$EVENT_PR_NUMBER"
             echo "head_sha=$EVENT_HEAD_SHA"
@@ -108,12 +138,6 @@ jobs:
           if [[ -n "$EVENT_WORKFLOW_HEAD_REPOSITORY" ]]; then
             [[ "$(jq -r '.head.repo.full_name' "$RUNNER_TEMP/event-live-pull-request.json")" == "$EVENT_WORKFLOW_HEAD_REPOSITORY" ]]
           fi
-          gh api --method POST "repos/$REPOSITORY/statuses/$EVENT_HEAD_SHA" \
-            -f state=pending \
-            -f context='High-Risk Regression Gate / Trusted exact-head adversarial evidence' \
-            -f description='Trusted high-risk evidence is being evaluated' \
-            -f target_url="$RUN_URL" \
-            > /dev/null
 
       - name: Check out trusted default-branch policy
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -125,6 +149,95 @@ jobs:
       - name: Set up Dart
         uses: dart-lang/setup-dart@65eb853c7ba17dde3be364c3d2858773e7144260 # v1
 
+      - name: Mint exclusive status-publisher token
+        id: status_app
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.HIGH_RISK_STATUS_PUBLISHER_CLIENT_ID }}
+          private-key: ${{ secrets.HIGH_RISK_STATUS_PUBLISHER_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-checks: write
+
+      - name: Publish authenticated in-progress check
+        id: publisher
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUBLISHER_TOKEN: ${{ steps.status_app.outputs.token }}
+          REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ steps.event.outputs.pr_number }}
+          HEAD_SHA: ${{ steps.event.outputs.head_sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          CHECK_NAME: High-Risk Regression Gate / Trusted exact-head adversarial evidence
+        run: |
+          set -euo pipefail
+          [[ "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]]
+          [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ -n "$PUBLISHER_TOKEN" ]]
+          expected_title="pr-$PR_NUMBER-head-$HEAD_SHA-base-main"
+          gh api "repos/$REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            > "$RUNNER_TEMP/current-trusted-run.json"
+          jq -e --arg repository "$REPOSITORY" --arg suffix "$expected_title" '
+            (.id | tostring) == env.GITHUB_RUN_ID and
+            .path == ".github/workflows/trusted_high_risk_regression_gate.yml" and
+            .head_repository.full_name == $repository and
+            (.display_title | endswith($suffix)) and
+            (.event == "pull_request_target" or .event == "workflow_run")
+          ' "$RUNNER_TEMP/current-trusted-run.json" > /dev/null
+          gh api --paginate --slurp \
+            "repos/$REPOSITORY/actions/workflows/trusted_high_risk_regression_gate.yml/runs?per_page=100" \
+            > "$RUNNER_TEMP/trusted-runs-pages.json"
+          latest_owner="$(
+            jq -r --arg repository "$REPOSITORY" --arg suffix "$expected_title" \
+              -f .github/high-risk-publisher-owner.jq \
+              "$RUNNER_TEMP/trusted-runs-pages.json"
+          )"
+          expected_owner="$GITHUB_RUN_ID"$'\t'"$GITHUB_RUN_ATTEMPT"
+          if [[ "$latest_owner" != "$expected_owner" ]]; then
+            echo "A newer authenticated trusted evaluation owns this PR head."
+            echo "owns_check=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          external_id="llamadart/high-risk/pr/$PR_NUMBER/head/$HEAD_SHA/run/$GITHUB_RUN_ID/attempt/$GITHUB_RUN_ATTEMPT"
+          jq -n \
+            --arg name "$CHECK_NAME" \
+            --arg head_sha "$HEAD_SHA" \
+            --arg external_id "$external_id" \
+            --arg details_url "$RUN_URL" \
+            '{
+              name: $name,
+              head_sha: $head_sha,
+              external_id: $external_id,
+              details_url: $details_url,
+              status: "in_progress",
+              output: {
+                title: "Trusted high-risk evidence is being evaluated",
+                summary: "Serialized evaluation by the repository-scoped status-publisher app."
+              }
+            }' > "$RUNNER_TEMP/create-high-risk-check.json"
+          GH_TOKEN="$PUBLISHER_TOKEN" gh api --method POST \
+            "repos/$REPOSITORY/check-runs" \
+            --input "$RUNNER_TEMP/create-high-risk-check.json" \
+            > "$RUNNER_TEMP/created-high-risk-check.json"
+          app_id="$(jq -r '.app.id' "$RUNNER_TEMP/created-high-risk-check.json")"
+          [[ "$app_id" =~ ^[1-9][0-9]*$ ]]
+          jq -e --argjson app_id "$app_id" \
+            --arg external_id "$external_id" --arg name "$CHECK_NAME" \
+            --arg head_sha "$HEAD_SHA" '
+              .app.id == $app_id and .external_id == $external_id and
+              .name == $name and .head_sha == $head_sha and
+              .status == "in_progress"
+            ' "$RUNNER_TEMP/created-high-risk-check.json" > /dev/null
+          check_id="$(jq -r '.id' "$RUNNER_TEMP/created-high-risk-check.json")"
+          [[ "$check_id" =~ ^[1-9][0-9]*$ ]]
+          {
+            echo "owns_check=true"
+            echo "check_id=$check_id"
+            echo "app_id=$app_id"
+            echo "external_id=$external_id"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Collect trusted-base protected evidence paths
         id: protected
         shell: bash
@@ -134,6 +247,7 @@ jobs:
           {
             printf '%s\n' \
               '.github/high-risk-policy.json' \
+              '.github/high-risk-publisher-owner.jq' \
               '.github/workflows/ci.yml' \
               '.github/workflows/high_risk_review_signal.yml' \
               '.github/workflows/trusted_high_risk_regression_gate.yml' \
@@ -788,57 +902,15 @@ jobs:
           args+=(--trusted-upstream-parity-evidence "$TRUSTED_PARITY_FILE")
           dart tool/testing/enforce_high_risk_pr_contract.dart "${args[@]}"
 
-      - name: Fail closed when trusted setup cannot capture a snapshot
+      - name: Publish exact-head required check
         if: >-
           always() && !cancelled() &&
           steps.event.outputs.head_sha != '' &&
-          steps.snapshot.outputs.digest == ''
+          steps.publisher.outputs.owns_check == 'true'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          REPOSITORY: ${{ github.repository }}
-          PR_NUMBER: ${{ steps.event.outputs.pr_number }}
-          HEAD_SHA: ${{ steps.event.outputs.head_sha }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-        run: |
-          set -euo pipefail
-          live_head="$(
-            gh api "repos/$REPOSITORY/pulls/$PR_NUMBER" --jq '.head.sha'
-          )"
-          if [[ "$live_head" != "$HEAD_SHA" ]]; then
-            echo "A stale setup run cannot publish failure to the current PR head."
-            exit 0
-          fi
-          run_status="$(
-            gh api "repos/$REPOSITORY/actions/runs/$GITHUB_RUN_ID" --jq '.status'
-          )"
-          [[ "$run_status" == "in_progress" ]]
-          latest_target="$(
-            gh api "repos/$REPOSITORY/commits/$HEAD_SHA/status" \
-              --jq '.statuses |
-                map(select(.context == "High-Risk Regression Gate / Trusted exact-head adversarial evidence")) |
-                max_by(.id).target_url // ""'
-          )"
-          if [[ "$latest_target" =~ /actions/runs/([1-9][0-9]*)$ ]] &&
-             (( BASH_REMATCH[1] > GITHUB_RUN_ID )); then
-            echo "A newer trusted evaluation owns the exact-head status."
-            exit 0
-          fi
-          gh api --method POST "repos/$REPOSITORY/statuses/$HEAD_SHA" \
-            -f state=failure \
-            -f context='High-Risk Regression Gate / Trusted exact-head adversarial evidence' \
-            -f description='Trusted high-risk setup failed before evaluation' \
-            -f target_url="$RUN_URL" \
-            > /dev/null
-
-      - name: Publish exact-head required status
-        if: >-
-          always() && !cancelled() &&
-          steps.event.outputs.head_sha != '' &&
-          steps.snapshot.outputs.digest != ''
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
+          PUBLISHER_TOKEN: ${{ steps.status_app.outputs.token }}
           REPOSITORY: ${{ github.repository }}
           HEAD_SHA: ${{ steps.event.outputs.head_sha }}
           BASE_SHA: ${{ steps.state.outputs.base_sha }}
@@ -851,6 +923,10 @@ jobs:
           VERIFIED_UPSTREAM_COMMITS: ${{ steps.upstream.outputs.file }}
           SNAPSHOT_DIGEST: ${{ steps.snapshot.outputs.digest }}
           ENFORCEMENT_OUTCOME: ${{ steps.enforce.outcome }}
+          CHECK_ID: ${{ steps.publisher.outputs.check_id }}
+          PUBLISHER_APP_ID: ${{ steps.publisher.outputs.app_id }}
+          EXTERNAL_ID: ${{ steps.publisher.outputs.external_id }}
+          CHECK_NAME: High-Risk Regression Gate / Trusted exact-head adversarial evidence
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           GRAPHQL_QUERY: >-
             query($owner:String!, $name:String!, $number:Int!) {
@@ -875,11 +951,15 @@ jobs:
           final_revalidation_failed=false
           set +e
           trap 'state=failure; description="Final trusted revalidation failed"; final_revalidation_failed=true' ERR
-          if [[ "$ENFORCEMENT_OUTCOME" == 'success' ]]; then
-            state=success
-            description='Trusted high-risk evidence accepted'
-          fi
-          gh api "repos/$REPOSITORY/pulls/$PR_NUMBER" \
+          if [[ -z "$SNAPSHOT_DIGEST" ]]; then
+            description='Trusted high-risk setup failed before evaluation'
+            final_revalidation_failed=true
+          else
+            if [[ "$ENFORCEMENT_OUTCOME" == 'success' ]]; then
+              state=success
+              description='Trusted high-risk evidence accepted'
+            fi
+            gh api "repos/$REPOSITORY/pulls/$PR_NUMBER" \
             > "$RUNNER_TEMP/final-live-pull-request.json"
           final_head="$(jq -r '.head.sha' "$RUNNER_TEMP/final-live-pull-request.json")"
           [[ "$final_head" == "$HEAD_SHA" ]]
@@ -949,7 +1029,7 @@ jobs:
           if ! diff -u \
             <(jq -cS . "$VERIFIED_UPSTREAM_COMMITS") \
             <(jq -cS . "$final_upstream"); then
-            echo "Canonical upstream refs changed before status publication." >&2
+            echo "Canonical upstream refs changed before check publication." >&2
             state=failure
             description='Canonical upstream refs changed'
             final_revalidation_failed=true
@@ -996,10 +1076,11 @@ jobs:
               awk '{print $1}'
           )"
           if [[ "$final_digest" != "$SNAPSHOT_DIGEST" ]]; then
-            echo "Mutable PR or CI evidence changed before status publication." >&2
+            echo "Mutable PR or CI evidence changed before check publication." >&2
             state=failure
             description='Mutable PR or CI evidence changed'
             final_revalidation_failed=true
+          fi
           fi
           trap - ERR
           set -e
@@ -1007,25 +1088,69 @@ jobs:
             gh api "repos/$REPOSITORY/actions/runs/$GITHUB_RUN_ID" --jq '.status'
           )"
           if [[ "$run_status" != "in_progress" ]]; then
-            echo "Canceled or completed evaluations cannot publish status." >&2
+            echo "Canceled or completed evaluations cannot publish checks." >&2
             exit 1
           fi
+          expected_title="pr-$PR_NUMBER-head-$HEAD_SHA-base-main"
+          gh api --paginate --slurp \
+            "repos/$REPOSITORY/actions/workflows/trusted_high_risk_regression_gate.yml/runs?per_page=100" \
+            > "$RUNNER_TEMP/final-trusted-runs-pages.json"
           latest_owner="$(
-            gh api "repos/$REPOSITORY/commits/$HEAD_SHA/status" \
-              --jq '.statuses |
-                map(select(.context == "High-Risk Regression Gate / Trusted exact-head adversarial evidence")) |
-                max_by(.id) | [.state, .target_url] | @tsv'
+            jq -r --arg repository "$REPOSITORY" --arg suffix "$expected_title" \
+              -f .github/high-risk-publisher-owner.jq \
+              "$RUNNER_TEMP/final-trusted-runs-pages.json"
           )"
-          if [[ "$latest_owner" != $'pending\t'"$RUN_URL" ]]; then
-            echo "A newer trusted evaluation owns the exact-head status."
+          expected_owner="$GITHUB_RUN_ID"$'\t'"$GITHUB_RUN_ATTEMPT"
+          if [[ "$latest_owner" != "$expected_owner" ]]; then
+            echo "A newer authenticated trusted evaluation owns this PR head."
             exit 0
           fi
-          gh api --method POST "repos/$REPOSITORY/statuses/$HEAD_SHA" \
-            -f state="$state" \
-            -f context='High-Risk Regression Gate / Trusted exact-head adversarial evidence' \
-            -f description="$description" \
-            -f target_url="$RUN_URL" \
-            > /dev/null
+          [[ "$CHECK_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ "$PUBLISHER_APP_ID" =~ ^[1-9][0-9]*$ ]]
+          [[ -n "$PUBLISHER_TOKEN" && -n "$EXTERNAL_ID" ]]
+          GH_TOKEN="$PUBLISHER_TOKEN" gh api \
+            "repos/$REPOSITORY/check-runs/$CHECK_ID" \
+            > "$RUNNER_TEMP/owned-high-risk-check.json"
+          jq -e --argjson app_id "$PUBLISHER_APP_ID" \
+            --arg external_id "$EXTERNAL_ID" --arg name "$CHECK_NAME" \
+            --arg head_sha "$HEAD_SHA" '
+              .app.id == $app_id and .external_id == $external_id and
+              .name == $name and .head_sha == $head_sha and
+              .status == "in_progress"
+            ' "$RUNNER_TEMP/owned-high-risk-check.json" > /dev/null
+          conclusion=failure
+          if [[ "$state" == "success" ]]; then
+            conclusion=success
+          fi
+          completed_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          jq -n \
+            --arg name "$CHECK_NAME" \
+            --arg details_url "$RUN_URL" \
+            --arg conclusion "$conclusion" \
+            --arg completed_at "$completed_at" \
+            --arg title "$description" \
+            '{
+              name: $name,
+              details_url: $details_url,
+              status: "completed",
+              conclusion: $conclusion,
+              completed_at: $completed_at,
+              output: {
+                title: $title,
+                summary: "Result published by the serialized repository-scoped status-publisher app."
+              }
+            }' > "$RUNNER_TEMP/complete-high-risk-check.json"
+          GH_TOKEN="$PUBLISHER_TOKEN" gh api --method PATCH \
+            "repos/$REPOSITORY/check-runs/$CHECK_ID" \
+            --input "$RUNNER_TEMP/complete-high-risk-check.json" \
+            > "$RUNNER_TEMP/completed-high-risk-check.json"
+          jq -e --argjson app_id "$PUBLISHER_APP_ID" \
+            --arg external_id "$EXTERNAL_ID" --arg name "$CHECK_NAME" \
+            --arg head_sha "$HEAD_SHA" --arg conclusion "$conclusion" '
+              .app.id == $app_id and .external_id == $external_id and
+              .name == $name and .head_sha == $head_sha and
+              .status == "completed" and .conclusion == $conclusion
+            ' "$RUNNER_TEMP/completed-high-risk-check.json" > /dev/null
           if [[ "$final_revalidation_failed" == "true" ]]; then
             exit 1
           fi

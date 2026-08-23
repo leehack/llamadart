@@ -282,6 +282,12 @@ void main() {
         assessHighRiskFiles(const ['.github/high-risk-policy.json']).surfaces,
         contains(HighRiskSurface.regressionPolicy),
       );
+      expect(
+        assessHighRiskFiles(const [
+          '.github/high-risk-publisher-owner.jq',
+        ]).surfaces,
+        contains(HighRiskSurface.regressionPolicy),
+      );
     });
 
     test('covers backend capabilities and artifact consumers', () {
@@ -1532,7 +1538,29 @@ Verdict: PASS''',
       expect(workflow, contains('.status == "renamed"'));
       expect(workflow, contains('Changed paths cannot contain CR or LF.'));
       expect(workflow, contains('persist-credentials: false'));
-      expect(workflow, contains('statuses: write'));
+      expect(workflow, isNot(contains('statuses: write')));
+      expect(workflow, isNot(contains(r'/statuses/$HEAD_SHA')));
+      expect(workflow, contains('high-risk-status-publisher'));
+      expect(workflow, contains('cancel-in-progress: false'));
+      expect(
+        workflow,
+        contains(
+          'actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1',
+        ),
+      );
+      expect(workflow, contains('HIGH_RISK_STATUS_PUBLISHER_CLIENT_ID'));
+      expect(workflow, contains('HIGH_RISK_STATUS_PUBLISHER_PRIVATE_KEY'));
+      expect(workflow, contains('permission-checks: write'));
+      expect(
+        workflow,
+        isNot(contains(r'GH_TOKEN="$PUBLISHER_TOKEN" gh api app')),
+      );
+      expect(
+        workflow,
+        contains(
+          r'''app_id="$(jq -r '.app.id' "$RUNNER_TEMP/created-high-risk-check.json")"''',
+        ),
+      );
       expect(workflow, contains('actions: read'));
       expect(
         workflow,
@@ -1540,13 +1568,23 @@ Verdict: PASS''',
       );
       expect(
         workflow,
-        isNot(contains("github.event.workflow_run.event != 'push'")),
+        contains(
+          r'''[[ "$EVENT_WORKFLOW_PATH" == ".github/workflows/ci.yml" ]]''',
+        ),
       );
       expect(
         workflow,
-        contains('Publish pending status for the event PR head'),
+        contains(
+          r'''[[ "$EVENT_WORKFLOW_PATH" == ".github/workflows/high_risk_review_signal.yml" ]]''',
+        ),
       );
-      expect(workflow, contains('-f state=pending'));
+      expect(
+        workflow,
+        isNot(contains("github.event.workflow_run.event != 'push'")),
+      );
+      expect(workflow, contains('Publish authenticated in-progress check'));
+      expect(workflow, contains(r'"repos/$REPOSITORY/check-runs"'));
+      expect(workflow, contains('status: "in_progress"'));
       expect(
         workflow,
         contains(r'EVENT_HEAD_SHA: ${{ steps.event.outputs.head_sha }}'),
@@ -1567,16 +1605,22 @@ Verdict: PASS''',
       expect(workflow, contains('Capture trusted mutable-input snapshot'));
       expect(
         workflow,
-        contains('Fail closed when trusted setup cannot capture a snapshot'),
-      );
-      expect(
-        workflow,
         contains('Trusted high-risk setup failed before evaluation'),
       );
-      expect(workflow, contains("steps.snapshot.outputs.digest == ''"));
-      expect(workflow, contains('-f state=failure'));
-      expect(workflow, contains('max_by(.id).target_url // ""'));
-      expect(workflow, contains('BASH_REMATCH[1] > GITHUB_RUN_ID'));
+      expect(workflow, contains(r'if [[ -z "$SNAPSHOT_DIGEST" ]]'));
+      expect(workflow, contains('conclusion=failure'));
+      expect(workflow, contains('.github/high-risk-publisher-owner.jq'));
+      expect(
+        workflow,
+        contains(
+          r'''expected_owner="$GITHUB_RUN_ID"$'\t'"$GITHUB_RUN_ATTEMPT"''',
+        ),
+      );
+      expect(workflow, contains(r'latest_owner" != "$expected_owner'));
+      expect(
+        workflow,
+        contains('A newer authenticated trusted evaluation owns this PR head.'),
+      );
       expect(workflow, contains('Mutable PR evidence changed'));
       expect(
         workflow,
@@ -1588,7 +1632,7 @@ Verdict: PASS''',
       );
       expect(
         workflow,
-        contains('Canonical upstream refs changed before status publication.'),
+        contains('Canonical upstream refs changed before check publication.'),
       );
       expect(workflow, contains(r'jq -cS . "$UPSTREAM_FILE"'));
       expect(workflow, contains(r'repos/ggml-org/llama.cpp/commits/$pinned'));
@@ -1633,6 +1677,7 @@ Verdict: PASS''',
         contains(r'--trusted-upstream-parity-evidence "$TRUSTED_PARITY_FILE"'),
       );
       for (final control in const [
+        '.github/high-risk-publisher-owner.jq',
         '.github/high-risk-policy.json',
         '.github/workflows/ci.yml',
         '.github/workflows/high_risk_review_signal.yml',
@@ -1671,18 +1716,16 @@ Verdict: PASS''',
       expect(workflow, isNot(contains('run_started_at')));
       expect(workflow, contains('The latest exact-head CI run must succeed'));
       expect(workflow, contains(r'[[ "$run_status" != "completed" ]]'));
-      expect(workflow, contains(r'statuses/$HEAD_SHA'));
+      expect(workflow, isNot(contains(r'statuses/$HEAD_SHA')));
       expect(
         workflow,
-        contains(
-          'Mutable PR or CI evidence changed before status publication.',
-        ),
+        contains('Mutable PR or CI evidence changed before check publication.'),
       );
       final finalDigestMismatch = workflow.indexOf(
         r'if [[ "$final_digest" != "$SNAPSHOT_DIGEST" ]]',
       );
-      final finalStatusPost = workflow.lastIndexOf(
-        r'gh api --method POST "repos/$REPOSITORY/statuses/$HEAD_SHA"',
+      final finalCheckPatch = workflow.lastIndexOf(
+        r'GH_TOKEN="$PUBLISHER_TOKEN" gh api --method PATCH',
       );
       expect(finalDigestMismatch, greaterThanOrEqualTo(0));
       final finalErrorTrap = workflow.indexOf(
@@ -1697,7 +1740,7 @@ Verdict: PASS''',
         finalErrorTrap,
       );
       final finalUpstreamDrift = workflow.indexOf(
-        'Canonical upstream refs changed before status publication.',
+        'Canonical upstream refs changed before check publication.',
       );
       expect(finalErrorTrap, greaterThanOrEqualTo(0));
       expect(finalPullApi, greaterThan(finalErrorTrap));
@@ -1711,9 +1754,9 @@ Verdict: PASS''',
         workflow.substring(finalUpstreamDrift, finalDigestMismatch),
         isNot(contains('exit 1')),
       );
-      expect(finalStatusPost, greaterThan(finalDigestMismatch));
+      expect(finalCheckPatch, greaterThan(finalDigestMismatch));
       expect(
-        workflow.substring(finalDigestMismatch, finalStatusPost),
+        workflow.substring(finalDigestMismatch, finalCheckPatch),
         contains('state=failure'),
       );
       expect(
@@ -1724,12 +1767,64 @@ Verdict: PASS''',
       expect(workflow, contains(r'[[ "$final_base_ref" != "main" ]]'));
       expect(
         workflow,
-        contains('Canceled or completed evaluations cannot publish status.'),
+        contains('Canceled or completed evaluations cannot publish checks.'),
       );
       expect(
         workflow,
-        contains('A newer trusted evaluation owns the exact-head status.'),
+        contains('A newer authenticated trusted evaluation owns this PR head.'),
       );
+      expect(workflow, contains(r'.app.id == $app_id'));
+      expect(workflow, contains(r'.external_id == $external_id'));
+      expect(workflow, contains(r'.head_sha == $head_sha'));
+      expect(workflow, contains(r'check-runs/$CHECK_ID'));
+      expect(workflow, contains(r'--method PATCH'));
+      final publisherOwner = File(
+        '.github/high-risk-publisher-owner.jq',
+      ).readAsStringSync();
+      expect(
+        publisherOwner,
+        contains(r'head_repository.full_name == $repository'),
+      );
+      expect(
+        publisherOwner,
+        contains(
+          '.path == ".github/workflows/trusted_high_risk_regression_gate.yml"',
+        ),
+      );
+      expect(
+        publisherOwner,
+        contains(r'(.display_title // "") | endswith($suffix)'),
+      );
+      expect(publisherOwner, contains('[.id, .run_attempt] | @tsv'));
+      expect(workflow, isNot(contains('max_by(.id).target_url')));
+      expect(workflow, isNot(contains(r'/actions/runs/([1-9][0-9]*)$')));
+
+      final workflowFiles = Directory('.github/workflows')
+          .listSync()
+          .whereType<File>()
+          .where(
+            (file) => file.path.endsWith('.yml') || file.path.endsWith('.yaml'),
+          );
+      for (final file in workflowFiles) {
+        final source = file.readAsStringSync();
+        if (file.path.endsWith('trusted_high_risk_regression_gate.yml')) {
+          continue;
+        }
+        expect(
+          source,
+          isNot(contains('HIGH_RISK_STATUS_PUBLISHER_')),
+          reason: file.path,
+        );
+        expect(
+          source,
+          isNot(
+            contains(
+              'High-Risk Regression Gate / Trusted exact-head adversarial evidence',
+            ),
+          ),
+          reason: file.path,
+        );
+      }
       expect(workflow, contains(r'live_head="$('));
       expect(workflow, contains(r'live_base="$('));
       expect(
@@ -1772,6 +1867,71 @@ Verdict: PASS''',
       expect(generatedGrammarTest, contains('toolChoice: ToolChoice.required'));
     });
 
+    test(
+      'selects only the latest authenticated publisher run and attempt',
+      () {
+        final directory = Directory.systemTemp.createTempSync(
+          'high-risk-publisher-owner-',
+        );
+        addTearDown(() => directory.deleteSync(recursive: true));
+        final input = File('${directory.path}/runs.json');
+        Map<String, Object?> run({
+          required int id,
+          required int attempt,
+          String path =
+              '.github/workflows/trusted_high_risk_regression_gate.yml',
+          String repository = 'leehack/llamadart',
+          String title =
+              'high-risk-evaluation-pr-420-head-1111111111111111111111111111111111111111-base-main',
+          String event = 'workflow_run',
+        }) => {
+          'id': id,
+          'run_attempt': attempt,
+          'path': path,
+          'head_repository': {'full_name': repository},
+          'display_title': title,
+          'event': event,
+        };
+
+        input.writeAsStringSync(
+          jsonEncode([
+            {
+              'workflow_runs': [
+                run(id: 100, attempt: 1),
+                run(id: 100, attempt: 2),
+                run(id: 999, attempt: 1, path: '.github/workflows/ci.yml'),
+                run(id: 998, attempt: 1, repository: 'attacker/fork'),
+                run(
+                  id: 997,
+                  attempt: 1,
+                  title:
+                      'high-risk-evaluation-pr-999-head-1111111111111111111111111111111111111111-base-main',
+                ),
+                run(id: 996, attempt: 1, event: 'workflow_dispatch'),
+              ],
+            },
+          ]),
+        );
+        final result = Process.runSync('jq', [
+          '-r',
+          '--arg',
+          'repository',
+          'leehack/llamadart',
+          '--arg',
+          'suffix',
+          'pr-420-head-1111111111111111111111111111111111111111-base-main',
+          '-f',
+          '.github/high-risk-publisher-owner.jq',
+          input.path,
+        ]);
+        expect(result.exitCode, 0, reason: result.stderr as String?);
+        expect((result.stdout as String).trim(), '100\t2');
+      },
+      skip: Platform.isWindows
+          ? 'jq fixture validation runs on trusted Linux'
+          : false,
+    );
+
     test('documents bootstrap and repository-settings closure gates', () {
       final agents = File('AGENTS.md').readAsStringSync();
       final matrix = File('doc/testing_matrix.md').readAsStringSync();
@@ -1780,7 +1940,11 @@ Verdict: PASS''',
       ).readAsStringSync();
 
       expect(agents, contains('treats pull-request files as untrusted data'));
-      expect(matrix, contains('head status context'));
+      expect(matrix, contains('App-owned check run'));
+      expect(matrix, contains('GitHub App as the expected source'));
+      expect(matrix, contains('same-named check attempted'));
+      expect(matrix, contains('HIGH_RISK_STATUS_PUBLISHER_CLIENT_ID'));
+      expect(matrix, contains('CODEOWNER approval'));
       expect(matrix, contains('require conversation'));
       expect(matrix, contains('conversation-resolution'));
       expect(matrix, contains('up to date with `main`'));

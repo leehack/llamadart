@@ -110,31 +110,56 @@ attempt controls readiness, so a rerun can revoke an older success.
 `High-Risk Regression Gate` runs policy only from the trusted default branch,
 reads PR files through read-only APIs, includes both sides of renames, checks
 the exact SHA/base distance and live unresolved review threads, and performs a
-final live mutable-input digest and status-owner check immediately before
+final live mutable-input digest and App-owned check verification immediately before
 publishing its result. Review signals carry trusted PR/head/base metadata in
 their workflow-run title and are re-associated through the live Pull Request
 API when GitHub omits `workflow_run.pull_requests`, including for forks. The
 body parser ignores HTML comments and fenced blocks and rejects duplicate gate
 labels. Exact-head CI selection follows run creation/identity and uses attempt
 only for retries of the same run. It fails
-closed on missing or weak evidence; a setup failure before snapshot capture
-publishes failure instead of leaving an earlier success authoritative. It never
+closed on missing or weak evidence; a setup failure after App-owned check
+creation completes that check as failure instead of leaving an earlier success
+authoritative. It never
 executes PR-supplied code.
 A known PR-caused P1 is always a merge blocker.
 
-The trusted workflow publishes
+The trusted workflow publishes an App-owned check run named
 `High-Risk Regression Gate / Trusted exact-head adversarial evidence` directly
 to the verified PR head; the workflow job itself runs on the trusted base SHA.
-The workflow is enforceable only when repository settings require that exact
-head status context, require conversation
-resolution, and require branches to be up to date with `main` before merging.
-Configure all three rules after the bootstrap lands, then verify them with a
-high-risk test PR, including a deliberate base advance, before closing the
-policy issue. Ready, review-request, CI completion, and auto-merge transitions
-rerun the trusted check. The review submission/dismissal and review-comment events
-flow through the fork-safe, read-only `High-Risk Review Signal`, whose trusted
-default-branch `workflow_run` consumer performs status writes. Code fixes also
-rerun through `synchronize`. GitHub does not
+The App token is minted only inside the fixed `high-risk-status-publisher`
+environment. Trusted evaluations for one exact head are serialized, and both
+the in-progress and final writes select the newest run and attempt from the
+authenticated Actions workflow-run API. The final update verifies the App ID,
+external transaction ID, check name, and head SHA before modifying the owned
+check run.
+
+The workflow is enforceable only after an administrator completes all of these
+external settings steps:
+
+1. Create a GitHub App installed only on `leehack/llamadart`, with repository
+   `Checks: read and write`, no other write permission, and no webhook.
+2. Create the `high-risk-status-publisher` environment, restrict deployment
+   branches to the selected `main` branch, disallow bypass, and add the
+   environment secrets `HIGH_RISK_STATUS_PUBLISHER_CLIENT_ID` and
+   `HIGH_RISK_STATUS_PUBLISHER_PRIVATE_KEY`.
+3. Require the exact check name above in the `main` ruleset and select that
+   GitHub App as the expected source. Also require conversation resolution and
+   require branches to be up to date with `main` before merging. Require a
+   CODEOWNER approval for changes to `.github/workflows/`, `.github/CODEOWNERS`,
+   `.github/high-risk-*`, and the App installation or environment configuration,
+   so another default-branch workflow cannot gain the publisher credentials.
+4. Verify the complete setup with a high-risk test PR, including a stale QA
+   review, a newer failed or active rerun, a deliberate base advance, and a
+   same-named check attempted through an ordinary `GITHUB_TOKEN`.
+
+Missing environment secrets, a missing App installation, or absent ruleset
+source binding is a fail-closed bootstrap state, not readiness evidence.
+Configure all controls after the bootstrap lands, then verify them before
+closing the policy issue. Ready, review-request, CI completion, and auto-merge
+transitions rerun the trusted check. The review submission/dismissal and
+review-comment events flow through the fork-safe, read-only `High-Risk Review
+Signal`, whose trusted default-branch `workflow_run` consumer requests a new
+App-owned check. Code fixes also rerun through `synchronize`. GitHub does not
 expose review-thread resolution as an Actions trigger, so the repository
 conversation-resolution rule is the merge-time authority for threads added
 after the last gate run. The strict up-to-date rule is the merge-time authority
@@ -164,12 +189,14 @@ trusted-base result bound to the exact head. It re-resolves both refs immediatel
 before enforcement and final publication and includes the canonical SHAs in
 each mutable-input snapshot, so upstream retagging invalidates the evaluation.
 The final publisher rechecks that the PR still targets `main`; a final digest
-mismatch publishes failure rather than leaving the context pending.
+mismatch completes the App-owned check as failure rather than leaving it
+pending.
 
 Edits to `.github/high-risk-policy.json` may add protected compiled-grammar
 tests or parity dependencies but cannot remove trusted-baseline entries. The
-policy, validator, CI workflow, review-signal workflow, and trusted gate are
-also mandatory protected inputs: deletion or rename fails closed.
+policy, App-owned publisher selector, validator, CI workflow, review-signal
+workflow, and trusted gate are also mandatory protected inputs: deletion or
+rename fails closed.
 
 Use the closest affected-family real model or artifact. If exact weights are
 unavailable, name every unavailable family and substitute primary upstream
