@@ -73,8 +73,9 @@ void main() {
         includeParentEnvironment: true,
       );
       expect(result.exitCode, isNot(0));
+      final output = '${result.stdout}\n${result.stderr}';
       expect(
-        result.stderr,
+        output,
         contains('LLAMA_CPP_CHAT_TEST_BUILD_JOBS must be a positive integer.'),
       );
     });
