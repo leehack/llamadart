@@ -29,7 +29,9 @@ concurrency:
     high-risk-regression-${{
       github.event.pull_request.number ||
       github.event.workflow_run.pull_requests[0].number ||
-      github.event.workflow_run.id ||
+      (github.event.workflow_run.name == 'High-Risk Review Signal' &&
+      github.event.workflow_run.display_title) ||
+      github.event.workflow_run.head_sha ||
       github.run_id
     }}
   cancel-in-progress: true
@@ -65,14 +67,33 @@ jobs:
             }}
           EVENT_WORKFLOW_NAME: ${{ github.event.workflow_run.name }}
           EVENT_SIGNAL_TITLE: ${{ github.event.workflow_run.display_title }}
+          EVENT_WORKFLOW_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          EVENT_WORKFLOW_HEAD_REPOSITORY: ${{ github.event.workflow_run.head_repository.full_name }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
           if [[ -z "$EVENT_PR_NUMBER" || -z "$EVENT_HEAD_SHA" ]]; then
-            [[ "$EVENT_WORKFLOW_NAME" == "High-Risk Review Signal" ]]
-            [[ "$EVENT_SIGNAL_TITLE" =~ ^high-risk-review-signal-pr-([1-9][0-9]*)-head-([0-9a-f]{40})-base-main$ ]]
-            EVENT_PR_NUMBER="${BASH_REMATCH[1]}"
-            EVENT_HEAD_SHA="${BASH_REMATCH[2]}"
+            if [[ "$EVENT_WORKFLOW_NAME" == "High-Risk Review Signal" ]]; then
+              [[ "$EVENT_SIGNAL_TITLE" =~ ^high-risk-review-signal-pr-([1-9][0-9]*)-head-([0-9a-f]{40})-base-main$ ]]
+              EVENT_PR_NUMBER="${BASH_REMATCH[1]}"
+              EVENT_HEAD_SHA="${BASH_REMATCH[2]}"
+            else
+              [[ "$EVENT_WORKFLOW_HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
+              gh api "repos/$REPOSITORY/commits/$EVENT_WORKFLOW_HEAD_SHA/pulls" \
+                > "$RUNNER_TEMP/event-associated-pulls.json"
+              mapfile -t associated_prs < <(
+                jq -r --arg head "$EVENT_WORKFLOW_HEAD_SHA" \
+                  --arg repo "$EVENT_WORKFLOW_HEAD_REPOSITORY" '
+                  .[] | select(
+                    .state == "open" and .base.ref == "main" and
+                    .head.sha == $head and .head.repo.full_name == $repo
+                  ) | .number
+                ' "$RUNNER_TEMP/event-associated-pulls.json"
+              )
+              (( ${#associated_prs[@]} == 1 ))
+              EVENT_PR_NUMBER="${associated_prs[0]}"
+              EVENT_HEAD_SHA="$EVENT_WORKFLOW_HEAD_SHA"
+            fi
           fi
           [[ "$EVENT_PR_NUMBER" =~ ^[1-9][0-9]*$ ]]
           [[ "$EVENT_HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
@@ -84,6 +105,9 @@ jobs:
             > "$RUNNER_TEMP/event-live-pull-request.json"
           [[ "$(jq -r '.base.ref' "$RUNNER_TEMP/event-live-pull-request.json")" == "main" ]]
           [[ "$(jq -r '.head.sha' "$RUNNER_TEMP/event-live-pull-request.json")" == "$EVENT_HEAD_SHA" ]]
+          if [[ -n "$EVENT_WORKFLOW_HEAD_REPOSITORY" ]]; then
+            [[ "$(jq -r '.head.repo.full_name' "$RUNNER_TEMP/event-live-pull-request.json")" == "$EVENT_WORKFLOW_HEAD_REPOSITORY" ]]
+          fi
           gh api --method POST "repos/$REPOSITORY/statuses/$EVENT_HEAD_SHA" \
             -f state=pending \
             -f context='High-Risk Regression Gate / Trusted exact-head adversarial evidence' \
@@ -849,6 +873,8 @@ jobs:
           state=failure
           description='Trusted high-risk evidence rejected'
           final_revalidation_failed=false
+          set +e
+          trap 'state=failure; description="Final trusted revalidation failed"; final_revalidation_failed=true' ERR
           if [[ "$ENFORCEMENT_OUTCOME" == 'success' ]]; then
             state=success
             description='Trusted high-risk evidence accepted'
@@ -924,7 +950,9 @@ jobs:
             <(jq -cS . "$VERIFIED_UPSTREAM_COMMITS") \
             <(jq -cS . "$final_upstream"); then
             echo "Canonical upstream refs changed before status publication." >&2
-            exit 1
+            state=failure
+            description='Canonical upstream refs changed'
+            final_revalidation_failed=true
           fi
           gh api --method GET \
             "repos/$REPOSITORY/actions/workflows/ci.yml/runs" \
@@ -973,6 +1001,8 @@ jobs:
             description='Mutable PR or CI evidence changed'
             final_revalidation_failed=true
           fi
+          trap - ERR
+          set -e
           run_status="$(
             gh api "repos/$REPOSITORY/actions/runs/$GITHUB_RUN_ID" --jq '.status'
           )"

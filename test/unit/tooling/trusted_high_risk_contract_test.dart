@@ -592,6 +592,71 @@ void main() {
       );
     });
 
+    test('rejects duplicate or conflicting visible QA attestation fields', () {
+      for (final extra in const [
+        'Head: $_head',
+        'Head: 0000000000000000000000000000000000000000',
+        'Verdict: FAIL',
+      ]) {
+        final approved = _state.reviews.single;
+        final state = HighRiskPrState(
+          number: _prNumber,
+          headRepository: _headRepository,
+          headSha: _head,
+          baseSha: _base,
+          behind: 0,
+          ahead: 6,
+          unresolvedThreads: 0,
+          authorLogin: _state.authorLogin,
+          prBodyDigest: _bodyDigest,
+          reviews: [
+            HighRiskReview(
+              id: approved.id,
+              authorLogin: approved.authorLogin,
+              authorAssociation: approved.authorAssociation,
+              commitSha: approved.commitSha,
+              state: approved.state,
+              body: '${approved.body}\n$extra',
+            ),
+          ],
+        );
+        expect(
+          _validate(state: state).errors,
+          contains(
+            'Independent QA PASS requires a current-head APPROVED review from a trusted repository reviewer other than the PR author, attesting the QA task, head, base, PR-body digest, and PASS verdict.',
+          ),
+          reason: extra,
+        );
+      }
+    });
+
+    test('ignores hidden QA-like fields instead of accepting or conflicting', () {
+      final approved = _state.reviews.single;
+      final state = HighRiskPrState(
+        number: _prNumber,
+        headRepository: _headRepository,
+        headSha: _head,
+        baseSha: _base,
+        behind: 0,
+        ahead: 6,
+        unresolvedThreads: 0,
+        authorLogin: _state.authorLogin,
+        prBodyDigest: _bodyDigest,
+        reviews: [
+          HighRiskReview(
+            id: approved.id,
+            authorLogin: approved.authorLogin,
+            authorAssociation: approved.authorAssociation,
+            commitSha: approved.commitSha,
+            state: approved.state,
+            body:
+                '${approved.body}\n<!-- Head: 0000000000000000000000000000000000000000 -->\n```\nVerdict: FAIL\n```',
+          ),
+        ],
+      );
+      expect(_validate(state: state).errors, isEmpty);
+    });
+
     test('rejects author, stale-head, and incomplete QA approvals', () {
       for (final review in const [
         HighRiskReview(
@@ -996,6 +1061,8 @@ Verdict: PASS''',
         body: body,
         files: const [
           policyPath,
+          'test/integration/core/grammar/new_grammar_test.dart',
+          'test/integration/core/template/new_parity_test.dart',
           'test/unit/tooling/trusted_high_risk_contract_test.dart',
           policyEvidencePath,
         ],
@@ -1007,12 +1074,48 @@ Verdict: PASS''',
       );
 
       final additive = validatePolicy(
-        proposedGrammar: const {_grammarTest, 'test/new_grammar_test.dart'},
+        proposedGrammar: const {
+          _grammarTest,
+          'test/integration/core/grammar/new_grammar_test.dart',
+        },
         proposedDependencies: const {
           ...trustedDependencies,
-          'test/new_parity_test.dart',
+          'test/integration/core/template/new_parity_test.dart',
         },
       );
+
+      for (final invalidAddition in const [
+        'test/',
+        'test/integration/core/template/phantom_test.dart',
+        'test/unit/unrelated/new_parity_test.dart',
+      ]) {
+        expect(
+          validatePolicy(
+            proposedGrammar: const {_grammarTest},
+            proposedDependencies: {...trustedDependencies, invalidAddition},
+          ).errors,
+          contains(
+            'Added high-risk policy paths must be changed, existing, exact structured-output test or tooling paths with a safe shape.',
+          ),
+          reason: invalidAddition,
+        );
+      }
+      for (final invalidGrammar in const [
+        'test/integration/core/grammar/',
+        'test/integration/core/grammar/phantom_test.dart',
+        'test/unit/core/template/not_a_grammar_test.dart',
+      ]) {
+        expect(
+          validatePolicy(
+            proposedGrammar: {_grammarTest, invalidGrammar},
+            proposedDependencies: trustedDependencies,
+          ).errors,
+          contains(
+            'Added high-risk policy paths must be changed, existing, exact structured-output test or tooling paths with a safe shape.',
+          ),
+          reason: invalidGrammar,
+        );
+      }
       expect(
         additive.errors,
         isNot(
@@ -1539,6 +1642,16 @@ Verdict: PASS''',
         expect(workflow, contains("'$control'"), reason: control);
       }
       expect(workflow, contains(r'.head_sha == $head'));
+      expect(workflow, contains(r'commits/$EVENT_WORKFLOW_HEAD_SHA/pulls'));
+      expect(workflow, contains(r'(( ${#associated_prs[@]} == 1 ))'));
+      expect(workflow, contains(r'.state == "open" and .base.ref == "main"'));
+      expect(workflow, contains(r'.head.repo.full_name == $repo'));
+      expect(
+        workflow,
+        contains("github.event.workflow_run.name == 'High-Risk Review Signal'"),
+      );
+      expect(workflow, contains('github.event.workflow_run.display_title'));
+      expect(workflow, contains('github.event.workflow_run.head_sha'));
       expect(
         RegExp(r'any\(\.pull_requests\[\]\?;').allMatches(workflow),
         hasLength(4),
@@ -1572,6 +1685,32 @@ Verdict: PASS''',
         r'gh api --method POST "repos/$REPOSITORY/statuses/$HEAD_SHA"',
       );
       expect(finalDigestMismatch, greaterThanOrEqualTo(0));
+      final finalErrorTrap = workflow.indexOf(
+        "trap 'state=failure; description=\"Final trusted revalidation failed\"; final_revalidation_failed=true' ERR",
+      );
+      final finalPullApi = workflow.indexOf(
+        r'gh api "repos/$REPOSITORY/pulls/$PR_NUMBER"',
+        finalErrorTrap,
+      );
+      final finalBaseApi = workflow.indexOf(
+        r'gh api "repos/$REPOSITORY/git/ref/heads/main"',
+        finalErrorTrap,
+      );
+      final finalUpstreamDrift = workflow.indexOf(
+        'Canonical upstream refs changed before status publication.',
+      );
+      expect(finalErrorTrap, greaterThanOrEqualTo(0));
+      expect(finalPullApi, greaterThan(finalErrorTrap));
+      expect(finalBaseApi, greaterThan(finalErrorTrap));
+      expect(finalUpstreamDrift, greaterThan(finalErrorTrap));
+      expect(
+        workflow.substring(finalUpstreamDrift, finalDigestMismatch),
+        contains("state=failure"),
+      );
+      expect(
+        workflow.substring(finalUpstreamDrift, finalDigestMismatch),
+        isNot(contains('exit 1')),
+      );
       expect(finalStatusPost, greaterThan(finalDigestMismatch));
       expect(
         workflow.substring(finalDigestMismatch, finalStatusPost),

@@ -304,6 +304,28 @@ HighRiskContractResult validateHighRiskContract({
           'test and structured-output parity dependency.',
         );
       }
+      final addedGrammarTests = proposedCompiledGrammarTests.difference(
+        compiledGrammarTests,
+      );
+      final addedParityDependencies = proposedStructuredOutputParityDependencies
+          .difference(structuredOutputParityDependencies);
+      if (addedGrammarTests.any(
+            (path) =>
+                !_isSafeCompiledGrammarTest(path) ||
+                !assessment.changedFiles.contains(path) ||
+                deletedFiles.contains(path),
+          ) ||
+          addedParityDependencies.any(
+            (path) =>
+                !_isSafeStructuredParityDependency(path) ||
+                !assessment.changedFiles.contains(path) ||
+                deletedFiles.contains(path),
+          )) {
+        errors.add(
+          'Added high-risk policy paths must be changed, existing, exact '
+          'structured-output test or tooling paths with a safe shape.',
+        );
+      }
     }
   }
 
@@ -428,6 +450,24 @@ HighRiskContractResult validateHighRiskContract({
   }
 
   return HighRiskContractResult(assessment: assessment, errors: errors);
+}
+
+bool _isSafeCompiledGrammarTest(String path) => RegExp(
+  r'^test/(?:unit|integration)/core/grammar/.+_test\.dart$',
+).hasMatch(path);
+
+bool _isSafeStructuredParityDependency(String path) {
+  if (path.endsWith('/')) return false;
+  if (RegExp(
+    r'^test/(?:unit|integration|e2e)/core/template/.+_test\.dart$',
+  ).hasMatch(path)) {
+    return true;
+  }
+  if (RegExp(r'^test/e2e/template/.+_test\.dart$').hasMatch(path)) {
+    return true;
+  }
+  return _isStructuredOutputGateScript(path) &&
+      RegExp(r'^tool/testing/.+\.(?:dart|sh|ref)$').hasMatch(path);
 }
 
 HighRiskCiRun? selectLatestExactHeadCiRun(
@@ -825,12 +865,12 @@ List<String> _validateTestPaths(
 }
 
 bool _hasIndependentQaAttestation(HighRiskPrState state, String qaTask) {
-  final requiredLines = <String>{
-    'High-risk QA task: $qaTask',
-    'Head: ${state.headSha}',
-    'Base: ${state.baseSha}',
-    'PR body SHA-256: ${state.prBodyDigest}',
-    'Verdict: PASS',
+  final requiredFields = <String, String>{
+    'High-risk QA task': qaTask,
+    'Head': state.headSha,
+    'Base': state.baseSha,
+    'PR body SHA-256': state.prBodyDigest,
+    'Verdict': 'PASS',
   };
   final latestByAuthor = <String, HighRiskReview>{};
   for (final review in state.reviews) {
@@ -841,10 +881,7 @@ bool _hasIndependentQaAttestation(HighRiskPrState state, String qaTask) {
     }
   }
   return latestByAuthor.values.any((review) {
-    final lines = review.body
-        .split(RegExp(r'\r?\n'))
-        .map((line) => line.trim())
-        .toSet();
+    final fields = _parseQaAttestationFields(review.body);
     return review.state == 'APPROVED' &&
         const {
           'OWNER',
@@ -854,8 +891,73 @@ bool _hasIndependentQaAttestation(HighRiskPrState state, String qaTask) {
         review.commitSha == state.headSha &&
         review.authorLogin.isNotEmpty &&
         review.authorLogin.toLowerCase() != state.authorLogin.toLowerCase() &&
-        lines.containsAll(requiredLines);
+        fields != null &&
+        fields.length == requiredFields.length &&
+        requiredFields.entries.every(
+          (entry) => fields[entry.key] == entry.value,
+        );
   });
+}
+
+Map<String, String>? _parseQaAttestationFields(String body) {
+  const labels = {
+    'High-risk QA task',
+    'Head',
+    'Base',
+    'PR body SHA-256',
+    'Verdict',
+  };
+  final pattern = RegExp(
+    r'^(High-risk QA task|Head|Base|PR body SHA-256|Verdict): (.+)$',
+  );
+  final openingFence = RegExp(r'^ {0,3}(`{3,}|~{3,})(.*)$');
+  final closingFence = RegExp(r'^ {0,3}(`{3,}|~{3,})[ \t]*$');
+  final fields = <String, String>{};
+  String? fenceCharacter;
+  var fenceLength = 0;
+  var inHtmlComment = false;
+  for (final rawLine in body.split(RegExp(r'\r?\n'))) {
+    if (fenceCharacter != null) {
+      final close = closingFence.firstMatch(rawLine);
+      if (close != null &&
+          close.group(1)![0] == fenceCharacter &&
+          close.group(1)!.length >= fenceLength) {
+        fenceCharacter = null;
+      }
+      continue;
+    }
+    final open = openingFence.firstMatch(rawLine);
+    if (open != null) {
+      fenceCharacter = open.group(1)![0];
+      fenceLength = open.group(1)!.length;
+      continue;
+    }
+    final visible = StringBuffer();
+    var offset = 0;
+    while (offset < rawLine.length) {
+      if (inHtmlComment) {
+        final end = rawLine.indexOf('-->', offset);
+        if (end < 0) break;
+        inHtmlComment = false;
+        offset = end + 3;
+      } else {
+        final start = rawLine.indexOf('<!--', offset);
+        if (start < 0) {
+          visible.write(rawLine.substring(offset));
+          break;
+        }
+        visible.write(rawLine.substring(offset, start));
+        inHtmlComment = true;
+        offset = start + 4;
+      }
+    }
+    final match = pattern.firstMatch(visible.toString());
+    if (match == null) continue;
+    final label = match.group(1)!;
+    if (!labels.contains(label) || fields.containsKey(label)) return null;
+    fields[label] = match.group(2)!;
+  }
+  return fields;
 }
 
 Map<String, String> _parseEvidenceFields(String body, List<String> errors) {
