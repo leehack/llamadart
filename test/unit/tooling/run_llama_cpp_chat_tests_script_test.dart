@@ -58,27 +58,47 @@ void main() {
           'llamadart-full-chat-environment-',
         );
         addTearDown(() => directory.delete(recursive: true));
+        final environmentReader = File(
+          '${directory.path}/environment_reader.dart',
+        );
+        await environmentReader.writeAsString('''
+import 'dart:convert';
+import 'dart:io';
+void main() {
+  stdout.write(jsonEncode({
+    'LLAMA_CPP_REF': Platform.environment['LLAMA_CPP_REF'],
+    'LLAMA_CPP_SOURCE_DIR': Platform.environment['LLAMA_CPP_SOURCE_DIR'],
+    'LLAMA_CPP_CHAT_TEST_INCLUDE_FULL':
+        Platform.environment['LLAMA_CPP_CHAT_TEST_INCLUDE_FULL'],
+  }));
+}
+''');
         final probe = File('${directory.path}/probe.dart');
         await probe.writeAsString('''
 import 'dart:io';
-Future<void> main() async {
+Future<void> main(List<String> args) async {
   final result = await Process.run(
-    '/usr/bin/env',
-    const <String>[],
+    Platform.resolvedExecutable,
+    [args.single],
     environment: const <String, String>{
       'LLAMA_CPP_CHAT_TEST_INCLUDE_FULL': '1',
     },
     includeParentEnvironment: true,
   );
+  if (result.exitCode != 0) {
+    stderr.write(result.stderr);
+    exitCode = result.exitCode;
+    return;
+  }
   stdout.write(result.stdout);
 }
 ''');
         final result = await Process.run(
           Platform.resolvedExecutable,
-          [probe.path],
-          environment: const {
+          [probe.path, environmentReader.path],
+          environment: {
             'LLAMA_CPP_REF': 'ref-sentinel',
-            'LLAMA_CPP_SOURCE_DIR': '/tmp/source-sentinel',
+            'LLAMA_CPP_SOURCE_DIR': directory.path,
           },
           includeParentEnvironment: true,
         );
@@ -87,13 +107,12 @@ Future<void> main() async {
           0,
           reason: '${result.stdout}\n${result.stderr}',
         );
-        final environment = LineSplitter.split(result.stdout as String).toSet();
-        expect(environment, contains('LLAMA_CPP_REF=ref-sentinel'));
-        expect(
-          environment,
-          contains('LLAMA_CPP_SOURCE_DIR=/tmp/source-sentinel'),
-        );
-        expect(environment, contains('LLAMA_CPP_CHAT_TEST_INCLUDE_FULL=1'));
+        final environment = jsonDecode(result.stdout as String);
+        expect(environment, isA<Map<String, dynamic>>());
+        final values = environment as Map<String, dynamic>;
+        expect(values['LLAMA_CPP_REF'], 'ref-sentinel');
+        expect(values['LLAMA_CPP_SOURCE_DIR'], directory.path);
+        expect(values['LLAMA_CPP_CHAT_TEST_INCLUDE_FULL'], '1');
       },
     );
   });
