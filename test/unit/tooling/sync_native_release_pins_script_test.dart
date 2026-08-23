@@ -1692,10 +1692,7 @@ Future<ProcessResult> _runPython(
         );
       }
       stopwatch.stop();
-      final reason = _sanitizeDiagnosticText(
-        '$error',
-        effectiveRedactions,
-      );
+      final reason = _sanitizeDiagnosticText('$error', effectiveRedactions);
       fail(
         'Subprocess readiness failed after '
         '${stopwatch.elapsedMilliseconds}ms: $reason.\n'
@@ -2073,10 +2070,7 @@ Future<int?> _readPidFile(File file) async {
   return int.tryParse((await file.readAsString()).trim());
 }
 
-Future<int> _waitForPidFile(
-  File file, {
-  required Duration timeout,
-}) async {
+Future<int> _waitForPidFile(File file, {required Duration timeout}) async {
   final deadline = DateTime.now().add(timeout);
   while (DateTime.now().isBefore(deadline)) {
     final pid = await _readPidFile(file);
