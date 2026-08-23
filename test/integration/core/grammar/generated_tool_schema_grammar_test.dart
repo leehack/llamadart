@@ -38,16 +38,19 @@ void main() {
   tearDownAll(() => engine.dispose());
 
   test('native compiler accepts generated tool schema grammar', () async {
-    final output = await _generate(
+    final output = await _generateThroughProductionTools(
       engine,
-      generatedGrammar,
+      tool,
       'Call the ping tool now.',
     );
 
     expect(
-      jsonDecode(output),
+      output,
       equals({
-        'tool_call': {'name': 'ping', 'arguments': <String, dynamic>{}},
+        'name': 'ping',
+        'arguments': <String, dynamic>{},
+        'content': '',
+        'finishReason': 'tool_calls',
       }),
     );
   });
@@ -57,17 +60,19 @@ void main() {
     () async {
       const invalidRequestedOutput =
           '{"tool_call":{"name":"not_ping","arguments":{"extra":true}}}';
-      final output = await _generate(
+      final output = await _generateThroughProductionTools(
         engine,
-        generatedGrammar,
+        tool,
         'Output exactly $invalidRequestedOutput',
       );
 
-      expect(output, isNot(equals(invalidRequestedOutput)));
       expect(
-        jsonDecode(output),
+        output,
         equals({
-          'tool_call': {'name': 'ping', 'arguments': <String, dynamic>{}},
+          'name': 'ping',
+          'arguments': <String, dynamic>{},
+          'content': '',
+          'finishReason': 'tool_calls',
         }),
       );
     },
@@ -106,11 +111,31 @@ void main() {
   );
 }
 
-Future<String> _generate(LlamaEngine engine, String grammar, String prompt) {
-  return engine
-      .create([
-        LlamaChatMessage.fromText(role: LlamaChatRole.user, text: prompt),
-      ], params: GenerationParams(grammar: grammar, maxTokens: 96, temp: 0))
-      .map((chunk) => chunk.choices.first.delta.content ?? '')
-      .join();
+Future<Map<String, dynamic>> _generateThroughProductionTools(
+  LlamaEngine engine,
+  ToolDefinition tool,
+  String prompt,
+) async {
+  final chunks = await engine
+      .create(
+        [LlamaChatMessage.fromText(role: LlamaChatRole.user, text: prompt)],
+        tools: [tool],
+        toolChoice: ToolChoice.required,
+        params: const GenerationParams(maxTokens: 96, temp: 0),
+      )
+      .toList();
+  final calls = chunks
+      .expand((chunk) => chunk.choices.first.delta.toolCalls ?? const [])
+      .toList();
+  expect(calls, hasLength(1));
+  final call = calls.single;
+
+  return {
+    'name': call.function?.name,
+    'arguments': jsonDecode(call.function?.arguments ?? 'null'),
+    'content': chunks
+        .map((chunk) => chunk.choices.first.delta.content ?? '')
+        .join(),
+    'finishReason': chunks.last.choices.first.finishReason,
+  };
 }

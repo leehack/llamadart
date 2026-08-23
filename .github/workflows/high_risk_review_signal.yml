@@ -1,4 +1,7 @@
 name: High-Risk Review Signal
+run-name: >-
+  high-risk-review-signal-pr-${{ github.event.pull_request.number }}-head-${{
+  github.event.pull_request.head.sha }}-base-${{ github.event.pull_request.base.ref }}
 
 # Fork-safe, read-only signal. The trusted default-branch workflow_run consumer
 # performs all API reads and writes without executing pull-request code.

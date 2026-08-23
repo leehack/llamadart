@@ -99,7 +99,9 @@ approval binds the QA verdict to the exact PR-body digest evaluated by the
 trusted workflow. Tests named by landed manifests and compiled-grammar tests
 listed in the CODEOWNERS-protected `.github/high-risk-policy.json` registry
 remain protected inputs; deleting or renaming one requires fresh high-risk
-evidence. The same registry protects the complete parity command dependency
+evidence. Registered compiled-grammar tests and parity dependencies classify as
+both structured-output and regression-policy changes, so policy-only evidence
+cannot rewrite either proof surface. The same registry protects the complete parity command dependency
 chain, including scripts, upstream ref input, E2E entrypoint, integration
 fixtures, and template unit-test directory. Its compiled-grammar test generates
 a tool/schema grammar, compiles it through the native runtime, accepts the valid
@@ -109,7 +111,12 @@ attempt controls readiness, so a rerun can revoke an older success.
 reads PR files through read-only APIs, includes both sides of renames, checks
 the exact SHA/base distance and live unresolved review threads, and performs a
 final live mutable-input digest and status-owner check immediately before
-publishing its result. It fails
+publishing its result. Review signals carry trusted PR/head/base metadata in
+their workflow-run title and are re-associated through the live Pull Request
+API when GitHub omits `workflow_run.pull_requests`, including for forks. The
+body parser ignores HTML comments and fenced blocks and rejects duplicate gate
+labels. Exact-head CI selection follows run creation/identity and uses attempt
+only for retries of the same run. It fails
 closed on missing or weak evidence; a setup failure before snapshot capture
 publishes failure instead of leaving an earlier success authoritative. It never
 executes PR-supplied code.
@@ -156,6 +163,8 @@ canonical commits, rejects aliases that resolve to the same SHA, and records a
 trusted-base result bound to the exact head. It re-resolves both refs immediately
 before enforcement and final publication and includes the canonical SHAs in
 each mutable-input snapshot, so upstream retagging invalidates the evaluation.
+The final publisher rechecks that the PR still targets `main`; a final digest
+mismatch publishes failure rather than leaving the context pending.
 
 Edits to `.github/high-risk-policy.json` may add protected compiled-grammar
 tests or parity dependencies but cannot remove trusted-baseline entries. The

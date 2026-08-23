@@ -324,6 +324,14 @@ jobs:
           UPSTREAM_FILE: ${{ steps.upstream.outputs.file }}
         run: |
           set -euo pipefail
+          parity_tests="$RUNNER_TEMP/upstream-parity-tests.txt"
+          jq -er '
+            .structuredOutput.upstreamParityTests |
+            select(
+              type == "array" and length > 0 and
+              all(.[]; type == "string" and test("^test/.+_test\\.dart$"))
+            ) | .[]
+          ' "$MANIFEST" > "$parity_tests"
           for role in pinned current; do
             ref="$(jq -r --arg role "$role" '.[$role]' "$UPSTREAM_FILE")"
             source_dir="$RUNNER_TEMP/llama-cpp-$role"
@@ -340,7 +348,6 @@ jobs:
             REQUIRE_LLAMA_CPP_TEMPLATES=1 \
               ./tool/testing/run_template_parity_suites.sh
             while IFS= read -r test_path; do
-              [[ "$test_path" =~ ^test/.+_test\.dart$ ]]
               LLAMA_CPP_REF="$ref" \
               LLAMA_CPP_SOURCE_DIR="$source_dir" \
               LLAMA_CPP_CHAT_TEST_SOURCE_DIR="$source_dir" \
@@ -348,9 +355,7 @@ jobs:
               LLAMA_CPP_TEMPLATES_DIR="$source_dir/models/templates" \
               REQUIRE_LLAMA_CPP_TEMPLATES=1 \
                 dart test -p vm -j 1 "$test_path"
-            done < <(
-              jq -r '.structuredOutput.upstreamParityTests[]' "$MANIFEST"
-            )
+            done < "$parity_tests"
           done
 
       - name: Build exact-head upstream parity evidence

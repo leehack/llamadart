@@ -29,6 +29,7 @@ concurrency:
     high-risk-regression-${{
       github.event.pull_request.number ||
       github.event.workflow_run.pull_requests[0].number ||
+      github.event.workflow_run.display_title ||
       github.run_id
     }}
   cancel-in-progress: true
@@ -42,9 +43,7 @@ jobs:
       (github.event_name == 'workflow_run' &&
       (github.event.workflow_run.event == 'pull_request' ||
       github.event.workflow_run.event == 'pull_request_review' ||
-      github.event.workflow_run.event == 'pull_request_review_comment') &&
-      github.event.workflow_run.pull_requests[0].number != null &&
-      github.event.workflow_run.pull_requests[0].base.ref == 'main')
+      github.event.workflow_run.event == 'pull_request_review_comment'))
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
@@ -64,15 +63,27 @@ jobs:
               github.event.pull_request.head.sha ||
               github.event.workflow_run.pull_requests[0].head.sha
             }}
+          EVENT_WORKFLOW_NAME: ${{ github.event.workflow_run.name }}
+          EVENT_SIGNAL_TITLE: ${{ github.event.workflow_run.display_title }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
+          if [[ -z "$EVENT_PR_NUMBER" || -z "$EVENT_HEAD_SHA" ]]; then
+            [[ "$EVENT_WORKFLOW_NAME" == "High-Risk Review Signal" ]]
+            [[ "$EVENT_SIGNAL_TITLE" =~ ^high-risk-review-signal-pr-([1-9][0-9]*)-head-([0-9a-f]{40})-base-main$ ]]
+            EVENT_PR_NUMBER="${BASH_REMATCH[1]}"
+            EVENT_HEAD_SHA="${BASH_REMATCH[2]}"
+          fi
           [[ "$EVENT_PR_NUMBER" =~ ^[1-9][0-9]*$ ]]
           [[ "$EVENT_HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
           {
             echo "pr_number=$EVENT_PR_NUMBER"
             echo "head_sha=$EVENT_HEAD_SHA"
           } >> "$GITHUB_OUTPUT"
+          gh api "repos/$REPOSITORY/pulls/$EVENT_PR_NUMBER" \
+            > "$RUNNER_TEMP/event-live-pull-request.json"
+          [[ "$(jq -r '.base.ref' "$RUNNER_TEMP/event-live-pull-request.json")" == "main" ]]
+          [[ "$(jq -r '.head.sha' "$RUNNER_TEMP/event-live-pull-request.json")" == "$EVENT_HEAD_SHA" ]]
           gh api --method POST "repos/$REPOSITORY/statuses/$EVENT_HEAD_SHA" \
             -f state=pending \
             -f context='High-Risk Regression Gate / Trusted exact-head adversarial evidence' \
@@ -291,7 +302,7 @@ jobs:
                   .event == "pull_request" and
                   .path == ".github/workflows/ci.yml"
                 )] |
-              sort_by(.updated_at, .run_attempt, .id) | last // empty
+              sort_by(.created_at, .id, .run_attempt) | last // empty
             ' "$RUNNER_TEMP/exact-head-ci-runs.json"
           )"
           run_id="$(jq -r '.id // empty' <<< "$latest_run")"
@@ -514,7 +525,7 @@ jobs:
                 select(
                   .head_sha == $head and .event == "pull_request" and
                   .path == ".github/workflows/ci.yml"
-                )] | sort_by(.updated_at, .run_attempt, .id) | last
+                )] | sort_by(.created_at, .id, .run_attempt) | last
             ' "$CI_RUNS_FILE"
             jq -cS . "$UPSTREAM_FILE"
             if [[ -s "$PARITY_FILE" ]]; then jq -cS . "$PARITY_FILE"; else printf 'null\n'; fi
@@ -664,7 +675,7 @@ jobs:
                 select(
                   .head_sha == $head and .event == "pull_request" and
                   .path == ".github/workflows/ci.yml"
-                )] | sort_by(.updated_at, .run_attempt, .id) | last
+                )] | sort_by(.created_at, .id, .run_attempt) | last
             ' "$RUNNER_TEMP/live-exact-head-ci-runs.json"
             jq -cS . "$live_upstream"
             if [[ -s "$PARITY_FILE" ]]; then jq -cS . "$PARITY_FILE"; else printf 'null\n'; fi
@@ -792,6 +803,7 @@ jobs:
           set -euo pipefail
           state=failure
           description='Trusted high-risk evidence rejected'
+          final_revalidation_failed=false
           if [[ "$ENFORCEMENT_OUTCOME" == 'success' ]]; then
             state=success
             description='Trusted high-risk evidence accepted'
@@ -800,6 +812,14 @@ jobs:
             > "$RUNNER_TEMP/final-live-pull-request.json"
           final_head="$(jq -r '.head.sha' "$RUNNER_TEMP/final-live-pull-request.json")"
           [[ "$final_head" == "$HEAD_SHA" ]]
+          final_base_ref="$(
+            jq -r '.base.ref' "$RUNNER_TEMP/final-live-pull-request.json"
+          )"
+          if [[ "$final_base_ref" != "main" ]]; then
+            state=failure
+            description='PR no longer targets main'
+            final_revalidation_failed=true
+          fi
           final_base="$(
             gh api "repos/$REPOSITORY/git/ref/heads/main" --jq '.object.sha'
           )"
@@ -881,7 +901,7 @@ jobs:
                 select(
                   .head_sha == $head and .event == "pull_request" and
                   .path == ".github/workflows/ci.yml"
-                )] | sort_by(.updated_at, .run_attempt, .id) | last
+                )] | sort_by(.created_at, .id, .run_attempt) | last
             ' "$RUNNER_TEMP/final-live-exact-head-ci-runs.json"
             jq -cS . "$final_upstream"
             if [[ -s "$PARITY_FILE" ]]; then jq -cS . "$PARITY_FILE"; else printf 'null\n'; fi
@@ -898,7 +918,9 @@ jobs:
           )"
           if [[ "$final_digest" != "$SNAPSHOT_DIGEST" ]]; then
             echo "Mutable PR or CI evidence changed before status publication." >&2
-            exit 1
+            state=failure
+            description='Mutable PR or CI evidence changed'
+            final_revalidation_failed=true
           fi
           run_status="$(
             gh api "repos/$REPOSITORY/actions/runs/$GITHUB_RUN_ID" --jq '.status'
@@ -923,6 +945,9 @@ jobs:
             -f description="$description" \
             -f target_url="$RUN_URL" \
             > /dev/null
+          if [[ "$final_revalidation_failed" == "true" ]]; then
+            exit 1
+          fi
 
       - name: Fail rejected evidence
         if: steps.enforce.outcome != 'success'

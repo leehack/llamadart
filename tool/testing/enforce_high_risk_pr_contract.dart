@@ -69,7 +69,7 @@ class HighRiskCiRun {
   const HighRiskCiRun({
     required this.id,
     required this.runAttempt,
-    required this.updatedAt,
+    required this.createdAt,
     required this.headSha,
     required this.event,
     required this.path,
@@ -79,7 +79,7 @@ class HighRiskCiRun {
 
   final int id;
   final int runAttempt;
-  final DateTime updatedAt;
+  final DateTime createdAt;
   final String headSha;
   final String event;
   final String path;
@@ -107,6 +107,7 @@ final _taskReference = RegExp(
 HighRiskAssessment assessHighRiskFiles(
   Iterable<String> files, {
   Set<String> protectedEvidencePaths = const {},
+  Set<String> compiledGrammarTests = const {},
   Set<String> structuredOutputParityDependencies = const {},
 }) {
   final normalized = files
@@ -200,6 +201,11 @@ HighRiskAssessment assessHighRiskFiles(
         ..add(HighRiskSurface.structuredOutput)
         ..add(HighRiskSurface.regressionPolicy);
     }
+    if (_isProtectedEvidencePath(path, compiledGrammarTests)) {
+      surfaces
+        ..add(HighRiskSurface.structuredOutput)
+        ..add(HighRiskSurface.regressionPolicy);
+    }
   }
 
   return HighRiskAssessment(changedFiles: normalized, surfaces: surfaces);
@@ -254,10 +260,11 @@ HighRiskContractResult validateHighRiskContract({
   final assessment = assessHighRiskFiles(
     changedFiles,
     protectedEvidencePaths: protectedEvidencePaths,
+    compiledGrammarTests: compiledGrammarTests,
     structuredOutputParityDependencies: structuredOutputParityDependencies,
   );
   final errors = <String>[];
-  final fields = _parseEvidenceFields(body);
+  final fields = _parseEvidenceFields(body, errors);
 
   if (assessment.changedFiles.contains('.github/high-risk-policy.json')) {
     if (proposedCompiledGrammarTests == null ||
@@ -410,10 +417,11 @@ HighRiskCiRun? selectLatestExactHeadCiRun(
       .toList();
   if (matching.isEmpty) return null;
   matching.sort((left, right) {
-    final updated = left.updatedAt.compareTo(right.updatedAt);
-    if (updated != 0) return updated;
-    final attempt = left.runAttempt.compareTo(right.runAttempt);
-    if (attempt != 0) return attempt;
+    if (left.id == right.id) {
+      return left.runAttempt.compareTo(right.runAttempt);
+    }
+    final created = left.createdAt.compareTo(right.createdAt);
+    if (created != 0) return created;
     return left.id.compareTo(right.id);
   });
   return matching.last;
@@ -529,8 +537,9 @@ void _validateEvidenceManifest(
       final repository = upstream['repository'];
       final pinned = upstream['pinned'];
       final current = upstream['current'];
-      if (repository != 'ggml-org/llama.cpp' ||
-          pinned is! String ||
+      if (repository != 'ggml-org/llama.cpp') {
+        errors.add('upstreamRefs.repository must be ggml-org/llama.cpp.');
+      } else if (pinned is! String ||
           current is! String ||
           !concreteRef.hasMatch(pinned) ||
           !concreteRef.hasMatch(current) ||
@@ -773,14 +782,57 @@ bool _hasIndependentQaAttestation(HighRiskPrState state, String qaTask) {
   });
 }
 
-Map<String, String> _parseEvidenceFields(String body) {
+Map<String, String> _parseEvidenceFields(String body, List<String> errors) {
   final fields = <String, String>{};
-  final pattern = RegExp(
-    r'^\s*-\s*\*\*([^*]+):\*\*\s*(.*?)\s*$',
-    multiLine: true,
-  );
-  for (final match in pattern.allMatches(body)) {
-    fields[match.group(1)!.trim()] = match.group(2)!.trim();
+  final pattern = RegExp(r'^\s*-\s*\*\*([^*]+):\*\*\s*(.*?)\s*$');
+  var inHtmlComment = false;
+  String? fence;
+  for (final rawLine in body.split(RegExp(r'\r?\n'))) {
+    final trimmed = rawLine.trimLeft();
+    final fenceMatch = RegExp(r'^(```+|~~~+)').firstMatch(trimmed);
+    if (!inHtmlComment && fenceMatch != null) {
+      final marker = fenceMatch.group(1)!;
+      if (fence == null) {
+        fence = marker[0];
+      } else if (marker.startsWith(fence)) {
+        fence = null;
+      }
+      continue;
+    }
+    if (fence != null) continue;
+
+    final visible = StringBuffer();
+    var offset = 0;
+    while (offset < rawLine.length) {
+      if (inHtmlComment) {
+        final end = rawLine.indexOf('-->', offset);
+        if (end == -1) {
+          offset = rawLine.length;
+        } else {
+          inHtmlComment = false;
+          offset = end + 3;
+        }
+      } else {
+        final start = rawLine.indexOf('<!--', offset);
+        if (start == -1) {
+          visible.write(rawLine.substring(offset));
+          offset = rawLine.length;
+        } else {
+          visible.write(rawLine.substring(offset, start));
+          visible.write(' ');
+          inHtmlComment = true;
+          offset = start + 4;
+        }
+      }
+    }
+    final match = pattern.firstMatch(visible.toString());
+    if (match == null) continue;
+    final label = match.group(1)!.trim();
+    if (fields.containsKey(label)) {
+      errors.add('PR body contains duplicate evidence field: $label.');
+      continue;
+    }
+    fields[label] = match.group(2)!.trim();
   }
   return fields;
 }
@@ -1064,12 +1116,12 @@ List<HighRiskCiRun> _decodeCiRuns(Object? value) {
         if (item is! Map<String, dynamic>) {
           _usage('Every CI run must be an object.');
         }
-        final updatedAt = item['updated_at'] is String
-            ? DateTime.tryParse(item['updated_at'] as String)
+        final createdAt = item['created_at'] is String
+            ? DateTime.tryParse(item['created_at'] as String)
             : null;
         if (item['id'] is! int ||
             item['run_attempt'] is! int ||
-            updatedAt == null ||
+            createdAt == null ||
             item['head_sha'] is! String ||
             item['event'] is! String ||
             item['path'] is! String ||
@@ -1080,7 +1132,7 @@ List<HighRiskCiRun> _decodeCiRuns(Object? value) {
         return HighRiskCiRun(
           id: item['id'] as int,
           runAttempt: item['run_attempt'] as int,
-          updatedAt: updatedAt,
+          createdAt: createdAt,
           headSha: item['head_sha'] as String,
           event: item['event'] as String,
           path: item['path'] as String,

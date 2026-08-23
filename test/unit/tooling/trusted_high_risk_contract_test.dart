@@ -57,7 +57,7 @@ List<HighRiskCiRun> _successfulCiRuns() => [
   HighRiskCiRun(
     id: 100,
     runAttempt: 1,
-    updatedAt: DateTime.utc(2026, 8, 22, 12),
+    createdAt: DateTime.utc(2026, 8, 22, 12),
     headSha: _head,
     event: 'pull_request',
     path: '.github/workflows/ci.yml',
@@ -406,6 +406,54 @@ void main() {
       }
     });
 
+    test('registered compiled grammar tests require structured evidence', () {
+      final policy =
+          jsonDecode(File('.github/high-risk-policy.json').readAsStringSync())
+              as Map<String, dynamic>;
+      final compiledTests = (policy['compiledGrammarTests'] as List)
+          .cast<String>()
+          .toSet();
+      const policyEvidencePath = '.github/high-risk-evidence/419.json';
+      final body = _replaceField(
+        _validBody(),
+        'Evidence manifest',
+        policyEvidencePath,
+      );
+
+      for (final compiledTest in compiledTests) {
+        final assessment = assessHighRiskFiles([
+          compiledTest,
+        ], compiledGrammarTests: compiledTests);
+        expect(
+          assessment.surfaces,
+          containsAll(const {
+            HighRiskSurface.structuredOutput,
+            HighRiskSurface.regressionPolicy,
+          }),
+          reason: compiledTest,
+        );
+
+        final result = _validate(
+          body: body,
+          files: [
+            compiledTest,
+            'test/unit/tooling/trusted_high_risk_contract_test.dart',
+            policyEvidencePath,
+          ],
+          evidence: _validPolicyEvidence(),
+          evidencePath: policyEvidencePath,
+          compiledGrammarTests: compiledTests,
+        );
+        expect(
+          result.errors,
+          contains(
+            'Structured-output changes require structuredOutput evidence.',
+          ),
+          reason: compiledTest,
+        );
+      }
+    });
+
     test('does not classify unrelated tests or docs', () {
       final assessment = assessHighRiskFiles(const [
         'test/unit/core/models/model_test.dart',
@@ -651,6 +699,30 @@ Verdict: PASS''',
       expect(errors, contains('must integrate the current base'));
     });
 
+    test('ignores hidden gate fields and rejects duplicate visible labels', () {
+      for (final hiddenBody in [
+        '<!--\n${_validBody()}\n-->',
+        '```markdown\n${_validBody()}\n```',
+        '~~~\n${_validBody()}\n~~~',
+      ]) {
+        expect(
+          _validate(body: hiddenBody).errors.join('\n'),
+          contains('High-risk classification'),
+        );
+      }
+
+      final hiddenDuplicate =
+          '${_validBody()}\n<!--\n- **Exact head SHA:** ffffffffffffffffffffffffffffffffffffffff\n-->';
+      expect(_validate(body: hiddenDuplicate).errors, isEmpty);
+
+      final duplicate =
+          '${_validBody()}\n- **Exact head SHA:** ffffffffffffffffffffffffffffffffffffffff';
+      expect(
+        _validate(body: duplicate).errors,
+        contains('PR body contains duplicate evidence field: Exact head SHA.'),
+      );
+    });
+
     test('blocks unresolved review threads', () {
       final body = _replaceField(
         _validBody(),
@@ -683,7 +755,7 @@ Verdict: PASS''',
         HighRiskCiRun(
           id: 100,
           runAttempt: 2,
-          updatedAt: DateTime.utc(2026, 8, 22, 13),
+          createdAt: DateTime.utc(2026, 8, 22, 13),
           headSha: _head,
           event: 'pull_request',
           path: '.github/workflows/ci.yml',
@@ -693,6 +765,37 @@ Verdict: PASS''',
       ];
 
       expect(selectLatestExactHeadCiRun(runs, _head)?.runAttempt, 2);
+      expect(
+        _validate(ciRuns: runs).errors,
+        contains('The latest exact-head CI run must succeed.'),
+      );
+    });
+
+    test('a later-created run wins even if an older run finishes later', () {
+      final runs = [
+        HighRiskCiRun(
+          id: 99,
+          runAttempt: 1,
+          createdAt: DateTime.utc(2026, 8, 22, 12),
+          headSha: _head,
+          event: 'pull_request',
+          path: '.github/workflows/ci.yml',
+          status: 'completed',
+          conclusion: 'success',
+        ),
+        HighRiskCiRun(
+          id: 101,
+          runAttempt: 1,
+          createdAt: DateTime.utc(2026, 8, 22, 13),
+          headSha: _head,
+          event: 'pull_request',
+          path: '.github/workflows/ci.yml',
+          status: 'completed',
+          conclusion: 'failure',
+        ),
+      ];
+
+      expect(selectLatestExactHeadCiRun(runs, _head)?.id, 101);
       expect(
         _validate(ciRuns: runs).errors,
         contains('The latest exact-head CI run must succeed.'),
@@ -1073,7 +1176,7 @@ Verdict: PASS''',
           'example/fork';
       expect(
         _validate(evidence: wrongRepository).errors.join('\n'),
-        contains('distinct concrete tags or commits'),
+        contains('upstreamRefs.repository must be ggml-org/llama.cpp'),
       );
 
       expect(
@@ -1189,7 +1292,7 @@ Verdict: PASS''',
       );
       final ciWorkflow = File('.github/workflows/ci.yml').readAsStringSync();
       expect(ciWorkflow, contains('High-Risk Upstream Parity Evidence'));
-      expect(ciWorkflow, contains('.structuredOutput.upstreamParityTests[]'));
+      expect(ciWorkflow, contains('.structuredOutput.upstreamParityTests |'));
       expect(ciWorkflow, contains('high-risk-upstream-parity-'));
       expect(ciWorkflow, contains(r'${{ github.run_attempt }}'));
       expect(ciWorkflow, contains('Resolve immutable upstream parity commits'));
@@ -1229,7 +1332,7 @@ Verdict: PASS''',
       expect(workflow, contains(r'.head_sha == $head'));
       expect(
         workflow,
-        contains('sort_by(.updated_at, .run_attempt, .id) | last // empty'),
+        contains('sort_by(.created_at, .id, .run_attempt) | last // empty'),
       );
       expect(workflow, contains('The latest exact-head CI run must succeed'));
       expect(workflow, contains(r'[[ "$run_status" != "completed" ]]'));
@@ -1240,6 +1343,24 @@ Verdict: PASS''',
           'Mutable PR or CI evidence changed before status publication.',
         ),
       );
+      final finalDigestMismatch = workflow.indexOf(
+        r'if [[ "$final_digest" != "$SNAPSHOT_DIGEST" ]]',
+      );
+      final finalStatusPost = workflow.lastIndexOf(
+        r'gh api --method POST "repos/$REPOSITORY/statuses/$HEAD_SHA"',
+      );
+      expect(finalDigestMismatch, greaterThanOrEqualTo(0));
+      expect(finalStatusPost, greaterThan(finalDigestMismatch));
+      expect(
+        workflow.substring(finalDigestMismatch, finalStatusPost),
+        contains('state=failure'),
+      );
+      expect(
+        workflow,
+        contains("description='Mutable PR or CI evidence changed'"),
+      );
+      expect(workflow, contains(r'final_base_ref="$('));
+      expect(workflow, contains(r'[[ "$final_base_ref" != "main" ]]'));
       expect(
         workflow,
         contains('Canceled or completed evaluations cannot publish status.'),
@@ -1267,12 +1388,27 @@ Verdict: PASS''',
       final signal = File(
         '.github/workflows/high_risk_review_signal.yml',
       ).readAsStringSync();
+      expect(signal, contains('high-risk-review-signal-pr-'));
       expect(signal, contains('pull_request_review:'));
       expect(signal, contains('types: [submitted, edited, dismissed]'));
       expect(signal, contains('pull_request_review_comment:'));
       expect(signal, contains('types: [created, edited, deleted]'));
       expect(signal, contains('contents: read'));
       expect(signal, isNot(contains('statuses: write')));
+      expect(workflow, contains('EVENT_SIGNAL_TITLE'));
+      expect(workflow, contains('High-Risk Review Signal'));
+      expect(workflow, contains('event-live-pull-request.json'));
+      expect(workflow, contains("jq -r '.base.ref'"));
+
+      expect(ciWorkflow, contains(r'parity_tests="$RUNNER_TEMP/'));
+      expect(ciWorkflow, contains(r'done < "$parity_tests"'));
+      expect(ciWorkflow, isNot(contains('done < <(\n              jq -r')));
+
+      final generatedGrammarTest = File(
+        'test/integration/core/grammar/generated_tool_schema_grammar_test.dart',
+      ).readAsStringSync();
+      expect(generatedGrammarTest, contains('tools: [tool]'));
+      expect(generatedGrammarTest, contains('toolChoice: ToolChoice.required'));
     });
 
     test('documents bootstrap and repository-settings closure gates', () {
@@ -1323,7 +1459,8 @@ Verdict: PASS''',
 
       final compiledTest = File(_grammarTest).readAsStringSync();
       expect(compiledTest, contains('ToolGrammarGenerator.generate'));
-      expect(compiledTest, contains('jsonDecode(output)'));
+      expect(compiledTest, contains('_generateThroughProductionTools'));
+      expect(compiledTest, contains('jsonDecode(call.function?.arguments'));
       expect(compiledTest, contains('undefined-generated-rule'));
       expect(compiledTest, contains('LlamaInferenceException'));
     });

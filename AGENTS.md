@@ -294,7 +294,9 @@ structured-output policy inputs include the complete upstream-parity dependency
 chain and a native compiled generated-grammar acceptance/rejection test. Policy
 updates are additive-only against the trusted baseline, and PR-produced parity
 artifacts are advisory; the trusted default-branch harness independently
-reproduces pinned/current parity before accepting evidence. A
+reproduces pinned/current parity before accepting evidence. Compiled-grammar
+proof must exercise the production `LlamaEngine.create` tools/tool-choice path,
+not only direct grammar injection. A
 non-author repository owner, member, or collaborator must submit a current-head
 GitHub approval whose structured attestation binds that task to the exact head,
 base, and trusted SHA-256 digest of the evaluated PR body; PR-authored `PASS`
