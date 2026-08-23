@@ -19,6 +19,16 @@ For canonical full release notes, use:
   it did before 0.8.0. A YAML boolean `false` clears the selection too. Unset,
   empty, and all-unrecognised config still select every family.
 
+- The published package no longer ships the `doc/` directory; that contributor
+  and maintainer documentation is maintained on GitHub, and packaged files now
+  link to it by absolute URL.
+
+- Fixed unanchored `docs/` and `website/` publish-exclusions that matched those
+  directory names at any depth and dropped `tool/docs/` plus the
+  `llamadart_server` example's OpenAPI spec and Swagger UI sources from the
+  package, leaving the published example unable to analyze. Both patterns are
+  now root-anchored.
+
 - Fixed Command R7B, Hermes, and Hunyuan V3 tool grammars so distinct tool or
   parameter names cannot collide after conversion to internal GBNF rule names.
 
