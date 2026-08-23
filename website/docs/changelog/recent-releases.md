@@ -9,6 +9,9 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Fixed Command R7B, Hermes, and Hunyuan V3 tool grammars so distinct tool or
+  parameter names cannot collide after conversion to internal GBNF rule names.
+
 - Fixed DeepSeek V3.2 DSML tool calls using their upstream
   `<｜DSML｜function_calls>` envelope while preserving DeepSeek V4's distinct
   `<｜DSML｜tool_calls>` grammar and parser behavior.

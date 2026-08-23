@@ -6,6 +6,7 @@ import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:llamadart/src/core/models/tools/tool_param.dart';
 import 'package:llamadart/src/core/template/chat_format.dart';
 import 'package:llamadart/src/core/template/handlers/hermes_handler.dart';
+import 'package:llamadart/src/core/template/tool_call_grammar_utils.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -220,6 +221,30 @@ void main() {
     expect(parsed.content, equals(input));
   });
 
+  test('collision-free grammar rules preserve Hermes wire names', () {
+    final handler = HermesHandler();
+    final tools = [_tool('a b'), _tool('a-b')];
+    final spacedRule = ToolCallGrammarUtils.ruleName('a b');
+    final dashedRule = ToolCallGrammarUtils.ruleName('a-b');
+
+    expect(spacedRule, isNot(dashedRule));
+    final grammar = handler.buildGrammar(tools)!;
+    expect(grammar, contains('$spacedRule-call ::='));
+    expect(grammar, contains('$dashedRule-call ::='));
+    expect(grammar, contains(r'\"name\": \"a b\"'));
+    expect(grammar, contains(r'\"name\": \"a-b\"'));
+
+    const output =
+        'before '
+        '<tool_call>{"name":"a-b","arguments":{}}</tool_call>'
+        ' after';
+    final parsed = handler.parse(output);
+    expect(parsed.content, 'before after');
+    expect(parsed.toolCalls, hasLength(1));
+    expect(parsed.toolCalls.single.function?.name, 'a-b');
+    expect(jsonDecode(parsed.toolCalls.single.function!.arguments!), isEmpty);
+  });
+
   test('keeps non-tagged payload as content', () {
     final handler = HermesHandler();
     final parsed = handler.parse(
@@ -239,3 +264,10 @@ void main() {
 Future<Object?> _noop(_) async {
   return 'ok';
 }
+
+ToolDefinition _tool(String name) => ToolDefinition(
+  name: name,
+  description: 'Collision coverage',
+  parameters: const [],
+  handler: _noop,
+);
