@@ -29,6 +29,11 @@ For canonical full release notes, use:
   package, leaving the published example unable to analyze. Both patterns are
   now root-anchored.
 
+- Narrowed the `dinja` dependency constraint to `>=1.0.0 <1.1.0` so chat
+  template capability detection cannot silently resolve against an unverified
+  Jinja parser minor. A 1.0.x patch can still reorganise the private sources
+  the analyzer imports; a new coupling test turns that into a named failure.
+
 - Fixed Command R7B, Hermes, and Hunyuan V3 tool grammars so distinct tool or
   parameter names cannot collide after conversion to internal GBNF rule names.
 
