@@ -1581,6 +1581,16 @@ Verdict: PASS''',
       );
       expect(
         workflow,
+        contains(
+          r'''[[ "$EVENT_WORKFLOW_HEAD_REPOSITORY" == "$REPOSITORY" ]]''',
+        ),
+      );
+      expect(
+        workflow,
+        contains(r'''if [[ "$EVENT_WORKFLOW_NAME" == "CI" ]]; then'''),
+      );
+      expect(
+        workflow,
         isNot(contains("github.event.workflow_run.event != 'push'")),
       );
       expect(workflow, contains('Publish authenticated in-progress check'));

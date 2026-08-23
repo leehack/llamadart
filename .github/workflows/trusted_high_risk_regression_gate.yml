@@ -119,6 +119,7 @@ jobs:
                 ;;
               'High-Risk Review Signal')
                 [[ "$EVENT_WORKFLOW_PATH" == ".github/workflows/high_risk_review_signal.yml" ]]
+                [[ "$EVENT_WORKFLOW_HEAD_REPOSITORY" == "$REPOSITORY" ]]
                 ;;
               *)
                 echo "Unexpected workflow-run source." >&2
@@ -134,7 +135,7 @@ jobs:
             > "$RUNNER_TEMP/event-live-pull-request.json"
           [[ "$(jq -r '.base.ref' "$RUNNER_TEMP/event-live-pull-request.json")" == "main" ]]
           [[ "$(jq -r '.head.sha' "$RUNNER_TEMP/event-live-pull-request.json")" == "$EVENT_HEAD_SHA" ]]
-          if [[ -n "$EVENT_WORKFLOW_HEAD_REPOSITORY" ]]; then
+          if [[ "$EVENT_WORKFLOW_NAME" == "CI" ]]; then
             [[ "$(jq -r '.head.repo.full_name' "$RUNNER_TEMP/event-live-pull-request.json")" == "$EVENT_WORKFLOW_HEAD_REPOSITORY" ]]
           fi
 
