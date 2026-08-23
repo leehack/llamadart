@@ -1257,12 +1257,12 @@ time.sleep(300)
       final message = '$failure';
       expect(message, contains('timed out after 5s'));
       expect(message, contains('process tree termination:'));
-      expect(message, contains('taskkillExit=0'));
+      expect(message, contains('treeCleanup=confirmed'));
       expect(message, contains('synthetic child ready:'));
       expect(message, contains('<temp>'));
       expect(message, isNot(contains(root.path)));
       expect(message, isNot(contains(secret)));
-      expect(stopwatch.elapsed, lessThan(const Duration(seconds: 20)));
+      expect(stopwatch.elapsed, lessThan(const Duration(seconds: 60)));
 
       expect(parentPid, isNotNull);
       expect(childPid, isNotNull);
@@ -1271,6 +1271,89 @@ time.sleep(300)
     },
     skip: Platform.isWindows ? false : 'validates Windows taskkill /T cleanup',
   );
+
+  test(
+    'bounded runner cancels inherited output streams after parent exit',
+    () async {
+      final root = await Directory.systemTemp.createTemp(
+        'bounded_output_drain_',
+      );
+      addTearDown(() => root.delete(recursive: true));
+
+      final childScript = File(path.join(root.path, 'child.py'));
+      final parentScript = File(path.join(root.path, 'parent.py'));
+      final childPidFile = File(path.join(root.path, 'child.pid'));
+      await childScript.writeAsString(r'''
+import time
+
+print("descendant owns inherited output", flush=True)
+time.sleep(300)
+''');
+      await parentScript.writeAsString(r'''
+from pathlib import Path
+import subprocess
+import sys
+
+child = subprocess.Popen(
+    [sys.executable, sys.argv[1]],
+    stdout=sys.stdout,
+    stderr=sys.stderr,
+)
+Path(sys.argv[2]).write_text(str(child.pid), encoding="utf-8")
+print("parent exited after spawning child", flush=True)
+''');
+
+      int? childPid;
+      addTearDown(() async {
+        childPid ??= await _readPidFile(childPidFile);
+        if (childPid != null) {
+          await _ensureWindowsProcessStopped(childPid!);
+        }
+      });
+
+      const secret = 'must-not-appear-in-output-drain-diagnostics';
+      Object? failure;
+      final stopwatch = Stopwatch()..start();
+      try {
+        await _runPython(
+          [parentScript.path, childScript.path, childPidFile.path, secret],
+          timeout: const Duration(seconds: 5),
+          outputDrainTimeout: const Duration(seconds: 1),
+          redactions: {root.path: '<temp>', secret: '<redacted>'},
+        );
+      } on Object catch (error) {
+        failure = error;
+      }
+      stopwatch.stop();
+      childPid = await _readPidFile(childPidFile);
+
+      expect(failure, isA<TestFailure>());
+      final message = '$failure';
+      expect(message, contains('output streams did not close within 1s'));
+      expect(message, contains('<temp>'));
+      expect(message, isNot(contains(root.path)));
+      expect(message, isNot(contains(secret)));
+      expect(stopwatch.elapsed, lessThan(const Duration(seconds: 10)));
+      expect(childPid, isNotNull);
+      expect(await _windowsProcessExists(childPid!), isTrue);
+    },
+    skip: Platform.isWindows ? false : 'validates inherited Windows handles',
+  );
+
+  test('bounded runner output buffer retains only a diagnostic tail', () {
+    final buffer = _CappedTextBuffer();
+    buffer.write('sensitive-prefix');
+    buffer.write('x' * (70 * 1024));
+
+    final output = buffer.toString();
+    expect(output, startsWith('<truncated>\n'));
+    expect(output, isNot(contains('sensitive-prefix')));
+    expect(
+      output.length,
+      lessThanOrEqualTo(64 * 1024 + '<truncated>\n'.length),
+    );
+    expect(output, endsWith('x' * 64));
+  });
 }
 
 Future<_LlamaSyncSetup> _writeLlamaOnlyRepo(String currentTag) async {
@@ -1439,6 +1522,7 @@ int _occurrences(String text, String needle) => needle.allMatches(text).length;
 Future<ProcessResult> _runPython(
   List<String> arguments, {
   Duration? timeout,
+  Duration outputDrainTimeout = const Duration(seconds: 5),
   Map<String, String> redactions = const {},
   void Function(int pid)? onStart,
 }) async {
@@ -1459,8 +1543,8 @@ Future<ProcessResult> _runPython(
   final stopwatch = Stopwatch()..start();
   final process = await Process.start(executable, arguments, runInShell: false);
   onStart?.call(process.pid);
-  final stdout = StringBuffer();
-  final stderr = StringBuffer();
+  final stdout = _CappedTextBuffer();
+  final stderr = _CappedTextBuffer();
   final stdoutSubscription = process.stdout
       .transform(utf8.decoder)
       .listen(stdout.write);
@@ -1475,12 +1559,13 @@ Future<ProcessResult> _runPython(
     exitCode = await process.exitCode.timeout(effectiveTimeout);
   } on TimeoutException {
     final termination = await _terminateProcessTree(process);
-    final outputDrained = await _waitForOutputDrain(stdoutDone, stderrDone);
+    final outputDrained = await _waitForOutputDrain(
+      stdoutDone,
+      stderrDone,
+      timeout: outputDrainTimeout,
+    );
     if (!outputDrained) {
-      await Future.wait([
-        stdoutSubscription.cancel(),
-        stderrSubscription.cancel(),
-      ]).timeout(const Duration(seconds: 2), onTimeout: () => <void>[]);
+      await _cancelOutputSubscriptions(stdoutSubscription, stderrSubscription);
     }
     stopwatch.stop();
     final command = _sanitizeDiagnosticText(
@@ -1502,7 +1587,24 @@ Future<ProcessResult> _runPython(
     );
   }
 
-  await Future.wait([stdoutDone, stderrDone]);
+  final outputDrained = await _waitForOutputDrain(
+    stdoutDone,
+    stderrDone,
+    timeout: outputDrainTimeout,
+  );
+  if (!outputDrained) {
+    await _cancelOutputSubscriptions(stdoutSubscription, stderrSubscription);
+    stopwatch.stop();
+    final command = _sanitizeDiagnosticText(
+      '$executable ${arguments.join(' ')}',
+      effectiveRedactions,
+    );
+    fail(
+      '$command exited with code $exitCode but its output streams did not '
+      'close within ${outputDrainTimeout.inSeconds}s '
+      '(elapsed ${stopwatch.elapsedMilliseconds}ms).',
+    );
+  }
   stopwatch.stop();
   return ProcessResult(
     process.pid,
@@ -1514,27 +1616,42 @@ Future<ProcessResult> _runPython(
 
 Future<String> _terminateProcessTree(Process process) async {
   if (Platform.isWindows) {
-    var taskkill = (exitCode: -1, timedOut: false);
-    try {
-      taskkill = await _taskkillWindowsPid(process.pid);
-    } on ProcessException {
-      // The direct-process fallback below still guarantees bounded cleanup.
+    final taskkillAttempts = <({int exitCode, bool timedOut})>[];
+    for (var attempt = 0; attempt < 2; attempt++) {
+      try {
+        final result = await _taskkillWindowsPid(process.pid);
+        taskkillAttempts.add(result);
+        if (result.exitCode == 0) {
+          break;
+        }
+      } on ProcessException {
+        taskkillAttempts.add((exitCode: -1, timedOut: false));
+      }
     }
+    final treeCleanupConfirmed = taskkillAttempts.any(
+      (attempt) => attempt.exitCode == 0,
+    );
 
     var processExit = await _awaitProcessExit(
       process,
-      const Duration(seconds: 5),
+      const Duration(seconds: 2),
     );
     var fallbackKill = false;
     if (processExit == null) {
       fallbackKill = process.kill();
       processExit = await _awaitProcessExit(
         process,
-        const Duration(seconds: 5),
+        const Duration(seconds: 3),
       );
     }
-    return 'taskkillExit=${taskkill.exitCode}, '
-        'taskkillTimedOut=${taskkill.timedOut}, '
+    final taskkillSummary = taskkillAttempts
+        .map(
+          (attempt) =>
+              '${attempt.exitCode}${attempt.timedOut ? "(timed-out)" : ""}',
+        )
+        .join(',');
+    return 'taskkillAttempts=[$taskkillSummary], '
+        'treeCleanup=${treeCleanupConfirmed ? 'confirmed' : 'unconfirmed'}, '
         'fallbackKill=$fallbackKill, processExit=${processExit ?? 'unconfirmed'}';
   }
 
@@ -1562,18 +1679,19 @@ Future<({int exitCode, bool timedOut})> _taskkillWindowsPid(int pid) async {
   final stdoutDone = stdoutSubscription.asFuture<void>();
   final stderrDone = stderrSubscription.asFuture<void>();
   var timedOut = false;
-  var exitCode = await _awaitProcessExit(taskkill, const Duration(seconds: 10));
+  var exitCode = await _awaitProcessExit(taskkill, const Duration(seconds: 5));
   if (exitCode == null) {
     timedOut = true;
     taskkill.kill();
-    exitCode = await _awaitProcessExit(taskkill, const Duration(seconds: 2));
+    exitCode = await _awaitProcessExit(taskkill, const Duration(seconds: 1));
   }
-  final outputDrained = await _waitForOutputDrain(stdoutDone, stderrDone);
+  final outputDrained = await _waitForOutputDrain(
+    stdoutDone,
+    stderrDone,
+    timeout: const Duration(seconds: 1),
+  );
   if (!outputDrained) {
-    await Future.wait([
-      stdoutSubscription.cancel(),
-      stderrSubscription.cancel(),
-    ]).timeout(const Duration(seconds: 2), onTimeout: () => <void>[]);
+    await _cancelOutputSubscriptions(stdoutSubscription, stderrSubscription);
   }
   return (exitCode: exitCode ?? -1, timedOut: timedOut);
 }
@@ -1588,17 +1706,49 @@ Future<int?> _awaitProcessExit(Process process, Duration timeout) async {
 
 Future<bool> _waitForOutputDrain(
   Future<void> stdoutDone,
-  Future<void> stderrDone,
-) async {
+  Future<void> stderrDone, {
+  Duration timeout = const Duration(seconds: 5),
+}) async {
   try {
-    await Future.wait([
-      stdoutDone,
-      stderrDone,
-    ]).timeout(const Duration(seconds: 5));
+    await Future.wait([stdoutDone, stderrDone]).timeout(timeout);
     return true;
   } on TimeoutException {
     return false;
   }
+}
+
+Future<void> _cancelOutputSubscriptions(
+  StreamSubscription<dynamic> stdoutSubscription,
+  StreamSubscription<dynamic> stderrSubscription,
+) async {
+  await Future.wait([
+    stdoutSubscription.cancel(),
+    stderrSubscription.cancel(),
+  ]).timeout(const Duration(seconds: 2), onTimeout: () => <void>[]);
+}
+
+final class _CappedTextBuffer {
+  static const _maxCharacters = 64 * 1024;
+
+  String _value = '';
+  bool _truncated = false;
+
+  void write(Object? value) {
+    final chunk = '$value';
+    if (chunk.length >= _maxCharacters) {
+      _value = chunk.substring(chunk.length - _maxCharacters);
+      _truncated = true;
+      return;
+    }
+    _value += chunk;
+    if (_value.length > _maxCharacters) {
+      _value = _value.substring(_value.length - _maxCharacters);
+      _truncated = true;
+    }
+  }
+
+  @override
+  String toString() => _truncated ? '<truncated>\n$_value' : _value;
 }
 
 String _sanitizeDiagnosticText(String value, Map<String, String> redactions) {
