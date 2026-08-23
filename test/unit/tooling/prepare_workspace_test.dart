@@ -19,6 +19,13 @@ Directory _workspaceFixture() {
   return root;
 }
 
+String _workspaceRelativePath(String rootPath, String workingDirectory) {
+  if (workingDirectory == rootPath) {
+    return '.';
+  }
+  return workingDirectory.substring(rootPath.length + 1).replaceAll('\\', '/');
+}
+
 void main() {
   test('checked-in package roots are fully classified', () {
     expect(validateWorkspaceManifest(Directory.current), isEmpty);
@@ -33,9 +40,7 @@ void main() {
       final result = await prepareWorkspace(
         root,
         commandRunner: (executable, arguments, workingDirectory) async {
-          final relative = workingDirectory == root.path
-              ? '.'
-              : workingDirectory.substring(root.path.length + 1);
+          final relative = _workspaceRelativePath(root.path, workingDirectory);
           commands.add('$executable ${arguments.join(' ')} @ $relative');
           return 0;
         },
@@ -56,6 +61,13 @@ void main() {
       );
     },
   );
+
+  test('normalizes Windows workspace command paths for stable assertions', () {
+    expect(
+      _workspaceRelativePath(r'C:\repo', r'C:\repo\example\chat_app'),
+      'example/chat_app',
+    );
+  });
 
   test('rejects a package that is not in the preparation manifest', () {
     final root = _workspaceFixture();
