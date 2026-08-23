@@ -1,4 +1,5 @@
 @TestOn('vm')
+@Timeout(Duration(minutes: 2))
 library;
 
 import 'dart:async';
@@ -113,6 +114,7 @@ paths=(
               litertAppleChecksums[entry.key]!,
       },
     );
+    await _expectOfflineReleaseFixtures(releaseDir);
 
     final result = await _runPython([
       'tool/native/sync_native_release_pins.py',
@@ -1193,6 +1195,82 @@ printf '%s\\n' '{"tag_name":"v0.2.0-1","assets":[]}'
     expect(result.stderr, isNot(contains('Traceback')));
     expect(result.stderr, isNot(contains('AttributeError')));
   });
+
+  test(
+    'bounded runner terminates a Windows process tree with safe diagnostics',
+    () async {
+      final root = await Directory.systemTemp.createTemp(
+        'bounded_process_tree_',
+      );
+      addTearDown(() => root.delete(recursive: true));
+
+      final childScript = File(path.join(root.path, 'child.py'));
+      final parentScript = File(path.join(root.path, 'parent.py'));
+      final childPidFile = File(path.join(root.path, 'child.pid'));
+      await childScript.writeAsString(r'''
+import time
+
+while True:
+    time.sleep(60)
+''');
+      await parentScript.writeAsString(r'''
+from pathlib import Path
+import subprocess
+import sys
+import time
+
+child = subprocess.Popen([sys.executable, sys.argv[1]])
+Path(sys.argv[2]).write_text(str(child.pid), encoding="utf-8")
+print(f"synthetic child ready: {child.pid}", flush=True)
+time.sleep(300)
+''');
+
+      int? parentPid;
+      int? childPid;
+      addTearDown(() async {
+        childPid ??= await _readPidFile(childPidFile);
+        if (parentPid != null) {
+          await _ensureWindowsProcessStopped(parentPid!);
+        }
+        if (childPid != null) {
+          await _ensureWindowsProcessStopped(childPid!);
+        }
+      });
+
+      const secret = 'must-not-appear-in-timeout-diagnostics';
+      Object? failure;
+      final stopwatch = Stopwatch()..start();
+      try {
+        await _runPython(
+          [parentScript.path, childScript.path, childPidFile.path, secret],
+          timeout: const Duration(seconds: 5),
+          redactions: {root.path: '<temp>', secret: '<redacted>'},
+          onStart: (pid) => parentPid = pid,
+        );
+      } on Object catch (error) {
+        failure = error;
+      }
+      stopwatch.stop();
+      childPid = await _readPidFile(childPidFile);
+
+      expect(failure, isA<TestFailure>());
+      final message = '$failure';
+      expect(message, contains('timed out after 5s'));
+      expect(message, contains('process tree termination:'));
+      expect(message, contains('taskkillExit=0'));
+      expect(message, contains('synthetic child ready:'));
+      expect(message, contains('<temp>'));
+      expect(message, isNot(contains(root.path)));
+      expect(message, isNot(contains(secret)));
+      expect(stopwatch.elapsed, lessThan(const Duration(seconds: 20)));
+
+      expect(parentPid, isNotNull);
+      expect(childPid, isNotNull);
+      expect(await _windowsProcessExists(parentPid!), isFalse);
+      expect(await _windowsProcessExists(childPid!), isFalse);
+    },
+    skip: Platform.isWindows ? false : 'validates Windows taskkill /T cleanup',
+  );
 }
 
 Future<_LlamaSyncSetup> _writeLlamaOnlyRepo(String currentTag) async {
@@ -1358,38 +1436,247 @@ String _upstreamTagForNativeTag(String tag) {
 
 int _occurrences(String text, String needle) => needle.allMatches(text).length;
 
-Future<ProcessResult> _runPython(List<String> arguments) async {
+Future<ProcessResult> _runPython(
+  List<String> arguments, {
+  Duration? timeout,
+  Map<String, String> redactions = const {},
+  void Function(int pid)? onStart,
+}) async {
   final executable = Platform.isWindows ? 'python' : 'python3';
-  final process = await Process.start(executable, arguments);
+  final effectiveTimeout =
+      timeout ??
+      (Platform.isWindows
+          ? const Duration(seconds: 60)
+          : const Duration(seconds: 30));
+  final effectiveRedactions = <String, String>{...redactions};
+  for (var index = 0; index < arguments.length - 1; index++) {
+    if (arguments[index] == '--repo-root' ||
+        arguments[index] == '--release-json-dir') {
+      effectiveRedactions[arguments[index + 1]] = '<temp>';
+    }
+  }
+
+  final stopwatch = Stopwatch()..start();
+  final process = await Process.start(executable, arguments, runInShell: false);
+  onStart?.call(process.pid);
   final stdout = StringBuffer();
   final stderr = StringBuffer();
-  final stdoutDone = process.stdout
+  final stdoutSubscription = process.stdout
       .transform(utf8.decoder)
-      .forEach(stdout.write);
-  final stderrDone = process.stderr
+      .listen(stdout.write);
+  final stderrSubscription = process.stderr
       .transform(utf8.decoder)
-      .forEach(stderr.write);
+      .listen(stderr.write);
+  final stdoutDone = stdoutSubscription.asFuture<void>();
+  final stderrDone = stderrSubscription.asFuture<void>();
 
   late final int exitCode;
   try {
-    exitCode = await process.exitCode.timeout(const Duration(seconds: 20));
+    exitCode = await process.exitCode.timeout(effectiveTimeout);
   } on TimeoutException {
-    process.kill(ProcessSignal.sigkill);
-    await process.exitCode;
-    await Future.wait([stdoutDone, stderrDone]);
+    final termination = await _terminateProcessTree(process);
+    final outputDrained = await _waitForOutputDrain(stdoutDone, stderrDone);
+    if (!outputDrained) {
+      await Future.wait([
+        stdoutSubscription.cancel(),
+        stderrSubscription.cancel(),
+      ]).timeout(const Duration(seconds: 2), onTimeout: () => <void>[]);
+    }
+    stopwatch.stop();
+    final command = _sanitizeDiagnosticText(
+      '$executable ${arguments.join(' ')}',
+      effectiveRedactions,
+    );
+    final stdoutTail = _diagnosticTail(
+      _sanitizeDiagnosticText(stdout.toString(), effectiveRedactions),
+    );
+    final stderrTail = _diagnosticTail(
+      _sanitizeDiagnosticText(stderr.toString(), effectiveRedactions),
+    );
     fail(
-      '$executable ${arguments.join(' ')} timed out.\n'
-      'stdout:\n$stdout\nstderr:\n$stderr',
+      '$command timed out after ${effectiveTimeout.inSeconds}s '
+      '(elapsed ${stopwatch.elapsedMilliseconds}ms).\n'
+      'process tree termination: $termination\n'
+      'stdout tail:\n$stdoutTail\n'
+      'stderr tail:\n$stderrTail',
     );
   }
 
   await Future.wait([stdoutDone, stderrDone]);
+  stopwatch.stop();
   return ProcessResult(
     process.pid,
     exitCode,
     stdout.toString(),
     stderr.toString(),
   );
+}
+
+Future<String> _terminateProcessTree(Process process) async {
+  if (Platform.isWindows) {
+    var taskkill = (exitCode: -1, timedOut: false);
+    try {
+      taskkill = await _taskkillWindowsPid(process.pid);
+    } on ProcessException {
+      // The direct-process fallback below still guarantees bounded cleanup.
+    }
+
+    var processExit = await _awaitProcessExit(
+      process,
+      const Duration(seconds: 5),
+    );
+    var fallbackKill = false;
+    if (processExit == null) {
+      fallbackKill = process.kill();
+      processExit = await _awaitProcessExit(
+        process,
+        const Duration(seconds: 5),
+      );
+    }
+    return 'taskkillExit=${taskkill.exitCode}, '
+        'taskkillTimedOut=${taskkill.timedOut}, '
+        'fallbackKill=$fallbackKill, processExit=${processExit ?? 'unconfirmed'}';
+  }
+
+  process.kill();
+  var processExit = await _awaitProcessExit(
+    process,
+    const Duration(seconds: 2),
+  );
+  if (processExit == null) {
+    process.kill(ProcessSignal.sigkill);
+    processExit = await _awaitProcessExit(process, const Duration(seconds: 5));
+  }
+  return 'processExit=${processExit ?? 'unconfirmed'}';
+}
+
+Future<({int exitCode, bool timedOut})> _taskkillWindowsPid(int pid) async {
+  final taskkill = await Process.start('taskkill', [
+    '/PID',
+    '$pid',
+    '/T',
+    '/F',
+  ], runInShell: false);
+  final stdoutSubscription = taskkill.stdout.listen(null);
+  final stderrSubscription = taskkill.stderr.listen(null);
+  final stdoutDone = stdoutSubscription.asFuture<void>();
+  final stderrDone = stderrSubscription.asFuture<void>();
+  var timedOut = false;
+  var exitCode = await _awaitProcessExit(taskkill, const Duration(seconds: 10));
+  if (exitCode == null) {
+    timedOut = true;
+    taskkill.kill();
+    exitCode = await _awaitProcessExit(taskkill, const Duration(seconds: 2));
+  }
+  final outputDrained = await _waitForOutputDrain(stdoutDone, stderrDone);
+  if (!outputDrained) {
+    await Future.wait([
+      stdoutSubscription.cancel(),
+      stderrSubscription.cancel(),
+    ]).timeout(const Duration(seconds: 2), onTimeout: () => <void>[]);
+  }
+  return (exitCode: exitCode ?? -1, timedOut: timedOut);
+}
+
+Future<int?> _awaitProcessExit(Process process, Duration timeout) async {
+  try {
+    return await process.exitCode.timeout(timeout);
+  } on TimeoutException {
+    return null;
+  }
+}
+
+Future<bool> _waitForOutputDrain(
+  Future<void> stdoutDone,
+  Future<void> stderrDone,
+) async {
+  try {
+    await Future.wait([
+      stdoutDone,
+      stderrDone,
+    ]).timeout(const Duration(seconds: 5));
+    return true;
+  } on TimeoutException {
+    return false;
+  }
+}
+
+String _sanitizeDiagnosticText(String value, Map<String, String> redactions) {
+  final ordered =
+      redactions.entries.where((entry) => entry.key.isNotEmpty).toList()
+        ..sort((left, right) => right.key.length.compareTo(left.key.length));
+  var sanitized = value;
+  for (final entry in ordered) {
+    sanitized = sanitized.replaceAll(entry.key, entry.value);
+  }
+  return sanitized;
+}
+
+String _diagnosticTail(String value, {int maxCharacters = 4096}) {
+  if (value.length <= maxCharacters) {
+    return value;
+  }
+  return '<truncated>\n${value.substring(value.length - maxCharacters)}';
+}
+
+Future<bool> _windowsProcessExists(int pid) async {
+  final result = await Process.run('powershell', [
+    '-NoProfile',
+    '-NonInteractive',
+    '-Command',
+    'if (Get-Process -Id $pid '
+        '-ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }',
+  ], runInShell: false);
+  return result.exitCode == 0;
+}
+
+Future<int?> _readPidFile(File file) async {
+  if (!file.existsSync()) {
+    return null;
+  }
+  return int.tryParse((await file.readAsString()).trim());
+}
+
+Future<void> _ensureWindowsProcessStopped(int pid) async {
+  if (!await _windowsProcessExists(pid)) {
+    return;
+  }
+  try {
+    await _taskkillWindowsPid(pid);
+  } on ProcessException {
+    return;
+  }
+  for (var attempt = 0; attempt < 20; attempt++) {
+    if (!await _windowsProcessExists(pid)) {
+      return;
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+  }
+}
+
+Future<void> _expectOfflineReleaseFixtures(Directory releaseDir) async {
+  final fixtures = await releaseDir
+      .list()
+      .where(
+        (entity) =>
+            entity is File &&
+            entity.path.endsWith('.json') &&
+            !entity.path.endsWith('__manifest.json'),
+      )
+      .cast<File>()
+      .toList();
+  expect(fixtures, hasLength(2));
+  for (final fixture in fixtures) {
+    final fixtureText = await fixture.readAsString();
+    expect(fixtureText, isNot(contains('browser_download_url')));
+    final payload = jsonDecode(fixtureText) as Map<String, Object?>;
+    final assets = (payload['assets'] as List<Object?>)
+        .cast<Map<String, Object?>>();
+    expect(assets, isNotEmpty);
+    for (final asset in assets) {
+      expect(asset['digest'], matches(RegExp(r'^sha256:[0-9a-f]{64}$')));
+    }
+  }
 }
 
 Future<void> _writePackageSwift(
