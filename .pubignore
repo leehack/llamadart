@@ -52,7 +52,8 @@ test/unit/backends/wllama/
 /docs/
 /website/
 
-# Contributor/maintainer docs: GitHub-only; packaged files link by absolute URL
+# Contributor/maintainer docs: GitHub-only; packaged documentation links use
+# absolute GitHub URLs
 /doc/
 
 # Agent-only maintainer notes

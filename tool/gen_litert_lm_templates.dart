@@ -12,7 +12,7 @@
 //   2. Add an `_Entry` to `_manifest` below (id, family substrings, bos/eos).
 //   3. Run: dart run tool/gen_litert_lm_templates.dart
 //
-// See https://github.com/leehack/llamadart/blob/main/doc/litert_lm_templates.md.
+// See https://github.com/leehack/llamadart/blob/main/doc/litert_lm_templates.md
 
 import 'dart:io';
 
