@@ -10,7 +10,9 @@ void main() {
 
   setUpAll(() async {
     repository = await Directory.systemTemp.createTemp('pubignore_contract_');
-    await File('.pubignore').copy('${repository.path}/.gitignore');
+    await File(
+      '.pubignore',
+    ).copy('${repository.path}${Platform.pathSeparator}.gitignore');
 
     final result = await Process.run('git', [
       'init',
@@ -20,6 +22,13 @@ void main() {
     await File(
       '${repository.path}${Platform.pathSeparator}.git'
       '${Platform.pathSeparator}empty_excludes',
+    ).writeAsString('');
+    // check-ignore also reads .git/info/exclude, which init.templateDir can
+    // populate on a contributor's machine.
+    await File(
+      '${repository.path}${Platform.pathSeparator}.git'
+      '${Platform.pathSeparator}info'
+      '${Platform.pathSeparator}exclude',
     ).writeAsString('');
   });
 

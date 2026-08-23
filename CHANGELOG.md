@@ -11,8 +11,8 @@
   empty, and all-unrecognised config still select every family.
 
 * The published package no longer ships the `doc/` directory; that contributor
-  and maintainer documentation is maintained on GitHub, and packaged files now
-  link to it by absolute URL.
+  and maintainer documentation is maintained on GitHub, and the packaged files
+  that link to it now use absolute URLs.
 
 * Fixed unanchored `docs/` and `website/` publish-exclusions that matched those
   directory names at any depth and dropped `tool/docs/` plus the
