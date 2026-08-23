@@ -47,9 +47,13 @@ lib/src/backends/wllama/
 test/integration/backends/wllama/
 test/unit/backends/wllama/
 
-# Local scratch docs directory
-docs/
-website/
+# Root-only: scratch docs output and the Docusaurus site source. Anchored so
+# nested docs/ directories (tool/docs, example .../presentation/docs) still ship.
+/docs/
+/website/
+
+# Contributor/maintainer docs: GitHub-only; packaged files link by absolute URL
+/doc/
 
 # Agent-only maintainer notes
 AGENTS.md
