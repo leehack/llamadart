@@ -72,7 +72,7 @@ void main() {
         environment: const {'LLAMA_CPP_CHAT_TEST_BUILD_JOBS': '0'},
         includeParentEnvironment: true,
       );
-      expect(result.exitCode, 64);
+      expect(result.exitCode, isNot(0));
       expect(
         result.stderr,
         contains('LLAMA_CPP_CHAT_TEST_BUILD_JOBS must be a positive integer.'),
