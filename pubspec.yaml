@@ -32,7 +32,13 @@ dependencies:
   code_assets: '>=1.0.0 <3.0.0'
   hooks: '>=1.0.0 <3.0.0'
   logging: ^1.3.0
-  dinja: ^1.0.0
+  # jinja_analyzer.dart imports dinja's private src/lexer.dart, src/parser.dart
+  # and src/ast/nodes.dart. This bound only rules out a silently resolved 1.1.x;
+  # a 1.0.x patch can move those files just as freely, and consumers of released
+  # versions resolve dinja themselves. jinja_analyzer_dinja_coupling_test.dart
+  # catches the break in CI. Durable fix: dinja exports this surface -
+  # issue #351 option 2. Re-verify the imports to widen.
+  dinja: '>=1.0.0 <1.1.0'
 
 dev_dependencies:
   ffigen: ^21.0.0
