@@ -7,7 +7,7 @@
     "structuredOutput"
   ],
   "implementationTask": "codex://tasks/root/premerge_regression_gate",
-  "independentQaTask": "codex://tasks/root/premerge_regression_gate/qa-sol-final",
+  "independentQaTask": "codex://tasks/root/qa_sol_final",
   "productionEvidence": {
     "positiveTests": [
       "test/integration/core/grammar/generated_tool_schema_grammar_test.dart",
