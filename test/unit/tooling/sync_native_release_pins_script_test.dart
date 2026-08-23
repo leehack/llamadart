@@ -1456,12 +1456,7 @@ print("parent exited after spawning child", flush=True)
         '-c',
         'import time; time.sleep(300)',
       ], runInShell: false);
-      addTearDown(() async {
-        if (await _awaitProcessExit(retryProcess, const Duration(seconds: 1)) ==
-            null) {
-          await _ensureWindowsProcessStopped(retryProcess.pid);
-        }
-      });
+      addTearDown(() => _ensureProcessHandleStopped(retryProcess));
       var retryCalls = 0;
       final retryResult = await _terminateProcessTree(
         retryProcess,
@@ -1483,15 +1478,7 @@ print("parent exited after spawning child", flush=True)
         '-c',
         'import time; time.sleep(300)',
       ], runInShell: false);
-      addTearDown(() async {
-        if (await _awaitProcessExit(
-              fallbackProcess,
-              const Duration(seconds: 1),
-            ) ==
-            null) {
-          await _ensureWindowsProcessStopped(fallbackProcess.pid);
-        }
-      });
+      addTearDown(() => _ensureProcessHandleStopped(fallbackProcess));
       var fallbackCalls = 0;
       final stopwatch = Stopwatch()..start();
       final fallbackResult = await _terminateProcessTree(
@@ -1939,6 +1926,18 @@ Future<int?> _awaitProcessExit(Process process, Duration timeout) async {
     return await process.exitCode.timeout(timeout);
   } on TimeoutException {
     return null;
+  }
+}
+
+Future<void> _ensureProcessHandleStopped(Process process) async {
+  if (await _awaitProcessExit(process, const Duration(seconds: 1)) != null) {
+    return;
+  }
+  // Keep cleanup attached to the launched Process. A numeric PID may already
+  // belong to an unrelated process by the time this timeout expires.
+  process.kill();
+  if (await _awaitProcessExit(process, const Duration(seconds: 3)) == null) {
+    fail('Failed to terminate synthetic process through its original handle.');
   }
 }
 
