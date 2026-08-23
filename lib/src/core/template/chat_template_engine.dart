@@ -413,7 +413,7 @@ class ChatTemplateEngine {
     LlamaChatTemplateResult result,
     ToolChoice toolChoice,
   ) {
-    if (toolChoice != ToolChoice.required || !result.grammarLazy) {
+    if (toolChoice != ToolChoice.required) {
       return result;
     }
     if (result.grammar == null || result.grammar!.isEmpty) {
@@ -423,7 +423,8 @@ class ChatTemplateEngine {
     final resultFormat = result.format < ChatFormat.values.length
         ? ChatFormat.values[result.format]
         : ChatFormat.generic;
-    if (_requiredKeepsLazyFormats.contains(resultFormat)) {
+    if (_requiredKeepsLazyFormats.contains(resultFormat) &&
+        result.grammarLazy) {
       return result;
     }
 
@@ -434,7 +435,7 @@ class ChatTemplateEngine {
       grammarLazy: false,
       additionalStops: result.additionalStops,
       preservedTokens: result.preservedTokens,
-      grammarTriggers: result.grammarTriggers,
+      grammarTriggers: const [],
       thinkingForcedOpen: result.thinkingForcedOpen,
       parser: result.parser,
       tokenCount: result.tokenCount,
@@ -444,6 +445,8 @@ class ChatTemplateEngine {
   /// Parses raw LLM output using the format's handler.
   ///
   /// The [formatIndex] should come from [LlamaChatTemplateResult.format].
+  /// [tools] supplies the schemas needed by formats whose wire representation
+  /// does not encode enough type information to reconstruct arguments safely.
   static ChatParseResult parse(
     int formatIndex,
     String output, {
@@ -451,6 +454,7 @@ class ChatTemplateEngine {
     bool parseToolCalls = true,
     bool thinkingForcedOpen = false,
     String? parser,
+    List<ToolDefinition>? tools,
   }) {
     final resolved = _resolveHandlerForParse(formatIndex: formatIndex);
     final handler = resolved.handler;
@@ -479,6 +483,16 @@ class ChatTemplateEngine {
         output: output,
         isPartial: isPartial,
         parseToolCalls: parseToolCalls,
+      );
+    }
+
+    if (handler is ToolSchemaAwareChatTemplateHandler) {
+      return (handler as ToolSchemaAwareChatTemplateHandler).parseWithTools(
+        output,
+        tools: tools,
+        isPartial: isPartial,
+        parseToolCalls: parseToolCalls,
+        thinkingForcedOpen: thinkingForcedOpen,
       );
     }
 
@@ -557,6 +571,8 @@ class ChatTemplateEngine {
         return MinimaxM3Handler();
       case ChatFormat.deepseekV4:
         return DeepseekV4Handler();
+      case ChatFormat.deepseekV32:
+        return DeepseekV32Handler();
       case ChatFormat.museGlimmer:
         return MuseGlimmerHandler();
       case ChatFormat.laguna:

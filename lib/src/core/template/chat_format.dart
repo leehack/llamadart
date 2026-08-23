@@ -133,7 +133,7 @@ enum ChatFormat {
   /// MiniMax M3 — namespaced XML invokes with `<mm:think>` reasoning.
   minimaxM3,
 
-  /// DeepSeek V3.2/V4 — DSML invokes with typed parameter values.
+  /// DeepSeek V4 — DSML `tool_calls` with typed parameter values.
   deepseekV4,
 
   /// Muse Glimmer — recipient channels with ATEM function-call markup.
@@ -141,6 +141,11 @@ enum ChatFormat {
 
   /// Poolside Laguna — tagged reasoning and arg-key/value tool calls.
   laguna,
+
+  /// DeepSeek V3.2 — DSML `function_calls` with typed parameter values.
+  ///
+  /// Appended to preserve the serialized indices of existing formats.
+  deepseekV32,
 }
 
 /// Detects the [ChatFormat] by scanning a Jinja template source string
@@ -179,8 +184,12 @@ ChatFormat detectChatFormat(String? templateSource) {
   // variable, so detecting only literal rendered tags misses every variant.
   if (templateSource.contains('dsml_token') &&
       templateSource.contains('DSML') &&
-      (templateSource.contains('function_calls') ||
-          templateSource.contains('tool_calls'))) {
+      templateSource.contains('function_calls')) {
+    return ChatFormat.deepseekV32;
+  }
+  if (templateSource.contains('dsml_token') &&
+      templateSource.contains('DSML') &&
+      templateSource.contains('tool_calls')) {
     return ChatFormat.deepseekV4;
   }
 

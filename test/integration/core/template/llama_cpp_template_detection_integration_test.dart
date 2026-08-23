@@ -6,6 +6,7 @@ import 'dart:io';
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
 import 'package:llamadart/src/core/models/chat/content_part.dart';
+import 'package:llamadart/src/core/models/inference/tool_choice.dart';
 import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:llamadart/src/core/models/tools/tool_param.dart';
 import 'package:llamadart/src/core/template/chat_format.dart';
@@ -83,7 +84,7 @@ void main() {
       'deepseek-ai-DeepSeek-R1-Distill-Llama-8B.jinja': ChatFormat.deepseekR1,
       'deepseek-ai-DeepSeek-R1-Distill-Qwen-32B.jinja': ChatFormat.deepseekR1,
       'deepseek-ai-DeepSeek-V3.1.jinja': ChatFormat.deepseekV3,
-      'deepseek-ai-DeepSeek-V3.2.jinja': ChatFormat.deepseekV4,
+      'deepseek-ai-DeepSeek-V3.2.jinja': ChatFormat.deepseekV32,
       'deepseek-ai-DeepSeek-V4.jinja': ChatFormat.deepseekV4,
       'deepseek-ai-DeepSeek-V4-Flash-0731.jinja': ChatFormat.deepseekV4,
       'fireworks-ai-llama-3-firefunction-v2.jinja': ChatFormat.firefunctionV2,
@@ -254,6 +255,7 @@ void main() {
         final parsed = ChatTemplateEngine.parse(
           rendered.format,
           sampleOutputForFormat(ChatFormat.values[rendered.format]),
+          tools: [tool],
           thinkingForcedOpen: rendered.thinkingForcedOpen,
         );
         expect(
@@ -263,6 +265,86 @@ void main() {
         );
         expect(parsed.toolCalls.single.function?.name, 'get_weather');
         expect(parsed.toolCalls.single.function?.arguments, contains('Seoul'));
+      }
+    }, skip: fixtureSkipReason);
+
+    test('direct-Jinja grammars preserve tool-choice and prefix semantics', () {
+      const templates = [
+        'Kimi-K3.jinja',
+        'MiniMax-M3.jinja',
+        'deepseek-ai-DeepSeek-V3.2.jinja',
+        'deepseek-ai-DeepSeek-V4.jinja',
+        'muse-glimmer.jinja',
+        'poolside-Laguna-XS-2.1.jinja',
+      ];
+      for (final templateName in templates) {
+        final source = File(
+          '${templatesDir.path}/$templateName',
+        ).readAsStringSync();
+        for (final enableThinking in const [true, false]) {
+          final auto = ChatTemplateEngine.render(
+            templateSource: source,
+            messages: messages,
+            metadata: metadata,
+            tools: [tool],
+            toolChoice: ToolChoice.auto,
+            enableThinking: enableThinking,
+          );
+          expect(auto.grammar, isNotNull, reason: templateName);
+          expect(auto.grammarLazy, isTrue, reason: templateName);
+          expect(auto.grammarTriggers, isNotEmpty, reason: templateName);
+
+          final required = ChatTemplateEngine.render(
+            templateSource: source,
+            messages: messages,
+            metadata: metadata,
+            tools: [tool],
+            toolChoice: ToolChoice.required,
+            enableThinking: enableThinking,
+          );
+          expect(required.grammar, isNotNull, reason: templateName);
+          expect(required.grammarLazy, isFalse, reason: templateName);
+          expect(required.grammarTriggers, isEmpty, reason: templateName);
+          expect(
+            required.grammar,
+            startsWith('root ::= '),
+            reason: templateName,
+          );
+
+          final none = ChatTemplateEngine.render(
+            templateSource: source,
+            messages: messages,
+            metadata: metadata,
+            tools: [tool],
+            toolChoice: ToolChoice.none,
+            enableThinking: enableThinking,
+          );
+          expect(none.grammar, isNull, reason: templateName);
+          expect(none.grammarLazy, isFalse, reason: templateName);
+          expect(none.grammarTriggers, isEmpty, reason: templateName);
+        }
+      }
+    }, skip: fixtureSkipReason);
+
+    test('DeepSeek grammars retain template-specific DSML envelopes', () {
+      for (final entry in const {
+        'deepseek-ai-DeepSeek-V3.2.jinja': 'function_calls',
+        'deepseek-ai-DeepSeek-V4.jinja': 'tool_calls',
+      }.entries) {
+        final source = File(
+          '${templatesDir.path}/${entry.key}',
+        ).readAsStringSync();
+        final rendered = ChatTemplateEngine.render(
+          templateSource: source,
+          messages: messages,
+          metadata: metadata,
+          tools: [tool],
+        );
+        expect(
+          rendered.grammar,
+          startsWith('root ::= "<｜DSML｜${entry.value}>'),
+        );
+        expect(rendered.grammarTriggers.single.value, '<｜DSML｜${entry.value}>');
       }
     }, skip: fixtureSkipReason);
   });

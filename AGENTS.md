@@ -41,6 +41,13 @@ For docs and release-sensitive snippets:
 dart run tool/testing/verify_release_docs_versions.dart
 ```
 
+For chat-template handler, parser, or grammar changes, run the pinned upstream
+suite plus compiled specialized-grammar acceptance checks:
+
+```bash
+tool/testing/run_template_parity_suites.sh
+```
+
 For coverage when `lib/` behavior changes or coverage is in doubt:
 
 ```bash
