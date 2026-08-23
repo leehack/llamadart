@@ -1814,6 +1814,7 @@ Verdict: PASS''',
         contains(r'(.display_title // "") | endswith($pr_suffix)'),
       );
       expect(publisherOwner, contains(r'.display_title == $ci_title'));
+      expect(publisherOwner, contains(r'.status == "in_progress"'));
       expect(publisherOwner, contains('[.id, .run_attempt] | @tsv'));
       expect(workflow, isNot(contains('max_by(.id).target_url')));
       expect(workflow, isNot(contains(r'/actions/runs/([1-9][0-9]*)$')));
@@ -1887,7 +1888,7 @@ Verdict: PASS''',
     });
 
     test(
-      'selects only the latest authenticated publisher run and attempt',
+      'selects only the authenticated active publisher run and attempt',
       () {
         final directory = Directory.systemTemp.createTempSync(
           'high-risk-publisher-owner-',
@@ -1903,6 +1904,7 @@ Verdict: PASS''',
           String title =
               'high-risk-evaluation-pr-420-head-1111111111111111111111111111111111111111-base-main',
           String event = 'workflow_run',
+          String status = 'in_progress',
         }) => {
           'id': id,
           'run_attempt': attempt,
@@ -1910,17 +1912,19 @@ Verdict: PASS''',
           'head_repository': {'full_name': repository},
           'display_title': title,
           'event': event,
+          'status': status,
         };
 
         input.writeAsStringSync(
           jsonEncode([
             {
               'workflow_runs': [
-                run(id: 100, attempt: 1),
+                run(id: 100, attempt: 1, status: 'completed'),
                 run(id: 100, attempt: 2),
                 run(
                   id: 101,
                   attempt: 1,
+                  status: 'queued',
                   title:
                       'high-risk-evaluation-ci-head-1111111111111111111111111111111111111111-base-main',
                 ),
@@ -1953,7 +1957,7 @@ Verdict: PASS''',
           input.path,
         ]);
         expect(result.exitCode, 0, reason: result.stderr as String?);
-        expect((result.stdout as String).trim(), '101\t1');
+        expect((result.stdout as String).trim(), '100\t2');
       },
       skip: Platform.isWindows
           ? 'jq fixture validation runs on trusted Linux'
