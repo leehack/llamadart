@@ -40,7 +40,8 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     mode: 'CI + local',
     covers: 'format, analyzer, web/native import boundaries',
     command:
-        'dart format --output=none --set-exit-if-changed .; dart analyze; '
+        'dart run tool/prepare_workspace.dart && '
+        'dart format --output=none --set-exit-if-changed . && dart analyze && '
         'dart run tool/testing/check_platform_boundaries.dart',
     useWhen: 'Every non-trivial PR.',
   ),
@@ -434,7 +435,9 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     id: 'template-parity',
     tier: 'targeted',
     mode: 'local-only',
-    covers: 'vendored llama.cpp chat-template detection/render/parse parity',
+    covers:
+        'vendored llama.cpp chat-template detection/render/parse parity and '
+        'compiled specialized GBNF schema acceptance/rejection',
     command: 'tool/testing/run_template_parity_suites.sh',
     useWhen: 'Template engine, handlers, grammar, or parser changes.',
   ),

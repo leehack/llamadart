@@ -94,7 +94,7 @@ export 'src/core/models/chat/completion_chunk.dart';
 
 // Tools
 export 'src/core/models/tools/tool_definition.dart';
-export 'src/core/models/tools/tool_param.dart';
+export 'src/core/models/tools/tool_param.dart' show ToolParam;
 export 'src/core/models/tools/tool_params.dart';
 
 // Models - Config

@@ -23,6 +23,7 @@
 
 ## Test Plan
 <!-- Mark commands as N/A with a short reason for docs-only/template-only changes. -->
+- [ ] `dart run tool/prepare_workspace.dart`
 - [ ] `dart format --output=none --set-exit-if-changed .`
 - [ ] `dart analyze`
 - [ ] `dart test -p vm -j 1 --exclude-tags local-only`

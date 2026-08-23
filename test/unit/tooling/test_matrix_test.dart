@@ -22,6 +22,24 @@ void main() {
       expect(ids, contains('coverage-lib'));
     });
 
+    test(
+      'keeps workspace preparation ahead of unscoped format and analyze',
+      () {
+        final row = testMatrixRows.singleWhere(
+          (row) => row.id == 'static-format-analyze',
+        );
+
+        expect(
+          row.command,
+          startsWith(
+            'dart run tool/prepare_workspace.dart && '
+            'dart format --output=none --set-exit-if-changed . && '
+            'dart analyze &&',
+          ),
+        );
+      },
+    );
+
     test('includes targeted local model smoke rows', () {
       final ids = testMatrixRows.map((row) => row.id).toSet();
 

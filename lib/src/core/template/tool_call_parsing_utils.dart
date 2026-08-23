@@ -285,6 +285,20 @@ class ToolCallParsingUtils {
     return ParsedJsonValueSlice(value: decoded, end: end);
   }
 
+  /// Whether [input] is valid JSON with unique keys in every object.
+  ///
+  /// JSON decoding normally collapses duplicate keys before schema validation.
+  /// Protocol parsers that must fail closed on ambiguous objects can use this
+  /// check before accepting the decoded value.
+  static bool hasUniqueJsonObjectKeys(String input) {
+    try {
+      jsonDecode(input);
+    } catch (_) {
+      return false;
+    }
+    return _UniqueJsonObjectKeyScanner(input).scan();
+  }
+
   /// Builds a function-style tool call chunk.
   static LlamaCompletionChunkToolCall createFunctionToolCall({
     required int index,
@@ -404,3 +418,143 @@ class ToolCallParsingUtils {
     return null;
   }
 }
+
+class _UniqueJsonObjectKeyScanner {
+  _UniqueJsonObjectKeyScanner(this.input);
+
+  final String input;
+  var _offset = 0;
+
+  bool scan() {
+    if (!_scanValue()) {
+      return false;
+    }
+    _skipWhitespace();
+    return _offset == input.length;
+  }
+
+  bool _scanValue() {
+    _skipWhitespace();
+    if (_offset >= input.length) {
+      return false;
+    }
+    return switch (input.codeUnitAt(_offset)) {
+      0x7B => _scanObject(),
+      0x5B => _scanArray(),
+      0x22 => _scanString(),
+      _ => _scanScalar(),
+    };
+  }
+
+  bool _scanObject() {
+    _offset++;
+    _skipWhitespace();
+    if (_consume(0x7D)) {
+      return true;
+    }
+
+    final keys = <String>{};
+    while (_offset < input.length) {
+      _skipWhitespace();
+      if (_offset >= input.length || input.codeUnitAt(_offset) != 0x22) {
+        return false;
+      }
+      final keyStart = _offset;
+      if (!_scanString()) {
+        return false;
+      }
+      final key = jsonDecode(input.substring(keyStart, _offset)) as String;
+      if (!keys.add(key)) {
+        return false;
+      }
+
+      _skipWhitespace();
+      if (!_consume(0x3A) || !_scanValue()) {
+        return false;
+      }
+      _skipWhitespace();
+      if (_consume(0x7D)) {
+        return true;
+      }
+      if (!_consume(0x2C)) {
+        return false;
+      }
+    }
+    return false;
+  }
+
+  bool _scanArray() {
+    _offset++;
+    _skipWhitespace();
+    if (_consume(0x5D)) {
+      return true;
+    }
+    while (_offset < input.length) {
+      if (!_scanValue()) {
+        return false;
+      }
+      _skipWhitespace();
+      if (_consume(0x5D)) {
+        return true;
+      }
+      if (!_consume(0x2C)) {
+        return false;
+      }
+    }
+    return false;
+  }
+
+  bool _scanString() {
+    if (!_consume(0x22)) {
+      return false;
+    }
+    var escaped = false;
+    while (_offset < input.length) {
+      final character = input.codeUnitAt(_offset++);
+      if (escaped) {
+        escaped = false;
+      } else if (character == 0x5C) {
+        escaped = true;
+      } else if (character == 0x22) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  bool _scanScalar() {
+    final start = _offset;
+    while (_offset < input.length) {
+      final character = input.codeUnitAt(_offset);
+      if (_isJsonWhitespace(character) ||
+          character == 0x2C ||
+          character == 0x5D ||
+          character == 0x7D) {
+        break;
+      }
+      _offset++;
+    }
+    return _offset > start;
+  }
+
+  void _skipWhitespace() {
+    while (_offset < input.length &&
+        _isJsonWhitespace(input.codeUnitAt(_offset))) {
+      _offset++;
+    }
+  }
+
+  bool _consume(int character) {
+    if (_offset >= input.length || input.codeUnitAt(_offset) != character) {
+      return false;
+    }
+    _offset++;
+    return true;
+  }
+}
+
+bool _isJsonWhitespace(int character) =>
+    character == 0x20 ||
+    character == 0x09 ||
+    character == 0x0A ||
+    character == 0x0D;

@@ -37,12 +37,26 @@ Verify these paths before running cross-repo workflows.
 From repo root:
 
 ```bash
+dart run tool/prepare_workspace.dart
 dart format --output=none --set-exit-if-changed .
 dart analyze
 dart test
 ./tool/docs/build_site.sh
 ./tool/docs/validate_links.sh
 ```
+
+Preparation resolves the root package and every maintained example. It also
+fails if any example or companion package is missing or unclassified. The root
+analyzer covers the root package and examples; companion packages own separate
+dependency, analysis, test, SwiftPM, and publish-validation lanes. Generated
+`.dart_tool`, `build`, CocoaPods `Pods`, Flutter platform `ephemeral`, and
+plugin `.symlinks` trees are not workspace packages. Vendored, archived docs,
+or local-only trees outside `example/` and `packages/` are not discovered by
+the workspace bootstrap.
+
+Use the current Flutter stable SDK, matching CI, for repository-wide quality
+gates. Older Dart formatters can produce different source layouts even after
+the same dependency bootstrap.
 
 Use targeted test commands when iterating quickly, then run full checks before
 release-related merges.

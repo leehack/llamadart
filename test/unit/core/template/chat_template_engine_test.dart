@@ -219,6 +219,7 @@ void main() {
         ChatFormat.minimaxM1: TemplateToolCallSerialization.normalizeOnly,
         ChatFormat.minimaxM3: TemplateToolCallSerialization.normalizeOnly,
         ChatFormat.deepseekV4: TemplateToolCallSerialization.normalizeOnly,
+        ChatFormat.deepseekV32: TemplateToolCallSerialization.normalizeOnly,
         ChatFormat.museGlimmer: TemplateToolCallSerialization.normalizeOnly,
         ChatFormat.laguna: TemplateToolCallSerialization.normalizeOnly,
       };
@@ -554,6 +555,84 @@ void main() {
       expect(result.format, equals(ChatFormat.functionaryV32.index));
       expect(result.grammar, isNotNull);
       expect(result.grammar!, contains('tool-0-call'));
+    });
+
+    test('direct-Jinja auto required and none preserve reasoning prefixes', () {
+      const templates = <ChatFormat, String>{
+        ChatFormat.kimiK3:
+            '{# <|open|> <|close|> <|end_of_msg|> #}'
+            '{{ "<|open|>think<|sep|>" }}',
+        ChatFormat.minimaxM3:
+            '{# ]<]minimax[>[ <tool_call> <invoke name= #}'
+            '{{ "<mm:think>" }}',
+        ChatFormat.deepseekV32:
+            '{# dsml_token DSML function_calls #}{{ "<think>" }}',
+        ChatFormat.deepseekV4:
+            '{# dsml_token DSML tool_calls #}{{ "<think>" }}',
+        ChatFormat.museGlimmer:
+            '{# <atem:function_calls> <|eom|> #}'
+            '{{ "<|start|>assistant" }}',
+        ChatFormat.laguna:
+            '{# <assistant> </assistant> <tool_response> '
+            '<arg_key> <arg_value> #}{{ "<think>" }}',
+      };
+
+      for (final entry in templates.entries) {
+        for (final enableThinking in [true, false]) {
+          final auto = ChatTemplateEngine.render(
+            templateSource: entry.value,
+            messages: grammarMessages,
+            metadata: const {},
+            tools: tools,
+            toolChoice: ToolChoice.auto,
+            enableThinking: enableThinking,
+          );
+          expect(auto.format, entry.key.index, reason: '${entry.key} auto');
+          expect(auto.grammar, isNotNull, reason: '${entry.key} auto');
+          expect(auto.grammarLazy, isTrue, reason: '${entry.key} auto');
+
+          final required = ChatTemplateEngine.render(
+            templateSource: entry.value,
+            messages: grammarMessages,
+            metadata: const {},
+            tools: tools,
+            toolChoice: ToolChoice.required,
+            enableThinking: enableThinking,
+          );
+          expect(
+            required.format,
+            entry.key.index,
+            reason: '${entry.key} required',
+          );
+          expect(required.grammar, isNotNull, reason: '${entry.key} required');
+          expect(
+            required.grammarLazy,
+            isFalse,
+            reason: '${entry.key} required',
+          );
+          expect(
+            required.grammarTriggers,
+            isEmpty,
+            reason: '${entry.key} required',
+          );
+          expect(
+            required.grammar!.split('\n').first,
+            contains('required'),
+            reason: '${entry.key} required',
+          );
+
+          final none = ChatTemplateEngine.render(
+            templateSource: entry.value,
+            messages: grammarMessages,
+            metadata: const {},
+            tools: tools,
+            toolChoice: ToolChoice.none,
+            enableThinking: enableThinking,
+          );
+          expect(none.grammar, isNull, reason: '${entry.key} none');
+          expect(none.grammarLazy, isFalse, reason: '${entry.key} none');
+        }
+      }
     });
 
     test('uses generic routing for tools + schema requests', () {
