@@ -723,6 +723,47 @@ Verdict: PASS''',
       );
     });
 
+    test('requires top-level fields and exact CommonMark fence closure', () {
+      final indented = _validBody()
+          .split('\n')
+          .map((line) => '    $line')
+          .join('\n');
+      final tabIndented = _validBody()
+          .split('\n')
+          .map((line) => '\t$line')
+          .join('\n');
+      for (final hiddenBody in [indented, tabIndented]) {
+        expect(
+          _validate(body: hiddenBody).errors.join('\n'),
+          contains('High-risk classification'),
+        );
+      }
+
+      for (final marker in ['`', '~']) {
+        final opener = List.filled(4, marker).join();
+        final shorterClose = List.filled(3, marker).join();
+        final exactClose = List.filled(4, marker).join();
+        final longerClose = List.filled(5, marker).join();
+        final pseudoClosed =
+            '$opener\n$shorterClose\n${_validBody()}\n$exactClose';
+        expect(
+          _validate(body: pseudoClosed).errors.join('\n'),
+          contains('High-risk classification'),
+          reason: '$marker shorter close must leave the fence open',
+        );
+
+        for (final close in [exactClose, longerClose]) {
+          final visibleAfterClose =
+              '$opener\nhidden gate prose\n$close\n${_validBody()}';
+          expect(
+            _validate(body: visibleAfterClose).errors,
+            isEmpty,
+            reason: '$marker fence must accept an equal-or-longer close',
+          );
+        }
+      }
+    });
+
     test('blocks unresolved review threads', () {
       final body = _replaceField(
         _validBody(),

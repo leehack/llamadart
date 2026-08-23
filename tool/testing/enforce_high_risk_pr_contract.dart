@@ -784,22 +784,36 @@ bool _hasIndependentQaAttestation(HighRiskPrState state, String qaTask) {
 
 Map<String, String> _parseEvidenceFields(String body, List<String> errors) {
   final fields = <String, String>{};
-  final pattern = RegExp(r'^\s*-\s*\*\*([^*]+):\*\*\s*(.*?)\s*$');
+  final pattern = RegExp(r'^-\s+\*\*([^*]+):\*\*\s*(.*?)\s*$');
+  final openingFence = RegExp(r'^ {0,3}(`{3,}|~{3,})(.*)$');
+  final closingFence = RegExp(r'^ {0,3}(`{3,}|~{3,})[ \t]*$');
   var inHtmlComment = false;
-  String? fence;
+  String? fenceCharacter;
+  var fenceLength = 0;
   for (final rawLine in body.split(RegExp(r'\r?\n'))) {
-    final trimmed = rawLine.trimLeft();
-    final fenceMatch = RegExp(r'^(```+|~~~+)').firstMatch(trimmed);
-    if (!inHtmlComment && fenceMatch != null) {
-      final marker = fenceMatch.group(1)!;
-      if (fence == null) {
-        fence = marker[0];
-      } else if (marker.startsWith(fence)) {
-        fence = null;
+    if (fenceCharacter != null) {
+      final match = closingFence.firstMatch(rawLine);
+      if (match != null) {
+        final marker = match.group(1)!;
+        if (marker[0] == fenceCharacter && marker.length >= fenceLength) {
+          fenceCharacter = null;
+          fenceLength = 0;
+        }
       }
       continue;
     }
-    if (fence != null) continue;
+    if (!inHtmlComment) {
+      final match = openingFence.firstMatch(rawLine);
+      if (match != null) {
+        final marker = match.group(1)!;
+        final info = match.group(2)!;
+        if (marker[0] != '`' || !info.contains('`')) {
+          fenceCharacter = marker[0];
+          fenceLength = marker.length;
+          continue;
+        }
+      }
+    }
 
     final visible = StringBuffer();
     var offset = 0;
