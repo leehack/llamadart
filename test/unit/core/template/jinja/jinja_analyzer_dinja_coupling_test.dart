@@ -154,11 +154,18 @@ void main() {
     }
 
     test('invalid syntax still falls back to the regex result', () {
-      const invalid = "{% if message.role == 'system' %}{{ message.content }}";
+      const invalid =
+          "{% if message.role == 'system' %}{{ message.content }} thinking";
+      final regexCaps = TemplateCaps.detectRegex(invalid);
+
       expect(
-        JinjaAnalyzer.analyze(invalid).toMap(),
-        TemplateCaps.detectRegex(invalid).toMap(),
+        regexCaps.supportsThinking,
+        isTrue,
+        reason:
+            'the raw marker must distinguish regex fallback from a silently '
+            'accepted AST path',
       );
+      expect(JinjaAnalyzer.analyze(invalid).toMap(), regexCaps.toMap());
     });
   });
 }
