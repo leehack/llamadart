@@ -4,6 +4,7 @@ library;
 import 'dart:io';
 
 import 'package:code_assets/code_assets.dart';
+import 'package:hooks/hooks.dart';
 import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
 
@@ -113,6 +114,30 @@ void main() {
       );
     },
   );
+
+  test('build hook fails when runtimes config selects none', () async {
+    await expectLater(
+      testCodeBuildHook(
+        mainMethod: build_hook.main,
+        targetOS: OS.linux,
+        targetArchitecture: Architecture.x64,
+        userDefines: PackageUserDefines(
+          workspacePubspec: PackageUserDefinesSource(
+            defines: const {'llamadart_native_runtimes': 'none'},
+            basePath: Directory.current.uri,
+          ),
+        ),
+        check: (_, _) {},
+      ),
+      throwsA(
+        isA<Exception>().having(
+          (error) => error.toString(),
+          'message',
+          contains('No native runtimes selected for linux-x64'),
+        ),
+      ),
+    );
+  });
 }
 
 String _readHookNativeTag() {
