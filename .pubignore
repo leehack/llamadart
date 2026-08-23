@@ -52,8 +52,8 @@ test/unit/backends/wllama/
 /docs/
 /website/
 
-# Contributor/maintainer docs: GitHub-only; packaged documentation links use
-# absolute GitHub URLs
+# Contributor/maintainer docs: GitHub-only. Packaged Markdown and Dartdoc link
+# to them by absolute URL; tool scripts still read them by path from a checkout.
 /doc/
 
 # Agent-only maintainer notes

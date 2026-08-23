@@ -17,6 +17,10 @@ void main() {
       '--quiet',
     ], workingDirectory: repository.path);
     expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+    await File(
+      '${repository.path}${Platform.pathSeparator}.git'
+      '${Platform.pathSeparator}empty_excludes',
+    ).writeAsString('');
   });
 
   tearDownAll(() async {
@@ -51,7 +55,12 @@ void main() {
 }
 
 Future<bool> _isIgnored(Directory repository, String candidate) async {
+  final emptyExcludes =
+      '${repository.path}${Platform.pathSeparator}.git'
+      '${Platform.pathSeparator}empty_excludes';
   final result = await Process.run('git', [
+    '-c',
+    'core.excludesFile=$emptyExcludes',
     'check-ignore',
     '--no-index',
     '--quiet',
