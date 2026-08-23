@@ -287,6 +287,28 @@ void main() {
       }
     });
 
+    test('production parse preserves duplicate MiniMax M1 JSON keys', () {
+      const duplicateTopLevel =
+          '<tool_calls>\n'
+          '{"name":"weather","name":"clock","arguments":{}}\n'
+          '</tool_calls>';
+      const duplicateArgument =
+          '<tool_calls>\n'
+          '{"name":"weather","arguments":'
+          '{"city":"Seoul","c\\u0069ty":"Tokyo"}}\n'
+          '</tool_calls>';
+
+      for (final output in [duplicateTopLevel, duplicateArgument]) {
+        final parsed = ChatTemplateEngine.parse(
+          ChatFormat.minimaxM1.index,
+          output,
+          tools: [_weatherWithCityTool],
+        );
+        expect(parsed.toolCalls, isEmpty);
+        expect(parsed.content, output);
+      }
+    });
+
     test('grammar and parse reject ambiguous MiniMax M1 tool schemas', () {
       const output =
           '<tool_calls>\n'

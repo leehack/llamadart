@@ -1685,6 +1685,11 @@ List<LlamaCompletionChunkToolCall>? _parseJsonObjectSequence(
     if (slice == null || slice.value is! Map) {
       return null;
     }
+    if (!ToolCallParsingUtils.hasUniqueJsonObjectKeys(
+      body.substring(cursor, slice.end),
+    )) {
+      return null;
+    }
     if (schemas.isEmpty) {
       final parsed = ToolCallParsingUtils.parseToolCallArray(<Object?>[
         slice.value,
