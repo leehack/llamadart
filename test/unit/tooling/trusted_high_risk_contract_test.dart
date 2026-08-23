@@ -57,7 +57,7 @@ List<HighRiskCiRun> _successfulCiRuns() => [
   HighRiskCiRun(
     id: 100,
     runAttempt: 1,
-    createdAt: DateTime.utc(2026, 8, 22, 12),
+    runStartedAt: DateTime.utc(2026, 8, 22, 12),
     headSha: _head,
     event: 'pull_request',
     path: '.github/workflows/ci.yml',
@@ -188,7 +188,10 @@ HighRiskContractResult _validate({
   Map<String, String>? verifiedUpstreamCommits,
   Set<String> compiledGrammarTests = const {_grammarTest},
   Set<String> protectedEvidencePaths = const {},
-  Set<String> structuredOutputParityDependencies = const {},
+  Set<String> structuredOutputParityDependencies = const {
+    _parserTest,
+    'test/unit/core/template/',
+  },
   Set<String>? proposedCompiledGrammarTests,
   Set<String>? proposedStructuredOutputParityDependencies,
   List<HighRiskCiRun>? ciRuns,
@@ -796,7 +799,7 @@ Verdict: PASS''',
         HighRiskCiRun(
           id: 100,
           runAttempt: 2,
-          createdAt: DateTime.utc(2026, 8, 22, 13),
+          runStartedAt: DateTime.utc(2026, 8, 22, 13),
           headSha: _head,
           event: 'pull_request',
           path: '.github/workflows/ci.yml',
@@ -817,7 +820,7 @@ Verdict: PASS''',
         HighRiskCiRun(
           id: 99,
           runAttempt: 1,
-          createdAt: DateTime.utc(2026, 8, 22, 12),
+          runStartedAt: DateTime.utc(2026, 8, 22, 12),
           headSha: _head,
           event: 'pull_request',
           path: '.github/workflows/ci.yml',
@@ -827,7 +830,7 @@ Verdict: PASS''',
         HighRiskCiRun(
           id: 101,
           runAttempt: 1,
-          createdAt: DateTime.utc(2026, 8, 22, 13),
+          runStartedAt: DateTime.utc(2026, 8, 22, 13),
           headSha: _head,
           event: 'pull_request',
           path: '.github/workflows/ci.yml',
@@ -837,6 +840,37 @@ Verdict: PASS''',
       ];
 
       expect(selectLatestExactHeadCiRun(runs, _head)?.id, 101);
+      expect(
+        _validate(ciRuns: runs).errors,
+        contains('The latest exact-head CI run must succeed.'),
+      );
+    });
+
+    test('a rerun start outranks a run created later but started earlier', () {
+      final runs = [
+        HighRiskCiRun(
+          id: 99,
+          runAttempt: 2,
+          runStartedAt: DateTime.utc(2026, 8, 22, 14),
+          headSha: _head,
+          event: 'pull_request',
+          path: '.github/workflows/ci.yml',
+          status: 'completed',
+          conclusion: 'failure',
+        ),
+        HighRiskCiRun(
+          id: 101,
+          runAttempt: 1,
+          runStartedAt: DateTime.utc(2026, 8, 22, 13),
+          headSha: _head,
+          event: 'pull_request',
+          path: '.github/workflows/ci.yml',
+          status: 'completed',
+          conclusion: 'success',
+        ),
+      ];
+
+      expect(selectLatestExactHeadCiRun(runs, _head)?.id, 99);
       expect(
         _validate(ciRuns: runs).errors,
         contains('The latest exact-head CI run must succeed.'),
@@ -1066,6 +1100,22 @@ Verdict: PASS''',
       expect(_validatePolicyEvidence(_validPolicyEvidence()).errors, isEmpty);
     });
 
+    test('accepts exact family N/A for structured policy-test changes', () {
+      final evidence = _validEvidence()
+        ..['affectedFamilies'] = <String>[]
+        ..['affectedFamilyEvidence'] = <String, dynamic>{}
+        ..['notApplicableReason'] =
+            'Policy-test coverage changes do not affect a runtime model family.';
+
+      expect(
+        _validate(
+          evidence: evidence,
+          files: const [_grammarTest, _parserTest, _evidencePath],
+        ).errors,
+        isEmpty,
+      );
+    });
+
     test('rejects malformed or stale family evidence for N/A scope', () {
       for (final invalid in <Object?>[
         const <String>[],
@@ -1208,6 +1258,34 @@ Verdict: PASS''',
       expect(
         _validate(evidence: evidence).errors.join('\n'),
         contains('not changed by the same PR'),
+      );
+
+      final unrelated = _validEvidence();
+      final unrelatedStructured =
+          unrelated['structuredOutput']! as Map<String, dynamic>;
+      unrelatedStructured['upstreamParityTests'] = [_grammarTest];
+      expect(
+        _validate(evidence: unrelated).errors,
+        contains(
+          'structuredOutput.upstreamParityTests must reference trusted structured-output parity dependencies.',
+        ),
+      );
+
+      final prefixChild = _validEvidence();
+      final prefixStructured =
+          prefixChild['structuredOutput']! as Map<String, dynamic>;
+      prefixStructured['upstreamParityTests'] = [
+        'test/unit/core/template/chat_template_engine_test.dart',
+      ];
+      expect(
+        _validate(
+          evidence: prefixChild,
+          files: [
+            ..._structuredFiles,
+            'test/unit/core/template/chat_template_engine_test.dart',
+          ],
+        ).errors,
+        isEmpty,
       );
     });
 
@@ -1373,7 +1451,7 @@ Verdict: PASS''',
       expect(workflow, contains(r'.head_sha == $head'));
       expect(
         workflow,
-        contains('sort_by(.created_at, .id, .run_attempt) | last // empty'),
+        contains('sort_by(.run_started_at, .id, .run_attempt) | last // empty'),
       );
       expect(workflow, contains('The latest exact-head CI run must succeed'));
       expect(workflow, contains(r'[[ "$run_status" != "completed" ]]'));

@@ -3,7 +3,8 @@
   "issue": 419,
   "knownPrCausedP1Regressions": 0,
   "surfaces": [
-    "regressionPolicy"
+    "regressionPolicy",
+    "structuredOutput"
   ],
   "implementationTask": "codex://tasks/root/premerge_regression_gate",
   "independentQaTask": "codex://tasks/root/premerge_regression_gate/qa-sol-final",
@@ -27,7 +28,58 @@
   },
   "affectedFamilies": [],
   "affectedFamilyEvidence": {},
-  "upstreamRefs": [],
+  "upstreamRefs": {
+    "repository": "ggml-org/llama.cpp",
+    "pinned": "b10549",
+    "current": "d775b8967a46d8beb110d444aa3b8938179e0dd8"
+  },
   "notApplicableReason": "Policy-only bootstrap; it does not change a model, parser, runtime, or artifact family.",
-  "structuredOutput": null
+  "structuredOutput": {
+    "compiledAcceptanceTests": [
+      "test/integration/core/grammar/generated_tool_schema_grammar_test.dart"
+    ],
+    "compiledRejectionTests": [
+      "test/integration/core/grammar/generated_tool_schema_grammar_test.dart"
+    ],
+    "schemaDirectedTypeTests": [
+      "test/unit/tooling/trusted_high_risk_contract_test.dart"
+    ],
+    "partialFinalStreamingTests": [
+      "test/unit/tooling/trusted_high_risk_contract_test.dart"
+    ],
+    "toolChoiceThinkingTests": [
+      "test/integration/core/grammar/generated_tool_schema_grammar_test.dart",
+      "test/unit/tooling/trusted_high_risk_contract_test.dart"
+    ],
+    "upstreamParityCommand": "./tool/testing/run_template_parity_suites.sh",
+    "upstreamParityTests": [
+      "test/integration/core/template/llama_cpp_template_detection_integration_test.dart"
+    ],
+    "requiredCoverage": [
+      "unknown-field",
+      "missing-field",
+      "mismatched-type",
+      "wrong-type",
+      "malformed-output",
+      "escaped-name",
+      "quoted-name",
+      "schema-exact",
+      "delimiter",
+      "string",
+      "number",
+      "boolean",
+      "null",
+      "object",
+      "array",
+      "zero-argument",
+      "empty-container",
+      "partial",
+      "final",
+      "rollback",
+      "auto",
+      "required",
+      "none",
+      "thinking-prefix"
+    ]
+  }
 }

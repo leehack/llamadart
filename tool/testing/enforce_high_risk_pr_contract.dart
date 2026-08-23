@@ -69,7 +69,7 @@ class HighRiskCiRun {
   const HighRiskCiRun({
     required this.id,
     required this.runAttempt,
-    required this.createdAt,
+    required this.runStartedAt,
     required this.headSha,
     required this.event,
     required this.path,
@@ -79,7 +79,7 @@ class HighRiskCiRun {
 
   final int id;
   final int runAttempt;
-  final DateTime createdAt;
+  final DateTime runStartedAt;
   final String headSha;
   final String event;
   final String path;
@@ -395,6 +395,7 @@ HighRiskContractResult validateHighRiskContract({
       qaTask: qaTask,
       verifiedUpstreamCommits: verifiedUpstreamCommits,
       compiledGrammarTests: compiledGrammarTests,
+      structuredOutputParityDependencies: structuredOutputParityDependencies,
       trustedUpstreamParityEvidence: trustedUpstreamParityEvidence,
       errors: errors,
     );
@@ -420,9 +421,11 @@ HighRiskCiRun? selectLatestExactHeadCiRun(
     if (left.id == right.id) {
       return left.runAttempt.compareTo(right.runAttempt);
     }
-    final created = left.createdAt.compareTo(right.createdAt);
-    if (created != 0) return created;
-    return left.id.compareTo(right.id);
+    final started = left.runStartedAt.compareTo(right.runStartedAt);
+    if (started != 0) return started;
+    final id = left.id.compareTo(right.id);
+    if (id != 0) return id;
+    return left.runAttempt.compareTo(right.runAttempt);
   });
   return matching.last;
 }
@@ -436,6 +439,7 @@ void _validateEvidenceManifest(
   required String? qaTask,
   required Map<String, String> verifiedUpstreamCommits,
   required Set<String> compiledGrammarTests,
+  required Set<String> structuredOutputParityDependencies,
   required Map<String, dynamic>? trustedUpstreamParityEvidence,
   required List<String> errors,
 }) {
@@ -483,7 +487,9 @@ void _validateEvidenceManifest(
     evidence['affectedFamilies'],
     'affectedFamilies',
     errors,
-    allowEmpty: !assessment.isStructuredOutput,
+    allowEmpty:
+        !assessment.isStructuredOutput ||
+        !assessment.changedFiles.any((path) => path.startsWith('lib/')),
   );
   final familyEvidence = evidence['affectedFamilyEvidence'];
   if (affectedFamilies.isEmpty) {
@@ -607,13 +613,22 @@ void _validateEvidenceManifest(
         './tool/testing/run_template_parity_suites.sh.',
       );
     }
-    _validateTestPaths(
+    final parityTests = _validateTestPaths(
       structured['upstreamParityTests'],
       'structuredOutput.upstreamParityTests',
       changed,
       deletedFiles,
       errors,
     );
+    if (parityTests.any(
+      (path) =>
+          !_isProtectedEvidencePath(path, structuredOutputParityDependencies),
+    )) {
+      errors.add(
+        'structuredOutput.upstreamParityTests must reference trusted '
+        'structured-output parity dependencies.',
+      );
+    }
     _validateTrustedUpstreamParityEvidence(
       trustedUpstreamParityEvidence,
       headSha: headSha,
@@ -1130,12 +1145,12 @@ List<HighRiskCiRun> _decodeCiRuns(Object? value) {
         if (item is! Map<String, dynamic>) {
           _usage('Every CI run must be an object.');
         }
-        final createdAt = item['created_at'] is String
-            ? DateTime.tryParse(item['created_at'] as String)
+        final runStartedAt = item['run_started_at'] is String
+            ? DateTime.tryParse(item['run_started_at'] as String)
             : null;
         if (item['id'] is! int ||
             item['run_attempt'] is! int ||
-            createdAt == null ||
+            runStartedAt == null ||
             item['head_sha'] is! String ||
             item['event'] is! String ||
             item['path'] is! String ||
@@ -1146,7 +1161,7 @@ List<HighRiskCiRun> _decodeCiRuns(Object? value) {
         return HighRiskCiRun(
           id: item['id'] as int,
           runAttempt: item['run_attempt'] as int,
-          createdAt: createdAt,
+          runStartedAt: runStartedAt,
           headSha: item['head_sha'] as String,
           event: item['event'] as String,
           path: item['path'] as String,

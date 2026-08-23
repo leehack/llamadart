@@ -147,6 +147,11 @@ void main() {
           .toList();
       missing.sort();
       expect(
+        files,
+        hasLength(expected.length),
+        reason: 'A registered llama.cpp template fixture must not disappear.',
+      );
+      expect(
         missing,
         isEmpty,
         reason:
@@ -154,117 +159,129 @@ void main() {
       );
     }, skip: fixtureSkipReason);
 
-    test('renders and parses every vendored llama.cpp template', () {
-      expect(templatesDir.existsSync(), isTrue);
+    test(
+      'renders and parses every vendored llama.cpp template',
+      () {
+        expect(templatesDir.existsSync(), isTrue);
 
-      final files =
-          templatesDir
-              .listSync()
-              .whereType<File>()
-              .where((f) => f.path.endsWith('.jinja'))
-              .toList()
-            ..sort((a, b) => a.path.compareTo(b.path));
+        final files =
+            templatesDir
+                .listSync()
+                .whereType<File>()
+                .where((f) => f.path.endsWith('.jinja'))
+                .toList()
+              ..sort((a, b) => a.path.compareTo(b.path));
 
-      for (final file in files) {
-        final source = file.readAsStringSync();
-        final detected = detectChatFormat(source);
+        for (final file in files) {
+          final source = file.readAsStringSync();
+          final detected = detectChatFormat(source);
 
-        final rendered = ChatTemplateEngine.render(
-          templateSource: source,
-          messages: messages,
-          metadata: metadata,
-          tools: [tool],
-          parallelToolCalls: true,
-        );
+          final rendered = ChatTemplateEngine.render(
+            templateSource: source,
+            messages: messages,
+            metadata: metadata,
+            tools: [tool],
+            parallelToolCalls: true,
+          );
 
-        expect(
-          rendered.prompt.trim(),
-          isNotEmpty,
-          reason: 'Empty prompt for ${file.uri.pathSegments.last}',
-        );
-
-        final parseInput = sampleOutputForFormat(detected);
-        final parsed = ChatTemplateEngine.parse(
-          rendered.format,
-          parseInput,
-          parser: rendered.parser,
-          thinkingForcedOpen: rendered.thinkingForcedOpen,
-        );
-
-        final hasAnyPayload =
-            parsed.content.isNotEmpty ||
-            parsed.toolCalls.isNotEmpty ||
-            (parsed.reasoningContent?.isNotEmpty ?? false);
-        expect(
-          hasAnyPayload,
-          isTrue,
-          reason:
-              'Parse produced empty payload for ${file.uri.pathSegments.last}',
-        );
-
-        if (parseInput.contains('get_weather')) {
-          final parsedToolName = parsed.toolCalls.isNotEmpty
-              ? parsed.toolCalls.first.function?.name
-              : null;
-          final preservedInContent = parsed.content.contains('get_weather');
           expect(
-            parsedToolName == 'get_weather' || preservedInContent,
+            rendered.prompt.trim(),
+            isNotEmpty,
+            reason: 'Empty prompt for ${file.uri.pathSegments.last}',
+          );
+
+          final parseInput = sampleOutputForFormat(detected);
+          final parsed = ChatTemplateEngine.parse(
+            rendered.format,
+            parseInput,
+            parser: rendered.parser,
+            thinkingForcedOpen: rendered.thinkingForcedOpen,
+          );
+
+          final hasAnyPayload =
+              parsed.content.isNotEmpty ||
+              parsed.toolCalls.isNotEmpty ||
+              (parsed.reasoningContent?.isNotEmpty ?? false);
+          expect(
+            hasAnyPayload,
             isTrue,
             reason:
-                'Tool payload was neither parsed nor preserved for ${file.uri.pathSegments.last}',
+                'Parse produced empty payload for ${file.uri.pathSegments.last}',
+          );
+
+          if (parseInput.contains('get_weather')) {
+            final parsedToolName = parsed.toolCalls.isNotEmpty
+                ? parsed.toolCalls.first.function?.name
+                : null;
+            final preservedInContent = parsed.content.contains('get_weather');
+            expect(
+              parsedToolName == 'get_weather' || preservedInContent,
+              isTrue,
+              reason:
+                  'Tool payload was neither parsed nor preserved for ${file.uri.pathSegments.last}',
+            );
+          }
+        }
+      },
+      skip: fixtureSkipReason,
+    );
+
+    test(
+      'preserves classified tool-call shapes through render and parse',
+      () {
+        const expectedMarkers = <String, String>{
+          'Kimi-K3.jinja': '<|open|>call tool="get_weather"',
+          'MiniMax-M1.jinja': '<tool_calls>\n{"name": "get_weather"',
+          'MiniMax-M3.jinja': ']<]minimax[>[<invoke name="get_weather">',
+          'deepseek-ai-DeepSeek-V3.2.jinja':
+              '<｜DSML｜invoke name="get_weather">',
+          'deepseek-ai-DeepSeek-V4.jinja': '<｜DSML｜invoke name="get_weather">',
+          'deepseek-ai-DeepSeek-V4-Flash-0731.jinja':
+              '<｜DSML｜invoke name="get_weather">',
+          'muse-glimmer.jinja': '<atem:invoke name="get_weather">',
+          'poolside-Laguna-S-2.1.jinja': '<tool_call>get_weather',
+          'poolside-Laguna-XS-2.1.jinja': '<tool_call>get_weather',
+          'poolside-Laguna-XS.2.jinja': '<tool_call>get_weather',
+        };
+
+        for (final entry in expectedMarkers.entries) {
+          final source = File(
+            '${templatesDir.path}/${entry.key}',
+          ).readAsStringSync();
+          final rendered = ChatTemplateEngine.render(
+            templateSource: source,
+            messages: toolCallHistory,
+            metadata: metadata,
+            addAssistant: false,
+            tools: [tool],
+            parallelToolCalls: true,
+          );
+
+          expect(
+            rendered.prompt,
+            contains(entry.value),
+            reason: 'Tool-call history shape drifted for ${entry.key}',
+          );
+
+          final parsed = ChatTemplateEngine.parse(
+            rendered.format,
+            sampleOutputForFormat(ChatFormat.values[rendered.format]),
+            thinkingForcedOpen: rendered.thinkingForcedOpen,
+          );
+          expect(
+            parsed.toolCalls,
+            hasLength(1),
+            reason: 'Generated tool-call shape was not parsed for ${entry.key}',
+          );
+          expect(parsed.toolCalls.single.function?.name, 'get_weather');
+          expect(
+            parsed.toolCalls.single.function?.arguments,
+            contains('Seoul'),
           );
         }
-      }
-    }, skip: fixtureSkipReason);
-
-    test('preserves classified tool-call shapes through render and parse', () {
-      const expectedMarkers = <String, String>{
-        'Kimi-K3.jinja': '<|open|>call tool="get_weather"',
-        'MiniMax-M1.jinja': '<tool_calls>\n{"name": "get_weather"',
-        'MiniMax-M3.jinja': ']<]minimax[>[<invoke name="get_weather">',
-        'deepseek-ai-DeepSeek-V3.2.jinja': '<｜DSML｜invoke name="get_weather">',
-        'deepseek-ai-DeepSeek-V4.jinja': '<｜DSML｜invoke name="get_weather">',
-        'deepseek-ai-DeepSeek-V4-Flash-0731.jinja':
-            '<｜DSML｜invoke name="get_weather">',
-        'muse-glimmer.jinja': '<atem:invoke name="get_weather">',
-        'poolside-Laguna-S-2.1.jinja': '<tool_call>get_weather',
-        'poolside-Laguna-XS-2.1.jinja': '<tool_call>get_weather',
-        'poolside-Laguna-XS.2.jinja': '<tool_call>get_weather',
-      };
-
-      for (final entry in expectedMarkers.entries) {
-        final source = File(
-          '${templatesDir.path}/${entry.key}',
-        ).readAsStringSync();
-        final rendered = ChatTemplateEngine.render(
-          templateSource: source,
-          messages: toolCallHistory,
-          metadata: metadata,
-          addAssistant: false,
-          tools: [tool],
-          parallelToolCalls: true,
-        );
-
-        expect(
-          rendered.prompt,
-          contains(entry.value),
-          reason: 'Tool-call history shape drifted for ${entry.key}',
-        );
-
-        final parsed = ChatTemplateEngine.parse(
-          rendered.format,
-          sampleOutputForFormat(ChatFormat.values[rendered.format]),
-          thinkingForcedOpen: rendered.thinkingForcedOpen,
-        );
-        expect(
-          parsed.toolCalls,
-          hasLength(1),
-          reason: 'Generated tool-call shape was not parsed for ${entry.key}',
-        );
-        expect(parsed.toolCalls.single.function?.name, 'get_weather');
-        expect(parsed.toolCalls.single.function?.arguments, contains('Seoul'));
-      }
-    }, skip: fixtureSkipReason);
+      },
+      skip: fixtureSkipReason,
+    );
   });
 }
 
