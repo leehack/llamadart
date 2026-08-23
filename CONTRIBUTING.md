@@ -7,7 +7,11 @@ Thank you for your interest in contributing to `llamadart`! We welcome contribut
 Before you begin, ensure you have the following installed:
 
 -   **Dart SDK**: >= 3.10.7
--   **Flutter SDK**: >= 3.38.0 (optional, for running UI examples)
+-   **Flutter SDK**: current stable for repository-wide quality gates and
+    Flutter examples (runtime support starts at 3.38.0; root-package-only Dart
+    work can use the Dart SDK alone). CI defines the canonical formatter via
+    its current Flutter stable SDK; older Dart formatters can produce different
+    source layouts.
 -   **CMake**: >= 3.10
 -   **C++ Compiler**:
     -   **macOS**: Xcode Command Line Tools (`xcode-select --install`)
@@ -77,6 +81,12 @@ When a user adds `llamadart` as a dependency and runs their app:
     ```
 
 2.  **Initialize**:
+    For repository-wide format/analyze gates and all maintained examples, use
+    the workspace bootstrap (it invokes Flutter for the Flutter examples):
+    ```bash
+    dart run tool/prepare_workspace.dart
+    ```
+    For root-package-only Dart changes, the Dart SDK is sufficient:
     ```bash
     dart pub get
     ```
@@ -240,7 +250,11 @@ If you need to build binaries for a new release:
 
 ## Development Guidelines
 
--   **Code Style**: We follow standard Dart linting rules. Run `dart format .` before committing.
+-   **Code Style**: We follow standard Dart linting rules. Before the root
+    format and analyzer gates, run `dart run tool/prepare_workspace.dart` to
+    resolve the root package and examples and verify that every maintained
+    package is classified. Companion packages resolve and validate in their
+    dedicated CI lanes. Then run `dart format .` before committing.
 -   **Native Assets**: The package uses the modern **Dart Native Assets** (hooks) mechanism.
 -   **Testing**: Add unit tests for new features where possible. Use `dart test` for full integration and unit verification.
 
