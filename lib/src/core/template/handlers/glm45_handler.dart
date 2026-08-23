@@ -398,7 +398,7 @@ bool _containsExactGlmProtocolMarker(String input) {
 
 bool _containsGlmProtocolRemainder(String input) {
   for (final marker in _glmProtocolMarkers) {
-    if (input.contains(marker.substring(0, marker.length - 1))) {
+    if (input.contains(marker)) {
       return true;
     }
   }

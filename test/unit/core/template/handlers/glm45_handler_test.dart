@@ -344,6 +344,27 @@ void main() {
           'code': 'before$nearLookalike after',
         }, reason: '$format $nearLookalike');
         expect(valid.content, isEmpty, reason: '$format $nearLookalike');
+
+        for (final output in [
+          'before$nearLookalike\n$validOutput',
+          '$validOutput\nafter$nearLookalike',
+        ]) {
+          final surrounded = ChatTemplateEngine.parse(
+            format.index,
+            output,
+            tools: [tool],
+          );
+          expect(
+            surrounded.toolCalls,
+            hasLength(1),
+            reason: '$format surrounding $nearLookalike',
+          );
+          expect(
+            surrounded.content,
+            output.replaceFirst(validOutput, '').trim(),
+            reason: '$format surrounding $nearLookalike',
+          );
+        }
       }
     }
   });
