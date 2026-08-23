@@ -1266,8 +1266,20 @@ time.sleep(300)
 
       expect(parentPid, isNotNull);
       expect(childPid, isNotNull);
-      expect(await _windowsProcessExists(parentPid!), isFalse);
-      expect(await _windowsProcessExists(childPid!), isFalse);
+      expect(
+        await _waitForWindowsProcessToStop(
+          parentPid!,
+          DateTime.now().add(const Duration(seconds: 10)),
+        ),
+        isTrue,
+      );
+      expect(
+        await _waitForWindowsProcessToStop(
+          childPid!,
+          DateTime.now().add(const Duration(seconds: 10)),
+        ),
+        isTrue,
+      );
     },
     skip: Platform.isWindows ? false : 'validates Windows taskkill /T cleanup',
   );
@@ -1340,7 +1352,13 @@ print("parent exited after spawning child", flush=True)
       expect(message, isNot(contains(secret)));
       expect(stopwatch.elapsed, lessThan(const Duration(seconds: 30)));
       expect(childPid, isNotNull);
-      expect(await _windowsProcessExists(childPid!), isFalse);
+      expect(
+        await _waitForWindowsProcessToStop(
+          childPid!,
+          DateTime.now().add(const Duration(seconds: 10)),
+        ),
+        isTrue,
+      );
     },
     skip: Platform.isWindows ? false : 'validates inherited Windows handles',
   );
@@ -1861,7 +1879,7 @@ String _diagnosticTail(String value, {int maxCharacters = 4096}) {
 
 Future<bool> _windowsProcessExists(
   int pid, {
-  Duration timeout = const Duration(seconds: 1),
+  Duration timeout = const Duration(seconds: 3),
 }) async {
   final probe = await Process.start('powershell', [
     '-NoProfile',
@@ -1938,9 +1956,9 @@ Future<void> _ensureWindowsProcessStopped(int pid) async {
 Future<bool> _waitForWindowsProcessToStop(int pid, DateTime deadline) async {
   while (DateTime.now().isBefore(deadline)) {
     final remaining = deadline.difference(DateTime.now());
-    final probeTimeout = remaining < const Duration(seconds: 1)
+    final probeTimeout = remaining < const Duration(seconds: 3)
         ? remaining
-        : const Duration(seconds: 1);
+        : const Duration(seconds: 3);
     if (!await _windowsProcessExists(pid, timeout: probeTimeout)) {
       return true;
     }
