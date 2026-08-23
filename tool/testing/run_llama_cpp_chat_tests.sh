@@ -7,6 +7,16 @@ build_dir="${LLAMA_CPP_CHAT_TEST_BUILD_DIR:-${repo_root}/.dart_tool/llama_cpp_ch
 include_full="${LLAMA_CPP_CHAT_TEST_INCLUDE_FULL:-0}"
 full_verbose="${LLAMA_CPP_CHAT_TEST_FULL_VERBOSE:-0}"
 
+run_full_test() {
+  if [[ "$(uname -s)" == "Linux" ]] && command -v setsid >/dev/null 2>&1; then
+    # Upstream test-chat manages server subprocesses and may signal their
+    # process group. Keep that group separate from the GitHub runner session.
+    setsid --wait "$@"
+  else
+    "$@"
+  fi
+}
+
 export LLAMA_CPP_SOURCE_DIR="${src_dir}"
 "${repo_root}/tool/testing/prepare_llama_cpp_source.sh" >/dev/null
 
@@ -103,13 +113,13 @@ if [[ "${include_full}" == "1" ]]; then
   if [[ "${full_verbose}" == "1" ]]; then
     (
       cd "${src_dir}"
-      "${full_test_bin}"
+      run_full_test "${full_test_bin}"
     )
   else
     full_log="${build_dir}/test-chat.log"
     if ! (
       cd "${src_dir}"
-      "${full_test_bin}" >"${full_log}" 2>&1
+      run_full_test "${full_test_bin}" >"${full_log}" 2>&1
     ); then
       echo "[chat-tests] full test-chat failed. Log:" >&2
       cat "${full_log}" >&2

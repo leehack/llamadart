@@ -47,6 +47,33 @@ void main() {
     );
 
     test(
+      'isolates full test-chat from the runner process group on Linux',
+      () async {
+        expect(script, contains('run_full_test "\${full_test_bin}"'));
+        expect(script, contains(r'setsid --wait "$@"'));
+        expect(script, contains(r'[[ "$(uname -s)" == "Linux" ]]'));
+        expect(script, contains(r'command -v setsid'));
+
+        if (!Platform.isLinux) return;
+        final result = await Process.run('bash', const [
+          '-c',
+          r'''
+set -euo pipefail
+runner_group="$(ps -o pgid= -p $$ | tr -d ' ')"
+child_group="$(setsid --wait bash -c 'ps -o pgid= -p $$' | tr -d ' ')"
+[[ -n "$runner_group" && -n "$child_group" ]]
+[[ "$runner_group" != "$child_group" ]]
+''',
+        ]);
+        expect(
+          result.exitCode,
+          0,
+          reason: '${result.stdout}\n${result.stderr}',
+        );
+      },
+    );
+
+    test(
       'full-suite process adds its flag and inherits ref/source inputs',
       () async {
         final e2eSource = File(
