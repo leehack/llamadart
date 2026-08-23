@@ -258,12 +258,31 @@ jobs:
           CHANGED_FILES: ${{ steps.state.outputs.changed_files }}
         run: |
           set -euo pipefail
+          baseline_paths="$RUNNER_TEMP/baseline-evidence-paths.txt"
+          : > "$baseline_paths"
+          echo "baseline_paths=$baseline_paths" >> "$GITHUB_OUTPUT"
           mapfile -t manifests < <(
             grep -E '^\.github/high-risk-evidence/[0-9]+\.json$' \
               "$CHANGED_FILES" || true
           )
           if (( ${#manifests[@]} == 1 )); then
             evidence_path="${manifests[0]}"
+            if [[ -f "$evidence_path" ]]; then
+              jq -r '
+                [
+                  .productionEvidence.positiveTests[]?,
+                  .productionEvidence.negativeTests[]?,
+                  .productionEvidence.adversarialTests[]?,
+                  .productionEvidence.deletionSensitivityTests[]?,
+                  .structuredOutput.compiledAcceptanceTests[]?,
+                  .structuredOutput.compiledRejectionTests[]?,
+                  .structuredOutput.schemaDirectedTypeTests[]?,
+                  .structuredOutput.partialFinalStreamingTests[]?,
+                  .structuredOutput.toolChoiceThinkingTests[]?,
+                  .structuredOutput.upstreamParityTests[]?
+                ] | .[] | select(type == "string")
+              ' "$evidence_path" | LC_ALL=C sort -u > "$baseline_paths"
+            fi
             gh api \
               "repos/$HEAD_REPOSITORY/contents/$evidence_path?ref=$HEAD_SHA" \
               --jq '.content' \
@@ -284,7 +303,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
+          PR_NUMBER: ${{ steps.event.outputs.pr_number }}
+          BASE_SHA: ${{ steps.state.outputs.base_sha }}
           HEAD_SHA: ${{ steps.state.outputs.head_sha }}
+          HEAD_REPOSITORY: ${{ steps.state.outputs.head_repo }}
           EVIDENCE_FILE: ${{ steps.evidence.outputs.file }}
         run: |
           set -euo pipefail
@@ -295,12 +317,18 @@ jobs:
             -f per_page=100 \
             > "$RUNNER_TEMP/exact-head-ci-runs.json"
           latest_run="$(
-            jq -c --arg head "$HEAD_SHA" '
+            jq -c --argjson pr "$PR_NUMBER" --arg base "$BASE_SHA" \
+              --arg head "$HEAD_SHA" --arg head_repo "$HEAD_REPOSITORY" '
               [.workflow_runs[] |
                 select(
                   .head_sha == $head and
                   .event == "pull_request" and
-                  .path == ".github/workflows/ci.yml"
+                  .path == ".github/workflows/ci.yml" and
+                  any(.pull_requests[]?;
+                    .number == $pr and .head.sha == $head and
+                    .base.sha == $base and
+                    .head.repo.url ==
+                      ("https://api.github.com/repos/" + $head_repo))
                 )] |
               sort_by(.run_started_at, .id, .run_attempt) | last // empty
             ' "$RUNNER_TEMP/exact-head-ci-runs.json"
@@ -520,11 +548,19 @@ jobs:
               "$FILES_FILE"
             printf '%s\n' "$THREAD_COUNT"
             jq -cS 'sort_by(.id)' "$REVIEWS_FILE"
-            jq -cS --arg head "${{ steps.state.outputs.head_sha }}" '
+            jq -cS --argjson pr "${{ steps.event.outputs.pr_number }}" \
+              --arg base "${{ steps.state.outputs.base_sha }}" \
+              --arg head "${{ steps.state.outputs.head_sha }}" \
+              --arg head_repo "${{ steps.state.outputs.head_repo }}" '
               [.workflow_runs[] |
                 select(
                   .head_sha == $head and .event == "pull_request" and
-                  .path == ".github/workflows/ci.yml"
+                  .path == ".github/workflows/ci.yml" and
+                  any(.pull_requests[]?;
+                    .number == $pr and .head.sha == $head and
+                    .base.sha == $base and
+                    .head.repo.url ==
+                      ("https://api.github.com/repos/" + $head_repo))
                 )] | sort_by(.run_started_at, .id, .run_attempt) | last
             ' "$CI_RUNS_FILE"
             jq -cS . "$UPSTREAM_FILE"
@@ -566,6 +602,7 @@ jobs:
           COMPILED_GRAMMAR_POLICY: .github/high-risk-policy.json
           PROPOSED_POLICY: ${{ steps.proposed_policy.outputs.file }}
           PROTECTED_EVIDENCE_PATHS: ${{ steps.protected.outputs.file }}
+          BASELINE_EVIDENCE_PATHS: ${{ steps.evidence.outputs.baseline_paths }}
           CI_RUNS_FILE: ${{ steps.ci.outputs.runs_file }}
           PARITY_FILE: ${{ steps.ci.outputs.parity_file }}
           TRUSTED_PARITY_FILE: ${{ steps.trusted_parity.outputs.file }}
@@ -670,11 +707,17 @@ jobs:
               "$RUNNER_TEMP/live-pull-files-pages.json"
             printf '%s\n' "$live_threads"
             jq -cS . "$RUNNER_TEMP/live-high-risk-reviews.json"
-            jq -cS --arg head "$HEAD_SHA" '
+            jq -cS --argjson pr "$PR_NUMBER" --arg base "$BASE_SHA" \
+              --arg head "$HEAD_SHA" --arg head_repo "$HEAD_REPOSITORY" '
               [.workflow_runs[] |
                 select(
                   .head_sha == $head and .event == "pull_request" and
-                  .path == ".github/workflows/ci.yml"
+                  .path == ".github/workflows/ci.yml" and
+                  any(.pull_requests[]?;
+                    .number == $pr and .head.sha == $head and
+                    .base.sha == $base and
+                    .head.repo.url ==
+                      ("https://api.github.com/repos/" + $head_repo))
                 )] | sort_by(.run_started_at, .id, .run_attempt) | last
             ' "$RUNNER_TEMP/live-exact-head-ci-runs.json"
             jq -cS . "$live_upstream"
@@ -708,6 +751,7 @@ jobs:
             --verified-upstream-commits "$VERIFIED_UPSTREAM_COMMITS"
             --compiled-grammar-policy "$COMPILED_GRAMMAR_POLICY"
             --protected-evidence-paths "$PROTECTED_EVIDENCE_PATHS"
+            --baseline-evidence-paths "$BASELINE_EVIDENCE_PATHS"
             --ci-runs "$CI_RUNS_FILE"
           )
           if [[ -n "$EVIDENCE_FILE" ]]; then
@@ -896,11 +940,17 @@ jobs:
               "$RUNNER_TEMP/final-live-pull-files-pages.json"
             printf '%s\n' "$final_threads"
             jq -cS . "$RUNNER_TEMP/final-live-high-risk-reviews.json"
-            jq -cS --arg head "$HEAD_SHA" '
+            jq -cS --argjson pr "$PR_NUMBER" --arg base "$BASE_SHA" \
+              --arg head "$HEAD_SHA" --arg head_repo "$HEAD_REPOSITORY" '
               [.workflow_runs[] |
                 select(
                   .head_sha == $head and .event == "pull_request" and
-                  .path == ".github/workflows/ci.yml"
+                  .path == ".github/workflows/ci.yml" and
+                  any(.pull_requests[]?;
+                    .number == $pr and .head.sha == $head and
+                    .base.sha == $base and
+                    .head.repo.url ==
+                      ("https://api.github.com/repos/" + $head_repo))
                 )] | sort_by(.run_started_at, .id, .run_attempt) | last
             ' "$RUNNER_TEMP/final-live-exact-head-ci-runs.json"
             jq -cS . "$final_upstream"

@@ -21,7 +21,19 @@ const _grammarTest =
 const _parserTest = 'test/unit/core/template/chat_template_engine_test.dart';
 const _pinnedCommit = '3333333333333333333333333333333333333333';
 const _currentCommit = '4444444444444444444444444444444444444444';
+const _prNumber = 420;
+const _headRepository = 'implementation/repo';
+const _ciPullRequests = [
+  HighRiskCiPullRequest(
+    number: 420,
+    headSha: _head,
+    baseSha: _base,
+    headRepository: 'implementation/repo',
+  ),
+];
 const _state = HighRiskPrState(
+  number: _prNumber,
+  headRepository: _headRepository,
   headSha: _head,
   baseSha: _base,
   behind: 0,
@@ -63,6 +75,7 @@ List<HighRiskCiRun> _successfulCiRuns() => [
     path: '.github/workflows/ci.yml',
     status: 'completed',
     conclusion: 'success',
+    pullRequests: _ciPullRequests,
   ),
 ];
 
@@ -188,6 +201,7 @@ HighRiskContractResult _validate({
   Map<String, String>? verifiedUpstreamCommits,
   Set<String> compiledGrammarTests = const {_grammarTest},
   Set<String> protectedEvidencePaths = const {},
+  Set<String> baselineEvidencePaths = const {},
   Set<String> structuredOutputParityDependencies = const {
     _parserTest,
     'test/unit/core/template/',
@@ -208,6 +222,7 @@ HighRiskContractResult _validate({
       const {'pinned': _pinnedCommit, 'current': _currentCommit},
   compiledGrammarTests: compiledGrammarTests,
   protectedEvidencePaths: protectedEvidencePaths,
+  baselineEvidencePaths: baselineEvidencePaths,
   structuredOutputParityDependencies: structuredOutputParityDependencies,
   proposedCompiledGrammarTests: proposedCompiledGrammarTests,
   proposedStructuredOutputParityDependencies:
@@ -527,6 +542,8 @@ void main() {
 
     test('requires an independent exact-head approving QA attestation', () {
       const noApproval = HighRiskPrState(
+        number: _prNumber,
+        headRepository: _headRepository,
         headSha: _head,
         baseSha: _base,
         behind: 0,
@@ -546,6 +563,8 @@ void main() {
     test('binds independent QA approval to the evaluated PR body digest', () {
       final review = _state.reviews.single;
       final state = HighRiskPrState(
+        number: _prNumber,
+        headRepository: _headRepository,
         headSha: _state.headSha,
         baseSha: _state.baseSha,
         behind: _state.behind,
@@ -622,6 +641,8 @@ Verdict: PASS''',
         ),
       ]) {
         final state = HighRiskPrState(
+          number: _prNumber,
+          headRepository: _headRepository,
           headSha: _head,
           baseSha: _base,
           behind: 0,
@@ -640,6 +661,8 @@ Verdict: PASS''',
 
     test('rejects a QA approval superseded by a later review', () {
       final state = HighRiskPrState(
+        number: _prNumber,
+        headRepository: _headRepository,
         headSha: _head,
         baseSha: _base,
         behind: 0,
@@ -686,6 +709,8 @@ Verdict: PASS''',
       final errors = _validate(
         body: body,
         state: const HighRiskPrState(
+          number: _prNumber,
+          headRepository: _headRepository,
           headSha: _head,
           baseSha: _base,
           behind: 1,
@@ -776,6 +801,8 @@ Verdict: PASS''',
       final result = _validate(
         body: body,
         state: const HighRiskPrState(
+          number: _prNumber,
+          headRepository: _headRepository,
           headSha: _head,
           baseSha: _base,
           behind: 0,
@@ -805,10 +832,11 @@ Verdict: PASS''',
           path: '.github/workflows/ci.yml',
           status: 'completed',
           conclusion: 'failure',
+          pullRequests: _ciPullRequests,
         ),
       ];
 
-      expect(selectLatestExactHeadCiRun(runs, _head)?.runAttempt, 2);
+      expect(selectLatestExactHeadCiRun(runs, _state)?.runAttempt, 2);
       expect(
         _validate(ciRuns: runs).errors,
         contains('The latest exact-head CI run must succeed.'),
@@ -826,6 +854,7 @@ Verdict: PASS''',
           path: '.github/workflows/ci.yml',
           status: 'completed',
           conclusion: 'success',
+          pullRequests: _ciPullRequests,
         ),
         HighRiskCiRun(
           id: 101,
@@ -836,10 +865,11 @@ Verdict: PASS''',
           path: '.github/workflows/ci.yml',
           status: 'completed',
           conclusion: 'failure',
+          pullRequests: _ciPullRequests,
         ),
       ];
 
-      expect(selectLatestExactHeadCiRun(runs, _head)?.id, 101);
+      expect(selectLatestExactHeadCiRun(runs, _state)?.id, 101);
       expect(
         _validate(ciRuns: runs).errors,
         contains('The latest exact-head CI run must succeed.'),
@@ -857,6 +887,7 @@ Verdict: PASS''',
           path: '.github/workflows/ci.yml',
           status: 'completed',
           conclusion: 'failure',
+          pullRequests: _ciPullRequests,
         ),
         HighRiskCiRun(
           id: 101,
@@ -867,10 +898,52 @@ Verdict: PASS''',
           path: '.github/workflows/ci.yml',
           status: 'completed',
           conclusion: 'success',
+          pullRequests: _ciPullRequests,
         ),
       ];
 
-      expect(selectLatestExactHeadCiRun(runs, _head)?.id, 99);
+      expect(selectLatestExactHeadCiRun(runs, _state)?.id, 99);
+      expect(
+        _validate(ciRuns: runs).errors,
+        contains('The latest exact-head CI run must succeed.'),
+      );
+    });
+
+    test('ignores same-SHA CI runs associated with another PR', () {
+      final foreignPullRequests = [
+        const HighRiskCiPullRequest(
+          number: 421,
+          headSha: _head,
+          baseSha: _base,
+          headRepository: 'implementation/repo',
+        ),
+      ];
+      final runs = [
+        HighRiskCiRun(
+          id: 100,
+          runAttempt: 1,
+          runStartedAt: DateTime.utc(2026, 8, 22, 12),
+          headSha: _head,
+          event: 'pull_request',
+          path: '.github/workflows/ci.yml',
+          status: 'completed',
+          conclusion: 'failure',
+          pullRequests: _ciPullRequests,
+        ),
+        HighRiskCiRun(
+          id: 101,
+          runAttempt: 1,
+          runStartedAt: DateTime.utc(2026, 8, 22, 13),
+          headSha: _head,
+          event: 'pull_request',
+          path: '.github/workflows/ci.yml',
+          status: 'completed',
+          conclusion: 'success',
+          pullRequests: foreignPullRequests,
+        ),
+      ];
+
+      expect(selectLatestExactHeadCiRun(runs, _state)?.id, 100);
       expect(
         _validate(ciRuns: runs).errors,
         contains('The latest exact-head CI run must succeed.'),
@@ -1009,6 +1082,23 @@ Verdict: PASS''',
 
       expect(result.errors.join('\n'), contains('exactly one changed'));
       expect(result.errors.join('\n'), contains('Trusted workflow'));
+    });
+
+    test('preserves every trusted-base manifest evidence path', () {
+      expect(
+        _validate(baselineEvidencePaths: const {_parserTest}).errors,
+        isEmpty,
+      );
+      expect(
+        _validate(
+          baselineEvidencePaths: const {
+            'test/unit/core/template/removed_durable_test.dart',
+          },
+        ).errors,
+        contains(
+          'A proposed evidence manifest must preserve every durable test path referenced by its trusted-base version.',
+        ),
+      );
     });
 
     test('binds the manifest issue to its numeric filename', () {
@@ -1449,6 +1539,17 @@ Verdict: PASS''',
         expect(workflow, contains("'$control'"), reason: control);
       }
       expect(workflow, contains(r'.head_sha == $head'));
+      expect(
+        RegExp(r'any\(\.pull_requests\[\]\?;').allMatches(workflow),
+        hasLength(4),
+      );
+      expect(workflow, contains(r'.number == $pr'));
+      expect(workflow, contains(r'.base.sha == $base'));
+      expect(workflow, contains(r'.head.repo.url =='));
+      expect(
+        workflow,
+        contains(r'--baseline-evidence-paths "$BASELINE_EVIDENCE_PATHS"'),
+      );
       expect(
         workflow,
         contains('sort_by(.run_started_at, .id, .run_attempt) | last // empty'),

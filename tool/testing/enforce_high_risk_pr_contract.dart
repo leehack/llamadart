@@ -27,6 +27,8 @@ class HighRiskAssessment {
 
 class HighRiskPrState {
   const HighRiskPrState({
+    required this.number,
+    required this.headRepository,
     required this.headSha,
     required this.baseSha,
     required this.behind,
@@ -37,6 +39,8 @@ class HighRiskPrState {
     required this.reviews,
   });
 
+  final int number;
+  final String headRepository;
   final String headSha;
   final String baseSha;
   final int behind;
@@ -75,6 +79,7 @@ class HighRiskCiRun {
     required this.path,
     required this.status,
     required this.conclusion,
+    required this.pullRequests,
   });
 
   final int id;
@@ -85,6 +90,21 @@ class HighRiskCiRun {
   final String path;
   final String status;
   final String? conclusion;
+  final List<HighRiskCiPullRequest> pullRequests;
+}
+
+class HighRiskCiPullRequest {
+  const HighRiskCiPullRequest({
+    required this.number,
+    required this.headSha,
+    required this.baseSha,
+    required this.headRepository,
+  });
+
+  final int number;
+  final String headSha;
+  final String baseSha;
+  final String headRepository;
 }
 
 class HighRiskContractResult {
@@ -251,6 +271,7 @@ HighRiskContractResult validateHighRiskContract({
   Map<String, String> verifiedUpstreamCommits = const {},
   Set<String> compiledGrammarTests = const {},
   Set<String> protectedEvidencePaths = const {},
+  Set<String> baselineEvidencePaths = const {},
   Set<String> structuredOutputParityDependencies = const {},
   Set<String>? proposedCompiledGrammarTests,
   Set<String>? proposedStructuredOutputParityDependencies,
@@ -308,7 +329,7 @@ HighRiskContractResult validateHighRiskContract({
   if (state.behind != 0) {
     errors.add('High-risk QA must integrate the current base before ready.');
   }
-  final latestCi = selectLatestExactHeadCiRun(ciRuns, state.headSha);
+  final latestCi = selectLatestExactHeadCiRun(ciRuns, state);
   if (latestCi == null ||
       latestCi.status != 'completed' ||
       latestCi.conclusion != 'success') {
@@ -386,6 +407,13 @@ HighRiskContractResult validateHighRiskContract({
     if (expectedIssue == null || evidence['issue'] != expectedIssue) {
       errors.add('Manifest issue must match its numeric evidence filename.');
     }
+    final proposedEvidencePaths = _evidenceTestPaths(evidence);
+    if (baselineEvidencePaths.difference(proposedEvidencePaths).isNotEmpty) {
+      errors.add(
+        'A proposed evidence manifest must preserve every durable test path '
+        'referenced by its trusted-base version.',
+      );
+    }
     _validateEvidenceManifest(
       evidence,
       assessment: assessment,
@@ -406,14 +434,21 @@ HighRiskContractResult validateHighRiskContract({
 
 HighRiskCiRun? selectLatestExactHeadCiRun(
   Iterable<HighRiskCiRun> runs,
-  String headSha,
+  HighRiskPrState state,
 ) {
   final matching = runs
       .where(
         (run) =>
-            run.headSha == headSha &&
+            run.headSha == state.headSha &&
             run.event == 'pull_request' &&
-            run.path == '.github/workflows/ci.yml',
+            run.path == '.github/workflows/ci.yml' &&
+            run.pullRequests.any(
+              (pullRequest) =>
+                  pullRequest.number == state.number &&
+                  pullRequest.headSha == state.headSha &&
+                  pullRequest.baseSha == state.baseSha &&
+                  pullRequest.headRepository == state.headRepository,
+            ),
       )
       .toList();
   if (matching.isEmpty) return null;
@@ -428,6 +463,39 @@ HighRiskCiRun? selectLatestExactHeadCiRun(
     return left.runAttempt.compareTo(right.runAttempt);
   });
   return matching.last;
+}
+
+Set<String> _evidenceTestPaths(Map<String, dynamic> evidence) {
+  final paths = <String>{};
+  void collect(Object? value) {
+    if (value is List) paths.addAll(value.whereType<String>());
+  }
+
+  final production = evidence['productionEvidence'];
+  if (production is Map<String, dynamic>) {
+    for (final key in const [
+      'positiveTests',
+      'negativeTests',
+      'adversarialTests',
+      'deletionSensitivityTests',
+    ]) {
+      collect(production[key]);
+    }
+  }
+  final structured = evidence['structuredOutput'];
+  if (structured is Map<String, dynamic>) {
+    for (final key in const [
+      'compiledAcceptanceTests',
+      'compiledRejectionTests',
+      'schemaDirectedTypeTests',
+      'partialFinalStreamingTests',
+      'toolChoiceThinkingTests',
+      'upstreamParityTests',
+    ]) {
+      collect(structured[key]);
+    }
+  }
+  return paths;
 }
 
 void _validateEvidenceManifest(
@@ -903,7 +971,8 @@ Never _usage(String message) {
     '--behind <n> --ahead <n> --unresolved-threads <n> --reviews <json> '
     '--pr-body-digest <sha256> --verified-upstream-commits <json> '
     '--compiled-grammar-policy <json> --protected-evidence-paths <paths.txt> '
-    '--ci-runs <json> [--trusted-upstream-parity-evidence <json>]',
+    '--baseline-evidence-paths <paths.txt> --ci-runs <json> '
+    '[--trusted-upstream-parity-evidence <json>]',
   );
   exit(64);
 }
@@ -930,6 +999,7 @@ Future<void> main(List<String> args) async {
     'verified-upstream-commits',
     'compiled-grammar-policy',
     'protected-evidence-paths',
+    'baseline-evidence-paths',
     'ci-runs',
   };
   final missing = required.difference(options.keys.toSet());
@@ -949,6 +1019,11 @@ Future<void> main(List<String> args) async {
     evidence = decoded;
   }
   final state = HighRiskPrState(
+    number: pullRequest['number'] as int,
+    headRepository:
+        ((pullRequest['head'] as Map<String, dynamic>)['repo']
+                as Map<String, dynamic>)['full_name']
+            as String,
     headSha: options['head-sha']!,
     baseSha: options['base-sha']!,
     behind: int.parse(options['behind']!),
@@ -987,6 +1062,9 @@ Future<void> main(List<String> args) async {
     protectedEvidencePaths: (await File(
       options['protected-evidence-paths']!,
     ).readAsLines()).toSet(),
+    baselineEvidencePaths: (await File(
+      options['baseline-evidence-paths']!,
+    ).readAsLines()).where((path) => path.isNotEmpty).toSet(),
     structuredOutputParityDependencies:
         policy.structuredOutputParityDependencies,
     proposedCompiledGrammarTests: proposedPolicy?.compiledGrammarTests,
@@ -1167,6 +1245,43 @@ List<HighRiskCiRun> _decodeCiRuns(Object? value) {
           path: item['path'] as String,
           status: item['status'] as String,
           conclusion: item['conclusion'] as String?,
+          pullRequests: _decodeCiRunPullRequests(item['pull_requests']),
+        );
+      })
+      .toList(growable: false);
+}
+
+List<HighRiskCiPullRequest> _decodeCiRunPullRequests(Object? value) {
+  if (value is! List) _usage('CI run pull_requests must be a list.');
+  return value
+      .map((item) {
+        if (item is! Map<String, dynamic> ||
+            item['number'] is! int ||
+            item['head'] is! Map<String, dynamic> ||
+            item['base'] is! Map<String, dynamic>) {
+          _usage('CI run pull request association is malformed.');
+        }
+        final head = item['head'] as Map<String, dynamic>;
+        final base = item['base'] as Map<String, dynamic>;
+        final repo = head['repo'];
+        final repoUrl = repo is Map<String, dynamic> ? repo['url'] : null;
+        final uri = repoUrl is String ? Uri.tryParse(repoUrl) : null;
+        final segments = uri?.pathSegments
+            .where((part) => part.isNotEmpty)
+            .toList();
+        if (head['sha'] is! String ||
+            base['sha'] is! String ||
+            segments == null ||
+            segments.length < 3 ||
+            segments[segments.length - 3] != 'repos') {
+          _usage('CI run pull request association is malformed.');
+        }
+        return HighRiskCiPullRequest(
+          number: item['number'] as int,
+          headSha: head['sha'] as String,
+          baseSha: base['sha'] as String,
+          headRepository:
+              '${segments[segments.length - 2]}/${segments[segments.length - 1]}',
         );
       })
       .toList(growable: false);
