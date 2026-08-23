@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:dinja/dinja.dart';
 
 import '../../models/chat/chat_message.dart';
@@ -10,7 +12,9 @@ import '../chat_parse_result.dart';
 import '../chat_template_handler.dart';
 import '../template_internal_metadata.dart';
 import '../thinking_utils.dart';
+import '../tool_call_grammar_utils.dart';
 import '../tool_call_parsing_utils.dart';
+import '../tool_schema_utils.dart';
 
 /// Handler for Command R7B format.
 ///
@@ -253,21 +257,23 @@ class CommandR7BHandler extends ChatTemplateHandler {
   @override
   String? buildGrammar(List<ToolDefinition>? tools) {
     if (tools == null || tools.isEmpty) return null;
+    toolSchemas(tools);
 
     // Build GBNF for Command R7B style tool calls
     final toolRules = <String>[];
     final toolChoices = <String>[];
 
     for (final tool in tools) {
-      final ruleName = _sanitizeName(tool.name);
+      final ruleName = ToolCallGrammarUtils.ruleName(tool.name);
       toolChoices.add('$ruleName-call');
 
       final schema = tool.toJsonSchema();
       final argsRule = _jsonSchemaToGbnf(schema, '$ruleName-args');
       toolRules.add(argsRule);
-      toolRules.add(
-        '$ruleName-call ::= "{\\"tool_name\\": \\"${tool.name}\\", \\"parameters\\": " $ruleName-args "}"',
+      final prefix = ToolCallGrammarUtils.literal(
+        '{"tool_name": ${jsonEncode(tool.name)}, "parameters": ',
       );
+      toolRules.add('$ruleName-call ::= $prefix $ruleName-args "}"');
     }
 
     final choiceRule = 'tool-choice ::= ${toolChoices.join(' | ')}';
@@ -333,9 +339,6 @@ class CommandR7BHandler extends ChatTemplateHandler {
     return null;
   }
 
-  String _sanitizeName(String name) =>
-      name.replaceAll(RegExp(r'[^a-zA-Z0-9]'), '-').toLowerCase();
-
   String _jsonSchemaToGbnf(Map<String, dynamic> schema, String ruleName) {
     final properties = schema['properties'] as Map<String, dynamic>? ?? {};
 
@@ -346,11 +349,14 @@ class CommandR7BHandler extends ChatTemplateHandler {
     final parts = <String>[];
     var first = true;
     for (final entry in properties.entries) {
-      final sep = first ? '' : '", " space ';
+      final separator = first
+          ? ''
+          : '${ToolCallGrammarUtils.literal(', ')} space ';
       first = false;
       final propType = (entry.value as Map<String, dynamic>)['type'] as String?;
       final valueRule = _typeToGbnf(propType);
-      parts.add('$sep"\\"${entry.key}\\": " space $valueRule');
+      final key = ToolCallGrammarUtils.literal('${jsonEncode(entry.key)}: ');
+      parts.add('$separator$key space $valueRule');
     }
 
     return '$ruleName ::= "{" space ${parts.join(' ')} space "}"';
