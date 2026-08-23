@@ -20,10 +20,12 @@ npm run start
 ./tool/docs/validate_links.sh
 ```
 
-The build rejects ICNS, JXL, HEIF, and AVIF content because the Docusaurus
-image-dimension dependency has no patched release for its infinite-loop
-parsers. Convert those images to PNG, JPEG, WebP, or SVG before committing
-them. Detection uses file content rather than extensions.
+Automatic local Markdown images are disabled because the Docusaurus
+image-dimension dependency has no patched release for its ICNS, JXL, and
+HEIF/AVIF infinite-loop parsers. Put docs images under `static/` and use an
+explicit pathname URL, such as `![diagram](pathname:///img/diagram.png)`, to
+bypass automatic dimension parsing. Remote Markdown images and HTML image
+elements do not use that parser.
 
 ## API docs
 
