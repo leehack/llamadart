@@ -4,7 +4,7 @@ import type { Config } from '@docusaurus/types';
 import type * as Preset from '@docusaurus/preset-classic';
 import { themes as prismThemes } from 'prism-react-renderer';
 
-import localMarkdownImageGuard from './plugins/local_markdown_image_guard.mjs';
+import {guardLocalMarkdownImages} from './plugins/local_markdown_image_guard.mjs';
 
 const siteUrl = 'https://llamadart.leehack.com';
 const socialCardPath = 'img/social-card.png';
@@ -29,12 +29,8 @@ const classicPreset: Preset.Options = {
     sidebarPath: './sidebars.ts',
     editUrl: 'https://github.com/leehack/llamadart/tree/main/website/',
     versions: docsVersionOptions,
-    beforeDefaultRemarkPlugins: [localMarkdownImageGuard],
   },
   blog: false,
-  pages: {
-    beforeDefaultRemarkPlugins: [localMarkdownImageGuard],
-  },
   sitemap: {
     changefreq: 'weekly',
     priority: 0.6,
@@ -68,6 +64,7 @@ const config: Config = {
   trailingSlash: false,
   markdown: {
     mermaid: true,
+    preprocessor: guardLocalMarkdownImages,
     hooks: {
       onBrokenMarkdownLinks: 'throw'
     }

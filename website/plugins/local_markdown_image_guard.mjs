@@ -1,6 +1,10 @@
 import {parseLocalURLPath} from '@docusaurus/utils';
+import remarkMdx from 'remark-mdx';
+import remarkParse from 'remark-parse';
+import {unified} from 'unified';
 
 const safePathnameExample = 'pathname:///img/example.png';
+const markdownParser = unified().use(remarkParse).use(remarkMdx);
 
 function visitLocalMarkdownImages(node, callback) {
   if (!node || typeof node !== 'object') {
@@ -19,22 +23,20 @@ function visitLocalMarkdownImages(node, callback) {
 }
 
 /**
- * Prevents Docusaurus from passing local Markdown images to image-size.
+ * Prevents every Docusaurus MDX loader from passing local images to image-size.
  *
- * image-size@2.0.2 is the latest published release and has unpatched
- * infinite-loop parsers. This plugin runs before Docusaurus' built-in image
- * transform on every MDX compilation, including development hot reloads.
+ * Docusaurus shares this synchronous preprocessor with docs, pages, and its
+ * fallback loader for Markdown imported from outside content directories.
  */
-export default function localMarkdownImageGuard() {
-  return (tree, file) => {
-    visitLocalMarkdownImages(tree, (image) => {
-      const source = file?.path ?? '<unknown Markdown file>';
-      throw new Error(
-        `Local Markdown image "${image.url}" in "${source}" would use ` +
-          'Docusaurus\' unpatched image-size parser. Put the asset under ' +
-          '`website/static/` and use an explicit pathname URL such as ' +
-          `"${safePathnameExample}".`,
-      );
-    });
-  };
+export function guardLocalMarkdownImages({fileContent, filePath}) {
+  const tree = markdownParser.parse(fileContent);
+  visitLocalMarkdownImages(tree, (image) => {
+    throw new Error(
+      `Local Markdown image "${image.url}" in "${filePath}" would use ` +
+        'Docusaurus\' unpatched image-size parser. Put the asset under ' +
+        '`website/static/` and use an explicit pathname URL such as ' +
+        `"${safePathnameExample}".`,
+    );
+  });
+  return fileContent;
 }

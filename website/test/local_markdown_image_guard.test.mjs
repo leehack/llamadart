@@ -1,23 +1,19 @@
 import assert from 'node:assert/strict';
+import path from 'node:path';
 import test from 'node:test';
+import {fileURLToPath} from 'node:url';
 
-import localMarkdownImageGuard from '../plugins/local_markdown_image_guard.mjs';
+import {loadSiteConfig} from '@docusaurus/core/lib/server/config.js';
 
-function documentWithImage(url) {
-  return {
-    type: 'root',
-    children: [
-      {
-        type: 'paragraph',
-        children: [{type: 'image', url, alt: 'probe'}],
-      },
-    ],
-  };
+import {guardLocalMarkdownImages} from '../plugins/local_markdown_image_guard.mjs';
+
+const websiteDirectory = fileURLToPath(new URL('..', import.meta.url));
+
+function preprocess(fileContent, filePath = 'docs/probe.md') {
+  return guardLocalMarkdownImages({fileContent, filePath});
 }
 
-test('rejects untracked local images at the MDX transform boundary', () => {
-  const transform = localMarkdownImageGuard();
-
+test('rejects untracked local images at the shared MDX boundary', () => {
   for (const url of [
     './untracked.icns',
     '../generated/image.jxl?raw=1#preview',
@@ -25,7 +21,7 @@ test('rejects untracked local images at the MDX transform boundary', () => {
     '/img/upload.avif',
   ]) {
     assert.throws(
-      () => transform(documentWithImage(url), {path: 'docs/untracked.md'}),
+      () => preprocess(`![probe](${url})`, 'docs/untracked.md'),
       (error) => {
         assert.match(error.message, /unpatched image-size parser/);
         assert.match(error.message, /pathname:\/\/\/img\/example\.png/);
@@ -36,35 +32,50 @@ test('rejects untracked local images at the MDX transform boundary', () => {
   }
 });
 
-test('re-checks fresh MDX input on every hot-reload transform', () => {
-  const transform = localMarkdownImageGuard();
-  const file = {path: 'docs/live-preview.md'};
-
+test('re-checks fresh MDX input on every hot-reload preprocess', () => {
   assert.doesNotThrow(() =>
-    transform(documentWithImage('https://example.com/initial.png'), file),
+    preprocess(
+      '![probe](https://example.com/initial.png)',
+      'docs/live-preview.md',
+    ),
   );
   assert.throws(
-    () => transform(documentWithImage('./created-after-start.icns'), file),
+    () =>
+      preprocess(
+        '![probe](./created-after-start.icns)',
+        'docs/live-preview.md',
+      ),
     /created-after-start\.icns/,
   );
 });
 
 test('allows parser-free pathname, remote, data, and HTML images', () => {
-  const transform = localMarkdownImageGuard();
-  const tree = {
-    type: 'root',
-    children: [
-      documentWithImage('pathname:///img/diagram.png').children[0],
-      documentWithImage('https://example.com/diagram.png').children[0],
-      documentWithImage('data:image/png;base64,AA==').children[0],
-      {
-        type: 'mdxJsxFlowElement',
-        name: 'img',
-        attributes: [{name: 'src', value: '/img/diagram.png'}],
-        children: [],
-      },
-    ],
-  };
+  const input = `
+![pathname](pathname:///img/diagram.png)
+![remote](https://example.com/diagram.png)
+![data](data:image/png;base64,AA==)
+<img src="/img/diagram.png" />
+`;
 
-  assert.doesNotThrow(() => transform(tree, {path: 'docs/safe.md'}));
+  assert.equal(preprocess(input, 'docs/safe.mdx'), input);
+});
+
+test('validated site config guards external fallback Markdown', async () => {
+  const {siteConfig} = await loadSiteConfig({siteDir: websiteDirectory});
+  const preprocessor = siteConfig.markdown.preprocessor;
+  assert.equal(typeof preprocessor, 'function');
+
+  const externalReadme = path.resolve(websiteDirectory, '..', 'README.md');
+  assert.throws(
+    () =>
+      preprocessor({
+        filePath: externalReadme,
+        fileContent: '![external](./unsafe-from-fallback.jxl)',
+      }),
+    (error) => {
+      assert.match(error.message, /unsafe-from-fallback\.jxl/);
+      assert.match(error.message, /README\.md/);
+      return true;
+    },
+  );
 });
