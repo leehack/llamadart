@@ -1264,6 +1264,8 @@ time.sleep(300)
       expect(message, contains('timed out after 5s'));
       expect(message, contains('process tree termination:'));
       expect(message, contains('treeCleanup=confirmed'));
+      expect(message, contains('processExit='));
+      expect(message, isNot(contains('processExit=unconfirmed')));
       expect(message, contains('synthetic child ready:'));
       expect(message, contains('<temp>'));
       expect(message, isNot(contains(root.path)));
@@ -1272,13 +1274,9 @@ time.sleep(300)
 
       expect(parentPid, isNotNull);
       expect(childPid, isNotNull);
-      expect(
-        await _waitForWindowsProcessToStop(
-          parentPid!,
-          DateTime.now().add(const Duration(seconds: 10)),
-        ),
-        isTrue,
-      );
+      // _terminateProcessTree awaits this exact Process handle. A numeric PID
+      // probe after exit can observe an unrelated process if Windows reuses it.
+      parentPid = null;
       expect(
         await _waitForWindowsProcessToStop(
           childPid!,
@@ -1458,7 +1456,7 @@ print("parent exited after spawning child", flush=True)
         '-c',
         'import time; time.sleep(300)',
       ], runInShell: false);
-      addTearDown(() => _ensureWindowsProcessStopped(retryProcess.pid));
+      addTearDown(() => _ensureProcessHandleStopped(retryProcess));
       var retryCalls = 0;
       final retryResult = await _terminateProcessTree(
         retryProcess,
@@ -1474,19 +1472,13 @@ print("parent exited after spawning child", flush=True)
       expect(retryCalls, 2);
       expect(retryResult, contains('taskkillAttempts=[-1(timed-out),0]'));
       expect(retryResult, contains('treeCleanup=confirmed'));
-      expect(
-        await _waitForWindowsProcessToStop(
-          retryProcess.pid,
-          DateTime.now().add(const Duration(seconds: 10)),
-        ),
-        isTrue,
-      );
+      expect(retryResult, isNot(contains('processExit=unconfirmed')));
 
       final fallbackProcess = await Process.start('python', [
         '-c',
         'import time; time.sleep(300)',
       ], runInShell: false);
-      addTearDown(() => _ensureWindowsProcessStopped(fallbackProcess.pid));
+      addTearDown(() => _ensureProcessHandleStopped(fallbackProcess));
       var fallbackCalls = 0;
       final stopwatch = Stopwatch()..start();
       final fallbackResult = await _terminateProcessTree(
@@ -1502,14 +1494,8 @@ print("parent exited after spawning child", flush=True)
       expect(fallbackResult, contains('taskkillAttempts=[-1,-1]'));
       expect(fallbackResult, contains('treeCleanup=unconfirmed'));
       expect(fallbackResult, contains('fallbackKill=true'));
+      expect(fallbackResult, isNot(contains('processExit=unconfirmed')));
       expect(stopwatch.elapsed, lessThan(const Duration(seconds: 10)));
-      expect(
-        await _waitForWindowsProcessToStop(
-          fallbackProcess.pid,
-          DateTime.now().add(const Duration(seconds: 10)),
-        ),
-        isTrue,
-      );
     },
     skip: Platform.isWindows ? false : 'validates Windows taskkill retries',
   );
@@ -1940,6 +1926,18 @@ Future<int?> _awaitProcessExit(Process process, Duration timeout) async {
     return await process.exitCode.timeout(timeout);
   } on TimeoutException {
     return null;
+  }
+}
+
+Future<void> _ensureProcessHandleStopped(Process process) async {
+  if (await _awaitProcessExit(process, const Duration(seconds: 1)) != null) {
+    return;
+  }
+  // Keep cleanup attached to the launched Process. A numeric PID may already
+  // belong to an unrelated process by the time this timeout expires.
+  process.kill();
+  if (await _awaitProcessExit(process, const Duration(seconds: 3)) == null) {
+    fail('Failed to terminate synthetic process through its original handle.');
   }
 }
 

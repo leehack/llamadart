@@ -4,6 +4,8 @@ import type { Config } from '@docusaurus/types';
 import type * as Preset from '@docusaurus/preset-classic';
 import { themes as prismThemes } from 'prism-react-renderer';
 
+import {guardLocalMarkdownImages} from './plugins/local_markdown_image_guard.mjs';
+
 const siteUrl = 'https://llamadart.leehack.com';
 const socialCardPath = 'img/social-card.png';
 const socialCardUrl = `${siteUrl}/${socialCardPath}`;
@@ -62,6 +64,7 @@ const config: Config = {
   trailingSlash: false,
   markdown: {
     mermaid: true,
+    preprocessor: guardLocalMarkdownImages,
     hooks: {
       onBrokenMarkdownLinks: 'throw'
     }

@@ -9,6 +9,10 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Patched the website's vulnerable `nanoid` and `uuid` dependency paths. Until
+  Docusaurus replaces its unpatched image parser, automatic local Markdown
+  images are rejected; website contributors should use static pathname URLs.
+
 - Fixed Command R7B, Hermes, and Hunyuan V3 tool grammars so distinct tool or
   parameter names cannot collide after conversion to internal GBNF rule names.
 
