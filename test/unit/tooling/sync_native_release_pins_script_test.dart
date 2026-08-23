@@ -1,4 +1,5 @@
 @TestOn('vm')
+@Timeout(Duration(minutes: 2))
 library;
 
 import 'dart:async';
@@ -113,6 +114,7 @@ paths=(
               litertAppleChecksums[entry.key]!,
       },
     );
+    await _expectOfflineReleaseFixtures(releaseDir);
 
     final result = await _runPython([
       'tool/native/sync_native_release_pins.py',
@@ -1193,6 +1195,324 @@ printf '%s\\n' '{"tag_name":"v0.2.0-1","assets":[]}'
     expect(result.stderr, isNot(contains('Traceback')));
     expect(result.stderr, isNot(contains('AttributeError')));
   });
+
+  test(
+    'bounded runner terminates a Windows process tree with safe diagnostics',
+    () async {
+      final root = await Directory.systemTemp.createTemp(
+        'bounded_process_tree_',
+      );
+      addTearDown(() => root.delete(recursive: true));
+
+      final childScript = File(path.join(root.path, 'child.py'));
+      final parentScript = File(path.join(root.path, 'parent.py'));
+      final childPidFile = File(path.join(root.path, 'child.pid'));
+      await childScript.writeAsString(r'''
+import time
+
+while True:
+    time.sleep(60)
+''');
+      await parentScript.writeAsString(r'''
+from pathlib import Path
+import subprocess
+import sys
+import time
+
+child = subprocess.Popen([sys.executable, sys.argv[1]])
+Path(sys.argv[2]).write_text(str(child.pid), encoding="utf-8")
+print(f"synthetic child ready: {child.pid}", flush=True)
+time.sleep(300)
+''');
+
+      int? parentPid;
+      int? childPid;
+      addTearDown(() async {
+        childPid ??= await _readPidFile(childPidFile);
+        if (parentPid != null) {
+          await _ensureWindowsProcessStopped(parentPid!);
+        }
+        if (childPid != null) {
+          await _ensureWindowsProcessStopped(childPid!);
+        }
+      });
+
+      const secret = 'must-not-appear-in-timeout-diagnostics';
+      Object? failure;
+      final stopwatch = Stopwatch()..start();
+      try {
+        await _runPython(
+          [parentScript.path, childScript.path, childPidFile.path, secret],
+          timeout: const Duration(seconds: 5),
+          waitUntilReady: () async {
+            childPid = await _waitForPidFile(
+              childPidFile,
+              timeout: const Duration(seconds: 30),
+            );
+          },
+          redactions: {root.path: '<temp>', secret: '<redacted>'},
+          onStart: (pid) => parentPid = pid,
+        );
+      } on Object catch (error) {
+        failure = error;
+      }
+      stopwatch.stop();
+      childPid = await _readPidFile(childPidFile);
+
+      expect(failure, isA<TestFailure>());
+      final message = '$failure';
+      expect(message, contains('timed out after 5s'));
+      expect(message, contains('process tree termination:'));
+      expect(message, contains('treeCleanup=confirmed'));
+      expect(message, contains('synthetic child ready:'));
+      expect(message, contains('<temp>'));
+      expect(message, isNot(contains(root.path)));
+      expect(message, isNot(contains(secret)));
+      expect(stopwatch.elapsed, lessThan(const Duration(seconds: 60)));
+
+      expect(parentPid, isNotNull);
+      expect(childPid, isNotNull);
+      expect(
+        await _waitForWindowsProcessToStop(
+          parentPid!,
+          DateTime.now().add(const Duration(seconds: 10)),
+        ),
+        isTrue,
+      );
+      expect(
+        await _waitForWindowsProcessToStop(
+          childPid!,
+          DateTime.now().add(const Duration(seconds: 10)),
+        ),
+        isTrue,
+      );
+    },
+    skip: Platform.isWindows ? false : 'validates Windows taskkill /T cleanup',
+  );
+
+  test(
+    'bounded runner cancels inherited output streams after parent exit',
+    () async {
+      final root = await Directory.systemTemp.createTemp(
+        'bounded_output_drain_',
+      );
+      addTearDown(() => root.delete(recursive: true));
+
+      final childScript = File(path.join(root.path, 'child.py'));
+      final parentScript = File(path.join(root.path, 'parent.py'));
+      final childPidFile = File(path.join(root.path, 'child.pid'));
+      await childScript.writeAsString(r'''
+import time
+
+print("descendant owns inherited output", flush=True)
+time.sleep(300)
+''');
+      await parentScript.writeAsString(r'''
+from pathlib import Path
+import subprocess
+import sys
+
+child = subprocess.Popen(
+    [sys.executable, sys.argv[1]],
+    stdout=sys.stdout,
+    stderr=sys.stderr,
+)
+Path(sys.argv[2]).write_text(str(child.pid), encoding="utf-8")
+print("parent exited after spawning child", flush=True)
+''');
+
+      int? childPid;
+      addTearDown(() async {
+        childPid ??= await _readPidFile(childPidFile);
+        if (childPid != null) {
+          await _ensureWindowsProcessStopped(childPid!);
+        }
+      });
+
+      const secret = 'must-not-appear-in-output-drain-diagnostics';
+      Object? failure;
+      final stopwatch = Stopwatch()..start();
+      try {
+        await _runPython(
+          [parentScript.path, childScript.path, childPidFile.path, secret],
+          timeout: const Duration(seconds: 5),
+          waitUntilReady: () async {
+            childPid = await _waitForPidFile(
+              childPidFile,
+              timeout: const Duration(seconds: 30),
+            );
+          },
+          outputDrainTimeout: const Duration(seconds: 1),
+          outputDrainDescendantPid: () {
+            childPid ??= _readPidFileSync(childPidFile);
+            return childPid;
+          },
+          redactions: {root.path: '<temp>', secret: '<redacted>'},
+        );
+      } on Object catch (error) {
+        failure = error;
+      }
+      stopwatch.stop();
+      childPid = await _readPidFile(childPidFile);
+
+      expect(failure, isA<TestFailure>());
+      final message = '$failure';
+      expect(message, contains('output streams did not close within 1s'));
+      expect(message, contains('descendantCleanup=confirmed'));
+      expect(message, contains('<temp>'));
+      expect(message, isNot(contains(root.path)));
+      expect(message, isNot(contains(secret)));
+      expect(stopwatch.elapsed, lessThan(const Duration(seconds: 45)));
+      expect(childPid, isNotNull);
+      expect(
+        await _waitForWindowsProcessToStop(
+          childPid!,
+          DateTime.now().add(const Duration(seconds: 10)),
+        ),
+        isTrue,
+      );
+    },
+    skip: Platform.isWindows ? false : 'validates inherited Windows handles',
+  );
+
+  test('bounded runner output buffer redacts across chunk and cap edges', () {
+    const secret = 'sensitive-token-across-boundary';
+    final buffer = _CappedTextBuffer({secret: '<redacted>'});
+    buffer.write('sensitive-prefix');
+    buffer.write(List.filled(70 * 1024, 'x').join() + secret.substring(0, 12));
+    buffer.write('${secret.substring(12)}-safe-tail');
+
+    final output = buffer.toString();
+    expect(output, startsWith('<truncated>\n'));
+    expect(output, isNot(contains('sensitive-prefix')));
+    expect(output, isNot(contains(secret)));
+    expect(output, isNot(contains(secret.substring(12))));
+    expect(output, contains('<redacted>-safe-tail'));
+    expect(
+      output.length,
+      lessThanOrEqualTo(64 * 1024 + '<truncated>\n'.length),
+    );
+    expect(output, endsWith('<redacted>-safe-tail'));
+  });
+
+  test('bounded runner redacts complete keys with prefix-suffix overlap', () {
+    final buffer = _CappedTextBuffer(const {'aba': '<redacted>'});
+
+    buffer.write('aba');
+
+    expect(buffer.toString(), '<redacted>');
+  });
+
+  test('bounded runner preserves exact overlapping redaction mappings', () {
+    final buffer = _CappedTextBuffer(const {'a': '<a>', 'ab': '<ab>'});
+
+    buffer.write('a');
+
+    expect(buffer.toString(), '<a>');
+
+    final complete = _CappedTextBuffer(const {'a': '<a>', 'ab': '<ab>'});
+    complete.write('ab');
+    expect(complete.toString(), '<ab>');
+
+    final chunked = _CappedTextBuffer(const {'a': '<a>', 'ab': '<ab>'});
+    chunked.write('a');
+    chunked.write('b');
+    expect(chunked.toString(), '<ab>');
+
+    final suffix = _CappedTextBuffer(const {'ab': '<ab>', 'aba': '<aba>'});
+    suffix.write('aba');
+    expect(suffix.toString(), '<aba>');
+  });
+
+  test('bounded runner sanitizes process launch failures', () async {
+    final root = await Directory.systemTemp.createTemp(
+      'bounded_launch_failure_',
+    );
+    addTearDown(() => root.delete(recursive: true));
+    const secret = 'must-not-appear-in-launch-diagnostics';
+
+    Object? failure;
+    try {
+      await _runPython(
+        [root.path, secret],
+        executable: 'llamadart-python-that-does-not-exist',
+        redactions: {root.path: '<temp>', secret: '<redacted>'},
+      );
+    } on Object catch (error) {
+      failure = error;
+    }
+
+    expect(failure, isA<TestFailure>());
+    final message = '$failure';
+    expect(message, contains('failed to start'));
+    expect(message, contains('<temp>'));
+    expect(message, contains('<redacted>'));
+    expect(message, isNot(contains(root.path)));
+    expect(message, isNot(contains(secret)));
+  });
+
+  test(
+    'bounded runner retries taskkill and reports unconfirmed cleanup',
+    () async {
+      final retryProcess = await Process.start('python', [
+        '-c',
+        'import time; time.sleep(300)',
+      ], runInShell: false);
+      addTearDown(() => _ensureWindowsProcessStopped(retryProcess.pid));
+      var retryCalls = 0;
+      final retryResult = await _terminateProcessTree(
+        retryProcess,
+        taskkillRunner: (pid) async {
+          retryCalls++;
+          if (retryCalls == 1) {
+            return (exitCode: -1, timedOut: true);
+          }
+          return _taskkillWindowsPid(pid);
+        },
+      );
+
+      expect(retryCalls, 2);
+      expect(retryResult, contains('taskkillAttempts=[-1(timed-out),0]'));
+      expect(retryResult, contains('treeCleanup=confirmed'));
+      expect(
+        await _waitForWindowsProcessToStop(
+          retryProcess.pid,
+          DateTime.now().add(const Duration(seconds: 10)),
+        ),
+        isTrue,
+      );
+
+      final fallbackProcess = await Process.start('python', [
+        '-c',
+        'import time; time.sleep(300)',
+      ], runInShell: false);
+      addTearDown(() => _ensureWindowsProcessStopped(fallbackProcess.pid));
+      var fallbackCalls = 0;
+      final stopwatch = Stopwatch()..start();
+      final fallbackResult = await _terminateProcessTree(
+        fallbackProcess,
+        taskkillRunner: (_) async {
+          fallbackCalls++;
+          return (exitCode: -1, timedOut: false);
+        },
+      );
+      stopwatch.stop();
+
+      expect(fallbackCalls, 2);
+      expect(fallbackResult, contains('taskkillAttempts=[-1,-1]'));
+      expect(fallbackResult, contains('treeCleanup=unconfirmed'));
+      expect(fallbackResult, contains('fallbackKill=true'));
+      expect(stopwatch.elapsed, lessThan(const Duration(seconds: 10)));
+      expect(
+        await _waitForWindowsProcessToStop(
+          fallbackProcess.pid,
+          DateTime.now().add(const Duration(seconds: 10)),
+        ),
+        isTrue,
+      );
+    },
+    skip: Platform.isWindows ? false : 'validates Windows taskkill retries',
+  );
 }
 
 Future<_LlamaSyncSetup> _writeLlamaOnlyRepo(String currentTag) async {
@@ -1358,38 +1678,570 @@ String _upstreamTagForNativeTag(String tag) {
 
 int _occurrences(String text, String needle) => needle.allMatches(text).length;
 
-Future<ProcessResult> _runPython(List<String> arguments) async {
-  final executable = Platform.isWindows ? 'python' : 'python3';
-  final process = await Process.start(executable, arguments);
-  final stdout = StringBuffer();
-  final stderr = StringBuffer();
-  final stdoutDone = process.stdout
+Future<ProcessResult> _runPython(
+  List<String> arguments, {
+  String? executable,
+  Duration? timeout,
+  Duration outputDrainTimeout = const Duration(seconds: 5),
+  int? Function()? outputDrainDescendantPid,
+  Future<void> Function()? waitUntilReady,
+  Map<String, String> redactions = const {},
+  void Function(int pid)? onStart,
+}) async {
+  final resolvedExecutable =
+      executable ?? (Platform.isWindows ? 'python' : 'python3');
+  final effectiveTimeout =
+      timeout ??
+      (Platform.isWindows
+          ? const Duration(seconds: 60)
+          : const Duration(seconds: 30));
+  final effectiveRedactions = <String, String>{...redactions};
+  for (var index = 0; index < arguments.length - 1; index++) {
+    if (arguments[index] == '--repo-root' ||
+        arguments[index] == '--release-json-dir') {
+      effectiveRedactions[arguments[index + 1]] = '<temp>';
+    }
+  }
+
+  final stopwatch = Stopwatch()..start();
+  late final Process process;
+  try {
+    process = await Process.start(
+      resolvedExecutable,
+      arguments,
+      runInShell: false,
+    );
+  } on ProcessException catch (error) {
+    stopwatch.stop();
+    final command = _sanitizeDiagnosticText(
+      '$resolvedExecutable ${arguments.join(' ')}',
+      effectiveRedactions,
+    );
+    final reason = _sanitizeDiagnosticText('$error', effectiveRedactions);
+    fail(
+      '$command failed to start after ${stopwatch.elapsedMilliseconds}ms: '
+      '$reason',
+    );
+  }
+  onStart?.call(process.pid);
+  final stdout = _CappedTextBuffer(effectiveRedactions);
+  final stderr = _CappedTextBuffer(effectiveRedactions);
+  final stdoutSubscription = process.stdout
       .transform(utf8.decoder)
-      .forEach(stdout.write);
-  final stderrDone = process.stderr
+      .listen(stdout.write);
+  final stderrSubscription = process.stderr
       .transform(utf8.decoder)
-      .forEach(stderr.write);
+      .listen(stderr.write);
+  final stdoutDone = stdoutSubscription.asFuture<void>();
+  final stderrDone = stderrSubscription.asFuture<void>();
+
+  if (waitUntilReady != null) {
+    try {
+      await waitUntilReady();
+    } on Object catch (error) {
+      final termination = await _terminateProcessTree(process);
+      final outputDrained = await _waitForOutputDrain(
+        stdoutDone,
+        stderrDone,
+        timeout: outputDrainTimeout,
+      );
+      if (!outputDrained) {
+        await _cancelOutputSubscriptions(
+          stdoutSubscription,
+          stderrSubscription,
+        );
+      }
+      stopwatch.stop();
+      final reason = _sanitizeDiagnosticText('$error', effectiveRedactions);
+      fail(
+        'Subprocess readiness failed after '
+        '${stopwatch.elapsedMilliseconds}ms: $reason.\n'
+        'process tree termination: $termination',
+      );
+    }
+  }
 
   late final int exitCode;
   try {
-    exitCode = await process.exitCode.timeout(const Duration(seconds: 20));
+    exitCode = await process.exitCode.timeout(effectiveTimeout);
   } on TimeoutException {
-    process.kill(ProcessSignal.sigkill);
-    await process.exitCode;
-    await Future.wait([stdoutDone, stderrDone]);
+    final termination = await _terminateProcessTree(process);
+    final outputDrained = await _waitForOutputDrain(
+      stdoutDone,
+      stderrDone,
+      timeout: outputDrainTimeout,
+    );
+    if (!outputDrained) {
+      await _cancelOutputSubscriptions(stdoutSubscription, stderrSubscription);
+    }
+    stopwatch.stop();
+    final command = _sanitizeDiagnosticText(
+      '$resolvedExecutable ${arguments.join(' ')}',
+      effectiveRedactions,
+    );
+    final stdoutTail = _diagnosticTail(
+      _sanitizeDiagnosticText(stdout.toString(), effectiveRedactions),
+    );
+    final stderrTail = _diagnosticTail(
+      _sanitizeDiagnosticText(stderr.toString(), effectiveRedactions),
+    );
     fail(
-      '$executable ${arguments.join(' ')} timed out.\n'
-      'stdout:\n$stdout\nstderr:\n$stderr',
+      '$command timed out after ${effectiveTimeout.inSeconds}s '
+      '(elapsed ${stopwatch.elapsedMilliseconds}ms).\n'
+      'process tree termination: $termination\n'
+      'stdout tail:\n$stdoutTail\n'
+      'stderr tail:\n$stderrTail',
     );
   }
 
-  await Future.wait([stdoutDone, stderrDone]);
+  final outputDrained = await _waitForOutputDrain(
+    stdoutDone,
+    stderrDone,
+    timeout: outputDrainTimeout,
+  );
+  if (!outputDrained) {
+    var cleanup = 'not-configured';
+    if (outputDrainDescendantPid != null) {
+      final descendantPid = outputDrainDescendantPid();
+      if (descendantPid == null) {
+        cleanup = 'missing-pid';
+      } else {
+        try {
+          await _ensureWindowsProcessStopped(descendantPid);
+          cleanup = 'confirmed';
+        } on Object {
+          cleanup = 'failed';
+        }
+      }
+    }
+    await _cancelOutputSubscriptions(stdoutSubscription, stderrSubscription);
+    stopwatch.stop();
+    final command = _sanitizeDiagnosticText(
+      '$resolvedExecutable ${arguments.join(' ')}',
+      effectiveRedactions,
+    );
+    fail(
+      '$command exited with code $exitCode but its output streams did not '
+      'close within ${outputDrainTimeout.inSeconds}s '
+      '(elapsed ${stopwatch.elapsedMilliseconds}ms); '
+      'descendantCleanup=$cleanup.',
+    );
+  }
+  stopwatch.stop();
   return ProcessResult(
     process.pid,
     exitCode,
     stdout.toString(),
     stderr.toString(),
   );
+}
+
+Future<String> _terminateProcessTree(
+  Process process, {
+  Future<({int exitCode, bool timedOut})> Function(int pid)? taskkillRunner,
+}) async {
+  if (Platform.isWindows) {
+    final runTaskkill = taskkillRunner ?? ((pid) => _taskkillWindowsPid(pid));
+    final taskkillAttempts = <({int exitCode, bool timedOut})>[];
+    for (var attempt = 0; attempt < 2; attempt++) {
+      try {
+        final result = await runTaskkill(process.pid);
+        taskkillAttempts.add(result);
+        if (result.exitCode == 0 && !result.timedOut) {
+          break;
+        }
+      } on ProcessException {
+        taskkillAttempts.add((exitCode: -1, timedOut: false));
+      }
+    }
+    final treeCleanupConfirmed = taskkillAttempts.any(
+      (attempt) => attempt.exitCode == 0 && !attempt.timedOut,
+    );
+
+    var processExit = await _awaitProcessExit(
+      process,
+      const Duration(seconds: 2),
+    );
+    var fallbackKill = false;
+    if (processExit == null) {
+      fallbackKill = process.kill();
+      processExit = await _awaitProcessExit(
+        process,
+        const Duration(seconds: 3),
+      );
+    }
+    final taskkillSummary = taskkillAttempts
+        .map(
+          (attempt) =>
+              '${attempt.exitCode}${attempt.timedOut ? "(timed-out)" : ""}',
+        )
+        .join(',');
+    return 'taskkillAttempts=[$taskkillSummary], '
+        'treeCleanup=${treeCleanupConfirmed ? 'confirmed' : 'unconfirmed'}, '
+        'fallbackKill=$fallbackKill, processExit=${processExit ?? 'unconfirmed'}';
+  }
+
+  process.kill();
+  var processExit = await _awaitProcessExit(
+    process,
+    const Duration(seconds: 2),
+  );
+  if (processExit == null) {
+    process.kill(ProcessSignal.sigkill);
+    processExit = await _awaitProcessExit(process, const Duration(seconds: 5));
+  }
+  return 'processExit=${processExit ?? 'unconfirmed'}';
+}
+
+Future<({int exitCode, bool timedOut})> _taskkillWindowsPid(
+  int pid, {
+  DateTime? deadline,
+}) async {
+  final taskkill = await Process.start('taskkill', [
+    '/PID',
+    '$pid',
+    '/T',
+    '/F',
+  ], runInShell: false);
+  final stdoutSubscription = taskkill.stdout.listen(null);
+  final stderrSubscription = taskkill.stderr.listen(null);
+  final stdoutDone = stdoutSubscription.asFuture<void>();
+  final stderrDone = stderrSubscription.asFuture<void>();
+  var timedOut = false;
+  var exitCode = await _awaitProcessExit(
+    taskkill,
+    _boundedDuration(deadline, const Duration(seconds: 5)),
+  );
+  if (exitCode == null) {
+    timedOut = true;
+    taskkill.kill();
+    exitCode = await _awaitProcessExit(
+      taskkill,
+      _boundedDuration(deadline, const Duration(seconds: 1)),
+    );
+  }
+  final outputDrained = await _waitForOutputDrain(
+    stdoutDone,
+    stderrDone,
+    timeout: _boundedDuration(deadline, const Duration(seconds: 1)),
+  );
+  if (!outputDrained) {
+    await _cancelOutputSubscriptions(
+      stdoutSubscription,
+      stderrSubscription,
+      timeout: _boundedDuration(deadline, const Duration(seconds: 2)),
+    );
+  }
+  return (exitCode: exitCode ?? -1, timedOut: timedOut);
+}
+
+Future<int?> _awaitProcessExit(Process process, Duration timeout) async {
+  try {
+    return await process.exitCode.timeout(timeout);
+  } on TimeoutException {
+    return null;
+  }
+}
+
+Future<bool> _waitForOutputDrain(
+  Future<void> stdoutDone,
+  Future<void> stderrDone, {
+  Duration timeout = const Duration(seconds: 5),
+}) async {
+  try {
+    await Future.wait([stdoutDone, stderrDone]).timeout(timeout);
+    return true;
+  } on TimeoutException {
+    return false;
+  }
+}
+
+Future<void> _cancelOutputSubscriptions(
+  StreamSubscription<dynamic> stdoutSubscription,
+  StreamSubscription<dynamic> stderrSubscription, {
+  Duration timeout = const Duration(seconds: 2),
+}) async {
+  await Future.wait([
+    stdoutSubscription.cancel(),
+    stderrSubscription.cancel(),
+  ]).timeout(timeout, onTimeout: () => <void>[]);
+}
+
+Duration _boundedDuration(DateTime? deadline, Duration maximum) {
+  if (deadline == null) {
+    return maximum;
+  }
+  final remaining = deadline.difference(DateTime.now());
+  if (remaining <= Duration.zero) {
+    return Duration.zero;
+  }
+  return remaining < maximum ? remaining : maximum;
+}
+
+final class _CappedTextBuffer {
+  static const _maxCharacters = 64 * 1024;
+
+  _CappedTextBuffer([Map<String, String> redactions = const {}])
+    : _redactions = Map.unmodifiable(redactions),
+      _orderedRedactionKeys =
+          redactions.keys.where((key) => key.isNotEmpty).toList()
+            ..sort((left, right) => right.length.compareTo(left.length));
+
+  final Map<String, String> _redactions;
+  final List<String> _orderedRedactionKeys;
+  String _value = '';
+  String _pendingRaw = '';
+  bool _truncated = false;
+
+  void write(Object? value) {
+    final combined = '$_pendingRaw$value';
+    final pendingLength = _incompleteRedactionSuffixLength(combined);
+    final safeLength = combined.length - pendingLength;
+    final chunk = _sanitizeDiagnosticText(
+      combined.substring(0, safeLength),
+      _redactions,
+    );
+    _pendingRaw = combined.substring(safeLength);
+    if (chunk.length >= _maxCharacters) {
+      _value = chunk.substring(chunk.length - _maxCharacters);
+      _truncated = true;
+      return;
+    }
+    _value += chunk;
+    if (_value.length > _maxCharacters) {
+      _value = _value.substring(_value.length - _maxCharacters);
+      _truncated = true;
+    }
+  }
+
+  @override
+  String toString() {
+    final pending = _redactIncompleteSuffix(_pendingRaw);
+    final result = '$_value$pending';
+    final bounded = result.length > _maxCharacters
+        ? result.substring(result.length - _maxCharacters)
+        : result;
+    return _truncated || result.length > _maxCharacters
+        ? '<truncated>\n$bounded'
+        : bounded;
+  }
+
+  int _incompleteRedactionSuffixLength(String value) {
+    var longestComplete = 0;
+    var longestIncomplete = 0;
+    for (final key in _orderedRedactionKeys) {
+      if (value.endsWith(key)) {
+        if (key.length > longestComplete) {
+          longestComplete = key.length;
+        }
+        continue;
+      }
+      final candidateLength = key.length - 1 < value.length
+          ? key.length - 1
+          : value.length;
+      for (var length = candidateLength; length > longestIncomplete; length--) {
+        if (key.startsWith(value.substring(value.length - length))) {
+          longestIncomplete = length;
+          break;
+        }
+      }
+    }
+    return longestComplete > longestIncomplete ? 0 : longestIncomplete;
+  }
+
+  String _redactIncompleteSuffix(String value) {
+    if (value.isEmpty) {
+      return value;
+    }
+    final exactReplacement = _redactions[value];
+    if (exactReplacement != null) {
+      return exactReplacement;
+    }
+    for (final key in _orderedRedactionKeys) {
+      if (key.startsWith(value)) {
+        return _redactions[key]!;
+      }
+    }
+    return _sanitizeDiagnosticText(value, _redactions);
+  }
+}
+
+String _sanitizeDiagnosticText(String value, Map<String, String> redactions) {
+  final ordered =
+      redactions.entries.where((entry) => entry.key.isNotEmpty).toList()
+        ..sort((left, right) => right.key.length.compareTo(left.key.length));
+  if (ordered.isEmpty || value.isEmpty) {
+    return value;
+  }
+  final sanitized = StringBuffer();
+  var index = 0;
+  while (index < value.length) {
+    MapEntry<String, String>? match;
+    for (final entry in ordered) {
+      if (value.startsWith(entry.key, index)) {
+        match = entry;
+        break;
+      }
+    }
+    if (match == null) {
+      sanitized.writeCharCode(value.codeUnitAt(index));
+      index++;
+    } else {
+      sanitized.write(match.value);
+      index += match.key.length;
+    }
+  }
+  return sanitized.toString();
+}
+
+String _diagnosticTail(String value, {int maxCharacters = 4096}) {
+  if (value.length <= maxCharacters) {
+    return value;
+  }
+  return '<truncated>\n${value.substring(value.length - maxCharacters)}';
+}
+
+Future<bool> _windowsProcessExists(
+  int pid, {
+  Duration timeout = const Duration(seconds: 3),
+}) async {
+  final probe = await Process.start('powershell', [
+    '-NoProfile',
+    '-NonInteractive',
+    '-Command',
+    'try { '
+        '[System.Diagnostics.Process]::GetProcessById(${pid.toString()}) '
+        '| Out-Null; exit 0 '
+        '} catch [System.ArgumentException] { exit 1 } '
+        'catch { exit 2 }',
+  ], runInShell: false);
+  final stdoutSubscription = probe.stdout.listen(null);
+  final stderrSubscription = probe.stderr.listen(null);
+  final stdoutDone = stdoutSubscription.asFuture<void>();
+  final stderrDone = stderrSubscription.asFuture<void>();
+  var timedOut = false;
+  var exitCode = await _awaitProcessExit(probe, timeout);
+  if (exitCode == null) {
+    timedOut = true;
+    probe.kill();
+    exitCode = await _awaitProcessExit(probe, const Duration(seconds: 1));
+  }
+  final outputDrained = await _waitForOutputDrain(
+    stdoutDone,
+    stderrDone,
+    timeout: const Duration(seconds: 1),
+  );
+  if (!outputDrained) {
+    await _cancelOutputSubscriptions(stdoutSubscription, stderrSubscription);
+  }
+  if (timedOut) {
+    return true;
+  }
+  return switch (exitCode) {
+    0 => true,
+    1 => false,
+    _ => true,
+  };
+}
+
+Future<int?> _readPidFile(File file) async {
+  if (!file.existsSync()) {
+    return null;
+  }
+  return int.tryParse((await file.readAsString()).trim());
+}
+
+Future<int> _waitForPidFile(File file, {required Duration timeout}) async {
+  final deadline = DateTime.now().add(timeout);
+  while (DateTime.now().isBefore(deadline)) {
+    final pid = await _readPidFile(file);
+    if (pid != null) {
+      return pid;
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+  }
+  throw TimeoutException(
+    'Synthetic child did not publish its PID within ${timeout.inSeconds}s',
+    timeout,
+  );
+}
+
+int? _readPidFileSync(File file) {
+  if (!file.existsSync()) {
+    return null;
+  }
+  return int.tryParse(file.readAsStringSync().trim());
+}
+
+Future<void> _ensureWindowsProcessStopped(int pid) async {
+  if (!await _windowsProcessExists(pid)) {
+    return;
+  }
+  final treeCleanupDeadline = DateTime.now().add(const Duration(seconds: 15));
+  for (var killAttempt = 0; killAttempt < 2; killAttempt++) {
+    if (!DateTime.now().isBefore(treeCleanupDeadline)) {
+      break;
+    }
+    try {
+      final result = await _taskkillWindowsPid(
+        pid,
+        deadline: treeCleanupDeadline,
+      );
+      if (result.exitCode != 0 || result.timedOut) {
+        continue;
+      }
+    } on ProcessException {
+      continue;
+    }
+    if (await _waitForWindowsProcessToStop(pid, treeCleanupDeadline)) {
+      return;
+    }
+  }
+  Process.killPid(pid);
+  final directKillDeadline = DateTime.now().add(const Duration(seconds: 5));
+  if (await _waitForWindowsProcessToStop(pid, directKillDeadline)) {
+    return;
+  }
+  fail('Failed to terminate synthetic Windows process $pid.');
+}
+
+Future<bool> _waitForWindowsProcessToStop(int pid, DateTime deadline) async {
+  while (DateTime.now().isBefore(deadline)) {
+    final remaining = deadline.difference(DateTime.now());
+    final probeTimeout = remaining < const Duration(seconds: 3)
+        ? remaining
+        : const Duration(seconds: 3);
+    if (!await _windowsProcessExists(pid, timeout: probeTimeout)) {
+      return true;
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+  }
+  return false;
+}
+
+Future<void> _expectOfflineReleaseFixtures(Directory releaseDir) async {
+  final fixtures = await releaseDir
+      .list()
+      .where(
+        (entity) =>
+            entity is File &&
+            entity.path.endsWith('.json') &&
+            !entity.path.endsWith('__manifest.json'),
+      )
+      .cast<File>()
+      .toList();
+  expect(fixtures, hasLength(2));
+  for (final fixture in fixtures) {
+    final fixtureText = await fixture.readAsString();
+    expect(fixtureText, isNot(contains('browser_download_url')));
+    final payload = jsonDecode(fixtureText) as Map<String, Object?>;
+    final assets = (payload['assets'] as List<Object?>)
+        .cast<Map<String, Object?>>();
+    expect(assets, isNotEmpty);
+    for (final asset in assets) {
+      expect(asset['digest'], matches(RegExp(r'^sha256:[0-9a-f]{64}$')));
+    }
+  }
 }
 
 Future<void> _writePackageSwift(
