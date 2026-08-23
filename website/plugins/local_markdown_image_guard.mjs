@@ -4,7 +4,10 @@ import remarkParse from 'remark-parse';
 import {unified} from 'unified';
 
 const safePathnameExample = 'pathname:///img/example.png';
-const markdownParser = unified().use(remarkParse).use(remarkMdx);
+const markdownParsers = [
+  unified().use(remarkParse).use(remarkMdx),
+  unified().use(remarkParse),
+];
 
 function visitLocalMarkdownImages(node, callback) {
   if (!node || typeof node !== 'object') {
@@ -32,14 +35,20 @@ export function guardLocalMarkdownImages({fileContent, filePath}) {
   // Docusaurus applies this compatibility transform immediately after the
   // custom preprocessor and before its real MDX parse. Scan the same content so
   // a fenced mdx-code-block cannot reveal a local image after this guard runs.
-  const tree = markdownParser.parse(unwrapMdxCodeBlocks(fileContent));
-  visitLocalMarkdownImages(tree, (image) => {
-    throw new Error(
-      `Local Markdown image "${image.url}" in "${filePath}" would use ` +
-        'Docusaurus\' unpatched image-size parser. Put the asset under ' +
-        '`website/static/` and use an explicit pathname URL such as ' +
-        `"${safePathnameExample}".`,
-    );
-  });
+  const content = unwrapMdxCodeBlocks(fileContent);
+  // The callback does not receive the final format, and front matter can make
+  // Docusaurus reinterpret an .md file as plain Markdown after preprocessing.
+  // Fail closed by scanning both grammars that its loader can select.
+  for (const parser of markdownParsers) {
+    const tree = parser.parse(content);
+    visitLocalMarkdownImages(tree, (image) => {
+      throw new Error(
+        `Local Markdown image "${image.url}" in "${filePath}" would use ` +
+          'Docusaurus\' unpatched image-size parser. Put the asset under ' +
+          '`website/static/` and use an explicit pathname URL such as ' +
+          `"${safePathnameExample}".`,
+      );
+    });
+  }
   return fileContent;
 }

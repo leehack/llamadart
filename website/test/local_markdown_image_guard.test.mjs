@@ -62,6 +62,16 @@ ${fence}`;
   }
 });
 
+test('rejects images under both Docusaurus Markdown grammars', () => {
+  const plainMarkdownImageHiddenFromMdx =
+    'export const x = "![probe](./plain-format-payload.icns)"';
+
+  assert.throws(
+    () => preprocess(plainMarkdownImageHiddenFromMdx, 'docs/plain-format.md'),
+    /plain-format-payload\.icns/,
+  );
+});
+
 test('allows parser-free pathname, remote, data, and HTML images', () => {
   const input = `
 ![pathname](pathname:///img/diagram.png)
