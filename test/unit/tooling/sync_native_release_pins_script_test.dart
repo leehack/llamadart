@@ -1319,12 +1319,9 @@ print("parent exited after spawning child", flush=True)
           [parentScript.path, childScript.path, childPidFile.path, secret],
           timeout: const Duration(seconds: 5),
           outputDrainTimeout: const Duration(seconds: 1),
-          outputDrainCleanup: () async {
-            childPid ??= await _readPidFile(childPidFile);
-            if (childPid == null) {
-              fail('Synthetic child PID was not recorded before cleanup.');
-            }
-            await _ensureWindowsProcessStopped(childPid!);
+          outputDrainDescendantPid: () {
+            childPid ??= _readPidFileSync(childPidFile);
+            return childPid;
           },
           redactions: {root.path: '<temp>', secret: '<redacted>'},
         );
@@ -1341,7 +1338,7 @@ print("parent exited after spawning child", flush=True)
       expect(message, contains('<temp>'));
       expect(message, isNot(contains(root.path)));
       expect(message, isNot(contains(secret)));
-      expect(stopwatch.elapsed, lessThan(const Duration(seconds: 10)));
+      expect(stopwatch.elapsed, lessThan(const Duration(seconds: 30)));
       expect(childPid, isNotNull);
       expect(await _windowsProcessExists(childPid!), isFalse);
     },
@@ -1544,7 +1541,7 @@ Future<ProcessResult> _runPython(
   List<String> arguments, {
   Duration? timeout,
   Duration outputDrainTimeout = const Duration(seconds: 5),
-  Future<void> Function()? outputDrainCleanup,
+  int? Function()? outputDrainDescendantPid,
   Map<String, String> redactions = const {},
   void Function(int pid)? onStart,
 }) async {
@@ -1616,12 +1613,17 @@ Future<ProcessResult> _runPython(
   );
   if (!outputDrained) {
     var cleanup = 'not-configured';
-    if (outputDrainCleanup != null) {
-      try {
-        await outputDrainCleanup().timeout(const Duration(seconds: 10));
-        cleanup = 'confirmed';
-      } on Object {
-        cleanup = 'failed';
+    if (outputDrainDescendantPid != null) {
+      final descendantPid = outputDrainDescendantPid();
+      if (descendantPid == null) {
+        cleanup = 'missing-pid';
+      } else {
+        try {
+          await _ensureWindowsProcessStopped(descendantPid);
+          cleanup = 'confirmed';
+        } on Object {
+          cleanup = 'failed';
+        }
       }
     }
     await _cancelOutputSubscriptions(stdoutSubscription, stderrSubscription);
@@ -1857,15 +1859,37 @@ String _diagnosticTail(String value, {int maxCharacters = 4096}) {
   return '<truncated>\n${value.substring(value.length - maxCharacters)}';
 }
 
-Future<bool> _windowsProcessExists(int pid) async {
-  final result = await Process.run('powershell', [
+Future<bool> _windowsProcessExists(
+  int pid, {
+  Duration timeout = const Duration(seconds: 1),
+}) async {
+  final probe = await Process.start('powershell', [
     '-NoProfile',
     '-NonInteractive',
     '-Command',
     'if (Get-Process -Id ${pid.toString()} '
         '-ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }',
   ], runInShell: false);
-  return result.exitCode == 0;
+  final stdoutSubscription = probe.stdout.listen(null);
+  final stderrSubscription = probe.stderr.listen(null);
+  final stdoutDone = stdoutSubscription.asFuture<void>();
+  final stderrDone = stderrSubscription.asFuture<void>();
+  var timedOut = false;
+  var exitCode = await _awaitProcessExit(probe, timeout);
+  if (exitCode == null) {
+    timedOut = true;
+    probe.kill();
+    exitCode = await _awaitProcessExit(probe, const Duration(seconds: 1));
+  }
+  final outputDrained = await _waitForOutputDrain(
+    stdoutDone,
+    stderrDone,
+    timeout: const Duration(seconds: 1),
+  );
+  if (!outputDrained) {
+    await _cancelOutputSubscriptions(stdoutSubscription, stderrSubscription);
+  }
+  return timedOut || exitCode == 0;
 }
 
 Future<int?> _readPidFile(File file) async {
@@ -1875,11 +1899,22 @@ Future<int?> _readPidFile(File file) async {
   return int.tryParse((await file.readAsString()).trim());
 }
 
+int? _readPidFileSync(File file) {
+  if (!file.existsSync()) {
+    return null;
+  }
+  return int.tryParse(file.readAsStringSync().trim());
+}
+
 Future<void> _ensureWindowsProcessStopped(int pid) async {
   if (!await _windowsProcessExists(pid)) {
     return;
   }
+  final treeCleanupDeadline = DateTime.now().add(const Duration(seconds: 15));
   for (var killAttempt = 0; killAttempt < 2; killAttempt++) {
+    if (!DateTime.now().isBefore(treeCleanupDeadline)) {
+      break;
+    }
     try {
       final result = await _taskkillWindowsPid(pid);
       if (result.exitCode != 0 || result.timedOut) {
@@ -1888,21 +1923,30 @@ Future<void> _ensureWindowsProcessStopped(int pid) async {
     } on ProcessException {
       continue;
     }
-    for (var pollAttempt = 0; pollAttempt < 20; pollAttempt++) {
-      if (!await _windowsProcessExists(pid)) {
-        return;
-      }
-      await Future<void>.delayed(const Duration(milliseconds: 100));
+    if (await _waitForWindowsProcessToStop(pid, treeCleanupDeadline)) {
+      return;
     }
   }
   Process.killPid(pid);
-  for (var pollAttempt = 0; pollAttempt < 30; pollAttempt++) {
-    if (!await _windowsProcessExists(pid)) {
-      return;
+  final directKillDeadline = DateTime.now().add(const Duration(seconds: 5));
+  if (await _waitForWindowsProcessToStop(pid, directKillDeadline)) {
+    return;
+  }
+  fail('Failed to terminate synthetic Windows process $pid.');
+}
+
+Future<bool> _waitForWindowsProcessToStop(int pid, DateTime deadline) async {
+  while (DateTime.now().isBefore(deadline)) {
+    final remaining = deadline.difference(DateTime.now());
+    final probeTimeout = remaining < const Duration(seconds: 1)
+        ? remaining
+        : const Duration(seconds: 1);
+    if (!await _windowsProcessExists(pid, timeout: probeTimeout)) {
+      return true;
     }
     await Future<void>.delayed(const Duration(milliseconds: 100));
   }
-  fail('Failed to terminate synthetic Windows process $pid.');
+  return false;
 }
 
 Future<void> _expectOfflineReleaseFixtures(Directory releaseDir) async {
