@@ -1319,6 +1319,13 @@ print("parent exited after spawning child", flush=True)
           [parentScript.path, childScript.path, childPidFile.path, secret],
           timeout: const Duration(seconds: 5),
           outputDrainTimeout: const Duration(seconds: 1),
+          outputDrainCleanup: () async {
+            childPid ??= await _readPidFile(childPidFile);
+            if (childPid == null) {
+              fail('Synthetic child PID was not recorded before cleanup.');
+            }
+            await _ensureWindowsProcessStopped(childPid!);
+          },
           redactions: {root.path: '<temp>', secret: '<redacted>'},
         );
       } on Object catch (error) {
@@ -1330,12 +1337,13 @@ print("parent exited after spawning child", flush=True)
       expect(failure, isA<TestFailure>());
       final message = '$failure';
       expect(message, contains('output streams did not close within 1s'));
+      expect(message, contains('descendantCleanup=confirmed'));
       expect(message, contains('<temp>'));
       expect(message, isNot(contains(root.path)));
       expect(message, isNot(contains(secret)));
       expect(stopwatch.elapsed, lessThan(const Duration(seconds: 10)));
       expect(childPid, isNotNull);
-      expect(await _windowsProcessExists(childPid!), isTrue);
+      expect(await _windowsProcessExists(childPid!), isFalse);
     },
     skip: Platform.isWindows ? false : 'validates inherited Windows handles',
   );
@@ -1344,7 +1352,7 @@ print("parent exited after spawning child", flush=True)
     const secret = 'sensitive-token-across-boundary';
     final buffer = _CappedTextBuffer({secret: '<redacted>'});
     buffer.write('sensitive-prefix');
-    buffer.write('x' * (70 * 1024) + secret.substring(0, 12));
+    buffer.write(List.filled(70 * 1024, 'x').join() + secret.substring(0, 12));
     buffer.write('${secret.substring(12)}-safe-tail');
 
     final output = buffer.toString();
@@ -1358,6 +1366,14 @@ print("parent exited after spawning child", flush=True)
       lessThanOrEqualTo(64 * 1024 + '<truncated>\n'.length),
     );
     expect(output, endsWith('<redacted>-safe-tail'));
+  });
+
+  test('bounded runner redacts complete keys with prefix-suffix overlap', () {
+    final buffer = _CappedTextBuffer(const {'aba': '<redacted>'});
+
+    buffer.write('aba');
+
+    expect(buffer.toString(), '<redacted>');
   });
 }
 
@@ -1528,6 +1544,7 @@ Future<ProcessResult> _runPython(
   List<String> arguments, {
   Duration? timeout,
   Duration outputDrainTimeout = const Duration(seconds: 5),
+  Future<void> Function()? outputDrainCleanup,
   Map<String, String> redactions = const {},
   void Function(int pid)? onStart,
 }) async {
@@ -1598,6 +1615,15 @@ Future<ProcessResult> _runPython(
     timeout: outputDrainTimeout,
   );
   if (!outputDrained) {
+    var cleanup = 'not-configured';
+    if (outputDrainCleanup != null) {
+      try {
+        await outputDrainCleanup().timeout(const Duration(seconds: 10));
+        cleanup = 'confirmed';
+      } on Object {
+        cleanup = 'failed';
+      }
+    }
     await _cancelOutputSubscriptions(stdoutSubscription, stderrSubscription);
     stopwatch.stop();
     final command = _sanitizeDiagnosticText(
@@ -1607,7 +1633,8 @@ Future<ProcessResult> _runPython(
     fail(
       '$command exited with code $exitCode but its output streams did not '
       'close within ${outputDrainTimeout.inSeconds}s '
-      '(elapsed ${stopwatch.elapsedMilliseconds}ms).',
+      '(elapsed ${stopwatch.elapsedMilliseconds}ms); '
+      'descendantCleanup=$cleanup.',
     );
   }
   stopwatch.stop();
@@ -1626,7 +1653,7 @@ Future<String> _terminateProcessTree(Process process) async {
       try {
         final result = await _taskkillWindowsPid(process.pid);
         taskkillAttempts.add(result);
-        if (result.exitCode == 0) {
+        if (result.exitCode == 0 && !result.timedOut) {
           break;
         }
       } on ProcessException {
@@ -1634,7 +1661,7 @@ Future<String> _terminateProcessTree(Process process) async {
       }
     }
     final treeCleanupConfirmed = taskkillAttempts.any(
-      (attempt) => attempt.exitCode == 0,
+      (attempt) => attempt.exitCode == 0 && !attempt.timedOut,
     );
 
     var processExit = await _awaitProcessExit(
@@ -1783,6 +1810,9 @@ final class _CappedTextBuffer {
   int _incompleteRedactionSuffixLength(String value) {
     var longest = 0;
     for (final key in _orderedRedactionKeys) {
+      if (value.endsWith(key)) {
+        continue;
+      }
       final candidateLength = key.length - 1 < value.length
           ? key.length - 1
           : value.length;
