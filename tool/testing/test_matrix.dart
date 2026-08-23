@@ -397,7 +397,9 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     id: 'template-parity',
     tier: 'targeted',
     mode: 'local-only',
-    covers: 'vendored llama.cpp chat-template detection/render/parse parity',
+    covers:
+        'vendored llama.cpp chat-template detection/render/parse parity and '
+        'compiled specialized GBNF schema acceptance/rejection',
     command: 'tool/testing/run_template_parity_suites.sh',
     useWhen: 'Template engine, handlers, grammar, or parser changes.',
   ),

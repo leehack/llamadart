@@ -686,6 +686,7 @@ class LlamaEngine {
       enableThinking: enableThinking,
       modelName: _modelPath ?? 'llama_model',
       completionId: completionId,
+      tools: effectiveTools,
     );
   }
 

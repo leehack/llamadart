@@ -5,6 +5,28 @@ import 'package:test/test.dart';
 
 void main() {
   group('ToolCallParsingUtils', () {
+    test(
+      'rejects duplicate object keys before JSON decoding collapses them',
+      () {
+        expect(
+          ToolCallParsingUtils.hasUniqueJsonObjectKeys(
+            '{"outer":{"city":"Seoul","c\\u0069ty":"Tokyo"}}',
+          ),
+          isFalse,
+        );
+        expect(
+          ToolCallParsingUtils.hasUniqueJsonObjectKeys(
+            '[{"city":"Seoul"},{"city":"Tokyo"}]',
+          ),
+          isTrue,
+        );
+        expect(
+          ToolCallParsingUtils.hasUniqueJsonObjectKeys('{"city":'),
+          isFalse,
+        );
+      },
+    );
+
     test('decodes JSON objects', () {
       final decoded = ToolCallParsingUtils.decodeJsonObject(
         '{"name":"get_weather","arguments":{"city":"Seoul"}}',
