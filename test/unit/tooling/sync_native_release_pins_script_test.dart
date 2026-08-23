@@ -1244,6 +1244,12 @@ time.sleep(300)
         await _runPython(
           [parentScript.path, childScript.path, childPidFile.path, secret],
           timeout: const Duration(seconds: 5),
+          waitUntilReady: () async {
+            childPid = await _waitForPidFile(
+              childPidFile,
+              timeout: const Duration(seconds: 30),
+            );
+          },
           redactions: {root.path: '<temp>', secret: '<redacted>'},
           onStart: (pid) => parentPid = pid,
         );
@@ -1330,6 +1336,12 @@ print("parent exited after spawning child", flush=True)
         await _runPython(
           [parentScript.path, childScript.path, childPidFile.path, secret],
           timeout: const Duration(seconds: 5),
+          waitUntilReady: () async {
+            childPid = await _waitForPidFile(
+              childPidFile,
+              timeout: const Duration(seconds: 30),
+            );
+          },
           outputDrainTimeout: const Duration(seconds: 1),
           outputDrainDescendantPid: () {
             childPid ??= _readPidFileSync(childPidFile);
@@ -1390,6 +1402,77 @@ print("parent exited after spawning child", flush=True)
 
     expect(buffer.toString(), '<redacted>');
   });
+
+  test('bounded runner preserves exact overlapping redaction mappings', () {
+    final buffer = _CappedTextBuffer(const {'a': '<a>', 'ab': '<ab>'});
+
+    buffer.write('a');
+
+    expect(buffer.toString(), '<a>');
+  });
+
+  test(
+    'bounded runner retries taskkill and reports unconfirmed cleanup',
+    () async {
+      final retryProcess = await Process.start('python', [
+        '-c',
+        'import time; time.sleep(300)',
+      ], runInShell: false);
+      addTearDown(() => _ensureWindowsProcessStopped(retryProcess.pid));
+      var retryCalls = 0;
+      final retryResult = await _terminateProcessTree(
+        retryProcess,
+        taskkillRunner: (pid) async {
+          retryCalls++;
+          if (retryCalls == 1) {
+            return (exitCode: -1, timedOut: true);
+          }
+          return _taskkillWindowsPid(pid);
+        },
+      );
+
+      expect(retryCalls, 2);
+      expect(retryResult, contains('taskkillAttempts=[-1(timed-out),0]'));
+      expect(retryResult, contains('treeCleanup=confirmed'));
+      expect(
+        await _waitForWindowsProcessToStop(
+          retryProcess.pid,
+          DateTime.now().add(const Duration(seconds: 10)),
+        ),
+        isTrue,
+      );
+
+      final fallbackProcess = await Process.start('python', [
+        '-c',
+        'import time; time.sleep(300)',
+      ], runInShell: false);
+      addTearDown(() => _ensureWindowsProcessStopped(fallbackProcess.pid));
+      var fallbackCalls = 0;
+      final stopwatch = Stopwatch()..start();
+      final fallbackResult = await _terminateProcessTree(
+        fallbackProcess,
+        taskkillRunner: (_) async {
+          fallbackCalls++;
+          return (exitCode: -1, timedOut: false);
+        },
+      );
+      stopwatch.stop();
+
+      expect(fallbackCalls, 2);
+      expect(fallbackResult, contains('taskkillAttempts=[-1,-1]'));
+      expect(fallbackResult, contains('treeCleanup=unconfirmed'));
+      expect(fallbackResult, contains('fallbackKill=true'));
+      expect(stopwatch.elapsed, lessThan(const Duration(seconds: 10)));
+      expect(
+        await _waitForWindowsProcessToStop(
+          fallbackProcess.pid,
+          DateTime.now().add(const Duration(seconds: 10)),
+        ),
+        isTrue,
+      );
+    },
+    skip: Platform.isWindows ? false : 'validates Windows taskkill retries',
+  );
 }
 
 Future<_LlamaSyncSetup> _writeLlamaOnlyRepo(String currentTag) async {
@@ -1560,6 +1643,7 @@ Future<ProcessResult> _runPython(
   Duration? timeout,
   Duration outputDrainTimeout = const Duration(seconds: 5),
   int? Function()? outputDrainDescendantPid,
+  Future<void> Function()? waitUntilReady,
   Map<String, String> redactions = const {},
   void Function(int pid)? onStart,
 }) async {
@@ -1590,6 +1674,35 @@ Future<ProcessResult> _runPython(
       .listen(stderr.write);
   final stdoutDone = stdoutSubscription.asFuture<void>();
   final stderrDone = stderrSubscription.asFuture<void>();
+
+  if (waitUntilReady != null) {
+    try {
+      await waitUntilReady();
+    } on Object catch (error) {
+      final termination = await _terminateProcessTree(process);
+      final outputDrained = await _waitForOutputDrain(
+        stdoutDone,
+        stderrDone,
+        timeout: outputDrainTimeout,
+      );
+      if (!outputDrained) {
+        await _cancelOutputSubscriptions(
+          stdoutSubscription,
+          stderrSubscription,
+        );
+      }
+      stopwatch.stop();
+      final reason = _sanitizeDiagnosticText(
+        '$error',
+        effectiveRedactions,
+      );
+      fail(
+        'Subprocess readiness failed after '
+        '${stopwatch.elapsedMilliseconds}ms: $reason.\n'
+        'process tree termination: $termination',
+      );
+    }
+  }
 
   late final int exitCode;
   try {
@@ -1666,12 +1779,16 @@ Future<ProcessResult> _runPython(
   );
 }
 
-Future<String> _terminateProcessTree(Process process) async {
+Future<String> _terminateProcessTree(
+  Process process, {
+  Future<({int exitCode, bool timedOut})> Function(int pid)? taskkillRunner,
+}) async {
   if (Platform.isWindows) {
+    final runTaskkill = taskkillRunner ?? ((pid) => _taskkillWindowsPid(pid));
     final taskkillAttempts = <({int exitCode, bool timedOut})>[];
     for (var attempt = 0; attempt < 2; attempt++) {
       try {
-        final result = await _taskkillWindowsPid(process.pid);
+        final result = await runTaskkill(process.pid);
         taskkillAttempts.add(result);
         if (result.exitCode == 0 && !result.timedOut) {
           break;
@@ -1875,6 +1992,10 @@ final class _CappedTextBuffer {
     if (value.isEmpty) {
       return value;
     }
+    final exactReplacement = _redactions[value];
+    if (exactReplacement != null) {
+      return exactReplacement;
+    }
     for (final key in _orderedRedactionKeys) {
       if (key.startsWith(value)) {
         return _redactions[key]!;
@@ -1950,6 +2071,24 @@ Future<int?> _readPidFile(File file) async {
     return null;
   }
   return int.tryParse((await file.readAsString()).trim());
+}
+
+Future<int> _waitForPidFile(
+  File file, {
+  required Duration timeout,
+}) async {
+  final deadline = DateTime.now().add(timeout);
+  while (DateTime.now().isBefore(deadline)) {
+    final pid = await _readPidFile(file);
+    if (pid != null) {
+      return pid;
+    }
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+  }
+  throw TimeoutException(
+    'Synthetic child did not publish its PID within ${timeout.inSeconds}s',
+    timeout,
+  );
 }
 
 int? _readPidFileSync(File file) {
