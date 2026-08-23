@@ -20,6 +20,11 @@ npm run start
 ./tool/docs/validate_links.sh
 ```
 
+The build rejects ICNS, JXL, HEIF, and AVIF content because the Docusaurus
+image-dimension dependency has no patched release for its infinite-loop
+parsers. Convert those images to PNG, JPEG, WebP, or SVG before committing
+them. Detection uses file content rather than extensions.
+
 ## API docs
 
 The docs site links API references to pub.dev:
