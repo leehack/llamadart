@@ -40,7 +40,8 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     mode: 'CI + local',
     covers: 'format, analyzer, web/native import boundaries',
     command:
-        'dart format --output=none --set-exit-if-changed .; dart analyze; '
+        'dart run tool/prepare_workspace.dart && '
+        'dart format --output=none --set-exit-if-changed . && dart analyze && '
         'dart run tool/testing/check_platform_boundaries.dart',
     useWhen: 'Every non-trivial PR.',
   ),
