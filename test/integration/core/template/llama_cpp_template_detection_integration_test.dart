@@ -268,6 +268,91 @@ void main() {
       }
     }, skip: fixtureSkipReason);
 
+    test(
+      'collision-prone names survive pinned render and production parse',
+      () {
+        final collisionTools = <ToolDefinition>[
+          ToolDefinition(
+            name: 'a b',
+            description: 'Spaced tool name',
+            parameters: const [],
+            handler: (_) async => null,
+          ),
+          ToolDefinition(
+            name: 'a-b',
+            description: 'Dashed tool name',
+            parameters: [
+              ToolParam.string('x y', required: true),
+              ToolParam.string('x-y', required: true),
+            ],
+            handler: (_) async => null,
+          ),
+        ];
+        const cases = <String, ({ChatFormat format, String output})>{
+          'CohereForAI-c4ai-command-r7b-12-2024-tool_use.jinja': (
+            format: ChatFormat.commandR7B,
+            output:
+                '<|START_ACTION|>'
+                '[{"tool_name":"a-b","parameters":'
+                '{"x y":"first","x-y":"second"}}]'
+                '<|END_ACTION|>',
+          ),
+          'NousResearch-Hermes-2-Pro-Llama-3-8B-tool_use.jinja': (
+            format: ChatFormat.hermes,
+            output:
+                '<tool_call>{"name":"a-b","arguments":'
+                '{"x y":"first","x-y":"second"}}</tool_call>',
+          ),
+          'tencent-Hy3.jinja': (
+            format: ChatFormat.hunyuanV3,
+            output:
+                '</think:opensource><tool_calls:opensource>\n'
+                '<tool_call:opensource>a-b<tool_sep:opensource>\n'
+                '<arg_key:opensource>x y</arg_key:opensource>\n'
+                '<arg_value:opensource>first</arg_value:opensource>\n'
+                '<arg_key:opensource>x-y</arg_key:opensource>\n'
+                '<arg_value:opensource>second</arg_value:opensource>\n'
+                '</tool_call:opensource>\n'
+                '</tool_calls:opensource>',
+          ),
+        };
+
+        for (final entry in cases.entries) {
+          final source = File(
+            '${templatesDir.path}/${entry.key}',
+          ).readAsStringSync();
+          final rendered = ChatTemplateEngine.render(
+            templateSource: source,
+            messages: messages,
+            metadata: metadata,
+            tools: collisionTools,
+          );
+
+          expect(
+            ChatFormat.values[rendered.format],
+            entry.value.format,
+            reason: entry.key,
+          );
+          for (final literal in const ['a b', 'a-b', 'x y', 'x-y']) {
+            expect(rendered.prompt, contains(literal), reason: entry.key);
+          }
+
+          final parsed = ChatTemplateEngine.parse(
+            rendered.format,
+            entry.value.output,
+            tools: collisionTools,
+            thinkingForcedOpen: rendered.thinkingForcedOpen,
+          );
+          expect(parsed.content, isEmpty, reason: entry.key);
+          expect(parsed.toolCalls, hasLength(1), reason: entry.key);
+          expect(parsed.toolCalls.single.function?.name, 'a-b');
+          expect(parsed.toolCalls.single.function?.arguments, contains('x y'));
+          expect(parsed.toolCalls.single.function?.arguments, contains('x-y'));
+        }
+      },
+      skip: fixtureSkipReason,
+    );
+
     test('direct-Jinja grammars preserve tool-choice and prefix semantics', () {
       const templates = [
         'Kimi-K3.jinja',

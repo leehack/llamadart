@@ -5,6 +5,7 @@ import 'package:llamadart/src/core/models/chat/chat_role.dart';
 import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:llamadart/src/core/models/tools/tool_param.dart';
 import 'package:llamadart/src/core/template/handlers/command_r7b_handler.dart';
+import 'package:llamadart/src/core/template/tool_call_grammar_utils.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -213,11 +214,36 @@ void main() {
     ];
 
     final grammar = handler.buildGrammar(tools)!;
+    final writeFileRule = ToolCallGrammarUtils.ruleName('write_file');
 
-    expect(grammar, contains('write-file-args ::= "{"'));
+    expect(grammar, contains('$writeFileRule-args ::= "{"'));
     expect(grammar, contains('"\\"path\\": " space string'));
     expect(grammar, contains('"\\"content\\": " space string'));
-    expect(grammar, isNot(contains('write-file-args ::= "{" space "}"')));
+    expect(grammar, isNot(contains('$writeFileRule-args ::= "{" space "}"')));
+  });
+
+  test('collision-free grammar rules preserve Command R wire names', () {
+    final handler = CommandR7BHandler();
+    final tools = [_tool('a b'), _tool('a-b')];
+    final spacedRule = ToolCallGrammarUtils.ruleName('a b');
+    final dashedRule = ToolCallGrammarUtils.ruleName('a-b');
+
+    expect(spacedRule, isNot(dashedRule));
+    final grammar = handler.buildGrammar(tools)!;
+    expect(grammar, contains('$spacedRule-call ::='));
+    expect(grammar, contains('$dashedRule-call ::='));
+    expect(grammar, contains(r'\"tool_name\": \"a b\"'));
+    expect(grammar, contains(r'\"tool_name\": \"a-b\"'));
+
+    const output =
+        'before '
+        '<|START_ACTION|>[{"tool_name":"a b","parameters":{}}]'
+        '<|END_ACTION|>';
+    final parsed = handler.parse(output);
+    expect(parsed.content, 'before');
+    expect(parsed.toolCalls, hasLength(1));
+    expect(parsed.toolCalls.single.function?.name, 'a b');
+    expect(jsonDecode(parsed.toolCalls.single.function!.arguments!), isEmpty);
   });
 
   test('keeps malformed action block as content', () {
@@ -235,3 +261,10 @@ void main() {
 Future<Object?> _noop(_) async {
   return 'ok';
 }
+
+ToolDefinition _tool(String name) => ToolDefinition(
+  name: name,
+  description: 'Collision coverage',
+  parameters: const [],
+  handler: _noop,
+);

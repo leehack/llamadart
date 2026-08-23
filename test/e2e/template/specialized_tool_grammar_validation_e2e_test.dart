@@ -2,11 +2,15 @@
 @Tags(['local-only', 'e2e'])
 library;
 
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:llamadart/src/core/models/tools/tool_param.dart';
+import 'package:llamadart/src/core/template/handlers/command_r7b_handler.dart';
 import 'package:llamadart/src/core/template/handlers/glm45_handler.dart';
+import 'package:llamadart/src/core/template/handlers/hermes_handler.dart';
+import 'package:llamadart/src/core/template/handlers/hunyuan_v3_handler.dart';
 import 'package:llamadart/src/core/template/handlers/llama_cpp_specialized_handlers.dart';
 import 'package:test/test.dart';
 
@@ -188,6 +192,105 @@ void main() {
             '</tool_call>\n',
       ],
       invalid: const [],
+    );
+  });
+
+  test('Command R7B, Hermes, and Hunyuan rule collisions compile', () {
+    _expectGrammar(
+      validator,
+      CommandR7BHandler().buildGrammar(_collidingToolNames)!,
+      valid: const [
+        '<|START_ACTION|>'
+            '[{"tool_name": "a b", "parameters": {}},'
+            '{"tool_name": "a-b", "parameters": {}}]'
+            '<|END_ACTION|>',
+      ],
+      invalid: const [
+        '<|START_ACTION|>'
+            '[{"tool_name": "a-u20-b", "parameters": {}}]'
+            '<|END_ACTION|>',
+      ],
+    );
+
+    _expectGrammar(
+      validator,
+      HermesHandler().buildGrammar(_collidingToolNames)!,
+      valid: const [
+        '<tool_call>{"name": "a b", "arguments": {}}</tool_call>'
+            '<tool_call>{"name": "a-b", "arguments": {}}</tool_call>',
+      ],
+      invalid: const [
+        '<tool_call>{"name": "a-u20-b", "arguments": {}}</tool_call>',
+      ],
+    );
+
+    _expectGrammar(
+      validator,
+      HunyuanV3Handler().buildGrammar(_hunyuanCollisionTools)!,
+      valid: const [
+        '<tool_calls:opensource>\n'
+            '<tool_call:opensource>a b<tool_sep:opensource>\n'
+            '</tool_call:opensource>\n'
+            '<tool_call:opensource>a-b<tool_sep:opensource>\n'
+            '<arg_key:opensource>x y</arg_key:opensource>\n'
+            '<arg_value:opensource>first</arg_value:opensource>\n'
+            '<arg_key:opensource>x-y</arg_key:opensource>\n'
+            '<arg_value:opensource>second</arg_value:opensource>\n'
+            '</tool_call:opensource>\n'
+            '</tool_calls:opensource>',
+      ],
+      invalid: const [
+        '<tool_calls:opensource>\n'
+            '<tool_call:opensource>a-b<tool_sep:opensource>\n'
+            '<arg_key:opensource>x-u20-y</arg_key:opensource>\n'
+            '<arg_value:opensource>first</arg_value:opensource>\n'
+            '<arg_key:opensource>x-y</arg_key:opensource>\n'
+            '<arg_value:opensource>second</arg_value:opensource>\n'
+            '</tool_call:opensource>\n'
+            '</tool_calls:opensource>',
+      ],
+    );
+  });
+
+  test('Command R7B and Hermes preserve escaped JSON wire identities', () {
+    const toolName = 'quote"slash\\tool';
+    const parameterName = 'quote"slash\\parameter';
+    final tool = ToolDefinition(
+      name: toolName,
+      description: 'Escaped JSON identity coverage',
+      parameters: [ToolParam.string(parameterName, required: true)],
+      handler: (_) async => null,
+    );
+    final encodedTool = jsonEncode(toolName);
+    final encodedParameter = jsonEncode(parameterName);
+    final commandCall =
+        '{"tool_name": $encodedTool, "parameters": '
+        '{$encodedParameter: "value"}}';
+    final hermesCall =
+        '{"name": $encodedTool, "arguments": '
+        '{$encodedParameter: "value"}}';
+
+    _expectGrammar(
+      validator,
+      CommandR7BHandler().buildGrammar([tool])!,
+      valid: ['<|START_ACTION|>[$commandCall]<|END_ACTION|>'],
+      invalid: [
+        '<|START_ACTION|>'
+            '[{"tool_name": "quote\\"slash-tool", "parameters": '
+            '{$encodedParameter: "value"}}]'
+            '<|END_ACTION|>',
+      ],
+    );
+    _expectGrammar(
+      validator,
+      HermesHandler().buildGrammar([tool])!,
+      valid: ['<tool_call>$hermesCall</tool_call>'],
+      invalid: [
+        '<tool_call>'
+            '{"name": "quote\\"slash-tool", "arguments": '
+            '{$encodedParameter: "value"}}'
+            '</tool_call>',
+      ],
     );
   });
 
@@ -752,6 +855,34 @@ final _collidingKeyTool = ToolDefinition(
   ],
   handler: (_) async => null,
 );
+
+final _collidingToolNames = <ToolDefinition>[
+  ToolDefinition(
+    name: 'a b',
+    description: 'Spaced tool name',
+    parameters: const [],
+    handler: (_) async => null,
+  ),
+  ToolDefinition(
+    name: 'a-b',
+    description: 'Dashed tool name',
+    parameters: const [],
+    handler: (_) async => null,
+  ),
+];
+
+final _hunyuanCollisionTools = <ToolDefinition>[
+  _collidingToolNames.first,
+  ToolDefinition(
+    name: 'a-b',
+    description: 'Tool and parameter collision coverage',
+    parameters: [
+      ToolParam.string('x y', required: true),
+      ToolParam.string('x-y', required: true),
+    ],
+    handler: (_) async => null,
+  ),
+];
 
 final _glmEvidenceTool = ToolDefinition(
   name: 'inspect',
