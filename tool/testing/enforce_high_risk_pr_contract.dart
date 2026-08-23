@@ -73,7 +73,6 @@ class HighRiskCiRun {
   const HighRiskCiRun({
     required this.id,
     required this.runAttempt,
-    required this.runStartedAt,
     required this.headSha,
     required this.event,
     required this.path,
@@ -84,7 +83,6 @@ class HighRiskCiRun {
 
   final int id;
   final int runAttempt;
-  final DateTime runStartedAt;
   final String headSha;
   final String event;
   final String path;
@@ -453,11 +451,6 @@ HighRiskCiRun? selectLatestExactHeadCiRun(
       .toList();
   if (matching.isEmpty) return null;
   matching.sort((left, right) {
-    if (left.id == right.id) {
-      return left.runAttempt.compareTo(right.runAttempt);
-    }
-    final started = left.runStartedAt.compareTo(right.runStartedAt);
-    if (started != 0) return started;
     final id = left.id.compareTo(right.id);
     if (id != 0) return id;
     return left.runAttempt.compareTo(right.runAttempt);
@@ -1223,12 +1216,8 @@ List<HighRiskCiRun> _decodeCiRuns(Object? value) {
         if (item is! Map<String, dynamic>) {
           _usage('Every CI run must be an object.');
         }
-        final runStartedAt = item['run_started_at'] is String
-            ? DateTime.tryParse(item['run_started_at'] as String)
-            : null;
         if (item['id'] is! int ||
             item['run_attempt'] is! int ||
-            runStartedAt == null ||
             item['head_sha'] is! String ||
             item['event'] is! String ||
             item['path'] is! String ||
@@ -1239,7 +1228,6 @@ List<HighRiskCiRun> _decodeCiRuns(Object? value) {
         return HighRiskCiRun(
           id: item['id'] as int,
           runAttempt: item['run_attempt'] as int,
-          runStartedAt: runStartedAt,
           headSha: item['head_sha'] as String,
           event: item['event'] as String,
           path: item['path'] as String,

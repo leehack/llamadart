@@ -330,7 +330,7 @@ jobs:
                     .head.repo.url ==
                       ("https://api.github.com/repos/" + $head_repo))
                 )] |
-              sort_by(.run_started_at, .id, .run_attempt) | last // empty
+              sort_by(.id, .run_attempt) | last // empty
             ' "$RUNNER_TEMP/exact-head-ci-runs.json"
           )"
           run_id="$(jq -r '.id // empty' <<< "$latest_run")"
@@ -562,7 +562,7 @@ jobs:
                     .base.sha == $base and
                     .head.repo.url ==
                       ("https://api.github.com/repos/" + $head_repo))
-                )] | sort_by(.run_started_at, .id, .run_attempt) | last
+                )] | sort_by(.id, .run_attempt) | last
             ' "$CI_RUNS_FILE"
             jq -cS . "$UPSTREAM_FILE"
             if [[ -s "$PARITY_FILE" ]]; then jq -cS . "$PARITY_FILE"; else printf 'null\n'; fi
@@ -719,7 +719,7 @@ jobs:
                     .base.sha == $base and
                     .head.repo.url ==
                       ("https://api.github.com/repos/" + $head_repo))
-                )] | sort_by(.run_started_at, .id, .run_attempt) | last
+                )] | sort_by(.id, .run_attempt) | last
             ' "$RUNNER_TEMP/live-exact-head-ci-runs.json"
             jq -cS . "$live_upstream"
             if [[ -s "$PARITY_FILE" ]]; then jq -cS . "$PARITY_FILE"; else printf 'null\n'; fi
@@ -952,7 +952,7 @@ jobs:
                     .base.sha == $base and
                     .head.repo.url ==
                       ("https://api.github.com/repos/" + $head_repo))
-                )] | sort_by(.run_started_at, .id, .run_attempt) | last
+                )] | sort_by(.id, .run_attempt) | last
             ' "$RUNNER_TEMP/final-live-exact-head-ci-runs.json"
             jq -cS . "$final_upstream"
             if [[ -s "$PARITY_FILE" ]]; then jq -cS . "$PARITY_FILE"; else printf 'null\n'; fi

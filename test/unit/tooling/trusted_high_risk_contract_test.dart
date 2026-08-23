@@ -69,7 +69,6 @@ List<HighRiskCiRun> _successfulCiRuns() => [
   HighRiskCiRun(
     id: 100,
     runAttempt: 1,
-    runStartedAt: DateTime.utc(2026, 8, 22, 12),
     headSha: _head,
     event: 'pull_request',
     path: '.github/workflows/ci.yml',
@@ -826,7 +825,6 @@ Verdict: PASS''',
         HighRiskCiRun(
           id: 100,
           runAttempt: 2,
-          runStartedAt: DateTime.utc(2026, 8, 22, 13),
           headSha: _head,
           event: 'pull_request',
           path: '.github/workflows/ci.yml',
@@ -843,12 +841,11 @@ Verdict: PASS''',
       );
     });
 
-    test('a later-created run wins even if an older run finishes later', () {
+    test('a newer run ID wins even if an older run finishes later', () {
       final runs = [
         HighRiskCiRun(
           id: 99,
           runAttempt: 1,
-          runStartedAt: DateTime.utc(2026, 8, 22, 12),
           headSha: _head,
           event: 'pull_request',
           path: '.github/workflows/ci.yml',
@@ -859,7 +856,6 @@ Verdict: PASS''',
         HighRiskCiRun(
           id: 101,
           runAttempt: 1,
-          runStartedAt: DateTime.utc(2026, 8, 22, 13),
           headSha: _head,
           event: 'pull_request',
           path: '.github/workflows/ci.yml',
@@ -876,38 +872,44 @@ Verdict: PASS''',
       );
     });
 
-    test('a rerun start outranks a run created later but started earlier', () {
-      final runs = [
-        HighRiskCiRun(
-          id: 99,
-          runAttempt: 2,
-          runStartedAt: DateTime.utc(2026, 8, 22, 14),
-          headSha: _head,
-          event: 'pull_request',
-          path: '.github/workflows/ci.yml',
-          status: 'completed',
-          conclusion: 'failure',
-          pullRequests: _ciPullRequests,
-        ),
-        HighRiskCiRun(
-          id: 101,
-          runAttempt: 1,
-          runStartedAt: DateTime.utc(2026, 8, 22, 13),
-          headSha: _head,
-          event: 'pull_request',
-          path: '.github/workflows/ci.yml',
-          status: 'completed',
-          conclusion: 'success',
-          pullRequests: _ciPullRequests,
-        ),
-      ];
+    test(
+      'an older delayed success cannot outrank a newer failed or active run',
+      () {
+        for (final newer in const [
+          (status: 'completed', conclusion: 'failure'),
+          (status: 'in_progress', conclusion: null),
+        ]) {
+          final runs = [
+            HighRiskCiRun(
+              id: 101,
+              runAttempt: 1,
+              headSha: _head,
+              event: 'pull_request',
+              path: '.github/workflows/ci.yml',
+              status: newer.status,
+              conclusion: newer.conclusion,
+              pullRequests: _ciPullRequests,
+            ),
+            HighRiskCiRun(
+              id: 99,
+              runAttempt: 1,
+              headSha: _head,
+              event: 'pull_request',
+              path: '.github/workflows/ci.yml',
+              status: 'completed',
+              conclusion: 'success',
+              pullRequests: _ciPullRequests,
+            ),
+          ];
 
-      expect(selectLatestExactHeadCiRun(runs, _state)?.id, 99);
-      expect(
-        _validate(ciRuns: runs).errors,
-        contains('The latest exact-head CI run must succeed.'),
-      );
-    });
+          expect(selectLatestExactHeadCiRun(runs, _state)?.id, 101);
+          expect(
+            _validate(ciRuns: runs).errors,
+            contains('The latest exact-head CI run must succeed.'),
+          );
+        }
+      },
+    );
 
     test('ignores same-SHA CI runs associated with another PR', () {
       final foreignPullRequests = [
@@ -922,7 +924,6 @@ Verdict: PASS''',
         HighRiskCiRun(
           id: 100,
           runAttempt: 1,
-          runStartedAt: DateTime.utc(2026, 8, 22, 12),
           headSha: _head,
           event: 'pull_request',
           path: '.github/workflows/ci.yml',
@@ -933,7 +934,6 @@ Verdict: PASS''',
         HighRiskCiRun(
           id: 101,
           runAttempt: 1,
-          runStartedAt: DateTime.utc(2026, 8, 22, 13),
           headSha: _head,
           event: 'pull_request',
           path: '.github/workflows/ci.yml',
@@ -1550,10 +1550,12 @@ Verdict: PASS''',
         workflow,
         contains(r'--baseline-evidence-paths "$BASELINE_EVIDENCE_PATHS"'),
       );
+      expect(workflow, contains('sort_by(.id, .run_attempt) | last // empty'));
       expect(
-        workflow,
-        contains('sort_by(.run_started_at, .id, .run_attempt) | last // empty'),
+        RegExp(r'sort_by\(\.id, \.run_attempt\) \| last').allMatches(workflow),
+        hasLength(4),
       );
+      expect(workflow, isNot(contains('run_started_at')));
       expect(workflow, contains('The latest exact-head CI run must succeed'));
       expect(workflow, contains(r'[[ "$run_status" != "completed" ]]'));
       expect(workflow, contains(r'statuses/$HEAD_SHA'));
