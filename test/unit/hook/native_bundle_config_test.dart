@@ -411,6 +411,94 @@ void main() {
     });
   });
 
+  group('selectNativeRuntimesForBundle explicit none', () {
+    List<String> select(Object? rawUserConfig, List<String> warnings) =>
+        selectNativeRuntimesForBundle(
+          bundle: 'linux-x64',
+          rawUserConfig: rawUserConfig,
+          warn: warnings.add,
+        );
+
+    test('explicit none tokens select nothing without warning', () {
+      for (final rawUserConfig in const <Object?>[
+        'none',
+        'off',
+        'false',
+        false,
+        ['none'],
+        [false],
+        ['llama_cpp', 'none'],
+        ['llama_cpp', false],
+        {'runtimes': 'none'},
+        {'runtimes': false},
+        {
+          'runtimes': ['llama_cpp'],
+          'platforms': {'linux-x64': 'none'},
+        },
+      ]) {
+        final warnings = <String>[];
+
+        expect(
+          select(rawUserConfig, warnings),
+          isEmpty,
+          reason: rawUserConfig.toString(),
+        );
+        expect(warnings, isEmpty, reason: rawUserConfig.toString());
+      }
+    });
+
+    test('a runtime named after none still selects', () {
+      final warnings = <String>[];
+
+      expect(select(const ['none', 'llama_cpp'], warnings), [
+        nativeRuntimeLlamaCpp,
+      ]);
+      expect(warnings, isEmpty);
+    });
+
+    test('unset, empty, and unsupported root scalars stay all', () {
+      for (final rawUserConfig in const <Object?>[null, '', <String>[]]) {
+        final warnings = <String>[];
+
+        expect(
+          select(rawUserConfig, warnings),
+          allNativeRuntimes,
+          reason: rawUserConfig.toString(),
+        );
+        expect(warnings, isEmpty, reason: rawUserConfig.toString());
+      }
+
+      final warnings = <String>[];
+      expect(select(true, warnings), allNativeRuntimes);
+      expect(warnings, hasLength(1));
+      expect(warnings.single, contains('true'));
+    });
+
+    test('all-unrecognised list warns and stays all runtime families', () {
+      final warnings = <String>[];
+
+      expect(select(const ['tflite', 'onnx'], warnings), allNativeRuntimes);
+      expect(warnings, hasLength(1));
+      expect(warnings.single, contains('tflite, onnx'));
+
+      warnings.clear();
+      expect(select(const ['none', 'tflite'], warnings), isEmpty);
+      expect(warnings, hasLength(1));
+      expect(warnings.single, contains('tflite'));
+    });
+
+    test('none clears explicit runtime tracking', () {
+      expect(
+        nativeRuntimeExplicitlySelectedForBundle(
+          bundle: 'linux-x64',
+          rawUserConfig: const ['llama_cpp', 'none'],
+          runtime: nativeRuntimeLlamaCpp,
+        ),
+        isFalse,
+      );
+    });
+  });
+
   group('selectLibrariesForBundling', () {
     final spec = resolveNativeBundleSpec(
       os: OS.linux,

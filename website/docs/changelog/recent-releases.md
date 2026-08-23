@@ -13,6 +13,12 @@ For canonical full release notes, use:
   Docusaurus replaces its unpatched image parser, automatic local Markdown
   images are rejected; website contributors should use static pathname URLs.
 
+- Fixed `llamadart_native_runtimes` values `none`, `off`, and the string
+  `false` selecting every runtime family instead of none;
+  the build hook fails with its `No native runtimes selected` error again, as
+  it did before 0.8.0. A YAML boolean `false` clears the selection too. Unset,
+  empty, and all-unrecognised config still select every family.
+
 - Fixed Command R7B, Hermes, and Hunyuan V3 tool grammars so distinct tool or
   parameter names cannot collide after conversion to internal GBNF rule names.
 
