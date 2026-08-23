@@ -1,4 +1,4 @@
-import {parseLocalURLPath} from '@docusaurus/utils';
+import {parseLocalURLPath, unwrapMdxCodeBlocks} from '@docusaurus/utils';
 import remarkMdx from 'remark-mdx';
 import remarkParse from 'remark-parse';
 import {unified} from 'unified';
@@ -29,7 +29,10 @@ function visitLocalMarkdownImages(node, callback) {
  * fallback loader for Markdown imported from outside content directories.
  */
 export function guardLocalMarkdownImages({fileContent, filePath}) {
-  const tree = markdownParser.parse(fileContent);
+  // Docusaurus applies this compatibility transform immediately after the
+  // custom preprocessor and before its real MDX parse. Scan the same content so
+  // a fenced mdx-code-block cannot reveal a local image after this guard runs.
+  const tree = markdownParser.parse(unwrapMdxCodeBlocks(fileContent));
   visitLocalMarkdownImages(tree, (image) => {
     throw new Error(
       `Local Markdown image "${image.url}" in "${filePath}" would use ` +

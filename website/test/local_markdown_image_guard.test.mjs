@@ -49,6 +49,17 @@ test('re-checks fresh MDX input on every hot-reload preprocess', () => {
   );
 });
 
+test('rejects images revealed by Docusaurus mdx-code-block unwrapping', () => {
+  const wrappedImage = `\`\`\`mdx-code-block
+![probe](./wrapped-after-preprocess.icns)
+\`\`\``;
+
+  assert.throws(
+    () => preprocess(wrappedImage, 'docs/compatibility.md'),
+    /wrapped-after-preprocess\.icns/,
+  );
+});
+
 test('allows parser-free pathname, remote, data, and HTML images', () => {
   const input = `
 ![pathname](pathname:///img/diagram.png)
