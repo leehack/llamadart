@@ -221,7 +221,15 @@ void main() {
       _expectGrammar(
         validator,
         grammar,
-        valid: const [validCall, '\n$validCall'],
+        valid: [
+          validCall,
+          '\n$validCall',
+          for (final marker in protocolMarkers)
+            validCall.replaceFirst(
+              'x < 5',
+              'before${marker.substring(0, marker.length - 1)}X after',
+            ),
+        ],
         invalid: [
           '$validCall$invalidEnumCall',
           for (final marker in protocolMarkers)

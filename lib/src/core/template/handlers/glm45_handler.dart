@@ -332,7 +332,7 @@ class Glm45Handler extends ChatTemplateHandler
       for (final argMatch in _argPairPattern.allMatches(block)) {
         final key = (argMatch.group(1) ?? '').trim();
         final rawValue = (argMatch.group(2) ?? '').trim();
-        if (key.isEmpty || _containsGlmProtocolMarker(rawValue)) {
+        if (key.isEmpty || _containsExactGlmProtocolMarker(rawValue)) {
           return null;
         }
         if (args.containsKey(key)) {
@@ -372,7 +372,7 @@ class Glm45Handler extends ChatTemplateHandler
       }
     }
 
-    if (toolCalls.isNotEmpty && _containsGlmProtocolMarker(remaining)) {
+    if (toolCalls.isNotEmpty && _containsGlmProtocolRemainder(remaining)) {
       return null;
     }
 
@@ -392,7 +392,11 @@ const _glmProtocolMarkers = [
   '</arg_value>',
 ];
 
-bool _containsGlmProtocolMarker(String input) {
+bool _containsExactGlmProtocolMarker(String input) {
+  return _glmProtocolMarkers.any(input.contains);
+}
+
+bool _containsGlmProtocolRemainder(String input) {
   for (final marker in _glmProtocolMarkers) {
     if (input.contains(marker.substring(0, marker.length - 1))) {
       return true;

@@ -297,7 +297,7 @@ void main() {
     expect(completed.toolCalls, isEmpty);
   });
 
-  test('GLM and Laguna fail closed on protocol markers inside strings', () {
+  test('GLM and Laguna distinguish protocol markers from near-lookalikes', () {
     final tool = ToolDefinition(
       name: 'inspect',
       description: 'Inspect',
@@ -315,18 +315,35 @@ void main() {
 
     for (final format in [ChatFormat.glm45, ChatFormat.laguna]) {
       for (final marker in markers) {
-        final output =
+        final invalidOutput =
             '<tool_call>inspect\n'
             '<arg_key>code</arg_key><arg_value>before$marker after'
             '</arg_value>\n'
             '</tool_call>';
-        final parsed = ChatTemplateEngine.parse(
+        final invalid = ChatTemplateEngine.parse(
           format.index,
-          output,
+          invalidOutput,
           tools: [tool],
         );
-        expect(parsed.toolCalls, isEmpty, reason: '$format $marker');
-        expect(parsed.content, output, reason: '$format $marker');
+        expect(invalid.toolCalls, isEmpty, reason: '$format $marker');
+        expect(invalid.content, invalidOutput, reason: '$format $marker');
+
+        final nearLookalike = '${marker.substring(0, marker.length - 1)}X';
+        final validOutput =
+            '<tool_call>inspect\n'
+            '<arg_key>code</arg_key><arg_value>before$nearLookalike after'
+            '</arg_value>\n'
+            '</tool_call>';
+        final valid = ChatTemplateEngine.parse(
+          format.index,
+          validOutput,
+          tools: [tool],
+        );
+        expect(valid.toolCalls, hasLength(1), reason: '$format $nearLookalike');
+        expect(jsonDecode(valid.toolCalls.single.function!.arguments!), {
+          'code': 'before$nearLookalike after',
+        }, reason: '$format $nearLookalike');
+        expect(valid.content, isEmpty, reason: '$format $nearLookalike');
       }
     }
   });
