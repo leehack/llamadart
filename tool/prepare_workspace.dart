@@ -2,6 +2,9 @@
 
 import 'dart:io';
 
+/// Standard command-line usage error (`EX_USAGE`).
+const int _usageErrorExitCode = 64;
+
 /// The dependency resolver used for a package in this repository.
 enum WorkspacePackageManager {
   /// Resolve with the Dart SDK.
@@ -157,7 +160,7 @@ Future<int> prepareWorkspace(
     for (final error in layoutErrors) {
       stderr.writeln(error);
     }
-    return 64;
+    return _usageErrorExitCode;
   }
 
   for (final package in workspacePackages.where(

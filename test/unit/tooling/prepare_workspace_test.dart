@@ -136,6 +136,23 @@ void main() {
     );
   });
 
+  test('rejects an invalid manifest before dependency preparation', () async {
+    final root = _workspaceFixture();
+    File('${root.path}/example/llamadart_server/pubspec.yaml').deleteSync();
+    var commandStarted = false;
+
+    final result = await prepareWorkspace(
+      root,
+      commandRunner: (executable, arguments, workingDirectory) async {
+        commandStarted = true;
+        return 0;
+      },
+    );
+
+    expect(result, 64, reason: 'Manifest failures use EX_USAGE.');
+    expect(commandStarted, isFalse);
+  });
+
   test('ignores explicitly generated package trees', () {
     final root = _workspaceFixture();
     for (final path in <String>[
