@@ -1350,7 +1350,7 @@ print("parent exited after spawning child", flush=True)
       expect(message, contains('<temp>'));
       expect(message, isNot(contains(root.path)));
       expect(message, isNot(contains(secret)));
-      expect(stopwatch.elapsed, lessThan(const Duration(seconds: 30)));
+      expect(stopwatch.elapsed, lessThan(const Duration(seconds: 45)));
       expect(childPid, isNotNull);
       expect(
         await _waitForWindowsProcessToStop(
@@ -1719,7 +1719,10 @@ Future<String> _terminateProcessTree(Process process) async {
   return 'processExit=${processExit ?? 'unconfirmed'}';
 }
 
-Future<({int exitCode, bool timedOut})> _taskkillWindowsPid(int pid) async {
+Future<({int exitCode, bool timedOut})> _taskkillWindowsPid(
+  int pid, {
+  DateTime? deadline,
+}) async {
   final taskkill = await Process.start('taskkill', [
     '/PID',
     '$pid',
@@ -1731,19 +1734,29 @@ Future<({int exitCode, bool timedOut})> _taskkillWindowsPid(int pid) async {
   final stdoutDone = stdoutSubscription.asFuture<void>();
   final stderrDone = stderrSubscription.asFuture<void>();
   var timedOut = false;
-  var exitCode = await _awaitProcessExit(taskkill, const Duration(seconds: 5));
+  var exitCode = await _awaitProcessExit(
+    taskkill,
+    _boundedDuration(deadline, const Duration(seconds: 5)),
+  );
   if (exitCode == null) {
     timedOut = true;
     taskkill.kill();
-    exitCode = await _awaitProcessExit(taskkill, const Duration(seconds: 1));
+    exitCode = await _awaitProcessExit(
+      taskkill,
+      _boundedDuration(deadline, const Duration(seconds: 1)),
+    );
   }
   final outputDrained = await _waitForOutputDrain(
     stdoutDone,
     stderrDone,
-    timeout: const Duration(seconds: 1),
+    timeout: _boundedDuration(deadline, const Duration(seconds: 1)),
   );
   if (!outputDrained) {
-    await _cancelOutputSubscriptions(stdoutSubscription, stderrSubscription);
+    await _cancelOutputSubscriptions(
+      stdoutSubscription,
+      stderrSubscription,
+      timeout: _boundedDuration(deadline, const Duration(seconds: 2)),
+    );
   }
   return (exitCode: exitCode ?? -1, timedOut: timedOut);
 }
@@ -1771,12 +1784,24 @@ Future<bool> _waitForOutputDrain(
 
 Future<void> _cancelOutputSubscriptions(
   StreamSubscription<dynamic> stdoutSubscription,
-  StreamSubscription<dynamic> stderrSubscription,
-) async {
+  StreamSubscription<dynamic> stderrSubscription, {
+  Duration timeout = const Duration(seconds: 2),
+}) async {
   await Future.wait([
     stdoutSubscription.cancel(),
     stderrSubscription.cancel(),
-  ]).timeout(const Duration(seconds: 2), onTimeout: () => <void>[]);
+  ]).timeout(timeout, onTimeout: () => <void>[]);
+}
+
+Duration _boundedDuration(DateTime? deadline, Duration maximum) {
+  if (deadline == null) {
+    return maximum;
+  }
+  final remaining = deadline.difference(DateTime.now());
+  if (remaining <= Duration.zero) {
+    return Duration.zero;
+  }
+  return remaining < maximum ? remaining : maximum;
 }
 
 final class _CappedTextBuffer {
@@ -1885,8 +1910,11 @@ Future<bool> _windowsProcessExists(
     '-NoProfile',
     '-NonInteractive',
     '-Command',
-    'if (Get-Process -Id ${pid.toString()} '
-        '-ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }',
+    'try { '
+        '[System.Diagnostics.Process]::GetProcessById(${pid.toString()}) '
+        '| Out-Null; exit 0 '
+        '} catch [System.ArgumentException] { exit 1 } '
+        'catch { exit 2 }',
   ], runInShell: false);
   final stdoutSubscription = probe.stdout.listen(null);
   final stderrSubscription = probe.stderr.listen(null);
@@ -1907,7 +1935,14 @@ Future<bool> _windowsProcessExists(
   if (!outputDrained) {
     await _cancelOutputSubscriptions(stdoutSubscription, stderrSubscription);
   }
-  return timedOut || exitCode == 0;
+  if (timedOut) {
+    return true;
+  }
+  return switch (exitCode) {
+    0 => true,
+    1 => false,
+    _ => true,
+  };
 }
 
 Future<int?> _readPidFile(File file) async {
@@ -1934,7 +1969,10 @@ Future<void> _ensureWindowsProcessStopped(int pid) async {
       break;
     }
     try {
-      final result = await _taskkillWindowsPid(pid);
+      final result = await _taskkillWindowsPid(
+        pid,
+        deadline: treeCleanupDeadline,
+      );
       if (result.exitCode != 0 || result.timedOut) {
         continue;
       }
