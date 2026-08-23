@@ -1541,6 +1541,7 @@ Verdict: PASS''',
       expect(workflow, isNot(contains('statuses: write')));
       expect(workflow, isNot(contains(r'/statuses/$HEAD_SHA')));
       expect(workflow, contains('high-risk-status-publisher'));
+      expect(workflow, contains('group: high-risk-regression-publisher'));
       expect(workflow, contains('cancel-in-progress: false'));
       expect(
         workflow,
@@ -1610,6 +1611,13 @@ Verdict: PASS''',
       expect(workflow, contains(r'if [[ -z "$SNAPSHOT_DIGEST" ]]'));
       expect(workflow, contains('conclusion=failure'));
       expect(workflow, contains('.github/high-risk-publisher-owner.jq'));
+      expect(workflow, contains("format('ci-head-{0}-base-main',"));
+      expect(
+        workflow,
+        contains(
+          "github.event.workflow_run.name == 'High-Risk Review Signal' &&",
+        ),
+      );
       expect(
         workflow,
         contains(
@@ -1793,8 +1801,9 @@ Verdict: PASS''',
       );
       expect(
         publisherOwner,
-        contains(r'(.display_title // "") | endswith($suffix)'),
+        contains(r'(.display_title // "") | endswith($pr_suffix)'),
       );
+      expect(publisherOwner, contains(r'.display_title == $ci_title'));
       expect(publisherOwner, contains('[.id, .run_attempt] | @tsv'));
       expect(workflow, isNot(contains('max_by(.id).target_url')));
       expect(workflow, isNot(contains(r'/actions/runs/([1-9][0-9]*)$')));
@@ -1899,6 +1908,12 @@ Verdict: PASS''',
               'workflow_runs': [
                 run(id: 100, attempt: 1),
                 run(id: 100, attempt: 2),
+                run(
+                  id: 101,
+                  attempt: 1,
+                  title:
+                      'high-risk-evaluation-ci-head-1111111111111111111111111111111111111111-base-main',
+                ),
                 run(id: 999, attempt: 1, path: '.github/workflows/ci.yml'),
                 run(id: 998, attempt: 1, repository: 'attacker/fork'),
                 run(
@@ -1918,14 +1933,17 @@ Verdict: PASS''',
           'repository',
           'leehack/llamadart',
           '--arg',
-          'suffix',
+          'pr_suffix',
           'pr-420-head-1111111111111111111111111111111111111111-base-main',
+          '--arg',
+          'ci_title',
+          'high-risk-evaluation-ci-head-1111111111111111111111111111111111111111-base-main',
           '-f',
           '.github/high-risk-publisher-owner.jq',
           input.path,
         ]);
         expect(result.exitCode, 0, reason: result.stderr as String?);
-        expect((result.stdout as String).trim(), '100\t2');
+        expect((result.stdout as String).trim(), '101\t1');
       },
       skip: Platform.isWindows
           ? 'jq fixture validation runs on trusted Linux'

@@ -12,6 +12,9 @@ run-name: >-
     github.event.workflow_run.pull_requests[0].head.sha)) ||
     (github.event.workflow_run.name == 'High-Risk Review Signal' &&
     github.event.workflow_run.display_title) ||
+    (github.event.workflow_run.name == 'CI' &&
+    format('ci-head-{0}-base-main',
+    github.event.workflow_run.head_sha)) ||
     format('unresolved-run-{0}', github.run_id)
   }}
 
@@ -39,15 +42,11 @@ permissions:
   pull-requests: read
 
 concurrency:
-  group: >-
-    high-risk-regression-${{
-      github.event.pull_request.head.sha ||
-      github.event.workflow_run.pull_requests[0].head.sha ||
-      github.event.workflow_run.head_sha ||
-      github.run_id
-    }}
+  group: high-risk-regression-publisher
   # A single protected GitHub App owns the required check. Serial execution
-  # prevents two trusted evaluations from mutating that check concurrently.
+  # across every trigger and PR prevents two trusted evaluations from mutating
+  # App-owned checks concurrently; authenticated newest-run selection then
+  # chooses the sole owner for each exact head.
   cancel-in-progress: false
 
 jobs:
@@ -175,21 +174,27 @@ jobs:
           [[ "$PR_NUMBER" =~ ^[1-9][0-9]*$ ]]
           [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]
           [[ -n "$PUBLISHER_TOKEN" ]]
-          expected_title="pr-$PR_NUMBER-head-$HEAD_SHA-base-main"
+          expected_pr_title="pr-$PR_NUMBER-head-$HEAD_SHA-base-main"
+          expected_ci_title="high-risk-evaluation-ci-head-$HEAD_SHA-base-main"
           gh api "repos/$REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
             > "$RUNNER_TEMP/current-trusted-run.json"
-          jq -e --arg repository "$REPOSITORY" --arg suffix "$expected_title" '
+          jq -e --arg repository "$REPOSITORY" \
+            --arg pr_suffix "$expected_pr_title" \
+            --arg ci_title "$expected_ci_title" '
             (.id | tostring) == env.GITHUB_RUN_ID and
             .path == ".github/workflows/trusted_high_risk_regression_gate.yml" and
             .head_repository.full_name == $repository and
-            (.display_title | endswith($suffix)) and
+            (((.display_title // "") | endswith($pr_suffix)) or
+              .display_title == $ci_title) and
             (.event == "pull_request_target" or .event == "workflow_run")
           ' "$RUNNER_TEMP/current-trusted-run.json" > /dev/null
           gh api --paginate --slurp \
             "repos/$REPOSITORY/actions/workflows/trusted_high_risk_regression_gate.yml/runs?per_page=100" \
             > "$RUNNER_TEMP/trusted-runs-pages.json"
           latest_owner="$(
-            jq -r --arg repository "$REPOSITORY" --arg suffix "$expected_title" \
+            jq -r --arg repository "$REPOSITORY" \
+              --arg pr_suffix "$expected_pr_title" \
+              --arg ci_title "$expected_ci_title" \
               -f .github/high-risk-publisher-owner.jq \
               "$RUNNER_TEMP/trusted-runs-pages.json"
           )"
@@ -1091,12 +1096,15 @@ jobs:
             echo "Canceled or completed evaluations cannot publish checks." >&2
             exit 1
           fi
-          expected_title="pr-$PR_NUMBER-head-$HEAD_SHA-base-main"
+          expected_pr_title="pr-$PR_NUMBER-head-$HEAD_SHA-base-main"
+          expected_ci_title="high-risk-evaluation-ci-head-$HEAD_SHA-base-main"
           gh api --paginate --slurp \
             "repos/$REPOSITORY/actions/workflows/trusted_high_risk_regression_gate.yml/runs?per_page=100" \
             > "$RUNNER_TEMP/final-trusted-runs-pages.json"
           latest_owner="$(
-            jq -r --arg repository "$REPOSITORY" --arg suffix "$expected_title" \
+            jq -r --arg repository "$REPOSITORY" \
+              --arg pr_suffix "$expected_pr_title" \
+              --arg ci_title "$expected_ci_title" \
               -f .github/high-risk-publisher-owner.jq \
               "$RUNNER_TEMP/final-trusted-runs-pages.json"
           )"
