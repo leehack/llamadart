@@ -46,32 +46,38 @@ void main() {
       },
     );
 
-    test(
-      'isolates full test-chat from the runner process group on Linux',
-      () async {
-        expect(script, contains('run_full_test "\${full_test_bin}"'));
-        expect(script, contains(r'setsid --wait "$@"'));
-        expect(script, contains(r'[[ "$(uname -s)" == "Linux" ]]'));
-        expect(script, contains(r'command -v setsid'));
-
-        if (!Platform.isLinux) return;
-        final result = await Process.run('bash', const [
-          '-c',
-          r'''
-set -euo pipefail
-runner_group="$(ps -o pgid= -p $$ | tr -d ' ')"
-child_group="$(setsid --wait bash -c 'ps -o pgid= -p $$' | tr -d ' ')"
-[[ -n "$runner_group" && -n "$child_group" ]]
-[[ "$runner_group" != "$child_group" ]]
-''',
-        ]);
+    test('bounds build parallelism by default and supports an override', () {
+      expect(
+        script,
+        contains(r'build_jobs="${LLAMA_CPP_CHAT_TEST_BUILD_JOBS:-2}"'),
+      );
+      expect(script, contains(r'--parallel "${build_jobs}"'));
+      expect(script, isNot(contains('setsid')));
+      for (final workflowPath in const [
+        '.github/workflows/ci.yml',
+        '.github/workflows/trusted_high_risk_regression_gate.yml',
+      ]) {
         expect(
-          result.exitCode,
-          0,
-          reason: '${result.stdout}\n${result.stderr}',
+          File(workflowPath).readAsStringSync(),
+          contains('LLAMA_CPP_CHAT_TEST_BUILD_JOBS=2'),
+          reason: workflowPath,
         );
-      },
-    );
+      }
+    });
+
+    test('rejects an invalid build-jobs override before preparation', () async {
+      final result = await Process.run(
+        'bash',
+        const ['tool/testing/run_llama_cpp_chat_tests.sh'],
+        environment: const {'LLAMA_CPP_CHAT_TEST_BUILD_JOBS': '0'},
+        includeParentEnvironment: true,
+      );
+      expect(result.exitCode, 64);
+      expect(
+        result.stderr,
+        contains('LLAMA_CPP_CHAT_TEST_BUILD_JOBS must be a positive integer.'),
+      );
+    });
 
     test(
       'full-suite process adds its flag and inherits ref/source inputs',

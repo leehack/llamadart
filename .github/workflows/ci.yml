@@ -344,6 +344,7 @@ jobs:
             LLAMA_CPP_SOURCE_DIR="$source_dir" \
             LLAMA_CPP_CHAT_TEST_SOURCE_DIR="$source_dir" \
             LLAMA_CPP_CHAT_TEST_BUILD_DIR="$build_dir" \
+            LLAMA_CPP_CHAT_TEST_BUILD_JOBS=2 \
             LLAMA_CPP_TEMPLATES_DIR="$source_dir/models/templates" \
             REQUIRE_LLAMA_CPP_TEMPLATES=1 \
               ./tool/testing/run_template_parity_suites.sh
