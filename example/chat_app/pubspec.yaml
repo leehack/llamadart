@@ -26,9 +26,9 @@ dependencies:
   crypto: ^3.0.6
   path_provider: ^2.1.5
   record: ^6.2.1
-  # Version pins that hold the SDK floor declared above: audioplayers 6.6.0
-  # pulls platform packages requiring Flutter 3.44, and synchronized 3.4.0+1
-  # requires Dart 3.11.
+  # Keep runtime dependencies compatible with the declared minimum:
+  # audioplayers 6.6.0 pulls platform packages requiring Flutter 3.44, and
+  # synchronized 3.4.0+1 requires Dart 3.11.
   audioplayers: 6.5.1
   synchronized: 3.4.0
   google_fonts: ^8.0.0
