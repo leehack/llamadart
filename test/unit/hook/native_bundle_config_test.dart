@@ -424,9 +424,13 @@ void main() {
         'none',
         'off',
         'false',
+        false,
         ['none'],
+        [false],
         ['llama_cpp', 'none'],
+        ['llama_cpp', false],
         {'runtimes': 'none'},
+        {'runtimes': false},
         {
           'runtimes': ['llama_cpp'],
           'platforms': {'linux-x64': 'none'},
@@ -452,7 +456,7 @@ void main() {
       expect(warnings, isEmpty);
     });
 
-    test('unset and empty stay all runtime families', () {
+    test('unset, empty, and unsupported root scalars stay all', () {
       for (final rawUserConfig in const <Object?>[null, '', <String>[]]) {
         final warnings = <String>[];
 
@@ -463,6 +467,11 @@ void main() {
         );
         expect(warnings, isEmpty, reason: rawUserConfig.toString());
       }
+
+      final warnings = <String>[];
+      expect(select(true, warnings), allNativeRuntimes);
+      expect(warnings, hasLength(1));
+      expect(warnings.single, contains('true'));
     });
 
     test('all-unrecognised list warns and stays all runtime families', () {
@@ -471,6 +480,11 @@ void main() {
       expect(select(const ['tflite', 'onnx'], warnings), allNativeRuntimes);
       expect(warnings, hasLength(1));
       expect(warnings.single, contains('tflite, onnx'));
+
+      warnings.clear();
+      expect(select(const ['none', 'tflite'], warnings), isEmpty);
+      expect(warnings, hasLength(1));
+      expect(warnings.single, contains('tflite'));
     });
 
     test('none clears explicit runtime tracking', () {

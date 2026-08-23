@@ -518,7 +518,8 @@ List<String>? parseRequestedBackends({
 /// lookup: `gguf` and `llama.cpp` reach `llama_cpp`; `litert`, `litertlm` and
 /// `.litertlm` reach `litert_lm`. `all` and `both` expand to
 /// [allNativeRuntimes]; the string tokens `none`, `off` and `false` clear what
-/// has accumulated — a bare YAML `false` is a bool, not one.
+/// has accumulated. A bare YAML boolean `false` clears it too, including in a
+/// list.
 /// Unrecognised non-empty tokens are dropped and reported once through
 /// [warn]; empty tokens are ignored silently. A string or list that selects
 /// nothing because it was empty or all-unrecognised yields
@@ -526,11 +527,12 @@ List<String>? parseRequestedBackends({
 /// recognised token refills it, so `['none', 'llama_cpp']` selects `llama_cpp`
 /// while `['none', 'tflite']` stays empty, which `hook/build.dart` throws on.
 ///
-/// Values other than a string or list select nothing, which `hook/build.dart`
-/// throws on; a map is first unwrapped through its `runtimes` key. When no
-/// level resolves a value at all — a scalar at the *root* included — the
-/// fallback to [defaultNativeRuntimes] is silent when the key is unset or the
-/// config is platform-scoped, and a [warn] otherwise.
+/// A map is first unwrapped through its `runtimes` key. At a selected map
+/// entry, values other than a string, list, map, or boolean `false` select
+/// nothing, which `hook/build.dart` throws on. When no level resolves a value
+/// at all — an unsupported scalar at the *root* included — the fallback to
+/// [defaultNativeRuntimes] is silent when the key is unset or the config is
+/// platform-scoped, and a [warn] otherwise.
 List<String> selectNativeRuntimesForBundle({
   required String bundle,
   required Object? rawUserConfig,
@@ -660,7 +662,9 @@ _parseNativeRuntimeConfigForBundle({
     return null;
   }
 
-  if (rawUserConfig is String || rawUserConfig is List<Object?>) {
+  if (rawUserConfig is String ||
+      rawUserConfig is List<Object?> ||
+      rawUserConfig == false) {
     return _parseRuntimeList(rawUserConfig);
   }
 
@@ -1121,6 +1125,11 @@ _parseRuntimeList(Object? value) {
     explicit.add(normalized);
   }
 
+  if (value == false) {
+    addToken('none');
+    return (runtimes: result, invalid: invalid, explicit: explicit);
+  }
+
   if (value is String) {
     for (final token in value.split(',')) {
       addToken(token);
@@ -1136,6 +1145,8 @@ _parseRuntimeList(Object? value) {
     for (final entry in value) {
       if (entry is String) {
         addToken(entry);
+      } else if (entry == false) {
+        addToken('none');
       } else if (entry != null) {
         invalid.add(entry.toString());
       }

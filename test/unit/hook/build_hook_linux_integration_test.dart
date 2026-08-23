@@ -116,27 +116,29 @@ void main() {
   );
 
   test('build hook fails when runtimes config selects none', () async {
-    await expectLater(
-      testCodeBuildHook(
-        mainMethod: build_hook.main,
-        targetOS: OS.linux,
-        targetArchitecture: Architecture.x64,
-        userDefines: PackageUserDefines(
-          workspacePubspec: PackageUserDefinesSource(
-            defines: const {'llamadart_native_runtimes': 'none'},
-            basePath: Directory.current.uri,
+    for (final rawUserConfig in const <Object>['none', false]) {
+      await expectLater(
+        testCodeBuildHook(
+          mainMethod: build_hook.main,
+          targetOS: OS.linux,
+          targetArchitecture: Architecture.x64,
+          userDefines: PackageUserDefines(
+            workspacePubspec: PackageUserDefinesSource(
+              defines: {'llamadart_native_runtimes': rawUserConfig},
+              basePath: Directory.current.uri,
+            ),
+          ),
+          check: (_, _) {},
+        ),
+        throwsA(
+          isA<Exception>().having(
+            (error) => error.toString(),
+            'message',
+            contains('No native runtimes selected for linux-x64'),
           ),
         ),
-        check: (_, _) {},
-      ),
-      throwsA(
-        isA<Exception>().having(
-          (error) => error.toString(),
-          'message',
-          contains('No native runtimes selected for linux-x64'),
-        ),
-      ),
-    );
+      );
+    }
   });
 }
 
