@@ -1409,6 +1409,46 @@ print("parent exited after spawning child", flush=True)
     buffer.write('a');
 
     expect(buffer.toString(), '<a>');
+
+    final complete = _CappedTextBuffer(const {'a': '<a>', 'ab': '<ab>'});
+    complete.write('ab');
+    expect(complete.toString(), '<ab>');
+
+    final chunked = _CappedTextBuffer(const {'a': '<a>', 'ab': '<ab>'});
+    chunked.write('a');
+    chunked.write('b');
+    expect(chunked.toString(), '<ab>');
+
+    final suffix = _CappedTextBuffer(const {'ab': '<ab>', 'aba': '<aba>'});
+    suffix.write('aba');
+    expect(suffix.toString(), '<aba>');
+  });
+
+  test('bounded runner sanitizes process launch failures', () async {
+    final root = await Directory.systemTemp.createTemp(
+      'bounded_launch_failure_',
+    );
+    addTearDown(() => root.delete(recursive: true));
+    const secret = 'must-not-appear-in-launch-diagnostics';
+
+    Object? failure;
+    try {
+      await _runPython(
+        [root.path, secret],
+        executable: 'llamadart-python-that-does-not-exist',
+        redactions: {root.path: '<temp>', secret: '<redacted>'},
+      );
+    } on Object catch (error) {
+      failure = error;
+    }
+
+    expect(failure, isA<TestFailure>());
+    final message = '$failure';
+    expect(message, contains('failed to start'));
+    expect(message, contains('<temp>'));
+    expect(message, contains('<redacted>'));
+    expect(message, isNot(contains(root.path)));
+    expect(message, isNot(contains(secret)));
   });
 
   test(
@@ -1640,6 +1680,7 @@ int _occurrences(String text, String needle) => needle.allMatches(text).length;
 
 Future<ProcessResult> _runPython(
   List<String> arguments, {
+  String? executable,
   Duration? timeout,
   Duration outputDrainTimeout = const Duration(seconds: 5),
   int? Function()? outputDrainDescendantPid,
@@ -1647,7 +1688,8 @@ Future<ProcessResult> _runPython(
   Map<String, String> redactions = const {},
   void Function(int pid)? onStart,
 }) async {
-  final executable = Platform.isWindows ? 'python' : 'python3';
+  final resolvedExecutable =
+      executable ?? (Platform.isWindows ? 'python' : 'python3');
   final effectiveTimeout =
       timeout ??
       (Platform.isWindows
@@ -1662,7 +1704,25 @@ Future<ProcessResult> _runPython(
   }
 
   final stopwatch = Stopwatch()..start();
-  final process = await Process.start(executable, arguments, runInShell: false);
+  late final Process process;
+  try {
+    process = await Process.start(
+      resolvedExecutable,
+      arguments,
+      runInShell: false,
+    );
+  } on ProcessException catch (error) {
+    stopwatch.stop();
+    final command = _sanitizeDiagnosticText(
+      '$resolvedExecutable ${arguments.join(' ')}',
+      effectiveRedactions,
+    );
+    final reason = _sanitizeDiagnosticText('$error', effectiveRedactions);
+    fail(
+      '$command failed to start after ${stopwatch.elapsedMilliseconds}ms: '
+      '$reason',
+    );
+  }
   onStart?.call(process.pid);
   final stdout = _CappedTextBuffer(effectiveRedactions);
   final stderr = _CappedTextBuffer(effectiveRedactions);
@@ -1716,7 +1776,7 @@ Future<ProcessResult> _runPython(
     }
     stopwatch.stop();
     final command = _sanitizeDiagnosticText(
-      '$executable ${arguments.join(' ')}',
+      '$resolvedExecutable ${arguments.join(' ')}',
       effectiveRedactions,
     );
     final stdoutTail = _diagnosticTail(
@@ -1757,7 +1817,7 @@ Future<ProcessResult> _runPython(
     await _cancelOutputSubscriptions(stdoutSubscription, stderrSubscription);
     stopwatch.stop();
     final command = _sanitizeDiagnosticText(
-      '$executable ${arguments.join(' ')}',
+      '$resolvedExecutable ${arguments.join(' ')}',
       effectiveRedactions,
     );
     fail(
@@ -1967,22 +2027,26 @@ final class _CappedTextBuffer {
   }
 
   int _incompleteRedactionSuffixLength(String value) {
-    var longest = 0;
+    var longestComplete = 0;
+    var longestIncomplete = 0;
     for (final key in _orderedRedactionKeys) {
       if (value.endsWith(key)) {
+        if (key.length > longestComplete) {
+          longestComplete = key.length;
+        }
         continue;
       }
       final candidateLength = key.length - 1 < value.length
           ? key.length - 1
           : value.length;
-      for (var length = candidateLength; length > longest; length--) {
+      for (var length = candidateLength; length > longestIncomplete; length--) {
         if (key.startsWith(value.substring(value.length - length))) {
-          longest = length;
+          longestIncomplete = length;
           break;
         }
       }
     }
-    return longest;
+    return longestComplete > longestIncomplete ? 0 : longestIncomplete;
   }
 
   String _redactIncompleteSuffix(String value) {
@@ -2006,11 +2070,28 @@ String _sanitizeDiagnosticText(String value, Map<String, String> redactions) {
   final ordered =
       redactions.entries.where((entry) => entry.key.isNotEmpty).toList()
         ..sort((left, right) => right.key.length.compareTo(left.key.length));
-  var sanitized = value;
-  for (final entry in ordered) {
-    sanitized = sanitized.replaceAll(entry.key, entry.value);
+  if (ordered.isEmpty || value.isEmpty) {
+    return value;
   }
-  return sanitized;
+  final sanitized = StringBuffer();
+  var index = 0;
+  while (index < value.length) {
+    MapEntry<String, String>? match;
+    for (final entry in ordered) {
+      if (value.startsWith(entry.key, index)) {
+        match = entry;
+        break;
+      }
+    }
+    if (match == null) {
+      sanitized.writeCharCode(value.codeUnitAt(index));
+      index++;
+    } else {
+      sanitized.write(match.value);
+      index += match.key.length;
+    }
+  }
+  return sanitized.toString();
 }
 
 String _diagnosticTail(String value, {int maxCharacters = 4096}) {
