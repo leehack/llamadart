@@ -38,7 +38,88 @@ Directory _fakeRepo({
   return root;
 }
 
+List<String> _releaseWorkflowContractProblems(String workflow) {
+  final problems = <String>[];
+  final strictGate = RegExp(
+    r'^\s+dart run tool/testing/verify_release_docs_versions\.dart '
+    r'--release-prep\s*$',
+    multiLine: true,
+  );
+  final gateMatches = strictGate.allMatches(workflow).toList();
+  if (gateMatches.length != 1) {
+    problems.add(
+      'expected exactly one strict release-prep verifier, found '
+      '${gateMatches.length}',
+    );
+  }
+
+  const validateStep = '- name: Validate release state';
+  const publishStep = '- name: Publish companion packages and core tag';
+  const releaseSecret =
+      r'RELEASE_TOKEN: ${{ secrets.RELEASE_AUTOMATION_TOKEN }}';
+  final validateIndex = workflow.indexOf(validateStep);
+  final gateIndex = gateMatches.length == 1 ? gateMatches.single.start : -1;
+  final publishIndex = workflow.indexOf(publishStep);
+  final secretIndex = workflow.indexOf(releaseSecret);
+  if (validateIndex == -1 || publishIndex == -1 || secretIndex == -1) {
+    problems.add('release validation, publication, or secret step is missing');
+  } else if (!(validateIndex < gateIndex &&
+      gateIndex < publishIndex &&
+      publishIndex < secretIndex)) {
+    problems.add(
+      'strict release-prep verification must run in validation before the '
+      'secret-bearing publication step',
+    );
+  }
+  return problems;
+}
+
 void main() {
+  test(
+    'release workflow runs the strict gate before publication authority',
+    () {
+      final workflow = File(
+        '.github/workflows/release_on_prep_merge.yml',
+      ).readAsStringSync();
+
+      expect(_releaseWorkflowContractProblems(workflow), isEmpty);
+    },
+  );
+
+  test('release workflow contract rejects deletion, bypass, and miswiring', () {
+    final workflow = File(
+      '.github/workflows/release_on_prep_merge.yml',
+    ).readAsStringSync();
+    const strictCommand =
+        'dart run tool/testing/verify_release_docs_versions.dart '
+        '--release-prep';
+    const publishStep = '- name: Publish companion packages and core tag';
+
+    expect(
+      _releaseWorkflowContractProblems(
+        workflow.replaceFirst(strictCommand, ''),
+      ),
+      isNotEmpty,
+    );
+    expect(
+      _releaseWorkflowContractProblems(
+        workflow.replaceFirst(strictCommand, '$strictCommand || true'),
+      ),
+      isNotEmpty,
+    );
+    expect(
+      _releaseWorkflowContractProblems(
+        workflow
+            .replaceFirst(strictCommand, '')
+            .replaceFirst(
+              publishStep,
+              '$publishStep\n          $strictCommand',
+            ),
+      ),
+      isNotEmpty,
+    );
+  });
+
   test('the checked-in companions are release-ready', () {
     final errors = <String>[];
 
