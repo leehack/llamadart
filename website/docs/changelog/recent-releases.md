@@ -122,6 +122,11 @@ For canonical full release notes, use:
 - Removed the abandoned Dart-side MTP/n-gram speculative-decoding scaffolding
   from the llama.cpp backend; speculative decoding behavior is unchanged.
 
+- Chat-template capability detection now logs a debug message naming the
+  probe (`string-content`, `typed-content`, `system-role`, `tools`) when its
+  render throws, so a template that fails to render is distinguishable from
+  one that genuinely lacks the capability.
+
 ## 0.8.20
 
 - Updated WebGPU bridge assets to `v0.1.37` (llama.cpp `b10514`), restoring
