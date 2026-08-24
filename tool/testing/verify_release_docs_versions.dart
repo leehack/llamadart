@@ -305,6 +305,9 @@ String? _matchInFile(
   } on FileSystemException catch (error) {
     errors.add('$path could not be read: $error');
     return null;
+  } on FormatException catch (error) {
+    errors.add('$path could not be decoded as UTF-8 text: $error');
+    return null;
   }
   final match = pattern.firstMatch(contents);
   if (match == null) {
