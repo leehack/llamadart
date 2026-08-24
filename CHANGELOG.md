@@ -131,6 +131,11 @@
   run through the native wrapper, and `SpeculativeDecodingStrategy` keeps every
   existing option.
 
+* Chat-template capability detection now logs a debug message naming the
+  probe (`string-content`, `typed-content`, `system-role`, `tools`) when its
+  render throws, so a template that fails to render is distinguishable from
+  one that genuinely lacks the capability.
+
 ## 0.8.20
 
 * Added `code_assets` 2.x compatibility while retaining support for 1.x native
