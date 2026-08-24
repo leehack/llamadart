@@ -1043,7 +1043,7 @@ printf '%s\\n' '{"tag_name":"v0.2.0-1","assets":[]}'
       );
       final releaseSkew = await _runLlamaSync(releaseSetup, 'v0.2.0');
       expect(releaseSkew.exitCode, 1);
-      expect(releaseSkew.stderr, contains('metadata resolved v0.2.1'));
+      expect(releaseSkew.stderr, contains('resolved unexpected tag v0.2.1'));
 
       final manifestSetup = await _writeLlamaOnlyRepo('b10514');
       addTearDown(() => manifestSetup.root.delete(recursive: true));
@@ -2212,7 +2212,8 @@ Future<void> _expectOfflineReleaseFixtures(Directory releaseDir) async {
         (entity) =>
             entity is File &&
             entity.path.endsWith('.json') &&
-            !entity.path.endsWith('__manifest.json'),
+            !entity.path.endsWith('__manifest.json') &&
+            !entity.path.endsWith('__commit.json'),
       )
       .cast<File>()
       .toList();
@@ -2447,6 +2448,26 @@ Future<void> _writeReleaseFixture(
     await manifestFile.writeAsString(manifestText);
     releaseAssetChecksums['manifest.json'] = sha256
         .convert(utf8.encode(manifestText))
+        .toString();
+    final upstreamCommit = upstream['commit'] as String;
+    await File(
+      path.join(
+        dir.path,
+        'google-ai-edge__LiteRT-LM__${upstream['tag']}__commit.json',
+      ),
+    ).writeAsString(jsonEncode({'sha': upstreamCommit}));
+    final checksumText = [
+      for (final artifact
+          in (manifest['artifacts'] as List<dynamic>)
+              .cast<Map<String, dynamic>>())
+        '${artifact['sha256']}  ${artifact['path']}',
+      '',
+    ].join('\n');
+    await File(
+      path.join(dir.path, '${repo.replaceAll('/', '__')}__${tag}__SHA256SUMS'),
+    ).writeAsString(checksumText);
+    releaseAssetChecksums['SHA256SUMS'] = sha256
+        .convert(utf8.encode(checksumText))
         .toString();
   }
   final releaseAssets = [

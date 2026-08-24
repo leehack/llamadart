@@ -14,6 +14,7 @@ from sync_native_release_pins import (  # noqa: E402
     ReleaseError,
     LEGACY_SCHEMA1_RELEASES,
     atomic_write_many,
+    fetch_release,
     litert_lm_runtime_version,
     normalize_litert_lm_release_tag,
     prepare_litert_lm_package_swift,
@@ -34,6 +35,25 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
     def test_exact_keys_rejects_non_object_json(self) -> None:
         with self.assertRaisesRegex(ReleaseError, "must be an object"):
             require_exact_keys([], {"expected"}, "test payload")
+
+    def test_release_fixture_errors_are_typed_and_tag_bound(self) -> None:
+        repo = "leehack/litert-lm-native"
+        tag = "v0.16.0-3"
+        with tempfile.TemporaryDirectory() as temp:
+            fixture = Path(temp) / f"leehack__litert-lm-native__{tag}.json"
+            fixture.write_bytes(b"\xff")
+            with self.assertRaisesRegex(ReleaseError, "Failed to fetch release"):
+                fetch_release(repo, tag, temp)
+
+            fixture.write_text("[]", encoding="utf-8")
+            with self.assertRaisesRegex(ReleaseError, "must be a JSON object"):
+                fetch_release(repo, tag, temp)
+
+            fixture.write_text(
+                json.dumps({"tag_name": "v0.16.0-4"}), encoding="utf-8"
+            )
+            with self.assertRaisesRegex(ReleaseError, "unexpected tag"):
+                fetch_release(repo, tag, temp)
 
     def test_sync_workflow_captures_every_litert_pin_surface(self) -> None:
         workflow = (
@@ -182,12 +202,159 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
             fixture_dir = Path(temp)
             fixture = fixture_dir / f"leehack__litert-lm-native__{tag}__manifest.json"
             fixture.write_bytes(owner_fixture.read_bytes())
+            upstream_ref_fixture = (
+                fixture_dir
+                / "google-ai-edge__LiteRT-LM__v0.16.0__commit.json"
+            )
+            upstream_ref_fixture.write_text(
+                json.dumps({"sha": manifest["upstream"]["commit"]}),
+                encoding="utf-8",
+            )
+            checksum_fixture = (
+                fixture_dir
+                / f"leehack__litert-lm-native__{tag}__SHA256SUMS"
+            )
+            checksum_fixture.write_text(
+                "".join(
+                    f"{artifact['sha256']}  {artifact['path']}\n"
+                    for artifact in manifest["artifacts"]
+                ),
+                encoding="utf-8",
+            )
+            checksum_asset = next(
+                asset for asset in release_assets if asset["name"] == "SHA256SUMS"
+            )
+            checksum_asset["digest"] = (
+                "sha256:" + hashlib.sha256(checksum_fixture.read_bytes()).hexdigest()
+            )
             validate_litert_lm_release_manifest(
                 release,
                 repo="leehack/litert-lm-native",
                 tag=tag,
                 release_json_dir=str(fixture_dir),
                 required_bundles=required_bundles,
+            )
+
+            fixture.write_bytes(b"\xff")
+            with self.assertRaisesRegex(ReleaseError, "Failed to read release manifest"):
+                validate_litert_lm_release_manifest(
+                    release,
+                    repo="leehack/litert-lm-native",
+                    tag=tag,
+                    release_json_dir=str(fixture_dir),
+                    required_bundles=required_bundles,
+                )
+            fixture.write_bytes(owner_fixture.read_bytes())
+
+            upstream_ref_fixture.write_text("{", encoding="utf-8")
+            with self.assertRaisesRegex(ReleaseError, "Failed to resolve exact commit"):
+                validate_litert_lm_release_manifest(
+                    release,
+                    repo="leehack/litert-lm-native",
+                    tag=tag,
+                    release_json_dir=str(fixture_dir),
+                    required_bundles=required_bundles,
+                )
+            upstream_ref_fixture.write_text(
+                json.dumps({"sha": manifest["upstream"]["commit"]}),
+                encoding="utf-8",
+            )
+
+            checksum_fixture.write_bytes(b"\xff")
+            checksum_asset["digest"] = (
+                "sha256:" + hashlib.sha256(checksum_fixture.read_bytes()).hexdigest()
+            )
+            with self.assertRaisesRegex(ReleaseError, "not valid UTF-8"):
+                validate_litert_lm_release_manifest(
+                    release,
+                    repo="leehack/litert-lm-native",
+                    tag=tag,
+                    release_json_dir=str(fixture_dir),
+                    required_bundles=required_bundles,
+                )
+            checksum_fixture.write_text(
+                "".join(
+                    f"{artifact['sha256']}  {artifact['path']}\n"
+                    for artifact in manifest["artifacts"]
+                ),
+                encoding="utf-8",
+            )
+            checksum_asset["digest"] = (
+                "sha256:" + hashlib.sha256(checksum_fixture.read_bytes()).hexdigest()
+            )
+
+            upstream_ref_fixture.write_text(
+                json.dumps({"sha": "1" * 40}), encoding="utf-8"
+            )
+            with self.assertRaisesRegex(ReleaseError, "exact upstream ref"):
+                validate_litert_lm_release_manifest(
+                    release,
+                    repo="leehack/litert-lm-native",
+                    tag=tag,
+                    release_json_dir=str(fixture_dir),
+                    required_bundles=required_bundles,
+                )
+            upstream_ref_fixture.write_text(
+                json.dumps({"sha": manifest["upstream"]["commit"]}),
+                encoding="utf-8",
+            )
+
+            original_checksum_text = checksum_fixture.read_text(encoding="utf-8")
+            checksum_lines = original_checksum_text.splitlines()
+            for checksum_text, expected_error in (
+                ("\n".join(checksum_lines[1:]) + "\n", "missing="),
+                (
+                    original_checksum_text + f"{'4' * 64}  unexpected.bin\n",
+                    "unexpected=",
+                ),
+                (
+                    original_checksum_text + checksum_lines[0] + "\n",
+                    "duplicates",
+                ),
+            ):
+                checksum_fixture.write_text(checksum_text, encoding="utf-8")
+                checksum_asset["digest"] = (
+                    "sha256:"
+                    + hashlib.sha256(checksum_fixture.read_bytes()).hexdigest()
+                )
+                with self.assertRaisesRegex(ReleaseError, expected_error):
+                    validate_litert_lm_release_manifest(
+                        release,
+                        repo="leehack/litert-lm-native",
+                        tag=tag,
+                        release_json_dir=str(fixture_dir),
+                        required_bundles=required_bundles,
+                    )
+
+            checksum_fixture.write_text(
+                original_checksum_text.replace(
+                    manifest["artifacts"][0]["sha256"], "2" * 64, 1
+                ),
+                encoding="utf-8",
+            )
+            checksum_asset["digest"] = (
+                "sha256:" + hashlib.sha256(checksum_fixture.read_bytes()).hexdigest()
+            )
+            with self.assertRaisesRegex(ReleaseError, "mismatched="):
+                validate_litert_lm_release_manifest(
+                    release,
+                    repo="leehack/litert-lm-native",
+                    tag=tag,
+                    release_json_dir=str(fixture_dir),
+                    required_bundles=required_bundles,
+                )
+            checksum_fixture.write_text(original_checksum_text, encoding="utf-8")
+            checksum_asset["digest"] = "sha256:" + "3" * 64
+            with self.assertRaisesRegex(ReleaseError, "bytes do not match"):
+                validate_litert_lm_release_manifest(
+                    release,
+                    repo="leehack/litert-lm-native",
+                    tag=tag,
+                    release_json_dir=str(fixture_dir),
+                    required_bundles=required_bundles,
+                )
+            checksum_asset["digest"] = (
+                "sha256:" + hashlib.sha256(checksum_fixture.read_bytes()).hexdigest()
             )
 
             runtime_asset = next(

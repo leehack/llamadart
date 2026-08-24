@@ -329,6 +329,52 @@ def validate_litert_release_asset_inventory(
             )
 
 
+def validate_litert_release_sha256_sums(
+    release: dict[str, Any],
+    manifest: dict[str, Any],
+    *,
+    repo: str,
+    tag: str,
+    release_json_dir: str,
+) -> None:
+    checksum_bytes = release_asset_bytes(
+        release,
+        "SHA256SUMS",
+        repo=repo,
+        tag=tag,
+        release_json_dir=release_json_dir,
+    )
+    expected_asset_digest = release_asset_checksum(release, "SHA256SUMS")
+    actual_asset_digest = hashlib.sha256(checksum_bytes).hexdigest()
+    if actual_asset_digest != expected_asset_digest:
+        raise ReleaseError(
+            "LiteRT-LM SHA256SUMS bytes do not match the GitHub release digest"
+        )
+    try:
+        checksum_text = checksum_bytes.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise ReleaseError(
+            f"Release {tag} SHA256SUMS is not valid UTF-8: {error}"
+        ) from error
+    actual = parse_sha256_sums(checksum_text, tag)
+    expected = {
+        str(artifact["path"]): str(artifact["sha256"])
+        for artifact in manifest["artifacts"]
+    }
+    if actual != expected:
+        missing = sorted(set(expected) - set(actual))
+        unexpected = sorted(set(actual) - set(expected))
+        mismatched = sorted(
+            path
+            for path in set(expected) & set(actual)
+            if expected[path] != actual[path]
+        )
+        raise ReleaseError(
+            "LiteRT-LM SHA256SUMS does not match manifest artifacts; "
+            f"missing={missing}, unexpected={unexpected}, mismatched={mismatched}"
+        )
+
+
 def main() -> int:
     args = parse_args()
     repo_root = Path(args.repo_root).resolve()
@@ -681,31 +727,45 @@ def parse_args() -> argparse.Namespace:
 
 
 def fetch_release(repo: str, tag: str, release_json_dir: str = "") -> dict[str, Any]:
-    if release_json_dir:
-        path = Path(release_json_dir) / f"{repo.replace('/', '__')}__{tag}.json"
-        if not path.exists():
-            raise ReleaseError(f"Missing release fixture {path}")
-        return json.loads(path.read_text(encoding="utf-8"))
-
-    if tag == "latest":
-        url = f"https://api.github.com/repos/{repo}/releases/latest"
-    else:
-        url = f"https://api.github.com/repos/{repo}/releases/tags/{tag}"
-    request = urllib.request.Request(
-        url,
-        headers={
-            "Accept": "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2022-11-28",
-            **github_auth_header(),
-        },
-    )
     try:
-        with urllib.request.urlopen(request) as response:
-            return json.loads(response.read().decode("utf-8"))
-    except urllib.error.HTTPError as error:
+        if release_json_dir:
+            path = Path(release_json_dir) / f"{repo.replace('/', '__')}__{tag}.json"
+            payload: Any = json.loads(path.read_text(encoding="utf-8"))
+        else:
+            if tag == "latest":
+                url = f"https://api.github.com/repos/{repo}/releases/latest"
+            else:
+                url = f"https://api.github.com/repos/{repo}/releases/tags/{tag}"
+            request = urllib.request.Request(
+                url,
+                headers={
+                    "Accept": "application/vnd.github+json",
+                    "X-GitHub-Api-Version": "2022-11-28",
+                    **github_auth_header(),
+                },
+            )
+            with urllib.request.urlopen(request) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+    except (
+        OSError,
+        urllib.error.HTTPError,
+        urllib.error.URLError,
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+    ) as error:
         raise ReleaseError(
-            f"Failed to fetch release {repo}@{tag}: HTTP {error.code}"
+            f"Failed to fetch release {repo}@{tag}: {error}"
         ) from error
+    if not isinstance(payload, dict):
+        raise ReleaseError(f"Release {repo}@{tag} must be a JSON object")
+    resolved_tag = payload.get("tag_name")
+    if not isinstance(resolved_tag, str) or not resolved_tag:
+        raise ReleaseError(f"Release {repo}@{tag} has no valid tag_name")
+    if tag != "latest" and resolved_tag != tag:
+        raise ReleaseError(
+            f"Release {repo}@{tag} resolved unexpected tag {resolved_tag}"
+        )
+    return payload
 
 
 def github_auth_header() -> dict[str, str]:
@@ -992,6 +1052,43 @@ def release_asset_text(release: dict[str, Any], asset_name: str) -> str:
     except (urllib.error.HTTPError, urllib.error.URLError, UnicodeDecodeError) as error:
         raise ReleaseError(
             f"Failed to read release checksum file {asset_name}: {error}"
+        ) from error
+
+
+def release_asset_bytes(
+    release: dict[str, Any],
+    asset_name: str,
+    *,
+    repo: str,
+    tag: str,
+    release_json_dir: str,
+) -> bytes:
+    asset = find_release_asset(release, asset_name)
+    if asset is None:
+        raise ReleaseError(
+            f"Release {tag} does not contain required asset {asset_name}"
+        )
+    if release_json_dir:
+        fixture = (
+            Path(release_json_dir)
+            / f"{repo.replace('/', '__')}__{tag}__{asset_name}"
+        )
+        try:
+            return fixture.read_bytes()
+        except OSError as error:
+            raise ReleaseError(
+                f"Failed to read release asset fixture {fixture}: {error}"
+            ) from error
+    download_url = asset.get("browser_download_url")
+    if not isinstance(download_url, str) or not download_url:
+        raise ReleaseError(f"Asset {asset_name} has no download URL")
+    request = urllib.request.Request(download_url, headers=github_auth_header())
+    try:
+        with urllib.request.urlopen(request) as response:
+            return response.read()
+    except (urllib.error.HTTPError, urllib.error.URLError, OSError) as error:
+        raise ReleaseError(
+            f"Failed to read release asset {asset_name}: {error}"
         ) from error
 
 
@@ -1479,6 +1576,11 @@ def validate_litert_lm_release_manifest(
             raise ReleaseError("Development release must not claim a stable upstream tag")
         if upstream.get("developmentIdentity") != expected_base:
             raise ReleaseError("Development identity does not match upstream commit")
+        resolved_upstream_commit = fetch_ref_commit(
+            str(upstream["repository"]),
+            str(upstream["commit"]),
+            release_json_dir,
+        )
         expected_channel = "development"
         expected_kind = "rebuild" if expected_rebuild > 0 else "commit"
     else:
@@ -1491,8 +1593,18 @@ def validate_litert_lm_release_manifest(
             )
         if upstream.get("compatibilityTag") != expected_upstream_tag:
             raise ReleaseError("Stable compatibility tag must equal its upstream tag")
+        resolved_upstream_commit = fetch_ref_commit(
+            str(upstream["repository"]),
+            expected_upstream_tag,
+            release_json_dir,
+        )
         expected_channel = "stable"
         expected_kind = "rebuild" if expected_rebuild > 0 else "upstream"
+
+    if resolved_upstream_commit != upstream["commit"]:
+        raise ReleaseError(
+            "LiteRT-LM manifest upstream commit does not match the exact upstream ref"
+        )
 
     if not STABLE_LITERT_TAG_RE.fullmatch(str(upstream.get("compatibilityTag", ""))):
         raise ReleaseError("LiteRT-LM manifest has an invalid compatibility tag")
@@ -1940,6 +2052,13 @@ def validate_litert_lm_release_manifest(
             "LiteRT-LM manifest is missing required real-model smoke evidence: "
             + ", ".join(sorted(required_smokes - passed_smokes))
         )
+    validate_litert_release_sha256_sums(
+        release,
+        manifest,
+        repo=repo,
+        tag=tag,
+        release_json_dir=release_json_dir,
+    )
     return manifest
 
 
@@ -1960,29 +2079,93 @@ def fetch_litert_lm_release_manifest(
     )
     if manifest_asset is None:
         return None
-    if release_json_dir:
-        fixture = (
-            Path(release_json_dir)
-            / f"{repo.replace('/', '__')}__{tag}__manifest.json"
-        )
-        if not fixture.exists():
-            raise ReleaseError(f"Missing release manifest fixture {fixture}")
-        payload = fixture.read_bytes()
+    try:
+        if release_json_dir:
+            fixture = (
+                Path(release_json_dir)
+                / f"{repo.replace('/', '__')}__{tag}__manifest.json"
+            )
+            payload = fixture.read_bytes()
+        else:
+            url = manifest_asset.get("browser_download_url")
+            if not isinstance(url, str) or not url:
+                raise ReleaseError(
+                    f"Release {repo}@{tag} manifest has no download URL"
+                )
+            request = urllib.request.Request(url, headers=github_auth_header())
+            with urllib.request.urlopen(request) as response:
+                payload = response.read()
         manifest = json.loads(payload.decode("utf-8"))
-        if not isinstance(manifest, dict):
-            raise ReleaseError(f"Release {repo}@{tag} manifest is not a JSON object")
-        return manifest, hashlib.sha256(payload).hexdigest()
-
-    url = manifest_asset.get("browser_download_url")
-    if not isinstance(url, str) or not url:
-        raise ReleaseError(f"Release {repo}@{tag} manifest has no download URL")
-    request = urllib.request.Request(url, headers=github_auth_header())
-    with urllib.request.urlopen(request) as response:
-        payload = response.read()
-    manifest = json.loads(payload.decode("utf-8"))
+    except ReleaseError:
+        raise
+    except (
+        OSError,
+        urllib.error.HTTPError,
+        urllib.error.URLError,
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+    ) as error:
+        raise ReleaseError(
+            f"Failed to read release manifest {repo}@{tag}: {error}"
+        ) from error
     if not isinstance(manifest, dict):
         raise ReleaseError(f"Release {repo}@{tag} manifest is not a JSON object")
     return manifest, hashlib.sha256(payload).hexdigest()
+
+
+def fetch_ref_commit(
+    repo: str,
+    ref: str,
+    release_json_dir: str,
+    release: dict[str, Any] | None = None,
+) -> str:
+    if release_json_dir:
+        fixture = (
+            Path(release_json_dir)
+            / f"{repo.replace('/', '__')}__{ref}__commit.json"
+        )
+        try:
+            if fixture.exists():
+                payload: Any = json.loads(fixture.read_text(encoding="utf-8"))
+            elif release is not None:
+                payload = {"sha": release.get("tag_commit_sha")}
+            else:
+                raise ReleaseError(f"Missing upstream ref fixture {fixture}")
+        except ReleaseError:
+            raise
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise ReleaseError(
+                f"Failed to resolve exact commit for {repo}@{ref}: {error}"
+            ) from error
+    else:
+        url = f"https://api.github.com/repos/{repo}/commits/{ref}"
+        request = urllib.request.Request(
+            url,
+            headers={
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+                **github_auth_header(),
+            },
+        )
+        try:
+            with urllib.request.urlopen(request) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except (
+            OSError,
+            urllib.error.HTTPError,
+            urllib.error.URLError,
+            UnicodeDecodeError,
+            json.JSONDecodeError,
+        ) as error:
+            raise ReleaseError(
+                f"Failed to resolve exact commit for {repo}@{ref}: {error}"
+            ) from error
+    if not isinstance(payload, dict):
+        raise ReleaseError(f"Commit response for {repo}@{ref} must be a JSON object")
+    commit = payload.get("sha")
+    if not isinstance(commit, str) or not FULL_COMMIT_RE.fullmatch(commit):
+        raise ReleaseError(f"Could not resolve exact commit for {repo}@{ref}")
+    return commit
 
 
 def fetch_tag_commit(
@@ -1991,28 +2174,7 @@ def fetch_tag_commit(
     release_json_dir: str,
     release: dict[str, Any],
 ) -> str:
-    if release_json_dir:
-        commit = release.get("tag_commit_sha")
-        if not isinstance(commit, str) or not FULL_COMMIT_RE.fullmatch(commit):
-            raise ReleaseError(
-                f"Legacy release fixture {repo}@{tag} lacks exact tag_commit_sha"
-            )
-        return commit
-    url = f"https://api.github.com/repos/{repo}/commits/{tag}"
-    request = urllib.request.Request(
-        url,
-        headers={
-            "Accept": "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2022-11-28",
-            **github_auth_header(),
-        },
-    )
-    with urllib.request.urlopen(request) as response:
-        payload = json.loads(response.read().decode("utf-8"))
-    commit = payload.get("sha")
-    if not isinstance(commit, str) or not FULL_COMMIT_RE.fullmatch(commit):
-        raise ReleaseError(f"Could not resolve exact tag commit for {repo}@{tag}")
-    return commit
+    return fetch_ref_commit(repo, tag, release_json_dir, release)
 
 
 def allows_legacy_litert_manifest(tag: str) -> bool:
