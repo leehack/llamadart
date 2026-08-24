@@ -911,6 +911,42 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
         with self.assertRaisesRegex(ReleaseError, "duplicate LiteRT-LM bundle"):
             litert_lm_bundle_names(f"{spec}\n{spec}\n")
 
+    def test_hook_library_sets_follow_dart_formatter_width(self) -> None:
+        hook = (
+            "_LiteRtLmBundleSpec(\n"
+            "    'linux-x64',\n"
+            f"    sha256: '{'a' * 64}',\n"
+            "    requiredLibraries: {'old.so'},\n"
+            "  ),"
+        )
+        short = replace_litert_lm_bundle_required_libraries(
+            hook,
+            "linux-x64",
+            ("a.so", "b.so", "c.so"),
+        )
+        self.assertIn(
+            "requiredLibraries: {'a.so', 'b.so', 'c.so'},",
+            short,
+        )
+
+        long = replace_litert_lm_bundle_required_libraries(
+            hook,
+            "linux-x64",
+            (
+                "libLiteRtTopKWebGpuSampler.so",
+                "libLiteRtWebGpuAccelerator.so",
+                "libwebgpu_dawn.so",
+            ),
+        )
+        self.assertIn(
+            "requiredLibraries: {\n"
+            "      'libLiteRtTopKWebGpuSampler.so',\n"
+            "      'libLiteRtWebGpuAccelerator.so',\n"
+            "      'libwebgpu_dawn.so',\n"
+            "    },",
+            long,
+        )
+
     def test_known_legacy_schema_1_manifest_requires_exact_immutable_evidence(self) -> None:
         tag = "v0.16.0-native.2"
         owner_fixture = (

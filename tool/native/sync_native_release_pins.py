@@ -82,6 +82,7 @@ LEGACY_LITERT_TAG_RE = re.compile(
 FULL_COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 SAFE_LITERT_LIBRARY_FILENAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.+-]*$")
+DART_FORMAT_PAGE_WIDTH = 80
 LEGACY_ALLOWLIST_PATH = (
     Path(__file__).resolve().parent / "fixtures" / "legacy_release_allowlist.json"
 )
@@ -2449,24 +2450,26 @@ def replace_litert_lm_bundle_required_libraries(
 ) -> str:
     if not libraries:
         raise ReleaseError(f"LiteRT-LM bundle {bundle} has no required libraries")
-    if len(libraries) <= 2:
-        required_libraries = "{" + ", ".join(
-            f"'{library}'" for library in libraries
-        ) + "}"
-    else:
-        required_libraries = "{\n" + "".join(
-            f"      '{library}',\n" for library in libraries
-        ) + "    }"
+    inline_libraries = "{" + ", ".join(f"'{library}'" for library in libraries) + "}"
+    multiline_libraries = "{\n" + "".join(
+        f"      '{library}',\n" for library in libraries
+    ) + "    }"
     pattern = re.compile(
         rf"(_LiteRtLmBundleSpec\(\s*'{re.escape(bundle)}',\s*"
         r"sha256: '[0-9a-f]+',\s*requiredLibraries:\s*)\{.*?\},?(\s*\),)",
         re.DOTALL,
     )
-    updated, count = pattern.subn(
-        lambda match: f"{match.group(1)}{required_libraries},{match.group(2)}",
-        hook_text,
-        count=1,
-    )
+    def replacement(match: re.Match[str]) -> str:
+        field_prefix_width = len(match.group(1).rsplit("\n", maxsplit=1)[-1])
+        required_libraries = (
+            inline_libraries
+            if field_prefix_width + len(inline_libraries) + 1
+            <= DART_FORMAT_PAGE_WIDTH
+            else multiline_libraries
+        )
+        return f"{match.group(1)}{required_libraries},{match.group(2)}"
+
+    updated, count = pattern.subn(replacement, hook_text, count=1)
     if count != 1:
         raise ReleaseError(
             f"Could not replace LiteRT-LM required libraries for {bundle}"
