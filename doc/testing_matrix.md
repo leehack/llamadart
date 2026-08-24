@@ -63,7 +63,9 @@ or website files changed.
 Discover the high-risk rows with:
 
 ```bash
-git diff --name-only --no-renames origin/main...HEAD | \
+# Replace upstream/main with the remote/ref for the current PR base.
+PR_BASE_REF=upstream/main
+git diff --name-only --no-renames "$PR_BASE_REF"...HEAD | \
   dart run tool/testing/classify_high_risk_changes.dart
 dart run tool/testing/test_matrix.dart --tier high-risk
 ```

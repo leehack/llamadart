@@ -19,6 +19,7 @@ void main() {
         '**Exact head / current base:**',
         '**Production-branch deletion, bypass, or miswire proof:**',
         '**Affected-family real-model/artifact evidence:**',
+        '**Explicit unavailable-family or other N/A evidence:**',
         '**Known PR-caused P1 regressions:**',
         '**Unresolved review threads:**',
       ]) {
@@ -59,12 +60,15 @@ void main() {
         'tool/testing/classify_high_risk_changes.dart',
         'tool/testing/run_template_parity_suites.sh',
         'tool/testing/run_llama_cpp_chat_tests.sh',
+        'tool/testing/prepare_llama_cpp_source.sh',
+        'tool/testing/llama_cpp_templates.ref',
         'tool/gen_litert_lm_templates.dart',
         'tool/litert_lm_templates/ @leehack',
         'test/integration/core/grammar/'
             'generated_tool_schema_grammar_test.dart',
         'test/e2e/template/'
             'specialized_tool_grammar_validation_e2e_test.dart',
+        'test/unit/tooling/high_risk_review_policy_test.dart',
       ]) {
         final rule = path.endsWith(' @leehack') ? path : '$path @leehack';
         expect(codeowners, contains(rule), reason: path);
