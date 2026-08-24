@@ -206,8 +206,8 @@ class JinjaAnalyzer {
       return template.render(context);
     } catch (error) {
       LlamaLogger.instance.debug(
-        'JinjaAnalyzer: $probe capability probe failed to render; treating '
-        'the capability as unsupported: $error',
+        'JinjaAnalyzer: $probe capability probe failed to render; skipping '
+        'this execution probe: $error',
       );
       return null;
     }
