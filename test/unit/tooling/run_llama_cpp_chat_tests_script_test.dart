@@ -69,6 +69,6 @@ void main() {
         '${result.stdout}\n${result.stderr}',
         contains('LLAMA_CPP_CHAT_TEST_BUILD_JOBS must be a positive integer.'),
       );
-    });
+    }, skip: Platform.isWindows ? 'requires a POSIX Bash runtime' : false);
   });
 }
