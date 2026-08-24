@@ -27,17 +27,22 @@ Directory _fakeRepo(String assetsTag, {Map<String, String> files = const {}}) {
 Directory _fakeRuntimeRepo({
   required String bridgeTag,
   required String nativeTag,
+  bool parityWording = false,
 }) {
   final root = Directory.systemTemp.createTempSync('bridge_runtime_gate');
   addTearDown(() => root.deleteSync(recursive: true));
   final entries = <String, String>{
     nativeLlamaCppTagPath: "const _llamaCppTag = '$nativeTag';\n",
-    'doc/webgpu_bridge.md':
-        'That release embeds llama.cpp `$bridgeTag`, which now trails the '
-        '`hook/build.dart`\n',
-    'website/docs/platforms/webgpu-bridge.md':
-        '- `v0.1.37+` bridge assets embed llama.cpp `$bridgeTag`, which now '
-        'trails the\n',
+    'doc/webgpu_bridge.md': parityWording
+        ? 'That release embeds llama.cpp `$bridgeTag`, matching the '
+              '`hook/build.dart` native pin\n'
+        : 'That release embeds llama.cpp `$bridgeTag`, which now trails the '
+              '`hook/build.dart`\n',
+    'website/docs/platforms/webgpu-bridge.md': parityWording
+        ? '- `v0.1.37+` bridge assets embed llama.cpp `$bridgeTag`, matching '
+              'the native runtime\n'
+        : '- `v0.1.37+` bridge assets embed llama.cpp `$bridgeTag`, which now '
+              'trails the\n',
   };
   for (final entry in entries.entries) {
     File('${root.path}/${entry.key}')
@@ -299,6 +304,25 @@ void main() {
           'the anchored bridgeLlamaCppTagPins patterns with the wording',
         ),
       );
+    });
+
+    test('stale divergence prose after convergence is reported', () {
+      final root = _fakeRuntimeRepo(bridgeTag: 'b10545', nativeTag: 'b10545');
+
+      expect(
+        findBridgeRuntimeDrift(root, 'b10545', null).join('\n'),
+        contains('matches 0 lines, expected 1'),
+      );
+    });
+
+    test('parity prose is accepted after convergence', () {
+      final root = _fakeRuntimeRepo(
+        bridgeTag: 'b10545',
+        nativeTag: 'b10545',
+        parityWording: true,
+      );
+
+      expect(findBridgeRuntimeDrift(root, 'b10545', null), isEmpty);
     });
 
     test('a doc naming a different bridge build is reported', () {

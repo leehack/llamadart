@@ -232,6 +232,29 @@ final List<BridgeTagPin> bridgeLlamaCppTagPins = <BridgeTagPin>[
   ),
 ];
 
+/// Doc sentences required once the bridge and native llama.cpp pins converge.
+///
+/// Keeping these separate from [bridgeLlamaCppTagPins] prevents stale
+/// divergence prose from passing merely because both embedded tag values are
+/// current.
+final List<BridgeTagPin> bridgeLlamaCppParityPins = <BridgeTagPin>[
+  BridgeTagPin(
+    'doc/webgpu_bridge.md',
+    RegExp(
+      r'^That release embeds llama\.cpp `(b\d+)`, matching the '
+      r'`hook/build\.dart` native pin$',
+      multiLine: true,
+    ),
+  ),
+  BridgeTagPin(
+    'website/docs/platforms/webgpu-bridge.md',
+    RegExp(
+      r'^- `v\d+\.\d+\.\d+\+` bridge assets embed llama\.cpp `(b\d+)`, matching the native runtime$',
+      multiLine: true,
+    ),
+  ),
+];
+
 /// Returns one message per problem with the Web/native llama.cpp relationship.
 ///
 /// `hook/build.dart` and the bridge manifest move in different repositories, so
@@ -276,7 +299,10 @@ List<String> findBridgeRuntimeDrift(
     );
   }
 
-  for (final pin in bridgeLlamaCppTagPins) {
+  final activeDocPins = divergence == null
+      ? bridgeLlamaCppParityPins
+      : bridgeLlamaCppTagPins;
+  for (final pin in activeDocPins) {
     final doc = File('${repoRoot.path}/${pin.path}');
     if (!doc.existsSync()) {
       problems.add('${pin.path}: file is missing');
