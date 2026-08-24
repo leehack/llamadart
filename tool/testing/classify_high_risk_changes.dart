@@ -67,10 +67,24 @@ bool _isStructuredOutput(String path) {
       path.contains('/structured_output') ||
       path.endsWith('/tool_choice.dart') ||
       path.endsWith('/completion_chunk.dart') ||
+      _isStructuredOutputEvidence(path) ||
       (path.startsWith('tool/testing/') &&
           (path.contains('template') ||
               path.contains('grammar') ||
               path.contains('structured')));
+}
+
+bool _isStructuredOutputEvidence(String path) {
+  return path ==
+          'test/integration/core/grammar/'
+              'generated_tool_schema_grammar_test.dart' ||
+      path == 'tool/testing/run_llama_cpp_chat_tests.sh' ||
+      path == 'tool/testing/prepare_llama_cpp_source.sh' ||
+      path == 'tool/testing/llama_cpp_templates.ref' ||
+      path == 'test/e2e/template/llama_cpp_chat_tests_e2e_test.dart' ||
+      path.startsWith('test/integration/core/template/') ||
+      path.startsWith('test/fixtures/templates/') ||
+      path.startsWith('test/unit/core/template/');
 }
 
 bool _isBackendRuntime(String path) {
@@ -80,6 +94,7 @@ bool _isBackendRuntime(String path) {
       path.startsWith('lib/src/core/models/') ||
       path.startsWith('lib/src/core/speech/') ||
       path.startsWith('lib/src/platform/') ||
+      path == 'lib/src/core/cache_policy.dart' ||
       path.contains('/capabilit');
 }
 

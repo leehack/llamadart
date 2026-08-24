@@ -15,6 +15,11 @@ doc/testing_matrix.md @leehack
 hook/build.dart @leehack
 tool/testing/test_matrix.dart @leehack
 tool/testing/classify_high_risk_changes.dart @leehack
+tool/testing/run_template_parity_suites.sh @leehack
+tool/testing/run_llama_cpp_chat_tests.sh @leehack
+tool/testing/prepare_llama_cpp_source.sh @leehack
+tool/testing/llama_cpp_templates.ref @leehack
+test/integration/core/grammar/generated_tool_schema_grammar_test.dart @leehack
 tool/testing/verify_release_docs_versions.dart @leehack
 tool/testing/check_webgpu_bridge_tag.dart @leehack
 scripts/fetch_webgpu_bridge_assets.sh @leehack

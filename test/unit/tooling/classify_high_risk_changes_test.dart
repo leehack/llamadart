@@ -18,10 +18,23 @@ void main() {
       expect(assessment.surfaces, contains(HighRiskSurface.structuredOutput));
     });
 
+    test('protects landed compiled grammar and upstream parity evidence', () {
+      final assessment = assessHighRiskFiles([
+        'test/integration/core/grammar/'
+            'generated_tool_schema_grammar_test.dart',
+        'tool/testing/run_llama_cpp_chat_tests.sh',
+        'tool/testing/llama_cpp_templates.ref',
+        'test/fixtures/templates/Kimi-K3.jinja',
+      ]);
+
+      expect(assessment.surfaces, contains(HighRiskSurface.structuredOutput));
+    });
+
     test('classifies backend, capability, and artifact consumers', () {
       final assessment = assessHighRiskFiles([
         'lib/src/backends/webgpu/webgpu_backend.dart',
         'lib/src/core/models/backend_capabilities.dart',
+        'lib/src/core/cache_policy.dart',
         'scripts/fetch_webgpu_bridge_assets.sh',
       ]);
 
