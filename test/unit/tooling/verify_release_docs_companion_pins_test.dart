@@ -170,10 +170,7 @@ void main() {
     final errors = <String>[];
 
     expect(() => checkCompanionSwiftPins(root, errors), returnsNormally);
-    expect(
-      errors,
-      contains(contains('$path could not be')),
-    );
+    expect(errors, contains(contains('$path could not be')));
   });
 
   test('an unreadable changelog is reported without throwing', () {
