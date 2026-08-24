@@ -1256,11 +1256,18 @@ time.sleep(300)
               timeout: const Duration(seconds: 30),
             );
             expect(
-              await _windowsProcessExists(
+              await _windowsProcessIdentity(
                 childPid!,
                 expectedCommandFragment: childScript.path,
               ),
-              isTrue,
+              _WindowsProcessIdentity.matching,
+            );
+            expect(
+              await _windowsProcessIdentity(
+                childPid!,
+                expectedCommandFragment: '${childScript.path}.mismatch',
+              ),
+              _WindowsProcessIdentity.absentOrDifferent,
             );
           },
           redactions: {root.path: '<temp>', secret: '<redacted>'},
@@ -1363,6 +1370,7 @@ print("parent exited after spawning child", flush=True)
             childPid ??= _readPidFileSync(childPidFile);
             return childPid;
           },
+          outputDrainDescendantCommandFragment: childScript.path,
           redactions: {root.path: '<temp>', secret: '<redacted>'},
         );
       } on Object catch (error) {
@@ -1689,6 +1697,7 @@ Future<ProcessResult> _runPython(
   Duration? timeout,
   Duration outputDrainTimeout = const Duration(seconds: 5),
   int? Function()? outputDrainDescendantPid,
+  String? outputDrainDescendantCommandFragment,
   Future<void> Function()? waitUntilReady,
   Map<String, String> redactions = const {},
   void Function(int pid)? onStart,
@@ -1810,9 +1819,14 @@ Future<ProcessResult> _runPython(
       final descendantPid = outputDrainDescendantPid();
       if (descendantPid == null) {
         cleanup = 'missing-pid';
+      } else if (outputDrainDescendantCommandFragment == null) {
+        cleanup = 'missing-identity';
       } else {
         try {
-          await _ensureWindowsProcessStopped(descendantPid);
+          await _ensureWindowsProcessStopped(
+            descendantPid,
+            expectedCommandFragment: outputDrainDescendantCommandFragment,
+          );
           cleanup = 'confirmed';
         } on Object {
           cleanup = 'failed';
@@ -2118,10 +2132,12 @@ String _diagnosticTail(String value, {int maxCharacters = 4096}) {
   return '<truncated>\n${value.substring(value.length - maxCharacters)}';
 }
 
-Future<bool> _windowsProcessExists(
+enum _WindowsProcessIdentity { matching, absentOrDifferent, unknown }
+
+Future<_WindowsProcessIdentity> _windowsProcessIdentity(
   int pid, {
   Duration timeout = const Duration(seconds: 3),
-  String? expectedCommandFragment,
+  required String expectedCommandFragment,
 }) async {
   const markerEnvironment = 'LLAMADART_EXPECTED_PROCESS_MARKER';
   final probe = await Process.start(
@@ -2131,22 +2147,19 @@ Future<bool> _windowsProcessExists(
       '-NonInteractive',
       '-Command',
       'try { '
-          '[System.Diagnostics.Process]::GetProcessById(${pid.toString()}) '
-          '| Out-Null; '
-          'if (\$env:$markerEnvironment) { '
           '\$candidate = Get-CimInstance Win32_Process '
           '-Filter "ProcessId = ${pid.toString()}"; '
-          'if (\$null -eq \$candidate -or '
-          '-not \$candidate.CommandLine.Contains(\$env:$markerEnvironment)) { '
+          'if (\$null -eq \$candidate) { exit 1 }; '
+          'if ([string]::IsNullOrEmpty(\$candidate.CommandLine)) { exit 2 }; '
+          'if (-not '
+          '\$candidate.CommandLine.Contains(\$env:$markerEnvironment)) { '
           'exit 1 '
           '} '
-          '} '
           'exit 0 '
-          '} catch [System.ArgumentException] { exit 1 } '
-          'catch { exit 2 }',
+          '} catch { exit 2 }',
     ],
     runInShell: false,
-    environment: {markerEnvironment: expectedCommandFragment ?? ''},
+    environment: {markerEnvironment: expectedCommandFragment},
   );
   final stdoutSubscription = probe.stdout.listen(null);
   final stderrSubscription = probe.stderr.listen(null);
@@ -2168,12 +2181,12 @@ Future<bool> _windowsProcessExists(
     await _cancelOutputSubscriptions(stdoutSubscription, stderrSubscription);
   }
   if (timedOut) {
-    return true;
+    return _WindowsProcessIdentity.unknown;
   }
   return switch (exitCode) {
-    0 => true,
-    1 => false,
-    _ => true,
+    0 => _WindowsProcessIdentity.matching,
+    1 => _WindowsProcessIdentity.absentOrDifferent,
+    _ => _WindowsProcessIdentity.unknown,
   };
 }
 
@@ -2208,18 +2221,32 @@ int? _readPidFileSync(File file) {
 
 Future<void> _ensureWindowsProcessStopped(
   int pid, {
-  String? expectedCommandFragment,
+  required String expectedCommandFragment,
 }) async {
-  if (!await _windowsProcessExists(
+  final initialIdentity = await _windowsProcessIdentity(
     pid,
     expectedCommandFragment: expectedCommandFragment,
-  )) {
+  );
+  if (initialIdentity == _WindowsProcessIdentity.absentOrDifferent) {
     return;
+  }
+  if (initialIdentity == _WindowsProcessIdentity.unknown) {
+    fail('Could not confirm synthetic Windows process $pid identity.');
   }
   final treeCleanupDeadline = DateTime.now().add(const Duration(seconds: 15));
   for (var killAttempt = 0; killAttempt < 2; killAttempt++) {
     if (!DateTime.now().isBefore(treeCleanupDeadline)) {
       break;
+    }
+    final identity = await _windowsProcessIdentity(
+      pid,
+      expectedCommandFragment: expectedCommandFragment,
+    );
+    if (identity == _WindowsProcessIdentity.absentOrDifferent) {
+      return;
+    }
+    if (identity == _WindowsProcessIdentity.unknown) {
+      fail('Could not reconfirm synthetic Windows process $pid identity.');
     }
     try {
       final result = await _taskkillWindowsPid(
@@ -2240,6 +2267,16 @@ Future<void> _ensureWindowsProcessStopped(
       return;
     }
   }
+  final fallbackIdentity = await _windowsProcessIdentity(
+    pid,
+    expectedCommandFragment: expectedCommandFragment,
+  );
+  if (fallbackIdentity == _WindowsProcessIdentity.absentOrDifferent) {
+    return;
+  }
+  if (fallbackIdentity == _WindowsProcessIdentity.unknown) {
+    fail('Could not reconfirm synthetic Windows process $pid identity.');
+  }
   Process.killPid(pid);
   final directKillDeadline = DateTime.now().add(const Duration(seconds: 5));
   if (await _waitForWindowsProcessToStop(
@@ -2255,18 +2292,19 @@ Future<void> _ensureWindowsProcessStopped(
 Future<bool> _waitForWindowsProcessToStop(
   int pid,
   DateTime deadline, {
-  String? expectedCommandFragment,
+  required String expectedCommandFragment,
 }) async {
   while (DateTime.now().isBefore(deadline)) {
     final remaining = deadline.difference(DateTime.now());
     final probeTimeout = remaining < const Duration(seconds: 3)
         ? remaining
         : const Duration(seconds: 3);
-    if (!await _windowsProcessExists(
+    final identity = await _windowsProcessIdentity(
       pid,
       timeout: probeTimeout,
       expectedCommandFragment: expectedCommandFragment,
-    )) {
+    );
+    if (identity == _WindowsProcessIdentity.absentOrDifferent) {
       return true;
     }
     await Future<void>.delayed(const Duration(milliseconds: 100));
