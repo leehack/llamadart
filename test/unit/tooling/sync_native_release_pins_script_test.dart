@@ -2124,27 +2124,30 @@ Future<bool> _windowsProcessExists(
   String? expectedCommandFragment,
 }) async {
   const markerEnvironment = 'LLAMADART_EXPECTED_PROCESS_MARKER';
-  final probe = await Process.start('powershell', [
-    '-NoProfile',
-    '-NonInteractive',
-    '-Command',
-    'try { '
-        '[System.Diagnostics.Process]::GetProcessById(${pid.toString()}) '
-        '| Out-Null; '
-        'if (\$env:$markerEnvironment) { '
-        '\$candidate = Get-CimInstance Win32_Process '
-        '-Filter "ProcessId = ${pid.toString()}"; '
-        'if (\$null -eq \$candidate -or '
-        '-not \$candidate.CommandLine.Contains(\$env:$markerEnvironment)) { '
-        'exit 1 '
-        '} '
-        '} '
-        'exit 0 '
-        '} catch [System.ArgumentException] { exit 1 } '
-        'catch { exit 2 }',
-  ], runInShell: false, environment: {
-    markerEnvironment: ?expectedCommandFragment,
-  });
+  final probe = await Process.start(
+    'powershell',
+    [
+      '-NoProfile',
+      '-NonInteractive',
+      '-Command',
+      'try { '
+          '[System.Diagnostics.Process]::GetProcessById(${pid.toString()}) '
+          '| Out-Null; '
+          'if (\$env:$markerEnvironment) { '
+          '\$candidate = Get-CimInstance Win32_Process '
+          '-Filter "ProcessId = ${pid.toString()}"; '
+          'if (\$null -eq \$candidate -or '
+          '-not \$candidate.CommandLine.Contains(\$env:$markerEnvironment)) { '
+          'exit 1 '
+          '} '
+          '} '
+          'exit 0 '
+          '} catch [System.ArgumentException] { exit 1 } '
+          'catch { exit 2 }',
+    ],
+    runInShell: false,
+    environment: {markerEnvironment: expectedCommandFragment ?? ''},
+  );
   final stdoutSubscription = probe.stdout.listen(null);
   final stderrSubscription = probe.stderr.listen(null);
   final stdoutDone = stdoutSubscription.asFuture<void>();
