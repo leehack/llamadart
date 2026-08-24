@@ -54,9 +54,9 @@ plugin `.symlinks` trees are not workspace packages. Vendored, archived docs,
 or local-only trees outside `example/` and `packages/` are not discovered by
 the workspace bootstrap.
 
-Use the current Flutter stable SDK, matching CI, for repository-wide quality
-gates. Older Dart formatters can produce different source layouts even after
-the same dependency bootstrap.
+Use the Flutter SDK pinned in `.flutter-version` (`3.47.1`), the same version
+CI installs, for repository-wide quality gates. Other Dart formatters produce
+different source layouts even after the same dependency bootstrap.
 
 Use targeted test commands when iterating quickly, then run full checks before
 release-related merges.
