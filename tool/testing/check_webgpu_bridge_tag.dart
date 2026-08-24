@@ -236,6 +236,8 @@ final List<BridgeTagPin> bridgeLlamaCppTagPins = <BridgeTagPin>[
 /// `hook/build.dart` and the bridge manifest move in different repositories, so
 /// nothing else notices when a native pin bump silently ends Web/native parity
 /// and leaves the docs claiming it.
+/// [bridgeTag] is the llama.cpp tag embedded by the bridge assets, not the
+/// bridge asset release tag itself.
 List<String> findBridgeRuntimeDrift(
   Directory repoRoot,
   String bridgeTag,
