@@ -32,6 +32,7 @@ void main() {
       environment: const <String, String>{
         'LLAMA_CPP_CHAT_TEST_INCLUDE_FULL': '1',
       },
+      includeParentEnvironment: true,
     );
     final output = '${result.stdout}\n${result.stderr}';
     expect(
