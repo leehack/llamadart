@@ -35,7 +35,7 @@ void main() {
     engine = LlamaEngine(LlamaBackend());
     await engine.loadModel(
       modelFile.path,
-      modelParams: const ModelParams(contextSize: 256),
+      modelParams: const ModelParams(contextSize: 256, gpuLayers: 0),
     );
     final path = modelFile.path.toNativeUtf8();
     try {
@@ -179,44 +179,50 @@ bool _compiledGrammarAccepts(
     ..free(rootPointer);
   expect(sampler, isNot(nullptr));
 
-  final prefixedTokens = _tokenize(vocab, '\n$candidate');
-  final prefixTokens = _tokenize(vocab, '\n');
-  expect(prefixedTokens.take(prefixTokens.length), orderedEquals(prefixTokens));
-  final candidateTokens = prefixedTokens.sublist(prefixTokens.length);
-  final data = calloc<llama_token_data>(1);
-  final array = calloc<llama_token_data_array>();
   try {
-    array.ref
-      ..data = data
-      ..size = 1
-      ..selected = -1
-      ..sorted = false;
-    for (final token in candidateTokens) {
+    final prefixedTokens = _tokenize(vocab, '\n$candidate');
+    final prefixTokens = _tokenize(vocab, '\n');
+    expect(
+      prefixedTokens.take(prefixTokens.length),
+      orderedEquals(prefixTokens),
+    );
+    final candidateTokens = prefixedTokens.sublist(prefixTokens.length);
+    final data = calloc<llama_token_data>(1);
+    final array = calloc<llama_token_data_array>();
+    try {
+      array.ref
+        ..data = data
+        ..size = 1
+        ..selected = -1
+        ..sorted = false;
+      for (final token in candidateTokens) {
+        data.ref
+          ..id = token
+          ..logit = 0
+          ..p = 0;
+        llama_sampler_apply(sampler, array);
+        if (data.ref.logit == double.negativeInfinity) return false;
+        llama_sampler_accept(sampler, token);
+      }
+      final eog = llama_vocab_eos(vocab);
+      expect(
+        llama_vocab_is_eog(vocab, eog),
+        isTrue,
+        reason:
+            'The test model EOS token must be a valid end-of-generation token.',
+      );
       data.ref
-        ..id = token
+        ..id = eog
         ..logit = 0
         ..p = 0;
       llama_sampler_apply(sampler, array);
-      if (data.ref.logit == double.negativeInfinity) return false;
-      llama_sampler_accept(sampler, token);
+      return data.ref.logit.isFinite;
+    } finally {
+      calloc
+        ..free(data)
+        ..free(array);
     }
-    final eog = llama_vocab_eos(vocab);
-    expect(
-      llama_vocab_is_eog(vocab, eog),
-      isTrue,
-      reason:
-          'The test model EOS token must be a valid end-of-generation token.',
-    );
-    data.ref
-      ..id = eog
-      ..logit = 0
-      ..p = 0;
-    llama_sampler_apply(sampler, array);
-    return data.ref.logit.isFinite;
   } finally {
-    calloc
-      ..free(data)
-      ..free(array);
     llama_sampler_free(sampler);
   }
 }
@@ -232,6 +238,11 @@ List<int> _tokenize(Pointer<llama_vocab> vocab, String value) {
       0,
       false,
       true,
+    );
+    expect(
+      required,
+      greaterThan(0),
+      reason: 'llama_tokenize must report a positive token buffer size.',
     );
     final tokens = calloc<llama_token>(required);
     try {
