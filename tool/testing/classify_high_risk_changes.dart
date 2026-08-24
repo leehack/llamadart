@@ -169,10 +169,7 @@ The command reads one changed repository path per line from standard input.
 ''';
 
 Future<List<String>> _readPaths() async {
-  return stdin
-      .transform(const SystemEncoding().decoder)
-      .transform(const LineSplitter())
-      .toList();
+  return stdin.transform(utf8.decoder).transform(const LineSplitter()).toList();
 }
 
 Future<void> main(List<String> args) async {
@@ -186,11 +183,19 @@ Future<void> main(List<String> args) async {
     return;
   }
 
-  final paths = await _readPaths();
-  if (paths.isEmpty) {
+  late final List<String> paths;
+  try {
+    paths = await _readPaths();
+  } on FormatException {
+    stderr.write('Changed paths must be valid UTF-8.\n${_usage()}');
+    exitCode = 65;
+    return;
+  }
+  final assessment = assessHighRiskFiles(paths);
+  if (assessment.changedFiles.isEmpty) {
     stderr.write('No changed paths were provided.\n${_usage()}');
     exitCode = 64;
     return;
   }
-  stdout.write(formatHighRiskAssessment(assessHighRiskFiles(paths)));
+  stdout.write(formatHighRiskAssessment(assessment));
 }

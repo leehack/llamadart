@@ -1,9 +1,26 @@
 @TestOn('vm')
 library;
 
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:test/test.dart';
 
 import '../../../tool/testing/classify_high_risk_changes.dart';
+
+Future<({int exitCode, String stdout, String stderr})> runClassifier(
+  List<int> input,
+) async {
+  final process = await Process.start(Platform.resolvedExecutable, [
+    'run',
+    'tool/testing/classify_high_risk_changes.dart',
+  ]);
+  process.stdin.add(input);
+  await process.stdin.close();
+  final output = await process.stdout.transform(utf8.decoder).join();
+  final error = await process.stderr.transform(utf8.decoder).join();
+  return (exitCode: await process.exitCode, stdout: output, stderr: error);
+}
 
 void main() {
   group('assessHighRiskFiles', () {
@@ -103,6 +120,30 @@ void main() {
         'Required matrix: '
         'dart run tool/testing/test_matrix.dart --tier high-risk\n',
       );
+    });
+  });
+
+  group('classifier CLI', () {
+    test(
+      'rejects whitespace-only input instead of reporting standard',
+      () async {
+        final result = await runClassifier(utf8.encode('  \n\t\n'));
+
+        expect(result.exitCode, 64);
+        expect(result.stdout, isEmpty);
+        expect(result.stderr, contains('No changed paths were provided.'));
+        expect(result.stderr, isNot(contains('Classification: standard')));
+      },
+    );
+
+    test('rejects malformed UTF-8 without a traceback', () async {
+      final result = await runClassifier([0xff, 0x0a]);
+
+      expect(result.exitCode, 65);
+      expect(result.stdout, isEmpty);
+      expect(result.stderr, contains('Changed paths must be valid UTF-8.'));
+      expect(result.stderr, isNot(contains('FormatException')));
+      expect(result.stderr, isNot(contains('Unhandled exception')));
     });
   });
 }
