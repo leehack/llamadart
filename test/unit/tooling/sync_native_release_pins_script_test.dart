@@ -1231,11 +1231,15 @@ printf '%s\\n' '{"tag_name":"v0.2.0-1","assets":[]}'
       final childScript = File(path.join(root.path, 'child.py'));
       final parentScript = File(path.join(root.path, 'parent.py'));
       final childPidFile = File(path.join(root.path, 'child.pid'));
+      final childStopFile = File(path.join(root.path, 'child.stop'));
       await childScript.writeAsString(r'''
+from pathlib import Path
+import sys
 import time
 
-while True:
-    time.sleep(60)
+deadline = time.monotonic() + 60
+while not Path(sys.argv[1]).exists() and time.monotonic() < deadline:
+    time.sleep(0.1)
 ''');
       await parentScript.writeAsString(r'''
 from pathlib import Path
@@ -1243,21 +1247,25 @@ import subprocess
 import sys
 import time
 
-child = subprocess.Popen([sys.executable, sys.argv[1]])
+child = subprocess.Popen([sys.executable, sys.argv[1], sys.argv[3]])
 Path(sys.argv[2]).write_text(str(child.pid), encoding="utf-8")
 print(f"synthetic child ready: {child.pid}", flush=True)
-time.sleep(300)
+time.sleep(60)
 ''');
 
-      int? parentPid;
+      Process? parentProcess;
       int? childPid;
       addTearDown(() async {
         childPid ??= await _readPidFile(childPidFile);
-        if (parentPid != null) {
-          await _ensureWindowsProcessStopped(parentPid!);
+        if (parentProcess != null) {
+          await _ensureProcessHandleStopped(parentProcess!);
         }
         if (childPid != null) {
-          await _ensureWindowsProcessStopped(childPid!);
+          await childStopFile.writeAsString('stop');
+          await _ensureWindowsProcessStopped(
+            childPid!,
+            expectedCommandFragment: childScript.path,
+          );
         }
       });
 
@@ -1266,16 +1274,36 @@ time.sleep(300)
       final stopwatch = Stopwatch()..start();
       try {
         await _runPython(
-          [parentScript.path, childScript.path, childPidFile.path, secret],
+          [
+            parentScript.path,
+            childScript.path,
+            childPidFile.path,
+            childStopFile.path,
+            secret,
+          ],
           timeout: const Duration(seconds: 5),
           waitUntilReady: () async {
             childPid = await _waitForPidFile(
               childPidFile,
               timeout: const Duration(seconds: 30),
             );
+            expect(
+              await _windowsProcessIdentity(
+                childPid!,
+                expectedCommandFragment: childScript.path,
+              ),
+              _WindowsProcessIdentity.matching,
+            );
+            expect(
+              await _windowsProcessIdentity(
+                childPid!,
+                expectedCommandFragment: '${childScript.path}.mismatch',
+              ),
+              _WindowsProcessIdentity.absentOrDifferent,
+            );
           },
           redactions: {root.path: '<temp>', secret: '<redacted>'},
-          onStart: (pid) => parentPid = pid,
+          onStart: (process) => parentProcess = process,
         );
       } on Object catch (error) {
         failure = error;
@@ -1296,15 +1324,16 @@ time.sleep(300)
       expect(message, isNot(contains(secret)));
       expect(stopwatch.elapsed, lessThan(const Duration(seconds: 60)));
 
-      expect(parentPid, isNotNull);
+      expect(parentProcess, isNotNull);
       expect(childPid, isNotNull);
-      // _terminateProcessTree awaits this exact Process handle. A numeric PID
-      // probe after exit can observe an unrelated process if Windows reuses it.
-      parentPid = null;
+      // _terminateProcessTree awaits this exact Process handle. Keep the
+      // command-line identity on the child probe because Windows can reuse a
+      // numeric PID before this assertion runs.
       expect(
         await _waitForWindowsProcessToStop(
           childPid!,
           DateTime.now().add(const Duration(seconds: 10)),
+          expectedCommandFragment: childScript.path,
         ),
         isTrue,
       );
@@ -1323,11 +1352,16 @@ time.sleep(300)
       final childScript = File(path.join(root.path, 'child.py'));
       final parentScript = File(path.join(root.path, 'parent.py'));
       final childPidFile = File(path.join(root.path, 'child.pid'));
+      final childStopFile = File(path.join(root.path, 'child.stop'));
       await childScript.writeAsString(r'''
+from pathlib import Path
+import sys
 import time
 
 print("descendant owns inherited output", flush=True)
-time.sleep(300)
+deadline = time.monotonic() + 60
+while not Path(sys.argv[1]).exists() and time.monotonic() < deadline:
+    time.sleep(0.1)
 ''');
       await parentScript.writeAsString(r'''
 from pathlib import Path
@@ -1335,7 +1369,7 @@ import subprocess
 import sys
 
 child = subprocess.Popen(
-    [sys.executable, sys.argv[1]],
+    [sys.executable, sys.argv[1], sys.argv[3]],
     stdout=sys.stdout,
     stderr=sys.stderr,
 )
@@ -1347,7 +1381,11 @@ print("parent exited after spawning child", flush=True)
       addTearDown(() async {
         childPid ??= await _readPidFile(childPidFile);
         if (childPid != null) {
-          await _ensureWindowsProcessStopped(childPid!);
+          await childStopFile.writeAsString('stop');
+          await _ensureWindowsProcessStopped(
+            childPid!,
+            expectedCommandFragment: childScript.path,
+          );
         }
       });
 
@@ -1356,7 +1394,13 @@ print("parent exited after spawning child", flush=True)
       final stopwatch = Stopwatch()..start();
       try {
         await _runPython(
-          [parentScript.path, childScript.path, childPidFile.path, secret],
+          [
+            parentScript.path,
+            childScript.path,
+            childPidFile.path,
+            childStopFile.path,
+            secret,
+          ],
           timeout: const Duration(seconds: 5),
           waitUntilReady: () async {
             childPid = await _waitForPidFile(
@@ -1365,9 +1409,17 @@ print("parent exited after spawning child", flush=True)
             );
           },
           outputDrainTimeout: const Duration(seconds: 1),
-          outputDrainDescendantPid: () {
-            childPid ??= _readPidFileSync(childPidFile);
-            return childPid;
+          outputDrainDescendantCleanup: () async {
+            final descendantPid = childPid ??= _readPidFileSync(childPidFile);
+            if (descendantPid == null) {
+              return false;
+            }
+            await childStopFile.writeAsString('stop');
+            return _waitForWindowsProcessToStop(
+              descendantPid,
+              DateTime.now().add(const Duration(seconds: 25)),
+              expectedCommandFragment: childScript.path,
+            );
           },
           redactions: {root.path: '<temp>', secret: '<redacted>'},
         );
@@ -1390,6 +1442,7 @@ print("parent exited after spawning child", flush=True)
         await _waitForWindowsProcessToStop(
           childPid!,
           DateTime.now().add(const Duration(seconds: 10)),
+          expectedCommandFragment: childScript.path,
         ),
         isTrue,
       );
@@ -1522,6 +1575,38 @@ print("parent exited after spawning child", flush=True)
       expect(stopwatch.elapsed, lessThan(const Duration(seconds: 10)));
     },
     skip: Platform.isWindows ? false : 'validates Windows taskkill retries',
+  );
+
+  test(
+    'Windows cleanup fails closed when process identity is unknown',
+    () async {
+      var probeCalls = 0;
+
+      await expectLater(
+        _ensureWindowsProcessStopped(
+          12345,
+          expectedCommandFragment: 'synthetic-child-marker',
+          timeout: const Duration(milliseconds: 250),
+          identityProbe:
+              (
+                _, {
+                timeout = const Duration(seconds: 3),
+                required expectedCommandFragment,
+              }) async {
+                probeCalls++;
+                return _WindowsProcessIdentity.unknown;
+              },
+        ),
+        throwsA(
+          isA<TestFailure>().having(
+            (failure) => '$failure',
+            'message',
+            contains('refusing unsafe raw-PID cleanup'),
+          ),
+        ),
+      );
+      expect(probeCalls, greaterThan(0));
+    },
   );
 }
 
@@ -1693,10 +1778,10 @@ Future<ProcessResult> _runPython(
   String? executable,
   Duration? timeout,
   Duration outputDrainTimeout = const Duration(seconds: 5),
-  int? Function()? outputDrainDescendantPid,
+  Future<bool> Function()? outputDrainDescendantCleanup,
   Future<void> Function()? waitUntilReady,
   Map<String, String> redactions = const {},
-  void Function(int pid)? onStart,
+  void Function(Process process)? onStart,
 }) async {
   final resolvedExecutable =
       executable ?? (Platform.isWindows ? 'python' : 'python3');
@@ -1733,7 +1818,7 @@ Future<ProcessResult> _runPython(
       '$reason',
     );
   }
-  onStart?.call(process.pid);
+  onStart?.call(process);
   final stdout = _CappedTextBuffer(effectiveRedactions);
   final stderr = _CappedTextBuffer(effectiveRedactions);
   final stdoutSubscription = process.stdout
@@ -1811,17 +1896,11 @@ Future<ProcessResult> _runPython(
   );
   if (!outputDrained) {
     var cleanup = 'not-configured';
-    if (outputDrainDescendantPid != null) {
-      final descendantPid = outputDrainDescendantPid();
-      if (descendantPid == null) {
-        cleanup = 'missing-pid';
-      } else {
-        try {
-          await _ensureWindowsProcessStopped(descendantPid);
-          cleanup = 'confirmed';
-        } on Object {
-          cleanup = 'failed';
-        }
+    if (outputDrainDescendantCleanup != null) {
+      try {
+        cleanup = await outputDrainDescendantCleanup() ? 'confirmed' : 'failed';
+      } on Object {
+        cleanup = 'failed';
       }
     }
     await _cancelOutputSubscriptions(stdoutSubscription, stderrSubscription);
@@ -2123,20 +2202,43 @@ String _diagnosticTail(String value, {int maxCharacters = 4096}) {
   return '<truncated>\n${value.substring(value.length - maxCharacters)}';
 }
 
-Future<bool> _windowsProcessExists(
+enum _WindowsProcessIdentity { matching, absentOrDifferent, unknown }
+
+typedef _WindowsProcessIdentityProbe =
+    Future<_WindowsProcessIdentity> Function(
+      int pid, {
+      Duration timeout,
+      required String expectedCommandFragment,
+    });
+
+Future<_WindowsProcessIdentity> _windowsProcessIdentity(
   int pid, {
   Duration timeout = const Duration(seconds: 3),
+  required String expectedCommandFragment,
 }) async {
-  final probe = await Process.start('powershell', [
-    '-NoProfile',
-    '-NonInteractive',
-    '-Command',
-    'try { '
-        '[System.Diagnostics.Process]::GetProcessById(${pid.toString()}) '
-        '| Out-Null; exit 0 '
-        '} catch [System.ArgumentException] { exit 1 } '
-        'catch { exit 2 }',
-  ], runInShell: false);
+  const markerEnvironment = 'LLAMADART_EXPECTED_PROCESS_MARKER';
+  final probe = await Process.start(
+    'powershell',
+    [
+      '-NoProfile',
+      '-NonInteractive',
+      '-Command',
+      'try { '
+          '\$candidate = Get-CimInstance Win32_Process '
+          '-Filter "ProcessId = ${pid.toString()}" -ErrorAction Stop; '
+          'if (\$null -eq \$candidate) { exit 1 }; '
+          'if ([string]::IsNullOrEmpty(\$candidate.CommandLine)) { exit 2 }; '
+          'if (-not '
+          '\$candidate.CommandLine.Contains(\$env:$markerEnvironment)) { '
+          'exit 1 '
+          '} '
+          'exit 0 '
+          '} catch { exit 2 }',
+    ],
+    runInShell: false,
+    environment: {markerEnvironment: expectedCommandFragment},
+    includeParentEnvironment: true,
+  );
   final stdoutSubscription = probe.stdout.listen(null);
   final stderrSubscription = probe.stderr.listen(null);
   final stdoutDone = stdoutSubscription.asFuture<void>();
@@ -2157,12 +2259,12 @@ Future<bool> _windowsProcessExists(
     await _cancelOutputSubscriptions(stdoutSubscription, stderrSubscription);
   }
   if (timedOut) {
-    return true;
+    return _WindowsProcessIdentity.unknown;
   }
   return switch (exitCode) {
-    0 => true,
-    1 => false,
-    _ => true,
+    0 => _WindowsProcessIdentity.matching,
+    1 => _WindowsProcessIdentity.absentOrDifferent,
+    _ => _WindowsProcessIdentity.unknown,
   };
 }
 
@@ -2195,45 +2297,49 @@ int? _readPidFileSync(File file) {
   return int.tryParse(file.readAsStringSync().trim());
 }
 
-Future<void> _ensureWindowsProcessStopped(int pid) async {
-  if (!await _windowsProcessExists(pid)) {
+Future<void> _ensureWindowsProcessStopped(
+  int pid, {
+  required String expectedCommandFragment,
+  Duration timeout = const Duration(seconds: 25),
+  _WindowsProcessIdentityProbe? identityProbe,
+}) async {
+  // This helper receives only a numeric PID, not the Process handle that Dart
+  // opened for the synthetic child. Never terminate through that PID: Windows
+  // can recycle it between an identity probe and a later taskkill call. The
+  // fixtures self-expire so failed primary cleanup remains bounded and this
+  // fallback can safely wait without risking an unrelated process.
+  if (await _waitForWindowsProcessToStop(
+    pid,
+    DateTime.now().add(timeout),
+    expectedCommandFragment: expectedCommandFragment,
+    identityProbe: identityProbe,
+  )) {
     return;
   }
-  final treeCleanupDeadline = DateTime.now().add(const Duration(seconds: 15));
-  for (var killAttempt = 0; killAttempt < 2; killAttempt++) {
-    if (!DateTime.now().isBefore(treeCleanupDeadline)) {
-      break;
-    }
-    try {
-      final result = await _taskkillWindowsPid(
-        pid,
-        deadline: treeCleanupDeadline,
-      );
-      if (result.exitCode != 0 || result.timedOut) {
-        continue;
-      }
-    } on ProcessException {
-      continue;
-    }
-    if (await _waitForWindowsProcessToStop(pid, treeCleanupDeadline)) {
-      return;
-    }
-  }
-  Process.killPid(pid);
-  final directKillDeadline = DateTime.now().add(const Duration(seconds: 5));
-  if (await _waitForWindowsProcessToStop(pid, directKillDeadline)) {
-    return;
-  }
-  fail('Failed to terminate synthetic Windows process $pid.');
+  fail(
+    'Synthetic Windows process $pid did not stop; refusing unsafe raw-PID '
+    'cleanup.',
+  );
 }
 
-Future<bool> _waitForWindowsProcessToStop(int pid, DateTime deadline) async {
+Future<bool> _waitForWindowsProcessToStop(
+  int pid,
+  DateTime deadline, {
+  required String expectedCommandFragment,
+  _WindowsProcessIdentityProbe? identityProbe,
+}) async {
+  final probe = identityProbe ?? _windowsProcessIdentity;
   while (DateTime.now().isBefore(deadline)) {
     final remaining = deadline.difference(DateTime.now());
     final probeTimeout = remaining < const Duration(seconds: 3)
         ? remaining
         : const Duration(seconds: 3);
-    if (!await _windowsProcessExists(pid, timeout: probeTimeout)) {
+    final identity = await probe(
+      pid,
+      timeout: probeTimeout,
+      expectedCommandFragment: expectedCommandFragment,
+    );
+    if (identity == _WindowsProcessIdentity.absentOrDifferent) {
       return true;
     }
     await Future<void>.delayed(const Duration(milliseconds: 100));
