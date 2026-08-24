@@ -29,6 +29,24 @@ class HighRiskAssessment {
   bool get isHighRisk => surfaces.isNotEmpty;
 }
 
+/// Platform-independent result of classifying paths read from standard input.
+class HighRiskCliResult {
+  const HighRiskCliResult({
+    required this.exitCode,
+    required this.standardOutput,
+    required this.standardError,
+  });
+
+  /// Process exit code for the classifier invocation.
+  final int exitCode;
+
+  /// Text written to standard output.
+  final String standardOutput;
+
+  /// Text written to standard error.
+  final String standardError;
+}
+
 /// Classifies changed repository paths without reading or executing PR code.
 HighRiskAssessment assessHighRiskFiles(Iterable<String> files) {
   final changedFiles = files
@@ -168,8 +186,39 @@ String _usage() => '''Usage:
 The command reads one changed repository path per line from standard input.
 ''';
 
-Future<List<String>> _readPaths() async {
-  return stdin.transform(utf8.decoder).transform(const LineSplitter()).toList();
+Future<List<String>> _readPaths(Stream<List<int>> input) async {
+  return input.transform(utf8.decoder).transform(const LineSplitter()).toList();
+}
+
+/// Classifies UTF-8 path input without starting another Dart process.
+///
+/// Keeping stdin handling injectable makes the error contract portable on
+/// Windows, where recursively starting `dart run` from `dart test` can block
+/// on the package build-hook lock.
+Future<HighRiskCliResult> classifyHighRiskInput(Stream<List<int>> input) async {
+  late final List<String> paths;
+  try {
+    paths = await _readPaths(input);
+  } on FormatException {
+    return HighRiskCliResult(
+      exitCode: 65,
+      standardOutput: '',
+      standardError: 'Changed paths must be valid UTF-8.\n${_usage()}',
+    );
+  }
+  final assessment = assessHighRiskFiles(paths);
+  if (assessment.changedFiles.isEmpty) {
+    return HighRiskCliResult(
+      exitCode: 64,
+      standardOutput: '',
+      standardError: 'No changed paths were provided.\n${_usage()}',
+    );
+  }
+  return HighRiskCliResult(
+    exitCode: 0,
+    standardOutput: formatHighRiskAssessment(assessment),
+    standardError: '',
+  );
 }
 
 Future<void> main(List<String> args) async {
@@ -183,19 +232,8 @@ Future<void> main(List<String> args) async {
     return;
   }
 
-  late final List<String> paths;
-  try {
-    paths = await _readPaths();
-  } on FormatException {
-    stderr.write('Changed paths must be valid UTF-8.\n${_usage()}');
-    exitCode = 65;
-    return;
-  }
-  final assessment = assessHighRiskFiles(paths);
-  if (assessment.changedFiles.isEmpty) {
-    stderr.write('No changed paths were provided.\n${_usage()}');
-    exitCode = 64;
-    return;
-  }
-  stdout.write(formatHighRiskAssessment(assessment));
+  final result = await classifyHighRiskInput(stdin);
+  stdout.write(result.standardOutput);
+  stderr.write(result.standardError);
+  exitCode = result.exitCode;
 }
