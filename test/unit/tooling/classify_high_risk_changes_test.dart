@@ -24,11 +24,25 @@ void main() {
             'generated_tool_schema_grammar_test.dart',
         'tool/testing/run_llama_cpp_chat_tests.sh',
         'tool/testing/llama_cpp_templates.ref',
+        'test/e2e/template/'
+            'specialized_tool_grammar_validation_e2e_test.dart',
         'test/fixtures/templates/Kimi-K3.jinja',
       ]);
 
       expect(assessment.surfaces, contains(HighRiskSurface.structuredOutput));
     });
+
+    test(
+      'classifies LiteRT template generator inputs as structured output',
+      () {
+        final assessment = assessHighRiskFiles([
+          'tool/gen_litert_lm_templates.dart',
+          'tool/litert_lm_templates/gemma3.jinja',
+        ]);
+
+        expect(assessment.surfaces, contains(HighRiskSurface.structuredOutput));
+      },
+    );
 
     test('classifies backend, capability, and artifact consumers', () {
       final assessment = assessHighRiskFiles([

@@ -19,7 +19,10 @@ tool/testing/run_template_parity_suites.sh @leehack
 tool/testing/run_llama_cpp_chat_tests.sh @leehack
 tool/testing/prepare_llama_cpp_source.sh @leehack
 tool/testing/llama_cpp_templates.ref @leehack
+tool/gen_litert_lm_templates.dart @leehack
+tool/litert_lm_templates/ @leehack
 test/integration/core/grammar/generated_tool_schema_grammar_test.dart @leehack
+test/e2e/template/specialized_tool_grammar_validation_e2e_test.dart @leehack
 test/unit/tooling/high_risk_review_policy_test.dart @leehack
 tool/testing/verify_release_docs_versions.dart @leehack
 tool/testing/check_webgpu_bridge_tag.dart @leehack

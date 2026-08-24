@@ -63,6 +63,8 @@ bool _isStructuredOutput(String path) {
       path.startsWith('lib/src/core/template/') ||
       path.startsWith('lib/src/core/grammar/') ||
       path.startsWith('lib/src/core/models/tools/') ||
+      path == 'tool/gen_litert_lm_templates.dart' ||
+      path.startsWith('tool/litert_lm_templates/') ||
       path.contains('/chat_template') ||
       path.contains('/structured_output') ||
       path.endsWith('/tool_choice.dart') ||
@@ -82,6 +84,9 @@ bool _isStructuredOutputEvidence(String path) {
       path == 'tool/testing/prepare_llama_cpp_source.sh' ||
       path == 'tool/testing/llama_cpp_templates.ref' ||
       path == 'test/e2e/template/llama_cpp_chat_tests_e2e_test.dart' ||
+      path ==
+          'test/e2e/template/'
+              'specialized_tool_grammar_validation_e2e_test.dart' ||
       path.startsWith('test/integration/core/template/') ||
       path.startsWith('test/fixtures/templates/') ||
       path.startsWith('test/unit/core/template/');
@@ -157,7 +162,7 @@ String formatHighRiskAssessment(HighRiskAssessment assessment) {
 }
 
 String _usage() => '''Usage:
-  git diff --name-only <base>...HEAD | \\
+  git diff --name-only --no-renames <base>...HEAD | \\
     dart run tool/testing/classify_high_risk_changes.dart
 
 The command reads one changed repository path per line from standard input.

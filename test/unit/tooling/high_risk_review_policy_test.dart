@@ -39,6 +39,16 @@ void main() {
       expect(matrix, contains('compiled production-path coverage'));
     });
 
+    test('classifier help preserves rename and deletion visibility', () {
+      final classifier = read('tool/testing/classify_high_risk_changes.dart');
+
+      expect(
+        classifier,
+        contains('git diff --name-only --no-renames <base>...HEAD'),
+      );
+      expect(classifier, isNot(contains('git diff --name-only <base>...HEAD')));
+    });
+
     test('CODEOWNERS protects policy and landed execution evidence', () {
       final codeowners = read('.github/CODEOWNERS');
 
@@ -49,10 +59,15 @@ void main() {
         'tool/testing/classify_high_risk_changes.dart',
         'tool/testing/run_template_parity_suites.sh',
         'tool/testing/run_llama_cpp_chat_tests.sh',
+        'tool/gen_litert_lm_templates.dart',
+        'tool/litert_lm_templates/ @leehack',
         'test/integration/core/grammar/'
             'generated_tool_schema_grammar_test.dart',
+        'test/e2e/template/'
+            'specialized_tool_grammar_validation_e2e_test.dart',
       ]) {
-        expect(codeowners, contains('$path @leehack'), reason: path);
+        final rule = path.endsWith(' @leehack') ? path : '$path @leehack';
+        expect(codeowners, contains(rule), reason: path);
       }
     });
   });
