@@ -1535,7 +1535,6 @@ print("parent exited after spawning child", flush=True)
     },
     skip: Platform.isWindows ? false : 'validates Windows taskkill retries',
   );
-
 }
 
 Future<_LlamaSyncSetup> _writeLlamaOnlyRepo(String currentTag) async {
