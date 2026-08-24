@@ -278,7 +278,8 @@ void main() {
         contains(
           'bridgeLlamaCppDivergence records a divergence, but the bridge '
           'assets and $nativeLlamaCppTagPath both use b10545 — clear the '
-          'record and restore the parity wording in the docs',
+          'record and restore the parity wording in the docs, then update '
+          'the anchored bridgeLlamaCppTagPins patterns with the wording',
         ),
       );
     });
@@ -318,5 +319,27 @@ void main() {
         ),
       );
     });
+  });
+
+  test('malformed remote manifest JSON is reported without throwing', () async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(server.close);
+    server.listen((request) {
+      request.response
+        ..statusCode = HttpStatus.ok
+        ..write('{not-json')
+        ..close();
+    });
+
+    final errors = await verifyManifestLlamaCppTag(
+      'v9.9.9',
+      'b10514',
+      manifestUrl: Uri.parse(
+        'http://${server.address.host}:${server.port}/manifest.json',
+      ),
+    );
+
+    expect(errors, hasLength(1));
+    expect(errors.single, contains('returned invalid manifest JSON'));
   });
 }

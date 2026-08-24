@@ -250,7 +250,8 @@ List<String> findBridgeRuntimeDrift(
       problems.add(
         'bridgeLlamaCppDivergence records a divergence, but the bridge assets '
         'and $nativeLlamaCppTagPath both use $nativeTag — clear the record and '
-        'restore the parity wording in the docs',
+        'restore the parity wording in the docs, then update the anchored '
+        'bridgeLlamaCppTagPins patterns with the wording',
       );
     }
   } else if (divergence == null) {
@@ -290,12 +291,15 @@ List<String> findBridgeRuntimeDrift(
 /// Network-dependent, so it is opt-in rather than part of the default run.
 Future<List<String>> verifyManifestLlamaCppTag(
   String expectedTag,
-  String bridgeTag,
-) async {
-  final url = Uri.parse(
-    'https://cdn.jsdelivr.net/gh/leehack/llama-web-bridge-assets@$expectedTag'
-    '/manifest.json',
-  );
+  String bridgeTag, {
+  Uri? manifestUrl,
+}) async {
+  final url =
+      manifestUrl ??
+      Uri.parse(
+        'https://cdn.jsdelivr.net/gh/leehack/llama-web-bridge-assets@$expectedTag'
+        '/manifest.json',
+      );
   final client = HttpClient();
   try {
     final response = await client
@@ -305,8 +309,19 @@ Future<List<String>> verifyManifestLlamaCppTag(
       return <String>['$url returned HTTP ${response.statusCode}'];
     }
     final body = await response.transform(utf8.decoder).join();
-    final manifestTag =
-        (jsonDecode(body) as Map<String, dynamic>)['llama_cpp_tag'];
+    final decoded = jsonDecode(body);
+    if (decoded is! Map<String, dynamic>) {
+      return <String>[
+        '$url returned invalid manifest JSON: expected an object',
+      ];
+    }
+    final manifestTag = decoded['llama_cpp_tag'];
+    if (manifestTag is! String || manifestTag.isEmpty) {
+      return <String>[
+        '$url returned invalid manifest JSON: llama_cpp_tag must be a '
+            'non-empty string',
+      ];
+    }
     if (manifestTag != bridgeTag) {
       return <String>[
         '$url reports llama_cpp_tag $manifestTag, but bridgeLlamaCppTag is '
@@ -316,6 +331,8 @@ Future<List<String>> verifyManifestLlamaCppTag(
     return <String>[];
   } on IOException catch (error) {
     return <String>['could not read $url: $error'];
+  } on FormatException catch (error) {
+    return <String>['$url returned invalid manifest JSON: $error'];
   } finally {
     client.close();
   }

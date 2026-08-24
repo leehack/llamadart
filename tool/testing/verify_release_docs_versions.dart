@@ -256,7 +256,15 @@ Map<String, String>? _changelogSections(
     body.clear();
   }
 
-  for (final line in file.readAsLinesSync()) {
+  late final List<String> lines;
+  try {
+    lines = file.readAsLinesSync();
+  } on FileSystemException catch (error) {
+    errors.add('$path could not be read: $error');
+    return null;
+  }
+
+  for (final line in lines) {
     final match = RegExp(r'^##\s+(.*\S)\s*$').firstMatch(line);
     if (match != null) {
       flush();
@@ -282,7 +290,14 @@ String? _matchInFile(
     errors.add('$path does not exist.');
     return null;
   }
-  final match = pattern.firstMatch(file.readAsStringSync());
+  late final String contents;
+  try {
+    contents = file.readAsStringSync();
+  } on FileSystemException catch (error) {
+    errors.add('$path could not be read: $error');
+    return null;
+  }
+  final match = pattern.firstMatch(contents);
   if (match == null) {
     errors.add('$path does not contain its $what.');
     return null;

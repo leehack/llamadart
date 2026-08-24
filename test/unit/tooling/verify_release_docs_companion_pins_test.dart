@@ -138,4 +138,23 @@ void main() {
       ),
     );
   });
+
+  test('an unreadable changelog is reported without throwing', () {
+    final root = _fakeRepo(
+      swiftTag: 'b10545',
+      version: '0.0.15',
+      changelog: '## 0.0.15\n\n* Pin `leehack/llamadart-native@b10545`.\n',
+    );
+    final path = 'packages/llamadart_llama_cpp_flutter/CHANGELOG.md';
+    final changelog = File('${root.path}/$path');
+    final chmod = Process.runSync('chmod', <String>['000', changelog.path]);
+    expect(chmod.exitCode, 0);
+    addTearDown(
+      () => Process.runSync('chmod', <String>['600', changelog.path]),
+    );
+    final errors = <String>[];
+
+    expect(() => checkCompanionSwiftPins(root, errors), returnsNormally);
+    expect(errors, contains(contains('$path could not be read:')));
+  }, skip: Platform.isWindows ? 'requires POSIX file permissions' : false);
 }
