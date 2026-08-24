@@ -1210,8 +1210,7 @@ printf '%s\\n' '{"tag_name":"v0.2.0-1","assets":[]}'
       await childScript.writeAsString(r'''
 import time
 
-while True:
-    time.sleep(60)
+time.sleep(20)
 ''');
       await parentScript.writeAsString(r'''
 from pathlib import Path
@@ -1325,7 +1324,7 @@ time.sleep(300)
 import time
 
 print("descendant owns inherited output", flush=True)
-time.sleep(300)
+time.sleep(4)
 ''');
       await parentScript.writeAsString(r'''
 from pathlib import Path
@@ -2224,70 +2223,22 @@ Future<void> _ensureWindowsProcessStopped(
   int pid, {
   required String expectedCommandFragment,
 }) async {
-  final initialIdentity = await _windowsProcessIdentity(
-    pid,
-    expectedCommandFragment: expectedCommandFragment,
-  );
-  if (initialIdentity == _WindowsProcessIdentity.absentOrDifferent) {
-    return;
-  }
-  if (initialIdentity == _WindowsProcessIdentity.unknown) {
-    fail('Could not confirm synthetic Windows process $pid identity.');
-  }
-  final treeCleanupDeadline = DateTime.now().add(const Duration(seconds: 15));
-  for (var killAttempt = 0; killAttempt < 2; killAttempt++) {
-    if (!DateTime.now().isBefore(treeCleanupDeadline)) {
-      break;
-    }
-    final identity = await _windowsProcessIdentity(
-      pid,
-      expectedCommandFragment: expectedCommandFragment,
-    );
-    if (identity == _WindowsProcessIdentity.absentOrDifferent) {
-      return;
-    }
-    if (identity == _WindowsProcessIdentity.unknown) {
-      fail('Could not reconfirm synthetic Windows process $pid identity.');
-    }
-    try {
-      final result = await _taskkillWindowsPid(
-        pid,
-        deadline: treeCleanupDeadline,
-      );
-      if (result.exitCode != 0 || result.timedOut) {
-        continue;
-      }
-    } on ProcessException {
-      continue;
-    }
-    if (await _waitForWindowsProcessToStop(
-      pid,
-      treeCleanupDeadline,
-      expectedCommandFragment: expectedCommandFragment,
-    )) {
-      return;
-    }
-  }
-  final fallbackIdentity = await _windowsProcessIdentity(
-    pid,
-    expectedCommandFragment: expectedCommandFragment,
-  );
-  if (fallbackIdentity == _WindowsProcessIdentity.absentOrDifferent) {
-    return;
-  }
-  if (fallbackIdentity == _WindowsProcessIdentity.unknown) {
-    fail('Could not reconfirm synthetic Windows process $pid identity.');
-  }
-  Process.killPid(pid);
-  final directKillDeadline = DateTime.now().add(const Duration(seconds: 5));
+  // This helper receives only a numeric PID, not the Process handle that Dart
+  // opened for the synthetic child. Never terminate through that PID: Windows
+  // can recycle it between an identity probe and a later taskkill call. The
+  // fixtures self-expire so failed primary cleanup remains bounded and this
+  // fallback can safely wait without risking an unrelated process.
   if (await _waitForWindowsProcessToStop(
     pid,
-    directKillDeadline,
+    DateTime.now().add(const Duration(seconds: 25)),
     expectedCommandFragment: expectedCommandFragment,
   )) {
     return;
   }
-  fail('Failed to terminate synthetic Windows process $pid.');
+  fail(
+    'Synthetic Windows process $pid did not stop; refusing unsafe raw-PID '
+    'cleanup.',
+  );
 }
 
 Future<bool> _waitForWindowsProcessToStop(
