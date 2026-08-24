@@ -129,7 +129,14 @@ String readPinnedBridgeTag(Directory repoRoot) {
   if (!file.existsSync()) {
     throw FormatException('Missing $bridgeTagSourcePath');
   }
-  final source = file.readAsStringSync();
+  late final String source;
+  try {
+    source = file.readAsStringSync();
+  } on FileSystemException catch (error) {
+    throw FormatException('$bridgeTagSourcePath could not be read: $error');
+  } on FormatException catch (error) {
+    throw FormatException('$bridgeTagSourcePath could not be decoded: $error');
+  }
   // Bash takes the last assignment, so a second one would leave this gate
   // validating a tag the script never downloads.
   final assignments = _anyAssignment.allMatches(source).length;
@@ -160,7 +167,9 @@ List<String> findBridgeTagDrift(Directory repoRoot, String expectedTag) {
       problems.add('${pin.path}: file is missing');
       continue;
     }
-    final matches = pin.pattern.allMatches(file.readAsStringSync()).toList();
+    final contents = _readGateFile(file, pin.path, problems);
+    if (contents == null) continue;
+    final matches = pin.pattern.allMatches(contents).toList();
     if (matches.length != 1) {
       problems.add(
         '${pin.path}: ${pin.pattern.pattern} matches ${matches.length} lines, '
@@ -237,7 +246,9 @@ List<String> findBridgeRuntimeDrift(
   if (!file.existsSync()) {
     return <String>['$nativeLlamaCppTagPath: file is missing'];
   }
-  final match = _nativeLlamaCppTag.firstMatch(file.readAsStringSync());
+  final nativeContents = _readGateFile(file, nativeLlamaCppTagPath, problems);
+  if (nativeContents == null) return problems;
+  final match = _nativeLlamaCppTag.firstMatch(nativeContents);
   if (match == null) {
     return <String>[
       '$nativeLlamaCppTagPath: no _llamaCppTag constant; the gate cannot run',
@@ -268,7 +279,9 @@ List<String> findBridgeRuntimeDrift(
       problems.add('${pin.path}: file is missing');
       continue;
     }
-    final matches = pin.pattern.allMatches(doc.readAsStringSync()).toList();
+    final contents = _readGateFile(doc, pin.path, problems);
+    if (contents == null) continue;
+    final matches = pin.pattern.allMatches(contents).toList();
     if (matches.length != 1) {
       problems.add(
         '${pin.path}: ${pin.pattern.pattern} matches ${matches.length} lines, '
@@ -283,6 +296,17 @@ List<String> findBridgeRuntimeDrift(
     }
   }
   return problems;
+}
+
+String? _readGateFile(File file, String path, List<String> problems) {
+  try {
+    return file.readAsStringSync();
+  } on FileSystemException catch (error) {
+    problems.add('$path: could not be read: $error');
+  } on FormatException catch (error) {
+    problems.add('$path: could not be decoded as UTF-8 text: $error');
+  }
+  return null;
 }
 
 /// Re-reads the published manifest for [expectedTag] and returns one message

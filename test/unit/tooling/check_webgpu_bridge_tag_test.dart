@@ -239,6 +239,23 @@ void main() {
     expect(() => readPinnedBridgeTag(root), throwsFormatException);
   });
 
+  test('an unreadable registered pin is reported without throwing', () {
+    final root = _fakeRepo(
+      'v9.9.9',
+      files: <String, String>{
+        'README.md':
+            '| Web llama.cpp / GGUF | '
+            '`leehack/llama-web-bridge-assets@v9.9.9` |\n',
+      },
+    );
+    final file = File('${root.path}/README.md');
+    expect(Process.runSync('chmod', ['000', file.path]).exitCode, 0);
+    addTearDown(() => Process.runSync('chmod', ['600', file.path]));
+
+    final problems = findBridgeTagDrift(root, 'v9.9.9');
+    expect(problems, contains(contains('README.md: could not be read:')));
+  }, skip: Platform.isWindows ? 'requires POSIX file permissions' : false);
+
   group('Web/native llama.cpp relationship', () {
     test('the checked-in repo agrees with its recorded divergence', () {
       expect(
@@ -319,6 +336,18 @@ void main() {
         ),
       );
     });
+
+    test('an unreadable native pin is reported without throwing', () {
+      final root = _fakeRuntimeRepo(bridgeTag: 'b10514', nativeTag: 'b10545');
+      final file = File('${root.path}/$nativeLlamaCppTagPath');
+      expect(Process.runSync('chmod', ['000', file.path]).exitCode, 0);
+      addTearDown(() => Process.runSync('chmod', ['600', file.path]));
+
+      expect(
+        findBridgeRuntimeDrift(root, 'b10514', 'because'),
+        contains(contains('$nativeLlamaCppTagPath: could not be read:')),
+      );
+    }, skip: Platform.isWindows ? 'requires POSIX file permissions' : false);
   });
 
   test('malformed remote manifest JSON is reported without throwing', () async {
