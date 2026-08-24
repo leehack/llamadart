@@ -74,6 +74,43 @@ List<String> _releaseWorkflowContractProblems(String workflow) {
   return problems;
 }
 
+List<String> _releaseDocsCliContractProblems(String source) {
+  final problems = <String>[];
+  final companionCheck = RegExp(
+    r'pending = checkCompanionSwiftPins\(\s*Directory\.current,\s*errors\s*\);',
+    multiLine: true,
+  ).allMatches(source).toList();
+  final strictMode = RegExp(
+    r'if \(releasePrep\) \{\s*'
+    r'errors\.addAll\(pending\.map\(\(bump\) => bump\.toString\(\)\)\);\s*\}',
+    multiLine: true,
+  ).allMatches(source).toList();
+  if (companionCheck.length != 1) {
+    problems.add(
+      'expected one production companion-pin check, found '
+      '${companionCheck.length}',
+    );
+  }
+  if (strictMode.length != 1) {
+    problems.add(
+      'expected one fail-closed release-prep pending-bump check, found '
+      '${strictMode.length}',
+    );
+  }
+
+  final errorGuard = source.indexOf('if (errors.isNotEmpty) {');
+  if (companionCheck.length == 1 &&
+      strictMode.length == 1 &&
+      !(companionCheck.single.start < strictMode.single.start &&
+          strictMode.single.start < errorGuard)) {
+    problems.add(
+      'companion-pin and release-prep checks must run before success can be '
+      'reported',
+    );
+  }
+  return problems;
+}
+
 void main() {
   test(
     'release workflow runs the strict gate before publication authority',
@@ -115,6 +152,45 @@ void main() {
               publishStep,
               '$publishStep\n          $strictCommand',
             ),
+      ),
+      isNotEmpty,
+    );
+  });
+
+  test('release docs CLI wires companion checks into strict mode', () {
+    final source = File(
+      'tool/testing/verify_release_docs_versions.dart',
+    ).readAsStringSync();
+
+    expect(_releaseDocsCliContractProblems(source), isEmpty);
+  });
+
+  test('release docs CLI contract rejects deletion and bypass', () {
+    final source = File(
+      'tool/testing/verify_release_docs_versions.dart',
+    ).readAsStringSync();
+
+    expect(
+      _releaseDocsCliContractProblems(
+        source.replaceFirst(
+          'checkCompanionSwiftPins(Directory.current, errors)',
+          'checkCompanionSwiftPins(Directory.systemTemp, errors)',
+        ),
+      ),
+      isNotEmpty,
+    );
+    expect(
+      _releaseDocsCliContractProblems(
+        source.replaceFirst('if (releasePrep) {', 'if (false) {'),
+      ),
+      isNotEmpty,
+    );
+    expect(
+      _releaseDocsCliContractProblems(
+        source.replaceFirst(
+          'pending = checkCompanionSwiftPins(Directory.current, errors);',
+          '',
+        ),
       ),
       isNotEmpty,
     );

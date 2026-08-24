@@ -7,6 +7,45 @@ import 'package:test/test.dart';
 
 import '../../../tool/testing/check_webgpu_bridge_tag.dart';
 
+List<String> _bridgeCliContractProblems(String source) {
+  final problems = <String>[];
+  final runtimeCheck = RegExp(
+    r'\.\.\.findBridgeRuntimeDrift\(\s*repoRoot,\s*bridgeLlamaCppTag,\s*'
+    r'bridgeLlamaCppDivergence,\s*\),',
+    multiLine: true,
+  ).allMatches(source).toList();
+  final manifestCheck = RegExp(
+    r'if \(verifyManifest\)\s*'
+    r'\.\.\.await verifyManifestLlamaCppTag\('
+    r'expectedTag, bridgeLlamaCppTag\),',
+    multiLine: true,
+  ).allMatches(source).toList();
+  if (runtimeCheck.length != 1) {
+    problems.add(
+      'expected one production Web/native runtime drift check, found '
+      '${runtimeCheck.length}',
+    );
+  }
+  if (manifestCheck.length != 1) {
+    problems.add(
+      'expected one opt-in production manifest check, found '
+      '${manifestCheck.length}',
+    );
+  }
+
+  final errorGuard = source.indexOf('if (problems.isNotEmpty) {');
+  if (runtimeCheck.length == 1 &&
+      manifestCheck.length == 1 &&
+      !(runtimeCheck.single.start < manifestCheck.single.start &&
+          manifestCheck.single.start < errorGuard)) {
+    problems.add(
+      'runtime-drift and manifest checks must run before success can be '
+      'reported',
+    );
+  }
+  return problems;
+}
+
 Directory _fakeRepo(String assetsTag, {Map<String, String> files = const {}}) {
   final root = Directory.systemTemp.createTempSync('bridge_tag_gate');
   addTearDown(() => root.deleteSync(recursive: true));
@@ -53,6 +92,47 @@ Directory _fakeRuntimeRepo({
 }
 
 void main() {
+  test('bridge CLI wires runtime drift and opt-in manifest checks', () {
+    final source = File(
+      'tool/testing/check_webgpu_bridge_tag.dart',
+    ).readAsStringSync();
+
+    expect(_bridgeCliContractProblems(source), isEmpty);
+  });
+
+  test('bridge CLI contract rejects deletion, bypass, and miswiring', () {
+    final source = File(
+      'tool/testing/check_webgpu_bridge_tag.dart',
+    ).readAsStringSync();
+
+    expect(
+      _bridgeCliContractProblems(
+        source.replaceFirst(
+          '...findBridgeRuntimeDrift(',
+          '...findBridgeTagDrift(',
+        ),
+      ),
+      isNotEmpty,
+    );
+    expect(
+      _bridgeCliContractProblems(
+        source.replaceFirst(
+          'repoRoot,\n      bridgeLlamaCppTag,\n      bridgeLlamaCppDivergence,',
+          'Directory.systemTemp,\n'
+              '      bridgeLlamaCppTag,\n'
+              '      bridgeLlamaCppDivergence,',
+        ),
+      ),
+      isNotEmpty,
+    );
+    expect(
+      _bridgeCliContractProblems(
+        source.replaceFirst('if (verifyManifest)', 'if (false)'),
+      ),
+      isNotEmpty,
+    );
+  });
+
   test('the checked-in pins all quote the source of truth', () {
     final repoRoot = Directory.current;
     expect(
