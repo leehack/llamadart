@@ -303,6 +303,32 @@ rationale in the thread before resolving it; classification alone is not a
 substitute for closing the thread. Do not merge while any review thread remains
 unresolved.
 
+Treat parser, grammar, streaming-protocol, backend/runtime-routing, capability-
+probe, artifact-consumer, release-automation, and regression-policy changes as
+high risk. Before mark-ready, run a blocking-only QA pass that is independent
+from the implementation task and reviews the exact PR head against the current
+base. Classify changed paths with
+`tool/testing/classify_high_risk_changes.dart`. Inspect production call sites
+and require issue-specific positive and negative tests that fail if the
+relevant branch is deleted, bypassed, or miswired.
+Record zero known PR-caused P1 regressions and zero unresolved review threads
+in the PR's high-risk block.
+
+Structured-output changes must cover compiled grammar acceptance and rejection,
+schema-directed scalar and container reconstruction, partial-streaming
+suppression and malformed-final rollback, `auto`/`required`/`none` tool choice
+with thinking prefixes, and pinned/current upstream parity as applicable. Use
+the closest affected-family model or artifact. If exact weights are unavailable,
+name every unavailable family and use primary upstream emissions plus durable
+fixtures; an unrelated representative model is pipeline-only evidence.
+
+Post-merge QA remains mandatory, but it must not be the first adversarial pass.
+If it finds a PR-caused P1, stop lower-priority merge work, file a causally
+accurate issue, and prepare one cohesive recovery before resuming feature work.
+Security-sensitive required-check publication and repository settings remain a
+separate owner-controlled boundary; do not weaken these review requirements
+while that enforcement is absent or being changed.
+
 For docs-only PRs, state that runtime behavior is unchanged and list docs
 validation. If implementation scope changed, reduce and state the scope rather
 than merging incomplete behavior.
