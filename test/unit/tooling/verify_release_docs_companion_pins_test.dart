@@ -139,6 +139,26 @@ void main() {
     );
   });
 
+  test('duplicate CHANGELOG sections fail closed', () {
+    final root = _fakeRepo(
+      swiftTag: 'b10545',
+      version: '0.0.15',
+      changelog:
+          '## 0.0.15\n\n* Pin `leehack/llamadart-native@b10545`.\n\n'
+          '## 0.0.15\n\n* Pin `leehack/llamadart-native@b10514`.\n',
+    );
+    final errors = <String>[];
+
+    expect(checkCompanionSwiftPins(root, errors), isEmpty);
+    expect(
+      errors,
+      contains(
+        'packages/llamadart_llama_cpp_flutter/CHANGELOG.md contains '
+        'duplicate `## 0.0.15` sections.',
+      ),
+    );
+  });
+
   test('an unreadable changelog is reported without throwing', () {
     final root = _fakeRepo(
       swiftTag: 'b10545',

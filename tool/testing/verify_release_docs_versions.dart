@@ -246,12 +246,18 @@ Map<String, String>? _changelogSections(
     return null;
   }
   final sections = <String, String>{};
+  var hasDuplicateHeading = false;
   String? heading;
   final body = StringBuffer();
   void flush() {
     final current = heading;
     if (current != null) {
-      sections.putIfAbsent(current, () => body.toString());
+      if (sections.containsKey(current)) {
+        errors.add('$path contains duplicate `## $current` sections.');
+        hasDuplicateHeading = true;
+      } else {
+        sections[current] = body.toString();
+      }
     }
     body.clear();
   }
@@ -274,7 +280,7 @@ Map<String, String>? _changelogSections(
     body.writeln(line);
   }
   flush();
-  return sections;
+  return hasDuplicateHeading ? null : sections;
 }
 
 /// Returns group 1 of [pattern] in [path], recording an error when absent.

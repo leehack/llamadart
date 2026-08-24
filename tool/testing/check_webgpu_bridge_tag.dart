@@ -6,6 +6,7 @@
 // releases legitimately hold older values and are deliberately absent, as is
 // website/versioned_docs/**, which is a frozen archive.
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -319,6 +320,7 @@ Future<List<String>> verifyManifestLlamaCppTag(
   String expectedTag,
   String bridgeTag, {
   Uri? manifestUrl,
+  Duration timeout = const Duration(seconds: 15),
 }) async {
   final url =
       manifestUrl ??
@@ -328,33 +330,40 @@ Future<List<String>> verifyManifestLlamaCppTag(
       );
   final client = HttpClient();
   try {
-    final response = await client
-        .getUrl(url)
-        .then((request) => request.close());
-    if (response.statusCode != 200) {
-      return <String>['$url returned HTTP ${response.statusCode}'];
+    Future<List<String>> fetchManifest() async {
+      final request = await client.getUrl(url);
+      final response = await request.close();
+      if (response.statusCode != 200) {
+        return <String>['$url returned HTTP ${response.statusCode}'];
+      }
+      final body = await response.transform(utf8.decoder).join();
+      final decoded = jsonDecode(body);
+      if (decoded is! Map<String, dynamic>) {
+        return <String>[
+          '$url returned invalid manifest JSON: expected an object',
+        ];
+      }
+      final manifestTag = decoded['llama_cpp_tag'];
+      if (manifestTag is! String || manifestTag.isEmpty) {
+        return <String>[
+          '$url returned invalid manifest JSON: llama_cpp_tag must be a '
+              'non-empty string',
+        ];
+      }
+      if (manifestTag != bridgeTag) {
+        return <String>[
+          '$url reports llama_cpp_tag $manifestTag, but bridgeLlamaCppTag is '
+              '$bridgeTag',
+        ];
+      }
+      return <String>[];
     }
-    final body = await response.transform(utf8.decoder).join();
-    final decoded = jsonDecode(body);
-    if (decoded is! Map<String, dynamic>) {
-      return <String>[
-        '$url returned invalid manifest JSON: expected an object',
-      ];
-    }
-    final manifestTag = decoded['llama_cpp_tag'];
-    if (manifestTag is! String || manifestTag.isEmpty) {
-      return <String>[
-        '$url returned invalid manifest JSON: llama_cpp_tag must be a '
-            'non-empty string',
-      ];
-    }
-    if (manifestTag != bridgeTag) {
-      return <String>[
-        '$url reports llama_cpp_tag $manifestTag, but bridgeLlamaCppTag is '
-            '$bridgeTag',
-      ];
-    }
-    return <String>[];
+
+    return await fetchManifest().timeout(timeout);
+  } on TimeoutException {
+    return <String>[
+      'timed out reading $url after ${timeout.inMilliseconds} ms',
+    ];
   } on IOException catch (error) {
     return <String>['could not read $url: $error'];
   } on FormatException catch (error) {

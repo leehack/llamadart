@@ -371,4 +371,26 @@ void main() {
     expect(errors, hasLength(1));
     expect(errors.single, contains('returned invalid manifest JSON'));
   });
+
+  test('a stalled remote manifest request times out', () async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(server.close);
+    server.listen((request) {
+      request.response.statusCode = HttpStatus.ok;
+      request.response.headers.contentType = ContentType.json;
+      request.response.write('{"llama_cpp_tag":"b10514"');
+    });
+
+    final errors = await verifyManifestLlamaCppTag(
+      'v9.9.9',
+      'b10514',
+      manifestUrl: Uri.parse(
+        'http://${server.address.host}:${server.port}/manifest.json',
+      ),
+      timeout: const Duration(milliseconds: 50),
+    );
+
+    expect(errors, hasLength(1));
+    expect(errors.single, contains('timed out reading'));
+  });
 }
