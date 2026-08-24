@@ -202,12 +202,23 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
             fixture_dir = Path(temp)
             fixture = fixture_dir / f"leehack__litert-lm-native__{tag}__manifest.json"
             fixture.write_bytes(owner_fixture.read_bytes())
+            manifest_asset["digest"] = (
+                "sha256:" + hashlib.sha256(fixture.read_bytes()).hexdigest()
+            )
             upstream_ref_fixture = (
                 fixture_dir
                 / "google-ai-edge__LiteRT-LM__v0.16.0__commit.json"
             )
             upstream_ref_fixture.write_text(
                 json.dumps({"sha": manifest["upstream"]["commit"]}),
+                encoding="utf-8",
+            )
+            native_ref_fixture = (
+                fixture_dir
+                / f"leehack__litert-lm-native__{tag}__commit.json"
+            )
+            native_ref_fixture.write_text(
+                json.dumps({"sha": manifest["native"]["commit"]}),
                 encoding="utf-8",
             )
             checksum_fixture = (
@@ -235,6 +246,77 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
                 required_bundles=required_bundles,
             )
 
+            native_ref_fixture.write_text(
+                json.dumps({"sha": "1" * 40}), encoding="utf-8"
+            )
+            with self.assertRaisesRegex(ReleaseError, "exact native tag"):
+                validate_litert_lm_release_manifest(
+                    release,
+                    repo="leehack/litert-lm-native",
+                    tag=tag,
+                    release_json_dir=str(fixture_dir),
+                    required_bundles=required_bundles,
+                )
+            native_ref_fixture.write_text(
+                json.dumps({"sha": manifest["native"]["commit"]}),
+                encoding="utf-8",
+            )
+
+            checksum_digest = checksum_asset["digest"]
+            checksum_asset["digest"] = [checksum_digest]
+            with self.assertRaisesRegex(ReleaseError, "invalid GitHub SHA-256"):
+                validate_litert_lm_release_manifest(
+                    release,
+                    repo="leehack/litert-lm-native",
+                    tag=tag,
+                    release_json_dir=str(fixture_dir),
+                    required_bundles=required_bundles,
+                )
+            checksum_asset["digest"] = checksum_digest
+
+            original_artifact_digest = manifest["artifacts"][0]["sha256"]
+            manifest["artifacts"][0]["sha256"] = int("1" * 64)
+            fixture.write_text(json.dumps(manifest), encoding="utf-8")
+            manifest_asset["digest"] = (
+                "sha256:" + hashlib.sha256(fixture.read_bytes()).hexdigest()
+            )
+            with self.assertRaisesRegex(ReleaseError, "artifact digest"):
+                validate_litert_lm_release_manifest(
+                    release,
+                    repo="leehack/litert-lm-native",
+                    tag=tag,
+                    release_json_dir=str(fixture_dir),
+                    required_bundles=required_bundles,
+                )
+            manifest["artifacts"][0]["sha256"] = original_artifact_digest
+
+            original_native_commit = manifest["native"]["commit"]
+            numeric_native_commit = int("1" * 40)
+            manifest["native"]["commit"] = numeric_native_commit
+            release["target_commitish"] = numeric_native_commit
+            for smoke in manifest["realModelSmokes"]:
+                smoke["nativeCommit"] = numeric_native_commit
+            fixture.write_text(json.dumps(manifest), encoding="utf-8")
+            manifest_asset["digest"] = (
+                "sha256:" + hashlib.sha256(fixture.read_bytes()).hexdigest()
+            )
+            with self.assertRaisesRegex(ReleaseError, "native commit"):
+                validate_litert_lm_release_manifest(
+                    release,
+                    repo="leehack/litert-lm-native",
+                    tag=tag,
+                    release_json_dir=str(fixture_dir),
+                    required_bundles=required_bundles,
+                )
+            manifest["native"]["commit"] = original_native_commit
+            release["target_commitish"] = original_native_commit
+            for smoke in manifest["realModelSmokes"]:
+                smoke["nativeCommit"] = original_native_commit
+            fixture.write_text(json.dumps(manifest), encoding="utf-8")
+            manifest_asset["digest"] = (
+                "sha256:" + hashlib.sha256(fixture.read_bytes()).hexdigest()
+            )
+
             fixture.write_bytes(b"\xff")
             with self.assertRaisesRegex(ReleaseError, "Failed to read release manifest"):
                 validate_litert_lm_release_manifest(
@@ -245,6 +327,9 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
                     required_bundles=required_bundles,
                 )
             fixture.write_bytes(owner_fixture.read_bytes())
+            manifest_asset["digest"] = (
+                "sha256:" + hashlib.sha256(fixture.read_bytes()).hexdigest()
+            )
 
             upstream_ref_fixture.write_text("{", encoding="utf-8")
             with self.assertRaisesRegex(ReleaseError, "Failed to resolve exact commit"):

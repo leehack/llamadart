@@ -218,6 +218,26 @@ def require_exact_keys(value: Any, expected: set[str], label: str) -> None:
         )
 
 
+def require_string(value: Any, label: str) -> str:
+    if not isinstance(value, str) or not value:
+        raise ReleaseError(f"LiteRT-LM {label} must be a non-empty string")
+    return value
+
+
+def require_full_commit(value: Any, label: str) -> str:
+    commit = require_string(value, label)
+    if not FULL_COMMIT_RE.fullmatch(commit):
+        raise ReleaseError(f"LiteRT-LM {label} must be an exact 40-hex commit")
+    return commit
+
+
+def require_sha256(value: Any, label: str) -> str:
+    digest = require_string(value, label)
+    if not SHA256_RE.fullmatch(digest):
+        raise ReleaseError(f"LiteRT-LM {label} must be an exact SHA-256 digest")
+    return digest
+
+
 def required_litert_manifest_paths(
     compatibility_tag: str,
     release_tag: str,
@@ -358,7 +378,9 @@ def validate_litert_release_sha256_sums(
         ) from error
     actual = parse_sha256_sums(checksum_text, tag)
     expected = {
-        str(artifact["path"]): str(artifact["sha256"])
+        require_string(artifact["path"], "artifact path"): require_sha256(
+            artifact["sha256"], "artifact digest"
+        )
         for artifact in manifest["artifacts"]
     }
     if actual != expected:
@@ -776,8 +798,12 @@ def github_auth_header() -> dict[str, str]:
 def release_asset_checksum(release: dict[str, Any], asset_name: str) -> str:
     asset = find_release_asset(release, asset_name)
     if asset is not None:
-        digest = asset.get("digest") or ""
-        if digest.startswith("sha256:"):
+        digest = asset.get("digest")
+        if digest not in (None, "") and not isinstance(digest, str):
+            raise ReleaseError(
+                f"Asset {asset_name} has a non-string GitHub SHA-256 digest"
+            )
+        if isinstance(digest, str) and digest.startswith("sha256:"):
             checksum = digest.removeprefix("sha256:")
             if not SHA256_RE.fullmatch(checksum):
                 raise ReleaseError(
@@ -785,7 +811,7 @@ def release_asset_checksum(release: dict[str, Any], asset_name: str) -> str:
                 )
             return checksum
         download_url = asset.get("browser_download_url")
-        if not download_url:
+        if not isinstance(download_url, str) or not download_url:
             raise ReleaseError(f"Asset {asset_name} has no download URL")
         return sha256_url(download_url)
     tag = release.get("tag_name", "<unknown>")
@@ -1504,11 +1530,26 @@ def validate_litert_lm_release_manifest(
             raise ReleaseError(
                 f"Legacy release {repo}@{tag} tag commit is not immutable allowlist evidence"
             )
-        actual_assets = {
-            str(asset.get("name")): str(asset.get("digest"))
-            for asset in release.get("assets", [])
-            if isinstance(asset, dict)
-        }
+        release_assets_value = release.get("assets")
+        if not isinstance(release_assets_value, list):
+            raise ReleaseError(
+                f"Legacy release {repo}@{tag} asset inventory is invalid"
+            )
+        actual_assets: dict[str, str] = {}
+        for asset in release_assets_value:
+            if not isinstance(asset, dict):
+                raise ReleaseError(
+                    f"Legacy release {repo}@{tag} asset inventory is invalid"
+                )
+            name = require_string(asset.get("name"), "legacy release asset name")
+            digest = require_string(
+                asset.get("digest"), "legacy release asset digest"
+            )
+            if name in actual_assets:
+                raise ReleaseError(
+                    f"Legacy release {repo}@{tag} asset inventory has duplicates"
+                )
+            actual_assets[name] = digest
         if actual_assets != expected_assets:
             raise ReleaseError(
                 f"Legacy release {repo}@{tag} asset digests are not immutable allowlist evidence"
@@ -1544,20 +1585,37 @@ def validate_litert_lm_release_manifest(
 
     upstream = manifest.get("upstream")
     native = manifest.get("native")
-    if not isinstance(upstream, dict) or not FULL_COMMIT_RE.fullmatch(
-        str(upstream.get("commit", ""))
-    ):
+    if not isinstance(upstream, dict):
         raise ReleaseError("LiteRT-LM manifest is missing an exact upstream commit")
-    if not isinstance(native, dict) or not FULL_COMMIT_RE.fullmatch(
-        str(native.get("commit", ""))
-    ):
+    if not isinstance(native, dict):
         raise ReleaseError("LiteRT-LM manifest is missing an exact native commit")
-    if upstream.get("repository") != "google-ai-edge/LiteRT-LM":
+    upstream_repository = require_string(
+        upstream.get("repository"), "upstream repository"
+    )
+    upstream_commit = require_full_commit(
+        upstream.get("commit"), "upstream commit"
+    )
+    native_repository = require_string(native.get("repository"), "native repository")
+    native_commit = require_full_commit(native.get("commit"), "native commit")
+    if upstream_repository != "google-ai-edge/LiteRT-LM":
         raise ReleaseError("LiteRT-LM manifest has an unexpected upstream repository")
-    if native.get("repository") != repo:
+    if native_repository != repo:
         raise ReleaseError("LiteRT-LM manifest has an unexpected native repository")
-    if release.get("target_commitish") != native["commit"]:
+    release_target = require_full_commit(
+        release.get("target_commitish"), "release target commit"
+    )
+    if release_target != native_commit:
         raise ReleaseError("LiteRT-LM release target does not match native commit")
+    resolved_native_commit = fetch_ref_commit(
+        native_repository,
+        tag,
+        release_json_dir,
+        release,
+    )
+    if resolved_native_commit != native_commit:
+        raise ReleaseError(
+            "LiteRT-LM manifest native commit does not match the exact native tag"
+        )
 
     stable_rebuild = STABLE_LITERT_REBUILD_RE.fullmatch(tag)
     development = DEVELOPMENT_LITERT_TAG_RE.fullmatch(tag)
@@ -1567,7 +1625,7 @@ def validate_litert_lm_release_manifest(
         expected_rebuild = (
             int(development_parts[1]) if len(development_parts) == 2 else 0
         )
-        expected_base = f"g{upstream['commit'][:12]}"
+        expected_base = f"g{upstream_commit[:12]}"
         if tag != expected_base and not tag.startswith(f"{expected_base}-"):
             raise ReleaseError(
                 f"Development release {tag} does not match upstream commit {upstream['commit']}"
@@ -1577,8 +1635,8 @@ def validate_litert_lm_release_manifest(
         if upstream.get("developmentIdentity") != expected_base:
             raise ReleaseError("Development identity does not match upstream commit")
         resolved_upstream_commit = fetch_ref_commit(
-            str(upstream["repository"]),
-            str(upstream["commit"]),
+            upstream_repository,
+            upstream_commit,
             release_json_dir,
         )
         expected_channel = "development"
@@ -1587,26 +1645,30 @@ def validate_litert_lm_release_manifest(
         expected_upstream_tag = (
             tag.rsplit("-", 1)[0] if stable_rebuild else tag
         )
-        if upstream.get("tag") != expected_upstream_tag:
+        upstream_tag = require_string(upstream.get("tag"), "upstream tag")
+        if upstream_tag != expected_upstream_tag:
             raise ReleaseError(
                 f"Stable release {tag} must use upstream tag {expected_upstream_tag}"
             )
         if upstream.get("compatibilityTag") != expected_upstream_tag:
             raise ReleaseError("Stable compatibility tag must equal its upstream tag")
         resolved_upstream_commit = fetch_ref_commit(
-            str(upstream["repository"]),
+            upstream_repository,
             expected_upstream_tag,
             release_json_dir,
         )
         expected_channel = "stable"
         expected_kind = "rebuild" if expected_rebuild > 0 else "upstream"
 
-    if resolved_upstream_commit != upstream["commit"]:
+    if resolved_upstream_commit != upstream_commit:
         raise ReleaseError(
             "LiteRT-LM manifest upstream commit does not match the exact upstream ref"
         )
 
-    if not STABLE_LITERT_TAG_RE.fullmatch(str(upstream.get("compatibilityTag", ""))):
+    compatibility_tag = require_string(
+        upstream.get("compatibilityTag"), "compatibility tag"
+    )
+    if not STABLE_LITERT_TAG_RE.fullmatch(compatibility_tag):
         raise ReleaseError("LiteRT-LM manifest has an invalid compatibility tag")
     expected_prerelease = development is not None or expected_rebuild > 0
     expected_release_fields = {
@@ -1635,7 +1697,7 @@ def validate_litert_lm_release_manifest(
     require_exact_keys(native, {"repository", "commit"}, "native provenance")
     if not isinstance(upstream.get("prebuiltOverrides"), list):
         raise ReleaseError("LiteRT-LM manifest prebuiltOverrides must be a list")
-    if upstream.get("developmentIdentity") != f"g{upstream['commit'][:12]}":
+    if upstream.get("developmentIdentity") != f"g{upstream_commit[:12]}":
         raise ReleaseError("LiteRT-LM development identity does not match upstream commit")
     for override in upstream["prebuiltOverrides"]:
         if not isinstance(override, dict):
@@ -1651,14 +1713,19 @@ def validate_litert_lm_release_manifest(
             },
             "prebuilt override provenance",
         )
-        if (
-            override.get("sourceRepository") != "google-ai-edge/LiteRT-LM"
-            or not FULL_COMMIT_RE.fullmatch(str(override.get("sourceCommit", "")))
-            or not SHA256_RE.fullmatch(str(override.get("sha256", "")))
-        ):
+        source_repository = require_string(
+            override.get("sourceRepository"), "prebuilt override source repository"
+        )
+        require_full_commit(
+            override.get("sourceCommit"), "prebuilt override source commit"
+        )
+        require_string(override.get("sourcePath"), "prebuilt override source path")
+        require_string(override.get("targetPath"), "prebuilt override target path")
+        require_sha256(override.get("sha256"), "prebuilt override digest")
+        if source_repository != "google-ai-edge/LiteRT-LM":
             raise ReleaseError("LiteRT-LM prebuilt override provenance is invalid")
     expected_overrides = LITERT_PREBUILT_OVERRIDES.get(
-        str(upstream.get("compatibilityTag")), []
+        compatibility_tag, []
     )
     if upstream["prebuiltOverrides"] != expected_overrides:
         raise ReleaseError(
@@ -1778,8 +1845,7 @@ def validate_litert_lm_release_manifest(
             },
             "artifact provenance",
         )
-        if not SHA256_RE.fullmatch(str(artifact.get("sha256", ""))):
-            raise ReleaseError("LiteRT-LM manifest contains an invalid artifact digest")
+        require_sha256(artifact.get("sha256"), "artifact digest")
         if artifact.get("releaseTag") != tag:
             raise ReleaseError("LiteRT-LM artifact releaseTag does not match release")
         if artifact.get("upstreamCommit") != upstream["commit"]:
@@ -1880,7 +1946,7 @@ def validate_litert_lm_release_manifest(
     if covered_native_paths != native_paths:
         raise ReleaseError("LiteRT-LM manifest has unbound native artifact provenance")
     required_paths = required_litert_manifest_paths(
-        str(upstream["compatibilityTag"]),
+        compatibility_tag,
         tag,
         official_assets=capabilities["officialUpstreamAssets"] is True,
     )
@@ -1970,12 +2036,9 @@ def validate_litert_lm_release_manifest(
             if not isinstance(payload, dict):
                 raise ReleaseError(f"LiteRT-LM smoke has invalid {field} evidence")
             require_exact_keys(payload, expected_keys, f"smoke {field}")
-            if (
-                not isinstance(payload.get("fileName"), str)
-                or not payload["fileName"]
-                or not SHA256_RE.fullmatch(str(payload.get("sha256", "")))
-            ):
+            if not isinstance(payload.get("fileName"), str) or not payload["fileName"]:
                 raise ReleaseError(f"LiteRT-LM smoke has an invalid {field} digest")
+            require_sha256(payload.get("sha256"), f"smoke {field} digest")
         fixture = item["fixture"]
         if fixture.get("sampleRateHz") != 16000 or not isinstance(
             fixture.get("sampleCount"), int
@@ -2038,9 +2101,9 @@ def validate_litert_lm_release_manifest(
                 "LiteRT-LM smoke does not satisfy the owner-pinned transcript expectation"
             )
         identity = (
-            str(item.get("id")),
-            str(item.get("platform")),
-            str(item.get("arch")),
+            require_string(item.get("id"), "smoke id"),
+            require_string(item.get("platform"), "smoke platform"),
+            require_string(item.get("arch"), "smoke architecture"),
         )
         if identity in smoke_identities:
             raise ReleaseError("LiteRT-LM smoke identity is duplicated")

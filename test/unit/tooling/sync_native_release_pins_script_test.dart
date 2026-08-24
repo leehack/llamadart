@@ -2456,6 +2456,11 @@ Future<void> _writeReleaseFixture(
         'google-ai-edge__LiteRT-LM__${upstream['tag']}__commit.json',
       ),
     ).writeAsString(jsonEncode({'sha': upstreamCommit}));
+    final native = manifest['native'] as Map<String, dynamic>;
+    final nativeCommit = native['commit'] as String;
+    await File(
+      path.join(dir.path, '${repo.replaceAll('/', '__')}__${tag}__commit.json'),
+    ).writeAsString(jsonEncode({'sha': nativeCommit}));
     final checksumText = [
       for (final artifact
           in (manifest['artifacts'] as List<dynamic>)
