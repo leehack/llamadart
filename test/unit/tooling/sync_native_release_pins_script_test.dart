@@ -1233,7 +1233,7 @@ import time
 child = subprocess.Popen(
     [sys.executable, sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]]
 )
-print("synthetic child ready", flush=True)
+print("synthetic child ready: lock-owned", flush=True)
 time.sleep(60)
 ''');
 
