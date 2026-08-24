@@ -1207,10 +1207,15 @@ printf '%s\\n' '{"tag_name":"v0.2.0-1","assets":[]}'
       final childScript = File(path.join(root.path, 'child.py'));
       final parentScript = File(path.join(root.path, 'parent.py'));
       final childPidFile = File(path.join(root.path, 'child.pid'));
+      final childStopFile = File(path.join(root.path, 'child.stop'));
       await childScript.writeAsString(r'''
+from pathlib import Path
+import sys
 import time
 
-time.sleep(20)
+deadline = time.monotonic() + 60
+while not Path(sys.argv[1]).exists() and time.monotonic() < deadline:
+    time.sleep(0.1)
 ''');
       await parentScript.writeAsString(r'''
 from pathlib import Path
@@ -1218,23 +1223,21 @@ import subprocess
 import sys
 import time
 
-child = subprocess.Popen([sys.executable, sys.argv[1]])
+child = subprocess.Popen([sys.executable, sys.argv[1], sys.argv[3]])
 Path(sys.argv[2]).write_text(str(child.pid), encoding="utf-8")
 print(f"synthetic child ready: {child.pid}", flush=True)
-time.sleep(300)
+time.sleep(60)
 ''');
 
-      int? parentPid;
+      Process? parentProcess;
       int? childPid;
       addTearDown(() async {
         childPid ??= await _readPidFile(childPidFile);
-        if (parentPid != null) {
-          await _ensureWindowsProcessStopped(
-            parentPid!,
-            expectedCommandFragment: parentScript.path,
-          );
+        if (parentProcess != null) {
+          await _ensureProcessHandleStopped(parentProcess!);
         }
         if (childPid != null) {
+          await childStopFile.writeAsString('stop');
           await _ensureWindowsProcessStopped(
             childPid!,
             expectedCommandFragment: childScript.path,
@@ -1247,7 +1250,13 @@ time.sleep(300)
       final stopwatch = Stopwatch()..start();
       try {
         await _runPython(
-          [parentScript.path, childScript.path, childPidFile.path, secret],
+          [
+            parentScript.path,
+            childScript.path,
+            childPidFile.path,
+            childStopFile.path,
+            secret,
+          ],
           timeout: const Duration(seconds: 5),
           waitUntilReady: () async {
             childPid = await _waitForPidFile(
@@ -1270,7 +1279,7 @@ time.sleep(300)
             );
           },
           redactions: {root.path: '<temp>', secret: '<redacted>'},
-          onStart: (pid) => parentPid = pid,
+          onStart: (process) => parentProcess = process,
         );
       } on Object catch (error) {
         failure = error;
@@ -1291,12 +1300,11 @@ time.sleep(300)
       expect(message, isNot(contains(secret)));
       expect(stopwatch.elapsed, lessThan(const Duration(seconds: 60)));
 
-      expect(parentPid, isNotNull);
+      expect(parentProcess, isNotNull);
       expect(childPid, isNotNull);
       // _terminateProcessTree awaits this exact Process handle. Keep the
       // command-line identity on the child probe because Windows can reuse a
       // numeric PID before this assertion runs.
-      parentPid = null;
       expect(
         await _waitForWindowsProcessToStop(
           childPid!,
@@ -1320,11 +1328,16 @@ time.sleep(300)
       final childScript = File(path.join(root.path, 'child.py'));
       final parentScript = File(path.join(root.path, 'parent.py'));
       final childPidFile = File(path.join(root.path, 'child.pid'));
+      final childStopFile = File(path.join(root.path, 'child.stop'));
       await childScript.writeAsString(r'''
+from pathlib import Path
+import sys
 import time
 
 print("descendant owns inherited output", flush=True)
-time.sleep(4)
+deadline = time.monotonic() + 60
+while not Path(sys.argv[1]).exists() and time.monotonic() < deadline:
+    time.sleep(0.1)
 ''');
       await parentScript.writeAsString(r'''
 from pathlib import Path
@@ -1332,7 +1345,7 @@ import subprocess
 import sys
 
 child = subprocess.Popen(
-    [sys.executable, sys.argv[1]],
+    [sys.executable, sys.argv[1], sys.argv[3]],
     stdout=sys.stdout,
     stderr=sys.stderr,
 )
@@ -1344,6 +1357,7 @@ print("parent exited after spawning child", flush=True)
       addTearDown(() async {
         childPid ??= await _readPidFile(childPidFile);
         if (childPid != null) {
+          await childStopFile.writeAsString('stop');
           await _ensureWindowsProcessStopped(
             childPid!,
             expectedCommandFragment: childScript.path,
@@ -1356,7 +1370,13 @@ print("parent exited after spawning child", flush=True)
       final stopwatch = Stopwatch()..start();
       try {
         await _runPython(
-          [parentScript.path, childScript.path, childPidFile.path, secret],
+          [
+            parentScript.path,
+            childScript.path,
+            childPidFile.path,
+            childStopFile.path,
+            secret,
+          ],
           timeout: const Duration(seconds: 5),
           waitUntilReady: () async {
             childPid = await _waitForPidFile(
@@ -1365,11 +1385,18 @@ print("parent exited after spawning child", flush=True)
             );
           },
           outputDrainTimeout: const Duration(seconds: 1),
-          outputDrainDescendantPid: () {
-            childPid ??= _readPidFileSync(childPidFile);
-            return childPid;
+          outputDrainDescendantCleanup: () async {
+            final descendantPid = childPid ??= _readPidFileSync(childPidFile);
+            if (descendantPid == null) {
+              return false;
+            }
+            await childStopFile.writeAsString('stop');
+            return _waitForWindowsProcessToStop(
+              descendantPid,
+              DateTime.now().add(const Duration(seconds: 25)),
+              expectedCommandFragment: childScript.path,
+            );
           },
-          outputDrainDescendantCommandFragment: childScript.path,
           redactions: {root.path: '<temp>', secret: '<redacted>'},
         );
       } on Object catch (error) {
@@ -1695,11 +1722,10 @@ Future<ProcessResult> _runPython(
   String? executable,
   Duration? timeout,
   Duration outputDrainTimeout = const Duration(seconds: 5),
-  int? Function()? outputDrainDescendantPid,
-  String? outputDrainDescendantCommandFragment,
+  Future<bool> Function()? outputDrainDescendantCleanup,
   Future<void> Function()? waitUntilReady,
   Map<String, String> redactions = const {},
-  void Function(int pid)? onStart,
+  void Function(Process process)? onStart,
 }) async {
   final resolvedExecutable =
       executable ?? (Platform.isWindows ? 'python' : 'python3');
@@ -1736,7 +1762,7 @@ Future<ProcessResult> _runPython(
       '$reason',
     );
   }
-  onStart?.call(process.pid);
+  onStart?.call(process);
   final stdout = _CappedTextBuffer(effectiveRedactions);
   final stderr = _CappedTextBuffer(effectiveRedactions);
   final stdoutSubscription = process.stdout
@@ -1814,22 +1840,11 @@ Future<ProcessResult> _runPython(
   );
   if (!outputDrained) {
     var cleanup = 'not-configured';
-    if (outputDrainDescendantPid != null) {
-      final descendantPid = outputDrainDescendantPid();
-      if (descendantPid == null) {
-        cleanup = 'missing-pid';
-      } else if (outputDrainDescendantCommandFragment == null) {
-        cleanup = 'missing-identity';
-      } else {
-        try {
-          await _ensureWindowsProcessStopped(
-            descendantPid,
-            expectedCommandFragment: outputDrainDescendantCommandFragment,
-          );
-          cleanup = 'confirmed';
-        } on Object {
-          cleanup = 'failed';
-        }
+    if (outputDrainDescendantCleanup != null) {
+      try {
+        cleanup = await outputDrainDescendantCleanup() ? 'confirmed' : 'failed';
+      } on Object {
+        cleanup = 'failed';
       }
     }
     await _cancelOutputSubscriptions(stdoutSubscription, stderrSubscription);
