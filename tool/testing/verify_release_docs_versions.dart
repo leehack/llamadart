@@ -268,6 +268,9 @@ Map<String, String>? _changelogSections(
   } on FileSystemException catch (error) {
     errors.add('$path could not be read: $error');
     return null;
+  } on FormatException catch (error) {
+    errors.add('$path could not be decoded as UTF-8 text: $error');
+    return null;
   }
 
   for (final line in lines) {
