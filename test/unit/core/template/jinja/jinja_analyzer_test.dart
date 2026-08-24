@@ -1,4 +1,6 @@
 import 'package:test/test.dart';
+import 'package:llamadart/src/core/llama_logger.dart';
+import 'package:llamadart/src/core/models/config/log_level.dart';
 import 'package:llamadart/src/core/template/jinja/jinja_analyzer.dart';
 
 void main() {
@@ -136,5 +138,73 @@ void main() {
         expect(caps.supportsTypedContent, isFalse);
       },
     );
+  });
+
+  group('JinjaAnalyzer probe render failures', () {
+    late List<String> messages;
+
+    setUp(() {
+      messages = <String>[];
+      LlamaLogger.instance.setLevel(LlamaLogLevel.debug);
+      LlamaLogger.instance.setHandler((record) => messages.add(record.message));
+    });
+
+    tearDown(() {
+      LlamaLogger.instance.setHandler(null);
+      LlamaLogger.instance.setLevel(LlamaLogLevel.none);
+    });
+
+    test('logs the labelled probe when the system-role render throws', () {
+      const template = '''
+{% for message in messages %}
+{% if message.role == 'system' %}{{ message.content | no_such_filter }}{% endif %}
+{% endfor %}
+''';
+
+      final caps = JinjaAnalyzer.analyze(template);
+
+      expect(caps.supportsSystemRole, isFalse);
+      expect(
+        messages,
+        contains(
+          allOf(
+            contains('system-role capability probe failed to render'),
+            contains('no_such_filter'),
+          ),
+        ),
+      );
+    });
+
+    test('logs the labelled probe when the tools render throws', () {
+      const template = '''
+{% for message in messages %}{{ message.content }}{% endfor %}
+{% for tool in tools %}{{ tool.function.name | no_such_filter }}{% endfor %}
+''';
+
+      final caps = JinjaAnalyzer.analyze(template);
+
+      expect(caps.supportsTools, isFalse);
+      expect(caps.supportsToolCalls, isFalse);
+      expect(caps.supportsParallelToolCalls, isFalse);
+      expect(
+        messages,
+        contains(contains('tools capability probe failed to render')),
+      );
+    });
+
+    test('stays silent when a template merely lacks the capability', () {
+      const template =
+          '{% for message in messages %}'
+          '{{ message.content }}{% endfor %}';
+
+      final caps = JinjaAnalyzer.analyze(template);
+
+      expect(caps.supportsTools, isFalse);
+      expect(caps.supportsToolCalls, isFalse);
+      expect(
+        messages,
+        isNot(contains(contains('capability probe failed to render'))),
+      );
+    });
   });
 }
