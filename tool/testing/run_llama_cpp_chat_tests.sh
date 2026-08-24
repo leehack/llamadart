@@ -6,6 +6,11 @@ src_dir="${LLAMA_CPP_CHAT_TEST_SOURCE_DIR:-${LLAMA_CPP_SOURCE_DIR:-${repo_root}/
 build_dir="${LLAMA_CPP_CHAT_TEST_BUILD_DIR:-${repo_root}/.dart_tool/llama_cpp_chat_tests}"
 include_full="${LLAMA_CPP_CHAT_TEST_INCLUDE_FULL:-0}"
 full_verbose="${LLAMA_CPP_CHAT_TEST_FULL_VERBOSE:-0}"
+build_jobs="${LLAMA_CPP_CHAT_TEST_BUILD_JOBS:-2}"
+if [[ ! "${build_jobs}" =~ ^[1-9][0-9]*$ ]]; then
+  echo "LLAMA_CPP_CHAT_TEST_BUILD_JOBS must be a positive integer." >&2
+  exit 64
+fi
 
 export LLAMA_CPP_SOURCE_DIR="${src_dir}"
 "${repo_root}/tool/testing/prepare_llama_cpp_source.sh" >/dev/null
@@ -74,7 +79,8 @@ if [[ "${include_full}" == "1" ]]; then
 fi
 
 echo "[chat-tests] build targets: ${targets[*]}"
-cmake --build "${build_dir}" --target "${targets[@]}" --parallel
+cmake --build "${build_dir}" --target "${targets[@]}" \
+  --parallel "${build_jobs}"
 
 library_path_entries=(
   "${build_dir}/bin"
