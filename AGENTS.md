@@ -310,8 +310,9 @@ from the implementation task and reviews the exact PR head against the current
 base. Classify changed paths with
 `tool/testing/classify_high_risk_changes.dart`. Inspect production call sites
 and require issue-specific positive and negative tests that fail if the
-relevant branch is deleted, bypassed, or miswired. Record zero known PR-caused
-P1 regressions and zero unresolved review threads in the PR's high-risk block.
+relevant branch is deleted, bypassed, or miswired.
+Record zero known PR-caused P1 regressions and zero unresolved review threads
+in the PR's high-risk block.
 
 Structured-output changes must cover compiled grammar acceptance and rejection,
 schema-directed scalar and container reconstruction, partial-streaming
