@@ -238,6 +238,14 @@ def require_sha256(value: Any, label: str) -> str:
     return digest
 
 
+def require_int(value: Any, label: str, *, minimum: int | None = None) -> int:
+    if type(value) is not int:
+        raise ReleaseError(f"LiteRT-LM {label} must be an integer")
+    if minimum is not None and value < minimum:
+        raise ReleaseError(f"LiteRT-LM {label} must be at least {minimum}")
+    return value
+
+
 def required_litert_manifest_paths(
     compatibility_tag: str,
     release_tag: str,
@@ -1682,6 +1690,14 @@ def validate_litert_lm_release_manifest(
         {"tag", *expected_release_fields.keys()},
         "release identity",
     )
+    require_string(release_identity.get("tag"), "release identity tag")
+    require_string(release_identity.get("channel"), "release identity channel")
+    require_string(release_identity.get("kind"), "release identity kind")
+    require_int(release_identity.get("rebuild"), "release identity rebuild", minimum=0)
+    if type(release_identity.get("githubPrerelease")) is not bool:
+        raise ReleaseError(
+            "LiteRT-LM release identity githubPrerelease must be a boolean"
+        )
     require_exact_keys(
         upstream,
         {
@@ -1763,11 +1779,17 @@ def validate_litert_lm_release_manifest(
             },
             "capability declaration",
         )
+    if not isinstance(abi, dict):
+        raise ReleaseError("LiteRT-LM manifest does not declare required bridge ABIs")
+    require_string(abi.get("upstreamC"), "ABI upstream header")
+    stream_proxy_abi = require_int(
+        abi.get("streamProxyCallback"), "stream proxy callback ABI", minimum=1
+    )
+    asr_bridge_abi = require_int(abi.get("asrBridge"), "ASR bridge ABI", minimum=1)
     if (
-        not isinstance(abi, dict)
-        or abi.get("upstreamC") != "c/engine.h"
-        or abi.get("streamProxyCallback") != 1
-        or abi.get("asrBridge") != 1
+        abi.get("upstreamC") != "c/engine.h"
+        or stream_proxy_abi != 1
+        or asr_bridge_abi != 1
     ):
         raise ReleaseError("LiteRT-LM manifest does not declare required bridge ABIs")
     if not isinstance(capabilities, dict) or not all(
@@ -1792,6 +1814,9 @@ def validate_litert_lm_release_manifest(
         )
     if any(not isinstance(item, dict) for item in platforms):
         raise ReleaseError("LiteRT-LM manifest contains an invalid platform")
+    for item in platforms:
+        require_string(item.get("platform"), "platform name")
+        require_string(item.get("arch"), "platform architecture")
     manifest_bundle_list = [
         f"{item.get('platform')}-{item.get('arch')}"
         for item in platforms
@@ -1846,6 +1871,21 @@ def validate_litert_lm_release_manifest(
             "artifact provenance",
         )
         require_sha256(artifact.get("sha256"), "artifact digest")
+        runtime = require_string(artifact.get("runtime"), "artifact runtime")
+        require_string(artifact.get("fileName"), "artifact file name")
+        require_string(artifact.get("releaseTag"), "artifact release tag")
+        require_full_commit(
+            artifact.get("upstreamCommit"), "artifact upstream commit"
+        )
+        artifact_platform = artifact.get("platform")
+        artifact_arch = artifact.get("arch")
+        if artifact_platform is not None:
+            require_string(artifact_platform, "artifact platform")
+        if artifact_arch is not None:
+            require_string(artifact_arch, "artifact architecture")
+        artifact_upstream_tag = artifact.get("upstreamTag")
+        if artifact_upstream_tag is not None:
+            require_string(artifact_upstream_tag, "artifact upstream tag")
         if artifact.get("releaseTag") != tag:
             raise ReleaseError("LiteRT-LM artifact releaseTag does not match release")
         if artifact.get("upstreamCommit") != upstream["commit"]:
@@ -1863,7 +1903,7 @@ def validate_litert_lm_release_manifest(
             raise ReleaseError("LiteRT-LM manifest contains an invalid artifact path")
         if artifact.get("fileName") != Path(artifact_path).name:
             raise ReleaseError("LiteRT-LM artifact fileName does not match path")
-        if artifact.get("runtime") not in {"native", "archive", "web"}:
+        if runtime not in {"native", "archive", "web"}:
             raise ReleaseError("LiteRT-LM artifact has an invalid runtime family")
         accelerators = artifact.get("accelerators")
         if (
@@ -1895,18 +1935,24 @@ def validate_litert_lm_release_manifest(
             {"platform", "arch", "releaseAsset", "artifactPaths", "accelerators"},
             "platform declaration",
         )
+        platform_name = require_string(platform.get("platform"), "platform name")
+        platform_arch = require_string(
+            platform.get("arch"), "platform architecture"
+        )
+        require_string(platform.get("releaseAsset"), "platform release asset")
         paths = platform.get("artifactPaths")
         if (
             not isinstance(paths, list)
             or not paths
+            or any(not isinstance(path, str) or not path for path in paths)
             or len(paths) != len(set(paths))
         ):
             raise ReleaseError("LiteRT-LM platform artifact paths are invalid")
         if any(path not in artifacts_by_path for path in paths):
             raise ReleaseError("LiteRT-LM platform references an unknown artifact path")
         if any(
-            artifacts_by_path[path].get("platform") != platform.get("platform")
-            or artifacts_by_path[path].get("arch") != platform.get("arch")
+            artifacts_by_path[path].get("platform") != platform_name
+            or artifacts_by_path[path].get("arch") != platform_arch
             for path in paths
         ):
             raise ReleaseError("LiteRT-LM platform artifact provenance does not match")
@@ -1914,8 +1960,13 @@ def validate_litert_lm_release_manifest(
             raise ReleaseError("LiteRT-LM platform may reference only native artifacts")
         covered_native_paths.update(paths)
         accelerators = platform.get("accelerators")
-        if not isinstance(accelerators, list) or len(accelerators) != len(
-            set(accelerators)
+        if (
+            not isinstance(accelerators, list)
+            or any(
+                not isinstance(accelerator, str) or not accelerator
+                for accelerator in accelerators
+            )
+            or len(accelerators) != len(set(accelerators))
         ):
             raise ReleaseError("LiteRT-LM platform accelerators are invalid")
         linked_accelerators = sorted(
@@ -1933,7 +1984,7 @@ def validate_litert_lm_release_manifest(
             )
         expected_release_asset = (
             "litert-lm-native-runtime-"
-            f"{platform.get('platform')}-{platform.get('arch')}-{tag}.tar.gz"
+            f"{platform_name}-{platform_arch}-{tag}.tar.gz"
         )
         if platform.get("releaseAsset") != expected_release_asset:
             raise ReleaseError("LiteRT-LM platform release asset does not match identity")
@@ -2022,7 +2073,11 @@ def validate_litert_lm_release_manifest(
             raise ReleaseError("LiteRT-LM smoke native commit does not match manifest")
         if item.get("id") != "litert_lm_asr_moonshine":
             raise ReleaseError("LiteRT-LM smoke has an unexpected identity")
-        if item.get("backend") != "cpu" or item.get("abiVersion") != 1:
+        require_string(item.get("backend"), "smoke backend")
+        smoke_abi_version = require_int(
+            item.get("abiVersion"), "smoke ABI version", minimum=1
+        )
+        if item.get("backend") != "cpu" or smoke_abi_version != 1:
             raise ReleaseError("LiteRT-LM smoke has invalid backend or ABI evidence")
         if not isinstance(item.get("transcript"), str) or not item["transcript"].strip():
             raise ReleaseError("LiteRT-LM smoke has no transcript evidence")
@@ -2040,9 +2095,13 @@ def validate_litert_lm_release_manifest(
                 raise ReleaseError(f"LiteRT-LM smoke has an invalid {field} digest")
             require_sha256(payload.get("sha256"), f"smoke {field} digest")
         fixture = item["fixture"]
-        if fixture.get("sampleRateHz") != 16000 or not isinstance(
-            fixture.get("sampleCount"), int
-        ) or fixture["sampleCount"] <= 0:
+        sample_rate = require_int(
+            fixture.get("sampleRateHz"), "smoke fixture sample rate", minimum=1
+        )
+        sample_count = require_int(
+            fixture.get("sampleCount"), "smoke fixture sample count", minimum=1
+        )
+        if sample_rate != 16000 or sample_count <= 0:
             raise ReleaseError("LiteRT-LM smoke has invalid fixture metadata")
         for field, pinned in LITERT_SMOKE_ASSETS.items():
             payload = item[field]

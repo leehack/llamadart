@@ -246,6 +246,66 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
                 required_bundles=required_bundles,
             )
 
+            scalar_cases = (
+                (
+                    manifest["artifacts"][0],
+                    "runtime",
+                    ["native"],
+                    "artifact runtime",
+                ),
+                (
+                    manifest["platforms"][0],
+                    "artifactPaths",
+                    [["nested"]],
+                    "artifact paths are invalid",
+                ),
+                (
+                    manifest["platforms"][0],
+                    "accelerators",
+                    [{"x": "metal"}],
+                    "platform accelerators are invalid",
+                ),
+                (
+                    manifest["abi"],
+                    "streamProxyCallback",
+                    True,
+                    "stream proxy callback ABI must be an integer",
+                ),
+                (
+                    manifest["realModelSmokes"][0],
+                    "abiVersion",
+                    True,
+                    "smoke ABI version must be an integer",
+                ),
+                (
+                    manifest["realModelSmokes"][0]["fixture"],
+                    "sampleCount",
+                    True,
+                    "sample count must be an integer",
+                ),
+            )
+            for target, key, malformed, expected_error in scalar_cases:
+                with self.subTest(malformed_schema_scalar=key):
+                    original = target[key]
+                    target[key] = malformed
+                    fixture.write_text(json.dumps(manifest), encoding="utf-8")
+                    manifest_asset["digest"] = (
+                        "sha256:" + hashlib.sha256(fixture.read_bytes()).hexdigest()
+                    )
+                    with self.assertRaisesRegex(ReleaseError, expected_error):
+                        validate_litert_lm_release_manifest(
+                            release,
+                            repo="leehack/litert-lm-native",
+                            tag=tag,
+                            release_json_dir=str(fixture_dir),
+                            required_bundles=required_bundles,
+                        )
+                    target[key] = original
+            fixture.write_bytes(owner_fixture.read_bytes())
+            manifest_asset["digest"] = (
+                "sha256:" + hashlib.sha256(fixture.read_bytes()).hexdigest()
+            )
+
             native_ref_fixture.write_text(
                 json.dumps({"sha": "1" * 40}), encoding="utf-8"
             )
