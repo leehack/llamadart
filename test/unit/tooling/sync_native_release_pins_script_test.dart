@@ -2148,7 +2148,7 @@ Future<_WindowsProcessIdentity> _windowsProcessIdentity(
       '-Command',
       'try { '
           '\$candidate = Get-CimInstance Win32_Process '
-          '-Filter "ProcessId = ${pid.toString()}"; '
+          '-Filter "ProcessId = ${pid.toString()}" -ErrorAction Stop; '
           'if (\$null -eq \$candidate) { exit 1 }; '
           'if ([string]::IsNullOrEmpty(\$candidate.CommandLine)) { exit 2 }; '
           'if (-not '
