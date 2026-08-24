@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import hashlib
+import re
 import sys
 import tempfile
 from pathlib import Path
@@ -15,6 +16,7 @@ from sync_native_release_pins import (  # noqa: E402
     LEGACY_SCHEMA1_RELEASES,
     atomic_write_many,
     fetch_release,
+    litert_lm_bundle_names,
     litert_schema2_bundle_required_libraries,
     litert_lm_runtime_version,
     normalize_litert_lm_release_tag,
@@ -861,19 +863,53 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
             )
 
         self.assertNotIn("GemmaModelConstraintProvider", prepared)
+        self.assertIn(
+            "requiredLibraries: {'libLiteRtLm.so', 'libwebgpu_dawn.so'},",
+            prepared,
+        )
+        self.assertIn("requiredLibraries: {'LiteRtLm.dll'},", prepared)
         for bundle, libraries in expected.items():
             bundle_start = prepared.index(f"_LiteRtLmBundleSpec(\n    '{bundle}',")
             bundle_end = prepared.index("\n  ),", bundle_start)
             block = prepared[bundle_start:bundle_end]
             required_block = block[block.index("requiredLibraries:") :]
             self.assertEqual(
-                {
-                    line.strip(" ',")
-                    for line in required_block.splitlines()
-                    if line.strip().startswith("'")
-                },
+                set(re.findall(r"'([^']+)'", required_block)),
                 set(libraries),
             )
+
+    def test_schema_2_hook_inventory_rejects_unsafe_library_names(self) -> None:
+        fixture_root = Path(__file__).resolve().parent / "fixtures"
+        original = json.loads(
+            (fixture_root / "litert_lm_schema2_owner_manifest.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        for filename in (
+            "libx','injected.so",
+            "libx$interpolated.so",
+            "libx with space.so",
+            "libx;command.so",
+        ):
+            with self.subTest(filename=filename):
+                manifest = json.loads(json.dumps(original))
+                manifest["platforms"][0]["artifactPaths"][0] = (
+                    f"bin/android/arm64/{filename}"
+                )
+                with self.assertRaisesRegex(
+                    ReleaseError,
+                    "library names are invalid",
+                ):
+                    litert_schema2_bundle_required_libraries(manifest)
+
+    def test_hook_bundle_inventory_rejects_duplicate_specs(self) -> None:
+        spec = (
+            "_LiteRtLmBundleSpec('linux-x64', "
+            "sha256: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', "
+            "requiredLibraries: {'libLiteRtLm.so'}),"
+        )
+        with self.assertRaisesRegex(ReleaseError, "duplicate LiteRT-LM bundle"):
+            litert_lm_bundle_names(f"{spec}\n{spec}\n")
 
     def test_known_legacy_schema_1_manifest_requires_exact_immutable_evidence(self) -> None:
         tag = "v0.16.0-native.2"

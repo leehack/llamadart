@@ -81,6 +81,7 @@ LEGACY_LITERT_TAG_RE = re.compile(
 )
 FULL_COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+SAFE_LITERT_LIBRARY_FILENAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.+-]*$")
 LEGACY_ALLOWLIST_PATH = (
     Path(__file__).resolve().parent / "fixtures" / "legacy_release_allowlist.json"
 )
@@ -2387,6 +2388,8 @@ def litert_lm_bundle_names(hook_text: str) -> list[str]:
     bundles = pattern.findall(hook_text)
     if not bundles:
         raise ReleaseError("Could not find LiteRT-LM bundle specs in hook/build.dart")
+    if len(bundles) != len(set(bundles)):
+        raise ReleaseError("hook/build.dart contains duplicate LiteRT-LM bundle specs")
     return bundles
 
 
@@ -2425,7 +2428,10 @@ def litert_schema2_bundle_required_libraries(
         ):
             raise ReleaseError("LiteRT-LM platform artifact paths are invalid")
         libraries = tuple(sorted(Path(path).name for path in paths))
-        if any(not library or "/" in library or "\\" in library for library in libraries):
+        if any(
+            not SAFE_LITERT_LIBRARY_FILENAME_RE.fullmatch(library)
+            for library in libraries
+        ):
             raise ReleaseError("LiteRT-LM platform library names are invalid")
         if len(libraries) != len(set(libraries)):
             raise ReleaseError("LiteRT-LM platform library names are duplicated")
@@ -2443,9 +2449,14 @@ def replace_litert_lm_bundle_required_libraries(
 ) -> str:
     if not libraries:
         raise ReleaseError(f"LiteRT-LM bundle {bundle} has no required libraries")
-    required_libraries = "{\n" + "".join(
-        f"      '{library}',\n" for library in libraries
-    ) + "    }"
+    if len(libraries) <= 2:
+        required_libraries = "{" + ", ".join(
+            f"'{library}'" for library in libraries
+        ) + "}"
+    else:
+        required_libraries = "{\n" + "".join(
+            f"      '{library}',\n" for library in libraries
+        ) + "    }"
     pattern = re.compile(
         rf"(_LiteRtLmBundleSpec\(\s*'{re.escape(bundle)}',\s*"
         r"sha256: '[0-9a-f]+',\s*requiredLibraries:\s*)\{.*?\},?(\s*\),)",
