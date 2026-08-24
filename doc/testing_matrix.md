@@ -22,6 +22,7 @@ the change, and mark skipped rows as `N/A` with a concrete reason.
 | --- | --- | --- |
 | `essential` | Cheap baseline package health checks. | Run for most code PRs and expect CI to cover them. |
 | `targeted` | Runtime/model/feature checks selected by touched code. | Run locally or cite the matching CI workflow when the PR touches that path. |
+| `high-risk` | Exact-head independent QA and adversarial production-path evidence. | Required before mark-ready for parser/grammar/streaming, backend/runtime, capability, artifact-consumer, release-automation, or regression-policy changes. |
 | `platform` | Supported platform or architecture validation rows. | Use when a PR affects runtime packaging, native pins, backend selection, app launch, or release confidence for a platform. |
 | `release` | Device or representative smoke checks that are too heavy for every PR. | Run for release candidates, native bundle changes, or high-risk runtime changes. |
 
@@ -56,6 +57,56 @@ For a typical code PR, include:
 
 Docs-only PRs can mark runtime rows `N/A`, but should run `docs-site` when docs
 or website files changed.
+
+## High-Risk Pre-Merge Review
+
+Discover the high-risk rows with:
+
+```bash
+git diff --name-only origin/main...HEAD | \
+  dart run tool/testing/classify_high_risk_changes.dart
+dart run tool/testing/test_matrix.dart --tier high-risk
+```
+
+Before mark-ready, assign an independent blocking-only QA task that did not
+implement the change. It must review the exact head against the current base,
+inspect the actual production call sites, and verify positive and negative
+tests that fail if the relevant branch is deleted, bypassed, or miswired. Fill
+the PR template's high-risk block with the task identities, exact head/base,
+affected-family evidence or precise N/A, zero known PR-caused P1 regressions,
+and the live unresolved-thread count. A known PR-caused P1 or any unresolved
+thread blocks readiness.
+
+For structured output, cover the applicable production-path axes:
+
+- compile generated grammars and accept upstream-emitted valid shapes;
+- reject unknown, missing, mismatched, wrong-type, and malformed structures;
+- reconstruct schema-directed strings, numbers, booleans, nulls, objects, and
+  arrays, including empty containers and zero-argument calls;
+- suppress incomplete protocol markup while streaming and preserve ordinary
+  content through malformed-final rollback;
+- exercise `auto`, `required`, and `none` tool choice with thinking/reasoning
+  prefixes; and
+- run pinned and current upstream template/parser parity.
+
+Use the closest affected-family real model or artifact. When it is unavailable,
+name every unavailable family and substitute primary upstream emissions plus
+durable fixtures. An unrelated representative model can validate the shared
+pipeline only; it cannot be reported as affected-family evidence.
+
+These checklist and matrix rules are the repository's current review contract.
+Any future required-check publisher or repository-rule enforcement is a
+separate security-sensitive change and must fail closed until its App,
+credentials, protected environment, source binding, and live adversarial proof
+are configured.
+
+The structured-output requirements encode the regression classes found after
+the broad parser rollout: envelope/name escaping and quoting (#394/#399),
+schema exactness and wrong-type rejection (#395/#396/#407), partial-protocol
+leakage and malformed-final content loss (#397/#398), thinking/tool-choice
+prefix handling (#402/#406), and empty/schema-directed value reconstruction
+(#408/#410). The compiled production-path coverage added separately to `main`
+is the durable execution proof; this policy slice does not duplicate it.
 
 ## Targeted Runtime and Model Rows
 

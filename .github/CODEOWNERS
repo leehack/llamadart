@@ -3,6 +3,7 @@
 .github/dependabot.yml @leehack
 .github/pull_request_template.md @leehack
 .github/workflows/ @leehack
+AGENTS.md @leehack
 scripts/build_chat_app_web.sh @leehack
 scripts/validate_chat_app_web_build.sh @leehack
 scripts/verify_chat_app_web_deployment.sh @leehack
@@ -12,6 +13,8 @@ pubspec.yaml @leehack
 CHANGELOG.md @leehack
 doc/testing_matrix.md @leehack
 hook/build.dart @leehack
+tool/testing/test_matrix.dart @leehack
+tool/testing/classify_high_risk_changes.dart @leehack
 tool/testing/verify_release_docs_versions.dart @leehack
 tool/testing/check_webgpu_bridge_tag.dart @leehack
 scripts/fetch_webgpu_bridge_assets.sh @leehack

@@ -1,0 +1,81 @@
+@TestOn('vm')
+library;
+
+import 'package:test/test.dart';
+
+import '../../../tool/testing/classify_high_risk_changes.dart';
+
+void main() {
+  group('assessHighRiskFiles', () {
+    test('classifies structured-output production and parity changes', () {
+      final assessment = assessHighRiskFiles([
+        'lib/src/core/template/chat_template_handler.dart',
+        'lib/src/core/grammar/gbnf_grammar_generator.dart',
+        'tool/testing/run_template_parity_suites.sh',
+      ]);
+
+      expect(assessment.isHighRisk, isTrue);
+      expect(assessment.surfaces, contains(HighRiskSurface.structuredOutput));
+    });
+
+    test('classifies backend, capability, and artifact consumers', () {
+      final assessment = assessHighRiskFiles([
+        'lib/src/backends/webgpu/webgpu_backend.dart',
+        'lib/src/core/models/backend_capabilities.dart',
+        'scripts/fetch_webgpu_bridge_assets.sh',
+      ]);
+
+      expect(
+        assessment.surfaces,
+        containsAll({
+          HighRiskSurface.backendRuntime,
+          HighRiskSurface.artifactConsumer,
+        }),
+      );
+    });
+
+    test('classifies release and regression-policy changes', () {
+      final assessment = assessHighRiskFiles([
+        '.github/workflows/release_on_prep_merge.yml',
+        '.github/pull_request_template.md',
+      ]);
+
+      expect(
+        assessment.surfaces,
+        containsAll({
+          HighRiskSurface.releaseAutomation,
+          HighRiskSurface.regressionPolicy,
+        }),
+      );
+    });
+
+    test('keeps ordinary docs-only changes standard risk', () {
+      final assessment = assessHighRiskFiles([
+        'website/docs/guides/model-downloads.md',
+      ]);
+
+      expect(assessment.isHighRisk, isFalse);
+      expect(
+        formatHighRiskAssessment(assessment),
+        'Classification: standard\n',
+      );
+    });
+
+    test('normalizes blank input and prints deterministic surfaces', () {
+      final assessment = assessHighRiskFiles([
+        '',
+        '  ',
+        ' lib/src/backends/backend.dart ',
+        '.github/workflows/ci.yml',
+      ]);
+
+      expect(
+        formatHighRiskAssessment(assessment),
+        'Classification: high-risk\n'
+        'Surfaces: backendRuntime, regressionPolicy\n'
+        'Required matrix: '
+        'dart run tool/testing/test_matrix.dart --tier high-risk\n',
+      );
+    });
+  });
+}

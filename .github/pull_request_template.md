@@ -39,3 +39,26 @@
 ## Review Notes
 - Independent review status: <!-- reviewer/tool/verdict, or N/A for trivial docs-only changes -->
 - CI status / head SHA: <!-- fill after CI runs -->
+
+## High-risk regression review
+<!--
+Use this section when production changes touch parsers, grammars, streaming
+protocols, backend/runtime routing, capability probes, artifact consumers,
+release automation, or this review policy. Classify changed paths with
+`tool/testing/classify_high_risk_changes.dart`, then run
+`dart run tool/testing/test_matrix.dart --tier high-risk` and follow
+`doc/testing_matrix.md`. The independent QA task must be separate from the
+implementation task and must review the exact PR head against the current base.
+Do not mark ready with a known PR-caused P1 or an unresolved review thread.
+For standard-risk PRs, leave the classification as `standard` and mark the
+remaining rows N/A.
+-->
+- **Classification:** standard
+- **Implementation task:** N/A
+- **Independent blocking QA task:** N/A
+- **Exact head / current base:** N/A
+- **Production-branch deletion, bypass, or miswire proof:** N/A
+- **Affected-family real-model/artifact evidence:** N/A
+- **Explicit unavailable-family or other N/A evidence:** N/A
+- **Known PR-caused P1 regressions:** 0
+- **Unresolved review threads:** 0
