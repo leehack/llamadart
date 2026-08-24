@@ -87,6 +87,7 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
             "v0.16.1-2": "v0.16.1-2",
             DEVELOPMENT_TAG: DEVELOPMENT_TAG,
             f"{DEVELOPMENT_TAG}-1": f"{DEVELOPMENT_TAG}-1",
+            "0.16.0-native.2": "v0.16.0-native.2",
             "v0.16.0-native.2": "v0.16.0-native.2",
             "latest": "latest",
             "keep": "keep",

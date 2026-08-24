@@ -1352,9 +1352,11 @@ def normalize_litert_lm_release_tag(tag: str) -> str:
     ):
         return tag
     prefixed_tag = f"v{tag}"
-    if STABLE_LITERT_TAG_RE.fullmatch(
-        prefixed_tag
-    ) or STABLE_LITERT_REBUILD_RE.fullmatch(prefixed_tag):
+    if (
+        STABLE_LITERT_TAG_RE.fullmatch(prefixed_tag)
+        or STABLE_LITERT_REBUILD_RE.fullmatch(prefixed_tag)
+        or LEGACY_LITERT_TAG_RE.fullmatch(prefixed_tag)
+    ):
         return prefixed_tag
     raise ReleaseError(
         "Invalid LiteRT-LM native tag. Expected vMAJOR.MINOR.PATCH, "
