@@ -15,9 +15,11 @@ from sync_native_release_pins import (  # noqa: E402
     LEGACY_SCHEMA1_RELEASES,
     atomic_write_many,
     fetch_release,
+    litert_schema2_bundle_required_libraries,
     litert_lm_runtime_version,
     normalize_litert_lm_release_tag,
     prepare_litert_lm_package_swift,
+    replace_litert_lm_bundle_required_libraries,
     require_exact_keys,
     required_litert_release_asset_names,
     validate_litert_lm_transition,
@@ -839,6 +841,38 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
             self.assertIn(
                 f'checksum: "{asset["digest"].removeprefix("sha256:")}"',
                 prepared,
+            )
+
+    def test_schema_2_prepares_hook_libraries_from_owner_inventory(self) -> None:
+        fixture_root = Path(__file__).resolve().parent / "fixtures"
+        manifest = json.loads(
+            (fixture_root / "litert_lm_schema2_owner_manifest.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        hook_path = Path(__file__).resolve().parents[2] / "hook" / "build.dart"
+        prepared = hook_path.read_text(encoding="utf-8")
+        expected = litert_schema2_bundle_required_libraries(manifest)
+        for bundle, libraries in expected.items():
+            prepared = replace_litert_lm_bundle_required_libraries(
+                prepared,
+                bundle,
+                libraries,
+            )
+
+        self.assertNotIn("GemmaModelConstraintProvider", prepared)
+        for bundle, libraries in expected.items():
+            bundle_start = prepared.index(f"_LiteRtLmBundleSpec(\n    '{bundle}',")
+            bundle_end = prepared.index("\n  ),", bundle_start)
+            block = prepared[bundle_start:bundle_end]
+            required_block = block[block.index("requiredLibraries:") :]
+            self.assertEqual(
+                {
+                    line.strip(" ',")
+                    for line in required_block.splitlines()
+                    if line.strip().startswith("'")
+                },
+                set(libraries),
             )
 
     def test_known_legacy_schema_1_manifest_requires_exact_immutable_evidence(self) -> None:

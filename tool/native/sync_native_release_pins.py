@@ -572,6 +572,15 @@ def main() -> int:
                 bundle,
                 checksum,
             )
+        if litert_lm_manifest.get("schemaVersion") == 2:
+            for bundle, libraries in litert_schema2_bundle_required_libraries(
+                litert_lm_manifest
+            ).items():
+                hook_text = replace_litert_lm_bundle_required_libraries(
+                    hook_text,
+                    bundle,
+                    libraries,
+                )
 
         if litert_lm_package_swift_path.exists():
             original_swift_text = litert_lm_package_swift_path.read_text(
@@ -2393,6 +2402,64 @@ def replace_litert_lm_bundle_checksum(
     updated, count = pattern.subn(rf"\g<1>{checksum}\2", hook_text, count=1)
     if count != 1:
         raise ReleaseError(f"Could not replace LiteRT-LM checksum for {bundle}")
+    return updated
+
+
+def litert_schema2_bundle_required_libraries(
+    manifest: dict[str, Any],
+) -> dict[str, tuple[str, ...]]:
+    platforms = manifest.get("platforms")
+    if not isinstance(platforms, list):
+        raise ReleaseError("LiteRT-LM manifest platforms must be a list")
+    result: dict[str, tuple[str, ...]] = {}
+    for platform in platforms:
+        if not isinstance(platform, dict):
+            raise ReleaseError("LiteRT-LM manifest contains an invalid platform")
+        platform_name = require_string(platform.get("platform"), "platform name")
+        arch = require_string(platform.get("arch"), "platform architecture")
+        paths = platform.get("artifactPaths")
+        if (
+            not isinstance(paths, list)
+            or not paths
+            or any(not isinstance(path, str) or not path for path in paths)
+        ):
+            raise ReleaseError("LiteRT-LM platform artifact paths are invalid")
+        libraries = tuple(sorted(Path(path).name for path in paths))
+        if any(not library or "/" in library or "\\" in library for library in libraries):
+            raise ReleaseError("LiteRT-LM platform library names are invalid")
+        if len(libraries) != len(set(libraries)):
+            raise ReleaseError("LiteRT-LM platform library names are duplicated")
+        bundle = f"{platform_name}-{arch}"
+        if bundle in result:
+            raise ReleaseError("LiteRT-LM platform bundle is duplicated")
+        result[bundle] = libraries
+    return result
+
+
+def replace_litert_lm_bundle_required_libraries(
+    hook_text: str,
+    bundle: str,
+    libraries: tuple[str, ...],
+) -> str:
+    if not libraries:
+        raise ReleaseError(f"LiteRT-LM bundle {bundle} has no required libraries")
+    required_libraries = "{\n" + "".join(
+        f"      '{library}',\n" for library in libraries
+    ) + "    }"
+    pattern = re.compile(
+        rf"(_LiteRtLmBundleSpec\(\s*'{re.escape(bundle)}',\s*"
+        r"sha256: '[0-9a-f]+',\s*requiredLibraries:\s*)\{.*?\},?(\s*\),)",
+        re.DOTALL,
+    )
+    updated, count = pattern.subn(
+        lambda match: f"{match.group(1)}{required_libraries},{match.group(2)}",
+        hook_text,
+        count=1,
+    )
+    if count != 1:
+        raise ReleaseError(
+            f"Could not replace LiteRT-LM required libraries for {bundle}"
+        )
     return updated
 
 
