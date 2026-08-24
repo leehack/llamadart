@@ -60,6 +60,236 @@ final Map<String, RegExp> _currentNativePins = <String, RegExp>{
   ),
 };
 
+/// A companion package whose Apple SwiftPM pin must already be recorded in the
+/// CHANGELOG section its `pubspec.yaml` version will publish.
+///
+/// `hook/build.dart` and `Package.swift` agreeing is not enough: a companion
+/// publishes the tag its own released section documents, and
+/// `release_on_prep_merge.yml` silently skips a companion whose version is
+/// already on pub.dev. Without this check a moved pin can sit in `Unreleased`
+/// forever while the release ships the previous tag.
+class CompanionSwiftPin {
+  /// Package name, as in `pubspec.yaml`.
+  final String package;
+
+  /// Repository-relative package directory.
+  final String root;
+
+  /// Matches the tag in the package's `Package.swift`; group 1 is the tag.
+  final RegExp swiftTag;
+
+  /// Native repository the CHANGELOG names, as `owner/repo`.
+  final String nativeRepo;
+
+  /// Creates a companion pin site.
+  const CompanionSwiftPin({
+    required this.package,
+    required this.root,
+    required this.swiftTag,
+    required this.nativeRepo,
+  });
+
+  /// Path of the package's SwiftPM manifest.
+  String get swiftPackagePath => '$root/darwin/$package/Package.swift';
+
+  /// Path of the package's CHANGELOG.
+  String get changelogPath => '$root/CHANGELOG.md';
+
+  /// Path of the package's pubspec.
+  String get pubspecPath => '$root/pubspec.yaml';
+
+  /// Matches the tag a CHANGELOG entry records; group 1 is the tag.
+  RegExp get changelogTag => RegExp('`${RegExp.escape(nativeRepo)}@([^`]+)`');
+}
+
+/// Every companion package that pins a native runtime through SwiftPM.
+final List<CompanionSwiftPin> companionSwiftPins = <CompanionSwiftPin>[
+  CompanionSwiftPin(
+    package: 'llamadart_llama_cpp_flutter',
+    root: 'packages/llamadart_llama_cpp_flutter',
+    swiftTag: RegExp(r'let llamaCppTag = "([^"]+)"'),
+    nativeRepo: 'leehack/llamadart-native',
+  ),
+  CompanionSwiftPin(
+    package: 'llamadart_litert_lm_flutter',
+    root: 'packages/llamadart_litert_lm_flutter',
+    swiftTag: RegExp(r'let liteRtLmTag = "([^"]+)"'),
+    nativeRepo: 'leehack/litert-lm-native',
+  ),
+];
+
+/// A companion whose SwiftPM pin is recorded only under `## Unreleased`.
+///
+/// Native-sync PRs deliberately leave this state behind; a release-prep PR must
+/// resolve it. See `website/docs/maintainers/release-workflow.md`.
+class PendingCompanionBump {
+  /// Package name.
+  final String package;
+
+  /// Version currently in `pubspec.yaml`.
+  final String version;
+
+  /// Tag `Package.swift` pins.
+  final String swiftPin;
+
+  /// Tag the `## $version` section records.
+  final String releasedPin;
+
+  /// Creates a pending bump record.
+  const PendingCompanionBump({
+    required this.package,
+    required this.version,
+    required this.swiftPin,
+    required this.releasedPin,
+  });
+
+  @override
+  String toString() =>
+      '$package $version publishes $releasedPin, but Package.swift pins '
+      '$swiftPin; bump the version and rename `## Unreleased` to the new '
+      'version before releasing.';
+}
+
+/// Checks that every companion's SwiftPM pin is documented in the CHANGELOG
+/// section its `pubspec.yaml` version will publish.
+///
+/// Appends hard failures to [errors] and returns the companions whose pin is
+/// still sitting in `## Unreleased`. Callers decide whether a pending bump is
+/// tolerable: it is during native sync, and never during release prep.
+List<PendingCompanionBump> checkCompanionSwiftPins(
+  Directory repoRoot,
+  List<String> errors,
+) {
+  final pending = <PendingCompanionBump>[];
+  for (final companion in companionSwiftPins) {
+    final swiftPin = _matchInFile(
+      repoRoot,
+      companion.swiftPackagePath,
+      companion.swiftTag,
+      'SwiftPM native tag',
+      errors,
+    );
+    final version = _matchInFile(
+      repoRoot,
+      companion.pubspecPath,
+      RegExp(r'^version:\s*(\S+)\s*$', multiLine: true),
+      'version field',
+      errors,
+    );
+    if (swiftPin == null || version == null) {
+      continue;
+    }
+
+    final sections = _changelogSections(
+      repoRoot,
+      companion.changelogPath,
+      errors,
+    );
+    if (sections == null) {
+      continue;
+    }
+
+    final released = sections[version];
+    if (released == null) {
+      errors.add(
+        '${companion.changelogPath} has no `## $version` section for the '
+        'version in ${companion.pubspecPath}.',
+      );
+      continue;
+    }
+
+    final releasedPin = companion.changelogTag.firstMatch(released)?.group(1);
+    if (releasedPin == null) {
+      errors.add(
+        '${companion.changelogPath} section `## $version` does not record a '
+        '`${companion.nativeRepo}@<tag>` pin.',
+      );
+      continue;
+    }
+    if (releasedPin == swiftPin) {
+      continue;
+    }
+
+    final unreleasedPin = companion.changelogTag
+        .firstMatch(sections['Unreleased'] ?? '')
+        ?.group(1);
+    if (unreleasedPin != swiftPin) {
+      errors.add(
+        '${companion.swiftPackagePath} pins $swiftPin, but '
+        '${companion.changelogPath} section `## $version` records '
+        '$releasedPin and no `## Unreleased` entry records $swiftPin.',
+      );
+      continue;
+    }
+
+    pending.add(
+      PendingCompanionBump(
+        package: companion.package,
+        version: version,
+        swiftPin: swiftPin,
+        releasedPin: releasedPin,
+      ),
+    );
+  }
+  return pending;
+}
+
+/// Returns section bodies keyed by heading text, or null when unreadable.
+Map<String, String>? _changelogSections(
+  Directory repoRoot,
+  String path,
+  List<String> errors,
+) {
+  final file = File('${repoRoot.path}/$path');
+  if (!file.existsSync()) {
+    errors.add('$path does not exist.');
+    return null;
+  }
+  final sections = <String, String>{};
+  String? heading;
+  final body = StringBuffer();
+  void flush() {
+    final current = heading;
+    if (current != null) {
+      sections.putIfAbsent(current, () => body.toString());
+    }
+    body.clear();
+  }
+
+  for (final line in file.readAsLinesSync()) {
+    final match = RegExp(r'^##\s+(.*\S)\s*$').firstMatch(line);
+    if (match != null) {
+      flush();
+      heading = match.group(1)!;
+      continue;
+    }
+    body.writeln(line);
+  }
+  flush();
+  return sections;
+}
+
+/// Returns group 1 of [pattern] in [path], recording an error when absent.
+String? _matchInFile(
+  Directory repoRoot,
+  String path,
+  RegExp pattern,
+  String what,
+  List<String> errors,
+) {
+  final file = File('${repoRoot.path}/$path');
+  if (!file.existsSync()) {
+    errors.add('$path does not exist.');
+    return null;
+  }
+  final match = pattern.firstMatch(file.readAsStringSync());
+  if (match == null) {
+    errors.add('$path does not contain its $what.');
+    return null;
+  }
+  return match.group(1)!;
+}
+
 final RegExp _dependencyLine = RegExp(
   r'^\s+(llamadart(?:_[a-z0-9_]+)?):\s+\^([0-9]+\.[0-9]+\.[0-9]+(?:[-+][^\s#]+)?)',
 );
@@ -70,9 +300,21 @@ final RegExp _nativeReleaseTag = RegExp(
   r'b(?:0|[1-9][0-9]*)(?:-[1-9][0-9]*|-llamadart\.[1-9][0-9]*)?)$',
 );
 
-void main() {
+void main(List<String> arguments) {
+  final releasePrep = arguments.contains('--release-prep');
+  final unknown = arguments.where((argument) => argument != '--release-prep');
+  if (unknown.isNotEmpty) {
+    stderr.writeln(
+      'Unknown argument(s): ${unknown.join(', ')}. '
+      'Usage: verify_release_docs_versions.dart [--release-prep]',
+    );
+    exitCode = 64;
+    return;
+  }
+
   final errors = <String>[];
   final versions = <String, String>{};
+  var pending = const <PendingCompanionBump>[];
   String? nativePin;
   for (final entry in _packagePubspecs.entries) {
     final version = _readPubspecVersion(entry.value, errors);
@@ -91,6 +333,10 @@ void main() {
       );
     }
     nativePin = _checkCurrentNativePins(errors);
+    pending = checkCompanionSwiftPins(Directory.current, errors);
+    if (releasePrep) {
+      errors.addAll(pending.map((bump) => bump.toString()));
+    }
   }
 
   if (errors.isNotEmpty) {
@@ -107,6 +353,9 @@ void main() {
     '${versions.entries.map((entry) => '${entry.key} ${entry.value}').join(', ')}; '
     'llamadart-native $nativePin.',
   );
+  for (final bump in pending) {
+    stdout.writeln('Pending companion bump: $bump');
+  }
 }
 
 String? _checkCurrentNativePins(List<String> errors) {

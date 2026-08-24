@@ -14,7 +14,7 @@ dart run tool/prepare_workspace.dart
 dart format --output=none --set-exit-if-changed .
 dart analyze
 dart test
-dart run tool/testing/verify_release_docs_versions.dart
+dart run tool/testing/verify_release_docs_versions.dart --release-prep
 ./tool/docs/build_site.sh
 ./tool/docs/validate_links.sh
 ```
@@ -65,8 +65,14 @@ version alignment:
   package-specific tags, and the publish workflow skips a companion package
   version that already exists on pub.dev.
 - Keep current install snippets aligned with root and companion `pubspec.yaml`
-  versions. Run `dart run tool/testing/verify_release_docs_versions.dart` before
-  opening or merging the release-prep PR.
+  versions. Run
+  `dart run tool/testing/verify_release_docs_versions.dart --release-prep`
+  before opening or merging the release-prep PR. Without `--release-prep` the
+  gate only reports pending companion bumps; with it, a companion whose
+  `Package.swift` pin is still recorded under `## Unreleased` fails the run.
+  `release_on_prep_merge.yml` runs the same strict check, so an unresolved
+  pending bump aborts the release before any tag is pushed instead of shipping
+  the previous pin.
 - Move accumulated `Unreleased` entries into the new version section; remove
   the `Unreleased` heading when it would otherwise be empty. Add it back only
   when the next unreleased change is documented.

@@ -122,6 +122,14 @@ For canonical full release notes, use:
 - Removed the abandoned Dart-side MTP/n-gram speculative-decoding scaffolding
   from the llama.cpp backend; speculative decoding behavior is unchanged.
 
+- Bumped `llamadart_llama_cpp_flutter` to `0.0.15` so the `b10545` Apple SwiftPM
+  pin actually publishes; `0.0.14` was already on pub.dev, so release automation
+  skipped it and Apple builds would have kept the `b10514` runtime.
+
+- Corrected the WebGPU bridge docs, which claimed the pinned `v0.1.37` bridge
+  assets match the default native llama.cpp runtime. They embed `b10514` and now
+  trail the native `b10545` pin.
+
 ## 0.8.20
 
 - Updated WebGPU bridge assets to `v0.1.37` (llama.cpp `b10514`), restoring

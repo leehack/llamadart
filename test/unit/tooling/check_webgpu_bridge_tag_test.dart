@@ -23,6 +23,30 @@ Directory _fakeRepo(String assetsTag, {Map<String, String> files = const {}}) {
   return root;
 }
 
+/// Builds a repo whose docs and native pin describe [bridgeTag]/[nativeTag].
+Directory _fakeRuntimeRepo({
+  required String bridgeTag,
+  required String nativeTag,
+}) {
+  final root = Directory.systemTemp.createTempSync('bridge_runtime_gate');
+  addTearDown(() => root.deleteSync(recursive: true));
+  final entries = <String, String>{
+    nativeLlamaCppTagPath: "const _llamaCppTag = '$nativeTag';\n",
+    'doc/webgpu_bridge.md':
+        'That release embeds llama.cpp `$bridgeTag`, which now trails the '
+        '`hook/build.dart`\n',
+    'website/docs/platforms/webgpu-bridge.md':
+        '- `v0.1.37+` bridge assets embed llama.cpp `$bridgeTag`, which now '
+        'trails the\n',
+  };
+  for (final entry in entries.entries) {
+    File('${root.path}/${entry.key}')
+      ..parent.createSync(recursive: true)
+      ..writeAsStringSync(entry.value);
+  }
+  return root;
+}
+
 void main() {
   test('the checked-in pins all quote the source of truth', () {
     final repoRoot = Directory.current;
@@ -213,5 +237,86 @@ void main() {
       ..writeAsStringSync('ASSETS_TAG="whatever"\n');
 
     expect(() => readPinnedBridgeTag(root), throwsFormatException);
+  });
+
+  group('Web/native llama.cpp relationship', () {
+    test('the checked-in repo agrees with its recorded divergence', () {
+      expect(
+        findBridgeRuntimeDrift(
+          Directory.current,
+          bridgeLlamaCppTag,
+          bridgeLlamaCppDivergence,
+        ),
+        isEmpty,
+      );
+    });
+
+    test('an unrecorded divergence is reported', () {
+      final root = _fakeRuntimeRepo(bridgeTag: 'b10514', nativeTag: 'b10545');
+
+      expect(
+        findBridgeRuntimeDrift(root, 'b10514', null),
+        contains(
+          'bridge assets embed llama.cpp b10514 but $nativeLlamaCppTagPath '
+          'pins b10545 — move the bridge asset pin, or set '
+          'bridgeLlamaCppDivergence and say so in the docs',
+        ),
+      );
+    });
+
+    test('a recorded divergence permits the mismatch', () {
+      final root = _fakeRuntimeRepo(bridgeTag: 'b10514', nativeTag: 'b10545');
+
+      expect(findBridgeRuntimeDrift(root, 'b10514', 'because'), isEmpty);
+    });
+
+    test('a divergence record left behind after convergence is reported', () {
+      final root = _fakeRuntimeRepo(bridgeTag: 'b10545', nativeTag: 'b10545');
+
+      expect(
+        findBridgeRuntimeDrift(root, 'b10545', 'because'),
+        contains(
+          'bridgeLlamaCppDivergence records a divergence, but the bridge '
+          'assets and $nativeLlamaCppTagPath both use b10545 — clear the '
+          'record and restore the parity wording in the docs',
+        ),
+      );
+    });
+
+    test('a doc naming a different bridge build is reported', () {
+      final root = _fakeRuntimeRepo(bridgeTag: 'b9999', nativeTag: 'b10545');
+
+      expect(
+        findBridgeRuntimeDrift(root, 'b10514', 'because'),
+        contains('doc/webgpu_bridge.md: states b9999, expected b10514'),
+      );
+    });
+
+    test('a reworded parity sentence is reported rather than skipped', () {
+      final root = _fakeRuntimeRepo(bridgeTag: 'b10514', nativeTag: 'b10545');
+      File('${root.path}/doc/webgpu_bridge.md').writeAsStringSync(
+        'That release embeds llama.cpp `b10514`, matching.\n',
+      );
+
+      expect(
+        findBridgeRuntimeDrift(root, 'b10514', 'because').join('\n'),
+        contains('matches 0 lines, expected 1'),
+      );
+    });
+
+    test('a missing native pin fails instead of passing vacuously', () {
+      final root = _fakeRuntimeRepo(bridgeTag: 'b10514', nativeTag: 'b10545');
+      File(
+        '${root.path}/$nativeLlamaCppTagPath',
+      ).writeAsStringSync('// nothing here\n');
+
+      expect(
+        findBridgeRuntimeDrift(root, 'b10514', 'because'),
+        contains(
+          '$nativeLlamaCppTagPath: no _llamaCppTag constant; the gate cannot '
+          'run',
+        ),
+      );
+    });
   });
 }
