@@ -7,13 +7,29 @@ long procedures in discoverable docs.
 ## Quick Commands
 
 ```bash
-dart pub get
+dart run tool/prepare_workspace.dart
 dart format .
 dart format --output=none --set-exit-if-changed .
 dart analyze
 dart test -p vm -j 1 --exclude-tags local-only
 dart test -p chrome --exclude-tags local-only
 ```
+
+The workspace preparation command resolves the root package and every
+maintained example, and fails if any example or companion package is missing or
+unclassified. Run it from a clean checkout before the root format/analyze
+gates; CI uses the same entry point and fails if it leaves tracked files
+modified. Never hand-edit a `pubspec.lock`: pin the offending dependency in
+`pubspec.yaml` and let pub regenerate the lock, so its `sdks:` block stays one
+pub can actually produce. Companion packages retain their own dependency,
+analyze, test, SwiftPM, and publish-validation lanes.
+Run repository-wide quality gates with the exact Flutter SDK CI pins: `3.47.1`,
+recorded in `.flutter-version` at the repo root and in every
+`subosito/flutter-action` step. Older Dart formatters produce different source
+layouts, so a different SDK makes `dart format --set-exit-if-changed` disagree
+with CI in both directions. Bumping the pin is its own PR: update
+`.flutter-version` and the workflow steps together, and carry any reformatting
+the new `dart_style` demands in that same PR.
 
 Use the testing matrix to choose validation for non-trivial changes:
 
@@ -31,6 +47,13 @@ For docs and release-sensitive snippets:
 ./tool/docs/build_site.sh
 ./tool/docs/validate_links.sh
 dart run tool/testing/verify_release_docs_versions.dart
+```
+
+For chat-template handler, parser, or grammar changes, run the pinned upstream
+suite plus compiled specialized-grammar acceptance checks:
+
+```bash
+tool/testing/run_template_parity_suites.sh
 ```
 
 For coverage when `lib/` behavior changes or coverage is in doubt:

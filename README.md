@@ -194,7 +194,12 @@ bindings, runtime behavior, and docs have been validated together.
 
 For package changes:
 
+Use the Flutter SDK pinned in `.flutter-version` (`3.47.1`), the same version
+CI installs, for repository-wide quality gates. Older Dart formatters produce
+different source layouts.
+
 ```bash
+dart run tool/prepare_workspace.dart
 dart format --output=none --set-exit-if-changed .
 dart analyze
 dart test -p vm -j 1 --exclude-tags local-only

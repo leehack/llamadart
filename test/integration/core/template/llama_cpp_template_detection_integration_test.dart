@@ -6,6 +6,7 @@ import 'dart:io';
 import 'package:llamadart/src/core/models/chat/chat_message.dart';
 import 'package:llamadart/src/core/models/chat/chat_role.dart';
 import 'package:llamadart/src/core/models/chat/content_part.dart';
+import 'package:llamadart/src/core/models/inference/tool_choice.dart';
 import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:llamadart/src/core/models/tools/tool_param.dart';
 import 'package:llamadart/src/core/template/chat_format.dart';
@@ -83,7 +84,7 @@ void main() {
       'deepseek-ai-DeepSeek-R1-Distill-Llama-8B.jinja': ChatFormat.deepseekR1,
       'deepseek-ai-DeepSeek-R1-Distill-Qwen-32B.jinja': ChatFormat.deepseekR1,
       'deepseek-ai-DeepSeek-V3.1.jinja': ChatFormat.deepseekV3,
-      'deepseek-ai-DeepSeek-V3.2.jinja': ChatFormat.deepseekV4,
+      'deepseek-ai-DeepSeek-V3.2.jinja': ChatFormat.deepseekV32,
       'deepseek-ai-DeepSeek-V4.jinja': ChatFormat.deepseekV4,
       'deepseek-ai-DeepSeek-V4-Flash-0731.jinja': ChatFormat.deepseekV4,
       'fireworks-ai-llama-3-firefunction-v2.jinja': ChatFormat.firefunctionV2,
@@ -146,6 +147,11 @@ void main() {
           .where((name) => !expected.containsKey(name))
           .toList();
       missing.sort();
+      expect(
+        files,
+        hasLength(expected.length),
+        reason: 'A registered llama.cpp template fixture must not disappear.',
+      );
       expect(
         missing,
         isEmpty,
@@ -254,6 +260,7 @@ void main() {
         final parsed = ChatTemplateEngine.parse(
           rendered.format,
           sampleOutputForFormat(ChatFormat.values[rendered.format]),
+          tools: [tool],
           thinkingForcedOpen: rendered.thinkingForcedOpen,
         );
         expect(
@@ -263,6 +270,171 @@ void main() {
         );
         expect(parsed.toolCalls.single.function?.name, 'get_weather');
         expect(parsed.toolCalls.single.function?.arguments, contains('Seoul'));
+      }
+    }, skip: fixtureSkipReason);
+
+    test(
+      'collision-prone names survive pinned render and production parse',
+      () {
+        final collisionTools = <ToolDefinition>[
+          ToolDefinition(
+            name: 'a b',
+            description: 'Spaced tool name',
+            parameters: const [],
+            handler: (_) async => null,
+          ),
+          ToolDefinition(
+            name: 'a-b',
+            description: 'Dashed tool name',
+            parameters: [
+              ToolParam.string('x y', required: true),
+              ToolParam.string('x-y', required: true),
+            ],
+            handler: (_) async => null,
+          ),
+        ];
+        const cases = <String, ({ChatFormat format, String output})>{
+          'CohereForAI-c4ai-command-r7b-12-2024-tool_use.jinja': (
+            format: ChatFormat.commandR7B,
+            output:
+                '<|START_ACTION|>'
+                '[{"tool_name":"a-b","parameters":'
+                '{"x y":"first","x-y":"second"}}]'
+                '<|END_ACTION|>',
+          ),
+          'NousResearch-Hermes-2-Pro-Llama-3-8B-tool_use.jinja': (
+            format: ChatFormat.hermes,
+            output:
+                '<tool_call>{"name":"a-b","arguments":'
+                '{"x y":"first","x-y":"second"}}</tool_call>',
+          ),
+          'tencent-Hy3.jinja': (
+            format: ChatFormat.hunyuanV3,
+            output:
+                '</think:opensource><tool_calls:opensource>\n'
+                '<tool_call:opensource>a-b<tool_sep:opensource>\n'
+                '<arg_key:opensource>x y</arg_key:opensource>\n'
+                '<arg_value:opensource>first</arg_value:opensource>\n'
+                '<arg_key:opensource>x-y</arg_key:opensource>\n'
+                '<arg_value:opensource>second</arg_value:opensource>\n'
+                '</tool_call:opensource>\n'
+                '</tool_calls:opensource>',
+          ),
+        };
+
+        for (final entry in cases.entries) {
+          final source = File(
+            '${templatesDir.path}/${entry.key}',
+          ).readAsStringSync();
+          final rendered = ChatTemplateEngine.render(
+            templateSource: source,
+            messages: messages,
+            metadata: metadata,
+            tools: collisionTools,
+          );
+
+          expect(
+            ChatFormat.values[rendered.format],
+            entry.value.format,
+            reason: entry.key,
+          );
+          for (final literal in const ['a b', 'a-b', 'x y', 'x-y']) {
+            expect(rendered.prompt, contains(literal), reason: entry.key);
+          }
+
+          final parsed = ChatTemplateEngine.parse(
+            rendered.format,
+            entry.value.output,
+            tools: collisionTools,
+            thinkingForcedOpen: rendered.thinkingForcedOpen,
+          );
+          expect(parsed.content, isEmpty, reason: entry.key);
+          expect(parsed.toolCalls, hasLength(1), reason: entry.key);
+          expect(parsed.toolCalls.single.function?.name, 'a-b');
+          expect(parsed.toolCalls.single.function?.arguments, contains('x y'));
+          expect(parsed.toolCalls.single.function?.arguments, contains('x-y'));
+        }
+      },
+      skip: fixtureSkipReason,
+    );
+
+    test('direct-Jinja grammars preserve tool-choice and prefix semantics', () {
+      const templates = [
+        'Kimi-K3.jinja',
+        'MiniMax-M3.jinja',
+        'deepseek-ai-DeepSeek-V3.2.jinja',
+        'deepseek-ai-DeepSeek-V4.jinja',
+        'muse-glimmer.jinja',
+        'poolside-Laguna-XS-2.1.jinja',
+      ];
+      for (final templateName in templates) {
+        final source = File(
+          '${templatesDir.path}/$templateName',
+        ).readAsStringSync();
+        for (final enableThinking in const [true, false]) {
+          final auto = ChatTemplateEngine.render(
+            templateSource: source,
+            messages: messages,
+            metadata: metadata,
+            tools: [tool],
+            toolChoice: ToolChoice.auto,
+            enableThinking: enableThinking,
+          );
+          expect(auto.grammar, isNotNull, reason: templateName);
+          expect(auto.grammarLazy, isTrue, reason: templateName);
+          expect(auto.grammarTriggers, isNotEmpty, reason: templateName);
+
+          final required = ChatTemplateEngine.render(
+            templateSource: source,
+            messages: messages,
+            metadata: metadata,
+            tools: [tool],
+            toolChoice: ToolChoice.required,
+            enableThinking: enableThinking,
+          );
+          expect(required.grammar, isNotNull, reason: templateName);
+          expect(required.grammarLazy, isFalse, reason: templateName);
+          expect(required.grammarTriggers, isEmpty, reason: templateName);
+          expect(
+            required.grammar,
+            startsWith('root ::= '),
+            reason: templateName,
+          );
+
+          final none = ChatTemplateEngine.render(
+            templateSource: source,
+            messages: messages,
+            metadata: metadata,
+            tools: [tool],
+            toolChoice: ToolChoice.none,
+            enableThinking: enableThinking,
+          );
+          expect(none.grammar, isNull, reason: templateName);
+          expect(none.grammarLazy, isFalse, reason: templateName);
+          expect(none.grammarTriggers, isEmpty, reason: templateName);
+        }
+      }
+    }, skip: fixtureSkipReason);
+
+    test('DeepSeek grammars retain template-specific DSML envelopes', () {
+      for (final entry in const {
+        'deepseek-ai-DeepSeek-V3.2.jinja': 'function_calls',
+        'deepseek-ai-DeepSeek-V4.jinja': 'tool_calls',
+      }.entries) {
+        final source = File(
+          '${templatesDir.path}/${entry.key}',
+        ).readAsStringSync();
+        final rendered = ChatTemplateEngine.render(
+          templateSource: source,
+          messages: messages,
+          metadata: metadata,
+          tools: [tool],
+        );
+        expect(
+          rendered.grammar,
+          startsWith('root ::= "<｜DSML｜${entry.value}>'),
+        );
+        expect(rendered.grammarTriggers.single.value, '<｜DSML｜${entry.value}>');
       }
     }, skip: fixtureSkipReason);
   });

@@ -1,5 +1,52 @@
 ## Unreleased
 
+* Patched the website's vulnerable `nanoid` and `uuid` dependency paths. Until
+  Docusaurus replaces its unpatched image parser, automatic local Markdown
+  images are rejected; website contributors should use static pathname URLs.
+
+* Fixed `llamadart_native_runtimes` values `none`, `off`, and the string
+  `false` selecting every runtime family instead of none;
+  the build hook fails with its `No native runtimes selected` error again, as
+  it did before 0.8.0. A YAML boolean `false` clears the selection too. Unset,
+  empty, and all-unrecognised config still select every family.
+
+* The published package no longer ships the `doc/` directory; that contributor
+  and maintainer documentation is maintained on GitHub, and the packaged files
+  that link to it now use absolute URLs.
+
+* Fixed unanchored `docs/` and `website/` publish-exclusions that matched those
+  directory names at any depth and dropped `tool/docs/` plus the
+  `llamadart_server` example's OpenAPI spec and Swagger UI sources from the
+  package, leaving the published example unable to analyze. Both patterns are
+  now root-anchored.
+
+* Narrowed the `dinja` dependency constraint to `>=1.0.0 <1.1.0` so chat
+  template capability detection cannot silently resolve against an unverified
+  Jinja parser minor. A 1.0.x patch can still reorganise the private sources
+  the analyzer imports; a new coupling test turns that into a named failure.
+
+* Fixed Command R7B, Hermes, and Hunyuan V3 tool grammars so distinct tool or
+  parameter names cannot collide after conversion to internal GBNF rule names.
+
+* Fixed DeepSeek V3.2 DSML tool calls using their upstream
+  `<｜DSML｜function_calls>` envelope while preserving DeepSeek V4's distinct
+  `<｜DSML｜tool_calls>` grammar and parser behavior.
+
+* Fixed partial GLM 4.5, Poolside Laguna, and Muse Glimmer tool envelopes
+  leaking into streamed assistant content, while preserving completed calls,
+  malformed final output, and ordinary text surrounding Muse recipient
+  channels.
+
+* Fixed schema-constrained tool calls for Kimi K3, MiniMax M1/M3, DeepSeek
+  V3.2/V4, and Muse Glimmer, including exact escaped names, required fields,
+  declared value types, matching MiniMax M3 element tags, zero-argument calls,
+  and strings containing delimiter characters. Required-tool mode now accepts
+  each format's reasoning/content prefix while still requiring a call.
+  MiniMax M3, DeepSeek DSML, Muse Glimmer, Poolside Laguna, and GLM 4.5 now
+  reconstruct argument values from the declared tool schema instead of
+  guessing from text. Added `ToolParam.nullType` for null-only JSON Schema
+  properties.
+
 * llama.cpp backend initialization failures now complete the worker startup
   handshake with a typed `LlamaBackendInitializationException` and collected
   native-loader diagnostics. A failed or incompatible worker is torn down
@@ -83,6 +130,11 @@
   from the llama.cpp backend. Speculative decoding is unchanged: it continues to
   run through the native wrapper, and `SpeculativeDecodingStrategy` keeps every
   existing option.
+
+* Chat-template capability detection now logs a debug message naming the
+  probe (`string-content`, `typed-content`, `system-role`, `tools`) when its
+  render throws, so a template that fails to render is distinguishable from
+  one that genuinely lacks the capability.
 
 ## 0.8.20
 

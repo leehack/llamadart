@@ -7,7 +7,11 @@ Thank you for your interest in contributing to `llamadart`! We welcome contribut
 Before you begin, ensure you have the following installed:
 
 -   **Dart SDK**: >= 3.10.7
--   **Flutter SDK**: >= 3.38.0 (optional, for running UI examples)
+-   **Flutter SDK**: the version pinned in `.flutter-version` (`3.47.1`) for
+    repository-wide quality gates and Flutter examples (runtime support starts
+    at 3.38.0; root-package-only Dart work can use the Dart SDK alone). CI
+    installs that exact version, so it defines the canonical formatter; any
+    other SDK can produce different source layouts.
 -   **CMake**: >= 3.10
 -   **C++ Compiler**:
     -   **macOS**: Xcode Command Line Tools (`xcode-select --install`)
@@ -77,6 +81,12 @@ When a user adds `llamadart` as a dependency and runs their app:
     ```
 
 2.  **Initialize**:
+    For repository-wide format/analyze gates and all maintained examples, use
+    the workspace bootstrap (it invokes Flutter for the Flutter examples):
+    ```bash
+    dart run tool/prepare_workspace.dart
+    ```
+    For root-package-only Dart changes, the Dart SDK is sufficient:
     ```bash
     dart pub get
     ```
@@ -117,9 +127,10 @@ Always verify paths in your environment before using them.
 We take testing seriously. CI enforces **>=70% line coverage on maintainable `lib/` code**. Auto-generated files are excluded when they are marked with `// coverage:ignore-file`.
 
 The authoritative contributor test matrix lives in
-[`doc/testing_matrix.md`](doc/testing_matrix.md) and
-`tool/testing/test_matrix.dart`. Use it to decide which runtime/model/feature
-rows apply to a PR and to generate the evidence table for the pull request:
+[`doc/testing_matrix.md`](https://github.com/leehack/llamadart/blob/main/doc/testing_matrix.md)
+and `tool/testing/test_matrix.dart`. Use it to decide which
+runtime/model/feature rows apply to a PR and to generate the evidence table for
+the pull request:
 
 ```bash
 dart run tool/testing/test_matrix.dart --list
@@ -240,7 +251,11 @@ If you need to build binaries for a new release:
 
 ## Development Guidelines
 
--   **Code Style**: We follow standard Dart linting rules. Run `dart format .` before committing.
+-   **Code Style**: We follow standard Dart linting rules. Before the root
+    format and analyzer gates, run `dart run tool/prepare_workspace.dart` to
+    resolve the root package and examples and verify that every maintained
+    package is classified. Companion packages resolve and validate in their
+    dedicated CI lanes. Then run `dart format .` before committing.
 -   **Native Assets**: The package uses the modern **Dart Native Assets** (hooks) mechanism.
 -   **Testing**: Add unit tests for new features where possible. Use `dart test` for full integration and unit verification.
 

@@ -1,9 +1,67 @@
+import 'package:llamadart/src/core/exceptions.dart';
 import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:llamadart/src/core/models/tools/tool_param.dart';
+import 'package:llamadart/src/core/template/handlers/command_r7b_handler.dart';
+import 'package:llamadart/src/core/template/handlers/hermes_handler.dart';
+import 'package:llamadart/src/core/template/handlers/hunyuan_v3_handler.dart';
 import 'package:llamadart/src/core/template/tool_call_grammar_utils.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test('ruleName preserves safe names and distinguishes escaped runes', () {
+    expect(ToolCallGrammarUtils.ruleName('code'), 'code');
+    expect(
+      ToolCallGrammarUtils.ruleName('a b'),
+      isNot(ToolCallGrammarUtils.ruleName('a-b')),
+    );
+    expect(
+      ToolCallGrammarUtils.ruleName('Weather'),
+      isNot(ToolCallGrammarUtils.ruleName('weather')),
+    );
+    expect(
+      ToolCallGrammarUtils.ruleName(''),
+      isNot(ToolCallGrammarUtils.ruleName('rule-empty')),
+    );
+  });
+
+  test('collision-sensitive handlers reject lossy schema identities', () {
+    final duplicateTools = [_tool('inspect'), _tool('inspect')];
+    final duplicateParameters = ToolDefinition(
+      name: 'ambiguous',
+      description: 'Duplicate parameter coverage',
+      parameters: [ToolParam.string('mode'), ToolParam.boolean('mode')],
+      handler: _noop,
+    );
+    final builders = <String? Function(List<ToolDefinition>?)>[
+      CommandR7BHandler().buildGrammar,
+      HermesHandler().buildGrammar,
+      HunyuanV3Handler().buildGrammar,
+    ];
+
+    for (final buildGrammar in builders) {
+      expect(
+        () => buildGrammar(duplicateTools),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            contains('unique tool names'),
+          ),
+        ),
+      );
+      expect(
+        () => buildGrammar([duplicateParameters]),
+        throwsA(
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            contains('declared more than once'),
+          ),
+        ),
+      );
+    }
+  });
+
   test('wrapRootGrammar wraps root rule with literals', () {
     const grammar = 'root ::= obj\nobj ::= "{}"\n';
 
@@ -120,3 +178,10 @@ void main() {
 Future<Object?> _noop(_) async {
   return 'ok';
 }
+
+ToolDefinition _tool(String name) => ToolDefinition(
+  name: name,
+  description: 'Identity coverage',
+  parameters: const [],
+  handler: _noop,
+);

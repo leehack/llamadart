@@ -12,7 +12,7 @@
 //   2. Add an `_Entry` to `_manifest` below (id, family substrings, bos/eos).
 //   3. Run: dart run tool/gen_litert_lm_templates.dart
 //
-// See `doc/litert_lm_templates.md`.
+// See https://github.com/leehack/llamadart/blob/main/doc/litert_lm_templates.md
 
 import 'dart:io';
 
@@ -43,7 +43,7 @@ class _Entry {
 
 // Order matters: the registry matches top-to-bottom and the first hit wins, so
 // more specific families must precede broader ones (gemma-4 and gemma-3n before
-// gemma-3). See `doc/litert_lm_templates.md`.
+// gemma-3).
 const List<_Entry> _manifest = [
   _Entry(
     id: 'gemma4',

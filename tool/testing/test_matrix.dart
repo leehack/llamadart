@@ -40,7 +40,8 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     mode: 'CI + local',
     covers: 'format, analyzer, web/native import boundaries',
     command:
-        'dart format --output=none --set-exit-if-changed .; dart analyze; '
+        'dart run tool/prepare_workspace.dart && '
+        'dart format --output=none --set-exit-if-changed . && dart analyze && '
         'dart run tool/testing/check_platform_boundaries.dart',
     useWhen: 'Every non-trivial PR.',
   ),
@@ -396,7 +397,9 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     id: 'template-parity',
     tier: 'targeted',
     mode: 'local-only',
-    covers: 'vendored llama.cpp chat-template detection/render/parse parity',
+    covers:
+        'vendored llama.cpp chat-template detection/render/parse parity and '
+        'compiled structured-output GBNF schema and collision acceptance/rejection',
     command: 'tool/testing/run_template_parity_suites.sh',
     useWhen: 'Template engine, handlers, grammar, or parser changes.',
   ),
@@ -661,7 +664,7 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     command:
         'Run android-arm64-device-smoke on old and modern arm64 devices with '
         'the cpu_profile full and compact configurations; see '
-        'doc/android_runtime_smoke_test_plan.md.',
+        'https://github.com/leehack/llamadart/blob/main/doc/android_runtime_smoke_test_plan.md',
     useWhen:
         'Android runtime selection, CPU variants, release candidates, or '
         'native bundle changes affecting Android.',

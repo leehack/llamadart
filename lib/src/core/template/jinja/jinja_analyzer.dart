@@ -8,6 +8,7 @@ import 'package:dinja/src/parser.dart';
 // ignore: implementation_imports
 import 'package:dinja/src/lexer.dart';
 
+import '../../llama_logger.dart';
 import '../template_caps.dart';
 
 /// Analyzes a Jinja template AST to detect capabilities more robustly than regex.
@@ -50,6 +51,7 @@ class JinjaAnalyzer {
 
     final stringRender = _renderTemplate(
       template,
+      probe: 'string-content',
       messages: <Map<String, dynamic>>[
         <String, dynamic>{'role': 'user', 'content': 'content'},
       ],
@@ -65,6 +67,7 @@ class JinjaAnalyzer {
     ];
     final typedRender = _renderTemplate(
       template,
+      probe: 'typed-content',
       messages: <Map<String, dynamic>>[
         <String, dynamic>{'role': 'user', 'content': typedContent},
       ],
@@ -81,6 +84,7 @@ class JinjaAnalyzer {
 
     final systemRender = _renderTemplate(
       template,
+      probe: 'system-role',
       messages: <Map<String, dynamic>>[
         <String, dynamic>{'role': 'system', 'content': _systemMarker},
         <String, dynamic>{'role': 'user', 'content': 'hello'},
@@ -95,6 +99,7 @@ class JinjaAnalyzer {
 
     final toolRender = _renderTemplate(
       template,
+      probe: 'tools',
       messages: <Map<String, dynamic>>[
         <String, dynamic>{'role': 'user', 'content': 'hello'},
         <String, dynamic>{
@@ -165,13 +170,24 @@ class JinjaAnalyzer {
   static Template? _createTemplate(String source) {
     try {
       return Template(source);
-    } catch (_) {
+    } catch (error) {
+      LlamaLogger.instance.debug(
+        'JinjaAnalyzer: Template construction failed; keeping AST-only '
+        'capabilities and skipping execution probes: $error',
+      );
       return null;
     }
   }
 
+  /// Renders one capability probe, returning `null` when the render throws.
+  ///
+  /// [probe] names the capability being probed so a render failure is
+  /// distinguishable in debug logs from a template that simply does not emit
+  /// the probe marker. The caller decides how a missing render affects each
+  /// capability; not every probe maps directly to a cleared flag.
   static String? _renderTemplate(
     Template template, {
+    required String probe,
     required List<Map<String, dynamic>> messages,
     required List<Map<String, dynamic>> tools,
   }) {
@@ -188,7 +204,11 @@ class JinjaAnalyzer {
         'datetime': '',
       };
       return template.render(context);
-    } catch (_) {
+    } catch (error) {
+      LlamaLogger.instance.debug(
+        'JinjaAnalyzer: $probe capability probe failed to render; skipping '
+        'this execution probe: $error',
+      );
       return null;
     }
   }

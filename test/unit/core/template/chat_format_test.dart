@@ -58,6 +58,16 @@ void main() {
       expect(format, equals(ChatFormat.deepseekV4));
     });
 
+    test('detects DeepSeek V3.2 DSML function_calls template', () {
+      const source =
+          "{%- set dsml_token = '｜DSML｜' -%}"
+          "<' + dsml_token + 'function_calls>"
+          "<' + dsml_token + 'invoke name=\"\$FUNCTION_NAME\">"
+          "</' + dsml_token + 'function_calls>";
+      final format = detectChatFormat(source);
+      expect(format, equals(ChatFormat.deepseekV32));
+    });
+
     test('detects Cohere2 MoE / North Code before older Command-R', () {
       const source =
           '<|START_THINKING|><|END_THINKING|><|START_TEXT|>{{ content }}<|END_TEXT|><|START_ACTION|>[]<|END_ACTION|>';
