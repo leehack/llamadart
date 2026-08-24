@@ -2160,6 +2160,7 @@ Future<_WindowsProcessIdentity> _windowsProcessIdentity(
     ],
     runInShell: false,
     environment: {markerEnvironment: expectedCommandFragment},
+    includeParentEnvironment: true,
   );
   final stdoutSubscription = probe.stdout.listen(null);
   final stderrSubscription = probe.stderr.listen(null);
