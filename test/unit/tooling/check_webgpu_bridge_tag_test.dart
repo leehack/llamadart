@@ -104,6 +104,17 @@ void main() {
     final source = File(
       'tool/testing/check_webgpu_bridge_tag.dart',
     ).readAsStringSync();
+    final wrongRootSource = source.replaceFirst(
+      RegExp(
+        r'repoRoot,\r?\n\s*bridgeLlamaCppTag,\r?\n\s*'
+        r'bridgeLlamaCppDivergence,',
+      ),
+      'Directory.systemTemp,\n'
+      '      bridgeLlamaCppTag,\n'
+      '      bridgeLlamaCppDivergence,',
+    );
+
+    expect(wrongRootSource, isNot(equals(source)));
 
     expect(
       _bridgeCliContractProblems(
@@ -114,17 +125,7 @@ void main() {
       ),
       isNotEmpty,
     );
-    expect(
-      _bridgeCliContractProblems(
-        source.replaceFirst(
-          'repoRoot,\n      bridgeLlamaCppTag,\n      bridgeLlamaCppDivergence,',
-          'Directory.systemTemp,\n'
-              '      bridgeLlamaCppTag,\n'
-              '      bridgeLlamaCppDivergence,',
-        ),
-      ),
-      isNotEmpty,
-    );
+    expect(_bridgeCliContractProblems(wrongRootSource), isNotEmpty);
     expect(
       _bridgeCliContractProblems(
         source.replaceFirst('if (verifyManifest)', 'if (false)'),
