@@ -194,8 +194,9 @@ bindings, runtime behavior, and docs have been validated together.
 
 For package changes:
 
-Use the current Flutter stable SDK, matching CI, for repository-wide quality
-gates. Older Dart formatters can produce different source layouts.
+Use the Flutter SDK pinned in `.flutter-version` (`3.47.1`), the same version
+CI installs, for repository-wide quality gates. Older Dart formatters produce
+different source layouts.
 
 ```bash
 dart run tool/prepare_workspace.dart

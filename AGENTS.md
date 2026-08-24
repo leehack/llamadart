@@ -23,8 +23,13 @@ modified. Never hand-edit a `pubspec.lock`: pin the offending dependency in
 `pubspec.yaml` and let pub regenerate the lock, so its `sdks:` block stays one
 pub can actually produce. Companion packages retain their own dependency,
 analyze, test, SwiftPM, and publish-validation lanes.
-Run repository-wide quality gates with the current Flutter stable SDK used by
-CI; older Dart formatters can produce different source layouts.
+Run repository-wide quality gates with the exact Flutter SDK CI pins: `3.47.1`,
+recorded in `.flutter-version` at the repo root and in every
+`subosito/flutter-action` step. Older Dart formatters produce different source
+layouts, so a different SDK makes `dart format --set-exit-if-changed` disagree
+with CI in both directions. Bumping the pin is its own PR: update
+`.flutter-version` and the workflow steps together, and carry any reformatting
+the new `dart_style` demands in that same PR.
 
 Use the testing matrix to choose validation for non-trivial changes:
 
