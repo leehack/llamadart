@@ -148,6 +148,11 @@ void main() {
           .toList();
       missing.sort();
       expect(
+        files,
+        hasLength(expected.length),
+        reason: 'A registered llama.cpp template fixture must not disappear.',
+      );
+      expect(
         missing,
         isEmpty,
         reason:
