@@ -182,8 +182,9 @@ class JinjaAnalyzer {
   /// Renders one capability probe, returning `null` when the render throws.
   ///
   /// [probe] names the capability being probed so a render failure is
-  /// distinguishable in debug logs from a template that genuinely lacks the
-  /// capability - both look like a cleared flag in the returned caps.
+  /// distinguishable in debug logs from a template that simply does not emit
+  /// the probe marker. The caller decides how a missing render affects each
+  /// capability; not every probe maps directly to a cleared flag.
   static String? _renderTemplate(
     Template template, {
     required String probe,
