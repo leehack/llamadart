@@ -3,8 +3,8 @@
 /// LiteRT-LM `.litertlm` bundles do not expose their chat template through the
 /// native FFI, so the backend must supply `tokenizer.chat_template` itself,
 /// keyed by detecting the model family from the bundle filename. See
-/// `doc/litert_lm_templates.md` for the full rationale and the recipe for
-/// adding a new family.
+/// [`doc/litert_lm_templates.md`](https://github.com/leehack/llamadart/blob/main/doc/litert_lm_templates.md)
+/// for the full rationale and the recipe for adding a new family.
 class LiteRtLmChatTemplate {
   /// Creates a built-in chat template descriptor.
   const LiteRtLmChatTemplate({

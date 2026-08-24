@@ -31,6 +31,11 @@ jobs:
       - name: Install dependencies
         run: dart run tool/prepare_workspace.dart
 
+      # A tracked lockfile pub rewrites on every resolve is a real defect, and
+      # nothing else in CI would notice it.
+      - name: Verify dependency preparation leaves tracked files unchanged
+        run: git diff --exit-code
+
       - name: Verify formatting
         run: dart format --output=none --set-exit-if-changed .
 
@@ -128,6 +133,9 @@ jobs:
 
       - name: Install dependencies
         run: (cd website && npm ci)
+
+      - name: Test documentation tooling
+        run: (cd website && npm test)
 
       - name: Build documentation site
         run: ./tool/docs/build_site.sh

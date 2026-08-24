@@ -702,7 +702,7 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     command:
         'Run android-arm64-device-smoke on old and modern arm64 devices with '
         'the cpu_profile full and compact configurations; see '
-        'doc/android_runtime_smoke_test_plan.md.',
+        'https://github.com/leehack/llamadart/blob/main/doc/android_runtime_smoke_test_plan.md',
     useWhen:
         'Android runtime selection, CPU variants, release candidates, or '
         'native bundle changes affecting Android.',

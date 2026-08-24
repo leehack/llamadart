@@ -1,5 +1,30 @@
 ## Unreleased
 
+* Patched the website's vulnerable `nanoid` and `uuid` dependency paths. Until
+  Docusaurus replaces its unpatched image parser, automatic local Markdown
+  images are rejected; website contributors should use static pathname URLs.
+
+* Fixed `llamadart_native_runtimes` values `none`, `off`, and the string
+  `false` selecting every runtime family instead of none;
+  the build hook fails with its `No native runtimes selected` error again, as
+  it did before 0.8.0. A YAML boolean `false` clears the selection too. Unset,
+  empty, and all-unrecognised config still select every family.
+
+* The published package no longer ships the `doc/` directory; that contributor
+  and maintainer documentation is maintained on GitHub, and the packaged files
+  that link to it now use absolute URLs.
+
+* Fixed unanchored `docs/` and `website/` publish-exclusions that matched those
+  directory names at any depth and dropped `tool/docs/` plus the
+  `llamadart_server` example's OpenAPI spec and Swagger UI sources from the
+  package, leaving the published example unable to analyze. Both patterns are
+  now root-anchored.
+
+* Narrowed the `dinja` dependency constraint to `>=1.0.0 <1.1.0` so chat
+  template capability detection cannot silently resolve against an unverified
+  Jinja parser minor. A 1.0.x patch can still reorganise the private sources
+  the analyzer imports; a new coupling test turns that into a named failure.
+
 * Fixed Command R7B, Hermes, and Hunyuan V3 tool grammars so distinct tool or
   parameter names cannot collide after conversion to internal GBNF rule names.
 

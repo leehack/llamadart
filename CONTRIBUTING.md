@@ -127,9 +127,10 @@ Always verify paths in your environment before using them.
 We take testing seriously. CI enforces **>=70% line coverage on maintainable `lib/` code**. Auto-generated files are excluded when they are marked with `// coverage:ignore-file`.
 
 The authoritative contributor test matrix lives in
-[`doc/testing_matrix.md`](doc/testing_matrix.md) and
-`tool/testing/test_matrix.dart`. Use it to decide which runtime/model/feature
-rows apply to a PR and to generate the evidence table for the pull request:
+[`doc/testing_matrix.md`](https://github.com/leehack/llamadart/blob/main/doc/testing_matrix.md)
+and `tool/testing/test_matrix.dart`. Use it to decide which
+runtime/model/feature rows apply to a PR and to generate the evidence table for
+the pull request:
 
 ```bash
 dart run tool/testing/test_matrix.dart --list
