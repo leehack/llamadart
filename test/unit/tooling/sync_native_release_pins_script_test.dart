@@ -1230,10 +1230,16 @@ time.sleep(300)
       addTearDown(() async {
         childPid ??= await _readPidFile(childPidFile);
         if (parentPid != null) {
-          await _ensureWindowsProcessStopped(parentPid!);
+          await _ensureWindowsProcessStopped(
+            parentPid!,
+            expectedCommandFragment: parentScript.path,
+          );
         }
         if (childPid != null) {
-          await _ensureWindowsProcessStopped(childPid!);
+          await _ensureWindowsProcessStopped(
+            childPid!,
+            expectedCommandFragment: childScript.path,
+          );
         }
       });
 
@@ -1248,6 +1254,13 @@ time.sleep(300)
             childPid = await _waitForPidFile(
               childPidFile,
               timeout: const Duration(seconds: 30),
+            );
+            expect(
+              await _windowsProcessExists(
+                childPid!,
+                expectedCommandFragment: childScript.path,
+              ),
+              isTrue,
             );
           },
           redactions: {root.path: '<temp>', secret: '<redacted>'},
@@ -1274,13 +1287,15 @@ time.sleep(300)
 
       expect(parentPid, isNotNull);
       expect(childPid, isNotNull);
-      // _terminateProcessTree awaits this exact Process handle. A numeric PID
-      // probe after exit can observe an unrelated process if Windows reuses it.
+      // _terminateProcessTree awaits this exact Process handle. Keep the
+      // command-line identity on the child probe because Windows can reuse a
+      // numeric PID before this assertion runs.
       parentPid = null;
       expect(
         await _waitForWindowsProcessToStop(
           childPid!,
           DateTime.now().add(const Duration(seconds: 10)),
+          expectedCommandFragment: childScript.path,
         ),
         isTrue,
       );
@@ -1323,7 +1338,10 @@ print("parent exited after spawning child", flush=True)
       addTearDown(() async {
         childPid ??= await _readPidFile(childPidFile);
         if (childPid != null) {
-          await _ensureWindowsProcessStopped(childPid!);
+          await _ensureWindowsProcessStopped(
+            childPid!,
+            expectedCommandFragment: childScript.path,
+          );
         }
       });
 
@@ -1366,6 +1384,7 @@ print("parent exited after spawning child", flush=True)
         await _waitForWindowsProcessToStop(
           childPid!,
           DateTime.now().add(const Duration(seconds: 10)),
+          expectedCommandFragment: childScript.path,
         ),
         isTrue,
       );
@@ -2102,17 +2121,30 @@ String _diagnosticTail(String value, {int maxCharacters = 4096}) {
 Future<bool> _windowsProcessExists(
   int pid, {
   Duration timeout = const Duration(seconds: 3),
+  String? expectedCommandFragment,
 }) async {
+  const markerEnvironment = 'LLAMADART_EXPECTED_PROCESS_MARKER';
   final probe = await Process.start('powershell', [
     '-NoProfile',
     '-NonInteractive',
     '-Command',
     'try { '
         '[System.Diagnostics.Process]::GetProcessById(${pid.toString()}) '
-        '| Out-Null; exit 0 '
+        '| Out-Null; '
+        'if (\$env:$markerEnvironment) { '
+        '\$candidate = Get-CimInstance Win32_Process '
+        '-Filter "ProcessId = ${pid.toString()}"; '
+        'if (\$null -eq \$candidate -or '
+        '-not \$candidate.CommandLine.Contains(\$env:$markerEnvironment)) { '
+        'exit 1 '
+        '} '
+        '} '
+        'exit 0 '
         '} catch [System.ArgumentException] { exit 1 } '
         'catch { exit 2 }',
-  ], runInShell: false);
+  ], runInShell: false, environment: {
+    markerEnvironment: ?expectedCommandFragment,
+  });
   final stdoutSubscription = probe.stdout.listen(null);
   final stderrSubscription = probe.stderr.listen(null);
   final stdoutDone = stdoutSubscription.asFuture<void>();
@@ -2171,8 +2203,14 @@ int? _readPidFileSync(File file) {
   return int.tryParse(file.readAsStringSync().trim());
 }
 
-Future<void> _ensureWindowsProcessStopped(int pid) async {
-  if (!await _windowsProcessExists(pid)) {
+Future<void> _ensureWindowsProcessStopped(
+  int pid, {
+  String? expectedCommandFragment,
+}) async {
+  if (!await _windowsProcessExists(
+    pid,
+    expectedCommandFragment: expectedCommandFragment,
+  )) {
     return;
   }
   final treeCleanupDeadline = DateTime.now().add(const Duration(seconds: 15));
@@ -2191,25 +2229,41 @@ Future<void> _ensureWindowsProcessStopped(int pid) async {
     } on ProcessException {
       continue;
     }
-    if (await _waitForWindowsProcessToStop(pid, treeCleanupDeadline)) {
+    if (await _waitForWindowsProcessToStop(
+      pid,
+      treeCleanupDeadline,
+      expectedCommandFragment: expectedCommandFragment,
+    )) {
       return;
     }
   }
   Process.killPid(pid);
   final directKillDeadline = DateTime.now().add(const Duration(seconds: 5));
-  if (await _waitForWindowsProcessToStop(pid, directKillDeadline)) {
+  if (await _waitForWindowsProcessToStop(
+    pid,
+    directKillDeadline,
+    expectedCommandFragment: expectedCommandFragment,
+  )) {
     return;
   }
   fail('Failed to terminate synthetic Windows process $pid.');
 }
 
-Future<bool> _waitForWindowsProcessToStop(int pid, DateTime deadline) async {
+Future<bool> _waitForWindowsProcessToStop(
+  int pid,
+  DateTime deadline, {
+  String? expectedCommandFragment,
+}) async {
   while (DateTime.now().isBefore(deadline)) {
     final remaining = deadline.difference(DateTime.now());
     final probeTimeout = remaining < const Duration(seconds: 3)
         ? remaining
         : const Duration(seconds: 3);
-    if (!await _windowsProcessExists(pid, timeout: probeTimeout)) {
+    if (!await _windowsProcessExists(
+      pid,
+      timeout: probeTimeout,
+      expectedCommandFragment: expectedCommandFragment,
+    )) {
       return true;
     }
     await Future<void>.delayed(const Duration(milliseconds: 100));
