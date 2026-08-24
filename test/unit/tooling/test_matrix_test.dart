@@ -77,6 +77,18 @@ void main() {
       expect(releaseTable, contains('pub.dev/api/packages'));
     });
 
+    test('includes high-risk adversarial review rows', () {
+      final highRiskTable = formatTestMatrix(tier: 'high-risk');
+
+      expect(highRiskTable, contains('high-risk-exact-head-independent-qa'));
+      expect(highRiskTable, contains('structured-output-adversarial'));
+      expect(highRiskTable, contains('production-branch deletion'));
+      expect(highRiskTable, contains('compiled grammar acceptance/rejection'));
+      expect(highRiskTable, contains('auto/required/none tool choice'));
+      expect(highRiskTable, contains('pipeline-only'));
+      expect(highRiskTable, isNot(contains('root-vm')));
+    });
+
     test('formats PR evidence template with matrix ids', () {
       final template = formatPrEvidenceTemplate(tier: 'essential');
 
