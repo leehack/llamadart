@@ -1552,6 +1552,38 @@ print("parent exited after spawning child", flush=True)
     },
     skip: Platform.isWindows ? false : 'validates Windows taskkill retries',
   );
+
+  test(
+    'Windows cleanup fails closed when process identity is unknown',
+    () async {
+      var probeCalls = 0;
+
+      await expectLater(
+        _ensureWindowsProcessStopped(
+          12345,
+          expectedCommandFragment: 'synthetic-child-marker',
+          timeout: const Duration(milliseconds: 250),
+          identityProbe:
+              (
+                _, {
+                timeout = const Duration(seconds: 3),
+                required expectedCommandFragment,
+              }) async {
+                probeCalls++;
+                return _WindowsProcessIdentity.unknown;
+              },
+        ),
+        throwsA(
+          isA<TestFailure>().having(
+            (failure) => '$failure',
+            'message',
+            contains('refusing unsafe raw-PID cleanup'),
+          ),
+        ),
+      );
+      expect(probeCalls, greaterThan(0));
+    },
+  );
 }
 
 Future<_LlamaSyncSetup> _writeLlamaOnlyRepo(String currentTag) async {
@@ -2148,6 +2180,13 @@ String _diagnosticTail(String value, {int maxCharacters = 4096}) {
 
 enum _WindowsProcessIdentity { matching, absentOrDifferent, unknown }
 
+typedef _WindowsProcessIdentityProbe =
+    Future<_WindowsProcessIdentity> Function(
+      int pid, {
+      Duration timeout,
+      required String expectedCommandFragment,
+    });
+
 Future<_WindowsProcessIdentity> _windowsProcessIdentity(
   int pid, {
   Duration timeout = const Duration(seconds: 3),
@@ -2237,6 +2276,8 @@ int? _readPidFileSync(File file) {
 Future<void> _ensureWindowsProcessStopped(
   int pid, {
   required String expectedCommandFragment,
+  Duration timeout = const Duration(seconds: 25),
+  _WindowsProcessIdentityProbe? identityProbe,
 }) async {
   // This helper receives only a numeric PID, not the Process handle that Dart
   // opened for the synthetic child. Never terminate through that PID: Windows
@@ -2245,8 +2286,9 @@ Future<void> _ensureWindowsProcessStopped(
   // fallback can safely wait without risking an unrelated process.
   if (await _waitForWindowsProcessToStop(
     pid,
-    DateTime.now().add(const Duration(seconds: 25)),
+    DateTime.now().add(timeout),
     expectedCommandFragment: expectedCommandFragment,
+    identityProbe: identityProbe,
   )) {
     return;
   }
@@ -2260,13 +2302,15 @@ Future<bool> _waitForWindowsProcessToStop(
   int pid,
   DateTime deadline, {
   required String expectedCommandFragment,
+  _WindowsProcessIdentityProbe? identityProbe,
 }) async {
+  final probe = identityProbe ?? _windowsProcessIdentity;
   while (DateTime.now().isBefore(deadline)) {
     final remaining = deadline.difference(DateTime.now());
     final probeTimeout = remaining < const Duration(seconds: 3)
         ? remaining
         : const Duration(seconds: 3);
-    final identity = await _windowsProcessIdentity(
+    final identity = await probe(
       pid,
       timeout: probeTimeout,
       expectedCommandFragment: expectedCommandFragment,
