@@ -234,7 +234,8 @@ paths=(
     expect(litertRuntimeDartText, isNot(contains('legacy-macos-arm64')));
     expect(litertRuntimeDartText, isNot(contains('legacy-arm64.framework')));
     expect(litertRuntimeDartText, isNot(contains('legacy-arm64-spm')));
-    final macosPrepareText = await macosPrepareScript.readAsString();
+    final macosPrepareText = (await macosPrepareScript.readAsString())
+        .replaceAll('\r\n', '\n');
     expect(macosPrepareText, contains('litert_lm/9.9.9/macos_arm64'));
     expect(macosPrepareText, contains('litert_lm/9.9.9/macos/arm64'));
     expect(macosPrepareText, isNot(contains('litert_lm/1.0.0/')));
