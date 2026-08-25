@@ -60,6 +60,60 @@ final Map<String, RegExp> _currentNativePins = <String, RegExp>{
   ),
 };
 
+/// Current docs whose prose calls a specific native tag the default runtime.
+///
+/// Release notes and `website/versioned_docs` pages are excluded because they
+/// describe the pin that was current when they were written. The WebGPU pages
+/// are excluded too: bridge assets deliberately trail the native pin, and
+/// `tool/testing/check_webgpu_bridge_tag.dart` owns that divergence.
+/// `README.md` and `website/docs/getting-started/installation.md` are excluded
+/// as well, but their coverage differs by site. [_currentNativePins] checks
+/// `README.md`'s pin table row and `installation.md`'s `llamadart_native_tag:`
+/// override, so scanning those here would duplicate that contract.
+/// `installation.md`'s prose `leehack/llamadart-native@<tag>` claim is not in
+/// [_currentNativePins]; `tool/native/sync_native_release_pins.py` rewrites
+/// every `leehack/llamadart-native@<tag>` occurrence in these docs and owns
+/// keeping it current.
+const List<String> defaultRuntimeClaimDocs = <String>[
+  'website/docs/platforms/support-matrix.md',
+  'website/docs/guides/performance-tuning.md',
+];
+
+final RegExp _defaultRuntimeClaim = RegExp(
+  r'(?:default|package-pinned)\s+`([^`]+)`\s+runtime',
+);
+
+/// Matches the `owner/repo@` prefix docs may put in front of a native tag.
+final RegExp _qualifiedTagPrefix = RegExp(r'^[\w.-]+/[\w.-]+@');
+
+/// Returns one message per sentence in [contents] calling a tag other than
+/// [expectedPin] the default native runtime.
+///
+/// [_currentNativePins] only covers sites that declare the pin; prose asserting
+/// which runtime ships drifts silently when the pin moves, leaving the docs
+/// recommending a runtime nobody ships. Pin-agnostic wording names no tag and
+/// is always accepted. A claim may name the tag bare or as
+/// `owner/repo@<tag>`; both compare by tag.
+List<String> findStaleDefaultRuntimeClaims(
+  String path,
+  String contents,
+  String expectedPin,
+) {
+  final problems = <String>[];
+  for (final match in _defaultRuntimeClaim.allMatches(contents)) {
+    final claimed = match.group(1)!.replaceFirst(_qualifiedTagPrefix, '');
+    if (claimed == expectedPin) {
+      continue;
+    }
+    final line = contents.substring(0, match.start).split('\n').length;
+    problems.add(
+      '$path:$line calls $claimed the default native runtime, but '
+      'hook/build.dart pins $expectedPin.',
+    );
+  }
+  return problems;
+}
+
 /// A companion package whose Apple SwiftPM pin must already be recorded in the
 /// CHANGELOG section its `pubspec.yaml` version will publish.
 ///
@@ -360,6 +414,16 @@ void main(List<String> arguments) {
       );
     }
     nativePin = _checkCurrentNativePins(errors);
+    if (nativePin != null) {
+      for (final path in defaultRuntimeClaimDocs) {
+        final lines = _readLines(path, errors);
+        if (lines != null) {
+          errors.addAll(
+            findStaleDefaultRuntimeClaims(path, lines.join('\n'), nativePin),
+          );
+        }
+      }
+    }
     pending = checkCompanionSwiftPins(Directory.current, errors);
     if (releasePrep) {
       errors.addAll(pending.map((bump) => bump.toString()));

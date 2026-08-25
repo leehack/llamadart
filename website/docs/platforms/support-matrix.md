@@ -248,9 +248,9 @@ device/model bundle, use `cpu` or `gpu` for that artifact.
   It maps to upstream `draft-dspark`, requires a compatible external draft
   GGUF, and remains subject to target/draft/backend parity, acceptance, and
   throughput validation. It is an external non-MTP draft-context strategy and
-  requires at least the `b10356-llamadart.1` wrapper fix; the default `b10514`
-  runtime satisfies that ABI. WebGPU and LiteRT-LM reject this llama.cpp-
-  specific strategy explicitly.
+  requires at least the `b10356-llamadart.1` wrapper fix; the package-pinned
+  default runtime satisfies that ABI. WebGPU and LiteRT-LM reject this
+  llama.cpp-specific strategy explicitly.
 - **State persistence** (`LlamaEngine.stateSaveFile(...)` /
   `stateLoadFile(...)`) is available on native backends and on WebGPU bridge
   assets `v0.1.15+` that expose `stateSaveFile` / `stateLoadFile` bridge APIs.

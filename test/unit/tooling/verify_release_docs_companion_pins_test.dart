@@ -98,7 +98,25 @@ List<String> _releaseDocsCliContractProblems(String source) {
     );
   }
 
+  final staleClaimCheck = RegExp(
+    r'errors\.addAll\(\s*findStaleDefaultRuntimeClaims\(\s*'
+    r"path,\s*lines\.join\('\\n'\),\s*nativePin,?\s*\),?\s*\);",
+    multiLine: true,
+  ).allMatches(source).toList();
+  if (staleClaimCheck.length != 1) {
+    problems.add(
+      'expected one production stale default-runtime check, found '
+      '${staleClaimCheck.length}',
+    );
+  }
+
   final errorGuard = source.indexOf('if (errors.isNotEmpty) {');
+  if (staleClaimCheck.length == 1 &&
+      staleClaimCheck.single.start > errorGuard) {
+    problems.add(
+      'the stale default-runtime check must run before success can be reported',
+    );
+  }
   if (companionCheck.length == 1 &&
       strictMode.length == 1 &&
       !(companionCheck.single.start < strictMode.single.start &&
@@ -194,6 +212,83 @@ void main() {
       ),
       isNotEmpty,
     );
+    expect(
+      _releaseDocsCliContractProblems(
+        source.replaceFirst(
+          "findStaleDefaultRuntimeClaims(path, lines.join('\\n'), nativePin)",
+          'findStaleDefaultRuntimeClaims(path, \'\', nativePin)',
+        ),
+      ),
+      isNotEmpty,
+    );
+  });
+
+  test('the superseded default-runtime claim is rejected', () {
+    const path = 'website/docs/platforms/support-matrix.md';
+    const contents =
+        'It is an external non-MTP draft-context strategy and\n'
+        'requires at least the `b10356-llamadart.1` wrapper fix; the default '
+        '`b10514`\n'
+        'runtime satisfies that ABI.\n';
+
+    expect(
+      findStaleDefaultRuntimeClaims(path, contents, 'v0.2.0-1'),
+      contains(
+        '$path:2 calls b10514 the default native runtime, but '
+        'hook/build.dart pins v0.2.0-1.',
+      ),
+    );
+  });
+
+  test('a repo-qualified default-runtime claim compares by tag', () {
+    const contents =
+        'and symbol-compatible with the default\n'
+        '`leehack/llamadart-native@v0.2.0-1` runtime.\n';
+
+    expect(
+      findStaleDefaultRuntimeClaims('any.md', contents, 'v0.2.0-1'),
+      isEmpty,
+    );
+    expect(
+      findStaleDefaultRuntimeClaims(
+        'any.md',
+        contents.replaceFirst('v0.2.0-1', 'b10514'),
+        'v0.2.0-1',
+      ),
+      contains(
+        'any.md:1 calls b10514 the default native runtime, but '
+        'hook/build.dart pins v0.2.0-1.',
+      ),
+    );
+  });
+
+  test('pin-agnostic default-runtime wording passes', () {
+    const contents =
+        'requires at least the `b10356-llamadart.1` wrapper fix; the '
+        'package-pinned\n'
+        'default runtime satisfies that ABI.\n';
+
+    expect(
+      findStaleDefaultRuntimeClaims('any.md', contents, 'v0.2.0-1'),
+      isEmpty,
+    );
+  });
+
+  test('the scan covers current docs only', () {
+    expect(
+      defaultRuntimeClaimDocs,
+      containsAll(<String>[
+        'website/docs/platforms/support-matrix.md',
+        'website/docs/guides/performance-tuning.md',
+      ]),
+    );
+    for (final path in defaultRuntimeClaimDocs) {
+      expect(File(path).existsSync(), isTrue, reason: '$path must exist');
+      expect(
+        path,
+        isNot(anyOf(contains('versioned_docs'), contains('webgpu'))),
+      );
+    }
   });
 
   test('the checked-in companions are release-ready', () {
