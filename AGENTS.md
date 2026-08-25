@@ -274,7 +274,13 @@ Before release prep or current install-snippet changes, run:
 
 ```bash
 dart run tool/testing/verify_release_docs_versions.dart
+dart run tool/testing/verify_release_docs_versions.dart --release-prep
 ```
+
+The default run reports a companion whose `Package.swift` pin is still only in
+its `## Unreleased` section as a pending bump; `--release-prep` fails on it.
+Resolve every pending bump in the release-prep PR, because the post-merge
+workflow skips a companion version that already exists on pub.dev.
 
 After release automation runs, verify the release workflow, package publication,
 GitHub Release, docs cut, docs pages deployment, and docs version selector

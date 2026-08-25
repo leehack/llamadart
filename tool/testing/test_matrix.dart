@@ -124,8 +124,12 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     tier: 'targeted',
     mode: 'CI + local',
     covers:
-        'current README/website install snippets and companion README versions',
-    command: 'dart run tool/testing/verify_release_docs_versions.dart',
+        'current README/website install snippets, companion README versions, '
+        'and each companion SwiftPM pin against its own released CHANGELOG '
+        'section',
+    command:
+        'dart run tool/testing/verify_release_docs_versions.dart '
+        '(add --release-prep during release prep)',
     useWhen:
         'Release prep, companion package version bumps, or current install docs.',
   ),
@@ -135,9 +139,14 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     mode: 'CI + local',
     covers:
         'every site pinning the WebGPU bridge asset tag matches the fetch '
-        'script default',
-    command: 'dart run tool/testing/check_webgpu_bridge_tag.dart',
-    useWhen: 'Bridge asset tag bumps, or edits to the docs that pin it.',
+        'script default, and the bridge assets\' llama.cpp build matches the '
+        'native pin unless a divergence is recorded',
+    command:
+        'dart run tool/testing/check_webgpu_bridge_tag.dart '
+        '(add --verify-manifest to re-read the published manifest)',
+    useWhen:
+        'Bridge asset tag bumps, native llama.cpp pin bumps, or edits to the '
+        'docs that pin either.',
   ),
   TestMatrixRow(
     id: 'examples-tests',

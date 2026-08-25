@@ -7,6 +7,45 @@ import 'package:test/test.dart';
 
 import '../../../tool/testing/check_webgpu_bridge_tag.dart';
 
+List<String> _bridgeCliContractProblems(String source) {
+  final problems = <String>[];
+  final runtimeCheck = RegExp(
+    r'\.\.\.findBridgeRuntimeDrift\(\s*repoRoot,\s*bridgeLlamaCppTag,\s*'
+    r'bridgeLlamaCppDivergence,\s*\),',
+    multiLine: true,
+  ).allMatches(source).toList();
+  final manifestCheck = RegExp(
+    r'if \(verifyManifest\)\s*'
+    r'\.\.\.await verifyManifestLlamaCppTag\('
+    r'expectedTag, bridgeLlamaCppTag\),',
+    multiLine: true,
+  ).allMatches(source).toList();
+  if (runtimeCheck.length != 1) {
+    problems.add(
+      'expected one production Web/native runtime drift check, found '
+      '${runtimeCheck.length}',
+    );
+  }
+  if (manifestCheck.length != 1) {
+    problems.add(
+      'expected one opt-in production manifest check, found '
+      '${manifestCheck.length}',
+    );
+  }
+
+  final errorGuard = source.indexOf('if (problems.isNotEmpty) {');
+  if (runtimeCheck.length == 1 &&
+      manifestCheck.length == 1 &&
+      !(runtimeCheck.single.start < manifestCheck.single.start &&
+          manifestCheck.single.start < errorGuard)) {
+    problems.add(
+      'runtime-drift and manifest checks must run before success can be '
+      'reported',
+    );
+  }
+  return problems;
+}
+
 Directory _fakeRepo(String assetsTag, {Map<String, String> files = const {}}) {
   final root = Directory.systemTemp.createTempSync('bridge_tag_gate');
   addTearDown(() => root.deleteSync(recursive: true));
@@ -23,7 +62,78 @@ Directory _fakeRepo(String assetsTag, {Map<String, String> files = const {}}) {
   return root;
 }
 
+/// Builds a repo whose docs and native pin describe [bridgeTag]/[nativeTag].
+Directory _fakeRuntimeRepo({
+  required String bridgeTag,
+  required String nativeTag,
+  bool parityWording = false,
+}) {
+  final root = Directory.systemTemp.createTempSync('bridge_runtime_gate');
+  addTearDown(() => root.deleteSync(recursive: true));
+  final entries = <String, String>{
+    nativeLlamaCppTagPath: "const _llamaCppTag = '$nativeTag';\n",
+    'doc/webgpu_bridge.md': parityWording
+        ? 'That release embeds llama.cpp `$bridgeTag`, matching the '
+              '`hook/build.dart` native pin\n'
+        : 'That release embeds llama.cpp `$bridgeTag`, which now trails the '
+              '`hook/build.dart`\n',
+    'website/docs/platforms/webgpu-bridge.md': parityWording
+        ? '- `v0.1.37+` bridge assets embed llama.cpp `$bridgeTag`, matching '
+              'the native runtime\n'
+        : '- `v0.1.37+` bridge assets embed llama.cpp `$bridgeTag`, which now '
+              'trails the\n',
+  };
+  for (final entry in entries.entries) {
+    File('${root.path}/${entry.key}')
+      ..parent.createSync(recursive: true)
+      ..writeAsStringSync(entry.value);
+  }
+  return root;
+}
+
 void main() {
+  test('bridge CLI wires runtime drift and opt-in manifest checks', () {
+    final source = File(
+      'tool/testing/check_webgpu_bridge_tag.dart',
+    ).readAsStringSync();
+
+    expect(_bridgeCliContractProblems(source), isEmpty);
+  });
+
+  test('bridge CLI contract rejects deletion, bypass, and miswiring', () {
+    final source = File(
+      'tool/testing/check_webgpu_bridge_tag.dart',
+    ).readAsStringSync();
+    final wrongRootSource = source.replaceFirst(
+      RegExp(
+        r'repoRoot,\r?\n\s*bridgeLlamaCppTag,\r?\n\s*'
+        r'bridgeLlamaCppDivergence,',
+      ),
+      'Directory.systemTemp,\n'
+      '      bridgeLlamaCppTag,\n'
+      '      bridgeLlamaCppDivergence,',
+    );
+
+    expect(wrongRootSource, isNot(equals(source)));
+
+    expect(
+      _bridgeCliContractProblems(
+        source.replaceFirst(
+          '...findBridgeRuntimeDrift(',
+          '...findBridgeTagDrift(',
+        ),
+      ),
+      isNotEmpty,
+    );
+    expect(_bridgeCliContractProblems(wrongRootSource), isNotEmpty);
+    expect(
+      _bridgeCliContractProblems(
+        source.replaceFirst('if (verifyManifest)', 'if (false)'),
+      ),
+      isNotEmpty,
+    );
+  });
+
   test('the checked-in pins all quote the source of truth', () {
     final repoRoot = Directory.current;
     expect(
@@ -213,5 +323,179 @@ void main() {
       ..writeAsStringSync('ASSETS_TAG="whatever"\n');
 
     expect(() => readPinnedBridgeTag(root), throwsFormatException);
+  });
+
+  test('an unreadable registered pin is reported without throwing', () {
+    final root = _fakeRepo(
+      'v9.9.9',
+      files: <String, String>{
+        'README.md':
+            '| Web llama.cpp / GGUF | '
+            '`leehack/llama-web-bridge-assets@v9.9.9` |\n',
+      },
+    );
+    final file = File('${root.path}/README.md');
+    expect(Process.runSync('chmod', ['000', file.path]).exitCode, 0);
+    addTearDown(() => Process.runSync('chmod', ['600', file.path]));
+
+    final problems = findBridgeTagDrift(root, 'v9.9.9');
+    expect(problems, contains(contains('README.md: could not be read:')));
+  }, skip: Platform.isWindows ? 'requires POSIX file permissions' : false);
+
+  group('Web/native llama.cpp relationship', () {
+    test('the checked-in repo agrees with its recorded divergence', () {
+      expect(
+        findBridgeRuntimeDrift(
+          Directory.current,
+          bridgeLlamaCppTag,
+          bridgeLlamaCppDivergence,
+        ),
+        isEmpty,
+      );
+    });
+
+    test('an unrecorded divergence is reported', () {
+      final root = _fakeRuntimeRepo(bridgeTag: 'b10514', nativeTag: 'b10545');
+
+      expect(
+        findBridgeRuntimeDrift(root, 'b10514', null),
+        contains(
+          'bridge assets embed llama.cpp b10514 but $nativeLlamaCppTagPath '
+          'pins b10545 — move the bridge asset pin, or set '
+          'bridgeLlamaCppDivergence and say so in the docs',
+        ),
+      );
+    });
+
+    test('a recorded divergence permits the mismatch', () {
+      final root = _fakeRuntimeRepo(bridgeTag: 'b10514', nativeTag: 'b10545');
+
+      expect(findBridgeRuntimeDrift(root, 'b10514', 'because'), isEmpty);
+    });
+
+    test('a divergence record left behind after convergence is reported', () {
+      final root = _fakeRuntimeRepo(bridgeTag: 'b10545', nativeTag: 'b10545');
+
+      expect(
+        findBridgeRuntimeDrift(root, 'b10545', 'because'),
+        contains(
+          'bridgeLlamaCppDivergence records a divergence, but the bridge '
+          'assets and $nativeLlamaCppTagPath both use b10545 — clear the '
+          'record and restore the parity wording in the docs, then update '
+          'the anchored bridgeLlamaCppTagPins patterns with the wording',
+        ),
+      );
+    });
+
+    test('stale divergence prose after convergence is reported', () {
+      final root = _fakeRuntimeRepo(bridgeTag: 'b10545', nativeTag: 'b10545');
+
+      expect(
+        findBridgeRuntimeDrift(root, 'b10545', null).join('\n'),
+        contains('matches 0 lines, expected 1'),
+      );
+    });
+
+    test('parity prose is accepted after convergence', () {
+      final root = _fakeRuntimeRepo(
+        bridgeTag: 'b10545',
+        nativeTag: 'b10545',
+        parityWording: true,
+      );
+
+      expect(findBridgeRuntimeDrift(root, 'b10545', null), isEmpty);
+    });
+
+    test('a doc naming a different bridge build is reported', () {
+      final root = _fakeRuntimeRepo(bridgeTag: 'b9999', nativeTag: 'b10545');
+
+      expect(
+        findBridgeRuntimeDrift(root, 'b10514', 'because'),
+        contains('doc/webgpu_bridge.md: states b9999, expected b10514'),
+      );
+    });
+
+    test('a reworded parity sentence is reported rather than skipped', () {
+      final root = _fakeRuntimeRepo(bridgeTag: 'b10514', nativeTag: 'b10545');
+      File('${root.path}/doc/webgpu_bridge.md').writeAsStringSync(
+        'That release embeds llama.cpp `b10514`, matching.\n',
+      );
+
+      expect(
+        findBridgeRuntimeDrift(root, 'b10514', 'because').join('\n'),
+        contains('matches 0 lines, expected 1'),
+      );
+    });
+
+    test('a missing native pin fails instead of passing vacuously', () {
+      final root = _fakeRuntimeRepo(bridgeTag: 'b10514', nativeTag: 'b10545');
+      File(
+        '${root.path}/$nativeLlamaCppTagPath',
+      ).writeAsStringSync('// nothing here\n');
+
+      expect(
+        findBridgeRuntimeDrift(root, 'b10514', 'because'),
+        contains(
+          '$nativeLlamaCppTagPath: no _llamaCppTag constant; the gate cannot '
+          'run',
+        ),
+      );
+    });
+
+    test('an unreadable native pin is reported without throwing', () {
+      final root = _fakeRuntimeRepo(bridgeTag: 'b10514', nativeTag: 'b10545');
+      final file = File('${root.path}/$nativeLlamaCppTagPath');
+      expect(Process.runSync('chmod', ['000', file.path]).exitCode, 0);
+      addTearDown(() => Process.runSync('chmod', ['600', file.path]));
+
+      expect(
+        findBridgeRuntimeDrift(root, 'b10514', 'because'),
+        contains(contains('$nativeLlamaCppTagPath: could not be read:')),
+      );
+    }, skip: Platform.isWindows ? 'requires POSIX file permissions' : false);
+  });
+
+  test('malformed remote manifest JSON is reported without throwing', () async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(server.close);
+    server.listen((request) {
+      request.response
+        ..statusCode = HttpStatus.ok
+        ..write('{not-json')
+        ..close();
+    });
+
+    final errors = await verifyManifestLlamaCppTag(
+      'v9.9.9',
+      'b10514',
+      manifestUrl: Uri.parse(
+        'http://${server.address.host}:${server.port}/manifest.json',
+      ),
+    );
+
+    expect(errors, hasLength(1));
+    expect(errors.single, contains('returned invalid manifest JSON'));
+  });
+
+  test('a stalled remote manifest request times out', () async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(server.close);
+    server.listen((request) {
+      request.response.statusCode = HttpStatus.ok;
+      request.response.headers.contentType = ContentType.json;
+      request.response.write('{"llama_cpp_tag":"b10514"');
+    });
+
+    final errors = await verifyManifestLlamaCppTag(
+      'v9.9.9',
+      'b10514',
+      manifestUrl: Uri.parse(
+        'http://${server.address.host}:${server.port}/manifest.json',
+      ),
+      timeout: const Duration(milliseconds: 50),
+    );
+
+    expect(errors, hasLength(1));
+    expect(errors.single, contains('timed out reading'));
   });
 }
