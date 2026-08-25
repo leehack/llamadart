@@ -207,8 +207,9 @@ final RegExp _nativeLlamaCppTag = RegExp(r"const _llamaCppTag = '([^']+)';");
 /// left behind after the tags converged. Prose describing the relationship
 /// lives in the [bridgeLlamaCppTagPins] sentences, which move with it.
 String? get bridgeLlamaCppDivergence =>
-    'Bridge assets v0.1.37 embed b10514; the native pin moved to b10545 after '
-    'v0.8.20. Web trails native until the next bridge asset release.';
+    'Bridge assets v0.1.37 embed b10514; the native pin now consumes immutable '
+    'v0.2.0-1 (llama.cpp v0.2.0). Web trails native until the next bridge '
+    'asset release.';
 
 /// Doc sentences that state the bridge assets' llama.cpp build.
 ///

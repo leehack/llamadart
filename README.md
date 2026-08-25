@@ -64,7 +64,7 @@ Package Manager should also add the runtime companion packages they need:
 ```yaml
 dependencies:
   llamadart: ^0.8.20
-  llamadart_llama_cpp_flutter: ^0.0.15 # GGUF / llama.cpp
+  llamadart_llama_cpp_flutter: ^0.0.16 # GGUF / llama.cpp
   llamadart_litert_lm_flutter: ^0.0.10 # Apple .litertlm / LiteRT-LM targets
 ```
 
@@ -143,7 +143,7 @@ Current default runtime pins:
 
 | Runtime | Pin |
 | --- | --- |
-| Native llama.cpp / GGUF | `leehack/llamadart-native@b10545` |
+| Native llama.cpp / GGUF | `leehack/llamadart-native@v0.2.0-1` |
 | Native LiteRT-LM / `.litertlm` | `leehack/litert-lm-native@v0.16.0-native.2` |
 | Web llama.cpp / GGUF | `leehack/llama-web-bridge-assets@v0.1.37` |
 | Web LiteRT-LM / `.litertlm` | `@litert-lm/core@0.15.0` |
