@@ -2078,6 +2078,22 @@ final class _RuntimeBundleDownloadHttpException implements Exception {
   String toString() => 'Failed to download $url ($statusCode).';
 }
 
+/// Extracts a native bundle archive through the hardened build-hook path.
+///
+/// This is intended for hook tests that need to assert extraction behaviour;
+/// production code should use the build hook entrypoint.
+Future<void> extractArchiveForTesting({
+  required String archivePath,
+  required String outputDirectory,
+  required Logger log,
+}) {
+  return _extractArchive(
+    archivePath: archivePath,
+    outputDirectory: outputDirectory,
+    log: log,
+  );
+}
+
 Future<void> _extractArchive({
   required String archivePath,
   required String outputDirectory,
@@ -2093,6 +2109,11 @@ Future<void> _extractArchive({
     log.severe('Failed to decode archive $archivePath: $error');
     throw Exception('Failed to decode native bundle archive: $archivePath');
   }
+
+  final entriesByArchivePath = <String, ArchiveFile>{};
+  // Insertion-ordered and deduplicated: an archive may repeat a path, and only
+  // its last entry decides whether that path ends up a link alias or a file.
+  final symbolicLinkPaths = <String>{};
 
   for (final file in archive.files) {
     final relativePath = path.normalize(file.name);
@@ -2111,8 +2132,92 @@ Future<void> _extractArchive({
       continue;
     }
 
+    final archiveRelativePath = path.posix.joinAll(path.split(relativePath));
+    entriesByArchivePath[archiveRelativePath] = file;
+
+    // Symbolic links are materialized after the loop so link targets that
+    // appear later in the archive still resolve.
+    if (file.isSymbolicLink) {
+      symbolicLinkPaths.add(archiveRelativePath);
+      continue;
+    }
+
     final bytes = file.content as List<int>;
     await Directory(path.dirname(targetPath)).create(recursive: true);
     await File(targetPath).writeAsBytes(bytes);
   }
+
+  for (final linkPath in symbolicLinkPaths) {
+    final resolved = _resolveArchiveSymlink(
+      archivePath: archivePath,
+      linkPath: linkPath,
+      entriesByArchivePath: entriesByArchivePath,
+    );
+
+    final linkFilePath = path.join(
+      outputRoot,
+      path.joinAll(linkPath.split('/')),
+    );
+    await Directory(path.dirname(linkFilePath)).create(recursive: true);
+
+    // Archive symlinks are materialized as regular files holding the resolved
+    // target's bytes rather than as OS symlinks: Windows refuses symlink
+    // creation without developer mode or elevation, and bundled native assets
+    // are copied around by downstream tooling that would not carry a link.
+    await File(linkFilePath).writeAsBytes(resolved.entry.content as List<int>);
+    log.fine(
+      'Materialized archive symlink $linkPath as a copy of ${resolved.path}.',
+    );
+  }
+}
+
+typedef _ResolvedArchiveEntry = ({String path, ArchiveFile entry});
+
+/// Follows an archive-internal symlink chain to the regular file it points at.
+///
+/// Throws when the chain escapes the archive root, cycles, or dangles, so a
+/// malicious or truncated bundle cannot write outside the extraction root or
+/// leave unloadable placeholder libraries behind.
+_ResolvedArchiveEntry _resolveArchiveSymlink({
+  required String archivePath,
+  required String linkPath,
+  required Map<String, ArchiveFile> entriesByArchivePath,
+}) {
+  final visited = <String>{};
+  var currentPath = linkPath;
+  var current = entriesByArchivePath[currentPath]!;
+
+  while (current.isSymbolicLink) {
+    if (!visited.add(currentPath)) {
+      throw Exception(
+        'Archive symlink cycle blocked for $archivePath: $linkPath',
+      );
+    }
+
+    final target = current.symbolicLink!;
+    final resolvedPath = path.posix.normalize(
+      path.posix.join(path.posix.dirname(currentPath), target),
+    );
+    if (path.posix.isAbsolute(target) ||
+        path.isAbsolute(target) ||
+        resolvedPath == '..' ||
+        resolvedPath.startsWith('../')) {
+      throw Exception(
+        'Archive symlink traversal blocked for $archivePath: '
+        '$linkPath -> $target',
+      );
+    }
+
+    final next = entriesByArchivePath[resolvedPath];
+    if (next == null) {
+      throw Exception(
+        'Archive symlink target missing in $archivePath: $linkPath -> $target',
+      );
+    }
+
+    currentPath = resolvedPath;
+    current = next;
+  }
+
+  return (path: currentPath, entry: current);
 }

@@ -3,6 +3,7 @@ library;
 
 import 'dart:io';
 
+import 'package:archive/archive.dart';
 import 'package:code_assets/code_assets.dart';
 import 'package:hooks/hooks.dart';
 import 'package:path/path.dart' as path;
@@ -32,6 +33,10 @@ void main() {
   final litertBackupDir = Directory(
     '${litertBundleDir.path}.__hook_test_backup',
   );
+  final archiveFile = File(
+    '$cacheRelativeDir/llamadart-native-linux-x64-$nativeTag.tar.gz',
+  );
+  final archiveBackupFile = File('${archiveFile.path}.__hook_test_backup');
 
   setUpAll(() async {
     if (backupDir.existsSync()) {
@@ -43,9 +48,15 @@ void main() {
     if (litertBackupDir.existsSync()) {
       await litertBackupDir.delete(recursive: true);
     }
+    if (archiveBackupFile.existsSync()) {
+      await archiveBackupFile.delete();
+    }
 
     if (bundleDir.existsSync()) {
       await bundleDir.rename(backupDir.path);
+    }
+    if (archiveFile.existsSync()) {
+      await archiveFile.rename(archiveBackupFile.path);
     }
     if (historicalBundleDir.existsSync()) {
       await historicalBundleDir.rename(historicalBackupDir.path);
@@ -80,9 +91,19 @@ void main() {
       'libggml-vulkan.so',
     ]);
     await _writeBundleLibraries(litertBundleDir, _linuxLiteRtLibraries);
+
+    if (archiveFile.existsSync()) {
+      await archiveFile.delete();
+    }
   });
 
   tearDownAll(() async {
+    if (archiveFile.existsSync()) {
+      await archiveFile.delete();
+    }
+    if (archiveBackupFile.existsSync()) {
+      await archiveBackupFile.rename(archiveFile.path);
+    }
     if (bundleDir.existsSync()) {
       await bundleDir.delete(recursive: true);
     }
@@ -171,6 +192,38 @@ void main() {
     );
   });
 
+  test('build hook emits archive symlink aliases with target bytes', () async {
+    await bundleDir.delete(recursive: true);
+    await _writeSymlinkedBundleArchive(archiveFile);
+
+    await testCodeBuildHook(
+      mainMethod: build_hook.main,
+      targetOS: OS.linux,
+      targetArchitecture: Architecture.x64,
+      check: (input, output) {
+        final assetFilesByName = <String, File>{};
+        for (final asset
+            in output.assets.encodedAssets
+                .where((asset) => asset.isCodeAsset)
+                .map((asset) => asset.asCodeAsset)) {
+          final assetFile = File(asset.file!.toFilePath());
+          assetFilesByName[path.basename(assetFile.path)] = assetFile;
+        }
+
+        for (final fileName in const ['libmtmd.so', 'libmtmd.so.0']) {
+          final assetFile = assetFilesByName[fileName];
+          expect(assetFile, isNotNull, reason: fileName);
+          expect(assetFile!.readAsStringSync(), _mtmdPayload, reason: fileName);
+        }
+
+        expect(
+          assetFilesByName['libllamadart.so']?.readAsStringSync(),
+          'archive-libllamadart.so',
+        );
+      },
+    );
+  });
+
   test('build hook fails when runtimes config selects none', () async {
     for (final rawUserConfig in const <Object>['none', false]) {
       await expectLater(
@@ -235,6 +288,36 @@ const List<String> _linuxLiteRtAssetNames = [
   'litert_lm_LiteRtTopKWebGpuSampler',
   'litert_lm_LiteRtWebGpuAccelerator',
 ];
+
+const String _mtmdPayload = 'archive-libmtmd.so.0.2.0';
+
+Future<void> _writeSymlinkedBundleArchive(File archiveFile) async {
+  final archive = Archive();
+
+  void addRegularFile(String name, String content) {
+    archive.addFile(ArchiveFile(name, content.length, content.codeUnits));
+  }
+
+  addRegularFile('libllamadart.so', 'archive-libllamadart.so');
+  addRegularFile('libmtmd.so.0.2.0', _mtmdPayload);
+  archive.addFile(ArchiveFile.symlink('libmtmd.so.0', 'libmtmd.so.0.2.0'));
+  archive.addFile(ArchiveFile.symlink('libmtmd.so', 'libmtmd.so.0'));
+  for (final name in const [
+    'libllama.so',
+    'libllama-common.so',
+    'libggml.so',
+    'libggml-base.so',
+    'libggml-cpu.so',
+    'libggml-vulkan.so',
+  ]) {
+    addRegularFile(name, 'archive-$name');
+  }
+
+  await archiveFile.parent.create(recursive: true);
+  await archiveFile.writeAsBytes(
+    GZipEncoder().encode(TarEncoder().encode(archive)),
+  );
+}
 
 Future<void> _writeBundleLibraries(
   Directory bundleDir,
