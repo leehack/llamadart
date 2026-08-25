@@ -8,7 +8,9 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import sys
+import tempfile
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -69,10 +71,207 @@ _STABLE_NATIVE_BUNDLES = (
     "windows-arm64",
     "windows-x64",
 )
+STABLE_LITERT_TAG_RE = re.compile(r"^v(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)$")
+STABLE_LITERT_REBUILD_RE = re.compile(
+    r"^v(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)-[1-9][0-9]*$"
+)
+DEVELOPMENT_LITERT_TAG_RE = re.compile(r"^g[0-9a-f]{12}(?:-[1-9][0-9]*)?$")
+LEGACY_LITERT_TAG_RE = re.compile(
+    r"^v(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)-native\.[1-9][0-9]*$"
+)
+FULL_COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
+SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+SAFE_LITERT_LIBRARY_FILENAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.+-]*$")
+DART_FORMAT_PAGE_WIDTH = 80
+LEGACY_ALLOWLIST_PATH = (
+    Path(__file__).resolve().parent / "fixtures" / "legacy_release_allowlist.json"
+)
+LEGACY_SCHEMA1_RELEASES: dict[str, dict[str, Any]] = json.loads(
+    LEGACY_ALLOWLIST_PATH.read_text(encoding="utf-8")
+)["releases"]
+REQUIRED_LITERT_PLATFORM_BUNDLES = {
+    "android-arm64",
+    "android-x64",
+    "ios-arm64",
+    "ios-arm64-sim",
+    "linux-arm64",
+    "linux-x64",
+    "macos-arm64",
+    "macos-x64",
+    "windows-x64",
+}
+LITERT_SMOKE_ASSETS = {
+    "model": {
+        "fileName": "moonshine_tiny_5s_i8.tflite",
+        "sha256": "97abdeea122d579229091659c24c59d988c6419d453a200f6471241a53b9a9b9",
+        "url": (
+            "https://huggingface.co/litert-community/moonshine-tiny/resolve/"
+            "beb49ee5028b4fb21eb989bcbd2db30a433373db/"
+            "moonshine_tiny_5s_i8.tflite"
+        ),
+    },
+    "tokenizer": {
+        "fileName": "moonshine_tokenizer.json",
+        "sha256": "6579793438bc4fbafffacf699169ff53e3769c5a0a0f5e71cdee8853e8130deb",
+        "url": (
+            "https://huggingface.co/UsefulSensors/moonshine-tiny/resolve/"
+            "390624ed33d594443aa4aa221f5b9f283b545b5a/tokenizer.json"
+        ),
+    },
+    "fixture": {
+        "fileName": "jfk.wav",
+        "sha256": "59dfb9a4acb36fe2a2affc14bacbee2920ff435cb13cc314a08c13f66ba7860e",
+        "url": (
+            "https://raw.githubusercontent.com/ggml-org/whisper.cpp/"
+            "592feef04a1802b18cbeffd0fd0eb5d02570c2ec/samples/jfk.wav"
+        ),
+    },
+}
+LITERT_ANDROID_DAWN_OVERRIDES = [
+    {
+        "sourceRepository": "google-ai-edge/LiteRT-LM",
+        "sourceCommit": "f73637c57f0940b53da184e0d5adfc52a4e55eef",
+        "sourcePath": "prebuilt/android_arm64/libwebgpu_dawn.so",
+        "targetPath": "bin/android/arm64/libwebgpu_dawn.so",
+        "sha256": "7282aacdb076ce89f0c9d93107a145b991b99eb1dfbd5b5746dd0d99466ab3c3",
+    },
+    {
+        "sourceRepository": "google-ai-edge/LiteRT-LM",
+        "sourceCommit": "f73637c57f0940b53da184e0d5adfc52a4e55eef",
+        "sourcePath": "prebuilt/android_x86_64/libwebgpu_dawn.so",
+        "targetPath": "bin/android/x64/libwebgpu_dawn.so",
+        "sha256": "fcfb9a0b902f7dd3f81f01295f381c10b22a2d5774f95ee0db813f284a0ab087",
+    },
+]
+LITERT_PREBUILT_OVERRIDES = {
+    "v0.15.0": [
+        {
+            "sourceRepository": "google-ai-edge/LiteRT-LM",
+            "sourceCommit": "8bee4dddc3794958b4bdd8a3a4ba75bcb71f6fbb",
+            "sourcePath": "prebuilt/android_arm64/libLiteRtTopKOpenClSampler.so",
+            "targetPath": "bin/android/arm64/libLiteRtTopKOpenClSampler.so",
+            "sha256": "4404dc68786460602685cab62ddfa29035e9cfc38bb4550dec15abaaa1302a82",
+        },
+        {
+            "sourceRepository": "google-ai-edge/LiteRT-LM",
+            "sourceCommit": "8bee4dddc3794958b4bdd8a3a4ba75bcb71f6fbb",
+            "sourcePath": "prebuilt/android_x86_64/libLiteRtTopKOpenClSampler.so",
+            "targetPath": "bin/android/x64/libLiteRtTopKOpenClSampler.so",
+            "sha256": "747ca5ed6a175fb4c2854ccee1d6ad97f11fe14d9e0d2b0c1710e1435376d51e",
+        },
+        *LITERT_ANDROID_DAWN_OVERRIDES,
+    ],
+    "v0.16.0": LITERT_ANDROID_DAWN_OVERRIDES,
+    "v0.16.1": LITERT_ANDROID_DAWN_OVERRIDES,
+}
+LITERT_REQUIRED_RUNTIME_PATHS = {
+    "bin/android/arm64/libLiteRtLm.so",
+    "bin/android/x64/libLiteRtLm.so",
+    "bin/ios/arm64/LiteRtLm.framework/LiteRtLm",
+    "bin/ios/arm64/CLiteRTLM.framework/CLiteRTLM",
+    "bin/ios/arm64-sim/LiteRtLm.framework/LiteRtLm",
+    "bin/ios/arm64-sim/CLiteRTLM.framework/CLiteRTLM",
+    "bin/linux/arm64/libLiteRtLm.so",
+    "bin/linux/x64/libLiteRtLm.so",
+    "bin/macos/arm64/libCLiteRTLM_mac.dylib",
+    "bin/macos/arm64/libLiteRtLm.dylib",
+    "bin/macos/x64/libCLiteRTLM_mac.dylib",
+    "bin/macos/x64/libLiteRtLm.dylib",
+    "bin/windows/x64/LiteRtLm.dll",
+}
+LITERT_V0_16_IOS_GPU_PATHS = {
+    "bin/ios/arm64/LiteRtMetalAccelerator.framework/LiteRtMetalAccelerator",
+    "bin/ios/arm64/LiteRtTopKMetalSampler.framework/LiteRtTopKMetalSampler",
+    "bin/ios/arm64-sim/LiteRtMetalAccelerator.framework/LiteRtMetalAccelerator",
+    "bin/ios/arm64-sim/LiteRtTopKMetalSampler.framework/LiteRtTopKMetalSampler",
+}
+LITERT_SPM_ASSET_PATTERNS = (
+    "litert-lm-native-apple-CLiteRTLM-xcframework-{tag}.zip",
+    "litert-lm-native-apple-CLiteRTLMMac-xcframework-{tag}.zip",
+    "litert-lm-native-apple-LiteRtLm-xcframework-{tag}.zip",
+)
+LITERT_V0_16_SPM_ASSET_PATTERNS = (
+    "litert-lm-native-apple-LiteRtMetalAccelerator-xcframework-{tag}.zip",
+    "litert-lm-native-apple-LiteRtTopKMetalSampler-xcframework-{tag}.zip",
+)
+LITERT_V0_16_ALLOWED_SPM_COMPANION_ASSET_PATTERNS = (
+    "litert-lm-native-apple-GemmaModelConstraintProvider-xcframework-{tag}.zip",
+    "litert-lm-native-apple-LiteRt-xcframework-{tag}.zip",
+    "litert-lm-native-apple-LiteRtTopKWebGpuSampler-xcframework-{tag}.zip",
+    "litert-lm-native-apple-LiteRtWebGpuAccelerator-xcframework-{tag}.zip",
+    "litert-lm-native-apple-WebgpuDawn-xcframework-{tag}.zip",
+)
+LITERT_ALLOWED_ACCELERATORS = {"gpu", "metal", "opencl", "webgpu"}
 
 
 class ReleaseError(RuntimeError):
     pass
+
+
+def _litert_compatibility_version(compatibility_tag: str) -> tuple[int, ...]:
+    if not STABLE_LITERT_TAG_RE.fullmatch(compatibility_tag):
+        raise ReleaseError("LiteRT-LM compatibility tag is invalid")
+    return tuple(int(part) for part in compatibility_tag[1:].split("."))
+
+
+def litert_spm_asset_patterns(
+    compatibility_tag: str,
+    *,
+    allowed: bool,
+) -> tuple[str, ...]:
+    patterns: list[str] = list(LITERT_SPM_ASSET_PATTERNS)
+    if _litert_compatibility_version(compatibility_tag) >= (0, 16, 0):
+        patterns.extend(LITERT_V0_16_SPM_ASSET_PATTERNS)
+        if allowed:
+            patterns.extend(LITERT_V0_16_ALLOWED_SPM_COMPANION_ASSET_PATTERNS)
+    return tuple(patterns)
+
+
+def litert_spm_artifact_paths(
+    compatibility_tag: str,
+    release_tag: str,
+    *,
+    allowed: bool,
+) -> set[str]:
+    return {
+        f"dist/spm/{release_tag}/{pattern.format(tag=release_tag)}"
+        for pattern in litert_spm_asset_patterns(
+            compatibility_tag,
+            allowed=allowed,
+        )
+    }
+
+
+def validate_litert_spm_artifact_inventory(
+    artifact_paths: set[str],
+    *,
+    compatibility_tag: str,
+    release_tag: str,
+) -> set[str]:
+    required_paths = litert_spm_artifact_paths(
+        compatibility_tag,
+        release_tag,
+        allowed=False,
+    )
+    allowed_paths = litert_spm_artifact_paths(
+        compatibility_tag,
+        release_tag,
+        allowed=True,
+    )
+    actual_paths = {
+        path
+        for path in artifact_paths
+        if Path(path).parts[:2] == ("dist", "spm")
+    }
+    missing_paths = required_paths - actual_paths
+    unexpected_paths = actual_paths - allowed_paths
+    if missing_paths or unexpected_paths:
+        raise ReleaseError(
+            "LiteRT-LM SPM artifact inventory mismatch; "
+            f"missing={sorted(missing_paths)}, "
+            f"unexpected={sorted(unexpected_paths)}"
+        )
+    return actual_paths
 
 
 class NativeReleaseVersion(NamedTuple):
@@ -80,6 +279,268 @@ class NativeReleaseVersion(NamedTuple):
     version: tuple[int, ...]
     wrapper_revision: int
     upstream_tag: str
+
+
+def require_exact_keys(value: Any, expected: set[str], label: str) -> None:
+    if not isinstance(value, dict):
+        raise ReleaseError(f"LiteRT-LM {label} must be an object")
+    actual = set(value.keys())
+    if actual != expected:
+        raise ReleaseError(
+            f"LiteRT-LM {label} keys do not match owner schema 2; "
+            f"missing={sorted(expected - actual)}, "
+            f"unexpected={sorted(actual - expected)}"
+        )
+
+
+def require_string(value: Any, label: str) -> str:
+    if not isinstance(value, str) or not value:
+        raise ReleaseError(f"LiteRT-LM {label} must be a non-empty string")
+    return value
+
+
+def require_full_commit(value: Any, label: str) -> str:
+    commit = require_string(value, label)
+    if not FULL_COMMIT_RE.fullmatch(commit):
+        raise ReleaseError(f"LiteRT-LM {label} must be an exact 40-hex commit")
+    return commit
+
+
+def require_sha256(value: Any, label: str) -> str:
+    digest = require_string(value, label)
+    if not SHA256_RE.fullmatch(digest):
+        raise ReleaseError(f"LiteRT-LM {label} must be an exact SHA-256 digest")
+    return digest
+
+
+def require_int(value: Any, label: str, *, minimum: int | None = None) -> int:
+    if type(value) is not int:
+        raise ReleaseError(f"LiteRT-LM {label} must be an integer")
+    if minimum is not None and value < minimum:
+        raise ReleaseError(f"LiteRT-LM {label} must be at least {minimum}")
+    return value
+
+
+def required_litert_manifest_paths(
+    compatibility_tag: str,
+    release_tag: str,
+    *,
+    official_assets: bool,
+) -> set[str]:
+    version = _litert_compatibility_version(compatibility_tag)
+    required = set(LITERT_REQUIRED_RUNTIME_PATHS)
+    if version >= (0, 16, 0):
+        required.update(LITERT_V0_16_IOS_GPU_PATHS)
+    if official_assets and version >= (0, 14, 0):
+        required.update(
+            {
+                f"dist/official/{compatibility_tag}/CLiteRTLM.xcframework.zip",
+                f"dist/official/{compatibility_tag}/CLiteRTLM_mac.xcframework.zip",
+            }
+        )
+    required.update(
+        litert_spm_artifact_paths(
+            compatibility_tag,
+            release_tag,
+            allowed=False,
+        )
+    )
+    required.update(
+        override["targetPath"]
+        for override in LITERT_PREBUILT_OVERRIDES.get(compatibility_tag, [])
+    )
+    return required
+
+
+def required_litert_release_asset_names(
+    manifest: dict[str, Any], release_tag: str
+) -> set[str]:
+    platforms = manifest.get("platforms")
+    artifacts = manifest.get("artifacts")
+    capabilities = manifest.get("capabilities")
+    upstream = manifest.get("upstream")
+    if not isinstance(platforms, list) or not isinstance(artifacts, list):
+        raise ReleaseError("LiteRT-LM owner inventory requires schema-2 platform artifacts")
+    if not isinstance(capabilities, dict):
+        raise ReleaseError("LiteRT-LM owner inventory requires schema-2 capabilities")
+    if not isinstance(upstream, dict):
+        raise ReleaseError("LiteRT-LM owner inventory requires schema-2 upstream metadata")
+    compatibility_tag = require_string(
+        upstream.get("compatibilityTag"),
+        "owner inventory upstream compatibilityTag",
+    )
+    artifact_paths = {
+        artifact["path"]
+        for artifact in artifacts
+        if isinstance(artifact, dict) and isinstance(artifact.get("path"), str)
+    }
+    spm_paths = validate_litert_spm_artifact_inventory(
+        artifact_paths,
+        compatibility_tag=compatibility_tag,
+        release_tag=release_tag,
+    )
+    assets = {
+        "manifest.json",
+        "SHA256SUMS",
+        "release-result.json",
+        f"litert-lm-native-prebuilts-{release_tag}.tar.gz",
+    }
+    for platform in platforms:
+        if not isinstance(platform, dict) or not isinstance(
+            platform.get("releaseAsset"), str
+        ):
+            raise ReleaseError("LiteRT-LM owner inventory has an invalid platform asset")
+        assets.add(platform["releaseAsset"])
+    assets.update(Path(path).name for path in spm_paths)
+    if capabilities.get("officialUpstreamAssets") is True:
+        assets.add(f"litert-lm-native-official-assets-{release_tag}.tar.gz")
+    return assets
+
+
+def litert_schema2_apple_targets(
+    manifest: dict[str, Any], release_tag: str
+) -> set[str]:
+    prefix = "litert-lm-native-apple-"
+    suffix = f"-xcframework-{release_tag}.zip"
+    upstream = manifest.get("upstream")
+    compatibility_tag = require_string(
+        upstream.get("compatibilityTag") if isinstance(upstream, dict) else None,
+        "owner inventory upstream compatibilityTag",
+    )
+    required_asset_names = {
+        Path(path).name
+        for path in litert_spm_artifact_paths(
+            compatibility_tag,
+            release_tag,
+            allowed=False,
+        )
+    }
+    targets = {
+        asset_name[len(prefix) : -len(suffix)]
+        for asset_name in required_asset_names
+        if asset_name.startswith(prefix) and asset_name.endswith(suffix)
+    }
+    if not targets:
+        raise ReleaseError("LiteRT-LM schema-2 owner inventory has no Apple targets")
+    return targets
+
+
+def validate_litert_release_asset_inventory(
+    release: dict[str, Any], manifest: dict[str, Any], release_tag: str
+) -> None:
+    assets = release.get("assets")
+    if not isinstance(assets, list) or any(
+        not isinstance(asset, dict) or not isinstance(asset.get("name"), str)
+        for asset in assets
+    ):
+        raise ReleaseError("LiteRT-LM GitHub release asset inventory is invalid")
+    names = [asset["name"] for asset in assets]
+    if len(names) != len(set(names)):
+        raise ReleaseError("LiteRT-LM GitHub release asset inventory has duplicates")
+    expected = required_litert_release_asset_names(manifest, release_tag)
+    actual = set(names)
+    if actual != expected:
+        raise ReleaseError(
+            "LiteRT-LM GitHub release asset inventory does not match owner policy; "
+            f"missing={sorted(expected - actual)}, unexpected={sorted(actual - expected)}"
+        )
+    for asset in assets:
+        digest = asset.get("digest")
+        if (
+            not isinstance(digest, str)
+            or not digest.startswith("sha256:")
+            or not SHA256_RE.fullmatch(digest.removeprefix("sha256:"))
+        ):
+            raise ReleaseError(
+                f"Asset {asset['name']} has an invalid GitHub SHA-256 digest"
+            )
+
+
+def validate_litert_release_sha256_sums(
+    release: dict[str, Any],
+    manifest: dict[str, Any],
+    *,
+    repo: str,
+    tag: str,
+    release_json_dir: str,
+) -> None:
+    checksum_bytes = release_asset_bytes(
+        release,
+        "SHA256SUMS",
+        repo=repo,
+        tag=tag,
+        release_json_dir=release_json_dir,
+    )
+    expected_asset_digest = release_asset_checksum(release, "SHA256SUMS")
+    actual_asset_digest = hashlib.sha256(checksum_bytes).hexdigest()
+    if actual_asset_digest != expected_asset_digest:
+        raise ReleaseError(
+            "LiteRT-LM SHA256SUMS bytes do not match the GitHub release digest"
+        )
+    try:
+        checksum_text = checksum_bytes.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise ReleaseError(
+            f"Release {tag} SHA256SUMS is not valid UTF-8: {error}"
+        ) from error
+    actual = parse_sha256_sums(checksum_text, tag)
+    expected = {
+        require_string(artifact["path"], "artifact path"): require_sha256(
+            artifact["sha256"], "artifact digest"
+        )
+        for artifact in manifest["artifacts"]
+    }
+    if actual != expected:
+        missing = sorted(set(expected) - set(actual))
+        unexpected = sorted(set(actual) - set(expected))
+        mismatched = sorted(
+            path
+            for path in set(expected) & set(actual)
+            if expected[path] != actual[path]
+        )
+        raise ReleaseError(
+            "LiteRT-LM SHA256SUMS does not match manifest artifacts; "
+            f"missing={missing}, unexpected={unexpected}, mismatched={mismatched}"
+        )
+
+
+def validate_litert_spm_release_asset_digests(
+    release: dict[str, Any],
+    manifest: dict[str, Any],
+    *,
+    release_tag: str,
+) -> None:
+    upstream = manifest.get("upstream")
+    compatibility_tag = require_string(
+        upstream.get("compatibilityTag") if isinstance(upstream, dict) else None,
+        "owner inventory upstream compatibilityTag",
+    )
+    artifacts = manifest.get("artifacts")
+    if not isinstance(artifacts, list):
+        raise ReleaseError("LiteRT-LM owner inventory requires schema-2 artifacts")
+    artifacts_by_path = {
+        artifact["path"]: artifact
+        for artifact in artifacts
+        if isinstance(artifact, dict) and isinstance(artifact.get("path"), str)
+    }
+    spm_paths = validate_litert_spm_artifact_inventory(
+        set(artifacts_by_path),
+        compatibility_tag=compatibility_tag,
+        release_tag=release_tag,
+    )
+    for path in sorted(spm_paths):
+        asset_name = Path(path).name
+        release_digest = release_asset_checksum(release, asset_name)
+        manifest_digest = require_sha256(
+            artifacts_by_path[path].get("sha256"),
+            f"SPM artifact {path} digest",
+        )
+        if release_digest != manifest_digest:
+            raise ReleaseError(
+                "LiteRT-LM SPM release asset digest does not match manifest; "
+                f"asset={asset_name}, manifest={manifest_digest}, "
+                f"release={release_digest}"
+            )
 
 
 def main() -> int:
@@ -178,8 +639,30 @@ def main() -> int:
             args.release_json_dir,
         )
         resolved_litert_lm_tag = release["tag_name"]
-        litert_version = resolved_litert_lm_tag.removeprefix("v")
+        current_litert_lm_tag = current_litert_lm_release_tag(hook_text)
+        validate_litert_lm_transition(
+            current_litert_lm_tag,
+            resolved_litert_lm_tag,
+            allow_channel_transition=args.allow_litert_channel_transition,
+            allow_development_line_transition=(
+                args.allow_litert_development_line_transition
+            ),
+        )
+        litert_version = litert_lm_runtime_version(resolved_litert_lm_tag)
+        litert_lm_manifest = validate_litert_lm_release_manifest(
+            release,
+            repo=args.litert_lm_native_repo,
+            tag=resolved_litert_lm_tag,
+            release_json_dir=args.release_json_dir,
+            required_bundles=litert_lm_bundle_names(hook_text),
+        )
 
+        hook_text = replace_one(
+            hook_text,
+            r"const _litertLmReleaseTag = '[^']+';",
+            f"const _litertLmReleaseTag = '{resolved_litert_lm_tag}';",
+            "hook LiteRT-LM release tag",
+        )
         hook_text = replace_one(
             hook_text,
             r"const _litertLmVersion = '[^']+';",
@@ -193,6 +676,27 @@ def main() -> int:
         runtime_dart_text = litert_lm_runtime_dart_path.read_text(
             encoding="utf-8"
         )
+        runtime_dart_text = replace_one(
+            runtime_dart_text,
+            r"const _litertLmReleaseTag = '[^']+';",
+            f"const _litertLmReleaseTag = '{resolved_litert_lm_tag}';",
+            "LiteRT-LM Dart runtime release tag",
+        )
+        schema2_bundle_libraries: dict[str, tuple[str, ...]] | None = None
+        if litert_lm_manifest.get("schemaVersion") == 2:
+            schema2_bundle_libraries = litert_schema2_bundle_required_libraries(
+                litert_lm_manifest
+            )
+            runtime_dart_text = replace_litert_lm_runtime_required_libraries(
+                runtime_dart_text,
+                schema2_bundle_libraries,
+            )
+            runtime_dart_text = replace_litert_lm_runtime_macos_inventory(
+                runtime_dart_text,
+                schema2_bundle_libraries,
+                manifest=litert_lm_manifest,
+                resolved_tag=resolved_litert_lm_tag,
+            )
         pending_writes[litert_lm_runtime_dart_path] = replace_one(
             runtime_dart_text,
             r"const _litertLmVersion = '[^']+';",
@@ -210,6 +714,13 @@ def main() -> int:
                 raise ReleaseError(
                     "Could not replace LiteRT-LM version in macOS prepare script"
                 )
+            if schema2_bundle_libraries is not None:
+                updated_prepare_text = replace_litert_lm_macos_prepare_inventory(
+                    updated_prepare_text,
+                    schema2_bundle_libraries,
+                    manifest=litert_lm_manifest,
+                    resolved_tag=resolved_litert_lm_tag,
+                )
             pending_writes[litert_lm_macos_prepare_path] = updated_prepare_text
         for bundle in litert_lm_bundle_names(hook_text):
             checksum = release_asset_checksum(
@@ -221,38 +732,24 @@ def main() -> int:
                 bundle,
                 checksum,
             )
+        if schema2_bundle_libraries is not None:
+            for bundle, libraries in schema2_bundle_libraries.items():
+                hook_text = replace_litert_lm_bundle_required_libraries(
+                    hook_text,
+                    bundle,
+                    libraries,
+                )
 
         if litert_lm_package_swift_path.exists():
             original_swift_text = litert_lm_package_swift_path.read_text(
                 encoding="utf-8"
             )
-            original_litert_lm_tag = swift_variable_value(
+            swift_text = prepare_litert_lm_package_swift(
                 original_swift_text,
-                "liteRtLmTag",
-                "LiteRT-LM Package.swift tag",
+                release=release,
+                manifest=litert_lm_manifest,
+                resolved_tag=resolved_litert_lm_tag,
             )
-            apple_targets = swift_native_repo_binary_targets(
-                original_swift_text,
-                tag_variable="liteRtLmTag",
-                current_tag=original_litert_lm_tag,
-            )
-            swift_text = original_swift_text
-            swift_text = replace_one(
-                swift_text,
-                r'let liteRtLmTag = "[^"]+"',
-                f'let liteRtLmTag = "{resolved_litert_lm_tag}"',
-                "LiteRT-LM Package.swift tag",
-            )
-            for target_name, asset_template in apple_targets:
-                checksum = release_asset_checksum(
-                    release,
-                    asset_template.format(tag=resolved_litert_lm_tag),
-                )
-                swift_text = replace_swift_binary_target_checksum(
-                    swift_text,
-                    target_name,
-                    checksum,
-                )
             pending_writes[litert_lm_package_swift_path] = swift_text
             package_root = companion_package_root(litert_lm_package_swift_path)
             project_doc_dependency_versions[package_root.name] = (
@@ -286,9 +783,8 @@ def main() -> int:
     if args.dry_run:
         print("Dry run; no files written.")
     else:
-        hook_path.write_text(hook_text, encoding="utf-8")
-        for path, text in pending_writes.items():
-            path.write_text(text, encoding="utf-8")
+        pending_writes[hook_path] = hook_text
+        atomic_write_many(pending_writes)
 
     for summary in summaries:
         print(f"Synced {summary}")
@@ -371,7 +867,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--litert-lm-tag",
         default="keep",
-        help="litert-lm-native release tag, latest, or keep.",
+        help=(
+            "litert-lm-native vX.Y.Z, vX.Y.Z-N, g<12hex>[-N], legacy "
+            "vX.Y.Z-native.N, latest, or keep."
+        ),
     )
     parser.add_argument(
         "--llamadart-native-repo",
@@ -398,6 +897,22 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--allow-litert-channel-transition",
+        action="store_true",
+        help=(
+            "Explicitly approve a stable/development channel transition after "
+            "reviewing the owner manifest ancestry evidence."
+        ),
+    )
+    parser.add_argument(
+        "--allow-litert-development-line-transition",
+        action="store_true",
+        help=(
+            "Explicitly approve changing from one g<commit> development line to "
+            "another after reviewing owner manifest ancestry evidence."
+        ),
+    )
+    parser.add_argument(
         "--release-json-dir",
         default="",
         help=(
@@ -409,31 +924,45 @@ def parse_args() -> argparse.Namespace:
 
 
 def fetch_release(repo: str, tag: str, release_json_dir: str = "") -> dict[str, Any]:
-    if release_json_dir:
-        path = Path(release_json_dir) / f"{repo.replace('/', '__')}__{tag}.json"
-        if not path.exists():
-            raise ReleaseError(f"Missing release fixture {path}")
-        return json.loads(path.read_text(encoding="utf-8"))
-
-    if tag == "latest":
-        url = f"https://api.github.com/repos/{repo}/releases/latest"
-    else:
-        url = f"https://api.github.com/repos/{repo}/releases/tags/{tag}"
-    request = urllib.request.Request(
-        url,
-        headers={
-            "Accept": "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2022-11-28",
-            **github_auth_header(),
-        },
-    )
     try:
-        with urllib.request.urlopen(request) as response:
-            return json.loads(response.read().decode("utf-8"))
-    except urllib.error.HTTPError as error:
+        if release_json_dir:
+            path = Path(release_json_dir) / f"{repo.replace('/', '__')}__{tag}.json"
+            payload: Any = json.loads(path.read_text(encoding="utf-8"))
+        else:
+            if tag == "latest":
+                url = f"https://api.github.com/repos/{repo}/releases/latest"
+            else:
+                url = f"https://api.github.com/repos/{repo}/releases/tags/{tag}"
+            request = urllib.request.Request(
+                url,
+                headers={
+                    "Accept": "application/vnd.github+json",
+                    "X-GitHub-Api-Version": "2022-11-28",
+                    **github_auth_header(),
+                },
+            )
+            with urllib.request.urlopen(request) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+    except (
+        OSError,
+        urllib.error.HTTPError,
+        urllib.error.URLError,
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+    ) as error:
         raise ReleaseError(
-            f"Failed to fetch release {repo}@{tag}: HTTP {error.code}"
+            f"Failed to fetch release {repo}@{tag}: {error}"
         ) from error
+    if not isinstance(payload, dict):
+        raise ReleaseError(f"Release {repo}@{tag} must be a JSON object")
+    resolved_tag = payload.get("tag_name")
+    if not isinstance(resolved_tag, str) or not resolved_tag:
+        raise ReleaseError(f"Release {repo}@{tag} has no valid tag_name")
+    if tag != "latest" and resolved_tag != tag:
+        raise ReleaseError(
+            f"Release {repo}@{tag} resolved unexpected tag {resolved_tag}"
+        )
+    return payload
 
 
 def github_auth_header() -> dict[str, str]:
@@ -444,11 +973,20 @@ def github_auth_header() -> dict[str, str]:
 def release_asset_checksum(release: dict[str, Any], asset_name: str) -> str:
     asset = find_release_asset(release, asset_name)
     if asset is not None:
-        digest = asset.get("digest") or ""
-        if digest.startswith("sha256:"):
-            return digest.removeprefix("sha256:")
+        digest = asset.get("digest")
+        if digest not in (None, "") and not isinstance(digest, str):
+            raise ReleaseError(
+                f"Asset {asset_name} has a non-string GitHub SHA-256 digest"
+            )
+        if isinstance(digest, str) and digest.startswith("sha256:"):
+            checksum = digest.removeprefix("sha256:")
+            if not SHA256_RE.fullmatch(checksum):
+                raise ReleaseError(
+                    f"Asset {asset_name} has an invalid GitHub SHA-256 digest"
+                )
+            return checksum
         download_url = asset.get("browser_download_url")
-        if not download_url:
+        if not isinstance(download_url, str) or not download_url:
             raise ReleaseError(f"Asset {asset_name} has no download URL")
         return sha256_url(download_url)
     tag = release.get("tag_name", "<unknown>")
@@ -718,6 +1256,43 @@ def release_asset_text(release: dict[str, Any], asset_name: str) -> str:
         ) from error
 
 
+def release_asset_bytes(
+    release: dict[str, Any],
+    asset_name: str,
+    *,
+    repo: str,
+    tag: str,
+    release_json_dir: str,
+) -> bytes:
+    asset = find_release_asset(release, asset_name)
+    if asset is None:
+        raise ReleaseError(
+            f"Release {tag} does not contain required asset {asset_name}"
+        )
+    if release_json_dir:
+        fixture = (
+            Path(release_json_dir)
+            / f"{repo.replace('/', '__')}__{tag}__{asset_name}"
+        )
+        try:
+            return fixture.read_bytes()
+        except OSError as error:
+            raise ReleaseError(
+                f"Failed to read release asset fixture {fixture}: {error}"
+            ) from error
+    download_url = asset.get("browser_download_url")
+    if not isinstance(download_url, str) or not download_url:
+        raise ReleaseError(f"Asset {asset_name} has no download URL")
+    request = urllib.request.Request(download_url, headers=github_auth_header())
+    try:
+        with urllib.request.urlopen(request) as response:
+            return response.read()
+    except (urllib.error.HTTPError, urllib.error.URLError, OSError) as error:
+        raise ReleaseError(
+            f"Failed to read release asset {asset_name}: {error}"
+        ) from error
+
+
 def parse_sha256_sums(checksum_text: str, release_tag: str) -> dict[str, str]:
     checksums: dict[str, str] = {}
     for line_number, line in enumerate(checksum_text.splitlines(), start=1):
@@ -934,9 +1509,980 @@ def normalize_litert_lm_release_tag(tag: str) -> str:
     tag = tag.strip()
     if not tag:
         return "keep"
-    if tag in {"keep", "latest"} or tag.startswith("v"):
+    if tag in {"keep", "latest"}:
         return tag
-    return f"v{tag}"
+    if (
+        STABLE_LITERT_TAG_RE.fullmatch(tag)
+        or STABLE_LITERT_REBUILD_RE.fullmatch(tag)
+        or DEVELOPMENT_LITERT_TAG_RE.fullmatch(tag)
+        or LEGACY_LITERT_TAG_RE.fullmatch(tag)
+    ):
+        return tag
+    prefixed_tag = f"v{tag}"
+    if (
+        STABLE_LITERT_TAG_RE.fullmatch(prefixed_tag)
+        or STABLE_LITERT_REBUILD_RE.fullmatch(prefixed_tag)
+        or LEGACY_LITERT_TAG_RE.fullmatch(prefixed_tag)
+    ):
+        return prefixed_tag
+    raise ReleaseError(
+        "Invalid LiteRT-LM native tag. Expected vMAJOR.MINOR.PATCH, "
+        "vMAJOR.MINOR.PATCH-N, g<12hex>, g<12hex>-N, or legacy "
+        "vMAJOR.MINOR.PATCH-native.N."
+    )
+
+
+def current_litert_lm_release_tag(hook_text: str) -> str:
+    release_match = re.search(
+        r"const _litertLmReleaseTag = '([^']+)';", hook_text
+    )
+    if release_match is not None:
+        return release_match.group(1)
+    match = re.search(r"const _litertLmVersion = '([^']+)';", hook_text)
+    if match is None:
+        raise ReleaseError("Could not find current LiteRT-LM version in hook/build.dart")
+    version = match.group(1)
+    return version if version.startswith("g") else f"v{version}"
+
+
+def litert_lm_runtime_version(release_tag: str) -> str:
+    """Return the cache/runtime version without altering commit release tags."""
+    return release_tag.removeprefix("v")
+
+
+def validate_litert_lm_transition(
+    current: str,
+    target: str,
+    *,
+    allow_channel_transition: bool = False,
+    allow_development_line_transition: bool = False,
+) -> None:
+    if current == target:
+        return
+    current_development = DEVELOPMENT_LITERT_TAG_RE.fullmatch(current)
+    target_development = DEVELOPMENT_LITERT_TAG_RE.fullmatch(target)
+    if current_development or target_development:
+        if bool(current_development) != bool(target_development):
+            if not allow_channel_transition:
+                raise ReleaseError(
+                    "LiteRT-LM stable/development transition requires explicit "
+                    "owner-ancestry approval"
+                )
+            target_rebuild = (
+                development_release_order(target)[1]
+                if target_development
+                else stable_release_order(target)[1]
+            )
+            if target_rebuild != 0:
+                raise ReleaseError(
+                    "LiteRT-LM channel transition must enter the target line at its base"
+                )
+            return
+        if current_development and target_development:
+            current_base, current_rebuild = development_release_order(current)
+            target_base, target_rebuild = development_release_order(target)
+            if (
+                current_base != target_base
+                and not allow_development_line_transition
+            ):
+                raise ReleaseError(
+                    "LiteRT-LM development line transition requires explicit "
+                    "owner-ancestry approval"
+                )
+            if current_base != target_base:
+                if target_rebuild != 0:
+                    raise ReleaseError(
+                        "LiteRT-LM development line transition must enter at its base"
+                    )
+                return
+            if target_rebuild < current_rebuild:
+                raise ReleaseError(
+                    f"LiteRT-LM development rebuild rollback: {current} -> {target}"
+                )
+            if target_rebuild != current_rebuild + 1:
+                raise ReleaseError(
+                    "LiteRT-LM development rebuild must use the immediate next ordinal"
+                )
+        return
+
+    current_version, current_rebuild = stable_release_order(current)
+    target_version, target_rebuild = stable_release_order(target)
+    if (
+        target_version == current_version
+        and target_rebuild == current_rebuild
+        and target != current
+    ):
+        raise ReleaseError(
+            f"LiteRT-LM ordinal alias is forbidden: {current} and {target} "
+            "identify the same rebuild"
+        )
+    if target_version < current_version or (
+        target_version == current_version and target_rebuild < current_rebuild
+    ):
+        raise ReleaseError(f"LiteRT-LM release rollback: {current} -> {target}")
+    if target_version > current_version:
+        if target_rebuild != 0:
+            raise ReleaseError(
+                "LiteRT-LM stable transition must enter the target line at its base"
+            )
+        return
+    if target_rebuild != current_rebuild + 1:
+        raise ReleaseError(
+            "LiteRT-LM stable rebuild must use the immediate next ordinal"
+        )
+
+
+def stable_release_order(tag: str) -> tuple[tuple[int, int, int], int]:
+    legacy = LEGACY_LITERT_TAG_RE.fullmatch(tag)
+    compact = STABLE_LITERT_REBUILD_RE.fullmatch(tag)
+    stable = STABLE_LITERT_TAG_RE.fullmatch(tag)
+    if legacy:
+        version_text, rebuild_text = tag[1:].rsplit("-native.", 1)
+    elif compact:
+        version_text, rebuild_text = tag[1:].rsplit("-", 1)
+    elif stable:
+        version_text, rebuild_text = tag[1:], "0"
+    else:
+        raise ReleaseError(f"Cannot order invalid LiteRT-LM release tag {tag}")
+    return tuple(int(part) for part in version_text.split(".")), int(rebuild_text)
+
+
+def development_release_order(tag: str) -> tuple[str, int]:
+    if not DEVELOPMENT_LITERT_TAG_RE.fullmatch(tag):
+        raise ReleaseError(f"Cannot order invalid LiteRT-LM development tag {tag}")
+    parts = tag.rsplit("-", 1)
+    return parts[0], int(parts[1]) if len(parts) == 2 else 0
+
+
+def validate_litert_lm_release_manifest(
+    release: dict[str, Any],
+    *,
+    repo: str,
+    tag: str,
+    release_json_dir: str,
+    required_bundles: list[str],
+) -> dict[str, Any]:
+    manifest_result = fetch_litert_lm_release_manifest(
+        release,
+        repo=repo,
+        tag=tag,
+        release_json_dir=release_json_dir,
+    )
+    if manifest_result is None:
+        raise ReleaseError(
+            f"Release {repo}@{tag} has no immutable manifest.json evidence"
+        )
+    manifest, manifest_digest = manifest_result
+    release_manifest_digest = release_asset_checksum(release, "manifest.json")
+    if release_manifest_digest != manifest_digest:
+        raise ReleaseError(
+            "LiteRT-LM manifest bytes do not match the GitHub release digest"
+        )
+
+    schema = manifest.get("schemaVersion")
+    release_identity = manifest.get("release")
+    if not isinstance(release_identity, dict) or release_identity.get("tag") != tag:
+        raise ReleaseError(f"Release manifest tag does not match {tag}")
+    if schema == 1:
+        legacy_identity = LEGACY_SCHEMA1_RELEASES.get(tag)
+        if legacy_identity is None:
+            raise ReleaseError(
+                f"Release {repo}@{tag} must use LiteRT-LM manifest schema 2"
+            )
+        expected_assets = legacy_identity.get("assets")
+        if not isinstance(expected_assets, dict):
+            raise ReleaseError("Legacy release allowlist has invalid asset evidence")
+        expected_manifest_asset_digest = expected_assets.get("manifest.json")
+        if not isinstance(expected_manifest_asset_digest, str) or not expected_manifest_asset_digest.startswith("sha256:"):
+            raise ReleaseError("Legacy release allowlist has no manifest digest")
+        expected_manifest_digest = expected_manifest_asset_digest.removeprefix(
+            "sha256:"
+        )
+        expected_tag_commit = legacy_identity.get("tagCommit")
+        if manifest_digest != expected_manifest_digest:
+            raise ReleaseError(
+                f"Legacy release {repo}@{tag} manifest digest is not immutable allowlist evidence"
+            )
+        if fetch_tag_commit(repo, tag, release_json_dir, release) != expected_tag_commit:
+            raise ReleaseError(
+                f"Legacy release {repo}@{tag} tag commit is not immutable allowlist evidence"
+            )
+        release_assets_value = release.get("assets")
+        if not isinstance(release_assets_value, list):
+            raise ReleaseError(
+                f"Legacy release {repo}@{tag} asset inventory is invalid"
+            )
+        actual_assets: dict[str, str] = {}
+        for asset in release_assets_value:
+            if not isinstance(asset, dict):
+                raise ReleaseError(
+                    f"Legacy release {repo}@{tag} asset inventory is invalid"
+                )
+            name = require_string(asset.get("name"), "legacy release asset name")
+            digest = require_string(
+                asset.get("digest"), "legacy release asset digest"
+            )
+            if name in actual_assets:
+                raise ReleaseError(
+                    f"Legacy release {repo}@{tag} asset inventory has duplicates"
+                )
+            actual_assets[name] = digest
+        if actual_assets != expected_assets:
+            raise ReleaseError(
+                f"Legacy release {repo}@{tag} asset digests are not immutable allowlist evidence"
+            )
+        if release.get("draft", False) != legacy_identity.get("draft") or release.get(
+            "prerelease", False
+        ) != legacy_identity.get("prerelease"):
+            raise ReleaseError(
+                f"Legacy release {repo}@{tag} classification is not immutable allowlist evidence"
+            )
+        return manifest
+    if schema != 2:
+        raise ReleaseError(f"Unsupported LiteRT-LM manifest schemaVersion {schema}")
+
+    require_exact_keys(
+        manifest,
+        {
+            "schemaVersion",
+            "package",
+            "release",
+            "upstream",
+            "native",
+            "abi",
+            "capabilities",
+            "platforms",
+            "artifacts",
+            "realModelSmokes",
+        },
+        "manifest",
+    )
+    if manifest.get("package") != "litert-lm-native":
+        raise ReleaseError("LiteRT-LM manifest has an unexpected package identity")
+
+    upstream = manifest.get("upstream")
+    native = manifest.get("native")
+    if not isinstance(upstream, dict):
+        raise ReleaseError("LiteRT-LM manifest is missing an exact upstream commit")
+    if not isinstance(native, dict):
+        raise ReleaseError("LiteRT-LM manifest is missing an exact native commit")
+    upstream_repository = require_string(
+        upstream.get("repository"), "upstream repository"
+    )
+    upstream_commit = require_full_commit(
+        upstream.get("commit"), "upstream commit"
+    )
+    native_repository = require_string(native.get("repository"), "native repository")
+    native_commit = require_full_commit(native.get("commit"), "native commit")
+    if upstream_repository != "google-ai-edge/LiteRT-LM":
+        raise ReleaseError("LiteRT-LM manifest has an unexpected upstream repository")
+    if native_repository != repo:
+        raise ReleaseError("LiteRT-LM manifest has an unexpected native repository")
+    release_target = require_full_commit(
+        release.get("target_commitish"), "release target commit"
+    )
+    if release_target != native_commit:
+        raise ReleaseError("LiteRT-LM release target does not match native commit")
+    resolved_native_commit = fetch_ref_commit(
+        native_repository,
+        tag,
+        release_json_dir,
+        release,
+    )
+    if resolved_native_commit != native_commit:
+        raise ReleaseError(
+            "LiteRT-LM manifest native commit does not match the exact native tag"
+        )
+
+    stable_rebuild = STABLE_LITERT_REBUILD_RE.fullmatch(tag)
+    development = DEVELOPMENT_LITERT_TAG_RE.fullmatch(tag)
+    expected_rebuild = int(tag.rsplit("-", 1)[1]) if stable_rebuild else 0
+    if development:
+        development_parts = tag.rsplit("-", 1)
+        expected_rebuild = (
+            int(development_parts[1]) if len(development_parts) == 2 else 0
+        )
+        expected_base = f"g{upstream_commit[:12]}"
+        if tag != expected_base and not tag.startswith(f"{expected_base}-"):
+            raise ReleaseError(
+                f"Development release {tag} does not match upstream commit {upstream['commit']}"
+            )
+        if upstream.get("tag") is not None:
+            raise ReleaseError("Development release must not claim a stable upstream tag")
+        if upstream.get("developmentIdentity") != expected_base:
+            raise ReleaseError("Development identity does not match upstream commit")
+        resolved_upstream_commit = fetch_ref_commit(
+            upstream_repository,
+            upstream_commit,
+            release_json_dir,
+        )
+        expected_channel = "development"
+        expected_kind = "rebuild" if expected_rebuild > 0 else "commit"
+    else:
+        expected_upstream_tag = (
+            tag.rsplit("-", 1)[0] if stable_rebuild else tag
+        )
+        upstream_tag = require_string(upstream.get("tag"), "upstream tag")
+        if upstream_tag != expected_upstream_tag:
+            raise ReleaseError(
+                f"Stable release {tag} must use upstream tag {expected_upstream_tag}"
+            )
+        if upstream.get("compatibilityTag") != expected_upstream_tag:
+            raise ReleaseError("Stable compatibility tag must equal its upstream tag")
+        resolved_upstream_commit = fetch_ref_commit(
+            upstream_repository,
+            expected_upstream_tag,
+            release_json_dir,
+        )
+        expected_channel = "stable"
+        expected_kind = "rebuild" if expected_rebuild > 0 else "upstream"
+
+    if resolved_upstream_commit != upstream_commit:
+        raise ReleaseError(
+            "LiteRT-LM manifest upstream commit does not match the exact upstream ref"
+        )
+
+    compatibility_tag = require_string(
+        upstream.get("compatibilityTag"), "compatibility tag"
+    )
+    if not STABLE_LITERT_TAG_RE.fullmatch(compatibility_tag):
+        raise ReleaseError("LiteRT-LM manifest has an invalid compatibility tag")
+    expected_prerelease = development is not None or expected_rebuild > 0
+    expected_release_fields = {
+        "channel": expected_channel,
+        "kind": expected_kind,
+        "rebuild": expected_rebuild,
+        "githubPrerelease": expected_prerelease,
+    }
+    require_exact_keys(
+        release_identity,
+        {"tag", *expected_release_fields.keys()},
+        "release identity",
+    )
+    require_string(release_identity.get("tag"), "release identity tag")
+    require_string(release_identity.get("channel"), "release identity channel")
+    require_string(release_identity.get("kind"), "release identity kind")
+    require_int(release_identity.get("rebuild"), "release identity rebuild", minimum=0)
+    if type(release_identity.get("githubPrerelease")) is not bool:
+        raise ReleaseError(
+            "LiteRT-LM release identity githubPrerelease must be a boolean"
+        )
+    require_exact_keys(
+        upstream,
+        {
+            "repository",
+            "tag",
+            "commit",
+            "compatibilityTag",
+            "developmentIdentity",
+            "prebuiltOverrides",
+        },
+        "upstream provenance",
+    )
+    require_exact_keys(native, {"repository", "commit"}, "native provenance")
+    if not isinstance(upstream.get("prebuiltOverrides"), list):
+        raise ReleaseError("LiteRT-LM manifest prebuiltOverrides must be a list")
+    if upstream.get("developmentIdentity") != f"g{upstream_commit[:12]}":
+        raise ReleaseError("LiteRT-LM development identity does not match upstream commit")
+    for override in upstream["prebuiltOverrides"]:
+        if not isinstance(override, dict):
+            raise ReleaseError("LiteRT-LM prebuilt override provenance is invalid")
+        require_exact_keys(
+            override,
+            {
+                "sourceRepository",
+                "sourceCommit",
+                "sourcePath",
+                "targetPath",
+                "sha256",
+            },
+            "prebuilt override provenance",
+        )
+        source_repository = require_string(
+            override.get("sourceRepository"), "prebuilt override source repository"
+        )
+        require_full_commit(
+            override.get("sourceCommit"), "prebuilt override source commit"
+        )
+        require_string(override.get("sourcePath"), "prebuilt override source path")
+        require_string(override.get("targetPath"), "prebuilt override target path")
+        require_sha256(override.get("sha256"), "prebuilt override digest")
+        if source_repository != "google-ai-edge/LiteRT-LM":
+            raise ReleaseError("LiteRT-LM prebuilt override provenance is invalid")
+    expected_overrides = LITERT_PREBUILT_OVERRIDES.get(
+        compatibility_tag, []
+    )
+    if upstream["prebuiltOverrides"] != expected_overrides:
+        raise ReleaseError(
+            "LiteRT-LM prebuilt override provenance does not match owner policy"
+        )
+    for name, expected in expected_release_fields.items():
+        if release_identity.get(name) != expected:
+            raise ReleaseError(
+                f"LiteRT-LM manifest release {name} does not match {tag}"
+            )
+    if release.get("draft") is not False:
+        raise ReleaseError("LiteRT-LM release must be published, not a draft")
+    if release.get("prerelease") is not expected_prerelease:
+        raise ReleaseError(
+            "LiteRT-LM GitHub prerelease classification does not match manifest"
+        )
+
+    abi = manifest.get("abi")
+    capabilities = manifest.get("capabilities")
+    if isinstance(abi, dict):
+        require_exact_keys(
+            abi,
+            {"upstreamC", "streamProxyCallback", "asrBridge"},
+            "ABI declaration",
+        )
+    if isinstance(capabilities, dict):
+        require_exact_keys(
+            capabilities,
+            {
+                "textGeneration",
+                "streaming",
+                "streamChunkAccessors",
+                "asr",
+                "officialUpstreamAssets",
+            },
+            "capability declaration",
+        )
+    if not isinstance(abi, dict):
+        raise ReleaseError("LiteRT-LM manifest does not declare required bridge ABIs")
+    require_string(abi.get("upstreamC"), "ABI upstream header")
+    stream_proxy_abi = require_int(
+        abi.get("streamProxyCallback"), "stream proxy callback ABI", minimum=1
+    )
+    asr_bridge_abi = require_int(abi.get("asrBridge"), "ASR bridge ABI", minimum=1)
+    if (
+        abi.get("upstreamC") != "c/engine.h"
+        or stream_proxy_abi != 1
+        or asr_bridge_abi != 1
+    ):
+        raise ReleaseError("LiteRT-LM manifest does not declare required bridge ABIs")
+    if not isinstance(capabilities, dict) or not all(
+        capabilities.get(name) is True
+        for name in ("textGeneration", "streaming", "streamChunkAccessors", "asr")
+    ):
+        raise ReleaseError("LiteRT-LM manifest lacks required generation capabilities")
+    if development is None and capabilities.get("officialUpstreamAssets") is not True:
+        raise ReleaseError("Stable LiteRT-LM release lacks official upstream assets")
+    if development is not None and capabilities.get("officialUpstreamAssets") is not False:
+        raise ReleaseError("Development LiteRT-LM release must not claim official assets")
+
+    platforms = manifest.get("platforms")
+    if not isinstance(platforms, list):
+        raise ReleaseError("LiteRT-LM manifest platforms must be a list")
+    required_platform_count = len(REQUIRED_LITERT_PLATFORM_BUNDLES)
+    if len(platforms) != required_platform_count:
+        raise ReleaseError(
+            "LiteRT-LM manifest must contain exactly "
+            f"{required_platform_count} finalized platform bundles; "
+            f"found {len(platforms)}"
+        )
+    if any(not isinstance(item, dict) for item in platforms):
+        raise ReleaseError("LiteRT-LM manifest contains an invalid platform")
+    for item in platforms:
+        require_string(item.get("platform"), "platform name")
+        require_string(item.get("arch"), "platform architecture")
+    manifest_bundle_list = [
+        f"{item.get('platform')}-{item.get('arch')}"
+        for item in platforms
+    ]
+    available_bundles = set(manifest_bundle_list)
+    expected_bundles = set(required_bundles)
+    if expected_bundles != REQUIRED_LITERT_PLATFORM_BUNDLES:
+        raise ReleaseError(
+            "llamadart hook bundle inventory does not cover the finalized nine-platform contract"
+        )
+    missing_bundles = sorted(expected_bundles - available_bundles)
+    unexpected_bundles = sorted(available_bundles - expected_bundles)
+    duplicate_bundles = sorted(
+        bundle
+        for bundle in available_bundles
+        if manifest_bundle_list.count(bundle) > 1
+    )
+    if missing_bundles or unexpected_bundles or duplicate_bundles:
+        details = []
+        if missing_bundles:
+            details.append("missing " + ", ".join(missing_bundles))
+        if unexpected_bundles:
+            details.append("unexpected " + ", ".join(unexpected_bundles))
+        if duplicate_bundles:
+            details.append("duplicates " + ", ".join(duplicate_bundles))
+        raise ReleaseError(
+            "LiteRT-LM finalized platform bundle inventory mismatch: "
+            + "; ".join(details)
+        )
+
+    artifacts = manifest.get("artifacts")
+    if not isinstance(artifacts, list) or not artifacts:
+        raise ReleaseError("LiteRT-LM manifest contains no artifacts")
+    artifacts_by_path: dict[str, dict[str, Any]] = {}
+    for artifact in artifacts:
+        if not isinstance(artifact, dict):
+            raise ReleaseError("LiteRT-LM manifest contains an invalid artifact")
+        require_exact_keys(
+            artifact,
+            {
+                "runtime",
+                "platform",
+                "arch",
+                "path",
+                "fileName",
+                "sha256",
+                "upstreamTag",
+                "upstreamCommit",
+                "releaseTag",
+                "accelerators",
+            },
+            "artifact provenance",
+        )
+        require_sha256(artifact.get("sha256"), "artifact digest")
+        runtime = require_string(artifact.get("runtime"), "artifact runtime")
+        require_string(artifact.get("fileName"), "artifact file name")
+        require_string(artifact.get("releaseTag"), "artifact release tag")
+        require_full_commit(
+            artifact.get("upstreamCommit"), "artifact upstream commit"
+        )
+        artifact_platform = artifact.get("platform")
+        artifact_arch = artifact.get("arch")
+        if artifact_platform is not None:
+            require_string(artifact_platform, "artifact platform")
+        if artifact_arch is not None:
+            require_string(artifact_arch, "artifact architecture")
+        artifact_upstream_tag = artifact.get("upstreamTag")
+        if artifact_upstream_tag is not None:
+            require_string(artifact_upstream_tag, "artifact upstream tag")
+        if artifact.get("releaseTag") != tag:
+            raise ReleaseError("LiteRT-LM artifact releaseTag does not match release")
+        if artifact.get("upstreamCommit") != upstream["commit"]:
+            raise ReleaseError("LiteRT-LM artifact upstream commit does not match manifest")
+        if artifact.get("upstreamTag") != upstream.get("tag"):
+            raise ReleaseError("LiteRT-LM artifact upstream tag does not match manifest")
+        artifact_path = artifact.get("path")
+        if (
+            not isinstance(artifact_path, str)
+            or not artifact_path
+            or artifact_path == "."
+            or "\\" in artifact_path
+            or Path(artifact_path).is_absolute()
+            or ".." in Path(artifact_path).parts
+            or Path(artifact_path).as_posix() != artifact_path
+        ):
+            raise ReleaseError("LiteRT-LM manifest contains an invalid artifact path")
+        if artifact.get("fileName") != Path(artifact_path).name:
+            raise ReleaseError("LiteRT-LM artifact fileName does not match path")
+        if runtime not in {"native", "archive", "web"}:
+            raise ReleaseError("LiteRT-LM artifact has an invalid runtime family")
+        accelerators = artifact.get("accelerators")
+        if (
+            not isinstance(accelerators, list)
+            or any(not isinstance(value, str) or not value for value in accelerators)
+            or len(accelerators) != len(set(accelerators))
+            or not set(accelerators).issubset(LITERT_ALLOWED_ACCELERATORS)
+        ):
+            raise ReleaseError("LiteRT-LM artifact accelerators are invalid")
+        if artifact_path in artifacts_by_path:
+            raise ReleaseError("LiteRT-LM manifest contains duplicate artifact paths")
+        artifacts_by_path[artifact_path] = artifact
+
+    validate_litert_spm_artifact_inventory(
+        set(artifacts_by_path),
+        compatibility_tag=compatibility_tag,
+        release_tag=tag,
+    )
+
+    for override in expected_overrides:
+        target = artifacts_by_path.get(override["targetPath"])
+        if (
+            target is None
+            or target.get("runtime") != "native"
+            or target.get("sha256") != override["sha256"]
+        ):
+            raise ReleaseError(
+                "LiteRT-LM prebuilt override target provenance does not match owner policy"
+            )
+
+    covered_native_paths: set[str] = set()
+    for platform in platforms:
+        require_exact_keys(
+            platform,
+            {"platform", "arch", "releaseAsset", "artifactPaths", "accelerators"},
+            "platform declaration",
+        )
+        platform_name = require_string(platform.get("platform"), "platform name")
+        platform_arch = require_string(
+            platform.get("arch"), "platform architecture"
+        )
+        require_string(platform.get("releaseAsset"), "platform release asset")
+        paths = platform.get("artifactPaths")
+        if (
+            not isinstance(paths, list)
+            or not paths
+            or any(not isinstance(path, str) or not path for path in paths)
+            or len(paths) != len(set(paths))
+        ):
+            raise ReleaseError("LiteRT-LM platform artifact paths are invalid")
+        if any(path not in artifacts_by_path for path in paths):
+            raise ReleaseError("LiteRT-LM platform references an unknown artifact path")
+        if any(
+            artifacts_by_path[path].get("platform") != platform_name
+            or artifacts_by_path[path].get("arch") != platform_arch
+            for path in paths
+        ):
+            raise ReleaseError("LiteRT-LM platform artifact provenance does not match")
+        if any(artifacts_by_path[path].get("runtime") != "native" for path in paths):
+            raise ReleaseError("LiteRT-LM platform may reference only native artifacts")
+        covered_native_paths.update(paths)
+        accelerators = platform.get("accelerators")
+        if (
+            not isinstance(accelerators, list)
+            or any(
+                not isinstance(accelerator, str) or not accelerator
+                for accelerator in accelerators
+            )
+            or len(accelerators) != len(set(accelerators))
+        ):
+            raise ReleaseError("LiteRT-LM platform accelerators are invalid")
+        linked_accelerators = sorted(
+            {
+                accelerator
+                for path in paths
+                for accelerator in artifacts_by_path[path]["accelerators"]
+            }
+        )
+        if accelerators != linked_accelerators or not set(accelerators).issubset(
+            LITERT_ALLOWED_ACCELERATORS
+        ):
+            raise ReleaseError(
+                "LiteRT-LM platform accelerators do not match linked artifacts"
+            )
+        expected_release_asset = (
+            "litert-lm-native-runtime-"
+            f"{platform_name}-{platform_arch}-{tag}.tar.gz"
+        )
+        if platform.get("releaseAsset") != expected_release_asset:
+            raise ReleaseError("LiteRT-LM platform release asset does not match identity")
+
+    native_paths = {
+        path
+        for path, artifact in artifacts_by_path.items()
+        if artifact.get("runtime") == "native"
+    }
+    if covered_native_paths != native_paths:
+        raise ReleaseError("LiteRT-LM manifest has unbound native artifact provenance")
+    required_paths = required_litert_manifest_paths(
+        compatibility_tag,
+        tag,
+        official_assets=capabilities["officialUpstreamAssets"] is True,
+    )
+    missing_paths = sorted(required_paths - set(artifacts_by_path))
+    if missing_paths:
+        raise ReleaseError(
+            "LiteRT-LM manifest is missing owner-required artifact paths: "
+            + ", ".join(missing_paths)
+        )
+    platform_paths = {
+        (platform["platform"], platform["arch"]): set(platform["artifactPaths"])
+        for platform in platforms
+    }
+    for path in sorted(required_paths):
+        artifact = artifacts_by_path[path]
+        parts = Path(path).parts
+        if parts[0] == "bin":
+            expected_platform, expected_arch = parts[1:3]
+            if (
+                artifact.get("runtime") != "native"
+                or artifact.get("platform") != expected_platform
+                or artifact.get("arch") != expected_arch
+                or path not in platform_paths[(expected_platform, expected_arch)]
+            ):
+                raise ReleaseError(
+                    "LiteRT-LM required runtime path has invalid platform binding"
+                )
+        elif (
+            artifact.get("runtime") != "archive"
+            or artifact.get("platform") is not None
+            or artifact.get("arch") is not None
+        ):
+            raise ReleaseError(
+                "LiteRT-LM required archive path has invalid platform binding"
+            )
+
+    validate_litert_release_asset_inventory(release, manifest, tag)
+
+    passed_smokes: set[str] = set()
+    smokes = manifest.get("realModelSmokes")
+    if not isinstance(smokes, list):
+        raise ReleaseError("LiteRT-LM realModelSmokes must be a list")
+    smoke_identities: set[tuple[str, str, str]] = set()
+    for item in smokes:
+        if not isinstance(item, dict):
+            raise ReleaseError("LiteRT-LM smoke must be an object")
+        require_exact_keys(
+            item,
+            {
+                "id",
+                "result",
+                "platform",
+                "arch",
+                "backend",
+                "upstreamCommit",
+                "nativeCommit",
+                "abiVersion",
+                "library",
+                "model",
+                "tokenizer",
+                "fixture",
+                "source",
+                "expectation",
+                "transcript",
+            },
+            "real-model smoke",
+        )
+        if item.get("result") != "pass":
+            raise ReleaseError("LiteRT-LM smoke is not a pass")
+        if item.get("upstreamCommit") != upstream["commit"]:
+            raise ReleaseError("LiteRT-LM smoke upstream commit does not match manifest")
+        if item.get("nativeCommit") != native["commit"]:
+            raise ReleaseError("LiteRT-LM smoke native commit does not match manifest")
+        if item.get("id") != "litert_lm_asr_moonshine":
+            raise ReleaseError("LiteRT-LM smoke has an unexpected identity")
+        require_string(item.get("backend"), "smoke backend")
+        smoke_abi_version = require_int(
+            item.get("abiVersion"), "smoke ABI version", minimum=1
+        )
+        if item.get("backend") != "cpu" or smoke_abi_version != 1:
+            raise ReleaseError("LiteRT-LM smoke has invalid backend or ABI evidence")
+        if not isinstance(item.get("transcript"), str) or not item["transcript"].strip():
+            raise ReleaseError("LiteRT-LM smoke has no transcript evidence")
+        for field, expected_keys in (
+            ("library", {"fileName", "sha256"}),
+            ("model", {"fileName", "sha256"}),
+            ("tokenizer", {"fileName", "sha256"}),
+            ("fixture", {"fileName", "sha256", "sampleRateHz", "sampleCount"}),
+        ):
+            payload = item.get(field)
+            if not isinstance(payload, dict):
+                raise ReleaseError(f"LiteRT-LM smoke has invalid {field} evidence")
+            require_exact_keys(payload, expected_keys, f"smoke {field}")
+            if not isinstance(payload.get("fileName"), str) or not payload["fileName"]:
+                raise ReleaseError(f"LiteRT-LM smoke has an invalid {field} digest")
+            require_sha256(payload.get("sha256"), f"smoke {field} digest")
+        fixture = item["fixture"]
+        sample_rate = require_int(
+            fixture.get("sampleRateHz"), "smoke fixture sample rate", minimum=1
+        )
+        sample_count = require_int(
+            fixture.get("sampleCount"), "smoke fixture sample count", minimum=1
+        )
+        if sample_rate != 16000 or sample_count <= 0:
+            raise ReleaseError("LiteRT-LM smoke has invalid fixture metadata")
+        for field, pinned in LITERT_SMOKE_ASSETS.items():
+            payload = item[field]
+            if (
+                payload.get("fileName") != pinned["fileName"]
+                or payload.get("sha256") != pinned["sha256"]
+            ):
+                raise ReleaseError(
+                    f"LiteRT-LM smoke {field} does not match the owner-pinned asset"
+                )
+        library = item["library"]
+        matching_libraries = [
+            artifact
+            for artifact in artifacts_by_path.values()
+            if artifact.get("runtime") == "native"
+            and artifact.get("platform") == item.get("platform")
+            and artifact.get("arch") == item.get("arch")
+            and artifact.get("fileName") == library.get("fileName")
+            and artifact.get("sha256") == library.get("sha256")
+        ]
+        if len(matching_libraries) != 1:
+            raise ReleaseError(
+                "LiteRT-LM smoke library does not match one packaged runtime artifact"
+            )
+        source = item.get("source")
+        if not isinstance(source, dict):
+            raise ReleaseError("LiteRT-LM smoke has no immutable source provenance")
+        require_exact_keys(
+            source,
+            {"runtimeReleaseAsset", "model", "tokenizer", "fixture"},
+            "smoke source provenance",
+        )
+        expected_runtime_asset = (
+            "litert-lm-native-runtime-"
+            f"{item.get('platform')}-{item.get('arch')}-{tag}.tar.gz"
+        )
+        if source.get("runtimeReleaseAsset") != expected_runtime_asset or any(
+            source.get(field) != LITERT_SMOKE_ASSETS[field]["url"]
+            for field in ("model", "tokenizer", "fixture")
+        ):
+            raise ReleaseError("LiteRT-LM smoke has invalid source provenance")
+        expectation = item.get("expectation")
+        if not isinstance(expectation, dict):
+            raise ReleaseError("LiteRT-LM smoke has no transcript expectation")
+        require_exact_keys(
+            expectation,
+            {"type", "value"},
+            "smoke transcript expectation",
+        )
+        expectation_value = expectation.get("value")
+        if expectation != {
+            "type": "case-insensitive-substring",
+            "value": "country",
+        } or expectation_value.casefold() not in item["transcript"].casefold():
+            raise ReleaseError(
+                "LiteRT-LM smoke does not satisfy the owner-pinned transcript expectation"
+            )
+        identity = (
+            require_string(item.get("id"), "smoke id"),
+            require_string(item.get("platform"), "smoke platform"),
+            require_string(item.get("arch"), "smoke architecture"),
+        )
+        if identity in smoke_identities:
+            raise ReleaseError("LiteRT-LM smoke identity is duplicated")
+        smoke_identities.add(identity)
+        passed_smokes.add(f"{item.get('platform')}/{item.get('arch')}")
+    required_smokes = {"linux/x64", "windows/x64"}
+    if not required_smokes.issubset(passed_smokes):
+        raise ReleaseError(
+            "LiteRT-LM manifest is missing required real-model smoke evidence: "
+            + ", ".join(sorted(required_smokes - passed_smokes))
+        )
+    validate_litert_release_sha256_sums(
+        release,
+        manifest,
+        repo=repo,
+        tag=tag,
+        release_json_dir=release_json_dir,
+    )
+    validate_litert_spm_release_asset_digests(
+        release,
+        manifest,
+        release_tag=tag,
+    )
+    return manifest
+
+
+def fetch_litert_lm_release_manifest(
+    release: dict[str, Any],
+    *,
+    repo: str,
+    tag: str,
+    release_json_dir: str,
+) -> tuple[dict[str, Any], str] | None:
+    manifest_asset = next(
+        (
+            asset
+            for asset in release.get("assets", [])
+            if isinstance(asset, dict) and asset.get("name") == "manifest.json"
+        ),
+        None,
+    )
+    if manifest_asset is None:
+        return None
+    try:
+        if release_json_dir:
+            fixture = (
+                Path(release_json_dir)
+                / f"{repo.replace('/', '__')}__{tag}__manifest.json"
+            )
+            payload = fixture.read_bytes()
+        else:
+            url = manifest_asset.get("browser_download_url")
+            if not isinstance(url, str) or not url:
+                raise ReleaseError(
+                    f"Release {repo}@{tag} manifest has no download URL"
+                )
+            request = urllib.request.Request(url, headers=github_auth_header())
+            with urllib.request.urlopen(request) as response:
+                payload = response.read()
+        manifest = json.loads(payload.decode("utf-8"))
+    except ReleaseError:
+        raise
+    except (
+        OSError,
+        urllib.error.HTTPError,
+        urllib.error.URLError,
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+    ) as error:
+        raise ReleaseError(
+            f"Failed to read release manifest {repo}@{tag}: {error}"
+        ) from error
+    if not isinstance(manifest, dict):
+        raise ReleaseError(f"Release {repo}@{tag} manifest is not a JSON object")
+    return manifest, hashlib.sha256(payload).hexdigest()
+
+
+def fetch_ref_commit(
+    repo: str,
+    ref: str,
+    release_json_dir: str,
+    release: dict[str, Any] | None = None,
+) -> str:
+    if release_json_dir:
+        fixture = (
+            Path(release_json_dir)
+            / f"{repo.replace('/', '__')}__{ref}__commit.json"
+        )
+        try:
+            if fixture.exists():
+                payload: Any = json.loads(fixture.read_text(encoding="utf-8"))
+            elif release is not None:
+                payload = {"sha": release.get("tag_commit_sha")}
+            else:
+                raise ReleaseError(f"Missing upstream ref fixture {fixture}")
+        except ReleaseError:
+            raise
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise ReleaseError(
+                f"Failed to resolve exact commit for {repo}@{ref}: {error}"
+            ) from error
+    else:
+        url = f"https://api.github.com/repos/{repo}/commits/{ref}"
+        request = urllib.request.Request(
+            url,
+            headers={
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+                **github_auth_header(),
+            },
+        )
+        try:
+            with urllib.request.urlopen(request) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except (
+            OSError,
+            urllib.error.HTTPError,
+            urllib.error.URLError,
+            UnicodeDecodeError,
+            json.JSONDecodeError,
+        ) as error:
+            raise ReleaseError(
+                f"Failed to resolve exact commit for {repo}@{ref}: {error}"
+            ) from error
+    if not isinstance(payload, dict):
+        raise ReleaseError(f"Commit response for {repo}@{ref} must be a JSON object")
+    commit = payload.get("sha")
+    if not isinstance(commit, str) or not FULL_COMMIT_RE.fullmatch(commit):
+        raise ReleaseError(f"Could not resolve exact commit for {repo}@{ref}")
+    return commit
+
+
+def fetch_tag_commit(
+    repo: str,
+    tag: str,
+    release_json_dir: str,
+    release: dict[str, Any],
+) -> str:
+    return fetch_ref_commit(repo, tag, release_json_dir, release)
+
+
+def allows_legacy_litert_manifest(tag: str) -> bool:
+    return tag in LEGACY_SCHEMA1_RELEASES
 
 
 def replace_one(text: str, pattern: str, replacement: str, description: str) -> str:
@@ -944,6 +2490,64 @@ def replace_one(text: str, pattern: str, replacement: str, description: str) -> 
     if count != 1:
         raise ReleaseError(f"Could not replace {description}")
     return updated
+
+
+def atomic_write_many(
+    writes: dict[Path, str],
+    *,
+    replace_func: Any = os.replace,
+) -> None:
+    """Commit a set of text replacements with rollback on partial failure."""
+    staged: dict[Path, Path] = {}
+    backups: dict[Path, Path | None] = {}
+    replaced: list[Path] = []
+    try:
+        for path, text in writes.items():
+            path.parent.mkdir(parents=True, exist_ok=True)
+            descriptor, staged_name = tempfile.mkstemp(
+                prefix=f".{path.name}.new-", dir=path.parent
+            )
+            staged_path = Path(staged_name)
+            with os.fdopen(descriptor, "w", encoding="utf-8") as output:
+                output.write(text)
+                output.flush()
+                os.fsync(output.fileno())
+            if path.exists():
+                staged_path.chmod(path.stat().st_mode)
+                backup_descriptor, backup_name = tempfile.mkstemp(
+                    prefix=f".{path.name}.backup-", dir=path.parent
+                )
+                os.close(backup_descriptor)
+                backup_path = Path(backup_name)
+                shutil.copy2(path, backup_path)
+                backups[path] = backup_path
+            else:
+                backups[path] = None
+            staged[path] = staged_path
+
+        for path in sorted(writes, key=lambda item: item.as_posix()):
+            replace_func(staged[path], path)
+            replaced.append(path)
+            staged.pop(path, None)
+    except Exception as error:
+        rollback_errors: list[str] = []
+        for path in reversed(replaced):
+            backup = backups[path]
+            try:
+                if backup is None:
+                    path.unlink(missing_ok=True)
+                else:
+                    replace_func(backup, path)
+                    backups[path] = None
+            except Exception as rollback_error:  # pragma: no cover - catastrophic IO
+                rollback_errors.append(f"{path}: {rollback_error}")
+        detail = ""
+        if rollback_errors:
+            detail = "; rollback failures: " + "; ".join(rollback_errors)
+        raise ReleaseError(f"Atomic pin update failed: {error}{detail}") from error
+    finally:
+        for path in (*staged.values(), *(item for item in backups.values() if item)):
+            path.unlink(missing_ok=True)
 
 
 def litert_lm_bundle_names(hook_text: str) -> list[str]:
@@ -954,6 +2558,8 @@ def litert_lm_bundle_names(hook_text: str) -> list[str]:
     bundles = pattern.findall(hook_text)
     if not bundles:
         raise ReleaseError("Could not find LiteRT-LM bundle specs in hook/build.dart")
+    if len(bundles) != len(set(bundles)):
+        raise ReleaseError("hook/build.dart contains duplicate LiteRT-LM bundle specs")
     return bundles
 
 
@@ -972,6 +2578,342 @@ def replace_litert_lm_bundle_checksum(
     return updated
 
 
+def litert_schema2_bundle_required_libraries(
+    manifest: dict[str, Any],
+) -> dict[str, tuple[str, ...]]:
+    platforms = manifest.get("platforms")
+    if not isinstance(platforms, list):
+        raise ReleaseError("LiteRT-LM manifest platforms must be a list")
+    result: dict[str, tuple[str, ...]] = {}
+    for platform in platforms:
+        if not isinstance(platform, dict):
+            raise ReleaseError("LiteRT-LM manifest contains an invalid platform")
+        platform_name = require_string(platform.get("platform"), "platform name")
+        arch = require_string(platform.get("arch"), "platform architecture")
+        paths = platform.get("artifactPaths")
+        if (
+            not isinstance(paths, list)
+            or not paths
+            or any(
+                not isinstance(path, str)
+                or not path
+                or path == "."
+                or "\\" in path
+                or Path(path).is_absolute()
+                or ".." in Path(path).parts
+                or Path(path).as_posix() != path
+                for path in paths
+            )
+        ):
+            raise ReleaseError("LiteRT-LM platform artifact paths are invalid")
+        libraries = tuple(sorted(Path(path).name for path in paths))
+        if any(
+            not SAFE_LITERT_LIBRARY_FILENAME_RE.fullmatch(library)
+            for library in libraries
+        ):
+            raise ReleaseError("LiteRT-LM platform library names are invalid")
+        if len(libraries) != len(set(libraries)):
+            raise ReleaseError("LiteRT-LM platform library names are duplicated")
+        bundle = f"{platform_name}-{arch}"
+        if bundle in result:
+            raise ReleaseError("LiteRT-LM platform bundle is duplicated")
+        result[bundle] = libraries
+    return result
+
+
+def replace_litert_lm_bundle_required_libraries(
+    hook_text: str,
+    bundle: str,
+    libraries: tuple[str, ...],
+) -> str:
+    if not libraries:
+        raise ReleaseError(f"LiteRT-LM bundle {bundle} has no required libraries")
+    inline_libraries = "{" + ", ".join(f"'{library}'" for library in libraries) + "}"
+    multiline_libraries = "{\n" + "".join(
+        f"      '{library}',\n" for library in libraries
+    ) + "    }"
+    pattern = re.compile(
+        rf"(_LiteRtLmBundleSpec\(\s*'{re.escape(bundle)}',\s*"
+        r"sha256: '[0-9a-f]+',\s*requiredLibraries:\s*)\{.*?\},?(\s*\),)",
+        re.DOTALL,
+    )
+    def replacement(match: re.Match[str]) -> str:
+        field_prefix_width = len(match.group(1).rsplit("\n", maxsplit=1)[-1])
+        required_libraries = (
+            inline_libraries
+            if field_prefix_width + len(inline_libraries) + 1
+            <= DART_FORMAT_PAGE_WIDTH
+            else multiline_libraries
+        )
+        return f"{match.group(1)}{required_libraries},{match.group(2)}"
+
+    updated, count = pattern.subn(replacement, hook_text, count=1)
+    if count != 1:
+        raise ReleaseError(
+            f"Could not replace LiteRT-LM required libraries for {bundle}"
+        )
+    return updated
+
+
+def litert_schema2_runtime_required_libraries(
+    bundle_libraries: dict[str, tuple[str, ...]],
+) -> dict[str, tuple[str, ...]]:
+    required_bundles = (
+        "macos-arm64",
+        "macos-x64",
+        "linux-arm64",
+        "linux-x64",
+        "windows-x64",
+    )
+    missing_bundles = set(required_bundles) - set(bundle_libraries)
+    if missing_bundles:
+        raise ReleaseError(
+            "LiteRT-LM runtime inventory is missing bundles: "
+            + ", ".join(sorted(missing_bundles))
+        )
+    return {
+        bundle: bundle_libraries[bundle]
+        for bundle in required_bundles
+    }
+
+
+def _render_litert_lm_runtime_library_function(
+    function_name: str,
+    entries: dict[str, tuple[str, ...]],
+) -> str:
+    lines = [
+        f"List<String> {function_name}(Abi abi) {{",
+        "  return switch (abi) {",
+    ]
+    for abi, libraries in entries.items():
+        if len(libraries) == 1:
+            lines.append(f"    Abi.{abi} => const <String>['{libraries[0]}'],")
+        elif libraries:
+            lines.append(f"    Abi.{abi} => const <String>[")
+            lines.extend(f"      '{library}'," for library in libraries)
+            lines.append("    ],")
+        else:
+            lines.append(f"    Abi.{abi} => const <String>[],")
+    lines.extend(
+        [
+            "    _ => const <String>[],",
+            "  };",
+            "}",
+        ]
+    )
+    return "\n".join(lines) + "\n"
+
+
+def _replace_litert_lm_runtime_library_function(
+    runtime_text: str,
+    function_name: str,
+    entries: dict[str, tuple[str, ...]],
+) -> str:
+    pattern = re.compile(
+        rf"List<String> {re.escape(function_name)}\(Abi abi\) \{{\n"
+        r"  return switch \(abi\) \{.*?\n  \};\n\}\n",
+        re.DOTALL,
+    )
+    replacement = _render_litert_lm_runtime_library_function(
+        function_name,
+        entries,
+    )
+    updated, count = pattern.subn(replacement, runtime_text, count=1)
+    if count != 1:
+        raise ReleaseError(
+            f"Could not replace LiteRT-LM runtime library function {function_name}"
+        )
+    return updated
+
+
+def replace_litert_lm_runtime_required_libraries(
+    runtime_text: str,
+    bundle_libraries: dict[str, tuple[str, ...]],
+) -> str:
+    runtime_libraries = litert_schema2_runtime_required_libraries(bundle_libraries)
+    # The bundle keys use hyphens while the Dart ABI enum uses camel case.
+    runtime_entries = {
+        "macosArm64": runtime_libraries["macos-arm64"],
+        "macosX64": runtime_libraries["macos-x64"],
+        "linuxArm64": runtime_libraries["linux-arm64"],
+        "linuxX64": runtime_libraries["linux-x64"],
+        "windowsX64": runtime_libraries["windows-x64"],
+    }
+    macos_entries = {
+        "macosArm64": runtime_libraries["macos-arm64"],
+        "macosX64": runtime_libraries["macos-x64"],
+    }
+    updated = _replace_litert_lm_runtime_library_function(
+        runtime_text,
+        "liteRtLmMacOsRequiredLibrariesForAbi",
+        macos_entries,
+    )
+    return _replace_litert_lm_runtime_library_function(
+        updated,
+        "liteRtLmRequiredLibrariesForAbi",
+        runtime_entries,
+    )
+
+
+def _litert_schema2_macos_bundle_entries(
+    bundle_libraries: dict[str, tuple[str, ...]],
+) -> dict[str, tuple[str, ...]]:
+    runtime_libraries = litert_schema2_runtime_required_libraries(bundle_libraries)
+    return {
+        "arm64": runtime_libraries["macos-arm64"],
+        "x64": runtime_libraries["macos-x64"],
+    }
+
+
+def _litert_macos_framework_binary_path(library: str) -> str:
+    if not library.endswith(".dylib"):
+        raise ReleaseError(
+            "LiteRT-LM macOS runtime inventory must contain dylib filenames"
+        )
+    framework_name = library.removesuffix(".dylib")
+    if framework_name.startswith("lib"):
+        framework_name = framework_name[3:]
+    if not framework_name:
+        raise ReleaseError("LiteRT-LM macOS runtime inventory has an empty library")
+    return (
+        f"{framework_name}.framework/Versions/A/"
+        f"{framework_name}"
+    )
+
+
+def _litert_schema2_macos_framework_entries(
+    bundle_libraries: dict[str, tuple[str, ...]],
+) -> dict[str, tuple[str, ...]]:
+    macos_bundles = _litert_schema2_macos_bundle_entries(bundle_libraries)
+    return {
+        arch: tuple(
+            sorted(_litert_macos_framework_binary_path(library) for library in libraries)
+        )
+        for arch, libraries in macos_bundles.items()
+    }
+
+
+def litert_schema2_macos_required_native_spm_files(
+    manifest: dict[str, Any],
+    resolved_tag: str,
+) -> tuple[str, ...]:
+    targets = litert_schema2_apple_targets(manifest, resolved_tag)
+    target_paths = {
+        "LiteRtLm": "LiteRtLm.framework/Versions/A/LiteRtLm",
+        "CLiteRTLMMac": "libCLiteRTLM_mac.dylib",
+    }
+    missing_targets = set(target_paths) - targets
+    if missing_targets:
+        raise ReleaseError(
+            "LiteRT-LM schema-2 owner inventory is missing required macOS SPM "
+            "targets: "
+            + ", ".join(sorted(missing_targets))
+        )
+    return tuple(target_paths[target] for target in ("LiteRtLm", "CLiteRTLMMac"))
+
+
+def _render_litert_lm_shell_inventory_function(
+    function_name: str,
+    entries: dict[str, tuple[str, ...]],
+) -> str:
+    lines = [
+        f"{function_name}() {{",
+        '  case "$LITERT_ARCH" in',
+    ]
+    for arch in ("arm64", "x64"):
+        libraries = entries[arch]
+        if not libraries:
+            raise ReleaseError(
+                f"LiteRT-LM macOS {arch} inventory has no required files"
+            )
+        lines.append(f"    {arch})")
+        lines.append("      printf '%s\\n' " + "\\")
+        for index, library in enumerate(libraries):
+            suffix = " " + "\\" if index < len(libraries) - 1 else ""
+            lines.append(f'        "{library}"{suffix}')
+        lines.append("      ;;")
+    lines.extend(("  esac", "}"))
+    return "\n".join(lines) + "\n"
+
+
+def _replace_litert_lm_shell_inventory_function(
+    prepare_text: str,
+    function_name: str,
+    entries: dict[str, tuple[str, ...]],
+) -> str:
+    pattern = re.compile(
+        rf"{re.escape(function_name)}\(\) \{{.*?\n\}}\n",
+        re.DOTALL,
+    )
+    replacement = _render_litert_lm_shell_inventory_function(
+        function_name,
+        entries,
+    )
+    updated, count = pattern.subn(replacement, prepare_text, count=1)
+    if count != 1:
+        raise ReleaseError(
+            f"Could not replace LiteRT-LM macOS prepare function {function_name}"
+        )
+    return updated
+
+
+def replace_litert_lm_macos_prepare_inventory(
+    prepare_text: str,
+    bundle_libraries: dict[str, tuple[str, ...]],
+    *,
+    manifest: dict[str, Any],
+    resolved_tag: str,
+) -> str:
+    bundle_entries = _litert_schema2_macos_bundle_entries(bundle_libraries)
+    native_spm_files = litert_schema2_macos_required_native_spm_files(
+        manifest,
+        resolved_tag,
+    )
+    native_spm_entries = {arch: native_spm_files for arch in ("arm64", "x64")}
+    updated = _replace_litert_lm_shell_inventory_function(
+        prepare_text,
+        "required_libraries",
+        bundle_entries,
+    )
+    return _replace_litert_lm_shell_inventory_function(
+        updated,
+        "required_native_spm_files",
+        native_spm_entries,
+    )
+
+
+def replace_litert_lm_runtime_macos_inventory(
+    runtime_text: str,
+    bundle_libraries: dict[str, tuple[str, ...]],
+    *,
+    manifest: dict[str, Any],
+    resolved_tag: str,
+) -> str:
+    framework_entries = _litert_schema2_macos_framework_entries(bundle_libraries)
+    runtime_framework_entries = {
+        "macosArm64": framework_entries["arm64"],
+        "macosX64": framework_entries["x64"],
+    }
+    native_spm_files = litert_schema2_macos_required_native_spm_files(
+        manifest,
+        resolved_tag,
+    )
+    runtime_native_spm_entries = {
+        "macosArm64": native_spm_files,
+        "macosX64": native_spm_files,
+    }
+    updated = _replace_litert_lm_runtime_library_function(
+        runtime_text,
+        "liteRtLmMacOsRequiredFrameworksForAbi",
+        runtime_framework_entries,
+    )
+    return _replace_litert_lm_runtime_library_function(
+        updated,
+        "liteRtLmMacOsRequiredNativeSpmFilesForAbi",
+        runtime_native_spm_entries,
+    )
+
+
 def replace_swift_binary_target_checksum(
     swift_text: str,
     target_name: str,
@@ -986,6 +2928,95 @@ def replace_swift_binary_target_checksum(
     if count != 1:
         raise ReleaseError(f"Could not replace Package.swift checksum for {target_name}")
     return updated
+
+
+def prepare_litert_lm_package_swift(
+    original_swift_text: str,
+    *,
+    release: dict[str, Any],
+    manifest: dict[str, Any],
+    resolved_tag: str,
+) -> str:
+    original_tag = swift_variable_value(
+        original_swift_text,
+        "liteRtLmTag",
+        "LiteRT-LM Package.swift tag",
+    )
+    swift_text = original_swift_text
+    if manifest.get("schemaVersion") == 2:
+        expected_targets = litert_schema2_apple_targets(manifest, resolved_tag)
+        legacy_targets = (expected_targets - {"CLiteRTLMMac"}) | {
+            "GemmaModelConstraintProvider"
+        }
+        current_targets = {
+            target_name
+            for target_name, _ in swift_native_repo_binary_targets(
+                swift_text,
+                tag_variable="liteRtLmTag",
+                current_tag=original_tag,
+            )
+        }
+        if current_targets == legacy_targets:
+            if swift_text.count("GemmaModelConstraintProvider") != 3:
+                raise ReleaseError(
+                    "Legacy LiteRT-LM Package.swift Gemma target topology is ambiguous"
+                )
+            swift_text = swift_text.replace(
+                "GemmaModelConstraintProvider",
+                "CLiteRTLMMac",
+            )
+            swift_text = replace_one(
+                swift_text,
+                (
+                    r'(name: "CLiteRTLMMac", condition: '
+                    r'\.when\(platforms: \[)\.iOS(\]\)\))'
+                ),
+                r"\g<1>.macOS\2",
+                "LiteRT-LM Package.swift macOS compatibility target condition",
+            )
+            swift_text = replace_one(
+                swift_text,
+                (
+                    r'(name: "LiteRtLm", condition: '
+                    r'\.when\(platforms: \[)\.iOS(\]\)\))'
+                ),
+                r"\g<1>.iOS, .macOS\2",
+                "LiteRT-LM Package.swift shared runtime target condition",
+            )
+        elif current_targets != expected_targets:
+            raise ReleaseError(
+                "LiteRT-LM Package.swift binary targets do not match the legacy "
+                "or schema-2 owner inventory"
+            )
+
+    apple_targets = swift_native_repo_binary_targets(
+        swift_text,
+        tag_variable="liteRtLmTag",
+        current_tag=original_tag,
+    )
+    if manifest.get("schemaVersion") == 2 and {
+        target_name for target_name, _ in apple_targets
+    } != litert_schema2_apple_targets(manifest, resolved_tag):
+        raise ReleaseError(
+            "LiteRT-LM Package.swift binary targets do not match schema-2 owner inventory"
+        )
+    swift_text = replace_one(
+        swift_text,
+        r'let liteRtLmTag = "[^"]+"',
+        f'let liteRtLmTag = "{resolved_tag}"',
+        "LiteRT-LM Package.swift tag",
+    )
+    for target_name, asset_template in apple_targets:
+        checksum = release_asset_checksum(
+            release,
+            asset_template.format(tag=resolved_tag),
+        )
+        swift_text = replace_swift_binary_target_checksum(
+            swift_text,
+            target_name,
+            checksum,
+        )
+    return swift_text
 
 
 def swift_variable_value(

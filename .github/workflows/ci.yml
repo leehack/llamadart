@@ -48,6 +48,9 @@ jobs:
       - name: Check WebGPU bridge asset tag
         run: dart run tool/testing/check_webgpu_bridge_tag.dart
 
+      - name: Verify native release pin policy
+        run: python3 tool/native/test_sync_native_release_pins.py
+
       - name: Pub Publish Dry Run
         run: flutter pub publish --dry-run
 

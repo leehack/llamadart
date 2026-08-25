@@ -6,6 +6,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
 
@@ -22,14 +23,19 @@ void main() {
 
     await File(path.join(root.path, 'hook', 'build.dart')).writeAsString('''
 const _llamaCppTag = 'b9998';
+const _litertLmReleaseTag = 'v1.0.0';
 const _litertLmVersion = '1.0.0';
 
 const _litertLmBundleSpecs = <_LiteRtLmBundleSpec>[
-  _LiteRtLmBundleSpec(
-    'linux-x64',
-    sha256: '${_hex('0')}',
-    requiredLibraries: {'libLiteRtLm.so'},
-  ),
+  _LiteRtLmBundleSpec('android-arm64', sha256: '${_hex('0')}', requiredLibraries: {'runtime'}),
+  _LiteRtLmBundleSpec('android-x64', sha256: '${_hex('0')}', requiredLibraries: {'runtime'}),
+  _LiteRtLmBundleSpec('ios-arm64', sha256: '${_hex('0')}', requiredLibraries: {'runtime'}),
+  _LiteRtLmBundleSpec('ios-arm64-sim', sha256: '${_hex('0')}', requiredLibraries: {'runtime'}),
+  _LiteRtLmBundleSpec('linux-arm64', sha256: '${_hex('0')}', requiredLibraries: {'runtime'}),
+  _LiteRtLmBundleSpec('linux-x64', sha256: '${_hex('0')}', requiredLibraries: {'runtime'}),
+  _LiteRtLmBundleSpec('macos-arm64', sha256: '${_hex('0')}', requiredLibraries: {'runtime'}),
+  _LiteRtLmBundleSpec('macos-x64', sha256: '${_hex('0')}', requiredLibraries: {'runtime'}),
+  _LiteRtLmBundleSpec('windows-x64', sha256: '${_hex('0')}', requiredLibraries: {'runtime'}),
 ];
 ''');
     final litertRuntimeDart = File(
@@ -44,13 +50,59 @@ const _litertLmBundleSpecs = <_LiteRtLmBundleSpec>[
     );
     await litertRuntimeDart.parent.create(recursive: true);
     await litertRuntimeDart.writeAsString('''
+import 'dart:ffi';
+
+const _litertLmReleaseTag = 'v1.0.0';
 const _litertLmVersion = '1.0.0';
+
+List<String> liteRtLmMacOsRequiredLibrariesForAbi(Abi abi) {
+  return switch (abi) {
+    Abi.macosArm64 => const <String>['legacy-macos-arm64'],
+    Abi.macosX64 => const <String>['legacy-macos-x64'],
+    _ => const <String>[],
+  };
+}
+
+List<String> liteRtLmRequiredLibrariesForAbi(Abi abi) {
+  return switch (abi) {
+    Abi.macosArm64 => liteRtLmMacOsRequiredLibrariesForAbi(abi),
+    Abi.macosX64 => liteRtLmMacOsRequiredLibrariesForAbi(abi),
+    Abi.linuxArm64 => const <String>['legacy-linux-arm64'],
+    Abi.linuxX64 => const <String>['legacy-linux-x64'],
+    Abi.windowsX64 => const <String>['legacy-windows-x64'],
+    _ => const <String>[],
+  };
+}
+
+List<String> liteRtLmMacOsRequiredFrameworksForAbi(Abi abi) {
+  return switch (abi) {
+    Abi.macosArm64 => const <String>['legacy-arm64.framework/legacy-arm64'],
+    Abi.macosX64 => const <String>['legacy-x64.framework/legacy-x64'],
+    _ => const <String>[],
+  };
+}
+
+List<String> liteRtLmMacOsRequiredNativeSpmFilesForAbi(Abi abi) {
+  return switch (abi) {
+    Abi.macosArm64 => const <String>['legacy-arm64-spm'],
+    Abi.macosX64 => const <String>['legacy-x64-spm'],
+    _ => const <String>[],
+  };
+}
 ''');
     final macosPrepareScript = File(
       path.join(root.path, 'tool', 'macos_litert_lm_prepare_app.sh'),
     );
     await macosPrepareScript.parent.create(recursive: true);
     await macosPrepareScript.writeAsString('''
+required_libraries() {
+  printf '%s\\n' "legacy-macos"
+}
+
+required_native_spm_files() {
+  printf '%s\\n' "legacy-spm"
+}
+
 paths=(
   ".dart_tool/llamadart/litert_lm/1.0.0/macos_arm64"
   ".dart_tool/llamadart/litert_lm/1.0.0/macos/arm64"
@@ -136,17 +188,69 @@ paths=(
       path.join(root.path, 'hook', 'build.dart'),
     ).readAsString();
     expect(hook, contains("const _llamaCppTag = '$llamaTag';"));
+    expect(hook, contains("const _litertLmReleaseTag = '$litertTag';"));
     expect(hook, contains("const _litertLmVersion = '9.9.9';"));
     expect(hook, contains("sha256: '$litertRuntimeChecksum'"));
-    final litertRuntimeDartText = await litertRuntimeDart.readAsString();
+    expect(hook, isNot(contains("requiredLibraries: {'runtime'}")));
+    expect(hook, contains("'libLiteRtLm.so'"));
+    expect(hook, contains("'libwebgpu_dawn.so'"));
+    final litertRuntimeDartText = (await litertRuntimeDart.readAsString())
+        .replaceAll('\r\n', '\n');
+    expect(
+      litertRuntimeDartText,
+      contains("const _litertLmReleaseTag = '$litertTag';"),
+    );
     expect(
       litertRuntimeDartText,
       contains("const _litertLmVersion = '9.9.9';"),
     );
-    final macosPrepareText = await macosPrepareScript.readAsString();
+    expect(
+      litertRuntimeDartText,
+      contains(
+        "Abi.macosArm64 => const <String>[\n"
+        "      'libCLiteRTLM_mac.dylib',\n"
+        "      'libLiteRtLm.dylib',\n"
+        "    ],",
+      ),
+    );
+    expect(
+      litertRuntimeDartText,
+      contains(
+        "Abi.macosArm64 => const <String>[\n"
+        "      'CLiteRTLM_mac.framework/Versions/A/CLiteRTLM_mac',\n"
+        "      'LiteRtLm.framework/Versions/A/LiteRtLm',\n"
+        "    ],",
+      ),
+    );
+    expect(
+      litertRuntimeDartText,
+      contains(
+        "Abi.macosArm64 => const <String>[\n"
+        "      'LiteRtLm.framework/Versions/A/LiteRtLm',\n"
+        "      'libCLiteRTLM_mac.dylib',\n"
+        "    ],",
+      ),
+    );
+    expect(litertRuntimeDartText, isNot(contains('legacy-macos-arm64')));
+    expect(litertRuntimeDartText, isNot(contains('legacy-arm64.framework')));
+    expect(litertRuntimeDartText, isNot(contains('legacy-arm64-spm')));
+    final macosPrepareText = (await macosPrepareScript.readAsString())
+        .replaceAll('\r\n', '\n');
     expect(macosPrepareText, contains('litert_lm/9.9.9/macos_arm64'));
     expect(macosPrepareText, contains('litert_lm/9.9.9/macos/arm64'));
     expect(macosPrepareText, isNot(contains('litert_lm/1.0.0/')));
+    expect(
+      macosPrepareText,
+      contains('"libCLiteRTLM_mac.dylib" \\\n        "libLiteRtLm.dylib"'),
+    );
+    expect(
+      macosPrepareText,
+      contains(
+        '"LiteRtLm.framework/Versions/A/LiteRtLm" \\\n        "libCLiteRTLM_mac.dylib"',
+      ),
+    );
+    expect(macosPrepareText, isNot(contains('legacy-macos')));
+    expect(macosPrepareText, isNot(contains('legacy-spm')));
 
     final llamaSwift = await File(
       path.join(
@@ -1031,7 +1135,7 @@ printf '%s\\n' '{"tag_name":"v0.2.0-1","assets":[]}'
       );
       final releaseSkew = await _runLlamaSync(releaseSetup, 'v0.2.0');
       expect(releaseSkew.exitCode, 1);
-      expect(releaseSkew.stderr, contains('metadata resolved v0.2.1'));
+      expect(releaseSkew.stderr, contains('resolved unexpected tag v0.2.1'));
 
       final manifestSetup = await _writeLlamaOnlyRepo('b10514');
       addTearDown(() => manifestSetup.root.delete(recursive: true));
@@ -1194,6 +1298,18 @@ printf '%s\\n' '{"tag_name":"v0.2.0-1","assets":[]}'
     expect(result.stderr, contains('asset list contains a non-object entry'));
     expect(result.stderr, isNot(contains('Traceback')));
     expect(result.stderr, isNot(contains('AttributeError')));
+  });
+
+  test('keeps LiteRT release identity separate from cache version', () {
+    final hook = File('hook/build.dart').readAsStringSync();
+    expect(hook, contains("const _litertLmReleaseTag = 'v0.16.0-native.2';"));
+    expect(hook, contains(r"'$_litertLmReleaseTag'"));
+    expect(hook, isNot(contains(r"v$_litertLmVersion")));
+
+    final workflow = File(
+      '.github/workflows/sync_native_bindings.yml',
+    ).readAsStringSync();
+    expect(workflow, contains('tool/macos_litert_lm_prepare_app.sh'));
   });
 
   test(
@@ -2188,7 +2304,8 @@ Future<void> _expectOfflineReleaseFixtures(Directory releaseDir) async {
         (entity) =>
             entity is File &&
             entity.path.endsWith('.json') &&
-            !entity.path.endsWith('__manifest.json'),
+            !entity.path.endsWith('__manifest.json') &&
+            !entity.path.endsWith('__commit.json'),
       )
       .cast<File>()
       .toList();
@@ -2339,18 +2456,131 @@ Future<void> _writeReleaseFixture(
   String tag,
   Map<String, String> assets, {
   String? resolvedTag,
-}) {
+}) async {
   final file = File(
     path.join(dir.path, '${repo.replaceAll('/', '__')}__$tag.json'),
   );
+  final releaseAssetChecksums = Map<String, String>.of(assets);
+  if (repo == 'leehack/litert-lm-native') {
+    final ownerFixture = File(
+      path.join(
+        Directory.current.path,
+        'tool/native/fixtures/litert_lm_schema2_owner_manifest.json',
+      ),
+    );
+    final manifest =
+        jsonDecode(await ownerFixture.readAsString()) as Map<String, dynamic>;
+    final releaseIdentity = manifest['release'] as Map<String, dynamic>;
+    final upstream = manifest['upstream'] as Map<String, dynamic>;
+    final originalReleaseTag = releaseIdentity['tag'] as String;
+    final originalCompatibilityTag = upstream['compatibilityTag'] as String;
+    releaseIdentity
+      ..['tag'] = tag
+      ..['kind'] = 'upstream'
+      ..['rebuild'] = 0
+      ..['githubPrerelease'] = false;
+    upstream
+      ..['tag'] = tag
+      ..['compatibilityTag'] = tag
+      ..['prebuiltOverrides'] = <Object>[];
+    for (final platform
+        in (manifest['platforms'] as List<dynamic>)
+            .cast<Map<String, dynamic>>()) {
+      platform['releaseAsset'] =
+          'litert-lm-native-runtime-${platform['platform']}-${platform['arch']}-$tag.tar.gz';
+      releaseAssetChecksums.putIfAbsent(
+        platform['releaseAsset'] as String,
+        () => _hex('f'),
+      );
+    }
+    for (final artifact
+        in (manifest['artifacts'] as List<dynamic>)
+            .cast<Map<String, dynamic>>()) {
+      final originalPath = artifact['path'] as String;
+      final releaseRetagged = originalPath.replaceAll(originalReleaseTag, tag);
+      final retaggedPath = releaseRetagged.replaceAll(
+        originalCompatibilityTag,
+        tag,
+      );
+      artifact
+        ..['path'] = retaggedPath
+        ..['fileName'] = path.basename(retaggedPath)
+        ..['upstreamTag'] = tag
+        ..['releaseTag'] = tag;
+      if (retaggedPath.startsWith('dist/spm/$tag/') &&
+          retaggedPath.endsWith('.zip')) {
+        final assetName = path.basename(retaggedPath);
+        final checksum = releaseAssetChecksums[assetName] ?? _hex('f');
+        artifact['sha256'] = checksum;
+        releaseAssetChecksums[assetName] = checksum;
+      }
+    }
+    for (final assetName in <String>[
+      'SHA256SUMS',
+      'release-result.json',
+      'litert-lm-native-prebuilts-$tag.tar.gz',
+      'litert-lm-native-official-assets-$tag.tar.gz',
+    ]) {
+      releaseAssetChecksums.putIfAbsent(assetName, () => _hex('f'));
+    }
+    for (final smoke
+        in (manifest['realModelSmokes'] as List<dynamic>)
+            .cast<Map<String, dynamic>>()) {
+      final source = smoke['source'] as Map<String, dynamic>;
+      source['runtimeReleaseAsset'] =
+          'litert-lm-native-runtime-${smoke['platform']}-${smoke['arch']}-$tag.tar.gz';
+    }
+    final manifestFile = File(
+      path.join(
+        dir.path,
+        '${repo.replaceAll('/', '__')}__${tag}__manifest.json',
+      ),
+    );
+    final manifestText = jsonEncode(manifest);
+    await manifestFile.writeAsString(manifestText);
+    releaseAssetChecksums['manifest.json'] = sha256
+        .convert(utf8.encode(manifestText))
+        .toString();
+    final upstreamCommit = upstream['commit'] as String;
+    await File(
+      path.join(
+        dir.path,
+        'google-ai-edge__LiteRT-LM__${upstream['tag']}__commit.json',
+      ),
+    ).writeAsString(jsonEncode({'sha': upstreamCommit}));
+    final native = manifest['native'] as Map<String, dynamic>;
+    final nativeCommit = native['commit'] as String;
+    await File(
+      path.join(dir.path, '${repo.replaceAll('/', '__')}__${tag}__commit.json'),
+    ).writeAsString(jsonEncode({'sha': nativeCommit}));
+    final checksumText = [
+      for (final artifact
+          in (manifest['artifacts'] as List<dynamic>)
+              .cast<Map<String, dynamic>>())
+        '${artifact['sha256']}  ${artifact['path']}',
+      '',
+    ].join('\n');
+    await File(
+      path.join(dir.path, '${repo.replaceAll('/', '__')}__${tag}__SHA256SUMS'),
+    ).writeAsString(checksumText);
+    releaseAssetChecksums['SHA256SUMS'] = sha256
+        .convert(utf8.encode(checksumText))
+        .toString();
+  }
+  final releaseAssets = [
+    for (final entry in releaseAssetChecksums.entries)
+      {'name': entry.key, 'digest': 'sha256:${entry.value}'},
+  ];
   final payload = {
     'tag_name': resolvedTag ?? tag,
-    'assets': [
-      for (final entry in assets.entries)
-        {'name': entry.key, 'digest': 'sha256:${entry.value}'},
-    ],
+    if (repo == 'leehack/litert-lm-native') ...{
+      'target_commitish': '451ba0ce7c366972b4dc0e58f08ffe590958f943',
+      'draft': false,
+      'prerelease': false,
+    },
+    'assets': releaseAssets,
   };
-  return file.writeAsString(jsonEncode(payload));
+  await file.writeAsString(jsonEncode(payload));
 }
 
 String _hex(String character) => List.filled(64, character).join();
@@ -2361,6 +2591,14 @@ const Map<String, (String, String)> _litertAppleTargets = {
   'CLiteRTLMMac': (
     'litert-lm-native-apple-CLiteRTLMMac-xcframework-{tag}.zip',
     '8',
+  ),
+  'LiteRtMetalAccelerator': (
+    'litert-lm-native-apple-LiteRtMetalAccelerator-xcframework-{tag}.zip',
+    '1',
+  ),
+  'LiteRtTopKMetalSampler': (
+    'litert-lm-native-apple-LiteRtTopKMetalSampler-xcframework-{tag}.zip',
+    '2',
   ),
 };
 

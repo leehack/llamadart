@@ -14,6 +14,7 @@ import 'litert_lm_asr_types.dart';
 
 export 'litert_lm_asr_types.dart';
 
+const _litertLmReleaseTag = 'v0.16.0-native.2';
 const _litertLmVersion = '0.16.0-native.2';
 const _litertLmLibDirEnv = 'LLAMADART_LITERT_LM_LIB_DIR';
 const _liteRtLmIosNativeAsset = 'package:llamadart/litert_lm_LiteRtLm';
@@ -55,7 +56,7 @@ String? liteRtLmStreamProxyCompatibilityError({
   return 'LiteRT-LM exposes the 0.15+ stream-chunk callback API, but its '
       'embedded StreamProxy is missing or not stream-chunk compatible. '
       'Expected callback ABI $_streamChunkCallbackAbiVersion from pinned '
-      'litert-lm-native v$_litertLmVersion; detected $detectedAbi. Install the '
+      'litert-lm-native $_litertLmReleaseTag; detected $detectedAbi. Install the '
       'pinned runtime before using asynchronous generation.';
 }
 

@@ -55,6 +55,25 @@ belongs only to `native_release_tag`; `llama_cpp_tag`/`llama_cpp_ref` in
 `assets.json` must remain the exact unsuffixed upstream prefix. GitHub classifies
 the rebuild as a prerelease, so automatic `latest` discovery must not select it.
 
+LiteRT-LM native tags follow four writable forms: stable `vMAJOR.MINOR.PATCH`,
+stable rebuild `vMAJOR.MINOR.PATCH-N`, development `g<12hex>`, and development
+rebuild `g<12hex>-N`. Historical `vMAJOR.MINOR.PATCH-native.N` tags remain
+explicitly consumable but read-only. The sync tool validates schema 2 release,
+upstream, native commit, ABI/capability, platform, digest, and real-model
+evidence fields before it prepares changes for a new compact or development tag.
+The release artifact tag is stored separately from the runtime/cache version,
+so development assets use `g<sha>` directly and never synthesize `vg<sha>` URLs.
+Schema 1 manifests remain accepted only when the downloaded bytes, GitHub asset
+digest, and immutable tag commit match the checked-in historical allowlist.
+
+Changing between stable and development channels requires
+`--allow-litert-channel-transition`; changing between two distinct `g<sha>`
+lines requires `--allow-litert-development-line-transition`. Both flags default
+off and represent explicit review of the owner-validated ancestry evidence.
+Legacy and compact tags with the same version and rebuild ordinal are aliases
+and are rejected. All pin edits are staged before a recoverable multi-file
+replacement, so a partial filesystem failure restores every prior pin.
+
 Local fallback:
 
 ```bash
@@ -101,6 +120,11 @@ Use this checklist in native sync PRs:
   upstream-aligned `vMAJOR.MINOR.PATCH` or an explicitly selected wrapper rebuild,
   `assets.json` records the correct distinct native/upstream tags and hook
   contract version 1, and its artifact checksums match the release assets.
+- For LiteRT-LM schema 2 releases, confirm the manifest's exact upstream and
+  native commits, ABI/capabilities, platform list, artifact digests, and
+  Linux/Windows real-model smoke evidence before changing any pin.
+- Confirm the schema-2 bytes match the owner-generated fixture contract under
+  `tool/native/fixtures/`; do not add a downstream-only manifest variant.
 - Confirm the same release provides Apple SPM-compatible XCFramework zip
   artifacts when companion package pins should move.
 - Update `hook/build.dart` native pins with

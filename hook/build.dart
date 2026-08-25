@@ -26,10 +26,11 @@ const _cacheBaseDir = 'llamadart';
 const _bundleCacheDir = 'native_bundles';
 const _reportDir = 'llamadart_bin';
 const _allowLegacyLocalBundleEnv = 'LLAMADART_ALLOW_LEGACY_LOCAL_BUNDLES';
+const _litertLmReleaseTag = 'v0.16.0-native.2';
 const _litertLmVersion = '0.16.0-native.2';
 const _litertLmNativeReleaseBaseUrl =
     'https://github.com/leehack/litert-lm-native/releases/download/'
-    'v$_litertLmVersion';
+    '$_litertLmReleaseTag';
 const _litertLmCacheDir = 'litert_lm';
 const _runtimeBundleDownloadMaxAttempts = 5;
 const _runtimeBundleDownloadRequestTimeout = Duration(seconds: 60);
@@ -198,7 +199,7 @@ class _LiteRtLmBundleSpec {
   });
 
   String get archiveName =>
-      'litert-lm-native-runtime-$bundle-v$_litertLmVersion.tar.gz';
+      'litert-lm-native-runtime-$bundle-$_litertLmReleaseTag.tar.gz';
 
   String get directoryName {
     final separator = bundle.indexOf('-');
