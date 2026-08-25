@@ -194,7 +194,8 @@ paths=(
     expect(hook, isNot(contains("requiredLibraries: {'runtime'}")));
     expect(hook, contains("'libLiteRtLm.so'"));
     expect(hook, contains("'libwebgpu_dawn.so'"));
-    final litertRuntimeDartText = await litertRuntimeDart.readAsString();
+    final litertRuntimeDartText = (await litertRuntimeDart.readAsString())
+        .replaceAll('\r\n', '\n');
     expect(
       litertRuntimeDartText,
       contains("const _litertLmReleaseTag = '$litertTag';"),
