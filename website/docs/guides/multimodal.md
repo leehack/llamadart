@@ -98,14 +98,14 @@ on the loaded bridge's runtime capability report.
 
 Video is not currently consumable through the public Dart generation API.
 `LlamaVideoContent` makes an attempted path/byte request explicit, but
-generation rejects it with `LlamaUnsupportedException`. The tested native
-b10545 macOS arm64 artifact exports upstream video helper symbols while the
-behavioral `mtmd_helper_support_video` probe reports video compiled out; symbol
-presence is not a capability check. A complete implementation still needs
-companion native builds with `LLAMA_SUBPROCESS`/`MTMD_VIDEO`, a cross-platform
-FFmpeg/ffprobe packaging policy, Dart frame and timestamp ingestion,
-cancellation, and lazy video-context cleanup. Extract representative image
-frames and send `LlamaImageContent` parts in the meantime.
+generation rejects it with `LlamaUnsupportedException`. The published native
+`v0.2.0-1` archive exports upstream video helper symbols, but this release has
+not been qualified for end-to-end video input; symbol presence is not a
+capability check. A complete implementation still needs companion native builds
+with `LLAMA_SUBPROCESS`/`MTMD_VIDEO`, a cross-platform FFmpeg/ffprobe packaging
+policy, Dart frame and timestamp ingestion, cancellation, and lazy video-context
+cleanup. Extract representative image frames and send `LlamaImageContent` parts
+in the meantime.
 
 `LlamaAudioContent` is generic audio input routed through normal generation; it
 does not by itself provide a transcript contract. For typed whole-file native

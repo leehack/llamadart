@@ -195,8 +195,9 @@ cannot report success before the bridge exposes `prefetchModelToCache(...)`.
   CPU main-thread runtime using the already cached model and projector. This
   recovery is slower than healthy WebGPU synthesis and does not loop.
 - `v0.1.37+` bridge assets embed llama.cpp `b10514`, which now trails the
-  `hook/build.dart` native pin, so Web and native are not on the same llama.cpp
-  build. The bridge assets provision an explicit 1 MiB stack for both wasm32
+  `hook/build.dart` native pin (`v0.2.0-1`, built from llama.cpp `v0.2.0`), so Web
+  and native are not on the same llama.cpp build. The bridge assets provision an
+  explicit 1 MiB stack for both wasm32
   and memory64, preventing `b10514` graph-parameter growth from overflowing
   Emscripten's 64 KiB default during memory64 Qwen3-ASR context construction.
 - `v0.1.12+` bridge assets forward native-compatible `ModelParams` load

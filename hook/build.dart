@@ -13,7 +13,7 @@ import 'package:path/path.dart' as path;
 
 import 'package:llamadart/src/hook/native_bundle_config.dart';
 
-const _llamaCppTag = 'b10545';
+const _llamaCppTag = 'v0.2.0-1';
 const _nativeRepoSlug = 'leehack/llamadart-native';
 
 const _packageName = 'llamadart';
@@ -377,6 +377,7 @@ void main(List<String> args) async {
         final emittedFileNames = _emittedFileNamesForLibrary(
           spec: spec,
           library: library,
+          nativeConfig: nativeConfig,
         );
 
         for (final emittedFileName in emittedFileNames) {
@@ -1650,6 +1651,7 @@ List<String> _collectDynamicLibraryPaths(
 List<String> _emittedFileNamesForLibrary({
   required NativeBundleSpec spec,
   required NativeLibraryDescriptor library,
+  required _NativeBundleConfig nativeConfig,
 }) {
   final fileNames = <String>[library.fileName];
 
@@ -1661,10 +1663,11 @@ List<String> _emittedFileNamesForLibrary({
     if (lowered.endsWith('.so') && !lowered.endsWith('.so.0')) {
       fileNames.add('${library.fileName}.0');
     }
-    // llamadart-native b10545 still publishes mtmd with the literal ELF SONAME
-    // `libmtmd.so.SOVERSION`. Keep the immutable release consumable until the
-    // owning native artifact corrects that SONAME.
-    if (lowered == 'libmtmd.so') {
+    // Historical b-tag artifacts and the original v0.2.0 artifact can encode
+    // mtmd's literal placeholder as their ELF SONAME. v0.2.0-1 corrected it.
+    final needsMtmdSoversionAlias =
+        nativeConfig.tag.startsWith('b') || nativeConfig.tag == 'v0.2.0';
+    if (lowered == 'libmtmd.so' && needsMtmdSoversionAlias) {
       fileNames.add('${library.fileName}.SOVERSION');
     }
   }
@@ -2076,6 +2079,22 @@ final class _RuntimeBundleDownloadHttpException implements Exception {
   String toString() => 'Failed to download $url ($statusCode).';
 }
 
+/// Extracts a native bundle archive through the hardened build-hook path.
+///
+/// This is intended for hook tests that need to assert extraction behaviour;
+/// production code should use the build hook entrypoint.
+Future<void> extractArchiveForTesting({
+  required String archivePath,
+  required String outputDirectory,
+  required Logger log,
+}) {
+  return _extractArchive(
+    archivePath: archivePath,
+    outputDirectory: outputDirectory,
+    log: log,
+  );
+}
+
 Future<void> _extractArchive({
   required String archivePath,
   required String outputDirectory,
@@ -2092,7 +2111,18 @@ Future<void> _extractArchive({
     throw Exception('Failed to decode native bundle archive: $archivePath');
   }
 
-  for (final file in archive.files) {
+  // An archive may repeat a normalized path (GNU tar emits `./`-prefixed names)
+  // and may even switch its kind between repeats, so the whole archive is
+  // scanned for traversal and deduplicated before anything touches the disk.
+  // Only the last entry for a path decides whether it lands as a directory, a
+  // regular file, or a materialized link alias.
+  final entriesByArchivePath = <String, ArchiveFile>{};
+  final targetPathsByArchivePath = <String, String>{};
+  final winningEntryIndexes = <String, int>{};
+  final archiveRelativePaths = <String>[];
+
+  for (var index = 0; index < archive.files.length; index++) {
+    final file = archive.files[index];
     final relativePath = path.normalize(file.name);
     final targetPath = path.normalize(path.join(outputRoot, relativePath));
     final isInRoot =
@@ -2104,13 +2134,153 @@ Future<void> _extractArchive({
       );
     }
 
-    if (file.isDirectory) {
-      await Directory(targetPath).create(recursive: true);
+    // `./` directory entries are normal in GNU tar output, but a regular file
+    // or symlink named `.` would make extraction delete the output root and
+    // replace it with a file, so it is rejected before anything touches disk.
+    if (targetPath == outputRoot && !file.isDirectory) {
+      throw Exception(
+        'Archive root replacement entry blocked for $archivePath: ${file.name}',
+      );
+    }
+
+    final archiveRelativePath = path.posix.joinAll(path.split(relativePath));
+    entriesByArchivePath[archiveRelativePath] = file;
+    targetPathsByArchivePath[archiveRelativePath] = targetPath;
+    winningEntryIndexes[archiveRelativePath] = index;
+    archiveRelativePaths.add(archiveRelativePath);
+  }
+
+  // Symbolic links are materialized after the extraction loop so link targets
+  // that appear later in the archive still resolve.
+  final symbolicLinkPaths = <String>[];
+
+  for (var index = 0; index < archive.files.length; index++) {
+    final archiveRelativePath = archiveRelativePaths[index];
+    if (winningEntryIndexes[archiveRelativePath] != index) {
       continue;
     }
 
-    final bytes = file.content as List<int>;
-    await Directory(path.dirname(targetPath)).create(recursive: true);
-    await File(targetPath).writeAsBytes(bytes);
+    final file = archive.files[index];
+    final targetPath = targetPathsByArchivePath[archiveRelativePath]!;
+
+    if (file.isDirectory) {
+      await _createExtractionDirectory(targetPath);
+      continue;
+    }
+
+    if (file.isSymbolicLink) {
+      symbolicLinkPaths.add(archiveRelativePath);
+      continue;
+    }
+
+    await _writeExtractionFile(targetPath, file.content as List<int>);
   }
+
+  for (final linkPath in symbolicLinkPaths) {
+    final resolved = _resolveArchiveSymlink(
+      archivePath: archivePath,
+      linkPath: linkPath,
+      entriesByArchivePath: entriesByArchivePath,
+    );
+
+    final linkFilePath = targetPathsByArchivePath[linkPath]!;
+
+    // Archive symlinks are materialized as regular files holding the resolved
+    // target's bytes rather than as OS symlinks: Windows refuses symlink
+    // creation without developer mode or elevation, and bundled native assets
+    // are copied around by downstream tooling that would not carry a link.
+    await _writeExtractionFile(
+      linkFilePath,
+      resolved.entry.content as List<int>,
+    );
+    log.fine(
+      'Materialized archive symlink $linkPath as a copy of ${resolved.path}.',
+    );
+  }
+}
+
+/// Creates [targetPath] as a directory, replacing a file left by an earlier
+/// entry for the same normalized path.
+Future<void> _createExtractionDirectory(String targetPath) async {
+  final existingType = await FileSystemEntity.type(
+    targetPath,
+    followLinks: false,
+  );
+  if (existingType == FileSystemEntityType.file ||
+      existingType == FileSystemEntityType.link) {
+    await File(targetPath).delete();
+  }
+  await Directory(targetPath).create(recursive: true);
+}
+
+/// Writes [bytes] to [targetPath], replacing a directory left by an earlier
+/// entry for the same normalized path.
+Future<void> _writeExtractionFile(String targetPath, List<int> bytes) async {
+  await Directory(path.dirname(targetPath)).create(recursive: true);
+  final existingType = await FileSystemEntity.type(
+    targetPath,
+    followLinks: false,
+  );
+  if (existingType == FileSystemEntityType.directory) {
+    await Directory(targetPath).delete(recursive: true);
+  }
+  await File(targetPath).writeAsBytes(bytes);
+}
+
+typedef _ResolvedArchiveEntry = ({String path, ArchiveFile entry});
+
+/// Follows an archive-internal symlink chain to the regular file it points at.
+///
+/// Throws when the chain escapes the archive root, cycles, dangles, or lands on
+/// a directory, so a malicious or truncated bundle cannot write outside the
+/// extraction root or leave unloadable placeholder libraries behind.
+_ResolvedArchiveEntry _resolveArchiveSymlink({
+  required String archivePath,
+  required String linkPath,
+  required Map<String, ArchiveFile> entriesByArchivePath,
+}) {
+  final visited = <String>{};
+  var currentPath = linkPath;
+  var current = entriesByArchivePath[currentPath]!;
+
+  while (current.isSymbolicLink) {
+    if (!visited.add(currentPath)) {
+      throw Exception(
+        'Archive symlink cycle blocked for $archivePath: $linkPath',
+      );
+    }
+
+    final target = current.symbolicLink!;
+    final resolvedPath = path.posix.normalize(
+      path.posix.join(path.posix.dirname(currentPath), target),
+    );
+    if (path.posix.isAbsolute(target) ||
+        path.isAbsolute(target) ||
+        resolvedPath == '..' ||
+        resolvedPath.startsWith('../')) {
+      throw Exception(
+        'Archive symlink traversal blocked for $archivePath: '
+        '$linkPath -> $target',
+      );
+    }
+
+    final next = entriesByArchivePath[resolvedPath];
+    if (next == null) {
+      throw Exception(
+        'Archive symlink target missing in $archivePath: $linkPath -> $target',
+      );
+    }
+
+    if (next.isDirectory) {
+      throw Exception(
+        'Archive symlink target is a directory in $archivePath: '
+        '$linkPath -> $target',
+      );
+    }
+
+    currentPath = resolvedPath;
+    current = next;
+  }
+
+  return (path: currentPath, entry: current);
 }

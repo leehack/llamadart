@@ -427,7 +427,7 @@ packages:
       path: "../../packages/llamadart_llama_cpp_flutter"
       relative: true
     source: path
-    version: "0.0.15"
+    version: "0.0.16"
   logging:
     dependency: transitive
     description:
