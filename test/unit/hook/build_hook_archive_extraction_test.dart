@@ -284,6 +284,71 @@ void main() {
     );
   });
 
+  test(
+    'blocks regular file entries that replace the extraction root',
+    () async {
+      for (final name in const ['.', './']) {
+        final archivePath = await writeArchive([
+          _regularFile(name, 'root-replacement-payload'),
+        ]);
+
+        await expectLater(
+          extract(archivePath),
+          throwsA(
+            isA<Exception>().having(
+              (error) => error.toString(),
+              'message for $name',
+              contains('Archive root replacement entry blocked'),
+            ),
+          ),
+        );
+
+        expect(outputDir.existsSync(), isTrue, reason: name);
+        expect(File(outputDir.path).existsSync(), isFalse, reason: name);
+      }
+    },
+  );
+
+  test('blocks symlink entries that replace the extraction root', () async {
+    for (final name in const ['.', './']) {
+      final archivePath = await writeArchive([
+        _regularFile('libfoo.so.1', 'link-target-payload'),
+        ArchiveFile.symlink(name, 'libfoo.so.1'),
+      ]);
+
+      await expectLater(
+        extract(archivePath),
+        throwsA(
+          isA<Exception>().having(
+            (error) => error.toString(),
+            'message for $name',
+            contains('Archive root replacement entry blocked'),
+          ),
+        ),
+      );
+
+      expect(outputDir.existsSync(), isTrue, reason: name);
+      expect(File(outputDir.path).existsSync(), isFalse, reason: name);
+    }
+  });
+
+  test(
+    'keeps extracting when the archive carries a root directory entry',
+    () async {
+      final archivePath = await writeArchive([
+        ArchiveFile.directory('./'),
+        _regularFile('./libllamadart.so', 'llamadart-elf-payload'),
+      ]);
+
+      await extract(archivePath);
+
+      expect(
+        await File(path.join(outputDir.path, 'libllamadart.so')).readAsString(),
+        'llamadart-elf-payload',
+      );
+    },
+  );
+
   test('rejects dangling symlinks', () async {
     final archivePath = await writeArchive([
       _regularFile('libllamadart.so', 'llamadart-elf-payload'),

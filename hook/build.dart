@@ -2133,6 +2133,15 @@ Future<void> _extractArchive({
       );
     }
 
+    // `./` directory entries are normal in GNU tar output, but a regular file
+    // or symlink named `.` would make extraction delete the output root and
+    // replace it with a file, so it is rejected before anything touches disk.
+    if (targetPath == outputRoot && !file.isDirectory) {
+      throw Exception(
+        'Archive root replacement entry blocked for $archivePath: ${file.name}',
+      );
+    }
+
     final archiveRelativePath = path.posix.joinAll(path.split(relativePath));
     entriesByArchivePath[archiveRelativePath] = file;
     targetPathsByArchivePath[archiveRelativePath] = targetPath;
