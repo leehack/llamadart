@@ -194,11 +194,84 @@ LITERT_V0_16_SPM_ASSET_PATTERNS = (
     "litert-lm-native-apple-LiteRtMetalAccelerator-xcframework-{tag}.zip",
     "litert-lm-native-apple-LiteRtTopKMetalSampler-xcframework-{tag}.zip",
 )
-LITERT_ALLOWED_ACCELERATORS = {"metal", "opencl", "webgpu"}
+LITERT_V0_16_ALLOWED_SPM_COMPANION_ASSET_PATTERNS = (
+    "litert-lm-native-apple-GemmaModelConstraintProvider-xcframework-{tag}.zip",
+    "litert-lm-native-apple-LiteRt-xcframework-{tag}.zip",
+    "litert-lm-native-apple-LiteRtTopKWebGpuSampler-xcframework-{tag}.zip",
+    "litert-lm-native-apple-LiteRtWebGpuAccelerator-xcframework-{tag}.zip",
+    "litert-lm-native-apple-WebgpuDawn-xcframework-{tag}.zip",
+)
+LITERT_ALLOWED_ACCELERATORS = {"gpu", "metal", "opencl", "webgpu"}
 
 
 class ReleaseError(RuntimeError):
     pass
+
+
+def _litert_compatibility_version(compatibility_tag: str) -> tuple[int, ...]:
+    if not STABLE_LITERT_TAG_RE.fullmatch(compatibility_tag):
+        raise ReleaseError("LiteRT-LM compatibility tag is invalid")
+    return tuple(int(part) for part in compatibility_tag[1:].split("."))
+
+
+def litert_spm_asset_patterns(
+    compatibility_tag: str,
+    *,
+    allowed: bool,
+) -> tuple[str, ...]:
+    patterns: list[str] = list(LITERT_SPM_ASSET_PATTERNS)
+    if _litert_compatibility_version(compatibility_tag) >= (0, 16, 0):
+        patterns.extend(LITERT_V0_16_SPM_ASSET_PATTERNS)
+        if allowed:
+            patterns.extend(LITERT_V0_16_ALLOWED_SPM_COMPANION_ASSET_PATTERNS)
+    return tuple(patterns)
+
+
+def litert_spm_artifact_paths(
+    compatibility_tag: str,
+    release_tag: str,
+    *,
+    allowed: bool,
+) -> set[str]:
+    return {
+        f"dist/spm/{release_tag}/{pattern.format(tag=release_tag)}"
+        for pattern in litert_spm_asset_patterns(
+            compatibility_tag,
+            allowed=allowed,
+        )
+    }
+
+
+def validate_litert_spm_artifact_inventory(
+    artifact_paths: set[str],
+    *,
+    compatibility_tag: str,
+    release_tag: str,
+) -> set[str]:
+    required_paths = litert_spm_artifact_paths(
+        compatibility_tag,
+        release_tag,
+        allowed=False,
+    )
+    allowed_paths = litert_spm_artifact_paths(
+        compatibility_tag,
+        release_tag,
+        allowed=True,
+    )
+    actual_paths = {
+        path
+        for path in artifact_paths
+        if Path(path).parts[:2] == ("dist", "spm")
+    }
+    missing_paths = required_paths - actual_paths
+    unexpected_paths = actual_paths - allowed_paths
+    if missing_paths or unexpected_paths:
+        raise ReleaseError(
+            "LiteRT-LM SPM artifact inventory mismatch; "
+            f"missing={sorted(missing_paths)}, "
+            f"unexpected={sorted(unexpected_paths)}"
+        )
+    return actual_paths
 
 
 class NativeReleaseVersion(NamedTuple):
@@ -254,12 +327,10 @@ def required_litert_manifest_paths(
     *,
     official_assets: bool,
 ) -> set[str]:
-    version = tuple(int(part) for part in compatibility_tag[1:].split("."))
+    version = _litert_compatibility_version(compatibility_tag)
     required = set(LITERT_REQUIRED_RUNTIME_PATHS)
-    spm_patterns = list(LITERT_SPM_ASSET_PATTERNS)
     if version >= (0, 16, 0):
         required.update(LITERT_V0_16_IOS_GPU_PATHS)
-        spm_patterns.extend(LITERT_V0_16_SPM_ASSET_PATTERNS)
     if official_assets and version >= (0, 14, 0):
         required.update(
             {
@@ -268,8 +339,11 @@ def required_litert_manifest_paths(
             }
         )
     required.update(
-        f"dist/spm/{release_tag}/{pattern.format(tag=release_tag)}"
-        for pattern in spm_patterns
+        litert_spm_artifact_paths(
+            compatibility_tag,
+            release_tag,
+            allowed=False,
+        )
     )
     required.update(
         override["targetPath"]
@@ -284,10 +358,27 @@ def required_litert_release_asset_names(
     platforms = manifest.get("platforms")
     artifacts = manifest.get("artifacts")
     capabilities = manifest.get("capabilities")
+    upstream = manifest.get("upstream")
     if not isinstance(platforms, list) or not isinstance(artifacts, list):
         raise ReleaseError("LiteRT-LM owner inventory requires schema-2 platform artifacts")
     if not isinstance(capabilities, dict):
         raise ReleaseError("LiteRT-LM owner inventory requires schema-2 capabilities")
+    if not isinstance(upstream, dict):
+        raise ReleaseError("LiteRT-LM owner inventory requires schema-2 upstream metadata")
+    compatibility_tag = require_string(
+        upstream.get("compatibilityTag"),
+        "owner inventory upstream compatibilityTag",
+    )
+    artifact_paths = {
+        artifact["path"]
+        for artifact in artifacts
+        if isinstance(artifact, dict) and isinstance(artifact.get("path"), str)
+    }
+    spm_paths = validate_litert_spm_artifact_inventory(
+        artifact_paths,
+        compatibility_tag=compatibility_tag,
+        release_tag=release_tag,
+    )
     assets = {
         "manifest.json",
         "SHA256SUMS",
@@ -300,14 +391,7 @@ def required_litert_release_asset_names(
         ):
             raise ReleaseError("LiteRT-LM owner inventory has an invalid platform asset")
         assets.add(platform["releaseAsset"])
-    for artifact in artifacts:
-        path = artifact.get("path") if isinstance(artifact, dict) else None
-        if (
-            isinstance(path, str)
-            and path.startswith(f"dist/spm/{release_tag}/")
-            and path.endswith(".zip")
-        ):
-            assets.add(Path(path).name)
+    assets.update(Path(path).name for path in spm_paths)
     if capabilities.get("officialUpstreamAssets") is True:
         assets.add(f"litert-lm-native-official-assets-{release_tag}.tar.gz")
     return assets
@@ -318,9 +402,22 @@ def litert_schema2_apple_targets(
 ) -> set[str]:
     prefix = "litert-lm-native-apple-"
     suffix = f"-xcframework-{release_tag}.zip"
+    upstream = manifest.get("upstream")
+    compatibility_tag = require_string(
+        upstream.get("compatibilityTag") if isinstance(upstream, dict) else None,
+        "owner inventory upstream compatibilityTag",
+    )
+    required_asset_names = {
+        Path(path).name
+        for path in litert_spm_artifact_paths(
+            compatibility_tag,
+            release_tag,
+            allowed=False,
+        )
+    }
     targets = {
         asset_name[len(prefix) : -len(suffix)]
-        for asset_name in required_litert_release_asset_names(manifest, release_tag)
+        for asset_name in required_asset_names
         if asset_name.startswith(prefix) and asset_name.endswith(suffix)
     }
     if not targets:
@@ -405,6 +502,45 @@ def validate_litert_release_sha256_sums(
             "LiteRT-LM SHA256SUMS does not match manifest artifacts; "
             f"missing={missing}, unexpected={unexpected}, mismatched={mismatched}"
         )
+
+
+def validate_litert_spm_release_asset_digests(
+    release: dict[str, Any],
+    manifest: dict[str, Any],
+    *,
+    release_tag: str,
+) -> None:
+    upstream = manifest.get("upstream")
+    compatibility_tag = require_string(
+        upstream.get("compatibilityTag") if isinstance(upstream, dict) else None,
+        "owner inventory upstream compatibilityTag",
+    )
+    artifacts = manifest.get("artifacts")
+    if not isinstance(artifacts, list):
+        raise ReleaseError("LiteRT-LM owner inventory requires schema-2 artifacts")
+    artifacts_by_path = {
+        artifact["path"]: artifact
+        for artifact in artifacts
+        if isinstance(artifact, dict) and isinstance(artifact.get("path"), str)
+    }
+    spm_paths = validate_litert_spm_artifact_inventory(
+        set(artifacts_by_path),
+        compatibility_tag=compatibility_tag,
+        release_tag=release_tag,
+    )
+    for path in sorted(spm_paths):
+        asset_name = Path(path).name
+        release_digest = release_asset_checksum(release, asset_name)
+        manifest_digest = require_sha256(
+            artifacts_by_path[path].get("sha256"),
+            f"SPM artifact {path} digest",
+        )
+        if release_digest != manifest_digest:
+            raise ReleaseError(
+                "LiteRT-LM SPM release asset digest does not match manifest; "
+                f"asset={asset_name}, manifest={manifest_digest}, "
+                f"release={release_digest}"
+            )
 
 
 def main() -> int:
@@ -546,6 +682,21 @@ def main() -> int:
             f"const _litertLmReleaseTag = '{resolved_litert_lm_tag}';",
             "LiteRT-LM Dart runtime release tag",
         )
+        schema2_bundle_libraries: dict[str, tuple[str, ...]] | None = None
+        if litert_lm_manifest.get("schemaVersion") == 2:
+            schema2_bundle_libraries = litert_schema2_bundle_required_libraries(
+                litert_lm_manifest
+            )
+            runtime_dart_text = replace_litert_lm_runtime_required_libraries(
+                runtime_dart_text,
+                schema2_bundle_libraries,
+            )
+            runtime_dart_text = replace_litert_lm_runtime_macos_inventory(
+                runtime_dart_text,
+                schema2_bundle_libraries,
+                manifest=litert_lm_manifest,
+                resolved_tag=resolved_litert_lm_tag,
+            )
         pending_writes[litert_lm_runtime_dart_path] = replace_one(
             runtime_dart_text,
             r"const _litertLmVersion = '[^']+';",
@@ -563,6 +714,13 @@ def main() -> int:
                 raise ReleaseError(
                     "Could not replace LiteRT-LM version in macOS prepare script"
                 )
+            if schema2_bundle_libraries is not None:
+                updated_prepare_text = replace_litert_lm_macos_prepare_inventory(
+                    updated_prepare_text,
+                    schema2_bundle_libraries,
+                    manifest=litert_lm_manifest,
+                    resolved_tag=resolved_litert_lm_tag,
+                )
             pending_writes[litert_lm_macos_prepare_path] = updated_prepare_text
         for bundle in litert_lm_bundle_names(hook_text):
             checksum = release_asset_checksum(
@@ -574,10 +732,8 @@ def main() -> int:
                 bundle,
                 checksum,
             )
-        if litert_lm_manifest.get("schemaVersion") == 2:
-            for bundle, libraries in litert_schema2_bundle_required_libraries(
-                litert_lm_manifest
-            ).items():
+        if schema2_bundle_libraries is not None:
+            for bundle, libraries in schema2_bundle_libraries.items():
                 hook_text = replace_litert_lm_bundle_required_libraries(
                     hook_text,
                     bundle,
@@ -1909,6 +2065,8 @@ def validate_litert_lm_release_manifest(
         if (
             not isinstance(artifact_path, str)
             or not artifact_path
+            or artifact_path == "."
+            or "\\" in artifact_path
             or Path(artifact_path).is_absolute()
             or ".." in Path(artifact_path).parts
             or Path(artifact_path).as_posix() != artifact_path
@@ -1929,6 +2087,12 @@ def validate_litert_lm_release_manifest(
         if artifact_path in artifacts_by_path:
             raise ReleaseError("LiteRT-LM manifest contains duplicate artifact paths")
         artifacts_by_path[artifact_path] = artifact
+
+    validate_litert_spm_artifact_inventory(
+        set(artifacts_by_path),
+        compatibility_tag=compatibility_tag,
+        release_tag=tag,
+    )
 
     for override in expected_overrides:
         target = artifacts_by_path.get(override["targetPath"])
@@ -2194,6 +2358,11 @@ def validate_litert_lm_release_manifest(
         tag=tag,
         release_json_dir=release_json_dir,
     )
+    validate_litert_spm_release_asset_digests(
+        release,
+        manifest,
+        release_tag=tag,
+    )
     return manifest
 
 
@@ -2425,7 +2594,16 @@ def litert_schema2_bundle_required_libraries(
         if (
             not isinstance(paths, list)
             or not paths
-            or any(not isinstance(path, str) or not path for path in paths)
+            or any(
+                not isinstance(path, str)
+                or not path
+                or path == "."
+                or "\\" in path
+                or Path(path).is_absolute()
+                or ".." in Path(path).parts
+                or Path(path).as_posix() != path
+                for path in paths
+            )
         ):
             raise ReleaseError("LiteRT-LM platform artifact paths are invalid")
         libraries = tuple(sorted(Path(path).name for path in paths))
@@ -2475,6 +2653,265 @@ def replace_litert_lm_bundle_required_libraries(
             f"Could not replace LiteRT-LM required libraries for {bundle}"
         )
     return updated
+
+
+def litert_schema2_runtime_required_libraries(
+    bundle_libraries: dict[str, tuple[str, ...]],
+) -> dict[str, tuple[str, ...]]:
+    required_bundles = (
+        "macos-arm64",
+        "macos-x64",
+        "linux-arm64",
+        "linux-x64",
+        "windows-x64",
+    )
+    missing_bundles = set(required_bundles) - set(bundle_libraries)
+    if missing_bundles:
+        raise ReleaseError(
+            "LiteRT-LM runtime inventory is missing bundles: "
+            + ", ".join(sorted(missing_bundles))
+        )
+    return {
+        bundle: bundle_libraries[bundle]
+        for bundle in required_bundles
+    }
+
+
+def _render_litert_lm_runtime_library_function(
+    function_name: str,
+    entries: dict[str, tuple[str, ...]],
+) -> str:
+    lines = [
+        f"List<String> {function_name}(Abi abi) {{",
+        "  return switch (abi) {",
+    ]
+    for abi, libraries in entries.items():
+        if len(libraries) == 1:
+            lines.append(f"    Abi.{abi} => const <String>['{libraries[0]}'],")
+        elif libraries:
+            lines.append(f"    Abi.{abi} => const <String>[")
+            lines.extend(f"      '{library}'," for library in libraries)
+            lines.append("    ],")
+        else:
+            lines.append(f"    Abi.{abi} => const <String>[],")
+    lines.extend(
+        [
+            "    _ => const <String>[],",
+            "  };",
+            "}",
+        ]
+    )
+    return "\n".join(lines) + "\n"
+
+
+def _replace_litert_lm_runtime_library_function(
+    runtime_text: str,
+    function_name: str,
+    entries: dict[str, tuple[str, ...]],
+) -> str:
+    pattern = re.compile(
+        rf"List<String> {re.escape(function_name)}\(Abi abi\) \{{\n"
+        r"  return switch \(abi\) \{.*?\n  \};\n\}\n",
+        re.DOTALL,
+    )
+    replacement = _render_litert_lm_runtime_library_function(
+        function_name,
+        entries,
+    )
+    updated, count = pattern.subn(replacement, runtime_text, count=1)
+    if count != 1:
+        raise ReleaseError(
+            f"Could not replace LiteRT-LM runtime library function {function_name}"
+        )
+    return updated
+
+
+def replace_litert_lm_runtime_required_libraries(
+    runtime_text: str,
+    bundle_libraries: dict[str, tuple[str, ...]],
+) -> str:
+    runtime_libraries = litert_schema2_runtime_required_libraries(bundle_libraries)
+    # The bundle keys use hyphens while the Dart ABI enum uses camel case.
+    runtime_entries = {
+        "macosArm64": runtime_libraries["macos-arm64"],
+        "macosX64": runtime_libraries["macos-x64"],
+        "linuxArm64": runtime_libraries["linux-arm64"],
+        "linuxX64": runtime_libraries["linux-x64"],
+        "windowsX64": runtime_libraries["windows-x64"],
+    }
+    macos_entries = {
+        "macosArm64": runtime_libraries["macos-arm64"],
+        "macosX64": runtime_libraries["macos-x64"],
+    }
+    updated = _replace_litert_lm_runtime_library_function(
+        runtime_text,
+        "liteRtLmMacOsRequiredLibrariesForAbi",
+        macos_entries,
+    )
+    return _replace_litert_lm_runtime_library_function(
+        updated,
+        "liteRtLmRequiredLibrariesForAbi",
+        runtime_entries,
+    )
+
+
+def _litert_schema2_macos_bundle_entries(
+    bundle_libraries: dict[str, tuple[str, ...]],
+) -> dict[str, tuple[str, ...]]:
+    runtime_libraries = litert_schema2_runtime_required_libraries(bundle_libraries)
+    return {
+        "arm64": runtime_libraries["macos-arm64"],
+        "x64": runtime_libraries["macos-x64"],
+    }
+
+
+def _litert_macos_framework_binary_path(library: str) -> str:
+    if not library.endswith(".dylib"):
+        raise ReleaseError(
+            "LiteRT-LM macOS runtime inventory must contain dylib filenames"
+        )
+    framework_name = library.removesuffix(".dylib")
+    if framework_name.startswith("lib"):
+        framework_name = framework_name[3:]
+    if not framework_name:
+        raise ReleaseError("LiteRT-LM macOS runtime inventory has an empty library")
+    return (
+        f"{framework_name}.framework/Versions/A/"
+        f"{framework_name}"
+    )
+
+
+def _litert_schema2_macos_framework_entries(
+    bundle_libraries: dict[str, tuple[str, ...]],
+) -> dict[str, tuple[str, ...]]:
+    macos_bundles = _litert_schema2_macos_bundle_entries(bundle_libraries)
+    return {
+        arch: tuple(
+            sorted(_litert_macos_framework_binary_path(library) for library in libraries)
+        )
+        for arch, libraries in macos_bundles.items()
+    }
+
+
+def litert_schema2_macos_required_native_spm_files(
+    manifest: dict[str, Any],
+    resolved_tag: str,
+) -> tuple[str, ...]:
+    targets = litert_schema2_apple_targets(manifest, resolved_tag)
+    target_paths = {
+        "LiteRtLm": "LiteRtLm.framework/Versions/A/LiteRtLm",
+        "CLiteRTLMMac": "libCLiteRTLM_mac.dylib",
+    }
+    missing_targets = set(target_paths) - targets
+    if missing_targets:
+        raise ReleaseError(
+            "LiteRT-LM schema-2 owner inventory is missing required macOS SPM "
+            "targets: "
+            + ", ".join(sorted(missing_targets))
+        )
+    return tuple(target_paths[target] for target in ("LiteRtLm", "CLiteRTLMMac"))
+
+
+def _render_litert_lm_shell_inventory_function(
+    function_name: str,
+    entries: dict[str, tuple[str, ...]],
+) -> str:
+    lines = [
+        f"{function_name}() {{",
+        '  case "$LITERT_ARCH" in',
+    ]
+    for arch in ("arm64", "x64"):
+        libraries = entries[arch]
+        if not libraries:
+            raise ReleaseError(
+                f"LiteRT-LM macOS {arch} inventory has no required files"
+            )
+        lines.append(f"    {arch})")
+        lines.append("      printf '%s\\n' " + "\\")
+        for index, library in enumerate(libraries):
+            suffix = " " + "\\" if index < len(libraries) - 1 else ""
+            lines.append(f'        "{library}"{suffix}')
+        lines.append("      ;;")
+    lines.extend(("  esac", "}"))
+    return "\n".join(lines) + "\n"
+
+
+def _replace_litert_lm_shell_inventory_function(
+    prepare_text: str,
+    function_name: str,
+    entries: dict[str, tuple[str, ...]],
+) -> str:
+    pattern = re.compile(
+        rf"{re.escape(function_name)}\(\) \{{.*?\n\}}\n",
+        re.DOTALL,
+    )
+    replacement = _render_litert_lm_shell_inventory_function(
+        function_name,
+        entries,
+    )
+    updated, count = pattern.subn(replacement, prepare_text, count=1)
+    if count != 1:
+        raise ReleaseError(
+            f"Could not replace LiteRT-LM macOS prepare function {function_name}"
+        )
+    return updated
+
+
+def replace_litert_lm_macos_prepare_inventory(
+    prepare_text: str,
+    bundle_libraries: dict[str, tuple[str, ...]],
+    *,
+    manifest: dict[str, Any],
+    resolved_tag: str,
+) -> str:
+    bundle_entries = _litert_schema2_macos_bundle_entries(bundle_libraries)
+    native_spm_files = litert_schema2_macos_required_native_spm_files(
+        manifest,
+        resolved_tag,
+    )
+    native_spm_entries = {arch: native_spm_files for arch in ("arm64", "x64")}
+    updated = _replace_litert_lm_shell_inventory_function(
+        prepare_text,
+        "required_libraries",
+        bundle_entries,
+    )
+    return _replace_litert_lm_shell_inventory_function(
+        updated,
+        "required_native_spm_files",
+        native_spm_entries,
+    )
+
+
+def replace_litert_lm_runtime_macos_inventory(
+    runtime_text: str,
+    bundle_libraries: dict[str, tuple[str, ...]],
+    *,
+    manifest: dict[str, Any],
+    resolved_tag: str,
+) -> str:
+    framework_entries = _litert_schema2_macos_framework_entries(bundle_libraries)
+    runtime_framework_entries = {
+        "macosArm64": framework_entries["arm64"],
+        "macosX64": framework_entries["x64"],
+    }
+    native_spm_files = litert_schema2_macos_required_native_spm_files(
+        manifest,
+        resolved_tag,
+    )
+    runtime_native_spm_entries = {
+        "macosArm64": native_spm_files,
+        "macosX64": native_spm_files,
+    }
+    updated = _replace_litert_lm_runtime_library_function(
+        runtime_text,
+        "liteRtLmMacOsRequiredFrameworksForAbi",
+        runtime_framework_entries,
+    )
+    return _replace_litert_lm_runtime_library_function(
+        updated,
+        "liteRtLmMacOsRequiredNativeSpmFilesForAbi",
+        runtime_native_spm_entries,
+    )
 
 
 def replace_swift_binary_target_checksum(
@@ -2536,6 +2973,15 @@ def prepare_litert_lm_package_swift(
                 ),
                 r"\g<1>.macOS\2",
                 "LiteRT-LM Package.swift macOS compatibility target condition",
+            )
+            swift_text = replace_one(
+                swift_text,
+                (
+                    r'(name: "LiteRtLm", condition: '
+                    r'\.when\(platforms: \[)\.iOS(\]\)\))'
+                ),
+                r"\g<1>.iOS, .macOS\2",
+                "LiteRT-LM Package.swift shared runtime target condition",
             )
         elif current_targets != expected_targets:
             raise ReleaseError(

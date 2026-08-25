@@ -50,14 +50,59 @@ const _litertLmBundleSpecs = <_LiteRtLmBundleSpec>[
     );
     await litertRuntimeDart.parent.create(recursive: true);
     await litertRuntimeDart.writeAsString('''
+import 'dart:ffi';
+
 const _litertLmReleaseTag = 'v1.0.0';
 const _litertLmVersion = '1.0.0';
+
+List<String> liteRtLmMacOsRequiredLibrariesForAbi(Abi abi) {
+  return switch (abi) {
+    Abi.macosArm64 => const <String>['legacy-macos-arm64'],
+    Abi.macosX64 => const <String>['legacy-macos-x64'],
+    _ => const <String>[],
+  };
+}
+
+List<String> liteRtLmRequiredLibrariesForAbi(Abi abi) {
+  return switch (abi) {
+    Abi.macosArm64 => liteRtLmMacOsRequiredLibrariesForAbi(abi),
+    Abi.macosX64 => liteRtLmMacOsRequiredLibrariesForAbi(abi),
+    Abi.linuxArm64 => const <String>['legacy-linux-arm64'],
+    Abi.linuxX64 => const <String>['legacy-linux-x64'],
+    Abi.windowsX64 => const <String>['legacy-windows-x64'],
+    _ => const <String>[],
+  };
+}
+
+List<String> liteRtLmMacOsRequiredFrameworksForAbi(Abi abi) {
+  return switch (abi) {
+    Abi.macosArm64 => const <String>['legacy-arm64.framework/legacy-arm64'],
+    Abi.macosX64 => const <String>['legacy-x64.framework/legacy-x64'],
+    _ => const <String>[],
+  };
+}
+
+List<String> liteRtLmMacOsRequiredNativeSpmFilesForAbi(Abi abi) {
+  return switch (abi) {
+    Abi.macosArm64 => const <String>['legacy-arm64-spm'],
+    Abi.macosX64 => const <String>['legacy-x64-spm'],
+    _ => const <String>[],
+  };
+}
 ''');
     final macosPrepareScript = File(
       path.join(root.path, 'tool', 'macos_litert_lm_prepare_app.sh'),
     );
     await macosPrepareScript.parent.create(recursive: true);
     await macosPrepareScript.writeAsString('''
+required_libraries() {
+  printf '%s\\n' "legacy-macos"
+}
+
+required_native_spm_files() {
+  printf '%s\\n' "legacy-spm"
+}
+
 paths=(
   ".dart_tool/llamadart/litert_lm/1.0.0/macos_arm64"
   ".dart_tool/llamadart/litert_lm/1.0.0/macos/arm64"
@@ -158,10 +203,52 @@ paths=(
       litertRuntimeDartText,
       contains("const _litertLmVersion = '9.9.9';"),
     );
+    expect(
+      litertRuntimeDartText,
+      contains(
+        "Abi.macosArm64 => const <String>[\n"
+        "      'libCLiteRTLM_mac.dylib',\n"
+        "      'libLiteRtLm.dylib',\n"
+        "    ],",
+      ),
+    );
+    expect(
+      litertRuntimeDartText,
+      contains(
+        "Abi.macosArm64 => const <String>[\n"
+        "      'CLiteRTLM_mac.framework/Versions/A/CLiteRTLM_mac',\n"
+        "      'LiteRtLm.framework/Versions/A/LiteRtLm',\n"
+        "    ],",
+      ),
+    );
+    expect(
+      litertRuntimeDartText,
+      contains(
+        "Abi.macosArm64 => const <String>[\n"
+        "      'LiteRtLm.framework/Versions/A/LiteRtLm',\n"
+        "      'libCLiteRTLM_mac.dylib',\n"
+        "    ],",
+      ),
+    );
+    expect(litertRuntimeDartText, isNot(contains('legacy-macos-arm64')));
+    expect(litertRuntimeDartText, isNot(contains('legacy-arm64.framework')));
+    expect(litertRuntimeDartText, isNot(contains('legacy-arm64-spm')));
     final macosPrepareText = await macosPrepareScript.readAsString();
     expect(macosPrepareText, contains('litert_lm/9.9.9/macos_arm64'));
     expect(macosPrepareText, contains('litert_lm/9.9.9/macos/arm64'));
     expect(macosPrepareText, isNot(contains('litert_lm/1.0.0/')));
+    expect(
+      macosPrepareText,
+      contains('"libCLiteRTLM_mac.dylib" \\\n        "libLiteRtLm.dylib"'),
+    );
+    expect(
+      macosPrepareText,
+      contains(
+        '"LiteRtLm.framework/Versions/A/LiteRtLm" \\\n        "libCLiteRTLM_mac.dylib"',
+      ),
+    );
+    expect(macosPrepareText, isNot(contains('legacy-macos')));
+    expect(macosPrepareText, isNot(contains('legacy-spm')));
 
     final llamaSwift = await File(
       path.join(
@@ -2420,10 +2507,10 @@ Future<void> _writeReleaseFixture(
         ..['releaseTag'] = tag;
       if (retaggedPath.startsWith('dist/spm/$tag/') &&
           retaggedPath.endsWith('.zip')) {
-        releaseAssetChecksums.putIfAbsent(
-          path.basename(retaggedPath),
-          () => _hex('f'),
-        );
+        final assetName = path.basename(retaggedPath);
+        final checksum = releaseAssetChecksums[assetName] ?? _hex('f');
+        artifact['sha256'] = checksum;
+        releaseAssetChecksums[assetName] = checksum;
       }
     }
     for (final assetName in <String>[

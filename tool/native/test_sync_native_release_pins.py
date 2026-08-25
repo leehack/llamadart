@@ -1,8 +1,11 @@
 from __future__ import annotations
 
-import json
 import hashlib
+import json
+import os
 import re
+import shutil
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -33,6 +36,265 @@ from sync_native_release_pins import (  # noqa: E402
 UPSTREAM_COMMIT = "ba82499873945908bf8bcfc96e955d0677eb1fa1"
 NATIVE_COMMIT = "451ba0ce7c366972b4dc0e58f08ffe590958f943"
 DEVELOPMENT_TAG = "gba8249987394"
+
+
+def _schema2_fixture_payloads() -> tuple[dict, dict]:
+    fixture_root = Path(__file__).resolve().parent / "fixtures"
+    manifest = json.loads(
+        (fixture_root / "litert_lm_schema2_owner_manifest.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    release = json.loads(
+        (fixture_root / "litert_lm_schema2_owner_release.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    return manifest, release
+
+
+def _set_release_asset_digest(release: dict, name: str, digest: str) -> None:
+    asset = next(asset for asset in release["assets"] if asset["name"] == name)
+    asset["digest"] = f"sha256:{digest}"
+
+
+def _materialize_schema2_release_fixtures(
+    fixture_dir: Path,
+    manifest: dict,
+    release: dict,
+) -> None:
+    repo = "leehack/litert-lm-native"
+    tag = manifest["release"]["tag"]
+    manifest_bytes = json.dumps(manifest).encode("utf-8")
+    (fixture_dir / f"{repo.replace('/', '__')}__{tag}__manifest.json").write_bytes(
+        manifest_bytes
+    )
+    _set_release_asset_digest(
+        release,
+        "manifest.json",
+        hashlib.sha256(manifest_bytes).hexdigest(),
+    )
+    checksum_text = "".join(
+        f"{artifact['sha256']}  {artifact['path']}\n"
+        for artifact in manifest["artifacts"]
+    ).encode("utf-8")
+    (fixture_dir / f"{repo.replace('/', '__')}__{tag}__SHA256SUMS").write_bytes(
+        checksum_text
+    )
+    _set_release_asset_digest(
+        release,
+        "SHA256SUMS",
+        hashlib.sha256(checksum_text).hexdigest(),
+    )
+    (fixture_dir / f"google-ai-edge__LiteRT-LM__v0.16.0__commit.json").write_text(
+        json.dumps({"sha": manifest["upstream"]["commit"]}),
+        encoding="utf-8",
+    )
+    (fixture_dir / f"{repo.replace('/', '__')}__{tag}__commit.json").write_text(
+        json.dumps({"sha": manifest["native"]["commit"]}),
+        encoding="utf-8",
+    )
+    (fixture_dir / f"{repo.replace('/', '__')}__{tag}.json").write_text(
+        json.dumps(release),
+        encoding="utf-8",
+    )
+
+
+def _run_schema2_sync(
+    temp_dir: Path,
+    manifest: dict,
+    release: dict,
+    *,
+    include_runtime_dependencies: bool = False,
+) -> subprocess.CompletedProcess[str]:
+    repo_root = temp_dir / "repo"
+    source_root = Path(__file__).resolve().parents[2]
+    if include_runtime_dependencies:
+        shutil.copytree(source_root / "lib", repo_root / "lib")
+        (repo_root / ".dart_tool").mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(
+            source_root / ".dart_tool/package_config.json",
+            repo_root / ".dart_tool/package_config.json",
+        )
+        shutil.copyfile(source_root / "pubspec.yaml", repo_root / "pubspec.yaml")
+    for relative_path in (
+        "hook/build.dart",
+        "lib/src/backends/litert_lm/litert_lm_runtime.dart",
+        "tool/macos_litert_lm_prepare_app.sh",
+        "README.md",
+        "CHANGELOG.md",
+        "website/docs/getting-started/installation.md",
+        "website/docs/platforms/support-matrix.md",
+        "packages/llamadart_litert_lm_flutter/darwin/"
+        "llamadart_litert_lm_flutter/Package.swift",
+        "packages/llamadart_litert_lm_flutter/pubspec.yaml",
+        "packages/llamadart_litert_lm_flutter/README.md",
+        "packages/llamadart_litert_lm_flutter/CHANGELOG.md",
+    ):
+        target = repo_root / relative_path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source_root / relative_path, target)
+    release_dir = temp_dir / "releases"
+    release_dir.mkdir()
+    _materialize_schema2_release_fixtures(release_dir, manifest, release)
+    script = Path(__file__).resolve().parent / "sync_native_release_pins.py"
+    return subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "--repo-root",
+            str(repo_root),
+            "--release-json-dir",
+            str(release_dir),
+            "--llama-cpp-tag",
+            "keep",
+            "--litert-lm-tag",
+            manifest["release"]["tag"],
+            "--litert-lm-package-swift",
+            "packages/llamadart_litert_lm_flutter/darwin/"
+            "llamadart_litert_lm_flutter/Package.swift",
+            "--litert-lm-macos-prepare-script",
+            "tool/macos_litert_lm_prepare_app.sh",
+        ],
+        cwd=repo_root,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+
+def _run_generated_macos_prepare(
+    repo_root: Path,
+    library_dir: Path,
+    app_dir: Path,
+) -> subprocess.CompletedProcess[str]:
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "LLAMADART_LITERT_LM_ARCH": "arm64",
+            "LLAMADART_LITERT_LM_LIB_DIR": str(library_dir),
+        }
+    )
+    return subprocess.run(
+        [
+            "bash",
+            str(repo_root / "tool/macos_litert_lm_prepare_app.sh"),
+            str(app_dir),
+        ],
+        cwd=repo_root,
+        check=False,
+        capture_output=True,
+        text=True,
+        env=environment,
+    )
+
+
+def _run_dart_inventory_checks(
+    repo_root: Path,
+) -> tuple[
+    subprocess.CompletedProcess[str],
+    subprocess.CompletedProcess[str],
+    subprocess.CompletedProcess[str],
+]:
+    generated = repo_root / "tool/native/generated_litert_lm_inventory.dart"
+    generated.parent.mkdir(parents=True, exist_ok=True)
+    generated.write_text(
+        """import 'dart:ffi';
+
+import '../../lib/src/backends/litert_lm/litert_lm_runtime.dart';
+
+void _expectList(String label, List<String> actual, List<String> expected) {
+  if (actual.length != expected.length ||
+      !actual.asMap().entries.every(
+        (entry) => entry.value == expected[entry.key],
+      )) {
+    throw StateError('$label: $actual != $expected');
+  }
+}
+
+void main() {
+  _expectList(
+    'macOS arm64 libraries',
+    liteRtLmMacOsRequiredLibrariesForAbi(Abi.macosArm64),
+    <String>['libCLiteRTLM_mac.dylib', 'libLiteRtLm.dylib'],
+  );
+  _expectList(
+    'macOS x64 libraries',
+    liteRtLmMacOsRequiredLibrariesForAbi(Abi.macosX64),
+    <String>['libCLiteRTLM_mac.dylib', 'libLiteRtLm.dylib'],
+  );
+  _expectList(
+    'macOS arm64 frameworks',
+    liteRtLmMacOsRequiredFrameworksForAbi(Abi.macosArm64),
+    <String>[
+      'CLiteRTLM_mac.framework/Versions/A/CLiteRTLM_mac',
+      'LiteRtLm.framework/Versions/A/LiteRtLm',
+    ],
+  );
+  _expectList(
+    'macOS x64 frameworks',
+    liteRtLmMacOsRequiredFrameworksForAbi(Abi.macosX64),
+    <String>[
+      'CLiteRTLM_mac.framework/Versions/A/CLiteRTLM_mac',
+      'LiteRtLm.framework/Versions/A/LiteRtLm',
+    ],
+  );
+  _expectList(
+    'macOS arm64 native SPM files',
+    liteRtLmMacOsRequiredNativeSpmFilesForAbi(Abi.macosArm64),
+    <String>[
+      'LiteRtLm.framework/Versions/A/LiteRtLm',
+      'libCLiteRTLM_mac.dylib',
+    ],
+  );
+  _expectList(
+    'macOS x64 native SPM files',
+    liteRtLmMacOsRequiredNativeSpmFilesForAbi(Abi.macosX64),
+    <String>[
+      'LiteRtLm.framework/Versions/A/LiteRtLm',
+      'libCLiteRTLM_mac.dylib',
+    ],
+  );
+}
+""",
+        encoding="utf-8",
+    )
+    format_result = subprocess.run(
+        [
+            "dart",
+            "format",
+            "--output=none",
+            "--set-exit-if-changed",
+            str(repo_root / "lib/src/backends/litert_lm/litert_lm_runtime.dart"),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        cwd=repo_root,
+    )
+    analyze_result = subprocess.run(
+        [
+            "dart",
+            "analyze",
+            str(repo_root / "lib/src/backends/litert_lm/litert_lm_runtime.dart"),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        cwd=repo_root,
+    )
+    run_result = subprocess.run(
+        [
+            "dart",
+            f"--packages={repo_root / '.dart_tool/package_config.json'}",
+            str(generated),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        cwd=repo_root,
+    )
+    return format_result, analyze_result, run_result
 
 
 class SyncNativeReleasePinsTest(unittest.TestCase):
@@ -626,7 +888,7 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
             manifest_asset["digest"] = "sha256:" + hashlib.sha256(
                 fixture.read_bytes()
             ).hexdigest()
-            with self.assertRaisesRegex(ReleaseError, "owner-required artifact paths"):
+            with self.assertRaisesRegex(ReleaseError, "SPM artifact inventory"):
                 validate_litert_lm_release_manifest(
                     release,
                     repo="leehack/litert-lm-native",
@@ -826,6 +1088,10 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
             'name: "CLiteRTLMMac", condition: .when(platforms: [.macOS])',
             prepared,
         )
+        self.assertIn(
+            'name: "LiteRtLm", condition: .when(platforms: [.iOS, .macOS])',
+            prepared,
+        )
         expected_targets = {
             "LiteRtLm",
             "CLiteRTLM",
@@ -890,6 +1156,8 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
             "libx$interpolated.so",
             "libx with space.so",
             "libx;command.so",
+            "../injected.so",
+            r"bin\android\arm64\libx.so",
         ):
             with self.subTest(filename=filename):
                 manifest = json.loads(json.dumps(original))
@@ -898,9 +1166,311 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
                 )
                 with self.assertRaisesRegex(
                     ReleaseError,
-                    "library names are invalid",
+                    "platform artifact paths are invalid|library names are invalid",
                 ):
                     litert_schema2_bundle_required_libraries(manifest)
+
+    def test_schema_2_sync_rejects_manifest_added_spm_archive(self) -> None:
+        manifest, release = _schema2_fixture_payloads()
+        tag = manifest["release"]["tag"]
+        extra_path = f"dist/spm/{tag}/unexpected-extra.zip"
+        extra_artifact = dict(
+            next(
+                artifact
+                for artifact in manifest["artifacts"]
+                if artifact["path"].startswith("dist/spm/")
+            )
+        )
+        extra_artifact.update(
+            path=extra_path,
+            fileName="unexpected-extra.zip",
+            sha256="e" * 64,
+            runtime="archive",
+            platform=None,
+            arch=None,
+            accelerators=[],
+        )
+        manifest["artifacts"].append(extra_artifact)
+        release["assets"].append(
+            {"name": "unexpected-extra.zip", "digest": f"sha256:{'e' * 64}"}
+        )
+
+        with tempfile.TemporaryDirectory() as temp:
+            result = _run_schema2_sync(Path(temp), manifest, release)
+
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("SPM artifact inventory", result.stdout + result.stderr)
+
+    def test_schema_2_sync_binds_spm_release_digest_to_manifest(self) -> None:
+        manifest, release = _schema2_fixture_payloads()
+        spm_asset = next(
+            asset
+            for asset in release["assets"]
+            if asset["name"].startswith(
+                "litert-lm-native-apple-LiteRtLm-xcframework-"
+            )
+        )
+        original_digest = spm_asset["digest"]
+        spm_asset["digest"] = "sha256:" + "0" * 64
+        self.assertNotEqual(original_digest, spm_asset["digest"])
+
+        with tempfile.TemporaryDirectory() as temp:
+            result = _run_schema2_sync(Path(temp), manifest, release)
+
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("SPM release asset digest", result.stdout + result.stderr)
+
+    def test_schema_2_sync_rejects_backslash_artifact_paths(self) -> None:
+        manifest, release = _schema2_fixture_payloads()
+        tag = manifest["release"]["tag"]
+        artifact = dict(
+            next(
+                artifact
+                for artifact in manifest["artifacts"]
+                if artifact["path"].startswith("dist/spm/")
+            )
+        )
+        artifact.update(
+            path=rf"dist\\spm\\{tag}\\unexpected-extra.zip",
+            fileName=rf"dist\\spm\\{tag}\\unexpected-extra.zip",
+            sha256="d" * 64,
+            runtime="archive",
+            platform=None,
+            arch=None,
+            accelerators=[],
+        )
+        manifest["artifacts"].append(artifact)
+
+        with tempfile.TemporaryDirectory() as temp:
+            result = _run_schema2_sync(Path(temp), manifest, release)
+
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("invalid artifact path", result.stdout + result.stderr)
+
+    def test_schema_2_sync_accepts_owner_gpu_accelerator_union(self) -> None:
+        manifest, release = _schema2_fixture_payloads()
+        artifact = next(
+            artifact
+            for artifact in manifest["artifacts"]
+            if artifact["path"] == "bin/android/arm64/libLiteRtLm.so"
+        )
+        artifact["accelerators"] = sorted(set(artifact["accelerators"]) | {"gpu"})
+        platform = next(
+            platform
+            for platform in manifest["platforms"]
+            if platform["platform"] == "android" and platform["arch"] == "arm64"
+        )
+        platform["accelerators"] = sorted(set(platform["accelerators"]) | {"gpu"})
+
+        with tempfile.TemporaryDirectory() as temp:
+            result = _run_schema2_sync(Path(temp), manifest, release)
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_schema_2_sync_generates_runtime_inventory_from_platform_paths(self) -> None:
+        manifest, release = _schema2_fixture_payloads()
+
+        with tempfile.TemporaryDirectory() as temp:
+            temp_path = Path(temp)
+            result = _run_schema2_sync(temp_path, manifest, release)
+            runtime = (
+                temp_path / "repo/lib/src/backends/litert_lm/litert_lm_runtime.dart"
+            ).read_text(encoding="utf-8")
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn(
+            """Abi.macosArm64 => const <String>[\n      'libCLiteRTLM_mac.dylib',\n      'libLiteRtLm.dylib',\n    ],""",
+            runtime,
+        )
+        self.assertIn(
+            "Abi.linuxX64 => const <String>['libLiteRtLm.so'],",
+            runtime,
+        )
+        self.assertIn(
+            "Abi.windowsX64 => const <String>['LiteRtLm.dll'],",
+            runtime,
+        )
+        self.assertNotIn("libGemmaModelConstraintProvider.dylib", runtime)
+        self.assertNotIn("libLiteRtTopKWebGpuSampler.so", runtime)
+
+    def test_schema_2_sync_updates_real_macos_inventory_surfaces(self) -> None:
+        manifest, release = _schema2_fixture_payloads()
+
+        with tempfile.TemporaryDirectory() as temp:
+            temp_path = Path(temp)
+            result = _run_schema2_sync(
+                temp_path,
+                manifest,
+                release,
+                include_runtime_dependencies=True,
+            )
+            repo_root = temp_path / "repo"
+            prepare = (repo_root / "tool/macos_litert_lm_prepare_app.sh").read_text(
+                encoding="utf-8"
+            )
+            runtime = (
+                repo_root / "lib/src/backends/litert_lm/litert_lm_runtime.dart"
+            ).read_text(encoding="utf-8")
+            if shutil.which("dart") is None:
+                self.skipTest("Dart SDK is required to analyze generated inventory")
+            (
+                dart_format_result,
+                dart_analyze_result,
+                dart_run_result,
+            ) = _run_dart_inventory_checks(repo_root)
+            package_swift = (
+                repo_root
+                / "packages/llamadart_litert_lm_flutter/darwin/"
+                / "llamadart_litert_lm_flutter/Package.swift"
+            ).read_text(encoding="utf-8")
+
+            library_dir = temp_path / "macos-arm64-libraries"
+            library_dir.mkdir()
+            for library in (
+                "libCLiteRTLM_mac.dylib",
+                "libLiteRtLm.dylib",
+            ):
+                (library_dir / library).touch()
+            app_dir = temp_path / "Test.app"
+            (app_dir / "Contents/Frameworks").mkdir(parents=True)
+            prepare_result = _run_generated_macos_prepare(
+                repo_root,
+                library_dir,
+                app_dir,
+            )
+            staged_runtime = app_dir / "Contents/Frameworks/LiteRtLmRuntime"
+            staged_runtime_files = sorted(
+                path.name for path in staged_runtime.iterdir()
+            )
+
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(
+            prepare_result.returncode,
+            0,
+            prepare_result.stdout + prepare_result.stderr,
+        )
+        self.assertEqual(
+            dart_format_result.returncode,
+            0,
+            dart_format_result.stdout + dart_format_result.stderr,
+        )
+        self.assertEqual(
+            dart_analyze_result.returncode,
+            0,
+            dart_analyze_result.stdout + dart_analyze_result.stderr,
+        )
+        self.assertEqual(
+            dart_run_result.returncode,
+            0,
+            dart_run_result.stdout + dart_run_result.stderr,
+        )
+        self.assertEqual(
+            staged_runtime_files,
+            ["libCLiteRTLM_mac.dylib", "libLiteRtLm.dylib"],
+        )
+        self.assertIn(
+            '"libCLiteRTLM_mac.dylib" \\\n        "libLiteRtLm.dylib"',
+            prepare,
+        )
+        self.assertIn(
+            '"LiteRtLm.framework/Versions/A/LiteRtLm" \\\n        "libCLiteRTLM_mac.dylib"',
+            prepare,
+        )
+        self.assertNotIn("libGemmaModelConstraintProvider.dylib", prepare)
+        self.assertNotIn("LiteRtMetalAccelerator.framework", prepare)
+        self.assertIn(
+            """Abi.macosArm64 => const <String>[\n      'CLiteRTLM_mac.framework/Versions/A/CLiteRTLM_mac',\n      'LiteRtLm.framework/Versions/A/LiteRtLm',\n    ],""",
+            runtime,
+        )
+        self.assertIn(
+            """Abi.macosArm64 => const <String>[\n      'LiteRtLm.framework/Versions/A/LiteRtLm',\n      'libCLiteRTLM_mac.dylib',\n    ],""",
+            runtime,
+        )
+        self.assertNotIn("GemmaModelConstraintProvider.framework", runtime)
+        self.assertNotIn("LiteRtMetalAccelerator.framework", runtime)
+        for target in (
+            "LiteRtLm",
+            "CLiteRTLM",
+            "CLiteRTLMMac",
+            "LiteRtMetalAccelerator",
+            "LiteRtTopKMetalSampler",
+        ):
+            self.assertIn(f'name: "{target}"', package_swift)
+        for optional_target in (
+            "GemmaModelConstraintProvider",
+            "LiteRt",
+            "LiteRtTopKWebGpuSampler",
+            "LiteRtWebGpuAccelerator",
+            "WebgpuDawn",
+        ):
+            self.assertNotIn(f'name: "{optional_target}"', package_swift)
+
+    def test_schema_2_optional_spm_companions_do_not_require_swift_targets(self) -> None:
+        manifest, release = _schema2_fixture_payloads()
+        tag = manifest["release"]["tag"]
+        optional_targets = (
+            "GemmaModelConstraintProvider",
+            "LiteRt",
+            "LiteRtTopKWebGpuSampler",
+            "LiteRtWebGpuAccelerator",
+            "WebgpuDawn",
+        )
+        for index, target in enumerate(optional_targets, start=1):
+            asset_name = (
+                f"litert-lm-native-apple-{target}-xcframework-{tag}.zip"
+            )
+            artifact = dict(
+                next(
+                    artifact
+                    for artifact in manifest["artifacts"]
+                    if artifact["path"].startswith("dist/spm/")
+                )
+            )
+            artifact.update(
+                path=f"dist/spm/{tag}/{asset_name}",
+                fileName=asset_name,
+                sha256=f"{index:x}" * 64,
+                runtime="archive",
+                platform=None,
+                arch=None,
+                accelerators=[],
+            )
+            manifest["artifacts"].append(artifact)
+            release["assets"].append(
+                {
+                    "name": asset_name,
+                    "digest": "sha256:" + f"{index:x}" * 64,
+                }
+            )
+
+        package_swift = (
+            Path(__file__).resolve().parents[2]
+            / "packages/llamadart_litert_lm_flutter/darwin/"
+            / "llamadart_litert_lm_flutter/Package.swift"
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            release_dir = Path(temp)
+            _materialize_schema2_release_fixtures(release_dir, manifest, release)
+            validated = validate_litert_lm_release_manifest(
+                release,
+                repo="leehack/litert-lm-native",
+                tag=tag,
+                release_json_dir=str(release_dir),
+                required_bundles=litert_lm_bundle_names(
+                    (Path(__file__).resolve().parents[2] / "hook/build.dart").read_text(
+                        encoding="utf-8"
+                    )
+                ),
+            )
+        self.assertEqual(validated, manifest)
+        prepared = prepare_litert_lm_package_swift(
+            package_swift.read_text(encoding="utf-8"),
+            release=release,
+            manifest=manifest,
+            resolved_tag=tag,
+        )
+        self.assertNotIn("GemmaModelConstraintProvider", prepared)
+        self.assertNotIn("LiteRtWebGpuAccelerator", prepared)
 
     def test_hook_bundle_inventory_rejects_duplicate_specs(self) -> None:
         spec = (
