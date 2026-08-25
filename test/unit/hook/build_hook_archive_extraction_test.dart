@@ -164,6 +164,89 @@ void main() {
     },
   );
 
+  test(
+    'drops symlink materialization when a duplicate directory follows',
+    () async {
+      final archivePath = await writeArchive([
+        _regularFile('libfoo.so.1', 'link-target-payload'),
+        ArchiveFile.symlink('libfoo.so', 'libfoo.so.1'),
+        ArchiveFile.directory('./libfoo.so'),
+        _regularFile('libfoo.so/nested.so', 'nested-payload'),
+      ]);
+
+      await extract(archivePath);
+
+      final duplicatePath = path.join(outputDir.path, 'libfoo.so');
+      expect(Directory(duplicatePath).existsSync(), isTrue);
+      expect(File(duplicatePath).existsSync(), isFalse);
+      expect(
+        await File(path.join(duplicatePath, 'nested.so')).readAsString(),
+        'nested-payload',
+      );
+    },
+  );
+
+  test('replaces an earlier file when a duplicate directory follows', () async {
+    final archivePath = await writeArchive([
+      _regularFile('libfoo.so', 'regular-payload'),
+      ArchiveFile.directory('./libfoo.so'),
+    ]);
+
+    await extract(archivePath);
+
+    final duplicatePath = path.join(outputDir.path, 'libfoo.so');
+    expect(Directory(duplicatePath).existsSync(), isTrue);
+    expect(File(duplicatePath).existsSync(), isFalse);
+  });
+
+  test('replaces an earlier directory when a duplicate file follows', () async {
+    final archivePath = await writeArchive([
+      ArchiveFile.directory('libfoo.so'),
+      _regularFile('./libfoo.so', 'regular-payload'),
+    ]);
+
+    await extract(archivePath);
+
+    final duplicatePath = path.join(outputDir.path, 'libfoo.so');
+    expect(Directory(duplicatePath).existsSync(), isFalse);
+    expect(await File(duplicatePath).readAsString(), 'regular-payload');
+  });
+
+  test(
+    'replaces an earlier directory when a duplicate symlink follows',
+    () async {
+      final archivePath = await writeArchive([
+        _regularFile('libfoo.so.1', 'link-target-payload'),
+        ArchiveFile.directory('libfoo.so'),
+        ArchiveFile.symlink('./libfoo.so', 'libfoo.so.1'),
+      ]);
+
+      await extract(archivePath);
+
+      final duplicatePath = path.join(outputDir.path, 'libfoo.so');
+      expect(Directory(duplicatePath).existsSync(), isFalse);
+      expect(await File(duplicatePath).readAsString(), 'link-target-payload');
+    },
+  );
+
+  test('rejects symlinks that target a directory', () async {
+    final archivePath = await writeArchive([
+      ArchiveFile.directory('lib'),
+      ArchiveFile.symlink('libfoo.so', 'lib'),
+    ]);
+
+    await expectLater(
+      extract(archivePath),
+      throwsA(
+        isA<Exception>().having(
+          (error) => error.toString(),
+          'message',
+          contains('Archive symlink target is a directory'),
+        ),
+      ),
+    );
+  });
+
   test('blocks symlinks escaping the extraction root', () async {
     for (final target in const ['../../outside.so', '/etc/passwd']) {
       final archivePath = await writeArchive([

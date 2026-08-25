@@ -2110,12 +2110,18 @@ Future<void> _extractArchive({
     throw Exception('Failed to decode native bundle archive: $archivePath');
   }
 
+  // An archive may repeat a normalized path (GNU tar emits `./`-prefixed names)
+  // and may even switch its kind between repeats, so the whole archive is
+  // scanned for traversal and deduplicated before anything touches the disk.
+  // Only the last entry for a path decides whether it lands as a directory, a
+  // regular file, or a materialized link alias.
   final entriesByArchivePath = <String, ArchiveFile>{};
-  // Insertion-ordered and deduplicated: an archive may repeat a path, and only
-  // its last entry decides whether that path ends up a link alias or a file.
-  final symbolicLinkPaths = <String>{};
+  final targetPathsByArchivePath = <String, String>{};
+  final winningEntryIndexes = <String, int>{};
+  final archiveRelativePaths = <String>[];
 
-  for (final file in archive.files) {
+  for (var index = 0; index < archive.files.length; index++) {
+    final file = archive.files[index];
     final relativePath = path.normalize(file.name);
     final targetPath = path.normalize(path.join(outputRoot, relativePath));
     final isInRoot =
@@ -2127,24 +2133,37 @@ Future<void> _extractArchive({
       );
     }
 
-    if (file.isDirectory) {
-      await Directory(targetPath).create(recursive: true);
+    final archiveRelativePath = path.posix.joinAll(path.split(relativePath));
+    entriesByArchivePath[archiveRelativePath] = file;
+    targetPathsByArchivePath[archiveRelativePath] = targetPath;
+    winningEntryIndexes[archiveRelativePath] = index;
+    archiveRelativePaths.add(archiveRelativePath);
+  }
+
+  // Symbolic links are materialized after the extraction loop so link targets
+  // that appear later in the archive still resolve.
+  final symbolicLinkPaths = <String>[];
+
+  for (var index = 0; index < archive.files.length; index++) {
+    final archiveRelativePath = archiveRelativePaths[index];
+    if (winningEntryIndexes[archiveRelativePath] != index) {
       continue;
     }
 
-    final archiveRelativePath = path.posix.joinAll(path.split(relativePath));
-    entriesByArchivePath[archiveRelativePath] = file;
+    final file = archive.files[index];
+    final targetPath = targetPathsByArchivePath[archiveRelativePath]!;
 
-    // Symbolic links are materialized after the loop so link targets that
-    // appear later in the archive still resolve.
+    if (file.isDirectory) {
+      await _createExtractionDirectory(targetPath);
+      continue;
+    }
+
     if (file.isSymbolicLink) {
       symbolicLinkPaths.add(archiveRelativePath);
       continue;
     }
 
-    final bytes = file.content as List<int>;
-    await Directory(path.dirname(targetPath)).create(recursive: true);
-    await File(targetPath).writeAsBytes(bytes);
+    await _writeExtractionFile(targetPath, file.content as List<int>);
   }
 
   for (final linkPath in symbolicLinkPaths) {
@@ -2154,30 +2173,57 @@ Future<void> _extractArchive({
       entriesByArchivePath: entriesByArchivePath,
     );
 
-    final linkFilePath = path.join(
-      outputRoot,
-      path.joinAll(linkPath.split('/')),
-    );
-    await Directory(path.dirname(linkFilePath)).create(recursive: true);
+    final linkFilePath = targetPathsByArchivePath[linkPath]!;
 
     // Archive symlinks are materialized as regular files holding the resolved
     // target's bytes rather than as OS symlinks: Windows refuses symlink
     // creation without developer mode or elevation, and bundled native assets
     // are copied around by downstream tooling that would not carry a link.
-    await File(linkFilePath).writeAsBytes(resolved.entry.content as List<int>);
+    await _writeExtractionFile(
+      linkFilePath,
+      resolved.entry.content as List<int>,
+    );
     log.fine(
       'Materialized archive symlink $linkPath as a copy of ${resolved.path}.',
     );
   }
 }
 
+/// Creates [targetPath] as a directory, replacing a file left by an earlier
+/// entry for the same normalized path.
+Future<void> _createExtractionDirectory(String targetPath) async {
+  final existingType = await FileSystemEntity.type(
+    targetPath,
+    followLinks: false,
+  );
+  if (existingType == FileSystemEntityType.file ||
+      existingType == FileSystemEntityType.link) {
+    await File(targetPath).delete();
+  }
+  await Directory(targetPath).create(recursive: true);
+}
+
+/// Writes [bytes] to [targetPath], replacing a directory left by an earlier
+/// entry for the same normalized path.
+Future<void> _writeExtractionFile(String targetPath, List<int> bytes) async {
+  await Directory(path.dirname(targetPath)).create(recursive: true);
+  final existingType = await FileSystemEntity.type(
+    targetPath,
+    followLinks: false,
+  );
+  if (existingType == FileSystemEntityType.directory) {
+    await Directory(targetPath).delete(recursive: true);
+  }
+  await File(targetPath).writeAsBytes(bytes);
+}
+
 typedef _ResolvedArchiveEntry = ({String path, ArchiveFile entry});
 
 /// Follows an archive-internal symlink chain to the regular file it points at.
 ///
-/// Throws when the chain escapes the archive root, cycles, or dangles, so a
-/// malicious or truncated bundle cannot write outside the extraction root or
-/// leave unloadable placeholder libraries behind.
+/// Throws when the chain escapes the archive root, cycles, dangles, or lands on
+/// a directory, so a malicious or truncated bundle cannot write outside the
+/// extraction root or leave unloadable placeholder libraries behind.
 _ResolvedArchiveEntry _resolveArchiveSymlink({
   required String archivePath,
   required String linkPath,
@@ -2212,6 +2258,13 @@ _ResolvedArchiveEntry _resolveArchiveSymlink({
     if (next == null) {
       throw Exception(
         'Archive symlink target missing in $archivePath: $linkPath -> $target',
+      );
+    }
+
+    if (next.isDirectory) {
+      throw Exception(
+        'Archive symlink target is a directory in $archivePath: '
+        '$linkPath -> $target',
       );
     }
 
