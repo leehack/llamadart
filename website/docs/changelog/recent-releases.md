@@ -114,21 +114,24 @@ For canonical full release notes, use:
   hierarchy. It is the same exception type `LlamaEngine.loadModelFromUrl`
   already throws for this condition; each keeps its own message.
 
-- Updated the default native llama.cpp runtime to `b10545`, adding LFM2 DSpark
-  support plus current upstream correctness and backend performance fixes.
-  Matching Dart FFI bindings, including the new multimodal projector-device
-  field, and the Apple SwiftPM artifact checksum were refreshed.
+- Updated the default native llama.cpp runtime to the immutable
+  `leehack/llamadart-native@v0.2.0-1` release (llama.cpp `v0.2.0`), adding LFM2
+  DSpark support plus current upstream correctness and backend performance
+  fixes. Matching Dart FFI bindings, including the new multimodal
+  projector-device field, and the Apple SwiftPM artifact checksum were
+  refreshed. Linux `libmtmd.so.0` now loads without the old
+  `libmtmd.so.SOVERSION` compatibility alias.
 
 - Removed the abandoned Dart-side MTP/n-gram speculative-decoding scaffolding
   from the llama.cpp backend; speculative decoding behavior is unchanged.
 
-- Bumped `llamadart_llama_cpp_flutter` to `0.0.15` so the `b10545` Apple SwiftPM
-  pin actually publishes; `0.0.14` was already on pub.dev, so release automation
-  skipped it and Apple builds would have kept the `b10514` runtime.
+- Bumped `llamadart_llama_cpp_flutter` to `0.0.16` so the `v0.2.0-1` Apple
+  SwiftPM pin actually publishes; `0.0.14` was already on pub.dev, so release
+  automation skipped it and Apple builds would have kept the `b10514` runtime.
 
 - Corrected the WebGPU bridge docs, which claimed the pinned `v0.1.37` bridge
   assets match the default native llama.cpp runtime. They embed `b10514` and now
-  trail the native `b10545` pin.
+  trail the native `v0.2.0-1` pin.
 
 - Chat-template capability detection now logs a debug message naming the
   probe (`string-content`, `typed-content`, `system-role`, `tools`) when its

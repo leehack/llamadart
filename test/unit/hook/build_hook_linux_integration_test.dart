@@ -18,6 +18,14 @@ void main() {
   final bundleRelativePath = '$cacheRelativeDir/extracted';
   final bundleDir = Directory(bundleRelativePath);
   final backupDir = Directory('$bundleRelativePath.__hook_test_backup');
+  const historicalNativeTag = 'b10545';
+  final historicalBundleRelativePath =
+      '.dart_tool/llamadart/native_bundles/$historicalNativeTag/'
+      'linux-x64/extracted';
+  final historicalBundleDir = Directory(historicalBundleRelativePath);
+  final historicalBackupDir = Directory(
+    '$historicalBundleRelativePath.__hook_test_backup',
+  );
   final litertBundleDir = Directory(
     '.dart_tool/llamadart/litert_lm/$litertVersion/linux/x64',
   );
@@ -29,12 +37,18 @@ void main() {
     if (backupDir.existsSync()) {
       await backupDir.delete(recursive: true);
     }
+    if (historicalBackupDir.existsSync()) {
+      await historicalBackupDir.delete(recursive: true);
+    }
     if (litertBackupDir.existsSync()) {
       await litertBackupDir.delete(recursive: true);
     }
 
     if (bundleDir.existsSync()) {
       await bundleDir.rename(backupDir.path);
+    }
+    if (historicalBundleDir.existsSync()) {
+      await historicalBundleDir.rename(historicalBackupDir.path);
     }
     if (litertBundleDir.existsSync()) {
       await litertBundleDir.rename(litertBackupDir.path);
@@ -55,6 +69,16 @@ void main() {
       'libggml-cpu.so',
       'libggml-vulkan.so',
     ]);
+    await _writeBundleLibraries(historicalBundleDir, const [
+      'libllamadart.so',
+      'libmtmd.so',
+      'libllama.so',
+      'libllama-common.so',
+      'libggml.so',
+      'libggml-base.so',
+      'libggml-cpu.so',
+      'libggml-vulkan.so',
+    ]);
     await _writeBundleLibraries(litertBundleDir, _linuxLiteRtLibraries);
   });
 
@@ -64,6 +88,12 @@ void main() {
     }
     if (backupDir.existsSync()) {
       await backupDir.rename(bundleDir.path);
+    }
+    if (historicalBundleDir.existsSync()) {
+      await historicalBundleDir.delete(recursive: true);
+    }
+    if (historicalBackupDir.existsSync()) {
+      await historicalBackupDir.rename(historicalBundleDir.path);
     }
     if (litertBundleDir.existsSync()) {
       await litertBundleDir.delete(recursive: true);
@@ -95,7 +125,8 @@ void main() {
 
           expect(emittedNames, contains('libllamadart.so'));
           expect(emittedNames, contains('libmtmd.so'));
-          expect(emittedNames, contains('libmtmd.so.SOVERSION'));
+          expect(emittedNames, contains('libmtmd.so.0'));
+          expect(emittedNames, isNot(contains('libmtmd.so.SOVERSION')));
           expect(emittedNames, contains('libllama.so'));
           expect(emittedNames, contains('libllama.so.0'));
           expect(emittedNames, contains('libllama-common.so'));
@@ -114,6 +145,31 @@ void main() {
       );
     },
   );
+
+  test('build hook preserves historical linux mtmd SONAME alias', () async {
+    await testCodeBuildHook(
+      mainMethod: build_hook.main,
+      targetOS: OS.linux,
+      targetArchitecture: Architecture.x64,
+      userDefines: PackageUserDefines(
+        workspacePubspec: PackageUserDefinesSource(
+          defines: const {'llamadart_native_tag': historicalNativeTag},
+          basePath: Directory.current.uri,
+        ),
+      ),
+      check: (input, output) {
+        final emittedNames = output.assets.encodedAssets
+            .where((asset) => asset.isCodeAsset)
+            .map((asset) => asset.asCodeAsset)
+            .map((asset) => path.basename(asset.file!.toFilePath()))
+            .toSet();
+
+        expect(emittedNames, contains('libmtmd.so'));
+        expect(emittedNames, contains('libmtmd.so.0'));
+        expect(emittedNames, contains('libmtmd.so.SOVERSION'));
+      },
+    );
+  });
 
   test('build hook fails when runtimes config selects none', () async {
     for (final rawUserConfig in const <Object>['none', false]) {

@@ -13,7 +13,7 @@ import 'package:path/path.dart' as path;
 
 import 'package:llamadart/src/hook/native_bundle_config.dart';
 
-const _llamaCppTag = 'b10545';
+const _llamaCppTag = 'v0.2.0-1';
 const _nativeRepoSlug = 'leehack/llamadart-native';
 
 const _packageName = 'llamadart';
@@ -376,6 +376,7 @@ void main(List<String> args) async {
         final emittedFileNames = _emittedFileNamesForLibrary(
           spec: spec,
           library: library,
+          nativeConfig: nativeConfig,
         );
 
         for (final emittedFileName in emittedFileNames) {
@@ -1649,6 +1650,7 @@ List<String> _collectDynamicLibraryPaths(
 List<String> _emittedFileNamesForLibrary({
   required NativeBundleSpec spec,
   required NativeLibraryDescriptor library,
+  required _NativeBundleConfig nativeConfig,
 }) {
   final fileNames = <String>[library.fileName];
 
@@ -1660,10 +1662,11 @@ List<String> _emittedFileNamesForLibrary({
     if (lowered.endsWith('.so') && !lowered.endsWith('.so.0')) {
       fileNames.add('${library.fileName}.0');
     }
-    // llamadart-native b10545 still publishes mtmd with the literal ELF SONAME
-    // `libmtmd.so.SOVERSION`. Keep the immutable release consumable until the
-    // owning native artifact corrects that SONAME.
-    if (lowered == 'libmtmd.so') {
+    // Historical b-tag artifacts and the original v0.2.0 artifact can encode
+    // mtmd's literal placeholder as their ELF SONAME. v0.2.0-1 corrected it.
+    final needsMtmdSoversionAlias =
+        nativeConfig.tag.startsWith('b') || nativeConfig.tag == 'v0.2.0';
+    if (lowered == 'libmtmd.so' && needsMtmdSoversionAlias) {
       fileNames.add('${library.fileName}.SOVERSION');
     }
   }

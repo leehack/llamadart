@@ -1,3 +1,8 @@
+## 0.0.16
+
+* Updated Apple SwiftPM native pin to the immutable
+  `leehack/llamadart-native@v0.2.0-1` release, built from llama.cpp `v0.2.0`.
+
 ## 0.0.15
 
 * Updated Apple SwiftPM native pin to `leehack/llamadart-native@b10545`.

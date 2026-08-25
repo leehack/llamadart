@@ -22,7 +22,8 @@ pipelines.
 Default pinned tag in the example is `v0.1.37`.
 
 That release embeds llama.cpp `b10514`, which now trails the `hook/build.dart`
-native pin, so Web and native are not on the same llama.cpp build. It retains
+native pin (`v0.2.0-1`, built from llama.cpp `v0.2.0`), so Web and native are not
+on the same llama.cpp build. It retains
 the Qwen3-ASR typed speech-to-text contract introduced in `v0.1.30` and
 provisions the explicit 1 MiB Wasm stack needed for `b10514` memory64 context
 construction in direct and worker modes. The chat bootstrap opts
