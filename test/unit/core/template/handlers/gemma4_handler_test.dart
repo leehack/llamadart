@@ -189,6 +189,15 @@ void main() {
       expect(parsed.content, isNot(contains('<channel|>')));
     });
 
+    test('preserves whitespace inside public channel content', () {
+      const output = '<|channel>final\n \tVisible answer.  \n<channel|>';
+
+      final parsed = ChatTemplateEngine.parse(ChatFormat.gemma4.index, output);
+
+      expect(parsed.content, ' \tVisible answer.  \n');
+      expect(parsed.reasoningContent, isNull);
+    });
+
     test('preserves ordinary raw content whitespace exactly', () {
       const output = ' \tVisible answer.  \n';
 

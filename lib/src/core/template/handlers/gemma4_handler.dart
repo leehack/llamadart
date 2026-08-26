@@ -430,7 +430,7 @@ class Gemma4Handler extends ChatTemplateHandler
         : 0;
     return (
       channel: block.substring(0, newline).trim(),
-      body: rawBody.substring(0, rawBody.length - heldPrefixLength).trim(),
+      body: rawBody.substring(0, rawBody.length - heldPrefixLength),
     );
   }
 
