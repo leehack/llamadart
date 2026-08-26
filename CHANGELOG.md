@@ -1,5 +1,9 @@
 ## Unreleased
 
+* Fixed native Qwen3-ASR transcription by applying the model chat template to
+  audio turns, while preserving the validated raw-prompt Web bridge contract.
+  Empty ASR output now fails explicitly instead of reporting an empty result.
+
 * Fixed Qwen 2.5/3 LiteRT-LM `ToolChoice.required` requests silently running
   without their required-call grammar and finishing with no call. They now fail
   with an actionable `LlamaUnsupportedException` before generation when the

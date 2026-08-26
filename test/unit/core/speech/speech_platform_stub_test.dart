@@ -7,6 +7,7 @@ import 'package:test/test.dart';
 void main() {
   test('native platform accepts file input and unencoded audio', () {
     expect(speechToTextRequiresBackendCapability, isFalse);
+    expect(speechToTextUsesChatTemplate, isTrue);
     expect(speechToTextSupportsFileInput, isTrue);
     expect(speechToTextRequiresEncodedAudioFormat, isFalse);
     expect(

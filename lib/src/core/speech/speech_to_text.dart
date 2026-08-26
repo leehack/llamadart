@@ -5,6 +5,8 @@ import '../../backends/backend.dart';
 import '../../backends/litert_lm/litert_lm_asr_types.dart';
 import '../engine/engine.dart';
 import '../exceptions.dart';
+import '../models/chat/chat_message.dart';
+import '../models/chat/chat_role.dart';
 import '../models/chat/content_part.dart';
 import '../models/inference/generation_params.dart';
 import 'litert_lm_speech_to_text_driver.dart';
@@ -426,6 +428,7 @@ class SpeechToTextTask {
   final StreamController<SpeechToTextEvent> _eventsController;
   final Completer<SpeechToTextCompletion> _doneCompleter;
   final void Function() _onCancel;
+  void Function()? _cancelTokenStream;
   bool _cancelled = false;
 
   SpeechToTextTask._({required void Function() onCancel})
@@ -453,7 +456,14 @@ class SpeechToTextTask {
       return;
     }
     _cancelled = true;
-    _onCancel();
+    try {
+      _onCancel();
+    } catch (_) {
+      // Cancellation is authoritative; the task runner still owns cleanup and
+      // terminal completion when a backend cancellation hook fails.
+    } finally {
+      _cancelTokenStream?.call();
+    }
   }
 }
 
@@ -765,7 +775,7 @@ class SpeechToTextEngine {
         // Preserve the first recognition failure.
       }
       if (task.isCancellationRequested) {
-        await _completeCancelled(task);
+        _completeCancelled(task);
       } else {
         final speechError = _speechError(error);
         task._eventsController.addError(speechError, stackTrace);
@@ -904,43 +914,98 @@ class SpeechToTextEngine {
   ) async {
     try {
       if (task.isCancellationRequested) {
-        await _completeCancelled(task);
+        _completeCancelled(task);
         return;
       }
 
-      final prompt = _promptFor(request);
       final output = StringBuffer();
-      await for (final text in _engine!.generate(
-        prompt,
-        parts: <LlamaContentPart>[_contentFor(request.audio)],
-        params: GenerationParams(
-          maxTokens: request.maxOutputTokens,
-          temp: 0,
-          topK: 1,
-          topP: 1,
-          penalty: 1,
-          seed: 1,
-          streamBatchTokenThreshold: 1,
-        ),
-      )) {
-        if (task.isCancellationRequested) {
-          break;
+      final tokenStreamDone = Completer<void>();
+      StreamSubscription<String>? tokenSubscription;
+      Future<void>? tokenStreamCancellation;
+      void cancelTokenStream() {
+        if (tokenStreamCancellation != null) {
+          return;
         }
-        output.write(text);
+        final subscription = tokenSubscription;
+        if (subscription == null) {
+          return;
+        }
+        late final Future<void> cancellation;
+        try {
+          cancellation = subscription.cancel();
+        } catch (error, stackTrace) {
+          cancellation = Future<void>.error(error, stackTrace);
+        }
+        tokenStreamCancellation = cancellation;
+        unawaited(cancellation.catchError((Object _, StackTrace _) {}));
+        if (!tokenStreamDone.isCompleted) {
+          tokenStreamDone.complete();
+        }
+      }
+
+      Object? tokenStreamError;
+      StackTrace? tokenStreamStackTrace;
+      try {
+        tokenSubscription = _promptAdapterTokens(request).listen(
+          (token) {
+            if (!task.isCancellationRequested && tokenStreamError == null) {
+              output.write(token);
+            }
+          },
+          onError: (Object error, StackTrace stackTrace) {
+            tokenStreamError ??= error;
+            tokenStreamStackTrace ??= stackTrace;
+            if (!tokenStreamDone.isCompleted) {
+              tokenStreamDone.complete();
+            }
+          },
+          onDone: () {
+            if (!tokenStreamDone.isCompleted) {
+              tokenStreamDone.complete();
+            }
+          },
+          cancelOnError: false,
+        );
+        task._cancelTokenStream = cancelTokenStream;
+        if (task.isCancellationRequested) {
+          cancelTokenStream();
+        }
+        await tokenStreamDone.future;
+      } catch (error, stackTrace) {
+        tokenStreamError ??= error;
+        tokenStreamStackTrace ??= stackTrace;
+      } finally {
+        if (identical(task._cancelTokenStream, cancelTokenStream)) {
+          task._cancelTokenStream = null;
+        }
+        try {
+          cancelTokenStream();
+          await tokenStreamCancellation;
+        } catch (error, stackTrace) {
+          tokenStreamError ??= error;
+          tokenStreamStackTrace ??= stackTrace;
+        }
+      }
+      final error = tokenStreamError;
+      if (error != null) {
+        Error.throwWithStackTrace(error, tokenStreamStackTrace!);
       }
 
       if (task.isCancellationRequested) {
-        await _completeCancelled(task);
+        _completeCancelled(task);
         return;
       }
 
       final normalized = _normalizeTranscript(output.toString());
+      if (normalized.text.isEmpty) {
+        throw LlamaSpeechException(
+          'Speech recognition produced an empty transcript.',
+        );
+      }
       final result = SpeechToTextResult(
         text: normalized.text,
         language: normalized.language,
-        segments: normalized.text.isEmpty
-            ? const <TranscriptSegment>[]
-            : <TranscriptSegment>[TranscriptSegment(text: normalized.text)],
+        segments: <TranscriptSegment>[TranscriptSegment(text: normalized.text)],
         sourceFormat: request.audio.format,
       );
       task._eventsController.add(SpeechToTextFinalEvent(result));
@@ -948,7 +1013,7 @@ class SpeechToTextEngine {
       task._doneCompleter.complete(SpeechToTextCompletion.completed(result));
     } catch (error, stackTrace) {
       if (task.isCancellationRequested) {
-        await _completeCancelled(task);
+        _completeCancelled(task);
         return;
       }
       final speechError = _speechError(error);
@@ -960,13 +1025,59 @@ class SpeechToTextEngine {
     }
   }
 
-  Future<void> _completeCancelled(SpeechToTextTask task) async {
+  void _completeCancelled(SpeechToTextTask task) {
     if (!task._eventsController.isClosed) {
       unawaited(task._eventsController.close());
     }
     if (!task._doneCompleter.isCompleted) {
       task._doneCompleter.complete(const SpeechToTextCompletion.cancelled());
     }
+  }
+
+  /// Streams transcript text for the prompt-adapted profile.
+  ///
+  /// Native Qwen3-ASR needs the audio turn wrapped by the model chat template,
+  /// so it goes through [LlamaEngine.create]. The Web bridge speech contract is
+  /// validated against raw prompt generation with bytes-only audio parts.
+  Stream<String> _promptAdapterTokens(SpeechToTextRequest request) {
+    final engine = _engine!;
+    final params = GenerationParams(
+      maxTokens: request.maxOutputTokens,
+      temp: 0,
+      topK: 1,
+      topP: 1,
+      penalty: 1,
+      seed: 1,
+      streamBatchTokenThreshold: 1,
+    );
+    if (!speechToTextUsesChatTemplate) {
+      return engine.generate(
+        _promptFor(request),
+        parts: <LlamaContentPart>[_contentFor(request.audio)],
+        params: params,
+      );
+    }
+    return engine
+        .create(
+          <LlamaChatMessage>[
+            LlamaChatMessage.withContent(
+              role: LlamaChatRole.user,
+              content: <LlamaContentPart>[
+                LlamaTextContent(_promptFor(request)),
+                _contentFor(request.audio),
+              ],
+            ),
+          ],
+          params: params,
+          enableThinking: false,
+        )
+        .expand((chunk) {
+          if (chunk.choices.isEmpty) {
+            return const <String>[];
+          }
+          final text = chunk.choices.first.delta.content;
+          return text == null ? const <String>[] : <String>[text];
+        });
   }
 
   String _promptFor(SpeechToTextRequest request) {
