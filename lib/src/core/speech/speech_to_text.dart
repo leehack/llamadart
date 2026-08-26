@@ -930,6 +930,8 @@ class SpeechToTextEngine {
       }
 
       task._cancelTokenStream = cancelTokenStream;
+      Object? tokenStreamError;
+      StackTrace? tokenStreamStackTrace;
       try {
         while (await tokenIterator.moveNext()) {
           if (task.isCancellationRequested) {
@@ -937,12 +939,23 @@ class SpeechToTextEngine {
           }
           output.write(tokenIterator.current);
         }
+      } catch (error, stackTrace) {
+        tokenStreamError = error;
+        tokenStreamStackTrace = stackTrace;
       } finally {
         if (identical(task._cancelTokenStream, cancelTokenStream)) {
           task._cancelTokenStream = null;
         }
-        cancelTokenStream();
-        await tokenStreamCancellation;
+        try {
+          cancelTokenStream();
+          await tokenStreamCancellation;
+        } catch (error, stackTrace) {
+          tokenStreamError ??= error;
+          tokenStreamStackTrace ??= stackTrace;
+        }
+      }
+      if (tokenStreamError != null) {
+        Error.throwWithStackTrace(tokenStreamError, tokenStreamStackTrace!);
       }
 
       if (task.isCancellationRequested) {

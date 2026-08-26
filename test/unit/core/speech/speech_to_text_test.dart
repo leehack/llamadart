@@ -378,6 +378,59 @@ void main() {
       expect((await retry.done).result?.text, 'transcript');
     });
 
+    test('awaits stream cleanup before releasing the backend lease', () async {
+      await _loadSpeechModel(llamaEngine);
+      final generationRelease = Completer<void>();
+      final cleanupStarted = Completer<void>();
+      final cleanupRelease = Completer<void>();
+      Stream<List<int>> generationStream() async* {
+        try {
+          await generationRelease.future;
+        } finally {
+          cleanupStarted.complete();
+          await cleanupRelease.future;
+        }
+      }
+
+      backend
+        ..generationStream = generationStream()
+        ..onCancelGeneration = () => generationRelease.complete();
+
+      final task = await speechEngine.transcribe(
+        const SpeechToTextRequest(audio: SpeechAudioFileInput('/tmp/test.wav')),
+      );
+      await backend.generationStarted.future;
+
+      task.cancel();
+      await cleanupStarted.future;
+
+      var taskCompleted = false;
+      unawaited(task.done.whenComplete(() => taskCompleted = true));
+      await Future<void>.delayed(Duration.zero);
+      expect(taskCompleted, isFalse);
+      await expectLater(
+        speechEngine.transcribe(
+          const SpeechToTextRequest(
+            audio: SpeechAudioFileInput('/tmp/retry.wav'),
+          ),
+        ),
+        throwsA(isA<LlamaStateException>()),
+      );
+
+      cleanupRelease.complete();
+      expect((await task.done).state, SpeechToTextCompletionState.cancelled);
+
+      backend
+        ..generationStream = null
+        ..onCancelGeneration = null;
+      final retry = await speechEngine.transcribe(
+        const SpeechToTextRequest(
+          audio: SpeechAudioFileInput('/tmp/retry.wav'),
+        ),
+      );
+      expect((await retry.done).result?.text, 'transcript');
+    });
+
     test('allows only one active task per wrapper', () async {
       backend.blockGeneration = true;
       await _loadSpeechModel(llamaEngine);
@@ -544,6 +597,8 @@ class _SpeechBackend implements LlamaBackend {
   String generationText = 'transcript';
   List<String>? generationChunks;
   Object? generationError;
+  Stream<List<int>>? generationStream;
+  void Function()? onCancelGeneration;
   bool blockGeneration = false;
   bool blockAudioProbe = false;
   bool blockMetadata = false;
@@ -639,13 +694,17 @@ class _SpeechBackend implements LlamaBackend {
     String prompt,
     GenerationParams params, {
     List<LlamaContentPart>? parts,
-  }) async* {
+  }) {
     lastGenerationPrompt = prompt;
     lastGenerationParams = params;
     lastParts = parts;
     if (!generationStarted.isCompleted) {
       generationStarted.complete();
     }
+    return generationStream ?? _defaultGenerationStream();
+  }
+
+  Stream<List<int>> _defaultGenerationStream() async* {
     if (blockGeneration) {
       await _generationRelease.future;
     }
@@ -680,6 +739,7 @@ class _SpeechBackend implements LlamaBackend {
   @override
   void cancelGeneration() {
     cancelGenerationCalls += 1;
+    onCancelGeneration?.call();
   }
 
   @override
