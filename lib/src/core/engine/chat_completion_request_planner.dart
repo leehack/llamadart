@@ -8,6 +8,7 @@ import '../models/chat/content_part.dart';
 import '../models/inference/generation_params.dart';
 import '../models/inference/tool_choice.dart';
 import '../models/tools/tool_definition.dart';
+import '../template/chat_format.dart';
 import '../template/chat_template_engine.dart';
 
 /// Prepared generation inputs for a chat-completion request.
@@ -89,6 +90,20 @@ class ChatCompletionRequestPlanner {
         'constraints; '
         'use a grammar-capable backend such as llama.cpp, or omit '
         'responseFormat for best-effort JSON output.',
+      );
+    }
+    if (!backendSupportsGrammarConstraints &&
+        toolChoice == ToolChoice.required &&
+        tools != null &&
+        tools.isNotEmpty &&
+        templateResult.format == ChatFormat.hermes.index) {
+      throw LlamaUnsupportedException(
+        'ToolChoice.required for Hermes/Qwen tool calling requires '
+        'grammar-constrained decoding, but the active backend does not '
+        'support grammar constraints. LiteRT-LM native and web cannot '
+        'currently enforce a declared tool schema before generation; use '
+        'ToolChoice.auto for best-effort tool calling, or use a '
+        'grammar-capable backend such as llama.cpp.',
       );
     }
 

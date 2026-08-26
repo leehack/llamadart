@@ -8,6 +8,7 @@ import 'package:llamadart/src/core/models/inference/generation_params.dart';
 import 'package:llamadart/src/core/models/inference/tool_choice.dart';
 import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:llamadart/src/core/models/tools/tool_param.dart';
+import 'package:llamadart/src/core/template/chat_format.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -63,6 +64,135 @@ void main() {
         ),
         throwsA(isA<LlamaUnsupportedException>()),
       );
+    });
+
+    test('rejects required Hermes tools on every no-grammar route', () {
+      for (final backend in <LlamaBackend>[
+        _NoGrammarBackend(),
+        _NoGrammarNativeChatBackend(),
+      ]) {
+        expect(
+          () => ChatCompletionRequestPlanner.build(
+            backend: backend,
+            templateResult: LlamaChatTemplateResult(
+              prompt: 'qwen prompt',
+              format: ChatFormat.hermes.index,
+              grammar: 'root ::= tool_call',
+            ),
+            messages: const [
+              LlamaChatMessage.fromText(
+                role: LlamaChatRole.user,
+                text: 'Call get_weather for Seoul.',
+              ),
+            ],
+            tools: [_weatherTool],
+            toolChoice: ToolChoice.required,
+            parallelToolCalls: false,
+          ),
+          throwsA(
+            isA<LlamaUnsupportedException>().having(
+              (error) => error.message,
+              'message',
+              allOf(
+                contains('ToolChoice.required'),
+                contains('Hermes/Qwen'),
+                contains('grammar-constrained decoding'),
+              ),
+            ),
+          ),
+          reason: backend.runtimeType.toString(),
+        );
+      }
+    });
+
+    test('keeps Hermes auto and none usable on every no-grammar route', () {
+      for (final route in <({LlamaBackend backend, bool usesNativeChat})>[
+        (backend: _NoGrammarBackend(), usesNativeChat: false),
+        (backend: _NoGrammarNativeChatBackend(), usesNativeChat: true),
+      ]) {
+        for (final toolChoice in [ToolChoice.auto, ToolChoice.none]) {
+          final plan = ChatCompletionRequestPlanner.build(
+            backend: route.backend,
+            templateResult: LlamaChatTemplateResult(
+              prompt: 'qwen prompt',
+              format: ChatFormat.hermes.index,
+              grammar: toolChoice == ToolChoice.auto
+                  ? 'root ::= tool_call'
+                  : null,
+            ),
+            messages: const [
+              LlamaChatMessage.fromText(
+                role: LlamaChatRole.user,
+                text: 'Hello.',
+              ),
+            ],
+            tools: [_weatherTool],
+            toolChoice: toolChoice,
+            parallelToolCalls: false,
+          );
+
+          final reason = '${route.backend.runtimeType}/${toolChoice.name}';
+          expect(
+            plan.usesNativeChatGeneration,
+            route.usesNativeChat,
+            reason: reason,
+          );
+          expect(plan.generationParams.grammar, isNull, reason: reason);
+          expect(
+            plan.parseToolCallsEnabled,
+            toolChoice == ToolChoice.auto,
+            reason: reason,
+          );
+        }
+      }
+    });
+
+    test('preserves required Hermes grammar on capable backends', () {
+      final plan = ChatCompletionRequestPlanner.build(
+        backend: _NativeChatBackend(),
+        templateResult: LlamaChatTemplateResult(
+          prompt: 'qwen prompt',
+          format: ChatFormat.hermes.index,
+          grammar: 'root ::= tool_call',
+        ),
+        messages: const [
+          LlamaChatMessage.fromText(
+            role: LlamaChatRole.user,
+            text: 'Call get_weather for Seoul.',
+          ),
+        ],
+        tools: [_weatherTool],
+        toolChoice: ToolChoice.required,
+        parallelToolCalls: false,
+      );
+
+      expect(plan.usesNativeChatGeneration, isFalse);
+      expect(plan.generationParams.grammar, 'root ::= tool_call');
+      expect(plan.parseToolCallsEnabled, isTrue);
+    });
+
+    test('preserves Gemma 4 required rendered-prompt compatibility', () {
+      final plan = ChatCompletionRequestPlanner.build(
+        backend: _NoGrammarNativeChatBackend(),
+        templateResult: LlamaChatTemplateResult(
+          prompt: 'gemma prompt',
+          format: ChatFormat.gemma4.index,
+          grammar: 'root ::= tool_call',
+        ),
+        messages: const [
+          LlamaChatMessage.fromText(
+            role: LlamaChatRole.user,
+            text: 'Call get_weather for Seoul.',
+          ),
+        ],
+        tools: [_weatherTool],
+        toolChoice: ToolChoice.required,
+        parallelToolCalls: false,
+      );
+
+      expect(plan.usesNativeChatGeneration, isFalse);
+      expect(plan.generationParams.grammar, isNull);
+      expect(plan.parseToolCallsEnabled, isTrue);
     });
 
     test('resolves omitted thinking-budget tags from the chat template', () {
@@ -123,6 +253,12 @@ class _NativeChatBackend extends _BaseBackend
   @override
   bool get supportsGrammarConstraints => true;
 
+  @override
+  bool get supportsNativeChatGeneration => true;
+}
+
+class _NoGrammarNativeChatBackend extends _NoGrammarBackend
+    implements BackendNativeChatGeneration {
   @override
   bool get supportsNativeChatGeneration => true;
 }
