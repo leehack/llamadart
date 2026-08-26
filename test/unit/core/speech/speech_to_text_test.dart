@@ -355,6 +355,40 @@ void main() {
       expect(backend.cancelGenerationCalls, 1);
     });
 
+    test(
+      'keeps cancellation authoritative when backend cancel throws',
+      () async {
+        backend
+          ..blockGeneration = true
+          ..onCancelGeneration = () {
+            throw StateError('synchronous backend cancellation failure');
+          };
+        await _loadSpeechModel(llamaEngine);
+
+        final task = await speechEngine.transcribe(
+          const SpeechToTextRequest(
+            audio: SpeechAudioFileInput('/tmp/test.wav'),
+          ),
+        );
+        await backend.generationStarted.future;
+
+        expect(task.cancel, returnsNormally);
+        backend.releaseGeneration();
+
+        expect(await task.events.toList(), isEmpty);
+        expect((await task.done).state, SpeechToTextCompletionState.cancelled);
+        expect(backend.cancelGenerationCalls, 1);
+
+        backend.onCancelGeneration = null;
+        final retry = await speechEngine.transcribe(
+          const SpeechToTextRequest(
+            audio: SpeechAudioFileInput('/tmp/retry.wav'),
+          ),
+        );
+        expect((await retry.done).result?.text, 'transcript');
+      },
+    );
+
     test('cancels while the native chat template is being prepared', () async {
       await _loadSpeechModel(llamaEngine);
       backend.blockMetadata = true;

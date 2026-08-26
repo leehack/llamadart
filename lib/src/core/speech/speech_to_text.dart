@@ -458,6 +458,9 @@ class SpeechToTextTask {
     _cancelled = true;
     try {
       _onCancel();
+    } catch (_) {
+      // Cancellation is authoritative; the task runner still owns cleanup and
+      // terminal completion when a backend cancellation hook fails.
     } finally {
       _cancelTokenStream?.call();
     }
