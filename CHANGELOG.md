@@ -1,5 +1,9 @@
 ## Unreleased
 
+* Fixed native Qwen3-ASR transcription by applying the model chat template to
+  audio turns, while preserving the validated raw-prompt Web bridge contract.
+  Empty ASR output now fails explicitly instead of reporting an empty result.
+
 * Fixed Gemma 4 thinking-budget output so split channel controls and tool-call
   envelopes stay out of visible assistant content while preserving ordinary
   whitespace. The chat example now also validates custom tool declarations,

@@ -109,16 +109,46 @@ void main() {
         expect(finalEvent.result.segments.single.text, finalEvent.result.text);
         expect(completion.state, SpeechToTextCompletionState.completed);
         expect(completion.result, same(finalEvent.result));
-        expect(backend.lastParts, hasLength(1));
-        expect(backend.lastParts!.single, isA<LlamaAudioContent>());
+        expect(backend.lastParts, hasLength(2));
+        expect(backend.lastParts!.first, isA<LlamaTextContent>());
         expect(
-          (backend.lastParts!.single as LlamaAudioContent).path,
+          (backend.lastParts!.first as LlamaTextContent).text,
+          'Transcribe this audio accurately. Context: llamadart',
+        );
+        expect(backend.lastParts![1], isA<LlamaAudioContent>());
+        expect(
+          (backend.lastParts![1] as LlamaAudioContent).path,
           '/tmp/test.wav',
         );
         expect(backend.lastGenerationPrompt, contains('Context: llamadart'));
         expect(backend.lastGenerationParams?.temp, 0);
         expect(backend.lastGenerationParams?.topK, 1);
+        expect(backend.lastGenerationParams?.topP, 1);
+        expect(backend.lastGenerationParams?.penalty, 1);
+        expect(backend.lastGenerationParams?.seed, 1);
         expect(backend.lastGenerationParams?.maxTokens, 64);
+        expect(backend.lastGenerationParams?.streamBatchTokenThreshold, 1);
+      },
+    );
+
+    test(
+      'renders the native audio turn with the model chat template',
+      () async {
+        await _loadSpeechModel(llamaEngine);
+
+        final task = await speechEngine.transcribe(
+          const SpeechToTextRequest(
+            audio: SpeechAudioFileInput('/tmp/test.wav'),
+          ),
+        );
+        await task.done;
+
+        expect(backend.lastGenerationPrompt, startsWith('user: '));
+        expect(backend.lastGenerationPrompt, endsWith('assistant: '));
+        expect(
+          backend.lastGenerationPrompt,
+          isNot('Transcribe this audio accurately.'),
+        );
       },
     );
 
@@ -135,8 +165,41 @@ void main() {
 
       expect(result.text, 'Byte-backed transcript.');
       expect(result.language, isNull);
-      final audio = backend.lastParts!.single as LlamaAudioContent;
+      final audio = backend.lastParts![1] as LlamaAudioContent;
       expect(audio.bytes, <int>[1, 2, 3]);
+    });
+
+    test('reports an empty transcript as a typed failure', () async {
+      backend.generationText = ' <asr_text> ';
+      await _loadSpeechModel(llamaEngine);
+
+      final task = await speechEngine.transcribe(
+        const SpeechToTextRequest(audio: SpeechAudioFileInput('/tmp/test.wav')),
+      );
+      final streamError = Completer<Object>();
+      task.events.listen(
+        (_) {},
+        onError: (Object error) => streamError.complete(error),
+      );
+      final completion = await task.done;
+
+      expect(
+        await streamError.future,
+        isA<LlamaSpeechException>().having(
+          (error) => error.message,
+          'message',
+          contains('empty transcript'),
+        ),
+      );
+      expect(completion.state, SpeechToTextCompletionState.failed);
+      expect(completion.result, isNull);
+      expect(completion.error, isA<LlamaSpeechException>());
+
+      backend.generationText = 'Recovered transcript.';
+      final retry = await speechEngine.transcribe(
+        const SpeechToTextRequest(audio: SpeechAudioFileInput('/tmp/test.wav')),
+      );
+      expect((await retry.done).result?.text, 'Recovered transcript.');
     });
 
     test('rejects unsupported encoded file formats before inference', () async {
@@ -218,7 +281,7 @@ void main() {
       );
 
       expect((await task.done).result?.text, 'Transcript.');
-      final audio = backend.lastParts!.single as LlamaAudioContent;
+      final audio = backend.lastParts![1] as LlamaAudioContent;
       expect(audio.path, '/tmp/content-addressed-audio');
     });
 
@@ -290,6 +353,29 @@ void main() {
       expect(await task.events.toList(), isEmpty);
       expect((await task.done).state, SpeechToTextCompletionState.cancelled);
       expect(backend.cancelGenerationCalls, 1);
+    });
+
+    test('cancels while the native chat template is being prepared', () async {
+      await _loadSpeechModel(llamaEngine);
+      backend.blockMetadata = true;
+
+      final task = await speechEngine.transcribe(
+        const SpeechToTextRequest(audio: SpeechAudioFileInput('/tmp/test.wav')),
+      );
+      await backend.metadataStarted.future;
+
+      task.cancel();
+      backend.releaseMetadata();
+
+      expect(await task.events.toList(), isEmpty);
+      expect((await task.done).state, SpeechToTextCompletionState.cancelled);
+      expect(backend.generationStarted.isCompleted, isFalse);
+      expect(backend.cancelGenerationCalls, 1);
+
+      final retry = await speechEngine.transcribe(
+        const SpeechToTextRequest(audio: SpeechAudioFileInput('/tmp/test.wav')),
+      );
+      expect((await retry.done).result?.text, 'transcript');
     });
 
     test('allows only one active task per wrapper', () async {
@@ -460,8 +546,11 @@ class _SpeechBackend implements LlamaBackend {
   Object? generationError;
   bool blockGeneration = false;
   bool blockAudioProbe = false;
+  bool blockMetadata = false;
   Completer<void> audioProbeStarted = Completer<void>();
   final Completer<void> _audioProbeRelease = Completer<void>();
+  Completer<void> metadataStarted = Completer<void>();
+  final Completer<void> _metadataRelease = Completer<void>();
   Completer<void> generationStarted = Completer<void>();
   final Completer<void> _generationRelease = Completer<void>();
   int cancelGenerationCalls = 0;
@@ -518,13 +607,21 @@ class _SpeechBackend implements LlamaBackend {
   Future<bool> supportsVision(int mmContextHandle) async => false;
 
   @override
-  Future<Map<String, String>> modelMetadata(int modelHandle) async => const {
-    'llm.context_length': '4096',
-    'tokenizer.chat_template':
-        '{% for message in messages %}{{ message["role"] + ": " + '
-        'message["content"] }}{% endfor %}{% if add_generation_prompt %}'
-        '{{ "assistant: " }}{% endif %}',
-  };
+  Future<Map<String, String>> modelMetadata(int modelHandle) async {
+    if (!metadataStarted.isCompleted) {
+      metadataStarted.complete();
+    }
+    if (blockMetadata) {
+      await _metadataRelease.future;
+    }
+    return const {
+      'llm.context_length': '4096',
+      'tokenizer.chat_template':
+          '{% for message in messages %}{{ message["role"] + ": " + '
+          'message["content"] }}{% endfor %}{% if add_generation_prompt %}'
+          '{{ "assistant: " }}{% endif %}',
+    };
+  }
 
   @override
   Future<String> applyChatTemplate(
@@ -571,6 +668,12 @@ class _SpeechBackend implements LlamaBackend {
   void releaseGeneration() {
     if (!_generationRelease.isCompleted) {
       _generationRelease.complete();
+    }
+  }
+
+  void releaseMetadata() {
+    if (!_metadataRelease.isCompleted) {
+      _metadataRelease.complete();
     }
   }
 
