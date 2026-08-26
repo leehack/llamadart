@@ -18,6 +18,7 @@ import 'package:llamadart/src/core/models/config/log_level.dart';
 import 'package:llamadart/src/core/models/config/lora_config.dart';
 import 'package:llamadart/src/core/models/inference/generation_params.dart';
 import 'package:llamadart/src/core/models/inference/model_params.dart';
+import 'package:llamadart/src/core/models/inference/tool_choice.dart';
 import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:llamadart/src/core/models/tools/tool_param.dart';
 import 'package:test/test.dart';
@@ -1836,6 +1837,65 @@ void main() {
       service.dispose();
     }
   });
+
+  test(
+    'rejects native required tool choice before runtime initialization',
+    () async {
+      final fakeClient = _FakeLiteRtLmRuntimeClient();
+      final service = LiteRtLmService(clientFactory: () => fakeClient);
+
+      try {
+        final modelHandle = await service.loadModel(
+          modelFile.path,
+          const ModelParams(preferredBackend: GpuBackend.cpu),
+        );
+        final contextHandle = service.createContext(
+          modelHandle,
+          const ModelParams(preferredBackend: GpuBackend.cpu),
+        );
+
+        await expectLater(
+          service
+              .generateChat(
+                contextHandle,
+                const [
+                  LlamaChatMessage.fromText(
+                    role: LlamaChatRole.user,
+                    text: 'Call get_weather for Seoul.',
+                  ),
+                ],
+                const GenerationParams(maxTokens: 32),
+                tools: [
+                  ToolDefinition(
+                    name: 'get_weather',
+                    description: 'Gets weather.',
+                    parameters: const [],
+                    handler: (_) async => 'sunny',
+                  ).toJson(),
+                ],
+                toolChoice: ToolChoice.required,
+              )
+              .drain<void>(),
+          throwsA(
+            isA<UnsupportedError>().having(
+              (error) => error.message,
+              'message',
+              allOf(
+                contains('ToolChoice.required enforcement'),
+                contains('rendered-prompt fallback'),
+                contains('grammar-capable backend'),
+              ),
+            ),
+          ),
+        );
+        expect(fakeClient.initializeStarted.isCompleted, isFalse);
+        expect(fakeClient.createConversationCount, 0);
+        expect(fakeClient.generateCount, 0);
+      } finally {
+        service.dispose();
+      }
+    },
+  );
 
   test(
     'recreates LiteRT-LM client when speculative decoding changes',

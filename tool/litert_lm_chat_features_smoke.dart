@@ -43,6 +43,19 @@ Future<void> main(List<String> args) async {
       modelParams: ModelParams(contextSize: 2048, liteRtLmBackend: backend),
     );
 
+    final plain = await _runScenario(
+      engine: engine,
+      messages: const [
+        LlamaChatMessage.fromText(
+          role: LlamaChatRole.user,
+          text: 'Reply with one short sentence saying hello.',
+        ),
+      ],
+      tools: const [],
+      enableThinking: false,
+      maxTokens: 64,
+    );
+
     final thinking = await _runScenario(
       engine: engine,
       messages: const [
@@ -58,65 +71,50 @@ Future<void> main(List<String> args) async {
       maxTokens: 256,
     );
 
-    final toolCall = await _runScenario(
-      engine: engine,
-      messages: const [
-        LlamaChatMessage.fromText(
-          role: LlamaChatRole.system,
-          text: 'You must call get_weather. Return only a tool call.',
-        ),
-        LlamaChatMessage.fromText(
-          role: LlamaChatRole.user,
-          text: 'Call get_weather with location Seoul.',
-        ),
-      ],
-      tools: [
-        ToolDefinition(
-          name: 'get_weather',
-          description: 'Returns current weather for a city.',
-          parameters: [ToolParam.string('location', description: 'City name')],
-          handler: (_) async => 'Sunny',
-        ),
-      ],
-      enableThinking: false,
-      maxTokens: 160,
+    final requiredTemplate = await engine.chatTemplate(
+      _requiredToolMessages,
+      tools: [_weatherTool],
       toolChoice: ToolChoice.required,
+      enableThinking: false,
+      includeTokenCount: false,
+    );
+    final requiredUnsupportedExpected =
+        requiredTemplate.format == ChatFormat.hermes.index;
+    final toolCall = await _runRequiredToolScenario(
+      engine: engine,
+      expectUnsupported: requiredUnsupportedExpected,
     );
 
-    final nativeToolHistory = await _runScenario(
-      engine: engine,
-      messages: const [
-        LlamaChatMessage.fromText(
-          role: LlamaChatRole.system,
-          text:
-              'For weather questions, call get_weather with the requested '
-              'city. Do not answer weather questions in text.',
-        ),
-        LlamaChatMessage.fromText(
-          role: LlamaChatRole.user,
-          text: 'Remember this city: Seoul.',
-        ),
-        LlamaChatMessage.fromText(
-          role: LlamaChatRole.assistant,
-          text: 'I will remember Seoul.',
-        ),
-        LlamaChatMessage.fromText(
-          role: LlamaChatRole.user,
-          text: 'What is the weather in the remembered city? Use the tool.',
-        ),
-      ],
-      tools: [
-        ToolDefinition(
-          name: 'get_weather',
-          description: 'Returns current weather for a city.',
-          parameters: [ToolParam.string('location', description: 'City name')],
-          handler: (_) async => 'Sunny',
-        ),
-      ],
-      enableThinking: false,
-      maxTokens: 160,
-      toolChoice: ToolChoice.auto,
-    );
+    final nativeToolHistory = requiredUnsupportedExpected
+        ? null
+        : await _runScenario(
+            engine: engine,
+            messages: const [
+              LlamaChatMessage.fromText(
+                role: LlamaChatRole.system,
+                text:
+                    'For weather questions, call get_weather with the '
+                    'requested city. Do not answer weather questions in text.',
+              ),
+              LlamaChatMessage.fromText(
+                role: LlamaChatRole.user,
+                text: 'Remember this city: Seoul.',
+              ),
+              LlamaChatMessage.fromText(
+                role: LlamaChatRole.assistant,
+                text: 'I will remember Seoul.',
+              ),
+              LlamaChatMessage.fromText(
+                role: LlamaChatRole.user,
+                text:
+                    'What is the weather in the remembered city? Use the tool.',
+              ),
+            ],
+            tools: [_weatherTool],
+            enableThinking: false,
+            maxTokens: 160,
+            toolChoice: ToolChoice.auto,
+          );
 
     final nativeMediaRender = imagePath == null
         ? null
@@ -165,9 +163,18 @@ Future<void> main(List<String> args) async {
     final result = {
       'backendName': await engine.getBackendName(),
       'requestedLiteRtLmBackend': backend.name,
+      'format': requiredTemplate.format,
+      'plain': plain.toJson(),
       'thinking': thinking.toJson(),
       'toolCall': toolCall.toJson(),
-      'nativeToolHistory': nativeToolHistory.toJson(),
+      'nativeToolHistory':
+          nativeToolHistory?.toJson() ??
+          const {
+            'status': 'not_applicable',
+            'reason':
+                'Hermes/Qwen auto tool calls are best-effort and are not '
+                'asserted by this smoke',
+          },
       if (nativeMediaRender != null)
         'nativeMediaRender': nativeMediaRender.toJson(),
       if (multimodal != null) 'multimodal': multimodal.toJson(),
@@ -177,8 +184,10 @@ Future<void> main(List<String> args) async {
       },
     };
     _verifyResult(
+      plain: plain,
       thinking: thinking,
       toolCall: toolCall,
+      requiredUnsupportedExpected: requiredUnsupportedExpected,
       nativeToolHistory: nativeToolHistory,
       multimodal: multimodal,
       audioChat: audioChat,
@@ -191,32 +200,58 @@ Future<void> main(List<String> args) async {
 }
 
 void _verifyResult({
+  required _ScenarioResult plain,
   required _ScenarioResult thinking,
-  required _ScenarioResult toolCall,
-  required _ScenarioResult nativeToolHistory,
+  required _RequiredToolScenarioResult toolCall,
+  required bool requiredUnsupportedExpected,
+  required _ScenarioResult? nativeToolHistory,
   _ScenarioResult? multimodal,
   _ScenarioResult? audioChat,
   String? audioExpectedText,
 }) {
-  if (thinking.thinking.trim().isEmpty) {
-    throw StateError('Gemma 4 thinking scenario produced no thinking delta.');
+  if (plain.content.trim().isEmpty) {
+    throw StateError('LiteRT-LM plain chat produced no visible content.');
   }
-  _verifyWeatherToolCall(
-    toolCall,
-    scenarioName: 'Gemma 4 required tool scenario',
-  );
-  if (nativeToolHistory.content.trim().isNotEmpty) {
+  if (plain.thinking.trim().isNotEmpty) {
     throw StateError(
-      'Gemma 4 native tool/history scenario streamed content: '
-      '${nativeToolHistory.content}',
+      'LiteRT-LM plain chat produced an unexpected thinking delta.',
     );
   }
-  _verifyWeatherToolCall(
-    nativeToolHistory,
-    scenarioName: 'Gemma 4 native tool/history scenario',
-  );
+  if (plain.toolCalls.isNotEmpty) {
+    throw StateError('LiteRT-LM plain chat produced an unexpected tool call.');
+  }
+  if (thinking.thinking.trim().isEmpty) {
+    throw StateError('LiteRT-LM thinking scenario produced no thinking delta.');
+  }
+  if (thinking.content.trim().isEmpty) {
+    throw StateError('LiteRT-LM thinking scenario produced no visible answer.');
+  }
+  if (requiredUnsupportedExpected) {
+    if (!toolCall.isUnsupported) {
+      throw StateError(
+        'Hermes/Qwen required tool choice did not fail explicitly unsupported.',
+      );
+    }
+  } else {
+    _verifyWeatherToolCall(
+      toolCall.scenario!,
+      scenarioName: 'LiteRT-LM required tool scenario',
+    );
+  }
+  if (nativeToolHistory != null) {
+    if (nativeToolHistory.content.trim().isNotEmpty) {
+      throw StateError(
+        'LiteRT-LM native tool/history scenario streamed content: '
+        '${nativeToolHistory.content}',
+      );
+    }
+    _verifyWeatherToolCall(
+      nativeToolHistory,
+      scenarioName: 'LiteRT-LM native tool/history scenario',
+    );
+  }
   if (multimodal != null && multimodal.content.trim().isEmpty) {
-    throw StateError('Gemma 4 multimodal scenario produced no content.');
+    throw StateError('LiteRT-LM multimodal scenario produced no content.');
   }
   if (audioChat != null) {
     verifyExactAudioChatAnswer(
@@ -244,8 +279,55 @@ void _verifyWeatherToolCall(
     throw StateError('$scenarioName did not call get_weather.');
   }
   final arguments = function['arguments'];
-  if (arguments is! String || !arguments.contains('"location":"Seoul"')) {
+  if (arguments is! String) {
+    throw StateError('$scenarioName did not provide JSON string arguments.');
+  }
+  Object? decoded;
+  try {
+    decoded = jsonDecode(arguments);
+  } catch (_) {
+    throw StateError('$scenarioName produced invalid JSON arguments.');
+  }
+  if (decoded is! Map ||
+      decoded.length != 1 ||
+      decoded['location'] != 'Seoul') {
     throw StateError('$scenarioName did not pass the expected location.');
+  }
+}
+
+Future<_RequiredToolScenarioResult> _runRequiredToolScenario({
+  required LlamaEngine engine,
+  required bool expectUnsupported,
+}) async {
+  try {
+    final scenario = await _runScenario(
+      engine: engine,
+      messages: _requiredToolMessages,
+      tools: [_weatherTool],
+      enableThinking: false,
+      maxTokens: 160,
+      toolChoice: ToolChoice.required,
+    );
+    if (expectUnsupported) {
+      throw StateError(
+        'Hermes/Qwen required tool choice reached generation instead of '
+        'failing explicitly unsupported.',
+      );
+    }
+    return _RequiredToolScenarioResult.success(scenario);
+  } on LlamaUnsupportedException catch (error) {
+    if (!expectUnsupported) {
+      rethrow;
+    }
+    if (!error.message.contains('ToolChoice.required') ||
+        !error.message.contains('Hermes/Qwen') ||
+        !error.message.contains('grammar-constrained decoding')) {
+      throw StateError(
+        'Hermes/Qwen required tool choice produced a non-actionable '
+        'unsupported error.',
+      );
+    }
+    return _RequiredToolScenarioResult.unsupported(error.message);
   }
 }
 
@@ -421,6 +503,23 @@ class _ScenarioResult {
   };
 }
 
+class _RequiredToolScenarioResult {
+  const _RequiredToolScenarioResult.success(this.scenario)
+    : unsupportedMessage = null;
+
+  const _RequiredToolScenarioResult.unsupported(this.unsupportedMessage)
+    : scenario = null;
+
+  final _ScenarioResult? scenario;
+  final String? unsupportedMessage;
+
+  bool get isUnsupported => unsupportedMessage != null;
+
+  Map<String, Object?> toJson() =>
+      scenario?.toJson() ??
+      {'status': 'unsupported', 'message': unsupportedMessage};
+}
+
 class _NativeMediaRenderResult {
   const _NativeMediaRenderResult({
     required this.marker,
@@ -445,3 +544,21 @@ String _tail(String value) {
   }
   return value.substring(value.length - 240);
 }
+
+const List<LlamaChatMessage> _requiredToolMessages = [
+  LlamaChatMessage.fromText(
+    role: LlamaChatRole.system,
+    text: 'You must call get_weather. Return only a tool call.',
+  ),
+  LlamaChatMessage.fromText(
+    role: LlamaChatRole.user,
+    text: 'Call get_weather with location Seoul.',
+  ),
+];
+
+final ToolDefinition _weatherTool = ToolDefinition(
+  name: 'get_weather',
+  description: 'Returns current weather for a city.',
+  parameters: [ToolParam.string('location', description: 'City name')],
+  handler: (_) async => 'Sunny',
+);

@@ -4,6 +4,12 @@
   audio turns, while preserving the validated raw-prompt Web bridge contract.
   Empty ASR output now fails explicitly instead of reporting an empty result.
 
+* Fixed Qwen 2.5/3 LiteRT-LM `ToolChoice.required` requests silently running
+  without their required-call grammar and finishing with no call. They now fail
+  with an actionable `LlamaUnsupportedException` before generation when the
+  backend cannot enforce the declared tool schema; Gemma 4 compatibility and
+  `auto`/`none` tool routing are unchanged.
+
 * Fixed Gemma 4 thinking-budget output so split channel controls and tool-call
   envelopes stay out of visible assistant content while preserving ordinary
   whitespace. The chat example now also validates custom tool declarations,
