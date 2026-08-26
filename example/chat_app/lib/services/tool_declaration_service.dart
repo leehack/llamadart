@@ -12,9 +12,12 @@ class ToolDeclarationService {
   }
 
   /// Parses a JSON declaration array into typed [ToolDefinition] values.
+  ///
+  /// [handlerFor] binds each declared name to a safe host implementation or an
+  /// explicit unsupported-tool result.
   List<ToolDefinition> parseDefinitions(
     String rawJson, {
-    required Future<Object?> Function(ToolParams params) handler,
+    required ToolHandler Function(String toolName) handlerFor,
   }) {
     Object decoded;
     try {
@@ -28,6 +31,7 @@ class ToolDeclarationService {
     }
 
     final tools = <ToolDefinition>[];
+    final seenNames = <String>{};
 
     for (var i = 0; i < decoded.length; i++) {
       final entry = decoded[i];
@@ -64,12 +68,18 @@ class ToolDeclarationService {
         toolNumber: i + 1,
       );
 
+      final normalizedName = name.trim();
+      if (!seenNames.add(normalizedName)) {
+        throw FormatException(
+          'Tool #${i + 1} duplicates the name `$normalizedName`.',
+        );
+      }
       tools.add(
         ToolDefinition(
-          name: name.trim(),
+          name: normalizedName,
           description: description?.trim() ?? '',
           parameters: parameters,
-          handler: handler,
+          handler: handlerFor(normalizedName),
         ),
       );
     }
@@ -127,8 +137,17 @@ class ToolDeclarationService {
       );
     }
 
+    final requiredSet = _parseRequiredSet(
+      schema['required'],
+      location: 'Tool #$toolNumber required list',
+    );
     final rawProperties = schema['properties'];
     if (rawProperties == null) {
+      if (requiredSet.isNotEmpty) {
+        throw FormatException(
+          'Tool #$toolNumber required list contains undeclared properties.',
+        );
+      }
       return const <ToolParam>[];
     }
     if (rawProperties is! Map) {
@@ -137,12 +156,13 @@ class ToolDeclarationService {
       );
     }
 
-    final requiredSet = _parseRequiredSet(
-      schema['required'],
-      location: 'Tool #$toolNumber required list',
-    );
-
     final properties = Map<String, dynamic>.from(rawProperties);
+    final unknownRequired = requiredSet.difference(properties.keys.toSet());
+    if (unknownRequired.isNotEmpty) {
+      throw FormatException(
+        'Tool #$toolNumber required list contains undeclared properties.',
+      );
+    }
     final params = <ToolParam>[];
 
     for (final entry in properties.entries) {
@@ -241,11 +261,21 @@ class ToolDeclarationService {
         location: '$location required list',
       );
       final nested = <ToolParam>[];
-      if (nestedPropertiesRaw != null) {
-        if (nestedPropertiesRaw is! Map) {
-          throw FormatException('$location properties must be an object.');
-        }
-        final nestedProperties = Map<String, dynamic>.from(nestedPropertiesRaw);
+      if (nestedPropertiesRaw != null && nestedPropertiesRaw is! Map) {
+        throw FormatException('$location properties must be an object.');
+      }
+      final nestedProperties = nestedPropertiesRaw == null
+          ? const <String, dynamic>{}
+          : Map<String, dynamic>.from(nestedPropertiesRaw as Map);
+      final unknownRequired = nestedRequired.difference(
+        nestedProperties.keys.toSet(),
+      );
+      if (unknownRequired.isNotEmpty) {
+        throw FormatException(
+          '$location required list contains undeclared properties.',
+        );
+      }
+      if (nestedProperties.isNotEmpty) {
         for (final entry in nestedProperties.entries) {
           final nestedSchema = entry.value;
           if (nestedSchema is! Map) {

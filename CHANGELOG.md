@@ -1,5 +1,11 @@
 ## Unreleased
 
+* Fixed Gemma 4 thinking-budget output so split channel controls and tool-call
+  envelopes stay out of visible assistant content while preserving ordinary
+  whitespace. The chat example now also validates custom tool declarations,
+  executes declared host handlers exactly once, appends tool results, and
+  performs a bounded continuation for both llama.cpp and LiteRT-LM backends.
+
 * Patched the website's vulnerable `nanoid` and `uuid` dependency paths. Until
   Docusaurus replaces its unpatched image parser, automatic local Markdown
   images are rejected; website contributors should use static pathname URLs.

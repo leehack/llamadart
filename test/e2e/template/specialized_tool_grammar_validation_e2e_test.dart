@@ -8,6 +8,7 @@ import 'dart:io';
 import 'package:llamadart/src/core/models/tools/tool_definition.dart';
 import 'package:llamadart/src/core/models/tools/tool_param.dart';
 import 'package:llamadart/src/core/template/handlers/command_r7b_handler.dart';
+import 'package:llamadart/src/core/template/handlers/gemma4_handler.dart';
 import 'package:llamadart/src/core/template/handlers/glm45_handler.dart';
 import 'package:llamadart/src/core/template/handlers/hermes_handler.dart';
 import 'package:llamadart/src/core/template/handlers/hunyuan_v3_handler.dart';
@@ -25,6 +26,48 @@ void main() {
       reason: 'Set LLAMA_CPP_GBNF_VALIDATOR to llama.cpp test-gbnf-validator.',
     );
     expect(File(validator).existsSync(), isTrue);
+  });
+
+  test('Gemma 4 eager grammar enforces one exact schema-valid envelope', () {
+    final grammar = Gemma4Handler().buildGrammar([
+      _weatherWithCityTool,
+      _zeroArgTool,
+      _gemmaEscapedTool,
+    ])!;
+    final weatherCall = '<|tool_call>call:weather{"city":"Seoul"}<tool_call|>';
+    final pingCall = '<|tool_call>call:ping{}<tool_call|>';
+    final escapedRequiredArguments = <String, dynamic>{
+      'a b': 'one',
+      r'city&"zone\path': 'Montréal {north}',
+    };
+    final escapedOptionalArguments = <String, dynamic>{
+      ...escapedRequiredArguments,
+      'a-b': 'two',
+    };
+    String escapedCall(Map<String, dynamic> arguments) =>
+        '<|tool_call>call:${_gemmaEscapedTool.name}'
+        '${jsonEncode(arguments)}<tool_call|>';
+
+    _expectGrammar(
+      validator,
+      grammar,
+      valid: [
+        weatherCall,
+        pingCall,
+        escapedCall(escapedRequiredArguments),
+        escapedCall(escapedOptionalArguments),
+      ],
+      invalid: [
+        'leading prose$weatherCall',
+        '$weatherCall$pingCall',
+        '<|tool_call>call:unknown{}<tool_call|>',
+        '<|tool_call>call:weather{}<tool_call|>',
+        '<|tool_call>call:weather{"city":7}<tool_call|>',
+        '<|tool_call>call:weather{"city":"Seoul","extra":true}'
+            '<tool_call|>',
+        escapedCall(<String, dynamic>{'a b': 'one'}),
+      ],
+    );
   });
 
   test('MiniMax M1 accepts quoted names and rejects invalid JSON names', () {
@@ -835,6 +878,17 @@ final _optionalTool = ToolDefinition(
     ToolParam.string('query', required: true),
     ToolParam.string('note'),
     ToolParam.string('detail'),
+  ],
+  handler: (_) async => null,
+);
+
+final _gemmaEscapedTool = ToolDefinition(
+  name: r'weather&"alerts\route|primary',
+  description: 'Gemma escaped identity and collision coverage',
+  parameters: [
+    ToolParam.string('a b', required: true),
+    ToolParam.string('a-b'),
+    ToolParam.string(r'city&"zone\path', required: true),
   ],
   handler: (_) async => null,
 );

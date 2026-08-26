@@ -74,8 +74,11 @@ class ChatCompletionStreamParser {
     final endTag = thinkingTags.endTag;
     var isThinking = templateResult.thinkingForcedOpen;
     var pendingBuffer = '';
+    final useStructuredStreaming =
+        parseToolCallsEnabled ||
+        templateResult.format == ChatFormat.gemma4.index;
 
-    if (parseToolCallsEnabled) {
+    if (useStructuredStreaming) {
       await for (final token in tokenStream) {
         buffer.write(token);
 
@@ -169,7 +172,7 @@ class ChatCompletionStreamParser {
             templateResult.format,
             buffer.toString(),
             isPartial: true,
-            parseToolCalls: true,
+            parseToolCalls: parseToolCallsEnabled,
             thinkingForcedOpen: templateResult.thinkingForcedOpen,
             parser: templateResult.parser,
             tools: tools,
@@ -222,14 +225,15 @@ class ChatCompletionStreamParser {
         }
       }
 
+      // Whitespace-only output never provides enough signal to leave the
+      // undecided state. Preserve it verbatim at EOF, while continuing to
+      // withhold non-whitespace partial control-marker prefixes.
       if (streamingMode == _ToolStreamingMode.undecided &&
+          undecidedPrefix.trim().isEmpty &&
           undecidedPrefix.isNotEmpty) {
-        streamedContent += undecidedPrefix;
-        yield _chunk(
-          completionId: completionId,
-          modelName: modelName,
-          delta: LlamaCompletionChunkDelta(content: undecidedPrefix),
-        );
+        streamingMode = _ToolStreamingMode.raw;
+        pendingBuffer += undecidedPrefix;
+        undecidedPrefix = '';
       }
 
       if (streamingMode == _ToolStreamingMode.raw && pendingBuffer.isNotEmpty) {
@@ -295,7 +299,7 @@ class ChatCompletionStreamParser {
       tools: tools,
     );
 
-    if (parseToolCallsEnabled) {
+    if (useStructuredStreaming) {
       final finalReasoning = parsed.reasoningContent ?? '';
       final reasoningDelta = _computeFinalReconciliationDelta(
         streamedValue: streamedReasoning,
@@ -336,19 +340,11 @@ class ChatCompletionStreamParser {
       }
     }
 
-    LlamaLogger.instance.debug('Parsed result: $parsed');
-    if (parsed.hasToolCalls) {
-      for (final tc in parsed.toolCalls) {
-        LlamaLogger.instance.debug(
-          '  Tool call: ${tc.function?.name}(${tc.function?.arguments})',
-        );
-      }
-    }
-    if (parsed.hasReasoning) {
-      LlamaLogger.instance.debug(
-        '  Reasoning: ${parsed.reasoningContent?.length ?? 0} chars',
-      );
-    }
+    LlamaLogger.instance.debug(
+      'Parsed completion: contentChars=${parsed.content.length}, '
+      'reasoningChars=${parsed.reasoningContent?.length ?? 0}, '
+      'toolCallCount=${parsed.toolCalls.length}',
+    );
 
     if (parsed.hasToolCalls) {
       final toolCallsWithIds = parsed.toolCalls
@@ -427,7 +423,8 @@ class ChatCompletionStreamParser {
       formatIndex == ChatFormat.deepseekV4.index ||
       formatIndex == ChatFormat.museGlimmer.index ||
       formatIndex == ChatFormat.glm45.index ||
-      formatIndex == ChatFormat.laguna.index;
+      formatIndex == ChatFormat.laguna.index ||
+      formatIndex == ChatFormat.gemma4.index;
 
   static int? _firstNonWhitespaceIndex(String value) {
     for (var i = 0; i < value.length; i++) {
