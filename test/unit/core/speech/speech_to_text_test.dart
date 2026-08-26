@@ -546,6 +546,64 @@ void main() {
       expect(completion.error, isA<LlamaUnsupportedException>());
     });
 
+    test(
+      'preserves the generation failure when stream cleanup also fails',
+      () async {
+        await _loadSpeechModel(llamaEngine);
+        late final StreamController<LlamaCompletionChunk> generation;
+        generation = StreamController<LlamaCompletionChunk>(
+          onListen: () {
+            scheduleMicrotask(() {
+              generation.addError(
+                LlamaUnsupportedException('first generation failure'),
+              );
+            });
+          },
+          onCancel: () => Future<void>.error(
+            StateError('secondary stream cleanup failure'),
+          ),
+        );
+        llamaEngine.chatCompletionStream = generation.stream;
+
+        final task = await speechEngine.transcribe(
+          const SpeechToTextRequest(
+            audio: SpeechAudioFileInput('/tmp/test.wav'),
+          ),
+        );
+        final streamError = Completer<Object>();
+        task.events.listen(
+          (_) {},
+          onError: (Object error) => streamError.complete(error),
+        );
+        final completion = await task.done;
+
+        expect(
+          await streamError.future,
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            'first generation failure',
+          ),
+        );
+        expect(
+          completion.error,
+          isA<LlamaUnsupportedException>().having(
+            (error) => error.message,
+            'message',
+            'first generation failure',
+          ),
+        );
+
+        llamaEngine.chatCompletionStream = null;
+        final retry = await speechEngine.transcribe(
+          const SpeechToTextRequest(
+            audio: SpeechAudioFileInput('/tmp/retry.wav'),
+          ),
+        );
+        expect((await retry.done).result?.text, 'transcript');
+      },
+    );
+
     test('cancellation wins over a simultaneous backend failure', () async {
       backend
         ..blockGeneration = true
@@ -761,5 +819,37 @@ class _SpeechBackend implements LlamaBackend {
 }
 
 class _SpeechLlamaEngine extends LlamaEngine {
+  Stream<LlamaCompletionChunk>? chatCompletionStream;
+
   _SpeechLlamaEngine(super.backend);
+
+  @override
+  Stream<LlamaCompletionChunk> create(
+    List<LlamaChatMessage> messages, {
+    GenerationParams? params,
+    List<ToolDefinition>? tools,
+    ToolChoice? toolChoice,
+    bool parallelToolCalls = false,
+    bool enableThinking = true,
+    Map<String, dynamic>? responseFormat,
+    String? sourceLangCode,
+    String? targetLangCode,
+    Map<String, dynamic>? chatTemplateKwargs,
+    DateTime? templateNow,
+  }) {
+    return chatCompletionStream ??
+        super.create(
+          messages,
+          params: params,
+          tools: tools,
+          toolChoice: toolChoice,
+          parallelToolCalls: parallelToolCalls,
+          enableThinking: enableThinking,
+          responseFormat: responseFormat,
+          sourceLangCode: sourceLangCode,
+          targetLangCode: targetLangCode,
+          chatTemplateKwargs: chatTemplateKwargs,
+          templateNow: templateNow,
+        );
+  }
 }

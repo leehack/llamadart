@@ -916,32 +916,61 @@ class SpeechToTextEngine {
       }
 
       final output = StringBuffer();
-      final tokenIterator = StreamIterator<String>(
-        _promptAdapterTokens(request),
-      );
+      final tokenStreamDone = Completer<void>();
+      StreamSubscription<String>? tokenSubscription;
       Future<void>? tokenStreamCancellation;
       void cancelTokenStream() {
         if (tokenStreamCancellation != null) {
           return;
         }
-        final cancellation = tokenIterator.cancel();
+        final subscription = tokenSubscription;
+        if (subscription == null) {
+          return;
+        }
+        late final Future<void> cancellation;
+        try {
+          cancellation = subscription.cancel();
+        } catch (error, stackTrace) {
+          cancellation = Future<void>.error(error, stackTrace);
+        }
         tokenStreamCancellation = cancellation;
         unawaited(cancellation.catchError((Object _, StackTrace _) {}));
+        if (!tokenStreamDone.isCompleted) {
+          tokenStreamDone.complete();
+        }
       }
 
-      task._cancelTokenStream = cancelTokenStream;
       Object? tokenStreamError;
       StackTrace? tokenStreamStackTrace;
       try {
-        while (await tokenIterator.moveNext()) {
-          if (task.isCancellationRequested) {
-            break;
-          }
-          output.write(tokenIterator.current);
+        tokenSubscription = _promptAdapterTokens(request).listen(
+          (token) {
+            if (!task.isCancellationRequested && tokenStreamError == null) {
+              output.write(token);
+            }
+          },
+          onError: (Object error, StackTrace stackTrace) {
+            tokenStreamError ??= error;
+            tokenStreamStackTrace ??= stackTrace;
+            if (!tokenStreamDone.isCompleted) {
+              tokenStreamDone.complete();
+            }
+          },
+          onDone: () {
+            if (!tokenStreamDone.isCompleted) {
+              tokenStreamDone.complete();
+            }
+          },
+          cancelOnError: false,
+        );
+        task._cancelTokenStream = cancelTokenStream;
+        if (task.isCancellationRequested) {
+          cancelTokenStream();
         }
+        await tokenStreamDone.future;
       } catch (error, stackTrace) {
-        tokenStreamError = error;
-        tokenStreamStackTrace = stackTrace;
+        tokenStreamError ??= error;
+        tokenStreamStackTrace ??= stackTrace;
       } finally {
         if (identical(task._cancelTokenStream, cancelTokenStream)) {
           task._cancelTokenStream = null;
@@ -954,8 +983,9 @@ class SpeechToTextEngine {
           tokenStreamStackTrace ??= stackTrace;
         }
       }
-      if (tokenStreamError != null) {
-        Error.throwWithStackTrace(tokenStreamError, tokenStreamStackTrace!);
+      final error = tokenStreamError;
+      if (error != null) {
+        Error.throwWithStackTrace(error, tokenStreamStackTrace!);
       }
 
       if (task.isCancellationRequested) {
