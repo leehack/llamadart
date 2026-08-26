@@ -48,8 +48,17 @@ class ChatSessionService {
     final role =
         message.role ??
         (message.isUser ? LlamaChatRole.user : LlamaChatRole.assistant);
-    final parts = message.parts != null && message.parts!.isNotEmpty
-        ? List<LlamaContentPart>.from(message.parts!)
+    // Tool results are mirrored onto the assistant tool-call message so the UI
+    // can render a call and its result together; only the tool-role message may
+    // carry them back into the prompt.
+    final storedParts = message.parts
+        ?.where(
+          (part) =>
+              role == LlamaChatRole.tool || part is! LlamaToolResultContent,
+        )
+        .toList(growable: false);
+    final parts = storedParts != null && storedParts.isNotEmpty
+        ? List<LlamaContentPart>.from(storedParts)
         : <LlamaContentPart>[
             if (message.text.trim().isNotEmpty) LlamaTextContent(message.text),
           ];

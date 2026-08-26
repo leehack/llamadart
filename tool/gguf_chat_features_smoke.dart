@@ -75,6 +75,13 @@ Future<void> main(List<String> args) async {
     if (mmprojPath != null) {
       await engine.loadMultimodalProjector(mmprojPath);
     }
+    final backendName = await engine.getBackendName();
+    // Emitted before every semantic assertion so a failing run still records
+    // which backend actually served it.
+    print(
+      'BACKEND gguf_chat_features '
+      '${jsonEncode({'backendName': backendName, 'requestedBackend': backend.name})}',
+    );
 
     if (audioFixture != null) {
       final audioChat = await _runScenario(
@@ -93,7 +100,7 @@ Future<void> main(List<String> args) async {
         enableThinking: false,
         maxTokens: 64,
       );
-      verifyExactAudioChatAnswer(
+      _verifyExactAudioChatAnswer(
         scenarioName: audioChat.name,
         actualText: audioChat.content,
         expectedText: audioExpectedText!,
@@ -101,7 +108,7 @@ Future<void> main(List<String> args) async {
       _verifyNoThinking(audioChat);
 
       final result = {
-        'backendName': await engine.getBackendName(),
+        'backendName': backendName,
         'requestedBackend': backend.name,
         'variant': 'audioAnswer',
         'audioInput': audioFixture.toJson(),
@@ -274,7 +281,7 @@ Future<void> main(List<String> args) async {
       _verifyNoThinking(multimodal);
     }
     final result = {
-      'backendName': await engine.getBackendName(),
+      'backendName': backendName,
       'requestedBackend': backend.name,
       'format': template.format,
       'noThinking': noThinking.toJson(),
@@ -365,6 +372,18 @@ void _verifyHasOutput(_ScenarioResult result) {
   }
 }
 
+void _verifyExactAudioChatAnswer({
+  required String scenarioName,
+  required String actualText,
+  required String expectedText,
+}) {
+  final expected = normalizeAudioChatAnswer(expectedText);
+  final actual = normalizeAudioChatAnswer(actualText);
+  if (actual != expected) {
+    throw StateError('$scenarioName answer did not match the expected text.');
+  }
+}
+
 void _verifyNoThinking(_ScenarioResult result) {
   _verifyHasOutput(result);
   if (result.thinking.trim().isNotEmpty) {
@@ -409,12 +428,13 @@ void _verifyToolCall(_ScenarioResult result) {
   if (result.finishReason != 'tool_calls') {
     throw StateError(
       '${result.name} scenario finished with ${result.finishReason}; '
-      'content=${_tail(result.content)}',
+      'contentLength=${result.content.length}',
     );
   }
   if (result.content.trim().isNotEmpty) {
     throw StateError(
-      '${result.name} scenario leaked content: ${_tail(result.content)}',
+      '${result.name} scenario leaked ${result.content.length} content '
+      'characters.',
     );
   }
   if (result.toolCalls.length != 1) {
@@ -425,21 +445,24 @@ void _verifyToolCall(_ScenarioResult result) {
 
   final function = result.toolCalls.first['function'];
   if (function is! Map || function['name'] != 'get_weather') {
-    throw StateError(
-      '${result.name} scenario did not call get_weather: '
-      '${result.toolCalls.first}',
-    );
+    throw StateError('${result.name} scenario did not call get_weather.');
   }
   final arguments = function['arguments'];
   if (arguments is! String) {
+    throw StateError('${result.name} tool call has no string arguments.');
+  }
+  Object? decoded;
+  try {
+    decoded = jsonDecode(arguments);
+  } catch (_) {
     throw StateError(
-      '${result.name} tool call has no string arguments: $function',
+      '${result.name} tool call has invalid JSON arguments '
+      '(${arguments.length} characters).',
     );
   }
-  final decoded = jsonDecode(arguments);
   final location = decoded is Map ? decoded['location'] : null;
   if (location is! String || !location.toLowerCase().contains('seoul')) {
-    throw StateError('${result.name} unexpected tool arguments: $arguments');
+    throw StateError('${result.name} tool arguments did not contain Seoul.');
   }
 }
 
@@ -495,18 +518,8 @@ class _ScenarioResult {
     'chunks': chunks,
     'finishReason': finishReason,
     'contentLength': content.length,
-    'contentTail': _tail(content),
     'thinkingLength': thinking.length,
-    'thinkingTail': _tail(thinking),
     'thinkingObserved': thinking.trim().isNotEmpty,
     'toolCallCount': toolCalls.length,
-    'toolCalls': toolCalls,
   };
-}
-
-String _tail(String value) {
-  if (value.length <= 240) {
-    return value;
-  }
-  return value.substring(value.length - 240);
 }

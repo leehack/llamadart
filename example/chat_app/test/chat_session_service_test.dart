@@ -22,6 +22,47 @@ void main() {
       );
     });
 
+    test('keeps mirrored tool results out of the assistant turn', () {
+      const call = LlamaToolCallContent(
+        id: 'call_1',
+        name: 'getWeather',
+        arguments: {'city': 'Seoul'},
+        rawJson: '{"city":"Seoul"}',
+      );
+      const result = LlamaToolResultContent(
+        id: 'call_1',
+        name: 'getWeather',
+        result: {'city': 'Seoul', 'simulated': true},
+      );
+
+      final assistant = service.toLlamaChatMessage(
+        ChatMessage(
+          text: '',
+          isUser: false,
+          parts: const <LlamaContentPart>[call, result],
+        ),
+      );
+      expect(assistant, isNotNull);
+      expect(assistant!.role, LlamaChatRole.assistant);
+      expect(assistant.parts.whereType<LlamaToolCallContent>(), hasLength(1));
+      expect(assistant.parts.whereType<LlamaToolResultContent>(), isEmpty);
+
+      final toolMessage = service.toLlamaChatMessage(
+        ChatMessage(
+          text: '',
+          isUser: false,
+          role: LlamaChatRole.tool,
+          parts: const <LlamaContentPart>[result],
+        ),
+      );
+      expect(toolMessage, isNotNull);
+      expect(toolMessage!.role, LlamaChatRole.tool);
+      expect(
+        toolMessage.parts.whereType<LlamaToolResultContent>(),
+        hasLength(1),
+      );
+    });
+
     test('ignores informational messages during serialization', () {
       final serialized = service.toLlamaChatMessage(
         ChatMessage(text: 'info', isUser: false, isInfo: true),
