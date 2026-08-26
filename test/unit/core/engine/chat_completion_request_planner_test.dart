@@ -97,6 +97,7 @@ void main() {
                 contains('ToolChoice.required'),
                 contains('Hermes/Qwen'),
                 contains('grammar-constrained decoding'),
+                isNot(contains('LiteRT-LM')),
               ),
             ),
           ),

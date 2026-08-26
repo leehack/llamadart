@@ -100,8 +100,8 @@ class ChatCompletionRequestPlanner {
       throw LlamaUnsupportedException(
         'ToolChoice.required for Hermes/Qwen tool calling requires '
         'grammar-constrained decoding, but the active backend does not '
-        'support grammar constraints. LiteRT-LM native and web cannot '
-        'currently enforce a declared tool schema before generation; use '
+        'support grammar constraints. The active backend cannot enforce the '
+        'declared tool schema before generation; use '
         'ToolChoice.auto for best-effort tool calling, or use a '
         'grammar-capable backend such as llama.cpp.',
       );
