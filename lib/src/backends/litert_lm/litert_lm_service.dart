@@ -238,8 +238,12 @@ class LiteRtLmService {
     }
     if (toolChoice == ToolChoice.required) {
       throw UnsupportedError(
-        'LiteRtLmBackend native chat generation does not support '
-        'ToolChoice.required; use the Dart template path instead.',
+        'LiteRtLmBackend native chat generation does not expose '
+        'ToolChoice.required enforcement. Use LlamaEngine.create so a '
+        'compatible template can select its rendered-prompt fallback. For '
+        'Hermes/Qwen, use ToolChoice.auto only when best-effort tool calling '
+        'is acceptable, or use a grammar-capable backend such as llama.cpp '
+        'for required tool calls.',
       );
     }
     if (parallelToolCalls) {

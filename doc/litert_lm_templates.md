@@ -55,13 +55,21 @@ llama.cpp reads `tokenizer.chat_template` straight from the GGUF metadata.
 | Gemma 4 (E2B/E4B) | `gemma4` | `gemma-4`, `gemma4` | ✅ | ✅ native `<\|tool_call>` | ✅ `<\|channel>` |
 | Gemma 3n (E2B/E4B) | `gemma` | `gemma-3n`, `gemma3n` | ✅ | ⚠️ prompt-engineered, no schema¹ | — |
 | Gemma 3 / 2 / 1B / 270m | `gemma` | `gemma-3`, `gemma-2` | ✅ | ⚠️ prompt-engineered, no schema¹ | — |
-| Qwen 3 / 3.5 | `hermes` | `qwen3`, `qwen-3` | ✅ | ✅ `<tool_call>` | ✅ `<think>` |
-| Qwen 2.5 | `hermes` | `qwen2.5`, `qwen-2.5`, `qwen2` | ✅ | ✅ `<tool_call>` | — |
+| Qwen 3 / 3.5 | `hermes` | `qwen3`, `qwen-3` | ✅ | ⚠️ best-effort `auto`; `required` unsupported on LiteRT-LM² | ✅ `<think>` |
+| Qwen 2.5 | `hermes` | `qwen2.5`, `qwen-2.5`, `qwen2` | ✅ | ⚠️ best-effort `auto`; `required` unsupported on LiteRT-LM² | — |
 
 ¹ For Gemma 3/3n the engine injects a generic "respond with `tool_call` JSON"
 instruction but does **not** render the tool schemas into the prompt. This
 matches the llama.cpp backend's Gemma 3 behavior — it is a property of the Gemma
 handler, not a LiteRT-LM limitation. Gemma **4** has full native tool calling.
+
+² Hermes/Qwen required-tool rendering depends on grammar-constrained decoding
+to guarantee one declared, schema-valid call. LiteRT-LM's llamadart backend does
+not expose that constraint wiring, so `ToolChoice.required` fails with
+`LlamaUnsupportedException` before generation. On native LiteRT-LM,
+`ToolChoice.auto` remains the best-effort Conversation path;
+`ToolChoice.none` still disables tool parsing and declarations on both native
+and web paths.
 
 Detection is best-effort and based on the bundle filename. If a bundle is
 renamed or its family isn't listed above, pass the template explicitly via
@@ -96,9 +104,16 @@ dart run tool/gguf_chat_features_smoke.dart \
   test/fixtures/image.png
 ```
 
-For native LiteRT-LM, `tool/litert_lm_chat_features_smoke.dart` checks the same
-tool-call path and also requires the model to emit a thinking channel. Use it
-with models that support thinking, such as Qwen 3/3.5 and Gemma 4:
+For native LiteRT-LM, `tool/litert_lm_chat_features_smoke.dart` requires a
+non-empty ordinary response with thinking disabled, plus both a thinking
+channel and visible answer with thinking enabled. For Gemma 4 it also validates
+native `auto` tool history and requires exactly one schema-valid
+`ToolChoice.required` call. For Hermes/Qwen it instead requires the planner's
+actionable unsupported error before generation; empty output or a normal
+`stop` finish still fails. The planner unit matrix separately pins unchanged
+native and rendered routing for `auto` and `none`; the Qwen smoke does not
+promote best-effort `auto` into a guaranteed call. Use it with models that
+support thinking, such as Qwen 3/3.5 and Gemma 4:
 
 ```bash
 dart run tool/litert_lm_chat_features_smoke.dart \
@@ -175,8 +190,10 @@ backend, not the registry:
   Dart-rendered prompt string.
 - **The Dart template path remains the compatibility fallback.** The engine
   still renders prompts in Dart for web LiteRT-LM, custom template inspection
-  through `chatTemplate(...)`, required tool-choice, parallel tool calls, and
-  any backend that does not expose native structured chat generation.
+  through `chatTemplate(...)`, Gemma 4 required tool-choice compatibility,
+  parallel tool calls, and any backend that does not expose native structured
+  chat generation. Hermes/Qwen required tool-choice is rejected before this
+  fallback because dropping its grammar would weaken the public contract.
 
 - **Thinking is reassembled from a channel stream.** The native runtime streams
   reasoning and the answer on separate channels — thought as
@@ -186,12 +203,14 @@ backend, not the registry:
   reasoning tags (`<|channel>thought … <channel|>` for Gemma 4, `<think>…</think>`
   for Qwen/Hermes) so chat-template handlers extract them as reasoning instead
   of leaking raw JSON.
-- **Grammar-constrained decoding is skipped.** Grammar-using handlers (Hermes/Qwen)
-  emit a GBNF grammar for tool calls, which the LiteRT-LM backend rejects.
-  `NativeAutoBackend` forwards `supportsGrammarConstraints == false` from the
-  active delegate, so the engine drops the grammar and tool calls are parsed
-  best-effort from the model output. Gemma 4 emits no grammar, so it is
-  unaffected.
+- **Grammar-constrained decoding is skipped.** Required-tool handlers including
+  Hermes/Qwen and Gemma 4 can emit GBNF tool-call grammars, which the LiteRT-LM
+  backend cannot consume. `NativeAutoBackend` forwards
+  `supportsGrammarConstraints == false` from the active delegate. The planner
+  therefore rejects Hermes/Qwen `ToolChoice.required` before generation rather
+  than dropping its required-call constraint. Gemma 4 keeps its existing,
+  real-model-tested rendered-prompt compatibility path, but its handler grammar
+  is still not applied by LiteRT-LM and must not be reported as grammar support.
 - **Native media parts use LiteRT-LM's conversation message JSON.** When
   `LlamaImageContent` or `LlamaAudioContent` reaches the native LiteRT-LM
   backend, llamadart sends matching `type: image` / `type: audio` message items
