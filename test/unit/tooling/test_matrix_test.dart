@@ -51,6 +51,110 @@ void main() {
       expect(ids, contains('web-real-model-smoke'));
       expect(ids, contains('webgpu-multimodal-regression'));
       expect(ids, contains('gemma4-webgpu-mem64'));
+      expect(ids, contains('physical-ios-speech-e2e'));
+    });
+
+    test('includes targeted physical iOS speech E2E row', () {
+      final row = testMatrixRows.singleWhere(
+        (row) => row.id == 'physical-ios-speech-e2e',
+      );
+      expect(row.tier, equals('targeted'));
+      expect(row.mode, contains('device'));
+      expect(row.covers, contains('physical iOS'));
+      expect(row.covers, contains('immutable local artifacts'));
+      expect(row.covers, contains('no audio playback'));
+      expect(row.covers, contains('llama.cpp Qwen3-ASR'));
+      expect(row.covers, contains('LiteRT-LM streaming ASR'));
+      expect(row.covers, contains('llama.cpp Qwen3-TTS'));
+      expect(row.covers, contains('LiteRT-LM TTS'));
+      expect(
+        row.command,
+        contains('integration_test/physical_ios_speech_e2e_test.dart'),
+      );
+    });
+
+    test('physical iOS speech row runs the local-only tagged target', () {
+      final row = testMatrixRows.singleWhere(
+        (row) => row.id == 'physical-ios-speech-e2e',
+      );
+
+      // The chat-app dart_test.yaml marks local-only as `skip`, so omitting
+      // these flags silently passes the harness without running it.
+      expect(row.command, contains('--run-skipped'));
+      expect(row.command, contains('-t local-only'));
+      expect(row.command, contains('--no-pub'));
+      expect(row.command, contains('--no-uninstall'));
+      expect(row.command, contains('cd example/chat_app'));
+      expect(row.command, contains('flutter test'));
+    });
+
+    test('physical iOS speech row targets a physical device only', () {
+      final row = testMatrixRows.singleWhere(
+        (row) => row.id == 'physical-ios-speech-e2e',
+      );
+
+      expect(row.command, contains(r'-d "$PHYSICAL_IOS_DEVICE_ID"'));
+      expect(row.command, isNot(contains('<physical-ios-device-id>')));
+      expect(row.command, isNot(matches(RegExp(r'(^|\s)<[^>]+>'))));
+      expect(row.command.toLowerCase(), isNot(contains('simulator')));
+      expect(row.command.toLowerCase(), isNot(contains('http://')));
+      expect(row.command.toLowerCase(), isNot(contains('https://')));
+      expect(row.command.toLowerCase(), isNot(contains('playback')));
+      expect(row.command.toLowerCase(), isNot(contains('--run-skipped-if')));
+      expect(row.covers.toLowerCase(), isNot(contains('simulator')));
+    });
+
+    test('physical iOS speech row passes every required dart define', () {
+      final row = testMatrixRows.singleWhere(
+        (row) => row.id == 'physical-ios-speech-e2e',
+      );
+
+      const requiredDefines = <String>[
+        'IOS_SPEECH_QWEN3_ASR_MODEL_PATH',
+        'IOS_SPEECH_QWEN3_ASR_MODEL_SHA256',
+        'IOS_SPEECH_QWEN3_ASR_MMPROJ_PATH',
+        'IOS_SPEECH_QWEN3_ASR_MMPROJ_SHA256',
+        'IOS_SPEECH_ASR_AUDIO_PATH',
+        'IOS_SPEECH_ASR_AUDIO_SHA256',
+        'IOS_SPEECH_ASR_EXPECTED_TRANSCRIPT',
+        'IOS_SPEECH_MIC_DURATION_SECONDS',
+        'IOS_SPEECH_MIC_EXPECTED_TRANSCRIPT',
+        'IOS_SPEECH_LITERT_ASR_MODEL_PATH',
+        'IOS_SPEECH_LITERT_ASR_MODEL_SHA256',
+        'IOS_SPEECH_LITERT_ASR_TOKENIZER_PATH',
+        'IOS_SPEECH_LITERT_ASR_TOKENIZER_SHA256',
+        'IOS_SPEECH_LITERT_ASR_PRESET',
+        'IOS_SPEECH_LITERT_ASR_AUDIO_PATH',
+        'IOS_SPEECH_LITERT_ASR_AUDIO_SHA256',
+        'IOS_SPEECH_LITERT_ASR_EXPECTED_TRANSCRIPT',
+        'IOS_SPEECH_QWEN3_TTS_MODEL_PATH',
+        'IOS_SPEECH_QWEN3_TTS_MODEL_SHA256',
+        'IOS_SPEECH_QWEN3_TTS_MMPROJ_PATH',
+        'IOS_SPEECH_QWEN3_TTS_MMPROJ_SHA256',
+        'IOS_SPEECH_TTS_TEXT',
+        'IOS_SPEECH_TTS_OUTPUT_PATH',
+        'IOS_SPEECH_TTS_EXPECTED_TRANSCRIPT',
+        'IOS_SPEECH_LITERT_LM_MODEL_PATH',
+        'IOS_SPEECH_LITERT_LM_MODEL_SHA256',
+      ];
+
+      for (final define in requiredDefines) {
+        expect(
+          row.command,
+          contains('--dart-define=$define='),
+          reason: 'Command must pass $define.',
+        );
+        expect(
+          row.command,
+          contains('--dart-define=$define="\$$define"'),
+          reason: 'Command must quote the operator-provided value for $define.',
+        );
+      }
+      expect(
+        '--dart-define='.allMatches(row.command).length,
+        equals(requiredDefines.length),
+        reason: 'Command must not pass unknown or duplicated defines.',
+      );
     });
 
     test('includes explicit platform coverage rows', () {
