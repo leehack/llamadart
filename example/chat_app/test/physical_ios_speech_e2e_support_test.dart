@@ -53,6 +53,72 @@ Map<String, String> _validEnv() {
   };
 }
 
+PhysicalIosSpeechConfig _copyConfigWithPaths(
+  PhysicalIosSpeechConfig source, {
+  String? qwen3AsrModelPath,
+  String? ttsOutputPath,
+}) {
+  return PhysicalIosSpeechConfig(
+    qwen3AsrModelPath: qwen3AsrModelPath ?? source.qwen3AsrModelPath,
+    qwen3AsrModelSha256: source.qwen3AsrModelSha256,
+    qwen3AsrMmprojPath: source.qwen3AsrMmprojPath,
+    qwen3AsrMmprojSha256: source.qwen3AsrMmprojSha256,
+    asrAudioPath: source.asrAudioPath,
+    asrAudioSha256: source.asrAudioSha256,
+    asrExpectedTranscript: source.asrExpectedTranscript,
+    micDurationSeconds: source.micDurationSeconds,
+    micExpectedTranscript: source.micExpectedTranscript,
+    liteRtAsrModelPath: source.liteRtAsrModelPath,
+    liteRtAsrModelSha256: source.liteRtAsrModelSha256,
+    liteRtAsrTokenizerPath: source.liteRtAsrTokenizerPath,
+    liteRtAsrTokenizerSha256: source.liteRtAsrTokenizerSha256,
+    liteRtAsrPreset: source.liteRtAsrPreset,
+    liteRtAsrAudioPath: source.liteRtAsrAudioPath,
+    liteRtAsrAudioSha256: source.liteRtAsrAudioSha256,
+    liteRtAsrExpectedTranscript: source.liteRtAsrExpectedTranscript,
+    qwen3TtsModelPath: source.qwen3TtsModelPath,
+    qwen3TtsModelSha256: source.qwen3TtsModelSha256,
+    qwen3TtsMmprojPath: source.qwen3TtsMmprojPath,
+    qwen3TtsMmprojSha256: source.qwen3TtsMmprojSha256,
+    ttsText: source.ttsText,
+    ttsOutputPath: ttsOutputPath ?? source.ttsOutputPath,
+    ttsExpectedTranscript: source.ttsExpectedTranscript,
+    liteRtLmModelPath: source.liteRtLmModelPath,
+    liteRtLmModelSha256: source.liteRtLmModelSha256,
+    resolvedAppCacheDirectoryPath: source.resolvedAppCacheDirectoryPath,
+  );
+}
+
+Future<PhysicalIosSpeechConfig> _createResolvedAppCacheConfig(
+  Directory cacheDirectory,
+) async {
+  final env = _validEnv()
+    ..['IOS_SPEECH_QWEN3_ASR_MODEL_PATH'] = '@appcache/inputs/qwen3_asr.gguf'
+    ..['IOS_SPEECH_QWEN3_ASR_MMPROJ_PATH'] =
+        '@appcache/inputs/qwen3_asr_mmproj.gguf'
+    ..['IOS_SPEECH_ASR_AUDIO_PATH'] = '@appcache/inputs/asr.wav'
+    ..['IOS_SPEECH_LITERT_ASR_MODEL_PATH'] =
+        '@appcache/inputs/litert_asr.tflite'
+    ..['IOS_SPEECH_LITERT_ASR_TOKENIZER_PATH'] =
+        '@appcache/inputs/tokenizer.json'
+    ..['IOS_SPEECH_LITERT_ASR_AUDIO_PATH'] = '@appcache/inputs/litert_asr.wav'
+    ..['IOS_SPEECH_QWEN3_TTS_MODEL_PATH'] = '@appcache/inputs/qwen3_tts.gguf'
+    ..['IOS_SPEECH_QWEN3_TTS_MMPROJ_PATH'] =
+        '@appcache/inputs/qwen3_tts_mmproj.gguf'
+    ..['IOS_SPEECH_LITERT_LM_MODEL_PATH'] = '@appcache/inputs/chat.litertlm'
+    ..['IOS_SPEECH_TTS_OUTPUT_PATH'] = '@appcache/output/tts.wav';
+  final resolved = await resolvePhysicalIosSpeechCachePaths(
+    PhysicalIosSpeechConfig.fromMap(env),
+    cacheDirectory: () async => cacheDirectory,
+  );
+  for (final artifact in resolved.artifacts) {
+    final file = File(artifact.path);
+    await file.parent.create(recursive: true);
+    await file.writeAsString(artifact.label, flush: true);
+  }
+  return resolved;
+}
+
 /// Rebuilds a WAV buffer with one header field overwritten so malformed
 /// metadata cases can be asserted precisely.
 Uint8List _withUint32(Uint8List source, int offset, int value) {
@@ -186,6 +252,419 @@ void main() {
         throwsA(isA<ArgumentError>()),
       );
     });
+  });
+
+  group('App-cache relative path defines', () {
+    test('accepts @appcache references alongside absolute paths', () {
+      final env = _validEnv()
+        ..['IOS_SPEECH_QWEN3_ASR_MODEL_PATH'] = '@appcache/models/asr.gguf'
+        ..['IOS_SPEECH_TTS_OUTPUT_PATH'] = '@appcache/out/tts.wav';
+
+      final config = PhysicalIosSpeechConfig.fromMap(env);
+      expect(config.qwen3AsrModelPath, equals('@appcache/models/asr.gguf'));
+      expect(config.usesAppCachePaths, isTrue);
+      expect(
+        PhysicalIosSpeechConfig.fromMap(_validEnv()).usesAppCachePaths,
+        isFalse,
+      );
+    });
+
+    test('rejects unsafe @appcache relative paths', () {
+      const unsafe = <String>[
+        '@appcache/../escape.gguf',
+        '@appcache/models/../../escape.gguf',
+        '@appcache/./model.gguf',
+        '@appcache/models/./model.gguf',
+        '@appcache/',
+        '@appcache',
+        '@appcache//model.gguf',
+        '@appcache/models//model.gguf',
+        '@appcache/models/',
+        '@appcache/models\\model.gguf',
+        '@appcache/https://example.invalid/model.gguf',
+        '@appcache/models/model.gguf?download=1',
+        '@appcache/models/model.gguf#fragment',
+        '@appcache//',
+        '@appcache/~/model.gguf',
+        '@appcache/~root/model.gguf',
+        ' @appcache/models/model.gguf',
+        '@appcache/models/model.gguf ',
+        '@appcache/ models/model.gguf',
+        '@appcache/models /model.gguf',
+      ];
+
+      for (final badPath in unsafe) {
+        final env = _validEnv()..['IOS_SPEECH_QWEN3_ASR_MODEL_PATH'] = badPath;
+        expect(
+          () => PhysicalIosSpeechConfig.fromMap(env),
+          throwsA(isA<ArgumentError>()),
+          reason: 'Should reject app-cache path: "$badPath"',
+        );
+      }
+    });
+
+    test('rejects a differently cased app-cache marker', () {
+      for (final marker in <String>[
+        '@AppCache/models/asr.gguf',
+        '@APPCACHE/models/asr.gguf',
+        '@Appcache/models/asr.gguf',
+      ]) {
+        final env = _validEnv()..['IOS_SPEECH_QWEN3_ASR_MODEL_PATH'] = marker;
+        expect(
+          () => PhysicalIosSpeechConfig.fromMap(env),
+          throwsA(
+            isA<ArgumentError>().having(
+              (e) => e.message.toString(),
+              'message',
+              contains('@appcache/'),
+            ),
+          ),
+          reason: 'Ambiguous marker casing must fail closed: "$marker"',
+        );
+      }
+    });
+
+    test('rejects unsafe absolute paths', () {
+      const unsafe = <String>[
+        '/',
+        '/models/../../etc/passwd',
+        '/models/./asr.gguf',
+        '/models//asr.gguf',
+        '/models/',
+        r'/models\asr.gguf',
+        '/~/models/asr.gguf',
+        '/models/asr:stream.gguf',
+        '/models/asr.gguf?download=1',
+        '/models/asr.gguf#fragment',
+        ' /models/asr.gguf',
+        '/models/asr.gguf ',
+        'file:///models/asr.gguf',
+      ];
+
+      for (final badPath in unsafe) {
+        final env = _validEnv()..['IOS_SPEECH_QWEN3_ASR_MODEL_PATH'] = badPath;
+        expect(
+          () => PhysicalIosSpeechConfig.fromMap(env),
+          throwsA(isA<ArgumentError>()),
+          reason: 'Should reject absolute path: "$badPath"',
+        );
+      }
+    });
+
+    test('resolves references against the runtime cache directory', () async {
+      final env = _validEnv()
+        ..['IOS_SPEECH_QWEN3_ASR_MODEL_PATH'] = '@appcache/models/asr.gguf'
+        ..['IOS_SPEECH_LITERT_LM_MODEL_PATH'] = '@appcache/dummy.litertlm'
+        ..['IOS_SPEECH_TTS_OUTPUT_PATH'] = '@appcache/out/tts.wav';
+
+      final resolved = await resolvePhysicalIosSpeechCachePaths(
+        PhysicalIosSpeechConfig.fromMap(env),
+        cacheDirectory: () async =>
+            Directory('/var/mobile/Containers/Data/Application/NEW-UUID/Cache'),
+      );
+
+      expect(
+        resolved.qwen3AsrModelPath,
+        equals(
+          '/var/mobile/Containers/Data/Application/NEW-UUID/Cache/models/'
+          'asr.gguf',
+        ),
+      );
+      expect(
+        resolved.liteRtLmModelPath,
+        equals(
+          '/var/mobile/Containers/Data/Application/NEW-UUID/Cache/'
+          'dummy.litertlm',
+        ),
+      );
+      expect(
+        resolved.ttsOutputPath,
+        equals(
+          '/var/mobile/Containers/Data/Application/NEW-UUID/Cache/out/tts.wav',
+        ),
+      );
+      expect(
+        resolved.qwen3AsrMmprojPath,
+        equals('/models/qwen3_asr_mmproj.gguf'),
+        reason: 'Safe absolute paths must survive resolution unchanged.',
+      );
+      expect(resolved.usesAppCachePaths, isFalse);
+      expect(resolved.micDurationSeconds, equals(3));
+      expect(
+        resolved.liteRtAsrPreset,
+        equals(LiteRtLmAsrModelPreset.moonshineTiny),
+      );
+    });
+
+    test('never consults path_provider for an all-absolute config', () async {
+      var lookups = 0;
+      final resolved = await resolvePhysicalIosSpeechCachePaths(
+        PhysicalIosSpeechConfig.fromMap(_validEnv()),
+        cacheDirectory: () async {
+          lookups++;
+          return Directory('/unused');
+        },
+      );
+
+      expect(lookups, isZero);
+      expect(resolved.ttsOutputPath, equals('/tmp/output_tts.wav'));
+    });
+
+    test('rejects an unusable runtime cache directory', () async {
+      final config = PhysicalIosSpeechConfig.fromMap(
+        _validEnv()..['IOS_SPEECH_TTS_OUTPUT_PATH'] = '@appcache/out/tts.wav',
+      );
+
+      for (final directory in <String>[
+        '',
+        '   ',
+        'relative/cache',
+        '/',
+        '/var/../root/cache',
+        '/var/cache//app',
+        ' /var/cache/app',
+        '/var/cache/app ',
+        '@appcache/nested',
+      ]) {
+        await expectLater(
+          resolvePhysicalIosSpeechCachePaths(
+            config,
+            cacheDirectory: () async => Directory(directory),
+          ),
+          throwsA(isA<ArgumentError>()),
+          reason: 'Should reject cache directory: "$directory"',
+        );
+      }
+    });
+
+    test('tolerates a trailing separator on the cache directory', () async {
+      final resolved = await resolvePhysicalIosSpeechCachePaths(
+        PhysicalIosSpeechConfig.fromMap(
+          _validEnv()..['IOS_SPEECH_TTS_OUTPUT_PATH'] = '@appcache/out/tts.wav',
+        ),
+        cacheDirectory: () async => Directory('/Containers/Cache/'),
+      );
+
+      expect(resolved.ttsOutputPath, equals('/Containers/Cache/out/tts.wav'));
+    });
+
+    test('rejects an output that collides only after resolution', () async {
+      final env = _validEnv()
+        ..['IOS_SPEECH_QWEN3_TTS_MODEL_PATH'] = '/Containers/Cache/TTS.wav'
+        ..['IOS_SPEECH_TTS_OUTPUT_PATH'] = '@appcache/tts.wav';
+
+      // The two specs differ textually, so only post-resolution comparison can
+      // stop the harness from deleting a pinned input during cleanup.
+      final config = PhysicalIosSpeechConfig.fromMap(env);
+
+      await expectLater(
+        resolvePhysicalIosSpeechCachePaths(
+          config,
+          cacheDirectory: () async => Directory('/Containers/Cache'),
+        ),
+        throwsA(isA<ArgumentError>()),
+        reason: 'Post-resolution comparison must ignore path casing.',
+      );
+    });
+
+    test('rejects an input/output collision that differs only by case', () {
+      final env = _validEnv()
+        ..['IOS_SPEECH_TTS_OUTPUT_PATH'] = '/models/QWEN3_TTS.gguf'
+        ..['IOS_SPEECH_QWEN3_TTS_MODEL_PATH'] = '/models/qwen3_tts.gguf';
+
+      expect(
+        () => PhysicalIosSpeechConfig.fromMap(env),
+        throwsA(isA<ArgumentError>()),
+        reason: 'The on-device container may fold case into one file.',
+      );
+    });
+
+    test('rejects duplicate immutable input paths ignoring case', () {
+      final env = _validEnv()
+        ..['IOS_SPEECH_QWEN3_ASR_MODEL_PATH'] = '/models/shared.gguf'
+        ..['IOS_SPEECH_QWEN3_ASR_MMPROJ_PATH'] = '/MODELS/SHARED.GGUF';
+
+      expect(
+        () => PhysicalIosSpeechConfig.fromMap(env),
+        throwsA(isA<ArgumentError>()),
+        reason: 'Every checksum pin must identify one unambiguous input file.',
+      );
+    });
+
+    test('refuses artifact access before resolution', () async {
+      final config = PhysicalIosSpeechConfig.fromMap(
+        _validEnv()
+          ..['IOS_SPEECH_ASR_AUDIO_PATH'] = '@appcache/fixtures/speech.wav',
+      );
+      final visited = <String>[];
+
+      await expectLater(
+        config.validateArtifacts(
+          verify: (artifact) async => visited.add(artifact.label),
+        ),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            allOf(contains('asrAudio'), contains('@appcache/')),
+          ),
+        ),
+      );
+      await expectLater(
+        config.validateArtifactsCollectingFailures(
+          verify: (artifact) async => visited.add(artifact.label),
+        ),
+        throwsA(isA<StateError>()),
+      );
+      expect(
+        visited,
+        isEmpty,
+        reason: 'No artifact may be opened while a path is unresolved.',
+      );
+    });
+
+    test(
+      'direct construction cannot bypass path and collision checks',
+      () async {
+        final valid = PhysicalIosSpeechConfig.fromMap(_validEnv());
+        final invalidConfigs = <PhysicalIosSpeechConfig>[
+          _copyConfigWithPaths(
+            valid,
+            qwen3AsrModelPath: '/models/../private/input.gguf',
+          ),
+          _copyConfigWithPaths(
+            valid,
+            qwen3AsrModelPath: '@AppCache/models/input.gguf',
+          ),
+          _copyConfigWithPaths(valid, ttsOutputPath: '/MODELS/QWEN3_ASR.GGUF'),
+        ];
+
+        for (final config in invalidConfigs) {
+          final visited = <String>[];
+          await expectLater(
+            config.validateArtifacts(
+              verify: (artifact) async => visited.add(artifact.label),
+            ),
+            throwsA(anyOf(isA<ArgumentError>(), isA<StateError>())),
+          );
+          expect(
+            visited,
+            isEmpty,
+            reason: 'Every path check must finish before the first file read.',
+          );
+        }
+      },
+    );
+  });
+
+  group('Canonical speech filesystem layout', () {
+    late Directory tempDir;
+    late Directory cacheDir;
+
+    setUp(() async {
+      tempDir = await Directory.systemTemp.createTemp(
+        'speech_e2e_layout_test_',
+      );
+      cacheDir = Directory('${tempDir.path}/cache');
+      await cacheDir.create();
+    });
+
+    tearDown(() async {
+      if (await tempDir.exists()) {
+        await tempDir.delete(recursive: true);
+      }
+    });
+
+    test('canonicalizes cache paths after runtime resolution', () async {
+      final resolved = await _createResolvedAppCacheConfig(cacheDir);
+
+      final canonical = await canonicalizePhysicalIosSpeechFilesystemLayout(
+        resolved,
+      );
+      final canonicalRoot = await cacheDir.resolveSymbolicLinks();
+
+      expect(canonical.resolvedAppCacheDirectoryPath, canonicalRoot);
+      expect(canonical.qwen3AsrModelPath, startsWith('$canonicalRoot/'));
+      expect(canonical.ttsOutputPath, '$canonicalRoot/output/tts.wav');
+      expect(await File(canonical.ttsOutputPath).exists(), isFalse);
+    });
+
+    test(
+      'rejects an input symlink that escapes the runtime cache',
+      () async {
+        final resolved = await _createResolvedAppCacheConfig(cacheDir);
+        final model = File(resolved.qwen3AsrModelPath);
+        final outside = File('${tempDir.path}/outside.gguf');
+        await outside.writeAsString('outside', flush: true);
+        await model.delete();
+        await Link(model.path).create(outside.path);
+
+        await expectLater(
+          canonicalizePhysicalIosSpeechFilesystemLayout(resolved),
+          throwsA(isA<StateError>()),
+        );
+      },
+      skip: Platform.isWindows
+          ? 'Creating symbolic links requires additional Windows privileges.'
+          : false,
+    );
+
+    test(
+      'rejects a symlinked output parent below the cache root',
+      () async {
+        final resolved = await _createResolvedAppCacheConfig(cacheDir);
+        final outside = Directory('${tempDir.path}/outside')..createSync();
+        await Link('${cacheDir.path}/output').create(outside.path);
+
+        await expectLater(
+          canonicalizePhysicalIosSpeechFilesystemLayout(resolved),
+          throwsA(isA<StateError>()),
+        );
+      },
+      skip: Platform.isWindows ? 'Symlink privileges are not portable.' : false,
+    );
+
+    test('writes exclusively and deletes only the canonical output', () async {
+      final resolved = await _createResolvedAppCacheConfig(cacheDir);
+      final canonical = await canonicalizePhysicalIosSpeechFilesystemLayout(
+        resolved,
+      );
+      final bytes = Uint8List.fromList(<int>[1, 2, 3, 4]);
+
+      final output = await writePhysicalIosSpeechOutputExclusive(
+        canonical,
+        bytes,
+      );
+      expect(await output.readAsBytes(), bytes);
+      await expectLater(
+        writePhysicalIosSpeechOutputExclusive(canonical, bytes),
+        throwsA(isA<StateError>()),
+      );
+
+      await deletePhysicalIosSpeechOutput(canonical);
+      expect(await output.exists(), isFalse);
+    });
+
+    test(
+      'refuses to delete an output replaced by a symbolic link',
+      () async {
+        final resolved = await _createResolvedAppCacheConfig(cacheDir);
+        final canonical = await canonicalizePhysicalIosSpeechFilesystemLayout(
+          resolved,
+        );
+        final target = File('${tempDir.path}/do_not_delete.wav');
+        await target.writeAsBytes(<int>[9], flush: true);
+        await Directory(canonical.ttsOutputPath).parent.create(recursive: true);
+        await Link(canonical.ttsOutputPath).create(target.path);
+
+        await expectLater(
+          deletePhysicalIosSpeechOutput(canonical),
+          throwsA(isA<StateError>()),
+        );
+        expect(await target.exists(), isTrue);
+      },
+      skip: Platform.isWindows ? 'Symlink privileges are not portable.' : false,
+    );
   });
 
   group('Compile-time define map', () {
@@ -619,6 +1098,23 @@ void main() {
         throwsA(isA<FileSystemException>()),
       );
     });
+
+    test(
+      'refuses to hash through an artifact symlink',
+      () async {
+        final target = File('${tempDir.path}/target.bin');
+        await target.writeAsBytes(<int>[1, 2, 3], flush: true);
+        final link = Link('${tempDir.path}/artifact.bin');
+        await link.create(target.path);
+
+        await expectLater(
+          computeFileSha256(link.path),
+          throwsA(isA<FileSystemException>()),
+        );
+        expect(await target.exists(), isTrue);
+      },
+      skip: Platform.isWindows ? 'Symlink privileges are not portable.' : false,
+    );
   });
 
   group('PCM16 WAV Parsing and Validation', () {
@@ -1312,14 +1808,39 @@ void main() {
   });
 
   group('Cancellation and Classification Helpers', () {
-    test('distinguishes physical iOS hardware from simulator machines', () {
-      expect(isPhysicalIosMachineIdentifier('iPhone17,2'), isTrue);
-      expect(isPhysicalIosMachineIdentifier('iPad14,6'), isTrue);
-      expect(isPhysicalIosMachineIdentifier('iPod9,1'), isTrue);
-      expect(isPhysicalIosMachineIdentifier('arm64'), isFalse);
-      expect(isPhysicalIosMachineIdentifier('x86_64'), isFalse);
-      expect(isPhysicalIosMachineIdentifier('iPhone Simulator'), isFalse);
-      expect(isPhysicalIosMachineIdentifier(''), isFalse);
+    test('distinguishes physical iOS app paths without private FFI', () {
+      expect(
+        isPhysicalIosApplicationExecutablePath(
+          '/private/var/containers/Bundle/Application/INSTALL-ID/'
+          'Runner.app/Runner',
+        ),
+        isTrue,
+      );
+      expect(
+        isPhysicalIosApplicationExecutablePath(
+          '/var/containers/Bundle/Application/INSTALL-ID/'
+          'Runner.app/Frameworks/App.framework/App',
+        ),
+        isTrue,
+      );
+      for (final path in <String>[
+        '/Users/test/Library/Developer/CoreSimulator/Devices/DEVICE/data/'
+            'Containers/Bundle/Application/INSTALL-ID/Runner.app/Runner',
+        '/private/var/mobile/Containers/Data/Application/INSTALL-ID/Runner',
+        '/private/var/containers/Bundle/Application/INSTALL-ID/Runner',
+        '/private/var/containers/Bundle/Application/INSTALL-ID/Runner.app',
+        '/private/var/containers/Bundle/Application//Runner.app/Runner',
+        '/private/var/containers/Bundle/Application/INSTALL-ID/'
+            'Runner.app/../Runner',
+        '/private/var/containers/Bundle/Application/INSTALL-ID/.app/Runner',
+        '',
+      ]) {
+        expect(
+          isPhysicalIosApplicationExecutablePath(path),
+          isFalse,
+          reason: 'Must reject non-device executable path: "$path"',
+        );
+      }
     });
 
     test(

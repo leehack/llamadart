@@ -16,20 +16,53 @@
 /// Fail-closed: never skips, never plays audio, never downloads, and requires
 /// every path, digest, transcript, preset, and duration as a `--dart-define`.
 ///
+/// Each path define is either a safe absolute on-device path or an
+/// `@appcache/<relative>` reference. Installing onto a physical device rotates
+/// the app data-container UUID, so an absolute container path captured before
+/// the install stops resolving; the `@appcache/` form is bound to the runtime
+/// cache directory during preflight, before any artifact is read.
+///
 /// Run with:
 /// ```
-/// cd example/chat_app && flutter test --no-pub --no-uninstall \
-///   --run-skipped -t local-only \
-///   integration_test/physical_ios_speech_e2e_test.dart \
-///   -d "$PHYSICAL_IOS_DEVICE_ID" --dart-define=...
+/// cd example/chat_app && flutter drive --no-pub \
+///   --publish-port \
+///   --no-start-paused --device-vmservice-port="$IOS_SPEECH_DEVICE_VM_PORT" \
+///   --host-vmservice-port="$IOS_SPEECH_HOST_VM_PORT" \
+///   --driver=test_driver/integration_test.dart \
+///   --target=integration_test/physical_ios_speech_e2e_test.dart \
+///   --timeout=21600 -d "$PHYSICAL_IOS_DEVICE_ID" \
+///   --dart-define=IOS_SPEECH_QWEN3_ASR_MODEL_PATH="$IOS_SPEECH_QWEN3_ASR_MODEL_PATH" \
+///   --dart-define=IOS_SPEECH_QWEN3_ASR_MODEL_SHA256="$IOS_SPEECH_QWEN3_ASR_MODEL_SHA256" \
+///   --dart-define=IOS_SPEECH_QWEN3_ASR_MMPROJ_PATH="$IOS_SPEECH_QWEN3_ASR_MMPROJ_PATH" \
+///   --dart-define=IOS_SPEECH_QWEN3_ASR_MMPROJ_SHA256="$IOS_SPEECH_QWEN3_ASR_MMPROJ_SHA256" \
+///   --dart-define=IOS_SPEECH_ASR_AUDIO_PATH="$IOS_SPEECH_ASR_AUDIO_PATH" \
+///   --dart-define=IOS_SPEECH_ASR_AUDIO_SHA256="$IOS_SPEECH_ASR_AUDIO_SHA256" \
+///   --dart-define=IOS_SPEECH_ASR_EXPECTED_TRANSCRIPT="$IOS_SPEECH_ASR_EXPECTED_TRANSCRIPT" \
+///   --dart-define=IOS_SPEECH_MIC_DURATION_SECONDS="$IOS_SPEECH_MIC_DURATION_SECONDS" \
+///   --dart-define=IOS_SPEECH_MIC_EXPECTED_TRANSCRIPT="$IOS_SPEECH_MIC_EXPECTED_TRANSCRIPT" \
+///   --dart-define=IOS_SPEECH_LITERT_ASR_MODEL_PATH="$IOS_SPEECH_LITERT_ASR_MODEL_PATH" \
+///   --dart-define=IOS_SPEECH_LITERT_ASR_MODEL_SHA256="$IOS_SPEECH_LITERT_ASR_MODEL_SHA256" \
+///   --dart-define=IOS_SPEECH_LITERT_ASR_TOKENIZER_PATH="$IOS_SPEECH_LITERT_ASR_TOKENIZER_PATH" \
+///   --dart-define=IOS_SPEECH_LITERT_ASR_TOKENIZER_SHA256="$IOS_SPEECH_LITERT_ASR_TOKENIZER_SHA256" \
+///   --dart-define=IOS_SPEECH_LITERT_ASR_PRESET="$IOS_SPEECH_LITERT_ASR_PRESET" \
+///   --dart-define=IOS_SPEECH_LITERT_ASR_AUDIO_PATH="$IOS_SPEECH_LITERT_ASR_AUDIO_PATH" \
+///   --dart-define=IOS_SPEECH_LITERT_ASR_AUDIO_SHA256="$IOS_SPEECH_LITERT_ASR_AUDIO_SHA256" \
+///   --dart-define=IOS_SPEECH_LITERT_ASR_EXPECTED_TRANSCRIPT="$IOS_SPEECH_LITERT_ASR_EXPECTED_TRANSCRIPT" \
+///   --dart-define=IOS_SPEECH_QWEN3_TTS_MODEL_PATH="$IOS_SPEECH_QWEN3_TTS_MODEL_PATH" \
+///   --dart-define=IOS_SPEECH_QWEN3_TTS_MODEL_SHA256="$IOS_SPEECH_QWEN3_TTS_MODEL_SHA256" \
+///   --dart-define=IOS_SPEECH_QWEN3_TTS_MMPROJ_PATH="$IOS_SPEECH_QWEN3_TTS_MMPROJ_PATH" \
+///   --dart-define=IOS_SPEECH_QWEN3_TTS_MMPROJ_SHA256="$IOS_SPEECH_QWEN3_TTS_MMPROJ_SHA256" \
+///   --dart-define=IOS_SPEECH_TTS_TEXT="$IOS_SPEECH_TTS_TEXT" \
+///   --dart-define=IOS_SPEECH_TTS_OUTPUT_PATH="$IOS_SPEECH_TTS_OUTPUT_PATH" \
+///   --dart-define=IOS_SPEECH_TTS_EXPECTED_TRANSCRIPT="$IOS_SPEECH_TTS_EXPECTED_TRANSCRIPT" \
+///   --dart-define=IOS_SPEECH_LITERT_LM_MODEL_PATH="$IOS_SPEECH_LITERT_LM_MODEL_PATH" \
+///   --dart-define=IOS_SPEECH_LITERT_LM_MODEL_SHA256="$IOS_SPEECH_LITERT_LM_MODEL_SHA256"
 /// ```
 library;
 
 import 'dart:async';
-import 'dart:ffi';
 import 'dart:io';
 
-import 'package:ffi/ffi.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
@@ -82,52 +115,41 @@ const ModelParams _metalParams = ModelParams(
   gpuLayers: ModelParams.maxGpuLayers,
 );
 
-typedef _SysctlByNameNative =
-    Int32 Function(
-      Pointer<Utf8>,
-      Pointer<Void>,
-      Pointer<UintPtr>,
-      Pointer<Void>,
-      UintPtr,
-    );
-typedef _SysctlByNameDart =
-    int Function(
-      Pointer<Utf8>,
-      Pointer<Void>,
-      Pointer<UintPtr>,
-      Pointer<Void>,
-      int,
-    );
-
-String _iosHardwareMachineIdentifier() {
-  final sysctl = DynamicLibrary.process()
-      .lookupFunction<_SysctlByNameNative, _SysctlByNameDart>('sysctlbyname');
-  final name = 'hw.machine'.toNativeUtf8();
-  final length = calloc<UintPtr>();
-  try {
-    if (sysctl(name, nullptr, length, nullptr, 0) != 0 ||
-        length.value <= 1 ||
-        length.value > 256) {
-      throw StateError('Unable to query a bounded iOS hardware identifier.');
-    }
-    final value = calloc<Uint8>(length.value);
-    try {
-      if (sysctl(name, value.cast<Void>(), length, nullptr, 0) != 0) {
-        throw StateError('Unable to read the iOS hardware identifier.');
-      }
-      return value.cast<Utf8>().toDartString();
-    } finally {
-      calloc.free(value);
-    }
-  } finally {
-    calloc
-      ..free(length)
-      ..free(name);
-  }
-}
-
 Future<void> _disposeEngine(LlamaEngine engine, String label) =>
     awaitBounded(engine.dispose(), _cleanupTimeout, '$label.dispose');
+
+Future<void> _settleSpeechTask({
+  required void Function() cancel,
+  required Future<Object?> done,
+  required Future<Object?> eventsClosed,
+  required String label,
+}) async {
+  Object? firstError;
+  StackTrace? firstStackTrace;
+
+  Future<void> run(Future<void> Function() action) async {
+    try {
+      await action();
+    } catch (error, stackTrace) {
+      firstError ??= error;
+      firstStackTrace ??= stackTrace;
+    }
+  }
+
+  await run(() async => cancel());
+  await run(() => awaitBounded(done, _cleanupTimeout, '$label.cleanupDone'));
+  await run(
+    () => awaitBounded(
+      eventsClosed,
+      _cleanupTimeout,
+      '$label.cleanupEventsClosed',
+    ),
+  );
+  final cleanupError = firstError;
+  if (cleanupError != null) {
+    Error.throwWithStackTrace(cleanupError, firstStackTrace!);
+  }
+}
 
 Future<Uint8List> _readBoundedFixture(File file, String label) async {
   final length = await awaitBounded(
@@ -217,6 +239,24 @@ Future<LlamaEngine> _loadMetalEngine(
       _modelLoadTimeout,
       '$label.loadMultimodalProjector',
     );
+    final gpuLayers = await awaitBounded(
+      engine.getResolvedGpuLayers(),
+      _cleanupTimeout,
+      '$label.getResolvedGpuLayers',
+    );
+    if (gpuLayers == null || gpuLayers <= 0) {
+      throw StateError(
+        '$label did not resolve Metal GPU offload on physical iOS hardware.',
+      );
+    }
+    requireSpeechBackendIdentity(
+      await awaitBounded(
+        engine.getBackendName(),
+        _cleanupTimeout,
+        '$label.getBackendName',
+      ),
+      SpeechE2EBackendKind.llamaCppMetal,
+    );
     return engine;
   } catch (error, stackTrace) {
     try {
@@ -245,44 +285,56 @@ Future<String> _transcribeExact({
     '$label.start',
   );
   final eventsFuture = collectSpeechEvents(task.events);
-  final completion = await awaitBounded(
-    task.done,
-    _transcribeTimeout,
-    '$label.done',
+  String? fingerprint;
+  await runWithSpeechCleanup(
+    body: () async {
+      final completion = await awaitBounded(
+        task.done,
+        _transcribeTimeout,
+        '$label.done',
+      );
+      final events = await awaitBounded(
+        eventsFuture,
+        _transcribeTimeout,
+        '$label.eventsClosed',
+      );
+      if (completion.state != SpeechToTextCompletionState.completed) {
+        throw StateError(
+          '$label ended in ${completion.state.name} instead of completed'
+          '${completion.error == null ? '' : ': ${safeSpeechErrorDiagnostic(completion.error!)}'}',
+        );
+      }
+      final result = completion.result;
+      if (result == null) {
+        throw StateError('$label completed without a SpeechToTextResult.');
+      }
+      final finalEvents = events.whereType<SpeechToTextFinalEvent>().toList();
+      if (finalEvents.length != 1) {
+        throw StateError(
+          '$label emitted ${finalEvents.length} final events instead of one.',
+        );
+      }
+      final text = result.text;
+      expectExactNormalizedTranscript(
+        actual: text,
+        expected: expectedTranscript,
+        label: label,
+      );
+      expectExactNormalizedTranscript(
+        actual: finalEvents.single.result.text,
+        expected: expectedTranscript,
+        label: '$label.finalEvent',
+      );
+      fingerprint = transcriptFingerprint(text);
+    },
+    cleanup: () => _settleSpeechTask(
+      cancel: task.cancel,
+      done: task.done,
+      eventsClosed: eventsFuture,
+      label: label,
+    ),
   );
-  final events = await awaitBounded(
-    eventsFuture,
-    _transcribeTimeout,
-    '$label.eventsClosed',
-  );
-  if (completion.state != SpeechToTextCompletionState.completed) {
-    throw StateError(
-      '$label ended in ${completion.state.name} instead of completed'
-      '${completion.error == null ? '' : ': ${safeSpeechErrorDiagnostic(completion.error!)}'}',
-    );
-  }
-  final result = completion.result;
-  if (result == null) {
-    throw StateError('$label completed without a SpeechToTextResult.');
-  }
-  final finalEvents = events.whereType<SpeechToTextFinalEvent>().toList();
-  if (finalEvents.length != 1) {
-    throw StateError(
-      '$label emitted ${finalEvents.length} final events instead of one.',
-    );
-  }
-  final text = result.text;
-  expectExactNormalizedTranscript(
-    actual: text,
-    expected: expectedTranscript,
-    label: label,
-  );
-  expectExactNormalizedTranscript(
-    actual: finalEvents.single.result.text,
-    expected: expectedTranscript,
-    label: '$label.finalEvent',
-  );
-  return transcriptFingerprint(text);
+  return fingerprint!;
 }
 
 /// Streams [samples] into [session] in bounded chunks.
@@ -350,10 +402,12 @@ void main() {
           'physical_ios_speech_e2e_test requires the iOS device runtime.',
         );
       }
-      final machine = _iosHardwareMachineIdentifier();
-      if (!isPhysicalIosMachineIdentifier(machine)) {
+      if (!isPhysicalIosApplicationExecutablePath(
+        Platform.resolvedExecutable,
+      )) {
         throw StateError(
-          'physical_ios_speech_e2e_test rejected an iOS simulator.',
+          'physical_ios_speech_e2e_test requires an app installed on physical '
+          'iOS hardware.',
         );
       }
     } catch (error) {
@@ -363,17 +417,24 @@ void main() {
     }
 
     late final PhysicalIosSpeechConfig config;
+    late final Map<String, PhysicalIosSpeechArtifactFailure> artifactFailures;
     try {
-      config = PhysicalIosSpeechConfig.fromEnvironment();
+      // Resolution must precede every artifact read: a device install mints a
+      // fresh data-container UUID, so `@appcache/` defines only name a real
+      // file once bound to the runtime cache directory.
+      config = await canonicalizePhysicalIosSpeechFilesystemLayout(
+        await resolvePhysicalIosSpeechCachePaths(
+          PhysicalIosSpeechConfig.fromEnvironment(),
+        ),
+      );
+      artifactFailures = await config.validateArtifactsCollectingFailures(
+        timeoutPerArtifact: _artifactHashTimeout,
+      );
     } catch (error) {
       _recordPreflightFailure(rowResults, error);
       _emitAndValidateResults(rowResults);
       return;
     }
-
-    final artifactFailures = await config.validateArtifactsCollectingFailures(
-      timeoutPerArtifact: _artifactHashTimeout,
-    );
 
     // =====================================================================
     // ROW 1: llama.cpp Qwen3-ASR
@@ -456,31 +517,43 @@ void main() {
               'row1.cancel.start',
             );
             final cancelEventsFuture = collectSpeechEvents(cancelTask.events);
-            await requireStillActiveBeforeCancellation(
-              cancelTask.done,
-              _activeCancellationObservation,
-              'row1.cancel',
-            );
-            cancelTask.cancel();
-            final cancelCompletion = await awaitBounded(
-              cancelTask.done,
-              _cancelTimeout,
-              'row1.cancel.done',
-            );
-            final cancelEvents = await awaitBounded(
-              cancelEventsFuture,
-              _cancelTimeout,
-              'row1.cancel.eventsClosed',
-            );
-            expect(
-              verifySttCancellation(cancelCompletion),
-              isTrue,
-              reason: 'Cancelled transcription must reach the cancelled state',
-            );
-            expect(
-              cancelEvents.whereType<SpeechToTextFinalEvent>(),
-              isEmpty,
-              reason: 'Cancelled transcription must not emit a final result',
+            await runWithSpeechCleanup(
+              body: () async {
+                await requireStillActiveBeforeCancellation(
+                  cancelTask.done,
+                  _activeCancellationObservation,
+                  'row1.cancel',
+                );
+                cancelTask.cancel();
+                final cancelCompletion = await awaitBounded(
+                  cancelTask.done,
+                  _cancelTimeout,
+                  'row1.cancel.done',
+                );
+                final cancelEvents = await awaitBounded(
+                  cancelEventsFuture,
+                  _cancelTimeout,
+                  'row1.cancel.eventsClosed',
+                );
+                expect(
+                  verifySttCancellation(cancelCompletion),
+                  isTrue,
+                  reason:
+                      'Cancelled transcription must reach the cancelled state',
+                );
+                expect(
+                  cancelEvents.whereType<SpeechToTextFinalEvent>(),
+                  isEmpty,
+                  reason:
+                      'Cancelled transcription must not emit a final result',
+                );
+              },
+              cleanup: () => _settleSpeechTask(
+                cancel: cancelTask.cancel,
+                done: cancelTask.done,
+                eventsClosed: cancelEventsFuture,
+                label: 'row1.cancel',
+              ),
             );
 
             // Physical microphone capture. The recorder is created outside the
@@ -732,7 +805,7 @@ void main() {
             );
             await requireStillActiveBeforeCancellation(
               cancelSession.done,
-              Duration.zero,
+              _activeCancellationObservation,
               'row2.cancel',
             );
             await awaitBounded(
@@ -999,32 +1072,13 @@ void main() {
                 );
 
                 // Export and re-read from disk: never played back.
-                if (await awaitBounded(
-                  outFile.exists(),
-                  _cleanupTimeout,
-                  'row3.output.preexisting',
-                )) {
-                  throw StateError(
-                    'The configured TTS output already exists; refusing to '
-                    'overwrite or delete it.',
-                  );
-                }
+                final wavBytes = synthResult.toWavBytes();
                 await awaitBounded(
-                  outFile.parent.create(recursive: true),
+                  writePhysicalIosSpeechOutputExclusive(config, wavBytes),
                   _cleanupTimeout,
-                  'row3.output.parentCreate',
-                );
-                await awaitBounded(
-                  outFile.create(exclusive: true),
-                  _cleanupTimeout,
-                  'row3.output.createExclusive',
+                  'row3.output.writeExclusive',
                 );
                 ownsOutputFile = true;
-                await awaitBounded(
-                  outFile.writeAsBytes(synthResult.toWavBytes(), flush: true),
-                  _cleanupTimeout,
-                  'row3.output.write',
-                );
                 final wavInfo = validatePcm16Wav(
                   await awaitBounded(
                     outFile.readAsBytes(),
@@ -1222,14 +1276,9 @@ void main() {
             );
           },
           cleanup: () async {
-            if (ownsOutputFile &&
-                await awaitBounded(
-                  outFile.exists(),
-                  _cleanupTimeout,
-                  'row3.output.cleanupExists',
-                )) {
+            if (ownsOutputFile) {
               await awaitBounded(
-                outFile.delete(),
+                deletePhysicalIosSpeechOutput(config),
                 _cleanupTimeout,
                 'row3.output.delete',
               );

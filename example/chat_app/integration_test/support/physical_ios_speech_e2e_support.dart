@@ -7,6 +7,8 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
 import 'package:llamadart/llamadart.dart';
 import 'package:llamadart_chat_example/services/audio_recording_service.dart';
+import 'package:path/path.dart' as path;
+import 'package:path_provider/path_provider.dart';
 
 /// Compile-time define names for physical iOS speech integration testing.
 abstract final class PhysicalIosSpeechEnvKeys {
@@ -163,16 +165,200 @@ final _hexDigestPattern = RegExp(r'^[0-9a-f]{64}$');
 final _positiveIntegerPattern = RegExp(r'^[0-9]+$');
 final _whitespaceRun = RegExp(r'\s+');
 final _controlCharacters = RegExp(r'[\x00-\x1f\x7f]');
-final _physicalIosMachinePattern = RegExp(r'^(?:iPhone|iPad|iPod)\d+,\d+$');
+const List<String> _physicalIosApplicationRoots = <String>[
+  '/private/var/containers/Bundle/Application/',
+  '/var/containers/Bundle/Application/',
+];
 
 const int _maximumMicrophoneDurationSeconds = 30;
+
+/// Marker for a path expressed relative to the on-device app cache directory.
+///
+/// Installing onto a physical device rotates the app data-container UUID, so an
+/// absolute container path captured before the install no longer resolves.
+/// Defines written as `@appcache/<relative>` are bound to the real directory at
+/// runtime through `getApplicationCacheDirectory` instead.
+const String appCachePathPrefix = '@appcache/';
+
+/// Matches the marker in any casing so a near-miss fails loudly instead of
+/// being reinterpreted as a relative path.
+final _appCacheMarkerProbe = RegExp(r'^@appcache(?=/|$)', caseSensitive: false);
+final _rejectedPathCharacters = RegExp(r'[\\:?#]');
+
+/// Whether [value] is an app-cache-relative path reference.
+bool isAppCachePathReference(String value) =>
+    value.startsWith(appCachePathPrefix);
+
+void _requireSafePathSegments(String segments, String key, String value) {
+  for (final segment in segments.split('/')) {
+    if (segment.isEmpty) {
+      throw ArgumentError.value(
+        value,
+        key,
+        'Path contains an empty segment. Leading, trailing, and duplicated '
+        '"/" separators are not allowed.',
+      );
+    }
+    if (segment == '.' || segment == '..') {
+      throw ArgumentError.value(
+        value,
+        key,
+        'Path contains a "." or ".." traversal segment.',
+      );
+    }
+    if (segment.startsWith('~')) {
+      throw ArgumentError.value(
+        value,
+        key,
+        'Path contains a "~" home-expansion segment.',
+      );
+    }
+    if (_rejectedPathCharacters.hasMatch(segment)) {
+      throw ArgumentError.value(
+        value,
+        key,
+        r'Path contains "\", ":", "?", or "#". Backslash separators, '
+        'drive-qualified values, URL queries, and URL fragments are not '
+        'allowed.',
+      );
+    }
+    if (_controlCharacters.hasMatch(segment) || segment.trim() != segment) {
+      throw ArgumentError.value(
+        value,
+        key,
+        'Path segments must not contain control characters or leading and '
+        'trailing whitespace.',
+      );
+    }
+  }
+}
+
+/// Validates one configured path spec and returns it unchanged.
+///
+/// Accepts either a safe absolute on-device path or an [appCachePathPrefix]
+/// reference. Traversal, dot, empty or duplicated separators, backslashes,
+/// URL-like values, the bare filesystem root, tilde expansion, and a
+/// differently cased marker are all rejected.
+String requireSafeSpeechPathSpec(String value, String key) {
+  if (_appCacheMarkerProbe.hasMatch(value)) {
+    if (!isAppCachePathReference(value)) {
+      throw ArgumentError.value(
+        value,
+        key,
+        'The app-cache marker must be spelled exactly "$appCachePathPrefix". '
+        'Case variants are rejected because the on-device container may fold '
+        'case.',
+      );
+    }
+    final relative = value.substring(appCachePathPrefix.length);
+    if (relative.isEmpty) {
+      throw ArgumentError.value(
+        value,
+        key,
+        'An $appCachePathPrefix reference must name a file below the app cache '
+        'directory.',
+      );
+    }
+    _requireSafePathSegments(relative, key, value);
+    return value;
+  }
+
+  final uri = Uri.tryParse(value);
+  if (!value.startsWith('/') || (uri?.hasScheme ?? false)) {
+    throw ArgumentError.value(
+      value,
+      key,
+      'Expected an absolute local on-device path or an $appCachePathPrefix '
+      'reference. URLs and relative paths are not allowed.',
+    );
+  }
+  final absoluteSegments = value.substring(1);
+  if (absoluteSegments.isEmpty) {
+    throw ArgumentError.value(
+      value,
+      key,
+      'The filesystem root is not a usable artifact path.',
+    );
+  }
+  _requireSafePathSegments(absoluteSegments, key, value);
+  return value;
+}
+
+String _requireUsableCacheDirectory(String rawDirectory) {
+  const key = 'applicationCacheDirectory';
+  if (rawDirectory.trim().isEmpty) {
+    throw ArgumentError.value(
+      rawDirectory,
+      key,
+      'The platform reported an empty application cache directory.',
+    );
+  }
+  if (rawDirectory.trim() != rawDirectory) {
+    throw ArgumentError.value(
+      rawDirectory,
+      key,
+      'The application cache directory must not have surrounding whitespace.',
+    );
+  }
+  final directory = rawDirectory;
+  final normalized = directory.length > 1 && directory.endsWith('/')
+      ? directory.substring(0, directory.length - 1)
+      : directory;
+  requireSafeSpeechPathSpec(normalized, key);
+  if (isAppCachePathReference(normalized)) {
+    throw ArgumentError.value(
+      rawDirectory,
+      key,
+      'The application cache directory must itself be an absolute path.',
+    );
+  }
+  return normalized;
+}
+
+/// Rejects duplicate immutable inputs and a TTS output that aliases an input.
+///
+/// Comparison folds case because the on-device container may treat two
+/// differently cased names as one file. Filesystem-level canonical and inode
+/// checks run later, after every path exists on the installed app container.
+void _requireUnambiguousSpeechPaths(
+  String outputPath,
+  Map<String, String> inputPaths,
+) {
+  final labelsByFoldedPath = <String, String>{};
+  for (final entry in inputPaths.entries) {
+    final folded = entry.value.toLowerCase();
+    final previousLabel = labelsByFoldedPath[folded];
+    if (previousLabel != null) {
+      throw ArgumentError.value(
+        entry.value,
+        entry.key,
+        'Immutable input path collides with $previousLabel, ignoring case.',
+      );
+    }
+    labelsByFoldedPath[folded] = entry.key;
+  }
+
+  final foldedOutput = outputPath.toLowerCase();
+  if (labelsByFoldedPath.containsKey(foldedOutput)) {
+    throw ArgumentError.value(
+      outputPath,
+      PhysicalIosSpeechEnvKeys.ttsOutputPath,
+      'The disposable TTS output path must not equal any immutable input '
+      'artifact path, ignoring case.',
+    );
+  }
+}
 
 /// One checksum-pinned immutable input file.
 class PhysicalIosSpeechArtifact {
   /// Stable identifier used in diagnostics and result digests.
   final String label;
 
-  /// Absolute on-device path supplied through a compile-time define.
+  /// Configured path spec.
+  ///
+  /// This may still be an [appCachePathPrefix] reference until the config is
+  /// resolved. Callers must use [PhysicalIosSpeechConfig.requireResolvedPaths]
+  /// before any filesystem access.
   final String path;
 
   /// Expected canonical lowercase SHA-256 digest.
@@ -233,6 +419,13 @@ class PhysicalIosSpeechConfig {
   final String liteRtLmModelPath;
   final String liteRtLmModelSha256;
 
+  /// Canonical cache root used to resolve [appCachePathPrefix] references.
+  ///
+  /// This stays null for an all-absolute configuration. Once set, every
+  /// resolved cache-relative path is required to remain below this directory
+  /// after symbolic-link resolution.
+  final String? resolvedAppCacheDirectoryPath;
+
   const PhysicalIosSpeechConfig({
     required this.qwen3AsrModelPath,
     required this.qwen3AsrModelSha256,
@@ -260,6 +453,7 @@ class PhysicalIosSpeechConfig {
     required this.ttsExpectedTranscript,
     required this.liteRtLmModelPath,
     required this.liteRtLmModelSha256,
+    this.resolvedAppCacheDirectoryPath,
   });
 
   /// Loads configuration from `--dart-define` values only.
@@ -297,18 +491,12 @@ class PhysicalIosSpeechConfig {
       return value;
     }
 
-    String requireAbsoluteLocalPath(String key) {
-      final value = require(key);
-      final uri = Uri.tryParse(value);
-      if (!value.startsWith('/') || (uri?.hasScheme ?? false)) {
-        throw ArgumentError.value(
-          value,
-          key,
-          'Expected an absolute local on-device path. URLs and relative paths '
-          'are not allowed.',
-        );
+    String requirePathSpec(String key) {
+      final raw = map[key] ?? '';
+      if (raw.trim().isEmpty) {
+        return requireSafeSpeechPathSpec(require(key), key);
       }
-      return value;
+      return requireSafeSpeechPathSpec(raw, key);
     }
 
     final micDurationStr = require(PhysicalIosSpeechEnvKeys.micDurationSeconds);
@@ -327,55 +515,47 @@ class PhysicalIosSpeechConfig {
       );
     }
 
-    final qwen3AsrModelPath = requireAbsoluteLocalPath(
+    final qwen3AsrModelPath = requirePathSpec(
       PhysicalIosSpeechEnvKeys.qwen3AsrModelPath,
     );
-    final qwen3AsrMmprojPath = requireAbsoluteLocalPath(
+    final qwen3AsrMmprojPath = requirePathSpec(
       PhysicalIosSpeechEnvKeys.qwen3AsrMmprojPath,
     );
-    final asrAudioPath = requireAbsoluteLocalPath(
-      PhysicalIosSpeechEnvKeys.asrAudioPath,
-    );
-    final liteRtAsrModelPath = requireAbsoluteLocalPath(
+    final asrAudioPath = requirePathSpec(PhysicalIosSpeechEnvKeys.asrAudioPath);
+    final liteRtAsrModelPath = requirePathSpec(
       PhysicalIosSpeechEnvKeys.liteRtAsrModelPath,
     );
-    final liteRtAsrTokenizerPath = requireAbsoluteLocalPath(
+    final liteRtAsrTokenizerPath = requirePathSpec(
       PhysicalIosSpeechEnvKeys.liteRtAsrTokenizerPath,
     );
-    final liteRtAsrAudioPath = requireAbsoluteLocalPath(
+    final liteRtAsrAudioPath = requirePathSpec(
       PhysicalIosSpeechEnvKeys.liteRtAsrAudioPath,
     );
-    final qwen3TtsModelPath = requireAbsoluteLocalPath(
+    final qwen3TtsModelPath = requirePathSpec(
       PhysicalIosSpeechEnvKeys.qwen3TtsModelPath,
     );
-    final qwen3TtsMmprojPath = requireAbsoluteLocalPath(
+    final qwen3TtsMmprojPath = requirePathSpec(
       PhysicalIosSpeechEnvKeys.qwen3TtsMmprojPath,
     );
-    final ttsOutputPath = requireAbsoluteLocalPath(
+    final ttsOutputPath = requirePathSpec(
       PhysicalIosSpeechEnvKeys.ttsOutputPath,
     );
-    final liteRtLmModelPath = requireAbsoluteLocalPath(
+    final liteRtLmModelPath = requirePathSpec(
       PhysicalIosSpeechEnvKeys.liteRtLmModelPath,
     );
-    final inputPaths = <String>{
-      qwen3AsrModelPath,
-      qwen3AsrMmprojPath,
-      asrAudioPath,
-      liteRtAsrModelPath,
-      liteRtAsrTokenizerPath,
-      liteRtAsrAudioPath,
-      qwen3TtsModelPath,
-      qwen3TtsMmprojPath,
-      liteRtLmModelPath,
-    };
-    if (inputPaths.contains(ttsOutputPath)) {
-      throw ArgumentError.value(
-        ttsOutputPath,
-        PhysicalIosSpeechEnvKeys.ttsOutputPath,
-        'The disposable TTS output path must not equal any immutable input '
-        'artifact path.',
-      );
-    }
+    // Collisions are re-checked after resolution, because an absolute path and
+    // an `@appcache/` reference can only be compared once both are bound.
+    _requireUnambiguousSpeechPaths(ttsOutputPath, <String, String>{
+      'qwen3AsrModel': qwen3AsrModelPath,
+      'qwen3AsrMmproj': qwen3AsrMmprojPath,
+      'asrAudio': asrAudioPath,
+      'liteRtAsrModel': liteRtAsrModelPath,
+      'liteRtAsrTokenizer': liteRtAsrTokenizerPath,
+      'liteRtAsrAudio': liteRtAsrAudioPath,
+      'qwen3TtsModel': qwen3TtsModelPath,
+      'qwen3TtsMmproj': qwen3TtsMmprojPath,
+      'liteRtLmModel': liteRtLmModelPath,
+    });
 
     return PhysicalIosSpeechConfig(
       qwen3AsrModelPath: qwen3AsrModelPath,
@@ -464,6 +644,150 @@ class PhysicalIosSpeechConfig {
     }
   }
 
+  /// Whether any configured path still needs app-cache resolution.
+  bool get usesAppCachePaths =>
+      _configuredPaths.any(isAppCachePathReference) ||
+      isAppCachePathReference(ttsOutputPath);
+
+  List<String> get _configuredPaths => <String>[
+    qwen3AsrModelPath,
+    qwen3AsrMmprojPath,
+    asrAudioPath,
+    liteRtAsrModelPath,
+    liteRtAsrTokenizerPath,
+    liteRtAsrAudioPath,
+    qwen3TtsModelPath,
+    qwen3TtsMmprojPath,
+    liteRtLmModelPath,
+  ];
+
+  /// Binds every [appCachePathPrefix] reference to [cacheDirectoryPath].
+  ///
+  /// Safe absolute paths are returned unchanged. Every path is re-validated
+  /// here so a directly constructed config cannot smuggle an unsafe path past
+  /// [PhysicalIosSpeechConfig.fromMap].
+  PhysicalIosSpeechConfig resolveAppCachePaths(String cacheDirectoryPath) {
+    final base = _requireUsableCacheDirectory(cacheDirectoryPath);
+
+    String resolve(String value, String key) {
+      final spec = requireSafeSpeechPathSpec(value, key);
+      if (!isAppCachePathReference(spec)) {
+        return spec;
+      }
+      return '$base/${spec.substring(appCachePathPrefix.length)}';
+    }
+
+    final resolvedQwen3AsrModelPath = resolve(
+      qwen3AsrModelPath,
+      PhysicalIosSpeechEnvKeys.qwen3AsrModelPath,
+    );
+    final resolvedQwen3AsrMmprojPath = resolve(
+      qwen3AsrMmprojPath,
+      PhysicalIosSpeechEnvKeys.qwen3AsrMmprojPath,
+    );
+    final resolvedAsrAudioPath = resolve(
+      asrAudioPath,
+      PhysicalIosSpeechEnvKeys.asrAudioPath,
+    );
+    final resolvedLiteRtAsrModelPath = resolve(
+      liteRtAsrModelPath,
+      PhysicalIosSpeechEnvKeys.liteRtAsrModelPath,
+    );
+    final resolvedLiteRtAsrTokenizerPath = resolve(
+      liteRtAsrTokenizerPath,
+      PhysicalIosSpeechEnvKeys.liteRtAsrTokenizerPath,
+    );
+    final resolvedLiteRtAsrAudioPath = resolve(
+      liteRtAsrAudioPath,
+      PhysicalIosSpeechEnvKeys.liteRtAsrAudioPath,
+    );
+    final resolvedQwen3TtsModelPath = resolve(
+      qwen3TtsModelPath,
+      PhysicalIosSpeechEnvKeys.qwen3TtsModelPath,
+    );
+    final resolvedQwen3TtsMmprojPath = resolve(
+      qwen3TtsMmprojPath,
+      PhysicalIosSpeechEnvKeys.qwen3TtsMmprojPath,
+    );
+    final resolvedLiteRtLmModelPath = resolve(
+      liteRtLmModelPath,
+      PhysicalIosSpeechEnvKeys.liteRtLmModelPath,
+    );
+    final resolvedTtsOutputPath = resolve(
+      ttsOutputPath,
+      PhysicalIosSpeechEnvKeys.ttsOutputPath,
+    );
+    _requireUnambiguousSpeechPaths(resolvedTtsOutputPath, <String, String>{
+      'qwen3AsrModel': resolvedQwen3AsrModelPath,
+      'qwen3AsrMmproj': resolvedQwen3AsrMmprojPath,
+      'asrAudio': resolvedAsrAudioPath,
+      'liteRtAsrModel': resolvedLiteRtAsrModelPath,
+      'liteRtAsrTokenizer': resolvedLiteRtAsrTokenizerPath,
+      'liteRtAsrAudio': resolvedLiteRtAsrAudioPath,
+      'qwen3TtsModel': resolvedQwen3TtsModelPath,
+      'qwen3TtsMmproj': resolvedQwen3TtsMmprojPath,
+      'liteRtLmModel': resolvedLiteRtLmModelPath,
+    });
+
+    return PhysicalIosSpeechConfig(
+      qwen3AsrModelPath: resolvedQwen3AsrModelPath,
+      qwen3AsrModelSha256: qwen3AsrModelSha256,
+      qwen3AsrMmprojPath: resolvedQwen3AsrMmprojPath,
+      qwen3AsrMmprojSha256: qwen3AsrMmprojSha256,
+      asrAudioPath: resolvedAsrAudioPath,
+      asrAudioSha256: asrAudioSha256,
+      asrExpectedTranscript: asrExpectedTranscript,
+      micDurationSeconds: micDurationSeconds,
+      micExpectedTranscript: micExpectedTranscript,
+      liteRtAsrModelPath: resolvedLiteRtAsrModelPath,
+      liteRtAsrModelSha256: liteRtAsrModelSha256,
+      liteRtAsrTokenizerPath: resolvedLiteRtAsrTokenizerPath,
+      liteRtAsrTokenizerSha256: liteRtAsrTokenizerSha256,
+      liteRtAsrPreset: liteRtAsrPreset,
+      liteRtAsrAudioPath: resolvedLiteRtAsrAudioPath,
+      liteRtAsrAudioSha256: liteRtAsrAudioSha256,
+      liteRtAsrExpectedTranscript: liteRtAsrExpectedTranscript,
+      qwen3TtsModelPath: resolvedQwen3TtsModelPath,
+      qwen3TtsModelSha256: qwen3TtsModelSha256,
+      qwen3TtsMmprojPath: resolvedQwen3TtsMmprojPath,
+      qwen3TtsMmprojSha256: qwen3TtsMmprojSha256,
+      ttsText: ttsText,
+      ttsOutputPath: resolvedTtsOutputPath,
+      ttsExpectedTranscript: ttsExpectedTranscript,
+      liteRtLmModelPath: resolvedLiteRtLmModelPath,
+      liteRtLmModelSha256: liteRtLmModelSha256,
+      resolvedAppCacheDirectoryPath: base,
+    );
+  }
+
+  /// Fails closed unless every path is safe, resolved, and collision-free.
+  void requireResolvedPaths() {
+    final configuredArtifacts = artifacts;
+    final unresolved = <String>[
+      for (final artifact in configuredArtifacts)
+        if (isAppCachePathReference(
+          requireSafeSpeechPathSpec(artifact.path, artifact.label),
+        ))
+          artifact.label,
+      if (isAppCachePathReference(
+        requireSafeSpeechPathSpec(
+          ttsOutputPath,
+          PhysicalIosSpeechEnvKeys.ttsOutputPath,
+        ),
+      ))
+        'ttsOutput',
+    ]..sort();
+    if (unresolved.isNotEmpty) {
+      throw StateError(
+        'Path access was attempted before $appCachePathPrefix references were '
+        'resolved: ${unresolved.join(', ')}.',
+      );
+    }
+    _requireUnambiguousSpeechPaths(ttsOutputPath, <String, String>{
+      for (final artifact in configuredArtifacts) artifact.label: artifact.path,
+    });
+  }
+
   /// Every checksum-pinned immutable artifact, in verification order.
   List<PhysicalIosSpeechArtifact> get artifacts => <PhysicalIosSpeechArtifact>[
     PhysicalIosSpeechArtifact(
@@ -520,6 +844,7 @@ class PhysicalIosSpeechConfig {
   Future<void> validateArtifacts({
     Future<void> Function(PhysicalIosSpeechArtifact artifact)? verify,
   }) async {
+    requireResolvedPaths();
     final check =
         verify ??
         (PhysicalIosSpeechArtifact artifact) =>
@@ -539,6 +864,7 @@ class PhysicalIosSpeechConfig {
     Future<void> Function(PhysicalIosSpeechArtifact artifact)? verify,
     Duration? timeoutPerArtifact,
   }) async {
+    requireResolvedPaths();
     final check =
         verify ??
         (PhysicalIosSpeechArtifact artifact) => validateFileChecksum(
@@ -561,6 +887,458 @@ class PhysicalIosSpeechConfig {
   }
 }
 
+/// Resolves [appCachePathPrefix] references against the real app cache
+/// directory, so paths survive the data-container UUID a device install mints.
+///
+/// [cacheDirectory] exists so host tests can bind a temporary directory; the
+/// device harness always uses `getApplicationCacheDirectory`. The lookup is
+/// skipped entirely when no define uses the marker, keeping an all-absolute
+/// configuration independent of the plugin.
+Future<PhysicalIosSpeechConfig> resolvePhysicalIosSpeechCachePaths(
+  PhysicalIosSpeechConfig config, {
+  Future<Directory> Function()? cacheDirectory,
+}) async {
+  if (!config.usesAppCachePaths) {
+    config.requireResolvedPaths();
+    return config;
+  }
+  final directory = await (cacheDirectory ?? getApplicationCacheDirectory)();
+  final resolved = config.resolveAppCachePaths(directory.path);
+  resolved.requireResolvedPaths();
+  return resolved;
+}
+
+bool _isWithinDirectory(String root, String candidate) {
+  final normalizedRoot = path.normalize(root);
+  final normalizedCandidate = path.normalize(candidate);
+  return path.equals(normalizedRoot, normalizedCandidate) ||
+      path.isWithin(normalizedRoot, normalizedCandidate);
+}
+
+Future<FileSystemEntityType> _safeEntityType(
+  String entityPath,
+  String label,
+) async {
+  try {
+    return await FileSystemEntity.type(entityPath, followLinks: false);
+  } on FileSystemException {
+    throw FileSystemException('Unable to inspect $label safely.');
+  }
+}
+
+Future<String> _safeResolveDirectory(String directoryPath, String label) async {
+  if (await _safeEntityType(directoryPath, label) !=
+      FileSystemEntityType.directory) {
+    throw FileSystemException('$label is not an existing directory.');
+  }
+  try {
+    return path.normalize(
+      await Directory(directoryPath).resolveSymbolicLinks(),
+    );
+  } on FileSystemException {
+    throw FileSystemException('Unable to canonicalize $label safely.');
+  }
+}
+
+Future<void> _requireNoLinksBelowRoot({
+  required String root,
+  required String candidate,
+  required String label,
+  required bool allowMissing,
+}) async {
+  if (!_isWithinDirectory(root, candidate) || path.equals(root, candidate)) {
+    throw StateError('$label escaped the runtime application cache.');
+  }
+  var current = path.normalize(root);
+  final relative = path.relative(path.normalize(candidate), from: current);
+  for (final segment in path.split(relative)) {
+    current = path.join(current, segment);
+    final type = await _safeEntityType(current, label);
+    if (type == FileSystemEntityType.link) {
+      throw StateError('$label contains a symbolic-link component.');
+    }
+    if (type == FileSystemEntityType.notFound) {
+      if (allowMissing) {
+        return;
+      }
+      throw FileSystemException('$label does not exist.');
+    }
+  }
+}
+
+Future<String?> _canonicalizeInputArtifact(
+  PhysicalIosSpeechArtifact artifact, {
+  required String? configuredCacheRoot,
+  required String? canonicalCacheRoot,
+}) async {
+  var candidate = path.normalize(artifact.path);
+  if (configuredCacheRoot != null &&
+      canonicalCacheRoot != null &&
+      _isWithinDirectory(configuredCacheRoot, candidate)) {
+    final relative = path.relative(candidate, from: configuredCacheRoot);
+    candidate = path.join(canonicalCacheRoot, relative);
+    await _requireNoLinksBelowRoot(
+      root: canonicalCacheRoot,
+      candidate: candidate,
+      label: artifact.label,
+      allowMissing: true,
+    );
+  }
+
+  final type = await _safeEntityType(candidate, artifact.label);
+  if (type == FileSystemEntityType.notFound) {
+    // Preserve the path so checksum validation can classify this failure only
+    // against rows that depend on the missing artifact.
+    return null;
+  }
+  if (type == FileSystemEntityType.link) {
+    throw StateError('${artifact.label} must not be a symbolic link.');
+  }
+  if (type != FileSystemEntityType.file) {
+    return null;
+  }
+  try {
+    final canonical = path.normalize(
+      await File(candidate).resolveSymbolicLinks(),
+    );
+    if (canonicalCacheRoot != null &&
+        _isWithinDirectory(canonicalCacheRoot, candidate) &&
+        !_isWithinDirectory(canonicalCacheRoot, canonical)) {
+      throw StateError(
+        '${artifact.label} escaped the runtime application cache.',
+      );
+    }
+    return canonical;
+  } on FileSystemException {
+    throw FileSystemException(
+      'Unable to canonicalize ${artifact.label} safely.',
+    );
+  }
+}
+
+Future<String> _canonicalizePlannedOutputPath(
+  String outputPath, {
+  required String? configuredCacheRoot,
+  required String? canonicalCacheRoot,
+}) async {
+  final normalizedOutput = path.normalize(outputPath);
+  if (configuredCacheRoot != null &&
+      canonicalCacheRoot != null &&
+      _isWithinDirectory(configuredCacheRoot, normalizedOutput)) {
+    final relative = path.relative(normalizedOutput, from: configuredCacheRoot);
+    final canonicalOutput = path.join(canonicalCacheRoot, relative);
+    await _requireNoLinksBelowRoot(
+      root: canonicalCacheRoot,
+      candidate: canonicalOutput,
+      label: 'ttsOutput',
+      allowMissing: true,
+    );
+    return canonicalOutput;
+  }
+
+  var existingAncestor = path.dirname(normalizedOutput);
+  final missingSegments = <String>[];
+  while (true) {
+    final type = await _safeEntityType(existingAncestor, 'ttsOutputParent');
+    if (type == FileSystemEntityType.directory ||
+        type == FileSystemEntityType.link) {
+      break;
+    }
+    if (type != FileSystemEntityType.notFound) {
+      throw StateError('The TTS output parent is not a directory.');
+    }
+    final parent = path.dirname(existingAncestor);
+    if (path.equals(parent, existingAncestor)) {
+      throw StateError('The TTS output path has no usable parent directory.');
+    }
+    missingSegments.add(path.basename(existingAncestor));
+    existingAncestor = parent;
+  }
+  var canonicalParent = path.normalize(
+    await Directory(existingAncestor).resolveSymbolicLinks(),
+  );
+  for (final segment in missingSegments.reversed) {
+    canonicalParent = path.join(canonicalParent, segment);
+  }
+  return path.join(canonicalParent, path.basename(normalizedOutput));
+}
+
+PhysicalIosSpeechConfig _copyConfigWithCanonicalPaths(
+  PhysicalIosSpeechConfig source,
+  Map<String, String> canonicalInputs,
+  String canonicalOutput,
+  String? canonicalCacheRoot,
+) {
+  return PhysicalIosSpeechConfig(
+    qwen3AsrModelPath:
+        canonicalInputs['qwen3AsrModel'] ?? source.qwen3AsrModelPath,
+    qwen3AsrModelSha256: source.qwen3AsrModelSha256,
+    qwen3AsrMmprojPath:
+        canonicalInputs['qwen3AsrMmproj'] ?? source.qwen3AsrMmprojPath,
+    qwen3AsrMmprojSha256: source.qwen3AsrMmprojSha256,
+    asrAudioPath: canonicalInputs['asrAudio'] ?? source.asrAudioPath,
+    asrAudioSha256: source.asrAudioSha256,
+    asrExpectedTranscript: source.asrExpectedTranscript,
+    micDurationSeconds: source.micDurationSeconds,
+    micExpectedTranscript: source.micExpectedTranscript,
+    liteRtAsrModelPath:
+        canonicalInputs['liteRtAsrModel'] ?? source.liteRtAsrModelPath,
+    liteRtAsrModelSha256: source.liteRtAsrModelSha256,
+    liteRtAsrTokenizerPath:
+        canonicalInputs['liteRtAsrTokenizer'] ?? source.liteRtAsrTokenizerPath,
+    liteRtAsrTokenizerSha256: source.liteRtAsrTokenizerSha256,
+    liteRtAsrPreset: source.liteRtAsrPreset,
+    liteRtAsrAudioPath:
+        canonicalInputs['liteRtAsrAudio'] ?? source.liteRtAsrAudioPath,
+    liteRtAsrAudioSha256: source.liteRtAsrAudioSha256,
+    liteRtAsrExpectedTranscript: source.liteRtAsrExpectedTranscript,
+    qwen3TtsModelPath:
+        canonicalInputs['qwen3TtsModel'] ?? source.qwen3TtsModelPath,
+    qwen3TtsModelSha256: source.qwen3TtsModelSha256,
+    qwen3TtsMmprojPath:
+        canonicalInputs['qwen3TtsMmproj'] ?? source.qwen3TtsMmprojPath,
+    qwen3TtsMmprojSha256: source.qwen3TtsMmprojSha256,
+    ttsText: source.ttsText,
+    ttsOutputPath: canonicalOutput,
+    ttsExpectedTranscript: source.ttsExpectedTranscript,
+    liteRtLmModelPath:
+        canonicalInputs['liteRtLmModel'] ?? source.liteRtLmModelPath,
+    liteRtLmModelSha256: source.liteRtLmModelSha256,
+    resolvedAppCacheDirectoryPath: canonicalCacheRoot,
+  );
+}
+
+/// Canonicalizes runtime paths and rejects symlink or inode aliases.
+///
+/// This runs only after app launch and [resolvePhysicalIosSpeechCachePaths], so
+/// an install-time data-container rotation cannot leave stale absolute cache
+/// paths in the runtime APIs. Missing inputs stay available for the later
+/// row-specific checksum ledger; unsafe symlinks and canonical collisions fail
+/// the whole preflight because the configured artifact identities are
+/// ambiguous.
+Future<PhysicalIosSpeechConfig> canonicalizePhysicalIosSpeechFilesystemLayout(
+  PhysicalIosSpeechConfig config,
+) async {
+  config.requireResolvedPaths();
+  final configuredCacheRoot = config.resolvedAppCacheDirectoryPath;
+  final canonicalCacheRoot = configuredCacheRoot == null
+      ? null
+      : await _safeResolveDirectory(
+          configuredCacheRoot,
+          'applicationCacheDirectory',
+        );
+
+  final canonicalInputs = <String, String>{};
+  final canonicalArtifacts = <PhysicalIosSpeechArtifact>[];
+  for (final artifact in config.artifacts) {
+    final canonical = await _canonicalizeInputArtifact(
+      artifact,
+      configuredCacheRoot: configuredCacheRoot,
+      canonicalCacheRoot: canonicalCacheRoot,
+    );
+    if (canonical == null) {
+      continue;
+    }
+    canonicalInputs[artifact.label] = canonical;
+    canonicalArtifacts.add(
+      PhysicalIosSpeechArtifact(
+        label: artifact.label,
+        path: canonical,
+        sha256: artifact.sha256,
+      ),
+    );
+  }
+
+  for (var i = 0; i < canonicalArtifacts.length; i++) {
+    for (var j = i + 1; j < canonicalArtifacts.length; j++) {
+      final left = canonicalArtifacts[i];
+      final right = canonicalArtifacts[j];
+      final collidesByName =
+          left.path.toLowerCase() == right.path.toLowerCase();
+      bool collidesByIdentity;
+      try {
+        collidesByIdentity = await FileSystemEntity.identical(
+          left.path,
+          right.path,
+        );
+      } on FileSystemException {
+        throw const FileSystemException(
+          'Unable to compare immutable artifact identities safely.',
+        );
+      }
+      if (collidesByName || collidesByIdentity) {
+        throw StateError(
+          'Immutable artifact identities collide: ${left.label}, '
+          '${right.label}.',
+        );
+      }
+    }
+  }
+
+  final canonicalOutput = await _canonicalizePlannedOutputPath(
+    config.ttsOutputPath,
+    configuredCacheRoot: configuredCacheRoot,
+    canonicalCacheRoot: canonicalCacheRoot,
+  );
+  final outputType = await _safeEntityType(canonicalOutput, 'ttsOutput');
+  if (outputType != FileSystemEntityType.notFound) {
+    throw StateError(
+      'The configured TTS output already exists; refusing to overwrite or '
+      'delete it.',
+    );
+  }
+  if (canonicalArtifacts.any(
+    (artifact) => artifact.path.toLowerCase() == canonicalOutput.toLowerCase(),
+  )) {
+    throw StateError('The TTS output aliases an immutable input artifact.');
+  }
+
+  return _copyConfigWithCanonicalPaths(
+    config,
+    canonicalInputs,
+    canonicalOutput,
+    canonicalCacheRoot,
+  );
+}
+
+Future<void> _createOutputParentSafely(
+  String outputPath,
+  String? canonicalCacheRoot,
+) async {
+  final parent = path.dirname(outputPath);
+  if (canonicalCacheRoot != null &&
+      _isWithinDirectory(canonicalCacheRoot, outputPath)) {
+    var current = canonicalCacheRoot;
+    final relative = path.relative(parent, from: canonicalCacheRoot);
+    for (final segment in path.split(relative)) {
+      if (segment == '.') {
+        continue;
+      }
+      current = path.join(current, segment);
+      final type = await _safeEntityType(current, 'ttsOutputParent');
+      if (type == FileSystemEntityType.link) {
+        throw StateError('The TTS output parent contains a symbolic link.');
+      }
+      if (type == FileSystemEntityType.notFound) {
+        try {
+          await Directory(current).create();
+        } on FileSystemException {
+          throw const FileSystemException(
+            'Unable to create the TTS output parent safely.',
+          );
+        }
+      } else if (type != FileSystemEntityType.directory) {
+        throw StateError('The TTS output parent is not a directory.');
+      }
+    }
+    return;
+  }
+
+  try {
+    await Directory(parent).create(recursive: true);
+  } on FileSystemException {
+    throw const FileSystemException(
+      'Unable to create the TTS output parent safely.',
+    );
+  }
+  final canonicalParent = await _safeResolveDirectory(
+    parent,
+    'ttsOutputParent',
+  );
+  if (!path.equals(canonicalParent, parent)) {
+    throw StateError('The TTS output parent changed after canonicalization.');
+  }
+}
+
+/// Creates and writes the disposable WAV without following an existing link.
+Future<File> writePhysicalIosSpeechOutputExclusive(
+  PhysicalIosSpeechConfig config,
+  Uint8List bytes,
+) async {
+  config.requireResolvedPaths();
+  final outputPath = path.normalize(config.ttsOutputPath);
+  await _createOutputParentSafely(
+    outputPath,
+    config.resolvedAppCacheDirectoryPath,
+  );
+  if (await _safeEntityType(outputPath, 'ttsOutput') !=
+      FileSystemEntityType.notFound) {
+    throw StateError(
+      'The configured TTS output already exists; refusing to overwrite or '
+      'delete it.',
+    );
+  }
+
+  final output = File(outputPath);
+  var created = false;
+  RandomAccessFile? handle;
+  Object? firstError;
+  StackTrace? firstStackTrace;
+  try {
+    await output.create(exclusive: true);
+    created = true;
+    if (await _safeEntityType(outputPath, 'ttsOutput') !=
+        FileSystemEntityType.file) {
+      throw StateError('The newly created TTS output is not a regular file.');
+    }
+    final canonical = path.normalize(await output.resolveSymbolicLinks());
+    if (!path.equals(canonical, outputPath)) {
+      throw StateError('The TTS output changed after exclusive creation.');
+    }
+    handle = await output.open(mode: FileMode.writeOnly);
+    await handle.writeFrom(bytes);
+    await handle.flush();
+  } catch (error, stackTrace) {
+    firstError = error;
+    firstStackTrace = stackTrace;
+  }
+  try {
+    await handle?.close();
+  } catch (error, stackTrace) {
+    firstError ??= error;
+    firstStackTrace ??= stackTrace;
+  }
+  if (firstError != null) {
+    if (created &&
+        await _safeEntityType(outputPath, 'ttsOutput') ==
+            FileSystemEntityType.file) {
+      try {
+        final canonical = path.normalize(await output.resolveSymbolicLinks());
+        if (path.equals(canonical, outputPath)) {
+          await output.delete();
+        }
+      } on FileSystemException {
+        // Preserve the write failure. A later run will fail closed on the
+        // pre-existing output instead of overwriting it.
+      }
+    }
+    Error.throwWithStackTrace(firstError, firstStackTrace!);
+  }
+  return output;
+}
+
+/// Deletes only the exact canonical regular file created by this harness.
+Future<void> deletePhysicalIosSpeechOutput(
+  PhysicalIosSpeechConfig config,
+) async {
+  final outputPath = path.normalize(config.ttsOutputPath);
+  if (await _safeEntityType(outputPath, 'ttsOutput') !=
+      FileSystemEntityType.file) {
+    throw StateError('Refusing to delete a non-regular TTS output.');
+  }
+  final canonical = path.normalize(
+    await File(outputPath).resolveSymbolicLinks(),
+  );
+  if (!path.equals(canonical, outputPath)) {
+    throw StateError('Refusing to delete a replaced TTS output.');
+  }
+  try {
+    await File(outputPath).delete();
+  } on FileSystemException {
+    throw const FileSystemException('Unable to delete the TTS output safely.');
+  }
+}
+
 /// Fails one row when any of its immutable input labels failed preflight.
 void requireValidSpeechArtifacts(
   Map<String, PhysicalIosSpeechArtifactFailure> failures,
@@ -578,7 +1356,7 @@ void requireValidSpeechArtifacts(
   );
 }
 
-/// Computes SHA-256 sequentially in fixed-size reads, never buffering it all.
+/// Computes SHA-256 sequentially from a cancellable file stream.
 Future<String> computeFileSha256(String path, {Duration? timeout}) async {
   final file = File(path);
   final stopwatch = Stopwatch()..start();
@@ -603,33 +1381,130 @@ Future<String> computeFileSha256(String path, {Duration? timeout}) async {
     );
   }
 
-  RandomAccessFile? inputFile;
   final digestSink = _SpeechDigestSink();
   var digestSinkClosed = false;
   final inputSink = sha256.startChunkedConversion(digestSink);
-  try {
-    final openedFile = await withinDeadline(file.open);
-    inputFile = openedFile;
-    while (true) {
-      final chunk = await withinDeadline(() => openedFile.read(1024 * 1024));
-      if (chunk.isEmpty) {
-        break;
-      }
-      inputSink.add(chunk);
-    }
-    inputSink.close();
-    digestSinkClosed = true;
-  } on FileSystemException {
-    throw const FileSystemException(
-      'Artifact file cannot be read for SHA-256 verification.',
-    );
-  } finally {
+  StreamSubscription<List<int>>? subscription;
+  Timer? deadlineTimer;
+  Object? firstError;
+  StackTrace? firstStackTrace;
+
+  void closeDigestSink() {
     if (!digestSinkClosed) {
       inputSink.close();
+      digestSinkClosed = true;
     }
-    if (inputFile != null) {
-      await inputFile.close();
+  }
+
+  try {
+    final initialType = await withinDeadline(
+      () => FileSystemEntity.type(path, followLinks: false),
+    );
+    if (initialType != FileSystemEntityType.file) {
+      throw const FileSystemException('Artifact path is not a regular file.');
     }
+    final initialCanonicalPath = await withinDeadline(
+      file.resolveSymbolicLinks,
+    );
+    final initialStat = await withinDeadline(file.stat);
+    final streamDone = Completer<void>();
+
+    void completeStreamError(Object error, StackTrace stackTrace) {
+      if (!streamDone.isCompleted) {
+        streamDone.completeError(error, stackTrace);
+      }
+    }
+
+    subscription = file.openRead().listen(
+      (chunk) {
+        try {
+          inputSink.add(chunk);
+        } catch (error, stackTrace) {
+          completeStreamError(error, stackTrace);
+          unawaited(subscription?.cancel());
+        }
+      },
+      onError: completeStreamError,
+      onDone: () {
+        if (streamDone.isCompleted) {
+          return;
+        }
+        try {
+          closeDigestSink();
+          streamDone.complete();
+        } catch (error, stackTrace) {
+          completeStreamError(error, stackTrace);
+        }
+      },
+      cancelOnError: true,
+    );
+    final bound = timeout;
+    if (bound != null) {
+      final remaining = bound - stopwatch.elapsed;
+      if (remaining <= Duration.zero) {
+        throw TimeoutException(
+          'Artifact SHA-256 verification timed out.',
+          bound,
+        );
+      }
+      deadlineTimer = Timer(remaining, () {
+        completeStreamError(
+          TimeoutException('Artifact SHA-256 verification timed out.', bound),
+          StackTrace.current,
+        );
+        unawaited(subscription?.cancel());
+      });
+    }
+    await streamDone.future;
+
+    final finalType = await withinDeadline(
+      () => FileSystemEntity.type(path, followLinks: false),
+    );
+    final finalCanonicalPath = await withinDeadline(file.resolveSymbolicLinks);
+    final finalStat = await withinDeadline(file.stat);
+    if (finalType != FileSystemEntityType.file ||
+        finalCanonicalPath != initialCanonicalPath ||
+        finalStat.type != initialStat.type ||
+        finalStat.size != initialStat.size ||
+        finalStat.modified != initialStat.modified ||
+        finalStat.changed != initialStat.changed) {
+      throw StateError(
+        'Artifact identity changed during SHA-256 verification.',
+      );
+    }
+  } catch (error, stackTrace) {
+    firstError = error;
+    firstStackTrace = stackTrace;
+  }
+
+  deadlineTimer?.cancel();
+  try {
+    await subscription?.cancel().timeout(
+      const Duration(seconds: 5),
+      onTimeout: () => throw TimeoutException(
+        'Artifact SHA-256 stream cleanup timed out.',
+        const Duration(seconds: 5),
+      ),
+    );
+  } catch (error, stackTrace) {
+    firstError ??= error;
+    firstStackTrace ??= stackTrace;
+  }
+  try {
+    closeDigestSink();
+  } catch (error, stackTrace) {
+    firstError ??= error;
+    firstStackTrace ??= stackTrace;
+  }
+
+  final error = firstError;
+  if (error != null) {
+    if (error is FileSystemException) {
+      throw const FileSystemException(
+        'Artifact file cannot be read for SHA-256 verification.',
+      );
+    }
+    Error.throwWithStackTrace(error, firstStackTrace!);
   }
   return digestSink.digest.toString().toLowerCase();
 }
@@ -791,9 +1666,31 @@ Future<void> requireStillActiveBeforeCancellation<T>(
   }
 }
 
-/// Whether an Apple hardware machine string proves this is not a simulator.
-bool isPhysicalIosMachineIdentifier(String machine) =>
-    _physicalIosMachinePattern.hasMatch(machine.trim());
+/// Whether [path] has the public executable-path shape of a physical iOS app.
+///
+/// Simulator executables live on the macOS host. Physical app executables live
+/// below the iOS bundle-installation root. This is deliberately a lexical,
+/// fail-closed check over [Platform.resolvedExecutable], with no private FFI or
+/// device identifier in diagnostics.
+bool isPhysicalIosApplicationExecutablePath(String path) {
+  final root = _physicalIosApplicationRoots.where(path.startsWith).firstOrNull;
+  if (root == null) {
+    return false;
+  }
+  final segments = path.substring(root.length).split('/');
+  return segments.length >= 3 &&
+      segments.every(
+        (segment) =>
+            segment.isNotEmpty &&
+            segment != '.' &&
+            segment != '..' &&
+            !_rejectedPathCharacters.hasMatch(segment) &&
+            !_controlCharacters.hasMatch(segment) &&
+            segment.trim() == segment,
+      ) &&
+      segments[1].length > '.app'.length &&
+      segments[1].endsWith('.app');
+}
 
 /// Backend family expected by one physical speech row.
 enum SpeechE2EBackendKind { llamaCppMetal, liteRtLmAsrCpu, liteRtLm }

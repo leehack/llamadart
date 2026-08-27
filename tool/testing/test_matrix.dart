@@ -387,10 +387,13 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'ASR round-trip intelligibility, and LiteRT-LM TTS unsupported '
         'classification across immutable local artifacts with no audio playback',
     command:
-        r'cd example/chat_app && flutter test --no-pub --no-uninstall '
-        r'--run-skipped -t local-only '
-        r'integration_test/physical_ios_speech_e2e_test.dart '
-        r'-d "$PHYSICAL_IOS_DEVICE_ID" '
+        r'cd example/chat_app && flutter drive --no-pub '
+        r'--publish-port --no-start-paused '
+        r'--device-vmservice-port="$IOS_SPEECH_DEVICE_VM_PORT" '
+        r'--host-vmservice-port="$IOS_SPEECH_HOST_VM_PORT" '
+        r'--driver=test_driver/integration_test.dart '
+        r'--target=integration_test/physical_ios_speech_e2e_test.dart '
+        r'--timeout=21600 -d "$PHYSICAL_IOS_DEVICE_ID" '
         r'--dart-define=IOS_SPEECH_QWEN3_ASR_MODEL_PATH="$IOS_SPEECH_QWEN3_ASR_MODEL_PATH" '
         r'--dart-define=IOS_SPEECH_QWEN3_ASR_MODEL_SHA256="$IOS_SPEECH_QWEN3_ASR_MODEL_SHA256" '
         r'--dart-define=IOS_SPEECH_QWEN3_ASR_MMPROJ_PATH="$IOS_SPEECH_QWEN3_ASR_MMPROJ_PATH" '
@@ -419,7 +422,11 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         r'--dart-define=IOS_SPEECH_LITERT_LM_MODEL_SHA256="$IOS_SPEECH_LITERT_LM_MODEL_SHA256"',
     useWhen:
         'Physical iOS speech validation across Qwen3-ASR, LiteRT-LM streaming '
-        'ASR, Qwen3-TTS, microphone capture, and typed speech API contracts.',
+        'ASR, Qwen3-TTS, microphone capture, and typed speech API contracts. '
+        'Each _PATH define takes a safe absolute device path or an '
+        '@appcache/ relative reference; prefer @appcache/ because installing '
+        'rotates the app data-container UUID and invalidates absolute '
+        'pre-install container paths.',
   ),
   TestMatrixRow(
     id: 'chat-app-live-speech-smoke',
