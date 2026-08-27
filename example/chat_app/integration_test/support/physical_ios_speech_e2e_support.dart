@@ -44,6 +44,10 @@ abstract final class PhysicalIosSpeechEnvKeys {
 
   static const liteRtLmModelPath = 'IOS_SPEECH_LITERT_LM_MODEL_PATH';
   static const liteRtLmModelSha256 = 'IOS_SPEECH_LITERT_LM_MODEL_SHA256';
+
+  /// Optional selector used to execute one matrix row without changing the
+  /// immutable artifact configuration.
+  static const rowSelection = 'IOS_SPEECH_ROW';
 }
 
 /// Every define this harness requires, in declaration order.
@@ -315,25 +319,68 @@ String _requireUsableCacheDirectory(String rawDirectory) {
   return normalized;
 }
 
+bool _isAsrAudioAliasPair(String firstLabel, String secondLabel) =>
+    (firstLabel == 'asrAudio' && secondLabel == 'liteRtAsrAudio') ||
+    (firstLabel == 'liteRtAsrAudio' && secondLabel == 'asrAudio');
+
+bool _isCanonicalDigest(String digest) =>
+    digest.length == 64 && _hexDigestPattern.hasMatch(digest);
+
+bool _hasEqualCanonicalDigest(String firstDigest, String secondDigest) =>
+    _isCanonicalDigest(firstDigest) &&
+    _isCanonicalDigest(secondDigest) &&
+    firstDigest == secondDigest;
+
+String _requireCanonicalDigest(String? digest, String key) {
+  if (digest == null || !_isCanonicalDigest(digest)) {
+    throw ArgumentError.value(
+      digest,
+      key,
+      'Expected a canonical lowercase 64-hex SHA-256 digest.',
+    );
+  }
+  return digest;
+}
+
 /// Rejects duplicate immutable inputs and a TTS output that aliases an input.
 ///
-/// Comparison folds case because the on-device container may treat two
-/// differently cased names as one file. Filesystem-level canonical and inode
-/// checks run later, after every path exists on the installed app container.
+/// Permits aliasing only between `asrAudio` and `liteRtAsrAudio` when their
+/// expected SHA-256 digests are identical. Comparison folds case because the
+/// on-device container may treat two differently cased names as one file.
+/// Filesystem-level canonical and inode checks run later, after every path
+/// exists on the installed app container.
 void _requireUnambiguousSpeechPaths(
   String outputPath,
-  Map<String, String> inputPaths,
-) {
+  Map<String, String> inputPaths, {
+  required Map<String, String> inputDigests,
+}) {
+  final canonicalDigests = <String, String>{
+    for (final label in inputPaths.keys)
+      label: _requireCanonicalDigest(inputDigests[label], '$label.sha256'),
+  };
   final labelsByFoldedPath = <String, String>{};
   for (final entry in inputPaths.entries) {
     final folded = entry.value.toLowerCase();
     final previousLabel = labelsByFoldedPath[folded];
     if (previousLabel != null) {
-      throw ArgumentError.value(
-        entry.value,
-        entry.key,
-        'Immutable input path collides with $previousLabel, ignoring case.',
-      );
+      if (!_isAsrAudioAliasPair(entry.key, previousLabel)) {
+        throw ArgumentError.value(
+          entry.value,
+          entry.key,
+          'Immutable input path collides with $previousLabel, ignoring case.',
+        );
+      }
+      if (!_hasEqualCanonicalDigest(
+        canonicalDigests[entry.key]!,
+        canonicalDigests[previousLabel]!,
+      )) {
+        throw ArgumentError.value(
+          entry.value,
+          entry.key,
+          'Shared ASR fixture paths require one identical canonical '
+          'lowercase SHA-256 digest.',
+        );
+      }
     }
     labelsByFoldedPath[folded] = entry.key;
   }
@@ -479,17 +526,7 @@ class PhysicalIosSpeechConfig {
       return trimmed;
     }
 
-    String requireDigest(String key) {
-      final value = require(key);
-      if (!_hexDigestPattern.hasMatch(value)) {
-        throw ArgumentError.value(
-          value,
-          key,
-          'Expected canonical 64 lowercase hex characters for $key.',
-        );
-      }
-      return value;
-    }
+    String requireDigest(String key) => _requireCanonicalDigest(map[key], key);
 
     String requirePathSpec(String key) {
       final raw = map[key] ?? '';
@@ -543,31 +580,69 @@ class PhysicalIosSpeechConfig {
     final liteRtLmModelPath = requirePathSpec(
       PhysicalIosSpeechEnvKeys.liteRtLmModelPath,
     );
+    final qwen3AsrModelSha256 = requireDigest(
+      PhysicalIosSpeechEnvKeys.qwen3AsrModelSha256,
+    );
+    final qwen3AsrMmprojSha256 = requireDigest(
+      PhysicalIosSpeechEnvKeys.qwen3AsrMmprojSha256,
+    );
+    final asrAudioSha256 = requireDigest(
+      PhysicalIosSpeechEnvKeys.asrAudioSha256,
+    );
+    final liteRtAsrModelSha256 = requireDigest(
+      PhysicalIosSpeechEnvKeys.liteRtAsrModelSha256,
+    );
+    final liteRtAsrTokenizerSha256 = requireDigest(
+      PhysicalIosSpeechEnvKeys.liteRtAsrTokenizerSha256,
+    );
+    final liteRtAsrAudioSha256 = requireDigest(
+      PhysicalIosSpeechEnvKeys.liteRtAsrAudioSha256,
+    );
+    final qwen3TtsModelSha256 = requireDigest(
+      PhysicalIosSpeechEnvKeys.qwen3TtsModelSha256,
+    );
+    final qwen3TtsMmprojSha256 = requireDigest(
+      PhysicalIosSpeechEnvKeys.qwen3TtsMmprojSha256,
+    );
+    final liteRtLmModelSha256 = requireDigest(
+      PhysicalIosSpeechEnvKeys.liteRtLmModelSha256,
+    );
+
     // Collisions are re-checked after resolution, because an absolute path and
     // an `@appcache/` reference can only be compared once both are bound.
-    _requireUnambiguousSpeechPaths(ttsOutputPath, <String, String>{
-      'qwen3AsrModel': qwen3AsrModelPath,
-      'qwen3AsrMmproj': qwen3AsrMmprojPath,
-      'asrAudio': asrAudioPath,
-      'liteRtAsrModel': liteRtAsrModelPath,
-      'liteRtAsrTokenizer': liteRtAsrTokenizerPath,
-      'liteRtAsrAudio': liteRtAsrAudioPath,
-      'qwen3TtsModel': qwen3TtsModelPath,
-      'qwen3TtsMmproj': qwen3TtsMmprojPath,
-      'liteRtLmModel': liteRtLmModelPath,
-    });
+    _requireUnambiguousSpeechPaths(
+      ttsOutputPath,
+      <String, String>{
+        'qwen3AsrModel': qwen3AsrModelPath,
+        'qwen3AsrMmproj': qwen3AsrMmprojPath,
+        'asrAudio': asrAudioPath,
+        'liteRtAsrModel': liteRtAsrModelPath,
+        'liteRtAsrTokenizer': liteRtAsrTokenizerPath,
+        'liteRtAsrAudio': liteRtAsrAudioPath,
+        'qwen3TtsModel': qwen3TtsModelPath,
+        'qwen3TtsMmproj': qwen3TtsMmprojPath,
+        'liteRtLmModel': liteRtLmModelPath,
+      },
+      inputDigests: <String, String>{
+        'qwen3AsrModel': qwen3AsrModelSha256,
+        'qwen3AsrMmproj': qwen3AsrMmprojSha256,
+        'asrAudio': asrAudioSha256,
+        'liteRtAsrModel': liteRtAsrModelSha256,
+        'liteRtAsrTokenizer': liteRtAsrTokenizerSha256,
+        'liteRtAsrAudio': liteRtAsrAudioSha256,
+        'qwen3TtsModel': qwen3TtsModelSha256,
+        'qwen3TtsMmproj': qwen3TtsMmprojSha256,
+        'liteRtLmModel': liteRtLmModelSha256,
+      },
+    );
 
     return PhysicalIosSpeechConfig(
       qwen3AsrModelPath: qwen3AsrModelPath,
-      qwen3AsrModelSha256: requireDigest(
-        PhysicalIosSpeechEnvKeys.qwen3AsrModelSha256,
-      ),
+      qwen3AsrModelSha256: qwen3AsrModelSha256,
       qwen3AsrMmprojPath: qwen3AsrMmprojPath,
-      qwen3AsrMmprojSha256: requireDigest(
-        PhysicalIosSpeechEnvKeys.qwen3AsrMmprojSha256,
-      ),
+      qwen3AsrMmprojSha256: qwen3AsrMmprojSha256,
       asrAudioPath: asrAudioPath,
-      asrAudioSha256: requireDigest(PhysicalIosSpeechEnvKeys.asrAudioSha256),
+      asrAudioSha256: asrAudioSha256,
       asrExpectedTranscript: require(
         PhysicalIosSpeechEnvKeys.asrExpectedTranscript,
       ),
@@ -576,40 +651,28 @@ class PhysicalIosSpeechConfig {
         PhysicalIosSpeechEnvKeys.micExpectedTranscript,
       ),
       liteRtAsrModelPath: liteRtAsrModelPath,
-      liteRtAsrModelSha256: requireDigest(
-        PhysicalIosSpeechEnvKeys.liteRtAsrModelSha256,
-      ),
+      liteRtAsrModelSha256: liteRtAsrModelSha256,
       liteRtAsrTokenizerPath: liteRtAsrTokenizerPath,
-      liteRtAsrTokenizerSha256: requireDigest(
-        PhysicalIosSpeechEnvKeys.liteRtAsrTokenizerSha256,
-      ),
+      liteRtAsrTokenizerSha256: liteRtAsrTokenizerSha256,
       liteRtAsrPreset: _parsePreset(
         require(PhysicalIosSpeechEnvKeys.liteRtAsrPreset),
       ),
       liteRtAsrAudioPath: liteRtAsrAudioPath,
-      liteRtAsrAudioSha256: requireDigest(
-        PhysicalIosSpeechEnvKeys.liteRtAsrAudioSha256,
-      ),
+      liteRtAsrAudioSha256: liteRtAsrAudioSha256,
       liteRtAsrExpectedTranscript: require(
         PhysicalIosSpeechEnvKeys.liteRtAsrExpectedTranscript,
       ),
       qwen3TtsModelPath: qwen3TtsModelPath,
-      qwen3TtsModelSha256: requireDigest(
-        PhysicalIosSpeechEnvKeys.qwen3TtsModelSha256,
-      ),
+      qwen3TtsModelSha256: qwen3TtsModelSha256,
       qwen3TtsMmprojPath: qwen3TtsMmprojPath,
-      qwen3TtsMmprojSha256: requireDigest(
-        PhysicalIosSpeechEnvKeys.qwen3TtsMmprojSha256,
-      ),
+      qwen3TtsMmprojSha256: qwen3TtsMmprojSha256,
       ttsText: require(PhysicalIosSpeechEnvKeys.ttsText),
       ttsOutputPath: ttsOutputPath,
       ttsExpectedTranscript: require(
         PhysicalIosSpeechEnvKeys.ttsExpectedTranscript,
       ),
       liteRtLmModelPath: liteRtLmModelPath,
-      liteRtLmModelSha256: requireDigest(
-        PhysicalIosSpeechEnvKeys.liteRtLmModelSha256,
-      ),
+      liteRtLmModelSha256: liteRtLmModelSha256,
     );
   }
 
@@ -717,17 +780,31 @@ class PhysicalIosSpeechConfig {
       ttsOutputPath,
       PhysicalIosSpeechEnvKeys.ttsOutputPath,
     );
-    _requireUnambiguousSpeechPaths(resolvedTtsOutputPath, <String, String>{
-      'qwen3AsrModel': resolvedQwen3AsrModelPath,
-      'qwen3AsrMmproj': resolvedQwen3AsrMmprojPath,
-      'asrAudio': resolvedAsrAudioPath,
-      'liteRtAsrModel': resolvedLiteRtAsrModelPath,
-      'liteRtAsrTokenizer': resolvedLiteRtAsrTokenizerPath,
-      'liteRtAsrAudio': resolvedLiteRtAsrAudioPath,
-      'qwen3TtsModel': resolvedQwen3TtsModelPath,
-      'qwen3TtsMmproj': resolvedQwen3TtsMmprojPath,
-      'liteRtLmModel': resolvedLiteRtLmModelPath,
-    });
+    _requireUnambiguousSpeechPaths(
+      resolvedTtsOutputPath,
+      <String, String>{
+        'qwen3AsrModel': resolvedQwen3AsrModelPath,
+        'qwen3AsrMmproj': resolvedQwen3AsrMmprojPath,
+        'asrAudio': resolvedAsrAudioPath,
+        'liteRtAsrModel': resolvedLiteRtAsrModelPath,
+        'liteRtAsrTokenizer': resolvedLiteRtAsrTokenizerPath,
+        'liteRtAsrAudio': resolvedLiteRtAsrAudioPath,
+        'qwen3TtsModel': resolvedQwen3TtsModelPath,
+        'qwen3TtsMmproj': resolvedQwen3TtsMmprojPath,
+        'liteRtLmModel': resolvedLiteRtLmModelPath,
+      },
+      inputDigests: <String, String>{
+        'qwen3AsrModel': qwen3AsrModelSha256,
+        'qwen3AsrMmproj': qwen3AsrMmprojSha256,
+        'asrAudio': asrAudioSha256,
+        'liteRtAsrModel': liteRtAsrModelSha256,
+        'liteRtAsrTokenizer': liteRtAsrTokenizerSha256,
+        'liteRtAsrAudio': liteRtAsrAudioSha256,
+        'qwen3TtsModel': qwen3TtsModelSha256,
+        'qwen3TtsMmproj': qwen3TtsMmprojSha256,
+        'liteRtLmModel': liteRtLmModelSha256,
+      },
+    );
 
     return PhysicalIosSpeechConfig(
       qwen3AsrModelPath: resolvedQwen3AsrModelPath,
@@ -760,7 +837,7 @@ class PhysicalIosSpeechConfig {
     );
   }
 
-  /// Fails closed unless every path is safe, resolved, and collision-free.
+  /// Fails closed unless every digest and path is canonical and unambiguous.
   void requireResolvedPaths() {
     final configuredArtifacts = artifacts;
     final unresolved = <String>[
@@ -783,9 +860,17 @@ class PhysicalIosSpeechConfig {
         'resolved: ${unresolved.join(', ')}.',
       );
     }
-    _requireUnambiguousSpeechPaths(ttsOutputPath, <String, String>{
-      for (final artifact in configuredArtifacts) artifact.label: artifact.path,
-    });
+    _requireUnambiguousSpeechPaths(
+      ttsOutputPath,
+      <String, String>{
+        for (final artifact in configuredArtifacts)
+          artifact.label: artifact.path,
+      },
+      inputDigests: <String, String>{
+        for (final artifact in configuredArtifacts)
+          artifact.label: artifact.sha256,
+      },
+    );
   }
 
   /// Every checksum-pinned immutable artifact, in verification order.
@@ -1167,10 +1252,15 @@ Future<PhysicalIosSpeechConfig> canonicalizePhysicalIosSpeechFilesystemLayout(
         );
       }
       if (collidesByName || collidesByIdentity) {
-        throw StateError(
-          'Immutable artifact identities collide: ${left.label}, '
-          '${right.label}.',
-        );
+        final isPermittedAsrAlias =
+            _isAsrAudioAliasPair(left.label, right.label) &&
+            _hasEqualCanonicalDigest(left.sha256, right.sha256);
+        if (!isPermittedAsrAlias) {
+          throw StateError(
+            'Immutable artifact identities collide: ${left.label}, '
+            '${right.label}.',
+          );
+        }
       }
     }
   }
@@ -1693,7 +1783,7 @@ bool isPhysicalIosApplicationExecutablePath(String path) {
 }
 
 /// Backend family expected by one physical speech row.
-enum SpeechE2EBackendKind { llamaCppMetal, liteRtLmAsrCpu, liteRtLm }
+enum SpeechE2EBackendKind { llamaCppCpu, liteRtLmAsrCpu, liteRtLm }
 
 /// Validates backend identity and returns a stable, sanitized report label.
 String requireSpeechBackendIdentity(
@@ -1702,8 +1792,7 @@ String requireSpeechBackendIdentity(
 ) {
   final normalized = actual.trim().toLowerCase();
   final matches = switch (expected) {
-    SpeechE2EBackendKind.llamaCppMetal =>
-      normalized.contains('metal') && !normalized.contains('litert'),
+    SpeechE2EBackendKind.llamaCppCpu => actual == 'CPU',
     SpeechE2EBackendKind.liteRtLmAsrCpu =>
       normalized.contains('litert-lm') &&
           normalized.contains('asr') &&
@@ -1718,7 +1807,7 @@ String requireSpeechBackendIdentity(
     );
   }
   return switch (expected) {
-    SpeechE2EBackendKind.llamaCppMetal => 'llama.cpp Metal',
+    SpeechE2EBackendKind.llamaCppCpu => 'llama.cpp CPU',
     SpeechE2EBackendKind.liteRtLmAsrCpu => 'LiteRT-LM ASR CPU',
     SpeechE2EBackendKind.liteRtLm => 'LiteRT-LM',
   };
@@ -2101,9 +2190,41 @@ const List<String> speechE2ERowIdsInOrder = <String>[
 /// Canonical identifiers for set-based validation.
 const Set<String> speechE2ERowIds = <String>{...speechE2ERowIdsInOrder};
 
+/// Selector value that runs the complete physical-iOS speech matrix.
+const String physicalIosSpeechAllRows = 'all';
+
+/// Parses the optional row selector while preserving canonical row ordering.
+///
+/// The selector is intentionally exact and case-sensitive. An omitted
+/// `IOS_SPEECH_ROW` define is supplied as [physicalIosSpeechAllRows] by the
+/// integration target; an explicit invalid value fails closed rather than
+/// silently running a different subset.
+List<String> selectPhysicalIosSpeechRowIds(String rawSelection) {
+  if (rawSelection.isEmpty || rawSelection != rawSelection.trim()) {
+    throw ArgumentError.value(
+      rawSelection,
+      PhysicalIosSpeechEnvKeys.rowSelection,
+      'Expected "$physicalIosSpeechAllRows" or one canonical speech row id '
+      'without surrounding whitespace.',
+    );
+  }
+  if (rawSelection == physicalIosSpeechAllRows) {
+    return List<String>.unmodifiable(speechE2ERowIdsInOrder);
+  }
+  if (!speechE2ERowIds.contains(rawSelection)) {
+    throw ArgumentError.value(
+      rawSelection,
+      PhysicalIosSpeechEnvKeys.rowSelection,
+      'Expected "$physicalIosSpeechAllRows" or one of '
+      '${speechE2ERowIdsInOrder.join(', ')}.',
+    );
+  }
+  return <String>[rawSelection];
+}
+
 /// Stable sanitized backend label used before a row resolves its live backend.
 String unresolvedSpeechBackendForRow(String id) => switch (id) {
-  'llama_cpp_qwen3_asr' || 'llama_cpp_qwen3_tts' => 'llama.cpp Metal',
+  'llama_cpp_qwen3_asr' || 'llama_cpp_qwen3_tts' => 'llama.cpp CPU',
   'litert_lm_streaming_asr' => 'LiteRT-LM ASR CPU',
   'litert_lm_tts' => 'LiteRT-LM',
   _ => '<unresolved>',
@@ -2239,6 +2360,23 @@ class SpeechE2ESummary {
         'Unexpected: ${unexpected.isEmpty ? '<none>' : (unexpected.toList()..sort()).join(', ')}.',
       );
     }
+  }
+
+  /// Validates the exact row set and strict statuses for a full or selected
+  /// physical-iOS speech run.
+  void validateSelectedRows(Set<String> expectedIds) {
+    if (expectedIds.isEmpty || !speechE2ERowIds.containsAll(expectedIds)) {
+      throw StateError(
+        'Expected one or more canonical physical-iOS speech row ids.',
+      );
+    }
+    validateRowIds(expectedIds: expectedIds);
+    final expectedUnsupported = expectedIds.contains('litert_lm_tts') ? 1 : 0;
+    validateStrictCounts(
+      expectedTotal: expectedIds.length,
+      expectedPass: expectedIds.length - expectedUnsupported,
+      expectedUnsupported: expectedUnsupported,
+    );
   }
 
   void validateStrictCounts({

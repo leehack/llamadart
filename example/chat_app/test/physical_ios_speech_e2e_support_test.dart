@@ -56,15 +56,22 @@ Map<String, String> _validEnv() {
 PhysicalIosSpeechConfig _copyConfigWithPaths(
   PhysicalIosSpeechConfig source, {
   String? qwen3AsrModelPath,
+  String? qwen3AsrModelSha256,
+  String? asrAudioPath,
+  String? asrAudioSha256,
+  String? liteRtAsrAudioPath,
+  String? liteRtAsrAudioSha256,
+  String? liteRtLmModelPath,
+  String? liteRtLmModelSha256,
   String? ttsOutputPath,
 }) {
   return PhysicalIosSpeechConfig(
     qwen3AsrModelPath: qwen3AsrModelPath ?? source.qwen3AsrModelPath,
-    qwen3AsrModelSha256: source.qwen3AsrModelSha256,
+    qwen3AsrModelSha256: qwen3AsrModelSha256 ?? source.qwen3AsrModelSha256,
     qwen3AsrMmprojPath: source.qwen3AsrMmprojPath,
     qwen3AsrMmprojSha256: source.qwen3AsrMmprojSha256,
-    asrAudioPath: source.asrAudioPath,
-    asrAudioSha256: source.asrAudioSha256,
+    asrAudioPath: asrAudioPath ?? source.asrAudioPath,
+    asrAudioSha256: asrAudioSha256 ?? source.asrAudioSha256,
     asrExpectedTranscript: source.asrExpectedTranscript,
     micDurationSeconds: source.micDurationSeconds,
     micExpectedTranscript: source.micExpectedTranscript,
@@ -73,8 +80,8 @@ PhysicalIosSpeechConfig _copyConfigWithPaths(
     liteRtAsrTokenizerPath: source.liteRtAsrTokenizerPath,
     liteRtAsrTokenizerSha256: source.liteRtAsrTokenizerSha256,
     liteRtAsrPreset: source.liteRtAsrPreset,
-    liteRtAsrAudioPath: source.liteRtAsrAudioPath,
-    liteRtAsrAudioSha256: source.liteRtAsrAudioSha256,
+    liteRtAsrAudioPath: liteRtAsrAudioPath ?? source.liteRtAsrAudioPath,
+    liteRtAsrAudioSha256: liteRtAsrAudioSha256 ?? source.liteRtAsrAudioSha256,
     liteRtAsrExpectedTranscript: source.liteRtAsrExpectedTranscript,
     qwen3TtsModelPath: source.qwen3TtsModelPath,
     qwen3TtsModelSha256: source.qwen3TtsModelSha256,
@@ -83,8 +90,8 @@ PhysicalIosSpeechConfig _copyConfigWithPaths(
     ttsText: source.ttsText,
     ttsOutputPath: ttsOutputPath ?? source.ttsOutputPath,
     ttsExpectedTranscript: source.ttsExpectedTranscript,
-    liteRtLmModelPath: source.liteRtLmModelPath,
-    liteRtLmModelSha256: source.liteRtLmModelSha256,
+    liteRtLmModelPath: liteRtLmModelPath ?? source.liteRtLmModelPath,
+    liteRtLmModelSha256: liteRtLmModelSha256 ?? source.liteRtLmModelSha256,
     resolvedAppCacheDirectoryPath: source.resolvedAppCacheDirectoryPath,
   );
 }
@@ -119,6 +126,20 @@ Future<PhysicalIosSpeechConfig> _createResolvedAppCacheConfig(
   return resolved;
 }
 
+Future<void> _replaceWithHardLink(File source, File destination) async {
+  await destination.delete();
+  final result = await Process.run('ln', <String>[
+    source.path,
+    destination.path,
+  ]);
+  expect(result.exitCode, isZero);
+  expect(
+    await FileSystemEntity.identical(source.path, destination.path),
+    isTrue,
+    reason: 'The test fixture must identify one inode through two paths.',
+  );
+}
+
 /// Rebuilds a WAV buffer with one header field overwritten so malformed
 /// metadata cases can be asserted precisely.
 Uint8List _withUint32(Uint8List source, int offset, int value) {
@@ -140,6 +161,45 @@ Map<String, Object?> _decodeResultLine(String line) {
 }
 
 void main() {
+  group('Physical iOS speech row selection', () {
+    test('defaults and preserves canonical order for the full matrix', () {
+      expect(PhysicalIosSpeechEnvKeys.rowSelection, 'IOS_SPEECH_ROW');
+      expect(
+        selectPhysicalIosSpeechRowIds(physicalIosSpeechAllRows),
+        equals(speechE2ERowIdsInOrder),
+      );
+    });
+
+    test('selects one canonical row for missing-row reruns', () {
+      for (final id in speechE2ERowIdsInOrder) {
+        expect(selectPhysicalIosSpeechRowIds(id), equals(<String>[id]));
+      }
+    });
+
+    test('rejects empty, padded, case-variant, and unknown selectors', () {
+      for (final invalid in <String>[
+        '',
+        ' all',
+        'all ',
+        'ALL',
+        'llama_cpp_qwen3_asr ',
+        'unknown_row',
+      ]) {
+        expect(
+          () => selectPhysicalIosSpeechRowIds(invalid),
+          throwsA(
+            isA<ArgumentError>().having(
+              (error) => error.name,
+              'name',
+              PhysicalIosSpeechEnvKeys.rowSelection,
+            ),
+          ),
+          reason: 'Selector should fail closed: "$invalid"',
+        );
+      }
+    });
+  });
+
   group('PhysicalIosSpeechConfig', () {
     test('parses valid full configuration successfully', () {
       final config = PhysicalIosSpeechConfig.fromMap(_validEnv());
@@ -189,6 +249,9 @@ void main() {
         '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef0',
         '0123456789ABCDEF0123456789abcdef0123456789abcdef0123456789abcdef',
         '0123456789xyzdef0123456789abcdef0123456789abcdef0123456789abcdef',
+        ' 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+        '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef ',
+        '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\n',
       ];
 
       for (final badDigest in invalidDigests) {
@@ -491,6 +554,185 @@ void main() {
       );
     });
 
+    test(
+      'accepts identical path and digest for asrAudio and liteRtAsrAudio',
+      () {
+        final env = _validEnv()
+          ..['IOS_SPEECH_ASR_AUDIO_PATH'] = '/fixtures/shared_speech.wav'
+          ..['IOS_SPEECH_LITERT_ASR_AUDIO_PATH'] = '/fixtures/shared_speech.wav'
+          ..['IOS_SPEECH_ASR_AUDIO_SHA256'] =
+              '1111111111111111111111111111111111111111111111111111111111111111'
+          ..['IOS_SPEECH_LITERT_ASR_AUDIO_SHA256'] =
+              '1111111111111111111111111111111111111111111111111111111111111111';
+
+        final config = PhysicalIosSpeechConfig.fromMap(env);
+        expect(config.asrAudioPath, equals('/fixtures/shared_speech.wav'));
+        expect(
+          config.liteRtAsrAudioPath,
+          equals('/fixtures/shared_speech.wav'),
+        );
+        expect(config.asrAudioSha256, equals(config.liteRtAsrAudioSha256));
+      },
+    );
+
+    test(
+      'accepts case-folded identical path for asrAudio and liteRtAsrAudio when digests match',
+      () {
+        final env = _validEnv()
+          ..['IOS_SPEECH_ASR_AUDIO_PATH'] = '/fixtures/SHARED_speech.wav'
+          ..['IOS_SPEECH_LITERT_ASR_AUDIO_PATH'] = '/fixtures/shared_SPEECH.wav'
+          ..['IOS_SPEECH_ASR_AUDIO_SHA256'] =
+              '1111111111111111111111111111111111111111111111111111111111111111'
+          ..['IOS_SPEECH_LITERT_ASR_AUDIO_SHA256'] =
+              '1111111111111111111111111111111111111111111111111111111111111111';
+
+        expect(() => PhysicalIosSpeechConfig.fromMap(env), returnsNormally);
+      },
+    );
+
+    test(
+      'rejects a three-way collision containing the permitted ASR fixture pair',
+      () {
+        const sharedPath = '/fixtures/shared_speech.wav';
+        const sharedDigest =
+            '1111111111111111111111111111111111111111111111111111111111111111';
+        final env = _validEnv()
+          ..['IOS_SPEECH_ASR_AUDIO_PATH'] = sharedPath
+          ..['IOS_SPEECH_LITERT_ASR_AUDIO_PATH'] = sharedPath
+          ..['IOS_SPEECH_QWEN3_TTS_MODEL_PATH'] = sharedPath
+          ..['IOS_SPEECH_ASR_AUDIO_SHA256'] = sharedDigest
+          ..['IOS_SPEECH_LITERT_ASR_AUDIO_SHA256'] = sharedDigest
+          ..['IOS_SPEECH_QWEN3_TTS_MODEL_SHA256'] = sharedDigest;
+
+        expect(
+          () => PhysicalIosSpeechConfig.fromMap(env),
+          throwsA(
+            isA<ArgumentError>()
+                .having((error) => error.name, 'name', 'qwen3TtsModel')
+                .having(
+                  (error) => error.message.toString(),
+                  'message',
+                  contains('collides'),
+                ),
+          ),
+          reason:
+              'The ASR fixture exception must not authorize a third artifact.',
+        );
+      },
+    );
+
+    test(
+      'rejects shared asrAudio and liteRtAsrAudio path when digests conflict',
+      () {
+        final env = _validEnv()
+          ..['IOS_SPEECH_ASR_AUDIO_PATH'] = '/fixtures/shared_speech.wav'
+          ..['IOS_SPEECH_LITERT_ASR_AUDIO_PATH'] = '/fixtures/shared_speech.wav'
+          ..['IOS_SPEECH_ASR_AUDIO_SHA256'] =
+              '1111111111111111111111111111111111111111111111111111111111111111'
+          ..['IOS_SPEECH_LITERT_ASR_AUDIO_SHA256'] =
+              '4444444444444444444444444444444444444444444444444444444444444444';
+
+        expect(
+          () => PhysicalIosSpeechConfig.fromMap(env),
+          throwsA(
+            isA<ArgumentError>().having(
+              (e) => e.message.toString(),
+              'message',
+              contains('SHA-256 digest'),
+            ),
+          ),
+        );
+      },
+    );
+
+    test(
+      'retains alias rejection for unrelated input pairs even with matching digests',
+      () {
+        final env1 = _validEnv()
+          ..['IOS_SPEECH_QWEN3_ASR_MODEL_PATH'] = '/models/same.gguf'
+          ..['IOS_SPEECH_QWEN3_ASR_MMPROJ_PATH'] = '/models/same.gguf'
+          ..['IOS_SPEECH_QWEN3_ASR_MODEL_SHA256'] =
+              '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+          ..['IOS_SPEECH_QWEN3_ASR_MMPROJ_SHA256'] =
+              '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+
+        expect(
+          () => PhysicalIosSpeechConfig.fromMap(env1),
+          throwsA(isA<ArgumentError>()),
+        );
+
+        final env2 = _validEnv()
+          ..['IOS_SPEECH_ASR_AUDIO_PATH'] = '/models/shared.bin'
+          ..['IOS_SPEECH_QWEN3_ASR_MODEL_PATH'] = '/models/shared.bin'
+          ..['IOS_SPEECH_ASR_AUDIO_SHA256'] =
+              '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+          ..['IOS_SPEECH_QWEN3_ASR_MODEL_SHA256'] =
+              '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef';
+
+        expect(
+          () => PhysicalIosSpeechConfig.fromMap(env2),
+          throwsA(isA<ArgumentError>()),
+        );
+
+        final env3 = _validEnv()
+          ..['IOS_SPEECH_LITERT_ASR_AUDIO_PATH'] = '/models/shared.bin'
+          ..['IOS_SPEECH_LITERT_LM_MODEL_PATH'] = '/models/shared.bin'
+          ..['IOS_SPEECH_LITERT_ASR_AUDIO_SHA256'] =
+              '7777777777777777777777777777777777777777777777777777777777777777'
+          ..['IOS_SPEECH_LITERT_LM_MODEL_SHA256'] =
+              '7777777777777777777777777777777777777777777777777777777777777777';
+
+        expect(
+          () => PhysicalIosSpeechConfig.fromMap(env3),
+          throwsA(isA<ArgumentError>()),
+        );
+      },
+    );
+
+    test('rejects TTS output colliding with shared ASR fixture path', () {
+      final env = _validEnv()
+        ..['IOS_SPEECH_ASR_AUDIO_PATH'] = '/fixtures/shared_speech.wav'
+        ..['IOS_SPEECH_LITERT_ASR_AUDIO_PATH'] = '/fixtures/shared_speech.wav'
+        ..['IOS_SPEECH_ASR_AUDIO_SHA256'] =
+            '1111111111111111111111111111111111111111111111111111111111111111'
+        ..['IOS_SPEECH_LITERT_ASR_AUDIO_SHA256'] =
+            '1111111111111111111111111111111111111111111111111111111111111111'
+        ..['IOS_SPEECH_TTS_OUTPUT_PATH'] = '/fixtures/SHARED_SPEECH.WAV';
+
+      expect(
+        () => PhysicalIosSpeechConfig.fromMap(env),
+        throwsA(isA<ArgumentError>()),
+      );
+    });
+
+    test(
+      'resolves shared @appcache ASR fixtures with matching digest',
+      () async {
+        final env = _validEnv()
+          ..['IOS_SPEECH_ASR_AUDIO_PATH'] = '@appcache/fixtures/speech.wav'
+          ..['IOS_SPEECH_LITERT_ASR_AUDIO_PATH'] =
+              '@appcache/fixtures/speech.wav'
+          ..['IOS_SPEECH_ASR_AUDIO_SHA256'] =
+              '1111111111111111111111111111111111111111111111111111111111111111'
+          ..['IOS_SPEECH_LITERT_ASR_AUDIO_SHA256'] =
+              '1111111111111111111111111111111111111111111111111111111111111111';
+
+        final resolved = await resolvePhysicalIosSpeechCachePaths(
+          PhysicalIosSpeechConfig.fromMap(env),
+          cacheDirectory: () async => Directory('/var/mobile/Containers/Cache'),
+        );
+
+        expect(
+          resolved.asrAudioPath,
+          equals('/var/mobile/Containers/Cache/fixtures/speech.wav'),
+        );
+        expect(
+          resolved.liteRtAsrAudioPath,
+          equals('/var/mobile/Containers/Cache/fixtures/speech.wav'),
+        );
+      },
+    );
+
     test('refuses artifact access before resolution', () async {
       final config = PhysicalIosSpeechConfig.fromMap(
         _validEnv()
@@ -523,38 +765,74 @@ void main() {
       );
     });
 
-    test(
-      'direct construction cannot bypass path and collision checks',
-      () async {
-        final valid = PhysicalIosSpeechConfig.fromMap(_validEnv());
-        final invalidConfigs = <PhysicalIosSpeechConfig>[
-          _copyConfigWithPaths(
-            valid,
-            qwen3AsrModelPath: '/models/../private/input.gguf',
-          ),
-          _copyConfigWithPaths(
-            valid,
-            qwen3AsrModelPath: '@AppCache/models/input.gguf',
-          ),
-          _copyConfigWithPaths(valid, ttsOutputPath: '/MODELS/QWEN3_ASR.GGUF'),
-        ];
+    test('direct construction cannot bypass path and collision checks', () async {
+      final valid = PhysicalIosSpeechConfig.fromMap(_validEnv());
+      final nonCanonicalDigest = valid.qwen3AsrModelSha256.toUpperCase();
+      final invalidConfigs = <PhysicalIosSpeechConfig>[
+        _copyConfigWithPaths(
+          valid,
+          qwen3AsrModelPath: '/models/../private/input.gguf',
+        ),
+        _copyConfigWithPaths(
+          valid,
+          qwen3AsrModelPath: '@AppCache/models/input.gguf',
+        ),
+        _copyConfigWithPaths(valid, ttsOutputPath: '/MODELS/QWEN3_ASR.GGUF'),
+        _copyConfigWithPaths(valid, qwen3AsrModelSha256: nonCanonicalDigest),
+        _copyConfigWithPaths(
+          valid,
+          qwen3AsrModelPath: '/models/shared.bin',
+          liteRtLmModelPath: '/models/shared.bin',
+          liteRtLmModelSha256: valid.qwen3AsrModelSha256,
+        ),
+        _copyConfigWithPaths(
+          valid,
+          asrAudioPath: '/fixtures/shared.wav',
+          liteRtAsrAudioPath: '/fixtures/shared.wav',
+          asrAudioSha256:
+              '1111111111111111111111111111111111111111111111111111111111111111',
+          liteRtAsrAudioSha256:
+              '4444444444444444444444444444444444444444444444444444444444444444',
+        ),
+        _copyConfigWithPaths(
+          valid,
+          asrAudioPath: '/fixtures/shared.wav',
+          liteRtAsrAudioPath: '/fixtures/shared.wav',
+          asrAudioSha256: nonCanonicalDigest,
+          liteRtAsrAudioSha256: nonCanonicalDigest,
+        ),
+        _copyConfigWithPaths(
+          valid,
+          asrAudioPath: '/fixtures/shared.wav',
+          liteRtAsrAudioPath: '/fixtures/shared.wav',
+          asrAudioSha256: '',
+          liteRtAsrAudioSha256: '',
+        ),
+      ];
 
-        for (final config in invalidConfigs) {
-          final visited = <String>[];
-          await expectLater(
-            config.validateArtifacts(
-              verify: (artifact) async => visited.add(artifact.label),
-            ),
-            throwsA(anyOf(isA<ArgumentError>(), isA<StateError>())),
-          );
-          expect(
-            visited,
-            isEmpty,
-            reason: 'Every path check must finish before the first file read.',
-          );
-        }
-      },
-    );
+      for (final config in invalidConfigs) {
+        final visited = <String>[];
+        await expectLater(
+          config.validateArtifacts(
+            verify: (artifact) async => visited.add(artifact.label),
+          ),
+          throwsA(anyOf(isA<ArgumentError>(), isA<StateError>())),
+        );
+        expect(
+          visited,
+          isEmpty,
+          reason: 'Every configuration check must finish before file reads.',
+        );
+      }
+
+      final validSharedConfig = _copyConfigWithPaths(
+        valid,
+        asrAudioPath: '/fixtures/shared.wav',
+        liteRtAsrAudioPath: '/fixtures/shared.wav',
+        liteRtAsrAudioSha256: valid.asrAudioSha256,
+      );
+      expect(() => validSharedConfig.requireResolvedPaths(), returnsNormally);
+    });
   });
 
   group('Canonical speech filesystem layout', () {
@@ -664,6 +942,105 @@ void main() {
         expect(await target.exists(), isTrue);
       },
       skip: Platform.isWindows ? 'Symlink privileges are not portable.' : false,
+    );
+
+    test(
+      'canonicalizes layout when asrAudio and liteRtAsrAudio share the same file and digest',
+      () async {
+        final resolved = await _createResolvedAppCacheConfig(cacheDir);
+        final sharedFixtureConfig = _copyConfigWithPaths(
+          resolved,
+          liteRtAsrAudioPath: resolved.asrAudioPath,
+          liteRtAsrAudioSha256: resolved.asrAudioSha256,
+        );
+
+        final canonical = await canonicalizePhysicalIosSpeechFilesystemLayout(
+          sharedFixtureConfig,
+        );
+        final canonicalRoot = await cacheDir.resolveSymbolicLinks();
+
+        expect(canonical.asrAudioPath, '$canonicalRoot/inputs/asr.wav');
+        expect(canonical.liteRtAsrAudioPath, '$canonicalRoot/inputs/asr.wav');
+      },
+    );
+
+    test(
+      'accepts distinct paths identifying the same inode for asrAudio and liteRtAsrAudio when digests match',
+      () async {
+        final resolved = await _createResolvedAppCacheConfig(cacheDir);
+        final asrFile = File(resolved.asrAudioPath);
+        final liteRtAsrFile = File(resolved.liteRtAsrAudioPath);
+
+        await _replaceWithHardLink(asrFile, liteRtAsrFile);
+
+        final sharedDigestConfig = _copyConfigWithPaths(
+          resolved,
+          liteRtAsrAudioSha256: resolved.asrAudioSha256,
+        );
+
+        final canonical = await canonicalizePhysicalIosSpeechFilesystemLayout(
+          sharedDigestConfig,
+        );
+        expect(
+          await FileSystemEntity.identical(
+            canonical.asrAudioPath,
+            canonical.liteRtAsrAudioPath,
+          ),
+          isTrue,
+        );
+      },
+      skip: Platform.isWindows ? 'Hardlinks require unix ln tool.' : false,
+    );
+
+    test(
+      'rejects distinct paths identifying the same inode for asrAudio and liteRtAsrAudio when digests conflict',
+      () async {
+        final resolved = await _createResolvedAppCacheConfig(cacheDir);
+        final asrFile = File(resolved.asrAudioPath);
+        final liteRtAsrFile = File(resolved.liteRtAsrAudioPath);
+
+        await _replaceWithHardLink(asrFile, liteRtAsrFile);
+
+        await expectLater(
+          canonicalizePhysicalIosSpeechFilesystemLayout(resolved),
+          throwsA(
+            isA<StateError>().having(
+              (error) => error.message,
+              'message',
+              allOf(contains('asrAudio'), contains('liteRtAsrAudio')),
+            ),
+          ),
+        );
+      },
+      skip: Platform.isWindows ? 'Hardlinks require unix ln tool.' : false,
+    );
+
+    test(
+      'rejects unrelated artifacts identifying the same inode even with identical digests',
+      () async {
+        final resolved = await _createResolvedAppCacheConfig(cacheDir);
+        final modelFile = File(resolved.qwen3AsrModelPath);
+        final lmFile = File(resolved.liteRtLmModelPath);
+
+        await _replaceWithHardLink(modelFile, lmFile);
+
+        final matchingDigestConfig = _copyConfigWithPaths(
+          resolved,
+          liteRtLmModelSha256: resolved.qwen3AsrModelSha256,
+        );
+
+        await expectLater(
+          canonicalizePhysicalIosSpeechFilesystemLayout(matchingDigestConfig),
+          throwsA(
+            isA<StateError>().having(
+              (error) => error.message,
+              'message',
+              allOf(contains('qwen3AsrModel'), contains('liteRtLmModel')),
+            ),
+          ),
+        );
+      },
+      skip: Platform.isWindows ? 'Hardlinks require unix ln tool.' : false,
     );
   });
 
@@ -1595,7 +1972,7 @@ void main() {
       final row = SpeechE2ERowResult(
         id: 'llama_cpp_qwen3_asr',
         status: SpeechE2ERowStatus.pass,
-        backend: 'llama.cpp Metal',
+        backend: 'llama.cpp CPU',
         duration: const Duration(milliseconds: 1250),
         digestIdentifiers: {'model': '01234567', 'mmproj': '89abcdef'},
         assertionSummary: 'verified caps, transcribed fixture, verified mic',
@@ -1604,7 +1981,7 @@ void main() {
       final decoded = _decodeResultLine(row.toResultLine());
       expect(decoded['id'], equals('llama_cpp_qwen3_asr'));
       expect(decoded['status'], equals('PASS'));
-      expect(decoded['backend'], equals('llama.cpp Metal'));
+      expect(decoded['backend'], equals('llama.cpp CPU'));
       expect(decoded['elapsedMs'], equals(1250));
       expect(
         decoded['digests'],
@@ -1651,7 +2028,7 @@ void main() {
         SpeechE2ERowResult(
           id: 'llama_cpp_qwen3_asr',
           status: SpeechE2ERowStatus.pass,
-          backend: 'llama.cpp Metal',
+          backend: 'llama.cpp CPU',
           duration: const Duration(seconds: 2),
         ),
         SpeechE2ERowResult(
@@ -1663,7 +2040,7 @@ void main() {
         SpeechE2ERowResult(
           id: 'llama_cpp_qwen3_tts',
           status: SpeechE2ERowStatus.pass,
-          backend: 'llama.cpp Metal',
+          backend: 'llama.cpp CPU',
           duration: const Duration(seconds: 3),
         ),
         SpeechE2ERowResult(
@@ -1683,6 +2060,10 @@ void main() {
 
       expect(() => summary.validateRowIds(), returnsNormally);
       expect(() => summary.validateStrictCounts(), returnsNormally);
+      expect(
+        () => summary.validateSelectedRows(speechE2ERowIds),
+        returnsNormally,
+      );
 
       expect(
         summary.toSummaryLine(),
@@ -1805,6 +2186,70 @@ void main() {
         ]),
       );
     });
+
+    test('validates strict status counts for every selector value', () {
+      for (final selection in <String>[
+        physicalIosSpeechAllRows,
+        ...speechE2ERowIdsInOrder,
+      ]) {
+        final expectedIds = selectPhysicalIosSpeechRowIds(selection).toSet();
+        final rows = <SpeechE2ERowResult>[
+          for (final id in speechE2ERowIdsInOrder)
+            if (expectedIds.contains(id))
+              SpeechE2ERowResult(
+                id: id,
+                status: id == 'litert_lm_tts'
+                    ? SpeechE2ERowStatus.unsupported
+                    : SpeechE2ERowStatus.pass,
+                backend: unresolvedSpeechBackendForRow(id),
+                duration: Duration.zero,
+              ),
+        ];
+
+        expect(
+          () => SpeechE2ESummary(rows).validateSelectedRows(expectedIds),
+          returnsNormally,
+          reason: 'Selector should validate its exact row set: $selection',
+        );
+      }
+    });
+
+    test('selected-row validation rejects extra rows and wrong statuses', () {
+      final selectedIds = selectPhysicalIosSpeechRowIds(
+        'llama_cpp_qwen3_asr',
+      ).toSet();
+      final extraRow = SpeechE2ESummary(<SpeechE2ERowResult>[
+        SpeechE2ERowResult(
+          id: 'llama_cpp_qwen3_asr',
+          status: SpeechE2ERowStatus.pass,
+          backend: 'llama.cpp CPU',
+          duration: Duration.zero,
+        ),
+        SpeechE2ERowResult(
+          id: 'llama_cpp_qwen3_tts',
+          status: SpeechE2ERowStatus.pass,
+          backend: 'llama.cpp CPU',
+          duration: Duration.zero,
+        ),
+      ]);
+      expect(
+        () => extraRow.validateSelectedRows(selectedIds),
+        throwsA(isA<StateError>()),
+      );
+
+      final wrongStatus = SpeechE2ESummary(<SpeechE2ERowResult>[
+        SpeechE2ERowResult(
+          id: 'llama_cpp_qwen3_asr',
+          status: SpeechE2ERowStatus.unsupported,
+          backend: 'llama.cpp CPU',
+          duration: Duration.zero,
+        ),
+      ]);
+      expect(
+        () => wrongStatus.validateSelectedRows(selectedIds),
+        throwsA(isA<StateError>()),
+      );
+    });
   });
 
   group('Cancellation and Classification Helpers', () {
@@ -1847,11 +2292,8 @@ void main() {
       'requires exact runtime backend families and canonicalizes labels',
       () {
         expect(
-          requireSpeechBackendIdentity(
-            'Metal',
-            SpeechE2EBackendKind.llamaCppMetal,
-          ),
-          'llama.cpp Metal',
+          requireSpeechBackendIdentity('CPU', SpeechE2EBackendKind.llamaCppCpu),
+          'llama.cpp CPU',
         );
         expect(
           requireSpeechBackendIdentity(
@@ -1868,12 +2310,71 @@ void main() {
           'LiteRT-LM',
         );
         expect(
+          requireSpeechBackendIdentity(
+            'LiteRT-LM',
+            SpeechE2EBackendKind.liteRtLm,
+          ),
+          'LiteRT-LM',
+        );
+
+        for (final value in <String>[
+          'cpu',
+          ' CPU',
+          'CPU ',
+          'llama.cpp CPU',
+          'CPU fallback',
+          'not CPU',
+        ]) {
+          expect(
+            () => requireSpeechBackendIdentity(
+              value,
+              SpeechE2EBackendKind.llamaCppCpu,
+            ),
+            throwsA(isA<StateError>()),
+            reason: 'llama.cpp CPU must reject non-runtime label "$value".',
+          );
+        }
+
+        // Reject Metal for CPU.
+        expect(
           () => requireSpeechBackendIdentity(
-            'LiteRT-LM Metal',
-            SpeechE2EBackendKind.llamaCppMetal,
+            'Metal',
+            SpeechE2EBackendKind.llamaCppCpu,
           ),
           throwsA(isA<StateError>()),
         );
+        expect(
+          () => requireSpeechBackendIdentity(
+            'llama.cpp Metal',
+            SpeechE2EBackendKind.llamaCppCpu,
+          ),
+          throwsA(isA<StateError>()),
+        );
+
+        // Reject LiteRT for CPU.
+        expect(
+          () => requireSpeechBackendIdentity(
+            'LiteRT-LM CPU',
+            SpeechE2EBackendKind.llamaCppCpu,
+          ),
+          throwsA(isA<StateError>()),
+        );
+        expect(
+          () => requireSpeechBackendIdentity(
+            'LiteRT-LM ASR CPU',
+            SpeechE2EBackendKind.llamaCppCpu,
+          ),
+          throwsA(isA<StateError>()),
+        );
+        expect(
+          () => requireSpeechBackendIdentity(
+            'LiteRT-LM',
+            SpeechE2EBackendKind.llamaCppCpu,
+          ),
+          throwsA(isA<StateError>()),
+        );
+
+        // Reject Metal for LiteRT.
         expect(
           () => requireSpeechBackendIdentity(
             'Metal',
@@ -1881,6 +2382,49 @@ void main() {
           ),
           throwsA(isA<StateError>()),
         );
+        expect(
+          () => requireSpeechBackendIdentity(
+            'Metal',
+            SpeechE2EBackendKind.liteRtLmAsrCpu,
+          ),
+          throwsA(isA<StateError>()),
+        );
+
+        // Reject CPU for LiteRT.
+        expect(
+          () => requireSpeechBackendIdentity(
+            'CPU',
+            SpeechE2EBackendKind.liteRtLmAsrCpu,
+          ),
+          throwsA(isA<StateError>()),
+        );
+        expect(
+          () => requireSpeechBackendIdentity(
+            'CPU',
+            SpeechE2EBackendKind.liteRtLm,
+          ),
+          throwsA(isA<StateError>()),
+        );
+      },
+    );
+
+    test(
+      'resolves expected fallback backend labels before live resolution',
+      () {
+        expect(
+          unresolvedSpeechBackendForRow('llama_cpp_qwen3_asr'),
+          'llama.cpp CPU',
+        );
+        expect(
+          unresolvedSpeechBackendForRow('llama_cpp_qwen3_tts'),
+          'llama.cpp CPU',
+        );
+        expect(
+          unresolvedSpeechBackendForRow('litert_lm_streaming_asr'),
+          'LiteRT-LM ASR CPU',
+        );
+        expect(unresolvedSpeechBackendForRow('litert_lm_tts'), 'LiteRT-LM');
+        expect(unresolvedSpeechBackendForRow('unknown_row'), '<unresolved>');
       },
     );
 
