@@ -325,11 +325,11 @@ final List<BridgeTagPin> bridgeProvenancePins = <BridgeTagPin>[
     'doc/webgpu_bridge.md',
     RegExp(
       r'^\(`(?<nativeReleaseTag>[^`]+)`, both built from upstream llama\.cpp '
-      r'`(?<upstreamTag>[^`@]+)@(?<upstreamCommit>[0-9a-f]{40})`\)\n'
-      r'even though wrapper release tags differ\. Provenance for this immutable consumer\n'
-      r'artifact: release `(?<releaseId>\d+)`, tag commit\n'
-      r'`(?<tagCommit>[0-9a-f]{40})`, bridge source\n'
-      r'`(?<bridgeCommit>[0-9a-f]{40})`, and manifest SHA-256\n'
+      r'`(?<upstreamTag>[^`@]+)@(?<upstreamCommit>[0-9a-f]{40})`\)\r?\n'
+      r'even though wrapper release tags differ\. Provenance for this immutable consumer\r?\n'
+      r'artifact: release `(?<releaseId>\d+)`, tag commit\r?\n'
+      r'`(?<tagCommit>[0-9a-f]{40})`, bridge source\r?\n'
+      r'`(?<bridgeCommit>[0-9a-f]{40})`, and manifest SHA-256\r?\n'
       r'`(?<manifestSha256>[0-9a-f]{64})`\.',
       multiLine: true,
     ),
@@ -338,10 +338,10 @@ final List<BridgeTagPin> bridgeProvenancePins = <BridgeTagPin>[
     'website/docs/platforms/webgpu-bridge.md',
     RegExp(
       r'^  \(`(?<nativeReleaseTag>[^`]+)`, both built from upstream '
-      r'`(?<upstreamTag>[^`@]+)@(?<upstreamCommit>[0-9a-f]{40})`\)\n'
-      r'  even though wrapper release tags differ\. Pinned artifact provenance: release\n'
-      r'  `(?<releaseId>\d+)`, tag commit `(?<tagCommit>[0-9a-f]{40})`, bridge\n'
-      r'  source `(?<bridgeCommit>[0-9a-f]{40})`, manifest SHA-256\n'
+      r'`(?<upstreamTag>[^`@]+)@(?<upstreamCommit>[0-9a-f]{40})`\)\r?\n'
+      r'  even though wrapper release tags differ\. Pinned artifact provenance: release\r?\n'
+      r'  `(?<releaseId>\d+)`, tag commit `(?<tagCommit>[0-9a-f]{40})`, bridge\r?\n'
+      r'  source `(?<bridgeCommit>[0-9a-f]{40})`, manifest SHA-256\r?\n'
       r'  `(?<manifestSha256>[0-9a-f]{64})`\.',
       multiLine: true,
     ),

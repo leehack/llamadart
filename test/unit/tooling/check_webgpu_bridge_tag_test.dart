@@ -699,6 +699,24 @@ void main() {
       expect(bridgeAssetsTagCommit, 'd14d46a63deeee7a8f8a017e394b74ee112f4dba');
     });
 
+    test('accepts equivalent CRLF documentation passages', () {
+      final root = Directory.systemTemp.createTempSync(
+        'bridge_provenance_crlf',
+      );
+      addTearDown(() => root.deleteSync(recursive: true));
+      for (final pin in bridgeProvenancePins) {
+        final source = File(pin.path).readAsStringSync();
+        final crlfSource = source
+            .replaceAll('\r\n', '\n')
+            .replaceAll('\n', '\r\n');
+        File('${root.path}/${pin.path}')
+          ..parent.createSync(recursive: true)
+          ..writeAsStringSync(crlfSource);
+      }
+
+      expect(findBridgeProvenanceDrift(root), isEmpty);
+    });
+
     test('a doc restating a stale provenance value is reported', () {
       final root = Directory.systemTemp.createTempSync('bridge_provenance');
       addTearDown(() => root.deleteSync(recursive: true));
