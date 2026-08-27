@@ -774,6 +774,22 @@ void main() {
       }
     });
 
+    test('default startup timeout permits a slow native cold start', () async {
+      final backend = NativeLlamaBackend(
+        workerEntrypoint: _slowReusableWorkerEntry,
+      );
+
+      try {
+        final handle = await backend
+            .modelLoad('slow.gguf', const ModelParams())
+            .timeout(const Duration(seconds: 10));
+        expect(handle, 42);
+        expect(backend.isReady, isTrue);
+      } finally {
+        await backend.dispose().timeout(const Duration(seconds: 2));
+      }
+    });
+
     test('unexpected handshake response reports version skew', () async {
       final backend = NativeLlamaBackend(
         workerEntrypoint: _incompatibleHandshakeWorkerEntry,
@@ -854,6 +870,24 @@ void _delayedReusableWorkerEntry(SendPort initialSendPort) {
     switch (message) {
       case WorkerHandshake():
         await Future<void>.delayed(const Duration(milliseconds: 50));
+        message.sendPort.send(DoneResponse());
+      case ModelLoadRequest():
+        message.sendPort.send(HandleResponse(42));
+      case DisposeRequest():
+        message.sendPort.send(null);
+        receivePort.close();
+        Isolate.exit();
+    }
+  });
+}
+
+void _slowReusableWorkerEntry(SendPort initialSendPort) {
+  final receivePort = ReceivePort();
+  initialSendPort.send(receivePort.sendPort);
+  receivePort.listen((message) async {
+    switch (message) {
+      case WorkerHandshake():
+        await Future<void>.delayed(const Duration(milliseconds: 5200));
         message.sendPort.send(DoneResponse());
       case ModelLoadRequest():
         message.sendPort.send(HandleResponse(42));

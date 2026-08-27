@@ -52,7 +52,7 @@ class NativeLlamaBackend
   NativeLlamaBackend({
     SendPort? initialSendPort,
     LlamaWorkerEntrypoint workerEntrypoint = llamaWorkerEntry,
-    Duration workerStartupTimeout = const Duration(seconds: 5),
+    Duration workerStartupTimeout = const Duration(seconds: 30),
   }) : _workerEntrypoint = workerEntrypoint,
        _workerStartupTimeout = workerStartupTimeout {
     if (initialSendPort != null) {

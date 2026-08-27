@@ -377,6 +377,58 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'temporary-audio handling changes.',
   ),
   TestMatrixRow(
+    id: 'physical-ios-speech-e2e',
+    tier: 'targeted',
+    mode: 'manual/device',
+    covers:
+        'physical iOS real microphone WAV capture, llama.cpp Qwen3-ASR with '
+        'cancellation and reload, LiteRT-LM streaming ASR with partials and '
+        'cancellation, llama.cpp Qwen3-TTS with 24 kHz WAV export, non-audible '
+        'ASR round-trip intelligibility, and LiteRT-LM TTS unsupported '
+        'classification across immutable local artifacts with no audio playback',
+    command:
+        r'cd example/chat_app && flutter drive --no-pub '
+        r'--publish-port --no-start-paused '
+        r'--device-vmservice-port="$IOS_SPEECH_DEVICE_VM_PORT" '
+        r'--host-vmservice-port="$IOS_SPEECH_HOST_VM_PORT" '
+        r'--driver=test_driver/integration_test.dart '
+        r'--target=integration_test/physical_ios_speech_e2e_test.dart '
+        r'--timeout=21600 -d "$PHYSICAL_IOS_DEVICE_ID" '
+        r'--dart-define=IOS_SPEECH_QWEN3_ASR_MODEL_PATH="$IOS_SPEECH_QWEN3_ASR_MODEL_PATH" '
+        r'--dart-define=IOS_SPEECH_QWEN3_ASR_MODEL_SHA256="$IOS_SPEECH_QWEN3_ASR_MODEL_SHA256" '
+        r'--dart-define=IOS_SPEECH_QWEN3_ASR_MMPROJ_PATH="$IOS_SPEECH_QWEN3_ASR_MMPROJ_PATH" '
+        r'--dart-define=IOS_SPEECH_QWEN3_ASR_MMPROJ_SHA256="$IOS_SPEECH_QWEN3_ASR_MMPROJ_SHA256" '
+        r'--dart-define=IOS_SPEECH_ASR_AUDIO_PATH="$IOS_SPEECH_ASR_AUDIO_PATH" '
+        r'--dart-define=IOS_SPEECH_ASR_AUDIO_SHA256="$IOS_SPEECH_ASR_AUDIO_SHA256" '
+        r'--dart-define=IOS_SPEECH_ASR_EXPECTED_TRANSCRIPT="$IOS_SPEECH_ASR_EXPECTED_TRANSCRIPT" '
+        r'--dart-define=IOS_SPEECH_MIC_DURATION_SECONDS="$IOS_SPEECH_MIC_DURATION_SECONDS" '
+        r'--dart-define=IOS_SPEECH_MIC_EXPECTED_TRANSCRIPT="$IOS_SPEECH_MIC_EXPECTED_TRANSCRIPT" '
+        r'--dart-define=IOS_SPEECH_LITERT_ASR_MODEL_PATH="$IOS_SPEECH_LITERT_ASR_MODEL_PATH" '
+        r'--dart-define=IOS_SPEECH_LITERT_ASR_MODEL_SHA256="$IOS_SPEECH_LITERT_ASR_MODEL_SHA256" '
+        r'--dart-define=IOS_SPEECH_LITERT_ASR_TOKENIZER_PATH="$IOS_SPEECH_LITERT_ASR_TOKENIZER_PATH" '
+        r'--dart-define=IOS_SPEECH_LITERT_ASR_TOKENIZER_SHA256="$IOS_SPEECH_LITERT_ASR_TOKENIZER_SHA256" '
+        r'--dart-define=IOS_SPEECH_LITERT_ASR_PRESET="$IOS_SPEECH_LITERT_ASR_PRESET" '
+        r'--dart-define=IOS_SPEECH_LITERT_ASR_AUDIO_PATH="$IOS_SPEECH_LITERT_ASR_AUDIO_PATH" '
+        r'--dart-define=IOS_SPEECH_LITERT_ASR_AUDIO_SHA256="$IOS_SPEECH_LITERT_ASR_AUDIO_SHA256" '
+        r'--dart-define=IOS_SPEECH_LITERT_ASR_EXPECTED_TRANSCRIPT="$IOS_SPEECH_LITERT_ASR_EXPECTED_TRANSCRIPT" '
+        r'--dart-define=IOS_SPEECH_QWEN3_TTS_MODEL_PATH="$IOS_SPEECH_QWEN3_TTS_MODEL_PATH" '
+        r'--dart-define=IOS_SPEECH_QWEN3_TTS_MODEL_SHA256="$IOS_SPEECH_QWEN3_TTS_MODEL_SHA256" '
+        r'--dart-define=IOS_SPEECH_QWEN3_TTS_MMPROJ_PATH="$IOS_SPEECH_QWEN3_TTS_MMPROJ_PATH" '
+        r'--dart-define=IOS_SPEECH_QWEN3_TTS_MMPROJ_SHA256="$IOS_SPEECH_QWEN3_TTS_MMPROJ_SHA256" '
+        r'--dart-define=IOS_SPEECH_TTS_TEXT="$IOS_SPEECH_TTS_TEXT" '
+        r'--dart-define=IOS_SPEECH_TTS_OUTPUT_PATH="$IOS_SPEECH_TTS_OUTPUT_PATH" '
+        r'--dart-define=IOS_SPEECH_TTS_EXPECTED_TRANSCRIPT="$IOS_SPEECH_TTS_EXPECTED_TRANSCRIPT" '
+        r'--dart-define=IOS_SPEECH_LITERT_LM_MODEL_PATH="$IOS_SPEECH_LITERT_LM_MODEL_PATH" '
+        r'--dart-define=IOS_SPEECH_LITERT_LM_MODEL_SHA256="$IOS_SPEECH_LITERT_LM_MODEL_SHA256"',
+    useWhen:
+        'Physical iOS speech validation across Qwen3-ASR, LiteRT-LM streaming '
+        'ASR, Qwen3-TTS, microphone capture, and typed speech API contracts. '
+        'Each _PATH define takes a safe absolute device path or an '
+        '@appcache/ relative reference; prefer @appcache/ because installing '
+        'rotates the app data-container UUID and invalidates absolute '
+        'pre-install container paths.',
+  ),
+  TestMatrixRow(
     id: 'chat-app-live-speech-smoke',
     tier: 'targeted',
     mode: 'manual/device',
