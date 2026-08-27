@@ -10,6 +10,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
+
 /// The file whose default decides what a fresh vendoring run downloads.
 const String bridgeTagSourcePath = 'scripts/fetch_webgpu_bridge_assets.sh';
 
@@ -99,7 +101,10 @@ final List<BridgeTagPin> bridgeTagPins = <BridgeTagPin>[
   ),
   BridgeTagPin(
     'website/docs/platforms/webgpu-bridge.md',
-    RegExp(r'^identified as `(v\d+\.\d+\.\d+)-local-b\d+`\.$', multiLine: true),
+    RegExp(
+      r'^identified as `(v\d+\.\d+\.\d+)-local-[a-zA-Z0-9.-]+`\.$',
+      multiLine: true,
+    ),
   ),
   BridgeTagPin(
     'website/docs/platforms/webgpu-bridge.md',
@@ -118,6 +123,24 @@ final List<BridgeTagPin> bridgeTagPins = <BridgeTagPin>[
   BridgeTagPin(
     'website/docs/guides/text-to-speech.md',
     RegExp(r'^- The chat example pins `(v\d+\.\d+\.\d+)`,', multiLine: true),
+  ),
+  BridgeTagPin(
+    'CHANGELOG.md',
+    RegExp(
+      r'^## Unreleased\b(?:(?!^## ).)*?^\* Aligned the default WebGPU bridge '
+      r'assets to `(v\d+\.\d+\.\d+)`',
+      multiLine: true,
+      dotAll: true,
+    ),
+  ),
+  BridgeTagPin(
+    'website/docs/changelog/recent-releases.md',
+    RegExp(
+      r'^## Unreleased\b(?:(?!^## ).)*?^- Aligned default WebGPU bridge assets '
+      r'to `(v\d+\.\d+\.\d+)`',
+      multiLine: true,
+      dotAll: true,
+    ),
   ),
 ];
 
@@ -187,62 +210,97 @@ List<String> findBridgeTagDrift(Directory repoRoot, String expectedTag) {
   return problems;
 }
 
-/// The llama.cpp build embedded in the pinned bridge assets.
-///
-/// Taken from `llama_cpp_tag` in the `manifest.json` published under the tag
-/// [bridgeTagSourcePath] pins. `--verify-manifest` re-reads the published
-/// manifest and fails when this record no longer matches it.
-const String bridgeLlamaCppTag = 'b10514';
+/// The llama.cpp upstream release tag embedded in the pinned bridge assets.
+const String bridgeLlamaCppTag = 'v0.2.0';
+
+/// The exact upstream llama.cpp commit embedded in the pinned bridge assets.
+const String bridgeLlamaCppCommit = 'bb4caa7540188872173c44d161602d9271386413';
+
+/// The exact bridge source commit used to build the pinned bridge assets.
+const String bridgeSourceCommit = '79b6ef31e394dd2de92a456b7c249f9da377c720';
+
+/// Canonical repository identities recorded in the approved manifest.
+const String bridgeAssetsRepository = 'leehack/llama-web-bridge-assets';
+const String bridgeSourceRepository = 'leehack/llama-web-bridge';
+const String bridgeUpstreamRepository = 'ggml-org/llama.cpp';
+const String bridgeNativeRepository = 'leehack/llamadart-native';
+
+/// The native release tag the pinned bridge assets were qualified against.
+const String bridgeNativeReleaseTag = 'v0.2.0-1';
+
+/// The asset repository release that published the pinned bridge assets.
+const String bridgeAssetsReleaseId = '377534035';
+
+/// The asset repository commit the pinned bridge asset tag points at.
+const String bridgeAssetsTagCommit = 'd14d46a63deeee7a8f8a017e394b74ee112f4dba';
+
+/// SHA-256 hash of the exact approved published manifest.json.
+const String bridgeManifestSha256 =
+    'b355d01040604f6ae2c5c5fe5bb42b858101a96f03f67e4b27b32fe41ce3b2bf';
 
 /// Where the native runtime's llama.cpp build is pinned.
 const String nativeLlamaCppTagPath = 'hook/build.dart';
 
 final RegExp _nativeLlamaCppTag = RegExp(r"const _llamaCppTag = '([^']+)';");
 
-/// Why Web deliberately runs a different llama.cpp build from native, or null
-/// when the two must agree.
-///
-/// Set this only alongside docs that say so; clear it once the bridge assets
-/// catch up. The gate fails both ways: an unrecorded divergence, and a record
-/// left behind after the tags converged. Prose describing the relationship
-/// lives in the [bridgeLlamaCppTagPins] sentences, which move with it.
-String? get bridgeLlamaCppDivergence =>
-    'Bridge assets v0.1.37 embed b10514; the native pin now consumes immutable '
-    'v0.2.0-1 (llama.cpp v0.2.0). Web trails native until the next bridge '
-    'asset release.';
+final RegExp _stableNativeTag = RegExp(
+  r'^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$',
+);
+final RegExp _stableWrapperTag = RegExp(
+  r'^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)-([1-9]\d*)$',
+);
+final RegExp _legacyNativeTag = RegExp(r'^b(0|[1-9]\d*)$');
+final RegExp _nightlyWrapperTag = RegExp(r'^b(0|[1-9]\d*)-([1-9]\d*)$');
+final RegExp _legacyWrapperTag = RegExp(
+  r'^b(0|[1-9]\d*)-llamadart\.([1-9]\d*)$',
+);
 
-/// Doc sentences that state the bridge assets' llama.cpp build.
+/// Normalizes a native release tag (e.g., `v0.2.0-1` or `b10514-1`) to its
+/// upstream llama.cpp release family (e.g., `v0.2.0` or `b10514`).
 ///
-/// Anchored on the surrounding wording so a reworded parity claim fails here
-/// instead of quietly outliving the pin it describes.
-final List<BridgeTagPin> bridgeLlamaCppTagPins = <BridgeTagPin>[
-  BridgeTagPin(
-    'doc/webgpu_bridge.md',
-    RegExp(
-      r'^That release embeds llama\.cpp `(b\d+)`, which now trails the '
-      r'`hook/build\.dart`$',
-      multiLine: true,
-    ),
-  ),
-  BridgeTagPin(
-    'website/docs/platforms/webgpu-bridge.md',
-    RegExp(
-      r'^- `v\d+\.\d+\.\d+\+` bridge assets embed llama\.cpp `(b\d+)`, which now trails the$',
-      multiLine: true,
-    ),
-  ),
-];
+/// Returns null if the tag is malformed or not a recognized native release tag.
+String? normalizeNativeLlamaCppTag(String nativeTag) {
+  final stableWrapperMatch = _stableWrapperTag.firstMatch(nativeTag);
+  if (stableWrapperMatch != null) {
+    return 'v${stableWrapperMatch.group(1)}.${stableWrapperMatch.group(2)}.${stableWrapperMatch.group(3)}';
+  }
+  final stableMatch = _stableNativeTag.firstMatch(nativeTag);
+  if (stableMatch != null) {
+    return nativeTag;
+  }
+  final nightlyWrapperMatch = _nightlyWrapperTag.firstMatch(nativeTag);
+  if (nightlyWrapperMatch != null) {
+    return 'b${nightlyWrapperMatch.group(1)}';
+  }
+  final legacyWrapperMatch = _legacyWrapperTag.firstMatch(nativeTag);
+  if (legacyWrapperMatch != null) {
+    return 'b${legacyWrapperMatch.group(1)}';
+  }
+  final legacyMatch = _legacyNativeTag.firstMatch(nativeTag);
+  if (legacyMatch != null) {
+    return nativeTag;
+  }
+  return null;
+}
 
-/// Doc sentences required once the bridge and native llama.cpp pins converge.
+/// Every site that names the llama.cpp build the bridge assets embed.
 ///
-/// Keeping these separate from [bridgeLlamaCppTagPins] prevents stale
-/// divergence prose from passing merely because both embedded tag values are
-/// current.
+/// The doc sentences are anchored on their parity wording so a reworded claim
+/// fails here instead of outliving the pin it describes. The chat bootstrap
+/// constant is included because it feeds the user-visible local build id, so a
+/// stale value there misreports the running build in every browser console.
 final List<BridgeTagPin> bridgeLlamaCppParityPins = <BridgeTagPin>[
   BridgeTagPin(
+    'example/chat_app/web/index.html',
+    RegExp(
+      r"^\s*const defaultBridgeLlamaCppTag = '(v\d+\.\d+\.\d+|b\d+)';$",
+      multiLine: true,
+    ),
+  ),
+  BridgeTagPin(
     'doc/webgpu_bridge.md',
     RegExp(
-      r'^That release embeds llama\.cpp `(b\d+)`, matching the '
+      r'^That release embeds llama\.cpp `(v\d+\.\d+\.\d+|b\d+)`, matching the '
       r'`hook/build\.dart` native pin$',
       multiLine: true,
     ),
@@ -250,24 +308,65 @@ final List<BridgeTagPin> bridgeLlamaCppParityPins = <BridgeTagPin>[
   BridgeTagPin(
     'website/docs/platforms/webgpu-bridge.md',
     RegExp(
-      r'^- `v\d+\.\d+\.\d+\+` bridge assets embed llama\.cpp `(b\d+)`, matching the native runtime$',
+      r'^- `v\d+\.\d+\.\d+\+` bridge assets embed llama\.cpp `(v\d+\.\d+\.\d+|b\d+)`, matching the native runtime$',
       multiLine: true,
     ),
   ),
 ];
+
+/// The provenance values the docs restate for the pinned immutable release.
+///
+/// Each pattern matches one passage; every named group is checked against
+/// [bridgeProvenanceValues]. The same six values are written out in two docs,
+/// so without this a partial bump leaves half the tree describing the previous
+/// release with nothing failing.
+final List<BridgeTagPin> bridgeProvenancePins = <BridgeTagPin>[
+  BridgeTagPin(
+    'doc/webgpu_bridge.md',
+    RegExp(
+      r'^\(`(?<nativeReleaseTag>[^`]+)`, both built from upstream llama\.cpp '
+      r'`(?<upstreamTag>[^`@]+)@(?<upstreamCommit>[0-9a-f]{40})`\)\n'
+      r'even though wrapper release tags differ\. Provenance for this immutable consumer\n'
+      r'artifact: release `(?<releaseId>\d+)`, tag commit\n'
+      r'`(?<tagCommit>[0-9a-f]{40})`, bridge source\n'
+      r'`(?<bridgeCommit>[0-9a-f]{40})`, and manifest SHA-256\n'
+      r'`(?<manifestSha256>[0-9a-f]{64})`\.',
+      multiLine: true,
+    ),
+  ),
+  BridgeTagPin(
+    'website/docs/platforms/webgpu-bridge.md',
+    RegExp(
+      r'^  \(`(?<nativeReleaseTag>[^`]+)`, both built from upstream '
+      r'`(?<upstreamTag>[^`@]+)@(?<upstreamCommit>[0-9a-f]{40})`\)\n'
+      r'  even though wrapper release tags differ\. Pinned artifact provenance: release\n'
+      r'  `(?<releaseId>\d+)`, tag commit `(?<tagCommit>[0-9a-f]{40})`, bridge\n'
+      r'  source `(?<bridgeCommit>[0-9a-f]{40})`, manifest SHA-256\n'
+      r'  `(?<manifestSha256>[0-9a-f]{64})`\.',
+      multiLine: true,
+    ),
+  ),
+];
+
+/// The expected value behind each [bridgeProvenancePins] group name.
+Map<String, String> get bridgeProvenanceValues => <String, String>{
+  'nativeReleaseTag': bridgeNativeReleaseTag,
+  'upstreamTag': bridgeLlamaCppTag,
+  'upstreamCommit': bridgeLlamaCppCommit,
+  'releaseId': bridgeAssetsReleaseId,
+  'tagCommit': bridgeAssetsTagCommit,
+  'bridgeCommit': bridgeSourceCommit,
+  'manifestSha256': bridgeManifestSha256,
+};
 
 /// Returns one message per problem with the Web/native llama.cpp relationship.
 ///
 /// `hook/build.dart` and the bridge manifest move in different repositories, so
 /// nothing else notices when a native pin bump silently ends Web/native parity
 /// and leaves the docs claiming it.
-/// [bridgeTag] is the llama.cpp tag embedded by the bridge assets, not the
-/// bridge asset release tag itself.
-List<String> findBridgeRuntimeDrift(
-  Directory repoRoot,
-  String bridgeTag,
-  String? divergence,
-) {
+/// [bridgeTag] is the llama.cpp upstream release tag embedded by the bridge
+/// assets, not the bridge asset release tag itself.
+List<String> findBridgeRuntimeDrift(Directory repoRoot, String bridgeTag) {
   final problems = <String>[];
   final file = File('${repoRoot.path}/$nativeLlamaCppTagPath');
   if (!file.existsSync()) {
@@ -275,35 +374,59 @@ List<String> findBridgeRuntimeDrift(
   }
   final nativeContents = _readGateFile(file, nativeLlamaCppTagPath, problems);
   if (nativeContents == null) return problems;
-  final match = _nativeLlamaCppTag.firstMatch(nativeContents);
-  if (match == null) {
+  final matches = _nativeLlamaCppTag.allMatches(nativeContents).toList();
+  if (matches.length != 1) {
     return <String>[
-      '$nativeLlamaCppTagPath: no _llamaCppTag constant; the gate cannot run',
+      '$nativeLlamaCppTagPath: found ${matches.length} _llamaCppTag constants, '
+          'expected exactly 1; the gate cannot identify the active native pin',
     ];
   }
 
-  final nativeTag = match.group(1)!;
-  if (nativeTag == bridgeTag) {
-    if (divergence != null) {
-      problems.add(
-        'bridgeLlamaCppDivergence records a divergence, but the bridge assets '
-        'and $nativeLlamaCppTagPath both use $nativeTag — clear the record and '
-        'restore the parity wording in the docs, then update the anchored '
-        'bridgeLlamaCppTagPins patterns with the wording',
-      );
-    }
-  } else if (divergence == null) {
+  final normalizedBridgeTag = normalizeNativeLlamaCppTag(bridgeTag);
+  if (normalizedBridgeTag != bridgeTag) {
     problems.add(
-      'bridge assets embed llama.cpp $bridgeTag but $nativeLlamaCppTagPath '
-      'pins $nativeTag — move the bridge asset pin, or set '
-      'bridgeLlamaCppDivergence and say so in the docs',
+      'bridgeLlamaCppTag $bridgeTag is not a canonical upstream llama.cpp '
+      'release tag',
     );
   }
 
-  final activeDocPins = divergence == null
-      ? bridgeLlamaCppParityPins
-      : bridgeLlamaCppTagPins;
-  for (final pin in activeDocPins) {
+  // The recorded anchor and the recorded upstream tag are bumped by hand in
+  // separate constants, so a half-finished bump would otherwise pass here and
+  // then be compared against the manifest in its stale form by
+  // --verify-manifest, which would pass too.
+  final normalizedAnchor = normalizeNativeLlamaCppTag(bridgeNativeReleaseTag);
+  if (normalizedAnchor != bridgeTag) {
+    problems.add(
+      'bridgeNativeReleaseTag $bridgeNativeReleaseTag does not belong to the '
+      'recorded upstream llama.cpp release $bridgeTag — the checked-in bridge '
+      'provenance constants disagree with each other',
+    );
+  }
+
+  final nativeTag = matches.single.group(1)!;
+  final normalizedNativeFamily = normalizeNativeLlamaCppTag(nativeTag);
+  if (normalizedNativeFamily == null) {
+    problems.add(
+      '$nativeLlamaCppTagPath: malformed native llama.cpp tag "$nativeTag" — '
+      'expected stable vMAJOR.MINOR.PATCH(-N) or nightly bNNNN(-N|-llamadart.N)',
+    );
+  } else {
+    if (nativeTag != bridgeNativeReleaseTag) {
+      problems.add(
+        '$nativeLlamaCppTagPath pins $nativeTag, expected the bridge-qualified '
+        'native anchor $bridgeNativeReleaseTag',
+      );
+    }
+    if (normalizedNativeFamily != bridgeTag) {
+      problems.add(
+        'bridge assets embed llama.cpp $bridgeTag but $nativeLlamaCppTagPath '
+        'pins $nativeTag (upstream family $normalizedNativeFamily) — Web and '
+        'native must share the same upstream llama.cpp release',
+      );
+    }
+  }
+
+  for (final pin in bridgeLlamaCppParityPins) {
     final doc = File('${repoRoot.path}/${pin.path}');
     if (!doc.existsSync()) {
       problems.add('${pin.path}: file is missing');
@@ -325,6 +448,50 @@ List<String> findBridgeRuntimeDrift(
       problems.add('${pin.path}: states $found, expected $bridgeTag');
     }
   }
+
+  return problems;
+}
+
+/// Returns one message per provenance value a doc states incorrectly.
+///
+/// The bridge assets are consumed as an immutable artifact, so every value in
+/// [bridgeProvenanceValues] identifies bytes that can be re-fetched and
+/// re-hashed. Docs that restate them are pinned rather than trusted.
+List<String> findBridgeProvenanceDrift(Directory repoRoot) {
+  final problems = <String>[];
+  for (final pin in bridgeProvenancePins) {
+    final doc = File('${repoRoot.path}/${pin.path}');
+    if (!doc.existsSync()) {
+      problems.add('${pin.path}: file is missing');
+      continue;
+    }
+    final contents = _readGateFile(doc, pin.path, problems);
+    if (contents == null) continue;
+    final matches = pin.pattern.allMatches(contents).toList();
+    if (matches.length != 1) {
+      problems.add(
+        '${pin.path}: the pinned release provenance passage matches '
+        '${matches.length} lines, expected 1 — it was reworded, removed, or '
+        'duplicated, so this check no longer covers it',
+      );
+      continue;
+    }
+    final match = matches.single;
+    for (final entry in bridgeProvenanceValues.entries) {
+      if (!match.groupNames.contains(entry.key)) {
+        problems.add(
+          '${pin.path}: the provenance passage no longer states ${entry.key}',
+        );
+        continue;
+      }
+      final found = match.namedGroup(entry.key);
+      if (found != entry.value) {
+        problems.add(
+          '${pin.path}: states ${entry.key} $found, expected ${entry.value}',
+        );
+      }
+    }
+  }
   return problems;
 }
 
@@ -339,64 +506,197 @@ String? _readGateFile(File file, String path, List<String> problems) {
   return null;
 }
 
-/// Re-reads the published manifest for [expectedTag] and returns one message
-/// when [bridgeLlamaCppTag] no longer matches it.
+/// Maximum accepted response size for the small release manifest.
+const int maxBridgeManifestBytes = 64 * 1024;
+
+/// The transport result consumed by [verifyManifest].
+class ManifestResponse {
+  /// HTTP status returned by the manifest endpoint.
+  final int statusCode;
+
+  /// Response bytes, empty for a non-success status.
+  final List<int> bytes;
+
+  /// Creates a manifest response.
+  const ManifestResponse(this.statusCode, this.bytes);
+}
+
+/// Fetches one manifest response.
+typedef ManifestFetcher = Future<ManifestResponse> Function(Uri url);
+
+const Map<String, String> _manifestProvenanceAliases = <String, String>{
+  'release_tag': 'bridge_assets_tag',
+  'bridge_repository': 'source_repository',
+  'bridge_commit': 'source_commit',
+  'upstream_tag': 'llama_cpp_tag',
+  'upstream_commit': 'llama_cpp_commit',
+};
+
+Future<ManifestResponse> _fetchManifest(
+  HttpClient client,
+  Uri url,
+  int maximumBytes,
+) async {
+  final request = await client.getUrl(url);
+  final response = await request.close();
+  if (response.statusCode != HttpStatus.ok) {
+    return ManifestResponse(response.statusCode, const <int>[]);
+  }
+  if (response.contentLength > maximumBytes) {
+    throw HttpException(
+      'manifest Content-Length ${response.contentLength} exceeds the '
+      '$maximumBytes-byte limit',
+      uri: url,
+    );
+  }
+
+  final bytes = <int>[];
+  await for (final chunk in response) {
+    if (bytes.length + chunk.length > maximumBytes) {
+      throw HttpException(
+        'manifest body exceeds the $maximumBytes-byte limit',
+        uri: url,
+      );
+    }
+    bytes.addAll(chunk);
+  }
+  return ManifestResponse(response.statusCode, bytes);
+}
+
+/// Verifies exact manifest bytes and their canonical schema-2 provenance.
+List<String> verifyManifestBytes({
+  required List<int> bytes,
+  required Uri source,
+  required String expectedManifestSha256,
+  required Map<String, Object> expectedProvenance,
+}) {
+  final problems = <String>[];
+  final actualHash = sha256.convert(bytes).toString();
+  if (actualHash != expectedManifestSha256) {
+    problems.add(
+      '$source manifest SHA-256 is $actualHash, expected '
+      '$expectedManifestSha256',
+    );
+  }
+
+  final String body;
+  try {
+    body = utf8.decode(bytes);
+  } on FormatException catch (error) {
+    return <String>[
+      ...problems,
+      '$source returned invalid manifest UTF-8 bytes: $error',
+    ];
+  }
+
+  final dynamic decoded;
+  try {
+    decoded = jsonDecode(body);
+  } on FormatException catch (error) {
+    return <String>[
+      ...problems,
+      '$source returned invalid manifest JSON: $error',
+    ];
+  }
+  if (decoded is! Map<String, dynamic>) {
+    return <String>[
+      ...problems,
+      '$source returned invalid manifest JSON: expected an object',
+    ];
+  }
+
+  // Alias fields remain in the published manifest for old consumers. This gate
+  // deliberately reads only the schema-2 canonical names so an alias cannot
+  // hide a missing or conflicting provenance field.
+  for (final expectation in expectedProvenance.entries) {
+    final value = decoded[expectation.key];
+    if (value == null || (value is String && value.isEmpty)) {
+      problems.add(
+        '$source returned invalid manifest JSON: ${expectation.key} is missing '
+        'or empty',
+      );
+      continue;
+    }
+    if (value != expectation.value) {
+      problems.add(
+        '$source reports ${expectation.key} $value, expected '
+        '${expectation.value}',
+      );
+    }
+  }
+  for (final alias in _manifestProvenanceAliases.entries) {
+    final aliasValue = decoded[alias.value];
+    if (aliasValue != null && aliasValue != decoded[alias.key]) {
+      problems.add(
+        '$source has conflicting provenance aliases: ${alias.key} '
+        '${decoded[alias.key]} but ${alias.value} $aliasValue',
+      );
+    }
+  }
+  return problems;
+}
+
+/// Re-reads the published manifest for [expectedTag] and machine-verifies its
+/// exact approved bytes and canonical schema-2 provenance fields.
 ///
 /// Network-dependent, so it is opt-in rather than part of the default run.
-Future<List<String>> verifyManifestLlamaCppTag(
-  String expectedTag,
-  String bridgeTag, {
+Future<List<String>> verifyManifest({
+  required String expectedTag,
+  required String expectedLlamaCppTag,
+  required String expectedLlamaCppCommit,
+  required String expectedBridgeCommit,
+  required String expectedNativeReleaseTag,
+  required String expectedManifestSha256,
   Uri? manifestUrl,
   Duration timeout = const Duration(seconds: 15),
+  int maximumBytes = maxBridgeManifestBytes,
+  ManifestFetcher? fetcher,
 }) async {
   final url =
       manifestUrl ??
       Uri.parse(
-        'https://cdn.jsdelivr.net/gh/leehack/llama-web-bridge-assets@$expectedTag'
+        'https://cdn.jsdelivr.net/gh/$bridgeAssetsRepository@$expectedTag'
         '/manifest.json',
       );
-  final client = HttpClient();
+  final client = fetcher == null ? HttpClient() : null;
   try {
-    Future<List<String>> fetchManifest() async {
-      final request = await client.getUrl(url);
-      final response = await request.close();
-      if (response.statusCode != 200) {
-        return <String>['$url returned HTTP ${response.statusCode}'];
-      }
-      final body = await response.transform(utf8.decoder).join();
-      final decoded = jsonDecode(body);
-      if (decoded is! Map<String, dynamic>) {
-        return <String>[
-          '$url returned invalid manifest JSON: expected an object',
-        ];
-      }
-      final manifestTag = decoded['llama_cpp_tag'];
-      if (manifestTag is! String || manifestTag.isEmpty) {
-        return <String>[
-          '$url returned invalid manifest JSON: llama_cpp_tag must be a '
-              'non-empty string',
-        ];
-      }
-      if (manifestTag != bridgeTag) {
-        return <String>[
-          '$url reports llama_cpp_tag $manifestTag, but bridgeLlamaCppTag is '
-              '$bridgeTag',
-        ];
-      }
-      return <String>[];
+    final response =
+        await (fetcher ?? (url) => _fetchManifest(client!, url, maximumBytes))(
+          url,
+        ).timeout(timeout);
+    if (response.statusCode != HttpStatus.ok) {
+      return <String>['$url returned HTTP ${response.statusCode}'];
     }
-
-    return await fetchManifest().timeout(timeout);
+    if (response.bytes.length > maximumBytes) {
+      return <String>[
+        '$url manifest body exceeds the $maximumBytes-byte limit',
+      ];
+    }
+    return verifyManifestBytes(
+      bytes: response.bytes,
+      source: url,
+      expectedManifestSha256: expectedManifestSha256,
+      expectedProvenance: <String, Object>{
+        'schema_version': 2,
+        'release_tag': expectedTag,
+        'assets_repository': bridgeAssetsRepository,
+        'bridge_repository': bridgeSourceRepository,
+        'bridge_commit': expectedBridgeCommit,
+        'upstream_repository': bridgeUpstreamRepository,
+        'upstream_tag': expectedLlamaCppTag,
+        'upstream_commit': expectedLlamaCppCommit,
+        'native_repository': bridgeNativeRepository,
+        'native_release_tag': expectedNativeReleaseTag,
+      },
+    );
   } on TimeoutException {
     return <String>[
       'timed out reading $url after ${timeout.inMilliseconds} ms',
     ];
   } on IOException catch (error) {
     return <String>['could not read $url: $error'];
-  } on FormatException catch (error) {
-    return <String>['$url returned invalid manifest JSON: $error'];
   } finally {
-    client.close();
+    client?.close(force: true);
   }
 }
 
@@ -419,7 +719,8 @@ const List<String> _selfPaths = <String>[
   'test/unit/tooling/check_webgpu_bridge_tag_test.dart',
 ];
 
-/// Files that record past releases, where an old tag is correct.
+/// Files that record past releases, where an old tag is correct. Current
+/// `Unreleased` claims in these files remain explicit [bridgeTagPins].
 const List<String> tagHistoryFiles = <String>[
   'CHANGELOG.md',
   'website/docs/changelog/recent-releases.md',
@@ -432,7 +733,7 @@ const String versionedDocsPrefix = 'website/versioned_docs/';
 ///
 /// Without this the gate would only protect sites someone remembered to
 /// register, so a newly added pin could go stale while CI stayed green.
-/// Capability floors (`v0.1.37+`) and the release histories are excluded
+/// Capability floors (`v0.1.39+`) and the release histories are excluded
 /// because they legitimately keep their own values.
 List<String> findUnregisteredTagSites(Directory repoRoot, String expectedTag) {
   final listed = Process.runSync('git', <String>[
@@ -507,7 +808,7 @@ class _PinOccurrence {
 }
 
 /// Every pin shape, plus every mention of [expectedTag] that is not a
-/// `v0.1.37+` minimum.
+/// `v0.1.39+` minimum.
 List<_PinOccurrence> _pinOccurrences(String line, String expectedTag) {
   final found = <_PinOccurrence>[];
   for (final shape in bridgeTagPinShapes) {
@@ -528,8 +829,31 @@ List<_PinOccurrence> _pinOccurrences(String line, String expectedTag) {
   return found;
 }
 
+/// Runs every offline drift gate and the optional published-manifest gate.
+Future<List<String>> findBridgeProblems(
+  Directory repoRoot,
+  String expectedTag, {
+  bool verifyPublishedManifest = false,
+  ManifestFetcher? manifestFetcher,
+}) async => <String>[
+  ...findBridgeTagDrift(repoRoot, expectedTag),
+  ...findUnregisteredTagSites(repoRoot, expectedTag),
+  ...findBridgeRuntimeDrift(repoRoot, bridgeLlamaCppTag),
+  ...findBridgeProvenanceDrift(repoRoot),
+  if (verifyPublishedManifest)
+    ...await verifyManifest(
+      expectedTag: expectedTag,
+      expectedLlamaCppTag: bridgeLlamaCppTag,
+      expectedLlamaCppCommit: bridgeLlamaCppCommit,
+      expectedBridgeCommit: bridgeSourceCommit,
+      expectedNativeReleaseTag: bridgeNativeReleaseTag,
+      expectedManifestSha256: bridgeManifestSha256,
+      fetcher: manifestFetcher,
+    ),
+];
+
 Future<void> main(List<String> arguments) async {
-  final verifyManifest = arguments.contains('--verify-manifest');
+  final verifyManifestFlag = arguments.contains('--verify-manifest');
   final unknown = arguments.where(
     (argument) => argument != '--verify-manifest',
   );
@@ -550,17 +874,11 @@ Future<void> main(List<String> arguments) async {
     exit(1);
   }
 
-  final problems = <String>[
-    ...findBridgeTagDrift(repoRoot, expectedTag),
-    ...findUnregisteredTagSites(repoRoot, expectedTag),
-    ...findBridgeRuntimeDrift(
-      repoRoot,
-      bridgeLlamaCppTag,
-      bridgeLlamaCppDivergence,
-    ),
-    if (verifyManifest)
-      ...await verifyManifestLlamaCppTag(expectedTag, bridgeLlamaCppTag),
-  ];
+  final problems = await findBridgeProblems(
+    repoRoot,
+    expectedTag,
+    verifyPublishedManifest: verifyManifestFlag,
+  );
   if (problems.isNotEmpty) {
     stderr.writeln(
       '[webgpu-bridge-tag] $bridgeTagSourcePath pins $expectedTag, but:',
@@ -571,19 +889,15 @@ Future<void> main(List<String> arguments) async {
     exit(1);
   }
 
-  final divergence = bridgeLlamaCppDivergence;
   stdout.writeln(
     '[webgpu-bridge-tag] OK: ${bridgeTagPins.length} pins agree on $expectedTag.',
   );
-  if (divergence == null) {
-    stdout.writeln(
-      '[webgpu-bridge-tag] OK: Web and native both run llama.cpp '
-      '$bridgeLlamaCppTag.',
-    );
-  } else {
-    stdout.writeln(
-      '[webgpu-bridge-tag] Recorded divergence: bridge assets embed '
-      '$bridgeLlamaCppTag. $divergence',
-    );
-  }
+  stdout.writeln(
+    '[webgpu-bridge-tag] OK: Web and native both run upstream llama.cpp '
+    '$bridgeLlamaCppTag.',
+  );
+  stdout.writeln(
+    '[webgpu-bridge-tag] OK: ${bridgeProvenancePins.length} docs restate the '
+    'release $bridgeAssetsReleaseId provenance correctly.',
+  );
 }
