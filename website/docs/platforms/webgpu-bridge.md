@@ -146,13 +146,13 @@ development validation, and CDN-first loading for normal hosted deployments:
 1. On localhost: local asset first, then CDN fallback.
 2. On hosted deployments: CDN asset first, then local fallback.
 
-The example currently pins bridge assets to `v0.1.37`, with local vendored assets
-identified as `v0.1.37-local-b10514`.
+The example currently pins bridge assets to `v0.1.39`, with local vendored assets
+identified as `v0.1.39-local-v0.2.0`.
 
 Fetch pinned local assets with:
 
 ```bash
-WEBGPU_BRIDGE_ASSETS_TAG=v0.1.37 ./scripts/fetch_webgpu_bridge_assets.sh
+WEBGPU_BRIDGE_ASSETS_TAG=v0.1.39 ./scripts/fetch_webgpu_bridge_assets.sh
 ```
 
 To verify the loaded runtime in a browser console, inspect:
@@ -194,12 +194,15 @@ cannot report success before the bridge exposes `prefetchModelToCache(...)`.
 - `v0.1.34+` bridge assets retry a failed worker WebGPU TTS synthesis once in a
   CPU main-thread runtime using the already cached model and projector. This
   recovery is slower than healthy WebGPU synthesis and does not loop.
-- `v0.1.37+` bridge assets embed llama.cpp `b10514`, which now trails the
-  `hook/build.dart` native pin (`v0.2.0-1`, built from llama.cpp `v0.2.0`), so Web
-  and native are not on the same llama.cpp build. The bridge assets provision an
-  explicit 1 MiB stack for both wasm32
-  and memory64, preventing `b10514` graph-parameter growth from overflowing
-  Emscripten's 64 KiB default during memory64 Qwen3-ASR context construction.
+- `v0.1.39+` bridge assets embed llama.cpp `v0.2.0`, matching the native runtime
+  (`v0.2.0-1`, both built from upstream `v0.2.0@bb4caa7540188872173c44d161602d9271386413`)
+  even though wrapper release tags differ. Pinned artifact provenance: release
+  `377534035`, tag commit `d14d46a63deeee7a8f8a017e394b74ee112f4dba`, bridge
+  source `79b6ef31e394dd2de92a456b7c249f9da377c720`, manifest SHA-256
+  `b355d01040604f6ae2c5c5fe5bb42b858101a96f03f67e4b27b32fe41ce3b2bf`. The
+  bridge assets provision an explicit 1 MiB stack for both wasm32 and memory64,
+  preventing graph-parameter growth from overflowing Emscripten's 64 KiB
+  default during memory64 Qwen3-ASR context construction.
 - `v0.1.12+` bridge assets forward native-compatible `ModelParams` load
   tuning fields, including multi-sequence slots, KV cache type, flash attention,
   RoPE overrides, split mode, and main GPU.
@@ -330,7 +333,7 @@ You can override bridge asset source/version before loader startup:
 ```html
 <script>
   window.__llamadartBridgeAssetsRepo = 'leehack/llama-web-bridge-assets';
-  window.__llamadartBridgeAssetsTag = 'v0.1.37';
+  window.__llamadartBridgeAssetsTag = 'v0.1.39';
   // Custom assets stay speech-disabled unless the host has validated them:
   // window.__llamadartBridgeSpeechToTextSupported = true;
   // Prefer local runtime even off localhost:

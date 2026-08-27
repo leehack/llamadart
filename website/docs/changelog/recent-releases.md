@@ -9,6 +9,13 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Aligned default WebGPU bridge assets to `v0.1.39` (immutable manifest
+  `b355d01040604f6ae2c5c5fe5bb42b858101a96f03f67e4b27b32fe41ce3b2bf`),
+  restoring Web and native llama.cpp upstream
+  `v0.2.0@bb4caa7540188872173c44d161602d9271386413` parity with native
+  anchor `llamadart-native@v0.2.0-1` while preserving Web
+  `@litert-lm/core@0.15.0` packaging.
+
 - Patched the website's vulnerable `nanoid` and `uuid` dependency paths. Until
   Docusaurus replaces its unpatched image parser, automatic local Markdown
   images are rejected; website contributors should use static pathname URLs.

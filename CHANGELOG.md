@@ -1,5 +1,11 @@
 ## Unreleased
 
+* Aligned the default WebGPU bridge assets to `v0.1.39` (immutable manifest
+  `b355d01040604f6ae2c5c5fe5bb42b858101a96f03f67e4b27b32fe41ce3b2bf`),
+  restoring Web/native llama.cpp upstream `v0.2.0@bb4caa7540188872173c44d161602d9271386413`
+  parity with native anchor `llamadart-native@v0.2.0-1` while preserving
+  approved Web `@litert-lm/core@0.15.0` packaging.
+
 * Fixed native Qwen3-ASR transcription by applying the model chat template to
   audio turns, while preserving the validated raw-prompt Web bridge contract.
   Empty ASR output now fails explicitly instead of reporting an empty result.

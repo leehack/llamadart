@@ -4,17 +4,24 @@ set -euo pipefail
 ROOT_DIR="$(git rev-parse --show-toplevel)"
 OUT_DIR="${WEBGPU_BRIDGE_OUT_DIR:-$ROOT_DIR/example/chat_app/web/webgpu_bridge}"
 ASSETS_REPO="${WEBGPU_BRIDGE_ASSETS_REPO:-leehack/llama-web-bridge-assets}"
-ASSETS_TAG="${WEBGPU_BRIDGE_ASSETS_TAG:-v0.1.37}"
+ASSETS_TAG="${WEBGPU_BRIDGE_ASSETS_TAG:-v0.1.39}"
 CDN_BASE="${WEBGPU_BRIDGE_CDN_BASE:-https://cdn.jsdelivr.net/gh/${ASSETS_REPO}@${ASSETS_TAG}}"
 PATCH_SAFARI_COMPAT="${WEBGPU_BRIDGE_PATCH_SAFARI_COMPAT:-1}"
 MIN_SAFARI_VERSION="${WEBGPU_BRIDGE_MIN_SAFARI_VERSION:-170400}"
+CURL_DOWNLOAD_ARGS=(
+  --connect-timeout 15
+  --max-time 300
+  --retry 3
+  --retry-delay 1
+  --retry-max-time 600
+)
 
 if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
   cat <<'USAGE'
 Downloads prebuilt WebGPU bridge assets into the chat_app web directory.
 
 Default source:
-  https://cdn.jsdelivr.net/gh/leehack/llama-web-bridge-assets@v0.1.37
+  https://cdn.jsdelivr.net/gh/leehack/llama-web-bridge-assets@v0.1.39
 
 Environment variables:
   WEBGPU_BRIDGE_ASSETS_REPO   Asset repo in owner/repo format
@@ -28,7 +35,7 @@ Usage:
   ./scripts/fetch_webgpu_bridge_assets.sh
 
 Examples:
-  WEBGPU_BRIDGE_ASSETS_TAG=v0.1.37 ./scripts/fetch_webgpu_bridge_assets.sh
+  WEBGPU_BRIDGE_ASSETS_TAG=v0.1.39 ./scripts/fetch_webgpu_bridge_assets.sh
   WEBGPU_BRIDGE_ASSETS_REPO=acme/llama-web-bridge-assets WEBGPU_BRIDGE_ASSETS_TAG=v2 ./scripts/fetch_webgpu_bridge_assets.sh
 USAGE
   exit 0
@@ -58,7 +65,7 @@ download_required() {
   local target_path="$OUT_DIR/$file_name"
 
   echo "[webgpu-assets] downloading $source_url"
-  curl -fL --retry 3 --retry-delay 1 "$source_url" -o "$target_path"
+  curl -fL "${CURL_DOWNLOAD_ARGS[@]}" "$source_url" -o "$target_path"
   mark_downloaded "$file_name"
 }
 
@@ -68,9 +75,9 @@ download_optional() {
   local target_path="$OUT_DIR/$file_name"
 
   rm -f "$target_path"
-  if curl -fsI "$source_url" >/dev/null; then
+  if curl -fsI --connect-timeout 15 --max-time 30 "$source_url" >/dev/null; then
     echo "[webgpu-assets] downloading optional $source_url"
-    curl -fL --retry 3 --retry-delay 1 "$source_url" -o "$target_path"
+    curl -fL "${CURL_DOWNLOAD_ARGS[@]}" "$source_url" -o "$target_path"
     mark_downloaded "$file_name"
   fi
 }
