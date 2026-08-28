@@ -22,7 +22,7 @@ jobs:
       - name: Checkout immutable trusted workflow revision
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.workflow_sha }}
+          ref: ${{ github.sha }}
           persist-credentials: false
 
       - name: Setup repository-pinned Flutter

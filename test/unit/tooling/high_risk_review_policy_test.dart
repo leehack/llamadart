@@ -118,7 +118,7 @@ void main() {
         expect(evaluator, isNot(contains('LLAMADART_READINESS_PRIVATE_KEY')));
         expect(evaluator, isNot(contains('Platform.environment')));
         expect(workflow, contains('pull_request_target:'));
-        expect(workflow, contains(r'ref: ${{ github.workflow_sha }}'));
+        expect(workflow, contains(r'ref: ${{ github.sha }}'));
         expect(workflow, isNot(contains('workflow_dispatch:')));
         expect(
           workflow,

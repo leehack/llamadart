@@ -152,7 +152,7 @@ environment trust, supplied changed-file inventory, or `ready` option.
 ## Trusted-default-branch diagnostic workflow
 
 `.github/workflows/high_risk_readiness.yml` runs under
-`pull_request_target` but checks out only the immutable `github.workflow_sha`
+`pull_request_target` but checks out only the immutable `github.sha`
 revision that supplied the trusted default-branch workflow, with credential
 persistence disabled. It has no branch-selectable manual-dispatch trigger. The
 workflow grants read-only contents and pull-request permissions, validates the
