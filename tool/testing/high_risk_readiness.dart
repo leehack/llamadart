@@ -318,12 +318,16 @@ class _DuplicateKeyScanner {
     switch (source.codeUnitAt(_offset)) {
       case 0x7b:
         _scanObject();
+        return;
       case 0x5b:
         _scanArray();
+        return;
       case 0x22:
         _scanString();
+        return;
       default:
         _scanPrimitive();
+        return;
     }
   }
 
