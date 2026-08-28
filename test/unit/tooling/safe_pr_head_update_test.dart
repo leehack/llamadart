@@ -600,6 +600,70 @@ void main() {
       },
     );
 
+    test(
+      'slash-containing remote name executes guarded update without invalid config keys',
+      () async {
+        expect(
+          (await git(<String>[
+            'remote',
+            'add',
+            'maintainer/upstream',
+            remote.path,
+          ], work)).exitCode,
+          0,
+        );
+        final invocations = <List<String>>[];
+        final updater = SafePrHeadUpdate(
+          gitRunner: (args, {workingDirectory}) {
+            invocations.add(List<String>.of(args));
+            return defaultGitCommandRunner(
+              args,
+              workingDirectory: workingDirectory,
+            );
+          },
+        );
+        final result = await updater.updatePrHead(
+          remote: 'maintainer/upstream',
+          branch: 'pr-test',
+          expectedHeadSha: commitA,
+          proposedHeadSha: commitB,
+          writer: 'slash-remote-writer',
+          workingDirectory: work.path,
+        );
+        expect(
+          result.decision,
+          PrHeadUpdateDecision.accepted,
+          reason: result.toFormattedJson(),
+        );
+        expect(result.remote, 'maintainer/upstream');
+        expect(result.remoteHeadBefore, commitA);
+        expect(result.remoteHeadAfter, commitB);
+        expectEvidenceMatchesLocalSchema(result);
+
+        final push = invocations.singleWhere((args) => args.contains('push'));
+        expect(push, contains('--porcelain'));
+        expect(push, contains('--no-mirror'));
+        expect(push, contains('--no-tags'));
+        expect(push, contains('--no-follow-tags'));
+        expect(push, contains('--verify'));
+        expect(push, contains('maintainer/upstream'));
+        expect(
+          push.any((arg) => arg.contains('maintainer/upstream.mirror')),
+          isFalse,
+        );
+        expect(push.any((arg) => arg.startsWith('--force')), isFalse);
+        expect(push.any((arg) => arg.startsWith('+')), isFalse);
+        expect(
+          (await git(<String>[
+            '--git-dir=${remote.path}',
+            'rev-parse',
+            'refs/heads/pr-test',
+          ], root)).stdout.toString().trim(),
+          commitB,
+        );
+      },
+    );
+
     test('configured pre-push rejection is preserved and classified', () async {
       final contributorHook = File('${work.path}/.git/hooks/pre-push');
       const hookContents = '#!/bin/sh\nexit 23\n';

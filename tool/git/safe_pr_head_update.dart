@@ -533,8 +533,10 @@ class SafePrHeadUpdate {
         final push = await gitRunner(<String>[
           '-c',
           'core.hooksPath=${hookDirectory.path}',
-          '-c',
-          'remote.$safeRemote.mirror=false',
+          if (!safeRemote.contains('/')) ...<String>[
+            '-c',
+            'remote.$safeRemote.mirror=false',
+          ],
           'push',
           '--porcelain',
           '--no-mirror',
