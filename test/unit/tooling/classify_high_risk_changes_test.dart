@@ -75,6 +75,10 @@ void main() {
         'tool/git/pr_head_update_evidence.schema.json',
         'test/unit/tooling/safe_pr_head_update_test.dart',
         'doc/pr_branch_writer_inventory.md',
+        'doc/high_risk_pre_merge_readiness.md',
+        'tool/testing/high_risk_readiness.dart',
+        'tool/testing/high_risk_readiness_evidence.schema.json',
+        'test/unit/tooling/high_risk_readiness_test.dart',
       ]);
 
       expect(
