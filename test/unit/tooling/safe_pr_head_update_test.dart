@@ -257,6 +257,120 @@ void main() {
       },
     );
 
+    test(
+      'injected runner accepts valid SSH URI push remote and sanitizes credential-bearing SSH push remote',
+      () async {
+        const commitA = '388dbc289abdb19b75225bcd3cee47cf72d83cd5';
+        const commitB = '25ef554283a667e3cf7e37a5cfd31605caafbd08';
+
+        ProcessResult mockGit(String pushUrl, List<String> args) {
+          if (args.length >= 2 && args[0] == 'remote' && args[1] == 'get-url') {
+            return ProcessResult(0, 0, '$pushUrl\n', '');
+          }
+          if (args.length >= 2 && args[0] == 'cat-file' && args[1] == '-t') {
+            return ProcessResult(0, 0, 'commit\n', '');
+          }
+          if (args.isNotEmpty && args[0] == 'ls-remote') {
+            return ProcessResult(
+              0,
+              0,
+              '$commitA\trefs/heads/feature/ssh-remote\n',
+              '',
+            );
+          }
+          if (args.contains('merge-base') && args.contains('--is-ancestor')) {
+            final isForward = args.indexOf(commitA) < args.indexOf(commitB);
+            return ProcessResult(0, isForward ? 0 : 1, '', '');
+          }
+          return ProcessResult(0, 0, '', '');
+        }
+
+        for (final validUrl in <String>[
+          'ssh://git@github.com/owner/repo.git',
+          'ssh://github.com/owner/repo.git',
+          'git@github.com:owner/repo.git',
+          'https://github.com/owner/repo.git',
+        ]) {
+          final accepted =
+              await SafePrHeadUpdate(
+                gitRunner: (args, {workingDirectory}) async =>
+                    mockGit(validUrl, args),
+              ).updatePrHead(
+                remote: 'origin',
+                branch: 'feature/ssh-remote',
+                expectedHeadSha: commitA,
+                proposedHeadSha: commitB,
+                writer: 'ssh-writer',
+                dryRun: true,
+              );
+          expect(
+            accepted.decision,
+            PrHeadUpdateDecision.validated,
+            reason: validUrl,
+          );
+          expect(
+            accepted.failureClassification,
+            PrHeadUpdateFailureClassification.none,
+            reason: validUrl,
+          );
+          expectEvidenceMatchesLocalSchema(accepted);
+        }
+
+        for (final (invalidUrl, secret) in <(String, String)>[
+          (
+            'ssh://git:sshSecretPass@github.com/owner/repo.git',
+            'sshSecretPass',
+          ),
+          ('ssh://:sshSecretPass@github.com/owner/repo.git', 'sshSecretPass'),
+          (
+            'ssh://git@github.com/owner/repo.git?token=sshSecretQuery',
+            'sshSecretQuery',
+          ),
+          (
+            'ssh://git@github.com/owner/repo.git#sshSecretFrag',
+            'sshSecretFrag',
+          ),
+          (
+            'https://user:httpsSecretPass@github.com/owner/repo.git',
+            'httpsSecretPass',
+          ),
+          (
+            'https://httpsSecretUser@github.com/owner/repo.git',
+            'httpsSecretUser',
+          ),
+        ]) {
+          final rejected =
+              await SafePrHeadUpdate(
+                gitRunner: (args, {workingDirectory}) async =>
+                    mockGit(invalidUrl, args),
+              ).updatePrHead(
+                remote: 'origin',
+                branch: 'feature/ssh-remote',
+                expectedHeadSha: commitA,
+                proposedHeadSha: commitB,
+                writer: 'ssh-writer',
+                dryRun: true,
+              );
+          expect(
+            rejected.decision,
+            PrHeadUpdateDecision.rejected,
+            reason: invalidUrl,
+          );
+          expect(
+            rejected.failureClassification,
+            PrHeadUpdateFailureClassification.invalidRemoteConfiguration,
+            reason: invalidUrl,
+          );
+          expect(
+            rejected.toFormattedJson(),
+            isNot(contains(secret)),
+            reason: invalidUrl,
+          );
+          expectEvidenceMatchesLocalSchema(rejected);
+        }
+      },
+    );
+
     test('process exceptions become sanitized structured evidence', () async {
       final result =
           await SafePrHeadUpdate(
@@ -974,8 +1088,18 @@ void main() {
           reconciled,
         ], work)).stdout.toString().trim().split(' ');
         expect(parents, <String>[reconciled, commitD, commitC]);
-        expect(File('${work.path}/diverged.txt').readAsStringSync(), 'D\n');
-        expect(File('${work.path}/feature.txt').readAsStringSync(), 'C\n');
+        expect(
+          File(
+            '${work.path}/diverged.txt',
+          ).readAsStringSync().replaceAll('\r\n', '\n'),
+          'D\n',
+        );
+        expect(
+          File(
+            '${work.path}/feature.txt',
+          ).readAsStringSync().replaceAll('\r\n', '\n'),
+          'C\n',
+        );
         for (final parent in <String>[commitD, commitC]) {
           expect(
             (await git(<String>[
@@ -993,8 +1117,12 @@ void main() {
 
   group('static repository writer contracts', () {
     test('all executable and task sources exclude bypass writers', () {
-      String repoPath(File file) =>
-          file.path.startsWith('./') ? file.path.substring(2) : file.path;
+      String repoPath(File file) {
+        final normalized = file.path.replaceAll('\\', '/');
+        return normalized.startsWith('./')
+            ? normalized.substring(2)
+            : normalized;
+      }
 
       final sourceFiles = Directory('.')
           .listSync(recursive: true, followLinks: false)
@@ -1077,15 +1205,18 @@ void main() {
       final markdownFiles = Directory('.')
           .listSync(recursive: true)
           .whereType<File>()
-          .where(
-            (file) =>
-                file.path.endsWith('.md') && !file.path.contains('/.git/'),
-          );
+          .where((file) {
+            final path = repoPath(file);
+            return path.endsWith('.md') &&
+                !path.startsWith('.git/') &&
+                !path.contains('/.git/');
+          });
       for (final file in markdownFiles) {
+        final path = repoPath(file);
         final content = file.readAsStringSync();
         for (final line in content.split('\n')) {
           if (!RegExp(r'\bgit\s+push\b').hasMatch(line)) continue;
-          if (file.path == './doc/pr_branch_writer_inventory.md') {
+          if (path == 'doc/pr_branch_writer_inventory.md') {
             expect(
               line,
               contains(
@@ -1095,13 +1226,13 @@ void main() {
             continue;
           }
           expect(
-            file.path,
+            path,
             matches(
               RegExp(
-                r'^\./website/versioned_docs/version-[^/]+/maintainers/release-workflow\.md$',
+                r'^website/versioned_docs/version-[^/]+/maintainers/release-workflow\.md$',
               ),
             ),
-            reason: '${file.path} documents an unregistered push',
+            reason: '$path documents an unregistered push',
           );
           expect(
             line.trim(),
@@ -1110,7 +1241,7 @@ void main() {
                 r'^git push origin llamadart_[a-z0-9_]+-v[0-9]+\.[0-9]+\.[0-9]+$',
               ),
             ),
-            reason: '${file.path} must remain a tag-only push example',
+            reason: '$path must remain a tag-only push example',
           );
         }
       }
@@ -1119,7 +1250,7 @@ void main() {
     test('the only workflow open-PR writer invokes the guarded helper', () {
       final workflow = File(
         '.github/workflows/sync_native_bindings.yml',
-      ).readAsStringSync();
+      ).readAsStringSync().replaceAll('\r\n', '\n');
       expect(workflowWriterContractViolations(workflow), isEmpty);
       expect(workflow, contains('tool/git/safe_pr_head_update.dart'));
       expect(workflow, contains('ref: main'));
@@ -1166,7 +1297,7 @@ void main() {
     test('workflow contract rejects guard deletion and mutation bypasses', () {
       final workflow = File(
         '.github/workflows/sync_native_bindings.yml',
-      ).readAsStringSync();
+      ).readAsStringSync().replaceAll('\r\n', '\n');
       expect(workflowWriterContractViolations(workflow), isEmpty);
 
       final deletedGuard = workflow.replaceFirst(

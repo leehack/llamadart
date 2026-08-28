@@ -152,12 +152,17 @@ bool _isSafePushUrl(String value) {
     return true;
   }
   final uri = Uri.tryParse(value);
-  return uri != null &&
-      <String>{'https', 'ssh'}.contains(uri.scheme) &&
-      uri.host.isNotEmpty &&
-      uri.userInfo.isEmpty &&
-      !uri.hasQuery &&
-      !uri.hasFragment;
+  if (uri == null || uri.host.isEmpty || uri.hasQuery || uri.hasFragment) {
+    return false;
+  }
+  if (uri.scheme == 'https') {
+    return uri.userInfo.isEmpty;
+  }
+  if (uri.scheme == 'ssh') {
+    return uri.userInfo.isEmpty ||
+        RegExp(r'^[A-Za-z0-9._-]+$').hasMatch(uri.userInfo);
+  }
+  return false;
 }
 
 String? _parseExactRemoteHead(String output, String targetRef) {
