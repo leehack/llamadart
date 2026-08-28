@@ -1,4 +1,4 @@
-## Unreleased
+## 0.8.21
 
 * Aligned the default WebGPU bridge assets to `v0.1.39` (immutable manifest
   `b355d01040604f6ae2c5c5fe5bb42b858101a96f03f67e4b27b32fe41ce3b2bf`),

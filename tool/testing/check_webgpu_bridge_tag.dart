@@ -124,25 +124,84 @@ final List<BridgeTagPin> bridgeTagPins = <BridgeTagPin>[
     'website/docs/guides/text-to-speech.md',
     RegExp(r'^- The chat example pins `(v\d+\.\d+\.\d+)`,', multiLine: true),
   ),
+];
+
+/// Release-notes files whose current section restates the pinned tag.
+///
+/// The patterns are matched against [currentReleaseNotesSection] alone, so the
+/// frozen sections below it keep the tags their releases shipped.
+final List<BridgeTagPin> releaseNotesPins = <BridgeTagPin>[
   BridgeTagPin(
     'CHANGELOG.md',
     RegExp(
-      r'^## Unreleased\b(?:(?!^## ).)*?^\* Aligned the default WebGPU bridge '
-      r'assets to `(v\d+\.\d+\.\d+)`',
+      r'^\* Aligned the default WebGPU bridge assets to `(v\d+\.\d+\.\d+)`',
       multiLine: true,
-      dotAll: true,
     ),
   ),
   BridgeTagPin(
     'website/docs/changelog/recent-releases.md',
     RegExp(
-      r'^## Unreleased\b(?:(?!^## ).)*?^- Aligned default WebGPU bridge assets '
-      r'to `(v\d+\.\d+\.\d+)`',
+      r'^- Aligned default WebGPU bridge assets to `(v\d+\.\d+\.\d+)`',
       multiLine: true,
-      dotAll: true,
     ),
   ),
 ];
+
+/// The pubspec whose version names the section a release-prep tree promotes.
+const String rootPubspecPath = 'pubspec.yaml';
+
+final RegExp _rootPubspecVersion = RegExp(
+  r'^version:\s*(\S+)\s*$',
+  multiLine: true,
+);
+
+final RegExp _topReleaseNotesSection = RegExp(
+  r'^## (?<heading>.*?)\s*$(?<body>(?:(?!^## ).)*)',
+  multiLine: true,
+  dotAll: true,
+);
+
+/// Reads the version the root package will publish.
+///
+/// Throws [FormatException] when it is missing or duplicated, so the gate
+/// cannot fall back to accepting any release-notes heading it finds.
+String readRootPackageVersion(Directory repoRoot) {
+  final file = File('${repoRoot.path}/$rootPubspecPath');
+  if (!file.existsSync()) {
+    throw FormatException('Missing $rootPubspecPath');
+  }
+  final String source;
+  try {
+    source = file.readAsStringSync();
+  } on FileSystemException catch (error) {
+    throw FormatException('$rootPubspecPath could not be read: $error');
+  } on FormatException catch (error) {
+    throw FormatException('$rootPubspecPath could not be decoded: $error');
+  }
+  final matches = _rootPubspecVersion.allMatches(source).toList();
+  if (matches.length != 1) {
+    throw FormatException(
+      'Expected exactly one version field in $rootPubspecPath, found '
+      '${matches.length}; the gate cannot identify the current release-notes '
+      'section.',
+    );
+  }
+  return matches.single.group(1)!;
+}
+
+/// The body of the top `## ` section of [contents] when it is the current one.
+///
+/// Ordinary development leaves the top section headed `## Unreleased`; a
+/// release-prep change promotes that same section to `## $releaseVersion`.
+/// Returns null for any other heading, so a gate reading this never mistakes a
+/// frozen historical section for the current release notes.
+String? currentReleaseNotesSection(String contents, String releaseVersion) {
+  final match = _topReleaseNotesSection.firstMatch(contents);
+  if (match == null) return null;
+  final heading = match.namedGroup('heading');
+  if (heading != 'Unreleased' && heading != releaseVersion) return null;
+  return match.namedGroup('body');
+}
 
 /// Reads the tag every pin must quote.
 ///
@@ -199,6 +258,58 @@ List<String> findBridgeTagDrift(Directory repoRoot, String expectedTag) {
         '${pin.path}: ${pin.pattern.pattern} matches ${matches.length} lines, '
         'expected 1 — the pin moved, was reworded, or was duplicated, so this '
         'check no longer covers exactly one site',
+      );
+      continue;
+    }
+    final found = matches.single.group(1)!;
+    if (found != expectedTag) {
+      problems.add('${pin.path}: pins $found, expected $expectedTag');
+    }
+  }
+  return <String>[
+    ...problems,
+    ...findCurrentReleaseNotesDrift(repoRoot, expectedTag),
+  ];
+}
+
+/// Returns one message per [releaseNotesPins] site whose current section
+/// drifted, lost its claim, or sits under an unrecognized heading.
+List<String> findCurrentReleaseNotesDrift(
+  Directory repoRoot,
+  String expectedTag,
+) {
+  final String releaseVersion;
+  try {
+    releaseVersion = readRootPackageVersion(repoRoot);
+  } on FormatException catch (error) {
+    return <String>[error.message];
+  }
+
+  final problems = <String>[];
+  for (final pin in releaseNotesPins) {
+    final file = File('${repoRoot.path}/${pin.path}');
+    if (!file.existsSync()) {
+      problems.add('${pin.path}: file is missing');
+      continue;
+    }
+    final contents = _readGateFile(file, pin.path, problems);
+    if (contents == null) continue;
+    final section = currentReleaseNotesSection(contents, releaseVersion);
+    if (section == null) {
+      problems.add(
+        '${pin.path}: the top section is neither `## Unreleased` nor '
+        '`## $releaseVersion`, so the gate cannot tell the current release '
+        'notes from frozen history',
+      );
+      continue;
+    }
+    final matches = pin.pattern.allMatches(section).toList();
+    if (matches.length != 1) {
+      problems.add(
+        '${pin.path}: ${pin.pattern.pattern} matches ${matches.length} lines in '
+        'the current release-notes section, expected 1 — the pin moved, was '
+        'reworded, or was duplicated, so this check no longer covers exactly '
+        'one site',
       );
       continue;
     }
@@ -719,8 +830,8 @@ const List<String> _selfPaths = <String>[
   'test/unit/tooling/check_webgpu_bridge_tag_test.dart',
 ];
 
-/// Files that record past releases, where an old tag is correct. Current
-/// `Unreleased` claims in these files remain explicit [bridgeTagPins].
+/// Files that record past releases, where an old tag is correct. The current
+/// release-notes claims in these files remain explicit [releaseNotesPins].
 const List<String> tagHistoryFiles = <String>[
   'CHANGELOG.md',
   'website/docs/changelog/recent-releases.md',
@@ -890,7 +1001,9 @@ Future<void> main(List<String> arguments) async {
   }
 
   stdout.writeln(
-    '[webgpu-bridge-tag] OK: ${bridgeTagPins.length} pins agree on $expectedTag.',
+    '[webgpu-bridge-tag] OK: '
+    '${bridgeTagPins.length + releaseNotesPins.length} pins agree on '
+    '$expectedTag.',
   );
   stdout.writeln(
     '[webgpu-bridge-tag] OK: Web and native both run upstream llama.cpp '
