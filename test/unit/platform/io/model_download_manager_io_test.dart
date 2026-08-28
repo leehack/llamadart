@@ -20,17 +20,10 @@ void main() {
     late _ModelHttpFixture server;
 
     setUp(() async {
-      tempDir = await Directory.systemTemp.createTemp(
-        'llamadart_model_cache_test_',
-      );
-      server = await _ModelHttpFixture.start();
-    });
-
-    tearDown(() async {
-      await server.close();
-      if (await tempDir.exists()) {
-        await tempDir.delete(recursive: true);
-      }
+      // Register each cleanup immediately so a partial setUp failure neither
+      // leaks an earlier resource nor reads an uninitialized `late` field.
+      tempDir = await _createManagedTempDirectory();
+      server = await _startManagedFixture();
     });
 
     test('resolves desktop shared model cache directories', () {
@@ -560,8 +553,7 @@ void main() {
     test(
       'cross-origin redirects do not forward caller supplied headers',
       () async {
-        final redirectedServer = await _ModelHttpFixture.start();
-        addTearDown(redirectedServer.close);
+        final redirectedServer = await _startManagedFixture();
         server.redirectTo = redirectedServer.modelUri;
         redirectedServer.payload = utf8.encode('redirected-model');
         final manager = DefaultModelDownloadManager(
@@ -955,14 +947,9 @@ void main() {
         final metadataFile = File(
           path.join(path.dirname(entry.filePath), 'metadata.json'),
         );
-        final outsideDir = await Directory.systemTemp.createTemp(
-          'llamadart_outside_cache_',
+        final outsideDir = await _createManagedTempDirectory(
+          prefix: 'llamadart_outside_cache_',
         );
-        addTearDown(() async {
-          if (await outsideDir.exists()) {
-            await outsideDir.delete(recursive: true);
-          }
-        });
         final outsideFile = File(path.join(outsideDir.path, 'outside.gguf'))
           ..writeAsStringSync('outside');
         final metadata =
@@ -1637,12 +1624,171 @@ void main() {
       },
     );
   });
+
+  group('suite resource isolation', () {
+    final createdDirectories = <Directory>[];
+
+    // Group tearDown runs after every callback a test registered with
+    // addTearDown, so this observes the state the next test would inherit.
+    tearDown(() {
+      for (final directory in createdDirectories) {
+        expect(
+          directory.existsSync(),
+          isFalse,
+          reason: 'leaked temporary directory ${directory.path}',
+        );
+      }
+      createdDirectories.clear();
+    });
+
+    test('temporary directories own their cleanup independently', () async {
+      final first = await _createManagedTempDirectory();
+      final second = await _createManagedTempDirectory();
+      createdDirectories.addAll(<Directory>[first, second]);
+
+      expect(first.path, isNot(second.path));
+      expect(first.existsSync(), isTrue);
+      expect(second.existsSync(), isTrue);
+    });
+
+    test('close waits for started request handlers', () async {
+      final fixture = await _startManagedFixture();
+      fixture.responseDelay = const Duration(milliseconds: 200);
+      final client = HttpClient();
+      addTearDown(() => client.close(force: true));
+
+      final pending = client
+          .getUrl(fixture.modelUri)
+          .then((request) => request.close())
+          .then((response) => response.drain<void>());
+      await fixture.firstRequestStarted;
+
+      expect(fixture.activeRequests, 1);
+
+      await fixture.close();
+
+      expect(
+        fixture.activeRequests,
+        0,
+        reason: 'close must not leave a handler running past the test',
+      );
+      await pending;
+    });
+
+    test('close is idempotent and stops accepting new requests', () async {
+      final fixture = await _startManagedFixture();
+      fixture.responseDelay = const Duration(milliseconds: 200);
+      final modelUri = fixture.modelUri;
+      final client = HttpClient();
+      addTearDown(() => client.close(force: true));
+
+      final pending = client
+          .getUrl(modelUri)
+          .then((request) => request.close())
+          .then((response) => response.drain<void>());
+      await fixture.firstRequestStarted;
+
+      final firstClose = fixture.close();
+      final secondClose = fixture.close();
+      await secondClose;
+      final activeAfterSecondClose = fixture.activeRequests;
+      await firstClose;
+      await pending;
+
+      expect(activeAfterSecondClose, 0);
+      await expectLater(
+        client.getUrl(modelUri).then((request) => request.close()),
+        throwsA(anyOf(isA<SocketException>(), isA<HttpException>())),
+      );
+      expect(fixture.requestCount, 1);
+    });
+
+    test('close reports request handler failures', () async {
+      final fixture = await _ModelHttpFixture.start();
+      addTearDown(() async {
+        try {
+          await fixture.close();
+        } on FormatException {
+          // This test deliberately gives the fixture an invalid byte range.
+        }
+      });
+      fixture.supportRanges = true;
+      final client = HttpClient();
+      addTearDown(() => client.close(force: true));
+      final request = await client.getUrl(fixture.modelUri);
+      request.headers.set(HttpHeaders.rangeHeader, 'bytes=invalid-');
+      final clientDone = request.close().then<void>(
+        (response) => response.drain<void>(),
+        onError: (Object error, StackTrace stackTrace) {
+          if (error is! SocketException && error is! HttpException) {
+            Error.throwWithStackTrace(error, stackTrace);
+          }
+        },
+      );
+      await fixture.firstRequestStarted;
+
+      await expectLater(fixture.close(), throwsA(isA<FormatException>()));
+      await clientDone;
+    });
+
+    test(
+      'repeated fixture cycles leave no handler or listener behind',
+      () async {
+        for (var cycle = 0; cycle < 20; cycle += 1) {
+          final fixture = await _startManagedFixture();
+          fixture.responseDelay = const Duration(milliseconds: 20);
+          final client = HttpClient();
+          final abandoned = client
+              .getUrl(fixture.modelUri)
+              .then((request) => request.close());
+          await fixture.firstRequestStarted;
+          client.close(force: true);
+
+          final clientDone = abandoned.then<void>(
+            (_) {},
+            onError: (Object error, StackTrace stackTrace) {
+              if (error is! SocketException && error is! HttpException) {
+                Error.throwWithStackTrace(error, stackTrace);
+              }
+            },
+          );
+          await Future.wait<void>(<Future<void>>[fixture.close(), clientDone]);
+
+          expect(fixture.activeRequests, 0, reason: 'cycle $cycle');
+          expect(fixture.requestCount, 1, reason: 'cycle $cycle');
+        }
+      },
+    );
+  });
+}
+
+Future<Directory> _createManagedTempDirectory({
+  String prefix = 'llamadart_model_cache_test_',
+}) async {
+  final directory = await Directory.systemTemp.createTemp(prefix);
+  addTearDown(() async {
+    if (await directory.exists()) {
+      await directory.delete(recursive: true);
+    }
+  });
+  return directory;
+}
+
+Future<_ModelHttpFixture> _startManagedFixture() async {
+  final fixture = await _ModelHttpFixture.start();
+  addTearDown(fixture.close);
+  return fixture;
 }
 
 class _ModelHttpFixture {
   _ModelHttpFixture._(this._server);
 
   final HttpServer _server;
+  late final StreamSubscription<HttpRequest> _subscription;
+  final Set<Future<void>> _inFlight = <Future<void>>{};
+  Future<void>? _closeFuture;
+  Object? _handlerError;
+  StackTrace? _handlerStackTrace;
   List<int> payload = utf8.encode('model-bytes');
   bool supportRanges = false;
   String? etag = '"fixture-v1"';
@@ -1667,15 +1813,47 @@ class _ModelHttpFixture {
   static Future<_ModelHttpFixture> start() async {
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     final fixture = _ModelHttpFixture._(server);
-    server.listen(fixture._handleRequest);
+    fixture._subscription = server.listen(fixture._acceptRequest);
     return fixture;
   }
 
-  Future<void> close() => _server.close(force: true);
+  /// Releases the listening socket once every started handler has finished.
+  ///
+  /// Returning while a handler is still writing hands the next test a live
+  /// socket and a pending handler owned by a test that already ended, so the
+  /// fixture is no longer isolated to the test that created it.
+  Future<void> close() => _closeFuture ??= _close();
+
+  Future<void> _close() async {
+    await _subscription.cancel();
+    while (_inFlight.isNotEmpty) {
+      await Future.wait(_inFlight.toList());
+    }
+    await _server.close(force: true);
+
+    final handlerError = _handlerError;
+    if (handlerError != null) {
+      Error.throwWithStackTrace(handlerError, _handlerStackTrace!);
+    }
+  }
 
   Future<void> get firstRequestStarted => _firstRequestStarted.future;
 
-  void _handleRequest(HttpRequest request) async {
+  void _acceptRequest(HttpRequest request) {
+    late final Future<void> tracked;
+    tracked = _handleRequest(request)
+        .then<void>(
+          (_) {},
+          onError: (Object error, StackTrace stackTrace) {
+            _handlerError ??= error;
+            _handlerStackTrace ??= stackTrace;
+          },
+        )
+        .whenComplete(() => _inFlight.remove(tracked));
+    _inFlight.add(tracked);
+  }
+
+  Future<void> _handleRequest(HttpRequest request) async {
     requestCount += 1;
     final requestNumber = requestCount;
     activeRequests += 1;
