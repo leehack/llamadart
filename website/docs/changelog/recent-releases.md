@@ -7,7 +7,7 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
-## Unreleased
+## 0.8.21
 
 - Aligned default WebGPU bridge assets to `v0.1.39` (immutable manifest
   `b355d01040604f6ae2c5c5fe5bb42b858101a96f03f67e4b27b32fe41ce3b2bf`),
@@ -15,6 +15,22 @@ For canonical full release notes, use:
   `v0.2.0@bb4caa7540188872173c44d161602d9271386413` parity with native
   anchor `llamadart-native@v0.2.0-1` while preserving Web
   `@litert-lm/core@0.15.0` packaging.
+
+- Fixed native Qwen3-ASR transcription by applying the model chat template to
+  audio turns, while preserving the validated raw-prompt Web bridge contract.
+  Empty ASR output now fails explicitly instead of reporting an empty result.
+
+- Fixed Qwen 2.5/3 LiteRT-LM `ToolChoice.required` requests silently running
+  without their required-call grammar and finishing with no call. They now fail
+  with an actionable `LlamaUnsupportedException` before generation when the
+  backend cannot enforce the declared tool schema; Gemma 4 compatibility and
+  `auto`/`none` tool routing are unchanged.
+
+- Fixed Gemma 4 thinking-budget output so split channel controls and tool-call
+  envelopes stay out of visible assistant content while preserving ordinary
+  whitespace. The chat example now also validates custom tool declarations,
+  executes declared host handlers exactly once, appends tool results, and
+  performs a bounded continuation for both llama.cpp and LiteRT-LM backends.
 
 - Patched the website's vulnerable `nanoid` and `uuid` dependency paths. Until
   Docusaurus replaces its unpatched image parser, automatic local Markdown

@@ -10,12 +10,17 @@ import 'package:test/test.dart';
 
 import '../../../tool/testing/check_webgpu_bridge_tag.dart';
 
-Directory _fakeRepo(String assetsTag, {Map<String, String> files = const {}}) {
+Directory _fakeRepo(
+  String assetsTag, {
+  String version = '1.2.3',
+  Map<String, String> files = const {},
+}) {
   final root = Directory.systemTemp.createTempSync('bridge_tag_gate');
   addTearDown(() => root.deleteSync(recursive: true));
   final entries = <String, String>{
     bridgeTagSourcePath:
         'ASSETS_TAG="\${WEBGPU_BRIDGE_ASSETS_TAG:-$assetsTag}"\n',
+    rootPubspecPath: 'name: llamadart\nversion: $version\n',
     ...files,
   };
   for (final entry in entries.entries) {
@@ -200,13 +205,17 @@ Future<List<String>> _verifyManifestJson(
   );
 }
 
-String _unreleasedSection(String path) {
-  final contents = File(path).readAsStringSync();
-  return RegExp(
-    r'^## Unreleased\b(?:(?!^## ).)*',
-    multiLine: true,
-    dotAll: true,
-  ).firstMatch(contents)!.group(0)!;
+String _currentReleaseNotes(String path) {
+  final section = currentReleaseNotesSection(
+    File(path).readAsStringSync(),
+    readRootPackageVersion(Directory.current),
+  );
+  expect(
+    section,
+    isNotNull,
+    reason: '$path has no current release-notes section',
+  );
+  return section!;
 }
 
 void main() {
@@ -243,16 +252,16 @@ void main() {
         'CHANGELOG.md',
         'website/docs/changelog/recent-releases.md',
       ]) {
-        final unreleased = _unreleasedSection(path);
-        expect(unreleased, contains('`v0.1.39`'), reason: path);
-        expect(unreleased, contains(bridgeManifestSha256), reason: path);
+        final current = _currentReleaseNotes(path);
+        expect(current, contains('`v0.1.39`'), reason: path);
+        expect(current, contains(bridgeManifestSha256), reason: path);
         expect(
-          unreleased,
+          current,
           contains('$bridgeLlamaCppTag@$bridgeLlamaCppCommit'),
           reason: path,
         );
-        expect(unreleased, contains(bridgeNativeReleaseTag), reason: path);
-        expect(unreleased, contains('@litert-lm/core@0.15.0'), reason: path);
+        expect(current, contains(bridgeNativeReleaseTag), reason: path);
+        expect(current, contains('@litert-lm/core@0.15.0'), reason: path);
       }
 
       expect(
@@ -316,30 +325,118 @@ void main() {
     );
   });
 
-  test(
-    'live changelog pins do not treat frozen release history as current',
-    () {
-      final cases = <String, String>{
+  group('current release-notes section', () {
+    /// A repo whose top release-notes section is headed [heading] and claims
+    /// [currentTag], over a frozen `## 1.0.0` section claiming `v1.0.0`.
+    Directory releaseNotesRepo(
+      String heading, {
+      String currentTag = 'v9.9.9',
+      String currentClaim = 'Aligned the default WebGPU bridge assets to',
+      String websiteClaim = 'Aligned default WebGPU bridge assets to',
+    }) => _fakeRepo(
+      'v9.9.9',
+      files: <String, String>{
         'CHANGELOG.md':
-            '## Unreleased\n\n'
-            '* Aligned the default WebGPU bridge assets to `v9.9.9`.\n\n'
+            '## $heading\n\n'
+            '* $currentClaim `$currentTag`.\n\n'
             '## 1.0.0\n\n'
             '* Aligned the default WebGPU bridge assets to `v1.0.0`.\n',
         'website/docs/changelog/recent-releases.md':
-            '## Unreleased\n\n'
-            '- Aligned default WebGPU bridge assets to `v9.9.9`.\n\n'
+            '## $heading\n\n'
+            '- $websiteClaim `$currentTag`.\n\n'
             '## 1.0.0\n\n'
             '- Aligned default WebGPU bridge assets to `v1.0.0`.\n',
-      };
+      },
+    );
 
-      for (final entry in cases.entries) {
-        final pin = bridgeTagPins.singleWhere((pin) => pin.path == entry.key);
-        final matches = pin.pattern.allMatches(entry.value).toList();
-        expect(matches, hasLength(1), reason: entry.key);
-        expect(matches.single.group(1), 'v9.9.9', reason: entry.key);
+    test('accepts `## Unreleased` and ignores frozen release history', () {
+      expect(
+        findCurrentReleaseNotesDrift(releaseNotesRepo('Unreleased'), 'v9.9.9'),
+        isEmpty,
+      );
+    });
+
+    test('accepts the promoted `## <pubspec version>` heading', () {
+      expect(
+        findCurrentReleaseNotesDrift(releaseNotesRepo('1.2.3'), 'v9.9.9'),
+        isEmpty,
+      );
+    });
+
+    test('a heading naming another version is reported', () {
+      expect(
+        findCurrentReleaseNotesDrift(releaseNotesRepo('1.2.4'), 'v9.9.9'),
+        everyElement(
+          contains('the top section is neither `## Unreleased` nor `## 1.2.3`'),
+        ),
+      );
+    });
+
+    test('a stale tag in the current section is reported', () {
+      expect(
+        findCurrentReleaseNotesDrift(
+          releaseNotesRepo('1.2.3', currentTag: 'v0.0.1'),
+          'v9.9.9',
+        ),
+        everyElement(contains('pins v0.0.1, expected v9.9.9')),
+      );
+    });
+
+    test('frozen history cannot satisfy a reworded current claim', () {
+      expect(
+        findCurrentReleaseNotesDrift(
+          releaseNotesRepo(
+            '1.2.3',
+            currentClaim: 'Moved the WebGPU bridge assets to',
+            websiteClaim: 'Moved the WebGPU bridge assets to',
+          ),
+          'v9.9.9',
+        ),
+        everyElement(
+          contains(
+            'matches 0 lines in the current release-notes section, expected 1',
+          ),
+        ),
+      );
+    });
+
+    test('a duplicated claim in the current section is reported', () {
+      final root = releaseNotesRepo('1.2.3');
+      for (final pin in releaseNotesPins) {
+        final file = File('${root.path}/${pin.path}');
+        final line = pin.pattern.firstMatch(file.readAsStringSync())!.group(0)!;
+        file.writeAsStringSync(
+          file.readAsStringSync().replaceFirst(line, '$line\n$line'),
+        );
       }
-    },
-  );
+
+      expect(
+        findCurrentReleaseNotesDrift(root, 'v9.9.9'),
+        everyElement(
+          contains(
+            'matches 2 lines in the current release-notes section, expected 1',
+          ),
+        ),
+      );
+    });
+
+    test('a missing release-notes file fails instead of passing vacuously', () {
+      expect(
+        findCurrentReleaseNotesDrift(_fakeRepo('v9.9.9'), 'v9.9.9'),
+        everyElement(contains('file is missing')),
+      );
+    });
+
+    test('a missing root pubspec version fails closed', () {
+      final root = releaseNotesRepo('Unreleased');
+      File('${root.path}/$rootPubspecPath').writeAsStringSync('name: x\n');
+
+      expect(
+        findCurrentReleaseNotesDrift(root, 'v9.9.9'),
+        contains(contains('Expected exactly one version field')),
+      );
+    });
+  });
 
   test('every bash assignment form is counted', () {
     const overrides = <String>[
