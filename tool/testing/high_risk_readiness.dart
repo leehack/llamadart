@@ -1181,19 +1181,7 @@ class HighRiskReadinessEvaluator {
         'schema_version': HighRiskReadinessResult.schemaVersion,
         'timestamp': now.toIso8601String(),
         'correlation_id': 'invalid-input',
-        'repository': _isRepository(context.repository)
-            ? context.repository
-            : 'invalid/invalid',
-        'pr_number': context.prNumber > 0 ? context.prNumber : 1,
-        'expected_pr_head_sha': _isSha(context.headSha)
-            ? context.headSha
-            : 'ffffffffffffffffffffffffffffffffffffffff',
-        'current_base_sha': _isSha(context.baseSha)
-            ? context.baseSha
-            : 'ffffffffffffffffffffffffffffffffffffffff',
-        'pr_author': _isGitHubLogin(context.author)
-            ? context.author
-            : 'invalid-author',
+        ..._boundIdentity(context),
         'classification': 'standard',
         'surfaces': const <String>[],
         'required_matrix_row_ids': const <String>[],
@@ -1213,22 +1201,7 @@ class HighRiskReadinessEvaluator {
       'correlation_id': _isIdentifier(evidence['correlation_id'])
           ? evidence['correlation_id']
           : 'invalid-input',
-      'repository': _isRepository(evidence['repository'])
-          ? evidence['repository']
-          : context.repository,
-      'pr_number':
-          evidence['pr_number'] is int && (evidence['pr_number'] as int) > 0
-          ? evidence['pr_number']
-          : context.prNumber,
-      'expected_pr_head_sha': _isSha(evidence['expected_pr_head_sha'])
-          ? evidence['expected_pr_head_sha']
-          : context.headSha,
-      'current_base_sha': _isSha(evidence['current_base_sha'])
-          ? evidence['current_base_sha']
-          : context.baseSha,
-      'pr_author': _isGitHubLogin(evidence['pr_author'])
-          ? evidence['pr_author']
-          : context.author,
+      ..._boundIdentity(context),
       'classification':
           const {'standard', 'high-risk'}.contains(evidence['classification'])
           ? evidence['classification']
@@ -1247,6 +1220,26 @@ class HighRiskReadinessEvaluator {
       'affected_test_paths': safe('affected_test_paths', const <String>[]),
     };
   }
+
+  /// Emitted identity always comes from the independently supplied context, so
+  /// a rejected result can never claim a different repository, PR, head, base,
+  /// or author than the one that was actually evaluated.
+  static Map<String, Object?> _boundIdentity(PullRequestContext context) =>
+      <String, Object?>{
+        'repository': _isRepository(context.repository)
+            ? context.repository
+            : 'invalid/invalid',
+        'pr_number': context.prNumber > 0 ? context.prNumber : 1,
+        'expected_pr_head_sha': _isSha(context.headSha)
+            ? context.headSha
+            : 'ffffffffffffffffffffffffffffffffffffffff',
+        'current_base_sha': _isSha(context.baseSha)
+            ? context.baseSha
+            : 'ffffffffffffffffffffffffffffffffffffffff',
+        'pr_author': _isGitHubLogin(context.author)
+            ? context.author
+            : 'invalid-author',
+      };
 
   static String? _exactKeys(
     Map<String, dynamic> value,

@@ -222,6 +222,45 @@ void expectFailure(
   expect(result.isReady, isFalse);
 }
 
+void expectEmittedIdentity(
+  HighRiskReadinessResult result, {
+  required String repository,
+  required int prNumber,
+  required String headSha,
+  required String baseSha,
+  required String author,
+}) {
+  for (final output in <Map<String, Object?>>[
+    result.evidence,
+    result.toJson(),
+  ]) {
+    expect(output['repository'], repository);
+    expect(output['pr_number'], prNumber);
+    expect(output['expected_pr_head_sha'], headSha);
+    expect(output['current_base_sha'], baseSha);
+    expect(output['pr_author'], author);
+  }
+  expect(() => jsonEncode(result.toJson()), returnsNormally);
+}
+
+void expectContextBoundIdentity(HighRiskReadinessResult result) =>
+    expectEmittedIdentity(
+      result,
+      repository: context.repository,
+      prNumber: context.prNumber,
+      headSha: context.headSha,
+      baseSha: context.baseSha,
+      author: context.author,
+    );
+
+void mutateIdentityToOtherValidValues(Map<String, dynamic> evidence) {
+  evidence['repository'] = 'attacker/fork';
+  evidence['pr_number'] = 420;
+  evidence['expected_pr_head_sha'] = otherSha;
+  evidence['current_base_sha'] = otherSha;
+  evidence['pr_author'] = 'other-author';
+}
+
 void main() {
   group('strict JSON and schema shape', () {
     test('rejects duplicate root, nested, and escaped-equivalent keys', () {
@@ -387,9 +426,35 @@ void main() {
       test('rejects mismatched ${testCase.$1}', () async {
         final evidence = structuredEvidence();
         testCase.$2(evidence);
-        expectFailure(await evaluateStructured(evidence), testCase.$3);
+        final result = await evaluateStructured(evidence);
+        expectFailure(result, testCase.$3);
+        expectContextBoundIdentity(result);
       });
     }
+
+    test(
+      'emitted identity stays bound to the context for every identity field',
+      () async {
+        final mismatch = structuredEvidence();
+        mutateIdentityToOtherValidValues(mismatch);
+        final mismatchResult = await evaluateStructured(mismatch);
+        expectFailure(
+          mismatchResult,
+          ReadinessFailureClassification.repositoryMismatch,
+        );
+        expectContextBoundIdentity(mismatchResult);
+
+        final schemaViolation = structuredEvidence();
+        mutateIdentityToOtherValidValues(schemaViolation);
+        schemaViolation['surfaces'] = [1];
+        final schemaResult = await evaluateStructured(schemaViolation);
+        expectFailure(
+          schemaResult,
+          ReadinessFailureClassification.schemaViolation,
+        );
+        expectContextBoundIdentity(schemaResult);
+      },
+    );
 
     test('fails closed when commits or ancestry cannot be proven', () async {
       expectFailure(
@@ -409,52 +474,98 @@ void main() {
     });
 
     test('rejects malformed context before any Git access', () async {
-      for (final malformedContext in const [
-        PullRequestContext(
-          repository: '../../unsafe',
-          prNumber: 419,
-          headSha: headSha,
-          baseSha: baseSha,
-          author: 'contributor-dev',
-        ),
-        PullRequestContext(
-          repository: 'leehack/llamadart',
-          prNumber: 0,
-          headSha: headSha,
-          baseSha: baseSha,
-          author: 'contributor-dev',
-        ),
-        PullRequestContext(
-          repository: 'leehack/llamadart',
-          prNumber: 419,
-          headSha: '--upload-pack=unsafe',
-          baseSha: baseSha,
-          author: 'contributor-dev',
-        ),
-        PullRequestContext(
-          repository: 'leehack/llamadart',
-          prNumber: 419,
-          headSha: headSha,
-          baseSha: '../unsafe',
-          author: 'contributor-dev',
-        ),
-        PullRequestContext(
-          repository: 'leehack/llamadart',
-          prNumber: 419,
-          headSha: headSha,
-          baseSha: baseSha,
-          author: 'bad--author',
-        ),
-      ]) {
+      for (final testCase
+          in <(PullRequestContext, String, int, String, String, String)>[
+            const (
+              PullRequestContext(
+                repository: '../../unsafe',
+                prNumber: 419,
+                headSha: headSha,
+                baseSha: baseSha,
+                author: 'contributor-dev',
+              ),
+              'invalid/invalid',
+              419,
+              headSha,
+              baseSha,
+              'contributor-dev',
+            ),
+            const (
+              PullRequestContext(
+                repository: 'leehack/llamadart',
+                prNumber: 0,
+                headSha: headSha,
+                baseSha: baseSha,
+                author: 'contributor-dev',
+              ),
+              'leehack/llamadart',
+              1,
+              headSha,
+              baseSha,
+              'contributor-dev',
+            ),
+            const (
+              PullRequestContext(
+                repository: 'leehack/llamadart',
+                prNumber: 419,
+                headSha: '--upload-pack=unsafe',
+                baseSha: baseSha,
+                author: 'contributor-dev',
+              ),
+              'leehack/llamadart',
+              419,
+              'ffffffffffffffffffffffffffffffffffffffff',
+              baseSha,
+              'contributor-dev',
+            ),
+            const (
+              PullRequestContext(
+                repository: 'leehack/llamadart',
+                prNumber: 419,
+                headSha: headSha,
+                baseSha: '../unsafe',
+                author: 'contributor-dev',
+              ),
+              'leehack/llamadart',
+              419,
+              headSha,
+              'ffffffffffffffffffffffffffffffffffffffff',
+              'contributor-dev',
+            ),
+            const (
+              PullRequestContext(
+                repository: 'leehack/llamadart',
+                prNumber: 419,
+                headSha: headSha,
+                baseSha: baseSha,
+                author: 'bad--author',
+              ),
+              'leehack/llamadart',
+              419,
+              headSha,
+              baseSha,
+              'invalid-author',
+            ),
+          ]) {
+        final malformedContext = testCase.$1;
         final repositoryState = FakeRepositoryState(changes: structuredChanges);
+        final evidence = structuredEvidence();
+        mutateIdentityToOtherValidValues(evidence);
         final result = await HighRiskReadinessEvaluator(
           repositoryState: repositoryState,
           clock: () => DateTime.utc(2026, 8, 28, 13),
-        ).evaluate(evidence: structuredEvidence(), context: malformedContext);
+        ).evaluate(evidence: evidence, context: malformedContext);
 
         expectFailure(result, ReadinessFailureClassification.invalidInput);
         expect(repositoryState.repositoryCallCount, 0);
-        expect(() => jsonEncode(result.toJson()), returnsNormally);
+        expectEmittedIdentity(
+          result,
+          repository: testCase.$2,
+          prNumber: testCase.$3,
+          headSha: testCase.$4,
+          baseSha: testCase.$5,
+          author: testCase.$6,
+        );
       }
     });
 
