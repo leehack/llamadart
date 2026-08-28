@@ -415,6 +415,33 @@ void main() {
         PrHeadUpdateFailureClassification.invalidInput.name,
       );
     });
+
+    test('help and no-argument CLI invocations print usage block', () async {
+      for (final args in <List<String>>[
+        <String>[],
+        <String>['--help'],
+        <String>['-h'],
+      ]) {
+        final process = await Process.run(Platform.resolvedExecutable, <String>[
+          'tool/git/safe_pr_head_update.dart',
+          ...args,
+        ]);
+        expect(process.exitCode, 0, reason: '$args');
+        expect(process.stderr.toString(), isEmpty, reason: '$args');
+        expect(
+          process.stdout.toString(),
+          contains('Usage: dart run tool/git/safe_pr_head_update.dart'),
+          reason: '$args',
+        );
+        expect(
+          process.stdout.toString(),
+          contains(
+            'Update attempts and\ninvalid-argument invocations emit JSON evidence on stdout.',
+          ),
+          reason: '$args',
+        );
+      }
+    });
   });
 
   group('bare remote integration', () {

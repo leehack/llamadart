@@ -707,8 +707,8 @@ Usage: dart run tool/git/safe_pr_head_update.dart
   --branch <branch> --expected-sha <sha> --proposed-sha <sha>
   --writer <principal> [--remote origin] [--correlation-id <id>] [--dry-run]
 
-Use the all-zero expected SHA to create an absent branch. Evidence is always
-emitted as JSON on stdout.
+Use the all-zero expected SHA to create an absent branch. Update attempts and
+invalid-argument invocations emit JSON evidence on stdout.
 ''');
 }
 
