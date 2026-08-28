@@ -267,6 +267,12 @@ If you need to build binaries for a new release:
 4.  Push to your fork and submit a Pull Request.
 5.  Complete the production-readiness sections in the pull request template.
 
+For the initial branch publication, `tool/git/safe_pr_head_update.dart` accepts
+the all-zero expected SHA only while the fork ref is absent. After the pull
+request opens, use the helper with the exact observed fork-branch head for every
+update; blind or force pushes are not authorized open-PR update paths. See
+`doc/pr_branch_writer_inventory.md` for the repository-local writer boundary.
+
 ### Production-readiness expectations
 
 `main` should remain production-ready. A pull request may reduce its scope, but

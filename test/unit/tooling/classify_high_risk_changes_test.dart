@@ -70,6 +70,11 @@ void main() {
       final assessment = assessHighRiskFiles([
         '.github/workflows/release_on_prep_merge.yml',
         '.github/pull_request_template.md',
+        'CONTRIBUTING.md',
+        'tool/git/safe_pr_head_update.dart',
+        'tool/git/pr_head_update_evidence.schema.json',
+        'test/unit/tooling/safe_pr_head_update_test.dart',
+        'doc/pr_branch_writer_inventory.md',
       ]);
 
       expect(

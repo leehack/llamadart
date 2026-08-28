@@ -36,6 +36,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -118,49 +121,167 @@ jobs:
             --litert-lm-tag "${LITERT_LM_TAG}" \
             "${transition_args[@]}"
 
-      - name: Create pull request
-        uses: peter-evans/create-pull-request@v8
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          commit-message: "chore(native): sync native release ${{ steps.sync_headers.outputs.resolved_tag }}"
-          title: "chore(native): sync native release ${{ steps.sync_headers.outputs.resolved_tag }}"
-          body: |
-            Automated sync from `leehack/llamadart-native` release `${{ steps.sync_headers.outputs.resolved_tag }}`.
+      - name: Prepare fast-forward automation head
+        id: prepare_pr_head
+        env:
+          RESOLVED_NATIVE_TAG: ${{ steps.sync_headers.outputs.resolved_tag }}
+        run: |
+          set -euo pipefail
+          zero_oid="0000000000000000000000000000000000000000"
+          branch="automation/native-sync-${RESOLVED_NATIVE_TAG}"
+          target_ref="refs/heads/${branch}"
+          git check-ref-format --branch "${branch}" >/dev/null
 
-            Changes:
-            - Updates `hook/build.dart` native release pins.
-            - Syncs headers from the matching `llamadart-native` release header bundle.
-            - Regenerates `lib/src/backends/llama_cpp/bindings.dart` via ffigen.
-            - Updates LiteRT-LM Dart runtime version and archive checksums when `litert_lm_tag` is not `keep`.
-            - Updates Apple SPM companion `Package.swift` binary target pins in `packages/`.
-            - Does not bump companion package versions unless the sync script is run with an explicit version-bump option outside this default workflow.
-            - Updates current README/website native pin docs and the core changelog when the llama.cpp native pin changes.
-
-            Native version checklist:
-            - [ ] If `allow_nightly_channel` was enabled, confirm the stable-to-nightly switch was intentional and record the compatibility reason.
-            - [ ] Confirm `leehack/llamadart-native` release `${{ steps.sync_headers.outputs.resolved_tag }}` includes the required native-assets archives.
-            - [ ] If LiteRT-LM sync was requested (`litert_lm_tag` is not `keep`), confirm `leehack/litert-lm-native` release `${{ steps.sync_pins.outputs.resolved_litert_lm_tag }}` includes the required runtime archives.
-            - [ ] Confirm a schema 2 LiteRT-LM manifest has exact upstream/native commits, ABI/capabilities, all platform bundles, SHA-256 artifact digests, and Linux/Windows real-model evidence. Schema 1 is legacy-only compatibility.
-            - [ ] Confirm matching Apple SPM pins changed under `packages/` when Apple XCFramework releases changed.
-            - [ ] Confirm current README/website native pin docs and `CHANGELOG.md` describe the new default pin.
-            - [ ] Do not tag or publish companion/core packages from this PR. Companion/core publication is owned by a later release-prep PR and `release_on_prep_merge.yml`.
-          branch: "automation/native-sync-${{ steps.sync_headers.outputs.resolved_tag }}"
-          labels: automation/native-sync
-          add-paths: |
-            hook/build.dart
-            packages/llamadart_llama_cpp_flutter/darwin/llamadart_llama_cpp_flutter/Package.swift
-            packages/llamadart_llama_cpp_flutter/pubspec.yaml
-            packages/llamadart_llama_cpp_flutter/CHANGELOG.md
-            packages/llamadart_llama_cpp_flutter/README.md
-            packages/llamadart_litert_lm_flutter/darwin/llamadart_litert_lm_flutter/Package.swift
-            packages/llamadart_litert_lm_flutter/pubspec.yaml
-            packages/llamadart_litert_lm_flutter/CHANGELOG.md
-            packages/llamadart_litert_lm_flutter/README.md
-            lib/src/backends/litert_lm/litert_lm_runtime.dart
-            tool/macos_litert_lm_prepare_app.sh
-            lib/src/backends/llama_cpp/bindings.dart
-            CHANGELOG.md
-            README.md
-            website/docs/getting-started/installation.md
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- \
+            hook/build.dart \
+            packages/llamadart_llama_cpp_flutter/darwin/llamadart_llama_cpp_flutter/Package.swift \
+            packages/llamadart_llama_cpp_flutter/pubspec.yaml \
+            packages/llamadart_llama_cpp_flutter/CHANGELOG.md \
+            packages/llamadart_llama_cpp_flutter/README.md \
+            packages/llamadart_litert_lm_flutter/darwin/llamadart_litert_lm_flutter/Package.swift \
+            packages/llamadart_litert_lm_flutter/pubspec.yaml \
+            packages/llamadart_litert_lm_flutter/CHANGELOG.md \
+            packages/llamadart_litert_lm_flutter/README.md \
+            lib/src/backends/litert_lm/litert_lm_runtime.dart \
+            tool/macos_litert_lm_prepare_app.sh \
+            lib/src/backends/llama_cpp/bindings.dart \
+            CHANGELOG.md \
+            README.md \
+            website/docs/getting-started/installation.md \
             website/docs/platforms/support-matrix.md
-          delete-branch: true
+
+          if git diff --cached --quiet; then
+            has_changes=false
+            candidate="$(git rev-parse HEAD)"
+          else
+            has_changes=true
+            git commit -m "chore(native): sync native release ${RESOLVED_NATIVE_TAG}"
+            candidate="$(git rev-parse HEAD)"
+          fi
+
+          remote_line="$(git ls-remote --refs origin "${target_ref}")"
+          if [[ -z "${remote_line}" ]]; then
+            expected="${zero_oid}"
+          else
+            if [[ "$(wc -l <<<"${remote_line}")" -ne 1 ]]; then
+              echo "Exact automation ref lookup returned multiple rows." >&2
+              exit 1
+            fi
+            read -r expected observed_ref <<<"${remote_line}"
+            if [[ "${observed_ref}" != "${target_ref}" || ! "${expected}" =~ ^[0-9a-f]{40}$ ]]; then
+              echo "Exact automation ref lookup returned an invalid row." >&2
+              exit 1
+            fi
+            git fetch --quiet --no-tags origin "${target_ref}"
+            fetched="$(git rev-parse FETCH_HEAD)"
+            if [[ "${fetched}" != "${expected}" ]]; then
+              echo "Automation ref moved while preparing the candidate; rerun required." >&2
+              exit 1
+            fi
+          fi
+
+          if [[ "${expected}" == "${zero_oid}" ]]; then
+            proposed="${candidate}"
+            should_update="${has_changes}"
+          elif git merge-base --is-ancestor "${expected}" "${candidate}"; then
+            proposed="${candidate}"
+            should_update=true
+          elif git merge-base --is-ancestor "${candidate}" "${expected}"; then
+            proposed="${expected}"
+            should_update=true
+          else
+            git checkout --quiet --detach "${expected}"
+            git merge --no-ff --no-edit "${candidate}"
+            proposed="$(git rev-parse HEAD)"
+            read -r reconciled parent_one parent_two extra <<<"$(
+              git rev-list --parents -n 1 "${proposed}"
+            )"
+            if [[ "${reconciled}" != "${proposed}" || \
+                  "${parent_one}" != "${expected}" || \
+                  "${parent_two}" != "${candidate}" || \
+                  -n "${extra:-}" ]]; then
+              echo "Reconciliation commit did not retain the exact expected parents." >&2
+              exit 1
+            fi
+            should_update=true
+          fi
+
+          if [[ "${expected}" != "${zero_oid}" ]] && \
+             ! git merge-base --is-ancestor "${expected}" "${proposed}"; then
+            echo "Prepared head does not retain the expected automation history." >&2
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "${candidate}" "${proposed}"; then
+            echo "Prepared head does not retain the exact current-main candidate." >&2
+            exit 1
+          fi
+
+          {
+            echo "branch=${branch}"
+            echo "expected_sha=${expected}"
+            echo "proposed_sha=${proposed}"
+            echo "has_changes=${has_changes}"
+            echo "should_update=${should_update}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Update automation branch with expected-head CAS
+        if: steps.prepare_pr_head.outputs.should_update == 'true'
+        env:
+          BRANCH: ${{ steps.prepare_pr_head.outputs.branch }}
+          EXPECTED_SHA: ${{ steps.prepare_pr_head.outputs.expected_sha }}
+          PROPOSED_SHA: ${{ steps.prepare_pr_head.outputs.proposed_sha }}
+        run: |
+          set -euo pipefail
+          dart run tool/git/safe_pr_head_update.dart \
+            --remote origin \
+            --branch "${BRANCH}" \
+            --expected-sha "${EXPECTED_SHA}" \
+            --proposed-sha "${PROPOSED_SHA}" \
+            --writer github-actions-native-sync \
+            --correlation-id "native-sync-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            | tee "${RUNNER_TEMP}/pr-head-update-evidence.json"
+
+      - name: Create, update, or close pull request
+        if: steps.prepare_pr_head.outputs.should_update == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH: ${{ steps.prepare_pr_head.outputs.branch }}
+          HAS_CHANGES: ${{ steps.prepare_pr_head.outputs.has_changes }}
+          RESOLVED_NATIVE_TAG: ${{ steps.sync_headers.outputs.resolved_tag }}
+          RESOLVED_LITERT_LM_TAG: ${{ steps.sync_pins.outputs.resolved_litert_lm_tag }}
+        run: |
+          set -euo pipefail
+          open_pr="$(gh pr list --state open --base main --head "${BRANCH}" \
+            --json number --jq '.[0].number // empty')"
+          if [[ "${HAS_CHANGES}" != "true" ]]; then
+            if [[ -n "${open_pr}" ]]; then
+              gh pr close "${open_pr}" \
+                --comment "The generated native sync now matches current main. The automation branch was reconciled with expected-head CAS and retained for auditable reuse."
+            fi
+            exit 0
+          fi
+
+          body_file="${RUNNER_TEMP}/native-sync-pr-body.md"
+          printf '%s\n' \
+            "Automated sync from \`leehack/llamadart-native\` release \`${RESOLVED_NATIVE_TAG}\`." \
+            "" \
+            "Changes:" \
+            "- Updates native release pins, headers, generated bindings, runtime checksums, Apple SPM pins, and current docs when applicable." \
+            "- Does not bump, tag, or publish companion/core packages." \
+            "" \
+            "Native version checklist:" \
+            "- [ ] Confirm the native release includes all required native-assets archives." \
+            "- [ ] If LiteRT-LM sync was requested, confirm release \`${RESOLVED_LITERT_LM_TAG}\` includes all required runtime archives." \
+            "- [ ] Confirm manifest provenance, ABI/capabilities, bundle coverage, checksums, and real-model evidence." \
+            "- [ ] Confirm Apple SPM pins and current README/website/changelog surfaces are aligned." \
+            > "${body_file}"
+          title="chore(native): sync native release ${RESOLVED_NATIVE_TAG}"
+          if [[ -n "${open_pr}" ]]; then
+            gh pr edit "${open_pr}" --title "${title}" --body-file "${body_file}" \
+              --add-label automation/native-sync
+          else
+            gh pr create --base main --head "${BRANCH}" --title "${title}" \
+              --body-file "${body_file}" --label automation/native-sync
+          fi

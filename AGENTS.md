@@ -339,6 +339,28 @@ For docs-only PRs, state that runtime behavior is unchanged and list docs
 validation. If implementation scope changed, reduce and state the scope rather
 than merging incomplete behavior.
 
+### PR Branch Integrity and Mutation Contract
+
+- Repository-local mutations to open PR branches must enforce an expected-head
+  compare-and-swap (CAS) plus fast-forward-only contract (`tool/git/safe_pr_head_update.dart`).
+  Immediately before mutation, the remote head must match the caller's expected
+  head, and the proposed new head must equal that head for an idempotent retry or
+  descend from it.
+- The helper uses a normal push guarded by the remote OID advertised to a
+  one-shot `pre-push` hook. Stale ancestor restorations, force options,
+  `+refspec` updates, and blind overwrites are strictly rejected. Read the exact
+  target ref back before claiming success.
+- Consequence of unexpected transitions (#434 incident): Any unexpected
+  branch-head transition invalidates prior CI runs, review approvals, and
+  independent QA evidence recorded against that head. If the remote head moves,
+  all validation and QA blocks must be re-executed against the exact new head.
+- Residual governance boundaries: checkout-local tooling governs only writers
+  that invoke it. It cannot govern GitHub web UI updates, Dependabot, installed
+  apps, or other server-side writers. The repository relies on branch protection
+  and rulesets to block force pushes and enforce linear history, status checks,
+  and CODEOWNERS reviews across those paths. See the bounded writer inventory
+  and incident evidence in `doc/pr_branch_writer_inventory.md`.
+
 ## AGENTS.md Maintenance
 
 - Update this file when a task reveals a durable workflow rule, command,

@@ -381,3 +381,7 @@ When an agent creates or updates a PR:
    `test/unit/`, `test/integration/`, or `test/e2e/`; wire heavyweight manual
    checks through `tool/testing/run_local_e2e.dart` and
    `tool/testing/test_matrix.dart`.
+6. When updating an open PR branch, enforce expected-head CAS and fast-forward
+   ancestry with `tool/git/safe_pr_head_update.dart` to prevent stale head
+   rewinds. Consult `doc/pr_branch_writer_inventory.md` for writer scope and the
+   remaining GitHub-managed governance boundary.
