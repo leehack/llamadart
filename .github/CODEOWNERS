@@ -4,6 +4,7 @@
 .github/pull_request_template.md @leehack
 .github/workflows/ @leehack
 AGENTS.md @leehack
+CONTRIBUTING.md @leehack
 scripts/build_chat_app_web.sh @leehack
 scripts/validate_chat_app_web_build.sh @leehack
 scripts/verify_chat_app_web_deployment.sh @leehack
@@ -12,6 +13,7 @@ scripts/verify_chat_app_web_deployment.sh @leehack
 pubspec.yaml @leehack
 CHANGELOG.md @leehack
 doc/testing_matrix.md @leehack
+doc/pr_branch_writer_inventory.md @leehack
 hook/build.dart @leehack
 tool/testing/test_matrix.dart @leehack
 tool/testing/classify_high_risk_changes.dart @leehack
@@ -24,6 +26,9 @@ tool/litert_lm_templates/ @leehack
 test/integration/core/grammar/generated_tool_schema_grammar_test.dart @leehack
 test/e2e/template/specialized_tool_grammar_validation_e2e_test.dart @leehack
 test/unit/tooling/high_risk_review_policy_test.dart @leehack
+tool/git/safe_pr_head_update.dart @leehack
+tool/git/pr_head_update_evidence.schema.json @leehack
+test/unit/tooling/safe_pr_head_update_test.dart @leehack
 tool/testing/verify_release_docs_versions.dart @leehack
 tool/testing/check_webgpu_bridge_tag.dart @leehack
 tool/native/sync_native_release_pins.py @leehack

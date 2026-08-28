@@ -55,7 +55,9 @@ void main() {
 
       for (final path in [
         'AGENTS.md',
+        'CONTRIBUTING.md',
         'doc/testing_matrix.md',
+        'doc/pr_branch_writer_inventory.md',
         'tool/testing/test_matrix.dart',
         'tool/testing/classify_high_risk_changes.dart',
         'tool/testing/run_template_parity_suites.sh',
@@ -69,6 +71,9 @@ void main() {
         'test/e2e/template/'
             'specialized_tool_grammar_validation_e2e_test.dart',
         'test/unit/tooling/high_risk_review_policy_test.dart',
+        'tool/git/safe_pr_head_update.dart',
+        'tool/git/pr_head_update_evidence.schema.json',
+        'test/unit/tooling/safe_pr_head_update_test.dart',
       ]) {
         final rule = path.endsWith(' @leehack') ? path : '$path @leehack';
         expect(codeowners, contains(rule), reason: path);

@@ -1,0 +1,1232 @@
+@TestOn('vm')
+library;
+
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:test/test.dart';
+
+import '../../../tool/git/safe_pr_head_update.dart';
+
+const zeroOid = '0000000000000000000000000000000000000000';
+
+Future<ProcessResult> git(List<String> args, Directory cwd) {
+  return Process.run('git', args, workingDirectory: cwd.path);
+}
+
+Future<String> commitFile(
+  Directory repo,
+  String filename,
+  String content,
+  String message,
+) async {
+  final file = File('${repo.path}/$filename');
+  await file.parent.create(recursive: true);
+  await file.writeAsString(content);
+  expect((await git(<String>['add', filename], repo)).exitCode, 0);
+  expect(
+    (await git(<String>[
+      '-c',
+      'user.name=Test Writer',
+      '-c',
+      'user.email=test@example.com',
+      'commit',
+      '--quiet',
+      '-m',
+      message,
+    ], repo)).exitCode,
+    0,
+  );
+  return (await git(<String>[
+    'rev-parse',
+    'HEAD',
+  ], repo)).stdout.toString().trim();
+}
+
+Future<String?> remoteHead(Directory repo, String branch) async {
+  final result = await git(<String>[
+    'ls-remote',
+    '--refs',
+    'origin',
+    'refs/heads/$branch',
+  ], repo);
+  final output = result.stdout.toString().trim();
+  return output.isEmpty ? null : output.split(RegExp(r'\s+')).first;
+}
+
+void expectEvidenceMatchesLocalSchema(PrHeadUpdateResult result) {
+  final schema =
+      jsonDecode(
+            File(
+              'tool/git/pr_head_update_evidence.schema.json',
+            ).readAsStringSync(),
+          )
+          as Map<String, dynamic>;
+  final properties = schema['properties'] as Map<String, dynamic>;
+  final required = (schema['required'] as List<dynamic>).cast<String>().toSet();
+  final evidence = result.toJson();
+
+  expect(schema[r'$id'], 'urn:llamadart:pr-head-update-evidence:1.0.0');
+  expect(schema['additionalProperties'], isFalse);
+  expect(required, properties.keys.toSet());
+  expect(evidence.keys.toSet(), properties.keys.toSet());
+  expect(evidence['schema'], PrHeadUpdateResult.schema);
+  expect(evidence['schema_version'], PrHeadUpdateResult.schemaVersion);
+  expect(DateTime.tryParse(evidence['timestamp']! as String), isNotNull);
+  expect(evidence['correlation_id'], isA<String>());
+  expect(evidence['writer'], isA<String>());
+  expect(evidence['target_ref'], isA<String>());
+  expect(evidence['remote'], isA<String>());
+  for (final key in <String>[
+    'expected_head_sha',
+    'remote_head_before',
+    'remote_head_after',
+  ]) {
+    final value = evidence[key];
+    expect(
+      value == null || RegExp(r'^[0-9a-f]{40}$').hasMatch(value as String),
+      isTrue,
+    );
+  }
+  expect(evidence['proposed_head_sha'], matches(RegExp(r'^[0-9a-f]{40}$')));
+  expect(
+    ((properties['decision'] as Map<String, dynamic>)['enum'] as List<dynamic>)
+        .toSet(),
+    PrHeadUpdateDecision.values.map((value) => value.name).toSet(),
+  );
+  expect(
+    ((properties['failure_classification'] as Map<String, dynamic>)['enum']
+            as List<dynamic>)
+        .toSet(),
+    PrHeadUpdateFailureClassification.values.map((value) => value.name).toSet(),
+  );
+  expect(evidence['decision'], result.decision.name);
+  expect(evidence['failure_classification'], result.failureClassification.name);
+  expect(evidence['message'], isA<String>());
+}
+
+List<String> workflowWriterContractViolations(String workflow) {
+  final violations = <String>[];
+  final guardedInvocation = RegExp(
+    r'''^\s+dart run tool/git/safe_pr_head_update\.dart \\\s*\n'''
+    r'''\s+--remote origin \\\s*\n'''
+    r'''\s+--branch "\$\{BRANCH\}" \\\s*\n'''
+    r'''\s+--expected-sha "\$\{EXPECTED_SHA\}" \\\s*\n'''
+    r'''\s+--proposed-sha "\$\{PROPOSED_SHA\}" \\\s*\n'''
+    r'''\s+--writer github-actions-native-sync \\\s*\n'''
+    r'''\s+--correlation-id "native-sync-\$\{GITHUB_RUN_ID\}-\$\{GITHUB_RUN_ATTEMPT\}" \\\s*\n'''
+    r'''\s+\| tee "\$\{RUNNER_TEMP\}/pr-head-update-evidence\.json"\s*$''',
+    multiLine: true,
+  );
+  final guardedInvocationCount = guardedInvocation.allMatches(workflow).length;
+  if (guardedInvocationCount != 1) {
+    violations.add('expected exactly one executable guarded-helper invocation');
+  }
+  for (final argument in <String>[
+    '--remote origin',
+    '--branch "\${BRANCH}"',
+    '--expected-sha "\${EXPECTED_SHA}"',
+    '--proposed-sha "\${PROPOSED_SHA}"',
+    '--writer github-actions-native-sync',
+    '--correlation-id "native-sync-\${GITHUB_RUN_ID}-\${GITHUB_RUN_ATTEMPT}"',
+  ]) {
+    if (!workflow.contains(argument)) {
+      violations.add('guarded helper is missing $argument');
+    }
+  }
+  for (final bypass in <RegExp>[
+    RegExp(r'peter-evans/create-pull-request'),
+    RegExp(r'^\s*git\b[^\n]*\bpush\b', multiLine: true),
+    RegExp(r'\b(?:createRef|updateRef|deleteRef)\s*\('),
+    RegExp(r'\bgithub\.rest\.git\.(?:createRef|updateRef|deleteRef)\b'),
+    RegExp(r'\b(?:gh\s+api|curl\b)[^\n]*git/refs/heads'),
+  ]) {
+    if (bypass.hasMatch(workflow)) {
+      violations.add('workflow contains a direct PR-ref mutation bypass');
+    }
+  }
+  final guardIndex = workflow.indexOf(
+    'dart run tool/git/safe_pr_head_update.dart',
+  );
+  for (final command in <String>['gh pr close', 'gh pr edit', 'gh pr create']) {
+    final commandIndex = workflow.indexOf(command);
+    if (guardIndex < 0 || commandIndex < 0 || guardIndex >= commandIndex) {
+      violations.add('$command must follow the guarded ref update');
+    }
+  }
+  return violations;
+}
+
+void main() {
+  group('input and evidence contracts', () {
+    test('validates branch, remote, and full object IDs', () {
+      expect(isValidBranchName('feature/fix-434'), isTrue);
+      expect(
+        isValidBranchName('refs/heads/automation/native-sync-v0.3.0'),
+        isTrue,
+      );
+      for (final value in <String>[
+        '',
+        '--force',
+        '+refs/heads/main',
+        'refs/tags/v1',
+        'feature/../main',
+        'feature//main',
+        '.hidden',
+        'feature/.hidden',
+        'feature/topic.lock/next',
+        'feature name',
+        'feature.lock',
+      ]) {
+        expect(isValidBranchName(value), isFalse, reason: value);
+      }
+
+      expect(isValidRemoteName('origin'), isTrue);
+      expect(isValidRemoteName('maintainer/upstream'), isTrue);
+      for (final value in <String>[
+        '--upload-pack=evil',
+        'https://example.test/repo.git',
+        'origin?token=secret',
+        '../origin',
+      ]) {
+        expect(isValidRemoteName(value), isFalse, reason: value);
+      }
+
+      expect(
+        isValidCommitSha('388dbc289abdb19b75225bcd3cee47cf72d83cd5'),
+        isTrue,
+      );
+      expect(isValidCommitSha(zeroOid), isFalse);
+      expect(isValidCommitSha(zeroOid, allowZero: true), isTrue);
+      expect(isValidCommitSha('HEAD'), isFalse);
+    });
+
+    test('all invalid inputs are sanitized before any rejection', () async {
+      final result = await const SafePrHeadUpdate().updatePrHead(
+        remote:
+            'https://user:remoteSecret@example.test/repo.git?token=remoteSecret',
+        branch: 'feature?branchSecret',
+        expectedHeadSha: 'expectedSecret',
+        proposedHeadSha: 'proposedSecret',
+        writer: 'writer?writerSecret',
+        correlationId: 'correlation?correlationSecret',
+      );
+      final encoded = result.toFormattedJson();
+      expect(
+        result.failureClassification,
+        PrHeadUpdateFailureClassification.invalidInput,
+      );
+      for (final secret in <String>[
+        'remoteSecret',
+        'branchSecret',
+        'expectedSecret',
+        'proposedSecret',
+        'writerSecret',
+        'correlationSecret',
+      ]) {
+        expect(encoded, isNot(contains(secret)));
+      }
+      expect(result.remote, '<invalid>');
+      expect(result.targetRef, '<invalid>');
+      expect(result.writer, '<invalid>');
+      expect(result.correlationId, '<invalid>');
+      expect(result.expectedHeadSha, zeroOid);
+      expect(result.proposedHeadSha, zeroOid);
+      expectEvidenceMatchesLocalSchema(result);
+    });
+
+    test(
+      'local schema exactly accepts every emitted field and stable enum',
+      () {
+        expectEvidenceMatchesLocalSchema(
+          PrHeadUpdateResult(
+            timestamp: DateTime.utc(2026, 8, 28),
+            correlationId: 'schema-check',
+            writer: 'schema-writer',
+            targetRef: 'refs/heads/schema-check',
+            remote: 'origin',
+            expectedHeadSha: zeroOid,
+            remoteHeadBefore: null,
+            proposedHeadSha: '388dbc289abdb19b75225bcd3cee47cf72d83cd5',
+            remoteHeadAfter: '388dbc289abdb19b75225bcd3cee47cf72d83cd5',
+            decision: PrHeadUpdateDecision.accepted,
+            failureClassification: PrHeadUpdateFailureClassification.none,
+            message: 'Schema validation fixture.',
+          ),
+        );
+      },
+    );
+
+    test('process exceptions become sanitized structured evidence', () async {
+      final result =
+          await SafePrHeadUpdate(
+            gitRunner: (args, {workingDirectory}) {
+              throw ProcessException('git', <String>['sensitive-argument']);
+            },
+          ).updatePrHead(
+            remote: 'origin',
+            branch: 'feature/process-failure',
+            expectedHeadSha: zeroOid,
+            proposedHeadSha: '388dbc289abdb19b75225bcd3cee47cf72d83cd5',
+            writer: 'process-writer',
+          );
+      expect(result.decision, PrHeadUpdateDecision.rejected);
+      expect(
+        result.failureClassification,
+        PrHeadUpdateFailureClassification.gitExecutionError,
+      );
+      expect(result.toFormattedJson(), isNot(contains('sensitive-argument')));
+      expectEvidenceMatchesLocalSchema(result);
+    });
+
+    test('malformed CLI input emits sanitized schema evidence', () async {
+      final process = await Process.run(Platform.resolvedExecutable, <String>[
+        'tool/git/safe_pr_head_update.dart',
+        '--unknown=cliSecret',
+      ]);
+      expect(process.exitCode, 64);
+      expect(process.stderr.toString(), isEmpty);
+      expect(process.stdout.toString(), isNot(contains('cliSecret')));
+      final evidence =
+          jsonDecode(process.stdout.toString()) as Map<String, dynamic>;
+      expect(evidence['schema'], PrHeadUpdateResult.schema);
+      expect(evidence['writer'], '<invalid>');
+      expect(evidence['target_ref'], '<invalid>');
+      expect(evidence['remote'], '<invalid>');
+      expect(evidence['expected_head_sha'], zeroOid);
+      expect(evidence['proposed_head_sha'], zeroOid);
+      expect(evidence['decision'], PrHeadUpdateDecision.rejected.name);
+      expect(
+        evidence['failure_classification'],
+        PrHeadUpdateFailureClassification.invalidInput.name,
+      );
+    });
+  });
+
+  group('bare remote integration', () {
+    late Directory root;
+    late Directory remote;
+    late Directory work;
+    late String commitA;
+    late String commitB;
+    late String commitC;
+    late String commitD;
+
+    setUp(() async {
+      root = await Directory.systemTemp.createTemp('safe_pr_head_update_test_');
+      remote = Directory('${root.path}/remote.git')..createSync();
+      work = Directory('${root.path}/work')..createSync();
+      expect(
+        (await git(<String>['init', '--bare', '--quiet'], remote)).exitCode,
+        0,
+      );
+      expect((await git(<String>['init', '--quiet'], work)).exitCode, 0);
+      expect(
+        (await git(<String>[
+          'remote',
+          'add',
+          'origin',
+          remote.path,
+        ], work)).exitCode,
+        0,
+      );
+      commitA = await commitFile(work, 'base.txt', 'A\n', 'A');
+      expect(
+        (await git(<String>[
+          'push',
+          '--quiet',
+          'origin',
+          '$commitA:refs/heads/pr-test',
+        ], work)).exitCode,
+        0,
+      );
+      commitB = await commitFile(work, 'feature.txt', 'B\n', 'B');
+      commitC = await commitFile(work, 'feature.txt', 'C\n', 'C');
+      expect(
+        (await git(<String>[
+          'checkout',
+          '--quiet',
+          '--detach',
+          commitA,
+        ], work)).exitCode,
+        0,
+      );
+      commitD = await commitFile(work, 'diverged.txt', 'D\n', 'D');
+      expect(
+        (await git(<String>[
+          'checkout',
+          '--quiet',
+          '--detach',
+          commitC,
+        ], work)).exitCode,
+        0,
+      );
+    });
+
+    tearDown(() => root.delete(recursive: true));
+
+    test(
+      'normal fast-forward succeeds with no force option and exact read-back',
+      () async {
+        expect(
+          (await git(<String>[
+            '-c',
+            'user.name=Test Writer',
+            '-c',
+            'user.email=test@example.com',
+            'tag',
+            '-a',
+            'must-not-follow',
+            '-m',
+            'must not follow',
+            commitB,
+          ], work)).exitCode,
+          0,
+        );
+        expect(
+          (await git(<String>[
+            'config',
+            'push.followTags',
+            'true',
+          ], work)).exitCode,
+          0,
+        );
+        expect(
+          (await git(<String>[
+            'config',
+            'remote.origin.mirror',
+            'true',
+          ], work)).exitCode,
+          0,
+        );
+        final contributorHookMarker = File('${root.path}/contributor-hook-ran');
+        final contributorHookDirectory = Directory(
+          '${work.path}/.custom-hooks',
+        );
+        await contributorHookDirectory.create();
+        expect(
+          (await git(<String>[
+            'config',
+            'core.hooksPath',
+            '.custom-hooks',
+          ], work)).exitCode,
+          0,
+        );
+        final contributorHook = File(
+          '${contributorHookDirectory.path}/pre-push',
+        );
+        await contributorHook.writeAsString(
+          '#!/bin/sh\n: > "${contributorHookMarker.path}"\n',
+        );
+        expect(
+          (await Process.run('chmod', <String>[
+            '700',
+            contributorHook.path,
+          ])).exitCode,
+          0,
+        );
+        final invocations = <List<String>>[];
+        final updater = SafePrHeadUpdate(
+          gitRunner: (args, {workingDirectory}) {
+            invocations.add(List<String>.of(args));
+            return defaultGitCommandRunner(
+              args,
+              workingDirectory: workingDirectory,
+            );
+          },
+        );
+        final result = await updater.updatePrHead(
+          remote: 'origin',
+          branch: 'pr-test',
+          expectedHeadSha: commitA,
+          proposedHeadSha: commitB,
+          writer: 'test-writer',
+          correlationId: 'normal-forward',
+          workingDirectory: work.path,
+        );
+        expect(
+          result.decision,
+          PrHeadUpdateDecision.accepted,
+          reason: result.toFormattedJson(),
+        );
+        expect(result.remoteHeadBefore, commitA);
+        expect(result.remoteHeadAfter, commitB);
+        expectEvidenceMatchesLocalSchema(result);
+        expect(await remoteHead(work, 'pr-test'), commitB);
+        expect(
+          (await git(<String>[
+            'ls-remote',
+            '--tags',
+            'origin',
+          ], work)).stdout.toString().trim(),
+          isEmpty,
+        );
+        expect(await contributorHookMarker.exists(), isTrue);
+        final push = invocations.singleWhere((args) => args.contains('push'));
+        expect(push, contains('--porcelain'));
+        expect(push, contains('remote.origin.mirror=false'));
+        expect(
+          push,
+          containsAll(<String>[
+            '--no-mirror',
+            '--no-tags',
+            '--no-follow-tags',
+            '--verify',
+          ]),
+        );
+        expect(push.any((arg) => arg.startsWith('--force')), isFalse);
+        expect(push.any((arg) => arg.startsWith('+')), isFalse);
+        final oneShotHookConfig = push.singleWhere(
+          (argument) => argument.startsWith('core.hooksPath='),
+        );
+        final oneShotHookDirectory = Directory(
+          oneShotHookConfig.substring('core.hooksPath='.length),
+        );
+        expect(oneShotHookDirectory.existsSync(), isFalse);
+      },
+    );
+
+    test('configured pre-push rejection is preserved and classified', () async {
+      final contributorHook = File('${work.path}/.git/hooks/pre-push');
+      const hookContents = '#!/bin/sh\nexit 23\n';
+      await contributorHook.writeAsString(hookContents);
+      expect(
+        (await Process.run('chmod', <String>[
+          '700',
+          contributorHook.path,
+        ])).exitCode,
+        0,
+      );
+      final result = await const SafePrHeadUpdate().updatePrHead(
+        remote: 'origin',
+        branch: 'pr-test',
+        expectedHeadSha: commitA,
+        proposedHeadSha: commitB,
+        writer: 'hook-policy-writer',
+        workingDirectory: work.path,
+      );
+      expect(result.decision, PrHeadUpdateDecision.rejected);
+      expect(
+        result.failureClassification,
+        PrHeadUpdateFailureClassification.prePushHookRejected,
+      );
+      expect(await remoteHead(work, 'pr-test'), commitA);
+      expect(await contributorHook.readAsString(), hookContents);
+    });
+
+    test(
+      'expected-head mismatch rejects and leaves the exact ref untouched',
+      () async {
+        final result = await const SafePrHeadUpdate().updatePrHead(
+          remote: 'origin',
+          branch: 'pr-test',
+          expectedHeadSha: commitB,
+          proposedHeadSha: commitC,
+          writer: 'stale-writer',
+          workingDirectory: work.path,
+        );
+        expect(
+          result.failureClassification,
+          PrHeadUpdateFailureClassification.expectedHeadMismatch,
+        );
+        expect(await remoteHead(work, 'pr-test'), commitA);
+      },
+    );
+
+    test('force-style refspec input is rejected without mutation', () async {
+      final result = await const SafePrHeadUpdate().updatePrHead(
+        remote: 'origin',
+        branch: '+refs/heads/pr-test',
+        expectedHeadSha: commitA,
+        proposedHeadSha: commitB,
+        writer: 'force-refspec-writer',
+        workingDirectory: work.path,
+      );
+      expect(
+        result.failureClassification,
+        PrHeadUpdateFailureClassification.invalidInput,
+      );
+      expect(await remoteHead(work, 'pr-test'), commitA);
+    });
+
+    test(
+      'credential-bearing configured push URL is rejected and redacted',
+      () async {
+        expect(
+          (await git(<String>[
+            'config',
+            'remote.origin.pushurl',
+            'https://user:pushSecret@example.test/repo.git',
+          ], work)).exitCode,
+          0,
+        );
+        final result = await const SafePrHeadUpdate().updatePrHead(
+          remote: 'origin',
+          branch: 'pr-test',
+          expectedHeadSha: commitA,
+          proposedHeadSha: commitB,
+          writer: 'redacted-url-writer',
+          workingDirectory: work.path,
+        );
+        expect(
+          result.failureClassification,
+          PrHeadUpdateFailureClassification.invalidRemoteConfiguration,
+        );
+        expect(result.toFormattedJson(), isNot(contains('pushSecret')));
+        expect(
+          (await git(<String>[
+            '--git-dir=${remote.path}',
+            'rev-parse',
+            'refs/heads/pr-test',
+          ], root)).stdout.toString().trim(),
+          commitA,
+        );
+      },
+    );
+
+    test('non-descendant history is rejected', () async {
+      expect(
+        (await git(<String>[
+          'push',
+          'origin',
+          '$commitB:refs/heads/pr-test',
+        ], work)).exitCode,
+        0,
+      );
+      final result = await const SafePrHeadUpdate().updatePrHead(
+        remote: 'origin',
+        branch: 'pr-test',
+        expectedHeadSha: commitB,
+        proposedHeadSha: commitD,
+        writer: 'diverged-writer',
+        workingDirectory: work.path,
+      );
+      expect(
+        result.failureClassification,
+        PrHeadUpdateFailureClassification.nonDescendantHistory,
+      );
+      expect(await remoteHead(work, 'pr-test'), commitB);
+    });
+
+    test('local replacement refs cannot bypass ancestry rejection', () async {
+      expect(
+        (await git(<String>[
+          'push',
+          'origin',
+          '$commitB:refs/heads/pr-test',
+        ], work)).exitCode,
+        0,
+      );
+      expect(
+        (await git(<String>['replace', commitD, commitC], work)).exitCode,
+        0,
+      );
+      expect(
+        (await git(<String>[
+          'merge-base',
+          '--is-ancestor',
+          commitB,
+          commitD,
+        ], work)).exitCode,
+        0,
+        reason:
+            'the fixture replacement must make the divergent head look safe',
+      );
+      final result = await const SafePrHeadUpdate().updatePrHead(
+        remote: 'origin',
+        branch: 'pr-test',
+        expectedHeadSha: commitB,
+        proposedHeadSha: commitD,
+        writer: 'replace-ref-writer',
+        workingDirectory: work.path,
+      );
+      expect(
+        result.failureClassification,
+        PrHeadUpdateFailureClassification.nonDescendantHistory,
+      );
+      expect(await remoteHead(work, 'pr-test'), commitB);
+    });
+
+    test('stale ancestor rewind is rejected', () async {
+      expect(
+        (await git(<String>[
+          'push',
+          'origin',
+          '$commitC:refs/heads/pr-test',
+        ], work)).exitCode,
+        0,
+      );
+      final result = await const SafePrHeadUpdate().updatePrHead(
+        remote: 'origin',
+        branch: 'pr-test',
+        expectedHeadSha: commitC,
+        proposedHeadSha: commitA,
+        writer: 'rewind-writer',
+        workingDirectory: work.path,
+      );
+      expect(
+        result.failureClassification,
+        PrHeadUpdateFailureClassification.staleAncestorRewind,
+      );
+      expect(await remoteHead(work, 'pr-test'), commitC);
+    });
+
+    test(
+      'retry is idempotent when expected and proposed equal the remote',
+      () async {
+        const updater = SafePrHeadUpdate();
+        final first = await updater.updatePrHead(
+          remote: 'origin',
+          branch: 'pr-test',
+          expectedHeadSha: commitA,
+          proposedHeadSha: commitB,
+          writer: 'retry-writer',
+          workingDirectory: work.path,
+        );
+        expect(first.decision, PrHeadUpdateDecision.accepted);
+        final result = await updater.updatePrHead(
+          remote: 'origin',
+          branch: 'pr-test',
+          expectedHeadSha: commitB,
+          proposedHeadSha: commitB,
+          writer: 'retry-writer',
+          workingDirectory: work.path,
+        );
+        expect(result.decision, PrHeadUpdateDecision.noOp);
+        expect(result.remoteHeadAfter, commitB);
+      },
+    );
+
+    test('all-zero expectation creates only an absent branch', () async {
+      final result = await const SafePrHeadUpdate().updatePrHead(
+        remote: 'origin',
+        branch: 'new-pr',
+        expectedHeadSha: zeroOid,
+        proposedHeadSha: commitB,
+        writer: 'automation-writer',
+        workingDirectory: work.path,
+      );
+      expect(result.decision, PrHeadUpdateDecision.accepted);
+      expect(result.remoteHeadBefore, isNull);
+      expect(result.remoteHeadAfter, commitB);
+      expect(await remoteHead(work, 'new-pr'), commitB);
+    });
+
+    test(
+      'an annotated tag object cannot be used as a proposed branch head',
+      () async {
+        expect(
+          (await git(<String>[
+            '-c',
+            'user.name=Test Writer',
+            '-c',
+            'user.email=test@example.com',
+            'tag',
+            '-a',
+            'tag-object-proposal',
+            '-m',
+            'tag object proposal',
+            commitB,
+          ], work)).exitCode,
+          0,
+        );
+        final tagObject = (await git(<String>[
+          'rev-parse',
+          'tag-object-proposal^{tag}',
+        ], work)).stdout.toString().trim();
+        final result = await const SafePrHeadUpdate().updatePrHead(
+          remote: 'origin',
+          branch: 'pr-test',
+          expectedHeadSha: commitA,
+          proposedHeadSha: tagObject,
+          writer: 'tag-object-writer',
+          workingDirectory: work.path,
+        );
+        expect(
+          result.failureClassification,
+          PrHeadUpdateFailureClassification.commitObjectMissing,
+        );
+        expect(await remoteHead(work, 'pr-test'), commitA);
+      },
+    );
+
+    test(
+      'dry-run reports the observed ref rather than an optimistic after SHA',
+      () async {
+        final result = await const SafePrHeadUpdate().updatePrHead(
+          remote: 'origin',
+          branch: 'pr-test',
+          expectedHeadSha: commitA,
+          proposedHeadSha: commitB,
+          writer: 'dry-runner',
+          dryRun: true,
+          workingDirectory: work.path,
+        );
+        expect(result.decision, PrHeadUpdateDecision.validated);
+        expect(result.remoteHeadAfter, commitA);
+        expect(await remoteHead(work, 'pr-test'), commitA);
+      },
+    );
+
+    test(
+      'concurrent winner advances after precheck and stale writer is rejected by in-push CAS',
+      () async {
+        var injectedWinner = false;
+        final updater = SafePrHeadUpdate(
+          gitRunner: (args, {workingDirectory}) async {
+            if (!injectedWinner && args.contains('push')) {
+              injectedWinner = true;
+              final winner = await git(<String>[
+                'push',
+                'origin',
+                '$commitB:refs/heads/pr-test',
+              ], work);
+              expect(winner.exitCode, 0);
+            }
+            return defaultGitCommandRunner(
+              args,
+              workingDirectory: workingDirectory,
+            );
+          },
+        );
+        final stale = await updater.updatePrHead(
+          remote: 'origin',
+          branch: 'pr-test',
+          expectedHeadSha: commitA,
+          proposedHeadSha: commitC,
+          writer: 'stale-concurrent-writer',
+          correlationId: 'deterministic-race',
+          workingDirectory: work.path,
+        );
+        expect(injectedWinner, isTrue);
+        expect(stale.decision, PrHeadUpdateDecision.rejected);
+        expect(
+          stale.failureClassification,
+          PrHeadUpdateFailureClassification.expectedHeadMismatch,
+        );
+        expect(stale.remoteHeadAfter, commitB);
+        expect(await remoteHead(work, 'pr-test'), commitB);
+      },
+    );
+
+    test(
+      'receive-pack rejects a post-advertisement race even when the stale proposal descends from the winner',
+      () async {
+        expect(
+          (await git(<String>[
+            'merge-base',
+            '--is-ancestor',
+            commitB,
+            commitC,
+          ], work)).exitCode,
+          0,
+        );
+        expect(
+          (await git(<String>[
+            'push',
+            '--quiet',
+            'origin',
+            '$commitC:refs/race-fixtures/commit-c',
+          ], work)).exitCode,
+          0,
+        );
+        final contributorHook = File('${work.path}/.git/hooks/pre-push');
+        await contributorHook.writeAsString(
+          '#!/bin/sh\n'
+          "git --git-dir='${remote.path}' update-ref "
+          "refs/heads/pr-test '$commitB' '$commitA'\n",
+        );
+        expect(
+          (await Process.run('chmod', <String>[
+            '700',
+            contributorHook.path,
+          ])).exitCode,
+          0,
+        );
+        final result = await const SafePrHeadUpdate().updatePrHead(
+          remote: 'origin',
+          branch: 'pr-test',
+          expectedHeadSha: commitA,
+          proposedHeadSha: commitC,
+          writer: 'post-advertisement-writer',
+          correlationId: 'receive-pack-old-oid-race',
+          workingDirectory: work.path,
+        );
+        expect(result.decision, PrHeadUpdateDecision.rejected);
+        expect(
+          result.failureClassification,
+          PrHeadUpdateFailureClassification.expectedHeadMismatch,
+        );
+        expect(result.remoteHeadBefore, commitA);
+        expect(result.remoteHeadAfter, commitB);
+        expect(await remoteHead(work, 'pr-test'), commitB);
+      },
+    );
+
+    test(
+      'success is rejected if the exact ref read-back moved again',
+      () async {
+        var remoteReads = 0;
+        final updater = SafePrHeadUpdate(
+          gitRunner: (args, {workingDirectory}) async {
+            if (args.contains('ls-remote')) {
+              remoteReads++;
+              if (remoteReads == 2) {
+                final next = await git(<String>[
+                  'push',
+                  'origin',
+                  '$commitC:refs/heads/pr-test',
+                ], work);
+                expect(next.exitCode, 0);
+              }
+            }
+            return defaultGitCommandRunner(
+              args,
+              workingDirectory: workingDirectory,
+            );
+          },
+        );
+        final result = await updater.updatePrHead(
+          remote: 'origin',
+          branch: 'pr-test',
+          expectedHeadSha: commitA,
+          proposedHeadSha: commitB,
+          writer: 'readback-writer',
+          workingDirectory: work.path,
+        );
+        expect(
+          result.failureClassification,
+          PrHeadUpdateFailureClassification.postMutationVerificationFailed,
+        );
+        expect(result.remoteHeadAfter, commitC);
+      },
+    );
+
+    test(
+      'read-back exception never reports an optimistic after head',
+      () async {
+        var remoteReads = 0;
+        final updater = SafePrHeadUpdate(
+          gitRunner: (args, {workingDirectory}) {
+            if (args.contains('ls-remote') && ++remoteReads == 2) {
+              throw ProcessException('git', <String>['secret-readback-arg']);
+            }
+            return defaultGitCommandRunner(
+              args,
+              workingDirectory: workingDirectory,
+            );
+          },
+        );
+        final result = await updater.updatePrHead(
+          remote: 'origin',
+          branch: 'pr-test',
+          expectedHeadSha: commitA,
+          proposedHeadSha: commitB,
+          writer: 'readback-exception-writer',
+          workingDirectory: work.path,
+        );
+        expect(
+          result.failureClassification,
+          PrHeadUpdateFailureClassification.gitExecutionError,
+        );
+        expect(result.remoteHeadBefore, commitA);
+        expect(result.remoteHeadAfter, isNull);
+        expect(
+          result.toFormattedJson(),
+          isNot(contains('secret-readback-arg')),
+        );
+        expect(await remoteHead(work, 'pr-test'), commitB);
+      },
+    );
+
+    test(
+      'workflow reconciliation merges both lines without dropping newer content',
+      () async {
+        expect(
+          (await git(<String>[
+            'checkout',
+            '--quiet',
+            '--detach',
+            commitD,
+          ], work)).exitCode,
+          0,
+        );
+        final reconciledResult = await git(<String>[
+          '-c',
+          'user.name=Test Writer',
+          '-c',
+          'user.email=test@example.com',
+          'merge',
+          '--no-ff',
+          '--no-edit',
+          commitC,
+        ], work);
+        expect(reconciledResult.exitCode, 0);
+        final reconciled = (await git(<String>[
+          'rev-parse',
+          'HEAD',
+        ], work)).stdout.toString().trim();
+        final parents = (await git(<String>[
+          'rev-list',
+          '--parents',
+          '-n',
+          '1',
+          reconciled,
+        ], work)).stdout.toString().trim().split(' ');
+        expect(parents, <String>[reconciled, commitD, commitC]);
+        expect(File('${work.path}/diverged.txt').readAsStringSync(), 'D\n');
+        expect(File('${work.path}/feature.txt').readAsStringSync(), 'C\n');
+        for (final parent in <String>[commitD, commitC]) {
+          expect(
+            (await git(<String>[
+              'merge-base',
+              '--is-ancestor',
+              parent,
+              reconciled,
+            ], work)).exitCode,
+            0,
+          );
+        }
+      },
+    );
+  });
+
+  group('static repository writer contracts', () {
+    test('all executable and task sources exclude bypass writers', () {
+      String repoPath(File file) =>
+          file.path.startsWith('./') ? file.path.substring(2) : file.path;
+
+      final sourceFiles = Directory('.')
+          .listSync(recursive: true, followLinks: false)
+          .whereType<File>()
+          .where((file) {
+            final path = repoPath(file);
+            if (path.startsWith('.git/') ||
+                path.startsWith('build/') ||
+                path.startsWith('.dart_tool/') ||
+                path.startsWith('node_modules/') ||
+                path.contains('/.dart_tool/') ||
+                path.contains('/node_modules/') ||
+                path.startsWith('test/')) {
+              return false;
+            }
+            return RegExp(
+                  r'\.(dart|py|sh|bash|zsh|fish|ps1|cmd|bat|js|ts)$',
+                ).hasMatch(path) ||
+                RegExp(r'\.ya?ml$').hasMatch(path) ||
+                path.endsWith('/package.json') ||
+                path == 'package.json' ||
+                path.endsWith('/Makefile') ||
+                path == 'Makefile';
+          });
+      for (final file in sourceFiles) {
+        final path = repoPath(file);
+        final content = file.readAsStringSync();
+        expect(
+          content,
+          isNot(contains('peter-evans/create-pull-request')),
+          reason: path,
+        );
+        expect(
+          content,
+          isNot(
+            matches(
+              RegExp(
+                r'(git\s*\.\s*(createRef|updateRef|deleteRef)|git/refs/heads|\b(createRef|updateRef|deleteRef)\s*\(|git\s+push\s+[^\n]*(--force|\+refs/heads))',
+                caseSensitive: false,
+              ),
+            ),
+          ),
+          reason: path,
+        );
+        if (path == '.github/workflows/docs_version_cut.yml') {
+          expect(content, contains('git push origin HEAD:main'));
+          expect(RegExp(r'\bgit\s+push\b').allMatches(content).length, 1);
+        } else {
+          expect(
+            content,
+            isNot(matches(RegExp(r'\bgit\s+push\b'))),
+            reason: '$path contains an unregistered direct push',
+          );
+        }
+        if (path != 'tool/git/safe_pr_head_update.dart') {
+          expect(
+            content,
+            isNot(
+              matches(
+                RegExp(
+                  r'''['"]git['"][\s\S]{0,160}['"]push['"]|['"]push['"]\s*,[\s\S]{0,160}refs/heads/''',
+                ),
+              ),
+            ),
+            reason: path,
+          );
+        }
+        if (path == '.github/workflows/release_on_prep_merge.yml') {
+          expect(content, contains('"ref=refs/tags/\$tag"'));
+          expect(RegExp(r'git/refs').allMatches(content).length, 1);
+        } else {
+          expect(
+            content,
+            isNot(matches(RegExp(r'git/refs'))),
+            reason: '$path contains an unregistered GitHub ref API',
+          );
+        }
+      }
+
+      final markdownFiles = Directory('.')
+          .listSync(recursive: true)
+          .whereType<File>()
+          .where(
+            (file) =>
+                file.path.endsWith('.md') && !file.path.contains('/.git/'),
+          );
+      for (final file in markdownFiles) {
+        final content = file.readAsStringSync();
+        for (final line in content.split('\n')) {
+          if (!RegExp(r'\bgit\s+push\b').hasMatch(line)) continue;
+          if (file.path == './doc/pr_branch_writer_inventory.md') {
+            expect(
+              line,
+              contains(
+                'ordinary blind `git push` is not an authorized open-PR update path',
+              ),
+            );
+            continue;
+          }
+          expect(
+            file.path,
+            matches(
+              RegExp(
+                r'^\./website/versioned_docs/version-[^/]+/maintainers/release-workflow\.md$',
+              ),
+            ),
+            reason: '${file.path} documents an unregistered push',
+          );
+          expect(
+            line.trim(),
+            matches(
+              RegExp(
+                r'^git push origin llamadart_[a-z0-9_]+-v[0-9]+\.[0-9]+\.[0-9]+$',
+              ),
+            ),
+            reason: '${file.path} must remain a tag-only push example',
+          );
+        }
+      }
+    });
+
+    test('the only workflow open-PR writer invokes the guarded helper', () {
+      final workflow = File(
+        '.github/workflows/sync_native_bindings.yml',
+      ).readAsStringSync();
+      expect(workflowWriterContractViolations(workflow), isEmpty);
+      expect(workflow, contains('tool/git/safe_pr_head_update.dart'));
+      expect(workflow, contains('ref: main'));
+      expect(workflow, contains('target_ref="refs/heads/\${branch}"'));
+      expect(workflow, contains('--expected-sha'));
+      expect(workflow, contains('--proposed-sha'));
+      expect(workflow, contains('--writer github-actions-native-sync'));
+      expect(workflow, contains('git fetch --quiet --no-tags origin'));
+      expect(workflow, contains('if [[ "\${fetched}" != "\${expected}" ]]'));
+      expect(
+        workflow,
+        contains('git merge-base --is-ancestor "\${candidate}" "\${expected}"'),
+      );
+      expect(workflow, contains('git merge --no-ff --no-edit "\${candidate}"'));
+      expect(workflow, contains('git rev-list --parents -n 1 "\${proposed}"'));
+      expect(
+        workflow,
+        contains('git merge-base --is-ancestor "\${expected}" "\${proposed}"'),
+      );
+      expect(
+        workflow,
+        contains('git merge-base --is-ancestor "\${candidate}" "\${proposed}"'),
+      );
+      expect(workflow, contains('should_update="\${has_changes}"'));
+      expect(workflow, contains('if [[ "\${HAS_CHANGES}" != "true" ]]'));
+      expect(workflow, contains('gh pr close'));
+      expect(workflow, contains('gh pr edit'));
+      expect(workflow, contains('gh pr create'));
+      expect(
+        workflow.indexOf('tool/git/safe_pr_head_update.dart'),
+        lessThan(workflow.indexOf('gh pr close')),
+      );
+      expect(
+        workflow.indexOf('tool/git/safe_pr_head_update.dart'),
+        lessThan(workflow.indexOf('gh pr edit')),
+      );
+      expect(
+        workflow.indexOf('tool/git/safe_pr_head_update.dart'),
+        lessThan(workflow.indexOf('gh pr create')),
+      );
+      expect(workflow, isNot(contains('create-pull-request')));
+    });
+
+    test('workflow contract rejects guard deletion and mutation bypasses', () {
+      final workflow = File(
+        '.github/workflows/sync_native_bindings.yml',
+      ).readAsStringSync();
+      expect(workflowWriterContractViolations(workflow), isEmpty);
+
+      final deletedGuard = workflow.replaceFirst(
+        '          dart run tool/git/safe_pr_head_update.dart \\\n',
+        '',
+      );
+      expect(workflowWriterContractViolations(deletedGuard), isNotEmpty);
+
+      final mentionedButNotExecuted = workflow.replaceFirst(
+        '          dart run tool/git/safe_pr_head_update.dart \\\n',
+        '          echo tool/git/safe_pr_head_update.dart \\\n',
+      );
+      expect(
+        workflowWriterContractViolations(mentionedButNotExecuted),
+        isNotEmpty,
+      );
+
+      for (final bypass in <String>[
+        '          git push --force origin HEAD:refs/heads/bypass\n',
+        "          gh api graphql -f query='mutation { updateRef(input: {}) }'\n",
+        '          gh api -X PATCH repos/example/repo/git/refs/heads/bypass\n',
+      ]) {
+        final bypassed = workflow.replaceFirst(
+          '          set -euo pipefail\n',
+          '          set -euo pipefail\n$bypass',
+        );
+        expect(
+          workflowWriterContractViolations(bypassed),
+          isNotEmpty,
+          reason: bypass.trim(),
+        );
+      }
+
+      final missingExpected = workflow.replaceFirst(
+        '            --expected-sha "\${EXPECTED_SHA}" \\\n',
+        '',
+      );
+      expect(workflowWriterContractViolations(missingExpected), isNotEmpty);
+    });
+
+    test('docs bind contributors to the inventory and residual boundary', () {
+      final agents = File('AGENTS.md').readAsStringSync();
+      final contributing = File('CONTRIBUTING.md').readAsStringSync();
+      final testingMatrix = File('doc/testing_matrix.md').readAsStringSync();
+      final inventory = File(
+        'doc/pr_branch_writer_inventory.md',
+      ).readAsStringSync();
+      expect(agents, contains('doc/pr_branch_writer_inventory.md'));
+      expect(agents, contains('tool/git/safe_pr_head_update.dart'));
+      expect(contributing, contains('tool/git/safe_pr_head_update.dart'));
+      expect(contributing, contains('exact observed fork-branch head'));
+      expect(testingMatrix, contains('tool/git/safe_pr_head_update.dart'));
+      expect(inventory, contains('GitHub web UI'));
+      expect(inventory, contains('third-party'));
+      expect(inventory, contains('protection or rulesets'));
+      expect(inventory, contains('b6af5a8b5d1973bc72d4e5283f1c7d728a679cb7'));
+      expect(inventory, contains('facts'));
+      expect(inventory, contains('Inference'));
+      expect(inventory, contains('.github/dependabot.yml'));
+      expect(inventory, contains('CONTRIBUTING.md'));
+    });
+  });
+}

@@ -155,15 +155,20 @@ bool _isReleaseAutomation(String path) {
 
 bool _isRegressionPolicy(String path) {
   return path == 'AGENTS.md' ||
+      path == 'CONTRIBUTING.md' ||
       path == '.github/CODEOWNERS' ||
       path == '.github/pull_request_template.md' ||
       path.startsWith('.github/workflows/') ||
       path == 'doc/testing_matrix.md' ||
+      path == 'doc/pr_branch_writer_inventory.md' ||
       path == 'tool/testing/test_matrix.dart' ||
       path == 'tool/testing/classify_high_risk_changes.dart' ||
       path == 'test/unit/tooling/test_matrix_test.dart' ||
       path == 'test/unit/tooling/classify_high_risk_changes_test.dart' ||
-      path == 'test/unit/tooling/high_risk_review_policy_test.dart';
+      path == 'test/unit/tooling/high_risk_review_policy_test.dart' ||
+      path == 'tool/git/safe_pr_head_update.dart' ||
+      path == 'tool/git/pr_head_update_evidence.schema.json' ||
+      path == 'test/unit/tooling/safe_pr_head_update_test.dart';
 }
 
 /// Formats the contributor-facing classification result.
