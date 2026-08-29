@@ -2397,18 +2397,12 @@ void main() {
       final classification = File(
         'tool/governance/deploy/high_risk_readiness_classify.yml.template',
       ).readAsStringSync();
-        final attestation = File(
-          'tool/governance/deploy/high_risk_readiness_publish.yml.template',
-        ).readAsStringSync();
-        expect(
-          attestation,
-          contains(r"github.ref != 'refs/heads/main' ||"),
-        );
-        expect(
-          attestation,
-          contains(r'github.workflow_sha != github.sha'),
-        );
-        expect(classification, contains('high-risk-readiness-classify-'));
+      final attestation = File(
+        'tool/governance/deploy/high_risk_readiness_publish.yml.template',
+      ).readAsStringSync();
+      expect(attestation, contains(r"github.ref != 'refs/heads/main' ||"));
+      expect(attestation, contains(r'github.workflow_sha != github.sha'));
+      expect(classification, contains('high-risk-readiness-classify-'));
       expect(classification, contains('cancel-in-progress: true'));
       expect(attestation, contains('high-risk-readiness-attest-'));
       expect(attestation, contains('cancel-in-progress: false'));
@@ -2619,10 +2613,7 @@ void main() {
       expect(properties['check_name'], <String, dynamic>{
         'const': defaultReadinessCheckName,
       });
-      expect(
-        properties['pr_number'],
-        containsPair('minimum', 1),
-      );
+      expect(properties['pr_number'], containsPair('minimum', 1));
       expect(properties, contains('protected_environment'));
       expect(appProperties, contains('installation_id'));
       expect(appProperties, contains('installation_app_slug'));
@@ -2645,7 +2636,9 @@ void main() {
         'head_check_state',
         'ruleset',
       ]) {
-        expect(classificationProperties[key], <String, dynamic>{'type': 'null'});
+        expect(classificationProperties[key], <String, dynamic>{
+          'type': 'null',
+        });
       }
     });
   });
