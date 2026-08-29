@@ -2621,8 +2621,21 @@ void main() {
       final appProperties = appIdentity['properties']! as Map<String, dynamic>;
       final ruleset = definitions['ruleset']! as Map<String, dynamic>;
       final rulesetProperties = ruleset['properties']! as Map<String, dynamic>;
+      final path = definitions['path']! as Map<String, dynamic>;
+      final pathPattern = RegExp(path['pattern'] as String);
 
       expect(digest['pattern'], r'^[0-9a-f]{64}$');
+      expect(path['pattern'], contains(r'(?!\s)'));
+      expect(path['pattern'], contains(r'(?!.*\s$)'));
+      expect(pathPattern.hasMatch('AGENTS.md'), isTrue);
+      for (final invalidPath in const <String>[
+        ' AGENTS.md',
+        'AGENTS.md ',
+        '\tAGENTS.md',
+        'AGENTS.md\t',
+      ]) {
+        expect(pathPattern.hasMatch(invalidPath), isFalse, reason: invalidPath);
+      }
       expect(properties['repository'], <String, dynamic>{
         'const': defaultReadinessRepository,
       });
