@@ -1,0 +1,53 @@
+{
+  "_comment": [
+    "Repository ruleset template for the dedicated High-Risk Readiness check.",
+    "This file is a review artifact. Applying it is a manual administrator step",
+    "described in doc/high_risk_readiness_publisher.md, and must not happen",
+    "until the App, both readiness environments, and the classification",
+    "workflow are installed and observed publishing on real pull requests.",
+    "GitHub required status checks are unconditional: a check that never",
+    "reports leaves every pull request pending. The classification workflow",
+    "therefore publishes this same check for standard-risk diffs as well, so",
+    "requiring it cannot strand a standard-risk pull request.",
+    "integration_id must be the numeric id of the dedicated App so no other",
+    "actor can satisfy this requirement.",
+    "enforcement is deliberately disabled; changing it to active is the",
+    "separate administrator approval in the activation runbook.",
+    "Placeholders are intentional. Never commit real ids here."
+  ],
+  "name": "high-risk-readiness",
+  "target": "branch",
+  "enforcement": "disabled",
+  "conditions": {
+    "ref_name": {
+      "include": ["refs/heads/main"],
+      "exclude": []
+    }
+  },
+  "bypass_actors": [],
+  "rules": [
+    {
+      "type": "required_status_checks",
+      "parameters": {
+        "strict_required_status_checks_policy": true,
+        "do_not_enforce_on_create": false,
+        "required_status_checks": [
+          {
+            "context": "High-Risk Readiness",
+            "integration_id": "<dedicated-app-numeric-id>"
+          }
+        ]
+      }
+    },
+    {
+      "type": "pull_request",
+      "parameters": {
+        "dismiss_stale_reviews_on_push": false,
+        "require_code_owner_review": false,
+        "require_last_push_approval": false,
+        "required_approving_review_count": 0,
+        "required_review_thread_resolution": true
+      }
+    }
+  ]
+}

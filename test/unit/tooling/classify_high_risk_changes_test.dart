@@ -79,6 +79,10 @@ void main() {
         'tool/testing/high_risk_readiness.dart',
         'tool/testing/high_risk_readiness_evidence.schema.json',
         'test/unit/tooling/high_risk_readiness_test.dart',
+        'doc/high_risk_readiness_publisher.md',
+        'tool/governance/high_risk_readiness_publisher.dart',
+        'tool/governance/readiness_publication_record.schema.json',
+        'test/unit/tooling/high_risk_readiness_publisher_test.dart',
       ]);
 
       expect(
@@ -88,6 +92,24 @@ void main() {
           HighRiskSurface.regressionPolicy,
         }),
       );
+    });
+
+    test('treats every readiness governance path as regression policy', () {
+      for (final path in const <String>[
+        'doc/high_risk_readiness_publisher.md',
+        'tool/governance/high_risk_readiness_publish.dart',
+        'tool/governance/high_risk_readiness_publisher.dart',
+        'tool/governance/readiness_publication_protocol.dart',
+        'tool/governance/readiness_publication_record.schema.json',
+        'tool/governance/deploy/readiness_ruleset.json.template',
+        'test/unit/tooling/high_risk_readiness_publisher_test.dart',
+      ]) {
+        expect(
+          assessHighRiskFiles([path]).surfaces,
+          contains(HighRiskSurface.regressionPolicy),
+          reason: path,
+        );
+      }
     });
 
     test('keeps ordinary docs-only changes standard risk', () {

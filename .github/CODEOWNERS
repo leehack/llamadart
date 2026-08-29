@@ -15,6 +15,9 @@ CHANGELOG.md @leehack
 doc/testing_matrix.md @leehack
 doc/pr_branch_writer_inventory.md @leehack
 doc/high_risk_pre_merge_readiness.md @leehack
+doc/high_risk_readiness_publisher.md @leehack
+tool/governance/ @leehack
+test/unit/tooling/high_risk_readiness_publisher_test.dart @leehack
 hook/build.dart @leehack
 tool/testing/test_matrix.dart @leehack
 tool/testing/classify_high_risk_changes.dart @leehack

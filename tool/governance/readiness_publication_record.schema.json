@@ -1,0 +1,687 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:llamadart:high-risk-readiness-publication:1.0.0",
+  "title": "llamadart high-risk readiness publication record",
+  "description": "Credential-free record of one authenticated readiness check publication attempt. The policy engine emits this record only from authenticated adapter results; the schema does not make an untrusted document authoritative.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "schema_version",
+    "published_at",
+    "mode",
+    "repository",
+    "check_name",
+    "pr_number",
+    "decision",
+    "failure_classification",
+    "message",
+    "app",
+    "pull_request",
+    "protected_approval",
+    "protected_environment",
+    "evidence_ingress",
+    "evidence_digest",
+    "changed_files",
+    "unresolved_review_threads",
+    "head_check_state",
+    "ruleset",
+    "governance_prerequisites",
+    "evaluator",
+    "check_conclusion",
+    "check_run_id",
+    "superseded_check_run_ids"
+  ],
+  "properties": {
+    "schema": { "const": "llamadart.high-risk-readiness-publication" },
+    "schema_version": { "const": "1.0.0" },
+    "published_at": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{1,6})?Z$"
+    },
+    "mode": { "enum": ["classification", "attestation"] },
+    "repository": { "const": "leehack/llamadart" },
+    "check_name": { "const": "High-Risk Readiness" },
+    "pr_number": { "type": "integer", "minimum": 1 },
+    "decision": {
+      "enum": ["accepted", "notApplicable", "blocked", "refused"]
+    },
+    "failure_classification": {
+      "enum": [
+        "none",
+        "untrustedAppIdentity",
+        "untrustedEvidenceIngress",
+        "unauthenticatedAuditor",
+        "auditorIdentityMismatch",
+        "selfAttestationProhibited",
+        "retiredQaIdentityProhibited",
+        "repositoryMismatch",
+        "pullRequestMismatch",
+        "invalidLiveState",
+        "liveInventoryInconsistent",
+        "liveStateRaced",
+        "malformedEvidence",
+        "evidenceRejected",
+        "unresolvedReviewThreads",
+        "headCheckStateNotGreen",
+        "pullRequestNotReady",
+        "governancePrerequisitesUnavailable",
+        "attestationModeRequired",
+        "checkPublicationFailed",
+        "liveReadFailed"
+      ]
+    },
+    "message": { "type": "string", "minLength": 1, "maxLength": 4000 },
+    "app": {
+      "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/appIdentity" }]
+    },
+    "pull_request": {
+      "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/pullRequest" }]
+    },
+    "protected_approval": {
+      "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/approval" }]
+    },
+    "protected_environment": {
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "#/$defs/protectedEnvironment" }
+      ]
+    },
+    "evidence_ingress": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "enum": [
+            "protectedEnvironmentApproval",
+            "pullRequestBody",
+            "pullRequestComment",
+            "pullRequestFile",
+            "workflowArtifact",
+            "processEnvironment",
+            "unknown"
+          ]
+        }
+      ]
+    },
+    "evidence_digest": {
+      "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/sha256" }]
+    },
+    "changed_files": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/repositoryChange" }
+    },
+    "unresolved_review_threads": {
+      "oneOf": [{ "type": "null" }, { "type": "integer" }]
+    },
+    "head_check_state": {
+      "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/headCheckState" }]
+    },
+    "ruleset": {
+      "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/ruleset" }]
+    },
+    "governance_prerequisites": { "$ref": "#/$defs/prerequisites" },
+    "evaluator": { "$ref": "#/$defs/evaluator" },
+    "check_conclusion": {
+      "oneOf": [
+        { "type": "null" },
+        { "enum": ["success", "failure", "action_required", "cancelled"] }
+      ]
+    },
+    "check_run_id": {
+      "oneOf": [{ "type": "null" }, { "type": "integer", "minimum": 1 }]
+    },
+    "superseded_check_run_ids": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "integer", "minimum": 1 }
+    }
+  },
+  "allOf": [
+    {
+      "description": "Only accepted or not-applicable decisions may pass.",
+      "if": { "properties": { "check_conclusion": { "const": "success" } } },
+      "then": {
+        "properties": {
+          "decision": { "enum": ["accepted", "notApplicable"] }
+        }
+      }
+    },
+    {
+      "description": "An accepted decision is an exact authenticated high-risk attestation.",
+      "if": {
+        "properties": { "decision": { "const": "accepted" } },
+        "required": ["decision"]
+      },
+      "then": {
+        "properties": {
+          "mode": { "const": "attestation" },
+          "failure_classification": { "const": "none" },
+          "app": { "$ref": "#/$defs/verifiedAppIdentity" },
+          "pull_request": {
+            "allOf": [
+              { "$ref": "#/$defs/verifiedPullRequest" },
+              { "properties": { "draft": { "const": false } } }
+            ]
+          },
+          "protected_approval": { "$ref": "#/$defs/verifiedApproval" },
+          "protected_environment": {
+            "$ref": "#/$defs/verifiedEnvironment"
+          },
+          "evidence_ingress": { "const": "protectedEnvironmentApproval" },
+          "evidence_digest": { "$ref": "#/$defs/sha256" },
+          "changed_files": {
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": { "$ref": "#/$defs/verifiedRepositoryChange" }
+          },
+          "unresolved_review_threads": { "const": 0 },
+          "head_check_state": {
+            "allOf": [
+              { "$ref": "#/$defs/verifiedHeadCheckState" },
+              { "properties": { "aggregate": { "const": "success" } } }
+            ]
+          },
+          "ruleset": { "$ref": "#/$defs/verifiedRuleset" },
+          "governance_prerequisites": { "$ref": "#/$defs/allPrerequisites" },
+          "evaluator": { "$ref": "#/$defs/acceptedEvaluator" },
+          "check_conclusion": { "const": "success" },
+          "check_run_id": { "type": "integer", "minimum": 1 }
+        }
+      }
+    },
+    {
+      "description": "Not-applicable is a published standard-risk success.",
+      "if": {
+        "properties": { "decision": { "const": "notApplicable" } },
+        "required": ["decision"]
+      },
+      "then": {
+        "properties": {
+          "failure_classification": { "const": "none" },
+          "app": { "$ref": "#/$defs/verifiedAppIdentity" },
+          "pull_request": { "$ref": "#/$defs/verifiedPullRequest" },
+          "check_conclusion": { "const": "success" },
+          "check_run_id": { "type": "integer", "minimum": 1 }
+        }
+      }
+    },
+    {
+      "description": "A refusal never claims a final conclusion or authoritative run id; post-write recovery may have cancelled App-owned runs recorded in superseded_check_run_ids.",
+      "if": {
+        "properties": { "decision": { "const": "refused" } },
+        "required": ["decision"]
+      },
+      "then": {
+        "properties": {
+          "check_conclusion": { "type": "null" },
+          "check_run_id": { "type": "null" },
+          "failure_classification": { "not": { "const": "none" } }
+        }
+      }
+    },
+    {
+      "description": "A blocked publication owns a non-passing completed run.",
+      "if": {
+        "properties": { "decision": { "const": "blocked" } },
+        "required": ["decision"]
+      },
+      "then": {
+        "properties": {
+          "app": { "$ref": "#/$defs/verifiedAppIdentity" },
+          "pull_request": { "$ref": "#/$defs/verifiedPullRequest" },
+          "check_conclusion": { "enum": ["failure", "action_required"] },
+          "check_run_id": { "type": "integer", "minimum": 1 },
+          "failure_classification": { "not": { "const": "none" } }
+        }
+      }
+    },
+    {
+      "description": "Classification never consumes evidence or approval state.",
+      "if": {
+        "properties": { "mode": { "const": "classification" } },
+        "required": ["mode"]
+      },
+      "then": {
+        "properties": {
+          "decision": { "enum": ["notApplicable", "blocked", "refused"] },
+          "protected_approval": { "type": "null" },
+          "protected_environment": { "type": "null" },
+          "evidence_ingress": { "type": "null" },
+          "evidence_digest": { "type": "null" },
+          "unresolved_review_threads": { "type": "null" },
+          "head_check_state": { "type": "null" },
+          "ruleset": { "type": "null" },
+          "evaluator": { "$ref": "#/$defs/nullEvaluator" }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "repository": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+    },
+    "sha": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$",
+      "not": { "const": "0000000000000000000000000000000000000000" }
+    },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "login": {
+      "type": "string",
+      "pattern": "^(?!.*--)[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$"
+    },
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.?(?:/|$))(?!.*\\\\)(?!.*[\\u0000-\\u001f\\u007f])[^/]+(?:/[^/]+)*$"
+    },
+    "contextName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255,
+      "pattern": "^(?!\\s)(?!.*\\s$)(?!.*[\\u0000-\\u001f\\u007f]).+$"
+    },
+    "requiredCheck": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["context", "integration_id"],
+      "properties": {
+        "context": { "type": "string" },
+        "integration_id": { "type": "integer" }
+      }
+    },
+    "appIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["slug", "app_id", "installation_id", "installation_app_slug", "installation_app_id", "installation_account", "repository_selection", "installation_repositories", "permissions"],
+      "properties": {
+        "slug": { "type": "string" },
+        "app_id": { "type": "integer" },
+        "installation_id": { "type": "integer" },
+        "installation_app_slug": { "type": "string" },
+        "installation_app_id": { "type": "integer" },
+        "installation_account": { "type": "string" },
+        "repository_selection": { "type": "string" },
+        "installation_repositories": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "permissions": {
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        }
+      }
+    },
+    "verifiedAppIdentity": {
+      "allOf": [
+        { "$ref": "#/$defs/appIdentity" },
+        {
+          "properties": {
+            "slug": { "const": "llamadart-high-risk-readiness" },
+            "app_id": { "type": "integer", "minimum": 1 },
+            "installation_id": { "type": "integer", "minimum": 1 },
+            "installation_app_slug": { "const": "llamadart-high-risk-readiness" },
+            "installation_app_id": { "type": "integer", "minimum": 1 },
+            "installation_account": { "const": "leehack" },
+            "repository_selection": { "const": "selected" },
+            "installation_repositories": {
+              "const": ["leehack/llamadart"]
+            },
+            "permissions": {
+              "const": {
+                "actions": "read",
+                "checks": "write",
+                "contents": "read",
+                "metadata": "read",
+                "pull_requests": "read",
+                "statuses": "read"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "pullRequest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "pr_number", "pr_author", "head_sha", "base_sha", "base_ref", "state", "draft", "changed_file_count"],
+      "properties": {
+        "repository": { "type": "string" },
+        "pr_number": { "type": "integer" },
+        "pr_author": { "type": "string" },
+        "head_sha": { "type": "string" },
+        "base_sha": { "type": "string" },
+        "base_ref": { "type": "string" },
+        "state": { "type": "string" },
+        "draft": { "type": "boolean" },
+        "changed_file_count": { "type": "integer" }
+      }
+    },
+    "verifiedPullRequest": {
+      "allOf": [
+        { "$ref": "#/$defs/pullRequest" },
+        {
+          "properties": {
+            "repository": { "const": "leehack/llamadart" },
+            "pr_number": { "type": "integer", "minimum": 1 },
+            "pr_author": { "$ref": "#/$defs/login" },
+            "head_sha": { "$ref": "#/$defs/sha" },
+            "base_sha": { "$ref": "#/$defs/sha" },
+            "base_ref": { "const": "main" },
+            "state": { "const": "open" },
+            "changed_file_count": { "type": "integer", "minimum": 1 }
+          }
+        }
+      ]
+    },
+    "approval": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "run_id", "run_attempt", "workflow_path", "workflow_sha", "event", "head_branch", "head_sha", "environment", "approver_login", "requester_login", "attested_pr_number", "attested_head_sha", "attested_base_sha", "attested_evidence_digest"],
+      "properties": {
+        "repository": { "type": "string" },
+        "run_id": { "type": "integer" },
+        "run_attempt": { "type": "integer" },
+        "workflow_path": { "type": "string" },
+        "workflow_sha": { "type": "string" },
+        "event": { "type": "string" },
+        "head_branch": { "type": "string" },
+        "head_sha": { "type": "string" },
+        "environment": { "type": "string" },
+        "approver_login": { "type": "string" },
+        "requester_login": { "type": "string" },
+        "attested_pr_number": { "type": "integer" },
+        "attested_head_sha": { "type": "string" },
+        "attested_base_sha": { "type": "string" },
+        "attested_evidence_digest": { "type": "string" }
+      }
+    },
+    "verifiedApproval": {
+      "allOf": [
+        { "$ref": "#/$defs/approval" },
+        {
+          "properties": {
+            "repository": { "const": "leehack/llamadart" },
+            "run_id": { "type": "integer", "minimum": 1 },
+            "run_attempt": { "const": 1 },
+            "workflow_path": {
+              "const": ".github/workflows/high_risk_readiness_publish.yml"
+            },
+            "event": { "const": "workflow_dispatch" },
+            "head_branch": { "const": "main" },
+            "workflow_sha": { "$ref": "#/$defs/sha" },
+            "head_sha": { "$ref": "#/$defs/sha" },
+            "environment": {
+              "const": "high-risk-readiness-attestation"
+            },
+            "approver_login": { "$ref": "#/$defs/login" },
+            "requester_login": { "$ref": "#/$defs/login" },
+            "attested_pr_number": { "type": "integer", "minimum": 1 },
+            "attested_head_sha": { "$ref": "#/$defs/sha" },
+            "attested_base_sha": { "$ref": "#/$defs/sha" },
+            "attested_evidence_digest": { "$ref": "#/$defs/sha256" }
+          }
+        }
+      ]
+    },
+    "protectedEnvironment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["repository", "name", "has_required_reviewers", "prevent_self_review", "protected_branches", "custom_branch_policies"],
+      "properties": {
+        "repository": { "type": "string" },
+        "name": { "type": "string" },
+        "has_required_reviewers": { "type": "boolean" },
+        "prevent_self_review": { "type": "boolean" },
+        "protected_branches": { "type": "boolean" },
+        "custom_branch_policies": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "verifiedEnvironment": {
+      "allOf": [
+        { "$ref": "#/$defs/protectedEnvironment" },
+        {
+          "properties": {
+            "repository": { "const": "leehack/llamadart" },
+            "name": { "const": "high-risk-readiness-attestation" },
+            "has_required_reviewers": { "const": true },
+            "prevent_self_review": { "const": true },
+            "protected_branches": { "const": false },
+            "custom_branch_policies": { "const": ["main"] }
+          }
+        }
+      ]
+    },
+    "repositoryChange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "status"],
+      "properties": {
+        "path": { "type": "string" },
+        "status": {
+          "enum": ["added", "modified", "deleted", "renamed", "copied", "typeChanged", "unmerged", "unknown"]
+        },
+        "previous_path": { "type": "string" }
+      }
+    },
+    "verifiedRepositoryChange": {
+      "allOf": [
+        { "$ref": "#/$defs/repositoryChange" },
+        {
+          "properties": {
+            "path": { "$ref": "#/$defs/path" },
+            "status": {
+              "enum": ["added", "modified", "deleted", "renamed", "copied", "typeChanged"]
+            },
+            "previous_path": { "$ref": "#/$defs/path" }
+          }
+        },
+        {
+          "if": {
+            "properties": { "status": { "enum": ["renamed", "copied"] } },
+            "required": ["status"]
+          },
+          "then": { "required": ["previous_path"] },
+          "else": { "not": { "required": ["previous_path"] } }
+        }
+      ]
+    },
+    "headCheckState": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["head_sha", "aggregate", "pending_contexts", "failing_contexts"],
+      "properties": {
+        "head_sha": { "type": "string" },
+        "aggregate": { "enum": ["success", "pending", "failure"] },
+        "pending_contexts": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "failing_contexts": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "verifiedHeadCheckState": {
+      "allOf": [
+        { "$ref": "#/$defs/headCheckState" },
+        {
+          "properties": {
+            "head_sha": { "$ref": "#/$defs/sha" },
+            "pending_contexts": {
+              "uniqueItems": true,
+              "items": { "$ref": "#/$defs/contextName" }
+            },
+            "failing_contexts": {
+              "uniqueItems": true,
+              "items": { "$ref": "#/$defs/contextName" }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "aggregate": { "const": "success" } },
+            "required": ["aggregate"]
+          },
+          "then": {
+            "properties": {
+              "pending_contexts": { "maxItems": 0 },
+              "failing_contexts": { "maxItems": 0 }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "aggregate": { "const": "pending" } },
+            "required": ["aggregate"]
+          },
+          "then": {
+            "properties": {
+              "pending_contexts": { "minItems": 1 },
+              "failing_contexts": { "maxItems": 0 }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "aggregate": { "const": "failure" } },
+            "required": ["aggregate"]
+          },
+          "then": {
+            "properties": { "failing_contexts": { "minItems": 1 } }
+          }
+        }
+      ]
+    },
+    "ruleset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["default_branch_protected", "strict_required_status_checks", "review_threads_must_be_resolved", "required_checks", "ruleset_names"],
+      "properties": {
+        "default_branch_protected": { "type": "boolean" },
+        "strict_required_status_checks": { "type": "boolean" },
+        "review_threads_must_be_resolved": { "type": "boolean" },
+        "required_checks": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/requiredCheck" }
+        },
+        "ruleset_names": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "verifiedRuleset": {
+      "allOf": [
+        { "$ref": "#/$defs/ruleset" },
+        {
+          "properties": {
+            "default_branch_protected": { "const": true },
+            "strict_required_status_checks": { "const": true },
+            "review_threads_must_be_resolved": { "const": true },
+            "required_checks": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "allOf": [
+                  { "$ref": "#/$defs/requiredCheck" },
+                  {
+                    "properties": {
+                      "context": { "$ref": "#/$defs/contextName" },
+                      "integration_id": { "type": "integer", "minimum": 1 }
+                    }
+                  }
+                ]
+              },
+              "contains": {
+                "type": "object",
+                "required": ["context", "integration_id"],
+                "properties": {
+                  "context": { "const": "High-Risk Readiness" },
+                  "integration_id": { "type": "integer", "minimum": 1 }
+                }
+              },
+              "minContains": 1,
+              "maxContains": 1
+            },
+            "ruleset_names": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": { "$ref": "#/$defs/contextName" }
+            }
+          }
+        }
+      ]
+    },
+    "prerequisites": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["app_identity_verified", "protected_environment_configured", "independent_auditor_authenticated", "ruleset_enforced"],
+      "properties": {
+        "app_identity_verified": { "type": "boolean" },
+        "protected_environment_configured": { "type": "boolean" },
+        "independent_auditor_authenticated": { "type": "boolean" },
+        "ruleset_enforced": { "type": "boolean" }
+      }
+    },
+    "allPrerequisites": {
+      "allOf": [
+        { "$ref": "#/$defs/prerequisites" },
+        {
+          "properties": {
+            "app_identity_verified": { "const": true },
+            "protected_environment_configured": { "const": true },
+            "independent_auditor_authenticated": { "const": true },
+            "ruleset_enforced": { "const": true }
+          }
+        }
+      ]
+    },
+    "evaluatorFailure": {
+      "enum": ["none", "schemaViolation", "repositoryMismatch", "prMismatch", "headMismatch", "baseMismatch", "authorMismatch", "classificationMismatch", "changedFilesMismatch", "selfApprovalProhibited", "retiredQaProfileProhibited", "unresolvedReviewThreads", "knownP1Regressions", "missingAudit", "auditRejected", "missingRequiredMatrixRow", "matrixRowFailed", "missingStructuredOutputEvidence", "missingTestPath", "nonTestPathCited", "unchangedEvidencePath", "deletedEvidencePath", "renamedEvidencePath", "externalPrerequisitesUnavailable", "gitExecutionError", "invalidInput"]
+    },
+    "evaluator": {
+      "oneOf": [
+        { "$ref": "#/$defs/nullEvaluator" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["decision", "failure_classification", "message"],
+          "properties": {
+            "decision": { "enum": ["rejected", "unverifiedPrerequisites", "standardRiskDiagnostic"] },
+            "failure_classification": { "$ref": "#/$defs/evaluatorFailure" },
+            "message": { "type": "string", "minLength": 1, "maxLength": 4000 }
+          }
+        }
+      ]
+    },
+    "nullEvaluator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decision", "failure_classification", "message"],
+      "properties": {
+        "decision": { "type": "null" },
+        "failure_classification": { "type": "null" },
+        "message": { "type": "null" }
+      }
+    },
+    "acceptedEvaluator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decision", "failure_classification", "message"],
+      "properties": {
+        "decision": { "const": "unverifiedPrerequisites" },
+        "failure_classification": { "const": "externalPrerequisitesUnavailable" },
+        "message": { "type": "string", "minLength": 1, "maxLength": 4000 }
+      }
+    }
+  }
+}

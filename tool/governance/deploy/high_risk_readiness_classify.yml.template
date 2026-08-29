@@ -1,0 +1,92 @@
+# Template for .github/workflows/high_risk_readiness_classify.yml
+#
+# NOT INSTALLED. This file lives outside .github/workflows on purpose: merging
+# it must not activate governance. Install it only after completing the
+# activation runbook in doc/high_risk_readiness_publisher.md, which also
+# requires the authenticated GitHub transport binding for
+# AuthenticatedGitHubSource and ReadinessCheckPublisher to exist. The current
+# --publish command intentionally fails, so this template is NOT RUNNABLE.
+#
+# This workflow is the unattended half of the design. It publishes the same
+# dedicated check for every pull request so a required-check ruleset cannot
+# leave standard-risk pull requests pending, and it re-publishes on every head
+# movement so a passing conclusion can never outlive the candidate it
+# described.
+#
+# It runs under pull_request_target and checks out `github.workflow_sha`, the
+# immutable revision of this workflow file. It never checks out, builds, or
+# executes pull-request code.
+
+name: High-Risk Readiness Classification
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
+
+concurrency:
+  # Keep this queue separate from attended runs. A dispatch waiting for an
+  # environment reviewer must never suppress standard-risk classification.
+  group: high-risk-readiness-classify-${{ github.repository }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  classify:
+    name: Invoke readiness classifier publisher
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Deployment branch policy restricted to the default branch. No required
+    # reviewers: this half must stay unattended so standard-risk pull requests
+    # resolve without a human.
+    environment: high-risk-readiness-classification
+
+    steps:
+      - name: Checkout immutable trusted workflow revision
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+
+      - name: Setup repository-pinned Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.1
+          channel: stable
+          cache: true
+
+      - name: Resolve dependencies from the trusted revision
+        run: dart pub get
+
+      - name: Mint a short-lived installation token for the dedicated App
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.HIGH_RISK_READINESS_APP_ID }}
+          private-key: ${{ secrets.HIGH_RISK_READINESS_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          # Do not narrow this token by repository. The adapter must enumerate
+          # the full installation and refuse if it contains anything except
+          # leehack/llamadart; a narrowed token would conceal broader scope.
+
+      - name: Publish the dedicated exact-head readiness check
+        env:
+          # The token authenticates reads and the App's own check writes. It is
+          # never a source of facts and is never echoed. Every repository, pull
+          # request, author, head, base, inventory, review-thread, and check
+          # value is re-read from the authenticated API by the publisher.
+          HIGH_RISK_READINESS_TOKEN: ${{ steps.app-token.outputs.token }}
+          HIGH_RISK_READINESS_INSTALLATION_ID: ${{ steps.app-token.outputs.installation-id }}
+          # The future adapter needs App-level authentication to read /app and
+          # the installation record. These are authentication material and a
+          # locator only; App identity and scope still come from API responses.
+          HIGH_RISK_READINESS_APP_ID: ${{ vars.HIGH_RISK_READINESS_APP_ID }}
+          HIGH_RISK_READINESS_APP_PRIVATE_KEY: ${{ secrets.HIGH_RISK_READINESS_APP_PRIVATE_KEY }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          dart run tool/governance/high_risk_readiness_publish.dart \
+            --publish \
+            --mode classification \
+            --pr-number "$PR_NUMBER"

@@ -54,6 +54,13 @@ enum RepositoryChangeKind {
   unknown,
 }
 
+/// Result of validating an independently derived repository inventory.
+enum RepositoryInventoryValidation {
+  valid,
+  malformedOrDuplicate,
+  unsupportedStatus,
+}
+
 /// One path in the exact base-to-head repository inventory.
 class RepositoryChange {
   const RepositoryChange({
@@ -281,6 +288,81 @@ List<RepositoryChange> parseGitNameStatus(String output) {
   return changes;
 }
 
+/// Validates exact Git/GitHub change inventory before policy classification.
+///
+/// This is shared by the local evaluator and authenticated publisher so shape,
+/// duplicate, and status rules cannot drift. [requireSafePaths] adds the API
+/// boundary's normalized repository-relative path constraints without changing
+/// the merged evaluator's ordering or failure classifications.
+RepositoryInventoryValidation validateRepositoryChangeInventory(
+  List<RepositoryChange> changes, {
+  bool requireSafePaths = false,
+}) {
+  final destinations = <String>{};
+  for (final change in changes) {
+    if (!_isValidRepositoryPath(
+          change.path,
+          requireSafePaths: requireSafePaths,
+        ) ||
+        !destinations.add(change.path)) {
+      return RepositoryInventoryValidation.malformedOrDuplicate;
+    }
+    final hasSource = change.previousPath != null;
+    if (change.kind == RepositoryChangeKind.renamed ||
+        change.kind == RepositoryChangeKind.copied) {
+      if (!hasSource ||
+          !_isValidRepositoryPath(
+            change.previousPath!,
+            requireSafePaths: requireSafePaths,
+          ) ||
+          change.previousPath == change.path) {
+        return RepositoryInventoryValidation.malformedOrDuplicate;
+      }
+    } else if (hasSource) {
+      return RepositoryInventoryValidation.malformedOrDuplicate;
+    }
+    if (change.kind == RepositoryChangeKind.unknown ||
+        change.kind == RepositoryChangeKind.unmerged) {
+      return RepositoryInventoryValidation.unsupportedStatus;
+    }
+  }
+  return RepositoryInventoryValidation.valid;
+}
+
+bool _isValidRepositoryPath(String path, {required bool requireSafePaths}) {
+  if (path.isEmpty || path.contains('\u0000')) return false;
+  if (!requireSafePaths) return true;
+  return path == path.trim() &&
+      !path.startsWith('/') &&
+      !path.contains('\\') &&
+      !RegExp(r'[\x00-\x1f\x7f]').hasMatch(path) &&
+      !path
+          .split('/')
+          .any((part) => part.isEmpty || part == '.' || part == '..');
+}
+
+/// Whether a value is a nonzero, lowercase, full-length SHA-1.
+bool isExactSha(Object? value) =>
+    value is String &&
+    value != '0000000000000000000000000000000000000000' &&
+    RegExp(r'^[0-9a-f]{40}$').hasMatch(value);
+
+/// Whether a value has the shape of a GitHub login.
+bool isGitHubLogin(Object? value) =>
+    value is String &&
+    RegExp(r'^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$').hasMatch(value) &&
+    !value.endsWith('-') &&
+    !value.contains('--');
+
+/// Whether an identity is the retired standalone qa profile.
+///
+/// The retirement is policy, not formatting, so every trust boundary that
+/// accepts an auditor identity must consult this one predicate.
+bool isRetiredQaIdentity(String identity) => RegExp(
+  r'^(qa|qa[-_]agent|qa[-_]profile|qa[-_]task)$',
+  caseSensitive: false,
+).hasMatch(identity);
+
 /// Strictly decodes a JSON object, rejecting duplicate object keys.
 Map<String, dynamic> decodeStrictJsonObject(String source) {
   _DuplicateKeyScanner(source).scan();
@@ -492,7 +574,6 @@ class HighRiskReadinessEvaluator {
   final DateTime Function() clock;
 
   static DateTime _defaultClock() => DateTime.now();
-  static const _zeroSha = '0000000000000000000000000000000000000000';
   static const _rootKeys = <String>{
     'schema',
     'schema_version',
@@ -660,24 +741,20 @@ class HighRiskReadinessEvaluator {
         'The exact base-to-head changed-file inventory is empty.',
       );
     }
-    if (changedFiles.any((change) => !_isValidRepositoryChange(change)) ||
-        changedFiles.map((change) => change.path).toSet().length !=
-            changedFiles.length) {
-      return reject(
-        ReadinessFailureClassification.changedFilesMismatch,
-        'The exact inventory contains a malformed or duplicate repository change.',
-      );
-    }
-    if (changedFiles.any(
-      (change) =>
-          change.kind == RepositoryChangeKind.unknown ||
-          change.kind == RepositoryChangeKind.unmerged,
-    )) {
-      return reject(
-        ReadinessFailureClassification.changedFilesMismatch,
-        'The exact inventory contains an unsupported or unmerged change status.',
-        changedFiles: changedFiles,
-      );
+    switch (validateRepositoryChangeInventory(changedFiles)) {
+      case RepositoryInventoryValidation.malformedOrDuplicate:
+        return reject(
+          ReadinessFailureClassification.changedFilesMismatch,
+          'The exact inventory contains a malformed or duplicate repository change.',
+        );
+      case RepositoryInventoryValidation.unsupportedStatus:
+        return reject(
+          ReadinessFailureClassification.changedFilesMismatch,
+          'The exact inventory contains an unsupported or unmerged change status.',
+          changedFiles: changedFiles,
+        );
+      case RepositoryInventoryValidation.valid:
+        break;
     }
 
     final classificationPaths = <String>[
@@ -1282,20 +1359,13 @@ class HighRiskReadinessEvaluator {
     return null;
   }
 
-  static bool _isSha(Object? value) =>
-      value is String &&
-      value != _zeroSha &&
-      RegExp(r'^[0-9a-f]{40}$').hasMatch(value);
+  static bool _isSha(Object? value) => isExactSha(value);
 
   static bool _isRepository(Object? value) =>
       value is String &&
       RegExp(r'^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$').hasMatch(value);
 
-  static bool _isGitHubLogin(Object? value) =>
-      value is String &&
-      RegExp(r'^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$').hasMatch(value) &&
-      !value.endsWith('-') &&
-      !value.contains('--');
+  static bool _isGitHubLogin(Object? value) => isGitHubLogin(value);
 
   static bool _isIdentifier(Object? value) =>
       value is String &&
@@ -1337,23 +1407,8 @@ class HighRiskReadinessEvaluator {
     return path.startsWith('test/') && path.endsWith('_test.dart');
   }
 
-  static bool _isValidRepositoryChange(RepositoryChange change) {
-    if (change.path.isEmpty || change.path.contains('\u0000')) return false;
-    final hasSource = change.previousPath != null;
-    if (change.kind == RepositoryChangeKind.renamed ||
-        change.kind == RepositoryChangeKind.copied) {
-      return hasSource &&
-          change.previousPath!.isNotEmpty &&
-          !change.previousPath!.contains('\u0000') &&
-          change.previousPath != change.path;
-    }
-    return !hasSource;
-  }
-
-  static bool _isRetiredQaIdentity(String identity) => RegExp(
-    r'^(qa|qa[-_]agent|qa[-_]profile|qa[-_]task)$',
-    caseSensitive: false,
-  ).hasMatch(identity);
+  static bool _isRetiredQaIdentity(String identity) =>
+      isRetiredQaIdentity(identity);
 
   static bool _sameSet<T>(Set<T> left, Set<T> right) =>
       left.length == right.length && left.containsAll(right);

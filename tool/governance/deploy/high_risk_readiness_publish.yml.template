@@ -1,0 +1,122 @@
+# Template for .github/workflows/high_risk_readiness_publish.yml
+#
+# NOT INSTALLED. This file lives outside .github/workflows on purpose: merging
+# it must not activate governance. Install it only after completing the
+# activation runbook in doc/high_risk_readiness_publisher.md. The current
+# --publish command intentionally fails, so this template is NOT RUNNABLE.
+#
+# The installed path must match defaultReadinessWorkflowPath in
+# tool/governance/high_risk_readiness_publisher.dart. The publisher refuses any
+# approval that did not come from this exact workflow, on the default branch,
+# through the protected attestation environment. The installed workflow must
+# use its own concurrency group. Sharing classification's group would let an
+# unapproved dispatch suppress the unattended standard-risk check; the policy
+# engine instead reconciles App-owned cross-mode check races.
+#
+# This workflow is the attended half of the design and the only path that can
+# publish a passing conclusion for a high-risk diff. The authenticated auditor
+# is the environment approver that GitHub records, read back from the API. The
+# dispatcher, github.actor, and every workflow input are untrusted claims. The
+# environment approval comment must authenticate the exact PR, head, base, and
+# full SHA-256 digest of the evidence input; the publisher reads that review
+# history back from GitHub before consuming the bytes.
+
+name: High-Risk Readiness Attestation
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Positive pull request number to attest.
+        required: true
+        type: number
+      evidence:
+        description: >-
+          Readiness evidence document matching
+          tool/testing/high_risk_readiness_evidence.schema.json. Treated as an
+          unverified claim set; every fact is re-checked against live state.
+        required: true
+        type: string
+
+concurrency:
+  group: high-risk-readiness-attest-${{ github.repository }}-${{ inputs.pr_number }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  attest:
+    name: Invoke readiness attestation publisher
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Required reviewers must be the maintainers eligible to act as independent
+    # auditors, with "prevent self-review" enabled and the deployment branch
+    # policy restricted to the default branch. The publisher independently
+    # refuses an approver equal to the dispatcher or to the pull-request author.
+    environment: high-risk-readiness-attestation
+
+    steps:
+      - name: Reject a dispatch outside the immutable trusted main revision
+        if: >-
+          github.ref != 'refs/heads/main' ||
+          github.workflow_sha != github.sha
+        run: |
+          echo "::error::Attestation requires a top-level workflow resolved at the exact main run head."
+          exit 1
+
+      - name: Checkout immutable trusted workflow revision
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+
+      - name: Setup repository-pinned Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.1
+          channel: stable
+          cache: true
+
+      - name: Resolve dependencies from the trusted revision
+        run: dart pub get
+
+      - name: Stage the dispatched evidence claim
+        id: evidence
+        env:
+          EVIDENCE: ${{ inputs.evidence }}
+        run: |
+          set -euo pipefail
+          staged="$RUNNER_TEMP/readiness-evidence.json"
+          printf '%s' "$EVIDENCE" > "$staged"
+          echo "path=$staged" >> "$GITHUB_OUTPUT"
+
+      - name: Mint a short-lived installation token for the dedicated App
+        id: app-token
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.HIGH_RISK_READINESS_APP_ID }}
+          private-key: ${{ secrets.HIGH_RISK_READINESS_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          # Full installation scope is intentional for verification. The App
+          # must be installed on exactly one repository, and the adapter
+          # refuses before publication if enumeration says otherwise.
+
+      - name: Publish the dedicated exact-head readiness check
+        env:
+          HIGH_RISK_READINESS_TOKEN: ${{ steps.app-token.outputs.token }}
+          HIGH_RISK_READINESS_INSTALLATION_ID: ${{ steps.app-token.outputs.installation-id }}
+          HIGH_RISK_READINESS_APP_ID: ${{ vars.HIGH_RISK_READINESS_APP_ID }}
+          HIGH_RISK_READINESS_APP_PRIVATE_KEY: ${{ secrets.HIGH_RISK_READINESS_APP_PRIVATE_KEY }}
+          # Locators only. The run id is validated by reading the run and its
+          # approval record back from the authenticated API; a run belonging to
+          # another repository, workflow, event, or branch is refused.
+          HIGH_RISK_READINESS_RUN_ID: ${{ github.run_id }}
+          HIGH_RISK_READINESS_EVIDENCE_PATH: ${{ steps.evidence.outputs.path }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+        run: |
+          dart run tool/governance/high_risk_readiness_publish.dart \
+            --publish \
+            --mode attestation \
+            --pr-number "$PR_NUMBER"

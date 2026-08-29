@@ -16,9 +16,16 @@ The repository currently provides:
 - candidate-tree checks for changed production tests;
 - a trusted-default-branch GitHub Actions diagnostic.
 
+It also provides an unactivated publisher policy engine, protocol, record
+schema, tests, and inert templates under `tool/governance/`, specified in
+`doc/high_risk_readiness_publisher.md`. No authenticated API adapter implements
+the protocol, so this is the design for the external boundary, not the boundary
+itself.
+
 It does **not** provide an authenticated GitHub App publisher, protected
-environment provenance, conditional ruleset enforcement, or an authenticated
-independent-auditor identity. Consequently:
+environment provenance, conditional ruleset enforcement, an authenticated
+independent-auditor identity, or an authenticated GitHub transport for the
+publisher engine. Consequently:
 
 - a valid local high-risk evaluation returns
   `unverifiedPrerequisites` and exits 2;
@@ -152,13 +159,15 @@ environment trust, supplied changed-file inventory, or `ready` option.
 ## Trusted-default-branch diagnostic workflow
 
 `.github/workflows/high_risk_readiness.yml` runs under
-`pull_request_target` but checks out only the immutable `github.sha`
-revision that supplied the trusted default-branch workflow, with credential
-persistence disabled. It has no branch-selectable manual-dispatch trigger. The
-workflow grants read-only contents and pull-request permissions, validates the
-PR number, fetches metadata/files through the read-only GitHub API, verifies the
-complete paginated file count, rejects ambiguous control-character paths, and
-classifies both current and previous rename paths.
+`pull_request_target` but checks out only the immutable
+`github.workflow_sha` revision that supplied the trusted default-branch
+workflow, with credential persistence disabled. The event-dependent
+`github.sha` is not used as the workflow trust binding. It has no
+branch-selectable manual-dispatch trigger. The workflow grants read-only
+contents and pull-request permissions, validates the PR number, fetches
+metadata/files through the read-only GitHub API, verifies the complete
+paginated file count, rejects ambiguous control-character paths, and classifies
+both current and previous rename paths.
 
 It does not check out or execute the PR branch and does not consume PR comments,
 PR-authored evidence files, workflow artifacts, or PR-authored workflows.
@@ -175,28 +184,36 @@ standard-risk PRs depend on a gate that is not intended for them.
 
 ## Missing external prerequisites
 
-Repository administrators must not add credentials or a required check until a
-separate reviewed implementation supplies all of these controls:
+`doc/high_risk_readiness_publisher.md` specifies how each control below is
+satisfied, which parts are implemented, and the exact administrator activation
+and read-back runbook. Repository administrators must not add credentials or a
+required check until a separate reviewed implementation supplies all of these
+controls:
 
-1. A dedicated GitHub App installed only on `leehack/llamadart`, with
-   read-only contents/pull-request access and only the minimum permission needed
-   to publish its own check.
-2. A protected execution environment whose branch/actor controls are verified
-   independently of ordinary process environment variables.
-3. An evidence ingress controlled by the App. PR bodies, comments, PR-authored
-   files, PR workflow artifacts, and caller-provided environment values are not
-   acceptable trust roots.
+1. A dedicated GitHub App installed only on `leehack/llamadart`, with exactly
+   Actions, contents, metadata, pull requests, and statuses read plus checks
+   write. App and installation identity must be read with the correct JWT and
+   installation-token endpoints rather than copied from caller claims.
+2. A protected execution environment whose required reviewers,
+   prevent-self-review flag, and `main`-only branch policy are read back from
+   the API.
+3. Evidence bytes whose full SHA-256, PR, head, and base are bound by a strict
+   authenticated environment-approval comment. Workflow inputs remain claims;
+   PR bodies, PR comments, PR-authored files, workflow artifacts, and ordinary
+   environment values are not trust roots.
 4. Authenticated creator binding for the independent auditor, with proof that
    the actor differs from the PR author and is not the retired `qa` identity.
 5. Live read-only queries for repository, PR, author, exact head/base, changed
    files, and unresolved review threads immediately before publication.
 6. Evaluation using a reviewed immutable revision from the default branch, not
    a mutable PR checkout.
-7. Publication bound to the exact head SHA, with stale/pending conclusions
-   superseded promptly when head, base, evidence, or review state changes.
-8. A tested enforcement design that blocks only classified high-risk changes.
-   GitHub required-check behavior must be validated before activation so a
-   missing conditional status cannot leave standard-risk PRs pending.
+7. Publication bound to the exact head, with PR re-reads before and after the
+   write, stale and duplicate App-owned runs superseded, and strict
+   up-to-date-status enforcement covering base movement.
+8. A two-mode required check: unattended classification reports success for
+   standard-risk diffs and non-passing for high-risk diffs; protected
+   attestation is the only high-risk success path. A refused attempt must not
+   cancel a current standard-risk success.
 9. Adversarial test PRs proving self-attestation, head/base drift, renamed and
    deleted evidence, malformed JSON, and missing evidence all fail closed.
 

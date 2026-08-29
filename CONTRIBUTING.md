@@ -316,6 +316,10 @@ The local evaluator derives the changed-file inventory from Git and never emits
 operational readiness. Until the separately reviewed GitHub App, auditor
 authentication, and conditional ruleset boundary exist, a valid high-risk run
 is explicitly unverified and the default-branch workflow is diagnostic only.
+`doc/high_risk_readiness_publisher.md` specifies the authenticated publisher
+that would close that gap. Its policy engine and inert templates are present,
+but the authenticated GitHub transport is not implemented and nothing is
+activated.
 
 ### PR type examples
 

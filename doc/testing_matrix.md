@@ -106,9 +106,12 @@ pipeline only; it cannot be reported as affected-family evidence.
 The readiness evaluator validates the repository-local portion of these rules;
 it never emits operational readiness. External auditor authentication, GitHub
 App status publication, protected-environment provenance, and conditional
-ruleset enforcement remain unavailable and fail closed. The default-branch
-workflow is a non-required diagnostic. See
-`doc/high_risk_pre_merge_readiness.md`.
+ruleset enforcement remain unavailable and fail closed. The policy-only
+publisher types and inert templates do not provide an authenticated transport.
+The default-branch workflow is a non-required diagnostic. See
+`doc/high_risk_pre_merge_readiness.md`, and
+`doc/high_risk_readiness_publisher.md` for the authenticated publisher design
+and its unactivated administrator runbook.
 
 The structured-output requirements encode the regression classes found after
 the broad parser rollout: envelope/name escaping and quoting (#394/#399),

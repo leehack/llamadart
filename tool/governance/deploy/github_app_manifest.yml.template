@@ -1,0 +1,46 @@
+# Dedicated high-risk readiness GitHub App - configuration template.
+#
+# This file is a review artifact, not an installable manifest and not a
+# credential store. Creating, installing, and configuring the App is a manual
+# administrator step described in doc/high_risk_readiness_publisher.md.
+#
+# Never add an App id, client id, client secret, private key, webhook secret,
+# installation id, or token to this file or to any file in this repository.
+
+name: llamadart High-Risk Readiness
+slug: llamadart-high-risk-readiness # must equal defaultReadinessAppSlug
+description: >-
+  Publishes the dedicated exact-head High-Risk Readiness check for
+  leehack/llamadart from a pinned trusted default-branch revision.
+
+# The App is installed on exactly one repository. The publisher refuses to run
+# when the installation covers anything else.
+installation:
+  account: leehack
+  repository_selection: selected
+  selected_repositories:
+    - leehack/llamadart
+
+# Minimum viable scope. `checks: write` is the only write permission. `actions`
+# reads the workflow run, approval history, and environment configuration;
+# `statuses` reads legacy commit-status contexts. The publisher refuses a
+# missing permission as well as anything outside this exact table.
+default_permissions:
+  actions: read
+  metadata: read
+  contents: read
+  pull_requests: read
+  statuses: read
+  checks: write
+
+# No webhooks are required: the publisher is driven by repository workflows.
+default_events: []
+
+# Credential handling, performed by an administrator outside this repository:
+#   - generate the private key in the App settings;
+#   - store the same secret name separately in each readiness environment;
+#   - do not create a repository or organization secret of that name;
+#   - never echo it, never write it to a file, never pass it on argv.
+secrets:
+  private_key_secret_name: HIGH_RISK_READINESS_APP_PRIVATE_KEY # value: <set-in-github-only>
+  app_id_variable_name: HIGH_RISK_READINESS_APP_ID # value: <set-in-github-only>

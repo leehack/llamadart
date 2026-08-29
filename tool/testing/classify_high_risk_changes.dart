@@ -162,6 +162,9 @@ bool _isRegressionPolicy(String path) {
       path == 'doc/testing_matrix.md' ||
       path == 'doc/pr_branch_writer_inventory.md' ||
       path == 'doc/high_risk_pre_merge_readiness.md' ||
+      path == 'doc/high_risk_readiness_publisher.md' ||
+      path.startsWith('tool/governance/') ||
+      path == 'test/unit/tooling/high_risk_readiness_publisher_test.dart' ||
       path == 'tool/testing/test_matrix.dart' ||
       path == 'tool/testing/classify_high_risk_changes.dart' ||
       path == 'tool/testing/high_risk_readiness.dart' ||

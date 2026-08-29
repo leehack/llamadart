@@ -339,10 +339,14 @@ Post-merge QA remains mandatory, but it must not be the first adversarial pass.
 If it finds a PR-caused P1, stop lower-priority merge work, file a causally
 accurate issue, and prepare one cohesive recovery before resuming feature work.
 Security-sensitive required-check publication and repository settings are
-governed by `doc/high_risk_pre_merge_readiness.md`; checkout-local verification
+governed by `doc/high_risk_pre_merge_readiness.md`, with the authenticated
+publisher design, trust boundaries, and administrator activation runbook in
+`doc/high_risk_readiness_publisher.md`; checkout-local verification
 can return only an unverified-prerequisites result and fails closed until the
-dedicated GitHub App, authenticated auditor boundary, and conditional ruleset
-enforcement are separately implemented and configured. Do not configure the
+authenticated API transport, dedicated GitHub App, authenticated auditor
+boundary, and strict conditional ruleset enforcement are separately
+implemented and configured. The repository currently contains policy-only
+types and inert templates, not a runnable publisher. Do not configure the
 default-branch diagnostic workflow as a required readiness check.
 
 For docs-only PRs, state that runtime behavior is unchanged and list docs
