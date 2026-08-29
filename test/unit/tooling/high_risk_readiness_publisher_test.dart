@@ -437,6 +437,7 @@ class FakeCheckPublisher implements ReadinessCheckPublisher {
   final externalIds = <String>[];
   final summaries = <String>[];
   var nextId = 5000;
+  var createdPendingStatus = 'in_progress';
   var throwAfterNextCreate = false;
   ReadinessCheckRun? conflictWinner;
   var createThrows = false;
@@ -473,7 +474,7 @@ class FakeCheckPublisher implements ReadinessCheckPublisher {
       id: nextId++,
       name: name,
       headSha: headSha,
-      status: conclusion == null ? 'in_progress' : 'completed',
+      status: conclusion == null ? createdPendingStatus : 'completed',
       conclusion: conclusion?.wireValue,
       appId: readinessAppId,
       externalId: malformedCreateResponse ? 'ambiguous' : externalId,
@@ -2145,6 +2146,21 @@ void main() {
       expect(record.supersededCheckRunIds, contains(41));
       expect(checks.runById(41).conclusion, 'cancelled');
       expect(checks.runById(42).conclusion, 'success');
+    });
+
+    test('accepts a queued check run immediately after creation', () async {
+      final checks = FakeCheckPublisher()..createdPendingStatus = 'queued';
+
+      final record = await attest(
+        FakeGitHubSource(submission: dispatched(highRiskEvidence())),
+        checks,
+      );
+
+      expect(record.decision, ReadinessPublicationDecision.accepted);
+      expect(record.checkRunId, 5000);
+      expect(checks.updatedIds, contains(5000));
+      expect(checks.runById(5000).status, 'completed');
+      expect(checks.runById(5000).conclusion, 'success');
     });
 
     test(

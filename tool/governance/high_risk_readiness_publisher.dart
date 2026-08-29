@@ -1117,7 +1117,7 @@ class HighRiskReadinessPublisher {
     _validateObservedOwnedRun(run, expectedAppId);
     if (run.headSha != expectedHeadSha ||
         run.externalId != expectedExternalId ||
-        run.status != 'in_progress' ||
+        !const {'queued', 'in_progress'}.contains(run.status) ||
         run.conclusion != null) {
       throw const FormatException(
         'GitHub did not confirm the exact pending check-run state.',
