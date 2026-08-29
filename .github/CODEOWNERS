@@ -14,9 +14,12 @@ pubspec.yaml @leehack
 CHANGELOG.md @leehack
 doc/testing_matrix.md @leehack
 doc/pr_branch_writer_inventory.md @leehack
+doc/high_risk_pre_merge_readiness.md @leehack
 hook/build.dart @leehack
 tool/testing/test_matrix.dart @leehack
 tool/testing/classify_high_risk_changes.dart @leehack
+tool/testing/high_risk_readiness.dart @leehack
+tool/testing/high_risk_readiness_evidence.schema.json @leehack
 tool/testing/run_template_parity_suites.sh @leehack
 tool/testing/run_llama_cpp_chat_tests.sh @leehack
 tool/testing/prepare_llama_cpp_source.sh @leehack
@@ -26,6 +29,7 @@ tool/litert_lm_templates/ @leehack
 test/integration/core/grammar/generated_tool_schema_grammar_test.dart @leehack
 test/e2e/template/specialized_tool_grammar_validation_e2e_test.dart @leehack
 test/unit/tooling/high_risk_review_policy_test.dart @leehack
+test/unit/tooling/high_risk_readiness_test.dart @leehack
 tool/git/safe_pr_head_update.dart @leehack
 tool/git/pr_head_update_evidence.schema.json @leehack
 test/unit/tooling/safe_pr_head_update_test.dart @leehack

@@ -161,11 +161,15 @@ bool _isRegressionPolicy(String path) {
       path.startsWith('.github/workflows/') ||
       path == 'doc/testing_matrix.md' ||
       path == 'doc/pr_branch_writer_inventory.md' ||
+      path == 'doc/high_risk_pre_merge_readiness.md' ||
       path == 'tool/testing/test_matrix.dart' ||
       path == 'tool/testing/classify_high_risk_changes.dart' ||
+      path == 'tool/testing/high_risk_readiness.dart' ||
+      path == 'tool/testing/high_risk_readiness_evidence.schema.json' ||
       path == 'test/unit/tooling/test_matrix_test.dart' ||
       path == 'test/unit/tooling/classify_high_risk_changes_test.dart' ||
       path == 'test/unit/tooling/high_risk_review_policy_test.dart' ||
+      path == 'test/unit/tooling/high_risk_readiness_test.dart' ||
       path == 'tool/git/safe_pr_head_update.dart' ||
       path == 'tool/git/pr_head_update_evidence.schema.json' ||
       path == 'test/unit/tooling/safe_pr_head_update_test.dart';

@@ -311,14 +311,21 @@ unresolved.
 
 Treat parser, grammar, streaming-protocol, backend/runtime-routing, capability-
 probe, artifact-consumer, release-automation, and regression-policy changes as
-high risk. Before mark-ready, run a blocking-only QA pass that is independent
+high risk. Before mark-ready, run a blocking-only review pass that is independent
 from the implementation task and reviews the exact PR head against the current
-base. Classify changed paths with
-`tool/testing/classify_high_risk_changes.dart`. Inspect production call sites
-and require issue-specific positive and negative tests that fail if the
-relevant branch is deleted, bypassed, or miswired.
+base. Use an independent operator-owned or fresh Codex adversarial audit identity
+(the standalone qa profile is retired and prohibited; author self-approval is
+rejected).
+Classify changed paths with `tool/testing/classify_high_risk_changes.dart`.
+Evaluate pre-merge readiness evidence with `tool/testing/high_risk_readiness.dart`
+against `tool/testing/high_risk_readiness_evidence.schema.json`, supplying the
+repository, PR, author, exact head, and exact base from an independent source.
+The evaluator derives the rename-aware changed-file inventory from Git; it does
+not accept a caller-supplied inventory. Inspect production call sites and
+require issue-specific positive and negative tests that fail if the relevant
+branch is deleted, bypassed, or miswired.
 Record zero known PR-caused P1 regressions and zero unresolved review threads
-in the PR's high-risk block.
+in the PR's high-risk block and evidence payload.
 
 Structured-output changes must cover compiled grammar acceptance and rejection,
 schema-directed scalar and container reconstruction, partial-streaming
@@ -331,9 +338,12 @@ fixtures; an unrelated representative model is pipeline-only evidence.
 Post-merge QA remains mandatory, but it must not be the first adversarial pass.
 If it finds a PR-caused P1, stop lower-priority merge work, file a causally
 accurate issue, and prepare one cohesive recovery before resuming feature work.
-Security-sensitive required-check publication and repository settings remain a
-separate owner-controlled boundary; do not weaken these review requirements
-while that enforcement is absent or being changed.
+Security-sensitive required-check publication and repository settings are
+governed by `doc/high_risk_pre_merge_readiness.md`; checkout-local verification
+can return only an unverified-prerequisites result and fails closed until the
+dedicated GitHub App, authenticated auditor boundary, and conditional ruleset
+enforcement are separately implemented and configured. Do not configure the
+default-branch diagnostic workflow as a required readiness check.
 
 For docs-only PRs, state that runtime behavior is unchanged and list docs
 validation. If implementation scope changed, reduce and state the scope rather

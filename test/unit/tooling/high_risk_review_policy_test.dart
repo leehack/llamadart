@@ -58,8 +58,11 @@ void main() {
         'CONTRIBUTING.md',
         'doc/testing_matrix.md',
         'doc/pr_branch_writer_inventory.md',
+        'doc/high_risk_pre_merge_readiness.md',
         'tool/testing/test_matrix.dart',
         'tool/testing/classify_high_risk_changes.dart',
+        'tool/testing/high_risk_readiness.dart',
+        'tool/testing/high_risk_readiness_evidence.schema.json',
         'tool/testing/run_template_parity_suites.sh',
         'tool/testing/run_llama_cpp_chat_tests.sh',
         'tool/testing/prepare_llama_cpp_source.sh',
@@ -71,6 +74,7 @@ void main() {
         'test/e2e/template/'
             'specialized_tool_grammar_validation_e2e_test.dart',
         'test/unit/tooling/high_risk_review_policy_test.dart',
+        'test/unit/tooling/high_risk_readiness_test.dart',
         'tool/git/safe_pr_head_update.dart',
         'tool/git/pr_head_update_evidence.schema.json',
         'test/unit/tooling/safe_pr_head_update_test.dart',
@@ -78,6 +82,81 @@ void main() {
         final rule = path.endsWith(' @leehack') ? path : '$path @leehack';
         expect(codeowners, contains(rule), reason: path);
       }
+    });
+
+    test('guidance documents machine-verifiable evaluator and runbook', () {
+      final agentGuidance = read('AGENTS.md');
+      final contributing = read('CONTRIBUTING.md');
+      final matrix = read('doc/testing_matrix.md');
+
+      expect(agentGuidance, contains('high_risk_readiness.dart'));
+      expect(
+        agentGuidance,
+        contains('high_risk_readiness_evidence.schema.json'),
+      );
+      expect(agentGuidance, contains('doc/high_risk_pre_merge_readiness.md'));
+      expect(contributing, contains('high_risk_readiness.dart'));
+      expect(contributing, contains('doc/high_risk_pre_merge_readiness.md'));
+      expect(matrix, contains('high_risk_readiness.dart'));
+      expect(matrix, contains('doc/high_risk_pre_merge_readiness.md'));
+    });
+
+    test(
+      'local evaluator and workflow preserve the external trust boundary',
+      () {
+        final evaluator = read('tool/testing/high_risk_readiness.dart');
+        final workflow = read('.github/workflows/high_risk_readiness.yml');
+        final runbook = read('doc/high_risk_pre_merge_readiness.md');
+
+        expect(evaluator, contains('unverifiedPrerequisites'));
+        expect(evaluator, contains('standardRiskDiagnostic'));
+        expect(
+          evaluator,
+          contains("'independent_auditor_authenticated': false"),
+        );
+        expect(evaluator, isNot(contains('LLAMADART_READINESS_APP_ID')));
+        expect(evaluator, isNot(contains('LLAMADART_READINESS_PRIVATE_KEY')));
+        expect(evaluator, isNot(contains('Platform.environment')));
+        expect(workflow, contains('pull_request_target:'));
+        expect(workflow, contains(r'ref: ${{ github.sha }}'));
+        expect(workflow, isNot(contains('workflow_dispatch:')));
+        expect(
+          workflow,
+          isNot(
+            contains(r'ref: ${{ github.event.repository.default_branch }}'),
+          ),
+        );
+        expect(workflow, contains('persist-credentials: false'));
+        expect(workflow, contains('Read-only diagnostic'));
+        expect(workflow, contains('observed_head'));
+        expect(workflow, contains('current_head'));
+        expect(workflow, contains('observed_base'));
+        expect(workflow, contains('current_base'));
+        expect(workflow, contains('observed_changed_files'));
+        expect(workflow, contains('current_changed_files'));
+        expect(workflow, contains('--paginate --slurp'));
+        expect(workflow, contains(r'($files | length) == $expected'));
+        expect(workflow, contains('def safe_path:'));
+        expect(workflow, contains(r'test("[\u0000-\u001F\u007F]")'));
+        expect(workflow, contains('exit 1'));
+        expect(workflow, isNot(contains('|| true')));
+        expect(workflow, isNot(contains('PRIVATE_KEY')));
+        expect(runbook, contains('issue #419 is not operationally complete'));
+        expect(runbook, contains('must not be selected as a required'));
+      },
+    );
+
+    test('schema makes evaluator decisions computed and enum-complete', () {
+      final schema = read(
+        'tool/testing/high_risk_readiness_evidence.schema.json',
+      );
+
+      expect(schema, contains(r'"additionalProperties": false'));
+      expect(schema, contains(r'"evaluation"'));
+      expect(schema, contains(r'"unverifiedPrerequisites"'));
+      expect(schema, contains(r'"standardRiskDiagnostic"'));
+      expect(schema, contains(r'"externalPrerequisitesUnavailable"'));
+      expect(schema, isNot(contains(r'"decision": "ready"')));
     });
   });
 }

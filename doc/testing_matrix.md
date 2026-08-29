@@ -70,11 +70,18 @@ git diff --name-only --no-renames "$PR_BASE_REF"...HEAD | \
 dart run tool/testing/test_matrix.dart --tier high-risk
 ```
 
-Before mark-ready, assign an independent blocking-only QA task that did not
-implement the change. It must review the exact head against the current base,
-inspect the actual production call sites, and verify positive and negative
-tests that fail if the relevant branch is deleted, bypassed, or miswired. Fill
-the PR template's high-risk block with the task identities, exact head/base,
+Before mark-ready, assign an independent blocking review pass that did not
+implement the change, using an independent operator-owned or fresh Codex
+adversarial audit identity (the standalone qa profile is retired; author
+self-approval is rejected). It must review the exact head against the current
+base, inspect the actual production call sites, and verify positive and negative
+tests that fail if the relevant branch is deleted, bypassed, or miswired.
+Validate the evidence payload with `tool/testing/high_risk_readiness.dart`,
+supplying repository, PR, author, exact head, and exact base values from an
+independent source as documented in `doc/high_risk_pre_merge_readiness.md`.
+The evaluator derives the rename-aware changed-file inventory from Git and
+rejects unchanged, deleted, renamed-old, non-test, and phantom evidence paths.
+Fill the PR template's high-risk block with the task identities, exact head/base,
 affected-family evidence or precise N/A, zero known PR-caused P1 regressions,
 and the live unresolved-thread count. A known PR-caused P1 or any unresolved
 thread blocks readiness.
@@ -96,11 +103,12 @@ name every unavailable family and substitute primary upstream emissions plus
 durable fixtures. An unrelated representative model can validate the shared
 pipeline only; it cannot be reported as affected-family evidence.
 
-These checklist and matrix rules are the repository's current review contract.
-Any future required-check publisher or repository-rule enforcement is a
-separate security-sensitive change and must fail closed until its App,
-credentials, protected environment, source binding, and live adversarial proof
-are configured.
+The readiness evaluator validates the repository-local portion of these rules;
+it never emits operational readiness. External auditor authentication, GitHub
+App status publication, protected-environment provenance, and conditional
+ruleset enforcement remain unavailable and fail closed. The default-branch
+workflow is a non-required diagnostic. See
+`doc/high_risk_pre_merge_readiness.md`.
 
 The structured-output requirements encode the regression classes found after
 the broad parser rollout: envelope/name escaping and quoting (#394/#399),
