@@ -141,9 +141,78 @@ void main() {
         expect(workflow, contains(r'test("[\u0000-\u001F\u007F]")'));
         expect(workflow, contains('exit 1'));
         expect(workflow, isNot(contains('|| true')));
+        expect(workflow, isNot(contains('continue-on-error')));
         expect(workflow, isNot(contains('PRIVATE_KEY')));
         expect(runbook, contains('issue #419 is not operationally complete'));
         expect(runbook, contains('must not be selected as a required'));
+      },
+    );
+
+    test(
+      'diagnostic workflow warns on high risk without failing while publisher fails closed',
+      () {
+        final workflow = read('.github/workflows/high_risk_readiness.yml');
+        final publisherCli = read(
+          'tool/governance/high_risk_readiness_publish.dart',
+        );
+        final publishTemplate = read(
+          'tool/governance/deploy/high_risk_readiness_publish.yml.template',
+        );
+
+        final highRiskBranchIndex = workflow.indexOf(
+          "steps.classify.outputs.is_high_risk == 'true'",
+        );
+        expect(highRiskBranchIndex, isNonNegative);
+        final highRiskSection = workflow.substring(highRiskBranchIndex);
+
+        expect(highRiskSection, contains(r'GITHUB_STEP_SUMMARY'));
+        expect(highRiskSection, contains('::warning::'));
+        expect(highRiskSection, isNot(contains('::error::')));
+        expect(highRiskSection, isNot(contains('exit 1')));
+        expect(highRiskSection, contains('High-risk paths were detected'));
+        expect(
+          highRiskSection,
+          contains(
+            'The protected GitHub App evidence publisher is not installed',
+          ),
+        );
+        expect(
+          highRiskSection,
+          contains(
+            'informational diagnostic only and must not be configured as a required readiness check',
+          ),
+        );
+        expect(
+          highRiskSection,
+          contains(
+            'Actual operational readiness remains unavailable until the separately activated authenticated publisher and check exist',
+          ),
+        );
+
+        expect(workflow, contains('exit 64'));
+        expect(workflow, contains('exit 65'));
+        expect(workflow, contains('exit 1'));
+        expect(workflow, isNot(contains('continue-on-error')));
+
+        expect(publisherCli, contains('unboundTransportMessage'));
+        expect(
+          publisherCli,
+          contains(
+            'Refusing to publish: no authenticated GitHub transport is bound',
+          ),
+        );
+        expect(publisherCli, contains("args.contains('--publish')"));
+        expect(publisherCli, contains('exitCode = 69;'));
+
+        expect(publishTemplate, contains("github.ref != 'refs/heads/main'"));
+        expect(publishTemplate, contains('github.workflow_sha != github.sha'));
+        expect(
+          publishTemplate,
+          contains(
+            '::error::Attestation requires a top-level workflow resolved at the exact main run head.',
+          ),
+        );
+        expect(publishTemplate, contains('exit 1'));
       },
     );
 

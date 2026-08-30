@@ -174,13 +174,20 @@ PR-authored evidence files, workflow artifacts, or PR-authored workflows.
 
 - Standard-risk changes receive a successful, explicitly non-required
   diagnostic.
-- High-risk changes fail nonzero because the protected publisher is absent.
-- No failure is hidden with `|| true`, and no diagnostic evidence payload is
-  fabricated.
+- High-risk changes receive an explicit diagnostic warning and summary noting
+  that high-risk paths were detected, the protected publisher is not installed,
+  and operational readiness remains unavailable until separately activated. The
+  bootstrap diagnostic succeeds so it does not block PRs before activation, but
+  the local evaluator, publisher, and future protected readiness check continue
+  to fail closed.
+- No metadata or inventory validation failure is hidden with `|| true`, and no
+  diagnostic evidence payload is fabricated.
 
-The workflow name and job name intentionally say `diagnostic`. Configuring it
-as a required check would make high-risk PRs permanently fail and could make
-standard-risk PRs depend on a gate that is not intended for them.
+The workflow name and job name intentionally say `diagnostic`. The diagnostic
+workflow must never be configured as a required readiness check; configuring it
+as a required check would create a false sense of enforcement while the
+privileged publisher is unavailable and could make standard-risk PRs depend on a
+gate that is not intended for them.
 
 ## Missing external prerequisites
 

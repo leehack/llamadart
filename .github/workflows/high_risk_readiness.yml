@@ -116,16 +116,16 @@ jobs:
             echo 'This workflow is diagnostic only and must not be configured as a required readiness check.'
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Fail closed while privileged readiness publisher is unavailable
+      - name: Report high-risk diagnostic while protected publisher is unavailable
         if: steps.classify.outputs.is_high_risk == 'true'
         run: |
           {
             echo '### High-risk readiness prerequisite diagnostic'
             echo
             echo 'High-risk paths were detected.'
-            echo 'No protected GitHub App evidence publisher or conditional ruleset is configured.'
+            echo 'The protected GitHub App evidence publisher is not installed or available.'
+            echo 'This workflow is an informational diagnostic only and must not be configured as a required readiness check.'
+            echo 'Actual operational readiness remains unavailable until the separately activated authenticated publisher and check exist.'
             echo 'PR comments, PR-authored files, workflow artifacts, and environment variables are not trusted readiness evidence.'
-            echo 'Operational readiness therefore remains unavailable and fails closed.'
           } >> "$GITHUB_STEP_SUMMARY"
-          echo "::error::High-risk readiness publication is not operationally configured."
-          exit 1
+          echo "::warning::High-risk paths were detected. Protected readiness publisher is not installed; operational readiness remains unavailable until separately activated."
