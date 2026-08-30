@@ -149,6 +149,7 @@ class HighRiskReadinessPublisher {
     LiveProtectedEnvironment? protectedEnvironment;
     EvidenceIngress? ingress;
     String? evidenceDigest;
+    int? evidenceRunId;
     var inventory = const <RepositoryChange>[];
     int? unresolvedThreads;
     LiveHeadCheckState? headCheckState;
@@ -202,6 +203,145 @@ class HighRiskReadinessPublisher {
       message: message,
     );
 
+    Future<ReadinessPublicationRecord?> revalidatePassingSnapshot(
+      LivePullRequest head,
+    ) async {
+      final expectedApp = app!;
+      final expectedInventory = inventory;
+      final expectedApproval = approval;
+      final expectedEnvironment = protectedEnvironment;
+      final expectedUnresolvedThreads = unresolvedThreads;
+      final expectedHeadCheckState = headCheckState;
+      final expectedRuleset = ruleset;
+      late final LiveAppIdentity confirmedApp;
+      late final List<RepositoryChange> confirmedInventory;
+      LiveProtectedApproval? confirmedApproval;
+      LiveProtectedEnvironment? confirmedEnvironment;
+      AuthenticatedEvidenceSubmission? confirmedSubmission;
+      int? confirmedUnresolvedThreads;
+      LiveHeadCheckState? confirmedHeadCheckState;
+      LiveRulesetEnforcement? confirmedRuleset;
+      try {
+        confirmedApp = await source.readAppIdentity();
+        if (mode == PublicationMode.attestation) {
+          confirmedApproval = await source.readProtectedApproval();
+          confirmedEnvironment = await source.readProtectedEnvironment(
+            environment,
+          );
+          confirmedSubmission = await source.readEvidenceSubmission();
+        }
+        confirmedInventory = await source.readChangedFiles(
+          prNumber,
+          expectedCount: head.changedFileCount,
+        );
+        if (mode == PublicationMode.attestation) {
+          confirmedUnresolvedThreads = await source
+              .readUnresolvedReviewThreadCount(prNumber);
+          confirmedHeadCheckState = await source.readHeadCheckState(
+            head.headSha,
+            excludedCheckName: checkName,
+            excludedAppId: expectedApp.appId,
+          );
+          if (ruleset != null) {
+            confirmedRuleset = await source.readRulesetEnforcement(
+              defaultBranch: defaultBranch,
+            );
+          }
+        }
+      } on Object {
+        return refuse(
+          ReadinessPublicationFailure.liveReadFailed,
+          'Authenticated live state could not be re-read immediately before '
+          'a passing publication.',
+        );
+      }
+
+      final appError = _validateAppIdentity(confirmedApp);
+      if (appError != null || !_sameApp(expectedApp, confirmedApp)) {
+        return refuse(
+          ReadinessPublicationFailure.untrustedAppIdentity,
+          'The authenticated App identity or installation scope changed '
+          'immediately before publication.',
+        );
+      }
+      if (confirmedInventory.length != head.changedFileCount ||
+          validateRepositoryChangeInventory(
+                confirmedInventory,
+                requireSafePaths: true,
+              ) !=
+              RepositoryInventoryValidation.valid ||
+          !_sameInventory(expectedInventory, confirmedInventory)) {
+        return refuse(
+          ReadinessPublicationFailure.liveInventoryInconsistent,
+          'The exact rename- and deletion-aware inventory changed immediately '
+          'before publication.',
+        );
+      }
+      if (mode != PublicationMode.attestation) return null;
+
+      final approvalValue = confirmedApproval;
+      final environmentValue = confirmedEnvironment;
+      final submissionValue = confirmedSubmission;
+      final unresolved = confirmedUnresolvedThreads;
+      final checkState = confirmedHeadCheckState;
+      if (approvalValue == null ||
+          environmentValue == null ||
+          submissionValue == null ||
+          unresolved == null ||
+          checkState == null) {
+        return refuse(
+          ReadinessPublicationFailure.liveReadFailed,
+          'Authenticated live state was incomplete immediately before a '
+          'passing publication.',
+        );
+      }
+      final approvalError = _validateApproval(approvalValue, head);
+      if (approvalError != null ||
+          !_sameApproval(expectedApproval, approvalValue)) {
+        return refuse(
+          ReadinessPublicationFailure.liveStateRaced,
+          'The authenticated approval changed immediately before publication.',
+        );
+      }
+      final environmentError = _validateEnvironment(environmentValue);
+      if (environmentError != null ||
+          !_sameEnvironment(expectedEnvironment!, environmentValue)) {
+        return refuse(
+          ReadinessPublicationFailure.liveStateRaced,
+          'The protected environment changed immediately before publication.',
+        );
+      }
+      if (submissionValue.ingress != ingress ||
+          submissionValue.runId != evidenceRunId ||
+          submissionValue.digest != evidenceDigest) {
+        return refuse(
+          ReadinessPublicationFailure.liveStateRaced,
+          'The evidence ingress changed immediately before publication.',
+        );
+      }
+      if (unresolved != expectedUnresolvedThreads ||
+          unresolved < 0 ||
+          !_sameHeadCheckState(expectedHeadCheckState!, checkState) ||
+          checkState.headSha != head.headSha ||
+          !_isValidHeadCheckState(checkState)) {
+        return refuse(
+          ReadinessPublicationFailure.liveStateRaced,
+          'Review-thread or exact-head check state changed immediately before '
+          'publication.',
+        );
+      }
+      if (expectedRuleset != null &&
+          (confirmedRuleset == null ||
+              !_isValidRuleset(confirmedRuleset) ||
+              !_sameRuleset(expectedRuleset, confirmedRuleset))) {
+        return refuse(
+          ReadinessPublicationFailure.liveStateRaced,
+          'The effective ruleset changed immediately before publication.',
+        );
+      }
+      return null;
+    }
+
     Future<ReadinessPublicationRecord> publishCheck({
       required ReadinessPublicationDecision decision,
       required ReadinessPublicationFailure failure,
@@ -227,6 +367,10 @@ class HighRiskReadinessPublisher {
           'The pull request changed immediately before publication, so no '
           'conclusion may be bound to the stale candidate.',
         );
+      }
+      if (conclusion == ReadinessCheckConclusion.success) {
+        final revalidation = await revalidatePassingSnapshot(confirmed);
+        if (revalidation != null) return revalidation;
       }
 
       final superseded = <int>[];
@@ -614,6 +758,7 @@ class HighRiskReadinessPublisher {
     }
     ingress = submission.ingress;
     evidenceDigest = submission.digest;
+    evidenceRunId = submission.runId;
     if (ingress != EvidenceIngress.protectedEnvironmentApproval) {
       return refuse(
         ReadinessPublicationFailure.untrustedEvidenceIngress,
@@ -1401,6 +1546,46 @@ class HighRiskReadinessPublisher {
     LiveProtectedApproval? left,
     LiveProtectedApproval? right,
   ) => jsonEncode(left?.toJson()) == jsonEncode(right?.toJson());
+
+  static bool _sameEnvironment(
+    LiveProtectedEnvironment left,
+    LiveProtectedEnvironment right,
+  ) => jsonEncode(left.toJson()) == jsonEncode(right.toJson());
+
+  static bool _sameHeadCheckState(
+    LiveHeadCheckState left,
+    LiveHeadCheckState right,
+  ) =>
+      left.headSha == right.headSha &&
+      left.aggregate == right.aggregate &&
+      _sameStringList(left.pendingContexts, right.pendingContexts) &&
+      _sameStringList(left.failingContexts, right.failingContexts);
+
+  static bool _sameRuleset(
+    LiveRulesetEnforcement left,
+    LiveRulesetEnforcement right,
+  ) {
+    if (left.defaultBranchProtected != right.defaultBranchProtected ||
+        left.strictRequiredStatusChecks != right.strictRequiredStatusChecks ||
+        left.reviewThreadsMustBeResolved != right.reviewThreadsMustBeResolved) {
+      return false;
+    }
+    List<String> requiredChecks(LiveRulesetEnforcement value) =>
+        value.requiredChecks.map((check) => jsonEncode(check.toJson())).toList()
+          ..sort();
+    return _sameStringList(left.rulesetNames, right.rulesetNames) &&
+        _sameStringList(requiredChecks(left), requiredChecks(right));
+  }
+
+  static bool _sameStringList(List<String> left, List<String> right) {
+    final leftValues = left.toList()..sort();
+    final rightValues = right.toList()..sort();
+    if (leftValues.length != rightValues.length) return false;
+    for (var index = 0; index < leftValues.length; index++) {
+      if (leftValues[index] != rightValues[index]) return false;
+    }
+    return true;
+  }
 
   static bool _sameInventory(
     List<RepositoryChange> left,

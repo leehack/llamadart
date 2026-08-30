@@ -289,17 +289,17 @@ class FakeGitHubSource implements AuthenticatedGitHubSource {
   final List<LivePullRequest> pullRequestReads;
   final List<RepositoryChange> inventory;
   final List<List<RepositoryChange>>? inventoryReads;
-  final int unresolvedThreads;
+  int unresolvedThreads;
   final List<int>? unresolvedThreadReads;
-  final LiveCheckAggregate aggregate;
-  final List<String> pendingContexts;
-  final List<String> failingContexts;
+  LiveCheckAggregate aggregate;
+  List<String> pendingContexts;
+  List<String> failingContexts;
   final List<LiveHeadCheckState>? headCheckStateReads;
   final LiveProtectedApproval approval;
   final bool approvalIsNull;
-  final LiveProtectedEnvironment protectedEnvironment;
+  LiveProtectedEnvironment protectedEnvironment;
   final List<LiveProtectedEnvironment>? protectedEnvironmentReads;
-  final LiveRulesetEnforcement ruleset;
+  LiveRulesetEnforcement ruleset;
   final AuthenticatedEvidenceSubmission? submission;
   final List<AuthenticatedEvidenceSubmission>? submissionReads;
   final Set<String> headPaths;
@@ -319,6 +319,7 @@ class FakeGitHubSource implements AuthenticatedGitHubSource {
   var rulesetReadCount = 0;
   int? lastExpectedInventoryCount;
   int? lastExcludedCheckAppId;
+  void Function()? afterFinalSnapshot;
 
   @override
   Future<LiveAppIdentity> readAppIdentity() async {
@@ -331,8 +332,14 @@ class FakeGitHubSource implements AuthenticatedGitHubSource {
     final index = pullRequestReadCount < pullRequestReads.length
         ? pullRequestReadCount
         : pullRequestReads.length - 1;
+    final value = pullRequestReads[index];
     pullRequestReadCount++;
-    return pullRequestReads[index];
+    if (pullRequestReadCount == 5) {
+      final callback = afterFinalSnapshot;
+      afterFinalSnapshot = null;
+      callback?.call();
+    }
+    return value;
   }
 
   @override
@@ -1405,6 +1412,82 @@ void main() {
         record.failure,
         ReadinessPublicationFailure.governancePrerequisitesUnavailable,
       );
+      expect(checks.runs, isEmpty);
+    });
+
+    test(
+      'refuses when review threads change after the final snapshot',
+      () async {
+        final source = FakeGitHubSource(
+          submission: dispatched(highRiskEvidence()),
+        );
+        source.afterFinalSnapshot = () {
+          source.unresolvedThreads = 1;
+        };
+        final checks = FakeCheckPublisher();
+
+        final record = await attest(source, checks);
+
+        expect(record.decision, ReadinessPublicationDecision.refused);
+        expect(record.failure, ReadinessPublicationFailure.liveStateRaced);
+        expect(checks.runs, isEmpty);
+      },
+    );
+
+    test(
+      'refuses when exact-head checks change after the final snapshot',
+      () async {
+        final source = FakeGitHubSource(
+          submission: dispatched(highRiskEvidence()),
+        );
+        source.afterFinalSnapshot = () {
+          source.aggregate = LiveCheckAggregate.pending;
+          source.pendingContexts = <String>['late-check'];
+        };
+        final checks = FakeCheckPublisher();
+
+        final record = await attest(source, checks);
+
+        expect(record.decision, ReadinessPublicationDecision.refused);
+        expect(record.failure, ReadinessPublicationFailure.liveStateRaced);
+        expect(checks.runs, isEmpty);
+      },
+    );
+
+    test(
+      'refuses when the environment changes after the final snapshot',
+      () async {
+        final source = FakeGitHubSource(
+          submission: dispatched(highRiskEvidence()),
+        );
+        source.afterFinalSnapshot = () {
+          source.protectedEnvironment = liveEnvironment(
+            preventSelfReview: false,
+          );
+        };
+        final checks = FakeCheckPublisher();
+
+        final record = await attest(source, checks);
+
+        expect(record.decision, ReadinessPublicationDecision.refused);
+        expect(record.failure, ReadinessPublicationFailure.liveStateRaced);
+        expect(checks.runs, isEmpty);
+      },
+    );
+
+    test('refuses when the ruleset changes after the final snapshot', () async {
+      final source = FakeGitHubSource(
+        submission: dispatched(highRiskEvidence()),
+      );
+      source.afterFinalSnapshot = () {
+        source.ruleset = liveRuleset(strict: false);
+      };
+      final checks = FakeCheckPublisher();
+
+      final record = await attest(source, checks);
+
+      expect(record.decision, ReadinessPublicationDecision.refused);
+      expect(record.failure, ReadinessPublicationFailure.liveStateRaced);
       expect(checks.runs, isEmpty);
     });
   });
