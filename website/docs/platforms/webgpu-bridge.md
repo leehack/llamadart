@@ -197,9 +197,10 @@ cannot report success before the bridge exposes `prefetchModelToCache(...)`.
 - `v0.1.39+` remains the compatibility floor for bridge asset capabilities.
 - The pinned `v0.1.40` bridge assets embed llama.cpp `v0.3.0`, matching the native runtime
   (`v0.3.0`, both built from upstream `v0.3.0@c1d0e7a004015f23bc0233470b747b596f29b264`)
-  even though wrapper release tags differ. Pinned artifact provenance: release
-  `379234159`, tag commit `a18f1c31835ee722c7750a5c68f22c5b19e4c937`, bridge
-  source `0bdc8286fd52b70da27f5b039e1b4278361da0be`, manifest SHA-256
+  even though the bridge asset tag `v0.1.40` differs from the native runtime tag
+  `v0.3.0`. Pinned artifact provenance: release `379234159`, tag commit
+  `a18f1c31835ee722c7750a5c68f22c5b19e4c937`, bridge source
+  `0bdc8286fd52b70da27f5b039e1b4278361da0be`, manifest SHA-256
   `99fc09bb0cc23cf0eb08875a9ea973803fb1d432c5c8ca1b1211af0eb1d20b17`. The
   bridge assets provision an explicit 1 MiB stack for both wasm32 and memory64,
   preventing graph-parameter growth from overflowing Emscripten's 64 KiB

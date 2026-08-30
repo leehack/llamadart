@@ -93,9 +93,25 @@ final List<BridgeTagPin> bridgeTagPins = <BridgeTagPin>[
     ),
   ),
   BridgeTagPin(
+    'doc/webgpu_bridge.md',
+    RegExp(
+      r'^even though the bridge asset tag `(v\d+\.\d+\.\d+)` differs from the '
+      r'native runtime tag$',
+      multiLine: true,
+    ),
+  ),
+  BridgeTagPin(
     'website/docs/platforms/webgpu-bridge.md',
     RegExp(
       r'^The example currently pins bridge assets to `(v\d+\.\d+\.\d+)`,',
+      multiLine: true,
+    ),
+  ),
+  BridgeTagPin(
+    'website/docs/platforms/webgpu-bridge.md',
+    RegExp(
+      r'^  even though the bridge asset tag `(v\d+\.\d+\.\d+)` differs from the '
+      r'native runtime tag$',
       multiLine: true,
     ),
   ),
@@ -444,9 +460,11 @@ final List<BridgeTagPin> bridgeProvenancePins = <BridgeTagPin>[
     RegExp(
       r'^\(`(?<nativeReleaseTag>[^`]+)`, both built from upstream llama\.cpp '
       r'`(?<upstreamTag>[^`@]+)@(?<upstreamCommit>[0-9a-f]{40})`\)\r?\n'
-      r'even though wrapper release tags differ\. Provenance for this immutable consumer\r?\n'
-      r'artifact: release `(?<releaseId>\d+)`, tag commit\r?\n'
-      r'`(?<tagCommit>[0-9a-f]{40})`, bridge source\r?\n'
+      r'even though the bridge asset tag `v\d+\.\d+\.\d+` differs from the '
+      r'native runtime tag\r?\n'
+      r'`v\d+\.\d+\.\d+`\. Provenance for this immutable consumer artifact: '
+      r'release `(?<releaseId>\d+)`,\r?\n'
+      r'tag commit `(?<tagCommit>[0-9a-f]{40})`, bridge source\r?\n'
       r'`(?<bridgeCommit>[0-9a-f]{40})`, and manifest SHA-256\r?\n'
       r'`(?<manifestSha256>[0-9a-f]{64})`\.',
       multiLine: true,
@@ -457,9 +475,12 @@ final List<BridgeTagPin> bridgeProvenancePins = <BridgeTagPin>[
     RegExp(
       r'^  \(`(?<nativeReleaseTag>[^`]+)`, both built from upstream '
       r'`(?<upstreamTag>[^`@]+)@(?<upstreamCommit>[0-9a-f]{40})`\)\r?\n'
-      r'  even though wrapper release tags differ\. Pinned artifact provenance: release\r?\n'
-      r'  `(?<releaseId>\d+)`, tag commit `(?<tagCommit>[0-9a-f]{40})`, bridge\r?\n'
-      r'  source `(?<bridgeCommit>[0-9a-f]{40})`, manifest SHA-256\r?\n'
+      r'  even though the bridge asset tag `v\d+\.\d+\.\d+` differs from the '
+      r'native runtime tag\r?\n'
+      r'  `v\d+\.\d+\.\d+`\. Pinned artifact provenance: release '
+      r'`(?<releaseId>\d+)`, tag commit\r?\n'
+      r'  `(?<tagCommit>[0-9a-f]{40})`, bridge source\r?\n'
+      r'  `(?<bridgeCommit>[0-9a-f]{40})`, manifest SHA-256\r?\n'
       r'  `(?<manifestSha256>[0-9a-f]{64})`\.',
       multiLine: true,
     ),
