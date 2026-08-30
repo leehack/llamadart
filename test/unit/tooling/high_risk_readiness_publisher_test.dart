@@ -2670,6 +2670,31 @@ void main() {
         });
       }
     });
+
+    test('schema rejects negative unresolved review-thread counts', () {
+      final schema =
+          jsonDecode(
+                File(
+                  'tool/governance/readiness_publication_record.schema.json',
+                ).readAsStringSync(),
+              )
+              as Map<String, dynamic>;
+      final properties = schema['properties']! as Map<String, dynamic>;
+      final unresolvedReviewThreads =
+          properties['unresolved_review_threads']! as Map<String, dynamic>;
+      final integerBranch = (unresolvedReviewThreads['oneOf']! as List<dynamic>)
+          .cast<Map<String, dynamic>>()
+          .singleWhere((branch) => branch['type'] == 'integer');
+
+      expect(integerBranch['minimum'], 0);
+      final minimum = integerBranch['minimum'] as int;
+      bool accepts(int value) => value >= minimum;
+
+      expect(accepts(-1), isFalse);
+      for (final value in const <int>[0, 1, 42]) {
+        expect(accepts(value), isTrue, reason: 'value=$value');
+      }
+    });
   });
 }
 

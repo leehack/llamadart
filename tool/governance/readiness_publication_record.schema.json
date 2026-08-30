@@ -112,7 +112,10 @@
       "items": { "$ref": "#/$defs/repositoryChange" }
     },
     "unresolved_review_threads": {
-      "oneOf": [{ "type": "null" }, { "type": "integer" }]
+      "oneOf": [
+        { "type": "null" },
+        { "type": "integer", "minimum": 0 }
+      ]
     },
     "head_check_state": {
       "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/headCheckState" }]
