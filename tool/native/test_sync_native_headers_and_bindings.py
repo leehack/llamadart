@@ -4,10 +4,13 @@ import hashlib
 import io
 import json
 import os
+import shutil
 import subprocess
 import tarfile
 import tempfile
+import threading
 import unittest
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
 
@@ -58,6 +61,7 @@ class NativeHeaderSyncIntegrationTest(unittest.TestCase):
         token: str = "",
         stale_paths: bool = False,
         duplicate_asset: bool = False,
+        config_capture: str = "",
     ) -> tuple[subprocess.CompletedProcess[str], Path]:
         temp = tempfile.TemporaryDirectory()
         self.addCleanup(temp.cleanup)
@@ -95,6 +99,13 @@ import sys
 
 args = sys.argv[1:]
 mode = os.environ.get("FAKE_CURL_MODE", "ok")
+capture = os.environ.get("FAKE_CONFIG_CAPTURE", "")
+if capture:
+    for index, arg in enumerate(args[:-1]):
+        if arg == "--config":
+            text = Path(args[index + 1]).read_text(encoding="utf-8")
+            if text.startswith('header = "Authorization:'):
+                Path(capture).write_text(text, encoding="utf-8")
 token = os.environ.get("FAKE_EXPECT_TOKEN", "")
 if token:
     if any(token in arg for arg in args):
@@ -185,6 +196,7 @@ exit 0
                 "LLAMADART_FFIGEN_HEADER_ROOT": str(live),
                 "GH_TOKEN": token,
                 "FAKE_EXPECT_TOKEN": token,
+                "FAKE_CONFIG_CAPTURE": config_capture,
                 "FAKE_EXPECT_URL": asset_url
                 or f"https://github.com/owner/repo/releases/download/{TAG}/{ASSET_NAME}",
             }
@@ -388,6 +400,60 @@ exit 0
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertNotIn(secret, result.stdout + result.stderr)
+
+    def _serve_authorization_probe(self) -> tuple[str, list[str | None]]:
+        seen: list[str | None] = []
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self) -> None:
+                seen.append(self.headers.get("Authorization"))
+                self.send_response(200)
+                self.send_header("Content-Length", "2")
+                self.end_headers()
+                self.wfile.write(b"{}")
+
+            def log_message(self, *args: object) -> None:
+                return
+
+        server = HTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(thread.join)
+        self.addCleanup(server.shutdown)
+        return f"http://127.0.0.1:{server.server_address[1]}/release", seen
+
+    @unittest.skipUnless(shutil.which("curl"), "requires curl")
+    def test_written_curl_config_authenticates_a_real_request(self) -> None:
+        archive_path = self._temp_archive_path()
+        self._write_archive(archive_path, CURRENT_LAYOUT_FILES)
+        secret = "ghp-llamadart-transport-probe-9f2c4e"
+        capture_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(capture_dir.cleanup)
+        capture = Path(capture_dir.name) / "curl.conf"
+
+        result, _ = self._run_sync(
+            archive_bytes=archive_path.read_bytes(),
+            token=secret,
+            config_capture=str(capture),
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(
+            capture.read_text(encoding="utf-8"),
+            f'header = "Authorization: Bearer {secret}"\n',
+        )
+
+        url, seen = self._serve_authorization_probe()
+        probe = subprocess.run(
+            ["curl", "-fsS", "--config", str(capture), url],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(probe.returncode, 0, probe.stderr)
+        self.assertEqual(seen, [f"Bearer {secret}"])
+        self.assertNotIn(secret, result.stdout + result.stderr)
+        self.assertNotIn(secret, probe.stdout + probe.stderr)
 
     def test_token_and_credential_url_are_not_reported(self) -> None:
         secret = "test-secret-token"

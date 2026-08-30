@@ -10,7 +10,9 @@ import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import urllib.error
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from unittest.mock import patch
 import unittest
@@ -72,6 +74,90 @@ def _release_with_asset(asset_name: str, tag: str = "v0.16.0") -> dict:
             {"name": asset_name, "browser_download_url": SIGNED_URL},
         ],
     }
+
+
+PROBE_TOKEN = "ghp-llamadart-transport-probe-9f2c4e"
+
+
+class GithubAuthTransportTest(unittest.TestCase):
+    """The real token must reach GitHub while staying out of every diagnostic."""
+
+    def setUp(self) -> None:
+        self.seen: list[str | None] = []
+        self.status = 200
+        test = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self) -> None:
+                test.seen.append(self.headers.get("Authorization"))
+                body = json.dumps({"tag_name": "v0.16.0", "assets": []}).encode()
+                self.send_response(test.status)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *args: object) -> None:
+                return
+
+        server = HTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(thread.join)
+        self.addCleanup(server.shutdown)
+        self.url = f"http://127.0.0.1:{server.server_address[1]}/release.json"
+
+    def _env(self, name: str = "") -> dict[str, str]:
+        env = {
+            k: v
+            for k, v in os.environ.items()
+            if k not in ("GH_TOKEN", "GITHUB_TOKEN")
+        }
+        if name:
+            env[name] = PROBE_TOKEN
+        return env
+
+    def test_auth_header_carries_the_real_token(self) -> None:
+        for name in ("GH_TOKEN", "GITHUB_TOKEN"):
+            with self.subTest(variable=name), patch.dict(
+                os.environ, self._env(name), clear=True
+            ):
+                self.assertEqual(
+                    pins.github_auth_header(),
+                    {"Authorization": f"Bearer {PROBE_TOKEN}"},
+                )
+                self.assertEqual(
+                    pins.github_api_headers()["Authorization"],
+                    f"Bearer {PROBE_TOKEN}",
+                )
+
+    def test_no_auth_header_without_a_token(self) -> None:
+        with patch.dict(os.environ, self._env(), clear=True):
+            self.assertEqual(pins.github_auth_header(), {})
+
+    def test_transport_sends_the_real_token(self) -> None:
+        with patch.dict(os.environ, self._env("GH_TOKEN"), clear=True):
+            payload = pins.read_release_url(
+                self.url, context="probe", headers=pins.github_api_headers()
+            )
+        self.assertEqual(self.seen, [f"Bearer {PROBE_TOKEN}"])
+        self.assertEqual(json.loads(payload)["tag_name"], "v0.16.0")
+
+    def test_failures_never_echo_the_token(self) -> None:
+        self.status = 404
+        with patch.dict(os.environ, self._env("GH_TOKEN"), clear=True):
+            with self.assertRaises(ReleaseError) as raised:
+                pins.read_release_url(
+                    self.url, context="probe", headers=pins.github_api_headers()
+                )
+        self.assertEqual(self.seen, [f"Bearer {PROBE_TOKEN}"])
+        cause = raised.exception.__cause__
+        message = f"{raised.exception}{cause}"
+        if isinstance(cause, urllib.error.HTTPError):
+            cause.close()
+        self.assertIn("HTTP 404", message)
+        self.assertNotIn(PROBE_TOKEN, message)
+        self.assertNotIn(self.url, str(raised.exception))
 
 
 class ReleaseTransportFailureTest(unittest.TestCase):
