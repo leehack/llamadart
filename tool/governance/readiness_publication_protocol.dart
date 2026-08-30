@@ -481,11 +481,11 @@ class ReadinessCheckRun {
   final int appId;
   final String externalId;
 
-  /// Whether this run would still let a merge proceed.
+  /// Whether this run still retains authority over merge readiness.
   ///
-  /// Queued, in-progress, and passing-shaped conclusions all keep authority, so
-  /// they must be superseded whenever the candidate they described is no longer
-  /// current.
+  /// Pending (queued or in-progress) and passing-shaped runs retain authority,
+  /// so they must be superseded whenever the candidate they describe is no
+  /// longer current.
   bool get isAuthoritative =>
       conclusion == null ||
       conclusion == 'success' ||
