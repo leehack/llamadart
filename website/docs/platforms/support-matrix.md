@@ -8,7 +8,7 @@ backend-module configuration for
 `llamadart`.
 
 The native-assets hook currently pins `llamadart-native` tag
-`v0.2.0-1` and
+`v0.3.0` and
 `litert-lm-native` release `v0.16.0-native.2` (`hook/build.dart`). Apps can
 override the llama.cpp native GitHub source with
 `hooks.user_defines.llamadart.llamadart_native_tag` and
@@ -117,8 +117,8 @@ bundled:
 - `llama_cpp`: GGUF model support through llama.cpp.
 - `litert_lm`: `.litertlm` model support through LiteRT-LM.
 
-The `v0.2.0-1` native llama.cpp pin (llama.cpp `v0.2.0`) includes BailingMoE3 and
-GraniteSWA/GraniteMoeSWA model loading and adds LFM2 target/draft support for
+The `v0.3.0` native llama.cpp pin (llama.cpp `v0.3.0`) includes BailingMoE3 and
+GraniteSWA/GraniteMoeSWA model loading and LFM2 target/draft support for
 DSpark speculative decoding. These architectures use the existing GGUF APIs;
 LFM2 DSpark uses `SpeculativeDecodingConfig.draftDspark(...)`. No
 model-specific Dart preset is required, but representative target/draft and
@@ -128,7 +128,7 @@ backend validation remains necessary before enabling DSpark in production.
 
 | Runtime path | Public video input | Current evidence |
 | --- | --- | --- |
-| Native llama.cpp / GGUF | Not consumable | The published `v0.2.0-1` archive exports upstream video helper symbols, but this release has not been qualified for end-to-end video input. The companion build does not opt into `LLAMA_SUBPROCESS`/`MTMD_VIDEO` or package FFmpeg/ffprobe; the public Dart path remains unsupported until matching native, packaging, and frame-lifecycle validation exists. |
+| Native llama.cpp / GGUF | Not consumable | The published `v0.3.0` archive exports upstream video helper symbols, but this release has not been qualified for end-to-end video input. The companion build does not opt into `LLAMA_SUBPROCESS`/`MTMD_VIDEO` or package FFmpeg/ffprobe; the public Dart path remains unsupported until matching native, packaging, and frame-lifecycle validation exists. |
 | Native LiteRT-LM | Not consumable | The public direct-media path accepts image/audio content only. |
 | WebGPU / Web LiteRT-LM | Not consumable | No validated public Dart video transport or frame-lifetime contract exists. |
 | Android / iOS | Not consumable | Explicitly unsupported pending native packaging and device validation. |
@@ -264,7 +264,7 @@ device/model bundle, use `cpu` or `gpu` for that artifact.
   a web load failure as a package bug. The [WebGPU Bridge](./webgpu-bridge)
   page has the browser-console probe and Flutter Web smoke-test path.
 
-## Current llama.cpp module availability by bundle (`v0.2.0-1`)
+## Current llama.cpp module availability by bundle (`v0.3.0`)
 
 | Bundle key | Available backend modules in bundle |
 | --- | --- |
@@ -312,7 +312,7 @@ hooks:
   user_defines:
     llamadart:
       # Optional. Defaults to llamadart's tested native runtime pin.
-      llamadart_native_tag: v0.2.0-1
+      llamadart_native_tag: v0.3.0
 
       # Optional. GitHub repository slug or github.com URL.
       llamadart_native_repository: leehack/llamadart-native
