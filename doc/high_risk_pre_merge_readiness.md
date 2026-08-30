@@ -14,7 +14,7 @@ The repository currently provides:
 - a Git-derived name-status inventory that preserves deletions and both sides
   of renames;
 - candidate-tree checks for changed production tests;
-- a trusted-default-branch GitHub Actions diagnostic.
+- a trusted-default-branch GitHub Actions advisory.
 
 It does **not** provide an authenticated GitHub App publisher, protected
 environment provenance, conditional ruleset enforcement, or an authenticated
@@ -24,8 +24,15 @@ independent-auditor identity. Consequently:
   `unverifiedPrerequisites` and exits 2;
 - no local JSON field, command-line flag, process environment variable, or
   credential-shaped value can produce an operational-ready result;
-- the diagnostic workflow must not be selected as a required status check;
-- issue #419 is not operationally complete.
+- the advisory workflow reports that limitation instead of enforcing it, and
+  must not be selected as a required status check;
+- high-risk merge readiness is established by manual repository-local review and
+  evidence, which is how issue #419 was closed as completed.
+
+Protected external enforcement is intentionally unconfigured and is not a
+pending merge requirement. Adopting it would need a separate approved
+governance change satisfying the boundary in
+[Missing external prerequisites](#missing-external-prerequisites).
 
 ## Threat model
 
@@ -149,7 +156,7 @@ Exit codes:
 `--schema` prints the schema. There is deliberately no App credential,
 environment trust, supplied changed-file inventory, or `ready` option.
 
-## Trusted-default-branch diagnostic workflow
+## Trusted-default-branch advisory workflow
 
 `.github/workflows/high_risk_readiness.yml` runs under
 `pull_request_target` but checks out only the immutable `github.sha`
@@ -163,15 +170,21 @@ classifies both current and previous rename paths.
 It does not check out or execute the PR branch and does not consume PR comments,
 PR-authored evidence files, workflow artifacts, or PR-authored workflows.
 
-- Standard-risk changes receive a successful, explicitly non-required
-  diagnostic.
-- High-risk changes fail nonzero because the protected publisher is absent.
-- No failure is hidden with `|| true`, and no diagnostic evidence payload is
+- Standard-risk changes receive a successful, explicitly non-required advisory.
+- High-risk changes succeed with a `::warning` and a job summary stating that
+  the protected publisher is absent, so readiness must be established by the
+  repository-local review, evaluator run, and independent audit described above.
+- Invalid PR metadata, GitHub API failures, incomplete or ambiguous file
+  inventories, head/base/changed-file drift, and classifier failures still exit
+  nonzero.
+- No failure is hidden with `|| true`, and no advisory evidence payload is
   fabricated.
 
-The workflow name and job name intentionally say `diagnostic`. Configuring it
-as a required check would make high-risk PRs permanently fail and could make
-standard-risk PRs depend on a gate that is not intended for them.
+The workflow name and job name intentionally say `advisory`. It is not a
+required check, so it deliberately does not fail merely because the protected
+publisher was never adopted; that absence is reported, not enforced.
+Configuring it as a required check could make standard-risk PRs depend on a
+gate that is not intended for them.
 
 ## Missing external prerequisites
 

@@ -342,8 +342,10 @@ Security-sensitive required-check publication and repository settings are
 governed by `doc/high_risk_pre_merge_readiness.md`; checkout-local verification
 can return only an unverified-prerequisites result and fails closed until the
 dedicated GitHub App, authenticated auditor boundary, and conditional ruleset
-enforcement are separately implemented and configured. Do not configure the
-default-branch diagnostic workflow as a required readiness check.
+enforcement are separately implemented and configured. The default-branch
+workflow is a non-required advisory: it warns on high-risk paths instead of
+failing, so high-risk readiness must be established by the repository-local
+review and evidence. Do not configure it as a required readiness check.
 
 For docs-only PRs, state that runtime behavior is unchanged and list docs
 validation. If implementation scope changed, reduce and state the scope rather

@@ -315,7 +315,8 @@ of an independent operator-owned or fresh Codex adversarial audit identity.
 The local evaluator derives the changed-file inventory from Git and never emits
 operational readiness. Until the separately reviewed GitHub App, auditor
 authentication, and conditional ruleset boundary exist, a valid high-risk run
-is explicitly unverified and the default-branch workflow is diagnostic only.
+is explicitly unverified and the default-branch workflow is a non-required
+advisory that warns rather than fails.
 
 ### PR type examples
 

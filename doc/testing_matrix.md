@@ -107,7 +107,8 @@ The readiness evaluator validates the repository-local portion of these rules;
 it never emits operational readiness. External auditor authentication, GitHub
 App status publication, protected-environment provenance, and conditional
 ruleset enforcement remain unavailable and fail closed. The default-branch
-workflow is a non-required diagnostic. See
+workflow is a non-required advisory that warns on high-risk paths instead of
+failing. See
 `doc/high_risk_pre_merge_readiness.md`.
 
 The structured-output requirements encode the regression classes found after
