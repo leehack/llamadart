@@ -1306,6 +1306,21 @@ external ffi.Pointer<ggml_tensor> ggml_clamp(
   ffi.Pointer<ggml_tensor> Function(
     ffi.Pointer<ggml_context>,
     ffi.Pointer<ggml_tensor>,
+    ffi.Float,
+    ffi.Float,
+  )
+>()
+external ffi.Pointer<ggml_tensor> ggml_clamp_inplace(
+  ffi.Pointer<ggml_context> ctx,
+  ffi.Pointer<ggml_tensor> a,
+  double min,
+  double max,
+);
+
+@ffi.Native<
+  ffi.Pointer<ggml_tensor> Function(
+    ffi.Pointer<ggml_context>,
+    ffi.Pointer<ggml_tensor>,
     ffi.Int,
     ffi.Int,
     ffi.Int,

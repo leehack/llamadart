@@ -19,15 +19,15 @@ pipelines.
    `https://cdn.jsdelivr.net/gh/leehack/llama-web-bridge-assets@<tag>/llama_webgpu_bridge.js`
 2. Local fallback: `./webgpu_bridge/llama_webgpu_bridge.js`
 
-Default pinned tag in the example is `v0.1.39`.
+Default pinned tag in the example is `v0.1.40`.
 
-That release embeds llama.cpp `v0.2.0`, matching the `hook/build.dart` native pin
-(`v0.2.0-1`, both built from upstream llama.cpp `v0.2.0@bb4caa7540188872173c44d161602d9271386413`)
-even though wrapper release tags differ. Provenance for this immutable consumer
-artifact: release `377534035`, tag commit
-`d14d46a63deeee7a8f8a017e394b74ee112f4dba`, bridge source
-`79b6ef31e394dd2de92a456b7c249f9da377c720`, and manifest SHA-256
-`b355d01040604f6ae2c5c5fe5bb42b858101a96f03f67e4b27b32fe41ce3b2bf`. It retains
+That release embeds llama.cpp `v0.3.0`, matching the `hook/build.dart` native pin
+(`v0.3.0`, both built from upstream llama.cpp `v0.3.0@c1d0e7a004015f23bc0233470b747b596f29b264`)
+even though the bridge asset tag `v0.1.40` differs from the native runtime tag
+`v0.3.0`. Provenance for this immutable consumer artifact: release `379234159`,
+tag commit `a18f1c31835ee722c7750a5c68f22c5b19e4c937`, bridge source
+`0bdc8286fd52b70da27f5b039e1b4278361da0be`, and manifest SHA-256
+`99fc09bb0cc23cf0eb08875a9ea973803fb1d432c5c8ca1b1211af0eb1d20b17`. It retains
 the Qwen3-ASR typed speech-to-text contract introduced in `v0.1.30` and
 provisions the explicit 1 MiB Wasm stack needed for memory64 context
 construction in direct and worker modes. The chat bootstrap opts
@@ -47,7 +47,7 @@ model bytes.
 To vendor pinned assets into local app web files:
 
 ```bash
-WEBGPU_BRIDGE_ASSETS_TAG=v0.1.39 ./scripts/fetch_webgpu_bridge_assets.sh
+WEBGPU_BRIDGE_ASSETS_TAG=v0.1.40 ./scripts/fetch_webgpu_bridge_assets.sh
 ```
 
 Optional compatibility env vars:
@@ -128,7 +128,7 @@ You can override CDN source/version before the bridge loader runs:
 ```html
 <script>
   window.__llamadartBridgeAssetsRepo = 'leehack/llama-web-bridge-assets';
-  window.__llamadartBridgeAssetsTag = 'v0.1.39';
+  window.__llamadartBridgeAssetsTag = 'v0.1.40';
 </script>
 ```
 
