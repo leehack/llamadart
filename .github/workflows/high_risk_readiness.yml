@@ -1,11 +1,11 @@
-name: High-Risk Readiness Prerequisite Diagnostic
+name: High-Risk Readiness Advisory
 
 on:
   pull_request_target:
     types: [opened, synchronize, reopened, ready_for_review]
 
 concurrency:
-  group: high-risk-readiness-diagnostic-${{ github.repository }}-${{ github.event.pull_request.number }}
+  group: high-risk-readiness-advisory-${{ github.repository }}-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 permissions:
@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   inspect:
-    name: Read-only diagnostic (not a required readiness check)
+    name: Read-only advisory (not a required readiness check)
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -106,26 +106,26 @@ jobs:
             echo "is_high_risk=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Report standard-risk diagnostic
+      - name: Report standard-risk advisory
         if: steps.classify.outputs.is_high_risk == 'false'
         run: |
           {
-            echo '### High-risk readiness prerequisite diagnostic'
+            echo '### High-risk readiness advisory'
             echo
             echo 'The trusted default-branch classifier found no high-risk surface.'
-            echo 'This workflow is diagnostic only and must not be configured as a required readiness check.'
+            echo 'This workflow is advisory only and must not be configured as a required readiness check.'
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Fail closed while privileged readiness publisher is unavailable
+      - name: Report high-risk advisory
         if: steps.classify.outputs.is_high_risk == 'true'
         run: |
           {
-            echo '### High-risk readiness prerequisite diagnostic'
+            echo '### High-risk readiness advisory'
             echo
             echo 'High-risk paths were detected.'
-            echo 'No protected GitHub App evidence publisher or conditional ruleset is configured.'
+            echo 'No protected GitHub App evidence publisher or conditional ruleset is configured, so this advisory cannot verify readiness and does not gate the merge.'
             echo 'PR comments, PR-authored files, workflow artifacts, and environment variables are not trusted readiness evidence.'
-            echo 'Operational readiness therefore remains unavailable and fails closed.'
+            echo 'Complete the repository-local review manually: run tool/testing/high_risk_readiness.dart with independently observed repository, PR, author, head, and base values, obtain an independent blocking audit, and fill the PR template high-risk block.'
+            echo 'See doc/high_risk_pre_merge_readiness.md.'
           } >> "$GITHUB_STEP_SUMMARY"
-          echo "::error::High-risk readiness publication is not operationally configured."
-          exit 1
+          echo "::warning::High-risk paths detected; readiness must be reviewed manually in the repository."

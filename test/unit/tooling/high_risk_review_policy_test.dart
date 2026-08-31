@@ -127,7 +127,7 @@ void main() {
           ),
         );
         expect(workflow, contains('persist-credentials: false'));
-        expect(workflow, contains('Read-only diagnostic'));
+        expect(workflow, contains('Read-only advisory'));
         expect(workflow, contains('observed_head'));
         expect(workflow, contains('current_head'));
         expect(workflow, contains('observed_base'));
@@ -141,10 +141,61 @@ void main() {
         expect(workflow, contains('exit 1'));
         expect(workflow, isNot(contains('|| true')));
         expect(workflow, isNot(contains('PRIVATE_KEY')));
-        expect(runbook, contains('issue #419 is not operationally complete'));
+        expect(runbook, contains('manual repository-local review'));
+        expect(
+          runbook,
+          contains(
+            'Protected external enforcement is intentionally '
+            'unconfigured',
+          ),
+        );
+        expect(
+          runbook,
+          contains('must not add credentials or a required check until'),
+        );
         expect(runbook, contains('must not be selected as a required'));
       },
     );
+
+    test('high-risk advisory warns instead of failing the check', () {
+      final workflow = read('.github/workflows/high_risk_readiness.yml');
+      final steps = workflow
+          .split(RegExp(r'^      - name: ', multiLine: true))
+          .skip(1)
+          .toList();
+      final advisory = steps.singleWhere(
+        (step) => step.contains("is_high_risk == 'true'"),
+      );
+
+      expect(advisory, contains('::warning::'));
+      expect(advisory, isNot(contains('::error::')));
+      expect(advisory, isNot(contains('exit 1')));
+      expect(advisory, contains('High-risk readiness advisory'));
+      expect(advisory, contains('tool/testing/high_risk_readiness.dart'));
+      expect(advisory, contains('doc/high_risk_pre_merge_readiness.md'));
+      expect(workflow, isNot(contains('Fail closed')));
+    });
+
+    test('advisory still fails on malformed or unsafe diagnostic input', () {
+      final workflow = read('.github/workflows/high_risk_readiness.yml');
+      final classify = workflow
+          .split(RegExp(r'^      - name: ', multiLine: true))
+          .singleWhere((step) => step.contains('id: classify'));
+
+      expect(classify, contains('set -euo pipefail'));
+      expect(classify, contains('::error::Invalid pull request number.'));
+      expect(classify, contains('exit 64'));
+      expect(classify, contains('exit 65'));
+      expect(
+        classify,
+        contains(
+          '::error::PR head, base, or changed-file count changed while the '
+          'inventory was read.',
+        ),
+      );
+      expect(classify, contains('exit 1'));
+      expect(classify, contains('jq -e --argjson expected'));
+    });
 
     test('schema makes evaluator decisions computed and enum-complete', () {
       final schema = read(
