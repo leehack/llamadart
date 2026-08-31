@@ -1,19 +1,26 @@
 from __future__ import annotations
 
 import hashlib
+import http.client
 import json
 import os
 import re
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
+import threading
+import urllib.error
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+from unittest.mock import patch
 import unittest
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import sync_native_release_pins as pins  # noqa: E402
 from sync_native_release_pins import (  # noqa: E402
     ReleaseError,
     LEGACY_SCHEMA1_RELEASES,
@@ -36,6 +43,332 @@ from sync_native_release_pins import (  # noqa: E402
 UPSTREAM_COMMIT = "ba82499873945908bf8bcfc96e955d0677eb1fa1"
 NATIVE_COMMIT = "451ba0ce7c366972b4dc0e58f08ffe590958f943"
 DEVELOPMENT_TAG = "gba8249987394"
+
+SIGNED_URL = "https://objects.example.invalid/asset?token=super-secret"
+
+
+class _FakeResponse:
+    def __init__(
+        self, payload: bytes = b"", read_error: BaseException | None = None
+    ) -> None:
+        self._payload = payload
+        self._read_error = read_error
+
+    def __enter__(self) -> _FakeResponse:
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        return None
+
+    def read(self, *args: object) -> bytes:
+        if self._read_error is not None:
+            raise self._read_error
+        payload, self._payload = self._payload, b""
+        return payload
+
+
+def _release_with_asset(asset_name: str, tag: str = "v0.16.0") -> dict:
+    return {
+        "tag_name": tag,
+        "assets": [
+            {"name": asset_name, "browser_download_url": SIGNED_URL},
+        ],
+    }
+
+
+PROBE_TOKEN = "ghp-llamadart-transport-probe-9f2c4e"
+
+
+class GithubAuthTransportTest(unittest.TestCase):
+    """The real token must reach GitHub while staying out of every diagnostic."""
+
+    def setUp(self) -> None:
+        self.seen: list[str | None] = []
+        self.status = 200
+        test = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self) -> None:
+                test.seen.append(self.headers.get("Authorization"))
+                body = json.dumps({"tag_name": "v0.16.0", "assets": []}).encode()
+                self.send_response(test.status)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, *args: object) -> None:
+                return
+
+        server = HTTPServer(("127.0.0.1", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(thread.join)
+        self.addCleanup(server.shutdown)
+        self.url = f"http://127.0.0.1:{server.server_address[1]}/release.json"
+
+    def _env(self, name: str = "") -> dict[str, str]:
+        env = {
+            k: v
+            for k, v in os.environ.items()
+            if k not in ("GH_TOKEN", "GITHUB_TOKEN")
+        }
+        if name:
+            env[name] = PROBE_TOKEN
+        return env
+
+    def test_auth_header_carries_the_real_token(self) -> None:
+        for name in ("GH_TOKEN", "GITHUB_TOKEN"):
+            with self.subTest(variable=name), patch.dict(
+                os.environ, self._env(name), clear=True
+            ):
+                self.assertEqual(
+                    pins.github_auth_header(),
+                    {"Authorization": f"Bearer {PROBE_TOKEN}"},
+                )
+                self.assertEqual(
+                    pins.github_api_headers()["Authorization"],
+                    f"Bearer {PROBE_TOKEN}",
+                )
+
+    def test_no_auth_header_without_a_token(self) -> None:
+        with patch.dict(os.environ, self._env(), clear=True):
+            self.assertEqual(pins.github_auth_header(), {})
+
+    def test_transport_sends_the_real_token(self) -> None:
+        with patch.dict(os.environ, self._env("GH_TOKEN"), clear=True):
+            payload = pins.read_release_url(
+                self.url, context="probe", headers=pins.github_api_headers()
+            )
+        self.assertEqual(self.seen, [f"Bearer {PROBE_TOKEN}"])
+        self.assertEqual(json.loads(payload)["tag_name"], "v0.16.0")
+
+    def test_failures_never_echo_the_token(self) -> None:
+        self.status = 404
+        with patch.dict(os.environ, self._env("GH_TOKEN"), clear=True):
+            with self.assertRaises(ReleaseError) as raised:
+                pins.read_release_url(
+                    self.url, context="probe", headers=pins.github_api_headers()
+                )
+        self.assertEqual(self.seen, [f"Bearer {PROBE_TOKEN}"])
+        cause = raised.exception.__cause__
+        message = f"{raised.exception}{cause}"
+        if isinstance(cause, urllib.error.HTTPError):
+            cause.close()
+        self.assertIn("HTTP 404", message)
+        self.assertNotIn(PROBE_TOKEN, message)
+        self.assertNotIn(self.url, str(raised.exception))
+
+
+class ReleaseTransportFailureTest(unittest.TestCase):
+    def setUp(self) -> None:
+        for name, value in (
+            ("HTTP_RETRY_DELAY_SECONDS", 0.0),
+            ("HTTP_SOCKET_TIMEOUT_SECONDS", 0.25),
+        ):
+            patcher = patch.object(pins, name, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def _http_error(self, code: int) -> urllib.error.HTTPError:
+        error = urllib.error.HTTPError(SIGNED_URL, code, SIGNED_URL, {}, None)
+        self.addCleanup(error.close)
+        return error
+
+    def _assert_actionable(self, message: str, *expected: str) -> None:
+        for fragment in expected:
+            self.assertIn(fragment, message)
+        self.assertNotIn("Traceback", message)
+        self.assertNotIn("objects.example.invalid", message)
+        self.assertNotIn("super-secret", message)
+
+    def test_dns_failure_is_retried_and_reported_without_the_url(self) -> None:
+        error = urllib.error.URLError(socket.gaierror(SIGNED_URL))
+        with patch.object(
+            pins.urllib.request, "urlopen", side_effect=error
+        ) as urlopen:
+            with self.assertRaises(ReleaseError) as raised:
+                fetch_release("owner/repo", "v0.16.0")
+
+        self._assert_actionable(
+            str(raised.exception),
+            "Failed to fetch release owner/repo@v0.16.0",
+            "DNS lookup failed",
+        )
+        self.assertEqual(urlopen.call_count, pins.HTTP_MAX_ATTEMPTS)
+        self.assertEqual(
+            {call.kwargs["timeout"] for call in urlopen.call_args_list},
+            {pins.HTTP_SOCKET_TIMEOUT_SECONDS},
+        )
+
+    def test_permanent_http_error_is_not_retried(self) -> None:
+        error = self._http_error(404)
+        with patch.object(
+            pins.urllib.request, "urlopen", side_effect=error
+        ) as urlopen:
+            with self.assertRaises(ReleaseError) as raised:
+                fetch_release("owner/repo", "v0.16.0")
+
+        self._assert_actionable(
+            str(raised.exception), "owner/repo@v0.16.0", "HTTP 404"
+        )
+        urlopen.assert_called_once()
+
+    def test_transient_http_error_is_retried_then_reported(self) -> None:
+        error = self._http_error(503)
+        with patch.object(
+            pins.urllib.request, "urlopen", side_effect=error
+        ) as urlopen:
+            with self.assertRaises(ReleaseError) as raised:
+                fetch_release("owner/repo", "v0.16.0")
+
+        self._assert_actionable(str(raised.exception), "HTTP 503")
+        self.assertEqual(urlopen.call_count, pins.HTTP_MAX_ATTEMPTS)
+
+    def test_nontransient_os_error_is_not_retried(self) -> None:
+        with patch.object(
+            pins.urllib.request, "urlopen", side_effect=OSError(SIGNED_URL)
+        ) as urlopen:
+            with self.assertRaises(ReleaseError) as raised:
+                fetch_release("owner/repo", "v0.16.0")
+        self._assert_actionable(str(raised.exception), "network error")
+        urlopen.assert_called_once()
+
+    def test_connection_timeout_is_reported_with_the_bound(self) -> None:
+        with patch.object(
+            pins.urllib.request, "urlopen", side_effect=TimeoutError(SIGNED_URL)
+        ):
+            with self.assertRaises(ReleaseError) as raised:
+                fetch_release("owner/repo", "v0.16.0")
+
+        self._assert_actionable(
+            str(raised.exception),
+            f"timed out (socket {pins.HTTP_SOCKET_TIMEOUT_SECONDS:g}s, "
+            f"total {pins.HTTP_TOTAL_TIMEOUT_SECONDS:g}s)",
+        )
+
+    def test_interrupted_asset_download_is_reported(self) -> None:
+        with patch.object(
+            pins.urllib.request,
+            "urlopen",
+            side_effect=lambda *a, **k: _FakeResponse(
+                read_error=http.client.IncompleteRead(b"partial")
+            ),
+        ) as urlopen:
+            with self.assertRaises(ReleaseError) as raised:
+                pins.release_asset_bytes(
+                    _release_with_asset("bundle.tar.gz"),
+                    "bundle.tar.gz",
+                    repo="owner/repo",
+                    tag="v0.16.0",
+                    release_json_dir="",
+                )
+
+        self._assert_actionable(
+            str(raised.exception),
+            "Failed to read release asset bundle.tar.gz (owner/repo@v0.16.0)",
+            "interrupted download",
+        )
+        self.assertEqual(urlopen.call_count, pins.HTTP_MAX_ATTEMPTS)
+
+    def test_invalid_manifest_payloads_are_release_errors(self) -> None:
+        for payload in (b"{not json", b"\xff\xfe", b'"a string"'):
+            with self.subTest(payload=payload), patch.object(
+                pins.urllib.request,
+                "urlopen",
+                return_value=_FakeResponse(payload),
+            ):
+                with self.assertRaises(ReleaseError) as raised:
+                    pins.release_asset_json(
+                        _release_with_asset("assets.json"), "assets.json"
+                    )
+                self._assert_actionable(str(raised.exception), "assets.json")
+
+        release = _release_with_asset("assets.json")
+        release["assets"][0]["fixture_json"] = []
+        with self.assertRaisesRegex(ReleaseError, "must be a JSON object"):
+            pins.release_asset_json(release, "assets.json")
+
+    def test_checksum_fallback_download_failure_names_the_asset(self) -> None:
+        error = self._http_error(403)
+        with patch.object(pins.urllib.request, "urlopen", side_effect=error):
+            with self.assertRaises(ReleaseError) as raised:
+                pins.release_asset_checksum(
+                    _release_with_asset("SHA256SUMS"),
+                    "SHA256SUMS",
+                    repo="owner/repo",
+                )
+
+        self._assert_actionable(
+            str(raised.exception),
+            "Failed to read release asset SHA256SUMS (owner/repo@v0.16.0)",
+            "HTTP 403",
+        )
+
+    def test_missing_fixture_is_actionable(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            with self.assertRaises(ReleaseError) as raised:
+                fetch_release("owner/repo", "v0.16.0", temp)
+
+        self._assert_actionable(
+            str(raised.exception),
+            "Failed to fetch release owner/repo@v0.16.0",
+            "cannot read fixture",
+        )
+
+    def test_transient_failure_recovers_on_retry(self) -> None:
+        payload = json.dumps({"tag_name": "v0.16.0", "assets": []}).encode("utf-8")
+        with patch.object(
+            pins.urllib.request,
+            "urlopen",
+            side_effect=[
+                urllib.error.URLError(ConnectionResetError("reset")),
+                _FakeResponse(payload),
+            ],
+        ) as urlopen:
+            release = fetch_release("owner/repo", "v0.16.0")
+
+        self.assertEqual(release["tag_name"], "v0.16.0")
+        self.assertEqual(urlopen.call_count, 2)
+
+    def test_invalid_url_is_typed_and_redacted(self) -> None:
+        secret_url = "not-a-url?token=super-secret"
+        with self.assertRaises(ReleaseError) as raised:
+            pins.read_release_url(secret_url, context="Failed to read asset")
+        self._assert_actionable(
+            str(raised.exception), "Failed to read asset", "invalid download URL"
+        )
+
+    def test_streaming_read_cannot_exceed_the_overall_deadline(self) -> None:
+        with patch.object(
+            pins.time,
+            "monotonic",
+            side_effect=[
+                0.0,
+                0.0,
+                0.0,
+                pins.HTTP_TOTAL_TIMEOUT_SECONDS + 1,
+                pins.HTTP_TOTAL_TIMEOUT_SECONDS + 1,
+            ],
+        ), patch.object(
+            pins.urllib.request, "urlopen", return_value=_FakeResponse(b"payload")
+        ) as urlopen:
+            with self.assertRaises(ReleaseError) as raised:
+                pins.read_release_url(SIGNED_URL, context="Failed to read asset")
+
+        self._assert_actionable(str(raised.exception), "timed out")
+        urlopen.assert_called_once()
+
+    def test_invalid_digest_and_asset_inventory_are_rejected(self) -> None:
+        release = _release_with_asset("bundle.tar.gz")
+        release["assets"][0]["digest"] = "sha512:abcd"
+        with self.assertRaisesRegex(ReleaseError, "invalid GitHub SHA-256 digest"):
+            pins.release_asset_checksum(release, "bundle.tar.gz")
+
+        duplicate = _release_with_asset("bundle.tar.gz")
+        duplicate["assets"].append(dict(duplicate["assets"][0]))
+        with self.assertRaisesRegex(ReleaseError, "duplicates asset"):
+            pins.release_asset_checksum(duplicate, "bundle.tar.gz")
 
 
 def _schema2_fixture_payloads() -> tuple[dict, dict]:

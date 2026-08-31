@@ -51,6 +51,12 @@ jobs:
       - name: Verify native release pin policy
         run: python3 tool/native/test_sync_native_release_pins.py
 
+      - name: Verify native header archive staging
+        run: python3 tool/native/test_native_header_archive.py
+
+      - name: Verify native header sync atomicity
+        run: python3 tool/native/test_sync_native_headers_and_bindings.py
+
       - name: Pub Publish Dry Run
         run: flutter pub publish --dry-run
 

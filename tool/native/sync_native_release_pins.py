@@ -5,14 +5,18 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import http.client
 import json
 import os
 import re
 import shutil
+import socket
 import sys
 import tempfile
+import time
 import urllib.error
 import urllib.request
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any, NamedTuple
 
@@ -206,6 +210,134 @@ LITERT_ALLOWED_ACCELERATORS = {"gpu", "metal", "opencl", "webgpu"}
 
 class ReleaseError(RuntimeError):
     pass
+
+
+HTTP_SOCKET_TIMEOUT_SECONDS = 15.0
+HTTP_TOTAL_TIMEOUT_SECONDS = 300.0
+HTTP_MAX_ATTEMPTS = 3
+HTTP_RETRY_DELAY_SECONDS = 2.0
+HTTP_CHUNK_BYTES = 1024 * 1024
+RETRYABLE_HTTP_STATUS = frozenset({408, 425, 429, 500, 502, 503, 504})
+
+
+def describe_transport_error(error: BaseException) -> str:
+    """Summarize a transport failure without echoing URLs or credentials."""
+    if isinstance(error, urllib.error.HTTPError):
+        return f"HTTP {error.code}"
+    if isinstance(error, http.client.IncompleteRead):
+        return "interrupted download"
+    if isinstance(error, ValueError):
+        return "invalid download URL"
+    reason = error.reason if isinstance(error, urllib.error.URLError) else error
+    if isinstance(reason, (TimeoutError, socket.timeout)):
+        return (
+            f"timed out (socket {HTTP_SOCKET_TIMEOUT_SECONDS:g}s, "
+            f"total {HTTP_TOTAL_TIMEOUT_SECONDS:g}s)"
+        )
+    if isinstance(reason, socket.gaierror):
+        return "DNS lookup failed"
+    if isinstance(reason, ConnectionError):
+        return "connection failed"
+    if isinstance(reason, http.client.HTTPException):
+        return "HTTP protocol error"
+    return "network error"
+
+
+def is_retryable_transport_error(error: BaseException) -> bool:
+    if isinstance(error, ValueError):
+        return False
+    if isinstance(error, urllib.error.HTTPError):
+        return error.code in RETRYABLE_HTTP_STATUS
+    reason = error.reason if isinstance(error, urllib.error.URLError) else error
+    return isinstance(
+        reason,
+        (
+            TimeoutError,
+            socket.timeout,
+            socket.gaierror,
+            ConnectionError,
+            http.client.HTTPException,
+        ),
+    )
+
+
+def response_chunks(response: Any, deadline: float) -> Iterator[bytes]:
+    while True:
+        if time.monotonic() > deadline:
+            raise TimeoutError("release download exceeded the overall timeout")
+        chunk = response.read(HTTP_CHUNK_BYTES)
+        if time.monotonic() > deadline:
+            raise TimeoutError("release download exceeded the overall timeout")
+        if not chunk:
+            return
+        yield chunk
+
+
+def read_release_url(
+    url: str,
+    *,
+    context: str,
+    headers: dict[str, str] | None = None,
+    consume: Callable[[Iterator[bytes]], Any] = b"".join,
+) -> Any:
+    """Read a release URL with a 15s socket and 300s overall deadline.
+
+    Transport failures and 408, 425, 429, and selected 5xx responses get at
+    most three total attempts. Permanent HTTP failures are not retried. Errors
+    omit the URL because release URLs may carry short-lived credentials.
+    """
+    deadline = time.monotonic() + HTTP_TOTAL_TIMEOUT_SECONDS
+    for attempt in range(1, HTTP_MAX_ATTEMPTS + 1):
+        try:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError("release download exceeded the overall timeout")
+            request = urllib.request.Request(url, headers=headers or {})
+            with urllib.request.urlopen(
+                request, timeout=min(HTTP_SOCKET_TIMEOUT_SECONDS, remaining)
+            ) as response:
+                return consume(response_chunks(response, deadline))
+        except (OSError, ValueError, http.client.HTTPException) as error:
+            reason = describe_transport_error(error)
+            retryable = (
+                attempt < HTTP_MAX_ATTEMPTS
+                and is_retryable_transport_error(error)
+                and time.monotonic() < deadline
+            )
+            if not retryable:
+                raise ReleaseError(f"{context}: {reason}") from error
+            delay = min(
+                HTTP_RETRY_DELAY_SECONDS * attempt,
+                max(0.0, deadline - time.monotonic()),
+            )
+            if delay:
+                time.sleep(delay)
+    raise ReleaseError(f"{context}: network error")
+
+
+def read_release_fixture(path: Path, context: str) -> bytes:
+    try:
+        return path.read_bytes()
+    except OSError as error:
+        raise ReleaseError(f"{context}: cannot read fixture") from error
+
+
+def github_api_headers() -> dict[str, str]:
+    return {
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        **github_auth_header(),
+    }
+
+
+def release_asset_context(
+    release: dict[str, Any], asset_name: str, kind: str, repo: str = ""
+) -> str:
+    tag = release.get("tag_name")
+    if not isinstance(tag, str) or not tag:
+        tag = "<unknown>"
+    identity = f"{repo}@{tag}" if repo else tag
+    return f"Failed to read release {kind} {asset_name} ({identity})"
 
 
 def _litert_compatibility_version(compatibility_tag: str) -> tuple[int, ...]:
@@ -471,7 +603,9 @@ def validate_litert_release_sha256_sums(
         tag=tag,
         release_json_dir=release_json_dir,
     )
-    expected_asset_digest = release_asset_checksum(release, "SHA256SUMS")
+    expected_asset_digest = release_asset_checksum(
+        release, "SHA256SUMS", repo=repo
+    )
     actual_asset_digest = hashlib.sha256(checksum_bytes).hexdigest()
     if actual_asset_digest != expected_asset_digest:
         raise ReleaseError(
@@ -508,6 +642,7 @@ def validate_litert_spm_release_asset_digests(
     release: dict[str, Any],
     manifest: dict[str, Any],
     *,
+    repo: str,
     release_tag: str,
 ) -> None:
     upstream = manifest.get("upstream")
@@ -530,7 +665,7 @@ def validate_litert_spm_release_asset_digests(
     )
     for path in sorted(spm_paths):
         asset_name = Path(path).name
-        release_digest = release_asset_checksum(release, asset_name)
+        release_digest = release_asset_checksum(release, asset_name, repo=repo)
         manifest_digest = require_sha256(
             artifacts_by_path[path].get("sha256"),
             f"SPM artifact {path} digest",
@@ -579,7 +714,11 @@ def main() -> int:
             current_tag=read_hook_native_tag(hook_text),
             allow_legacy_tag=args.allow_legacy_tag,
         )
-        validate_native_release_manifest(release, resolved_llama_cpp_tag)
+        validate_native_release_manifest(
+            release,
+            resolved_llama_cpp_tag,
+            repo=args.llamadart_native_repo,
+        )
         hook_text = replace_one(
             hook_text,
             r"const _llamaCppTag = '[^']+';",
@@ -590,6 +729,7 @@ def main() -> int:
             checksum = release_asset_checksum(
                 release,
                 f"llamadart-native-apple-xcframework-{resolved_llama_cpp_tag}.zip",
+                repo=args.llamadart_native_repo,
             )
             original_swift_text = llama_cpp_package_swift_path.read_text(
                 encoding="utf-8"
@@ -726,6 +866,7 @@ def main() -> int:
             checksum = release_asset_checksum(
                 release,
                 f"litert-lm-native-runtime-{bundle}-{resolved_litert_lm_tag}.tar.gz",
+                repo=args.litert_lm_native_repo,
             )
             hook_text = replace_litert_lm_bundle_checksum(
                 hook_text,
@@ -749,6 +890,7 @@ def main() -> int:
                 release=release,
                 manifest=litert_lm_manifest,
                 resolved_tag=resolved_litert_lm_tag,
+                repo=args.litert_lm_native_repo,
             )
             pending_writes[litert_lm_package_swift_path] = swift_text
             package_root = companion_package_root(litert_lm_package_swift_path)
@@ -924,35 +1066,20 @@ def parse_args() -> argparse.Namespace:
 
 
 def fetch_release(repo: str, tag: str, release_json_dir: str = "") -> dict[str, Any]:
-    try:
-        if release_json_dir:
-            path = Path(release_json_dir) / f"{repo.replace('/', '__')}__{tag}.json"
-            payload: Any = json.loads(path.read_text(encoding="utf-8"))
+    context = f"Failed to fetch release {repo}@{tag}"
+    if release_json_dir:
+        path = Path(release_json_dir) / f"{repo.replace('/', '__')}__{tag}.json"
+        raw = read_release_fixture(path, context)
+    else:
+        if tag == "latest":
+            url = f"https://api.github.com/repos/{repo}/releases/latest"
         else:
-            if tag == "latest":
-                url = f"https://api.github.com/repos/{repo}/releases/latest"
-            else:
-                url = f"https://api.github.com/repos/{repo}/releases/tags/{tag}"
-            request = urllib.request.Request(
-                url,
-                headers={
-                    "Accept": "application/vnd.github+json",
-                    "X-GitHub-Api-Version": "2022-11-28",
-                    **github_auth_header(),
-                },
-            )
-            with urllib.request.urlopen(request) as response:
-                payload = json.loads(response.read().decode("utf-8"))
-    except (
-        OSError,
-        urllib.error.HTTPError,
-        urllib.error.URLError,
-        UnicodeDecodeError,
-        json.JSONDecodeError,
-    ) as error:
-        raise ReleaseError(
-            f"Failed to fetch release {repo}@{tag}: {error}"
-        ) from error
+            url = f"https://api.github.com/repos/{repo}/releases/tags/{tag}"
+        raw = read_release_url(url, context=context, headers=github_api_headers())
+    try:
+        payload: Any = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ReleaseError(f"{context}: invalid UTF-8 or JSON") from error
     if not isinstance(payload, dict):
         raise ReleaseError(f"Release {repo}@{tag} must be a JSON object")
     resolved_tag = payload.get("tag_name")
@@ -970,7 +1097,9 @@ def github_auth_header() -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"} if token else {}
 
 
-def release_asset_checksum(release: dict[str, Any], asset_name: str) -> str:
+def release_asset_checksum(
+    release: dict[str, Any], asset_name: str, *, repo: str = ""
+) -> str:
     asset = find_release_asset(release, asset_name)
     if asset is not None:
         digest = asset.get("digest")
@@ -978,17 +1107,21 @@ def release_asset_checksum(release: dict[str, Any], asset_name: str) -> str:
             raise ReleaseError(
                 f"Asset {asset_name} has a non-string GitHub SHA-256 digest"
             )
-        if isinstance(digest, str) and digest.startswith("sha256:"):
-            checksum = digest.removeprefix("sha256:")
-            if not SHA256_RE.fullmatch(checksum):
+        if isinstance(digest, str) and digest:
+            if re.fullmatch(r"sha256:[0-9a-f]{64}", digest) is None:
                 raise ReleaseError(
                     f"Asset {asset_name} has an invalid GitHub SHA-256 digest"
                 )
-            return checksum
+            return digest.removeprefix("sha256:")
         download_url = asset.get("browser_download_url")
         if not isinstance(download_url, str) or not download_url:
             raise ReleaseError(f"Asset {asset_name} has no download URL")
-        return sha256_url(download_url)
+        return sha256_url(
+            download_url,
+            context=release_asset_context(
+                release, asset_name, "asset", repo=repo
+            ),
+        )
     tag = release.get("tag_name", "<unknown>")
     names = ", ".join(
         sorted(str(asset.get("name", "")) for asset in release_assets(release))
@@ -999,16 +1132,19 @@ def release_asset_checksum(release: dict[str, Any], asset_name: str) -> str:
     )
 
 
-def sha256_url(url: str) -> str:
-    request = urllib.request.Request(url, headers=github_auth_header())
-    digest = hashlib.sha256()
-    with urllib.request.urlopen(request) as response:
-        while True:
-            chunk = response.read(1024 * 1024)
-            if not chunk:
-                break
+def sha256_url(url: str, *, context: str) -> str:
+    def hash_chunks(chunks: Iterator[bytes]) -> str:
+        digest = hashlib.sha256()
+        for chunk in chunks:
             digest.update(chunk)
-    return digest.hexdigest()
+        return digest.hexdigest()
+
+    return read_release_url(
+        url,
+        context=context,
+        headers=github_auth_header(),
+        consume=hash_chunks,
+    )
 
 
 def normalize_release_tag(tag: str) -> str:
@@ -1173,12 +1309,21 @@ def release_assets(release: dict[str, Any]) -> list[dict[str, Any]]:
     assets = release.get("assets", [])
     if not isinstance(assets, list):
         raise ReleaseError("Native release metadata assets must be a list")
+    names: set[str] = set()
     for index, asset in enumerate(assets):
         if not isinstance(asset, dict):
             raise ReleaseError(
                 "Native release metadata asset list contains a non-object "
                 f"entry at index {index}"
             )
+        name = asset.get("name")
+        if not isinstance(name, str) or not name:
+            raise ReleaseError(
+                f"Native release metadata asset at index {index} has no valid name"
+            )
+        if name in names:
+            raise ReleaseError(f"Native release metadata duplicates asset {name}")
+        names.add(name)
     return assets
 
 
@@ -1197,7 +1342,7 @@ def require_github_sha256_digest(
 
 
 def release_asset_json(
-    release: dict[str, Any], asset_name: str
+    release: dict[str, Any], asset_name: str, *, repo: str = ""
 ) -> dict[str, Any]:
     asset = find_release_asset(release, asset_name)
     if asset is None:
@@ -1206,32 +1351,31 @@ def release_asset_json(
             f"Release {tag} does not contain required asset {asset_name}"
         )
 
-    fixture_json = asset.get("fixture_json")
-    if isinstance(fixture_json, dict):
+    if "fixture_json" in asset:
+        fixture_json = asset["fixture_json"]
+        if not isinstance(fixture_json, dict):
+            raise ReleaseError(f"Release manifest {asset_name} must be a JSON object")
         return fixture_json
 
     download_url = asset.get("browser_download_url")
     if not isinstance(download_url, str) or not download_url:
         raise ReleaseError(f"Asset {asset_name} has no download URL")
-    request = urllib.request.Request(download_url, headers=github_auth_header())
+    context = release_asset_context(release, asset_name, "manifest", repo=repo)
+    raw = read_release_url(
+        download_url, context=context, headers=github_auth_header()
+    )
     try:
-        with urllib.request.urlopen(request) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-    except (
-        urllib.error.HTTPError,
-        urllib.error.URLError,
-        json.JSONDecodeError,
-        UnicodeDecodeError,
-    ) as error:
-        raise ReleaseError(
-            f"Failed to read release manifest {asset_name}: {error}"
-        ) from error
+        payload = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ReleaseError(f"{context}: invalid UTF-8 or JSON") from error
     if not isinstance(payload, dict):
         raise ReleaseError(f"Release manifest {asset_name} must be a JSON object")
     return payload
 
 
-def release_asset_text(release: dict[str, Any], asset_name: str) -> str:
+def release_asset_text(
+    release: dict[str, Any], asset_name: str, *, repo: str = ""
+) -> str:
     asset = find_release_asset(release, asset_name)
     if asset is None:
         tag = release.get("tag_name", "<unknown>")
@@ -1239,21 +1383,25 @@ def release_asset_text(release: dict[str, Any], asset_name: str) -> str:
             f"Release {tag} does not contain required asset {asset_name}"
         )
 
-    fixture_text = asset.get("fixture_text")
-    if isinstance(fixture_text, str):
+    if "fixture_text" in asset:
+        fixture_text = asset["fixture_text"]
+        if not isinstance(fixture_text, str):
+            raise ReleaseError(f"Release checksum file {asset_name} must be text")
         return fixture_text
 
     download_url = asset.get("browser_download_url")
     if not isinstance(download_url, str) or not download_url:
         raise ReleaseError(f"Asset {asset_name} has no download URL")
-    request = urllib.request.Request(download_url, headers=github_auth_header())
+    context = release_asset_context(
+        release, asset_name, "checksum file", repo=repo
+    )
+    raw = read_release_url(
+        download_url, context=context, headers=github_auth_header()
+    )
     try:
-        with urllib.request.urlopen(request) as response:
-            return response.read().decode("utf-8")
-    except (urllib.error.HTTPError, urllib.error.URLError, UnicodeDecodeError) as error:
-        raise ReleaseError(
-            f"Failed to read release checksum file {asset_name}: {error}"
-        ) from error
+        return raw.decode("utf-8")
+    except UnicodeDecodeError as error:
+        raise ReleaseError(f"{context}: invalid UTF-8") from error
 
 
 def release_asset_bytes(
@@ -1269,28 +1417,19 @@ def release_asset_bytes(
         raise ReleaseError(
             f"Release {tag} does not contain required asset {asset_name}"
         )
+    context = f"Failed to read release asset {asset_name} ({repo}@{tag})"
     if release_json_dir:
         fixture = (
             Path(release_json_dir)
             / f"{repo.replace('/', '__')}__{tag}__{asset_name}"
         )
-        try:
-            return fixture.read_bytes()
-        except OSError as error:
-            raise ReleaseError(
-                f"Failed to read release asset fixture {fixture}: {error}"
-            ) from error
+        return read_release_fixture(fixture, context)
     download_url = asset.get("browser_download_url")
     if not isinstance(download_url, str) or not download_url:
         raise ReleaseError(f"Asset {asset_name} has no download URL")
-    request = urllib.request.Request(download_url, headers=github_auth_header())
-    try:
-        with urllib.request.urlopen(request) as response:
-            return response.read()
-    except (urllib.error.HTTPError, urllib.error.URLError, OSError) as error:
-        raise ReleaseError(
-            f"Failed to read release asset {asset_name}: {error}"
-        ) from error
+    return read_release_url(
+        download_url, context=context, headers=github_auth_header()
+    )
 
 
 def parse_sha256_sums(checksum_text: str, release_tag: str) -> dict[str, str]:
@@ -1314,7 +1453,10 @@ def parse_sha256_sums(checksum_text: str, release_tag: str) -> dict[str, str]:
 
 
 def validate_native_release_manifest(
-    release: dict[str, Any], release_tag: str
+    release: dict[str, Any],
+    release_tag: str,
+    *,
+    repo: str = DEFAULT_LLAMADART_NATIVE_REPO,
 ) -> None:
     release_version = parse_native_release_tag(release_tag)
     is_new_wrapper_form = bool(
@@ -1336,7 +1478,7 @@ def validate_native_release_manifest(
             "assets.json",
         )
 
-    manifest = release_asset_json(release, "assets.json")
+    manifest = release_asset_json(release, "assets.json", repo=repo)
     native_release_tag = manifest.get("native_release_tag")
     legacy_release_tag = manifest.get("tag")
     for field_name, value in (
@@ -1492,7 +1634,7 @@ def validate_native_release_manifest(
             "SHA256SUMS",
         )
         published_checksums = parse_sha256_sums(
-            release_asset_text(release, "SHA256SUMS"),
+            release_asset_text(release, "SHA256SUMS", repo=repo),
             release_tag,
         )
         for file_name, checksum in manifest_checksums.items():
@@ -1673,7 +1815,9 @@ def validate_litert_lm_release_manifest(
             f"Release {repo}@{tag} has no immutable manifest.json evidence"
         )
     manifest, manifest_digest = manifest_result
-    release_manifest_digest = release_asset_checksum(release, "manifest.json")
+    release_manifest_digest = release_asset_checksum(
+        release, "manifest.json", repo=repo
+    )
     if release_manifest_digest != manifest_digest:
         raise ReleaseError(
             "LiteRT-LM manifest bytes do not match the GitHub release digest"
@@ -2361,6 +2505,7 @@ def validate_litert_lm_release_manifest(
     validate_litert_spm_release_asset_digests(
         release,
         manifest,
+        repo=repo,
         release_tag=tag,
     )
     return manifest
@@ -2383,35 +2528,24 @@ def fetch_litert_lm_release_manifest(
     )
     if manifest_asset is None:
         return None
+    context = f"Failed to read release manifest {repo}@{tag}"
+    if release_json_dir:
+        fixture = (
+            Path(release_json_dir)
+            / f"{repo.replace('/', '__')}__{tag}__manifest.json"
+        )
+        payload = read_release_fixture(fixture, context)
+    else:
+        url = manifest_asset.get("browser_download_url")
+        if not isinstance(url, str) or not url:
+            raise ReleaseError(f"Release {repo}@{tag} manifest has no download URL")
+        payload = read_release_url(
+            url, context=context, headers=github_auth_header()
+        )
     try:
-        if release_json_dir:
-            fixture = (
-                Path(release_json_dir)
-                / f"{repo.replace('/', '__')}__{tag}__manifest.json"
-            )
-            payload = fixture.read_bytes()
-        else:
-            url = manifest_asset.get("browser_download_url")
-            if not isinstance(url, str) or not url:
-                raise ReleaseError(
-                    f"Release {repo}@{tag} manifest has no download URL"
-                )
-            request = urllib.request.Request(url, headers=github_auth_header())
-            with urllib.request.urlopen(request) as response:
-                payload = response.read()
         manifest = json.loads(payload.decode("utf-8"))
-    except ReleaseError:
-        raise
-    except (
-        OSError,
-        urllib.error.HTTPError,
-        urllib.error.URLError,
-        UnicodeDecodeError,
-        json.JSONDecodeError,
-    ) as error:
-        raise ReleaseError(
-            f"Failed to read release manifest {repo}@{tag}: {error}"
-        ) from error
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ReleaseError(f"{context}: invalid UTF-8 or JSON") from error
     if not isinstance(manifest, dict):
         raise ReleaseError(f"Release {repo}@{tag} manifest is not a JSON object")
     return manifest, hashlib.sha256(payload).hexdigest()
@@ -2442,28 +2576,16 @@ def fetch_ref_commit(
                 f"Failed to resolve exact commit for {repo}@{ref}: {error}"
             ) from error
     else:
-        url = f"https://api.github.com/repos/{repo}/commits/{ref}"
-        request = urllib.request.Request(
-            url,
-            headers={
-                "Accept": "application/vnd.github+json",
-                "X-GitHub-Api-Version": "2022-11-28",
-                **github_auth_header(),
-            },
+        context = f"Failed to resolve exact commit for {repo}@{ref}"
+        raw = read_release_url(
+            f"https://api.github.com/repos/{repo}/commits/{ref}",
+            context=context,
+            headers=github_api_headers(),
         )
         try:
-            with urllib.request.urlopen(request) as response:
-                payload = json.loads(response.read().decode("utf-8"))
-        except (
-            OSError,
-            urllib.error.HTTPError,
-            urllib.error.URLError,
-            UnicodeDecodeError,
-            json.JSONDecodeError,
-        ) as error:
-            raise ReleaseError(
-                f"Failed to resolve exact commit for {repo}@{ref}: {error}"
-            ) from error
+            payload = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise ReleaseError(f"{context}: invalid UTF-8 or JSON") from error
     if not isinstance(payload, dict):
         raise ReleaseError(f"Commit response for {repo}@{ref} must be a JSON object")
     commit = payload.get("sha")
@@ -2936,6 +3058,7 @@ def prepare_litert_lm_package_swift(
     release: dict[str, Any],
     manifest: dict[str, Any],
     resolved_tag: str,
+    repo: str = DEFAULT_LITERT_LM_NATIVE_REPO,
 ) -> str:
     original_tag = swift_variable_value(
         original_swift_text,
@@ -3010,6 +3133,7 @@ def prepare_litert_lm_package_swift(
         checksum = release_asset_checksum(
             release,
             asset_template.format(tag=resolved_tag),
+            repo=repo,
         )
         swift_text = replace_swift_binary_target_checksum(
             swift_text,
