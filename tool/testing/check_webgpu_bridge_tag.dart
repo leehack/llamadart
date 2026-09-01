@@ -11,6 +11,10 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
+import 'package:llamadart/src/hook/native_bundle_config.dart';
+
+export 'package:llamadart/src/hook/native_bundle_config.dart'
+    show normalizeNativeLlamaCppTag;
 
 /// The file whose default decides what a fresh vendoring run downloads.
 const String bridgeTagSourcePath = 'scripts/fetch_webgpu_bridge_assets.sh';
@@ -376,46 +380,6 @@ const String bridgeManifestSha256 =
 const String nativeLlamaCppTagPath = 'hook/build.dart';
 
 final RegExp _nativeLlamaCppTag = RegExp(r"const _llamaCppTag = '([^']+)';");
-
-final RegExp _stableNativeTag = RegExp(
-  r'^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$',
-);
-final RegExp _stableWrapperTag = RegExp(
-  r'^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)-([1-9]\d*)$',
-);
-final RegExp _legacyNativeTag = RegExp(r'^b(0|[1-9]\d*)$');
-final RegExp _nightlyWrapperTag = RegExp(r'^b(0|[1-9]\d*)-([1-9]\d*)$');
-final RegExp _legacyWrapperTag = RegExp(
-  r'^b(0|[1-9]\d*)-llamadart\.([1-9]\d*)$',
-);
-
-/// Normalizes a native release tag (e.g., `v0.2.0-1` or `b10514-1`) to its
-/// upstream llama.cpp release family (e.g., `v0.2.0` or `b10514`).
-///
-/// Returns null if the tag is malformed or not a recognized native release tag.
-String? normalizeNativeLlamaCppTag(String nativeTag) {
-  final stableWrapperMatch = _stableWrapperTag.firstMatch(nativeTag);
-  if (stableWrapperMatch != null) {
-    return 'v${stableWrapperMatch.group(1)}.${stableWrapperMatch.group(2)}.${stableWrapperMatch.group(3)}';
-  }
-  final stableMatch = _stableNativeTag.firstMatch(nativeTag);
-  if (stableMatch != null) {
-    return nativeTag;
-  }
-  final nightlyWrapperMatch = _nightlyWrapperTag.firstMatch(nativeTag);
-  if (nightlyWrapperMatch != null) {
-    return 'b${nightlyWrapperMatch.group(1)}';
-  }
-  final legacyWrapperMatch = _legacyWrapperTag.firstMatch(nativeTag);
-  if (legacyWrapperMatch != null) {
-    return 'b${legacyWrapperMatch.group(1)}';
-  }
-  final legacyMatch = _legacyNativeTag.firstMatch(nativeTag);
-  if (legacyMatch != null) {
-    return nativeTag;
-  }
-  return null;
-}
 
 /// Every site that names the llama.cpp build the bridge assets embed.
 ///

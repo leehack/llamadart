@@ -1,6 +1,36 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+stable_tag_pattern='^v(0|[1-9][0-9]{0,17})\.(0|[1-9][0-9]{0,17})\.(0|[1-9][0-9]{0,17})$'
+stable_wrapper_tag_pattern='^v(0|[1-9][0-9]{0,17})\.(0|[1-9][0-9]{0,17})\.(0|[1-9][0-9]{0,17})-[1-9][0-9]{0,17}$'
+nightly_tag_pattern='^b(0|[1-9][0-9]{0,17})$'
+nightly_wrapper_tag_pattern='^b(0|[1-9][0-9]{0,17})-[1-9][0-9]{0,17}$'
+legacy_wrapper_tag_pattern='^b(0|[1-9][0-9]{0,17})-llamadart\.[1-9][0-9]{0,17}$'
+
+is_supported_native_tag() {
+  [[ "$1" =~ ${stable_tag_pattern} ]] ||
+    [[ "$1" =~ ${stable_wrapper_tag_pattern} ]] ||
+    [[ "$1" =~ ${nightly_tag_pattern} ]] ||
+    [[ "$1" =~ ${nightly_wrapper_tag_pattern} ]] ||
+    [[ "$1" =~ ${legacy_wrapper_tag_pattern} ]]
+}
+
+is_latest_eligible_tag() {
+  [[ "$1" =~ ${stable_tag_pattern} ]]
+}
+
+is_stable_upstream_tag() {
+  [[ "$1" =~ ${stable_tag_pattern} || "$1" =~ ${stable_wrapper_tag_pattern} ]]
+}
+
+is_allowed_native_tag_input() {
+  [[ "$1" == "latest" ]] || is_supported_native_tag "$1"
+}
+
+if [[ "${BASH_SOURCE[0]}" != "${0}" ]]; then
+  return 0
+fi
+
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "${repo_root}"
 
@@ -55,35 +85,13 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-stable_tag_pattern='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
-stable_wrapper_tag_pattern='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-[1-9][0-9]*$'
-nightly_tag_pattern='^b(0|[1-9][0-9]*)$'
-nightly_wrapper_tag_pattern='^b(0|[1-9][0-9]*)-[1-9][0-9]*$'
-legacy_wrapper_tag_pattern='^b(0|[1-9][0-9]*)-llamadart\.[1-9][0-9]*$'
-
-is_supported_native_tag() {
-  [[ "$1" =~ ${stable_tag_pattern} ]] ||
-    [[ "$1" =~ ${stable_wrapper_tag_pattern} ]] ||
-    [[ "$1" =~ ${nightly_tag_pattern} ]] ||
-    [[ "$1" =~ ${nightly_wrapper_tag_pattern} ]] ||
-    [[ "$1" =~ ${legacy_wrapper_tag_pattern} ]]
-}
-
-is_latest_eligible_tag() {
-  [[ "$1" =~ ${stable_tag_pattern} ]]
-}
-
-is_stable_upstream_tag() {
-  [[ "$1" =~ ${stable_tag_pattern} || "$1" =~ ${stable_wrapper_tag_pattern} ]]
-}
-
-if [[ "${tag_input}" != "latest" && -n "${tag_input}" ]] &&
-  ! is_supported_native_tag "${tag_input}"; then
+if ! is_allowed_native_tag_input "${tag_input}"; then
   echo "Invalid llamadart-native tag: ${tag_input}" >&2
   echo "Expected stable vMAJOR.MINOR.PATCH, stable wrapper" \
     "vMAJOR.MINOR.PATCH-N, canonical historical/nightly bNNNN without" \
     "leading zeros, nightly wrapper" \
-    "bNNNN-N, or legacy wrapper artifact bNNNN-llamadart.N." >&2
+    "bNNNN-N, or legacy wrapper artifact bNNNN-llamadart.N; each numeric" \
+    "component may contain at most 18 digits." >&2
   exit 1
 fi
 if [[ ! "${native_repo}" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then

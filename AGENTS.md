@@ -226,7 +226,8 @@ older `prerelease=false` metadata, but remain explicit compatibility inputs;
 metadata. Build-hook overrides must always name an explicit tag; only maintainer
 synchronization and header/binding regeneration accept `latest`. Nightly cores
 use canonical decimal spelling (`b0` or a nonzero first digit), and rebuild
-counters start at 1 without leading zeros.
+counters start at 1 without leading zeros. Native tag numeric components contain
+at most 18 digits.
 New nightly wrapper rebuilds use `bNNNN-N`; existing
 `bNNNN-llamadart.N` artifacts remain explicit consumption-only compatibility
 inputs. New stable or nightly wrapper forms require manifests containing both

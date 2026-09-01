@@ -1,6 +1,7 @@
 @TestOn('vm')
 library;
 
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:test/test.dart';
@@ -36,6 +37,13 @@ Directory _fakeRepo({
       ..writeAsStringSync(entry.value);
   }
   return root;
+}
+
+void _copyNativeTagGrammarFixture(Directory root) {
+  const relativePath = 'tool/native/fixtures/native_release_tag_grammar.json';
+  final target = File('${root.path}/$relativePath');
+  target.parent.createSync(recursive: true);
+  File(relativePath).copySync(target.path);
 }
 
 List<String> _releaseWorkflowContractProblems(String workflow) {
@@ -110,11 +118,28 @@ List<String> _releaseDocsCliContractProblems(String source) {
     );
   }
 
+  final grammarDocCheck = RegExp(
+    r'checkNativeTagGrammarDocContracts\(\s*Directory\.current,\s*errors\s*\);',
+    multiLine: true,
+  ).allMatches(source).toList();
+  if (grammarDocCheck.length != 1) {
+    problems.add(
+      'expected one production native tag grammar doc contract check, found '
+      '${grammarDocCheck.length}',
+    );
+  }
+
   final errorGuard = source.indexOf('if (errors.isNotEmpty) {');
   if (staleClaimCheck.length == 1 &&
       staleClaimCheck.single.start > errorGuard) {
     problems.add(
       'the stale default-runtime check must run before success can be reported',
+    );
+  }
+  if (grammarDocCheck.length == 1 &&
+      grammarDocCheck.single.start > errorGuard) {
+    problems.add(
+      'the native tag grammar doc check must run before success can be reported',
     );
   }
   if (companionCheck.length == 1 &&
@@ -470,4 +495,77 @@ void main() {
     expect(() => checkCompanionSwiftPins(root, errors), returnsNormally);
     expect(errors, contains(contains('$path could not be read:')));
   }, skip: Platform.isWindows ? 'requires POSIX file permissions' : false);
+
+  test('checkNativeTagGrammarDocContracts passes on current repo root', () {
+    final errors = <String>[];
+    checkNativeTagGrammarDocContracts(Directory.current, errors);
+    expect(errors, isEmpty);
+  });
+
+  test(
+    'checkNativeTagGrammarDocContracts flags missing workflow description',
+    () {
+      final tempDir = Directory.systemTemp.createTempSync('doc_contract_test');
+      addTearDown(() => tempDir.deleteSync(recursive: true));
+      _copyNativeTagGrammarFixture(tempDir);
+      final errors = <String>[];
+      checkNativeTagGrammarDocContracts(tempDir, errors);
+      expect(errors, isNotEmpty);
+      expect(
+        errors,
+        contains(
+          contains('.github/workflows/sync_native_bindings.yml does not exist'),
+        ),
+      );
+    },
+  );
+
+  test(
+    'checkNativeTagGrammarDocContracts flags altered workflow description',
+    () {
+      final tempDir = Directory.systemTemp.createTempSync('doc_contract_wf');
+      addTearDown(() => tempDir.deleteSync(recursive: true));
+      _copyNativeTagGrammarFixture(tempDir);
+      File('${tempDir.path}/.github/workflows/sync_native_bindings.yml')
+        ..parent.createSync(recursive: true)
+        ..writeAsStringSync("description: 'any tag'\n");
+      final errors = <String>[];
+      checkNativeTagGrammarDocContracts(tempDir, errors);
+      expect(
+        errors,
+        contains(contains('native_tag input description does not match')),
+      );
+    },
+  );
+
+  test('workflow text under another input cannot satisfy the contract', () {
+    final tempDir = Directory.systemTemp.createTempSync('doc_contract_scope');
+    addTearDown(() => tempDir.deleteSync(recursive: true));
+    _copyNativeTagGrammarFixture(tempDir);
+    final fixture =
+        jsonDecode(
+              File(
+                '${tempDir.path}/tool/native/fixtures/'
+                'native_release_tag_grammar.json',
+              ).readAsStringSync(),
+            )
+            as Map<String, dynamic>;
+    final contract = fixture['documentation_contract'] as Map<String, dynamic>;
+    final workflow = contract['workflow'] as Map<String, dynamic>;
+    final expectedDescription = workflow['required_text'] as String;
+    File('${tempDir.path}/.github/workflows/sync_native_bindings.yml')
+      ..parent.createSync(recursive: true)
+      ..writeAsStringSync(
+        '      native_tag:\n'
+        "        description: 'any tag'\n"
+        '      litert_lm_tag:\n'
+        '        $expectedDescription\n',
+      );
+    final errors = <String>[];
+    checkNativeTagGrammarDocContracts(tempDir, errors);
+    expect(
+      errors,
+      contains(contains('native_tag input description does not match')),
+    );
+  });
 }

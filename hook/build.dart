@@ -158,10 +158,6 @@ const _dynamicLibraryExtensions = {'.so', '.dylib', '.dll'};
 final _windowsCudartPattern = RegExp(r'^cudart64(?:[_-]?\d+)?\.dll$');
 final _windowsCublasPattern = RegExp(r'^cublas64(?:[_-]?\d+)?\.dll$');
 final _linuxVersionedSoPattern = RegExp(r'\.so\.\d+$');
-final _nativeTagPattern = RegExp(
-  r'^(?:v(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-[1-9][0-9]*)?|'
-  r'b(?:0|[1-9][0-9]*)(?:-[1-9][0-9]*|-llamadart\.[1-9][0-9]*)?)$',
-);
 final _githubRepoSegmentPattern = RegExp(r'^[A-Za-z0-9_.-]+$');
 
 class _NativeBundleConfig {
@@ -1137,20 +1133,21 @@ String _resolveNativeTag(Object? rawUserConfig) {
     );
   }
 
-  final tag = rawUserConfig.trim();
+  final tag = rawUserConfig;
   if (tag.isEmpty) {
     throw FormatException(
       'hooks.user_defines.$_packageName.$nativeTagUserDefineKey must not be '
       'empty.',
     );
   }
-  if (!_nativeTagPattern.hasMatch(tag)) {
+  if (!isValidNativeReleaseTag(tag)) {
     throw FormatException(
       'hooks.user_defines.$_packageName.$nativeTagUserDefineKey must be a '
       'stable vMAJOR.MINOR.PATCH tag, stable wrapper rebuild '
       'vMAJOR.MINOR.PATCH-N, canonical historical/nightly bNNNN tag without '
       'leading zeros, nightly wrapper '
       'rebuild bNNNN-N, or legacy wrapper artifact bNNNN-llamadart.N '
+      'with numeric components of at most 18 digits '
       '(for example $_llamaCppTag).',
     );
   }

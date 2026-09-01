@@ -11,6 +11,9 @@
   `@litert-lm/core@0.15.0` packaging. Immutable manifest:
   `99fc09bb0cc23cf0eb08875a9ea973803fb1d432c5c8ca1b1211af0eb1d20b17`.
 
+* Consolidated native release tag grammar across Dart, Python, Bash, workflows,
+  and documentation via a machine-readable fixture contract (`#404`).
+
 ## 0.8.21
 
 * Aligned the default WebGPU bridge assets to `v0.1.39` (immutable manifest

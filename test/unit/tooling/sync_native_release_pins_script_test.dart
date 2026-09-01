@@ -867,22 +867,31 @@ paths=(
       'Bash header sync': await File(
         'tool/native/sync_native_headers_and_bindings.sh',
       ).readAsString(),
-      'Dart build hook': await File('hook/build.dart').readAsString(),
-      'release-doc verifier': await File(
-        'tool/testing/verify_release_docs_versions.dart',
+      'Dart native release tag': await File(
+        'lib/src/hook/native_release_tag.dart',
+      ).readAsString(),
+      'Tag grammar fixture': await File(
+        'tool/native/fixtures/native_release_tag_grammar.json',
       ).readAsString(),
     };
 
-    expect(sources['Python synchronizer'], contains(r'r"^b(0|[1-9][0-9]*)$"'));
+    expect(
+      sources['Python synchronizer'],
+      contains(r'r"^b(0|[1-9][0-9]{0,17})$"'),
+    );
     expect(
       sources['Bash header sync'],
-      contains("nightly_tag_pattern='^b(0|[1-9][0-9]*)\$'"),
+      contains("nightly_tag_pattern='^b(0|[1-9][0-9]{0,17})\$'"),
     );
-    for (final entry in sources.entries.where(
-      (entry) =>
-          entry.key.startsWith('Dart') || entry.key.startsWith('release'),
-    )) {
-      expect(entry.value, contains(r'b(?:0|[1-9][0-9]*)'), reason: entry.key);
+    expect(
+      sources['Dart native release tag'],
+      contains(r'b(?:0|[1-9][0-9]{0,17})'),
+    );
+    expect(
+      sources['Tag grammar fixture'],
+      contains(r'b(?:0|[1-9][0-9]{0,17})'),
+    );
+    for (final entry in sources.entries) {
       expect(entry.value, isNot(contains(r'b[0-9]+')), reason: entry.key);
     }
   });
@@ -923,21 +932,32 @@ paths=(
     addTearDown(() => setup.root.delete(recursive: true));
 
     for (final tag in const [
+      '../bad',
+      '../v0.2.0',
+      '/v0.2.0',
+      ' v0.2.0',
+      'v0.2.0 ',
+      '1.2.3',
       'v1.2',
       'v01.2.3',
+      'v0.2.0-0',
+      'v0.2.0-01',
+      'v0.2.0-beta',
+      'v0.2.0-custom.1',
+      'v0.2.0-llamadart.1',
+      'b',
       'b00',
       'b0000',
       'b0001',
       'b0001-1',
       'b0001-llamadart.1',
+      'b1-0',
       'b1-01',
+      'b1-llamadart.0',
       'b1-llamadart.01',
-      'b10514-custom',
       'b10514-0',
-      'v0.2.0-0',
-      'v0.2.0-llamadart.1',
-      'v0.2.0-custom.1',
-      '../v0.2.0',
+      'b10514-custom',
+      'b9999999999999999999',
       r'b1; touch "$RUNNER_TEMP/llamadart-pwned"',
       r'b1$(touch "$RUNNER_TEMP/llamadart-pwned")',
     ]) {
@@ -955,15 +975,34 @@ paths=(
     'header sync rejects invalid native tags before network lookup',
     () async {
       for (final tag in const [
+        '../bad',
+        '../v0.2.0',
+        '/v0.2.0',
+        ' v0.2.0',
+        'v0.2.0 ',
+        '1.2.3',
         'v1.2',
+        'v01.2.3',
+        'v0.2.0-0',
+        'v0.2.0-01',
+        'v0.2.0-beta',
+        'v0.2.0-custom.1',
+        'v0.2.0-llamadart.1',
+        'b',
+        'b00',
         'b0000',
+        'b0001',
         'b0001-1',
         'b0001-llamadart.1',
+        'b1-0',
         'b1-01',
+        'b1-llamadart.0',
         'b1-llamadart.01',
         'b10514-0',
-        'v0.2.0-llamadart.1',
+        'b10514-custom',
+        'b9999999999999999999',
         r'b1; touch "$RUNNER_TEMP/llamadart-pwned"',
+        r'b1$(touch "$RUNNER_TEMP/llamadart-pwned")',
       ]) {
         final result = await Process.run('bash', [
           'tool/native/sync_native_headers_and_bindings.sh',

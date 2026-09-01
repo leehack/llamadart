@@ -1931,5 +1931,75 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
                     required_bundles=["linux-x64"],
                 )
 
+
+class NativeReleaseTagGrammarCorpusTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        fixture_path = (
+            Path(__file__).resolve().parent
+            / "fixtures"
+            / "native_release_tag_grammar.json"
+        )
+        cls.fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+
+    def test_patterns_match_fixture(self) -> None:
+        patterns = self.fixture["patterns"]
+        self.assertEqual(
+            pins._STABLE_NATIVE_TAG_PATTERN.pattern, patterns["stable_pattern"]
+        )
+        self.assertEqual(
+            pins._STABLE_WRAPPER_TAG_PATTERN.pattern,
+            patterns["stable_wrapper_pattern"],
+        )
+        self.assertEqual(
+            pins._LEGACY_NATIVE_TAG_PATTERN.pattern, patterns["nightly_pattern"]
+        )
+        self.assertEqual(
+            pins._NIGHTLY_WRAPPER_TAG_PATTERN.pattern,
+            patterns["nightly_wrapper_pattern"],
+        )
+        self.assertEqual(
+            pins._LEGACY_WRAPPER_TAG_PATTERN.pattern,
+            patterns["legacy_wrapper_pattern"],
+        )
+        self.assertEqual(pins._NATIVE_DOC_TAG_PATTERN, patterns["doc_tag_pattern"])
+
+    def test_positive_tag_corpus(self) -> None:
+        for case in self.fixture["positive_cases"]:
+            tag = case["tag"]
+            with self.subTest(tag=tag):
+                parsed = pins.parse_native_release_tag(tag)
+                self.assertEqual(parsed.channel, case["channel"])
+                self.assertEqual(list(parsed.version), case["version"])
+                self.assertEqual(parsed.wrapper_revision, case["wrapper_revision"])
+                self.assertEqual(parsed.upstream_tag, case["upstream_tag"])
+                self.assertEqual(pins.normalize_release_tag(tag), tag)
+                self.assertEqual(
+                    bool(pins._STABLE_NATIVE_TAG_PATTERN.fullmatch(tag)),
+                    case["is_latest_eligible"],
+                )
+
+    def test_reserved_inputs_follow_consumer_policy(self) -> None:
+        for case in self.fixture["reserved_inputs"]:
+            value = case["value"]
+            with self.subTest(value=value):
+                if case["python_sync"]:
+                    self.assertEqual(pins.normalize_release_tag(value), value)
+                else:
+                    with self.assertRaises(ReleaseError):
+                        pins.normalize_release_tag(value)
+                with self.assertRaises(ReleaseError):
+                    pins.parse_native_release_tag(value)
+
+    def test_negative_tag_corpus(self) -> None:
+        for case in self.fixture["negative_cases"]:
+            tag = case["tag"]
+            reason = case["reason"]
+            with self.subTest(tag=tag, reason=reason):
+                with self.assertRaises(ReleaseError):
+                    pins.parse_native_release_tag(tag)
+                with self.assertRaises(ReleaseError):
+                    pins.normalize_release_tag(tag)
+
 if __name__ == "__main__":
     unittest.main()

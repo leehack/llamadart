@@ -23,6 +23,8 @@ library;
 import 'package:code_assets/code_assets.dart';
 import 'package:path/path.dart' as path;
 
+export 'native_release_tag.dart';
+
 /// User-define key selecting which llama.cpp backend modules to bundle (`cpu`,
 /// `vulkan`, `cuda`, `blas`, `opencl`, `hip`); also carries the Android arm64
 /// `cpu_profile`/`cpu_variants` policy. [parseRequestedBackends] decodes the

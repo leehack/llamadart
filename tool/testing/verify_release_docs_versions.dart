@@ -1,6 +1,9 @@
 #!/usr/bin/env dart
 
+import 'dart:convert';
 import 'dart:io';
+
+import 'package:llamadart/src/hook/native_bundle_config.dart';
 
 // Keep these maps in sync when adding companion packages or moving the current
 // installation docs. Historical website/versioned_docs pages are intentionally
@@ -376,11 +379,6 @@ final RegExp _dependencyLine = RegExp(
 );
 final RegExp _fenceLine = RegExp(r'^\s*```\s*([^\s`]*)?\s*$');
 final RegExp _versionLine = RegExp(r'^version:\s*(\S+)\s*$');
-final RegExp _nativeReleaseTag = RegExp(
-  r'^(?:v(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)(?:-[1-9][0-9]*)?|'
-  r'b(?:0|[1-9][0-9]*)(?:-[1-9][0-9]*|-llamadart\.[1-9][0-9]*)?)$',
-);
-
 void main(List<String> arguments) {
   final releasePrep = arguments.contains('--release-prep');
   final unknown = arguments.where((argument) => argument != '--release-prep');
@@ -424,6 +422,7 @@ void main(List<String> arguments) {
         }
       }
     }
+    checkNativeTagGrammarDocContracts(Directory.current, errors);
     pending = checkCompanionSwiftPins(Directory.current, errors);
     if (releasePrep) {
       errors.addAll(pending.map((bump) => bump.toString()));
@@ -472,13 +471,14 @@ String? _checkCurrentNativePins(List<String> errors) {
       continue;
     }
     final pin = match.group(1)!;
-    if (!_nativeReleaseTag.hasMatch(pin)) {
+    if (!isValidNativeReleaseTag(pin)) {
       errors.add(
         '${entry.key} uses unsupported native tag $pin; expected stable '
         'vMAJOR.MINOR.PATCH, stable wrapper rebuild '
         'vMAJOR.MINOR.PATCH-N, canonical historical/nightly bNNNN without '
         'leading zeros, nightly wrapper '
-        'rebuild bNNNN-N, or legacy wrapper artifact bNNNN-llamadart.N.',
+        'rebuild bNNNN-N, or legacy wrapper artifact bNNNN-llamadart.N; '
+        'numeric components may contain at most 18 digits.',
       );
       continue;
     }
@@ -598,3 +598,115 @@ List<String>? _readLines(String path, List<String> errors) {
 }
 
 String packagePubspecPath(String package) => _packagePubspecs[package]!;
+
+void checkNativeTagGrammarDocContracts(
+  Directory repoRoot,
+  List<String> errors,
+) {
+  const fixturePath = 'tool/native/fixtures/native_release_tag_grammar.json';
+  final fixtureFile = File('${repoRoot.path}/$fixturePath');
+  if (!fixtureFile.existsSync()) {
+    errors.add('$fixturePath does not exist.');
+    return;
+  }
+
+  late final Object? decoded;
+  try {
+    decoded = jsonDecode(fixtureFile.readAsStringSync());
+  } on FileSystemException catch (error) {
+    errors.add('Could not read $fixturePath: ${error.message}.');
+    return;
+  } on FormatException catch (error) {
+    errors.add('$fixturePath is not valid JSON: ${error.message}.');
+    return;
+  }
+  if (decoded is! Map<String, dynamic>) {
+    errors.add('$fixturePath must contain a JSON object.');
+    return;
+  }
+  final contract = decoded['documentation_contract'];
+  if (contract is! Map<String, dynamic>) {
+    errors.add('$fixturePath has no documentation_contract object.');
+    return;
+  }
+  final workflow = contract['workflow'];
+  if (workflow is! Map<String, dynamic> ||
+      workflow['path'] is! String ||
+      workflow['input'] is! String ||
+      workflow['required_text'] is! String) {
+    errors.add('$fixturePath has an invalid workflow documentation contract.');
+    return;
+  }
+  final workflowPath = workflow['path'] as String;
+  final workflowInput = workflow['input'] as String;
+  final expectedDescription = workflow['required_text'] as String;
+  final workflowLines = _readLinesFromRoot(repoRoot, workflowPath, errors);
+  if (workflowLines != null) {
+    final inputLine = '      $workflowInput:';
+    final inputStart = workflowLines.indexOf(inputLine);
+    final nextInput = inputStart < 0
+        ? -1
+        : workflowLines.indexWhere(
+            (line) => RegExp(r'^      [a-zA-Z0-9_]+:$').hasMatch(line),
+            inputStart + 1,
+          );
+    final inputEnd = nextInput < 0 ? workflowLines.length : nextInput;
+    final inputBlock = inputStart < 0
+        ? const <String>[]
+        : workflowLines.sublist(inputStart + 1, inputEnd);
+    if (!inputBlock.contains('        $expectedDescription')) {
+      errors.add(
+        '$workflowPath $workflowInput input description does not match the '
+        'canonical native tag grammar contract.',
+      );
+    }
+  }
+
+  final docs = contract['docs'];
+  if (docs is! Map<String, dynamic>) {
+    errors.add('$fixturePath has no documentation_contract.docs object.');
+    return;
+  }
+  for (final entry in docs.entries) {
+    final rawRequirements = entry.value;
+    if (rawRequirements is! List<dynamic> ||
+        rawRequirements.any((value) => value is! String)) {
+      errors.add('$fixturePath has invalid doc requirements for ${entry.key}.');
+      continue;
+    }
+    final lines = _readLinesFromRoot(repoRoot, entry.key, errors);
+    if (lines == null) continue;
+    final normalized = lines.join(' ').replaceAll(RegExp(r'\s+'), ' ');
+    for (final requirement in rawRequirements.cast<String>()) {
+      final normalizedRequirement = requirement.replaceAll(RegExp(r'\s+'), ' ');
+      if (!normalized.contains(normalizedRequirement)) {
+        errors.add(
+          '${entry.key} is missing native release tag contract requirement: '
+          '"$requirement".',
+        );
+      }
+    }
+  }
+}
+
+List<String>? _readLinesFromRoot(
+  Directory repoRoot,
+  String relativePath,
+  List<String> errors,
+) {
+  final file = File('${repoRoot.path}/$relativePath');
+  if (!file.existsSync()) {
+    errors.add('$relativePath does not exist.');
+    return null;
+  }
+
+  try {
+    return file.readAsLinesSync();
+  } on FileSystemException catch (error) {
+    errors.add('Could not read $relativePath: ${error.message}.');
+    return null;
+  } on FormatException catch (error) {
+    errors.add('$relativePath is not valid UTF-8 text: ${error.message}.');
+    return null;
+  }
+}

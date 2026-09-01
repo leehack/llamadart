@@ -499,5 +499,103 @@ exit 0
         self._assert_previous_root(live)
 
 
+class NativeReleaseTagGrammarBashIntegrationTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        fixture_path = (
+            Path(__file__).resolve().parent
+            / "fixtures"
+            / "native_release_tag_grammar.json"
+        )
+        cls.fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+
+    def _eval_bash_fn(self, fn_name: str, tag: str) -> bool:
+        if "\x00" in tag:
+            return False
+        cmd = [
+            "bash",
+            "-c",
+            f'source "{SCRIPT_PATH}"; {fn_name} "$1"',
+            "_",
+            tag,
+        ]
+        proc = subprocess.run(cmd, capture_output=True, text=True)
+        return proc.returncode == 0
+
+    def test_positive_tag_corpus_in_bash(self) -> None:
+        for case in self.fixture["positive_cases"]:
+            tag = case["tag"]
+            with self.subTest(tag=tag):
+                self.assertTrue(
+                    self._eval_bash_fn("is_supported_native_tag", tag),
+                    msg=f"is_supported_native_tag failed for {tag}",
+                )
+                self.assertEqual(
+                    self._eval_bash_fn("is_latest_eligible_tag", tag),
+                    case["is_latest_eligible"],
+                    msg=f"is_latest_eligible_tag mismatch for {tag}",
+                )
+                self.assertEqual(
+                    self._eval_bash_fn("is_stable_upstream_tag", tag),
+                    case["is_stable_upstream"],
+                    msg=f"is_stable_upstream_tag mismatch for {tag}",
+                )
+
+    def test_negative_tag_corpus_in_bash(self) -> None:
+        for case in self.fixture["negative_cases"]:
+            tag = case["tag"]
+            reason = case["reason"]
+            with self.subTest(tag=tag, reason=reason):
+                self.assertFalse(
+                    self._eval_bash_fn("is_supported_native_tag", tag),
+                    msg=f"is_supported_native_tag should reject {tag} ({reason})",
+                )
+                self.assertFalse(
+                    self._eval_bash_fn("is_latest_eligible_tag", tag),
+                    msg=f"is_latest_eligible_tag should reject {tag} ({reason})",
+                )
+                self.assertFalse(
+                    self._eval_bash_fn("is_stable_upstream_tag", tag),
+                    msg=f"is_stable_upstream_tag should reject {tag} ({reason})",
+                )
+
+    def test_reserved_inputs_follow_consumer_policy(self) -> None:
+        for case in self.fixture["reserved_inputs"]:
+            value = case["value"]
+            with self.subTest(value=value):
+                self.assertEqual(
+                    self._eval_bash_fn("is_allowed_native_tag_input", value),
+                    case["bash_header_sync"],
+                )
+                self.assertFalse(self._eval_bash_fn("is_supported_native_tag", value))
+
+    def test_cli_rejects_negative_corpus_before_network(self) -> None:
+        for case in self.fixture["negative_cases"]:
+            tag = case["tag"]
+            reason = case["reason"]
+            with self.subTest(tag=tag, reason=reason):
+                if "\x00" in tag:
+                    with self.assertRaises(ValueError):
+                        subprocess.run(
+                            [str(SCRIPT_PATH), "--tag", tag, "--skip-ffigen"],
+                            capture_output=True,
+                            text=True,
+                        )
+                    continue
+                proc = subprocess.run(
+                    [str(SCRIPT_PATH), "--tag", tag, "--skip-ffigen"],
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertNotEqual(
+                    proc.returncode, 0, msg=f"CLI accepted invalid tag: {tag} ({reason})"
+                )
+                self.assertIn(
+                    "Invalid llamadart-native tag",
+                    proc.stderr,
+                    msg=f"CLI did not output expected error for {tag}",
+                )
+
+
 if __name__ == "__main__":
     unittest.main()
