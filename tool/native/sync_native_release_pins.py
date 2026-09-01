@@ -1148,9 +1148,6 @@ def sha256_url(url: str, *, context: str) -> str:
 
 
 def normalize_release_tag(tag: str) -> str:
-    tag = tag.strip()
-    if not tag:
-        return "keep"
     if tag not in {"keep", "latest"}:
         parse_native_release_tag(tag)
     return tag

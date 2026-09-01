@@ -1931,5 +1931,123 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
                     required_bundles=["linux-x64"],
                 )
 
+
+class NativeReleaseTagGrammarCorpusTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        fixture_path = (
+            Path(__file__).resolve().parent
+            / "fixtures"
+            / "native_release_tag_grammar.json"
+        )
+        cls.fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+        cls.forms = cls.fixture["forms"]
+
+    def test_patterns_match_fixture(self) -> None:
+        patterns = self.fixture["patterns"]
+        self.assertEqual(
+            pins._STABLE_NATIVE_TAG_PATTERN.pattern, patterns["stable_pattern"]
+        )
+        self.assertEqual(
+            pins._STABLE_WRAPPER_TAG_PATTERN.pattern,
+            patterns["stable_wrapper_pattern"],
+        )
+        self.assertEqual(
+            pins._LEGACY_NATIVE_TAG_PATTERN.pattern, patterns["nightly_pattern"]
+        )
+        self.assertEqual(
+            pins._NIGHTLY_WRAPPER_TAG_PATTERN.pattern,
+            patterns["nightly_wrapper_pattern"],
+        )
+        self.assertEqual(
+            pins._LEGACY_WRAPPER_TAG_PATTERN.pattern,
+            patterns["legacy_wrapper_pattern"],
+        )
+        self.assertEqual(pins._NATIVE_DOC_TAG_PATTERN, patterns["doc_tag_pattern"])
+
+    def test_positive_tag_corpus(self) -> None:
+        for case in self.fixture["positive_cases"]:
+            tag = case["tag"]
+            form = self.forms[case["form"]]
+            with self.subTest(tag=tag):
+                parsed = pins.parse_native_release_tag(tag)
+                self.assertEqual(parsed.channel, form["channel"])
+                self.assertEqual(list(parsed.version), case["version"])
+                self.assertEqual(parsed.wrapper_revision, case["wrapper_revision"])
+                self.assertEqual(parsed.wrapper_revision > 0, form["is_wrapper"])
+                self.assertEqual(parsed.channel == "nightly", form["is_legacy"])
+                self.assertEqual(parsed.upstream_tag, case["upstream_tag"])
+                self.assertTrue(tag.startswith(parsed.upstream_tag))
+                self.assertEqual(pins.normalize_release_tag(tag), tag)
+                is_stable_upstream = bool(
+                    pins._STABLE_NATIVE_TAG_PATTERN.fullmatch(tag)
+                    or pins._STABLE_WRAPPER_TAG_PATTERN.fullmatch(tag)
+                )
+                self.assertEqual(is_stable_upstream, form["is_stable_upstream"])
+
+    def test_latest_discovery_accepts_only_unsuffixed_stable(self) -> None:
+        for case in self.fixture["positive_cases"]:
+            tag = case["tag"]
+            form = self.forms[case["form"]]
+            def resolve_latest() -> str:
+                return pins.validate_resolved_native_release(
+                    {"tag_name": tag},
+                    requested_tag="latest",
+                    current_tag=tag,
+                    allow_legacy_tag=False,
+                )
+
+            with self.subTest(tag=tag):
+                if form["is_latest_eligible"]:
+                    self.assertEqual(resolve_latest(), tag)
+                else:
+                    with self.assertRaisesRegex(ReleaseError, "Automatic discovery"):
+                        resolve_latest()
+
+    def test_transitions_enforce_channel_and_rollback_policy(self) -> None:
+        def transition(current: str, target: str) -> None:
+            pins.validate_native_release_transition(
+                current, target, allow_legacy_tag=False
+            )
+
+        transition("v0.2.0", "v0.3.0")
+        transition("v0.2.0", "v0.2.0-1")
+        transition("b10514", "v0.3.0")
+        transition("b10514-llamadart.1", "b10514-2")
+        with self.assertRaisesRegex(ReleaseError, "rollback"):
+            transition("v0.3.0", "v0.2.0")
+        with self.assertRaisesRegex(ReleaseError, "rollback"):
+            transition("v0.2.0-2", "v0.2.0-1")
+        with self.assertRaisesRegex(ReleaseError, "equivalent native release"):
+            transition("b10514-llamadart.1", "b10514-1")
+        with self.assertRaisesRegex(ReleaseError, "stable-to-historical/nightly"):
+            transition("v0.3.0", "b10514")
+        pins.validate_native_release_transition(
+            "v0.3.0", "b10514", allow_legacy_tag=True
+        )
+
+    def test_reserved_inputs_follow_consumer_policy(self) -> None:
+        for case in self.fixture["reserved_inputs"]:
+            value = case["value"]
+            with self.subTest(value=value):
+                if case["python_sync"]:
+                    self.assertEqual(pins.normalize_release_tag(value), value)
+                else:
+                    with self.assertRaises(ReleaseError):
+                        pins.normalize_release_tag(value)
+                with self.assertRaises(ReleaseError):
+                    pins.parse_native_release_tag(value)
+
+    def test_negative_tag_corpus(self) -> None:
+        for case in self.fixture["negative_cases"]:
+            tag = case["tag"]
+            reason = case["reason"]
+            with self.subTest(tag=tag, reason=reason):
+                with self.assertRaises(ReleaseError):
+                    pins.parse_native_release_tag(tag)
+                with self.assertRaises(ReleaseError):
+                    pins.normalize_release_tag(tag)
+
+
 if __name__ == "__main__":
     unittest.main()
