@@ -609,19 +609,30 @@ void checkNativeTagGrammarDocContracts(
   final fixture = _readFromRoot(repoRoot, fixturePath, errors);
   if (fixture == null) return;
 
-  final Map<String, dynamic> contract;
+  final Map<String, dynamic> workflow;
+  final String workflowPath;
+  final String workflowInput;
+  final String workflowRequiredText;
+  final Map<String, List<String>> docs;
   try {
-    contract =
+    final contract =
         (jsonDecode(fixture) as Map<String, dynamic>)['documentation_contract']
             as Map<String, dynamic>;
+    workflow = contract['workflow'] as Map<String, dynamic>;
+    workflowPath = workflow['path'] as String;
+    workflowInput = workflow['input'] as String;
+    workflowRequiredText = workflow['required_text'] as String;
+    docs = <String, List<String>>{
+      for (final entry in (contract['docs'] as Map<String, dynamic>).entries)
+        entry.key: (entry.value as List<dynamic>).cast<String>().toList(
+          growable: false,
+        ),
+    };
   } on Object catch (error) {
     errors.add('$fixturePath has no usable documentation_contract: $error.');
     return;
   }
 
-  final workflow = contract['workflow'] as Map<String, dynamic>;
-  final workflowPath = workflow['path'] as String;
-  final workflowInput = workflow['input'] as String;
   final workflowText = _readFromRoot(repoRoot, workflowPath, errors);
   if (workflowText != null) {
     final normalizedWorkflow = workflowText.replaceAll('\r\n', '\n');
@@ -630,7 +641,7 @@ void checkNativeTagGrammarDocContracts(
     final scopedDescription = RegExp(
       '^ {6}${RegExp.escape(workflowInput)}:\$\n'
       '(?: {8}.*\$\n)*?'
-      ' {8}${RegExp.escape(workflow['required_text'] as String)}\$\n',
+      ' {8}${RegExp.escape(workflowRequiredText)}\$\n',
       multiLine: true,
     );
     if (!scopedDescription.hasMatch(normalizedWorkflow)) {
@@ -642,11 +653,11 @@ void checkNativeTagGrammarDocContracts(
   }
 
   final whitespace = RegExp(r'\s+');
-  for (final entry in (contract['docs'] as Map<String, dynamic>).entries) {
+  for (final entry in docs.entries) {
     final text = _readFromRoot(repoRoot, entry.key, errors);
     if (text == null) continue;
     final normalized = text.replaceAll(whitespace, ' ');
-    for (final requirement in (entry.value as List<dynamic>).cast<String>()) {
+    for (final requirement in entry.value) {
       if (!normalized.contains(requirement.replaceAll(whitespace, ' '))) {
         errors.add(
           '${entry.key} is missing native release tag contract requirement: '

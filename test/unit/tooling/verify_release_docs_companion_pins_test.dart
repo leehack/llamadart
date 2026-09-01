@@ -538,6 +538,31 @@ void main() {
     },
   );
 
+  test('malformed nested documentation contract is reported', () {
+    final tempDir = Directory.systemTemp.createTempSync('doc_contract_bad');
+    addTearDown(() => tempDir.deleteSync(recursive: true));
+    final fixture = File(
+      '${tempDir.path}/tool/native/fixtures/'
+      'native_release_tag_grammar.json',
+    );
+    fixture.parent.createSync(recursive: true);
+    fixture.writeAsStringSync(
+      jsonEncode({
+        'documentation_contract': {
+          'workflow': <Object>[],
+          'docs': <String, Object>{},
+        },
+      }),
+    );
+
+    final errors = <String>[];
+    expect(
+      () => checkNativeTagGrammarDocContracts(tempDir, errors),
+      returnsNormally,
+    );
+    expect(errors, contains(contains('has no usable documentation_contract')));
+  });
+
   test('workflow text under another input cannot satisfy the contract', () {
     final tempDir = Directory.systemTemp.createTempSync('doc_contract_scope');
     addTearDown(() => tempDir.deleteSync(recursive: true));
