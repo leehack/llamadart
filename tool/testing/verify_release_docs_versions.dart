@@ -624,6 +624,7 @@ void checkNativeTagGrammarDocContracts(
   final workflowInput = workflow['input'] as String;
   final workflowText = _readFromRoot(repoRoot, workflowPath, errors);
   if (workflowText != null) {
+    final normalizedWorkflow = workflowText.replaceAll('\r\n', '\n');
     // Only the 8-space body lines of the input may satisfy the contract, so a
     // matching description under a different input cannot stand in for it.
     final scopedDescription = RegExp(
@@ -632,7 +633,7 @@ void checkNativeTagGrammarDocContracts(
       ' {8}${RegExp.escape(workflow['required_text'] as String)}\$\n',
       multiLine: true,
     );
-    if (!scopedDescription.hasMatch(workflowText)) {
+    if (!scopedDescription.hasMatch(normalizedWorkflow)) {
       errors.add(
         '$workflowPath $workflowInput input description does not match the '
         'canonical native tag grammar contract.',

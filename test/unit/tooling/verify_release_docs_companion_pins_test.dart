@@ -568,4 +568,33 @@ void main() {
       contains(contains('native_tag input description does not match')),
     );
   });
+
+  test('workflow contract accepts Windows line endings', () {
+    final tempDir = Directory.systemTemp.createTempSync('doc_contract_crlf');
+    addTearDown(() => tempDir.deleteSync(recursive: true));
+    _copyNativeTagGrammarFixture(tempDir);
+    final fixture =
+        jsonDecode(
+              File(
+                '${tempDir.path}/tool/native/fixtures/'
+                'native_release_tag_grammar.json',
+              ).readAsStringSync(),
+            )
+            as Map<String, dynamic>;
+    final contract = fixture['documentation_contract'] as Map<String, dynamic>;
+    final workflow = contract['workflow'] as Map<String, dynamic>;
+    final expectedDescription = workflow['required_text'] as String;
+    File('${tempDir.path}/.github/workflows/sync_native_bindings.yml')
+      ..parent.createSync(recursive: true)
+      ..writeAsStringSync(
+        '      native_tag:\r\n'
+        '        $expectedDescription\r\n',
+      );
+    final errors = <String>[];
+    checkNativeTagGrammarDocContracts(tempDir, errors);
+    expect(
+      errors,
+      isNot(contains(contains('native_tag input description does not match'))),
+    );
+  });
 }
