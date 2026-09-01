@@ -162,8 +162,7 @@ explicit tag; `latest` is limited to maintainer synchronization and
 header/binding regeneration, where it accepts only an unsuffixed stable tag
 regardless of GitHub metadata. Nightly cores use canonical decimal spelling
 (`b0` or a nonzero first digit), and rebuild counters start at 1 without leading
-zeros. Every numeric component is limited to at most 18 digits. The default pin
-above changes only after the matching artifacts,
+zeros. The default pin above changes only after the matching artifacts,
 bindings, runtime behavior, and docs have been validated together.
 
 ## Common Tasks

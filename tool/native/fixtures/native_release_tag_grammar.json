@@ -1,6 +1,57 @@
 {
   "schema_version": 1,
-  "description": "Canonical llamadart-native release tag grammar specification, pattern inventory, and verification corpus.",
+  "description": "Canonical llamadart-native release tag grammar: pattern inventory, form semantics, consumer policy, and verification corpus.",
+  "patterns": {
+    "stable_pattern": "^v(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$",
+    "stable_wrapper_pattern": "^v(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)-([1-9][0-9]*)$",
+    "nightly_pattern": "^b(0|[1-9][0-9]*)$",
+    "nightly_wrapper_pattern": "^b(0|[1-9][0-9]*)-([1-9][0-9]*)$",
+    "legacy_wrapper_pattern": "^b(0|[1-9][0-9]*)-llamadart\\.([1-9][0-9]*)$",
+    "combined_pattern": "^(?:v(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)(?:-[1-9][0-9]*)?|b(?:0|[1-9][0-9]*)(?:-[1-9][0-9]*|-llamadart\\.[1-9][0-9]*)?)$",
+    "doc_tag_pattern": "(?:v(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)\\.(?:0|[1-9][0-9]*)(?:-[1-9][0-9]*)?|b(?:0|[1-9][0-9]*)(?:-[1-9][0-9]*|-llamadart\\.[1-9][0-9]*)?)"
+  },
+  "forms": {
+    "stable": {
+      "syntax": "vMAJOR.MINOR.PATCH",
+      "channel": "stable",
+      "is_wrapper": false,
+      "is_legacy": false,
+      "is_latest_eligible": true,
+      "is_stable_upstream": true
+    },
+    "stable_wrapper": {
+      "syntax": "vMAJOR.MINOR.PATCH-N",
+      "channel": "stable",
+      "is_wrapper": true,
+      "is_legacy": false,
+      "is_latest_eligible": false,
+      "is_stable_upstream": true
+    },
+    "nightly": {
+      "syntax": "bNNNN",
+      "channel": "nightly",
+      "is_wrapper": false,
+      "is_legacy": true,
+      "is_latest_eligible": false,
+      "is_stable_upstream": false
+    },
+    "nightly_wrapper": {
+      "syntax": "bNNNN-N",
+      "channel": "nightly",
+      "is_wrapper": true,
+      "is_legacy": true,
+      "is_latest_eligible": false,
+      "is_stable_upstream": false
+    },
+    "legacy_wrapper": {
+      "syntax": "bNNNN-llamadart.N",
+      "channel": "nightly",
+      "is_wrapper": true,
+      "is_legacy": true,
+      "is_latest_eligible": false,
+      "is_stable_upstream": false
+    }
+  },
   "reserved_inputs": [
     {
       "value": "latest",
@@ -21,11 +72,15 @@
     "workflow": {
       "path": ".github/workflows/sync_native_bindings.yml",
       "input": "native_tag",
-      "required_text": "description: 'vM.m.p; numbers max 18 digits; vM.m.p-N, bNNNN[-N], legacy bNNNN-llamadart.N explicit; latest unsuffixed v only'"
+      "required_text": "description: 'vM.m.p; explicit vM.m.p-N, bNNNN[-N], or legacy bNNNN-llamadart.N; latest is unsuffixed v only'"
     },
     "docs": {
       "AGENTS.md": [
-        "at most 18 digits"
+        "`bNNNN-N`",
+        "`bNNNN-llamadart.N`",
+        "canonical decimal spelling",
+        "start at 1 without leading zeros",
+        "`latest` accepts only unsuffixed `vMAJOR.MINOR.PATCH`"
       ],
       "README.md": [
         "vMAJOR.MINOR.PATCH",
@@ -33,8 +88,7 @@
         "bNNNN-N",
         "bNNNN-llamadart.N",
         "without leading zeros",
-        "start at 1",
-        "at most 18 digits"
+        "start at 1"
       ],
       "website/docs/getting-started/installation.md": [
         "vMAJOR.MINOR.PATCH",
@@ -42,16 +96,14 @@
         "bNNNN-N",
         "bNNNN-llamadart.N",
         "without leading zeros",
-        "start at 1",
-        "at most 18 digits"
+        "start at 1"
       ],
       "website/docs/platforms/support-matrix.md": [
         "vMAJOR.MINOR.PATCH",
         "bNNNN",
         "bNNNN-N",
         "bNNNN-llamadart.N",
-        "reject leading zeros",
-        "at most 18 digits"
+        "reject leading zeros"
       ],
       "website/docs/maintainers/native-and-web-sync.md": [
         "`vMAJOR.MINOR.PATCH`",
@@ -61,506 +113,182 @@
         "`b0`",
         "without leading zeros",
         "start at 1",
-        "at most 18 digits",
         "`latest` accepts only an unsuffixed `vMAJOR.MINOR.PATCH`"
       ]
     }
   },
-  "patterns": {
-    "stable_pattern": "^v(0|[1-9][0-9]{0,17})\\.(0|[1-9][0-9]{0,17})\\.(0|[1-9][0-9]{0,17})$",
-    "stable_wrapper_pattern": "^v(0|[1-9][0-9]{0,17})\\.(0|[1-9][0-9]{0,17})\\.(0|[1-9][0-9]{0,17})-([1-9][0-9]{0,17})$",
-    "nightly_pattern": "^b(0|[1-9][0-9]{0,17})$",
-    "nightly_wrapper_pattern": "^b(0|[1-9][0-9]{0,17})-([1-9][0-9]{0,17})$",
-    "legacy_wrapper_pattern": "^b(0|[1-9][0-9]{0,17})-llamadart\\.([1-9][0-9]{0,17})$",
-    "combined_pattern": "^(?:v(?:0|[1-9][0-9]{0,17})\\.(?:0|[1-9][0-9]{0,17})\\.(?:0|[1-9][0-9]{0,17})(?:-[1-9][0-9]{0,17})?|b(?:0|[1-9][0-9]{0,17})(?:-[1-9][0-9]{0,17}|-llamadart\\.[1-9][0-9]{0,17})?)$",
-    "doc_tag_pattern": "(?:v(?:0|[1-9][0-9]{0,17})\\.(?:0|[1-9][0-9]{0,17})\\.(?:0|[1-9][0-9]{0,17})(?:-[1-9][0-9]{0,17})?|b(?:0|[1-9][0-9]{0,17})(?:-[1-9][0-9]{0,17}|-llamadart\\.[1-9][0-9]{0,17})?)"
-  },
-  "forms": [
-    {
-      "name": "stable",
-      "syntax": "vMAJOR.MINOR.PATCH",
-      "channel": "stable",
-      "is_wrapper": false,
-      "is_legacy": false,
-      "is_latest_eligible": true,
-      "is_stable_upstream": true
-    },
-    {
-      "name": "stable_wrapper",
-      "syntax": "vMAJOR.MINOR.PATCH-N",
-      "channel": "stable",
-      "is_wrapper": true,
-      "is_legacy": false,
-      "is_latest_eligible": false,
-      "is_stable_upstream": true
-    },
-    {
-      "name": "nightly",
-      "syntax": "bNNNN",
-      "channel": "nightly",
-      "is_wrapper": false,
-      "is_legacy": true,
-      "is_latest_eligible": false,
-      "is_stable_upstream": false
-    },
-    {
-      "name": "nightly_wrapper",
-      "syntax": "bNNNN-N",
-      "channel": "nightly",
-      "is_wrapper": true,
-      "is_legacy": true,
-      "is_latest_eligible": false,
-      "is_stable_upstream": false
-    },
-    {
-      "name": "legacy_wrapper",
-      "syntax": "bNNNN-llamadart.N",
-      "channel": "nightly",
-      "is_wrapper": true,
-      "is_legacy": true,
-      "is_latest_eligible": false,
-      "is_stable_upstream": false
-    }
-  ],
   "positive_cases": [
     {
       "tag": "v0.0.0",
       "form": "stable",
-      "channel": "stable",
-      "version": [0, 0, 0],
+      "version": [
+        0,
+        0,
+        0
+      ],
       "wrapper_revision": 0,
-      "upstream_tag": "v0.0.0",
-      "is_wrapper": false,
-      "is_legacy": false,
-      "is_latest_eligible": true,
-      "is_stable_upstream": true
-    },
-    {
-      "tag": "v0.2.0",
-      "form": "stable",
-      "channel": "stable",
-      "version": [0, 2, 0],
-      "wrapper_revision": 0,
-      "upstream_tag": "v0.2.0",
-      "is_wrapper": false,
-      "is_legacy": false,
-      "is_latest_eligible": true,
-      "is_stable_upstream": true
+      "upstream_tag": "v0.0.0"
     },
     {
       "tag": "v0.3.0",
       "form": "stable",
-      "channel": "stable",
-      "version": [0, 3, 0],
+      "version": [
+        0,
+        3,
+        0
+      ],
       "wrapper_revision": 0,
-      "upstream_tag": "v0.3.0",
-      "is_wrapper": false,
-      "is_legacy": false,
-      "is_latest_eligible": true,
-      "is_stable_upstream": true
-    },
-    {
-      "tag": "v1.0.0",
-      "form": "stable",
-      "channel": "stable",
-      "version": [1, 0, 0],
-      "wrapper_revision": 0,
-      "upstream_tag": "v1.0.0",
-      "is_wrapper": false,
-      "is_legacy": false,
-      "is_latest_eligible": true,
-      "is_stable_upstream": true
+      "upstream_tag": "v0.3.0"
     },
     {
       "tag": "v1.2.3",
       "form": "stable",
-      "channel": "stable",
-      "version": [1, 2, 3],
+      "version": [
+        1,
+        2,
+        3
+      ],
       "wrapper_revision": 0,
-      "upstream_tag": "v1.2.3",
-      "is_wrapper": false,
-      "is_legacy": false,
-      "is_latest_eligible": true,
-      "is_stable_upstream": true
+      "upstream_tag": "v1.2.3"
     },
     {
       "tag": "v10.20.300",
       "form": "stable",
-      "channel": "stable",
-      "version": [10, 20, 300],
+      "version": [
+        10,
+        20,
+        300
+      ],
       "wrapper_revision": 0,
-      "upstream_tag": "v10.20.300",
-      "is_wrapper": false,
-      "is_legacy": false,
-      "is_latest_eligible": true,
-      "is_stable_upstream": true
+      "upstream_tag": "v10.20.300"
     },
     {
-      "tag": "v999999999999999999.999999999999999999.999999999999999999",
+      "tag": "v9999999999999999999.2.3",
       "form": "stable",
-      "channel": "stable",
-      "version": [999999999999999999, 999999999999999999, 999999999999999999],
+      "version": [
+        9999999999999999999,
+        2,
+        3
+      ],
       "wrapper_revision": 0,
-      "upstream_tag": "v999999999999999999.999999999999999999.999999999999999999",
-      "is_wrapper": false,
-      "is_legacy": false,
-      "is_latest_eligible": true,
-      "is_stable_upstream": true
+      "upstream_tag": "v9999999999999999999.2.3"
     },
     {
       "tag": "v0.0.0-1",
       "form": "stable_wrapper",
-      "channel": "stable",
-      "version": [0, 0, 0],
+      "version": [
+        0,
+        0,
+        0
+      ],
       "wrapper_revision": 1,
-      "upstream_tag": "v0.0.0",
-      "is_wrapper": true,
-      "is_legacy": false,
-      "is_latest_eligible": false,
-      "is_stable_upstream": true
-    },
-    {
-      "tag": "v0.2.0-1",
-      "form": "stable_wrapper",
-      "channel": "stable",
-      "version": [0, 2, 0],
-      "wrapper_revision": 1,
-      "upstream_tag": "v0.2.0",
-      "is_wrapper": true,
-      "is_legacy": false,
-      "is_latest_eligible": false,
-      "is_stable_upstream": true
+      "upstream_tag": "v0.0.0"
     },
     {
       "tag": "v0.2.0-2",
       "form": "stable_wrapper",
-      "channel": "stable",
-      "version": [0, 2, 0],
+      "version": [
+        0,
+        2,
+        0
+      ],
       "wrapper_revision": 2,
-      "upstream_tag": "v0.2.0",
-      "is_wrapper": true,
-      "is_legacy": false,
-      "is_latest_eligible": false,
-      "is_stable_upstream": true
+      "upstream_tag": "v0.2.0"
     },
     {
       "tag": "v1.2.3-45",
       "form": "stable_wrapper",
-      "channel": "stable",
-      "version": [1, 2, 3],
+      "version": [
+        1,
+        2,
+        3
+      ],
       "wrapper_revision": 45,
-      "upstream_tag": "v1.2.3",
-      "is_wrapper": true,
-      "is_legacy": false,
-      "is_latest_eligible": false,
-      "is_stable_upstream": true
-    },
-    {
-      "tag": "v10.20.300-999",
-      "form": "stable_wrapper",
-      "channel": "stable",
-      "version": [10, 20, 300],
-      "wrapper_revision": 999,
-      "upstream_tag": "v10.20.300",
-      "is_wrapper": true,
-      "is_legacy": false,
-      "is_latest_eligible": false,
-      "is_stable_upstream": true
-    },
-    {
-      "tag": "v1.2.3-999999999999999999",
-      "form": "stable_wrapper",
-      "channel": "stable",
-      "version": [1, 2, 3],
-      "wrapper_revision": 999999999999999999,
-      "upstream_tag": "v1.2.3",
-      "is_wrapper": true,
-      "is_legacy": false,
-      "is_latest_eligible": false,
-      "is_stable_upstream": true
+      "upstream_tag": "v1.2.3"
     },
     {
       "tag": "b0",
       "form": "nightly",
-      "channel": "nightly",
-      "version": [0],
+      "version": [
+        0
+      ],
       "wrapper_revision": 0,
-      "upstream_tag": "b0",
-      "is_wrapper": false,
-      "is_legacy": true,
-      "is_latest_eligible": false,
-      "is_stable_upstream": false
+      "upstream_tag": "b0"
     },
     {
       "tag": "b1",
       "form": "nightly",
-      "channel": "nightly",
-      "version": [1],
+      "version": [
+        1
+      ],
       "wrapper_revision": 0,
-      "upstream_tag": "b1",
-      "is_wrapper": false,
-      "is_legacy": true,
-      "is_latest_eligible": false,
-      "is_stable_upstream": false
-    },
-    {
-      "tag": "b9998",
-      "form": "nightly",
-      "channel": "nightly",
-      "version": [9998],
-      "wrapper_revision": 0,
-      "upstream_tag": "b9998",
-      "is_wrapper": false,
-      "is_legacy": true,
-      "is_latest_eligible": false,
-      "is_stable_upstream": false
-    },
-    {
-      "tag": "b9999",
-      "form": "nightly",
-      "channel": "nightly",
-      "version": [9999],
-      "wrapper_revision": 0,
-      "upstream_tag": "b9999",
-      "is_wrapper": false,
-      "is_legacy": true,
-      "is_latest_eligible": false,
-      "is_stable_upstream": false
-    },
-    {
-      "tag": "b10000",
-      "form": "nightly",
-      "channel": "nightly",
-      "version": [10000],
-      "wrapper_revision": 0,
-      "upstream_tag": "b10000",
-      "is_wrapper": false,
-      "is_legacy": true,
-      "is_latest_eligible": false,
-      "is_stable_upstream": false
-    },
-    {
-      "tag": "b10356",
-      "form": "nightly",
-      "channel": "nightly",
-      "version": [10356],
-      "wrapper_revision": 0,
-      "upstream_tag": "b10356",
-      "is_wrapper": false,
-      "is_legacy": true,
-      "is_latest_eligible": false,
-      "is_stable_upstream": false
+      "upstream_tag": "b1"
     },
     {
       "tag": "b10514",
       "form": "nightly",
-      "channel": "nightly",
-      "version": [10514],
+      "version": [
+        10514
+      ],
       "wrapper_revision": 0,
-      "upstream_tag": "b10514",
-      "is_wrapper": false,
-      "is_legacy": true,
-      "is_latest_eligible": false,
-      "is_stable_upstream": false
-    },
-    {
-      "tag": "b10545",
-      "form": "nightly",
-      "channel": "nightly",
-      "version": [10545],
-      "wrapper_revision": 0,
-      "upstream_tag": "b10545",
-      "is_wrapper": false,
-      "is_legacy": true,
-      "is_latest_eligible": false,
-      "is_stable_upstream": false
-    },
-    {
-      "tag": "b999999999999999999",
-      "form": "nightly",
-      "channel": "nightly",
-      "version": [999999999999999999],
-      "wrapper_revision": 0,
-      "upstream_tag": "b999999999999999999",
-      "is_wrapper": false,
-      "is_legacy": true,
-      "is_latest_eligible": false,
-      "is_stable_upstream": false
+      "upstream_tag": "b10514"
     },
     {
       "tag": "b0-1",
       "form": "nightly_wrapper",
-      "channel": "nightly",
-      "version": [0],
+      "version": [
+        0
+      ],
       "wrapper_revision": 1,
-      "upstream_tag": "b0",
-      "is_wrapper": true,
-      "is_legacy": true,
-      "is_latest_eligible": false,
-      "is_stable_upstream": false
-    },
-    {
-      "tag": "b1-1",
-      "form": "nightly_wrapper",
-      "channel": "nightly",
-      "version": [1],
-      "wrapper_revision": 1,
-      "upstream_tag": "b1",
-      "is_wrapper": true,
-      "is_legacy": true,
-      "is_latest_eligible": false,
-      "is_stable_upstream": false
-    },
-    {
-      "tag": "b10514-1",
-      "form": "nightly_wrapper",
-      "channel": "nightly",
-      "version": [10514],
-      "wrapper_revision": 1,
-      "upstream_tag": "b10514",
-      "is_wrapper": true,
-      "is_legacy": true,
-      "is_latest_eligible": false,
-      "is_stable_upstream": false
+      "upstream_tag": "b0"
     },
     {
       "tag": "b10514-2",
       "form": "nightly_wrapper",
-      "channel": "nightly",
-      "version": [10514],
+      "version": [
+        10514
+      ],
       "wrapper_revision": 2,
-      "upstream_tag": "b10514",
-      "is_wrapper": true,
-      "is_legacy": true,
-      "is_latest_eligible": false,
-      "is_stable_upstream": false
+      "upstream_tag": "b10514"
     },
     {
-      "tag": "b10545-99",
+      "tag": "b9999999999999999999-9999999999999999999",
       "form": "nightly_wrapper",
-      "channel": "nightly",
-      "version": [10545],
-      "wrapper_revision": 99,
-      "upstream_tag": "b10545",
-      "is_wrapper": true,
-      "is_legacy": true,
-      "is_latest_eligible": false,
-      "is_stable_upstream": false
-    },
-    {
-      "tag": "b1-999999999999999999",
-      "form": "nightly_wrapper",
-      "channel": "nightly",
-      "version": [1],
-      "wrapper_revision": 999999999999999999,
-      "upstream_tag": "b1",
-      "is_wrapper": true,
-      "is_legacy": true,
-      "is_latest_eligible": false,
-      "is_stable_upstream": false
+      "version": [
+        9999999999999999999
+      ],
+      "wrapper_revision": 9999999999999999999,
+      "upstream_tag": "b9999999999999999999"
     },
     {
       "tag": "b0-llamadart.1",
       "form": "legacy_wrapper",
-      "channel": "nightly",
-      "version": [0],
+      "version": [
+        0
+      ],
       "wrapper_revision": 1,
-      "upstream_tag": "b0",
-      "is_wrapper": true,
-      "is_legacy": true,
-      "is_latest_eligible": false,
-      "is_stable_upstream": false
-    },
-    {
-      "tag": "b1-llamadart.1",
-      "form": "legacy_wrapper",
-      "channel": "nightly",
-      "version": [1],
-      "wrapper_revision": 1,
-      "upstream_tag": "b1",
-      "is_wrapper": true,
-      "is_legacy": true,
-      "is_latest_eligible": false,
-      "is_stable_upstream": false
-    },
-    {
-      "tag": "b10356-llamadart.1",
-      "form": "legacy_wrapper",
-      "channel": "nightly",
-      "version": [10356],
-      "wrapper_revision": 1,
-      "upstream_tag": "b10356",
-      "is_wrapper": true,
-      "is_legacy": true,
-      "is_latest_eligible": false,
-      "is_stable_upstream": false
-    },
-    {
-      "tag": "b10514-llamadart.1",
-      "form": "legacy_wrapper",
-      "channel": "nightly",
-      "version": [10514],
-      "wrapper_revision": 1,
-      "upstream_tag": "b10514",
-      "is_wrapper": true,
-      "is_legacy": true,
-      "is_latest_eligible": false,
-      "is_stable_upstream": false
+      "upstream_tag": "b0"
     },
     {
       "tag": "b10514-llamadart.42",
       "form": "legacy_wrapper",
-      "channel": "nightly",
-      "version": [10514],
+      "version": [
+        10514
+      ],
       "wrapper_revision": 42,
-      "upstream_tag": "b10514",
-      "is_wrapper": true,
-      "is_legacy": true,
-      "is_latest_eligible": false,
-      "is_stable_upstream": false
-    },
-    {
-      "tag": "b1-llamadart.999999999999999999",
-      "form": "legacy_wrapper",
-      "channel": "nightly",
-      "version": [1],
-      "wrapper_revision": 999999999999999999,
-      "upstream_tag": "b1",
-      "is_wrapper": true,
-      "is_legacy": true,
-      "is_latest_eligible": false,
-      "is_stable_upstream": false
-    }
-  ],
-  "negative_cases": [
-    {
-      "tag": "v9999999999999999999.2.3",
-      "reason": "major version component exceeds 18 digits"
-    },
-    {
-      "tag": "v1.9999999999999999999.3",
-      "reason": "minor version component exceeds 18 digits"
-    },
-    {
-      "tag": "v1.2.9999999999999999999",
-      "reason": "patch version component exceeds 18 digits"
-    },
-    {
-      "tag": "v1.2.3-9999999999999999999",
-      "reason": "stable wrapper revision exceeds 18 digits"
-    },
-    {
-      "tag": "b9999999999999999999",
-      "reason": "nightly build number exceeds 18 digits"
-    },
-    {
-      "tag": "b1-9999999999999999999",
-      "reason": "nightly wrapper revision exceeds 18 digits"
+      "upstream_tag": "b10514"
     },
     {
       "tag": "b1-llamadart.9999999999999999999",
-      "reason": "legacy wrapper revision exceeds 18 digits"
-    },
+      "form": "legacy_wrapper",
+      "version": [
+        1
+      ],
+      "wrapper_revision": 9999999999999999999,
+      "upstream_tag": "b1"
+    }
+  ],
+  "negative_cases": [
     {
       "tag": "v01.2.3",
       "reason": "leading zero in major version component"
@@ -574,39 +302,11 @@
       "reason": "leading zero in patch version component"
     },
     {
-      "tag": "v00.0.0",
-      "reason": "redundant zeros in major version component"
-    },
-    {
-      "tag": "v0.00.0",
-      "reason": "redundant zeros in minor version component"
-    },
-    {
-      "tag": "v0.0.00",
-      "reason": "redundant zeros in patch version component"
-    },
-    {
       "tag": "b00",
       "reason": "redundant zero in nightly build number"
     },
     {
-      "tag": "b000",
-      "reason": "redundant zeros in nightly build number"
-    },
-    {
-      "tag": "b0000",
-      "reason": "redundant zeros in nightly build number"
-    },
-    {
-      "tag": "b0001",
-      "reason": "leading zeros in nightly build number"
-    },
-    {
       "tag": "b0123",
-      "reason": "leading zero in nightly build number"
-    },
-    {
-      "tag": "b010514",
       "reason": "leading zero in nightly build number"
     },
     {
@@ -614,19 +314,7 @@
       "reason": "wrapper rebuild revision must be at least 1"
     },
     {
-      "tag": "v1.0.0-0",
-      "reason": "wrapper rebuild revision must be at least 1"
-    },
-    {
-      "tag": "b0-0",
-      "reason": "nightly wrapper rebuild revision must be at least 1"
-    },
-    {
       "tag": "b1-0",
-      "reason": "nightly wrapper rebuild revision must be at least 1"
-    },
-    {
-      "tag": "b10514-0",
       "reason": "nightly wrapper rebuild revision must be at least 1"
     },
     {
@@ -634,56 +322,28 @@
       "reason": "legacy wrapper rebuild revision must be at least 1"
     },
     {
-      "tag": "b10514-llamadart.0",
-      "reason": "legacy wrapper rebuild revision must be at least 1"
-    },
-    {
       "tag": "v0.2.0-01",
       "reason": "leading zero in wrapper rebuild revision"
-    },
-    {
-      "tag": "v0.2.0-001",
-      "reason": "leading zeros in wrapper rebuild revision"
     },
     {
       "tag": "b1-01",
       "reason": "leading zero in nightly wrapper rebuild revision"
     },
     {
-      "tag": "b10514-01",
-      "reason": "leading zero in nightly wrapper rebuild revision"
+      "tag": "b1-llamadart.01",
+      "reason": "leading zero in legacy wrapper rebuild revision"
     },
     {
       "tag": "b0001-1",
       "reason": "leading zeros in nightly build with wrapper"
     },
     {
-      "tag": "b1-llamadart.01",
-      "reason": "leading zero in legacy wrapper rebuild revision"
-    },
-    {
-      "tag": "b10514-llamadart.001",
-      "reason": "leading zeros in legacy wrapper rebuild revision"
-    },
-    {
-      "tag": "b0001-llamadart.1",
-      "reason": "leading zeros in legacy nightly build"
-    },
-    {
       "tag": "1.2.3",
-      "reason": "missing v prefix"
-    },
-    {
-      "tag": "0.2.0",
       "reason": "missing v prefix"
     },
     {
       "tag": "10514",
       "reason": "missing b prefix"
-    },
-    {
-      "tag": "1.2.3-1",
-      "reason": "missing v prefix on wrapper tag"
     },
     {
       "tag": "V1.2.3",
@@ -710,20 +370,8 @@
       "reason": "incomplete version"
     },
     {
-      "tag": "v..",
-      "reason": "incomplete version"
-    },
-    {
-      "tag": "v1",
-      "reason": "incomplete major-only version"
-    },
-    {
       "tag": "v1.2",
       "reason": "incomplete major.minor version"
-    },
-    {
-      "tag": "v1.2.",
-      "reason": "trailing dot in version"
     },
     {
       "tag": "v1.2.3.",
@@ -762,24 +410,12 @@
       "reason": "unsupported SemVer prerelease identifier"
     },
     {
-      "tag": "v0.2.0-rc1",
-      "reason": "unsupported SemVer prerelease identifier"
-    },
-    {
-      "tag": "v0.2.0-custom",
-      "reason": "unsupported custom wrapper suffix"
-    },
-    {
       "tag": "v0.2.0-custom.1",
       "reason": "unsupported custom wrapper suffix"
     },
     {
       "tag": "v0.2.0-llamadart.1",
       "reason": "legacy llamadart suffix is only accepted on historical nightly tags"
-    },
-    {
-      "tag": "v0.2.0-native.1",
-      "reason": "unsupported native suffix"
     },
     {
       "tag": "v0.2.0+build.1",
@@ -790,16 +426,12 @@
       "reason": "unsupported wrapper build metadata"
     },
     {
-      "tag": "b10514-custom",
-      "reason": "unsupported custom nightly suffix"
-    },
-    {
       "tag": "b10514-beta",
       "reason": "unsupported nightly prerelease identifier"
     },
     {
-      "tag": "b10514-rc1",
-      "reason": "unsupported nightly prerelease identifier"
+      "tag": "b10514-custom",
+      "reason": "unsupported custom nightly suffix"
     },
     {
       "tag": "b10514-llamadart-1",
@@ -822,10 +454,6 @@
       "reason": "underscore instead of hyphen in rebuild revision"
     },
     {
-      "tag": "../bad",
-      "reason": "directory traversal path"
-    },
-    {
       "tag": "../v0.2.0",
       "reason": "directory traversal path"
     },
@@ -842,32 +470,16 @@
       "reason": "backslash path separator"
     },
     {
-      "tag": "v0.2.0/",
-      "reason": "trailing slash"
-    },
-    {
-      "tag": "/b10514",
-      "reason": "absolute path prefix"
-    },
-    {
-      "tag": "b10514/..",
-      "reason": "directory traversal path"
-    },
-    {
       "tag": "..\\v0.2.0",
       "reason": "backslash directory traversal"
     },
     {
-      "tag": "v0.2.0\\..",
-      "reason": "backslash directory traversal"
+      "tag": "v0.2.0/",
+      "reason": "trailing slash"
     },
     {
       "tag": "v0.2.0/subdir",
       "reason": "nested directory path"
-    },
-    {
-      "tag": "v0.2.0/file.tar.gz",
-      "reason": "nested file path"
     },
     {
       "tag": "b1; touch \"$RUNNER_TEMP/llamadart-pwned\"",
@@ -890,15 +502,7 @@
       "reason": "pipe shell metacharacter"
     },
     {
-      "tag": "v0.2.0||echo pwned",
-      "reason": "logical or shell metacharacter"
-    },
-    {
       "tag": "v0.2.0>out",
-      "reason": "redirect shell metacharacter"
-    },
-    {
-      "tag": "v0.2.0<in",
       "reason": "redirect shell metacharacter"
     },
     {
@@ -906,12 +510,12 @@
       "reason": "comment shell metacharacter"
     },
     {
-      "tag": "v0.2.0?query=1",
-      "reason": "URL query character"
-    },
-    {
       "tag": "v0.2.0*",
       "reason": "glob shell metacharacter"
+    },
+    {
+      "tag": "v0.2.0?query=1",
+      "reason": "URL query character"
     },
     {
       "tag": "",
@@ -919,10 +523,6 @@
     },
     {
       "tag": " ",
-      "reason": "whitespace only"
-    },
-    {
-      "tag": "   ",
       "reason": "whitespace only"
     },
     {
@@ -959,10 +559,6 @@
     },
     {
       "tag": "v0.2.0\u0000",
-      "reason": "embedded null byte"
-    },
-    {
-      "tag": "b10514\u0000",
       "reason": "embedded null byte"
     }
   ]

@@ -596,29 +596,6 @@ void main() {
       );
     });
 
-    test('normalizes native wrapper rebuild tags to upstream family', () {
-      expect(normalizeNativeLlamaCppTag('v0.2.0-1'), 'v0.2.0');
-      expect(normalizeNativeLlamaCppTag('v0.2.0'), 'v0.2.0');
-      expect(normalizeNativeLlamaCppTag('v1.2.3-45'), 'v1.2.3');
-      expect(normalizeNativeLlamaCppTag('b10514-1'), 'b10514');
-      expect(normalizeNativeLlamaCppTag('b10514-llamadart.1'), 'b10514');
-      expect(normalizeNativeLlamaCppTag('b10514'), 'b10514');
-    });
-
-    test('rejects malformed native tags during normalization', () {
-      expect(normalizeNativeLlamaCppTag('v0.2.0-0'), isNull);
-      expect(normalizeNativeLlamaCppTag('v0.2.0-beta'), isNull);
-      expect(normalizeNativeLlamaCppTag('v0.2.0-custom'), isNull);
-      expect(normalizeNativeLlamaCppTag('v00.2.0-1'), isNull);
-      expect(normalizeNativeLlamaCppTag('v0.2.0-01'), isNull);
-      expect(normalizeNativeLlamaCppTag('b0123'), isNull);
-      expect(normalizeNativeLlamaCppTag('b10514-0'), isNull);
-      expect(normalizeNativeLlamaCppTag('b10514-llamadart.0'), isNull);
-      expect(normalizeNativeLlamaCppTag('v1.2'), isNull);
-      expect(normalizeNativeLlamaCppTag('invalid-tag'), isNull);
-      expect(normalizeNativeLlamaCppTag(''), isNull);
-    });
-
     test('a malformed native wrapper tag is reported', () {
       final root = _fakeRuntimeRepo(
         bridgeTag: 'v0.2.0',

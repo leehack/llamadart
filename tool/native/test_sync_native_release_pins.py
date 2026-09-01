@@ -1941,6 +1941,7 @@ class NativeReleaseTagGrammarCorpusTest(unittest.TestCase):
             / "native_release_tag_grammar.json"
         )
         cls.fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+        cls.forms = cls.fixture["forms"]
 
     def test_patterns_match_fixture(self) -> None:
         patterns = self.fixture["patterns"]
@@ -1967,17 +1968,63 @@ class NativeReleaseTagGrammarCorpusTest(unittest.TestCase):
     def test_positive_tag_corpus(self) -> None:
         for case in self.fixture["positive_cases"]:
             tag = case["tag"]
+            form = self.forms[case["form"]]
             with self.subTest(tag=tag):
                 parsed = pins.parse_native_release_tag(tag)
-                self.assertEqual(parsed.channel, case["channel"])
+                self.assertEqual(parsed.channel, form["channel"])
                 self.assertEqual(list(parsed.version), case["version"])
                 self.assertEqual(parsed.wrapper_revision, case["wrapper_revision"])
+                self.assertEqual(parsed.wrapper_revision > 0, form["is_wrapper"])
+                self.assertEqual(parsed.channel == "nightly", form["is_legacy"])
                 self.assertEqual(parsed.upstream_tag, case["upstream_tag"])
+                self.assertTrue(tag.startswith(parsed.upstream_tag))
                 self.assertEqual(pins.normalize_release_tag(tag), tag)
-                self.assertEqual(
-                    bool(pins._STABLE_NATIVE_TAG_PATTERN.fullmatch(tag)),
-                    case["is_latest_eligible"],
+                is_stable_upstream = bool(
+                    pins._STABLE_NATIVE_TAG_PATTERN.fullmatch(tag)
+                    or pins._STABLE_WRAPPER_TAG_PATTERN.fullmatch(tag)
                 )
+                self.assertEqual(is_stable_upstream, form["is_stable_upstream"])
+
+    def test_latest_discovery_accepts_only_unsuffixed_stable(self) -> None:
+        for case in self.fixture["positive_cases"]:
+            tag = case["tag"]
+            form = self.forms[case["form"]]
+            def resolve_latest() -> str:
+                return pins.validate_resolved_native_release(
+                    {"tag_name": tag},
+                    requested_tag="latest",
+                    current_tag=tag,
+                    allow_legacy_tag=False,
+                )
+
+            with self.subTest(tag=tag):
+                if form["is_latest_eligible"]:
+                    self.assertEqual(resolve_latest(), tag)
+                else:
+                    with self.assertRaisesRegex(ReleaseError, "Automatic discovery"):
+                        resolve_latest()
+
+    def test_transitions_enforce_channel_and_rollback_policy(self) -> None:
+        def transition(current: str, target: str) -> None:
+            pins.validate_native_release_transition(
+                current, target, allow_legacy_tag=False
+            )
+
+        transition("v0.2.0", "v0.3.0")
+        transition("v0.2.0", "v0.2.0-1")
+        transition("b10514", "v0.3.0")
+        transition("b10514-llamadart.1", "b10514-2")
+        with self.assertRaisesRegex(ReleaseError, "rollback"):
+            transition("v0.3.0", "v0.2.0")
+        with self.assertRaisesRegex(ReleaseError, "rollback"):
+            transition("v0.2.0-2", "v0.2.0-1")
+        with self.assertRaisesRegex(ReleaseError, "equivalent native release"):
+            transition("b10514-llamadart.1", "b10514-1")
+        with self.assertRaisesRegex(ReleaseError, "stable-to-historical/nightly"):
+            transition("v0.3.0", "b10514")
+        pins.validate_native_release_transition(
+            "v0.3.0", "b10514", allow_legacy_tag=True
+        )
 
     def test_reserved_inputs_follow_consumer_policy(self) -> None:
         for case in self.fixture["reserved_inputs"]:
@@ -2000,6 +2047,7 @@ class NativeReleaseTagGrammarCorpusTest(unittest.TestCase):
                     pins.parse_native_release_tag(tag)
                 with self.assertRaises(ReleaseError):
                     pins.normalize_release_tag(tag)
+
 
 if __name__ == "__main__":
     unittest.main()

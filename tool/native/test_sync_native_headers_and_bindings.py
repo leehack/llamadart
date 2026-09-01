@@ -499,6 +499,14 @@ exit 0
         self._assert_previous_root(live)
 
 
+TAG_PREDICATES = (
+    "is_supported_native_tag",
+    "is_latest_eligible_tag",
+    "is_stable_upstream_tag",
+    "is_allowed_native_tag_input",
+)
+
+
 class NativeReleaseTagGrammarBashIntegrationTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
@@ -508,72 +516,59 @@ class NativeReleaseTagGrammarBashIntegrationTest(unittest.TestCase):
             / "native_release_tag_grammar.json"
         )
         cls.fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
+        cls.forms = cls.fixture["forms"]
 
-    def _eval_bash_fn(self, fn_name: str, tag: str) -> bool:
+    def _classify(self, tag: str) -> dict[str, bool]:
         if "\x00" in tag:
-            return False
-        cmd = [
-            "bash",
-            "-c",
-            f'source "{SCRIPT_PATH}"; {fn_name} "$1"',
-            "_",
-            tag,
-        ]
-        proc = subprocess.run(cmd, capture_output=True, text=True)
-        return proc.returncode == 0
+            return dict.fromkeys(TAG_PREDICATES, False)
+        script = f'source "{SCRIPT_PATH}"\n' + "".join(
+            f'if {name} "$1"; then echo 1; else echo 0; fi\n' for name in TAG_PREDICATES
+        )
+        proc = subprocess.run(
+            ["bash", "-c", script, "_", tag],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return dict(zip(TAG_PREDICATES, [line == "1" for line in proc.stdout.split()]))
 
     def test_positive_tag_corpus_in_bash(self) -> None:
         for case in self.fixture["positive_cases"]:
             tag = case["tag"]
+            form = self.forms[case["form"]]
             with self.subTest(tag=tag):
-                self.assertTrue(
-                    self._eval_bash_fn("is_supported_native_tag", tag),
-                    msg=f"is_supported_native_tag failed for {tag}",
+                actual = self._classify(tag)
+                self.assertTrue(actual["is_supported_native_tag"])
+                self.assertTrue(actual["is_allowed_native_tag_input"])
+                self.assertEqual(
+                    actual["is_latest_eligible_tag"], form["is_latest_eligible"]
                 )
                 self.assertEqual(
-                    self._eval_bash_fn("is_latest_eligible_tag", tag),
-                    case["is_latest_eligible"],
-                    msg=f"is_latest_eligible_tag mismatch for {tag}",
-                )
-                self.assertEqual(
-                    self._eval_bash_fn("is_stable_upstream_tag", tag),
-                    case["is_stable_upstream"],
-                    msg=f"is_stable_upstream_tag mismatch for {tag}",
+                    actual["is_stable_upstream_tag"], form["is_stable_upstream"]
                 )
 
     def test_negative_tag_corpus_in_bash(self) -> None:
         for case in self.fixture["negative_cases"]:
             tag = case["tag"]
-            reason = case["reason"]
-            with self.subTest(tag=tag, reason=reason):
-                self.assertFalse(
-                    self._eval_bash_fn("is_supported_native_tag", tag),
-                    msg=f"is_supported_native_tag should reject {tag} ({reason})",
-                )
-                self.assertFalse(
-                    self._eval_bash_fn("is_latest_eligible_tag", tag),
-                    msg=f"is_latest_eligible_tag should reject {tag} ({reason})",
-                )
-                self.assertFalse(
-                    self._eval_bash_fn("is_stable_upstream_tag", tag),
-                    msg=f"is_stable_upstream_tag should reject {tag} ({reason})",
+            with self.subTest(tag=tag, reason=case["reason"]):
+                self.assertEqual(
+                    self._classify(tag), dict.fromkeys(TAG_PREDICATES, False)
                 )
 
     def test_reserved_inputs_follow_consumer_policy(self) -> None:
         for case in self.fixture["reserved_inputs"]:
             value = case["value"]
             with self.subTest(value=value):
+                actual = self._classify(value)
                 self.assertEqual(
-                    self._eval_bash_fn("is_allowed_native_tag_input", value),
-                    case["bash_header_sync"],
+                    actual["is_allowed_native_tag_input"], case["bash_header_sync"]
                 )
-                self.assertFalse(self._eval_bash_fn("is_supported_native_tag", value))
+                self.assertFalse(actual["is_supported_native_tag"])
 
     def test_cli_rejects_negative_corpus_before_network(self) -> None:
         for case in self.fixture["negative_cases"]:
             tag = case["tag"]
-            reason = case["reason"]
-            with self.subTest(tag=tag, reason=reason):
+            with self.subTest(tag=tag, reason=case["reason"]):
                 if "\x00" in tag:
                     with self.assertRaises(ValueError):
                         subprocess.run(
@@ -587,14 +582,8 @@ class NativeReleaseTagGrammarBashIntegrationTest(unittest.TestCase):
                     capture_output=True,
                     text=True,
                 )
-                self.assertNotEqual(
-                    proc.returncode, 0, msg=f"CLI accepted invalid tag: {tag} ({reason})"
-                )
-                self.assertIn(
-                    "Invalid llamadart-native tag",
-                    proc.stderr,
-                    msg=f"CLI did not output expected error for {tag}",
-                )
+                self.assertNotEqual(proc.returncode, 0)
+                self.assertIn("Invalid llamadart-native tag", proc.stderr)
 
 
 if __name__ == "__main__":

@@ -13,9 +13,6 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:llamadart/src/hook/native_bundle_config.dart';
 
-export 'package:llamadart/src/hook/native_bundle_config.dart'
-    show normalizeNativeLlamaCppTag;
-
 /// The file whose default decides what a fresh vendoring run downloads.
 const String bridgeTagSourcePath = 'scripts/fetch_webgpu_bridge_assets.sh';
 

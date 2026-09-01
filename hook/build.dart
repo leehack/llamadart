@@ -1147,7 +1147,6 @@ String _resolveNativeTag(Object? rawUserConfig) {
       'vMAJOR.MINOR.PATCH-N, canonical historical/nightly bNNNN tag without '
       'leading zeros, nightly wrapper '
       'rebuild bNNNN-N, or legacy wrapper artifact bNNNN-llamadart.N '
-      'with numeric components of at most 18 digits '
       '(for example $_llamaCppTag).',
     );
   }

@@ -44,8 +44,7 @@ remain explicit compatibility inputs. Build-hook overrides must always name an
 explicit tag; `latest` is limited to maintainer synchronization and
 header/binding regeneration, where it accepts only an unsuffixed stable tag
 regardless of GitHub metadata. Nightly cores and positive rebuild counters
-reject leading zeros, and every numeric component is limited to at most 18
-digits.
+reject leading zeros.
 The selected release must include a bundle asset named
 `llamadart-native-<bundle>-<tag>.tar.gz` for the target being built.
 Native source overrides do not regenerate Dart FFI bindings or symbol lookups,

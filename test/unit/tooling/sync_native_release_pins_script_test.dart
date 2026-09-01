@@ -875,22 +875,13 @@ paths=(
       ).readAsString(),
     };
 
-    expect(
-      sources['Python synchronizer'],
-      contains(r'r"^b(0|[1-9][0-9]{0,17})$"'),
-    );
+    expect(sources['Python synchronizer'], contains(r'r"^b(0|[1-9][0-9]*)$"'));
     expect(
       sources['Bash header sync'],
-      contains("nightly_tag_pattern='^b(0|[1-9][0-9]{0,17})\$'"),
+      contains("nightly_tag_pattern='^b(0|[1-9][0-9]*)\$'"),
     );
-    expect(
-      sources['Dart native release tag'],
-      contains(r'b(?:0|[1-9][0-9]{0,17})'),
-    );
-    expect(
-      sources['Tag grammar fixture'],
-      contains(r'b(?:0|[1-9][0-9]{0,17})'),
-    );
+    expect(sources['Dart native release tag'], contains(r'b(?:0|[1-9][0-9]*)'));
+    expect(sources['Tag grammar fixture'], contains(r'b(?:0|[1-9][0-9]*)'));
     for (final entry in sources.entries) {
       expect(entry.value, isNot(contains(r'b[0-9]+')), reason: entry.key);
     }
@@ -957,7 +948,6 @@ paths=(
       'b1-llamadart.01',
       'b10514-0',
       'b10514-custom',
-      'b9999999999999999999',
       r'b1; touch "$RUNNER_TEMP/llamadart-pwned"',
       r'b1$(touch "$RUNNER_TEMP/llamadart-pwned")',
     ]) {
@@ -1000,7 +990,6 @@ paths=(
         'b1-llamadart.01',
         'b10514-0',
         'b10514-custom',
-        'b9999999999999999999',
         r'b1; touch "$RUNNER_TEMP/llamadart-pwned"',
         r'b1$(touch "$RUNNER_TEMP/llamadart-pwned")',
       ]) {

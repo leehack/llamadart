@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       native_tag:
-        description: 'vM.m.p; numbers max 18 digits; vM.m.p-N, bNNNN[-N], legacy bNNNN-llamadart.N explicit; latest unsuffixed v only'
+        description: 'vM.m.p; explicit vM.m.p-N, bNNNN[-N], or legacy bNNNN-llamadart.N; latest is unsuffixed v only'
         required: true
         default: 'latest'
       allow_nightly_channel:

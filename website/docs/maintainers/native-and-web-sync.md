@@ -42,8 +42,7 @@ New wrapper and nightly releases are GitHub prereleases and must be named
 explicitly. Immutable historical `bNNNN` and `bNNNN-llamadart.N` artifacts may
 retain older `prerelease=false` metadata, but remain explicit compatibility
 inputs. Nightly cores use canonical decimal spelling (`b0` or a nonzero first
-digit), rebuild counters start at 1 without leading zeros, and every numeric
-component is limited to at most 18 digits.
+digit), and rebuild counters start at 1 without leading zeros.
 The `litert_lm_tag` input defaults to `keep`; set it to a
 `litert-lm-native` tag or `latest` only when the LiteRT-LM native release should
 move in the same PR.

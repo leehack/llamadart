@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-stable_tag_pattern='^v(0|[1-9][0-9]{0,17})\.(0|[1-9][0-9]{0,17})\.(0|[1-9][0-9]{0,17})$'
-stable_wrapper_tag_pattern='^v(0|[1-9][0-9]{0,17})\.(0|[1-9][0-9]{0,17})\.(0|[1-9][0-9]{0,17})-[1-9][0-9]{0,17}$'
-nightly_tag_pattern='^b(0|[1-9][0-9]{0,17})$'
-nightly_wrapper_tag_pattern='^b(0|[1-9][0-9]{0,17})-[1-9][0-9]{0,17}$'
-legacy_wrapper_tag_pattern='^b(0|[1-9][0-9]{0,17})-llamadart\.[1-9][0-9]{0,17}$'
+stable_tag_pattern='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
+stable_wrapper_tag_pattern='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-[1-9][0-9]*$'
+nightly_tag_pattern='^b(0|[1-9][0-9]*)$'
+nightly_wrapper_tag_pattern='^b(0|[1-9][0-9]*)-[1-9][0-9]*$'
+legacy_wrapper_tag_pattern='^b(0|[1-9][0-9]*)-llamadart\.[1-9][0-9]*$'
 
 is_supported_native_tag() {
   [[ "$1" =~ ${stable_tag_pattern} ]] ||
@@ -90,8 +90,7 @@ if ! is_allowed_native_tag_input "${tag_input}"; then
   echo "Expected stable vMAJOR.MINOR.PATCH, stable wrapper" \
     "vMAJOR.MINOR.PATCH-N, canonical historical/nightly bNNNN without" \
     "leading zeros, nightly wrapper" \
-    "bNNNN-N, or legacy wrapper artifact bNNNN-llamadart.N; each numeric" \
-    "component may contain at most 18 digits." >&2
+    "bNNNN-N, or legacy wrapper artifact bNNNN-llamadart.N." >&2
   exit 1
 fi
 if [[ ! "${native_repo}" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]]; then

@@ -43,25 +43,23 @@ DEFAULT_LLAMA_CPP_PROJECT_DOCS = (
 DEFAULT_CHANGELOG = "CHANGELOG.md"
 SUPPORTED_NATIVE_HOOK_CONTRACT_VERSION = 1
 _STABLE_NATIVE_TAG_PATTERN = re.compile(
-    r"^v(0|[1-9][0-9]{0,17})\.(0|[1-9][0-9]{0,17})\."
-    r"(0|[1-9][0-9]{0,17})$"
+    r"^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$"
 )
 _STABLE_WRAPPER_TAG_PATTERN = re.compile(
-    r"^v(0|[1-9][0-9]{0,17})\.(0|[1-9][0-9]{0,17})\."
-    r"(0|[1-9][0-9]{0,17})-([1-9][0-9]{0,17})$"
+    r"^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\."
+    r"(0|[1-9][0-9]*)-([1-9][0-9]*)$"
 )
-_LEGACY_NATIVE_TAG_PATTERN = re.compile(r"^b(0|[1-9][0-9]{0,17})$")
+_LEGACY_NATIVE_TAG_PATTERN = re.compile(r"^b(0|[1-9][0-9]*)$")
 _NIGHTLY_WRAPPER_TAG_PATTERN = re.compile(
-    r"^b(0|[1-9][0-9]{0,17})-([1-9][0-9]{0,17})$"
+    r"^b(0|[1-9][0-9]*)-([1-9][0-9]*)$"
 )
 _LEGACY_WRAPPER_TAG_PATTERN = re.compile(
-    r"^b(0|[1-9][0-9]{0,17})-llamadart\.([1-9][0-9]{0,17})$"
+    r"^b(0|[1-9][0-9]*)-llamadart\.([1-9][0-9]*)$"
 )
 _NATIVE_DOC_TAG_PATTERN = (
-    r"(?:v(?:0|[1-9][0-9]{0,17})\.(?:0|[1-9][0-9]{0,17})\."
-    r"(?:0|[1-9][0-9]{0,17})(?:-[1-9][0-9]{0,17})?|"
-    r"b(?:0|[1-9][0-9]{0,17})(?:-[1-9][0-9]{0,17}|"
-    r"-llamadart\.[1-9][0-9]{0,17})?)"
+    r"(?:v(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\."
+    r"(?:0|[1-9][0-9]*)(?:-[1-9][0-9]*)?|"
+    r"b(?:0|[1-9][0-9]*)(?:-[1-9][0-9]*|-llamadart\.[1-9][0-9]*)?)"
 )
 _COMMIT_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 _STABLE_NATIVE_BUNDLES = (
@@ -1205,8 +1203,7 @@ def parse_native_release_tag(tag: str) -> NativeReleaseVersion:
         "vMAJOR.MINOR.PATCH, stable wrapper rebuild "
         "vMAJOR.MINOR.PATCH-N, canonical historical/nightly bNNNN without "
         "leading zeros, nightly wrapper "
-        "rebuild bNNNN-N, or legacy wrapper artifact bNNNN-llamadart.N; "
-        "each numeric component may contain at most 18 digits."
+        "rebuild bNNNN-N, or legacy wrapper artifact bNNNN-llamadart.N."
     )
 
 

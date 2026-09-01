@@ -477,8 +477,7 @@ String? _checkCurrentNativePins(List<String> errors) {
         'vMAJOR.MINOR.PATCH, stable wrapper rebuild '
         'vMAJOR.MINOR.PATCH-N, canonical historical/nightly bNNNN without '
         'leading zeros, nightly wrapper '
-        'rebuild bNNNN-N, or legacy wrapper artifact bNNNN-llamadart.N; '
-        'numeric components may contain at most 18 digits.',
+        'rebuild bNNNN-N, or legacy wrapper artifact bNNNN-llamadart.N.',
       );
       continue;
     }
@@ -599,62 +598,41 @@ List<String>? _readLines(String path, List<String> errors) {
 
 String packagePubspecPath(String package) => _packagePubspecs[package]!;
 
+/// Checks the workflow input and prose that restate the native release tag
+/// grammar against `documentation_contract` in the shared grammar fixture, so
+/// a grammar change cannot land without the docs that describe it.
 void checkNativeTagGrammarDocContracts(
   Directory repoRoot,
   List<String> errors,
 ) {
   const fixturePath = 'tool/native/fixtures/native_release_tag_grammar.json';
-  final fixtureFile = File('${repoRoot.path}/$fixturePath');
-  if (!fixtureFile.existsSync()) {
-    errors.add('$fixturePath does not exist.');
+  final fixture = _readFromRoot(repoRoot, fixturePath, errors);
+  if (fixture == null) return;
+
+  final Map<String, dynamic> contract;
+  try {
+    contract =
+        (jsonDecode(fixture) as Map<String, dynamic>)['documentation_contract']
+            as Map<String, dynamic>;
+  } on Object catch (error) {
+    errors.add('$fixturePath has no usable documentation_contract: $error.');
     return;
   }
 
-  late final Object? decoded;
-  try {
-    decoded = jsonDecode(fixtureFile.readAsStringSync());
-  } on FileSystemException catch (error) {
-    errors.add('Could not read $fixturePath: ${error.message}.');
-    return;
-  } on FormatException catch (error) {
-    errors.add('$fixturePath is not valid JSON: ${error.message}.');
-    return;
-  }
-  if (decoded is! Map<String, dynamic>) {
-    errors.add('$fixturePath must contain a JSON object.');
-    return;
-  }
-  final contract = decoded['documentation_contract'];
-  if (contract is! Map<String, dynamic>) {
-    errors.add('$fixturePath has no documentation_contract object.');
-    return;
-  }
-  final workflow = contract['workflow'];
-  if (workflow is! Map<String, dynamic> ||
-      workflow['path'] is! String ||
-      workflow['input'] is! String ||
-      workflow['required_text'] is! String) {
-    errors.add('$fixturePath has an invalid workflow documentation contract.');
-    return;
-  }
+  final workflow = contract['workflow'] as Map<String, dynamic>;
   final workflowPath = workflow['path'] as String;
   final workflowInput = workflow['input'] as String;
-  final expectedDescription = workflow['required_text'] as String;
-  final workflowLines = _readLinesFromRoot(repoRoot, workflowPath, errors);
-  if (workflowLines != null) {
-    final inputLine = '      $workflowInput:';
-    final inputStart = workflowLines.indexOf(inputLine);
-    final nextInput = inputStart < 0
-        ? -1
-        : workflowLines.indexWhere(
-            (line) => RegExp(r'^      [a-zA-Z0-9_]+:$').hasMatch(line),
-            inputStart + 1,
-          );
-    final inputEnd = nextInput < 0 ? workflowLines.length : nextInput;
-    final inputBlock = inputStart < 0
-        ? const <String>[]
-        : workflowLines.sublist(inputStart + 1, inputEnd);
-    if (!inputBlock.contains('        $expectedDescription')) {
+  final workflowText = _readFromRoot(repoRoot, workflowPath, errors);
+  if (workflowText != null) {
+    // Only the 8-space body lines of the input may satisfy the contract, so a
+    // matching description under a different input cannot stand in for it.
+    final scopedDescription = RegExp(
+      '^ {6}${RegExp.escape(workflowInput)}:\$\n'
+      '(?: {8}.*\$\n)*?'
+      ' {8}${RegExp.escape(workflow['required_text'] as String)}\$\n',
+      multiLine: true,
+    );
+    if (!scopedDescription.hasMatch(workflowText)) {
       errors.add(
         '$workflowPath $workflowInput input description does not match the '
         'canonical native tag grammar contract.',
@@ -662,24 +640,13 @@ void checkNativeTagGrammarDocContracts(
     }
   }
 
-  final docs = contract['docs'];
-  if (docs is! Map<String, dynamic>) {
-    errors.add('$fixturePath has no documentation_contract.docs object.');
-    return;
-  }
-  for (final entry in docs.entries) {
-    final rawRequirements = entry.value;
-    if (rawRequirements is! List<dynamic> ||
-        rawRequirements.any((value) => value is! String)) {
-      errors.add('$fixturePath has invalid doc requirements for ${entry.key}.');
-      continue;
-    }
-    final lines = _readLinesFromRoot(repoRoot, entry.key, errors);
-    if (lines == null) continue;
-    final normalized = lines.join(' ').replaceAll(RegExp(r'\s+'), ' ');
-    for (final requirement in rawRequirements.cast<String>()) {
-      final normalizedRequirement = requirement.replaceAll(RegExp(r'\s+'), ' ');
-      if (!normalized.contains(normalizedRequirement)) {
+  final whitespace = RegExp(r'\s+');
+  for (final entry in (contract['docs'] as Map<String, dynamic>).entries) {
+    final text = _readFromRoot(repoRoot, entry.key, errors);
+    if (text == null) continue;
+    final normalized = text.replaceAll(whitespace, ' ');
+    for (final requirement in (entry.value as List<dynamic>).cast<String>()) {
+      if (!normalized.contains(requirement.replaceAll(whitespace, ' '))) {
         errors.add(
           '${entry.key} is missing native release tag contract requirement: '
           '"$requirement".',
@@ -689,7 +656,7 @@ void checkNativeTagGrammarDocContracts(
   }
 }
 
-List<String>? _readLinesFromRoot(
+String? _readFromRoot(
   Directory repoRoot,
   String relativePath,
   List<String> errors,
@@ -701,7 +668,7 @@ List<String>? _readLinesFromRoot(
   }
 
   try {
-    return file.readAsLinesSync();
+    return file.readAsStringSync();
   } on FileSystemException catch (error) {
     errors.add('Could not read $relativePath: ${error.message}.');
     return null;
