@@ -172,11 +172,14 @@ memory-constrained mobile devices.
 - Web requires published bridge assets `v0.1.33+`, WebAssembly memory64 for the
   pinned roughly 1.48 GB model/projector pair, and a browser/device with enough
   memory. Older bridge assets fail capability discovery clearly.
-- The chat example pins `v0.1.40`, which retains the `v0.1.34` recovery that
-  retries a worker WebGPU abort or device failure once on CPU using the cached
-  model and projector. Recovery is slower and is not a substitute for
-  sufficient browser memory. Qwen3-TTS accelerator behavior remains
-  device-dependent; validate the target browser and device for queue-watchdog
-  timeouts before relying on it in production.
+- The chat example pins `v0.1.41`, which retains the `v0.1.34` worker
+  recovery. Eligible WebGPU errors and generic worker timeouts retry once on
+  the main thread using cached model/projector bytes with CPU-only settings.
+  The exact `worker request timeout` and `worker init timeout` errors preserve
+  the original GPU offload settings on that retry. Already CPU-only models are
+  not retried, and cancellation takes precedence over recovery. Other errors
+  propagate unchanged. See the [bridge recovery contract](https://github.com/leehack/llama-web-bridge/blob/646037ac816c066d3f7d9e357139ca20800dc7ee/docs/api.md#synthesizespeechoptions).
+  Recovery is slower and does not replace sufficient browser memory or
+  validation of queue-watchdog timeouts on the target browser/device.
 - Web speaker references are selected-file bytes only; microphone speaker
   recording remains a native chat-example feature.
