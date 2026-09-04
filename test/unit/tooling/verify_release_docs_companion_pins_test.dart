@@ -316,23 +316,13 @@ void main() {
     }
   });
 
-  test(
-    'the checked-in companions keep pending sync separate from release prep',
-    () {
-      final errors = <String>[];
-      final pending = checkCompanionSwiftPins(Directory.current, errors);
+  test('the checked-in companion versions record their SwiftPM pins', () {
+    final errors = <String>[];
+    final pending = checkCompanionSwiftPins(Directory.current, errors);
 
-      expect(
-        pending.map((bump) => bump.toString()),
-        contains(
-          'llamadart_llama_cpp_flutter 0.0.16 publishes v0.2.0-1, but '
-          'Package.swift pins v0.3.0; bump the version and rename '
-          '`## Unreleased` to the new version before releasing.',
-        ),
-      );
-      expect(errors, isEmpty);
-    },
-  );
+    expect(pending, isEmpty);
+    expect(errors, isEmpty);
+  });
 
   test('a pin recorded in the released section passes', () {
     final root = _fakeRepo(

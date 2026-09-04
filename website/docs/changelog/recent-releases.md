@@ -7,7 +7,10 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
-## Unreleased
+## 0.8.22
+
+- Updated `llamadart_llama_cpp_flutter` to `0.0.17` with the
+  Apple SwiftPM `v0.3.0` runtime pin.
 
 - Updated the default llama.cpp native runtime pin to
   `leehack/llamadart-native@v0.3.0`, regenerated matching Dart FFI bindings,
