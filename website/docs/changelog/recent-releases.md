@@ -9,6 +9,9 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Prepared `llamadart_llama_cpp_flutter` `0.0.17` to package the existing
+  Apple SwiftPM `v0.3.0` runtime pin.
+
 - Updated the default llama.cpp native runtime pin to
   `leehack/llamadart-native@v0.3.0`, regenerated matching Dart FFI bindings,
   refreshed the `llamadart_llama_cpp_flutter` Apple SwiftPM checksum, and

@@ -36,7 +36,7 @@ Package Manager, also add the runtime companion packages you need:
 ```yaml
 dependencies:
   llamadart: ^0.8.21
-  llamadart_llama_cpp_flutter: ^0.0.16 # GGUF / llama.cpp
+  llamadart_llama_cpp_flutter: ^0.0.17 # GGUF / llama.cpp
   llamadart_litert_lm_flutter: ^0.0.10 # Apple .litertlm / LiteRT-LM targets
 ```
 
