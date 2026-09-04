@@ -1,6 +1,6 @@
-## Unreleased
+## 0.8.22
 
-* Prepared `llamadart_llama_cpp_flutter` `0.0.17` to package the existing
+* Updated `llamadart_llama_cpp_flutter` to `0.0.17` with the
   Apple SwiftPM `v0.3.0` runtime pin.
 
 * Updated the default llama.cpp native runtime pin to

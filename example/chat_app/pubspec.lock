@@ -413,7 +413,7 @@ packages:
       path: "../.."
       relative: true
     source: path
-    version: "0.8.21"
+    version: "0.8.22"
   llamadart_litert_lm_flutter:
     dependency: "direct main"
     description:
