@@ -19,15 +19,15 @@ pipelines.
    `https://cdn.jsdelivr.net/gh/leehack/llama-web-bridge-assets@<tag>/llama_webgpu_bridge.js`
 2. Local fallback: `./webgpu_bridge/llama_webgpu_bridge.js`
 
-Default pinned tag in the example is `v0.1.40`.
+Default pinned tag in the example is `v0.1.41`.
 
 That release embeds llama.cpp `v0.3.0`, matching the `hook/build.dart` native pin
 (`v0.3.0`, both built from upstream llama.cpp `v0.3.0@c1d0e7a004015f23bc0233470b747b596f29b264`)
-even though the bridge asset tag `v0.1.40` differs from the native runtime tag
-`v0.3.0`. Provenance for this immutable consumer artifact: release `379234159`,
-tag commit `a18f1c31835ee722c7750a5c68f22c5b19e4c937`, bridge source
-`0bdc8286fd52b70da27f5b039e1b4278361da0be`, and manifest SHA-256
-`99fc09bb0cc23cf0eb08875a9ea973803fb1d432c5c8ca1b1211af0eb1d20b17`. It retains
+even though the bridge asset tag `v0.1.41` differs from the native runtime tag
+`v0.3.0`. Provenance for this immutable consumer artifact: release `381873266`,
+tag commit `dca41da58a689697f3b532f09da5aa1672e24e93`, bridge source
+`646037ac816c066d3f7d9e357139ca20800dc7ee`, and manifest SHA-256
+`fe97604daabaad6aefa223a8637d5fd9dcac09dd4a61b2ef19cd6aabb39392b9`. It retains
 the Qwen3-ASR typed speech-to-text contract introduced in `v0.1.30` and
 provisions the explicit 1 MiB Wasm stack needed for memory64 context
 construction in direct and worker modes. The chat bootstrap opts
@@ -47,7 +47,7 @@ model bytes.
 To vendor pinned assets into local app web files:
 
 ```bash
-WEBGPU_BRIDGE_ASSETS_TAG=v0.1.40 ./scripts/fetch_webgpu_bridge_assets.sh
+WEBGPU_BRIDGE_ASSETS_TAG=v0.1.41 ./scripts/fetch_webgpu_bridge_assets.sh
 ```
 
 Optional compatibility env vars:
@@ -128,7 +128,7 @@ You can override CDN source/version before the bridge loader runs:
 ```html
 <script>
   window.__llamadartBridgeAssetsRepo = 'leehack/llama-web-bridge-assets';
-  window.__llamadartBridgeAssetsTag = 'v0.1.40';
+  window.__llamadartBridgeAssetsTag = 'v0.1.41';
 </script>
 ```
 
