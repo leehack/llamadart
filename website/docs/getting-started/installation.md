@@ -40,6 +40,11 @@ The development example below requires both path overrides to the same checkout.
 Publish companion `0.0.18` only with the matching next core release, and replace
 these temporary overrides/version constraints during that coordinated release.
 
+Apple builds verify the resolved companion's SwiftPM runtime pin before native
+symbol lookup. Incompatible companions or unverified local `Artifacts`
+overrides fail the build; resolve the matching companion and rerun
+`flutter pub get`. Core native overrides do not replace SPM frameworks.
+
 ```yaml
 dependencies:
   llamadart: ^0.8.22
