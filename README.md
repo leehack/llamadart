@@ -55,30 +55,20 @@ For Dart or Flutter apps:
 
 ```yaml
 dependencies:
-  llamadart: ^0.8.22
+  llamadart: ^0.8.23
 ```
 
 Flutter iOS/macOS apps that should link Apple XCFrameworks through Swift
 Package Manager should also add the runtime companion packages they need:
 
-**Unreleased coordinated upgrade:** companion `0.0.18` requires the matching
-llama.cpp v0.4.0 core bindings; it is not compatible with published core
-`0.8.22`. For published packages, keep core `0.8.22` with companion `0.0.17`.
-The development example below requires both path overrides to the same checkout.
-Publish companion `0.0.18` only with the matching next core release, and replace
-these temporary overrides/version constraints during that coordinated release.
+Pair companion `0.0.18` with core `0.8.23` for matching llama.cpp v0.4.0
+bindings. Keep core `0.8.22` paired with companion `0.0.17`.
 
 ```yaml
 dependencies:
-  llamadart: ^0.8.22
+  llamadart: ^0.8.23
   llamadart_llama_cpp_flutter: ^0.0.18 # GGUF / llama.cpp
   llamadart_litert_lm_flutter: ^0.0.10 # Apple .litertlm / LiteRT-LM targets
-
-dependency_overrides:
-  llamadart:
-    path: /path/to/llamadart
-  llamadart_llama_cpp_flutter:
-    path: /path/to/llamadart/packages/llamadart_llama_cpp_flutter
 ```
 
 The LiteRT-LM companion manifest includes the complete iOS SwiftPM runtime

@@ -1,16 +1,20 @@
-## Unreleased
+## 0.8.23
 
 * Updated the default llama.cpp native runtime pin to
   `leehack/llamadart-native@v0.4.0`, regenerated matching Dart FFI bindings, refreshed
   the `llamadart_llama_cpp_flutter` Apple SwiftPM checksum, and
   aligned current README/website native override docs. Updated multimodal calls
   for the matching ABI. Saved native sessions from older runtimes must be
-  regenerated. Prepared Apple companion `0.0.18` for the matching native runtime.
+  regenerated. Apple companion `0.0.18` supplies the matching native runtime.
 
 * Aligned the default WebGPU bridge assets to `v0.1.43` for Web/native
   llama.cpp `v0.4.0@5266f24da75dc449bd56cbed7addb9c8e4a6a73e` parity.
   Web `@litert-lm/core@0.15.0` and native LiteRT pins are unchanged. Immutable
   manifest: `111eefc3588842cebfe665b363378edca34924764610263e1eda5280dfcfaa27`.
+
+* Known upstream limitation: llama.cpp v0.4.0 rejects grammars at the 2,000-rule
+  expansion boundary, such as `root ::= "a"{2000}`. The post-v0.4.0 upstream
+  correction is tracked in `llamadart-native#76` and is not part of this release.
 
 ## 0.8.22
 
