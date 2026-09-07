@@ -212,6 +212,12 @@ flow in ownership order:
 
 ## Native And Web Asset Sync
 
+Apple llama.cpp process lookup requires the resolved companion's package
+identity and SwiftPM pin to match the core native pin. Preserve this guard and
+its metadata cache dependencies when changing sync or hook behavior; declared
+version constraints and core native overrides are not ABI evidence. Unverified
+local companion `Artifacts` overrides must fail closed.
+
 Prefer the repository workflow for native version and binding updates:
 `.github/workflows/sync_native_bindings.yml`.
 

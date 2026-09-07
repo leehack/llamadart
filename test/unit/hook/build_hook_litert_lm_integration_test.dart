@@ -1,6 +1,7 @@
 @TestOn('vm')
 library;
 
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:code_assets/code_assets.dart';
@@ -325,6 +326,200 @@ void main() {
             isTrue,
           );
         },
+      );
+    },
+  );
+
+  for (final target in [OS.iOS, OS.macOS]) {
+    test(
+      'Apple $target rejects resolved old ABI despite native overrides',
+      () async {
+        final defines = await _flutterAppleUserDefines(
+          dependencies: const ['llamadart_llama_cpp_flutter'],
+          companionTag: 'v0.3.0',
+          companionVersion: '0.0.17',
+          defines: {
+            'llamadart_native_tag': 'v0.4.0',
+            'llamadart_native_path': './new-runtime',
+            'llamadart_native_runtimes': ['litert_lm'],
+          },
+        );
+        var emitted = false;
+        await expectLater(
+          testCodeBuildHook(
+            mainMethod: build_hook.main,
+            targetOS: target,
+            targetArchitecture: Architecture.arm64,
+            targetIOSSdk: target == OS.iOS ? IOSSdk.iPhoneOS : null,
+            userDefines: defines,
+            check: (_, _) => emitted = true,
+          ),
+          throwsA(
+            predicate(
+              (error) => error.toString().contains(
+                'Incompatible Apple llama.cpp companion',
+              ),
+            ),
+          ),
+        );
+        expect(emitted, isFalse);
+      },
+    );
+  }
+
+  for (final scenario in [
+    'missing',
+    'duplicate',
+    'local',
+    'false-version',
+    'malformed-config',
+    'malformed-pubspec',
+    'wrong-name',
+    'missing-pin',
+    'duplicate-pin',
+    'wrong-target',
+    'missing-manifest',
+  ]) {
+    test('Apple companion rejects $scenario metadata before lookup', () async {
+      final defines = await _flutterAppleUserDefines(
+        dependencies: const ['llamadart_llama_cpp_flutter'],
+        missingConfiguration: scenario == 'missing',
+        duplicateCompanion: scenario == 'duplicate',
+        localArtifacts: scenario == 'local',
+        companionTag: scenario == 'false-version' ? 'v0.3.0' : null,
+        mutate: (root) {
+          final config = File(
+            path.join(root.path, '.dart_tool', 'package_config.json'),
+          );
+          final metadata = File(
+            path.join(root.path, 'resolved companion', 'pubspec.yaml'),
+          );
+          final manifest = File(
+            path.join(
+              root.path,
+              'resolved companion',
+              'darwin',
+              'llamadart_llama_cpp_flutter',
+              'Package.swift',
+            ),
+          );
+          switch (scenario) {
+            case 'malformed-config':
+              config.writeAsStringSync('{');
+            case 'malformed-pubspec':
+              metadata.writeAsStringSync('name: [');
+            case 'wrong-name':
+              metadata.writeAsStringSync('name: other\nversion: 0.0.18');
+            case 'missing-pin':
+              manifest.writeAsStringSync('// no pin');
+            case 'duplicate-pin':
+              manifest.writeAsStringSync(
+                '${manifest.readAsStringSync()}\nlet llamaCppTag = "v0.4.0"\n',
+              );
+            case 'wrong-target':
+              manifest.writeAsStringSync(
+                manifest.readAsStringSync().replaceFirst(
+                  'tag: llamaCppTag,',
+                  'tag: "v0.3.0",',
+                ),
+              );
+            case 'missing-manifest':
+              manifest.deleteSync();
+          }
+        },
+      );
+      var emitted = false;
+      await expectLater(
+        testCodeBuildHook(
+          mainMethod: build_hook.main,
+          targetOS: OS.iOS,
+          targetArchitecture: Architecture.arm64,
+          targetIOSSdk: IOSSdk.iPhoneOS,
+          userDefines: defines,
+          check: (_, _) => emitted = true,
+        ),
+        throwsA(
+          predicate(
+            (error) => error.toString().contains(
+              'Incompatible Apple llama.cpp companion',
+            ),
+          ),
+        ),
+      );
+      expect(emitted, isFalse);
+    });
+  }
+
+  test(
+    'workspace-resolved matching companion tracks all metadata for caching',
+    () async {
+      final defines = await _flutterAppleUserDefines(
+        dependencies: const ['llamadart_llama_cpp_flutter'],
+        workspaceMember: true,
+      );
+      await testCodeBuildHook(
+        mainMethod: build_hook.main,
+        targetOS: OS.macOS,
+        targetArchitecture: Architecture.arm64,
+        userDefines: defines,
+        check: (_, output) {
+          expect(
+            output.assets.encodedAssets.single.asCodeAsset.linkMode,
+            isA<LookupInProcess>(),
+          );
+          final dependencies = output.dependencies
+              .map((uri) => uri.toFilePath())
+              .toList();
+          expect(
+            dependencies.where((entry) => entry.endsWith('pubspec.yaml')),
+            hasLength(2),
+          );
+          expect(
+            dependencies.any((entry) => entry.endsWith('package_config.json')),
+            isTrue,
+          );
+          expect(
+            dependencies.any((entry) => entry.endsWith('Package.swift')),
+            isTrue,
+          );
+          expect(
+            dependencies.any((entry) => entry.endsWith('Artifacts/')),
+            isTrue,
+          );
+        },
+      );
+    },
+  );
+
+  test(
+    'flow YAML and dependency overrides cannot hide old resolved ABI',
+    () async {
+      final defines = await _flutterAppleUserDefines(
+        dependencies: const ['llamadart_llama_cpp_flutter'],
+        companionTag: 'v0.3.0',
+        mutate: (root) =>
+            File(path.join(root.path, 'pubspec.yaml')).writeAsStringSync('''
+name: consumer
+dependencies: {flutter: {sdk: flutter}, llamadart: ^0.8.22, llamadart_llama_cpp_flutter: ^0.0.18}
+dependency_overrides: {llamadart_llama_cpp_flutter: {path: resolved companion}}
+'''),
+      );
+      await expectLater(
+        testCodeBuildHook(
+          mainMethod: build_hook.main,
+          targetOS: OS.iOS,
+          targetArchitecture: Architecture.arm64,
+          targetIOSSdk: IOSSdk.iPhoneOS,
+          userDefines: defines,
+          check: (_, _) => fail('Must not emit in-process assets'),
+        ),
+        throwsA(
+          predicate(
+            (error) => error.toString().contains(
+              'Incompatible Apple llama.cpp companion',
+            ),
+          ),
+        ),
       );
     },
   );
@@ -731,6 +926,13 @@ Future<PackageUserDefines> _flutterAppleUserDefines({
   required List<String> dependencies,
   Map<String, Object?> defines = const {},
   String dependenciesYaml = '',
+  String? companionTag,
+  String companionVersion = '0.0.18',
+  bool missingConfiguration = false,
+  bool duplicateCompanion = false,
+  bool localArtifacts = false,
+  bool workspaceMember = false,
+  void Function(Directory)? mutate,
 }) async {
   final dir = await Directory.systemTemp.createTemp(
     'llamadart_apple_consumer_',
@@ -741,7 +943,11 @@ Future<PackageUserDefines> _flutterAppleUserDefines({
     }
   });
 
-  final pubspec = File(path.join(dir.path, 'pubspec.yaml'));
+  final consumer = workspaceMember
+      ? Directory(path.join(dir.path, 'app'))
+      : dir;
+  await consumer.create(recursive: true);
+  final pubspec = File(path.join(consumer.path, 'pubspec.yaml'));
   await pubspec.writeAsString('''
 name: llamadart_apple_consumer
 publish_to: none
@@ -751,11 +957,57 @@ environment:
   flutter: ^3.38.0
 
 dependencies:
+  llamadart: ^0.8.22
   flutter:
     sdk: flutter
 ${dependenciesYaml.trimRight()}
-${dependencies.map((dependency) => '  $dependency: ^0.8.0').join('\n')}
+${dependencies.map((dependency) => '  $dependency: ^0.0.17').join('\n')}
 ''');
+
+  if (dependencies.contains('llamadart_llama_cpp_flutter') &&
+      !missingConfiguration) {
+    final companion = Directory(path.join(dir.path, 'resolved companion'));
+    await companion.create();
+    await File(path.join(companion.path, 'pubspec.yaml')).writeAsString(
+      'name: llamadart_llama_cpp_flutter\nversion: $companionVersion\n',
+    );
+    final manifest = File(
+      path.join(
+        companion.path,
+        'darwin',
+        'llamadart_llama_cpp_flutter',
+        'Package.swift',
+      ),
+    );
+    await manifest.parent.create(recursive: true);
+    await manifest.writeAsString(
+      File(
+        'packages/llamadart_llama_cpp_flutter/'
+        'darwin/llamadart_llama_cpp_flutter/Package.swift',
+      ).readAsStringSync().replaceFirst(
+        'let llamaCppTag = "${_readHookConst('_llamaCppTag')}"',
+        'let llamaCppTag = "${companionTag ?? _readHookConst('_llamaCppTag')}"',
+      ),
+    );
+    if (localArtifacts) {
+      await Directory(path.join(manifest.parent.path, 'Artifacts')).create();
+    }
+    final config = File(
+      path.join(dir.path, '.dart_tool', 'package_config.json'),
+    );
+    await config.parent.create();
+    final entry = {
+      'name': 'llamadart_llama_cpp_flutter',
+      'rootUri': '../resolved%20companion',
+    };
+    await config.writeAsString(
+      jsonEncode({
+        'configVersion': 2,
+        'packages': [entry, if (duplicateCompanion) entry],
+      }),
+    );
+  }
+  mutate?.call(dir);
 
   return PackageUserDefines(
     workspacePubspec: PackageUserDefinesSource(

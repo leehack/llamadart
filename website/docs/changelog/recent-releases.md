@@ -9,6 +9,10 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Fail Apple builds before native symbol lookup when the resolved llama.cpp
+  companion does not match the core native runtime, with actionable upgrade
+  guidance.
+
 - Adopted native llama.cpp v0.4.0 with matching bindings and multimodal calls.
   Saved native sessions from older runtimes must be regenerated. Prepared Apple
   companion `0.0.18` for the matching native runtime.

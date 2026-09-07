@@ -1,6 +1,6 @@
 import 'dart:async'
     show Completer, StreamSubscription, Timer, TimeoutException, unawaited;
-import 'dart:convert' show utf8;
+import 'dart:convert' show jsonDecode, utf8;
 import 'dart:io';
 
 import 'package:archive/archive.dart';
@@ -10,6 +10,7 @@ import 'package:hooks/hooks.dart';
 import 'package:http/http.dart' as http;
 import 'package:logging/logging.dart';
 import 'package:path/path.dart' as path;
+import 'package:yaml/yaml.dart';
 
 import 'package:llamadart/src/hook/native_bundle_config.dart';
 
@@ -254,6 +255,7 @@ void main(List<String> args) async {
     final appleSpmRuntimes = _flutterAppleCompanionRuntimes(
       input: input,
       code: code,
+      output: output,
       log: log,
     );
     var selectedRuntimes =
@@ -520,6 +522,7 @@ bool _isAppleTarget(OS os) => os == OS.iOS || os == OS.macOS;
 List<String>? _flutterAppleCompanionRuntimes({
   required BuildInput input,
   required CodeConfig code,
+  required BuildOutputBuilder output,
   required Logger log,
 }) {
   if (!_isAppleTarget(code.targetOS)) {
@@ -551,6 +554,7 @@ List<String>? _flutterAppleCompanionRuntimes({
   }
 
   final pubspecSource = pubspec.readAsStringSync();
+  output.dependencies.add(pubspec.uri);
   final isFlutter = _pubspecDeclaresFlutter(pubspecSource);
   if (!isFlutter) {
     log.info(
@@ -563,6 +567,7 @@ List<String>? _flutterAppleCompanionRuntimes({
   final dependencies = _pubspecDependencyNames(pubspecSource);
   final runtimes = <String>[];
   if (dependencies.contains(_llamaCppFlutterPackageName)) {
+    _validateAppleLlamaCompanion(consumerRoot, output);
     runtimes.add(nativeRuntimeLlamaCpp);
   }
   if (dependencies.contains(_liteRtLmFlutterPackageName)) {
@@ -577,6 +582,125 @@ List<String>? _flutterAppleCompanionRuntimes({
     return null;
   }
   return runtimes;
+}
+
+void _validateAppleLlamaCompanion(
+  Directory consumerRoot,
+  BuildOutputBuilder output,
+) {
+  Never reject(String reason) => throw StateError(
+    'Incompatible Apple llama.cpp companion: $reason '
+    'Resolve $_llamaCppFlutterPackageName with a Package.swift pin matching '
+    '$_nativeRepoSlug@$_llamaCppTag and rerun flutter pub get. '
+    'For native v0.4.0 use companion 0.0.18 with the matching core; '
+    'native tag/path overrides do not replace SPM frameworks. '
+    'No in-process native asset was emitted.',
+  );
+
+  try {
+    var directory = consumerRoot;
+    File? configuration;
+    while (true) {
+      final candidate = File(
+        path.join(directory.path, _dartToolDir, 'package_config.json'),
+      );
+      if (candidate.existsSync()) {
+        configuration = candidate;
+        break;
+      }
+      final parent = directory.parent;
+      if (_sameDirectory(parent, directory)) break;
+      directory = parent;
+    }
+    if (configuration == null) {
+      reject('Resolved package configuration missing.');
+    }
+    output.dependencies.add(configuration.uri);
+    final config = jsonDecode(configuration.readAsStringSync());
+    if (config is! Map ||
+        config['configVersion'] != 2 ||
+        config['packages'] is! List) {
+      reject('Resolved package configuration is malformed.');
+    }
+    final entries = config['packages'] as List;
+    if (entries.any((entry) => entry is! Map)) {
+      reject('Resolved package configuration contains malformed entries.');
+    }
+    final companions = entries
+        .where((entry) => (entry as Map)['name'] == _llamaCppFlutterPackageName)
+        .toList();
+    if (companions.length != 1) {
+      reject('Expected exactly one resolved llama.cpp companion.');
+    }
+    final root = (companions.single as Map)['rootUri'];
+    if (root is! String || root.isEmpty) reject('Companion root URI missing.');
+    final uri = configuration.uri.resolve(root);
+    if (uri.scheme != 'file' || uri.hasQuery || uri.hasFragment) {
+      reject('Companion root must be a local package directory.');
+    }
+    final companionRoot = Directory.fromUri(uri);
+    final pubspec = File(path.join(companionRoot.path, 'pubspec.yaml'));
+    final manifest = File(
+      path.join(
+        companionRoot.path,
+        'darwin',
+        _llamaCppFlutterPackageName,
+        'Package.swift',
+      ),
+    );
+    output.dependencies.addAll([pubspec.uri, manifest.uri]);
+    if (!pubspec.existsSync() || !manifest.existsSync()) {
+      reject('Resolved companion package metadata is missing.');
+    }
+    final metadata = loadYaml(pubspec.readAsStringSync());
+    if (metadata is! Map ||
+        metadata['name'] != _llamaCppFlutterPackageName ||
+        metadata['version'] is! String ||
+        !RegExp(
+          r'^\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$',
+        ).hasMatch(metadata['version'] as String)) {
+      reject('Resolved companion identity is malformed.');
+    }
+    final source = manifest.readAsStringSync();
+    final pins = RegExp(
+      r'^let llamaCppTag = "([^"\r\n]+)"\s*$',
+      multiLine: true,
+    ).allMatches(source).toList();
+    if (pins.length != 1 || pins.single.group(1) != _llamaCppTag) {
+      reject(
+        'Resolved companion ${metadata['version']} does not uniquely pin '
+        'the required native runtime $_llamaCppTag.',
+      );
+    }
+    // Only the maintained tag-driven remote target contract is recognized.
+    // A copied tag declaration must not authorize a different target pin.
+    if (!RegExp(
+          r'repository:\s*"leehack/llamadart-native",',
+        ).hasMatch(source) ||
+        !source.contains(
+          'artifactName: "llamadart-native-apple-xcframework-'
+          r'\(llamaCppTag).zip"',
+        ) ||
+        RegExp(r'tag:\s*llamaCppTag,').allMatches(source).length != 1) {
+      reject('Companion SwiftPM target does not use the supported native pin.');
+    }
+    final artifacts = Directory(path.join(manifest.parent.path, 'Artifacts'));
+    // The supported manifest can prefer local binaries over its remote pin.
+    // Such binaries have no verified ABI contract and must not inherit trust
+    // from the tag string. Track the directory so local additions invalidate
+    // an otherwise cached successful hook result.
+    output.dependencies.add(artifacts.uri);
+    if (artifacts.existsSync()) {
+      reject(
+        'Local Artifacts overrides cannot establish framework ABI '
+        'compatibility; remove them and use the pinned framework.',
+      );
+    }
+  } on FileSystemException {
+    reject('Unable to read resolved companion metadata.');
+  } on FormatException {
+    reject('Resolved companion metadata is malformed.');
+  }
 }
 
 Directory? _consumerPackageRoot(BuildInput input) {
@@ -652,49 +776,29 @@ bool _sameDirectory(Directory a, Directory b) {
 }
 
 bool _pubspecDeclaresFlutter(String source) {
-  final lines = source.split('\n');
-  for (final rawLine in lines) {
-    final line = rawLine.split('#').first;
-    if (RegExp(r'^\s*sdk\s*:\s*flutter\s*$').hasMatch(line)) {
-      return true;
-    }
-  }
-  return false;
+  final pubspec = _readConsumerPubspec(source);
+  if (pubspec is! Map) return false;
+  final dependencies = pubspec['dependencies'];
+  if (dependencies is! Map) return false;
+  final flutter = dependencies['flutter'];
+  return flutter is Map && flutter['sdk'] == 'flutter';
 }
 
 Set<String> _pubspecDependencyNames(String source) {
-  final dependencies = <String>{};
-  String? section;
-  int? dependencyIndent;
-  for (final rawLine in source.split('\n')) {
-    final line = rawLine.split('#').first;
-    if (line.trim().isEmpty) {
-      continue;
-    }
+  final pubspec = _readConsumerPubspec(source);
+  if (pubspec is! Map || pubspec['dependencies'] is! Map) return {};
+  return (pubspec['dependencies'] as Map).keys.whereType<String>().toSet();
+}
 
-    final topLevel = RegExp(r'^([A-Za-z_][A-Za-z0-9_]*)\s*:').firstMatch(line);
-    if (topLevel != null) {
-      section = topLevel.group(1);
-      dependencyIndent = null;
-      continue;
-    }
-
-    if (section != 'dependencies') {
-      continue;
-    }
-
-    final dependency = RegExp(
-      r'^(\s+)([A-Za-z_][A-Za-z0-9_]*)\s*:',
-    ).firstMatch(line);
-    if (dependency != null) {
-      final indent = dependency.group(1)!.length;
-      dependencyIndent ??= indent;
-      if (indent == dependencyIndent) {
-        dependencies.add(dependency.group(2)!);
-      }
-    }
+Object? _readConsumerPubspec(String source) {
+  try {
+    return loadYaml(source);
+  } on FormatException {
+    throw StateError(
+      'Cannot validate Apple runtime selection: malformed '
+      'consumer pubspec. Fix pubspec.yaml and rerun flutter pub get.',
+    );
   }
-  return dependencies;
 }
 
 Future<void> _emitLiteRtLmAssets({

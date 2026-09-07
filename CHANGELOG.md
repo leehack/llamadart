@@ -1,5 +1,9 @@
 ## Unreleased
 
+* Fail Apple builds before native symbol lookup when the resolved llama.cpp
+  companion does not match the core native runtime, with an actionable upgrade
+  diagnostic instead of allowing ABI-incompatible frameworks.
+
 * Updated the default llama.cpp native runtime pin to
   `leehack/llamadart-native@v0.4.0`, regenerated matching Dart FFI bindings, refreshed
   the `llamadart_llama_cpp_flutter` Apple SwiftPM checksum, and
