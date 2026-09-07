@@ -10,8 +10,13 @@ For canonical full release notes, use:
 ## Unreleased
 
 - Adopted native llama.cpp v0.4.0 with matching bindings and multimodal calls.
-  Saved native sessions from older runtimes must be regenerated; Web and LiteRT
-  runtime pins are unchanged.
+  Saved native sessions from older runtimes must be regenerated. Prepared Apple
+  companion `0.0.18` for the matching native runtime.
+
+- Aligned default WebGPU bridge assets to `v0.1.43` for Web/native
+  llama.cpp `v0.4.0@5266f24da75dc449bd56cbed7addb9c8e4a6a73e` parity.
+  Web `@litert-lm/core@0.15.0` and native LiteRT pins are unchanged. Immutable
+  manifest: `111eefc3588842cebfe665b363378edca34924764610263e1eda5280dfcfaa27`.
 
 ## 0.8.22
 

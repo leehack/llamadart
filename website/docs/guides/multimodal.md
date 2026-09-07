@@ -98,8 +98,8 @@ on the loaded bridge's runtime capability report.
 
 Video is not currently consumable through the public Dart generation API.
 `LlamaVideoContent` makes an attempted path/byte request explicit, but
-generation rejects it with `LlamaUnsupportedException`. The published native
-`v0.3.0` archive exports upstream video helper symbols, but this release has
+generation rejects it with `LlamaUnsupportedException`. The pinned native
+`v0.4.0` archive exports upstream video helper symbols, but this release has
 not been qualified for end-to-end video input; symbol presence is not a
 capability check. A complete implementation still needs companion native builds
 with `LLAMA_SUBPROCESS`/`MTMD_VIDEO`, a cross-platform FFmpeg/ffprobe packaging

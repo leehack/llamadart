@@ -10,6 +10,20 @@ import '../../../tool/git/safe_pr_head_update.dart';
 
 const zeroOid = '0000000000000000000000000000000000000000';
 
+bool isMaintainedMarkdown(String path) {
+  final parts = path.replaceAll('\\', '/').split('/');
+  return parts.last.endsWith('.md') &&
+      !parts.any(
+        const {
+          '.git',
+          '.dart_tool',
+          'node_modules',
+          'build',
+          '.docusaurus',
+        }.contains,
+      );
+}
+
 Future<ProcessResult> git(List<String> args, Directory cwd) {
   return Process.run('git', args, workingDirectory: cwd.path);
 }
@@ -1207,6 +1221,30 @@ void main() {
   });
 
   group('static repository writer contracts', () {
+    test(
+      'Markdown ownership excludes dependencies but retains maintained docs',
+      () {
+        for (final path in [
+          'README.md',
+          'doc/pr_branch_writer_inventory.md',
+          'website/docs/maintainers/release-workflow.md',
+          'website/versioned_docs/version-0.8.22/maintainers/release-workflow.md',
+        ]) {
+          expect(isMaintainedMarkdown(path), isTrue, reason: path);
+        }
+        for (final path in [
+          'website/node_modules/dependency/README.md',
+          r'website\node_modules\dependency\README.md',
+          'node_modules/dependency/README.md',
+          'example/chat_app/build/README.md',
+          'website/.docusaurus/README.md',
+          '.dart_tool/README.md',
+          '.git/README.md',
+        ]) {
+          expect(isMaintainedMarkdown(path), isFalse, reason: path);
+        }
+      },
+    );
     test('all executable and task sources exclude bypass writers', () {
       String repoPath(File file) {
         final normalized = file.path.replaceAll('\\', '/');
@@ -1294,14 +1332,9 @@ void main() {
       }
 
       final markdownFiles = Directory('.')
-          .listSync(recursive: true)
+          .listSync(recursive: true, followLinks: false)
           .whereType<File>()
-          .where((file) {
-            final path = repoPath(file);
-            return path.endsWith('.md') &&
-                !path.startsWith('.git/') &&
-                !path.contains('/.git/');
-          });
+          .where((file) => isMaintainedMarkdown(repoPath(file)));
       for (final file in markdownFiles) {
         final path = repoPath(file);
         final content = file.readAsStringSync();

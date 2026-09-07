@@ -117,7 +117,7 @@ bundled:
 - `llama_cpp`: GGUF model support through llama.cpp.
 - `litert_lm`: `.litertlm` model support through LiteRT-LM.
 
-The `v0.3.0` native llama.cpp pin (llama.cpp `v0.3.0`) includes BailingMoE3 and
+The `v0.4.0` native llama.cpp pin retains BailingMoE3 and
 GraniteSWA/GraniteMoeSWA model loading and LFM2 target/draft support for
 DSpark speculative decoding. These architectures use the existing GGUF APIs;
 LFM2 DSpark uses `SpeculativeDecodingConfig.draftDspark(...)`. No
@@ -128,7 +128,7 @@ backend validation remains necessary before enabling DSpark in production.
 
 | Runtime path | Public video input | Current evidence |
 | --- | --- | --- |
-| Native llama.cpp / GGUF | Not consumable | The published `v0.3.0` archive exports upstream video helper symbols, but this release has not been qualified for end-to-end video input. The companion build does not opt into `LLAMA_SUBPROCESS`/`MTMD_VIDEO` or package FFmpeg/ffprobe; the public Dart path remains unsupported until matching native, packaging, and frame-lifecycle validation exists. |
+| Native llama.cpp / GGUF | Not consumable | The pinned `v0.4.0` archive exports upstream video helper symbols, but this release has not been qualified for end-to-end video input. The companion build does not opt into `LLAMA_SUBPROCESS`/`MTMD_VIDEO` or package FFmpeg/ffprobe; the public Dart path remains unsupported until matching native, packaging, and frame-lifecycle validation exists. |
 | Native LiteRT-LM | Not consumable | The public direct-media path accepts image/audio content only. |
 | WebGPU / Web LiteRT-LM | Not consumable | No validated public Dart video transport or frame-lifetime contract exists. |
 | Android / iOS | Not consumable | Explicitly unsupported pending native packaging and device validation. |
