@@ -33,11 +33,24 @@ dependencies:
 For Flutter iOS/macOS apps that should link Apple XCFrameworks through Swift
 Package Manager, also add the runtime companion packages you need:
 
+**Unreleased coordinated upgrade:** companion `0.0.18` requires the matching
+llama.cpp v0.4.0 core bindings; it is not compatible with published core
+`0.8.22`. For published packages, keep core `0.8.22` with companion `0.0.17`.
+The development example below requires both path overrides to the same checkout.
+Publish companion `0.0.18` only with the matching next core release, and replace
+these temporary overrides/version constraints during that coordinated release.
+
 ```yaml
 dependencies:
   llamadart: ^0.8.22
-  llamadart_llama_cpp_flutter: ^0.0.17 # GGUF / llama.cpp
+  llamadart_llama_cpp_flutter: ^0.0.18 # GGUF / llama.cpp
   llamadart_litert_lm_flutter: ^0.0.10 # Apple .litertlm / LiteRT-LM targets
+
+dependency_overrides:
+  llamadart:
+    path: /path/to/llamadart
+  llamadart_llama_cpp_flutter:
+    path: /path/to/llamadart/packages/llamadart_llama_cpp_flutter
 ```
 
 The companion packages are published independently from the `packages/`
@@ -79,7 +92,7 @@ hooks:
     llamadart:
       # Optional. Defaults to llamadart's tested native runtime pin.
       # Use a leehack/llamadart-native release tag when testing another build.
-      llamadart_native_tag: v0.3.0
+      llamadart_native_tag: v0.4.0
 
       # Optional. GitHub repository slug or github.com URL.
       llamadart_native_repository: leehack/llamadart-native
@@ -106,7 +119,7 @@ per-target module list.
 Native source overrides are for compatibility testing. They do not regenerate
 Dart FFI bindings or symbol lookups, so the selected binary still must be ABI-
 and symbol-compatible with the default
-`leehack/llamadart-native@v0.3.0` runtime.
+`leehack/llamadart-native@v0.4.0` runtime.
 
 Available native tags are published on the
 [`leehack/llamadart-native` releases page](https://github.com/leehack/llamadart-native/releases).
@@ -134,7 +147,7 @@ gh release list --repo leehack/llamadart-native --limit 20
 
 Before overriding, confirm the release includes the asset for your target. The
 hook downloads files named `llamadart-native-<bundle>-<tag>.tar.gz`, for example
-`llamadart-native-windows-x64-v0.3.0.tar.gz`.
+`llamadart-native-windows-x64-v0.4.0.tar.gz`.
 For local testing, `llamadart_native_path` may point directly at a bundle
 archive, at an extracted bundle directory, or at a directory containing
 `<tag>/<bundle>/`, `<bundle>/`, or the expected archive file.
