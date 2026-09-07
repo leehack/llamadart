@@ -378,6 +378,8 @@ void main() {
     'missing-pin',
     'duplicate-pin',
     'wrong-target',
+    'hardcoded-url',
+    'comment-decoy',
     'missing-manifest',
   ]) {
     test('Apple companion rejects $scenario metadata before lookup', () async {
@@ -425,6 +427,20 @@ void main() {
               );
             case 'missing-manifest':
               manifest.deleteSync();
+            case 'hardcoded-url':
+              manifest.writeAsStringSync(
+                manifest.readAsStringSync().replaceFirst(
+                  r'url: "https://github.com/\(repository)/releases/download/\(tag)/\(artifactName)"',
+                  'url: "https://github.com/leehack/llamadart-native/releases/download/v0.3.0/llamadart-native-apple-xcframework-v0.3.0.zip"',
+                ),
+              );
+            case 'comment-decoy':
+              manifest.writeAsStringSync(
+                manifest.readAsStringSync().replaceFirst(
+                  'tag: llamaCppTag,',
+                  '// tag: llamaCppTag,\n            tag: "v0.3.0",',
+                ),
+              );
           }
         },
       );

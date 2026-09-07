@@ -19,6 +19,11 @@ const _nativeRepoSlug = 'leehack/llamadart-native';
 
 const _packageName = 'llamadart';
 const _llamaCppFlutterPackageName = 'llamadart_llama_cpp_flutter';
+// Bind the maintained SwiftPM code, not just a tag declaration that arbitrary
+// Swift could ignore. Only the release tag/checksum and CRLF are normalized.
+// Changes to the companion manifest implementation require contract review.
+const _appleCompanionManifestTemplateSha256 =
+    '6f047f32a768fb3afd2eb4b0488768b591f254fe94e2bb472c5d70b34ff52a86';
 const _liteRtLmFlutterPackageName = 'llamadart_litert_lm_flutter';
 const _thirdPartyDir = 'third_party';
 const _binDir = 'bin';
@@ -592,7 +597,7 @@ void _validateAppleLlamaCompanion(
     'Incompatible Apple llama.cpp companion: $reason '
     'Resolve $_llamaCppFlutterPackageName with a Package.swift pin matching '
     '$_nativeRepoSlug@$_llamaCppTag and rerun flutter pub get. '
-    'For native v0.4.0 use companion 0.0.18 with the matching core; '
+    'Upgrade the core and companion together to a matching released pair; '
     'native tag/path overrides do not replace SPM frameworks. '
     'No in-process native asset was emitted.',
   );
@@ -672,16 +677,17 @@ void _validateAppleLlamaCompanion(
         'the required native runtime $_llamaCppTag.',
       );
     }
-    // Only the maintained tag-driven remote target contract is recognized.
-    // A copied tag declaration must not authorize a different target pin.
-    if (!RegExp(
-          r'repository:\s*"leehack/llamadart-native",',
-        ).hasMatch(source) ||
-        !source.contains(
-          'artifactName: "llamadart-native-apple-xcframework-'
-          r'\(llamaCppTag).zip"',
-        ) ||
-        RegExp(r'tag:\s*llamaCppTag,').allMatches(source).length != 1) {
+    final normalizedSource = source.replaceAll('\r\n', '\n');
+    final checksum = RegExp(r'checksum: "[0-9a-f]{64}"');
+    final template = normalizedSource
+        .replaceFirst(
+          RegExp(r'^let llamaCppTag = "[^"\r\n]+"$', multiLine: true),
+          'let llamaCppTag = "PIN"',
+        )
+        .replaceFirst(checksum, 'checksum: "CHECKSUM"');
+    if (checksum.allMatches(normalizedSource).length != 1 ||
+        sha256.convert(utf8.encode(template)).toString() !=
+            _appleCompanionManifestTemplateSha256) {
       reject('Companion SwiftPM target does not use the supported native pin.');
     }
     final artifacts = Directory(path.join(manifest.parent.path, 'Artifacts'));

@@ -217,6 +217,8 @@ identity and SwiftPM pin to match the core native pin. Preserve this guard and
 its metadata cache dependencies when changing sync or hook behavior; declared
 version constraints and core native overrides are not ABI evidence. Unverified
 local companion `Artifacts` overrides must fail closed.
+Changes to the companion SwiftPM implementation require reviewing/updating the
+hook's normalized manifest template contract; tag/checksum-only syncs do not.
 
 Prefer the repository workflow for native version and binding updates:
 `.github/workflows/sync_native_bindings.yml`.

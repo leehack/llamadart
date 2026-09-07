@@ -5,6 +5,11 @@ description: Follow the correct workflow when syncing native bindings, companion
 
 ## Apple companion compatibility
 
+The hook binds the complete maintained SwiftPM template, normalizing only its
+release tag, checksum and CRLF line endings. A companion manifest code change
+requires a reviewed hook contract update; copied tag declarations cannot
+authorize alternate framework URLs or target code.
+
 Apple llama.cpp companion selection validates the **resolved** package from
 the consumer/workspace `package_config.json`, including path and dependency
 overrides. Its package identity and maintained SwiftPM native pin must match
