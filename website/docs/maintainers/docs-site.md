@@ -72,3 +72,7 @@ release-related merges.
 - Latest stable user-facing docs stay indexable, `/docs/next` plus archived
   versions are `noIndex`, and maintainer pages are listed under Help &
   Reference for contributors.
+- The navbar version dropdown switches between the current development docs
+  and every published version in `website/versions.json`. After a docs cut,
+  verify it opens the matching latest and archived installation pages without
+  changing their package pins or the latest-stable default route.
