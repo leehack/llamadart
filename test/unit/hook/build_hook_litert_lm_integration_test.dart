@@ -499,7 +499,7 @@ void main() {
             isTrue,
           );
           expect(
-            dependencies.any((entry) => entry.endsWith('Artifacts/')),
+            output.dependencies.any((uri) => uri.path.endsWith('/Artifacts/')),
             isTrue,
           );
         },
