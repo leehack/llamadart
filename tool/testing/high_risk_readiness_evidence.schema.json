@@ -63,7 +63,8 @@
       "items": {
         "enum": [
           "high-risk-exact-head-independent-qa",
-          "structured-output-adversarial"
+          "structured-output-adversarial",
+          "release-metadata-verification"
         ]
       }
     },
@@ -72,7 +73,8 @@
       "propertyNames": {
         "enum": [
           "high-risk-exact-head-independent-qa",
-          "structured-output-adversarial"
+          "structured-output-adversarial",
+          "release-metadata-verification"
         ]
       },
       "additionalProperties": { "$ref": "#/$defs/matrixRow" }
@@ -123,7 +125,8 @@
         "row_id": {
           "enum": [
             "high-risk-exact-head-independent-qa",
-            "structured-output-adversarial"
+            "structured-output-adversarial",
+            "release-metadata-verification"
           ]
         },
         "result": { "enum": ["pass", "fail", "notApplicable"] },
@@ -317,6 +320,7 @@
             "unchangedEvidencePath",
             "deletedEvidencePath",
             "renamedEvidencePath",
+            "invalidReleaseMetadata",
             "externalPrerequisitesUnavailable",
             "gitExecutionError",
             "invalidInput"

@@ -93,6 +93,19 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
         'changes. Required before mark-ready, not after merge.',
   ),
   TestMatrixRow(
+    id: 'release-metadata-verification',
+    tier: 'high-risk',
+    mode: 'local exact-head release evidence',
+    covers:
+        'bounded core-patch metadata diff and unchanged release regression suite',
+    command:
+        'dart run tool/testing/verify_release_docs_versions.dart --release-prep && '
+        'dart test -p vm -j 1 test/unit/tooling/verify_release_docs_companion_pins_test.dart',
+    useWhen:
+        'Only the evaluator-verified core-patch metadata release route; '
+        'never a substitute for changed tests on production or policy changes.',
+  ),
+  TestMatrixRow(
     id: 'structured-output-adversarial',
     tier: 'high-risk',
     mode: 'CI + local + primary upstream fixtures',

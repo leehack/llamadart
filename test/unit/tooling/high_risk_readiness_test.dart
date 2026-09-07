@@ -8,6 +8,7 @@ import 'package:test/test.dart';
 
 import '../../../tool/testing/classify_high_risk_changes.dart';
 import '../../../tool/testing/high_risk_readiness.dart';
+import '../../../tool/testing/release_metadata_readiness.dart';
 
 const baseSha = '1111111111111111111111111111111111111111';
 const headSha = '2222222222222222222222222222222222222222';
@@ -30,6 +31,7 @@ class FakeRepositoryState implements RepositoryStateReader {
     this.commitsExist = true,
     this.baseIsAncestor = true,
     this.pathProbeThrows = false,
+    this.files = const {},
   }) : existingPaths =
            existingPaths ??
            changes
@@ -42,7 +44,15 @@ class FakeRepositoryState implements RepositoryStateReader {
   final bool commitsExist;
   final bool baseIsAncestor;
   final bool pathProbeThrows;
+  final Map<String, Map<String, ReadinessFile>> files;
   var repositoryCallCount = 0;
+
+  @override
+  Future<ReadinessFile?> fileAt(
+    String sha,
+    String path, {
+    String? workingDirectory,
+  }) async => files[sha]?[path];
 
   @override
   Future<bool> commitExists(String sha, {String? workingDirectory}) async {
@@ -160,6 +170,69 @@ Map<String, dynamic> backendEvidence() {
   return evidence;
 }
 
+Map<String, dynamic> metadataEvidence() {
+  final evidence = backendEvidence();
+  evidence['surfaces'] = ['artifactConsumer'];
+  (evidence['required_matrix_row_ids'] as List).add(releaseMetadataRow);
+  (evidence['matrix_row_evidence'] as Map)[releaseMetadataRow] = {
+    'row_id': releaseMetadataRow,
+    'result': 'pass',
+    'command': releaseMetadataCommand,
+    'evidence_notes':
+        'Strict verifier and existing companion-pin tests passed on exact head.',
+  };
+  evidence['affected_test_paths'] = [releaseMetadataTest];
+  return evidence;
+}
+
+Map<String, Map<String, ReadinessFile>> metadataFiles() {
+  ReadinessFile file(String text) => (mode: '100644', contents: text);
+  final base = <String, ReadinessFile>{
+    'pubspec.yaml': file(
+      'name: llamadart\nversion: 0.8.22\ndependencies:\n  yaml: ^3.1.3\n',
+    ),
+    for (final path in releaseMetadataDocs)
+      path: file(
+        path.contains('CHANGELOG') || path.contains('recent-releases')
+            ? '# Changes\n\n## Unreleased\n\n* Update.\n\n## 0.8.22\n\n* History.\n'
+            : '# Install\n\n```yaml\ndependencies:\n  llamadart: ^0.8.22\n```\n',
+      ),
+    releaseMetadataLock: file(
+      'packages:\n  llamadart:\n    dependency: "direct main"\n    description:\n      path: "../.."\n      relative: true\n    source: path\n    version: "0.8.22"\nsdks:\n  dart: ">=3.13.0 <4.0.0"\n',
+    ),
+    releaseMetadataVerifier: file('// maintained verifier\n'),
+    releaseMetadataTest: file(
+      '// existing negative companion pin regressions\n',
+    ),
+  };
+  final head = Map<String, ReadinessFile>.from(base);
+  for (final path in releaseMetadataPaths) {
+    final old = base[path]!;
+    head[path] = file(
+      path.contains('CHANGELOG') || path.contains('recent-releases')
+          ? old.contents.replaceFirst('## Unreleased', '## 0.8.23')
+          : old.contents.replaceAll('0.8.22', '0.8.23'),
+    );
+  }
+  return {baseSha: base, headSha: head};
+}
+
+Future<HighRiskReadinessResult> evaluateMetadata({
+  Map<String, dynamic>? evidence,
+  Map<String, Map<String, ReadinessFile>>? files,
+  List<RepositoryChange>? changes,
+}) => HighRiskReadinessEvaluator(
+  repositoryState: FakeRepositoryState(
+    changes:
+        changes ??
+        [
+          for (final path in releaseMetadataPaths)
+            RepositoryChange(path: path, kind: RepositoryChangeKind.modified),
+        ],
+    files: files ?? metadataFiles(),
+  ),
+).evaluate(evidence: evidence ?? metadataEvidence(), context: context);
+
 Map<String, dynamic> standardEvidence() {
   final evidence = backendEvidence();
   evidence['classification'] = 'standard';
@@ -262,6 +335,401 @@ void mutateIdentityToOtherValidValues(Map<String, dynamic> evidence) {
 }
 
 void main() {
+  group('bounded metadata-only release evidence', () {
+    test(
+      'real Git blobs authorize only the committed metadata candidate',
+      () async {
+        final repo = Directory.systemTemp.createTempSync(
+          'release-metadata-git-',
+        );
+        addTearDown(() => repo.deleteSync(recursive: true));
+        String git(List<String> args) {
+          final result = Process.runSync(
+            'git',
+            args,
+            workingDirectory: repo.path,
+          );
+          expect(result.exitCode, 0, reason: '${result.stderr}');
+          return (result.stdout as String).trim();
+        }
+
+        git(['init', '--quiet']);
+        git(['config', 'user.name', 'Metadata test']);
+        git(['config', 'user.email', 'metadata@example.invalid']);
+        git(['config', 'core.autocrlf', 'false']);
+        final files = metadataFiles();
+        void write(Map<String, ReadinessFile> tree) {
+          for (final entry in tree.entries) {
+            File('${repo.path}/${entry.key}')
+              ..parent.createSync(recursive: true)
+              ..writeAsStringSync(entry.value.contents);
+          }
+        }
+
+        write(files[baseSha]!);
+        git(['add', '.']);
+        git(['commit', '--quiet', '-m', 'base']);
+        final base = git(['rev-parse', 'HEAD']);
+        write(files[headSha]!);
+        git(['add', '.']);
+        git(['commit', '--quiet', '-m', 'release']);
+        final head = git(['rev-parse', 'HEAD']);
+        final evidence = metadataEvidence()
+          ..['expected_pr_head_sha'] = head
+          ..['current_base_sha'] = base;
+        evidence['independent_audit']['audit_head_sha'] = head;
+        evidence['independent_audit']['audit_base_sha'] = base;
+        Future<HighRiskReadinessResult> evaluate(
+          String candidate,
+          Map<String, dynamic> input,
+        ) => const HighRiskReadinessEvaluator().evaluate(
+          evidence: input,
+          context: PullRequestContext(
+            repository: context.repository,
+            prNumber: context.prNumber,
+            headSha: candidate,
+            baseSha: base,
+            author: context.author,
+          ),
+          workingDirectory: repo.path,
+        );
+        // Mutable working-tree content cannot substitute for committed blobs.
+        File('${repo.path}/README.md').writeAsStringSync('{unsafe()}');
+        expect(
+          (await evaluate(head, evidence)).decision,
+          ReadinessDecision.unverifiedPrerequisites,
+        );
+        git(['add', 'README.md']);
+        git(['commit', '--quiet', '-m', 'unsafe MDX']);
+        final unsafe = git(['rev-parse', 'HEAD']);
+        expectFailure(
+          await evaluate(unsafe, evidence),
+          ReadinessFailureClassification.headMismatch,
+        );
+        evidence['expected_pr_head_sha'] = unsafe;
+        evidence['independent_audit']['audit_head_sha'] = unsafe;
+        expectFailure(
+          await evaluate(unsafe, evidence),
+          ReadinessFailureClassification.invalidReleaseMetadata,
+        );
+      },
+    );
+    test(
+      'documented grammar and repeated existing runtime identity are inert',
+      () async {
+        final files = metadataFiles();
+        for (final sha in [baseSha, headSha]) {
+          final old = files[sha]!['README.md']!;
+          files[sha]!['README.md'] = (
+            mode: old.mode,
+            contents: '${old.contents}\nNative v0.4.0.\n',
+          );
+        }
+        final candidate = files[headSha]!['README.md']!;
+        files[headSha]!['README.md'] = (
+          mode: candidate.mode,
+          contents:
+              '${candidate.contents}\nKnown v0.4.0 limitation: `root ::= "a"{2000}`.\n',
+        );
+        expect(
+          (await evaluateMetadata(files: files)).decision,
+          ReadinessDecision.unverifiedPrerequisites,
+        );
+      },
+    );
+    test(
+      'fence and inline context cannot convert existing fragments to MDX',
+      () async {
+        for (final snippet in [
+          '{dangerous()}',
+          'export const bad = 1;',
+          '<script src="bad"/>',
+        ]) {
+          for (final fence in ['```', '````', '~~~', '`']) {
+            final files = metadataFiles();
+            final before = files[baseSha]!['README.md']!;
+            final after = files[headSha]!['README.md']!;
+            final inert = fence.length == 1
+                ? '$fence$snippet$fence'
+                : '$fence\n$snippet\n$fence';
+            files[baseSha]!['README.md'] = (
+              mode: before.mode,
+              contents: '${before.contents}\n$inert\n',
+            );
+            files[headSha]!['README.md'] = (
+              mode: after.mode,
+              contents: '${after.contents}\n$snippet\n',
+            );
+            expectFailure(
+              await evaluateMetadata(files: files),
+              ReadinessFailureClassification.invalidReleaseMetadata,
+            );
+          }
+        }
+      },
+    );
+    test('Docusaurus executable fences and unclosed fences reject', () async {
+      for (final snippet in [
+        '```mdx-code-block\n{dangerous()}\n```',
+        '````mdx-code-block\n{dangerous()}\n````',
+        '```js\n{dangerous()}',
+      ]) {
+        final files = metadataFiles();
+        final old = files[headSha]!['README.md']!;
+        files[headSha]!['README.md'] = (
+          mode: old.mode,
+          contents: '${old.contents}\n$snippet\n',
+        );
+        expectFailure(
+          await evaluateMetadata(files: files),
+          ReadinessFailureClassification.invalidReleaseMetadata,
+        );
+      }
+    });
+    test(
+      'existing release proof remains high risk and externally unverified',
+      () async {
+        final result = await evaluateMetadata();
+        expect(result.decision, ReadinessDecision.unverifiedPrerequisites);
+        expect(
+          result.failureClassification,
+          ReadinessFailureClassification.externalPrerequisitesUnavailable,
+        );
+        expect(result.isReady, isFalse);
+        expect(result.toJson()['classification'], 'high-risk');
+      },
+    );
+
+    for (final path in [
+      'lib/src/backends/native.dart',
+      'hook/build.dart',
+      'scripts/fetch_webgpu_bridge_assets.sh',
+      'packages/llamadart_llama_cpp_flutter/darwin/llamadart_llama_cpp_flutter/Package.swift',
+      '.github/workflows/release_on_prep_merge.yml',
+      'tool/testing/high_risk_readiness.dart',
+      'AGENTS.md',
+      'website/versioned_docs/version-0.8.22/intro.md',
+      'website/docs/new.mdx',
+      'packages/llamadart_llama_cpp_flutter/pubspec.yaml',
+    ]) {
+      test('mixed $path cannot claim release exception', () async {
+        final changes = [
+          for (final name in releaseMetadataPaths)
+            RepositoryChange(path: name, kind: RepositoryChangeKind.modified),
+          RepositoryChange(path: path, kind: RepositoryChangeKind.modified),
+        ];
+        final evidence = metadataEvidence();
+        evidence['surfaces'] = assessHighRiskFiles(
+          changes.map((c) => c.path),
+        ).surfaces.map((s) => s.name).toList();
+        expect(
+          (await evaluateMetadata(
+            evidence: evidence,
+            changes: changes,
+          )).decision,
+          ReadinessDecision.rejected,
+        );
+      });
+    }
+
+    for (final mutation in <String, String Function(String)>{
+      'dependency': (s) => s.replaceFirst('yaml: ^3.1.3', 'yaml: ^9.0.0'),
+      'SDK': (s) =>
+          '$s'
+          'environment:\n  sdk: ^9.0.0\n',
+      'override': (s) =>
+          '$s'
+          'dependency_overrides:\n  yaml: any\n',
+      'native pin': (s) =>
+          '$s'
+          'hooks:\n  user_defines:\n    llamadart_native_tag: v9.0.0\n',
+      'duplicate version': (s) =>
+          '$s'
+          'version: 0.8.23\n',
+      'rollback': (s) => s.replaceFirst('0.8.23', '0.8.21'),
+      'minor jump': (s) => s.replaceFirst('0.8.23', '0.9.0'),
+      'leading zero': (s) => s.replaceFirst('0.8.23', '0.8.023'),
+    }.entries) {
+      test(
+        'pubspec ${mutation.key} rejects even claimed verifier PASS',
+        () async {
+          final files = metadataFiles();
+          files[headSha]!['pubspec.yaml'] = (
+            mode: '100644',
+            contents: mutation.value(files[headSha]!['pubspec.yaml']!.contents),
+          );
+          expectFailure(
+            await evaluateMetadata(files: files),
+            ReadinessFailureClassification.invalidReleaseMetadata,
+          );
+        },
+      );
+    }
+
+    for (final mutation in <String, String Function(String)>{
+      'source': (s) => s.replaceFirst('source: path', 'source: hosted'),
+      'path': (s) => s.replaceFirst('../..', '../evil'),
+      'SDK': (s) => s.replaceFirst('3.13.0', '3.14.0'),
+      'extra package': (s) =>
+          s.replaceFirst('sdks:', '  evil:\n    version: "1.0.0"\nsdks:'),
+      'wrong version': (s) => s.replaceFirst('0.8.23', '0.8.24'),
+      'hash': (s) =>
+          s.replaceFirst('source: path', 'sha256: evil\n    source: path'),
+    }.entries) {
+      test('lock ${mutation.key} rejects', () async {
+        final files = metadataFiles();
+        files[headSha]![releaseMetadataLock] = (
+          mode: '100644',
+          contents: mutation.value(
+            files[headSha]![releaseMetadataLock]!.contents,
+          ),
+        );
+        expectFailure(
+          await evaluateMetadata(files: files),
+          ReadinessFailureClassification.invalidReleaseMetadata,
+        );
+      });
+    }
+
+    for (final path in [
+      releaseMetadataVerifier,
+      releaseMetadataTest,
+      'pubspec.yaml',
+    ]) {
+      for (final mode in ['120000', '100755']) {
+        test('$path mode $mode rejects', () async {
+          final files = metadataFiles();
+          files[headSha]![path] = (
+            mode: mode,
+            contents: files[headSha]![path]!.contents,
+          );
+          expectFailure(
+            await evaluateMetadata(files: files),
+            ReadinessFailureClassification.invalidReleaseMetadata,
+          );
+        });
+      }
+    }
+    test('modified or missing existing verifier/test rejects', () async {
+      for (final path in [releaseMetadataVerifier, releaseMetadataTest]) {
+        final files = metadataFiles();
+        files[headSha]![path] = (mode: '100644', contents: '// fake pass\n');
+        expectFailure(
+          await evaluateMetadata(files: files),
+          ReadinessFailureClassification.invalidReleaseMetadata,
+        );
+        files[headSha]!.remove(path);
+        expectFailure(
+          await evaluateMetadata(files: files),
+          ReadinessFailureClassification.invalidReleaseMetadata,
+        );
+      }
+    });
+    test(
+      'changed history, stale snippets and executable docs reject',
+      () async {
+        for (final source in [
+          '# Install\n  llamadart: ^0.8.22\n',
+          '# Install\n  llamadart: ^0.8.23\n{dangerous()}\n',
+          '# Install\n  llamadart: ^0.8.23\n<script src="evil"/>\n',
+          '# Install\n  llamadart: ^0.8.23\nexport const x = 1;\n',
+          '# Install\n  llamadart: ^0.8.23\nNew runtime v9.0.0\n',
+        ]) {
+          final files = metadataFiles();
+          files[headSha]!['README.md'] = (mode: '100644', contents: source);
+          expectFailure(
+            await evaluateMetadata(files: files),
+            ReadinessFailureClassification.invalidReleaseMetadata,
+          );
+        }
+        final files = metadataFiles();
+        files[headSha]!['CHANGELOG.md'] = (
+          mode: '100644',
+          contents: files[headSha]!['CHANGELOG.md']!.contents.replaceFirst(
+            'History.',
+            'Rewrite.',
+          ),
+        );
+        expectFailure(
+          await evaluateMetadata(files: files),
+          ReadinessFailureClassification.invalidReleaseMetadata,
+        );
+      },
+    );
+    test(
+      'renames/additions/removals cannot be disguised as metadata',
+      () async {
+        for (final kind in [
+          RepositoryChangeKind.added,
+          RepositoryChangeKind.deleted,
+          RepositoryChangeKind.renamed,
+          RepositoryChangeKind.typeChanged,
+        ]) {
+          final changes = [
+            for (final path in releaseMetadataPaths)
+              RepositoryChange(
+                path: path,
+                kind: path == 'README.md'
+                    ? kind
+                    : RepositoryChangeKind.modified,
+                previousPath:
+                    path == 'README.md' && kind == RepositoryChangeKind.renamed
+                    ? 'old.md'
+                    : null,
+              ),
+          ];
+          expectFailure(
+            await evaluateMetadata(changes: changes),
+            ReadinessFailureClassification.invalidReleaseMetadata,
+          );
+        }
+      },
+    );
+    test(
+      'wrong command, nonpassing row and invented test cannot authorize',
+      () async {
+        final command = metadataEvidence();
+        command['matrix_row_evidence'][releaseMetadataRow]['command'] =
+            'echo pass';
+        expectFailure(
+          await evaluateMetadata(evidence: command),
+          ReadinessFailureClassification.invalidReleaseMetadata,
+        );
+        final failed = metadataEvidence();
+        failed['matrix_row_evidence'][releaseMetadataRow]['result'] =
+            'notApplicable';
+        expectFailure(
+          await evaluateMetadata(evidence: failed),
+          ReadinessFailureClassification.matrixRowFailed,
+        );
+        final path = metadataEvidence()
+          ..['affected_test_paths'] = [backendTest];
+        expectFailure(
+          await evaluateMetadata(evidence: path),
+          ReadinessFailureClassification.invalidReleaseMetadata,
+        );
+      },
+    );
+    test(
+      'stale audits, selfapproval, P1s and unresolved threads stay blocked',
+      () async {
+        for (final entry in <String, Object>{
+          'audit_head_sha': otherSha,
+          'audit_base_sha': otherSha,
+          'auditor_identity': context.author,
+          'known_pr_caused_p1_regressions': 1,
+          'unresolved_review_threads': 1,
+        }.entries) {
+          final evidence = metadataEvidence();
+          evidence['independent_audit'][entry.key] = entry.value;
+          expect(
+            (await evaluateMetadata(evidence: evidence)).decision,
+            ReadinessDecision.rejected,
+          );
+        }
+      },
+    );
+  });
   group('strict JSON and schema shape', () {
     test('rejects duplicate root, nested, and escaped-equivalent keys', () {
       expect(
@@ -1093,6 +1561,7 @@ void main() {
       const matrixRows = <String>[
         'high-risk-exact-head-independent-qa',
         'structured-output-adversarial',
+        'release-metadata-verification',
       ];
       expect(
         (schema['properties']
