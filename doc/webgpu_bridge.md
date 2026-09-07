@@ -19,15 +19,15 @@ pipelines.
    `https://cdn.jsdelivr.net/gh/leehack/llama-web-bridge-assets@<tag>/llama_webgpu_bridge.js`
 2. Local fallback: `./webgpu_bridge/llama_webgpu_bridge.js`
 
-Default pinned tag in the example is `v0.1.40`.
+Default pinned tag in the example is `v0.1.43`.
 
-That release embeds llama.cpp `v0.3.0`, matching the `hook/build.dart` native pin
-(`v0.3.0`, both built from upstream llama.cpp `v0.3.0@c1d0e7a004015f23bc0233470b747b596f29b264`)
-even though the bridge asset tag `v0.1.40` differs from the native runtime tag
-`v0.3.0`. Provenance for this immutable consumer artifact: release `379234159`,
-tag commit `a18f1c31835ee722c7750a5c68f22c5b19e4c937`, bridge source
-`0bdc8286fd52b70da27f5b039e1b4278361da0be`, and manifest SHA-256
-`99fc09bb0cc23cf0eb08875a9ea973803fb1d432c5c8ca1b1211af0eb1d20b17`. It retains
+That release embeds llama.cpp `v0.4.0`, matching the `hook/build.dart` native pin
+(`v0.4.0`, both built from upstream llama.cpp `v0.4.0@5266f24da75dc449bd56cbed7addb9c8e4a6a73e`)
+even though the bridge asset tag `v0.1.43` differs from the native runtime tag
+`v0.4.0`. Provenance for this immutable consumer artifact: release `384042112`,
+tag commit `78be0c8c628cd8cbc6a1268b1a9758c3d6d052a6`, bridge source
+`89178be67c3c84300bc1b129182bd5bc5a8e21fc`, and manifest SHA-256
+`111eefc3588842cebfe665b363378edca34924764610263e1eda5280dfcfaa27`. It retains
 the Qwen3-ASR typed speech-to-text contract introduced in `v0.1.30` and
 provisions the explicit 1 MiB Wasm stack needed for memory64 context
 construction in direct and worker modes. The chat bootstrap opts
@@ -47,7 +47,7 @@ model bytes.
 To vendor pinned assets into local app web files:
 
 ```bash
-WEBGPU_BRIDGE_ASSETS_TAG=v0.1.40 ./scripts/fetch_webgpu_bridge_assets.sh
+WEBGPU_BRIDGE_ASSETS_TAG=v0.1.43 ./scripts/fetch_webgpu_bridge_assets.sh
 ```
 
 Optional compatibility env vars:
@@ -128,7 +128,7 @@ You can override CDN source/version before the bridge loader runs:
 ```html
 <script>
   window.__llamadartBridgeAssetsRepo = 'leehack/llama-web-bridge-assets';
-  window.__llamadartBridgeAssetsTag = 'v0.1.40';
+  window.__llamadartBridgeAssetsTag = 'v0.1.43';
 </script>
 ```
 

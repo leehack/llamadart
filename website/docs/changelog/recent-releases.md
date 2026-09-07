@@ -9,16 +9,30 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+- Adopted native llama.cpp v0.4.0 with matching bindings and multimodal calls.
+  Saved native sessions from older runtimes must be regenerated. Prepared Apple
+  companion `0.0.18` for the matching native runtime.
+
+- Aligned default WebGPU bridge assets to `v0.1.43` for Web/native
+  llama.cpp `v0.4.0@5266f24da75dc449bd56cbed7addb9c8e4a6a73e` parity.
+  Web `@litert-lm/core@0.15.0` and native LiteRT pins are unchanged. Immutable
+  manifest: `111eefc3588842cebfe665b363378edca34924764610263e1eda5280dfcfaa27`.
+
+## 0.8.22
+
+- Updated `llamadart_llama_cpp_flutter` to `0.0.17` with the
+  Apple SwiftPM `v0.3.0` runtime pin.
+
 - Updated the default llama.cpp native runtime pin to
   `leehack/llamadart-native@v0.3.0`, regenerated matching Dart FFI bindings,
   refreshed the `llamadart_llama_cpp_flutter` Apple SwiftPM checksum, and
   aligned current README/website native override docs.
 
-- Aligned default WebGPU bridge assets to `v0.1.40`, keeping Web and native
-  llama.cpp upstream `v0.3.0@c1d0e7a004015f23bc0233470b747b596f29b264` parity
-  with native anchor `llamadart-native@v0.3.0` while preserving Web
-  `@litert-lm/core@0.15.0` packaging. Immutable manifest:
-  `99fc09bb0cc23cf0eb08875a9ea973803fb1d432c5c8ca1b1211af0eb1d20b17`.
+- Aligned default WebGPU bridge assets to `v0.1.41` for corrected
+  TypeScript declarations and TTS recovery guidance, retaining Web/native
+  llama.cpp `v0.3.0@c1d0e7a004015f23bc0233470b747b596f29b264` parity and Web
+  `@litert-lm/core@0.15.0`. Immutable manifest:
+  `fe97604daabaad6aefa223a8637d5fd9dcac09dd4a61b2ef19cd6aabb39392b9`.
 
 - Consolidated native release tag grammar across Dart, Python, Bash, workflows,
   and documentation via a machine-readable fixture contract (`#404`).

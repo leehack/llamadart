@@ -3,6 +3,7 @@
 library;
 
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:test/test.dart';
 import 'package:llamadart/llamadart.dart';
 import '../test_helper.dart';
@@ -78,6 +79,30 @@ void main() async {
       () => engine.stateLoadFile(missingPath, tokenCapacity: 256),
       throwsA(isA<Exception>()),
     );
+  });
+
+  test('rejects v0.3.0 session headers and can reload a valid state', () async {
+    final tokens = await engine.tokenize('Once upon a time');
+    await engine
+        .generate(
+          'Once upon a time',
+          params: const GenerationParams(maxTokens: 2),
+        )
+        .drain<void>();
+    final validPath = '${tmpDir.path}/current-version.bin';
+    expect(await engine.stateSaveFile(validPath, tokens: tokens), isTrue);
+    final bytes = File(validPath).readAsBytesSync();
+    final header = ByteData.sublistView(bytes);
+    expect(header.getUint32(4, Endian.host), 10);
+    header.setUint32(4, 9, Endian.host);
+    final oldPath = '${tmpDir.path}/old-version.bin';
+    File(oldPath).writeAsBytesSync(bytes);
+    await expectLater(
+      engine.stateLoadFile(oldPath, tokenCapacity: 256),
+      throwsA(isA<LlamaException>()),
+    );
+    final restored = await engine.stateLoadFile(validPath, tokenCapacity: 256);
+    expect(restored.tokens, tokens);
   });
 
   test('rejects token capacity larger than context size', () async {

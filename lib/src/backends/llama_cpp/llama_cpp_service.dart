@@ -262,17 +262,21 @@ typedef _MtmdInputChunksInitNative = Pointer<mtmd_input_chunks> Function();
 typedef _MtmdInputChunksInitDart = Pointer<mtmd_input_chunks> Function();
 typedef _MtmdInputChunksFreeNative = Void Function(Pointer<mtmd_input_chunks>);
 typedef _MtmdInputChunksFreeDart = void Function(Pointer<mtmd_input_chunks>);
+typedef _MtmdHelperInitOptDefaultNative = mtmd_helper_init_opt Function();
+typedef _MtmdHelperInitOptDefaultDart = mtmd_helper_init_opt Function();
 typedef _MtmdHelperBitmapInitFromFileNative =
     mtmd_helper_bitmap_wrapper Function(
       Pointer<mtmd_context>,
       Pointer<Char>,
       Bool,
+      mtmd_helper_init_opt,
     );
 typedef _MtmdHelperBitmapInitFromFileDart =
     mtmd_helper_bitmap_wrapper Function(
       Pointer<mtmd_context>,
       Pointer<Char>,
       bool,
+      mtmd_helper_init_opt,
     );
 typedef _MtmdHelperBitmapInitFromBufNative =
     mtmd_helper_bitmap_wrapper Function(
@@ -280,6 +284,7 @@ typedef _MtmdHelperBitmapInitFromBufNative =
       Pointer<UnsignedChar>,
       Size,
       Bool,
+      mtmd_helper_init_opt,
     );
 typedef _MtmdHelperBitmapInitFromBufDart =
     mtmd_helper_bitmap_wrapper Function(
@@ -287,6 +292,7 @@ typedef _MtmdHelperBitmapInitFromBufDart =
       Pointer<UnsignedChar>,
       int,
       bool,
+      mtmd_helper_init_opt,
     );
 typedef _MtmdBitmapInitFromAudioNative =
     Pointer<mtmd_bitmap> Function(Size, Pointer<Float>);
@@ -6817,7 +6823,12 @@ class LlamaCppService {
   ) {
     if (!_mtmdPrimarySymbolsUnavailable) {
       try {
-        return mtmd_helper_bitmap_init_from_file(ctx, pathPtr, false).bitmap;
+        return mtmd_helper_bitmap_init_from_file(
+          ctx,
+          pathPtr,
+          false,
+          mtmd_helper_init_opt_default(),
+        ).bitmap;
       } on ArgumentError {
         _mtmdPrimarySymbolsUnavailable = true;
       }
@@ -6828,7 +6839,14 @@ class LlamaCppService {
         _mtmdUnavailableMessage('mtmd_helper_bitmap_init_from_file'),
       );
     }
-    return fallback.helperBitmapInitFromFile(ctx, pathPtr, false).bitmap;
+    return fallback
+        .helperBitmapInitFromFile(
+          ctx,
+          pathPtr,
+          false,
+          fallback.helperInitOptDefault(),
+        )
+        .bitmap;
   }
 
   Pointer<mtmd_bitmap> _mtmdHelperBitmapInitFromBuf(
@@ -6838,7 +6856,13 @@ class LlamaCppService {
   ) {
     if (!_mtmdPrimarySymbolsUnavailable) {
       try {
-        return mtmd_helper_bitmap_init_from_buf(ctx, data, size, false).bitmap;
+        return mtmd_helper_bitmap_init_from_buf(
+          ctx,
+          data,
+          size,
+          false,
+          mtmd_helper_init_opt_default(),
+        ).bitmap;
       } on ArgumentError {
         _mtmdPrimarySymbolsUnavailable = true;
       }
@@ -6849,7 +6873,15 @@ class LlamaCppService {
         _mtmdUnavailableMessage('mtmd_helper_bitmap_init_from_buf'),
       );
     }
-    return fallback.helperBitmapInitFromBuf(ctx, data, size, false).bitmap;
+    return fallback
+        .helperBitmapInitFromBuf(
+          ctx,
+          data,
+          size,
+          false,
+          fallback.helperInitOptDefault(),
+        )
+        .bitmap;
   }
 
   Pointer<mtmd_bitmap> _mtmdBitmapInitFromAudio(int n, Pointer<Float> samples) {
@@ -8118,6 +8150,7 @@ class _MtmdApi {
   final _MtmdFreeDart free;
   final _MtmdInputChunksInitDart inputChunksInit;
   final _MtmdInputChunksFreeDart inputChunksFree;
+  final _MtmdHelperInitOptDefaultDart helperInitOptDefault;
   final _MtmdHelperBitmapInitFromFileDart helperBitmapInitFromFile;
   final _MtmdHelperBitmapInitFromBufDart helperBitmapInitFromBuf;
   final _MtmdBitmapInitFromAudioDart bitmapInitFromAudio;
@@ -8137,6 +8170,7 @@ class _MtmdApi {
     required this.free,
     required this.inputChunksInit,
     required this.inputChunksFree,
+    required this.helperInitOptDefault,
     required this.helperBitmapInitFromFile,
     required this.helperBitmapInitFromBuf,
     required this.bitmapInitFromAudio,
@@ -8200,6 +8234,11 @@ class _MtmdApi {
               _MtmdInputChunksFreeNative,
               _MtmdInputChunksFreeDart
             >('mtmd_input_chunks_free'),
+        helperInitOptDefault: library
+            .lookupFunction<
+              _MtmdHelperInitOptDefaultNative,
+              _MtmdHelperInitOptDefaultDart
+            >('mtmd_helper_init_opt_default'),
         helperBitmapInitFromFile: library
             .lookupFunction<
               _MtmdHelperBitmapInitFromFileNative,
