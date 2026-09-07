@@ -7,6 +7,12 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
+## Unreleased
+
+- Adopted native llama.cpp v0.4.0 with matching bindings and multimodal calls.
+  Saved native sessions from older runtimes must be regenerated; Web and LiteRT
+  runtime pins are unchanged.
+
 ## 0.8.22
 
 - Updated `llamadart_llama_cpp_flutter` to `0.0.17` with the

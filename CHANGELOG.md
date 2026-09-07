@@ -1,3 +1,12 @@
+## Unreleased
+
+* Updated the default llama.cpp native runtime pin to
+  `leehack/llamadart-native@v0.4.0`, regenerated matching Dart FFI bindings, refreshed
+  the `llamadart_llama_cpp_flutter` Apple SwiftPM checksum, and
+  aligned current README/website native override docs. Updated multimodal calls
+  for the matching ABI. Saved native sessions from older runtimes must be
+  regenerated; Web and LiteRT runtime pins are unchanged.
+
 ## 0.8.22
 
 * Updated `llamadart_llama_cpp_flutter` to `0.0.17` with the
