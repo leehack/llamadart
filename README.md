@@ -64,6 +64,11 @@ Package Manager should also add the runtime companion packages they need:
 Pair companion `0.0.18` with core `0.8.23` for matching llama.cpp v0.4.0
 bindings. Keep core `0.8.22` paired with companion `0.0.17`.
 
+Apple builds verify the resolved companion's SwiftPM runtime pin before native
+symbol lookup. Incompatible companions or unverified local `Artifacts`
+overrides fail the build; resolve the matching companion and rerun
+`flutter pub get`. Core native overrides do not replace SPM frameworks.
+
 ```yaml
 dependencies:
   llamadart: ^0.8.23

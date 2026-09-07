@@ -3,6 +3,25 @@ title: Native and Web Sync Flows
 description: Follow the correct workflow when syncing native bindings, companion package pins, or published web bridge assets.
 ---
 
+## Apple companion compatibility
+
+The hook binds the complete maintained SwiftPM template, normalizing only its
+release tag, checksum and CRLF line endings. A companion manifest code change
+requires a reviewed hook contract update; copied tag declarations cannot
+authorize alternate framework URLs or target code.
+
+Apple llama.cpp companion selection validates the **resolved** package from
+the consumer/workspace `package_config.json`, including path and dependency
+overrides. Its package identity and maintained SwiftPM native pin must match
+the core hook pin before any in-process native asset is emitted. Updating a
+declared dependency constraint alone is insufficient: rerun `flutter pub get`
+and resolve the matching companion. Core native tag/path/backend overrides do
+not replace SwiftPM frameworks and cannot bypass this check.
+
+Local `Artifacts` overrides in that companion are rejected because their ABI
+provenance is unverified. Remove the override and use the pinned remote
+framework. Non-Apple native-assets and LiteRT selection are unchanged.
+
 ## Native sync flow
 
 When native behavior or bindings need updates:
