@@ -33,11 +33,24 @@ dependencies:
 For Flutter iOS/macOS apps that should link Apple XCFrameworks through Swift
 Package Manager, also add the runtime companion packages you need:
 
+**Unreleased coordinated upgrade:** companion `0.0.18` requires the matching
+llama.cpp v0.4.0 core bindings; it is not compatible with published core
+`0.8.22`. For published packages, keep core `0.8.22` with companion `0.0.17`.
+The development example below requires both path overrides to the same checkout.
+Publish companion `0.0.18` only with the matching next core release, and replace
+these temporary overrides/version constraints during that coordinated release.
+
 ```yaml
 dependencies:
   llamadart: ^0.8.22
   llamadart_llama_cpp_flutter: ^0.0.18 # GGUF / llama.cpp
   llamadart_litert_lm_flutter: ^0.0.10 # Apple .litertlm / LiteRT-LM targets
+
+dependency_overrides:
+  llamadart:
+    path: /path/to/llamadart
+  llamadart_llama_cpp_flutter:
+    path: /path/to/llamadart/packages/llamadart_llama_cpp_flutter
 ```
 
 The companion packages are published independently from the `packages/`
