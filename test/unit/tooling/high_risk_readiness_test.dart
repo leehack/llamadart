@@ -337,6 +337,26 @@ void mutateIdentityToOtherValidValues(Map<String, dynamic> evidence) {
 void main() {
   group('bounded metadata-only release evidence', () {
     test(
+      'new release prefix cannot duplicate or invent historical sections',
+      () async {
+        for (final heading in ['## 0.8.22', '## 9.0.0', '## Migration']) {
+          final files = metadataFiles();
+          final old = files[headSha]!['CHANGELOG.md']!;
+          files[headSha]!['CHANGELOG.md'] = (
+            mode: old.mode,
+            contents: old.contents.replaceFirst(
+              '* Update.',
+              '* Update.\n\n$heading\n\n* Duplicate.',
+            ),
+          );
+          expectFailure(
+            await evaluateMetadata(files: files),
+            ReadinessFailureClassification.invalidReleaseMetadata,
+          );
+        }
+      },
+    );
+    test(
       'existing active JSX template attributes and script bodies cannot use exception',
       () async {
         for (final pair in [

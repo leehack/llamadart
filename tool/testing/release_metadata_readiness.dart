@@ -125,6 +125,22 @@ String? validateReleaseMetadata(Map<String, ReadinessFilePair> files) {
         0,
         pair.head.contents.length - historyLength,
       );
+      final headings = RegExp(r'^## ([^\n]+)$', multiLine: true);
+      final before = headings
+          .allMatches(baseProse)
+          .map((m) => m.group(1))
+          .toList();
+      final after = headings
+          .allMatches(headProse)
+          .map((m) => m.group(1))
+          .toList();
+      if (before.length != 1 ||
+          before.single != 'Unreleased' ||
+          after.length != 1 ||
+          after.single != newVersion) {
+        return 'Metadata release must replace only the Unreleased section '
+            'heading with the next core patch: $path.';
+      }
     }
     // This exception is for Markdown prose/code examples, not active MDX.
     // Deny active contexts altogether: fragment equality cannot establish JS
