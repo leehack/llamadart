@@ -119,10 +119,13 @@ not a `metadata_only` flag or a caller-provided inventory:
   every other byte, including dependencies, SDK, hooks and overrides, is fixed.
 - Both current changelogs and the four maintained installation README/docs
   pages are modified. Historical numbered changelog sections, runtime identity
-  strings, embedded MDX/HTML fragments, frontmatter and already-prepared
-  companion constraints remain unchanged; current core snippets name the new
-  patch. Narrative release prose still needs independent review.
-- The only optional path is `example/chat_app/pubspec.lock`, changing only the
+  identities, frontmatter and already-prepared companion constraints remain
+  unchanged; current core snippets name the new patch. Mutable release prose
+  must be inactive Markdown with no MDX expressions/imports/exports or HTML
+  outside inert code examples. Executable `mdx-code-block` fences are rejected.
+  Historical changelog tails are excluded from that syntax check only after
+  proving byte equality. Narrative prose still needs independent review.
+- The generated `example/chat_app/pubspec.lock` must change only the
   matching local `llamadart` version. Path, source, inventory, hashes, SDK and
   all other bytes remain identical. Pub must generate the lock normally.
 - All changed paths are existing non-executable regular files; additions,

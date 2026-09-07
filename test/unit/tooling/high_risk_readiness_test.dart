@@ -337,6 +337,60 @@ void mutateIdentityToOtherValidValues(Map<String, dynamic> evidence) {
 void main() {
   group('bounded metadata-only release evidence', () {
     test(
+      'existing active JSX template attributes and script bodies cannot use exception',
+      () async {
+        for (final pair in [
+          (
+            before: '<div title={`safe`} />',
+            after: r'<div title={`${dangerous()}`} />',
+          ),
+          (
+            before: '<script>safe()</script>',
+            after: '<script>dangerous()</script>',
+          ),
+          (
+            before: '<style>body{color:red}</style>',
+            after: '<style>body{display:none}</style>',
+          ),
+        ]) {
+          final files = metadataFiles();
+          final base = files[baseSha]!['README.md']!;
+          final head = files[headSha]!['README.md']!;
+          files[baseSha]!['README.md'] = (
+            mode: base.mode,
+            contents: '${base.contents}\n${pair.before}\n',
+          );
+          files[headSha]!['README.md'] = (
+            mode: head.mode,
+            contents: '${head.contents}\n${pair.after}\n',
+          );
+          expectFailure(
+            await evaluateMetadata(files: files),
+            ReadinessFailureClassification.invalidReleaseMetadata,
+          );
+        }
+      },
+    );
+    test(
+      'omitting a required lock or current document cannot hide stale metadata',
+      () async {
+        for (final omitted in releaseMetadataPaths) {
+          final changes = [
+            for (final path in releaseMetadataPaths)
+              if (path != omitted)
+                RepositoryChange(
+                  path: path,
+                  kind: RepositoryChangeKind.modified,
+                ),
+          ];
+          expectFailure(
+            await evaluateMetadata(changes: changes),
+            ReadinessFailureClassification.invalidReleaseMetadata,
+          );
+        }
+      },
+    );
+    test(
       'real Git blobs authorize only the committed metadata candidate',
       () async {
         final repo = Directory.systemTemp.createTempSync(

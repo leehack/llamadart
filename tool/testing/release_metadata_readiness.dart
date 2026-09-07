@@ -38,11 +38,12 @@ typedef ReadinessFilePair = ({ReadinessFile base, ReadinessFile head});
 String? validateReleaseMetadata(Map<String, ReadinessFilePair> files) {
   if (!files.keys.toSet().containsAll({
         'pubspec.yaml',
+        releaseMetadataLock,
         ...releaseMetadataDocs,
       }) ||
       files.keys.any((path) => !releaseMetadataPaths.contains(path))) {
-    return 'Metadata release requires core pubspec and both current changelogs; '
-        'only the fixed release metadata paths are allowed.';
+    return 'Metadata release requires the complete fixed core pubspec, generated '
+        'chat lock and current release-document inventory.';
   }
   for (final entry in files.entries) {
     if (entry.value.base.mode != '100644' ||
@@ -79,19 +80,8 @@ String? validateReleaseMetadata(Map<String, ReadinessFilePair> files) {
   for (final path in releaseMetadataDocs) {
     final pair = files[path];
     if (pair == null) continue;
-    // Markdown in Docusaurus may contain executable MDX. Preserve its complete
-    // syntax-bearing fragments and import/export lines rather than exempt it.
-    final baseActive = _activeFragments(pair.base.contents);
-    final headActive = _activeFragments(pair.head.contents);
-    if (baseActive == null ||
-        headActive == null ||
-        baseActive != headActive ||
-        _frontMatter(pair.base.contents) != _frontMatter(pair.head.contents) ||
-        _runtimeIdentities(pair.base.contents) !=
-            _runtimeIdentities(pair.head.contents)) {
-      return 'Release documentation cannot change embedded MDX/HTML syntax: '
-          '$path.';
-    }
+    var baseProse = pair.base.contents;
+    var headProse = pair.head.contents;
     if (path.endsWith('README.md') || path.endsWith('installation.md')) {
       final dependencies = RegExp(
         r'^\s+llamadart:\s+\^([^\s#]+)',
@@ -127,6 +117,25 @@ String? validateReleaseMetadata(Map<String, ReadinessFilePair> files) {
         return 'Release changelogs must name the new patch and preserve all '
             'historical numbered sections: $path.';
       }
+      // Historical bytes are already immutable. Do not reinterpret their old
+      // Markdown with a new parser; inspect only the mutable release prefix.
+      final historyLength = pair.base.contents.length - historical.start;
+      baseProse = pair.base.contents.substring(0, historical.start);
+      headProse = pair.head.contents.substring(
+        0,
+        pair.head.contents.length - historyLength,
+      );
+    }
+    // This exception is for Markdown prose/code examples, not active MDX.
+    // Deny active contexts altogether: fragment equality cannot establish JS
+    // equivalence (template literal attributes or script bodies can change).
+    if (_activeFragments(baseProse) != '' ||
+        _activeFragments(headProse) != '' ||
+        _frontMatter(pair.base.contents) != _frontMatter(pair.head.contents) ||
+        _runtimeIdentities(pair.base.contents) !=
+            _runtimeIdentities(pair.head.contents)) {
+      return 'Metadata release docs require inactive Markdown, unchanged '
+          'frontmatter and unchanged runtime identities: $path.';
     }
   }
   return null;
