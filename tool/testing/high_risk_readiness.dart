@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'classify_high_risk_changes.dart';
+import 'release_metadata_readiness.dart';
 
 /// Overall decision reached by the repository-local evaluator.
 enum ReadinessDecision {
@@ -37,6 +38,7 @@ enum ReadinessFailureClassification {
   unchangedEvidencePath,
   deletedEvidencePath,
   renamedEvidencePath,
+  invalidReleaseMetadata,
   externalPrerequisitesUnavailable,
   gitExecutionError,
   invalidInput,
@@ -111,6 +113,12 @@ abstract interface class RepositoryStateReader {
     String path, {
     String? workingDirectory,
   });
+
+  Future<ReadinessFile?> fileAt(
+    String sha,
+    String path, {
+    String? workingDirectory,
+  });
 }
 
 /// Function signature for non-shell Git command execution.
@@ -136,6 +144,38 @@ class GitRepositoryStateReader implements RepositoryStateReader {
   const GitRepositoryStateReader({this.gitRunner = _defaultGitRunner});
 
   final GitRunner gitRunner;
+
+  @override
+  Future<ReadinessFile?> fileAt(
+    String sha,
+    String path, {
+    String? workingDirectory,
+  }) async {
+    final tree = await gitRunner(<String>[
+      'ls-tree',
+      '-z',
+      '--full-tree',
+      sha,
+      '--',
+      ':(top,literal)$path',
+    ], workingDirectory: workingDirectory);
+    if (tree.exitCode != 0 || tree.stdout is! String) {
+      throw StateError('Could not read literal Git tree entry.');
+    }
+    final entry = RegExp(
+      r'^(100644|100755) blob ([0-9a-f]{40})\t([^\u0000]+)\u0000$',
+    ).firstMatch(tree.stdout as String);
+    if (entry == null || entry.group(3) != path) return null;
+    final blob = await gitRunner(<String>[
+      'cat-file',
+      'blob',
+      entry.group(2)!,
+    ], workingDirectory: workingDirectory);
+    if (blob.exitCode != 0 || blob.stdout is! String) {
+      throw StateError('Could not read exact Git blob.');
+    }
+    return (mode: entry.group(1)!, contents: blob.stdout as String);
+  }
 
   @override
   Future<bool> commitExists(String sha, {String? workingDirectory}) async {
@@ -531,6 +571,7 @@ class HighRiskReadinessEvaluator {
   static const _knownMatrixRows = <String>{
     'high-risk-exact-head-independent-qa',
     'structured-output-adversarial',
+    releaseMetadataRow,
   };
   static const _structuredKeys = <String>{'coverage', 'families'};
   static const _coverageAxes = <String>{
@@ -732,6 +773,9 @@ class HighRiskReadinessEvaluator {
     const baselineRow = 'high-risk-exact-head-independent-qa';
     const structuredRow = 'structured-output-adversarial';
     final requiredRows = <String>{baselineRow};
+    final metadataClaim = (evidence['required_matrix_row_ids'] as List<dynamic>)
+        .contains(releaseMetadataRow);
+    if (metadataClaim) requiredRows.add(releaseMetadataRow);
     if (actualSurfaces.contains(HighRiskSurface.structuredOutput.name)) {
       requiredRows.add(structuredRow);
     }
@@ -833,14 +877,98 @@ class HighRiskReadinessEvaluator {
     };
     final affectedPaths = (evidence['affected_test_paths'] as List<dynamic>)
         .cast<String>();
-    if (affectedPaths.isEmpty) {
+    if (metadataClaim) {
+      if (actualSurfaces.length != 1 ||
+          !actualSurfaces.contains(HighRiskSurface.artifactConsumer.name) ||
+          affectedPaths.length != 1 ||
+          affectedPaths.single != releaseMetadataTest ||
+          (matrixEvidence[releaseMetadataRow]
+                  as Map<String, dynamic>)['command'] !=
+              releaseMetadataCommand) {
+        return reject(
+          ReadinessFailureClassification.invalidReleaseMetadata,
+          'Metadata release evidence requires only artifactConsumer, the fixed '
+          'existing release test and its exact strict-verifier/test command.',
+          changedFiles: changedFiles,
+        );
+      }
+      try {
+        final files = <String, ReadinessFilePair>{};
+        for (final change in changedFiles) {
+          if (change.kind != RepositoryChangeKind.modified ||
+              !releaseMetadataPaths.contains(change.path)) {
+            return reject(
+              ReadinessFailureClassification.invalidReleaseMetadata,
+              'Metadata releases cannot add, remove, rename or change paths '
+              'outside the fixed release inventory.',
+              changedFiles: changedFiles,
+            );
+          }
+          final base = await repositoryState.fileAt(
+            context.baseSha,
+            change.path,
+            workingDirectory: workingDirectory,
+          );
+          final head = await repositoryState.fileAt(
+            context.headSha,
+            change.path,
+            workingDirectory: workingDirectory,
+          );
+          if (base == null || head == null) {
+            return reject(
+              ReadinessFailureClassification.invalidReleaseMetadata,
+              'Metadata release paths must be regular files at both revisions.',
+              changedFiles: changedFiles,
+            );
+          }
+          files[change.path] = (base: base, head: head);
+        }
+        final metadataError = validateReleaseMetadata(files);
+        if (metadataError != null) {
+          return reject(
+            ReadinessFailureClassification.invalidReleaseMetadata,
+            metadataError,
+            changedFiles: changedFiles,
+          );
+        }
+        for (final path in [releaseMetadataVerifier, releaseMetadataTest]) {
+          final base = await repositoryState.fileAt(
+            context.baseSha,
+            path,
+            workingDirectory: workingDirectory,
+          );
+          final head = await repositoryState.fileAt(
+            context.headSha,
+            path,
+            workingDirectory: workingDirectory,
+          );
+          if (base == null ||
+              head == null ||
+              base != head ||
+              base.mode != '100644') {
+            return reject(
+              ReadinessFailureClassification.invalidReleaseMetadata,
+              'Existing release verifier and test must be unchanged regular '
+              'blobs at the exact base and head.',
+              changedFiles: changedFiles,
+            );
+          }
+        }
+      } on Object {
+        return reject(
+          ReadinessFailureClassification.gitExecutionError,
+          'Could not verify exact release metadata blobs.',
+          changedFiles: changedFiles,
+        );
+      }
+    } else if (affectedPaths.isEmpty) {
       return reject(
         ReadinessFailureClassification.missingTestPath,
         'High-risk evidence must cite at least one changed production test.',
         changedFiles: changedFiles,
       );
     }
-    for (final path in affectedPaths) {
+    for (final path in metadataClaim ? const <String>[] : affectedPaths) {
       late final (ReadinessFailureClassification, String)? pathFailure;
       try {
         pathFailure = await _validateEvidencePath(

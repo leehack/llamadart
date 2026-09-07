@@ -334,6 +334,10 @@ require issue-specific positive and negative tests that fail if the relevant
 branch is deleted, bypassed, or miswired.
 Record zero known PR-caused P1 regressions and zero unresolved review threads
 in the PR's high-risk block and evidence payload.
+For core-patch release metadata only, use the bounded
+`release-metadata-verification` evidence route described in
+`doc/high_risk_pre_merge_readiness.md`. It checks exact Git blobs and existing
+release tests; do not fabricate changed tests or reclassify the PR as standard.
 
 Structured-output changes must cover compiled grammar acceptance and rejection,
 schema-directed scalar and container reconstruction, partial-streaming
