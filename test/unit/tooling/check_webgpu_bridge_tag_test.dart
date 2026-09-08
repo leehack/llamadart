@@ -365,6 +365,57 @@ void main() {
       );
     });
 
+    test(
+      'unrelated Unreleased notes retain the exact current released pin',
+      () {
+        final root = releaseNotesRepo('1.2.3');
+        for (final pin in releaseNotesPins) {
+          final file = File('${root.path}/${pin.path}');
+          file.writeAsStringSync(
+            '## Unreleased\n\n* Fix Apple dependency scanning.\n\n'
+            'WebGPU bridge assets are unchanged.\n\n${file.readAsStringSync()}',
+          );
+        }
+        expect(findCurrentReleaseNotesDrift(root, 'v9.9.9'), isEmpty);
+        expect(findCurrentReleaseNotesDrift(root, 'v8.8.8'), isNotEmpty);
+      },
+    );
+
+    test('pin-free Unreleased cannot borrow another historical version', () {
+      final root = releaseNotesRepo('1.0.0');
+      for (final pin in releaseNotesPins) {
+        final file = File('${root.path}/${pin.path}');
+        file.writeAsStringSync(
+          '## Unreleased\n\n* Apple fix.\n${file.readAsStringSync()}',
+        );
+      }
+      expect(findCurrentReleaseNotesDrift(root, 'v9.9.9'), hasLength(2));
+      for (final pin in releaseNotesPins) {
+        File(
+          '${root.path}/${pin.path}',
+        ).writeAsStringSync('## Unreleased\n\n* Apple fix.\n');
+      }
+      expect(findCurrentReleaseNotesDrift(root, 'v9.9.9'), hasLength(2));
+    });
+
+    for (final claim in [
+      'Aligned default WebGPU bridge assets to `v0.0.1`.',
+      'Moved WebGPU bridge assets to an invalid tag.',
+      'Aligned default WebGPU bridge assets to `v9.9.9`.\n- Moved WebGPU bridge assets to malformed.',
+      'Aligned default WebGPU bridge assets to `v9.9.9`.\n- Aligned default WebGPU bridge assets to `v9.9.9`.',
+    ]) {
+      test('Unreleased claim cannot hide behind released history: $claim', () {
+        final root = releaseNotesRepo('1.2.3');
+        for (final pin in releaseNotesPins) {
+          final file = File('${root.path}/${pin.path}');
+          file.writeAsStringSync(
+            '## Unreleased\n\n- $claim\n\n${file.readAsStringSync()}',
+          );
+        }
+        expect(findCurrentReleaseNotesDrift(root, 'v9.9.9'), hasLength(2));
+      });
+    }
+
     test('a heading naming another version is reported', () {
       expect(
         findCurrentReleaseNotesDrift(releaseNotesRepo('1.2.4'), 'v9.9.9'),
