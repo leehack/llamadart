@@ -411,7 +411,7 @@ jobs:
 
       - name: Verify Flutter Apple companion cache transitions
         if: runner.os == 'macOS'
-        run: dart test -p vm test/integration/apple_companion_flutter_cache_test.dart
+        run: dart test -p vm --run-skipped test/integration/apple_companion_flutter_cache_test.dart
 
   native-prompt-reuse-parity:
     name: Native Prompt Reuse Parity
