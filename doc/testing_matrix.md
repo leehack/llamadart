@@ -143,6 +143,13 @@ Pick targeted rows based on the touched surface:
 | Chat-app Ask with voice | `gguf-audio-chat-smoke`, `litert-lm-chat-features-smoke`, `chat-app-voice-question-smoke` |
 | Example app, CLI, or server package | `examples-tests` |
 
+Apple companion hook changes also require
+`dart test -p vm --run-skipped test/integration/apple_companion_flutter_cache_test.dart` on
+macOS with the pinned Flutter SDK. This explicit `local-only` test runs in a
+temporary clone and exercises fresh/warm Flutter tests, rejects a newly added
+local `Artifacts` override, then verifies recovery after removal without
+clearing caches. The macOS CI native job runs it explicitly.
+
 The required `Web Chat Contract` check runs the chat app tests on VM and
 Chrome, validates the final Flutter Web artifact, exercises deterministic UI
 behavior, and loads a tiny real GGUF through the packaged worker and WASM core.

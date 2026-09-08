@@ -693,9 +693,10 @@ void _validateAppleLlamaCompanion(
     final artifacts = Directory(path.join(manifest.parent.path, 'Artifacts'));
     // The supported manifest can prefer local binaries over its remote pin.
     // Such binaries have no verified ABI contract and must not inherit trust
-    // from the tag string. Track the directory so local additions invalidate
-    // an otherwise cached successful hook result.
-    output.dependencies.add(artifacts.uri);
+    // from the tag string. Track the existing parent: directory dependencies
+    // hash child names, so adding/removing Artifacts invalidates a cached
+    // success without making Flutter enumerate a nonexistent directory.
+    output.dependencies.add(manifest.parent.uri);
     if (artifacts.existsSync()) {
       reject(
         'Local Artifacts overrides cannot establish framework ABI '
