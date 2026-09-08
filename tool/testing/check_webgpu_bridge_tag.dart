@@ -213,19 +213,32 @@ String readRootPackageVersion(Directory repoRoot) {
   return matches.single.group(1)!;
 }
 
-/// The body of the top `## ` section of [contents] when it is the current one.
+/// The current bridge-pin announcement section of [contents].
 ///
 /// Ordinary development leaves the top section headed `## Unreleased`; a
 /// release-prep change promotes that same section to `## $releaseVersion`.
-/// Returns null for any other heading, so a gate reading this never mistakes a
-/// frozen historical section for the current release notes.
+/// Pin-free Unreleased notes use only the immediately following exact current
+/// release. A recognizable (even malformed) pin bullet prevents fallback.
 String? currentReleaseNotesSection(String contents, String releaseVersion) {
   final match = _topReleaseNotesSection.firstMatch(contents);
   if (match == null) return null;
   final heading = match.namedGroup('heading');
   if (heading != 'Unreleased' && heading != releaseVersion) return null;
-  return match.namedGroup('body');
+  final body = match.namedGroup('body')!;
+  if (heading != 'Unreleased' || _bridgePinBullet.hasMatch(body)) return body;
+  final released = _topReleaseNotesSection.firstMatch(
+    contents.substring(match.end),
+  );
+  if (released?.namedGroup('heading') != releaseVersion) return null;
+  return released!.namedGroup('body');
 }
+
+// Ambiguous/reworded pin bullets must fail the exact canonical claim check,
+// not silently borrow a historical value. Ordinary prose is not a pin site.
+final RegExp _bridgePinBullet = RegExp(
+  r'^[*-]\s+[^\n]*(?:WebGPU bridge assets|default WebGPU)[^\n]*$',
+  multiLine: true,
+);
 
 /// Reads the tag every pin must quote.
 ///
@@ -328,6 +341,13 @@ List<String> findCurrentReleaseNotesDrift(
       continue;
     }
     final matches = pin.pattern.allMatches(section).toList();
+    if (matches.length == 1 &&
+        _bridgePinBullet.allMatches(section).length != 1) {
+      problems.add(
+        '${pin.path}: ambiguous or malformed additional bridge pin bullet',
+      );
+      continue;
+    }
     if (matches.length != 1) {
       problems.add(
         '${pin.path}: ${pin.pattern.pattern} matches ${matches.length} lines in '
