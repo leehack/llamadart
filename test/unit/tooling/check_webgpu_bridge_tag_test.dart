@@ -408,8 +408,18 @@ void main() {
         final root = releaseNotesRepo('1.2.3');
         for (final pin in releaseNotesPins) {
           final file = File('${root.path}/${pin.path}');
+          final currentClaim = pin.path == 'CHANGELOG.md'
+              ? claim
+                    .replaceAll(
+                      'Aligned default WebGPU',
+                      'Aligned the default WebGPU',
+                    )
+                    .replaceAll('\n- ', '\n* ')
+              : claim;
+          final bullet = pin.path == 'CHANGELOG.md' ? '*' : '-';
           file.writeAsStringSync(
-            '## Unreleased\n\n- $claim\n\n${file.readAsStringSync()}',
+            '## Unreleased\n\n$bullet $currentClaim\n\n'
+            '${file.readAsStringSync()}',
           );
         }
         expect(findCurrentReleaseNotesDrift(root, 'v9.9.9'), hasLength(2));
