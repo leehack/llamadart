@@ -17,6 +17,10 @@
 /// every path, digest, transcript, preset, and duration as a `--dart-define`.
 /// The optional `IOS_SPEECH_ROW` define selects one canonical row for a
 /// missing-row rerun; omit it or use `all` for the complete strict matrix.
+/// Failed Qwen3-ASR `RESULT` records include a content-free `phase` and short
+/// identifiers for validated artifact digests. Cleanup-only errors report
+/// `teardown`; cleanup never replaces a primary operation's failure phase.
+/// Error text remains fingerprinted, not a transcript or local file path.
 ///
 /// Each path define is either a safe absolute on-device path or an
 /// `@appcache/<relative>` reference. Installing onto a physical device rotates
@@ -219,20 +223,39 @@ void _emitAndValidateResults(
 void _recordPreflightFailure(
   List<SpeechE2ERowResult> results,
   Object error,
-  Iterable<String> rowIds,
-) {
+  Iterable<String> rowIds, {
+  PhysicalIosSpeechConfig? config,
+}) {
   for (final id in rowIds) {
+    final isQwen3Asr = id == 'llama_cpp_qwen3_asr';
     results.add(
       SpeechE2ERowResult(
         id: id,
         status: SpeechE2ERowStatus.fail,
         backend: unresolvedSpeechBackendForRow(id),
         duration: Duration.zero,
+        digestIdentifiers: isQwen3Asr && config != null
+            ? Qwen3AsrDiagnostics(
+                _qwen3AsrDigestIdentifiers(config),
+              ).digestIdentifiers
+            : const <String, String>{},
+        assertionSummary: isQwen3Asr
+            ? 'Failed during setup: ${safeSpeechErrorDiagnostic(error)}'
+            : '',
+        phase: isQwen3Asr ? PhysicalIosQwen3AsrPhase.setup : null,
         error: error,
       ),
     );
   }
 }
+
+Map<String, String> _qwen3AsrDigestIdentifiers(
+  PhysicalIosSpeechConfig config,
+) => <String, String>{
+  'model': config.qwen3AsrModelSha256,
+  'mmproj': config.qwen3AsrMmprojSha256,
+  'fixture': config.asrAudioSha256,
+};
 
 /// Loads a Qwen3 model plus its projector on explicit llama.cpp CPU.
 Future<LlamaEngine> _loadCpuEngine(
@@ -287,6 +310,7 @@ Future<String> _transcribeExact({
   required String audioPath,
   required String expectedTranscript,
   required String label,
+  void Function()? markCleanupPhase,
 }) async {
   final task = await awaitBounded(
     recognizer.transcribe(
@@ -347,6 +371,7 @@ Future<String> _transcribeExact({
       eventsClosed: eventsFuture,
       label: label,
     ),
+    markCleanupPhase: markCleanupPhase,
   );
   return fingerprint!;
 }
@@ -373,33 +398,6 @@ Future<void> _pushBoundedPcm(
       '$label.addPcm[$index]',
     );
     index++;
-  }
-}
-
-/// Runs one row, always recording a result and never aborting the harness.
-Future<void> _recordRow({
-  required String id,
-  required List<SpeechE2ERowResult> results,
-  required Future<SpeechE2ERowResult> Function(Stopwatch elapsed) body,
-}) async {
-  final stopwatch = Stopwatch()..start();
-  try {
-    final result = await body(stopwatch);
-    if (result.id != id) {
-      throw StateError('Speech row body returned a mismatched row id.');
-    }
-    results.add(result);
-  } catch (error) {
-    results.add(
-      SpeechE2ERowResult(
-        id: id,
-        status: classifySpeechRowFailure(error),
-        backend: unresolvedSpeechBackendForRow(id),
-        duration: stopwatch.elapsed,
-        error: error,
-        actionMarker: speechRowFailureMarker(error),
-      ),
-    );
   }
 }
 
@@ -432,22 +430,33 @@ void main() {
       return;
     }
 
+    PhysicalIosSpeechConfig? resolvedConfig;
     late final PhysicalIosSpeechConfig config;
     late final Map<String, PhysicalIosSpeechArtifactFailure> artifactFailures;
     try {
       // Resolution must precede every artifact read: a device install mints a
       // fresh data-container UUID, so `@appcache/` defines only name a real
       // file once bound to the runtime cache directory.
-      config = await canonicalizePhysicalIosSpeechFilesystemLayout(
-        await resolvePhysicalIosSpeechCachePaths(
-          PhysicalIosSpeechConfig.fromEnvironment(),
-        ),
+      final environmentConfig = PhysicalIosSpeechConfig.fromEnvironment();
+      resolvedConfig = environmentConfig;
+      final cacheResolvedConfig = await resolvePhysicalIosSpeechCachePaths(
+        environmentConfig,
       );
+      resolvedConfig = cacheResolvedConfig;
+      config = await canonicalizePhysicalIosSpeechFilesystemLayout(
+        cacheResolvedConfig,
+      );
+      resolvedConfig = config;
       artifactFailures = await config.validateArtifactsCollectingFailures(
         timeoutPerArtifact: _artifactHashTimeout,
       );
     } catch (error) {
-      _recordPreflightFailure(rowResults, error, selectedRowIds);
+      _recordPreflightFailure(
+        rowResults,
+        error,
+        selectedRowIds,
+        config: resolvedConfig,
+      );
       _emitAndValidateResults(rowResults, expectedIds: expectedRowIds);
       return;
     }
@@ -456,9 +465,15 @@ void main() {
     // ROW 1: llama.cpp Qwen3-ASR
     // =====================================================================
     if (selectedRowIds.contains('llama_cpp_qwen3_asr')) {
-      await _recordRow(
+      final diagnostics = Qwen3AsrDiagnostics(
+        _qwen3AsrDigestIdentifiers(config),
+      );
+      void setPhase(PhysicalIosQwen3AsrPhase phase) =>
+          diagnostics.phase = phase;
+      await recordSpeechRow(
         id: 'llama_cpp_qwen3_asr',
         results: rowResults,
+        diagnostics: diagnostics,
         body: (elapsed) async {
           requireValidSpeechArtifacts(artifactFailures, _row1ArtifactLabels);
           String? backendName;
@@ -517,13 +532,17 @@ void main() {
                 SpeechE2EBackendKind.llamaCppCpu,
               );
 
+              setPhase(PhysicalIosQwen3AsrPhase.fileTranscript);
               await _transcribeExact(
                 recognizer: recognizer,
                 audioPath: config.asrAudioPath,
                 expectedTranscript: config.asrExpectedTranscript,
                 label: 'row1.fixture',
+                markCleanupPhase: () =>
+                    setPhase(PhysicalIosQwen3AsrPhase.teardown),
               );
 
+              setPhase(PhysicalIosQwen3AsrPhase.cancellation);
               final cancelTask = await awaitBounded(
                 recognizer.transcribe(
                   SpeechToTextRequest(
@@ -572,10 +591,13 @@ void main() {
                   eventsClosed: cancelEventsFuture,
                   label: 'row1.cancel',
                 ),
+                markCleanupPhase: () =>
+                    setPhase(PhysicalIosQwen3AsrPhase.teardown),
               );
 
               // Physical microphone capture. The recorder is created outside the
               // capture try so a failing start() or stop() still disposes it.
+              setPhase(PhysicalIosQwen3AsrPhase.microphoneStart);
               final recorder = AudioRecordingService();
               String? micWavPath;
               await runWithSpeechCleanup(
@@ -591,6 +613,7 @@ void main() {
                     _cleanupTimeout,
                     'row1.mic.start',
                   );
+                  setPhase(PhysicalIosQwen3AsrPhase.microphoneCapture);
                   await Future<void>.delayed(
                     Duration(seconds: config.micDurationSeconds),
                   );
@@ -623,20 +646,27 @@ void main() {
                   expect(micInfo.sampleFrames, greaterThan(0));
                   expect(micInfo.durationSeconds, greaterThan(0.0));
 
+                  setPhase(PhysicalIosQwen3AsrPhase.microphoneTranscript);
                   await _transcribeExact(
                     recognizer: recognizer,
                     audioPath: capturedPath,
                     expectedTranscript: config.micExpectedTranscript,
                     label: 'row1.microphone',
+                    markCleanupPhase: () =>
+                        setPhase(PhysicalIosQwen3AsrPhase.teardown),
                   );
                 },
                 cleanup: () => _cleanupRecorder(recorder, micWavPath),
+                markCleanupPhase: () =>
+                    setPhase(PhysicalIosQwen3AsrPhase.teardown),
               );
             },
             cleanup: () => _disposeEngine(engine, 'row1.engine'),
+            markCleanupPhase: () => setPhase(PhysicalIosQwen3AsrPhase.teardown),
           );
 
           // Fresh engine over the same immutable paths proves unload/reload.
+          setPhase(PhysicalIosQwen3AsrPhase.reload);
           final reloadEngine = await _loadCpuEngine(
             config.qwen3AsrModelPath,
             config.qwen3AsrMmprojPath,
@@ -651,8 +681,11 @@ void main() {
               audioPath: config.asrAudioPath,
               expectedTranscript: config.asrExpectedTranscript,
               label: 'row1.reload.fixture',
+              markCleanupPhase: () =>
+                  setPhase(PhysicalIosQwen3AsrPhase.teardown),
             ),
             cleanup: () => _disposeEngine(reloadEngine, 'row1.reload'),
+            markCleanupPhase: () => setPhase(PhysicalIosQwen3AsrPhase.teardown),
           );
 
           final validatedBackendName = backendName;
@@ -664,11 +697,7 @@ void main() {
             status: SpeechE2ERowStatus.pass,
             backend: validatedBackendName,
             duration: elapsed.elapsed,
-            digestIdentifiers: {
-              'model': config.qwen3AsrModelSha256.substring(0, 8),
-              'mmproj': config.qwen3AsrMmprojSha256.substring(0, 8),
-              'fixture': config.asrAudioSha256.substring(0, 8),
-            },
+            digestIdentifiers: diagnostics.digestIdentifiers,
             assertionSummary:
                 'llama.cpp CPU with 0 GPU layers, caps verified, exact fixture '
                 'transcript, active cancellation, physical mic capture with '
@@ -683,7 +712,7 @@ void main() {
     // ROW 2: LiteRT-LM dedicated streaming ASR
     // =====================================================================
     if (selectedRowIds.contains('litert_lm_streaming_asr')) {
-      await _recordRow(
+      await recordSpeechRow(
         id: 'litert_lm_streaming_asr',
         results: rowResults,
         body: (elapsed) async {
@@ -969,7 +998,7 @@ void main() {
     // ROW 3: llama.cpp Qwen3-TTS
     // =====================================================================
     if (selectedRowIds.contains('llama_cpp_qwen3_tts')) {
-      await _recordRow(
+      await recordSpeechRow(
         id: 'llama_cpp_qwen3_tts',
         results: rowResults,
         body: (elapsed) async {
@@ -1383,7 +1412,7 @@ void main() {
     // ROW 4: LiteRT-LM TTS (expected unsupported)
     // =====================================================================
     if (selectedRowIds.contains('litert_lm_tts')) {
-      await _recordRow(
+      await recordSpeechRow(
         id: 'litert_lm_tts',
         results: rowResults,
         body: (elapsed) async {
