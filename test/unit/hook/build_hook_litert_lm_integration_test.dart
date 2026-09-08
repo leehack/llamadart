@@ -499,9 +499,21 @@ void main() {
             isTrue,
           );
           expect(
-            output.dependencies.any((uri) => uri.path.endsWith('/Artifacts/')),
+            output.dependencies.any(
+              (uri) =>
+                  uri.path.endsWith('/darwin/llamadart_llama_cpp_flutter/'),
+            ),
             isTrue,
           );
+          expect(
+            output.dependencies.any((uri) => uri.path.endsWith('/Artifacts/')),
+            isFalse,
+          );
+          for (final uri in output.dependencies.where(
+            (uri) => uri.path.endsWith('/'),
+          )) {
+            expect(Directory.fromUri(uri).existsSync(), isTrue);
+          }
         },
       );
     },

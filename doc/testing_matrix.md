@@ -126,6 +126,13 @@ Pick targeted rows based on the touched surface:
 | Change area | Matrix rows to consider |
 | --- | --- |
 | Native-assets hook, runtime pin, bundle layout | `native-hook-bundles`, `litert-lm-engine-smoke`, and relevant `platform` rows such as `android-arm64-device-smoke` |
+
+Apple companion hook changes also require
+`dart test -p vm test/integration/apple_companion_flutter_cache_test.dart` on
+macOS with the pinned Flutter SDK. This explicit `local-only` test runs in a
+temporary clone and exercises fresh/warm Flutter tests, rejects a newly added
+local `Artifacts` override, then verifies recovery after removal without
+clearing caches. The macOS CI native job runs it explicitly.
 | llama.cpp / GGUF generation, prompt reuse, context reuse | `native-prompt-reuse-parity`, `native-inference-benchmark`, `gguf-chat-features-smoke` |
 | Speculative decoding, bundled MTP, or n-gram drafting | `llama-cpp-speculative-benchmark`, `gemma4-mtp-smoke` |
 | Embedding API, `embedBatch`, or embedding throughput | `native-embedding-benchmark`, `native-embedding-sweep` |

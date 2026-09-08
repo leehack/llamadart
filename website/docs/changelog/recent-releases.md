@@ -7,6 +7,11 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
+## Unreleased
+
+- Fix fresh macOS Flutter test/build dependency scanning while retaining the
+  Apple companion ABI and local-override guards.
+
 ## 0.8.23
 
 - Fail Apple builds before native symbol lookup when the resolved llama.cpp
