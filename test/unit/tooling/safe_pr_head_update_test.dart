@@ -1348,6 +1348,12 @@ void main() {
             ..parent.createSync(recursive: true)
             ..writeAsStringSync('git push origin HEAD');
         }
+        // Assert traversal itself, before the writer path filter: deleting the
+        // directory-pruning guard must expose the generated entries here.
+        expect(
+          maintainedFiles(root).map((entry) => entry.key),
+          unorderedEquals(paths),
+        );
         final sources = Map.fromEntries(maintainedWriterSources(root));
         expect(sources.keys, unorderedEquals(paths));
         expect(sources.values, everyElement(contains('git push origin HEAD')));
