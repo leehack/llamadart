@@ -7,10 +7,16 @@ For canonical full release notes, use:
 
 - [`CHANGELOG.md`](https://github.com/leehack/llamadart/blob/main/CHANGELOG.md)
 
-## Unreleased
+## 0.8.24
 
 - Fix fresh macOS Flutter test/build dependency scanning while retaining the
   Apple companion ABI and local-override guards.
+
+- Aligned default WebGPU bridge assets to `v0.1.43` (unchanged from
+  0.8.23), retaining Web/native llama.cpp
+  `v0.4.0@5266f24da75dc449bd56cbed7addb9c8e4a6a73e` parity. Web
+  `@litert-lm/core@0.15.0` and native LiteRT pins are unchanged. Immutable
+  manifest: `111eefc3588842cebfe665b363378edca34924764610263e1eda5280dfcfaa27`.
 
 ## 0.8.23
 
