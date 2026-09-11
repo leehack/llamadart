@@ -27,13 +27,13 @@ In Xcode, set `IPHONEOS_DEPLOYMENT_TARGET = 16.4` or
 
 ```yaml
 dependencies:
-  llamadart: ^0.8.23
+  llamadart: ^0.8.24
 ```
 
 For Flutter iOS/macOS apps that should link Apple XCFrameworks through Swift
 Package Manager, also add the runtime companion packages you need:
 
-Pair companion `0.0.18` with core `0.8.23` for matching llama.cpp v0.4.0
+Pair companion `0.0.18` with core `0.8.24` for matching llama.cpp v0.4.0
 bindings. Keep core `0.8.22` paired with companion `0.0.17`.
 
 Apple builds verify the resolved companion's SwiftPM runtime pin before native
@@ -43,7 +43,7 @@ overrides fail the build; resolve the matching companion and rerun
 
 ```yaml
 dependencies:
-  llamadart: ^0.8.23
+  llamadart: ^0.8.24
   llamadart_llama_cpp_flutter: ^0.0.18 # GGUF / llama.cpp
   llamadart_litert_lm_flutter: ^0.0.10 # Apple .litertlm / LiteRT-LM targets
 ```
