@@ -57,7 +57,7 @@ jobs:
         run: |
           echo "Skipping release automation: ${{ steps.gate.outputs.reason }}."
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         if: steps.gate.outputs.should_release == 'true'
         with:
           ref: ${{ github.event.pull_request.merge_commit_sha }}
