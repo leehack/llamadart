@@ -3,6 +3,10 @@
 * Fix fresh macOS Flutter test/build dependency scanning while retaining the
   Apple companion ABI and local-override guards.
 
+* Keep repository writer checks independent of generated website output.
+
+* Preserve failure-phase diagnostics in the physical iOS speech test harness.
+
 * Aligned the default WebGPU bridge assets to `v0.1.43` (unchanged from
   0.8.23), retaining Web/native llama.cpp
   `v0.4.0@5266f24da75dc449bd56cbed7addb9c8e4a6a73e` parity. Web
