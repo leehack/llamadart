@@ -9,6 +9,9 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+* Updated the native LiteRT-LM runtime to `v0.17.0-1`, including corrected macOS SwiftPM packaging and iOS provider selection.
+
+
 - Fix fresh macOS Flutter test/build dependency scanning while retaining the
   Apple companion ABI and local-override guards.
 

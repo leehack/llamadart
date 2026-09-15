@@ -89,6 +89,12 @@ Changing between stable and development channels requires
 `--allow-litert-channel-transition`; changing between two distinct `g<sha>`
 lines requires `--allow-litert-development-line-transition`. Both flags default
 off and represent explicit review of the owner-validated ancestry evidence.
+Entering a newer stable version at a qualified rebuild instead of its base
+release requires `--allow-litert-stable-rebuild-entry`. Use this only after
+reviewing the corrected owner artifact; full manifest validation still applies.
+This flag does not permit rollbacks, same-version rebuild skips, or channel
+changes. For example, a qualified `v0.17.0-1` can replace `v0.16.0-native.2`
+without first consuming the superseded `v0.17.0` artifact.
 Legacy and compact tags with the same version and rebuild ordinal are aliases
 and are rejected. All pin edits are staged before a recoverable multi-file
 replacement, so a partial filesystem failure restores every prior pin.
