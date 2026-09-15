@@ -1,5 +1,7 @@
 ## Unreleased
 
+* Load LiteRT-LM companion libraries even when their inventory lists dependencies later.
+
 * Keep framework metadata and Windows import archives out of generated LiteRT-LM runtime library inventories.
 
 * Fix fresh macOS Flutter test/build dependency scanning while retaining the

@@ -732,7 +732,7 @@ class LiteRtLmRuntimeClient {
       final liteRtLmLibraryPath = _liteRtLmLibraryPath!;
       final companionLibraryPaths = _liteRtLmCompanionLibraryPaths;
       final engineAddress = await Isolate.run(() {
-        final companionLibraries = _openCompanionLibraries(
+        final companionLibraries = liteRtLmOpenCompanionLibraries(
           companionLibraryPaths,
         );
         try {
@@ -1377,7 +1377,9 @@ class LiteRtLmRuntimeClient {
       throw UnsupportedError('LiteRT-LM does not support ${Abi.current()}.');
     }
 
-    final companionLibraries = _openCompanionLibraries(libraries.companions);
+    final companionLibraries = liteRtLmOpenCompanionLibraries(
+      libraries.companions,
+    );
 
     final liteRtLm = _openFirstAvailableWithPath(
       libraries.liteRtLmCandidates,
@@ -2054,7 +2056,7 @@ Future<String> _runBlockingSendMessageInIsolate(
 }
 
 String _runBlockingSendMessage(_BlockingSendMessageRequest request) {
-  final companionLibraries = _openCompanionLibraries(
+  final companionLibraries = liteRtLmOpenCompanionLibraries(
     request.companionLibraryPaths,
   );
   try {
@@ -2131,12 +2133,41 @@ bool _hasNativeSymbol(DynamicLibrary library, String symbol) {
   }
 }
 
-List<DynamicLibrary> _openCompanionLibraries(Iterable<String> companions) {
+/// Opens companion libraries, retrying dependencies after other libraries load.
+///
+/// Runtime inventories are not dependency ordered. Retry failed loads only when
+/// the previous pass loaded another library; otherwise preserve the loader's
+/// original error and stack. Missing absolute paths retain discovery's existing
+/// behavior and are skipped. [openLibrary] allows isolated loader tests.
+List<DynamicLibrary> liteRtLmOpenCompanionLibraries(
+  Iterable<String> companions, {
+  DynamicLibrary Function(String)? openLibrary,
+}) {
+  final open = openLibrary ?? DynamicLibrary.open;
+  var pending = companions
+      .where(
+        (companion) =>
+            File(companion).existsSync() || !path.isAbsolute(companion),
+      )
+      .toList();
   final libraries = <DynamicLibrary>[];
-  for (final companion in companions) {
-    if (File(companion).existsSync() || !path.isAbsolute(companion)) {
-      libraries.add(DynamicLibrary.open(companion));
+  while (pending.isNotEmpty) {
+    final deferred = <String>[];
+    ArgumentError? firstError;
+    StackTrace? firstStack;
+    for (final companion in pending) {
+      try {
+        libraries.add(open(companion));
+      } on ArgumentError catch (error, stack) {
+        deferred.add(companion);
+        firstError ??= error;
+        firstStack ??= stack;
+      }
     }
+    if (deferred.length == pending.length) {
+      Error.throwWithStackTrace(firstError!, firstStack!);
+    }
+    pending = deferred;
   }
   return libraries;
 }

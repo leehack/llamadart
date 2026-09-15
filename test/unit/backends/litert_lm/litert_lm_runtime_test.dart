@@ -9,6 +9,73 @@ import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
 
 void main() {
+  test('companion loading retries an unordered dependency chain', () {
+    final loaded = <String>{};
+    final attempts = <String>[];
+    final handle = DynamicLibrary.process();
+    final libraries = liteRtLmOpenCompanionLibraries(
+      ['sampler', 'accelerator', 'dawn'],
+      openLibrary: (name) {
+        attempts.add(name);
+        final dependency = switch (name) {
+          'sampler' => 'accelerator',
+          'accelerator' => 'dawn',
+          _ => null,
+        };
+        if (dependency != null && !loaded.contains(dependency)) {
+          throw ArgumentError('Missing dependency $dependency');
+        }
+        loaded.add(name);
+        return handle;
+      },
+    );
+    expect(libraries, [handle, handle, handle]);
+    expect(attempts, [
+      'sampler',
+      'accelerator',
+      'dawn',
+      'sampler',
+      'accelerator',
+      'sampler',
+    ]);
+  });
+
+  test(
+    'companion loading stops without progress and preserves loader errors',
+    () {
+      final failure = ArgumentError('Missing external dependency');
+      final attempts = <String>[];
+      expect(
+        () => liteRtLmOpenCompanionLibraries(
+          ['broken', 'independent'],
+          openLibrary: (name) {
+            attempts.add(name);
+            if (name == 'broken') throw failure;
+            return DynamicLibrary.process();
+          },
+        ),
+        throwsA(same(failure)),
+      );
+      expect(attempts, ['broken', 'independent', 'broken']);
+    },
+  );
+
+  test('companion loading does not retry unrelated errors', () {
+    final failure = StateError('Unexpected loader failure');
+    final attempts = <String>[];
+    expect(
+      () => liteRtLmOpenCompanionLibraries(
+        ['broken', 'independent'],
+        openLibrary: (name) {
+          attempts.add(name);
+          throw failure;
+        },
+      ),
+      throwsA(same(failure)),
+    );
+    expect(attempts, ['broken']);
+  });
+
   test('missing explicit runtime does not advertise the ASR bridge', () {
     final client = LiteRtLmRuntimeClient(
       libraryPath: '/missing/libLiteRtLm.so',
