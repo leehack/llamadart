@@ -1477,6 +1477,53 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
                 set(libraries),
             )
 
+    def test_schema_2_ios_framework_metadata_is_not_a_flat_library(self) -> None:
+        paths = [
+            "bin/ios/arm64/CLiteRTLM.framework/CLiteRTLM",
+            "bin/ios/arm64/CLiteRTLM.framework/Info.plist",
+            "bin/ios/arm64/LiteRtLm.framework/LiteRtLm",
+            "bin/ios/arm64/LiteRtLm.framework/Info.plist",
+            "bin/ios/arm64/libLiteRtLm.dylib",
+        ]
+        manifest = {"platforms": [{"platform": "ios", "arch": "arm64",
+                                   "artifactPaths": paths}]}
+        self.assertEqual(litert_schema2_bundle_required_libraries(manifest), {
+            "ios-arm64": ("CLiteRTLM", "LiteRtLm", "libLiteRtLm.dylib")})
+        for extra in (paths[0], paths[1],
+                      "bin/ios/arm64/Other.framework/LiteRtLm",
+                      "bin/ios/arm64/../Other.framework/Info.plist"):
+            with self.subTest(extra=extra):
+                manifest["platforms"][0]["artifactPaths"] = paths + [extra]
+                with self.assertRaises(ReleaseError):
+                    litert_schema2_bundle_required_libraries(manifest)
+        manifest["platforms"][0]["artifactPaths"] = [paths[1], paths[3]]
+        with self.assertRaisesRegex(ReleaseError, "no runtime libraries"):
+            litert_schema2_bundle_required_libraries(manifest)
+
+    def test_schema_2_framework_metadata_filter_is_platform_and_path_scoped(self) -> None:
+        for platform, arch, paths in (
+            ("macos", "arm64", ["bin/macos/arm64/A.framework/Info.plist", "bin/macos/arm64/B.framework/Info.plist"]),
+            ("ios", "arm64", ["bin/ios/arm64-sim/A.framework/Info.plist", "bin/ios/arm64-sim/B.framework/Info.plist"]),
+            ("ios", "arm64", ["bin/ios/arm64/A.framework/extra/Info.plist", "bin/ios/arm64/B.framework/extra/Info.plist"]),
+        ):
+            with self.subTest(platform=platform, paths=paths):
+                manifest = {"platforms": [{"platform": platform, "arch": arch,
+                    "artifactPaths": [f"bin/{platform}/{arch}/libLiteRtLm.dylib", *paths]}]}
+                with self.assertRaisesRegex(ReleaseError, "duplicated"):
+                    litert_schema2_bundle_required_libraries(manifest)
+
+    def test_schema_2_windows_import_library_is_not_loaded(self) -> None:
+        paths = ["bin/windows/x64/LiteRtLm.dll",
+                 "bin/windows/x64/libGemmaModelConstraintProvider.dll",
+                 "bin/windows/x64/libGemmaModelConstraintProvider.lib"]
+        manifest = {"platforms": [{"platform": "windows", "arch": "x64",
+                                   "artifactPaths": paths}]}
+        self.assertEqual(litert_schema2_bundle_required_libraries(manifest), {
+            "windows-x64": ("LiteRtLm.dll", "libGemmaModelConstraintProvider.dll")})
+        manifest["platforms"][0]["artifactPaths"] = paths[::2]
+        with self.assertRaisesRegex(ReleaseError, "no matching DLL"):
+            litert_schema2_bundle_required_libraries(manifest)
+
     def test_schema_2_hook_inventory_rejects_unsafe_library_names(self) -> None:
         fixture_root = Path(__file__).resolve().parent / "fixtures"
         original = json.loads(

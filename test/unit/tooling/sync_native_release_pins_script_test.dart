@@ -11,6 +11,87 @@ import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
 
 void main() {
+  test(
+    'iOS framework metadata does not become a required runtime library',
+    () async {
+      final result = await Process.run('python3', [
+        '-c',
+        r'''
+import json, sys
+sys.path.insert(0, 'tool/native')
+from sync_native_release_pins import litert_schema2_bundle_required_libraries
+paths = [
+    'bin/ios/arm64/CLiteRTLM.framework/CLiteRTLM',
+    'bin/ios/arm64/CLiteRTLM.framework/Info.plist',
+    'bin/ios/arm64/LiteRtLm.framework/LiteRtLm',
+    'bin/ios/arm64/LiteRtLm.framework/Info.plist',
+    'bin/ios/arm64/libLiteRtLm.dylib',
+]
+manifest = {'platforms': [{'platform': 'ios', 'arch': 'arm64', 'artifactPaths': paths}]}
+print(json.dumps(litert_schema2_bundle_required_libraries(manifest)))
+''',
+      ]);
+      expect(result.exitCode, 0, reason: '${result.stderr}');
+      expect(jsonDecode(result.stdout as String), {
+        'ios-arm64': ['CLiteRTLM', 'LiteRtLm', 'libLiteRtLm.dylib'],
+      });
+    },
+  );
+
+  test(
+    'iOS inventory still rejects duplicate binaries and unsafe metadata paths',
+    () async {
+      final result = await Process.run('python3', [
+        '-c',
+        r'''
+import sys
+sys.path.insert(0, 'tool/native')
+from sync_native_release_pins import ReleaseError, litert_schema2_bundle_required_libraries
+runtime = 'bin/ios/arm64/LiteRtLm.framework/LiteRtLm'
+for extra in (runtime, 'bin/ios/arm64/Other.framework/LiteRtLm',
+              'bin/ios/arm64/../Other.framework/Info.plist'):
+    manifest = {'platforms': [{'platform': 'ios', 'arch': 'arm64',
+                              'artifactPaths': [runtime, extra]}]}
+    try:
+        litert_schema2_bundle_required_libraries(manifest)
+    except ReleaseError:
+        continue
+    raise AssertionError('Unsafe inventory was accepted: ' + extra)
+''',
+      ]);
+      expect(result.exitCode, 0, reason: '${result.stderr}');
+    },
+  );
+  test(
+    'Windows import archives never become loadable runtime dependencies',
+    () async {
+      final result = await Process.run('python3', [
+        '-c',
+        r'''
+import json, sys
+sys.path.insert(0, 'tool/native')
+from sync_native_release_pins import ReleaseError, litert_schema2_bundle_required_libraries
+paths = ['bin/windows/x64/LiteRtLm.dll',
+         'bin/windows/x64/libGemmaModelConstraintProvider.dll',
+         'bin/windows/x64/libGemmaModelConstraintProvider.lib']
+manifest = {'platforms': [{'platform': 'windows', 'arch': 'x64', 'artifactPaths': paths}]}
+print(json.dumps(litert_schema2_bundle_required_libraries(manifest)))
+manifest['platforms'][0]['artifactPaths'] = paths[::2]
+try:
+    litert_schema2_bundle_required_libraries(manifest)
+except ReleaseError:
+    pass
+else:
+    raise AssertionError('Orphan import archive was accepted')
+''',
+      ]);
+      expect(result.exitCode, 0, reason: '${result.stderr}');
+      expect(jsonDecode(result.stdout as String), {
+        'windows-x64': ['LiteRtLm.dll', 'libGemmaModelConstraintProvider.dll'],
+      });
+    },
+  );
+
   test('updates hook native release pins from release metadata', () async {
     final root = await Directory.systemTemp.createTemp(
       'sync_native_release_pins_',
