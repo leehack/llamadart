@@ -2231,6 +2231,7 @@ external void ggml_flash_attn_ext_set_n_kv_max(
   int n_kv_max,
 );
 
+@Deprecated('use ggml_prec_set_acc() instead')
 @ffi.Native<ffi.Void Function(ffi.Pointer<ggml_tensor>, ffi.UnsignedInt)>(
   symbol: 'ggml_flash_attn_ext_set_prec',
 )
@@ -3414,6 +3415,7 @@ void ggml_mul_mat_set_hint(ffi.Pointer<ggml_tensor> a, ggml_op_hint hint) {
   return _ggml_mul_mat_set_hint(a, hint.value);
 }
 
+@Deprecated('use ggml_prec_set_acc() instead')
 @ffi.Native<ffi.Void Function(ffi.Pointer<ggml_tensor>, ffi.UnsignedInt)>(
   symbol: 'ggml_mul_mat_set_prec',
 )
@@ -3939,6 +3941,24 @@ ffi.Pointer<ggml_tensor> ggml_pool_2d_back(
   double p1,
 ) {
   return _ggml_pool_2d_back(ctx, a, af, op.value, k0, k1, s0, s1, p0, p1);
+}
+
+@ffi.Native<ffi.Bool Function(ffi.Pointer<ggml_tensor>, ffi.UnsignedInt)>(
+  symbol: 'ggml_prec_set_acc',
+)
+external bool _ggml_prec_set_acc(ffi.Pointer<ggml_tensor> a, int prec);
+
+bool ggml_prec_set_acc(ffi.Pointer<ggml_tensor> a, ggml_prec prec) {
+  return _ggml_prec_set_acc(a, prec.value);
+}
+
+@ffi.Native<
+  ffi.Bool Function(ffi.Pointer<ggml_tensor>, ffi.UnsignedInt, ffi.Int)
+>(symbol: 'ggml_prec_set_src')
+external bool _ggml_prec_set_src(ffi.Pointer<ggml_tensor> a, int prec, int idx);
+
+bool ggml_prec_set_src(ffi.Pointer<ggml_tensor> a, ggml_prec prec, int idx) {
+  return _ggml_prec_set_src(a, prec.value, idx);
 }
 
 @ffi.Native<ffi.Void Function(ffi.Pointer<ggml_object>)>()
@@ -7145,7 +7165,7 @@ external ffi.Pointer<llama_sampler> llama_sampler_chain_init(
   llama_sampler_chain_params params,
 );
 
-@ffi.Native<ffi.Int Function(ffi.Pointer<llama_sampler>)>()
+@ffi.Native<ffi.Int32 Function(ffi.Pointer<llama_sampler>)>()
 external int llama_sampler_chain_n(ffi.Pointer<llama_sampler> chain);
 
 @ffi.Native<
@@ -9851,17 +9871,34 @@ final class ggml_opt_result extends ffi.Opaque {}
 typedef ggml_opt_result_t = ffi.Pointer<ggml_opt_result>;
 
 enum ggml_prec {
-  GGML_PREC_DEFAULT(0),
-  GGML_PREC_F32(10);
+  GGML_PREC_UNDEFINED(0),
+  GGML_PREC_F32(10),
+  GGML_PREC_BF16(15),
+  GGML_PREC_F16(20),
+  GGML_PREC_Q8(30),
+  GGML_PREC_Q4(40);
+
+  static const GGML_PREC_DEFAULT = GGML_PREC_UNDEFINED;
 
   final int value;
   const ggml_prec(this.value);
 
   static ggml_prec fromValue(int value) => switch (value) {
-    0 => GGML_PREC_DEFAULT,
+    0 => GGML_PREC_UNDEFINED,
     10 => GGML_PREC_F32,
+    15 => GGML_PREC_BF16,
+    20 => GGML_PREC_F16,
+    30 => GGML_PREC_Q8,
+    40 => GGML_PREC_Q4,
     _ => throw ArgumentError('Unknown value for ggml_prec: $value'),
   };
+
+  @override
+  String toString() {
+    if (this == GGML_PREC_UNDEFINED)
+      return "ggml_prec.GGML_PREC_UNDEFINED, ggml_prec.GGML_PREC_DEFAULT";
+    return super.toString();
+  }
 }
 
 enum ggml_scale_flag {
