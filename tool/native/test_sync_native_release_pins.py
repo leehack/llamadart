@@ -1444,6 +1444,49 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
                 prepared,
             )
 
+    def test_schema_2_keeps_required_ios_provider_and_repairs_missing_target(self) -> None:
+        manifest, release = _schema2_fixture_payloads()
+        tag = manifest["release"]["tag"]
+        original = (Path(__file__).resolve().parents[2] /
+            "packages/llamadart_litert_lm_flutter/darwin/llamadart_litert_lm_flutter/Package.swift").read_text()
+        previous = prepare_litert_lm_package_swift(
+            original, release=release, manifest=manifest, resolved_tag=tag,
+        )
+        provider = "GemmaModelConstraintProvider"
+        asset_name = f"litert-lm-native-apple-{provider}-xcframework-{tag}.zip"
+        release["assets"].append({"name": asset_name, "digest": "sha256:" + "a" * 64})
+        for platform in manifest["platforms"]:
+            if platform["platform"] == "ios":
+                platform["artifactPaths"].append(
+                    f'bin/ios/{platform["arch"]}/{provider}.framework/{provider}'
+                )
+        for source in (original, previous):
+            with self.subTest(source="legacy" if source == original else "schema2"):
+                prepared = prepare_litert_lm_package_swift(
+                    source, release=release, manifest=manifest, resolved_tag=tag,
+                )
+                self.assertEqual(prepared.count('name: "GemmaModelConstraintProvider"'), 2)
+                self.assertIn('.target(name: "GemmaModelConstraintProvider", condition: .when(platforms: [.iOS]))', prepared)
+                self.assertIn('.target(name: "CLiteRTLMMac", condition: .when(platforms: [.macOS]))', prepared)
+                self.assertIn(asset_name.replace(tag, r"\(liteRtLmTag)"), prepared)
+                self.assertIn('checksum: "' + 'a' * 64 + '"', prepared)
+                self.assertEqual(prepare_litert_lm_package_swift(
+                    prepared, release=release, manifest=manifest, resolved_tag=tag,
+                ), prepared)
+        wrong_platform = prepared.replace(
+            '.target(name: "GemmaModelConstraintProvider", condition: .when(platforms: [.iOS]))',
+            '.target(name: "GemmaModelConstraintProvider", condition: .when(platforms: [.macOS]))',
+        )
+        with self.assertRaisesRegex(ReleaseError, "exactly one iOS dependency"):
+            prepare_litert_lm_package_swift(
+                wrong_platform, release=release, manifest=manifest, resolved_tag=tag,
+            )
+        release["assets"] = [asset for asset in release["assets"] if asset["name"] != asset_name]
+        with self.assertRaisesRegex(ReleaseError, "GemmaModelConstraintProvider"):
+            prepare_litert_lm_package_swift(
+                original, release=release, manifest=manifest, resolved_tag=tag,
+            )
+
     def test_schema_2_prepares_hook_libraries_from_owner_inventory(self) -> None:
         fixture_root = Path(__file__).resolve().parent / "fixtures"
         manifest = json.loads(

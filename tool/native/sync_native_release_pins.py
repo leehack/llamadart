@@ -552,6 +552,14 @@ def litert_schema2_apple_targets(
         for asset_name in required_asset_names
         if asset_name.startswith(prefix) and asset_name.endswith(suffix)
     }
+    # Optional release assets alone do not imply a dependency. Include the
+    # provider only when an iOS runtime bundle actually requires its binary.
+    bundles = litert_schema2_bundle_required_libraries(manifest)
+    if any(
+        "GemmaModelConstraintProvider" in libraries
+        for bundle, libraries in bundles.items() if bundle.startswith("ios-")
+    ):
+        targets.add("GemmaModelConstraintProvider")
     if not targets:
         raise ReleaseError("LiteRT-LM schema-2 owner inventory has no Apple targets")
     return targets
@@ -3122,11 +3130,48 @@ def prepare_litert_lm_package_swift(
                 r"\g<1>.iOS, .macOS\2",
                 "LiteRT-LM Package.swift shared runtime target condition",
             )
+        elif (
+            "GemmaModelConstraintProvider" in expected_targets
+            and current_targets == expected_targets - {"GemmaModelConstraintProvider"}
+        ):
+            pass  # Repair a previously generated schema-2 manifest.
         elif current_targets != expected_targets:
             raise ReleaseError(
                 "LiteRT-LM Package.swift binary targets do not match the legacy "
                 "or schema-2 owner inventory"
             )
+
+    if manifest.get("schemaVersion") == 2 and "GemmaModelConstraintProvider" in expected_targets:
+        current_targets = {
+            name for name, _ in swift_native_repo_binary_targets(
+                swift_text, tag_variable="liteRtLmTag", current_tag=original_tag,
+            )
+        }
+        if "GemmaModelConstraintProvider" not in current_targets:
+            pattern = re.compile(
+                r'(?m)(?P<indent>^[ \t]*)nativeRepoBinaryTarget\(\s*'
+                r'name: "CLiteRTLMMac",.*?^[ \t]*\),',
+                re.MULTILINE | re.DOTALL,
+            )
+            matches = list(pattern.finditer(swift_text))
+            if len(matches) != 1:
+                raise ReleaseError("LiteRT-LM macOS compatibility target is ambiguous")
+            match = matches[0]
+            provider = match.group().replace("CLiteRTLMMac", "GemmaModelConstraintProvider")
+            swift_text = swift_text[:match.end()] + "\n" + provider + swift_text[match.end():]
+            swift_text = replace_one(
+                swift_text,
+                r'(?m)(?P<indent>^[ \t]*)(?P<target>\.target\(name: "CLiteRTLMMac", condition: \.when\(platforms: \[\.macOS\]\)\),)',
+                r'\g<indent>\g<target>\n\g<indent>.target(name: "GemmaModelConstraintProvider", condition: .when(platforms: [.iOS])),',
+                "LiteRT-LM required iOS provider dependency",
+            )
+
+        provider_dependencies = re.findall(
+            r'\.target\(name: "GemmaModelConstraintProvider", condition: \.when\(platforms: \[([^]]*)\]\)\)',
+            swift_text,
+        )
+        if provider_dependencies != [".iOS"]:
+            raise ReleaseError("LiteRT-LM required provider must have exactly one iOS dependency")
 
     apple_targets = swift_native_repo_binary_targets(
         swift_text,
