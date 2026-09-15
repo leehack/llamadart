@@ -1,5 +1,8 @@
 ## Unreleased
 
+* Hardened LiteRT-LM runtime synchronization and smoke checks to preserve macOS GPU companions and avoid duplicate iOS libraries.
+
+
 * Preserve required iOS provider frameworks when synchronizing LiteRT-LM Apple packages.
 
 * Load LiteRT-LM companion libraries even when their inventory lists dependencies later.

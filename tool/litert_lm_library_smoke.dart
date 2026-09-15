@@ -25,7 +25,10 @@ void main() {
     return;
   }
 
-  final opened = _openLiteRtLmLibrary();
+  final opened = openLiteRtLmSmokeLibrary(
+    directory: Platform.environment[_litertLmLibDirEnv],
+    abi: Abi.current(),
+  );
   final library = opened.library;
   for (final symbol in _requiredSymbols) {
     library.lookup<NativeFunction<Void Function()>>(symbol);
@@ -42,33 +45,48 @@ bool _isSupportedHost() {
       (Platform.isWindows && abi == Abi.windowsX64);
 }
 
-({String path, DynamicLibrary library}) _openLiteRtLmLibrary() {
-  final envDir = Platform.environment[_litertLmLibDirEnv];
+/// Opens the smoke runtime with the same dependency handling as production.
+({String path, DynamicLibrary library, List<DynamicLibrary> companions})
+openLiteRtLmSmokeLibrary({
+  required String? directory,
+  required Abi abi,
+  DynamicLibrary Function(String)? openLibrary,
+}) {
+  final open = openLibrary ?? DynamicLibrary.open;
+  final envDir = directory;
   if (envDir != null && envDir.isNotEmpty) {
-    final primary = _primaryLibraryFileName();
+    final primary = _primaryLibraryFileName(abi);
     if (primary == null) {
-      throw UnsupportedError('LiteRT-LM does not support ${Abi.current()}.');
+      throw UnsupportedError('LiteRT-LM does not support $abi.');
     }
 
-    for (final companion
-        in runtime
-            .liteRtLmRequiredLibrariesForAbi(Abi.current())
-            .where((library) => library != primary)) {
-      DynamicLibrary.open('$envDir/$companion');
+    final companionPaths = [
+      for (final library in runtime.liteRtLmRequiredLibrariesForAbi(abi))
+        if (library != primary) '$envDir/$library',
+    ];
+    // Production discovery can skip absent optional candidates; the smoke
+    // must fail if any required inventory entry is missing.
+    for (final file in [...companionPaths, '$envDir/$primary']) {
+      if (!File(file).existsSync()) {
+        throw StateError('Required LiteRT-LM smoke library is missing: $file');
+      }
     }
-
+    final companions = runtime.liteRtLmOpenCompanionLibraries(
+      companionPaths,
+      openLibrary: open,
+    );
     final path = '$envDir/$primary';
-    return (path: path, library: DynamicLibrary.open(path));
+    return (path: path, library: open(path), companions: companions);
   }
 
   return (
     path: _liteRtLmAssetId,
-    library: DynamicLibrary.open(_liteRtLmAssetId),
+    library: open(_liteRtLmAssetId),
+    companions: const <DynamicLibrary>[],
   );
 }
 
-String? _primaryLibraryFileName() {
-  final abi = Abi.current();
+String? _primaryLibraryFileName(Abi abi) {
   return switch (abi) {
     Abi.linuxArm64 || Abi.linuxX64 => 'libLiteRtLm.so',
     Abi.windowsX64 => 'LiteRtLm.dll',

@@ -40,6 +40,8 @@ from sync_native_release_pins import (  # noqa: E402
 )
 
 
+LEGACY_LITERT_SWIFT = Path(__file__).resolve().parent / "fixtures/litert_lm_legacy_Package.swift"
+
 UPSTREAM_COMMIT = "ba82499873945908bf8bcfc96e955d0677eb1fa1"
 NATIVE_COMMIT = "451ba0ce7c366972b4dc0e58f08ffe590958f943"
 DEVELOPMENT_TAG = "gba8249987394"
@@ -439,6 +441,8 @@ def _run_schema2_sync(
     release: dict,
     *,
     include_runtime_dependencies: bool = False,
+    current_litert_tag: str = "v0.16.0-native.2",
+    allow_stable_rebuild_entry: bool = False,
 ) -> subprocess.CompletedProcess[str]:
     repo_root = temp_dir / "repo"
     source_root = Path(__file__).resolve().parents[2]
@@ -467,6 +471,18 @@ def _run_schema2_sync(
         target = repo_root / relative_path
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(source_root / relative_path, target)
+    # Historical transition fixtures must not follow the checkout's live pin.
+    hook = repo_root / "hook/build.dart"
+    hook.write_text(re.sub(
+        r"const _litertLmReleaseTag = '[^']+';",
+        f"const _litertLmReleaseTag = '{current_litert_tag}';",
+        hook.read_text(),
+    ))
+    swift = repo_root / (
+        "packages/llamadart_litert_lm_flutter/darwin/"
+        "llamadart_litert_lm_flutter/Package.swift"
+    )
+    shutil.copyfile(LEGACY_LITERT_SWIFT, swift)
     release_dir = temp_dir / "releases"
     release_dir.mkdir()
     _materialize_schema2_release_fixtures(release_dir, manifest, release)
@@ -475,6 +491,7 @@ def _run_schema2_sync(
         [
             sys.executable,
             str(script),
+            *(["--allow-litert-stable-rebuild-entry"] if allow_stable_rebuild_entry else []),
             "--repo-root",
             str(repo_root),
             "--release-json-dir",
@@ -717,6 +734,42 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
             validate_litert_lm_transition("v0.16.0-native.2", "v0.17.0-1")
         with self.assertRaisesRegex(ReleaseError, "immediate next ordinal"):
             validate_litert_lm_transition(DEVELOPMENT_TAG, f"{DEVELOPMENT_TAG}-2")
+
+    def test_stable_rebuild_entry_cli_enforces_opt_in_and_manifest(self) -> None:
+        manifest, release = _schema2_fixture_payloads()
+        for enabled in (False, True):
+            with tempfile.TemporaryDirectory() as temp:
+                result = _run_schema2_sync(Path(temp), manifest, release,
+                    current_litert_tag="v0.15.0-native.2",
+                    allow_stable_rebuild_entry=enabled)
+                self.assertEqual(result.returncode, 0 if enabled else 1,
+                    result.stdout + result.stderr)
+                if not enabled:
+                    self.assertIn("target line at its base", result.stderr)
+        manifest["platforms"][0]["artifactPaths"].append("../unsafe.so")
+        with tempfile.TemporaryDirectory() as temp:
+            result = _run_schema2_sync(Path(temp), manifest, release,
+                current_litert_tag="v0.15.0-native.2", allow_stable_rebuild_entry=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("v0.15.0-native.2", (Path(temp) / "repo/hook/build.dart").read_text())
+
+    def test_stable_rebuild_entry_opt_in_preserves_other_guards(self) -> None:
+        validate_litert_lm_transition(
+            "v0.16.0-native.2", "v0.17.0-1", allow_stable_rebuild_entry=True
+        )
+        for current, target, error in (
+            ("v0.17.0-1", "v0.16.0-3", "rollback"),
+            ("v0.17.0-2", "v0.17.0-1", "rollback"),
+            ("v0.17.0-native.1", "v0.17.0-1", "ordinal alias"),
+            ("v0.17.0-1", "v0.17.0-3", "immediate next ordinal"),
+            ("v0.17.0", DEVELOPMENT_TAG, "stable/development"),
+            (DEVELOPMENT_TAG, "g111111111111-1", "development line"),
+        ):
+            with self.subTest(current=current, target=target):
+                with self.assertRaisesRegex(ReleaseError, error):
+                    validate_litert_lm_transition(
+                        current, target, allow_stable_rebuild_entry=True
+                    )
 
     def test_channel_and_development_line_transitions_require_explicit_approval(self) -> None:
         with self.assertRaisesRegex(ReleaseError, "stable/development"):
@@ -1400,7 +1453,7 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
             / "llamadart_litert_lm_flutter"
             / "Package.swift"
         )
-        original = package_swift.read_text(encoding="utf-8")
+        original = LEGACY_LITERT_SWIFT.read_text(encoding="utf-8")
 
         prepared = prepare_litert_lm_package_swift(
             original,
@@ -1410,7 +1463,7 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
         )
 
         self.assertEqual(
-            package_swift.read_text(encoding="utf-8"),
+            LEGACY_LITERT_SWIFT.read_text(encoding="utf-8"),
             original,
             "pin preparation must not modify the checked-in manifest",
         )
@@ -1447,8 +1500,7 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
     def test_schema_2_keeps_required_ios_provider_and_repairs_missing_target(self) -> None:
         manifest, release = _schema2_fixture_payloads()
         tag = manifest["release"]["tag"]
-        original = (Path(__file__).resolve().parents[2] /
-            "packages/llamadart_litert_lm_flutter/darwin/llamadart_litert_lm_flutter/Package.swift").read_text()
+        original = LEGACY_LITERT_SWIFT.read_text(encoding="utf-8")
         previous = prepare_litert_lm_package_swift(
             original, release=release, manifest=manifest, resolved_tag=tag,
         )
@@ -1531,7 +1583,7 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
         manifest = {"platforms": [{"platform": "ios", "arch": "arm64",
                                    "artifactPaths": paths}]}
         self.assertEqual(litert_schema2_bundle_required_libraries(manifest), {
-            "ios-arm64": ("CLiteRTLM", "LiteRtLm", "libLiteRtLm.dylib")})
+            "ios-arm64": ("CLiteRTLM", "LiteRtLm")})
         for extra in (paths[0], paths[1],
                       "bin/ios/arm64/Other.framework/LiteRtLm",
                       "bin/ios/arm64/../Other.framework/Info.plist"):
@@ -1543,6 +1595,25 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
         with self.assertRaisesRegex(ReleaseError, "no runtime libraries"):
             litert_schema2_bundle_required_libraries(manifest)
 
+    def test_ios_raw_inputs_require_canonical_frameworks(self) -> None:
+        for arch in ("arm64", "arm64-sim"):
+            for raw, framework in (
+                ("libLiteRtLm.dylib", "LiteRtLm"),
+                ("libLiteRt.dylib", "LiteRtLm"),
+                ("libGemmaModelConstraintProvider.dylib", "GemmaModelConstraintProvider"),
+                ("libLiteRtMetalAccelerator.dylib", "LiteRtMetalAccelerator"),
+                ("libLiteRtTopKMetalSampler.dylib", "LiteRtTopKMetalSampler"),
+            ):
+                paths = [f"bin/ios/{arch}/{raw}"]
+                manifest = {"platforms": [{"platform": "ios", "arch": arch,
+                    "artifactPaths": paths}]}
+                with self.subTest(arch=arch, raw=raw):
+                    with self.assertRaisesRegex(ReleaseError, "no canonical framework"):
+                        litert_schema2_bundle_required_libraries(manifest)
+                    paths.append(f"bin/ios/{arch}/{framework}.framework/{framework}")
+                    self.assertEqual(litert_schema2_bundle_required_libraries(manifest),
+                        {f"ios-{arch}": (framework,)})
+
     def test_schema_2_framework_metadata_filter_is_platform_and_path_scoped(self) -> None:
         for platform, arch, paths in (
             ("macos", "arm64", ["bin/macos/arm64/A.framework/Info.plist", "bin/macos/arm64/B.framework/Info.plist"]),
@@ -1551,7 +1622,9 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
         ):
             with self.subTest(platform=platform, paths=paths):
                 manifest = {"platforms": [{"platform": platform, "arch": arch,
-                    "artifactPaths": [f"bin/{platform}/{arch}/libLiteRtLm.dylib", *paths]}]}
+                    "artifactPaths": [
+                        f"bin/ios/{arch}/LiteRtLm.framework/LiteRtLm" if platform == "ios"
+                        else f"bin/{platform}/{arch}/libLiteRtLm.dylib", *paths]}]}
                 with self.assertRaisesRegex(ReleaseError, "duplicated"):
                     litert_schema2_bundle_required_libraries(manifest)
 
@@ -1689,6 +1762,29 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
             result = _run_schema2_sync(Path(temp), manifest, release)
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_schema_2_sync_keeps_macos_gpu_companions_in_spm_completeness(self) -> None:
+        manifest, release = _schema2_fixture_payloads()
+        platform = next(item for item in manifest["platforms"]
+            if item["platform"] == "macos" and item["arch"] == "arm64")
+        companion = "bin/macos/arm64/libLiteRtWebGpuAccelerator.dylib"
+        platform["artifactPaths"].append(companion)
+        artifact = dict(next(item for item in manifest["artifacts"]
+            if item["path"] == "bin/macos/arm64/libLiteRtLm.dylib"))
+        artifact.update(path=companion, fileName="libLiteRtWebGpuAccelerator.dylib")
+        manifest["artifacts"].append(artifact)
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            result = _run_schema2_sync(root, manifest, release)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            runtime = (root / "repo/lib/src/backends/litert_lm/litert_lm_runtime.dart").read_text()
+            function = runtime.split("liteRtLmMacOsRequiredNativeSpmFilesForAbi", 1)[1].split("\n}", 1)[0]
+            self.assertIn("LiteRtWebGpuAccelerator.framework/Versions/A/LiteRtWebGpuAccelerator", function)
+            self.assertNotIn("GemmaModelConstraintProvider", function)
+            prepare = (root / "repo/tool/macos_litert_lm_prepare_app.sh").read_text()
+            function = prepare.split("required_native_spm_files()", 1)[1].split("\n}", 1)[0]
+            self.assertIn("LiteRtWebGpuAccelerator.framework/Versions/A/LiteRtWebGpuAccelerator", function)
+            self.assertNotIn("GemmaModelConstraintProvider", function)
 
     def test_schema_2_sync_generates_runtime_inventory_from_platform_paths(self) -> None:
         manifest, release = _schema2_fixture_payloads()
@@ -1887,7 +1983,7 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
             )
         self.assertEqual(validated, manifest)
         prepared = prepare_litert_lm_package_swift(
-            package_swift.read_text(encoding="utf-8"),
+            LEGACY_LITERT_SWIFT.read_text(encoding="utf-8"),
             release=release,
             manifest=manifest,
             resolved_tag=tag,

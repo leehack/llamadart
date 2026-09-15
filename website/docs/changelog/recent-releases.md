@@ -9,6 +9,9 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+* Hardened LiteRT-LM runtime synchronization and smoke checks to preserve macOS GPU companions and avoid duplicate iOS libraries.
+
+
 - Fix fresh macOS Flutter test/build dependency scanning while retaining the
   Apple companion ABI and local-override guards.
 

@@ -11,6 +11,45 @@ import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
 
 void main() {
+  test('sync CLI preserves generated macOS GPU completeness checks', () async {
+    final result = await Process.run('python3', [
+      '-m',
+      'unittest',
+      'tool.native.test_sync_native_release_pins.SyncNativeReleasePinsTest.test_schema_2_sync_keeps_macos_gpu_companions_in_spm_completeness',
+    ]);
+    expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+  });
+
+  test(
+    'stable rebuild entry is explicit and retains rollback guards',
+    () async {
+      final result = await Process.run('python3', [
+        '-c',
+        r'''
+import sys
+sys.path.insert(0, 'tool/native')
+from sync_native_release_pins import parse_args, validate_litert_lm_transition, ReleaseError
+sys.argv = ['sync', '--allow-litert-stable-rebuild-entry']
+args = parse_args()
+assert args.allow_litert_stable_rebuild_entry
+validate_litert_lm_transition('v0.16.0-native.2', 'v0.17.0-1',
+    allow_stable_rebuild_entry=args.allow_litert_stable_rebuild_entry)
+for current, target, enabled in [
+    ('v0.16.0-native.2', 'v0.17.0-1', False),
+    ('v0.17.0-1', 'v0.16.0-3', True),
+    ('v0.17.0-1', 'v0.17.0-3', True),
+]:
+    try:
+        validate_litert_lm_transition(current, target, allow_stable_rebuild_entry=enabled)
+    except ReleaseError:
+        continue
+    raise AssertionError((current, target, enabled))
+''',
+      ]);
+      expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+    },
+  );
+
   test(
     'schema-2 sync retains the iOS provider alongside the macOS shim',
     () async {
@@ -79,7 +118,7 @@ print(json.dumps(litert_schema2_bundle_required_libraries(manifest)))
       ]);
       expect(result.exitCode, 0, reason: '${result.stderr}');
       expect(jsonDecode(result.stdout as String), {
-        'ios-arm64': ['CLiteRTLM', 'LiteRtLm', 'libLiteRtLm.dylib'],
+        'ios-arm64': ['CLiteRTLM', 'LiteRtLm'],
       });
     },
   );

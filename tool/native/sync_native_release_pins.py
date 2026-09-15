@@ -792,6 +792,7 @@ def main() -> int:
             current_litert_lm_tag,
             resolved_litert_lm_tag,
             allow_channel_transition=args.allow_litert_channel_transition,
+            allow_stable_rebuild_entry=args.allow_litert_stable_rebuild_entry,
             allow_development_line_transition=(
                 args.allow_litert_development_line_transition
             ),
@@ -1060,6 +1061,14 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Explicitly approve changing from one g<commit> development line to "
             "another after reviewing owner manifest ancestry evidence."
+        ),
+    )
+    parser.add_argument(
+        "--allow-litert-stable-rebuild-entry",
+        action="store_true",
+        help=(
+            "Allow entering a newer stable version at a qualified rebuild. "
+            "Manifest validation and all other transition guards still apply."
         ),
     )
     parser.add_argument(
@@ -1703,6 +1712,7 @@ def validate_litert_lm_transition(
     *,
     allow_channel_transition: bool = False,
     allow_development_line_transition: bool = False,
+    allow_stable_rebuild_entry: bool = False,
 ) -> None:
     if current == target:
         return
@@ -1768,7 +1778,7 @@ def validate_litert_lm_transition(
     ):
         raise ReleaseError(f"LiteRT-LM release rollback: {current} -> {target}")
     if target_version > current_version:
-        if target_rebuild != 0:
+        if target_rebuild != 0 and not allow_stable_rebuild_entry:
             raise ReleaseError(
                 "LiteRT-LM stable transition must enter the target line at its base"
             )
@@ -2744,6 +2754,22 @@ def litert_schema2_bundle_required_libraries(
         for path in paths:
             if platform_name == "ios" and framework_metadata.fullmatch(path):
                 continue
+            if platform_name == "ios":
+                # Owner archives include raw build inputs beside canonical
+                # frameworks. Flutter would embed those as duplicate frameworks.
+                raw_frameworks = {
+                    "libLiteRtLm.dylib": "LiteRtLm",
+                    "libLiteRt.dylib": "LiteRtLm",
+                    "libGemmaModelConstraintProvider.dylib": "GemmaModelConstraintProvider",
+                    "libLiteRtMetalAccelerator.dylib": "LiteRtMetalAccelerator",
+                    "libLiteRtTopKMetalSampler.dylib": "LiteRtTopKMetalSampler",
+                }
+                framework = raw_frameworks.get(Path(path).name)
+                if framework and Path(path).parent.as_posix() == f"bin/ios/{arch}":
+                    canonical = f"bin/ios/{arch}/{framework}.framework/{framework}"
+                    if canonical not in paths:
+                        raise ReleaseError("LiteRT-LM iOS raw input has no canonical framework")
+                    continue
             if platform_name == "windows" and Path(path).suffix == ".lib":
                 if (Path(path).parent.as_posix() != f"bin/windows/{arch}"
                         or Path(path).with_suffix(".dll").as_posix() not in paths):
@@ -2958,6 +2984,23 @@ def litert_schema2_macos_required_native_spm_files(
     return tuple(target_paths[target] for target in ("LiteRtLm", "CLiteRTLMMac"))
 
 
+def litert_macos_complete_spm_entries(
+    bundle_libraries: dict[str, tuple[str, ...]],
+    native_spm_files: tuple[str, ...],
+) -> dict[str, tuple[str, ...]]:
+    # Core/shim linking does not establish availability of dynamic GPU plugins.
+    # Require the complete per-architecture inventory before skipping raw staging.
+    frameworks = _litert_schema2_macos_framework_entries(bundle_libraries)
+    return {
+        arch: native_spm_files + tuple(
+            item for item in frameworks[arch]
+            if item not in native_spm_files
+            and item != "CLiteRTLM_mac.framework/Versions/A/CLiteRTLM_mac"
+        )
+        for arch in ("arm64", "x64")
+    }
+
+
 def _render_litert_lm_shell_inventory_function(
     function_name: str,
     entries: dict[str, tuple[str, ...]],
@@ -3015,7 +3058,9 @@ def replace_litert_lm_macos_prepare_inventory(
         manifest,
         resolved_tag,
     )
-    native_spm_entries = {arch: native_spm_files for arch in ("arm64", "x64")}
+    native_spm_entries = litert_macos_complete_spm_entries(
+        bundle_libraries, native_spm_files
+    )
     updated = _replace_litert_lm_shell_inventory_function(
         prepare_text,
         "required_libraries",
@@ -3044,9 +3089,10 @@ def replace_litert_lm_runtime_macos_inventory(
         manifest,
         resolved_tag,
     )
+    complete_spm = litert_macos_complete_spm_entries(bundle_libraries, native_spm_files)
     runtime_native_spm_entries = {
-        "macosArm64": native_spm_files,
-        "macosX64": native_spm_files,
+        "macosArm64": complete_spm["arm64"],
+        "macosX64": complete_spm["x64"],
     }
     updated = _replace_litert_lm_runtime_library_function(
         runtime_text,
