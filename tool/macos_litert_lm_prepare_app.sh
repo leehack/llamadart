@@ -25,27 +25,22 @@ resolve_litert_arch() {
 LITERT_ARCH="$(resolve_litert_arch)"
 
 required_libraries() {
-  case "$LITERT_ARCH" in
-    arm64)
-      printf '%s
-' \
-        "libCLiteRTLM_mac.dylib" \
-        "libGemmaModelConstraintProvider.dylib" \
-        "libLiteRt.dylib" \
-        "libLiteRtLm.dylib" \
-        "libLiteRtMetalAccelerator.dylib" \
-        "libLiteRtTopKMetalSampler.dylib" \
-        "libLiteRtTopKWebGpuSampler.dylib" \
-        "libLiteRtWebGpuAccelerator.dylib" \
-        "libwebgpu_dawn.dylib"
-      ;;
-    x64)
-      printf '%s
-' \
-        "libCLiteRTLM_mac.dylib" \
-        "libLiteRtLm.dylib"
-      ;;
-  esac
+  if [[ "$LITERT_ARCH" == "x64" ]]; then
+    printf '%s\n' \
+      "libCLiteRTLM_mac.dylib" \
+      "libLiteRtLm.dylib"
+    return
+  fi
+  printf '%s\n' \
+    "libCLiteRTLM_mac.dylib" \
+    "libGemmaModelConstraintProvider.dylib" \
+    "libLiteRt.dylib" \
+    "libLiteRtLm.dylib" \
+    "libLiteRtMetalAccelerator.dylib" \
+    "libLiteRtTopKMetalSampler.dylib" \
+    "libLiteRtTopKWebGpuSampler.dylib" \
+    "libLiteRtWebGpuAccelerator.dylib" \
+    "libwebgpu_dawn.dylib"
 }
 
 validate_litert_dir() {
@@ -75,27 +70,22 @@ validate_litert_dir() {
 }
 
 required_native_spm_files() {
-  case "$LITERT_ARCH" in
-    arm64)
-      printf '%s
-' \
-        "LiteRtLm.framework/Versions/A/LiteRtLm" \
-        "libCLiteRTLM_mac.dylib" \
-        "GemmaModelConstraintProvider.framework/Versions/A/GemmaModelConstraintProvider" \
-        "LiteRt.framework/Versions/A/LiteRt" \
-        "LiteRtMetalAccelerator.framework/Versions/A/LiteRtMetalAccelerator" \
-        "LiteRtTopKMetalSampler.framework/Versions/A/LiteRtTopKMetalSampler" \
-        "LiteRtTopKWebGpuSampler.framework/Versions/A/LiteRtTopKWebGpuSampler" \
-        "LiteRtWebGpuAccelerator.framework/Versions/A/LiteRtWebGpuAccelerator" \
-        "webgpu_dawn.framework/Versions/A/webgpu_dawn"
-      ;;
-    x64)
-      printf '%s
-' \
-        "LiteRtLm.framework/Versions/A/LiteRtLm" \
-        "libCLiteRTLM_mac.dylib"
-      ;;
-  esac
+  if [[ "$LITERT_ARCH" == "x64" ]]; then
+    printf '%s\n' \
+      "LiteRtLm.framework/Versions/A/LiteRtLm" \
+      "libCLiteRTLM_mac.dylib"
+    return
+  fi
+  printf '%s\n' \
+    "LiteRtLm.framework/Versions/A/LiteRtLm" \
+    "libCLiteRTLM_mac.dylib" \
+    "GemmaModelConstraintProvider.framework/Versions/A/GemmaModelConstraintProvider" \
+    "LiteRt.framework/Versions/A/LiteRt" \
+    "LiteRtMetalAccelerator.framework/Versions/A/LiteRtMetalAccelerator" \
+    "LiteRtTopKMetalSampler.framework/Versions/A/LiteRtTopKMetalSampler" \
+    "LiteRtTopKWebGpuSampler.framework/Versions/A/LiteRtTopKWebGpuSampler" \
+    "LiteRtWebGpuAccelerator.framework/Versions/A/LiteRtWebGpuAccelerator" \
+    "webgpu_dawn.framework/Versions/A/webgpu_dawn"
 }
 
 has_complete_native_spm_runtime() {
@@ -120,8 +110,8 @@ resolve_litert_dir() {
   fi
 
   local candidates=(
-    "$ROOT_DIR/.dart_tool/llamadart/litert_lm/0.17.0-1/macos_$LITERT_ARCH"
-    "$ROOT_DIR/.dart_tool/llamadart/litert_lm/0.17.0-1/macos/$LITERT_ARCH"
+    "$ROOT_DIR/.dart_tool/llamadart/litert_lm/0.16.0-native.2/macos_$LITERT_ARCH"
+    "$ROOT_DIR/.dart_tool/llamadart/litert_lm/0.16.0-native.2/macos/$LITERT_ARCH"
   )
   local candidate
   for candidate in "${candidates[@]}"; do

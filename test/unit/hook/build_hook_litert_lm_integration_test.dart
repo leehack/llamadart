@@ -1097,16 +1097,12 @@ const List<String> _iosLiteRtLibraries = [
   'LiteRtLm',
   'CLiteRTLM',
   'GemmaModelConstraintProvider',
-  'LiteRtMetalAccelerator',
-  'LiteRtTopKMetalSampler',
 ];
 
 const List<String> _iosLiteRtAssetNames = [
   'litert_lm_LiteRtLm',
   'litert_lm_CLiteRTLM',
   'litert_lm_GemmaModelConstraintProvider',
-  'litert_lm_LiteRtMetalAccelerator',
-  'litert_lm_LiteRtTopKMetalSampler',
 ];
 
 const List<String> _macosArm64LiteRtLibraries = [

@@ -1763,6 +1763,29 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_schema_2_sync_keeps_macos_gpu_companions_in_spm_completeness(self) -> None:
+        manifest, release = _schema2_fixture_payloads()
+        platform = next(item for item in manifest["platforms"]
+            if item["platform"] == "macos" and item["arch"] == "arm64")
+        companion = "bin/macos/arm64/libLiteRtWebGpuAccelerator.dylib"
+        platform["artifactPaths"].append(companion)
+        artifact = dict(next(item for item in manifest["artifacts"]
+            if item["path"] == "bin/macos/arm64/libLiteRtLm.dylib"))
+        artifact.update(path=companion, fileName="libLiteRtWebGpuAccelerator.dylib")
+        manifest["artifacts"].append(artifact)
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            result = _run_schema2_sync(root, manifest, release)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            runtime = (root / "repo/lib/src/backends/litert_lm/litert_lm_runtime.dart").read_text()
+            function = runtime.split("liteRtLmMacOsRequiredNativeSpmFilesForAbi", 1)[1].split("\n}", 1)[0]
+            self.assertIn("LiteRtWebGpuAccelerator.framework/Versions/A/LiteRtWebGpuAccelerator", function)
+            self.assertNotIn("GemmaModelConstraintProvider", function)
+            prepare = (root / "repo/tool/macos_litert_lm_prepare_app.sh").read_text()
+            function = prepare.split("required_native_spm_files()", 1)[1].split("\n}", 1)[0]
+            self.assertIn("LiteRtWebGpuAccelerator.framework/Versions/A/LiteRtWebGpuAccelerator", function)
+            self.assertNotIn("GemmaModelConstraintProvider", function)
+
     def test_schema_2_sync_generates_runtime_inventory_from_platform_paths(self) -> None:
         manifest, release = _schema2_fixture_payloads()
 

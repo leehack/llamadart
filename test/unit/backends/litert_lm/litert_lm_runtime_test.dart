@@ -226,7 +226,7 @@ void main() {
     );
     expect(legacyAbiError, contains('not stream-chunk compatible'));
     expect(legacyAbiError, contains('Expected callback ABI 2'));
-    expect(legacyAbiError, contains('v0.17.0-1'));
+    expect(legacyAbiError, contains('v0.16.0-native.2'));
     expect(legacyAbiError, contains('detected 1'));
   });
 
@@ -387,17 +387,17 @@ void main() {
       'libGemmaModelConstraintProvider.so',
       'libLiteRt.so',
       'libLiteRtLm.so',
+      'libwebgpu_dawn.so',
       'libLiteRtTopKWebGpuSampler.so',
       'libLiteRtWebGpuAccelerator.so',
-      'libwebgpu_dawn.so',
     ]);
     expect(liteRtLmRequiredLibrariesForAbi(Abi.windowsX64), const <String>[
       'LiteRtLm.dll',
       'libGemmaModelConstraintProvider.dll',
       'libLiteRt.dll',
+      'libwebgpu_dawn.dll',
       'libLiteRtTopKWebGpuSampler.dll',
       'libLiteRtWebGpuAccelerator.dll',
-      'libwebgpu_dawn.dll',
     ]);
     expect(liteRtLmRequiredLibrariesForAbi(Abi.androidArm64), isEmpty);
   });

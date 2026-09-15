@@ -11,6 +11,15 @@ import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
 
 void main() {
+  test('sync CLI preserves generated macOS GPU completeness checks', () async {
+    final result = await Process.run('python3', [
+      '-m',
+      'unittest',
+      'tool.native.test_sync_native_release_pins.SyncNativeReleasePinsTest.test_schema_2_sync_keeps_macos_gpu_companions_in_spm_completeness',
+    ]);
+    expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+  });
+
   test(
     'stable rebuild entry is explicit and retains rollback guards',
     () async {
@@ -1487,7 +1496,7 @@ printf '%s\\n' '{"tag_name":"v0.2.0-1","assets":[]}'
 
   test('keeps LiteRT release identity separate from cache version', () {
     final hook = File('hook/build.dart').readAsStringSync();
-    expect(hook, contains("const _litertLmReleaseTag = 'v0.17.0-1';"));
+    expect(hook, contains("const _litertLmReleaseTag = 'v0.16.0-native.2';"));
     expect(hook, contains(r"'$_litertLmReleaseTag'"));
     expect(hook, isNot(contains(r"v$_litertLmVersion")));
 

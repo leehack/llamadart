@@ -1,6 +1,6 @@
 ## Unreleased
 
-* Updated the native LiteRT-LM runtime to `v0.17.0-1`, including corrected macOS SwiftPM packaging and iOS provider selection.
+* Hardened LiteRT-LM runtime synchronization and smoke checks to preserve macOS GPU companions and avoid duplicate iOS libraries.
 
 
 * Preserve required iOS provider frameworks when synchronizing LiteRT-LM Apple packages.
