@@ -12,6 +12,52 @@ import 'package:test/test.dart';
 
 void main() {
   test(
+    'schema-2 sync retains the iOS provider alongside the macOS shim',
+    () async {
+      final result = await Process.run('python3', [
+        '-c',
+        r'''
+import json, sys
+from pathlib import Path
+sys.path.insert(0, 'tool/native')
+from sync_native_release_pins import prepare_litert_lm_package_swift
+fixtures = Path('tool/native/fixtures')
+manifest = json.loads((fixtures / 'litert_lm_schema2_owner_manifest.json').read_text())
+release = json.loads((fixtures / 'litert_lm_schema2_owner_release.json').read_text())
+provider = 'GemmaModelConstraintProvider'
+tag = manifest['release']['tag']
+for platform in manifest['platforms']:
+    if platform['platform'] == 'ios':
+        platform['artifactPaths'].append(f"bin/ios/{platform['arch']}/{provider}.framework/{provider}")
+release['assets'].append({'name': f'litert-lm-native-apple-{provider}-xcframework-{tag}.zip',
+                          'digest': 'sha256:' + 'a' * 64})
+source = Path('packages/llamadart_litert_lm_flutter/darwin/llamadart_litert_lm_flutter/Package.swift').read_text()
+print(prepare_litert_lm_package_swift(source, release=release, manifest=manifest, resolved_tag=tag))
+''',
+      ]);
+      expect(result.exitCode, 0, reason: '${result.stderr}');
+      final generated = result.stdout as String;
+      expect(
+        generated,
+        contains(
+          '.target(name: "GemmaModelConstraintProvider", condition: .when(platforms: [.iOS]))',
+        ),
+      );
+      expect(
+        generated,
+        contains(
+          '.target(name: "CLiteRTLMMac", condition: .when(platforms: [.macOS]))',
+        ),
+      );
+      expect(generated, contains('checksum: "${'a' * 64}"'));
+      expect(
+        RegExp('name: "GemmaModelConstraintProvider"').allMatches(generated),
+        hasLength(2),
+      );
+    },
+  );
+
+  test(
     'iOS framework metadata does not become a required runtime library',
     () async {
       final result = await Process.run('python3', [
