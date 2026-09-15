@@ -1,5 +1,7 @@
 ## Unreleased
 
+* Keep framework metadata and Windows import archives out of generated LiteRT-LM runtime library inventories.
+
 * Fix fresh macOS Flutter test/build dependency scanning while retaining the
   Apple companion ABI and local-override guards.
 

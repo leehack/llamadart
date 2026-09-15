@@ -2725,7 +2725,26 @@ def litert_schema2_bundle_required_libraries(
             )
         ):
             raise ReleaseError("LiteRT-LM platform artifact paths are invalid")
-        libraries = tuple(sorted(Path(path).name for path in paths))
+        if len(paths) != len(set(paths)):
+            raise ReleaseError("LiteRT-LM platform artifact paths are duplicated")
+        # Framework metadata is part of the archive provenance, not a library
+        # the flat native-assets hook should extract or require.
+        framework_metadata = re.compile(
+            rf"bin/ios/{re.escape(arch)}/[A-Za-z0-9_]+\.framework/Info\.plist"
+        )
+        library_paths = []
+        for path in paths:
+            if platform_name == "ios" and framework_metadata.fullmatch(path):
+                continue
+            if platform_name == "windows" and Path(path).suffix == ".lib":
+                if (Path(path).parent.as_posix() != f"bin/windows/{arch}"
+                        or Path(path).with_suffix(".dll").as_posix() not in paths):
+                    raise ReleaseError("LiteRT-LM Windows import library has no matching DLL")
+                continue
+            library_paths.append(path)
+        if not library_paths:
+            raise ReleaseError("LiteRT-LM platform contains no runtime libraries")
+        libraries = tuple(sorted(Path(path).name for path in library_paths))
         if any(
             not SAFE_LITERT_LIBRARY_FILENAME_RE.fullmatch(library)
             for library in libraries
