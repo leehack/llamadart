@@ -120,8 +120,8 @@ resolve_litert_dir() {
   fi
 
   local candidates=(
-    "$ROOT_DIR/.dart_tool/llamadart/litert_lm/0.17.0-2/macos_$LITERT_ARCH"
-    "$ROOT_DIR/.dart_tool/llamadart/litert_lm/0.17.0-2/macos/$LITERT_ARCH"
+    "$ROOT_DIR/.dart_tool/llamadart/litert_lm/0.17.0-3/macos_$LITERT_ARCH"
+    "$ROOT_DIR/.dart_tool/llamadart/litert_lm/0.17.0-3/macos/$LITERT_ARCH"
   )
   local candidate
   for candidate in "${candidates[@]}"; do

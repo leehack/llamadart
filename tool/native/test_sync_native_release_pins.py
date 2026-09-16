@@ -818,6 +818,21 @@ class SyncNativeReleasePinsTest(unittest.TestCase):
             self.assertEqual(first.read_text(encoding="utf-8"), "old-a")
             self.assertEqual(second.read_text(encoding="utf-8"), "old-b")
 
+    def test_v017_requires_exact_android_dawn_repair_provenance(self) -> None:
+        expected = [
+            ("arm64", "android_arm64", "7282aacdb076ce89f0c9d93107a145b991b99eb1dfbd5b5746dd0d99466ab3c3"),
+            ("x64", "android_x86_64", "fcfb9a0b902f7dd3f81f01295f381c10b22a2d5774f95ee0db813f284a0ab087"),
+        ]
+        self.assertEqual(pins.LITERT_PREBUILT_OVERRIDES.get("v0.17.0"), [
+            {
+                "sourceRepository": "google-ai-edge/LiteRT-LM",
+                "sourceCommit": "f73637c57f0940b53da184e0d5adfc52a4e55eef",
+                "sourcePath": f"prebuilt/{upstream}/libwebgpu_dawn.so",
+                "targetPath": f"bin/android/{arch}/libwebgpu_dawn.so",
+                "sha256": digest,
+            } for arch, upstream, digest in expected
+        ])
+
     def test_owner_generated_schema_2_manifest_is_consumed_exactly(self) -> None:
         owner_fixture = (
             Path(__file__).resolve().parent

@@ -9,7 +9,7 @@ backend-module configuration for
 
 The native-assets hook currently pins `llamadart-native` tag
 `v0.4.0` and
-`litert-lm-native` release `v0.17.0-2` (`hook/build.dart`). Apps can
+`litert-lm-native` release `v0.17.0-3` (`hook/build.dart`). Apps can
 override the llama.cpp native GitHub source with
 `hooks.user_defines.llamadart.llamadart_native_tag` and
 `hooks.user_defines.llamadart.llamadart_native_repository`, or use a local
@@ -171,7 +171,7 @@ Explicitly selecting `litert_lm` for a target without a pinned LiteRT-LM
 runtime fails during the build hook instead of producing an app that cannot
 load `.litertlm` models.
 
-## LiteRT-LM runtime coverage (`v0.17.0-2`)
+## LiteRT-LM runtime coverage (`v0.17.0-3`)
 
 | Platform target | LiteRT-LM bundle key | Selectable backends | Status |
 | --- | --- | --- | --- |
@@ -186,6 +186,16 @@ load `.litertlm` models.
 | Linux x64 | `linux-x64` | `cpu` | Supported |
 | Windows x64 | `windows-x64` | `cpu` | Supported |
 | Web (browser) | N/A (`@litert-lm/core`) | `cpu`, `gpu` | Experimental; web-compatible `.litertlm` URLs only |
+
+Device qualification is model- and backend-specific. On Pixel 9 Pro, the
+v0.17.0-3 Android Dawn correction targets the Mali/Vulkan device-loss regression
+observed with Qwen3 0.6B and Gemma 4 E2B. Qwen3.5 0.8B int8 GPU initialization
+still has an observed out-of-memory failure, also reproduced with the previous
+runtime. An OpenCL diagnostic crashed and is not qualified by the Vulkan tests.
+On the ARM64 iOS simulator, Qwen3 and Qwen3.5 CPU/GPU tests passed with
+v0.17.0-2, but Gemma 4 E2B GPU hit a Metal texture-binding limit also present in
+the previous runtime. Simulator evidence does not establish physical iOS GPU
+coverage; these rows are not claims that every model works on every backend.
 
 LiteRT-LM does not currently expose embeddings, state persistence, or external
 multimodal projector APIs through llamadart. On native LiteRT-LM targets,
@@ -207,7 +217,7 @@ as a multi-turn `ChatSession` or tool-calling backend yet.
 instead of silently ignoring llama.cpp-only settings.
 
 Native LiteRT-LM exposes these load-time runtime controls through
-`ModelParams`. Nullable fields keep the pinned `v0.17.0-2` runtime
+`ModelParams`. Nullable fields keep the pinned `v0.17.0-3` runtime
 default.
 
 | Native C API | Dart field | Support decision |

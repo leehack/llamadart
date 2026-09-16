@@ -167,6 +167,9 @@ LITERT_PREBUILT_OVERRIDES = {
     ],
     "v0.16.0": LITERT_ANDROID_DAWN_OVERRIDES,
     "v0.16.1": LITERT_ANDROID_DAWN_OVERRIDES,
+    # v0.17.0-3 restores the reviewed Pixel/Mali correction. Earlier v0.17
+    # artifacts without this provenance must not be newly adopted.
+    "v0.17.0": LITERT_ANDROID_DAWN_OVERRIDES,
 }
 LITERT_REQUIRED_RUNTIME_PATHS = {
     "bin/android/arm64/libLiteRtLm.so",
