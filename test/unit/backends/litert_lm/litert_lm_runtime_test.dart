@@ -226,7 +226,7 @@ void main() {
     );
     expect(legacyAbiError, contains('not stream-chunk compatible'));
     expect(legacyAbiError, contains('Expected callback ABI 2'));
-    expect(legacyAbiError, contains('v0.16.0-native.2'));
+    expect(legacyAbiError, contains('v0.17.0-3'));
     expect(legacyAbiError, contains('detected 1'));
   });
 
@@ -387,17 +387,17 @@ void main() {
       'libGemmaModelConstraintProvider.so',
       'libLiteRt.so',
       'libLiteRtLm.so',
-      'libwebgpu_dawn.so',
       'libLiteRtTopKWebGpuSampler.so',
       'libLiteRtWebGpuAccelerator.so',
+      'libwebgpu_dawn.so',
     ]);
     expect(liteRtLmRequiredLibrariesForAbi(Abi.windowsX64), const <String>[
       'LiteRtLm.dll',
       'libGemmaModelConstraintProvider.dll',
       'libLiteRt.dll',
-      'libwebgpu_dawn.dll',
       'libLiteRtTopKWebGpuSampler.dll',
       'libLiteRtWebGpuAccelerator.dll',
+      'libwebgpu_dawn.dll',
     ]);
     expect(liteRtLmRequiredLibrariesForAbi(Abi.androidArm64), isEmpty);
   });
@@ -455,6 +455,22 @@ void main() {
       liteRtLmIsMacOsCacheDirectoryForAbi(arm64Dir, Abi.macosArm64),
       isTrue,
     );
+
+    // Every published arm64 companion is required even for CPU loading:
+    // accepting an incomplete cache can hide a broken GPU deployment.
+    for (final library in liteRtLmMacOsRequiredLibrariesForAbi(
+      Abi.macosArm64,
+    )) {
+      final file = File('${arm64Dir.path}/$library');
+      file.deleteSync();
+      expect(
+        liteRtLmIsCacheDirectoryForAbi(arm64Dir, Abi.macosArm64),
+        isFalse,
+        reason: 'Missing $library must invalidate the cache',
+      );
+      file.createSync();
+    }
+    expect(liteRtLmIsCacheDirectoryForAbi(arm64Dir, Abi.macosArm64), isTrue);
 
     final x64Dir = Directory('${root.path}/x64')..createSync();
 

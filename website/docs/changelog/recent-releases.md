@@ -9,6 +9,8 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+* Update the native LiteRT-LM runtime to `v0.17.0-3`, preserving Qwen3 tokenizer compatibility, restoring Pixel GPU compatibility, and refreshing Apple runtime packages.
+
 * Hardened LiteRT-LM runtime synchronization and smoke checks to preserve macOS GPU companions and avoid duplicate iOS libraries.
 
 
