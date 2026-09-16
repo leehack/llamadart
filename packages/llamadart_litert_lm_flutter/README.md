@@ -7,8 +7,9 @@ support.
 Add the package to a Flutter iOS app when it should link the prebuilt LiteRT-LM
 Apple XCFrameworks through SwiftPM instead of relying on the core package's
 native-assets fallback. Flutter macOS continues to use the core package's
-hook-managed runtime bundle because LiteRT-LM v0.16 does not publish every
-required macOS companion library as an XCFramework.
+hook-managed runtime bundle for the complete GPU companion inventory. The
+SwiftPM package links the shared runtime and macOS compatibility shim, but
+those two frameworks alone do not provide the complete macOS runtime.
 
 The iOS artifacts include arm64 device and arm64 Simulator slices. Apps that
 also request an x86_64 Simulator slice must exclude x86_64 for LiteRT-LM builds.
