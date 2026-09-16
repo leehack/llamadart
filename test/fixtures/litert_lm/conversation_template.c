@@ -3,6 +3,9 @@
 #include <stdint.h>
 #include <string.h>
 static char template_text[32768];
+static char system_text[32768];
+const char* fixture_system_message(void) { return system_text; }
+void litert_lm_conversation_config_set_system_message(void* p, const char* s) { strncpy(system_text, s, sizeof(system_text) - 1); }
 void litert_lm_set_min_log_level(int level) {}
 void* litert_lm_engine_settings_create(const char* m, const char* b, const char* v, const char* a) { return (void*)1; }
 void litert_lm_engine_settings_set_max_num_tokens(void* p, int n) {}

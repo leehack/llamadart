@@ -794,6 +794,9 @@ class LiteRtLmRuntimeClient {
 
   /// Creates a new LiteRT-LM conversation for generation and token operations.
   ///
+  /// [systemMessage] is plain text, including any literal JSON text. The native
+  /// API wraps this content in its own system-role message.
+  ///
   /// [promptTemplate] overrides the bundle's native Jinja template. Omit it to
   /// preserve model-specific formatting, especially for media. An explicit
   /// override requires the native conversation-template setter; incompatible
@@ -843,7 +846,7 @@ class LiteRtLmRuntimeClient {
     final templatePtr = promptTemplate?.toNativeUtf8(allocator: calloc);
     final systemPtr = systemMessage == null
         ? nullptr
-        : _systemMessageJson(systemMessage).toNativeUtf8(allocator: calloc);
+        : jsonEncode(systemMessage).toNativeUtf8(allocator: calloc);
     final messagesPtr = messages == null || messages.isEmpty
         ? nullptr
         : jsonEncode(messages).toNativeUtf8(allocator: calloc);
@@ -1954,23 +1957,6 @@ String _messageJson(String text) {
     'role': 'user',
     'content': [
       {'type': 'text', 'text': text},
-    ],
-  });
-}
-
-String _systemMessageJson(String textOrJson) {
-  try {
-    final decoded = jsonDecode(textOrJson);
-    if (decoded is Map<String, dynamic>) {
-      return textOrJson;
-    }
-  } on FormatException {
-    // Plain text system messages are wrapped below.
-  }
-  return jsonEncode({
-    'role': 'system',
-    'content': [
-      {'type': 'text', 'text': textOrJson},
     ],
   });
 }

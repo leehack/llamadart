@@ -1,6 +1,6 @@
 ## Unreleased
 
-* Fix empty native Qwen 3 text-chat responses when thinking is disabled.
+* Fix empty native Qwen 3 text-chat responses when thinking is disabled and preserve plain-text system instructions in native conversations.
 
 * Update the native LiteRT-LM runtime to `v0.17.0-3`, preserving Qwen3 tokenizer compatibility, restoring Pixel GPU compatibility, and refreshing Apple runtime packages.
 

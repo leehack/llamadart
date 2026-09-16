@@ -36,6 +36,8 @@ native template override preserves the closed reasoning prefix for
 hidden reasoning as the answer. Qwen 3.5, other families, and media conversations
 retain their model-specific native templates. Native overrides lacking the
 conversation-template setter fail explicitly instead of silently ignoring it.
+System instructions are passed as JSON-encoded text content: the native C API
+adds the system role itself, so passing a full message object would nest it.
 
 
 > Note: the native runtime adds the model's start token itself, so the bundled
@@ -116,7 +118,8 @@ dart run tool/gguf_chat_features_smoke.dart \
 ```
 
 For native LiteRT-LM, `tool/litert_lm_chat_features_smoke.dart` requires a
-non-empty ordinary response with thinking disabled, plus both a thinking
+non-empty ordinary response with thinking disabled, a system/history turn that
+recalls a code from an earlier message, plus both a thinking
 channel and visible answer with thinking enabled. For Gemma 4 it also validates
 native `auto` tool history and requires exactly one schema-valid
 `ToolChoice.required` call. For Hermes/Qwen it instead requires the planner's

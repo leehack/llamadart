@@ -1,7 +1,11 @@
 @TestOn('vm && (mac-os || linux)')
 library;
 
+import 'dart:convert';
+import 'dart:ffi';
 import 'dart:io';
+
+import 'package:ffi/ffi.dart';
 
 import 'package:llamadart/src/backends/litert_lm/litert_lm_runtime.dart';
 import 'package:llamadart/src/core/exceptions.dart';
@@ -42,7 +46,19 @@ void main() {
           );
         } else {
           const template = '{{ messages }}\n<think>\n\n</think>\n\n';
-          client.createConversation(promptTemplate: template, npuBackend: true);
+          const system =
+              'Keep literal JSON: {"content":"hello"} and Unicode: 안녕';
+          client.createConversation(
+            promptTemplate: template,
+            systemMessage: system,
+            npuBackend: true,
+          );
+          final readSystem = DynamicLibrary.open(library)
+              .lookupFunction<
+                Pointer<Utf8> Function(),
+                Pointer<Utf8> Function()
+              >('fixture_system_message');
+          expect(jsonDecode(readSystem().toDartString()), system);
           expect(
             client.renderMessageToString({'role': 'user', 'content': 'Hi'}),
             template,
