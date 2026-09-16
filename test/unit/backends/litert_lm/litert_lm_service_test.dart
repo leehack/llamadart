@@ -41,6 +41,98 @@ void main() {
     }
   });
 
+  for (final name in ['Qwen3-0.6B', 'Qwen3.5-0.8B', 'gemma-4-E2B', 'unknown']) {
+    for (final thinking in [false, true]) {
+      test('$name native text template preserves thinking=$thinking', () async {
+        final file = File('${tempDir.path}/$name.litertlm');
+        await file.writeAsString('fake model');
+        final client = _FakeLiteRtLmRuntimeClient();
+        final service = LiteRtLmService(clientFactory: () => client);
+        const params = ModelParams(
+          liteRtLmBackend: LiteRtLmBackendPreference.cpu,
+        );
+        try {
+          final model = await service.loadModel(file.path, params);
+          final context = service.createContext(model, params);
+          final pending = service
+              .generateChat(
+                context,
+                const [
+                  LlamaChatMessage.fromText(
+                    role: LlamaChatRole.user,
+                    text: 'Hello',
+                  ),
+                ],
+                const GenerationParams(maxTokens: 64),
+                enableThinking: thinking,
+              )
+              .toList();
+          await client.generateStarted.future;
+          client.generated.add('Hello');
+          await client.generated.close();
+          expect(await pending, [utf8.encode('Hello')]);
+          expect(client.lastExtraContext?['enable_thinking'], thinking);
+          if (name == 'Qwen3-0.6B') {
+            expect(client.lastPromptTemplate, contains('enable_thinking'));
+            expect(
+              client.lastPromptTemplate,
+              service.getMetadata(model)['tokenizer.chat_template'],
+            );
+          } else {
+            expect(client.lastPromptTemplate, isNull);
+          }
+        } finally {
+          service.dispose();
+        }
+      });
+    }
+  }
+
+  for (final withMedia in [false, true]) {
+    test(
+      'Qwen3 custom text override and native media boundary: $withMedia',
+      () async {
+        final file = File('${tempDir.path}/Qwen3-0.6B.litertlm');
+        await file.writeAsString('fake model');
+        final client = _FakeLiteRtLmRuntimeClient();
+        final service = LiteRtLmService(clientFactory: () => client);
+        const custom = '{{ messages[0].content }}';
+        const params = ModelParams(
+          liteRtLmBackend: LiteRtLmBackendPreference.cpu,
+          chatTemplate: custom,
+        );
+        try {
+          final model = await service.loadModel(file.path, params);
+          final context = service.createContext(model, params);
+          final pending = service
+              .generateChat(
+                context,
+                [
+                  LlamaChatMessage.withContent(
+                    role: LlamaChatRole.user,
+                    content: [
+                      const LlamaTextContent('Hello'),
+                      if (withMedia)
+                        LlamaImageContent(bytes: Uint8List.fromList([1, 2, 3])),
+                    ],
+                  ),
+                ],
+                const GenerationParams(maxTokens: 64),
+                enableThinking: false,
+              )
+              .toList();
+          await client.generateStarted.future;
+          client.generated.add('Hello');
+          await client.generated.close();
+          expect(await pending, [utf8.encode('Hello')]);
+          expect(client.lastPromptTemplate, withMedia ? isNull : custom);
+        } finally {
+          service.dispose();
+        }
+      },
+    );
+  }
+
   test(
     'loads local litertlm bundles without initializing native runtime',
     () async {
@@ -2856,6 +2948,7 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
   LiteRtLmRuntimeMetrics? metrics;
   Object? metricsError;
   void Function()? onCreateConversation;
+  String? lastPromptTemplate;
   int createConversationCount = 0;
   int generateCount = 0;
   int cancelCount = 0;
@@ -2920,6 +3013,7 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
   @override
   void createConversation({
     String? systemMessage,
+    String? promptTemplate,
     List<Map<String, dynamic>>? messages,
     List<Map<String, dynamic>>? tools,
     Map<String, dynamic>? extraContext,
@@ -2938,6 +3032,7 @@ class _FakeLiteRtLmRuntimeClient extends LiteRtLmRuntimeClient {
     lastNpuBackend = npuBackend;
     lastLoraPath = loraPath;
     lastSystemMessage = systemMessage;
+    lastPromptTemplate = promptTemplate;
     lastMessages = messages
         ?.map(Map<String, dynamic>.from)
         .toList(growable: false);

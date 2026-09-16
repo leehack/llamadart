@@ -61,14 +61,37 @@ Future<void> main(List<String> args) async {
       messages: const [
         LlamaChatMessage.fromText(
           role: LlamaChatRole.user,
-          text:
-              'A farmer has 17 sheep. All but 9 run away. Think step by step, '
-              'then state how many sheep remain.',
+          text: 'What is 2+2? Think briefly, then answer with the number.',
         ),
       ],
       tools: const [],
       enableThinking: true,
       maxTokens: 256,
+    );
+
+    final textHistory = await _runScenario(
+      engine: engine,
+      messages: const [
+        LlamaChatMessage.fromText(
+          role: LlamaChatRole.system,
+          text: 'Answer briefly and accurately.',
+        ),
+        LlamaChatMessage.fromText(
+          role: LlamaChatRole.user,
+          text: 'Remember this code: PINE.',
+        ),
+        LlamaChatMessage.fromText(
+          role: LlamaChatRole.assistant,
+          text: 'I will remember PINE.',
+        ),
+        LlamaChatMessage.fromText(
+          role: LlamaChatRole.user,
+          text: 'What is the code? Answer only with the code.',
+        ),
+      ],
+      tools: const [],
+      enableThinking: false,
+      maxTokens: 64,
     );
 
     final requiredTemplate = await engine.chatTemplate(
@@ -166,6 +189,7 @@ Future<void> main(List<String> args) async {
       'format': requiredTemplate.format,
       'plain': plain.toJson(),
       'thinking': thinking.toJson(),
+      'textHistory': textHistory.toJson(),
       'toolCall': toolCall.toJson(),
       'nativeToolHistory':
           nativeToolHistory?.toJson() ??
@@ -183,9 +207,11 @@ Future<void> main(List<String> args) async {
         'audioChat': audioChat.toJson(),
       },
     };
+    print('DIAGNOSTIC litert_lm_chat_features ${jsonEncode(result)}');
     _verifyResult(
       plain: plain,
       thinking: thinking,
+      textHistory: textHistory,
       toolCall: toolCall,
       requiredUnsupportedExpected: requiredUnsupportedExpected,
       nativeToolHistory: nativeToolHistory,
@@ -202,6 +228,7 @@ Future<void> main(List<String> args) async {
 void _verifyResult({
   required _ScenarioResult plain,
   required _ScenarioResult thinking,
+  required _ScenarioResult textHistory,
   required _RequiredToolScenarioResult toolCall,
   required bool requiredUnsupportedExpected,
   required _ScenarioResult? nativeToolHistory,
@@ -225,6 +252,13 @@ void _verifyResult({
   }
   if (thinking.content.trim().isEmpty) {
     throw StateError('LiteRT-LM thinking scenario produced no visible answer.');
+  }
+  if (!textHistory.content.contains('PINE') ||
+      textHistory.thinking.isNotEmpty ||
+      textHistory.toolCalls.isNotEmpty) {
+    throw StateError(
+      'LiteRT-LM system/history chat did not preserve the remembered code.',
+    );
   }
   if (requiredUnsupportedExpected) {
     if (!toolCall.isUnsupported) {
