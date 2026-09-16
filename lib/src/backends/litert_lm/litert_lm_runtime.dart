@@ -793,8 +793,14 @@ class LiteRtLmRuntimeClient {
   }
 
   /// Creates a new LiteRT-LM conversation for generation and token operations.
+  ///
+  /// [promptTemplate] overrides the bundle's native Jinja template. Omit it to
+  /// preserve model-specific formatting, especially for media. An explicit
+  /// override requires the native conversation-template setter; incompatible
+  /// runtime overrides fail with [LlamaUnsupportedException].
   void createConversation({
     String? systemMessage,
+    String? promptTemplate,
     List<Map<String, dynamic>>? messages,
     List<Map<String, dynamic>>? tools,
     Map<String, dynamic>? extraContext,
@@ -809,6 +815,15 @@ class LiteRtLmRuntimeClient {
     final engine = _requireEngine();
     _deleteConversation();
 
+    if (promptTemplate != null &&
+        !bindings._library.providesSymbol(
+          'litert_lm_conversation_config_set_prompt_template',
+        )) {
+      throw LlamaUnsupportedException(
+        'The LiteRT-LM runtime does not support conversation prompt templates. '
+        'Use the packaged runtime or a compatible newer runtime.',
+      );
+    }
     final sessionConfig = bindings.sessionConfigCreate();
     if (sessionConfig == nullptr) {
       throw StateError('litert_lm_session_config_create returned null');
@@ -825,6 +840,7 @@ class LiteRtLmRuntimeClient {
     }
     _setSessionLoraPath(bindings, sessionConfig, loraPath);
 
+    final templatePtr = promptTemplate?.toNativeUtf8(allocator: calloc);
     final systemPtr = systemMessage == null
         ? nullptr
         : _systemMessageJson(systemMessage).toNativeUtf8(allocator: calloc);
@@ -844,6 +860,12 @@ class LiteRtLmRuntimeClient {
         throw StateError('litert_lm_conversation_config_create returned null');
       }
       bindings.conversationConfigSetSessionConfig(config, sessionConfig);
+      if (templatePtr != null) {
+        bindings.conversationConfigSetPromptTemplate(
+          config,
+          templatePtr.cast(),
+        );
+      }
       if (systemPtr != nullptr) {
         bindings.conversationConfigSetSystemMessage(config, systemPtr.cast());
       }
@@ -870,6 +892,7 @@ class LiteRtLmRuntimeClient {
         bindings.conversationConfigDelete(config);
       }
       bindings.sessionConfigDelete(sessionConfig);
+      if (templatePtr != null) calloc.free(templatePtr);
       if (systemPtr != nullptr) {
         calloc.free(systemPtr);
       }
@@ -3242,6 +3265,12 @@ class _LiteRtLmBindings {
         Void Function(Pointer<_LiteRtLmConversationConfig>, Pointer<Char>),
         void Function(Pointer<_LiteRtLmConversationConfig>, Pointer<Char>)
       >('litert_lm_conversation_config_set_messages');
+
+  late final conversationConfigSetPromptTemplate = _library
+      .lookupFunction<
+        Void Function(Pointer<_LiteRtLmConversationConfig>, Pointer<Char>),
+        void Function(Pointer<_LiteRtLmConversationConfig>, Pointer<Char>)
+      >('litert_lm_conversation_config_set_prompt_template');
 
   late final conversationConfigSetExtraContext = _library
       .lookupFunction<

@@ -27,6 +27,17 @@ messages, tools, and per-call extra context. The registry still provides the
 format handler used to parse streamed assistant output and to render prompts for
 unsupported or non-native paths.
 
+For Qwen 3 text-only native conversations, llamadart supplies the same canonical
+Jinja template to the native conversation. Older Qwen 3 bundles otherwise render
+generic ChatML that ignores `enable_thinking`, so a disabled-thinking request can
+spend its entire token budget on reasoning that the public API suppresses. The
+native template override preserves the closed reasoning prefix for
+`enableThinking: false`; it does not increase the output token budget or expose
+hidden reasoning as the answer. Qwen 3.5, other families, and media conversations
+retain their model-specific native templates. Native overrides lacking the
+conversation-template setter fail explicitly instead of silently ignoring it.
+
+
 > Note: the native runtime adds the model's start token itself, so the bundled
 > templates have their leading `bos_token` stripped to avoid a doubled BOS.
 
@@ -113,7 +124,11 @@ actionable unsupported error before generation; empty output or a normal
 `stop` finish still fails. The planner unit matrix separately pins unchanged
 native and rendered routing for `auto` and `none`; the Qwen smoke does not
 promote best-effort `auto` into a guaranteed call. Use it with models that
-support thinking, such as Qwen 3/3.5 and Gemma 4:
+support thinking, such as Qwen 3/3.5 and Gemma 4. The smoke uses a brief arithmetic
+question within its fixed thinking budget and prints diagnostics before asserting,
+so token exhaustion and empty plain responses remain inspectable on failure.
+Model/runtime decoding quality is a separate check: a non-empty response alone
+does not establish correct Unicode output.
 
 ```bash
 dart run tool/litert_lm_chat_features_smoke.dart \

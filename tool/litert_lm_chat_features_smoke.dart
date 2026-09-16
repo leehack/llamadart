@@ -61,9 +61,7 @@ Future<void> main(List<String> args) async {
       messages: const [
         LlamaChatMessage.fromText(
           role: LlamaChatRole.user,
-          text:
-              'A farmer has 17 sheep. All but 9 run away. Think step by step, '
-              'then state how many sheep remain.',
+          text: 'What is 2+2? Think briefly, then answer with the number.',
         ),
       ],
       tools: const [],
@@ -183,6 +181,7 @@ Future<void> main(List<String> args) async {
         'audioChat': audioChat.toJson(),
       },
     };
+    print('DIAGNOSTIC litert_lm_chat_features ${jsonEncode(result)}');
     _verifyResult(
       plain: plain,
       thinking: thinking,

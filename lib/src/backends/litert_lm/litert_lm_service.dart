@@ -285,7 +285,21 @@ class LiteRtLmService {
       templateNow: templateNow,
       enableThinking: enableThinking,
     );
+    // Older Qwen bundles use a native ChatML template that ignores
+    // enable_thinking. Match the text template used by the Dart parser so
+    // disabled thinking closes the reasoning prefix before generation.
+    // Media remains owned by the native model-specific processor.
+    final modelName = File(
+      _modelPath!,
+    ).uri.pathSegments.last.toLowerCase().replaceAll('_', '-');
+    final isQwen3TextModel = RegExp(r'qwen-?3(?:[^.\d]|$)').hasMatch(modelName);
+    final builtinTemplate = _resolveBuiltinTemplate(modelName);
+    final promptTemplate =
+        maxNumImages == null && !enableAudio && isQwen3TextModel
+        ? _modelParams?.chatTemplate ?? builtinTemplate?.template
+        : null;
     client.createConversation(
+      promptTemplate: promptTemplate,
       systemMessage: seed.systemMessage,
       messages: seed.messages,
       tools: nativeTools,
