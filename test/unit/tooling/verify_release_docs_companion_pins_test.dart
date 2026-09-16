@@ -316,11 +316,11 @@ void main() {
     }
   });
 
-  test('the checked-in companion versions record their SwiftPM pins', () {
+  test('checked-in SwiftPM pins are recorded in released or pending notes', () {
     final errors = <String>[];
-    final pending = checkCompanionSwiftPins(Directory.current, errors);
-
-    expect(pending, isEmpty);
+    // Pin adoption precedes companion release preparation. The CLI enforces
+    // that pending bumps are resolved when --release-prep is requested.
+    checkCompanionSwiftPins(Directory.current, errors);
     expect(errors, isEmpty);
   });
 

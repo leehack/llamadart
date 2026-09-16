@@ -14,8 +14,8 @@ import 'litert_lm_asr_types.dart';
 
 export 'litert_lm_asr_types.dart';
 
-const _litertLmReleaseTag = 'v0.16.0-native.2';
-const _litertLmVersion = '0.16.0-native.2';
+const _litertLmReleaseTag = 'v0.17.0-2';
+const _litertLmVersion = '0.17.0-2';
 const _litertLmLibDirEnv = 'LLAMADART_LITERT_LM_LIB_DIR';
 const _liteRtLmIosNativeAsset = 'package:llamadart/litert_lm_LiteRtLm';
 const _processLibraryCandidate = '<process>';
@@ -189,31 +189,44 @@ List<String> liteRtLmIosLibraryCandidates(
 /// native-assets cache directories.
 List<String> liteRtLmRequiredLibrariesForAbi(Abi abi) {
   return switch (abi) {
-    Abi.macosArm64 => liteRtLmMacOsRequiredLibrariesForAbi(abi),
-    Abi.macosX64 => liteRtLmMacOsRequiredLibrariesForAbi(abi),
+    Abi.macosArm64 => const <String>[
+      'libCLiteRTLM_mac.dylib',
+      'libGemmaModelConstraintProvider.dylib',
+      'libLiteRt.dylib',
+      'libLiteRtLm.dylib',
+      'libLiteRtMetalAccelerator.dylib',
+      'libLiteRtTopKMetalSampler.dylib',
+      'libLiteRtTopKWebGpuSampler.dylib',
+      'libLiteRtWebGpuAccelerator.dylib',
+      'libwebgpu_dawn.dylib',
+    ],
+    Abi.macosX64 => const <String>[
+      'libCLiteRTLM_mac.dylib',
+      'libLiteRtLm.dylib',
+    ],
     Abi.linuxArm64 => const <String>[
       'libGemmaModelConstraintProvider.so',
       'libLiteRt.so',
       'libLiteRtLm.so',
-      'libwebgpu_dawn.so',
       'libLiteRtTopKWebGpuSampler.so',
       'libLiteRtWebGpuAccelerator.so',
+      'libwebgpu_dawn.so',
     ],
     Abi.linuxX64 => const <String>[
       'libGemmaModelConstraintProvider.so',
       'libLiteRt.so',
       'libLiteRtLm.so',
-      'libwebgpu_dawn.so',
       'libLiteRtTopKWebGpuSampler.so',
       'libLiteRtWebGpuAccelerator.so',
+      'libwebgpu_dawn.so',
     ],
     Abi.windowsX64 => const <String>[
       'LiteRtLm.dll',
       'libGemmaModelConstraintProvider.dll',
       'libLiteRt.dll',
-      'libwebgpu_dawn.dll',
       'libLiteRtTopKWebGpuSampler.dll',
       'libLiteRtWebGpuAccelerator.dll',
+      'libwebgpu_dawn.dll',
     ],
     _ => const <String>[],
   };
@@ -281,14 +294,12 @@ List<String> liteRtLmMacOsRequiredFrameworksForAbi(Abi abi) {
   return switch (abi) {
     Abi.macosArm64 => const <String>[
       'CLiteRTLM_mac.framework/Versions/A/CLiteRTLM_mac',
-      'GemmaModelConstraintProvider.framework/Versions/A/'
-          'GemmaModelConstraintProvider',
+      'GemmaModelConstraintProvider.framework/Versions/A/GemmaModelConstraintProvider',
       'LiteRt.framework/Versions/A/LiteRt',
       'LiteRtLm.framework/Versions/A/LiteRtLm',
       'LiteRtMetalAccelerator.framework/Versions/A/LiteRtMetalAccelerator',
       'LiteRtTopKMetalSampler.framework/Versions/A/LiteRtTopKMetalSampler',
-      'LiteRtTopKWebGpuSampler.framework/Versions/A/'
-          'LiteRtTopKWebGpuSampler',
+      'LiteRtTopKWebGpuSampler.framework/Versions/A/LiteRtTopKWebGpuSampler',
       'LiteRtWebGpuAccelerator.framework/Versions/A/LiteRtWebGpuAccelerator',
       'webgpu_dawn.framework/Versions/A/webgpu_dawn',
     ],
@@ -307,13 +318,11 @@ List<String> liteRtLmMacOsRequiredNativeSpmFilesForAbi(Abi abi) {
     Abi.macosArm64 => const <String>[
       'LiteRtLm.framework/Versions/A/LiteRtLm',
       'libCLiteRTLM_mac.dylib',
-      'GemmaModelConstraintProvider.framework/Versions/A/'
-          'GemmaModelConstraintProvider',
+      'GemmaModelConstraintProvider.framework/Versions/A/GemmaModelConstraintProvider',
       'LiteRt.framework/Versions/A/LiteRt',
       'LiteRtMetalAccelerator.framework/Versions/A/LiteRtMetalAccelerator',
       'LiteRtTopKMetalSampler.framework/Versions/A/LiteRtTopKMetalSampler',
-      'LiteRtTopKWebGpuSampler.framework/Versions/A/'
-          'LiteRtTopKWebGpuSampler',
+      'LiteRtTopKWebGpuSampler.framework/Versions/A/LiteRtTopKWebGpuSampler',
       'LiteRtWebGpuAccelerator.framework/Versions/A/LiteRtWebGpuAccelerator',
       'webgpu_dawn.framework/Versions/A/webgpu_dawn',
     ],
