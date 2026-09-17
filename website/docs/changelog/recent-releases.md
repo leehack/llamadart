@@ -9,6 +9,8 @@ For canonical full release notes, use:
 
 ## Unreleased
 
+* Preserve accented text, emoji, and other Unicode characters when detokenizing native GGUF tokens.
+
 * Update native LiteRT-LM to `v0.17.0-5` with corrected Linux library loading, and enable explicit GPU selection on Linux x64 and Windows x64 while retaining CPU defaults.
 
 * Make zero-temperature native LiteRT-LM generation greedy to avoid corrupted GPU output.
