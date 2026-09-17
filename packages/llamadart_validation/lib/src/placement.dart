@@ -120,6 +120,10 @@ Map<String, dynamic> _inspectNpu(
       ? [
           'C04.hello',
           'C04.arithmetic',
+          'C06.history',
+          'C06.history.public_system_wire',
+          'C06.history.no_system',
+          'C06.history.combined',
           'C09.reload',
           'B01.warmup',
           'B01.1',

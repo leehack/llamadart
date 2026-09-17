@@ -98,6 +98,10 @@ void main() {
     for (final id in [
       'C04.hello',
       'C04.arithmetic',
+      'C06.history',
+      'C06.history.public_system_wire',
+      'C06.history.no_system',
+      'C06.history.combined',
       'C09.reload',
       'B01.warmup',
       'B01.1',
@@ -116,6 +120,22 @@ void main() {
       count++;
     }
     expect(inspectPlacement(manifest, cases, null)['verified'], true);
+    for (final missing in [
+      'C06.history',
+      'C06.history.public_system_wire',
+      'C06.history.no_system',
+      'C06.history.combined',
+    ]) {
+      expect(
+        inspectPlacement(
+          manifest,
+          cases.where((record) => record['case_id'] != missing).toList(),
+          null,
+        )['verified'],
+        false,
+        reason: 'Every history control requires independent NPU proof',
+      );
+    }
     expect(
       inspectPlacement(manifest, cases.sublist(1), null)['verified'],
       false,

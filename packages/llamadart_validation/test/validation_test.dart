@@ -25,6 +25,8 @@ class FakeEngine implements ValidationEngine {
   var loads = 0;
   var generated = 0;
   var wrongArithmetic = false;
+  var wrongHistory = false;
+  final requests = <Map<String, dynamic>>[];
   var ignoresCancellation = false;
   String backendName = 'LiteRT-LM CPU';
   Map<String, dynamic> metadata = {};
@@ -75,10 +77,14 @@ class FakeEngine implements ValidationEngine {
     List<LlamaChatMessage>? history,
   }) async {
     generated++;
+    requests.add({'prompt': prompt, 'history': history});
     if (timeout) return Completer<Map<String, dynamic>>().future;
     return {
-      'content': history != null
-          ? 'cedar17'
+      'content':
+          history != null || prompt.contains('The secret code is cedar17.')
+          ? wrongHistory
+                ? '77777777777777777777777777777777'
+                : 'cedar17'
           : prompt.contains('2 + 2')
           ? wrongArithmetic
                 ? '2'
@@ -131,6 +137,69 @@ Future<({ValidationReport report, List<Map<String, dynamic>> events})> run(
 }
 
 void main() {
+  test(
+    'native reference runs each history control with its distinct input',
+    () async {
+      final data = profile(backend: 'npu').toJson()
+        ..['execution_path'] = 'native_c_api';
+      final engine = FakeEngine()..backendName = 'LiteRT-LM NPU direct C API';
+      final result = await run(
+        engine,
+        selected: ValidationProfile.fromJson(data),
+      );
+      expect(result.report.cases.length, 12);
+      expect(result.report.assertionsPassed, true);
+      final histories = engine.requests
+          .where((r) => r['history'] != null)
+          .toList();
+      expect(histories, hasLength(3));
+      final canonical = histories[0]['history'] as List<LlamaChatMessage>;
+      expect(canonical.map((m) => m.role.name), [
+        'system',
+        'user',
+        'assistant',
+        'user',
+      ]);
+      expect(canonical.map((m) => m.content), [
+        'Remember the secret code exactly.',
+        'The secret code is cedar17.',
+        'I will remember the code.',
+        'What is the secret code? Reply with only the code.',
+      ]);
+      final literal = histories[1]['history'] as List<LlamaChatMessage>;
+      expect(jsonDecode(literal.first.content), {
+        'role': 'system',
+        'content': [
+          {'type': 'text', 'text': canonical.first.content},
+        ],
+      });
+      expect(
+        literal.skip(1).map((m) => m.content),
+        canonical.skip(1).map((m) => m.content),
+      );
+      final noSystem = histories[2]['history'] as List<LlamaChatMessage>;
+      expect(noSystem.map((m) => m.role.name), ['user', 'assistant', 'user']);
+      final combined = engine.requests.singleWhere(
+        (r) =>
+            r['history'] == null && (r['prompt'] as String).contains('cedar17'),
+      );
+      expect(combined['prompt'], canonical.map((m) => m.content).join('\n'));
+
+      final failed = await run(
+        FakeEngine()
+          ..wrongHistory = true
+          ..backendName = 'LiteRT-LM NPU direct C API',
+        selected: ValidationProfile.fromJson(data),
+      );
+      expect(failed.report.assertionsPassed, false);
+      expect(
+        failed.report.cases
+            .where((c) => (c['case_id'] as String).startsWith('C06.'))
+            .map((c) => c['status']),
+        ['FAIL', 'FAIL', 'FAIL', 'FAIL'],
+      );
+    },
+  );
   test(
     'NPU candidates are locked and reject preparation before any download',
     () async {

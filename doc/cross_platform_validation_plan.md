@@ -520,8 +520,12 @@ remain unknown, so the deterministic cancellation-prefix check may stay NOT_RUN.
 native control calls the C API on a dedicated isolate, bypassing public Dart
 backend/worker bindings. Native source/build ownership remains in the native repo.
 
-The public path runs 14 quick chat cases; the control runs eight (load,
-hello/arithmetic, reload, warmup and three measured generations). N01/N03/N04/N06
+The public path runs 14 quick chat cases; the control now runs twelve (load,
+hello/arithmetic, four history controls, reload, warmup and three measured
+generations). The additional controls compare canonical system/history seeding,
+the observed public system JSON, history without system content, and a combined
+prompt; all retain the exact `cedar17` oracle and per-generation NPU proof.
+N01/N03/N04/N06
 are covered to this bounded scope. N02's additional Unicode generation fixture,
 the compatible CPU Gemma control, and aggregate matching of the reference/public
 reports remain unimplemented; C02 tokenizer coverage runs only on the public

@@ -7,7 +7,7 @@ import 'package:path/path.dart' as p;
 import 'process.dart';
 
 /// The native release and its actual LiteRT dependency, not the LiteRT-LM tag.
-const npuRuntimeTag = '0.17.0-3';
+const npuRuntimeTag = '0.17.0-5';
 const npuLiteRtRevision = '9fe5be45564c868408e6514c8aabb83e211a0911';
 const npuDispatchHeaderHash =
     '11dd4d98bd084157ac987b1ee1951f3f96e2b3ca6b51a27c10e645686bf0e3ee';

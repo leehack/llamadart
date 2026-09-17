@@ -125,7 +125,7 @@ initialized and executed the NPU through both adapters, establishing access for
 that exact device/runtime/kit combination. Other targets remain unverified.
 Android host libraries cannot substitute for DSP libraries with the same basename.
 
-For runtime `0.17.0-3`, the actual LiteRT dependency is
+For runtimes `0.17.0-3` and `0.17.0-5`, the actual LiteRT dependency is
 `9fe5be45564c868408e6514c8aabb83e211a0911`. Its dispatch header adds `get_hooks`
 to the nested interface relative to LiteRT v2.2.0 while retaining the same API
 version. The version string alone cannot establish table-layout compatibility.
@@ -164,8 +164,17 @@ kit/model inputs. No Hugging Face token, signed download URL or SDK credential i
 packaged. Kit `license-*` files are retained in the APK.
 
 The direct native control bypasses `LlamaEngine` and its backend/worker bindings,
-calling the pinned C API on a dedicated isolate. It runs eight cases: load,
-hello, arithmetic, reload, warmup and three throughput repetitions. It uses the
+calling the pinned C API on a dedicated isolate. It now runs twelve cases: load,
+hello, arithmetic, four history controls, reload, warmup and three throughput
+repetitions. The history controls retain the exact `cedar17` oracle and compare
+canonical native system/history seeding, the public path's literal JSON system
+content, history without a system message, and one combined user prompt. Each
+records the JSON bytes supplied to the C API, response, timing and dispatch
+counters. The native system setter receives JSON content, not a complete message
+object; the literal-JSON variant deliberately reproduces the observed public
+serialization for diagnosis. Setup timing and its dispatch snapshot are separate
+from send/decode timing; total dispatch proof includes preface initialization.
+It uses the
 same Gemma artifact, dispatch kit, context 1280, four threads and per-request
 output cap 32 as the public LiteRT service. The public NPU runtime skips session
 sampler overrides, so both paths retain compiled model/runtime defaults. Requested
@@ -183,6 +192,15 @@ Native controls are labelled separately and do not qualify the public Dart path.
 Native decode TPS/token counts and native TTFT are separate from wall throughput;
 the blocking native control cannot observe visible-answer TTFA, so that field
 is null. Warmup is retained but excluded from the three-sample charts.
+
+Main `21135e37dadf60882ea427db6078ccc90f84a28a` adopts runtime `0.17.0-5`.
+Its published manifest retains upstream LiteRT-LM
+`e9fd8c53ff968071774206163027dd84bedfe925` and the same LiteRT dependency above.
+The NPU input guard now requires this runtime and a separately recorded kit
+audit; preserve the old kit and reports. The new runtime's desktop linkage fixes
+do not establish that Gemma NPU history is fixed. The native repository's
+[Qwen tokenizer repair](https://github.com/leehack/litert-lm-native/blob/3eb4079397d19e2058e176fcdb5ab15b28a70ad0/docs/qwen3_tokenizer_repair.md)
+creates a distinct model artifact; the locked original Qwen fixture is unchanged.
 
 Use the normal Firebase `plan`/`run`/`collect`/`cleanup` flow below with the exact
 S24 or Pixel 10 profile/device pairing. Run the native control first and stop if

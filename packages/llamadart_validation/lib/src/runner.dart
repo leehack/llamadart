@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:llamadart/llamadart.dart';
 
@@ -247,7 +248,12 @@ class ValidationRunner {
     'C01.load',
     if (!profile.nativeReference) ...['C02.unicode', 'C03.raw'],
     if (profile.isChat) ...['C04.hello', 'C04.arithmetic'],
-    if (!profile.nativeReference && profile.isChat) 'C06.history',
+    if (profile.isChat) 'C06.history',
+    if (profile.nativeReference && profile.isChat) ...[
+      'C06.history.public_system_wire',
+      'C06.history.no_system',
+      'C06.history.combined',
+    ],
     if (!profile.nativeReference) 'C08.cancel',
     'C09.reload',
     if (!profile.nativeReference) ...['C10.limit', 'C12.recovery'],
@@ -488,30 +494,52 @@ class ValidationRunner {
               : 'FAIL',
         };
       case 'C06.history':
+      case 'C06.history.public_system_wire':
+      case 'C06.history.no_system':
+      case 'C06.history.combined':
         const prompt = 'What is the secret code? Reply with only the code.';
+        const system = 'Remember the secret code exactly.';
+        final literalSystem = id == 'C06.history.public_system_wire';
+        final combined = id == 'C06.history.combined';
+        final messages = [
+          if (id != 'C06.history.no_system')
+            LlamaChatMessage.fromText(
+              role: LlamaChatRole.system,
+              text: literalSystem
+                  ? jsonEncode({
+                      'role': 'system',
+                      'content': [
+                        {'type': 'text', 'text': system},
+                      ],
+                    })
+                  : system,
+            ),
+          const LlamaChatMessage.fromText(
+            role: LlamaChatRole.user,
+            text: 'The secret code is cedar17.',
+          ),
+          const LlamaChatMessage.fromText(
+            role: LlamaChatRole.assistant,
+            text: 'I will remember the code.',
+          ),
+          const LlamaChatMessage.fromText(
+            role: LlamaChatRole.user,
+            text: prompt,
+          ),
+        ];
+        final selectedPrompt = combined
+            ? messages.map((message) => message.content).join('\n')
+            : prompt;
         final output = await _checked(
           () => engine.generate(
-            prompt,
+            selectedPrompt,
             profile,
-            history: const [
-              LlamaChatMessage.fromText(
-                role: LlamaChatRole.system,
-                text: 'Remember the secret code exactly.',
-              ),
-              LlamaChatMessage.fromText(
-                role: LlamaChatRole.user,
-                text: 'The secret code is cedar17.',
-              ),
-              LlamaChatMessage.fromText(
-                role: LlamaChatRole.assistant,
-                text: 'I will remember the code.',
-              ),
-              LlamaChatMessage.fromText(role: LlamaChatRole.user, text: prompt),
-            ],
+            history: combined ? null : messages,
           ),
         );
         return {
           ...output,
+          if (profile.nativeReference) 'history_control': id,
           'expected': 'cedar17',
           'status': (output['content'] as String).trim() == 'cedar17'
               ? 'PASS'

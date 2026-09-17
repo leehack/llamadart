@@ -8,6 +8,7 @@ import 'package:llamadart/llamadart.dart';
 import 'package:path/path.dart' as p;
 
 import 'manifest.dart';
+import 'native_reference_request.dart';
 import 'npu_evidence.dart';
 import 'npu_monitor_io.dart';
 import 'runner.dart';
@@ -79,14 +80,16 @@ class NativeNpuReferenceEngine implements ValidationEngine {
     bool cancelAfterFirst = false,
     List<LlamaChatMessage>? history,
   }) {
-    if (raw || cancelAfterFirst || history != null) {
+    if (raw || cancelAfterFirst) {
       throw UnsupportedError(
-        'Native reference only covers isolated text conversations',
+        'Native reference only covers blocking text conversations',
       );
     }
     return _call('generate', {
       'prompt': prompt,
       'max_tokens': maxTokens ?? profile.maxTokens,
+      'wire': nativeReferenceRequest(prompt, history: history),
+      if (history != null) 'messages': history.map((m) => m.toJson()).toList(),
     });
   }
 
@@ -139,7 +142,9 @@ void _worker(SendPort parent) {
           result = engine!.generate(
             args['prompt'] as String,
             args['max_tokens'] as int,
+            Map<String, dynamic>.from(args['wire'] as Map),
           );
+          if (args['messages'] != null) result['messages'] = args['messages'];
         case 'unload':
           engine?.close();
           engine = null;
@@ -243,6 +248,19 @@ class _Capi {
         Void Function(Pointer<Void>, Pointer<Void>),
         void Function(Pointer<Void>, Pointer<Void>)
       >(_name(name))(value, other);
+  void setJson(String name, Pointer<Void> value, String? json) {
+    if (json == null) return;
+    final text = json.toNativeUtf8();
+    try {
+      library.lookupFunction<
+        Void Function(Pointer<Void>, Pointer<Utf8>),
+        void Function(Pointer<Void>, Pointer<Utf8>)
+      >(_name(name))(value, text);
+    } finally {
+      calloc.free(text);
+    }
+  }
+
   double metric(String name, Pointer<Void> info) =>
       library.lookupFunction<
         Double Function(Pointer<Void>),
@@ -263,19 +281,18 @@ class _Capi {
     }
   }
 
-  Map<String, dynamic> generate(String prompt, int maxTokens) {
+  Map<String, dynamic> generate(
+    String prompt,
+    int maxTokens,
+    Map<String, dynamic> wire,
+  ) {
     Pointer<Void> session = nullptr;
     Pointer<Void> config = nullptr;
     Pointer<Void> optionalArgs = nullptr;
     Pointer<Void> conversation = nullptr;
     Pointer<Void> response = nullptr;
     Pointer<Void> benchmark = nullptr;
-    final message = jsonEncode({
-      'role': 'user',
-      'content': [
-        {'type': 'text', 'text': prompt},
-      ],
-    }).toNativeUtf8();
+    final message = (wire['message_json'] as String).toNativeUtf8();
     try {
       session = create('session_config_create');
       config = create('conversation_config_create');
@@ -291,13 +308,33 @@ class _Capi {
         maxTokens,
       );
       setPointer('conversation_config_set_session_config', config, session);
+      setJson(
+        'conversation_config_set_system_message',
+        config,
+        wire['system_message_json'] as String?,
+      );
+      setJson(
+        'conversation_config_set_messages',
+        config,
+        wire['messages_json'] as String?,
+      );
+      library.lookupFunction<
+        Void Function(Pointer<Void>, Bool),
+        void Function(Pointer<Void>, bool)
+      >('litert_lm_conversation_config_set_enable_constrained_decoding')(
+        config,
+        wire['enable_constrained_decoding'] as bool,
+      );
+      final before = monitor.snapshot();
+      final setupWatch = Stopwatch()..start();
       conversation = library
           .lookupFunction<
             Pointer<Void> Function(Pointer<Void>, Pointer<Void>),
             Pointer<Void> Function(Pointer<Void>, Pointer<Void>)
           >('litert_lm_conversation_create')(handle, config);
       _required(conversation, 'conversation');
-      final before = monitor.snapshot();
+      setupWatch.stop();
+      final afterSetup = monitor.snapshot();
       final watch = Stopwatch()..start();
       response = library
           .lookupFunction<
@@ -366,6 +403,9 @@ class _Capi {
         'content': visible,
         'thinking': '',
         'native_response': json,
+        'native_request': wire,
+        'native_conversation_create_ms': setupWatch.elapsedMicroseconds / 1000,
+        'npu_after_conversation_create': afterSetup,
         'max_tokens': maxTokens,
         'execution_path': 'native_c_api',
         'npu_execution': npuGenerationEvidence(before, after),
