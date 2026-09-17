@@ -190,6 +190,38 @@ LocalE2eCommandStep _prepareChatAppWebBuild(LocalE2eRunContext context) =>
 List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
   return [
     LocalE2eScenario(
+      name: 'validation-harness',
+      group: LocalE2eScenarioGroup.dartLocalOnly,
+      description:
+          'Model-free validation runner, bundle and provider lifecycle checks.',
+      requiresDevice: false,
+      stepsBuilder: (context) => [
+        LocalE2eCommandStep(
+          workingDirectory:
+              '${context.projectRoot}/packages/llamadart_validation',
+          executable: 'dart',
+          arguments: const ['pub', 'get'],
+          description: 'Prepare private suite',
+        ),
+        LocalE2eCommandStep(
+          workingDirectory:
+              '${context.projectRoot}/packages/llamadart_validation',
+          executable: 'dart',
+          arguments: const ['test'],
+          description: 'Shared suite regressions',
+        ),
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: 'dart',
+          arguments: const [
+            'test',
+            'test/unit/tooling/validation_remote_test.dart',
+          ],
+          description: 'Provider safety and bundle identity regressions',
+        ),
+      ],
+    ),
+    LocalE2eScenario(
       name: 'root-template-e2e',
       group: LocalE2eScenarioGroup.dartLocalOnly,
       description: 'Run local-only upstream/template parity E2E tests.',

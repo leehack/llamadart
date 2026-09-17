@@ -39,6 +39,7 @@ void main() {
       'example/llamadart_cli',
       'example/llamadart_server',
       'example/tui_coding_agent',
+      'packages/llamadart_validation',
       'packages/llamadart_litert_lm_flutter',
       'packages/llamadart_llama_cpp_flutter',
     ]);

@@ -1,0 +1,77 @@
+name: Validation bundles
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: Locked quick profile compiled into mobile and Web apps
+        type: choice
+        options: [tiny-gguf-cpu, tiny-gguf-metal, tiny-gguf-vulkan, tiny-gguf-cuda, chat-gguf-cpu, chat-gguf-metal, chat-gguf-vulkan, chat-gguf-cuda, chat-litert-cpu, chat-litert-gpu]
+        default: tiny-gguf-cpu
+
+permissions:
+  contents: read
+
+concurrency:
+  group: validation-bundles-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  desktop:
+    name: Desktop ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022, macos-15]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v6
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.1
+          channel: stable
+          cache: true
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: dart pub get
+      - run: dart run tool/testing/validation.dart build --target desktop --profile ${{ inputs.profile }} --out .dart_tool/validation/bundle
+      - name: Preserve executable permissions in transport
+        run: tar -czf .dart_tool/validation/bundle.tar.gz -C .dart_tool/validation bundle
+      - uses: actions/upload-artifact@v6
+        with:
+          name: validation-desktop-${{ runner.os }}-${{ runner.arch }}-${{ github.sha }}
+          path: .dart_tool/validation/bundle.tar.gz
+          retention-days: 7
+          if-no-files-found: error
+
+  app:
+    name: App ${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [android, web, ios-inputs]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v6
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.1
+          channel: stable
+          cache: true
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - run: dart run tool/prepare_workspace.dart
+      - run: dart run tool/testing/validation.dart build --target ${{ matrix.target }} --profile ${{ inputs.profile }} --out .dart_tool/validation/bundle
+      - name: Preserve executable permissions in transport
+        run: tar -czf .dart_tool/validation/bundle.tar.gz -C .dart_tool/validation bundle
+      - uses: actions/upload-artifact@v6
+        with:
+          name: validation-${{ matrix.target }}-${{ github.sha }}
+          path: .dart_tool/validation/bundle.tar.gz
+          retention-days: 7
+          if-no-files-found: error

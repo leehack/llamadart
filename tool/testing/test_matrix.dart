@@ -35,6 +35,28 @@ class TestMatrixRow {
 /// The canonical contributor-facing validation matrix.
 const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
   TestMatrixRow(
+    id: 'validation-harness',
+    tier: 'targeted',
+    mode: 'CI + local; model-free',
+    covers:
+        'private runner, result integrity, provider lifecycle and artifact checks',
+    command:
+        'dart run tool/testing/run_local_e2e.dart --scenario validation-harness',
+    useWhen:
+        'Validation harness, report, bundle or cloud orchestration changes.',
+  ),
+  TestMatrixRow(
+    id: 'validation-model-core',
+    tier: 'platform',
+    mode: 'opt-in; owned hardware or explicit remote run',
+    covers:
+        'public package load, tokenizer, inference, cancellation, reload, limits and TPS',
+    command:
+        'dart run tool/testing/validation.dart local --profile tiny-gguf-cpu',
+    useWhen:
+        'Real-model qualification; see doc/cross_platform_validation.md for bundles and cloud lifecycle.',
+  ),
+  TestMatrixRow(
     id: 'static-format-analyze',
     tier: 'essential',
     mode: 'CI + local',

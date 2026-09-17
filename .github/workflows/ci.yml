@@ -69,6 +69,24 @@ jobs:
       - name: Check Pana Score
         run: flutter pub global run pana . --exit-code-threshold 0
 
+  validation-harness:
+    name: Validation harness (model-free)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.1
+          channel: stable
+          cache: true
+      - run: dart pub get
+        working-directory: packages/llamadart_validation
+      - run: dart analyze --fatal-infos
+        working-directory: packages/llamadart_validation
+      - run: dart test
+        working-directory: packages/llamadart_validation
+
   companion-packages:
     name: Companion Package (${{ matrix.package }})
     runs-on: macos-latest

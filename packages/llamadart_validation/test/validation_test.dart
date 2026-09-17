@@ -1,0 +1,415 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:llamadart/llamadart.dart';
+import 'package:llamadart_validation/llamadart_validation.dart';
+import 'package:llamadart_validation/src/placement.dart';
+import 'package:test/test.dart';
+
+ValidationProfile profile({String backend = 'cpu', bool release = false}) {
+  final json =
+      jsonDecode(
+            File('assets/profiles/chat-litert-cpu.json').readAsStringSync(),
+          )
+          as Map<String, dynamic>;
+  json['backend'] = backend;
+  json['selection'] = release ? 'release' : 'quick';
+  return ValidationProfile.fromJson(json);
+}
+
+class FakeEngine implements ValidationEngine {
+  var disposed = false;
+  var cancelled = false;
+  var loads = 0;
+  var generated = 0;
+  var wrongArithmetic = false;
+  var ignoresCancellation = false;
+  String backendName = 'LiteRT-LM CPU';
+  Map<String, dynamic> metadata = {};
+  int? switchAfterLoad;
+  Completer<void>? pauseReload;
+  var timeout = false;
+  var cleanupFails = false;
+  @override
+  Future<void> load(String location, ValidationProfile profile) async {
+    if (location.endsWith('.missing')) {
+      throw LlamaModelException('missing model');
+    }
+    loads++;
+    if (loads == 2) await pauseReload?.future;
+  }
+
+  @override
+  Future<void> unload() async {}
+  @override
+  Future<void> dispose() async {
+    disposed = true;
+    if (cleanupFails) throw StateError('cleanup failure');
+  }
+
+  @override
+  void cancel() {
+    cancelled = true;
+  }
+
+  @override
+  Future<Map<String, dynamic>> diagnostics() async => {
+    'model_metadata': metadata,
+    'backend_name': switchAfterLoad != null && loads >= switchAfterLoad!
+        ? 'Metal'
+        : backendName,
+  };
+  @override
+  Future<List<int>> tokenize(String text) async => utf8.encode(text);
+  @override
+  Future<String> detokenize(List<int> tokens) async => utf8.decode(tokens);
+  @override
+  Future<Map<String, dynamic>> generate(
+    String prompt,
+    ValidationProfile profile, {
+    bool raw = false,
+    int? maxTokens,
+    bool cancelAfterFirst = false,
+    List<LlamaChatMessage>? history,
+  }) async {
+    generated++;
+    if (timeout) return Completer<Map<String, dynamic>>().future;
+    return {
+      'content': history != null
+          ? 'cedar17'
+          : prompt.contains('2 + 2')
+          ? wrongArithmetic
+                ? '2'
+                : '4'
+          : 'hello',
+      'thinking': '',
+      'prompt': prompt,
+      'cancel_requested': cancelAfterFirst,
+      'cancel_to_done_ms': cancelAfterFirst ? 1 : null,
+      'metrics': {
+        'native_decode_tokens':
+            maxTokens == 1 || (cancelAfterFirst && !ignoresCancellation)
+            ? 1
+            : 8,
+        'native_decode_tps': 12,
+        'estimated_wall_tps': 10,
+        'ttfa_ms': 5,
+      },
+    };
+  }
+}
+
+Future<({ValidationReport report, List<Map<String, dynamic>> events})> run(
+  FakeEngine engine, {
+  ValidationProfile? selected,
+}) async {
+  final events = <Map<String, dynamic>>[];
+  await ValidationRunner(
+    profile: selected ?? profile(),
+    engine: engine,
+    emit: (event) async {
+      events.add(event);
+    },
+    caseTimeout: const Duration(milliseconds: 30),
+  ).run(
+    'model.litertlm',
+    runId: 'test-run',
+    environment: {
+      'source_commit': List.filled(40, 'a').join(),
+      'source_dirty': false,
+      'hook_sha256': List.filled(64, 'b').join(),
+      'native_tag': 'v0.4.0',
+      'litert_tag': '0.17.0-3',
+    },
+  );
+  return (
+    report: ValidationReport.parse(events.map(jsonEncode).join('\n')),
+    events: events,
+  );
+}
+
+void main() {
+  test(
+    'WASM CPU diagnostics require a CPU-only core and zero GPU layers',
+    () async {
+      final selected = profile().toJson()..['runtime'] = 'gguf';
+      final model = Map<String, dynamic>.from(selected['model'] as Map);
+      model['filename'] = 'model.gguf';
+      model['url'] = (model['url'] as String).replaceAll('.litertlm', '.gguf');
+      selected['model'] = model;
+      for (final layers in ['0', '1', null]) {
+        final engine = FakeEngine()
+          ..backendName = 'WASM (Prototype bridge)'
+          ..metadata = {
+            'llamadart.webgpu.n_gpu_layers': layers,
+            'llamadart.webgpu.core_variant': 'wasm32',
+          };
+        final result = await run(
+          engine,
+          selected: ValidationProfile.fromJson(selected),
+        );
+        for (final id in ['C01.load', 'C09.reload', 'C12.recovery']) {
+          expect(
+            result.report.cases.firstWhere(
+              (record) => record['case_id'] == id,
+            )['status'],
+            layers == '0' ? 'PASS' : 'FAIL',
+          );
+        }
+      }
+    },
+  );
+  test(
+    'missing or dirty provenance preserves assertions but cannot qualify',
+    () async {
+      final result = await run(FakeEngine());
+      expect(result.report.assertionsPassed, true);
+      for (final key in [
+        'source_commit',
+        'source_dirty',
+        'hook_sha256',
+        'litert_tag',
+      ]) {
+        final events = (jsonDecode(jsonEncode(result.events)) as List)
+            .cast<Map>();
+        (events.first['environment'] as Map).remove(key);
+        final report = ValidationReport.parse(
+          events.map(jsonEncode).join('\n'),
+        );
+        expect(report.assertionsPassed, true);
+        expect(report.qualified, false);
+        expect(report.toJUnit(), contains('run-integrity'));
+        expect(report.provenanceProblems, isNotEmpty);
+      }
+      (result.events.first['environment'] as Map)['source_dirty'] = true;
+      expect(
+        ValidationReport.parse(
+          result.events.map(jsonEncode).join('\n'),
+        ).qualified,
+        false,
+      );
+    },
+  );
+  test(
+    'CPU backend changes during reload or recovery cannot qualify TPS',
+    () async {
+      for (final threshold in [2, 3]) {
+        final result = await run(FakeEngine()..switchAfterLoad = threshold);
+        expect(
+          result.report.cases.singleWhere(
+            (c) =>
+                c['case_id'] ==
+                (threshold == 2 ? 'C09.reload' : 'C12.recovery'),
+          )['status'],
+          'FAIL',
+        );
+        expect(result.report.qualified, false);
+      }
+    },
+  );
+
+  test(
+    'native GPU evidence requires matching backend and all load allocations',
+    () {
+      final manifest = <String, dynamic>{
+        'profile': {'runtime': 'gguf', 'backend': 'metal'},
+        'accelerator_evidence_required': true,
+      };
+      final cases = <Map<String, dynamic>>[
+        {
+          'case_id': 'C01.load',
+          'status': 'PASS',
+          'diagnostics': {'backend_name': 'Metal'},
+        },
+        {
+          'case_id': 'C09.reload',
+          'status': 'PASS',
+          'diagnostics': {'backend_name': 'Metal'},
+        },
+        {
+          'case_id': 'C12.recovery',
+          'status': 'PASS',
+          'diagnostics': {'backend_name': 'Metal'},
+        },
+      ];
+      const load =
+          'load_tensors: offloaded 7/7 layers to GPU\nsched_reserve: MTL0 compute buffer size = 63.62 MiB\n';
+      expect(inspectPlacement(manifest, cases, load * 3)['verified'], true);
+      expect(inspectPlacement(manifest, cases, load * 2)['verified'], false);
+      expect(
+        inspectPlacement(
+          manifest,
+          cases,
+          load.replaceAll('7/7', '0/7') * 3,
+        )['verified'],
+        false,
+      );
+      expect(
+        inspectPlacement(
+          manifest,
+          cases,
+          load.replaceAll('MTL0', 'CPU') * 3,
+        )['verified'],
+        false,
+      );
+      expect(
+        inspectPlacement(manifest, cases, 'GPU found: Metal')['verified'],
+        false,
+      );
+      cases.first['diagnostics'] = {'backend_name': 'CPU'};
+      expect(inspectPlacement(manifest, cases, load * 3)['verified'], false);
+    },
+  );
+
+  test(
+    'late timed-out reload cannot start more inference after cleanup',
+    () async {
+      final paused = Completer<void>();
+      final engine = FakeEngine()..pauseReload = paused;
+      final result = await run(engine);
+      final generated = engine.generated;
+      expect(result.report.cleanupPassed, false);
+      paused.complete();
+      await Future<void>.delayed(Duration.zero);
+      expect(engine.generated, generated);
+      expect(engine.loads, 2);
+    },
+  );
+  test('explicit CPU case rejects accelerator diagnostics', () async {
+    final result = await run(FakeEngine()..backendName = 'Metal');
+    expect(result.report.cases.first['status'], 'FAIL');
+    expect(result.report.qualified, false);
+  });
+
+  test(
+    'ignored cancellation cannot pass the cancellation obligation',
+    () async {
+      final result = await run(FakeEngine()..ignoresCancellation = true);
+      expect(
+        result.report.cases.singleWhere(
+          (c) => c['case_id'] == 'C08.cancel',
+        )['status'],
+        'NOT_RUN',
+      );
+      expect(result.report.qualified, false);
+    },
+  );
+  test('journal sink failure still disposes the engine', () async {
+    final engine = FakeEngine();
+    await expectLater(
+      ValidationRunner(
+        profile: profile(),
+        engine: engine,
+        emit: (_) async => throw StateError('disk full'),
+      ).run('model', runId: 'test', environment: {}),
+      throwsStateError,
+    );
+    expect(engine.disposed, true);
+  });
+  test('validated profile cannot be mutated through nested JSON', () {
+    final selected = profile();
+    expect(() => selected.model['sha256'] = 'changed', throwsUnsupportedError);
+  });
+
+  test('rejects floating or unchecked model inputs', () {
+    for (final field in ['revision', 'sha256']) {
+      final json = profile().toJson();
+      (json['model'] as Map)[field] = 'main';
+      expect(() => ValidationProfile.fromJson(json), throwsFormatException);
+    }
+  });
+  test('canonical identity is independent of JSON key order', () {
+    expect(jsonHash({'b': 2, 'a': 1}), jsonHash({'a': 1, 'b': 2}));
+  });
+  test('one warmup and three measured samples; lifecycle loads only', () async {
+    final engine = FakeEngine();
+    final result = await run(engine);
+    expect(result.report.qualified, isTrue);
+    expect(result.report.samples, hasLength(3));
+    expect(engine.loads, 3);
+    expect(engine.disposed, isTrue);
+  });
+  test('semantic failure preserves output and still measures TPS', () async {
+    final result = await run(FakeEngine()..wrongArithmetic = true);
+    final failure = result.report.cases.singleWhere(
+      (c) => c['case_id'] == 'C04.arithmetic',
+    );
+    expect(failure['status'], 'FAIL');
+    expect(failure['content'], '2');
+    expect(result.report.samples, hasLength(3));
+    expect(result.report.assertionsPassed, isFalse);
+  });
+  test(
+    'timeout cancels and prevents overlapping subsequent inference',
+    () async {
+      final engine = FakeEngine()..timeout = true;
+      final result = await run(engine);
+      expect(engine.generated, 1);
+      expect(engine.cancelled, isTrue);
+      expect(engine.disposed, isTrue);
+      expect(result.report.assertionsPassed, isFalse);
+      expect(
+        result.report.cases.where((c) => c['status'] == 'NOT_RUN'),
+        isNotEmpty,
+      );
+    },
+  );
+  test('cleanup failure cannot produce a passing report', () async {
+    final result = await run(FakeEngine()..cleanupFails = true);
+    expect(result.report.qualified, isFalse);
+    expect(result.report.toJUnit(), contains('run-integrity'));
+  });
+  test(
+    'GPU preference and reported layers are not accelerator proof',
+    () async {
+      final result = await run(FakeEngine(), selected: profile(backend: 'gpu'));
+      expect(result.report.assertionsPassed, isTrue);
+      expect(result.report.qualified, isFalse);
+      expect(result.report.toHtml(), contains('unverified'));
+    },
+  );
+  test('release selection keeps unimplemented obligations visible', () async {
+    final result = await run(FakeEngine(), selected: profile(release: true));
+    expect(result.report.qualified, isFalse);
+    expect(
+      result.report.cases.singleWhere(
+        (c) => c['case_id'] == 'C07.tools',
+      )['status'],
+      'NOT_RUN',
+    );
+  });
+  test(
+    'duplicate, missing, malformed or truncated records fail closed',
+    () async {
+      final result = await run(FakeEngine());
+      final lines = result.events.map(jsonEncode).toList();
+      for (final altered in [
+        [
+          ...lines,
+          jsonEncode(result.events.firstWhere((e) => e['type'] == 'case')),
+        ],
+        lines.take(lines.length - 1).toList(),
+        [...lines, '{"type":'],
+        lines
+            .where((s) => !s.contains('C02.unicode') || s.contains('manifest'))
+            .toList(),
+      ]) {
+        expect(ValidationReport.parse(altered.join('\n')).qualified, isFalse);
+      }
+    },
+  );
+  test('reports escape generated markup and retain warmup exclusion', () async {
+    final result = await run(FakeEngine());
+    result.report.cases.first['content'] = '<script>alert(1)</script>';
+    expect(result.report.toHtml(), isNot(contains('<script>alert')));
+    expect(result.report.toCsv(), isNot(contains('warmup')));
+    expect(result.report.toJUnit(), contains('&lt;script&gt;'));
+  });
+  test('diagnostics redact bearer tokens and signed URLs', () {
+    expect(
+      redactDiagnostic('Bearer secret https://x.test/a?token=secret'),
+      isNot(contains('secret')),
+    );
+  });
+}

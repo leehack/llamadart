@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "llamadart validation journal event v1",
+  "type": "object",
+  "required": [
+    "type"
+  ],
+  "properties": {
+    "type": {
+      "enum": [
+        "manifest",
+        "case_start",
+        "case",
+        "cleanup",
+        "run_end",
+        "preparation_error"
+      ]
+    },
+    "sequence": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "status": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "ERROR",
+        "UNSUPPORTED",
+        "NOT_RUN"
+      ]
+    },
+    "case_id": {
+      "type": "string"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "manifest"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "schema_version",
+          "run_id",
+          "profile",
+          "profile_hash",
+          "effective_config",
+          "config_hash",
+          "environment",
+          "preparation",
+          "case_ids"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "case"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "case_id",
+          "status",
+          "sequence"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "run_end"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "sequence",
+          "cancelled"
+        ]
+      }
+    }
+  ]
+}

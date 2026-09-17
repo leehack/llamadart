@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "llamadart validation profile v1",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "id",
+    "runtime",
+    "backend",
+    "model"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]{0,63}$"
+    },
+    "runtime": {
+      "enum": [
+        "gguf",
+        "litert"
+      ]
+    },
+    "backend": {
+      "type": "string"
+    },
+    "selection": {
+      "enum": [
+        "quick",
+        "release"
+      ]
+    },
+    "context_size": {
+      "type": "integer",
+      "minimum": 128,
+      "maximum": 8192
+    },
+    "threads": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 32
+    },
+    "max_tokens": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 512
+    },
+    "model": {
+      "type": "object",
+      "required": [
+        "revision",
+        "filename",
+        "sha256",
+        "bytes",
+        "kind",
+        "url"
+      ],
+      "properties": {
+        "revision": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "filename": {
+          "type": "string",
+          "pattern": "^[a-zA-Z0-9_.-]+$"
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "kind": {
+          "enum": [
+            "raw",
+            "chat"
+          ]
+        },
+        "url": {
+          "type": "string",
+          "pattern": "^https://"
+        }
+      }
+    }
+  }
+}

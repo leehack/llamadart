@@ -4,6 +4,13 @@ This repository uses a layered test matrix so contributors can validate the
 essential runtime, model, feature, and platform paths without forcing every pull
 request to run large local models or device-only checks.
 
+The proposed [cross-platform validation plan](cross_platform_validation_plan.md)
+details reusable test apps, model/backend cases, metrics, a free Firebase
+physical-device rotation, and VM/Firebase upload, execution and cleanup. It is
+planning work; implementation is deferred until
+the current release additions are complete, and its proposed rows are not yet
+implemented by the runners below.
+
 Use the matrix for every non-trivial PR:
 
 ```bash
@@ -401,3 +408,7 @@ When an agent creates or updates a PR:
    ancestry with `tool/git/safe_pr_head_update.dart` to prevent stale head
    rewinds. Consult `doc/pr_branch_writer_inventory.md` for writer scope and the
    remaining GitHub-managed governance boundary.
+
+The executable quick suite and provider commands are documented in the
+[cross-platform validation runbook](cross_platform_validation.md). Discover the
+model-free `validation-harness` and opt-in `validation-model-core` matrix rows.
