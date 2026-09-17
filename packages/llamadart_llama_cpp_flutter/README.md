@@ -10,10 +10,14 @@ core package's native-assets fallback.
 Pair companion `0.0.18` with core `0.8.23` for matching llama.cpp v0.4.0
 bindings. Keep core `0.8.22` paired with companion `0.0.17`.
 
+The unreleased source checkout instead uses native `v0.4.1` and the local
+companion prepared as `0.0.19`. Use the core and companion from that same
+checkout together; `0.0.19` is not the companion for the published `0.8.23` core.
+
 ```yaml
 dependencies:
   llamadart: ^0.8.23
-  llamadart_llama_cpp_flutter: ^0.0.19
+  llamadart_llama_cpp_flutter: ^0.0.18
 ```
 
 This package has no runtime Dart API of its own. Import `package:llamadart`
