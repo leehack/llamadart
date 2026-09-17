@@ -25,6 +25,25 @@ class BlockedClient extends http.BaseClient {
   }
 }
 
+class SlowModelClient extends http.BaseClient {
+  final body = StreamController<List<int>>();
+  bool closed = false;
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    body.add([1, 2]);
+    return http.StreamedResponse(body.stream, 200);
+  }
+
+  @override
+  void close() {
+    if (closed) return;
+    closed = true;
+    body.addError(http.ClientException('Connection closed by transport'));
+    unawaited(body.close());
+  }
+}
+
 void main() {
   late Directory cache;
   late ValidationProfile profile;
@@ -50,8 +69,10 @@ void main() {
         calls++;
         return http.Response.bytes(bytes, 200);
       }),
+      timeout: const Duration(minutes: 10),
     );
     expect(first.evidence['verified'], true);
+    expect(first.evidence['download_timeout_ms'], 600000);
     final second = await prepareModel(
       profile,
       cache,
@@ -99,10 +120,42 @@ void main() {
           client: client,
           timeout: const Duration(milliseconds: 5),
         ),
-        throwsA(isA<http.ClientException>()),
+        throwsA(isA<TimeoutException>()),
       );
       expect(client.closed, true);
       expect(cache.listSync(recursive: true).whereType<File>(), isEmpty);
     },
   );
+
+  test('download deadline retains byte progress in its diagnostic', () async {
+    final client = SlowModelClient();
+    await expectLater(
+      prepareModel(
+        profile,
+        cache,
+        client: client,
+        timeout: const Duration(milliseconds: 50),
+      ),
+      throwsA(
+        isA<TimeoutException>().having(
+          (error) => error.message,
+          'bounded progress diagnostic',
+          contains('receiving 2 of ${bytes.length} bytes'),
+        ),
+      ),
+    );
+    expect(client.closed, isTrue);
+    expect(cache.listSync(recursive: true).whereType<File>(), isEmpty);
+  });
+
+  test('external cancellation is distinct from a download deadline', () async {
+    final client = SlowModelClient();
+    final cancel = Timer(const Duration(milliseconds: 20), client.close);
+    addTearDown(cancel.cancel);
+    await expectLater(
+      prepareModel(profile, cache, client: client),
+      throwsA(isA<http.ClientException>()),
+    );
+    expect(cache.listSync(recursive: true).whereType<File>(), isEmpty);
+  });
 }

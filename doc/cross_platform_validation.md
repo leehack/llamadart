@@ -65,6 +65,10 @@ C08 compares the same prompt against an uncancelled control; the pinned WASM
 delegate's explicit cancellation AbortError is also recorded as interruption evidence. Merely calling cancel
 is not a pass; missing interruption evidence is NOT_RUN. Case timeouts are 60s;
 disposal has a 10s bound and unresolved work cannot report successful cleanup.
+Native Flutter model acquisition has a ten-minute deadline within the
+18-minute integration test and 20-minute Test Lab execution limits. CLI downloads
+retain their five-minute default. Download deadline failures report received and
+expected bytes, remove partial weights and never become inference/TPS samples.
 
 Prompts, regex expectations, exact output/thinking, ordered terminal case IDs,
 configuration hashes, model hashes, source/runtime pins and environment all appear
@@ -175,7 +179,9 @@ run label through the Testing API before using it. If submission is interrupted,
 recover the existing matrix with `reconcile`; never repeat `run` to find out
 whether a submission succeeded. An unverified candidate ID is diagnostic only.
 
-Android pulls external app result files with complete console JSONL as fallback.
+Android pulls external app result files. The first live S24 run recovered a
+complete journal through this path, but its collected console log contained no
+validation JSONL; console-only recovery is not yet qualified on Flutter devices.
 iOS attaches bounded result files to XCTest; collection exports `.xcresult`
 attachments on macOS. Missing, truncated or conflicting evidence remains incomplete.
 Physical device export/crash behavior is an explicit live-qualification step;

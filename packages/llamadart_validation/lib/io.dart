@@ -47,7 +47,12 @@ Future<({String path, Map<String, dynamic> evidence})> prepareModel(
       '${target.path}.${DateTime.now().microsecondsSinceEpoch}.part',
     );
     final transport = client ?? http.Client();
-    final timer = Timer(timeout, transport.close);
+    var receivedBytes = 0;
+    var deadlineExpired = false;
+    final timer = Timer(timeout, () {
+      deadlineExpired = true;
+      transport.close();
+    });
     IOSink? sink;
     final watch = Stopwatch()..start();
     try {
@@ -59,10 +64,9 @@ Future<({String path, Map<String, dynamic> evidence})> prepareModel(
           throw HttpException('Model download HTTP ${response.statusCode}');
         }
         sink = temporary.openWrite();
-        var bytes = 0;
         await for (final chunk in response.stream) {
-          bytes += chunk.length;
-          if (bytes > (profile.model['bytes'] as int)) {
+          receivedBytes += chunk.length;
+          if (receivedBytes > (profile.model['bytes'] as int)) {
             throw const FormatException(
               'Model download exceeded locked byte size',
             );
@@ -73,6 +77,8 @@ Future<({String path, Map<String, dynamic> evidence})> prepareModel(
         await sink!.close();
         sink = null;
       })();
+      if (deadlineExpired) throw TimeoutException('Model download deadline');
+      timer.cancel();
       downloadMs = watch.elapsedMilliseconds;
       checksum.start();
       if (!await valid(temporary)) {
@@ -80,6 +86,15 @@ Future<({String path, Map<String, dynamic> evidence})> prepareModel(
       }
       checksum.stop();
       await temporary.rename(target.path);
+    } catch (_) {
+      if (deadlineExpired) {
+        throw TimeoutException(
+          'Model download deadline exceeded after receiving $receivedBytes '
+          'of ${profile.model['bytes']} bytes',
+          timeout,
+        );
+      }
+      rethrow;
     } finally {
       timer.cancel();
       transport.close();
@@ -94,6 +109,7 @@ Future<({String path, Map<String, dynamic> evidence})> prepareModel(
       'bytes': profile.model['bytes'],
       'verified': true,
       'cache_hit': hit,
+      'download_timeout_ms': timeout.inMilliseconds,
       'download_ms': downloadMs,
       'checksum_ms': checksum.elapsedMilliseconds,
       'total_ms': started.elapsedMilliseconds,

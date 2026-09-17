@@ -40,6 +40,7 @@ class _NativeHost implements ValidationHost {
           ),
         ),
         client: _client,
+        timeout: const Duration(minutes: 10),
       );
     } finally {
       _client?.close();
