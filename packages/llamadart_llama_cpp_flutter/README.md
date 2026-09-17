@@ -13,7 +13,7 @@ bindings. Keep core `0.8.22` paired with companion `0.0.17`.
 ```yaml
 dependencies:
   llamadart: ^0.8.23
-  llamadart_llama_cpp_flutter: ^0.0.18
+  llamadart_llama_cpp_flutter: ^0.0.19
 ```
 
 This package has no runtime Dart API of its own. Import `package:llamadart`

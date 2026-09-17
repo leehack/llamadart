@@ -44,7 +44,7 @@ overrides fail the build; resolve the matching companion and rerun
 ```yaml
 dependencies:
   llamadart: ^0.8.23
-  llamadart_llama_cpp_flutter: ^0.0.18 # GGUF / llama.cpp
+  llamadart_llama_cpp_flutter: ^0.0.19 # GGUF / llama.cpp
   llamadart_litert_lm_flutter: ^0.0.10 # Apple .litertlm / LiteRT-LM targets
 ```
 
