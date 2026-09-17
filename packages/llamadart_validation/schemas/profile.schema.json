@@ -29,11 +29,15 @@
     "selection": {
       "enum": [
         "quick",
+        "focused",
         "release"
       ]
     },
     "execution_path": {
-      "enum": ["public_api", "native_c_api"]
+      "enum": [
+        "public_api",
+        "native_c_api"
+      ]
     },
     "enable_thinking": {
       "type": "boolean"
@@ -94,6 +98,50 @@
           "pattern": "^https://"
         }
       }
+    },
+    "focus_features": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "text",
+          "unicode",
+          "thinking",
+          "history",
+          "tools",
+          "streaming",
+          "lifecycle",
+          "guards",
+          "performance"
+        ]
+      }
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": [
+          "selection"
+        ],
+        "properties": {
+          "selection": {
+            "const": "focused"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "focus_features"
+        ]
+      },
+      "else": {
+        "not": {
+          "required": [
+            "focus_features"
+          ]
+        }
+      }
+    }
+  ]
 }

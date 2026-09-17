@@ -23,6 +23,8 @@ class FakeEngine implements ValidationEngine {
   var disposed = false;
   var cancelled = false;
   var loads = 0;
+  int? failOnLoad;
+  var disposeCalls = 0;
   var generated = 0;
   var wrongArithmetic = false;
   var wrongHistory = false;
@@ -40,6 +42,7 @@ class FakeEngine implements ValidationEngine {
       throw LlamaModelException('missing model');
     }
     loads++;
+    if (loads == failOnLoad) throw LlamaModelException('reload failed');
     if (loads == 2) await pauseReload?.future;
   }
 
@@ -47,6 +50,7 @@ class FakeEngine implements ValidationEngine {
   Future<void> unload() async {}
   @override
   Future<void> dispose() async {
+    disposeCalls++;
     disposed = true;
     if (cleanupFails) throw StateError('cleanup failure');
   }
@@ -137,6 +141,239 @@ Future<({ValidationReport report, List<Map<String, dynamic>> events})> run(
 }
 
 void main() {
+  ValidationProfile focused(List<String> features) =>
+      ValidationProfile.fromJson(
+        profile().toJson()
+          ..['selection'] = 'focused'
+          ..['focus_features'] = features,
+      );
+
+  test(
+    'focused lifecycle runs a second dispose/load/generation cycle',
+    () async {
+      final engine = FakeEngine();
+      final result = await run(engine, selected: focused(['lifecycle']));
+      expect(result.report.qualified, true);
+      expect(
+        engine.loads,
+        4,
+      ); // Initial, first cycle, invalid-file recovery, second.
+      expect(engine.disposeCalls, 3); // Both cycles and final cleanup.
+      expect(result.report.cases.last['case_id'], 'C09.reload.second');
+      expect(result.report.cases.last['status'], 'PASS');
+      expect(
+        result.report.cases.map((c) => c['case_id']),
+        isNot(contains('C07.tools')),
+      );
+    },
+  );
+
+  test(
+    'second-cycle load failure stays visible and cleanup still runs',
+    () async {
+      final engine = FakeEngine()..failOnLoad = 4;
+      final result = await run(engine, selected: focused(['lifecycle']));
+      expect(result.report.qualified, false);
+      expect(result.report.cases.last['status'], 'ERROR');
+      expect(result.report.cases.last['error_type'], 'LlamaModelException');
+      expect(engine.disposeCalls, 3);
+      expect(result.report.cleanupPassed, true);
+    },
+  );
+
+  test(
+    'focused selection adds only matching obligations to the quick core',
+    () async {
+      final selected = focused(['streaming', 'tools']);
+      expect(selected.caseIds, [
+        ...profile().caseIds,
+        'C07.tools',
+        'C10.stop',
+        'C11.batching',
+      ]);
+      expect(selected.focusFeatures, ['streaming', 'tools']);
+      final result = await run(FakeEngine(), selected: selected);
+      expect(result.report.qualified, false);
+      expect(
+        result.report.cases
+            .where((c) => c['status'] == 'NOT_RUN')
+            .map((c) => c['case_id']),
+        ['C07.tools', 'C10.stop', 'C11.batching'],
+      );
+      expect(result.report.problems, isEmpty);
+    },
+  );
+
+  test(
+    'invalid feature selections and fixture overrides fail before execution',
+    () {
+      for (final patch in <Map<String, dynamic>>[
+        {'selection': 'focused'},
+        {'selection': 'focused', 'focus_features': []},
+        {
+          'selection': 'focused',
+          'focus_features': ['tools', 'tools'],
+        },
+        {
+          'selection': 'focused',
+          'focus_features': ['unknown'],
+        },
+        {'focus_features': []},
+        {
+          'focus_features': ['tools'],
+        },
+        {
+          'fixtures': {
+            'hello': {'prompt': 3},
+          },
+        },
+        {
+          'fixtures': {
+            'hello': {'unknown': 'ignored'},
+          },
+        },
+        {
+          'fixtures': {
+            'unknown': {'prompt': 'ignored'},
+          },
+        },
+      ]) {
+        expect(
+          () => ValidationProfile.fromJson(profile().toJson()..addAll(patch)),
+          throwsFormatException,
+        );
+      }
+    },
+  );
+
+  test(
+    'catalog records resolved prompts, versions and explicit omissions',
+    () async {
+      final data = profile().toJson();
+      (data['fixtures'] as Map)['hello'] = {'prompt': 'Please answer hello.'};
+      final selected = ValidationProfile.fromJson(data);
+      final engine = FakeEngine();
+      final result = await run(engine, selected: selected);
+      expect(result.report.qualified, true);
+      final manifest = result.events.first;
+      expect(manifest['schema_version'], 2);
+      expect(manifest['catalog_hash'], jsonHash(selected.catalog));
+      expect((manifest['catalog'] as Map)['fixtures'], selected.fixtures);
+      expect(
+        engine.requests
+            .where((r) => r['prompt'] == 'Please answer hello.')
+            .length,
+        greaterThan(1),
+      );
+      final omitted = ((manifest['catalog'] as Map)['cases'] as List)
+          .cast<Map>()
+          .singleWhere((c) => c['id'] == 'C07.tools');
+      expect(omitted['selected'], false);
+      expect(omitted['omission_reason'], 'outside_selected_features');
+      for (final record in result.report.cases) {
+        expect(record['case_version'], 1);
+        expect(
+          record['fixture_hash'],
+          jsonHash(selected.caseFixtures(record['case_id'] as String)),
+        );
+      }
+    },
+  );
+
+  test('rehashed catalog edits and missing metadata cannot qualify', () async {
+    for (final omit in [false, true]) {
+      final result = await run(FakeEngine());
+      final manifest = result.events.first;
+      if (omit) {
+        manifest.remove('catalog');
+      } else {
+        final catalog = jsonDecode(jsonEncode(manifest['catalog'])) as Map;
+        (catalog['fixtures'] as Map)['history']['expected'] =
+            'a different code';
+        manifest['catalog'] = catalog;
+      }
+      manifest['catalog_hash'] = jsonHash(manifest['catalog']);
+      final report = ValidationReport.parse(
+        result.events.map(jsonEncode).join('\n'),
+      );
+      expect(report.qualified, false);
+      expect(
+        report.problems,
+        contains('Catalog does not match the executable profile'),
+      );
+    }
+  });
+
+  test('case version and fixture identity are independently checked', () async {
+    for (final field in ['case_version', 'fixture_hash']) {
+      final result = await run(FakeEngine());
+      result.events.firstWhere((e) => e['type'] == 'case')[field] =
+          field == 'case_version' ? 2 : '0' * 64;
+      final report = ValidationReport.parse(
+        result.events.map(jsonEncode).join('\n'),
+      );
+      expect(report.qualified, false);
+      expect(
+        report.problems,
+        contains('Case version or fixture identity mismatch: C01.load'),
+      );
+    }
+  });
+
+  test(
+    'legacy quick journals remain readable without invented catalog metadata',
+    () async {
+      final result = await run(FakeEngine());
+      result.events.first
+        ..['schema_version'] = 1
+        ..remove('catalog')
+        ..remove('catalog_hash');
+      for (final event in result.events) {
+        event
+          ..remove('case_version')
+          ..remove('fixture_hash');
+      }
+      final report = ValidationReport.parse(
+        result.events.map(jsonEncode).join('\n'),
+      );
+      expect(report.qualified, true);
+      expect(report.manifest.containsKey('catalog'), false);
+    },
+  );
+
+  test('legacy schema cannot claim unchecked catalog provenance', () async {
+    final result = await run(FakeEngine());
+    result.events.first['schema_version'] = 1;
+    final report = ValidationReport.parse(
+      result.events.map(jsonEncode).join('\n'),
+    );
+    expect(report.qualified, false);
+    expect(
+      report.problems,
+      contains('Catalog metadata requires result schema 2'),
+    );
+    expect(
+      report.toHtml(),
+      contains('catalog version: unavailable in legacy journal'),
+    );
+  });
+
+  test(
+    'focused journals cannot downgrade to legacy selection semantics',
+    () async {
+      final result = await run(FakeEngine(), selected: focused(['lifecycle']));
+      result.events.first['schema_version'] = 1;
+      final report = ValidationReport.parse(
+        result.events.map(jsonEncode).join('\n'),
+      );
+      expect(report.qualified, false);
+      expect(
+        report.problems,
+        contains('Focused selection requires result schema 2'),
+      );
+    },
+  );
+
   test('Gemma CPU control locks identity and matches NPU prompt settings', () {
     final selected = ValidationProfile.fromJson(
       jsonDecode(

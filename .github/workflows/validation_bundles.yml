@@ -20,7 +20,7 @@ on:
       profile:
         description: Locked quick profile compiled into mobile and Web apps
         type: choice
-        options: [tiny-gguf-cpu, tiny-gguf-metal, tiny-gguf-vulkan, tiny-gguf-cuda, chat-gguf-cpu, chat-gguf-metal, chat-gguf-vulkan, chat-gguf-cuda, chat-litert-cpu, chat-litert-gpu]
+        options: [tiny-gguf-cpu, tiny-gguf-lifecycle, tiny-gguf-metal, tiny-gguf-vulkan, tiny-gguf-cuda, chat-gguf-cpu, chat-gguf-metal, chat-gguf-vulkan, chat-gguf-cuda, chat-litert-cpu, chat-litert-gpu]
         default: tiny-gguf-cpu
 
 permissions:

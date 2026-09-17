@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:llamadart/llamadart.dart';
 
+import 'case_catalog.dart';
 import 'manifest.dart';
 import 'npu_evidence.dart';
 
@@ -256,7 +257,7 @@ class ValidationRunner {
     try {
       await emit({
         'type': 'manifest',
-        'schema_version': 1,
+        'schema_version': 2,
         'run_id': runId,
         'profile': profile.toJson(),
         'profile_hash': jsonHash(profile.toJson()),
@@ -265,6 +266,8 @@ class ValidationRunner {
         'environment': environment,
         'preparation': preparation,
         'case_ids': caseIds,
+        'catalog': profile.catalog,
+        'catalog_hash': jsonHash(profile.catalog),
         'started_at': DateTime.now().toUtc().toIso8601String(),
         'accelerator_evidence_required': profile.requiresAcceleratorProof,
       });
@@ -281,13 +284,9 @@ class ValidationRunner {
           });
           continue;
         }
-        if (id == 'C05.thinking' ||
-            id == 'C07.tools' ||
-            id == 'C10.stop' ||
-            id == 'C11.batching' ||
-            id == 'C12.guards') {
+        if (!validationCase(id).implemented) {
           await _record(id, 'NOT_RUN', {
-            'reason': 'release feature pack not implemented',
+            'reason': 'selected case or reference fixture not implemented',
           });
           continue;
         }
@@ -357,14 +356,16 @@ class ValidationRunner {
       emit({
         'type': 'case',
         'case_id': id,
+        'case_version': validationCase(id).version,
+        'fixture_hash': jsonHash(profile.caseFixtures(id)),
         'status': status,
         'sequence': _sequence++,
         ...values,
       });
 
   String get _shortPrompt => profile.isChat
-      ? 'Reply with one short sentence saying hello.'
-      : 'Once upon a time';
+      ? profile.fixtureText('hello', 'prompt')
+      : profile.fixtureText('raw', 'prompt');
 
   Future<T> _checked<T>(Future<T> Function() operation) async {
     void check() {
@@ -423,13 +424,10 @@ class ValidationRunner {
         await _checked(() => engine.load(location, profile));
         return _withDiagnostics({});
       case 'C02.unicode':
-        const text = 'Montréal 👋\n한글 café';
+        final text = profile.fixtureText('unicode', 'input');
         final tokens = await _checked(() => engine.tokenize(text));
         final decoded = await _checked(() => engine.detokenize(tokens));
-        final prefix =
-            (profile.fixtures['unicode'] as Map?)?['expected_prefix']
-                as String? ??
-            '';
+        final prefix = profile.fixtureText('unicode', 'expected_prefix');
         final expected = '$prefix$text';
         return {
           'input': text,
@@ -442,22 +440,19 @@ class ValidationRunner {
       case 'C03.raw':
         return _nonempty(
           await _checked(
-            () => engine.generate('Once upon a time', profile, raw: true),
+            () => engine.generate(
+              profile.fixtureText('raw', 'prompt'),
+              profile,
+              raw: true,
+            ),
           ),
         );
       case 'C04.hello':
       case 'C04.arithmetic':
         final arithmetic = id.endsWith('arithmetic');
-        final fixture =
-            profile.fixtures[arithmetic ? 'arithmetic' : 'hello'] as Map?;
-        final prompt =
-            fixture?['prompt'] as String? ??
-            (arithmetic
-                ? 'What is 2 + 2? Reply with only the number.'
-                : _shortPrompt);
-        final expected =
-            fixture?['regex'] as String? ??
-            (arithmetic ? r'^4[.!]?$' : r'\bhello\b');
+        final fixture = arithmetic ? 'arithmetic' : 'hello';
+        final prompt = profile.fixtureText(fixture, 'prompt');
+        final expected = profile.fixtureText(fixture, 'regex');
         final output = await _checked(() => engine.generate(prompt, profile));
         final text = (output['content'] as String).trim();
         return {
@@ -473,8 +468,8 @@ class ValidationRunner {
       case 'C06.history.public_system_wire':
       case 'C06.history.no_system':
       case 'C06.history.combined':
-        const prompt = 'What is the secret code? Reply with only the code.';
-        const system = 'Remember the secret code exactly.';
+        final prompt = profile.fixtureText('history', 'prompt');
+        final system = profile.fixtureText('history', 'system');
         final literalSystem = id == 'C06.history.public_system_wire';
         final combined = id == 'C06.history.combined';
         final messages = [
@@ -490,18 +485,15 @@ class ValidationRunner {
                     })
                   : system,
             ),
-          const LlamaChatMessage.fromText(
+          LlamaChatMessage.fromText(
             role: LlamaChatRole.user,
-            text: 'The secret code is cedar17.',
+            text: profile.fixtureText('history', 'user'),
           ),
-          const LlamaChatMessage.fromText(
+          LlamaChatMessage.fromText(
             role: LlamaChatRole.assistant,
-            text: 'I will remember the code.',
+            text: profile.fixtureText('history', 'assistant'),
           ),
-          const LlamaChatMessage.fromText(
-            role: LlamaChatRole.user,
-            text: prompt,
-          ),
+          LlamaChatMessage.fromText(role: LlamaChatRole.user, text: prompt),
         ];
         final selectedPrompt = combined
             ? messages.map((message) => message.content).join('\n')
@@ -516,21 +508,23 @@ class ValidationRunner {
         return {
           ...output,
           if (profile.historyControls) 'history_control': id,
-          'expected': 'cedar17',
-          'status': (output['content'] as String).trim() == 'cedar17'
+          'expected': profile.fixtureText('history', 'expected'),
+          'status':
+              (output['content'] as String).trim() ==
+                  profile.fixtureText('history', 'expected')
               ? 'PASS'
               : 'FAIL',
         };
       case 'C08.cancel':
         final prompt = profile.isChat
-            ? 'Write a long story about a fox. Continue for at least 500 words.'
-            : 'Once upon a time';
+            ? profile.fixtureText('cancel', 'chat_prompt')
+            : profile.fixtureText('raw', 'prompt');
         final control = await _checked(
           () => engine.generate(
             prompt,
             profile,
             raw: !profile.isChat,
-            maxTokens: 256,
+            maxTokens: (profile.fixtures['cancel'] as Map)['max_tokens'] as int,
           ),
         );
         final output = await _checked(
@@ -538,7 +532,7 @@ class ValidationRunner {
             prompt,
             profile,
             raw: !profile.isChat,
-            maxTokens: 256,
+            maxTokens: (profile.fixtures['cancel'] as Map)['max_tokens'] as int,
             cancelAfterFirst: true,
           ),
         );
@@ -570,7 +564,8 @@ class ValidationRunner {
           'status': output['cancel_requested'] != true || !interrupted
               ? 'NOT_RUN'
               : duration != null &&
-                    duration <= 5000 &&
+                    duration <=
+                        (profile.fixtures['cancel'] as Map)['deadline_ms'] &&
                     (recovery['content'] as String).trim().isNotEmpty
               ? 'PASS'
               : 'FAIL',
@@ -578,6 +573,7 @@ class ValidationRunner {
               'requires fewer native decoded tokens or an explicit cancellation abort, matching the seeded control prefix, prompt recovery and bounded cancellation latency',
         };
       case 'C09.reload':
+      case 'C09.reload.second':
         await _checked(() => engine.dispose());
         await _checked(() => engine.load(location, profile));
         return _withDiagnostics(_nonempty(await _short()));
@@ -587,7 +583,7 @@ class ValidationRunner {
             _shortPrompt,
             profile,
             raw: !profile.isChat,
-            maxTokens: 1,
+            maxTokens: (profile.fixtures['limit'] as Map)['max_tokens'] as int,
           ),
         );
         final count =
@@ -597,7 +593,9 @@ class ValidationRunner {
           'expected': 'at most one native decoded token',
           'status': count == null
               ? 'NOT_RUN'
-              : count == 1
+              : count ==
+                    (profile.fixtures['limit']
+                        as Map)['expected_native_decode_tokens']
               ? 'PASS'
               : 'FAIL',
           if (count == null)
@@ -624,10 +622,13 @@ class ValidationRunner {
               : 'FAIL',
           'expected': 'typed missing-model error and valid recovery',
         });
-      default:
+      case 'B01.warmup':
+      case 'B01.1':
+      case 'B01.2':
+      case 'B01.3':
         final prompt = profile.isChat
-            ? 'List the numbers from one to twenty in English.'
-            : 'Once upon a time';
+            ? profile.fixtureText('benchmark', 'chat_prompt')
+            : profile.fixtureText('raw', 'prompt');
         return {
           ..._nonempty(
             await _checked(
@@ -640,6 +641,8 @@ class ValidationRunner {
               ? 'short-generation'
               : 'tiny-packaging-diagnostic',
         };
+      default:
+        throw StateError('No implementation for catalog case $id');
     }
   }
 }

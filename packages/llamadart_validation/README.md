@@ -9,6 +9,7 @@ Start from the repository root:
 ```sh
 dart run tool/testing/run_local_e2e.dart --scenario validation-harness
 dart run tool/testing/validation.dart local --profile tiny-gguf-cpu
+dart run tool/testing/validation.dart local --profile tiny-gguf-lifecycle
 dart run tool/testing/validation.dart build --target desktop --out .dart_tool/validation/bundles/desktop
 ```
 
@@ -36,3 +37,17 @@ feature packs as NOT_RUN until their fixtures and wrappers are qualified.
 The reporter derives mandatory cases, effective settings and accelerator-proof
 requirements from the validated profile. Self-declared inventory, rehashed
 conflicting settings and per-record unsupported exemptions cannot waive them.
+
+Profiles select `quick`, `focused` or `release`. Focused profiles require a
+nonempty, unique `focus_features` list; `tiny-gguf-lifecycle` adds the second
+dispose/load/generate cycle to the quick CPU run. Core feature IDs are `text`,
+`unicode`, `thinking`, `history`, `tools`, `streaming`, `lifecycle`, `guards` and
+`performance`. Unimplemented selected cases stay NOT_RUN.
+
+Journal schema 2 includes the versioned case/feature catalog, resolved synthetic
+fixtures, explicit omissions and a catalog hash. Each terminal case carries its
+case version and fixture hash. Defaults live in `lib/src/case_catalog.dart` and
+compile into every host; model overrides remain in the locked JSON profiles.
+The reporter validates metadata against the executable catalog and still imports
+schema-1 journals with their original inventory. It does not invent missing
+catalog provenance for those older runs.

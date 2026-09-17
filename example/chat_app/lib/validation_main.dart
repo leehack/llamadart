@@ -71,6 +71,7 @@ class _ValidationAppState extends State<ValidationApp> {
                             ? [_compiledProfile]
                             : const [
                                 'tiny-gguf-cpu',
+                                'tiny-gguf-lifecycle',
                                 'tiny-gguf-metal',
                                 'tiny-gguf-vulkan',
                                 'tiny-gguf-cuda',

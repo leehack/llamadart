@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:llamadart/llamadart.dart';
 
+import 'case_catalog.dart';
+
 /// Canonical encoding for stable experiment identity.
 String canonicalJson(Object? value) {
   Object? ordered(Object? value) {
@@ -81,8 +83,41 @@ class ValidationProfile {
         threads > 32) {
       throw const FormatException('Profile exceeds bounded core limits');
     }
-    if (!const ['quick', 'release'].contains(selection)) {
-      throw const FormatException('selection must be quick or release');
+    if (!const ['quick', 'focused', 'release'].contains(selection)) {
+      throw const FormatException(
+        'selection must be quick, focused or release',
+      );
+    }
+    final focus = data['focus_features'] ?? const [];
+    if (focus is! List ||
+        focus.any((feature) => !validationFeatures.containsKey(feature)) ||
+        focus.toSet().length != focus.length ||
+        (selection != 'focused' && data.containsKey('focus_features')) ||
+        (selection == 'focused') != focus.isNotEmpty) {
+      throw const FormatException(
+        'Only focused selection requires a nonempty unique focus_features list '
+        'of catalog feature IDs',
+      );
+    }
+    final overrides = data['fixtures'];
+    if (overrides != null &&
+        (overrides is! Map ||
+            overrides.entries.any(
+              (entry) =>
+                  !validationFixtures.containsKey(entry.key) ||
+                  entry.value is! Map ||
+                  (entry.value as Map).entries.any(
+                    (field) =>
+                        !validationFixtures[entry.key]!.containsKey(
+                          field.key,
+                        ) ||
+                        // Core overrides are synthetic text/predicate fixtures;
+                        // tool/media schemas need their own qualified pack.
+                        field.value is! String ||
+                        validationFixtures[entry.key]![field.key] is! String,
+                  ),
+            ))) {
+      throw const FormatException('Invalid core fixture override');
     }
     for (final key in ['enable_thinking', 'history_controls']) {
       if (data.containsKey(key) && data[key] is! bool) {
@@ -147,6 +182,10 @@ class ValidationProfile {
   /// Catalog selection; release includes explicit uncovered obligations.
   String get selection => data['selection'] as String? ?? 'quick';
 
+  /// Canonical feature set used only by focused runs.
+  List<String> get focusFeatures =>
+      List<String>.from(data['focus_features'] as List? ?? const [])..sort();
+
   /// Separate direct-C-API controls from public-package qualification.
   bool get nativeReference => data['execution_path'] == 'native_c_api';
 
@@ -158,8 +197,7 @@ class ValidationProfile {
   bool get historyControls =>
       nativeReference || data['history_controls'] == true;
 
-  /// Expanded obligations, including explicitly unimplemented release cases.
-  List<String> get caseIds => [
+  List<String> get _quickCaseIds => [
     'C01.load',
     if (!nativeReference) ...['C02.unicode', 'C03.raw'],
     if (isChat) ...['C04.hello', 'C04.arithmetic'],
@@ -176,6 +214,11 @@ class ValidationProfile {
     'B01.1',
     'B01.2',
     'B01.3',
+  ];
+
+  /// Original journal-v1 obligations, retained for existing report imports.
+  List<String> get legacyCaseIds => [
+    ..._quickCaseIds,
     if (selection == 'release') ...[
       'C05.thinking',
       'C07.tools',
@@ -185,9 +228,74 @@ class ValidationProfile {
     ],
   ];
 
-  /// Optional model-specific prompts and expected regex predicates.
-  Map<String, dynamic> get fixtures =>
-      data['fixtures'] as Map<String, dynamic>? ?? const {};
+  /// Expanded obligations; a focused run adds relevant cases to the quick core.
+  List<String> get caseIds {
+    final quick = _quickCaseIds;
+    return [
+      ...quick,
+      for (final definition in extendedValidationCases)
+        if (selection == 'release' ||
+            (selection == 'focused' &&
+                definition.features.any(focusFeatures.contains)))
+          definition.id,
+    ];
+  }
+
+  /// Resolved synthetic fixtures, including explicit model-specific overrides.
+  Map<String, dynamic> get fixtures {
+    final overrides = data['fixtures'] as Map? ?? const {};
+    return {
+      for (final entry in validationFixtures.entries)
+        entry.key: {...entry.value, ...?overrides[entry.key] as Map?},
+    };
+  }
+
+  /// Text read by the runner and included in the replay catalog.
+  String fixtureText(String fixture, String field) =>
+      (fixtures[fixture] as Map)[field] as String;
+
+  /// The resolved fixtures whose identity is bound to one case record.
+  Map<String, dynamic> caseFixtures(String id) => {
+    for (final key in validationCase(id).fixtures) key: fixtures[key],
+  };
+
+  /// Versioned selected/omitted inventory with reproducible fixture contents.
+  Map<String, dynamic> get catalog => {
+    'version': 1,
+    'features': validationFeatures,
+    'selection': selection,
+    'focus_features': focusFeatures,
+    'fixtures': fixtures,
+    'cases': [
+      for (final definition in validationCaseCatalog)
+        {
+          ...definition.toJson(),
+          'selected': caseIds.contains(definition.id),
+          if (!caseIds.contains(definition.id))
+            'omission_reason': _omissionReason(definition.id),
+        },
+    ],
+  };
+
+  String _omissionReason(String id) {
+    if (id.startsWith('C06.history.') && !historyControls) {
+      return 'history_controls_disabled';
+    }
+    if (!isChat && (id.startsWith('C04.') || id.startsWith('C06.'))) {
+      return 'raw_model_has_no_chat_oracle';
+    }
+    if (nativeReference &&
+        const [
+          'C02.unicode',
+          'C03.raw',
+          'C08.cancel',
+          'C10.limit',
+          'C12.recovery',
+        ].contains(id)) {
+      return 'outside_native_reference_scope';
+    }
+    return 'outside_selected_features';
+  }
 
   /// Accelerator evidence is mandatory for an explicit accelerator selection.
   bool get requiresAcceleratorProof =>

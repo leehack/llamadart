@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:math' as math;
 
+import 'case_catalog.dart';
 import 'manifest.dart';
 import 'placement.dart';
 
@@ -39,8 +40,19 @@ class ValidationReport {
     final manifests = events.where((e) => e['type'] == 'manifest').toList();
     if (manifests.length != 1) problems.add('Expected exactly one manifest');
     final manifest = manifests.isEmpty ? <String, dynamic>{} : manifests.first;
-    if (manifest['schema_version'] != 1) {
+    final legacy = manifest['schema_version'] == 1;
+    if (!const [1, 2].contains(manifest['schema_version'])) {
       problems.add('Unsupported result schema');
+    }
+    if (legacy &&
+        (manifest.containsKey('catalog') ||
+            manifest.containsKey('catalog_hash') ||
+            events.any(
+              (event) =>
+                  event.containsKey('case_version') ||
+                  event.containsKey('fixture_hash'),
+            ))) {
+      problems.add('Catalog metadata requires result schema 2');
     }
     if (manifest['profile_hash'] != jsonHash(manifest['profile'])) {
       problems.add('Profile hash does not match the manifest');
@@ -64,7 +76,20 @@ class ValidationReport {
       problems.add('Malformed case inventory');
     }
     if (profile != null) {
-      if (canonicalJson(inventory) != canonicalJson(profile.caseIds)) {
+      if (legacy && profile.selection == 'focused') {
+        problems.add('Focused selection requires result schema 2');
+      }
+      if (!legacy) {
+        if (manifest['catalog_hash'] != jsonHash(manifest['catalog'])) {
+          problems.add('Catalog hash does not match the manifest');
+        }
+        if (canonicalJson(manifest['catalog']) !=
+            canonicalJson(profile.catalog)) {
+          problems.add('Catalog does not match the executable profile');
+        }
+      }
+      if (canonicalJson(inventory) !=
+          canonicalJson(legacy ? profile.legacyCaseIds : profile.caseIds)) {
         problems.add('Case inventory does not match the profile');
       }
       if (canonicalJson(manifest['effective_config']) !=
@@ -78,7 +103,11 @@ class ValidationReport {
         );
       }
     }
-    final expected = profile?.caseIds ?? declared;
+    final expected = profile == null
+        ? declared
+        : legacy
+        ? profile.legacyCaseIds
+        : profile.caseIds;
     var sequence = 0;
     for (var index = 0; index < events.length; index++) {
       final event = events[index];
@@ -113,6 +142,12 @@ class ValidationReport {
       }
       if (records.containsKey(id)) {
         problems.add('Duplicate terminal record: $id');
+      }
+      if (!legacy && profile != null) {
+        if (event['case_version'] != validationCase(id).version ||
+            event['fixture_hash'] != jsonHash(profile.caseFixtures(id))) {
+          problems.add('Case version or fixture identity mismatch: $id');
+        }
       }
       if (!const [
         'PASS',
@@ -198,7 +233,7 @@ class ValidationReport {
       assertionsPassed && acceleratorVerified && provenanceProblems.isEmpty;
 
   Map<String, dynamic> toJson() => {
-    'schema_version': 1,
+    'schema_version': manifest['schema_version'] == 2 ? 2 : 1,
     'manifest': manifest,
     'cases': cases,
     'summary': {
@@ -277,8 +312,27 @@ class ValidationReport {
 
   /// Standalone escaped HTML with separate native and estimated throughput plots.
   String toHtml() {
-    final nativeReference =
-        (manifest['profile'] as Map?)?['execution_path'] == 'native_c_api';
+    final profile = manifest['profile'] is Map
+        ? manifest['profile'] as Map
+        : const {};
+    final catalog =
+        manifest['schema_version'] == 2 && manifest['catalog'] is Map
+        ? manifest['catalog'] as Map
+        : const {};
+    final catalogCases = catalog['cases'] is List
+        ? catalog['cases'] as List
+        : const [];
+    final omitted = catalogCases
+        .whereType<Map>()
+        .where((c) => c['selected'] == false)
+        .toList();
+    final omittedHtml = catalog.isEmpty
+        ? ''
+        : '<details><summary>Unselected cases (${omitted.length})</summary>'
+              '<p>Outside this run; these cases are not passing or unsupported evidence.</p>'
+              '<table><tr><th>Case</th><th>Reason</th></tr>'
+              '${omitted.map((c) => '<tr><td>${_escape(c['id'])}</td><td>${_escape(c['omission_reason'])}</td></tr>').join()}</table></details>';
+    final nativeReference = profile['execution_path'] == 'native_c_api';
     String chart(String metric, String title) {
       final values =
           samples
@@ -310,6 +364,9 @@ class ValidationReport {
         '</style><h1>llamadart validation</h1>'
         '<p><strong>${qualified ? 'QUALIFIED' : 'INCOMPLETE / FAILED'}</strong> · ${_escape(manifest['run_id'])}</p>'
         '<p>Execution path: ${nativeReference ? 'direct native C API control (does not qualify the public Dart path)' : 'llamadart public API'}.</p>'
+        '<p>Selection: ${_escape(profile['selection'] ?? 'quick')}; '
+        'focused features: ${_escape(profile['focus_features'] ?? 'none')}; '
+        'catalog version: ${_escape(catalog['version'] ?? 'unavailable in legacy journal')}.</p>'
         '<p>Functional assertions: ${assertionsPassed ? 'passed' : 'incomplete or failed'}. '
         'Accelerator placement: ${placement['required'] != true
             ? 'not required'
@@ -321,6 +378,7 @@ class ValidationReport {
         '<p>${_escape([...problems, ...provenanceProblems].join('; '))}</p>'
         '<table><tr><th>Case</th><th>Status</th><th>Reason</th></tr>'
         '${cases.map((c) => '<tr><td>${_escape(c['case_id'])}</td><td>${_escape(c['status'])}</td><td>${_escape(c['reason'] ?? '')}</td></tr>').join()}</table>'
+        '$omittedHtml'
         '${chart('native_decode_tps', 'Native decode tokens/second')}'
         '${chart('estimated_wall_tps', 'Estimated visible-output tokens/second')}'
         '${chart('ttfa_ms', 'Time to first visible answer (ms)')}'

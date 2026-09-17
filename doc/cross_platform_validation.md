@@ -21,10 +21,13 @@ history qualification remains failed; Pixel 10 hardware execution is NOT_RUN.
 The quick diagnostic core is usable; the full platform/release suite is incomplete.
 Model-backed Mac, browser and Firebase runs have exposed actual product failures,
 and the reports retain failed assertions alongside useful timing and device evidence.
-As of 2026-09-17, the local harness has 43 passing model-free tests and the provider
+As of 2026-09-17, the local harness has 53 passing model-free tests and the provider
 and input controls have 44. Draft [PR #515](https://github.com/leehack/llamadart/pull/515)
 now runs the portable build workflow on relevant changes. Follow its current CI
 for target-specific build results; build-only success is not model execution.
+Native GGUF Unicode corruption was fixed in merged
+[PR #516](https://github.com/leehack/llamadart/pull/516). Earlier failed journals
+remain historical evidence; reruns must identify the fixed source commit.
 
 | Area | Current evidence | Remaining qualification |
 | --- | --- | --- |
@@ -73,6 +76,7 @@ qualification requires a clean committed source and known runtime identities.
 | Profiles | Locked fixture | Use |
 | --- | --- | --- |
 | `tiny-gguf-{cpu,metal,vulkan,cuda}` | stories15M, 98,357,920 bytes | Packaging, native loading, lifecycle; throughput is a tiny-model diagnostic |
+| `tiny-gguf-lifecycle` | Same stories15M lock / CPU | Quick core plus the second dispose/load/generate cycle; focused selection example |
 | `chat-gguf-{cpu,metal,vulkan,cuda}` | Qwen3.5 0.8B Q4_0, 563,036,064 bytes | GGUF chat, history and instruction checks |
 | `chat-litert-{cpu,gpu}` | Qwen3 0.6B LiteRT-LM, 614,236,160 bytes | Native LiteRT public path; explicit GPU proof remains incomplete |
 | `gemma3-litert-cpu` | Gemma3 1B IT q4 LiteRT-LM, 584,417,280 bytes | CPU semantic counterpart to the S24 NPU fixture; gated, supply a local authorized model |
@@ -129,6 +133,42 @@ expected bytes, remove partial weights and never become inference/TPS samples.
 Prompts, regex expectations, exact output/thinking, ordered terminal case IDs,
 configuration hashes, model hashes, source/runtime pins and environment all appear
 in the journal. The raw tiny fixture does not claim chat capability.
+
+### Focused selections and replay metadata
+
+The shared runner accepts three profile selections:
+
+- `quick`: the original short core and one three-sample benchmark series.
+- `focused`: the quick core plus cases matching the profile's nonempty, unique
+  `focus_features` list. Valid IDs are `text`, `unicode`, `thinking`, `history`,
+  `tools`, `streaming`, `lifecycle`, `guards` and `performance`. Text/history/
+  performance are already covered by the applicable quick cases.
+- `release`: every current extended core obligation, including unfinished cases.
+
+For example, `"selection": "focused", "focus_features": ["streaming", "tools"]`
+adds C07 tools, C10 stop markers and C11 batching. Those three still record
+NOT_RUN until their implementations and model references are qualified.
+`tiny-gguf-lifecycle` is a runnable focused CPU profile: it adds
+`C09.reload.second` after the first reload, invalid-input recovery and benchmark.
+It is available in the QA app, portable bundles and manual build workflow:
+
+```bash
+dart run tool/testing/validation.dart local --profile tiny-gguf-lifecycle \
+  --out .dart_tool/validation/runs/tiny-lifecycle
+```
+
+Journal/report schema 2 exports catalog version 1, per-feature and per-case
+versions, resolved synthetic prompts/tool schemas/predicates, selected cases and
+omission reasons. The runner reads the same compiled fixture definitions that it
+exports; model-specific text/predicate overrides are explicit hashed profile
+fields. Each terminal record binds its case version and fixture hash. Reports
+reject missing or rehashed conflicting catalog data, and HTML shows selection
+and unselected cases separately from verdicts. Future media/model packs still
+need their own fixture locks and reference qualification.
+
+Schema-1 journals remain readable with their original case inventory; missing
+catalog metadata stays unavailable. A legacy report is not evidence that the
+newer extended selection ran. Focused selection requires schema 2.
 
 Thinking, tool calls, stop-marker fixtures, batching, expanded unsupported guards,
 multimodal/speech/embedding packs and full browser/device rotation remain
