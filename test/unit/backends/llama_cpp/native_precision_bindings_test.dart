@@ -10,72 +10,23 @@ import 'package:test/test.dart';
 
 void main() {
   test('v0.4.1 precision bindings preserve accepted and unsupported paths', () {
-    // Windows does not re-export dependency DLL symbols through llamadart.
-    // Resolve ggml operations from the same emitted asset used by the service.
-    final ggml = Platform.isWindows
-        ? ffi.DynamicLibrary.open('package:llamadart/ggml-base')
-        : null;
-    final init = ggml == null
-        ? ggml_init
-        : ggml.lookupFunction<
-            ffi.Pointer<ggml_context> Function(ggml_init_params),
-            ffi.Pointer<ggml_context> Function(ggml_init_params)
-          >('ggml_init');
-    final free = ggml == null
-        ? ggml_free
-        : ggml.lookupFunction<
-            ffi.Void Function(ffi.Pointer<ggml_context>),
-            void Function(ffi.Pointer<ggml_context>)
-          >('ggml_free');
-    final newTensor = ggml == null
-        ? (ffi.Pointer<ggml_context> ctx, int type, int x, int y) =>
-              ggml_new_tensor_2d(ctx, ggml_type.fromValue(type), x, y)
-        : ggml.lookupFunction<
-            ffi.Pointer<ggml_tensor> Function(
-              ffi.Pointer<ggml_context>,
-              ffi.UnsignedInt,
-              ffi.Int64,
-              ffi.Int64,
-            ),
-            ffi.Pointer<ggml_tensor> Function(
-              ffi.Pointer<ggml_context>,
-              int,
-              int,
-              int,
-            )
-          >('ggml_new_tensor_2d');
-    final multiply = ggml == null
-        ? ggml_mul_mat
-        : ggml.lookupFunction<
-            ffi.Pointer<ggml_tensor> Function(
-              ffi.Pointer<ggml_context>,
-              ffi.Pointer<ggml_tensor>,
-              ffi.Pointer<ggml_tensor>,
-            ),
-            ffi.Pointer<ggml_tensor> Function(
-              ffi.Pointer<ggml_context>,
-              ffi.Pointer<ggml_tensor>,
-              ffi.Pointer<ggml_tensor>,
-            )
-          >('ggml_mul_mat');
-    final setAccumulator = ggml == null
-        ? (ffi.Pointer<ggml_tensor> tensor, int precision) =>
-              ggml_prec_set_acc(tensor, ggml_prec.fromValue(precision))
-        : ggml.lookupFunction<
-            ffi.Bool Function(ffi.Pointer<ggml_tensor>, ffi.UnsignedInt),
-            bool Function(ffi.Pointer<ggml_tensor>, int)
-          >('ggml_prec_set_acc');
-    final setSource = ggml == null
-        ? (ffi.Pointer<ggml_tensor> tensor, int precision, int index) =>
-              ggml_prec_set_src(tensor, ggml_prec.fromValue(precision), index)
-        : ggml.lookupFunction<
-            ffi.Bool Function(
-              ffi.Pointer<ggml_tensor>,
-              ffi.UnsignedInt,
-              ffi.Int,
-            ),
-            bool Function(ffi.Pointer<ggml_tensor>, int, int)
-          >('ggml_prec_set_src');
+    // @Native resolves the emitted code asset; DynamicLibrary.open accepts
+    // filesystem paths and cannot resolve package asset identifiers.
+    final init = Platform.isWindows ? _splitInit : ggml_init;
+    final free = Platform.isWindows ? _splitFree : ggml_free;
+    final newTensor = Platform.isWindows
+        ? _splitNewTensor
+        : (ffi.Pointer<ggml_context> ctx, int type, int x, int y) =>
+              ggml_new_tensor_2d(ctx, ggml_type.fromValue(type), x, y);
+    final multiply = Platform.isWindows ? _splitMultiply : ggml_mul_mat;
+    final setAccumulator = Platform.isWindows
+        ? _splitSetAccumulator
+        : (ffi.Pointer<ggml_tensor> tensor, int precision) =>
+              ggml_prec_set_acc(tensor, ggml_prec.fromValue(precision));
+    final setSource = Platform.isWindows
+        ? _splitSetSource
+        : (ffi.Pointer<ggml_tensor> tensor, int precision, int index) =>
+              ggml_prec_set_src(tensor, ggml_prec.fromValue(precision), index);
     final params = calloc<ggml_init_params>();
     addTearDown(() => calloc.free(params));
     params.ref
@@ -101,3 +52,65 @@ void main() {
     expect(ggml_prec.fromValue(40), ggml_prec.GGML_PREC_Q4);
   });
 }
+
+// Windows exports these operations from the GGML dependency DLL, not the
+// primary llamadart DLL. Keep the hook's native asset identity explicit.
+const _ggmlAsset = 'package:llamadart/ggml-base';
+
+@ffi.Native<ffi.Pointer<ggml_context> Function(ggml_init_params)>(
+  assetId: _ggmlAsset,
+  symbol: 'ggml_init',
+)
+external ffi.Pointer<ggml_context> _splitInit(ggml_init_params params);
+
+@ffi.Native<ffi.Void Function(ffi.Pointer<ggml_context>)>(
+  assetId: _ggmlAsset,
+  symbol: 'ggml_free',
+)
+external void _splitFree(ffi.Pointer<ggml_context> context);
+
+@ffi.Native<
+  ffi.Pointer<ggml_tensor> Function(
+    ffi.Pointer<ggml_context>,
+    ffi.UnsignedInt,
+    ffi.Int64,
+    ffi.Int64,
+  )
+>(assetId: _ggmlAsset, symbol: 'ggml_new_tensor_2d')
+external ffi.Pointer<ggml_tensor> _splitNewTensor(
+  ffi.Pointer<ggml_context> context,
+  int type,
+  int x,
+  int y,
+);
+
+@ffi.Native<
+  ffi.Pointer<ggml_tensor> Function(
+    ffi.Pointer<ggml_context>,
+    ffi.Pointer<ggml_tensor>,
+    ffi.Pointer<ggml_tensor>,
+  )
+>(assetId: _ggmlAsset, symbol: 'ggml_mul_mat')
+external ffi.Pointer<ggml_tensor> _splitMultiply(
+  ffi.Pointer<ggml_context> context,
+  ffi.Pointer<ggml_tensor> lhs,
+  ffi.Pointer<ggml_tensor> rhs,
+);
+
+@ffi.Native<ffi.Bool Function(ffi.Pointer<ggml_tensor>, ffi.UnsignedInt)>(
+  assetId: _ggmlAsset,
+  symbol: 'ggml_prec_set_acc',
+)
+external bool _splitSetAccumulator(
+  ffi.Pointer<ggml_tensor> tensor,
+  int precision,
+);
+
+@ffi.Native<
+  ffi.Bool Function(ffi.Pointer<ggml_tensor>, ffi.UnsignedInt, ffi.Int)
+>(assetId: _ggmlAsset, symbol: 'ggml_prec_set_src')
+external bool _splitSetSource(
+  ffi.Pointer<ggml_tensor> tensor,
+  int precision,
+  int index,
+);
