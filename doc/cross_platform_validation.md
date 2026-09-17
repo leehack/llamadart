@@ -6,6 +6,13 @@ runtime pins. It does not replace the release matrix, qualify unrun platforms,
 or schedule paid work. The broader [validation plan](cross_platform_validation_plan.md)
 retains the later feature and device milestones.
 
+Firebase is the primary physical Android/iOS qualification route. The personal
+Pixel and iPad are optional debugging devices; the Mac remains the local build,
+iOS signing and desktop/browser test host. The next milestone includes Firebase
+NPU qualification on Galaxy S24 (Qualcomm SM8650) and Pixel 10 (Tensor G5).
+These planned cases still need vendor packaging and execution-proof adapters;
+the current bundles do not yet qualify NPU inference.
+
 ## Source and generated artifacts
 
 - `packages/llamadart_validation/`: private Dart suite, locked profiles, desktop
@@ -64,9 +71,12 @@ configuration hashes, model hashes, source/runtime pins and environment all appe
 in the journal. The raw tiny fixture does not claim chat capability.
 
 Thinking, tool calls, stop-marker fixtures, batching, expanded unsupported guards,
-multimodal/speech/embedding packs, NPU, and full browser/device rotation remain
-subsequent qualification work. Selecting `release` today keeps those additional
-obligations visible as NOT_RUN and cannot pass as a release qualification.
+multimodal/speech/embedding packs and full browser/device rotation remain
+subsequent qualification work. NPU profiles, dispatch-directory configuration,
+SoC checks, vendor libraries and native execution evidence are the next mobile
+expansion; selecting `npu` alone cannot supply them. Selecting `release` today
+keeps those additional obligations visible as NOT_RUN and cannot pass as a
+release qualification.
 
 ## Build and run
 
@@ -127,6 +137,15 @@ python3 tool/testing/serve_static_with_headers.py --directory .dart_tool/validat
 ```
 
 ## Firebase setup, submission and collection
+
+The [device rotation and NPU cases](cross_platform_validation_plan.md#8-firebase-device-selection-and-free-rotation)
+include S24, Tab P12, iPhone 16 Pro, iPhone SE 3, Pixel 10 and iPad 10. The planned
+initial selection is 16 CPU/GPU core executions, six NPU reference/public-Dart/CPU
+control executions and two targeted iPad GPU/lifecycle executions: **24 across
+at least seven quota days**, with at most four planned physical executions/day.
+NPU submissions require the new APK packaging and preflight first. iOS cases
+cover CPU/Metal/LiteRT GPU; Apple NPU is not exposed by the current backend.
+Native XCTest coverage does not qualify Safari/iPadOS browser execution.
 
 Use an explicitly selected **unbilled Spark project** and account. Preflight checks
 billing is disabled and the selected physical model/OS exists in the live catalog.

@@ -5,15 +5,17 @@ Status: **initial quick-core harness implemented; broader qualification remains 
 The implementation starts from current merged main and preserves its runtime pins;
 the separate release task still owns pending runtime changes. See the
 [implementation runbook](cross_platform_validation.md) for available commands,
-actual bundles, verified behavior and remaining qualification work. Pilot and
-catalog observations below are dated 2026-09-16; proposed later coverage is not
-an assertion that those rows now pass.
+actual bundles, verified behavior and remaining qualification work. Pilot
+observations below are dated 2026-09-16; the device catalog was refreshed on
+2026-09-17. Proposed later coverage is not an assertion that those rows now pass.
 
 The objective is a small, repeatable test of the **public llamadart package**,
 including native-library packaging, model routing and application lifecycle.
-Use owned hardware and free CI for routine checks, then rotate selected Firebase
-devices for hardware and OS gaps. Keep the operating budget at **$0 out of
-pocket**, even after promotional GCP credit expires.
+Use free CI and the Mac for routine checks, and **Firebase as the primary
+physical Android/iOS test route**. The personal Pixel and iPad are optional
+debugging devices, never prerequisites for mobile qualification. Include
+Qualcomm and Tensor LiteRT-LM NPU qualification in the next milestone. Keep the
+operating budget at **$0 out of pocket**, even after promotional GCP credit expires.
 
 ## 1. Deliverables and boundaries
 
@@ -54,8 +56,9 @@ The first implementation milestone is deliberately small: manifests, shared
 cases, existing CLI/mobile/Web adapters, reliable result capture and a basic
 offline report. Reuse the chat app for Flutter/Apple companion packaging checks;
 do not require new desktop Flutter UIs in addition to CLI bundles. Advanced
-trend charts, model conversion and NPU packaging are subsequent milestones and
-must not block a usable CPU/GPU harness.
+trend charts and model conversion remain later milestones. The next milestone
+adds Firebase mobile qualification and NPU packaging/evidence; the current
+CPU/GPU harness remains usable while those additions are implemented.
 
 ### Proposed repository layout
 
@@ -202,10 +205,10 @@ or selectable backend is not inference qualification.
 
 | Target | GGUF profiles | LiteRT profiles | Where / coverage limit |
 | --- | --- | --- | --- |
-| Android arm64 physical | CPU, Vulkan; OpenCL in targeted pack | CPU, GPU; NPU only with matched model/dispatch libraries | Owned Pixel 9 Pro plus Firebase rotation |
+| Android arm64 physical | CPU, Vulkan; OpenCL in targeted pack | CPU, GPU; Qualcomm/Tensor NPU with matched model/dispatch libraries | Firebase device rotation; personal Pixel optional |
 | Android arm64 virtual | CPU, install/load, 4K/16K page-size packaging | CPU where artifact supports it; explicit unsupported cases | Free Firebase virtual quota; no physical GPU/ISA qualification |
 | Android x64 emulator | CPU; Vulkan and OpenCL targeted if actually exposed | CPU, GPU only with backend proof | Local/free CI emulator; unavailable GPU profiles remain NOT_RUN; current Firebase virtual catalog is arm64 |
-| iOS arm64 physical | CPU, Metal | CPU, GPU | Owned iPad and Firebase iPhones |
+| iOS arm64 physical | CPU, Metal | CPU, GPU; no Apple NPU backend | Firebase iPhones and iPad 10; personal iPad optional |
 | iOS arm64 simulator | CPU, available Metal path separately labelled simulator | CPU, available GPU path separately labelled simulator | Owned Mac; does not qualify physical-device drivers or memory |
 | iOS x86_64 simulator | CPU / available Metal | Negative packaging contract: no LiteRT artifact | Intel host if available, otherwise NOT_RUN |
 | macOS arm64 | CPU, Metal | CPU, GPU | Owned Mac if matching architecture; record actual hardware |
@@ -214,8 +217,8 @@ or selectable backend is not inference qualification.
 | Linux arm64 | CPU; Vulkan/BLAS targeted | CPU | Available arm64 runner/hardware; no x64 emulation as arm64 proof |
 | Windows x64 | CPU; CUDA, Vulkan/BLAS targeted | CPU; GPU unsupported until qualified/enabled | Free CI CPU, accessible Windows hardware; CUDA requires actual NVIDIA GPU |
 | Windows arm64 | CPU, Vulkan/BLAS where available | Negative artifact contract unless support is added | Hook/build coverage plus explicit runtime gap without hardware |
-| Web, Chrome | WASM CPU and WebGPU separately | Browser CPU/GPU with Web-compatible model | CI WASM; owned Mac/Pixel real browser GPU |
-| Web, Safari/iPadOS | WASM and WebGPU when exposed | Browser runtime capability-dependent | Owned Apple devices; verify browser/version, secure context and memory limits |
+| Web, Chrome | WASM CPU and WebGPU separately | Browser CPU/GPU with Web-compatible model | CI WASM; Mac real browser GPU; mobile browser coverage separate |
+| Web, Safari/iPadOS | WASM and WebGPU when exposed | Browser runtime capability-dependent | Mac Safari; iPadOS browser lane remains NOT_RUN until a browser adapter or optional device run qualifies it; Firebase native XCTest is not browser evidence |
 | Web, Firefox | WASM plus explicit capability checks | Only what active browser runtime exposes | Compatibility lane; unavailable WebGPU is not a GPU pass |
 
 Quick core applies to each selected supported runtime row. Release selection
@@ -236,8 +239,8 @@ incomplete.
 
 Do not multiply every model by every device. Run representative core models on
 the device rotation; exercise affected model families and feature packs on
-selected capable owned devices. A custom manifest can add a user's model without
-silently replacing a failing standard fixture.
+selected capable Firebase devices or desktop hosts. A custom manifest can add a
+user's model without silently replacing a failing standard fixture.
 
 | Model ID | Proposed artifact | Purpose / scheduling |
 | --- | --- | --- |
@@ -245,8 +248,8 @@ silently replacing a failing standard fixture.
 | `chat-gguf` | Qwen3.5-0.8B Q4_K_M GGUF | Representative chat/thinking/tools; qualify template and semantic fixtures first |
 | `dense-state` | Qwen2.5-0.5B Q4_K_M GGUF | Dense context/state/prompt-reuse checks, targeted pack |
 | `chat-litert` | Qwen3-0.6B.litertlm, 614.24 MB | Native LiteRT core plus retained arithmetic/tokenizer diagnostics |
-| `npu-qualcomm-sm8650` | Gemma 3 1B IT, Qualcomm SM8650-specific LiteRT bundle, about 658 MB | Optional S24 NPU qualification; separate artifact from CPU/GPU models |
-| `npu-tensor-g5` | Gemma 3 1B IT, Tensor G5-specific LiteRT bundle, about 1.7 GB | Optional Pixel 10 NPU qualification; separate vendor runtime and artifact |
+| `npu-qualcomm-sm8650` | Gemma 3 1B IT, Qualcomm SM8650-specific LiteRT bundle, 4-bit per-channel, about 658 MB | Next-milestone S24 NPU qualification; separate artifact from CPU/GPU models |
+| `npu-tensor-g5` | Gemma 3 1B IT, Tensor G5-specific LiteRT bundle, 8-bit per-channel, about 1.7 GB | Next-milestone Pixel 10 NPU qualification; separate vendor runtime and artifact |
 | `tools-litert` | FunctionGemma 270M compatible LiteRT bundle | Optional native tool fixtures; verify actual template/tool support first |
 | `gemma-gguf` | Gemma 4 E2B GGUF + matching projector, about 4 GB total | Vision/audio/thinking/tools and large-memory coverage |
 | `gemma-litert-native` | Native Gemma 4 E2B LiteRT bundle, about 2.6 GB | Native multimodal pack |
@@ -414,7 +417,7 @@ and do not compare it to uncached prefill. Native initialization may be lazy:
 
 ## 8. Firebase device selection and free rotation
 
-The live `gcloud firebase test ... models list` catalog on **2026-09-16** contained
+The live `gcloud firebase test ... models list` catalog on **2026-09-17** contained
 205 Android entries (196 physical, nine virtual) and six iOS models. Counts
 include device/form-factor variants, not 196 distinct useful inference targets;
 capacity is not a reservation. The iOS catalog contained iPad 10, iPhone 8,
@@ -424,7 +427,7 @@ and [iOS](https://firebase.google.com/docs/test-lab/ios/available-testing-device
 catalog guidance.
 
 Choose for a new driver/SoC generation, CPU instruction baseline, OS boundary or
-form factor. Avoid spending routine quota duplicating the owned Pixel 9 Pro.
+form factor. Plan coverage independently of access to personal mobile devices.
 
 | Priority | Device ID / catalog OS | Added coverage | Initial cases |
 | --- | --- | --- | --- |
@@ -434,7 +437,7 @@ form factor. Avoid spending routine quota duplicating the owned Pixel 9 Pro.
 | A | iPhone SE 3 `iphonese3` / 26.3; medium capacity | Newer catalog OS on a different, older Apple device generation | Four core profiles, lifecycle and small-screen flow; retain 18.4 as optional same-model OS control |
 | B | Galaxy A05s `a05s` / API 35; low capacity | Snapdragon 680 / Adreno 610, older/budget CPU and GPU; candidate lower-ISA qualification device | GGUF CPU full + compact first; probe CPU features and selected module before claiming older-ISA coverage; GPU and LiteRT next |
 | B | iPhone 8 `iphone8` / 16.6; medium capacity | Older Apple hardware and nearest available OS to current iOS minimum 16.4 | Tiny GGUF CPU/Metal first; representative model only after memory preflight; LiteRT and resource failures explicitly recorded |
-| C | iPad 10 `ipad10` / 16.6; medium capacity | Tablet/older-OS gap if owned iPad does not cover it | Layout/lifecycle and affected native backend only |
+| A, targeted | iPad 10 `ipad10` / 16.6; medium capacity | Apple tablet and older-OS coverage without a personal iPad | GGUF Metal and LiteRT GPU core plus layout/lifecycle; CPU rows remain NOT_RUN unless separately selected |
 | C | Pixel 5 `redfin` / API 30; high capacity | Older Android OS when installation/runtime compatibility changes | Packaging/CPU core, then affected backend; different purpose from A05s ISA checks |
 
 Hardware family sources: [Lenovo Tab P12 specifications](https://psref.lenovo.com/syspool/Sys/PDF/Lenovo_Tablets/Tab_P12/Tab_P12_Spec.pdf),
@@ -456,11 +459,11 @@ These are arm64 virtual entries. Keep Android x64 coverage in a local/CI emulato
 GPU-capable virtual infrastructure does not prove a physical Adreno/Mali driver,
 device NPU, lower-ISA CPU selection or real-device memory behavior.
 
-### Optional LiteRT-LM NPU test pack
+### Next-milestone LiteRT-LM NPU test pack
 
-Add **Galaxy S24 first, then Pixel 10** after the deferred implementation and
-preflight prerequisites are complete. This is a qualification proposal, not a
-claim that Firebase or the current llamadart bundle has passed NPU inference.
+Include **Galaxy S24 first, then Pixel 10** in the next implementation and
+qualification milestone. These are planned public-llamadart NPU cases; neither
+Firebase catalog availability nor the current bundle proves NPU inference.
 Google's [LiteRT-LM NPU guide](https://developers.google.com/edge/litert/next/litert_lm_npu)
 documents SoC-specific Gemma 3 1B models for Qualcomm SM8650 and Google Tensor G5.
 The [Google Tensor SDK](https://developers.google.com/edge/tensor-sdk) remains
@@ -473,7 +476,7 @@ labelled beta; verify required SDK/model access before selecting that row.
 | Alternate | Pixel 10 Pro `blazer` / API 36 | Tensor G5, separately recorded device/OS/driver cohort | Use only if the base Pixel 10 is unavailable; snapshot reports low capacity |
 | Later | Galaxy S25 Ultra `pa3q` / API 35 or 36; OnePlus 11 `CPH2449` / API 34 | Corresponding SM8750 or SM8550 model/runtime | Optional Qualcomm-generation expansion after the first two paths work |
 
-Device/OS entries are from the 2026-09-16 Firebase catalog snapshot. Confirm the
+Device/OS entries are from the 2026-09-17 Firebase catalog snapshot. Confirm the
 actual `ro.soc.model`, ABI, OS build and driver on device, then require an exact
 manifest match before loading. S24 variants with other SoCs are not substitutes.
 See [SC-51E hardware specifications](https://www.docomo.ne.jp/support/product/sc51e/spec.html)
@@ -481,10 +484,19 @@ and [Pixel 10 Tensor G5 specifications](https://blog.google/products-and-platfor
 Catalog presence establishes access to a device, not its NPU permissions or
 working dispatch libraries inside the Test Lab app sandbox.
 
-The owned Pixel 9 Pro's Tensor G4 and the Tab P12's Dimensity 7050 are absent from
+The Pixel 9 Pro's Tensor G4 and the Tab P12's Dimensity 7050 are absent from
 the documented LLM NPU model table, so they are not positive NPU targets in this
 pack. Current llamadart Apple backends expose CPU/GPU only. Existing GPU tests
 remain useful and do not qualify any of these devices' NPUs.
+
+**Implementation still required:** the current quick profiles do not include an
+NPU model, vendor libraries or NPU execution-proof adapter. Add the two immutable
+SoC-specific profiles, dispatch-directory configuration, dependency-aware Android
+packaging, on-device identity preflight and the N01–N06 cases below. Native build
+or runtime changes belong in their owning repository before this harness consumes
+them. Export native-reference and public-Dart results through the same result
+contract, with distinct path identities. Test missing dependencies, incompatible
+manifests, absent proof and CPU fallback locally before submitting the APK.
 
 **Preflight before spending a device execution:**
 
@@ -537,11 +549,13 @@ a crash or initialization state cannot conceal the difference. In a first smoke,
 stop before the Dart cloud submission if the native control cannot initialize;
 retain the unspent quota and record Dart qualification as NOT_RUN.
 
-Append S24 on day 5 and Pixel 10 on day 6 of the proposed rotation: **six optional
-executions over two additional quota days**, bringing core plus this initial NPU
-pack to 22 executions across at least six days. This stays below four planned
-physical executions/day and preserves the fifth daily slot for an explicit
-diagnostic rerun. Do not add NPU to an already-full four-profile core day.
+Append S24 on day 5 and Pixel 10 on day 6 of the proposed rotation: **six NPU
+qualification executions over two additional quota days**, bringing core plus
+this initial NPU pack to 22 executions across at least six days. The targeted
+iPad row on day 7 brings the initial mobile selection to **24 executions over
+at least seven quota days**. This stays within four planned physical executions/day
+and preserves the fifth daily slot for an explicit diagnostic rerun. Do not add
+NPU to an already-full four-profile core day.
 Further repetitions, alternate devices, or artifact experiments require extra
 quota days; no automatic retries or billing upgrade.
 
@@ -580,12 +594,18 @@ billing or creating projects to bypass the allowance.
 | 2 | Tab P12 | Same four profiles = 4 |
 | 3 | iPhone 16 Pro | GGUF CPU, GGUF Metal, LiteRT CPU, LiteRT GPU = 4 |
 | 4 | iPhone SE 3 / 26.3 | Same four profiles = 4 |
+| 5 | S24 / SM8650 | Native NPU reference, public llamadart NPU, compatible CPU semantic control = 3, after NPU preflight |
+| 6 | Pixel 10 / Tensor G5 | Same three NPU qualification/control profiles = 3, after NPU preflight |
+| 7 | iPad 10 / 16.6 | GGUF Metal and LiteRT GPU core, each with tablet layout/lifecycle = 2 |
 
-This proposed core rotation takes **16 executions across at least four quota
-days**. It qualifies those selected rows only; it is not the complete supported
-platform/release matrix. Older-device, CPU full/compact, OpenCL, NPU and large
-feature-pack executions extend the rotation on additional days. Do not spend the
-reserved rerun automatically. For a narrow runtime change, run its CPU/GPU pair
+The four-device CPU/GPU core takes **16 executions across at least four
+quota days**; including NPU and the targeted iPad checks takes **24 executions
+across at least seven quota days**. Missing NPU prerequisites defer those rows
+with an explicit NOT_RUN reason; they do not require a personal device or block
+independent CPU/GPU checks. This qualifies selected rows only, not the complete
+supported platform/release matrix. Older-device, CPU full/compact, OpenCL and
+large feature-pack executions extend the rotation on additional days. Do not
+spend the reserved rerun automatically. For a narrow runtime change, run its CPU/GPU pair
 on two relevant devices in one day instead of all four profiles on one device.
 
 Before dispatch, produce a local selection summary with the exact case/model
@@ -599,10 +619,11 @@ A LiteRT-only follow-up across the same four core devices therefore needs eight
 CPU/GPU executions over at least two quota days, rather than sixteen for both
 runtimes. This saves runs by selecting scope, not by claiming fresh GGUF evidence.
 
-Use the owned Pixel/Mac/iPad for frequent checks and stable performance baselines.
-Run Firebase on native pin/backend/packaging changes and release candidates, not
-on every documentation or pure-Dart PR. Select virtual packaging cases only when
-needed and count them against the shared ten/day limit.
+Use the Mac and free CI for frequent checks. Run Firebase as the primary mobile
+lane on native pin/backend/packaging changes and release candidates, not on every
+documentation or pure-Dart PR. Personal Pixel/iPad runs are optional diagnostics
+and never a prerequisite to lab submission. Select virtual packaging cases only
+when needed and count them against the shared ten/day limit.
 
 The initial five pilot submissions finished (one intentionally cancelled).
 The last billing check on 2026-09-16 had `billingEnabled: false`; it needed no GCP
@@ -911,10 +932,12 @@ a device ranking. Native compute timing excludes work included in the public
 stream. Build modes also differ. Do not put these values in a comparable-platform
 leaderboard or infer LiteRT TPS from them.
 
-Performance is initially informational. Establish stable owned-device baselines
-before setting thresholds. A candidate alert is a >20% median slowdown with
-matching provenance, but three lab samples alone cannot prove a regression:
-confirm locally or in another quota-approved run. Correctness/crashes are
+Performance is initially informational. Establish repeatable per-device/model
+Firebase cohorts, recording OS, driver, memory and available thermal information,
+before setting thresholds; matching catalog IDs alone do not ensure equal device
+conditions. A candidate alert is a >20% median slowdown with matching provenance,
+but three lab samples alone cannot prove a regression: confirm in another
+quota-approved run, or optionally locally. Correctness/crashes are
 blocking independently of speed. No throughput threshold hides a known failure.
 
 ## 12. Implementation sequence and completion criteria
@@ -925,7 +948,8 @@ blocking independently of speed. No throughput threshold hides a known failure.
    Reuse the three pilot issues to investigate failures separately from harness work.
 2. Implement the smallest shared suite, desktop runner and mobile wrapper, plus
    immutable manifests and incremental JSON. Integrate existing matrix/E2E
-   discovery. Validate on owned Mac/Pixel/iPad before consuming cloud quota.
+   discovery. Validate the shared suite on the Mac and test provider failure paths
+   locally before consuming cloud quota; no personal phone or tablet is required.
 3. Add separate Android/iOS backend profiles, local preflight, artifact retrieval
    and terminal-state reconciliation. Test the Firebase adapter with fake
    provider responses for uncertain submission, duplicate invocation, quota
@@ -942,10 +966,14 @@ blocking independently of speed. No throughput threshold hides a known failure.
    owner. Verify that unresolved cleanup blocks another VM. A separately
    authorized short GCE run must prove upload, execution, result retrieval and
    resource deletion before broad CUDA coverage; unavailable credit defers this
-   optional lane without blocking the owned-device/Firebase harness.
-6. Run the selected Firebase rotation, then older-device CPU full/compact and
-   feature packs as quota permits. Qualify the optional S24 then Pixel 10 NPU
-   pack only after its model/library preflight and native reference succeed.
+   optional lane without blocking the Mac/CI/Firebase harness.
+6. **Next mobile milestone:** prove current Android/iOS bundle submission and
+   result retrieval in Firebase. Implement the NPU profiles, vendor packaging,
+   native-reference adapter and execution evidence alongside the CPU/GPU
+   qualification work. Qualify S24 then Pixel 10 NPU only after model/library
+   preflight and each native reference succeed. Complete the selected Firebase
+   rotation including targeted iPad checks, then older-device CPU full/compact
+   and feature packs as quota permits.
    Fill every supported-platform row with exact
    PASS/FAIL/ERROR/UNSUPPORTED/NOT_RUN evidence; never equate selected rotation
    completion with whole-release qualification.
