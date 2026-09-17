@@ -50,7 +50,8 @@ critical feature packs with representative locked models before broadening devic
   Android instrumentation and iOS XCTest invoke the same controller.
 - `tool/testing/validation.dart`: build, local, report, npu-preflight, plan, run, status, collect,
   reconcile, cleanup. Provider helpers live beside it under `tool/testing/validation/`.
-- `.github/workflows/validation_bundles.yml`: manual build-only workflow. No cloud
+- `.github/workflows/validation_bundles.yml`: build-only workflow on relevant PR
+  changes (tiny CPU profile) or explicit manual selection. No cloud
   credentials, model runs, VM creation or Firebase submission in CI.
 - `.dart_tool/validation/`: ignored local models, bundles and journals. Do not
   commit weights, signing files, account configs, results or credentials.

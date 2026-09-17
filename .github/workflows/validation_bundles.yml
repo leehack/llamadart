@@ -1,6 +1,20 @@
 name: Validation bundles
 
 on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/validation_bundles.yml
+      - packages/llamadart_validation/**
+      - tool/testing/validation.dart
+      - tool/testing/validation/**
+      - example/chat_app/lib/validation_main.dart
+      - example/chat_app/lib/validation/**
+      - example/chat_app/integration_test/validation_test.dart
+      - example/chat_app/android/**
+      - example/chat_app/ios/**
+      - example/chat_app/pubspec.*
+      - scripts/build_chat_app_web.sh
   workflow_dispatch:
     inputs:
       profile:
@@ -36,7 +50,7 @@ jobs:
         with:
           python-version: '3.12'
       - run: dart pub get
-      - run: dart run tool/testing/validation.dart build --target desktop --profile ${{ inputs.profile }} --out .dart_tool/validation/bundle
+      - run: dart run tool/testing/validation.dart build --target desktop --profile ${{ inputs.profile || 'tiny-gguf-cpu' }} --out .dart_tool/validation/bundle
       - name: Preserve executable permissions in transport
         run: tar -czf .dart_tool/validation/bundle.tar.gz -C .dart_tool/validation bundle
       - uses: actions/upload-artifact@v6
@@ -66,7 +80,7 @@ jobs:
           distribution: temurin
           java-version: '17'
       - run: dart run tool/prepare_workspace.dart
-      - run: dart run tool/testing/validation.dart build --target ${{ matrix.target }} --profile ${{ inputs.profile }} --out .dart_tool/validation/bundle
+      - run: dart run tool/testing/validation.dart build --target ${{ matrix.target }} --profile ${{ inputs.profile || 'tiny-gguf-cpu' }} --out .dart_tool/validation/bundle
       - name: Preserve executable permissions in transport
         run: tar -czf .dart_tool/validation/bundle.tar.gz -C .dart_tool/validation bundle
       - uses: actions/upload-artifact@v6

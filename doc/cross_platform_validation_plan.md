@@ -68,8 +68,10 @@ CPU/GPU harness remains usable while those additions are implemented.
 ### Proposed repository layout
 
 Keep the suite in the **llamadart repository**, next to the package it validates.
-Use one private Dart package named `llamadart_validation`; the paths below are
-planned, not implemented:
+Use one private Dart package named `llamadart_validation`. The package, adapters,
+commands and workflow below now exist. The nested `cases/`, `manifest/` and
+`results/` directories remain a possible organization as the catalog grows;
+the initial implementation keeps these responsibilities in small `lib/src/` files:
 
 ```text
 packages/llamadart_validation/
@@ -219,9 +221,9 @@ or selectable backend is not inference qualification.
 | iOS x86_64 simulator | CPU / available Metal | Negative packaging contract: no LiteRT artifact | Intel host if available, otherwise NOT_RUN |
 | macOS arm64 | CPU, Metal | CPU, GPU | Owned Mac if matching architecture; record actual hardware |
 | macOS x64 | CPU, available Metal | CPU; GPU unsupported by documented x64 bundle | Available free runner or Intel host; GPU gaps explicit |
-| Linux x64 | CPU; CUDA, Vulkan, HIP/BLAS targeted | CPU; GPU unsupported until qualified/enabled | Free CI CPU; GPU only on available hardware or separately verified credit-covered VM |
+| Linux x64 | CPU; CUDA, Vulkan, HIP/BLAS targeted | CPU; explicit GPU through Vulkan with `0.17.0-5` | Free CI CPU; GPU requires a compatible driver and suite execution proof |
 | Linux arm64 | CPU; Vulkan/BLAS targeted | CPU | Available arm64 runner/hardware; no x64 emulation as arm64 proof |
-| Windows x64 | CPU; CUDA, Vulkan/BLAS targeted | CPU; GPU unsupported until qualified/enabled | Free CI CPU, accessible Windows hardware; CUDA requires actual NVIDIA GPU |
+| Windows x64 | CPU; CUDA, Vulkan/BLAS targeted | CPU; explicit GPU through D3D12 with `0.17.0-5` | Free CI CPU, accessible Windows hardware; GGUF CUDA requires actual NVIDIA GPU |
 | Windows arm64 | CPU, Vulkan/BLAS where available | Negative artifact contract unless support is added | Hook/build coverage plus explicit runtime gap without hardware |
 | Web, Chrome | WASM CPU and WebGPU separately | Browser CPU/GPU with Web-compatible model | CI WASM; Mac real browser GPU; mobile browser coverage separate |
 | Web, Safari/iPadOS | WASM and WebGPU when exposed | Browser runtime capability-dependent | Mac Safari; iPadOS browser lane remains NOT_RUN until a browser adapter or optional device run qualifies it; Firebase native XCTest is not browser evidence |
@@ -1093,3 +1095,34 @@ the journal cannot declare its own exemptions. The next suite acceptance step is
 exact-head CI build and portable execution evidence, followed by the missing
 critical feature packs. Original-model diagnostics remain private local evidence,
 not an extra heavyweight dependency in the default core or CI.
+
+## 13. Remaining work checklist (2026-09-17)
+
+GitHub tracker: [#514](https://github.com/leehack/llamadart/issues/514).
+
+This is the remaining scope from the full plan, not a claim that all rows belong
+in the first PR. The initial PR delivers the quick core, reports, portable build
+and cloud adapters, NPU diagnostics and the discovered system-message correction.
+Its CI and independent review must finish before merge readiness. Device/model
+failures remain visible and are investigated separately from harness completion.
+
+| ID | Remaining work | Completion evidence |
+| --- | --- | --- |
+| R01 | Qualify the PR and bundle workflow on Linux x64, Windows x64 and macOS; build Android APK/test APK, Web and iOS inputs | Exact-head CI green, extracted bundles executable outside a checkout, checksums/manifests retained; independent high-risk review before ready. iOS physical signing remains on the Mac. |
+| R02 | Complete C05 thinking/budgets, C07 tool auto/required/none and continuation, C10 stop-marker semantics, C11 batching parity and C12 guard/recovery subcases | Positive fixtures plus typed negative/version-skew checks; `release` no longer emits the five placeholder NOT_RUN records for supported selected rows. Extend C09 to its second lifecycle cycle and C02 to separate Unicode generation. |
+| R03 | Implement change-focused selection and versioned case/feature metadata | One catalog selects affected cases without duplicating suites; exported omitted/unsupported obligations remain explicit. Prompts, tools, media hashes, predicates and case versions are reproducible assets rather than undocumented overrides. |
+| R04 | Add the eleven targeted packs in section 6 | Structured output; state/prompt reuse; embeddings; vision; audio understanding; ASR; TTS; LoRA; speculative decoding; runtime controls; app/device/browser lifecycle. Reuse existing registered tests and keep large models opt-in. |
+| R05 | Lock and reference-qualify pack models/media | Dense Qwen2.5, FunctionGemma, Gemma 4 GGUF/native/Web bundles, EmbeddingGemma, Qwen3-ASR, Moonshine, Qwen3-TTS and needed adapters/drafts/projectors; exact revisions/hashes/access and memory limits. Current quick/NPU model locks do not qualify these candidates. |
+| R06 | Finish Firebase core device rotation | Isolated GGUF CPU/GPU and LiteRT CPU/GPU on S24, Tab P12, iPhone 16 Pro and SE 3; targeted iPad 10 GPU runs. Existing pilots are partial evidence, not a completed rotation. A05s full/compact, iPhone 8 and Pixel 5 remain later compatibility rows. |
+| R07 | Complete S24 NPU qualification, then Tensor G5 | Resolve #513; add N02 Unicode generation/native tokenizer control, compatible S24 CPU Gemma with verified private model transfer, and paired native/public comparison. Require coherent N03 outputs and N04 lifecycle evidence; retain hybrid/unknown placement limits. Pixel 10 needs installed-app vendor-kit/SoC/probe and native/public/CPU runs; a compiled dispatch library is not execution proof. |
+| R08 | Fill remaining platform/packaging rows | Android arm64 virtual 4K/16K and separate backcompat, Android x64 emulator, Apple simulators, Linux arm64, Windows arm64, macOS x64 as available; full/compact and lower-ISA physical coverage. Record unavailable hardware explicitly. |
+| R09 | Qualify browser and GPU evidence paths | LiteRT GPU adapters with actual driver/delegate proof; Chrome WASM/WebGPU, Safari and Firefox capability rows; a genuine LiteRT Web model bundle and negative native-only contracts. Native Firebase XCTest does not qualify iPadOS Safari. |
+| R10 | Exercise the GCE lifecycle and desktop CUDA runs | One bounded Linux then Windows GGUF/CUDA run proving upload, execution, retrieval and deletion of instance/disks; inspect actual NVIDIA execution. Recheck current credit before provisioning. LiteRT desktop GPU is Vulkan/D3D12, not CUDA. No available credit means NOT_RUN, not personal charges. |
+| R11 | Complete the required evidence envelope and missing measurements | Structured preparation failures before a model manifest; explicit provenance/availability for artifact and companion hashes, device memory/page size, cold first response, prefill/native TTFT and first-thinking timing where observable. Keep unsupported counters null; add ASR/TTS WER/real-time factor with their packs. |
+| R12 | Add aggregate and historical reporting after core evidence is stable | Paired run comparison, device/backend coverage heatmap, comparable-cohort filters, trend and quota views. Existing per-run JSON/JUnit/CSV/HTML and three-sample TPS are usable; a dashboard or performance threshold is not required for the first PR. |
+
+Prioritize R01, then bounded R02/R03 work. R06/R07 use only freshly verified free
+Firebase allowance or covered credit; never dispatch the entire rotation at once.
+R10 is optional while credit is unavailable. R04/R05 are change-focused feature
+coverage, not every-model-by-every-device permutations. R12 visual polish comes
+after the mandatory evidence, not before correctness.
