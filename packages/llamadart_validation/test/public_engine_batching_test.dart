@@ -71,9 +71,12 @@ class CapturingEngine implements LlamaEngine {
       );
     }
     yield chunk(LlamaCompletionChunkDelta(), finish: 'stop');
-    if (lateContent) yield chunk(LlamaCompletionChunkDelta(content: 'late'));
-    if (duplicateFinish)
+    if (lateContent) {
+      yield chunk(LlamaCompletionChunkDelta(content: 'late'));
+    }
+    if (duplicateFinish) {
       yield chunk(LlamaCompletionChunkDelta(), finish: 'stop');
+    }
   }
 
   // Optional timing/tokenizer reads are deliberately unavailable in this double.
