@@ -11,6 +11,7 @@ import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 import '../../../tool/testing/validation/bundle.dart';
+import '../../../tool/testing/validation/collect.dart';
 import '../../../tool/testing/validation/process.dart';
 import '../../../tool/testing/validation/remote.dart';
 import '../../../tool/testing/validation/runtime_bundle.dart';
@@ -234,6 +235,81 @@ void main() {
         delay: (_) async {},
         assess: (_, _) async => pass,
       );
+
+  test(
+    'collected qualification binds every uploaded runtime identity',
+    () async {
+      final identity = <String, dynamic>{
+        'source_commit': 'a' * 40,
+        'source_dirty': false,
+        'hook_sha256': 'b' * 64,
+        'native_tag': 'v0.4.0',
+        'litert_tag': '0.17.0-5',
+        'bridge_tag': 'v0.1.43',
+      };
+      await writeBundleManifest(bundle, {'target': 'android', ...identity});
+      final profile = jsonDecode(
+        File(p.join(bundle.path, 'profile.json')).readAsStringSync(),
+      );
+      final run = Directory(p.join(scratch.path, 'collected'))..createSync();
+      final pulled = Directory(p.join(run.path, 'remote-results'))
+        ..createSync();
+      File(
+        p.join(pulled.path, 'events.jsonl'),
+      ).writeAsStringSync(jsonEncode({'type': 'manifest', 'profile': profile}));
+      Future<bool> assess(Map<String, dynamic> environment) =>
+          assessCollectedRun(
+            Directory.current.path,
+            plan(),
+            run,
+            execute: (executable, arguments, {directory, timeout}) async {
+              expect(arguments, contains('bin/report.dart'));
+              File(p.join(arguments[2], 'results.json')).writeAsStringSync(
+                jsonEncode({
+                  'manifest': {'environment': environment, 'profile': profile},
+                  'summary': {'qualified': true},
+                }),
+              );
+              return const CommandResult(0, '', '');
+            },
+          );
+      expect(await assess(identity), true);
+      for (final key in identity.keys) {
+        expect(
+          await assess({
+            ...identity,
+            key: key == 'source_dirty' ? true : 'different',
+          }),
+          false,
+          reason: key,
+        );
+        expect(await assess({...identity}..remove(key)), false, reason: key);
+      }
+    },
+  );
+
+  test(
+    'source provenance rejects local pub overrides before reading Git',
+    () async {
+      File(
+        p.join(scratch.path, 'pubspec_overrides.yaml'),
+      ).writeAsStringSync('dependency_overrides: {}');
+      await expectLater(
+        readValidationProvenance(
+          scratch.path,
+          execute: (executable, arguments, {directory, timeout}) async =>
+              throw StateError('Git must not run'),
+        ),
+        throwsA(
+          isA<StateError>().having(
+            (error) => '$error',
+            'reason',
+            contains('local pub overrides'),
+          ),
+        ),
+      );
+    },
+  );
 
   RemotePlan blazePlan({String id = 'qa-one', String funding = 'credit'}) {
     final json =

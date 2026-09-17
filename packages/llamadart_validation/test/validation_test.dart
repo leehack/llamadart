@@ -170,6 +170,11 @@ Future<({ValidationReport report, List<Map<String, dynamic>> events})> run(
   ).run(
     'model.litertlm',
     runId: 'test-run',
+    preparation: {
+      'verified': true,
+      'sha256': (selected ?? profile()).modelHash,
+      'bytes': (selected ?? profile()).model['bytes'],
+    },
     environment: {
       'source_commit': List.filled(40, 'a').join(),
       'source_dirty': false,
@@ -778,6 +783,54 @@ void main() {
         ).qualified,
         false,
       );
+    },
+  );
+  test('model preparation must prove the exact locked hash and size', () async {
+    final result = await run(FakeEngine());
+    expect(result.report.qualified, true);
+    final valid = result.events.first['preparation'] as Map;
+    for (final preparation in [
+      null,
+      {},
+      {...valid, 'verified': false},
+      {...valid, 'sha256': '0' * 64},
+      {...valid, 'bytes': 1},
+      {...valid, 'bytes': '${valid['bytes']}'},
+    ]) {
+      final events = (jsonDecode(jsonEncode(result.events)) as List)
+          .cast<Map>();
+      events.first['preparation'] = preparation;
+      final report = ValidationReport.parse(events.map(jsonEncode).join('\n'));
+      expect(report.assertionsPassed, true);
+      expect(report.qualified, false);
+      expect(report.provenanceProblems, contains(contains('model hash')));
+    }
+  });
+  test(
+    'desktop payload verification is required even for complete assertions',
+    () async {
+      final result = await run(FakeEngine());
+      final environment = result.events.first['environment'] as Map;
+      environment['os'] = 'macos';
+      ValidationReport report() =>
+          ValidationReport.parse(result.events.map(jsonEncode).join('\n'));
+      expect(report().qualified, false);
+      environment['runtime_payload_verified'] = true;
+      expect(report().qualified, false);
+      environment['runtime_bundle_sha256'] = 'a' * 64;
+      expect(report().qualified, true);
+      environment['runtime_payload_verified'] = false;
+      expect(report().qualified, false);
+      environment.remove('os');
+      environment['platform'] = 'macOS';
+      expect(
+        report().provenanceProblems,
+        contains(contains('Desktop runtime')),
+      );
+      environment['web'] = true;
+      environment['platform'] = 'linux';
+      environment['bridge_tag'] = 'v0.1.43';
+      expect(report().provenanceProblems, isEmpty);
     },
   );
   test(

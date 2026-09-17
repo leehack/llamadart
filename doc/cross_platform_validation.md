@@ -21,8 +21,8 @@ history qualification remains failed; Pixel 10 hardware execution is NOT_RUN.
 The quick diagnostic core is usable; the full platform/release suite is incomplete.
 Model-backed Mac, browser and Firebase runs have exposed actual product failures,
 and the reports retain failed assertions alongside useful timing and device evidence.
-As of 2026-09-17, the local harness has 73 passing model-free tests and the provider
-and input controls have 44. Draft [PR #515](https://github.com/leehack/llamadart/pull/515)
+As of 2026-09-17, the local harness has 82 passing model-free tests and the provider
+and input controls have 46. Draft [PR #515](https://github.com/leehack/llamadart/pull/515)
 now runs the portable build workflow on relevant changes. Follow its current CI
 for target-specific build results; build-only success is not model execution.
 Native GGUF Unicode corruption was fixed in merged
@@ -36,7 +36,7 @@ remain historical evidence; reruns must identify the fixed source commit.
 | Portable apps | Local macOS bundle and Android/iOS/Web paths exercised | Exact-head Linux/Windows/macOS CI builds and portable execution on each target; iOS signing remains local |
 | Cloud lifecycle | Firebase submission, retrieval and cleanup exercised; Firebase/GCE failure controls tested locally | Real GCE upload/run/retrieve/delete lifecycle when credit and a run are authorized |
 | Accelerators | GGUF native-log proof and S24 per-generation NPU dispatch evidence | LiteRT GPU/Web proof, Pixel 10 NPU and the remaining device rotation |
-| Critical feature packs | Release selection preserves missing obligations as NOT_RUN | Thinking, tools, stop sequences, batching, guards, multimodal, speech and embeddings |
+| Critical feature packs | Release selection preserves missing obligations as NOT_RUN | Thinking, tools, stop sequences, remaining batching contracts, guards, multimodal, speech and embeddings |
 
 Do not weaken semantic predicates to obtain a green run. The Gemma original-model
 control below passes the strict history predicate; the LiteRT results remain failed.
@@ -66,10 +66,22 @@ Use Flutter **3.47.1**, its Dart executable, and Python 3.10+ (Windows: `python`
 other hosts: `python3`). Android uses the installed Android SDK/JDK; XCTest needs
 Xcode, configured local signing and the owned Mac. gcloud is needed only for
 provider operations. Normal chat-app behavior is unchanged.
-The `local` command records source/runtime provenance automatically. Plain
-`flutter run` is useful for diagnostics, but an app without the builder's identity
-defines cannot qualify. Dirty builds retain all assertion results and metrics;
-qualification requires a clean committed source and known runtime identities.
+The `local` command records source/runtime pins for diagnostics. Desktop JIT and
+Flutter desktop runs cannot qualify without verified portable payload evidence;
+use the built CLI bundle for desktop qualification. Plain `flutter run` without
+the builder's identity defines also remains diagnostic. Dirty builds retain all
+assertion results and metrics; qualification requires clean committed source,
+known runtime identities, and verified model hash/size evidence matching the lock.
+
+Desktop launch verifies the bundle inventory, runtime files and environment,
+rejects runtime overrides and unlisted loader sidecars, then anchors native cache
+discovery to the bundle directory. Caller model/cache/output paths retain their
+original meaning. `runtime_payload_verified` and `runtime_bundle_sha256` record
+this check separately from accelerator placement. The builder rejects local pub
+overrides; explicit native library overrides are rejected by the public adapter.
+Dart tooling's JIT library search paths remain usable only for diagnostics.
+This is payload integrity verification, not code signing or a signature over an
+untrusted producer's report.
 
 ## Quick model profiles and cases
 
@@ -559,7 +571,9 @@ run `status`, `collect` and `cleanup`. Recovery commands never submit a replacem
 `cleanup.json` stores verified/unknown cleanup. `remote-summary.json` is the
 combined verdict: provider success **and** validated Dart assertions/provenance
 **and** complete retrieval **and** verified cleanup. Test-only report success
-cannot override provider failure or unresolved infrastructure.
+cannot override provider failure or unresolved infrastructure. Collection also
+matches the source commit, cleanliness, hook hash and all runtime pins against
+the uploaded bundle; desktop evidence must match its bundle manifest hash.
 
 Each run exports `events.jsonl`, `manifest.json`, `results.json`, `junit.xml`,
 `samples.csv`, and `summary.html`. HTML has case status/output, native decode TPS,
@@ -576,6 +590,10 @@ an event flag cannot waive it. The current catalog grants no expected-unsupporte
 exemptions, so a producer cannot qualify a skipped case by setting
 `expected_unsupported: true`. Old reports are evidence snapshots; revalidation
 with a newer catalog must preserve the original and write a separate result.
+Reimport requires `preparation.verified == true` and the exact model SHA256/byte
+size from the profile. Historical desktop journals without runtime payload proof
+retain their assertion results but are incomplete under the current qualification
+gate; do not copy new verification flags into old journals.
 
 Explicit CPU rows reject contradictory GPU diagnostics. GGUF accelerator reports
 require matching backend diagnostics plus positive native tensor offload and

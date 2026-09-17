@@ -19,8 +19,8 @@ See [the full plan](../../doc/cross_platform_validation_plan.md) for subsequent
 platform and feature qualification. A quick run does not qualify a release.
 
 `assets/profiles/` locks each model URL/revision/SHA256/size and inference
-configuration. `lib/` has no Flutter or filesystem dependency; `lib/io.dart`
-is the native filesystem adapter. `bin/run.dart` and `bin/report.dart` are the
+configuration. `lib/llamadart_validation.dart` is the platform-neutral suite; conditional native
+adapters and `lib/io.dart` handle filesystem/runtime checks. `bin/run.dart` and `bin/report.dart` are the
 CLI entrypoints. Flutter uses the package's profile assets and shared runner.
 Native wrappers persist JSONL per event; reports always derive from that journal.
 
@@ -32,7 +32,12 @@ qualification still fails; Pixel 10 hardware execution remains NOT_RUN.
 
 Exit 0 means this selected run qualified, 1 means failed/incomplete.
 Unknown/dirty source provenance, missing counters, unknown backend placement, skipped mandatory cases and missing
-records remain incomplete. `release` selection deliberately records unimplemented
+records remain incomplete. Imported model preparation must prove the locked
+SHA256 and byte size. Desktop qualification additionally requires the portable
+CLI's verified runtime inventory and bundle manifest hash; JIT remains diagnostic.
+The CLI rejects runtime overrides, validates its environment and runtime payload,
+and anchors native discovery to the bundle. Older desktop journals without this
+proof preserve assertions but no longer qualify when reimported. `release` selection deliberately records unimplemented
 feature packs as NOT_RUN until their fixtures and wrappers are qualified.
 The reporter derives mandatory cases, effective settings and accelerator-proof
 requirements from the validated profile. Self-declared inventory, rehashed

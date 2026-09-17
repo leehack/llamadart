@@ -237,7 +237,26 @@ class ValidationReport {
         ? (manifest['profile'] as Map)['runtime']
         : null;
     final tag = environment[runtime == 'litert' ? 'litert_tag' : 'native_tag'];
+    final model = (manifest['profile'] as Map?)?['model'] as Map? ?? {};
+    final preparation = manifest['preparation'] is Map
+        ? manifest['preparation'] as Map
+        : const {};
+    final desktop =
+        environment['web'] != true &&
+        ['macos', 'linux', 'windows'].contains(
+          '${environment['os'] ?? environment['platform']}'.toLowerCase(),
+        );
     return [
+      if (preparation['verified'] != true ||
+          preparation['sha256'] != model['sha256'] ||
+          preparation['bytes'] != model['bytes'])
+        'Verified model hash and byte size do not match the profile lock',
+      if (desktop &&
+          (environment['runtime_payload_verified'] != true ||
+              !RegExp(
+                r'^[a-f0-9]{64}$',
+              ).hasMatch('${environment['runtime_bundle_sha256']}')))
+        'Desktop runtime payload was not verified from a portable bundle',
       if (!RegExp(
         r'^[a-f0-9]{40}$',
       ).hasMatch('${environment['source_commit']}'))

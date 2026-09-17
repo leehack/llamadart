@@ -5,6 +5,11 @@ import 'dart:ffi' show Abi;
 import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
 
+// The root orchestrator shares policy with the private, unpublished harness;
+// adding a root package dependency would create a dependency cycle.
+// ignore: avoid_relative_lib_imports
+import '../../../packages/llamadart_validation/lib/src/runtime_environment.dart';
+
 import 'process.dart';
 import 'npu.dart';
 import 'runtime_bundle.dart';
@@ -14,6 +19,18 @@ Future<Map<String, dynamic>> readValidationProvenance(
   String root, {
   CommandExecutor execute = executeCommand,
 }) async {
+  requireValidationRuntimeEnvironment();
+  for (final directory in [
+    '',
+    'packages/llamadart_validation',
+    'example/chat_app',
+  ]) {
+    if (File(p.join(root, directory, 'pubspec_overrides.yaml')).existsSync()) {
+      throw StateError(
+        'Validation builds require manifests without local pub overrides',
+      );
+    }
+  }
   final revision = await execute('git', ['rev-parse', 'HEAD'], directory: root);
   final source = revision.output.trim();
   final status = await execute('git', [
@@ -38,10 +55,6 @@ Future<Map<String, dynamic>> readValidationProvenance(
       pin('_litertLmVersion') == null ||
       bridgeTag == null) {
     throw StateError('Cannot establish runtime pins');
-  }
-  if (Platform.environment.containsKey('WEBGPU_BRIDGE_ASSETS_TAG') ||
-      Platform.environment.containsKey('WEBGPU_BRIDGE_ASSETS_REPO')) {
-    throw StateError('Validation requires the committed Web runtime assets');
   }
   return {
     'source_commit': source,

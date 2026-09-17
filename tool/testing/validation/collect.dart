@@ -147,7 +147,20 @@ Future<bool> assessCollectedRun(
 
   return generated.code == 0 &&
       (result['summary'] as Map)['qualified'] == true &&
-      (manifest['environment'] as Map?)?['source_commit'] ==
-          bundle['source_commit'] &&
+      const [
+        'source_commit',
+        'source_dirty',
+        'hook_sha256',
+        'native_tag',
+        'litert_tag',
+        'bridge_tag',
+      ].every(
+        (key) =>
+            bundle.containsKey(key) &&
+            (manifest['environment'] as Map?)?[key] == bundle[key],
+      ) &&
+      (plan.firebase ||
+          (manifest['environment'] as Map?)?['runtime_bundle_sha256'] ==
+              plan.json['bundle_sha256']) &&
       canonical(manifest['profile']) == canonical(profile);
 }

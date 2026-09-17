@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:llamadart_validation/io.dart';
 import 'package:llamadart_validation/llamadart_validation.dart';
+import 'package:llamadart_validation/src/desktop_bundle.dart';
+import 'package:llamadart_validation/src/runtime_environment.dart';
 import 'package:path/path.dart' as p;
 
 Future<void> main(List<String> args) async {
@@ -40,6 +42,50 @@ Future<void> main(List<String> args) async {
       }
       return;
     }
+    requireValidationRuntimeEnvironment();
+    final launchDirectory = Directory.current.path;
+    // Resolve caller paths before anchoring runtime discovery in the bundle.
+    for (final name in [
+      'assets',
+      'profile-file',
+      'model',
+      'cache',
+      'out',
+      'environment-file',
+    ]) {
+      if (options[name] != null) options[name] = p.absolute(options[name]!);
+    }
+    final assetRoot = p.absolute(assets);
+    final executableRoot = File(Platform.resolvedExecutable).parent.parent;
+    final bundleManifest = File(
+      p.join(executableRoot.path, 'bundle-manifest.json'),
+    );
+    final portable = bundleManifest.existsSync();
+    final Map<String, dynamic> provenance;
+    if (portable) {
+      provenance = await verifyDesktopValidationBundle(executableRoot);
+      if (options['environment-file'] case final requested?) {
+        final supplied = File(requested).readAsStringSync();
+        final bundled = File(
+          p.join(executableRoot.path, 'environment.json'),
+        ).readAsStringSync();
+        if (supplied != bundled) {
+          throw const FormatException('Use the bundled desktop environment');
+        }
+      }
+      // LiteRT searches CWD before executable-relative caches. The verified
+      // bundle must be first, regardless of where the user launched the CLI.
+      Directory.current = executableRoot;
+    } else {
+      if (const bool.fromEnvironment('dart.vm.product')) {
+        throw const FormatException('Portable validation bundle is missing');
+      }
+      provenance = {
+        if (options['environment-file'] case final path?)
+          ...jsonDecode(File(path).readAsStringSync()) as Map<String, dynamic>,
+        'runtime_payload_verified': false,
+      };
+    }
     final profileId = options['profile'] ?? 'tiny-gguf-cpu';
     if (!RegExp(r'^[a-z][a-z0-9-]{0,63}$').hasMatch(profileId)) {
       throw const FormatException('Invalid profile id');
@@ -48,7 +94,7 @@ Future<void> main(List<String> args) async {
       jsonDecode(
             File(
               options['profile-file'] ??
-                  p.join(assets, 'profiles', '$profileId.json'),
+                  p.join(assetRoot, 'profiles', '$profileId.json'),
             ).readAsStringSync(),
           )
           as Map<String, dynamic>,
@@ -57,30 +103,26 @@ Future<void> main(List<String> args) async {
         options['run-id'] ??
         'local-${DateTime.now().toUtc().microsecondsSinceEpoch}';
     final directory = Directory(
-      options['out'] ?? p.join('.dart_tool', 'validation', 'runs', runId),
+      options['out'] ??
+          p.join(launchDirectory, '.dart_tool', 'validation', 'runs', runId),
     );
     final journal = FileValidationJournal(directory);
     try {
       final prepared = await prepareModel(
         profile,
         Directory(
-          options['cache'] ?? p.join('.dart_tool', 'validation', 'model-cache'),
+          options['cache'] ??
+              p.join(
+                launchDirectory,
+                '.dart_tool',
+                'validation',
+                'model-cache',
+              ),
         ),
         suppliedPath: options['model'],
       );
-      final bundledEnvironment = File(
-        p.join(
-          File(Platform.resolvedExecutable).parent.parent.path,
-          'environment.json',
-        ),
-      );
-      final environmentPath =
-          options['environment-file'] ??
-          (bundledEnvironment.existsSync() ? bundledEnvironment.path : null);
       final environment = <String, dynamic>{
-        if (environmentPath != null)
-          ...jsonDecode(File(environmentPath).readAsStringSync())
-              as Map<String, dynamic>,
+        ...provenance,
         'os': Platform.operatingSystem,
         'os_version': Platform.operatingSystemVersion,
         'processors': Platform.numberOfProcessors,

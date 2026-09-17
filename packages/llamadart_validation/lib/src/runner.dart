@@ -6,6 +6,7 @@ import 'package:llamadart/llamadart.dart';
 import 'case_catalog.dart';
 import 'manifest.dart';
 import 'npu_evidence.dart';
+import 'runtime_environment.dart';
 
 /// Sink implemented by file, browser and Firebase host adapters.
 typedef ValidationEventSink = Future<void> Function(Map<String, dynamic> event);
@@ -47,6 +48,7 @@ class PublicValidationEngine implements ValidationEngine {
 
   @override
   Future<void> load(String location, ValidationProfile profile) async {
+    requireValidationRuntimeEnvironment();
     profile.requireRunnable(verifiedAndroidNpuHost: npu != null);
     if (_disposed) {
       _engine = _engineFactory();
