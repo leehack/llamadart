@@ -9,6 +9,20 @@ android {
     namespace = "com.example.llamadart_chat_example"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = "28.2.13676358"
+    // The maintained bundle builder provides an isolated, verified staging tree.
+    val npuStage = System.getenv("LLAMADART_VALIDATION_NPU_STAGE")
+    if (npuStage != null) {
+        sourceSets.getByName("main") {
+            assets.srcDir("$npuStage/assets")
+            jniLibs.srcDir("$npuStage/jniLibs")
+            manifest.srcFile("$npuStage/AndroidManifest.xml")
+        }
+        packaging.jniLibs.useLegacyPackaging = true
+        packaging.jniLibs.keepDebugSymbols += setOf(
+            "**/libLiteRtDispatch_*.so", "**/libLlamadartVendor_*.so", "**/libQnn*.so",
+        )
+        androidResources.noCompress += "litertlm"
+    }
 
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

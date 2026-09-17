@@ -11,8 +11,10 @@ Pixel and iPad are optional debugging devices; the Mac remains the local build,
 iOS signing and desktop/browser test host. The next milestone includes Firebase
 NPU qualification on Galaxy S24 (Qualcomm SM8650) and Pixel 10 (Tensor G5).
 The two SoC-specific model locks and offline input preflight are implemented.
-Installed-app vendor packaging and execution-proof integration remain required;
-the current bundles do not yet qualify NPU inference.
+The Android builder now embeds verified model/vendor inputs, and the installed
+app checks its SoC before loading. Public-Dart and direct-native control paths
+capture per-generation dispatch evidence. Neither path has run on an NPU device
+yet; hardware qualification remains NOT_RUN.
 
 ## Source and generated artifacts
 
@@ -77,16 +79,16 @@ in the journal. The raw tiny fixture does not claim chat capability.
 
 Thinking, tool calls, stop-marker fixtures, batching, expanded unsupported guards,
 multimodal/speech/embedding packs and full browser/device rotation remain
-subsequent qualification work. NPU dispatch-directory configuration,
-SoC checks, vendor libraries and native execution evidence are the next mobile
-expansion; selecting `npu` alone cannot supply them. Selecting `release` today
+subsequent qualification work. NPU requires the verified Android packaging
+described below; selecting `npu` alone cannot supply vendor libraries or evidence.
+Selecting `release` today
 keeps those additional obligations visible as NOT_RUN and cannot pass as a
 release qualification.
 
 ## NPU input preparation
 
-`npu-qualcomm-sm8650` and `npu-tensor-g5` are **candidate locks**, not runnable
-quick profiles. Each records Gemma 3 1B IT revision
+`npu-qualcomm-sm8650` and `npu-tensor-g5` are **unqualified candidate locks**
+with opt-in Android build support. Each records Gemma 3 1B IT revision
 `a6306a4e292016480083b73b8dc6f3f939ae04c3`, the SoC-specific file/hash/size,
 context 1280, max output 32 and required library architectures. The Qualcomm
 file is 690,094,080 bytes; Tensor G5 is 1,678,542,365 bytes. Model access is gated:
@@ -111,7 +113,9 @@ The kit contains flat regular library files and `npu-kit.json` with schema 1,
 `target`, `runtime_tag`, `litert_revision`, `dispatch_header_sha256`, and a
 `libraries` map from basename to `sha256`/`bytes`. Host libraries must be
 AArch64 ELF64; the Qualcomm V75 skeleton is Hexagon ELF32. The lock includes
-QAIRT 2.47.0.260601 host/DSP hashes and the two audited vendor dispatch hashes.
+QAIRT 2.47.0.260601 host/DSP hashes, audited vendor dispatch hashes and the
+matching diagnostic proxy hashes. Rebuilding a proxy requires reviewing and
+updating its lock; a caller-supplied manifest cannot bless a different probe.
 An older prebuilt, different SoC, tampered file, missing file or symlink fails
 the input check. Dynamic dependency resolution still needs final-APK/device
 verification; this inventory check does not execute or resolve a shared library.
@@ -130,20 +134,62 @@ vendor calls and exports lifetime counters for synchronous completions/failures,
 async submissions/failures and synchronous calls in flight. Async submission is
 not completion; positive counts establish some NPU work, never all-NPU placement.
 
-The proxy's model-free forwarding/negative checks and Android compilation are
-preparation evidence only. Before enabling build/upload for these profiles:
+The builder stages the model as an uncompressed APK asset and the verified kit
+as extracted native libraries. The final APK checker streams every model/library
+entry and rechecks sizes/hashes; remote upload repeats this check. The Android
+host checks `Build.SOC_MODEL`, API and ABI before loading, checks installed library
+hashes, copies the model to the app's private cache, and verifies its hash again.
+It declares the required device library (`libcdsprpc.so` or
+`libedgetpu_litert.so`) and configures the app-local DSP search directory. These
+checks cannot prove that the Firebase sandbox grants access to its device driver.
 
-1. Package licensed libraries and model delivery into the installed test app;
-   inspect all native dependencies and device-sandbox access.
-2. Read `Build.SOC_MODEL`, API and ABI on the device before loading weights.
-3. Integrate before/after counter snapshots for each public-Dart generation,
-   rejecting absent proof, failed calls and CPU-only results; report hybrid work.
-4. Add the installed-app direct-native reference and compatible CPU semantic
-   control, then schedule them through the existing quota/lifecycle controller.
+Build separate bundles from clean committed source; each contains interactive
+`qa-app.apk`, unattended `app.apk` and instrumentation `test.apk`:
 
-The builder, model preparation and remote upload currently reject NPU profiles
-before model download, provider preflight or submission. The model-free
-`validation-harness` row tests these guards and the input verifier.
+```sh
+dart run tool/testing/validation.dart build --target android \
+  --profile npu-qualcomm-sm8650 \
+  --kit /path/to/qualcomm-kit \
+  --model /path/to/Gemma3-1B-IT_q4_ekv1280_sm8650.litertlm \
+  --execution-path native_c_api \
+  --out .dart_tool/validation/bundles/s24-npu-native
+# Repeat with --execution-path public_api and a separate output directory.
+```
+
+These locally staged bundles contain authorized model weights and licensed vendor
+libraries. Keep them private; the public CI bundle workflow does not accept NPU
+kit/model inputs. No Hugging Face token, signed download URL or SDK credential is
+packaged. Kit `license-*` files are retained in the APK.
+
+The direct native control bypasses `LlamaEngine` and its backend/worker bindings,
+calling the pinned C API on a dedicated isolate. It runs eight cases: load,
+hello, arithmetic, reload, warmup and three throughput repetitions. It uses the
+same Gemma artifact, dispatch kit, context 1280, four threads and per-request
+output cap 32 as the public LiteRT service. The public NPU runtime skips session
+sampler overrides, so both paths retain compiled model/runtime defaults. Requested
+seed/temperature/top-k/top-p remain recorded, but effective NPU sampling is
+explicitly unknown; these runs cannot claim seeded deterministic sampling.
+Gemma keeps the native conversation default for thinking; the Qwen pilot's
+explicit thinking-disable setting is not reused. The public NPU path runs the
+14-case quick chat inventory, including Unicode tokenization, raw/history,
+cancel/control/recovery, one-token limit and missing-model recovery.
+
+Every generation records before/after probe counters. The reporter recomputes
+deltas and rejects absent, reset, failed, in-flight or async-only proof. Positive
+proof means **NPU participation; CPU partition coverage unknown**, never all-NPU.
+Native controls are labelled separately and do not qualify the public Dart path.
+Native decode TPS/token counts and native TTFT are separate from wall throughput;
+the blocking native control cannot observe visible-answer TTFA, so that field
+is null. Warmup is retained but excluded from the three-sample charts.
+
+Use the normal Firebase `plan`/`run`/`collect`/`cleanup` flow below with the exact
+S24 or Pixel 10 profile/device pairing. Run the native control first and stop if
+it cannot initialize. Do not automatically submit both bundles or bypass the
+rolling quota guard. The compatible CPU Gemma semantic control, separate Unicode
+generation fixture and aggregate paired-control qualification remain future
+work; the existing Qwen CPU retry is not a matched Gemma control. A per-run green
+report is not completion of the full NPU pack. The `validation-harness` row covers
+the model-free identity/proof/input checks and APK tampering tests.
 
 ## Build and run
 
@@ -210,7 +256,7 @@ include S24, Tab P12, iPhone 16 Pro, iPhone SE 3, Pixel 10 and iPad 10. The plan
 initial selection is 16 CPU/GPU core executions, six NPU reference/public-Dart/CPU
 control executions and two targeted iPad GPU/lifecycle executions: **24 across
 at least seven quota days**, with at most four planned physical executions/day.
-NPU submissions require the new APK packaging and preflight first. iOS cases
+NPU submissions require the verified APK packaging and preflight first. iOS cases
 cover CPU/Metal/LiteRT GPU; Apple NPU is not exposed by the current backend.
 Native XCTest coverage does not qualify Safari/iPadOS browser execution.
 
@@ -336,8 +382,9 @@ not a performance regression gate or a cross-device ranking.
 Explicit CPU rows reject contradictory GPU diagnostics. GGUF accelerator reports
 require matching backend diagnostics plus positive native tensor offload and
 compute allocations for all three successful loads. Device presence or requested
-GPU layers alone does not qualify execution. LiteRT GPU/NPU and browser accelerator
-proof still require their own qualified evidence adapters; they remain incomplete.
+GPU layers alone does not qualify execution. LiteRT NPU uses the checked per-generation dispatch adapter described above.
+LiteRT GPU and browser accelerator proof still require qualified evidence
+adapters; they remain incomplete.
 
 Normal model runs are opt-in. Model-free suite/provider tests run in CI. Before
 claiming another platform qualified, attach the exact commit, model/backend,

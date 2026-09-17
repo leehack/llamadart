@@ -12,9 +12,11 @@ import java.util.concurrent.Executors
 class MainActivity : FlutterActivity() {
     private val clipboardExecutor = Executors.newSingleThreadExecutor()
     private var clipboardChannel: MethodChannel? = null
+    private var validationNpuHost: ValidationNpuHost? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        validationNpuHost = ValidationNpuHost(this, flutterEngine)
         val channel = MethodChannel(
             flutterEngine.dartExecutor.binaryMessenger,
             CLIPBOARD_CHANNEL,
@@ -53,6 +55,8 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
+        validationNpuHost?.close()
+        validationNpuHost = null
         clipboardChannel?.setMethodCallHandler(null)
         clipboardChannel = null
         clipboardExecutor.shutdownNow()

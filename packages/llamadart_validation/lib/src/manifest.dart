@@ -84,6 +84,15 @@ class ValidationProfile {
     if (!const ['quick', 'release'].contains(selection)) {
       throw const FormatException('selection must be quick or release');
     }
+    if (!const [
+          'public_api',
+          'native_c_api',
+        ].contains(data['execution_path'] ?? 'public_api') ||
+        (nativeReference && backend != 'npu')) {
+      throw const FormatException(
+        'Native C API controls require an explicit NPU profile',
+      );
+    }
   }
 
   /// JSON definition; callers receive a defensive copy through [toJson].
@@ -122,6 +131,12 @@ class ValidationProfile {
   /// Catalog selection; release includes explicit uncovered obligations.
   String get selection => data['selection'] as String? ?? 'quick';
 
+  /// Separate direct-C-API controls from public-package qualification.
+  bool get nativeReference => data['execution_path'] == 'native_c_api';
+
+  /// Uses the public API's default for Gemma; the Qwen pilot disables thinking.
+  bool get enableThinking => backend == 'npu';
+
   /// Optional model-specific prompts and expected regex predicates.
   Map<String, dynamic> get fixtures =>
       data['fixtures'] as Map<String, dynamic>? ?? const {};
@@ -130,9 +145,9 @@ class ValidationProfile {
   bool get requiresAcceleratorProof =>
       !['cpu', 'auto', 'blas'].contains(backend);
 
-  /// Candidate NPU locks are inspectable, but do not yet have a runnable host.
-  void requireRunnable() {
-    if (backend == 'npu') {
+  /// NPU candidates require the installed Android host to verify the kit first.
+  void requireRunnable({bool verifiedAndroidNpuHost = false}) {
+    if (backend == 'npu' && !verifiedAndroidNpuHost) {
       throw LlamaUnsupportedException(
         'NPU validation needs installed-app vendor packaging, SoC checks and '
         'per-generation execution proof. Use validation.dart npu-preflight '
@@ -155,7 +170,7 @@ class ValidationProfile {
     numberOfThreadsBatch: runtime == 'litert' ? 0 : threads,
   );
 
-  /// Deterministic sampler; native prompt reuse is deliberately disabled.
+  /// Requested sampler; NPU retains compiled runtime defaults instead.
   GenerationParams get generationParams => GenerationParams(
     maxTokens: maxTokens,
     temp: 0,
@@ -176,6 +191,10 @@ class ValidationProfile {
     'backend': backend,
     'gpu_layers_hint': loadParams.gpuLayers,
     'max_tokens': maxTokens,
+    'sampling_application': backend == 'npu'
+        ? 'runtime_defaults_requested_sampler_not_applied'
+        : 'requested_sampler',
+    'effective_npu_sampler': null,
     'temperature': 0,
     'seed': 1,
     'top_k': 40,
@@ -184,7 +203,8 @@ class ValidationProfile {
     'repeat_penalty': 1.1,
     'presence_penalty': 0,
     'stop_sequences': <String>[],
-    'enable_thinking': false,
+    'enable_thinking': enableThinking,
+    'execution_path': nativeReference ? 'native_c_api' : 'public_api',
     'reuse_prompt_prefix': false,
     'stream_batch_tokens': generationParams.streamBatchTokenThreshold,
     'stream_batch_bytes': generationParams.streamBatchByteThreshold,
@@ -193,7 +213,7 @@ class ValidationProfile {
     'thinking_budget': null,
     'activation_type': null,
     'prefill_chunk_size': null,
-    'dispatch_dir': null,
+    'dispatch_dir': backend == 'npu' ? 'android.nativeLibraryDir' : null,
     'batch_size': 0,
     'micro_batch_size': 0,
     'flash_attention': 'auto',

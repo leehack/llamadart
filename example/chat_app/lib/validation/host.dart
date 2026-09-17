@@ -6,6 +6,9 @@ import 'host_native.dart'
 
 /// Platform storage and model preparation for the shared validation runner.
 abstract interface class ValidationHost {
+  /// Selects the prepared public API or direct native reference adapter.
+  ValidationEngine createEngine(ValidationProfile profile);
+
   /// Prepares and verifies the locked model before inference.
   Future<({String path, Map<String, dynamic> evidence})> prepare(
     ValidationProfile profile,

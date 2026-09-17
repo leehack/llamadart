@@ -26,14 +26,19 @@
     "libraries": {
       "libLiteRtDispatch_GoogleTensor.so": {
         "elf_machine": 183,
-        "elf_class": 2
+        "elf_class": 2,
+        "sha256": "b8ff7daf8461265e64d782f267573487aa33e88eab551d04181f38ec84653798"
       },
       "libLlamadartVendor_GoogleTensor.so": {
         "elf_machine": 183,
         "elf_class": 2,
         "sha256": "71a3847419d37ea31bf93cf38e6cf4d61562a3f46aded42903fcf03873ef9467"
       }
-    }
+    },
+    "device_soc_models": [
+      "Tensor G5"
+    ],
+    "firebase_model": "frankel"
   },
   "fixtures": {
     "hello": {

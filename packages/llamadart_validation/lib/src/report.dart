@@ -251,6 +251,8 @@ class ValidationReport {
 
   /// Standalone escaped HTML with separate native and estimated throughput plots.
   String toHtml() {
+    final nativeReference =
+        (manifest['profile'] as Map?)?['execution_path'] == 'native_c_api';
     String chart(String metric, String title) {
       final values =
           samples
@@ -281,11 +283,14 @@ class ValidationReport {
         'pre{white-space:pre-wrap;overflow-wrap:anywhere} .bar{height:8px;background:#247a87}.sample{margin:12px 0}'
         '</style><h1>llamadart validation</h1>'
         '<p><strong>${qualified ? 'QUALIFIED' : 'INCOMPLETE / FAILED'}</strong> · ${_escape(manifest['run_id'])}</p>'
+        '<p>Execution path: ${nativeReference ? 'direct native C API control (does not qualify the public Dart path)' : 'llamadart public API'}.</p>'
         '<p>Functional assertions: ${assertionsPassed ? 'passed' : 'incomplete or failed'}. '
         'Accelerator placement: ${placement['required'] != true
             ? 'not required'
             : acceleratorVerified
-            ? 'verified native offload'
+            ? placement['placement'] == 'npu_participation_cpu_partitions_unknown'
+                  ? 'NPU participation verified; CPU partition coverage unknown'
+                  : 'verified native offload'
             : 'unverified'}.</p>'
         '<p>${_escape([...problems, ...provenanceProblems].join('; '))}</p>'
         '<table><tr><th>Case</th><th>Status</th><th>Reason</th></tr>'
@@ -293,6 +298,7 @@ class ValidationReport {
         '${chart('native_decode_tps', 'Native decode tokens/second')}'
         '${chart('estimated_wall_tps', 'Estimated visible-output tokens/second')}'
         '${chart('ttfa_ms', 'Time to first visible answer (ms)')}'
+        '${chart('native_ttft_ms', 'Native time to first token (ms)')}'
         '<p>Each series represents one exact model/configuration/build. Failed outputs remain visible. '
         'Retokenized output counts are estimates; stream chunks are not tokens.</p>'
         '<details><summary>Complete evidence</summary><pre>${_escape(const JsonEncoder.withIndent('  ').convert(toJson()))}</pre></details></html>';

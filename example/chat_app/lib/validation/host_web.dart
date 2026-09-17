@@ -14,6 +14,9 @@ import 'host.dart';
 ValidationHost createHost() => _WebHost();
 
 class _WebHost implements ValidationHost {
+  @override
+  ValidationEngine createEngine(ValidationProfile profile) =>
+      PublicValidationEngine();
   final _lines = <String>[];
   http.Client? _client;
   @override

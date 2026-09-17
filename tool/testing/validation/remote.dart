@@ -242,7 +242,28 @@ class RemoteController {
       ),
     );
     final profile = jsonDecode(profileFile.readAsStringSync()) as Map;
-    requireExecutableValidationProfile(profile);
+    final npu = manifest['npu'];
+    final validNpu =
+        plan.target == 'firebase-android' &&
+        npu is Map &&
+        npu['schema_version'] == 1 &&
+        npu['runtime_tag'] == npuRuntimeTag &&
+        npu['model_sha256'] == (profile['model'] as Map?)?['sha256'] &&
+        npu['device_model'] == plan.settings['device_model'] &&
+        manifest['execution_path'] == profile['execution_path'];
+    requireExecutableValidationProfile(profile, verifiedAndroidKit: validNpu);
+    if (profile['backend'] == 'npu') {
+      var checkout = Directory.current.absolute;
+      while (!File(
+        p.join(checkout.path, 'tool/testing/validation/check_npu_apk.py'),
+      ).existsSync()) {
+        if (checkout.parent.path == checkout.path) {
+          throw StateError('Cannot locate NPU APK verifier');
+        }
+        checkout = checkout.parent;
+      }
+      await verifyNpuApks(checkout.path, bundle);
+    }
     if (profile['id'] != plan.profile ||
         (!plan.firebase &&
             (profile['backend'] != 'cuda' || profile['runtime'] != 'gguf'))) {

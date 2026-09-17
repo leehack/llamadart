@@ -61,6 +61,9 @@ Future<Directory> buildValidationBundle(
   String profile = 'tiny-gguf-cpu',
   String mode = 'debug',
   String? team,
+  String? npuKit,
+  String? model,
+  String executionPath = 'public_api',
   CommandExecutor execute = executeCommand,
 }) async {
   final destination = Directory(output).absolute;
@@ -71,14 +74,28 @@ Future<Directory> buildValidationBundle(
     throw const FormatException('Invalid profile');
   }
   final package = p.join(root, 'packages', 'llamadart_validation');
+  final selectedProfile =
+      jsonDecode(
+            File(
+              p.join(package, 'assets', 'profiles', '$profile.json'),
+            ).readAsStringSync(),
+          )
+          as Map<String, dynamic>;
+  final npu = selectedProfile['backend'] == 'npu';
   requireExecutableValidationProfile(
-    jsonDecode(
-          File(
-            p.join(package, 'assets', 'profiles', '$profile.json'),
-          ).readAsStringSync(),
-        )
-        as Map,
+    selectedProfile,
+    verifiedAndroidKit:
+        npu && target == 'android' && npuKit != null && model != null,
   );
+  if (!['public_api', 'native_c_api'].contains(executionPath) ||
+      (executionPath == 'native_c_api' && !npu)) {
+    throw const FormatException('native_c_api requires an Android NPU kit');
+  }
+  if (npu && Platform.isWindows) {
+    throw UnsupportedError(
+      'NPU APK builder currently uses a macOS/Linux build host',
+    );
+  }
   final app = p.join(root, 'example', 'chat_app');
   final sourceIdentity = await readValidationProvenance(root, execute: execute);
   final source = sourceIdentity['source_commit'] as String;
@@ -104,10 +121,12 @@ Future<Directory> buildValidationBundle(
     'flutter_sdk': sdk['frameworkVersion'],
     'target': target,
     'profile': profile,
+    'execution_path': executionPath,
     'mode': ['desktop', 'web', 'ios'].contains(target) ? 'release' : mode,
   };
   final defines = [
     'VALIDATION_PROFILE=$profile',
+    'VALIDATION_EXECUTION_PATH=$executionPath',
     'VALIDATION_COMMIT=$source',
     'VALIDATION_SOURCE_DIRTY=${provenance['source_dirty']}',
     'VALIDATION_NATIVE_TAG=${provenance['native_tag']}',
@@ -115,10 +134,13 @@ Future<Directory> buildValidationBundle(
     'VALIDATION_BRIDGE_TAG=${provenance['bridge_tag']}',
     'VALIDATION_HOOK_SHA256=${provenance['hook_sha256']}',
   ];
+  String? npuStage;
   Future<void> command(String binary, List<String> args, String cwd) async {
     final result = await execute(
-      binary,
-      args,
+      npuStage == null ? binary : 'env',
+      npuStage == null
+          ? args
+          : ['LLAMADART_VALIDATION_NPU_STAGE=$npuStage', binary, ...args],
       directory: cwd,
       timeout: const Duration(minutes: 30),
     );
@@ -138,6 +160,17 @@ Future<Directory> buildValidationBundle(
     ),
   )..createSync(recursive: true);
   try {
+    if (npu) {
+      final stage = Directory(p.join(scratch.path, 'npu'));
+      provenance['npu'] = await stageNpuAndroid(
+        root,
+        profile,
+        model,
+        npuKit,
+        stage,
+      );
+      npuStage = stage.path;
+    }
     if (target == 'desktop') {
       await command(Platform.resolvedExecutable, ['pub', 'get'], package);
       await command(Platform.resolvedExecutable, [
@@ -362,9 +395,16 @@ Future<Directory> buildValidationBundle(
     }
     provenance['source_dirty'] =
         provenance['source_dirty'] == true || finalStatus.output.isNotEmpty;
+    selectedProfile['execution_path'] = executionPath;
     File(
-      p.join(package, 'assets', 'profiles', '$profile.json'),
-    ).copySync(p.join(destination.path, 'profile.json'));
+      p.join(destination.path, 'profile.json'),
+    ).writeAsStringSync(jsonEncode(selectedProfile));
+    if (npu) {
+      File(
+        p.join(npuKit!, 'npu-kit.json'),
+      ).copySync(p.join(destination.path, 'npu-kit.json'));
+      await verifyNpuApks(root, destination, execute: execute);
+    }
     File(
       p.join(package, 'pubspec.lock'),
     ).copySync(p.join(destination.path, 'validation-pubspec.lock'));
@@ -379,7 +419,7 @@ Future<Directory> buildValidationBundle(
     File(p.join(destination.path, 'RUN.txt')).writeAsStringSync(
       'llamadart validation bundle\nTarget: $target\nSource: $source\n'
       'Desktop: bin/llamadart-validate --profile $profile --environment-file environment.json --out results\n'
-      'Models are downloaded and SHA256-verified; weights are not in this bundle.\n'
+      '${npu ? 'NPU model and licensed vendor libraries are embedded and SHA256-verified.' : 'Models are downloaded and SHA256-verified; weights are not in this bundle.'}\n'
       'Android: install qa-app.apk for interactive use; app.apk plus test.apk are a matched instrumentation pair.\n'
       'iOS: build/sign XCTest on a Mac. Web: serve with required isolation headers.\n',
     );

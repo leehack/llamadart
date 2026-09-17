@@ -68,9 +68,12 @@ class ValidationController extends ChangeNotifier {
       final source = await rootBundle.loadString(
         'packages/llamadart_validation/assets/profiles/$profileId.json',
       );
-      final profile = ValidationProfile.fromJson(
-        jsonDecode(source) as Map<String, dynamic>,
+      final data = jsonDecode(source) as Map<String, dynamic>;
+      data['execution_path'] = const String.fromEnvironment(
+        'VALIDATION_EXECUTION_PATH',
+        defaultValue: 'public_api',
       );
+      final profile = ValidationProfile.fromJson(data);
       if (_cancelled) {
         throw StateError('Run cancelled before model preparation');
       }
@@ -84,7 +87,7 @@ class ValidationController extends ChangeNotifier {
       if (_cancelled) throw StateError('Run cancelled during preparation');
       _runner = ValidationRunner(
         profile: profile,
-        engine: PublicValidationEngine(),
+        engine: host.createEngine(profile),
         emit: (event) async {
           await host.emit(event);
           if (event['type'] == 'case' || event['type'] == 'case_start') {

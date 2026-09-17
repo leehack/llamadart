@@ -53,6 +53,8 @@ void main() {
     (profile['npu_target']['libraries'] as Map).remove(
       'libLlamadartVendor_GoogleTensor.so',
     );
+    profile['npu_target']['libraries'][p.basename(dispatch.path)]['sha256'] =
+        sha256.convert(dispatch.readAsBytesSync()).toString();
     profile['model']['sha256'] = sha256
         .convert(model.readAsBytesSync())
         .toString();
@@ -165,6 +167,16 @@ void main() {
       manifest['libraries'][p.basename(dispatch.path)]['sha256'] = sha256
           .convert(bytes)
           .toString();
+      final profileFile = File(
+        p.join(
+          root.path,
+          'packages/llamadart_validation/assets/profiles/$id.json',
+        ),
+      );
+      final profile = jsonDecode(profileFile.readAsStringSync()) as Map;
+      profile['npu_target']['libraries'][p.basename(dispatch.path)]['sha256'] =
+          manifest['libraries'][p.basename(dispatch.path)]['sha256'];
+      profileFile.writeAsStringSync(jsonEncode(profile));
       save();
       expect(
         status(await inspect(), 'library:${p.basename(dispatch.path)}'),
@@ -172,6 +184,20 @@ void main() {
       );
     },
   );
+
+  test('a caller-supplied hash cannot replace the locked probe', () async {
+    final bytes = [...dispatch.readAsBytesSync(), 1];
+    dispatch.writeAsBytesSync(bytes);
+    manifest['libraries'][p.basename(dispatch.path)] = {
+      'bytes': bytes.length,
+      'sha256': sha256.convert(bytes).toString(),
+    };
+    save();
+    expect(
+      status(await inspect(), 'library:${p.basename(dispatch.path)}'),
+      'NOT_RUN',
+    );
+  });
 
   test('model size and SHA256 must both match', () async {
     model.writeAsStringSync('fixture Model');

@@ -1,11 +1,13 @@
-import 'dart:io';
+import 'dart:async';
 import 'dart:convert';
-import 'package:http/http.dart' as http;
-import 'dart:typed_data';
+import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
 import 'package:llamadart_validation/io.dart';
 import 'package:llamadart_validation/llamadart_validation.dart';
+import 'package:llamadart_validation/npu_io.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
@@ -15,11 +17,24 @@ import 'host.dart';
 ValidationHost createHost() => _NativeHost();
 
 class _NativeHost implements ValidationHost {
+  static const _npuChannel = MethodChannel('llamadart_validation/npu');
+  AndroidNpuMonitor? _npu;
+  String? _probeLibrary;
+  @override
+  ValidationEngine createEngine(ValidationProfile profile) =>
+      profile.nativeReference
+      ? NativeNpuReferenceEngine(_npu!, _probeLibrary!)
+      : PublicValidationEngine(npu: _npu);
   FileValidationJournal? _journal;
   Directory? _output;
   http.Client? _client;
   @override
-  void cancelPreparation() => _client?.close();
+  void cancelPreparation() {
+    _client?.close();
+    if (Platform.isAndroid) {
+      _npuChannel.invokeMethod<void>('cancel').catchError((Object _) {});
+    }
+  }
 
   @override
   String get outputLocation => _output?.path ?? '';
@@ -28,6 +43,51 @@ class _NativeHost implements ValidationHost {
   Future<({String path, Map<String, dynamic> evidence})> prepare(
     ValidationProfile profile,
   ) async {
+    _npu = null;
+    _probeLibrary = null;
+    if (profile.backend == 'npu') {
+      if (!Platform.isAndroid) {
+        throw UnsupportedError('NPU app validation requires Android');
+      }
+      final value = Map<String, dynamic>.from(
+        (await _npuChannel
+            .invokeMapMethod<String, dynamic>('prepare', {
+              'profile': profile.id,
+            })
+            .timeout(
+              const Duration(minutes: 10),
+              onTimeout: () {
+                cancelPreparation();
+                throw TimeoutException('NPU preparation exceeded ten minutes');
+              },
+            ))!,
+      );
+      final kit =
+          jsonDecode(value.remove('kit') as String) as Map<String, dynamic>;
+      final directory = value.remove('dispatch_directory') as String;
+      final path = value.remove('path') as String;
+      final target = profile.data['npu_target'] as Map;
+      validateNpuDevice(profile, value);
+      if (value['verified'] != true ||
+          value['sha256'] != profile.modelHash ||
+          kit['target'] != target['soc'] ||
+          kit['runtime_tag'] !=
+              const String.fromEnvironment('VALIDATION_LITERT_TAG') ||
+          kit['litert_revision'] !=
+              '9fe5be45564c868408e6514c8aabb83e211a0911' ||
+          kit['dispatch_header_sha256'] !=
+              '11dd4d98bd084157ac987b1ee1951f3f96e2b3ca6b51a27c10e645686bf0e3ee') {
+        throw StateError(
+          'Installed NPU host identity does not match the profile/runtime',
+        );
+      }
+      _probeLibrary = (target['libraries'] as Map).keys
+          .cast<String>()
+          .singleWhere((name) => name.startsWith('libLiteRtDispatch_'));
+      final identity = {'device': value, 'kit': kit};
+      _npu = AndroidNpuMonitor(directory, _probeLibrary!, identity);
+      return (path: path, evidence: {...value, 'npu': identity});
+    }
     _client = http.Client();
     try {
       return await prepareModel(

@@ -501,14 +501,26 @@ failures and async submissions, with model-free forwarding/negative tests.
 These are input/build checks, not device execution evidence. See the
 [NPU input runbook](cross_platform_validation.md#npu-input-preparation).
 
-**Implementation still required:** dispatch-directory configuration,
-dependency-aware Android packaging, on-device identity preflight, the private
-Dart counter adapter, installed-app native control and N01–N06 cases below.
-NPU build/upload is blocked until these are present. Native build
-or runtime changes belong in their owning repository before this harness consumes
-them. Export native-reference and public-Dart results through the same result
-contract, with distinct path identities. Test missing dependencies, incompatible
-manifests, absent proof and CPU fallback locally before submitting the APK.
+**Android implementation:** the opt-in builder embeds verified local weights and
+vendor libraries, checks final APK entries, and repeats those checks before remote
+upload. The installed host verifies SoC/API/ABI and installed file hashes before
+loading. Separate `public_api` and `native_c_api` bundles capture raw dispatch
+snapshots and retain distinct path identities in the same report contract. Both
+NPU paths use compiled runtime sampling defaults: the current public NPU adapter
+does not apply requested session sampler overrides. Effective sampler values
+remain unknown, so the deterministic cancellation-prefix check may stay NOT_RUN. The
+native control calls the C API on a dedicated isolate, bypassing public Dart
+backend/worker bindings. Native source/build ownership remains in the native repo.
+
+The public path runs 14 quick chat cases; the control runs eight (load,
+hello/arithmetic, reload, warmup and three measured generations). N01/N03/N04/N06
+are covered to this bounded scope. N02's additional Unicode generation fixture,
+the compatible CPU Gemma control, and aggregate matching of the reference/public
+reports remain unimplemented; C02 tokenizer coverage runs only on the public
+path. A single passing run cannot complete the whole NPU pack. Hardware driver
+access, model initialization, output correctness and NPU TPS remain NOT_RUN until
+the installed apps execute on the matching lab device. Positive counters prove
+NPU participation with CPU partition coverage unknown, not full NPU placement.
 
 **Preflight before spending a device execution:**
 
@@ -987,9 +999,9 @@ blocking independently of speed. No throughput threshold hides a known failure.
    resource deletion before broad CUDA coverage; unavailable credit defers this
    optional lane without blocking the Mac/CI/Firebase harness.
 6. **Next mobile milestone:** prove current Android/iOS bundle submission and
-   result retrieval in Firebase. With the NPU input locks in place, implement vendor packaging,
-   native-reference adapter and execution evidence alongside the CPU/GPU
-   qualification work. Qualify S24 then Pixel 10 NPU only after model/library
+   result retrieval in Firebase. With NPU packaging and both execution adapters implemented, verify their
+   installed-app execution alongside the CPU/GPU qualification work; complete
+   the remaining Unicode generation, compatible Gemma CPU and paired-report controls. Qualify S24 then Pixel 10 NPU only after model/library
    preflight and each native reference succeed. Complete the selected Firebase
    rotation including targeted iPad checks, then older-device CPU full/compact
    and feature packs as quota permits.

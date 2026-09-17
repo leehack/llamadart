@@ -4,22 +4,111 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
 
+import 'process.dart';
+
 /// The native release and its actual LiteRT dependency, not the LiteRT-LM tag.
 const npuRuntimeTag = '0.17.0-3';
 const npuLiteRtRevision = '9fe5be45564c868408e6514c8aabb83e211a0911';
 const npuDispatchHeaderHash =
     '11dd4d98bd084157ac987b1ee1951f3f96e2b3ca6b51a27c10e645686bf0e3ee';
 
-/// Rejects dispatch until the installed-app adapter and native proof exist.
+/// Requires an explicit, verified Android model and vendor kit.
 /// Keep this at both build and upload boundaries: old/custom bundles can bypass
 /// the builder, and spending a Firebase execution cannot repair missing inputs.
-void requireExecutableValidationProfile(Map<dynamic, dynamic> profile) {
-  if (profile['backend'] == 'npu') {
+void requireExecutableValidationProfile(
+  Map<dynamic, dynamic> profile, {
+  bool verifiedAndroidKit = false,
+}) {
+  if (profile['backend'] == 'npu' && !verifiedAndroidKit) {
     throw StateError(
-      'NPU qualification is not executable yet: installed-app vendor packaging, '
+      'NPU qualification requires a verified Android kit: installed-app vendor packaging, '
       'SoC preflight and per-generation native execution proof are required. '
       'Run validation.dart npu-preflight for the locked input inventory.',
     );
+  }
+}
+
+/// Stages only verified inputs for the opt-in Android build. No credentials or
+/// downloads are involved; models are streamed from APK assets on the device.
+Future<Map<String, dynamic>> stageNpuAndroid(
+  String root,
+  String profileId,
+  String? model,
+  String? kit,
+  Directory stage,
+) async {
+  final report = await inspectNpuInputs(
+    root,
+    profileId,
+    modelPath: model,
+    kitPath: kit,
+  );
+  if (report['inputs_verified'] != true) {
+    throw StateError('NPU inputs are incomplete; run npu-preflight');
+  }
+  final assets = Directory(p.join(stage.path, 'assets', 'llamadart_npu'))
+    ..createSync(recursive: true);
+  final libraries = Directory(p.join(stage.path, 'jniLibs', 'arm64-v8a'))
+    ..createSync(recursive: true);
+  final profileFile = File(
+    p.join(
+      root,
+      'packages/llamadart_validation/assets/profiles/$profileId.json',
+    ),
+  );
+  final profile = jsonDecode(profileFile.readAsStringSync()) as Map;
+  profileFile.copySync(p.join(assets.path, 'profile.json'));
+  File(model!).copySync(p.join(assets.path, 'model.litertlm'));
+  File(
+    p.join(kit!, 'npu-kit.json'),
+  ).copySync(p.join(assets.path, 'npu-kit.json'));
+  for (final name in (report['libraries'] as Map).keys.cast<String>()) {
+    File(p.join(kit, name)).copySync(p.join(libraries.path, name));
+  }
+  for (final file in Directory(kit).listSync().whereType<File>()) {
+    if (p.basename(file.path).startsWith('license-')) {
+      file.copySync(p.join(assets.path, p.basename(file.path)));
+    }
+  }
+  final systemLibrary = profileId == 'npu-qualcomm-sm8650'
+      ? 'libcdsprpc.so'
+      : 'libedgetpu_litert.so';
+  final original = File(
+    p.join(root, 'example/chat_app/android/app/src/main/AndroidManifest.xml'),
+  ).readAsStringSync();
+  File(p.join(stage.path, 'AndroidManifest.xml')).writeAsStringSync(
+    original.replaceFirst(
+      '</application>',
+      '<uses-native-library android:name="$systemLibrary" android:required="false"/>\n    </application>',
+    ),
+  );
+  return {
+    'schema_version': 1,
+    'model_sha256': (profile['model'] as Map)['sha256'],
+    'device_model': (profile['npu_target'] as Map)['firebase_model'],
+    'runtime_tag': npuRuntimeTag,
+  };
+}
+
+/// Rechecks embedded model and libraries in final APKs, including before upload.
+Future<void> verifyNpuApks(
+  String root,
+  Directory bundle, {
+  CommandExecutor execute = executeCommand,
+}) async {
+  for (final apk in ['app.apk', 'qa-app.apk']) {
+    final result = await execute(Platform.isWindows ? 'python' : 'python3', [
+      p.join(root, 'tool/testing/validation/check_npu_apk.py'),
+      '--apk',
+      p.join(bundle.path, apk),
+      '--profile',
+      p.join(bundle.path, 'profile.json'),
+      '--kit',
+      p.join(bundle.path, 'npu-kit.json'),
+    ], timeout: const Duration(minutes: 5));
+    if (result.code != 0) {
+      throw StateError('NPU APK contents failed verification: $apk');
+    }
   }
 }
 
@@ -180,7 +269,7 @@ Future<Map<String, dynamic>> inspectNpuInputs(
     'remaining': [
       'Inspect final APK dependencies, licenses and sandbox-accessible model delivery',
       'Check on-device Build.SOC_MODEL, ABI and API level before native load',
-      'Implement installed-app direct-native reference and public Dart NPU paths',
+      'Run installed-app direct-native reference and public Dart NPU bundles separately',
       'Require per-generation completed NPU execution evidence; selector and async submission do not qualify',
     ],
   };

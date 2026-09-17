@@ -220,6 +220,20 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
           ],
           description: 'Provider safety, bundle identity and NPU input checks',
         ),
+        LocalE2eCommandStep(
+          workingDirectory: context.projectRoot,
+          executable: Platform.isWindows ? 'python' : 'python3',
+          arguments: const [
+            '-m',
+            'unittest',
+            'discover',
+            '-s',
+            'tool/testing/validation',
+            '-p',
+            'test_npu_apk.py',
+          ],
+          description: 'Embedded NPU model/library integrity checks',
+        ),
       ],
     ),
     LocalE2eScenario(

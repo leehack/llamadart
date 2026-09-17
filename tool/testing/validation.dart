@@ -20,6 +20,7 @@ Future<void> main(List<String> arguments) async {
       stdout.writeln(
         'llamadart validation\n'
         '  build --target desktop|android|web|ios|ios-inputs --out <new-directory> [--profile <id>]\n'
+        '    Android NPU: --kit <directory> --model <file> [--execution-path public_api|native_c_api]\n'
         '  local --profile <id> [--model <path>] [--out <new-directory>]\n'
         '  report --out <run-directory>\n'
         '  npu-preflight --profile npu-qualcomm-sm8650|npu-tensor-g5 [--model <file>] [--kit <directory>] [--out <new-json>]\n'
@@ -62,6 +63,9 @@ Future<void> main(List<String> arguments) async {
         required('out'),
         profile: profile,
         team: options['team'],
+        npuKit: options['kit'],
+        model: options['model'],
+        executionPath: options['execution-path'] ?? 'public_api',
       );
       stdout.writeln('Bundle: ${bundle.path}');
     } else if (command == 'local' || command == 'report') {
@@ -232,6 +236,7 @@ Map<String, String> _options(List<String> args) {
     'profile',
     'model',
     'kit',
+    'execution-path',
     'config',
     'bundle',
     'plan',

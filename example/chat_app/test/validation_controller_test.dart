@@ -6,6 +6,9 @@ import 'package:llamadart_chat_example/validation/controller.dart';
 import 'package:llamadart_chat_example/validation/host.dart';
 
 class PreparationHost implements ValidationHost {
+  @override
+  ValidationEngine createEngine(ValidationProfile profile) =>
+      throw StateError('Preparation did not finish');
   final started = Completer<void>();
   final pending = Completer<({String path, Map<String, dynamic> evidence})>();
   bool cancelled = false;

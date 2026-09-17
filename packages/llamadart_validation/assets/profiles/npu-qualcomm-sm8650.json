@@ -26,7 +26,8 @@
     "libraries": {
       "libLiteRtDispatch_Qualcomm.so": {
         "elf_machine": 183,
-        "elf_class": 2
+        "elf_class": 2,
+        "sha256": "d07d3324ad7617719fa613012168870892a221c11bbbd3795e1dcb64026cbcb5"
       },
       "libQnnHtp.so": {
         "elf_machine": 183,
@@ -58,7 +59,11 @@
         "elf_class": 2,
         "sha256": "0b6c4d3c521047046689cb379eae8b57f1ef996ddd15fdb4090a081b94c4aa70"
       }
-    }
+    },
+    "device_soc_models": [
+      "SM8650"
+    ],
+    "firebase_model": "SC-51E"
   },
   "fixtures": {
     "hello": {

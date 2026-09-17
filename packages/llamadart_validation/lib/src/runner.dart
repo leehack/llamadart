@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:llamadart/llamadart.dart';
 
 import 'manifest.dart';
+import 'npu_evidence.dart';
 
 /// Sink implemented by file, browser and Firebase host adapters.
 typedef ValidationEventSink = Future<void> Function(Map<String, dynamic> event);
@@ -28,18 +29,25 @@ abstract interface class ValidationEngine {
 
 /// Runs inference through the exported llamadart API on every platform.
 class PublicValidationEngine implements ValidationEngine {
+  PublicValidationEngine({this.npu});
+  final NpuExecutionMonitor? npu;
   LlamaEngine _engine = LlamaEngine(LlamaBackend());
   bool _disposed = false;
 
   @override
   Future<void> load(String location, ValidationProfile profile) async {
-    profile.requireRunnable();
+    profile.requireRunnable(verifiedAndroidNpuHost: npu != null);
     if (_disposed) {
       _engine = LlamaEngine(LlamaBackend());
       _disposed = false;
     }
     await _engine.setLogLevel(LlamaLogLevel.info);
-    await _engine.loadModel(location, modelParams: profile.loadParams);
+    await _engine.loadModel(
+      location,
+      modelParams: profile.loadParams.copyWith(
+        liteRtLmDispatchLibDir: npu?.dispatchDirectory,
+      ),
+    );
     if (!_engine.isReady) {
       throw StateError('loadModel returned without readiness');
     }
@@ -67,6 +75,7 @@ class PublicValidationEngine implements ValidationEngine {
     'reported_gpu_layers': await _engine.getResolvedGpuLayers(),
     'context_size': await _engine.getContextSize(),
     'model_metadata': await _engine.getMetadata(),
+    if (npu != null) 'npu_identity': npu!.identity,
     // These public values can contain selector hints. They are not placement proof.
     'accelerator_execution_verified': false,
     'accelerator_evidence_reason':
@@ -89,6 +98,7 @@ class PublicValidationEngine implements ValidationEngine {
     int? firstUs;
     int? cancelUs;
     final params = profile.generationParams.copyWith(maxTokens: maxTokens);
+    final npuBefore = npu?.snapshot();
     final watch = Stopwatch()..start();
     void append(String content) {
       if (content.isEmpty) return;
@@ -121,7 +131,7 @@ class PublicValidationEngine implements ValidationEngine {
                 ),
               ],
           params: params,
-          enableThinking: false,
+          enableThinking: profile.enableThinking,
         )) {
           chunks++;
           for (final choice in chunk.choices) {
@@ -146,6 +156,7 @@ class PublicValidationEngine implements ValidationEngine {
       }
     }
     watch.stop();
+    final npuAfter = npu?.snapshot();
     // Tokenization and diagnostic reads occur after the timed region.
     int? estimatedTokens;
     try {
@@ -162,7 +173,9 @@ class PublicValidationEngine implements ValidationEngine {
       'prompt': prompt,
       if (history != null) 'messages': history.map((m) => m.toJson()).toList(),
       'max_tokens': params.maxTokens,
-      'enable_thinking': false,
+      'enable_thinking': profile.enableThinking,
+      if (npuBefore != null && npuAfter != null)
+        'npu_execution': npuGenerationEvidence(npuBefore, npuAfter),
       'content': text.toString(),
       'thinking': thinking.toString(),
       'chunks': chunks,
@@ -232,13 +245,12 @@ class ValidationRunner {
   /// Expanded obligations, including explicitly unimplemented release cases.
   List<String> get caseIds => [
     'C01.load',
-    'C02.unicode',
-    'C03.raw',
-    if (profile.isChat) ...['C04.hello', 'C04.arithmetic', 'C06.history'],
-    'C08.cancel',
+    if (!profile.nativeReference) ...['C02.unicode', 'C03.raw'],
+    if (profile.isChat) ...['C04.hello', 'C04.arithmetic'],
+    if (!profile.nativeReference && profile.isChat) 'C06.history',
+    if (!profile.nativeReference) 'C08.cancel',
     'C09.reload',
-    'C10.limit',
-    'C12.recovery',
+    if (!profile.nativeReference) ...['C10.limit', 'C12.recovery'],
     'B01.warmup',
     'B01.1',
     'B01.2',
