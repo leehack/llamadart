@@ -439,6 +439,55 @@ void main() {
   });
 
   test(
+    'Blaze free allowance supports bounded runs without assuming credit',
+    () async {
+      final json =
+          jsonDecode(jsonEncode(blazePlan(funding: 'free_allowance').json))
+              as Map<String, dynamic>;
+      final settings = json['settings'] as Map;
+      settings.remove('credit');
+      settings['test_timeout_minutes'] = 10;
+      settings['free_allowance'] = {
+        'verified_at': now.toIso8601String(),
+        'evidence':
+            'all project test process durations checked, rounded per execution',
+        'remaining_physical_minutes': 19,
+      };
+      final provider = FakeProvider();
+      final control = controller(provider);
+      final result = await control.run(RemotePlan(json));
+      expect(result['phase'], 'COMPLETE');
+      expect(result['reserved_physical_minutes'], 11);
+      json['run_id'] = 'qa-two';
+      expect(
+        (await control.run(RemotePlan(json)))['phase'],
+        'PREFLIGHT_FAILED',
+      );
+      expect(provider.starts, 1);
+      for (final edit in <void Function(Map)>[
+        (s) => s.remove('free_allowance'),
+        (s) => s['free_allowance']['remaining_physical_minutes'] = 10,
+        (s) => s['free_allowance']['remaining_physical_minutes'] = 31,
+        (s) => s['free_allowance']['remaining_physical_minutes'] = 19.5,
+        (s) => s['free_allowance']['verified_at'] = now
+            .subtract(const Duration(minutes: 1))
+            .toIso8601String(),
+        (s) => s['free_allowance']['verified_at'] = now
+            .subtract(const Duration(minutes: 16))
+            .toIso8601String(),
+      ]) {
+        final invalid = jsonDecode(jsonEncode(json)) as Map<String, dynamic>;
+        edit(invalid['settings'] as Map);
+        expect(() => RemotePlan(invalid).validateBudget(now), throwsStateError);
+      }
+      for (final minutes in [0, 21, 10.5]) {
+        settings['test_timeout_minutes'] = minutes;
+        expect(() => RemotePlan(json), throwsFormatException);
+      }
+    },
+  );
+
+  test(
     'concurrent same-ID runs submit once and preserve the journal',
     () async {
       final gate = Completer<void>();
@@ -525,39 +574,50 @@ void main() {
     'Firebase async URL receipts recover an owned Android or iOS matrix',
     () async {
       for (final target in ['firebase-android', 'firebase-ios']) {
-        final calls = <List<String>>[];
-        final checkpoints = <Map<String, dynamic>>[];
-        final provider = MatrixProvider(
-          {
-            'projectId': 'test-project',
-            'testMatrixId': 'matrix-one',
-            'clientInfo': {
-              'clientInfoDetails': [
-                {'key': 'matrixLabel', 'value': 'qa-one'},
-              ],
+        for (final timeoutMinutes in [10, 20]) {
+          final calls = <List<String>>[];
+          final checkpoints = <Map<String, dynamic>>[];
+          final provider = MatrixProvider(
+            {
+              'projectId': 'test-project',
+              'testMatrixId': 'matrix-one',
+              'clientInfo': {
+                'clientInfoDetails': [
+                  {'key': 'matrixLabel', 'value': 'qa-one'},
+                ],
+              },
             },
-          },
-          execute: (binary, args, {directory, timeout}) async {
-            calls.add(args);
-            return CommandResult(
-              0,
-              jsonEncode(
-                'https://console.firebase.google.com/project/test-project/testlab/histories/history/matrices/execution',
-              ),
-              'Uploading test files...\nTest [matrix-one] has been created in the Google Cloud.\n',
-            );
-          },
-        );
-        final remote = await provider.start(
-          plan(target: target),
-          checkpoints.add,
-        );
-        expect(remote['matrix_id'], 'matrix-one');
-        expect(checkpoints.first, {'submission_candidate_id': 'matrix-one'});
-        expect(checkpoints.last['matrix_id'], 'matrix-one');
-        expect(calls, hasLength(1));
-        expect(calls.single, contains('--async'));
-        expect(calls.single, contains('--num-flaky-test-attempts=0'));
+            execute: (binary, args, {directory, timeout}) async {
+              calls.add(args);
+              return CommandResult(
+                0,
+                jsonEncode(
+                  'https://console.firebase.google.com/project/test-project/testlab/histories/history/matrices/execution',
+                ),
+                'Uploading test files...\nTest [matrix-one] has been created in the Google Cloud.\n',
+              );
+            },
+          );
+          final selected =
+              jsonDecode(jsonEncode(plan(target: target).json))
+                  as Map<String, dynamic>;
+          selected['settings']['test_timeout_minutes'] = timeoutMinutes;
+          final remote = await provider.start(
+            RemotePlan(selected),
+            checkpoints.add,
+          );
+          expect(remote['matrix_id'], 'matrix-one');
+          expect(checkpoints.first, {'submission_candidate_id': 'matrix-one'});
+          expect(checkpoints.last['matrix_id'], 'matrix-one');
+          expect(calls, hasLength(1));
+          expect(calls.single, contains('--async'));
+          expect(calls.single, contains('--num-flaky-test-attempts=0'));
+          expect(calls.single, contains('--timeout=${timeoutMinutes}m'));
+          expect(
+            calls.single.where((arg) => arg.startsWith('--device=')),
+            hasLength(1),
+          );
+        }
       }
     },
   );

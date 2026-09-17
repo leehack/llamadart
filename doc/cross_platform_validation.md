@@ -277,7 +277,7 @@ dart run tool/testing/validation.dart run --plan .dart_tool/validation/plan.json
 
 Use `firebase-ios` with the signed `ios` bundle. Plan creation is local/read-only;
 `run` rechecks identity, budget evidence and live provider state before submission.
-The CLI uses explicit `--project` and `--account`, one 20-minute execution, no
+The CLI uses explicit `--project` and `--account`, one execution capped at 20 minutes, no
 flaky retries and no video. It records the matrix ID, polls terminal state, copies
 the default Test Lab results, then verifies completion or cancellation. It does
 not enable billing or create a custom result bucket.
@@ -306,6 +306,24 @@ establish eligibility. `funding: "approved_charges"` is only for an explicit
 user authorization covering out-of-pocket charges; it is not implied by having
 a payment method or requesting a credit-funded upgrade.
 
+For free execution on Blaze, select `funding: "free_allowance"` and supply a fresh
+`free_allowance` receipt (`verified_at`, `evidence`, `remaining_physical_minutes`).
+Verify the full project inventory, including other clients and pre-upgrade use;
+round each physical test's **test-process duration** up to whole minutes. Queue,
+installation and result-collection durations are not the billable test duration.
+Subtract this usage from the published 30-minute daily physical allowance. Unknown
+or active executions prevent relying on that calculation. The receipt must be
+within the budget window. This mode needs no assumed credit eligibility or paid
+authorization; gross USD reservations remain for traceability.
+
+Set `test_timeout_minutes` to an integer from 1 to 20 (default 20). Verified free
+minutes must cover that timeout plus a one-minute rounding reserve. The journal
+also reserves minutes for submissions made after the receipt was checked, so
+reusing a receipt cannot spend those minutes twice. Refresh the full project
+inventory after each completed execution before reclaiming unused reserved time;
+do not simply update its timestamp. These controls cannot exclude submissions
+from another client after the check, so keep this dedicated project serialized.
+
 The journal reserves the full per-run estimate before any submission, rounding
 up to cents, and rejects runs exceeding the batch cap. Earlier Blaze submissions
 for the same project within that window consume the cap even when failed or
@@ -313,7 +331,7 @@ cancelled; preflight failures do not. An uncertain submission still blocks all
 new remote work until reconciled. Keep one shared run journal for the batch;
 do not delete it or move the window to reset the allowance.
 
-Each run remains one physical device, a 20-minute provider timeout and zero
+Each run remains one physical device, at most a 20-minute provider timeout and zero
 flaky retries. The estimate must cover at least the full timeout at the current
 [$5/device-hour rate](https://firebase.google.com/docs/test-lab/usage-quotas-pricing),
 before deducting any free minutes or credits. For example, a $2/run reservation

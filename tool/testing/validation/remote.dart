@@ -38,6 +38,10 @@ class RemotePlan {
 
   static const firebaseTimeoutMinutes = 20;
   static const firebasePhysicalHourlyUsd = 5;
+  int get testTimeoutMinutes =>
+      settings['test_timeout_minutes'] as int? ?? firebaseTimeoutMinutes;
+  bool get usesFreeAllowance =>
+      blaze && (settings['budget'] as Map?)?['funding'] == 'free_allowance';
 
   /// Gross cost reservation, before any free allowance or promotional credit.
   int get reservedUsdCents =>
@@ -70,6 +74,12 @@ class RemotePlan {
       );
     }
     if (firebase) {
+      if (settings['test_timeout_minutes'] != null &&
+          (settings['test_timeout_minutes'] is! int ||
+              testTimeoutMinutes < 1 ||
+              testTimeoutMinutes > firebaseTimeoutMinutes)) {
+        throw const FormatException('Firebase timeout must be 1-20 minutes');
+      }
       if (!const [null, 'spark', 'blaze'].contains(settings['billing_mode'])) {
         throw const FormatException(
           'Firebase billing_mode must be spark or blaze',
@@ -187,15 +197,30 @@ class RemotePlan {
         end.difference(start) > const Duration(hours: 24) ||
         !perRun.isFinite ||
         !total.isFinite ||
-        perRun < firebaseTimeoutMinutes * firebasePhysicalHourlyUsd / 60 ||
+        perRun < testTimeoutMinutes * firebasePhysicalHourlyUsd / 60 ||
         total < perRun ||
-        !const ['credit', 'approved_charges'].contains(budget['funding'])) {
+        !const [
+          'credit',
+          'approved_charges',
+          'free_allowance',
+        ].contains(budget['funding'])) {
       throw StateError(
         'Blaze requires a bounded, authorized gross-cost budget',
       );
     }
     if (budget['funding'] == 'credit') {
       _validateCredit(_receipt('credit', now), now, requiredUsd: total);
+    } else if (usesFreeAllowance) {
+      final allowance = _receipt('free_allowance', now);
+      final remaining = allowance['remaining_physical_minutes'];
+      if (remaining is! int ||
+          remaining > 30 ||
+          remaining < testTimeoutMinutes + 1 ||
+          DateTime.parse(allowance['verified_at'] as String).isBefore(start)) {
+        throw StateError(
+          'Verified free minutes must cover the timeout plus a rounding reserve',
+        );
+      }
     }
   }
 }
@@ -367,6 +392,13 @@ class RemoteController {
             : now().toUtc().subtract(const Duration(hours: 24));
         var count = 0;
         var reserved = 0;
+        var reservedMinutes = 0;
+        final allowanceChecked = plan.usesFreeAllowance
+            ? DateTime.parse(
+                (plan.settings['free_allowance'] as Map)['verified_at']
+                    as String,
+              )
+            : null;
         for (final directory in root.listSync().whereType<Directory>()) {
           final file = File(p.join(directory.path, 'orchestration.json'));
           if (file.existsSync()) {
@@ -390,6 +422,19 @@ class RemoteController {
                   );
                 }
                 reserved += cost;
+                final dispatched = DateTime.parse(
+                  previous['dispatched_at'] as String,
+                );
+                if (allowanceChecked != null &&
+                    !dispatched.isBefore(allowanceChecked)) {
+                  final minutes = previous['reserved_physical_minutes'];
+                  if (minutes is! int || minutes <= 0) {
+                    throw StateError(
+                      'Earlier Blaze submission has no minute reservation',
+                    );
+                  }
+                  reservedMinutes += minutes;
+                }
               }
             }
           }
@@ -403,6 +448,15 @@ class RemoteController {
             );
           }
           state['reserved_usd_cents'] = plan.reservedUsdCents;
+          state['reserved_physical_minutes'] = plan.testTimeoutMinutes + 1;
+          if (plan.usesFreeAllowance &&
+              reservedMinutes + plan.testTimeoutMinutes + 1 >
+                  (plan.settings['free_allowance']
+                      as Map)['remaining_physical_minutes']) {
+            throw StateError(
+              'Free minutes are already reserved by earlier submissions',
+            );
+          }
         } else if (count >= 4) {
           throw StateError(
             'Four physical submissions already dispatched in the last 24 hours',
@@ -851,7 +905,7 @@ class GcloudProvider implements RemoteProvider {
       '--test=${p.join(plan.bundle, ios ? 'tests.zip' : 'test.apk')}',
       '--device=model=${plan.settings['device_model']},version=${plan.settings['device_version']}',
       '--async',
-      '--timeout=${RemotePlan.firebaseTimeoutMinutes}m',
+      '--timeout=${plan.testTimeoutMinutes}m',
       '--num-flaky-test-attempts=0',
       '--no-record-video',
       '--client-details=matrixLabel=${plan.runId}',

@@ -17,9 +17,9 @@ physical Android/iOS test route**. The personal Pixel and iPad are optional
 debugging devices, never prerequisites for mobile qualification. Include
 Qualcomm and Tensor LiteRT-LM NPU qualification in the next milestone. Keep the
 operating budget at **$0 out of pocket**, even after promotional GCP credit expires.
-The maintainer has since requested an optional Blaze upgrade for the S24 pilot.
-Its execution remains conditional on verified Test Lab credit coverage or a
-separate explicit out-of-pocket authorization; the free rotation remains the
+The maintainer upgraded the isolated QA project to Blaze on 2026-09-17.
+Execution remains conditional on verified remaining free minutes, verified
+Test Lab credit coverage or a separate explicit out-of-pocket authorization; the free rotation remains the
 sustainable default. See the runbook's [Blaze controls](cross_platform_validation.md#explicit-blaze-runs).
 
 ## 1. Deliverables and boundaries
@@ -604,8 +604,10 @@ becomes a green backend badge. No NPU run is scheduled by this document update.
 
 ### Budget and scheduling
 
-For the free rotation, use Spark project `llamadart-device-qa-20260916`, **without linking
-billing**. Firebase currently allows five physical executions and ten virtual
+The original rotation below describes Spark, which requires an **unbilled
+project**. Project `llamadart-device-qa-20260916` is now on Blaze and uses its
+separate free-minute guard; the original Spark execution count is no longer its
+free allowance. Firebase currently allows five physical executions and ten virtual
 executions per project/day on Spark. Each device configuration, retry and shard
 can consume another execution; five devices times four profiles is twenty
 executions, not five. See [official quotas](https://firebase.google.com/docs/test-lab/usage-quotas-pricing).
@@ -620,12 +622,19 @@ An explicitly authorized Blaze batch uses the same bundle and cleanup flow with
 a live exact-account check and a gross-cost reservation for every submission.
 The local cap replaces the Spark four-run guard only for that explicit mode;
 free minutes and expected credits are not subtracted from its reservations.
+For zero-cost Blaze runs, verify remaining physical minutes against each selected
+provider timeout plus a rounding reserve. Spread the rotation across additional
+days if its elapsed test time would exceed 30 free physical minutes in one day.
 Keep the authorization window fixed, preserve the shared journal, and refresh
 quota and funding evidence before each run. No automatic paid retry is permitted.
 The first requested batch is the S24 native NPU reference, public llamadart NPU
 only after reference initialization, and the existing Qwen CPU retry. That retry
 does not satisfy the matched Gemma CPU control still required by the NPU pack.
-Credit balances with unspecified service coverage do not authorize dispatch.
+Credit balances with unspecified service coverage do not authorize paid dispatch.
+Blaze's verified free minutes can fund a shorter run: the runner reserves its
+full provider timeout plus a rounding minute, then requires a fresh project-wide
+usage check before reclaiming the unused reservation. Never treat the upgraded
+physical execution-count quota as extra free minutes.
 
 | Day of a release rotation | Device | Planned executions |
 | --- | --- | --- |
@@ -665,9 +674,11 @@ and never a prerequisite to lab submission. Select virtual packaging cases only
 when needed and count them against the shared ten/day limit.
 
 The initial five pilot submissions finished (one intentionally cancelled).
-The last billing check on 2026-09-17 had `billingEnabled: false`; it needed no GCP
-credit. Spark submissions require billing to remain disabled. The requested
-Blaze upgrade and device execution are not established by local runner tests.
+The initial CPU pilot ran with billing disabled and needed no GCP credit. A later
+live check on 2026-09-17 verified `billingEnabled: true` after the explicitly
+authorized Blaze upgrade. Spark plans correctly reject this billed project;
+future tests require the explicit Blaze configuration. Device execution is not
+established by an upgrade or local runner tests.
 Test Lab executions have no idle VM to stop. Any later
 Compute Engine CUDA testing is a separate action: verify credit eligibility and
 remaining balance first, and account for disks/IP/storage after stopping a VM.
