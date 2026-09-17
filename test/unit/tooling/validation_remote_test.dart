@@ -3,6 +3,7 @@ library;
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:ffi';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
@@ -12,6 +13,7 @@ import 'package:test/test.dart';
 import '../../../tool/testing/validation/bundle.dart';
 import '../../../tool/testing/validation/process.dart';
 import '../../../tool/testing/validation/remote.dart';
+import '../../../tool/testing/validation/runtime_bundle.dart';
 
 class FakeProvider implements RemoteProvider {
   int starts = 0;
@@ -105,6 +107,60 @@ class MatrixProvider extends GcloudProvider {
 }
 
 void main() {
+  test(
+    'Windows arm64 keeps GGUF builds without requiring a LiteRT archive',
+    () async {
+      expect(standaloneLiteRtTarget(Abi.windowsArm64), isNull);
+      expect(standaloneLiteRtTarget(Abi.windowsX64), 'windows-x64');
+      expect(standaloneLiteRtTarget(Abi.linuxArm64), 'linux-arm64');
+      final scratch = Directory.systemTemp.createTempSync('validation-arm64-');
+      addTearDown(() => scratch.deleteSync(recursive: true));
+      final identity = <String, dynamic>{'profile': 'tiny-gguf-cpu'};
+      await bundleLiteRtRuntime(
+        'missing-checkout',
+        scratch,
+        scratch,
+        identity,
+        abi: Abi.windowsArm64,
+        execute: (executable, arguments, {directory, timeout}) async =>
+            throw StateError('No extraction should run'),
+      );
+      expect(identity['litert_runtime_supported'], false);
+      expect(scratch.listSync(), isEmpty);
+      await expectLater(
+        bundleLiteRtRuntime('missing-checkout', scratch, scratch, {
+          'profile': 'chat-litert-cpu',
+        }, abi: Abi.windowsArm64),
+        throwsUnsupportedError,
+      );
+    },
+  );
+  test(
+    'standalone LiteRT archive inventory matches every supported desktop hook',
+    () {
+      final hook = File('hook/build.dart').readAsStringSync();
+      for (final target in [
+        'macos-arm64',
+        'macos-x64',
+        'linux-arm64',
+        'linux-x64',
+        'windows-x64',
+      ]) {
+        final spec = liteRtArchiveSpec(hook, target);
+        expect(spec.checksum, matches(r'^[a-f0-9]{64}$'));
+        expect(spec.libraries, isNotEmpty);
+        expect(spec.libraries.any((name) => name.contains('LiteRtLm')), true);
+      }
+      expect(() => liteRtArchiveSpec(hook, 'windows-arm64'), throwsStateError);
+      expect(
+        () => liteRtArchiveSpec(
+          hook.replaceAll('sha256:', 'unverified:'),
+          'macos-arm64',
+        ),
+        throwsStateError,
+      );
+    },
+  );
   late Directory scratch;
   late Directory bundle;
   late Directory runs;

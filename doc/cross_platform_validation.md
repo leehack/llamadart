@@ -87,7 +87,14 @@ dart run tool/testing/validation.dart build --target ios --profile tiny-gguf-cpu
 ```
 
 Desktop bundles include `bin/llamadart-validate`, `bin/llamadart-report`, native
-code assets, profiles and remote wrappers. Run outside the repository:
+code assets, profiles and remote wrappers.
+The hidden `.dart_tool/llamadart/litert_lm/` directory inside desktop bundles
+contains the pinned LiteRT runtime, re-extracted from its SHA256-verified archive.
+Preserve it when copying or extracting a bundle; the public runtime discovers it
+relative to the executable. This avoids depending on the build machine's cache.
+Windows arm64 bundles retain GGUF only; the manifest records LiteRT unavailable,
+and an explicitly selected LiteRT build profile is rejected on that ABI.
+Run outside the repository:
 
 ```sh
 bin/llamadart-validate --profile tiny-gguf-cpu --environment-file environment.json --out results

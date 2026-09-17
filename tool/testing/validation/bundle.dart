@@ -6,6 +6,7 @@ import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
 
 import 'process.dart';
+import 'runtime_bundle.dart';
 
 /// Reads committed source and runtime identities for local runs and bundles.
 Future<Map<String, dynamic>> readValidationProvenance(
@@ -189,6 +190,13 @@ Future<Directory> buildValidationBundle(
       copyDirectory(
         Directory(p.join(package, 'assets')),
         Directory(p.join(destination.path, 'assets')),
+      );
+      await bundleLiteRtRuntime(
+        root,
+        destination,
+        scratch,
+        provenance,
+        execute: execute,
       );
       for (final name in ['run-remote.sh', 'run-remote.ps1']) {
         File(
