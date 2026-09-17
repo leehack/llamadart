@@ -17,10 +17,15 @@ class ValidationApp extends StatefulWidget {
 
 class _ValidationAppState extends State<ValidationApp> {
   final _controller = ValidationController();
-  String _profile = const String.fromEnvironment(
+  static const _compiledProfile = String.fromEnvironment(
     'VALIDATION_PROFILE',
     defaultValue: 'tiny-gguf-cpu',
   );
+  static const _executionPath = String.fromEnvironment(
+    'VALIDATION_EXECUTION_PATH',
+    defaultValue: 'public_api',
+  );
+  String _profile = _compiledProfile;
   @override
   void dispose() {
     _controller.cancel();
@@ -50,24 +55,32 @@ class _ValidationAppState extends State<ValidationApp> {
                   style: TextStyle(fontSize: 22),
                 ),
                 const SizedBox(height: 16),
+                Text(
+                  _executionPath == 'native_c_api'
+                      ? 'Direct native control · does not qualify the public Dart path'
+                      : 'llamadart public API',
+                ),
                 DropdownButtonFormField<String>(
                   initialValue: _profile,
                   decoration: const InputDecoration(
                     labelText: 'Model / backend profile',
                   ),
                   items: [
-                    for (final id in const [
-                      'tiny-gguf-cpu',
-                      'tiny-gguf-metal',
-                      'tiny-gguf-vulkan',
-                      'tiny-gguf-cuda',
-                      'chat-gguf-cpu',
-                      'chat-gguf-metal',
-                      'chat-gguf-vulkan',
-                      'chat-gguf-cuda',
-                      'chat-litert-cpu',
-                      'chat-litert-gpu',
-                    ])
+                    for (final id
+                        in _compiledProfile.startsWith('npu-')
+                            ? [_compiledProfile]
+                            : const [
+                                'tiny-gguf-cpu',
+                                'tiny-gguf-metal',
+                                'tiny-gguf-vulkan',
+                                'tiny-gguf-cuda',
+                                'chat-gguf-cpu',
+                                'chat-gguf-metal',
+                                'chat-gguf-vulkan',
+                                'chat-gguf-cuda',
+                                'chat-litert-cpu',
+                                'chat-litert-gpu',
+                              ])
                       DropdownMenuItem(value: id, child: Text(id)),
                   ],
                   onChanged: _controller.running
@@ -124,7 +137,11 @@ class _ValidationAppState extends State<ValidationApp> {
                     'Assertions: ${_controller.report!.assertionsPassed ? 'passed' : 'failed or incomplete'}',
                   ),
                   Text(
-                    'Accelerator execution: ${_controller.report!.acceleratorVerified ? 'not required' : 'unverified; inspect native evidence'}',
+                    'Accelerator execution: ${_controller.report!.placement['required'] != true
+                        ? 'not required'
+                        : _controller.report!.acceleratorVerified
+                        ? _controller.report!.placement['reason']
+                        : 'unverified; inspect native evidence'}',
                   ),
                   SelectableText(_controller.host.outputLocation),
                 ],
