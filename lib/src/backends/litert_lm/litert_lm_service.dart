@@ -172,7 +172,8 @@ class LiteRtLmService {
     final loraPath = _activeTextLoraPath();
     client.createConversation(
       temperature: params.temp,
-      topK: params.topK,
+      // Zero-temperature LiteRT GPU sampling needs a single greedy candidate.
+      topK: params.temp == 0 ? 1 : params.topK,
       topP: params.topP,
       seed: params.seed ?? _defaultSamplerSeed(),
       npuBackend: backend == 'npu',
@@ -305,7 +306,8 @@ class LiteRtLmService {
       tools: nativeTools,
       extraContext: extraContext,
       temperature: params.temp,
-      topK: params.topK,
+      // Zero-temperature LiteRT GPU sampling needs a single greedy candidate.
+      topK: params.temp == 0 ? 1 : params.topK,
       topP: params.topP,
       seed: params.seed ?? _defaultSamplerSeed(),
       npuBackend: backend == 'npu',

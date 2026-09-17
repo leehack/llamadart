@@ -1707,6 +1707,51 @@ void main() {
     }
   });
 
+  for (final chat in [false, true]) {
+    for (final requestedTopK in [0, 1, 40]) {
+      test('uses greedy LiteRT sampling for zero temperature '
+          '(chat=$chat, topK=$requestedTopK)', () async {
+        final fakeClient = _FakeLiteRtLmRuntimeClient();
+        final service = LiteRtLmService(clientFactory: () => fakeClient);
+        const modelParams = ModelParams(preferredBackend: GpuBackend.cpu);
+        try {
+          final model = await service.loadModel(modelFile.path, modelParams);
+          final context = service.createContext(model, modelParams);
+          final params = GenerationParams(
+            temp: 0,
+            topK: requestedTopK,
+            topP: 0.4,
+            seed: 9,
+          );
+          final stream = chat
+              ? service.generateChat(
+                  context,
+                  const [
+                    LlamaChatMessage.fromText(
+                      role: LlamaChatRole.user,
+                      text: '2+2?',
+                    ),
+                  ],
+                  params,
+                  enableThinking: false,
+                )
+              : service.generate(context, '2+2?', params);
+          final chunks = stream.toList();
+          await fakeClient.generateStarted.future;
+          fakeClient.generated.add('4');
+          await fakeClient.generated.close();
+          expect(await chunks, [utf8.encode('4')]);
+          expect(fakeClient.lastTemperature, 0);
+          expect(fakeClient.lastTopK, 1);
+          expect(fakeClient.lastTopP, 0.4);
+          expect(fakeClient.lastSeed, 9);
+        } finally {
+          service.dispose();
+        }
+      });
+    }
+  }
+
   test('passes supported LiteRT-LM generation options to the client', () async {
     final fakeClient = _FakeLiteRtLmRuntimeClient();
     final service = LiteRtLmService(clientFactory: () => fakeClient);
