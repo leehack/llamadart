@@ -318,6 +318,11 @@ class _Capi {
         config,
         wire['messages_json'] as String?,
       );
+      setJson(
+        'conversation_config_set_extra_context',
+        config,
+        wire['extra_context_json'] as String,
+      );
       library.lookupFunction<
         Void Function(Pointer<Void>, Bool),
         void Function(Pointer<Void>, bool)

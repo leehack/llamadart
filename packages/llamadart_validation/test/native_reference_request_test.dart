@@ -56,6 +56,9 @@ void main() {
       ],
     });
     expect(wire['enable_constrained_decoding'], false);
+    expect(jsonDecode(wire['extra_context_json'] as String), {
+      'enable_thinking': true,
+    });
   });
   test('literal system control reproduces the public double-encoded bytes', () {
     final systemObject = {

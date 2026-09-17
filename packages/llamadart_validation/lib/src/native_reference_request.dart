@@ -47,6 +47,7 @@ Map<String, dynamic> nativeReferenceRequest(
     'system_message_json': system.isEmpty ? null : jsonEncode(system),
     'messages_json': past.isEmpty ? null : jsonEncode(past),
     'message_json': jsonEncode(encode(messages.last)),
+    'extra_context_json': jsonEncode({'enable_thinking': true}),
     'enable_constrained_decoding': false,
   };
 }
