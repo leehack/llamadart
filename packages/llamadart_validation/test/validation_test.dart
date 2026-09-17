@@ -585,13 +585,20 @@ void main() {
   test(
     'CPU backend changes during reload or recovery cannot qualify TPS',
     () async {
-      for (final threshold in [2, 3]) {
-        final result = await run(FakeEngine()..switchAfterLoad = threshold);
+      for (final threshold in [2, 3, 4]) {
+        final result = await run(
+          FakeEngine()..switchAfterLoad = threshold,
+          selected: focused(['lifecycle']),
+        );
         expect(
           result.report.cases.singleWhere(
             (c) =>
                 c['case_id'] ==
-                (threshold == 2 ? 'C09.reload' : 'C12.recovery'),
+                (threshold == 2
+                    ? 'C09.reload'
+                    : threshold == 3
+                    ? 'C12.recovery'
+                    : 'C09.reload.second'),
           )['status'],
           'FAIL',
         );
@@ -604,7 +611,15 @@ void main() {
     'native GPU evidence requires matching backend and all load allocations',
     () {
       final manifest = <String, dynamic>{
-        'profile': {'runtime': 'gguf', 'backend': 'metal'},
+        'schema_version': 1,
+        'profile':
+            (jsonDecode(
+                    File(
+                      'assets/profiles/tiny-gguf-cpu.json',
+                    ).readAsStringSync(),
+                  )
+                  as Map<String, dynamic>)
+              ..['backend'] = 'metal',
         'accelerator_evidence_required': true,
       };
       final cases = <Map<String, dynamic>>[
@@ -652,6 +667,65 @@ void main() {
       expect(inspectPlacement(manifest, cases, load * 3)['verified'], false);
     },
   );
+
+  for (final selection in ['focused', 'release']) {
+    test('$selection GPU proof includes every selected reload', () {
+      final data =
+          jsonDecode(
+                File('assets/profiles/tiny-gguf-cpu.json').readAsStringSync(),
+              )
+              as Map<String, dynamic>;
+      data['backend'] = 'metal';
+      data['selection'] = selection;
+      if (selection == 'focused') data['focus_features'] = ['lifecycle'];
+      final manifest = <String, dynamic>{
+        'schema_version': 2,
+        'profile': data,
+        // A producer cannot waive the fourth load by omitting it here.
+        'case_ids': ['C01.load', 'C09.reload', 'C12.recovery'],
+        'accelerator_evidence_required': false,
+      };
+      final cases = <Map<String, dynamic>>[
+        for (final id in [
+          'C01.load',
+          'C09.reload',
+          'C12.recovery',
+          'C09.reload.second',
+        ])
+          {
+            'case_id': id,
+            'status': 'PASS',
+            'diagnostics': {'backend_name': 'Metal'},
+          },
+      ];
+      const load =
+          'load_tensors: offloaded 7/7 layers to GPU\nsched_reserve: MTL0 compute buffer size = 63.62 MiB\n';
+      final proof = inspectPlacement(manifest, cases, load * 4);
+      expect(proof['verified'], true);
+      expect(proof['expected_loads'], 4);
+      expect(inspectPlacement(manifest, cases, load * 3)['verified'], false);
+      expect(
+        inspectPlacement(
+          manifest,
+          cases.take(3).toList(),
+          load * 4,
+        )['verified'],
+        false,
+      );
+      expect(
+        inspectPlacement(manifest, [
+          ...cases.take(3),
+          cases.first,
+        ], load * 4)['verified'],
+        false,
+      );
+      cases.last['diagnostics'] = {'backend_name': 'CPU'};
+      expect(inspectPlacement(manifest, cases, load * 4)['verified'], false);
+      cases.last['diagnostics'] = {'backend_name': 'Metal'};
+      cases.last['status'] = 'FAIL';
+      expect(inspectPlacement(manifest, cases, load * 4)['verified'], false);
+    });
+  }
 
   test(
     'late timed-out reload cannot start more inference after cleanup',

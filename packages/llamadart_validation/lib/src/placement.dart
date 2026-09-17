@@ -1,6 +1,8 @@
 import 'dart:convert';
+
 import 'package:crypto/crypto.dart';
 
+import 'manifest.dart';
 import 'npu_evidence.dart';
 
 /// Conservative GGUF native-log evidence. A selector or device inventory alone
@@ -25,23 +27,48 @@ Map<String, dynamic> inspectPlacement(
     'reason': 'native placement evidence unavailable',
     if (log != null) 'log_sha256': sha256.convert(utf8.encode(log)).toString(),
   };
+  // Derive obligations from the executable profile, never from a producer's
+  // case inventory or the evidence records that happen to be present.
+  final List<String> selected;
+  try {
+    final parsed = ValidationProfile.fromJson(
+      Map<String, dynamic>.from(profile),
+    );
+    final schema = manifest['schema_version'];
+    if (schema != 1 && schema != 2 ||
+        schema == 1 && parsed.selection == 'focused') {
+      return result;
+    }
+    selected = schema == 1 ? parsed.legacyCaseIds : parsed.caseIds;
+  } catch (_) {
+    return result;
+  }
   if (profile['runtime'] == 'litert' && backend == 'npu') {
-    return _inspectNpu(manifest, cases, result);
+    return _inspectNpu(manifest, cases, selected, result);
   }
   if (profile['runtime'] != 'gguf' ||
       log == null ||
       !['cuda', 'metal', 'vulkan'].contains(backend)) {
     return result;
   }
-  final loads = cases
+  final expectedIds = selected
       .where(
-        (c) =>
-            ['C01.load', 'C09.reload', 'C12.recovery'].contains(c['case_id']) &&
-            c['status'] == 'PASS',
+        (id) => const [
+          'C01.load',
+          'C09.reload',
+          'C12.recovery',
+          'C09.reload.second',
+        ].contains(id),
       )
       .toList();
-  final expectedLoads = loads.length;
-  if (expectedLoads != 3 ||
+  final loads = cases
+      .where((c) => expectedIds.contains(c['case_id']) && c['status'] == 'PASS')
+      .toList();
+  final expectedLoads = expectedIds.length;
+  if (expectedLoads == 0 ||
+      expectedIds.any(
+        (id) => loads.where((c) => c['case_id'] == id).length != 1,
+      ) ||
       loads.any((c) {
         final name = (c['diagnostics'] as Map?)?['backend_name'];
         return name is! String ||
@@ -71,7 +98,7 @@ Map<String, dynamic> inspectPlacement(
     ...result,
     'verified': positive,
     'reason': positive
-        ? 'matching runtime diagnostics, positive native tensor offload and compute buffers for all three loads'
+        ? 'matching runtime diagnostics, positive native tensor offload and compute buffers for all $expectedLoads loads'
         : 'native placement records incomplete or contradictory',
     'expected_loads': expectedLoads,
     'offload_records': offloads.map((m) => m[0]).toList(),
@@ -82,6 +109,7 @@ Map<String, dynamic> inspectPlacement(
 Map<String, dynamic> _inspectNpu(
   Map<String, dynamic> manifest,
   List<Map<String, dynamic>> cases,
+  List<String> selected,
   Map<String, dynamic> result,
 ) {
   final profile = manifest['profile'] as Map;
@@ -119,34 +147,26 @@ Map<String, dynamic> _inspectNpu(
             RegExp(r'^[a-f0-9]{64}$').hasMatch('${value['sha256']}') &&
             (lock['sha256'] == null || value['sha256'] == lock['sha256']);
       });
-  final expected = profile['execution_path'] == 'native_c_api'
-      ? [
-          'C04.hello',
-          'C04.arithmetic',
-          'C06.history',
-          'C06.history.public_system_wire',
-          'C06.history.no_system',
-          'C06.history.combined',
-          'C09.reload',
-          'B01.warmup',
-          'B01.1',
-          'B01.2',
-          'B01.3',
-        ]
-      : [
-          'C03.raw',
-          'C04.hello',
-          'C04.arithmetic',
-          'C06.history',
-          'C08.cancel',
-          'C09.reload',
-          'C10.limit',
-          'C12.recovery',
-          'B01.warmup',
-          'B01.1',
-          'B01.2',
-          'B01.3',
-        ];
+  final expected = selected.where(
+    (id) => const [
+      'C03.raw',
+      'C04.hello',
+      'C04.arithmetic',
+      'C06.history',
+      'C06.history.public_system_wire',
+      'C06.history.no_system',
+      'C06.history.combined',
+      'C08.cancel',
+      'C09.reload',
+      'C10.limit',
+      'C12.recovery',
+      'B01.warmup',
+      'B01.1',
+      'B01.2',
+      'B01.3',
+      'C09.reload.second',
+    ].contains(id),
+  );
   final records = {for (final record in cases) record['case_id']: record};
   var valid = identitiesMatch;
   var proven = 0;

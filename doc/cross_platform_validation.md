@@ -21,7 +21,7 @@ history qualification remains failed; Pixel 10 hardware execution is NOT_RUN.
 The quick diagnostic core is usable; the full platform/release suite is incomplete.
 Model-backed Mac, browser and Firebase runs have exposed actual product failures,
 and the reports retain failed assertions alongside useful timing and device evidence.
-As of 2026-09-17, the local harness has 53 passing model-free tests and the provider
+As of 2026-09-17, the local harness has 58 passing model-free tests and the provider
 and input controls have 44. Draft [PR #515](https://github.com/leehack/llamadart/pull/515)
 now runs the portable build workflow on relevant changes. Follow its current CI
 for target-specific build results; build-only success is not model execution.
