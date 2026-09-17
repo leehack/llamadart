@@ -93,7 +93,7 @@ class FakeProvider implements RemoteProvider {
 }
 
 class MatrixProvider extends GcloudProvider {
-  MatrixProvider(this.value);
+  MatrixProvider(this.value, {super.execute});
   final Map<String, dynamic> value;
   @override
   Future<Map<String, dynamic>> matrix(
@@ -313,6 +313,113 @@ void main() {
           throwsStateError,
         );
       }
+    },
+  );
+
+  test(
+    'Firebase async URL receipts recover an owned Android or iOS matrix',
+    () async {
+      for (final target in ['firebase-android', 'firebase-ios']) {
+        final calls = <List<String>>[];
+        final checkpoints = <Map<String, dynamic>>[];
+        final provider = MatrixProvider(
+          {
+            'projectId': 'test-project',
+            'testMatrixId': 'matrix-one',
+            'clientInfo': {
+              'clientInfoDetails': [
+                {'key': 'matrixLabel', 'value': 'qa-one'},
+              ],
+            },
+          },
+          execute: (binary, args, {directory, timeout}) async {
+            calls.add(args);
+            return CommandResult(
+              0,
+              jsonEncode(
+                'https://console.firebase.google.com/project/test-project/testlab/histories/history/matrices/execution',
+              ),
+              'Uploading test files...\nTest [matrix-one] has been created in the Google Cloud.\n',
+            );
+          },
+        );
+        final remote = await provider.start(
+          plan(target: target),
+          checkpoints.add,
+        );
+        expect(remote['matrix_id'], 'matrix-one');
+        expect(checkpoints.first, {'submission_candidate_id': 'matrix-one'});
+        expect(checkpoints.last['matrix_id'], 'matrix-one');
+        expect(calls, hasLength(1));
+        expect(calls.single, contains('--async'));
+        expect(calls.single, contains('--num-flaky-test-attempts=0'));
+      }
+    },
+  );
+
+  test(
+    'Firebase submission rejects ambiguous receipts and foreign ownership',
+    () async {
+      for (final receipt in [
+        '',
+        'Test [matrix-one] has been created in the Google Cloud.\nTest [matrix-two] has been created in the Google Cloud.\n',
+        'Test [matrix-one] has been created in the Google Cloud.\n',
+      ]) {
+        final checkpoints = <Map<String, dynamic>>[];
+        final provider = MatrixProvider(
+          {
+            'projectId': 'another-project',
+            'testMatrixId': 'matrix-one',
+            'clientInfo': {
+              'clientInfoDetails': [
+                {'key': 'matrixLabel', 'value': 'qa-one'},
+              ],
+            },
+          },
+          execute: (binary, args, {directory, timeout}) async => CommandResult(
+            0,
+            jsonEncode('https://console.firebase.google.com/'),
+            receipt,
+          ),
+        );
+        await expectLater(
+          provider.start(plan(), checkpoints.add),
+          throwsStateError,
+        );
+        expect(
+          checkpoints.where((value) => value.containsKey('matrix_id')),
+          isEmpty,
+        );
+      }
+    },
+  );
+
+  test(
+    'Firebase saves verified identity when gcloud fails after creation',
+    () async {
+      final checkpoints = <Map<String, dynamic>>[];
+      final provider = MatrixProvider(
+        {
+          'projectId': 'test-project',
+          'testMatrixId': 'matrix-one',
+          'clientInfo': {
+            'clientInfoDetails': [
+              {'key': 'matrixLabel', 'value': 'qa-one'},
+            ],
+          },
+        },
+        execute: (binary, args, {directory, timeout}) async =>
+            const CommandResult(
+              1,
+              '',
+              'Test [matrix-one] has been created in the Google Cloud.\n',
+            ),
+      );
+      await expectLater(
+        provider.start(plan(), checkpoints.add),
+        throwsStateError,
+      );
+      expect(checkpoints.last['matrix_id'], 'matrix-one');
     },
   );
 

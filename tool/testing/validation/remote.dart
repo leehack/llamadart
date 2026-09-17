@@ -747,17 +747,29 @@ class GcloudProvider implements RemoteProvider {
       if (!ios)
         '--directories-to-pull=/sdcard/Android/data/com.example.llamadart_chat_example/files/validation',
     ];
-    final result = jsonObject(
-      await command(plan, args, timeout: const Duration(minutes: 10)),
+    final result = await command(
+      plan,
+      args,
+      timeout: const Duration(minutes: 10),
     );
-    final id = result['testMatrixId'];
-    if (id is! String) {
+    // gcloud --async returns a console URL, even with --format=json. Its
+    // creation receipt names the matrix; verify ownership through the API.
+    final ids = RegExp(
+      r'^Test \[([A-Za-z0-9_-]+)\] has been created in the Google Cloud\.\s*$',
+      multiLine: true,
+    ).allMatches(result.error).map((match) => match[1]!).toSet();
+    if (ids.length != 1) {
       throw StateError(
         'Submission response lacks matrix ID; reconcile without resubmitting',
       );
     }
-    final remote = {'matrix_id': id, 'matrix': result};
+    final id = ids.single;
+    checkpoint({'submission_candidate_id': id});
+    final remote = await identify(plan, id);
     checkpoint(remote);
+    if (result.code != 0) {
+      throw StateError('Submission failed after creating a verified matrix');
+    }
     return remote;
   }
 

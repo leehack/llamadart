@@ -169,6 +169,12 @@ flaky retries and no video. It records the matrix ID, polls terminal state, copi
 the default Test Lab results, then verifies completion or cancellation. It does
 not enable billing or create a custom result bucket.
 
+The gcloud asynchronous response contains a console URL, not a matrix object.
+The adapter reads the matrix creation receipt and verifies its project and unique
+run label through the Testing API before using it. If submission is interrupted,
+recover the existing matrix with `reconcile`; never repeat `run` to find out
+whether a submission succeeded. An unverified candidate ID is diagnostic only.
+
 Android pulls external app result files with complete console JSONL as fallback.
 iOS attaches bounded result files to XCTest; collection exports `.xcresult`
 attachments on macOS. Missing, truncated or conflicting evidence remains incomplete.
