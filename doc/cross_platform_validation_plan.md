@@ -138,8 +138,11 @@ The download location after publication and a successful workflow run will be
 The local `.github/workflows/validation_bundles.yml` implementation names desktop
 artifacts `validation-desktop-<runner-os>-<runner-arch>-<commit>` and app artifacts
 `validation-<target>-<commit>`. The bundle manifest records the locked profile.
-The workflow has not yet been published or run across all CI hosts; no hosted
-artifact availability is claimed from local builds alone.
+Draft [PR #515](https://github.com/leehack/llamadart/pull/515) publishes this
+workflow and runs the tiny CPU build on relevant PR changes. Desktop jobs also
+extract the archive into a temporary directory and verify command startup/profile
+discovery there without inference. Use a successful run's artifact inventory;
+do not infer hosted availability from a local build.
 
 | Target | Download / runnable output |
 | --- | --- |

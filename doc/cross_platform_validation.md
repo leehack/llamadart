@@ -22,8 +22,9 @@ The quick diagnostic core is usable; the full platform/release suite is incomple
 Model-backed Mac, browser and Firebase runs have exposed actual product failures,
 and the reports retain failed assertions alongside useful timing and device evidence.
 As of 2026-09-17, the local harness has 43 passing model-free tests and the provider
-and input controls have 44. These are local results; the unpublished branch has
-not yet qualified its portable build workflow across all CI hosts.
+and input controls have 44. Draft [PR #515](https://github.com/leehack/llamadart/pull/515)
+now runs the portable build workflow on relevant changes. Follow its current CI
+for target-specific build results; build-only success is not model execution.
 
 | Area | Current evidence | Remaining qualification |
 | --- | --- | --- |
@@ -53,6 +54,8 @@ critical feature packs with representative locked models before broadening devic
 - `.github/workflows/validation_bundles.yml`: build-only workflow on relevant PR
   changes (tiny CPU profile) or explicit manual selection. No cloud
   credentials, model runs, VM creation or Firebase submission in CI.
+  Desktop jobs extract the transport archive outside the checkout and verify
+  command startup and bundled profile discovery without loading a model.
 - `.dart_tool/validation/`: ignored local models, bundles and journals. Do not
   commit weights, signing files, account configs, results or credentials.
 

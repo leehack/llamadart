@@ -53,6 +53,28 @@ jobs:
       - run: dart run tool/testing/validation.dart build --target desktop --profile ${{ inputs.profile || 'tiny-gguf-cpu' }} --out .dart_tool/validation/bundle
       - name: Preserve executable permissions in transport
         run: tar -czf .dart_tool/validation/bundle.tar.gz -C .dart_tool/validation bundle
+      - name: Verify extracted desktop command and profiles
+        shell: bash
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          import subprocess
+          import tarfile
+          import tempfile
+
+          archive = Path('.dart_tool/validation/bundle.tar.gz').resolve()
+          with tempfile.TemporaryDirectory(prefix='llamadart-portable-') as scratch:
+              with tarfile.open(archive) as package:
+                  package.extractall(scratch, filter='data')
+              extension = '.exe' if os.name == 'nt' else ''
+              command = Path(scratch) / 'bundle/bin' / ('llamadart-validate' + extension)
+              subprocess.run([str(command), '--help'], cwd=scratch, check=True, timeout=30)
+              profiles = subprocess.run([str(command), '--list'], cwd=scratch, check=True,
+                                        capture_output=True, text=True, timeout=30).stdout.splitlines()
+              if 'tiny-gguf-cpu' not in profiles:
+                  raise RuntimeError('Extracted command did not discover bundled profiles')
+          PY
       - uses: actions/upload-artifact@v6
         with:
           name: validation-desktop-${{ runner.os }}-${{ runner.arch }}-${{ github.sha }}
