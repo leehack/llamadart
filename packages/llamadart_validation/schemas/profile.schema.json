@@ -32,6 +32,15 @@
         "release"
       ]
     },
+    "execution_path": {
+      "enum": ["public_api", "native_c_api"]
+    },
+    "enable_thinking": {
+      "type": "boolean"
+    },
+    "history_controls": {
+      "type": "boolean"
+    },
     "context_size": {
       "type": "integer",
       "minimum": 128,

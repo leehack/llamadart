@@ -534,6 +534,81 @@ void main() {
     );
   });
   test(
+    'removing an obligation and its inventory entry cannot qualify',
+    () async {
+      final result = await run(FakeEngine());
+      final events = result.events;
+      (events.first['case_ids'] as List).remove('C06.history');
+      events.removeWhere((event) => event['case_id'] == 'C06.history');
+      for (var index = 1; index < events.length; index++) {
+        events[index]['sequence'] = index - 1;
+      }
+      final report = ValidationReport.parse(events.map(jsonEncode).join('\n'));
+      expect(report.qualified, false);
+      expect(
+        report.problems,
+        contains('Case inventory does not match the profile'),
+      );
+      expect(
+        report.cases.singleWhere(
+          (c) => c['case_id'] == 'C06.history',
+        )['status'],
+        'NOT_RUN',
+      );
+    },
+  );
+  test('rehashed configuration must match the executable profile', () async {
+    final result = await run(FakeEngine());
+    final manifest = result.events.first;
+    (manifest['effective_config'] as Map)['temperature'] = 0.8;
+    manifest['config_hash'] = jsonHash(manifest['effective_config']);
+    final report = ValidationReport.parse(
+      result.events.map(jsonEncode).join('\n'),
+    );
+    expect(report.qualified, false);
+    expect(
+      report.problems,
+      contains('Effective configuration does not match the profile'),
+    );
+  });
+  test('report rejects a self-hashed invalid profile', () async {
+    final result = await run(FakeEngine());
+    final manifest = result.events.first;
+    (manifest['profile'] as Map)['runtime'] = 'invalid';
+    manifest['profile_hash'] = jsonHash(manifest['profile']);
+    final report = ValidationReport.parse(
+      result.events.map(jsonEncode).join('\n'),
+    );
+    expect(report.qualified, false);
+    expect(report.problems, contains('Invalid validation profile'));
+  });
+  test('manifest flag cannot waive accelerator evidence', () async {
+    for (final flag in [false, null]) {
+      final result = await run(FakeEngine(), selected: profile(backend: 'gpu'));
+      result.events.first['accelerator_evidence_required'] = flag;
+      final report = ValidationReport.parse(
+        result.events.map(jsonEncode).join('\n'),
+      );
+      expect(report.qualified, false);
+      expect(report.acceleratorVerified, false);
+      expect(
+        report.problems,
+        contains('Accelerator evidence requirement does not match the profile'),
+      );
+    }
+  });
+  test('record cannot declare its own unsupported exemption', () async {
+    final result = await run(FakeEngine());
+    result.events.firstWhere((e) => e['type'] == 'case')
+      ..['status'] = 'UNSUPPORTED'
+      ..['expected_unsupported'] = true;
+    final report = ValidationReport.parse(
+      result.events.map(jsonEncode).join('\n'),
+    );
+    expect(report.qualified, false);
+    expect(report.assertionsPassed, false);
+  });
+  test(
     'duplicate, missing, malformed or truncated records fail closed',
     () async {
       final result = await run(FakeEngine());

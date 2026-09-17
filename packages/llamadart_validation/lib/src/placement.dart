@@ -10,9 +10,12 @@ Map<String, dynamic> inspectPlacement(
   List<Map<String, dynamic>> cases,
   String? log,
 ) {
-  final profile = manifest['profile'] as Map? ?? {};
+  final profile = manifest['profile'] is Map
+      ? manifest['profile'] as Map
+      : const {};
   final backend = profile['backend'];
-  final required = manifest['accelerator_evidence_required'] == true;
+  // The selector determines the obligation; a journal flag cannot waive it.
+  final required = !['cpu', 'auto', 'blas'].contains(backend);
   if (!required) {
     return {'required': false, 'verified': true, 'reason': 'not_required'};
   }

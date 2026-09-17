@@ -24,10 +24,15 @@ CLI entrypoints. Flutter uses the package's profile assets and shared runner.
 Native wrappers persist JSONL per event; reports always derive from that journal.
 
 The two `npu-*` profiles are locked candidates. Inspect their local prerequisites
-with `validation.dart npu-preflight`; downloading/running them is blocked until
-installed-app packaging, SoC checks and per-generation execution proof are wired.
+with `validation.dart npu-preflight`; the opt-in Android builder packages verified
+local model/vendor inputs and the installed app checks its SoC and captures
+per-generation execution proof. S24 NPU execution is verified but semantic
+qualification still fails; Pixel 10 hardware execution remains NOT_RUN.
 
 Exit 0 means this selected run qualified, 1 means failed/incomplete.
 Unknown/dirty source provenance, missing counters, unknown backend placement, skipped mandatory cases and missing
 records remain incomplete. `release` selection deliberately records unimplemented
 feature packs as NOT_RUN until their fixtures and wrappers are qualified.
+The reporter derives mandatory cases, effective settings and accelerator-proof
+requirements from the validated profile. Self-declared inventory, rehashed
+conflicting settings and per-record unsupported exemptions cannot waive them.

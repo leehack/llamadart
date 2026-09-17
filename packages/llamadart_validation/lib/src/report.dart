@@ -48,13 +48,37 @@ class ValidationReport {
     if (manifest['config_hash'] != jsonHash(manifest['effective_config'])) {
       problems.add('Effective configuration hash does not match');
     }
+    ValidationProfile? profile;
+    try {
+      profile = ValidationProfile.fromJson(
+        manifest['profile'] as Map<String, dynamic>,
+      );
+    } catch (_) {
+      problems.add('Invalid validation profile');
+    }
     final inventory = manifest['case_ids'];
-    final expected = inventory is List
+    final declared = inventory is List
         ? inventory.whereType<String>().toList()
         : <String>[];
-    if (inventory is! List || expected.length != inventory.length) {
+    if (inventory is! List || declared.length != inventory.length) {
       problems.add('Malformed case inventory');
     }
+    if (profile != null) {
+      if (canonicalJson(inventory) != canonicalJson(profile.caseIds)) {
+        problems.add('Case inventory does not match the profile');
+      }
+      if (canonicalJson(manifest['effective_config']) !=
+          canonicalJson(profile.effectiveConfig)) {
+        problems.add('Effective configuration does not match the profile');
+      }
+      if (manifest['accelerator_evidence_required'] !=
+          profile.requiresAcceleratorProof) {
+        problems.add(
+          'Accelerator evidence requirement does not match the profile',
+        );
+      }
+    }
+    final expected = profile?.caseIds ?? declared;
     var sequence = 0;
     for (var index = 0; index < events.length; index++) {
       final event = events[index];
@@ -135,19 +159,21 @@ class ValidationReport {
   bool get assertionsPassed =>
       problems.isEmpty &&
       cases.isNotEmpty &&
-      cases.every(
-        (e) =>
-            e['status'] == 'PASS' ||
-            (e['status'] == 'UNSUPPORTED' && e['expected_unsupported'] == true),
-      );
+      // The current catalog has no allowed unsupported exemptions. A producer
+      // cannot grant itself one through an expected_unsupported event field.
+      cases.every((e) => e['status'] == 'PASS');
 
   /// Public selector values alone never qualify an accelerator.
   bool get acceleratorVerified => placement['verified'] == true;
 
   /// Missing or uncommitted build identity preserves results but cannot qualify.
   List<String> get provenanceProblems {
-    final environment = manifest['environment'] as Map? ?? {};
-    final runtime = (manifest['profile'] as Map?)?['runtime'];
+    final environment = manifest['environment'] is Map
+        ? manifest['environment'] as Map
+        : const {};
+    final runtime = manifest['profile'] is Map
+        ? (manifest['profile'] as Map)['runtime']
+        : null;
     final tag = environment[runtime == 'litert' ? 'litert_tag' : 'native_tag'];
     return [
       if (!RegExp(

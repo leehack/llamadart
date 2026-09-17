@@ -131,12 +131,13 @@ not the maintained suite location.
 
 ### Where to get the built apps
 
-The planned download location is **llamadart → GitHub Actions → Validation
-Bundles → selected run → Artifacts**, produced by
-`.github/workflows/validation_bundles.yml`. Name each artifact
-`llamadart-validation-<target>-<profile>-<commit12>` so downloads identify their
-platform, backend profile and source revision. This workflow and its artifacts
-do not exist yet; this is the distribution contract for implementation.
+The download location after publication and a successful workflow run will be
+**llamadart → GitHub Actions → Validation Bundles → selected run → Artifacts**.
+The local `.github/workflows/validation_bundles.yml` implementation names desktop
+artifacts `validation-desktop-<runner-os>-<runner-arch>-<commit>` and app artifacts
+`validation-<target>-<commit>`. The bundle manifest records the locked profile.
+The workflow has not yet been published or run across all CI hosts; no hosted
+artifact availability is claimed from local builds alone.
 
 | Target | Download / runnable output |
 | --- | --- |
@@ -1059,8 +1060,11 @@ blocking independently of speed. No throughput threshold hides a known failure.
    corrected locally, and the public replay matches canonical native `Cedar17`
    rather than repeated tokens. Keep its strict capitalization failure and the
    native combined-prompt failure explicit. Repeated Mac CPU public/native
-   controls reproduce both failure patterns; compare the original Gemma model
-   and rendered/tokenized prompts next, alongside Qwen arithmetic and GPU work.
+   controls reproduce both failure patterns. The original Gemma reference now
+   passes all four variants in three repetitions; the CPU tokenizer bytes and
+   rendered prompt/token IDs match after accounting for BOS. Separate converted
+   weights/quantization from LiteRT runtime execution next, alongside Qwen
+   arithmetic and GPU work. Keep those findings separate from NPU attribution.
    Complete the remaining Unicode
    generation, compatible S24 Gemma CPU and paired-report controls. Gated CPU
    weights require verified private model transfer before a Firebase run; never
@@ -1081,3 +1085,11 @@ work. Subsequent milestones expand model/features/platforms; the initial milesto
 does not qualify unrun rows. Known product failures remain visible. Full release
 readiness still requires the repository's
 existing review, platform matrix, affected-family and release gates.
+
+The [current readiness table](cross_platform_validation.md#current-readiness)
+records the implementation boundary. Report validation now derives required
+cases, expanded configuration and accelerator obligations from the profile;
+the journal cannot declare its own exemptions. The next suite acceptance step is
+exact-head CI build and portable execution evidence, followed by the missing
+critical feature packs. Original-model diagnostics remain private local evidence,
+not an extra heavyweight dependency in the default core or CI.

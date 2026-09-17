@@ -16,6 +16,30 @@ app checks its SoC before loading. Public-Dart and direct-native control paths
 capture per-generation dispatch evidence. S24 execution is verified, but strict
 history qualification remains failed; Pixel 10 hardware execution is NOT_RUN.
 
+## Current readiness
+
+The quick diagnostic core is usable; the full platform/release suite is incomplete.
+Model-backed Mac, browser and Firebase runs have exposed actual product failures,
+and the reports retain failed assertions alongside useful timing and device evidence.
+As of 2026-09-17, the local harness has 43 passing model-free tests and the provider
+and input controls have 44. These are local results; the unpublished branch has
+not yet qualified its portable build workflow across all CI hosts.
+
+| Area | Current evidence | Remaining qualification |
+| --- | --- | --- |
+| Quick public API core | Load, Unicode round-trip, raw/chat, history, cancellation/recovery, reload, token bound and short TPS sampling | Keep model/backend failures visible; add separate Unicode generation |
+| Report integrity | Canonical profile-derived cases/configuration/proof requirements; missing, contradictory, duplicate and interrupted records fail closed | Paired native/public/reference aggregation and optional trend views |
+| Portable apps | Local macOS bundle and Android/iOS/Web paths exercised | Exact-head Linux/Windows/macOS CI builds and portable execution on each target; iOS signing remains local |
+| Cloud lifecycle | Firebase submission, retrieval and cleanup exercised; Firebase/GCE failure controls tested locally | Real GCE upload/run/retrieve/delete lifecycle when credit and a run are authorized |
+| Accelerators | GGUF native-log proof and S24 per-generation NPU dispatch evidence | LiteRT GPU/Web proof, Pixel 10 NPU and the remaining device rotation |
+| Critical feature packs | Release selection preserves missing obligations as NOT_RUN | Thinking, tools, stop sequences, batching, guards, multimodal, speech and embeddings |
+
+Do not weaken semantic predicates to obtain a green run. The Gemma original-model
+control below passes the strict history predicate; the LiteRT results remain failed.
+Three benchmark samples support diagnosis, not a performance regression threshold
+or a device ranking. First qualify the portable build workflow, then expand the
+critical feature packs with representative locked models before broadening devices.
+
 ## Source and generated artifacts
 
 - `packages/llamadart_validation/`: private Dart suite, locked profiles, desktop
@@ -483,6 +507,14 @@ chunks are never called tokens. Backend-native decode timing and retokenized
 wall-time estimates stay in separate series. Three samples are informational,
 not a performance regression gate or a cross-device ranking.
 
+The reporter validates the embedded profile, derives its canonical mandatory case
+inventory and effective configuration, and checks the journal against both. Hash
+consistency alone is insufficient. Accelerator proof is derived from the backend;
+an event flag cannot waive it. The current catalog grants no expected-unsupported
+exemptions, so a producer cannot qualify a skipped case by setting
+`expected_unsupported: true`. Old reports are evidence snapshots; revalidation
+with a newer catalog must preserve the original and write a separate result.
+
 Explicit CPU rows reject contradictory GPU diagnostics. GGUF accelerator reports
 require matching backend diagnostics plus positive native tensor offload and
 compute allocations for all three successful loads. Device presence or requested
@@ -718,9 +750,9 @@ NPU controls; its outputs match the public CPU path in all twelve comparisons.
 
 Every row still fails exact `cedar17`. These failures therefore occur without
 Qualcomm/NPU execution and without the Dart service, worker or streaming adapter.
-This narrows attribution but does not distinguish the converted model/tokenizer,
-shared LiteRT runtime, and original model behavior. Compare the original model
-reference and rendered/tokenized prompts next; keep
+This narrowed attribution but did not distinguish the converted model/tokenizer,
+shared LiteRT runtime, and original model behavior. The subsequent original-model
+and prompt comparison below narrows that boundary further; keep
 [#513](https://github.com/leehack/llamadart/issues/513) open.
 
 Both CPU paths use context 1280, four threads, max output 32, thinking enabled
@@ -739,3 +771,51 @@ no cloud test minutes were consumed. The three run directories are
 `.dart_tool/validation/runs/gemma-cpu-20260917-{1,2,3}`; comparison JSON,
 direct-native script/results/logs and runtime/model audit are under
 `.dart_tool/validation/gemma-cpu-20260917/`.
+
+### Original Gemma and tokenizer reference (2026-09-17)
+
+The original `google/gemma-3-1b-it` model at revision
+`dcc83ea841ab6100d6b47a070329e1ba4cf78752` was acquired through existing authorized
+access and verified against repository Git blobs/LFS hashes. Its safetensors file
+is 1,999,811,208 bytes, SHA256
+`3d4ef8d71c14db7e448a09ebe891cfb6bf32c57a9b44499ae0d1c098e48516b6`.
+The local reference used Transformers 5.17.0, PyTorch 2.14.0, Tokenizers 0.23.2,
+CPU float32, four threads, eager attention, greedy decoding, seed 1 and at most
+32 new tokens. It used the model's original chat template and the exact four
+role/content inputs from the prior direct-native control.
+
+All four variants returned `cedar17\n` in each of three repetitions: **12/12 PASS**
+under the existing trimmed, case-sensitive predicate. No assertion was relaxed.
+This is a semantic reference, not a comparable speed or quantization benchmark.
+
+The CPU LiteRT model embeds a SentencePiece tokenizer byte-identical to the
+original: SHA256
+`1299c11d7cf632ef3b4e11937501358ada021bbdf7c47638d13c0ee982f2e79c`.
+For every input, the native conversation render exactly matches the original
+prompt after accounting for BOS. The native tokenizer IDs plus metadata BOS ID 2
+match the original Transformers input IDs. The pinned upstream session code adds
+that BOS separately on the first turn; this comparison checks rendering and the
+tokenizer API, not a trace of tensors passed to the executor.
+
+The NPU tokenizer differs in IDs 256000–262143 (6,144 vocabulary entries), with
+the same normalizer and core special-token IDs. None of the observed input IDs
+uses those changed entries. That difference is not evidence of the cause; actual
+NPU prompt tokenization was not captured in this local comparison. Both LiteRT
+files use non-Jinja role affixes with BOS ID 2; the NPU metadata additionally
+specifies the 1280-token limit.
+
+These results rule out an impossible oracle and a mismatched CPU tokenizer file
+for these inputs. They do not separate quantization/conversion effects from
+LiteRT executor/runtime behavior. Continue #513 with a controlled alternative
+conversion or upstream execution comparison; keep the strict failures and S24 CPU
+gap open. No Firebase execution, VM or paid resource was used. Hash audits,
+original inputs/token IDs/outputs, native rendered prompts, extracted tokenizer
+metadata, dependency versions and comparison JSON are retained privately under
+`.dart_tool/validation/gemma-reference-20260917/`.
+
+The report validator was also tightened after five regression tests demonstrated
+false qualifications from omitted obligations, conflicting rehashed settings,
+invalid profiles, waived accelerator flags and self-granted unsupported status.
+All 43 harness tests and 44 provider/input tests pass. Revalidating copies of the
+three CPU journals and latest public/native S24 journals preserves their exact
+verdicts and counts, with no new integrity problems; originals remain unchanged.

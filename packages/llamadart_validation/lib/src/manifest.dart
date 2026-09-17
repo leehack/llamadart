@@ -158,6 +158,33 @@ class ValidationProfile {
   bool get historyControls =>
       nativeReference || data['history_controls'] == true;
 
+  /// Expanded obligations, including explicitly unimplemented release cases.
+  List<String> get caseIds => [
+    'C01.load',
+    if (!nativeReference) ...['C02.unicode', 'C03.raw'],
+    if (isChat) ...['C04.hello', 'C04.arithmetic'],
+    if (isChat) 'C06.history',
+    if (historyControls && isChat) ...[
+      'C06.history.public_system_wire',
+      'C06.history.no_system',
+      'C06.history.combined',
+    ],
+    if (!nativeReference) 'C08.cancel',
+    'C09.reload',
+    if (!nativeReference) ...['C10.limit', 'C12.recovery'],
+    'B01.warmup',
+    'B01.1',
+    'B01.2',
+    'B01.3',
+    if (selection == 'release') ...[
+      'C05.thinking',
+      'C07.tools',
+      'C10.stop',
+      'C11.batching',
+      'C12.guards',
+    ],
+  ];
+
   /// Optional model-specific prompts and expected regex predicates.
   Map<String, dynamic> get fixtures =>
       data['fixtures'] as Map<String, dynamic>? ?? const {};

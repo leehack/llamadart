@@ -243,32 +243,8 @@ class ValidationRunner {
     engine.cancel();
   }
 
-  /// Expanded obligations, including explicitly unimplemented release cases.
-  List<String> get caseIds => [
-    'C01.load',
-    if (!profile.nativeReference) ...['C02.unicode', 'C03.raw'],
-    if (profile.isChat) ...['C04.hello', 'C04.arithmetic'],
-    if (profile.isChat) 'C06.history',
-    if (profile.historyControls && profile.isChat) ...[
-      'C06.history.public_system_wire',
-      'C06.history.no_system',
-      'C06.history.combined',
-    ],
-    if (!profile.nativeReference) 'C08.cancel',
-    'C09.reload',
-    if (!profile.nativeReference) ...['C10.limit', 'C12.recovery'],
-    'B01.warmup',
-    'B01.1',
-    'B01.2',
-    'B01.3',
-    if (profile.selection == 'release') ...[
-      'C05.thinking',
-      'C07.tools',
-      'C10.stop',
-      'C11.batching',
-      'C12.guards',
-    ],
-  ];
+  /// Expanded obligations shared with the independent report validator.
+  List<String> get caseIds => profile.caseIds;
 
   /// Captures a run without pretending selector diagnostics prove GPU placement.
   Future<void> run(
