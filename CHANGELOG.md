@@ -1,5 +1,10 @@
 ## Unreleased
 
+* Aligned the default WebGPU bridge assets to `v0.1.44` for Web/native
+  llama.cpp `v0.4.1@b29c606e28a01b1bc8c1351026a0fa6e616bf6c4` parity.
+  Web `@litert-lm/core@0.15.0` and native LiteRT pins are unchanged. Immutable
+  manifest: `8d61f453753ac7a7d839ac12318b70986a814748d86029993118c19454293aa9`.
+
 * Updated the default llama.cpp native runtime pin to
   `leehack/llamadart-native@v0.4.1`, regenerated matching Dart FFI bindings, refreshed
   the `llamadart_llama_cpp_flutter` Apple SwiftPM checksum, and
