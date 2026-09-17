@@ -167,12 +167,12 @@ The direct native control bypasses `LlamaEngine` and its backend/worker bindings
 calling the pinned C API on a dedicated isolate. It now runs twelve cases: load,
 hello, arithmetic, four history controls, reload, warmup and three throughput
 repetitions. The history controls retain the exact `cedar17` oracle and compare
-canonical native system/history seeding, the public path's literal JSON system
+canonical native system/history seeding, the former public path's literal JSON system
 content, history without a system message, and one combined user prompt. Each
 records the JSON bytes supplied to the C API, response, timing and dispatch
 counters. The native system setter receives JSON content, not a complete message
-object; the literal-JSON variant deliberately reproduces the observed public
-serialization for diagnosis. Setup timing and its dispatch snapshot are separate
+object; the literal-JSON variant deliberately preserves the original incorrect
+public serialization for regression diagnosis. Setup timing and its dispatch snapshot are separate
 from send/decode timing; total dispatch proof includes preface initialization.
 It uses the
 same Gemma artifact, dispatch kit, context 1280, four threads and per-request
@@ -623,3 +623,46 @@ cleanup VERIFIED. The provider recorded 46 seconds, consuming one rounded free
 minute. The final 18:52 UTC project inventory found eight completed physical
 executions, **18 of 30 free minutes used**, twelve remaining and no unresolved
 executions. No VM was created or additional run scheduled.
+
+### Public history replay after the system-content fix
+
+Clean source `d0bd029b07e31649ab5760756dcc1841ba487282` corrects the service's
+system-message boundary: pass plain joined text to the runtime, which JSON-encodes
+it once for the C API. Literal JSON, quotes, newlines, Unicode, multiple and
+empty system messages are covered; the existing history-order and unsupported
+system-media assertions remain. Three regression assertions failed against the
+old service. All 161 LiteRT VM tests, full repository analysis and changed-file
+format checks pass, with every executable history-seeding line covered.
+
+The one public API retest used the same S24, model hash, QAIRT kit and audited
+`0.17.0-5` core as the preceding native control. Run `qa-1789672372212252`,
+matrix `matrix-23gzng6la12qr`, completed **13 PASS, 1 FAIL**, with no ERROR/NOT_RUN,
+complete provenance and NPU participation verified across fourteen generations.
+`C06.history` now returns **`Cedar17`**, matching the canonical native control,
+instead of the original repeated `7` output. The exact lowercase `cedar17`
+oracle remains unchanged and failed; the NPU profile remains unqualified and
+[#513](https://github.com/leehack/llamadart/issues/513) stays open. The history
+request recorded 52 prompt tokens, four decoded tokens, two public chunks and
+five completed vendor calls; CPU partition coverage is still unknown.
+
+This fixes the demonstrated serialization contract mismatch and removes the
+degeneration in this single public observation. It does not establish a failure
+rate or attribute the remaining capitalization and combined-prompt failures to
+model behavior, model conversion or the NPU runtime. A compatible Gemma CPU/model
+reference and repeated controlled comparison remain the next diagnostic steps.
+Compiled NPU sampling defaults are unknown; requested temperature/seed are not
+applied by this path.
+
+Three measured short benchmark samples after warmup gave median native decode
+**77.84 TPS**, estimated wall **66.13 TPS** and time to first public output
+**152.17 ms**. Native TTFT is unavailable on this public path. These benchmarks
+assert bounded nonempty output, not number-list semantics, and the earlier
+82.27 TPS sample is not a statistically controlled performance baseline.
+
+Collection is COMPLETE and terminal cleanup VERIFIED. The test process took
+46 seconds, consuming **one rounded free minute**. The 19:22 UTC project audit
+found nine completed physical executions, **19 of 30 free minutes used**, eleven
+remaining and zero unresolved executions. No paid test minutes were needed, no
+VM was created and no further run was scheduled. The interactive report, exact
+JSON, immutable usage receipt and runtime audit are retained under
+`.dart_tool/validation/system-fix-20260917/` and the run's `report/` directory.

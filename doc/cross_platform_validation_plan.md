@@ -477,6 +477,11 @@ The later [native replay on current main](cross_platform_validation.md#native-hi
 reproduced repeated tokens with the public system JSON on `0.17.0-5`; canonical
 native history recalled `Cedar17`, still failing exact capitalization. Fixing
 serialization alone does not yet qualify the model/path.
+The [public replay after the fix](cross_platform_validation.md#public-history-replay-after-the-system-content-fix)
+now also returns `Cedar17`: 13 PASS, one strict history FAIL, with NPU
+participation verified. The service correction is locally committed; it is not
+a merged release fix. Matched Gemma CPU/model controls and repeated comparisons
+remain necessary to isolate the residual behavior.
 Pixel 10 remains planned. Neither catalog availability nor a built bundle proves
 NPU inference on another target.
 Google's [LiteRT-LM NPU guide](https://developers.google.com/edge/litert/next/litert_lm_npu)
@@ -1047,10 +1052,10 @@ blocking independently of speed. No throughput threshold hides a known failure.
    resource deletion before broad CUDA coverage; unavailable credit defers this
    optional lane without blocking the Mac/CI/Firebase harness.
 6. **Next mobile milestone:** preserve the demonstrated Android/iOS submission,
-   result retrieval and S24 NPU execution. The native history controls now
-   reproduce the public literal-system degeneration on the latest runtime;
-   correct that serialization boundary and replay public Dart. Keep the native
-   capitalization and combined-prompt failures explicit, and compare matched
+   result retrieval and S24 NPU execution. The system-content boundary is now
+   corrected locally, and the public replay matches canonical native `Cedar17`
+   rather than repeated tokens. Keep its strict capitalization failure and the
+   native combined-prompt failure explicit, and compare matched
    Gemma CPU/model controls alongside Qwen arithmetic and GPU qualification work.
    Complete the remaining Unicode
    generation, compatible Gemma CPU and paired-report controls.
