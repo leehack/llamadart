@@ -3,6 +3,7 @@ library;
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:ffi';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -2926,7 +2927,14 @@ void main() {
     final service = LiteRtLmService();
 
     try {
-      expect(service.getGpuSupport(), Platform.isMacOS || Platform.isAndroid);
+      expect(
+        service.getGpuSupport(),
+        Platform.isMacOS ||
+            Platform.isIOS ||
+            Platform.isAndroid ||
+            Abi.current() == Abi.linuxX64 ||
+            Abi.current() == Abi.windowsX64,
+      );
       expect(service.getVramInfo(), (total: 0, free: 0));
       expect(() => service.freeMultimodalContext(1), throwsUnsupportedError);
       expect(() => service.supportsVision(1), throwsUnsupportedError);

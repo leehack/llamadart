@@ -40,8 +40,14 @@ bool liteRtLmNativeGpuSupportedOnCurrentPlatform() {
   return Platform.isAndroid ||
       Platform.isIOS ||
       Platform.isMacOS ||
-      Abi.current() == Abi.linuxX64 ||
-      Abi.current() == Abi.windowsX64;
+      liteRtLmDesktopGpuSupportedForAbi(Abi.current());
+}
+
+/// Returns whether a Linux or Windows ABI has qualified GPU runtime support.
+///
+/// ARM64 desktop targets remain unavailable until separately qualified.
+bool liteRtLmDesktopGpuSupportedForAbi(Abi abi) {
+  return abi == Abi.linuxX64 || abi == Abi.windowsX64;
 }
 
 /// Normalizes an optional direct LiteRT-LM native backend override.

@@ -8,6 +8,18 @@ import 'package:llamadart/src/backends/litert_lm/litert_lm_platform.dart';
 import 'package:test/test.dart';
 
 void main() {
+  test('desktop GPU qualification is restricted to x64 Linux and Windows', () {
+    for (final abi in Abi.values) {
+      expect(
+        liteRtLmDesktopGpuSupportedForAbi(abi),
+        abi == Abi.linuxX64 || abi == Abi.windowsX64,
+        reason: '$abi must retain its independently qualified support boundary',
+      );
+    }
+    expect(liteRtLmDesktopGpuSupportedForAbi(Abi.linuxArm64), isFalse);
+    expect(liteRtLmDesktopGpuSupportedForAbi(Abi.windowsArm64), isFalse);
+  });
+
   test('normalizes native backend overrides', () {
     expect(normalizeLiteRtLmNativeBackendOverride(null), isNull);
     expect(normalizeLiteRtLmNativeBackendOverride(''), isNull);
