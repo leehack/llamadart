@@ -9,7 +9,7 @@ backend-module configuration for
 
 The native-assets hook currently pins `llamadart-native` tag
 `v0.4.0` and
-`litert-lm-native` release `v0.17.0-3` (`hook/build.dart`). Apps can
+`litert-lm-native` release `v0.17.0-5` (`hook/build.dart`). Apps can
 override the llama.cpp native GitHub source with
 `hooks.user_defines.llamadart.llamadart_native_tag` and
 `hooks.user_defines.llamadart.llamadart_native_repository`, or use a local
@@ -171,7 +171,7 @@ Explicitly selecting `litert_lm` for a target without a pinned LiteRT-LM
 runtime fails during the build hook instead of producing an app that cannot
 load `.litertlm` models.
 
-## LiteRT-LM runtime coverage (`v0.17.0-3`)
+## LiteRT-LM runtime coverage (`v0.17.0-5`)
 
 | Platform target | LiteRT-LM bundle key | Selectable backends | Status |
 | --- | --- | --- | --- |
@@ -183,9 +183,18 @@ load `.litertlm` models.
 | macOS arm64 | `macos-arm64` | `cpu`, `gpu` | Supported |
 | macOS x86_64 | `macos-x64` | `cpu` | Supported; the published x64 bundle does not include the WebGPU companion libraries |
 | Linux arm64 | `linux-arm64` | `cpu` | Supported |
-| Linux x64 | `linux-x64` | `cpu` | Supported |
-| Windows x64 | `windows-x64` | `cpu` | Supported |
+| Linux x64 | `linux-x64` | `cpu`, explicit `gpu` | CPU default; GPU requires a compatible Vulkan driver |
+| Windows x64 | `windows-x64` | `cpu`, explicit `gpu` | CPU default; GPU requires a compatible D3D12 driver |
 | Web (browser) | N/A (`@litert-lm/core`) | `cpu`, `gpu` | Experimental; web-compatible `.litertlm` URLs only |
+
+Linux x64 and Windows x64 keep CPU for automatic selection. Explicit GPU
+selection uses the LiteRT-LM GPU backend; it does not select CUDA. Desktop
+qualification of the pinned v0.17.0-5 artifacts passed on NVIDIA L4 with
+Qwen3 0.6B (repaired tokenizer) and Gemma 4 E2B, on CPU and GPU. Windows
+used Direct3D 12 with driver 582.53; Linux used Vulkan with driver
+580.173.02. Checks covered text answers, cancellation, and reuse without
+runtime library search-path workarounds. These results do not establish
+support for every GPU, driver, or model. Linux arm64 remains CPU-only.
 
 Device qualification is model- and backend-specific. On Pixel 9 Pro, the
 v0.17.0-3 Android Dawn correction targets the Mali/Vulkan device-loss regression
@@ -217,7 +226,7 @@ as a multi-turn `ChatSession` or tool-calling backend yet.
 instead of silently ignoring llama.cpp-only settings.
 
 Native LiteRT-LM exposes these load-time runtime controls through
-`ModelParams`. Nullable fields keep the pinned `v0.17.0-3` runtime
+`ModelParams`. Nullable fields keep the pinned `v0.17.0-5` runtime
 default.
 
 | Native C API | Dart field | Support decision |
