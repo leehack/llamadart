@@ -473,6 +473,10 @@ Qualify **Galaxy S24 first, then Pixel 10**. The S24 pilot now establishes NPU
 participation through both native and public adapters, but public history fails
 ([#513](https://github.com/leehack/llamadart/issues/513)); full qualification remains
 blocked. See the [dated result](cross_platform_validation.md#galaxy-s24-npu-pilot-2026-09-17).
+The later [native replay on current main](cross_platform_validation.md#native-history-replay-on-current-main--litert-lm-0170-5)
+reproduced repeated tokens with the public system JSON on `0.17.0-5`; canonical
+native history recalled `Cedar17`, still failing exact capitalization. Fixing
+serialization alone does not yet qualify the model/path.
 Pixel 10 remains planned. Neither catalog availability nor a built bundle proves
 NPU inference on another target.
 Google's [LiteRT-LM NPU guide](https://developers.google.com/edge/litert/next/litert_lm_npu)
@@ -1043,9 +1047,12 @@ blocking independently of speed. No throughput threshold hides a known failure.
    resource deletion before broad CUDA coverage; unavailable credit defers this
    optional lane without blocking the Mac/CI/Firebase harness.
 6. **Next mobile milestone:** preserve the demonstrated Android/iOS submission,
-   result retrieval and S24 NPU execution. Investigate the public NPU history
-   failure with the same input through the direct native control, alongside CPU
-   arithmetic and GPU qualification work. Complete the remaining Unicode
+   result retrieval and S24 NPU execution. The native history controls now
+   reproduce the public literal-system degeneration on the latest runtime;
+   correct that serialization boundary and replay public Dart. Keep the native
+   capitalization and combined-prompt failures explicit, and compare matched
+   Gemma CPU/model controls alongside Qwen arithmetic and GPU qualification work.
+   Complete the remaining Unicode
    generation, compatible Gemma CPU and paired-report controls.
    Qualify S24 then Pixel 10 NPU only after model/library
    preflight and each native reference succeed. Complete the selected Firebase

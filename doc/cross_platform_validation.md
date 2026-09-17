@@ -583,3 +583,43 @@ reservation is a dispatch guard, not a charge. No VM or custom storage bucket wa
 created. The default Test Lab result bucket is
 [provided at no charge](https://docs.cloud.google.com/sdk/gcloud/reference/firebase/test/android/run#description),
 and complete copies of the reports are retained locally.
+
+### Native history replay on current main / LiteRT-LM 0.17.0-5
+
+The follow-up control used clean source
+`fb8d2beb4db65f1b8987d69022049b4d0ae4fbda`, including main
+`21135e37dadf60882ea427db6078ccc90f84a28a`, with the same Gemma model, QAIRT kit
+and S24/API 36. Runtime `0.17.0-5` was verified from the release archive through
+the APK: its core SHA256 `502d017d8375c0796adf5f720da29fb1915b2a70103e3cf8f6e8e8880ac0f614`
+becomes `5424262e8a396b1cc32813a5d3f061c0ccba06cdff2ddc61d5bfdc40a249d2c4`
+after the reproduced Android NDK symbol-stripping operation.
+
+Run `qa-1789670325547288` / `matrix-1serhazjregr5` completed **8 PASS, 4 FAIL**,
+with no ERROR/NOT_RUN and NPU participation verified in all eleven generations.
+Every history variant retained the exact, case-sensitive `cedar17` oracle:
+
+| Direct native history control | Output | Verdict |
+| --- | --- | --- |
+| Normal system content plus prior messages | `Cedar17` | FAIL: capitalization |
+| Public path's literal-JSON system content, same prior messages | 32 repeated `7` characters | FAIL |
+| Prior messages without system content | `Cedar17` | FAIL: capitalization |
+| Four text contents joined into one user prompt | `7777\n` | FAIL |
+
+This reproduces degeneration without the public worker/streaming adapter on the
+new runtime. The literal-system input conflicts with the C API's system-content
+contract; normal content removed degeneration in this observed comparison, but
+strict recall still failed. One generation per variant and unknown compiled
+sampling do not establish a failure rate or isolate every cause. The native
+conversation-creation snapshots showed no vendor calls for these controls, so
+this result does not establish a separate initialization-prefill defect.
+[#513](https://github.com/leehack/llamadart/issues/513) retains the exact setter
+JSON and next controls: correct the serialization boundary, replay public Dart,
+and compare a compatible Gemma CPU/model reference. No public `0.17.0-5` rerun
+or production serialization change is claimed by this control.
+
+The independent short benchmarks had median native decode 80.58 TPS, estimated
+wall 71.71 TPS and native TTFT 37.05 ms. Collection was COMPLETE and terminal
+cleanup VERIFIED. The provider recorded 46 seconds, consuming one rounded free
+minute. The final 18:52 UTC project inventory found eight completed physical
+executions, **18 of 30 free minutes used**, twelve remaining and no unresolved
+executions. No VM was created or additional run scheduled.
