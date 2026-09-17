@@ -24,6 +24,7 @@ class FakeProvider implements RemoteProvider {
   bool cleanupVerified = true;
   bool successful = true;
   bool checkpointBeforeFailure = false;
+  void Function(RemotePlan)? onStart;
   final List<String> calls = [];
   Map<String, dynamic>? cleanupRemote;
   @override
@@ -49,6 +50,7 @@ class FakeProvider implements RemoteProvider {
     void Function(Map<String, dynamic>) checkpoint,
   ) async {
     calls.add('start');
+    onStart?.call(plan);
     starts++;
     final remote = <String, dynamic>{'matrix_id': 'matrix-one'};
     if (checkpointBeforeFailure) checkpoint(remote);
@@ -232,6 +234,209 @@ void main() {
         delay: (_) async {},
         assess: (_, _) async => pass,
       );
+
+  RemotePlan blazePlan({String id = 'qa-one', String funding = 'credit'}) {
+    final json =
+        jsonDecode(jsonEncode(plan(id: id).json)) as Map<String, dynamic>;
+    final settings = json['settings'] as Map;
+    settings['billing_mode'] = 'blaze';
+    settings['billing_account'] = '123456-ABCDEF-123456';
+    settings['budget'] = {
+      'verified_at': now.toIso8601String(),
+      'evidence': 'operator checked authorization and current gross pricing',
+      'window_start': now.toIso8601String(),
+      'expires_at': now.add(const Duration(hours: 4)).toIso8601String(),
+      'maximum_run_usd': 2,
+      'maximum_total_usd': 6,
+      'funding': funding,
+    };
+    return RemotePlan(json);
+  }
+
+  test('billing mode is explicit and live account must match', () async {
+    Map<String, dynamic> billing = {'billingEnabled': false};
+    final provider = GcloudProvider(
+      execute: (binary, args, {directory, timeout}) async => CommandResult(
+        0,
+        jsonEncode(
+          args.first == 'billing'
+              ? billing
+              : [
+                  {
+                    'id': 'test-device',
+                    'form': 'PHYSICAL',
+                    'supportedVersionIds': ['35'],
+                  },
+                ],
+        ),
+        '',
+      ),
+    );
+    await provider.preflight(plan());
+    await expectLater(provider.preflight(blazePlan()), throwsStateError);
+    billing = {
+      'billingEnabled': true,
+      'billingAccountName': 'billingAccounts/123456-ABCDEF-123456',
+    };
+    await provider.preflight(blazePlan());
+    await expectLater(provider.preflight(plan()), throwsStateError);
+    billing['billingAccountName'] = 'billingAccounts/654321-ABCDEF-123456';
+    await expectLater(provider.preflight(blazePlan()), throwsStateError);
+  });
+
+  test('Blaze rejects missing, stale, underpriced or unauthorized budgets', () {
+    for (final edit in <void Function(Map)>[
+      (s) => s.remove('budget'),
+      (s) => s['budget']['funding'] = 'assumed_credit',
+      (s) => s['budget']['maximum_run_usd'] = 1,
+      (s) => s['budget']['maximum_total_usd'] = 1,
+      (s) => s['budget']['maximum_total_usd'] = double.nan,
+      (s) => s['budget']['maximum_run_usd'] = double.infinity,
+      (s) => s['budget']['window_start'] = now
+          .add(const Duration(minutes: 1))
+          .toIso8601String(),
+      (s) => s['budget']['expires_at'] = now
+          .add(const Duration(minutes: 59))
+          .toIso8601String(),
+      (s) => s['budget']['expires_at'] = now
+          .add(const Duration(days: 2))
+          .toIso8601String(),
+      (s) => s['budget']['verified_at'] = now
+          .subtract(const Duration(minutes: 16))
+          .toIso8601String(),
+      (s) => s['credit']['applicable'] = false,
+      (s) => s['credit']['available_usd'] = 11.99,
+      (s) => s['quota']['remaining_physical'] = 0,
+    ]) {
+      final json =
+          jsonDecode(jsonEncode(blazePlan().json)) as Map<String, dynamic>;
+      edit(json['settings'] as Map);
+      expect(() => RemotePlan(json).validateBudget(now), throwsStateError);
+    }
+    blazePlan().validateBudget(now);
+    final paid =
+        jsonDecode(jsonEncode(blazePlan(funding: 'approved_charges').json))
+            as Map<String, dynamic>;
+    (paid['settings'] as Map).remove('credit');
+    RemotePlan(paid).validateBudget(now);
+    for (final edit in <void Function(Map)>[
+      (s) => s['billing_mode'] = 'Blaze',
+      (s) => s.remove('billing_account'),
+      (s) => s['billing_account'] = 'another-account',
+    ]) {
+      final json =
+          jsonDecode(jsonEncode(blazePlan().json)) as Map<String, dynamic>;
+      edit(json['settings'] as Map);
+      expect(() => RemotePlan(json), throwsFormatException);
+    }
+  });
+
+  test(
+    'Blaze reserves gross cost across runs and keeps Spark count guard',
+    () async {
+      final provider = FakeProvider();
+      final control = controller(provider);
+      for (var i = 0; i < 4; i++) {
+        expect(
+          (await control.run(plan(id: 'qa-spark-$i')))['phase'],
+          'COMPLETE',
+        );
+      }
+      expect(
+        (await control.run(plan(id: 'qa-spark-five')))['phase'],
+        'PREFLIGHT_FAILED',
+      );
+      for (var i = 0; i < 3; i++) {
+        final result = await control.run(blazePlan(id: 'qa-blaze-$i'));
+        expect(result['phase'], 'COMPLETE');
+        expect(result['reserved_usd_cents'], 200);
+      }
+      expect(
+        (await control.run(blazePlan(id: 'qa-blaze-four')))['phase'],
+        'PREFLIGHT_FAILED',
+      );
+      expect(provider.starts, 7);
+    },
+  );
+
+  test(
+    'Blaze failed dispatch keeps reservation but preflight does not spend it',
+    () async {
+      final provider = FakeProvider()..preflightFails = true;
+      final control = controller(provider);
+      await control.run(blazePlan(id: 'qa-preflight'));
+      provider.preflightFails = false;
+      provider.uncertainStart = true;
+      provider.checkpointBeforeFailure = true;
+      for (var i = 0; i < 3; i++) {
+        final result = await control.run(blazePlan(id: 'qa-failed-$i'));
+        expect(result['cleanup'], 'VERIFIED');
+        expect(result['dispatched_at'], isNotNull);
+      }
+      expect(
+        (await control.run(blazePlan(id: 'qa-no-budget')))['phase'],
+        'PREFLIGHT_FAILED',
+      );
+      expect(provider.starts, 3);
+    },
+  );
+
+  test(
+    'Blaze persists its rounded reservation before provider mutation',
+    () async {
+      final json =
+          jsonDecode(jsonEncode(blazePlan().json)) as Map<String, dynamic>;
+      json['settings']['budget']['maximum_run_usd'] = 2.001;
+      final provider = FakeProvider()
+        ..onStart = (selected) {
+          final saved =
+              jsonDecode(
+                    File(
+                      p.join(runs.path, selected.runId, 'orchestration.json'),
+                    ).readAsStringSync(),
+                  )
+                  as Map;
+          expect(saved['phase'], 'SUBMITTING');
+          expect(saved['reserved_usd_cents'], 201);
+          expect(saved['dispatched_at'], isNotNull);
+        };
+      expect(
+        (await controller(provider).run(RemotePlan(json)))['phase'],
+        'COMPLETE',
+      );
+      expect(provider.starts, 1);
+    },
+  );
+
+  test(
+    'Blaze refuses a prior dispatch whose cost cannot be reconciled',
+    () async {
+      final provider = FakeProvider();
+      final control = controller(provider);
+      await control.run(blazePlan());
+      final file = File(p.join(runs.path, 'qa-one', 'orchestration.json'));
+      final previous = jsonDecode(file.readAsStringSync()) as Map;
+      previous.remove('reserved_usd_cents');
+      file.writeAsStringSync(jsonEncode(previous));
+      expect(
+        (await control.run(blazePlan(id: 'qa-two')))['phase'],
+        'PREFLIGHT_FAILED',
+      );
+      expect(provider.starts, 1);
+    },
+  );
+
+  test('Blaze rechecks receipt freshness after slow preflight', () async {
+    var current = now;
+    final gate = Completer<void>();
+    final provider = FakeProvider()..pausePreflight = gate;
+    final control = RemoteController(runs, provider, now: () => current);
+    final pending = control.run(blazePlan());
+    current = now.add(const Duration(minutes: 16));
+    gate.complete();
+    expect((await pending)['phase'], 'PREFLIGHT_FAILED');
+    expect(provider.starts, 0);
+  });
 
   test(
     'concurrent same-ID runs submit once and preserve the journal',

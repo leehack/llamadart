@@ -33,7 +33,15 @@ class RemotePlan {
   String get profile => json['profile'] as String;
   Map<String, dynamic> get settings => json['settings'] as Map<String, dynamic>;
   bool get firebase => target.startsWith('firebase-');
+  bool get blaze => firebase && settings['billing_mode'] == 'blaze';
   bool get windows => target == 'gce-windows-cuda';
+
+  static const firebaseTimeoutMinutes = 20;
+  static const firebasePhysicalHourlyUsd = 5;
+
+  /// Gross cost reservation, before any free allowance or promotional credit.
+  int get reservedUsdCents =>
+      (((settings['budget'] as Map)['maximum_run_usd'] as num) * 100).ceil();
 
   void validate() {
     if (json['schema_version'] != 1 ||
@@ -62,6 +70,19 @@ class RemotePlan {
       );
     }
     if (firebase) {
+      if (!const [null, 'spark', 'blaze'].contains(settings['billing_mode'])) {
+        throw const FormatException(
+          'Firebase billing_mode must be spark or blaze',
+        );
+      }
+      if (blaze &&
+          !RegExp(
+            r'^[A-F0-9]{6}-[A-F0-9]{6}-[A-F0-9]{6}$',
+          ).hasMatch(settings['billing_account'] as String? ?? '')) {
+        throw const FormatException(
+          'Blaze requires an exact billing account ID',
+        );
+      }
       for (final field in ['device_model', 'device_version']) {
         if (!RegExp(
           r'^[A-Za-z0-9_.-]+$',
@@ -106,11 +127,21 @@ class RemotePlan {
 
   /// Enforces dated quota/credit evidence; this is not a billing guarantee.
   void validateBudget(DateTime now) {
-    final receipt = settings[firebase ? 'quota' : 'credit'] as Map?;
+    final receipt = _receipt(firebase ? 'quota' : 'credit', now);
+    if (firebase) {
+      if ((receipt['remaining_physical'] as int? ?? 0) < 1) {
+        throw StateError('No physical execution quota');
+      }
+      if (blaze) _validateBlazeBudget(now);
+    } else {
+      _validateCredit(receipt, now);
+    }
+  }
+
+  Map _receipt(String name, DateTime now) {
+    final receipt = settings[name] as Map?;
     if (receipt == null) {
-      throw StateError(
-        'Missing current ${firebase ? 'quota' : 'credit'} evidence',
-      );
+      throw StateError('Missing current $name evidence');
     }
     final verified = DateTime.tryParse(receipt['verified_at'] as String? ?? '');
     if (verified == null ||
@@ -123,25 +154,48 @@ class RemotePlan {
     if ((receipt['evidence'] as String? ?? '').trim().isEmpty) {
       throw StateError('Budget evidence must identify its checked source');
     }
-    if (firebase) {
-      if ((receipt['remaining_physical'] as int? ?? 0) < 1) {
-        throw StateError('No physical execution quota');
-      }
-    } else {
-      final expiry = DateTime.tryParse(receipt['expires_at'] as String? ?? '');
-      final balance = receipt['available_usd'] as num? ?? 0;
-      final maximum = receipt['maximum_run_usd'] as num? ?? 0;
-      if (receipt['applicable'] != true ||
-          expiry == null ||
-          expiry.difference(now) < const Duration(hours: 2) ||
-          !maximum.isFinite ||
-          !balance.isFinite ||
-          maximum <= 0 ||
-          balance < maximum * 2) {
-        throw StateError(
-          'Credit must cover all run costs with reserve and expiry margin',
-        );
-      }
+    return receipt;
+  }
+
+  void _validateCredit(Map receipt, DateTime now, {num? requiredUsd}) {
+    final expiry = DateTime.tryParse(receipt['expires_at'] as String? ?? '');
+    final balance = receipt['available_usd'] as num? ?? 0;
+    final maximum = requiredUsd ?? receipt['maximum_run_usd'] as num? ?? 0;
+    if (receipt['applicable'] != true ||
+        expiry == null ||
+        expiry.difference(now) < const Duration(hours: 2) ||
+        !maximum.isFinite ||
+        !balance.isFinite ||
+        maximum <= 0 ||
+        balance < maximum * 2) {
+      throw StateError(
+        'Credit must cover all run costs with reserve and expiry margin',
+      );
+    }
+  }
+
+  void _validateBlazeBudget(DateTime now) {
+    final budget = _receipt('budget', now);
+    final start = DateTime.tryParse(budget['window_start'] as String? ?? '');
+    final end = DateTime.tryParse(budget['expires_at'] as String? ?? '');
+    final perRun = budget['maximum_run_usd'] as num? ?? 0;
+    final total = budget['maximum_total_usd'] as num? ?? 0;
+    if (start == null ||
+        end == null ||
+        start.isAfter(now) ||
+        end.difference(now) < const Duration(hours: 1) ||
+        end.difference(start) > const Duration(hours: 24) ||
+        !perRun.isFinite ||
+        !total.isFinite ||
+        perRun < firebaseTimeoutMinutes * firebasePhysicalHourlyUsd / 60 ||
+        total < perRun ||
+        !const ['credit', 'approved_charges'].contains(budget['funding'])) {
+      throw StateError(
+        'Blaze requires a bounded, authorized gross-cost budget',
+      );
+    }
+    if (budget['funding'] == 'credit') {
+      _validateCredit(_receipt('credit', now), now, requiredUsd: total);
     }
   }
 }
@@ -304,29 +358,57 @@ class RemoteController {
           throw StateError('An earlier remote run has unresolved cleanup');
         }
       }
+      plan.validateBudget(now().toUtc());
       if (plan.firebase) {
-        final cutoff = now().toUtc().subtract(const Duration(hours: 24));
+        final cutoff = plan.blaze
+            ? DateTime.parse(
+                (plan.settings['budget'] as Map)['window_start'] as String,
+              )
+            : now().toUtc().subtract(const Duration(hours: 24));
         var count = 0;
+        var reserved = 0;
         for (final directory in root.listSync().whereType<Directory>()) {
           final file = File(p.join(directory.path, 'orchestration.json'));
           if (file.existsSync()) {
             final previous = jsonDecode(file.readAsStringSync()) as Map;
             if ((DateTime.tryParse(
                       previous['dispatched_at'] as String? ?? '',
-                    )?.isAfter(cutoff) ??
+                    )?.isBefore(cutoff) ==
                     false) &&
-                (previous['plan'] as Map?)?['project'] == plan.project) {
+                (previous['plan'] as Map?)?['project'] == plan.project &&
+                ((previous['plan'] as Map?)?['target'] as String? ?? '')
+                    .startsWith('firebase-')) {
               count++;
+              if (plan.blaze &&
+                  ((previous['plan'] as Map?)?['settings']
+                          as Map?)?['billing_mode'] ==
+                      'blaze') {
+                final cost = previous['reserved_usd_cents'];
+                if (cost is! int || cost <= 0) {
+                  throw StateError(
+                    'Earlier Blaze submission has no cost reservation',
+                  );
+                }
+                reserved += cost;
+              }
             }
           }
         }
-        if (count >= 4) {
+        if (plan.blaze) {
+          final total =
+              (plan.settings['budget'] as Map)['maximum_total_usd'] as num;
+          if (reserved + plan.reservedUsdCents > (total * 100).floor()) {
+            throw StateError(
+              'Blaze budget is already reserved by earlier submissions',
+            );
+          }
+          state['reserved_usd_cents'] = plan.reservedUsdCents;
+        } else if (count >= 4) {
           throw StateError(
             'Four physical submissions already dispatched in the last 24 hours',
           );
         }
       }
-      plan.validateBudget(now().toUtc());
       await _verifyUpload(plan);
       await provider.preflight(plan);
       plan.validateBudget(now().toUtc());
@@ -659,7 +741,15 @@ class GcloudProvider implements RemoteProvider {
       ]),
     );
     if (plan.firebase) {
-      if (billing['billingEnabled'] != false) {
+      if (plan.blaze) {
+        if (billing['billingEnabled'] != true ||
+            billing['billingAccountName'] !=
+                'billingAccounts/${plan.settings['billing_account']}') {
+          throw StateError(
+            'Blaze billing account does not match the approved plan',
+          );
+        }
+      } else if (billing['billingEnabled'] != false) {
         throw StateError('Firebase project must remain unbilled Spark');
       }
       final platform = plan.target == 'firebase-ios' ? 'ios' : 'android';
@@ -761,7 +851,7 @@ class GcloudProvider implements RemoteProvider {
       '--test=${p.join(plan.bundle, ios ? 'tests.zip' : 'test.apk')}',
       '--device=model=${plan.settings['device_model']},version=${plan.settings['device_version']}',
       '--async',
-      '--timeout=20m',
+      '--timeout=${RemotePlan.firebaseTimeoutMinutes}m',
       '--num-flaky-test-attempts=0',
       '--no-record-video',
       '--client-details=matrixLabel=${plan.runId}',

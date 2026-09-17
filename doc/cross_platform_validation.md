@@ -185,7 +185,7 @@ is null. Warmup is retained but excluded from the three-sample charts.
 Use the normal Firebase `plan`/`run`/`collect`/`cleanup` flow below with the exact
 S24 or Pixel 10 profile/device pairing. Run the native control first and stop if
 it cannot initialize. Do not automatically submit both bundles or bypass the
-rolling quota guard. The compatible CPU Gemma semantic control, separate Unicode
+selected Spark quota or Blaze budget guard. The compatible CPU Gemma semantic control, separate Unicode
 generation fixture and aggregate paired-control qualification remain future
 work; the existing Qwen CPU retry is not a matched Gemma control. A per-run green
 report is not completion of the full NPU pack. The `validation-harness` row covers
@@ -255,12 +255,12 @@ The [device rotation and NPU cases](cross_platform_validation_plan.md#8-firebase
 include S24, Tab P12, iPhone 16 Pro, iPhone SE 3, Pixel 10 and iPad 10. The planned
 initial selection is 16 CPU/GPU core executions, six NPU reference/public-Dart/CPU
 control executions and two targeted iPad GPU/lifecycle executions: **24 across
-at least seven quota days**, with at most four planned physical executions/day.
+at least seven Spark quota days**, with at most four planned physical executions/day.
 NPU submissions require the verified APK packaging and preflight first. iOS cases
 cover CPU/Metal/LiteRT GPU; Apple NPU is not exposed by the current backend.
 Native XCTest coverage does not qualify Safari/iPadOS browser execution.
 
-Use an explicitly selected **unbilled Spark project** and account. Preflight checks
+By default, use an explicitly selected **unbilled Spark project** and account. Preflight checks
 billing is disabled and the selected physical model/OS exists in the live catalog.
 Pick one row per submission; never use an implicit device matrix. Check available
 physical quota in Firebase before creating a receipt. Receipt evidence expires
@@ -281,6 +281,47 @@ The CLI uses explicit `--project` and `--account`, one 20-minute execution, no
 flaky retries and no video. It records the matrix ID, polls terminal state, copies
 the default Test Lab results, then verifies completion or cancellation. It does
 not enable billing or create a custom result bucket.
+
+### Explicit Blaze runs
+
+Blaze is an opt-in mode for separately authorized runs. Copy
+`tool/testing/validation/firebase_blaze.example.json` to an ignored local path.
+The operator links billing separately; the runner never upgrades a project.
+Preflight requires `billing_mode: "blaze"`, an enabled billing link to the exact
+`billing_account`, and current physical execution quota. Spark plans still reject
+billed projects. A quota receipt proves execution capacity, not free minutes.
+
+Supply a fresh `budget` receipt with an authorization/pricing evidence reference,
+fixed `window_start`, `expires_at` no more than 24 hours later, and positive
+`maximum_run_usd` and `maximum_total_usd`. At least one hour must remain before
+dispatch. Refresh `verified_at` within 15 minutes of each run, without moving
+the authorized window or increasing its cap. All amounts are USD: record any
+conservative conversion, tax and auxiliary-cost allowance in the evidence.
+Do not copy a CAD credit balance into `available_usd`.
+
+`funding: "credit"` also requires a fresh credit receipt that verifies Test Lab
+eligibility, at least twice the entire batch budget available, and two hours
+before credit expiry. A balance alone or a scope of "certain usage" does not
+establish eligibility. `funding: "approved_charges"` is only for an explicit
+user authorization covering out-of-pocket charges; it is not implied by having
+a payment method or requesting a credit-funded upgrade.
+
+The journal reserves the full per-run estimate before any submission, rounding
+up to cents, and rejects runs exceeding the batch cap. Earlier Blaze submissions
+for the same project within that window consume the cap even when failed or
+cancelled; preflight failures do not. An uncertain submission still blocks all
+new remote work until reconciled. Keep one shared run journal for the batch;
+do not delete it or move the window to reset the allowance.
+
+Each run remains one physical device, a 20-minute provider timeout and zero
+flaky retries. The estimate must cover at least the full timeout at the current
+[$5/device-hour rate](https://firebase.google.com/docs/test-lab/usage-quotas-pricing),
+before deducting any free minutes or credits. For example, a $2/run reservation
+and $6 batch cap permit three runs. Check current prices and add other costs
+where applicable. This is a local submission guard, not a Cloud Billing hard
+cap: it cannot control other clients, determine promotional eligibility, or
+reconcile the provider invoice. Actual usage, applied credits and charged cost
+remain separate evidence. Budget alerts also do not cap charges.
 
 The gcloud asynchronous response contains a console URL, not a matrix object.
 The adapter reads the matrix creation receipt and verifies its project and unique

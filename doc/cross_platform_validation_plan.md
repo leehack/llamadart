@@ -17,6 +17,10 @@ physical Android/iOS test route**. The personal Pixel and iPad are optional
 debugging devices, never prerequisites for mobile qualification. Include
 Qualcomm and Tensor LiteRT-LM NPU qualification in the next milestone. Keep the
 operating budget at **$0 out of pocket**, even after promotional GCP credit expires.
+The maintainer has since requested an optional Blaze upgrade for the S24 pilot.
+Its execution remains conditional on verified Test Lab credit coverage or a
+separate explicit out-of-pocket authorization; the free rotation remains the
+sustainable default. See the runbook's [Blaze controls](cross_platform_validation.md#explicit-blaze-runs).
 
 ## 1. Deliverables and boundaries
 
@@ -581,7 +585,7 @@ at least seven quota days**. This stays within four planned physical executions/
 and preserves the fifth daily slot for an explicit diagnostic rerun. Do not add
 NPU to an already-full four-profile core day.
 Further repetitions, alternate devices, or artifact experiments require extra
-quota days; no automatic retries or billing upgrade.
+quota days under Spark; no automatic retries or automatic billing upgrade.
 
 Three controls per device are the initial qualification budget, not an obligation
 for every later Dart-only edit. After qualification, rerun current public-Dart
@@ -600,7 +604,7 @@ becomes a green backend badge. No NPU run is scheduled by this document update.
 
 ### Budget and scheduling
 
-Use existing Spark project `llamadart-device-qa-20260916`, **without linking
+For the free rotation, use Spark project `llamadart-device-qa-20260916`, **without linking
 billing**. Firebase currently allows five physical executions and ten virtual
 executions per project/day on Spark. Each device configuration, retry and shard
 can consume another execution; five devices times four profiles is twenty
@@ -609,8 +613,19 @@ executions, not five. See [official quotas](https://firebase.google.com/docs/tes
 Reserve at most **four planned physical executions/day**, leaving the fifth
 for an explicit diagnostic rerun. Disable automatic flaky retries, sharding and
 device/OS Cartesian expansion. Inspect remaining quota and other active matrices
-before submitting; insufficient quota means NOT_RUN/reschedule, never enabling
-billing or creating projects to bypass the allowance.
+before submitting; insufficient quota means NOT_RUN/reschedule, never automatically
+enabling billing or creating projects to bypass the allowance.
+
+An explicitly authorized Blaze batch uses the same bundle and cleanup flow with
+a live exact-account check and a gross-cost reservation for every submission.
+The local cap replaces the Spark four-run guard only for that explicit mode;
+free minutes and expected credits are not subtracted from its reservations.
+Keep the authorization window fixed, preserve the shared journal, and refresh
+quota and funding evidence before each run. No automatic paid retry is permitted.
+The first requested batch is the S24 native NPU reference, public llamadart NPU
+only after reference initialization, and the existing Qwen CPU retry. That retry
+does not satisfy the matched Gemma CPU control still required by the NPU pack.
+Credit balances with unspecified service coverage do not authorize dispatch.
 
 | Day of a release rotation | Device | Planned executions |
 | --- | --- | --- |
@@ -650,17 +665,19 @@ and never a prerequisite to lab submission. Select virtual packaging cases only
 when needed and count them against the shared ten/day limit.
 
 The initial five pilot submissions finished (one intentionally cancelled).
-The last billing check on 2026-09-16 had `billingEnabled: false`; it needed no GCP
-credit. Require billing to remain disabled before future submissions. This plan
-adds no new submission. Free Test Lab executions have no idle VM to stop. Any later
+The last billing check on 2026-09-17 had `billingEnabled: false`; it needed no GCP
+credit. Spark submissions require billing to remain disabled. The requested
+Blaze upgrade and device execution are not established by local runner tests.
+Test Lab executions have no idle VM to stop. Any later
 Compute Engine CUDA testing is a separate action: verify credit eligibility and
 remaining balance first, and account for disks/IP/storage after stopping a VM.
 Stopping compute does not guarantee every associated resource is free.
 
 Android Device Streaming is optional interactive debugging, with a separate
 30-minute/project/month free allowance at this snapshot; it is not extra
-automated execution quota. End a streaming session explicitly. Do not upgrade
-to Blaze for either service to make this plan fit.
+automated execution quota. End a streaming session explicitly. The free rotation
+does not require Blaze for either service; Device Streaming is outside the
+authorized automated-test batch.
 
 ## 9. Remote execution, provisioning and cleanup
 
@@ -830,9 +847,9 @@ XCTest attachments. Retain the earlier incremental log fallback for native crash
 
 Firebase manages device allocation/install/run and device cleanup; we own
 submission, cancellation, evidence retrieval and terminal-state checks. Do not
-delete the Spark project or its default result bucket as per-run teardown. End
+delete the test project or its default result bucket as per-run teardown. End
 any separately opened Device Streaming session. Serialize our submissions within
-the four-planned-physical-runs/day policy, account for other project users, and
+the selected Spark quota or explicitly authorized Blaze budget, account for other project users, and
 never upgrade billing or retry automatically when quota is exhausted. No VM is
 created by this adapter.
 

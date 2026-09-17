@@ -2,6 +2,7 @@
   "account": "your-account@example.com",
   "project": "your-unbilled-project",
   "settings": {
+    "billing_mode": "spark",
     "device_model": "REPLACE_FROM_CURRENT_CATALOG",
     "device_version": "REPLACE_FROM_CURRENT_CATALOG",
     "quota": {
