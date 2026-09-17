@@ -14,6 +14,8 @@ For canonical full release notes, use:
   Web `@litert-lm/core@0.15.0` and native LiteRT pins are unchanged. Immutable
   manifest: `8d61f453753ac7a7d839ac12318b70986a814748d86029993118c19454293aa9`.
 
+* Preserve accented text, emoji, and other Unicode characters when detokenizing native GGUF tokens.
+
 * Update native LiteRT-LM to `v0.17.0-5` with corrected Linux library loading, and enable explicit GPU selection on Linux x64 and Windows x64 while retaining CPU defaults.
 
 * Make zero-temperature native LiteRT-LM generation greedy to avoid corrupted GPU output.

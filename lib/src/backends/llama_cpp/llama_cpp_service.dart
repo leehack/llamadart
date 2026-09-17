@@ -6055,7 +6055,8 @@ class LlamaCppService {
     final model = _models[modelHandle];
     if (model == null) return "";
     final vocab = llama_model_get_vocab(model.pointer);
-    final buffer = malloc<Int8>(256);
+    // UTF-8 decoding requires unsigned bytes, including byte-fallback tokens.
+    final buffer = malloc<Uint8>(256);
     final bytes = <int>[];
     for (final t in tokens) {
       final n = llama_token_to_piece(vocab, t, buffer.cast(), 256, 0, special);
