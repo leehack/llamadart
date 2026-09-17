@@ -47,7 +47,8 @@ void main() {
         } else {
           const template = '{{ messages }}\n<think>\n\n</think>\n\n';
           const system =
-              'Keep literal JSON: {"content":"hello"} and Unicode: 안녕';
+              'Keep literal JSON: {"content":"hello"}\n'
+              'and Unicode: 안녕';
           client.createConversation(
             promptTemplate: template,
             systemMessage: system,
