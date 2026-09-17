@@ -11,6 +11,172 @@ import 'package:path/path.dart' as path;
 import 'package:test/test.dart';
 
 void main() {
+  test('sync CLI preserves generated macOS GPU completeness checks', () async {
+    final result = await Process.run('python3', [
+      '-m',
+      'unittest',
+      'tool.native.test_sync_native_release_pins.SyncNativeReleasePinsTest.test_schema_2_sync_keeps_macos_gpu_companions_in_spm_completeness',
+    ]);
+    expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+  });
+
+  test(
+    'stable rebuild entry is explicit and retains rollback guards',
+    () async {
+      final result = await Process.run('python3', [
+        '-c',
+        r'''
+import sys
+sys.path.insert(0, 'tool/native')
+from sync_native_release_pins import parse_args, validate_litert_lm_transition, ReleaseError
+sys.argv = ['sync', '--allow-litert-stable-rebuild-entry']
+args = parse_args()
+assert args.allow_litert_stable_rebuild_entry
+validate_litert_lm_transition('v0.16.0-native.2', 'v0.17.0-1',
+    allow_stable_rebuild_entry=args.allow_litert_stable_rebuild_entry)
+for current, target, enabled in [
+    ('v0.16.0-native.2', 'v0.17.0-1', False),
+    ('v0.17.0-1', 'v0.16.0-3', True),
+    ('v0.17.0-1', 'v0.17.0-3', True),
+]:
+    try:
+        validate_litert_lm_transition(current, target, allow_stable_rebuild_entry=enabled)
+    except ReleaseError:
+        continue
+    raise AssertionError((current, target, enabled))
+''',
+      ]);
+      expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+    },
+  );
+
+  test(
+    'schema-2 sync retains the iOS provider alongside the macOS shim',
+    () async {
+      final result = await Process.run('python3', [
+        '-c',
+        r'''
+import json, sys
+from pathlib import Path
+sys.path.insert(0, 'tool/native')
+from sync_native_release_pins import prepare_litert_lm_package_swift
+fixtures = Path('tool/native/fixtures')
+manifest = json.loads((fixtures / 'litert_lm_schema2_owner_manifest.json').read_text())
+release = json.loads((fixtures / 'litert_lm_schema2_owner_release.json').read_text())
+provider = 'GemmaModelConstraintProvider'
+tag = manifest['release']['tag']
+for platform in manifest['platforms']:
+    if platform['platform'] == 'ios':
+        platform['artifactPaths'].append(f"bin/ios/{platform['arch']}/{provider}.framework/{provider}")
+release['assets'].append({'name': f'litert-lm-native-apple-{provider}-xcframework-{tag}.zip',
+                          'digest': 'sha256:' + 'a' * 64})
+source = Path('packages/llamadart_litert_lm_flutter/darwin/llamadart_litert_lm_flutter/Package.swift').read_text()
+print(prepare_litert_lm_package_swift(source, release=release, manifest=manifest, resolved_tag=tag))
+''',
+      ]);
+      expect(result.exitCode, 0, reason: '${result.stderr}');
+      final generated = result.stdout as String;
+      expect(
+        generated,
+        contains(
+          '.target(name: "GemmaModelConstraintProvider", condition: .when(platforms: [.iOS]))',
+        ),
+      );
+      expect(
+        generated,
+        contains(
+          '.target(name: "CLiteRTLMMac", condition: .when(platforms: [.macOS]))',
+        ),
+      );
+      expect(generated, contains('checksum: "${'a' * 64}"'));
+      expect(
+        RegExp('name: "GemmaModelConstraintProvider"').allMatches(generated),
+        hasLength(2),
+      );
+    },
+  );
+
+  test(
+    'iOS framework metadata does not become a required runtime library',
+    () async {
+      final result = await Process.run('python3', [
+        '-c',
+        r'''
+import json, sys
+sys.path.insert(0, 'tool/native')
+from sync_native_release_pins import litert_schema2_bundle_required_libraries
+paths = [
+    'bin/ios/arm64/CLiteRTLM.framework/CLiteRTLM',
+    'bin/ios/arm64/CLiteRTLM.framework/Info.plist',
+    'bin/ios/arm64/LiteRtLm.framework/LiteRtLm',
+    'bin/ios/arm64/LiteRtLm.framework/Info.plist',
+    'bin/ios/arm64/libLiteRtLm.dylib',
+]
+manifest = {'platforms': [{'platform': 'ios', 'arch': 'arm64', 'artifactPaths': paths}]}
+print(json.dumps(litert_schema2_bundle_required_libraries(manifest)))
+''',
+      ]);
+      expect(result.exitCode, 0, reason: '${result.stderr}');
+      expect(jsonDecode(result.stdout as String), {
+        'ios-arm64': ['CLiteRTLM', 'LiteRtLm'],
+      });
+    },
+  );
+
+  test(
+    'iOS inventory still rejects duplicate binaries and unsafe metadata paths',
+    () async {
+      final result = await Process.run('python3', [
+        '-c',
+        r'''
+import sys
+sys.path.insert(0, 'tool/native')
+from sync_native_release_pins import ReleaseError, litert_schema2_bundle_required_libraries
+runtime = 'bin/ios/arm64/LiteRtLm.framework/LiteRtLm'
+for extra in (runtime, 'bin/ios/arm64/Other.framework/LiteRtLm',
+              'bin/ios/arm64/../Other.framework/Info.plist'):
+    manifest = {'platforms': [{'platform': 'ios', 'arch': 'arm64',
+                              'artifactPaths': [runtime, extra]}]}
+    try:
+        litert_schema2_bundle_required_libraries(manifest)
+    except ReleaseError:
+        continue
+    raise AssertionError('Unsafe inventory was accepted: ' + extra)
+''',
+      ]);
+      expect(result.exitCode, 0, reason: '${result.stderr}');
+    },
+  );
+  test(
+    'Windows import archives never become loadable runtime dependencies',
+    () async {
+      final result = await Process.run('python3', [
+        '-c',
+        r'''
+import json, sys
+sys.path.insert(0, 'tool/native')
+from sync_native_release_pins import ReleaseError, litert_schema2_bundle_required_libraries
+paths = ['bin/windows/x64/LiteRtLm.dll',
+         'bin/windows/x64/libGemmaModelConstraintProvider.dll',
+         'bin/windows/x64/libGemmaModelConstraintProvider.lib']
+manifest = {'platforms': [{'platform': 'windows', 'arch': 'x64', 'artifactPaths': paths}]}
+print(json.dumps(litert_schema2_bundle_required_libraries(manifest)))
+manifest['platforms'][0]['artifactPaths'] = paths[::2]
+try:
+    litert_schema2_bundle_required_libraries(manifest)
+except ReleaseError:
+    pass
+else:
+    raise AssertionError('Orphan import archive was accepted')
+''',
+      ]);
+      expect(result.exitCode, 0, reason: '${result.stderr}');
+      expect(jsonDecode(result.stdout as String), {
+        'windows-x64': ['LiteRtLm.dll', 'libGemmaModelConstraintProvider.dll'],
+      });
+    },
+  );
+
   test('updates hook native release pins from release metadata', () async {
     final root = await Directory.systemTemp.createTemp(
       'sync_native_release_pins_',
@@ -1330,7 +1496,7 @@ printf '%s\\n' '{"tag_name":"v0.2.0-1","assets":[]}'
 
   test('keeps LiteRT release identity separate from cache version', () {
     final hook = File('hook/build.dart').readAsStringSync();
-    expect(hook, contains("const _litertLmReleaseTag = 'v0.16.0-native.2';"));
+    expect(hook, contains("const _litertLmReleaseTag = 'v0.17.0-5';"));
     expect(hook, contains(r"'$_litertLmReleaseTag'"));
     expect(hook, isNot(contains(r"v$_litertLmVersion")));
 

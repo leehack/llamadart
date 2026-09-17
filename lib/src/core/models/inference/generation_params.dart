@@ -585,7 +585,8 @@ class GenerationParams {
   final int maxTokens;
 
   /// Temperature for sampling (higher = more creative/random, lower = more deterministic).
-  /// Range is typically 0.0 to 2.0.
+  /// Range is typically 0.0 to 2.0. Native LiteRT-LM CPU/GPU treats zero as
+  /// greedy decoding and uses one candidate regardless of [topK].
   final double temp;
 
   /// Top-K sampling: only sample from the top K most likely tokens.

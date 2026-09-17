@@ -167,6 +167,9 @@ LITERT_PREBUILT_OVERRIDES = {
     ],
     "v0.16.0": LITERT_ANDROID_DAWN_OVERRIDES,
     "v0.16.1": LITERT_ANDROID_DAWN_OVERRIDES,
+    # v0.17.0-3 restores the reviewed Pixel/Mali correction. Earlier v0.17
+    # artifacts without this provenance must not be newly adopted.
+    "v0.17.0": LITERT_ANDROID_DAWN_OVERRIDES,
 }
 LITERT_REQUIRED_RUNTIME_PATHS = {
     "bin/android/arm64/libLiteRtLm.so",
@@ -552,6 +555,14 @@ def litert_schema2_apple_targets(
         for asset_name in required_asset_names
         if asset_name.startswith(prefix) and asset_name.endswith(suffix)
     }
+    # Optional release assets alone do not imply a dependency. Include the
+    # provider only when an iOS runtime bundle actually requires its binary.
+    bundles = litert_schema2_bundle_required_libraries(manifest)
+    if any(
+        "GemmaModelConstraintProvider" in libraries
+        for bundle, libraries in bundles.items() if bundle.startswith("ios-")
+    ):
+        targets.add("GemmaModelConstraintProvider")
     if not targets:
         raise ReleaseError("LiteRT-LM schema-2 owner inventory has no Apple targets")
     return targets
@@ -784,6 +795,7 @@ def main() -> int:
             current_litert_lm_tag,
             resolved_litert_lm_tag,
             allow_channel_transition=args.allow_litert_channel_transition,
+            allow_stable_rebuild_entry=args.allow_litert_stable_rebuild_entry,
             allow_development_line_transition=(
                 args.allow_litert_development_line_transition
             ),
@@ -1052,6 +1064,14 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Explicitly approve changing from one g<commit> development line to "
             "another after reviewing owner manifest ancestry evidence."
+        ),
+    )
+    parser.add_argument(
+        "--allow-litert-stable-rebuild-entry",
+        action="store_true",
+        help=(
+            "Allow entering a newer stable version at a qualified rebuild. "
+            "Manifest validation and all other transition guards still apply."
         ),
     )
     parser.add_argument(
@@ -1695,6 +1715,7 @@ def validate_litert_lm_transition(
     *,
     allow_channel_transition: bool = False,
     allow_development_line_transition: bool = False,
+    allow_stable_rebuild_entry: bool = False,
 ) -> None:
     if current == target:
         return
@@ -1760,7 +1781,7 @@ def validate_litert_lm_transition(
     ):
         raise ReleaseError(f"LiteRT-LM release rollback: {current} -> {target}")
     if target_version > current_version:
-        if target_rebuild != 0:
+        if target_rebuild != 0 and not allow_stable_rebuild_entry:
             raise ReleaseError(
                 "LiteRT-LM stable transition must enter the target line at its base"
             )
@@ -2725,7 +2746,42 @@ def litert_schema2_bundle_required_libraries(
             )
         ):
             raise ReleaseError("LiteRT-LM platform artifact paths are invalid")
-        libraries = tuple(sorted(Path(path).name for path in paths))
+        if len(paths) != len(set(paths)):
+            raise ReleaseError("LiteRT-LM platform artifact paths are duplicated")
+        # Framework metadata is part of the archive provenance, not a library
+        # the flat native-assets hook should extract or require.
+        framework_metadata = re.compile(
+            rf"bin/ios/{re.escape(arch)}/[A-Za-z0-9_]+\.framework/Info\.plist"
+        )
+        library_paths = []
+        for path in paths:
+            if platform_name == "ios" and framework_metadata.fullmatch(path):
+                continue
+            if platform_name == "ios":
+                # Owner archives include raw build inputs beside canonical
+                # frameworks. Flutter would embed those as duplicate frameworks.
+                raw_frameworks = {
+                    "libLiteRtLm.dylib": "LiteRtLm",
+                    "libLiteRt.dylib": "LiteRtLm",
+                    "libGemmaModelConstraintProvider.dylib": "GemmaModelConstraintProvider",
+                    "libLiteRtMetalAccelerator.dylib": "LiteRtMetalAccelerator",
+                    "libLiteRtTopKMetalSampler.dylib": "LiteRtTopKMetalSampler",
+                }
+                framework = raw_frameworks.get(Path(path).name)
+                if framework and Path(path).parent.as_posix() == f"bin/ios/{arch}":
+                    canonical = f"bin/ios/{arch}/{framework}.framework/{framework}"
+                    if canonical not in paths:
+                        raise ReleaseError("LiteRT-LM iOS raw input has no canonical framework")
+                    continue
+            if platform_name == "windows" and Path(path).suffix == ".lib":
+                if (Path(path).parent.as_posix() != f"bin/windows/{arch}"
+                        or Path(path).with_suffix(".dll").as_posix() not in paths):
+                    raise ReleaseError("LiteRT-LM Windows import library has no matching DLL")
+                continue
+            library_paths.append(path)
+        if not library_paths:
+            raise ReleaseError("LiteRT-LM platform contains no runtime libraries")
+        libraries = tuple(sorted(Path(path).name for path in library_paths))
         if any(
             not SAFE_LITERT_LIBRARY_FILENAME_RE.fullmatch(library)
             for library in libraries
@@ -2931,6 +2987,23 @@ def litert_schema2_macos_required_native_spm_files(
     return tuple(target_paths[target] for target in ("LiteRtLm", "CLiteRTLMMac"))
 
 
+def litert_macos_complete_spm_entries(
+    bundle_libraries: dict[str, tuple[str, ...]],
+    native_spm_files: tuple[str, ...],
+) -> dict[str, tuple[str, ...]]:
+    # Core/shim linking does not establish availability of dynamic GPU plugins.
+    # Require the complete per-architecture inventory before skipping raw staging.
+    frameworks = _litert_schema2_macos_framework_entries(bundle_libraries)
+    return {
+        arch: native_spm_files + tuple(
+            item for item in frameworks[arch]
+            if item not in native_spm_files
+            and item != "CLiteRTLM_mac.framework/Versions/A/CLiteRTLM_mac"
+        )
+        for arch in ("arm64", "x64")
+    }
+
+
 def _render_litert_lm_shell_inventory_function(
     function_name: str,
     entries: dict[str, tuple[str, ...]],
@@ -2988,7 +3061,9 @@ def replace_litert_lm_macos_prepare_inventory(
         manifest,
         resolved_tag,
     )
-    native_spm_entries = {arch: native_spm_files for arch in ("arm64", "x64")}
+    native_spm_entries = litert_macos_complete_spm_entries(
+        bundle_libraries, native_spm_files
+    )
     updated = _replace_litert_lm_shell_inventory_function(
         prepare_text,
         "required_libraries",
@@ -3017,9 +3092,10 @@ def replace_litert_lm_runtime_macos_inventory(
         manifest,
         resolved_tag,
     )
+    complete_spm = litert_macos_complete_spm_entries(bundle_libraries, native_spm_files)
     runtime_native_spm_entries = {
-        "macosArm64": native_spm_files,
-        "macosX64": native_spm_files,
+        "macosArm64": complete_spm["arm64"],
+        "macosX64": complete_spm["x64"],
     }
     updated = _replace_litert_lm_runtime_library_function(
         runtime_text,
@@ -3103,11 +3179,48 @@ def prepare_litert_lm_package_swift(
                 r"\g<1>.iOS, .macOS\2",
                 "LiteRT-LM Package.swift shared runtime target condition",
             )
+        elif (
+            "GemmaModelConstraintProvider" in expected_targets
+            and current_targets == expected_targets - {"GemmaModelConstraintProvider"}
+        ):
+            pass  # Repair a previously generated schema-2 manifest.
         elif current_targets != expected_targets:
             raise ReleaseError(
                 "LiteRT-LM Package.swift binary targets do not match the legacy "
                 "or schema-2 owner inventory"
             )
+
+    if manifest.get("schemaVersion") == 2 and "GemmaModelConstraintProvider" in expected_targets:
+        current_targets = {
+            name for name, _ in swift_native_repo_binary_targets(
+                swift_text, tag_variable="liteRtLmTag", current_tag=original_tag,
+            )
+        }
+        if "GemmaModelConstraintProvider" not in current_targets:
+            pattern = re.compile(
+                r'(?m)(?P<indent>^[ \t]*)nativeRepoBinaryTarget\(\s*'
+                r'name: "CLiteRTLMMac",.*?^[ \t]*\),',
+                re.MULTILINE | re.DOTALL,
+            )
+            matches = list(pattern.finditer(swift_text))
+            if len(matches) != 1:
+                raise ReleaseError("LiteRT-LM macOS compatibility target is ambiguous")
+            match = matches[0]
+            provider = match.group().replace("CLiteRTLMMac", "GemmaModelConstraintProvider")
+            swift_text = swift_text[:match.end()] + "\n" + provider + swift_text[match.end():]
+            swift_text = replace_one(
+                swift_text,
+                r'(?m)(?P<indent>^[ \t]*)(?P<target>\.target\(name: "CLiteRTLMMac", condition: \.when\(platforms: \[\.macOS\]\)\),)',
+                r'\g<indent>\g<target>\n\g<indent>.target(name: "GemmaModelConstraintProvider", condition: .when(platforms: [.iOS])),',
+                "LiteRT-LM required iOS provider dependency",
+            )
+
+        provider_dependencies = re.findall(
+            r'\.target\(name: "GemmaModelConstraintProvider", condition: \.when\(platforms: \[([^]]*)\]\)\)',
+            swift_text,
+        )
+        if provider_dependencies != [".iOS"]:
+            raise ReleaseError("LiteRT-LM required provider must have exactly one iOS dependency")
 
     apple_targets = swift_native_repo_binary_targets(
         swift_text,

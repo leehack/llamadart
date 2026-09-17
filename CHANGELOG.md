@@ -5,6 +5,23 @@
   the `llamadart_llama_cpp_flutter` Apple SwiftPM checksum, and
   aligned current README/website native override docs.
 
+* Update native LiteRT-LM to `v0.17.0-5` with corrected Linux library loading, and enable explicit GPU selection on Linux x64 and Windows x64 while retaining CPU defaults.
+
+* Make zero-temperature native LiteRT-LM generation greedy to avoid corrupted GPU output.
+
+* Fix empty native Qwen 3 text-chat responses when thinking is disabled and preserve plain-text system instructions in native conversations.
+
+* Update the native LiteRT-LM runtime to `v0.17.0-3`, preserving Qwen3 tokenizer compatibility, restoring Pixel GPU compatibility, and refreshing Apple runtime packages.
+
+* Hardened LiteRT-LM runtime synchronization and smoke checks to preserve macOS GPU companions and avoid duplicate iOS libraries.
+
+
+* Preserve required iOS provider frameworks when synchronizing LiteRT-LM Apple packages.
+
+* Load LiteRT-LM companion libraries even when their inventory lists dependencies later.
+
+* Keep framework metadata and Windows import archives out of generated LiteRT-LM runtime library inventories.
+
 * Fix fresh macOS Flutter test/build dependency scanning while retaining the
   Apple companion ABI and local-override guards.
 
