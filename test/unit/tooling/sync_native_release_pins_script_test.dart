@@ -1496,7 +1496,7 @@ printf '%s\\n' '{"tag_name":"v0.2.0-1","assets":[]}'
 
   test('keeps LiteRT release identity separate from cache version', () {
     final hook = File('hook/build.dart').readAsStringSync();
-    expect(hook, contains("const _litertLmReleaseTag = 'v0.17.0-3';"));
+    expect(hook, contains("const _litertLmReleaseTag = 'v0.17.0-4';"));
     expect(hook, contains(r"'$_litertLmReleaseTag'"));
     expect(hook, isNot(contains(r"v$_litertLmVersion")));
 

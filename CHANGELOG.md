@@ -1,5 +1,7 @@
 ## Unreleased
 
+* Update native LiteRT-LM to `v0.17.0-4` with corrected desktop runtime packaging. Desktop GPU availability remains unchanged.
+
 * Make zero-temperature native LiteRT-LM generation greedy to avoid corrupted GPU output.
 
 * Fix empty native Qwen 3 text-chat responses when thinking is disabled and preserve plain-text system instructions in native conversations.
