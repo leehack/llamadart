@@ -189,10 +189,12 @@ load `.litertlm` models.
 
 Linux x64 and Windows x64 keep CPU for automatic selection. Explicit GPU
 selection uses the LiteRT-LM GPU backend; it does not select CUDA. Desktop
-candidate and v0.17.0-4 qualification covered NVIDIA L4 with Qwen3 0.6B
-and Gemma 4 E2B. Qualification of the newly pinned v0.17.0-5 artifacts is
-pending; those earlier results do not establish support for every GPU, driver,
-or model. Linux arm64 remains CPU-only.
+qualification of the pinned v0.17.0-5 artifacts passed on NVIDIA L4 with
+Qwen3 0.6B (repaired tokenizer) and Gemma 4 E2B, on CPU and GPU. Windows
+used Direct3D 12 with driver 582.53; Linux used Vulkan with driver
+580.173.02. Checks covered text answers, cancellation, and reuse without
+runtime library search-path workarounds. These results do not establish
+support for every GPU, driver, or model. Linux arm64 remains CPU-only.
 
 Device qualification is model- and backend-specific. On Pixel 9 Pro, the
 v0.17.0-3 Android Dawn correction targets the Mali/Vulkan device-loss regression
