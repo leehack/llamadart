@@ -6,8 +6,9 @@ The implementation starts from current merged main and preserves its runtime pin
 the separate release task still owns pending runtime changes. See the
 [implementation runbook](cross_platform_validation.md) for available commands,
 actual bundles, verified behavior and remaining qualification work. Pilot
-observations below are dated 2026-09-16; the device catalog was refreshed on
-2026-09-17. Proposed later coverage is not an assertion that those rows now pass.
+observations below are dated 2026-09-16; the device catalog and maintained-harness
+pilot were refreshed on 2026-09-17. The runbook records the newer outcomes.
+Proposed later coverage is not an assertion that those rows now pass.
 
 The objective is a small, repeatable test of the **public llamadart package**,
 including native-library packaging, model routing and application lifecycle.
@@ -388,7 +389,7 @@ benchmark:
   measured_runs: 3
 timeouts:
   generation_seconds: 60
-  model_prepare_seconds: 300
+  model_prepare_seconds: 300 # CLI; native Flutter uses 600
   cloud_execution_minutes: 20
 ```
 
@@ -738,8 +739,9 @@ account balance, current VM state or credit expiry was verified by this plan edi
 
 Use Flutter integration tests as Android instrumentation or iOS XCTest, as
 [Firebase documents](https://firebase.google.com/docs/test-lab/flutter/integration-testing-with-flutter).
-Robo crawling is not the correctness harness. The pilot confirmed the package
-runs through both wrappers; the maintained harness is still to be implemented.
+Robo crawling is not the correctness harness. The maintained quick-core harness
+has now executed through both wrappers, with Android app-file retrieval and iOS
+XCTest attachment export verified. The broader feature packs remain planned.
 
 1. Freeze source/dependency/model/configuration hashes. Build and locally validate
    supported options, signed iOS inputs and device-specific install requirements.
@@ -755,8 +757,11 @@ runs through both wrappers; the maintained harness is still to be implemented.
    lifecycle reload tests within that profile. A crash must not prevent the
    other backend profiles from producing their own results.
 4. Download pinned public models inside the test or use a verified supported
-   fixture-transfer mechanism. No paid custom model bucket. Bound download at
-   five minutes and distinguish network preparation failure from inference.
+   fixture-transfer mechanism. No paid custom model bucket. Native Flutter uses
+   a ten-minute download deadline within the 18-minute integration test and
+   20-minute cloud execution limits; CLI preparation retains five minutes.
+   Report received/expected bytes on deadline expiry, remove partial weights,
+   and distinguish network preparation failure from inference.
 5. Write results incrementally to durable files; capture Android pullable app
    artifacts through a verified Test Lab mechanism and iOS XCTest attachments.
    Prove retrieval on each platform before relying on it. Keep short sequenced
@@ -823,8 +828,11 @@ aggregation rules. Firebase's own JUnit remains raw provider evidence and is
 reconciled with the derived case report. Preserve samples so reports can be
 recomputed without rerunning inference. Common provenance belongs in the manifest;
 events reference stable case/model/configuration IDs. Reruns append attempts and
-preserve previous failures; never export only the best attempt. These exporters
-are still proposed.
+preserve previous failures; never export only the best attempt. The quick-core
+exporters are implemented. A preparation failure before the suite manifest is
+currently retained as raw evidence and an incomplete run; promoting it into a
+structured preparation-error envelope is still a follow-up. It cannot establish
+runtime provenance, passing cases or TPS.
 
 The manifest lists every mandatory expanded row and a stable ID; each has one
 terminal result per attempt. Detect missing, duplicate or truncated records.

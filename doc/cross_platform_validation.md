@@ -132,8 +132,8 @@ bundled, making APKs larger than a single-runtime deployment.
 `ios-inputs` contains committed source, no signing credentials. `ios` invokes
 `build-for-testing` and packages `tests.zip`; signing must already be configured. The unique existing project team is applied
 to the test target too; use `--team TEAMID` when selecting another configured team.
-iOS execution and attachment retrieval still need a separately approved device
-run. Web builds use the maintained bridge-staging script. Serve with isolation
+Building the iOS bundle does not submit a test; use the explicit Firebase
+`plan`/`run` steps below. Web builds use the maintained bridge-staging script. Serve with isolation
 headers, for example:
 
 ```sh
@@ -186,6 +186,13 @@ iOS attaches bounded result files to XCTest; collection exports `.xcresult`
 attachments on macOS. Missing, truncated or conflicting evidence remains incomplete.
 Physical device export/crash behavior is an explicit live-qualification step;
 a build and fake-provider tests alone do not prove it.
+
+A model-preparation error can occur before the suite manifest exists. The current
+collector retains those raw device files under `remote-results`, but cannot
+produce a validated suite report from them. Record preparation as ERROR and
+inference as NOT_RUN, with TPS unavailable. Zero cases and successful artifact
+collection are not a passing run; a structured preparation-error envelope remains
+a follow-up. Do not insert requested bundle metadata as observed runtime evidence.
 
 ## GCE setup and teardown
 
@@ -291,3 +298,39 @@ but answered `2` for `2 + 2`; retain the semantic failure and relate it to
 [#509](https://github.com/leehack/llamadart/issues/509), without inferring the same
 cause before a native reference comparison. These runs are diagnostics, not
 release qualification or stable performance baselines.
+
+## Maintained Firebase CPU pilot (2026-09-17)
+
+Four physical executions used the unbilled Spark project. All reached terminal
+provider states, artifacts were collected, and completion was verified. No GCE
+VM was created. Android file pulls and iOS XCTest attachment export both recovered
+complete quick-core journals when model preparation succeeded.
+
+| Device / profile | Outcome | Median native decode TPS |
+| --- | --- | ---: |
+| Galaxy S24 / tiny GGUF CPU | 10 PASS, 1 FAIL: C02 Unicode corruption | 538.5 |
+| iPhone 16 Pro / tiny GGUF CPU | 10 PASS, 1 FAIL: C02 Unicode corruption | 708.3 |
+| Galaxy S24 / Qwen3 LiteRT CPU | Preparation ERROR; inference NOT_RUN | Unavailable |
+| iPhone 16 Pro / Qwen3 LiteRT CPU | 13 PASS, 1 FAIL: C04 arithmetic returned `2` | 8.9 |
+
+GGUF used native `v0.4.0`; LiteRT used `0.17.0-3`. Unicode matches
+[#511](https://github.com/leehack/llamadart/issues/511); the arithmetic observation
+matches [#509](https://github.com/leehack/llamadart/issues/509) and does not by
+itself establish a Dart-layer defect. The three benchmark samples after warmup
+remain available despite those independent assertion failures. Android is Debug
+and iOS is Release; the tiny GGUF model is a packaging fixture, so these numbers
+are not a device ranking or a comparison of backend performance.
+
+The Android LiteRT attempt ended after 302 seconds during model download, before
+any suite manifest or inference. Its old diagnostic recorded a closed connection
+without partial byte progress. The corrected mobile host now has a ten-minute
+download deadline and reports byte counts on timeout. The final iOS bundle used
+that host, downloaded and verified the 614 MB fixture in about 65 seconds, then
+ran the suite. This does not prove Android download recovery: the corrected APK
+was built locally but no fifth execution was submitted. Retain the failed attempt
+and use a fresh quota receipt for an explicitly selected later retry.
+
+The remaining mobile milestones are reliable preparation-error envelopes,
+Android LiteRT inference with the corrected host, and the planned GPU/NPU
+packaging and execution-evidence adapters. These CPU observations do not qualify
+those accelerator paths or a release.
