@@ -245,7 +245,7 @@ void main() {
         'hook_sha256': 'b' * 64,
         'native_tag': 'v0.4.0',
         'litert_tag': '0.17.0-5',
-        'bridge_tag': 'v0.1.43',
+        'bridge_tag': 'fixture-bridge',
       };
       await writeBundleManifest(bundle, {'target': 'android', ...identity});
       final profile = jsonDecode(

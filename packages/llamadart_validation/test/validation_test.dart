@@ -829,7 +829,7 @@ void main() {
       );
       environment['web'] = true;
       environment['platform'] = 'linux';
-      environment['bridge_tag'] = 'v0.1.43';
+      environment['bridge_tag'] = 'fixture-bridge';
       expect(report().provenanceProblems, isEmpty);
     },
   );
