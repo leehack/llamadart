@@ -120,9 +120,10 @@ An older prebuilt, different SoC, tampered file, missing file or symlink fails
 the input check. Dynamic dependency resolution still needs final-APK/device
 verification; this inventory check does not execute or resolve a shared library.
 The inspected S24 stub needs device `libcdsprpc.so`; its DSP skeleton needs
-Hexagon `libc++.so.1` and `libc++abi.so.1`. Their availability and namespace access
-inside the installed Firebase app remain unverified. Android host libraries
-cannot substitute for DSP libraries with the same basename.
+Hexagon `libc++.so.1` and `libc++abi.so.1`. The 2026-09-17 installed S24 pilot
+initialized and executed the NPU through both adapters, establishing access for
+that exact device/runtime/kit combination. Other targets remain unverified.
+Android host libraries cannot substitute for DSP libraries with the same basename.
 
 For runtime `0.17.0-3`, the actual LiteRT dependency is
 `9fe5be45564c868408e6514c8aabb83e211a0911`. Its dispatch header adds `get_hooks`
@@ -142,6 +143,7 @@ hashes, copies the model to the app's private cache, and verifies its hash again
 It declares the required device library (`libcdsprpc.so` or
 `libedgetpu_litert.so`) and configures the app-local DSP search directory. These
 checks cannot prove that the Firebase sandbox grants access to its device driver.
+Use the dated device results below for actual execution evidence.
 
 Build separate bundles from clean committed source; each contains interactive
 `qa-app.apk`, unattended `app.apk` and instrumentation `test.apk`:
@@ -495,11 +497,71 @@ any suite manifest or inference. Its old diagnostic recorded a closed connection
 without partial byte progress. The corrected mobile host now has a ten-minute
 download deadline and reports byte counts on timeout. The final iOS bundle used
 that host, downloaded and verified the 614 MB fixture in about 65 seconds, then
-ran the suite. This does not prove Android download recovery: the corrected APK
-was built locally but no fifth execution was submitted. Retain the failed attempt
-and use a fresh quota receipt for an explicitly selected later retry.
+ran the suite. The original failed Android attempt remains in the evidence;
+the separately selected retry below establishes download recovery for one run.
 
 The remaining mobile milestones are reliable preparation-error envelopes,
-Android LiteRT inference with the corrected host, and the planned GPU/NPU
-packaging and execution-evidence adapters. These CPU observations do not qualify
-those accelerator paths or a release.
+semantic-failure investigation, and the planned accelerator qualification packs.
+These CPU observations do not qualify accelerator paths or a release.
+
+### Android LiteRT CPU retry after Blaze upgrade
+
+Run `qa-1789668430755373` / `matrix-2thou79z4k2ud` used the corrected clean
+`b860bfe6c13958bede6df7088d1f53e05eac8f7c` Debug bundle on S24/API 36. It
+downloaded the 614,236,160-byte Qwen3 model in 169.332 seconds, verified its locked
+SHA256, and finished preparation in 175.961 seconds within the ten-minute
+download deadline. This is one successful retry, not a network reliability rate.
+
+The result was **13 PASS, 1 FAIL**: C04 arithmetic again returned `2` for `2 + 2`,
+matching [#509](https://github.com/leehack/llamadart/issues/509). Median native
+decode throughput was 12.34 TPS, estimated wall throughput 8.53 TPS, and visible
+TTFA 2,054.97 ms across three measured samples after warmup. The provider recorded
+232 seconds of test process time (four rounded free minutes), and collection and
+completion were verified. The scheduled September 18 retry was paused to prevent
+a duplicate. Qwen CPU is not the matched Gemma CPU control for the NPU pack.
+
+## Galaxy S24 NPU pilot (2026-09-17)
+
+Both installed apps used clean bundle source `2288eed19c482e7774df2c93b1e7d9a96e6e9c4e`,
+Flutter 3.47.1, Debug mode, LiteRT-LM `0.17.0-3`, QAIRT `2.47.0.260601`, and the
+locked `Gemma3-1B-IT_q4_ekv1280_sm8650.litertlm` model. The device reported
+`SC-51E`, `SM8650`, arm64-v8a and API 36. Model and kit hashes were verified on
+installation and per-generation synchronous vendor-call completions established
+**NPU participation; CPU partition coverage unknown**.
+
+| Execution path | Result | Native decode TPS, median | Estimated wall TPS, median | Collection/completion |
+| --- | --- | ---: | ---: | --- |
+| Direct native C API control | 8 PASS; NPU proof in 7 generations | 80.08 | 72.45 | COMPLETE / VERIFIED |
+| Public llamadart API | 13 PASS, 1 FAIL; NPU proof in 14 generations | 82.27 | 72.24 | COMPLETE / VERIFIED |
+
+These are three short 32-token measured generations after warmup, not a sustained
+benchmark or evidence that one adapter is faster. Both use compiled NPU sampling
+defaults: requested temperature/seed overrides are not applied, and effective
+sampler values remain unknown. Native-control TTFT median was 36.37 ms; public
+visible-answer TTFA median was 135.56 ms. They measure different boundaries and
+must not be substituted for each other.
+
+The public history case expected `cedar17` and returned 32 repeated `7` characters.
+It remains FAIL and blocks public NPU qualification. Load, Unicode tokenizer
+round-trip, raw generation, hello, arithmetic, cancellation/recovery, reload,
+one-token output limit and invalid-path recovery passed. Track the exact inputs
+and controls in [history investigation #513](https://github.com/leehack/llamadart/issues/513).
+The native control does not yet test this history input, so its success does not
+establish whether the failure belongs to Dart, the runtime, or the compiled model.
+
+Native run `qa-1789667329901788` / `matrix-pt34kzd9mgxsa` used six seconds of test
+process time; public run `qa-1789667821365130` / `matrix-21m98jmyipzo2` used 45 seconds.
+Both were capped at ten minutes after a fresh project-wide free-minute check.
+Each consumes one rounded free physical minute. All raw outputs, configuration,
+provenance, timing samples and dispatch counters are retained with the run reports.
+The matched Gemma CPU control, separate Unicode generation fixture and aggregate
+NPU pack qualification remain outstanding; the Qwen CPU retry is independent.
+
+The final project-wide inventory at 18:15 UTC found all seven September 17
+physical executions complete, with no unresolved executions. Individually
+rounded test times totalled **17 of the 30 free physical minutes**: 11 from the
+earlier Spark runs and six from this three-run batch. The gross USD 6 journal
+reservation is a dispatch guard, not a charge. No VM or custom storage bucket was
+created. The default Test Lab result bucket is
+[provided at no charge](https://docs.cloud.google.com/sdk/gcloud/reference/firebase/test/android/run#description),
+and complete copies of the reports are retained locally.

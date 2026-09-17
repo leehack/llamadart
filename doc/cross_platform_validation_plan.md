@@ -265,7 +265,8 @@ user's model without silently replacing a failing standard fixture.
 | `tts-gguf` | Qwen3-TTS GGUF + matching projector, about 1.5 GB | Experimental typed synthesis and playback/export |
 
 The pilot fixtures below and the checked-in quick/NPU profiles have immutable
-model locks; the NPU profiles remain unexecuted candidates. Other artifacts/sizes
+model locks. S24 NPU execution is observed but history qualification fails;
+Tensor NPU remains unexecuted. Other artifacts/sizes
 are **selection candidates**, not locked or reference-qualified inputs.
 Before a row is executable, resolve
 the exact repository revision, filename, byte size, SHA256, format, quantization,
@@ -468,9 +469,12 @@ device NPU, lower-ISA CPU selection or real-device memory behavior.
 
 ### Next-milestone LiteRT-LM NPU test pack
 
-Include **Galaxy S24 first, then Pixel 10** in the next implementation and
-qualification milestone. These are planned public-llamadart NPU cases; neither
-Firebase catalog availability nor the current bundle proves NPU inference.
+Qualify **Galaxy S24 first, then Pixel 10**. The S24 pilot now establishes NPU
+participation through both native and public adapters, but public history fails
+([#513](https://github.com/leehack/llamadart/issues/513)); full qualification remains
+blocked. See the [dated result](cross_platform_validation.md#galaxy-s24-npu-pilot-2026-09-17).
+Pixel 10 remains planned. Neither catalog availability nor a built bundle proves
+NPU inference on another target.
 Google's [LiteRT-LM NPU guide](https://developers.google.com/edge/litert/next/litert_lm_npu)
 documents SoC-specific Gemma 3 1B models for Qualcomm SM8650 and Google Tensor G5.
 The [Google Tensor SDK](https://developers.google.com/edge/tensor-sdk) remains
@@ -478,7 +482,7 @@ labelled beta; verify required SDK/model access before selecting that row.
 
 | Order | Device / catalog OS | Required NPU target | Purpose |
 | --- | --- | --- | --- |
-| 1 | Galaxy S24 `SC-51E` / API 36 | Qualcomm SM8650, Snapdragon 8 Gen 3; matching Qualcomm dispatch and QAIRT/HTP libraries | Reuse the pilot device and add its first actual NPU qualification |
+| 1 | Galaxy S24 `SC-51E` / API 36 | Qualcomm SM8650, Snapdragon 8 Gen 3; matching Qualcomm dispatch and QAIRT/HTP libraries | NPU participation verified; resolve history failure and finish matched controls before qualification |
 | 2 | Pixel 10 `frankel` / API 36 | Google Tensor G5; matching Google Tensor dispatch/runtime | Independent vendor path; catalog snapshot reports high capacity |
 | Alternate | Pixel 10 Pro `blazer` / API 36 | Tensor G5, separately recorded device/OS/driver cohort | Use only if the base Pixel 10 is unavailable; snapshot reports low capacity |
 | Later | Galaxy S25 Ultra `pa3q` / API 35 or 36; OnePlus 11 `CPH2449` / API 34 | Corresponding SM8750 or SM8550 model/runtime | Optional Qualcomm-generation expansion after the first two paths work |
@@ -521,10 +525,12 @@ hello/arithmetic, reload, warmup and three measured generations). N01/N03/N04/N0
 are covered to this bounded scope. N02's additional Unicode generation fixture,
 the compatible CPU Gemma control, and aggregate matching of the reference/public
 reports remain unimplemented; C02 tokenizer coverage runs only on the public
-path. A single passing run cannot complete the whole NPU pack. Hardware driver
-access, model initialization, output correctness and NPU TPS remain NOT_RUN until
-the installed apps execute on the matching lab device. Positive counters prove
-NPU participation with CPU partition coverage unknown, not full NPU placement.
+path. A single passing run cannot complete the whole NPU pack. The installed S24
+apps now prove driver access, initialization and NPU participation, and report
+measured TPS; the public history failure remains a qualification blocker. Other
+device rows remain NOT_RUN until matching installed apps execute. Positive
+counters prove NPU participation with CPU partition coverage unknown, not full
+NPU placement.
 
 **Preflight before spending a device execution:**
 
@@ -544,8 +550,10 @@ NPU participation with CPU partition coverage unknown, not full NPU placement.
 4. Use explicit `LiteRtLmBackendPreference.npu` and a validated
    `liteRtLmDispatchLibDir`. Keep llama.cpp-only options at supported defaults
    (`numberOfThreadsBatch=0`). Lock context 1280 for the documented Gemma NPU
-   fixtures, max output 32, temperature 0, seed 1, and one warm-up plus three
-   measured runs. Record all effective settings; do not apply Qwen-specific
+   fixtures, max output 32, requested temperature 0 and seed 1, and one warm-up
+   plus three measured runs. The current NPU runtime cannot accept the requested
+   sampler overrides; record compiled runtime defaults and unknown effective
+   sampling explicitly. Do not label these runs greedy or seeded. Do not apply Qwen-specific
    thinking/template options to Gemma. Native automatic controls stay at their
    documented defaults unless the exact NPU artifact supports an override.
 5. Build a minimal direct-native reference test and the public Dart test with
@@ -627,9 +635,12 @@ provider timeout plus a rounding reserve. Spread the rotation across additional
 days if its elapsed test time would exceed 30 free physical minutes in one day.
 Keep the authorization window fixed, preserve the shared journal, and refresh
 quota and funding evidence before each run. No automatic paid retry is permitted.
-The first requested batch is the S24 native NPU reference, public llamadart NPU
-only after reference initialization, and the existing Qwen CPU retry. That retry
-does not satisfy the matched Gemma CPU control still required by the NPU pack.
+The first batch completed the S24 native NPU reference, public llamadart NPU
+after reference initialization, and the existing Qwen CPU retry. All three were
+collected and completion-verified; the public history and CPU arithmetic failures
+remain explicit. That retry does not satisfy the matched Gemma CPU control still
+required by the NPU pack. The batch consumed six rounded free physical minutes;
+the full day's inventory, including earlier Spark tests, totalled 17 of 30.
 Credit balances with unspecified service coverage do not authorize paid dispatch.
 Blaze's verified free minutes can fund a shorter run: the runner reserves its
 full provider timeout plus a rounding minute, then requires a fresh project-wide
@@ -677,8 +688,9 @@ The initial five pilot submissions finished (one intentionally cancelled).
 The initial CPU pilot ran with billing disabled and needed no GCP credit. A later
 live check on 2026-09-17 verified `billingEnabled: true` after the explicitly
 authorized Blaze upgrade. Spark plans correctly reject this billed project;
-future tests require the explicit Blaze configuration. Device execution is not
-established by an upgrade or local runner tests.
+future tests require the explicit Blaze configuration. Subsequent S24 runs
+established native/public NPU participation and CPU download recovery, while
+retaining semantic failures. See the [dated run evidence](cross_platform_validation.md#galaxy-s24-npu-pilot-2026-09-17).
 Test Lab executions have no idle VM to stop. Any later
 Compute Engine CUDA testing is a separate action: verify credit eligibility and
 remaining balance first, and account for disks/IP/storage after stopping a VM.
@@ -1026,10 +1038,12 @@ blocking independently of speed. No throughput threshold hides a known failure.
    authorized short GCE run must prove upload, execution, result retrieval and
    resource deletion before broad CUDA coverage; unavailable credit defers this
    optional lane without blocking the Mac/CI/Firebase harness.
-6. **Next mobile milestone:** prove current Android/iOS bundle submission and
-   result retrieval in Firebase. With NPU packaging and both execution adapters implemented, verify their
-   installed-app execution alongside the CPU/GPU qualification work; complete
-   the remaining Unicode generation, compatible Gemma CPU and paired-report controls. Qualify S24 then Pixel 10 NPU only after model/library
+6. **Next mobile milestone:** preserve the demonstrated Android/iOS submission,
+   result retrieval and S24 NPU execution. Investigate the public NPU history
+   failure with the same input through the direct native control, alongside CPU
+   arithmetic and GPU qualification work. Complete the remaining Unicode
+   generation, compatible Gemma CPU and paired-report controls.
+   Qualify S24 then Pixel 10 NPU only after model/library
    preflight and each native reference succeed. Complete the selected Firebase
    rotation including targeted iPad checks, then older-device CPU full/compact
    and feature packs as quota permits.
