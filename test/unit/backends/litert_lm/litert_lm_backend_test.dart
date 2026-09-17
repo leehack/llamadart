@@ -2,6 +2,7 @@
 library;
 
 import 'dart:async';
+import 'dart:ffi';
 import 'dart:io';
 import 'dart:isolate';
 
@@ -89,7 +90,13 @@ void main() {
         results[2],
         expectedBackend == 'cpu' ? 0 : ModelParams.maxGpuLayers,
       );
-      expect(results[3], Platform.isMacOS || Platform.isAndroid);
+      expect(
+        results[3],
+        Platform.isMacOS ||
+            Platform.isAndroid ||
+            Abi.current() == Abi.linuxX64 ||
+            Abi.current() == Abi.windowsX64,
+      );
     } finally {
       await backend.dispose();
     }

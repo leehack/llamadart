@@ -9,7 +9,7 @@ For canonical full release notes, use:
 
 ## Unreleased
 
-* Update native LiteRT-LM to `v0.17.0-4` with corrected desktop runtime packaging. Desktop GPU availability remains unchanged.
+* Update native LiteRT-LM to `v0.17.0-5` with corrected Linux library loading, and enable explicit GPU selection on Linux x64 and Windows x64 while retaining CPU defaults.
 
 * Make zero-temperature native LiteRT-LM generation greedy to avoid corrupted GPU output.
 

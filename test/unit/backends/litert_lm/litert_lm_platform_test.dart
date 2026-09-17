@@ -1,6 +1,7 @@
 @TestOn('vm')
 library;
 
+import 'dart:ffi';
 import 'dart:io';
 
 import 'package:llamadart/src/backends/litert_lm/litert_lm_platform.dart';
@@ -41,6 +42,13 @@ void main() {
     if (Platform.isIOS || Platform.isMacOS) {
       expect(available, const <String>[liteRtLmCpuBackend, liteRtLmGpuBackend]);
       expect(liteRtLmDefaultNativeBackendForCurrentPlatform(), 'gpu');
+      expect(liteRtLmNativeGpuSupportedOnCurrentPlatform(), isTrue);
+      return;
+    }
+
+    if (Abi.current() == Abi.linuxX64 || Abi.current() == Abi.windowsX64) {
+      expect(available, const <String>[liteRtLmCpuBackend, liteRtLmGpuBackend]);
+      expect(liteRtLmDefaultNativeBackendForCurrentPlatform(), 'cpu');
       expect(liteRtLmNativeGpuSupportedOnCurrentPlatform(), isTrue);
       return;
     }
