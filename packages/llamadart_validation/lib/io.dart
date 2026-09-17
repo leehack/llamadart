@@ -19,6 +19,7 @@ Future<({String path, Map<String, dynamic> evidence})> prepareModel(
   Duration timeout = const Duration(minutes: 5),
   http.Client? client,
 }) async {
+  profile.requireRunnable();
   final started = Stopwatch()..start();
   final target = suppliedPath == null
       ? File(p.join(cache.path, profile.modelHash, profile.filename))

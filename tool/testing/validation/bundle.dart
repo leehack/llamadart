@@ -6,6 +6,7 @@ import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as p;
 
 import 'process.dart';
+import 'npu.dart';
 import 'runtime_bundle.dart';
 
 /// Reads committed source and runtime identities for local runs and bundles.
@@ -70,6 +71,14 @@ Future<Directory> buildValidationBundle(
     throw const FormatException('Invalid profile');
   }
   final package = p.join(root, 'packages', 'llamadart_validation');
+  requireExecutableValidationProfile(
+    jsonDecode(
+          File(
+            p.join(package, 'assets', 'profiles', '$profile.json'),
+          ).readAsStringSync(),
+        )
+        as Map,
+  );
   final app = p.join(root, 'example', 'chat_app');
   final sourceIdentity = await readValidationProvenance(root, execute: execute);
   final source = sourceIdentity['source_commit'] as String;

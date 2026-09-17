@@ -39,7 +39,7 @@ const List<TestMatrixRow> testMatrixRows = <TestMatrixRow>[
     tier: 'targeted',
     mode: 'CI + local; model-free',
     covers:
-        'private runner, result integrity, provider lifecycle and artifact checks',
+        'private runner, result integrity, provider lifecycle, artifact and NPU input checks',
     command:
         'dart run tool/testing/run_local_e2e.dart --scenario validation-harness',
     useWhen:

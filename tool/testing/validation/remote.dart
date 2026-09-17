@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
 import 'bundle.dart';
+import 'npu.dart';
 import 'process.dart';
 
 Object? _freeze(Object? value) => value is Map
@@ -241,6 +242,7 @@ class RemoteController {
       ),
     );
     final profile = jsonDecode(profileFile.readAsStringSync()) as Map;
+    requireExecutableValidationProfile(profile);
     if (profile['id'] != plan.profile ||
         (!plan.firebase &&
             (profile['backend'] != 'cuda' || profile['runtime'] != 'gguf'))) {

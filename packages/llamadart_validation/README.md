@@ -23,6 +23,10 @@ is the native filesystem adapter. `bin/run.dart` and `bin/report.dart` are the
 CLI entrypoints. Flutter uses the package's profile assets and shared runner.
 Native wrappers persist JSONL per event; reports always derive from that journal.
 
+The two `npu-*` profiles are locked candidates. Inspect their local prerequisites
+with `validation.dart npu-preflight`; downloading/running them is blocked until
+installed-app packaging, SoC checks and per-generation execution proof are wired.
+
 Exit 0 means this selected run qualified, 1 means failed/incomplete.
 Unknown/dirty source provenance, missing counters, unknown backend placement, skipped mandatory cases and missing
 records remain incomplete. `release` selection deliberately records unimplemented

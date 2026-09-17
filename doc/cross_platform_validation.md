@@ -10,7 +10,8 @@ Firebase is the primary physical Android/iOS qualification route. The personal
 Pixel and iPad are optional debugging devices; the Mac remains the local build,
 iOS signing and desktop/browser test host. The next milestone includes Firebase
 NPU qualification on Galaxy S24 (Qualcomm SM8650) and Pixel 10 (Tensor G5).
-These planned cases still need vendor packaging and execution-proof adapters;
+The two SoC-specific model locks and offline input preflight are implemented.
+Installed-app vendor packaging and execution-proof integration remain required;
 the current bundles do not yet qualify NPU inference.
 
 ## Source and generated artifacts
@@ -21,7 +22,7 @@ the current bundles do not yet qualify NPU inference.
   `flutter run -t lib/validation_main.dart` from `example/chat_app`.
 - `example/chat_app/integration_test/validation_test.dart`: unattended entrypoint;
   Android instrumentation and iOS XCTest invoke the same controller.
-- `tool/testing/validation.dart`: build, local, report, plan, run, status, collect,
+- `tool/testing/validation.dart`: build, local, report, npu-preflight, plan, run, status, collect,
   reconcile, cleanup. Provider helpers live beside it under `tool/testing/validation/`.
 - `.github/workflows/validation_bundles.yml`: manual build-only workflow. No cloud
   credentials, model runs, VM creation or Firebase submission in CI.
@@ -76,11 +77,73 @@ in the journal. The raw tiny fixture does not claim chat capability.
 
 Thinking, tool calls, stop-marker fixtures, batching, expanded unsupported guards,
 multimodal/speech/embedding packs and full browser/device rotation remain
-subsequent qualification work. NPU profiles, dispatch-directory configuration,
+subsequent qualification work. NPU dispatch-directory configuration,
 SoC checks, vendor libraries and native execution evidence are the next mobile
 expansion; selecting `npu` alone cannot supply them. Selecting `release` today
 keeps those additional obligations visible as NOT_RUN and cannot pass as a
 release qualification.
+
+## NPU input preparation
+
+`npu-qualcomm-sm8650` and `npu-tensor-g5` are **candidate locks**, not runnable
+quick profiles. Each records Gemma 3 1B IT revision
+`a6306a4e292016480083b73b8dc6f3f939ae04c3`, the SoC-specific file/hash/size,
+context 1280, max output 32 and required library architectures. The Qualcomm
+file is 690,094,080 bytes; Tensor G5 is 1,678,542,365 bytes. Model access is gated:
+stage an authorized copy locally without embedding tokens or signed URLs in
+the APK, kit manifest or report. The preflight never downloads a model.
+
+```sh
+dart run tool/testing/validation.dart npu-preflight \
+  --profile npu-qualcomm-sm8650 \
+  --model /path/to/Gemma3-1B-IT_q4_ekv1280_sm8650.litertlm \
+  --kit /path/to/qualcomm-kit \
+  --out .dart_tool/validation/npu-preflight.json
+```
+
+Omit `--model` or `--kit` to obtain the missing-input inventory. `--out` must be
+a new file. The command writes hashes, sizes, SoC/runtime identities and checks;
+it does not export supplied local paths. Exit 1 and `status: NOT_RUN` remain
+intentional even when `inputs_verified: true`: file integrity is not native
+execution or qualification. It creates no remote resources and uses no quota.
+
+The kit contains flat regular library files and `npu-kit.json` with schema 1,
+`target`, `runtime_tag`, `litert_revision`, `dispatch_header_sha256`, and a
+`libraries` map from basename to `sha256`/`bytes`. Host libraries must be
+AArch64 ELF64; the Qualcomm V75 skeleton is Hexagon ELF32. The lock includes
+QAIRT 2.47.0.260601 host/DSP hashes and the two audited vendor dispatch hashes.
+An older prebuilt, different SoC, tampered file, missing file or symlink fails
+the input check. Dynamic dependency resolution still needs final-APK/device
+verification; this inventory check does not execute or resolve a shared library.
+The inspected S24 stub needs device `libcdsprpc.so`; its DSP skeleton needs
+Hexagon `libc++.so.1` and `libc++abi.so.1`. Their availability and namespace access
+inside the installed Firebase app remain unverified. Android host libraries
+cannot substitute for DSP libraries with the same basename.
+
+For runtime `0.17.0-3`, the actual LiteRT dependency is
+`9fe5be45564c868408e6514c8aabb83e211a0911`. Its dispatch header adds `get_hooks`
+to the nested interface relative to LiteRT v2.2.0 while retaining the same API
+version. The version string alone cannot establish table-layout compatibility.
+The native owner repository's diagnostic proxy is built against the exact
+headers and accepts only the audited same-source vendor binaries. It preserves
+vendor calls and exports lifetime counters for synchronous completions/failures,
+async submissions/failures and synchronous calls in flight. Async submission is
+not completion; positive counts establish some NPU work, never all-NPU placement.
+
+The proxy's model-free forwarding/negative checks and Android compilation are
+preparation evidence only. Before enabling build/upload for these profiles:
+
+1. Package licensed libraries and model delivery into the installed test app;
+   inspect all native dependencies and device-sandbox access.
+2. Read `Build.SOC_MODEL`, API and ABI on the device before loading weights.
+3. Integrate before/after counter snapshots for each public-Dart generation,
+   rejecting absent proof, failed calls and CPU-only results; report hybrid work.
+4. Add the installed-app direct-native reference and compatible CPU semantic
+   control, then schedule them through the existing quota/lifecycle controller.
+
+The builder, model preparation and remote upload currently reject NPU profiles
+before model download, provider preflight or submission. The model-free
+`validation-harness` row tests these guards and the input verifier.
 
 ## Build and run
 

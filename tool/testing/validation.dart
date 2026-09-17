@@ -9,6 +9,7 @@ import 'package:path/path.dart' as p;
 
 import 'validation/bundle.dart';
 import 'validation/collect.dart';
+import 'validation/npu.dart';
 import 'validation/process.dart';
 import 'validation/remote.dart';
 
@@ -21,6 +22,7 @@ Future<void> main(List<String> arguments) async {
         '  build --target desktop|android|web|ios|ios-inputs --out <new-directory> [--profile <id>]\n'
         '  local --profile <id> [--model <path>] [--out <new-directory>]\n'
         '  report --out <run-directory>\n'
+        '  npu-preflight --profile npu-qualcomm-sm8650|npu-tensor-g5 [--model <file>] [--kit <directory>] [--out <new-json>]\n'
         '  plan --target <remote-target> --config <local-json> --bundle <directory> --out <plan.json>\n'
         '  run --plan <plan.json>\n'
         '  status|collect|cleanup --run-id <id>\n'
@@ -37,7 +39,23 @@ Future<void> main(List<String> arguments) async {
     final profile = options['profile'] ?? 'tiny-gguf-cpu';
     String required(String key) =>
         options[key] ?? (throw FormatException('--$key is required'));
-    if (command == 'build') {
+    if (command == 'npu-preflight') {
+      final report = await inspectNpuInputs(
+        root,
+        required('profile'),
+        modelPath: options['model'],
+        kitPath: options['kit'],
+      );
+      final encoded = const JsonEncoder.withIndent('  ').convert(report);
+      if (options['out'] case final output?) {
+        final file = File(output);
+        file.createSync(exclusive: true);
+        file.writeAsStringSync('$encoded\n');
+      }
+      stdout.writeln(encoded);
+      // No hardware execution means no qualification, even if inputs match.
+      exitCode = report['dispatch_allowed'] == true ? 0 : 1;
+    } else if (command == 'build') {
       final bundle = await buildValidationBundle(
         root,
         required('target'),
@@ -213,6 +231,7 @@ Map<String, String> _options(List<String> args) {
     'out',
     'profile',
     'model',
+    'kit',
     'config',
     'bundle',
     'plan',

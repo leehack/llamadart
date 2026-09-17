@@ -130,6 +130,17 @@ class ValidationProfile {
   bool get requiresAcceleratorProof =>
       !['cpu', 'auto', 'blas'].contains(backend);
 
+  /// Candidate NPU locks are inspectable, but do not yet have a runnable host.
+  void requireRunnable() {
+    if (backend == 'npu') {
+      throw LlamaUnsupportedException(
+        'NPU validation needs installed-app vendor packaging, SoC checks and '
+        'per-generation execution proof. Use validation.dart npu-preflight '
+        'to inspect the locked inputs without downloading or loading a model.',
+      );
+    }
+  }
+
   /// Configuration actually passed to the public model loader.
   ModelParams get loadParams => ModelParams(
     contextSize: contextSize,

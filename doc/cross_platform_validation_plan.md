@@ -260,8 +260,10 @@ user's model without silently replacing a failing standard fixture.
 | `asr-litert` | Moonshine tiny INT8 + tokenizer, about 54 MB | Native CPU streaming ASR |
 | `tts-gguf` | Qwen3-TTS GGUF + matching projector, about 1.5 GB | Experimental typed synthesis and playback/export |
 
-Except the two pilot fixtures below, artifacts/sizes are **selection candidates**,
-not locked or reference-qualified test inputs. Before a row is executable, resolve
+The pilot fixtures below and the checked-in quick/NPU profiles have immutable
+model locks; the NPU profiles remain unexecuted candidates. Other artifacts/sizes
+are **selection candidates**, not locked or reference-qualified inputs.
+Before a row is executable, resolve
 the exact repository revision, filename, byte size, SHA256, format, quantization,
 tokenizer/template identity, license/access requirements, companion hashes,
 supported feature flags and measured memory envelope. Reject a manifest with
@@ -490,10 +492,19 @@ the documented LLM NPU model table, so they are not positive NPU targets in this
 pack. Current llamadart Apple backends expose CPU/GPU only. Existing GPU tests
 remain useful and do not qualify any of these devices' NPUs.
 
-**Implementation still required:** the current quick profiles do not include an
-NPU model, vendor libraries or NPU execution-proof adapter. Add the two immutable
-SoC-specific profiles, dispatch-directory configuration, dependency-aware Android
-packaging, on-device identity preflight and the N01–N06 cases below. Native build
+**Preparation implemented:** the two immutable SoC-specific candidate profiles
+and `validation.dart npu-preflight` now check local model/kit hashes, runtime
+identity and host/DSP library architectures. The S24 model was staged and checked;
+same-source Qualcomm/Tensor dispatch libraries were compiled in the native owner
+worktree. Its diagnostic proxy distinguishes completed synchronous calls from
+failures and async submissions, with model-free forwarding/negative tests.
+These are input/build checks, not device execution evidence. See the
+[NPU input runbook](cross_platform_validation.md#npu-input-preparation).
+
+**Implementation still required:** dispatch-directory configuration,
+dependency-aware Android packaging, on-device identity preflight, the private
+Dart counter adapter, installed-app native control and N01–N06 cases below.
+NPU build/upload is blocked until these are present. Native build
 or runtime changes belong in their owning repository before this harness consumes
 them. Export native-reference and public-Dart results through the same result
 contract, with distinct path identities. Test missing dependencies, incompatible
@@ -976,7 +987,7 @@ blocking independently of speed. No throughput threshold hides a known failure.
    resource deletion before broad CUDA coverage; unavailable credit defers this
    optional lane without blocking the Mac/CI/Firebase harness.
 6. **Next mobile milestone:** prove current Android/iOS bundle submission and
-   result retrieval in Firebase. Implement the NPU profiles, vendor packaging,
+   result retrieval in Firebase. With the NPU input locks in place, implement vendor packaging,
    native-reference adapter and execution evidence alongside the CPU/GPU
    qualification work. Qualify S24 then Pixel 10 NPU only after model/library
    preflight and each native reference succeed. Complete the selected Firebase

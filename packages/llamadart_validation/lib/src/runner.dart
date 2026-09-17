@@ -33,6 +33,7 @@ class PublicValidationEngine implements ValidationEngine {
 
   @override
   Future<void> load(String location, ValidationProfile profile) async {
+    profile.requireRunnable();
     if (_disposed) {
       _engine = LlamaEngine(LlamaBackend());
       _disposed = false;

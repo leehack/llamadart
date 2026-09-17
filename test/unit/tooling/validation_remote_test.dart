@@ -423,6 +423,28 @@ void main() {
     },
   );
 
+  test(
+    'NPU bundles are blocked before provider preflight or submission',
+    () async {
+      const id = 'npu-qualcomm-sm8650';
+      File(
+        'packages/llamadart_validation/assets/profiles/$id.json',
+      ).copySync(p.join(bundle.path, 'profile.json'));
+      await writeBundleManifest(bundle, {
+        'target': 'android',
+        'profile': id,
+        'source_dirty': false,
+      });
+      final provider = FakeProvider();
+      final controller = RemoteController(runs, provider, now: () => now);
+      final result = await controller.run(plan(profile: id));
+      expect(result['qualified'], isNot(true));
+      expect(result['error'], contains('StateError'));
+      expect(provider.calls, isEmpty);
+      expect(provider.starts, 0);
+    },
+  );
+
   test('SIGTERM on the command host terminates owned descendants', () async {
     if (Platform.isWindows) {
       return;

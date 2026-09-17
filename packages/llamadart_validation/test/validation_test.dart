@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:llamadart/llamadart.dart';
+import 'package:llamadart_validation/io.dart';
 import 'package:llamadart_validation/llamadart_validation.dart';
 import 'package:llamadart_validation/src/placement.dart';
 import 'package:test/test.dart';
@@ -130,6 +131,34 @@ Future<({ValidationReport report, List<Map<String, dynamic>> events})> run(
 }
 
 void main() {
+  test(
+    'NPU candidates are locked and reject preparation before any download',
+    () async {
+      for (final target in ['qualcomm-sm8650', 'tensor-g5']) {
+        final selected = ValidationProfile.fromJson(
+          jsonDecode(
+                File('assets/profiles/npu-$target.json').readAsStringSync(),
+              )
+              as Map<String, dynamic>,
+        );
+        expect(selected.backend, 'npu');
+        expect(selected.contextSize, 1280);
+        expect(selected.requiresAcceleratorProof, true);
+        final directory = Directory.systemTemp.createTempSync(
+          'npu-no-download-',
+        );
+        try {
+          await expectLater(
+            prepareModel(selected, directory),
+            throwsA(isA<LlamaUnsupportedException>()),
+          );
+          expect(directory.listSync(), isEmpty);
+        } finally {
+          directory.deleteSync();
+        }
+      }
+    },
+  );
   test(
     'WASM CPU diagnostics require a CPU-only core and zero GPU layers',
     () async {

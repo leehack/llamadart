@@ -216,8 +216,9 @@ List<LocalE2eScenario> buildLocalE2eScenarios({String? projectRoot}) {
           arguments: const [
             'test',
             'test/unit/tooling/validation_remote_test.dart',
+            'test/unit/tooling/validation_npu_test.dart',
           ],
-          description: 'Provider safety and bundle identity regressions',
+          description: 'Provider safety, bundle identity and NPU input checks',
         ),
       ],
     ),
