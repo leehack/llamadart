@@ -13,8 +13,8 @@ NPU qualification on Galaxy S24 (Qualcomm SM8650) and Pixel 10 (Tensor G5).
 The two SoC-specific model locks and offline input preflight are implemented.
 The Android builder now embeds verified model/vendor inputs, and the installed
 app checks its SoC before loading. Public-Dart and direct-native control paths
-capture per-generation dispatch evidence. Neither path has run on an NPU device
-yet; hardware qualification remains NOT_RUN.
+capture per-generation dispatch evidence. S24 execution is verified, but strict
+history qualification remains failed; Pixel 10 hardware execution is NOT_RUN.
 
 ## Source and generated artifacts
 
@@ -47,12 +47,34 @@ qualification requires a clean committed source and known runtime identities.
 | `tiny-gguf-{cpu,metal,vulkan,cuda}` | stories15M, 98,357,920 bytes | Packaging, native loading, lifecycle; throughput is a tiny-model diagnostic |
 | `chat-gguf-{cpu,metal,vulkan,cuda}` | Qwen3.5 0.8B Q4_0, 563,036,064 bytes | GGUF chat, history and instruction checks |
 | `chat-litert-{cpu,gpu}` | Qwen3 0.6B LiteRT-LM, 614,236,160 bytes | Native LiteRT public path; explicit GPU proof remains incomplete |
+| `gemma3-litert-cpu` | Gemma3 1B IT q4 LiteRT-LM, 584,417,280 bytes | CPU semantic counterpart to the S24 NPU fixture; gated, supply a local authorized model |
 
 Full revisions and SHA256 values live in profile JSON. The instruction GGUF is
 [ggml-org's Q4_0 artifact](https://huggingface.co/ggml-org/Qwen3.5-0.8B-GGUF/blob/8fea620810c4afa23dd6443f999a48574c1611a3/Qwen3.5-0.8B-Q4_0.gguf),
 so its results are a distinct cohort from the Q4_K_M candidate in the original plan.
 Native LiteRT files cannot qualify LiteRT Web; that requires a Web model bundle.
 The app reports this explicitly before downloading a native LiteRT fixture in Web.
+
+The Gemma CPU profile uses the same pinned model repository revision as the NPU
+profile, with a distinct CPU artifact hash and conversion. It aligns context
+1280, four threads, 32 output tokens and thinking enabled. CPU uses the requested
+greedy sampler; NPU uses unknown compiled defaults. These are semantic controls,
+not an identical-artifact speed comparison. The CPU profile adds the same four
+strict history variants as the native NPU diagnostic, producing 17 cases:
+canonical, the original literal-system representation, no system and a combined
+user prompt. `enable_thinking` is an explicit boolean profile override;
+`history_controls` opts LiteRT CPU chat profiles into the extra diagnostic cases.
+Other core profiles retain their original inventory and settings.
+
+```bash
+dart run tool/testing/validation.dart local --profile gemma3-litert-cpu \
+  --model /path/to/gemma3-1b-it-int4.litertlm \
+  --out .dart_tool/validation/runs/gemma-cpu-control-1
+```
+
+Use fresh output directories for repetitions. The CPU artifact has native context
+capacity 4096 but is loaded with the matched 1280 limit. A Mac result is a desktop
+semantic control; it does not fill the separate S24 CPU device obligation.
 
 The quick inventory is C01 load/diagnostics, C02 Unicode tokenize/detokenize,
 C03 raw generation, C04 hello/arithmetic and C06 multi-turn history for chat

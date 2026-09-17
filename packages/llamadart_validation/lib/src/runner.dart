@@ -249,7 +249,7 @@ class ValidationRunner {
     if (!profile.nativeReference) ...['C02.unicode', 'C03.raw'],
     if (profile.isChat) ...['C04.hello', 'C04.arithmetic'],
     if (profile.isChat) 'C06.history',
-    if (profile.nativeReference && profile.isChat) ...[
+    if (profile.historyControls && profile.isChat) ...[
       'C06.history.public_system_wire',
       'C06.history.no_system',
       'C06.history.combined',
@@ -539,7 +539,7 @@ class ValidationRunner {
         );
         return {
           ...output,
-          if (profile.nativeReference) 'history_control': id,
+          if (profile.historyControls) 'history_control': id,
           'expected': 'cedar17',
           'status': (output['content'] as String).trim() == 'cedar17'
               ? 'PASS'

@@ -137,69 +137,125 @@ Future<({ValidationReport report, List<Map<String, dynamic>> events})> run(
 }
 
 void main() {
-  test(
-    'native reference runs each history control with its distinct input',
-    () async {
-      final data = profile(backend: 'npu').toJson()
-        ..['execution_path'] = 'native_c_api';
-      final engine = FakeEngine()..backendName = 'LiteRT-LM NPU direct C API';
-      final result = await run(
-        engine,
-        selected: ValidationProfile.fromJson(data),
-      );
-      expect(result.report.cases.length, 12);
-      expect(result.report.assertionsPassed, true);
-      final histories = engine.requests
-          .where((r) => r['history'] != null)
-          .toList();
-      expect(histories, hasLength(3));
-      final canonical = histories[0]['history'] as List<LlamaChatMessage>;
-      expect(canonical.map((m) => m.role.name), [
-        'system',
-        'user',
-        'assistant',
-        'user',
-      ]);
-      expect(canonical.map((m) => m.content), [
-        'Remember the secret code exactly.',
-        'The secret code is cedar17.',
-        'I will remember the code.',
-        'What is the secret code? Reply with only the code.',
-      ]);
-      final literal = histories[1]['history'] as List<LlamaChatMessage>;
-      expect(jsonDecode(literal.first.content), {
-        'role': 'system',
-        'content': [
-          {'type': 'text', 'text': canonical.first.content},
-        ],
-      });
-      expect(
-        literal.skip(1).map((m) => m.content),
-        canonical.skip(1).map((m) => m.content),
-      );
-      final noSystem = histories[2]['history'] as List<LlamaChatMessage>;
-      expect(noSystem.map((m) => m.role.name), ['user', 'assistant', 'user']);
-      final combined = engine.requests.singleWhere(
-        (r) =>
-            r['history'] == null && (r['prompt'] as String).contains('cedar17'),
-      );
-      expect(combined['prompt'], canonical.map((m) => m.content).join('\n'));
+  test('Gemma CPU control locks identity and matches NPU prompt settings', () {
+    final selected = ValidationProfile.fromJson(
+      jsonDecode(
+            File('assets/profiles/gemma3-litert-cpu.json').readAsStringSync(),
+          )
+          as Map<String, dynamic>,
+    );
+    expect(selected.backend, 'cpu');
+    expect(selected.contextSize, 1280);
+    expect(selected.threads, 4);
+    expect(selected.maxTokens, 32);
+    expect(selected.enableThinking, true);
+    expect(selected.effectiveConfig['enable_thinking'], true);
+    expect(
+      selected.effectiveConfig['sampling_application'],
+      'requested_sampler',
+    );
+    expect(selected.historyControls, true);
+    expect(selected.nativeReference, false);
+    expect(
+      selected.modelHash,
+      '1325ae366d31950f137c9c357b9fa89448b176d76998180c08ceaca78bba98be',
+    );
+    expect(profile().enableThinking, false);
+    expect(profile().historyControls, false);
+    expect(profile(backend: 'npu').enableThinking, true);
+  });
 
-      final failed = await run(
-        FakeEngine()
-          ..wrongHistory = true
-          ..backendName = 'LiteRT-LM NPU direct C API',
-        selected: ValidationProfile.fromJson(data),
-      );
-      expect(failed.report.assertionsPassed, false);
+  test('history controls and thinking overrides reject invalid contracts', () {
+    for (final patch in <Map<String, dynamic>>[
+      {'enable_thinking': 'true'},
+      {'history_controls': 1},
+      {'history_controls': true, 'backend': 'gpu'},
+      {'history_controls': true, 'backend': 'npu'},
+      {
+        'execution_path': 'native_c_api',
+        'backend': 'npu',
+        'enable_thinking': false,
+      },
+    ]) {
       expect(
-        failed.report.cases
-            .where((c) => (c['case_id'] as String).startsWith('C06.'))
-            .map((c) => c['status']),
-        ['FAIL', 'FAIL', 'FAIL', 'FAIL'],
+        () => ValidationProfile.fromJson(profile().toJson()..addAll(patch)),
+        throwsFormatException,
       );
-    },
-  );
+    }
+  });
+
+  for (final native in [false, true]) {
+    test(
+      'history controls preserve distinct input and strict oracle: native=$native',
+      () async {
+        final data = profile(backend: native ? 'npu' : 'cpu').toJson()
+          ..['execution_path'] = native ? 'native_c_api' : 'public_api';
+        if (!native) data['history_controls'] = true;
+        final engine = FakeEngine()
+          ..backendName = native
+              ? 'LiteRT-LM NPU direct C API'
+              : 'LiteRT-LM CPU';
+        final result = await run(
+          engine,
+          selected: ValidationProfile.fromJson(data),
+        );
+        expect(result.report.cases.length, native ? 12 : 17);
+        expect(result.report.assertionsPassed, true);
+        final histories = engine.requests
+            .where((r) => r['history'] != null)
+            .toList();
+        expect(histories, hasLength(3));
+        final canonical = histories[0]['history'] as List<LlamaChatMessage>;
+        expect(canonical.map((m) => m.role.name), [
+          'system',
+          'user',
+          'assistant',
+          'user',
+        ]);
+        expect(canonical.map((m) => m.content), [
+          'Remember the secret code exactly.',
+          'The secret code is cedar17.',
+          'I will remember the code.',
+          'What is the secret code? Reply with only the code.',
+        ]);
+        final literal = histories[1]['history'] as List<LlamaChatMessage>;
+        expect(jsonDecode(literal.first.content), {
+          'role': 'system',
+          'content': [
+            {'type': 'text', 'text': canonical.first.content},
+          ],
+        });
+        expect(
+          literal.skip(1).map((m) => m.content),
+          canonical.skip(1).map((m) => m.content),
+        );
+        final noSystem = histories[2]['history'] as List<LlamaChatMessage>;
+        expect(noSystem.map((m) => m.role.name), ['user', 'assistant', 'user']);
+        final combined = engine.requests.singleWhere(
+          (r) =>
+              r['history'] == null &&
+              (r['prompt'] as String).contains('cedar17'),
+        );
+        expect(combined['prompt'], canonical.map((m) => m.content).join('\n'));
+
+        final failed = await run(
+          FakeEngine()
+            ..wrongHistory = true
+            ..backendName = native
+                ? 'LiteRT-LM NPU direct C API'
+                : 'LiteRT-LM CPU',
+          selected: ValidationProfile.fromJson(data),
+        );
+        expect(failed.report.assertionsPassed, false);
+        expect(
+          failed.report.cases
+              .where((c) => (c['case_id'] as String).startsWith('C06.'))
+              .map((c) => c['status']),
+          ['FAIL', 'FAIL', 'FAIL', 'FAIL'],
+        );
+      },
+    );
+  }
   test(
     'NPU candidates are locked and reject preparation before any download',
     () async {

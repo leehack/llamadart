@@ -84,6 +84,17 @@ class ValidationProfile {
     if (!const ['quick', 'release'].contains(selection)) {
       throw const FormatException('selection must be quick or release');
     }
+    for (final key in ['enable_thinking', 'history_controls']) {
+      if (data.containsKey(key) && data[key] is! bool) {
+        throw FormatException('$key must be a boolean');
+      }
+    }
+    if (data['history_controls'] == true &&
+        (runtime != 'litert' || backend != 'cpu' || !isChat)) {
+      throw const FormatException(
+        'Optional history controls require a LiteRT CPU chat profile',
+      );
+    }
     if (!const [
           'public_api',
           'native_c_api',
@@ -91,6 +102,11 @@ class ValidationProfile {
         (nativeReference && backend != 'npu')) {
       throw const FormatException(
         'Native C API controls require an explicit NPU profile',
+      );
+    }
+    if (nativeReference && !enableThinking) {
+      throw const FormatException(
+        'Native C API controls currently require thinking enabled',
       );
     }
   }
@@ -134,8 +150,13 @@ class ValidationProfile {
   /// Separate direct-C-API controls from public-package qualification.
   bool get nativeReference => data['execution_path'] == 'native_c_api';
 
-  /// Uses the public API's default for Gemma; the Qwen pilot disables thinking.
-  bool get enableThinking => backend == 'npu';
+  /// Explicit model setting; preserves existing NPU and Qwen pilot defaults.
+  bool get enableThinking =>
+      data['enable_thinking'] as bool? ?? backend == 'npu';
+
+  /// Adds the same seeded, literal-system, no-system and combined diagnostics.
+  bool get historyControls =>
+      nativeReference || data['history_controls'] == true;
 
   /// Optional model-specific prompts and expected regex predicates.
   Map<String, dynamic> get fixtures =>
