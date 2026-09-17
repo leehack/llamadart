@@ -16,11 +16,15 @@ void main() {
     '_resolveSpeculativeApi',
   ]) {
     test('production $resolver loads Windows wrapper sibling DLLs', () async {
-      // dart run executes the real pinned build hook and production
-      // resolver in a fresh process. In particular, llama-common.dll and
-      // mtmd.dll must not have been preloaded by another test or model load.
+      // Reuse the pinned DLLs already bundled by the parent test invocation.
+      // Bypass dartdev so the child cannot rerun hooks and try to replace
+      // DLLs loaded by the parent process (Windows denies that deletion).
+      // These optional resolvers open the wrapper explicitly; no @Native
+      // entry point is called, so a second native-assets build is unnecessary.
+      // Each fresh process must discover sibling DLLs without prior preloads.
       final process = await Process.start(Platform.resolvedExecutable, [
-        'run',
+        '--disable-dart-dev',
+        '--packages=${path.join('.dart_tool', 'package_config.json')}',
         path.join('test', 'fixtures', 'native_wrapper_loading_probe.dart'),
         resolver,
       ], workingDirectory: Directory.current.path);
