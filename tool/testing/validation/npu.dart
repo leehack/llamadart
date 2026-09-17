@@ -12,13 +12,23 @@ const npuLiteRtRevision = '9fe5be45564c868408e6514c8aabb83e211a0911';
 const npuDispatchHeaderHash =
     '11dd4d98bd084157ac987b1ee1951f3f96e2b3ca6b51a27c10e645686bf0e3ee';
 
-/// Requires an explicit, verified Android model and vendor kit.
+/// Requires locally supplied gated models and verified Android NPU kits.
 /// Keep this at both build and upload boundaries: old/custom bundles can bypass
 /// the builder, and spending a Firebase execution cannot repair missing inputs.
 void requireExecutableValidationProfile(
   Map<dynamic, dynamic> profile, {
   bool verifiedAndroidKit = false,
+  bool supportsLocalModelPath = false,
 }) {
+  if (profile['backend'] != 'npu' &&
+      (profile['model'] as Map?)?['access'] == 'gated-local-staging' &&
+      !supportsLocalModelPath) {
+    throw StateError(
+      'This gated CPU model requires a verified local file. Use the desktop '
+      'runner with --model. Mobile/remote model transfer is not implemented; '
+      'do not submit a credential-free download that would consume test quota.',
+    );
+  }
   if (profile['backend'] == 'npu' && !verifiedAndroidKit) {
     throw StateError(
       'NPU qualification requires a verified Android kit: installed-app vendor packaging, '

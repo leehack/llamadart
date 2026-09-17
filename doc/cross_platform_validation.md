@@ -75,6 +75,9 @@ dart run tool/testing/validation.dart local --profile gemma3-litert-cpu \
 Use fresh output directories for repetitions. The CPU artifact has native context
 capacity 4096 but is loaded with the matched 1280 limit. A Mac result is a desktop
 semantic control; it does not fill the separate S24 CPU device obligation.
+The builder rejects this gated profile for mobile/Web, and remote submission
+rejects it before spending quota. Desktop bundles remain usable with `--model`;
+private mobile model transfer must be implemented before enabling that lane.
 
 The quick inventory is C01 load/diagnostics, C02 Unicode tokenize/detokenize,
 C03 raw generation, C04 hello/arithmetic and C06 multi-turn history for chat
@@ -227,7 +230,7 @@ creates a distinct model artifact; the locked original Qwen fixture is unchanged
 Use the normal Firebase `plan`/`run`/`collect`/`cleanup` flow below with the exact
 S24 or Pixel 10 profile/device pairing. Run the native control first and stop if
 it cannot initialize. Do not automatically submit both bundles or bypass the
-selected Spark quota or Blaze budget guard. The compatible CPU Gemma semantic control, separate Unicode
+selected Spark quota or Blaze budget guard. The compatible S24 CPU Gemma semantic control, separate Unicode
 generation fixture and aggregate paired-control qualification remain future
 work; the existing Qwen CPU retry is not a matched Gemma control. A per-run green
 report is not completion of the full NPU pack. The `validation-harness` row covers
@@ -688,3 +691,51 @@ remaining and zero unresolved executions. No paid test minutes were needed, no
 VM was created and no further run was scheduled. The interactive report, exact
 JSON, immutable usage receipt and runtime audit are retained under
 `.dart_tool/validation/system-fix-20260917/` and the run's `report/` directory.
+
+### Repeated Gemma CPU controls on macOS
+
+The local CPU comparison uses clean source
+`2b604775ac49f0532e2a0a9f34024c93d3998c10`, Apple M4 Max/macOS 26.6.2 arm64,
+and LiteRT-LM `0.17.0-5`. The CPU artifact from the same pinned model repository
+is `gemma3-1b-it-int4.litertlm`, 584,417,280 bytes, SHA256
+`1325ae366d31950f137c9c357b9fa89448b176d76998180c08ceaca78bba98be`.
+The core library SHA256 is
+`42a1fa7cc0666ceda1bb00f864065e7b6bcae041234bd501ecc1c56de54b7530`, matching
+the cached release archive and published release manifest's macOS smoke record.
+
+Three fresh public-API processes each completed **13 PASS, 4 FAIL**, with no
+ERROR/NOT_RUN and complete provenance. A separate local Python/ctypes diagnostic
+used the upstream C API directly, without Dart, and repeated all four history
+inputs three times with fresh engines. Its exact setter JSON matches the prior
+NPU controls; its outputs match the public CPU path in all twelve comparisons.
+
+| Input | Public CPU, each of three runs | Direct-native CPU, each of three repetitions |
+| --- | --- | --- |
+| Canonical system and prior history | `Cedar17` | `Cedar17` |
+| Former public literal-JSON system content | 32 repeated `7` characters | 32 repeated `7` characters |
+| History without system content | `Cedar17` | `Cedar17` |
+| Combined user prompt | 32 repeated `7` characters | 32 repeated `7` characters |
+
+Every row still fails exact `cedar17`. These failures therefore occur without
+Qualcomm/NPU execution and without the Dart service, worker or streaming adapter.
+This narrows attribution but does not distinguish the converted model/tokenizer,
+shared LiteRT runtime, and original model behavior. Compare the original model
+reference and rendered/tokenized prompts next; keep
+[#513](https://github.com/leehack/llamadart/issues/513) open.
+
+Both CPU paths use context 1280, four threads, max output 32, thinking enabled
+and greedy decoding. The public requested top-k 40/temperature zero resolves to
+top-k 1 in the service; the direct C API used TopP sampler type 2, top-k 1,
+top-p 0.9, temperature zero and seed 1. NPU still has unknown compiled sampling.
+Platform, artifact/conversion, maximum native context capacity, and sampling
+differ between CPU and NPU. Do not treat their TPS ratio as accelerator speedup
+or fill the S24 CPU row with this Mac evidence.
+
+Across nine short public benchmark samples (three per run after separate
+warmups), median native decode was **74.06 TPS**, estimated wall **67.46 TPS**,
+and time to first public output **137.33 ms**. This is diagnostic throughput,
+not semantic qualification. No Firebase run, VM or paid resource was created;
+no cloud test minutes were consumed. The three run directories are
+`.dart_tool/validation/runs/gemma-cpu-20260917-{1,2,3}`; comparison JSON,
+direct-native script/results/logs and runtime/model audit are under
+`.dart_tool/validation/gemma-cpu-20260917/`.

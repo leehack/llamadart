@@ -86,6 +86,77 @@ void main() {
   });
   tearDown(() => root.deleteSync(recursive: true));
 
+  test('gated CPU profiles require local-file support before remote use', () {
+    final profile =
+        jsonDecode(
+              File(
+                'packages/llamadart_validation/assets/profiles/gemma3-litert-cpu.json',
+              ).readAsStringSync(),
+            )
+            as Map;
+    expect(
+      () => requireExecutableValidationProfile(profile),
+      throwsA(
+        isA<StateError>().having(
+          (error) => error.message,
+          'message',
+          contains('desktop runner with --model'),
+        ),
+      ),
+    );
+    expect(
+      () => requireExecutableValidationProfile(
+        profile,
+        supportsLocalModelPath: true,
+      ),
+      returnsNormally,
+    );
+    expect(
+      () => requireExecutableValidationProfile({
+        'backend': 'cpu',
+        'model': {'access': 'public'},
+      }),
+      returnsNormally,
+    );
+  });
+
+  test('gated CPU mobile builds fail before any build command', () async {
+    final profile = File(
+      p.join(
+        root.path,
+        'packages/llamadart_validation/assets/profiles/gemma3-litert-cpu.json',
+      ),
+    );
+    profile.writeAsStringSync(
+      File(
+        'packages/llamadart_validation/assets/profiles/gemma3-litert-cpu.json',
+      ).readAsStringSync(),
+    );
+    for (final target in ['android', 'ios', 'ios-inputs', 'web']) {
+      var invoked = false;
+      await expectLater(
+        buildValidationBundle(
+          root.path,
+          target,
+          p.join(root.path, 'output-$target'),
+          profile: 'gemma3-litert-cpu',
+          execute: (binary, args, {directory, timeout}) async {
+            invoked = true;
+            throw StateError('Build command must not run');
+          },
+        ),
+        throwsA(
+          isA<StateError>().having(
+            (error) => error.message,
+            'message',
+            contains('Mobile/remote model transfer is not implemented'),
+          ),
+        ),
+      );
+      expect(invoked, false);
+    }
+  });
+
   test(
     'matching input inventory never qualifies or permits dispatch',
     () async {

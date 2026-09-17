@@ -84,6 +84,7 @@ Future<Directory> buildValidationBundle(
   final npu = selectedProfile['backend'] == 'npu';
   requireExecutableValidationProfile(
     selectedProfile,
+    supportsLocalModelPath: target == 'desktop',
     verifiedAndroidKit:
         npu && target == 'android' && npuKit != null && model != null,
   );

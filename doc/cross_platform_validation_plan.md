@@ -480,8 +480,11 @@ serialization alone does not yet qualify the model/path.
 The [public replay after the fix](cross_platform_validation.md#public-history-replay-after-the-system-content-fix)
 now also returns `Cedar17`: 13 PASS, one strict history FAIL, with NPU
 participation verified. The service correction is locally committed; it is not
-a merged release fix. Matched Gemma CPU/model controls and repeated comparisons
-remain necessary to isolate the residual behavior.
+a merged release fix. [Repeated Mac CPU controls](cross_platform_validation.md#repeated-gemma-cpu-controls-on-macos)
+now reproduce all four history failures in three public runs and three direct
+C API repetitions, so the behavior is not confined to NPU or Dart. Original-model
+and tokenizer/template reference checks remain necessary; the separate S24 CPU
+device row remains unrun.
 Pixel 10 remains planned. Neither catalog availability nor a built bundle proves
 NPU inference on another target.
 Google's [LiteRT-LM NPU guide](https://developers.google.com/edge/litert/next/litert_lm_npu)
@@ -1055,10 +1058,13 @@ blocking independently of speed. No throughput threshold hides a known failure.
    result retrieval and S24 NPU execution. The system-content boundary is now
    corrected locally, and the public replay matches canonical native `Cedar17`
    rather than repeated tokens. Keep its strict capitalization failure and the
-   native combined-prompt failure explicit, and compare matched
-   Gemma CPU/model controls alongside Qwen arithmetic and GPU qualification work.
+   native combined-prompt failure explicit. Repeated Mac CPU public/native
+   controls reproduce both failure patterns; compare the original Gemma model
+   and rendered/tokenized prompts next, alongside Qwen arithmetic and GPU work.
    Complete the remaining Unicode
-   generation, compatible Gemma CPU and paired-report controls.
+   generation, compatible S24 Gemma CPU and paired-report controls. Gated CPU
+   weights require verified private model transfer before a Firebase run; never
+   package an access token or substitute a signed URL in its model lock.
    Qualify S24 then Pixel 10 NPU only after model/library
    preflight and each native reference succeed. Complete the selected Firebase
    rotation including targeted iPad checks, then older-device CPU full/compact
