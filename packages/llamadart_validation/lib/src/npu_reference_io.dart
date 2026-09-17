@@ -60,6 +60,9 @@ class NativeNpuReferenceEngine implements ValidationEngine {
   }
 
   @override
+  bool get isWeb => false;
+
+  @override
   Future<void> load(String location, ValidationProfile profile) async {
     await _call('load', {
       'model': location,
@@ -77,9 +80,16 @@ class NativeNpuReferenceEngine implements ValidationEngine {
     ValidationProfile profile, {
     bool raw = false,
     int? maxTokens,
+    int? streamBatchTokens,
+    int? streamBatchBytes,
     bool cancelAfterFirst = false,
     List<LlamaChatMessage>? history,
   }) {
+    if (streamBatchTokens != null || streamBatchBytes != null) {
+      throw LlamaUnsupportedException(
+        'Direct native control has no public worker batching',
+      );
+    }
     if (raw || cancelAfterFirst) {
       throw UnsupportedError(
         'Native reference only covers blocking text conversations',

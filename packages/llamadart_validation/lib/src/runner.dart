@@ -12,6 +12,8 @@ typedef ValidationEventSink = Future<void> Function(Map<String, dynamic> event);
 
 /// Injectable public-API boundary for model-free harness regression tests.
 abstract interface class ValidationEngine {
+  /// Whether the adapter executes in a browser, independent of profile input.
+  bool get isWeb;
   Future<void> load(String location, ValidationProfile profile);
   Future<void> unload();
   Future<void> dispose();
@@ -24,6 +26,8 @@ abstract interface class ValidationEngine {
     ValidationProfile profile, {
     bool raw = false,
     int? maxTokens,
+    int? streamBatchTokens,
+    int? streamBatchBytes,
     bool cancelAfterFirst = false,
     List<LlamaChatMessage>? history,
   });
@@ -31,16 +35,21 @@ abstract interface class ValidationEngine {
 
 /// Runs inference through the exported llamadart API on every platform.
 class PublicValidationEngine implements ValidationEngine {
-  PublicValidationEngine({this.npu});
+  /// Uses the public engine; a factory allows isolated adapter verification.
+  PublicValidationEngine({this.npu, LlamaEngine Function()? engineFactory})
+    : _engineFactory = engineFactory ?? (() => LlamaEngine(LlamaBackend()));
   final NpuExecutionMonitor? npu;
-  LlamaEngine _engine = LlamaEngine(LlamaBackend());
+  final LlamaEngine Function() _engineFactory;
+  late LlamaEngine _engine = _engineFactory();
+  @override
+  bool get isWeb => const bool.fromEnvironment('dart.library.js_interop');
   bool _disposed = false;
 
   @override
   Future<void> load(String location, ValidationProfile profile) async {
     profile.requireRunnable(verifiedAndroidNpuHost: npu != null);
     if (_disposed) {
-      _engine = LlamaEngine(LlamaBackend());
+      _engine = _engineFactory();
       _disposed = false;
     }
     await _engine.setLogLevel(LlamaLogLevel.info);
@@ -90,16 +99,25 @@ class PublicValidationEngine implements ValidationEngine {
     ValidationProfile profile, {
     bool raw = false,
     int? maxTokens,
+    int? streamBatchTokens,
+    int? streamBatchBytes,
     bool cancelAfterFirst = false,
     List<LlamaChatMessage>? history,
   }) async {
     final text = StringBuffer();
     final thinking = StringBuffer();
     final finish = <String>[];
+    final toolDeltas = <Map<String, dynamic>>[];
+    var toolBytes = 0;
+    var ordered = true;
     var chunks = 0;
     int? firstUs;
     int? cancelUs;
-    final params = profile.generationParams.copyWith(maxTokens: maxTokens);
+    final params = profile.generationParams.copyWith(
+      maxTokens: maxTokens,
+      streamBatchTokenThreshold: streamBatchTokens,
+      streamBatchByteThreshold: streamBatchBytes,
+    );
     final npuBefore = npu?.snapshot();
     final watch = Stopwatch()..start();
     void append(String content) {
@@ -137,6 +155,17 @@ class PublicValidationEngine implements ValidationEngine {
         )) {
           chunks++;
           for (final choice in chunk.choices) {
+            if (choice.index != 0 || finish.isNotEmpty) ordered = false;
+            for (final tool
+                in choice.delta.toolCalls ?? <LlamaCompletionChunkToolCall>[]) {
+              final data = tool.toJson();
+              toolBytes += utf8.encode(jsonEncode(data)).length;
+              if (toolBytes > 65536) {
+                cancel();
+                throw StateError('Tool deltas exceeded the 64 KiB core limit');
+              }
+              toolDeltas.add(data);
+            }
             append(choice.delta.content ?? '');
             thinking.write(choice.delta.thinking ?? '');
             if (thinking.length > 65536) {
@@ -182,6 +211,12 @@ class PublicValidationEngine implements ValidationEngine {
       'thinking': thinking.toString(),
       'chunks': chunks,
       'finish_reasons': finish,
+      'tool_call_deltas': toolDeltas,
+      'stream_completed': cancellationAbort == null,
+      'completion_order_valid':
+          ordered && (raw ? finish.isEmpty : finish.length == 1),
+      'stream_batch_tokens': params.streamBatchTokenThreshold,
+      'stream_batch_bytes': params.streamBatchByteThreshold,
       'cancel_requested': cancelUs != null,
       'cancel_abort_observed': cancellationAbort != null,
       'cancel_abort': ?cancellationAbort,
@@ -379,6 +414,130 @@ class ValidationRunner {
     check();
     return result;
   }
+
+  Future<Map<String, dynamic>> _batching() async {
+    if (profile.nativeReference ||
+        profile.backend == 'npu' ||
+        (engine.isWeb && profile.runtime != 'litert')) {
+      return {
+        'status': 'NOT_RUN',
+        'reason': profile.nativeReference
+            ? 'Direct native control bypasses public worker batching'
+            : profile.backend == 'npu'
+            ? 'NPU runtime-default sampling has no qualified deterministic parity control'
+            : 'GGUF browser worker batching is not a qualified native-worker control',
+      };
+    }
+    final fixture = profile.fixtures['batching'] as Map;
+    final tokens = fixture['token_threshold'] as int;
+    final bytes = fixture['byte_threshold'] as int;
+    final defaults = profile.generationParams;
+    Future<Map<String, dynamic>> generate({
+      int? tokenThreshold,
+      int? byteThreshold,
+    }) => _checked(
+      () => engine.generate(
+        _shortPrompt,
+        profile,
+        raw: !profile.isChat,
+        streamBatchTokens: tokenThreshold,
+        streamBatchBytes: byteThreshold,
+      ),
+    );
+    final control = await generate();
+    if (engine.isWeb) {
+      final rejected = <Map<String, dynamic>>[];
+      for (final option in [
+        'streamBatchTokenThreshold',
+        'streamBatchByteThreshold',
+      ]) {
+        try {
+          final output = await generate(
+            tokenThreshold: option == 'streamBatchTokenThreshold'
+                ? tokens
+                : null,
+            byteThreshold: option == 'streamBatchByteThreshold' ? bytes : null,
+          );
+          rejected.add({'option': option, 'rejected': false, 'output': output});
+        } on LlamaUnsupportedException catch (error) {
+          rejected.add({
+            'option': option,
+            'rejected': error.toString().contains(option),
+            'error_type': error.runtimeType.toString(),
+            'message': redactDiagnostic(error.toString()),
+          });
+        }
+      }
+      final recovery = await generate();
+      return {
+        'control': control,
+        'rejected_options': rejected,
+        'recovery': recovery,
+        'coverage': 'litert_web_native_option_rejection_and_recovery',
+        'status':
+            rejected.every((entry) => entry['rejected'] == true) &&
+                _validBatchOutput(control) &&
+                _validBatchOutput(recovery)
+            ? 'PASS'
+            : 'FAIL',
+        'expected':
+            'Each native batching option is rejected with a named typed error; default requests still complete',
+      };
+    }
+    final batched = await generate(
+      tokenThreshold: tokens,
+      byteThreshold: bytes,
+    );
+    final recovery = await generate();
+    final outputs = [control, batched, recovery];
+    final configMatches =
+        control['stream_batch_tokens'] == defaults.streamBatchTokenThreshold &&
+        control['stream_batch_bytes'] == defaults.streamBatchByteThreshold &&
+        batched['stream_batch_tokens'] == tokens &&
+        batched['stream_batch_bytes'] == bytes &&
+        recovery['stream_batch_tokens'] == defaults.streamBatchTokenThreshold &&
+        recovery['stream_batch_bytes'] == defaults.streamBatchByteThreshold;
+    final equal = outputs.every(
+      (output) =>
+          output['content'] == control['content'] &&
+          output['thinking'] == control['thinking'] &&
+          canonicalJson(output['finish_reasons']) ==
+              canonicalJson(control['finish_reasons']),
+    );
+    final tools = outputs.any(
+      (output) =>
+          output['tool_call_deltas'] is List &&
+          (output['tool_call_deltas'] as List).isNotEmpty,
+    );
+    return {
+      'control': control,
+      'batched': batched,
+      'recovery': recovery,
+      'coverage': 'native_text_and_thinking_reconstruction',
+      'configurations_verified': configMatches,
+      'reconstruction_equal': equal,
+      'status': tools
+          ? 'NOT_RUN'
+          : configMatches && equal && outputs.every(_validBatchOutput)
+          ? 'PASS'
+          : 'FAIL',
+      'expected':
+          'Same nonempty content, thinking and finish reasons with ordered completion; default configuration recovers; chunk count may differ',
+      if (tools)
+        'reason':
+            'Tool emissions require the separately qualified C07 tool fixture',
+    };
+  }
+
+  bool _validBatchOutput(Map<String, dynamic> output) =>
+      output['content'] is String &&
+      (output['content'] as String).trim().isNotEmpty &&
+      output['thinking'] is String &&
+      output['finish_reasons'] is List &&
+      output['tool_call_deltas'] is List &&
+      output['stream_completed'] == true &&
+      output['completion_order_valid'] == true &&
+      output['cancel_requested'] == false;
 
   Future<Map<String, dynamic>> _short() => _checked(
     () => engine.generate(_shortPrompt, profile, raw: !profile.isChat),
@@ -601,6 +760,8 @@ class ValidationRunner {
           if (count == null)
             'reason': 'native token counter unavailable; chunks are not tokens',
         };
+      case 'C11.batching':
+        return _batching();
       case 'C12.recovery':
         await _checked(() => engine.unload());
         String? errorType;

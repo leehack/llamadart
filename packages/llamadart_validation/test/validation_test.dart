@@ -20,6 +20,11 @@ ValidationProfile profile({String backend = 'cpu', bool release = false}) {
 }
 
 class FakeEngine implements ValidationEngine {
+  @override
+  bool isWeb = false;
+  bool rejectBatching = false;
+  String? batchingFault;
+  bool _batchingSeen = false;
   var disposed = false;
   var cancelled = false;
   var loads = 0;
@@ -77,15 +82,37 @@ class FakeEngine implements ValidationEngine {
     ValidationProfile profile, {
     bool raw = false,
     int? maxTokens,
+    int? streamBatchTokens,
+    int? streamBatchBytes,
     bool cancelAfterFirst = false,
     List<LlamaChatMessage>? history,
   }) async {
     generated++;
-    requests.add({'prompt': prompt, 'history': history});
+    final adjusted = streamBatchTokens != null || streamBatchBytes != null;
+    requests.add({
+      'prompt': prompt,
+      'history': history,
+      'batch_tokens': streamBatchTokens,
+      'batch_bytes': streamBatchBytes,
+    });
+    if (adjusted && rejectBatching) {
+      _batchingSeen = true;
+      if (batchingFault == 'wrong_error') throw StateError('failed');
+      throw LlamaUnsupportedException(
+        batchingFault == 'wrong_option'
+            ? 'unrelated option'
+            : 'streamBatchTokenThreshold streamBatchByteThreshold',
+      );
+    }
+    final recovering = _batchingSeen && !adjusted;
+    if (adjusted) _batchingSeen = true;
     if (timeout) return Completer<Map<String, dynamic>>().future;
     return {
       'content':
-          history != null || prompt.contains('The secret code is cedar17.')
+          (adjusted && batchingFault == 'content') ||
+              (recovering && batchingFault == 'recovery')
+          ? 'corrupted'
+          : history != null || prompt.contains('The secret code is cedar17.')
           ? wrongHistory
                 ? '77777777777777777777777777777777'
                 : 'cedar17'
@@ -94,7 +121,24 @@ class FakeEngine implements ValidationEngine {
                 ? '2'
                 : '4'
           : 'hello',
-      'thinking': '',
+      'thinking': adjusted && batchingFault == 'thinking' ? 'changed' : '',
+      'chunks': adjusted ? 32 : 5,
+      'stream_batch_tokens': batchingFault == 'config'
+          ? 8
+          : streamBatchTokens ?? 8,
+      'stream_batch_bytes': streamBatchBytes ?? 512,
+      'stream_completed':
+          !(adjusted && batchingFault == 'incomplete') &&
+          !(recovering && batchingFault == 'recovery'),
+      'completion_order_valid': !(adjusted && batchingFault == 'order'),
+      'tool_call_deltas': adjusted && batchingFault == 'tools'
+          ? [
+              {'index': 0},
+            ]
+          : [],
+      'finish_reasons': raw
+          ? []
+          : [adjusted && batchingFault == 'finish' ? 'length' : 'stop'],
       'prompt': prompt,
       'cancel_requested': cancelAfterFirst,
       'cancel_to_done_ms': cancelAfterFirst ? 1 : null,
@@ -198,11 +242,165 @@ void main() {
         result.report.cases
             .where((c) => c['status'] == 'NOT_RUN')
             .map((c) => c['case_id']),
-        ['C07.tools', 'C10.stop', 'C11.batching'],
+        ['C07.tools', 'C10.stop'],
       );
       expect(result.report.problems, isEmpty);
     },
   );
+
+  test(
+    'focused batching verifies reconstruction, configuration and recovery',
+    () async {
+      final engine = FakeEngine();
+      final result = await run(engine, selected: focused(['batching']));
+      final record = result.report.cases.last;
+      expect(record['case_id'], 'C11.batching');
+      expect(result.report.qualified, true);
+      expect(record['case_version'], 2);
+      expect((record['batched'] as Map)['chunks'], 32);
+      expect((record['control'] as Map)['chunks'], 5);
+      expect(
+        engine.requests.where(
+          (r) => r['batch_tokens'] == 1 && r['batch_bytes'] == 1,
+        ),
+        hasLength(1),
+      );
+      expect(record['reconstruction_equal'], true);
+      expect(record['configurations_verified'], true);
+    },
+  );
+
+  for (final fault in [
+    'content',
+    'thinking',
+    'finish',
+    'config',
+    'incomplete',
+    'order',
+    'recovery',
+  ]) {
+    test('batching rejects $fault mismatch', () async {
+      final result = await run(
+        FakeEngine()..batchingFault = fault,
+        selected: focused(['batching']),
+      );
+      expect(result.report.cases.last['status'], 'FAIL');
+      expect(result.report.qualified, false);
+      expect(result.report.cleanupPassed, true);
+    });
+  }
+
+  test(
+    'unqualified tool output and NPU defaults remain explicit gaps',
+    () async {
+      final tool = await run(
+        FakeEngine()..batchingFault = 'tools',
+        selected: focused(['batching']),
+      );
+      expect(tool.report.cases.last['status'], 'NOT_RUN');
+      expect(tool.report.qualified, false);
+      final webData =
+          jsonDecode(
+                File(
+                  'assets/profiles/tiny-gguf-batching.json',
+                ).readAsStringSync(),
+              )
+              as Map<String, dynamic>;
+      final web = await run(
+        FakeEngine()
+          ..isWeb = true
+          ..backendName = 'CPU',
+        selected: ValidationProfile.fromJson(webData),
+      );
+      expect(web.report.cases.last['status'], 'NOT_RUN');
+      expect(web.report.cases.last['reason'], contains('browser'));
+      final data = focused(['batching']).toJson()..['backend'] = 'npu';
+      for (final native in [false, true]) {
+        if (native) data['execution_path'] = 'native_c_api';
+        final result = await run(
+          FakeEngine()..backendName = 'LiteRT-LM NPU',
+          selected: ValidationProfile.fromJson(data),
+        );
+        expect(result.report.cases.last['status'], 'NOT_RUN');
+        expect(
+          result.report.cases.last['reason'],
+          contains(native ? 'bypasses' : 'sampling'),
+        );
+      }
+    },
+  );
+
+  test(
+    'LiteRT Web requires both named typed rejections and recovery',
+    () async {
+      for (final fault in [null, 'wrong_option', 'wrong_error', 'recovery']) {
+        final result = await run(
+          FakeEngine()
+            ..isWeb = true
+            ..rejectBatching = true
+            ..batchingFault = fault,
+          selected: focused(['batching']),
+        );
+        expect(
+          result.report.cases.last['status'],
+          fault == null
+              ? 'PASS'
+              : fault == 'wrong_error'
+              ? 'ERROR'
+              : 'FAIL',
+        );
+        if (fault == null) {
+          expect(
+            (result.report.cases.last['rejected_options'] as List),
+            hasLength(2),
+          );
+          expect(
+            result.report.cases.last['coverage'],
+            'litert_web_native_option_rejection_and_recovery',
+          );
+        }
+      }
+      final ignored = await run(
+        FakeEngine()..isWeb = true,
+        selected: focused(['batching']),
+      );
+      expect(ignored.report.cases.last['status'], 'FAIL');
+    },
+  );
+
+  test(
+    'previous schema-2 catalog preserves its original obligations',
+    () async {
+      final selected = focused(['streaming']);
+      final result = await run(FakeEngine(), selected: selected);
+      final events = result.events;
+      events.first['catalog'] = selected.catalogForVersion(1);
+      events.first['catalog_hash'] = jsonHash(events.first['catalog']);
+      final batching = events.singleWhere(
+        (e) => e['type'] == 'case' && e['case_id'] == 'C11.batching',
+      );
+      batching['case_version'] = 1;
+      batching['fixture_hash'] = jsonHash(
+        selected.caseFixtures('C11.batching', catalogVersion: 1),
+      );
+      batching['status'] = 'NOT_RUN';
+      final report = ValidationReport.parse(events.map(jsonEncode).join('\n'));
+      expect(report.problems, isEmpty);
+      expect(report.cases.last['status'], 'NOT_RUN');
+      events.first['catalog'] = selected.catalogForVersion(1)
+        ..['version'] = 999;
+      events.first['catalog_hash'] = jsonHash(events.first['catalog']);
+      expect(
+        ValidationReport.parse(events.map(jsonEncode).join('\n')).qualified,
+        false,
+      );
+    },
+  );
+
+  test('batching feature cannot downgrade to old catalog', () async {
+    final selected = focused(['batching']);
+    expect(() => selected.catalogForVersion(1), throwsFormatException);
+  });
 
   test(
     'invalid feature selections and fixture overrides fail before execution',

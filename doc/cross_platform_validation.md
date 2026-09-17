@@ -21,7 +21,7 @@ history qualification remains failed; Pixel 10 hardware execution is NOT_RUN.
 The quick diagnostic core is usable; the full platform/release suite is incomplete.
 Model-backed Mac, browser and Firebase runs have exposed actual product failures,
 and the reports retain failed assertions alongside useful timing and device evidence.
-As of 2026-09-17, the local harness has 58 passing model-free tests and the provider
+As of 2026-09-17, the local harness has 73 passing model-free tests and the provider
 and input controls have 44. Draft [PR #515](https://github.com/leehack/llamadart/pull/515)
 now runs the portable build workflow on relevant changes. Follow its current CI
 for target-specific build results; build-only success is not model execution.
@@ -76,7 +76,8 @@ qualification requires a clean committed source and known runtime identities.
 | Profiles | Locked fixture | Use |
 | --- | --- | --- |
 | `tiny-gguf-{cpu,metal,vulkan,cuda}` | stories15M, 98,357,920 bytes | Packaging, native loading, lifecycle; throughput is a tiny-model diagnostic |
-| `tiny-gguf-lifecycle` | Same stories15M lock / CPU | Quick core plus the second dispose/load/generate cycle; focused selection example |
+| `tiny-gguf-lifecycle` | Same stories15M lock / CPU | Quick core plus the second dispose/load/generate cycle |
+| `tiny-gguf-batching` | Same stories15M lock / CPU | Quick core plus C11 default/adjusted/default batching parity |
 | `chat-gguf-{cpu,metal,vulkan,cuda}` | Qwen3.5 0.8B Q4_0, 563,036,064 bytes | GGUF chat, history and instruction checks |
 | `chat-litert-{cpu,gpu}` | Qwen3 0.6B LiteRT-LM, 614,236,160 bytes | Native LiteRT public path; explicit GPU proof remains incomplete |
 | `gemma3-litert-cpu` | Gemma3 1B IT q4 LiteRT-LM, 584,417,280 bytes | CPU semantic counterpart to the S24 NPU fixture; gated, supply a local authorized model |
@@ -141,13 +142,13 @@ The shared runner accepts three profile selections:
 - `quick`: the original short core and one three-sample benchmark series.
 - `focused`: the quick core plus cases matching the profile's nonempty, unique
   `focus_features` list. Valid IDs are `text`, `unicode`, `thinking`, `history`,
-  `tools`, `streaming`, `lifecycle`, `guards` and `performance`. Text/history/
+  `tools`, `streaming`, `batching`, `lifecycle`, `guards` and `performance`. Text/history/
   performance are already covered by the applicable quick cases.
 - `release`: every current extended core obligation, including unfinished cases.
 
 For example, `"selection": "focused", "focus_features": ["streaming", "tools"]`
-adds C07 tools, C10 stop markers and C11 batching. Those three still record
-NOT_RUN until their implementations and model references are qualified.
+adds C07 tools, C10 stop markers and C11 batching. C07 and C10 still record
+NOT_RUN; C11 executes only the qualified parity or rejection contracts below.
 `tiny-gguf-lifecycle` is a runnable focused CPU profile: it adds
 `C09.reload.second` after the first reload, invalid-input recovery and benchmark.
 It is available in the QA app, portable bundles and manual build workflow:
@@ -157,7 +158,22 @@ dart run tool/testing/validation.dart local --profile tiny-gguf-lifecycle \
   --out .dart_tool/validation/runs/tiny-lifecycle
 ```
 
-Journal/report schema 2 exports catalog version 1, per-feature and per-case
+`tiny-gguf-batching` selects C11 without also selecting the unfinished stop-marker
+case. It runs the same short prompt with default worker thresholds (8 pieces /
+512 bytes), then 1 piece / 1 byte, then defaults again. Content, thinking and
+finish reasons must match, every stream must complete in order, and the recorded
+options must match each trial. Chunk counts may differ. All three requests retain
+output, effective batching thresholds and timing/TPS; they are parity trials,
+not extra benchmark samples.
+
+LiteRT Web separately checks that each nondefault option produces a named
+`LlamaUnsupportedException` before inference, then verifies default-request
+recovery. This is negative-contract coverage, not native batching qualification.
+GGUF Web, direct-native controls and NPU runtime-default sampling remain NOT_RUN
+for C11. Tool-bearing parity requires the qualified C07 fixture; unexpected tool
+emissions remain visible and cannot pass the text/thinking case.
+
+Journal/report schema 2 exports catalog version 2, per-feature and per-case
 versions, resolved synthetic prompts/tool schemas/predicates, selected cases and
 omission reasons. The runner reads the same compiled fixture definitions that it
 exports; model-specific text/predicate overrides are explicit hashed profile
@@ -167,10 +183,12 @@ and unselected cases separately from verdicts. Future media/model packs still
 need their own fixture locks and reference qualification.
 
 Schema-1 journals remain readable with their original case inventory; missing
-catalog metadata stays unavailable. A legacy report is not evidence that the
+catalog metadata stays unavailable. Catalog-version-1 schema-2 reports are also imported against their original
+definitions, with C11 still unimplemented. Unknown versions or new batching
+selections claiming the old catalog fail closed. A legacy report is not evidence that the
 newer extended selection ran. Focused selection requires schema 2.
 
-Thinking, tool calls, stop-marker fixtures, batching, expanded unsupported guards,
+Thinking, tool calls, stop-marker fixtures, tool-bearing batching, expanded unsupported guards,
 multimodal/speech/embedding packs and full browser/device rotation remain
 subsequent qualification work. NPU requires the verified Android packaging
 described below; selecting `npu` alone cannot supply vendor libraries or evidence.

@@ -1,3 +1,6 @@
+/// Current reproducible catalog contract; older journals retain their version.
+const int validationCatalogVersion = 2;
+
 /// Versioned core feature selectors. Optional model/media packs are separate.
 const validationFeatures = {
   'text': 1,
@@ -6,6 +9,7 @@ const validationFeatures = {
   'history': 1,
   'tools': 1,
   'streaming': 1,
+  'batching': 1,
   'lifecycle': 1,
   'guards': 1,
   'performance': 1,
@@ -63,6 +67,7 @@ const validationFixtures = <String, Map<String, Object>>{
     'max_tokens': 256,
     'deadline_ms': 5000,
   },
+  'batching': {'token_threshold': 1, 'byte_threshold': 1},
   'limit': {'max_tokens': 1, 'expected_native_decode_tokens': 1},
   'benchmark': {
     'chat_prompt': 'List the numbers from one to twenty in English.',
@@ -162,9 +167,9 @@ const extendedValidationCases = [
   ValidationCaseDefinition('C10.stop', ['streaming'], [], implemented: false),
   ValidationCaseDefinition(
     'C11.batching',
-    ['streaming'],
-    ['raw', 'hello'],
-    implemented: false,
+    ['streaming', 'batching'],
+    ['raw', 'hello', 'batching'],
+    version: 2,
   ),
   ValidationCaseDefinition('C12.guards', ['guards'], [], implemented: false),
   ValidationCaseDefinition(
@@ -187,5 +192,20 @@ const validationCaseCatalog = [
 ];
 
 /// Finds a declared case; an unknown ID is a programming error.
-ValidationCaseDefinition validationCase(String id) =>
-    validationCaseCatalog.singleWhere((definition) => definition.id == id);
+ValidationCaseDefinition validationCase(
+  String id, {
+  int catalogVersion = validationCatalogVersion,
+}) {
+  if (catalogVersion != 1 && catalogVersion != validationCatalogVersion) {
+    throw const FormatException('Unsupported catalog version');
+  }
+  if (catalogVersion == 1 && id == 'C11.batching') {
+    return const ValidationCaseDefinition(
+      'C11.batching',
+      ['streaming'],
+      ['raw', 'hello'],
+      implemented: false,
+    );
+  }
+  return validationCaseCatalog.singleWhere((definition) => definition.id == id);
+}

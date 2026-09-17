@@ -255,27 +255,54 @@ class ValidationProfile {
       (fixtures[fixture] as Map)[field] as String;
 
   /// The resolved fixtures whose identity is bound to one case record.
-  Map<String, dynamic> caseFixtures(String id) => {
-    for (final key in validationCase(id).fixtures) key: fixtures[key],
+  Map<String, dynamic> caseFixtures(
+    String id, {
+    int catalogVersion = validationCatalogVersion,
+  }) => {
+    for (final key in validationCase(
+      id,
+      catalogVersion: catalogVersion,
+    ).fixtures)
+      key: fixtures[key],
   };
 
-  /// Versioned selected/omitted inventory with reproducible fixture contents.
-  Map<String, dynamic> get catalog => {
-    'version': 1,
-    'features': validationFeatures,
-    'selection': selection,
-    'focus_features': focusFeatures,
-    'fixtures': fixtures,
-    'cases': [
-      for (final definition in validationCaseCatalog)
-        {
-          ...definition.toJson(),
-          'selected': caseIds.contains(definition.id),
-          if (!caseIds.contains(definition.id))
-            'omission_reason': _omissionReason(definition.id),
-        },
-    ],
-  };
+  /// Current selected/omitted inventory with reproducible fixture contents.
+  Map<String, dynamic> get catalog =>
+      catalogForVersion(validationCatalogVersion);
+
+  /// Reconstructs a supported historical catalog without inventing new evidence.
+  Map<String, dynamic> catalogForVersion(int version) {
+    validationCase('C11.batching', catalogVersion: version);
+    if (version == 1 &&
+        (focusFeatures.contains('batching') ||
+            (data['fixtures'] as Map?)?.containsKey('batching') == true)) {
+      throw const FormatException(
+        'Batching selection requires catalog version 2',
+      );
+    }
+    return {
+      'version': version,
+      'features': {
+        for (final entry in validationFeatures.entries)
+          if (version != 1 || entry.key != 'batching') entry.key: entry.value,
+      },
+      'selection': selection,
+      'focus_features': focusFeatures,
+      'fixtures': {
+        for (final entry in fixtures.entries)
+          if (version != 1 || entry.key != 'batching') entry.key: entry.value,
+      },
+      'cases': [
+        for (final definition in validationCaseCatalog)
+          {
+            ...validationCase(definition.id, catalogVersion: version).toJson(),
+            'selected': caseIds.contains(definition.id),
+            if (!caseIds.contains(definition.id))
+              'omission_reason': _omissionReason(definition.id),
+          },
+      ],
+    };
+  }
 
   String _omissionReason(String id) {
     if (id.startsWith('C06.history.') && !historyControls) {

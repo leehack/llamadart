@@ -72,6 +72,7 @@ class _ValidationAppState extends State<ValidationApp> {
                             : const [
                                 'tiny-gguf-cpu',
                                 'tiny-gguf-lifecycle',
+                                'tiny-gguf-batching',
                                 'tiny-gguf-metal',
                                 'tiny-gguf-vulkan',
                                 'tiny-gguf-cuda',

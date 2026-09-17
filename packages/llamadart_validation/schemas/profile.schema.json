@@ -111,6 +111,7 @@
           "history",
           "tools",
           "streaming",
+          "batching",
           "lifecycle",
           "guards",
           "performance"

@@ -41,7 +41,7 @@ conflicting settings and per-record unsupported exemptions cannot waive them.
 Profiles select `quick`, `focused` or `release`. Focused profiles require a
 nonempty, unique `focus_features` list; `tiny-gguf-lifecycle` adds the second
 dispose/load/generate cycle to the quick CPU run. Core feature IDs are `text`,
-`unicode`, `thinking`, `history`, `tools`, `streaming`, `lifecycle`, `guards` and
+`unicode`, `thinking`, `history`, `tools`, `streaming`, `batching`, `lifecycle`, `guards` and
 `performance`. Unimplemented selected cases stay NOT_RUN.
 
 Journal schema 2 includes the versioned case/feature catalog, resolved synthetic
@@ -51,3 +51,10 @@ compile into every host; model overrides remain in the locked JSON profiles.
 The reporter validates metadata against the executable catalog and still imports
 schema-1 journals with their original inventory. It does not invent missing
 catalog provenance for those older runs.
+
+`tiny-gguf-batching` adds C11 text/thinking parity across default, 1-piece/1-byte,
+and recovered default worker settings. Trial outputs/configuration/finish order
+and metrics are retained; chunk counts may differ. LiteRT Web checks each native
+option's typed rejection instead. NPU deterministic parity, GGUF Web controls and
+tool-bearing fixtures remain unqualified. Catalog version 2 preserves imports of
+version-1 journals against their original case/fixture definitions.

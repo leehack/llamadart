@@ -41,6 +41,10 @@ class ValidationReport {
     if (manifests.length != 1) problems.add('Expected exactly one manifest');
     final manifest = manifests.isEmpty ? <String, dynamic>{} : manifests.first;
     final legacy = manifest['schema_version'] == 1;
+    final declaredCatalog = manifest['catalog'];
+    final catalogVersion = declaredCatalog is Map
+        ? declaredCatalog['version']
+        : null;
     if (!const [1, 2].contains(manifest['schema_version'])) {
       problems.add('Unsupported result schema');
     }
@@ -83,9 +87,14 @@ class ValidationReport {
         if (manifest['catalog_hash'] != jsonHash(manifest['catalog'])) {
           problems.add('Catalog hash does not match the manifest');
         }
-        if (canonicalJson(manifest['catalog']) !=
-            canonicalJson(profile.catalog)) {
-          problems.add('Catalog does not match the executable profile');
+        try {
+          if (catalogVersion is! int ||
+              canonicalJson(manifest['catalog']) !=
+                  canonicalJson(profile.catalogForVersion(catalogVersion))) {
+            problems.add('Catalog does not match the executable profile');
+          }
+        } on FormatException catch (error) {
+          problems.add(error.message.toString());
         }
       }
       if (canonicalJson(inventory) !=
@@ -143,11 +152,29 @@ class ValidationReport {
       if (records.containsKey(id)) {
         problems.add('Duplicate terminal record: $id');
       }
-      if (!legacy && profile != null) {
-        if (event['case_version'] != validationCase(id).version ||
-            event['fixture_hash'] != jsonHash(profile.caseFixtures(id))) {
+      if (!legacy && profile != null && const [1, 2].contains(catalogVersion)) {
+        if (event['case_version'] !=
+                validationCase(
+                  id,
+                  catalogVersion: catalogVersion as int,
+                ).version ||
+            event['fixture_hash'] !=
+                jsonHash(
+                  profile.caseFixtures(id, catalogVersion: catalogVersion),
+                )) {
           problems.add('Case version or fixture identity mismatch: $id');
         }
+      }
+      if (!legacy &&
+          const [1, 2].contains(catalogVersion) &&
+          !validationCase(
+            id,
+            catalogVersion: catalogVersion as int,
+          ).implemented &&
+          event['status'] != 'NOT_RUN') {
+        problems.add(
+          'Unimplemented catalog case cannot claim an executed result: $id',
+        );
       }
       if (!const [
         'PASS',
