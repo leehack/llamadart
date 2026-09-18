@@ -1021,6 +1021,10 @@ controller never retries submission. Interrupted runs stay unqualified. Failed
 Firebase runs cancel/verify terminal state before collecting final artifacts;
 pre-terminal snapshots cannot be labelled complete. GCE still collects before
 VM/disk deletion. An unknown cleanup state continues to block new submissions.
+Manual Firebase cleanup invalidates earlier collections and refreshes provider
+status. Follow it with `collect`, which refreshes terminal status again before
+retrieval. A failed recovery persists an incomplete, unqualified assessment;
+cancelled preparation-only runs cannot qualify from old artifacts.
 
 Catalog 3 executes C10 stop-marker comparison and C12 unloaded-engine readiness
 rejection/reload recovery. Stop tests retain an unrestricted control, exact

@@ -720,8 +720,10 @@ class RemoteController {
       throw const FormatException('Invalid run id');
     }
     final lock = _lock();
+    Map<String, dynamic>? recoveryState;
     try {
       final state = read(id);
+      recoveryState = state;
       final plan = RemotePlan(Map<String, dynamic>.from(state['plan'] as Map));
       final remote = Map<String, dynamic>.from(state['remote'] as Map);
       if (action == 'reconcile') {
@@ -747,6 +749,17 @@ class RemoteController {
         remote.addAll(await provider.status(plan, remote));
         state['remote'] = remote;
       } else if (action == 'collect') {
+        state['collection'] = 'INCOMPLETE';
+        state['qualified'] = false;
+        _save(id, state);
+        if (plan.firebase) {
+          remote.addAll(await provider.status(plan, remote));
+          state['remote'] = remote;
+          _save(id, state);
+          if (remote['terminal'] != true) {
+            throw StateError('Firebase collection requires terminal status');
+          }
+        }
         await provider.collect(
           plan,
           remote,
@@ -754,6 +767,13 @@ class RemoteController {
         );
         state['collection'] = 'COMPLETE';
       } else if (action == 'cleanup') {
+        if (plan.firebase) {
+          // A legacy collection may contain only a queued snapshot. Cleanup
+          // changes provider state, so explicit recollection is required.
+          state['collection'] = 'INCOMPLETE';
+          state['qualified'] = false;
+          _save(id, state);
+        }
         final result = await provider.cleanup(plan, remote);
         state['cleanup_details'] = result;
         state['cleanup'] = result['verified'] == true ? 'VERIFIED' : 'UNKNOWN';
@@ -761,12 +781,29 @@ class RemoteController {
           jsonEncode({'status': state['cleanup'], 'details': result}),
           flush: true,
         );
+        _save(id, state);
+        if (plan.firebase) {
+          remote.addAll(await provider.status(plan, remote));
+          state['remote'] = remote;
+        }
       } else {
         throw const FormatException('Unknown recovery action');
       }
       await _finishAssessment(plan, state);
       _save(id, state);
       return state;
+    } catch (error) {
+      final state = recoveryState;
+      if (state != null) {
+        state['collection'] = 'INCOMPLETE';
+        state['recovery_failure'] = _safeFailure(error, 'recovery_$action');
+        await _finishAssessment(
+          RemotePlan(Map<String, dynamic>.from(state['plan'] as Map)),
+          state,
+        );
+        _save(id, state);
+      }
+      rethrow;
     } finally {
       lock.release();
     }

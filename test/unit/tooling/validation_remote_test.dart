@@ -28,6 +28,7 @@ class FakeProvider implements RemoteProvider {
   bool collectionFails = false;
   bool cleanupVerified = true;
   bool successful = true;
+  Map<String, dynamic>? statusOverride;
   bool checkpointBeforeFailure = false;
   void Function(RemotePlan)? onStart;
   final List<String> calls = [];
@@ -72,6 +73,7 @@ class FakeProvider implements RemoteProvider {
   ) async {
     calls.add('status');
     if (statusErrors.isNotEmpty) throw statusErrors.removeAt(0);
+    if (statusOverride != null) return statusOverride!;
     return {
       'terminal': true,
       'state': 'FINISHED',
@@ -1165,6 +1167,51 @@ void main() {
         'VERIFIED',
       );
       expect(provider.starts, 1);
+    },
+  );
+  test(
+    'Firebase recovery replaces legacy pending collection evidence',
+    () async {
+      final provider = FakeProvider();
+      final control = controller(provider);
+      await control.run(plan());
+      final journal = File(p.join(runs.path, 'qa-one', 'orchestration.json'));
+      final legacy =
+          jsonDecode(journal.readAsStringSync()) as Map<String, dynamic>;
+      legacy['remote'] = {
+        'matrix_id': 'matrix-one',
+        'state': 'PENDING',
+        'terminal': false,
+        'matrix': {'state': 'PENDING'},
+      };
+      journal.writeAsStringSync(jsonEncode(legacy));
+      provider.statusOverride = {
+        'state': 'FINISHED',
+        'terminal': true,
+        'matrix': {
+          'state': 'FINISHED',
+          'outcomeSummary': 'INCONCLUSIVE',
+          'testExecutions': [
+            {'state': 'CANCELLED'},
+          ],
+        },
+      };
+      provider.calls.clear();
+      final cleaned = await control.recover('qa-one', 'cleanup');
+      expect(cleaned['collection'], 'INCOMPLETE');
+      expect(cleaned['qualified'], false);
+      expect(cleaned['remote']['state'], 'FINISHED');
+      expect(provider.calls, ['cleanup', 'status']);
+      final collected = await control.recover('qa-one', 'collect');
+      expect(collected['collection'], 'COMPLETE');
+      expect(collected['remote']['matrix']['outcomeSummary'], 'INCONCLUSIVE');
+      expect(collected['qualified'], false);
+      expect(collected['phase'], 'FAILED');
+      expect(provider.starts, 1);
+      provider.statusOverride = {'state': 'PENDING', 'terminal': false};
+      await expectLater(control.recover('qa-one', 'collect'), throwsStateError);
+      expect(control.read('qa-one')['collection'], 'INCOMPLETE');
+      expect(control.read('qa-one')['qualified'], false);
     },
   );
   test('stale credit and insufficient quota fail locally', () {
