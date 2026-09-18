@@ -100,6 +100,90 @@ void main() {
       }
     },
   );
+  test(
+    'preparation progress survives failure without claiming verification',
+    () async {
+      final events = <Map<String, dynamic>>[];
+      await expectLater(
+        prepareModel(
+          profile,
+          cache,
+          client: MockClient(
+            (_) async =>
+                http.Response.bytes(List<int>.filled(bytes.length, 0), 200),
+          ),
+          onProgress: (event) async => events.add(event),
+        ),
+        throwsFormatException,
+      );
+      expect(events.map((e) => '${e['stage']}:${e['state']}'), [
+        'download:started',
+        'download:finished',
+        'checksum:started',
+        'checksum:rejected',
+      ]);
+      expect(events.last['bytes'], bytes.length);
+      expect(
+        events.every((e) => e['model_sha256'] == profile.modelHash),
+        isTrue,
+      );
+      expect(jsonEncode(events), isNot(contains(cache.path)));
+      expect(jsonEncode(events), isNot(contains(profile.model['url'])));
+      expect(cache.listSync(recursive: true).whereType<File>(), isEmpty);
+    },
+  );
+
+  test(
+    'durable progress distinguishes download, hash and verified reuse',
+    () async {
+      final journal = FileValidationJournal(
+        Directory(p.join(cache.path, 'run')),
+      );
+      await prepareModel(
+        profile,
+        cache,
+        client: MockClient((_) async => http.Response.bytes(bytes, 200)),
+        onProgress: journal.emitPreparation,
+      );
+      await journal.emit({'type': 'manifest', 'test_marker': true});
+      journal.close();
+      final suiteEvents = File(
+        p.join(cache.path, 'run', 'events.jsonl'),
+      ).readAsLinesSync();
+      expect(suiteEvents, hasLength(1));
+      expect(jsonDecode(suiteEvents.single)['type'], 'manifest');
+      final events = const LineSplitter()
+          .convert(
+            File(
+              p.join(cache.path, 'run', 'preparation.jsonl'),
+            ).readAsStringSync(),
+          )
+          .map((line) => jsonDecode(line) as Map)
+          .toList();
+      expect(events.map((e) => '${e['stage']}:${e['state']}'), [
+        'download:started',
+        'download:finished',
+        'checksum:started',
+        'checksum:verified',
+        'ready:verified',
+      ]);
+      expect(events.last['bytes'], bytes.length);
+      final reuse = <Map<String, dynamic>>[];
+      await prepareModel(
+        profile,
+        cache,
+        client: MockClient((_) async => throw StateError('no network')),
+        onProgress: (e) async => reuse.add(e),
+      );
+      expect(reuse.map((e) => e['stage']), ['checksum', 'checksum', 'ready']);
+      // Progress alone cannot qualify an interrupted preparation as a suite pass.
+      expect(
+        ValidationReport.parse(events.map(jsonEncode).join('\n')).qualified,
+        isFalse,
+      );
+    },
+  );
+
   test('invalid supplied file is retained for the user', () async {
     final input = File(p.join(cache.path, 'user-model.gguf'))
       ..writeAsStringSync('wrong');

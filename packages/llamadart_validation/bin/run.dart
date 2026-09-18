@@ -120,6 +120,7 @@ Future<void> main(List<String> args) async {
               ),
         ),
         suppliedPath: options['model'],
+        onProgress: journal.emitPreparation,
       );
       final environment = <String, dynamic>{
         ...provenance,

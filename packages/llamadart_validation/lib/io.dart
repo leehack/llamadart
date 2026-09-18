@@ -18,6 +18,7 @@ Future<({String path, Map<String, dynamic> evidence})> prepareModel(
   String? suppliedPath,
   Duration timeout = const Duration(minutes: 5),
   http.Client? client,
+  Future<void> Function(Map<String, dynamic>)? onProgress,
 }) async {
   profile.requireRunnable();
   final started = Stopwatch()..start();
@@ -25,10 +26,45 @@ Future<({String path, Map<String, dynamic> evidence})> prepareModel(
       ? File(p.join(cache.path, profile.modelHash, profile.filename))
       : File(suppliedPath);
   var hit = target.existsSync();
-  Future<bool> valid(File file) async =>
-      await file.length() == profile.model['bytes'] &&
-      (await sha256.bind(file.openRead()).first).toString() ==
-          profile.modelHash;
+  Future<void> progress(String stage, int bytes, String state) async {
+    await onProgress?.call({
+      'type': 'preparation_progress',
+      'profile_id': profile.id,
+      'model_sha256': profile.modelHash,
+      'stage': stage,
+      'state': state,
+      'bytes': bytes,
+      'expected_bytes': profile.model['bytes'],
+      'elapsed_ms': started.elapsedMilliseconds,
+    });
+  }
+
+  Future<bool> valid(File file) async {
+    final length = await file.length();
+    await progress('checksum', 0, 'started');
+    if (length != profile.model['bytes']) {
+      await progress('checksum', length, 'rejected');
+      return false;
+    }
+    var hashed = 0;
+    var lastReport = started.elapsedMilliseconds;
+    final hash = await sha256
+        .bind(
+          file.openRead().asyncMap((chunk) async {
+            hashed += chunk.length;
+            if (started.elapsedMilliseconds - lastReport >= 10000) {
+              await progress('checksum', hashed, 'running');
+              lastReport = started.elapsedMilliseconds;
+            }
+            return chunk;
+          }),
+        )
+        .first;
+    final matches = hash.toString() == profile.modelHash;
+    await progress('checksum', hashed, matches ? 'verified' : 'rejected');
+    return matches;
+  }
+
   final checksum = Stopwatch()..start();
   if (hit && !await valid(target)) {
     if (suppliedPath != null) {
@@ -48,6 +84,7 @@ Future<({String path, Map<String, dynamic> evidence})> prepareModel(
       '${target.path}.${DateTime.now().microsecondsSinceEpoch}.part',
     );
     final transport = client ?? http.Client();
+    var lastReport = started.elapsedMilliseconds;
     var receivedBytes = 0;
     var deadlineExpired = false;
     final timer = Timer(timeout, () {
@@ -57,6 +94,7 @@ Future<({String path, Map<String, dynamic> evidence})> prepareModel(
     IOSink? sink;
     final watch = Stopwatch()..start();
     try {
+      await progress('download', 0, 'started');
       await (() async {
         final response = await transport.send(
           http.Request('GET', Uri.parse(profile.model['url'] as String)),
@@ -73,6 +111,10 @@ Future<({String path, Map<String, dynamic> evidence})> prepareModel(
             );
           }
           sink!.add(chunk);
+          if (started.elapsedMilliseconds - lastReport >= 10000) {
+            await progress('download', receivedBytes, 'running');
+            lastReport = started.elapsedMilliseconds;
+          }
         }
         await sink!.flush();
         await sink!.close();
@@ -81,6 +123,7 @@ Future<({String path, Map<String, dynamic> evidence})> prepareModel(
       if (deadlineExpired) throw TimeoutException('Model download deadline');
       timer.cancel();
       downloadMs = watch.elapsedMilliseconds;
+      await progress('download', receivedBytes, 'finished');
       checksum.start();
       if (!await valid(temporary)) {
         throw const FormatException('Downloaded model hash/size mismatch');
@@ -103,6 +146,7 @@ Future<({String path, Map<String, dynamic> evidence})> prepareModel(
       if (temporary.existsSync()) await temporary.delete();
     }
   }
+  await progress('ready', profile.model['bytes'] as int, 'verified');
   return (
     path: target.absolute.path,
     evidence: {
@@ -144,6 +188,15 @@ class FileValidationJournal {
     if (utf8.encode(line).length <= 32768) {
       stdout.writeln('LLAMADART_VALIDATION $line');
     }
+  }
+
+  /// Persists diagnostics separately from the manifest-first suite protocol.
+  Future<void> emitPreparation(Map<String, dynamic> event) async {
+    final line = jsonEncode(event);
+    File(
+      p.join(directory.path, 'preparation.jsonl'),
+    ).writeAsStringSync('$line\n', mode: FileMode.append, flush: true);
+    stdout.writeln('LLAMADART_PREPARATION $line');
   }
 
   void close() => _file.closeSync();

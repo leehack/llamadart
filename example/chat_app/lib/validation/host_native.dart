@@ -100,6 +100,7 @@ class _NativeHost implements ValidationHost {
           ),
         ),
         client: _client,
+        onProgress: _journal!.emitPreparation,
         timeout: const Duration(minutes: 10),
       );
     } finally {

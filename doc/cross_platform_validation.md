@@ -981,3 +981,23 @@ not accelerator or perceptual qualification. Full microphone/playback,
 noise/language/voice fixtures, mobile/Web speech packaging, and historical
 speech dashboards remain open. A supported backend request still requires
 actual hardware execution evidence before marking a platform/backend row green.
+
+### Preparation progress on interrupted runs
+
+Native desktop and Flutter validation write a separate `preparation.jsonl` with `preparation_progress`
+records before inference: download started/finished, checksum started/verified
+(or rejected), and ready only after size and SHA256 verification. Active byte
+processing emits at most one progress update per ten seconds per stage; a stalled
+network does not emit a heartbeat. Records contain profile ID, locked model hash,
+processed/expected bytes and elapsed preparation milliseconds, never a URL or
+local model path. Subtract stage timestamps to separate transfer from verification
+cost. Existing completed-run `download_ms` and `checksum_ms` remain available.
+
+These flushed JSONL records also appear in provider logs with the
+`LLAMADART_PREPARATION` prefix. They leave the manifest-first suite protocol
+unchanged and survive a provider timeout where no suite
+manifest was written, but cannot qualify a run or replace missing test results.
+The eight-minute S24 Gemma 4 attempt reached model loading only after about 7m44s;
+its old logs do not distinguish transfer and checksum cost. Use these records
+before choosing a longer timeout or another model delivery strategy, and recheck
+free allowance before any device dispatch.
