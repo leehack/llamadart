@@ -1001,3 +1001,12 @@ The eight-minute S24 Gemma 4 attempt reached model loading only after about 7m44
 its old logs do not distinguish transfer and checksum cost. Use these records
 before choosing a longer timeout or another model delivery strategy, and recheck
 free allowance before any device dispatch.
+
+### Desktop CUDA payloads
+
+Linux x64 and Windows x64 validation bundles explicitly include CPU, Vulkan and
+CUDA modules through the private harness hook configuration. Bundling fails if
+any is missing; selecting a CUDA profile alone does not override Dart build-hook
+defaults. The GPU driver remains a host prerequisite, and a shipped CUDA module
+is not execution or placement evidence. Earlier 31867c10c CI bundles use the
+CPU/Vulkan defaults and must not be used for CUDA qualification.

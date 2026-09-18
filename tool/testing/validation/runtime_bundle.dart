@@ -2,9 +2,32 @@ import 'dart:ffi';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
+import 'package:llamadart/src/hook/native_bundle_config.dart';
 import 'package:path/path.dart' as p;
 
 import 'process.dart';
+
+/// Desktop x64 bundles advertise CPU, Vulkan and CUDA profiles together.
+/// Fail before publication if hook filtering dropped one of their modules.
+void requireDesktopBackendModules(Directory bundle, {Abi? abi}) {
+  final target = abi ?? Abi.current();
+  if (target != Abi.linuxX64 && target != Abi.windowsX64) return;
+  final libraries = Directory(p.join(bundle.path, 'lib'));
+  final available = libraries.existsSync()
+      ? collectAvailableBackends(
+          describeNativeLibraries(
+            libraries.listSync().whereType<File>().map((file) => file.path),
+          ),
+        )
+      : <String>{};
+  final missing = {'cpu', 'vulkan', 'cuda'}.difference(available);
+  if (missing.isNotEmpty) {
+    throw StateError(
+      'Desktop validation bundle is missing backend modules: '
+      '${missing.join(', ')}. Check llamadart_native_backends for $target.',
+    );
+  }
+}
 
 /// Null keeps the supported GGUF-only Windows arm64 bundle buildable.
 String? standaloneLiteRtTarget(Abi abi) => switch (abi) {

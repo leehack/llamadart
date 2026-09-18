@@ -7,6 +7,8 @@ import 'dart:ffi';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
+import 'package:llamadart/src/hook/native_bundle_config.dart';
+import 'package:yaml/yaml.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
@@ -110,6 +112,151 @@ class MatrixProvider extends GcloudProvider {
 }
 
 void main() {
+  test('desktop validation hook selects all advertised x64 backends', () {
+    final yaml =
+        loadYaml(
+              File(
+                'packages/llamadart_validation/pubspec.yaml',
+              ).readAsStringSync(),
+            )
+            as Map;
+    final raw =
+        yaml['hooks']['user_defines']['llamadart'][nativeBackendUserDefineKey];
+    for (final target in ['linux-x64', 'windows-x64']) {
+      expect(
+        parseRequestedBackends(bundle: target, rawUserConfig: raw),
+        containsAll(['cpu', 'vulkan', 'cuda']),
+      );
+    }
+  });
+
+  test(
+    'desktop payload guard rejects absent CUDA and accepts versioned modules',
+    () {
+      final root = Directory.systemTemp.createTempSync('validation-backends-');
+      addTearDown(() => root.deleteSync(recursive: true));
+      final libraries = Directory(p.join(root.path, 'lib'))..createSync();
+      for (final target in [Abi.linuxX64, Abi.windowsX64]) {
+        for (final file in libraries.listSync()) {
+          file.deleteSync();
+        }
+        String name(String backend) => target == Abi.linuxX64
+            ? 'libggml-$backend.so.0'
+            : 'ggml-$backend.dll';
+        for (final backend in ['cpu', 'vulkan']) {
+          File(
+            p.join(libraries.path, name(backend)),
+          ).writeAsStringSync('fixture');
+        }
+        expect(
+          () => requireDesktopBackendModules(root, abi: target),
+          throwsStateError,
+        );
+        File(p.join(libraries.path, name('cuda'))).writeAsStringSync('fixture');
+        expect(
+          () => requireDesktopBackendModules(root, abi: target),
+          returnsNormally,
+        );
+      }
+      expect(
+        () => requireDesktopBackendModules(root, abi: Abi.macosArm64),
+        returnsNormally,
+      );
+    },
+  );
+
+  test(
+    'desktop builder refuses to seal a CPU and Vulkan only payload',
+    () async {
+      final root = Directory.systemTemp.createTempSync('validation-build-');
+      addTearDown(() => root.deleteSync(recursive: true));
+      for (final path in [
+        '.flutter-version',
+        'hook/build.dart',
+        'scripts/fetch_webgpu_bridge_assets.sh',
+        'packages/llamadart_validation/assets/profiles/tiny-gguf-cpu.json',
+      ]) {
+        final target = File(p.join(root.path, path));
+        target.parent.createSync(recursive: true);
+        File(path).copySync(target.path);
+      }
+      final output = Directory(p.join(root.path, 'output'));
+      var builds = 0;
+      await expectLater(
+        buildValidationBundle(
+          root.path,
+          'desktop',
+          output.path,
+          execute: (binary, args, {directory, timeout}) async {
+            if (binary == 'git') {
+              return CommandResult(
+                0,
+                args.first == 'rev-parse' ? 'a' * 40 : '',
+                '',
+              );
+            }
+            if (binary == 'flutter' && args.first == '--version') {
+              return CommandResult(
+                0,
+                jsonEncode({
+                  'frameworkVersion': File(
+                    '.flutter-version',
+                  ).readAsStringSync().trim(),
+                  'dartSdkVersion': Platform.version.split(' ').first,
+                }),
+                '',
+              );
+            }
+            if (args.first == 'pub') return const CommandResult(0, '', '');
+            if (args.first != 'build') {
+              throw StateError('Unexpected command after backend guard');
+            }
+            builds++;
+            final destination = args[args.indexOf('-o') + 1];
+            final name = args.contains('bin/run.dart') ? 'run' : 'report';
+            final executable = File(
+              p.join(
+                destination,
+                'bundle',
+                'bin',
+                Platform.isWindows ? '$name.exe' : name,
+              ),
+            );
+            executable.parent.createSync(recursive: true);
+            executable.writeAsStringSync('executable fixture');
+            for (final backend in ['cpu', 'vulkan']) {
+              final library = File(
+                p.join(
+                  destination,
+                  'bundle',
+                  'lib',
+                  Platform.isWindows
+                      ? 'ggml-$backend.dll'
+                      : 'libggml-$backend.so.0',
+                ),
+              );
+              library.parent.createSync(recursive: true);
+              library.writeAsStringSync('library fixture');
+            }
+            return const CommandResult(0, '', '');
+          },
+        ),
+        throwsA(
+          isA<StateError>().having(
+            (error) => error.message,
+            'missing backend',
+            contains('missing backend modules: cuda'),
+          ),
+        ),
+      );
+      expect(builds, 2);
+      expect(output.existsSync(), false);
+    },
+    skip: ![Abi.linuxX64, Abi.windowsX64].contains(Abi.current())
+        ? 'Runs against the production host ABI on Linux/Windows x64 CI'
+        : false,
+  );
+
   test(
     'Windows arm64 keeps GGUF builds without requiring a LiteRT archive',
     () async {

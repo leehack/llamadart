@@ -243,6 +243,7 @@ Future<Directory> buildValidationBundle(
           file.copySync(existing.path);
         }
       }
+      requireDesktopBackendModules(destination);
       copyDirectory(
         Directory(p.join(package, 'assets')),
         Directory(p.join(destination.path, 'assets')),
