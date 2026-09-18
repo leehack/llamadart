@@ -291,8 +291,9 @@ Future<Map<String, Object?>> runSpeechValidation(
       }
       await check('cancel', () async {
         final result = await adapter.execute(cancel: true);
-        if (result['cancelled'] != true)
+        if (result['cancelled'] != true) {
           throw StateError('Cancellation not confirmed');
+        }
         return result;
       });
       await check('after_cancel', () => adapter.execute());
